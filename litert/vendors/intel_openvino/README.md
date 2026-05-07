@@ -52,12 +52,21 @@ Intel Core Ultra Series 3 | NPU5010 | Panther Lake (PTL) | Linux, Windows
 > **In short:** the NPU driver is needed only on machines that **execute** the
 > model on NPU hardware. Pure AOT-build machines can skip it.
 
-> **Note:** `openvino==2026.1.0` is installed transitively by
-> `ai-edge-litert-sdk-intel-nightly`. The Intel SDK nightly also fetches the NPU
-> compiler shared library (`libopenvino_intel_npu_compiler.so` / `.dll`) into
-> its `data/` dir at `pip install` time — without it, AOT fails with `Device
-> with "NPU" name is not registered`. To override Linux distro detection, set
-> `LITERT_OV_OS_ID=ubuntu22` or `ubuntu24` before `pip install`.
+> **Note:** `ai-edge-litert-sdk-intel-nightly` pins the matching OpenVINO
+> nightly wheel via a direct URL in `install_requires` (one per supported
+> Python × OS combo, selected by pip at install time via PEP 508 env
+> markers). The plugin and dispatch libraries must be ABI-compatible with
+> this exact OpenVINO build, so the wheel URL is pinned to the same build
+> number as the archive fetched at compile time; a plain `pip install
+> ai-edge-litert-sdk-intel-nightly` is sufficient — no `--extra-index-url`
+> required.
+>
+> The SDK nightly also fetches the NPU compiler shared library
+> (`libopenvino_intel_npu_compiler.so` / `.dll`) from the matching toolkit
+> archive into its `data/` dir at `pip install` time — without it, AOT
+> fails with `Device with "NPU" name is not registered`. To override Linux
+> distro detection, set `LITERT_OV_OS_ID=ubuntu22` or `ubuntu24` before
+> `pip install`.
 
 For building from source: Bazel 7.4.1+ via
 [Bazelisk](https://github.com/bazelbuild/bazelisk) or Docker.

@@ -15,9 +15,12 @@
 
 """Intel OpenVINO SDK for AI Edge LiteRT.
 
-Ships `libopenvino_intel_npu_compiler.{so,dll}` fetched from the OpenVINO
-toolkit archive at install time (see setup.py). Level Zero loader, NPU
-firmware, and the NPU UMD (intel-level-zero-npu / intel-fw-npu /
+Ships the NPU compiler shared libraries fetched from the OpenVINO toolkit
+archive at install time (see setup.py). In OpenVINO 2026.2+ this is two
+files: the compiler (`libopenvino_intel_npu_compiler.{so,dll}`) and the VCL
+loader (`libopenvino_intel_npu_compiler_loader.{so,dll}`) that carries the
+entry points the NPU plugin dlopens. Level Zero loader, NPU firmware, and
+the NPU UMD (intel-level-zero-npu / intel-fw-npu /
 intel-driver-compiler-npu) remain a user-installed prerequisite.
 """
 
@@ -31,11 +34,16 @@ __version__ = "{{ PACKAGE_VERSION }}"
 
 _SDK_FILES_SUBDIR = "data"
 
-_COMPILER_LIB_NAME = (
-    "openvino_intel_npu_compiler.dll"
-    if sys.platform == "win32"
-    else "libopenvino_intel_npu_compiler.so"
-)
+if sys.platform == "win32":
+  _COMPILER_LIB_NAMES = (
+      "openvino_intel_npu_compiler.dll",
+      "openvino_intel_npu_compiler_loader.dll",
+  )
+else:
+  _COMPILER_LIB_NAMES = (
+      "libopenvino_intel_npu_compiler.so",
+      "libopenvino_intel_npu_compiler_loader.so",
+  )
 
 
 def get_sdk_path() -> Optional[pathlib.Path]:
@@ -70,36 +78,39 @@ def _openvino_libs_dir() -> Optional[pathlib.Path]:
 
 
 def _ensure_compiler_in_openvino_libs() -> None:
-  """Copies libopenvino_intel_npu_compiler.{so,dll} into openvino/libs/.
+  """Copies NPU compiler + VCL loader libs into openvino/libs/.
 
-  OpenVINO's NPU plugin looks for the VCL compiler next to libopenvino.so
-  (i.e. `<site-packages>/openvino/libs/`) when a non-default SOC target
-  triggers the external compiler load path (e.g. SOC_MODEL=LNL sets
-  NPU_PLATFORM=NPU4000, which invokes the VCL adapter).
+  OpenVINO's NPU plugin dlopens these next to libopenvino.so (i.e.
+  `<site-packages>/openvino/libs/`) when a non-default SOC target triggers
+  the external compiler load path (e.g. SOC_MODEL=LNL sets
+  NPU_PLATFORM=NPU4000, which invokes the VCL adapter). In 2026.2 the VCL
+  entry points (`vclGetVersion` etc.) live in the `_compiler_loader`
+  sibling, so both files need to be present.
 
-  The SDK sdist downloads the compiler to its own `data/` dir during pip
-  install; this copies it to openvino/libs/ on first import so it's picked
-  up without env vars or manual symlinks. Best-effort: if the copy fails
+  The SDK sdist downloads these to its own `data/` dir during pip install;
+  this copies them to openvino/libs/ on first import so they're picked up
+  without env vars or manual symlinks. Best-effort: if the copy fails
   (permissions, readonly FS, already present), leave it alone.
   """
   sdk_data = get_sdk_path()
   if sdk_data is None:
     return
-  src = sdk_data / _COMPILER_LIB_NAME
-  if not src.is_file():
-    return
   libs_dir = _openvino_libs_dir()
   if libs_dir is None:
     return
-  dst = libs_dir / _COMPILER_LIB_NAME
-  if dst.is_file() and dst.stat().st_size == src.stat().st_size:
-    return  # already in place
-  try:
-    shutil.copyfile(src, dst)
-  except OSError:
-    # Non-fatal: NPU AOT for non-default SOC targets will fail, but default
-    # SOC and JIT paths still work without this copy.
-    pass
+  for name in _COMPILER_LIB_NAMES:
+    src = sdk_data / name
+    if not src.is_file():
+      continue
+    dst = libs_dir / name
+    if dst.is_file() and dst.stat().st_size == src.stat().st_size:
+      continue  # already in place
+    try:
+      shutil.copyfile(src, dst)
+    except OSError:
+      # Non-fatal: NPU AOT for non-default SOC targets may fail, but default
+      # SOC and JIT paths still work without this copy.
+      pass
 
 
 # On Windows, register the data dir with the process DLL search path so that
