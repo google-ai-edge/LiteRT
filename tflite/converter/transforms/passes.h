@@ -25,7 +25,6 @@ limitations under the License.
 #include "tflite/converter/quantization/common/quantization_lib/quantization_config.h"
 #include "tflite/converter/transforms/canonicalize_boundary_value_pass.h"
 #include "tflite/converter/transforms/cleanup_optimization_barrier_pass.h"
-#include "tflite/converter/transforms/downcast_x64_pass.h"
 #include "tflite/converter/transforms/optimize_batch_matmul_pass.h"
 #include "tflite/converter/transforms/optimize_broadcast_like_pass.h"
 #include "tflite/converter/transforms/optimize_broadcast_like_pass_options.h"
@@ -364,7 +363,6 @@ inline void registerTensorFlowLitePasses() {
   Register<UnfoldLargeSplatConstantPass>();
   Register<SplitMergedOperandsPass>();
   Register<CleanupOptimizationBarrierPass>();
-  Register<DowncastX64Pass>();
 
   // Utility Passes
   Register<DenseToDenseResourceElementsPass>();
