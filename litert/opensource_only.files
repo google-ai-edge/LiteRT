@@ -1,4 +1,5 @@
 ci/tools/python/vendor_sdk/BUILD:
+ci/tools/python/vendor_sdk/google_tensor/BUILD:
 ci/tools/python/vendor_sdk/intel/BUILD:
 ci/tools/python/vendor_sdk/mediatek/BUILD:
 ci/tools/python/vendor_sdk/qualcomm/BUILD:

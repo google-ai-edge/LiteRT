@@ -1,0 +1,2 @@
+graft ai_edge_litert_sdk_google_tensor/data
+include ai_edge_litert_sdk_google_tensor/__init__.py
