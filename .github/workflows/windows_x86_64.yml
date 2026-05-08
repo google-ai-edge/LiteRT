@@ -67,7 +67,7 @@ jobs:
           echo "CACHE_RESTORE_KEY_HEAD=$CACHE_RESTORE_KEY_HEAD" >> "$env:GITHUB_OUTPUT"
           echo "CACHE_KEY=$CACHE_KEY" >> "$env:GITHUB_OUTPUT"
           $SHORT_SHA=$("${{ github.sha }}".SubString(0, 8))
-          echo "BAZEL_OUTPUT_BASE=C:/w-$SHORT_SHA" >> "$env:GITHUB_ENV"
+          echo "BAZEL_OUTPUT_BASE=C:/actions-runner/_work" >> "$env:GITHUB_ENV"
 
       - name: Clean build outputs if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'

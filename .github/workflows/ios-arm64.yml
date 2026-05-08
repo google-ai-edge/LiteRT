@@ -22,7 +22,7 @@ concurrency:
 jobs:
   presubmit:
     name: "Presubmit-iOS"
-    runs-on: macos-15-xlarge
+    runs-on: macos-15
     permissions:
       actions: write
       contents: write
