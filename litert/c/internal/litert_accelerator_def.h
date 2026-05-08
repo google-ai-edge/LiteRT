@@ -15,6 +15,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_INTERNAL_LITERT_ACCELERATOR_DEF_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_INTERNAL_LITERT_ACCELERATOR_DEF_H_
 
+#include <stddef.h>
+
 #include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
@@ -31,6 +33,9 @@ extern "C" {
 
 // A struct that contains the data and functions that are used to define an
 // accelerator. Refer litert_accelerator_registration.h for more details.
+//
+// Note: This struct is shared with LiteRT runtime and Accelerators. So it must
+// be ABI stable.
 typedef struct {
   int version;  // Version of the accelerator definition
                 // Current runtime only supports version 1.
@@ -59,6 +64,40 @@ typedef struct {
 
   LiteRtCustomTensorBufferHandlersDef buffer_handlers;
 } LiteRtAcceleratorDefV1;
+
+// ABI compatibility check for LiteRtAcceleratorDefV1.
+//
+// Note: Please get review from the LiteRT ABI compatibility team when you make
+// changes to this struct.
+#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
+    __SIZEOF_POINTER__ == 8
+static_assert(sizeof(LiteRtAcceleratorDefV1) == 200,
+              "LiteRtAcceleratorDefV1 size mismatch");
+static_assert(offsetof(LiteRtAcceleratorDefV1, version) == 0,
+              "LiteRtAcceleratorDefV1 version offset mismatch");
+static_assert(offsetof(LiteRtAcceleratorDefV1, get_name) == 8,
+              "LiteRtAcceleratorDefV1 get_name offset mismatch");
+static_assert(offsetof(LiteRtAcceleratorDefV1, get_version) == 16,
+              "LiteRtAcceleratorDefV1 get_version offset mismatch");
+static_assert(offsetof(LiteRtAcceleratorDefV1, get_hardware_support) == 24,
+              "LiteRtAcceleratorDefV1 get_hardware_support offset mismatch");
+static_assert(
+    offsetof(LiteRtAcceleratorDefV1,
+             is_tflite_delegate_responsible_for_jit_compilation) == 32,
+    "LiteRtAcceleratorDefV1 is_tflite_delegate_responsible_for_jit_compilation "
+    "offset mismatch");
+static_assert(offsetof(LiteRtAcceleratorDefV1, create_delegate) == 40,
+              "LiteRtAcceleratorDefV1 create_delegate offset mismatch");
+static_assert(offsetof(LiteRtAcceleratorDefV1, destroy_delegate) == 48,
+              "LiteRtAcceleratorDefV1 destroy_delegate offset mismatch");
+static_assert(
+    offsetof(LiteRtAcceleratorDefV1, start_metrics_collection) == 56,
+    "LiteRtAcceleratorDefV1 start_metrics_collection offset mismatch");
+static_assert(offsetof(LiteRtAcceleratorDefV1, stop_metrics_collection) == 64,
+              "LiteRtAcceleratorDefV1 stop_metrics_collection offset mismatch");
+static_assert(offsetof(LiteRtAcceleratorDefV1, buffer_handlers) == 72,
+              "LiteRtAcceleratorDefV1 buffer_handlers offset mismatch");
+#endif  // __cplusplus
 
 typedef LiteRtAcceleratorDefV1 LiteRtAcceleratorDef;
 

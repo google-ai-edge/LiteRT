@@ -29,6 +29,9 @@ extern "C" {
 #endif
 
 /// A function table that contains LiteRT C APIs needed for Compiler Plugins.
+///
+/// @note This struct is shared with LiteRT runtime and Compiler Plugins. So it
+/// must be ABI stable.
 typedef struct LiteRtCompilerContext {
   // Model inspection
   LiteRtStatus (*get_num_model_subgraphs)(LiteRtModel model,
@@ -124,6 +127,99 @@ typedef struct LiteRtCompilerContext {
       LiteRtEnvironmentOptions options, LiteRtEnvOptionTag tag,
       LiteRtAny* value);
 } LiteRtCompilerContext;
+
+// ABI compatibility check for LiteRtCompilerContext.
+//
+// Note: Please get review from the LiteRT ABI compatibility team when you make
+// changes to this struct.
+#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
+    __SIZEOF_POINTER__ == 8
+static_assert(sizeof(LiteRtCompilerContext) == 296,
+              "LiteRtCompilerContext size mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_num_model_subgraphs) == 0,
+              "LiteRtCompilerContext get_num_model_subgraphs offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_model_subgraph) == 8,
+              "LiteRtCompilerContext get_model_subgraph offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_num_subgraph_ops) == 16,
+              "LiteRtCompilerContext get_num_subgraph_ops offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_subgraph_op) == 24,
+              "LiteRtCompilerContext get_subgraph_op offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_num_subgraph_inputs) == 32,
+              "LiteRtCompilerContext get_num_subgraph_inputs offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_subgraph_input) == 40,
+              "LiteRtCompilerContext get_subgraph_input offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_num_subgraph_outputs) == 48,
+              "LiteRtCompilerContext get_num_subgraph_outputs offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_subgraph_output) == 56,
+              "LiteRtCompilerContext get_subgraph_output offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_op_code) == 64,
+              "LiteRtCompilerContext get_op_code offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_custom_code) == 72,
+              "LiteRtCompilerContext get_custom_code offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_num_op_inputs) == 80,
+              "LiteRtCompilerContext get_num_op_inputs offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_op_input) == 88,
+              "LiteRtCompilerContext get_op_input offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_num_op_outputs) == 96,
+              "LiteRtCompilerContext get_num_op_outputs offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_op_output) == 104,
+              "LiteRtCompilerContext get_op_output offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_tensor_name) == 112,
+              "LiteRtCompilerContext get_tensor_name offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_tensor_index) == 120,
+              "LiteRtCompilerContext get_tensor_index offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_tensor_type_id) == 128,
+              "LiteRtCompilerContext get_tensor_type_id offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_ranked_tensor_type) == 136,
+              "LiteRtCompilerContext get_ranked_tensor_type offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_unranked_tensor_type) == 144,
+              "LiteRtCompilerContext get_unranked_tensor_type offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_quantization_type_id) == 152,
+              "LiteRtCompilerContext get_quantization_type_id offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_per_tensor_quantization) == 160,
+    "LiteRtCompilerContext get_per_tensor_quantization offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_per_channel_quantization) == 168,
+    "LiteRtCompilerContext get_per_channel_quantization offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_num_tensor_uses) == 176,
+              "LiteRtCompilerContext get_num_tensor_uses offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_tensor_use) == 184,
+              "LiteRtCompilerContext get_tensor_use offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_tensor_defining_op) == 192,
+              "LiteRtCompilerContext get_tensor_defining_op offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_tensor_weights) == 200,
+              "LiteRtCompilerContext get_tensor_weights offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_weights_buffer_id) == 208,
+              "LiteRtCompilerContext get_weights_buffer_id offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_weights_bytes) == 216,
+              "LiteRtCompilerContext get_weights_bytes offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_shlo_composite_op_name) == 224,
+    "LiteRtCompilerContext get_shlo_composite_op_name offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext,
+             get_shlo_composite_op_decomposition_subgraph_index) == 232,
+    "LiteRtCompilerContext get_shlo_composite_op_decomposition_subgraph_index "
+    "offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_shlo_composite_op_attributes) == 240,
+    "LiteRtCompilerContext get_shlo_composite_op_attributes offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_shlo_composite_op_version) == 248,
+    "LiteRtCompilerContext get_shlo_composite_op_version offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, push_op) == 256,
+              "LiteRtCompilerContext push_op offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_opaque_options) == 264,
+              "LiteRtCompilerContext get_opaque_options offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, find_opaque_options_data) == 272,
+              "LiteRtCompilerContext find_opaque_options_data offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, destroy_options) == 280,
+              "LiteRtCompilerContext destroy_options offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_environment_options_value) == 288,
+    "LiteRtCompilerContext get_environment_options_value offset mismatch");
+#endif  // __cplusplus
 
 LiteRtCompilerContext* LrtGetCompilerContext();
 
