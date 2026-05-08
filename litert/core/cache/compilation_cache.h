@@ -38,6 +38,7 @@ class CompilationCache {
     LiteRtApiVersion api_version;
     LiteRtHwAccelerators hw_accelerators;
     std::string_view manufacturer;
+    std::string sdk_version;
   };
 
   // Creates a compilation cache instance that uses the provided

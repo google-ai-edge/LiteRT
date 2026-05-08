@@ -65,10 +65,12 @@ GetPluginInfo(
     LITERT_ASSIGN_OR_RETURN(LiteRtHwAcceleratorSet hw_accelerators,
                             plugin.SupportedHardware());
     absl::string_view manufacturer = plugin.SocManufacturer();
+    LITERT_ASSIGN_OR_RETURN(std::string sdk_version, plugin.SdkVersion());
     cache_info[i] = {
         .api_version = api_version,
         .hw_accelerators = (LiteRtHwAccelerators)hw_accelerators,
         .manufacturer = manufacturer,
+        .sdk_version = std::move(sdk_version),
     };
   }
   return cache_info;
@@ -105,6 +107,7 @@ uint64_t GetHash(
   uint64_t ans = GetHash(compiler_plugin_info.api_version);
   HashCombine(ans, compiler_plugin_info.hw_accelerators);
   HashCombine(ans, compiler_plugin_info.manufacturer);
+  HashCombine(ans, compiler_plugin_info.sdk_version);
   return ans;
 }
 

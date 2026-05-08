@@ -35,6 +35,7 @@ CompilationCache::CompilerPluginInfo GetTestCompilerPluginInfo() {
       .api_version = {.major = 1, .minor = 0, .patch = 0},
       .hw_accelerators = kLiteRtHwAcceleratorNpu,
       .manufacturer = "test_manufacturer",
+      .sdk_version = "1.0.0",
   };
 }
 
@@ -116,6 +117,38 @@ TEST(CompilationCacheTest, CompilerPluginVersionChange_CacheMiss) {
   LITERT_ASSIGN_OR_ABORT(
       std::optional<LiteRtModelT::Ptr> cache_hit,
       compilation_cache.TryLoadModel(model_hash_with_updated_api_version));
+  EXPECT_FALSE(cache_hit.has_value());
+}
+
+TEST(CompilationCacheTest, CompilerPluginSdkVersionChange_CacheMiss) {
+  // GIVEN: a compilation cache and a model, saved to the cache
+  const std::string cache_root_path = ::testing::TempDir();
+  LITERT_ASSIGN_OR_ABORT(CompilationCache compilation_cache,
+                         CompilationCache::Create(cache_root_path));
+  LITERT_ASSIGN_OR_ABORT(
+      std::unique_ptr<LiteRtModelT> model,
+      LoadModelFromFile(litert::testing::GetTestFilePath(kModelFileName)));
+
+  CompilationCache::CompilerPluginInfo compiler_plugin_info =
+      GetTestCompilerPluginInfo();
+  compiler_plugin_info.sdk_version = "1.0.0";
+
+  LITERT_ASSIGN_OR_ABORT(const std::size_t model_hash,
+                         CompilationCache::GetModelHash(
+                             *model, GetTestOptions(), compiler_plugin_info));
+  LITERT_ABORT_IF_ERROR(compilation_cache.SaveModel(*model, model_hash));
+
+  // WHEN: the vendor plugin SDK version has been updated.
+  compiler_plugin_info.sdk_version = "1.0.1";
+
+  LITERT_ASSIGN_OR_ABORT(const std::size_t model_hash_with_updated_sdk_version,
+                         CompilationCache::GetModelHash(
+                             *model, GetTestOptions(), compiler_plugin_info));
+
+  // THEN: the model can not be loaded from the cache
+  LITERT_ASSIGN_OR_ABORT(
+      std::optional<LiteRtModelT::Ptr> cache_hit,
+      compilation_cache.TryLoadModel(model_hash_with_updated_sdk_version));
   EXPECT_FALSE(cache_hit.has_value());
 }
 
