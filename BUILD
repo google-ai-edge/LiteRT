@@ -14,4 +14,5 @@
 
 exports_files([
     "PATCH.protobuf_port_msvc_compat",
+    "tensorflow_source_rules.bzl",
 ])
