@@ -74,13 +74,13 @@ class AtsInferenceTest : public RngTest {
   }
 
   void SetUp() override {
+    cap_.model.SetFields(names_, Graph());
     if (names_.should_skip) {
       GTEST_SKIP() << "Filtered by dont_register";
     }
     ASSERT_EQ(Graph().NumSubgraphs(), 1);
     LITERT_LOG(LITERT_INFO, "Setting up test for %s",
                absl::StrFormat("%v", conf_.Backend()).c_str());
-    cap_.model.SetFields(names_, Graph());
     cap_.run.num_iterations = conf_.ItersPerTest();
     cap_.numerics.reference_type =
         graph_->HasReference() ? ReferenceType::kCustom : ReferenceType::kCpu;

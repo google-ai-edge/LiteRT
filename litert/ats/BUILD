@@ -562,7 +562,7 @@ cc_library(
         ":configure",
         ":print",
         "//litert/core/model",
-        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/strings:str_format",
     ],
 )
 
