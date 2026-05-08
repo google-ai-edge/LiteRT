@@ -47,6 +47,7 @@ from typing import Any, BinaryIO, Callable, Optional, TypeVar
 import uuid
 import zlib
 import flatbuffers
+
 from google.protobuf import message
 from google.protobuf import text_format
 from litert.python.internal import litertlm_core
@@ -82,6 +83,43 @@ class Metadata:
   key: str
   value: Any
   dtype: DType
+
+  @classmethod
+  def from_key_value_pair(cls, kvp: schema.KeyValuePairT) -> "Metadata":
+    """Createsa `Metadata` object from a `KeyValuePairT`."""
+    assert kvp.key is not None
+    if isinstance(key := kvp.key, bytes):
+      key = key.decode()
+    assert kvp.value is not None
+    value = kvp.value.value
+    match kvp.valueType:
+      case schema.VData.UInt8:
+        dtype = DType.UINT8
+      case schema.VData.Int8:
+        dtype = DType.INT8
+      case schema.VData.UInt16:
+        dtype = DType.UINT16
+      case schema.VData.Int16:
+        dtype = DType.INT16
+      case schema.VData.UInt32:
+        dtype = DType.UINT32
+      case schema.VData.Int32:
+        dtype = DType.INT32
+      case schema.VData.UInt64:
+        dtype = DType.UINT64
+      case schema.VData.Int64:
+        dtype = DType.INT64
+      case schema.VData.Float32:
+        dtype = DType.FLOAT32
+      case schema.VData.Double:
+        dtype = DType.DOUBLE
+      case schema.VData.Bool:
+        dtype = DType.BOOL
+      case schema.VData.StringValue:
+        dtype = DType.STRING
+      case _:
+        raise ValueError(f"Unsupported value type: {kvp.valueType}")
+    return cls(key=key, value=value, dtype=dtype)
 
   def to_key_value_pair(self) -> schema.KeyValuePairT:
     """Converts the Metadata object to a `KeyValuePairT`."""
