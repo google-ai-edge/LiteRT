@@ -56,8 +56,8 @@ ABSL_FLAG(std::string, compiler_cache_dir, "",
           "Path to the compiler cache directory. Only for JIT compilation.");
 ABSL_FLAG(std::string, accelerator, "cpu",
           "Which backend to use. Comma delimited string of accelerators (e.g. "
-          "cpu,gpu,npu). Will delegate to NPU, GPU, then CPU if they are "
-          "specified in this flag.");
+          "cpu,gpu,npu). Will delegate to NPU, GPU, then CPU. CPU is always "
+          "included as a fallback.");
 ABSL_FLAG(size_t, signature_index, 0, "Index of the signature to run.");
 ABSL_FLAG(bool, print_tensors, false, "Print tensor values after execution.");
 ABSL_FLAG(bool, compare_numerical, false,
@@ -99,7 +99,7 @@ namespace {
 litert::HwAcceleratorSet GetAccelerator() {
   const std::string accelerator_str = absl::GetFlag(FLAGS_accelerator);
   litert::HwAcceleratorSet accelerators(
-      static_cast<int>(litert::HwAccelerators::kNone));
+      static_cast<int>(litert::HwAccelerators::kCpu));
   for (absl::string_view accelerator : absl::StrSplit(accelerator_str, ',')) {
     if (accelerator == "gpu") {
       accelerators |= litert::HwAccelerators::kGpu;
