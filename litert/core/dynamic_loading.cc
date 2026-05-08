@@ -14,12 +14,19 @@
 
 #include "litert/core/dynamic_loading.h"
 
+#if LITERT_WINDOWS_OS
+#include <windows.h>
+#endif
+
 #include <dlfcn.h>
+
+#if !LITERT_WINDOWS_OS
 #include <unistd.h>
+#endif
 
 // clang-format off
 #ifndef __ANDROID__
-#if __has_include(<link.h>)
+#if !LITERT_WINDOWS_OS && __has_include(<link.h>)
 #include <link.h>
 #endif
 #endif
@@ -51,7 +58,12 @@ bool EnvPathContains(absl::string_view path, absl::string_view var_value) {
 
 }  // namespace
 
-static constexpr absl::string_view kSo = ".so";
+#if LITERT_WINDOWS_OS
+static constexpr absl::string_view kSharedLibExt = ".dll";
+static constexpr absl::string_view kSharedLibExtFallback = ".so";
+#else
+static constexpr absl::string_view kSharedLibExt = ".so";
+#endif
 
 LiteRtStatus FindLiteRtSharedLibsHelper(const std::string& search_path,
                                         const std::string& lib_pattern,
@@ -67,9 +79,6 @@ LiteRtStatus FindLiteRtSharedLibsHelper(const std::string& search_path,
            search_path,
            std::filesystem::directory_options::skip_permission_denied)) {
     const auto& path = entry.path();
-    if (access(path.c_str(), R_OK) != 0) {
-      continue;
-    }
     if (entry.is_regular_file()) {
       if (full_match) {
         if (path.string().find(lib_pattern) != -1) {
@@ -79,7 +88,13 @@ LiteRtStatus FindLiteRtSharedLibsHelper(const std::string& search_path,
       } else {
         const auto stem = path.stem().string();
         const auto ext = path.extension().string();
-        if (stem.find(lib_pattern) == 0 && kSo == ext) {
+        bool match = (stem.find(lib_pattern) == 0);
+#if LITERT_WINDOWS_OS
+        match &= (ext == kSharedLibExt || ext == kSharedLibExtFallback);
+#else
+        match &= (ext == kSharedLibExt);
+#endif
+        if (match) {
           LITERT_LOG(LITERT_VERBOSE, "Found shared library: %s", path.c_str());
           results.push_back(path);
         }
@@ -141,7 +156,11 @@ LiteRtStatus PutLibOnLdPath(absl::string_view search_path,
   }
 
   LITERT_LOG(LITERT_INFO, "Adding %s to LD_LIBRARY_PATH", new_ld.c_str());
+#if LITERT_WINDOWS_OS
+  _putenv_s(kLdLibraryPath.data(), new_ld.c_str());
+#else
   setenv(kLdLibraryPath.data(), new_ld.c_str(), /*overwrite=*/1);
+#endif
 
   return kLiteRtStatusOk;
 }

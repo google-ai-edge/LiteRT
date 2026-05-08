@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -62,15 +63,19 @@ class CompiledResult {
   // There will be oe entry point for each subgraph compiled for.
   Expected<CallInformation> CallInfo(LiteRtParamIndex call_idx) const;
 
+  // Get the opaque handle to the compiled artifact for JIT execution.
+  Expected<const void*> GetHandle(LiteRtParamIndex byte_code_idx = 0) const;
+
   // Get the number of entry points in the compiled module. This will be equal
   // to the number of subgraphs passed to the compilation step.
   Expected<LiteRtParamIndex> NumCalls() const;
 
-  explicit CompiledResult(const LiteRtCompilerPluginApi& parent)
-      : parent_(parent) {}
+  explicit CompiledResult(const LiteRtCompilerPluginApi& parent,
+                          std::shared_ptr<SharedLibrary> lib)
+      : parent_(parent), lib_(std::move(lib)) {}
 
-  CompiledResult(CompiledResult&& other);
-  CompiledResult& operator=(CompiledResult&& other);
+  CompiledResult(CompiledResult&& other) noexcept;
+  CompiledResult& operator=(CompiledResult&& other) noexcept;
   CompiledResult(const CompiledResult& other) = delete;
   CompiledResult& operator=(const CompiledResult& other) = delete;
 
@@ -78,6 +83,7 @@ class CompiledResult {
 
  private:
   LiteRtCompilerPluginApi parent_;
+  std::shared_ptr<SharedLibrary> lib_;
   LiteRtCompiledResult compiled_result_handle_ = nullptr;
 };
 
@@ -175,7 +181,7 @@ class CompilerPlugin {
   CompilerPlugin() = default;
 
   std::vector<std::string> soc_models_;
-  SharedLibrary lib_;
+  std::shared_ptr<SharedLibrary> lib_;
   LiteRtOptions options_ = nullptr;
   LiteRtEnvironmentOptions env_ = nullptr;
   LiteRtCompilerPluginApi plugin_api_ = {};
@@ -185,7 +191,7 @@ class CompilerPlugin {
 
   // Internal LiteRtCompiledResult wrapper.
 
-  CompiledResult MakeResult() const { return CompiledResult(plugin_api_); }
+  CompiledResult MakeResult() const { return CompiledResult(plugin_api_, lib_); }
 };
 
 // Higher level functions for applying plugin to graph.
@@ -209,17 +215,30 @@ Expected<PartitionResult> PartitionModel(
 Expected<PartitionResult> PartitionModelDirect(
     std::vector<LiteRtOpWithPartitionIndex> selected_ops, LiteRtModelT& model);
 
+struct ApplyPluginsResult {
+  size_t num_applied_plugins;
+  std::string success_message;
+  std::string error_message;
+
+  // Holds opaque JIT executable handles keyed by the dispatch op name.
+  absl::flat_hash_map<std::string, const void*> jit_executable_handles;
+
+  // Keep the compiled results alive.
+  std::vector<CompiledResult> compiled_results;
+};
+
 // Applies both the partition and compile steps to the model. Generated
 // byte_code will be internalized within the model for later serialization.
 Expected<void> ApplyPlugin(
     CompilerPlugin& compiler_plugin, LiteRtModelT& model,
-    absl::string_view soc_model = "",
+    ApplyPluginsResult& result, absl::string_view soc_model = "",
     const absl::flat_hash_set<uint32_t>& subgraphs_to_partition = {});
 
 // Applies the compilation step to the model given a predetermined partition.
 Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
                                         LiteRtModelT& model,
                                         PartitionResult partitions,
+                                        ApplyPluginsResult& result,
                                         absl::string_view soc_model = "");
 
 // Applies the transformation registered by vendor plugin to the model.
@@ -233,11 +252,6 @@ Expected<void> TransformModel(CompilerPlugin& compiler_plugin,
 // plugins that were successfully applied, and (3) a string listing the compiler
 // plugins that failed to apply with an associated error message. This mutates
 // the given model.
-struct ApplyPluginsResult {
-  size_t num_applied_plugins;
-  std::string success_message;
-  std::string error_message;
-};
 
 Expected<ApplyPluginsResult> ApplyPlugins(
     LiteRtEnvironment environment, LiteRtOptions options, LiteRtModel model,
