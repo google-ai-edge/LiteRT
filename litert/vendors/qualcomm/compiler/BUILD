@@ -82,6 +82,7 @@ litert_dynamic_lib(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -123,7 +124,7 @@ litert_test(
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_header",
         "//litert/c:litert_op_code",
-        "//litert/c/internal:litert_compiler_context_testonly",
+        "//litert/c/internal:litert_compiler_context",
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_qualcomm_options",
         "//litert/cc:litert_expected",

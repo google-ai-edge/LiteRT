@@ -209,6 +209,17 @@ TEST(TestQnnPlugin, GetConfigInfo) {
   EXPECT_STREQ(config_id, "UNKNOWN_SDM");
 }
 
+TEST(TestQnnPlugin, GetSDKVersion) {
+  auto plugin = CreatePlugin();
+
+  const char* sdk_version = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtGetCompilerPluginSDKVersion(plugin.get(), &sdk_version));
+  ASSERT_NE(sdk_version, nullptr);
+  EXPECT_FALSE(absl::string_view(sdk_version).empty());
+  LITERT_LOG(LITERT_INFO, "QNN SDK Version: %s", sdk_version);
+}
+
 TEST(TestQnnPlugin, PartitionMulOps) {
   auto plugin = CreatePlugin(LrtGetCompilerContext());
   auto model = testing::LoadTestFileModel("one_mul.tflite");
