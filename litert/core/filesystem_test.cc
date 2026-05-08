@@ -23,6 +23,7 @@
 #include <gtest/gtest.h>
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 
 namespace litert::internal {
 namespace {
@@ -34,7 +35,6 @@ static constexpr absl::string_view kInfix = "an/infix";
 static constexpr absl::string_view kSuffix = "suffix.ext";
 static constexpr absl::string_view kPath = "a/prefix.ext";
 static constexpr absl::string_view kStem = "prefix";
-
 
 TEST(FilesystemTest, JoinTwo) {
   const auto path = Join({kPrefix, kSuffix});
@@ -139,6 +139,30 @@ TEST(FilesystemTest, RmDir) {
   EXPECT_FALSE(Exists(dir));
 }
 
+TEST(FilesystemTest, GetLastWriteTime) {
+  const std::string file = Join({::testing::TempDir(), "test_file_mtime"});
+  Touch(file);
+  auto mtime = GetLastWriteTime(file);
+  ASSERT_TRUE(mtime);
+  EXPECT_GT(*mtime, absl::UnixEpoch());
+}
+
+TEST(FilesystemTest, RecursiveListDir) {
+  const std::string dir =
+      Join({::testing::TempDir(), "recursive_list_dir_test"});
+  auto status = MkDir(dir);
+  ASSERT_TRUE(status);
+  const std::string subdir = Join({dir, "subdir"});
+  status = MkDir(subdir);
+  ASSERT_TRUE(status);
+  const std::string file1 = Join({dir, "file1.txt"});
+  const std::string file2 = Join({subdir, "file2.txt"});
+  Touch(file1);
+  Touch(file2);
+  auto list = RecursiveListDir(dir);
+  ASSERT_TRUE(list);
+  EXPECT_THAT(*list, UnorderedElementsAre(file1, file2));
+}
+
 }  // namespace
 }  // namespace litert::internal
-
