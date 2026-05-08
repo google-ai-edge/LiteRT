@@ -74,7 +74,11 @@ NB_MODULE(converter_api_ext, m) {
               "Allows fusion of dynamic shaped broadcast ops")
 
       .def_rw("enable_x64", &litert::ConvertToTFLConfig::enable_x64,
-              "Allows x64 types in the model");
+              "Allows x64 types in the model")
+
+      .def_rw("unsafe_single_batch_rank_reduction",
+            &litert::ConvertToTFLConfig::unsafe_single_batch_rank_reduction,
+            "Allows single batch rank reduction");
 
   m.def(
       "prepare_mlir_context",
