@@ -133,6 +133,17 @@ class GpuOptions {
     kFp16 = kLiteRtDelegatePrecisionFp16,
     kFp32 = kLiteRtDelegatePrecisionFp32,
   };
+
+  /// @brief Sets the calculation precision of the GPU Accelerator.
+  ///
+  /// By default, the GPU accelerator will use fp16 precision for calculations
+  /// and weights and activations are stored in fp16 if fp16 issupported by the
+  /// GPU. This is to improve performance and reduce memory usage. But it
+  /// may cause some precision loss. If you need fp32 precision as CPU, you can
+  /// set it to fp32.
+  ///
+  /// @param precision The precision to use.
+  /// @return An error if the precision is not supported.
   Expected<void> SetPrecision(Precision precision) {
     LITERT_RETURN_IF_ERROR(LrtSetGpuAcceleratorCompilationOptionsPrecision(
         options_, static_cast<LiteRtDelegatePrecision>(precision)));

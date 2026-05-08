@@ -506,6 +506,7 @@ cc_binary(
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc/internal:scoped_file",
         "//litert/cc/internal:scoped_weight_source",
+        "//litert/cc/options:litert_gpu_options",
         "//litert/tools/flags:options_parser_registry",
         "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:intel_openvino_flags",

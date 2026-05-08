@@ -81,7 +81,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   auto use_npu = params.Get<bool>("use_npu");
   auto use_cpu = params.Get<bool>("use_cpu");
   auto gpu_backend = params.Get<std::string>("gpu_backend");
-  auto allow_fp16 = params.Get<bool>("allow_fp16");
+  auto gpu_precision = params.Get<std::string>("gpu-precision");
   auto gpu_low_priority = params.Get<bool>("gpu_low_priority");
   auto use_profiler = params.Get<bool>("use_profiler");
   auto require_full_delegation = params.Get<bool>("require_full_delegation");
@@ -153,8 +153,16 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     } else if (gpu_backend == "opengl" || gpu_backend == "gl") {
       gpu_options.SetBackend(GpuOptions::Backend::kOpenGl);
     }
-    if (allow_fp16 == false) {
+    if (gpu_precision == "fp32") {
       gpu_options.SetPrecision(GpuOptions::Precision::kFp32);
+    } else if (gpu_precision == "fp16") {
+      gpu_options.SetPrecision(GpuOptions::Precision::kFp16);
+    } else if (gpu_precision == "auto") {
+      gpu_options.SetPrecision(GpuOptions::Precision::kDefault);
+    } else {
+      LITERT_LOG(LITERT_ERROR, "Invalid gpu-precision: %s",
+                 gpu_precision.c_str());
+      std::abort();
     }
     if (gpu_low_priority) {
       gpu_options.SetPriority(GpuOptions::Priority::kLow);

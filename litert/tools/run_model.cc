@@ -43,6 +43,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/options/litert_gpu_options.h"
 #include "litert/tools/flags/options_parser_registry.h"
 #include "litert/tools/tensor_utils.h"
 #include "tflite/profiling/time.h"
@@ -58,6 +59,8 @@ ABSL_FLAG(std::string, accelerator, "cpu",
           "Which backend to use. Comma delimited string of accelerators (e.g. "
           "cpu,gpu,npu). Will delegate to NPU, GPU, then CPU. CPU is always "
           "included as a fallback.");
+ABSL_FLAG(std::string, gpu_precision, "auto",
+          "GPU precision option [auto|fp16|fp32].");
 ABSL_FLAG(size_t, signature_index, 0, "Index of the signature to run.");
 ABSL_FLAG(bool, print_tensors, false, "Print tensor values after execution.");
 ABSL_FLAG(bool, compare_numerical, false,
@@ -224,6 +227,23 @@ Expected<Options> GetOptions() {
     if (kernel_batch_size > 0) {
       LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
       LITERT_RETURN_IF_ERROR(gpu_opts.SetKernelBatchSize(kernel_batch_size));
+    }
+    std::string gpu_precision = absl::GetFlag(FLAGS_gpu_precision);
+    if (gpu_precision == "fp32") {
+      LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
+      LITERT_RETURN_IF_ERROR(
+          gpu_opts.SetPrecision(GpuOptions::Precision::kFp32));
+    } else if (gpu_precision == "fp16") {
+      LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
+      LITERT_RETURN_IF_ERROR(
+          gpu_opts.SetPrecision(GpuOptions::Precision::kFp16));
+    } else if (gpu_precision == "auto") {
+      LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
+      LITERT_RETURN_IF_ERROR(
+          gpu_opts.SetPrecision(GpuOptions::Precision::kDefault));
+    } else {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Invalid gpu_precision flag value.");
     }
   }
 
