@@ -454,7 +454,9 @@ class LiteRtCompiledModelT {
 
   // Tries to load the model from the cache. Returns true if the model is loaded
   // from the cache, false otherwise.
-  bool TryLoadingFromCache(uint64_t model_hash);
+  bool TryLoadingFromCache(
+      litert::internal::CompilationCache::CacheKey cache_key,
+      absl::string_view model_name = "");
 #endif  // !defined(LITERT_DISABLE_NPU)
 
   // The environment associated with the compiled model.
