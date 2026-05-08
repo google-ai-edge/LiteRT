@@ -14,7 +14,9 @@
 
 #include "litert/cc/litert_compiled_model.h"
 
+#include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -1194,6 +1196,83 @@ TEST(CompiledModelTest, GetBufferRequirementsDetailed) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto output_strides,
                               output_requirements.Strides());
   EXPECT_EQ(output_strides.size(), 0);
+}
+
+void GetVmStatsLocal(size_t& vm_size, size_t& vm_rss) {
+  vm_size = 0;
+  vm_rss = 0;
+  std::ifstream status_file("/proc/self/status");
+  std::string line;
+  while (std::getline(status_file, line)) {
+    if (line.rfind("VmSize:", 0) == 0) {
+      sscanf(line.c_str(), "VmSize: %zu kB", &vm_size);
+      vm_size *= 1024;
+    } else if (line.rfind("VmRSS:", 0) == 0) {
+      sscanf(line.c_str(), "VmRSS: %zu kB", &vm_rss);
+      vm_rss *= 1024;
+    }
+  }
+}
+
+TEST(CompiledModelTest, DirectAllocationOverheadVerification) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  // Use MobileNet v2 which is large enough to have a measurable arena
+  std::string model_path =
+      testing::GetTestFilePath("mobilenet_v2_1.0_224.tflite");
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, model_path, HwAccelerators::kCpu));
+
+  size_t rss_init, rss_no_alloc, rss_alloc, dummy;
+  GetVmStatsLocal(dummy, rss_init);
+
+  // Scenario A: Query layouts WITHOUT allocation. Arena should NOT be created.
+  auto layouts_no_alloc = compiled_model.GetOutputTensorLayouts(
+      /*signature_index=*/0, /*update_allocation=*/false);
+  ASSERT_TRUE(layouts_no_alloc.HasValue());
+  GetVmStatsLocal(dummy, rss_no_alloc);
+
+  size_t diff_no_alloc = rss_no_alloc - rss_init;
+  ABSL_LOG(INFO) << "MobileNet No-Alloc RSS diff: " << diff_no_alloc
+                 << " bytes";
+  EXPECT_LT(diff_no_alloc, 1024 * 1024);  // Expect < 1MB overhead
+
+  // Scenario B: Query layouts WITH allocation. Arena WILL be created.
+  auto layouts_alloc = compiled_model.GetOutputTensorLayouts(
+      /*signature_index=*/0, /*update_allocation=*/true);
+  ASSERT_TRUE(layouts_alloc.HasValue());
+  GetVmStatsLocal(dummy, rss_alloc);
+
+  size_t diff_alloc = rss_alloc - rss_no_alloc;
+  ABSL_LOG(INFO) << "MobileNet Alloc RSS diff: " << diff_alloc << " bytes";
+  // MobileNet activation arena is several megabytes
+  EXPECT_GE(diff_alloc, 1024 * 1024);
+}
+
+TEST(CompiledModelTest, CreateOutputBuffersAvoidsArenaForStaticModel) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  std::string model_path =
+      testing::GetTestFilePath("mobilenet_v2_1.0_224.tflite");
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, model_path, HwAccelerators::kCpu));
+
+  size_t rss_before, rss_after, dummy;
+  GetVmStatsLocal(dummy, rss_before);
+
+  // Option 1 fix ensures CreateOutputBuffers on static models skips the arena.
+  auto out_buffers = compiled_model.CreateOutputBuffers();
+  ASSERT_TRUE(out_buffers.HasValue());
+
+  GetVmStatsLocal(dummy, rss_after);
+  size_t rss_diff = rss_after - rss_before;
+  ABSL_LOG(INFO) << "MobileNet CreateOutputBuffers RSS diff: " << rss_diff
+                 << " bytes";
+
+  // Verify RSS diff is small, matching only the backing buffers, not the arena
+  EXPECT_LT(rss_diff, 2 * 1024 * 1024);
 }
 
 }  // namespace
