@@ -490,6 +490,7 @@ class LiteRtCompiledModelT {
   std::optional<litert::internal::CompilationCache> compilation_cache_;
   std::optional<LiteRtModelT::Ptr> cached_model_;
   std::vector<litert::internal::CompilerPlugin> maybe_compiled_plugins_;
+  std::optional<litert::internal::ApplyPluginsResult> apply_plugins_result_;
 #endif  // !defined(LITERT_DISABLE_NPU)
 
   // The buffer requirement maps for CPU buffers. For delegates with CPU

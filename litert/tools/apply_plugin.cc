@@ -449,8 +449,9 @@ LiteRtStatus Apply(Context& ctx) {
   }
 
   ctx.Dump().Start("Applying plugin");
+  litert::internal::ApplyPluginsResult result;
   if (auto status = litert::internal::ApplyPlugin(
-          *plugin, model, ctx.SocModelTarget(), ctx.Run().subgraphs);
+          *plugin, model, result, ctx.SocModelTarget(), ctx.Run().subgraphs);
       !status) {
     LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
     return status.Error().Status();

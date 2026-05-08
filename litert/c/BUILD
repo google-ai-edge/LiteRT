@@ -812,6 +812,10 @@ cc_shared_library(
     name = "litert_runtime_c_api_so",
     additional_linker_inputs = export_lrt_runtime_only_script(),
     shared_lib_name = "libLiteRt.so",
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     user_link_flags = export_lrt_runtime_only_linkopt() + select({
         "//litert:macos": ["-Wl,-install_name,@rpath/libLiteRt.so"],
         "//conditions:default": ["-Wl,-soname=libLiteRt.so"],
@@ -950,6 +954,10 @@ cc_shared_library(
     additional_linker_inputs = export_lrt_tflite_runtime_script(),
     shared_lib_name = "libLiteRt.so",
     tags = ["manual"],  # To prevent build together with `litert_runtime_c_api_so`.
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     user_link_flags = export_lrt_tflite_runtime_linkopt() + litert_android_linkopts(),
     deps = [":litert_tflite_runtime_c_api_so_shim"],
 )
