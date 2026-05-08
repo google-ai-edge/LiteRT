@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_COMMON_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_COMMON_H_
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -127,7 +128,39 @@ using FbOpTypes =
         std::bool_constant<OpCode == kLiteRtOpCodeTflDepthwiseConv2d>,
             FbOpTraits<tflite::DepthwiseConv2DOptionsT,
                        tflite::BuiltinOperator_DEPTHWISE_CONV_2D,
-                       tflite::BuiltinOptions_DepthwiseConv2DOptions>
+                       tflite::BuiltinOptions_DepthwiseConv2DOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflReduceMax>,
+            FbOpTraits<tflite::ReducerOptionsT,
+                       tflite::BuiltinOperator_REDUCE_MAX,
+                       tflite::BuiltinOptions_ReducerOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflReduceMin>,
+            FbOpTraits<tflite::ReducerOptionsT,
+                       tflite::BuiltinOperator_REDUCE_MIN,
+                       tflite::BuiltinOptions_ReducerOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflReduceProd>,
+            FbOpTraits<tflite::ReducerOptionsT,
+                       tflite::BuiltinOperator_REDUCE_PROD,
+                       tflite::BuiltinOptions_ReducerOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflReduceAny>,
+            FbOpTraits<tflite::ReducerOptionsT,
+                       tflite::BuiltinOperator_REDUCE_ANY,
+                       tflite::BuiltinOptions_ReducerOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflReduceAll>,
+            FbOpTraits<tflite::ReducerOptionsT,
+                       tflite::BuiltinOperator_REDUCE_ALL,
+                       tflite::BuiltinOptions_ReducerOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflSum>,
+            FbOpTraits<tflite::ReducerOptionsT,
+                       tflite::BuiltinOperator_SUM,
+                       tflite::BuiltinOptions_ReducerOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflMaxPool2d>,
+            FbOpTraits<tflite::Pool2DOptionsT,
+                       tflite::BuiltinOperator_MAX_POOL_2D,
+                       tflite::BuiltinOptions_Pool2DOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflAveragePool2d>,
+            FbOpTraits<tflite::Pool2DOptionsT,
+                       tflite::BuiltinOperator_AVERAGE_POOL_2D,
+                       tflite::BuiltinOptions_Pool2DOptions>
     >;
 // clang-format on
 static_assert(FbOpTypes<kLiteRtOpCodeTflAdd>::kHasOptions);
@@ -278,7 +311,7 @@ inline int ComputePaddingBefore(int in_size, int filter_size, int stride,
   if (padding == tflite::Padding_SAME) {
     int effective_filter_size = (filter_size - 1) * dilation + 1;
     int pad_along = (out_size - 1) * stride + effective_filter_size - in_size;
-    return pad_along / 2;
+    return std::max(0, pad_along) / 2;
   }
   return 0;
 }

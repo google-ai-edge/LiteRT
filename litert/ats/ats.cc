@@ -32,7 +32,6 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_c_types_printing.h"  // IWYU pragma: keep
 #include "litert/cc/internal/litert_detail.h"
-#include "litert/cc/litert_environment.h"
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/generators.h"
 #include "tflite/schema/schema_generated.h"
@@ -160,6 +159,23 @@ void RegisterDepthwiseConv2d(const AtsConf& options, size_t& test_id,
 }
 
 template <typename Fixture>
+void RegisterPooling(const AtsConf& options, size_t& test_id, size_t iters,
+                     typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Pooling,
+      TypeList<float>,
+      OpCodeListC<kLiteRtOpCodeTflMaxPool2d, kLiteRtOpCodeTflAveragePool2d>,
+      TypeList<std::integral_constant<tflite::Padding, tflite::Padding_SAME>,
+               std::integral_constant<tflite::Padding, tflite::Padding_VALID>>,
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>,
+               FaC<tflite::ActivationFunctionType_RELU>>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
 void RegisterAll(const AtsConf& options, size_t& test_id,
                  typename Fixture::Capture& cap) {
   RegisterExtraModels<Fixture>(test_id, options, cap);
@@ -168,6 +184,7 @@ void RegisterAll(const AtsConf& options, size_t& test_id,
   RegisterUnary<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterConv2d<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterDepthwiseConv2d<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterPooling<Fixture>(options, test_id, /*iters=*/10, cap);
 }
 
 int Ats() {

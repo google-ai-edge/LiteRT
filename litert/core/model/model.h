@@ -1495,6 +1495,11 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
       absl::Format(&sink, "%v", dw_opts);
       break;
     }
+    case tflite::BuiltinOptions_Pool2DOptions: {
+      const auto* pool_opts = opts.AsPool2DOptions();
+      absl::Format(&sink, "%v", pool_opts);
+      break;
+    }
     case tflite::BuiltinOptions_NONE: {
       absl::Format(&sink, "{}");
       break;
@@ -1630,6 +1635,22 @@ void AbslStringify(Sink& sink, const DepthwiseConv2DOptionsT& opts) {
 
 template <class Sink>
 void AbslStringify(Sink& sink, const DepthwiseConv2DOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const Pool2DOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("fa", opts.fused_activation_function);
+  b("padding", opts.padding);
+  b("stride_w", opts.stride_w);
+  b("stride_h", opts.stride_h);
+  b("filter_width", opts.filter_width);
+  b("filter_height", opts.filter_height);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const Pool2DOptionsT* opts) {
   ::litert::internal::PrintNullableOpts(sink, opts);
 }
 

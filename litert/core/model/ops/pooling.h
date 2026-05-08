@@ -17,6 +17,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <algorithm>
+#include <limits>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
@@ -62,6 +64,53 @@ inline LiteRtStatus InferPool2D(const LiteRtOpT& op,
 
   output_shapes[0] = {input_shape[0], out_h, out_w, input_shape[3]};
   return kLiteRtStatusOk;
+}
+
+template <bool IsMax>
+inline void ReferencePool2D(const float* input_data, float* output_data,
+                            int batch, int in_h, int in_w, int in_c, int out_h,
+                            int out_w, int filter_h, int filter_w, int stride_h,
+                            int stride_w, int pad_t, int pad_l,
+                            tflite::ActivationFunctionType faf) {
+  for (int b = 0; b < batch; ++b) {
+    for (int oh = 0; oh < out_h; ++oh) {
+      for (int ow = 0; ow < out_w; ++ow) {
+        for (int c = 0; c < in_c; ++c) {
+          float res = IsMax ? -std::numeric_limits<float>::infinity() : 0.0f;
+          int count = 0;
+          for (int kh = 0; kh < filter_h; ++kh) {
+            for (int kw = 0; kw < filter_w; ++kw) {
+              int ih = oh * stride_h + kh - pad_t;
+              int iw = ow * stride_w + kw - pad_l;
+              if (ih >= 0 && ih < in_h && iw >= 0 && iw < in_w) {
+                float val =
+                    input_data[((b * in_h + ih) * in_w + iw) * in_c + c];
+                if constexpr (IsMax) {
+                  res = std::max(res, val);
+                } else {
+                  res += val;
+                  count++;
+                }
+              }
+            }
+          }
+          if constexpr (!IsMax) {
+            if (count > 0) res /= count;
+          }
+
+          // Apply activation
+          if (faf == tflite::ActivationFunctionType_RELU) {
+            if (res < 0.0f) res = 0.0f;
+          } else if (faf == tflite::ActivationFunctionType_RELU6) {
+            if (res < 0.0f) res = 0.0f;
+            if (res > 6.0f) res = 6.0f;
+          }
+
+          output_data[((b * out_h + oh) * out_w + ow) * in_c + c] = res;
+        }
+      }
+    }
+  }
 }
 
 }  // namespace litert::internal
