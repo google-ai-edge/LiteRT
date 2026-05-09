@@ -19,9 +19,12 @@ platforms, via efficient conversion, runtime, and optimization
 
 
 ## Description
-
 LiteRT continues the legacy of TensorFlow Lite as the trusted, high-performance
 runtime for on-device AI.
+
+> [!NOTE]
+> **Are you looking to deploy Large Language Models (LLMs)?**
+> Go directly to **[LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM)**, our specialized, production-ready inference framework for running GenAI models on edge devices. You can also experience these models in action via the **[Google AI Edge Gallery](https://github.com/google-ai-edge/gallery)** app.
 
 LiteRT features advanced GPU/NPU acceleration, delivers superior ML & GenAI
 performance, making on-device ML inference easier than ever.
