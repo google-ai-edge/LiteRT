@@ -38,6 +38,7 @@ cc_library(
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
         "@com_google_protobuf//:protobuf",
         "@flatbuffers",
         "@org_tensorflow//tensorflow/core:protos_all_cc_impl",
