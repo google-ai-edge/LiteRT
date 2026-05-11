@@ -55,6 +55,19 @@ from litert.python.internal import litertlm_header_schema_py_generated as schema
 from litert.python.internal import llm_metadata_pb2
 
 
+# For Python versions before 3.11, provide our own `enum.StrEnum`.
+class StrEnumImpl(str, enum.Enum):
+
+  def __str__(self):
+    return self.value
+
+
+if hasattr(enum, "StrEnum"):
+  _StrEnum = enum.StrEnum
+else:
+  _StrEnum = StrEnumImpl
+
+
 @enum.unique
 class DType(enum.Enum):
   """DType enum.
@@ -227,7 +240,7 @@ class TfLiteModelType(enum.Enum):
 
 
 @enum.unique
-class Backend(enum.StrEnum):
+class Backend(_StrEnum):
   """Backend enum."""
 
   CPU = "cpu"
@@ -247,7 +260,7 @@ class _SectionObject:
 
 
 @enum.unique
-class LlmModelType(enum.StrEnum):
+class LlmModelType(_StrEnum):
   """LLM model type for the LiteRT LM model."""
 
   GENERIC = "generic"
@@ -255,6 +268,7 @@ class LlmModelType(enum.StrEnum):
   GEMMA3 = "gemma3"
   QWEN3 = "qwen3"
   QWEN2P5 = "qwen2p5"
+
 
 LitertLmFileBuilderT = TypeVar(
     "LitertLmFileBuilderT", bound="LitertLmFileBuilder"
@@ -370,10 +384,8 @@ class LitertLmFileBuilder:
       model_type: The type of the tflite model.
       backend_constraint: The backend constraint for the tflite model.
       prefer_activation_type: The preferred activation type for the tflite
-        model.
-        - fp16/float16 for float16 activation.
-        - fp32/float32 for float32 activation.
-        - fp32_fp16 for mixed activation.
+        model. - fp16/float16 for float16 activation. - fp32/float32 for float32
+        activation. - fp32_fp16 for mixed activation.
       additional_metadata: Additional metadata to add to the tflite model.
 
     Returns:
