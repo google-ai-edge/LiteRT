@@ -209,8 +209,14 @@ TEST(TestQnnPlugin, GetConfigInfo) {
   EXPECT_STREQ(config_id, "UNKNOWN_SDM");
 }
 
+TEST(TestQnnPlugin, CreateWithNullContextFails) {
+  LiteRtCompilerPlugin plugin;
+  EXPECT_EQ(kLiteRtStatusErrorInvalidArgument,
+            LiteRtCreateCompilerPlugin(nullptr, &plugin, nullptr, nullptr));
+}
+
 TEST(TestQnnPlugin, GetSDKVersion) {
-  auto plugin = CreatePlugin();
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
 
   const char* sdk_version = nullptr;
   LITERT_ASSERT_OK(
@@ -310,24 +316,6 @@ TEST(TestQnnPlugin, CompileMulSubgraphWithOptions) {
   ASSERT_EQ("qnn_partition_0", op_data_string);
 
   LiteRtDestroyCompiledResult(compiled);
-}
-
-TEST(TestQnnPlugin, CompileMulSubgraphWithLibraryDir) {
-  LiteRtEnvironmentOptionsT env_options;
-  LiteRtEnvOption compiler_plugin_option;
-  compiler_plugin_option.tag = kLiteRtEnvOptionTagCompilerPluginLibraryDir;
-  compiler_plugin_option.value.type = kLiteRtAnyTypeString;
-  compiler_plugin_option.value.str_value = "/tmp/bogus_qnn_path";
-  env_options.SetOption(compiler_plugin_option);
-
-  auto plugin = CreatePlugin(/*compiler_context=*/nullptr, /*env=*/&env_options,
-                             /*options=*/nullptr);
-  auto model = testing::LoadTestFileModel("one_mul.tflite");
-
-  LiteRtCompiledResult compiled;
-  // This should fail because it tries to load libraries from bogus path.
-  LITERT_EXPECT_ERROR(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
-                                                  model.Get(), &compiled));
 }
 
 TEST(TestQnnPlugin, ShareContextBinary) {

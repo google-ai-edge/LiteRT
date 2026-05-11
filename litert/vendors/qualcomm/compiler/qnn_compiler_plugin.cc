@@ -269,6 +269,10 @@ LiteRtStatus LiteRtCreateCompilerPlugin(
     const LiteRtCompilerContext* compiler_context,
     LiteRtCompilerPlugin* compiler_plugin, LiteRtEnvironmentOptions env,
     LiteRtOptions options) {
+  if (compiler_context == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "Compiler context is null");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   if (options == nullptr || env == nullptr) {
     LITERT_LOG(LITERT_WARNING,
                "QNN compiler plugin created with null options, these will be "
