@@ -132,13 +132,13 @@ cc_library(
     deps = [
         "//litert/c:litert_any",
         "//litert/c:litert_common",
-        "//litert/c:litert_environment_options",
-        "//litert/c:litert_model",
+        "//litert/c:litert_environment_options_impl",
+        "//litert/c:litert_model_impl",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
-        "//litert/c:litert_op_options",
-        "//litert/c:litert_opaque_options",
-        "//litert/c:litert_options",
+        "//litert/c:litert_op_options_impl",
+        "//litert/c:litert_opaque_options_impl",
+        "//litert/c:litert_options_impl",
     ],
 )
 

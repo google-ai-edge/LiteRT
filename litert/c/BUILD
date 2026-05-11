@@ -377,7 +377,7 @@ litert_c_api_library(
         "//litert/runtime:tensor_buffer",
         "//litert/runtime:tensor_buffer_requirements",
         "@opencl_headers",
-        ":litert_tensor_buffer_requirements",
+        ":litert_tensor_buffer_requirements_impl",
     ] + gles_deps(),
     linkopts = litert_android_linkopts() + gles_linkopts() + litert_metal_linkopts(),
     deps = [
