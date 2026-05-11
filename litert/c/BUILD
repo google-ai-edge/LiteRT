@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@build_bazel_rules_apple//apple:ios.bzl", "ios_framework", "ios_unit_test")
 load("@build_bazel_rules_apple//apple:macos.bzl", "macos_dylib")
 
@@ -918,10 +917,7 @@ cc_import(
 
 alias(
     name = "litert_runtime_c_api_import",
-    actual = select({
-        ":resolve_symbols_in_exec": ":litert_runtime_c_api_exe_import",
-        "//conditions:default": ":litert_runtime_c_api_dll_import",
-    }),
+    actual = ":litert_runtime_c_api_dll_import",
 )
 
 exports_files(srcs = ["windows_exported_symbols.def"])
@@ -955,7 +951,6 @@ cc_shared_library(
 )
 
 SELECT_LITERT_RUNTIME_C_API_SHARED_LIB = select({
-    ":resolve_symbols_in_exec": [],
     "//litert:ios": [":litert_runtime_c_api_dylib"],
     "//litert:macos": [":litert_runtime_c_api_dylib"],
     "//litert:windows": [],
@@ -967,27 +962,6 @@ filegroup(
     name = "libLiteRt.so",
     srcs = SELECT_LITERT_RUNTIME_C_API_SHARED_LIB,
     visibility = ["//litert:litert_public"],
-)
-
-# Config for LiteRT client executables to export LiteRt* symbols and let accelerator shared libs
-config_setting(
-    name = "resolve_symbols_in_exec_define",
-    define_values = {"resolve_symbols_in_exec": "true"},
-)
-
-config_setting(
-    name = "resolve_symbols_in_exec_flag",
-    flag_values = {"//litert/build_common:resolve_symbols_in_exec": "true"},
-)
-
-# Config for LiteRT client executables to export LiteRt* symbols and let accelerator shared libs
-# resolve the symbols, not from libLiteRt.so.
-selects.config_setting_group(
-    name = "resolve_symbols_in_exec",
-    match_any = [
-        ":resolve_symbols_in_exec_define",
-        ":resolve_symbols_in_exec_flag",
-    ],
 )
 
 filegroup(
@@ -1033,7 +1007,6 @@ cc_library(
         "//tflite/profiling:profile_buffer",
         "//litert/build_common:build_config",
     ] + gles_headers() + select({
-        ":resolve_symbols_in_exec": [],
         "//litert:windows": [":litert_runtime_c_api_import"],
         "//conditions:default": [],
     }),
