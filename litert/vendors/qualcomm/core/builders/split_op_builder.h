@@ -16,6 +16,9 @@ std::vector<OpWrapper> BuildSplitOp(
     const std::vector<TensorWrapperRef>& outputs,
     const std::uint32_t num_splits);
 
+OpWrapper CreateSplitOp(const TensorWrapper& input_0,
+                        const std::vector<ConstTensorWrapperRef>& outputs,
+                        std::uint32_t axis, const TensorWrapper& split_index);
 }  // namespace qnn
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_SPLIT_OP_BUILDER_H_

@@ -64,7 +64,11 @@ class QnnModel {
 
   bool Execute();
 
-  void MoveOpsToGraph(std::vector<::qnn::OpWrapper>&& ops) {
+  void MoveOpToGraph(OpWrapper&& op) {
+    op_wrappers_.emplace_back(std::move(op));
+  }
+
+  void MoveOpsToGraph(std::vector<OpWrapper>&& ops) {
     std::move(ops.begin(), ops.end(), std::back_inserter(op_wrappers_));
   }
 
