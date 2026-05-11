@@ -55,9 +55,9 @@ IS_X86_ARCHITECTURE = platform.machine() in ('x86_64', 'AMD64', 'i386', 'i686')
 # at pip install time. Drift between the two causes runtime compiler/plugin
 # ABI mismatches. ci/check_openvino_version_sync.py enforces this.
 # LINT.IfChange(wheel_openvino_sdk_version)
-_OV_BUILD = '2026.1.0.21367.63e31528c62'
+_OV_BUILD = '2026.2.0-21820-9a25caa5a15'
 _OV_BASE_URL = (
-    'https://storage.openvinotoolkit.org/repositories/openvino/packages/2026.1'
+    'https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2026.2'
 )
 # LINT.ThenChange(
 #   ../../../../../third_party/intel_openvino/openvino.bzl:openvino_packages,
