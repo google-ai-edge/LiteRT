@@ -31,7 +31,7 @@ def openvino_configure():
     # LINT.IfChange(openvino_packages)
     configurable_repo(
         name = "intel_openvino",
-        build_file = "@//third_party/intel_openvino:openvino.bazel",
+        build_file = Label("@//third_party/intel_openvino:openvino.bazel"),
         local_path_env = "OPENVINO_NATIVE_DIR",
         packages = json.encode([
             {
