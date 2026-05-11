@@ -69,7 +69,8 @@ void RegisterBinaryNoBroadcast(const AtsConf& options, size_t& test_id,
       BinaryNoBroadcast,
       SizeListC<1, 2, 3, 4, 5, 6>,
       TypeList<float, int32_t>,
-      OpCodeListC<kLiteRtOpCodeTflAdd, kLiteRtOpCodeTflSub>,
+      OpCodeListC<kLiteRtOpCodeTflAdd, kLiteRtOpCodeTflSub,
+                  kLiteRtOpCodeTflMul, kLiteRtOpCodeTflDiv>,
       FaListC<::tflite::ActivationFunctionType_NONE>>
     (iters, test_id, options, cap);
   // clang-format on

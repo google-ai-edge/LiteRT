@@ -160,7 +160,15 @@ using FbOpTypes =
         std::bool_constant<OpCode == kLiteRtOpCodeTflAveragePool2d>,
             FbOpTraits<tflite::Pool2DOptionsT,
                        tflite::BuiltinOperator_AVERAGE_POOL_2D,
-                       tflite::BuiltinOptions_Pool2DOptions>
+                       tflite::BuiltinOptions_Pool2DOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflMul>,
+            FbOpTraits<tflite::MulOptionsT,
+                       tflite::BuiltinOperator_MUL,
+                       tflite::BuiltinOptions_MulOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflDiv>,
+            FbOpTraits<tflite::DivOptionsT,
+                       tflite::BuiltinOperator_DIV,
+                       tflite::BuiltinOptions_DivOptions>
     >;
 // clang-format on
 static_assert(FbOpTypes<kLiteRtOpCodeTflAdd>::kHasOptions);
