@@ -14,6 +14,10 @@
 
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 
+#include <string>
+
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -28,6 +32,7 @@ namespace {
 struct Payload {
   const void* alloc_base = nullptr;
   int alloc_base_fd = -1;
+  absl::flat_hash_map<std::string, const void*> jit_executable_handles;
 };
 
 }  // namespace
@@ -70,6 +75,23 @@ Expected<void> DispatchDelegateOptions::SetAllocBaseFd(int alloc_base_fd) {
 Expected<int> DispatchDelegateOptions::GetAllocBaseFd() {
   LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
   return payload->alloc_base_fd;
+}
+
+Expected<void> DispatchDelegateOptions::AddExecHandle(absl::string_view name,
+                                                      const void* handle) {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  payload->jit_executable_handles[name] = handle;
+  return {};
+}
+
+Expected<const void*> DispatchDelegateOptions::GetExecHandle(
+    absl::string_view name) {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  auto it = payload->jit_executable_handles.find(name);
+  if (it != payload->jit_executable_handles.end()) {
+    return it->second;
+  }
+  return nullptr;
 }
 
 }  // namespace litert::internal

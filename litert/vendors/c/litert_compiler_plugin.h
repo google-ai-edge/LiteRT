@@ -29,6 +29,9 @@ LITERT_DEFINE_HANDLE(LiteRtCompilerPlugin);
 // Artifact produced from compiling a selected partition of ops.
 LITERT_DEFINE_HANDLE(LiteRtCompiledResult);
 
+// Opaque handle to a JIT compiled executable.
+LITERT_DEFINE_HANDLE(LiteRtJitExecutable);
+
 // Struct to hold information about a transformation. Append only.
 typedef struct {
   LiteRtPatternFn pattern;  // The function pointer of the pattern.
@@ -111,6 +114,12 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetCompiledResultByteCode(
 // The number of individual byte code modules.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompiledResultNumByteCodeModules(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex* num_byte_code);
+
+// Gets an opaque handle to the compiled artifact (for JIT execution).
+// The handle remains valid as long as the compiled_result is valid.
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetCompiledResultHandle(
+    LiteRtCompiledResult compiled_result, LiteRtParamIndex call_idx,
+    LiteRtJitExecutable* handle);
 
 // Get per-op info related to a particular compiled partition as well as the
 // index of the respective byte code buffer.

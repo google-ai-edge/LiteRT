@@ -228,6 +228,7 @@ class QnnManager {
   std::unique_ptr<::qnn::QnnBackend> backend_ = nullptr;
   ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[0];
   ::qnn::Options options_;
+  std::optional<std::string> shared_library_dir_;
   SdkVersion sdk_version_{};
 };
 

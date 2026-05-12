@@ -22,9 +22,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -419,6 +421,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   result->byte_code_index.resize(num_partitions);
   QnnManager* qnn_manager = compiler_plugin->QNN();
   auto options = compiler_plugin->Options();
+  if (!options.GetSaverOutputDir().empty()) {
+    LITERT_LOG(
+        LITERT_WARNING,
+        "Overriding graph IO tensor mem type to Raw because Saver is enabled.");
+    options.SetGraphIOTensorMemType(::qnn::GraphIOTensorMemType::kRaw);
+  }
   const bool ir_backend_override =
       !options.GetDlcDir().empty() &&
       options.GetBackendType() != ::qnn::BackendType::kIrBackend;
@@ -427,6 +435,20 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                "Overriding backend type to IR Backend because DLC dir is set.");
     options.SetBackendType(::qnn::BackendType::kIrBackend);
   }
+
+  if (options.GetBackendType() == ::qnn::BackendType::kIrBackend) {
+    std::string dlc_dir(options.GetDlcDir());
+    if (!dlc_dir.empty()) {
+      std::error_code ec;
+      std::filesystem::create_directories(dlc_dir, ec);
+      if (ec) {
+        LITERT_LOG(LITERT_ERROR, "Failed to create DLC directory %s: %s",
+                   dlc_dir.c_str(), ec.message().c_str());
+        return kLiteRtStatusErrorRuntimeFailure;
+      }
+    }
+  }
+
   if (!qnn_manager || ir_backend_override) {
     // Initialize SDK and load qnn shared libraries.
     LITERT_LOG(LITERT_INFO, "%s", "Creating QNN manager");
@@ -541,11 +563,22 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LITERT_LOG(LITERT_INFO, "%s", "Graph composed");
   }
 
+  if (!options.GetSaverOutputDir().empty()) {
+    LITERT_LOG(LITERT_WARNING,
+               "Since Saver is enabled, functional context binaries are "
+               "excluded from the compiled TFLite.");
+    result->context_bin.resize(next_context_handle_idx);
+    *compiled_result = result.release();
+    return kLiteRtStatusOk;
+  }
+
   if (options.GetBackendType() == ::qnn::BackendType::kIrBackend) {
     LITERT_LOG(LITERT_WARNING,
                "Since IR backend is enabled, functional context binaries are "
                "excluded from the compiled TFLite.");
-    return kLiteRtStatusErrorUnsupported;
+    result->context_bin.resize(next_context_handle_idx);
+    *compiled_result = result.release();
+    return kLiteRtStatusOk;
   } else {
     // Generate context binary.
     result->context_bin.resize(next_context_handle_idx);
