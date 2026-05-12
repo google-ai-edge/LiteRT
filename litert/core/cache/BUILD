@@ -47,6 +47,7 @@ cc_library(
         "//litert/core/util:flatbuffer_tools",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/time",
     ],
 )
 
