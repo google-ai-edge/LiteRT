@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CORE_CACHE_COMPILATION_CACHE_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CORE_CACHE_COMPILATION_CACHE_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -22,6 +23,7 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
@@ -42,6 +44,15 @@ class CompilationCache {
   };
 
   struct CacheKey {
+    uint64_t content_hash;
+    uint64_t config_hash;
+  };
+
+  struct CacheEntry {
+    std::string path;
+    size_t size;
+    absl::Time last_modified;
+    std::string model_id;  // "mem" or model_name
     uint64_t content_hash;
     uint64_t config_hash;
   };
@@ -88,6 +99,10 @@ class CompilationCache {
   // - Returns a failure status if an error occurred trying to load the model.
   Expected<std::optional<LiteRtModelT::Ptr>> TryLoadModel(
       CacheKey cache_key, absl::string_view model_name = "");
+
+  // Builds an inventory of all cached models.
+  // Visible for testing.
+  Expected<std::vector<CacheEntry>> BuildInventory() const;
 
  private:
   // Creates a compilation cache instance that uses the provided
