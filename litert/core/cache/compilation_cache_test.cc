@@ -296,7 +296,8 @@ TEST(CompilationCacheTest, DifferentModelContent_DifferentCachePath) {
                          LoadModelFromFile(litert::testing::GetTestFilePath(
                              "simple_add_dynamic_shape.tflite")));
 
-  std::string model_name = "shared_name";
+  std::string model_name_1 = "model_a";
+  std::string model_name_2 = "model_b";
 
   LITERT_ASSIGN_OR_ABORT(
       CompilationCache::CacheKey cache_key_1,
@@ -311,15 +312,15 @@ TEST(CompilationCacheTest, DifferentModelContent_DifferentCachePath) {
   EXPECT_NE(cache_key_1.content_hash, cache_key_2.content_hash);
 
   LITERT_ABORT_IF_ERROR(
-      compilation_cache.SaveModel(*model_1, cache_key_1, model_name));
+      compilation_cache.SaveModel(*model_1, cache_key_1, model_name_1));
   LITERT_ABORT_IF_ERROR(
-      compilation_cache.SaveModel(*model_2, cache_key_2, model_name));
+      compilation_cache.SaveModel(*model_2, cache_key_2, model_name_2));
 
   std::string path_1 = litert::internal::Join(
-      {cache_root_path, model_name, absl::StrCat(cache_key_1.content_hash),
+      {cache_root_path, model_name_1, absl::StrCat(cache_key_1.content_hash),
        absl::StrCat(cache_key_1.config_hash, ".tflite")});
   std::string path_2 = litert::internal::Join(
-      {cache_root_path, model_name, absl::StrCat(cache_key_2.content_hash),
+      {cache_root_path, model_name_2, absl::StrCat(cache_key_2.content_hash),
        absl::StrCat(cache_key_2.config_hash, ".tflite")});
 
   EXPECT_TRUE(litert::internal::Exists(path_1));
@@ -433,13 +434,14 @@ TEST(CompilationCacheTest, BuildInventoryComplex) {
   LITERT_ABORT_IF_ERROR(
       compilation_cache.SaveModel(*model_1, key_a_c1_o2, model_name));
 
-  // 3. Model A, Content 2, Config 1
+  // 3. Model B, Content 2, Config 1
+  std::string model_name_b = "model_b";
   LITERT_ASSIGN_OR_ABORT(
-      CompilationCache::CacheKey key_a_c2_o1,
+      CompilationCache::CacheKey key_b_c2_o1,
       CompilationCache::GetModelHash(*model_2, GetTestOptions(),
                                      GetTestCompilerPluginInfo()));
   LITERT_ABORT_IF_ERROR(
-      compilation_cache.SaveModel(*model_2, key_a_c2_o1, model_name));
+      compilation_cache.SaveModel(*model_2, key_b_c2_o1, model_name_b));
 
   // 4. Unnamed Model, Content 1, Config 1
   LITERT_ASSIGN_OR_ABORT(
@@ -469,10 +471,57 @@ TEST(CompilationCacheTest, BuildInventoryComplex) {
                          model_name));
   EXPECT_TRUE(find_entry(key_a_c1_o2.content_hash, key_a_c1_o2.config_hash,
                          model_name));
-  EXPECT_TRUE(find_entry(key_a_c2_o1.content_hash, key_a_c2_o1.config_hash,
-                         model_name));
+  EXPECT_TRUE(find_entry(key_b_c2_o1.content_hash, key_b_c2_o1.config_hash,
+                         model_name_b));
   EXPECT_TRUE(
       find_entry(key_unnamed.content_hash, key_unnamed.config_hash, "mem"));
+}
+
+TEST(CompilationCacheTest, Case1_ModelUpdate_RemovesOldDirectory) {
+  const std::string cache_root_path =
+      ::testing::TempDir() + "/Case1_ModelUpdate";
+  LITERT_ABORT_IF_ERROR(litert::internal::MkDir(cache_root_path));
+  LITERT_ASSIGN_OR_ABORT(CompilationCache compilation_cache,
+                         CompilationCache::Create(cache_root_path));
+
+  LITERT_ASSIGN_OR_ABORT(std::unique_ptr<LiteRtModelT> model_1,
+                         LoadModelFromFile(litert::testing::GetTestFilePath(
+                             "simple_model.tflite")));
+
+  LITERT_ASSIGN_OR_ABORT(std::unique_ptr<LiteRtModelT> model_2,
+                         LoadModelFromFile(litert::testing::GetTestFilePath(
+                             "simple_add_dynamic_shape.tflite")));
+
+  std::string model_name = "my_model";
+
+  // 1. Save Model 1
+  LITERT_ASSIGN_OR_ABORT(
+      CompilationCache::CacheKey key_1,
+      CompilationCache::GetModelHash(*model_1, GetTestOptions(),
+                                     GetTestCompilerPluginInfo()));
+  LITERT_ABORT_IF_ERROR(
+      compilation_cache.SaveModel(*model_1, key_1, model_name));
+
+  // Verify directory 1 exists
+  std::string dir_1 = litert::internal::Join(
+      {cache_root_path, model_name, absl::StrCat(key_1.content_hash)});
+  EXPECT_TRUE(litert::internal::Exists(dir_1));
+
+  // 2. Save Model 2 (same name, different content)
+  LITERT_ASSIGN_OR_ABORT(
+      CompilationCache::CacheKey key_2,
+      CompilationCache::GetModelHash(*model_2, GetTestOptions(),
+                                     GetTestCompilerPluginInfo()));
+  LITERT_ABORT_IF_ERROR(
+      compilation_cache.SaveModel(*model_2, key_2, model_name));
+
+  // Verify directory 2 exists
+  std::string dir_2 = litert::internal::Join(
+      {cache_root_path, model_name, absl::StrCat(key_2.content_hash)});
+  EXPECT_TRUE(litert::internal::Exists(dir_2));
+
+  // Verify directory 1 is REMOVED
+  EXPECT_FALSE(litert::internal::Exists(dir_1));
 }
 
 }  // namespace litert::internal

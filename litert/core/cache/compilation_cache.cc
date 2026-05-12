@@ -222,6 +222,20 @@ Expected<void> CompilationCache::SaveModel(
     return Unexpected(kLiteRtStatusErrorFileIO,
                       "Failed to write all data to cache file");
   }
+
+  // Case 1 Cleanup: Remove old content directories for named models.
+  if (!model_name.empty()) {
+    LITERT_ASSIGN_OR_RETURN(auto inventory, BuildInventory());
+    for (const auto& entry : inventory) {
+      if (entry.model_id == model_name &&
+          entry.content_hash != cache_key.content_hash) {
+        std::string dir_path = litert::internal::Join(
+            {cache_root_path_, model_name, absl::StrCat(entry.content_hash)});
+        LITERT_RETURN_IF_ERROR(RmDir(dir_path));
+      }
+    }
+  }
+
   return Expected<void>();
 }
 
