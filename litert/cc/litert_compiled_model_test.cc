@@ -344,6 +344,116 @@ TEST(CompiledModelTest, RunWithInputOutputMap) {
   }
 }
 
+TEST(CompiledModelTest, RunTwoModelsPipelineWithSharedTensorBuffers) {
+  // In this test, we create two CompiledModels and the second model uses the
+  // output of the first model as its first input and the second input is shared
+  // with the first model.
+  //
+  // Pipeline structure:
+  //
+  //        arg0                  arg1
+  //          |                     |
+  //          v                     v
+  //      +----------------+        |
+  //      | mode1(tfl.add) | <------+
+  //      +----------------+        |
+  //           |                    |
+  //           | output1            |
+  //           v                    |
+  //      +-----------------+       |
+  //      | model2(tfl.add) | <-----+
+  //      +-----------------+
+  //           |
+  //           v
+  //         output2
+
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  // Create the first CompiledModel.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel model1,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  // Create the second CompiledModel.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel model2,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  // Create and fill input and output buffers for the first model.
+  LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer input1_buffer0,
+                              model1.CreateInputBuffer("arg0"));
+  LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer input1_buffer1,
+                              model1.CreateInputBuffer("arg1"));
+  LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer output1_buffer0,
+                              model1.CreateOutputBuffer("tfl.add"));
+
+  ASSERT_TRUE(input1_buffer0.Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input1_buffer1.Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  // Create input and output buffers for the second model.
+  // TensorBuffer::Duplicate() creates a virtual copy of the TensorBuffer.
+  // Their underlying memory is shared so we don't need to copy the data.
+  LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer input2_buffer0,
+                              output1_buffer0.Duplicate());
+  LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer input2_buffer1,
+                              input1_buffer1.Duplicate());
+  LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer output2_buffer0,
+                              model2.CreateOutputBuffer("tfl.add"));
+
+  // Create input and output map for the first model.
+  absl::flat_hash_map<absl::string_view, TensorBuffer> input1_map;
+  input1_map["arg0"] = std::move(input1_buffer0);
+  input1_map["arg1"] = std::move(input1_buffer1);
+  absl::flat_hash_map<absl::string_view, TensorBuffer> output1_map;
+  output1_map["tfl.add"] = std::move(output1_buffer0);
+
+  // Create input and output map for the second model.
+  absl::flat_hash_map<absl::string_view, TensorBuffer> input2_map;
+  input2_map["arg0"] = std::move(input2_buffer0);
+  input2_map["arg1"] = std::move(input2_buffer1);
+  absl::flat_hash_map<absl::string_view, TensorBuffer> output2_map;
+  output2_map["tfl.add"] = std::move(output2_buffer0);
+
+  // Execute models sequentially.
+  LITERT_ASSERT_OK(model1.Run(input1_map, output1_map));
+  // The output of the first model is shared via TensorBuffer so no additional
+  // copying is needed here.
+  LITERT_ASSERT_OK(model2.Run(input2_map, output2_map));
+
+  // Check model1 output.
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto lock_and_addr,
+        litert::TensorBufferScopedLock::Create<const float>(
+            output1_map["tfl.add"], TensorBuffer::LockMode::kRead));
+    auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
+    for (auto i = 0; i < kTestOutputSize; ++i) {
+      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
+    }
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+  }
+
+  // Check model2 output.
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto lock_and_addr,
+        litert::TensorBufferScopedLock::Create<const float>(
+            output2_map["tfl.add"], TensorBuffer::LockMode::kRead));
+    auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
+    constexpr const float kTestOutputTensor2[] = {21, 42};  // 11 + 10, 22 + 20
+    for (auto i = 0; i < kTestOutputSize; ++i) {
+      ABSL_LOG(INFO) << "Result: " << output[i] << "\t"
+                     << kTestOutputTensor2[i];
+    }
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor2));
+  }
+}
+
 // Tests Compiled Model signature accessors.
 TEST(CompiledModelTest, SignatureAccessors) {
   // Environment setup.
