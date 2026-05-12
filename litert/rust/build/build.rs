@@ -234,7 +234,7 @@ fn dump_all_env_vars() {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     dump_all_env_vars();
-    println!("cargo:rustc-check-cfg=cfg(bindgen_rs_file, cargo_bindgen, docsrs)");
+    println!("cargo:rustc-check-cfg=cfg(bazel_bindgen, cargo_bindgen, docsrs)");
     // Check if we are currently generating documentation
     let is_doc_gen = env::var(CARGO_DOCS_RS).is_ok();
 

@@ -20,6 +20,8 @@ name = "google-ai-edge-litert"
 version = "0.1.0"
 edition = "2021"
 repository = "https://github.com/google-ai-edge/LiteRT/"
+description = "LiteRT Rust language binding"                                                                                                                                                                                                
+license = "Apache-2.0" 
 
 # If enabled, the runtime will be build using Docker, otherwise
 # a prebuild binary for the target platform will be downloaded.
@@ -31,7 +33,7 @@ name = "litert"
 path = "src/lib.rs"
 
 [build-dependencies]
-bindgen = "*"
+bindgen = "0.72"
 reqwest = { version = "0.11", features = ["blocking"] }
 zip = "0.6"
 anyhow = "1.0" # For easy error handling in build script
