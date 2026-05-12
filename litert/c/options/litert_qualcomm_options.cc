@@ -33,6 +33,59 @@
 
 using litert::internal::ParseToml;
 
+namespace {
+
+struct CustomOpPackage {
+  std::string name = "";
+  std::string interface_provider = "";
+  std::string compile_package_path = "";
+  std::string compile_target = "";
+  std::string dispatch_package_path = "";
+  std::string dispatch_target = "";
+};
+
+LiteRtStatus ParseCustomOpPackageValue(absl::string_view value,
+                                       CustomOpPackage& package) {
+  size_t start = 0;
+  while (start <= value.size()) {
+    const size_t end = value.find(';', start);
+    const size_t token_end =
+        (end == absl::string_view::npos) ? value.size() : end;
+    absl::string_view token = value.substr(start, token_end - start);
+    start = (end == absl::string_view::npos) ? value.size() + 1 : end + 1;
+
+    if (token.empty()) {
+      continue;
+    }
+
+    const size_t colon_pos = token.find(':');
+    if (colon_pos == absl::string_view::npos) {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+
+    const absl::string_view key = token.substr(0, colon_pos);
+    const absl::string_view val = token.substr(colon_pos + 1);
+
+    if (key == "name") {
+      package.name = std::string(val);
+    } else if (key == "interface_provider") {
+      package.interface_provider = std::string(val);
+    } else if (key == "compile_package_path") {
+      package.compile_package_path = std::string(val);
+    } else if (key == "compile_target") {
+      package.compile_target = std::string(val);
+    } else if (key == "dispatch_package_path") {
+      package.dispatch_package_path = std::string(val);
+    } else if (key == "dispatch_target") {
+      package.dispatch_target = std::string(val);
+    }
+  }
+
+  return kLiteRtStatusOk;
+}
+
+}  // namespace
+
 struct LrtQualcommOptionsT {
   std::optional<LrtQualcommOptionsLogLevel> log_level;
   std::optional<LrtQualcommOptionsProfiling> profiling;
@@ -56,10 +109,7 @@ struct LrtQualcommOptionsT {
   std::optional<std::string> saver_output_dir;
   std::optional<LrtQualcommOptionsGraphIOTensorMemType>
       graph_io_tensor_mem_type;
-  std::optional<std::string> custom_op_package_name = "";
-  std::optional<std::string> custom_op_package_path = "";
-  std::optional<std::string> custom_op_package_target = "";
-  std::optional<std::string> custom_op_package_interface_provider = "";
+  std::optional<CustomOpPackage> custom_op_package;
 };
 
 LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
@@ -179,18 +229,12 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           status = LrtQualcommOptionsSetGraphIOTensorMemType(
               parsed_options,
               static_cast<LrtQualcommOptionsGraphIOTensorMemType>(*v));
-        } else if (key == "custom_op_package_name") {
-          LrtQualcommOptionsSetCustomOpPackageName(parsed_options,
-                                                   std::string(value).c_str());
-        } else if (key == "custom_op_package_path") {
-          LrtQualcommOptionsSetCustomOpPackagePath(parsed_options,
-                                                   std::string(value).c_str());
-        } else if (key == "custom_op_package_target") {
-          LrtQualcommOptionsSetCustomOpPackageTarget(
-              parsed_options, std::string(value).c_str());
-        } else if (key == "custom_op_package_interface_provider") {
-          LrtQualcommOptionsSetCustomOpPackageInterfaceProvider(
-              parsed_options, std::string(value).c_str());
+        } else if (key == "custom_op_package") {
+          CustomOpPackage package;
+          status = ParseCustomOpPackageValue(value, package);
+          if (status == kLiteRtStatusOk) {
+            parsed_options->custom_op_package = package;
+          }
         }
 
         return status;
@@ -304,21 +348,24 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
     toml << "graph_io_tensor_mem_type = "
          << static_cast<int>(*options->graph_io_tensor_mem_type) << "\n";
   }
-  if (options->custom_op_package_name.has_value()) {
-    toml << "custom_op_package_name = \"" << *options->custom_op_package_name
-         << "\"\n";
-  }
-  if (options->custom_op_package_path.has_value()) {
-    toml << "custom_op_package_path = \"" << *options->custom_op_package_path
-         << "\"\n";
-  }
-  if (options->custom_op_package_target.has_value()) {
-    toml << "custom_op_package_target = \""
-         << *options->custom_op_package_target << "\"\n";
-  }
-  if (options->custom_op_package_interface_provider.has_value()) {
-    toml << "custom_op_package_interface_provider = \""
-         << *options->custom_op_package_interface_provider << "\"\n";
+  if (options->custom_op_package.has_value()) {
+    const auto& package = *options->custom_op_package;
+    std::string value;
+    value.append("name:").append(package.name).append(";");
+    value.append("interface_provider:")
+        .append(package.interface_provider)
+        .append(";");
+    value.append("compile_package_path:")
+        .append(package.compile_package_path)
+        .append(";");
+    value.append("compile_target:").append(package.compile_target).append(";");
+    value.append("dispatch_package_path:")
+        .append(package.dispatch_package_path)
+        .append(";");
+    value.append("dispatch_target:")
+        .append(package.dispatch_target)
+        .append(";");
+    toml << "custom_op_package = \"" << value << "\"\n";
   }
 
   *identifier = LrtQualcommOptionsGetIdentifier();
@@ -405,103 +452,55 @@ LiteRtStatus LrtQualcommOptionsGetSaverOutputDir(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LrtQualcommOptionsSetCustomOpPackageName(
-    LrtQualcommOptions options, const char* custom_op_package_name) {
+LiteRtStatus LrtQualcommOptionsSetCustomOpPackage(
+    LrtQualcommOptions options, const char* name,
+    const char* interface_provider, const char* compile_package_path,
+    const char* compile_target, const char* dispatch_package_path,
+    const char* dispatch_target) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  options->custom_op_package_name = custom_op_package_name;
+  CustomOpPackage package;
+  package.name = name;
+  package.interface_provider = interface_provider;
+  package.compile_package_path = compile_package_path;
+  package.compile_target = compile_target;
+  package.dispatch_package_path = dispatch_package_path;
+  package.dispatch_target = dispatch_target;
+  options->custom_op_package = package;
 
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LrtQualcommOptionsGetCustomOpPackageName(
-    LrtQualcommOptions options, const char** custom_op_package_name) {
-  if (options == nullptr || custom_op_package_name == nullptr) {
+LiteRtStatus LrtQualcommOptionsGetCustomOpPackage(
+    LrtQualcommOptions options, const char** name,
+    const char** interface_provider, const char** compile_package_path,
+    const char** compile_target, const char** dispatch_package_path,
+    const char** dispatch_target) {
+  if (options == nullptr || name == nullptr || interface_provider == nullptr ||
+      compile_package_path == nullptr || compile_target == nullptr ||
+      dispatch_package_path == nullptr || dispatch_target == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  *custom_op_package_name = options->custom_op_package_name.has_value()
-                                ? options->custom_op_package_name->c_str()
-                                : "";
-
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LrtQualcommOptionsSetCustomOpPackagePath(
-    LrtQualcommOptions options, const char* custom_op_package_path) {
-  if (options == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
+  if (!options->custom_op_package.has_value()) {
+    *name = "";
+    *interface_provider = "";
+    *compile_package_path = "";
+    *compile_target = "";
+    *dispatch_package_path = "";
+    *dispatch_target = "";
+    return kLiteRtStatusOk;
   }
 
-  options->custom_op_package_path = custom_op_package_path;
-
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LrtQualcommOptionsGetCustomOpPackagePath(
-    LrtQualcommOptions options, const char** custom_op_package_path) {
-  if (options == nullptr || custom_op_package_path == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
-  *custom_op_package_path = options->custom_op_package_path.has_value()
-                                ? options->custom_op_package_path->c_str()
-                                : "";
-
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LrtQualcommOptionsSetCustomOpPackageTarget(
-    LrtQualcommOptions options, const char* custom_op_package_target) {
-  if (options == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
-  options->custom_op_package_target = custom_op_package_target;
-
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LrtQualcommOptionsGetCustomOpPackageTarget(
-    LrtQualcommOptions options, const char** custom_op_package_target) {
-  if (options == nullptr || custom_op_package_target == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
-  *custom_op_package_target = options->custom_op_package_target.has_value()
-                                  ? options->custom_op_package_target->c_str()
-                                  : "";
-
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LrtQualcommOptionsSetCustomOpPackageInterfaceProvider(
-    LrtQualcommOptions options,
-    const char* custom_op_package_interface_provider) {
-  if (options == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
-  options->custom_op_package_interface_provider =
-      custom_op_package_interface_provider;
-
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LrtQualcommOptionsGetCustomOpPackageInterfaceProvider(
-    LrtQualcommOptions options,
-    const char** custom_op_package_interface_provider) {
-  if (options == nullptr || custom_op_package_interface_provider == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
-  *custom_op_package_interface_provider =
-      options->custom_op_package_interface_provider.has_value()
-          ? options->custom_op_package_interface_provider->c_str()
-          : "";
-
+  const auto& package = *options->custom_op_package;
+  *name = package.name.c_str();
+  *interface_provider = package.interface_provider.c_str();
+  *compile_package_path = package.compile_package_path.c_str();
+  *compile_target = package.compile_target.c_str();
+  *dispatch_package_path = package.dispatch_package_path.c_str();
+  *dispatch_target = package.dispatch_target.c_str();
   return kLiteRtStatusOk;
 }
 

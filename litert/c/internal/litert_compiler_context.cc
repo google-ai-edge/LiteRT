@@ -60,7 +60,6 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
       .find_opaque_options_data = LiteRtFindOpaqueOptionsData,
       .destroy_options = LiteRtDestroyOptions,
       .get_environment_options_value = LiteRtGetEnvironmentOptionsValue,
-<<<<<<< HEAD
 
       .get_strided_slice_begin_mask_option =
           LiteRtGetStridedSliceBeginMaskOption,
@@ -226,9 +225,8 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
       .get_mirror_pad_mode_option = LiteRtGetMirrorPadModeOption,
 
       .get_squeeze_dims_option = LiteRtGetSqueezeDimsOption,
-=======
+
       .get_custom_options = LiteRtGetCustomOptions,
->>>>>>> d221e74a6 (Support custom op options, package, builder.)
   };
   return &ctx;
 }

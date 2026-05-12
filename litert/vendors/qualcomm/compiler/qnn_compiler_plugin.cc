@@ -245,6 +245,13 @@ class LiteRtCompilerPluginT {
   const ::qnn::Options& Options() const { return qnn_options_; }
 
   void initQnnManager(std::unique_ptr<QnnManager> qnn_manager) {
+    if (const auto& custom_op_package = qnn_options_.GetCustomOpPackage();
+        !custom_op_package.name.empty()) {
+      qnn_manager->RegisterOpPackage(
+          custom_op_package.compile_package_path.c_str(),
+          custom_op_package.interface_provider.c_str(),
+          custom_op_package.compile_target.c_str());
+    }
     qnn_manager_ = std::move(qnn_manager);
   }
 

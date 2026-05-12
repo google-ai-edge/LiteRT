@@ -85,9 +85,11 @@ enum class GraphPriority {
 
 struct CustomOpPackage {
   std::string name = "";
-  std::string path = "";
-  std::string target = "";
   std::string interface_provider = "";
+  std::string compile_package_path = "";
+  std::string compile_target = "";
+  std::string dispatch_package_path = "";
+  std::string dispatch_target = "";
 };
 
 class Options {
@@ -154,9 +156,12 @@ class Options {
   void SetGraphIOTensorMemType(GraphIOTensorMemType mem_type);
   GraphIOTensorMemType GetGraphIOTensorMemType() const;
 
-  void SetCustomOpPackage(std::string_view name, std::string_view path,
-                          std::string_view target,
-                          std::string_view interface_provider);
+  void SetCustomOpPackage(absl::string_view name,
+                          absl::string_view interface_provider,
+                          absl::string_view compile_package_path,
+                          absl::string_view compile_target,
+                          absl::string_view dispatch_package_path,
+                          absl::string_view dispatch_target);
   const CustomOpPackage& GetCustomOpPackage() const;
 
  private:

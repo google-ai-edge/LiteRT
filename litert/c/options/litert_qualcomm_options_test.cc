@@ -316,6 +316,54 @@ TEST(LiteRtQualcommOptionsTest, DumpTensorIds) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, CustomOpPackageSetGet) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetCustomOpPackage(
+      qualcomm_options, "pkg", "provider", "compile.so", "CPU", "dispatch.so",
+      "HTP"));
+
+  const char* name = nullptr;
+  const char* interface_provider = nullptr;
+  const char* compile_package_path = nullptr;
+  const char* compile_target = nullptr;
+  const char* dispatch_package_path = nullptr;
+  const char* dispatch_target = nullptr;
+  LITERT_ASSERT_OK(LrtQualcommOptionsGetCustomOpPackage(
+      qualcomm_options, &name, &interface_provider, &compile_package_path,
+      &compile_target, &dispatch_package_path, &dispatch_target));
+
+  EXPECT_STREQ(name, "pkg");
+  EXPECT_STREQ(interface_provider, "provider");
+  EXPECT_STREQ(compile_package_path, "compile.so");
+  EXPECT_STREQ(compile_target, "CPU");
+  EXPECT_STREQ(dispatch_package_path, "dispatch.so");
+  EXPECT_STREQ(dispatch_target, "HTP");
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, CustomOpPackageRoundTrip) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetCustomOpPackage(
+      qualcomm_options, "pkg", "provider", "compile.so", "CPU", "dispatch.so",
+      "HTP"));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  const auto custom_op_package = parsed.GetCustomOpPackage();
+  EXPECT_EQ(custom_op_package.name, "pkg");
+  EXPECT_EQ(custom_op_package.interface_provider, "provider");
+  EXPECT_EQ(custom_op_package.compile_package_path, "compile.so");
+  EXPECT_EQ(custom_op_package.compile_target, "CPU");
+  EXPECT_EQ(custom_op_package.dispatch_package_path, "dispatch.so");
+  EXPECT_EQ(custom_op_package.dispatch_target, "HTP");
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(QualcommOptionsTest, CppWrapper) {
   auto options = QualcommOptions::Create();
   ASSERT_TRUE(options);
@@ -412,6 +460,16 @@ TEST(QualcommOptionsTest, CppWrapper) {
       QualcommOptions::GraphIOTensorMemType::kMemHandle);
   EXPECT_EQ(options->GetGraphIOTensorMemType(),
             QualcommOptions::GraphIOTensorMemType::kMemHandle);
+
+  options->SetCustomOpPackage("pkg", "provider", "compile.so", "CPU",
+                              "dispatch.so", "HTP");
+  const auto custom_op_package = options->GetCustomOpPackage();
+  EXPECT_EQ(custom_op_package.name, "pkg");
+  EXPECT_EQ(custom_op_package.interface_provider, "provider");
+  EXPECT_EQ(custom_op_package.compile_package_path, "compile.so");
+  EXPECT_EQ(custom_op_package.compile_target, "CPU");
+  EXPECT_EQ(custom_op_package.dispatch_package_path, "dispatch.so");
+  EXPECT_EQ(custom_op_package.dispatch_target, "HTP");
 }
 
 }  // namespace

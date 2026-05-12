@@ -429,6 +429,22 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::OpWrapper& op) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus QnnManager::RegisterOpPackage(
+    const std::string& package_path, const std::string& interface_provider,
+    const std::string& target) {
+  if (auto status = Api()->backendRegisterOpPackage(
+          backend_->GetBackendHandle(), package_path.c_str(),
+          interface_provider.c_str(), target.c_str());
+      status != QNN_SUCCESS) {
+    LITERT_LOG(LITERT_ERROR, "Failed to register op package. Error code: %d",
+               status);
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  LITERT_LOG(LITERT_INFO, "Op package loaded successfully.");
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
                               std::optional<::qnn::SocInfo> soc_info,
                               const ::qnn::Options& options) {
@@ -533,21 +549,6 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
   const char* build_id;
   Api()->backendGetBuildId(&build_id);
   LITERT_ASSIGN_OR_RETURN(sdk_version_, ParseSdkVersion(build_id));
-
-  if (const auto& custom_op_package = options.GetCustomOpPackage();
-      !custom_op_package.path.empty()) {
-    if (auto status = Api()->backendRegisterOpPackage(
-            backend_->GetBackendHandle(), custom_op_package.path.data(),
-            custom_op_package.interface_provider.data(),
-            custom_op_package.target.data());
-        status != QNN_SUCCESS) {
-      LITERT_LOG(LITERT_ERROR, "Failed to register op package. Error code: %d",
-                 status);
-      return kLiteRtStatusErrorRuntimeFailure;
-    } else {
-      LITERT_LOG(LITERT_INFO, "Op package loaded successfully.");
-    }
-  }
 
   return kLiteRtStatusOk;
 }

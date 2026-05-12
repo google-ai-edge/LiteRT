@@ -202,13 +202,18 @@ GraphIOTensorMemType Options::GetGraphIOTensorMemType() const {
   return graph_io_tensor_mem_type_;
 }
 
-void Options::SetCustomOpPackage(std::string_view name, std::string_view path,
-                                 std::string_view target,
-                                 std::string_view interface_provider) {
+void Options::SetCustomOpPackage(absl::string_view name,
+                                 absl::string_view interface_provider,
+                                 absl::string_view compile_package_path,
+                                 absl::string_view compile_target,
+                                 absl::string_view dispatch_package_path,
+                                 absl::string_view dispatch_target) {
   custom_op_package_.name = name;
-  custom_op_package_.path = path;
-  custom_op_package_.target = target;
   custom_op_package_.interface_provider = interface_provider;
+  custom_op_package_.compile_package_path = compile_package_path;
+  custom_op_package_.compile_target = compile_target;
+  custom_op_package_.dispatch_package_path = dispatch_package_path;
+  custom_op_package_.dispatch_target = dispatch_target;
 }
 
 const CustomOpPackage& Options::GetCustomOpPackage() const {
@@ -240,9 +245,11 @@ SaverOutputDir: %s\n\
 GraphIOTensorMemType: %d\n\
 CustomOpPackage: {\n\
   name: %s\n\
-  path: %s\n\
-  target: %s\n\
   interface_provider: %s\n\
+  compile_package_path: %s\n\
+  compile_target: %s\n\
+  dispatch_package_path: %s\n\
+  dispatch_target: %s\n\
 }";  // NOLINT
 
   std::string dump_tensor_ids = absl::StrJoin(dump_tensor_ids_, ",");
@@ -254,8 +261,11 @@ CustomOpPackage: {\n\
       dsp_performance_mode_, dump_tensor_ids, ir_json_dir_, dlc_dir_,
       vtcm_size_, num_hvx_threads_, optimization_level_, graph_priority_,
       saver_output_dir_, graph_io_tensor_mem_type_, custom_op_package_.name,
-      custom_op_package_.path, custom_op_package_.target,
-      custom_op_package_.interface_provider);
+      custom_op_package_.interface_provider,
+      custom_op_package_.compile_package_path,
+      custom_op_package_.compile_target,
+      custom_op_package_.dispatch_package_path,
+      custom_op_package_.dispatch_target);
 }
 
 QnnLog_Callback_t GetDefaultStdOutLogger() { return DefaultStdOutLogger; }

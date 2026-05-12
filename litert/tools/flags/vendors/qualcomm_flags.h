@@ -49,13 +49,18 @@ std::string AbslUnparseFlag(QualcommOptions::Backend options);
 
 }  // namespace litert::qualcomm
 
-ABSL_DECLARE_FLAG(std::string, qualcomm_custom_op_package_name);
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::CustomOpPackage,
+                  qualcomm_custom_op_package);
 
-ABSL_DECLARE_FLAG(std::string, qualcomm_custom_op_package_path);
+namespace litert::qualcomm {
 
-ABSL_DECLARE_FLAG(std::string, qualcomm_custom_op_package_target);
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::CustomOpPackage* options,
+                   std::string* error);
 
-ABSL_DECLARE_FLAG(std::string, qualcomm_custom_op_package_interface_provider);
+std::string AbslUnparseFlag(QualcommOptions::CustomOpPackage options);
+
+}  // namespace litert::qualcomm
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
