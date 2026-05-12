@@ -87,7 +87,7 @@ Expected<size_t> Size(absl::string_view path) {
   auto std_path = MakeStdPath(path);
   if (!StdExists(std_path)) {
     return Error(kLiteRtStatusErrorNotFound,
-                 absl::StrFormat("File not found: %s", std_path.c_str()));
+                 absl::StrFormat("File not found: %s", path));
   }
   return StdSize(std_path);
 }
@@ -99,7 +99,7 @@ Expected<absl::Time> GetLastWriteTime(absl::string_view path) {
   if (ec) {
     return Error(kLiteRtStatusErrorFileIO,
                  absl::StrFormat("Failed to get last write time: %s, error: %s",
-                                 path.data(), ec.message().c_str()));
+                                 path, ec.message().c_str()));
   }
   return absl::Now() +
          absl::FromChrono(ftime -
@@ -111,14 +111,14 @@ Expected<OwningBufferRef<uint8_t>> LoadBinaryFile(absl::string_view path) {
 
   if (!StdExists(std_path)) {
     return Error(kLiteRtStatusErrorNotFound,
-                 absl::StrFormat("File not found: %s", std_path.c_str()));
+                 absl::StrFormat("File not found: %s", path));
   }
 
   OwningBufferRef<uint8_t> buf(StdSize(std_path));
   if (auto status = StdIFRead(std_path, buf.StrData(), buf.Size());
       status != kLiteRtStatusOk) {
     return Error(status,
-                 absl::StrFormat("Failed to read: %s", std_path.c_str()));
+                 absl::StrFormat("Failed to read: %s", path));
   }
 
   return buf;
@@ -128,7 +128,7 @@ Expected<std::vector<std::string>> ListDir(absl::string_view path) {
   auto std_path = MakeStdPath(path);
   if (!StdExists(std_path)) {
     return Error(kLiteRtStatusErrorNotFound,
-                 absl::StrFormat("Directory not found: %s", std_path.c_str()));
+                 absl::StrFormat("Directory not found: %s", path));
   }
   std::vector<std::string> res;
   for (const auto& entry : std::filesystem::directory_iterator(std_path)) {
@@ -143,7 +143,7 @@ Expected<std::vector<std::string>> RecursiveListDir(absl::string_view path) {
   auto std_path = MakeStdPath(path);
   if (!StdExists(std_path)) {
     return Error(kLiteRtStatusErrorNotFound,
-                 absl::StrFormat("Directory not found: %s", std_path.c_str()));
+                 absl::StrFormat("Directory not found: %s", path));
   }
   std::vector<std::string> res;
   std::error_code ec;
@@ -165,7 +165,7 @@ Expected<std::string> Filename(absl::string_view path) {
   auto std_path = MakeStdPath(path);
   if (!StdExists(std_path)) {
     return Error(kLiteRtStatusErrorNotFound,
-                 absl::StrFormat("File not found: %s", std_path.c_str()));
+                 absl::StrFormat("File not found: %s", path));
   }
   return std_path.filename().generic_string();
 }
@@ -182,14 +182,14 @@ Expected<void> MkDir(absl::string_view path) {
   if (Exists(path)) {
     return Error(
         kLiteRtStatusErrorAlreadyExists,
-        absl::StrFormat("Path exists and is not a directory: %s", path.data()));
+        absl::StrFormat("Path exists and is not a directory: %s", path));
   }
   auto std_path = MakeStdPath(path);
   const auto stat = std::filesystem::create_directories(std_path);
   if (!stat) {
     return Error(
         kLiteRtStatusErrorFileIO,
-        absl::StrFormat("Failed to create directory: %s", std_path.c_str()));
+        absl::StrFormat("Failed to create directory: %s", path));
   }
   return {};
 }
@@ -197,6 +197,20 @@ Expected<void> MkDir(absl::string_view path) {
 Expected<std::string> Parent(absl::string_view path) {
   auto std_path = MakeStdPath(path);
   return std_path.parent_path().generic_string();
+}
+
+Expected<std::string> Relative(absl::string_view path, absl::string_view base) {
+  auto std_path = MakeStdPath(path);
+  auto std_base = MakeStdPath(base);
+  std::error_code ec;
+  auto rel = std::filesystem::relative(std_path, std_base, ec);
+  if (ec) {
+    return Error(
+        kLiteRtStatusErrorFileIO,
+        absl::StrFormat("Failed to compute relative path for %s w.r.t %s: %s",
+                        path, base, ec.message().c_str()));
+  }
+  return rel.generic_string();
 }
 
 Expected<void> RmDir(std::string path_to_remove) {
