@@ -205,24 +205,26 @@ Expected<void> CompilationCache::SaveModel(
                           Parent(cached_model_file_path));
   LITERT_RETURN_IF_ERROR(MkDir(parent_dir));
 
-  std::ofstream output_file(cached_model_file_path,
-                            std::ios::out | std::ios::binary);
-  if (!output_file.is_open()) {
-    LITERT_LOG(LITERT_ERROR, "Failed to open cache file for writing: %s",
-               cached_model_file_path.c_str());
-    return Unexpected(kLiteRtStatusErrorFileIO,
-                      "Failed to open cache file for writing");
-  }
+  {
+    std::ofstream output_file(cached_model_file_path,
+                              std::ios::out | std::ios::binary);
+    if (!output_file.is_open()) {
+      LITERT_LOG(LITERT_ERROR, "Failed to open cache file for writing: %s",
+                 cached_model_file_path.c_str());
+      return Unexpected(kLiteRtStatusErrorFileIO,
+                        "Failed to open cache file for writing");
+    }
 
-  size_t data_size = model_buffer.Size();
-  const char* data = reinterpret_cast<const char*>(model_buffer.Data());
-  output_file.write(data, data_size);
+    size_t data_size = model_buffer.Size();
+    const char* data = reinterpret_cast<const char*>(model_buffer.Data());
+    output_file.write(data, data_size);
 
-  if (!output_file.good()) {
-    LITERT_LOG(LITERT_ERROR, "Failed to write all data to cache file: %s",
-               cached_model_file_path.c_str());
-    return Unexpected(kLiteRtStatusErrorFileIO,
-                      "Failed to write all data to cache file");
+    if (!output_file.good()) {
+      LITERT_LOG(LITERT_ERROR, "Failed to write all data to cache file: %s",
+                 cached_model_file_path.c_str());
+      return Unexpected(kLiteRtStatusErrorFileIO,
+                        "Failed to write all data to cache file");
+    }
   }
 
   LITERT_ASSIGN_OR_RETURN(auto inventory, BuildInventory());
@@ -255,12 +257,38 @@ Expected<void> CompilationCache::SaveModel(
 
   // Case 2 Cleanup: Remove old content directories for named models.
   if (!model_name.empty()) {
+    LITERT_ASSIGN_OR_RETURN(auto inventory, BuildInventory());
     for (const auto& entry : inventory) {
       if (entry.model_id == model_name &&
           entry.content_hash != cache_key.content_hash) {
         std::string dir_path = litert::internal::Join(
             {cache_root_path_, model_name, absl::StrCat(entry.content_hash)});
         LITERT_RETURN_IF_ERROR(RmDir(dir_path));
+      }
+    }
+  }
+
+  // Case 3 Cleanup: Global LRU eviction.
+  if (max_total_size_ > 0) {
+    // Rebuild inventory to get the current state.
+    LITERT_ASSIGN_OR_RETURN(auto inventory, BuildInventory());
+    size_t total_size = 0;
+    for (const auto& entry : inventory) {
+      total_size += entry.size;
+    }
+
+    if (total_size > max_total_size_) {
+      std::sort(inventory.begin(), inventory.end(),
+                [](const CacheEntry& a, const CacheEntry& b) {
+                  return a.last_modified < b.last_modified;
+                });
+
+      for (const auto& entry : inventory) {
+        if (total_size <= max_total_size_) {
+          break;
+        }
+        LITERT_RETURN_IF_ERROR(RemoveFile(entry.path));
+        total_size -= entry.size;
       }
     }
   }
@@ -285,6 +313,8 @@ Expected<std::optional<LiteRtModelT::Ptr>> CompilationCache::TryLoadModel(
       return Expected<std::optional<LiteRtModelT::Ptr>>(std::nullopt);
     }
   }
+
+  LITERT_RETURN_IF_ERROR(TouchFile(expected_model_file_path));
 
   LITERT_ASSIGN_OR_RETURN(
       LiteRtModelT::Ptr cached_model,

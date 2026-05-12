@@ -81,6 +81,7 @@ cc_test(
         "//litert:android": [],
         "//litert:ios": [],
         "//litert:macos": [],
+        "//litert:windows": [],
         "//conditions:default": [
             make_rpaths([
                 "//litert/c:litert_runtime_c_api_so",
@@ -144,6 +145,7 @@ cc_test(
         "//litert:android": [],
         "//litert:ios": [],
         "//litert:macos": [],
+        "//litert:windows": [],
         "//conditions:default": [
             make_rpaths([
                 "//litert/c:litert_runtime_c_api_so",

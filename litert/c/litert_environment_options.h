@@ -64,6 +64,7 @@ typedef enum {
   kLiteRtEnvOptionTagMinLoggerSeverity = 25,
   // Maximum number of configurations to store per model in the compiler cache.
   kLiteRtEnvOptionTagCompilerCacheMaxConfigsPerModel = 26,
+  kLiteRtEnvOptionTagCompilerCacheMaxTotalSize = 27,
   // Internal use only. Virtual null tag for option that is not defined.
   kLiteRtEnvOptionTagNull = 255,
 } LiteRtEnvOptionTag;

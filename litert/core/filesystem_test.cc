@@ -23,6 +23,7 @@
 #include <gtest/gtest.h>
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 
 namespace litert::internal {
@@ -154,6 +155,24 @@ TEST(FilesystemTest, GetLastWriteTime) {
   auto mtime = GetLastWriteTime(file);
   ASSERT_TRUE(mtime);
   EXPECT_GT(*mtime, absl::UnixEpoch());
+}
+
+TEST(FilesystemTest, TouchFile) {
+  const std::string file = Join({::testing::TempDir(), "test_file_touch"});
+  Touch(file);
+  auto mtime1 = GetLastWriteTime(file);
+  ASSERT_TRUE(mtime1);
+
+  // Sleep to ensure time difference.
+  absl::SleepFor(absl::Seconds(1));
+
+  auto status = TouchFile(file);
+  ASSERT_TRUE(status);
+
+  auto mtime2 = GetLastWriteTime(file);
+  ASSERT_TRUE(mtime2);
+
+  EXPECT_GT(*mtime2, *mtime1);
 }
 
 TEST(FilesystemTest, RecursiveListDir) {

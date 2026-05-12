@@ -76,6 +76,9 @@ Expected<void> RmDir(std::string path_to_remove);
 
 Expected<void> RemoveFile(absl::string_view path);
 
+// Updates the last modification time of the file to current time.
+Expected<void> TouchFile(absl::string_view path);
+
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_CORE_FILESYSTEM_H_

@@ -14,6 +14,7 @@
 
 #include "litert/core/cache/compilation_cache.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -591,6 +592,152 @@ TEST(CompilationCacheTest, Case2_ConfigLimit_RemovesOldestConfig) {
   // Verify ONE of the old ones is removed (should be Config 1)
   EXPECT_FALSE(litert::internal::Exists(path_1));
   EXPECT_TRUE(litert::internal::Exists(path_2));
+}
+
+TEST(CompilationCacheTest, Case3_GlobalLRU_RemovesOldestFiles) {
+  const std::string cache_root_path = ::testing::TempDir() + "/Case3_GlobalLRU";
+  LITERT_ABORT_IF_ERROR(litert::internal::MkDir(cache_root_path));
+  LITERT_ASSIGN_OR_ABORT(CompilationCache compilation_cache,
+                         CompilationCache::Create(cache_root_path));
+
+  LITERT_ASSIGN_OR_ABORT(std::unique_ptr<LiteRtModelT> model,
+                         LoadModelFromFile(litert::testing::GetTestFilePath(
+                             "simple_model.tflite")));
+
+  // Get size of one file to set limit appropriately
+  LITERT_ASSIGN_OR_ABORT(
+      CompilationCache::CacheKey key_temp,
+      CompilationCache::GetModelHash(*model, GetTestOptions(),
+                                     GetTestCompilerPluginInfo()));
+  LITERT_ABORT_IF_ERROR(compilation_cache.SaveModel(*model, key_temp, "temp"));
+  std::string temp_path = litert::internal::Join(
+      {cache_root_path, "temp", absl::StrCat(key_temp.content_hash),
+       absl::StrCat(key_temp.config_hash, ".tflite")});
+  LITERT_ASSIGN_OR_ABORT(size_t file_size, litert::internal::Size(temp_path));
+  LITERT_ABORT_IF_ERROR(
+      litert::internal::RemoveFile(temp_path));  // Cleanup temp file
+  LITERT_ABORT_IF_ERROR(litert::internal::RmDir(
+      litert::internal::Join({cache_root_path, "temp"})));  // Cleanup temp dir
+
+  // Set limit to hold 2 files
+  compilation_cache.SetMaxTotalSize(file_size * 2 + file_size / 2);
+
+  // 1. Save File 1 (Model A)
+  LITERT_ASSIGN_OR_ABORT(
+      CompilationCache::CacheKey key_1,
+      CompilationCache::GetModelHash(*model, GetTestOptions(),
+                                     GetTestCompilerPluginInfo()));
+  LITERT_ABORT_IF_ERROR(compilation_cache.SaveModel(*model, key_1, "model_a"));
+  absl::SleepFor(absl::Milliseconds(100));
+
+  // 2. Save File 2 (Model B)
+  LITERT_ASSIGN_OR_ABORT(
+      CompilationCache::CacheKey key_2,
+      CompilationCache::GetModelHash(*model, GetTestOptions(),
+                                     GetTestCompilerPluginInfo()));
+  LITERT_ABORT_IF_ERROR(compilation_cache.SaveModel(*model, key_2, "model_b"));
+  absl::SleepFor(absl::Milliseconds(100));
+
+  std::string path_1 = litert::internal::Join(
+      {cache_root_path, "model_a", absl::StrCat(key_1.content_hash),
+       absl::StrCat(key_1.config_hash, ".tflite")});
+  std::string path_2 = litert::internal::Join(
+      {cache_root_path, "model_b", absl::StrCat(key_2.content_hash),
+       absl::StrCat(key_2.config_hash, ".tflite")});
+  EXPECT_TRUE(litert::internal::Exists(path_1));
+  EXPECT_TRUE(litert::internal::Exists(path_2));
+
+  // 3. Save File 3 (Model C) - Exceeds total size limit!
+  LITERT_ASSIGN_OR_ABORT(
+      CompilationCache::CacheKey key_3,
+      CompilationCache::GetModelHash(*model, GetTestOptions(),
+                                     GetTestCompilerPluginInfo()));
+  LITERT_ABORT_IF_ERROR(compilation_cache.SaveModel(*model, key_3, "model_c"));
+
+  std::string path_3 = litert::internal::Join(
+      {cache_root_path, "model_c", absl::StrCat(key_3.content_hash),
+       absl::StrCat(key_3.config_hash, ".tflite")});
+  EXPECT_TRUE(litert::internal::Exists(path_3));
+
+  // Verify ONE of the old ones is removed (should be File 1)
+  EXPECT_FALSE(litert::internal::Exists(path_1));
+  EXPECT_TRUE(litert::internal::Exists(path_2));
+}
+
+TEST(CompilationCacheTest, Case3_GlobalLRU_TouchUpdatesTimestamp) {
+  const std::string cache_root_path =
+      ::testing::TempDir() + "/Case3_GlobalLRU_Touch";
+  LITERT_ABORT_IF_ERROR(litert::internal::MkDir(cache_root_path));
+  LITERT_ASSIGN_OR_ABORT(CompilationCache compilation_cache,
+                         CompilationCache::Create(cache_root_path));
+
+  LITERT_ASSIGN_OR_ABORT(std::unique_ptr<LiteRtModelT> model,
+                         LoadModelFromFile(litert::testing::GetTestFilePath(
+                             "simple_model.tflite")));
+
+  // Get size of one file to set limit appropriately
+  LITERT_ASSIGN_OR_ABORT(
+      CompilationCache::CacheKey key_temp,
+      CompilationCache::GetModelHash(*model, GetTestOptions(),
+                                     GetTestCompilerPluginInfo()));
+  LITERT_ABORT_IF_ERROR(compilation_cache.SaveModel(*model, key_temp, "temp"));
+  std::string temp_path = litert::internal::Join(
+      {cache_root_path, "temp", absl::StrCat(key_temp.content_hash),
+       absl::StrCat(key_temp.config_hash, ".tflite")});
+  LITERT_ASSIGN_OR_ABORT(size_t file_size, litert::internal::Size(temp_path));
+  LITERT_ABORT_IF_ERROR(litert::internal::RemoveFile(temp_path));
+  LITERT_ABORT_IF_ERROR(litert::internal::RmDir(
+      litert::internal::Join({cache_root_path, "temp"})));
+
+  // Set limit to hold 2 files
+  compilation_cache.SetMaxTotalSize(file_size * 2 + file_size / 2);
+
+  // 1. Save File 1 (Model A)
+  LITERT_ASSIGN_OR_ABORT(
+      CompilationCache::CacheKey key_1,
+      CompilationCache::GetModelHash(*model, GetTestOptions(),
+                                     GetTestCompilerPluginInfo()));
+  LITERT_ABORT_IF_ERROR(compilation_cache.SaveModel(*model, key_1, "model_a"));
+  absl::SleepFor(absl::Milliseconds(100));
+
+  // 2. Save File 2 (Model B)
+  LITERT_ASSIGN_OR_ABORT(
+      CompilationCache::CacheKey key_2,
+      CompilationCache::GetModelHash(*model, GetTestOptions(),
+                                     GetTestCompilerPluginInfo()));
+  LITERT_ABORT_IF_ERROR(compilation_cache.SaveModel(*model, key_2, "model_b"));
+  absl::SleepFor(absl::Milliseconds(100));
+
+  std::string path_1 = litert::internal::Join(
+      {cache_root_path, "model_a", absl::StrCat(key_1.content_hash),
+       absl::StrCat(key_1.config_hash, ".tflite")});
+  std::string path_2 = litert::internal::Join(
+      {cache_root_path, "model_b", absl::StrCat(key_2.content_hash),
+       absl::StrCat(key_2.config_hash, ".tflite")});
+  EXPECT_TRUE(litert::internal::Exists(path_1));
+  EXPECT_TRUE(litert::internal::Exists(path_2));
+
+  // 3. Access File 1 (Updates timestamp to be newer than File 2)
+  LITERT_ASSIGN_OR_ABORT(std::optional<LiteRtModelT::Ptr> cache_hit,
+                         compilation_cache.TryLoadModel(key_1, "model_a"));
+  EXPECT_TRUE(cache_hit.has_value());
+  absl::SleepFor(absl::Milliseconds(100));
+
+  // 4. Save File 3 (Model C) - Exceeds total size limit!
+  LITERT_ASSIGN_OR_ABORT(
+      CompilationCache::CacheKey key_3,
+      CompilationCache::GetModelHash(*model, GetTestOptions(),
+                                     GetTestCompilerPluginInfo()));
+  LITERT_ABORT_IF_ERROR(compilation_cache.SaveModel(*model, key_3, "model_c"));
+
+  std::string path_3 = litert::internal::Join(
+      {cache_root_path, "model_c", absl::StrCat(key_3.content_hash),
+       absl::StrCat(key_3.config_hash, ".tflite")});
+  EXPECT_TRUE(litert::internal::Exists(path_3));
+
+  // Verify File 2 is removed (it is now the oldest)
+  EXPECT_TRUE(litert::internal::Exists(path_1));
+  EXPECT_FALSE(litert::internal::Exists(path_2));
 }
 
 }  // namespace litert::internal

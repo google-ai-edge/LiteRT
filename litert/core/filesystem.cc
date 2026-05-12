@@ -106,6 +106,19 @@ Expected<absl::Time> GetLastWriteTime(absl::string_view path) {
                           std::filesystem::file_time_type::clock::now());
 }
 
+Expected<void> TouchFile(absl::string_view path) {
+  auto std_path = MakeStdPath(path);
+  std::error_code ec;
+  std::filesystem::last_write_time(
+      std_path, std::filesystem::file_time_type::clock::now(), ec);
+  if (ec) {
+    return Error(kLiteRtStatusErrorFileIO,
+                 absl::StrFormat("Failed to touch file: %s, error: %s",
+                                 path, ec.message().c_str()));
+  }
+  return {};
+}
+
 Expected<OwningBufferRef<uint8_t>> LoadBinaryFile(absl::string_view path) {
   auto std_path = MakeStdPath(path);
 
@@ -206,7 +219,7 @@ Expected<void> RemoveFile(absl::string_view path) {
   if (ec) {
     return Error(kLiteRtStatusErrorFileIO,
                  absl::StrFormat("Failed to remove file: %s, error: %s",
-                                 path.data(), ec.message().c_str()));
+                                 path, ec.message().c_str()));
   }
   return {};
 }

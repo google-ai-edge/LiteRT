@@ -77,6 +77,23 @@ TEST(EnvironmentOptionsTest, SetGetMaxConfigsOptionWorks) {
   EXPECT_THAT(stored_option.int_value, Eq(kIntValue));
 }
 
+TEST(EnvironmentOptionsTest, SetGetMaxTotalSizeOptionWorks) {
+  constexpr int kIntValue = 1024;
+  LiteRtEnvironmentOptionsT options;
+  LiteRtEnvOption env_option{
+      /*tag=*/kLiteRtEnvOptionTagCompilerCacheMaxTotalSize,
+      /*value=*/{/*type=*/kLiteRtAnyTypeInt}};
+  env_option.value.int_value = kIntValue;
+  options.SetOption(env_option);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny stored_option,
+      options.GetOption(kLiteRtEnvOptionTagCompilerCacheMaxTotalSize));
+
+  EXPECT_THAT(stored_option.type, Eq(kLiteRtAnyTypeInt));
+  EXPECT_THAT(stored_option.int_value, Eq(kIntValue));
+}
+
 TEST(EnvironmentOptionsTest, GetNotSetReturnsNotFound) {
   LiteRtEnvironmentOptionsT options;
 

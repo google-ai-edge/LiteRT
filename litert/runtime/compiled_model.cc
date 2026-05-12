@@ -641,6 +641,12 @@ std::optional<litert::internal::CompilationCache> MaybeCreateCompilationCache(
           max_configs_option->type == kLiteRtAnyTypeInt) {
         cache.SetMaxConfigsPerModel(max_configs_option->int_value);
       }
+      auto max_size_option =
+          env.GetOption(kLiteRtEnvOptionTagCompilerCacheMaxTotalSize);
+      if (max_size_option.has_value() &&
+          max_size_option->type == kLiteRtAnyTypeInt) {
+        cache.SetMaxTotalSize(max_size_option->int_value);
+      }
       return cache;
     }
   }
