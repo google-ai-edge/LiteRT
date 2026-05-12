@@ -21,6 +21,7 @@ limitations under the License.
 #include <string>
 #include <vector>
 
+#include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "tflite/delegates/gpu/common/data_type.h"
 #include "tflite/delegates/gpu/common/shape.h"
