@@ -16,7 +16,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <utility>
+#include <vector>
 
 #include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/base/const_init.h"  // from @com_google_absl
@@ -60,6 +62,22 @@ LiteRtStatus LiteRtCreateEnvironment(int num_options,
   }
 
   auto options_span = absl::MakeSpan(options, num_options);
+
+#if defined(LITERT_WINDOWS_OS)
+  std::vector<LiteRtEnvOption> extended_options(options, options + num_options);
+  LiteRtEnvOption malloc_opt;
+  malloc_opt.tag = kLiteRtEnvOptionTagMalloc;
+  malloc_opt.value.type = kLiteRtAnyTypeVoidPtr;
+  malloc_opt.value.ptr_value = reinterpret_cast<const void*>(malloc);
+  extended_options.push_back(malloc_opt);
+  LiteRtEnvOption free_opt;
+  free_opt.tag = kLiteRtEnvOptionTagFree;
+  free_opt.value.type = kLiteRtAnyTypeVoidPtr;
+  free_opt.value.ptr_value = reinterpret_cast<const void*>(free);
+  extended_options.push_back(free_opt);
+  options_span = absl::MakeSpan(extended_options);
+#endif  // defined(LITERT_WINDOWS_OS)
+
   LITERT_ASSIGN_OR_RETURN(auto env,
                           LiteRtEnvironmentT::CreateWithOptions(options_span));
   litert::TriggerAcceleratorAutomaticRegistration(*env);

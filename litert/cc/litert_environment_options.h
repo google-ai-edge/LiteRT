@@ -91,6 +91,11 @@ class EnvironmentOptions {
     kAutoRegisterAccelerators = kLiteRtEnvOptionTagAutoRegisterAccelerators,
     /// Minimum logger severity for the environment.
     kMinLoggerSeverity = kLiteRtEnvOptionTagMinLoggerSeverity,
+#if defined(LITERT_WINDOWS_OS)
+    /// Allocator function pointers to avoid cross-DLL deallocation issues.
+    kMalloc = kLiteRtEnvOptionTagMalloc,
+    kFree = kLiteRtEnvOptionTagFree,
+#endif
   };
 
   struct Option {

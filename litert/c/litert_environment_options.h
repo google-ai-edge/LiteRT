@@ -63,6 +63,13 @@ typedef enum {
   // Minimum logger severity for the environment.
   kLiteRtEnvOptionTagMinLoggerSeverity = 25,
 
+#if defined(LITERT_WINDOWS_OS)
+  // Allocator function pointers to avoid cross-DLL heap access issues.
+  // These are only used on Windows.
+  kLiteRtEnvOptionTagMalloc = 26,
+  kLiteRtEnvOptionTagFree = 27,
+#endif  // defined(LITERT_WINDOWS_OS)
+
   // Internal use only. Virtual null tag for option that is not defined.
   kLiteRtEnvOptionTagNull = 255,
 } LiteRtEnvOptionTag;
