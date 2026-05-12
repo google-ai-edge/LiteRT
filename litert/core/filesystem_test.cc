@@ -164,5 +164,23 @@ TEST(FilesystemTest, RecursiveListDir) {
   EXPECT_THAT(*list, UnorderedElementsAre(file1, file2));
 }
 
+TEST(FilesystemTest, Relative) {
+  const std::string base = "/a/b/c";
+  const std::string path1 = "/a/b/c/d/e.txt";
+  auto rel1 = Relative(path1, base);
+  ASSERT_TRUE(rel1);
+  EXPECT_EQ(*rel1, "d/e.txt");
+
+  // Trailing slash on base
+  auto rel2 = Relative(path1, base + "/");
+  ASSERT_TRUE(rel2);
+  EXPECT_EQ(*rel2, "d/e.txt");
+
+  // Double slash on base
+  auto rel3 = Relative(path1, "/a/b//c");
+  ASSERT_TRUE(rel3);
+  EXPECT_EQ(*rel3, "d/e.txt");
+}
+
 }  // namespace
 }  // namespace litert::internal
