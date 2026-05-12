@@ -6,6 +6,16 @@ workspace(name = "litert")
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+# Darts Clone. Declare this before TensorFlow's workspace macros so they do not
+# install their own incompatible BUILD overlay.
+http_archive(
+    name = "darts_clone",
+    build_file = "@//:BUILD.darts_clone",
+    sha256 = "4a562824ec2fbb0ef7bd0058d9f73300173d20757b33bb69baa7e50349f65820",
+    strip_prefix = "darts-clone-e40ce4627526985a7767444b6ed6893ab6ff8983",
+    url = "https://github.com/s-yata/darts-clone/archive/e40ce4627526985a7767444b6ed6893ab6ff8983.tar.gz",
+)
+
 http_archive(
     name = "rules_shell",
     sha256 = "bc61ef94facc78e20a645726f64756e5e285a045037c7a61f65af2941f4c25e1",
@@ -280,15 +290,6 @@ http_archive(
     sha256 = "9970f0a0afee1648890293321665e5b2efa04eaec9f1671fcf8048f456f5bb86",
     strip_prefix = "sentencepiece-0.2.0/src",
     url = "https://github.com/google/sentencepiece/archive/refs/tags/v0.2.0.tar.gz",
-)
-
-# Darts Clone
-http_archive(
-    name = "darts_clone",
-    build_file = "@//:BUILD.darts_clone",
-    sha256 = "4a562824ec2fbb0ef7bd0058d9f73300173d20757b33bb69baa7e50349f65820",
-    strip_prefix = "darts-clone-e40ce4627526985a7767444b6ed6893ab6ff8983",
-    url = "https://github.com/s-yata/darts-clone/archive/e40ce4627526985a7767444b6ed6893ab6ff8983.tar.gz",
 )
 
 # tomlplusplus
