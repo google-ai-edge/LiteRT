@@ -103,6 +103,9 @@ class CompilationCache {
   // Builds an inventory of all cached models.
   // Visible for testing.
   Expected<std::vector<CacheEntry>> BuildInventory() const;
+  void SetMaxConfigsPerModel(int max_configs) {
+    max_configs_per_model_ = max_configs;
+  }
 
  private:
   // Creates a compilation cache instance that uses the provided
@@ -111,6 +114,8 @@ class CompilationCache {
 
   // The cache root path.
   std::string cache_root_path_;
+
+  int max_configs_per_model_ = 1;
 };
 
 }  // namespace litert::internal

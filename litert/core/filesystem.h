@@ -74,6 +74,8 @@ Expected<std::string> Relative(absl::string_view path, absl::string_view base);
 
 Expected<void> RmDir(std::string path_to_remove);
 
+Expected<void> RemoveFile(absl::string_view path);
+
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_CORE_FILESYSTEM_H_

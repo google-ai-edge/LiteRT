@@ -28,6 +28,8 @@
 #include <sys/system_properties.h>
 #endif  // __ANDROID__
 
+#include <algorithm>
+
 #include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
@@ -223,9 +225,36 @@ Expected<void> CompilationCache::SaveModel(
                       "Failed to write all data to cache file");
   }
 
-  // Case 1 Cleanup: Remove old content directories for named models.
+  LITERT_ASSIGN_OR_RETURN(auto inventory, BuildInventory());
+
+  // Case 1 Cleanup: Limit configurations per model content.
+  std::vector<CacheEntry> same_model_content_entries;
+  std::string current_model_id =
+      model_name.empty() ? "mem" : std::string(model_name);
+
+  for (const auto& entry : inventory) {
+    if (entry.model_id == current_model_id &&
+        entry.content_hash == cache_key.content_hash) {
+      same_model_content_entries.push_back(entry);
+    }
+  }
+
+  if (same_model_content_entries.size() > max_configs_per_model_) {
+    std::sort(same_model_content_entries.begin(),
+              same_model_content_entries.end(),
+              [](const CacheEntry& a, const CacheEntry& b) {
+                return a.last_modified < b.last_modified;
+              });
+
+    size_t num_to_remove =
+        same_model_content_entries.size() - max_configs_per_model_;
+    for (size_t i = 0; i < num_to_remove; ++i) {
+      LITERT_RETURN_IF_ERROR(RemoveFile(same_model_content_entries[i].path));
+    }
+  }
+
+  // Case 2 Cleanup: Remove old content directories for named models.
   if (!model_name.empty()) {
-    LITERT_ASSIGN_OR_RETURN(auto inventory, BuildInventory());
     for (const auto& entry : inventory) {
       if (entry.model_id == model_name &&
           entry.content_hash != cache_key.content_hash) {
@@ -313,6 +342,7 @@ CompilationCache::BuildInventory() const {
     });
   }
 
+  // Return the inventory.
   return inventory;
 }
 

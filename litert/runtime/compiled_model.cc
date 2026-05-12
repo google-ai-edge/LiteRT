@@ -101,11 +101,11 @@
 #include "litert/runtime/tensor_identifier.h"
 #include "litert/runtime/tfl_utils.h"
 #if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-#include "litert/runtime/fabric/compiled_model_fabric_internal.h"
-#include "litert/runtime/fabric/litert_fabric_options.h"
 #include "third_party/odml/infra/fabric/runtime/tg_proto_converter.h"
 #include "third_party/odml/infra/fabric/runtime/transmission_graph.pb.h"
+#include "litert/runtime/fabric/compiled_model_fabric_internal.h"
 #include "litert/runtime/fabric/dispatch_runner_sb.h"
+#include "litert/runtime/fabric/litert_fabric_options.h"
 #endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 #include "weight_loader/external_weight_loader_litert.h"
 #include "tflite/converter/allocation.h"
@@ -634,7 +634,14 @@ std::optional<litert::internal::CompilationCache> MaybeCreateCompilationCache(
         litert::internal::CompilationCache::Create(
             compiler_cache_dir_option->str_value);
     if (compilation_cache_expected.HasValue()) {
-      return compilation_cache_expected.Value();
+      auto cache = compilation_cache_expected.Value();
+      auto max_configs_option =
+          env.GetOption(kLiteRtEnvOptionTagCompilerCacheMaxConfigsPerModel);
+      if (max_configs_option.has_value() &&
+          max_configs_option->type == kLiteRtAnyTypeInt) {
+        cache.SetMaxConfigsPerModel(max_configs_option->int_value);
+      }
+      return cache;
     }
   }
   return std::nullopt;

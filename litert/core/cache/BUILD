@@ -72,6 +72,7 @@ cc_test(
         "//litert/test:common",
         "//litert/test:simple_model",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
     ],
 )

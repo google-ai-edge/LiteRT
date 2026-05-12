@@ -139,6 +139,15 @@ TEST(FilesystemTest, RmDir) {
   EXPECT_FALSE(Exists(dir));
 }
 
+TEST(FilesystemTest, RemoveFile) {
+  const std::string file = Join({::testing::TempDir(), "test_file_to_remove"});
+  Touch(file);
+  EXPECT_TRUE(Exists(file));
+  auto status = RemoveFile(file);
+  ASSERT_TRUE(status);
+  EXPECT_FALSE(Exists(file));
+}
+
 TEST(FilesystemTest, GetLastWriteTime) {
   const std::string file = Join({::testing::TempDir(), "test_file_mtime"});
   Touch(file);

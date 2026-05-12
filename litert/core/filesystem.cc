@@ -199,6 +199,18 @@ Expected<std::string> Parent(absl::string_view path) {
   return std_path.parent_path().generic_string();
 }
 
+Expected<void> RemoveFile(absl::string_view path) {
+  auto std_path = MakeStdPath(path);
+  std::error_code ec;
+  std::filesystem::remove(std_path, ec);
+  if (ec) {
+    return Error(kLiteRtStatusErrorFileIO,
+                 absl::StrFormat("Failed to remove file: %s, error: %s",
+                                 path.data(), ec.message().c_str()));
+  }
+  return {};
+}
+
 Expected<std::string> Relative(absl::string_view path, absl::string_view base) {
   auto std_path = MakeStdPath(path);
   auto std_base = MakeStdPath(base);
