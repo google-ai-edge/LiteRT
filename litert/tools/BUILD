@@ -496,6 +496,7 @@ cc_binary(
     deps = [
         ":tensor_utils",
         "//litert/c:litert_common",
+        "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",

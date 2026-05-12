@@ -32,6 +32,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/internal/scoped_weight_source.h"
 #include "litert/cc/litert_common.h"
@@ -280,26 +281,6 @@ Expected<size_t> GetTotalElements(const TensorBuffer& buffer) {
     total_elements *= layout.Dimensions()[d];
   }
   return total_elements;
-}
-
-// Fills a tensor buffer with sample data based on element type
-Expected<void> FillInputBuffer(TensorBuffer& buffer) {
-  if (!absl::GetFlag(FLAGS_compare_numerical)) {
-    return {};
-  }
-
-  LITERT_ASSIGN_OR_RETURN(const size_t total_elements,
-                          GetTotalElements(buffer));
-
-  // Always treat input as float and fill with rotating values from 0.0 to 0.9
-  std::vector<float> data(total_elements);
-  for (size_t i = 0; i < total_elements; ++i) {
-    // Rotate through 0.0, 0.1, 0.2, ..., 0.9, 0.0, 0.1, ...
-    data[i] = static_cast<float>(i % 10) * 0.1f;
-  }
-
-  // Write the data to the tensor buffer
-  return buffer.Write<float>(absl::MakeConstSpan(data));
 }
 
 // Fills input buffers for a language model with sample data.
