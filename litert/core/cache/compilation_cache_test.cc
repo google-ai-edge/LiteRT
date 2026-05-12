@@ -35,6 +35,7 @@
 
 namespace litert::internal {
 
+// Helper function to get a test CompilerPluginInfo.
 CompilationCache::CompilerPluginInfo GetTestCompilerPluginInfo() {
   return {
       .api_version = {.major = 1, .minor = 0, .patch = 0},
@@ -44,6 +45,7 @@ CompilationCache::CompilerPluginInfo GetTestCompilerPluginInfo() {
   };
 }
 
+// Helper function to get a test LiteRtOptionsT.
 LiteRtOptionsT GetTestOptions() {
   return {
       .version = {.major = 1, .minor = 0, .patch = 0},
