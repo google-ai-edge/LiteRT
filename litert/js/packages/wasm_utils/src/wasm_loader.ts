@@ -40,6 +40,23 @@ export declare interface FileLocator {
 }
 
 /**
+ * Factory exported by Emscripten's ES module output.
+ */
+export type WasmModuleFactory =
+    (fileLocator?: FileLocator) => Promise<WasmModule>;
+
+/**
+ * Options for initializing a Wasm library.
+ */
+export declare interface CreateWasmLibOptions {
+  wasmLoaderScript?: UrlString|null;
+  assetLoaderScript?: UrlString|null;
+  glCanvas?: HTMLCanvasElement|OffscreenCanvas|null;
+  fileLocator?: FileLocator;
+  moduleFactory?: WasmModuleFactory;
+}
+
+/**
  * Global function interface to initialize Wasm blob and load runtime assets for
  *     a specialized Wasm library. Standard implementation is
  *     `createWasmLib<LibType>`.
@@ -54,6 +71,9 @@ export declare interface FileLocator {
  *     completed successfully.
  */
 export interface CreateWasmLibApi {
+  <LibType>(
+      constructorFcn: WasmConstructor<LibType>,
+      options?: CreateWasmLibOptions): Promise<LibType>;
   <LibType>(
       constructorFcn: WasmConstructor<LibType>,
       wasmLoaderScript?: UrlString|null, assetLoaderScript?: UrlString|null,
@@ -73,10 +93,27 @@ declare global {
 
 /** {@override CreateWasmLibApi} */
 export const createWasmLib: CreateWasmLibApi = async<LibType>(
-    constructorFcn: WasmConstructor<LibType>, wasmLoaderScript?: UrlString|null,
+    constructorFcn: WasmConstructor<LibType>,
+    wasmLoaderScriptOrOptions?: UrlString|null|CreateWasmLibOptions,
     assetLoaderScript?: UrlString|null,
     glCanvas?: HTMLCanvasElement|OffscreenCanvas|null,
     fileLocator?: FileLocator): Promise<LibType> => {
+  let wasmLoaderScript = wasmLoaderScriptOrOptions as UrlString|null|undefined;
+  let moduleFactory: WasmModuleFactory|undefined;
+  if (typeof wasmLoaderScriptOrOptions === 'object' &&
+      wasmLoaderScriptOrOptions !== null) {
+    wasmLoaderScript = wasmLoaderScriptOrOptions.wasmLoaderScript;
+    assetLoaderScript = wasmLoaderScriptOrOptions.assetLoaderScript;
+    glCanvas = wasmLoaderScriptOrOptions.glCanvas;
+    fileLocator = wasmLoaderScriptOrOptions.fileLocator;
+    moduleFactory = wasmLoaderScriptOrOptions.moduleFactory;
+  }
+
+  if (moduleFactory) {
+    const module = await moduleFactory(fileLocator);
+    return new constructorFcn(module, glCanvas);
+  }
+
   // Run wasm-loader script here
   if (wasmLoaderScript) {
     await runScript(wasmLoaderScript);

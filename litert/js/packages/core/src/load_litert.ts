@@ -19,9 +19,7 @@
 import {Environment} from './environment';
 import {getGlobalLiteRt, getGlobalLiteRtPromise, hasGlobalLiteRt, hasGlobalLiteRtPromise, setGlobalLiteRt, setGlobalLiteRtPromise} from './global_litert';
 import {LiteRt} from './litert_web';
-import {load, LoadOptions} from './load';
-
-type UrlString = string;
+import {load, LoadOptions, WasmModuleSource} from './load';
 
 /**
  * Options for loading LiteRT.
@@ -33,7 +31,7 @@ type UrlString = string;
  *     to false. Unused when specifying a .js file directly instead of a
  *     directory containing the Wasm files.
  **/
-export interface LoadLiteRtOptions extends LoadOptions {}
+export type LoadLiteRtOptions = LoadOptions;
 
 /**
  * Load LiteRT.js Wasm files from the given URL. This needs to be called before
@@ -42,17 +40,19 @@ export interface LoadLiteRtOptions extends LoadOptions {}
  * The URL can be:
  *
  * - A directory containing the LiteRT Wasm files (e.g. `.../wasm/`), or
- * - The LiteRT Wasm's js file (e.g. `.../litert_wasm_internal.js`)
+ * - The LiteRT Wasm's js/mjs file (e.g. `.../litert_wasm_internal.js`), or
+ * - An Emscripten ES module factory imported from a generated `.mjs` file.
  *
  * If the URL is to a directory, LiteRT.js will detect what WASM features are
  * available in the browser and load the compatible WASM file. If the URL is
  * to a file, it will be loaded as is.
  *
  * @param path The path to the directory containing the LiteRT Wasm files, or
- *     the full URL of the LiteRT Wasm .js file.
+ *     the full URL of the LiteRT Wasm .js/.mjs file. Emscripten ES module
+ *     factories can also be passed directly.
  */
 export function loadLiteRt(
-    path: UrlString, options?: LoadLiteRtOptions): Promise<LiteRt> {
+    path: WasmModuleSource, options?: LoadLiteRtOptions): Promise<LiteRt> {
   if (hasGlobalLiteRtPromise()) {
     throw new Error('LiteRT is already loading / loaded.');
   }

@@ -14,7 +14,11 @@
  * limitations under the License.
  */
 
-import {createWasmLib} from '@litertjs/wasm-utils';
+import {
+  createWasmLib,
+  type FileLocator,
+  type WasmModuleFactory,
+} from '@litertjs/wasm-utils';
 
 import {LiteRt} from './litert_web';
 import {appendPathSegment, pathToString, UrlPath} from './url_path_utils';
@@ -24,6 +28,13 @@ const WASM_JS_FILE_NAME = 'litert_wasm_internal.js';
 const WASM_JS_COMPAT_FILE_NAME = 'litert_wasm_compat_internal.js';
 const WASM_JS_THREADED_FILE_NAME = 'litert_wasm_threaded_internal.js';
 const WASM_JS_JSPI_FILE_NAME = 'litert_wasm_jspi_internal.js';
+const WASM_MJS_FILE_NAME = 'litert_wasm_internal.mjs';
+const WASM_MJS_COMPAT_FILE_NAME = 'litert_wasm_compat_internal.mjs';
+const WASM_MJS_THREADED_FILE_NAME = 'litert_wasm_threaded_internal.mjs';
+const WASM_MJS_JSPI_FILE_NAME = 'litert_wasm_jspi_internal.mjs';
+
+export type WasmModuleSource = UrlPath|WasmModuleFactory;
+export type WasmLoaderType = 'script'|'module';
 
 /**
  * Options for loading LiteRT's Wasm module.
@@ -34,10 +45,18 @@ const WASM_JS_JSPI_FILE_NAME = 'litert_wasm_jspi_internal.js';
  * @property jspi Whether to load the JSPI version of the Wasm module. Defaults
  *     to false. Unused when specifying a .js file directly instead of a
  *     directory containing the Wasm files.
+ * @property wasmLoaderType Whether to load Emscripten's generated glue as a
+ *     classic script or as an ES module. Defaults to 'script'. When set to
+ *     'module' and a directory path is provided, LiteRT.js selects the
+ *     corresponding `.mjs` file.
+ * @property fileLocator File locator overrides passed to Emscripten's module
+ *     factory.
  **/
 export interface LoadOptions {
   threads?: boolean;
   jspi?: boolean;
+  wasmLoaderType?: WasmLoaderType;
+  fileLocator?: FileLocator;
 }
 
 /**
@@ -45,11 +64,60 @@ export interface LoadOptions {
  * global LiteRT instance.
  */
 export async function load(
-    path: UrlPath, options?: LoadOptions): Promise<LiteRt> {
-  const pathString = pathToString(path);
-  const isFullFilePath =
-      pathString.endsWith('.wasm') || pathString.endsWith('.js');
+    source: WasmModuleSource, options?: LoadOptions): Promise<LiteRt> {
+  if (typeof source === 'function') {
+    await validateLoadOptions(
+        options, /* isFullFilePath= */ true,
+        'the provided Wasm module factory');
+    return createWasmLib(LiteRt, {
+      fileLocator: options?.fileLocator,
+      moduleFactory: source,
+    });
+  }
 
+  const pathString = pathToString(source);
+  const isModule = options?.wasmLoaderType === 'module' ||
+      pathString.endsWith('.mjs');
+  const isFullFilePath = pathString.endsWith('.wasm') ||
+      pathString.endsWith('.js') || pathString.endsWith('.mjs');
+
+  const relaxedSimd =
+      await validateLoadOptions(options, isFullFilePath, pathString);
+  let fileName = isModule ? WASM_MJS_COMPAT_FILE_NAME : WASM_JS_COMPAT_FILE_NAME;
+  if (relaxedSimd) {
+    if (options?.threads) {
+      fileName =
+          isModule ? WASM_MJS_THREADED_FILE_NAME : WASM_JS_THREADED_FILE_NAME;
+    } else if (options?.jspi) {
+      fileName = isModule ? WASM_MJS_JSPI_FILE_NAME : WASM_JS_JSPI_FILE_NAME;
+    } else {
+      fileName = isModule ? WASM_MJS_FILE_NAME : WASM_JS_FILE_NAME;
+    }
+  }
+
+  let jsFilePath = source;
+  if (pathString.endsWith('.wasm')) {
+    throw new Error(
+        'Please load the `.js` file corresponding to the `.wasm` file, or ' +
+        'load the directory containing it.');
+  } else if (!pathString.endsWith('.js') && !pathString.endsWith('.mjs')) {
+    jsFilePath = appendPathSegment(source, fileName);
+  }
+
+  if (isModule) {
+    const wasmModuleFactory = await importWasmModuleFactory(jsFilePath);
+    return createWasmLib(LiteRt, {
+      fileLocator: options?.fileLocator,
+      moduleFactory: wasmModuleFactory,
+    });
+  }
+
+  return createWasmLib(LiteRt, jsFilePath, null, null, options?.fileLocator);
+}
+
+async function validateLoadOptions(
+    options: LoadOptions|undefined, isFullFilePath: boolean,
+    pathString: string): Promise<boolean> {
   const relaxedSimd = await supportsFeature('relaxedSimd');
   if (options?.threads) {
     if (options?.jspi) {
@@ -83,26 +151,39 @@ export async function load(
     }
     await throwIfFeatureNotSupported('jspi');
   }
+  return relaxedSimd;
+}
 
-  let fileName = WASM_JS_COMPAT_FILE_NAME;
-  if (relaxedSimd) {
-    if (options?.threads) {
-      fileName = WASM_JS_THREADED_FILE_NAME;
-    } else if (options?.jspi) {
-      fileName = WASM_JS_JSPI_FILE_NAME;
-    } else {
-      fileName = WASM_JS_FILE_NAME;
-    }
-  }
-
-  let jsFilePath = path;
-  if (pathString.endsWith('.wasm')) {
+async function importWasmModuleFactory(
+    jsFilePath: UrlPath): Promise<WasmModuleFactory> {
+  const moduleUrl = resolveModuleImportUrl(jsFilePath);
+  const wasmModule = await import(/* @vite-ignore */ moduleUrl);
+  if (typeof wasmModule.default !== 'function') {
     throw new Error(
-        'Please load the `.js` file corresponding to the `.wasm` file, or ' +
-        'load the directory containing it.');
-  } else if (!pathString.endsWith('.js')) {
-    jsFilePath = appendPathSegment(path, fileName);
+        `LiteRT Wasm ES module ${moduleUrl} must have a ` +
+        'default export module factory.');
   }
+  return wasmModule.default as WasmModuleFactory;
+}
 
-  return createWasmLib(LiteRt, jsFilePath);
+function resolveModuleImportUrl(jsFilePath: UrlPath): string {
+  const pathString = pathToString(jsFilePath);
+  const baseUrl = getResourceBaseUrl();
+  if (!baseUrl) return pathString;
+
+  try {
+    return new URL(pathString, baseUrl).href;
+  } catch {
+    return pathString;
+  }
+}
+
+function getResourceBaseUrl(): string|undefined {
+  if (typeof document !== 'undefined') {
+    return document.baseURI;
+  }
+  if (typeof location !== 'undefined') {
+    return location.href;
+  }
+  return undefined;
 }
