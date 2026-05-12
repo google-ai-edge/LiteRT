@@ -69,6 +69,9 @@ Expected<void> MkDir(absl::string_view path);
 // Get the parent directory of the given path.
 Expected<std::string> Parent(absl::string_view path);
 
+// Get the relative path of 'path' with respect to 'base'.
+Expected<std::string> Relative(absl::string_view path, absl::string_view base);
+
 Expected<void> RmDir(std::string path_to_remove);
 
 }  // namespace litert::internal
