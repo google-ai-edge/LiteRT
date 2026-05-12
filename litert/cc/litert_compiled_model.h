@@ -29,6 +29,7 @@
 
 #include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -1065,6 +1066,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                                    absl::Span<const int> dims) {
     LITERT_RETURN_IF_ERROR(env_.runtime->CompiledModelResizeInputTensor(
         Get(), signature_index, input_index, dims.data(), dims.size()));
+    resized_signatures_.insert(signature_index);
     return {};
   }
 
@@ -1110,6 +1112,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     LITERT_RETURN_IF_ERROR(
         env_.runtime->CompiledModelResizeInputTensorNonStrict(
             Get(), signature_index, input_index, dims.data(), dims.size()));
+    resized_signatures_.insert(signature_index);
     return {};
   }
 
@@ -1615,9 +1618,32 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     } else {
       LITERT_ASSIGN_OR_RETURN(size_t tensor_index,
                               FindOutputIndex(signature_index, tensor_name));
+
+      // 1. Try getting layouts WITHOUT allocating
       LITERT_ASSIGN_OR_RETURN(
           std::vector<Layout> runtime_layouts,
-          GetOutputTensorLayouts(signature_index, /*update_allocation=*/true));
+          GetOutputTensorLayouts(signature_index, /*update_allocation=*/false));
+
+      // 2. Check if shapes are valid (no dynamic -1 dimensions)
+      // 2. Force allocation if signature was explicitly resized OR has dynamic -1 shapes
+      bool needs_allocation = resized_signatures_.contains(signature_index);
+      if (!needs_allocation) {
+        for (int dim : runtime_layouts[tensor_index].Dimensions()) {
+          if (dim == -1) {
+            needs_allocation = true;
+            break;
+          }
+        }
+      }
+
+      // 3. Only force allocation if static shapes are missing
+      if (needs_allocation) {
+        LITERT_ASSIGN_OR_RETURN(
+            runtime_layouts,
+            GetOutputTensorLayouts(signature_index,
+                                   /*update_allocation=*/true));
+      }
+
       tensor_type = RankedTensorType(tensor_type.ElementType(),
                                      std::move(runtime_layouts[tensor_index]));
       LITERT_ASSIGN_OR_RETURN(
@@ -1914,6 +1940,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   internal::LiteRtOptionsPtr options_;
   absl::AnyInvocable<bool()> check_cancelled_func_;
   internal::BaseHandle<LiteRtModel> model_;
+  mutable absl::flat_hash_set<size_t> resized_signatures_;
 };
 
 }  // namespace litert
