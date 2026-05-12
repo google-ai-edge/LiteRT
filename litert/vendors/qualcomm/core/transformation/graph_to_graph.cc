@@ -239,27 +239,53 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
   Transform(validate_op_config, ops, tensor_pool, embedding_gemma,
             TransformEmbeddingGemma);
 
+  // Simplify masking
+  const std::vector<QnnOpCode> reshape_add_reshape = {
+      QnnOpCode::kReshape,
+      QnnOpCode::kElementWiseBinary,
+      QnnOpCode::kReshape,
+  };
+  Transform(validate_op_config, ops, tensor_pool, reshape_add_reshape,
+            SimplifyMaskingAdd);
+
   // Fast Vlm Optimization
   const std::vector<QnnOpCode> fast_vlm_mha_prefill = {
-      QnnOpCode::kElementWiseBinary,
+      QnnOpCode::kElementWiseBinary, // mul
       QnnOpCode::kReshape,
       QnnOpCode::kMatMul,
       QnnOpCode::kMatMul,
       QnnOpCode::kConcat,
-      QnnOpCode::kReshape,
-      QnnOpCode::kElementWiseBinary,
-      QnnOpCode::kReshape,
+      QnnOpCode::kConcat, // concat for add
+      QnnOpCode::kElementWiseBinary, // add
       QnnOpCode::kSoftmax,
       QnnOpCode::kStridedSlice,
       QnnOpCode::kStridedSlice,
       QnnOpCode::kMatMul,
       QnnOpCode::kMatMul,
-      QnnOpCode::kElementWiseBinary,
+      QnnOpCode::kElementWiseBinary, // add
       QnnOpCode::kReshape,
       QnnOpCode::kTranspose,
       QnnOpCode::kReshape};
   Transform(validate_op_config, ops, tensor_pool, fast_vlm_mha_prefill,
             OptimizeMHAFastVlmPrefill);
+
+  // This optimization can be applied on FastVlm decode and Kanana decode.
+  const std::vector<QnnOpCode> fast_vlm_mha_decode = {
+      QnnOpCode::kElementWiseBinary,  // mul
+      QnnOpCode::kReshape,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kConcat,
+      QnnOpCode::kElementWiseBinary,  // add
+      QnnOpCode::kSoftmax,
+      QnnOpCode::kStridedSlice,
+      QnnOpCode::kStridedSlice,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kElementWiseBinary,  // add
+      QnnOpCode::kReshape};
+  Transform(validate_op_config, ops, tensor_pool, fast_vlm_mha_decode,
+            OptimizeGQADecode);
 
   // Kv-swapped Fast Vlm Optimization
   const std::vector<QnnOpCode> kv_swapped_fastvlm_prefill = {
@@ -282,26 +308,6 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
       QnnOpCode::kReshape};
   Transform(validate_op_config, ops, tensor_pool, kv_swapped_fastvlm_prefill,
             OptimizeKvSwappedFastVlmPrefill);
-
-  // This optimization can be applied on FastVlm decode and Kanana decode.
-  const std::vector<QnnOpCode> fast_vlm_mha_decode = {
-      QnnOpCode::kElementWiseBinary,  // mul
-      QnnOpCode::kReshape,
-      QnnOpCode::kMatMul,
-      QnnOpCode::kMatMul,
-      QnnOpCode::kConcat,
-      QnnOpCode::kReshape,
-      QnnOpCode::kElementWiseBinary,  // add
-      QnnOpCode::kReshape,
-      QnnOpCode::kSoftmax,
-      QnnOpCode::kStridedSlice,
-      QnnOpCode::kStridedSlice,
-      QnnOpCode::kMatMul,
-      QnnOpCode::kMatMul,
-      QnnOpCode::kElementWiseBinary,  // add
-      QnnOpCode::kReshape};
-  Transform(validate_op_config, ops, tensor_pool, fast_vlm_mha_decode,
-            OptimizeMHAFastVlmDecode);
 
   // Attention Optimization
   const std::vector<QnnOpCode> attn = {
