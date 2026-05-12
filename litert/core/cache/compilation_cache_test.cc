@@ -14,12 +14,14 @@
 
 #include "litert/core/cache/compilation_cache.h"
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
 
 #include <gtest/gtest.h>
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/filesystem.h"
@@ -395,6 +397,82 @@ TEST(CompilationCacheTest, UnnamedModel_StoredInMemDirectory) {
        absl::StrCat(cache_key.config_hash, ".tflite")});
 
   EXPECT_TRUE(litert::internal::Exists(path));
+}
+
+TEST(CompilationCacheTest, BuildInventoryComplex) {
+  const std::string cache_root_path =
+      ::testing::TempDir() + "/BuildInventoryComplex";
+  LITERT_ABORT_IF_ERROR(litert::internal::MkDir(cache_root_path));
+  LITERT_ASSIGN_OR_ABORT(CompilationCache compilation_cache,
+                         CompilationCache::Create(cache_root_path));
+
+  LITERT_ASSIGN_OR_ABORT(std::unique_ptr<LiteRtModelT> model_1,
+                         LoadModelFromFile(litert::testing::GetTestFilePath(
+                             "simple_model.tflite")));
+
+  LITERT_ASSIGN_OR_ABORT(std::unique_ptr<LiteRtModelT> model_2,
+                         LoadModelFromFile(litert::testing::GetTestFilePath(
+                             "simple_add_dynamic_shape.tflite")));
+
+  std::string model_name = "model_a";
+
+  // 1. Model A, Content 1, Config 1
+  LITERT_ASSIGN_OR_ABORT(
+      CompilationCache::CacheKey key_a_c1_o1,
+      CompilationCache::GetModelHash(*model_1, GetTestOptions(),
+                                     GetTestCompilerPluginInfo()));
+  LITERT_ABORT_IF_ERROR(
+      compilation_cache.SaveModel(*model_1, key_a_c1_o1, model_name));
+
+  // 2. Model A, Content 1, Config 2
+  auto options_2 = GetTestOptions();
+  options_2.version.major++;
+  LITERT_ASSIGN_OR_ABORT(CompilationCache::CacheKey key_a_c1_o2,
+                         CompilationCache::GetModelHash(
+                             *model_1, options_2, GetTestCompilerPluginInfo()));
+  LITERT_ABORT_IF_ERROR(
+      compilation_cache.SaveModel(*model_1, key_a_c1_o2, model_name));
+
+  // 3. Model A, Content 2, Config 1
+  LITERT_ASSIGN_OR_ABORT(
+      CompilationCache::CacheKey key_a_c2_o1,
+      CompilationCache::GetModelHash(*model_2, GetTestOptions(),
+                                     GetTestCompilerPluginInfo()));
+  LITERT_ABORT_IF_ERROR(
+      compilation_cache.SaveModel(*model_2, key_a_c2_o1, model_name));
+
+  // 4. Unnamed Model, Content 1, Config 1
+  LITERT_ASSIGN_OR_ABORT(
+      CompilationCache::CacheKey key_unnamed,
+      CompilationCache::GetModelHash(*model_1, GetTestOptions(),
+                                     GetTestCompilerPluginInfo()));
+  LITERT_ABORT_IF_ERROR(compilation_cache.SaveModel(*model_1, key_unnamed, ""));
+
+  // Now build inventory
+  LITERT_ASSIGN_OR_ABORT(auto inventory, compilation_cache.BuildInventory());
+
+  ASSERT_EQ(inventory.size(), 4);
+
+  // Helper to find entry in inventory
+  auto find_entry = [&](uint64_t content_hash, uint64_t config_hash,
+                        absl::string_view model_id) {
+    for (const auto& entry : inventory) {
+      if (entry.content_hash == content_hash &&
+          entry.config_hash == config_hash && entry.model_id == model_id) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  EXPECT_TRUE(find_entry(key_a_c1_o1.content_hash, key_a_c1_o1.config_hash,
+                         model_name));
+  EXPECT_TRUE(find_entry(key_a_c1_o2.content_hash, key_a_c1_o2.config_hash,
+                         model_name));
+  EXPECT_TRUE(find_entry(key_a_c2_o1.content_hash, key_a_c2_o1.config_hash,
+                         model_name));
+  EXPECT_TRUE(
+      find_entry(key_unnamed.content_hash, key_unnamed.config_hash, "mem"));
 }
 
 }  // namespace litert::internal
