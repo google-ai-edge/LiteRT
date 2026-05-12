@@ -101,11 +101,11 @@
 #include "litert/runtime/tensor_identifier.h"
 #include "litert/runtime/tfl_utils.h"
 #if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-#include "litert/runtime/fabric/compiled_model_fabric_internal.h"
-#include "litert/runtime/fabric/litert_fabric_options.h"
 #include "third_party/odml/infra/fabric/runtime/tg_proto_converter.h"
 #include "third_party/odml/infra/fabric/runtime/transmission_graph.pb.h"
+#include "litert/runtime/fabric/compiled_model_fabric_internal.h"
 #include "litert/runtime/fabric/dispatch_runner_sb.h"
+#include "litert/runtime/fabric/litert_fabric_options.h"
 #endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 #include "weight_loader/external_weight_loader_litert.h"
 #include "tflite/converter/allocation.h"
@@ -817,6 +817,14 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
         dispatch_options.SetAllocBase(compiled_model->GetModelBase()));
     LITERT_RETURN_IF_ERROR(
         dispatch_options.SetAllocBaseFd(compiled_model->fb_model_fd_));
+#if !defined(LITERT_DISABLE_NPU)
+    if (compiled_model->apply_plugins_result_.has_value()) {
+      for (const auto& [name, handle] :
+           compiled_model->apply_plugins_result_->jit_executable_handles) {
+        LITERT_RETURN_IF_ERROR(dispatch_options.AddExecHandle(name, handle));
+      }
+    }
+#endif  // !defined(LITERT_DISABLE_NPU)
     LITERT_RETURN_IF_ERROR(scoped_modifier.Append(std::move(dispatch_options)));
   }
 
@@ -1000,8 +1008,21 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
   }
   // Cache miss, we need to continue with JIT compilation.
   if (maybe_compiled_plugins.HasValue()) {
-    TryApplyPluginsImpl(&model, hw_accelerators, maybe_compiled_plugins.Value(),
-                        &need_reserialization);
+    auto jit_result = litert::internal::ApplyPlugins(
+        &model, hw_accelerators, maybe_compiled_plugins.Value(),
+        &need_reserialization);
+    if (!jit_result) {
+      LITERT_LOG(GetLogSeverityForJitCompilationFailure(hw_accelerators),
+                 "Failed to apply compiler plugins: %s",
+                 jit_result.Error().Message().c_str());
+    } else {
+      LITERT_LOG(
+          LITERT_INFO, "%d compiler plugins were applied successfully: %s",
+          jit_result->num_applied_plugins, jit_result->success_message.c_str());
+      LITERT_LOG(LITERT_WARNING, "Plugin errs: %s",
+                 jit_result->error_message.c_str());
+      apply_plugins_result_ = std::move(*jit_result);
+    }
     // Store the compiler plugins to a member variable to postpone its
     // destruction and reduce initialization time.
     maybe_compiled_plugins_ = std::move(maybe_compiled_plugins.Value());
@@ -1012,10 +1033,20 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
   LITERT_LOG(LITERT_INFO, "JIT compilation changed model, reserializing...");
 
   LITERT_ASSIGN_OR_RETURN(auto serialized, SerializeModel(std::move(model)));
+
+  bool has_jit_handles = apply_plugins_result_.has_value() &&
+                         !apply_plugins_result_->jit_executable_handles.empty();
+
   if (cache_key.has_value()) {
-    LITERT_LOG(LITERT_DEBUG, "Saving JIT compiled model to cache.");
-    LITERT_RETURN_IF_ERROR(compilation_cache_.value().SaveModel(
-        serialized, cache_key.value(), model_name));
+    if (!has_jit_handles) {
+      LITERT_LOG(LITERT_DEBUG, "Saving JIT compiled model to cache.");
+      LITERT_RETURN_IF_ERROR(compilation_cache_.value().SaveModel(
+          serialized, cache_key.value(), model_name));
+    } else {
+      LITERT_LOG(
+          LITERT_INFO,
+          "JIT execution handles detected. Disabling JIT model caching.");
+    }
   }
 
   model_buf_ = std::move(serialized);
