@@ -53,13 +53,10 @@ Intel Core Ultra Series 3 | NPU5010 | Panther Lake (PTL) | Linux, Windows
 > model on NPU hardware. Pure AOT-build machines can skip it.
 
 > **Note:** `ai-edge-litert-sdk-intel-nightly` pins the matching OpenVINO
-> nightly wheel via a direct URL in `install_requires` (one per supported Python
-> × OS combo, selected by pip at install time via PEP 508 env markers). The
-> plugin and dispatch libraries must be ABI-compatible with this exact OpenVINO
-> build, so the wheel URL is pinned to the same build number as the archive
-> fetched at compile time; a plain `pip install
-> ai-edge-litert-sdk-intel-nightly` is sufficient — no `--extra-index-url`
-> required.
+> nightly wheel by PEP 440 version (e.g. `openvino==2026.2.0.dev20260506`), so
+> pip needs `--extra-index-url
+> https://storage.openvinotoolkit.org/simple/wheels/nightly` to locate it — see
+> the install command below.
 >
 > The SDK nightly also fetches the NPU compiler shared library
 > (`libopenvino_intel_npu_compiler.so` / `.dll`) from the matching toolkit
@@ -80,8 +77,13 @@ See [Linux NPU Setup](#linux-npu-setup) or
 ### 2. Install the pip Package
 
 ```bash
-pip install ai-edge-litert-nightly ai-edge-litert-sdk-intel-nightly
+pip install --pre \
+    --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly \
+    ai-edge-litert-nightly ai-edge-litert-sdk-intel-nightly
 ```
+
+The `--extra-index-url` lets pip resolve the pinned `openvino` nightly wheel
+from OpenVINO's index alongside packages on PyPI.
 
 ### 3. Verify Installation
 

@@ -49,16 +49,19 @@ IS_X86_ARCHITECTURE = platform.machine() in ('x86_64', 'AMD64', 'i386', 'i686')
 # --- Configuration for OpenVINO NPU Compiler Download ---
 #
 # Must match the OpenVINO build pinned in third_party/intel_openvino/
-# openvino.bzl. That workspace file pins the OpenVINO SDK used to compile the
-# Intel OV compiler plugin and dispatch library at build time; this file pins
-# the OpenVINO nightly archive that provides the NPU compiler shared library
-# fetched at pip install time, and the `openvino` PyPI wheel referenced by
-# install_requires below. All three must point at the same commit. OpenVINO's
-# build number (the numeric segment in `2026.2.0-21820-<commit>/`) uniquely
-# identifies a build: it appears both in the toolkit archive directory and as
-# the wheel filename's build tag (the `-21820-` between version and py-tag).
-# ci/check_openvino_version_sync.py enforces this across openvino.bzl and
-# this file.
+# openvino.bzl. That workspace file pins the OpenVINO SDK used to compile
+# the Intel OV compiler plugin and dispatch library at build time; the
+# archive URL below pins the matching toolkit build from which we extract
+# the NPU compiler shared library at pip install time. OpenVINO's build
+# number (the numeric segment in `2026.2.0-21820-<commit>/`) uniquely
+# identifies a build — ci/check_openvino_version_sync.py enforces that
+# this file and openvino.bzl pin the same one.
+#
+# install_requires pins the matching PyPI `openvino` wheel by PEP 440
+# version string (date-stamped, e.g. `2026.2.0.dev20260506`). PyPI does
+# not allow direct-URL dependencies in hosted packages, so users need
+# `--extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly`
+# at install time to locate the nightly wheel.
 # LINT.IfChange(wheel_openvino_sdk_version)
 _OV_BUILD_NUMBER = '21820'
 _OV_COMMIT = '9a25caa5a15'
@@ -67,12 +70,6 @@ _OV_ARCHIVE_DIR = f'2026.2.0-{_OV_BUILD_NUMBER}-{_OV_COMMIT}'
 _OV_BASE_URL = (
     'https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly'
     f'/{_OV_ARCHIVE_DIR}'
-)
-# PyPI nightly wheel index used for install_requires direct URLs; lets a plain
-# `pip install ai-edge-litert-sdk-intel-nightly` pull the matching openvino
-# wheel without --extra-index-url.
-_OV_WHEEL_BASE_URL = (
-    'https://storage.openvinotoolkit.org/wheels/nightly/openvino'
 )
 # LINT.ThenChange(
 #   ../../../../../third_party/intel_openvino/openvino.bzl:openvino_packages,
@@ -132,70 +129,6 @@ _ARCHIVES = {
         'members': _WINDOWS_MEMBERS,
     },
 }
-
-# Pin the `openvino` PyPI wheel to the exact nightly build that matches
-# _OV_ARCHIVE_DIR. One direct URL per supported (python, os); pip picks the
-# right one via the PEP 508 environment marker.
-# Wheel filename schema at _OV_WHEEL_BASE_URL:
-#   openvino-<pep440>-<build>-<py>-<abi>-<plat>.whl
-# Linux wheels use manylinux2014_x86_64, Windows uses win_amd64.
-_OV_WHEEL_TARGETS = (
-    # (py_tag, abi_tag, platform_tag, env_marker)
-    (
-        'cp310',
-        'cp310',
-        'manylinux_2_28_x86_64',
-        (
-            'python_version == "3.10" and sys_platform == "linux" and'
-            ' platform_machine == "x86_64"'
-        ),
-    ),
-    (
-        'cp311',
-        'cp311',
-        'manylinux_2_28_x86_64',
-        (
-            'python_version == "3.11" and sys_platform == "linux" and'
-            ' platform_machine == "x86_64"'
-        ),
-    ),
-    (
-        'cp312',
-        'cp312',
-        'manylinux_2_28_x86_64',
-        (
-            'python_version == "3.12" and sys_platform == "linux" and'
-            ' platform_machine == "x86_64"'
-        ),
-    ),
-    (
-        'cp313',
-        'cp313',
-        'manylinux_2_28_x86_64',
-        (
-            'python_version == "3.13" and sys_platform == "linux" and'
-            ' platform_machine == "x86_64"'
-        ),
-    ),
-    (
-        'cp311',
-        'cp311',
-        'win_amd64',
-        'python_version == "3.11" and sys_platform == "win32"',
-    ),
-)
-
-
-def _openvino_install_requires():
-  reqs = []
-  for py_tag, abi_tag, plat_tag, marker in _OV_WHEEL_TARGETS:
-    wheel = (
-        f'openvino-{_OV_PEP440_VERSION}-{_OV_BUILD_NUMBER}'
-        f'-{py_tag}-{abi_tag}-{plat_tag}.whl'
-    )
-    reqs.append(f'openvino @ {_OV_WHEEL_BASE_URL}/{wheel} ; {marker}')
-  return reqs
-
 
 _TARGET_DIR = 'ai_edge_litert_sdk_intel/data'
 
@@ -468,7 +401,7 @@ setuptools.setup(
     packages=['ai_edge_litert_sdk_intel'],
     package_dir={'ai_edge_litert_sdk_intel': 'ai_edge_litert_sdk_intel'},
     python_requires='>=3.10',
-    install_requires=_openvino_install_requires(),
+    install_requires=[f'openvino=={_OV_PEP440_VERSION}'],
     cmdclass={
         'build_py': CustomBuildPy,
     },

@@ -94,7 +94,7 @@ function install_sdk {
   SKIP_SDK_DOWNLOAD="true" ${PYTHON_BIN} -m pip install ${mtk_dist_pkg?} --ignore-installed
 
   local intel_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_intel*.tar.gz)"
-  ${PYTHON_BIN} -m pip install ${intel_dist_pkg?} --ignore-installed
+  ${PYTHON_BIN} -m pip install --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly ${intel_dist_pkg?} --ignore-installed
 
   echo
 }
