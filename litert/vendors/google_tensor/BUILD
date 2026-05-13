@@ -49,7 +49,6 @@ litert_lib(
     ungrte = False,
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/core:dynamic_loading",
@@ -100,7 +99,6 @@ litert_lib(
         ":edgetpu_compiler_api",
         ":edgetpu_compiler_options_cc_proto",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -115,7 +113,6 @@ litert_lib(
     hdrs = ["adapter.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
     ] + select({
         "//litert:android": [":adapter_odc"],

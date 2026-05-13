@@ -15,6 +15,7 @@
 load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "make_rpaths")
 
 package(
@@ -59,21 +60,23 @@ litert_dynamic_lib(
     ],
     deps = [
         ":google_tensor_options_cc_proto",
+        "//litert/c:litert_builder",
         "//litert/c:litert_common",
+        "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
         "//litert/c:litert_op_options",
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
-        "//litert/c/internal:litert_logging_helper",
+        "//litert/c/internal:litert_logging_helper_with_compiler_context",
         "//litert/c/options:litert_google_tensor_options",
+        "//litert/c/options:litert_google_tensor_options_type",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/internal:litert_context_wrapper",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_opaque_options_wrapper",
         "//litert/cc/internal:litert_options_wrapper",
         "//litert/cc/options:litert_google_tensor_options",
+        "//litert/compiler/cc:litert_model",
         "//litert/vendors/google_tensor:adapter",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings",
@@ -146,4 +149,15 @@ cc_proto_library(
     name = "google_tensor_options_cc_proto",
     visibility = ["//platforms/darwinn/compiler:__subpackages__"],
     deps = [":google_tensor_options_proto"],
+)
+
+sh_test(
+    name = "google_tensor_compiler_plugin_so_symbol_test",
+    srcs = ["//litert/test:litert_compiler_plugin_symbol_test.sh"],
+    args = [
+        "$(location :google_tensor_compiler_plugin_so)",
+    ],
+    data = [
+        ":google_tensor_compiler_plugin_so",
+    ],
 )
