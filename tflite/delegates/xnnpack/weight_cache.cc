@@ -95,7 +95,8 @@ bool CheckFingerprints(const cache::schema::BufferList* buffer_list) {
       std::memcpy(&fingerprint, &cache_fingerprint, sizeof(fingerprint));
       XNNPACK_RETURN_CHECK(
           xnn_check_fingerprint(fingerprint) == xnn_status_success,
-          "fingerprint (id: 0x%x) could not be matched", fingerprint.id);
+          "fingerprint %s could not be matched",
+          xnn_fingerprint_id_to_string_u32(fingerprint.id));
     }
   }
   return true;
@@ -242,8 +243,8 @@ BufferLocation WeightCacheBuilder::Append(PackIdentifier pack_id,
   const xnn_fingerprint* fingerprint = xnn_get_fingerprint(fingerprint_id);
   XNNPACK_ABORT_CHECK(fingerprint,
                       "XNNPack weight cache: could not find a fingerprint with "
-                      "id 0x%x when appending a buffer to the cache file.",
-                      fingerprint_id);
+                      "id %s when appending a buffer to the cache file.",
+                      xnn_fingerprint_id_to_string_u32(fingerprint_id));
   uint64_t fingerprint_value;
   static_assert(sizeof(fingerprint_value) == sizeof(*fingerprint));
   std::memcpy(&fingerprint_value, fingerprint, sizeof(*fingerprint));
