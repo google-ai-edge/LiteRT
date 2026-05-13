@@ -68,3 +68,19 @@ console.log(result.toTypedArray());
 // Clean up the result tensor.
 result.delete();
 ```
+
+LiteRT.js can also load Emscripten ES module glue when the package includes the
+matching `.mjs` files:
+
+```typescript
+await loadLiteRt('/path/to/wasm/directory/', {wasmLoaderType: 'module'});
+```
+
+If your bundler or runtime needs a static ESM import, pass the Emscripten module
+factory directly:
+
+```typescript
+import createLiteRtWasm from '@litertjs/core/wasm/litert_wasm_internal.mjs';
+
+await loadLiteRt(createLiteRtWasm);
+```
