@@ -113,7 +113,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
   const int num_rows = SizeOfDimension(value, 0);
   TF_LITE_ENSURE(context, num_rows != 0);
-  const int row_bytes = value->bytes / num_rows;
+  const size_t row_bytes = value->bytes / num_rows;
   void* pointer = nullptr;
   DynamicBuffer buf;
 
@@ -130,15 +130,17 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
       if (output->type == kTfLiteString) {
         buf.AddString(nullptr, 0);
       } else {
-        memset(output->data.raw + i * row_bytes, 0, row_bytes);
+        memset(output->data.raw + static_cast<size_t>(i) * row_bytes, 0,
+               row_bytes);
       }
       hits->data.uint8[i] = 0;
     } else {
       if (output->type == kTfLiteString) {
         buf.AddString(GetString(value, idx));
       } else {
-        memcpy(output->data.raw + i * row_bytes,
-               value->data.raw + idx * row_bytes, row_bytes);
+        memcpy(output->data.raw + static_cast<size_t>(i) * row_bytes,
+               value->data.raw + static_cast<size_t>(idx) * row_bytes,
+               row_bytes);
       }
       hits->data.uint8[i] = 1;
     }

@@ -125,7 +125,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
 void FinalizeAggregation(TfLiteCombinerType combiner, int num_elements,
                          float current_total_weight,
-                         float current_squares_weight, int embedding_size,
+                         float current_squares_weight, size_t embedding_size,
                          float* output) {
   if (combiner != kTfLiteCombinerTypeSum && num_elements > 0) {
     float multiplier = 1.0;
@@ -139,7 +139,7 @@ void FinalizeAggregation(TfLiteCombinerType combiner, int num_elements,
       default:
         break;
     }
-    for (int k = 0; k < embedding_size; k++) {
+    for (size_t k = 0; k < embedding_size; k++) {
       output[k] /= multiplier;
     }
   }
@@ -212,7 +212,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   std::fill_n(output_ptr, output_size.Value(), 0.0f);
 
   // Keep track of the current bucket for aggregation/combination.
-  int current_output_offset = 0;
+  size_t current_output_offset = 0;
   float current_total_weight = 0.0;
   float current_squares_weight = 0.0;
   int num_elements = 0;
@@ -228,14 +228,14 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
     }
 
     // Check where we need to aggregate.
-    const int example_indices_offset = i * lookup_rank;
-    int output_bucket = 0;
-    int stride = 1;
+    const size_t example_indices_offset = static_cast<size_t>(i) * lookup_rank;
+    size_t output_bucket = 0;
+    size_t stride = 1;
     for (int k = (lookup_rank - 1) - 1; k >= 0; k--) {
       output_bucket += indices->data.i32[example_indices_offset + k] * stride;
       stride *= dense_shape->data.i32[k];
     }
-    const int output_offset = output_bucket * embedding_size.Value();
+    const size_t output_offset = output_bucket * embedding_size.Value();
 
     // If we are in a new aggregation bucket and the combiner is not the sum,
     // go back and finalize the result of the previous bucket.
@@ -253,15 +253,14 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
     // Add element to aggregation.
     ++num_elements;
-    const int example_embedding_offset = idx * embedding_size.Value();
+    const size_t example_embedding_offset =
+        static_cast<size_t>(idx) * embedding_size.Value();
     const float w = weights_ptr[i];
     current_squares_weight += w * w;
     current_total_weight += w;
-    for (int k = 0; k < embedding_size; k++) {
+    for (size_t k = 0; k < embedding_size.Value(); k++) {
       // only index if indices are valid
-      if (current_output_offset + k < 0) continue;
-      if (current_output_offset + k >= output_size) continue;
-      if (example_embedding_offset + k < 0) continue;
+      if (current_output_offset + k >= output_size.Value()) continue;
       if (example_embedding_offset + k >= values_size) continue;
       output_ptr[current_output_offset + k] +=
           value_ptr[example_embedding_offset + k] * w;
