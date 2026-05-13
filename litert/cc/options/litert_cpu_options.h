@@ -18,9 +18,9 @@
 #include <cstdint>
 #include <memory>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_cpu_options.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
@@ -100,14 +100,14 @@ class CpuOptions {
   }
 
   /// @brief Gets the XNNPack weight cache file path.
-  Expected<absl::string_view> GetXNNPackWeightCachePath() const {
+  Expected<StringView> GetXNNPackWeightCachePath() const {
     const char* path;
     auto s = LrtGetCpuOptionsXnnPackWeightCachePath(options_.get(), &path);
     if (s == kLiteRtStatusErrorNotFound) {
-      return absl::string_view();
+      return StringView();
     }
     LITERT_RETURN_IF_ERROR(s);
-    return absl::NullSafeStringView(path);
+    return internal::NullSafeStringView(path);
   }
 
   /// @brief Sets the XNNPack weight cache file descriptor.

@@ -177,15 +177,12 @@ cc_test(
 )
 
 cc_library(
-    name = "dispatch_delegate",
+    name = "dispatch_delegate_kernel",
     srcs = [
-        "dispatch_delegate.cc",
         "dispatch_delegate_kernel.cc",
     ],
     hdrs = [
         "dispatch_delegate_kernel.h",
-        "//litert/c/internal:litert_dispatch_delegate.h",
-        "//litert/cc/internal:litert_dispatch_delegate.h",
     ],
     copts = litert_metal_opts(),
     deps = [
@@ -204,7 +201,6 @@ cc_library(
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_tflite_error_status_builder",
-        "//litert/core:build_stamp",
         "//litert/core:dispatch_op_schema",
         "//litert/runtime:external_litert_buffer_context",
         "//litert/runtime:metrics",
@@ -224,6 +220,39 @@ cc_library(
         "@com_google_absl//absl/container:node_hash_map",
         "@com_google_absl//absl/container:node_hash_set",
         "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_library(
+    name = "dispatch_delegate",
+    srcs = [
+        "dispatch_delegate.cc",
+    ],
+    hdrs = [
+        "//litert/c/internal:litert_dispatch_delegate.h",
+        "//litert/cc/internal:litert_dispatch_delegate.h",
+    ],
+    copts = litert_metal_opts(),
+    deps = [
+        ":dispatch",
+        ":dispatch_delegate_kernel",
+        "//litert/c:litert_common",
+        "//litert/c:litert_metrics",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_requirements",
+        "//litert/c/internal:litert_dispatch_headers",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/core:build_stamp",
+        "//litert/runtime:metrics",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "//tflite/c:c_api",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/delegates/utils:simple_opaque_delegate",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
