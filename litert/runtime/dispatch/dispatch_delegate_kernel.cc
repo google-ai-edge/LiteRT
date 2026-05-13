@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iterator>
+#include <memory>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -26,6 +27,7 @@
 #include <vector>
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
+#include "absl/memory/memory.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/container/node_hash_set.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
@@ -105,9 +107,11 @@ DispatchDelegateKernel::~DispatchDelegateKernel() {
   }
 }
 
-Expected<DispatchDelegateKernel::Ptr> DispatchDelegateKernel::Create(
-    std::string&& graph_name, LiteRtEnvironmentOptions environment_options,
-    LiteRtOptions options, LiteRtDispatchDeviceContext device_context) {
+Expected<std::unique_ptr<DispatchDelegateKernel>>
+DispatchDelegateKernel::Create(std::string&& graph_name,
+                               LiteRtEnvironmentOptions environment_options,
+                               LiteRtOptions options,
+                               LiteRtDispatchDeviceContext device_context) {
   int capabilities;
   if (auto status = LiteRtDispatchGetCapabilities(&capabilities);
       status != kLiteRtStatusOk) {
@@ -121,9 +125,9 @@ Expected<DispatchDelegateKernel::Ptr> DispatchDelegateKernel::Create(
     LITERT_LOG(LITERT_INFO, "Found async dispatch capabilities");
   }
 
-  return Ptr(new DispatchDelegateKernel(environment_options, options,
-                                        std::move(graph_name), device_context,
-                                        async_dispatch));
+  return absl::WrapUnique(new DispatchDelegateKernel(
+      environment_options, options, std::move(graph_name), device_context,
+      async_dispatch));
 }
 
 Expected<const void*> DispatchDelegateKernel::FindAllocBase() const {

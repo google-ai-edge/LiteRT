@@ -42,14 +42,11 @@ namespace litert::internal {
 class DispatchDelegateKernel
     : public tflite::SimpleOpaqueDelegateKernelInterface {
  public:
-  using Ptr = std::unique_ptr<tflite::SimpleOpaqueDelegateKernelInterface>;
-
   ~DispatchDelegateKernel() override;
 
-  static Expected<Ptr> Create(std::string&& graph_name,
-                              LiteRtEnvironmentOptions environment_options,
-                              LiteRtOptions options,
-                              LiteRtDispatchDeviceContext device_context);
+  static Expected<std::unique_ptr<DispatchDelegateKernel>> Create(
+      std::string&& graph_name, LiteRtEnvironmentOptions environment_options,
+      LiteRtOptions options, LiteRtDispatchDeviceContext device_context);
 
   TfLiteStatus Init(TfLiteOpaqueContext* context,
                     const TfLiteOpaqueDelegateParams* params) override;
