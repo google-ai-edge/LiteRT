@@ -175,6 +175,7 @@ cc_library(
         "//litert:litert_public",
     ],
     deps = [
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
@@ -254,6 +255,7 @@ cc_library(
     deps = [
         ":litert_extended_model",
         ":litert_op_options",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
@@ -333,6 +335,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_detail",
@@ -362,6 +365,7 @@ cc_library(
     name = "litert_opaque_options",
     hdrs = ["//litert/cc:litert_opaque_options.h"],
     deps = [
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -455,6 +459,7 @@ cc_library(
     deps = [
         ":litert_environment",
         ":litert_event",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -539,6 +544,7 @@ cc_library(
     hdrs = ["//litert/cc:litert_environment.h"],
     deps = [
         "//litert/cc:litert_any",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_common",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
@@ -593,6 +599,7 @@ cc_library(
         ":litert_profiler",
         ":litert_tensor_buffer",
         "//litert/c/internal:litert_scheduling_info",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
@@ -711,6 +718,7 @@ cc_library(
         "//litert/c/options:litert_qualcomm_options",
         "//litert/c/options:litert_runtime_options",
         "//litert/c/options:litert_samsung_options",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",

@@ -88,6 +88,7 @@ cc_library(
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c:litert_webgpu_types",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_common",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_event",
@@ -147,6 +148,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_api_types",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -360,6 +362,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -409,6 +412,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_ranked_tensor_type",
         "@com_google_absl//absl/container:inlined_vector",
@@ -490,6 +494,7 @@ cc_library(
         "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
@@ -691,6 +696,7 @@ cc_library(
         "scoped_file_win.h",
     ],
     deps = [
+        "//litert/cc:litert_api_types",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
@@ -703,6 +709,7 @@ cc_library(
     hdrs = ["scoped_weight_source.h"],
     deps = [
         ":scoped_file",
+        "//litert/cc:litert_api_types",
         "@com_google_absl//absl/container:flat_hash_map",
     ],
 )
@@ -826,6 +833,7 @@ cc_library(
         "//litert/c:litert_webgpu_types",
         "//litert/c/internal:litert_runtime_c_api",
         "//litert/c/internal:litert_scheduling_info",
+        "//litert/cc:litert_api_types",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:die_if_null",
     ] + select({
@@ -865,6 +873,7 @@ cc_library(
         "//litert/c:litert_webgpu_types",
         "//litert/c/internal:litert_runtime_c_api",
         "//litert/c/internal:litert_scheduling_info",
+        "//litert/cc:litert_api_types",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:die_if_null",
     ],
