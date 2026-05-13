@@ -21,13 +21,12 @@
 #include <utility>
 #include <vector>
 
-#include "absl/container/inlined_vector.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 
@@ -45,12 +44,12 @@ namespace litert {
 /// @brief Holds information about a tensor's type and dimensions for matching.
 struct TensorTypeInfo {
   std::optional<ElementType> element_type = std::nullopt;
-  std::optional<absl::InlinedVector<int32_t, 4>> dims = std::nullopt;
+  std::optional<SmallVector<int32_t, 4>> dims = std::nullopt;
 
   explicit TensorTypeInfo(ElementType element_type)
       : element_type(element_type) {}
-  explicit TensorTypeInfo(absl::InlinedVector<int32_t, 4> dims) : dims(dims) {}
-  TensorTypeInfo(ElementType element_type, absl::InlinedVector<int32_t, 4> dims)
+  explicit TensorTypeInfo(SmallVector<int32_t, 4> dims) : dims(dims) {}
+  TensorTypeInfo(ElementType element_type, SmallVector<int32_t, 4> dims)
       : element_type(element_type), dims(dims) {}
 };
 
@@ -84,7 +83,7 @@ bool MatchOpType(
 /// @param expected_data The expected weight data.
 /// @return `true` if the tensor's weights match the expected data.
 template <typename T>
-bool MatchWeights(const Tensor& tensor, absl::Span<const T> expected_data) {
+bool MatchWeights(const Tensor& tensor, Span<const T> expected_data) {
   auto weights = tensor.WeightsData<T>();
   return weights.HasValue() && *weights == expected_data;
 }
@@ -108,8 +107,7 @@ bool MatchUses(const Tensor& tensor, const std::vector<UseInfo>& expected_uses,
 namespace internal::model_predicates_detail {
 
 template <typename T>
-bool Any(absl::Span<const T> vals,
-         const std::function<bool(const T&)>& unary_pred) {
+bool Any(Span<const T> vals, const std::function<bool(const T&)>& unary_pred) {
   for (const auto& val : vals) {
     if (unary_pred(val)) {
       return true;
@@ -142,7 +140,7 @@ inline bool MatchRankedTensorType(const RankedTensorType& tensor_type,
 
   if (expected.dims.has_value()) {
     auto actual_dims = tensor_type.Layout().Dimensions();
-    auto expected_dims = absl::MakeConstSpan(expected.dims.value());
+    auto expected_dims = internal::MakeLiteRtConstSpan(expected.dims.value());
     return AllZip(actual_dims, expected_dims,
                   [](auto l, auto r) -> bool { return l == r; });
   }
@@ -165,11 +163,12 @@ inline bool MatchOpType(
     return MatchRankedTensorType(*actual_ranked_tensor_type, expected.value());
   };
 
-  const bool inputs_match = AllZip(absl::MakeConstSpan(op.Inputs()),
-                                   absl::MakeConstSpan(expected_inputs), match);
+  const bool inputs_match =
+      AllZip(internal::MakeLiteRtConstSpan(op.Inputs()),
+             internal::MakeLiteRtConstSpan(expected_inputs), match);
   const bool outputs_match =
-      AllZip(absl::MakeConstSpan(op.Outputs()),
-             absl::MakeConstSpan(expected_outputs), match);
+      AllZip(internal::MakeLiteRtConstSpan(op.Outputs()),
+             internal::MakeLiteRtConstSpan(expected_outputs), match);
   return inputs_match && outputs_match;
 }
 
