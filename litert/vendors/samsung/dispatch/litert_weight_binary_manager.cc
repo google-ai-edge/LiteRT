@@ -16,6 +16,7 @@
 #include "litert/vendors/samsung/dispatch/litert_weight_binary_manager.h"
 
 #include <unistd.h>
+#include <cstring>
 
 #include "litert/c/internal/litert_logging.h"
 
@@ -35,7 +36,7 @@ WeightBinaryManager::~WeightBinaryManager() {
 }
 
 // Returns cached buffer if exists, otherwise creates new (from file-opened fd)
-litert::Expected<EnnBufferPtr> WeightBinaryManager::Acquire(
+litert::Expected<EnnBufferPtr> litert::samsung::WeightBinaryManager::Acquire(
     const std::string& signature, int fd, int64_t offset, size_t size) {
   std::lock_guard<std::mutex> lock(mutex_);
 
@@ -108,6 +109,44 @@ void WeightBinaryManager::ClearAll() {
     }
   }
   entries_.clear();
+}
+
+litert::Expected<EnnBufferPtr> WeightBinaryManager::Acquire(
+    const std::string& signature, const void* address, size_t size) {
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  // Check cache first
+  auto it = std::find_if(
+      entries_.begin(), entries_.end(),
+      [&](const Entry& e) { return e.signature == signature; });
+
+  if (it != entries_.end()) {
+    it->ref_count++;
+    LITERT_LOG(LITERT_VERBOSE, "WeightBinaryManager: cache hit - %s",
+               signature.c_str());
+    return it->buffer;
+  }
+
+  // Cache miss - create new buffer
+  EnnBufferPtr buffer;
+  if (enn_manager_->Api().EnnCreateBufferCache(size, &buffer) != ENN_RET_SUCCESS) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Failed to create weight buffer");
+  }
+
+  // Copy data from memory address into buffer
+  if (address == nullptr) {
+    enn_manager_->Api().EnnReleaseBuffer(buffer);
+    return litert::Error(kLiteRtStatusErrorInvalidArgument,
+                         "Null address provided for weight acquisition");
+  }
+  std::memcpy(buffer->va, address, size);
+
+  entries_.push_back({signature, std::move(buffer), 1});
+  LITERT_LOG(LITERT_VERBOSE, "WeightBinaryManager: created from memory - %s",
+             signature.c_str());
+
+  return entries_.back().buffer;
 }
 
 }  // namespace litert::samsung

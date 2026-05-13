@@ -38,6 +38,9 @@ class WeightBinaryManager {
   // Returns cached buffer if exists, otherwise creates new (from file-opened fd)
   litert::Expected<EnnBufferPtr> Acquire(const std::string& signature,
                                           int fd, int64_t offset, size_t size);
+  // Acquire from memory address without file descriptor
+  litert::Expected<EnnBufferPtr> Acquire(const std::string& signature,
+                                          const void* address, size_t size);
 
   // Decrements ref count
   litert::Expected<void> Release(const std::string& signature);

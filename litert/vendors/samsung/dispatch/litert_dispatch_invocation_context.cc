@@ -222,14 +222,6 @@ LiteRtDispatchInvocationContextT::Create(
 
   // Load model based on condition
   if (load_info.has_valid_header && load_info.use_external_weights) {
-    if (load_info.fd < 0) {
-      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                           "Requires fd for external weights, but fd is not available.");
-    }
-
-    LITERT_LOG(LITERT_SILENT, "File descriptor: %d", load_info.fd);
-    LITERT_LOG(LITERT_SILENT, "Model offset: %u, Model size: %u", load_info.model_offset, load_info.model_size);
-
     auto& weight_mgr = litert::samsung::WeightBinaryManager::GetInstance(enn_manager);
     std::vector<EnnBufferPtr> weight_buffers;
 
@@ -246,19 +238,35 @@ LiteRtDispatchInvocationContextT::Create(
         size = load_info.separated_weights[i].end_offset -
                load_info.separated_weights[i].start_offset;
       }
-      auto buffer = weight_mgr.Acquire(sig, load_info.fd, offset, size);
+      litert::Expected<EnnBufferPtr> buffer;
+      if (load_info.fd >= 0) {
+        buffer = weight_mgr.Acquire(sig, load_info.fd, offset, size);
+      } else {
+        const void* addr = static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr) + offset;
+        buffer = weight_mgr.Acquire(sig, addr, size);
+      }
+
       if (!buffer) {
         return buffer.Error();
       }
       weight_buffers.push_back(*buffer);
       signatures.push_back(sig);
     }
-
-    if (enn_manager->Api().EnnOpenModelWithFileOpenFdWeight(
-            load_info.fd, load_info.model_size, load_info.model_offset,
-            &weight_buffers[0], weight_buffers.size(), &model_id) != ENN_RET_SUCCESS)
-      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                           "Failed to load model from fd with weights");
+    if (load_info.fd >= 0) {
+      if (enn_manager->Api().EnnOpenModelWithFileOpenFdWeight(
+              load_info.fd, load_info.model_size, load_info.model_offset,
+              &weight_buffers[0], weight_buffers.size(), &model_id) != ENN_RET_SUCCESS)
+        return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                             "Failed to load model from fd with weights");
+    } else {
+      const void* model_addr = static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr) +
+                               load_info.model_offset;
+      if (enn_manager->Api().EnnOpenModelFromMemoryWithWeight(
+              reinterpret_cast<const char*>(model_addr), load_info.model_size,
+              &weight_buffers[0], weight_buffers.size(), &model_id) != ENN_RET_SUCCESS)
+        return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                             "Failed to load model from memory with weights");
+    }
   } else {
     if (exec_bytecode_buffer->fd >= 0) {
       LITERT_LOG(LITERT_SILENT, "fd: %d, Model offset: %u, Model size: %zu",
