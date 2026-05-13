@@ -17,10 +17,10 @@
 #include <memory>
 #include <string>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
@@ -126,11 +126,11 @@ class MediatekOptions {
                        mediatek_dla_dir.c_str());
   }
 
-  absl::string_view GetMediatekDlaDir() {
+  StringView GetMediatekDlaDir() {
     const char* mediatek_dla_dir;
     internal::AssertOk(LrtGetMediatekOptionsMediatekDlaDir, Get(),
                        &mediatek_dla_dir);
-    return absl::string_view(mediatek_dla_dir);
+    return StringView(mediatek_dla_dir);
   }
 
   void SetAotCompilationOptions(const std::string& aot_compilation_options) {
@@ -138,11 +138,11 @@ class MediatekOptions {
                        aot_compilation_options.c_str());
   }
 
-  absl::string_view GetAotCompilationOptions() {
+  StringView GetAotCompilationOptions() {
     const char* aot_compilation_options;
     internal::AssertOk(LrtGetMediatekOptionsAotCompilationOptions, Get(),
                        &aot_compilation_options);
-    return absl::string_view(aot_compilation_options);
+    return StringView(aot_compilation_options);
   }
 
  private:

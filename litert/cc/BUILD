@@ -44,10 +44,24 @@ package(
 # -----------------------------------------------------------------------------
 
 cc_library(
+    name = "litert_api_types",
+    hdrs = ["litert_api_types.h"],
+    compatible_with = get_compatible_with_portable(),
+    deps = [
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/functional:any_invocable",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
     name = "litert_any",
     hdrs = ["litert_any.h"],
     compatible_with = get_compatible_with_portable(),
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_expected",
         ":litert_macros",
@@ -77,6 +91,7 @@ cc_library(
     name = "litert_buffer_ref",
     hdrs = ["litert_buffer_ref.h"],
     deps = [
+        ":litert_api_types",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
@@ -109,6 +124,7 @@ cc_library(
     hdrs = ["litert_macros.h"],
     compatible_with = get_compatible_with_portable(),
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_expected",
         "//litert/c:litert_common",
@@ -141,6 +157,7 @@ cc_library(
     hdrs = ["litert_expected.h"],
     compatible_with = get_compatible_with_portable(),
     deps = [
+        ":litert_api_types",
         ":litert_common",
         "//litert/c:litert_common",
         "@com_google_absl//absl/log:absl_check",
@@ -186,12 +203,11 @@ cc_library(
     name = "litert_layout",
     hdrs = ["litert_layout.h"],
     deps = [
+        ":litert_api_types",
         ":litert_expected",
         ":litert_macros",
         "//litert/c:litert_layout",
         "//litert/cc/internal:litert_consts",
-        "@com_google_absl//absl/container:inlined_vector",
-        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -208,6 +224,7 @@ cc_library(
     name = "litert_opaque_options",
     hdrs = ["litert_opaque_options.h"],
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_expected",
         ":litert_macros",
@@ -239,6 +256,7 @@ cc_library(
     hdrs = ["litert_environment_options.h"],
     deps = [
         ":litert_any",
+        ":litert_api_types",
         ":litert_common",
         ":litert_expected",
         "//litert/c:litert_environment_options_header",
@@ -278,6 +296,7 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_buffer_ref",
         ":litert_common",
         ":litert_environment",
@@ -727,6 +746,7 @@ cc_library_with_testonly_vis(
     ],
     deps = [
         ":litert_any",
+        ":litert_api_types",
         ":litert_common",
         ":litert_environment_options",
         ":litert_expected",
@@ -751,6 +771,7 @@ cc_test(
     }),
     deps = [
         ":litert_any",
+        ":litert_api_types",
         ":litert_common",
         ":litert_compiled_model",
         ":litert_environment",
@@ -821,6 +842,7 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_element_type",
         ":litert_expected",
@@ -847,6 +869,7 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_buffer_ref",
         ":litert_common",
         ":litert_element_type",
@@ -878,6 +901,7 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_element_type",
         ":litert_expected",
@@ -944,6 +968,7 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_expected",
         ":litert_tensor_buffer_types",
@@ -979,6 +1004,7 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_environment",
         ":litert_event",
@@ -1091,6 +1117,7 @@ cc_library_with_testonly_vis(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_custom_op_kernel",
         ":litert_environment",
@@ -1230,6 +1257,7 @@ cc_library(
     name = "litert_api_with_dynamic_runtime",
     hdrs = [
         # C++ API headers.
+        "litert_api_types.h",
         "litert_any.h",
         "litert_common.h",
         "//litert/c/internal:litert_scheduling_info",
@@ -1312,6 +1340,7 @@ cc_library(
         "//litert/cc/options:litert_intel_openvino_options",
         "//litert/cc/options:litert_qualcomm_options",
         # Other (static) C++ API targets.
+        ":litert_api_types",
         ":litert_any",
         ":litert_buffer_ref",
         ":litert_common",
