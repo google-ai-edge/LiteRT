@@ -74,6 +74,7 @@ litert_dynamic_lib(
         "//litert/cc/internal:litert_shared_library",
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
+        "//litert/vendors/samsung/schema:samsung_byte_code",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/strings:string_view",
     ],

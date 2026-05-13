@@ -73,6 +73,7 @@ struct EnnManager::PublicApi {
                                                const uint32_t size,
                                                const uint32_t offset,
                                                EnnBufferPtr* out);
+  EnnReturn (*EnnCreateBufferCache)(const uint32_t req_size, EnnBufferPtr *out);
   EnnReturn (*EnnAllocateAllBuffers)(const EnnModelId model_id,
                                      EnnBufferPtr** out_buffers,
                                      NumberOfBuffersInfo* out_buffers_info);

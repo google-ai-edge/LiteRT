@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-// Copyright 2024 Google LLC.
+// Copyright (C) 2026 Samsung Electronics Co. LTD.
+// SPDX-License-Identifier: Apache-2.0
 
-#include "litert/vendors/samsung/dispatch/litert_dispatch_invocation_context.h"
+#include <memory>
+#include <fstream>
+#include <unistd.h>
 
-#include "litert/c/internal/litert_runtime_context.h"
+
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -25,9 +28,135 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/util/tensor_type_util.h"
+
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/samsung/dispatch/litert_dispatch_device_context.h"
+#include "litert/vendors/samsung/dispatch/litert_dispatch_invocation_context.h"
+#include "litert/vendors/samsung/schema/litert_samsung_header_generated.h"
+
 namespace litert::samsung {
+
+#define TO_FILE_OFFSET(header_offset, buffer_offset) ((header_offset) + (buffer_offset))
+
+struct EnnModelHandle {
+  EnnModelId id;
+  const ::litert::samsung::EnnManager* manager;
+
+  EnnModelHandle(EnnModelId id, const ::litert::samsung::EnnManager* manager)
+      : id(id), manager(manager) {}
+};
+
+// Custom deleter for EnnModelHandle
+struct EnnModelDeleter {
+  void operator()(EnnModelHandle* handle) const {
+    if (handle && handle->manager) {
+      handle->manager->Api().EnnCloseModel(handle->id);
+    }
+    delete handle;
+  }
+};
+
+using EnnModelPtr = std::unique_ptr<EnnModelHandle, EnnModelDeleter>;
+
+static EnnModelPtr MakeEnnModelPtr(const ::litert::samsung::EnnManager* manager, EnnModelId model_id) {
+  auto raw_ptr = std::make_unique<EnnModelHandle>(model_id, manager);
+  return EnnModelPtr(raw_ptr.release(), EnnModelDeleter{});
+}
+
+// Structure to hold separated weight information
+struct SeparatedWeightInfo {
+  std::string signature;
+  int64_t start_offset;
+  int64_t end_offset;
+};
+
+// Structure to hold model loading information
+struct ModelLoadInfo {
+  bool has_valid_header = false;
+  bool use_external_weights = false;
+  const void* model_addr = nullptr;
+  size_t model_size = 0;
+  int fd = -1;
+  uint32_t model_offset = 0;
+  std::vector<SeparatedWeightInfo> separated_weights;
+};
+
+static Expected<ModelLoadInfo> AnalyzeModelLoadStrategy(
+   const LiteRtMemBuffer* exec_bytecode_buffer) {
+  ModelLoadInfo info;
+
+  const void* exec_bytecode_ptr =
+      static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr) +
+      exec_bytecode_buffer->offset;
+  size_t exec_bytecode_size = exec_bytecode_buffer->size;
+
+  LITERT_LOG(LITERT_INFO, "Bytecode buffer: base_addr=%p, offset=%zu, size=%zu",
+             exec_bytecode_buffer->base_addr, exec_bytecode_buffer->offset, exec_bytecode_size);
+  LITERT_LOG(LITERT_INFO, "Calculated bytecode ptr: %p, size: %zu", exec_bytecode_ptr, exec_bytecode_size);
+
+  info.fd = exec_bytecode_buffer->fd;
+
+  auto* header_buf = litert::samsung::schema::GetLiteRTSamsungHeader(exec_bytecode_ptr);
+  if (!header_buf) {
+    LITERT_LOG(LITERT_INFO, "No valid Samsung header found - using old format");
+    info.model_offset = static_cast<uint32_t>(exec_bytecode_buffer->offset);
+    info.model_size = exec_bytecode_size;
+    return info;
+  }
+
+  flatbuffers::Verifier verifier(
+      static_cast<const uint8_t*>(exec_bytecode_ptr),
+      exec_bytecode_size);
+
+  bool fb_generated = header_buf->Verify(verifier);
+  info.has_valid_header = fb_generated;
+
+  if (!fb_generated) {
+    LITERT_LOG(LITERT_INFO, "Header verification failed - using old format");
+    info.model_offset = static_cast<uint32_t>(exec_bytecode_buffer->offset);
+    info.model_size = exec_bytecode_size;
+    return info;
+  }
+
+  auto* dispatch_binary = header_buf->dispatch_binary();
+  info.use_external_weights = dispatch_binary->use_external_weights();
+
+  const auto* buf_section = dispatch_binary->buf();
+  const auto* external_weights = dispatch_binary->external_weights();
+  const auto* separated_weights = header_buf->separated_weights();
+
+  LITERT_LOG(LITERT_INFO, "Schema version: %u", header_buf->version());
+  LITERT_LOG(LITERT_VERBOSE, "Dispatch Binary Buffer: start_offset=%ld, end_offset=%ld",
+             buf_section->start_offset(), buf_section->end_offset());
+  LITERT_LOG(LITERT_VERBOSE, "Use External Weights: %s", info.use_external_weights ? "true" : "false");
+
+  if (separated_weights) {
+    for (int32_t i = 0; i < separated_weights->size(); i++) {
+      const auto* weight = separated_weights->Get(i);
+      SeparatedWeightInfo weight_info;
+      weight_info.signature = weight->signature()->str();
+      weight_info.start_offset = TO_FILE_OFFSET(weight->buf()->start_offset(), exec_bytecode_buffer->offset);
+      weight_info.end_offset = TO_FILE_OFFSET(weight->buf()->end_offset(), exec_bytecode_buffer->offset);
+      info.separated_weights.push_back(weight_info);
+      LITERT_LOG(LITERT_SILENT, "Separated Weight[%d]: signature=%s, offset=%ld-%ld",
+                 i, weight_info.signature.c_str(), weight_info.start_offset, weight_info.end_offset);
+    }
+    LITERT_LOG(LITERT_SILENT, "Total separated weights: %zu", info.separated_weights.size());
+  }
+
+  if (info.use_external_weights) {
+    LITERT_LOG(LITERT_VERBOSE, "Valid header with external weights");
+    info.model_offset = static_cast<uint32_t>(TO_FILE_OFFSET(buf_section->start_offset(), exec_bytecode_buffer->offset));
+    info.model_size = buf_section->end_offset() - buf_section->start_offset();
+    LITERT_LOG(LITERT_SILENT, "Model offset: %u, Model size: %zu", info.model_offset, info.model_size);
+  } else {
+    LITERT_LOG(LITERT_VERBOSE, "Valid header without external weights");
+    info.model_offset = static_cast<uint32_t>(TO_FILE_OFFSET(buf_section->start_offset(), exec_bytecode_buffer->offset));
+    info.model_size = buf_section->end_offset() - buf_section->start_offset();
+    LITERT_LOG(LITERT_SILENT, "Model offset: %u, Model size: %zu", info.model_offset, info.model_size);
+  }
+  return info;
+}
 
 // Require continuous memory for tensor buffer. No strides.
 Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
@@ -65,6 +194,7 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
       model_id_(model_id),
       inputs_buf_(num_inputs, nullptr),
       outputs_buf_(num_outputs, nullptr) {}
+}
 
 litert::Expected<LiteRtDispatchInvocationContextT::UniquePtr>
 LiteRtDispatchInvocationContextT::Create(
@@ -73,55 +203,107 @@ LiteRtDispatchInvocationContextT::Create(
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
     int num_inputs, int num_outputs) {
-  EnnBufferPtr* tmp_buf_ptr;
   if (!enn_manager) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Fail to get enn runtime.");
   }
 
-  const void* exec_bytecode_ptr =
-      static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr) +
-      exec_bytecode_buffer->offset;
-  auto exec_bytecode_size = exec_bytecode_buffer->size;
+  // Analyze model loading strategy
+  LITERT_ASSIGN_OR_RETURN(auto load_info,
+    litert::samsung::AnalyzeModelLoadStrategy(exec_bytecode_buffer));
+
   EnnModelId model_id;
-  if (enn_manager->Api().EnnOpenModelFromMemory(
-          reinterpret_cast<const char*>(exec_bytecode_ptr), exec_bytecode_size,
-          &model_id) != ENN_RET_SUCCESS) {
-    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                         "Fail to load model.");
+
+  // Load model based on condition
+  if (load_info.has_valid_header && load_info.use_external_weights) {
+    if (load_info.fd < 0) {
+      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                           "Requires fd for external weights, but fd is not available.");
+    }
+
+    LITERT_LOG(LITERT_SILENT, "File descriptor: %d", load_info.fd);
+    LITERT_LOG(LITERT_SILENT, "Model offset: %u, Model size: %u", load_info.model_offset, load_info.model_size);
+
+    std::vector<EnnBufferPtr> weight_buffers;
+    for (size_t i = 0; i < load_info.separated_weights.size(); i++) {
+      const auto& weight = load_info.separated_weights[i];
+      EnnBufferPtr weight_buffer;
+      size_t weight_size = weight.end_offset - weight.start_offset;
+
+      LITERT_LOG(LITERT_VERBOSE, "Creating weight buffer[%zu]: offset=%ld, size=%zu, signature=%s",
+                 i, weight.start_offset, weight_size, weight.signature.c_str());
+
+      if (enn_manager->Api().EnnCreateBufferCache(weight_size, &weight_buffer) != ENN_RET_SUCCESS)
+        return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                             "Failed to create weight buffer");
+
+      ssize_t bytes_read = pread(load_info.fd, weight_buffer->va, weight_size, weight.start_offset);
+      if (bytes_read != static_cast<ssize_t>(weight_size))
+        return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                             "Failed to read weight data from file");
+
+      weight_buffers.push_back(weight_buffer);
+      LITERT_LOG(LITERT_SILENT, "Weight buffer: %p, size=%d", weight_buffer->va, weight_buffer->size);
+    }
+
+    if (enn_manager->Api().EnnOpenModelWithFileOpenFdWeight(
+            load_info.fd, load_info.model_size, load_info.model_offset,
+            &weight_buffers[0], weight_buffers.size(), &model_id) != ENN_RET_SUCCESS)
+      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                           "Failed to load model from fd with weights");
+  } else {
+    if (exec_bytecode_buffer->fd >= 0) {
+      LITERT_LOG(LITERT_SILENT, "fd: %d, Model offset: %u, Model size: %zu",
+                 exec_bytecode_buffer->fd, load_info.model_offset, load_info.model_size);
+
+      if (enn_manager->Api().EnnOpenModelWithFileOpenFd(
+              exec_bytecode_buffer->fd,
+              static_cast<uint32_t>(load_info.model_size),
+              load_info.model_offset, &model_id) != ENN_RET_SUCCESS)
+        return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                             "Fail to load model from fd.");
+    } else {
+      // Load from memory (fd not available)
+      LITERT_LOG(LITERT_INFO, "Loading model from memory");
+
+      const void* model_addr = static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr) +
+                                load_info.model_offset;
+      size_t model_size = load_info.model_size;
+
+      LITERT_LOG(LITERT_SILENT, "Model addr: %p, Model size: %zu", model_addr, model_size);
+
+      if (enn_manager->Api().EnnOpenModelFromMemory(
+              reinterpret_cast<const char *>(model_addr), model_size,
+              &model_id) != ENN_RET_SUCCESS)
+        return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                             "Fail to load model from memory.");
+    }
   }
+
+  auto model_guard = MakeEnnModelPtr(enn_manager, model_id);
 
   NumberOfBuffersInfo buffer_info;
-  if (enn_manager->Api().EnnGetBuffersInfo(model_id, &buffer_info) !=
-      ENN_RET_SUCCESS) {
-    if (enn_manager->Api().EnnCloseModel(model_id) != ENN_RET_SUCCESS) {
-      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                           "Fail to trying to Close Model");
-    }
-    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                         "Fail to get buffers information");
+  if (enn_manager->Api().EnnGetBuffersInfo(model_id, &buffer_info) != ENN_RET_SUCCESS) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure, "Fail to get buffers information");
   }
-  if (buffer_info.n_in_buf != num_inputs ||
-      buffer_info.n_out_buf != num_outputs) {
-    if (enn_manager->Api().EnnCloseModel(model_id) != ENN_RET_SUCCESS) {
-      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                           "Fail to trying to Close Model");
-    }
-    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                         "Number of inputs/outputs is invalid");
+  LITERT_LOG(LITERT_INFO, "Buffer info - inputs: %d, outputs: %d",
+             buffer_info.n_in_buf, buffer_info.n_out_buf);
+
+  if (buffer_info.n_in_buf != num_inputs || buffer_info.n_out_buf != num_outputs) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure, "Number of inputs/outputs is invalid");
   }
 
-  if (enn_manager->Api().EnnAllocateAllBuffers(
-          model_id, &tmp_buf_ptr, &buffer_info) != ENN_RET_SUCCESS) {
-    if (enn_manager->Api().EnnCloseModel(model_id) != ENN_RET_SUCCESS) {
-      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                           "Fail to trying to Close Model");
-    }
-    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                         "EnnAllocateAllBuffers Failed");
+  // Allocate buffers
+  EnnBufferPtr *tmp_buf_ptr;
+  if (enn_manager->Api().EnnAllocateAllBuffers(model_id, &tmp_buf_ptr, &buffer_info) != ENN_RET_SUCCESS) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure, "EnnAllocateAllBuffers Failed");
   }
+  LITERT_LOG(LITERT_INFO, "Buffers allocated successfully");
 
   device_context->SetEnnCommittedBuffer(tmp_buf_ptr);
+  LITERT_LOG(LITERT_INFO, "=== Model Loading Complete ===");
+
+  model_guard.release();
 
   return LiteRtDispatchInvocationContextT::UniquePtr(
       new LiteRtDispatchInvocationContextT(enn_manager, device_context,
