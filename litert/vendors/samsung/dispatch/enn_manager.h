@@ -53,6 +53,22 @@ struct EnnManager::PublicApi {
   EnnReturn (*EnnInitialize)(void);
   EnnReturn (*EnnOpenModelFromMemory)(const char* va, const uint32_t size,
                                       EnnModelId* model_id);
+  EnnReturn (*EnnOpenModelFromFdWithWeight)(const uint32_t fd,
+                                            const uint32_t size,
+                                            const uint32_t offset,
+                                            EnnBufferPtr* weights,
+                                            uint32_t n_weights,
+                                            EnnModelId* model_id);
+  EnnReturn (*EnnOpenModelWithFileOpenFdWeight)(const int fd,
+                                                const uint32_t size,
+                                                const uint32_t offset,
+                                                EnnBufferPtr* weights,
+                                                uint32_t n_weights,
+                                                EnnModelId* model_id);
+  EnnReturn (*EnnOpenModelWithFileOpenFd)(const int fd,
+                                          const uint32_t size,
+                                          const uint32_t offset,
+                                          EnnModelId* model_id);
   EnnReturn (*EnnCreateBufferFromFdWithOffset)(const uint32_t fd,
                                                const uint32_t size,
                                                const uint32_t offset,
