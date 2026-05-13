@@ -160,6 +160,22 @@ void RegisterDepthwiseConv2d(const AtsConf& options, size_t& test_id,
 }
 
 template <typename Fixture>
+void RegisterReduction(const AtsConf& options, size_t& test_id, size_t iters,
+                       typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Reduction,
+      SizeListC<1, 2, 3, 4>,
+      TypeList<float>,
+      OpCodeListC<kLiteRtOpCodeTflReduceMax, kLiteRtOpCodeTflReduceMin,
+                  kLiteRtOpCodeTflReduceProd, kLiteRtOpCodeTflSum>,
+      TypeList<std::true_type, std::false_type>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
 void RegisterPooling(const AtsConf& options, size_t& test_id, size_t iters,
                      typename Fixture::Capture& cap) {
   // clang-format off
@@ -185,6 +201,7 @@ void RegisterAll(const AtsConf& options, size_t& test_id,
   RegisterUnary<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterConv2d<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterDepthwiseConv2d<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterReduction<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterPooling<Fixture>(options, test_id, /*iters=*/10, cap);
 }
 
