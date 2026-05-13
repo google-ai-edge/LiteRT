@@ -123,6 +123,7 @@ cc_library(
         "//litert/vendors/samsung/compiler/builders:transpose_conv_op_builder",
         "//litert/vendors/samsung/compiler/builders:transpose_op_builder",
         "//litert/vendors/samsung/compiler/builders:utils",
+        "//litert/vendors/samsung/schema:samsung_byte_code",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:inlined_vector",
