@@ -47,7 +47,7 @@ size_t OptimizeMHAFastVlmPrefill(
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size);
 
-size_t OptimizeGQADecode(
+size_t OptimizeGqa(
     std::function<bool(OpWrapper&)> validate_op_config,
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size);
@@ -70,6 +70,9 @@ size_t SimplifyMaskingAdd(std::function<bool(OpWrapper&)> validate_op_config,
                        std::vector<OpWrapper>& ops, size_t start_index,
                        TensorPool& tensor_pool, size_t pattern_size);
 
+size_t DuplicateConcate(std::function<bool(OpWrapper&)> validate_op_config,
+                       std::vector<OpWrapper>& ops, size_t start_index,
+                       TensorPool& tensor_pool, size_t pattern_size);
 }  // namespace qnn
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_TRANSFORMATION_MHA_TO_SHA_H_

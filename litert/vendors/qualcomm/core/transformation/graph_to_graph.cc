@@ -239,6 +239,14 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
   Transform(validate_op_config, ops, tensor_pool, embedding_gemma,
             TransformEmbeddingGemma);
 
+  // Duplicate concat for each masking to make the pattern more independent.
+  const std::vector<QnnOpCode> concat_add = {
+      QnnOpCode::kConcat,
+      QnnOpCode::kElementWiseBinary,
+  };
+  Transform(validate_op_config, ops, tensor_pool, concat_add,
+            DuplicateConcate);
+
   // Simplify masking
   const std::vector<QnnOpCode> reshape_add_reshape = {
       QnnOpCode::kReshape,
@@ -248,7 +256,7 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
   Transform(validate_op_config, ops, tensor_pool, reshape_add_reshape,
             SimplifyMaskingAdd);
 
-  // Fast Vlm Optimization
+  // Fast Vlm Optimization (Prefill)
   const std::vector<QnnOpCode> fast_vlm_mha_prefill = {
       QnnOpCode::kElementWiseBinary, // mul
       QnnOpCode::kReshape,
@@ -266,6 +274,7 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
       QnnOpCode::kReshape,
       QnnOpCode::kTranspose,
       QnnOpCode::kReshape};
+  // TODO(jiunkaiy): Change OptimizeMHAFastVlmPrefill to OptimizeGqa.
   Transform(validate_op_config, ops, tensor_pool, fast_vlm_mha_prefill,
             OptimizeMHAFastVlmPrefill);
 
@@ -285,7 +294,7 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
       QnnOpCode::kElementWiseBinary,  // add
       QnnOpCode::kReshape};
   Transform(validate_op_config, ops, tensor_pool, fast_vlm_mha_decode,
-            OptimizeGQADecode);
+            OptimizeGqa);
 
   // Kv-swapped Fast Vlm Optimization
   const std::vector<QnnOpCode> kv_swapped_fastvlm_prefill = {
