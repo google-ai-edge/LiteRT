@@ -32,6 +32,7 @@
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/samsung/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/samsung/dispatch/litert_dispatch_invocation_context.h"
+#include "litert/vendors/samsung/dispatch/litert_weight_binary_manager.h"
 #include "litert/vendors/samsung/schema/litert_samsung_header_generated.h"
 
 namespace litert::samsung {
@@ -207,7 +208,6 @@ LiteRtDispatchInvocationContextT::Create(
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
     int num_inputs, int num_outputs) {
 
-  counter.fetch_add(1);
   if (!enn_manager) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Fail to get enn runtime.");
@@ -218,6 +218,7 @@ LiteRtDispatchInvocationContextT::Create(
     litert::samsung::AnalyzeModelLoadStrategy(exec_bytecode_buffer));
 
   EnnModelId model_id;
+  std::vector<std::string> signatures;
 
   // Load model based on condition
   if (load_info.has_valid_header && load_info.use_external_weights) {
@@ -229,51 +230,28 @@ LiteRtDispatchInvocationContextT::Create(
     LITERT_LOG(LITERT_SILENT, "File descriptor: %d", load_info.fd);
     LITERT_LOG(LITERT_SILENT, "Model offset: %u, Model size: %u", load_info.model_offset, load_info.model_size);
 
-    WeightData weightdata;
+    auto& weight_mgr = litert::samsung::WeightBinaryManager::GetInstance(enn_manager);
     std::vector<EnnBufferPtr> weight_buffers;
-    int shared_weight = 0;
 
-    auto it = std::find_if(weightDatas.begin(), weightDatas.end(),
-      [&](const WeightData& m) {
-          return m.signature == load_info.signatures[0];
-      });
+    for (size_t i = 0; i < load_info.signatures.size(); i++) {
+      const auto& sig = load_info.signatures[i];
 
-    if (it == weightDatas.end()) {
-      LITERT_LOG(LITERT_VERBOSE, "not find the signature !");
-    } else {
-      LITERT_LOG(LITERT_VERBOSE, "find the signature !");
-      weight_buffers = it->weight_buffers;
-      shared_weight = 1;
-    }
-    if (!shared_weight) {
-      for (size_t i = 0; i < load_info.separated_weights.size(); i++) {
-        const auto& weight = load_info.separated_weights[i];
-        EnnBufferPtr weight_buffer;
-        size_t weight_size = weight.end_offset - weight.start_offset;
+      int64_t offset = 0;
+      size_t size = 0;
 
-        LITERT_LOG(LITERT_VERBOSE, "Creating weight buffer[%zu]: offset=%ld, size=%zu, signature=%s",
-                  i, weight.start_offset, weight_size, weight.signature.c_str());
-
-        // Create empty buffer
-        if (enn_manager->Api().EnnCreateBufferCache(weight_size, &weight_buffer) != ENN_RET_SUCCESS)
-          return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                              "Failed to create weight buffer");
-
-        // Read weight data from file using pread
-        ssize_t bytes_read = pread(load_info.fd, weight_buffer->va, weight_size, weight.start_offset);
-        if (bytes_read != static_cast<ssize_t>(weight_size))
-          return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                              "Failed to read weight data from file");
-
-        if (i == 0) {
-          //only update the first weight signature
-          weightdata.signature = weight.signature;
-        }
-        weightdata.weight_buffers.push_back(weight_buffer);
-        LITERT_LOG(LITERT_SILENT, "Weight buffer: %p, size=%d", weight_buffer->va, weight_buffer->size);
+      // If separated_weights has the corresponding entry, use its offset/size
+      if (!load_info.separated_weights.empty() &&
+          i < load_info.separated_weights.size()) {
+        offset = load_info.separated_weights[i].start_offset;
+        size = load_info.separated_weights[i].end_offset -
+               load_info.separated_weights[i].start_offset;
       }
-      weightDatas.push_back(weightdata);
-      weight_buffers = weightdata.weight_buffers;
+      auto buffer = weight_mgr.Acquire(sig, load_info.fd, offset, size);
+      if (!buffer) {
+        return buffer.Error();
+      }
+      weight_buffers.push_back(*buffer);
+      signatures.push_back(sig);
     }
 
     if (enn_manager->Api().EnnOpenModelWithFileOpenFdWeight(
@@ -335,23 +313,20 @@ LiteRtDispatchInvocationContextT::Create(
 
   model_guard.release();
 
-  return LiteRtDispatchInvocationContextT::UniquePtr(
+  auto context = LiteRtDispatchInvocationContextT::UniquePtr(
       new LiteRtDispatchInvocationContextT(enn_manager, device_context,
                                            model_id, num_inputs, num_outputs));
+
+  // Set weight signatures for later release
+  context->SetWeightSignatures(std::move(signatures));
+
+  return context;
 }
 
 LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
-  counter.fetch_sub(1);
-  if (!counter.load()) {
-    for (auto& wd : weightDatas) {
-        for (auto& buf : wd.weight_buffers) {
-            if (enn_manager_->Api().EnnReleaseBuffer(buf) != ENN_RET_SUCCESS) {
-              LITERT_LOG(LITERT_INFO, "EnnReleaseBuffer failed");
-            };
-        }
-        wd.weight_buffers.clear();
-    }
-    weightDatas.clear();
+  auto& weight_mgr = litert::samsung::WeightBinaryManager::GetInstance(enn_manager_);
+  for (const auto& sig : weight_signatures_) {
+    weight_mgr.Release(sig);
   }
 
   enn_manager_->Api().EnnCloseModel(model_id_);

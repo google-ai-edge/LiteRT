@@ -28,12 +28,14 @@ litert_dynamic_lib(
         "enn_manager.cc",
         "litert_dispatch_device_context.cc",
         "litert_dispatch_invocation_context.cc",
+        "litert_weight_binary_manager.cc",
     ],
     hdrs = [
         "enn_manager.h",
         "enn_type.h",
         "litert_dispatch_device_context.h",
         "litert_dispatch_invocation_context.h",
+        "litert_weight_binary_manager.h",
     ],
     copts = [
         "-Os",

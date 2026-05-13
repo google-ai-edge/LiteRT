@@ -19,7 +19,6 @@
 #define ODML_LITERT_VENDORS_SAMSUNG_DISPATCH_INVOCATION_CONTEXT_H_
 
 #include <optional>
-#include <atomic>
 
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_model.h"
@@ -27,11 +26,6 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/samsung/dispatch/enn_manager.h"
-
-struct WeightData {
-    std::vector<EnnBufferPtr> weight_buffers;
-    std::string signature;
-};
 
 class LiteRtDispatchInvocationContextT {
  public:
@@ -87,14 +81,17 @@ class LiteRtDispatchInvocationContextT {
   litert::Expected<void> SetInputBuffers() const;
   litert::Expected<void> SetOutputBuffers() const;
 
+  void SetWeightSignatures(std::vector<std::string> signatures) {
+    weight_signatures_ = std::move(signatures);
+  }
+
   const ::litert::samsung::EnnManager* enn_manager_;
   LiteRtDispatchDeviceContext device_context_;
   std::optional<LiteRtSchedulingInfo> scheduling_info_;
   EnnModelId model_id_;
   std::vector<EnnBufferPtr> inputs_buf_;
   std::vector<EnnBufferPtr> outputs_buf_;
-  inline static std::vector<WeightData> weightDatas;
-  inline static std::atomic<int> counter{0};
+  std::vector<std::string> weight_signatures_;
 };
 
 #endif  // ODML_LITERT_VENDORS_SAMSUNG_DISPATCH_INVOCATION_CONTEXT_H_
