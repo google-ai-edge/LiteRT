@@ -19,7 +19,7 @@
 #include <fstream>
 #include <unistd.h>
 
-
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -79,6 +79,7 @@ struct ModelLoadInfo {
   int fd = -1;
   uint32_t model_offset = 0;
   std::vector<SeparatedWeightInfo> separated_weights;
+  std::vector<std::string> signatures;
 };
 
 static Expected<ModelLoadInfo> AnalyzeModelLoadStrategy(
@@ -149,6 +150,9 @@ static Expected<ModelLoadInfo> AnalyzeModelLoadStrategy(
     info.model_offset = static_cast<uint32_t>(TO_FILE_OFFSET(buf_section->start_offset(), exec_bytecode_buffer->offset));
     info.model_size = buf_section->end_offset() - buf_section->start_offset();
     LITERT_LOG(LITERT_SILENT, "Model offset: %u, Model size: %zu", info.model_offset, info.model_size);
+    for (int32_t i = 0; i < external_weights->size(); i++) {
+      info.signatures.emplace_back(external_weights->Get(i)->str());
+    }
   } else {
     LITERT_LOG(LITERT_VERBOSE, "Valid header without external weights");
     info.model_offset = static_cast<uint32_t>(TO_FILE_OFFSET(buf_section->start_offset(), exec_bytecode_buffer->offset));
@@ -194,7 +198,6 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
       model_id_(model_id),
       inputs_buf_(num_inputs, nullptr),
       outputs_buf_(num_outputs, nullptr) {}
-}
 
 litert::Expected<LiteRtDispatchInvocationContextT::UniquePtr>
 LiteRtDispatchInvocationContextT::Create(
@@ -203,6 +206,8 @@ LiteRtDispatchInvocationContextT::Create(
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
     int num_inputs, int num_outputs) {
+
+  counter.fetch_add(1);
   if (!enn_manager) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Fail to get enn runtime.");
@@ -224,26 +229,51 @@ LiteRtDispatchInvocationContextT::Create(
     LITERT_LOG(LITERT_SILENT, "File descriptor: %d", load_info.fd);
     LITERT_LOG(LITERT_SILENT, "Model offset: %u, Model size: %u", load_info.model_offset, load_info.model_size);
 
+    WeightData weightdata;
     std::vector<EnnBufferPtr> weight_buffers;
-    for (size_t i = 0; i < load_info.separated_weights.size(); i++) {
-      const auto& weight = load_info.separated_weights[i];
-      EnnBufferPtr weight_buffer;
-      size_t weight_size = weight.end_offset - weight.start_offset;
+    int shared_weight = 0;
 
-      LITERT_LOG(LITERT_VERBOSE, "Creating weight buffer[%zu]: offset=%ld, size=%zu, signature=%s",
-                 i, weight.start_offset, weight_size, weight.signature.c_str());
+    auto it = std::find_if(weightDatas.begin(), weightDatas.end(),
+      [&](const WeightData& m) {
+          return m.signature == load_info.signatures[0];
+      });
 
-      if (enn_manager->Api().EnnCreateBufferCache(weight_size, &weight_buffer) != ENN_RET_SUCCESS)
-        return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                             "Failed to create weight buffer");
+    if (it == weightDatas.end()) {
+      LITERT_LOG(LITERT_VERBOSE, "not find the signature !");
+    } else {
+      LITERT_LOG(LITERT_VERBOSE, "find the signature !");
+      weight_buffers = it->weight_buffers;
+      shared_weight = 1;
+    }
+    if (!shared_weight) {
+      for (size_t i = 0; i < load_info.separated_weights.size(); i++) {
+        const auto& weight = load_info.separated_weights[i];
+        EnnBufferPtr weight_buffer;
+        size_t weight_size = weight.end_offset - weight.start_offset;
 
-      ssize_t bytes_read = pread(load_info.fd, weight_buffer->va, weight_size, weight.start_offset);
-      if (bytes_read != static_cast<ssize_t>(weight_size))
-        return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                             "Failed to read weight data from file");
+        LITERT_LOG(LITERT_VERBOSE, "Creating weight buffer[%zu]: offset=%ld, size=%zu, signature=%s",
+                  i, weight.start_offset, weight_size, weight.signature.c_str());
 
-      weight_buffers.push_back(weight_buffer);
-      LITERT_LOG(LITERT_SILENT, "Weight buffer: %p, size=%d", weight_buffer->va, weight_buffer->size);
+        // Create empty buffer
+        if (enn_manager->Api().EnnCreateBufferCache(weight_size, &weight_buffer) != ENN_RET_SUCCESS)
+          return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                              "Failed to create weight buffer");
+
+        // Read weight data from file using pread
+        ssize_t bytes_read = pread(load_info.fd, weight_buffer->va, weight_size, weight.start_offset);
+        if (bytes_read != static_cast<ssize_t>(weight_size))
+          return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                              "Failed to read weight data from file");
+
+        if (i == 0) {
+          //only update the first weight signature
+          weightdata.signature = weight.signature;
+        }
+        weightdata.weight_buffers.push_back(weight_buffer);
+        LITERT_LOG(LITERT_SILENT, "Weight buffer: %p, size=%d", weight_buffer->va, weight_buffer->size);
+      }
+      weightDatas.push_back(weightdata);
+      weight_buffers = weightdata.weight_buffers;
     }
 
     if (enn_manager->Api().EnnOpenModelWithFileOpenFdWeight(
@@ -311,6 +341,19 @@ LiteRtDispatchInvocationContextT::Create(
 }
 
 LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
+  counter.fetch_sub(1);
+  if (!counter.load()) {
+    for (auto& wd : weightDatas) {
+        for (auto& buf : wd.weight_buffers) {
+            if (enn_manager_->Api().EnnReleaseBuffer(buf) != ENN_RET_SUCCESS) {
+              LITERT_LOG(LITERT_INFO, "EnnReleaseBuffer failed");
+            };
+        }
+        wd.weight_buffers.clear();
+    }
+    weightDatas.clear();
+  }
+
   enn_manager_->Api().EnnCloseModel(model_id_);
 }
 
