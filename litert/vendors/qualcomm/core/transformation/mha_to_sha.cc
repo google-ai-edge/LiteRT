@@ -636,7 +636,7 @@ size_t OptimizeMHADecode(std::function<bool(OpWrapper&)> validate_op_config,
   return 1;
 }
 
-size_t OptimizeMHAFastVlmPrefill(
+size_t OptimizeGqaPrefill(
     std::function<bool(OpWrapper&)> validate_op_config,
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size) {
@@ -690,35 +690,18 @@ size_t OptimizeMHAFastVlmPrefill(
     return 1;
   }
 
-  // Strict check for only FastVLM with q head = 14, kv head = 2.
-  static constexpr size_t kQHeads = 14;
-  static constexpr size_t kKVHeads = 2;
-  if (!(kKVHeads ==
-            ops[start_index + kQKSliceMatmulIdx].GetInputTensor(1).GetDimension(
-                1) &&
-        kQHeads ==
-            ops[start_index + kQScaleMulIdx].GetInputTensor(0).GetDimension(
-                1) &&
-        kKVHeads == ops[start_index + kQKVCacheMatmulIdx]
-                        .GetInputTensor(1)
-                        .GetDimension(1) &&
-        kKVHeads == ops[start_index + kQKVSliceMatmulIdx]
-                        .GetInputTensor(1)
-                        .GetDimension(1))) {
-    QNN_LOG_WARNING(
-        "[G2G] Pattern does not match Q heads: %d, KV heads %d. In pattern, "
-        "k_slice_add_in_0_dims[1]: %d, k_slice_add_in_1_dims[1]: %d,"
-        "q_scale_mul_dims[1]: %d, v_cache_dims[1]: %d, v_slice_dims[1]: %d",
-        kQHeads, kKVHeads,
-        ops[start_index + kQScaleMulIdx].GetInputTensor(0).GetDimension(1),
-        ops[start_index + kQKSliceMatmulIdx].GetInputTensor(1).GetDimension(1),
-        ops[start_index + kQScaleMulIdx].GetInputTensor(0).GetDimension(1),
-        ops[start_index + kQKVCacheMatmulIdx].GetInputTensor(1).GetDimension(1),
-        ops[start_index + kQKVSliceMatmulIdx].GetInputTensor(1).GetDimension(
-            1));
+  const size_t num_q_heads =
+      ops[start_index + kQScaleMulIdx].GetInputTensor(0).GetDimension(1);
+  const size_t num_kv_heads =
+      ops[start_index + kQKSliceMatmulIdx].GetInputTensor(1).GetDimension(1);
+  // Strict check:
+  // - FastVLM with q head = 14, kv head = 2.
+  // - Kanana with q head = 16, kv head = 8.
+  if ((num_q_heads == 14 && num_kv_heads == 2) &&
+      (num_q_heads == 16 && num_kv_heads == 8)) {
     return 1;
   }
-  QNN_LOG_INFO("[G2G] GQA Optimization (FastVLM Prefill).");
+  QNN_LOG_INFO("[G2G] GQA Optimization (Prefill).");
   std::vector<OpWrapper> new_ops;
 
   // QKV Unpack
@@ -738,8 +721,7 @@ size_t OptimizeMHAFastVlmPrefill(
   const auto& v_slice = ops[start_index + kQKVSliceMatmulIdx].GetInputTensor(1);
   auto v_slice_unpack_outputs = SplitTensor(tensor_pool, new_ops, v_slice);
 
-  auto num_attn_heads = scale_mul_unpack_outputs.size();
-  auto group_size = num_attn_heads / kKVHeads;
+  auto group_size = num_q_heads / num_kv_heads;
   // Remove unnessary concat mask.
   auto add_op = CreateElementWiseAddOp(
       ops[start_index + kMaskAddIdx].GetInputTensor(0),
@@ -749,8 +731,8 @@ size_t OptimizeMHAFastVlmPrefill(
   auto mask_add_output_dims = mask_add_out.GetDimensions();
   // Build num_head SHAs
   std::vector<ConstTensorWrapperRef> sha_outputs;
-  sha_outputs.reserve(num_attn_heads);
-  for (size_t i = 0; i < kKVHeads; ++i) {
+  sha_outputs.reserve(num_q_heads);
+  for (size_t i = 0; i < num_kv_heads; ++i) {
     for (size_t j = 0; j < group_size; ++j) {
       auto& sha_output = BuildSingleSHAByUnpackAxis1(
           new_ops, tensor_pool, group_size,
@@ -810,7 +792,7 @@ size_t OptimizeMHAFastVlmPrefill(
   return 1;
 }
 
-size_t OptimizeGqa(std::function<bool(OpWrapper&)> validate_op_config,
+size_t OptimizeGqaDecode(std::function<bool(OpWrapper&)> validate_op_config,
                          std::vector<OpWrapper>& ops, size_t start_index,
                          TensorPool& tensor_pool, size_t pattern_size) {
   QNN_LOG_INFO("[G2G] GQA optimization (decode)");
@@ -1578,13 +1560,15 @@ size_t SimplifyMaskingAdd(std::function<bool(OpWrapper&)> validate_op_config,
   return 1;
 }
 
-size_t DuplicateConcate(std::function<bool(OpWrapper&)> validate_op_config,
-                        std::vector<OpWrapper>& ops, size_t start_index,
-                        TensorPool& tensor_pool, size_t pattern_size) {
+size_t DuplicateOrRemoveConcate(
+    std::function<bool(OpWrapper&)> validate_op_config,
+    std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
+    size_t pattern_size) {
   constexpr size_t kMaskingConcatIndex = 0;
   constexpr size_t kMaskingAddIndex = 1;
   const auto& concat_op = ops[start_index + kMaskingConcatIndex];
   const auto& concat_op_name = concat_op.GetName();
+  const auto& mask = concat_op.GetInputTensor(0);
   const auto& concat_output = concat_op.GetOutputTensor(0);
   const auto& add_op = ops[start_index + kMaskingAddIndex];
   if (!(IS_CONNECTED(kMaskingConcatIndex, 0, kMaskingAddIndex, 1) &&
@@ -1596,7 +1580,7 @@ size_t DuplicateConcate(std::function<bool(OpWrapper&)> validate_op_config,
   size_t input_cnt = 0;
   while (num_elements > 0) {
     auto& concat_input = concat_op.GetInputTensor(input_cnt);
-    if (concat_input != concat_op.GetInputTensor(0)) {
+    if (concat_input != mask) {
       return 1;
     }
     num_elements -= concat_input.GetTensorNumElements();
@@ -1613,31 +1597,52 @@ size_t DuplicateConcate(std::function<bool(OpWrapper&)> validate_op_config,
   if (indices.size() <= 1) {
     return 1;
   }
-  QNN_LOG_INFO("[G2G] Duplicate concat %s", concat_op.GetName().data());
-  // Add concat ops.
-  const std::vector<qnn::ConstTensorWrapperRef> concat_inputs(
-      input_cnt, concat_op.GetInputTensor(0));
-  for (size_t i : indices) {
-    const auto& duplicated_concat_output =
-        tensor_pool.CloneNativeTensorFrom(concat_output);
-    // Add
-    auto add = CreateElementWiseAddOp(ops[i].GetInputTensor(0),
-                                      duplicated_concat_output,
-                                      ops[i].GetOutputTensor(0));
-    CloneNamespace(ops[i], add);
-    ops[i] = std::move(add);
-    ops[i].AddSuffixToName(absl::StrCat("_qcg2g_", i));
-    validate_op_config(ops[i]);
 
-    // Concat
-    auto concat = CreateOpWithSameParams(concat_op, concat_inputs,
-                                         {duplicated_concat_output});
-    CloneNamespace(ops[i], concat);
-    ops.insert(ops.begin() + i, concat);
-    validate_op_config(ops[i]);
-    ops[i].AddSuffixToName(absl::StrCat("_qcg2g_", i));
-    QNN_LOG_INFO("new: %d",
-                 ops[i].GetOutputTensor(0) == ops[i + 1].GetInputTensor(1))
+  bool can_remove_concat = true;
+  for (size_t index = 0; index < mask.GetRank(); ++index) {
+    size_t mask_dim = mask.GetDimension(index);
+    size_t input_dim = add_op.GetInputTensor(0).GetDimension(index);
+    if (!(mask_dim == input_dim || mask_dim == 1 || input_dim == 1)) {
+      can_remove_concat = false;
+      break;
+    }
+  }
+
+  QNN_LOG_INFO("[G2G] %s concat", can_remove_concat ? "Remove" : "Duplicate");
+  if (can_remove_concat) {
+    for (size_t i : indices) {
+      // Add
+      auto add = CreateElementWiseAddOp(ops[i].GetInputTensor(0), mask,
+                                        ops[i].GetOutputTensor(0));
+      CloneNamespace(ops[i], add);
+      ops[i] = std::move(add);
+      ops[i].AddSuffixToName(absl::StrCat("_qcg2g_", i));
+      validate_op_config(ops[i]);
+    }
+  } else {
+    // Add concat ops.
+    const std::vector<qnn::ConstTensorWrapperRef> concat_inputs(
+        input_cnt, concat_op.GetInputTensor(0));
+    for (size_t i : indices) {
+      const auto& duplicated_concat_output =
+          tensor_pool.CloneNativeTensorFrom(concat_output);
+      // Add
+      auto add = CreateElementWiseAddOp(ops[i].GetInputTensor(0),
+                                        duplicated_concat_output,
+                                        ops[i].GetOutputTensor(0));
+      CloneNamespace(ops[i], add);
+      ops[i] = std::move(add);
+      ops[i].AddSuffixToName(absl::StrCat("_qcg2g_", i));
+      validate_op_config(ops[i]);
+
+      // Concat
+      auto concat = CreateOpWithSameParams(concat_op, concat_inputs,
+                                           {duplicated_concat_output});
+      CloneNamespace(ops[i], concat);
+      ops.insert(ops.begin() + i, concat);
+      validate_op_config(ops[i]);
+      ops[i].AddSuffixToName(absl::StrCat("_qcg2g_", i));
+    }
   }
   // TODO(jiunkaiy): Can be more efficient, but keep this saftest way for now.
   ops.erase(std::remove_if(ops.begin(), ops.end(),
@@ -1645,8 +1650,6 @@ size_t DuplicateConcate(std::function<bool(OpWrapper&)> validate_op_config,
                              return op.GetName() == concat_op_name;
                            }),
             ops.end());
-
-  QNN_LOG_INFO("[G2G] Duplicate %d concat ops successfully", indices.size());
   return pattern_size;
 }
 }  // namespace qnn

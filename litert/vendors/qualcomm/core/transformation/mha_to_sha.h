@@ -42,12 +42,12 @@ size_t OptimizeMHADecode(std::function<bool(OpWrapper&)> validate_op_config,
                          std::vector<OpWrapper>& ops, size_t start_index,
                          TensorPool& tensor_pool, size_t pattern_size);
 
-size_t OptimizeMHAFastVlmPrefill(
+size_t OptimizeGqaPrefill(
     std::function<bool(OpWrapper&)> validate_op_config,
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size);
 
-size_t OptimizeGqa(
+size_t OptimizeGqaDecode(
     std::function<bool(OpWrapper&)> validate_op_config,
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size);
@@ -70,7 +70,7 @@ size_t SimplifyMaskingAdd(std::function<bool(OpWrapper&)> validate_op_config,
                        std::vector<OpWrapper>& ops, size_t start_index,
                        TensorPool& tensor_pool, size_t pattern_size);
 
-size_t DuplicateConcate(std::function<bool(OpWrapper&)> validate_op_config,
+size_t DuplicateOrRemoveConcate(std::function<bool(OpWrapper&)> validate_op_config,
                        std::vector<OpWrapper>& ops, size_t start_index,
                        TensorPool& tensor_pool, size_t pattern_size);
 }  // namespace qnn
