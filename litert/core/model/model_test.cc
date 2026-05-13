@@ -304,6 +304,12 @@ TEST(ModelSubgraphTest, TransferTensorsFrom) {
   EXPECT_EQ(other_subgraph.Tensors().size(), 1);
 }
 
+TEST(ModelSubgraphTest, Name) {
+  LiteRtSubgraphT subgraph;
+  subgraph.SetName("MY_SUBGRAPH_NAME");
+  EXPECT_EQ(subgraph.Name(), "MY_SUBGRAPH_NAME");
+}
+
 //
 // Op
 //

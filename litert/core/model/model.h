@@ -719,6 +719,12 @@ class LiteRtSubgraphT {
     return buffer_manager_;
   }
 
+  // Authored name associated with this subgraph. May be empty.
+  absl::string_view Name() const { return name_; }
+
+  // Update the name associated with this subgraph.
+  void SetName(std::string name) { name_ = std::move(name); }
+
  private:
   // If null, tensors emplaced will own their own buffer managers.
   ::litert::internal::BufferManager* buffer_manager_ = nullptr;
@@ -729,6 +735,8 @@ class LiteRtSubgraphT {
 
   std::vector<LiteRtTensor> inputs_;
   std::vector<LiteRtTensor> outputs_;
+
+  std::string name_;
 };
 
 //

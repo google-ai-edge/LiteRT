@@ -237,6 +237,10 @@ LiteRtStatus PackSubgraph(SerializationContext& builder,
                           LiteRtSubgraphT& litert_subgraph,
                           TflSubgraph& tfl_subgraph, TensorMap& tensor_map,
                           size_t subgraph_ind) {
+  if (!litert_subgraph.Name().empty()) {
+    tfl_subgraph.name = std::string(litert_subgraph.Name());
+  }
+
   for (auto* tensor : litert_subgraph.Tensors()) {
     tfl_subgraph.tensors.push_back(std::make_unique<TflTensor>());
     tensor_map.insert({tensor, tfl_subgraph.tensors.size() - 1});

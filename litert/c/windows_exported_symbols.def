@@ -271,6 +271,7 @@ EXPORTS
   LiteRtGetStridedSliceShrinkAxisMaskOption
   LiteRtGetSubFusedActivationOption
   LiteRtGetSubgraphInput
+  LiteRtGetSubgraphName
   LiteRtGetSubgraphOp
   LiteRtGetSubgraphOutput
   LiteRtGetSumKeepDimsOption
