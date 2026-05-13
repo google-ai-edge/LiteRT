@@ -147,8 +147,8 @@ def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, 
 # QUALCOMM
 
 def _QualcommSpec(version = "V75"):
-    stub_lib = "@qairt//:lib/aarch64-android/libQnnHtp%sStub.so" % version
-    skel_lib = "@qairt//:lib/hexagon-%s/unsigned/libQnnHtp%sSkel.so" % (version.lower(), version.upper())
+    stub_lib = "//third_party/qairt/latest:lib/aarch64-android/libQnnHtp%sStub.so" % version
+    skel_lib = "//third_party/qairt/latest:lib/hexagon-%s/unsigned/libQnnHtp%sSkel.so" % (version.lower(), version.upper())
     version_suffix = version.lower()
     id = "qualcomm_%s" % version_suffix
 
@@ -172,10 +172,10 @@ def _QualcommSpec(version = "V75"):
         id: BackendSpec(
             id = id,
             libs = [
-                ("@qairt//:lib/aarch64-android/libQnnHtp.so", "LD_LIBRARY_PATH"),
+                ("//third_party/qairt/latest:lib/aarch64-android/libQnnHtp.so", "LD_LIBRARY_PATH"),
                 (stub_lib, "LD_LIBRARY_PATH"),
-                ("@qairt//:lib/aarch64-android/libQnnSystem.so", "LD_LIBRARY_PATH"),
-                ("@qairt//:lib/aarch64-android/libQnnHtpPrepare.so", "LD_LIBRARY_PATH"),
+                ("//third_party/qairt/latest:lib/aarch64-android/libQnnSystem.so", "LD_LIBRARY_PATH"),
+                ("//third_party/qairt/latest:lib/aarch64-android/libQnnHtpPrepare.so", "LD_LIBRARY_PATH"),
                 (skel_lib, "ADSP_LIBRARY_PATH"),
                 ("//litert/vendors/qualcomm/dispatch:libLiteRtDispatch_Qualcomm.so", "LD_LIBRARY_PATH"),
                 ("//litert/vendors/qualcomm/compiler:libLiteRtCompilerPlugin_Qualcomm.so", "LD_LIBRARY_PATH"),
@@ -184,8 +184,8 @@ def _QualcommSpec(version = "V75"):
             plugin = "libLiteRtCompilerPlugin_Qualcomm.so",
             dispatch = "libLiteRtDispatch_Qualcomm.so",
             host_libs = [
-                "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
-                "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
+                "//third_party/qairt/latest:lib/x86_64-linux-clang/libQnnHtp.so",
+                "//third_party/qairt/latest:lib/x86_64-linux-clang/libQnnSystem.so",
             ],
             version_target_suffix = version_suffix,
         ),

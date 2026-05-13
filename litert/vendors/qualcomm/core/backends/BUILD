@@ -7,6 +7,7 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert/vendors/qualcomm:__subpackages__"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
 )
 
 cc_library(
@@ -22,6 +23,7 @@ cc_library(
     name = "qnn_backend",
     srcs = ["qnn_backend.cc"],
     hdrs = ["qnn_backend.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
@@ -35,6 +37,7 @@ cc_library(
     name = "ir_backend",
     srcs = ["ir_backend.cc"],
     hdrs = ["ir_backend.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
         ":qnn_backend",
         "//litert/vendors/qualcomm/core:common",
@@ -49,6 +52,7 @@ cc_library(
     name = "htp_backend",
     srcs = ["htp_backend.cc"],
     hdrs = ["htp_backend.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
         ":backend_utils",
         ":qnn_backend",
@@ -64,6 +68,7 @@ cc_library(
     name = "dsp_backend",
     srcs = ["dsp_backend.cc"],
     hdrs = ["dsp_backend.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
         ":backend_utils",
         ":qnn_backend",
