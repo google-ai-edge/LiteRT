@@ -60,6 +60,15 @@ class LiteRtDispatchInvocationContextT {
 
   litert::Expected<void> Invoke();
 
+  litert::Expected<EnnBufferPtr*> GetEnnCommittedBuffer(void) const {
+    return committed_buf_;
+  }
+
+  litert::Expected<void> SetEnnCommittedBuffer(EnnBufferPtr* update) {
+    committed_buf_ = update;
+    return {};
+  }
+
   void SetSchedulingInfo(const LiteRtSchedulingInfo* scheduling_info) {
     if (scheduling_info == nullptr) {
       scheduling_info_ = std::nullopt;
@@ -92,6 +101,7 @@ class LiteRtDispatchInvocationContextT {
   std::vector<EnnBufferPtr> inputs_buf_;
   std::vector<EnnBufferPtr> outputs_buf_;
   std::vector<std::string> weight_signatures_;
+  EnnBufferPtr* committed_buf_;
 };
 
 #endif  // ODML_LITERT_VENDORS_SAMSUNG_DISPATCH_INVOCATION_CONTEXT_H_

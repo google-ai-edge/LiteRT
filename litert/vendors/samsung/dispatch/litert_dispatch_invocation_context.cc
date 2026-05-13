@@ -308,7 +308,6 @@ LiteRtDispatchInvocationContextT::Create(
   }
   LITERT_LOG(LITERT_INFO, "Buffers allocated successfully");
 
-  device_context->SetEnnCommittedBuffer(tmp_buf_ptr);
   LITERT_LOG(LITERT_INFO, "=== Model Loading Complete ===");
 
   model_guard.release();
@@ -316,6 +315,9 @@ LiteRtDispatchInvocationContextT::Create(
   auto context = LiteRtDispatchInvocationContextT::UniquePtr(
       new LiteRtDispatchInvocationContextT(enn_manager, device_context,
                                            model_id, num_inputs, num_outputs));
+
+  // Set committed buffer for this model
+  context->SetEnnCommittedBuffer(tmp_buf_ptr);
 
   // Set weight signatures for later release
   context->SetWeightSignatures(std::move(signatures));
@@ -426,8 +428,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::SetInputBuffers()
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Inputs/outputs not prepared.");
   }
-  LITERT_ASSIGN_OR_RETURN(auto committed_buf,
-                          device_context_->GetEnnCommittedBuffer());
+  LITERT_ASSIGN_OR_RETURN(auto committed_buf, GetEnnCommittedBuffer());
 
   for (int idx = 0; idx < inputs_buf_.size(); idx++) {
     auto usr_buf = inputs_buf_.at(idx);
@@ -440,8 +441,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::SetInputBuffers()
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::SetOutputBuffers()
     const {
-  LITERT_ASSIGN_OR_RETURN(auto committed_buf,
-                          device_context_->GetEnnCommittedBuffer());
+  LITERT_ASSIGN_OR_RETURN(auto committed_buf, GetEnnCommittedBuffer());
 
   int _input_buf_size = inputs_buf_.size();
   for (int idx = 0; idx < outputs_buf_.size(); idx++) {
