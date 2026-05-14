@@ -97,20 +97,20 @@ LiteRtStatus UnpackOp(FlatbufferContext& context, LiteRtSubgraphT& parent,
                       size_t op_index) {
   // I/O TENSORS
 
-  if (tfl_op.intermediates() && tfl_op.intermediates()->size() != 0) {
+  if (tfl_op.intermediates() && !tfl_op.intermediates()->empty()) {
     // TODO: b/365299994 - Support intermediates.
     LITERT_LOG(LITERT_ERROR, "Intermediate tensors not yet supported.");
     return kLiteRtStatusErrorUnsupported;
   }
 
   if (tfl_op.mutating_variable_inputs() &&
-      tfl_op.mutating_variable_inputs()->size() != 0) {
+      !tfl_op.mutating_variable_inputs()->empty()) {
     // TODO: b/365299994 - Support mutating variable inputs.
     LITERT_LOG(LITERT_ERROR, "Mutating variable inputs not yet supported.");
     return kLiteRtStatusErrorUnsupported;
   }
 
-  const auto num_inputs = tfl_op.inputs()->size();
+  const auto num_inputs = tfl_op.inputs() ? tfl_op.inputs()->size() : 0;
   for (auto i = 0; i < num_inputs; ++i) {
     const auto input_ind = tfl_op.inputs()->Get(i);
     // Skipping optional input tensor.
@@ -120,7 +120,7 @@ LiteRtStatus UnpackOp(FlatbufferContext& context, LiteRtSubgraphT& parent,
     AttachInput(&parent.Tensor(input_ind), litert_op);
   }
 
-  const auto num_outputs = tfl_op.outputs()->size();
+  const auto num_outputs = tfl_op.outputs() ? tfl_op.outputs()->size() : 0;
   for (auto i = 0; i < num_outputs; ++i) {
     const auto output_ind = tfl_op.outputs()->Get(i);
     AttachOutput(&parent.Tensor(output_ind), litert_op);
@@ -245,8 +245,7 @@ LiteRtStatus UnpackTensor(FlatbufferContext& context,
     return kLiteRtStatusErrorUnsupported;
   }
 
-  if (tfl_tensor.variant_tensors() &&
-      tfl_tensor.variant_tensors()->size() != 0) {
+  if (tfl_tensor.variant_tensors() && !tfl_tensor.variant_tensors()->empty()) {
     // TODO: b/365299994 - Support variant tensors.
     LITERT_LOG(LITERT_ERROR, "Variant tensors not yet supported.");
     return kLiteRtStatusErrorUnsupported;
@@ -269,7 +268,8 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
   }
 
   // Unpack tensors.
-  const auto num_tensors = tfl_subgraph.tensors()->size();
+  const auto num_tensors =
+      tfl_subgraph.tensors() ? tfl_subgraph.tensors()->size() : 0;
   for (auto i = 0; i < num_tensors; ++i) {
     const auto* tfl_tensor = tfl_subgraph.tensors()->Get(i);
     auto& litert_tensor = litert_subgraph.EmplaceTensor();
@@ -279,7 +279,8 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
 
   // Unpack ops, pass litert_subgraph so they can look up the new litert
   // tensors.
-  const auto num_ops = tfl_subgraph.operators()->size();
+  const auto num_ops =
+      tfl_subgraph.operators() ? tfl_subgraph.operators()->size() : 0;
   for (auto i = 0; i < num_ops; ++i) {
     const auto* tfl_op = tfl_subgraph.operators()->Get(i);
     LITERT_RETURN_IF_ERROR(UnpackOp(context, litert_subgraph, *tfl_op,
@@ -287,7 +288,8 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
   }
 
   // Update subgraph I/O.
-  const auto num_inputs = tfl_subgraph.inputs()->size();
+  const auto num_inputs =
+      tfl_subgraph.inputs() ? tfl_subgraph.inputs()->size() : 0;
   for (auto i = 0; i < num_inputs; ++i) {
     const auto tfl_input_ind = tfl_subgraph.inputs()->Get(i);
     if (tfl_input_ind < 0 ||
@@ -299,7 +301,8 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
     }
     litert_subgraph.Inputs().push_back(&litert_subgraph.Tensor(tfl_input_ind));
   }
-  const auto num_outputs = tfl_subgraph.outputs()->size();
+  const auto num_outputs =
+      tfl_subgraph.outputs() ? tfl_subgraph.outputs()->size() : 0;
   for (auto i = 0; i < num_outputs; ++i) {
     const auto tfl_output_ind = tfl_subgraph.outputs()->Get(i);
     if (tfl_output_ind < 0 ||

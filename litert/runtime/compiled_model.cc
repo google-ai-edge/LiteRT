@@ -1310,19 +1310,18 @@ Expected<void> LiteRtCompiledModelT::GetOutputTensorShapes(
     return Unexpected(kLiteRtStatusErrorNotFound,
                       "Failed to get signature runner");
   }
-  if (update_allocation) {
-    LITERT_ASSIGN_OR_RETURN(bool needs_allocation,
-                            SignatureNeedsAllocation(runner));
-    if (needs_allocation) {
-      if (auto res = runner->AllocateTensors(); res != kTfLiteOk) {
-        if (error_reporter_) {
-          error_reporter_->Report("Failed to allocate tensors for execution");
-        }
-        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                          "Failed to allocate tensors");
+  LITERT_ASSIGN_OR_RETURN(bool needs_allocation,
+                          SignatureNeedsAllocation(runner));
+  needs_allocation = update_allocation || needs_allocation;
+  if (needs_allocation) {
+    if (auto res = runner->AllocateTensors(); res != kTfLiteOk) {
+      if (error_reporter_) {
+        error_reporter_->Report("Failed to allocate tensors for execution");
       }
-      LITERT_RETURN_IF_ERROR(MarkSignatureAllocationUpToDate(runner));
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Failed to allocate tensors");
     }
+    LITERT_RETURN_IF_ERROR(MarkSignatureAllocationUpToDate(runner));
   }
   auto output_names = runner->subgraph_output_names();
   // Check whether output_layouts has enough space to store all output tensors
@@ -2166,7 +2165,7 @@ Expected<bool> LiteRtCompiledModelT::SignatureNeedsAllocation(
     const tflite::SignatureRunner* runner) const {
   auto iter = signature_needs_allocation_.find(runner);
   if (iter == signature_needs_allocation_.end()) {
-    return true;
+    return false;
   }
   return iter->second;
 }
