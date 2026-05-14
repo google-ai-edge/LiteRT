@@ -432,6 +432,12 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::OpWrapper& op) {
 LiteRtStatus QnnManager::RegisterOpPackage(
     const std::string& package_path, const std::string& interface_provider,
     const std::string& target) {
+  if (options_.GetBackendType() == ::qnn::BackendType::kIrBackend) {
+    LITERT_LOG(LITERT_INFO,
+               "Custom op package is not supportted in IrBackend. Ignore.");
+    return kLiteRtStatusOk;
+  }
+
   if (auto status = Api()->backendRegisterOpPackage(
           backend_->GetBackendHandle(), package_path.c_str(),
           interface_provider.c_str(), target.c_str());
