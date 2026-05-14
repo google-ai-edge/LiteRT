@@ -193,6 +193,20 @@ void RegisterPooling(const AtsConf& options, size_t& test_id, size_t iters,
 }
 
 template <typename Fixture>
+void RegisterReshape(const AtsConf& options, size_t& test_id, size_t iters,
+                     typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Reshape,
+      SizeListC<1, 2, 3, 4, 5, 6>,
+      SizeListC<1, 2, 3, 4, 5, 6>,
+      TypeList<float>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
 void RegisterAll(const AtsConf& options, size_t& test_id,
                  typename Fixture::Capture& cap) {
   RegisterExtraModels<Fixture>(test_id, options, cap);
@@ -203,6 +217,7 @@ void RegisterAll(const AtsConf& options, size_t& test_id,
   RegisterDepthwiseConv2d<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterReduction<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterPooling<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterReshape<Fixture>(options, test_id, /*iters=*/10, cap);
 }
 
 int Ats() {

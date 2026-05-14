@@ -771,6 +771,15 @@ TEST(PrintingTest, TflOptionsNoPrinter) {
   EXPECT_EQ(absl::StrFormat("%v", opts), "{!no_printer}");
 }
 
+TEST(PrintingTest, TflOptionsReshape) {
+  TflOptions opts;
+  opts.type = ::tflite::BuiltinOptions_ReshapeOptions;
+  ::tflite::ReshapeOptionsT reshape_opts;
+  reshape_opts.new_shape = {2, 3};
+  opts.Set(std::move(reshape_opts));
+  EXPECT_EQ(absl::StrFormat("%v", opts), "{new_shape=[2,3]}");
+}
+
 TEST(PrintingTest, TflOptions2NoPrinter) {
   TflOptions2 opts;
   opts.type = ::tflite::BuiltinOptions2_StableHLOCompositeOptions;

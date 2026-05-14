@@ -25,5 +25,6 @@
 #include "litert/test/generators/depthwise_conv_2d.h"  // IWYU pragma: export
 #include "litert/test/generators/reduction.h"  // IWYU pragma: export
 #include "litert/test/generators/pooling.h"  // IWYU pragma: export
+#include "litert/test/generators/reshape.h"  // IWYU pragma: export
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_

@@ -1523,6 +1523,11 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
       absl::Format(&sink, "%v", pool_opts);
       break;
     }
+    case tflite::BuiltinOptions_ReshapeOptions: {
+      const auto* reshape_opts = opts.AsReshapeOptions();
+      absl::Format(&sink, "%v", reshape_opts);
+      break;
+    }
     case tflite::BuiltinOptions_NONE: {
       absl::Format(&sink, "{}");
       break;
@@ -1691,6 +1696,25 @@ void AbslStringify(Sink& sink, const DivOptionsT& opts) {
 
 template <class Sink>
 void AbslStringify(Sink& sink, const DivOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const ReshapeOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  std::string shape_str = "[";
+  for (auto it = opts.new_shape.begin(); it != opts.new_shape.end(); ++it) {
+    if (it != opts.new_shape.begin()) {
+      shape_str += ",";
+    }
+    shape_str += std::to_string(*it);
+  }
+  shape_str += "]";
+  b("new_shape", shape_str);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const ReshapeOptionsT* opts) {
   ::litert::internal::PrintNullableOpts(sink, opts);
 }
 

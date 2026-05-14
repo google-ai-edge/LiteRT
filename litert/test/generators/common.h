@@ -168,7 +168,10 @@ using FbOpTypes =
         std::bool_constant<OpCode == kLiteRtOpCodeTflDiv>,
             FbOpTraits<tflite::DivOptionsT,
                        tflite::BuiltinOperator_DIV,
-                       tflite::BuiltinOptions_DivOptions>
+                       tflite::BuiltinOptions_DivOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflReshape>,
+            FbOpTraits<tflite::ReshapeOptionsT, tflite::BuiltinOperator_RESHAPE,
+                       tflite::BuiltinOptions_ReshapeOptions>
     >;
 // clang-format on
 static_assert(FbOpTypes<kLiteRtOpCodeTflAdd>::kHasOptions);
