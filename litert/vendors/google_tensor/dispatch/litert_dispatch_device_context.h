@@ -58,6 +58,8 @@ class LiteRtDispatchDeviceContextT {
 
   LiteRtStatus UnloadExecutable(LiteRtDispatchExecutableHandle exec_handle);
 
+  bool IsTfliteExecutable(LiteRtDispatchExecutableHandle exec_handle) const;
+
   // Registers a graph with the device context.
   //
   // This has the effect of guaranteeing that the device context remains alive
@@ -116,6 +118,10 @@ class LiteRtDispatchDeviceContextT {
   // when non-empty; release order is graphs, then executables, then Destroy.
   // std::vector (not hash set): expected N=1.
   std::vector<MmapRegion> mmap_regions_;
+  // Set of executables that are TFLite flatbuffers. This is in contrast to
+  // other executable types like custom-compiled binaries. TFLite
+  // flatbuffers can contain multiple signatures.
+  absl::flat_hash_set<LiteRtDispatchExecutableHandle> tflite_executables_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_

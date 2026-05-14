@@ -231,7 +231,8 @@ LiteRtStatus LiteRtDispatchGraphT::AssignNodeFunction(
   const char* valid_function_name =
       (!function_name || *function_name == '\0') ? nullptr : function_name;
 
-  if (valid_function_name != nullptr &&
+  if (!device_context_->IsTfliteExecutable(exec_handle) &&
+      valid_function_name != nullptr &&
       !GoogleTensorSouthBoundFeatureSupported(
           GoogleTensorSouthBoundFeature::kTachyonNamedSqFunctions)) {
     LITERT_LOG(LITERT_VERBOSE,
