@@ -147,6 +147,7 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetSaverOutputDir(qualcomm_options.GetSaverOutputDir());
   qnn_options.SetGraphIOTensorMemType(static_cast<::qnn::GraphIOTensorMemType>(
       qualcomm_options.GetGraphIOTensorMemType()));
+  qnn_options.SetSchematicDir(qualcomm_options.GetSchematicDir());
   const auto custom_op_package = qualcomm_options.GetCustomOpPackage();
   qnn_options.SetCustomOpPackage(
       custom_op_package.name, custom_op_package.interface_provider,

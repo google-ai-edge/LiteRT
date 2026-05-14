@@ -21,6 +21,7 @@ import tempfile
 import types
 import unittest
 
+import ml_dtypes
 import numpy as np
 
 from litert.python.litert_wrapper.compiled_model_wrapper import (
@@ -75,6 +76,11 @@ class PercentileTest(unittest.TestCase):
 class GetNumpyDtypeTest(unittest.TestCase):
 
   def test_known_dtypes(self):
+    self.assertEqual(bm.get_numpy_dtype('bfloat16'), ml_dtypes.bfloat16)
+    self.assertEqual(
+        bm.get_numpy_dtype('float8_e4m3fn'), ml_dtypes.float8_e4m3fn
+    )
+    self.assertEqual(bm.get_numpy_dtype('float8_e5m2'), ml_dtypes.float8_e5m2)
     self.assertEqual(bm.get_numpy_dtype('float32'), np.float32)
     self.assertEqual(bm.get_numpy_dtype('float16'), np.float16)
     self.assertEqual(bm.get_numpy_dtype('int32'), np.int32)
@@ -84,7 +90,6 @@ class GetNumpyDtypeTest(unittest.TestCase):
     self.assertEqual(bm.get_numpy_dtype('bool'), np.bool_)
 
   def test_unknown_dtype_defaults_to_float32(self):
-    self.assertEqual(bm.get_numpy_dtype('bfloat16'), np.float32)
     self.assertEqual(bm.get_numpy_dtype(''), np.float32)
 
 
