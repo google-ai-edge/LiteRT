@@ -72,7 +72,7 @@ cc_test(
     name = "compiler_plugin_test",
     srcs = ["compiler_plugin_test.cc"],
     data = [
-        "//litert/c:litert_runtime_c_api_so",
+        "//litert/c:libLiteRt.so",
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
         "//litert/vendors/examples:example_plugin_so_data",
@@ -84,7 +84,7 @@ cc_test(
         "//litert:windows": [],
         "//conditions:default": [
             make_rpaths([
-                "//litert/c:litert_runtime_c_api_so",
+                "//litert/c:libLiteRt.so",
                 "//litert/c:litert_so",
             ]),
         ],
@@ -136,7 +136,7 @@ cc_test(
     name = "compiler_plugin_transformation_test",
     srcs = ["compiler_plugin_transformation_test.cc"],
     data = [
-        "//litert/c:litert_runtime_c_api_so",
+        "//litert/c:libLiteRt.so",
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
         "//litert/vendors/examples:example_plugin_so_data",
@@ -148,7 +148,7 @@ cc_test(
         "//litert:windows": [],
         "//conditions:default": [
             make_rpaths([
-                "//litert/c:litert_runtime_c_api_so",
+                "//litert/c:libLiteRt.so",
                 "//litert/c:litert_so",
             ]),
         ],

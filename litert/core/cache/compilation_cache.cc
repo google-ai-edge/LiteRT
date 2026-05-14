@@ -316,10 +316,16 @@ Expected<std::optional<LiteRtModelT::Ptr>> CompilationCache::TryLoadModel(
 
   LITERT_RETURN_IF_ERROR(TouchFile(expected_model_file_path));
 
-  LITERT_ASSIGN_OR_RETURN(
-      LiteRtModelT::Ptr cached_model,
-      litert::internal::LoadModelFromFile(expected_model_file_path));
-  return std::make_optional(std::move(cached_model));
+  auto cached_model_expected =
+      litert::internal::LoadModelFromFile(expected_model_file_path);
+  if (!cached_model_expected.HasValue()) {
+    LITERT_LOG(LITERT_WARNING,
+               "Failed to load model from cache, removing corrupted file: %s",
+               expected_model_file_path.c_str());
+    (void)RemoveFile(expected_model_file_path);
+    return Expected<std::optional<LiteRtModelT::Ptr>>(std::nullopt);
+  }
+  return std::make_optional(std::move(cached_model_expected.Value()));
 }
 
 CompilationCache::CompilationCache(absl::string_view cache_root_path)

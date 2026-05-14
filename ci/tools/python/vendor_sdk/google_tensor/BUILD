@@ -27,7 +27,7 @@ sdist_rule(
     package_name = PROJECT_NAME,
     manifest_in = "MANIFEST.in",
     nightly_suffix = "//ci/tools/python/wheel:nightly_iso_date",
-    package_srcs = glob(["ai_edge_litert_sdk_google_tensor/**"]),
+    package_srcs = glob(["ai_edge_litert_sdk_google_tensor/**"]) + ["TERMS_OF_USE.md"],
     setup_py = "setup.py",
     version = LITERT_SDK_GOOGLE_TENSOR_FULL_VERSION,
 )

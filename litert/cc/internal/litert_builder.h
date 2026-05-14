@@ -22,7 +22,6 @@
 #include <utility>
 #include <vector>
 
-#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_builder.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
@@ -32,6 +31,7 @@
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_op_options.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
@@ -184,8 +184,7 @@ class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
 
   /// @brief Builds weights for a tensor.
   template <typename T>
-  Expected<Weights> BuildWeights(absl::Span<const T> data,
-                                 Tensor& tensor) const {
+  Expected<Weights> BuildWeights(Span<const T> data, Tensor& tensor) const {
     const uint8_t* data_uint8 = reinterpret_cast<const uint8_t*>(data.data());
     size_t size_uint8 = data.size() * sizeof(T);
     LiteRtWeights weights;
