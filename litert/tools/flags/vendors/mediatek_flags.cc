@@ -18,7 +18,6 @@
 
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
@@ -29,8 +28,9 @@
 // TODO: Move absl parse/unparse function to same file as enum types if
 // it becomes an issue.
 
-ABSL_FLAG(LiteRtMediatekOptionsNeronSDKVersionType, mediatek_sdk_version_type,
-          kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8,
+ABSL_FLAG(litert::mediatek::MediatekOptions::NeronSDKVersion,
+          mediatek_sdk_version_type,
+          litert::mediatek::MediatekOptions::NeronSDKVersion::kVersion8,
           "Version for neuron sdk for Mediatek.");
 
 ABSL_FLAG(bool, mediatek_enable_gemma_compiler_optimizations, false,
@@ -39,14 +39,14 @@ ABSL_FLAG(bool, mediatek_enable_gemma_compiler_optimizations, false,
 ABSL_FLAG(bool, mediatek_enable_l1_cache_optimizations, false,
           "Whether to enable L1 cache optimizations.");
 
-ABSL_FLAG(LiteRtMediatekNeuronAdapterPerformanceMode,
+ABSL_FLAG(litert::mediatek::MediatekOptions::PerformanceMode,
           mediatek_performance_mode_type,
-          kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed,
+          litert::mediatek::MediatekOptions::PerformanceMode::kSustainedSpeed,
           "Performance mode for Mediatek Inference.");
 
-ABSL_FLAG(LiteRtMediatekNeuronAdapterOptimizationHint,
+ABSL_FLAG(litert::mediatek::MediatekOptions::OptimizationHint,
           mediatek_optimization_hint,
-          kLiteRtMediatekNeuronAdapterOptimizationHintNormal,
+          litert::mediatek::MediatekOptions::OptimizationHint::kNormal,
           "Optimization hint for Mediatek Inference.");
 
 ABSL_FLAG(bool, mediatek_disable_dla_dir_removal, false,
@@ -62,21 +62,23 @@ ABSL_FLAG(
 ABSL_FLAG(std::string, mediatek_aot_compilation_options, "",
           "Aot compilation options for Mediatek Inference.");
 
+namespace litert::mediatek {
+
 bool AbslParseFlag(absl::string_view text,
-                   LiteRtMediatekOptionsNeronSDKVersionType* options,
+                   MediatekOptions::NeronSDKVersion* options,
                    std::string* error) {
   if (text == "version7") {
-    *options = kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7;
+    *options = MediatekOptions::NeronSDKVersion::kVersion7;
     return true;
   }
 
   if (text == "version8") {
-    *options = kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8;
+    *options = MediatekOptions::NeronSDKVersion::kVersion8;
     return true;
   }
 
   if (text == "version9") {
-    *options = kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9;
+    *options = MediatekOptions::NeronSDKVersion::kVersion9;
     return true;
   }
 
@@ -84,37 +86,34 @@ bool AbslParseFlag(absl::string_view text,
   return false;
 }
 
-std::string AbslUnparseFlag(LiteRtMediatekOptionsNeronSDKVersionType options) {
+std::string AbslUnparseFlag(MediatekOptions::NeronSDKVersion options) {
   switch (options) {
-    case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7:
+    case MediatekOptions::NeronSDKVersion::kVersion7:
       return "version7";
-    case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8:
+    case MediatekOptions::NeronSDKVersion::kVersion8:
       return "version8";
-    case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9:
+    case MediatekOptions::NeronSDKVersion::kVersion9:
       return "version9";
   }
 }
 
 bool AbslParseFlag(absl::string_view text,
-                   LiteRtMediatekNeuronAdapterPerformanceMode* options,
+                   MediatekOptions::PerformanceMode* options,
                    std::string* error) {
   if (text == "low_power") {
-    *options = kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferLowPower;
+    *options = MediatekOptions::PerformanceMode::kLowPower;
     return true;
   }
   if (text == "fast_single_answer") {
-    *options =
-        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer;
+    *options = MediatekOptions::PerformanceMode::kFastSingleAnswer;
     return true;
   }
   if (text == "sustained_speed") {
-    *options =
-        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed;
+    *options = MediatekOptions::PerformanceMode::kSustainedSpeed;
     return true;
   }
   if (text == "turbo_boost") {
-    *options =
-        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferTurboBoost;
+    *options = MediatekOptions::PerformanceMode::kTurboBoost;
     return true;
   }
 
@@ -122,39 +121,36 @@ bool AbslParseFlag(absl::string_view text,
   return false;
 }
 
-std::string AbslUnparseFlag(
-    LiteRtMediatekNeuronAdapterPerformanceMode options) {
+std::string AbslUnparseFlag(MediatekOptions::PerformanceMode options) {
   switch (options) {
-    case kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferLowPower:
+    case MediatekOptions::PerformanceMode::kLowPower:
       return "low_power";
-    case kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed:
+    case MediatekOptions::PerformanceMode::kSustainedSpeed:
       return "sustained_speed";
-    case (
-        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer
-      ):
+    case MediatekOptions::PerformanceMode::kFastSingleAnswer:
       return "fast_single_answer";
-    case kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferTurboBoost:
+    case MediatekOptions::PerformanceMode::kTurboBoost:
       return "turbo_boost";
   }
 }
 
 bool AbslParseFlag(absl::string_view text,
-                   LiteRtMediatekNeuronAdapterOptimizationHint* options,
+                   MediatekOptions::OptimizationHint* options,
                    std::string* error) {
   if (text == "normal") {
-    *options = kLiteRtMediatekNeuronAdapterOptimizationHintNormal;
+    *options = MediatekOptions::OptimizationHint::kNormal;
     return true;
   }
   if (text == "low_latency") {
-    *options = kLiteRtMediatekNeuronAdapterOptimizationHintLowLatency;
+    *options = MediatekOptions::OptimizationHint::kLowLatency;
     return true;
   }
   if (text == "deep_fusion") {
-    *options = kLiteRtMediatekNeuronAdapterOptimizationHintDeepFusion;
+    *options = MediatekOptions::OptimizationHint::kDeepFusion;
     return true;
   }
   if (text == "batch_processing") {
-    *options = kLiteRtMediatekNeuronAdapterOptimizationHintBatchProcessing;
+    *options = MediatekOptions::OptimizationHint::kBatchProcessing;
     return true;
   }
 
@@ -162,19 +158,20 @@ bool AbslParseFlag(absl::string_view text,
   return false;
 }
 
-std::string AbslUnparseFlag(
-    LiteRtMediatekNeuronAdapterOptimizationHint options) {
+std::string AbslUnparseFlag(MediatekOptions::OptimizationHint options) {
   switch (options) {
-    case kLiteRtMediatekNeuronAdapterOptimizationHintNormal:
+    case MediatekOptions::OptimizationHint::kNormal:
       return "normal";
-    case kLiteRtMediatekNeuronAdapterOptimizationHintLowLatency:
+    case MediatekOptions::OptimizationHint::kLowLatency:
       return "low_latency";
-    case (kLiteRtMediatekNeuronAdapterOptimizationHintDeepFusion):
+    case MediatekOptions::OptimizationHint::kDeepFusion:
       return "deep_fusion";
-    case kLiteRtMediatekNeuronAdapterOptimizationHintBatchProcessing:
+    case MediatekOptions::OptimizationHint::kBatchProcessing:
       return "batch_processing";
   }
 }
+
+}  // namespace litert::mediatek
 
 // NOLINTEND(*alien-types*)
 

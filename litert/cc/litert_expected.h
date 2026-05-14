@@ -24,10 +24,13 @@
 #include <type_traits>
 #include <utility>
 
+#ifndef LITERT_NO_ABSL
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#endif  // LITERT_NO_ABSL
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_common.h"
 
 /// @file
@@ -49,13 +52,13 @@ class Error {
   explicit Error(::litert::Status status, std::string message = "")
       : status_(static_cast<LiteRtStatus>(status)),
         message_(std::move(message)) {
-    ABSL_DCHECK(status != ::litert::Status::kOk);
+    LITERT_INTERNAL_DCHECK(status != ::litert::Status::kOk);
   }
 
   [[deprecated("Use the constructor that takes ::litert::Status instead.")]]
   explicit Error(LiteRtStatus status, std::string message = "")
       : status_(status), message_(std::move(message)) {
-    ABSL_DCHECK(status != kLiteRtStatusOk);
+    LITERT_INTERNAL_DCHECK(status != kLiteRtStatusOk);
   }
 
   /// @brief Gets the status.
@@ -81,6 +84,7 @@ class Error {
     return stream;
   }
 
+#ifndef LITERT_NO_ABSL
   template <class Sink>
   friend void AbslStringify(Sink& sink, const Error& error) {
     absl::Format(&sink, "%s", LiteRtGetStatusString(error.status_));
@@ -88,6 +92,7 @@ class Error {
       absl::Format(&sink, ": %v", error.Message());
     }
   }
+#endif  // LITERT_NO_ABSL
 
  private:
   LiteRtStatus status_;
@@ -127,10 +132,12 @@ class Unexpected {
   }
   constexpr class Error&& Error() && noexcept { return std::move(error_); }
 
+#ifndef LITERT_NO_ABSL
   template <class Sink>
   friend void AbslStringify(Sink& sink, const Unexpected& unexpected) {
     AbslStringify(sink, unexpected.Error());
   }
+#endif  // LITERT_NO_ABSL
 
  private:
   class Error error_;
@@ -377,8 +384,8 @@ class Expected {
     StorageType value_;
     Unexpected unexpected_;
   };
-  void CheckNoVal() const { ABSL_CHECK(!HasValue()); }
-  void CheckVal() const { ABSL_CHECK(HasValue()); }
+  void CheckNoVal() const { LITERT_INTERNAL_CHECK(!HasValue()); }
+  void CheckVal() const { LITERT_INTERNAL_CHECK(HasValue()); }
 };
 
 template <class T>
@@ -387,6 +394,7 @@ Expected(const T&) -> Expected<T>;
 template <class T>
 Expected(T&&) -> Expected<T>;
 
+#ifndef LITERT_NO_ABSL
 namespace internal {
 template <class T>
 struct CanBeAbslFormated {
@@ -419,6 +427,7 @@ void AbslStringify(Sink& sink, const Expected<T>& expected) {
     }
   }
 }
+#endif  // LITERT_NO_ABSL
 
 /// @brief A specialization of `Expected` for `void`.
 ///
@@ -474,8 +483,8 @@ class Expected<void> {
 
  private:
   std::optional<Unexpected> unexpected_;
-  void CheckNoVal() const { ABSL_CHECK(!HasValue()); }
-  void CheckVal() const { ABSL_CHECK(HasValue()); }
+  void CheckNoVal() const { LITERT_INTERNAL_CHECK(!HasValue()); }
+  void CheckVal() const { LITERT_INTERNAL_CHECK(HasValue()); }
 };
 
 }  // namespace litert

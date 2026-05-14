@@ -121,10 +121,10 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
                            compilation_options.GetMediatekOptions());
     if (mediatek_nerun_pilot_version == "version9") {
       mtk_opts.SetNeronSDKVersionType(
-          kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9);
+          litert::mediatek::MediatekOptions::NeronSDKVersion::kVersion9);
     }
     mtk_opts.SetPerformanceMode(
-        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferTurboBoost);
+        litert::mediatek::MediatekOptions::PerformanceMode::kTurboBoost);
     mtk_opts.SetEnableL1CacheOptimizations(true);
 
     // Google Tensor options

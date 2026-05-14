@@ -19,23 +19,22 @@
 
 #include "absl/flags/declare.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
-ABSL_DECLARE_FLAG(LiteRtMediatekOptionsNeronSDKVersionType,
+ABSL_DECLARE_FLAG(litert::mediatek::MediatekOptions::NeronSDKVersion,
                   mediatek_sdk_version_type);
 
 ABSL_DECLARE_FLAG(bool, mediatek_enable_gemma_compiler_optimizations);
 
-ABSL_DECLARE_FLAG(LiteRtMediatekNeuronAdapterPerformanceMode,
+ABSL_DECLARE_FLAG(litert::mediatek::MediatekOptions::PerformanceMode,
                   mediatek_performance_mode_type);
 
 ABSL_DECLARE_FLAG(bool, mediatek_enable_l1_cache_optimizations);
 
-ABSL_DECLARE_FLAG(LiteRtMediatekNeuronAdapterOptimizationHint,
+ABSL_DECLARE_FLAG(litert::mediatek::MediatekOptions::OptimizationHint,
                   mediatek_optimization_hint);
 
 ABSL_DECLARE_FLAG(bool, mediatek_disable_dla_dir_removal);
@@ -44,30 +43,27 @@ ABSL_DECLARE_FLAG(std::string, mediatek_dla_dir);
 
 ABSL_DECLARE_FLAG(std::string, mediatek_aot_compilation_options);
 
-bool AbslParseFlag(absl::string_view text,
-                   LiteRtMediatekOptionsNeronSDKVersionType* options,
-                   std::string* error);
-
-std::string AbslUnparseFlag(LiteRtMediatekOptionsNeronSDKVersionType options);
+namespace litert::mediatek {
 
 bool AbslParseFlag(absl::string_view text,
-                   LiteRtMediatekNeuronAdapterPerformanceMode* options,
+                   MediatekOptions::NeronSDKVersion* options,
                    std::string* error);
 
-std::string AbslUnparseFlag(LiteRtMediatekNeuronAdapterPerformanceMode options);
+std::string AbslUnparseFlag(MediatekOptions::NeronSDKVersion options);
 
 bool AbslParseFlag(absl::string_view text,
-                   LiteRtMediatekNeuronAdapterPerformanceMode* options,
+                   MediatekOptions::PerformanceMode* options,
                    std::string* error);
 
-std::string AbslUnparseFlag(LiteRtMediatekNeuronAdapterPerformanceMode options);
+std::string AbslUnparseFlag(MediatekOptions::PerformanceMode options);
 
 bool AbslParseFlag(absl::string_view text,
-                   LiteRtMediatekNeuronAdapterOptimizationHint* options,
+                   MediatekOptions::OptimizationHint* options,
                    std::string* error);
 
-std::string AbslUnparseFlag(
-    LiteRtMediatekNeuronAdapterOptimizationHint options);
+std::string AbslUnparseFlag(MediatekOptions::OptimizationHint options);
+
+}  // namespace litert::mediatek
 
 // PARSERS (internal) //////////////////////////////////////////////////////////
 
