@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
 #include <memory>
 #include <optional>
 #include <string>
@@ -738,6 +739,48 @@ TEST(CompilationCacheTest, Case3_GlobalLRU_TouchUpdatesTimestamp) {
   // Verify File 2 is removed (it is now the oldest)
   EXPECT_TRUE(litert::internal::Exists(path_1));
   EXPECT_FALSE(litert::internal::Exists(path_2));
+}
+
+TEST(CompilationCacheTest, Case4_Corruption_RemovesCorruptedFile) {
+  const std::string cache_root_path =
+      ::testing::TempDir() + "/Case4_Corruption";
+  LITERT_ABORT_IF_ERROR(litert::internal::MkDir(cache_root_path));
+  LITERT_ASSIGN_OR_ABORT(CompilationCache compilation_cache,
+                         CompilationCache::Create(cache_root_path));
+
+  LITERT_ASSIGN_OR_ABORT(std::unique_ptr<LiteRtModelT> model,
+                         LoadModelFromFile(litert::testing::GetTestFilePath(
+                             "simple_model.tflite")));
+
+  LITERT_ASSIGN_OR_ABORT(
+      CompilationCache::CacheKey key,
+      CompilationCache::GetModelHash(*model, GetTestOptions(),
+                                     GetTestCompilerPluginInfo()));
+
+  std::string model_name = "my_model";
+
+  // Manually create a corrupted file
+  std::string corrupted_dir = litert::internal::Join(
+      {cache_root_path, model_name, absl::StrCat(key.content_hash)});
+  LITERT_ABORT_IF_ERROR(litert::internal::MkDir(corrupted_dir));
+  std::string corrupted_path = litert::internal::Join(
+      {corrupted_dir, absl::StrCat(key.config_hash, ".tflite")});
+
+  std::ofstream file(corrupted_path);
+  file << "This is corrupted content, not a valid TFLite model!";
+  file.close();
+
+  EXPECT_TRUE(litert::internal::Exists(corrupted_path));
+
+  // Try to load it
+  LITERT_ASSIGN_OR_ABORT(std::optional<LiteRtModelT::Ptr> cache_hit,
+                         compilation_cache.TryLoadModel(key, model_name));
+
+  // Verify it returns nullopt (clean cache miss after removal)
+  EXPECT_FALSE(cache_hit.has_value());
+
+  // Verify the file is REMOVED
+  EXPECT_FALSE(litert::internal::Exists(corrupted_path));
 }
 
 }  // namespace litert::internal

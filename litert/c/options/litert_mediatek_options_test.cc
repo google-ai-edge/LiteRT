@@ -14,11 +14,13 @@
 #include "litert/c/options/litert_mediatek_options.h"
 
 #include <string>
+#include <utility>
 
 #include <gtest/gtest.h>
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/test/matchers.h"
 
 namespace litert::mediatek {
@@ -290,6 +292,33 @@ TEST(LrtMediatekOptionsTest, GetOpaqueDataPopulated) {
 
   payload_deleter(payload);
   LrtDestroyMediatekOptions(options);
+}
+
+TEST(MediatekOptionsTest, CppWrapper) {
+  auto options_or = MediatekOptions::Create();
+  ASSERT_TRUE(options_or.HasValue());
+  auto options = std::move(options_or.Value());
+
+  // Test default values
+  EXPECT_EQ(options.GetNeronSDKVersionType(),
+            MediatekOptions::NeronSDKVersion::kVersion8);
+  EXPECT_EQ(options.GetPerformanceMode(),
+            MediatekOptions::PerformanceMode::kSustainedSpeed);
+  EXPECT_EQ(options.GetOptimizationHint(),
+            MediatekOptions::OptimizationHint::kNormal);
+
+  // Test setting values
+  options.SetNeronSDKVersionType(MediatekOptions::NeronSDKVersion::kVersion7);
+  EXPECT_EQ(options.GetNeronSDKVersionType(),
+            MediatekOptions::NeronSDKVersion::kVersion7);
+
+  options.SetPerformanceMode(MediatekOptions::PerformanceMode::kLowPower);
+  EXPECT_EQ(options.GetPerformanceMode(),
+            MediatekOptions::PerformanceMode::kLowPower);
+
+  options.SetOptimizationHint(MediatekOptions::OptimizationHint::kLowLatency);
+  EXPECT_EQ(options.GetOptimizationHint(),
+            MediatekOptions::OptimizationHint::kLowLatency);
 }
 
 }  // namespace
