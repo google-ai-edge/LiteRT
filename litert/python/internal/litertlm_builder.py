@@ -54,6 +54,18 @@ from litert.python.internal import litertlm_core
 from litert.python.internal import litertlm_header_schema_py_generated as schema
 from litert.python.internal import llm_metadata_pb2
 
+# For Python versions before 3.11, provide our own `enum.StrEnum`.
+class StrEnumImpl(str, enum.Enum):
+
+  def __str__(self):
+    return self.value
+
+
+if hasattr(enum, "StrEnum"):
+  _StrEnum = enum.StrEnum
+else:
+  _StrEnum = StrEnumImpl
+
 
 # For Python versions before 3.11, provide our own `enum.StrEnum`.
 class StrEnumImpl(str, enum.Enum):
