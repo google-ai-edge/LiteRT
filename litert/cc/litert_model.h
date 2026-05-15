@@ -229,6 +229,19 @@ class Model : public internal::BaseHandle<LiteRtModel> {
     return CreateFromOwnedHandle(model);
   }
 
+  /// @brief Creates a model from a file descriptor region.
+  ///
+  /// LiteRT duplicates the file descriptor internally; the caller retains
+  /// ownership of `fd`.
+  static Expected<Model> CreateFromFd(int fd, size_t offset, size_t size) {
+    LiteRtModel model;
+    if (auto status = LiteRtCreateModelFromFd(fd, offset, size, &model);
+        status != kLiteRtStatusOk) {
+      return Unexpected(ToStatus(status), "Failed to load model from fd");
+    }
+    return CreateFromOwnedHandle(model);
+  }
+
 #if !defined(LITERT_DYNAMIC_RUNTIME) && !defined(LITERT_NO_ABSL)
   // copybara:uncomment_begin(google_only)
   // /// @internal

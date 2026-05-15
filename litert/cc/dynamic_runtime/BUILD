@@ -315,6 +315,7 @@ cc_test(
         "//litert/cc:litert_model_types",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_extended_model",
+        "//litert/cc/internal:scoped_file",
         "//litert/core/model",
         "//litert/test:common",
         "//litert/test:matchers",

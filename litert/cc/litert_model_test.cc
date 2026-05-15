@@ -31,6 +31,7 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_model_types.h"
@@ -112,6 +113,30 @@ TEST(CcModelTest, SimpleModelSignature) {
   EXPECT_EQ(output_names->at(0), "sum");
   EXPECT_EQ(output_names->at(1), "prod");
 }
+
+#if !defined(LITERT_WINDOWS_OS)
+TEST(CcModelTest, CreateFromFd) {
+  if (!tflite::MMAPAllocation::IsSupported()) {
+    GTEST_SKIP() << "MMAPAllocation is not supported";
+  }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model_file,
+      ScopedFile::Open(testing::GetTestFilePath("one_mul.tflite")));
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t model_size, model_file.GetSize());
+
+  auto model = Model::CreateFromFd(model_file.file(), 0, model_size);
+  ASSERT_TRUE(model);
+  EXPECT_EQ(model->GetNumSignatures(), 1);
+
+  auto signature = model->FindSignature(Model::DefaultSignatureKey());
+  ASSERT_TRUE(signature);
+  EXPECT_THAT(signature->InputNames(),
+              ::testing::ElementsAreArray({"arg0", "arg1"}));
+  EXPECT_THAT(signature->OutputNames(),
+              ::testing::ElementsAreArray({"tfl.mul"}));
+}
+#endif  // !defined(LITERT_WINDOWS_OS)
 
 #if !defined(LITERT_DYNAMIC_RUNTIME)
 // copybara:uncomment_begin(google_only)
