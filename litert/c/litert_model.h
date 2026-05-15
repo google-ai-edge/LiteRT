@@ -237,6 +237,10 @@ LiteRtStatus LiteRtCreateModelFromFile(const char* filename,
 LiteRtStatus LiteRtCreateModelFromBuffer(const void* buffer_addr,
                                          size_t buffer_size,
                                          LiteRtModel* model);
+// Creates a model from the given file descriptor region. LiteRT duplicates the
+// file descriptor internally; the caller retains ownership of `fd`.
+LiteRtStatus LiteRtCreateModelFromFd(int fd, size_t offset, size_t size,
+                                     LiteRtModel* model);
 
 // Get the metadata buffer associated with given key if it exists.
 LiteRtStatus LiteRtGetModelMetadata(LiteRtModel model, const char* metadata_key,
