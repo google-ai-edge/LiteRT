@@ -122,10 +122,7 @@ litert_bin(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     linkopts = litert_android_linkopts(),
     linkshared = 1,
-    visibility = [
-        "//ci/tools/python/wheel:__subpackages__",
-        "//litert:__subpackages__",
-    ],
+    visibility = ["//visibility:public"],  # Allows LiteRT-LM packaging.
     deps = [
         ":litert_dispatch_api",
         "//litert/c:litert_common",
