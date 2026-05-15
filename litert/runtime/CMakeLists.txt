@@ -74,7 +74,8 @@ target_sources(litert_runtime PRIVATE open_cl_memory.cc open_cl_sync.cc)
 
 # Link Apple frameworks for Metal and OpenGL interop
 if(APPLE)
-  set_source_files_properties(metal_info.cc PROPERTIES COMPILE_FLAGS "-x objective-c++")
+  set_source_files_properties(metal_info.cc PROPERTIES
+    COMPILE_FLAGS "-x objective-c++ -fobjc-arc")
   target_link_libraries(litert_runtime PRIVATE "-framework Metal" "-framework Foundation" "-framework OpenGL")
 endif()
 
