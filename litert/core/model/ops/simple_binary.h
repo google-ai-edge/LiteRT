@@ -26,6 +26,8 @@
 #include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/shape_inference_types.h"
+#include "tflite/converter/schema/schema_generated.h"
+#include "tflite/kernels/internal/runtime_shape.h"
 
 namespace litert::internal {
 
@@ -95,6 +97,77 @@ DEFINE_SIMPLE_BINARY_INFER(SquaredDifference)
 DEFINE_SIMPLE_BINARY_INFER(Sub)
 
 #undef DEFINE_SIMPLE_BINARY_INFER
+
+inline void ComputeBroadcastStrides(const int32_t* dims, int input_rank,
+                                    int output_rank, size_t* strides) {
+  size_t current_stride = 1;
+  for (int i = output_rank - 1; i >= 0; --i) {
+    int idx = i - (output_rank - input_rank);
+    int32_t dim = (idx >= 0) ? dims[idx] : 1;
+    strides[i] = (dim == 1) ? 0 : current_stride;
+    current_stride *= dim;
+  }
+}
+
+template <typename T, typename BinaryOp>
+void RunBinaryOp(const T* a, const T* b, T* output, const size_t* a_stride,
+                 const size_t* b_stride, const size_t* output_stride,
+                 const size_t* output_shape, int rank, BinaryOp op) {
+  if (rank <= 0) {
+    *output = op(*a, *b);
+  } else if (rank == 1) {
+    for (size_t i = 0; i < output_shape[0]; ++i) {
+      output[i * output_stride[0]] = op(a[i * a_stride[0]], b[i * b_stride[0]]);
+    }
+  } else {
+    for (size_t i = 0; i < output_shape[0]; ++i) {
+      RunBinaryOp(a + i * a_stride[0], b + i * b_stride[0],
+                  output + i * output_stride[0], a_stride + 1, b_stride + 1,
+                  output_stride + 1, output_shape + 1, rank - 1, op);
+    }
+  }
+}
+
+template <typename T, typename BinaryOp>
+inline void ReferenceBinaryGeneric(const T* input1_data,
+                                   const int32_t* input1_dims, int input1_rank,
+                                   const T* input2_data,
+                                   const int32_t* input2_dims, int input2_rank,
+                                   T* output_data, const int32_t* output_dims,
+                                   int rank, BinaryOp op) {
+  constexpr int kMaxRank = tflite::RuntimeShape::kMaxSmallSize;
+  size_t a_stride[kMaxRank];
+  size_t b_stride[kMaxRank];
+  size_t o_stride[kMaxRank];
+  size_t o_shape[kMaxRank];
+
+  ComputeBroadcastStrides(input1_dims, input1_rank, rank, a_stride);
+  ComputeBroadcastStrides(input2_dims, input2_rank, rank, b_stride);
+
+  size_t current_stride = 1;
+  for (int i = rank - 1; i >= 0; --i) {
+    o_stride[i] = current_stride;
+    o_shape[i] = output_dims[i];
+    current_stride *= output_dims[i];
+  }
+
+  RunBinaryOp(input1_data, input2_data, output_data, a_stride, b_stride,
+              o_stride, o_shape, rank, op);
+}
+
+inline void ApplyActivation(float* output_data, size_t num_elements,
+                            tflite::ActivationFunctionType faf) {
+  if (faf == tflite::ActivationFunctionType_RELU) {
+    for (size_t i = 0; i < num_elements; ++i) {
+      output_data[i] = std::max(0.0f, output_data[i]);
+    }
+  } else if (faf == tflite::ActivationFunctionType_RELU6) {
+    for (size_t i = 0; i < num_elements; ++i) {
+      output_data[i] = std::min(6.0f, std::max(0.0f, output_data[i]));
+    }
+  }
+}
+
 
 }  // namespace litert::internal
 

@@ -193,6 +193,75 @@ void RegisterPooling(const AtsConf& options, size_t& test_id, size_t iters,
 }
 
 template <typename Fixture>
+void RegisterBinaryBroadcast(const AtsConf& options, size_t& test_id,
+                             size_t iters, typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      BinaryBroadcast,
+      SizeListC<1, 2, 3, 4>,
+      SizeListC<1, 2, 3, 4>,
+      TypeList<float>,
+      OpCodeListC<kLiteRtOpCodeTflAdd, kLiteRtOpCodeTflMul,
+                  kLiteRtOpCodeTflSub, kLiteRtOpCodeTflDiv>,
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>,
+               FaC<tflite::ActivationFunctionType_RELU>>>
+    (iters, test_id, options, cap);
+
+  RegisterCombinations<
+      Fixture,
+      BinaryBroadcast,
+      SizeListC<1, 2, 3, 4>,
+      SizeListC<1, 2, 3, 4>,
+      TypeList<float>,
+      OpCodeListC<kLiteRtOpCodeTflMaximum, kLiteRtOpCodeTflMinimum,
+                  kLiteRtOpCodeTflSquaredDifference,
+                  kLiteRtOpCodeTflFloorDiv, kLiteRtOpCodeTflPow>,
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>>>
+    (iters, test_id, options, cap);
+
+  // Prelu requires Rank2 <= Rank1!
+  // We generate all valid pairs (R1 >= R2) up to rank 4.
+  RegisterCombinations<
+      Fixture,
+      BinaryBroadcast,
+      SizeListC<1, 2, 3, 4>,
+      SizeListC<1>,
+      TypeList<float>,
+      OpCodeListC<kLiteRtOpCodeTflPrelu>,
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>>>
+    (iters, test_id, options, cap);
+  RegisterCombinations<
+      Fixture,
+      BinaryBroadcast,
+      SizeListC<2, 3, 4>,
+      SizeListC<2>,
+      TypeList<float>,
+      OpCodeListC<kLiteRtOpCodeTflPrelu>,
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>>>
+    (iters, test_id, options, cap);
+  RegisterCombinations<
+      Fixture,
+      BinaryBroadcast,
+      SizeListC<3, 4>,
+      SizeListC<3>,
+      TypeList<float>,
+      OpCodeListC<kLiteRtOpCodeTflPrelu>,
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>>>
+    (iters, test_id, options, cap);
+  RegisterCombinations<
+      Fixture,
+      BinaryBroadcast,
+      SizeListC<4>,
+      SizeListC<4>,
+      TypeList<float>,
+      OpCodeListC<kLiteRtOpCodeTflPrelu>,
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
 void RegisterReshape(const AtsConf& options, size_t& test_id, size_t iters,
                      typename Fixture::Capture& cap) {
   // clang-format off
@@ -212,6 +281,7 @@ void RegisterAll(const AtsConf& options, size_t& test_id,
   RegisterExtraModels<Fixture>(test_id, options, cap);
   RegisterNoOp<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterBinaryNoBroadcast<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterBinaryBroadcast<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterUnary<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterConv2d<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterDepthwiseConv2d<Fixture>(options, test_id, /*iters=*/10, cap);

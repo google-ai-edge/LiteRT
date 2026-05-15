@@ -461,6 +461,9 @@ cc_library(
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//tflite/converter/schema:schema_fbs",
+        "//tflite/kernels/internal:reference_base",
+        "//tflite/kernels/internal:types",
         "@com_google_absl//absl/types:span",
     ],
 )

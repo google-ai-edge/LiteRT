@@ -316,6 +316,34 @@ cc_library(
 )
 
 cc_library(
+    name = "binary_broadcast",
+    testonly = True,
+    hdrs = ["binary_broadcast.h"],
+    deps = [
+        ":common",
+        ":graph_helpers",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_rng",
+        "//litert/core/model",
+        "//litert/core/model:model_load",
+        "//litert/core/model:model_serialize",
+        "//litert/core/model:ops_simple_binary",
+        "//litert/core/model:shape_inference_types",
+        "//litert/core/util:flatbuffer_tools",
+        "//litert/test:simple_buffer",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
     name = "reshape",
     testonly = True,
     hdrs = ["reshape.h"],
@@ -345,6 +373,7 @@ cc_library(
     testonly = True,
     hdrs = ["generators.h"],
     deps = [
+        ":binary_broadcast",
         ":binary_no_bcast",
         ":common",
         ":conv_2d",
