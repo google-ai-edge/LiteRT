@@ -44,6 +44,7 @@ struct LrtGoogleTensorOptionsT {
   std::optional<LiteRtGoogleTensorOptionsPerformanceMode> performance_mode =
       std::nullopt;
   std::string op_filters_proto = "";
+  std::string extra_options_path = "";
 };
 
 LiteRtStatus LrtCreateGoogleTensorOptions(LrtGoogleTensorOptions* options) {
@@ -129,6 +130,10 @@ LiteRtStatus LrtGetOpaqueGoogleTensorOptionsData(
     absl::StrAppendFormat(&toml_str, "op_filters_proto = \"%s\"\n",
                           absl::Base64Escape(options->op_filters_proto));
   }
+  if (!options->extra_options_path.empty()) {
+    absl::StrAppendFormat(&toml_str, "extra_options_path = \"%s\"\n",
+                          options->extra_options_path);
+  }
 
   *identifier = LrtGoogleTensorOptionsGetIdentifier();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
@@ -194,6 +199,8 @@ LiteRtStatus LrtCreateGoogleTensorOptionsFromToml(
           if (!absl::Base64Unescape(value, &options_ref.op_filters_proto)) {
             return kLiteRtStatusErrorInvalidArgument;
           }
+        } else if (key == "extra_options_path") {
+          options_ref.extra_options_path = std::string(value);
         }
         return kLiteRtStatusOk;
       });
@@ -462,5 +469,29 @@ LiteRtStatus LrtGoogleTensorOptionsGetOpFiltersProto(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *op_filters_proto = options->op_filters_proto.c_str();
+  return kLiteRtStatusOk;
+}
+
+// extra_options_path --------------------------------------------------
+
+LiteRtStatus LrtGoogleTensorOptionsSetExtraOptionsPath(
+    LrtGoogleTensorOptions options, const char* extra_options_path) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (extra_options_path == nullptr) {
+    options->extra_options_path = "";
+  } else {
+    options->extra_options_path = extra_options_path;
+  }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGoogleTensorOptionsGetExtraOptionsPath(
+    LrtGoogleTensorOptions options, const char** extra_options_path) {
+  if (options == nullptr || extra_options_path == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *extra_options_path = options->extra_options_path.c_str();
   return kLiteRtStatusOk;
 }

@@ -188,6 +188,10 @@ TEST(GoogleTensorOptionsTest, CppApi) {
   EXPECT_EQ(options->GetOpFiltersProto(), "");
   options->SetOpFiltersProto("test_proto_string");
   EXPECT_EQ(options->GetOpFiltersProto(), "test_proto_string");
+
+  EXPECT_EQ(options->GetExtraOptionsPath(), "");
+  options->SetExtraOptionsPath("/tmp/extra_options.bin");
+  EXPECT_EQ(options->GetExtraOptionsPath(), "/tmp/extra_options.bin");
 }
 
 TEST(LrtGoogleTensorOptionsTest, OpFiltersProto) {
@@ -211,6 +215,32 @@ TEST(LrtGoogleTensorOptionsTest, OpFiltersProto) {
   LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetOpFiltersProto(
       parsed, &parsed_op_filters_proto));
   EXPECT_STREQ(parsed_op_filters_proto, "some_\"proto\"path\\");
+
+  LrtDestroyGoogleTensorOptions(parsed);
+  LrtDestroyGoogleTensorOptions(options);
+}
+
+TEST(LrtGoogleTensorOptionsTest, ExtraOptionsPath) {
+  LrtGoogleTensorOptions options;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
+
+  const char* extra_options_path;
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetExtraOptionsPath(
+      options, &extra_options_path));
+  ASSERT_STREQ(extra_options_path, "");
+
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetExtraOptionsPath(
+      options, "/tmp/extra_options.bin"));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetExtraOptionsPath(
+      options, &extra_options_path));
+  ASSERT_STREQ(extra_options_path, "/tmp/extra_options.bin");
+
+  LrtGoogleTensorOptions parsed;
+  SerializeAndParse(options, &parsed);
+  const char* parsed_extra_options_path;
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetExtraOptionsPath(
+      parsed, &parsed_extra_options_path));
+  EXPECT_STREQ(parsed_extra_options_path, "/tmp/extra_options.bin");
 
   LrtDestroyGoogleTensorOptions(parsed);
   LrtDestroyGoogleTensorOptions(options);

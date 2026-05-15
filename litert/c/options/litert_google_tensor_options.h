@@ -131,6 +131,14 @@ LiteRtStatus LrtGoogleTensorOptionsSetOpFiltersProto(
 LiteRtStatus LrtGoogleTensorOptionsGetOpFiltersProto(
     LrtGoogleTensorOptions options, const char** op_filters_proto);
 
+// extra_options_path --------------------------------------------------
+
+LiteRtStatus LrtGoogleTensorOptionsSetExtraOptionsPath(
+    LrtGoogleTensorOptions options, const char* extra_options_path);
+
+LiteRtStatus LrtGoogleTensorOptionsGetExtraOptionsPath(
+    LrtGoogleTensorOptions options, const char** extra_options_path);
+
 #ifdef __cplusplus
 // testing flags ---------------------------------------------------------------
 LiteRtStatus LrtGoogleTensorOptionsSetTestingFlags(

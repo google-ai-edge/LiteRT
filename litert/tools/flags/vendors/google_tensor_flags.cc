@@ -134,6 +134,10 @@ ABSL_FLAG(
     "Tensor plugin.");
 
 ABSL_FLAG(
+    std::string, google_tensor_extra_options_path, "",
+    "Path to a file containing extra compiler options file for Google Tensor.");
+
+ABSL_FLAG(
     litert::google_tensor::GoogleTensorOptions::PerformanceMode,
     google_tensor_performance_mode,
     litert::google_tensor::GoogleTensorOptions::PerformanceMode::kBalanced,
@@ -209,6 +213,8 @@ Expected<void> UpdateGoogleTensorOptionsFromFlags(
   options.SetTestingFlags(absl::GetFlag(FLAGS_google_tensor_testing_flags));
   options.SetOpFiltersProto(
       absl::GetFlag(FLAGS_google_tensor_op_filters_proto));
+  options.SetExtraOptionsPath(
+      absl::GetFlag(FLAGS_google_tensor_extra_options_path));
   options.SetPerformanceMode(
       ::absl::GetFlag(::FLAGS_google_tensor_performance_mode));
   return {};

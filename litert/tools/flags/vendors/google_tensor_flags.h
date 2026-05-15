@@ -56,6 +56,7 @@ ABSL_DECLARE_FLAG(std::string, google_tensor_testing_flags);
 
 ABSL_DECLARE_FLAG(std::string, google_tensor_op_filters_proto);
 
+ABSL_DECLARE_FLAG(std::string, google_tensor_extra_options_path);
 
 namespace litert::google_tensor {
 bool AbslParseFlag(::absl::string_view text,

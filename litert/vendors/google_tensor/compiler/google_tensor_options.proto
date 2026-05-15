@@ -84,7 +84,7 @@ message OpFilters {
 
 // Message to hold various compilation options for the Google Tensor compiler
 // plugin.
-// NEXT ID: 12
+// NEXT ID: 13
 message GoogleTensorOptions {
   // Specifies the type of float truncation to be applied.
   GoogleTensorOptionsTruncationType float_truncation_type = 1;
@@ -109,4 +109,6 @@ message GoogleTensorOptions {
   bool enable_dynamic_range_quantization = 10;
   // Path to a file containing proto text formatted OpFilters.
   string op_filters_proto = 11;
+  // Path to a file containing binary compiler options.
+  string extra_options_path = 12;
 }

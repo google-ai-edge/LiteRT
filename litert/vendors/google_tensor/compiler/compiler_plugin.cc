@@ -278,6 +278,12 @@ LiteRtStatus LrtOptionsToGoogleTensorOptions(
       LrtGoogleTensorOptionsGetOpFiltersProto(lrt_options, &op_filters_path));
   google_tensor_options.set_op_filters_proto(op_filters_path);
 
+  // EXTRA OPTIONS PATH
+  const char* extra_options_path;
+  LITERT_RETURN_IF_ERROR(LrtGoogleTensorOptionsGetExtraOptionsPath(
+      lrt_options, &extra_options_path));
+  google_tensor_options.set_extra_options_path(extra_options_path);
+
   return kLiteRtStatusOk;
 }
 
