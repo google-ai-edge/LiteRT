@@ -59,6 +59,35 @@
 
 namespace litert::internal {
 
+Expected<LiteRtMemBuffer> BuildExecutableBytecodeBuffer(
+    const DispatchOpOptions& dispatch_options, const void* alloc_base,
+    int alloc_base_fd, size_t alloc_base_file_offset, size_t alloc_base_size,
+    bool has_alloc_base_file_region) {
+  if (dispatch_options.bytecode_offset == 0) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Found dispatch op with missing bytecode offset");
+  }
+  if (has_alloc_base_file_region &&
+      dispatch_options.bytecode_offset + dispatch_options.bytecode_size >
+          alloc_base_size) {
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        "Dispatch bytecode range exceeds the model file region bounds");
+  }
+
+  size_t bytecode_offset = dispatch_options.bytecode_offset;
+  if (alloc_base_fd >= 0 && has_alloc_base_file_region) {
+    bytecode_offset += alloc_base_file_offset;
+  }
+
+  return LiteRtMemBuffer{
+      /*.fd=*/alloc_base_fd,
+      /*.base_addr=*/alloc_base,
+      /*.offset=*/bytecode_offset,
+      /*.size=*/dispatch_options.bytecode_size,
+  };
+}
+
 DispatchDelegateKernel::~DispatchDelegateKernel() {
   // Detach all buffer handles from invocation contexts.
   {
@@ -146,6 +175,33 @@ Expected<int> DispatchDelegateKernel::FindAllocBaseFd() const {
       auto dispatch_options,
       FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));
   return dispatch_options.GetAllocBaseFd();
+}
+
+Expected<size_t> DispatchDelegateKernel::FindAllocBaseFileOffset() const {
+  auto opaque_options =
+      OpaqueOptions::WrapCObject(options_->options, OwnHandle::kNo);
+  LITERT_ASSIGN_OR_RETURN(
+      auto dispatch_options,
+      FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));
+  return dispatch_options.GetAllocBaseFileOffset();
+}
+
+Expected<size_t> DispatchDelegateKernel::FindAllocBaseSize() const {
+  auto opaque_options =
+      OpaqueOptions::WrapCObject(options_->options, OwnHandle::kNo);
+  LITERT_ASSIGN_OR_RETURN(
+      auto dispatch_options,
+      FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));
+  return dispatch_options.GetAllocBaseSize();
+}
+
+Expected<bool> DispatchDelegateKernel::HasAllocBaseFileRegion() const {
+  auto opaque_options =
+      OpaqueOptions::WrapCObject(options_->options, OwnHandle::kNo);
+  LITERT_ASSIGN_OR_RETURN(
+      auto dispatch_options,
+      FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));
+  return dispatch_options.HasAllocBaseFileRegion();
 }
 
 TfLiteStatus DispatchDelegateKernel::Init(
@@ -518,21 +574,19 @@ DispatchDelegateKernel::CreateNodeInvocationContext(
   // Read offset and size (relative to alloc_base) from the custom options (and
   // name).
   const auto dispatch_opts = GetDispatchOpOptions(custom_opts);
-  if (dispatch_opts.bytecode_offset == 0) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Found dispatch op with missing bytecode offset");
-  }
-
-  // Find pointer to the start of the loaded model buffer.
   LITERT_ASSIGN_OR_RETURN(const void* alloc_base, FindAllocBase());
   LITERT_ASSIGN_OR_RETURN(const int alloc_fd, FindAllocBaseFd());
+  LITERT_ASSIGN_OR_RETURN(const size_t alloc_base_file_offset,
+                          FindAllocBaseFileOffset());
+  LITERT_ASSIGN_OR_RETURN(const size_t alloc_base_size, FindAllocBaseSize());
+  LITERT_ASSIGN_OR_RETURN(const bool has_alloc_base_file_region,
+                          HasAllocBaseFileRegion());
 
-  // Get location of bytecode in the model buffer relative to alloc_base.
-  LiteRtMemBuffer exec_bytecode_buffer = {
-      /*.fd=*/alloc_fd,
-      /*.base_addr=*/alloc_base,
-      /*.offset=*/dispatch_opts.bytecode_offset,
-      /*.size=*/dispatch_opts.bytecode_size};
+  LITERT_ASSIGN_OR_RETURN(
+      LiteRtMemBuffer exec_bytecode_buffer,
+      BuildExecutableBytecodeBuffer(dispatch_opts, alloc_base, alloc_fd,
+                                    alloc_base_file_offset, alloc_base_size,
+                                    has_alloc_base_file_region));
   const auto& function_name = dispatch_opts.name;
 
   auto num_node_inputs = TfLiteOpaqueNodeNumberOfInputs(node);
