@@ -163,6 +163,35 @@ class Unexpected {
 ///   return Foo();
 /// }
 /// @endcode
+///
+/// Suggested Usage:
+/// Do not manually inspect `Expected` objects (e.g., via `if (!var_or)`, `if
+/// (!var_or.HasValue())`) if you intend to propagate a possible error to the
+/// caller. Instead, use the early-exit LiteRT macros defined in
+/// `litert_macros.h`:
+/// @code
+/// // For functions returning Expected<Foo>:
+/// LITERT_ASSIGN_OR_RETURN(Foo foo, Bar());
+///
+/// // For functions returning Expected<void>:
+/// LITERT_RETURN_IF_ERROR(Baz());
+///
+/// // To append a custom error message to the failure:
+/// LITERT_ASSIGN_OR_RETURN(Foo foo, Bar(), _ << "Failed to get Foo");
+/// LITERT_RETURN_IF_ERROR(Baz()) << "Failed during Baz";
+/// @endcode
+///
+/// In unit tests, use the test macros defined in `litert/test/matchers.h`:
+/// @code
+/// // To assert success and unpack a value:
+/// LITERT_ASSERT_OK_AND_ASSIGN(Foo foo, Bar());
+///
+/// // To assert success for Expected<void>:
+/// LITERT_ASSERT_OK(Baz());
+///
+/// // To expect or assert failure:
+/// LITERT_EXPECT_ERROR(Baz());
+/// @endcode
 template <class T>
 class Expected {
  public:
