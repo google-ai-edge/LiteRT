@@ -225,6 +225,7 @@ litert_define_ats(
     dont_register = [
         "whisper_tiny_decoder",
         "hf_all_minilm_l6_v2",
+        "hf_mobilevit_small",
         ".*5d.*",
         ".*6d.*",
         ".*tfl.elu.*",
