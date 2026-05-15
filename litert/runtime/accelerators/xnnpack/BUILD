@@ -35,6 +35,7 @@ cc_library(
         "//litert/runtime:litert_cpu_options",
         "//litert/runtime/accelerators:accelerator_implementation_helper",
         "//tflite/c:c_api_types",
+        "//tflite/core/c:private_common",
         "//tflite/delegates/xnnpack:xnnpack_delegate",
     ],
     alwayslink = 1,  # Keep the symbols in Windows and macOS.

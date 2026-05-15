@@ -57,6 +57,9 @@ ABSL_FLAG(bool, quiet, false, "Minimize logging.");
 ABSL_FLAG(std::string, backend, "cpu",
           "Which backend to use as the \"actual\".");
 
+ABSL_FLAG(bool, cpu_hint_fully_delegated, false,
+          "Whether to hint at fully delegating to a single delegate for CPU.");
+
 ABSL_FLAG(std::string, dispatch_dir, "",
           "Path to directory containing the dispatch library. Only relevant "
           "for NPU.");
@@ -164,6 +167,10 @@ Expected<Options> ParseOptions(ExecutionBackend backend) {
     options.SetHardwareAccelerators(HwAccelerators::kNpu);
   } else if (backend == ExecutionBackend::kCpu) {
     options.SetHardwareAccelerators(HwAccelerators::kCpu);
+    LITERT_ASSIGN_OR_RETURN(auto& cpu_opts, options.GetCpuOptions());
+    LITERT_RETURN_IF_ERROR(
+        cpu_opts.SetHintFullyDelegatedToSingleDelegate(
+            absl::GetFlag(FLAGS_cpu_hint_fully_delegated)));
   } else if (backend == ExecutionBackend::kGpu) {
     options.SetHardwareAccelerators(HwAccelerators::kGpu);
     LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
