@@ -166,6 +166,9 @@ Expected<Options> ParseOptions(ExecutionBackend backend) {
     options.SetHardwareAccelerators(HwAccelerators::kCpu);
   } else if (backend == ExecutionBackend::kGpu) {
     options.SetHardwareAccelerators(HwAccelerators::kGpu);
+    LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
+    LITERT_RETURN_IF_ERROR(
+        gpu_opts.SetHintFullyDelegatedToSingleDelegate(true));
   }
   return options;
 }
