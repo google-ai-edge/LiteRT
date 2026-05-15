@@ -216,6 +216,29 @@ litert_define_ats(
     jit_suffix = "",
 )
 
+litert_define_ats(
+    name = "samsung_ats",
+    backend = "samsung",
+    compile_only_suffix = "_aot",
+    do_register = [
+    ],
+    dont_register = [
+        "whisper_tiny_decoder",
+        "hf_all_minilm_l6_v2",
+        ".*5d.*",
+        ".*6d.*",
+        ".*tfl.elu.*",
+        ".*tfl.neg.*",
+        ".*tfl.square.*",
+        ".*tfl.zeros_like.*",
+        ".*tfl.round.*",
+        ".*tfl.sign.*",
+    ],
+    extra_flags = [
+    ],
+    jit_suffix = "",
+)
+
 # SOURCE CODES #####################################################################################
 
 # Note: The `litert_test` target below (`ats`) is the base test binary executed directly on the host
@@ -275,6 +298,8 @@ cc_library(
         "-DINCLUDE_QUALCOMM_RUNTIME_FLAGS",
         "-DINCLUDE_MEDIATEK_COMPILE_FLAGS",
         "-DINCLUDE_MEDIATEK_RUNTIME_FLAGS",
+        "-DINCLUDE_SAMSUNG_COMPILE_FLAGS",
+        "-DINCLUDE_SAMSUNG_RUNTIME_FLAGS",
     ],
     deps = [
         ":common",
@@ -292,6 +317,7 @@ cc_library(
         "//litert/core/model:model_serialize",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
+        "//litert/tools/flags/vendors:samsung_flags",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings",
