@@ -15,10 +15,12 @@ limitations under the License.
 
 #include "tflite/testing/generate_testspec.h"
 
+#include <cstdint>
+#include <cstdio>
 #include <iostream>
 #include <random>
-#include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/log/check.h"
 #include "tensorflow/core/framework/types.h"

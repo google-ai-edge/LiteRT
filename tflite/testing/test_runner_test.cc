@@ -14,7 +14,10 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/testing/test_runner.h"
 
+#include <cstddef>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include "tflite/string_type.h"
