@@ -48,6 +48,7 @@ configure_file(
     ${LITERT_CC_SDK_TREE_ROOT}/litert/build_common/build_config.h.in
     ${LITERT_BUILD_COMMON_GENERATED_DIR}/build_config.h
 )
+include_directories(${LITERT_GENERATED_INCLUDE_DIR})
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
 if(EXISTS "${LITERT_CC_SDK_TREE_ROOT}/tflite/tools/cmake/modules")
@@ -69,24 +70,32 @@ string(REGEX REPLACE "[ \t\r\n]+" ";" LITERT_CC_HEADERS "${FILE_CONTENTS}")
 list(REMOVE_ITEM LITERT_CC_HEADERS "")
 list(TRANSFORM LITERT_CC_HEADERS PREPEND "${LITERT_CC_SDK_TREE_ROOT}/")
 
-# Core C++ API header-only library.
-add_library(litert_cc_api INTERFACE)
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/litert_cc_sdk_srcs.txt FILE_CONTENTS)
+string(REGEX REPLACE "[ \t\r\n]+" ";" LITERT_CC_SRCS "${FILE_CONTENTS}")
+list(REMOVE_ITEM LITERT_CC_SRCS "")
+list(TRANSFORM LITERT_CC_SRCS PREPEND "${LITERT_CC_SDK_TREE_ROOT}/")
 
-# Set PUBLIC_HEADER property for installation/export packaging.
+
+# Core C++ API library
+add_library(litert_cc_api STATIC
+    ${LITERT_CC_SRCS}
+)
+
+# Set PUBLIC_HEADER property for proper installation
 set_target_properties(litert_cc_api PROPERTIES
     PUBLIC_HEADER "${LITERT_CC_HEADERS}"
 )
 
 target_include_directories(litert_cc_api
-    INTERFACE
+    PUBLIC
         $<BUILD_INTERFACE:${LITERT_CC_SDK_TREE_ROOT}>
         $<BUILD_INTERFACE:${LITERT_GENERATED_INCLUDE_DIR}>
-        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 target_link_libraries(litert_cc_api
-    INTERFACE
-        litert_c_api
+    PUBLIC
         absl::status
         absl::statusor
         absl::span
@@ -94,6 +103,8 @@ target_link_libraries(litert_cc_api
         absl::log
         absl::die_if_null
         flatbuffers::flatbuffers
+    PRIVATE
+        litert_c_api
 )
 
 # run_model_simple target for testing.
