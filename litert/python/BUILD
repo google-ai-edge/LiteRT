@@ -73,6 +73,7 @@ py_strict_library(
         "//litert/python/litert_wrapper/compiled_model_wrapper:_pywrap_litert_compiled_model_wrapper",
         "//litert/python/litert_wrapper/environment_wrapper:_pywrap_litert_environment_wrapper",
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:_pywrap_litert_tensor_buffer_wrapper",
+        "//tflite/profiling/profiler_based_calibration:_pywrap_tfl_calibration",
     ],
 )
 
@@ -101,7 +102,7 @@ pywrap_library(
     common_lib_version_scripts = {
         "litert/python/pywrap_litert_common": PYWRAP_LITERT_COMMON_LIB_VERSION_SCRIPTS,
     },
-    pywrap_count = 12,
+    pywrap_count = 13,
     visibility = ["//visibility:public"],
     deps = [
         ":litert_pywrap_deps",
