@@ -127,6 +127,18 @@ cc_test(
 )
 
 cc_test(
+    name = "dispatch_delegate_kernel_test",
+    srcs = ["dispatch_delegate_kernel_test.cc"],
+    deps = [
+        ":dispatch_delegate",
+        ":dispatch_delegate_kernel",
+        "//litert/c:litert_environment",
+        "//litert/core:dispatch_op_schema",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
     name = "dispatch_delegate_test",
     srcs = ["dispatch_delegate_test.cc"],
     data = [
