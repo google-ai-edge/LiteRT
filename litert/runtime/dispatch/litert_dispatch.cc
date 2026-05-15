@@ -103,10 +103,11 @@ litert::Expected<std::string> GetSharedLibraryPath(
   LiteRtAny dispatch_lib_dir;
   auto status = LiteRtGetEnvironmentOptionsValue(
       env_options, kLiteRtEnvOptionTagDispatchLibraryDir, &dispatch_lib_dir);
-  if (status == kLiteRtStatusOk) {
-    litert::internal::FindLiteRtDispatchSharedLibs(dispatch_lib_dir.str_value,
-                                                   dispatch_lib_paths);
+  if (status != kLiteRtStatusOk) {
+    return litert::Error(status, "Dispatch library directory option not set.");
   }
+  litert::internal::FindLiteRtDispatchSharedLibs(dispatch_lib_dir.str_value,
+                                                 dispatch_lib_paths);
   if (dispatch_lib_paths.empty()) {
     LITERT_LOG(LITERT_ERROR, "No dispatch library found in %s",
                dispatch_lib_dir.str_value);
