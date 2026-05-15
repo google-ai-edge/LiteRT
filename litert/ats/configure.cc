@@ -42,6 +42,7 @@
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/tools/flags/vendors/mediatek_flags.h"
 #include "litert/tools/flags/vendors/qualcomm_flags.h"
+#include "litert/tools/flags/vendors/samsung_flags.h"
 
 ABSL_FLAG(std::optional<int>, data_seed, std::nullopt,
           "Seed for the buffer data generation.");
@@ -123,6 +124,7 @@ namespace {
 
 using mediatek::UpdateMediatekOptionsFromFlags;
 using qualcomm::UpdateQualcommOptionsFromFlags;
+using litert::samsung::UpdateSamsungOptionsFromFlags;
 
 Expected<AtsConf::SeedMap> ParseParamSeedMap() {
   const auto seed_flags = absl::GetFlag(FLAGS_seeds);
@@ -161,6 +163,8 @@ Expected<Options> ParseOptions(ExecutionBackend backend) {
     LITERT_RETURN_IF_ERROR(UpdateQualcommOptionsFromFlags(qnn_opts));
     LITERT_ASSIGN_OR_RETURN(auto& mediatek_opts, options.GetMediatekOptions());
     LITERT_RETURN_IF_ERROR(UpdateMediatekOptionsFromFlags(mediatek_opts));
+    LITERT_ASSIGN_OR_RETURN(auto& samsung_opts, options.GetSamsungOptions());
+    LITERT_RETURN_IF_ERROR(UpdateSamsungOptionsFromFlags(samsung_opts));
     options.SetHardwareAccelerators(HwAccelerators::kNpu);
   } else if (backend == ExecutionBackend::kCpu) {
     options.SetHardwareAccelerators(HwAccelerators::kCpu);

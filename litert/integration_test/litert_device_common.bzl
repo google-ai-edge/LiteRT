@@ -272,6 +272,29 @@ def _GoogleTensorSpec():
         ),
     }
 
+# SAMSUNG
+
+def _SamsungSpec():
+    return {
+        "samsung": BackendSpec(
+            id = "samsung",
+            libs = [
+                ("//litert/vendors/samsung/dispatch:libLiteRtDispatch_Samsung.so", "LD_LIBRARY_PATH"),
+                ("//litert/vendors/samsung/compiler:libLiteRtCompilerPlugin_Samsung.so", "LD_LIBRARY_PATH"),
+                ("@exynos_ai_litecore//:lib_arm64_v8a", "LD_LIBRARY_PATH"),
+            ],
+            plugin = "libLiteRtCompilerPlugin_Samsung.so",
+            dispatch = "libLiteRtDispatch_Samsung.so",
+            mh_devices = [{
+                "hardware": "E9965",
+                "pool": "shared",
+            }],
+            host_libs = [
+                "@exynos_ai_litecore//:lib_x86_64_linux",
+            ]
+        ),
+    }
+
 # EXAMPLE
 
 def _ExampleSpec():
@@ -314,11 +337,11 @@ def _GpuSpec():
 # COMMON
 
 def _Specs(name):
-    return (_QualcommSpec() | _QualcommSpec("V79") | _GoogleTensorSpec() | _MediatekSpec() | _IntelOpenVinoSpec() | _CpuSpec() | _GpuSpec() | _ExampleSpec())[name]
+    return (_QualcommSpec() | _QualcommSpec("V79") | _GoogleTensorSpec() | _MediatekSpec() | _IntelOpenVinoSpec() | _SamsungSpec() | _CpuSpec() | _GpuSpec() | _ExampleSpec())[name]
 
 # Check if the backend maps to an NPU backend.
 def is_npu_backend(name):
-    return "qualcomm" in name or name in ["mediatek", "google_tensor", "intel_openvino", "example"]
+    return "qualcomm" in name or name in ["mediatek", "google_tensor", "intel_openvino", "samsung", "example"]
 
 # Get the libs for the given backend.
 def get_libs(name):
