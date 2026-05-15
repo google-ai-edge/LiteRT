@@ -81,10 +81,17 @@ class OperandType : public NeuronOperandType {
                          quant_info.zero_point, std::nullopt);
     } else if (t.QTypeId() == kLiteRtQuantizationPerChannel) {
       auto quant_info = t.PerChannelQuantization();
-      NeuronSymmPerChannelQuantParams params;
+      NeuronPerChannelQuantParams params;
       params.scaleCount = quant_info.num_channels;
       params.scales = quant_info.scales;
       params.channelDim = quant_info.quantized_dimension;
+      params.zeroPointCount = quant_info.num_channels;
+      // Convert int64 -> int32
+      std::vector<std::int32_t> zero_points(quant_info.num_channels);
+      for (size_t i = 0; i < zero_points.size(); ++i) {
+        zero_points[i] = quant_info.zero_points[i];
+      }
+      params.zeroPoints = zero_points.data();
       LITERT_LOG(LITERT_DEBUG, "quantized_dimension: %d",
                  quant_info.quantized_dimension);
       LITERT_LOG(LITERT_DEBUG, "params.channelDim: %d", params.channelDim);
@@ -136,7 +143,7 @@ class OperandType : public NeuronOperandType {
     return {};
   }
 
-  Expected<NeuronSymmPerChannelQuantParams> GetPerChannelQuantParams() {
+  Expected<NeuronPerChannelQuantParams> GetPerChannelQuantParams() {
     if (!neuron_per_channel_params_.has_value()) {
       return Error(kLiteRtStatusErrorRuntimeFailure, "No quant param is set");
     }
@@ -160,7 +167,7 @@ class OperandType : public NeuronOperandType {
  private:
   explicit OperandType(int32_t mtk_type, std::vector<uint32_t>&& mtk_dimensions,
                        float scale, int32_t zero_point,
-                       std::optional<NeuronSymmPerChannelQuantParams> pararms)
+                       std::optional<NeuronPerChannelQuantParams> pararms)
       : dimensions_(std::move(mtk_dimensions)),
         neuron_per_channel_params_(pararms) {
     this->scale = scale;
@@ -172,7 +179,7 @@ class OperandType : public NeuronOperandType {
 
   std::vector<uint32_t> dimensions_;
 
-  std::optional<NeuronSymmPerChannelQuantParams> neuron_per_channel_params_ =
+  std::optional<NeuronPerChannelQuantParams> neuron_per_channel_params_ =
       std::nullopt;
 };
 

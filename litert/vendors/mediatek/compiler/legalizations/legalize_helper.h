@@ -69,6 +69,22 @@ inline Expected<uint32_t> AddZeroBiasForConvBase(const Tensor& input_tensor,
   LITERT_ASSIGN_OR_RETURN(bias_extra_data_idx,
                           operand_map.RegisterExtraData(bias_data_size));
   memset(operand_map.GetExtraData(bias_extra_data_idx), 0, bias_data_size);
+  // Neuron requires bias scale to be a product of an input scale and
+  // a filter scale.
+  if (bias_neuron_type == NEURON_TENSOR_INT32 &&
+      input_tensor.QTypeId() == kLiteRtQuantizationPerTensor &&
+      filter_tensor.QTypeId() == kLiteRtQuantizationPerTensor) {
+    const NeuronOperandType tensor_operand_type = {
+        .type = bias_neuron_type,
+        .dimensionCount = (uint32_t)bias_shape.size(),
+        .dimensions = bias_shape.data(),
+        .scale = input_tensor.PerTensorQuantization().scale *
+                 filter_tensor.PerTensorQuantization().scale,
+    };
+    return operand_map.AddTensorByOperandType(
+        tensor_operand_type, operand_map.GetExtraData(bias_extra_data_idx),
+        bias_data_size);
+  }
   return operand_map.AddTensorByType(
       bias_neuron_type, bias_shape,
       operand_map.GetExtraData(bias_extra_data_idx), bias_data_size);
@@ -433,6 +449,19 @@ inline Expected<uint32_t> AddLeakyReluAlphaOption(const litert::Op& op,
                                      operand_map.GetExtraData(alpha_idx),
                                      sizeof(float));
 }  // namespace litert::mediatek
+
+//==============================================================================
+// kLiteRtOpCodeTflUnpack
+//==============================================================================
+inline Expected<uint32_t> AddUnpackAxisOption(const litert::Op& op,
+                                              OperandMap& operand_map) {
+  // Note that return type should be same as the NEURON parameters needs for
+  // Unpack.
+  int32_t axis = 0;
+  LITERT_RETURN_IF_ERROR(LiteRtGetUnpackAxisOption(op.Get(), &axis))
+      << "Fails to get UnpackAxis";
+  return operand_map.AddScalarInt32(axis);
+}
 
 }  // namespace litert::mediatek
 

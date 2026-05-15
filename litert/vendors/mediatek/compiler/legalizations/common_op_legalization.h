@@ -25,16 +25,36 @@ namespace litert::mediatek {
 
 bool VerifyCommonOp(const litert::Op& op, LiteRtOpCode op_code);
 
+template <typename T>
+inline Expected<NeuronOperationType> ResolveOpType(
+    OperandMap& operand_map, std::vector<uint32_t>& input_indices,
+    T type_or_name) {
+  if constexpr (std::is_same_v<T, NeuronOperationType>) {
+    return type_or_name;
+  } else {
+    NeuronOperationType nn_op_type;
+    auto custom_operand_index =
+        operand_map.AddOemExtensionOperand(type_or_name, &nn_op_type);
+
+    if (!custom_operand_index) {
+      return custom_operand_index.Error();
+    }
+
+    input_indices.push_back(*custom_operand_index);
+
+    return nn_op_type;
+  }
+}
+
 Expected<void> LegalizeCommonOp(const NeuronAdapterApi& neuron_adapter_api,
                                 NeuronModel* model, OperandMap& operand_map,
                                 const litert::Op& op,
                                 NeuronOperationType mtk_operation_type);
 
-template <typename... AdditionalOperands>
+template <typename OpTypeOrName, typename... AdditionalOperands>
 Expected<void> LegalizeOp(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
-    OperandMap& operand_map, const litert::Op& op,
-    NeuronOperationType operation_type,
+    OperandMap& operand_map, const litert::Op& op, OpTypeOrName op_type_or_name,
     std::tuple<AdditionalOperands...> additional_operands) {
   LITERT_LOG(LITERT_INFO, "Legalize Operation %d", op.Code());
 
@@ -69,6 +89,13 @@ Expected<void> LegalizeOp(
     return result.Error();
   }
 
+  auto resolved_type =
+      ResolveOpType(operand_map, input_indices, op_type_or_name);
+  if (!resolved_type) {
+    return resolved_type.Error();
+  }
+  NeuronOperationType final_op_type = *resolved_type;
+
   std::vector<uint32_t> output_indices;
   for (auto& output : op.Outputs()) {
     auto id = operand_map.GetOperandIndex(output);
@@ -78,8 +105,8 @@ Expected<void> LegalizeOp(
     output_indices.push_back(*id);
   }
 
-  if (ModelAddOperation(neuron_adapter_api, model, operation_type,
-                        input_indices, output_indices) != NEURON_NO_ERROR) {
+  if (ModelAddOperation(neuron_adapter_api, model, final_op_type, input_indices,
+                        output_indices) != NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure, "Failed to add operation");
   }
 
