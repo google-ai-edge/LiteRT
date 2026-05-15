@@ -18,7 +18,13 @@ namespace qnn {
 
 class DspBackend : public QnnBackend {
  public:
-  static const char* GetLibraryName() { return "libQnnDsp.so"; }
+  static const char* GetLibraryName() {
+#if defined(_WIN32)
+    return "QnnDsp.dll";
+#else
+    return "libQnnDsp.so";
+#endif
+  }
 
   static Qnn_Version_t GetExpectedBackendVersion() {
     Qnn_Version_t backend_version;

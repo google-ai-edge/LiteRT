@@ -26,6 +26,7 @@
 #include <fstream>
 #include <ios>
 #include <iterator>
+#include <limits>
 #include <ostream>
 #include <sstream>
 #include <string>
@@ -189,11 +190,21 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
                       "Tensor strides are not supported by QNN");
   }
 
+  static constexpr std::array<const LiteRtTensorBufferType, 1>
+      kRawTensorBufferTypes = {kLiteRtTensorBufferTypeHostMemory};
   static constexpr std::array<const LiteRtTensorBufferType, 2>
-      kSupportedTensorBufferTypes = {
+      kMemHandleTensorBufferTypes = {
           kLiteRtTensorBufferTypeFastRpc,
           kLiteRtTensorBufferTypeDmaBuf,
       };
+  const LiteRtTensorBufferType* supported_tensor_buffer_types =
+      kMemHandleTensorBufferTypes.data();
+  size_t num_supported_tensor_buffer_types = kMemHandleTensorBufferTypes.size();
+  if (qnn_manager_.GetOptions().GetGraphIOTensorMemType() ==
+      ::qnn::GraphIOTensorMemType::kRaw) {
+    supported_tensor_buffer_types = kRawTensorBufferTypes.data();
+    num_supported_tensor_buffer_types = kRawTensorBufferTypes.size();
+  }
 
   auto buffer_size = litert::internal::GetNumPackedBytes(tensor_type);
   if (!buffer_size) {
@@ -203,8 +214,8 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
   LiteRtTensorBufferRequirements requirements;
   if (auto status =
           device_context_->runtime_context()->create_tensor_buffer_requirements(
-              kSupportedTensorBufferTypes.size(),
-              kSupportedTensorBufferTypes.data(), *buffer_size,
+              num_supported_tensor_buffer_types, supported_tensor_buffer_types,
+              *buffer_size,
               /*num_strides=*/0,
               /*strides=*/nullptr, &requirements);
       status != kLiteRtStatusOk) {
@@ -275,6 +286,52 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
     return Unexpected(tensor_buffer.Error());
   }
 
+  LiteRtTensorBufferType tensor_buffer_type;
+  LITERT_RETURN_IF_ERROR(
+      device_context_->runtime_context()->get_tensor_buffer_type(
+          *tensor_buffer, &tensor_buffer_type));
+  if (tensor_buffer_type == kLiteRtTensorBufferTypeHostMemory) {
+    void* host_memory_addr = nullptr;
+    LITERT_RETURN_IF_ERROR(
+        device_context_->runtime_context()->get_tensor_buffer_host_memory(
+            *tensor_buffer, &host_memory_addr));
+
+    size_t tensor_buffer_size = 0;
+    LITERT_RETURN_IF_ERROR(
+        device_context_->runtime_context()->get_tensor_buffer_size(
+            *tensor_buffer, &tensor_buffer_size));
+
+    size_t tensor_buffer_offset = 0;
+    LITERT_RETURN_IF_ERROR(
+        device_context_->runtime_context()->get_tensor_buffer_offset(
+            *tensor_buffer, &tensor_buffer_offset));
+
+    if (tensor_buffer_size > std::numeric_limits<uint32_t>::max()) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Host tensor buffer is too large for QNN");
+    }
+    void* data =
+        static_cast<void*>(static_cast<uint8_t*>(host_memory_addr) +
+                           tensor_buffer_offset);
+    if (tensor.version == QNN_TENSOR_VERSION_1) {
+      tensor.v1.memType = QNN_TENSORMEMTYPE_RAW;
+      tensor.v1.clientBuf.data = data;
+      tensor.v1.clientBuf.dataSize = static_cast<uint32_t>(tensor_buffer_size);
+    } else if (tensor.version == QNN_TENSOR_VERSION_2) {
+      if (tensor.v2.isDynamicDimensions != nullptr) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "Dynamic dimensions not yet supported");
+      }
+      tensor.v2.memType = QNN_TENSORMEMTYPE_RAW;
+      tensor.v2.clientBuf.data = data;
+      tensor.v2.clientBuf.dataSize = static_cast<uint32_t>(tensor_buffer_size);
+    } else {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Unsupported QNN tensor version");
+    }
+    return {};
+  }
+
   auto mem_handle = device_context_->GetMemHandle(tensor_buffer_handle, tensor);
   if (!mem_handle) {
     return Unexpected(mem_handle.Error());
@@ -301,6 +358,12 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
 
 Expected<void> LiteRtDispatchInvocationContextT::DetachBuffer(
     Qnn_Tensor_t& tensor, LiteRtTensorBufferHandle tensor_buffer_handle) {
+  const auto mem_type = tensor.version == QNN_TENSOR_VERSION_1
+                            ? tensor.v1.memType
+                            : tensor.v2.memType;
+  if (mem_type == QNN_TENSORMEMTYPE_RAW) {
+    return device_context_->UnregisterTensorBuffer(tensor_buffer_handle);
+  }
   LITERT_RETURN_IF_ERROR(
       device_context_->UnregisterTensorBuffer(tensor_buffer_handle, tensor));
   return {};
