@@ -434,6 +434,7 @@ def _generate_ctx_bin(
       "--soc_manufacturer=Qualcomm",
       f"--soc_model={soc_model.upper()}",
       "--qualcomm_profiling=optrace",
+      f"--qualcomm_ir_json_dir={_OUTPUT_DIR.value}",
   ]
 
   env = os.environ.copy()
