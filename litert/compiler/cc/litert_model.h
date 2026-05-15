@@ -206,6 +206,8 @@ class Op {
 
   LiteRtOp Get() const { return op_; }
 
+  const LiteRtCompilerContext* ctx() const { return ctx_; }
+
   LiteRtOpCode Code() const {
     LiteRtOpCode opcode = kLiteRtOpCodeTflCustom;
     if (ctx_ && ctx_->get_op_code) {
