@@ -1523,6 +1523,11 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
       absl::Format(&sink, "%v", pool_opts);
       break;
     }
+    case tflite::BuiltinOptions_GeluOptions: {
+      const auto* gelu_opts = opts.AsGeluOptions();
+      absl::Format(&sink, "%v", gelu_opts);
+      break;
+    }
     case tflite::BuiltinOptions_ReshapeOptions: {
       const auto* reshape_opts = opts.AsReshapeOptions();
       absl::Format(&sink, "%v", reshape_opts);
@@ -1731,6 +1736,17 @@ void AbslStringify(Sink& sink, const Pool2DOptionsT& opts) {
 
 template <class Sink>
 void AbslStringify(Sink& sink, const Pool2DOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const GeluOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("approximate", opts.approximate);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const GeluOptionsT* opts) {
   ::litert::internal::PrintNullableOpts(sink, opts);
 }
 
