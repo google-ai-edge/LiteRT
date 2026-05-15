@@ -31,6 +31,7 @@ struct LiteRtCpuOptionsT {
   // expects a `const char*` for `weight_cache_file_path` and does not manage
   // its memory.
   std::string weight_cache_file_path_buffer;
+  bool hint_fully_delegated_to_single_delegate = false;
 
   static const char* Identifier() { return "xnnpack"; }
 };
