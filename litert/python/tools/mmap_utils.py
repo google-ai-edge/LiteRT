@@ -104,8 +104,6 @@ def get_file_contents(
     A `memoryview` wrapping either an `mmap.mmap` or `bytearray` of the contents
     of the file.
   """
-  data = None
-
   # Try to mmap the file first if it is local.
   try:
     fd = os.open(path, os.O_RDONLY)
@@ -113,12 +111,15 @@ def get_file_contents(
     logging.info('Failed to open the file "%s": %s', path, e)
   else:
     try:
+      offset_lo = offset & (mmap.ALLOCATIONGRANULARITY - 1)
+      offset_hi = offset - offset_lo
       data = mmap.mmap(
           fd,
-          size,
+          size + offset_lo if size > 0 else 0,
           access=mmap.ACCESS_COPY,
-          offset=offset,
+          offset=offset_hi,
       )
+      return memoryview(data)[offset_lo:]
     except OSError as e:
       logging.info(
           'Failed to create an `mmap` of the file "%s": %s',
@@ -129,13 +130,12 @@ def get_file_contents(
 
   # If mapping failed (path might refer to a special file that either `os.open`
   # or `mmap.mmap` can't handle, go at it conventionally.
-  if data is None:
-    size = size or (os.stat(path).st_size - offset)
-    data = bytearray(size)
-    with open(path, 'rb') as f:
-      if offset:
-        f.seek(offset)
-      assert f.readinto(data) == size
+  size = size or (os.stat(path).st_size - offset)
+  data = bytearray(size)
+  with open(path, 'rb') as f:
+    if offset:
+      f.seek(offset)
+    assert f.readinto(data) == size
 
   return memoryview(data)
 
