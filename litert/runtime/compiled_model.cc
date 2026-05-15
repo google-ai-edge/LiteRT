@@ -135,6 +135,15 @@ using litert::internal::ParseLiteRtRuntimeOptions;
 using litert::internal::TfLiteTensorIdentifier;
 
 namespace {
+struct ModelSourceInfo {
+  int fd = -1;
+  size_t file_offset = 0;
+  size_t size = 0;
+};
+
+Expected<ModelSourceInfo> GetModelSourceInfoFromAllocation(
+    const tflite::Allocation* allocation);
+
 std::optional<std::string> ExtractDirectory(absl::string_view path) {
   const size_t last_sep = path.find_last_of("/\\");
   if (last_sep == absl::string_view::npos) {
@@ -595,6 +604,58 @@ int GetAllocationFd(const tflite::Allocation* allocation) {
   return -1;
 }
 
+Expected<ModelSourceInfo> GetModelSourceInfoFromAllocation(
+    const tflite::Allocation* allocation) {
+  if (allocation == nullptr ||
+      allocation->type() != tflite::Allocation::Type::kMMap) {
+    return Unexpected(kLiteRtStatusErrorNotFound,
+                      "Model allocation is not file-backed");
+  }
+
+  const auto& mmap_allocation =
+      static_cast<const tflite::MMAPAllocation&>(*allocation);
+  const int fd = mmap_allocation.fd();
+  if (fd < 0) {
+    return Unexpected(kLiteRtStatusErrorNotFound,
+                      "Model allocation does not expose a valid fd");
+  }
+
+  const auto* base = static_cast<const char*>(mmap_allocation.base());
+  const auto* mapped_base =
+      static_cast<const char*>(mmap_allocation.mmapped_buffer());
+  if (base == nullptr || mapped_base == nullptr || base < mapped_base) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Invalid mmap allocation base addresses");
+  }
+
+  return ModelSourceInfo{
+      .fd = fd,
+      .file_offset = mmap_allocation.mmapped_buffer_offset_in_file() +
+                     static_cast<size_t>(base - mapped_base),
+      .size = mmap_allocation.bytes(),
+  };
+}
+
+void SetModelSourceInfoFromAllocation(const tflite::Allocation* allocation,
+                                      int& fd, size_t& file_offset,
+                                      size_t& size) {
+  if (auto model_source = GetModelSourceInfoFromAllocation(allocation);
+      model_source.HasValue()) {
+    fd = model_source->fd;
+    file_offset = model_source->file_offset;
+    size = model_source->size;
+    return;
+  }
+
+  // Fall back to getting the file descriptor if full model source info cannot
+  // be extracted. This is applicable when mmap is used but full region
+  // metadata is unavailable, or for non-file-backed allocations (where fd will
+  // be -1).
+  fd = GetAllocationFd(allocation);
+  file_offset = 0;
+  size = 0;
+}
+
 #if !defined(LITERT_DISABLE_NPU)
 
 Expected<std::vector<litert::internal::CompilerPlugin>> TryGetCompilerPlugins(
@@ -733,7 +794,9 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
         "Flatbuffer model initialized directly from incoming litert model.");
     fb_model_ = tflite::FlatBufferModel::BuildFromBuffer(
         tfl_buf.StrData(), tfl_buf.Size(), error_reporter_.get());
-    fb_model_fd_ = GetAllocationFd(tfl_wrapper.FlatbufferModel().allocation());
+    SetModelSourceInfoFromAllocation(tfl_wrapper.FlatbufferModel().allocation(),
+                                     fb_model_fd_, fb_model_file_offset_,
+                                     fb_model_size_);
     return {};
   }
 
@@ -830,6 +893,13 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
         dispatch_options.SetAllocBase(compiled_model->GetModelBase()));
     LITERT_RETURN_IF_ERROR(
         dispatch_options.SetAllocBaseFd(compiled_model->fb_model_fd_));
+    if (compiled_model->fb_model_fd_ >= 0 &&
+        compiled_model->fb_model_size_ > 0) {
+      LITERT_RETURN_IF_ERROR(dispatch_options.SetAllocBaseFileOffset(
+          compiled_model->fb_model_file_offset_));
+      LITERT_RETURN_IF_ERROR(
+          dispatch_options.SetAllocBaseSize(compiled_model->fb_model_size_));
+    }
     LITERT_RETURN_IF_ERROR(scoped_modifier.Append(std::move(dispatch_options)));
   }
 
@@ -1042,7 +1112,8 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
   LITERT_LOG(LITERT_DEBUG,
              "Plugins applied, flatbuffer model initialized from  JIT compiled "
              "model.");
-  fb_model_fd_ = GetAllocationFd(fb_model_->allocation());
+  SetModelSourceInfoFromAllocation(fb_model_->allocation(), fb_model_fd_,
+                                   fb_model_file_offset_, fb_model_size_);
   return true;
 }
 
@@ -1078,8 +1149,9 @@ bool LiteRtCompiledModelT::TryLoadingFromCache(
   fb_model_ = tflite::FlatBufferModel::BuildFromBuffer(
       tfl_buf_from_cached_model.StrData(), tfl_buf_from_cached_model.Size(),
       error_reporter_.get());
-  fb_model_fd_ = GetAllocationFd(
-      tfl_wrapper_from_cached_model.FlatbufferModel().allocation());
+  SetModelSourceInfoFromAllocation(
+      tfl_wrapper_from_cached_model.FlatbufferModel().allocation(),
+      fb_model_fd_, fb_model_file_offset_, fb_model_size_);
   cached_model_ = std::move(cached_model.value());
   return true;
 }
