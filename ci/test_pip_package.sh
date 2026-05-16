@@ -93,6 +93,9 @@ function install_sdk {
   local mtk_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_mediatek*.tar.gz)"
   SKIP_SDK_DOWNLOAD="true" ${PYTHON_BIN} -m pip install ${mtk_dist_pkg?} --ignore-installed
 
+  local gt_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_google_tensor*.tar.gz)"
+  SKIP_SDK_DOWNLOAD="true" ${PYTHON_BIN} -m pip install ${gt_dist_pkg?} --ignore-installed
+
   local intel_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_intel*.tar.gz)"
   ${PYTHON_BIN} -m pip install --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly ${intel_dist_pkg?} --ignore-installed
 
@@ -122,6 +125,10 @@ function uninstall_pip {
 
   yes | ${PYTHON_BIN} -m pip uninstall ${mtk_pip_pkg}
 
+  local google_tensor_pip_pkg="ai_edge_litert_sdk_google_tensor"
+
+  yes | ${PYTHON_BIN} -m pip uninstall ${google_tensor_pip_pkg}
+
   local intel_pip_pkg="ai_edge_litert_sdk_intel"
 
   yes | ${PYTHON_BIN} -m pip uninstall ${intel_pip_pkg}
@@ -136,6 +143,7 @@ function test_import {
   ${PYTHON_BIN} -c "import ai_edge_litert.environment"
   ${PYTHON_BIN} -c "import ai_edge_litert_sdk_qualcomm"
   ${PYTHON_BIN} -c "import ai_edge_litert_sdk_mediatek"
+  ${PYTHON_BIN} -c "import ai_edge_litert_sdk_google_tensor"
   ${PYTHON_BIN} -c "import ai_edge_litert_sdk_intel"
 
   # Intel OpenVINO backend imports
