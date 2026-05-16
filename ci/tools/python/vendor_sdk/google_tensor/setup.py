@@ -43,6 +43,10 @@ IS_X86_ARCHITECTURE = platform.machine() in ('x86_64')
 
 # --- Configuration for Google Tensor ML SDK Download ---
 # Google Tensor ML SDK version doesn't necessarily match the SDK version though.
+# TODO: b/475410468 - Remove this environment variable once the SDK is publicly
+# available without ACLs. Remove the entire flow of using environment variables
+# for the SDK download, and use the URL directly.
+GOOGLE_TENSOR_SDK_BETA = os.environ.get('GOOGLE_TENSOR_SDK_BETA', None)
 # TODO: b/475410468 - Update the URL once the SDK is finalized.
 # Currently, an environment variable is used here instead of the true URL. This
 # is because the SDK is not yet publicly available. The URL environment variable
@@ -54,9 +58,23 @@ GOOGLE_TENSOR_ML_SDK_TARGET_DIR = 'ai_edge_litert_sdk_google_tensor/data'
 
 
 def _download_and_extract(
-    tarball_url: str, prefix_to_strip: str, target_dir: str
+    tarball_url: str,
+    prefix_to_strip: str,
+    target_dir: str,
+    tarball_is_local_file: bool,
 ):
-  """Download archive, extracts and copy."""
+  """Download archive, extracts and copy.
+
+  Args:
+    tarball_url: The URL of the archive to download, or the path to the local
+      file.
+    prefix_to_strip: The prefix to strip from the archive members.
+    target_dir: The directory to extract the archive to.
+    tarball_is_local_file: Whether the tarball_url is a local file or a URL.
+
+  Raises:
+    SystemExit: If the SDK download or extraction fails .
+  """
   if not (IS_LINUX and IS_X86_ARCHITECTURE):
     print(
         'IGNORED: Currently LiteRT NPU AOT for Google Tensor is only supported'
@@ -69,19 +87,25 @@ def _download_and_extract(
   with tempfile.TemporaryDirectory() as tmpdir:
     archive_name_local = os.path.join(tmpdir, os.path.basename(tarball_url))
 
-    print(f'Downloading SDK from {tarball_url}...')
-    try:
-      urllib.request.urlretrieve(tarball_url, archive_name_local)
-    except Exception as e:  # pylint: disable=broad-exception-caught
-      print(f'ERROR: Failed to download SDK: {e!r}', file=sys.stderr)
-      print(
-          'Please ensure you have an active internet connection.',
-          file=sys.stderr,
-      )
-      # An exception is raised here to abort the installation process.
-      # If we simply return None, the build process will continue, which is not
-      # desired.
-      raise SystemExit('Install SDK failed. Aborting installation.') from e
+    if tarball_is_local_file:
+      # For the Beta SDK, the tarball will be downloaded by the user, and then
+      # the path to the tarball is provided via the environment variable.
+      archive_name_local = tarball_url
+      print(f'Using SDK from {tarball_url}...')
+    else:
+      print(f'Downloading SDK from {tarball_url}...')
+      try:
+        urllib.request.urlretrieve(tarball_url, archive_name_local)
+      except Exception as e:  # pylint: disable=broad-exception-caught
+        print(f'ERROR: Failed to download SDK: {e!r}', file=sys.stderr)
+        print(
+            'Please ensure you have an active internet connection.',
+            file=sys.stderr,
+        )
+        # An exception is raised here to abort the installation process.
+        # If we simply return None, the build process will continue, which is
+        # not desired.
+        raise SystemExit('Install SDK failed. Aborting installation.') from e
 
     print('Extracting SDK files...')
     try:
@@ -214,10 +238,34 @@ class CustomBuildPy(_build_py):
     if SKIP_SDK_DOWNLOAD:
       print('Skipping SDK download...')
     else:
+      tarball_is_local_file = False
+      if GOOGLE_TENSOR_SDK_BETA is not None:
+        if os.path.isfile(GOOGLE_TENSOR_SDK_BETA):
+          tarball_is_local_file = True
+        else:
+          print(
+              'ERROR: Google Tensor SDK beta file not found:'
+              f' {GOOGLE_TENSOR_SDK_BETA}',
+              file=sys.stderr,
+          )
+          raise SystemExit('Install SDK failed. Aborting installation.')
+
+        tarball_location = GOOGLE_TENSOR_SDK_BETA
+      elif GOOGLE_TENSOR_ML_SDK_URL is not None:
+        tarball_location = GOOGLE_TENSOR_ML_SDK_URL
+      else:
+        raise SystemExit('SDK location is not set. Aborting installation.')
+
+      # Here, `tarball_location` is used as a generic variable that can either
+      # be a local file path or a URL.
+      # `tarball_is_local_file` is used to determine whether the tarball is a
+      # local file or a URL.
+
       _download_and_extract(
-          GOOGLE_TENSOR_ML_SDK_URL,
+          tarball_location,
           GOOGLE_TENSOR_ML_SDK_CONTENT_DIR,
           GOOGLE_TENSOR_ML_SDK_TARGET_DIR,
+          tarball_is_local_file,
       )
 
     super().run()
