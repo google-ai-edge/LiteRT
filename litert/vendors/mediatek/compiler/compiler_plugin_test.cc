@@ -18,6 +18,7 @@
 
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
@@ -65,7 +66,7 @@ const auto kSupportedOps = Values(
 TEST(TestMediatekPlugin, GetConfigInfo) {
   EXPECT_STREQ(LiteRtGetCompilerPluginSocManufacturer(), "MediaTek");
 
-  auto plugin = CreatePlugin();
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
 
   LiteRtParamIndex num_supported_soc_models;
   ASSERT_EQ(LiteRtGetNumCompilerPluginSupportedSocModels(
@@ -81,7 +82,7 @@ TEST(TestMediatekPlugin, GetConfigInfo) {
 }
 
 TEST(TestMediatekPlugin, PartitionAdd) {
-  auto plugin = CreatePlugin();
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
   auto model = testing::LoadTestFileModel("add_simple.tflite");
 
   auto subgraph = model.Subgraph(0);
@@ -101,7 +102,7 @@ TEST(TestMediatekPlugin, DlaDirectory) {
   char* dla_directory_name = std::getenv("MTKNN_ADAPTER_DLA_DIR");
 #endif
 
-  auto plugin = CreatePlugin();
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
   auto model = testing::LoadTestFileModel("add_simple.tflite");
 
   auto subgraph = model.Subgraph(0);
@@ -137,7 +138,7 @@ class MtkPluginOpCompatibilityTest
 
 TEST_P(MtkPluginOpCompatibilityTest, SupportedOpsTest) {
   LITERT_LOG(LITERT_INFO, "Testing TFLite model: %s", GetParam().c_str());
-  auto plugin = CreatePlugin();
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
   auto model = testing::LoadTestFileModel(GetParam());
 
   LiteRtCompiledResult compiled;

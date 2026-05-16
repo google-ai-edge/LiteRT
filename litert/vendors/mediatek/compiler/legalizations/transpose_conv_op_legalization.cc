@@ -17,11 +17,12 @@
 #include <cstdint>
 #include <vector>
 
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_options.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/legalize_helper.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
@@ -36,7 +37,7 @@ namespace litert::mediatek {
 
 Expected<void> LegalizeTransposeConvOp(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
-    OperandMap& operand_map, const litert::Op& op) {
+    OperandMap& operand_map, const litert::compiler::Op& op) {
   LITERT_LOG(LITERT_INFO, "Legalize TransposeConv");
 
   std::vector<uint32_t> input_indices;
@@ -58,12 +59,15 @@ Expected<void> LegalizeTransposeConvOp(
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    "The output_shape input of TransposeConv is not const.");
     }
-    auto output_shape_data = op.Inputs()[0].WeightsData<int32_t>();
-    if (!output_shape_data.HasValue()) {
+    auto output_shape_weights = op.Inputs()[0].Weights().Bytes();
+    if (output_shape_weights.empty()) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    "Fail to get data of output shape tensor.");
     }
-    const int32_t output_depth = output_shape_data.Value()[3];
+    absl::Span<const int32_t> output_shape_data(
+        reinterpret_cast<const int32_t*>(output_shape_weights.data()),
+        output_shape_weights.size() / sizeof(int32_t));
+    const int32_t output_depth = output_shape_data[3];
 
     auto zero_bias_idx = AddZeroBiasForConvBase(op.Inputs()[2], op.Inputs()[1],
                                                 output_depth, operand_map);
@@ -82,7 +86,8 @@ Expected<void> LegalizeTransposeConvOp(
   input_indices.push_back(*output_shape_tensor_id);
 
   uint32_t padding;
-  if (auto status = LiteRtGetTransposeConvPaddingOption(op.Get(), &padding);
+  if (auto status =
+          op.ctx()->get_transpose_conv_padding_option(op.Get(), &padding);
       status != kLiteRtStatusOk) {
     return Error(status, "Failed to get padding");
   }
@@ -95,7 +100,7 @@ Expected<void> LegalizeTransposeConvOp(
 
   int32_t stride_width;
   if (auto status =
-          LiteRtGetTransposeConvStrideWOption(op.Get(), &stride_width);
+          op.ctx()->get_transpose_conv_stride_w_option(op.Get(), &stride_width);
       status != kLiteRtStatusOk) {
     return Error(status, "Failed to get stride width");
   }
@@ -104,8 +109,8 @@ Expected<void> LegalizeTransposeConvOp(
   input_indices.push_back(*stride_width_operand_index);
 
   int32_t stride_height;
-  if (auto status =
-          LiteRtGetTransposeConvStrideWOption(op.Get(), &stride_height);
+  if (auto status = op.ctx()->get_transpose_conv_stride_h_option(
+          op.Get(), &stride_height);
       status != kLiteRtStatusOk) {
     return Error(status, "Failed to get stride height");
   }

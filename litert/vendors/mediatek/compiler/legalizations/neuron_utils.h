@@ -19,8 +19,8 @@
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
 #define MAX_OEM_OP_STRING_LEN 100
@@ -43,8 +43,8 @@ struct OemOperandValue {
   uint32_t dataLen;
 };
 
-Expected<NeuronTensorType> GetNeuronTensorType(const Tensor& t,
-                                               int32_t tensor_flags = 0);
+Expected<NeuronTensorType> GetNeuronTensorType(
+    const litert::compiler::Tensor& t, int32_t tensor_flags = 0);
 
 Expected<uint32_t> GetNeuronDataSize(NeuronTensorType type);
 

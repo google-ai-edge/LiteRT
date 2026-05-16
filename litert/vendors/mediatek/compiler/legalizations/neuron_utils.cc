@@ -25,15 +25,15 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
 namespace litert::mediatek {
 
-Expected<NeuronTensorType> GetNeuronTensorType(const Tensor& t,
-                                               int32_t tensor_flags) {
+Expected<NeuronTensorType> GetNeuronTensorType(
+    const litert::compiler::Tensor& t, int32_t tensor_flags) {
   auto element_type = t.ElementType();
 
   const bool use_int8_asymm_signed =

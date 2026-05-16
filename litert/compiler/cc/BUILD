@@ -25,10 +25,10 @@ cc_library(
     hdrs = ["litert_model.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_model",
+        "//litert/c:litert_model_header",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
-        "//litert/c/internal:litert_compiler_context",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
