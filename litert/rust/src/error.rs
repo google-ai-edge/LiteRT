@@ -203,17 +203,19 @@ impl Error {
                 "kLiteRtStatusErrorIncompatibleByteCodeVersion"
             }
 
+            // kLiteRtStatusErrorUnsupportedOpShapeInferer and 
+            // kLiteRtStatusErrorShapeInferenceFailed are not in C++ API.
             // Shape related errors.
-            LiteRtStatus_kLiteRtStatusErrorUnsupportedOpShapeInferer => {
-                "kLiteRtStatusErrorUnsupportedOpShapeInferer"
-            }
-            LiteRtStatus_kLiteRtStatusErrorShapeInferenceFailed => {
-                "kLiteRtStatusErrorShapeInferenceFailed"
-            }
+            //LiteRtStatus_kLiteRtStatusErrorUnsupportedOpShapeInferer => {
+            //    "kLiteRtStatusErrorUnsupportedOpShapeInferer"
+            //}
+            //LiteRtStatus_kLiteRtStatusErrorShapeInferenceFailed => {
+            //    "kLiteRtStatusErrorShapeInferenceFailed"
+            //}
 
             _ => "???",
         }
-        // LINT.ThenChange(../c/litert_common.h:status_codes)
+        // LINT.ThenChange(../../c/litert_common.h:status_codes)
         .to_string()
     }
 }
