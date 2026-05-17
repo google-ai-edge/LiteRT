@@ -108,6 +108,14 @@ class BwScaleOffsetQuantizeParamsWrapper final {
     qnn_quantize_param_.bwScaleOffsetEncoding.bitwidth = bitwidth;
   }
 
+  float GetScale() const {
+    return qnn_quantize_param_.bwScaleOffsetEncoding.scale;
+  }
+
+  std::int32_t GetZeroPoint() const {
+    return -qnn_quantize_param_.bwScaleOffsetEncoding.offset;
+  }
+
  private:
   Qnn_QuantizeParams_t qnn_quantize_param_ = QNN_QUANTIZE_PARAMS_INIT;
 };
