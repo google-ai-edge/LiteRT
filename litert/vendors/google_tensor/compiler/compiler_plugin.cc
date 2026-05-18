@@ -245,33 +245,6 @@ LiteRtStatus LrtOptionsToGoogleTensorOptions(
                                                               &enable_drq));
   google_tensor_options.set_enable_dynamic_range_quantization(enable_drq);
 
-  // TESTING FLAGS
-  std::vector<std::vector<std::string>> testing_flags;
-  LITERT_RETURN_IF_ERROR(
-      LrtGoogleTensorOptionsGetTestingFlags(lrt_options, &testing_flags));
-
-  std::string merged_testing_flags;
-  for (const auto& group : testing_flags) {
-    if (group.empty()) {
-      continue;
-    }
-    if (!merged_testing_flags.empty()) {
-      merged_testing_flags += ',';
-    }
-    if (group.size() >= 2) {
-      absl::StrAppend(&merged_testing_flags, group[0], "=", group[1]);
-    } else {
-      merged_testing_flags += group[0];
-    }
-  }
-
-  if (!merged_testing_flags.empty()) {
-    google_tensor_options.set_testing_flags(merged_testing_flags);
-    LITERT_LOG(LITERT_INFO,
-               "GoogleTensor Compiler Plugin using testing_flags: '%s'",
-               merged_testing_flags.c_str());
-  }
-
   // OP FILTERS PROTO TEXT FILE
   const char* op_filters_path;
   LITERT_RETURN_IF_ERROR(
