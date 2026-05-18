@@ -349,7 +349,7 @@ absl::Status NumElements(const std::vector<T>& shape, U* num_elements) {
         static_cast<uint64_t>(dim) >
             std::numeric_limits<U>::max() / *num_elements) {
       *num_elements = 0;
-      return tensorflow::errors::InvalidArgument("Tensor shape is too large");
+      return absl::InvalidArgumentError("Tensor shape is too large");
     }
     *num_elements *= dim;
   }
