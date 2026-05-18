@@ -347,17 +347,12 @@ cc_library(
     copts = tflite_copts() + NEON_FLAGS_IF_APPLICABLE,
     defines = select({
         ":x86_64_any": ["FC_4BIT_SSE"],
-        ":aarch64_any": [
-            "FC_4BIT_NEON",
-        ],
-        ":arm32_any": [
-            "FC_4BIT_NEON",
-        ],
+        ":aarch64_any": ["FC_4BIT_NEON"],
+        ":arm32_any": ["FC_4BIT_NEON"],
         "//conditions:default": [],
     }),
     deps = [
         ":cppmath",
-        ":cpu_check",
         "@cpuinfo//:cpuinfo_with_unstripped_include_path",
     ],
 )
