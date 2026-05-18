@@ -193,6 +193,9 @@ GpuEnvironment::~GpuEnvironment() {
   if (options_.callback_on_destroy) {
     options_.callback_on_destroy(options_.callback_user_data_on_destroy);
   }
+#if LITERT_HAS_METAL_SUPPORT
+  LiteRtDeleteMetalInfo(metal_info_);
+#endif  // LITERT_HAS_METAL_SUPPORT
 }
 
 Expected<void> GpuEnvironment::Initialize(
