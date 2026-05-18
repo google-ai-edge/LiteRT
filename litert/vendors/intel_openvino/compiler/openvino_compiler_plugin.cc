@@ -29,19 +29,18 @@
 #include "openvino/runtime/core.hpp"
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
-#include "litert/c/internal/litert_logging_helper.h"
+#include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_opaque_options_wrapper.h"
 #include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_intel_openvino_options.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
 #include "litert/vendors/intel_openvino/compiler/openvino_compile_context.h"
@@ -277,7 +276,8 @@ class LiteRtCompilerPluginT {
   using IntelOpenVinoOptions = ::litert::intel_openvino::IntelOpenVinoOptions;
 
   LiteRtCompilerPluginT(const LiteRtCompilerContext* ctx,
-                        LiteRtEnvironmentOptions env, LiteRtOptions options) {
+                        LiteRtEnvironmentOptions env, LiteRtOptions options)
+      : ctx_(ctx) {
     if (options == nullptr) return;
     compiler_opts_ = litert::internal::OptionsWrapper(
         litert::internal::ContextWrapper(ctx), options, litert::OwnHandle::kNo);
@@ -307,7 +307,11 @@ class LiteRtCompilerPluginT {
     return opq_;
   }
 
+ public:
+  const LiteRtCompilerContext* ctx() const { return ctx_; }
+
  private:
+  const LiteRtCompilerContext* ctx_;
   litert::Expected<litert::internal::OptionsWrapper> compiler_opts_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
   litert::Expected<litert::internal::OpaqueOptionsWrapper> opq_ =
@@ -321,7 +325,7 @@ LiteRtStatus LiteRtCreateCompilerPlugin(
     LiteRtCompilerPlugin* compiler_plugin, LiteRtEnvironmentOptions env,
     LiteRtOptions options) {
   LiteRtSetMinLoggerSeverity(LiteRtGetDefaultLogger(), LITERT_INFO);
-  LiteRtPropagateMinLoggerSeverity(env);
+  LiteRtPropagateMinLoggerSeverityWithCompilerContext(compiler_context, env);
   auto* plugin = new LiteRtCompilerPluginT(compiler_context, env, options);
   *compiler_plugin = plugin;
   return kLiteRtStatusOk;
@@ -331,7 +335,7 @@ void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin) {
   delete compiler_plugin;
 }
 
-bool IsOpSupported(const ::litert::Op& op) {
+bool IsOpSupported(const litert::compiler::Op& op) {
   for (const auto& supportedOp : kSupportedOps) {
     if (op.Code() == supportedOp) return true;
   }
@@ -345,7 +349,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            const char* soc_model,
                                            LiteRtSubgraph subgraph,
                                            LiteRtOpList selected_ops) {
-  ::litert::Subgraph graph(subgraph);
+  litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
 
   // Check if any subgraph input has dims.size() >= 6.
   auto subgraph_inputs = graph.Inputs();
@@ -369,7 +373,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
       LITERT_LOG(LITERT_INFO, "op type %d is not supported", op.Code());
       continue;
     }
-    LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
+    LITERT_RETURN_IF_ERROR(op.ctx()->push_op(selected_ops, op.Get(), 0));
   }
 
   return kLiteRtStatusOk;
@@ -382,7 +386,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
   try {
-    auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
+    litert::compiler::Model model(compiler_plugin->ctx(), partitions);
     const auto num_partitions = model.NumSubgraphs();
 
     // Build the OpenVINO compile context from options.
@@ -401,13 +405,13 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     for (int partition_idx = 0; partition_idx < num_partitions;
          ++partition_idx) {
       auto graph_name = absl::StrFormat("Partition_%d", partition_idx);
-      litert::Expected<litert::Subgraph> expected_subgraph =
+      litert::Expected<litert::compiler::Subgraph> expected_subgraph =
           model.Subgraph(partition_idx);
       if (expected_subgraph.HasValue()) {
         std::shared_ptr<ov::frontend::tensorflow_lite::GraphIterator>
             graph_delegate =
                 std::make_shared<litert::openvino::GraphIteratorDelegate>(
-                    &expected_subgraph.Value());
+                    compiler_plugin->ctx(), &expected_subgraph.Value());
         auto input_model = tflite_fe->load(graph_delegate);
         LITERT_LOG(LITERT_INFO, "Model loaded");
         auto ov_model = tflite_fe->convert(input_model);

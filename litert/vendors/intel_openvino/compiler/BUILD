@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_bin", "litert_dynamic_lib", "litert_lib", "litert_test")
 
 package(
@@ -27,7 +28,6 @@ litert_lib(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/strings:string_view",
@@ -94,13 +94,20 @@ litert_dynamic_lib(
         ":graph_iterator",
         ":openvino_compile_context",
         ":openvino_soc_config",
+        "//litert/c:litert_builder",
         "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
-        "//litert/c/internal:litert_logging_helper",
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/c/internal:litert_logging_helper_with_compiler_context",
+        "//litert/c/options:litert_intel_openvino_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_context_wrapper",
+        "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_opaque_options_wrapper",
         "//litert/cc/internal:litert_options_wrapper",
+        "//litert/cc/options:litert_intel_openvino_options",
+        "//litert/compiler/cc:litert_model",
         "@com_google_absl//absl/strings:str_format",
         "@intel_openvino//:openvino",
     ],
@@ -129,19 +136,19 @@ litert_bin(
         ":openvino_compile_context",
         ":openvino_soc_config",
         "//litert/c:litert_common",
-        "//litert/c:litert_model",
-        "//litert/c:litert_op_options",
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
-        "//litert/c/internal:litert_logging_helper",
+        "//litert/c/internal:litert_logging_helper_with_compiler_context",
         "//litert/c/options:litert_compiler_options",
         "//litert/c/options:litert_intel_openvino_options",
-        "//litert/c/options:litert_runtime_options",
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_context_wrapper",
+        "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_opaque_options_wrapper",
         "//litert/cc/internal:litert_options_wrapper",
+        "//litert/cc/options:litert_intel_openvino_options",
+        "//litert/compiler/cc:litert_model",
         "@com_google_absl//absl/strings:str_format",
         "@intel_openvino//:openvino",
     ],
@@ -155,8 +162,8 @@ litert_lib(
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
+        "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
     ],
 )
 
@@ -174,12 +181,14 @@ litert_lib(
     deps = [
         ":decoder",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_model_types",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_ranked_tensor_type",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
         "//litert/vendors/intel_openvino:ov_utils",
         "@intel_openvino//:openvino",
     ],
@@ -193,8 +202,15 @@ litert_lib(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c:litert_op_options_header",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/c/internal:litert_logging",
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/compiler/cc:litert_model",
         "//litert/vendors/intel_openvino:ov_utils",
         "//tflite/schema:schema_fbs",
         "@intel_openvino//:openvino",
@@ -261,6 +277,8 @@ litert_test(
     use_sys_malloc = True,
     deps = [
         ":openvino_compiler_plugin",  # buildcleaner: keep
+        ":openvino_soc_config",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
@@ -274,5 +292,16 @@ litert_test(
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
         "@intel_openvino//:openvino",
+    ],
+)
+
+sh_test(
+    name = "intel_openvino_compiler_plugin_so_symbol_test",
+    srcs = ["//litert/test:litert_compiler_plugin_symbol_test.sh"],
+    args = [
+        "$(location :intel_openvino_compiler_plugin_so)",
+    ],
+    data = [
+        ":intel_openvino_compiler_plugin_so",
     ],
 )

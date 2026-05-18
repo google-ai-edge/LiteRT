@@ -16,17 +16,17 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_COMPILER_GRAPH_ITERATOR_H_
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_COMPILER_GRAPH_ITERATOR_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <unordered_set>
 #include <vector>
 
 #include "openvino/frontend/tensorflow_lite/decoder.hpp"
 #include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
 #include "openvino/frontend/tensorflow_lite/quantization_info.hpp"
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
-#include "litert/c/litert_model.h"
-#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/intel_openvino/compiler/decoder.h"
 namespace litert {
 namespace openvino {
@@ -46,7 +46,9 @@ struct OVGraphIndices {
 class GraphIteratorDelegate
     : public ov::frontend::tensorflow_lite::GraphIterator {
  public:
-  GraphIteratorDelegate(const litert::Subgraph* graph) : subgraph_ptr_(graph) {
+  GraphIteratorDelegate(const LiteRtCompilerContext* ctx,
+                        const litert::compiler::Subgraph* graph)
+      : ctx_(ctx), subgraph_ptr_(graph) {
     for (const auto& input : subgraph_ptr_->Inputs()) {
       if (input.IsSubgraphInput()) {
         iterator_indices_.input_index_++;
@@ -94,8 +96,9 @@ class GraphIteratorDelegate
   };
 
  private:
+  const LiteRtCompilerContext* ctx_;
   size_t node_index_ = 0;
-  const litert::Subgraph* subgraph_ptr_;
+  const litert::compiler::Subgraph* subgraph_ptr_;
   struct OVGraphIndices iterator_indices_;
   // Owns converted weight buffers for i2-to-u2 transformations. Each entry
   // holds a copy of the original packed bytes with the MSB of every 2-bit

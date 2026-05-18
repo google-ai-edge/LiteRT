@@ -25,9 +25,9 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/intel_openvino/utils.h"
 
 namespace litert {
@@ -35,15 +35,12 @@ namespace openvino {
 
 namespace {
 
-LiteRtStatus GetOVTensorShape(const litert::Tensor& litert_tensor,
+LiteRtStatus GetOVTensorShape(const litert::compiler::Tensor& litert_tensor,
                               std::vector<int64_t>& ov_shape_vec) {
-  if (litert_tensor.TypeId() != kLiteRtRankedTensorType)
-    return kLiteRtStatusErrorInvalidArgument;
+  auto ranked_tensor_type = litert_tensor.RankedTensorType();
+  if (!ranked_tensor_type) return kLiteRtStatusErrorInvalidArgument;
 
-  LITERT_ASSIGN_OR_RETURN(RankedTensorType ranked_tensor_type,
-                          litert_tensor.RankedTensorType());
-
-  const auto tensor_layout = ranked_tensor_type.Layout();
+  const auto tensor_layout = ranked_tensor_type->Layout();
   ov_shape_vec.resize(tensor_layout.Rank());
   for (int i = 0; i < ov_shape_vec.size(); i++)
     ov_shape_vec[i] = tensor_layout.Dimensions()[i];
@@ -70,7 +67,7 @@ bool GraphIteratorDelegate::is_end() const {
 
 bool fill_tensor_meta(
     ov::frontend::tensorflow_lite::TensorMetaInfo& tensor_meta_info,
-    const litert::Tensor& litert_tensor) {
+    const litert::compiler::Tensor& litert_tensor) {
   std::vector<int64_t> shape_vec;
   const ElementType type = litert_tensor.ElementType();
   ov::element::Type ov_element_type =
@@ -207,7 +204,7 @@ GraphIteratorDelegate::get_decoder() const {
       output_meta_info.push_back(tensor_meta_info);
     }
     return std::make_shared<litert::openvino::DecoderOperation>(
-        input_meta_info, output_meta_info, op, node_index_);
+        ctx_, input_meta_info, output_meta_info, op, node_index_);
   }
 }
 

@@ -692,7 +692,7 @@ cc_test(
     ],
 )
 
-cc_library(
+litert_c_api_library(
     name = "litert_builder",
     srcs = ["litert_builder.cc"],
     hdrs = ["litert_builder.h"],
