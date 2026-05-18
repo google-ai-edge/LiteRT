@@ -8,32 +8,32 @@ LITERT_FULL_VERSION = "1.5.0"
 #
 # The patched version should be bumped after every release during
 # alpha. Once leaving alpha, the version is 2.1.0.
-LITERT_EXPERIMENTAL_VERSION = "2.2.0"
+LITERT_EXPERIMENTAL_VERSION = "2.1.5"
 
 # The next version of LiteRT SDK for Qualcomm.
 # The minor version code should be bumped after every release.
 # It contains QAIRT 2.44.0.260225
-LITERT_SDK_QUALCOMM_FULL_VERSION = "2.2.0"
+LITERT_SDK_QUALCOMM_FULL_VERSION = "2.1.5"
 
 # The next version of LiteRT SDK for MediaTek version.
 # The minor version code should be bumped after every release.
 # It contains NeuroPilot 8.0.10 and 9.0.3 VERSION
-LITERT_SDK_MEDIATEK_FULL_VERSION = "2.2.0"
+LITERT_SDK_MEDIATEK_FULL_VERSION = "2.1.5"
 
 # The next version of LiteRT SDK for Google Tensor version.
 # The minor version code should be bumped after every release.
 # It contains Google Tensor ML SDK UNKNOWN VERSION
-LITERT_SDK_GOOGLE_TENSOR_FULL_VERSION = "2.2.0"
+LITERT_SDK_GOOGLE_TENSOR_FULL_VERSION = "2.1.5"
 
 # The next version of LiteRT SDK for MediaTek version.
 # The minor version code should be bumped after every release.
 # It contains Exynos AI LiteCore 1.1.0 VERSION
-LITERT_SDK_SAMSUNG_FULL_VERSION = "2.2.0"
+LITERT_SDK_SAMSUNG_FULL_VERSION = "2.1.5"
 
 # The next version of LiteRT SDK for Intel version.
 # The minor version code should be bumped after every release.
-LITERT_SDK_INTEL_FULL_VERSION = "2.2.0"
+LITERT_SDK_INTEL_FULL_VERSION = "2.1.5"
 
 # The next version of LiteRT Converter version.
 # The minor version code should be bumped after every release.
-LITERT_CONVERTER_VERSION = "0.2.0"
+LITERT_CONVERTER_VERSION = "2.1.5"
