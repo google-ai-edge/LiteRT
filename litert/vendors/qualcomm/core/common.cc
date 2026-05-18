@@ -122,6 +122,14 @@ void Options::SetUseFoldReLU(bool use_fold_relu) {
 
 bool Options::GetUseFoldReLU() const { return use_fold_relu_; }
 
+void Options::SetDlbc(bool dlbc) { dlbc_ = dlbc; }
+
+bool Options::GetDlbc() const { return dlbc_; }
+
+void Options::SetDlbcWeights(bool dlbc_weights) { dlbc_weights_ = dlbc_weights; }
+
+bool Options::GetDlbcWeights() const { return dlbc_weights_; }
+
 void Options::SetHtpPerformanceMode(HtpPerformanceMode htp_performance_mode) {
   htp_performance_mode_ = htp_performance_mode;
 }
@@ -207,6 +215,8 @@ UseInt64BiasAsInt32: %v\n\
 EnableWeightSharing: %v\n\
 UseConvHMX: %v\n\
 UseFoldReLU: %v\n\
+Dlbc: %v\n\
+DlbcWeights: %v\n\
 HtpPerformanceMode: %d\n\
 DspPerformanceMode: %d\n\
 DumpTensorIds: %s\n\
@@ -224,6 +234,7 @@ GraphIOTensorMemType: %d\n";  // NOLINT
   return absl::StrFormat(kQnnOptionsDumpFormat, log_level_, backend_type_,
                          profiling_, use_int64_bias_as_int32_,
                          enable_weight_sharing_, use_conv_hmx_, use_fold_relu_,
+                         dlbc_, dlbc_weights_,
                          htp_performance_mode_, dsp_performance_mode_,
                          dump_tensor_ids, ir_json_dir_, dlc_dir_, vtcm_size_,
                          num_hvx_threads_, optimization_level_, graph_priority_,

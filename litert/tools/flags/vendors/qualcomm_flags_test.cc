@@ -510,6 +510,8 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_EQ(options.Value().GetBackend(), QualcommOptions::Backend::kHtp);
   EXPECT_EQ(options.Value().GetGraphIOTensorMemType(),
             QualcommOptions::GraphIOTensorMemType::kMemHandle);
+  EXPECT_FALSE(options.Value().GetDlbc());
+  EXPECT_FALSE(options.Value().GetDlbcWeights());
 }
 
 }  // namespace

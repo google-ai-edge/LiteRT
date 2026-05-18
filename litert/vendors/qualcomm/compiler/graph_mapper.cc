@@ -73,9 +73,9 @@ Qnn_Priority_t GetGraphPriorityValue(::qnn::GraphPriority graph_priority) {
 
 inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs(
     const ::qnn::Options& options) {
-  static std::array<QnnHtpGraph_CustomConfig_t, 6> graph_custom_configs;
-  static std::array<QnnGraph_Config_t, 7> graph_configs;
-  static std::array<const QnnGraph_Config_t*, 8> result;
+  static std::array<QnnHtpGraph_CustomConfig_t, 8> graph_custom_configs;
+  static std::array<QnnGraph_Config_t, 9> graph_configs;
+  static std::array<const QnnGraph_Config_t*, 10> result;
 
   // QNN suggest always enable relax precision.
   graph_custom_configs[0] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
@@ -108,14 +108,38 @@ inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs(
 
   // Hvx Thread
   bool has_hvx = options.GetNumHvxThreads() != 0;
+  size_t num_config = 5;
   if (has_hvx) {
-    graph_custom_configs[5] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
-    graph_custom_configs[5].option =
+    graph_custom_configs[num_config] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    graph_custom_configs[num_config].option =
         QNN_HTP_GRAPH_CONFIG_OPTION_NUM_HVX_THREADS;
-    graph_custom_configs[5].numHvxThreads = options.GetNumHvxThreads();
+    graph_custom_configs[num_config].numHvxThreads =
+        options.GetNumHvxThreads();
+    ++num_config;
   }
 
-  size_t num_config = has_hvx ? 6 : 5;
+  // DLBC (activations / inputs). Offline-prep only — emitted only when
+  // explicitly enabled to preserve default behavior.
+  if (options.GetDlbc()) {
+    graph_custom_configs[num_config] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    graph_custom_configs[num_config].option =
+        QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
+    graph_custom_configs[num_config].optimizationOption.type =
+        QNN_HTP_GRAPH_OPTIMIZATION_TYPE_ENABLE_DLBC;
+    graph_custom_configs[num_config].optimizationOption.floatValue = 1.0f;
+    ++num_config;
+  }
+  // DLBC weights. Offline-prep only.
+  if (options.GetDlbcWeights()) {
+    graph_custom_configs[num_config] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    graph_custom_configs[num_config].option =
+        QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
+    graph_custom_configs[num_config].optimizationOption.type =
+        QNN_HTP_GRAPH_OPTIMIZATION_TYPE_ENABLE_DLBC_WEIGHTS;
+    graph_custom_configs[num_config].optimizationOption.floatValue = 1.0f;
+    ++num_config;
+  }
+
   for (size_t i = 0; i < num_config; ++i) {
     graph_configs[i] = QNN_GRAPH_CONFIG_INIT;
     graph_configs[i].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
@@ -137,9 +161,9 @@ inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs(
 
 inline absl::Span<const QnnGraph_Config_t*> GetLegacyGraphConfigs(
     const ::qnn::Options& options) {
-  static std::array<QnnHtpGraph_CustomConfig_t, 5> graph_custom_configs;
-  static std::array<QnnGraph_Config_t, 6> graph_configs;
-  static std::array<const QnnGraph_Config_t*, 7> result;
+  static std::array<QnnHtpGraph_CustomConfig_t, 7> graph_custom_configs;
+  static std::array<QnnGraph_Config_t, 8> graph_configs;
+  static std::array<const QnnGraph_Config_t*, 9> result;
   // Default use O3 for now.
   graph_custom_configs[0] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
   graph_custom_configs[0].option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
@@ -168,14 +192,37 @@ inline absl::Span<const QnnGraph_Config_t*> GetLegacyGraphConfigs(
 
   // Hvx Thread
   bool has_hvx = options.GetNumHvxThreads() != 0;
+  size_t num_config = 4;
   if (has_hvx) {
-    graph_custom_configs[4] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
-    graph_custom_configs[4].option =
+    graph_custom_configs[num_config] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    graph_custom_configs[num_config].option =
         QNN_HTP_GRAPH_CONFIG_OPTION_NUM_HVX_THREADS;
-    graph_custom_configs[4].numHvxThreads = options.GetNumHvxThreads();
+    graph_custom_configs[num_config].numHvxThreads =
+        options.GetNumHvxThreads();
+    ++num_config;
   }
 
-  size_t num_config = has_hvx ? 5 : 4;
+  // DLBC (activations / inputs). Offline-prep only.
+  if (options.GetDlbc()) {
+    graph_custom_configs[num_config] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    graph_custom_configs[num_config].option =
+        QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
+    graph_custom_configs[num_config].optimizationOption.type =
+        QNN_HTP_GRAPH_OPTIMIZATION_TYPE_ENABLE_DLBC;
+    graph_custom_configs[num_config].optimizationOption.floatValue = 1.0f;
+    ++num_config;
+  }
+  // DLBC weights. Offline-prep only.
+  if (options.GetDlbcWeights()) {
+    graph_custom_configs[num_config] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    graph_custom_configs[num_config].option =
+        QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
+    graph_custom_configs[num_config].optimizationOption.type =
+        QNN_HTP_GRAPH_OPTIMIZATION_TYPE_ENABLE_DLBC_WEIGHTS;
+    graph_custom_configs[num_config].optimizationOption.floatValue = 1.0f;
+    ++num_config;
+  }
+
   for (size_t i = 0; i < num_config; ++i) {
     graph_configs[i] = QNN_GRAPH_CONFIG_INIT;
     graph_configs[i].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;

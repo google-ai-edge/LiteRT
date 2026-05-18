@@ -475,6 +475,16 @@ ABSL_FLAG(bool, qualcomm_use_fold_relu, true,
           "optimization is correct when quantization ranges for convolution "
           "are equal to or are subset of the Relu operation.");
 
+ABSL_FLAG(bool, qualcomm_htp_use_dlbc, false,
+          "Enable Deep Learning Bandwidth Compression (DLBC) for activations "
+          "on the HTP backend. Only effective in the AOT (offline x86) "
+          "preparation flow.");
+
+ABSL_FLAG(bool, qualcomm_htp_use_dlbc_weights, false,
+          "Enable Deep Learning Bandwidth Compression (DLBC) for weight "
+          "tensors on the HTP backend. Only effective in the AOT (offline "
+          "x86) preparation flow.");
+
 ABSL_FLAG(litert::qualcomm::QualcommOptions::Backend, qualcomm_backend,
           litert::qualcomm::QualcommOptions::Backend::kHtp,
           "QNN backend to use.");
@@ -573,6 +583,13 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const auto use_fold_relu = absl::GetFlag(FLAGS_qualcomm_use_fold_relu);
   opts.SetUseFoldReLU(use_fold_relu);
+
+  const auto htp_use_dlbc = absl::GetFlag(FLAGS_qualcomm_htp_use_dlbc);
+  opts.SetDlbc(htp_use_dlbc);
+
+  const auto htp_use_dlbc_weights =
+      absl::GetFlag(FLAGS_qualcomm_htp_use_dlbc_weights);
+  opts.SetDlbcWeights(htp_use_dlbc_weights);
 
   const auto qnn_backend = absl::GetFlag(FLAGS_qualcomm_backend);
   opts.SetBackend(qnn_backend);
