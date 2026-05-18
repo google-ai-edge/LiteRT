@@ -122,8 +122,8 @@ TfLiteStatus EvalSimple(TfLiteContext* context, TfLiteNode* node,
                          idx, row_size - 1);
       return kTfLiteError;
     } else {
-      std::memcpy(output_raw + i * row_bytes, value_raw + idx * row_bytes,
-                  row_bytes);
+      std::memcpy(output_raw + static_cast<size_t>(i) * row_bytes,
+                  value_raw + static_cast<size_t>(idx) * row_bytes, row_bytes);
     }
   }
 
@@ -204,7 +204,7 @@ TfLiteStatus EvalBlockwise(TfLiteContext* context, TfLiteNode* node,
   const int row_size = SizeOfDimension(value, 0);
 
   // col_size after we flatten tensor into 2D.
-  int col_size = 1;
+  size_t col_size = 1;
   for (int i = 1; i < NumDimensions(value); i++) {
     col_size *= SizeOfDimension(value, i);
   }
@@ -241,17 +241,18 @@ TfLiteStatus EvalBlockwise(TfLiteContext* context, TfLiteNode* node,
     }
     const size_t scale_offset = static_cast<size_t>(idx) * num_blocks;
     const size_t value_offset = static_cast<size_t>(idx) * col_size;
+    const size_t output_offset = static_cast<size_t>(i) * col_size;
     for (int j = 0; j < num_blocks; ++j) {
       float scaling_factor = GetTensorData<half>(&scale)[scale_offset + j];
 
       if (output_fp32_ptr) {
         Unpack4Bit(scaling_factor, blocksize,
                    &value_ptr[(value_offset + j * blocksize) / 2],
-                   &output_fp32_ptr[j * blocksize + i * col_size]);
-      } else {
+                   &output_fp32_ptr[j * blocksize + output_offset]);
+      } else if (output_fp16_ptr) {
         Unpack4Bit(scaling_factor, blocksize,
                    &value_ptr[(value_offset + j * blocksize) / 2],
-                   &output_fp16_ptr[j * blocksize + i * col_size]);
+                   &output_fp16_ptr[j * blocksize + output_offset]);
       }
     }
   }
@@ -264,23 +265,24 @@ TfLiteStatus EvalHybrid(TfLiteContext* context, TfLiteNode* node,
   const int row_size = SizeOfDimension(value, 0);
 
   // col_size after we flatten tensor into 2D.
-  int col_size = 1;
+  size_t col_size = 1;
   for (int i = 1; i < NumDimensions(value); i++) {
     col_size *= SizeOfDimension(value, i);
   }
 
   auto copy_row = [&](float scaling_factor, auto output_ptr, auto value_ptr,
-                      int idx, int i) {
+                      int idx, size_t i) {
     const size_t offset = static_cast<size_t>(idx) * col_size;
+    const size_t output_offset = static_cast<size_t>(i) * col_size;
     if (value->type == kTfLiteInt4) {
       Unpack4Bit(scaling_factor, col_size, &value_ptr[offset >> 1],
-                 &output_ptr[i * col_size]);
+                 &output_ptr[output_offset]);
     } else if (value->type == kTfLiteInt2) {
       Unpack2Bit(scaling_factor, col_size, &value_ptr[offset >> 2],
-                 &output_ptr[i * col_size]);
+                 &output_ptr[output_offset]);
     } else {
-      for (int j = 0; j < col_size; j++) {
-        output_ptr[j + i * col_size] = value_ptr[offset + j] * scaling_factor;
+      for (size_t j = 0; j < col_size; ++j) {
+        output_ptr[j + output_offset] = value_ptr[offset + j] * scaling_factor;
       }
     }
   };
@@ -292,7 +294,7 @@ TfLiteStatus EvalHybrid(TfLiteContext* context, TfLiteNode* node,
   const int8_t* value_ptr = GetTensorData<int8_t>(value);
   const int32_t* lookup_data = GetTensorData<int32_t>(lookup);
 
-  for (int i = 0; i < SizeOfDimension(lookup, 0); i++) {
+  for (size_t i = 0; i < SizeOfDimension(lookup, 0); i++) {
     const int32_t idx = lookup_data[i];
     if (idx >= row_size || idx < 0) {
       TF_LITE_KERNEL_LOG(context,
@@ -316,7 +318,7 @@ TfLiteStatus EvalHybrid(TfLiteContext* context, TfLiteNode* node,
 
       if (output_fp32_ptr) {
         copy_row(scaling_factor, output_fp32_ptr, value_ptr, idx, i);
-      } else {
+      } else if (output_fp16_ptr) {
         copy_row(scaling_factor, output_fp16_ptr, value_ptr, idx, i);
       }
     }
