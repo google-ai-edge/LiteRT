@@ -37,6 +37,8 @@
 #include "tflite/schema/schema_generated.h"
 #include "tflite/types/half.h"
 
+ABSL_FLAG(std::string, gtest_filter, "", "GTest filter override for ATS");
+
 namespace litert::testing {
 namespace {
 
@@ -316,12 +318,14 @@ int Ats() {
   const auto res = RUN_ALL_TESTS();
 
   // Final report.
-  if (options->CompileMode()) {
-    options->Csv(c_cap);
-    options->Print(c_cap);
-  } else {
-    options->Csv(i_cap);
-    options->Print(i_cap);
+  if (!options->Quiet()) {
+    if (options->CompileMode()) {
+      options->Csv(c_cap);
+      options->Print(c_cap);
+    } else {
+      options->Csv(i_cap);
+      options->Print(i_cap);
+    }
   }
 
   return res;
@@ -355,5 +359,11 @@ int main(int argc, char** argv) {
   int absl_argc = absl_flags.size();
   ::testing::InitGoogleTest(&absl_argc, absl_flags.data());
   absl::ParseCommandLine(absl_argc, absl_flags.data());
+
+  std::string filter = absl::GetFlag(FLAGS_gtest_filter);
+  if (!filter.empty()) {
+    GTEST_FLAG_SET(filter, filter);
+  }
+
   return litert::testing::Ats();
 }
