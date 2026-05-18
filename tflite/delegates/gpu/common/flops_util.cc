@@ -15,6 +15,8 @@ limitations under the License.
 
 #include "tflite/delegates/gpu/common/flops_util.h"
 
+#include <cstdint>
+
 #include "tflite/delegates/gpu/common/shape.h"
 
 namespace tflite {
