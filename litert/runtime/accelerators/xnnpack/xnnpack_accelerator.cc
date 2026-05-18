@@ -27,6 +27,7 @@
 #include "litert/runtime/accelerators/accelerator_implementation_helper.h"
 #include "litert/runtime/litert_cpu_options.h"
 #include "tflite/c/c_api_types.h"
+#include "tflite/core/c/common.h"
 #include "tflite/delegates/xnnpack/xnnpack_delegate.h"
 
 namespace litert {
@@ -102,6 +103,12 @@ class CpuAccelerator final
     LITERT_RETURN_IF_ERROR(xnnpack_delegate != nullptr,
                            ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure))
         << "XNNPack delegate failed to be created.";
+
+    if (parsed_options.hint_fully_delegated_to_single_delegate) {
+      reinterpret_cast<TfLiteDelegate*>(xnnpack_delegate)->flags |=
+          kTfLiteDelegateFlagsHintFullyDelegatedToSingleDelegate;
+    }
+
     LITERT_RETURN_IF_ERROR(
         runtime_context->wrap_delegate(xnnpack_delegate, delegate_wrapper));
 
