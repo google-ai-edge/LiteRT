@@ -15,12 +15,7 @@
 """Vendor backends for LiteRt."""
 import os
 
+from litert.python.aot.vendors.google_tensor import google_tensor_backend as _
 from litert.python.aot.vendors.intel_openvino import intel_openvino_backend as _
 from litert.python.aot.vendors.mediatek import mediatek_backend as _
 from litert.python.aot.vendors.qualcomm import qualcomm_backend as _
-
-if any(
-    key in os.environ
-    for key in ("GOOGLE_TENSOR_COMPILER_LIB", "GOOGLE_TENSOR_BACKEND_ENABLED")
-):
-  from litert.python.aot.vendors.google_tensor import google_tensor_backend as _  # pylint: disable=g-import-not-at-top,g-bad-import-order
