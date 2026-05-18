@@ -239,27 +239,79 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
   Transform(validate_op_config, ops, tensor_pool, embedding_gemma,
             TransformEmbeddingGemma);
 
-  // Fast Vlm Optimization
-  const std::vector<QnnOpCode> fast_vlm_mha_prefill = {
+  // Attention Optimization
+  const std::vector<QnnOpCode> attn = {
       QnnOpCode::kElementWiseBinary,
+      QnnOpCode::kElementWiseBinary,
+      QnnOpCode::kTranspose,
+      QnnOpCode::kTranspose,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kReshape,
+      QnnOpCode::kElementWiseBinary,
+      QnnOpCode::kElementWiseSelect,
+      QnnOpCode::kSoftmax,
+      QnnOpCode::kTranspose,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kTranspose,
+  };
+  Transform(validate_op_config, ops, tensor_pool, attn, OptimizeMHAAttn);
+
+  // Duplicate or remove concat for each masking to make the pattern more
+  // independent.
+  const std::vector<QnnOpCode> concat_add = {
+      QnnOpCode::kConcat,
+      QnnOpCode::kElementWiseBinary,
+  };
+  Transform(validate_op_config, ops, tensor_pool, concat_add,
+            DuplicateOrRemoveConcate);
+
+  // Simplify masking
+  const std::vector<QnnOpCode> reshape_add_reshape = {
+      QnnOpCode::kReshape,
+      QnnOpCode::kElementWiseBinary,
+      QnnOpCode::kReshape,
+  };
+  Transform(validate_op_config, ops, tensor_pool, reshape_add_reshape,
+            SimplifyMaskingAdd);
+
+  // This optimization can be applied on FastVlm prefill and Kanana prefill.
+  const std::vector<QnnOpCode> fast_vlm_mha_prefill = {
+      QnnOpCode::kElementWiseBinary, // mul
       QnnOpCode::kReshape,
       QnnOpCode::kMatMul,
       QnnOpCode::kMatMul,
       QnnOpCode::kConcat,
-      QnnOpCode::kReshape,
-      QnnOpCode::kElementWiseBinary,
-      QnnOpCode::kReshape,
+      QnnOpCode::kConcat, // concat for add
+      QnnOpCode::kElementWiseBinary, // add
       QnnOpCode::kSoftmax,
       QnnOpCode::kStridedSlice,
       QnnOpCode::kStridedSlice,
       QnnOpCode::kMatMul,
       QnnOpCode::kMatMul,
-      QnnOpCode::kElementWiseBinary,
+      QnnOpCode::kElementWiseBinary, // add
       QnnOpCode::kReshape,
       QnnOpCode::kTranspose,
       QnnOpCode::kReshape};
   Transform(validate_op_config, ops, tensor_pool, fast_vlm_mha_prefill,
-            OptimizeMHAFastVlmPrefill);
+            OptimizeGqaPrefill);
+
+  // This optimization can be applied on FastVlm decode and Kanana decode.
+  const std::vector<QnnOpCode> fast_vlm_mha_decode = {
+      QnnOpCode::kElementWiseBinary,  // mul
+      QnnOpCode::kReshape,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kConcat,
+      QnnOpCode::kElementWiseBinary,  // add
+      QnnOpCode::kSoftmax,
+      QnnOpCode::kStridedSlice,
+      QnnOpCode::kStridedSlice,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kElementWiseBinary,  // add
+      QnnOpCode::kReshape};
+  Transform(validate_op_config, ops, tensor_pool, fast_vlm_mha_decode,
+            OptimizeGqaDecode);
 
   // Kv-swapped Fast Vlm Optimization
   const std::vector<QnnOpCode> kv_swapped_fastvlm_prefill = {
@@ -282,42 +334,5 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
       QnnOpCode::kReshape};
   Transform(validate_op_config, ops, tensor_pool, kv_swapped_fastvlm_prefill,
             OptimizeKvSwappedFastVlmPrefill);
-
-  // This optimization can be applied on FastVlm decode and Kanana decode.
-  const std::vector<QnnOpCode> fast_vlm_mha_decode = {
-      QnnOpCode::kElementWiseBinary,  // mul
-      QnnOpCode::kReshape,
-      QnnOpCode::kMatMul,
-      QnnOpCode::kMatMul,
-      QnnOpCode::kConcat,
-      QnnOpCode::kReshape,
-      QnnOpCode::kElementWiseBinary,  // add
-      QnnOpCode::kReshape,
-      QnnOpCode::kSoftmax,
-      QnnOpCode::kStridedSlice,
-      QnnOpCode::kStridedSlice,
-      QnnOpCode::kMatMul,
-      QnnOpCode::kMatMul,
-      QnnOpCode::kElementWiseBinary,  // add
-      QnnOpCode::kReshape};
-  Transform(validate_op_config, ops, tensor_pool, fast_vlm_mha_decode,
-            OptimizeMHAFastVlmDecode);
-
-  // Attention Optimization
-  const std::vector<QnnOpCode> attn = {
-      QnnOpCode::kElementWiseBinary,
-      QnnOpCode::kElementWiseBinary,
-      QnnOpCode::kTranspose,
-      QnnOpCode::kTranspose,
-      QnnOpCode::kMatMul,
-      QnnOpCode::kReshape,
-      QnnOpCode::kElementWiseBinary,
-      QnnOpCode::kElementWiseSelect,
-      QnnOpCode::kSoftmax,
-      QnnOpCode::kTranspose,
-      QnnOpCode::kMatMul,
-      QnnOpCode::kTranspose,
-  };
-  Transform(validate_op_config, ops, tensor_pool, attn, OptimizeMHAAttn);
 }
 }  // namespace qnn

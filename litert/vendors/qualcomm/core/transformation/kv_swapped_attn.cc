@@ -116,7 +116,6 @@ size_t OptimizeKvSwappedFastVlmPrefill(
           ops[start_index + kQKCacheMatmulIdx],
           ops[start_index + kQKSliceMatmulIdx], ops[start_index + kQKConcatIdx],
           ops[start_index + kMaskAddIdx],
-          ops[start_index + kPostMaskReshapeIdx],
           ops[start_index + kSoftmaxIdx], ops[start_index + kQKVCacheSliceIdx],
           ops[start_index + kQKVSliceSliceIdx],
           ops[start_index + kQKVCacheMatmulIdx],
