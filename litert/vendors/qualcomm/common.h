@@ -123,6 +123,17 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetUseConvHMX(qualcomm_options.GetUseConvHMX());
   qnn_options.SetUseFoldReLU(qualcomm_options.GetUseFoldReLU());
   qnn_options.SetHtpPPoint(qualcomm_options.GetHtpPPoint());
+  qnn_options.SetDlbc(qualcomm_options.GetDlbc());
+  // DLBC weights is mutually exclusive with weight sharing (see QAIRT release
+  // notes for 2.36+). Force-off and warn when both are requested.
+  bool dlbc_weights = qualcomm_options.GetDlbcWeights();
+  if (dlbc_weights && qualcomm_options.GetEnableWeightSharing()) {
+    LITERT_LOG(LITERT_WARNING,
+               "DLBC weights cannot be combined with weight sharing; "
+               "forcing dlbc_weights = false.");
+    dlbc_weights = false;
+  }
+  qnn_options.SetDlbcWeights(dlbc_weights);
   qnn_options.SetHtpPerformanceMode(static_cast<::qnn::HtpPerformanceMode>(
       qualcomm_options.GetHtpPerformanceMode()));
   qnn_options.SetDspPerformanceMode(static_cast<::qnn::DspPerformanceMode>(

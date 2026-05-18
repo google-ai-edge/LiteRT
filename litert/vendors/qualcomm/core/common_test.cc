@@ -196,6 +196,24 @@ TEST(QnnOptionTest, HtpPPoint) {
   EXPECT_EQ(options.GetHtpPPoint(), 0);
 }
 
+TEST(QnnOptionTest, Dlbc) {
+  Options options;
+  EXPECT_FALSE(options.GetDlbc());
+  options.SetDlbc(true);
+  EXPECT_TRUE(options.GetDlbc());
+  options.SetDlbc(false);
+  EXPECT_FALSE(options.GetDlbc());
+}
+
+TEST(QnnOptionTest, DlbcWeights) {
+  Options options;
+  EXPECT_FALSE(options.GetDlbcWeights());
+  options.SetDlbcWeights(true);
+  EXPECT_TRUE(options.GetDlbcWeights());
+  options.SetDlbcWeights(false);
+  EXPECT_FALSE(options.GetDlbcWeights());
+}
+
 TEST(QnnOptionTest, SetIrJsonDir) {
   Options options;
   options.SetIrJsonDir("tmp/");
@@ -263,6 +281,8 @@ TEST(QnnOptionTest, Default) {
   EXPECT_TRUE(options.GetUseConvHMX());
   EXPECT_TRUE(options.GetUseFoldReLU());
   EXPECT_EQ(options.GetHtpPPoint(), 0);
+  EXPECT_FALSE(options.GetDlbc());
+  EXPECT_FALSE(options.GetDlbcWeights());
   EXPECT_EQ(options.GetHtpPerformanceMode(), HtpPerformanceMode::kDefault);
   EXPECT_EQ(options.GetDspPerformanceMode(), DspPerformanceMode::kDefault);
   EXPECT_TRUE(options.GetIrJsonDir().empty());

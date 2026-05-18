@@ -480,6 +480,16 @@ ABSL_FLAG(
     "P points are experimental (HTP backend with O3 only) and map to "
     "predefined compiler configurations affecting latency and DRAM bandwidth.");
 
+ABSL_FLAG(bool, qualcomm_htp_use_dlbc, false,
+          "Enable Deep Learning Bandwidth Compression (DLBC) for activations "
+          "on the HTP backend. Only effective in the AOT (offline x86) "
+          "preparation flow.");
+
+ABSL_FLAG(bool, qualcomm_htp_use_dlbc_weights, false,
+          "Enable Deep Learning Bandwidth Compression (DLBC) for weight "
+          "tensors on the HTP backend. Only effective in the AOT (offline "
+          "x86) preparation flow.");
+
 ABSL_FLAG(litert::qualcomm::QualcommOptions::Backend, qualcomm_backend,
           litert::qualcomm::QualcommOptions::Backend::kHtp,
           "QNN backend to use.");
@@ -581,6 +591,13 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const auto htp_p_point = absl::GetFlag(FLAGS_qualcomm_htp_p_point);
   opts.SetHtpPPoint(htp_p_point);
+
+  const auto htp_use_dlbc = absl::GetFlag(FLAGS_qualcomm_htp_use_dlbc);
+  opts.SetDlbc(htp_use_dlbc);
+
+  const auto htp_use_dlbc_weights =
+      absl::GetFlag(FLAGS_qualcomm_htp_use_dlbc_weights);
+  opts.SetDlbcWeights(htp_use_dlbc_weights);
 
   const auto qnn_backend = absl::GetFlag(FLAGS_qualcomm_backend);
   opts.SetBackend(qnn_backend);
