@@ -15,11 +15,17 @@
 
 #include "litert/vendors/samsung/compiler/builders/batch_matmul_op_builder.h"
 
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_op_options.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildBatchMatMulOp(const Op& op) {
+Expected<OpWrapper> BuildBatchMatMulOp(const LiteRtCompilerContext* ctx,
+                                       const litert::compiler::Op& op) {
   OpWrapper op_wrapper("BATCH_MATMUL");
 
   for (const auto& input : op.Inputs()) {
@@ -29,9 +35,9 @@ Expected<OpWrapper> BuildBatchMatMulOp(const Op& op) {
     op_wrapper.AddOutput(output);
   }
   bool adj_x = false, adj_y = false, asymmetric_quantize_input = false;
-  LITERT_RETURN_IF_ERROR(LiteRtGetBatchMatmulAdjXOption(op.Get(), &adj_x));
-  LITERT_RETURN_IF_ERROR(LiteRtGetBatchMatmulAdjYOption(op.Get(), &adj_y));
-  LITERT_RETURN_IF_ERROR(LiteRtGetBatchMatmulAsymmetricQuantizeInputOption(
+  LITERT_RETURN_IF_ERROR(ctx->get_batch_matmul_adj_x_option(op.Get(), &adj_x));
+  LITERT_RETURN_IF_ERROR(ctx->get_batch_matmul_adj_y_option(op.Get(), &adj_y));
+  LITERT_RETURN_IF_ERROR(ctx->get_batch_matmul_asymmetric_quantize_input_option(
       op.Get(), &asymmetric_quantize_input));
 
   op_wrapper.AddParam("adj_x", adj_x);

@@ -20,8 +20,7 @@
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildBroadcastToOp(const Op& op);
-
+Expected<OpWrapper> BuildBroadcastToOp(const litert::compiler::Op& op);
 }
 
 #endif  //  ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_BROADCASTTO_OP_BUILDER_H_

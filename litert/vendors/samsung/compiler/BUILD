@@ -14,6 +14,7 @@
 # limitations under the License.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
 
 package(
@@ -49,16 +50,20 @@ litert_dynamic_lib(
     deps = [
         ":compile_model",
         ":create_model",
+        "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper",
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/c/options:litert_samsung_options",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_context_wrapper",
+        "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_opaque_options_wrapper",
         "//litert/cc/internal:litert_options_wrapper",
         "//litert/cc/options:litert_samsung_options",
+        "//litert/compiler/cc:litert_model",
         "//litert/vendors/samsung:ai_litecore_api",
         "//litert/vendors/samsung:soc_model",
     ],
@@ -70,15 +75,16 @@ cc_library(
     hdrs = ["create_model.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_op_options",
         "//litert/cc/internal:litert_consts",
+        "//litert/compiler/cc:litert_model",
         "//litert/vendors/samsung:ai_litecore_api",
         "//litert/vendors/samsung/compiler/builders:argmax_op_builder",
         "//litert/vendors/samsung/compiler/builders:batch_matmul_op_builder",
@@ -137,10 +143,20 @@ cc_library(
     hdrs = ["compile_model.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/vendors/samsung:ai_litecore_api",
         "@exynos_ai_litecore//:ai_litecore_headers",
+    ],
+)
+
+sh_test(
+    name = "samsung_compiler_plugin_so_symbol_test",
+    srcs = ["//litert/test:litert_compiler_plugin_symbol_test.sh"],
+    args = [
+        "$(location :compiler_plugin_so)",
+    ],
+    data = [
+        ":compiler_plugin_so",
     ],
 )

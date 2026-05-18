@@ -19,7 +19,6 @@
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildReluN1To1(const Op& op);
-
+Expected<OpWrapper> BuildReluN1To1(const litert::compiler::Op& op);
 }
 #endif  //  ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_RELUN1TO1_OP_BUILDER_H_

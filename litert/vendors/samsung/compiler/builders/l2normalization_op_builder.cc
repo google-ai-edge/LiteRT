@@ -15,12 +15,17 @@
 
 #include "litert/vendors/samsung/compiler/builders/l2normalization_op_builder.h"
 
+#include <cstdint>
+
 #include "litert/c/litert_op_options.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildL2NormalizationOp(const Op& op) {
+Expected<OpWrapper> BuildL2NormalizationOp(const litert::compiler::Op& op) {
   OpWrapper op_wrapper("L2Normalization");
   for (const auto& input : op.Inputs()) {
     op_wrapper.AddInput(input);

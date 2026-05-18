@@ -20,7 +20,6 @@
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildL2NormalizationOp(const Op& op);
-
+Expected<OpWrapper> BuildL2NormalizationOp(const litert::compiler::Op& op);
 }
 #endif  //  ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_L2NORMALIZATION_OP_BUILDER_H_

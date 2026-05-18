@@ -15,14 +15,17 @@
 
 #include "litert/vendors/samsung/compiler/builders/gelu_op_builder.h"
 
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildGeluOp(const Op& op) {
+Expected<OpWrapper> BuildGeluOp(const LiteRtCompilerContext* ctx,
+                                const litert::compiler::Op& op) {
   OpWrapper op_wrapper("Gelu");
 
   for (const auto& input : op.Inputs()) {
@@ -33,7 +36,7 @@ Expected<OpWrapper> BuildGeluOp(const Op& op) {
   }
 
   bool approximate{};
-  if (auto status = LiteRtGetGeluApproximateOption(op.Get(), &approximate);
+  if (auto status = ctx->get_gelu_approximate_option(op.Get(), &approximate);
       status != kLiteRtStatusOk) {
     return Error(status, "Fail to get approximate.");
   }

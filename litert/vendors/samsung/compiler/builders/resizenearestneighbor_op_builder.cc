@@ -15,10 +15,15 @@
 
 #include "litert/vendors/samsung/compiler/builders/resizenearestneighbor_op_builder.h"
 
+#include <cstdint>
+
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
@@ -27,7 +32,8 @@ constexpr int32_t kOutputIndex = 0;
 constexpr int32_t kHeightIndex = 1;
 constexpr int32_t kWidthIndex = 2;
 
-Expected<OpWrapper> BuildResizeNearestNeighborOp(const Op& op) {
+Expected<OpWrapper> BuildResizeNearestNeighborOp(
+    const LiteRtCompilerContext* ctx, const litert::compiler::Op& op) {
   OpWrapper op_wrapper("RESIZE_NEAREST_NEIGHBOR");
 
   for (const auto& input : op.Inputs()) {
@@ -38,12 +44,13 @@ Expected<OpWrapper> BuildResizeNearestNeighborOp(const Op& op) {
   }
 
   bool align_corners;
-  LITERT_RETURN_IF_ERROR(LiteRtGetResizeNearestNeighborAlignCornersOption(
+  LITERT_RETURN_IF_ERROR(ctx->get_resize_nearest_neighbor_align_corners_option(
       op.Get(), &align_corners));
 
   bool half_pixel_centers;
-  LITERT_RETURN_IF_ERROR(LiteRtGetResizeNearestNeighborHalfPixelCenterOption(
-      op.Get(), &half_pixel_centers));
+  LITERT_RETURN_IF_ERROR(
+      ctx->get_resize_nearest_neighbor_half_pixel_center_option(
+          op.Get(), &half_pixel_centers));
 
   auto input_dimensions = GetDimensions(op.Inputs()[kInputIndex]);
   auto output_dimensions = GetDimensions(op.Outputs()[kOutputIndex]);

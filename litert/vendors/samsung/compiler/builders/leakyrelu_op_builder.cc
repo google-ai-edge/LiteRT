@@ -15,13 +15,16 @@
 
 #include "litert/vendors/samsung/compiler/builders/leakyrelu_op_builder.h"
 
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildLeakyReluOp(const Op& op) {
+Expected<OpWrapper> BuildLeakyReluOp(const LiteRtCompilerContext* ctx,
+                                     const litert::compiler::Op& op) {
   OpWrapper op_wrapper("LeakyRelu");
 
   for (const auto& input : op.Inputs()) {
@@ -31,7 +34,7 @@ Expected<OpWrapper> BuildLeakyReluOp(const Op& op) {
     op_wrapper.AddOutput(output);
   }
   float alpha = 0.0;
-  if (auto status = LiteRtGetLeakyReluAlphaOption(op.Get(), &alpha);
+  if (auto status = ctx->get_leaky_relu_alpha_option(op.Get(), &alpha);
       status != kLiteRtStatusOk) {
     return Error(status, "Fail to get alpha.");
   }

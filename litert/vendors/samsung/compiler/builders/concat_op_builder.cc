@@ -15,14 +15,19 @@
 
 #include "litert/vendors/samsung/compiler/builders/concat_op_builder.h"
 
+#include <cstdint>
+
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildConcatOp(const Op& op) {
+Expected<OpWrapper> BuildConcatOp(const LiteRtCompilerContext* ctx,
+                                  const litert::compiler::Op& op) {
   OpWrapper op_wrapper("Concat");
 
   for (const auto& input : op.Inputs()) {
@@ -32,7 +37,7 @@ Expected<OpWrapper> BuildConcatOp(const Op& op) {
     op_wrapper.AddOutput(output);
   }
   int32_t axis{};
-  if (auto status = LiteRtGetConcatenationAxisOption(op.Get(), &axis);
+  if (auto status = ctx->get_concatenation_axis_option(op.Get(), &axis);
       status != kLiteRtStatusOk) {
     return Error(status, "Fail to get axis.");
   }

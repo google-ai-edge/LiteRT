@@ -15,11 +15,15 @@
 
 #include "litert/vendors/samsung/compiler/builders/transpose_conv_op_builder.h"
 
+#include <cstdint>
+
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/samsung/compiler/builders/utils.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -36,7 +40,8 @@ constexpr int32_t kIOChannelIndex = 3;
 constexpr int32_t kKernelHeightIndex = 1;
 constexpr int32_t kKernelWidthIndex = 2;
 
-Expected<OpWrapper> BuildTransposeConvOp(const Op& op) {
+Expected<OpWrapper> BuildTransposeConvOp(const LiteRtCompilerContext* ctx,
+                                         const litert::compiler::Op& op) {
   OpWrapper op_wrapper("DECONV2D");
 
   const auto input = std::move(op.Inputs()[kInputIndex]);
@@ -57,11 +62,11 @@ Expected<OpWrapper> BuildTransposeConvOp(const Op& op) {
 
   int32_t stride_h = 0;
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetTransposeConvStrideHOption(op.Get(), &stride_h));
+      ctx->get_transpose_conv_stride_h_option(op.Get(), &stride_h));
 
   int32_t stride_w = 0;
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetTransposeConvStrideWOption(op.Get(), &stride_w));
+      ctx->get_transpose_conv_stride_w_option(op.Get(), &stride_w));
 
   op_wrapper.AddParam("stride_w", stride_w);
   op_wrapper.AddParam("stride_h", stride_h);
@@ -73,7 +78,7 @@ Expected<OpWrapper> BuildTransposeConvOp(const Op& op) {
 
   uint32_t padding = 0;
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetTransposeConvPaddingOption(op.Get(), &padding));
+      ctx->get_transpose_conv_padding_option(op.Get(), &padding));
   // Compute explicit padding according to padding type
   std::vector<int32_t> explicit_paddings(4, 0);
   if (padding == ::tflite::Padding_SAME) {
@@ -91,7 +96,7 @@ Expected<OpWrapper> BuildTransposeConvOp(const Op& op) {
   op_wrapper.AddParam("explicit_padding", explicit_paddings);
 
   uint32_t tfl_fused_activation;
-  LITERT_RETURN_IF_ERROR(LiteRtGetTransposeConvFusedActivationOption(
+  LITERT_RETURN_IF_ERROR(ctx->get_transpose_conv_fused_activation_option(
       op.Get(), &tfl_fused_activation));
 
   LITERT_ASSIGN_OR_RETURN(auto activation,

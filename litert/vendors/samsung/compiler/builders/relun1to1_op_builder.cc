@@ -14,8 +14,12 @@
 // limitations under the License.
 #include "litert/vendors/samsung/compiler/builders/relun1to1_op_builder.h"
 
+#include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+
 namespace litert::samsung {
-Expected<OpWrapper> BuildReluN1To1(const Op& op) {
+Expected<OpWrapper> BuildReluN1To1(const litert::compiler::Op& op) {
   OpWrapper op_wrapper("ReLUN1To1");
 
   for (const auto& input : op.Inputs()) {

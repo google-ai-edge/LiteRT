@@ -16,12 +16,12 @@
 #define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_LOGISTIC_OP_BUILDER_H_
 
 #include "litert/c/litert_common.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildLogisticOp(const Op& op);
+Expected<OpWrapper> BuildLogisticOp(const litert::compiler::Op& op);
 }
 #endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_LOGISTIC_OP_BUILDER_H_

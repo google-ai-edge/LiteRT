@@ -18,11 +18,12 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildLogisticOp(const Op& op) {
+Expected<OpWrapper> BuildLogisticOp(const litert::compiler::Op& op) {
   OpWrapper op_wrapper("Sigmoid");
 
   for (const auto& input : op.Inputs()) {

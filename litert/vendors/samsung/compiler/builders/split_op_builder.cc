@@ -15,7 +15,14 @@
 
 #include "litert/vendors/samsung/compiler/builders/split_op_builder.h"
 
+#include <cstdint>
+
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_op_options.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
@@ -23,7 +30,8 @@ namespace litert::samsung {
 constexpr int kAxisIndex = 0;
 constexpr int kInputIndex = 1;
 
-Expected<OpWrapper> BuildSplitOp(const Op& op) {
+Expected<OpWrapper> BuildSplitOp(const LiteRtCompilerContext* ctx,
+                                 const litert::compiler::Op& op) {
   OpWrapper op_wrapper("Split");
 
   op_wrapper.AddInput(op.Inputs()[kInputIndex]);
@@ -32,7 +40,8 @@ Expected<OpWrapper> BuildSplitOp(const Op& op) {
   }
 
   int32_t num_splits = 0;
-  LITERT_RETURN_IF_ERROR(LiteRtGetSplitNumSplitsOption(op.Get(), &num_splits));
+  LITERT_RETURN_IF_ERROR(
+      ctx->get_split_num_splits_option(op.Get(), &num_splits));
 
   LITERT_ASSIGN_OR_RETURN(auto axis,
                           GetWeightDataAs<int32_t>(op.Inputs()[kAxisIndex]));

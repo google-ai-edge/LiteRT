@@ -15,7 +15,13 @@
 
 #include "litert/vendors/samsung/compiler/builders/broadcastto_op_builder.h"
 
+#include <cstdint>
+
 #include "litert/c/litert_op_options.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
@@ -23,7 +29,7 @@ namespace litert::samsung {
 constexpr int32_t kInputIndex = 0;
 constexpr int32_t kShapeIndex = 1;
 
-Expected<OpWrapper> BuildBroadcastToOp(const Op& op) {
+Expected<OpWrapper> BuildBroadcastToOp(const litert::compiler::Op& op) {
   OpWrapper op_wrapper("Expand");
 
   op_wrapper.AddInput(op.Inputs()[kInputIndex]);

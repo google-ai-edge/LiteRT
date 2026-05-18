@@ -14,6 +14,10 @@
 // limitations under the License.
 #include "litert/vendors/samsung/compiler/builders/utils.h"
 
+#include <cstdint>
+
+#include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "tflite/schema/schema_generated.h"
 
 namespace litert::samsung {
@@ -33,7 +37,7 @@ Expected<std::string> GetFusedActivationName(uint32_t tfl_fused_activation) {
 }
 
 absl::InlinedVector<int32_t, kExpectedMaxTensorRank> GetDimensions(
-    const Tensor& t) {
+    const litert::compiler::Tensor& t) {
   auto tensor_type = t.RankedTensorType();
   auto dimensions = tensor_type->Layout().Dimensions();
   // TODO: Remove this comment
