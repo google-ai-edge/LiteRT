@@ -21,7 +21,7 @@ import {Environment} from './environment';
 import {getGlobalLiteRt} from './global_litert';
 import {readableStreamDefaultReaderToUint8Array, urlToUint8Array} from './load_utils';
 import {Model} from './model';
-import {CompileOptions} from './model_types';
+import {CompileOptions, fillCompileOptions} from './model_types';
 import {Deletable, LiteRtWasm} from './wasm_binding_types';
 import {isJspiSupported} from './wasm_feature_detect';
 
@@ -114,6 +114,22 @@ export class LiteRt {
   }
 
   /**
+   * Registers an object to be deleted when this LiteRt instance is deleted.
+   * Internal use only.
+   */
+  _registerObjectForDeletion(object: Deletable) {
+    this.objectsToDelete.add(object);
+  }
+
+  /**
+   * Unregisters an object from being deleted when this LiteRt instance is
+   * deleted. Internal use only.
+   */
+  _unregisterObjectForDeletion(object: Deletable) {
+    this.objectsToDelete.delete(object);
+  }
+
+  /**
    * Loads and compiles a LiteRt model.
    *
    * @param model The model data. This can be a string (the model url), a URL
@@ -152,16 +168,8 @@ export class LiteRt {
           'environment.');
     }
 
-    const cpuOptions = compileOptions.cpuOptions ??
-        {numThreads: this.liteRtWasm.getThreadCount()};
-
-    const filledCompileOptions: Required<CompileOptions> = {
-      environment,
-      accelerator,
-      cpuOptions,
-      gpuOptions: compileOptions.gpuOptions ?? {},
-      webNNOptions: compileOptions.webNNOptions ?? {},
-    };
+    const filledCompileOptions = fillCompileOptions(
+        compileOptions, environment, this.liteRtWasm.getThreadCount());
 
     const ptr = this.liteRtWasm._malloc(modelData.byteLength);
     this.liteRtWasm.HEAPU8.set(modelData, ptr);
