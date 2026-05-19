@@ -16,7 +16,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
+load("//litert/build_common:litert_build_defs.bzl", "litert_bin", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
@@ -71,6 +71,66 @@ litert_dynamic_lib(
         "//litert/cc/internal:litert_options_wrapper",
         "//litert/cc/options:litert_qualcomm_options",
         "//litert/compiler/cc:litert_model",
+        "//litert/vendors/qualcomm:common",
+        "//litert/vendors/qualcomm:qnn_manager",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/utils:miscs",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+litert_bin(
+    name = "LiteRtCompilerPlugin_Qualcomm",
+    srcs = [
+        "qnn_compiler_plugin.cc",
+        "//litert/vendors/c:litert_compiler_plugin.h",
+    ],
+    copts = select({
+        "//litert:windows": [
+            "/DLITERT_COMPILE_LIBRARY",
+            "/wd4018",  # -Wno-sign-compare
+        ],
+        "//conditions:default": [],
+    }),
+    linkshared = 1,
+    linkstatic = 1,
+    tags = [
+        "nobuilder",
+        "notap",
+        "windows",
+    ],
+    target_compatible_with = select({
+        "//litert:windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//litert:litert_public"],
+    deps = [
+        ":qnn_compose_graph",
+        "//litert/c:litert_any",
+        "//litert/c:litert_builder",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_model_header",
+        "//litert/c:litert_opaque_options_header",
+        "//litert/c:litert_options_header",
+        "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_logging_helper_with_compiler_context",
+        "//litert/c/options:litert_qualcomm_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_context_wrapper",
+        "//litert/cc/internal:litert_handle",
+        "//litert/cc/internal:litert_options_wrapper",
+        "//litert/cc/options:litert_qualcomm_options",
+        "//litert/compiler/cc:litert_model",
+        "//litert/vendors/cc:namespace_heuristics",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:common",

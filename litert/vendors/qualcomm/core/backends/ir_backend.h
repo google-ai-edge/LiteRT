@@ -17,7 +17,13 @@ namespace qnn {
 
 class IrBackend : public QnnBackend {
  public:
-  static const char* GetLibraryName() { return "libQnnIr.so"; }
+  static const char* GetLibraryName() {
+#if defined(_WIN32)
+    return "QnnIr.dll";
+#else
+    return "libQnnIr.so";
+#endif
+  }
 
   static Qnn_Version_t GetExpectedBackendVersion() {
     Qnn_Version_t backend_version;

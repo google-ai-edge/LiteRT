@@ -66,6 +66,19 @@ namespace litert::qnn {
 
 namespace {
 
+LiteRtStatus SetEnvVar(const char* name, const char* value) {
+#if defined(_WIN32)
+  if (_putenv_s(name, value) != 0) {
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+#else
+  if (setenv(name, value, /*overwrite=*/1) != 0) {
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+#endif
+  return kLiteRtStatusOk;
+}
+
 RtldFlags GetRtldFlags() {
 #if defined(__ANDROID__)
   // Race condition segfault without NoDelete on android.
@@ -434,7 +447,7 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
     static constexpr char kAdsp[] = "ADSP_LIBRARY_PATH";
     const char* adsp_library_path = getenv(kAdsp);
     if (adsp_library_path == nullptr) {
-      setenv(kAdsp, shared_library_dir->data(), /*overwrite=*/1);
+      LITERT_RETURN_IF_ERROR(SetEnvVar(kAdsp, shared_library_dir->c_str()));
     } else {
       bool found = false;
       for (absl::string_view part : absl::StrSplit(adsp_library_path, ';')) {
@@ -446,7 +459,8 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
       if (!found) {
         auto new_adsp_library_path =
             absl::StrCat(shared_library_dir.value(), ";", adsp_library_path);
-        setenv(kAdsp, new_adsp_library_path.c_str(), /*overwrite=*/1);
+        LITERT_RETURN_IF_ERROR(
+            SetEnvVar(kAdsp, new_adsp_library_path.c_str()));
       }
     }
     LITERT_LOG(LITERT_DEBUG, "ADSP_LIBRARY_PATH: %s", getenv(kAdsp));

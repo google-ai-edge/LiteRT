@@ -13,7 +13,11 @@
 // limitations under the License.
 #include "litert/vendors/qualcomm/compiler/qnn_compose_graph.h"
 
+#if defined(_WIN32)
+#include <malloc.h>
+#else
 #include <alloca.h>
+#endif
 #include <stdbool.h>
 #include <stdio.h>
 

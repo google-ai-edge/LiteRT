@@ -16,7 +16,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_dispatch_api")
+load("//litert/build_common:litert_build_defs.bzl", "litert_bin", "litert_dispatch_api")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
@@ -91,6 +91,76 @@ litert_dispatch_api(
         "//litert/c/internal:litert_scheduling_info",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+litert_bin(
+    name = "LiteRtDispatch_Qualcomm",
+    srcs = [
+        "dispatch_api.cc",
+        "litert_dispatch_device_context.cc",
+        "litert_dispatch_device_context.h",
+        "litert_dispatch_invocation_context.cc",
+        "litert_dispatch_invocation_context.h",
+        "registry.h",
+    ],
+    copts = select({
+        "//litert:windows": [
+            "/DLITERT_COMPILE_LIBRARY",
+            "/wd4018",  # -Wno-sign-compare
+        ],
+        "//conditions:default": [],
+    }),
+    linkshared = 1,
+    linkstatic = 1,
+    tags = [
+        "nobuilder",
+        "notap",
+        "windows",
+    ],
+    target_compatible_with = select({
+        "//litert:windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//litert:litert_public"],
+    deps = [
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_header",
+        "//litert/c:litert_environment_options_header",
+        "//litert/c:litert_event_header",
+        "//litert/c:litert_event_type",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_opaque_options_header",
+        "//litert/c:litert_options_header",
+        "//litert/c:litert_tensor_buffer_header",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_logging_helper_with_runtime_context",
+        "//litert/c/internal:litert_runtime_context_header",
+        "//litert/c/internal:litert_scheduling_info",
+        "//litert/c/options:litert_qualcomm_options",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_context_wrapper",
+        "//litert/cc/internal:litert_options_wrapper",
+        "//litert/cc/options:litert_qualcomm_options",
+        "//litert/core/util:tensor_type_util",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "//litert/vendors/qualcomm:common",
+        "//litert/vendors/qualcomm:context_binary_info",
+        "//litert/vendors/qualcomm:qnn_manager",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/utils:miscs",
+        "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@com_google_absl//absl/base:no_destructor",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],
 )

@@ -42,10 +42,18 @@ typedef QNN_INTERFACE_VER_TYPE QnnApi;
 typedef QNN_SYSTEM_INTERFACE_VER_TYPE QnnSystemApi;
 
 // QNN backend library should be on DT_RUNPATH (-rpath) (for linux).
+#if LITERT_WINDOWS_OS
+static const char kLibQnnSystemSo[] = "QnnSystem.dll";
+#else
 static const char kLibQnnSystemSo[] = "libQnnSystem.so";
+#endif
 
 // Android only library.
+#if LITERT_WINDOWS_OS
+static const char kLibQnnHtpPrepareSo[] = "QnnHtpPrepare.dll";
+#else
 static const char kLibQnnHtpPrepareSo[] = "libQnnHtpPrepare.so";
+#endif
 
 // Map LiteRT element type to Qnn counterpart.
 inline LiteRtStatus LegalizeElementType(litert::ElementType litert_type,
