@@ -15,14 +15,18 @@ limitations under the License.
 
 #include "tflite/delegates/gpu/common/task/tensor_desc.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/strings/substitute.h"
+#include "third_party/gloop/util/status/status_macros.h"
 #include "tflite/delegates/gpu/common/data_type.h"
 #include "tflite/delegates/gpu/common/shape.h"
 #include "tflite/delegates/gpu/common/task/util.h"
