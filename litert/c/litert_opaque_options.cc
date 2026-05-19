@@ -15,10 +15,10 @@
 #include "litert/c/litert_opaque_options.h"
 
 #include <cstdint>
-#include <functional>
 #include <memory>
+#include <cstdlib>
+#include <new>
 #include <string>
-#include <string_view>
 #include <utility>
 
 #include "litert/c/litert_common.h"
@@ -42,15 +42,20 @@ LiteRtStatus LiteRtCreateOpaqueOptions(const char* payload_identifier,
   if (!payload_identifier || !payload_data || !payload_destructor || !options) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *options = new LiteRtOpaqueOptionsT(std::string(payload_identifier),
-                                      payload_data, payload_destructor);
+  void* mem = malloc(sizeof(LiteRtOpaqueOptionsT));
+  if (!mem) {
+    return kLiteRtStatusErrorMemoryAllocationFailure;
+  }
+  *options = new (mem) LiteRtOpaqueOptionsT(std::string(payload_identifier),
+                                             payload_data, payload_destructor);
   return kLiteRtStatusOk;
 }
 
 void LiteRtDestroyOpaqueOptions(LiteRtOpaqueOptions options) {
   while (options) {
     LiteRtOpaqueOptions next = options->next;
-    delete options;
+    options->~LiteRtOpaqueOptionsT();
+    free(options);
     options = next;
   }
 }
@@ -135,29 +140,15 @@ LiteRtStatus LiteRtSetOpaqueOptionsHash(
   return kLiteRtStatusOk;
 }
 
-namespace {
-uint64_t HashCStringPayload(void* payload_data) {
-  const char* data = reinterpret_cast<const char*>(payload_data);
-  if (data == nullptr || data[0] == '\0') {
-    return 0;
-  }
-  std::string_view data_view(data);
-  return std::hash<std::string_view>{}(data_view);
-}
-}  // namespace
-
 LiteRtStatus LiteRtGetOpaqueOptionsHash(LiteRtOpaqueOptions options,
                                         uint64_t* hash) {
   if (!options || !hash) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  if (options->payload_hash_func) {
-    *hash = options->payload_hash_func(options->payload_data.get());
-    return kLiteRtStatusOk;
+  if (!options->payload_hash_func) {
+    // Hash function not set for these options.
+    return kLiteRtStatusErrorUnsupported;
   }
-  // If no hash function is provided, default to `HashCStringPayload`.
-  // HashCStringPayload assumes a nul-terminated string and is unsafe for
-  // other types.
-  *hash = HashCStringPayload(options->payload_data.get());
+  *hash = options->payload_hash_func(options->payload_data.get());
   return kLiteRtStatusOk;
 }
