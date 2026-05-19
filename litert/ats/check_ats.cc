@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <iostream>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -65,13 +66,14 @@ Expected<AtsConf> CpuInferenceOptions() {
   return AtsConf::ParseFlagsAndDoSetup();
 }
 
-Expected<AtsConf> CompileOptions() {
+Expected<AtsConf> CompileOptions(absl::string_view models_out) {
   absl::FlagSaver saver;
   absl::SetFlag(&FLAGS_dispatch_dir, GetLiteRtPath("vendors/examples/"));
   absl::SetFlag(&FLAGS_plugin_dir, GetLiteRtPath("vendors/examples/"));
   absl::SetFlag(&FLAGS_compile_mode, true);
   absl::SetFlag(&FLAGS_soc_manufacturer, "ExampleSocManufacturer");
   absl::SetFlag(&FLAGS_backend, "npu");
+  absl::SetFlag(&FLAGS_models_out, std::string(models_out));
   return AtsConf::ParseFlagsAndDoSetup();
 }
 
@@ -79,7 +81,6 @@ Expected<void> CheckAts() {
   absl::SetFlag(&FLAGS_extra_models, {GetLiteRtPath("test/testdata/")});
 
   LITERT_ASSIGN_OR_RETURN(auto dir, UniqueTestDirectory::Create());
-  absl::SetFlag(&FLAGS_models_out, dir.Str());
 
   size_t test_id = 0;
 
@@ -87,7 +88,7 @@ Expected<void> CheckAts() {
   AtsCompileTest::Capture c_cap;
 
   LITERT_ASSIGN_OR_RETURN(auto cpu_inference_options, CpuInferenceOptions());
-  LITERT_ASSIGN_OR_RETURN(auto compile_options, CompileOptions());
+  LITERT_ASSIGN_OR_RETURN(auto compile_options, CompileOptions(dir.Str()));
   LITERT_ASSIGN_OR_RETURN(auto npu_inference_options, NpuInferenceOptions());
 
   // CPU
