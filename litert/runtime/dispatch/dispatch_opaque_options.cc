@@ -14,6 +14,8 @@
 
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 
+#include <cstddef>
+
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -26,8 +28,16 @@ namespace litert::internal {
 namespace {
 
 struct Payload {
+  // Base address of the memory allocation.
   const void* alloc_base = nullptr;
+  // File descriptor for the backing file of the allocation.
   int alloc_base_fd = -1;
+  // Byte offset of alloc_base in the backing file when alloc_base_fd is used.
+  size_t alloc_base_file_offset = 0;
+  // Size in bytes of the model rooted at alloc_base.
+  size_t alloc_base_size = 0;
+  // Indicates whether the file region metadata (offset or size) is populated.
+  bool has_alloc_base_file_region = false;
 };
 
 }  // namespace
@@ -70,6 +80,37 @@ Expected<void> DispatchDelegateOptions::SetAllocBaseFd(int alloc_base_fd) {
 Expected<int> DispatchDelegateOptions::GetAllocBaseFd() {
   LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
   return payload->alloc_base_fd;
+}
+
+Expected<void> DispatchDelegateOptions::SetAllocBaseFileOffset(
+    size_t alloc_base_file_offset) {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  payload->alloc_base_file_offset = alloc_base_file_offset;
+  payload->has_alloc_base_file_region = true;
+  return {};
+}
+
+Expected<size_t> DispatchDelegateOptions::GetAllocBaseFileOffset() {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  return payload->alloc_base_file_offset;
+}
+
+Expected<void> DispatchDelegateOptions::SetAllocBaseSize(
+    size_t alloc_base_size) {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  payload->alloc_base_size = alloc_base_size;
+  payload->has_alloc_base_file_region = true;
+  return {};
+}
+
+Expected<size_t> DispatchDelegateOptions::GetAllocBaseSize() {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  return payload->alloc_base_size;
+}
+
+Expected<bool> DispatchDelegateOptions::HasAllocBaseFileRegion() {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  return payload->has_alloc_base_file_region;
 }
 
 }  // namespace litert::internal

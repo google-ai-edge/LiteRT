@@ -339,6 +339,12 @@ class RuntimeProxy {
                                buffer_size, model);
   }
 
+  LiteRtStatus CreateModelFromFd(int fd, size_t offset, size_t size,
+                                 LiteRtModel* model) {
+    LITERT_PROXY_METHOD_STATUS(litert_create_model_from_fd, fd, offset, size,
+                               model);
+  }
+
   LiteRtStatus GetModelMetadata(LiteRtModel model, const char* metadata_key,
                                 const void** metadata_buffer,
                                 size_t* metadata_buffer_size) {

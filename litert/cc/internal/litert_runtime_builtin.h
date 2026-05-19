@@ -253,6 +253,7 @@ inline const LiteRtRuntimeCApiStruct kBuiltinStruct = {
     .litert_run_compiled_model_async_with_scheduling_info =
         LiteRtRunCompiledModelAsyncWithSchedulingInfo,
     .litert_environment_supports_fp16 = LiteRtEnvironmentSupportsFP16,
+    .litert_create_model_from_fd = LiteRtCreateModelFromFd,
 };
 
 inline const LiteRtRuntimeCApiStruct* const kLiteRtRuntimeBuiltin =

@@ -224,8 +224,9 @@ litert_c_api_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_common",
         "//litert/core/model",
-        "//tflite/converter:allocation",
         "//litert/core/model:model_load",
+        "//tflite:stderr_reporter",
+        "//tflite/converter:allocation",
         "//tflite/core/c:private_c_api_types",
     ] + select({
         "//litert/build_common:build_include_npu_enabled": [
@@ -252,6 +253,7 @@ cc_test(
         ":litert_model",
         ":litert_op_code",
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc/internal:scoped_file",
         "//litert/core/model",
         "//litert/test:common",
         "//litert/test:matchers",

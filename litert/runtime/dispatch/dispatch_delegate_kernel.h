@@ -26,6 +26,7 @@
 #include "absl/container/node_hash_map.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/core/dispatch_op_schema.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/metrics.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -36,6 +37,13 @@
 class LiteRtExternalLiteRtBufferContextT;
 
 namespace litert::internal {
+
+// Builds a memory buffer containing the executable bytecode for a dispatch op,
+// using the provided dispatch options and allocation base information.
+Expected<LiteRtMemBuffer> BuildExecutableBytecodeBuffer(
+    const DispatchOpOptions& dispatch_options, const void* alloc_base,
+    int alloc_base_fd, size_t alloc_base_file_offset, size_t alloc_base_size,
+    bool has_alloc_base_file_region);
 
 // A TFL kernel that the interpreter calls to dispatch execution through the
 // Dispatch API.
@@ -110,8 +118,17 @@ class DispatchDelegateKernel
   Expected<void> ScheduleAsyncExecution(TfLiteOpaqueContext* context);
   Expected<void> ScheduleSyncExecution(TfLiteOpaqueContext* context);
 
+  // Retrieves the allocation base from the options.
   Expected<const void*> FindAllocBase() const;
+  // Retrieves the allocation base file descriptor from the options.
   Expected<int> FindAllocBaseFd() const;
+  // Retrieves the allocation base file offset from the options.
+  Expected<size_t> FindAllocBaseFileOffset() const;
+  // Retrieves the allocation base size from the options.
+  Expected<size_t> FindAllocBaseSize() const;
+  // Checks if the allocation base file region (offset and size) is set in the
+  // options.
+  Expected<bool> HasAllocBaseFileRegion() const;
 
   LiteRtEnvironmentOptions environment_options_;
   LiteRtOptions options_;

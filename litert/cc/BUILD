@@ -947,6 +947,7 @@ cc_test(
         "//litert/c:litert_layout",
         "//litert/c:litert_op_code",
         "//litert/cc/internal:litert_extended_model",
+        "//litert/cc/internal:scoped_file",
         "//litert/core/model",
         "//litert/test:common",
         "//litert/test:matchers",
