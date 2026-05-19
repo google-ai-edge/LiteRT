@@ -27,6 +27,16 @@ cc_library(
         "external_weight_loader_litert.h",
     ],
     deps = [
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        # copybara:uncomment_begin(google-only)
+        # "@ml_drift//ml_drift/webgpu:webgpu_headers",
+        # copybara:uncomment_end
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
@@ -38,13 +48,6 @@ cc_library(
         "//litert/core/model:flatbuffer_to_litert",
         "//tflite:framework",
         "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
     ],
 )
 
