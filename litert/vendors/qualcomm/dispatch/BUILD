@@ -23,6 +23,7 @@ load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//visibility:private"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
 )
 
 litert_dispatch_api(
@@ -46,6 +47,7 @@ litert_dispatch_api(
         "-fdata-sections",
     ],
     export_litert_only = True,
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
     linkopts = litert_android_linkopts() + [
         "-Wl,-soname=libLiteRtDispatch_Qualcomm.so",
         "-Wl,-lc++abi",
@@ -156,12 +158,12 @@ litert_bin(
         "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "//third_party/qairt/latest:qnn_lib_headers",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-        "@qairt//:qnn_lib_headers",
     ],
 )
 

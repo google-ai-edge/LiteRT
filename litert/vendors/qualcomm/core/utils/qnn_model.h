@@ -10,8 +10,8 @@
 #include <optional>
 #include <vector>
 
-#include "QnnCommon.h"
-#include "QnnInterface.h"
+#include "QnnCommon.h"  // from @qairt
+#include "QnnInterface.h"  // from @qairt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"

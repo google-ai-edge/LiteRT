@@ -9,10 +9,10 @@
 #include <optional>
 #include <vector>
 
-#include "DSP/QnnDspDevice.h"
-#include "DSP/QnnDspPerfInfrastructure.h"
-#include "QnnCommon.h"
-#include "QnnInterface.h"
+#include "DSP/QnnDspDevice.h"  // from @qairt
+#include "DSP/QnnDspPerfInfrastructure.h"  // from @qairt
+#include "QnnCommon.h"  // from @qairt
+#include "QnnInterface.h"  // from @qairt
 #include <gtest/gtest.h>
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/backends/backend_utils.h"
