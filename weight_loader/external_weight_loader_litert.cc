@@ -28,6 +28,46 @@
 #include <windows.h>
 #endif  // !defined(_WIN32)
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/val.h>
+
+namespace litert_web {
+emscripten::val GetStreamWeightsCallback();
+}
+
+// clang-format off
+EM_ASYNC_JS(
+    int, CallStreamWeightsOnWeb,
+    (const int* tfl_ids, const uint32_t* wgpu_buffers, const double* offsets,
+     const double* lengths, int count),
+    {
+      const callback = Module.getStreamWeightsCallback();
+      if (typeof callback !== 'function') {
+        console.error(
+            'Stream weights callback is not registered or is not a function');
+        return 1;
+      }
+      const tflIdsArray = new Int32Array(Module.HEAP32.buffer, tfl_ids, count);
+      const wgpuBuffersArray =
+          new Uint32Array(Module.HEAPU32.buffer, wgpu_buffers, count);
+      const offsetsArray =
+          new Float64Array(Module.HEAPF64.buffer, offsets, count);
+      const lengthsArray =
+          new Float64Array(Module.HEAPF64.buffer, lengths, count);
+      try {
+        await callback(
+            new Int32Array(tflIdsArray), new Uint32Array(wgpuBuffersArray),
+            new Float64Array(offsetsArray), new Float64Array(lengthsArray));
+      } catch (e) {
+        console.error('Error in streamWeightsOnWeb:', e);
+        return 1;
+      }
+      return 0;
+    });
+// clang-format on
+#endif  // __EMSCRIPTEN__
+
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
@@ -774,6 +814,40 @@ class LiteRtWeightLoader : public WeightLoader {
     }
     return &(*it->second.access);
   }
+
+#ifdef __EMSCRIPTEN__
+  absl::Status UploadWeightsOnWeb(const absl::flat_hash_map<int, wgpu::Buffer>&
+                                      tfl_id_to_wgpu_buffer) override {
+    std::vector<int> tfl_ids;
+    std::vector<uint32_t> wgpu_buffers;
+    std::vector<double> offsets;
+    std::vector<double> lengths;
+    tfl_ids.reserve(tfl_id_to_wgpu_buffer.size());
+    wgpu_buffers.reserve(tfl_id_to_wgpu_buffer.size());
+    offsets.reserve(tfl_id_to_wgpu_buffer.size());
+    lengths.reserve(tfl_id_to_wgpu_buffer.size());
+    for (const auto& [id, buffer] : tfl_id_to_wgpu_buffer) {
+      tfl_ids.push_back(id);
+      wgpu_buffers.push_back(reinterpret_cast<uint32_t>(buffer.Get()));
+      auto entry_it = entries_.find(static_cast<uint32_t>(id));
+      if (entry_it != entries_.end()) {
+        const auto& info = infos_[entry_it->second.info_index];
+        offsets.push_back(static_cast<double>(info.offset));
+        lengths.push_back(static_cast<double>(info.length));
+      } else {
+        return absl::InternalError("Could not find WeightInfo for buffer ID.");
+      }
+    }
+
+    int result =
+        CallStreamWeightsOnWeb(tfl_ids.data(), wgpu_buffers.data(),
+                               offsets.data(), lengths.data(), tfl_ids.size());
+    if (result != 0) {
+      return absl::InternalError("Failed to stream weights on web");
+    }
+    return absl::OkStatus();
+  }
+#endif  // __EMSCRIPTEN__
 
  private:
   LiteRtRuntimeContext* runtime_context_;

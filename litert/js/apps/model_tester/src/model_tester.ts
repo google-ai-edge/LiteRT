@@ -31,7 +31,7 @@ import type {Settings, SettingValues} from './common_settings';
 import {formStyles, hostStyles, typographyStyles} from './common_styles';
 import {ConsoleMirror} from './console_mirror';
 import {download} from './download';
-import {getFileHandle} from './file_utils';
+import {findFilesByExtension, getFileHandle} from './file_utils';
 import {LiteRtModelRunner} from './litert_model_runner';
 import {locationReplace} from './location_replace';
 import type {RunResult} from './model_runner';
@@ -266,6 +266,47 @@ export class ModelTester extends LitElement {
     }
   }
 
+  private async setExternalWeightsDirectory() {
+    const windowWithFilesystemApi = window as unknown as {
+      showDirectoryPicker: () => Promise<FileSystemDirectoryHandle>;
+    };
+    try {
+      const directoryHandle = await windowWithFilesystemApi.showDirectoryPicker();
+      const tfliteFiles = await findFilesByExtension(directoryHandle, ['.tflite']);
+      const binFiles = await findFilesByExtension(directoryHandle, ['.bin']);
+
+      if (tfliteFiles.length === 0) {
+        throw new Error('No .tflite file found in the selected directory.');
+      }
+      if (binFiles.length === 0) {
+        throw new Error('No .bin file found in the selected directory.');
+      }
+
+      if (tfliteFiles.length > 1) {
+        console.warn('Multiple .tflite files found. Using the first one:', tfliteFiles[0]);
+      }
+      if (binFiles.length > 1) {
+        console.warn('Multiple .bin files found. Using the first one:', binFiles[0]);
+      }
+
+      const tfliteHandle = await getFileHandle(directoryHandle, tfliteFiles[0]);
+      const tfliteFile = await tfliteHandle.getFile();
+      const modelData = new Uint8Array(await tfliteFile.arrayBuffer());
+
+      const binHandle = await getFileHandle(directoryHandle, binFiles[0]);
+      const binFile = await binHandle.getFile();
+      const weightsStream = binFile.stream();
+
+      this.modelRunner = await LiteRtModelRunner.load(
+          modelData,
+          () => this.consoleMirror.getMessages(),
+          weightsStream,
+      );
+    } catch (e) {
+      console.error('Failed to load external weights directory:', e);
+    }
+  }
+
   private async runTest() {
     try {
       this.running = true;
@@ -326,6 +367,11 @@ export class ModelTester extends LitElement {
         type="file"
         @change=${this.setModelFile}
       />
+      <button
+        @click=${this.setExternalWeightsDirectory}
+      >
+        Choose External Weights Directory
+      </button>
       <button
         class="primary"
         ?disabled=${!this.modelRunner || this.running}
