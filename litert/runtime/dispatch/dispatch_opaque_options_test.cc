@@ -25,6 +25,9 @@ TEST(DispatchDelegateOptionsTest, Create) {
   ASSERT_TRUE(options);
   ASSERT_TRUE(options->GetAllocBase());
   ASSERT_TRUE(options->GetAllocBaseFd());
+  ASSERT_TRUE(options->GetAllocBaseFileOffset());
+  ASSERT_TRUE(options->GetAllocBaseSize());
+  ASSERT_TRUE(options->HasAllocBaseFileRegion());
 }
 
 TEST(DispatchDelegateOptionsTest, CreateFromOpaqueOptions) {
@@ -66,6 +69,29 @@ TEST(DispatchDelegateOptionsTest, SetAllocBaseFd) {
   auto alloc_base_fd = options->GetAllocBaseFd();
   ASSERT_TRUE(alloc_base_fd);
   ASSERT_EQ(*alloc_base_fd, dummy_fd);
+}
+
+TEST(DispatchDelegateOptionsTest, SetAllocBaseFileRegion) {
+  auto options = DispatchDelegateOptions::Create();
+  ASSERT_TRUE(options);
+
+  constexpr size_t kDummyOffset = 4096;
+  constexpr size_t kDummySize = 8192;
+
+  ASSERT_TRUE(options->SetAllocBaseFileOffset(kDummyOffset));
+  ASSERT_TRUE(options->SetAllocBaseSize(kDummySize));
+
+  auto alloc_base_file_offset = options->GetAllocBaseFileOffset();
+  ASSERT_TRUE(alloc_base_file_offset);
+  ASSERT_EQ(*alloc_base_file_offset, kDummyOffset);
+
+  auto alloc_base_size = options->GetAllocBaseSize();
+  ASSERT_TRUE(alloc_base_size);
+  ASSERT_EQ(*alloc_base_size, kDummySize);
+
+  auto has_alloc_base_file_region = options->HasAllocBaseFileRegion();
+  ASSERT_TRUE(has_alloc_base_file_region);
+  ASSERT_TRUE(*has_alloc_base_file_region);
 }
 
 }  // namespace

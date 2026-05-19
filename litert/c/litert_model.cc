@@ -34,6 +34,7 @@
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_load.h"
 #include "tflite/converter/allocation.h"
+#include "tflite/stderr_reporter.h"
 #if !defined(LITERT_DISABLE_NPU)
 #include "litert/core/model/model_serialize.h"
 #endif  // !defined(LITERT_DISABLE_NPU)
@@ -69,6 +70,28 @@ LiteRtStatus LiteRtCreateModelFromBuffer(const void* buffer_addr,
       LiteRtModelT::Ptr new_model,
       litert::internal::LoadModelFromBuffer(
           litert::BufferRef<uint8_t>(buffer_addr, buffer_size)));
+  *model = new_model.release();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCreateModelFromFd(int fd, size_t offset, size_t size,
+                                     LiteRtModel* model) {
+  if (fd < 0 || size == 0 || !model) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!tflite::MMAPAllocation::IsSupported()) {
+    return kLiteRtStatusErrorUnsupported;
+  }
+
+  auto allocation = std::make_unique<tflite::MMAPAllocation>(
+      fd, offset, size, tflite::DefaultErrorReporter());
+  if (!allocation->valid()) {
+    return kLiteRtStatusErrorFileIO;
+  }
+
+  LITERT_ASSIGN_OR_RETURN(
+      LiteRtModelT::Ptr new_model,
+      litert::internal::LoadModelFromAllocation(std::move(allocation)));
   *model = new_model.release();
   return kLiteRtStatusOk;
 }
