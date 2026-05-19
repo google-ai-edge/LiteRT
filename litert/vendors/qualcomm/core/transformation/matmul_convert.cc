@@ -28,12 +28,9 @@ size_t FuseMatMulConvertDecode(
   }
   // Graph transform
   QNN_LOG_INFO("[G2G] MatMul-convert fusion (Decode)");
-  const std::array<ConstTensorWrapperRef, 2> matmul_inputs = {
-      matmul.GetInputTensor(0), matmul.GetInputTensor(1)};
-  const std::array<ConstTensorWrapperRef, 1> matmul_outputs = {
-      convert.GetOutputTensor(0)};
-  auto new_matmul =
-      CreateOpWithSameParams(matmul, matmul_inputs, matmul_outputs);
+  auto new_matmul = CreateOpWithSameParams(
+      matmul, {matmul.GetInputTensor(0), matmul.GetInputTensor(1)},
+      {convert.GetOutputTensor(0)});
   if (validate_op_config(new_matmul)) {
     ops.erase(ops.begin() + start_index,
               ops.begin() + start_index + pattern_size);
@@ -57,12 +54,9 @@ size_t FuseMatMulConvertPrefill(
   }
   // Graph transform
   QNN_LOG_INFO("[G2G] MatMul-convert fusion (Prefill)");
-  const std::array<ConstTensorWrapperRef, 2> matmul_inputs = {
-      matmul.GetInputTensor(0), matmul.GetInputTensor(1)};
-  const std::array<ConstTensorWrapperRef, 1> matmul_outputs = {
-      convert.GetOutputTensor(0)};
-  auto new_matmul =
-      CreateOpWithSameParams(matmul, matmul_inputs, matmul_outputs);
+  auto new_matmul = CreateOpWithSameParams(
+      matmul, {matmul.GetInputTensor(0), matmul.GetInputTensor(1)},
+      {convert.GetOutputTensor(0)});
   if (validate_op_config(new_matmul)) {
     ops.erase(ops.begin() + start_index + 2);
     ops.erase(ops.begin() + start_index);
