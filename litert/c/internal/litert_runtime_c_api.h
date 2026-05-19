@@ -747,6 +747,10 @@ typedef struct LiteRtRuntimeCApiStruct {
   // litert_environment.h: LiteRtEnvironmentSupportsFP16
   LiteRtStatus (*litert_environment_supports_fp16)(
       LiteRtEnvironment environment, bool* is_supported);
+
+  // litert_model.h: LiteRtCreateModelFromFd
+  LiteRtStatus (*litert_create_model_from_fd)(int fd, size_t offset,
+                                              size_t size, LiteRtModel* model);
 } LiteRtRuntimeCApiStruct;
 
 // LINT.ThenChange(:version_number)

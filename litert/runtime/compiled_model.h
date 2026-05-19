@@ -484,6 +484,10 @@ class LiteRtCompiledModelT {
   // a newly serialized flatbuffer owned by the compiled model. If the model is
   // loaded from the cache, the fd belongs to the cached flatbuffer.
   int fb_model_fd_ = -1;
+  size_t fb_model_file_offset_ = 0;
+  // Size of the flatbuffer model. Note that this is only available when
+  // fb_model_fd_ refers to a file.
+  size_t fb_model_size_ = 0;
 
 #if !defined(LITERT_DISABLE_NPU)
   // The compilation cache used to store the compiled model. If the model is
