@@ -27,11 +27,11 @@ filegroup(
     name = "test_utilities",
     testonly = True,
     data = [
+        "@llvm-project//llvm:FileCheck",
+        # copybara:uncomment "@llvm-project//mlir:run_lit.sh",
         "//tflite/converter:flatbuffer_translate",
         "//tflite/converter:tf_tfl_translate",
         "//tflite/converter/stablehlo:odml-to-stablehlo-opt",
         "//tflite/converter/stablehlo:odml_to_stablehlo",
-        "@llvm-project//llvm:FileCheck",
-        "@llvm-project//mlir:run_lit.sh",
     ],
 )
