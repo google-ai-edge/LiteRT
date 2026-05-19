@@ -362,6 +362,7 @@ cc_library(
         "//litert/core/model",
         "//litert/core/model:ops_reshape",
         "//litert/core/model:shape_inference_types",
+        "//litert/core/util:flatbuffer_tools",
         "//litert/test:simple_buffer",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
