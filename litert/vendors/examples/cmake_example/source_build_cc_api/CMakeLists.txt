@@ -37,29 +37,41 @@ set(LITERT_EXAMPLE_DEFAULT_GPU_MODEL
 
 add_subdirectory("${LITERT_SOURCE_DIR}" "${LITERT_BUILD_DIR}" EXCLUDE_FROM_ALL)
 
-add_executable(litert_source_build_cc_api_run_model
-    source_build_cc_api_run_model.cc
+set(_litert_source_build_cc_api_targets
+    litert_source_build_cc_api_run_model
+    litert_source_build_cc_api_no_absl_run_model
 )
 
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-    target_compile_options(litert_source_build_cc_api_run_model
-        PRIVATE -Wno-deprecated-declarations)
-endif()
+foreach(_litert_source_build_cc_api_target IN LISTS _litert_source_build_cc_api_targets)
+    add_executable(${_litert_source_build_cc_api_target}
+        source_build_cc_api_run_model.cc
+    )
 
-target_compile_definitions(litert_source_build_cc_api_run_model
-    PRIVATE
-        LITERT_EXAMPLE_DEFAULT_MODEL="${LITERT_EXAMPLE_DEFAULT_MODEL}"
-        LITERT_EXAMPLE_DEFAULT_GPU_MODEL="${LITERT_EXAMPLE_DEFAULT_GPU_MODEL}"
-        LITERT_EXAMPLE_DEFAULT_RUNTIME_LIBRARY_DIR="$<TARGET_FILE_DIR:litert_runtime_c_api_shared_lib>"
-)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        target_compile_options(${_litert_source_build_cc_api_target}
+            PRIVATE -Wno-deprecated-declarations)
+    endif()
+
+    target_compile_definitions(${_litert_source_build_cc_api_target}
+        PRIVATE
+            LITERT_EXAMPLE_DEFAULT_MODEL="${LITERT_EXAMPLE_DEFAULT_MODEL}"
+            LITERT_EXAMPLE_DEFAULT_GPU_MODEL="${LITERT_EXAMPLE_DEFAULT_GPU_MODEL}"
+            LITERT_EXAMPLE_DEFAULT_RUNTIME_LIBRARY_DIR="$<TARGET_FILE_DIR:litert_runtime_c_api_shared_lib>"
+    )
+
+    set_target_properties(${_litert_source_build_cc_api_target} PROPERTIES
+        BUILD_RPATH "$<TARGET_FILE_DIR:litert_runtime_c_api_shared_lib>"
+    )
+endforeach()
 
 target_link_libraries(litert_source_build_cc_api_run_model
     PRIVATE
         litert_cc_api_with_dynamic_runtime
 )
 
-set_target_properties(litert_source_build_cc_api_run_model PROPERTIES
-    BUILD_RPATH "$<TARGET_FILE_DIR:litert_runtime_c_api_shared_lib>"
+target_link_libraries(litert_source_build_cc_api_no_absl_run_model
+    PRIVATE
+        litert_cc_api_no_absl_with_dynamic_runtime
 )
 
 if(LITERT_ENABLE_GPU)
@@ -110,11 +122,13 @@ if(LITERT_ENABLE_GPU)
                 "${_litert_download_message}")
         endif()
 
-        add_custom_command(TARGET litert_source_build_cc_api_run_model POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${_litert_gpu_accelerator}"
-                "$<TARGET_FILE_DIR:litert_runtime_c_api_shared_lib>/${_litert_gpu_accelerator_name}"
-            COMMENT "Copying LiteRT GPU accelerator next to libLiteRt")
+        foreach(_litert_source_build_cc_api_target IN LISTS _litert_source_build_cc_api_targets)
+            add_custom_command(TARGET ${_litert_source_build_cc_api_target} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${_litert_gpu_accelerator}"
+                    "$<TARGET_FILE_DIR:litert_runtime_c_api_shared_lib>/${_litert_gpu_accelerator_name}"
+                COMMENT "Copying LiteRT GPU accelerator next to libLiteRt")
+        endforeach()
     else()
         message(WARNING
             "LITERT_ENABLE_GPU=ON, but this example does not know which "
