@@ -34,6 +34,8 @@
 #include "litert/core/model/model_serialize.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/generators/common.h"
+#include "third_party/odml/litert/tensor/backends/tflite/tflite_flatbuffer_conversion.h"
+#include "third_party/odml/litert/tensor/tensor.h"
 
 namespace litert::testing {
 
@@ -149,6 +151,16 @@ Expected<LiteRtModelT::Ptr> SingleOpModel(
   SetTflOpCodes(model, std::move(tfl_codes));
   LITERT_ASSIGN_OR_RETURN(auto serialized, SerializeModel(std::move(model)));
   return LoadModelFromBuffer(std::move(serialized));
+}
+
+// Saves a litert::tensor tracing graph into an expected LiteRtModelT pointer,
+// ensuring it is safely backed by heap memory.
+inline Expected<LiteRtModelT::Ptr> SaveTensorGraph(
+    std::vector<litert::tensor::TensorHandle> outputs) {
+  std::vector<char> fb_buffer;
+  LITERT_RETURN_IF_ERROR(litert::tensor::Save(std::move(outputs), fb_buffer));
+  return LoadModelFromBuffer(::litert::OwningBufferRef<uint8_t>(
+      reinterpret_cast<const uint8_t*>(fb_buffer.data()), fb_buffer.size()));
 }
 
 }  // namespace litert::testing

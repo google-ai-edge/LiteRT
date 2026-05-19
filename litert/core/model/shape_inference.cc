@@ -30,6 +30,7 @@
 #include "litert/core/model/ops/convolution.h"
 #include "litert/core/model/ops/gather.h"
 #include "litert/core/model/ops/matmul.h"
+#include "litert/core/model/ops/one_hot.h"
 #include "litert/core/model/ops/pack.h"
 #include "litert/core/model/ops/pad.h"
 #include "litert/core/model/ops/pooling.h"
@@ -120,6 +121,7 @@ void ShapeInferenceEngine::RegisterStandardOps() {
   RegisterInferrer(kLiteRtOpCodeTflMean, InferReduce);
   RegisterInferrer(kLiteRtOpCodeTflMirrorPad, InferMirrorPad);
   RegisterInferrer(kLiteRtOpCodeTflMul, InferMul);
+  RegisterInferrer(kLiteRtOpCodeTflOneHot, InferOneHot);
   RegisterInferrer(kLiteRtOpCodeTflPack, InferPack);
   RegisterInferrer(kLiteRtOpCodeTflPad, InferPad);
   RegisterInferrer(kLiteRtOpCodeTflPadv2, InferPadv2);

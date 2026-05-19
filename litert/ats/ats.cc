@@ -34,6 +34,7 @@
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/generators.h"
+#include "litert/test/generators/one_hot.h"
 #include "tflite/schema/schema_generated.h"
 #include "tflite/types/half.h"
 
@@ -195,6 +196,48 @@ void RegisterPooling(const AtsConf& options, size_t& test_id, size_t iters,
 }
 
 template <typename Fixture>
+void RegisterOneHot(const AtsConf& options, size_t& test_id, size_t iters,
+                    typename Fixture::Capture& cap) {
+  // clang-format off
+  // Rank 1
+  RegisterCombinations<
+      Fixture,
+      OneHot,
+      TypeList<float>,
+      SizeListC<1>,
+      SizeListC<0, 1>>
+    (iters, test_id, options, cap);
+
+  // Rank 2
+  RegisterCombinations<
+      Fixture,
+      OneHot,
+      TypeList<float>,
+      SizeListC<2>,
+      SizeListC<0, 1, 2>>
+    (iters, test_id, options, cap);
+
+  // Rank 3
+  RegisterCombinations<
+      Fixture,
+      OneHot,
+      TypeList<float>,
+      SizeListC<3>,
+      SizeListC<0, 1, 2, 3>>
+    (iters, test_id, options, cap);
+
+  // Rank 4
+  RegisterCombinations<
+      Fixture,
+      OneHot,
+      TypeList<float>,
+      SizeListC<4>,
+      SizeListC<0, 1, 2, 3, 4>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
 void RegisterBinaryBroadcast(const AtsConf& options, size_t& test_id,
                              size_t iters, typename Fixture::Capture& cap) {
   // clang-format off
@@ -289,6 +332,7 @@ void RegisterAll(const AtsConf& options, size_t& test_id,
   RegisterDepthwiseConv2d<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterReduction<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterPooling<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterOneHot<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterReshape<Fixture>(options, test_id, /*iters=*/10, cap);
 }
 
