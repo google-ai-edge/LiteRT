@@ -40,10 +40,17 @@
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/graph_helpers.h"
 #include "litert/test/simple_buffer.h"
+#include "third_party/odml/litert/tensor/arithmetic.h"
+#include "third_party/odml/litert/tensor/backends/tflite/arithmetic_tflite.h"
+#include "third_party/odml/litert/tensor/datatypes.h"
+#include "third_party/odml/litert/tensor/tensor.h"
 #include "tflite/types/half.h"
 
 namespace litert {
 namespace testing {
+
+using TensorTf = litert::tensor::Tensor<litert::tensor::TfLiteMixinTag>;
+
 
 template <typename T>
 struct FloorReference {
@@ -380,18 +387,65 @@ class Unary : public TestGraph {
     return p;
   }
   static Expected<LiteRtModelT::Ptr> BuildGraph(const Params& params) {
-    const std::vector<int32_t> dims(params.shape.begin(), params.shape.end());
+    std::vector<int32_t> dims(params.shape.begin(), params.shape.end());
+    TensorTf input = litert::tensor::Create(
+        "input", litert::tensor::ApiType<T>::value, dims);
+    TensorTf output;
 
-    std::vector<TensorDetails> inputs(1);
-    std::vector<TensorDetails> outputs(1);
+    if constexpr (kOpCode == kLiteRtOpCodeTflRelu) {
+      output = litert::tensor::Relu(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflFloor) {
+      output = litert::tensor::Floor(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflLogistic) {
+      output = litert::tensor::Logistic(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflReluN1To1) {
+      output = litert::tensor::ReluN1To1(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflRelu6) {
+      output = litert::tensor::Relu6(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflTanh) {
+      output = litert::tensor::Tanh(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflExp) {
+      output = litert::tensor::Exp(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflNeg) {
+      output = litert::tensor::Neg(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflSin) {
+      output = litert::tensor::Sin(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflLog) {
+      output = litert::tensor::Log(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflSqrt) {
+      output = litert::tensor::Sqrt(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflRsqrt) {
+      output = litert::tensor::Rsqrt(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflSquare) {
+      output = litert::tensor::Square(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflZerosLike) {
+      output = litert::tensor::ZerosLike(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflAbs) {
+      output = litert::tensor::Abs(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflCeil) {
+      output = litert::tensor::Ceil(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflCos) {
+      output = litert::tensor::Cos(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflElu) {
+      output = litert::tensor::Elu(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflRound) {
+      output = litert::tensor::Round(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflHardSwish) {
+      output = litert::tensor::HardSwish(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflGelu) {
+      output = litert::tensor::Gelu(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflRelu0To1) {
+      output = litert::tensor::Relu0To1(input);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflSign) {
+      output = litert::tensor::Sign(input);
+    } else {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Unsupported unary opcode");
+    }
 
-    inputs[0] = TensorDetails{dims, LiteRtElementType(kElementType),
-                              std::string(kInputNames[0])};
+    output.SetName(std::string(kOutputNames[0]));
 
-    outputs[0] = TensorDetails{dims, LiteRtElementType(kElementType),
-                               std::string(kOutputNames[0])};
-
-    return SingleOpModel<kOpCode>(inputs, outputs);
+    return SaveTensorGraph({output});
   }
 
   Expected<void> ReferenceImpl(
