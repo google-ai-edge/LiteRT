@@ -20,6 +20,7 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/status/status_macros.h"
 #include "absl/strings/substitute.h"
 #include "tflite/delegates/gpu/common/shape.h"
 #include "tflite/delegates/gpu/common/status.h"
