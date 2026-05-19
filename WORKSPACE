@@ -101,9 +101,9 @@ tensorflow_source_repo(
     name = "org_tensorflow",
     patches = ["//:PATCH.flatbuffers_windows_no_bash"],
     protobuf_patches = ["//:PATCH.protobuf_port_msvc_compat"],
-    sha256 = "879cf25692d50c60315a4dd3929dccd923d4c44a2c4b95ebb483666d2c16a22a",
-    strip_prefix = "tensorflow-6d40c20cdfe385746c31da6227b95722f5ece342",
-    urls = ["https://github.com/tensorflow/tensorflow/archive/6d40c20cdfe385746c31da6227b95722f5ece342.tar.gz"],
+    sha256 = "c29ef319c524eee22d2ee177d7e17087f1c66e46e021a237a7031c288198a128",
+    strip_prefix = "tensorflow-97f383ddc524f5cb60c8387ec55e81402dbfcb3f",
+    urls = ["https://github.com/tensorflow/tensorflow/archive/97f383ddc524f5cb60c8387ec55e81402dbfcb3f.tar.gz"],
 )
 
 # Initialize the TensorFlow repository and all dependencies.
