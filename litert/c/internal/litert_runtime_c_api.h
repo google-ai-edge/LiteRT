@@ -592,7 +592,7 @@ typedef struct LiteRtRuntimeCApiStruct {
                                                          int sync_fence_fd,
                                                          bool owns_fd,
                                                          LiteRtEvent* event);
-  // litert_event.h: LiteRtCreateEventFromOpenClEvent
+  // litert_event.h: LiteRtCreateEventFromOpenclEvent
   LiteRtStatus (*litert_create_event_from_opencl_event)(LiteRtEnvironment env,
                                                         LiteRtClEvent cl_event,
                                                         LiteRtEvent* event);
@@ -747,6 +747,12 @@ typedef struct LiteRtRuntimeCApiStruct {
   // litert_environment.h: LiteRtEnvironmentSupportsFP16
   LiteRtStatus (*litert_environment_supports_fp16)(
       LiteRtEnvironment environment, bool* is_supported);
+
+  // litert_compiled_model.h: LiteRtCompiledModelCreateBufferForIoTensor
+  LiteRtStatus (*litert_compiled_model_create_buffer_for_io_tensor)(
+      LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+      const char* tensor_name, bool is_input,
+      LiteRtTensorBuffer* tensor_buffer);
 } LiteRtRuntimeCApiStruct;
 
 // LINT.ThenChange(:version_number)
