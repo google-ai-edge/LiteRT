@@ -141,6 +141,14 @@ set(ABSEIL_TOOL_LIBS
     absl::statusor
 )
 
+set(LITERT_TOOL_VENDOR_FLAG_LIBS
+    litert_tool_flags_google_tensor
+    litert_tool_flags_intel_openvino
+    litert_tool_flags_mediatek
+    litert_tool_flags_qualcomm
+    litert_tool_flags_samsung
+)
+
 # NPU numerics check
 add_executable(litert_npu_numerics_check
     npu_numerics_check.cc
@@ -279,6 +287,160 @@ else()
             "-Wl,--end-group"
             ${CMAKE_DL_LIBS}
             litert_tensor_utils
+    )
+endif()
+
+# benchmark_tool
+find_package(Protobuf REQUIRED)
+
+set(_LITERT_XLA_SOURCE_DIR "${XLA_SOURCE_DIR}")
+if(NOT _LITERT_XLA_SOURCE_DIR)
+    set(_LITERT_XLA_SOURCE_DIR "${TENSORFLOW_SOURCE_DIR}/third_party/xla")
+endif()
+
+get_filename_component(_LITERT_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." REALPATH)
+set(_LITERT_TOOLS_PROTO_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated_protos")
+
+set(LITERT_BENCHMARK_PROTO_FILES
+    ${_LITERT_SOURCE_ROOT}/tflite/tools/benchmark/proto/benchmark_result.proto
+    ${_LITERT_SOURCE_ROOT}/tflite/profiling/proto/profiling_info.proto
+    ${_LITERT_SOURCE_ROOT}/tflite/profiling/proto/model_runtime_info.proto
+)
+set(LITERT_BENCHMARK_PROTO_SRCS
+    ${_LITERT_TOOLS_PROTO_GEN_DIR}/tflite/tools/benchmark/proto/benchmark_result.pb.cc
+    ${_LITERT_TOOLS_PROTO_GEN_DIR}/tflite/tools/benchmark/proto/benchmark_result.pb.h
+    ${_LITERT_TOOLS_PROTO_GEN_DIR}/tflite/profiling/proto/profiling_info.pb.cc
+    ${_LITERT_TOOLS_PROTO_GEN_DIR}/tflite/profiling/proto/profiling_info.pb.h
+    ${_LITERT_TOOLS_PROTO_GEN_DIR}/tflite/profiling/proto/model_runtime_info.pb.cc
+    ${_LITERT_TOOLS_PROTO_GEN_DIR}/tflite/profiling/proto/model_runtime_info.pb.h
+)
+
+add_custom_command(
+    OUTPUT ${LITERT_BENCHMARK_PROTO_SRCS}
+    COMMAND ${Protobuf_PROTOC_EXECUTABLE}
+    ARGS
+        --cpp_out=${_LITERT_TOOLS_PROTO_GEN_DIR}
+        --proto_path=${_LITERT_SOURCE_ROOT}
+        ${LITERT_BENCHMARK_PROTO_FILES}
+    DEPENDS
+        ${Protobuf_PROTOC_EXECUTABLE}
+        ${LITERT_BENCHMARK_PROTO_FILES}
+    VERBATIM
+)
+
+add_library(litert_benchmark_protos STATIC ${LITERT_BENCHMARK_PROTO_SRCS})
+set_source_files_properties(${LITERT_BENCHMARK_PROTO_SRCS}
+    PROPERTIES GENERATED TRUE
+)
+target_include_directories(litert_benchmark_protos
+    PUBLIC
+        ${_LITERT_TOOLS_PROTO_GEN_DIR}
+)
+target_link_libraries(litert_benchmark_protos
+    PUBLIC
+        protobuf::libprotobuf
+)
+
+set(LITERT_BENCHMARK_TOOL_SRCS
+    benchmark_litert_model.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/util/perfetto_profiling.cc
+    ${TFLITE_SOURCE_DIR}/profiling/memory_usage_monitor.cc
+    ${TFLITE_SOURCE_DIR}/profiling/model_runtime_info.cc
+    ${TFLITE_SOURCE_DIR}/tools/benchmark/benchmark_model.cc
+    ${TFLITE_SOURCE_DIR}/tools/benchmark/benchmark_utils.cc
+    ${TFLITE_SOURCE_DIR}/tools/command_line_flags.cc
+    ${TFLITE_SOURCE_DIR}/tools/tool_params.cc
+    ${TFLITE_SOURCE_DIR}/tools/utils.cc
+    ${_LITERT_XLA_SOURCE_DIR}/xla/tsl/util/stats_calculator.cc
+)
+
+add_library(litert_benchmark_tool_lib STATIC
+    ${LITERT_BENCHMARK_TOOL_SRCS}
+)
+
+target_include_directories(litert_benchmark_tool_lib
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
+        $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${_LITERT_XLA_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(litert_benchmark_tool_lib
+    PUBLIC
+        litert_c_api
+        litert_cc_api
+        litert_cc_internal
+        litert_cc_options
+        litert_core
+        litert_core_model
+        litert_runtime
+        litert_options_parser_registry
+        litert_benchmark_protos
+        protobuf::libprotobuf
+        tensorflow-lite
+        absl::flat_hash_map
+        absl::log
+        absl::span
+        absl::str_format
+        absl::strings
+)
+
+add_executable(benchmark_tool
+    benchmark_litert_model_main.cc
+)
+
+set_target_properties(benchmark_tool PROPERTIES
+    OUTPUT_NAME benchmark_model
+)
+
+if(ANDROID)
+    target_compile_definitions(benchmark_tool PRIVATE ABSL_FLAGS_STRIP_NAMES=0)
+endif()
+
+set(LITERT_BENCHMARK_TOOL_COMMON_LIBS
+    litert_benchmark_tool_lib
+    ${LITERT_TOOL_COMMON_LIBS}
+    ${ABSEIL_TOOL_LIBS}
+    absl::flags_reflection
+    litert_benchmark_protos
+    protobuf::libprotobuf
+)
+
+if(ANDROID)
+    target_link_libraries(benchmark_tool
+        PRIVATE
+            "-Wl,--whole-archive"
+            ${LITERT_TOOL_VENDOR_FLAG_LIBS}
+            "-Wl,--no-whole-archive"
+            ${LITERT_BENCHMARK_TOOL_COMMON_LIBS}
+            tensorflow-lite
+            Threads::Threads
+    )
+elseif(APPLE)
+    target_link_libraries(benchmark_tool
+        PRIVATE
+            ${LITERT_TOOL_VENDOR_FLAG_LIBS}
+            ${LITERT_BENCHMARK_TOOL_COMMON_LIBS}
+            tensorflow-lite
+            Threads::Threads
+    )
+else()
+    target_link_libraries(benchmark_tool
+        PRIVATE
+            "-Wl,--whole-archive"
+            ${LITERT_TOOL_VENDOR_FLAG_LIBS}
+            "-Wl,--no-whole-archive"
+            Threads::Threads
+            tensorflow-lite
+            "-Wl,--start-group"
+            ${LITERT_BENCHMARK_TOOL_COMMON_LIBS}
+            "-Wl,--end-group"
+            ${CMAKE_DL_LIBS}
     )
 endif()
 
@@ -484,6 +646,7 @@ endif()
 # Platform-specific configurations for all executables
 if(LITERT_PLATFORM_ANDROID)
     target_link_libraries(run_model PRIVATE ${LOG_LIB})
+    target_link_libraries(benchmark_tool PRIVATE ${LOG_LIB})
     target_link_libraries(analyze_model PRIVATE ${LOG_LIB})
     target_link_libraries(apply_plugin_main PRIVATE ${LOG_LIB})
     target_link_libraries(extract_bytecode PRIVATE ${LOG_LIB})
@@ -492,11 +655,12 @@ if(LITERT_PLATFORM_ANDROID)
         target_link_libraries(npu_numerics_check PRIVATE litert_tflite_gpu_gl_core)
         target_link_libraries(litert_npu_numerics_check PRIVATE litert_tflite_gpu_gl_core)
         target_link_libraries(run_model PRIVATE litert_tflite_gpu_gl_core)
+        target_link_libraries(benchmark_tool PRIVATE litert_tflite_gpu_gl_core)
         target_link_libraries(apply_plugin_main PRIVATE litert_tflite_gpu_gl_core)
     endif()
 endif()
 
 # Install targets
-install(TARGETS run_model analyze_model apply_plugin_main extract_bytecode
+install(TARGETS run_model benchmark_tool analyze_model apply_plugin_main extract_bytecode
     RUNTIME DESTINATION bin
 )
