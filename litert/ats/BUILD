@@ -254,6 +254,7 @@ litert_test(
         "//litert/cc/internal:litert_detail",
         "//litert/test/generators",
         "//litert/test/generators:common",
+        "//litert/test/generators:one_hot",
         "//tflite/schema:schema_fbs",
         "//tflite/types:half",
         "@com_google_absl//absl/flags:flag",
@@ -332,6 +333,7 @@ cc_library(
         "//litert/cc/internal:litert_rng",
         "//litert/core:filesystem",
         "//litert/test/generators",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -469,6 +471,7 @@ cc_test(
         "//litert/test:simple_buffer",
         "//litert/test/generators",
         "//litert/test/generators:common",
+        "//litert/test/generators:one_hot",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/flags:reflection",

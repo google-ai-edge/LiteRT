@@ -315,6 +315,7 @@ cc_library(
         ":ops_convolution",
         ":ops_gather",
         ":ops_matmul",
+        ":ops_one_hot",
         ":ops_pack",
         ":ops_pad",
         ":ops_pooling",
@@ -567,6 +568,18 @@ cc_library(
     deps = [
         ":model",
         ":op_shape_inference_utils",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_one_hot",
+    hdrs = ["ops/one_hot.h"],
+    deps = [
+        ":model",
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//tflite/converter/schema:schema_fbs",

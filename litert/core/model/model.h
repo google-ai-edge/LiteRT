@@ -1533,6 +1533,26 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
       absl::Format(&sink, "%v", reshape_opts);
       break;
     }
+    case tflite::BuiltinOptions_OneHotOptions: {
+      const auto* one_hot_opts = opts.AsOneHotOptions();
+      absl::Format(&sink, "%v", one_hot_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_FullyConnectedOptions: {
+      const auto* fc_opts = opts.AsFullyConnectedOptions();
+      absl::Format(&sink, "%v", fc_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_BatchMatMulOptions: {
+      const auto* bmm_opts = opts.AsBatchMatMulOptions();
+      absl::Format(&sink, "%v", bmm_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_SoftmaxOptions: {
+      const auto* softmax_opts = opts.AsSoftmaxOptions();
+      absl::Format(&sink, "%v", softmax_opts);
+      break;
+    }
     case tflite::BuiltinOptions_NONE: {
       absl::Format(&sink, "{}");
       break;
@@ -1616,6 +1636,17 @@ void AbslStringify(Sink& sink, const SubOptionsT& opts) {
 
 template <class Sink>
 void AbslStringify(Sink& sink, const SubOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const OneHotOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("axis", opts.axis);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const OneHotOptionsT* opts) {
   ::litert::internal::PrintNullableOpts(sink, opts);
 }
 
@@ -1747,6 +1778,40 @@ void AbslStringify(Sink& sink, const GeluOptionsT& opts) {
 
 template <class Sink>
 void AbslStringify(Sink& sink, const GeluOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const FullyConnectedOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("fa", opts.fused_activation_function);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const FullyConnectedOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const BatchMatMulOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("adj_x", opts.adj_x);
+  b("adj_y", opts.adj_y);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const BatchMatMulOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const SoftmaxOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("beta", opts.beta);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const SoftmaxOptionsT* opts) {
   ::litert::internal::PrintNullableOpts(sink, opts);
 }
 

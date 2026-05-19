@@ -109,13 +109,18 @@ class AtsInferenceTest : public RngTest {
 
     if (::testing::Test::IsSkipped()) {
       cap_.run.status = RunStatus::kSkipped;
+      return;
     } else if (HasFailure()) {
       cap_.run.status = RunStatus::kError;
+      return;
     } else if (TimedOut()) {
       cap_.run.status = RunStatus::kTimeout;
+      return;
     } else {
       cap_.run.status = RunStatus::kOk;
     }
+    LITERT_ASSERT_OK(
+        conf_.SaveModel(names_.report_id, std::move(graph_->Graph())));
   }
 
  private:
