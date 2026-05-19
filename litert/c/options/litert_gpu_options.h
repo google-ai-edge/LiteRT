@@ -194,6 +194,13 @@ LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
 LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
     LrtGpuOptions* gpu_options, bool disable_shader_optimization);
 
+// Sets the pointer to the shared tensor maps.
+// The pointer must point to a litert::ml_drift::SharedTensorMaps struct.
+// The caller is responsible for maintaining the lifetime of the struct
+// until the model is destroyed.
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsSharedTensorMaps(
+    LrtGpuOptions* gpu_options, void* shared_tensor_maps);
+
 // Sets the number of steps of command buffer preparations.
 LiteRtStatus
 LrtSetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
@@ -323,6 +330,9 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
     bool* disable_shader_optimization, const LrtGpuOptions* options);
+
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSharedTensorMaps(
+    void** shared_tensor_maps, const LrtGpuOptions* gpu_options);
 
 LiteRtStatus
 LrtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(

@@ -48,6 +48,8 @@ Expected<TflElementType> MapElementType(LiteRtElementType litert_element_type) {
       return tflite::TensorType_INT64;
     case kLiteRtElementTypeUInt8:
       return tflite::TensorType_UINT8;
+    case kLiteRtElementTypeUInt4:
+      return tflite::TensorType_UINT4;
     case kLiteRtElementTypeUInt16:
       return tflite::TensorType_UINT16;
     case kLiteRtElementTypeUInt32:
@@ -56,6 +58,10 @@ Expected<TflElementType> MapElementType(LiteRtElementType litert_element_type) {
       return tflite::TensorType_UINT64;
     case kLiteRtElementTypeFloat16:
       return tflite::TensorType_FLOAT16;
+    case kLiteRtElementTypeFloat8E4M3FN:
+      return tflite::TensorType_FLOAT8_E4M3FN;
+    case kLiteRtElementTypeFloat8E5M2:
+      return tflite::TensorType_FLOAT8_E5M2;
     case kLiteRtElementTypeBFloat16:
       return tflite::TensorType_BFLOAT16;
     case kLiteRtElementTypeFloat32:
