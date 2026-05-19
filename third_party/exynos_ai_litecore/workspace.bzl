@@ -22,5 +22,5 @@ def exynos_ai_litecore():
         strip_prefix = "exynos-ai-litecore-v1.2.0",
         # TODO: Internal link (Not available). Please change to official link when release.
         url =
-            "https://soc-developer.semiconductor.samsung.com/api/v1/resource/download-file/1.2.0/ai-litecore-ubuntu2404-v1.2.0.tar.gz",
+            "https://soc-developer.semiconductor.samsung.com/api/v1/resource/download-file/ai-litecore-ubuntu2404-v1.2.0.tar.gz",
     )
