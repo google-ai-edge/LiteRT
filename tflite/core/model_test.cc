@@ -815,4 +815,30 @@ TEST(BasicFlatBufferModel, TestHandleZeroSizeConstant) {
 // These tests will occur with the evaluation tests of individual operators,
 // not here.
 
+TEST(BasicFlatBufferModel, TestNullBlockwiseQuantization) {
+  flatbuffers::FlatBufferBuilder fbb;
+  auto quant = CreateQuantizationParameters(
+      fbb, 0, 0, 0, 0, QuantizationDetails_BlockwiseQuantization,
+      0);  // 0 for details
+  auto tensor =
+      CreateTensor(fbb, fbb.CreateVector<int32_t>({}), TensorType_FLOAT32, 0,
+                   fbb.CreateString("test"), quant);
+  auto tensors = fbb.CreateVector({tensor});
+  auto subgraph = CreateSubGraph(fbb, tensors);
+  auto subgraphs = fbb.CreateVector({subgraph});
+  auto buffers = fbb.CreateVector({CreateBuffer(fbb)});
+  auto model = CreateModel(fbb, 3, 0, subgraphs, fbb.CreateString(""), buffers);
+  fbb.Finish(model, "TFL3");
+
+  auto flatbuffer_model = FlatBufferModel::BuildFromBuffer(
+      reinterpret_cast<const char*>(fbb.GetBufferPointer()), fbb.GetSize());
+  ASSERT_TRUE(flatbuffer_model);
+
+  std::unique_ptr<Interpreter> interpreter;
+  TrivialResolver resolver;
+  // Should fail gracefully, not crash.
+  ASSERT_NE(InterpreterBuilder(*flatbuffer_model, resolver)(&interpreter),
+            kTfLiteOk);
+}
+
 }  // namespace tflite
