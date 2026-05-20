@@ -25,10 +25,8 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/options/litert_samsung_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_opaque_options_wrapper.h"
 #include "litert/cc/internal/litert_options_wrapper.h"
@@ -36,6 +34,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_samsung_options.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/samsung/ai_litecore_manager.h"
 #include "litert/vendors/samsung/compiler/compile_model.h"
@@ -47,7 +46,8 @@ class LiteRtCompilerPluginT {
   using SamsungOptions = ::litert::samsung::SamsungOptions;
 
   LiteRtCompilerPluginT(const LiteRtCompilerContext* ctx,
-                        LiteRtEnvironmentOptions env, LiteRtOptions options) {
+                        LiteRtEnvironmentOptions env, LiteRtOptions options)
+      : ctx_(ctx) {
     if (options == nullptr) {
       return;
     }
@@ -82,7 +82,10 @@ class LiteRtCompilerPluginT {
     return opq_;
   }
 
+  const LiteRtCompilerContext* ctx() const { return ctx_; }
+
  private:
+  const LiteRtCompilerContext* ctx_;
   litert::Expected<litert::internal::OptionsWrapper> compiler_opts_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
   litert::Expected<litert::internal::OpaqueOptionsWrapper> opq_ = litert::Error(
@@ -236,10 +239,11 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   if (!compiler_plugin || !soc_model) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  ::litert::Subgraph graph(subgraph);
+  litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
 
   for (const auto& op : graph.Ops()) {
-    LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
+    LITERT_RETURN_IF_ERROR(
+        compiler_plugin->ctx()->push_op(selected_ops, op.Get(), 0));
   }
   return kLiteRtStatusOk;
 }
@@ -247,7 +251,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
-  auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
+  litert::compiler::Model model(compiler_plugin->ctx(), partitions);
   const auto num_partitions = model.NumSubgraphs();
   auto result = std::make_unique<LiteRtCompiledResultT>();
   result->byte_code.resize(num_partitions);
@@ -257,11 +261,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       litert::samsung::AiLiteCoreManager::Create(std::nullopt));
   for (auto i = 0; i < num_partitions; ++i) {
     // Get subgraph
-    LITERT_ASSIGN_OR_RETURN(litert::Subgraph subgraph, model.Subgraph(i));
+    LITERT_ASSIGN_OR_RETURN(auto subgraph, model.Subgraph(i));
     // Create graph used in samsung backend
     LITERT_ASSIGN_OR_RETURN(
         auto graph_buffer,
-        ::litert::samsung::CreateModel(ai_lite_core.get(), subgraph));
+        ::litert::samsung::CreateModel(ai_lite_core.get(),
+                                       compiler_plugin->ctx(), subgraph));
 
     // Compile graph and return binary
     LITERT_ASSIGN_OR_RETURN(auto soc_model_id,

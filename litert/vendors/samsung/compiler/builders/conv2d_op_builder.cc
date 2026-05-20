@@ -15,11 +15,17 @@
 
 #include "litert/vendors/samsung/compiler/builders/conv2d_op_builder.h"
 
+#include <cstdint>
+#include <string>
+
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/utils.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -36,7 +42,8 @@ constexpr int32_t kKernelHeightIndex = 1;
 constexpr int32_t kKernelWidthIndex = 2;
 constexpr int32_t kKernelChannelIndex = 3;
 
-Expected<OpWrapper> BuildGeneralConvOp(const Op& op, const std::string& type,
+Expected<OpWrapper> BuildGeneralConvOp(const litert::compiler::Op& op,
+                                       const std::string& type,
                                        int32_t stride_h, int32_t stride_w,
                                        int32_t dilation_h, int32_t dilation_w,
                                        int32_t padding,
@@ -91,25 +98,28 @@ Expected<OpWrapper> BuildGeneralConvOp(const Op& op, const std::string& type,
   return op_wrapper;
 }
 
-Expected<OpWrapper> BuildConv2dOp(const Op& op) {
+Expected<OpWrapper> BuildConv2dOp(const LiteRtCompilerContext* ctx,
+                                  const litert::compiler::Op& op) {
   int32_t stride_h = 0;
-  LITERT_RETURN_IF_ERROR(LiteRtGetConv2dStrideHOption(op.Get(), &stride_h));
+  LITERT_RETURN_IF_ERROR(ctx->get_conv_2d_stride_h_option(op.Get(), &stride_h));
 
   int32_t stride_w = 0;
-  LITERT_RETURN_IF_ERROR(LiteRtGetConv2dStrideWOption(op.Get(), &stride_w));
+  LITERT_RETURN_IF_ERROR(ctx->get_conv_2d_stride_w_option(op.Get(), &stride_w));
 
   int32_t dilation_h = 0;
-  LITERT_RETURN_IF_ERROR(LiteRtGetConv2dDilationHOption(op.Get(), &dilation_h));
+  LITERT_RETURN_IF_ERROR(
+      ctx->get_conv_2d_dilation_h_option(op.Get(), &dilation_h));
 
   int32_t dilation_w = 0;
-  LITERT_RETURN_IF_ERROR(LiteRtGetConv2dDilationWOption(op.Get(), &dilation_w));
+  LITERT_RETURN_IF_ERROR(
+      ctx->get_conv_2d_dilation_w_option(op.Get(), &dilation_w));
 
   uint32_t padding = 0;
-  LITERT_RETURN_IF_ERROR(LiteRtGetConv2dPaddingOption(op.Get(), &padding));
+  LITERT_RETURN_IF_ERROR(ctx->get_conv_2d_padding_option(op.Get(), &padding));
 
   uint32_t tfl_fused_activation;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGetConv2dFusedActivationOption(op.Get(), &tfl_fused_activation));
+  LITERT_RETURN_IF_ERROR(ctx->get_conv_2d_fused_activation_option(
+      op.Get(), &tfl_fused_activation));
 
   LITERT_ASSIGN_OR_RETURN(
       auto op_wrapper,
@@ -122,29 +132,30 @@ Expected<OpWrapper> BuildConv2dOp(const Op& op) {
   return op_wrapper;
 }
 
-Expected<OpWrapper> BuildDepthwiseConv2dOp(const Op& op) {
+Expected<OpWrapper> BuildDepthwiseConv2dOp(const LiteRtCompilerContext* ctx,
+                                           const litert::compiler::Op& op) {
   int32_t stride_h = 0;
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetDepthwiseConv2dStrideHOption(op.Get(), &stride_h));
+      ctx->get_depthwise_conv_2d_stride_h_option(op.Get(), &stride_h));
 
   int32_t stride_w = 0;
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetDepthwiseConv2dStrideWOption(op.Get(), &stride_w));
+      ctx->get_depthwise_conv_2d_stride_w_option(op.Get(), &stride_w));
 
   int32_t dilation_h = 0;
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetDepthwiseConv2dDilationHOption(op.Get(), &dilation_h));
+      ctx->get_depthwise_conv_2d_dilation_h_option(op.Get(), &dilation_h));
 
   int32_t dilation_w = 0;
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetDepthwiseConv2dDilationWOption(op.Get(), &dilation_w));
+      ctx->get_depthwise_conv_2d_dilation_w_option(op.Get(), &dilation_w));
 
   uint32_t padding = 0;
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetDepthwiseConv2dPaddingOption(op.Get(), &padding));
+      ctx->get_depthwise_conv_2d_padding_option(op.Get(), &padding));
 
   uint32_t tfl_fused_activation;
-  LITERT_RETURN_IF_ERROR(LiteRtGetDepthwiseConv2dFusedActivationOption(
+  LITERT_RETURN_IF_ERROR(ctx->get_depthwise_conv_2d_fused_activation_option(
       op.Get(), &tfl_fused_activation));
 
   return BuildGeneralConvOp(op, "DWCONV2D", stride_h, stride_w, dilation_h,

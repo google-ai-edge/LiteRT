@@ -15,17 +15,22 @@
 
 #include "litert/vendors/samsung/compiler/builders/cumsum_op_builder.h"
 
+#include <cstdint>
+
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
 namespace litert::samsung {
 
 constexpr int32_t kInputIndex = 0;
 constexpr int32_t kOutputIndex = 0;
 
-Expected<OpWrapper> BuildCumsumOp(const Op& op) {
+Expected<OpWrapper> BuildCumsumOp(const LiteRtCompilerContext* ctx,
+                                  const litert::compiler::Op& op) {
   OpWrapper op_wrapper("CumSum");
 
   op_wrapper.AddInput(op.Inputs()[kInputIndex]);
@@ -34,11 +39,11 @@ Expected<OpWrapper> BuildCumsumOp(const Op& op) {
   bool exclusive{};
   bool reverse{};
   int32_t axis = 0;
-  if (auto status = LiteRtGetCumsumExclusiveOption(op.Get(), &exclusive);
+  if (auto status = ctx->get_cumsum_exclusive_option(op.Get(), &exclusive);
       status != kLiteRtStatusOk) {
     return Error(status, "Fail to get exclusive.");
   }
-  if (auto status = LiteRtGetCumsumReverseOption(op.Get(), &reverse);
+  if (auto status = ctx->get_cumsum_reverse_option(op.Get(), &reverse);
       status != kLiteRtStatusOk) {
     return Error(status, "Fail to get reverse.");
   }

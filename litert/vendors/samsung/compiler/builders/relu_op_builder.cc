@@ -17,10 +17,11 @@
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
 namespace litert::samsung {
-Expected<OpWrapper> BuildReLUOp(const Op& op) {
+Expected<OpWrapper> BuildReLUOp(const litert::compiler::Op& op) {
   OpWrapper op_wrapper("Relu");
 
   for (const auto& input : op.Inputs()) {

@@ -24,16 +24,16 @@
 #include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "common-types.h"  // from @exynos_ai_litecore
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/internal/litert_extended_model.h"
-#include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/samsung/ai_litecore_manager.h"
 #include "litert/vendors/samsung/compiler/builders/argmax_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/batch_matmul_op_builder.h"
@@ -101,10 +101,11 @@ const char* MapToQuantTypeStr(ElementType element_type) {
 
 // GraphCreator
 GraphCreator::GraphCreator(AiLiteCoreManager::Ptr ai_lite_core,
-                           graph_handler_t handler)
-    : ai_lite_core_(ai_lite_core), handler_(handler) {}
+                           graph_handler_t handler,
+                           const LiteRtCompilerContext* ctx)
+    : ai_lite_core_(ai_lite_core), handler_(handler), ctx_(ctx) {}
 
-LiteRtStatus GraphCreator::CreateTensor(const Tensor& t) {
+LiteRtStatus GraphCreator::CreateTensor(const litert::compiler::Tensor& t) {
   if (!t.Get()) {
     return kLiteRtStatusErrorRuntimeFailure;
   }
@@ -181,7 +182,7 @@ LiteRtStatus GraphCreator::CreateOpNode(const OpWrapper& op_wrapper) {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus GraphCreator::AddInput(const Tensor& t_input) {
+LiteRtStatus GraphCreator::AddInput(const litert::compiler::Tensor& t_input) {
   uint32_t tensor_input_index = t_input.TensorIndex();
   if (tensors_map_.find(tensor_input_index) == tensors_map_.end()) {
     LITERT_RETURN_IF_ERROR(CreateTensor(t_input));
@@ -191,7 +192,7 @@ LiteRtStatus GraphCreator::AddInput(const Tensor& t_input) {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus GraphCreator::AddOutput(const Tensor& t_output) {
+LiteRtStatus GraphCreator::AddOutput(const litert::compiler::Tensor& t_output) {
   uint32_t tensor_output_index = t_output.TensorIndex();
   if (tensors_map_.find(tensor_output_index) == tensors_map_.end()) {
     LITERT_RETURN_IF_ERROR(CreateTensor(t_output));
@@ -229,7 +230,7 @@ Expected<std::vector<char>> GraphCreator::Release() const {
   return g_buffer;
 }
 
-LiteRtStatus GraphCreator::CreateQParam(const Tensor& t) {
+LiteRtStatus GraphCreator::CreateQParam(const litert::compiler::Tensor& t) {
   std::vector<float> scales;
   std::vector<int32_t> zero_points;
   if (t.QTypeId() == kLiteRtQuantizationPerTensor) {
@@ -277,19 +278,21 @@ LiteRtStatus GraphCreator::CreateQParam(const Tensor& t) {
 }
 
 // Create Model Main
-Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
-                                        const Subgraph& partition) {
+Expected<std::vector<char>> CreateModel(
+    AiLiteCoreManager::Ptr ai_lite_core,
+    const LiteRtCompilerContext* compiler_context,
+    const litert::compiler::Subgraph& partition) {
   auto expected_graph_handler = ai_lite_core->CreateGraphHandler();
   if (!expected_graph_handler.HasValue()) {
     return expected_graph_handler.Error();
   }
   auto graph_handler = std::move(expected_graph_handler.Value());
 
-  GraphCreator graph_crt(ai_lite_core, graph_handler.get());
-  for (const Tensor& input : partition.Inputs()) {
+  GraphCreator graph_crt(ai_lite_core, graph_handler.get(), compiler_context);
+  for (const auto& input : partition.Inputs()) {
     LITERT_RETURN_IF_ERROR(graph_crt.AddInput(input));
   }
-  for (const Tensor& output : partition.Outputs()) {
+  for (const auto& output : partition.Outputs()) {
     LITERT_RETURN_IF_ERROR(graph_crt.AddOutput(output));
   }
 
@@ -300,19 +303,19 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         Error(litert::Status::kErrorInvalidArgument, "Invalid op wrapper");
     switch (op.Code()) {
       case kLiteRtOpCodeTflAbs:
-        op_wrapper = BuildAbsOp(op);
+        op_wrapper = BuildAbsOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflAdd:
-        op_wrapper = BuildAddOp(op);
+        op_wrapper = BuildAddOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflArgMax:
         op_wrapper = BuildArgMaxOp(op);
         break;
       case kLiteRtOpCodeTflAveragePool2d:
-        op_wrapper = BuildAvgPool2dOp(op);
+        op_wrapper = BuildAvgPool2dOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflBatchMatmul:
-        op_wrapper = BuildBatchMatMulOp(op);
+        op_wrapper = BuildBatchMatMulOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflBroadcastTo:
         op_wrapper = BuildBroadcastToOp(op);
@@ -321,64 +324,64 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         op_wrapper = BuildCastOp(op);
         break;
       case kLiteRtOpCodeTflCeil:
-        op_wrapper = BuildCeilOp(op);
+        op_wrapper = BuildCeilOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflConcatenation:
-        op_wrapper = BuildConcatOp(op);
+        op_wrapper = BuildConcatOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflConv2d:
-        op_wrapper = BuildConv2dOp(op);
+        op_wrapper = BuildConv2dOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflConv3d:
-        op_wrapper = BuildConv3dOp(op);
+        op_wrapper = BuildConv3dOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflCos:
-        op_wrapper = BuildCosOp(op);
+        op_wrapper = BuildCosOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflCumsum:
-        op_wrapper = BuildCumsumOp(op);
+        op_wrapper = BuildCumsumOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflDepthwiseConv2d:
-        op_wrapper = BuildDepthwiseConv2dOp(op);
+        op_wrapper = BuildDepthwiseConv2dOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflDequantize:
         op_wrapper = BuildDequantizeOp(op);
         break;
       case kLiteRtOpCodeTflDiv:
-        op_wrapper = BuildDivOp(op);
+        op_wrapper = BuildDivOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflEmbeddingLookup:
-        op_wrapper = BuildEmbeddingLookupOp(op);
+        op_wrapper = BuildEmbeddingLookupOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflEqual:
-        op_wrapper = BuildEqualOp(op);
+        op_wrapper = BuildEqualOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflExp:
-        op_wrapper = BuildExpOp(op);
+        op_wrapper = BuildExpOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflFloor:
-        op_wrapper = BuildFloorOp(op);
+        op_wrapper = BuildFloorOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflFloorDiv:
-        op_wrapper = BuildFloorDivOp(op);
+        op_wrapper = BuildFloorDivOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflFullyConnected:
-        op_wrapper = BuildFullyConnectedOp(op);
+        op_wrapper = BuildFullyConnectedOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflGather:
-        op_wrapper = BuildGatherOp(op);
+        op_wrapper = BuildGatherOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflGatherNd:
         op_wrapper = BuildGatherNdOp(op);
         break;
       case kLiteRtOpCodeTflGelu:
-        op_wrapper = BuildGeluOp(op);
+        op_wrapper = BuildGeluOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflGreater:
-        op_wrapper = BuildGreaterOp(op);
+        op_wrapper = BuildGreaterOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflGreaterEqual:
-        op_wrapper = BuildGreaterEqualOp(op);
+        op_wrapper = BuildGreaterEqualOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflHardSwish:
         op_wrapper = BuildHardSwishOp(op);
@@ -387,47 +390,47 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         op_wrapper = BuildL2NormalizationOp(op);
         break;
       case kLiteRtOpCodeTflLeakyRelu:
-        op_wrapper = BuildLeakyReluOp(op);
+        op_wrapper = BuildLeakyReluOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflLess:
-        op_wrapper = BuildLessOp(op);
+        op_wrapper = BuildLessOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflLog:
-        op_wrapper = BuildLogOp(op);
+        op_wrapper = BuildLogOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflLogicalAnd:
-        op_wrapper = BuildLogicalAndOp(op);
+        op_wrapper = BuildLogicalAndOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflLogistic:
         op_wrapper = BuildLogisticOp(op);
         break;
       case kLiteRtOpCodeTflMaximum:
-        op_wrapper = BuildMaxOp(op);
+        op_wrapper = BuildMaxOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflMinimum:
-        op_wrapper = BuildMinOp(op);
+        op_wrapper = BuildMinOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflMirrorPad:
-        op_wrapper = BuildMirrorPadOp(op);
+        op_wrapper = BuildMirrorPadOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflMaxPool2d:
-        op_wrapper = BuildMaxPool2dOp(op);
+        op_wrapper = BuildMaxPool2dOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflMean:
-        op_wrapper = BuildReduceMeanOp(op);
+        op_wrapper = BuildReduceMeanOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflMul:
-        op_wrapper = BuildMulOp(op);
+        op_wrapper = BuildMulOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflNotEqual:
-        op_wrapper = BuildNotEqualOp(op);
+        op_wrapper = BuildNotEqualOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflPad:
       case kLiteRtOpCodeTflPadv2:
-        op_wrapper = BuildPadOp(op);
+        op_wrapper = BuildPadOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflPow:
-        op_wrapper = BuildPowOp(op);
+        op_wrapper = BuildPowOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflQuantize:
         op_wrapper = BuildQuantizeOp(op);
@@ -445,25 +448,25 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         op_wrapper = BuildRelu6Op(op);
         break;
       case kLiteRtOpCodeTflReshape:
-        op_wrapper = BuildReshapeOp(op);
+        op_wrapper = BuildReshapeOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflReduceMax:
-        op_wrapper = BuildReduceMaxOp(op);
+        op_wrapper = BuildReduceMaxOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflReduceMin:
-        op_wrapper = BuildReduceMinOp(op);
+        op_wrapper = BuildReduceMinOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflResizeBilinear:
-        op_wrapper = BuildResizeBilinearOp(op);
+        op_wrapper = BuildResizeBilinearOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflResizeNearestNeighbor:
-        op_wrapper = BuildResizeNearestNeighborOp(op);
+        op_wrapper = BuildResizeNearestNeighborOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflReverseV2:
         op_wrapper = BuildReverseV2Op(op);
         break;
       case kLiteRtOpCodeTflRsqrt:
-        op_wrapper = BuildRsqrtOp(op);
+        op_wrapper = BuildRsqrtOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflSelect:
         op_wrapper = BuildSelectOp(op);
@@ -472,7 +475,7 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         op_wrapper = BuildSelectV2Op(op);
         break;
       case kLiteRtOpCodeTflSin:
-        op_wrapper = BuildSinOp(op);
+        op_wrapper = BuildSinOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflSlice:
         op_wrapper = BuildSliceOp(op);
@@ -481,25 +484,25 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         op_wrapper = BuildSoftmaxOp(op);
         break;
       case kLiteRtOpCodeTflSpaceToDepth:
-        op_wrapper = BuildSpaceToDepthOp(op);
+        op_wrapper = BuildSpaceToDepthOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflSplit:
-        op_wrapper = BuildSplitOp(op);
+        op_wrapper = BuildSplitOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflSqrt:
-        op_wrapper = BuildSqrtOp(op);
+        op_wrapper = BuildSqrtOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflSquaredDifference:
-        op_wrapper = BuildSquaredDifferenceOp(op);
+        op_wrapper = BuildSquaredDifferenceOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflSub:
-        op_wrapper = BuildSubOp(op);
+        op_wrapper = BuildSubOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflSum:
-        op_wrapper = BuildReduceSumOp(op);
+        op_wrapper = BuildReduceSumOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflStridedSlice:
-        op_wrapper = BuildStridedSliceOp(op);
+        op_wrapper = BuildStridedSliceOp(compiler_context, op);
         break;
       case kLiteRtOpCodeTflTanh:
         op_wrapper = BuildTanhOp(op);
@@ -508,16 +511,18 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         op_wrapper = BuildTransposeOp(op);
         break;
       case kLiteRtOpCodeTflTransposeConv:
-        op_wrapper = BuildTransposeConvOp(op);
+        op_wrapper = BuildTransposeConvOp(compiler_context, op);
         break;
       case kLiteRtOpCodeShloComposite: {
-        auto composite_opt = GetOptionsAs<CompositeOptions>(op.Get());
-        if (composite_opt &&
-            composite_opt->name == CompositeOptions::kRmsNorm) {
-          op_wrapper = BuildRmsNormOp(op);
+        const char* composite_name = nullptr;
+        LITERT_RETURN_IF_ERROR(compiler_context->get_shlo_composite_op_name(
+            op.Get(), &composite_name));
+        if (composite_name &&
+            absl::string_view(composite_name) == "odml.rms_norm") {
+          op_wrapper = BuildRmsNormOp(compiler_context, op);
         } else {
-          LITERT_LOG(LITERT_ERROR,
-                     "Unsupported composite operator : ", composite_opt->name);
+          LITERT_LOG(LITERT_ERROR, "Unsupported composite operator : ",
+                     composite_name ? composite_name : "nullptr");
         }
         break;
       }

@@ -14,17 +14,21 @@
 // limitations under the License.
 #include "litert/vendors/samsung/compiler/builders/elementwise_op_builder.h"
 
+#include <cstdint>
 #include <string>
 
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_op_options.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildElementwiseOp(const Op& op, const std::string& type,
+Expected<OpWrapper> BuildElementwiseOp(const litert::compiler::Op& op,
+                                       const std::string& type,
                                        uint32_t tfl_fused_activation) {
   OpWrapper op_wrapper(type);
 
@@ -43,10 +47,11 @@ Expected<OpWrapper> BuildElementwiseOp(const Op& op, const std::string& type,
   return op_wrapper;
 }
 
-Expected<OpWrapper> BuildAddOp(const Op& op) {
+Expected<OpWrapper> BuildAddOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op) {
   uint32_t tfl_fused_activation;
   if (auto status =
-          LiteRtGetAddFusedActivationOption(op.Get(), &tfl_fused_activation);
+          ctx->get_add_fused_activation_option(op.Get(), &tfl_fused_activation);
       status != kLiteRtStatusOk) {
     return Error(static_cast<litert::Status>(status),
                  "Fail to get fused activation");
@@ -55,10 +60,11 @@ Expected<OpWrapper> BuildAddOp(const Op& op) {
   return BuildElementwiseOp(op, "ADD", tfl_fused_activation);
 }
 
-Expected<OpWrapper> BuildMulOp(const Op& op) {
+Expected<OpWrapper> BuildMulOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op) {
   uint32_t tfl_fused_activation;
   if (auto status =
-          LiteRtGetMulFusedActivationOption(op.Get(), &tfl_fused_activation);
+          ctx->get_mul_fused_activation_option(op.Get(), &tfl_fused_activation);
       status != kLiteRtStatusOk) {
     return Error(status, "Fail to get fused activation");
   }
@@ -66,10 +72,11 @@ Expected<OpWrapper> BuildMulOp(const Op& op) {
   return BuildElementwiseOp(op, "MUL", tfl_fused_activation);
 }
 
-Expected<OpWrapper> BuildDivOp(const Op& op) {
+Expected<OpWrapper> BuildDivOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op) {
   uint32_t tfl_fused_activation;
   if (auto status =
-          LiteRtGetDivFusedActivationOption(op.Get(), &tfl_fused_activation);
+          ctx->get_div_fused_activation_option(op.Get(), &tfl_fused_activation);
       status != kLiteRtStatusOk) {
     return Error(status, "Fail to get fused activation");
   }
@@ -77,38 +84,46 @@ Expected<OpWrapper> BuildDivOp(const Op& op) {
   return BuildElementwiseOp(op, "DIV", tfl_fused_activation);
 }
 
-Expected<OpWrapper> BuildExpOp(const Op& op) {
+Expected<OpWrapper> BuildExpOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op) {
   return BuildElementwiseOp(op, "EXP", 0);
 }
 
-Expected<OpWrapper> BuildGreaterOp(const Op& op) {
+Expected<OpWrapper> BuildGreaterOp(const LiteRtCompilerContext* ctx,
+                                   const litert::compiler::Op& op) {
   return BuildElementwiseOp(op, "Greater", 0);
 }
 
-Expected<OpWrapper> BuildGreaterEqualOp(const Op& op) {
+Expected<OpWrapper> BuildGreaterEqualOp(const LiteRtCompilerContext* ctx,
+                                        const litert::compiler::Op& op) {
   return BuildElementwiseOp(op, "GreaterOrEqual", 0);
 }
 
-Expected<OpWrapper> BuildMaxOp(const Op& op) {
+Expected<OpWrapper> BuildMaxOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op) {
   return BuildElementwiseOp(op, "Maximum", 0);
 }
 
-Expected<OpWrapper> BuildMinOp(const Op& op) {
+Expected<OpWrapper> BuildMinOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op) {
   return BuildElementwiseOp(op, "Minimum", 0);
 }
 
-Expected<OpWrapper> BuildCosOp(const Op& op) {
+Expected<OpWrapper> BuildCosOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op) {
   return BuildElementwiseOp(op, "Cos", 0);
 }
 
-Expected<OpWrapper> BuildSinOp(const Op& op) {
+Expected<OpWrapper> BuildSinOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op) {
   return BuildElementwiseOp(op, "Sin", 0);
 }
 
-Expected<OpWrapper> BuildSubOp(const Op& op) {
+Expected<OpWrapper> BuildSubOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op) {
   uint32_t tfl_fused_activation;
   if (auto status =
-          LiteRtGetSubFusedActivationOption(op.Get(), &tfl_fused_activation);
+          ctx->get_sub_fused_activation_option(op.Get(), &tfl_fused_activation);
       status != kLiteRtStatusOk) {
     return Error(status, "Fail to get fused activation");
   }
@@ -116,55 +131,68 @@ Expected<OpWrapper> BuildSubOp(const Op& op) {
   return BuildElementwiseOp(op, "SUB", tfl_fused_activation);
 }
 
-Expected<OpWrapper> BuildSqrtOp(const Op& op) {
+Expected<OpWrapper> BuildSqrtOp(const LiteRtCompilerContext* ctx,
+                                const litert::compiler::Op& op) {
   return BuildElementwiseOp(op, "SQRT", 0);
 }
 
-Expected<OpWrapper> BuildRsqrtOp(const Op& op) {
+Expected<OpWrapper> BuildRsqrtOp(const LiteRtCompilerContext* ctx,
+                                 const litert::compiler::Op& op) {
   return BuildElementwiseOp(op, "RSQRT", 0);
 }
 
-Expected<OpWrapper> BuildSquaredDifferenceOp(const Op& op) {
+Expected<OpWrapper> BuildSquaredDifferenceOp(const LiteRtCompilerContext* ctx,
+                                             const litert::compiler::Op& op) {
   return BuildElementwiseOp(op, "SquaredDifference", 0);
 }
 
-Expected<OpWrapper> BuildAbsOp(const Op& op) {
+Expected<OpWrapper> BuildAbsOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op) {
   return BuildElementwiseOp(op, "ABS", 0);
 }
 
-Expected<OpWrapper> BuildEqualOp(const Op& op) {
+Expected<OpWrapper> BuildEqualOp(const LiteRtCompilerContext* ctx,
+                                 const litert::compiler::Op& op) {
   return BuildElementwiseOp(op, "Equal", 0);
 }
 
-Expected<OpWrapper> BuildCeilOp(const Op& op) {
+Expected<OpWrapper> BuildCeilOp(const LiteRtCompilerContext* ctx,
+                                const litert::compiler::Op& op) {
   return BuildElementwiseOp(op, "Ceil", 0);
 }
 
-Expected<OpWrapper> BuildFloorOp(const Op& op) {
+Expected<OpWrapper> BuildFloorOp(const LiteRtCompilerContext* ctx,
+                                 const litert::compiler::Op& op) {
   return BuildElementwiseOp(op, "Floor", 0);
 }
 
-Expected<OpWrapper> BuildFloorDivOp(const Op& op) {
+Expected<OpWrapper> BuildFloorDivOp(const LiteRtCompilerContext* ctx,
+                                    const litert::compiler::Op& op) {
   return BuildElementwiseOp(op, "FloorDiv", 0);
 }
 
-Expected<OpWrapper> BuildLessOp(const Op& op) {
+Expected<OpWrapper> BuildLessOp(const LiteRtCompilerContext* ctx,
+                                const litert::compiler::Op& op) {
   return BuildElementwiseOp(op, "Less", 0);
 }
 
-Expected<OpWrapper> BuildLogOp(const Op& op) {
+Expected<OpWrapper> BuildLogOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op) {
   return BuildElementwiseOp(op, "Log", 0);
 }
 
-Expected<OpWrapper> BuildPowOp(const Op& op) {
+Expected<OpWrapper> BuildPowOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op) {
   return BuildElementwiseOp(op, "Pow", 0);
 }
 
-Expected<OpWrapper> BuildLogicalAndOp(const Op& op) {
+Expected<OpWrapper> BuildLogicalAndOp(const LiteRtCompilerContext* ctx,
+                                      const litert::compiler::Op& op) {
   return BuildElementwiseOp(op, "And", 0);
 }
 
-Expected<OpWrapper> BuildNotEqualOp(const Op& op) {
+Expected<OpWrapper> BuildNotEqualOp(const LiteRtCompilerContext* ctx,
+                                    const litert::compiler::Op& op) {
   return BuildElementwiseOp(op, "NotEqual", 0);
 }
 
