@@ -54,7 +54,7 @@ optimization tools.
 - runtime/
 
   Private code and APIs specific to the runtime, defined inside lrt:::internal
-  namespace.
+  namespace
 
 - tools/
 
@@ -63,4 +63,4 @@ optimization tools.
 
 - vendors/
 
-  Code specific to SoC-vendors.
+  Code specific to SoC-vendors
