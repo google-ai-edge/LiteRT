@@ -816,7 +816,7 @@ PackIdentifier MMapWeightCacheProvider::BuildPackIdentifier(
       }
       XNNPACK_ABORT_CHECK(
           remapped_it != buffer_remaps_.end(),
-          "Unknown constant buffer passed to BuildPackIdentifier.");
+          "Unknown constant buffer passed to BuildPackIdentifier: %p.", buffer);
     }
     return PackIdentifier::kNoId;
   };
