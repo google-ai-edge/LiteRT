@@ -17,7 +17,7 @@
 import '@tensorflow/tfjs-backend-webgpu'; // Side-effect import for webgpu backend.
 import '@tensorflow/tfjs-backend-cpu'; // CPU backend is needed if WebGPU is not available.
 
-import {CompiledModel, getWebGpuDevice, loadAndCompile, loadLiteRt, SignatureRunner, Tensor} from '@litertjs/core';
+import {CompiledModel, Environment, getWebGpuDevice, loadAndCompile, loadLiteRt, loadModelAndWeights, SignatureRunner, Tensor} from '@litertjs/core';
 import {litertToTfjs, runWithTfjsTensors, tfjsToLitert} from '@litertjs/tfjs-interop';
 import {WebGPUBackend} from '@tensorflow/tfjs-backend-webgpu';
 import * as tf from '@tensorflow/tfjs-core';
@@ -71,17 +71,38 @@ export class LiteRtModelRunner implements ModelRunner {
       private webnnModel: Maybe<CompiledModel>,
       private readConsole?: () => ConsoleMessage[]) {}
 
-  static async load(data: Uint8Array, readConsole?: () => ConsoleMessage[]):
+  static async load(
+      data: Uint8Array, readConsole?: () => ConsoleMessage[],
+      weightsStream?: ReadableStream<Uint8Array>):
       Promise<LiteRtModelRunner> {
     await liteRtPromise;
-    const gpuModel =
-        await toMaybe(() => loadAndCompile(data, {accelerator: 'webgpu'}));
-    const cpuModel =
-        await toMaybe(() => loadAndCompile(data, {accelerator: 'wasm'}));
-    const webnnModel = await toMaybe(() => loadAndCompile(data, {
-                                       accelerator: ['webnn', 'wasm'],
-                                       webNNOptions: {devicePreference: 'npu'}
-                                     }));
+    let gpuModel: Maybe<CompiledModel>;
+    let cpuModel: Maybe<CompiledModel>;
+    let webnnModel: Maybe<CompiledModel>;
+
+    if (weightsStream) {
+      const device = await getWebGpuDevice();
+      if (!device) {
+        gpuModel = {error: 'WebGPU device is required for streamed loading'};
+      } else {
+        gpuModel = await toMaybe(() => loadModelAndWeights(
+            data, weightsStream, {
+              environment: new Environment({webGpuDevice: device}),
+              accelerator: 'webgpu',
+            }));
+      }
+      cpuModel = {error: 'CPU execution not supported with externalized weights'};
+      webnnModel = {error: 'WebNN execution not supported with externalized weights'};
+    } else {
+      gpuModel =
+          await toMaybe(() => loadAndCompile(data, {accelerator: 'webgpu'}));
+      cpuModel =
+          await toMaybe(() => loadAndCompile(data, {accelerator: 'wasm'}));
+      webnnModel = await toMaybe(() => loadAndCompile(data, {
+                                         accelerator: ['webnn', 'wasm'],
+                                         webNNOptions: {devicePreference: 'npu'}
+                                       }));
+    }
 
     if (gpuModel.error && cpuModel.error && webnnModel.error) {
       console.error('GPU, CPU, and WebNN models failed to load');

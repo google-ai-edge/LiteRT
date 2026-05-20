@@ -20,9 +20,11 @@
 #include <optional>
 #include <string>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "ml_drift/webgpu/webgpu_headers.h"  // from @ml_drift
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/scoped_weight_source.h"
@@ -119,6 +121,14 @@ class WeightLoader {
   // buffer ID. Returns `nullptr` if no such tensor exists.
   virtual const WeightAccess* GetExternalWeightByBuffer(
       uint32_t external_buffer_id) const = 0;
+
+#ifdef __EMSCRIPTEN__
+  virtual absl::Status UploadWeightsOnWeb(
+      const absl::flat_hash_map<int, wgpu::Buffer>& tfl_id_to_wgpu_buffer) {
+    return absl::UnimplementedError(
+        "UploadWeightsOnWeb is not implemented by default.");
+  }
+#endif  // __EMSCRIPTEN__
 };
 
 // Provides access to the data of an external weight tensor.
