@@ -24,7 +24,7 @@ cc_library(
     hdrs = ["op_wrapper.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
         "@exynos_ai_litecore//:ai_litecore_headers",
     ],
 )
@@ -35,11 +35,9 @@ cc_library(
     hdrs = ["utils.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
         "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -49,10 +47,11 @@ cc_library(
     hdrs = ["batch_matmul_op_builder.h"],
     deps = [
         ":op_wrapper",
-        "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc:litert_macros",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -63,10 +62,10 @@ cc_library(
     deps = [
         ":op_wrapper",
         ":utils",
-        "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc:litert_macros",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -77,10 +76,10 @@ cc_library(
     deps = [
         ":op_wrapper",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -92,11 +91,12 @@ cc_library(
         ":op_wrapper",
         ":utils",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc:litert_macros",
+        "//litert/compiler/cc:litert_model",
         "//tflite/schema:schema_fbs",
     ],
 )
@@ -108,10 +108,11 @@ cc_library(
     deps = [
         ":op_wrapper",
         ":utils",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -122,10 +123,10 @@ cc_library(
     deps = [
         ":op_wrapper",
         ":utils",
-        "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -136,11 +137,9 @@ cc_library(
     deps = [
         ":op_wrapper",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
-        "//tflite/schema:schema_fbs",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -152,11 +151,11 @@ cc_library(
         ":op_wrapper",
         ":utils",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/compiler/cc:litert_model",
         "//tflite/schema:schema_fbs",
     ],
 )
@@ -169,10 +168,11 @@ cc_library(
         ":op_wrapper",
         ":utils",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc:litert_macros",
+        "//litert/compiler/cc:litert_model",
         "//tflite/schema:schema_fbs",
     ],
 )
@@ -185,11 +185,11 @@ cc_library(
         ":op_wrapper",
         ":utils",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -199,11 +199,10 @@ cc_library(
     hdrs = ["relu_op_builder.h"],
     deps = [
         ":op_wrapper",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -213,10 +212,9 @@ cc_library(
     hdrs = ["relu1_op_builder.h"],
     deps = [
         ":op_wrapper",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_model",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -226,11 +224,10 @@ cc_library(
     hdrs = ["relu6_op_builder.h"],
     deps = [
         ":op_wrapper",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -241,10 +238,11 @@ cc_library(
     deps = [
         ":op_wrapper",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -256,9 +254,12 @@ cc_library(
         ":op_wrapper",
         ":utils",
         "//litert/c:litert_common",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_op_options",
+        "//litert/cc:litert_macros",
+        "//litert/compiler/cc:litert_model",
+        "@flatbuffers//:runtime_cc",
     ],
 )
 
@@ -269,10 +270,9 @@ cc_library(
     deps = [
         ":op_wrapper",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -284,11 +284,12 @@ cc_library(
         ":op_wrapper",
         ":utils",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc:litert_macros",
+        "//litert/compiler/cc:litert_model",
         "//tflite/schema:schema_fbs",
     ],
 )
@@ -301,10 +302,10 @@ cc_library(
         ":op_wrapper",
         ":utils",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc:litert_macros",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -314,10 +315,9 @@ cc_library(
     hdrs = ["gathernd_op_builder.h"],
     deps = [
         ":op_wrapper",
-        "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -328,9 +328,10 @@ cc_library(
     deps = [
         ":op_wrapper",
         ":utils",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc:litert_macros",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -341,10 +342,10 @@ cc_library(
     deps = [
         ":op_wrapper",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -355,10 +356,9 @@ cc_library(
     deps = [
         ":op_wrapper",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -369,9 +369,11 @@ cc_library(
     deps = [
         ":op_wrapper",
         ":utils",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc:litert_macros",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -382,9 +384,11 @@ cc_library(
     deps = [
         ":op_wrapper",
         ":utils",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc:litert_macros",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -394,9 +398,11 @@ cc_library(
     hdrs = ["gather_op_builder.h"],
     deps = [
         ":op_wrapper",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc:litert_macros",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -406,11 +412,10 @@ cc_library(
     hdrs = ["leakyrelu_op_builder.h"],
     deps = [
         ":op_wrapper",
-        ":utils",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -420,12 +425,11 @@ cc_library(
     hdrs = ["gelu_op_builder.h"],
     deps = [
         ":op_wrapper",
-        ":utils",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -435,12 +439,10 @@ cc_library(
     hdrs = ["tanh_op_builder.h"],
     deps = [
         ":op_wrapper",
-        ":utils",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -452,10 +454,11 @@ cc_library(
         ":op_wrapper",
         ":utils",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc:litert_macros",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -465,12 +468,11 @@ cc_library(
     hdrs = ["cumsum_op_builder.h"],
     deps = [
         ":op_wrapper",
-        ":utils",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -480,11 +482,9 @@ cc_library(
     hdrs = ["select_op_builder.h"],
     deps = [
         ":op_wrapper",
-        ":utils",
-        "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -494,11 +494,9 @@ cc_library(
     hdrs = ["selectv2_op_builder.h"],
     deps = [
         ":op_wrapper",
-        ":utils",
-        "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -510,10 +508,10 @@ cc_library(
         ":op_wrapper",
         ":utils",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc:litert_macros",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -525,10 +523,11 @@ cc_library(
         ":op_wrapper",
         ":utils",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc:litert_macros",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -539,10 +538,9 @@ cc_library(
     deps = [
         ":op_wrapper",
         ":utils",
-        "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -553,8 +551,12 @@ cc_library(
     deps = [
         ":op_wrapper",
         ":utils",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/compiler/cc:litert_model",
         "//tflite/schema:schema_fbs",
     ],
 )
@@ -565,10 +567,9 @@ cc_library(
     hdrs = ["relun1to1_op_builder.h"],
     deps = [
         ":op_wrapper",
-        ":utils",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -579,9 +580,10 @@ cc_library(
     deps = [
         ":op_wrapper",
         ":utils",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc:litert_macros",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -592,10 +594,9 @@ cc_library(
     deps = [
         ":op_wrapper",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_model",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -606,10 +607,9 @@ cc_library(
     deps = [
         ":op_wrapper",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_model",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )
 
@@ -619,9 +619,8 @@ cc_library(
     hdrs = ["reversev2_op_builder.h"],
     deps = [
         ":op_wrapper",
-        ":utils",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
     ],
 )

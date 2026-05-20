@@ -15,15 +15,20 @@
 
 #include "litert/vendors/samsung/compiler/builders/cast_op_builder.h"
 
+#include <cstdint>
+
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
 constexpr int32_t kInputIndex = 0;
 constexpr int32_t kOutputIndex = 0;
 
-Expected<OpWrapper> BuildCastOp(const Op& op) {
+Expected<OpWrapper> BuildCastOp(const litert::compiler::Op& op) {
   OpWrapper op_wrapper("CAST");
 
   op_wrapper.AddInput(op.Inputs()[kInputIndex]);

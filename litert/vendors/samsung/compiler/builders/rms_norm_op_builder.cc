@@ -14,17 +14,22 @@
 // limitations under the License.
 #include "litert/vendors/samsung/compiler/builders/rms_norm_op_builder.h"
 
+#include <cstdint>
+
+#include "flatbuffers/flexbuffers.h"  // from @flatbuffers
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
-#include "litert/cc/internal/litert_extended_model.h"
-#include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
 
 constexpr int kInputIndex = 0;
 
-Expected<OpWrapper> BuildRmsNormOp(const Op& op) {
+Expected<OpWrapper> BuildRmsNormOp(const LiteRtCompilerContext* ctx,
+                                   const litert::compiler::Op& op) {
   OpWrapper op_wrapper("RMSNORM");
 
   for (const auto& input : op.Inputs()) {
@@ -38,9 +43,26 @@ Expected<OpWrapper> BuildRmsNormOp(const Op& op) {
 
   op_wrapper.AddParam("axis", input_dimensions.size() - 1);
 
-  LITERT_ASSIGN_OR_RETURN(auto rms_norm_options,
-                          GetOptionsAs<RmsNormOpts>(op.Get()));
-  op_wrapper.AddParam("epsilon", rms_norm_options.epsilon);
+  const uint8_t* impl_attributes = nullptr;
+  int32_t impl_attributes_size = 0;
+  LITERT_RETURN_IF_ERROR(ctx->get_shlo_composite_op_attributes(
+      op.Get(), &impl_attributes, &impl_attributes_size));
+
+  if (impl_attributes_size <= 0) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Missing attributes for RMSNorm");
+  }
+
+  auto attributes_map =
+      flexbuffers::GetRoot(impl_attributes, impl_attributes_size).AsMap();
+  constexpr char kEpsilonKey[] = "epsilon";
+  flexbuffers::Reference raw_epsilon = attributes_map[kEpsilonKey];
+  if (raw_epsilon.IsNull()) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Missing epsilon attribute for RMSNorm");
+  }
+
+  op_wrapper.AddParam("epsilon", raw_epsilon.AsFloat());
 
   return op_wrapper;
 }

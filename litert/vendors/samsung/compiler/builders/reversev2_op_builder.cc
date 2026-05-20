@@ -15,9 +15,13 @@
 
 #include "litert/vendors/samsung/compiler/builders/reversev2_op_builder.h"
 
+#include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildReverseV2Op(const Op& op) {
+Expected<OpWrapper> BuildReverseV2Op(const litert::compiler::Op& op) {
   OpWrapper op_wrapper("ReverseV2");
 
   for (const auto& input : op.Inputs()) {

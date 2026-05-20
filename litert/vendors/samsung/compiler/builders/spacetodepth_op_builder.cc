@@ -15,14 +15,19 @@
 
 #include "litert/vendors/samsung/compiler/builders/spacetodepth_op_builder.h"
 
+#include <cstdint>
+
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildSpaceToDepthOp(const Op& op) {
+Expected<OpWrapper> BuildSpaceToDepthOp(const LiteRtCompilerContext* ctx,
+                                        const litert::compiler::Op& op) {
   OpWrapper op_wrapper("SpaceToDepth");
 
   for (const auto& input : op.Inputs()) {
@@ -33,7 +38,8 @@ Expected<OpWrapper> BuildSpaceToDepthOp(const Op& op) {
   }
 
   int32_t block_size{};
-  if (auto status = LiteRtGetSpaceToDepthBlockSizeOption(op.Get(), &block_size);
+  if (auto status =
+          ctx->get_space_to_depth_block_size_option(op.Get(), &block_size);
       status != kLiteRtStatusOk) {
     return Error(status, "Fail to get block_size.");
   }

@@ -15,14 +15,23 @@
 
 #include "litert/vendors/samsung/compiler/builders/gather_op_builder.h"
 
+#include <cstdint>
+#include <vector>
+
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_op_options.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
 namespace litert::samsung {
 
 constexpr int kOutIndex = 0;
 
 Expected<OpWrapper> BuildGeneralGatherOp(
-    const Op& op, const std::vector<int32_t>& input_order, int32_t& axis) {
+    const litert::compiler::Op& op, const std::vector<int32_t>& input_order,
+    int32_t& axis) {
   OpWrapper op_wrapper("GATHER");
   for (const auto& index : input_order) {
     op_wrapper.AddInput(op.Inputs()[index]);
@@ -33,18 +42,20 @@ Expected<OpWrapper> BuildGeneralGatherOp(
   return op_wrapper;
 }
 
-Expected<OpWrapper> BuildGatherOp(const Op& op) {
+Expected<OpWrapper> BuildGatherOp(const LiteRtCompilerContext* ctx,
+                                  const litert::compiler::Op& op) {
   int32_t axis = 0;
   std::vector<int32_t> gather_input_order = {0, 1};
 
-  LITERT_RETURN_IF_ERROR(LiteRtGetGatherAxisOption(op.Get(), &axis));
+  LITERT_RETURN_IF_ERROR(ctx->get_gather_axis_option(op.Get(), &axis));
   LITERT_ASSIGN_OR_RETURN(auto op_wrapper,
                           BuildGeneralGatherOp(op, gather_input_order, axis));
 
   return op_wrapper;
 }
 
-Expected<OpWrapper> BuildEmbeddingLookupOp(const Op& op) {
+Expected<OpWrapper> BuildEmbeddingLookupOp(const LiteRtCompilerContext* ctx,
+                                           const litert::compiler::Op& op) {
   int32_t axis = 0;
   std::vector<int32_t> embeding_lookup_input_order = {1, 0};
   LITERT_ASSIGN_OR_RETURN(

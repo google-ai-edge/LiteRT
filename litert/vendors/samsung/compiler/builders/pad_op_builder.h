@@ -15,16 +15,19 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_PAD_OP_BUILDER_H_
 #define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_PAD_OP_BUILDER_H_
 
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildPadOp(const Op& op);
+Expected<OpWrapper> BuildPadOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildMirrorPadOp(const Op& op);
+Expected<OpWrapper> BuildMirrorPadOp(const LiteRtCompilerContext* ctx,
+                                     const litert::compiler::Op& op);
 
 }  // namespace litert::samsung
 #endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_PAD_OP_BUILDER_H_
