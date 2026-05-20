@@ -1,6 +1,5 @@
 # TensorFlow ops for audio front-end processing.
 
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_library")
 load(
     "@org_tensorflow//tensorflow:tensorflow.bzl",
     "tf_copts",
@@ -12,6 +11,7 @@ load(
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "tf_custom_op_py_strict_library", "tf_py_strict_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -108,7 +108,7 @@ tf_gen_op_wrapper_py(
         "@org_tensorflow//tensorflow/python/util:deprecation",
         "@org_tensorflow//tensorflow/python/util:tf_export",
     ],
-    py_lib_rule = py_strict_library,
+    py_lib_rule = py_library,
     deps = [":audio_microfrontend_op_op_lib"],
 )
 
