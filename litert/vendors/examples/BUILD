@@ -33,6 +33,10 @@ litert_dynamic_lib(
         "//conditions:default": ["-Wl,-rpath,$$ORIGIN"],
     }),
     linkstatic = 1,
+    local_defines = select({
+        "//litert:windows": ["LITERT_COMPILE_LIBRARY"],
+        "//conditions:default": [],
+    }),
     shared_lib_name = "example_plugin_so",
     so_name = "libLiteRtCompilerPlugin_Example.so",
     visibility = ["//litert:litert_public"],
@@ -88,6 +92,10 @@ litert_dynamic_lib(
         "//conditions:default": ["-Wl,-rpath,$$ORIGIN"],
     }),
     linkstatic = 1,
+    local_defines = select({
+        "//litert:windows": ["LITERT_COMPILE_LIBRARY"],
+        "//conditions:default": [],
+    }),
     shared_lib_name = "example_dispatch_so",
     so_name = "libLiteRtDispatch_Example.so",
     visibility = ["//litert:litert_public"],
@@ -222,10 +230,12 @@ cc_test(
         "//conditions:default": [],
     }),
     deps = [
+        ":example_common",
         ":example_plugin",  # buildcleaner: keep
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_compiler_context",
+        "//litert/cc:litert_buffer_ref",
         "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/core/model:model_testonly",
         "//litert/test:common",
@@ -294,6 +304,7 @@ cc_test(
         "//conditions:default": [],
     }),
     deps = [
+        ":example_common",
         ":example_dispatch",  # buildcleaner: keep
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",

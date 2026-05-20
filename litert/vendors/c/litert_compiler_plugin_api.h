@@ -70,6 +70,10 @@ typedef LiteRtStatus (*LiteRtGetCompiledResultByteCodeT)(
     LiteRtCompiledResult, LiteRtParamIndex byte_code_idx,
     const void** byte_code, size_t* byte_code_size);
 
+typedef LiteRtStatus (*LiteRtGetCompiledResultHandleT)(
+    LiteRtCompiledResult, LiteRtParamIndex call_idx,
+    LiteRtJitExecutable* handle);
+
 typedef LiteRtStatus (*LiteRtCompiledResultNumByteCodeModulesT)(
     LiteRtCompiledResult, LiteRtParamIndex* num_byte_code);
 
@@ -113,6 +117,7 @@ struct LiteRtCompilerPluginApi {
 
   LiteRtDestroyCompiledResultT destroy_compiled_result;
   LiteRtGetCompiledResultByteCodeT get_compiled_result_byte_code;
+  LiteRtGetCompiledResultHandleT get_compiled_result_handle;
   LiteRtCompiledResultNumByteCodeModulesT get_compiled_result_num_byte_code;
   LiteRtGetCompiledResultCallInfoT get_compiled_result_call_info;
   LiteRtGetNumCompiledResultCallsT get_compiled_result_num_calls;
@@ -155,6 +160,8 @@ static constexpr absl::string_view kLiteRtDestroyCompiledResult =
     "LiteRtDestroyCompiledResult";
 static constexpr absl::string_view kLiteRtGetCompiledResultByteCode =
     "LiteRtGetCompiledResultByteCode";
+static constexpr absl::string_view kLiteRtGetCompiledResultHandle =
+    "LiteRtGetCompiledResultHandle";
 static constexpr absl::string_view kLiteRtCompiledResultNumByteCodeModules =
     "LiteRtCompiledResultNumByteCodeModules";
 static constexpr absl::string_view kLiteRtGetCompiledResultCallInfo =

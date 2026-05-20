@@ -59,6 +59,10 @@ cc_test(
         "//litert/test:mlir_test_data",
         "//litert/vendors/examples:example_plugin_so_data",
     ],
+    features = select({
+        "//litert:windows": ["-static_link_msvcrt"],
+        "//conditions:default": [],
+    }),
     # Workaround to disable mismatched-size-delete.
     # This test uses`libLiteRt.so` with some system components.
     # So mixing of the two will cause mismatched-size-delete error.
@@ -111,6 +115,10 @@ litert_bin(
         ],
     }),
     export_litert_only = 1,
+    features = select({
+        "//litert:windows": ["-static_link_msvcrt"],
+        "//conditions:default": [],
+    }),
     linkstatic = 1,
     # copybara:uncomment malloc = "//base:system_malloc",
     tags = [

@@ -112,6 +112,12 @@ void Options::SetEnableWeightSharing(bool enable_weight_sharing) {
 
 bool Options::GetEnableWeightSharing() const { return enable_weight_sharing_; }
 
+void Options::SetEnableJustInTime(bool enable_just_in_time) {
+  enable_just_in_time_ = enable_just_in_time;
+}
+
+bool Options::GetEnableJustInTime() const { return enable_just_in_time_; }
+
 void Options::SetUseConvHMX(bool use_conv_hmx) { use_conv_hmx_ = use_conv_hmx; }
 
 bool Options::GetUseConvHMX() const { return use_conv_hmx_; }
@@ -211,6 +217,7 @@ BackendType: %d\n\
 Profiling: %d\n\
 UseInt64BiasAsInt32: %v\n\
 EnableWeightSharing: %v\n\
+EnableJustInTime: %v\n\
 UseConvHMX: %v\n\
 UseFoldReLU: %v\n\
 HtpPPoint: %d\n\
@@ -230,8 +237,8 @@ GraphIOTensorMemType: %d\n";  // NOLINT
 
   return absl::StrFormat(
       kQnnOptionsDumpFormat, log_level_, backend_type_, profiling_,
-      use_int64_bias_as_int32_, enable_weight_sharing_, use_conv_hmx_,
-      use_fold_relu_, htp_p_point_, htp_performance_mode_,
+      use_int64_bias_as_int32_, enable_weight_sharing_, enable_just_in_time_,
+      use_conv_hmx_, use_fold_relu_, htp_p_point_, htp_performance_mode_,
       dsp_performance_mode_, dump_tensor_ids, ir_json_dir_, dlc_dir_,
       vtcm_size_, num_hvx_threads_, optimization_level_, graph_priority_,
       saver_output_dir_, graph_io_tensor_mem_type_);

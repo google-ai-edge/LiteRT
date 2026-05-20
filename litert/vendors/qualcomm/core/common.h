@@ -102,6 +102,9 @@ class Options {
   void SetEnableWeightSharing(bool enable_weight_sharing);
   bool GetEnableWeightSharing() const;
 
+  void SetEnableJustInTime(bool enable_just_in_time);
+  bool GetEnableJustInTime() const;
+
   void SetUseConvHMX(bool use_conv_hmx);
   bool GetUseConvHMX() const;
 
@@ -153,6 +156,7 @@ class Options {
   Profiling profiling_ = Profiling::kOff;
   bool use_int64_bias_as_int32_ = true;
   bool enable_weight_sharing_ = false;
+  bool enable_just_in_time_ = false;
   bool use_conv_hmx_ = true;
   bool use_fold_relu_ = true;
   std::int32_t htp_p_point_ = 0;
