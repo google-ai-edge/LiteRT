@@ -77,14 +77,14 @@ class RegisterFunctor {
   }
 
   RegisterFunctor(size_t iters, size_t& test_id, const AtsConf& options,
-                  Fixture::Capture& cap)
+                  typename Fixture::Capture& cap)
       : iters_(iters), test_id_(test_id), options_(options), cap_(cap) {}
 
  private:
   const size_t iters_;
   size_t& test_id_;
   const AtsConf& options_;
-  Fixture::Capture& cap_;
+  typename Fixture::Capture& cap_;
 };
 
 // Specializes the given test logic template with the cartesian product of

@@ -140,8 +140,8 @@ class NoOp : public TestGraph {
         /*pot_scale_int16=*/false);
   }
 
-  Expected<void> ReferenceImpl(const Traits::ReferenceInputs& inputs,
-                               Traits::ReferenceOutputs& outputs) const {
+  Expected<void> ReferenceImpl(const typename Traits::ReferenceInputs& inputs,
+                               typename Traits::ReferenceOutputs& outputs) const {
     auto [input] = inputs;
     auto [output] = outputs;
     const size_t num_elements = output.NumElements();

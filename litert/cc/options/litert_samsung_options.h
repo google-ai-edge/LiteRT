@@ -18,6 +18,7 @@
 #include "litert/c/options/litert_samsung_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_opaque_options.h"
 
 namespace litert::samsung {
 
@@ -66,6 +67,15 @@ class SamsungOptions {
     LITERT_RETURN_IF_ERROR(LrtSamsungOptionsGetEnableLargeModelSupport(
         Get(), &large_model_support));
     return large_model_support;
+  }
+  Expected<void> SetSocModel(const char* soc_model) {
+    LITERT_RETURN_IF_ERROR(LrtSamsungOptionsSetSocModel(Get(), soc_model));
+    return {};
+  }
+  Expected<const char*> GetSocModel() const {
+    const char* soc_model;
+    LITERT_RETURN_IF_ERROR(LrtSamsungOptionsGetSocModel(Get(), &soc_model));
+    return soc_model;
   }
 
  private:

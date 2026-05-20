@@ -54,6 +54,12 @@ LiteRtStatus LrtSamsungOptionsSetEnableLargeModelSupport(
 
 LiteRtStatus LrtSamsungOptionsGetEnableLargeModelSupport(
     LrtSamsungOptions options, bool* enable_large_model_support);
+
+LiteRtStatus LrtSamsungOptionsSetSocModel(LrtSamsungOptions options,
+                                           const char* soc_model);
+
+LiteRtStatus LrtSamsungOptionsGetSocModel(LrtSamsungOptions options,
+                                           const char** soc_model);
 #ifdef __cplusplus
 }
 #endif  // __cplusplus
