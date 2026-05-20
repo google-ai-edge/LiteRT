@@ -419,7 +419,9 @@ cc_library(
         ":portable",
         "//tflite/delegates/gpu/common:gpu_info",
         "//tflite/delegates/gpu/common:status",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@org_tensorflow//third_party/gloop/util/status:status_macros",
     ],
 )
 
@@ -449,6 +451,7 @@ cc_library(
         "//tflite/delegates/gpu/gl/runtime:shared_buffer",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
