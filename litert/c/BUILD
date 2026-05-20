@@ -696,15 +696,18 @@ litert_c_api_library(
     name = "litert_builder",
     srcs = ["litert_builder.cc"],
     hdrs = ["litert_builder.h"],
-    deps = [
-        ":litert_common",
-        ":litert_model",
-        ":litert_op_code",
-        ":litert_op_options",
+    impl_deps = [
+        ":litert_model_impl",
+        ":litert_op_options_impl",
         "//litert/core/model",
         "//litert/core/model:buffer_manager",
         "//litert/core/util:flatbuffer_tools",
         "//tflite/converter/schema:schema_fbs",
+    ],
+    deps = [
+        ":litert_common",
+        ":litert_model_types",
+        ":litert_op_code",
     ],
 )
 

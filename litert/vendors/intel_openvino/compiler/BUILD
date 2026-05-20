@@ -94,7 +94,7 @@ litert_dynamic_lib(
         ":graph_iterator",
         ":openvino_compile_context",
         ":openvino_soc_config",
-        "//litert/c:litert_builder",
+        "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",

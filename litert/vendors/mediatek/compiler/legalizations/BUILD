@@ -34,7 +34,7 @@ cc_library(
     deps = [
         ":neuron_utils",
         "//litert/c:litert_common",
-        "//litert/c:litert_model",
+        "//litert/c:litert_model_header",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
@@ -373,7 +373,7 @@ cc_library(
     deps = [
         ":operand_map",
         "//litert/c:litert_common",
-        "//litert/c:litert_options",
+        "//litert/c:litert_options_header",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/compiler/cc:litert_model",
@@ -434,7 +434,7 @@ cc_library(
         ":legalize_helper",
         ":operand_map",
         "//litert/c:litert_common",
-        "//litert/c:litert_options",
+        "//litert/c:litert_options_header",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/compiler/cc:litert_model",
@@ -455,7 +455,7 @@ cc_library(
     deps = [
         ":operand_map",
         "//litert/c:litert_common",
-        "//litert/c:litert_options",
+        "//litert/c:litert_options_header",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/compiler/cc:litert_model",

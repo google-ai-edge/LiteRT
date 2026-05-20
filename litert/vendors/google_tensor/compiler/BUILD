@@ -60,7 +60,7 @@ litert_dynamic_lib(
     ],
     deps = [
         ":google_tensor_options_cc_proto",
-        "//litert/c:litert_builder",
+        "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",

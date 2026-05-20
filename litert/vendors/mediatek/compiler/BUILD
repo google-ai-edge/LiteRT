@@ -41,7 +41,7 @@ litert_dynamic_lib(
     deps = [
         ":compile_model",
         ":create_model",
-        "//litert/c:litert_builder",
+        "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
