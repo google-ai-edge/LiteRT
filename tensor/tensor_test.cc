@@ -20,6 +20,7 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
@@ -118,6 +119,46 @@ TEST(TensorTest, InitConstructorWorks) {
   EXPECT_THAT(a_info.shape, ElementsAre(2, 2));
   EXPECT_THAT(a_info.name, StrEq("a"));
   EXPECT_THAT(a_info.buffer, Eq(buffer));
+}
+
+TEST(TensorTest, CreateWithStdStringWorks) {
+  std::string name = "test_tensor";
+  TensorHandle a = Create(name, Type::kI32, {2, 2});
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const graph::TensorInformation& a_info,
+                                  GetInfo(a));
+  EXPECT_EQ(a_info.type, Type::kI32);
+  EXPECT_THAT(a_info.shape, ElementsAre(2, 2));
+  EXPECT_THAT(a_info.name, StrEq("test_tensor"));
+
+  std::shared_ptr<OwningCpuBuffer> buffer =
+      OwningCpuBuffer::Copy<Type::kI32>({1, 2, 3, 4});
+  TensorHandle b = Create(name, Type::kI32, {2, 2}, buffer);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const graph::TensorInformation& b_info,
+                                  GetInfo(b));
+  EXPECT_EQ(b_info.type, Type::kI32);
+  EXPECT_THAT(b_info.shape, ElementsAre(2, 2));
+  EXPECT_THAT(b_info.name, StrEq("test_tensor"));
+  EXPECT_THAT(b_info.buffer, Eq(buffer));
+}
+
+TEST(TensorTest, CreateWithAbslStringViewWorks) {
+  absl::string_view name = "test_tensor";
+  TensorHandle a = Create(name, Type::kI32, {2, 2});
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const graph::TensorInformation& a_info,
+                                  GetInfo(a));
+  EXPECT_EQ(a_info.type, Type::kI32);
+  EXPECT_THAT(a_info.shape, ElementsAre(2, 2));
+  EXPECT_THAT(a_info.name, StrEq("test_tensor"));
+
+  std::shared_ptr<OwningCpuBuffer> buffer =
+      OwningCpuBuffer::Copy<Type::kI32>({1, 2, 3, 4});
+  TensorHandle b = Create(name, Type::kI32, {2, 2}, buffer);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const graph::TensorInformation& b_info,
+                                  GetInfo(b));
+  EXPECT_EQ(b_info.type, Type::kI32);
+  EXPECT_THAT(b_info.shape, ElementsAre(2, 2));
+  EXPECT_THAT(b_info.name, StrEq("test_tensor"));
+  EXPECT_THAT(b_info.buffer, Eq(buffer));
 }
 
 TEST(TensorTest, FullyConnectedKeepDims) {

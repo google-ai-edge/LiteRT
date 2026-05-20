@@ -166,11 +166,39 @@ Tensor() -> Tensor<Mixins...>;
 inline TensorHandle Create(const char* name, Type type, Shape shape) {
   return TensorHandle({.name = name, .type = type, .shape = std::move(shape)});
 }
+// For placeholders with no buffer
+inline TensorHandle Create(std::string name, Type type, Shape shape) {
+  return TensorHandle(
+      {.name = std::move(name), .type = type, .shape = std::move(shape)});
+}
+// For placeholders with no buffer
+inline TensorHandle Create(absl::string_view name, Type type, Shape shape) {
+  return TensorHandle(
+      {.name = std::string(name), .type = type, .shape = std::move(shape)});
+}
 // For tensors with buffer
 template <typename Buffer>
 inline TensorHandle Create(const char* name, Type type, Shape shape,
                            Buffer&& buffer) {
   return TensorHandle({.name = name,
+                       .type = type,
+                       .shape = std::move(shape),
+                       .buffer = std::forward<Buffer>(buffer)});
+}
+// For tensors with buffer
+template <typename Buffer>
+inline TensorHandle Create(std::string name, Type type, Shape shape,
+                           Buffer&& buffer) {
+  return TensorHandle({.name = std::move(name),
+                       .type = type,
+                       .shape = std::move(shape),
+                       .buffer = std::forward<Buffer>(buffer)});
+}
+// For tensors with buffer
+template <typename Buffer>
+inline TensorHandle Create(absl::string_view name, Type type, Shape shape,
+                           Buffer&& buffer) {
+  return TensorHandle({.name = std::string(name),
                        .type = type,
                        .shape = std::move(shape),
                        .buffer = std::forward<Buffer>(buffer)});

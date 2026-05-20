@@ -124,11 +124,12 @@ cc_test(
     srcs = ["tensor_test.cc"],
     deps = [
         ":arithmetic",
+        ":buffer",
+        ":datatypes",
         ":tensor",
-        "//tensor:buffer",
-        "//tensor:datatypes",
         "//tensor/internal:graph",
         "//tensor/utils:matchers",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
 )

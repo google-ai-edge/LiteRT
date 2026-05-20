@@ -676,7 +676,7 @@ TensorHandle CreateTensorWithData(emscripten::val data, Type type,
   }
 
   auto tensor_handle = ::litert::tensor::Create(
-      name_str.c_str(), type, int_shape,
+      std::move(name_str), type, int_shape,
       ::litert::tensor::OwningCpuBuffer::Copy<::litert::tensor::Type::kFP32>(
           vec));
 
