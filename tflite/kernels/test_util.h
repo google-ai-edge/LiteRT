@@ -33,6 +33,7 @@ limitations under the License.
 #include <ostream>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -43,10 +44,13 @@ limitations under the License.
 #include "absl/log/absl_log.h"
 #include "absl/types/span.h"
 #include "Eigen/Core"  // from @eigen_archive
+#include "flatbuffers/buffer.h"  // from @flatbuffers
+#include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "tflite/core/api/op_resolver.h"
 #include "tflite/core/c/common.h"
 #include "tflite/core/interpreter.h"
 #include "tflite/kernels/internal/portable_tensor_utils.h"
+#include "tflite/kernels/internal/runtime_shape.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/internal/utils/sparsity_format_converter.h"
 #include "tflite/kernels/kernel_util.h"
@@ -737,6 +741,9 @@ class SingleOpModel {
 
       if (t->type == kTfLiteInt4) {
         PopulateTensor4bit(index, /*offset=*/0, quantized_output.data(),
+                           quantized_output.data() + quantized_output.size());
+      } else if (t->type == kTfLiteInt2) {
+        PopulateTensor2bit(index, /*offset=*/0, quantized_output.data(),
                            quantized_output.data() + quantized_output.size());
       }
     }

@@ -157,6 +157,7 @@ cc_library(
         "//tflite/core/kernels:builtin_ops",
         "//tflite/delegates/nnapi:acceleration_test_util",
         "//tflite/delegates/nnapi:nnapi_delegate",
+        "//tflite/kernels/internal:runtime_shape",
         "//tflite/kernels/internal:tensor_ctypes",
         "//tflite/kernels/internal:tensor_utils",
         "//tflite/kernels/internal/utils:sparsity_format_converter",
