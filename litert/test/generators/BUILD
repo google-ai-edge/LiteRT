@@ -316,6 +316,28 @@ cc_library(
 )
 
 cc_library(
+    name = "one_hot",
+    testonly = True,
+    hdrs = ["one_hot.h"],
+    deps = [
+        ":common",
+        ":graph_helpers",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_rng",
+        "//litert/core/model",
+        "//litert/core/model:ops_one_hot",
+        "//litert/test:simple_buffer",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
     name = "binary_broadcast",
     testonly = True,
     hdrs = ["binary_broadcast.h"],
@@ -380,6 +402,7 @@ cc_library(
         ":depthwise_conv_2d",
         ":extra_model",
         ":no_op",
+        ":one_hot",
         ":pooling",
         ":reduction",
         ":reshape",

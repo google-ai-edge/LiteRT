@@ -1533,6 +1533,11 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
       absl::Format(&sink, "%v", reshape_opts);
       break;
     }
+    case tflite::BuiltinOptions_OneHotOptions: {
+      const auto* one_hot_opts = opts.AsOneHotOptions();
+      absl::Format(&sink, "%v", one_hot_opts);
+      break;
+    }
     case tflite::BuiltinOptions_NONE: {
       absl::Format(&sink, "{}");
       break;
@@ -1616,6 +1621,17 @@ void AbslStringify(Sink& sink, const SubOptionsT& opts) {
 
 template <class Sink>
 void AbslStringify(Sink& sink, const SubOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const OneHotOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("axis", opts.axis);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const OneHotOptionsT* opts) {
   ::litert::internal::PrintNullableOpts(sink, opts);
 }
 
