@@ -105,7 +105,7 @@ void AddFlexOpsFromModel(const tflite::Model* model, OpKernelSet* flex_ops) {
       }
       const flatbuffers::Vector<uint8_t>* custom_opt_bytes =
           op->custom_options();
-      if (custom_opt_bytes && custom_opt_bytes->size()) {
+      if (custom_opt_bytes && !custom_opt_bytes->empty()) {
         // NOLINTNEXTLINE: It is common to use references with flatbuffer.
         const flexbuffers::Vector& v =
             flexbuffers::GetRoot(custom_opt_bytes->data(),
