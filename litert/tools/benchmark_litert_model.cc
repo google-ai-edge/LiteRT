@@ -88,6 +88,8 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   auto num_threads = params.Get<int>("num_threads");
   auto enable_weight_sharing = params.Get<bool>("enable_weight_sharing");
   auto convert_weights_on_gpu = params.Get<bool>("convert_weights_on_gpu");
+  auto qualcomm_graph_io_tensor_mem_type =
+      params.Get<std::string>("qualcomm_graph_io_tensor_mem_type");
   auto mediatek_nerun_pilot_version =
       params.Get<std::string>("mediatek_nerun_pilot_version");
   LITERT_ASSIGN_OR_ABORT(Options compilation_options,
@@ -139,6 +141,18 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     if (!status) {
       LITERT_LOG(LITERT_ERROR, "Failed to run options parsers: %s",
                  status.Error().Message().c_str());
+      std::abort();
+    }
+    if (qualcomm_graph_io_tensor_mem_type == "raw") {
+      qnn_opts.SetGraphIOTensorMemType(
+          litert::qualcomm::QualcommOptions::GraphIOTensorMemType::kRaw);
+    } else if (qualcomm_graph_io_tensor_mem_type == "memhandle") {
+      qnn_opts.SetGraphIOTensorMemType(
+          litert::qualcomm::QualcommOptions::GraphIOTensorMemType::kMemHandle);
+    } else {
+      LITERT_LOG(LITERT_ERROR,
+                 "Invalid qualcomm_graph_io_tensor_mem_type: %s",
+                 qualcomm_graph_io_tensor_mem_type.c_str());
       std::abort();
     }
   }
