@@ -28,17 +28,61 @@
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_rng.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/shape_inference_types.h"
+#include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/simple_buffer.h"
 #include "tflite/schema/schema_generated.h"
 
 namespace litert::testing {
+
+class DummyShapeInferenceContext
+    : public ::litert::internal::ShapeInferenceContext {
+ public:
+  explicit DummyShapeInferenceContext(const LiteRtOpT& op) : op_(op) {}
+
+  ::litert::internal::Dims GetInputShape(size_t index) const override {
+    if (index >= op_.Inputs().size() || op_.Inputs()[index] == nullptr) {
+      return {};
+    }
+    const auto& tensor = *op_.Inputs()[index];
+    if (tensor.Type().first == kLiteRtRankedTensorType) {
+      const auto& layout = tensor.Type().second.ranked_tensor_type.layout;
+      return ::litert::internal::Dims(layout.dimensions,
+                                      layout.dimensions + layout.rank);
+    }
+    return {};
+  }
+
+  absl::Span<const uint8_t> GetInputData(size_t index) const override {
+    if (index >= op_.Inputs().size() || op_.Inputs()[index] == nullptr) {
+      return {};
+    }
+    const auto& tensor = *op_.Inputs()[index];
+    if (tensor.Weights().Buffer().Size() > 0) {
+      auto weights = tensor.Weights().Buffer();
+      return absl::MakeConstSpan(weights.Data(), weights.Size());
+    }
+    return {};
+  }
+
+  const ::litert::internal::TflOptions& GetOptions() const override {
+    return ::litert::internal::GetTflOptions(op_);
+  }
+
+  LiteRtOpCode GetOpCode() const override { return op_.OpCode(); }
+
+ private:
+  const LiteRtOpT& op_;
+};
 
 // Helpers for defining generators and their consituent types.
 

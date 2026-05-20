@@ -36,10 +36,13 @@ cc_library(
         "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_rng",
         "//litert/core/model",
+        "//litert/core/model:shape_inference_types",
+        "//litert/core/util:flatbuffer_tools",
         "//litert/test:simple_buffer",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -384,6 +387,7 @@ cc_library(
         "//litert/core/model",
         "//litert/core/model:ops_reshape",
         "//litert/core/model:shape_inference_types",
+        "//litert/core/util:flatbuffer_tools",
         "//litert/test:simple_buffer",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",

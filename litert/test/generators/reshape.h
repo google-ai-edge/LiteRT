@@ -183,14 +183,13 @@ class Reshape : public TestGraph {
     dummy_op.Inputs().push_back(&data_tensor);
     dummy_op.Inputs().push_back(&shape_tensor);
 
-    std::vector<internal::Dims> input_shapes = {input_dims, shape_dims};
-    std::vector<internal::Dims> output_shapes(1);
+    DummyShapeInferenceContext ctx(dummy_op);
+    ::litert::internal::InferenceResult result;
 
-    LITERT_RETURN_IF_ERROR(internal::InferReshape(
-        dummy_op, absl::MakeSpan(input_shapes), output_shapes));
+    LITERT_RETURN_IF_ERROR(::litert::internal::InferReshape(ctx, result));
 
-    std::vector<int32_t> resolved_output_dims(output_shapes[0].begin(),
-                                              output_shapes[0].end());
+    std::vector<int32_t> resolved_output_dims(result.output_shapes[0].begin(),
+                                              result.output_shapes[0].end());
 
     std::vector<TensorDetails> op_outputs(1);
     op_outputs[0] =
