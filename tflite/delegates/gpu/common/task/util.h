@@ -19,6 +19,7 @@ limitations under the License.
 #include <string>
 #include <vector>
 
+#include "absl/status/status.h"
 #include "tflite/delegates/gpu/common/gpu_info.h"
 #include "tflite/delegates/gpu/common/precision.h"
 #include "tflite/delegates/gpu/common/task/gpu_object_desc.h"
