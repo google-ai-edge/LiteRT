@@ -279,7 +279,7 @@ package_group(
         "//litert/vendors/...",
         # When litert_link_capi_so=false
         "//ci/tools/...",
-        # copybara:uncomment "//third_party/odml/litert/tensor/...",
+        # copybara:uncomment "//tensor/...",
     ] + litert_friends(),
 )
 
