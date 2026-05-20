@@ -83,6 +83,15 @@ enum class GraphPriority {
   kHigh = 4,
 };
 
+struct CustomOpPackage {
+  std::string name = "";
+  std::string interface_provider = "";
+  std::string compile_package_path = "";
+  std::string compile_target = "";
+  std::string dispatch_package_path = "";
+  std::string dispatch_target = "";
+};
+
 class Options {
  public:
   Options() = default;
@@ -147,6 +156,14 @@ class Options {
   void SetGraphIOTensorMemType(GraphIOTensorMemType mem_type);
   GraphIOTensorMemType GetGraphIOTensorMemType() const;
 
+  void SetCustomOpPackage(absl::string_view name,
+                          absl::string_view interface_provider,
+                          absl::string_view compile_package_path,
+                          absl::string_view compile_target,
+                          absl::string_view dispatch_package_path,
+                          absl::string_view dispatch_target);
+  const CustomOpPackage& GetCustomOpPackage() const;
+
  private:
   LogLevel log_level_ = LogLevel::kInfo;
   BackendType backend_type_ = BackendType::kHtpBackend;
@@ -169,6 +186,8 @@ class Options {
   std::string saver_output_dir_;
   GraphIOTensorMemType graph_io_tensor_mem_type_ =
       GraphIOTensorMemType::kMemHandle;
+  // Currently we only support one custom op package.
+  CustomOpPackage custom_op_package_;
 };
 
 // Gets a default logger implementation to stdout.

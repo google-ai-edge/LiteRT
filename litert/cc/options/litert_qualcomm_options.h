@@ -444,6 +444,48 @@ class QualcommOptions {
     return static_cast<GraphIOTensorMemType>(val);
   }
 
+  struct CustomOpPackage {
+    std::string name;
+    std::string interface_provider;
+    std::string compile_package_path;
+    std::string compile_target;
+    std::string dispatch_package_path;
+    std::string dispatch_target;
+  };
+
+  void SetCustomOpPackage(const CustomOpPackage& custom_op_package) {
+    LrtQualcommOptionsSetCustomOpPackage(
+        options_, custom_op_package.name.c_str(),
+        custom_op_package.interface_provider.c_str(),
+        custom_op_package.compile_package_path.c_str(),
+        custom_op_package.compile_target.c_str(),
+        custom_op_package.dispatch_package_path.c_str(),
+        custom_op_package.dispatch_target.c_str());
+  }
+
+  CustomOpPackage GetCustomOpPackage() {
+    const char* name = "";
+    const char* interface_provider = "";
+    const char* compile_package_path = "";
+    const char* compile_target = "";
+    const char* dispatch_package_path = "";
+    const char* dispatch_target = "";
+    auto status = LrtQualcommOptionsGetCustomOpPackage(
+        options_, &name, &interface_provider, &compile_package_path,
+        &compile_target, &dispatch_package_path, &dispatch_target);
+    if (status != kLiteRtStatusOk) {
+      return {};
+    }
+    CustomOpPackage custom_op_package;
+    custom_op_package.name = name;
+    custom_op_package.interface_provider = interface_provider;
+    custom_op_package.compile_package_path = compile_package_path;
+    custom_op_package.compile_target = compile_target;
+    custom_op_package.dispatch_package_path = dispatch_package_path;
+    custom_op_package.dispatch_target = dispatch_target;
+    return custom_op_package;
+  }
+
  private:
   LrtQualcommOptions options_;
 };

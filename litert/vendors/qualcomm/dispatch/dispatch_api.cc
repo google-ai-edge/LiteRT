@@ -135,6 +135,14 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
     LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().c_str());
     return qnn_manager.Error().Status();
   } else {
+    if (const auto& custom_op_package = qnn_options.GetCustomOpPackage();
+        !custom_op_package.name.empty()) {
+      (*qnn_manager)
+          ->RegisterOpPackage(custom_op_package.dispatch_package_path.c_str(),
+                              custom_op_package.interface_provider.c_str(),
+                              custom_op_package.dispatch_target.c_str());
+    }
+
     std::swap(QnnManagerStorage(), *qnn_manager);
   }
 

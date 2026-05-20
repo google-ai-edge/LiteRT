@@ -161,6 +161,10 @@ class QnnManager {
 
   LiteRtStatus ValidateOp(::qnn::OpWrapper& op);
 
+  LiteRtStatus RegisterOpPackage(const std::string& package_path,
+                                 const std::string& interface_provider,
+                                 const std::string& target);
+
   bool IsFp16Supported() {
     // TODO(jiunkaiy): Remove this function after upgrading to stricter SDK
     // restrictions.

@@ -17,6 +17,7 @@
 #include <string>
 
 #include <gtest/gtest.h>
+#include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/litert_expected.h"
@@ -487,6 +488,23 @@ TEST(GraphIOTensorMemTypeTest, Parse) {
     EXPECT_EQ(value, kMemHandleEnum);
     EXPECT_EQ(kMemHandle, AbslUnparseFlag(value));
   }
+}
+
+TEST(CustomOpPackageFlagTest, ParseUnparse) {
+  std::string error;
+  QualcommOptions::CustomOpPackage value;
+  static constexpr absl::string_view kFlagValue =
+      "name:pkg;interface_provider:provider;compile_package_path:compile.so;"
+      "compile_target:CPU;dispatch_package_path:dispatch.so;"
+      "dispatch_target:HTP;";
+  EXPECT_TRUE(AbslParseFlag(kFlagValue, &value, &error));
+  EXPECT_EQ(value.name, "pkg");
+  EXPECT_EQ(value.interface_provider, "provider");
+  EXPECT_EQ(value.compile_package_path, "compile.so");
+  EXPECT_EQ(value.compile_target, "CPU");
+  EXPECT_EQ(value.dispatch_package_path, "dispatch.so");
+  EXPECT_EQ(value.dispatch_target, "HTP");
+  EXPECT_EQ(AbslUnparseFlag(value), kFlagValue);
 }
 
 TEST(QualcommOptionsFromFlagsTest, DefaultValue) {

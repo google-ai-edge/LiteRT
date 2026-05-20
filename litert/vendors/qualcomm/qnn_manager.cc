@@ -429,6 +429,28 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::OpWrapper& op) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus QnnManager::RegisterOpPackage(
+    const std::string& package_path, const std::string& interface_provider,
+    const std::string& target) {
+  if (options_.GetBackendType() == ::qnn::BackendType::kIrBackend) {
+    LITERT_LOG(LITERT_INFO,
+               "Custom op package is not supportted in IrBackend. Ignore.");
+    return kLiteRtStatusOk;
+  }
+
+  if (auto status = Api()->backendRegisterOpPackage(
+          backend_->GetBackendHandle(), package_path.c_str(),
+          interface_provider.c_str(), target.c_str());
+      status != QNN_SUCCESS) {
+    LITERT_LOG(LITERT_ERROR, "Failed to register op package. Error code: %d",
+               status);
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  LITERT_LOG(LITERT_INFO, "Op package loaded successfully.");
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
                               std::optional<::qnn::SocInfo> soc_info,
                               const ::qnn::Options& options) {
@@ -533,6 +555,7 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
   const char* build_id;
   Api()->backendGetBuildId(&build_id);
   LITERT_ASSIGN_OR_RETURN(sdk_version_, ParseSdkVersion(build_id));
+
   return kLiteRtStatusOk;
 }
 
