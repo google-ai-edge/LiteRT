@@ -263,6 +263,36 @@ class QualcommOptions {
     return val;
   }
 
+  /// @brief Enable Deep Learning Bandwidth Compression (DLBC) for activations.
+  ///
+  /// Only effective for offline (x86 AOT) preparation. Defaults to false.
+  void SetDlbc(bool dlbc) { LrtQualcommOptionsSetDlbc(options_, dlbc); }
+  bool GetDlbc() {
+    bool val;
+    auto status = LrtQualcommOptionsGetDlbc(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return val;
+  }
+
+  /// @brief Enable Deep Learning Bandwidth Compression (DLBC) for weights.
+  ///
+  /// Only effective for offline (x86 AOT) preparation. Mutually exclusive
+  /// with weight sharing — when both are enabled the runtime forces this
+  /// option off (matching QAIRT 2.36+ behavior). Defaults to false.
+  void SetDlbcWeights(bool dlbc_weights) {
+    LrtQualcommOptionsSetDlbcWeights(options_, dlbc_weights);
+  }
+  bool GetDlbcWeights() {
+    bool val;
+    auto status = LrtQualcommOptionsGetDlbcWeights(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return val;
+  }
+
   /// @brief This option controls the profiling level.
   ///
   /// A higher level results in a more detailed report after execution.

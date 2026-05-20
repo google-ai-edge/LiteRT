@@ -156,6 +156,30 @@ TEST(LiteRtQualcommOptionsTest, UseFoldReLU) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, Dlbc) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetDlbc(qualcomm_options, true));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_TRUE(parsed.GetDlbc());
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, DlbcWeights) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetDlbcWeights(qualcomm_options, true));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_TRUE(parsed.GetDlbcWeights());
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, HtpPerformanceMode) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -394,6 +418,14 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_TRUE(options->GetUseFoldReLU());
   options->SetUseFoldReLU(false);
   EXPECT_FALSE(options->GetUseFoldReLU());
+
+  EXPECT_FALSE(options->GetDlbc());
+  options->SetDlbc(true);
+  EXPECT_TRUE(options->GetDlbc());
+
+  EXPECT_FALSE(options->GetDlbcWeights());
+  options->SetDlbcWeights(true);
+  EXPECT_TRUE(options->GetDlbcWeights());
 
   EXPECT_EQ(options->GetBackend(), QualcommOptions::Backend::kHtp);
   options->SetBackend(QualcommOptions::Backend::kDsp);

@@ -153,6 +153,28 @@ LiteRtStatus LrtQualcommOptionsSetUseFoldReLU(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetUseFoldReLU(LrtQualcommOptions options,
                                               bool* use_fold_relu);
 
+// dlbc
+
+// Deep Learning Bandwidth Compression (DLBC) for activations / inputs.
+// Only effective for offline (x86 AOT) preparation. Defaults to false.
+
+LiteRtStatus LrtQualcommOptionsSetDlbc(LrtQualcommOptions options, bool dlbc);
+
+LiteRtStatus LrtQualcommOptionsGetDlbc(LrtQualcommOptions options, bool* dlbc);
+
+// dlbc_weights
+
+// DLBC for weight tensors. Only effective for offline (x86 AOT) preparation.
+// Mutually exclusive with weight sharing — when both are enabled the runtime
+// will force this option off (matching QAIRT 2.36+ behavior). Defaults to
+// false.
+
+LiteRtStatus LrtQualcommOptionsSetDlbcWeights(LrtQualcommOptions options,
+                                              bool dlbc_weights);
+
+LiteRtStatus LrtQualcommOptionsGetDlbcWeights(LrtQualcommOptions options,
+                                              bool* dlbc_weights);
+
 // graph_io_tensor_mem_type
 
 // This controls whether graph inputs and outputs use MemHandle or Raw buffers
