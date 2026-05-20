@@ -97,7 +97,7 @@ LiteRtStatus RegisterGpuAccelerator(LiteRtEnvironment environment) {
     for (auto plugin_path : kGpuAcceleratorLibs) {
       std::filesystem::path full_plugin_path =
           std::filesystem::path(runtime_lib_path) / std::string(plugin_path);
-      LITERT_LOG(LITERT_INFO, "Loading GPU accelerator(%s).",
+      LITERT_LOG(LITERT_INFO, "Attempting to load GPU accelerator(%s).",
                  full_plugin_path.c_str());
       // Try to load a GPU accelerator using `LiteRtAcceleratorImpl` symbol.
       auto registration = RegisterSharedObjectAcceleratorViaAcceleratorDef(

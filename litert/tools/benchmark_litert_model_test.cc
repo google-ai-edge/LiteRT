@@ -106,7 +106,7 @@ TEST_F(BenchmarkLiteRtModelTest, CpuOnlyInitDoesNotProbeGpuAccelerator) {
   EXPECT_EQ(benchmark.Init(), kTfLiteOk);
   const std::string logs = testing::internal::GetCapturedStderr();
 
-  EXPECT_EQ(logs.find("Loading GPU accelerator("), std::string::npos) << logs;
+  EXPECT_EQ(logs.find("Attempting to load GPU accelerator("), std::string::npos) << logs;
 }
 
 TEST_F(BenchmarkLiteRtModelTest, BenchmarkWithResultFilePath) {
