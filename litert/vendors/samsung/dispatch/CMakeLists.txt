@@ -21,16 +21,21 @@ target_sources(dispatch_api_samsung_so
         enn_manager.cc
         litert_dispatch_device_context.cc
         litert_dispatch_invocation_context.cc
+        litert_weight_binary_manager.cc
 )
+add_dependencies(dispatch_api_samsung_so samsung_schema_gen)
+
 target_include_directories(dispatch_api_samsung_so
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/../schema/generated/include>
         $<$<BOOL:${LITECORE_HEADERS_DIR}>:${LITECORE_HEADERS_DIR}>
 )
 target_link_libraries(dispatch_api_samsung_so
     PRIVATE
         samsung_soc_model
         samsung_ai_litecore_manager
+        samsung_byte_code
         litert_runtime_c_api_static
 )
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")

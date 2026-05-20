@@ -28,12 +28,14 @@ litert_dynamic_lib(
         "enn_manager.cc",
         "litert_dispatch_device_context.cc",
         "litert_dispatch_invocation_context.cc",
+        "litert_weight_binary_manager.cc",
     ],
     hdrs = [
         "enn_manager.h",
         "enn_type.h",
         "litert_dispatch_device_context.h",
         "litert_dispatch_invocation_context.h",
+        "litert_weight_binary_manager.h",
     ],
     copts = [
         "-Os",
@@ -74,6 +76,7 @@ litert_dynamic_lib(
         "//litert/cc/internal:litert_shared_library",
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
+        "//litert/vendors/samsung/schema:litert_samsung_header",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/strings:string_view",
     ],
