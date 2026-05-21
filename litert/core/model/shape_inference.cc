@@ -28,15 +28,18 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/ops/broadcast_args.h"
 #include "litert/core/model/ops/broadcast_to.h"
 #include "litert/core/model/ops/concatenation.h"
 #include "litert/core/model/ops/convolution.h"
+#include "litert/core/model/ops/expand_dims.h"
 #include "litert/core/model/ops/gather.h"
 #include "litert/core/model/ops/matmul.h"
 #include "litert/core/model/ops/one_hot.h"
 #include "litert/core/model/ops/pack.h"
 #include "litert/core/model/ops/pad.h"
 #include "litert/core/model/ops/pooling.h"
+#include "litert/core/model/ops/range.h"
 #include "litert/core/model/ops/reductions.h"
 #include "litert/core/model/ops/reshape.h"
 #include "litert/core/model/ops/select.h"
@@ -45,6 +48,7 @@
 #include "litert/core/model/ops/simple_unary.h"
 #include "litert/core/model/ops/slice.h"
 #include "litert/core/model/ops/spatial.h"
+#include "litert/core/model/ops/squeeze.h"
 #include "litert/core/model/ops/topk.h"
 #include "litert/core/model/ops/transpose.h"
 #include "litert/core/model/ops/unpack.h"
@@ -291,6 +295,10 @@ void ShapeInferenceEngine::RegisterStandardOps() {
   RegisterInferrer(kLiteRtOpCodeTflShape, InferShape);
   RegisterInferrer(kLiteRtOpCodeTflRank, InferRank);
   RegisterInferrer(kLiteRtOpCodeTflReshape, InferReshape);
+  RegisterInferrer(kLiteRtOpCodeTflExpandDims, InferExpandDims);
+  RegisterInferrer(kLiteRtOpCodeTflSqueeze, InferSqueeze);
+  RegisterInferrer(kLiteRtOpCodeTflRange, InferRange);
+  RegisterInferrer(kLiteRtOpCodeTflBroadcastArgs, InferBroadcastArgs);
 }
 
 void ShapeInferenceEngine::RegisterInferrer(LiteRtOpCode op_code,

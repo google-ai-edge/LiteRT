@@ -434,6 +434,10 @@ TEST(ShapeInferenceTest, CheckSupportedOps) {
       kLiteRtOpCodeTflTopkV2,
       kLiteRtOpCodeTflShape,
       kLiteRtOpCodeTflRank,
+      kLiteRtOpCodeTflExpandDims,
+      kLiteRtOpCodeTflSqueeze,
+      kLiteRtOpCodeTflRange,
+      kLiteRtOpCodeTflBroadcastArgs,
   };
 
   ShapeInferenceEngine engine;
