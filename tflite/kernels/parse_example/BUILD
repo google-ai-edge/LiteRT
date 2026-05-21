@@ -38,7 +38,6 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/core/platform:hash",
     ] + select({
         "@org_tensorflow//tensorflow:android": [
             "@org_tensorflow//tensorflow/core:portable_tensorflow_lib_lite",
@@ -54,6 +53,7 @@ cc_library(
             "@org_tensorflow//tensorflow/core:lib",
             "@org_tensorflow//tensorflow/core:lib_internal",
             "@org_tensorflow//tensorflow/core:protos_all_cc",
+            "@org_tensorflow//tensorflow/core/platform:hash",
         ],
     }),
 )
