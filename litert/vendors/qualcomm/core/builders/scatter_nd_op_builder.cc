@@ -8,7 +8,7 @@
 #include <cstring>
 #include <vector>
 
-#include "QnnOpDef.h"
+#include "QnnOpDef.h"  // from @qairt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"

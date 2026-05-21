@@ -19,7 +19,7 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "if_oss")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test", "litert_integration_test")
-load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "get_libs")
+load("//litert/integration_test:litert_device_common.bzl", "cc_import_files", "device_rlocation", "get_libs")
 load("//litert/integration_test:litert_device_script.bzl", "litert_device_script", "make_download_model_provider")
 # copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_intel_openvino_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_mh_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
 
@@ -641,4 +641,46 @@ litert_device_test(
         "@com_google_absl//absl/flags:flag",
         "@com_google_googletest//:gtest_main",
     ],
+)
+
+cc_import_files(
+    name = "libQnnHtp.so",
+    testonly = True,
+    target = "@qairt//:libQnnHtp.so",
+)
+
+cc_import_files(
+    name = "libQnnSystem.so",
+    testonly = True,
+    target = "@qairt//:libQnnSystem.so",
+)
+
+cc_import_files(
+    name = "libQnnHtpPrepare.so",
+    testonly = True,
+    target = "@qairt//:libQnnHtpPrepare.so",
+)
+
+cc_import_files(
+    name = "libQnnHtpV75Stub.so",
+    testonly = True,
+    target = "@qairt//:libQnnHtpV75Stub.so",
+)
+
+cc_import_files(
+    name = "libQnnHtpV75Skel.so",
+    testonly = True,
+    target = "@qairt//:libQnnHtpV75Skel.so",
+)
+
+cc_import_files(
+    name = "libQnnHtpV79Stub.so",
+    testonly = True,
+    target = "@qairt//:libQnnHtpV79Stub.so",
+)
+
+cc_import_files(
+    name = "libQnnHtpV79Skel.so",
+    testonly = True,
+    target = "@qairt//:libQnnHtpV79Skel.so",
 )

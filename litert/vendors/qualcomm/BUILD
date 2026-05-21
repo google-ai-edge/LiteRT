@@ -24,11 +24,13 @@ load("//litert/vendors/qualcomm:qualcomm_build_defs.bzl", "litert_cc_lib_with_qn
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:__subpackages__"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
 )
 
 cc_library(
     name = "common",
     hdrs = ["common.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
@@ -44,6 +46,7 @@ cc_library(
 cc_library(
     name = "qnn_manager_hdr",
     hdrs = ["qnn_manager.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
         ":common",
         "//litert/c:litert_common",
@@ -67,6 +70,7 @@ litert_cc_lib_with_qnn(
         "qnn_manager.cc",
     ],
     hdrs = ["qnn_manager.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
     include_system = True,
     ungrte = True,
     deps = [
@@ -166,6 +170,7 @@ cc_library(
     name = "qnn_saver_utils",
     srcs = ["qnn_saver_utils.cc"],
     hdrs = ["qnn_saver_utils.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",

@@ -11,6 +11,7 @@ package(
         "//litert/cc:__subpackages__",
         "//litert/vendors/qualcomm:__subpackages__",
     ],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
 )
 
 cc_library(
@@ -33,6 +34,7 @@ cc_library(
     name = "miscs",
     srcs = ["miscs.cc"],
     hdrs = ["miscs.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
     linkopts = ["-ldl"],
     deps = [
         ":log",

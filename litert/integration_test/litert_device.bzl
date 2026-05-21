@@ -165,7 +165,6 @@ def litert_device_exec(
         backend_id = backend_id,
     )
 
-    # Copybara comment doesn't work right if it is inside an if statement (breaks formatting).
     if remote_suffix != None:
         # Note model providers are not compatible with mobile harness.
         _litert_mh_exec(

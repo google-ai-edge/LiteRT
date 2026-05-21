@@ -23,6 +23,7 @@ load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//visibility:private"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
 )
 
 litert_dispatch_api(
@@ -46,6 +47,7 @@ litert_dispatch_api(
         "-fdata-sections",
     ],
     export_litert_only = True,
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
     linkopts = litert_android_linkopts() + [
         "-Wl,-soname=libLiteRtDispatch_Qualcomm.so",
         "-Wl,-lc++abi",

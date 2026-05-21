@@ -25,6 +25,7 @@ package(
     default_visibility = [
         "//visibility:private",
     ],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
 )
 
 litert_dynamic_lib(
@@ -220,6 +221,7 @@ litert_lib(
     name = "qnn_compose_graph",
     srcs = ["qnn_compose_graph.cc"],
     hdrs = ["qnn_compose_graph.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
         ":graph_mapper",
         "//litert/c:litert_common",
@@ -311,6 +313,7 @@ litert_lib(
     name = "graph_mapper",
     srcs = ["graph_mapper.cc"],
     hdrs = ["graph_mapper.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
     visibility = ["//litert:__subpackages__"],
     deps = [
         "//litert/c:litert_common",

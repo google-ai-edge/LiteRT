@@ -6,12 +6,14 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert/vendors/qualcomm:__subpackages__"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
 )
 
 cc_library(
     name = "op_builder",
     srcs = ["op_builder.cc"],
     hdrs = ["op_builder.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core:tensor_pool",

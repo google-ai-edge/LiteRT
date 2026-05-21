@@ -29,6 +29,7 @@ package(
     default_visibility = [
         "//litert:litert_public",
     ],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
 )
 
 # BUILD CONFIGURATIONS #############################################################################
@@ -116,14 +117,14 @@ litert_test(
     data = select({
         "//litert:linux_x86_64": [
             # copybara:uncomment "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
-            "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
-            "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
+            "@qairt//:libQnnHtp.so",
+            "@qairt//:libQnnSystem.so",
         ],
         "//conditions:default": [],
     }),
     linkopts = ["-ldl"] + select({
         "//litert:linux_x86_64": [
-            make_rpaths(["@qairt//:lib/x86_64-linux-clang/libQnnHtp.so"]),
+            make_rpaths(["@qairt//:libQnnHtp.so"]),
             # copybara:uncomment make_rpaths(["@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so"]),
         ],
         "//conditions:default": [],
@@ -168,7 +169,7 @@ litert_test(
 # sdk_release_tar(
 #     name = "litert_qualcomm_sdk_release",
 #     srcs = [
-#         "@qairt//:qnn_htp_latest_files",
+#         "//third_party/qairt/latest:qnn_htp_latest_files",
 #     ],
 #     strip_prefix = "third_party/qairt",
 # )
