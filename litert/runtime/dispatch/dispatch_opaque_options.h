@@ -60,6 +60,25 @@ class DispatchDelegateOptions : public OpaqueOptions {
 
   // Get alloc base fd.
   Expected<int> GetAllocBaseFd();
+
+  // alloc_base_file_offset ----------------------------------------------------
+
+  // Byte offset of alloc_base in the backing file when alloc_base_fd is used.
+  Expected<void> SetAllocBaseFileOffset(size_t alloc_base_file_offset);
+
+  // Get alloc base file offset.
+  Expected<size_t> GetAllocBaseFileOffset();
+
+  // alloc_base_size -----------------------------------------------------------
+
+  // Size in bytes of the model rooted at alloc_base when alloc_base_fd is used.
+  Expected<void> SetAllocBaseSize(size_t alloc_base_size);
+
+  // Get alloc base size.
+  Expected<size_t> GetAllocBaseSize();
+
+  // Returns whether the file region metadata (offset or size) is populated.
+  Expected<bool> HasAllocBaseFileRegion();
 };
 
 }  // namespace litert::internal
