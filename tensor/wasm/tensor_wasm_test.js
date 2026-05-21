@@ -706,6 +706,62 @@ describe("LiteRT WebAssembly Complete End-to-End Bindings Verification", () => {
     c_out.delete();
     runner.delete();
   });
+
+  it("verifies wrapping and executing operations using the jit() decorator successfully", async () => {
+    if (!litert) return;
+
+    const addPipeline = litert.jit((x, y) => {
+      return x.add(y);
+    }, { accelerators: litert.HwAccelerators.CPU });
+
+    const a = litert.createTensorWithData(new Float32Array([1, 2, 3]), litert.TensorType.FP32, [3]);
+    const b = litert.createTensorWithData(new Float32Array([10, 20, 30]), litert.TensorType.FP32, [3]);
+
+    const output = await addPipeline(a, b);
+    expect(output).toBeDefined();
+
+    const retrievedData = await output.getData();
+    expect(retrievedData).toEqual(new Float32Array([11, 22, 33]));
+
+    a.delete();
+    b.delete();
+    output.delete();
+  });
+
+  it("verifies wrapping and executing multi-signature operations using jitMulti() successfully", async () => {
+    if (!litert) return;
+
+    const model = litert.jitMulti({
+      addSig: {
+        func: (x, y) => x.add(y),
+        inputs: [{ type: 'FP32', shape: [2] }, { type: 'FP32', shape: [2] }]
+      },
+      mulSig: {
+        func: (x, y) => x.mul(y),
+        inputs: [{ type: 'FP32', shape: [2] }, { type: 'FP32', shape: [2] }]
+      }
+    }, { accelerators: litert.HwAccelerators.CPU });
+
+    const a = litert.createTensorWithData(new Float32Array([2, 4]), litert.TensorType.FP32, [2]);
+    const b = litert.createTensorWithData(new Float32Array([10, 20]), litert.TensorType.FP32, [2]);
+
+    const sum = await model.addSig(a, b);
+    const prod = await model.mulSig(a, b);
+
+    expect(sum).toBeDefined();
+    expect(prod).toBeDefined();
+
+    const sumData = await sum.getData();
+    const prodData = await prod.getData();
+
+    expect(sumData).toEqual(new Float32Array([12, 24]));
+    expect(prodData).toEqual(new Float32Array([20, 80]));
+
+    a.delete();
+    b.delete();
+    sum.delete();
+    prod.delete();
+  });
 });
 
 

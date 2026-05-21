@@ -65,65 +65,53 @@
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 512, height: 512 } });
       video.srcObject = stream;
       await video.play();
-      // 1. Create Input Tensors for Pre-processing
-      const rawImage = litert.createTensor({
-        name: "raw_image",
-        type: "FP32",
-        shape: [1, 512, 512, 3]
-      });
+      // 1. Allocate intermediate persistent Tensors
+      const rawImage = litert.createTensor({ type: "FP32", shape: [1, 512, 512, 3], name: "raw_image" });
+      const scaleTensor = litert.createTensor({ type: "FP32", shape: [1], name: "scale" });
+      const offsetTensor = litert.createTensor({ type: "FP32", shape: [1], name: "offset" });
+      const colors = litert.createTensor({ type: "FP32", shape: [6, 4], name: "colors" });
 
-      const scaleTensor = litert.createTensor({
-        name: "scale",
-        type: "FP32",
-        shape: [1]
-      });
+      // Initialize constant parameters once upfront (highly optimized)
+      await scaleTensor.setData(new Float32Array([2.0]));
+      await offsetTensor.setData(new Float32Array([-1.0]));
+      await colors.setData(new Float32Array([
+        0.0, 0.0, 0.0, 0.0, // Background (transparent)
+        1.0, 0.0, 0.0, 0.5, // Class 1 (semi-transparent red)
+        0.0, 1.0, 0.0, 0.5, // Class 2 (semi-transparent green)
+        0.0, 0.0, 1.0, 0.5, // Class 3 (semi-transparent blue)
+        1.0, 1.0, 0.0, 0.5, // Class 4 (semi-transparent yellow)
+        1.0, 0.0, 1.0, 0.5  // Class 5 (semi-transparent magenta)
+      ]));
 
-      const offsetTensor = litert.createTensor({
-        name: "offset",
-        type: "FP32",
-        shape: [1]
-      });
+      // 2. Define the Pre-processing JIT pipeline
+      const preprocess = litert.jit((img, scale, offset) => {
+        return img.resizeBilinear([256, 256], false, false).mul(scale).add(offset);
+      }, { accelerators: litert.HwAccelerators.GPU });
 
-      // 2. Build Pre-processing Graph: resize -> scale (mul) -> normalize (add)
-      const resized = rawImage.resizeBilinear([256, 256], false, false);
-      const preprocessed = resized.mul(scaleTensor)
-                                   .add(offsetTensor);
+      // 3. Define the Post-processing JIT pipeline
+      const postprocess = litert.jit((logits, colMap) => {
+        const winningClasses = logits.argMax(-1);
+        const winning1D = winningClasses.reshape([256 * 256]);
+        const maskColor1D = colMap.gather(winning1D, 0);
+        return maskColor1D.reshape([1, 256, 256, 4]);
+      }, { accelerators: litert.HwAccelerators.GPU });
 
-      // 3. Create Input Tensors for Post-processing
-      const modelOutput = litert.createTensor({
-        name: "model_output",
-        type: "FP32",
-        shape: [1, 256, 256, 6]
-      });
-
-      const colors = litert.createTensor({
-        name: "colors",
-        type: "FP32",
-        shape: [6, 4]
-      });
-
-      // 4. Build Post-processing Graph: ArgMax -> Reshape -> Gather -> Reshape
-      const winningClasses = modelOutput.argMax(-1);
-      const winning1D = winningClasses.reshape([256 * 256]);
-      const maskColor1D = colors.gather(winning1D, 0);
-      const maskOut = maskColor1D.reshape([1, 256, 256, 4]);
-
-      // 5. Init Pre/Core/Post model runners
-      const preRunner = await litert.createGraphRunner(
-          {"raw_image": rawImage, "scale": scaleTensor, "offset": offsetTensor},
-          {"normalized_image": preprocessed}
-      );
-      console.log("HwAccelerators:", litert.HwAccelerators);
-      if (litert.HwAccelerators) {
-        console.log("CPU:", litert.HwAccelerators.CPU);
-      }
-
+      // 4. Core TFLite runner
       const coreRunner = litert.createModelRunner(new Uint8Array(modelBytes), litert.HwAccelerators ? (litert.HwAccelerators.CPU.value | litert.HwAccelerators.GPU.value) : 3);
 
-      const postRunner = await litert.createGraphRunner(
-          {"model_output": modelOutput, "colors": colors},
-          {"blended": maskOut}
-      );
+      // 5. Compile JIT pipelines upfront using the sample persistent placeholders (Pre-compilation / Warm-up)
+      infoDiv.textContent = "Compiling pre-processing pipeline...";
+      await preprocess.compile(rawImage, scaleTensor, offsetTensor);
+
+      infoDiv.textContent = "Compiling post-processing pipeline...";
+      await postprocess.compile(coreRunner.getOutput(0), colors);
+
+      // 6. Extract the persistent WebGPU input buffer of the compiled runner once upfront
+      const preInputTensor = preprocess.getRunner().getInput(preprocess.getInputName(0));
+      const dstBufferIdPre = preInputTensor.getWebGpuBuffer();
+      const dstBufferPre = litert.WebGPU.getJsObject(dstBufferIdPre);
+
+
 
       const canvas = document.getElementById("outputCanvas");
       const gpu_context = canvas.getContext("webgpu");
@@ -219,71 +207,38 @@
  
           // Pass input data to pre-processing model
           const tSetPre0 = performance.now();
-          // Get raw GPU buffer handle
-          const preInputTensor = preRunner.getInput("raw_image");
-          const dstBufferIdPre = preInputTensor.getWebGpuBuffer();
-          const dstBufferPre = litert.WebGPU.getJsObject(dstBufferIdPre);
-
-          // Copy directly to GPU buffer!
+          // Write webcam pixel data directly into the compiled WebGPU input buffer (Zero-Copy!)
           device.queue.writeBuffer(dstBufferPre, 0, floatPixels);
-
-          // Set constants for pre-processing
-          const scaleData = new Float32Array([2.0]);
-          preRunner.setInputBinary("scale", new Uint8Array(scaleData.buffer));
-
-          const offsetData = new Float32Array([-1.0]);
-          preRunner.setInputBinary("offset", new Uint8Array(offsetData.buffer));
           const tSetPre1 = performance.now();
  
-          // Execute Pre-processing
+          // 1. Execute JIT Pre-processing
           const tPre0 = performance.now();
-          await preRunner.run();
+          const preOutputTensor = await preprocess(rawImage, scaleTensor, offsetTensor);
           const tPre1 = performance.now();
 
-          // Pass output of pre-processing to core model
-          const preOutputTensor = preRunner.getOutput("normalized_image");
-
+          // 2. Bind Pre-processing output directly to Core TFLite model
           const coreInputTensor = coreRunner.getInput(0);
           const inputName = coreInputTensor.getName();
 
           const tSetCore0 = performance.now();
-          
-          // Share WebGPU buffer directly between runners instead of copying!
           coreRunner.setInput(inputName, preOutputTensor);
-          
           const tSetCore1 = performance.now();
 
-          // Execute Core Model
+          // 3. Execute Core Model
           const tCore0 = performance.now();
           await coreRunner.run();
           await device.queue.onSubmittedWorkDone();
           const tCore1 = performance.now();
 
-          // Pass output of core model to post-processing
+          // 4. Execute JIT Post-processing
           const coreOutputTensor = coreRunner.getOutput(0);
           const tSetPost0 = performance.now();
-          
-          // Share WebGPU buffer directly between runners instead of copying!
-          postRunner.setInput("model_output", coreOutputTensor);
-          // Set colors for post-processing (RGBA)
-          const colorsData = new Float32Array([
-            0.0, 0.0, 0.0, 0.0, // Background (transparent)
-            1.0, 0.0, 0.0, 0.5, // Class 1 (semi-transparent red)
-            0.0, 1.0, 0.0, 0.5, // Class 2 (semi-transparent green)
-            0.0, 0.0, 1.0, 0.5, // Class 3 (semi-transparent blue)
-            1.0, 1.0, 0.0, 0.5, // Class 4 (semi-transparent yellow)
-            1.0, 0.0, 1.0, 0.5  // Class 5 (semi-transparent magenta)
-          ]);
-          postRunner.setInputBinary("colors", new Uint8Array(colorsData.buffer));
-
+          // Constants are already set upfront inside colors tensor!
           const tSetPost1 = performance.now();
 
-          // Execute Post-processing
           const tPost0 = performance.now();
-          await postRunner.run();
+          const postOutputTensor = await postprocess(coreOutputTensor, colors);
           const tPost1 = performance.now();
-
-          const postOutputTensor = postRunner.getOutput("blended");
           const tDraw0 = performance.now();
 
 

@@ -130,6 +130,7 @@
         <button class="secondary snippet-btn" id="btn-reduction" onclick="loadSnippet('reduction')">Reductions</button>
         <button class="secondary snippet-btn" id="btn-broadcasting" onclick="loadSnippet('broadcasting')">Broadcasting</button>
         <button class="secondary snippet-btn" id="btn-lambda" onclick="loadSnippet('lambda')">Static Graph</button>
+        <button class="secondary snippet-btn" id="btn-jit" onclick="loadSnippet('jit')">JIT Mode</button>
         <button class="secondary snippet-btn" id="btn-eager" onclick="loadSnippet('eager')">Eager Mode</button>
       </div>
       <textarea id="codeEditor">// Write JavaScript using the 'litert' WASM module
@@ -301,7 +302,39 @@ println("Executing t1.add(t2) eagerly...");
 const result = t1.add(t2);
 
 // No runner needed!
-logTensor(result, "Eager Addition Result");`
+logTensor(result, "Eager Addition Result");`,
+
+      jit: `// JIT Compilation Mode using litert.jit()
+// Write clean, eager-like functions that get traced & compiled transparently
+
+// 1. Define a standard JS math function and wrap it in litert.jit()
+const fusedPipeline = litert.jit((x, scale, bias) => {
+  // Traces operations (Resize, Mul, Add, Relu) on placeholders under the hood
+  const resized = x.resizeBilinear([2, 2], false, false);
+  return resized.mul(scale).add(bias).relu();
+});
+
+// 2. Prepare inputs with concrete data
+const shape = [1, 4, 4, 1];
+const img = litert.createTensorWithData([
+  1, 2, 3, 4,
+  5, 6, 7, 8,
+  9, 10, 11, 12,
+  13, 14, 15, 16
+], litert.TensorType.FP32, shape, "image");
+
+const scale = litert.createTensorWithData([10.0], litert.TensorType.FP32, [1], "scale");
+const bias = litert.createTensorWithData([-50.0], litert.TensorType.FP32, [1], "bias");
+
+println("Executing JIT Pipeline for the first time...");
+println("(Traces inputs, AOT compiles graph, and dispatches on WebGPU/CPU)");
+let output = await fusedPipeline(img, scale, bias);
+await logTensor(output, "JIT Execution 1 Output");
+
+println("Executing JIT Pipeline for the second time...");
+println("(Skips compilation completely, re-binds buffers zero-copy, dispatches instantly)");
+output = await fusedPipeline(img, scale, bias);
+await logTensor(output, "JIT Execution 2 Output");`
     };
 
     let editor = null;

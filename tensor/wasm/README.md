@@ -56,6 +56,63 @@ Runner for dynamic models loaded from TFLite buffer.
 -   `createDynamicRunnerFromBuffer(buffer, accelerators)`: Create a dynamic runner from a TFLite model buffer.
 -   `createMultiSignatureRunner(signatures, accelerator)`: Create a multi-signature runner from a set of graph outputs.
 -   `setEagerMode(enable)`: Enable or disable automatic eager execution mode globally.
+-   `jit(func, options)`: Creates a JIT-compiled mathematical pipeline from a standard JS function.
+-   `jitMulti(sigConfigs, options)`: Compiles multiple state-sharing subgraphs into a single multi-signature runner.
+
+## JIT Compilation Mode
+
+LiteRT WASM supports a high-performance **JIT (Just-In-Time) Compilation Mode** via `litert.jit()` and `litert.jitMulti()`. This allows you to write standard, readable mathematical JavaScript functions that look like normal eager code, but are compiled into optimized execution pipelines behind the scenes.
+
+### How JIT Works
+1. **Lazy Tracing (First Execution)**: The JIT decorator intercepts the first call, creates placeholder "tracers" matching the argument shapes/types, executes your function under the hood to trace the DAG, and compiles an optimized `createGraphRunner`.
+2. **Cached Fast-Path Execution (Subsequent Runs)**: On all subsequent invocations, compilation is skipped entirely. The arguments are dynamically bound zero-copy to the compiled runner, executing immediately on the hardware accelerator.
+
+### 1. Single JIT Pipeline (`jit()`)
+
+Ideal for stateless, straight-line execution flows like pre-processing:
+
+```javascript
+// Define and wrap a function in litert.jit()
+const preprocess = litert.jit((img, scale, bias) => {
+  // Traces Bilinear Resizing, Multiplication, and Addition
+  const resized = img.resizeBilinear([256, 256], false, false);
+  return resized.mul(scale).add(bias).relu();
+}, { accelerators: litert.HwAccelerators.GPU });
+
+// Execute dynamically (Zero-copy buffer sharing)
+const outputTensor = await preprocess(imageTensor, scaleTensor, biasTensor);
+```
+
+### 2. Multi-Signature State Sharing (`jitMulti()`)
+
+Ideal for state-sharing pipelines, such as Large Language Models with persistent key-value caches. By defining shared state variables inside JavaScript closures, both subgraphs share the same persistent GPU buffers:
+
+```javascript
+// Shared KV-Cache buffer allocated once on the GPU
+const kvCache = litert.createTensor({ type: 'FP32', shape: [1, 32, 128, 128] });
+
+const gemma3 = litert.jitMulti({
+  prefill: {
+    func: (inputTokens) => {
+      // Traces writing to the shared kvCache
+      kvCache.setData(...);
+      return inputTokens.mul(10);
+    },
+    inputs: [{ type: 'FP32', shape: [1, 32] }] // Expected input signature
+  },
+  decode: {
+    func: (nextToken) => {
+      // Traces reading from the shared kvCache
+      return nextToken.add(kvCache.sum([2]));
+    },
+    inputs: [{ type: 'FP32', shape: [1, 1] }]
+  }
+}, { accelerators: litert.HwAccelerators.GPU });
+
+// Call the compiled endpoints directly
+const prefillLogits = await gemma3.prefill(actualPrefillTokens);
+const nextLogits    = await gemma3.decode(actualNextToken);
+```
 
 ## Eager Execution Mode
 

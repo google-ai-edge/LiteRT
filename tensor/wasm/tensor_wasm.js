@@ -312,6 +312,193 @@ export function wrapLiteRTModule(module) {
     return new LiteRtMultiSignatureRunner(rawRunner, module);
   };
 
+  module.jit = function(func, options = {}) {
+    let compiledRunner = null;
+    let inputNames = [];
+    const outputName = "jit_output";
+
+    const jittedFn = async function(...args) {
+      if (!compiledRunner) {
+        const inputBindings = {};
+        inputNames = args.map((_, index) => `jit_input_${index}`);
+
+        const traceArgs = args.map((arg, index) => {
+          if (!arg || !arg.getName) {
+            throw new Error(`jit() arguments must be LiteRT Tensors. Argument at index ${index} is not a Tensor.`);
+          }
+          const name = inputNames[index];
+          const placeholder = module.createTensor({
+            name: name,
+            type: arg.getType(),
+            shape: arg.getShape()
+          });
+          inputBindings[name] = placeholder;
+          return placeholder;
+        });
+
+        const wasEager = eagerMode;
+        eagerMode = false;
+
+        let tracedOutput;
+        try {
+          tracedOutput = func(...traceArgs);
+        } finally {
+          eagerMode = wasEager;
+        }
+
+        if (!tracedOutput || !tracedOutput.getName) {
+          throw new Error("The jitted function must return a LiteRT Tensor.");
+        }
+
+        tracedOutput.setName(outputName);
+        const outputBindings = { [outputName]: tracedOutput };
+
+        const rawRunner = await module.createStaticLambdaRunner(
+          inputBindings,
+          outputBindings,
+          options.accelerators !== undefined ? (typeof options.accelerators === 'object' ? options.accelerators.value : options.accelerators) : (module.HwAccelerators.GPU ? module.HwAccelerators.GPU.value : 2)
+        );
+        compiledRunner = new LiteRTRunner(rawRunner, module);
+      }
+
+      for (let i = 0; i < args.length; i++) {
+        compiledRunner.setInput(inputNames[i], args[i]);
+      }
+
+      await compiledRunner.run();
+      return compiledRunner.getOutput(outputName);
+    };
+
+    jittedFn.getRunner = () => compiledRunner;
+    jittedFn.getInputName = (index) => `jit_input_${index}`;
+    jittedFn.compile = async function(...sampleArgs) {
+      if (compiledRunner) return;
+      await jittedFn(...sampleArgs);
+    };
+
+    return jittedFn;
+  };
+
+  module.jitMulti = function(sigConfigs, options = {}) {
+    let compiledRunner = null;
+    const sigInputNames = {};
+    const sigOutputNames = {};
+    const jittedObject = {};
+
+    async function compileAll(sampleInputs = null) {
+      const signaturesBindings = {};
+      const wasEager = eagerMode;
+      eagerMode = false;
+
+      try {
+        for (const [sigName, config] of Object.entries(sigConfigs)) {
+          let func, inputs;
+          if (typeof config === 'function') {
+            func = config;
+            if (!sampleInputs || !sampleInputs[sigName]) {
+              throw new Error(`Cannot compile signature '${sigName}'. No sample inputs supplied.`);
+            }
+            inputs = sampleInputs[sigName].map(arg => ({
+              type: arg.getType(),
+              shape: arg.getShape()
+            }));
+          } else {
+            func = config.func;
+            inputs = config.inputs;
+            if (!func || !inputs) {
+              throw new Error(`Invalid configuration for signature '${sigName}'. Must contain 'func' and 'inputs'.`);
+            }
+          }
+
+          sigInputNames[sigName] = inputs.map((_, idx) => `sig_${sigName}_in_${idx}`);
+          const traceArgs = inputs.map((inputDesc, idx) => {
+            return module.createTensor({
+              name: sigInputNames[sigName][idx],
+              type: inputDesc.type,
+              shape: inputDesc.shape
+            });
+          });
+
+          let tracedOutputs = func(...traceArgs);
+          if (!Array.isArray(tracedOutputs)) {
+            tracedOutputs = [tracedOutputs];
+          }
+
+          sigOutputNames[sigName] = tracedOutputs.map((out, idx) => {
+            if (!out || !out.getName) {
+              throw new Error(`Signature '${sigName}' must return LiteRT Tensor(s).`);
+            }
+            const outName = `sig_${sigName}_out_${idx}`;
+            out.setName(outName);
+            return outName;
+          });
+
+          signaturesBindings[sigName] = {
+            outputs: tracedOutputs
+          };
+        }
+      } finally {
+        eagerMode = wasEager;
+      }
+
+      let acc = options.accelerators;
+      if (acc && typeof acc === 'object' && acc.value !== undefined) {
+        acc = acc.value;
+      }
+      if (acc === undefined) {
+        acc = module.HwAccelerators.GPU ? module.HwAccelerators.GPU.value : 2;
+      }
+
+      const rawRunner = module.createMultiSignatureRunnerInternal(signaturesBindings, acc);
+      compiledRunner = new LiteRtMultiSignatureRunner(rawRunner, module);
+    }
+
+    let canCompileImmediately = true;
+    for (const config of Object.values(sigConfigs)) {
+      if (typeof config === 'function' || !config.inputs) {
+        canCompileImmediately = false;
+        break;
+      }
+    }
+
+    let compilationPromise = null;
+    if (canCompileImmediately) {
+      compilationPromise = compileAll();
+    }
+
+    for (const sigName of Object.keys(sigConfigs)) {
+      jittedObject[sigName] = async function(...args) {
+        if (compilationPromise) {
+          await compilationPromise;
+        }
+        if (!compiledRunner) {
+          throw new Error("jitMulti: Runner is not compiled yet. Call .compile(sampleInputs) first.");
+        }
+
+        const inputNames = sigInputNames[sigName];
+        for (let i = 0; i < args.length; i++) {
+          compiledRunner.setInput(sigName, inputNames[i], args[i]);
+        }
+
+        await compiledRunner.run(sigName);
+
+        const outputNames = sigOutputNames[sigName];
+        const results = outputNames.map(name => compiledRunner.getOutput(sigName, name));
+        return results.length === 1 ? results[0] : results;
+      };
+    }
+
+    jittedObject.compile = async function(sampleInputs) {
+      if (compiledRunner) {
+        throw new Error("jitMulti is already compiled.");
+      }
+      compilationPromise = compileAll(sampleInputs);
+      await compilationPromise;
+    };
+
+    return jittedObject;
+  };
+
   return module;
 }
 

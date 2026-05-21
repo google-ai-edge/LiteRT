@@ -216,6 +216,26 @@ export interface LiteRtWasmModule {
   createModelRunner(buffer: Uint8Array, accelerators?: number|{value: number}):
       LiteRTRunner;
 
+  jit<T extends (...args: Tensor[]) => Tensor>(
+    func: T,
+    options?: { accelerators?: number | { value: number } }
+  ): (...args: Parameters<T>) => Promise<Tensor>;
+
+  jitMulti(
+    sigConfigs: {
+      [sigName: string]:
+        | ((...args: Tensor[]) => Tensor | Tensor[])
+        | {
+            func: (...args: Tensor[]) => Tensor | Tensor[];
+            inputs: Array<{ type: string | TensorType; shape: number[] }>;
+          };
+    },
+    options?: { accelerators?: number | { value: number } }
+  ): {
+    [sigName: string]: (...args: Tensor[]) => Promise<Tensor | Tensor[]>;
+    compile(sampleInputs: { [sigName: string]: Tensor[] }): Promise<void>;
+  };
+
   HwAccelerators: {CPU: {value: number}; GPU: {value: number};};
 }
 

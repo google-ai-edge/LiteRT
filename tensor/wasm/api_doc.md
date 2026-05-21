@@ -91,6 +91,66 @@ The `Tensor` object represents a multi-dimensional array.
 *   `setShape(shape: number[]): void`: Sets the shape. Accepts standard JS arrays.
 *   `setData(data: TypedArray): void`: Copies data from a JS typed array into the tensor.
 
+## JIT Compilation Mode
+
+LiteRT WASM supports a high-performance JIT (Just-In-Time) Compilation Mode. This allows you to write standard, eagerly structured JavaScript functions containing tensor operations, which are compiled into optimized hardware-accelerated execution runners behind the scenes.
+
+### `litert.jit(func: Function, options?: object): Function`
+
+Traces a standard JavaScript function and JIT-compiles it into an optimized Graph Runner.
+
+*   `func`: The JavaScript function representing the operations: `(...inputs) => outputTensor`.
+*   `options` (optional): Configuration mapping (e.g., `accelerators`).
+*   **Returns**: A compiled asynchronous function with the same signature: `async (...inputs) => outputTensor`.
+
+Example:
+```javascript
+const customPipeline = litert.jit((img, scale, bias) => {
+  const resized = img.resizeBilinear([256, 256], false, false);
+  return resized.mul(scale).add(bias).relu();
+}, { accelerators: litert.HwAccelerators.GPU });
+
+// First call: Traces, AOT compiles GraphRunner, and runs.
+// Subsequent calls: Skips compile, binds arguments zero-copy, dispatches immediately.
+const output = await customPipeline(actualImage, scaleTensor, biasTensor);
+```
+
+### `litert.jitMulti(sigConfigs: object, options?: object): object`
+
+Compiles multiple related, state-sharing subgraphs into a single multi-signature Graph Runner. 
+
+*   `sigConfigs`: A dictionary mapping signature names to configurations:
+    *   If configuration is a **Function**: Defer compilation (requires calling `.compile(sampleInputs)` manually before execution).
+    *   If configuration is an **Object**: Supply configuration upfront:
+        *   `func`: The subgraph execution function.
+        *   `inputs`: Array of expected input descriptions: `[{ type: TensorType | string, shape: number[] }]`.
+*   `options` (optional): Configuration mapping (e.g., `accelerators`).
+*   **Returns**: An object containing the compiled asynchronous functions as callable methods, plus a `.compile(sampleInputs)` helper method.
+
+Example (KV-Cache State Sharing):
+```javascript
+const kvCache = litert.createTensor({ type: 'FP32', shape: [1, 32, 128, 128] });
+
+const model = litert.jitMulti({
+  prefill: {
+    func: (tokens) => {
+      kvCache.setData(...); // updates shared cache in closure
+      return tokens.mul(10);
+    },
+    inputs: [{ type: 'FP32', shape: [1, 32] }]
+  },
+  decode: {
+    func: (nextToken) => {
+      return nextToken.add(kvCache.sum([2])); // reads shared cache
+    },
+    inputs: [{ type: 'FP32', shape: [1, 1] }]
+  }
+}, { accelerators: litert.HwAccelerators.GPU });
+
+// Direct fast-path dispatching
+const logits = await model.prefill(actualPrefillTokens);
+```
+
 ## Eager Execution Mode
 
 LiteRT WASM supports an intuitive Eager Execution Mode that evaluates tensor
