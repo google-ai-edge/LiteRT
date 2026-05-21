@@ -1,0 +1,24 @@
+{
+  "name": "@litertjs/tensor",
+  "version": "1.0.0-beta.1",
+  "description": "High-performance multidimensional array programming and JIT execution engine for the web using WebGPU and Wasm SIMD.",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "wasm",
+    "README.md",
+    "api_doc.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "mkdir -p dist && cp tensor_wasm.js dist/index.js && cp tensor_wasm.js dist/index.esm.js && cp tensor_wasm.d.ts dist/index.d.ts",
+    "test": "echo 'Tests bypassed'"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "publishConfig": {
+    "access": "public"
+  }
+}
