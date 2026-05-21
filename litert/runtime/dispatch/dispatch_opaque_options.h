@@ -20,6 +20,11 @@
 
 namespace litert::internal {
 
+// The DispatchDelegateOptions is used to share information between the
+// CompiledModel and the DispatchDelegate.
+//
+// Note: Since they're alway build together, this structure doesn't need to be
+// ABI stable.
 class DispatchDelegateOptions : public OpaqueOptions {
  public:
   using OpaqueOptions::OpaqueOptions;
