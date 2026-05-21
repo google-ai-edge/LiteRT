@@ -3,6 +3,7 @@ load(
     "tf_cc_binary",
     "tf_cc_test",
     "tf_features_nolayering_check_if_ios",
+    "tf_features_nolayering_check_if_mobile",
 )
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 load("@org_tensorflow//tensorflow/core/platform:build_config_root.bzl", "if_pywrap")
@@ -87,6 +88,7 @@ _test_size_override = {
     )],
     # copybara:comment_end
     delegate = delegate,
+    features = tf_features_nolayering_check_if_mobile(),
     tags = tags + [
         "gen_zip_test",
         "tflite_not_portable_intentional",
