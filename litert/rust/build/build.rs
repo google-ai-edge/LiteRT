@@ -90,10 +90,7 @@ impl TargetPlatform {
 fn check_tool_installed(tool: &str) -> Result<(), String> {
     match Command::new(tool).arg("--version").output() {
         Ok(output) if output.status.success() => Ok(()),
-        _ => Err(format!(
-            "Required tool '{}' is not installed or not in PATH.",
-            tool
-        )),
+        _ => Err(format!("Required tool '{}' is not installed or not in PATH.", tool)),
     }
 }
 
@@ -166,10 +163,7 @@ struct LiteRTSdk {
 
 impl LiteRTSdk {
     fn new(sdk_root_dir: PathBuf, sdk_build_dir: PathBuf) -> Self {
-        Self {
-            sdk_root_dir,
-            sdk_build_dir,
-        }
+        Self { sdk_root_dir, sdk_build_dir }
     }
 }
 
@@ -191,10 +185,7 @@ fn download_and_build_cpp_sdk(
     let zip_root_dir = unzip_archive(&sdk_zip_path, &sdk_extract_dir)?;
     let sdk_root = sdk_extract_dir.join(zip_root_dir);
 
-    info!(
-        "Downloading prebuilt runtime for SDK to {}",
-        sdk_root.display()
-    );
+    info!("Downloading prebuilt runtime for SDK to {}", sdk_root.display());
     download_runtime(target_platform, &sdk_root)?;
 
     let build_dir = out_dir.join("litert_cc_sdk_build");
@@ -213,11 +204,7 @@ fn download_and_build_cpp_sdk(
         return Err(format!("CMake configure failed with status: {}", status).into());
     }
 
-    let status = Command::new("cmake")
-        .arg("--build")
-        .arg(&build_dir)
-        .arg("-j")
-        .status()?;
+    let status = Command::new("cmake").arg("--build").arg(&build_dir).arg("-j").status()?;
 
     if !status.success() {
         return Err(format!("CMake build failed with status: {}", status).into());
@@ -234,14 +221,14 @@ fn dump_all_env_vars() {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     dump_all_env_vars();
-    println!("cargo:rustc-check-cfg=cfg(bindgen_rs_file, cargo_bindgen, docsrs)");
+    println!("cargo::rustc-check-cfg=cfg(bazel_bindgen, cargo_bindgen, docsrs)");
     // Check if we are currently generating documentation
     let is_doc_gen = env::var(CARGO_DOCS_RS).is_ok();
 
     if is_doc_gen {
         info!("Skipping heavy lifting because we are just building docs!");
-        println!("cargo:rustc-check-cfg=cfg(docsrs)");
-        println!("cargo:rustc-cfg=docsrs");
+        println!("cargo::rustc-check-cfg=cfg(docsrs)");
+        println!("cargo::rustc-cfg=docsrs");
         return Ok(());
     }
     println!("cargo::rerun-if-changed=build/build.rs");
@@ -261,29 +248,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Runtime dir {}", litert_sdk.sdk_root_dir.display());
     info!("Build dir {}", litert_sdk.sdk_build_dir.display());
 
-    println!(
-        "cargo::rustc-link-search=native={}",
-        litert_sdk.sdk_root_dir.display()
-    );
+    println!("cargo::rustc-link-search=native={}", litert_sdk.sdk_root_dir.display());
     println!("cargo::rustc-link-lib=dylib=LiteRt");
-    println!(
-        "cargo::rustc-link-search=native={}",
-        litert_sdk.sdk_build_dir.display()
-    );
+    println!("cargo::rustc-link-search=native={}", litert_sdk.sdk_build_dir.display());
     println!("cargo::rustc-link-lib=static=litert_cc_api");
 
     let bindings = bindgen::Builder::default()
         .header("wrapper.h")
         // Add the include path so clang can find dependent headers
         .clang_arg(format!("-I{}", litert_sdk.sdk_root_dir.display()))
-        .clang_arg(format!(
-            "-I{}",
-            litert_sdk.sdk_root_dir.join("litert").join("c").display()
-        ))
-        .clang_arg(format!(
-            "-I{}",
-            litert_sdk.sdk_build_dir.join("include").display()
-        ))
+        .clang_arg(format!("-I{}", litert_sdk.sdk_root_dir.join("litert").join("c").display()))
+        .clang_arg(format!("-I{}", litert_sdk.sdk_build_dir.join("include").display()))
         .clang_arg("-DLITERT_DISABLE_GPU")
         .layout_tests(false)
         .derive_default(true)
@@ -295,10 +270,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = PathBuf::from(env::var(OUT_DIR_ENV_VAR)?);
     let bindings_out_path = out_dir.join("bindings.rs");
     info!("Writing binding.rs to {}", bindings_out_path.display());
-    bindings
-        .write_to_file(bindings_out_path)
-        .expect("Couldn't write bindings!");
-    println!("cargo::rustc-check-cfg=cfg(bindgen_rs_file, cargo_bindgen)");
+    bindings.write_to_file(bindings_out_path).expect("Couldn't write bindings!");
     println!("cargo::rustc-cfg=cargo_bindgen");
 
     Ok(())

@@ -99,11 +99,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Error: {:?}", self.cause)?;
         let status_description = self.litert_status_description();
-        write!(
-            f,
-            " LiteRtStatus: {:?} [{}] ",
-            self.litert_status, status_description
-        )
+        write!(f, " LiteRtStatus: {:?} [{}] ", self.litert_status, status_description)
     }
 }
 
@@ -117,10 +113,7 @@ impl std::error::Error for Error {}
 
 impl Error {
     pub(crate) fn new(cause: ErrorCause, status: LiteRtStatus) -> Self {
-        Error {
-            cause,
-            litert_status: status,
-        }
+        Error { cause, litert_status: status }
     }
 
     /// Returns the reason of the error from the binding code.
@@ -213,7 +206,7 @@ impl Error {
 
             _ => "???",
         }
-        // LINT.ThenChange(../c/litert_common.h:status_codes)
+        // LINT.ThenChange(../../c/litert_common.h:status_codes)
         .to_string()
     }
 }
