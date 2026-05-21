@@ -390,12 +390,15 @@ class LiteRtTensorT {
   // Number of elements in the tensor.
   size_t NumElements() const {
     auto ranked = Ranked();
-    if (!ranked) {
+    if (!ranked || ranked->layout.rank == 0) {
       return 0;
     }
     const auto& dims = ranked->layout.dimensions;
+    // Note: `dims` is a fixed-size array of size LITERT_TENSOR_MAX_RANK (8).
+    // We must accumulate only up to `ranked->layout.rank` to avoid multiplying
+    // by undefined tail elements.
     return static_cast<size_t>(std::accumulate(
-        std::cbegin(dims), std::cend(dims), 1,
+        std::cbegin(dims), std::cbegin(dims) + ranked->layout.rank, 1,
         std::multiplies<std::remove_reference_t<decltype(dims[0])>>()));
   }
 
