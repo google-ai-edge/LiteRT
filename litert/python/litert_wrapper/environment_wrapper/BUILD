@@ -74,6 +74,7 @@ pybind_extension(
 py_library(
     name = "environment",
     srcs = ["environment.py"],
+    # copybara:uncomment strict_deps = False,
     visibility = ["//visibility:public"],
     deps = [
         ":_pywrap_litert_environment_wrapper",

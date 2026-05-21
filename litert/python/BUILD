@@ -14,7 +14,8 @@
 
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension", "pywrap_binaries", "pywrap_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("//litert/python:strict.bzl", "py_strict_library", "py_strict_test")
+load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
+load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
 
 WINDOWS_PYBIND_UNDEFS = select({
     "//litert:windows": [
@@ -64,7 +65,7 @@ pybind_extension(
     ],
 )
 
-py_strict_library(
+py_library(
     name = "litert_pywrap_deps",
     visibility = ["//visibility:public"],
     deps = [
@@ -140,7 +141,7 @@ pywrap_binaries(
     visibility = ["//visibility:public"],
 )
 
-py_strict_test(
+py_test(
     name = "converter_wrapper_test",
     srcs = ["converter_wrapper_test.py"],
     target_compatible_with = select({

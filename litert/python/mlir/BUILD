@@ -25,6 +25,7 @@ py_library(
     srcs = [
         "__init__.py",
     ],
+    strict_deps = False,
     deps = [
         ":arithmetic_dialect",
         ":builtin_dialect",

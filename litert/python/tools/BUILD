@@ -1,3 +1,5 @@
+load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
+
 # Copyright 2025 Google LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 load("//litert/python:pytype.bzl", "pytype_strict_library")
-load("//litert/python:strict.bzl", "py_strict_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -31,7 +32,7 @@ pytype_strict_library(
     ],
 )
 
-py_strict_test(
+py_test(
     name = "flatbuffer_utils_test",
     srcs = ["flatbuffer_utils_test.py"],
     tags = ["no_oss"],
@@ -51,7 +52,7 @@ pytype_strict_library(
     ],
 )
 
-py_strict_test(
+py_test(
     name = "mmap_utils_test",
     srcs = ["mmap_utils_test.py"],
     target_compatible_with = select({
@@ -76,7 +77,7 @@ pytype_strict_library(
     ],
 )
 
-py_strict_test(
+py_test(
     name = "benchmark_litert_model_test",
     srcs = ["benchmark_litert_model_test.py"],
     deps = [

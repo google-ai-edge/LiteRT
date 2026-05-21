@@ -13,6 +13,7 @@ py_binary(
         "assets/config_viewer.json",
         "assets/htp_ext_config.json",
     ],
+    # copybara:uncomment strict_deps = False,
     deps = [
         "@absl_py//absl:app",
         "@absl_py//absl/flags",

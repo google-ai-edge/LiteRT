@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# copybara:uncomment load("//litert/python:strict.bzl", "py_strict_test")
+# copybara:uncomment load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -21,7 +21,7 @@ package(
 )
 
 # copybara:uncomment_begin(google-only)
-# py_strict_test(
+# py_test(
 #     name = "litert_wrapper_test",
 #     srcs = ["litert_wrapper_test.py"],
 #     data = [
