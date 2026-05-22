@@ -19,7 +19,6 @@ limitations under the License.
 #include <string>
 #include <utility>
 
-#include "absl/memory/memory.h"
 #include "tflite/delegates/gpu/common/status.h"
 #include "tflite/delegates/gpu/common/types.h"
 #include "tflite/delegates/gpu/gl/node_shader.h"

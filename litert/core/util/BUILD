@@ -85,7 +85,7 @@ cc_library(
     ],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_model",
+        "//litert/c:litert_model_header",
         "//litert/cc:litert_expected",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
@@ -98,6 +98,7 @@ cc_test(
     deps = [
         ":tensor_type_util",
         "//litert/c:litert_model",
+        "//litert/c:litert_model_types",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],

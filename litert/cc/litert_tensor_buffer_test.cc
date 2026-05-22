@@ -32,6 +32,7 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_platform_support.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_environment_options.h"
@@ -41,9 +42,11 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/test/matchers.h"
+#include <CL/cl.h>
 
 #if LITERT_HAS_AHWB_SUPPORT
 #include <android/hardware_buffer.h>
@@ -181,14 +184,14 @@ class ClEnvironment {
                                       tflite::gpu::cl::CLContext* context) {
     if (gl_env == nullptr) {
       if (!tflite::gpu::cl::CreateCLContext(device, context).ok()) {
-        return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+        return litert::Unexpected(Status::kErrorInvalidArgument,
                                   "Failed to create CL context");
       }
     } else {
 #if LITERT_HAS_OPENGL_SUPPORT
       if (!tflite::gpu::cl::IsGlSharingSupported(device)) {
         if (!tflite::gpu::cl::CreateCLContext(device, context).ok()) {
-          return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+          return litert::Unexpected(Status::kErrorInvalidArgument,
                                     "Failed to create CL context");
         }
       } else {
@@ -200,7 +203,7 @@ class ClEnvironment {
                      gl_env->GetEglEnvironment().display()),
                  context)
                  .ok()) {
-          return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+          return litert::Unexpected(Status::kErrorInvalidArgument,
                                     "Failed to create CL-GL context");
         }
       }
@@ -317,6 +320,29 @@ TEST(TensorBuffer, HostMemory) {
         std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)),
         0);
   }
+}
+
+TEST(TensorBuffer, CreateManagedFromRequirements) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  const RankedTensorType kTensorType(kTestTensorType);
+  constexpr auto kTensorBufferType = TensorBufferType::kHostMemory;
+
+  const litert::TensorBufferType kSupportedTypes[] = {kTensorBufferType};
+  auto requirements = TensorBufferRequirements::Create(
+      absl::MakeSpan(kSupportedTypes, 1), sizeof(kTensorData));
+  ASSERT_TRUE(requirements);
+
+  auto tensor_buffer = TensorBuffer::CreateManagedFromRequirements(
+      env, kTensorType, *requirements);
+  ASSERT_TRUE(tensor_buffer);
+
+  auto tensor_buffer_type = tensor_buffer->BufferType();
+  ASSERT_TRUE(tensor_buffer_type);
+  ASSERT_EQ(*tensor_buffer_type, kTensorBufferType);
+
+  auto size = tensor_buffer->Size();
+  ASSERT_TRUE(size);
+  ASSERT_EQ(*size, sizeof(kTensorData));
 }
 
 bool CanLoadOpenCl() {
@@ -676,10 +702,16 @@ TEST(TensorBuffer, CreateFromExternalHostMemory) {
       std::max<int>(sizeof(kTensorData), LITERT_HOST_MEMORY_BUFFER_ALIGNMENT);
   const RankedTensorType kTensorType(kTestTensorType);
   void* host_memory_ptr;
+#ifdef _WIN32
+  host_memory_ptr =
+      _aligned_malloc(kTensorBufferSize, LITERT_HOST_MEMORY_BUFFER_ALIGNMENT);
+  ASSERT_NE(host_memory_ptr, nullptr);
+#else
   ASSERT_EQ(
       ::posix_memalign(&host_memory_ptr, LITERT_HOST_MEMORY_BUFFER_ALIGNMENT,
                        kTensorBufferSize),
       0);
+#endif
 
   std::memcpy(host_memory_ptr, kTensorData, sizeof(kTensorData));
 
@@ -1241,6 +1273,48 @@ TEST(TensorBuffer, ClBufferReadOnWriteLockIsInvalid) {
   }
 }
 
+TEST(TensorBuffer, ClBufferReadWriteInt8) {
+  if (!HasOpenClSupport()) {
+    GTEST_SKIP() << "OpenCL buffers are not supported on this platform; "
+                    "skipping the test";
+  }
+  if (!CanLoadOpenCl()) {
+    GTEST_SKIP() << "OpenCL library could not be loaded; skipping the test";
+  }
+  auto user_gpu_env = UserGpuEnvironment::Create(/*create_gl_env=*/false);
+
+  constexpr const int8_t kInt8TensorData[] = {1, 2, 3, 4};
+  const LiteRtRankedTensorType litert_tensor_type = {
+      /*.element_type=*/kLiteRtElementTypeInt8,
+      /*.layout=*/BuildLayout({4})};
+  const RankedTensorType kTensorType(litert_tensor_type);
+  constexpr auto kTensorBufferType = TensorBufferType::kOpenClBuffer;
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto tensor_buffer, TensorBuffer::CreateManaged(
+                              user_gpu_env->GetEnvironment(), kTensorBufferType,
+                              kTensorType, sizeof(kInt8TensorData)));
+
+  // 1. Test Upload
+  {
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        tensor_buffer, TensorBuffer::LockMode::kWrite);
+    ASSERT_TRUE(lock_and_addr);
+    std::memcpy(lock_and_addr->second, kInt8TensorData,
+                sizeof(kInt8TensorData));
+  }
+
+  // 2. Test Download
+  {
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        tensor_buffer, TensorBuffer::LockMode::kRead);
+    ASSERT_TRUE(lock_and_addr);
+    ASSERT_EQ(std::memcmp(lock_and_addr->second, kInt8TensorData,
+                          sizeof(kInt8TensorData)),
+              0);
+  }
+}
+
 TEST(TensorBuffer, GetAhwb) {
   if (!HasAhwbSupport()) {
     GTEST_SKIP() << "AHardwareBuffers are not supported on this platform; "
@@ -1257,6 +1331,9 @@ TEST(TensorBuffer, GetAhwb) {
 }
 
 TEST(TensorBuffer, Event) {
+  if (!HasSyncFenceSupport()) {
+    GTEST_SKIP() << "Sync fences are not supported on this platform.";
+  }
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer tensor_buffer,

@@ -17,9 +17,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
-#include "absl/log/absl_check.h"  // from @com_google_absl
-#include "absl/log/die_if_null.h"  // from @com_google_absl
 #include "litert/c/internal/litert_runtime_c_api.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
@@ -36,16 +35,19 @@
 #include "litert/c/litert_opencl_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/litert_webgpu_types.h"
+#include "litert/cc/internal/litert_runtime_builtin.h"
+#include "litert/cc/litert_api_types.h"
 
 namespace litert {
+class Options;
 namespace internal {
 
-#define LITERT_PROXY_METHOD_STATUS(method, ...) \
-  ABSL_CHECK(runtime_c_api_->method);           \
+#define LITERT_PROXY_METHOD_STATUS(method, ...)  \
+  LITERT_INTERNAL_CHECK(runtime_c_api_->method); \
   return runtime_c_api_->method(__VA_ARGS__);
 
-#define LITERT_PROXY_METHOD_VOID(method, ...) \
-  ABSL_CHECK(runtime_c_api_->method);         \
+#define LITERT_PROXY_METHOD_VOID(method, ...)    \
+  LITERT_INTERNAL_CHECK(runtime_c_api_->method); \
   runtime_c_api_->method(__VA_ARGS__);
 
 // A proxy class that provides a C++ interface to the LiteRT Runtime C Api.
@@ -54,8 +56,16 @@ namespace internal {
 // different runtime implementations (e.g. real runtime, mock runtime).
 class RuntimeProxy {
  public:
+  friend class litert::Options;
+  /// @brief Creates a runtime proxy with the externally provided system runtime
+  /// handle.
+  ///
+  /// If the system runtime handle is not provided, the builtin runtime will be
+  /// used.
   explicit RuntimeProxy(const LiteRtRuntimeCApiStruct* runtime_c_api)
-      : runtime_c_api_(ABSL_DIE_IF_NULL(runtime_c_api)) {};
+      : runtime_c_api_(LITERT_INTERNAL_DIE_IF_NULL(runtime_c_api == nullptr
+                                                       ? kLiteRtRuntimeBuiltin
+                                                       : runtime_c_api)) {};
 
   ~RuntimeProxy() = default;
 
@@ -327,6 +337,12 @@ class RuntimeProxy {
                                      size_t buffer_size, LiteRtModel* model) {
     LITERT_PROXY_METHOD_STATUS(litert_create_model_from_buffer, buffer_addr,
                                buffer_size, model);
+  }
+
+  LiteRtStatus CreateModelFromFd(int fd, size_t offset, size_t size,
+                                 LiteRtModel* model) {
+    LITERT_PROXY_METHOD_STATUS(litert_create_model_from_fd, fd, offset, size,
+                               model);
   }
 
   LiteRtStatus GetModelMetadata(LiteRtModel model, const char* metadata_key,
@@ -606,7 +622,7 @@ class RuntimeProxy {
                                         const char* format, Args&&... args) {
     // We cannot forward variadic arguments, so this function cannot use the
     // macro.
-    ABSL_CHECK(runtime_c_api_->litert_compiled_model_report_error);
+    LITERT_INTERNAL_CHECK(runtime_c_api_->litert_compiled_model_report_error);
     return runtime_c_api_->litert_compiled_model_report_error(
         compiled_model, format, std::forward<Args>(args)...);
   }
@@ -733,7 +749,6 @@ class RuntimeProxy {
                                tensor_buffer, host_memory_addr);
   }
 
-#if LITERT_HAS_AHWB_SUPPORT
   LiteRtStatus CreateTensorBufferFromAhwb(
       LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
       AHardwareBuffer* ahwb, size_t ahwb_offset,
@@ -749,8 +764,6 @@ class RuntimeProxy {
                                ahwb);
   }
 
-#endif  // LITERT_HAS_AHWB_SUPPORT
-#if LITERT_HAS_ION_SUPPORT
   LiteRtStatus CreateTensorBufferFromIonBuffer(
       const LiteRtRankedTensorType* tensor_type, void* ion_buffer_addr,
       int ion_buffer_fd, size_t ion_buffer_size, size_t ion_buffer_offset,
@@ -768,8 +781,6 @@ class RuntimeProxy {
                                ion_buffer_addr, ion_buffer_fd);
   }
 
-#endif  // LITERT_HAS_ION_SUPPORT
-#if LITERT_HAS_DMABUF_SUPPORT
   LiteRtStatus CreateTensorBufferFromDmaBufBuffer(
       const LiteRtRankedTensorType* tensor_type, void* dmabuf_buffer_addr,
       int dmabuf_buffer_fd, size_t dmabuf_buffer_size,
@@ -789,8 +800,6 @@ class RuntimeProxy {
                                dmabuf_buffer_fd);
   }
 
-#endif  // LITERT_HAS_DMABUF_SUPPORT
-#if LITERT_HAS_FASTRPC_SUPPORT
   LiteRtStatus CreateTensorBufferFromFastRpcBuffer(
       const LiteRtRankedTensorType* tensor_type, void* fastrpc_buffer_addr,
       int fastrpc_fd, size_t fastrpc_buffer_size, size_t fastrpc_buffer_offset,
@@ -809,8 +818,6 @@ class RuntimeProxy {
                                fastrpc_buffer_fd);
   }
 
-#endif  // LITERT_HAS_FASTRPC_SUPPORT
-#if LITERT_HAS_OPENCL_SUPPORT
   LiteRtStatus CreateTensorBufferFromOpenClMemory(
       LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
       LiteRtTensorBufferType buffer_type, LiteRtClMem cl_mem_addr,
@@ -827,7 +834,6 @@ class RuntimeProxy {
                                tensor_buffer, cl_mem_addr);
   }
 
-#endif  // LITERT_HAS_OPENCL_SUPPORT
   LiteRtStatus GetTensorBufferCustomTensorBufferHandle(
       LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle) {
     LITERT_PROXY_METHOD_STATUS(
@@ -871,7 +877,6 @@ class RuntimeProxy {
                                layer);
   }
 
-#if LITERT_HAS_WEBGPU_SUPPORT
   LiteRtStatus CreateTensorBufferFromWebGpuBuffer(
       LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
       LiteRtTensorBufferType buffer_type, LiteRtWGPUBuffer wgpu_buffer,
@@ -898,8 +903,6 @@ class RuntimeProxy {
                                webgpu_texture_size, deallocator, tensor_buffer);
   }
 
-#endif  // LITERT_HAS_WEBGPU_SUPPORT
-#if LITERT_HAS_METAL_SUPPORT
   LiteRtStatus CreateTensorBufferFromMetalMemory(
       LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
       LiteRtTensorBufferType buffer_type, void* metal_buffer,
@@ -916,15 +919,12 @@ class RuntimeProxy {
                                tensor_buffer, hw_memory_handle);
   }
 
-#endif  // LITERT_HAS_METAL_SUPPORT
-#if LITERT_HAS_VULKAN_SUPPORT
   LiteRtStatus GetTensorBufferVulkanMemory(LiteRtTensorBuffer tensor_buffer,
                                            HwMemoryHandle* hw_memory_handle) {
     LITERT_PROXY_METHOD_STATUS(litert_get_tensor_buffer_vulkan_memory,
                                tensor_buffer, hw_memory_handle);
   }
 
-#endif  // LITERT_HAS_VULKAN_SUPPORT
   LiteRtStatus DuplicateTensorBuffer(LiteRtTensorBuffer tensor_buffer) {
     LITERT_PROXY_METHOD_STATUS(litert_duplicate_tensor_buffer, tensor_buffer);
   }
@@ -1221,6 +1221,12 @@ class RuntimeProxy {
                                         int size_bytes) {
     LITERT_PROXY_METHOD_STATUS(litert_add_external_tensor_binding, options,
                                signature_name, tensor_name, data, size_bytes);
+  }
+
+  LiteRtStatus EnvironmentSupportsFP16(LiteRtEnvironment environment,
+                                       bool* is_supported) {
+    LITERT_PROXY_METHOD_STATUS(litert_environment_supports_fp16, environment,
+                               is_supported);
   }
 
  protected:

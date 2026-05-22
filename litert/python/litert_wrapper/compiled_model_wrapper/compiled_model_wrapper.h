@@ -17,14 +17,55 @@
 
 #include <Python.h>
 
+#include <cstdint>
+#include <map>
 #include <string>
+#include <vector>
 
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_compiled_model.h"
-#include "litert/cc/litert_environment.h"
 
 namespace litert {
 namespace compiled_model_wrapper {
+
+struct CompilationOptions {
+  int hardware_accel = 0;
+  int cpu_num_threads = 0;
+  bool gpu_enforce_f32 = false;
+  bool gpu_share_constant_tensors = false;
+  int cpu_kernel_mode = -1;
+  int xnnpack_flags = -1;
+  std::string xnnpack_weight_cache_path;
+  bool enable_constant_tensor_sharing = false;
+  bool enable_infinite_float_capping = false;
+  bool enable_benchmark_mode = false;
+  bool enable_allow_src_quantized_fc_conv_ops = false;
+  bool enable_hint_waiting_for_completion = false;
+
+  int qualcomm_log_level = -1;
+  int qualcomm_htp_performance_mode = -1;
+  int qualcomm_dsp_performance_mode = -1;
+  int qualcomm_use_int64_bias_as_int32 = -1;
+  int qualcomm_enable_weight_sharing = -1;
+  int qualcomm_use_conv_hmx = -1;
+  int qualcomm_use_fold_relu = -1;
+  int qualcomm_profiling = -1;
+  bool qualcomm_has_dump_tensor_ids = false;
+  std::vector<std::int32_t> qualcomm_dump_tensor_ids;
+  std::string qualcomm_ir_json_dir;
+  std::string qualcomm_dlc_dir;
+  int qualcomm_vtcm_size = -1;
+  int qualcomm_num_hvx_threads = -1;
+  int qualcomm_optimization_level = -1;
+  int qualcomm_graph_priority = -1;
+  int qualcomm_backend = -1;
+  std::string qualcomm_saver_output_dir;
+  int qualcomm_graph_io_tensor_mem_type = -1;
+
+  int intel_openvino_device_type = -1;
+  int intel_openvino_performance_mode = -1;
+  std::map<std::string, std::string> intel_openvino_configs_map;
+};
 
 /**
  * Wrapper class for LiteRT models that provides Python bindings.
@@ -39,49 +80,49 @@ class CompiledModelWrapper {
    * Creates a wrapper from a model file path.
    *
    * @param model_path Path to the model file
-   * @param runtime_path Path to the LiteRT runtime library
-   * @param compiler_plugin_path Path to the compiler plugin (can be nullptr)
-   * @param dispatch_library_path Path to the dispatch library (can be nullptr)
+   * @param environment_capsule PyCapsule containing a LiteRT Environment
    * @param hardware_accel Hardware acceleration option (LiteRtHwAccelerators).
    *        These are bit flags that can be combined with bitwise OR:
    *        1 (kCpu)  - CPU acceleration (always works)
    *        2 (kGpu)  - GPU acceleration (WebGPU/OpenCL/Metal)
    *        Use kCpu | kGpu (3) for GPU with CPU fallback.
    *        Note: 0 (kNone) will fail; at least one accelerator must be set.
+   * @param cpu_num_threads Number of threads for CPU execution.
+   * @param gpu_enforce_f32 Enforce F32 precision on GPU.
+   * @param gpu_share_constant_tensors Share constant tensors among subgraphs on
+   *        GPU.
    * @param out_error String to store error message if creation fails
-   * @return A new CompiledModelWrapper instance with environment_ created and
-   *         maintained within the wrapper, or nullptr on failure
+   * @return A new CompiledModelWrapper instance, or nullptr on failure
    */
   static CompiledModelWrapper* CreateWrapperFromFile(
-      const char* model_path, const char* runtime_path,
-      const char* compiler_plugin_path, const char* dispatch_library_path,
-      int hardware_accel, std::string* out_error);
+      PyObject* environment_capsule, const char* model_path,
+      const CompilationOptions& compilation_options, std::string* out_error);
 
   /**
    * Creates a wrapper from a model buffer in memory.
    *
+   * @param environment_capsule PyCapsule containing a LiteRT Environment
    * @param model_data Python bytes object containing the model data
    *        (created from reading a model file or receiving serialized model
    * data)
-   * @param runtime_path Path to the LiteRT runtime library
-   * @param compiler_plugin_path Path to the compiler plugin (can be nullptr)
-   * @param dispatch_library_path Path to the dispatch library (can be nullptr)
    * @param hardware_accel Hardware acceleration option (LiteRtHwAccelerators).
    *        These are bit flags that can be combined with bitwise OR:
    *        1 (kCpu)  - CPU acceleration (always works)
    *        2 (kGpu)  - GPU acceleration (WebGPU/OpenCL/Metal)
    *        Use kCpu | kGpu (3) for GPU with CPU fallback.
    *        Note: 0 (kNone) will fail; at least one accelerator must be set.
+   * @param cpu_num_threads Number of threads for CPU execution.
+   * @param gpu_enforce_f32 Enforce F32 precision on GPU.
+   * @param gpu_share_constant_tensors Share constant tensors among subgraphs on
+   *        GPU.
    * @param out_error String to store error message if creation fails
-   * @return A new CompiledModelWrapper instance with environment_ created and
-   *         maintained within the wrapper, or nullptr on failure
+   * @return A new CompiledModelWrapper instance, or nullptr on failure
    */
   static CompiledModelWrapper* CreateWrapperFromBuffer(
-      PyObject* model_data, const char* runtime_path,
-      const char* compiler_plugin_path, const char* dispatch_library_path,
-      int hardware_accel, std::string* out_error);
+      PyObject* environment_capsule, PyObject* model_data,
+      const CompilationOptions& compilation_options, std::string* out_error);
 
-  CompiledModelWrapper(litert::Environment env, litert::ExtendedModel model,
+  CompiledModelWrapper(litert::ExtendedModel model,
                        litert::CompiledModel compiled);
 
   ~CompiledModelWrapper();
@@ -114,23 +155,21 @@ class CompiledModelWrapper {
 
   // Creates an input buffer for a tensor identified by signature key and input
   // name.
-  PyObject* CreateInputBufferByName(PyObject* self_wrapper,
-                                    const char* signature_key,
+  PyObject* CreateInputBufferByName(const char* signature_key,
                                     const char* input_name);
 
   // Creates an output buffer for a tensor identified by signature key and
   // output name.
-  PyObject* CreateOutputBufferByName(PyObject* self_wrapper,
-                                     const char* signature_key,
+  PyObject* CreateOutputBufferByName(const char* signature_key,
                                      const char* output_name);
 
   // Creates all input buffers for a signature and returns them as a list of
   // capsules.
-  PyObject* CreateInputBuffers(PyObject* self_wrapper, int signature_index);
+  PyObject* CreateInputBuffers(int signature_index);
 
   // Creates all output buffers for a signature and returns them as a list of
   // capsules.
-  PyObject* CreateOutputBuffers(PyObject* self_wrapper, int signature_index);
+  PyObject* CreateOutputBuffers(int signature_index);
 
   // Executes the model using a signature key and name-to-buffer mappings.
   PyObject* RunByName(const char* signature_key, PyObject* input_map,
@@ -143,6 +182,16 @@ class CompiledModelWrapper {
   // Returns input tensor details for a given signature.
   PyObject* GetInputTensorDetails(const char* signature_key);
 
+  // Returns output tensor details for a given signature.
+  PyObject* GetOutputTensorDetails(const char* signature_key);
+
+  // Returns whether the model is fully accelerated with selected accelerators.
+  PyObject* IsFullyAccelerated();
+
+  // Resizes an input tensor by signature and input index.
+  PyObject* ResizeInputTensor(int signature_index, int input_index,
+                              const std::vector<int>& dims, bool strict);
+
  private:
   // Returns the size in bytes of a single element of the given data type.
   static size_t ByteWidthOfDType(const std::string& dtype);
@@ -154,7 +203,6 @@ class CompiledModelWrapper {
   static PyObject* ConvertErrorToPyExc(const litert::Error& error);
 
   // Member variables holding the LiteRT C++ objects.
-  litert::Environment environment_;
   ExtendedModel model_;
   litert::CompiledModel compiled_model_;
 

@@ -390,12 +390,15 @@ class LiteRtTensorT {
   // Number of elements in the tensor.
   size_t NumElements() const {
     auto ranked = Ranked();
-    if (!ranked) {
+    if (!ranked || ranked->layout.rank == 0) {
       return 0;
     }
     const auto& dims = ranked->layout.dimensions;
+    // Note: `dims` is a fixed-size array of size LITERT_TENSOR_MAX_RANK (8).
+    // We must accumulate only up to `ranked->layout.rank` to avoid multiplying
+    // by undefined tail elements.
     return static_cast<size_t>(std::accumulate(
-        std::cbegin(dims), std::cend(dims), 1,
+        std::cbegin(dims), std::cbegin(dims) + ranked->layout.rank, 1,
         std::multiplies<std::remove_reference_t<decltype(dims[0])>>()));
   }
 
@@ -422,7 +425,7 @@ class LiteRtTensorT {
 
   // IR is generally, default constructible and movable but not copyable.
   LiteRtTensorT() = default;
-  LiteRtTensorT(::litert::internal::BufferManager* buffer_manager)
+  explicit LiteRtTensorT(::litert::internal::BufferManager* buffer_manager)
       : weights_(buffer_manager) {}
   LiteRtTensorT(const LiteRtTensorT&) = delete;
   LiteRtTensorT(LiteRtTensorT&&) = default;
@@ -434,7 +437,7 @@ class LiteRtTensorT {
   std::vector<LiteRtParamIndex> user_arg_inds_;
 
   LiteRtOp defining_op_ = nullptr;
-  LiteRtParamIndex defining_op_out_ind_;
+  LiteRtParamIndex defining_op_out_ind_ = 0;
 
   LiteRtWeightsT weights_;
   Quantization quantization_;
@@ -442,7 +445,7 @@ class LiteRtTensorT {
 
   std::string name_;
 
-  std::uint32_t tensor_index_;
+  std::uint32_t tensor_index_ = 0;
 
   std::vector<UserData> user_data_;
 };
@@ -707,7 +710,7 @@ class LiteRtSubgraphT {
 
   // IR is generally, default constructible and movable but not copyable.
   LiteRtSubgraphT() = default;
-  LiteRtSubgraphT(::litert::internal::BufferManager* buffer_manager)
+  explicit LiteRtSubgraphT(::litert::internal::BufferManager* buffer_manager)
       : buffer_manager_(buffer_manager) {};
   LiteRtSubgraphT(const LiteRtSubgraphT&) = delete;
   LiteRtSubgraphT(LiteRtSubgraphT&&) = default;
@@ -719,6 +722,12 @@ class LiteRtSubgraphT {
     return buffer_manager_;
   }
 
+  // Authored name associated with this subgraph. May be empty.
+  absl::string_view Name() const { return name_; }
+
+  // Update the name associated with this subgraph.
+  void SetName(std::string name) { name_ = std::move(name); }
+
  private:
   // If null, tensors emplaced will own their own buffer managers.
   ::litert::internal::BufferManager* buffer_manager_ = nullptr;
@@ -729,6 +738,8 @@ class LiteRtSubgraphT {
 
   std::vector<LiteRtTensor> inputs_;
   std::vector<LiteRtTensor> outputs_;
+
+  std::string name_;
 };
 
 //
@@ -1406,7 +1417,7 @@ void AbslStringify(Sink& sink, const LiteRtOpT* op) {
 namespace absl {
 
 template <class Sink>
-void StringifyLiteRtOpImpl(Sink& sink, const absl::Span<const LiteRtOp>& ops) {
+void StringifyLiteRtOpImpl(Sink& sink, const absl::Span<const LiteRtOp> ops) {
   for (auto it = ops.begin(); it < ops.end() - 1; ++it) {
     sink.Append(absl::StrFormat("%v", **it));
     sink.Append("/");
@@ -1415,12 +1426,12 @@ void StringifyLiteRtOpImpl(Sink& sink, const absl::Span<const LiteRtOp>& ops) {
 }
 
 template <class Sink>
-void AbslStringify(Sink& sink, const absl::Span<const LiteRtOp>& ops) {
+void AbslStringify(Sink& sink, const absl::Span<const LiteRtOp> ops) {
   StringifyLiteRtOpImpl(sink, ops);
 }
 
 template <class Sink>
-void AbslStringify(Sink& sink, const absl::Span<LiteRtOp>& ops) {
+void AbslStringify(Sink& sink, const absl::Span<LiteRtOp> ops) {
   StringifyLiteRtOpImpl(sink, ops);
 }
 
@@ -1434,25 +1445,25 @@ namespace litert::internal {
 // sets of options in a consistent manner.
 template <typename Sink>
 struct OptionStrBuilder {
-  OptionStrBuilder(Sink& sink) : sink_(sink) { sink_.Append("{"); }
+  explicit OptionStrBuilder(Sink& sink) : sink(sink) { sink.Append("{"); }
 
   template <typename Val>
   void operator()(const std::string& key, const Val& value) {
-    if (num_opts_++ > 0) {
-      sink_.Append(",");
+    if (num_opts++ > 0) {
+      sink.Append(",");
     }
     if constexpr (std::is_convertible_v<Val, absl::string_view>) {
-      absl::Format(&sink_, "%s=%s", key, value);
+      absl::Format(&sink, "%s=%s", key, value);
     } else {
-      absl::Format(&sink_, "%s=%v", key, value);
+      absl::Format(&sink, "%s=%v", key, value);
     }
   }
 
-  ~OptionStrBuilder() { sink_.Append("}"); }
+  ~OptionStrBuilder() { sink.Append("}"); }
 
  private:
-  size_t num_opts_ = 0;
-  Sink& sink_;
+  size_t num_opts = 0;
+  Sink& sink;
 };
 template <typename Sink>
 OptionStrBuilder(Sink& sink) -> OptionStrBuilder<Sink>;
@@ -1474,7 +1485,7 @@ template <class Sink>
 void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
   // NOTE: Printers for specific options will be added on an as needed basis.
   const auto type = opts.type;
-  switch (type) {
+  switch (static_cast<tflite::BuiltinOptions>(type)) {
     case tflite::BuiltinOptions_AddOptions: {
       const auto* add_opts = opts.AsAddOptions();
       absl::Format(&sink, "%v", add_opts);
@@ -1483,6 +1494,51 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
     case tflite::BuiltinOptions_SubOptions: {
       const auto* sub_opts = opts.AsSubOptions();
       absl::Format(&sink, "%v", sub_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_Conv2DOptions: {
+      const auto* conv_opts = opts.AsConv2DOptions();
+      absl::Format(&sink, "%v", conv_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_DepthwiseConv2DOptions: {
+      const auto* dw_opts = opts.AsDepthwiseConv2DOptions();
+      absl::Format(&sink, "%v", dw_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_ReducerOptions: {
+      const auto* reducer_opts = opts.AsReducerOptions();
+      absl::Format(&sink, "%v", reducer_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_MulOptions: {
+      const auto* mul_opts = opts.AsMulOptions();
+      absl::Format(&sink, "%v", mul_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_DivOptions: {
+      const auto* div_opts = opts.AsDivOptions();
+      absl::Format(&sink, "%v", div_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_Pool2DOptions: {
+      const auto* pool_opts = opts.AsPool2DOptions();
+      absl::Format(&sink, "%v", pool_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_GeluOptions: {
+      const auto* gelu_opts = opts.AsGeluOptions();
+      absl::Format(&sink, "%v", gelu_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_ReshapeOptions: {
+      const auto* reshape_opts = opts.AsReshapeOptions();
+      absl::Format(&sink, "%v", reshape_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_OneHotOptions: {
+      const auto* one_hot_opts = opts.AsOneHotOptions();
+      absl::Format(&sink, "%v", one_hot_opts);
       break;
     }
     case tflite::BuiltinOptions_NONE: {
@@ -1499,7 +1555,7 @@ template <class Sink>
 void AbslStringify(Sink& sink, const ::litert::internal::TflOptions2& opts) {
   // NOTE: Printers for specific options will be added on an as needed basis.
   const auto type = opts.type;
-  switch (type) {
+  switch (static_cast<tflite::BuiltinOptions>(type)) {
     case tflite::BuiltinOptions_NONE: {
       absl::Format(&sink, "{}");
       break;
@@ -1568,6 +1624,148 @@ void AbslStringify(Sink& sink, const SubOptionsT& opts) {
 
 template <class Sink>
 void AbslStringify(Sink& sink, const SubOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const OneHotOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("axis", opts.axis);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const OneHotOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <typename Sink>
+void AbslStringify(Sink& sink, const Padding& type) {
+  switch (type) {
+    case Padding_SAME:
+      sink.Append("SAME");
+      break;
+    case Padding_VALID:
+      sink.Append("VALID");
+      break;
+    default:
+      sink.Append(::litert::kNoPrinterTag);
+      break;
+  }
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const Conv2DOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  const auto faf = opts.fused_activation_function;
+  b("fa", faf);
+  const auto pad = opts.padding;
+  b("padding", pad);
+  b("stride_w", opts.stride_w);
+  b("stride_h", opts.stride_h);
+  b("dilation_w", opts.dilation_w_factor);
+  b("dilation_h", opts.dilation_h_factor);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const Conv2DOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const DepthwiseConv2DOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  const auto faf = opts.fused_activation_function;
+  b("fa", faf);
+  const auto pad = opts.padding;
+  b("padding", pad);
+  b("stride_w", opts.stride_w);
+  b("stride_h", opts.stride_h);
+  b("depth_multiplier", opts.depth_multiplier);
+  b("dilation_w", opts.dilation_w_factor);
+  b("dilation_h", opts.dilation_h_factor);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const DepthwiseConv2DOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const ReducerOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("keep_dims", opts.keep_dims);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const ReducerOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const MulOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("fa", opts.fused_activation_function);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const MulOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const DivOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("fa", opts.fused_activation_function);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const DivOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const ReshapeOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  std::string shape_str = "[";
+  for (auto it = opts.new_shape.begin(); it != opts.new_shape.end(); ++it) {
+    if (it != opts.new_shape.begin()) {
+      shape_str += ",";
+    }
+    shape_str += std::to_string(*it);
+  }
+  shape_str += "]";
+  b("new_shape", shape_str);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const ReshapeOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const Pool2DOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("fa", opts.fused_activation_function);
+  b("padding", opts.padding);
+  b("stride_w", opts.stride_w);
+  b("stride_h", opts.stride_h);
+  b("filter_width", opts.filter_width);
+  b("filter_height", opts.filter_height);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const Pool2DOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const GeluOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("approximate", opts.approximate);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const GeluOptionsT* opts) {
   ::litert::internal::PrintNullableOpts(sink, opts);
 }
 

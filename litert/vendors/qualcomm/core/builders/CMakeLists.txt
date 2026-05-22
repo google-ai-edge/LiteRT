@@ -26,13 +26,14 @@ target_sources(qnn_builders
         elementwise_op_builder.cc
         embedding_lookup_op_builder.cc
         fully_connected_op_builder.cc
-        fully_connected_op_builder_htp.cc
         gather_op_builder.cc
         gathernd_op_builder.cc
         gelu_op_builder.cc
+        layer_norm_op_builder.cc
         l2_norm_op_builder.cc
         leaky_relu_op_builder.cc
         logistic_op_builder.cc
+        onehot_op_builder.cc
         matmul_op_builder.cc
         op_builder.cc
         pack_op_builder.cc
@@ -72,8 +73,9 @@ target_include_directories(qnn_builders
 )
 
 target_link_libraries(qnn_builders
-    PUBLIC
-        qnn_core
     PRIVATE
+        qnn_log
+        qnn_miscs
+        qnn_tensor_pool
         qnn_wrappers
 )

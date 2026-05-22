@@ -30,13 +30,12 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
-        "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_runtime_context_header",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:scoped_weight_source",
         "//litert/core:environment",
         "//litert/core/model:flatbuffer_to_litert",
-        "//litert/runtime:open_cl_sync",
         "//tflite:framework",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -45,7 +44,6 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-        "@opencl_headers",
     ],
 )
 
@@ -55,10 +53,11 @@ cc_test(
     deps = [
         ":external_weight_loader",
         "//litert/c:litert_common",
+        "//litert/c:litert_environment",  # buildcleaner: keep
         "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer",
-        "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_runtime_context_testonly",
         "//litert/cc/internal:scoped_file",
         "//litert/cc/internal:scoped_weight_source",
         "//tflite/schema:schema_fbs",

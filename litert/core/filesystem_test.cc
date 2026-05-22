@@ -23,6 +23,8 @@
 #include <gtest/gtest.h>
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/time/clock.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 
 namespace litert::internal {
 namespace {
@@ -34,7 +36,6 @@ static constexpr absl::string_view kInfix = "an/infix";
 static constexpr absl::string_view kSuffix = "suffix.ext";
 static constexpr absl::string_view kPath = "a/prefix.ext";
 static constexpr absl::string_view kStem = "prefix";
-
 
 TEST(FilesystemTest, JoinTwo) {
   const auto path = Join({kPrefix, kSuffix});
@@ -139,6 +140,75 @@ TEST(FilesystemTest, RmDir) {
   EXPECT_FALSE(Exists(dir));
 }
 
+TEST(FilesystemTest, RemoveFile) {
+  const std::string file = Join({::testing::TempDir(), "test_file_to_remove"});
+  Touch(file);
+  EXPECT_TRUE(Exists(file));
+  auto status = RemoveFile(file);
+  ASSERT_TRUE(status);
+  EXPECT_FALSE(Exists(file));
+}
+
+TEST(FilesystemTest, GetLastWriteTime) {
+  const std::string file = Join({::testing::TempDir(), "test_file_mtime"});
+  Touch(file);
+  auto mtime = GetLastWriteTime(file);
+  ASSERT_TRUE(mtime);
+  EXPECT_GT(*mtime, absl::UnixEpoch());
+}
+
+TEST(FilesystemTest, TouchFile) {
+  const std::string file = Join({::testing::TempDir(), "test_file_touch"});
+  Touch(file);
+  auto mtime1 = GetLastWriteTime(file);
+  ASSERT_TRUE(mtime1);
+
+  // Sleep to ensure time difference.
+  absl::SleepFor(absl::Seconds(1));
+
+  auto status = TouchFile(file);
+  ASSERT_TRUE(status);
+
+  auto mtime2 = GetLastWriteTime(file);
+  ASSERT_TRUE(mtime2);
+
+  EXPECT_GT(*mtime2, *mtime1);
+}
+
+TEST(FilesystemTest, RecursiveListDir) {
+  const std::string dir =
+      Join({::testing::TempDir(), "recursive_list_dir_test"});
+  auto status = MkDir(dir);
+  ASSERT_TRUE(status);
+  const std::string subdir = Join({dir, "subdir"});
+  status = MkDir(subdir);
+  ASSERT_TRUE(status);
+  const std::string file1 = Join({dir, "file1.txt"});
+  const std::string file2 = Join({subdir, "file2.txt"});
+  Touch(file1);
+  Touch(file2);
+  auto list = RecursiveListDir(dir);
+  ASSERT_TRUE(list);
+  EXPECT_THAT(*list, UnorderedElementsAre(file1, file2));
+}
+
+TEST(FilesystemTest, Relative) {
+  const std::string base = "/a/b/c";
+  const std::string path1 = "/a/b/c/d/e.txt";
+  auto rel1 = Relative(path1, base);
+  ASSERT_TRUE(rel1);
+  EXPECT_EQ(*rel1, "d/e.txt");
+
+  // Trailing slash on base
+  auto rel2 = Relative(path1, base + "/");
+  ASSERT_TRUE(rel2);
+  EXPECT_EQ(*rel2, "d/e.txt");
+
+  // Double slash on base
+  auto rel3 = Relative(path1, "/a/b//c");
+  ASSERT_TRUE(rel3);
+  EXPECT_EQ(*rel3, "d/e.txt");
+}
+
 }  // namespace
 }  // namespace litert::internal
-

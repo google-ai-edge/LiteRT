@@ -22,8 +22,8 @@ def qairt():
         name = "qairt",
         build_file = "@//third_party/qairt:qairt.BUILD",
         local_path_env = "LITERT_QAIRT_SDK",
-        strip_prefix = "qairt/2.42.0.251225",
-        url = "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.42.0.251225/v2.42.0.251225.zip",
+        strip_prefix = "qairt/2.46.0.260424",
+        url = "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.46.0.260424/v2.46.0.260424.zip",
         file_extension = "zip",
     )
 

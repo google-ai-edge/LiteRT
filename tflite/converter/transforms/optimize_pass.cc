@@ -1784,7 +1784,7 @@ struct FuseFullyConnectedAndReluX : public OpRewritePattern<ReluXOp> {
 // .. with ..
 // FC(lhs, Mul(filter, rhs), bias)
 // .. if rhs, filter, and bias are all constants.
-// The generated Mul will be constant folded to a single matrix using TF::Mul.
+// The generated Mul will be constant folded to a single matrix using TFL::Mul.
 // TODO(b/136285429): Move to tablegen when variadic is supported
 struct FuseFullyConnectedAndMul : public OpRewritePattern<TFL::MulOp> {
   using OpRewritePattern<TFL::MulOp>::OpRewritePattern;
@@ -1841,9 +1841,7 @@ struct FuseFullyConnectedAndMul : public OpRewritePattern<TFL::MulOp> {
         arith::ConstantOp::create(rewriter, mul_op.getLoc(), new_type, new_cst);
     Value new_const_val = new_op.getResult();
 
-    // Rewrite. Since the folder of TFL::MulOp couldn't broadcast the operands,
-    // TF::MulOp is used to fold the constant.
-    // TODO(b/139192933): switch to the TFL constant folding
+    // Rewrite.
     auto filter_type = mlir::cast<ShapedType>(filter.getType());
     if (filter_type.hasStaticShape()) {
       auto size =
@@ -1853,12 +1851,16 @@ struct FuseFullyConnectedAndMul : public OpRewritePattern<TFL::MulOp> {
       if (size > (1 << 30)) return failure();
     }
     auto new_filter =
-        TF::MulOp::create(rewriter, mul_op.getLoc(), filter, new_const_val)
-            .getZ();
+        TFL::MulOp::create(rewriter, mul_op.getLoc(), filter, new_const_val,
+                           /*fusedActivationFunction=*/
+                           rewriter.getStringAttr("NONE"))
+            .getOutput();
     // If bias isn't None, it needs to be multiplied as well.
     if (!mlir::isa<NoneType>(bias.getType())) {
-      bias = TF::MulOp::create(rewriter, mul_op.getLoc(), bias, constant_val)
-                 .getZ();
+      bias = TFL::MulOp::create(rewriter, mul_op.getLoc(), bias, constant_val,
+                                /*fusedActivationFunction=*/
+                                rewriter.getStringAttr("NONE"))
+                 .getOutput();
     }
 
     auto fc = TFL::FullyConnectedOp::create(
@@ -3195,109 +3197,6 @@ struct ReorderTransposeReshapeTranspose
   }
 };
 
-// Pushes TFL::BroadcastToOp after a TFL::ReshapeOp.
-// This is useful when a Reshape (Squeeze/ExpandDims) is applied to a
-// broadcasted tensor. Pattern: Reshape(BroadcastTo(x, bcast_shape),
-// reshape_shape)
-//      => BroadcastTo(Reshape(x, intermediate_shape), reshape_shape)
-struct PushBroadcastThroughReshape : public OpRewritePattern<TFL::ReshapeOp> {
-  using OpRewritePattern<TFL::ReshapeOp>::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(TFL::ReshapeOp reshape_op,
-                                PatternRewriter& rewriter) const override {
-    auto broadcast_op =
-        reshape_op.getInput().getDefiningOp<TFL::BroadcastToOp>();
-    if (!broadcast_op || !broadcast_op.getOutput().hasOneUse()) {
-      return failure();
-    }
-
-    Value input = broadcast_op.getInput();
-    auto input_ty = mlir::dyn_cast<RankedTensorType>(input.getType());
-    auto bcast_out_ty =
-        mlir::dyn_cast<RankedTensorType>(broadcast_op.getOutput().getType());
-    auto reshape_out_ty =
-        mlir::dyn_cast<RankedTensorType>(reshape_op.getType());
-
-    if (!input_ty || !bcast_out_ty || !reshape_out_ty ||
-        !input_ty.hasStaticShape() || !bcast_out_ty.hasStaticShape() ||
-        !reshape_out_ty.hasStaticShape()) {
-      return rewriter.notifyMatchFailure(reshape_op,
-                                         "Only static shapes supported");
-    }
-
-    // Helper: extract dimensions that are not 1
-    auto get_non_unit_dims = [](ArrayRef<int64_t> shape) {
-      SmallVector<int64_t> dims;
-      for (auto d : shape)
-        if (d != 1) dims.push_back(d);
-      return dims;
-    };
-
-    // Requirement: The Reshape must be a "Squeeze" or "ExpandDims" equivalent.
-    // We verify this by checking if the sequence of non-unit dimensions is
-    // unchanged.
-    if (get_non_unit_dims(bcast_out_ty.getShape()) !=
-        get_non_unit_dims(reshape_out_ty.getShape())) {
-      return rewriter.notifyMatchFailure(
-          reshape_op, "Reshape is not a simple Squeeze/Expand");
-    }
-
-    // Calculate the intermediate shape for the new Reshape op.
-    // This shape is the target reshape_out_ty, but with all dimensions
-    // that were expanded by the original BroadcastTo set back to 1.
-    auto input_shape = input_ty.getShape();
-    auto target_shape = reshape_out_ty.getShape();
-
-    // To handle arbitrary Squeeze/ExpandDims, we map the "true data" from the
-    // input through to the target shape.
-    SmallVector<int64_t> non_unit_input_dims = get_non_unit_dims(input_shape);
-    SmallVector<int32_t> intermediate_shape_vec;
-
-    size_t input_ptr = 0;
-    for (int64_t dim : target_shape) {
-      if (input_ptr < non_unit_input_dims.size() &&
-          dim == non_unit_input_dims[input_ptr]) {
-        intermediate_shape_vec.push_back(static_cast<int32_t>(dim));
-        input_ptr++;
-      } else {
-        intermediate_shape_vec.push_back(1);
-      }
-    }
-
-    // If we couldn't map all input data, the reshape is collapsing data dims.
-    if (input_ptr < non_unit_input_dims.size()) return failure();
-
-    Location loc = reshape_op.getLoc();
-
-    // Create the intermediate Reshape shape constant
-    auto intermediate_shape_type = RankedTensorType::get(
-        {static_cast<int64_t>(intermediate_shape_vec.size())},
-        rewriter.getI32Type());
-    auto intermediate_shape_attr = DenseIntElementsAttr::get(
-        intermediate_shape_type, intermediate_shape_vec);
-    auto intermediate_shape_const = rewriter.create<arith::ConstantOp>(
-        loc, intermediate_shape_type, intermediate_shape_attr);
-
-    // Create the new Reshape op acting on the original (unbroadcasted) input
-    llvm::SmallVector<int64_t> new_reshape_shape;
-    for (int32_t dim : intermediate_shape_vec) {
-      new_reshape_shape.push_back(static_cast<int64_t>(dim));
-    }
-    auto new_reshape_out_ty =
-        RankedTensorType::get(new_reshape_shape, input_ty.getElementType());
-
-    auto new_reshape = rewriter.create<TFL::ReshapeOp>(
-        loc, new_reshape_out_ty, input, intermediate_shape_const);
-
-    // Create the final BroadcastTo op (using the original reshape's shape
-    // output)
-    rewriter.replaceOpWithNewOp<TFL::BroadcastToOp>(reshape_op, reshape_out_ty,
-                                                    new_reshape.getResult(),
-                                                    reshape_op.getShape());
-    return success();
-  }
-};
-
 // Some models produce FullyConnected ops where the LHS is a const and the RHS
 // is the activation. This breaks some downstream optimizations (notably input
 // caching in XNNPack among other things). This rewrite pattern swaps the
@@ -3449,8 +3348,7 @@ void OptimizePass::runOnOperation() {
       FuseTransposeReshapeIntoBatchMatmul, MoveReshapeAfterFullyConnected,
       EnableFullyConnectedKeepNumDimsBeforeReshape,
       ReorderTransposeReshapeTranspose,
-      FullyConnectedSwapOperandsWhenLHSIsConst, PushBroadcastThroughReshape>(
-      ctx);
+      FullyConnectedSwapOperandsWhenLHSIsConst>(ctx);
   if (!GetOptions().disable_fuse_mul_and_fc) {
     phase_2_patterns.add<FuseMulAndFullyConnected>(ctx);
   }

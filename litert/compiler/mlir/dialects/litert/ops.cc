@@ -270,7 +270,7 @@ mlir::Attribute ConstFoldBinaryOp(
 llvm::LogicalResult GetDimensionSizeOp::inferReturnTypes(
     mlir::MLIRContext* context, std::optional<mlir::Location> loc,
     mlir::ValueRange operands, mlir::DictionaryAttr attributes,
-    mlir::OpaqueProperties properties, mlir::RegionRange regions,
+    mlir::PropertyRef properties, mlir::RegionRange regions,
     llvm::SmallVectorImpl<mlir::Type>& inferred_return_types) {
   inferred_return_types.push_back(
       mlir::RankedTensorType::get({1}, mlir::IntegerType::get(context, 32)));
@@ -332,7 +332,7 @@ static llvm::LogicalResult TransposeOpInferReturnTypes(
 llvm::LogicalResult TransposeOp::inferReturnTypes(
     mlir::MLIRContext*, std::optional<mlir::Location> loc,
     mlir::ValueRange operands, mlir::DictionaryAttr attributes,
-    mlir::OpaqueProperties properties, mlir::RegionRange regions,
+    mlir::PropertyRef properties, mlir::RegionRange regions,
     llvm::SmallVectorImpl<mlir::Type>& inferred_return_types) {
   TransposeOp::Adaptor adaptor(operands, attributes, properties, regions);
 
@@ -375,7 +375,7 @@ llvm::LogicalResult TransposeOp::inferReturnTypes(
 llvm::LogicalResult AddOp::inferReturnTypes(
     mlir::MLIRContext* context, std::optional<mlir::Location> loc,
     mlir::ValueRange operands, mlir::DictionaryAttr attributes,
-    mlir::OpaqueProperties properties, mlir::RegionRange regions,
+    mlir::PropertyRef properties, mlir::RegionRange regions,
     llvm::SmallVectorImpl<mlir::Type>& inferred_return_types) {
   AddOp::Adaptor adaptor(operands, attributes, properties, regions);
   auto result_type = GetBroadcastedType(adaptor.getLhs().getType(),
@@ -465,7 +465,7 @@ llvm::LogicalResult AddOp::verifySymbolUses(
 llvm::LogicalResult DivOp::inferReturnTypes(
     mlir::MLIRContext* context, std::optional<mlir::Location> loc,
     mlir::ValueRange operands, mlir::DictionaryAttr attributes,
-    mlir::OpaqueProperties properties, mlir::RegionRange regions,
+    mlir::PropertyRef properties, mlir::RegionRange regions,
     llvm::SmallVectorImpl<mlir::Type>& inferred_return_types) {
   DivOp::Adaptor adaptor(operands, attributes, properties, regions);
   auto result_type = GetBroadcastedType(adaptor.getLhs().getType(),
@@ -551,7 +551,7 @@ mlir::OpFoldResult DivOp::fold(FoldAdaptor adaptor) {
 llvm::LogicalResult MulOp::inferReturnTypes(
     mlir::MLIRContext* context, std::optional<mlir::Location> loc,
     mlir::ValueRange operands, mlir::DictionaryAttr attributes,
-    mlir::OpaqueProperties properties, mlir::RegionRange regions,
+    mlir::PropertyRef properties, mlir::RegionRange regions,
     llvm::SmallVectorImpl<mlir::Type>& inferred_return_types) {
   MulOp::Adaptor adaptor(operands, attributes, properties, regions);
   auto result_type = GetBroadcastedType(adaptor.getLhs().getType(),
@@ -659,7 +659,7 @@ void ReshapeOp::getCanonicalizationPatterns(mlir::RewritePatternSet& results,
 llvm::LogicalResult SubOp::inferReturnTypes(
     mlir::MLIRContext* context, std::optional<mlir::Location> loc,
     mlir::ValueRange operands, mlir::DictionaryAttr attributes,
-    mlir::OpaqueProperties properties, mlir::RegionRange regions,
+    mlir::PropertyRef properties, mlir::RegionRange regions,
     llvm::SmallVectorImpl<mlir::Type>& inferred_return_types) {
   SubOp::Adaptor adaptor(operands, attributes, properties, regions);
   auto result_type = GetBroadcastedType(adaptor.getLhs().getType(),

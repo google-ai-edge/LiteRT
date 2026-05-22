@@ -6,6 +6,16 @@ workspace(name = "litert")
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+# Darts Clone. Declare this before TensorFlow's workspace macros so they do not
+# install their own incompatible BUILD overlay.
+http_archive(
+    name = "darts_clone",
+    build_file = "@//:BUILD.darts_clone",
+    sha256 = "4a562824ec2fbb0ef7bd0058d9f73300173d20757b33bb69baa7e50349f65820",
+    strip_prefix = "darts-clone-e40ce4627526985a7767444b6ed6893ab6ff8983",
+    url = "https://github.com/s-yata/darts-clone/archive/e40ce4627526985a7767444b6ed6893ab6ff8983.tar.gz",
+)
+
 http_archive(
     name = "rules_shell",
     sha256 = "bc61ef94facc78e20a645726f64756e5e285a045037c7a61f65af2941f4c25e1",
@@ -22,9 +32,52 @@ rules_shell_toolchains()
 http_archive(
     name = "rules_platform",
     sha256 = "0aadd1bd350091aa1f9b6f2fbcac8cd98201476289454e475b28801ecf85d3fd",
+    url = "https://github.com/bazelbuild/rules_platform/releases/download/0.1.0/rules_platform-0.1.0.tar.gz",
+)
+
+# Use recent platoforms version to support uefi platform.
+http_archive(
+    name = "platforms",
+    sha256 = "3384eb1c30762704fbe38e440204e114154086c8fc8a8c2e3e28441028c019a8",
     urls = [
-        "https://github.com/bazelbuild/rules_platform/releases/download/0.1.0/rules_platform-0.1.0.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/platforms/releases/download/1.0.0/platforms-1.0.0.tar.gz",
+        "https://github.com/bazelbuild/platforms/releases/download/1.0.0/platforms-1.0.0.tar.gz",
     ],
+)
+
+# Use 3.22.0 (from 3.5.1 of tensorflow) to fix binary signing issue on MacOS Tahoe.
+http_archive(
+    name = "build_bazel_rules_apple",
+    sha256 = "a78f26c22ac8d6e3f3fcaad50eace4d9c767688bd7254b75bdf4a6735b299f6a",
+    url = "https://github.com/bazelbuild/rules_apple/releases/download/3.22.0/rules_apple.3.22.0.tar.gz",
+)
+
+load(
+    "@build_bazel_rules_apple//apple:repositories.bzl",
+    "apple_rules_dependencies",
+)
+
+apple_rules_dependencies()
+
+http_archive(
+    name = "build_bazel_rules_swift",
+    sha256 = "f7a67197cd8a79debfe70b8cef4dc19d03039af02cc561e31e0718e98cad83ac",
+    url = "https://github.com/bazelbuild/rules_swift/releases/download/2.9.0/rules_swift.2.9.0.tar.gz",
+)
+
+# Lower the version from 1.24.5 that tensorflow uses to 1.23.1, the highest version which don't have
+# issues with missing LC_UUID, DEVELOPER_DIR or SDKROOT on MacOS Tahoe.
+http_archive(
+    name = "build_bazel_apple_support",
+    sha256 = "ee20cc5c0bab47065473c8033d462374dd38d172406ecc8de5c8f08487943f2f",
+    url = "https://github.com/bazelbuild/apple_support/releases/download/1.23.1/apple_support.1.23.1.tar.gz",
+)
+
+http_archive(
+    name = "bazel_features",
+    sha256 = "c26b4e69cf02fea24511a108d158188b9d8174426311aac59ce803a78d107648",
+    strip_prefix = "bazel_features-1.43.0",
+    url = "https://github.com/bazel-contrib/bazel_features/releases/download/v1.43.0/bazel_features-v1.43.0.tar.gz",
 )
 
 # Download coremltools of the same version of tensorflow, but with a custom patchcmd until
@@ -46,9 +99,11 @@ load("//litert:tensorflow_source_rules.bzl", "tensorflow_source_repo")
 
 tensorflow_source_repo(
     name = "org_tensorflow",
-    sha256 = "3a26196b1a9cee6e56a17f2334b0be32c23c4a7367648cae942b217091728a98",
-    strip_prefix = "tensorflow-f2d8e35dc5369fb4002f57d95303eb551e85f138",
-    urls = ["https://github.com/tensorflow/tensorflow/archive/f2d8e35dc5369fb4002f57d95303eb551e85f138.tar.gz"],
+    patches = ["//:PATCH.flatbuffers_windows_no_bash"],
+    protobuf_patches = ["//:PATCH.protobuf_port_msvc_compat"],
+    sha256 = "c29ef319c524eee22d2ee177d7e17087f1c66e46e021a237a7031c288198a128",
+    strip_prefix = "tensorflow-97f383ddc524f5cb60c8387ec55e81402dbfcb3f",
+    urls = ["https://github.com/tensorflow/tensorflow/archive/97f383ddc524f5cb60c8387ec55e81402dbfcb3f.tar.gz"],
 )
 
 # Initialize the TensorFlow repository and all dependencies.
@@ -66,7 +121,7 @@ load("@xla//third_party/py:python_init_rules.bzl", "python_init_rules")
 
 python_init_rules()
 
-load("@xla//third_party/py:python_init_repositories.bzl", "python_init_repositories")
+load("@rules_ml_toolchain//py:python_init_repositories.bzl", "python_init_repositories")
 
 python_init_repositories(
     default_python_version = "system",
@@ -81,14 +136,15 @@ python_init_repositories(
         "3.11": "@org_tensorflow//:requirements_lock_3_11.txt",
         "3.12": "@org_tensorflow//:requirements_lock_3_12.txt",
         "3.13": "@org_tensorflow//:requirements_lock_3_13.txt",
+        "3.14": "@org_tensorflow//:requirements_lock_3_14.txt",
     },
 )
 
-load("@xla//third_party/py:python_init_toolchains.bzl", "python_init_toolchains")
+load("@rules_ml_toolchain//py:python_register_toolchain.bzl", "python_register_toolchain")
 
-python_init_toolchains()
+python_register_toolchain()
 
-load("@xla//third_party/py:python_init_pip.bzl", "python_init_pip")
+load("@rules_ml_toolchain//py:python_init_pip.bzl", "python_init_pip")
 
 python_init_pip()
 
@@ -116,17 +172,7 @@ load(
 
 python_wheel_version_suffix_repository(name = "tf_wheel_version_suffix")
 
-# Toolchains for ML projects hermetic builds.
-# Details: https://github.com/google-ml-infra/rules_ml_toolchain
-http_archive(
-    name = "rules_ml_toolchain",
-    sha256 = "9dbee8f24cc1b430bf9c2a6661ab70cbca89979322ddc7742305a05ff637ab6b",
-    strip_prefix = "rules_ml_toolchain-545c80f1026d526ea9c7aaa410bf0b52c9a82e74",
-    urls = [
-        "https://github.com/google-ml-infra/rules_ml_toolchain/archive/545c80f1026d526ea9c7aaa410bf0b52c9a82e74.tar.gz",
-    ],
-)
-
+# Initialize hermetic C++
 load(
     "@rules_ml_toolchain//cc/deps:cc_toolchain_deps.bzl",
     "cc_toolchain_deps",
@@ -135,6 +181,7 @@ load(
 cc_toolchain_deps()
 
 register_toolchains("@rules_ml_toolchain//cc:linux_x86_64_linux_x86_64")
+# End hermetic C++ initialization
 
 load(
     "@rules_ml_toolchain//gpu/cuda:cuda_json_init_repository.bzl",
@@ -245,15 +292,6 @@ http_archive(
     url = "https://github.com/google/sentencepiece/archive/refs/tags/v0.2.0.tar.gz",
 )
 
-# Darts Clone
-http_archive(
-    name = "darts_clone",
-    build_file = "@//:BUILD.darts_clone",
-    sha256 = "4a562824ec2fbb0ef7bd0058d9f73300173d20757b33bb69baa7e50349f65820",
-    strip_prefix = "darts-clone-e40ce4627526985a7767444b6ed6893ab6ff8983",
-    url = "https://github.com/s-yata/darts-clone/archive/e40ce4627526985a7767444b6ed6893ab6ff8983.tar.gz",
-)
-
 # tomlplusplus
 http_archive(
     name = "tomlplusplus",
@@ -265,6 +303,17 @@ http_archive(
     sha256 = "8517f65938a4faae9ccf8ebb36631a38c1cadfb5efa85d9a72e15b9e97d25155",
     strip_prefix = "tomlplusplus-3.4.0",
     url = "https://github.com/marzer/tomlplusplus/archive/refs/tags/v3.4.0.tar.gz",
+)
+
+# RE2
+http_archive(
+    name = "com_googlesource_code_re2",
+    sha256 = "7b2b3aa8241eac25f674e5b5b2e23d4ac4f0a8891418a2661869f736f03f57f4",
+    strip_prefix = "re2-2024-03-01",
+    urls = [
+        "https://github.com/google/re2/archive/refs/tags/2024-03-01.tar.gz",
+        "https://storage.googleapis.com/mirror.tensorflow.org/github.com/google/re2/archive/refs/tags/2024-03-01.tar.gz",
+    ],
 )
 
 load("@rules_kotlin//kotlin:repositories.bzl", "kotlin_repositories")
@@ -320,3 +369,8 @@ litert_prebuilts()
 load("//third_party/intel_openvino:openvino.bzl", "openvino_configure")
 
 openvino_configure()
+
+# SAMSUNG EXYNOS ----------------------------------------------------------------------------------
+load("//third_party/exynos_ai_litecore:workspace.bzl", "exynos_ai_litecore")
+
+exynos_ai_litecore()

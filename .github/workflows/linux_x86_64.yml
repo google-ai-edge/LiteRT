@@ -22,7 +22,9 @@ concurrency:
 jobs:
   presubmit:
     name: "Presubmit-Linux"
-    runs-on: LiteRT_Linux_x64  # Latest high spec runner (96 cores and 384GB RAM).
+    runs-on: linux-x86-n2-16
+    container:
+      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build:latest
     permissions:
       actions: write
       contents: write
@@ -41,11 +43,7 @@ jobs:
 
       - name: Install System Dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libc++-dev \
-            libc++abi-dev \
-            clang \
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends libc++-18-dev libc++abi-18-dev llvm-18 clang-18
 
       - name: Configure tensorflow & python path
         run: |
@@ -56,7 +54,7 @@ jobs:
           export TF_NEED_CUDA=0
           export TF_SET_ANDROID_WORKSPACE=0
           export CC_OPT_FLAGS='-Wno-sign-compare'
-          python3 configure.py
+          yes "" | python3 configure.py
 
       - name: Set up cache keys
         id: cache-keys
@@ -100,6 +98,7 @@ jobs:
       - name: Run bazel build on Linux
         env:
           TEST_LANG_FILTERS: cc,py
+        shell: bash
         run: |
           BUILD_FLAGS=(
             "--config=bulk_test_cpu"

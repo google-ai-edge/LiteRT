@@ -30,8 +30,7 @@
 
 namespace litert {
 
-class Profiler
-    : public internal::Handle<LiteRtProfiler, LiteRtDestroyProfiler> {
+class Profiler : public internal::BaseHandle<LiteRtProfiler> {
  public:
   Profiler() = default;
 
@@ -40,8 +39,8 @@ class Profiler
   /// @param owned Indicates if the created `Profiler` object should take
   /// ownership of the provided `profiler` handle.
   explicit Profiler(LiteRtProfiler profiler, OwnHandle owned)
-      : internal::Handle<LiteRtProfiler, LiteRtDestroyProfiler>(profiler,
-                                                                owned) {}
+      : internal::BaseHandle<LiteRtProfiler>(profiler, LiteRtDestroyProfiler,
+                                             owned) {}
 
   /// @brief Get the number of events.
   Expected<int> GetNumEvents() const {

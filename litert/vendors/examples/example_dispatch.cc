@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstdint>
+#include <cstring>
 #include <list>
 #include <memory>
 #include <optional>
@@ -22,19 +23,20 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging_helper.h"
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_options.h"
+#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
-#include "litert/cc/litert_tensor_buffer.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/examples/example_common.h"
@@ -68,9 +70,8 @@ class LiteRtDispatchDeviceContextT {
     return {};
   }
 
-  ::litert::TensorBuffer Lookup(BufferHandle handle) {
-    return ::litert::TensorBuffer::WrapCObject(registered_buffers_[handle],
-                                               ::litert::OwnHandle::kNo);
+  LiteRtTensorBuffer Lookup(BufferHandle handle) {
+    return registered_buffers_[handle];
   }
 
  private:
@@ -84,12 +85,13 @@ class LiteRtDispatchInvocationContextT {
  public:
   using Ptr = std::unique_ptr<LiteRtDispatchInvocationContextT>;
   static ::litert::Expected<LiteRtDispatchInvocationContextT::Ptr> Create(
+      const LiteRtRuntimeContext* runtime_context,
       LiteRtDispatchDeviceContext device_context,
       LiteRtDispatchExecutableType exec_type,
       const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
       int num_inputs, int num_outputs) {
-    if (device_context == nullptr || exec_bytecode_buffer == nullptr ||
-        function_name == nullptr) {
+    if (runtime_context == nullptr || device_context == nullptr ||
+        exec_bytecode_buffer == nullptr || function_name == nullptr) {
       return ::litert::Error(kLiteRtStatusErrorInvalidArgument,
                              "Inputs are null");
     }
@@ -114,8 +116,8 @@ class LiteRtDispatchInvocationContextT {
     }
 
     auto context = Ptr(new LiteRtDispatchInvocationContextT(
-        device_context, exec_type, absl::string_view(function_name),
-        std::move(global_graph)));
+        runtime_context, device_context, exec_type,
+        absl::string_view(function_name), std::move(global_graph)));
     context->Initialize();
     return context;
   }
@@ -182,19 +184,28 @@ class LiteRtDispatchInvocationContextT {
         continue;
       }
       auto* input = inputs_[i];
-      ::litert::TensorBuffer buffer = device_context_->Lookup(input);
-      std::vector<float> input_data(4);
-      buffer.Read(absl::MakeSpan(input_data));
-      const auto packed_size = buffer.PackedSize();
-      input->resize(*packed_size / sizeof(float));
-      buffer.Read(absl::MakeSpan(input->data(), input->size()));
+      LiteRtTensorBuffer buffer = device_context_->Lookup(input);
+      size_t packed_size;
+      runtime_context_->get_tensor_buffer_packed_size(buffer, &packed_size);
+      input->resize(packed_size / sizeof(float));
+      void* host_mem;
+      runtime_context_->lock_tensor_buffer(buffer, &host_mem,
+                                           kLiteRtTensorBufferLockModeRead);
+      std::memcpy(input->data(), host_mem, packed_size);
+      runtime_context_->unlock_tensor_buffer(buffer);
     }
   }
 
   void Finish() {
     for (auto* output : outputs_) {
-      ::litert::TensorBuffer buffer = device_context_->Lookup(output);
-      buffer.Write(absl::MakeConstSpan(output->data(), output->size()));
+      LiteRtTensorBuffer buffer = device_context_->Lookup(output);
+      size_t packed_size;
+      runtime_context_->get_tensor_buffer_packed_size(buffer, &packed_size);
+      void* host_mem;
+      runtime_context_->lock_tensor_buffer(buffer, &host_mem,
+                                           kLiteRtTensorBufferLockModeWrite);
+      std::memcpy(host_mem, output->data(), packed_size);
+      runtime_context_->unlock_tensor_buffer(buffer);
     }
   }
 
@@ -242,12 +253,18 @@ class LiteRtDispatchInvocationContextT {
 
   ~LiteRtDispatchInvocationContextT() = default;
 
+  const LiteRtRuntimeContext* runtime_context() const {
+    return runtime_context_;
+  }
+
  private:
   LiteRtDispatchInvocationContextT(
+      const LiteRtRuntimeContext* runtime_context,
       LiteRtDispatchDeviceContext device_context,
       LiteRtDispatchExecutableType exec_type, absl::string_view function_name,
       ::litert::example::ExampleGlobalGraph global_graph)
-      : device_context_(device_context),
+      : runtime_context_(runtime_context),
+        device_context_(device_context),
         exec_type_(exec_type),
         function_name_(function_name),
         global_graph_(std::move(global_graph)) {
@@ -260,6 +277,7 @@ class LiteRtDispatchInvocationContextT {
     outputs_.resize(example_graph.Outputs().size());
   }
 
+  const LiteRtRuntimeContext* runtime_context_;
   LiteRtDispatchDeviceContext device_context_;
   LiteRtDispatchExecutableType exec_type_;
   absl::string_view function_name_;
@@ -295,13 +313,23 @@ LiteRtStatus GetCapabilities(int* capabilities) {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus Initialize(LiteRtEnvironment env, LiteRtOptions options) {
+LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
+                        LiteRtEnvironment env, LiteRtOptions options) {
   the_environment = env;
   the_options = options;
+
+  LiteRtEnvironmentOptions environment_options;
+  if (LiteRtGetEnvironmentOptions(env, &environment_options) ==
+      kLiteRtStatusOk) {
+    LiteRtPropagateMinLoggerSeverity(environment_options);
+  }
+
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext* device_context) {
+LiteRtStatus DeviceContextCreate(const LiteRtRuntimeContext* runtime_context,
+                                 LiteRtOptions options,
+                                 LiteRtDispatchDeviceContext* device_context) {
   *device_context = new LiteRtDispatchDeviceContextT();
   return kLiteRtStatusOk;
 }
@@ -312,6 +340,7 @@ LiteRtStatus DeviceContextDestroy(LiteRtDispatchDeviceContext device_context) {
 }
 
 Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
+    const LiteRtRuntimeContext* runtime_context,
     const LiteRtRankedTensorType& tensor_type) {
   RankedTensorType t(tensor_type);
   if (t.Layout().HasStrides()) {
@@ -323,7 +352,7 @@ Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
   LITERT_ASSIGN_OR_RETURN(const auto size, t.Bytes());
 
   LiteRtTensorBufferRequirements requirements;
-  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferRequirements(
+  LITERT_RETURN_IF_ERROR(runtime_context->create_tensor_buffer_requirements(
       buffer_types_c.size(), buffer_types_c.data(), size, 0, nullptr,
       &requirements));
   return requirements;
@@ -333,8 +362,10 @@ LiteRtStatus GetInputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int input_index,
     const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
-  LITERT_ASSIGN_OR_RETURN(auto requirements,
-                          GetTensorBufferRequirements(*tensor_type));
+  LITERT_ASSIGN_OR_RETURN(
+      auto requirements,
+      GetTensorBufferRequirements(invocation_context->runtime_context(),
+                                  *tensor_type));
   *tensor_buffer_requirements = requirements;
   return kLiteRtStatusOk;
 }
@@ -343,8 +374,10 @@ LiteRtStatus GetOutputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int output_index,
     const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
-  LITERT_ASSIGN_OR_RETURN(auto requirements,
-                          GetTensorBufferRequirements(*tensor_type));
+  LITERT_ASSIGN_OR_RETURN(
+      auto requirements,
+      GetTensorBufferRequirements(invocation_context->runtime_context(),
+                                  *tensor_type));
   *tensor_buffer_requirements = requirements;
   return kLiteRtStatusOk;
 }
@@ -365,15 +398,17 @@ LiteRtStatus UnregisterTensorBuffer(LiteRtDispatchDeviceContext device_context,
 }
 
 LiteRtStatus InvocationContextCreate(
+    const LiteRtRuntimeContext* runtime_context,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
     int num_inputs, int num_outputs,
     LiteRtDispatchInvocationContext* invocation_context) {
-  LITERT_ASSIGN_OR_RETURN(auto invocation_context_ptr,
-                          LiteRtDispatchInvocationContextT::Create(
-                              device_context, exec_type, exec_bytecode_buffer,
-                              function_name, num_inputs, num_outputs));
+  LITERT_ASSIGN_OR_RETURN(
+      auto invocation_context_ptr,
+      LiteRtDispatchInvocationContextT::Create(
+          runtime_context, device_context, exec_type, exec_bytecode_buffer,
+          function_name, num_inputs, num_outputs));
   *invocation_context = invocation_context_ptr.release();
   return kLiteRtStatusOk;
 }

@@ -14,7 +14,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_bin", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
+load("//litert/build_common:litert_build_defs.bzl", "copy_file", "litert_bin", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -28,6 +28,10 @@ litert_dynamic_lib(
     ],
     hdrs = ["//litert/vendors/c:litert_compiler_plugin.h"],
     export_litert_only = True,
+    linkopts = select({
+        "//litert:windows": [],
+        "//conditions:default": ["-Wl,-rpath,$$ORIGIN"],
+    }),
     linkstatic = 1,
     shared_lib_name = "example_plugin_so",
     so_name = "libLiteRtCompilerPlugin_Example.so",
@@ -35,16 +39,41 @@ litert_dynamic_lib(
     deps = [
         ":example_common",
         ":example_transformations",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_logging_helper",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_op_options",
+        "//litert/compiler/cc:litert_model",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
+)
+
+copy_file(
+    name = "example_plugin_runtime_dll",
+    src = "//litert/c:litert_runtime_c_api_dll",
+    target = "libLiteRt.dll",
+    visibility = ["//litert:litert_public"],
+)
+
+copy_file(
+    name = "example_plugin_runtime_so",
+    src = "//litert/c:litert_runtime_c_api_so",
+    target = "libLiteRt.so",
+    visibility = ["//litert:litert_public"],
+)
+
+filegroup(
+    name = "example_plugin_so_data",
+    srcs = [":example_plugin_so"] + select({
+        "//litert:windows": [":example_plugin_runtime_dll"],
+        "//conditions:default": [":example_plugin_runtime_so"],
+    }),
+    visibility = ["//litert:litert_public"],
 )
 
 litert_dynamic_lib(
@@ -54,26 +83,27 @@ litert_dynamic_lib(
     ],
     hdrs = ["//litert/vendors/c:litert_dispatch.h"],
     export_litert_only = True,
+    linkopts = select({
+        "//litert:windows": [],
+        "//conditions:default": ["-Wl,-rpath,$$ORIGIN"],
+    }),
     linkstatic = 1,
     shared_lib_name = "example_dispatch_so",
     so_name = "libLiteRtDispatch_Example.so",
     visibility = ["//litert:litert_public"],
     deps = [
         ":example_common",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging_helper",
         "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_ranked_tensor_type",
-        "//litert/cc:litert_tensor_buffer_requirements",
-        "//litert/cc:litert_tensor_buffer_types",
-        "//litert/cc/dynamic_runtime:litert_tensor_buffer",
-        "//litert/cc/internal:litert_handle",
         "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -97,18 +127,16 @@ litert_bin(
         ":example_common",
         ":example_transformations",
         ":litert_compiler_plugin_c_api",
-        "//litert/c:litert_builder",
-        "//litert/c:litert_op_options",
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_logging_helper",
         "//litert/c/options:litert_compiler_options",
-        "//litert/c/options:litert_intel_openvino_options",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_op_options",
+        "//litert/compiler/cc:litert_model",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -120,6 +148,7 @@ litert_lib(
         "//litert/vendors/c:litert_compiler_plugin.h",
     ],
     deps = [
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
     ],
 )
@@ -143,8 +172,10 @@ litert_bin(
     deps = [
         ":example_common",
         ":litert_dispatch_api",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c:litert_tensor_buffer",
+        "//litert/c/internal:litert_logging_helper",
         "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/cc:litert_buffer_ref",
@@ -152,7 +183,6 @@ litert_bin(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc/dynamic_runtime:litert_model",
-        "//litert/cc/dynamic_runtime:litert_tensor_buffer",
         "//litert/cc/internal:litert_handle",
         "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -167,6 +197,7 @@ litert_lib(
         "//litert/vendors/c:litert_dispatch.h",
     ],
     deps = [
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_scheduling_info",
     ],
@@ -186,9 +217,15 @@ cc_test(
         "nosan",
         "notsan",
     ],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":example_plugin",  # buildcleaner: keep
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_compiler_context",
         "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/core/model:model_testonly",
         "//litert/test:common",
@@ -204,7 +241,7 @@ cc_library(
     srcs = ["example_common.cc"],
     hdrs = ["example_common.h"],
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
@@ -235,29 +272,32 @@ cc_library(
     srcs = ["example_dispatch.cc"],
     deps = [
         ":example_common",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging_helper",
         "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_ranked_tensor_type",
-        "//litert/cc:litert_tensor_buffer_requirements",
-        "//litert/cc:litert_tensor_buffer_types",
-        "//litert/cc/dynamic_runtime:litert_tensor_buffer",
-        "//litert/cc/internal:litert_handle",
         "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
     ],
 )
 
 cc_test(
     name = "example_dispatch_test",
     srcs = ["example_dispatch_test.cc"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":example_dispatch",  # buildcleaner: keep
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_runtime_context_testonly",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/test:matchers",
         "//litert/test:simple_buffer_runtimecapi",
@@ -273,7 +313,7 @@ cc_test(
     srcs = ["end_to_end_test.cc"],
     data = [
         ":example_dispatch_so",
-        ":libLiteRtCompilerPlugin_Example.so",
+        ":example_plugin_so",
         "//litert/test:mlir_test_data",
     ],
     # This test dlopens, so sanitzers are prone to false positive.
@@ -284,12 +324,7 @@ cc_test(
         "notsan",
     ],
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_api_with_dynamic_runtime",
-        "//litert/cc/dynamic_runtime:litert_compiled_model",
-        "//litert/cc/dynamic_runtime:litert_environment",
-        "//litert/core/model:model_testonly",
         "//litert/test:common",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
@@ -303,6 +338,7 @@ cc_library(
     srcs = ["example_transformations.cc"],
     hdrs = ["example_transformations.h"],
     deps = [
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_builder",
@@ -322,7 +358,9 @@ litert_test(
         "//litert/test:tflite_test_data",
     ],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": [],
+        "//litert:android": [],
+        "//litert:ios": [],
+        "//litert:macos": [],
         "//conditions:default": [
             make_rpaths([
                 "//litert/c:litert_runtime_c_api_so",
@@ -336,6 +374,10 @@ litert_test(
         "notap",
         "nosan",
     ],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     ungrte = True,
     use_sys_malloc = True,
     deps = [

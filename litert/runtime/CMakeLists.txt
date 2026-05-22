@@ -18,7 +18,12 @@ cmake_minimum_required(VERSION 3.20)
 set(LITERT_RUNTIME_SOURCES
     accelerator_registry.cc
     accelerators/auto_registration.cc
+    accelerators/cpu_registry.cc
     accelerators/dispatch/dispatch_accelerator.cc
+    accelerators/gpu_registry.cc
+    accelerators/npu_registry.cc
+    accelerators/registration_helper.cc
+    accelerators/webnn_registry.cc
     accelerators/xnnpack/xnnpack_accelerator.cc
     ahwb_buffer.cc
     ahwb_wrapper.cc
@@ -69,9 +74,14 @@ target_sources(litert_runtime PRIVATE open_cl_memory.cc open_cl_sync.cc)
 
 # Link Apple frameworks for Metal and OpenGL interop
 if(APPLE)
-  set_source_files_properties(metal_info.cc PROPERTIES COMPILE_FLAGS "-x objective-c++")
+  set_source_files_properties(metal_info.cc PROPERTIES
+    COMPILE_FLAGS "-x objective-c++ -fobjc-arc")
   target_link_libraries(litert_runtime PRIVATE "-framework Metal" "-framework Foundation" "-framework OpenGL")
 endif()
+
+target_compile_options(litert_runtime PRIVATE
+    -DLITERT_USE_XNNPACK
+)
 
 target_include_directories(litert_runtime
     PUBLIC

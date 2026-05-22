@@ -15,6 +15,7 @@
 
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
 
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #if __ANDROID__
@@ -39,17 +40,16 @@
 #include "litert/c/litert_model.h"
 #include "litert/vendors/intel_openvino/utils.h"
 
-#if defined(LITERT_WINDOWS_OS)
-#include "litert/vendors/intel_openvino/dispatch/remote_tensor_buffer.h"
-#endif  // LITERT_WINDOWS_OS
+#include "litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.h"
 
 #if LITERT_HAS_AHWB_SUPPORT || LITERT_HAS_DMABUF_SUPPORT
 #include "openvino/core/type/element_type.hpp"
 #endif
 
 litert::Expected<LiteRtDispatchDeviceContextT::Ptr>
-LiteRtDispatchDeviceContextT::Create() {
-  return Ptr(new LiteRtDispatchDeviceContextT());
+LiteRtDispatchDeviceContextT::Create(
+    const LiteRtRuntimeContext* runtime_context) {
+  return Ptr(new LiteRtDispatchDeviceContextT(runtime_context));
 }
 
 #if LITERT_HAS_AHWB_SUPPORT
@@ -100,7 +100,7 @@ litert::Expected<int> GetFdFromUnixHandle(AHardwareBuffer* ahwb) {
                               "Failed to receive socket message");
   }
   int fd = -1;
-  struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
   if (cmsg && cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
     memcpy(&fd, CMSG_DATA(cmsg), sizeof(int));
   }
@@ -115,25 +115,29 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   LiteRtTensorBufferType tensor_buffer_type;
 
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetTensorBufferType(tensor_buffer, &tensor_buffer_type),
+      runtime_context_->get_tensor_buffer_type(tensor_buffer,
+                                               &tensor_buffer_type),
       litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to get tensor buffer type"));
 
   size_t tensor_buffer_size;
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetTensorBufferSize(tensor_buffer, &tensor_buffer_size),
+      runtime_context_->get_tensor_buffer_size(tensor_buffer,
+                                               &tensor_buffer_size),
       litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to get tensor buffer size"));
 
   size_t tensor_buffer_offset;
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetTensorBufferOffset(tensor_buffer, &tensor_buffer_offset),
+      runtime_context_->get_tensor_buffer_offset(tensor_buffer,
+                                                 &tensor_buffer_offset),
       litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to get tensor buffer offset"));
 
   LiteRtRankedTensorType tensor_type;
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetTensorBufferTensorType(tensor_buffer, &tensor_type),
+      runtime_context_->get_tensor_buffer_tensor_type(tensor_buffer,
+                                                      &tensor_type),
       litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to get tensor buffer's type"));
   LITERT_RETURN_IF_ERROR(
@@ -143,48 +147,35 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 
   switch (tensor_buffer_type) {
     case kLiteRtTensorBufferTypeOpenVINOTensorBuffer: {
-#if defined(LITERT_WINDOWS_OS)
       HwMemoryHandle hw_memory_handle;
       LITERT_RETURN_IF_ERROR(
-          LiteRtGetTensorBufferCustomTensorBufferHandle(tensor_buffer,
-                                                        &hw_memory_handle),
+          runtime_context_->get_tensor_buffer_custom_tensor_buffer_handle(
+              tensor_buffer, &hw_memory_handle),
           litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                             "Failed to get OpenVINO remote tensor buffer."));
-      RemoteTensorBuffer* custom_tensor_buffer =
-          reinterpret_cast<RemoteTensorBuffer*>(hw_memory_handle);
+                             "Failed to get OpenVINO tensor buffer."));
+      OpenVinoTensorBuffer* custom_tensor_buffer =
+          reinterpret_cast<OpenVinoTensorBuffer*>(hw_memory_handle);
 
-      LITERT_ASSIGN_OR_RETURN(auto remote_tensor,
-                              custom_tensor_buffer->GetZeroBufferTensor());
+      LITERT_ASSIGN_OR_RETURN(auto openvino_tensor,
+                              custom_tensor_buffer->GetOVTensor());
       tensor_handle_map_.emplace((LiteRtTensorBufferHandle)next_handle_,
-                                 remote_tensor);
+                                 RegisteredTensor{.tensor = openvino_tensor});
 
       return next_handle_++;
-#else
-      return litert::Unexpected(
-          kLiteRtStatusErrorRuntimeFailure,
-          "Remote tensor support is missing on this platform.");
-#endif  // LITERT_WINDOWS_OS
     }
     case kLiteRtTensorBufferTypeDmaBuf: {
 #if LITERT_HAS_DMABUF_SUPPORT
       ov::element::Type ov_element_type =
           litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
       int buffer_fd;
-      void *buffer_host_addr;
+      void* buffer_host_addr;
       LITERT_RETURN_IF_ERROR(
-          LiteRtGetTensorBufferDmaBufBuffer(tensor_buffer, &buffer_host_addr,
-                                            &buffer_fd),
+          runtime_context_->get_tensor_buffer_dma_buf_buffer(
+              tensor_buffer, &buffer_host_addr, &buffer_fd),
           litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                              "Failed to get DMA-BUF buffer"));
-
-      auto mmap_handle = mmap(NULL, tensor_buffer_size, PROT_WRITE | PROT_READ,
-                              MAP_SHARED, buffer_fd, tensor_buffer_offset);
-
-      if (mmap_handle == MAP_FAILED)
-        return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                  "MMAP failed for tensor buffer");
-
-      auto context = core_->get_default_context("NPU")
+      auto context = getCore()
+                         ->get_default_context("NPU")
                          .as<ov::intel_npu::level_zero::ZeroContext>();
       std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
       for (int i = 0; i < ov_shape_vec.size(); i++)
@@ -194,7 +185,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
           ov_element_type, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()},
           buffer_fd);
       tensor_handle_map_.emplace((LiteRtTensorBufferHandle)next_handle_,
-                                 remote_tensor);
+                                 RegisteredTensor{.tensor = remote_tensor});
       return next_handle_++;
 
 #else
@@ -208,14 +199,13 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 #if LITERT_HAS_AHWB_SUPPORT
       ov::element::Type ov_element_type =
           litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
-      AHardwareBuffer *ahwb;
+      AHardwareBuffer* ahwb;
       LITERT_RETURN_IF_ERROR(
-          LiteRtGetTensorBufferAhwb(tensor_buffer, &ahwb),
+          runtime_context_->get_tensor_buffer_ahwb(tensor_buffer, &ahwb),
           litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                              "Failed to get LiteRT Tensor Buffer for AHWB"));
 
-      auto fd_exp = GetFdFromUnixHandle(ahwb);
-      int fd = fd_exp.Value();
+      LITERT_ASSIGN_OR_RETURN(int fd, GetFdFromUnixHandle(ahwb));
       LITERT_RETURN_IF_ERROR(
           fd != -1, litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                        "Failed to get FD from unix handle"));
@@ -223,15 +213,25 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
       for (int i = 0; i < ov_shape_vec.size(); i++)
         ov_shape_vec[i] = tensor_type.layout.dimensions[i];
-      auto context = core_->get_default_context("NPU")
+      auto context = getCore()
+                         ->get_default_context("NPU")
                          .as<ov::intel_npu::level_zero::ZeroContext>();
       void* buffer = mmap(nullptr, tensor_buffer_size, PROT_READ | PROT_WRITE,
                           MAP_SHARED, fd, tensor_buffer_offset);
+      close(fd);
+      if (buffer == MAP_FAILED) {
+        return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                  "MMAP failed for tensor buffer");
+      }
+      CleanupAction cleanup([buffer, tensor_buffer_size]() {
+        munmap(buffer, tensor_buffer_size);
+      });
       ov::Tensor ov_tensor(ov_element_type,
                            ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()},
                            buffer);
-      tensor_handle_map_.emplace((LiteRtTensorBufferHandle)next_handle_,
-                                 ov_tensor);
+      tensor_handle_map_.emplace(
+          (LiteRtTensorBufferHandle)next_handle_,
+          RegisteredTensor{.tensor = ov_tensor, .cleanup = std::move(cleanup)});
       return next_handle_++;
 
 #else

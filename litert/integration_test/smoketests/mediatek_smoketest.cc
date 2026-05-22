@@ -44,9 +44,11 @@ TEST(MediaTekSmokeTest, LoadLibsFromEnvPath) {
 }
 
 TEST(MediaTekSmokeTest, NeuronAdapterApiCreate) {
-  auto mediatek_options = mediatek::MediatekOptions::Create();
+  LrtMediatekOptions* mediatek_options;
+  LrtCreateMediatekOptions(&mediatek_options);
   auto neuron_adapter_api = litert::mediatek::NeuronAdapterApi::Create(
       std::nullopt, mediatek_options);
+  LrtDestroyMediatekOptions(mediatek_options);
   ASSERT_TRUE(neuron_adapter_api.HasValue());
 }
 

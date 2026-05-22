@@ -14,6 +14,13 @@
 
 cmake_minimum_required(VERSION 3.20)
 
+# absl strips flag names and registration on Android by default (ABSL_FLAGS_STRIP_NAMES=1),
+# which causes absl::ParseCommandLine to see no registered flags at runtime.
+# Override this for all flag libraries so flags are always registered.
+if(ANDROID)
+    add_compile_definitions(ABSL_FLAGS_STRIP_NAMES=0)
+endif()
+
 # Common flags
 add_library(litert_tool_flags_common STATIC
     common_flags.cc

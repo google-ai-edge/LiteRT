@@ -15,7 +15,6 @@
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
 
 #include <cinttypes>
-#include <cstdint>
 #include <optional>
 #include <string>
 #include <utility>
@@ -26,11 +25,14 @@
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+#include "litert/vendors/google_tensor/dispatch/google/darwinn_options_utils.h"
+#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_macros.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_utils.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
-#include "litert/vendors/google_tensor/dispatch/sb_dispatch_annotations.h"
+#include "litert/vendors/google_tensor/dispatch/sb_api_features.h"
 
 namespace gt = litert::google_tensor;
 
@@ -70,47 +72,22 @@ LiteRtStatus LiteRtDispatchGraphT::Create(
   graph = new LiteRtDispatchGraphT(device_context, thr_graph);
   absl::Cleanup graph_cleanup = [graph] { graph->Destroy(); };
 
-  if (device_context->darwinn_options().has_value()) {
-    const LiteRtDispatchDeviceContextT::DarwinnOptionsData& darwinn_options =
-        *(device_context->darwinn_options());
+#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+  LITERT_RETURN_IF_ERROR(
+      gt::ApplyDarwinnOptionsToGraph(graph, device_context->darwinn_options()));
+#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
 
-    if (std::optional<uint32_t> device_power_state =
-            darwinn_options.inference_power_state;
-        device_power_state.has_value()) {
-      LITERT_RETURN_IF_ERROR(graph->AnnotateGraph(
-          gt::DispatchDirectiveAnnotations::kEdgetpuDevicePowerState.data(),
-          std::to_string(*device_power_state).c_str()));
+  // Apply Google Tensor specific options.
+  constexpr char kEdgetpuPerformanceMode[] = "edgetpu_performance_mode";
+  if (const auto& options = device_context->google_tensor_options();
+      options.has_value() && options->performance_mode.has_value()) {
+    // Ignore the return value as this is unsupported on older runtime.
+    if (graph->AnnotateGraph(
+            kEdgetpuPerformanceMode,
+            std::to_string(static_cast<int>(*options->performance_mode))
+                .c_str()) != kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_WARNING, "Failed to apply edgetpu_performance_mode.");
     }
-
-    if (std::optional<uint32_t> memory_power_state =
-            darwinn_options.inference_memory_power_state;
-        memory_power_state.has_value()) {
-      LITERT_RETURN_IF_ERROR(graph->AnnotateGraph(
-          gt::DispatchDirectiveAnnotations::kEdgetpuMemoryPowerState.data(),
-          std::to_string(*memory_power_state).c_str()));
-    }
-
-    if (std::optional<int8_t> inference_priority =
-            darwinn_options.inference_priority;
-        inference_priority.has_value()) {
-      LITERT_RETURN_IF_ERROR(graph->AnnotateGraph(
-          gt::DispatchDirectiveAnnotations::kPriority.data(),
-          std::to_string(*inference_priority).c_str()));
-    }
-
-    if (darwinn_options.atomic_inference) {
-      LITERT_RETURN_IF_ERROR(graph->AnnotateGraph(
-          gt::DispatchDirectiveAnnotations::kEdgetpuAtomicInference.data(),
-          "1"));
-    }
-
-    if (darwinn_options.prefer_coherent) {
-      LITERT_RETURN_IF_ERROR(graph->AnnotateGraph(
-          gt::GraphDirectiveAnnotations::kPreferCoherent.data(), "1"));
-    }
-
-    LITERT_LOG(LITERT_INFO,
-               "Successfully applied Darwinn options as graph annotations");
   }
 
   LITERT_RETURN_IF_ERROR(device_context->RegisterGraph(graph));
@@ -251,13 +228,26 @@ LiteRtStatus LiteRtDispatchGraphT::AssignNodeFunction(
   // An empty function name represents no function name being provided, and
   // therefore we must pass `nullptr` to the call below, otherwise SB expects a
   // model with a signature - b/378913220.
+  const char* valid_function_name =
+      (!function_name || *function_name == '\0') ? nullptr : function_name;
+
+  if (!device_context_->IsTfliteExecutable(exec_handle) &&
+      valid_function_name != nullptr &&
+      !GoogleTensorSouthBoundFeatureSupported(
+          GoogleTensorSouthBoundFeature::kTachyonNamedSqFunctions)) {
+    LITERT_LOG(LITERT_VERBOSE,
+               "Named SQ functions are not supported, so overriding function "
+               "name '%s' to ''",
+               valid_function_name);
+    valid_function_name = nullptr;
+  }
+
   GT_LOG_RETURN_IF_SB_ERROR(
-      thrGraphAssignSq(
-          thr_graph_, gt::ToThrNodeId(node_id), exec_handle,
-          !function_name || *function_name == '\0' ? nullptr : function_name),
+      thrGraphAssignSq(thr_graph_, gt::ToThrNodeId(node_id), exec_handle,
+                       valid_function_name),
       "Failed to assign function '%s' from executable %" PRIu64
       " to node %" PRIu64,
-      function_name, exec_handle, node_id);
+      valid_function_name, exec_handle, node_id);
 
   return kLiteRtStatusOk;
 }

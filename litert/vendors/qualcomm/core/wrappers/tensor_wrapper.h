@@ -148,6 +148,8 @@ class TensorWrapper final {
            qnn_tensor_.v2.type == QNN_TENSOR_TYPE_APP_READ;
   }
 
+  bool IsQuantBitwidth(std::uint32_t bitwidth) const;
+
   // Utilities /////////////////////////////////////////////////////////
 
   // Allocate memory on owned_data_ for output tensors
@@ -159,14 +161,19 @@ class TensorWrapper final {
 
   void ConvertAxisScaleOffsetToScaleOffset();
 
-  void ConvertQint16ToQuint16();
-
   void MarkDump() {
     if (!absl::EndsWith(name_, kDumpSuffix)) {
       name_ += kDumpSuffix;
       qnn_tensor_.v2.name = name_.c_str();
     }
     SetTensorType(QNN_TENSOR_TYPE_APP_READ);
+  }
+
+  void SetQuantBitwidth(std::uint32_t bitwidth);
+
+  void SetMemHandle(Qnn_MemHandle_t memory_handle) {
+    qnn_tensor_.v2.memType = QNN_TENSORMEMTYPE_MEMHANDLE;
+    qnn_tensor_.v2.memHandle = memory_handle;
   }
 
  private:
@@ -206,6 +213,7 @@ class TensorWrapper final {
 };
 
 using TensorWrapperRef = std::reference_wrapper<TensorWrapper>;
+using ConstTensorWrapperRef = std::reference_wrapper<const TensorWrapper>;
 
 // Get the Qnn_DataType_t associated with given C++ type.
 template <typename T>

@@ -14,7 +14,11 @@ limitations under the License.
 ==============================================================================*/
 
 #include <cstdlib>
+#include <iostream>
 
+#include "absl/flags/reflection.h"  // from @com_google_absl
+#include "absl/strings/match.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/tools/benchmark_litert_model.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/tools/logging.h"
@@ -22,9 +26,35 @@ limitations under the License.
 namespace litert::benchmark {
 
 int Main(int argc, char** argv) {
+  bool has_help = false;
+  for (int i = 1; i < argc; ++i) {
+    if (absl::string_view(argv[i]) == "--help" ||
+        absl::string_view(argv[i]) == "-h") {
+      has_help = true;
+      break;
+    }
+  }
+
+  if (has_help) {
+    std::cout << "\n  NPU Vendor Flags from LiteRT:\n";
+    auto flags = absl::GetAllFlags();
+    for (const auto& [name, flag] : flags) {
+      if (absl::StrContains(flag->Filename(), "flags/vendors/")) {
+        std::cout << "    --" << flag->Name() << " (" << flag->Help()
+                  << "); default: " << flag->DefaultValue() << ";\n";
+      }
+    }
+    std::cout << std::endl;
+  }
+
   TFLITE_LOG(INFO) << "STARTING!";
   BenchmarkLiteRtModel benchmark;
   if (benchmark.Run(argc, argv) != kTfLiteOk) {
+    // If help was requested, tflite benchmark returns kTfLiteError, which is
+    // fine
+    if (has_help) {
+      return EXIT_SUCCESS;
+    }
     TFLITE_LOG(ERROR) << "Benchmarking failed.";
     return EXIT_FAILURE;
   }

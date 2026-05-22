@@ -19,9 +19,8 @@
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_op_options.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
@@ -29,7 +28,7 @@ namespace litert::mediatek {
 
 Expected<void> LegalizeAddOp(const NeuronAdapterApi& neuron_adapter_api,
                              NeuronModel* model, OperandMap& operand_map,
-                             const litert::Op& op) {
+                             const litert::compiler::Op& op) {
   LITERT_LOG(LITERT_INFO, "Legalize Add");
   std::vector<uint32_t> input_indices;
   for (auto& input : op.Inputs()) {
@@ -43,8 +42,8 @@ Expected<void> LegalizeAddOp(const NeuronAdapterApi& neuron_adapter_api,
   // A NEURON_ADD operation takes a 3rd scalar operand, which is used to pass a
   // TfLiteFusedActivation value.
   uint32_t tfl_fused_activation;
-  if (auto status =
-          LiteRtGetAddFusedActivationOption(op.Get(), &tfl_fused_activation);
+  if (auto status = op.ctx()->get_add_fused_activation_option(
+          op.Get(), &tfl_fused_activation);
       status != kLiteRtStatusOk) {
     return Error(status, "Failed to get fused activation");
   }

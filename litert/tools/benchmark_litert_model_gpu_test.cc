@@ -84,6 +84,26 @@ TEST(BenchmarkLiteRtModelTest, GPUAccelerationWithProfiler) {
   EXPECT_EQ(benchmark.Run(), kTfLiteOk);
 }
 
+TEST(BenchmarkLiteRtModelTest, WeightOptions) {
+  // MSAN does not support GPU tests.
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported In msan";
+#endif
+  BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
+  params.Set<std::string>("graph", kModelPath);
+  params.Set<std::string>("signature_to_run_for", kSignatureToRunFor);
+  params.Set<bool>("use_cpu", false);
+  params.Set<bool>("use_gpu", true);
+  params.Set<bool>("require_full_delegation", true);
+  params.Set<bool>("enable_weight_sharing", true);
+  params.Set<bool>("convert_weights_on_gpu", true);
+
+  BenchmarkLiteRtModel benchmark = BenchmarkLiteRtModel(std::move(params));
+
+  EXPECT_EQ(benchmark.Run(), kTfLiteOk);
+}
+
+
 }  // namespace
 }  // namespace benchmark
 }  // namespace litert

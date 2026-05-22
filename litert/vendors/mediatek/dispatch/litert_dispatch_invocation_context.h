@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "neuron/api/NeuronAdapter.h"
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
@@ -78,8 +79,10 @@ class LiteRtDispatchInvocationContextT {
   class IoRequirementsBuilder {
    public:
     IoRequirementsBuilder(size_t buffer_size,
-                          const std::vector<uint32_t>& padded_dimensions);
-    litert::Expected<LiteRtTensorBufferRequirements> Create();
+                          const std::vector<uint32_t>& padded_dimensions,
+                          const LiteRtRankedTensorType& tensor_type);
+    litert::Expected<LiteRtTensorBufferRequirements> Create(
+        const LiteRtRuntimeContext* runtime_context);
 
    private:
     size_t buffer_size_;

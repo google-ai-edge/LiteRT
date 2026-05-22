@@ -14,16 +14,19 @@
 
 #include "litert/tools/flags/vendors/qualcomm_flags.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>
 
 #include "absl/flags/flag.h"  // from @com_google_absl
+#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/tools/flags/flag_types.h"
+#include "litert/tools/flags/options_parser_registry.h"
 
 // NOLINTBEGIN(*alien-types*)
 // TODO: Move absl parse/unparse function to same file as enum types if
@@ -81,18 +84,22 @@ std::string AbslUnparseFlag(QualcommOptions::LogLevel options) {
       return "debug";
   }
 }
+
 }  // namespace litert::qualcomm
 
 ABSL_FLAG(bool, qualcomm_enable_weight_sharing, false,
           "Whether to enable weight sharing, this is unsupported on mobile "
           "platforms.");
 
-ABSL_FLAG(bool, qualcomm_use_htp_preference, false,
-          "Whether to transform a litert op into the HTP prefered pattern.");
+ABSL_RETIRED_FLAG(
+    bool, qualcomm_use_htp_preference, false,
+    "DEPRECATED: Whether to transform a litert op into the HTP prefered "
+    "pattern.");
 
-ABSL_FLAG(bool, qualcomm_use_qint16_as_quint16, false,
-          "Whether to automatically convert a quantized int16 model into a "
-          "quantized uin16 model.");
+ABSL_RETIRED_FLAG(
+    bool, qualcomm_use_qint16_as_quint16, false,
+    "DEPRECATED: Whether to automatically convert a quantized int16 "
+    "model into a quantized uin16 model.");
 
 ABSL_FLAG(bool, qualcomm_use_int64_bias_as_int32, true,
           "Whether to convert bias tensors of FullyConnected "
@@ -114,7 +121,6 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::DspPerformanceMode,
 ABSL_FLAG(::litert::tools::IntList, qualcomm_dump_tensor_ids, {},
           "Debug Feature. Ids to dump as outputs. Comma-separated list of "
           "string. Use -1 to dump all op outputs.");
-
 namespace litert::qualcomm {
 
 bool AbslParseFlag(absl::string_view text,
@@ -255,6 +261,42 @@ std::string AbslUnparseFlag(QualcommOptions::DspPerformanceMode options) {
   }
 }
 
+}  // namespace litert::qualcomm
+
+ABSL_FLAG(litert::qualcomm::QualcommOptions::GraphIOTensorMemType,
+          qualcomm_graph_io_tensor_mem_type,
+          litert::qualcomm::QualcommOptions::GraphIOTensorMemType::kMemHandle,
+          "Specifies mem type to be used for input and output tensors during "
+          "graph creation. Valid settings:\"raw\" and \"memhandle\"");
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::GraphIOTensorMemType* memory_type,
+                   std::string* error) {
+  if (text == "raw") {
+    *memory_type = QualcommOptions::GraphIOTensorMemType::kRaw;
+    return true;
+  }
+  if (text == "memhandle") {
+    *memory_type = QualcommOptions::GraphIOTensorMemType::kMemHandle;
+    return true;
+  }
+  *error = "Unknown graph input output tensor mem type";
+  return false;
+}
+
+std::string AbslUnparseFlag(QualcommOptions::GraphIOTensorMemType memory_type) {
+  switch (memory_type) {
+    case QualcommOptions::GraphIOTensorMemType::kRaw:
+      return "raw";
+    case QualcommOptions::GraphIOTensorMemType::kMemHandle:
+      return "memhandle";
+    default:
+      ABSL_CHECK(false) << "Unknown GraphIOTensorMemType: "
+                        << static_cast<int>(memory_type);
+  }
+}
 }  // namespace litert::qualcomm
 
 ABSL_FLAG(litert::qualcomm::QualcommOptions::Profiling, qualcomm_profiling,
@@ -433,6 +475,11 @@ ABSL_FLAG(bool, qualcomm_use_fold_relu, true,
           "optimization is correct when quantization ranges for convolution "
           "are equal to or are subset of the Relu operation.");
 
+ABSL_FLAG(
+    std::int32_t, qualcomm_htp_p_point, 0,
+    "P points are experimental (HTP backend with O3 only) and map to "
+    "predefined compiler configurations affecting latency and DRAM bandwidth.");
+
 ABSL_FLAG(litert::qualcomm::QualcommOptions::Backend, qualcomm_backend,
           litert::qualcomm::QualcommOptions::Backend::kHtp,
           "QNN backend to use.");
@@ -488,14 +535,6 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto log_level = absl::GetFlag(FLAGS_qualcomm_log_level);
   opts.SetLogLevel(log_level);
 
-  const auto use_htp_preference =
-      absl::GetFlag(FLAGS_qualcomm_use_htp_preference);
-  opts.SetUseHtpPreference(use_htp_preference);
-
-  const auto use_qint16_as_quint16 =
-      absl::GetFlag(FLAGS_qualcomm_use_qint16_as_quint16);
-  opts.SetUseQint16AsQuint16(use_qint16_as_quint16);
-
   const auto use_int64_bias_as_int32 =
       absl::GetFlag(FLAGS_qualcomm_use_int64_bias_as_int32);
   opts.SetUseInt64BiasAsInt32(use_int64_bias_as_int32);
@@ -540,6 +579,9 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto use_fold_relu = absl::GetFlag(FLAGS_qualcomm_use_fold_relu);
   opts.SetUseFoldReLU(use_fold_relu);
 
+  const auto htp_p_point = absl::GetFlag(FLAGS_qualcomm_htp_p_point);
+  opts.SetHtpPPoint(htp_p_point);
+
   const auto qnn_backend = absl::GetFlag(FLAGS_qualcomm_backend);
   opts.SetBackend(qnn_backend);
 
@@ -547,7 +589,20 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
       absl::GetFlag(FLAGS_qualcomm_saver_output_dir);
   opts.SetSaverOutputDir(saver_output_dir);
 
+  const auto graph_io_tensor_mem_type =
+      absl::GetFlag(FLAGS_qualcomm_graph_io_tensor_mem_type);
+  opts.SetGraphIOTensorMemType(graph_io_tensor_mem_type);
+
   return {};
 }
+
+}  // namespace litert::qualcomm
+
+namespace litert::qualcomm {
+
+LITERT_REGISTER_OPTIONS_PARSER([](Options& options) -> Expected<void> {
+  LITERT_ASSIGN_OR_RETURN(auto& qualcomm_opts, options.GetQualcommOptions());
+  return UpdateQualcommOptionsFromFlags(qualcomm_opts);
+});
 
 }  // namespace litert::qualcomm

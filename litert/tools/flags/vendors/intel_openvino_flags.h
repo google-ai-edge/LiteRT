@@ -28,8 +28,6 @@
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
-#if defined(INCLUDE_INTEL_OPENVINO_COMPILE_FLAGS)
-
 ABSL_DECLARE_FLAG(LiteRtIntelOpenVinoDeviceType, intel_openvino_device_type);
 
 ABSL_DECLARE_FLAG(LiteRtIntelOpenVinoPerformanceMode,
@@ -48,12 +46,7 @@ bool AbslParseFlag(absl::string_view text,
 
 std::string AbslUnparseFlag(LiteRtIntelOpenVinoPerformanceMode options);
 
-#endif
-
 // PARSERS (internal) //////////////////////////////////////////////////////////
-
-#if defined(INCLUDE_INTEL_OPENVINO_COMPILE_FLAGS) || \
-    defined(INCLUDE_INTEL_OPENVINO_RUNTIME_FLAGS)
 
 namespace litert::intel_openvino {
 
@@ -64,6 +57,4 @@ Expected<void> UpdateIntelOpenVinoOptionsFromFlags(
 
 }  // namespace litert::intel_openvino
 
-#endif  // INCLUDE_INTEL_OPENVINO_COMPILE_FLAGS ||
-        // INCLUDE_INTEL_OPENVINO_RUNTIME_FLAGS
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_VENDORS_INTEL_OPENVINO_FLAGS_H_

@@ -15,8 +15,10 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_COMMON_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_COMMON_H_
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <tuple>
 #include <type_traits>
@@ -26,16 +28,61 @@
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_rng.h"
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/shape_inference_types.h"
+#include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/simple_buffer.h"
 #include "tflite/schema/schema_generated.h"
 
 namespace litert::testing {
+
+class DummyShapeInferenceContext
+    : public ::litert::internal::ShapeInferenceContext {
+ public:
+  explicit DummyShapeInferenceContext(const LiteRtOpT& op) : op_(op) {}
+
+  ::litert::internal::Dims GetInputShape(size_t index) const override {
+    if (index >= op_.Inputs().size() || op_.Inputs()[index] == nullptr) {
+      return {};
+    }
+    const auto& tensor = *op_.Inputs()[index];
+    if (tensor.Type().first == kLiteRtRankedTensorType) {
+      const auto& layout = tensor.Type().second.ranked_tensor_type.layout;
+      return ::litert::internal::Dims(layout.dimensions,
+                                      layout.dimensions + layout.rank);
+    }
+    return {};
+  }
+
+  absl::Span<const uint8_t> GetInputData(size_t index) const override {
+    if (index >= op_.Inputs().size() || op_.Inputs()[index] == nullptr) {
+      return {};
+    }
+    const auto& tensor = *op_.Inputs()[index];
+    if (tensor.Weights().Buffer().Size() > 0) {
+      auto weights = tensor.Weights().Buffer();
+      return absl::MakeConstSpan(weights.Data(), weights.Size());
+    }
+    return {};
+  }
+
+  const ::litert::internal::TflOptions& GetOptions() const override {
+    return ::litert::internal::GetTflOptions(op_);
+  }
+
+  LiteRtOpCode GetOpCode() const override { return op_.OpCode(); }
+
+ private:
+  const LiteRtOpT& op_;
+};
 
 // Helpers for defining generators and their consituent types.
 
@@ -118,7 +165,57 @@ using FbOpTypes =
         std::bool_constant<OpCode == kLiteRtOpCodeTflRelu0To1>,
             FbOpTraitsNoOptions<tflite::BuiltinOperator_RELU_0_TO_1>,
         std::bool_constant<OpCode == kLiteRtOpCodeTflSign>,
-            FbOpTraitsNoOptions<tflite::BuiltinOperator_SIGN>
+            FbOpTraitsNoOptions<tflite::BuiltinOperator_SIGN>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflConv2d>,
+            FbOpTraits<tflite::Conv2DOptionsT, tflite::BuiltinOperator_CONV_2D,
+                       tflite::BuiltinOptions_Conv2DOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflDepthwiseConv2d>,
+            FbOpTraits<tflite::DepthwiseConv2DOptionsT,
+                       tflite::BuiltinOperator_DEPTHWISE_CONV_2D,
+                       tflite::BuiltinOptions_DepthwiseConv2DOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflReduceMax>,
+            FbOpTraits<tflite::ReducerOptionsT,
+                       tflite::BuiltinOperator_REDUCE_MAX,
+                       tflite::BuiltinOptions_ReducerOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflReduceMin>,
+            FbOpTraits<tflite::ReducerOptionsT,
+                       tflite::BuiltinOperator_REDUCE_MIN,
+                       tflite::BuiltinOptions_ReducerOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflReduceProd>,
+            FbOpTraits<tflite::ReducerOptionsT,
+                       tflite::BuiltinOperator_REDUCE_PROD,
+                       tflite::BuiltinOptions_ReducerOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflReduceAny>,
+            FbOpTraits<tflite::ReducerOptionsT,
+                       tflite::BuiltinOperator_REDUCE_ANY,
+                       tflite::BuiltinOptions_ReducerOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflReduceAll>,
+            FbOpTraits<tflite::ReducerOptionsT,
+                       tflite::BuiltinOperator_REDUCE_ALL,
+                       tflite::BuiltinOptions_ReducerOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflSum>,
+            FbOpTraits<tflite::ReducerOptionsT,
+                       tflite::BuiltinOperator_SUM,
+                       tflite::BuiltinOptions_ReducerOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflMaxPool2d>,
+            FbOpTraits<tflite::Pool2DOptionsT,
+                       tflite::BuiltinOperator_MAX_POOL_2D,
+                       tflite::BuiltinOptions_Pool2DOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflAveragePool2d>,
+            FbOpTraits<tflite::Pool2DOptionsT,
+                       tflite::BuiltinOperator_AVERAGE_POOL_2D,
+                       tflite::BuiltinOptions_Pool2DOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflMul>,
+            FbOpTraits<tflite::MulOptionsT,
+                       tflite::BuiltinOperator_MUL,
+                       tflite::BuiltinOptions_MulOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflDiv>,
+            FbOpTraits<tflite::DivOptionsT,
+                       tflite::BuiltinOperator_DIV,
+                       tflite::BuiltinOptions_DivOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflReshape>,
+            FbOpTraits<tflite::ReshapeOptionsT, tflite::BuiltinOperator_RESHAPE,
+                       tflite::BuiltinOptions_ReshapeOptions>
     >;
 // clang-format on
 static_assert(FbOpTypes<kLiteRtOpCodeTflAdd>::kHasOptions);
@@ -262,6 +359,23 @@ class TestGraph {
  private:
   LiteRtModelT::Ptr model_;
 };
+
+inline int ComputePaddingBefore(int in_size, int filter_size, int stride,
+                                int dilation, tflite::Padding padding,
+                                int out_size) {
+  if (padding == tflite::Padding_SAME) {
+    int effective_filter_size = (filter_size - 1) * dilation + 1;
+    int pad_along = (out_size - 1) * stride + effective_filter_size - in_size;
+    return std::max(0, pad_along) / 2;
+  }
+  return 0;
+}
+
+template <typename T>
+inline OwningBufferRef<uint8_t> MakeOwningBufferRef(const std::vector<T>& vec) {
+  return OwningBufferRef<uint8_t>(reinterpret_cast<const uint8_t*>(vec.data()),
+                                  vec.size() * sizeof(T));
+}
 
 }  // namespace litert::testing
 

@@ -157,6 +157,7 @@ cc_library(
         "//tflite/core/kernels:builtin_ops",
         "//tflite/delegates/nnapi:acceleration_test_util",
         "//tflite/delegates/nnapi:nnapi_delegate",
+        "//tflite/kernels/internal:runtime_shape",
         "//tflite/kernels/internal:tensor_ctypes",
         "//tflite/kernels/internal:tensor_utils",
         "//tflite/kernels/internal/utils:sparsity_format_converter",
@@ -535,9 +536,11 @@ cc_library(
         ":op_macros",
         "//tflite:array",
         "//tflite:kernel_api",
+        "//tflite:util",
         "//tflite/core/c:common",
         "//tflite/kernels/internal:cppmath",
         "//tflite/kernels/internal:quantization_util",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -777,6 +780,7 @@ BUILTIN_KERNEL_DEPS = [
     ":control_flow_common",
     "@eigen_archive//:eigen3",
     "@flatbuffers",
+    "@com_google_absl//absl/types:span",
     "//tflite:framework_stable",
     "//tflite:minimal_logging",
     "//tflite:string_util",
@@ -1533,6 +1537,7 @@ cc_test(
     # TODO(b/162870360): Re-enable nnapi test after delegating grouped conv is added.
     # tags = ["tflite_nnapi"],
     deps = [
+        ":kernel_util",
         ":test_main",
         ":test_util",
         "//tflite:framework_stable",
@@ -1571,12 +1576,12 @@ cc_test(
     size = "small",
     srcs = ["conv3d_test.cc"],
     deps = [
+        ":kernel_util",
         ":test_main",
         ":test_util",
         "//tflite:framework_stable",
-        "//tflite:string",
+        "//tflite/c:common",
         "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/memory",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -1627,12 +1632,8 @@ cc_test(
         "//tflite:framework_stable",
         "//tflite:string",
         "//tflite/core:framework_stable",
-        "//tflite/core/api",
-        "//tflite/kernels/internal:test_util",
         "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/memory",
         "@com_google_googletest//:gtest",
-        "@flatbuffers",
     ],
 )
 
@@ -2234,13 +2235,9 @@ cc_test(
         "//tflite:framework_stable",
         "//tflite:string",
         "//tflite/core:framework_stable",
-        "//tflite/core/api",
-        "//tflite/kernels/internal:tensor_utils",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/memory",
         "@com_google_googletest//:gtest",
-        "@flatbuffers",
     ],
 )
 
@@ -3181,9 +3178,9 @@ cc_test(
         ":test_main",
         ":test_util",
         "//tflite:framework_stable",
-        "//tflite:string",
+        "//tflite/c:common",
+        "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/memory",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -3447,20 +3444,46 @@ tflite_portable_test_suite_combined(
     # TODO(b/229985981) : Remove `nnapi_args` after adding Relu0To1 is completed.
     nnapi_args = ["--gunit_filter=*Reshape*"],
     #nnapi_args = ["--gunit_filter=-*QuantizedActivationsOpTest.Relu0To1*"],
+    shard_count = 50,
 )
 
 # Note this is created mainly for validating external delegates in OSS.
 tflite_combine_cc_tests(
     name = "combined_all_kernel_tests",
+    build_test_tags = [
+        "manual",
+        "tflite_portable_build_test",
+    ],
     deps_conditions = [":test_main"],
     generate_cc_library = True,
+    tags = [
+        "manual",
+        "notap",
+    ],
 )
 
 # This test uses SimpleAllocator and works nicely with ASAN.
 tflite_combine_cc_tests(
     name = "combined_all_kernel_with_simple_allocator_tests",
     args = ["--use_simple_allocator=true"],
+    build_test_tags = [
+        "manual",
+        "tflite_portable_build_test",
+    ],
     deps_conditions = [":test_main"],
+    shard_count = 50,
+    tags = [
+        "manual",
+        "notap",
+    ],
+)
+
+# Test the XNNPACK delegate
+tflite_combine_cc_tests(
+    name = "combined_all_kernel_with_xnnpack_tests",
+    args = ["--use_xnnpack=true"],
+    deps_conditions = [":test_main"],
+    shard_count = 50,
 )
 
 tflite_self_contained_libs_test_suite(name = "self_contained_libs_tests")

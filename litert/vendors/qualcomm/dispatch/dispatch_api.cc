@@ -19,19 +19,25 @@
 #include <utility>
 
 #include "absl/base/no_destructor.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_opaque_options.h"
+#include "litert/c/litert_options.h"
+#include "litert/c/options/litert_qualcomm_options.h"
+#include "litert/cc/internal/litert_context_wrapper.h"
+#include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
-#include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
@@ -61,16 +67,21 @@ char BuildId[256];
 // Basic Execution API
 // /////////////////////////////////////////////////////////////////////////////
 
-LiteRtStatus Initialize(LiteRtEnvironment environment, LiteRtOptions options) {
+LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
+                        LiteRtEnvironment environment, LiteRtOptions options) {
   LiteRtEnvironmentOptions environment_options;
-  LiteRtGetEnvironmentOptions(environment, &environment_options);
+  if (runtime_context->get_environment_options(
+          environment, &environment_options) == kLiteRtStatusOk) {
+    LiteRtPropagateMinLoggerSeverityWithRuntimeContext(runtime_context,
+                                                       environment_options);
+  }
   TheEnvironmentOptions = environment_options;
   TheOptions = options;
 
   const char* dispatch_lib_dir = nullptr;
   if (environment_options) {
     LiteRtAny dispatch_lib_dir_any;
-    auto status = LiteRtGetEnvironmentOptionsValue(
+    auto status = runtime_context->get_environment_options_value(
         environment_options, kLiteRtEnvOptionTagDispatchLibraryDir,
         &dispatch_lib_dir_any);
     if (status == kLiteRtStatusOk && dispatch_lib_dir_any.str_value) {
@@ -81,8 +92,26 @@ LiteRtStatus Initialize(LiteRtEnvironment environment, LiteRtOptions options) {
   // TODO LUKE confirm where the lib dir is coming from, the
   // "dispatch_library_dir" thing makes no sense Since this should be shared lib
   // for libqnn.so.
-  auto [opts, opq_opts, qnn_opts] =
-      litert::ParseOptions<litert::qualcomm::QualcommOptions>(TheOptions);
+  litert::Expected<litert::qualcomm::QualcommOptions> qnn_opts =
+      litert::Error(kLiteRtStatusErrorNotFound, "Null Qualcomm options");
+
+  if (TheOptions) {
+    litert::internal::OptionsWrapper internal_options(
+        litert::internal::ContextWrapper(runtime_context), TheOptions);
+    auto opaque_options_result = internal_options.GetOpaqueOptions();
+    if (opaque_options_result) {
+      auto payload_data_result = opaque_options_result->FindOpaqueOptions(
+          LrtQualcommOptionsGetIdentifier());
+      if (payload_data_result && payload_data_result.Value() != nullptr) {
+        LrtQualcommOptions options_handle = nullptr;
+        if (LrtCreateQualcommOptionsFromToml(
+                reinterpret_cast<const char*>(payload_data_result.Value()),
+                &options_handle) == kLiteRtStatusOk) {
+          qnn_opts = litert::qualcomm::QualcommOptions(options_handle);
+        }
+      }
+    }
+  }
 
   std::optional<std::string> shared_library_dir_opt =
       dispatch_lib_dir != nullptr
@@ -150,8 +179,12 @@ LiteRtStatus GetCapabilities(int* capabilities) {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext* device_context) {
-  if (auto context = LiteRtDispatchDeviceContextT::Create(Qnn()); context) {
+LiteRtStatus DeviceContextCreate(const LiteRtRuntimeContext* runtime_context,
+                                 LiteRtOptions options,
+                                 LiteRtDispatchDeviceContext* device_context) {
+  if (auto context =
+          LiteRtDispatchDeviceContextT::Create(runtime_context, Qnn());
+      context) {
     *device_context = context->release();
     return kLiteRtStatusOk;
   } else {
@@ -223,6 +256,7 @@ LiteRtStatus UnregisterTensorBuffer(LiteRtDispatchDeviceContext device_context,
 }
 
 LiteRtStatus InvocationContextCreate(
+    const LiteRtRuntimeContext* runtime_context,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,

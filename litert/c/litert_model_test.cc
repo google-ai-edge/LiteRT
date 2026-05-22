@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <initializer_list>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -29,9 +30,13 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/model.h"
+#include "litert/test/common.h"
 #include "litert/test/matchers.h"
+#include "tflite/converter/allocation.h"
+#include "tflite/stderr_reporter.h"
 
 namespace {
 
@@ -39,6 +44,50 @@ using ::litert::BufferRef;
 using ::litert::OwningBufferRef;
 using ::testing::ElementsAreArray;
 using ::testing::litert::IsError;
+
+TEST(LiteRtModelTest, CreateFromAllocation) {
+  auto runtime = litert::testing::MakeRuntimeFromTestFile("one_mul.tflite");
+  ASSERT_TRUE(runtime);
+
+  const auto model_buffer = (*runtime)->Flatbuffer().Buf();
+  auto allocation = std::make_unique<tflite::MemoryAllocation>(
+      model_buffer.Data(), model_buffer.Size(), tflite::DefaultErrorReporter());
+
+  LiteRtModel model = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtCreateModelFromAllocation(std::move(allocation), &model));
+  ASSERT_NE(model, nullptr);
+
+  LiteRtParamIndex num_subgraphs;
+  LITERT_ASSERT_OK(LiteRtGetNumModelSubgraphs(model, &num_subgraphs));
+  EXPECT_EQ(num_subgraphs, 1);
+
+  LiteRtDestroyModel(model);
+}
+
+#if !defined(LITERT_WINDOWS_OS)
+TEST(LiteRtModelTest, CreateFromFd) {
+  if (!tflite::MMAPAllocation::IsSupported()) {
+    GTEST_SKIP() << "MMAPAllocation is not supported";
+  }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model_file, litert::ScopedFile::Open(
+                           litert::testing::GetTestFilePath("one_mul.tflite")));
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t model_size, model_file.GetSize());
+
+  LiteRtModel model = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtCreateModelFromFd(model_file.file(), 0, model_size, &model));
+  ASSERT_NE(model, nullptr);
+
+  LiteRtParamIndex num_subgraphs;
+  LITERT_ASSERT_OK(LiteRtGetNumModelSubgraphs(model, &num_subgraphs));
+  EXPECT_EQ(num_subgraphs, 1);
+
+  LiteRtDestroyModel(model);
+}
+#endif  // !defined(LITERT_WINDOWS_OS)
 
 TEST(LiteRtWeightsTest, GetNullWeights) {
   LiteRtWeightsT weights = {};

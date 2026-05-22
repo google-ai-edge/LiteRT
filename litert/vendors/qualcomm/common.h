@@ -42,10 +42,18 @@ typedef QNN_INTERFACE_VER_TYPE QnnApi;
 typedef QNN_SYSTEM_INTERFACE_VER_TYPE QnnSystemApi;
 
 // QNN backend library should be on DT_RUNPATH (-rpath) (for linux).
+#if LITERT_WINDOWS_OS
+static const char kLibQnnSystemSo[] = "QnnSystem.dll";
+#else
 static const char kLibQnnSystemSo[] = "libQnnSystem.so";
+#endif
 
 // Android only library.
+#if LITERT_WINDOWS_OS
+static const char kLibQnnHtpPrepareSo[] = "QnnHtpPrepare.dll";
+#else
 static const char kLibQnnHtpPrepareSo[] = "libQnnHtpPrepare.so";
+#endif
 
 // Map LiteRT element type to Qnn counterpart.
 inline LiteRtStatus LegalizeElementType(litert::ElementType litert_type,
@@ -108,14 +116,13 @@ inline LiteRtStatus InitQnnOptions(
   ::qnn::QNNLogger::SetLogLevel(qnn_options.GetLogLevel());
   qnn_options.SetProfiling(
       static_cast<::qnn::Profiling>(qualcomm_options.GetProfiling()));
-  qnn_options.SetUseHtpPreference(qualcomm_options.GetUseHtpPreference());
-  qnn_options.SetUseQint16AsQuint16(qualcomm_options.GetUseQint16AsQuint16());
   qnn_options.SetUseInt64BiasAsInt32(qualcomm_options.GetUseInt64BiasAsInt32());
   qnn_options.SetBackendType(
       static_cast<::qnn::BackendType>(qualcomm_options.GetBackend()));
   qnn_options.SetEnableWeightSharing(qualcomm_options.GetEnableWeightSharing());
   qnn_options.SetUseConvHMX(qualcomm_options.GetUseConvHMX());
   qnn_options.SetUseFoldReLU(qualcomm_options.GetUseFoldReLU());
+  qnn_options.SetHtpPPoint(qualcomm_options.GetHtpPPoint());
   qnn_options.SetHtpPerformanceMode(static_cast<::qnn::HtpPerformanceMode>(
       qualcomm_options.GetHtpPerformanceMode()));
   qnn_options.SetDspPerformanceMode(static_cast<::qnn::DspPerformanceMode>(
@@ -130,6 +137,8 @@ inline LiteRtStatus InitQnnOptions(
       static_cast<::qnn::GraphPriority>(qualcomm_options.GetGraphPriority()));
   qnn_options.SetDumpTensorIds(qualcomm_options.GetDumpTensorIds());
   qnn_options.SetSaverOutputDir(qualcomm_options.GetSaverOutputDir());
+  qnn_options.SetGraphIOTensorMemType(static_cast<::qnn::GraphIOTensorMemType>(
+      qualcomm_options.GetGraphIOTensorMemType()));
 
   LITERT_LOG(LITERT_INFO, "\n%s", qnn_options.Dump().data());
   return kLiteRtStatusOk;

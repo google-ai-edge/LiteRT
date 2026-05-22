@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
+#include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
@@ -13,26 +14,42 @@
 
 namespace qnn {
 
+OpWrapper CreateConvertOp(const TensorWrapper& input,
+                          const TensorWrapper& output) {
+  OpWrapper op(GetUniqueOpName(QNN_OP_CONVERT), QNN_OP_CONVERT,
+               QnnOpCode::kConvert);
+  op.AddInputTensor(input);
+  op.AddOutputTensor(output);
+  return op;
+}
+
+OpWrapper CreateQuantizeOp(const TensorWrapper& input,
+                           const TensorWrapper& output) {
+  OpWrapper op(GetUniqueOpName(QNN_OP_QUANTIZE), QNN_OP_QUANTIZE,
+               QnnOpCode::kQuantize);
+  op.AddInputTensor(input);
+  op.AddOutputTensor(output);
+  return op;
+}
+
 std::vector<OpWrapper> BuildQuantizeOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
-  const char* qnn_op = nullptr;
   if (inputs[0].get().IsPerTensorQuantWithOffsetDiff(outputs[0].get())) {
-    qnn_op = QNN_OP_CAST;
+    auto& op = CreateOpWrapper(res, QNN_OP_CAST);
+    op.AddInputTensor(inputs[0]);
+    op.AddOutputTensor(outputs[0]);
   } else if ((inputs[0].get().IsQuantI8() || inputs[0].get().IsQuantU8() ||
               inputs[0].get().IsQuantI16() || inputs[0].get().IsQuantU16()) &&
              (outputs[0].get().IsQuantI8() || outputs[0].get().IsQuantU8() ||
               outputs[0].get().IsQuantI16() || outputs[0].get().IsQuantU16())) {
-    qnn_op = QNN_OP_CONVERT;
+    res.emplace_back(CreateConvertOp(inputs[0], outputs[0]));
+    return res;
   } else {
-    qnn_op = QNN_OP_QUANTIZE;
+    return MakeVector(CreateQuantizeOp(inputs[0], outputs[0]));
   }
-
-  auto& quantize_op = CreateOpWrapper(res, qnn_op);
-  quantize_op.AddInputTensor(inputs[0]);
-  quantize_op.AddOutputTensor(outputs[0]);
 
   return res;
 }

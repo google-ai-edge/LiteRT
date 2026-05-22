@@ -30,11 +30,13 @@ cc_library(
         "//litert/c/internal:litert_delegate_wrapper",
         "//litert/c/internal:litert_dispatch_delegate",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_runtime_context_header",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_dispatch_delegate",
         "//litert/core:environment",
         "//litert/runtime/accelerators:accelerator_implementation_helper",
+        "//litert/vendors/c:litert_dispatch_c_api",
         "//tflite/c:c_api_types",
     ],
 )

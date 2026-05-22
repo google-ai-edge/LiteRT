@@ -13,6 +13,7 @@ target_sources(qnn_transformation
         embedding_gemma.cc
         mask.cc
         mha_to_sha.cc
+        kv_swapped_attn.cc
 )
 
 target_include_directories(qnn_transformation
@@ -22,5 +23,11 @@ target_include_directories(qnn_transformation
 
 target_link_libraries(qnn_transformation
     PUBLIC
-        qnn_core
+        absl::strings
+        absl::string_view
+    PRIVATE
+        qnn_log
+        qnn_tensor_pool
+        qnn_wrappers
+        qnn_builders
 )

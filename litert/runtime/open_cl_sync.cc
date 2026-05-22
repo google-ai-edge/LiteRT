@@ -50,6 +50,7 @@ using TensorBool = tflite::gpu::Tensor<BHWC, DataType::BOOL>;
 using TensorFloat16 = tflite::gpu::Tensor<BHWC, DataType::FLOAT16>;
 using TensorFloat32 = tflite::gpu::Tensor<BHWC, DataType::FLOAT32>;
 using TensorInt32 = tflite::gpu::Tensor<BHWC, DataType::INT32>;
+using TensorInt8 = tflite::gpu::Tensor<BHWC, DataType::INT8>;
 
 namespace litert::internal {
 // TODO(b/431308296): Clean up the GPU memory sync logic to make it generic for
@@ -167,6 +168,9 @@ LiteRtStatus LiteRtGpuMemoryUpload(GpuEnvironment* gpu_env,
     }
     return LiteRtGpuMemoryUploadImpl<TensorFloat16, tflite::gpu::half>(
         *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
+  } else if (tensor_type->element_type == kLiteRtElementTypeInt8) {
+    return LiteRtGpuMemoryUploadImpl<TensorInt8, int8_t>(
+        *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
   } else {
     return LiteRtGpuMemoryUploadImpl<TensorFloat32, float>(
         *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
@@ -229,6 +233,9 @@ LiteRtStatus LiteRtGpuMemoryDownload(GpuEnvironment* gpu_env,
           *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
     }
     return LiteRtGpuMemoryDownloadImpl<TensorFloat16, tflite::gpu::half>(
+        *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
+  } else if (tensor_type->element_type == kLiteRtElementTypeInt8) {
+    return LiteRtGpuMemoryDownloadImpl<TensorInt8, int8_t>(
         *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
   } else {
     return LiteRtGpuMemoryDownloadImpl<TensorFloat32, float>(

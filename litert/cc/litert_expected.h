@@ -24,12 +24,14 @@
 #include <type_traits>
 #include <utility>
 
+#ifndef LITERT_NO_ABSL
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#endif  // LITERT_NO_ABSL
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_common.h"
-#include "litert/cc/internal/litert_detail.h"
 
 /// @file
 /// @brief Defines an `Expected` class for handling return values that may be
@@ -47,46 +49,50 @@ class Error {
  public:
   /// @brief Constructs an `Error` from a status and an optional error message.
   /// @note `::litert::Status::kOk` should not be passed.
-  explicit Error(Status status, std::string message = "")
+  explicit Error(::litert::Status status, std::string message = "")
       : status_(static_cast<LiteRtStatus>(status)),
         message_(std::move(message)) {
-    ABSL_DCHECK(status != Status::kOk);
+    LITERT_INTERNAL_DCHECK(status != ::litert::Status::kOk);
   }
 
   [[deprecated("Use the constructor that takes ::litert::Status instead.")]]
   explicit Error(LiteRtStatus status, std::string message = "")
       : status_(status), message_(std::move(message)) {
-    ABSL_DCHECK(status != kLiteRtStatusOk);
+    LITERT_INTERNAL_DCHECK(status != kLiteRtStatusOk);
   }
 
   /// @brief Gets the status.
   /// @todo Rename to `Status()` after the deprecated function is removed.
-  constexpr Status StatusCC() const {
-    return static_cast<enum Status>(status_);
+  constexpr ::litert::Status StatusCC() const {
+    return static_cast<enum ::litert::Status>(status_);
   }
 
   [[deprecated("Use StatusCC() instead.")]]
-  constexpr LiteRtStatus Status() const { return status_; }
+  constexpr LiteRtStatus Status() const {
+    return status_;
+  }
 
   /// @brief Gets the error message. Returns an empty string if none was
   /// attached.
   const std::string& Message() const { return message_; }
 
   friend std::ostream& operator<<(std::ostream& stream, const Error& error) {
-    stream << LiteRtGetStatusString(error.Status());
+    stream << LiteRtGetStatusString(error.status_);
     if (!error.Message().empty()) {
       stream << ": " << error.Message();
     }
     return stream;
   }
 
+#ifndef LITERT_NO_ABSL
   template <class Sink>
   friend void AbslStringify(Sink& sink, const Error& error) {
-    absl::Format(&sink, "%s", LiteRtGetStatusString(error.Status()));
+    absl::Format(&sink, "%s", LiteRtGetStatusString(error.status_));
     if (!error.Message().empty()) {
       absl::Format(&sink, ": %v", error.Message());
     }
   }
+#endif  // LITERT_NO_ABSL
 
  private:
   LiteRtStatus status_;
@@ -96,9 +102,18 @@ class Error {
 /// @brief A utility for generic return values that represents a failure.
 class Unexpected {
  public:
-  template <class... Args>
-  constexpr explicit Unexpected(Args&&... args)
-      : error_(std::forward<Args>(args)...) {}
+  explicit Unexpected(Status status, std::string message = "")
+      : error_(status, std::move(message)) {}
+
+  explicit Unexpected(LiteRtStatus status, std::string message = "")
+      : error_(ToStatus(status), std::move(message)) {}
+
+  template <class First, class... Rest,
+            class = std::enable_if_t<
+                !std::is_same_v<std::decay_t<First>, Status> &&
+                !std::is_same_v<std::decay_t<First>, LiteRtStatus>>>
+  constexpr explicit Unexpected(First&& first, Rest&&... rest)
+      : error_(std::forward<First>(first), std::forward<Rest>(rest)...) {}
 
   /// @brief Allows for implicit conversion from a convertible `Error` value
   /// in-place.
@@ -117,10 +132,12 @@ class Unexpected {
   }
   constexpr class Error&& Error() && noexcept { return std::move(error_); }
 
+#ifndef LITERT_NO_ABSL
   template <class Sink>
   friend void AbslStringify(Sink& sink, const Unexpected& unexpected) {
     AbslStringify(sink, unexpected.Error());
   }
+#endif  // LITERT_NO_ABSL
 
  private:
   class Error error_;
@@ -141,10 +158,39 @@ class Unexpected {
 /// Expected<Foo> Bar() {
 ///   bool success = ...
 ///   if (!success) {
-///     return Unexpected(kLiteRtStatus, "Bad Baz");
+///     return Unexpected(Status::kErrorUnknown, "Bad Baz");
 ///   }
 ///   return Foo();
 /// }
+/// @endcode
+///
+/// Suggested Usage:
+/// Do not manually inspect `Expected` objects (e.g., via `if (!var_or)`, `if
+/// (!var_or.HasValue())`) if you intend to propagate a possible error to the
+/// caller. Instead, use the early-exit LiteRT macros defined in
+/// `litert_macros.h`:
+/// @code
+/// // For functions returning Expected<Foo>:
+/// LITERT_ASSIGN_OR_RETURN(Foo foo, Bar());
+///
+/// // For functions returning Expected<void>:
+/// LITERT_RETURN_IF_ERROR(Baz());
+///
+/// // To append a custom error message to the failure:
+/// LITERT_ASSIGN_OR_RETURN(Foo foo, Bar(), _ << "Failed to get Foo");
+/// LITERT_RETURN_IF_ERROR(Baz()) << "Failed during Baz";
+/// @endcode
+///
+/// In unit tests, use the test macros defined in `litert/test/matchers.h`:
+/// @code
+/// // To assert success and unpack a value:
+/// LITERT_ASSERT_OK_AND_ASSIGN(Foo foo, Bar());
+///
+/// // To assert success for Expected<void>:
+/// LITERT_ASSERT_OK(Baz());
+///
+/// // To expect or assert failure:
+/// LITERT_EXPECT_ERROR(Baz());
 /// @endcode
 template <class T>
 class Expected {
@@ -198,18 +244,19 @@ class Expected {
 
   Expected(Expected&& other) : has_value_(other.HasValue()) {
     if (HasValue()) {
-      ConstructAt(std::addressof(value_), std::move(other.value_));
+      ::new (std::addressof(value_)) StorageType(std::move(other.value_));
     } else {
-      ConstructAt(std::addressof(unexpected_), std::move(other.unexpected_));
+      ::new (std::addressof(unexpected_))
+          Unexpected(std::move(other.unexpected_));
     }
   }
 
   Expected(const Expected& other) : has_value_(other.has_value_) {
     if (HasValue()) {
-      ConstructAt(std::addressof(value_), other.value_);
+      ::new (std::addressof(value_)) StorageType(other.value_);
       value_ = other.value_;
     } else {
-      ConstructAt(std::addressof(unexpected_), other.unexpected_);
+      ::new (std::addressof(unexpected_)) Unexpected(other.unexpected_);
     }
   }
 
@@ -220,13 +267,13 @@ class Expected {
           value_ = std::move(other.value_);
         } else {
           value_.~StorageType();
-          ConstructAt(std::addressof(unexpected_),
-                      std::move(other.unexpected_));
+          ::new (std::addressof(unexpected_))
+              Unexpected(std::move(other.unexpected_));
         }
       } else {
         if (other.HasValue()) {
           unexpected_.~Unexpected();
-          ConstructAt(std::addressof(value_), std::move(other.value_));
+          ::new (std::addressof(value_)) StorageType(std::move(other.value_));
         } else {
           unexpected_ = std::move(other.unexpected_);
         }
@@ -243,12 +290,12 @@ class Expected {
           value_ = other.value_;
         } else {
           value_.~StorageType();
-          ConstructAt(std::addressof(unexpected_), other.unexpected_);
+          ::new (std::addressof(unexpected_)) Unexpected(other.unexpected_);
         }
       } else {
         if (other.HasValue()) {
           unexpected_.~Unexpected();
-          ConstructAt(std::addressof(value_), other.value_);
+          ::new (std::addressof(value_)) StorageType(other.value_);
         } else {
           unexpected_ = other.unexpected_;
         }
@@ -366,8 +413,8 @@ class Expected {
     StorageType value_;
     Unexpected unexpected_;
   };
-  void CheckNoVal() const { ABSL_CHECK(!HasValue()); }
-  void CheckVal() const { ABSL_CHECK(HasValue()); }
+  void CheckNoVal() const { LITERT_INTERNAL_CHECK(!HasValue()); }
+  void CheckVal() const { LITERT_INTERNAL_CHECK(HasValue()); }
 };
 
 template <class T>
@@ -376,6 +423,7 @@ Expected(const T&) -> Expected<T>;
 template <class T>
 Expected(T&&) -> Expected<T>;
 
+#ifndef LITERT_NO_ABSL
 namespace internal {
 template <class T>
 struct CanBeAbslFormated {
@@ -408,6 +456,7 @@ void AbslStringify(Sink& sink, const Expected<T>& expected) {
     }
   }
 }
+#endif  // LITERT_NO_ABSL
 
 /// @brief A specialization of `Expected` for `void`.
 ///
@@ -463,8 +512,8 @@ class Expected<void> {
 
  private:
   std::optional<Unexpected> unexpected_;
-  void CheckNoVal() const { ABSL_CHECK(!HasValue()); }
-  void CheckVal() const { ABSL_CHECK(HasValue()); }
+  void CheckNoVal() const { LITERT_INTERNAL_CHECK(!HasValue()); }
+  void CheckVal() const { LITERT_INTERNAL_CHECK(HasValue()); }
 };
 
 }  // namespace litert

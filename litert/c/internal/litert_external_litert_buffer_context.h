@@ -41,6 +41,10 @@ LiteRtStatus LiteRtExternalLiteRtBufferContextRegisterTensorBuffer(
     LiteRtExternalLiteRtBufferContext context, const TfLiteTensor* tensor,
     LiteRtTensorBuffer buffer);
 
+// Unregisters a TensorBuffer object for the given tensor.
+LiteRtStatus LiteRtExternalLiteRtBufferContextUnregisterTensorBuffer(
+    LiteRtExternalLiteRtBufferContext context, const TfLiteTensor* tensor);
+
 // Registers the buffer requirements for the given tensor. The buffer context
 // assumes ownership of the buffer requirements.
 LiteRtStatus LiteRtExternalLiteRtBufferContextRegisterBufferRequirements(

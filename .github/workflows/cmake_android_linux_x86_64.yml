@@ -25,7 +25,9 @@ concurrency:
 jobs:
   presubmit:
     name: "Presubmit-Android-Linux"
-    runs-on: LiteRT_Linux_x64
+    runs-on: linux-x86-n2-16
+    container:
+      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build:latest
     permissions:
       actions: write
       contents: write
@@ -76,9 +78,11 @@ jobs:
           echo "Cache Primary Key: ${{ steps.cmake-cache.outputs.cache-primary-key }}"
           echo "Cache Matched Key: ${{ steps.cmake-cache.outputs.cache-matched-key }}"
       - name: Setup CMake 3.28.3
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: "3.28.3"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          pip3 install cmake==3.28.3
+          cmake --version
 
       - name: Ensure clang toolchain
         run: |

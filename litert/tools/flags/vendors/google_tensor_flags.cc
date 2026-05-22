@@ -21,14 +21,16 @@
 #include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
+#include "litert/tools/flags/options_parser_registry.h"
 
 // NOLINTBEGIN(*alien-types*)
 // TODO: Move absl parse/unparse function to same file as enum types if
 // it becomes an issue.
 
 bool AbslParseFlag(absl::string_view text,
-                   LiteRtGoogleTensorOptionsTruncationType* options,
+                   LrtGoogleTensorOptionsTruncationType* options,
                    std::string* error) {
   if (text == "auto") {
     *options = kLiteRtGoogleTensorFloatTruncationTypeAuto;
@@ -50,7 +52,7 @@ bool AbslParseFlag(absl::string_view text,
   return false;
 }
 
-std::string AbslUnparseFlag(LiteRtGoogleTensorOptionsTruncationType options) {
+std::string AbslUnparseFlag(LrtGoogleTensorOptionsTruncationType options) {
   switch (options) {
     case kLiteRtGoogleTensorFloatTruncationTypeAuto:
       return "auto";
@@ -64,7 +66,7 @@ std::string AbslUnparseFlag(LiteRtGoogleTensorOptionsTruncationType options) {
 }
 
 bool AbslParseFlag(absl::string_view text,
-                   LiteRtGoogleTensorOptionsShardingIntensity* options,
+                   LrtGoogleTensorOptionsShardingIntensity* options,
                    std::string* error) {
   if (text == "minimal") {
     *options = kLiteRtGoogleTensorShardingIntensityMinimal;
@@ -86,8 +88,7 @@ bool AbslParseFlag(absl::string_view text,
   return false;
 }
 
-std::string AbslUnparseFlag(
-    LiteRtGoogleTensorOptionsShardingIntensity options) {
+std::string AbslUnparseFlag(LrtGoogleTensorOptionsShardingIntensity options) {
   switch (options) {
     case kLiteRtGoogleTensorShardingIntensityMinimal:
       return "minimal";
@@ -100,8 +101,7 @@ std::string AbslUnparseFlag(
   }
 }
 
-ABSL_FLAG(LiteRtGoogleTensorOptionsTruncationType,
-          google_tensor_truncation_type,
+ABSL_FLAG(LrtGoogleTensorOptionsTruncationType, google_tensor_truncation_type,
           kLiteRtGoogleTensorFloatTruncationTypeAuto,
           "Float truncation type for Google Tensor.");
 
@@ -117,7 +117,7 @@ ABSL_FLAG(bool, google_tensor_enable_large_model_support, false,
 ABSL_FLAG(bool, google_tensor_enable_4bit_compilation, false,
           "Whether to enable 4bit compilation.");
 
-ABSL_FLAG(LiteRtGoogleTensorOptionsShardingIntensity,
+ABSL_FLAG(LrtGoogleTensorOptionsShardingIntensity,
           google_tensor_sharding_intensity,
           kLiteRtGoogleTensorShardingIntensityMinimal,
           "Sharding intensity for Google Tensor.");
@@ -125,12 +125,72 @@ ABSL_FLAG(LiteRtGoogleTensorOptionsShardingIntensity,
 ABSL_FLAG(bool, google_tensor_enable_dynamic_range_quantization, false,
           "Whether to enable dynamic range quantization.");
 
-ABSL_FLAG(std::string, google_tensor_testing_flags, "",
-          "Testing flags for Google Tensor. Flag1=value1,Flag2=value2");
+ABSL_FLAG(
+    std::string, google_tensor_op_filters_proto, "",
+    "A path to a file containing proto text formatted OpFilters for the Google "
+    "Tensor plugin.");
 
-// NOLINTEND(*alien-types*)
+ABSL_FLAG(
+    std::string, google_tensor_extra_options_path, "",
+    "Path to a file containing extra compiler options file for Google Tensor.");
+
+ABSL_FLAG(
+    litert::google_tensor::GoogleTensorOptions::PerformanceMode,
+    google_tensor_performance_mode,
+    litert::google_tensor::GoogleTensorOptions::PerformanceMode::kBalanced,
+    "Performance mode for Google Tensor.");
 
 namespace litert::google_tensor {
+
+bool AbslParseFlag(::absl::string_view text,
+                   GoogleTensorOptions::PerformanceMode* options,
+                   ::std::string* error) {
+  using PerformanceMode = GoogleTensorOptions::PerformanceMode;
+  if (text == "extreme_power_saver") {
+    *options = PerformanceMode::kExtremePowerSaver;
+    return true;
+  }
+  if (text == "power_saver") {
+    *options = PerformanceMode::kPowerSaver;
+    return true;
+  }
+  if (text == "balanced") {
+    *options = PerformanceMode::kBalanced;
+    return true;
+  }
+  if (text == "high_performance") {
+    *options = PerformanceMode::kHighPerformance;
+    return true;
+  }
+  if (text == "sustained_performance") {
+    *options = PerformanceMode::kSustainedPerformance;
+    return true;
+  }
+  if (text == "burst") {
+    *options = PerformanceMode::kBurst;
+    return true;
+  }
+  *error = "Unknown performance mode";
+  return false;
+}
+
+::std::string AbslUnparseFlag(GoogleTensorOptions::PerformanceMode options) {
+  using PerformanceMode = GoogleTensorOptions::PerformanceMode;
+  switch (options) {
+    case PerformanceMode::kExtremePowerSaver:
+      return "extreme_power_saver";
+    case PerformanceMode::kPowerSaver:
+      return "power_saver";
+    case PerformanceMode::kBalanced:
+      return "balanced";
+    case PerformanceMode::kHighPerformance:
+      return "high_performance";
+    case PerformanceMode::kSustainedPerformance:
+      return "sustained_performance";
+    case PerformanceMode::kBurst:
+      return "burst";
+  }
+}
 
 Expected<void> UpdateGoogleTensorOptionsFromFlags(
     GoogleTensorOptions& options) {
@@ -147,8 +207,21 @@ Expected<void> UpdateGoogleTensorOptionsFromFlags(
       absl::GetFlag(FLAGS_google_tensor_sharding_intensity));
   options.SetEnableDynamicRangeQuantization(
       absl::GetFlag(FLAGS_google_tensor_enable_dynamic_range_quantization));
-  options.SetTestingFlags(absl::GetFlag(FLAGS_google_tensor_testing_flags));
+  options.SetOpFiltersProto(
+      absl::GetFlag(FLAGS_google_tensor_op_filters_proto));
+  options.SetExtraOptionsPath(
+      absl::GetFlag(FLAGS_google_tensor_extra_options_path));
+  options.SetPerformanceMode(
+      ::absl::GetFlag(::FLAGS_google_tensor_performance_mode));
   return {};
 }
 
+LITERT_REGISTER_OPTIONS_PARSER([](Options& options) -> Expected<void> {
+  LITERT_ASSIGN_OR_RETURN(auto& google_tensor_opts,
+                          options.GetGoogleTensorOptions());
+  return UpdateGoogleTensorOptionsFromFlags(google_tensor_opts);
+});
+
 }  // namespace litert::google_tensor
+
+// NOLINTEND(*alien-types*)

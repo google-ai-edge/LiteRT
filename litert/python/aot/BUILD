@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_contrib_test", "pytype_strict_library")
+load("//litert/python:pytype.bzl", "pytype_strict_contrib_test", "pytype_strict_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -25,10 +25,10 @@ pytype_strict_library(
     visibility = ["//visibility:public"],
     deps = [
         ":prepare_for_npu",
+        "//litert/python/aot/core:aot_types",
         "//litert/python/aot/core:apply_plugin",
         "//litert/python/aot/core:components",
         "//litert/python/aot/core:mlir_transforms",
-        "//litert/python/aot/core:types",
         "//litert/python/aot/vendors:import_vendor",
     ],
 )
@@ -49,13 +49,18 @@ pytype_strict_contrib_test(
         "notap",
         "notsan",
     ],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":aot_compile",
+        "//litert/python/aot/core:aot_types",
         "//litert/python/aot/core:common",
         "//litert/python/aot/core:test_common",
-        "//litert/python/aot/core:types",
         "//litert/python/aot/vendors/mediatek:target",
         "//litert/python/aot/vendors/qualcomm:target",
+        "//litert/python/aot/vendors/samsung:target",
         "@absl_py//absl/testing:absltest",
     ],
 )
@@ -64,9 +69,9 @@ pytype_strict_library(
     name = "prepare_for_npu",
     srcs = ["prepare_for_npu.py"],
     deps = [
+        "//litert/python/aot/core:aot_types",
         "//litert/python/aot/core:common",
         "//litert/python/aot/core:components",
-        "//litert/python/aot/core:types",
         "//litert/python/aot/vendors",  # buildcleaner: keep
         "//litert/python/aot/vendors:import_vendor",
         "@tqdm",
@@ -76,12 +81,16 @@ pytype_strict_library(
 pytype_strict_contrib_test(
     name = "prepare_for_npu_test",
     srcs = ["prepare_for_npu_test.py"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":prepare_for_npu",
+        "//litert/python/aot/core:aot_types",
         "//litert/python/aot/core:common",
         "//litert/python/aot/core:components",
         "//litert/python/aot/core:test_common",
-        "//litert/python/aot/core:types",
         "//litert/python/aot/vendors/example:example_backend",
         "@absl_py//absl/testing:absltest",
     ],

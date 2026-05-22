@@ -23,15 +23,43 @@
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_macros.h"
 
 struct LrtCpuOptions {
+  std::optional<LiteRtCpuKernelMode> kernel_mode;
   std::optional<int32_t> num_threads;
   std::optional<uint32_t> flags;
   std::optional<std::string> weight_cache_file_path;
   std::optional<int> weight_cache_file_descriptor;
 };
+
+namespace {
+
+bool IsValidCpuKernelMode(LiteRtCpuKernelMode mode) {
+  switch (mode) {
+    case kLiteRtCpuKernelModeXnnpack:
+    case kLiteRtCpuKernelModeBuiltin:
+    case kLiteRtCpuKernelModeReference:
+      return true;
+  }
+  return false;
+}
+
+const char* CpuKernelModeToString(LiteRtCpuKernelMode mode) {
+  switch (mode) {
+    case kLiteRtCpuKernelModeXnnpack:
+      return "xnnpack";
+    case kLiteRtCpuKernelModeBuiltin:
+      return "builtin";
+    case kLiteRtCpuKernelModeReference:
+      return "reference";
+  }
+  return nullptr;
+}
+
+}  // namespace
 
 LiteRtStatus LrtCreateCpuOptions(LrtCpuOptions** options) {
   LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
@@ -55,6 +83,12 @@ LiteRtStatus LrtGetOpaqueCpuOptionsData(const LrtCpuOptions* options,
                 "payload_deleter is null.");
 
   std::string toml_data;
+  if (options->kernel_mode.has_value()) {
+    absl::StrAppend(
+        &toml_data,
+        absl::StrFormat("kernel_mode = \"%s\"\n",
+                        CpuKernelModeToString(*options->kernel_mode)));
+  }
   if (options->num_threads.has_value()) {
     absl::StrAppend(&toml_data, absl::StrFormat("num_threads = %d\n",
                                                 *options->num_threads));
@@ -74,16 +108,36 @@ LiteRtStatus LrtGetOpaqueCpuOptionsData(const LrtCpuOptions* options,
                                     *options->weight_cache_file_descriptor));
   }
 
-  char* data_buffer = strdup(toml_data.c_str());
-
   *identifier = LrtGetCpuOptionsIdentifier();
-  *payload = data_buffer;
-  *payload_deleter = [](void* p) { free(static_cast<char*>(p)); };
+  litert::internal::MakeCStringPayload(toml_data, payload, payload_deleter);
 
   return kLiteRtStatusOk;
 }
 
 const char* LrtGetCpuOptionsIdentifier() { return "xnnpack"; }
+
+LiteRtStatus LrtSetCpuOptionsKernelMode(LrtCpuOptions* options,
+                                        LiteRtCpuKernelMode mode) {
+  LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "options is null.");
+  LITERT_ENSURE(IsValidCpuKernelMode(mode), kLiteRtStatusErrorInvalidArgument,
+                "kernel mode is invalid.");
+  options->kernel_mode = mode;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetCpuOptionsKernelMode(const LrtCpuOptions* options,
+                                        LiteRtCpuKernelMode* const mode) {
+  LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "options is null.");
+  LITERT_ENSURE(mode != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "mode is null.");
+  if (!options->kernel_mode.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *mode = *options->kernel_mode;
+  return kLiteRtStatusOk;
+}
 
 LiteRtStatus LrtSetCpuOptionsNumThread(LrtCpuOptions* options,
                                        int num_threads) {

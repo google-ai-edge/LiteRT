@@ -77,12 +77,12 @@ cc_test(
 cc_library(
     name = "dynamic_loading",
     srcs = select({
-        "@org_tensorflow//tensorflow:windows": ["dynamic_loading_windows.cc"],
+        "//litert:windows": ["dynamic_loading_windows.cc"],
         "//conditions:default": ["dynamic_loading.cc"],
     }),
     hdrs = ["dynamic_loading.h"],
     linkopts = select({
-        "@org_tensorflow//tensorflow:windows": [],
+        "//litert:windows": [],
         "//conditions:default": ["-ldl"],
     }),
     # TODO: factor out the logic here that is used by vendors and move to cc/shared_lib utilities.
@@ -92,7 +92,7 @@ cc_library(
         "//litert/c:litert_common",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
-        "@org_tensorflow//tensorflow:windows": [
+        "//litert:windows": [
             ":filesystem",
             "//litert/c/internal:litert_logging",
             "@com_google_absl//absl/strings",
@@ -141,11 +141,15 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/runtime:accelerator_registry",
-        "//litert/runtime:gpu_environment",
         "//litert/runtime:tensor_buffer_registry_header",
         "//tflite/core/api:error_reporter",
         "@com_google_absl//absl/types:span",
-    ],
+    ] + select({
+        "//litert/build_common:build_include_gpu_enabled": [
+            "//litert/runtime:gpu_environment",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(
@@ -200,6 +204,7 @@ cc_library_with_testonly_vis(
         "//litert/cc:litert_expected",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/time",
     ],
 )
 
@@ -221,6 +226,7 @@ cc_test(
         ":filesystem",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
     ],
 )

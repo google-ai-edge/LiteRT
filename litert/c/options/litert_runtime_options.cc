@@ -19,13 +19,16 @@
 #include <cstdlib>
 #include <optional>
 #include <sstream>
+#include <string>
 
+#include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
 
 struct LrtRuntimeOptions {
   std::optional<bool> enable_profiling;
   std::optional<LiteRtErrorReporterMode> error_reporter_mode;
   std::optional<bool> compress_quantization_zero_points;
+  std::optional<bool> disable_delegate_clustering;
 };
 
 LiteRtStatus LrtCreateRuntimeOptions(LrtRuntimeOptions** options) {
@@ -68,12 +71,15 @@ LiteRtStatus LrtGetOpaqueRuntimeOptionsData(const LrtRuntimeOptions* options,
                                                               : "false")
        << "\n";
   }
-
-  char* payload_str = strdup(ss.str().c_str());
+  if (options->disable_delegate_clustering.has_value()) {
+    ss << "disable_delegate_clustering = "
+       << (options->disable_delegate_clustering.value() ? "true" : "false")
+       << "\n";
+  }
 
   *identifier = LrtGetRuntimeOptionsIdentifier();
-  *payload = payload_str;
-  *payload_deleter = [](void* p) { free(p); };
+  std::string toml_str = ss.str();
+  litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
 
   return kLiteRtStatusOk;
 }
@@ -133,5 +139,23 @@ LiteRtStatus LrtGetRuntimeOptionsCompressQuantizationZeroPoints(
     return kLiteRtStatusErrorNotFound;
   }
   *compress_zero_points = options->compress_quantization_zero_points.value();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetRuntimeOptionsDisableDelegateClustering(
+    LrtRuntimeOptions* options, bool disable_delegate_clustering) {
+  if (!options) return kLiteRtStatusErrorInvalidArgument;
+  options->disable_delegate_clustering = disable_delegate_clustering;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetRuntimeOptionsDisableDelegateClustering(
+    const LrtRuntimeOptions* options, bool* disable_delegate_clustering) {
+  if (!options || !disable_delegate_clustering)
+    return kLiteRtStatusErrorInvalidArgument;
+  if (!options->disable_delegate_clustering.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *disable_delegate_clustering = options->disable_delegate_clustering.value();
   return kLiteRtStatusOk;
 }

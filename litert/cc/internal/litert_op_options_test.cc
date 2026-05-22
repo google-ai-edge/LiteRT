@@ -24,6 +24,7 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/model.h"
@@ -102,7 +103,8 @@ TEST(OpOptionsTest, GetRmsNormEpsilonFromSimpleComposite) {
       GetOptionsAs<RmsNormOpts>(rms_norm_composite_op);
 
   EXPECT_FALSE(info);
-  EXPECT_EQ(info.Error().Status(), kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(ToLiteRtStatus(info.Error().StatusCC()),
+            kLiteRtStatusErrorInvalidArgument);
 }
 
 TEST(OpOptionsTest, GetAddOptions) {

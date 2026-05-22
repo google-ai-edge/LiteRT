@@ -46,7 +46,18 @@ done
 
 if [ "$SKIP_BUILD" -eq 0 ]; then
   echo "Building Docker image..."
-  docker build -t litert_build_env -f ./hermetic_build.Dockerfile .
+  # Forward host proxy env vars into the Docker image build so that apt-get,
+  # wget, and pip can reach the internet from behind a corporate proxy.
+  # When these variables are unset the --build-arg values are empty strings
+  # and Docker ignores them — no proxy is configured.
+  docker build -t litert_build_env -f ./hermetic_build.Dockerfile \
+    --build-arg http_proxy="${http_proxy}" \
+    --build-arg https_proxy="${https_proxy}" \
+    --build-arg no_proxy="${no_proxy}" \
+    --build-arg HTTP_PROXY="${HTTP_PROXY}" \
+    --build-arg HTTPS_PROXY="${HTTPS_PROXY}" \
+    --build-arg NO_PROXY="${NO_PROXY}" \
+    .
   if [ $? -ne 0 ]; then
     echo "Error: Docker build failed."
     exit 1
@@ -73,12 +84,25 @@ else
     DISABLE_SVE_ARG=(-e DISABLE_SVE_FOR_BAZEL=1)
   fi
 
-  # Relax seccomp to allow JVM feature probes and other syscalls in container
+  # Relax seccomp to allow JVM feature probes and other syscalls in container.
+  # Proxy env vars are forwarded into the container so that curl, pip, and
+  # other tools can reach the internet. When unset, empty strings are passed
+  # and no proxy is configured.
+  #
+  # Uses the default CMD (/run_build.sh) which builds //litert/runtime:compiled_model.
+  # To build different targets (e.g. Intel OpenVINO), override the CMD — see
+  # litert/vendors/intel_openvino/README.md for examples.
   docker run --name ${CONTAINER_NAME} \
     --security-opt seccomp=unconfined \
     --user $(id -u):$(id -g) \
     -e HOME=/litert_build \
     -e USER=$(id -un) \
+    -e http_proxy="${http_proxy}" \
+    -e https_proxy="${https_proxy}" \
+    -e no_proxy="${no_proxy}" \
+    -e HTTP_PROXY="${HTTP_PROXY}" \
+    -e HTTPS_PROXY="${HTTPS_PROXY}" \
+    -e NO_PROXY="${NO_PROXY}" \
     "${DISABLE_SVE_ARG[@]}" \
     -v $(pwd)/..:/litert_build \
     litert_build_env
@@ -97,5 +121,5 @@ echo "Container '${CONTAINER_NAME}' is preserved with all build outputs."
 echo "You can:"
 echo "  - Copy files out: docker cp ${CONTAINER_NAME}:/litert_build/bazel-bin/<path> ."
 echo "  - Open a shell to inspect bazel-bin:"
-echo "    docker run --rm -it --user $(id -u):$(id -g) -e HOME=/litert_build -e USER=$(id -un) -v ${REPO_ROOT}:/litert_build litert_build_env bash"
+echo "    docker run --rm -it --user $(id -u):$(id -g) -e HOME=/litert_build -e USER=$(id -un) -e http_proxy=\"${http_proxy}\" -e https_proxy=\"${https_proxy}\" -e no_proxy=\"${no_proxy}\" -e HTTP_PROXY=\"${HTTP_PROXY}\" -e HTTPS_PROXY=\"${HTTPS_PROXY}\" -e NO_PROXY=\"${NO_PROXY}\" -v ${REPO_ROOT}:/litert_build litert_build_env bash"
 echo "  - Remove container: docker rm -f ${CONTAINER_NAME}"

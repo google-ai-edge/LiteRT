@@ -21,7 +21,6 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -39,7 +38,8 @@ Expected<uint32_t> OperandMap::Register(const NeuronOperandType& operand_type) {
   return AllocateOperandIndex();
 }
 
-Expected<uint32_t> OperandMap::Register(const Tensor& t, int32_t tensor_flags) {
+Expected<uint32_t> OperandMap::Register(const litert::compiler::Tensor& t,
+                                        int32_t tensor_flags) {
   auto operand_type = OperandType::Create(t, tensor_flags);
   if (!operand_type) {
     return operand_type.Error();

@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
@@ -42,6 +43,10 @@ std::pair<std::uint32_t, std::uint32_t> ComputePaddingBeforeAfter(
 std::string GetUniqueOpName(const char* op_type);
 
 OpWrapper& CreateOpWrapper(std::vector<OpWrapper>& ops, const char* op_type);
+
+OpWrapper CreateOpWithSameParams(
+    const OpWrapper& src, absl::Span<const ConstTensorWrapperRef> inputs,
+    absl::Span<const ConstTensorWrapperRef> outputs);
 
 /*
   This function creates a new tensor and replaces the original output tensor of

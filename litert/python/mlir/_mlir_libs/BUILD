@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_contrib_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@rules_python//python:py_library.bzl", "py_library")
+load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
 load("//litert/build_common:litert_build_defs.bzl", "if_google")
 load("//litert/build_common:symlink_files.bzl", "symlink_inputs")
+load("//litert/python:pytype.bzl", "pytype_strict_contrib_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
@@ -49,15 +49,21 @@ symlink_inputs(
 cc_library(
     name = "lib_litert_compiler_mlir",
     srcs = select({
-        "@platforms//os:macos": [],
-        "@platforms//os:windows": [],
+        "//litert:windows": [],
         "//conditions:default": [":libLiteRTCompilerMLIR.so"],
     }),
 )
 
 cc_binary(
     name = "libLiteRTCompilerMLIR.so",
-    linkopts = ["-Wl,-Bsymbolic"],
+    linkopts = select({
+        "//litert:macos": [
+            "-Wl,-undefined,dynamic_lookup",
+            "-Wl,-install_name,@loader_path/libLiteRTCompilerMLIR.so",
+        ],
+        "//litert:windows": [],
+        "//conditions:default": ["-Wl,-Bsymbolic"],
+    }),
     linkshared = 1,
     tags = [
         "nobuilder",

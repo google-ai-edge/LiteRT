@@ -16,6 +16,7 @@
 #define INCLUDE_MEDIATEK_COMPILE_FLAGS
 #define INCLUDE_INTEL_OPENVINO_COMPILE_FLAGS
 #define INCLUDE_GOOGLE_TENSOR_COMPILE_FLAGS
+#define INCLUDE_SAMSUNG_COMPILE_FLAGS
 
 #include <memory>
 #include <string>
@@ -40,6 +41,7 @@
 #include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: keep
+#include "litert/tools/flags/vendors/samsung_flags.h"  // IWYU pragma: keep
 #endif  // !defined(LITERT_WINDOWS_OS)
 
 namespace {
@@ -154,6 +156,11 @@ int main(int argc, char* argv[]) {
       run->dump_out, "Mediatek", [&] { return opts->GetMediatekOptions(); },
       litert::mediatek::UpdateMediatekOptionsFromFlags,
       "Failed to parse Mediatek flags, Error: ");
+
+  ParseOptionsFlags(
+      run->dump_out, "Samsung", [&] { return opts->GetSamsungOptions(); },
+      litert::samsung::UpdateSamsungOptionsFromFlags,
+      "Failed to parse Samsung flags, Error: ");
 #endif  // !defined(LITERT_WINDOWS_OS)
 
   ParseOptionsFlags(

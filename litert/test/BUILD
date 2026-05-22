@@ -14,8 +14,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-
-# copybara:uncomment load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("//litert/build_common:symlink_files.bzl", "symlink_files")  # @unused
 load("//litert/build_common:tfl_model_gen.bzl", "tfl_model_gen")  # @unused
 
@@ -30,6 +29,12 @@ package(
 # tfl_model_gen(
 #     name = "mlir_test_data",
 #     srcs = glob(["testdata/*.mlir"]),
+# )
+#
+# tfl_model_gen(
+#     name = "mlir_test_data_stablehlo",
+#     srcs = glob(["testdata/stablehlo/*.mlir"]),
+#     subdir = "testdata/stablehlo",
 # )
 # copybara:uncomment_end
 
@@ -71,7 +76,10 @@ filegroup(
     srcs = glob([
         "testdata/*.tflite",
         "testdata/*.bin",
-    ]) + [":mlir_test_data"],
+    ]) + [
+        ":mlir_test_data",
+        ":mlir_test_data_stablehlo",
+    ],
 )
 
 filegroup(
@@ -225,6 +233,7 @@ cc_library(
         "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_c_types_printing",
         "@com_google_absl//absl/status",
@@ -293,7 +302,6 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_ranked_tensor_type",
-        "//litert/cc/dynamic_runtime:litert_model",
         "//litert/cc/internal:litert_c_types_printing",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
@@ -311,9 +319,24 @@ cc_library(
 )
 
 cc_library(
+    name = "tflite_half_traits",
+    testonly = True,
+    hdrs = ["tflite_half_traits.h"],
+    deps = [
+        "//litert/cc:litert_element_type",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_numerics",
+        "//litert/cc/internal:litert_rng",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
     name = "simple_buffer",
+    testonly = True,
     hdrs = ["simple_buffer.h"],
     deps = [
+        ":tflite_half_traits",
         "//litert/c:litert_common",
         "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_buffer_ref",
@@ -325,6 +348,7 @@ cc_library(
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc/internal:litert_extended_model",
         "//litert/cc/internal:litert_rng",
+        "//tflite/types:half",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
     ],
@@ -335,6 +359,8 @@ cc_library(
     testonly = True,
     hdrs = ["simple_buffer.h"],
     deps = [
+        ":tflite_half_traits",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_element_type",
@@ -345,6 +371,7 @@ cc_library(
         "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
         "//litert/cc/internal:litert_rng",
+        "//tflite/types:half",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
     ],
@@ -365,26 +392,27 @@ cc_test(
     ],
 )
 
-# copybara:uncomment_begin(google-only)
-# objc_library(
-#     name = "metal_test_helper",
-#     testonly = True,
-#     srcs = ["metal_test_helper.mm"],
-#     hdrs = ["metal_test_helper.h"],
-#     deps = [
-#         ":common",
-#         ":matchers",
-#         "@com_google_absl//absl/types:span",
-#         "//third_party/apple_frameworks:XCTest",
-#         "//litert/cc:litert_expected",
-#         "//litert/cc:litert_macros",
-#         "//litert/cc:litert_tensor_buffer",
-#     ],
-# )
-# copybara:uncomment_end
+objc_library(
+    name = "metal_test_helper",
+    testonly = True,
+    srcs = ["metal_test_helper.mm"],
+    hdrs = ["metal_test_helper.h"],
+    deps = [
+        ":common",
+        ":matchers",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_tensor_buffer",
+        "//third_party/apple_frameworks:Metal",
+        "//third_party/apple_frameworks:XCTest",
+        "@com_google_absl//absl/types:span",
+    ],
+)
 
 exports_files(
     srcs = [
+        "litert_c_api_dependency_test.sh",
+        "litert_compiler_plugin_symbol_test.sh",
         "testdata/mobilenet_v2_1.0_224.tflite",
         "testdata/model_magic_test.tflite",
         "testdata/model_with_external_weights.tflite",

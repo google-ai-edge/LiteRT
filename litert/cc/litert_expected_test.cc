@@ -26,6 +26,7 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_common.h"
 
 namespace litert {
 
@@ -79,7 +80,7 @@ TEST(ExpectedTest, CopyCstorError) {
   const Expected<int> exp = Unexpected(kErrorStatus);
   Expected<int> other(exp);
   ASSERT_FALSE(other.HasValue());
-  EXPECT_EQ(other.Error().Status(), kErrorStatus);
+  EXPECT_EQ(ToLiteRtStatus(other.Error().StatusCC()), kErrorStatus);
 }
 
 TEST(ExpectedTest, CopyCstorVal) {
@@ -94,7 +95,7 @@ TEST(ExpectedTest, CopyAssignError) {
   ASSERT_FALSE(exp.HasValue());
   Expected<int> other = exp;
   ASSERT_FALSE(other.HasValue());
-  EXPECT_EQ(other.Error().Status(), kErrorStatus);
+  EXPECT_EQ(ToLiteRtStatus(other.Error().StatusCC()), kErrorStatus);
 }
 
 TEST(ExpectedTest, CopyAssignVal) {
@@ -108,7 +109,7 @@ TEST(ExpectedTest, MoveCstorError) {
   Expected<int> exp = Unexpected(kErrorStatus);
   Expected<int> other(std::move(exp));
   ASSERT_FALSE(other.HasValue());
-  EXPECT_EQ(other.Error().Status(), kErrorStatus);
+  EXPECT_EQ(ToLiteRtStatus(other.Error().StatusCC()), kErrorStatus);
 }
 
 TEST(ExpectedTest, MoveCstorVal) {
@@ -122,7 +123,7 @@ TEST(ExpectedTest, MoveAssignError) {
   Expected<int> exp = Unexpected(kErrorStatus);
   Expected<int> other = std::move(exp);
   ASSERT_FALSE(other.HasValue());
-  EXPECT_EQ(other.Error().Status(), kErrorStatus);
+  EXPECT_EQ(ToLiteRtStatus(other.Error().StatusCC()), kErrorStatus);
 }
 
 TEST(ExpectedTest, MoveAssignVal) {
@@ -181,20 +182,20 @@ TEST(ExpectedTest, DereferenceFromConstReference) {
 
 TEST(UnexpectedTest, WithStatus) {
   Unexpected err(kErrorStatus);
-  EXPECT_EQ(err.Error().Status(), kErrorStatus);
+  EXPECT_EQ(ToLiteRtStatus(err.Error().StatusCC()), kErrorStatus);
   EXPECT_TRUE(err.Error().Message().empty());
 }
 
 TEST(UnexpectedTest, WithMessage) {
   Unexpected err(kErrorStatus, "MESSAGE");
-  EXPECT_EQ(err.Error().Status(), kErrorStatus);
+  EXPECT_EQ(ToLiteRtStatus(err.Error().StatusCC()), kErrorStatus);
   EXPECT_EQ(err.Error().Message(), "MESSAGE");
 }
 
 TEST(UnexpectedTest, WithLocalMessageString) {
   // Message is a string with scoped lifetime.
   Unexpected err(kErrorStatus, absl::StrCat("MESSAGE", 1));
-  EXPECT_EQ(err.Error().Status(), kErrorStatus);
+  EXPECT_EQ(ToLiteRtStatus(err.Error().StatusCC()), kErrorStatus);
   EXPECT_EQ(err.Error().Message(), "MESSAGE1");
 }
 
@@ -227,7 +228,7 @@ TEST(ExpectedWithNoValue, WithoutError) {
 TEST(ExpectedWithNoValue, WithError) {
   Expected<void> expected(Unexpected(kErrorStatus, "MESSAGE"));
   EXPECT_FALSE(expected.HasValue());
-  EXPECT_EQ(expected.Error().Status(), kErrorStatus);
+  EXPECT_EQ(ToLiteRtStatus(expected.Error().StatusCC()), kErrorStatus);
   EXPECT_EQ(expected.Error().Message(), "MESSAGE");
 }
 
@@ -243,19 +244,19 @@ TEST(ExpectedTest, PrintingWorks) {
 
   EXPECT_THAT(absl::StrCat(Expected<void>()), StrEq("void expected value"));
 
-  EXPECT_THAT(absl::StrCat(Unexpected(kLiteRtStatusErrorNotFound)),
+  EXPECT_THAT(absl::StrCat(Unexpected(Status::kErrorNotFound)),
               StrEq("kLiteRtStatusErrorNotFound"));
 
-  EXPECT_THAT(absl::StrCat(Unexpected(kLiteRtStatusErrorNotFound,
+  EXPECT_THAT(absl::StrCat(Unexpected(Status::kErrorNotFound,
                                       "Error not found message")),
               StrEq("kLiteRtStatusErrorNotFound: Error not found message"));
 
-  EXPECT_THAT(absl::StrCat(Error(kLiteRtStatusErrorNotFound)),
+  EXPECT_THAT(absl::StrCat(Error(Status::kErrorNotFound)),
               StrEq("kLiteRtStatusErrorNotFound"));
 
-  EXPECT_THAT(absl::StrCat(
-                  Error(kLiteRtStatusErrorNotFound, "Error not found message")),
-              StrEq("kLiteRtStatusErrorNotFound: Error not found message"));
+  EXPECT_THAT(
+      absl::StrCat(Error(Status::kErrorNotFound, "Error not found message")),
+      StrEq("kLiteRtStatusErrorNotFound: Error not found message"));
 
   struct UnknownStruct {};
   EXPECT_THAT(absl::StrCat(Expected<UnknownStruct>({})),

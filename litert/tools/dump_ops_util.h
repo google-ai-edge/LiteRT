@@ -16,13 +16,16 @@
 #define ODML_LITERT_LITERT_TOOLS_DUMP_OPS_UTIL_H_
 
 #include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "litert/c/litert_op_code.h"
 #include "litert/core/model/model.h"
+#include "litert/tools/dump.h"
 
 namespace litert::tools {
 
@@ -40,6 +43,15 @@ struct DumpStats {
   absl::flat_hash_map<std::string, int> op_code_counts;
   std::vector<std::string> invalid_files;
 };
+
+inline std::string OpCodeToString(LiteRtOpCode code) {
+  std::ostringstream oss;
+  litert::internal::Dump(code, oss);
+  if (oss.str().empty()) {
+    return "UNKNOWN";
+  }
+  return oss.str();
+}
 
 absl::Status DumpOps(LiteRtModelT& model, const DumpOptions& options,
                      DumpStats* stats = nullptr);

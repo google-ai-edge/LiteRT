@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_library", "py_strict_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension", "pywrap_binaries", "pywrap_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
+load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
 
 WINDOWS_PYBIND_UNDEFS = select({
-    "@platforms//os:windows": [
+    "//litert:windows": [
         "/UPROTOBUF_USE_DLLS",
         "/UABSL_CONSUME_DLL",
     ],
@@ -64,14 +65,16 @@ pybind_extension(
     ],
 )
 
-py_strict_library(
+py_library(
     name = "litert_pywrap_deps",
     visibility = ["//visibility:public"],
     deps = [
         ":_pywrap_litert_converter",
         "//ci/tools/python/wheel:tflite_converter_protos",
         "//litert/python/litert_wrapper/compiled_model_wrapper:_pywrap_litert_compiled_model_wrapper",
+        "//litert/python/litert_wrapper/environment_wrapper:_pywrap_litert_environment_wrapper",
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:_pywrap_litert_tensor_buffer_wrapper",
+        "//tflite/profiling/profiler_based_calibration:_pywrap_tfl_calibration",
     ],
 )
 
@@ -100,7 +103,7 @@ pywrap_library(
     common_lib_version_scripts = {
         "litert/python/pywrap_litert_common": PYWRAP_LITERT_COMMON_LIB_VERSION_SCRIPTS,
     },
-    pywrap_count = 11,
+    pywrap_count = 13,
     visibility = ["//visibility:public"],
     deps = [
         ":litert_pywrap_deps",
@@ -119,12 +122,10 @@ pywrap_library(
     common_lib_version_scripts = {
         "litert/python/pywrap_litert_with_converter_common": PYWRAP_LITERT_COMMON_LIB_VERSION_SCRIPTS,
     },
-    pywrap_count = 15,
+    pywrap_count = 4,
     visibility = ["//visibility:public"],
     deps = [
-        ":litert_pywrap_deps",
         "//litert/python/mlir",
-        "//tflite/python:tflite_pywrap_deps",
     ],
 )
 
@@ -140,9 +141,13 @@ pywrap_binaries(
     visibility = ["//visibility:public"],
 )
 
-py_strict_test(
+py_test(
     name = "converter_wrapper_test",
     srcs = ["converter_wrapper_test.py"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":pywrap_litert",
         "//ci/tools/python/wheel:tflite_converter_protos",

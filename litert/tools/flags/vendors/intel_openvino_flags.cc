@@ -27,7 +27,9 @@
 #include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_intel_openvino_options.h"
+#include "litert/tools/flags/options_parser_registry.h"
 
 // NOLINTBEGIN(*alien-types*)
 // TODO: Move absl parse/unparse function to same file as enum types if
@@ -148,5 +150,15 @@ Expected<void> UpdateIntelOpenVinoOptionsFromFlags(
 
   return {};
 }
+
+}  // namespace litert::intel_openvino
+
+namespace litert::intel_openvino {
+
+LITERT_REGISTER_OPTIONS_PARSER([](Options& options) -> Expected<void> {
+  LITERT_ASSIGN_OR_RETURN(auto& intel_openvino_opts,
+                          options.GetIntelOpenVinoOptions());
+  return UpdateIntelOpenVinoOptionsFromFlags(intel_openvino_opts);
+});
 
 }  // namespace litert::intel_openvino

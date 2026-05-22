@@ -1,5 +1,6 @@
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_binary")
+load("@org_tensorflow//tensorflow:tensorflow.bzl", "if_oss")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "filegroup")
+load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
 load("//tflite/converter:glob_lit_test.bzl", "glob_lit_tests")
 
 # copybara:uncomment package(default_applicable_licenses = ["@org_tensorflow//tensorflow:license"])
@@ -43,20 +44,36 @@ filegroup(
     ],
 )
 
-py_strict_binary(
+py_binary(
     name = "saved_model_error",
     srcs = ["saved_model_error.py"],
+    exec_properties = if_oss(
+        None,
+        select({
+            "//tools/cpp:asan_build": {"cpp_link.mem": "20g"},
+            "//conditions:default": None,
+        }),
+    ),
     main = "saved_model_error.py",
+    strict_deps = True,
     deps = [
         "@absl_py//absl:app",
         "@org_tensorflow//tensorflow:tensorflow_py",
     ],
 )
 
-py_strict_binary(
+py_binary(
     name = "concrete_function_error",
     srcs = ["concrete_function_error.py"],
+    exec_properties = if_oss(
+        None,
+        select({
+            "//tools/cpp:asan_build": {"cpp_link.mem": "20g"},
+            "//conditions:default": None,
+        }),
+    ),
     main = "concrete_function_error.py",
+    strict_deps = True,
     deps = [
         "@absl_py//absl:app",
         "@org_tensorflow//tensorflow:tensorflow_py",

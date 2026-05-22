@@ -1,7 +1,7 @@
 # LiteRT Constant Output Support Guide
 
-This guide covers how LiteRT handles constant output tensors so applications
-can consume read-only model results without performing extra synchronization.
+This guide covers how LiteRT handles constant output tensors so applications can
+consume read-only model results without performing extra synchronization.
 
 ## Introduction
 
@@ -13,8 +13,9 @@ application-accessible buffers after each invocation.
 
 ## Core Concepts
 
-*   **Constant outputs**: Tensors whose allocation type is `kTfLiteMmapRo` and
-    whose memory originates from the model flatbuffer rather than the runtime.
+*   **Constant outputs**: Tensors whose allocation type is `kTfLiteMmapRo`
+    (flatbuffer constants) or `kTfLitePersistentRo` (dynamically generated
+    constants during Prepare).
 *   **Registration tracking**: During buffer registration LiteRT flags constant
     outputs and captures the locked host addresses returned by
     `LiteRtLockTensorBuffer`.
@@ -26,13 +27,22 @@ application-accessible buffers after each invocation.
 
 Constant outputs appear alongside regular outputs in the buffer vector returned
 by `CreateOutputBuffers`.
+
 ### Constant vs. Non-Constant Outputs
 
-| Aspect | Constant Output Tensor | Regular (Non-Constant) Output Tensor |
-| --- | --- | --- |
-| Backing memory | Read-only flatbuffer payload (`kTfLiteMmapRo`) embedded in the model | Allocated by LiteRT / delegates for each invocation |
-| Data updates across runs | Static contents copied after every invoke; values never change | Populated with fresh results for each invocation |
-| Buffer registration | Runtime tracks locked buffer addresses and copies constants post-invoke | Runtime register buffers directly and relies on normal writes |
+| Aspect              | Constant Output Tensor    | Regular (Non-Constant)   |
+:                     :                           : Output Tensor            :
+| ------------------- | ------------------------- | ------------------------ |
+| Backing memory      | Read-only flatbuffer      | Allocated by LiteRT /    |
+:                     : payload (`kTfLiteMmapRo`) : delegates for each       :
+:                     : embedded in the model     : invocation               :
+| Data updates across | Static contents copied    | Populated with fresh     |
+: runs                : after every invoke;       : results for each         :
+:                     : values never change       : invocation               :
+| Buffer registration | Runtime tracks locked     | Runtime register buffers |
+:                     : buffer addresses and      : directly and relies on   :
+:                     : copies constants          : normal writes            :
+:                     : post-invoke               :                          :
 
 ### Code Snippet: Reading Constant Outputs (C++)
 

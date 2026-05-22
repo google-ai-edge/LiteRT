@@ -13,42 +13,55 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstddef>
+#include <string>
+#include <vector>
+
 #include "openvino/core/except.hpp"
+#include "openvino/runtime/core.hpp"
+#include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_custom_tensor_buffer.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
-#include "litert/cc/litert_environment_options.h"
+#include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/options/litert_intel_openvino_options.h"
+#include "litert/cc/internal/litert_context_wrapper.h"
+#include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
 #include "litert/vendors/intel_openvino/dispatch/invocation_context.h"
-
-#if defined(LITERT_WINDOWS_OS)
-#include "litert/c/internal/litert_tensor_buffer_registry.h"
-#include "litert/c/litert_custom_tensor_buffer.h"
-#include "litert/vendors/intel_openvino/dispatch/remote_tensor_buffer.h"
-#endif  // LITERT_WINDOWS_OS
+#include "litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.h"
 
 namespace litert {
 namespace openvino {
 
-#if defined(LITERT_WINDOWS_OS)
-LiteRtStatus CreateRemoteTensorBuffer(LiteRtEnvironment env,
-                                      const LiteRtRankedTensorType* tensor_type,
-                                      LiteRtTensorBufferType buffer_type,
-                                      size_t bytes, size_t packed_bytes,
-                                      HwMemoryInfoPtr* hw_memory_info) {
+using IntelOpenVinoOptions = ::litert::intel_openvino::IntelOpenVinoOptions;
+namespace {
+
+// Optional intel openvino specific options provided by the application.
+IntelOpenVinoOptions* intel_openvino_opts = nullptr;
+
+}  // namespace
+
+LiteRtStatus CreateOpenVinoTensorBuffer(
+    LiteRtGpuDeviceId device_id, LiteRtGpuQueueId queue_id,
+    const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, size_t bytes, size_t packed_bytes,
+    HwMemoryInfoPtr* hw_memory_info) {
   auto memory_info = new HwMemoryInfo();
-  RemoteTensorBuffer* custom_tensor_buffer = new RemoteTensorBuffer();
+  OpenVinoTensorBuffer* custom_tensor_buffer = new OpenVinoTensorBuffer();
   litert::Expected<void> result =
       custom_tensor_buffer->Alloc(*tensor_type, bytes);
   if (!result) {
-    LITERT_LOG(LITERT_ERROR, "Failed to alloc remote tensor buffer %d.", bytes);
+    LITERT_LOG(LITERT_ERROR, "Failed to alloc OpenVino tensor buffer %d.",
+               bytes);
     return kLiteRtStatusErrorMemoryAllocationFailure;
   }
   memory_info->memory_handle = custom_tensor_buffer;
@@ -56,29 +69,26 @@ LiteRtStatus CreateRemoteTensorBuffer(LiteRtEnvironment env,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus DestroyRemoteTensorBuffer(LiteRtEnvironment env,
-                                       HwMemoryInfoPtr hw_memory_info) {
-  RemoteTensorBuffer* custom_tensor_buffer =
-      reinterpret_cast<RemoteTensorBuffer*>(hw_memory_info->memory_handle);
-  if (custom_tensor_buffer->GetZeroBufferPtr()) {
+LiteRtStatus DestroyOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+  OpenVinoTensorBuffer* custom_tensor_buffer =
+      reinterpret_cast<OpenVinoTensorBuffer*>(hw_memory_info->memory_handle);
+  if (custom_tensor_buffer->GetTensorData()) {
     delete custom_tensor_buffer;
   }
   delete hw_memory_info;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus UnlockRemoteTensorBuffer(LiteRtEnvironment env,
-                                      HwMemoryInfoPtr hw_memory_info) {
+LiteRtStatus UnlockOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LockRemoteTensorBuffer(LiteRtEnvironment env,
-                                    HwMemoryInfoPtr hw_memory_info,
-                                    LiteRtTensorBufferLockMode mode,
-                                    void** host_memory_ptr) {
-  RemoteTensorBuffer* custom_tensor_buffer =
-      reinterpret_cast<RemoteTensorBuffer*>(hw_memory_info->memory_handle);
-  auto result = custom_tensor_buffer->GetZeroBufferPtr();
+LiteRtStatus LockOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info,
+                                      LiteRtTensorBufferLockMode mode,
+                                      void** host_memory_ptr) {
+  OpenVinoTensorBuffer* custom_tensor_buffer =
+      reinterpret_cast<OpenVinoTensorBuffer*>(hw_memory_info->memory_handle);
+  auto result = custom_tensor_buffer->GetTensorData();
   if (!result) {
     LITERT_LOG(LITERT_ERROR, "Failed to lock tensor buffer: %s",
                result.Error().Message().c_str());
@@ -87,24 +97,44 @@ LiteRtStatus LockRemoteTensorBuffer(LiteRtEnvironment env,
   *host_memory_ptr = result.Value();
   return kLiteRtStatusOk;
 }
-#endif  // LITERT_WINDOWS_OS
 
 // Initialize the Dispatch API runtime.
 // This function should be called before calling any other Dispatch API
 // functions.
-LiteRtStatus DispatchInitialize(LiteRtEnvironment env, LiteRtOptions options) {
+LiteRtStatus DispatchInitialize(const LiteRtRuntimeContext* runtime_context,
+                                LiteRtEnvironment env, LiteRtOptions options) {
+  LiteRtEnvironmentOptions environment_options;
+  if (runtime_context->get_environment_options(env, &environment_options) ==
+      kLiteRtStatusOk) {
+    LiteRtPropagateMinLoggerSeverityWithRuntimeContext(runtime_context,
+                                                       environment_options);
+  }
+
   ov::Core core;
   std::vector<std::string> availableDevices = core.get_available_devices();
   for (auto&& device : availableDevices)
     LITERT_LOG(LITERT_INFO, "[Openvino]Found device plugin for: %s",
                device.c_str());
 
-#if defined(LITERT_WINDOWS_OS)
-  LITERT_RETURN_IF_ERROR(LiteRtRegisterTensorBufferHandlers(
-      env, kLiteRtTensorBufferTypeOpenVINOTensorBuffer,
-      CreateRemoteTensorBuffer, DestroyRemoteTensorBuffer,
-      LockRemoteTensorBuffer, UnlockRemoteTensorBuffer, nullptr, nullptr));
-#endif  // LITERT_WINDOWS_OS
+  if (options) {
+    litert::internal::OptionsWrapper internal_options(
+        litert::internal::ContextWrapper(runtime_context), options);
+    auto opaque_options_result = internal_options.GetOpaqueOptions();
+    if (opaque_options_result) {
+      auto payload_data_result = opaque_options_result->FindOpaqueOptions(
+          LrtGetIntelOpenVinoOptionsIdentifier());
+      if (payload_data_result && payload_data_result.Value() != nullptr) {
+        LrtIntelOpenVinoOptions raw_options = nullptr;
+        if (LrtCreateIntelOpenVinoOptionsFromToml(
+                static_cast<const char*>(payload_data_result.Value()),
+                &raw_options) == kLiteRtStatusOk) {
+          delete intel_openvino_opts;
+          intel_openvino_opts = new IntelOpenVinoOptions(
+              IntelOpenVinoOptions::CreateFromOwnedHandle(raw_options));
+        }
+      }
+    }
+  }
 
   return kLiteRtStatusOk;
 }
@@ -139,9 +169,11 @@ LiteRtStatus DispatchGetCapabilities(int* capabilities) {
 // LiteRtDispatchDeviceContextDestroy() to release it. Return NULL in case of
 // error.
 LiteRtStatus DispatchDeviceContextCreate(
+    const LiteRtRuntimeContext* runtime_context, LiteRtOptions options,
     LiteRtDispatchDeviceContext* device_context) {
   try {
-    if (auto context = LiteRtDispatchDeviceContextT::Create(); context) {
+    if (auto context = LiteRtDispatchDeviceContextT::Create(runtime_context);
+        context) {
       *device_context = context->release();
       return kLiteRtStatusOk;
     } else {
@@ -256,6 +288,7 @@ LiteRtStatus DispatchUnregisterTensorBuffer(
 // executable. Parameter `function_name` is required if the provided executable
 // includes multiple functions.
 LiteRtStatus DispatchInvocationContextCreate(
+    const LiteRtRuntimeContext* runtime_context,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
@@ -264,7 +297,7 @@ LiteRtStatus DispatchInvocationContextCreate(
   try {
     auto context = LiteRtDispatchInvocationContextT::Create(
         *device_context, exec_type, exec_bytecode_buffer, function_name,
-        num_inputs, num_outputs);
+        num_inputs, num_outputs, intel_openvino_opts);
     if (!context) {
       LITERT_LOG(LITERT_ERROR,
                  "Failed to create context from context binary: %s",
@@ -417,6 +450,19 @@ LiteRtDispatchInterface TheInterface = {
     .check_runtime_compatibility = litert::openvino::CheckRuntimeCompatibility,
 };
 
+LiteRtCustomTensorBufferHandlersDef TheTensorBufferHandlers = {
+    .create_func = litert::openvino::CreateOpenVinoTensorBuffer,
+    .destroy_func = litert::openvino::DestroyOpenVinoTensorBuffer,
+    .lock_func = litert::openvino::LockOpenVinoTensorBuffer,
+    .unlock_func = litert::openvino::UnlockOpenVinoTensorBuffer,
+    .clear_func = nullptr,
+    .import_func = nullptr,
+    .device_tag = kLiteRtEnvOptionTagNull,
+    .queue_tag = kLiteRtEnvOptionTagNull,
+    .num_supported_buffer_types = 1,
+    .supported_buffer_types = {kLiteRtTensorBufferTypeOpenVINOTensorBuffer},
+};
+
 LiteRtDispatchApi TheApi = {
     .version = {.major = LITERT_API_VERSION_MAJOR,
                 .minor = LITERT_API_VERSION_MINOR,
@@ -424,6 +470,7 @@ LiteRtDispatchApi TheApi = {
     .interface = &TheInterface,
     .async_interface = nullptr,
     .graph_interface = nullptr,
+    .tensor_buffer_handlers_def = &TheTensorBufferHandlers,
 };
 
 }  // namespace

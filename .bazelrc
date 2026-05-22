@@ -52,10 +52,14 @@ build:clang_local --repo_env USE_HERMETIC_CC_TOOLCHAIN=1
 
 build --repo_env=USE_PYWRAP_RULES=True
 build --copt=-DGRPC_BAZEL_BUILD
-build --cxxopt=-std=gnu++17
-build --cxxopt=-fpermissive
 build --host_copt=-DGRPC_BAZEL_BUILD
-build --host_cxxopt=-fpermissive
+# GCC/Clang-specific flags: only apply on non-Windows platforms.
+# Each platform already specifies its own C++ standard (see below).
+build:linux --cxxopt=-std=gnu++17
+build:linux --cxxopt=-fpermissive
+build:linux --host_cxxopt=-fpermissive
+build:macos --cxxopt=-fpermissive
+build:macos --host_cxxopt=-fpermissive
 build --action_env=GRPC_BAZEL_RUNTIME=1
 build --repo_env=PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=upb
 build --action_env=PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=upb
@@ -126,9 +130,12 @@ build --incompatible_enforce_config_setting_visibility
 # TODO: also enable this flag after fixing the visibility violations
 # build --incompatible_config_setting_private_default_visibility
 
+# LiteRT Converter build options
+build:litert_converter --copt=-Wno-macro-redefined --copt=-DMLIR_PYTHON_PACKAGE_PREFIX=litert_converter.mlir.
+
 # Compiler MLIR Builds
-common --copt=-DMLIR_PYTHON_PACKAGE_PREFIX=ai_edge_litert.mlir.
 common --copt=-DNB_DOMAIN=litert
+common --copt=-DMLIR_BINDINGS_PYTHON_DOMAIN=LITERT_MLIR
 
 # Use GitHub mirror for BCR to work around bcr.bazel.build outages
 common --registry=https://raw.githubusercontent.com/bazelbuild/bazel-central-registry/main/
@@ -190,18 +197,17 @@ build:apple-toolchain --apple_crosstool_top=@local_config_apple_cc//:toolchain
 build:apple-toolchain --crosstool_top=@local_config_apple_cc//:toolchain
 build:apple-toolchain --host_crosstool_top=@local_config_apple_cc//:toolchain
 
-# Wheel builds need the LiteRT runtime dylib linked into python extensions.
-# This config overrides the macos default above.
+# Wheel builds need the installable macOS runtime dylib linked into python
+# extensions and packaged into the wheel.
 build:macos_wheel --config=macos
 build:macos_wheel --define=resolve_symbols_in_exec=false
-build:macos_wheel --define=litert_macos_wheel_use_so=true
 
 # Settings for MacOS on ARM CPUs.
 build:macos_arm64 --config=macos
 build:macos_arm64 --cpu=darwin_arm64
 build:macos_arm64 --cxxopt=-std=gnu++17
 build:macos_arm64 --macos_minimum_os=11.0
-build:macos_arm64 --platforms=@build_bazel_apple_support//configs/platforms:darwin_arm64
+build:macos_arm64 --platforms=@build_bazel_apple_support//platforms:macos_arm64
 
 # iOS configs for each architecture and the fat binary builds.
 build:ios --apple_platform_type=ios
@@ -213,16 +219,16 @@ build:ios_armv7 --cpu=ios_armv7
 build:ios_armv7 --platforms=@org_tensorflow//tensorflow/tools/toolchains/ios:ios_armv7
 build:ios_arm64 --config=ios
 build:ios_arm64 --cpu=ios_arm64
-build:ios_arm64 --platforms=@build_bazel_apple_support//configs/platforms:ios_arm64
+build:ios_arm64 --platforms=@build_bazel_apple_support//platforms:ios_arm64
 build:ios_arm64e --config=ios
 build:ios_arm64e --cpu=ios_arm64e
-build:ios_arm64e --platforms=@build_bazel_apple_support//configs/platforms:ios_arm64e
+build:ios_arm64e --platforms=@build_bazel_apple_support//platforms:ios_arm64e
 build:ios_sim_arm64 --config=ios
 build:ios_sim_arm64 --cpu=ios_sim_arm64
-build:ios_sim_arm64 --platforms=@build_bazel_apple_support//configs/platforms:ios_sim_arm64
+build:ios_sim_arm64 --platforms=@build_bazel_apple_support//platforms:ios_sim_arm64
 build:ios_x86_64 --config=ios
 build:ios_x86_64 --cpu=ios_x86_64
-build:ios_x86_64 --platforms=@build_bazel_apple_support//configs/platforms:ios_x86_64
+build:ios_x86_64 --platforms=@build_bazel_apple_support//platforms:ios_x86_64
 build:ios_fat --config=ios
 build:ios_fat --ios_multi_cpus=armv7,arm64,i386,x86_64
 
@@ -271,6 +277,12 @@ build:macos --copt=-w
 # Suppress all C++ compiler warnings on Windows
 build:windows --copt=/W0
 build:windows --host_copt=/W0
+
+# Ensure the CPU is set explicitly for Windows so that XLA/TSL config_settings
+# (which match on cpu=x64_windows) resolve correctly. Without this,
+# if_not_windows() selects may fall through to the default branch and pass
+# GCC/Clang flags (e.g. -Wno-sign-compare) to MSVC.
+build:windows --cpu=x64_windows
 
 # Suppress most C++ compiler warnings to reduce log size but allow
 # for specific warnings to still be present.
@@ -381,6 +393,13 @@ build:macos_arm64 --cxxopt=-std=c++17
 build:macos_arm64 --host_cxxopt=-std=c++17
 build:windows --cxxopt=/std:c++20
 build:windows --host_cxxopt=/std:c++20
+# Protobuf v6.31.1 uses incomplete (forward-declared) types as value types in
+# absl::flat_hash_map. Under MSVC C++20, std::pair requires complete types for
+# conditionally-trivial special members (P0848R3), causing compilation failures.
+# Compile protobuf with C++17 to work around this; the rest of the project
+# stays at C++20.
+build:windows --per_file_copt=external/com_google_protobuf/.*\.cc$@/std:c++17
+build:windows --host_per_file_copt=external/com_google_protobuf/.*\.cc$@/std:c++17
 
 # On windows, we still link everything into a single DLL.
 build:windows --config=monolithic
@@ -412,8 +431,8 @@ build:windows --strategy=Genrule=local
 build:windows --genrule_strategy=local
 build:windows --spawn_strategy=local
 
-# Use Git Bash for genrules
-build:windows --shell_executable="C:/Program Files/Git/bin/bash.exe"
+# Do not require Bash on Windows. Windows-aware rules should provide cmd_bat
+# or cmd_ps implementations instead of relying on a Unix shell.
 
 # Verbose failure logs when something goes wrong
 build:windows --verbose_failures
@@ -421,9 +440,6 @@ build:windows --verbose_failures
 # Work around potential issues with large command lines on windows.
 # See: https://github.com/bazelbuild/bazel/issues/5163
 build:windows --features=compiler_param_file
-
-# Disable problematic features on Windows
-build:windows --define=tflite_with_xnnpack=false
 
 # Minimal build configuration
 build:windows --define=build_with_mkl=false

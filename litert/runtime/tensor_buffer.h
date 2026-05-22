@@ -116,7 +116,7 @@ class LiteRtTensorBufferT {
   static litert::Expected<Ptr> CreateFromOpenClMemory(
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
       LiteRtTensorBufferType buffer_type, LiteRtClMem buffer,
-      size_t opencl_buffer_size, LiteRtOpenClDeallocator deallocator = nullptr);
+      size_t opencl_buffer_size);
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_WEBGPU_SUPPORT
@@ -171,10 +171,10 @@ class LiteRtTensorBufferT {
   litert::Expected<litert::internal::GlBuffer*> GetGlBuffer();
   litert::Expected<litert::internal::GlTexture*> GetGlTexture();
 #endif  // LITERT_HAS_OPENGL_SUPPORT
-#if LITERT_HAS_OPENCL_SUPPORT
-  litert::Expected<litert::internal::OpenClMemory*> GetOpenClMemory();
-#endif  // LITERT_HAS_OPENCL_SUPPORT
   litert::Expected<litert::internal::CustomBuffer*> GetCustomBuffer();
+#if LITERT_HAS_OPENCL_SUPPORT
+  litert::Expected<LiteRtClMem> GetOpenClMemory();
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
   litert::Expected<void*> Lock(LiteRtTensorBufferLockMode mode);
   litert::Expected<void> Unlock();

@@ -155,22 +155,6 @@ TEST(QnnOptionTest, DspPerformanceMode) {
   EXPECT_EQ(options.GetDspPerformanceMode(), kBalanced);
 }
 
-TEST(QnnOptionTest, UseHtpPreference) {
-  Options options;
-  options.SetUseHtpPreference(true);
-  EXPECT_EQ(options.GetUseHtpPreference(), true);
-  options.SetUseHtpPreference(false);
-  EXPECT_EQ(options.GetUseHtpPreference(), false);
-}
-
-TEST(QnnOptionTest, UseQint16AsQuint16) {
-  Options options;
-  options.SetUseQint16AsQuint16(true);
-  EXPECT_EQ(options.GetUseQint16AsQuint16(), true);
-  options.SetUseQint16AsQuint16(false);
-  EXPECT_EQ(options.GetUseQint16AsQuint16(), false);
-}
-
 TEST(QnnOptionTest, UseInt64BiasAsInt32) {
   Options options;
   options.SetUseInt64BiasAsInt32(true);
@@ -201,6 +185,15 @@ TEST(QnnOptionTest, UseFoldReLU) {
   EXPECT_EQ(options.GetUseFoldReLU(), true);
   options.SetUseFoldReLU(false);
   EXPECT_EQ(options.GetUseFoldReLU(), false);
+}
+
+TEST(QnnOptionTest, HtpPPoint) {
+  Options options;
+  EXPECT_EQ(options.GetHtpPPoint(), 0);
+  options.SetHtpPPoint(2);
+  EXPECT_EQ(options.GetHtpPPoint(), 2);
+  options.SetHtpPPoint(0);
+  EXPECT_EQ(options.GetHtpPPoint(), 0);
 }
 
 TEST(QnnOptionTest, SetIrJsonDir) {
@@ -265,12 +258,11 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetLogLevel(), LogLevel::kInfo);
   EXPECT_EQ(options.GetBackendType(), BackendType::kHtpBackend);
   EXPECT_EQ(options.GetProfiling(), Profiling::kOff);
-  EXPECT_FALSE(options.GetUseHtpPreference());
-  EXPECT_FALSE(options.GetUseQint16AsQuint16());
   EXPECT_TRUE(options.GetUseInt64BiasAsInt32());
   EXPECT_FALSE(options.GetEnableWeightSharing());
   EXPECT_TRUE(options.GetUseConvHMX());
   EXPECT_TRUE(options.GetUseFoldReLU());
+  EXPECT_EQ(options.GetHtpPPoint(), 0);
   EXPECT_EQ(options.GetHtpPerformanceMode(), HtpPerformanceMode::kDefault);
   EXPECT_EQ(options.GetDspPerformanceMode(), DspPerformanceMode::kDefault);
   EXPECT_TRUE(options.GetIrJsonDir().empty());
@@ -280,6 +272,21 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetOptimizationLevel(),
             OptimizationLevel::kHtpOptimizeForInferenceO3);
   EXPECT_EQ(options.GetGraphPriority(), GraphPriority::kDefault);
+  EXPECT_EQ(options.GetGraphIOTensorMemType(),
+            GraphIOTensorMemType::kMemHandle);
+}
+
+TEST(QnnOptionTest, SetGraphIOTensorMemType) {
+  Options options;
+  EXPECT_EQ(options.GetGraphIOTensorMemType(),
+            GraphIOTensorMemType::kMemHandle);
+
+  options.SetGraphIOTensorMemType(GraphIOTensorMemType::kRaw);
+  EXPECT_EQ(options.GetGraphIOTensorMemType(), GraphIOTensorMemType::kRaw);
+
+  options.SetGraphIOTensorMemType(GraphIOTensorMemType::kMemHandle);
+  EXPECT_EQ(options.GetGraphIOTensorMemType(),
+            GraphIOTensorMemType::kMemHandle);
 }
 
 }  // namespace

@@ -15,13 +15,26 @@
 
 #include "litert/vendors/intel_openvino/compiler/decoder.h"
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <map>
+#include <string>
+#include <utility>
+#include <vector>
 
+#include "openvino/core/any.hpp"
 #include "openvino/core/type/element_type.hpp"
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_op_code.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_element_type.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/intel_openvino/utils.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -30,7 +43,7 @@ namespace openvino {
 
 // This has been picked from the openvino build:
 // build/src/frontends/tensorflow_lite/src/schema_generated.h
-constexpr std::array<std::pair<LiteRtOpCode, const char*>, 159> kLitertOvMap{
+constexpr std::array<std::pair<LiteRtOpCode, const char*>, 161> kLitertOvMap{
     {{kLiteRtOpCodeTflAdd, "ADD"},
      {kLiteRtOpCodeTflAveragePool2d, "AVERAGE_POOL_2D"},
      {kLiteRtOpCodeTflConcatenation, "CONCATENATION"},
@@ -192,7 +205,8 @@ constexpr std::array<std::pair<LiteRtOpCode, const char*>, 159> kLitertOvMap{
      {kLiteRtOpCodeTflUnsortedSegmentSum, "UNSORTED_SEGMENT_SUM"},
      {kLiteRtOpCodeTflAtan2, "ATAN2"},
      {kLiteRtOpCodeTflUnsortedSegmentMin, "UNSORTED_SEGMENT_MIN"},
-     {kLiteRtOpCodeTflSign, "SIGN"}}};
+     {kLiteRtOpCodeTflSign, "SIGN"},
+     {kLiteRtOpCodeTflUnpack, "UNPACK"}}};
 
 constexpr const char* GetOvOpType(const LiteRtOpCode op_code) {
   for (const auto& entry : kLitertOvMap) {
@@ -203,13 +217,15 @@ constexpr const char* GetOvOpType(const LiteRtOpCode op_code) {
 }
 
 DecoderOperation::DecoderOperation(
+    const LiteRtCompilerContext* ctx,
     std::vector<ov::frontend::tensorflow_lite::TensorMetaInfo>
         input_tensor_info,
     std::vector<ov::frontend::tensorflow_lite::TensorMetaInfo>
         output_tensor_info,
-    const litert::Op& litert_op, size_t node_index)
+    const litert::compiler::Op& litert_op, size_t node_index)
     : input_tensor_info_(input_tensor_info),
       output_tensor_info_(output_tensor_info),
+      ctx_(ctx),
       litert_op_(litert_op.Get()),
       litert_op_code_(litert_op.Code()) {
   op_type_ = GetOvOpType(litert_op_code_);
@@ -241,35 +257,36 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "strides") {
         int32_t stride_w;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetConv2dStrideWOption(litert_op_, &stride_w),
+            ctx_->get_conv_2d_stride_w_option(litert_op_, &stride_w),
             ERROR_LOG_STR("stride_w", op_name_.c_str()));
         int32_t stride_h;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetConv2dStrideHOption(litert_op_, &stride_h),
+            ctx_->get_conv_2d_stride_h_option(litert_op_, &stride_h),
             ERROR_LOG_STR("stride_h", op_name_.c_str()));
         return ov::Any(std::vector<int64_t>{1, stride_h, stride_w, 1});
       } else if (name == "padding") {
         uint32_t padding;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetConv2dPaddingOption(litert_op_, &padding),
+            ctx_->get_conv_2d_padding_option(litert_op_, &padding),
             ERROR_LOG_STR("padding", op_name_.c_str()));
         return ov::Any(std::string(
             tflite::EnumNamePadding(static_cast<tflite::Padding>(padding))));
       } else if (name == "dilations") {
         int32_t dilation_w_factor;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetConv2dDilationWOption(litert_op_, &dilation_w_factor),
+            ctx_->get_conv_2d_dilation_w_option(litert_op_, &dilation_w_factor),
             ERROR_LOG_STR("dilation_w_factor", op_name_.c_str()));
         int32_t dilation_h_factor;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetConv2dDilationHOption(litert_op_, &dilation_h_factor),
+            ctx_->get_conv_2d_dilation_h_option(litert_op_, &dilation_h_factor),
             ERROR_LOG_STR("dilation_h_factor", op_name_.c_str()));
         return ov::Any(
             std::vector<int64_t>{1, dilation_h_factor, dilation_w_factor, 1});
       } else if (name == "activation") {
         uint32_t fused_activation;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetConv2dFusedActivationOption(litert_op_, &fused_activation),
+            ctx_->get_conv_2d_fused_activation_option(litert_op_,
+                                                      &fused_activation),
             ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return ov::Any(tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation)));
@@ -281,45 +298,46 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "strides") {
         int32_t stride_w;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetDepthwiseConv2dStrideWOption(litert_op_, &stride_w),
+            ctx_->get_depthwise_conv_2d_stride_w_option(litert_op_, &stride_w),
             ERROR_LOG_STR("stride_w", op_name_.c_str()));
         int32_t stride_h;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetDepthwiseConv2dStrideHOption(litert_op_, &stride_h),
+            ctx_->get_depthwise_conv_2d_stride_h_option(litert_op_, &stride_h),
             ERROR_LOG_STR("stride_h", op_name_.c_str()));
         return ov::Any(std::vector<int64_t>{1, stride_h, stride_w, 1});
       } else if (name == "padding") {
         uint32_t padding;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetDepthwiseConv2dPaddingOption(litert_op_, &padding),
+            ctx_->get_depthwise_conv_2d_padding_option(litert_op_, &padding),
             ERROR_LOG_STR("padding", op_name_.c_str()));
         return ov::Any(std::string(
             tflite::EnumNamePadding(static_cast<tflite::Padding>(padding))));
       } else if (name == "dilations") {
         int32_t dilation_w_factor;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetDepthwiseConv2dDilationWOption(litert_op_,
-                                                    &dilation_w_factor),
+            ctx_->get_depthwise_conv_2d_dilation_w_option(litert_op_,
+                                                          &dilation_w_factor),
             ERROR_LOG_STR("dilation_w_factor", op_name_.c_str()));
         int32_t dilation_h_factor;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetDepthwiseConv2dDilationHOption(litert_op_,
-                                                    &dilation_h_factor),
+            ctx_->get_depthwise_conv_2d_dilation_h_option(litert_op_,
+                                                          &dilation_h_factor),
             ERROR_LOG_STR("dilation_h_factor", op_name_.c_str()));
         return ov::Any(
             std::vector<int64_t>{1, dilation_h_factor, dilation_w_factor, 1});
       } else if (name == "activation") {
         uint32_t fused_activation;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetDepthwiseConv2dFusedActivationOption(litert_op_,
-                                                          &fused_activation),
+            ctx_->get_depthwise_conv_2d_fused_activation_option(
+                litert_op_, &fused_activation),
             ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return ov::Any(tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation)));
       } else if (name == "group") {
         int32_t group = 0;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetDepthwiseConv2dDepthMultiplierOption(litert_op_, &group),
+            ctx_->get_depthwise_conv_2d_depth_multiplier_option(litert_op_,
+                                                                &group),
             ERROR_LOG_STR("group", op_name_.c_str()));
         return ov::Any(group);
       } else if (name == "data_format") {
@@ -330,7 +348,7 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "num_split") {
         int32_t num_split;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetSplitNumSplitsOption(litert_op_, &num_split),
+            ctx_->get_split_num_splits_option(litert_op_, &num_split),
             ERROR_LOG_STR("num_split", op_name_.c_str()));
         return ov::Any(static_cast<int64_t>(num_split));
       }
@@ -339,22 +357,22 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "weights_format") {
         uint32_t weights_format;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetFullyConnectedWeightsFormatOption(litert_op_,
-                                                       &weights_format),
+            ctx_->get_fully_connected_weights_format_option(litert_op_,
+                                                            &weights_format),
             ERROR_LOG_STR("weights_format", op_name_.c_str()));
         return ov::Any(static_cast<int8_t>(weights_format));
       } else if (name == "keep_num_dims") {
         bool keep_num_dims;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetFullyConnectedKeepNumDimsOption(litert_op_,
-                                                     &keep_num_dims),
+            ctx_->get_fully_connected_keep_num_dims_option(litert_op_,
+                                                           &keep_num_dims),
             ERROR_LOG_STR("keep_num_dims", op_name_.c_str()));
         return ov::Any(keep_num_dims);
       } else if (name == "fused_activation_function") {
         uint32_t fused_activation;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetFullyConnectedFusedActivationOption(litert_op_,
-                                                         &fused_activation),
+            ctx_->get_fully_connected_fused_activation_option(
+                litert_op_, &fused_activation),
             ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return ov::Any(tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation)));
@@ -364,7 +382,8 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "fused_activation_function") {
         uint32_t fused_activation;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetAddFusedActivationOption(litert_op_, &fused_activation),
+            ctx_->get_add_fused_activation_option(litert_op_,
+                                                  &fused_activation),
             ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return ov::Any(tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation)));
@@ -375,9 +394,13 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
         const int32_t* reshape_new_shape;
         int32_t new_shape_size;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetReshapeNewShapeOption(litert_op_, &reshape_new_shape,
-                                           &new_shape_size),
+            ctx_->get_reshape_new_shape_option(litert_op_, &reshape_new_shape,
+                                               &new_shape_size),
             ERROR_LOG_STR("new_shape", op_name_.c_str()));
+        if (new_shape_size == 0 && reshape_new_shape == nullptr) {
+          // An empty vector represents a scalar shape in OpenVINO.
+          return ov::Any(std::vector<int64_t>{});
+        }
         std::vector<int64_t> new_shape(new_shape_size);
         for (int i = 0; i < new_shape_size; ++i) {
           new_shape[i] = reshape_new_shape[i];
@@ -389,7 +412,7 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "keep_dims") {
         bool keep_dims;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetMeanKeepDimsOption(litert_op_, &keep_dims),
+            ctx_->get_mean_keep_dims_option(litert_op_, &keep_dims),
             ERROR_LOG_STR("keep_dims", op_name_.c_str()));
         return ov::Any(keep_dims);
       }
@@ -398,15 +421,15 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "align_corners") {
         bool align_corners;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetResizeBilinearAlignCornersOption(litert_op_,
-                                                      &align_corners),
+            ctx_->get_resize_bilinear_align_corners_option(litert_op_,
+                                                           &align_corners),
             ERROR_LOG_STR("align_corners", op_name_.c_str()));
         return ov::Any(align_corners);
       } else if (name == "half_pixel_centers") {
         bool half_pixel_centers;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetResizeBilinearHalfPixelCenterOption(litert_op_,
-                                                         &half_pixel_centers),
+            ctx_->get_resize_bilinear_half_pixel_center_option(
+                litert_op_, &half_pixel_centers),
             ERROR_LOG_STR("half_pixel_centers", op_name_.c_str()));
         return ov::Any(half_pixel_centers);
       }
@@ -415,14 +438,14 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "align_corners") {
         bool align_corners;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetResizeNearestNeighborAlignCornersOption(litert_op_,
-                                                             &align_corners),
+            ctx_->get_resize_nearest_neighbor_align_corners_option(
+                litert_op_, &align_corners),
             ERROR_LOG_STR("align_corners", op_name_.c_str()));
         return ov::Any(align_corners);
       } else if (name == "half_pixel_centers") {
         bool half_pixel_centers;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetResizeNearestNeighborHalfPixelCenterOption(
+            ctx_->get_resize_nearest_neighbor_half_pixel_center_option(
                 litert_op_, &half_pixel_centers),
             ERROR_LOG_STR("half_pixel_centers", op_name_.c_str()));
         return ov::Any(half_pixel_centers);
@@ -432,7 +455,7 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "axis") {
         int32_t axis;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetConcatenationAxisOption(litert_op_, &axis),
+            ctx_->get_concatenation_axis_option(litert_op_, &axis),
             ERROR_LOG_STR("axis", op_name_.c_str()));
         return ov::Any(axis);
       }
@@ -441,35 +464,36 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "strides") {
         int32_t stride_w;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetMaxPool2dStrideWOption(litert_op_, &stride_w),
+            ctx_->get_max_pool_2d_stride_w_option(litert_op_, &stride_w),
             ERROR_LOG_STR("stride_w", op_name_.c_str()));
         int32_t stride_h;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetMaxPool2dStrideHOption(litert_op_, &stride_h),
+            ctx_->get_max_pool_2d_stride_h_option(litert_op_, &stride_h),
             ERROR_LOG_STR("stride_h", op_name_.c_str()));
         return ov::Any(std::vector<int64_t>{1, stride_h, stride_w, 1});
       } else if (name == "padding") {
         uint32_t padding;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetMaxPool2dPaddingOption(litert_op_, &padding),
+            ctx_->get_max_pool_2d_padding_option(litert_op_, &padding),
             ERROR_LOG_STR("padding", op_name_.c_str()));
         return ov::Any(std::string(
             tflite::EnumNamePadding(static_cast<tflite::Padding>(padding))));
       } else if (name == "ksize") {
         int32_t filter_width;
-        LITERT_RETURN_IF_ERROR(
-            LiteRtGetMaxPool2dFilterWidthOption(litert_op_, &filter_width),
-            ERROR_LOG_STR("filter_width", op_name_.c_str()));
+        LITERT_RETURN_IF_ERROR(ctx_->get_max_pool_2d_filter_width_option(
+                                   litert_op_, &filter_width),
+                               ERROR_LOG_STR("filter_width", op_name_.c_str()));
         int32_t filter_height;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetMaxPool2dFilterHeightOption(litert_op_, &filter_height),
+            ctx_->get_max_pool_2d_filter_height_option(litert_op_,
+                                                       &filter_height),
             ERROR_LOG_STR("filter_height", op_name_.c_str()));
         return ov::Any(std::vector<int64_t>{1, filter_height, filter_width, 1});
       } else if (name == "activation") {
         uint32_t fused_activation;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetMaxPool2dFusedActivationOption(litert_op_,
-                                                    &fused_activation),
+            ctx_->get_max_pool_2d_fused_activation_option(litert_op_,
+                                                          &fused_activation),
             ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return ov::Any(tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation)));
@@ -481,36 +505,36 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "strides") {
         int32_t stride_w;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetAveragePool2dStrideWOption(litert_op_, &stride_w),
+            ctx_->get_average_pool_2d_stride_w_option(litert_op_, &stride_w),
             ERROR_LOG_STR("stride_w", op_name_.c_str()));
         int32_t stride_h;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetAveragePool2dStrideHOption(litert_op_, &stride_h),
+            ctx_->get_average_pool_2d_stride_h_option(litert_op_, &stride_h),
             ERROR_LOG_STR("stride_h", op_name_.c_str()));
         return ov::Any(std::vector<int64_t>{1, stride_h, stride_w, 1});
       } else if (name == "padding") {
         uint32_t padding;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetAveragePool2dPaddingOption(litert_op_, &padding),
+            ctx_->get_average_pool_2d_padding_option(litert_op_, &padding),
             ERROR_LOG_STR("padding", op_name_.c_str()));
         return ov::Any(std::string(
             tflite::EnumNamePadding(static_cast<tflite::Padding>(padding))));
       } else if (name == "ksize") {
         int32_t filter_width;
-        LITERT_RETURN_IF_ERROR(
-            LiteRtGetAveragePool2dFilterWidthOption(litert_op_, &filter_width),
-            ERROR_LOG_STR("filter_width", op_name_.c_str()));
+        LITERT_RETURN_IF_ERROR(ctx_->get_average_pool_2d_filter_width_option(
+                                   litert_op_, &filter_width),
+                               ERROR_LOG_STR("filter_width", op_name_.c_str()));
         int32_t filter_height;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetAveragePool2dFilterHeightOption(litert_op_,
-                                                     &filter_height),
+            ctx_->get_average_pool_2d_filter_height_option(litert_op_,
+                                                           &filter_height),
             ERROR_LOG_STR("filter_height", op_name_.c_str()));
         return ov::Any(std::vector<int64_t>{1, filter_height, filter_width, 1});
       } else if (name == "activation") {
         uint32_t fused_activation;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetAveragePool2dFusedActivationOption(litert_op_,
-                                                        &fused_activation),
+            ctx_->get_average_pool_2d_fused_activation_option(
+                litert_op_, &fused_activation),
             ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return ov::Any(tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation)));
@@ -522,7 +546,8 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "fused_activation_function") {
         uint32_t fused_activation;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetMulFusedActivationOption(litert_op_, &fused_activation),
+            ctx_->get_mul_fused_activation_option(litert_op_,
+                                                  &fused_activation),
             ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return ov::Any(tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation)));
@@ -532,17 +557,17 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "strides") {
         int32_t stride_w;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetTransposeConvStrideWOption(litert_op_, &stride_w),
+            ctx_->get_transpose_conv_stride_w_option(litert_op_, &stride_w),
             ERROR_LOG_STR("stride_w", op_name_.c_str()));
         int32_t stride_h;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetTransposeConvStrideHOption(litert_op_, &stride_h),
+            ctx_->get_transpose_conv_stride_h_option(litert_op_, &stride_h),
             ERROR_LOG_STR("stride_h", op_name_.c_str()));
         return ov::Any(std::vector<int64_t>{1, stride_h, stride_w, 1});
       } else if (name == "padding") {
         uint32_t padding;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetTransposeConvPaddingOption(litert_op_, &padding),
+            ctx_->get_transpose_conv_padding_option(litert_op_, &padding),
             ERROR_LOG_STR("padding", op_name_.c_str()));
         return ov::Any(std::string(
             tflite::EnumNamePadding(static_cast<tflite::Padding>(padding))));
@@ -553,8 +578,8 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       } else if (name == "activation") {
         uint32_t fused_activation;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetTransposeConvFusedActivationOption(litert_op_,
-                                                        &fused_activation),
+            ctx_->get_transpose_conv_fused_activation_option(litert_op_,
+                                                             &fused_activation),
             ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return ov::Any(tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation)));
@@ -565,7 +590,7 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
     case LiteRtOpCode::kLiteRtOpCodeTflSoftmax:
       if (name == "beta") {
         float beta;
-        LITERT_RETURN_IF_ERROR(LiteRtGetSoftmaxBetaOption(litert_op_, &beta),
+        LITERT_RETURN_IF_ERROR(ctx_->get_softmax_beta_option(litert_op_, &beta),
                                ERROR_LOG_STR("beta", op_name_.c_str()));
         return ov::Any(beta);
       }
@@ -581,32 +606,34 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "begin_mask") {
         int32_t begin_mask;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetStridedSliceBeginMaskOption(litert_op_, &begin_mask),
+            ctx_->get_strided_slice_begin_mask_option(litert_op_, &begin_mask),
             ERROR_LOG_STR("begin_mask", op_name_.c_str()));
         return ov::Any(begin_mask);
       } else if (name == "end_mask") {
         int32_t end_mask;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetStridedSliceEndMaskOption(litert_op_, &end_mask),
+            ctx_->get_strided_slice_end_mask_option(litert_op_, &end_mask),
             ERROR_LOG_STR("end_mask", op_name_.c_str()));
         return ov::Any(end_mask);
       } else if (name == "new_axis_mask") {
         int32_t new_axis_mask;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetStridedSliceNewAxisMaskOption(litert_op_, &new_axis_mask),
+            ctx_->get_strided_slice_new_axis_mask_option(litert_op_,
+                                                         &new_axis_mask),
             ERROR_LOG_STR("new_axis_mask", op_name_.c_str()));
         return ov::Any(new_axis_mask);
       } else if (name == "ellipsis_mask") {
         int32_t ellipsis_mask;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetStridedSliceEllipsisMaskOption(litert_op_, &ellipsis_mask),
+            ctx_->get_strided_slice_ellipsis_mask_option(litert_op_,
+                                                         &ellipsis_mask),
             ERROR_LOG_STR("ellipsis_mask", op_name_.c_str()));
         return ov::Any(ellipsis_mask);
       } else if (name == "shrink_axis_mask") {
         int32_t shrink_axis_mask;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetStridedSliceShrinkAxisMaskOption(litert_op_,
-                                                      &shrink_axis_mask),
+            ctx_->get_strided_slice_shrink_axis_mask_option(litert_op_,
+                                                            &shrink_axis_mask),
             ERROR_LOG_STR("shrink_axis_mask", op_name_.c_str()));
         return ov::Any(shrink_axis_mask);
       }
@@ -615,7 +642,7 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "block_size") {
         int32_t block_size;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetDepthToSpaceBlockSizeOption(litert_op_, &block_size),
+            ctx_->get_depth_to_space_block_size_option(litert_op_, &block_size),
             ERROR_LOG_STR("block_size", op_name_.c_str()));
         return ov::Any(block_size);
       } else if (name == "data_format") {
@@ -625,13 +652,13 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
     case LiteRtOpCode::kLiteRtOpCodeTflGather:
       if (name == "axis") {
         int32_t axis;
-        LITERT_RETURN_IF_ERROR(LiteRtGetGatherAxisOption(litert_op_, &axis),
+        LITERT_RETURN_IF_ERROR(ctx_->get_gather_axis_option(litert_op_, &axis),
                                ERROR_LOG_STR("axis", op_name_.c_str()));
         return ov::Any(axis);
       } else if (name == "batch_dims") {
         int32_t batch_dims;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetGatherBatchDimsOption(litert_op_, &batch_dims),
+            ctx_->get_gather_batch_dims_option(litert_op_, &batch_dims),
             ERROR_LOG_STR("batch_dims", op_name_.c_str()));
         return ov::Any(batch_dims);
       }
@@ -640,13 +667,13 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "adj_x") {
         bool adj_x;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetBatchMatmulAdjXOption(litert_op_, &adj_x),
+            ctx_->get_batch_matmul_adj_x_option(litert_op_, &adj_x),
             ERROR_LOG_STR("adj_x", op_name_.c_str()));
         return ov::Any(adj_x);
       } else if (name == "adj_y") {
         bool adj_y;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetBatchMatmulAdjYOption(litert_op_, &adj_y),
+            ctx_->get_batch_matmul_adj_y_option(litert_op_, &adj_y),
             ERROR_LOG_STR("adj_y", op_name_.c_str()));
         return ov::Any(adj_y);
       }
@@ -655,7 +682,7 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "alpha") {
         float alpha;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetLeakyReluAlphaOption(litert_op_, &alpha),
+            ctx_->get_leaky_relu_alpha_option(litert_op_, &alpha),
             ERROR_LOG_STR("alpha", op_name_.c_str()));
         return ov::Any(alpha);
       }
@@ -663,9 +690,22 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
     case LiteRtOpCode::kLiteRtOpCodeTflPack:
       if (name == "axis") {
         int32_t axis;
-        LITERT_RETURN_IF_ERROR(LiteRtGetPackAxisOption(litert_op_, &axis),
+        LITERT_RETURN_IF_ERROR(ctx_->get_pack_axis_option(litert_op_, &axis),
                                ERROR_LOG_STR("axis", op_name_.c_str()));
         return ov::Any(axis);
+      }
+      break;
+    case LiteRtOpCode::kLiteRtOpCodeTflUnpack:
+      if (name == "axis") {
+        int32_t axis;
+        LITERT_RETURN_IF_ERROR(ctx_->get_unpack_axis_option(litert_op_, &axis),
+                               ERROR_LOG_STR("axis", op_name_.c_str()));
+        return ov::Any(axis);
+      } else if (name == "num") {
+        int32_t num;
+        LITERT_RETURN_IF_ERROR(ctx_->get_unpack_num_option(litert_op_, &num),
+                               ERROR_LOG_STR("num", op_name_.c_str()));
+        return ov::Any(num);
       }
       break;
     case LiteRtOpCode::kLiteRtOpCodeTflCast:
@@ -677,7 +717,8 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "fused_activation_function") {
         uint32_t fused_activation;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetDivFusedActivationOption(litert_op_, &fused_activation),
+            ctx_->get_div_fused_activation_option(litert_op_,
+                                                  &fused_activation),
             ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return ov::Any(tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation)));
@@ -687,13 +728,13 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "exclusive") {
         bool exclusive;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetCumsumExclusiveOption(litert_op_, &exclusive),
+            ctx_->get_cumsum_exclusive_option(litert_op_, &exclusive),
             ERROR_LOG_STR("exclusive", op_name_.c_str()));
         return ov::Any(exclusive);
       } else if (name == "reverse") {
         bool reverse;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetCumsumReverseOption(litert_op_, &reverse),
+            ctx_->get_cumsum_reverse_option(litert_op_, &reverse),
             ERROR_LOG_STR("reverse", op_name_.c_str()));
         return ov::Any(reverse);
       }
@@ -702,7 +743,8 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "fused_activation_function") {
         uint32_t fused_activation;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetSubFusedActivationOption(litert_op_, &fused_activation),
+            ctx_->get_sub_fused_activation_option(litert_op_,
+                                                  &fused_activation),
             ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return ov::Any(tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation)));
@@ -712,7 +754,7 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "approximate") {
         bool approximate;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetGeluApproximateOption(litert_op_, &approximate),
+            ctx_->get_gelu_approximate_option(litert_op_, &approximate),
             ERROR_LOG_STR("approximate", op_name_.c_str()));
         return ov::Any(approximate);
       }
@@ -727,7 +769,7 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "keep_dims") {
         bool keep_dims;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetSumKeepDimsOption(litert_op_, &keep_dims),
+            ctx_->get_sum_keep_dims_option(litert_op_, &keep_dims),
             ERROR_LOG_STR("keep_dims", op_name_.c_str()));
         return ov::Any(keep_dims);
       }
@@ -736,7 +778,7 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "keep_dims") {
         bool keep_dims;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetReduceMaxKeepDimsOption(litert_op_, &keep_dims),
+            ctx_->get_reduce_max_keep_dims_option(litert_op_, &keep_dims),
             ERROR_LOG_STR("keep_dims", op_name_.c_str()));
         return ov::Any(keep_dims);
       }
@@ -745,44 +787,45 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "strides") {
         int32_t stride_d;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetConv3dStrideDOption(litert_op_, &stride_d),
+            ctx_->get_conv_3d_stride_d_option(litert_op_, &stride_d),
             ERROR_LOG_STR("stride_d", op_name_.c_str()));
         int32_t stride_w;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetConv3dStrideWOption(litert_op_, &stride_w),
+            ctx_->get_conv_3d_stride_w_option(litert_op_, &stride_w),
             ERROR_LOG_STR("stride_w", op_name_.c_str()));
         int32_t stride_h;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetConv3dStrideHOption(litert_op_, &stride_h),
+            ctx_->get_conv_3d_stride_h_option(litert_op_, &stride_h),
             ERROR_LOG_STR("stride_h", op_name_.c_str()));
         return ov::Any(
             std::vector<int64_t>{1, stride_d, stride_h, stride_w, 1});
       } else if (name == "padding") {
         uint32_t padding;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetConv3dPaddingOption(litert_op_, &padding),
+            ctx_->get_conv_3d_padding_option(litert_op_, &padding),
             ERROR_LOG_STR("padding", op_name_.c_str()));
         return ov::Any(std::string(
             tflite::EnumNamePadding(static_cast<tflite::Padding>(padding))));
       } else if (name == "dilations") {
         int32_t dilation_d_factor;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetConv3dDilationDOption(litert_op_, &dilation_d_factor),
+            ctx_->get_conv_3d_dilation_d_option(litert_op_, &dilation_d_factor),
             ERROR_LOG_STR("dilation_d_factor", op_name_.c_str()));
         int32_t dilation_w_factor;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetConv3dDilationWOption(litert_op_, &dilation_w_factor),
+            ctx_->get_conv_3d_dilation_w_option(litert_op_, &dilation_w_factor),
             ERROR_LOG_STR("dilation_w_factor", op_name_.c_str()));
         int32_t dilation_h_factor;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetConv3dDilationHOption(litert_op_, &dilation_h_factor),
+            ctx_->get_conv_3d_dilation_h_option(litert_op_, &dilation_h_factor),
             ERROR_LOG_STR("dilation_h_factor", op_name_.c_str()));
         return ov::Any(std::vector<int64_t>{
             1, dilation_d_factor, dilation_h_factor, dilation_w_factor, 1});
       } else if (name == "activation") {
         uint32_t fused_activation;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetConv3dFusedActivationOption(litert_op_, &fused_activation),
+            ctx_->get_conv_3d_fused_activation_option(litert_op_,
+                                                      &fused_activation),
             ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return ov::Any(tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation)));
@@ -793,13 +836,12 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
     case LiteRtOpCode::kLiteRtOpCodeTflArgMax:
       if (name == "output_type") {
         // Get the output tensor to extract its element type
-        litert::Op op(litert_op_);
+        litert::compiler::Op op(ctx_, litert_op_);
         auto outputs = op.Outputs();
         if (outputs.empty()) {
           LITERT_LOG(LITERT_ERROR, "ArgMax op has no outputs");
           return ov::Any(nullptr);
         }
-        // Get the element type from the output tensor
         const ElementType type = outputs[0].ElementType();
         ov::element::Type ov_element_type =
             MapLiteTypeToOV(static_cast<LiteRtElementType>(type));
@@ -812,6 +854,15 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
         // Using the default value as per TFLite and OV spec.
         int32_t axis = -1;
         return ov::Any(axis);
+      }
+      break;
+    case LiteRtOpCode::kLiteRtOpCodeTflReduceAll:
+      if (name == "keep_dims") {
+        bool keep_dims;
+        LITERT_RETURN_IF_ERROR(
+            ctx_->get_reduce_all_keep_dims_option(litert_op_, &keep_dims),
+            ERROR_LOG_STR("keep_dims", op_name_.c_str()));
+        return ov::Any(keep_dims);
       }
       break;
     default:

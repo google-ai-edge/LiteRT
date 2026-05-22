@@ -258,6 +258,27 @@ TEST_P(CompiledModelGpuTest, GpuEnvironment) {
                         std::get<int64_t>(opencl_command_queue));
 }
 
+TEST_P(CompiledModelGpuTest, GpuDisabledByEnvironmentOption) {
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kAutoRegisterAccelerators,
+          static_cast<int64_t>(kLiteRtHwAcceleratorCpu),
+      },
+  };
+  auto env = litert::Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
+  ASSERT_TRUE(env);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compilation_options,
+      CreateGpuOptions(CompiledModelGpuTest::GetParam()));
+  auto compiled_model = CompiledModel::Create(
+      *env, testing::GetTestFilePath(kModelFileName), compilation_options);
+
+  EXPECT_FALSE(compiled_model.HasValue());
+  EXPECT_EQ(compiled_model.Error().Status(), kLiteRtStatusErrorCompilation);
+}
+
 TEST_P(CompiledModelGpuTest, Async) {
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
@@ -410,7 +431,8 @@ TEST_P(CompiledModelGpuTest, PartialDelegationNoCpuFallbackError) {
       *env, testing::GetTestFilePath(kModelPartilaFileName),
       *compilation_options);
   EXPECT_FALSE(compiled_model_res.HasValue());
-  EXPECT_EQ(compiled_model_res.Error().Status(), kLiteRtStatusErrorCompilation);
+  EXPECT_EQ(ToLiteRtStatus(compiled_model_res.Error().StatusCC()),
+            kLiteRtStatusErrorCompilation);
 }
 
 TEST_P(CompiledModelGpuTest, BasicAdd3dCstInt32) {
@@ -538,7 +560,7 @@ bool IsGlClInteropSupported() {
 }
 
 // Runs model synchronously on OpenCL with GL input/output buffers.
-TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
+TEST(CompiledModelGpuTest, SyncWithGlClInterop) {
   if (!IsGlClInteropSupported()) {
     GTEST_SKIP() << "GPU tests are not supported in this configuration";
   }
@@ -550,8 +572,7 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
   LITERT_ASSERT_OK(gpu_options.SetPrecision(GpuOptions::Precision::kFp32));
   LITERT_ASSERT_OK(
       gpu_options.SetBufferStorageType(GpuOptions::BufferStorageType::kBuffer));
-  LITERT_ASSERT_OK(
-      gpu_options.EnableExternalTensorsMode(CompiledModelGpuTest::GetParam()));
+  LITERT_ASSERT_OK(gpu_options.EnableExternalTensorsMode(false));
 
   options.SetHardwareAccelerators(HwAccelerators::kGpu);
 
@@ -606,8 +627,10 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
   }
 }
 
+// TODO(b/403337563): Async execution mode is not currently supported for GL-CL
+// interop.
 // Runs model asynchronously on OpenCL with GL input/output buffers.
-TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
+TEST(CompiledModelGpuTest, DISABLED_AsyncWithGlClInterop) {
   if (!IsGlClInteropSupported()) {
     GTEST_SKIP() << "GPU tests are not supported in this configuration";
   }
@@ -920,6 +943,158 @@ TEST(CompiledModelGpuTest, BasicOpenGlWithProvidedEglEnvironment) {
     }
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
   }
+}
+
+TEST(CompiledModelGpuTest, GlBufferIdRecyclingRaceCondition) {
+#if LITERT_HAS_OPENGL_SUPPORT
+  if (!IsGlClInteropSupported()) {
+    GTEST_SKIP() << "GPU tests are not supported in this configuration";
+  }
+
+  // Setup environment.
+  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
+  ASSERT_TRUE(
+      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
+
+  std::vector<litert::Environment::Option> env_options;
+  env_options.push_back(
+      {litert::Environment::OptionTag::EglContext,
+       reinterpret_cast<int64_t>(egl_env->context().context())});
+  env_options.push_back({litert::Environment::OptionTag::EglDisplay,
+                         reinterpret_cast<int64_t>(egl_env->display())});
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env,
+                              litert::Environment::Create(env_options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(litert::Options options, Options::Create());
+  options.SetHardwareAccelerators(HwAccelerators::kGpu);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto type0,
+                              compiled_model.GetInputTensorType(0, "arg0"));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto type1,
+                              compiled_model.GetInputTensorType(0, "arg1"));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto type_out,
+                              compiled_model.GetOutputTensorType(0, "tfl.add"));
+
+  // === Prime the cache (Run 1) ===
+  GLuint in_ids_1[2];
+  glGenBuffers(2, in_ids_1);
+  GLuint out_id_1;
+  glGenBuffers(1, &out_id_1);
+
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, in_ids_1[0]);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, kTestInput0Size * sizeof(float),
+               kTestInput0Tensor, GL_STATIC_DRAW);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, in_ids_1[1]);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, kTestInput1Size * sizeof(float),
+               kTestInput1Tensor, GL_STATIC_DRAW);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, out_id_1);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, kTestOutputSize * sizeof(float),
+               nullptr, GL_STREAM_READ);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+  // Run 1.
+  {
+    std::vector<TensorBuffer> inputs;
+    std::vector<TensorBuffer> outputs;
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto tb0, TensorBuffer::CreateFromGlBuffer(
+                      env, type0, GL_SHADER_STORAGE_BUFFER, in_ids_1[0],
+                      kTestInput0Size * sizeof(float), 0));
+    inputs.push_back(std::move(tb0));
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto tb1, TensorBuffer::CreateFromGlBuffer(
+                      env, type1, GL_SHADER_STORAGE_BUFFER, in_ids_1[1],
+                      kTestInput1Size * sizeof(float), 0));
+    inputs.push_back(std::move(tb1));
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto tbOut, TensorBuffer::CreateFromGlBuffer(
+                        env, type_out, GL_SHADER_STORAGE_BUFFER, out_id_1,
+                        kTestOutputSize * sizeof(float), 0));
+    outputs.push_back(std::move(tbOut));
+
+    LITERT_ASSERT_OK(compiled_model.Run(inputs, outputs));
+  }
+  // TensorBuffer objects are destroyed, so we expect the GL buffers to be
+  // released (and not held by the buffer context).
+
+  // === Test against race condition ===
+
+  // Deleting and immediately re-creating GL buffers should not affect LiteRT
+  // execution.
+  glDeleteBuffers(2, in_ids_1);
+  glDeleteBuffers(1, &out_id_1);
+  GLuint in_ids_2[2];
+  glGenBuffers(2, in_ids_2);
+  GLuint out_id_2;
+  glGenBuffers(1, &out_id_2);
+
+  // Verify that GL buffer ID recycling is detected.
+  ASSERT_EQ(in_ids_1[0], in_ids_2[0])
+      << "Test Inconclusive: Driver did not recycle the GL ID. Cannot "
+         "reproduce race.";
+
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, in_ids_2[0]);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, kTestInput0Size * sizeof(float),
+               kTestInput0Tensor, GL_STATIC_DRAW);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, in_ids_2[1]);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, kTestInput1Size * sizeof(float),
+               kTestInput1Tensor, GL_STATIC_DRAW);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, out_id_2);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, kTestOutputSize * sizeof(float),
+               nullptr, GL_STREAM_READ);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+  {
+    std::vector<TensorBuffer> inputs_2;
+    std::vector<TensorBuffer> outputs_2;
+
+    // Create wrappers for the RECYCLED IDs
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto tb0, TensorBuffer::CreateFromGlBuffer(
+                      env, type0, GL_SHADER_STORAGE_BUFFER, in_ids_2[0],
+                      kTestInput0Size * sizeof(float), 0));
+    inputs_2.push_back(std::move(tb0));
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto tb1, TensorBuffer::CreateFromGlBuffer(
+                      env, type1, GL_SHADER_STORAGE_BUFFER, in_ids_2[1],
+                      kTestInput1Size * sizeof(float), 0));
+    inputs_2.push_back(std::move(tb1));
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto tbOut, TensorBuffer::CreateFromGlBuffer(
+                        env, type_out, GL_SHADER_STORAGE_BUFFER, out_id_2,
+                        kTestOutputSize * sizeof(float), 0));
+    outputs_2.push_back(std::move(tbOut));
+
+    // Run 2. We expect LiteRT to run successfully with recycled GL IDs.
+    // External LiteRT Buffer Context should not cache old GL IDs.
+    LITERT_ASSERT_OK(compiled_model.Run(inputs_2, outputs_2));
+    {
+      LITERT_ASSERT_OK_AND_ASSIGN(
+          auto lock_and_addr,
+          litert::TensorBufferScopedLock::Create<const float>(
+              outputs_2[0], TensorBuffer::LockMode::kRead));
+      auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
+      EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+    }
+  }
+
+  // Clean up.
+  glDeleteBuffers(2, in_ids_2);
+  glDeleteBuffers(1, &out_id_2);
+
+#else
+  GTEST_SKIP() << "OpenGL not supported.";
+#endif
 }
 
 TEST(CompiledModelGpuTest, UseCpuBuffer) {

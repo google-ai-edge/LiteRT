@@ -23,8 +23,8 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/internal/scoped_weight_source.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -61,9 +61,10 @@ class LiteRtEnvironmentT;
 namespace weight_loader {
 
 struct LiteRtTensorBufferDeleter {
+  LiteRtRuntimeContext* runtime_context = nullptr;
   void operator()(LiteRtTensorBufferT* buffer) const {
-    if (buffer) {
-      LiteRtDestroyTensorBuffer(buffer);
+    if (buffer && runtime_context) {
+      runtime_context->destroy_tensor_buffer(buffer);
     }
   }
 };
@@ -156,7 +157,7 @@ struct WeightAccess {
 // are located. If `model_directory` is not specified, treat the group path
 // as the absolute path.
 std::unique_ptr<WeightLoader> CreateLiteRtWeightLoader(
-    const tflite::Model* flatbuffer,
+    LiteRtRuntimeContext* runtime_context, const tflite::Model* flatbuffer,
     std::optional<std::string> model_directory = std::nullopt,
     std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source = nullptr);
 

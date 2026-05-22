@@ -14,7 +14,9 @@
 
 #include "litert/cc/internal/litert_shared_library.h"
 
+#if !LITERT_WINDOWS_OS
 #include <dlfcn.h>
+#endif
 
 #include <string>
 #include <utility>
@@ -49,10 +51,12 @@ TEST(RtldFlagsTest, FlagFactoryWorks) {
               Eq(RTLD_LAZY | RTLD_NODELETE));
   EXPECT_THAT(static_cast<int>(RtldFlags::Lazy().NoLoad()),
               Eq(RTLD_LAZY | RTLD_NOLOAD));
-  #if !defined(__ANDROID__)
+#if defined(RTLD_DEEPBIND)
   EXPECT_THAT(static_cast<int>(RtldFlags::Lazy().DeepBind()),
               Eq(RTLD_LAZY | RTLD_DEEPBIND));
-  #endif  // !defined(__ANDROID__)
+#else
+  EXPECT_THAT(static_cast<int>(RtldFlags::Lazy().DeepBind()), Eq(RTLD_LAZY));
+#endif  // defined(RTLD_DEEPBIND)
 }
 
 TEST(SharedLibraryTest, LoadRtldDefaultWorks) {

@@ -23,19 +23,27 @@
 extern "C" {
 #endif  // __cplusplus
 
-// Create an Intel OpenVINO options object that is type erased. The actual
-// option data can be accessed from the payload.
-LiteRtStatus LiteRtIntelOpenVinoOptionsCreate(LiteRtOpaqueOptions* options);
-LITERT_DEFINE_HANDLE(LiteRtIntelOpenVinoOptions);
+LITERT_DEFINE_HANDLE(LrtIntelOpenVinoOptions);
 
-// The string identifier that discriminates Intel OpenVINO options within
-// type erased options.
-const char* LiteRtIntelOpenVinoOptionsGetIdentifier();
+// Create an Intel OpenVINO options object.
+LiteRtStatus LrtIntelOpenVinoOptionsCreate(LrtIntelOpenVinoOptions* options);
 
-// Attempt to retrieve Intel OpenVINO options from the opaque options. Fails
-// if the opaque options are of another type.
-LiteRtStatus LiteRtIntelOpenVinoOptionsGet(
-    LiteRtOpaqueOptions options, LiteRtIntelOpenVinoOptions* options_data);
+// Destroy the options object.
+void LrtDestroyIntelOpenVinoOptions(LrtIntelOpenVinoOptions options);
+
+// Serializes intel openvino options and returns the components needed to create
+// opaque options. The caller is responsible for passing these to
+// `LiteRtCreateOpaqueOptions`.
+LiteRtStatus LrtGetOpaqueIntelOpenVinoOptionsData(
+    LrtIntelOpenVinoOptions options, const char** identifier, void** payload,
+    void (**payload_deleter)(void*));
+
+// Gets the identifier for Intel OpenVINO options stored in opaque options.
+const char* LrtGetIntelOpenVinoOptionsIdentifier();
+
+// Parses a TOML string into the C API representation.
+LiteRtStatus LrtCreateIntelOpenVinoOptionsFromToml(
+    const char* payload, LrtIntelOpenVinoOptions* options);
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
@@ -47,12 +55,12 @@ typedef enum LiteRtIntelOpenVinoDeviceType {
   kLiteRtIntelOpenVinoDeviceTypeAUTO = 3,
 } LiteRtIntelOpenVinoDeviceType;
 
-LiteRtStatus LiteRtIntelOpenVinoOptionsSetDeviceType(
-    LiteRtIntelOpenVinoOptions options,
+LiteRtStatus LrtIntelOpenVinoOptionsSetDeviceType(
+    LrtIntelOpenVinoOptions options,
     enum LiteRtIntelOpenVinoDeviceType device_type);
 
-LiteRtStatus LiteRtIntelOpenVinoOptionsGetDeviceType(
-    LiteRtIntelOpenVinoOptions options,
+LiteRtStatus LrtIntelOpenVinoOptionsGetDeviceType(
+    LrtIntelOpenVinoOptions options,
     enum LiteRtIntelOpenVinoDeviceType* device_type);
 
 // performance_mode -----------------------------------------------------------
@@ -70,12 +78,12 @@ typedef enum LiteRtIntelOpenVinoPerformanceMode {
   kLiteRtIntelOpenVinoPerformanceModeCumulativeThroughput = 2,
 } LiteRtIntelOpenVinoPerformanceMode;
 
-LiteRtStatus LiteRtIntelOpenVinoOptionsSetPerformanceMode(
-    LiteRtIntelOpenVinoOptions options,
+LiteRtStatus LrtIntelOpenVinoOptionsSetPerformanceMode(
+    LrtIntelOpenVinoOptions options,
     LiteRtIntelOpenVinoPerformanceMode performance_mode);
 
-LiteRtStatus LiteRtIntelOpenVinoOptionsGetPerformanceMode(
-    LiteRtIntelOpenVinoOptions options,
+LiteRtStatus LrtIntelOpenVinoOptionsGetPerformanceMode(
+    LrtIntelOpenVinoOptions options,
     LiteRtIntelOpenVinoPerformanceMode* performance_mode);
 
 // configs_map ----------------------------------------------------------------
@@ -83,19 +91,19 @@ LiteRtStatus LiteRtIntelOpenVinoOptionsGetPerformanceMode(
 // Set a custom configuration option with a string key-value pair.
 // The key and value strings are copied internally, so their lifetime does not
 // need to extend beyond this function call.
-LiteRtStatus LiteRtIntelOpenVinoOptionsSetConfigsMapOption(
-    LiteRtIntelOpenVinoOptions options, const char* key, const char* value);
+LiteRtStatus LrtIntelOpenVinoOptionsSetConfigsMapOption(
+    LrtIntelOpenVinoOptions options, const char* key, const char* value);
 
 // Get the number of custom configuration options
-LiteRtStatus LiteRtIntelOpenVinoOptionsGetNumConfigsMapOptions(
-    LiteRtIntelOpenVinoOptions options, int* num_options);
+LiteRtStatus LrtIntelOpenVinoOptionsGetNumConfigsMapOptions(
+    LrtIntelOpenVinoOptions options, int* num_options);
 
 // Get a custom configuration option by index.
 // The returned key and value pointers point to internal string data
 // and are valid for the lifetime of the options object.
 // The caller should not free these pointers.
-LiteRtStatus LiteRtIntelOpenVinoOptionsGetConfigsMapOption(
-    LiteRtIntelOpenVinoOptions options, int index, const char** key,
+LiteRtStatus LrtIntelOpenVinoOptionsGetConfigsMapOption(
+    LrtIntelOpenVinoOptions options, int index, const char** key,
     const char** value);
 
 #ifdef __cplusplus

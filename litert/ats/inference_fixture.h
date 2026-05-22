@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_FIXTURE_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_FIXTURE_H_
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -35,6 +36,7 @@
 #include "litert/c/internal/litert_logging.h"  // IWYU pragma: keep
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_c_types_printing.h"  // IWYU pragma: keep
+#include "litert/cc/internal/litert_numerics.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -43,6 +45,7 @@
 #include "litert/test/matchers.h"
 #include "litert/test/rng_fixture.h"
 #include "litert/test/simple_buffer.h"
+#include "tflite/types/half.h"
 
 namespace litert::testing {
 
@@ -71,10 +74,13 @@ class AtsInferenceTest : public RngTest {
   }
 
   void SetUp() override {
+    cap_.model.SetFields(names_, Graph());
+    if (names_.should_skip) {
+      GTEST_SKIP() << "Filtered by dont_register";
+    }
     ASSERT_EQ(Graph().NumSubgraphs(), 1);
     LITERT_LOG(LITERT_INFO, "Setting up test for %s",
                absl::StrFormat("%v", conf_.Backend()).c_str());
-    cap_.model.SetFields(names_, Graph());
     cap_.run.num_iterations = conf_.ItersPerTest();
     cap_.numerics.reference_type =
         graph_->HasReference() ? ReferenceType::kCustom : ReferenceType::kCpu;
@@ -101,7 +107,9 @@ class AtsInferenceTest : public RngTest {
       }
     }
 
-    if (HasFailure()) {
+    if (::testing::Test::IsSkipped()) {
+      cap_.run.status = RunStatus::kSkipped;
+    } else if (HasFailure()) {
       cap_.run.status = RunStatus::kError;
     } else if (TimedOut()) {
       cap_.run.status = RunStatus::kTimeout;
@@ -114,11 +122,12 @@ class AtsInferenceTest : public RngTest {
   double Tol() const { return graph_->HasReference() ? 1e-4 : 1e2; }
 
   Expected<CompiledModelExecutor::Ptr> MakeExecutor() {
+    auto& env = conf_.GetEnvironment();
+
     CompiledModelExecutor::Ptr exec;
     if (conf_.IsNpu()) {
-      auto exec = NpuCompiledModelExecutor::Create(
-          Graph(), conf_.TargetOptions(), conf_.DispatchDir(),
-          conf_.PluginDir());
+      auto exec =
+          NpuCompiledModelExecutor::Create(Graph(), conf_.TargetOptions(), env);
       cap_.compilation.SetFields(conf_, Graph(), !exec.HasValue());
       if (!exec) {
         return exec.Error();
@@ -127,8 +136,15 @@ class AtsInferenceTest : public RngTest {
       return res;
     }
     if (conf_.IsCpu()) {
-      LITERT_ASSIGN_OR_RETURN(auto exec, CpuCompiledModelExecutor::Create(
-                                             Graph(), conf_.TargetOptions()));
+      LITERT_ASSIGN_OR_RETURN(auto exec,
+                              CpuCompiledModelExecutor::Create(
+                                  Graph(), conf_.TargetOptions(), env));
+      return std::make_unique<CompiledModelExecutor>(std::move(exec));
+    }
+    if (conf_.IsGpu()) {
+      LITERT_ASSIGN_OR_RETURN(auto exec,
+                              GpuCompiledModelExecutor::Create(
+                                  Graph(), conf_.TargetOptions(), env));
       return std::make_unique<CompiledModelExecutor>(std::move(exec));
     }
 
@@ -160,7 +176,8 @@ class AtsInferenceTest : public RngTest {
 
   Expected<VarBuffers> CpuReference(const VarBuffers& inputs) const {
     LITERT_ASSIGN_OR_RETURN(auto exec, CpuCompiledModelExecutor::Create(
-                                           Graph(), conf_.ReferenceOptions()));
+                                           Graph(), conf_.ReferenceOptions(),
+                                           conf_.GetEnvironment()));
     return exec.Run(inputs);
   }
 
@@ -175,6 +192,9 @@ class AtsInferenceTest : public RngTest {
       ASSERT_EQ(actual[i].Type(), ref[i].Type());
       if (actual[i].Type().ElementType() == ElementType::Float32) {
         CheckOutputImpl(actual[i].AsView<float>(), ref[i].AsView<float>());
+      } else if (actual[i].Type().ElementType() == ElementType::Float16) {
+        CheckOutputImpl(actual[i].AsView<tflite::half>(),
+                        ref[i].AsView<tflite::half>());
       } else if (actual[i].Type().ElementType() == ElementType::Int32) {
         CheckOutputImpl(actual[i].AsView<int32_t>(), ref[i].AsView<int32_t>());
       } else {
@@ -188,7 +208,9 @@ class AtsInferenceTest : public RngTest {
   template <typename T>
   void CheckOutputImpl(const BufferView<T>& actual, const BufferView<T>& ref) {
     double mse = std::numeric_limits<double>::max();
-    EXPECT_THAT(actual.data, MeanSquaredErrorLt(ref.data, Tol(), &mse));
+    double tol = std::max(
+        Tol(), static_cast<double>(NumericLimits<T>::Epsilon()) * 10.0);
+    EXPECT_THAT(actual.data, MeanSquaredErrorLt(ref.data, tol, &mse));
     cap_.numerics.NewMse(mse);
   }
 

@@ -215,7 +215,9 @@ private constructor(
   data class QualcommOptions
   constructor(
     val logLevel: LogLevel? = null,
+    @Deprecated("This option is deprecated and will be no-op.")
     val useHtpPreference: Boolean? = null,
+    @Deprecated("This option is deprecated and will be no-op.")
     val useQint16AsQuint16: Boolean? = null,
     val enableWeightSharing: Boolean? = null,
     val dumpTensorIds: List<Int>? = null,
@@ -292,12 +294,6 @@ private constructor(
       val map = mutableMapOf<Key, String>()
       if (logLevel != null) {
         map[Key.LOG_LEVEL] = logLevel.value.toString()
-      }
-      if (useHtpPreference != null) {
-        map[Key.USE_HTP_PREFERENCE] = useHtpPreference.toString()
-      }
-      if (useQint16AsQuint16 != null) {
-        map[Key.USE_QINT16_AS_QUINT16] = useQint16AsQuint16.toString()
       }
       if (enableWeightSharing != null) {
         map[Key.ENABLE_WEIGHT_SHARING] = enableWeightSharing.toString()

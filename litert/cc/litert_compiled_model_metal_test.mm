@@ -67,7 +67,6 @@ const float kTolerance = 1e-5;
   XCTAssertNotNil(modelFilePath);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(externalTensorsMode));
-  XCTAssertTrue(options);
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model, litert::CompiledModel::Create(env, modelFilePath.UTF8String, options));
   XCTAssertEqual(compiled_model.GetNumSignatures(), 1);
@@ -157,7 +156,6 @@ const float kTolerance = 1e-5;
   XCTAssertNotNil(modelFilePath);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(externalTensorsMode));
-  XCTAssertTrue(options);
 
   // Create 1st model.
   LITERT_ASSERT_OK_AND_ASSIGN(

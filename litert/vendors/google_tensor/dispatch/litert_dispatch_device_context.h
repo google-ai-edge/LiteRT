@@ -15,29 +15,33 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 #define ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 
-#include <cstdint>
+#include <cstddef>
 #include <optional>
-#include <utility>
+#include <vector>
 
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+#include "litert/vendors/google_tensor/dispatch/google/litert_darwinn_runtime_options.h"
+#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
 // This class is thread-compatible.
 class LiteRtDispatchDeviceContextT {
  public:
-  // Stores DarwiNN options for later annotation.
-  struct DarwinnOptionsData {
-    std::optional<uint32_t> inference_power_state;
-    std::optional<uint32_t> inference_memory_power_state;
-    std::optional<int8_t> inference_priority;
-    bool atomic_inference = false;
-    bool prefer_coherent = false;
+  // Stores Google Tensor Options for later annotation.
+  struct GoogleTensorOptionsData {
+    std::optional<LiteRtGoogleTensorOptionsPerformanceMode> performance_mode =
+        std::nullopt;
   };
 
-  static LiteRtStatus Create(LiteRtDispatchDeviceContext& device_context);
+  static LiteRtStatus Create(const LiteRtRuntimeContext* runtime_context,
+                             LiteRtOptions options,
+                             LiteRtDispatchDeviceContext& device_context);
 
   LiteRtStatus Destroy();
 
@@ -54,6 +58,8 @@ class LiteRtDispatchDeviceContextT {
 
   LiteRtStatus UnloadExecutable(LiteRtDispatchExecutableHandle exec_handle);
 
+  bool IsTfliteExecutable(LiteRtDispatchExecutableHandle exec_handle) const;
+
   // Registers a graph with the device context.
   //
   // This has the effect of guaranteeing that the device context remains alive
@@ -67,24 +73,55 @@ class LiteRtDispatchDeviceContextT {
 
   ThrContext* absl_nonnull thr_context() { return thr_context_; }
 
-  const std::optional<DarwinnOptionsData>& darwinn_options() {
+#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+  std::optional<litert::LiteRtDarwinnRuntimeOptionsT>& darwinn_options() {
     return darwinn_options_;
   }
+#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+
+  std::optional<GoogleTensorOptionsData>& google_tensor_options() {
+    return google_tensor_options_;
+  }
+
+  const LiteRtRuntimeContext* runtime_context() const {
+    return runtime_context_;
+  }
+
+  LiteRtStatus AnnotateSystemAttribute(const char* absl_nonnull key,
+                                       const char* absl_nonnull value);
 
  private:
-  LiteRtDispatchDeviceContextT(
-      ThrContext* absl_nonnull thr_context,
-      std::optional<DarwinnOptionsData> darwinn_options)
-      : thr_context_(thr_context),
-        darwinn_options_(std::move(darwinn_options)) {}
+  struct MmapRegion {
+    LiteRtDispatchExecutableHandle exec_handle;
+    void* addr;
+    size_t length;
+  };
+
+  explicit LiteRtDispatchDeviceContextT(
+      const LiteRtRuntimeContext* runtime_context,
+      ThrContext* absl_nonnull thr_context)
+      : runtime_context_(runtime_context), thr_context_(thr_context) {}
 
   // Consumers of this class must use `Destroy` to delete the instance.
   ~LiteRtDispatchDeviceContextT() = default;
 
+  const LiteRtRuntimeContext* runtime_context_;
   ThrContext* absl_nonnull thr_context_;
-  std::optional<DarwinnOptionsData> darwinn_options_;
+#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+  std::optional<litert::LiteRtDarwinnRuntimeOptionsT> darwinn_options_;
+#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+  std::optional<GoogleTensorOptionsData> google_tensor_options_;
   // A device context cannot be destroyed with any registered graphs.
   absl::flat_hash_set<LiteRtDispatchGraph> registered_graphs_;
+  // Each region backs an executable's bytecode and must outlive any graph
+  // referencing that executable via AssignNodeFunction. Destroy refuses
+  // when non-empty; release order is graphs, then executables, then Destroy.
+  // std::vector (not hash set): expected N=1.
+  std::vector<MmapRegion> mmap_regions_;
+  // Set of executables that are TFLite flatbuffers. This is in contrast to
+  // other executable types like custom-compiled binaries. TFLite
+  // flatbuffers can contain multiple signatures.
+  absl::flat_hash_set<LiteRtDispatchExecutableHandle> tflite_executables_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_

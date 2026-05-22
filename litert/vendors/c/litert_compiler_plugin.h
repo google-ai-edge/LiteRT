@@ -53,8 +53,11 @@ LITERT_CAPI_EXPORT const char* LiteRtGetCompilerPluginSocManufacturer();
 // while the plugin is alive. These are read-only (TODO: update api for const
 // correctness). It is OK for these to be null, in which case the plugin should
 // use default values.
+typedef struct LiteRtCompilerContext LiteRtCompilerContext;
+
 LITERT_CAPI_EXPORT LiteRtStatus
-LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
+LiteRtCreateCompilerPlugin(const LiteRtCompilerContext* compiler_context,
+                           LiteRtCompilerPlugin* compiler_plugin,
                            LiteRtEnvironmentOptions env, LiteRtOptions options);
 
 LITERT_CAPI_EXPORT void LiteRtDestroyCompilerPlugin(
@@ -75,6 +78,11 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetNumCompilerPluginSupportedSocModels(
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
     LiteRtCompilerPlugin compiler_plugin, LiteRtParamIndex soc_model_idx,
     const char** soc_model_name);
+
+// Gets the SDK version of the vendor's compiler plugin. The memory
+// associated with the returned version string is owned by the plugin.
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
+    LiteRtCompilerPlugin compiler_plugin, const char** sdk_version);
 
 // Select desired ops for compilation. This will only be called once
 // per subgraph, plugins should select all supportable ops.

@@ -20,11 +20,14 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event_type.h"
 #include "litert/c/litert_gl_types.h"
-#include "litert/c/litert_opencl_types.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+
+#if LITERT_HAS_OPENCL_SUPPORT
+#include "litert/c/litert_opencl_types.h"
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #ifdef __cplusplus
 extern "C" {
@@ -51,9 +54,9 @@ class Event : public internal::BaseHandle<LiteRtEvent> {
                                                int sync_fence_fd,
                                                bool owns_fd) {
     LiteRtEvent event;
-      auto env_holder = env.GetHolder();
+    auto env_holder = env.GetHolder();
     LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateEventFromSyncFenceFd(
-        env.Get(), sync_fence_fd, owns_fd, &event));
+        env_holder.handle, sync_fence_fd, owns_fd, &event));
     return Event(env_holder, event, OwnHandle::kYes);
   }
 

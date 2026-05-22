@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
@@ -58,8 +59,7 @@ std::string GetUniqueOpName(const char* op_type) {
   // TODO(jiunkaiy): Remove the static op_index to ensure each op has a unique
   // name.
   static uint32_t op_index = 0;
-  const auto name = absl::StrCat(op_type, "_", op_index++);
-  return name;
+  return absl::StrCat(op_type, "_", op_index++);
 }
 
 OpWrapper& CreateOpWrapper(std::vector<OpWrapper>& ops, const char* op_type) {
@@ -225,6 +225,22 @@ OpWrapper& CreateOpWrapper(std::vector<OpWrapper>& ops, const char* op_type) {
 
   auto name = GetUniqueOpName(op_type);
   return ops.emplace_back(std::move(name), op_type, code_type_map->at(op_type));
+}
+
+OpWrapper CreateOpWithSameParams(
+    const OpWrapper& src, absl::Span<const ConstTensorWrapperRef> inputs,
+    absl::Span<const ConstTensorWrapperRef> outputs) {
+  OpWrapper op(src);
+  const char* op_type = src.GetTypeName();
+  op.SetName(GetUniqueOpName(op_type ? op_type : ""));
+  op.ClearInputOutputTensors();
+  for (const auto& input : inputs) {
+    op.AddInputTensor(input.get());
+  }
+  for (const auto& output : outputs) {
+    op.AddOutputTensor(output.get());
+  }
+  return op;
 }
 
 TensorWrapper& CreateFusedActivationInputTensor(

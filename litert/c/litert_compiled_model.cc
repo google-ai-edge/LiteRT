@@ -22,19 +22,16 @@
 #include <cstring>
 #include <memory>
 #include <string>
-#include <unordered_map>
 
+#include "absl/base/attributes.h"  // from @com_google_absl
+#include "absl/base/const_init.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment.h"
 #include "litert/c/litert_layout.h"
-#include "litert/c/litert_metrics.h"
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_options.h"
-#include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/compiled_model.h"
 
@@ -49,6 +46,14 @@ LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
   if (!environment || !model || !compiled_model) {
     return kLiteRtStatusErrorInvalidArgument;
   }
+  ABSL_CONST_INIT static absl::Mutex compiled_model_create_mutex(
+      absl::kConstInit);
+  // TODO b/491180241 - Experimental multi-threading support for CompiledModel
+  // creation.
+  // Note: The entire CompiledModel APIs are not verified to support
+  // multi-threading.
+  absl::MutexLock lock(compiled_model_create_mutex);
+
   LITERT_ASSIGN_OR_RETURN(auto created_compiled_model,
                           LiteRtCompiledModelT::Create(
                               environment, model, jit_compilation_options));
@@ -155,7 +160,7 @@ LiteRtStatus LiteRtRunCompiledModelWithOptions(
                                      output_buffers, &async, options);
   if (!res) {
     LITERT_LOG(LITERT_ERROR, "%s", res.Error().Message().c_str());
-    return res.Error().Status();
+    return litert::ToLiteRtStatus(res.Error().StatusCC());
   }
   return kLiteRtStatusOk;
 }
@@ -194,7 +199,7 @@ LiteRtStatus LiteRtRunCompiledModelAsyncWithOptions(
 
   if (!res) {
     LITERT_LOG(LITERT_ERROR, "%s", res.Error().Message().c_str());
-    return res.Error().Status();
+    return litert::ToLiteRtStatus(res.Error().StatusCC());
   }
   return kLiteRtStatusOk;
 }
@@ -208,7 +213,7 @@ LiteRtStatus LiteRtCompiledModelSetSchedulingInfo(
   auto res = compiled_model->SetSchedulingInfo(scheduling_info);
   if (!res) {
     LITERT_LOG(LITERT_ERROR, "%s", res.Error().Message().c_str());
-    return res.Error().Status();
+    return litert::ToLiteRtStatus(res.Error().StatusCC());
   }
   return kLiteRtStatusOk;
 }
@@ -229,7 +234,7 @@ LiteRtStatus LiteRtRunCompiledModelWithSchedulingInfo(
                                      output_buffers, &async, scheduling_info);
   if (!res) {
     LITERT_LOG(LITERT_ERROR, "%s", res.Error().Message().c_str());
-    return res.Error().Status();
+    return litert::ToLiteRtStatus(res.Error().StatusCC());
   }
   return kLiteRtStatusOk;
 }
@@ -255,7 +260,7 @@ LiteRtStatus LiteRtRunCompiledModelAsyncWithSchedulingInfo(
       output_buffers, async_ptr, scheduling_info);
   if (!res) {
     LITERT_LOG(LITERT_ERROR, "%s", res.Error().Message().c_str());
-    return res.Error().Status();
+    return litert::ToLiteRtStatus(res.Error().StatusCC());
   }
   return kLiteRtStatusOk;
 }
@@ -455,7 +460,7 @@ LiteRtStatus LiteRtCompiledModelClearErrors(
 
   auto result = compiled_model->ClearErrors();
   if (!result) {
-    return result.Error().Status();
+    return litert::ToLiteRtStatus(result.Error().StatusCC());
   }
 
   return kLiteRtStatusOk;
@@ -468,7 +473,7 @@ LiteRtStatus LiteRtCompiledModelGetErrorMessages(
 
   auto result = compiled_model->GetErrorMessages();
   if (!result) {
-    return result.Error().Status();
+    return litert::ToLiteRtStatus(result.Error().StatusCC());
   }
 
   // Allocate and copy the string

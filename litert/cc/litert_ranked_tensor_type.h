@@ -17,15 +17,13 @@
 
 #include <cstddef>
 #include <initializer_list>
-#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
@@ -40,10 +38,12 @@ namespace litert {
 /// tensors with known dimensions.
 class RankedTensorType {
  public:
-  RankedTensorType(ElementType element_type, Layout&& layout)
+  RankedTensorType(::litert::ElementType element_type,
+                   ::litert::Layout&& layout)
       : element_type_(element_type), layout_(std::move(layout)) {}
   explicit RankedTensorType(const LiteRtRankedTensorType& type)
-      : element_type_(static_cast<enum ElementType>(type.element_type)),
+      : element_type_(
+            static_cast<enum ::litert::ElementType>(type.element_type)),
         layout_(type.layout) {}
 
   explicit operator LiteRtRankedTensorType() const {
@@ -61,26 +61,26 @@ class RankedTensorType {
     return !(*this == other);
   }
 
-  ElementType ElementType() const { return element_type_; }
+  ::litert::ElementType ElementType() const { return element_type_; }
 
-  void SetElementType(enum ElementType element_type) {
+  void SetElementType(enum ::litert::ElementType element_type) {
     element_type_ = element_type;
   }
 
-  const Layout& Layout() const { return layout_; }
+  const ::litert::Layout& Layout() const { return layout_; }
 
   Expected<size_t> Bytes() const {
     LITERT_ASSIGN_OR_RETURN(const size_t num_elements, layout_.NumElements());
     auto byte_width = GetByteWidth(element_type_);
     if (!byte_width) {
-      return Unexpected(kLiteRtStatusErrorInvalidArgument);
+      return Unexpected(Status::kErrorInvalidArgument);
     }
     return *byte_width * num_elements;
   }
 
  private:
-  enum ElementType element_type_;
-  class Layout layout_;
+  enum ::litert::ElementType element_type_;
+  class ::litert::Layout layout_;
 };
 
 /// @brief Constructs a `RankedTensorType` from a C++ type and shape.

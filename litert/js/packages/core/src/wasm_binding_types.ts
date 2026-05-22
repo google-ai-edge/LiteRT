@@ -92,11 +92,21 @@ export declare interface LiteRtGpuOptions {
 }
 
 /**
+ * Options for configuring the WebNN delegate.
+ */
+export declare interface LiteRtWebNNOptions {
+  devicePreference?: 'cpu'|'gpu'|'npu';
+  powerPreference?: 'default'|'high-performance'|'low-power';
+  precision?: 'fp32'|'fp16';
+}
+
+/**
  * Options for loading and compiling a LiteRt model.
  */
 export declare interface LiteRtCompileOptions {
-  accelerator?: 'wasm'|'webgpu'|'webnn';
+  accelerator?: 'wasm'|'webgpu'|'webnn'|Array<'wasm'|'webgpu'|'webnn'>;
   gpuOptions?: LiteRtGpuOptions;
+  webNNOptions?: LiteRtWebNNOptions;
 }
 
 declare const liteRtModelBrand: unique symbol;
@@ -180,6 +190,7 @@ export declare interface LiteRtCompiledModel extends Deletable {
       LiteRtTensorBufferRequirements;
   run(signatureIndex: number, inputTensors: LiteRtTensorBuffer[]):
       LiteRtTensorBuffer[]|Promise<LiteRtTensorBuffer[]>;
+  isFullyAccelerated(): boolean;
 }
 
 /**

@@ -15,6 +15,7 @@
 #include "litert/core/util/flatbuffer_tools.h"
 
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -48,6 +49,7 @@ namespace litert::internal {
 
 using ::flatbuffers::Verifier;
 using ::tflite::VerifyModelBuffer;
+static constexpr size_t kMaxModelSize = std::numeric_limits<size_t>::max();
 
 namespace {
 
@@ -93,6 +95,10 @@ bool VerifyFlatbuffer(absl::Span<const uint8_t> buf) {
 
 bool VerifyFlatbuffer(const uint8_t* buf, size_t buf_size) {
   flatbuffers::Verifier::Options options;
+  // Flatbuffers::Verifier::Options::max_size defaults to 2GB. But LiteRT models
+  // can contain external buffers, so the total size can be larger. We increase
+  // the max size to a very large value to allow verification of these models.
+  options.max_size = kMaxModelSize;
 #ifndef NDEBUG
   options.assert = true;
 #endif
@@ -273,14 +279,15 @@ Expected<TflPerChannelQParams> AsPerChannelQparams(
 
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromBuffer(
     BufferRef<uint8_t> buffer) {
-  static constexpr size_t k2GiB = 2e+9;
-  if (buffer.Size() < k2GiB &&
-      !VerifyFlatbuffer(buffer.Data(), buffer.Size())) {
+  if (buffer.Size() >= kMaxModelSize) {
+    return Error(kLiteRtStatusErrorInvalidFlatbuffer, "Model exceeds max size");
+  }
+  if (!VerifyFlatbuffer(buffer.Data(), buffer.Size())) {
     return Error(kLiteRtStatusErrorInvalidFlatbuffer, "Invalid flatbuffer");
   }
   auto alloc = MakeAllocation(buffer);
   LITERT_ASSIGN_OR_ABORT(auto wrapper,
-                           (CreateFromAllocation(std::move(alloc))));
+                         (CreateFromAllocation(std::move(alloc))));
   return wrapper;
 }
 
@@ -296,8 +303,7 @@ Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromAllocation(
     return Error(kLiteRtStatusErrorFileIO, "Failed to build flatbuffer model");
   }
 
-  return FlatbufferWrapper::Ptr(new FlatbufferWrapper(
-      std::move(fb_model)));
+  return FlatbufferWrapper::Ptr(new FlatbufferWrapper(std::move(fb_model)));
 }
 
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromBuffer(

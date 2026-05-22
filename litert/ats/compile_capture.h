@@ -51,7 +51,7 @@ class CompilationTime : public Printable<Microseconds> {
 };
 
 // Type to hold all of the capturable information related compilation test
-// case..
+// case.
 struct CompileCaptureEntry
     : public PrintableRow<ModelDetail, CompilationDetail, AcceleratorDetail,
                           CompilationTime> {

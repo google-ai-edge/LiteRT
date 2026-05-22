@@ -18,24 +18,36 @@
 #include <Python.h>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_element_type.h"
 
 namespace litert::litert_wrapper_utils {
 
+// The name used for LiteRtEnvironment capsules.
+constexpr absl::string_view kLiteRtEnvironmentName = "LiteRtEnvironment";
+
 // The name used for LiteRtTensorBuffer capsules
 constexpr absl::string_view kLiteRtTensorBufferName = "LiteRtTensorBuffer";
+// Safely destroys a LiteRt Environment from a PyCapsule and clears the name to
+// prevent double destruction.
+void DestroyEnvironmentFromCapsule(PyObject* capsule);
+
+// Returns the LiteRT environment stored in the given capsule, or nullptr if
+// the capsule is invalid.
+Environment* GetEnvironmentFromCapsule(PyObject* capsule);
+
+// Creates a PyCapsule that owns the provided Environment pointer.
+PyObject* MakeEnvironmentCapsule(Environment* environment);
 
 // Safely destroys a LiteRtTensorBuffer from a PyCapsule and clears the name
-// to prevent double destruction. Also releases the model reference stored in
-// the capsule context (if any) to ensure correct destruction order.
+// to prevent double destruction.
 void DestroyTensorBufferFromCapsule(PyObject* capsule);
 
 // Creates a PyCapsule for a TensorBuffer with the appropriate destructor.
-// If model_wrapper is provided, stores a reference to it in the capsule
-// context. This ensures the model stays alive as long as any of its buffers
-// exist, preventing use-after-free crashes during garbage collection.
-PyObject* MakeTensorBufferCapsule(TensorBuffer& buffer,
-                                  PyObject* model_wrapper);
+PyObject* MakeTensorBufferCapsule(TensorBuffer& buffer);
+
+const char* ElementTypeToString(litert::ElementType dtype);
 
 }  // namespace litert::litert_wrapper_utils
 

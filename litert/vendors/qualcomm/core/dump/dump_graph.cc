@@ -100,11 +100,11 @@ nlohmann::json SerializeQuantParamToJson(
     scale_offsets.reserve(num_elements);
     for (int i = 0; i < num_elements; ++i) {
       scale_offsets.emplace_back(nlohmann::json{
+          {"bitwidth", quant_params.bwAxisScaleOffsetEncoding.bitwidth},
           {"scale", quant_params.bwAxisScaleOffsetEncoding.scales[i]},
           {"offset", quant_params.bwAxisScaleOffsetEncoding.offsets[i]}});
     }
     qnn_quant_params["axis_scale_offset"] = {
-        {"bitwidth", quant_params.bwAxisScaleOffsetEncoding.bitwidth},
         {"axis", quant_params.bwAxisScaleOffsetEncoding.axis},
         {"num_scale_offsets", num_elements},
         {"scale_offsets", scale_offsets},

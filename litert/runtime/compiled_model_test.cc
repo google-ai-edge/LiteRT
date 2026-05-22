@@ -14,7 +14,9 @@
 
 #include "litert/runtime/compiled_model.h"
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -27,10 +29,18 @@
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "ml_drift/cl/cl_command_queue.h"  // from @ml_drift
+#include "ml_drift/cl/cl_context.h"  // from @ml_drift
+#include "ml_drift/cl/environment.h"  // from @ml_drift
+#include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
+#include "litert/c/internal/litert_tensor_buffer_registry.h"
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_profiler.h"
@@ -40,6 +50,7 @@
 #include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/internal/litert_consts.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_any.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
@@ -59,6 +70,7 @@
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
+#include "third_party/odml/litert/ml_drift/delegate/buffer_handler_opencl.h"
 #include "tflite/interpreter.h"
 
 namespace litert {
@@ -69,17 +81,7 @@ using ::testing::FloatNear;
 using ::testing::Pointwise;
 using ::testing::litert::IsError;
 
-Expected<LiteRtEnvironment> CreateGpuEnabledEnvironment() {
-  LiteRtEnvironment env;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
 
-  LITERT_ASSIGN_OR_RETURN(
-      auto gpu_env,
-      litert::internal::GpuEnvironment::Create(env->GetOptions()));
-  LITERT_RETURN_IF_ERROR(env->SetGpuEnvironment(std::move(gpu_env)));
-  return env;
-}
 
 // Creates a tensor buffer of the given tensor, buffer type, and size.
 Expected<LiteRtTensorBufferT*> CreateBufferOfType(
@@ -472,6 +474,9 @@ TEST(CompiledModelTest, UseAhwbBuffer) {
 }
 
 TEST(CompiledModelTest, UseOpenCLBuffer) {
+#if defined(_WIN32)
+  GTEST_SKIP() << "OpenCL buffer coverage is not linked on Windows.";
+#else
   // MSAN does not support GPU tests.
 #if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
   GTEST_SKIP() << "GPU tests are not supported In msan";
@@ -485,7 +490,44 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
   absl::LeakCheckDisabler disable_leak_check;
 
   // Environment setup.
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env_ptr, CreateGpuEnabledEnvironment());
+  if (!ml_drift::cl::LoadOpenCL().ok()) {
+    GTEST_SKIP() << "OpenCL could not be loaded; skipping the test";
+  }
+
+  ml_drift::cl::Environment cl_env;
+  LITERT_ASSERT_OK(ml_drift::cl::CreateEnvironment(&cl_env));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny context_id,
+      litert::ToLiteRtAny(litert::LiteRtVariant(
+          reinterpret_cast<int64_t>(cl_env.context().context()))));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny queue_id,
+      litert::ToLiteRtAny(litert::LiteRtVariant(
+          reinterpret_cast<int64_t>(cl_env.queue()->queue()))));
+
+  const std::array<LiteRtEnvOption, 2> environment_options = {
+      LiteRtEnvOption{
+          /*.tag=*/kLiteRtEnvOptionTagOpenClContext,
+          /*.value=*/context_id,
+      },
+      LiteRtEnvOption{
+          /*.tag=*/kLiteRtEnvOptionTagOpenClCommandQueue,
+          /*.value=*/queue_id,
+      },
+  };
+
+  LiteRtEnvironment env_ptr;
+  LITERT_ASSERT_OK(LiteRtCreateEnvironment(
+      environment_options.size(), environment_options.data(), &env_ptr));
+
+  LiteRtRegisterTensorBufferHandlers(
+      env_ptr, kLiteRtTensorBufferTypeOpenClBuffer, LiteRtCreateOpenClMemory,
+      LiteRtDestroyOpenClMemory, LiteRtLockOpenClMemory,
+      LiteRtUnlockOpenClMemory, LiteRtClearOpenClMemory,
+      LiteRtImportOpenClMemory, kLiteRtEnvOptionTagOpenClContext,
+      kLiteRtEnvOptionTagOpenClCommandQueue);
 
   // Create LiteRtModel and check signatures.
   std::string path = testing::GetTestFilePath(kModelFileName);
@@ -607,6 +649,7 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
 
   LiteRtDestroyModel(model);
   LiteRtDestroyEnvironment(env_ptr);
+#endif
 }
 
 TEST(CompiledModelTest, WithProfiler) {
@@ -1276,6 +1319,33 @@ TEST(CompiledModelTest, BindExternalWeightBuffer) {
   LiteRtDestroyEnvironment(env_ptr);
 }
 
+TEST(CompiledModelTest, NonExternalModelKeepsWeightLoaderNull) {
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  LiteRtOptions options;
+  ASSERT_EQ(LiteRtCreateOptions(&options), kLiteRtStatusOk);
+  ASSERT_EQ(
+      LiteRtSetOptionsHardwareAccelerators(options, kLiteRtHwAcceleratorCpu),
+      kLiteRtStatusOk);
+  auto* options_impl = reinterpret_cast<LiteRtOptionsT*>(options);
+  ASSERT_NE(options_impl, nullptr);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, options));
+  EXPECT_EQ(options_impl->weight_loader, nullptr);
+
+  LiteRtDestroyOptions(options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
 TEST(CompiledModelTest, GetInterpreter) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
@@ -1444,6 +1514,159 @@ TEST(CompiledModelTest, CheckResizeFail) {
   EXPECT_THAT(
       InputTensorNeedsResize(compiled_model.get(), input_tensor1, {2, 128, 4}),
       IsError(kLiteRtStatusErrorInvalidArgument));
+
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+TEST(CompiledModelTest, DynamicResizeWithCustomAllocationsSimple) {
+  constexpr absl::string_view kSimpleAddDynamicShapeModel =
+      "simple_add_dynamic_shape.tflite";
+
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel and check signatures.
+  std::string path = testing::GetTestFilePath(kSimpleAddDynamicShapeModel);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  absl::Span<LiteRtSignature> signatures = model->Signatures();
+  ASSERT_EQ(signatures.size(), 1);
+  absl::string_view signature_key = signatures[0]->Key();
+  EXPECT_EQ(signature_key, litert::kDefaultSignatureKey);
+
+  const std::vector<std::string>& input_names = signatures[0]->InputNames();
+  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(const LiteRtSignatureT& signature,
+                              model->FindSignature(signature_key));
+  const LiteRtSubgraphT& subgraph = signature.GetSubgraph();
+  const LiteRtTensorT& tensor0 = *subgraph.Inputs()[0];
+  const LiteRtTensorT& tensor1 = *subgraph.Inputs()[1];
+  const LiteRtTensorT& tensor_out = *subgraph.Outputs()[0];
+
+  // Create CompiledModel with options.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+
+  // 1. Resize to Shape A: {1, 128, 4}
+  std::vector<int> shape_a = {1, 128, 4};
+  for (size_t i = 0; i < input_names.size(); ++i) {
+    auto resize = compiled_model->ResizeInputTensor(
+        /*signature_index=*/0, /*input_index=*/i, shape_a);
+    ASSERT_TRUE(resize.HasValue()) << resize.Error().Message();
+  }
+
+  // 2. Create and Run with Shape A
+  LiteRtRankedTensorType type_a_0 = tensor0.Type().second.ranked_tensor_type;
+  type_a_0.layout.dimensions[0] = 1;
+  type_a_0.layout.dimensions[1] = 128;
+  type_a_0.layout.dimensions[2] = 4;
+  type_a_0.layout.rank = 3;
+
+  LiteRtRankedTensorType type_a_1 = tensor1.Type().second.ranked_tensor_type;
+  type_a_1.layout.dimensions[0] = 1;
+  type_a_1.layout.dimensions[1] = 128;
+  type_a_1.layout.dimensions[2] = 4;
+  type_a_1.layout.rank = 3;
+
+  LiteRtRankedTensorType type_out_a =
+      tensor_out.Type().second.ranked_tensor_type;
+  type_out_a.layout.dimensions[0] = 1;
+  type_out_a.layout.dimensions[1] = 128;
+  type_out_a.layout.dimensions[2] = 4;
+  type_out_a.layout.rank = 3;
+
+  size_t bytes_a = 1 * 128 * 4 * sizeof(float);
+
+  LiteRtTensorBuffer input_a_0, input_a_1, output_a;
+  ASSERT_EQ(LiteRtCreateManagedTensorBuffer(env_ptr,
+                                            kLiteRtTensorBufferTypeHostMemory,
+                                            &type_a_0, bytes_a, &input_a_0),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateManagedTensorBuffer(env_ptr,
+                                            kLiteRtTensorBufferTypeHostMemory,
+                                            &type_a_1, bytes_a, &input_a_1),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateManagedTensorBuffer(env_ptr,
+                                            kLiteRtTensorBufferTypeHostMemory,
+                                            &type_out_a, bytes_a, &output_a),
+            kLiteRtStatusOk);
+
+  std::vector<LiteRtTensorBuffer> inputs_a = {input_a_0, input_a_1};
+  std::vector<LiteRtTensorBuffer> outputs_a = {output_a};
+
+  bool async = false;
+  auto run_status_a =
+      compiled_model->Run(signature_key, inputs_a, outputs_a, async);
+  ASSERT_TRUE(run_status_a.HasValue()) << run_status_a.Error().Message();
+
+  // 3. Resize to Shape B: {2, 128, 4} (larger)
+  std::vector<int> shape_b = {2, 128, 4};
+  for (size_t i = 0; i < input_names.size(); ++i) {
+    auto resize = compiled_model->ResizeInputTensor(
+        /*signature_index=*/0, /*input_index=*/i, shape_b);
+    ASSERT_TRUE(resize.HasValue()) << resize.Error().Message();
+  }
+
+  // 4. Create and Run with Shape B
+  LiteRtRankedTensorType type_b_0 = tensor0.Type().second.ranked_tensor_type;
+  type_b_0.layout.dimensions[0] = 2;
+  type_b_0.layout.dimensions[1] = 128;
+  type_b_0.layout.dimensions[2] = 4;
+  type_b_0.layout.rank = 3;
+
+  LiteRtRankedTensorType type_b_1 = tensor1.Type().second.ranked_tensor_type;
+  type_b_1.layout.dimensions[0] = 2;
+  type_b_1.layout.dimensions[1] = 128;
+  type_b_1.layout.dimensions[2] = 4;
+  type_b_1.layout.rank = 3;
+
+  LiteRtRankedTensorType type_out_b =
+      tensor_out.Type().second.ranked_tensor_type;
+  type_out_b.layout.dimensions[0] = 2;
+  type_out_b.layout.dimensions[1] = 128;
+  type_out_b.layout.dimensions[2] = 4;
+  type_out_b.layout.rank = 3;
+
+  size_t bytes_b = 2 * 128 * 4 * sizeof(float);
+
+  LiteRtTensorBuffer input_b_0, input_b_1, output_b;
+  ASSERT_EQ(LiteRtCreateManagedTensorBuffer(env_ptr,
+                                            kLiteRtTensorBufferTypeHostMemory,
+                                            &type_b_0, bytes_b, &input_b_0),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateManagedTensorBuffer(env_ptr,
+                                            kLiteRtTensorBufferTypeHostMemory,
+                                            &type_b_1, bytes_b, &input_b_1),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateManagedTensorBuffer(env_ptr,
+                                            kLiteRtTensorBufferTypeHostMemory,
+                                            &type_out_b, bytes_b, &output_b),
+            kLiteRtStatusOk);
+
+  std::vector<LiteRtTensorBuffer> inputs_b = {input_b_0, input_b_1};
+  std::vector<LiteRtTensorBuffer> outputs_b = {output_b};
+
+  auto run_status_b =
+      compiled_model->Run(signature_key, inputs_b, outputs_b, async);
+  ASSERT_TRUE(run_status_b.HasValue()) << run_status_b.Error().Message();
+
+  // Cleanup
+  for (auto& buf : inputs_a) LiteRtDestroyTensorBuffer(buf);
+  for (auto& buf : outputs_a) LiteRtDestroyTensorBuffer(buf);
+  for (auto& buf : inputs_b) LiteRtDestroyTensorBuffer(buf);
+  for (auto& buf : outputs_b) LiteRtDestroyTensorBuffer(buf);
 
   LiteRtDestroyOptions(jit_compilation_options);
   LiteRtDestroyModel(model);

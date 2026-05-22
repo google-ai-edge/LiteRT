@@ -18,25 +18,25 @@ import pathlib
 import tempfile
 
 from litert.python.aot import prepare_for_npu as core
+from litert.python.aot.core import aot_types
 from litert.python.aot.core import apply_plugin
 from litert.python.aot.core import components
 from litert.python.aot.core import mlir_transforms
-from litert.python.aot.core import types
 from litert.python.aot.vendors import import_vendor
 
 
 def aot_compile(
-    input_model: types.Model | str,
+    input_model: aot_types.Model | str,
     output_dir: str | pathlib.Path | None = None,
-    target: types.Target | list[types.Target] | None = None,
+    target: aot_types.Target | list[aot_types.Target] | None = None,
     config: (
-        types.CompilationConfig | list[types.CompilationConfig] | None
+        aot_types.CompilationConfig | list[aot_types.CompilationConfig] | None
     ) = None,
     quantizer: components.AieQuantizerT | None = None,
     keep_going: bool = True,
     subgraphs_to_compile: list[int] | None = None,
     **kwargs,
-) -> types.CompilationResult:
+) -> aot_types.CompilationResult:
   """Prepares a TFLite model for NPU execution.
 
   High level command that erforms various backend specific pre-processing steps
@@ -66,16 +66,16 @@ def aot_compile(
   if config is None:
     if target is None:
       target = import_vendor.AllRegisteredTarget()
-    if isinstance(target, types.Target):
-      config = types.CompilationConfig(target=target)
+    if isinstance(target, aot_types.Target):
+      config = aot_types.CompilationConfig(target=target)
     elif isinstance(target, list):
-      config = [types.CompilationConfig(target=t) for t in target]
+      config = [aot_types.CompilationConfig(target=t) for t in target]
     else:
       raise ValueError("Unsupported target type.")
 
   if isinstance(input_model, str):
     input_path = pathlib.Path(input_model)
-    input_model = types.Model.create_from_path(input_path)
+    input_model = aot_types.Model.create_from_path(input_path)
 
   # Resolve output paths.
   temp_dir = None
@@ -94,10 +94,10 @@ def aot_compile(
   output_dir_path = pathlib.Path(output_dir)
   output_dir_path.mkdir(parents=True, exist_ok=True)
 
-  if isinstance(config, types.CompilationConfig) or not config:
+  if isinstance(config, aot_types.CompilationConfig) or not config:
     if config:
       # Make pytype happy.
-      assert isinstance(config, types.CompilationConfig)
+      assert isinstance(config, aot_types.CompilationConfig)
       kw_config = config.to_dict() | kwargs
     else:
       kw_config = kwargs

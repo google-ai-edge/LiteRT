@@ -28,6 +28,10 @@ INSERT SMALL BLURB ABOUT RELEASE FOCUS AREA AND POTENTIAL TOOLCHAIN CHANGES
 * Updated CMake build rules to support both CompiledModel and Interpreter APIs.
   cmake_example/CMakeLists.txt shows how you can use both libraries.
 
+* Expanded MediaTek NPU support to all applicable Android versions
+  (only Android 15 previously) by supporting bundling MediaTek libraries in
+  application binary.
+
 ### Bug Fixes and Other Changes
 
 <!---

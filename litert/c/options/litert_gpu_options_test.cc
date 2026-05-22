@@ -561,6 +561,34 @@ TEST(GpuAcceleratorPayload, SetAndGetSyncExecutionModeWaitType) {
   LrtDestroyGpuOptions(payload);
 }
 
+TEST(GpuAcceleratorPayload, SetAndGetKernelBatchSize) {
+  LrtGpuOptions* payload = nullptr;
+  LITERT_ASSERT_OK(LrtCreateGpuOptions(&payload));
+
+  int kernel_batch_size;
+  // Check the default value.
+  LITERT_EXPECT_OK(LrtGetGpuAcceleratorRuntimeOptionsKernelBatchSize(
+      &kernel_batch_size, payload));
+  EXPECT_THAT(kernel_batch_size, Eq(-1));
+
+  LITERT_EXPECT_OK(
+      LrtSetGpuAcceleratorRuntimeOptionsKernelBatchSize(payload, 10));
+  LITERT_EXPECT_OK(LrtGetGpuAcceleratorRuntimeOptionsKernelBatchSize(
+      &kernel_batch_size, payload));
+  EXPECT_EQ(kernel_batch_size, 10);
+
+  LrtGpuOptions* payload_from_toml = nullptr;
+  SerializeAndParse(payload, &payload_from_toml);
+
+  int kernel_batch_size_from_toml;
+  LITERT_EXPECT_OK(LrtGetGpuAcceleratorRuntimeOptionsKernelBatchSize(
+      &kernel_batch_size_from_toml, payload_from_toml));
+  EXPECT_THAT(kernel_batch_size_from_toml, Eq(10));
+
+  LrtDestroyGpuOptions(payload_from_toml);
+  LrtDestroyGpuOptions(payload);
+}
+
 TEST(GpuAcceleratorPayload, SetAndGetAllowSrcQuantizedFcConvOps) {
   LrtGpuOptions* payload = nullptr;
   LITERT_ASSERT_OK(LrtCreateGpuOptions(&payload));

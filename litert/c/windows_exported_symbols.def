@@ -25,6 +25,46 @@ EXPORTS
   LiteRtAddModelMetadata
   LiteRtAddOpaqueOptions
   LiteRtAppendOpaqueOptions
+  LiteRtBuilderBuildAddOpOption
+  LiteRtBuilderBuildAveragePool2dOpOption
+  LiteRtBuilderBuildBatchMatmulOpOption
+  LiteRtBuilderBuildConcatenationOpOption
+  LiteRtBuilderBuildConv2dOpOption
+  LiteRtBuilderBuildConv3dOpOption
+  LiteRtBuilderBuildCumsumOpOption
+  LiteRtBuilderBuildDepthToSpaceOpOption
+  LiteRtBuilderBuildDepthwiseConv2dOpOption
+  LiteRtBuilderBuildDivOpOption
+  LiteRtBuilderBuildFullyConnectedOpOption
+  LiteRtBuilderBuildGatherOpOption
+  LiteRtBuilderBuildGeluOpOption
+  LiteRtBuilderBuildL2Pool2dOpOption
+  LiteRtBuilderBuildLeakyReluOpOption
+  LiteRtBuilderBuildMaxPool2dOpOption
+  LiteRtBuilderBuildMeanOpOption
+  LiteRtBuilderBuildMirrorPadOpOption
+  LiteRtBuilderBuildMulOpOption
+  LiteRtBuilderBuildOp
+  LiteRtBuilderBuildPackOpOption
+  LiteRtBuilderBuildReduceAllOpOption
+  LiteRtBuilderBuildReduceAnyOpOption
+  LiteRtBuilderBuildReduceMaxOpOption
+  LiteRtBuilderBuildReduceMinOpOption
+  LiteRtBuilderBuildReshapeOpOption
+  LiteRtBuilderBuildResizeBilinearOpOption
+  LiteRtBuilderBuildResizeNearestNeighborOpOption
+  LiteRtBuilderBuildSoftmaxOpOption
+  LiteRtBuilderBuildSpaceToDepthOpOption
+  LiteRtBuilderBuildSplitOpOption
+  LiteRtBuilderBuildSqueezeOpOption
+  LiteRtBuilderBuildStridedSliceOpOption
+  LiteRtBuilderBuildSubOpOption
+  LiteRtBuilderBuildSumOpOption
+  LiteRtBuilderBuildTensor
+  LiteRtBuilderBuildTransposeConvOpOption
+  LiteRtBuilderBuildUnpackOpOption
+  LiteRtBuilderBuildWeights
+  LiteRtBuilderEraseOp
   LiteRtClearTensorBuffer
   LiteRtClearTensorBufferEvent
   LiteRtCompiledModelClearErrors
@@ -51,12 +91,19 @@ EXPORTS
   LiteRtCreateManagedTensorBufferFromRequirements
   LiteRtCreateMetrics
   LiteRtCreateModelFromBuffer
+  LiteRtCreateModelFromFd
   LiteRtCreateModelFromFile
   LiteRtCreateOpaqueOptions
   LiteRtCreateOptions
+  LiteRtCreateTensorBufferFromAhwb
+  LiteRtCreateTensorBufferFromDmaBufBuffer
+  LiteRtCreateTensorBufferFromFastRpcBuffer
   LiteRtCreateTensorBufferFromGlBuffer
   LiteRtCreateTensorBufferFromGlTexture
   LiteRtCreateTensorBufferFromHostMemory
+  LiteRtCreateTensorBufferFromIonBuffer
+  LiteRtCreateTensorBufferFromMetalMemory
+  LiteRtCreateTensorBufferFromOpenClMemory
   LiteRtCreateTensorBufferFromWebGpuBuffer
   LiteRtCreateTensorBufferFromWebGpuTexture
   LiteRtCreateTensorBufferRequirements
@@ -76,18 +123,58 @@ EXPORTS
   LiteRtEnvironmentSupportsAhwbClInterop
   LiteRtEnvironmentSupportsAhwbGlInterop
   LiteRtEnvironmentSupportsClGlInterop
+  LiteRtEnvironmentSupportsFP16
   LiteRtExternalLiteRtBufferContextCreateBufferForTensor
   LiteRtExternalLiteRtBufferContextGetEnvironment
   LiteRtExternalLiteRtBufferContextIsAsyncExecutionMode
   LiteRtExternalLiteRtBufferContextRegisterBufferRequirements
   LiteRtExternalLiteRtBufferContextRegisterTensorBuffer
+  LiteRtExternalLiteRtBufferContextUnregisterTensorBuffer
   LiteRtFindOpaqueOptionsData
+  LiteRtFullyConnectedGetQuantizedBiasTypeOption
   LiteRtGetAcceleratorEnvironment
+  LiteRtGetAddFusedActivationOption
+  LiteRtGetAveragePool2dFilterHeightOption
+  LiteRtGetAveragePool2dFilterWidthOption
+  LiteRtGetAveragePool2dFusedActivationOption
+  LiteRtGetAveragePool2dPaddingOption
+  LiteRtGetAveragePool2dStrideHOption
+  LiteRtGetAveragePool2dStrideWOption
+  LiteRtGetBatchMatmulAdjXOption
+  LiteRtGetBatchMatmulAdjYOption
+  LiteRtGetBatchMatmulAsymmetricQuantizeInputOption
   LiteRtGetCompiledModelEnvironment
   LiteRtGetCompiledModelInputBufferRequirements
   LiteRtGetCompiledModelInputTensorLayout
   LiteRtGetCompiledModelOutputBufferRequirements
   LiteRtGetCompiledModelOutputTensorLayouts
+  LiteRtGetConcatenationAxisOption
+  LiteRtGetConcatenationFusedActivationOption
+  LiteRtGetConv2dDilationHOption
+  LiteRtGetConv2dDilationWOption
+  LiteRtGetConv2dFusedActivationOption
+  LiteRtGetConv2dPaddingOption
+  LiteRtGetConv2dStrideHOption
+  LiteRtGetConv2dStrideWOption
+  LiteRtGetConv3dDilationDOption
+  LiteRtGetConv3dDilationHOption
+  LiteRtGetConv3dDilationWOption
+  LiteRtGetConv3dFusedActivationOption
+  LiteRtGetConv3dPaddingOption
+  LiteRtGetConv3dStrideDOption
+  LiteRtGetConv3dStrideHOption
+  LiteRtGetConv3dStrideWOption
+  LiteRtGetCumsumExclusiveOption
+  LiteRtGetCumsumReverseOption
+  LiteRtGetDepthToSpaceBlockSizeOption
+  LiteRtGetDepthwiseConv2dDepthMultiplierOption
+  LiteRtGetDepthwiseConv2dDilationHOption
+  LiteRtGetDepthwiseConv2dDilationWOption
+  LiteRtGetDepthwiseConv2dFusedActivationOption
+  LiteRtGetDepthwiseConv2dPaddingOption
+  LiteRtGetDepthwiseConv2dStrideHOption
+  LiteRtGetDepthwiseConv2dStrideWOption
+  LiteRtGetDivFusedActivationOption
   LiteRtGetEnvironmentOptions
   LiteRtGetEnvironmentOptionsValue
   LiteRtGetEventCustomNativeEvent
@@ -96,11 +183,34 @@ EXPORTS
   LiteRtGetEventOpenClEvent
   LiteRtGetEventSyncFenceFd
   LiteRtGetExternalLiteRtBufferContextTensorBuffer
+  LiteRtGetFullyConnectedAsymmetricQuantizeInputOption
+  LiteRtGetFullyConnectedFusedActivationOption
+  LiteRtGetFullyConnectedKeepNumDimsOption
+  LiteRtGetFullyConnectedWeightsFormatOption
+  LiteRtGetGatherAxisOption
+  LiteRtGetGatherBatchDimsOption
+  LiteRtGetGeluApproximateOption
+  LiteRtGetL2Pool2dFilterHeightOption
+  LiteRtGetL2Pool2dFilterWidthOption
+  LiteRtGetL2Pool2dFusedActivationOption
+  LiteRtGetL2Pool2dPaddingOption
+  LiteRtGetL2Pool2dStrideHOption
+  LiteRtGetL2Pool2dStrideWOption
+  LiteRtGetLeakyReluAlphaOption
   LiteRtGetMainModelSubgraphIndex
+  LiteRtGetMaxPool2dFilterHeightOption
+  LiteRtGetMaxPool2dFilterWidthOption
+  LiteRtGetMaxPool2dFusedActivationOption
+  LiteRtGetMaxPool2dPaddingOption
+  LiteRtGetMaxPool2dStrideHOption
+  LiteRtGetMaxPool2dStrideWOption
+  LiteRtGetMeanKeepDimsOption
   LiteRtGetMetric
+  LiteRtGetMirrorPadModeOption
   LiteRtGetModelMetadata
   LiteRtGetModelSignature
   LiteRtGetModelSubgraph
+  LiteRtGetMulFusedActivationOption
   LiteRtGetNextOpaqueOptions
   LiteRtGetNumMetrics
   LiteRtGetNumModelSignatures
@@ -114,18 +224,34 @@ EXPORTS
   LiteRtGetNumSubgraphOutputs
   LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes
   LiteRtGetNumTensorUses
-  LiteRtGetOpCode
-  LiteRtGetOpInput
-  LiteRtGetOpOutput
+  LiteRtGetOneHotAxisOption
   LiteRtGetOpaqueOptions
   LiteRtGetOpaqueOptionsData
   LiteRtGetOpaqueOptionsHash
   LiteRtGetOpaqueOptionsIdentifier
+  LiteRtGetOpCode
+  LiteRtGetOpInput
+  LiteRtGetOpOutput
   LiteRtGetOptionsHardwareAccelerators
+  LiteRtGetPackAxisOption
+  LiteRtGetPackValuesCountOption
   LiteRtGetPerChannelQuantization
   LiteRtGetPerTensorQuantization
   LiteRtGetQuantizationTypeId
   LiteRtGetRankedTensorType
+  LiteRtGetReduceAllKeepDimsOption
+  LiteRtGetReduceAnyKeepDimsOption
+  LiteRtGetReduceMaxKeepDimsOption
+  LiteRtGetReduceMinKeepDimsOption
+  LiteRtGetReshapeNewShapeOption
+  LiteRtGetResizeBilinearAlignCornersOption
+  LiteRtGetResizeBilinearHalfPixelCenterOption
+  LiteRtGetResizeNearestNeighborAlignCornersOption
+  LiteRtGetResizeNearestNeighborHalfPixelCenterOption
+  LiteRtGetSHLOCompositeOpAttributes
+  LiteRtGetSHLOCompositeOpDecompositionSubgraphIndex
+  LiteRtGetSHLOCompositeOpName
+  LiteRtGetSHLOCompositeOpVersion
   LiteRtGetSignatureInputName
   LiteRtGetSignatureInputTensor
   LiteRtGetSignatureInputTensorByIndex
@@ -134,15 +260,34 @@ EXPORTS
   LiteRtGetSignatureOutputTensor
   LiteRtGetSignatureOutputTensorByIndex
   LiteRtGetSignatureSubgraph
+  LiteRtGetSoftmaxBetaOption
+  LiteRtGetSpaceToDepthBlockSizeOption
+  LiteRtGetSplitNumSplitsOption
+  LiteRtGetSqueezeDimsOption
+  LiteRtGetStridedSliceBeginMaskOption
+  LiteRtGetStridedSliceEllipsisMaskOption
+  LiteRtGetStridedSliceEndMaskOption
+  LiteRtGetStridedSliceNewAxisMaskOption
+  LiteRtGetStridedSliceOffsetOption
+  LiteRtGetStridedSliceShrinkAxisMaskOption
+  LiteRtGetSubFusedActivationOption
   LiteRtGetSubgraphInput
+  LiteRtGetSubgraphName
   LiteRtGetSubgraphOp
   LiteRtGetSubgraphOutput
+  LiteRtGetSumKeepDimsOption
+  LiteRtGetTensorBufferAhwb
   LiteRtGetTensorBufferCustomTensorBufferHandle
+  LiteRtGetTensorBufferDmaBufBuffer
   LiteRtGetTensorBufferEvent
+  LiteRtGetTensorBufferFastRpcBuffer
   LiteRtGetTensorBufferGlBuffer
   LiteRtGetTensorBufferGlTexture
   LiteRtGetTensorBufferHostMemory
+  LiteRtGetTensorBufferIonBuffer
+  LiteRtGetTensorBufferMetalMemory
   LiteRtGetTensorBufferOffset
+  LiteRtGetTensorBufferOpenClMemory
   LiteRtGetTensorBufferPackedSize
   LiteRtGetTensorBufferRegistry
   LiteRtGetTensorBufferRequirementsAlignment
@@ -160,106 +305,22 @@ EXPORTS
   LiteRtGetTensorTypeId
   LiteRtGetTensorUse
   LiteRtGetTensorWeights
+  LiteRtGetTransposeConvFusedActivationOption
+  LiteRtGetTransposeConvPaddingOption
+  LiteRtGetTransposeConvStrideHOption
+  LiteRtGetTransposeConvStrideWOption
+  LiteRtGetUnpackAxisOption
+  LiteRtGetUnpackNumOption
   LiteRtGetUnrankedTensorType
+  LiteRtGetWeightsBufferId
   LiteRtGetWeightsBytes
-  LiteRtGoogleTensorOptionsCreate
-  LiteRtGoogleTensorOptionsGet
-  LiteRtGoogleTensorOptionsGetDumpOpTimings
-  LiteRtGoogleTensorOptionsGetEnable4BitCompilation
-  LiteRtGoogleTensorOptionsGetEnableDynamicRangeQuantization
-  LiteRtGoogleTensorOptionsGetEnableLargeModelSupport
-  LiteRtGoogleTensorOptionsGetFloatTruncationType
-  LiteRtGoogleTensorOptionsGetIdentifier
-  LiteRtGoogleTensorOptionsGetInt64ToInt32Truncation
-  LiteRtGoogleTensorOptionsGetOutputDir
-  LiteRtGoogleTensorOptionsGetShardingIntensity
-  LiteRtGoogleTensorOptionsGetTestingFlags
-  LiteRtGoogleTensorOptionsSetDumpOpTimings
-  LiteRtGoogleTensorOptionsSetEnable4BitCompilation
-  LiteRtGoogleTensorOptionsSetEnableDynamicRangeQuantization
-  LiteRtGoogleTensorOptionsSetEnableLargeModelSupport
-  LiteRtGoogleTensorOptionsSetFloatTruncationType
-  LiteRtGoogleTensorOptionsSetInt64ToInt32Truncation
-  LiteRtGoogleTensorOptionsSetOutputDir
-  LiteRtGoogleTensorOptionsSetShardingIntensity
-  LiteRtGoogleTensorOptionsSetTestingFlags
   LiteRtGpuEnvironmentCreate
   LiteRtHasTensorBufferEvent
-  LiteRtIntelOpenVinoOptionsCreate
-  LiteRtIntelOpenVinoOptionsGet
-  LiteRtIntelOpenVinoOptionsGetConfigsMapOption
-  LiteRtIntelOpenVinoOptionsGetDeviceType
-  LiteRtIntelOpenVinoOptionsGetIdentifier
-  LiteRtIntelOpenVinoOptionsGetNumConfigsMapOptions
-  LiteRtIntelOpenVinoOptionsGetPerformanceMode
-  LiteRtIntelOpenVinoOptionsSetConfigsMapOption
-  LiteRtIntelOpenVinoOptionsSetDeviceType
-  LiteRtIntelOpenVinoOptionsSetPerformanceMode
   LiteRtIsEventSignaled
   LiteRtJoinTensorBufferRequirements
   LiteRtLockTensorBuffer
-  LiteRtMediatekOptionsCreate
-  LiteRtMediatekOptionsGet
-  LiteRtMediatekOptionsGetAotCompilationOptions
-  LiteRtMediatekOptionsGetDisableDlaDirRemoval
-  LiteRtMediatekOptionsGetGemmaCompilerOptimizations
-  LiteRtMediatekOptionsGetIdentifier
-  LiteRtMediatekOptionsGetL1CacheOptimizations
-  LiteRtMediatekOptionsGetMediatekDlaDir
-  LiteRtMediatekOptionsGetNeronSDKVersionType
-  LiteRtMediatekOptionsGetOptimizationHint
-  LiteRtMediatekOptionsGetPerformanceMode
-  LiteRtMediatekOptionsSetAotCompilationOptions
-  LiteRtMediatekOptionsSetDisableDlaDirRemoval
-  LiteRtMediatekOptionsSetGemmaCompilerOptimizations
-  LiteRtMediatekOptionsSetL1CacheOptimizations
-  LiteRtMediatekOptionsSetMediatekDlaDir
-  LiteRtMediatekOptionsSetNeronSDKVersionType
-  LiteRtMediatekOptionsSetOptimizationHint
-  LiteRtMediatekOptionsSetPerformanceMode
   LiteRtPopOpaqueOptions
   LiteRtPushOp
-  LiteRtQualcommOptionsCreate
-  LiteRtQualcommOptionsGet
-  LiteRtQualcommOptionsGetBackend
-  LiteRtQualcommOptionsGetDlcDir
-  LiteRtQualcommOptionsGetDspPerformanceMode
-  LiteRtQualcommOptionsGetDumpTensorIds
-  LiteRtQualcommOptionsGetEnableWeightSharing
-  LiteRtQualcommOptionsGetGraphPriority
-  LiteRtQualcommOptionsGetHtpPerformanceMode
-  LiteRtQualcommOptionsGetIdentifier
-  LiteRtQualcommOptionsGetIrJsonDir
-  LiteRtQualcommOptionsGetLogLevel
-  LiteRtQualcommOptionsGetNumHvxThreads
-  LiteRtQualcommOptionsGetOptimizationLevel
-  LiteRtQualcommOptionsGetProfiling
-  LiteRtQualcommOptionsGetSaverOutputDir
-  LiteRtQualcommOptionsGetUseConvHMX
-  LiteRtQualcommOptionsGetUseFoldReLU
-  LiteRtQualcommOptionsGetUseHtpPreference
-  LiteRtQualcommOptionsGetUseQint16AsQuint16
-  LiteRtQualcommOptionsGetUseInt64BiasAsInt32
-  LiteRtQualcommOptionsGetVtcmSize
-  LiteRtQualcommOptionsSetBackend
-  LiteRtQualcommOptionsSetDlcDir
-  LiteRtQualcommOptionsSetDspPerformanceMode
-  LiteRtQualcommOptionsSetDumpTensorIds
-  LiteRtQualcommOptionsSetEnableWeightSharing
-  LiteRtQualcommOptionsSetGraphPriority
-  LiteRtQualcommOptionsSetHtpPerformanceMode
-  LiteRtQualcommOptionsSetIrJsonDir
-  LiteRtQualcommOptionsSetLogLevel
-  LiteRtQualcommOptionsSetNumHvxThreads
-  LiteRtQualcommOptionsSetOptimizationLevel
-  LiteRtQualcommOptionsSetProfiling
-  LiteRtQualcommOptionsSetSaverOutputDir
-  LiteRtQualcommOptionsSetUseConvHMX
-  LiteRtQualcommOptionsSetUseFoldReLU
-  LiteRtQualcommOptionsSetUseHtpPreference
-  LiteRtQualcommOptionsSetUseQint16AsQuint16
-  LiteRtQualcommOptionsSetUseInt64BiasAsInt32
-  LiteRtQualcommOptionsSetVtcmSize
   LiteRtRegisterAccelerator
   LiteRtRegisterTensorBufferHandlers
   LiteRtRunCompiledModel

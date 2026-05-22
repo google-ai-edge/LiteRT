@@ -57,7 +57,7 @@ class MyCustomOpKernel : public CustomOpKernel {
       const std::vector<Layout>& input_layouts,
       std::vector<Layout>& output_layouts) override {
     if (!(input_layouts.size() == 2 && output_layouts.size() == 1)) {
-      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+      return Unexpected(Status::kErrorInvalidArgument,
                         "Invalid number of arguments");
     }
     output_layouts[0] = input_layouts[0];

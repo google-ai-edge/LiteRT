@@ -24,6 +24,12 @@
 #include "litert/c/litert_op_code.h"
 
 #ifdef __cplusplus
+#include <memory>
+
+namespace tflite {
+class Allocation;
+}  // namespace tflite
+
 extern "C" {
 #endif  // __cplusplus
 
@@ -128,6 +134,10 @@ LiteRtStatus LiteRtGetOpOutput(LiteRtOp op, LiteRtParamIndex output_index,
 // LiteRtSubgraph
 //
 
+// Get the string name associated with this subgraph. This is an optional
+// attribute and if not set will return a zero-length string.
+LiteRtStatus LiteRtGetSubgraphName(LiteRtSubgraph subgraph, const char** name);
+
 // Get input tensors for given subgraph.
 //
 // Note: The returned LiteRtTensor is only valid during the LiteRtModel's
@@ -227,6 +237,10 @@ LiteRtStatus LiteRtCreateModelFromFile(const char* filename,
 LiteRtStatus LiteRtCreateModelFromBuffer(const void* buffer_addr,
                                          size_t buffer_size,
                                          LiteRtModel* model);
+// Creates a model from the given file descriptor region. LiteRT duplicates the
+// file descriptor internally; the caller retains ownership of `fd`.
+LiteRtStatus LiteRtCreateModelFromFd(int fd, size_t offset, size_t size,
+                                     LiteRtModel* model);
 
 // Get the metadata buffer associated with given key if it exists.
 LiteRtStatus LiteRtGetModelMetadata(LiteRtModel model, const char* metadata_key,
@@ -307,7 +321,16 @@ LiteRtStatus LiteRtSerializeModel(LiteRtModel model, uint8_t** buf,
                                   LiteRtModelSerializationOptions options);
 
 #ifdef __cplusplus
-}
+}  // extern "C"
+#endif  // __cplusplus
+
+#ifdef __cplusplus
+// Loading a model from an owned TFLite allocation.
+// This is an internal experimetal API which is not available through
+// libLiteRt.so. It's not part of the official LiteRT public C API.
+// TODO(b/493996317): Provide C linkage for the following method.
+LiteRtStatus LiteRtCreateModelFromAllocation(
+    std::unique_ptr<tflite::Allocation> allocation, LiteRtModel* model);
 #endif  // __cplusplus
 
 #endif  // ODML_LITERT_LITERT_C_LITERT_MODEL_H_

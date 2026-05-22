@@ -17,6 +17,7 @@
 
 #include <string>
 
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/ats/common.h"
 #include "litert/ats/configure.h"
 #include "litert/ats/print.h"
@@ -42,7 +43,9 @@ struct ModelDetail : Printable<std::string, std::string, bool> {
   ModelDetail() : Printable("ModelDetail", "name", "desc", "precompiled") {}
 
  private:
-  Fields GetFields() const override { return Fields{name, desc, precompiled}; }
+  Fields GetFields() const override {
+    return Fields{name, absl::StrFormat("\"%s\"", desc), precompiled};
+  }
 };
 
 // Information about the accelerator used if any.

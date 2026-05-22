@@ -18,7 +18,7 @@ import functools
 from litert.python.mlir import ir
 
 from absl.testing import absltest as googletest
-from litert.python.tools.model_utils import core
+from litert.python.mlir._mlir_libs import model_utils_ext
 from litert.python.tools.model_utils import transform
 from litert.python.tools.model_utils.dialect import mlir
 
@@ -48,18 +48,24 @@ def ir_text(
     The MLIR text of the module.
   """
   if isinstance(module, mlir.ModuleOp):
-    module = transform.convert_to_mlir(module)
+    ir_module = transform.convert_to_mlir(module)
+  else:
+    ir_module = module
 
-  if isinstance(module, ir.Module):
-    module = module.operation
+  if isinstance(ir_module, ir.Module):
+    op = ir_module.operation
+  else:
+    op = ir_module
 
-  if not isinstance(module, ir.Operation):
+  if not isinstance(op, ir.Operation):
     raise ValueError("Module must be an ir.Operation")
 
-  module.verify()
-  return module.get_asm(
-      enable_debug_info=enable_debug_info,
-      large_elements_limit=1000,
+  op.verify()
+  return str(
+      op.get_asm(
+          enable_debug_info=enable_debug_info,
+          large_elements_limit=1000,
+      )
   )
 
 
@@ -100,5 +106,5 @@ class ModelUtilsTestCase(googletest.TestCase):
     if isinstance(actual, (mlir.ModuleOp, ir.Module, ir.Operation)):
       actual = ir_text(actual)
 
-    if not core.pybind.filecheck_check_input(actual, check):
+    if not model_utils_ext.filecheck_check_input(actual, check):
       self.fail(f"Got output:\n\n{actual}\nExpected to match:\n{check}")

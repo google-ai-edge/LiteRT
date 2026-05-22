@@ -264,6 +264,39 @@ TEST(GetOpOptionTest, TestGetReshapeOptions2x3To3x2) {
   ASSERT_EQ(new_shape[1], 2);
 }
 
+TEST(GetOpOptionTest, TestGetReshapeOptionsEmptyNewShape) {
+  LiteRtModelT model_t;
+  auto& subgraph = model_t.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflReshape);
+
+  LiteRtTensorT tensor;
+  tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {1}));
+  op.Inputs().push_back(&tensor);
+
+  LiteRtTensorT tensor2;
+  tensor2.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {0}));
+  auto& weights = tensor2.Weights();
+  weights.SetBufferManager(model_t.Buffers());
+
+  litert::internal::BufferContext context;
+  context.should_append = true;
+  SetWeightsFromUnownedBuffer(weights, litert::BufferRef<uint8_t>(), context);
+
+  op.Inputs().push_back(&tensor2);
+  LiteRtTensorT tensor3;
+  tensor3.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {0}));
+  op.Outputs().push_back(&tensor3);
+
+  LiteRtOpT& reshape_op = op;
+  EXPECT_EQ(reshape_op.OpCode(), kLiteRtOpCodeTflReshape);
+  const int32_t* new_shape = nullptr;
+  int32_t new_shape_size = -1;
+  LITERT_ASSERT_OK(
+      LiteRtGetReshapeNewShapeOption(&reshape_op, &new_shape, &new_shape_size));
+  ASSERT_EQ(new_shape_size, 0);
+}
+
 TEST(GetOpOptionTest, TestGetSumOptions) {
   auto model = litert::testing::LoadTestFileModel("simple_sum_op.tflite");
   auto subgraph = model.MainSubgraph();

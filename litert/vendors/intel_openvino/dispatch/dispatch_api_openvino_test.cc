@@ -23,6 +23,7 @@
 #include "absl/log/log.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
@@ -54,8 +55,12 @@ litert::Expected<litert::Environment> CreateDefaultEnvironment() {
 TEST(OpenVino, DispatchApi) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, ::litert::Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto litert_opts,
+                              litert::internal::LiteRtOptionsPtrBuilder::Build(
+                                  options, env.GetHolder()));
 
-  ASSERT_EQ(LiteRtDispatchInitialize(env.Get(), options.Get()),
+  ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(),
+                                     env.GetHolder().handle, litert_opts.get()),
             kLiteRtStatusOk);
 
   const char* vendor_id;
@@ -76,7 +81,8 @@ TEST(OpenVino, DispatchApi) {
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(&device_context),
+  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(
+                LrtGetRuntimeContext(), litert_opts.get(), &device_context),
             kLiteRtStatusOk);
   EXPECT_NE(device_context, nullptr);
 
@@ -93,8 +99,9 @@ TEST(OpenVino, DispatchApi) {
                                           /*.size=*/model->Size()};
   LiteRtDispatchInvocationContext invocation_context = nullptr;
   EXPECT_EQ(LiteRtDispatchInvocationContextCreate(
-                device_context, kLiteRtDispatchExecutableTypeMlModel,
-                &exec_bytecode_buffer, /*function_name=*/nullptr,
+                LrtGetRuntimeContext(), device_context,
+                kLiteRtDispatchExecutableTypeMlModel, &exec_bytecode_buffer,
+                /*function_name=*/nullptr,
                 /*num_inputs=*/2, /*num_outputs=*/1, &invocation_context),
             kLiteRtStatusOk);
   EXPECT_NE(invocation_context, nullptr);

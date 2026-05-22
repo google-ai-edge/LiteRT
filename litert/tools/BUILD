@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# copybara:uncomment load("//devtools/deps/check:deps_check.bzl", "check_dependencies")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
@@ -39,6 +38,7 @@ cc_library(
         ":dump_runtimecapi",
         ":outstream",
         ":tool_display",
+        "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/compiler/plugin:compiler_plugin",
@@ -57,7 +57,7 @@ cc_test(
     srcs = ["apply_plugin_test.cc"],
     data = [
         "//litert/test:mlir_test_data",
-        "//litert/vendors/examples:example_plugin_so",
+        "//litert/vendors/examples:example_plugin_so_data",
     ],
     # Workaround to disable mismatched-size-delete.
     # This test uses`libLiteRt.so` with some system components.
@@ -72,6 +72,7 @@ cc_test(
     deps = [
         ":apply_plugin_runtimecapi",
         ":outstream",
+        "//litert/c:litert_common",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/core:build_stamp",
         "//litert/core:dispatch_op_schema",
@@ -87,20 +88,26 @@ litert_bin(
     name = "apply_plugin_main",
     srcs = ["apply_plugin_main.cc"],
     data = select({
-        "@platforms//os:windows": [],
+        "//litert:windows": [],
         "//conditions:default": [
             # copybara:uncomment_begin(google-only)
             # "//platforms/darwinn/compiler/external:litert_plugin_compiler",
             # copybara:uncomment_end
             "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
             "//litert/vendors/mediatek/compiler:compiler_plugin_so",
-            "//litert/vendors/examples:example_plugin_so",
+            "//litert/vendors/examples:example_plugin_so_data",
             "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
-            "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
-            "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
+            "//litert/vendors/samsung/compiler:compiler_plugin_so",
+            "@qairt//:libQnnHtp.so",
+            "@qairt//:libQnnIr.so",
+            "@qairt//:libQnnSaver.so",
+            "@qairt//:libQnnSystem.so",
             "@neuro_pilot//:v9_latest/host/lib/libneuron_adapter.so",
             "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
             "@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so",
+            "@exynos_ai_litecore//:lib/x86_64-linux/libgraph_wrapper.so",
+            "@exynos_ai_litecore//:lib/x86_64-linux/libgraphgen.so",
+            "@exynos_ai_litecore//:lib/x86_64-linux/libgraphgen_api.so",
         ],
     }),
     export_litert_only = 1,
@@ -112,8 +119,8 @@ litert_bin(
         "nosan",
     ],
     target_compatible_with = select({
-        "@platforms//os:linux": [],
-        "@platforms//os:windows": [],
+        "//litert:linux": [],
+        "//litert:windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,
@@ -121,6 +128,8 @@ litert_bin(
     deps = [
         ":apply_plugin_runtimecapi",
         ":outstream",
+        "//litert/c:litert_common",
+        "//litert/c/options:litert_google_tensor_options",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/core:build_stamp",
         "//litert/tools/flags:apply_plugin_flags",
@@ -133,11 +142,12 @@ litert_bin(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
-        "@platforms//os:windows": [],
+        "//litert:windows": [],
         "//conditions:default": [
             "//litert/tools/flags/vendors:google_tensor_flags_with_dynamic_runtime",
             "//litert/tools/flags/vendors:mediatek_flags_with_dynamic_runtime",
             "//litert/tools/flags/vendors:qualcomm_flags_with_dynamic_runtime",
+            "//litert/tools/flags/vendors:samsung_flags_with_dynamic_runtime",
         ],
     }),
 )
@@ -158,7 +168,7 @@ litert_bin(
         "nosan",
     ],
     target_compatible_with = select({
-        "@platforms//os:linux": [],
+        "//litert:linux": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     visibility = [
@@ -168,6 +178,8 @@ litert_bin(
     deps = [
         ":apply_plugin_runtimecapi",
         ":outstream",
+        "//litert/c:litert_common",
+        "//litert/c/options:litert_google_tensor_options",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/core:build_stamp",
         "//litert/tools/flags:apply_plugin_flags",
@@ -177,11 +189,27 @@ litert_bin(
         "//litert/tools/flags/vendors:intel_openvino_flags_with_dynamic_runtime",
         "//litert/tools/flags/vendors:mediatek_flags_with_dynamic_runtime",
         "//litert/tools/flags/vendors:qualcomm_flags_with_dynamic_runtime",
+        "//litert/tools/flags/vendors:samsung_flags_with_dynamic_runtime",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+tool_test(
+    name = "apply_plugin_main_for_google_tensor_test",
+    data = ["//litert/test:testdata/simple_quantized_ops.tflite"],
+    tool = ":apply_plugin_main_for_google_tensor",
+    tool_args = [
+        "--soc_model=Tensor_G5",
+        "--soc_manufacturer=Google",
+        "--model={}".format(
+            runfile_path("//litert/test:testdata/simple_quantized_ops.tflite"),
+        ),
+        "--cmd=apply",
+        "--o=$$(mktemp)",
     ],
 )
 
@@ -242,7 +270,7 @@ cc_binary(
     name = "apply_plugin_main_for_test",
     testonly = 1,
     srcs = ["apply_plugin_main.cc"],
-    data = ["//litert/vendors/examples:example_plugin_so"],
+    data = ["//litert/vendors/examples:example_plugin_so_data"],
     linkstatic = 1,
     tags = [
         "noasan",
@@ -252,6 +280,7 @@ cc_binary(
     deps = [
         ":apply_plugin_runtimecapi",
         ":outstream",
+        "//litert/c:litert_common",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/tools/flags:apply_plugin_flags",
         "//litert/tools/flags:common_flags",
@@ -260,6 +289,7 @@ cc_binary(
         "//litert/tools/flags/vendors:intel_openvino_flags_with_dynamic_runtime",
         "//litert/tools/flags/vendors:mediatek_flags_with_dynamic_runtime",
         "//litert/tools/flags/vendors:qualcomm_flags_with_dynamic_runtime",
+        "//litert/tools/flags/vendors:samsung_flags_with_dynamic_runtime",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/strings:str_format",
@@ -301,6 +331,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_c_types_printing",
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core/model",
         "@com_google_absl//absl/strings:str_format",
@@ -316,6 +347,7 @@ cc_library(
     # Then, we can remove this visibility.
     visibility = ["//litert:litert_public"],
     deps = [
+        "//litert/c:litert_common",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core/model",
@@ -330,6 +362,7 @@ cc_test(
     data = ["//litert/test:mlir_test_data"],
     deps = [
         ":dump",
+        "//litert/c:litert_environment",  # buildcleaner: keep
         "//litert/c:litert_tensor_buffer",
         "//litert/core/model",
         "//litert/test:common",
@@ -357,6 +390,7 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_mediatek_options",
         "//litert/c/options:litert_qualcomm_options",
+        "//litert/c/options:litert_samsung_options",
         "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",
@@ -371,12 +405,20 @@ cc_library(
         "//litert/cc/internal:litert_compiled_model_next",
         "//litert/cc/internal:litert_tflite_error_status_builder",
         "//litert/cc/options:litert_cpu_options",
+        "//litert/cc/options:litert_google_tensor_options",
         "//litert/cc/options:litert_gpu_options",
         "//litert/cc/options:litert_mediatek_options",
         "//litert/cc/options:litert_qualcomm_options",
         "//litert/cc/options:litert_runtime_options",
+        "//litert/cc/options:litert_samsung_options",
         "//litert/core/util:perfetto_profiling",
         "//litert/runtime:compiled_model",
+        "//litert/tools/flags:options_parser_registry",
+        "//litert/tools/flags/vendors:google_tensor_flags",
+        "//litert/tools/flags/vendors:intel_openvino_flags",
+        "//litert/tools/flags/vendors:mediatek_flags",
+        "//litert/tools/flags/vendors:qualcomm_flags",
+        "//litert/tools/flags/vendors:samsung_flags",
         "//tflite:framework_stable",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
@@ -389,19 +431,10 @@ cc_library(
         "//tflite/tools/benchmark/proto:benchmark_result_cc",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
     ],
 )
-
-# copybara:uncomment_begin(google-only)
-# # Ensure that benchmark tool is statically linked.
-# check_dependencies(
-#     of = [":benchmark_litert_model"],
-#     dont_depend_on = [
-#         "//litert/c:litert_runtime_c_api_shared_lib",
-#     ],
-# )
-# copybara:uncomment_end
 
 cc_test(
     name = "benchmark_litert_model_test",
@@ -463,6 +496,7 @@ cc_binary(
     deps = [
         ":tensor_utils",
         "//litert/c:litert_common",
+        "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",
@@ -475,11 +509,15 @@ cc_binary(
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc/internal:scoped_file",
         "//litert/cc/internal:scoped_weight_source",
+        "//litert/cc/options:litert_gpu_options",
+        "//litert/tools/flags:options_parser_registry",
         "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:intel_openvino_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
+        "//litert/tools/flags/vendors:samsung_flags",
         "//tflite/profiling:time",
+        "@com_google_absl//absl/flags:config",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_log",
@@ -524,21 +562,31 @@ cc_binary(
         "//litert/c:litert_common",
         "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",
-        "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/random",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
+    ],
+)
+
+# Simple dump_model that only requires the C++ API.
+cc_binary(
+    name = "dump_model_simple",
+    srcs = ["dump_model_simple.cc"],
+    deps = [
+        "//litert/c:litert_model_types",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_model_types",
+        "//litert/cc:litert_ranked_tensor_type",
     ],
 )
 
@@ -562,18 +610,41 @@ NUMERICS_CHECK_DEPS = [
     "//tflite/profiling:time",
 ]
 
+cc_library(
+    name = "gpu_numerics_threshold",
+    srcs = ["gpu_numerics_threshold.cc"],
+    hdrs = ["gpu_numerics_threshold.h"],
+    deps = [
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "gpu_numerics_threshold_test",
+    srcs = ["gpu_numerics_threshold_test.cc"],
+    deps = [
+        ":gpu_numerics_threshold",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_binary(
     name = "npu_numerics_check",
     srcs = ["npu_numerics_check.cc"],
     deps = NUMERICS_CHECK_DEPS + [
         ":tensor_utils",
         "//litert/cc:litert_common",
+        "//litert/tools/flags:options_parser_registry",
         "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:intel_openvino_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
+        "//litert/tools/flags/vendors:samsung_flags",
+        "@com_google_absl//absl/flags:config",
+        "@com_google_absl//absl/strings",
     ] + select({
-        "@org_tensorflow//tensorflow:android": [
+        "//litert:android": [
             # copybara:uncomment_begin(google-only)
             # "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
             # copybara:uncomment_end
@@ -585,20 +656,34 @@ cc_binary(
 cc_binary(
     name = "gpu_numerics_check",
     srcs = ["gpu_numerics_check.cc"],
+    copts = [
+        "-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1",
+    ],
     data = litert_gpu_accelerator_prebuilts(),
     deps = NUMERICS_CHECK_DEPS + [
+        ":gpu_numerics_threshold",
         "//litert/cc:litert_common",
+        "//litert/cc/internal:scoped_file",
+        "//litert/cc/internal:scoped_weight_source",
         "//litert/cc/options:litert_gpu_options",
         "//litert/core:filesystem",
         "//tflite/c:c_api_types",
         "//tflite/tools:utils",
+        "@com_google_absl//absl/strings",
     ] + litert_gpu_accelerator_deps(),
 )
 
 cc_binary(
     name = "gpu_numerics_check_cl_gl",
     srcs = ["gpu_numerics_check.cc"],
+    copts = [
+        "-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1",
+    ],
     deps = NUMERICS_CHECK_DEPS + [
+        ":gpu_numerics_threshold",
+        "@com_google_absl//absl/strings",
+        "//litert/cc/internal:scoped_file",
+        "//litert/cc/internal:scoped_weight_source",
         "//litert/cc/options:litert_gpu_options",
         "//litert/cc:litert_common",
         "//litert/core:filesystem",
@@ -613,8 +698,15 @@ cc_binary(
 cc_binary(
     name = "gpu_numerics_check_vulkan",
     srcs = ["gpu_numerics_check.cc"],
+    copts = [
+        "-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1",
+    ],
     tags = ["requires-gpu-nvidia"],
     deps = NUMERICS_CHECK_DEPS + [
+        ":gpu_numerics_threshold",
+        "@com_google_absl//absl/strings",
+        "//litert/cc/internal:scoped_file",
+        "//litert/cc/internal:scoped_weight_source",
         "//litert/cc/options:litert_gpu_options",
         "//litert/cc:litert_common",
         "//litert/core:filesystem",
@@ -632,6 +724,9 @@ cc_binary(
 cc_binary(
     name = "gpu_numerics_check_jet",
     srcs = ["gpu_numerics_check.cc"],
+    copts = [
+        "-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1",
+    ],
     tags = [
         "manual",
         "nofastbuild",
@@ -642,6 +737,10 @@ cc_binary(
         "requires-gpu-nvidia",
     ],
     deps = NUMERICS_CHECK_DEPS + [
+        ":gpu_numerics_threshold",
+        "@com_google_absl//absl/strings",
+        "//litert/cc/internal:scoped_file",
+        "//litert/cc/internal:scoped_weight_source",
         "//litert/cc/options:litert_gpu_options",
         "//litert/cc:litert_common",
         "//litert/core:filesystem",
@@ -663,13 +762,17 @@ cc_binary(
     deps = [
         ":dump",
         ":tool_display",
+        "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
         "//litert/cc/internal:litert_logging",
         "//litert/core/model",
+        "//litert/core/model:shape_inference",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -686,6 +789,8 @@ cc_library(
         ":benchmark_litert_model",
         "//tflite/c:c_api_types",
         "//tflite/tools:logging",
+        "@com_google_absl//absl/flags:reflection",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -703,6 +808,7 @@ cc_binary(
         ":benchmark_model_main",
         # copybara:uncomment_begin(google-only)
         # "//litert/runtime/accelerators/gpu:ml_drift_allgpu_accelerator",  # buildcleaner: keep
+        # "//litert/runtime/accelerators/gpu:ml_drift_delegate_create",
         # copybara:uncomment_end
     ],
 )
@@ -771,12 +877,6 @@ litert_device_test(
     ],
     deps = [
         ":benchmark_litert_model",
-        "//litert/cc:litert_api_with_dynamic_runtime",
-        "//litert/test:common",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -801,6 +901,29 @@ cc_binary(
     ],
 )
 
+cc_binary(
+    name = "apply_input_shapes_main",
+    srcs = ["apply_input_shapes_main.cc"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/cc:litert_expected",
+        "//litert/core/model",
+        "//litert/core/model:model_load",
+        "//litert/core/model:model_serialize",
+        "//litert/core/model:shape_inference",
+        "//litert/core/model:shape_inference_types",
+        "//litert/core/util:flatbuffer_tools",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
 cc_library(
     name = "dump_ops_util",
     srcs = ["dump_ops_util.cc"],
@@ -808,6 +931,7 @@ cc_library(
     deps = [
         ":dump",
         "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
         "//litert/core/model",
         "//litert/core/model:model_serialize",
         "//litert/core/util:flatbuffer_tools",

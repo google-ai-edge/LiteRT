@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_contrib_test", "pytype_strict_library")
+load("//litert/python:pytype.bzl", "pytype_strict_contrib_test", "pytype_strict_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -23,8 +23,8 @@ pytype_strict_library(
     name = "example_backend",
     srcs = ["example_backend.py"],
     deps = [
+        "//litert/python/aot/core:aot_types",
         "//litert/python/aot/core:components",
-        "//litert/python/aot/core:types",
         "//litert/python/aot/vendors:import_vendor",
     ],
 )
@@ -32,11 +32,15 @@ pytype_strict_library(
 pytype_strict_contrib_test(
     name = "example_backend_test",
     srcs = ["example_backend_test.py"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":example_backend",
+        "//litert/python/aot/core:aot_types",
         "//litert/python/aot/core:components",
         "//litert/python/aot/core:test_common",
-        "//litert/python/aot/core:types",
         "@absl_py//absl/testing:absltest",
     ],
 )

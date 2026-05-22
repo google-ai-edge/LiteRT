@@ -11,10 +11,10 @@
 
 #include <gtest/gtest.h>
 #include "litert/vendors/qualcomm/core/backends/htp_backend.h"
-#include "litert/vendors/qualcomm/core/backends/ir_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
+#include "litert/vendors/qualcomm/core/utils/test_utils.h"
 
 namespace qnn {
 namespace {
@@ -66,9 +66,14 @@ TEST_P(LiteRtLog, SanityTest) {
       std::filesystem::temp_directory_path() / "temp.log";
   std::ofstream fout(temp_path);
   ASSERT_TRUE(fout.is_open());
+  fout.close();
 
   // Set log file pointer
+#ifdef _WIN32
+  FILE* file_ptr = _wfopen(temp_path.c_str(), L"w");
+#else
   FILE* file_ptr = fopen(temp_path.c_str(), "w");
+#endif
   ASSERT_TRUE(file_ptr);
   qnn::QNNLogger::SetLogFilePointer(file_ptr);
 
@@ -123,27 +128,6 @@ TEST(MiscTests, Dequantize) {
   EXPECT_FLOAT_EQ(val, 1);
 }
 
-TEST(MiscTests, ConvertDataFromInt16toUInt16) {
-  constexpr std::array<std::int16_t, 4> int16_data = {0, 1, 2, 3};
-  std::vector<std::uint16_t> uint16_data;
-  ConvertDataFromInt16toUInt16(int16_data, uint16_data);
-  EXPECT_EQ(uint16_data[0], 32768);
-  EXPECT_EQ(uint16_data[1], 32769);
-  EXPECT_EQ(uint16_data[2], 32770);
-  EXPECT_EQ(uint16_data[3], 32771);
-}
-
-TEST(MiscTests, ConvertDataFromUInt16toInt16) {
-  constexpr std::array<std::uint16_t, 4> uint16_data = {32768, 32769, 32770,
-                                                        32771};
-  std::vector<std::int16_t> int16_data;
-  ConvertDataFromUInt16toInt16(uint16_data, int16_data);
-  EXPECT_EQ(int16_data[0], 0);
-  EXPECT_EQ(int16_data[1], 1);
-  EXPECT_EQ(int16_data[2], 2);
-  EXPECT_EQ(int16_data[3], 3);
-}
-
 TEST(MiscTests, LoadHtpBackendApiWithInvalidPathTest) {
   DLHandle handle = ::qnn::CreateDLHandle("/invalid/path/to/libQnn.so");
   auto api = ::qnn::ResolveQnnApi(
@@ -153,11 +137,137 @@ TEST(MiscTests, LoadHtpBackendApiWithInvalidPathTest) {
 }
 
 TEST(MiscTests, DISABLED_LoadHtpBackendApiTest) {
+  if (!::qnn::IsTestHtpBackend()) {
+    GTEST_SKIP() << "Skipping test because targeted backend is not supported";
+  }
+
   DLHandle handle = ::qnn::CreateDLHandle(::qnn::HtpBackend::GetLibraryName());
   auto api = ::qnn::ResolveQnnApi(
       handle.get(), ::qnn::HtpBackend::GetExpectedBackendVersion());
 
   ASSERT_TRUE(api);
+}
+
+TEST(MiscTests, IsTestHtpBackendTest) {
+  qnn::SetTestBackend(BackendType::kHtpBackend);
+  EXPECT_TRUE(qnn::IsTestHtpBackend());
+}
+
+TEST(MiscTests, IsTestDspBackendTest) {
+  qnn::SetTestBackend(BackendType::kDspBackend);
+  EXPECT_TRUE(qnn::IsTestDspBackend());
+}
+
+TEST(MiscTests, UnpackInt2Data) {
+  // Single byte: 0xE4 (binary: 11 10 01 00), LSB-first unpacking.
+  // bits 0-1: 00 -> 0
+  // bits 2-3: 01 -> 1
+  // bits 4-5: 10 -> -2
+  // bits 6-7: 11 -> -1
+  {
+    const uint8_t src[] = {0xE4};
+    auto dst = UnpackInt2Data(src, 1);
+    ASSERT_EQ(dst.size(), 4);
+    EXPECT_EQ(dst[0], 0);
+    EXPECT_EQ(dst[1], 1);
+    EXPECT_EQ(dst[2], -2);
+    EXPECT_EQ(dst[3], -1);
+  }
+
+  // All zeros: 0x00 -> {0, 0, 0, 0}
+  {
+    const uint8_t src[] = {0x00};
+    auto dst = UnpackInt2Data(src, 1);
+    ASSERT_EQ(dst.size(), 4);
+    EXPECT_EQ(dst[0], 0);
+    EXPECT_EQ(dst[1], 0);
+    EXPECT_EQ(dst[2], 0);
+    EXPECT_EQ(dst[3], 0);
+  }
+
+  // All ones: 0xFF (binary: 11 11 11 11) -> {-1, -1, -1, -1}
+  {
+    const uint8_t src[] = {0xFF};
+    auto dst = UnpackInt2Data(src, 1);
+    ASSERT_EQ(dst.size(), 4);
+    EXPECT_EQ(dst[0], -1);
+    EXPECT_EQ(dst[1], -1);
+    EXPECT_EQ(dst[2], -1);
+    EXPECT_EQ(dst[3], -1);
+  }
+
+  // Multiple bytes: {0xE4, 0x1B}
+  // 0x1B (binary: 00 01 10 11):
+  //   bits 0-1: 11 -> -1
+  //   bits 2-3: 10 -> -2
+  //   bits 4-5: 01 ->  1
+  //   bits 6-7: 00 ->  0
+  {
+    const uint8_t src[] = {0xE4, 0x1B};
+    auto dst = UnpackInt2Data(src, 2);
+    ASSERT_EQ(dst.size(), 8);
+    EXPECT_EQ(dst[0], 0);
+    EXPECT_EQ(dst[1], 1);
+    EXPECT_EQ(dst[2], -2);
+    EXPECT_EQ(dst[3], -1);
+    EXPECT_EQ(dst[4], -1);
+    EXPECT_EQ(dst[5], -2);
+    EXPECT_EQ(dst[6], 1);
+    EXPECT_EQ(dst[7], 0);
+  }
+}
+
+TEST(MiscTests, UnpackInt4Data) {
+  // Single byte: 0xE4 (binary: 1110 0100), LSB-first unpacking.
+  // lower nibble: 0100 = 4
+  // upper nibble: 1110 = -2 (sign extended)
+  {
+    const uint8_t src[] = {0xE4};
+    auto dst = UnpackInt4Data(src, 1);
+    ASSERT_EQ(dst.size(), 2);
+    EXPECT_EQ(dst[0], 4);
+    EXPECT_EQ(dst[1], -2);
+  }
+
+  // All zeros: 0x00 -> {0, 0}
+  {
+    const uint8_t src[] = {0x00};
+    auto dst = UnpackInt4Data(src, 1);
+    ASSERT_EQ(dst.size(), 2);
+    EXPECT_EQ(dst[0], 0);
+    EXPECT_EQ(dst[1], 0);
+  }
+
+  // All ones: 0xFF (binary: 1111 1111) -> {-1, -1}
+  {
+    const uint8_t src[] = {0xFF};
+    auto dst = UnpackInt4Data(src, 1);
+    ASSERT_EQ(dst.size(), 2);
+    EXPECT_EQ(dst[0], -1);
+    EXPECT_EQ(dst[1], -1);
+  }
+
+  // Min/max: 0x87 (binary: 1000 0111)
+  // lower nibble: 0111 = 7 (max positive int4)
+  // upper nibble: 1000 = -8 (min negative int4)
+  {
+    const uint8_t src[] = {0x87};
+    auto dst = UnpackInt4Data(src, 1);
+    ASSERT_EQ(dst.size(), 2);
+    EXPECT_EQ(dst[0], 7);
+    EXPECT_EQ(dst[1], -8);
+  }
+
+  // Multiple bytes: {0xE4, 0x87}
+  {
+    const uint8_t src[] = {0xE4, 0x87};
+    auto dst = UnpackInt4Data(src, 2);
+    ASSERT_EQ(dst.size(), 4);
+    EXPECT_EQ(dst[0], 4);
+    EXPECT_EQ(dst[1], -2);
+    EXPECT_EQ(dst[2], 7);
+    EXPECT_EQ(dst[3], -8);
+  }
 }
 
 }  // namespace qnn

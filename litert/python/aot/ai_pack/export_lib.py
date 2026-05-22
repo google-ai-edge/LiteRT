@@ -18,14 +18,16 @@ import os
 import pathlib
 from typing import cast
 
+from litert.python.aot.core import aot_types
 from litert.python.aot.core import common
-from litert.python.aot.core import types
 from litert.python.aot.vendors import fallback_backend
 from litert.python.aot.vendors.google_tensor import target as google_tensor_target
 from litert.python.aot.vendors.mediatek import mediatek_backend
 from litert.python.aot.vendors.mediatek import target as mtk_target
 from litert.python.aot.vendors.qualcomm import qualcomm_backend
 from litert.python.aot.vendors.qualcomm import target as qnn_target
+from litert.python.aot.vendors.samsung import samsung_backend
+from litert.python.aot.vendors.samsung import target as exynos_target
 
 # TODO: b/407453529 - Add unittests.
 
@@ -44,7 +46,8 @@ _DEVICE_SELECTOR_TEMPLATE = """        <config:device-selector>
         </config:device-selector>"""
 
 
-def _is_mobile_device_backend(backend: types.Backend):
+def _is_mobile_device_backend(backend: aot_types.Backend):
+  """Returns True if the backend is a mobile device backend."""
   target = backend.target
   if backend.id() == qualcomm_backend.QualcommBackend.id():
     target = cast(qnn_target.Target, target)
@@ -54,11 +57,25 @@ def _is_mobile_device_backend(backend: types.Backend):
         qnn_target.SocModel.SA8295,
     ):
       return False
+  if backend.id() == mediatek_backend.MediaTekBackend.id():
+    target = cast(mtk_target.Target, target)
+    # Non Android Phone MTK targets.
+    if target.soc_model in (
+        mtk_target.SocModel.MT8188,
+        mtk_target.SocModel.MT8189,
+        mtk_target.SocModel.MT8171,
+    ):
+      return False
+  if backend.id() == samsung_backend.SamsungBackend.id():
+    target = cast(exynos_target.Target, target)
+    # Non Android Phone Samsung targets.
+    if target.soc_model in (exynos_target.SocModel.E9965,):
+      return False
   return True
 
 
 def _export_model_files_to_ai_pack(
-    compiled_models: types.CompilationResult,
+    compiled_models: aot_types.CompilationResult,
     ai_pack_dir: pathlib.Path,
     ai_pack_name: str,
     litert_model_name: str,
@@ -121,7 +138,7 @@ def _export_model_files_to_ai_pack(
 
 
 def _export_model_files_to_mtk_ai_pack(
-    compiled_models: types.CompilationResult,
+    compiled_models: aot_types.CompilationResult,
     ai_pack_dir: pathlib.Path,
     ai_pack_name: str,
     litert_model_name: str,
@@ -154,7 +171,7 @@ def _export_model_files_to_mtk_ai_pack(
     model.save(model_export_path, export_only=True)
 
 
-def _build_targeting_config(compiled_backends: list[types.Backend]) -> str:
+def _build_targeting_config(compiled_backends: list[aot_types.Backend]) -> str:
   """Builds device-targeting-config in device_targeting_configuration.xml."""
   device_groups = []
   for backend in compiled_backends:
@@ -168,7 +185,7 @@ def _build_targeting_config(compiled_backends: list[types.Backend]) -> str:
   return _DEVICE_TARGETING_CONFIGURATION.format(device_groups=device_groups)
 
 
-def _target_to_ai_pack_info(target: types.Target) -> str | None:
+def _target_to_ai_pack_info(target: aot_types.Target) -> str | None:
   """Builds the device group used in device_targeting_configuration.xml."""
   if isinstance(target, qnn_target.Target):
     group_name = str(target)
@@ -242,7 +259,7 @@ def _process_google_tensor_target(
 
 
 def _write_targeting_config(
-    compiled_models: types.CompilationResult, ai_pack_dir: pathlib.Path
+    compiled_models: aot_types.CompilationResult, ai_pack_dir: pathlib.Path
 ) -> None:
   """Writes device_targeting_configuration.xml for the given compiled models."""
   compiled_backends = [x for x, _ in compiled_models.models_with_backend]
@@ -255,10 +272,11 @@ def _write_targeting_config(
 
 
 def export(
-    compiled_models: types.CompilationResult,
+    compiled_models: aot_types.CompilationResult,
     ai_pack_dir: pathlib.Path | str,
     ai_pack_name: str,
     litert_model_name: str,
+    separate_mtk_ai_pack: bool = False,
 ) -> None:
   """Exports the compiled models to AI pack format.
 
@@ -283,6 +301,7 @@ def export(
     ai_pack_dir: The directory to export the AI pack to.
     ai_pack_name: The name of the AI pack.
     litert_model_name: The name of the model in the litert format.
+    separate_mtk_ai_pack: Whether to separate the MTK AI pack.
   """
   if isinstance(ai_pack_dir, str):
     ai_pack_dir = pathlib.Path(ai_pack_dir)
@@ -294,6 +313,7 @@ def export(
       ai_pack_dir=ai_pack_dir,
       ai_pack_name=ai_pack_name,
       litert_model_name=litert_model_name,
+      separate_mtk_ai_pack=separate_mtk_ai_pack,
   )
   _write_targeting_config(
       compiled_models=compiled_models, ai_pack_dir=ai_pack_dir

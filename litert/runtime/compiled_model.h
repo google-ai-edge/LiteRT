@@ -36,9 +36,7 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 #include "weight_loader/external_weight_loader_litert.h"
-#endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 #if !defined(LITERT_DISABLE_NPU)
 #include "litert/core/cache/compilation_cache.h"
 #endif  // !defined(LITERT_DISABLE_NPU)
@@ -61,19 +59,21 @@ using TfLiteTensorIdentifier = litert::internal::TfLiteTensorIdentifier;
 using TensorIdentifierHash = litert::internal::TensorIdentifierHash;
 using TensorIdentifierEqual = litert::internal::TensorIdentifierEqual;
 
+#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+namespace litert::internal {
+struct FabricRuntimeState;
+}  // namespace litert::internal
+
+struct LiteRtFabricOptionsT;
+#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+
 // The LiteRtCompiledModelT is internal implementation of CompiledModel C++ API.
 class LiteRtCompiledModelT {
  public:
   using Ptr = std::unique_ptr<LiteRtCompiledModelT>;
 
-  explicit LiteRtCompiledModelT(LiteRtEnvironmentT* env) : env_(env) {}
-  ~LiteRtCompiledModelT() {
-    // If the profiler is set, delete it here.
-    if (profiler_ != nullptr) {
-      delete profiler_;
-      profiler_ = nullptr;
-    }
-  };
+  explicit LiteRtCompiledModelT(LiteRtEnvironmentT* env);
+  ~LiteRtCompiledModelT();
 
   // Creates a LiteRtCompiledModelT from a LiteRtModel object.
   // The model is loaded into memory and the caller takes ownership of the
@@ -142,6 +142,11 @@ class LiteRtCompiledModelT {
     return GetOutputTensorShapes(*signature_keys_[signature_index],
                                  output_layouts, update_allocation);
   }
+
+#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+  litert::Expected<LiteRtRankedTensorType> GetRuntimeOutputTensorType(
+      size_t signature_index, size_t output_index);
+#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 
   // Returns the layout for an input tensor identified by signature and index.
   litert::Expected<LiteRtLayout> GetInputTensorLayout(size_t signature_index,
@@ -275,11 +280,13 @@ class LiteRtCompiledModelT {
         delegate;
     // NOLINTBEGIN(*-readability-class-member-naming)
     // Starts collection of HW-specific metrics at a specific level of detail.
-    LiteRtStatus (*StartMetricsCollection)(LiteRtDelegateWrapper delegate,
-                                           int detail_level);
+    LiteRtStatus (*StartMetricsCollection)(
+        LiteRtRuntimeContext* runtime_context, LiteRtDelegateWrapper delegate,
+        int detail_level);
 
     // Stops collection of HW-specific metrics and report the collected metrics.
-    LiteRtStatus (*StopMetricsCollection)(LiteRtDelegateWrapper delegate,
+    LiteRtStatus (*StopMetricsCollection)(LiteRtRuntimeContext* runtime_context,
+                                          LiteRtDelegateWrapper delegate,
                                           LiteRtMetricsT* metrics);
     // NOLINTEND(*-readability-class-member-naming)
   };
@@ -361,18 +368,21 @@ class LiteRtCompiledModelT {
   struct ConstantOutputInfo {
     LiteRtTensorBuffer buffer;
     void* locked_address;
+    int tensor_index;
     const char* tensor_name;
     size_t data_size;
   };
 
   // Registers the TensorBuffer for the given tensor with the SignatureRunner.
+  // The `tensor_index` is the index of the tensor in the interpreter. It is
+  // used when the `runner` is not available.
   // If the TensorBuffer can be directly consumed as CPU Tensors, they'll be
   // locked and use it with CustomAllocation. The locked buffer is kept in the
   // `locked_buffers`. Caller is responsible for unlocking of these buffers.
   // If the TensorBuffer can be consumed by the delegate, then `tensor` will be
   // marked as non-CPU to avoid TFLite from allocating it.
   litert::Expected<void> RegisterBuffer(
-      tflite::SignatureRunner* runner, TfLiteTensor* tensor,
+      tflite::SignatureRunner* runner, TfLiteTensor* tensor, int tensor_index,
       const char* tensor_name, LiteRtTensorBufferT* buffer, bool is_input,
       std::vector<LiteRtTensorBuffer>& locked_buffers,
       std::vector<ConstantOutputInfo>& constant_outputs);
@@ -389,6 +399,34 @@ class LiteRtCompiledModelT {
                                                absl::Span<const int> dims,
                                                bool strict_mode);
 
+#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+  // Initializes the Fabric runtime path when Fabric options are provided.
+  litert::Expected<void> InitializeFabricRuntime(
+      LiteRtOptions options, const LiteRtFabricOptionsT& fabric_options);
+  litert::Expected<const LiteRtTensorBufferRequirementsT*>
+  GetFabricInputBufferRequirements(absl::string_view signature_key,
+                                   size_t input_index);
+
+  litert::Expected<const LiteRtTensorBufferRequirementsT*>
+  GetFabricOutputBufferRequirements(absl::string_view signature_key,
+                                    size_t output_index);
+
+  litert::Expected<LiteRtLayout> GetFabricInputTensorLayout(
+      size_t signature_index, size_t input_index);
+
+  litert::Expected<LiteRtRankedTensorType> GetFabricRuntimeOutputTensorType(
+      absl::string_view signature_key, size_t output_index);
+
+  litert::Expected<void> GetFabricOutputTensorShapes(
+      absl::string_view signature_key,
+      absl::Span<LiteRtLayout>& output_layouts);
+
+  litert::Expected<void> RunWithFabric(
+      absl::string_view signature_key,
+      const std::vector<LiteRtTensorBuffer>& input_buffers,
+      const std::vector<LiteRtTensorBuffer>& output_buffers, bool& async);
+#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+
   // Marks that the given signature needs tensor allocation.
   litert::Expected<void> MarkSignatureNeedsAllocation(
       const tflite::SignatureRunner* runner);
@@ -401,12 +439,10 @@ class LiteRtCompiledModelT {
   litert::Expected<bool> SignatureNeedsAllocation(
       const tflite::SignatureRunner* runner) const;
 
-#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
   // Restores external weights into tensor for CPU execution.
   // This is called before delegates are applied so that XNNPack and other
   // CPU delegates can see the weight data in the tensors.
   litert::Expected<void> RestoreExternalWeightsForCpu();
-#endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 
 #if !defined(LITERT_DISABLE_NPU)
   // Applies the plugins to the model and caches the compiled model if
@@ -418,7 +454,9 @@ class LiteRtCompiledModelT {
 
   // Tries to load the model from the cache. Returns true if the model is loaded
   // from the cache, false otherwise.
-  bool TryLoadingFromCache(uint64_t model_hash);
+  bool TryLoadingFromCache(
+      litert::internal::CompilationCache::CacheKey cache_key,
+      absl::string_view model_name = "");
 #endif  // !defined(LITERT_DISABLE_NPU)
 
   // The environment associated with the compiled model.
@@ -446,6 +484,10 @@ class LiteRtCompiledModelT {
   // a newly serialized flatbuffer owned by the compiled model. If the model is
   // loaded from the cache, the fd belongs to the cached flatbuffer.
   int fb_model_fd_ = -1;
+  size_t fb_model_file_offset_ = 0;
+  // Size of the flatbuffer model. Note that this is only available when
+  // fb_model_fd_ refers to a file.
+  size_t fb_model_size_ = 0;
 
 #if !defined(LITERT_DISABLE_NPU)
   // The compilation cache used to store the compiled model. If the model is
@@ -487,10 +529,16 @@ class LiteRtCompiledModelT {
   // `SetSchedulingInfo`.
   std::string model_debug_feature_id_;
 
-#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
+#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+  // Fabric runtime path state (non-null when CompiledModel runs Fabric).
+  std::unique_ptr<litert::internal::FabricRuntimeState> fabric_runtime_;
+#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+
   // The loader that manages external weight metadata and bindings.
   std::unique_ptr<weight_loader::WeightLoader> weight_loader_;
-#endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
+
+  // Indicates whether this model actually uses external weights.
+  bool has_external_weights_ = false;
 
   // File system hints about the originating model location.
   std::optional<std::string> model_directory_;
@@ -511,6 +559,9 @@ class LiteRtCompiledModelT {
   // Cancellation support
   bool (*check_cancelled_func_)(void*) = nullptr;
   absl::AnyInvocable<bool()> check_cancelled_func_cpp_;
+
+  // Indicates whether the model is fully delegated on GPU or NPU.
+  bool non_cpu_fully_delegated_ = false;
 };
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_

@@ -45,7 +45,8 @@ PYBIND11_MODULE(_pywrap_litert_tensor_buffer_wrapper, m) {
       py::arg("py_data"), py::arg("dtype"), py::arg("num_elements"));
 
   // Writes data to an existing TensorBuffer.
-  // The data is copied from the provided Python list into the TensorBuffer.
+  // The data is copied from the provided Python list or contiguous buffer into
+  // the TensorBuffer.
   m.def("WriteTensor",
         [](py::object capsule, py::object data_list, const std::string& dtype) {
           PyObject* res = TensorBufferWrapper::WriteTensor(
@@ -53,7 +54,7 @@ PYBIND11_MODULE(_pywrap_litert_tensor_buffer_wrapper, m) {
           if (!res) {
             throw py::error_already_set();
           }
-          // No return value needed
+          Py_DECREF(res);
         });
 
   // Reads data from a TensorBuffer into a Python list.
@@ -68,13 +69,41 @@ PYBIND11_MODULE(_pywrap_litert_tensor_buffer_wrapper, m) {
           return py::reinterpret_steal<py::object>(res);
         });
 
+  m.def("WriteTensorBuffer",
+        [](py::object capsule, py::object py_data, const std::string& dtype) {
+          PyObject* res = TensorBufferWrapper::WriteTensorBuffer(
+              capsule.ptr(), py_data.ptr(), dtype);
+          if (!res) {
+            throw py::error_already_set();
+          }
+          Py_DECREF(res);
+        });
+
+  m.def("ReadTensorToBuffer",
+        [](py::object capsule, py::object py_data, const std::string& dtype) {
+          PyObject* res = TensorBufferWrapper::ReadTensorToBuffer(
+              capsule.ptr(), py_data.ptr(), dtype);
+          if (!res) {
+            throw py::error_already_set();
+          }
+          Py_DECREF(res);
+        });
+
+  m.def("GetTensorDetails", [](py::object capsule) {
+    PyObject* res = TensorBufferWrapper::GetTensorDetails(capsule.ptr());
+    if (!res) {
+      throw py::error_already_set();
+    }
+    return py::reinterpret_steal<py::object>(res);
+  });
+
   // Destroys a TensorBuffer and releases associated resources.
   // This should be called when the TensorBuffer is no longer needed.
   m.def("DestroyTensorBuffer", [](py::object capsule) {
-    if (PyObject* res = TensorBufferWrapper::DestroyTensorBuffer(capsule.ptr());
-        !res) {
+    PyObject* res = TensorBufferWrapper::DestroyTensorBuffer(capsule.ptr());
+    if (!res) {
       throw py::error_already_set();
     }
-    // No return value needed
+    Py_DECREF(res);
   });
 }

@@ -1160,6 +1160,7 @@ cc_library(
         "transforms/generated_lower_static_tensor_list.inc",
         "transforms/generated_prepare_tf.inc",
         "transforms/get_arithmetic_count.cc",
+        "transforms/gpu_compatibility.cc",
         "transforms/if_outline.cc",
         "transforms/insert_call_once_op.cc",
         "transforms/legalize_hashtables.cc",
@@ -1174,6 +1175,7 @@ cc_library(
         "transforms/prepare_composite_functions_tf.cc",
         "transforms/prepare_tf.cc",
         "transforms/raise_custom_ops.cc",
+        "transforms/rank_reduction.cc",
         "transforms/reduce_type_precision.cc",
         "transforms/reduce_while_operands.cc",
         "transforms/runtime_verify.cc",
@@ -2017,7 +2019,6 @@ cc_library(
         ":converter_flags_proto_cc",
         ":converter_pass_options_setter",
         ":downcast_x64",
-        ":elements_attr_roundtrip_pass",
         ":fake_quant_utils",
         ":optimize_broadcast_like_pass",
         ":pass",
@@ -2167,7 +2168,10 @@ cc_library(
     name = "string_utils",
     srcs = ["utils/string_utils.cc"],
     hdrs = ["utils/string_utils.h"],
-    visibility = ["//tflite:__pkg__"],
+    visibility = [
+        "//litert/compiler/mlir:__pkg__",
+        "//tflite:__pkg__",
+    ],
 )
 
 exports_files(srcs = ["allocation.h"])
@@ -2198,7 +2202,10 @@ exports_files(srcs = ["utils/control_edges.h"])
 cc_library(
     name = "control_edges",
     hdrs = ["utils/control_edges.h"],
-    visibility = ["//tflite/converter/experimental/remat:__pkg__"],
+    visibility = [
+        "//litert/compiler/mlir:__pkg__",
+        "//tflite/converter/experimental/remat:__pkg__",
+    ],
 )
 
 tf_cc_test(

@@ -23,6 +23,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_dispatch_delegate.h"
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/cc/internal/litert_dispatch_delegate.h"
@@ -137,10 +138,8 @@ DispatchDelegate::CreateDelegateKernelInterface() {
       std::move(dispatch_graph_name), environment_options_, options_,
       device_context_);
   if (kernel) {
-    auto* kernel_ptr =
-        dynamic_cast<typename litert::internal::DispatchDelegateKernel*>(
-            kernel->get());
-    kernels_.push_back(kernel_ptr);
+    kernels_.push_back(kernel->get());
+    // The compiler handles upcasting to the function return type.
     return std::move(*kernel);
   } else {
     LITERT_FATAL("Failed to create a dispatch delegate kernel: %s",
@@ -171,7 +170,8 @@ litert::Expected<LiteRtMetricsT> DispatchDelegate::StopMetricsCollection() {
 }
 
 litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
-  LITERT_RETURN_IF_ERROR(LiteRtDispatchInitialize(env_, options_));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtDispatchInitialize(LrtGetRuntimeContext(), env_, options_));
   // Check if Library needed by dispatch api is compatible.
   LITERT_RETURN_IF_ERROR(LiteRtDispatchCheckRuntimeCompatibility(
       LiteRtApiVersion{LITERT_API_VERSION_MAJOR, LITERT_API_VERSION_MINOR,
@@ -209,7 +209,8 @@ litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
                         capabilities));
   }
 
-  LITERT_RETURN_IF_ERROR(LiteRtDispatchDeviceContextCreate(&device_context_));
+  LITERT_RETURN_IF_ERROR(LiteRtDispatchDeviceContextCreate(
+      LrtGetRuntimeContext(), options_, &device_context_));
 
   return {};
 }

@@ -28,18 +28,40 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
+#include "tflite/converter/allocation.h"
+#include "tflite/stderr_reporter.h"
 
 // Tests for CC Wrapper classes around public C api.
 
 namespace litert {
 
 namespace {
+
+// copybara:uncomment_begin(google_only)
+// TEST(CcExtendedModelTest, CreateFromMemoryAllocation) {
+//   auto runtime = testing::MakeRuntimeFromTestFile("one_mul.tflite");
+//   ASSERT_TRUE(runtime);
+// 
+//   const auto model_buffer = (*runtime)->Flatbuffer().Buf();
+//   auto allocation = std::make_unique<tflite::MemoryAllocation>(
+//       model_buffer.Data(), model_buffer.Size(), tflite::DefaultErrorReporter());
+// 
+//   auto model = ExtendedModel::CreateFromAllocation(std::move(allocation));
+//   ASSERT_TRUE(model);
+// 
+//   auto subgraph = model->MainSubgraph();
+//   ASSERT_TRUE(subgraph);
+//   EXPECT_EQ(subgraph->Inputs().size(), 2);
+//   EXPECT_EQ(subgraph->Outputs().size(), 1);
+// }
+// copybara:uncomment_end
 
 //===----------------------------------------------------------------------===//
 //                                CC Op                                       //
@@ -65,13 +87,15 @@ TEST(CcOpTest, SimpleSupportedOp) {
   ASSERT_TRUE(input1.HasValue());
   auto input2 = op.Input(2);
   ASSERT_FALSE(input2.HasValue());
-  EXPECT_EQ(input2.Error().Status(), kLiteRtStatusErrorIndexOOB);
+  EXPECT_EQ(ToLiteRtStatus(input2.Error().StatusCC()),
+            kLiteRtStatusErrorIndexOOB);
 
   auto output0 = op.Output(0);
   ASSERT_TRUE(output0.HasValue());
   auto output1 = op.Output(1);
   ASSERT_FALSE(output1.HasValue());
-  EXPECT_EQ(output1.Error().Status(), kLiteRtStatusErrorIndexOOB);
+  EXPECT_EQ(ToLiteRtStatus(output1.Error().StatusCC()),
+            kLiteRtStatusErrorIndexOOB);
 }
 
 TEST(CcOpTest, CustomCode) {

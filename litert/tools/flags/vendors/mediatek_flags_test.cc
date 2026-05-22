@@ -20,7 +20,7 @@
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/marshalling.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/options/litert_mediatek_options.h"
+
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 
@@ -29,7 +29,7 @@ namespace {
 
 TEST(NeronSDKVersionTypeFlagTest, Malformed) {
   std::string error;
-  LiteRtMediatekOptionsNeronSDKVersionType value;
+  MediatekOptions::NeronSDKVersion value;
 
   EXPECT_FALSE(absl::ParseFlag("wenxin", &value, &error));
   EXPECT_FALSE(absl::ParseFlag("+", &value, &error));
@@ -38,12 +38,12 @@ TEST(NeronSDKVersionTypeFlagTest, Malformed) {
 
 TEST(NeronSDKVersionTypeFlagTest, Parse) {
   std::string error;
-  LiteRtMediatekOptionsNeronSDKVersionType value;
+  MediatekOptions::NeronSDKVersion value;
 
   {
     static constexpr absl::string_view kVersion = "version8";
-    static constexpr LiteRtMediatekOptionsNeronSDKVersionType kVersionEnum =
-        kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8;
+    static constexpr MediatekOptions::NeronSDKVersion kVersionEnum =
+        MediatekOptions::NeronSDKVersion::kVersion8;
     EXPECT_TRUE(absl::ParseFlag(kVersion, &value, &error));
     EXPECT_EQ(value, kVersionEnum);
     EXPECT_EQ(kVersion, absl::UnparseFlag(value));
@@ -51,8 +51,8 @@ TEST(NeronSDKVersionTypeFlagTest, Parse) {
 
   {
     static constexpr absl::string_view kVersion = "version7";
-    static constexpr LiteRtMediatekOptionsNeronSDKVersionType kLevelEnum =
-        kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7;
+    static constexpr MediatekOptions::NeronSDKVersion kLevelEnum =
+        MediatekOptions::NeronSDKVersion::kVersion7;
     EXPECT_TRUE(absl::ParseFlag(kVersion, &value, &error));
     EXPECT_EQ(value, kLevelEnum);
     EXPECT_EQ(kVersion, absl::UnparseFlag(value));
@@ -60,8 +60,8 @@ TEST(NeronSDKVersionTypeFlagTest, Parse) {
 
   {
     static constexpr absl::string_view kVersion = "version9";
-    static constexpr LiteRtMediatekOptionsNeronSDKVersionType kLevelEnum =
-        kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9;
+    static constexpr MediatekOptions::NeronSDKVersion kLevelEnum =
+        MediatekOptions::NeronSDKVersion::kVersion9;
     EXPECT_TRUE(absl::ParseFlag(kVersion, &value, &error));
     EXPECT_EQ(value, kLevelEnum);
     EXPECT_EQ(kVersion, absl::UnparseFlag(value));
@@ -73,23 +73,23 @@ TEST(UpdateMediatekOptionsFromFlagsTest, DefaultValue) {
   ASSERT_TRUE(options.HasValue());
   ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetNeronSDKVersionType(),
-            kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8);
+            MediatekOptions::NeronSDKVersion::kVersion8);
   EXPECT_FALSE(options.Value().GetEnableGemmaCompilerOptimizations());
   EXPECT_EQ(
       options.Value().GetPerformanceMode(),
-      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed);
+      MediatekOptions::PerformanceMode::kSustainedSpeed);
   EXPECT_EQ(options.Value().GetMediatekDlaDir(), "");
 }
 
 TEST(UpdateMediatekOptionsFromFlagsTest, SetFlagToVersion7) {
   absl::SetFlag(&FLAGS_mediatek_sdk_version_type,
-                kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7);
+                MediatekOptions::NeronSDKVersion::kVersion7);
   Expected<MediatekOptions> options = MediatekOptions::Create();
 
   ASSERT_TRUE(options.HasValue());
   ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetNeronSDKVersionType(),
-            kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7);
+            MediatekOptions::NeronSDKVersion::kVersion7);
 }
 
 TEST(UpdateMediatekOptionsFromFlagsTest,
@@ -117,17 +117,17 @@ TEST(UpdateMediatekOptionsFromFlagsTest,
 TEST(UpdateMediatekOptionsFromFlagsTest, SetPerformanceMode) {
   absl::SetFlag(
       &FLAGS_mediatek_performance_mode_type,
-      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferLowPower);
+      MediatekOptions::PerformanceMode::kLowPower);
   Expected<MediatekOptions> options = MediatekOptions::Create();
 
   ASSERT_TRUE(options.HasValue());
   ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetPerformanceMode(),
-            kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferLowPower);
+            MediatekOptions::PerformanceMode::kLowPower);
   // Reset flag to default to avoid affecting other tests
   absl::SetFlag(
       &FLAGS_mediatek_performance_mode_type,
-      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed);
+      MediatekOptions::PerformanceMode::kSustainedSpeed);
 }
 
 TEST(UpdateMediatekOptionsFromFlagsTest, SetEnableL1CacheOptimizationsToTrue) {
@@ -172,16 +172,16 @@ TEST(UpdateMediatekOptionsFromFlagsTest, SetDisableDlaDirRemovalToFalse) {
 
 TEST(UpdateMediatekOptionsFromFlagsTest, SetOptimizationHint) {
   absl::SetFlag(&FLAGS_mediatek_optimization_hint,
-                kLiteRtMediatekNeuronAdapterOptimizationHintLowLatency);
+                MediatekOptions::OptimizationHint::kLowLatency);
   Expected<MediatekOptions> options = MediatekOptions::Create();
 
   ASSERT_TRUE(options.HasValue());
   ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetOptimizationHint(),
-            kLiteRtMediatekNeuronAdapterOptimizationHintLowLatency);
+            MediatekOptions::OptimizationHint::kLowLatency);
   // Reset flag to default to avoid affecting other tests
   absl::SetFlag(&FLAGS_mediatek_optimization_hint,
-                kLiteRtMediatekNeuronAdapterOptimizationHintNormal);
+                MediatekOptions::OptimizationHint::kNormal);
 }
 
 TEST(UpdateMediatekOptionsFromFlagsTest, SetMediatekDlaDir) {
@@ -206,7 +206,7 @@ TEST(UpdateMediatekOptionsFromFlagsTest, SetMediatekDlaDirMalformed) {
 
 TEST(NeuronAdapterPerformanceModeFlagTest, Malformed) {
   std::string error;
-  LiteRtMediatekNeuronAdapterPerformanceMode value;
+  MediatekOptions::PerformanceMode value;
 
   EXPECT_FALSE(absl::ParseFlag("not", &value, &error));
   EXPECT_FALSE(absl::ParseFlag("a real", &value, &error));
@@ -215,35 +215,35 @@ TEST(NeuronAdapterPerformanceModeFlagTest, Malformed) {
 
 TEST(NeuronAdapterPerformanceModeFlagTest, Parse) {
   std::string error;
-  LiteRtMediatekNeuronAdapterPerformanceMode value;
+  MediatekOptions::PerformanceMode value;
   {
     static constexpr absl::string_view kMode = "low_power";
-    static constexpr LiteRtMediatekNeuronAdapterPerformanceMode kModeEnum =
-        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferLowPower;
+    static constexpr MediatekOptions::PerformanceMode kModeEnum =
+        MediatekOptions::PerformanceMode::kLowPower;
     EXPECT_TRUE(absl::ParseFlag(kMode, &value, &error));
     EXPECT_EQ(value, kModeEnum);
     EXPECT_EQ(kMode, absl::UnparseFlag(value));
   }
   {
     static constexpr absl::string_view kMode = "fast_single_answer";
-    static constexpr LiteRtMediatekNeuronAdapterPerformanceMode kModeEnum =
-        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer;
+    static constexpr MediatekOptions::PerformanceMode kModeEnum =
+        MediatekOptions::PerformanceMode::kFastSingleAnswer;
     EXPECT_TRUE(absl::ParseFlag(kMode, &value, &error));
     EXPECT_EQ(value, kModeEnum);
     EXPECT_EQ(kMode, absl::UnparseFlag(value));
   }
   {
     static constexpr absl::string_view kMode = "sustained_speed";
-    static constexpr LiteRtMediatekNeuronAdapterPerformanceMode kModeEnum =
-        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed;
+    static constexpr MediatekOptions::PerformanceMode kModeEnum =
+        MediatekOptions::PerformanceMode::kSustainedSpeed;
     EXPECT_TRUE(absl::ParseFlag(kMode, &value, &error));
     EXPECT_EQ(value, kModeEnum);
     EXPECT_EQ(kMode, absl::UnparseFlag(value));
   }
   {
     static constexpr absl::string_view kMode = "turbo_boost";
-    static constexpr LiteRtMediatekNeuronAdapterPerformanceMode kModeEnum =
-        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferTurboBoost;
+    static constexpr MediatekOptions::PerformanceMode kModeEnum =
+        MediatekOptions::PerformanceMode::kTurboBoost;
     EXPECT_TRUE(absl::ParseFlag(kMode, &value, &error));
     EXPECT_EQ(value, kModeEnum);
     EXPECT_EQ(kMode, absl::UnparseFlag(value));
@@ -252,7 +252,7 @@ TEST(NeuronAdapterPerformanceModeFlagTest, Parse) {
 
 TEST(NeuronAdapterOptimizationHintFlagTest, Malformed) {
   std::string error;
-  LiteRtMediatekNeuronAdapterOptimizationHint value;
+  MediatekOptions::OptimizationHint value;
 
   EXPECT_FALSE(absl::ParseFlag("not", &value, &error));
   EXPECT_FALSE(absl::ParseFlag("a real", &value, &error));
@@ -261,35 +261,35 @@ TEST(NeuronAdapterOptimizationHintFlagTest, Malformed) {
 
 TEST(NeuronAdapterOptimizationHintFlagTest, Parse) {
   std::string error;
-  LiteRtMediatekNeuronAdapterOptimizationHint value;
+  MediatekOptions::OptimizationHint value;
   {
     static constexpr absl::string_view kMode = "normal";
-    static constexpr LiteRtMediatekNeuronAdapterOptimizationHint kModeEnum =
-        kLiteRtMediatekNeuronAdapterOptimizationHintNormal;
+    static constexpr MediatekOptions::OptimizationHint kModeEnum =
+        MediatekOptions::OptimizationHint::kNormal;
     EXPECT_TRUE(absl::ParseFlag(kMode, &value, &error));
     EXPECT_EQ(value, kModeEnum);
     EXPECT_EQ(kMode, absl::UnparseFlag(value));
   }
   {
     static constexpr absl::string_view kMode = "low_latency";
-    static constexpr LiteRtMediatekNeuronAdapterOptimizationHint kModeEnum =
-        kLiteRtMediatekNeuronAdapterOptimizationHintLowLatency;
+    static constexpr MediatekOptions::OptimizationHint kModeEnum =
+        MediatekOptions::OptimizationHint::kLowLatency;
     EXPECT_TRUE(absl::ParseFlag(kMode, &value, &error));
     EXPECT_EQ(value, kModeEnum);
     EXPECT_EQ(kMode, absl::UnparseFlag(value));
   }
   {
     static constexpr absl::string_view kMode = "deep_fusion";
-    static constexpr LiteRtMediatekNeuronAdapterOptimizationHint kModeEnum =
-        kLiteRtMediatekNeuronAdapterOptimizationHintDeepFusion;
+    static constexpr MediatekOptions::OptimizationHint kModeEnum =
+        MediatekOptions::OptimizationHint::kDeepFusion;
     EXPECT_TRUE(absl::ParseFlag(kMode, &value, &error));
     EXPECT_EQ(value, kModeEnum);
     EXPECT_EQ(kMode, absl::UnparseFlag(value));
   }
   {
     static constexpr absl::string_view kMode = "batch_processing";
-    static constexpr LiteRtMediatekNeuronAdapterOptimizationHint kModeEnum =
-        kLiteRtMediatekNeuronAdapterOptimizationHintBatchProcessing;
+    static constexpr MediatekOptions::OptimizationHint kModeEnum =
+        MediatekOptions::OptimizationHint::kBatchProcessing;
     EXPECT_TRUE(absl::ParseFlag(kMode, &value, &error));
     EXPECT_EQ(value, kModeEnum);
     EXPECT_EQ(kMode, absl::UnparseFlag(value));

@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_OPENVINO_SHARED_CORE_H_
 
 #include <memory>
+#include <string>
 
 #include "openvino/runtime/core.hpp"
 
@@ -31,11 +32,15 @@ class OpenVINOSharedCore {
   // Return the core shared_pointer.
   std::shared_ptr<ov::Core> getCore() const { return core_; }
 
+  void SetDevice(const std::string device) { device_ = device; }
+  std::string GetDevice() { return device_; }
+
  private:
   OpenVINOSharedCore();
   ~OpenVINOSharedCore();
 
   std::shared_ptr<ov::Core> core_;
+  std::string device_ = "NPU";  // Default device
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_OPENVINO_SHARED_CORE_H_

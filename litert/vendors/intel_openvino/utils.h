@@ -4,9 +4,7 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_UTILS_H_
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_UTILS_H_
 #include "openvino/core/type/element_type.hpp"
-#include "openvino/frontend/tensorflow_lite/decoder.hpp"
-#include "litert/c/litert_model.h"
-#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/c/litert_model_types.h"
 
 namespace litert {
 namespace openvino {
@@ -17,6 +15,11 @@ static const ov::element::Type MapLiteTypeToOV(
   switch (element_type) {
     case kLiteRtElementTypeBool:
       ov_type = ov::element::boolean;
+      break;
+    case kLiteRtElementTypeInt2:
+      // i2 weights are converted to u2 in graph_iterator before reaching
+      // OpenVINO, so map directly to u2 here as well.
+      ov_type = ov::element::u2;
       break;
     case kLiteRtElementTypeInt4:
       ov_type = ov::element::i4;
@@ -61,21 +64,6 @@ static const ov::element::Type MapLiteTypeToOV(
       ov_type = ov::element::dynamic;
   }
   return ov_type;
-}
-
-static const LiteRtStatus GetOVTensorShape(const litert::Tensor& litert_tensor,
-                                           std::vector<int64_t>& ov_shape_vec) {
-  if (litert_tensor.TypeId() != kLiteRtRankedTensorType)
-    return kLiteRtStatusErrorInvalidArgument;
-
-  LITERT_ASSIGN_OR_RETURN(RankedTensorType ranked_tensor_type,
-                          litert_tensor.RankedTensorType());
-
-  const auto tensor_layout = ranked_tensor_type.Layout();
-  ov_shape_vec.resize(tensor_layout.Rank());
-  for (int i = 0; i < ov_shape_vec.size(); i++)
-    ov_shape_vec[i] = tensor_layout.Dimensions()[i];
-  return kLiteRtStatusOk;
 }
 
 }  // namespace openvino

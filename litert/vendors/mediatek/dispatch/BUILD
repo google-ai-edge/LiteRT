@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dispatch_api")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
@@ -21,7 +22,7 @@ package(
     default_visibility = ["//litert:litert_internal_users"],
 )
 
-litert_dynamic_lib(
+litert_dispatch_api(
     name = "dispatch_api",
     srcs = [
         "dispatch_api.cc",
@@ -52,23 +53,51 @@ litert_dynamic_lib(
         "nobuilder",
         "notap",
     ],
-    visibility = ["//litert:__subpackages__"],
+    visibility = [
+        "//litert:__subpackages__",
+        "//litert:litert_friends",
+    ],
     deps = [
-        "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_absl//absl/strings:str_format",
-        "@neuro_pilot//:v8_latest_host_headers",
-        "//litert/c:litert_environment_options",
-        # Needed to build in OSS
-        "//litert/core/util:tensor_type_util",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_header",
+        "//litert/c:litert_environment_options_header",
+        "//litert/c:litert_event_header",
+        "//litert/c:litert_event_type",
+        "//litert/c:litert_model_header",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_opaque_options_header",
+        "//litert/c:litert_options_header",
+        "//litert/c:litert_tensor_buffer_header",
+        "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_logging_helper_with_runtime_context",
+        "//litert/c/internal:litert_runtime_context_header",
         "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_context_wrapper",
+        "//litert/cc/internal:litert_opaque_options_wrapper",
+        "//litert/cc/internal:litert_options_wrapper",
         "//litert/vendors/c:litert_dispatch_c_api",
-        "//litert/vendors/cc:options_helper",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "//litert/vendors/mediatek/schema:mediatek_litert_schema",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@neuro_pilot//:v8_latest_host_headers",
+    ],
+)
+
+sh_test(
+    name = "mediatek_dispatch_so_symbol_test",
+    srcs = ["//litert/test:litert_c_api_dependency_test.sh"],
+    args = [
+        "LiteRtDispatchGetApi",
+        "$(location :dispatch_api_so)",
+    ],
+    data = [
+        ":dispatch_api_so",
     ],
 )
 
@@ -81,7 +110,9 @@ litert_device_test(
         "//litert/test:testdata/simple_model_npu.tflite",
     ],
     deps = [
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_runtime_context_testonly",
         "//litert/cc:litert_any",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_environment_testonly",

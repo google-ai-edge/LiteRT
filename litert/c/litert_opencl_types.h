@@ -17,32 +17,26 @@
 
 #include <stdint.h>
 
-#if LITERT_HAS_OPENCL_SUPPORT
-#include <CL/cl.h>
-#include <CL/cl_platform.h>
-#endif
-
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
 
 /**
- * Define LiteRT aliases for OpenCL types `cl_mem` and `cl_event`,
- * but ensure that they are always defined, even if OpenCL isn't supported.
+ * Define LiteRT aliases for OpenCL types without requiring downstream users to
+ * include the OpenCL SDK headers just to compile LiteRT public headers.
+ *
+ * The OpenCL C API models both `cl_mem` and `cl_event` as opaque pointers to
+ * implementation-defined structs. Forward-declaring the same struct tags keeps
+ * LiteRT's public ABI compatible with code that later includes `CL/cl.h`,
+ * while avoiding a transitive dependency on the OpenCL headers for consumers
+ * that never bind directly to raw OpenCL objects.
  */
-#if LITERT_HAS_OPENCL_SUPPORT
-typedef cl_mem LiteRtClMem;
-typedef cl_event LiteRtClEvent;
-typedef cl_int LiteRtClInt;
-#define LITE_RT_CL_SUCCESS CL_SUCCESS
-#define LITE_RT_CL_COMPLETE CL_COMPLETE
-#else
-typedef struct LiteRtClMemStruct* LiteRtClMem;
-typedef struct LiteRtClEventStruct* LiteRtClEvent;
+typedef struct _cl_mem* LiteRtClMem;
+typedef struct _cl_event* LiteRtClEvent;
 typedef int32_t LiteRtClInt;
+
 #define LITE_RT_CL_SUCCESS 0
 #define LITE_RT_CL_COMPLETE 0x0
-#endif
 
 #ifdef __cplusplus
 }  // extern "C"

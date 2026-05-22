@@ -15,6 +15,24 @@
 # Docker image to provide a hermetic build environment for Litert.
 FROM ubuntu:24.04
 
+# Proxy build arguments (passed from host environment via --build-arg).
+# When the host has no proxy configured these remain empty and all network
+# access goes direct. Both lower-case and upper-case variants are forwarded
+# because different tools honour different conventions (e.g. curl reads
+# http_proxy while some Java libraries read HTTP_PROXY).
+ARG http_proxy
+ARG https_proxy
+ARG no_proxy
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ENV http_proxy=${http_proxy} \
+    https_proxy=${https_proxy} \
+    no_proxy=${no_proxy} \
+    HTTP_PROXY=${HTTP_PROXY} \
+    HTTPS_PROXY=${HTTPS_PROXY} \
+    NO_PROXY=${NO_PROXY}
+
 # Avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -34,6 +52,7 @@ RUN apt-get update && apt-get install -y \
     clang-18 \
     libc++-dev \
     libc++abi-dev \
+    patchelf \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -63,7 +82,6 @@ RUN mkdir -p /root/.android
 ENV ANDROID_SDK_FILENAME=commandlinetools-linux-13114758_latest.zip
 ENV ANDROID_SDK_URL=https://dl.google.com/android/repository/${ANDROID_SDK_FILENAME}
 ENV ANDROID_API_LEVEL=34
-ENV ANDROID_NDK_API_LEVEL=28
 ENV ANDROID_SDK_API_LEVEL=34
 ENV ANDROID_BUILD_TOOLS_VERSION=34.0.0
 ENV ANDROID_SDK_HOME=${ANDROID_DEV_HOME}/sdk
@@ -76,6 +94,8 @@ RUN cd ${ANDROID_DEV_HOME} && \
     rm ${ANDROID_SDK_FILENAME}
 
 # Install Android NDK
+ENV ANDROID_NDK_API_LEVEL=28
+ENV ANDROID_NDK_VERSION=28
 ENV ANDROID_NDK_FILENAME=android-ndk-r28b-linux.zip
 ENV ANDROID_NDK_URL=https://dl.google.com/android/repository/${ANDROID_NDK_FILENAME}
 ENV ANDROID_NDK_HOME=${ANDROID_DEV_HOME}/ndk
@@ -112,9 +132,6 @@ ENV USE_BAZEL_VERSION=7.4.1
 ENV CLANG_COMPILER_PATH=/usr/lib/llvm-18/bin/clang
 ENV TF_NEED_CLANG=1
 
-# Set NDK version for configuration
-ENV ANDROID_NDK_VERSION=25
-
 RUN echo y | ${ANDROID_SDK_HOME}/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_SDK_HOME} "build-tools;${ANDROID_BUILD_TOOLS_VERSION}" "platforms;android-${ANDROID_SDK_API_LEVEL}" "platform-tools"
 # Set up work directory
 WORKDIR /litert_build
@@ -137,22 +154,16 @@ exec "$@"\n\
 # Set the entrypoint
 ENTRYPOINT ["/entrypoint.sh"]
 
-# Immediately execute a build.
-# Add a wrapper script to optionally disable SVE for Bazel's host JVM on AArch64
-RUN echo '#!/bin/bash\n\
-set -euo pipefail\n\
-\n\
-./docker_build/verify_android_env.sh\n\
-\n\
-EXTRA_STARTUP=""\n\
-arch=$(uname -m || echo unknown)\n\
-if [ "${DISABLE_SVE_FOR_BAZEL:-}" = "1" ] && { [ "$arch" = "aarch64" ] || [ "$arch" = "arm64" ]; }; then\n\
-  EXTRA_STARTUP="--host_jvm_args=-XX:UseSVE=0"\n\
-  echo "[run_build] AArch64 detected; disabling SVE for Bazel host JVM" >&2\n\
-fi\n\
-\
-bazel ${EXTRA_STARTUP} build //litert/runtime:compiled_model\n\
-' > /run_build.sh && chmod +x /run_build.sh
+# Default build script.
+# Provides proxy-to-JVM forwarding, optional SVE workaround, and a single
+# default Bazel target.  Individual build_*.sh scripts (build_with_docker.sh,
+# build_wheel_with_docker.sh) override the CMD to run their own targets while
+# reusing the same proxy/SVE helpers defined inline.
+COPY setup_bazel_env.sh /setup_bazel_env.sh
+COPY run_build.sh /run_build.sh
+RUN chmod +x /setup_bazel_env.sh /run_build.sh
 
-# Default command runs the wrapper
+# Default command — builds //litert/runtime:compiled_model.
+# Override with `docker run ... litert_build_env bash -c '...'` or by passing
+# a custom CMD in build_with_docker.sh / build_wheel_with_docker.sh.
 CMD ["/run_build.sh"]

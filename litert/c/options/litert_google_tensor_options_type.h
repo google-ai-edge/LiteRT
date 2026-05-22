@@ -17,18 +17,35 @@
 
 // float_truncation_type -------------------------------------------------------
 
-typedef enum LiteRtGoogleTensorOptionsTruncationType {
+typedef enum LrtGoogleTensorOptionsTruncationType {
   kLiteRtGoogleTensorFloatTruncationTypeAuto = 0,
   kLiteRtGoogleTensorFloatTruncationTypeNoTruncation = 1,
   kLiteRtGoogleTensorFloatTruncationTypeBfloat16 = 2,
   kLiteRtGoogleTensorFloatTruncationTypeHalf = 3,
-} LiteRtGoogleTensorOptionsTruncationType;
+} LrtGoogleTensorOptionsTruncationType;
 
-typedef enum LiteRtGoogleTensorOptionsShardingIntensity {
+typedef enum LrtGoogleTensorOptionsShardingIntensity {
   kLiteRtGoogleTensorShardingIntensityMinimal = 0,
   kLiteRtGoogleTensorShardingIntensityModerate = 1,
   kLiteRtGoogleTensorShardingIntensityExtensive = 2,
   kLiteRtGoogleTensorShardingIntensityMaximum = 3,
-} LiteRtGoogleTensorOptionsShardingIntensity;
+} LrtGoogleTensorOptionsShardingIntensity;
+
+// Enum for Google Tensor performance mode.
+typedef enum LiteRtGoogleTensorOptionsPerformanceMode {
+  kLiteRtGoogleTensorOptionsPerformanceModeExtremePowerSaver =
+      0,  // Maximum power saving, lowest performance.
+  kLiteRtGoogleTensorOptionsPerformanceModePowerSaver =
+      1,  // Balanced for background tasks with power efficiency.
+  kLiteRtGoogleTensorOptionsPerformanceModeBalanced =
+      2,  // Default state providing a mix of speed and efficiency.
+  kLiteRtGoogleTensorOptionsPerformanceModeHighPerformance =
+      3,  // High clock speeds for low-latency interactive tasks.
+  kLiteRtGoogleTensorOptionsPerformanceModeSustainedPerformance =
+      4,  // Optimized for long-running heavy workloads to avoid thermal
+          // throttling.
+  kLiteRtGoogleTensorOptionsPerformanceModeBurst =
+      5  // Absolute maximum performance for short durations.
+} LiteRtGoogleTensorOptionsPerformanceMode;
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_GOOGLE_TENSOR_OPTIONS_TYPE_H_

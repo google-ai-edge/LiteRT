@@ -1,0 +1,4 @@
+---
+Checks: "-*,clang-diagnostic-*,clang-analyzer-*"
+WarningsAsErrors: "*"
+FormatStyle: google

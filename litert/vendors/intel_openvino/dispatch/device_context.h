@@ -17,8 +17,10 @@
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <unordered_map>
+#include <utility>
 
 #include "openvino/runtime/tensor.hpp"
 #include "litert/c/litert_common.h"
@@ -29,36 +31,31 @@
 #include "openvino/runtime/core.hpp"
 #include "openvino/runtime/intel_npu/level_zero/level_zero.hpp"
 #include "openvino/runtime/remote_context.hpp"
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
-
-#if defined(LITERT_WINDOWS_OS)
 #include "litert/vendors/intel_openvino/dispatch/openvino_shared_core.h"
-#endif  // LITERT_WINDOWS_OS
 
 class LiteRtDispatchDeviceContextT {
  public:
   using Ptr = std::unique_ptr<LiteRtDispatchDeviceContextT>;
 
   ~LiteRtDispatchDeviceContextT() = default;
-  static litert::Expected<Ptr> Create();
+  static litert::Expected<Ptr> Create(
+      const LiteRtRuntimeContext* runtime_context);
   litert::Expected<LiteRtTensorBufferHandle> RegisterTensorBuffer(
       LiteRtTensorBuffer tensor_buffer);
 
   litert::Expected<void> UnregisterTensorBuffer(
       LiteRtTensorBufferHandle tensor_buffer_handle);
 
-#if defined(LITERT_WINDOWS_OS)
-  litert::Expected<ov::intel_npu::level_zero::ZeroBufferTensor> getOvTensor(
-#else
-  litert::Expected<ov::Tensor> getOvTensor(
-#endif
+  litert::Expected<ov::Tensor> getOVTensor(
       const LiteRtTensorBufferHandle& handle) const {
     auto it = tensor_handle_map_.find(handle);
     if (it != tensor_handle_map_.end()) {
-      return it->second;
+      return it->second.tensor;
     } else {
       return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                 "Failed to get Remote Tensor");
@@ -67,25 +64,55 @@ class LiteRtDispatchDeviceContextT {
 
   // Return the core shared_pointer.
   std::shared_ptr<ov::Core> getCore() const {
-#if defined(LITERT_WINDOWS_OS)
     return OpenVINOSharedCore::GetInstance()->getCore();
-#else
-    return core_;
-#endif  // LITERT_WINDOWS_OS
+  }
+
+  const LiteRtRuntimeContext* runtime_context() const {
+    return runtime_context_;
   }
 
  private:
-#if defined(LITERT_WINDOWS_OS)
-  explicit LiteRtDispatchDeviceContextT() : next_handle_(0) {}
-  std::unordered_map<LiteRtTensorBufferHandle,
-                     ov::intel_npu::level_zero::ZeroBufferTensor>
+  class CleanupAction {
+   public:
+    CleanupAction() = default;
+    explicit CleanupAction(std::function<void()> action)
+        : action_(std::move(action)) {}
+    ~CleanupAction() {
+      if (action_) {
+        action_();
+      }
+    }
+    CleanupAction(const CleanupAction&) = delete;
+    CleanupAction& operator=(const CleanupAction&) = delete;
+    CleanupAction(CleanupAction&& other) : action_(std::move(other.action_)) {
+      other.action_ = nullptr;
+    }
+    CleanupAction& operator=(CleanupAction&& other) {
+      if (this != &other) {
+        if (action_ != nullptr) {
+          action_();
+        }
+        action_ = std::move(other.action_);
+        other.action_ = nullptr;
+      }
+      return *this;
+    }
+
+   private:
+    std::function<void()> action_;
+  };
+
+  struct RegisteredTensor {
+    ov::Tensor tensor;
+    CleanupAction cleanup;
+  };
+
+  explicit LiteRtDispatchDeviceContextT(
+      const LiteRtRuntimeContext* runtime_context)
+      : runtime_context_(runtime_context), next_handle_(0) {}
+  const LiteRtRuntimeContext* runtime_context_;
+  std::unordered_map<LiteRtTensorBufferHandle, RegisteredTensor>
       tensor_handle_map_;
-#else
-  explicit LiteRtDispatchDeviceContextT()
-      : core_(std::make_shared<ov::Core>()), next_handle_(0) {}
-  std::shared_ptr<ov::Core> core_;
-  std::unordered_map<LiteRtTensorBufferHandle, ov::Tensor> tensor_handle_map_;
-#endif  // LITERT_WINDOWS_OS
   uint64_t next_handle_;
 };
 

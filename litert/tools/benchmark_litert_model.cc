@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include "litert/tools/benchmark_litert_model.h"
 
+#include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <string>
@@ -27,7 +28,6 @@ limitations under the License.
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_mediatek_options.h"
-#include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/internal/litert_compiled_model_next.h"
 #include "litert/cc/internal/litert_tflite_error_status_builder.h"
 #include "litert/cc/litert_common.h"
@@ -41,12 +41,14 @@ limitations under the License.
 #include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/options/litert_cpu_options.h"
+#include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
 #include "litert/core/util/perfetto_profiling.h"
 #include "litert/runtime/compiled_model.h"
+#include "litert/tools/flags/options_parser_registry.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 #include "tflite/interpreter.h"
@@ -58,17 +60,34 @@ using ::litert::Options;
 using ::litert::RuntimeOptions;
 using ::litert::TensorBuffer;
 
+HwAcceleratorSet GetRequestedHardwareAccelerators(
+    const BenchmarkParams& params) {
+  HwAcceleratorSet hardware_accelerators(HwAccelerators::kNone);
+  if (params.Get<bool>("use_npu")) {
+    hardware_accelerators |= HwAccelerators::kNpu;
+  }
+  if (params.Get<bool>("use_gpu")) {
+    hardware_accelerators |= HwAccelerators::kGpu;
+  }
+  if (params.Get<bool>("use_cpu") ||
+      !params.Get<bool>("require_full_delegation")) {
+    hardware_accelerators |= HwAccelerators::kCpu;
+  }
+  return hardware_accelerators;
+}
+
 Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   auto use_gpu = params.Get<bool>("use_gpu");
   auto use_npu = params.Get<bool>("use_npu");
   auto use_cpu = params.Get<bool>("use_cpu");
   auto gpu_backend = params.Get<std::string>("gpu_backend");
-  auto allow_fp16 = params.Get<bool>("allow_fp16");
+  auto gpu_precision = params.Get<std::string>("gpu-precision");
   auto gpu_low_priority = params.Get<bool>("gpu_low_priority");
   auto use_profiler = params.Get<bool>("use_profiler");
   auto require_full_delegation = params.Get<bool>("require_full_delegation");
   auto num_threads = params.Get<int>("num_threads");
   auto enable_weight_sharing = params.Get<bool>("enable_weight_sharing");
+  auto convert_weights_on_gpu = params.Get<bool>("convert_weights_on_gpu");
   auto mediatek_nerun_pilot_version =
       params.Get<std::string>("mediatek_nerun_pilot_version");
   LITERT_ASSIGN_OR_ABORT(Options compilation_options,
@@ -81,11 +100,11 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     std::abort();
   }
 
-  HwAcceleratorSet hardware_accelerators(HwAccelerators::kNone);
+  HwAcceleratorSet hardware_accelerators =
+      GetRequestedHardwareAccelerators(params);
 
   if (use_npu) {
-    hardware_accelerators |= HwAccelerators::kNpu;
-    // QNN options
+    // Set default QNN options
     LITERT_ASSIGN_OR_ABORT(auto& qnn_opts,
                            compilation_options.GetQualcommOptions());
     qnn_opts.SetLogLevel(litert::qualcomm::QualcommOptions::LogLevel::kOff);
@@ -97,24 +116,34 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
         litert::qualcomm::QualcommOptions::OptimizationLevel::
             kOptimizeForInferenceO3);
 
-    // MTK options
-    LITERT_ASSIGN_OR_ABORT(auto mtk_opts,
-                           ::litert::mediatek::MediatekOptions::Create());
+    // Set default MTK options
+    LITERT_ASSIGN_OR_ABORT(auto& mtk_opts,
+                           compilation_options.GetMediatekOptions());
     if (mediatek_nerun_pilot_version == "version9") {
       mtk_opts.SetNeronSDKVersionType(
-          kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9);
+          litert::mediatek::MediatekOptions::NeronSDKVersion::kVersion9);
     }
     mtk_opts.SetPerformanceMode(
-        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer);  // NOLINT
-    mtk_opts.SetPerformanceMode(
-        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferTurboBoost);
+        litert::mediatek::MediatekOptions::PerformanceMode::kTurboBoost);
     mtk_opts.SetEnableL1CacheOptimizations(true);
-    compilation_options.AddOpaqueOptions(std::move(mtk_opts));
-    // TODO(yunandrew): Add options for other NPU backends.
+
+    // Google Tensor options
+    LITERT_ASSIGN_OR_ABORT(auto& google_tensor_opts,
+                           compilation_options.GetGoogleTensorOptions());
+    google_tensor_opts.SetPerformanceMode(
+        google_tensor::GoogleTensorOptions::PerformanceMode::kBurst);
+
+    // Parser user provided NPU options
+    auto status = tools::OptionsParserRegistry::GetInstance().RunAllParsers(
+        compilation_options);
+    if (!status) {
+      LITERT_LOG(LITERT_ERROR, "Failed to run options parsers: %s",
+                 status.Error().Message().c_str());
+      std::abort();
+    }
   }
 
   if (use_gpu) {
-    hardware_accelerators |= HwAccelerators::kGpu;
     LITERT_ASSIGN_OR_ABORT(auto& gpu_options,
                            compilation_options.GetGpuOptions());
     // Enable benchmark mode to run clFinish() after each inference.
@@ -124,14 +153,25 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     } else if (gpu_backend == "opengl" || gpu_backend == "gl") {
       gpu_options.SetBackend(GpuOptions::Backend::kOpenGl);
     }
-    if (allow_fp16 == false) {
+    if (gpu_precision == "fp32") {
       gpu_options.SetPrecision(GpuOptions::Precision::kFp32);
+    } else if (gpu_precision == "fp16") {
+      gpu_options.SetPrecision(GpuOptions::Precision::kFp16);
+    } else if (gpu_precision == "auto") {
+      gpu_options.SetPrecision(GpuOptions::Precision::kDefault);
+    } else {
+      LITERT_LOG(LITERT_ERROR, "Invalid gpu-precision: %s",
+                 gpu_precision.c_str());
+      std::abort();
     }
     if (gpu_low_priority) {
       gpu_options.SetPriority(GpuOptions::Priority::kLow);
     }
     if (enable_weight_sharing) {
       gpu_options.EnableConstantTensorSharing(true);
+    }
+    if (convert_weights_on_gpu) {
+      gpu_options.SetConvertWeightsOnGpu(true);
     }
 
     auto use_profiler = params.Get<bool>("use_profiler");
@@ -140,9 +180,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     }
   }
 
-  if (use_cpu || !require_full_delegation) {
-    hardware_accelerators |= HwAccelerators::kCpu;
-
+  if (hardware_accelerators & HwAccelerators::kCpu) {
     if (num_threads > 0) {
       LITERT_ASSIGN_OR_ABORT(auto& cpu_options,
                              compilation_options.GetCpuOptions());
@@ -163,9 +201,19 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
 
 litert::Expected<Environment> CreateDefaultEnvironment(
     const BenchmarkParams& params) {
+  const int64_t requested_hardware_accelerators =
+      GetRequestedHardwareAccelerators(params).value;
   if (!params.Get<bool>("use_npu")) {
-    // If NPU is not used, we don't need to set the dispatch library directory.
-    return litert::Environment::Create({});
+    // Only auto-register accelerators required by the selected benchmark path.
+    const std::vector<litert::EnvironmentOptions::Option> environment_options =
+        {
+            litert::EnvironmentOptions::Option{
+                litert::EnvironmentOptions::Tag::kAutoRegisterAccelerators,
+                requested_hardware_accelerators,
+            },
+        };
+    return litert::Environment::Create(
+        litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
   }
   auto dispatch_library_path = params.Get<std::string>("dispatch_library_path");
   LITERT_LOG(LITERT_INFO, "dispatch_library_path: %s",
@@ -190,6 +238,10 @@ litert::Expected<Environment> CreateDefaultEnvironment(
       litert::EnvironmentOptions::Option{
           litert::EnvironmentOptions::Tag::kCompilerCacheDir,
           compiler_cache_path.c_str(),
+      },
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kAutoRegisterAccelerators,
+          requested_hardware_accelerators,
       },
   };
   return litert::Environment::Create(

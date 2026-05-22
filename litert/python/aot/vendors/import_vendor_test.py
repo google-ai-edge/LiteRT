@@ -14,7 +14,7 @@
 # ==============================================================================
 
 from absl.testing import absltest as googletest
-from litert.python.aot.core import types
+from litert.python.aot.core import aot_types
 from litert.python.aot.vendors import import_vendor
 from litert.python.aot.vendors.example import example_backend  # pylint: disable=unused-import
 
@@ -23,7 +23,7 @@ class ImportVendorTest(googletest.TestCase):
 
   def test_import_example_backend(self):
     backend = import_vendor.import_vendor("example")
-    self.assertIsInstance(backend, types.Backend.__class__)
+    self.assertIsInstance(backend, aot_types.Backend.__class__)
     self.assertEqual(backend.id(), "example")
 
   def test_import_backend_not_found(self):

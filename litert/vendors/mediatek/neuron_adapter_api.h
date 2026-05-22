@@ -21,9 +21,9 @@
 
 #include "neuron/api/NeuronAdapter.h"
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/options/litert_mediatek_options.h"
 
 #if LITERT_HAS_AHWB_SUPPORT
 #include <android/hardware_buffer.h>
@@ -82,9 +82,8 @@ class NeuronAdapterApi {
   NeuronAdapterApi& operator=(const NeuronAdapterApi&) = delete;
   NeuronAdapterApi& operator=(NeuronAdapterApi&&) = delete;
 
-  static Expected<Ptr> Create(
-      std::optional<std::string> shared_library_dir,
-      ::litert::Expected<litert::mediatek::MediatekOptions>& mediatek_options);
+  static Expected<Ptr> Create(std::optional<std::string> shared_library_dir,
+                              LrtMediatekOptions* mediatek_options);
 
   const Api& api() const { return *api_; }
 
@@ -109,6 +108,12 @@ class NeuronAdapterApi {
   bool IsFeatureEnabled(NeuronFeatureType feature) const;
 
   litert::Expected<int32_t> GetNeuroPilotMagicNumber();
+
+  // Get the cached Neuron SDK runtime version.
+  // This is populated during Create() and remains constant.
+  const NeuronRuntimeVersion& RuntimeVersion() const {
+    return runtime_version_;
+  }
 
  private:
   NeuronAdapterApi();

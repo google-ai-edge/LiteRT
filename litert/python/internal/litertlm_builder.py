@@ -39,17 +39,33 @@ with litertlm_core.open_file(output_path, "wb") as f:
 # TODO(b/445163709): Remove this module once litert_lm publishes a pypi package.
 
 import dataclasses
+import datetime
 import enum
 import os  # pylint: disable=unused-import
 import shutil
 from typing import Any, BinaryIO, Callable, Optional, TypeVar
+import uuid
 import zlib
 import flatbuffers
+
 from google.protobuf import message
 from google.protobuf import text_format
 from litert.python.internal import litertlm_core
 from litert.python.internal import litertlm_header_schema_py_generated as schema
 from litert.python.internal import llm_metadata_pb2
+
+
+# For Python versions before 3.11, provide our own `enum.StrEnum`.
+class StrEnumImpl(str, enum.Enum):
+
+  def __str__(self):
+    return self.value
+
+
+if hasattr(enum, "StrEnum"):
+  _StrEnum = enum.StrEnum
+else:
+  _StrEnum = StrEnumImpl
 
 
 @enum.unique
@@ -80,6 +96,117 @@ class Metadata:
   key: str
   value: Any
   dtype: DType
+
+  @classmethod
+  def from_key_value_pair(cls, kvp: schema.KeyValuePairT) -> "Metadata":
+    """Createsa `Metadata` object from a `KeyValuePairT`."""
+    assert kvp.key is not None
+    if isinstance(key := kvp.key, bytes):
+      key = key.decode()
+    assert kvp.value is not None
+    value = kvp.value.value
+    match kvp.valueType:
+      case schema.VData.UInt8:
+        dtype = DType.UINT8
+      case schema.VData.Int8:
+        dtype = DType.INT8
+      case schema.VData.UInt16:
+        dtype = DType.UINT16
+      case schema.VData.Int16:
+        dtype = DType.INT16
+      case schema.VData.UInt32:
+        dtype = DType.UINT32
+      case schema.VData.Int32:
+        dtype = DType.INT32
+      case schema.VData.UInt64:
+        dtype = DType.UINT64
+      case schema.VData.Int64:
+        dtype = DType.INT64
+      case schema.VData.Float32:
+        dtype = DType.FLOAT32
+      case schema.VData.Double:
+        dtype = DType.DOUBLE
+      case schema.VData.Bool:
+        dtype = DType.BOOL
+      case schema.VData.StringValue:
+        dtype = DType.STRING
+      case _:
+        raise ValueError(f"Unsupported value type: {kvp.valueType}")
+    return cls(key=key, value=value, dtype=dtype)
+
+  def to_key_value_pair(self) -> schema.KeyValuePairT:
+    """Converts the Metadata object to a `KeyValuePairT`."""
+    match self.dtype:
+      case DType.UINT8:
+        value = schema.UInt8T(self.value)
+        value_type = schema.VData.UInt8
+      case DType.INT8:
+        value = schema.Int8T(self.value)
+        value_type = schema.VData.Int8
+      case DType.UINT16:
+        value = schema.UInt16T(self.value)
+        value_type = schema.VData.UInt16
+      case DType.INT16:
+        value = schema.Int16T(self.value)
+        value_type = schema.VData.Int16
+      case DType.UINT32:
+        value = schema.UInt32T(self.value)
+        value_type = schema.VData.UInt32
+      case DType.INT32:
+        value = schema.Int32T(self.value)
+        value_type = schema.VData.Int32
+      case DType.FLOAT32:
+        value = schema.Float32T(self.value)
+        value_type = schema.VData.Float32
+      case DType.BOOL:
+        value = schema.BoolT(self.value)
+        value_type = schema.VData.Bool
+      case DType.STRING:
+        value = schema.StringValueT(self.value)
+        value_type = schema.VData.StringValue
+      case DType.UINT64:
+        value = schema.UInt64T(self.value)
+        value_type = schema.VData.UInt64
+      case DType.INT64:
+        value = schema.Int64T(self.value)
+        value_type = schema.VData.Int64
+      case DType.DOUBLE:
+        value = schema.DoubleT(self.value)
+        value_type = schema.VData.Double
+      case _:
+        raise ValueError(f"Unsupported dtype: {self.dtype}")
+    return schema.KeyValuePairT(key=self.key, value=value, valueType=value_type)
+
+
+def populate_system_metadata(
+    system_metadata: list[Metadata],
+) -> list[Metadata]:
+  """Populates system metadata with default UUID and creation timestamp.
+
+  Args:
+    system_metadata: The list of system metadata.
+
+  Returns:
+    The updated list of system metadata.
+  """
+  system_metadata = [
+      m for m in system_metadata if m.key not in ("uuid", "creation_timestamp")
+  ]
+  system_metadata.append(
+      Metadata(
+          key="uuid",
+          value=str(uuid.uuid4()),
+          dtype=DType.STRING,
+      )
+  )
+  system_metadata.append(
+      Metadata(
+          key="creation_timestamp",
+          value=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+          dtype=DType.STRING,
+      )
+  )
+  return system_metadata
 
 
 @enum.unique
@@ -113,7 +240,7 @@ class TfLiteModelType(enum.Enum):
 
 
 @enum.unique
-class Backend(enum.StrEnum):
+class Backend(_StrEnum):
   """Backend enum."""
 
   CPU = "cpu"
@@ -133,7 +260,7 @@ class _SectionObject:
 
 
 @enum.unique
-class LlmModelType(enum.StrEnum):
+class LlmModelType(_StrEnum):
   """LLM model type for the LiteRT LM model."""
 
   GENERIC = "generic"
@@ -141,6 +268,7 @@ class LlmModelType(enum.StrEnum):
   GEMMA3 = "gemma3"
   QWEN3 = "qwen3"
   QWEN2P5 = "qwen2p5"
+
 
 LitertLmFileBuilderT = TypeVar(
     "LitertLmFileBuilderT", bound="LitertLmFileBuilder"
@@ -246,6 +374,7 @@ class LitertLmFileBuilder:
       tflite_model_path: str,
       model_type: TfLiteModelType,
       backend_constraint: Optional[str] = None,
+      prefer_activation_type: Optional[str] = None,
       additional_metadata: Optional[list[Metadata]] = None,
   ) -> LitertLmFileBuilderT:
     """Adds a tflite model to the litertlm file.
@@ -254,6 +383,9 @@ class LitertLmFileBuilder:
       tflite_model_path: The path to the tflite model file.
       model_type: The type of the tflite model.
       backend_constraint: The backend constraint for the tflite model.
+      prefer_activation_type: The preferred activation type for the tflite
+        model. - fp16/float16 for float16 activation. - fp32/float32 for float32
+        activation. - fp32_fp16 for mixed activation.
       additional_metadata: Additional metadata to add to the tflite model.
 
     Returns:
@@ -277,6 +409,14 @@ class LitertLmFileBuilder:
           Metadata(
               key="backend_constraint",
               value=backend_constraint.lower(),
+              dtype=DType.STRING,
+          )
+      )
+    if prefer_activation_type:
+      metadata.append(
+          Metadata(
+              key="prefer_activation_type",
+              value=prefer_activation_type.lower(),
               dtype=DType.STRING,
           )
       )
@@ -430,100 +570,101 @@ class LitertLmFileBuilder:
 
   def build(self, stream: BinaryIO) -> None:
     """Builds the litertlm into the given stream."""
-    stream.seek(0)
-    # To simplify the build logic, we reserved the first block for the header.
-    # This translates to the first block will be padded to `BLOCK_SIZE`.
-    # TODO(b/413978412): support headers > 16KB.
-    stream.write(b"\0" * litertlm_core.BLOCK_SIZE)
+    # Add UUID if not already present, but always generate a new timestamp.
+    self._system_metadata = populate_system_metadata(self._system_metadata)
 
-    # Write sections
-    offsets = []
-    for section in self._sections:
-      start_offset = stream.tell()
+    # Populate a SystemMetadataT object from `self._system_metadata`.
+    system_metadata = schema.SystemMetadataT(
+        entries=[m.to_key_value_pair() for m in self._system_metadata]
+    )
+
+    # Populate a SectionMetadataT object from `self._sections`.
+    section_metadata = schema.SectionMetadataT(
+        objects=[
+            schema.SectionObjectT(
+                items=[m.to_key_value_pair() for m in s.metadata],
+                dataType=s.data_type,
+                beginOffset=1,  # Use a non-zero (default value) placeholder.
+                endOffset=1,  # Use a non-zero (default value) placeholder
+            )
+            for s in self._sections
+        ]
+    )
+
+    # Populate and pack the `LiteRTLMMetaDataT` to get its size.
+    litertlm_metadata = schema.LiteRTLMMetaDataT(
+        systemMetadata=system_metadata, sectionMetadata=section_metadata
+    )
+    metadata_builder = flatbuffers.Builder(litertlm_core.BLOCK_SIZE)
+    metadata_builder.Finish(litertlm_metadata.Pack(metadata_builder))
+    packed_metadata_size = metadata_builder.Offset()
+
+    # Write the section data and populate the section offsets.
+    offset = _round_up_to_block_size(
+        litertlm_core.HEADER_BEGIN_BYTE_OFFSET + packed_metadata_size
+    )
+    for section, section_fb in zip(self._sections, section_metadata.objects):
+      stream.seek(offset)
+      section_fb.beginOffset = offset
       section.data_writer(stream)
-      end_offset = stream.tell()
-      offsets.append((start_offset, end_offset))
-      _write_padding(stream, litertlm_core.BLOCK_SIZE)
+      offset = stream.tell()
+      section_fb.endOffset = offset
+      offset = _round_up_to_block_size(offset)
 
-    # write header
-    self._write_header(stream, offsets)
-
-  def _write_header(
-      self, stream: BinaryIO, offsets: list[tuple[int, int]]
-  ) -> None:
-    """Writes the header to the stream."""
-    assert self._system_metadata, "System metadata is empty."
-
+    # Go back and write the header and updated metadata at the start of the
+    # output file.
+    metadata_builder.Clear()
+    metadata_builder.Finish(litertlm_metadata.Pack(metadata_builder))
+    assert packed_metadata_size == metadata_builder.Offset()
     stream.seek(0)
-    stream.write(b"LITERTLM")
+    stream.write(litertlm_core.HEADER_MAGIC_BYTES)
     stream.write(litertlm_core.LITERTLM_MAJOR_VERSION.to_bytes(4, "little"))
     stream.write(litertlm_core.LITERTLM_MINOR_VERSION.to_bytes(4, "little"))
     stream.write(litertlm_core.LITERTLM_PATCH_VERSION.to_bytes(4, "little"))
-    _write_padding(stream, litertlm_core.HEADER_BEGIN_BYTE_OFFSET)
-    stream.write(self._get_header_data(offsets))
-    header_end_offset = stream.tell()
-    if header_end_offset > litertlm_core.BLOCK_SIZE:
-      raise ValueError("Header size exceeds 16KB limit.")
-    stream.seek(litertlm_core.HEADER_END_LOCATION_BYTE_OFFSET)
-    stream.write(header_end_offset.to_bytes(8, "little"))
-
-  def _get_header_data(self, offsets: list[tuple[int, int]]) -> bytearray:
-    builder = flatbuffers.Builder(1024)
-    system_metadata_offset = self._write_system_metadata(builder)
-    section_metadata_offset = self._write_section_metadata(builder, offsets)
-    schema.LiteRTLMMetaDataStart(builder)
-    schema.LiteRTLMMetaDataAddSystemMetadata(builder, system_metadata_offset)
-    schema.LiteRTLMMetaDataAddSectionMetadata(builder, section_metadata_offset)
-    root = schema.LiteRTLMMetaDataEnd(builder)
-    builder.Finish(root)
-    return builder.Output()
-
-  def _write_system_metadata(self, builder: flatbuffers.Builder) -> int:
-    """Writes the system metadata to the builder."""
-    system_metadata_offsets = [
-        _write_metadata(builder, m) for m in self._system_metadata
-    ]
-    schema.SystemMetadataStartEntriesVector(
-        builder, len(system_metadata_offsets)
+    stream.write(int(0).to_bytes(4, "little"))  # Zero padding.
+    stream.write(
+        (
+            litertlm_core.HEADER_BEGIN_BYTE_OFFSET + packed_metadata_size
+        ).to_bytes(8, "little")
     )
-    for offsets in reversed(system_metadata_offsets):
-      builder.PrependUOffsetTRelative(offsets)
-    entries_vec = builder.EndVector()
-    schema.SystemMetadataStart(builder)
-    schema.SystemMetadataAddEntries(builder, entries_vec)
-    return schema.SystemMetadataEnd(builder)
+    stream.write(metadata_builder.Output())
 
-  def _write_section_metadata(
-      self, builder: flatbuffers.Builder, offsets: list[tuple[int, int]]
-  ) -> int:
-    """Writes the section metadata to the builder."""
-    assert len(self._sections) == len(offsets)
 
-    section_objects_offsets = []
-    for section, offset in zip(self._sections, offsets):
-      section_objects_offsets.append(
-          _write_section_object(
-              builder, section.metadata, offset, section.data_type
-          )
-      )
-
-    schema.SectionMetadataStartObjectsVector(
-        builder, len(section_objects_offsets)
-    )
-    for obj in reversed(section_objects_offsets):
-      builder.PrependUOffsetTRelative(obj)
-    objects_vec = builder.EndVector()
-
-    schema.SectionMetadataStart(builder)
-    schema.SectionMetadataAddObjects(builder, objects_vec)
-    return schema.SectionMetadataEnd(builder)
+def _round_up_to_block_size(offset: int) -> int:
+  """Rounds `offset` up to the next multiple of `litertlm_core.BLOCK_SIZE`."""
+  return (offset + litertlm_core.BLOCK_SIZE - 1) & ~(
+      litertlm_core.BLOCK_SIZE - 1
+  )
 
 
 def _copy_file_to_stream(f_src: Any, f_dst: BinaryIO, buffer_size=1024 * 1024):
   """Copies data from f_src to f_dst efficiently."""
-  # shutil.copyfileobj attempts to use os.sendfile (zero-copy) if available.
-  # This avoids loading data into Python memory, resulting in massive speedups
-  # for large files (>20GB).
+  # Try to use os.sendfile (zero-copy) if available.
+  if hasattr(os, "sendfile"):
+    try:
+      # Flush the destination stream to ensure all buffered data is written
+      # before using os.sendfile, which operates directly on the file
+      # descriptor.
+      f_dst.flush()
+
+      in_fd, out_fd = f_src.fileno(), f_dst.fileno()
+      num_bytes = os.fstat(in_fd).st_size
+      offset = 0
+      while num_bytes > 0 and (
+          bytes_sent := os.sendfile(
+              out_fd, in_fd, offset=offset, count=num_bytes
+          )
+      ):
+        offset += bytes_sent
+        num_bytes -= bytes_sent
+    except OSError:
+      pass
+    else:
+      if num_bytes == 0:
+        return
+
+  # If the above did not work, then just copy the file in chunks to avoid
+  # flooding the memory memory when reading/writing large files.
   shutil.copyfileobj(f_src, f_dst, length=buffer_size)
 
 

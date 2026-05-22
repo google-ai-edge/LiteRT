@@ -12,7 +12,11 @@
 
 namespace litert::qnn {
 
+#if defined(_WIN32)
+constexpr char kSaverLibraryName[] = "QnnSaver.dll";
+#else
 constexpr char kSaverLibraryName[] = "libQnnSaver.so";
+#endif
 
 inline Qnn_Version_t GetExpectedSaverVersion() {
   Qnn_Version_t backend_version;

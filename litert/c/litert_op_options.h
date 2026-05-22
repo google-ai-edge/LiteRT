@@ -179,6 +179,11 @@ LiteRtStatus LiteRtBuilderBuildSubOpOption(LiteRtBuilder builder, LiteRtOp op,
 // Get option APIs for LiteRt Reshape op.
 //  Options:
 //  - new_shape : int32_t[]
+//  - new_shape_size : int32_t
+//
+// Note that for a Reshape op to unpack a tensor of one element to a scalar, the
+// 'new_shape' may be set to nullptr and 'new_shape_size' may be set to 0. The
+// return value is kLiteRtStatusOk in this case.
 //
 //==============================================================================
 LiteRtStatus LiteRtGetReshapeNewShapeOption(LiteRtOp op,
@@ -256,6 +261,15 @@ LiteRtStatus LiteRtGetPackValuesCountOption(LiteRtOp op, int32_t* values_count);
 LiteRtStatus LiteRtBuilderBuildPackOpOption(LiteRtBuilder builder, LiteRtOp op,
                                             int32_t* axis,
                                             int32_t* values_count);
+
+//==============================================================================
+//
+// Get option APIs for LiteRt OneHot op.
+//  Options:
+// - axis : int32_t
+//
+//==============================================================================
+LiteRtStatus LiteRtGetOneHotAxisOption(LiteRtOp op, int32_t* axis);
 
 //==============================================================================
 //

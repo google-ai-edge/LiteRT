@@ -25,8 +25,8 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/mediatek/dispatch/litert_dispatch_device_context.h"
@@ -227,6 +227,46 @@ LoadModelAndCompilation(
   }
 }
 
+// Compatibility policy: Major version must match.
+// Minor/patch version differences are allowed for forward compatibility.
+Expected<void> CheckNeuronSdkVersionCompatibility(
+    const neuron::SchemaResolver& resolver,
+    const litert::mediatek::NeuronAdapterApi& neuron_adapter_api) {
+  auto bytecode_version = resolver.GetNeuronVersion();
+  const auto& runtime_version = neuron_adapter_api.RuntimeVersion();
+
+  if (!bytecode_version.has_value()) {
+    // Backward compatibility: old bytecode without version info
+    LITERT_LOG(LITERT_WARNING,
+               "Bytecode does not contain Neuron SDK version info (compiled "
+               "with older SDK). Current runtime version is %u.%u.%u. "
+               "Skipping version check for backward compatibility.",
+               runtime_version.major, runtime_version.minor,
+               runtime_version.patch);
+    return {};
+  }
+
+  auto [bc_major, bc_minor, bc_patch] = bytecode_version.value();
+
+  // Check major version compatibility
+  if (bc_major != runtime_version.major) {
+    LITERT_LOG(LITERT_ERROR,
+               "Incompatible Neuron SDK major version: bytecode compiled with "
+               "%u.%u.%u, but runtime is %u.%u.%u",
+               bc_major, bc_minor, bc_patch, runtime_version.major,
+               runtime_version.minor, runtime_version.patch);
+    return Error(kLiteRtStatusErrorIncompatibleByteCodeVersion,
+                 "Neuron SDK major version mismatch");
+  }
+
+  LITERT_LOG(LITERT_INFO,
+             "Neuron SDK version check passed: bytecode %u.%u.%u, "
+             "runtime %u.%u.%u",
+             bc_major, bc_minor, bc_patch, runtime_version.major,
+             runtime_version.minor, runtime_version.patch);
+  return {};
+}
+
 }  // namespace
 
 Expected<LiteRtDispatchInvocationContextT::Ptr>
@@ -245,6 +285,10 @@ LiteRtDispatchInvocationContextT::Create(
   auto res = resolver.Initialize((const uint8_t*)exec_bytecode_ptr,
                                  exec_bytecode_size);
   if (res.HasValue() && res.Value()) {
+    // Check Neuron SDK Compatibility
+    LITERT_RETURN_IF_ERROR(
+        CheckNeuronSdkVersionCompatibility(resolver, neuron_adapter_api));
+
     std::string func = function_name != nullptr ? function_name : "";
     auto graph = resolver.GetCompiledGraph(func);
     if (!graph.has_value()) {
@@ -297,18 +341,33 @@ LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
 }
 
 LiteRtDispatchInvocationContextT::IoRequirementsBuilder::IoRequirementsBuilder(
-    size_t buffer_size, const std::vector<uint32_t>& padded_dimensions)
+    size_t buffer_size, const std::vector<uint32_t>& padded_dimensions,
+    const LiteRtRankedTensorType& tensor_type)
     : buffer_size_(buffer_size) {
   auto rank = padded_dimensions.size();
+  bool has_strides = false;
   strides_.resize(rank);
-  strides_[0] = 1;
-  for (auto i = 1; i < rank; ++i) {
-    strides_[i] = padded_dimensions[i - 1];
+  if (rank > 0) {
+    strides_[0] = 1;
+    for (auto i = 1; i < rank; ++i) {
+      strides_[i] = padded_dimensions[i - 1];
+      if (i - 1 < tensor_type.layout.rank &&
+          padded_dimensions[i - 1] != tensor_type.layout.dimensions[i - 1]) {
+        has_strides = true;
+      }
+    }
+  }
+
+  // If the strides are all the same as the original dimensions, then we don't
+  // need to specify the strides.
+  if (!has_strides) {
+    strides_.clear();
   }
 }
 
 Expected<LiteRtTensorBufferRequirements>
-LiteRtDispatchInvocationContextT::IoRequirementsBuilder::Create() {
+LiteRtDispatchInvocationContextT::IoRequirementsBuilder::Create(
+    const LiteRtRuntimeContext* runtime_context) {
   static constexpr std::array kSupportedTensorBufferTypes = {
 #if defined(__ANDROID__)
       kLiteRtTensorBufferTypeAhwb,
@@ -317,7 +376,7 @@ LiteRtDispatchInvocationContextT::IoRequirementsBuilder::Create() {
   };
 
   LiteRtTensorBufferRequirements requirements;
-  if (auto status = LiteRtCreateTensorBufferRequirements(
+  if (auto status = runtime_context->create_tensor_buffer_requirements(
           kSupportedTensorBufferTypes.size(),
           kSupportedTensorBufferTypes.data(), buffer_size_, strides_.size(),
           strides_.data(), &requirements);
@@ -383,10 +442,12 @@ LiteRtDispatchInvocationContextT::GetInputRequirements(
     padded_dimensions.resize(tensor_type.layout.rank);
 
     input_requirements_builders_[input_index] =
-        std::make_unique<IoRequirementsBuilder>(buffer_size, padded_dimensions);
+        std::make_unique<IoRequirementsBuilder>(buffer_size, padded_dimensions,
+                                                tensor_type);
   }
 
-  return input_requirements_builders_[input_index]->Create();
+  return input_requirements_builders_[input_index]->Create(
+      device_context_->runtime_context());
 }
 
 Expected<LiteRtTensorBufferRequirements>
@@ -443,10 +504,12 @@ LiteRtDispatchInvocationContextT::GetOutputRequirements(
     padded_dimensions.resize(tensor_type.layout.rank);
 
     output_requirements_builders_[output_index] =
-        std::make_unique<IoRequirementsBuilder>(buffer_size, padded_dimensions);
+        std::make_unique<IoRequirementsBuilder>(buffer_size, padded_dimensions,
+                                                tensor_type);
   }
 
-  return output_requirements_builders_[output_index]->Create();
+  return output_requirements_builders_[output_index]->Create(
+      device_context_->runtime_context());
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::AttachInput(

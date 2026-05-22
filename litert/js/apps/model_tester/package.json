@@ -1,6 +1,6 @@
 {
   "name": "@litertjs/model-tester",
-  "version": "2.0.0",
+  "version": "2.5.0",
   "publishConfig": {
     "access": "public"
   },
@@ -25,8 +25,9 @@
   "description": "",
   "dependencies": {
     "@lit/task": "^1.0.2",
-    "@litertjs/tfjs-interop": "^2.0.0",
-    "@litertjs/core": "^2.0.0",
+    "@litertjs/tfjs-interop": "^2.5.0",
+    "@litertjs/core": "^2.5.0",
+    "@material/web": "^2.3.0",
     "argparse": "^2.0.1",
     "d3": "^5.16.0",
     "esbuild": "^0.23.0",

@@ -26,9 +26,6 @@
 
 // GENERAL SDK SETTINGS ////////////////////////////////////////////////////////
 
-#if defined(INCLUDE_QUALCOMM_COMPILE_FLAGS) || \
-    defined(INCLUDE_QUALCOMM_RUNTIME_FLAGS)
-
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::LogLevel,
                   qualcomm_log_level);
 
@@ -52,16 +49,14 @@ std::string AbslUnparseFlag(QualcommOptions::Backend options);
 
 }  // namespace litert::qualcomm
 
-#endif
-
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
-
-#if defined(INCLUDE_QUALCOMM_COMPILE_FLAGS)
 
 ABSL_DECLARE_FLAG(bool, qualcomm_enable_weight_sharing);
 
+// @deprecated This flag is deprecated and will be no-op.
 ABSL_DECLARE_FLAG(bool, qualcomm_use_htp_preference);
 
+// @deprecated This flag is deprecated and will be no-op.
 ABSL_DECLARE_FLAG(bool, qualcomm_use_qint16_as_quint16);
 
 ABSL_DECLARE_FLAG(bool, qualcomm_use_int64_bias_as_int32);
@@ -82,6 +77,8 @@ ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::OptimizationLevel,
                   qualcomm_optimization_level);
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::GraphPriority,
                   qualcomm_graph_priority);
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::GraphIOTensorMemType,
+                  qualcomm_graph_io_tensor_mem_type);
 
 namespace litert::qualcomm {
 
@@ -98,17 +95,21 @@ bool AbslParseFlag(absl::string_view text,
 
 std::string AbslUnparseFlag(QualcommOptions::GraphPriority graph_priority);
 
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::GraphIOTensorMemType* memory_type,
+                   std::string* error);
+
+std::string AbslUnparseFlag(QualcommOptions::GraphIOTensorMemType memory_type);
+
 }  // namespace litert::qualcomm
 
 ABSL_DECLARE_FLAG(bool, qualcomm_use_conv_hmx);
 
 ABSL_DECLARE_FLAG(bool, qualcomm_use_fold_relu);
 
-#endif
+ABSL_DECLARE_FLAG(int32_t, qualcomm_htp_p_point);
 
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
-
-#if defined(INCLUDE_QUALCOMM_COMPILE_FLAGS)
 
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::HtpPerformanceMode,
                   qualcomm_htp_performance_mode);
@@ -148,12 +149,7 @@ std::string AbslUnparseFlag(QualcommOptions::Profiling options);
 
 }  // namespace litert::qualcomm
 
-#endif
-
 // TO OBJECT (internal) ////////////////////////////////////////////////////////
-
-#if defined(INCLUDE_QUALCOMM_COMPILE_FLAGS) || \
-    defined(INCLUDE_QUALCOMM_RUNTIME_FLAGS)
 
 namespace litert::qualcomm {
 
@@ -162,7 +158,5 @@ namespace litert::qualcomm {
 Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts);
 
 }  // namespace litert::qualcomm
-
-#endif
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_VENDORS_QUALCOMM_FLAGS_H_

@@ -19,10 +19,12 @@
 # copybara:uncomment_end
 
 load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@bazel_skylib//rules:copy_file.bzl", skylib_copy_file = "copy_file")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 
 ####################################################################################################
 # Util
@@ -118,7 +120,7 @@ def _make_target_ref(name):
 
 def commandline_flag_copts():
     return select({
-        "@platforms//os:android": ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"] + if_oss(["-DABSL_FLAGS_STRIP_NAMES=0"]),
+        "//litert:android": ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"] + if_oss(["-DABSL_FLAGS_STRIP_NAMES=0"]),
         "//conditions:default": [],
     })
 
@@ -145,9 +147,10 @@ _EXPORT_LRT_ONLY_LINKOPT_DARWIN = make_linkopt("-exported_symbols_list,$(locatio
 def symbol_opts():
     """Defines linker flags whether to include symbols or not."""
     return select({
-        "@org_tensorflow//tensorflow:debug": [],
-        "@platforms//os:macos": [],
-        "@platforms//os:ios": [],
+        "//litert:litert_keep_symbols": [],
+        "//litert:debug": [],
+        "//litert:macos": [],
+        "//litert:ios": [],
         "//conditions:default": [
             # Omit symbol table, for all non debug builds
             "-Wl,-s",
@@ -156,24 +159,27 @@ def symbol_opts():
 
 def export_lrt_only_script():
     return select({
-        "@platforms//os:linux": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
-        "@platforms//os:android": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
-        "@platforms//os:chromiumos": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
-        "@platforms//os:macos": [_EXPORT_LRT_ONLY_SCRIPT_DARWIN],
-        "@platforms//os:ios": [_EXPORT_LRT_ONLY_SCRIPT_DARWIN],
+        "//litert:linux": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
+        "//litert:android": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
+        "//litert:chromiumos": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
+        "//litert:macos": [_EXPORT_LRT_ONLY_SCRIPT_DARWIN],
+        "//litert:ios": [_EXPORT_LRT_ONLY_SCRIPT_DARWIN],
         "//conditions:default": [],
     })
 
+_LRT_ANDROID_PAGE_SIZE_LINKOPTS = [
+    "-Wl,-z,max-page-size=16384",
+    "-Wl,-z,common-page-size=16384",
+    "-Wl,-z,separate-loadable-segments",
+]
+
 def export_lrt_only_linkopt():
     return select({
-        "@platforms//os:linux": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
-        "@platforms//os:android": [
-            "-Wl,-z,max-page-size=16384",
-            _EXPORT_LRT_ONLY_LINKOPT_LINUX,
-        ],
-        "@platforms//os:chromiumos": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
-        "@platforms//os:macos": [_EXPORT_LRT_ONLY_LINKOPT_DARWIN],
-        "@platforms//os:ios": [_EXPORT_LRT_ONLY_LINKOPT_DARWIN],
+        "//litert:linux": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
+        "//litert:android": _LRT_ANDROID_PAGE_SIZE_LINKOPTS + [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
+        "//litert:chromiumos": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
+        "//litert:macos": [_EXPORT_LRT_ONLY_LINKOPT_DARWIN],
+        "//litert:ios": [_EXPORT_LRT_ONLY_LINKOPT_DARWIN],
         "//conditions:default": [],
     }) + symbol_opts()
 
@@ -191,24 +197,21 @@ _EXPORT_LRT_COMMON_LINKOPTS_LINUX = [
 
 def export_lrt_runtime_only_script():
     return select({
-        "@platforms//os:linux": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_LINUX],
-        "@platforms//os:android": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_LINUX],
-        "@platforms//os:chromiumos": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_LINUX],
-        "@platforms//os:macos": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_DARWIN],
-        "@platforms//os:ios": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_DARWIN],
+        "//litert:linux": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_LINUX],
+        "//litert:android": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_LINUX],
+        "//litert:chromiumos": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_LINUX],
+        "//litert:macos": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_DARWIN],
+        "//litert:ios": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_DARWIN],
         "//conditions:default": [],
     })
 
 def export_lrt_runtime_only_linkopt():
     return select({
-        "@platforms//os:linux": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX],
-        "@platforms//os:android": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [
-            "-Wl,-z,max-page-size=16384",
-            _EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX,
-        ],
-        "@platforms//os:chromiumos": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX],
-        "@platforms//os:macos": [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_DARWIN],
-        "@platforms//os:ios": [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_DARWIN],
+        "//litert:linux": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX],
+        "//litert:android": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + _LRT_ANDROID_PAGE_SIZE_LINKOPTS + [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX],
+        "//litert:chromiumos": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX],
+        "//litert:macos": [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_DARWIN],
+        "//litert:ios": [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_DARWIN],
         "//conditions:default": [],
     }) + symbol_opts()
 
@@ -219,24 +222,46 @@ _EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN = make_linkopt("-exported_symbols_list
 
 def export_lrt_tflite_runtime_script():
     return select({
-        "@platforms//os:linux": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
-        "@platforms//os:android": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
-        "@platforms//os:chromiumos": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
-        "@platforms//os:macos": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_DARWIN],
-        "@platforms//os:ios": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_DARWIN],
+        "//litert:linux": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
+        "//litert:android": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
+        "//litert:chromiumos": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
+        "//litert:macos": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_DARWIN],
+        "//litert:ios": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_DARWIN],
         "//conditions:default": [],
     })
 
 def export_lrt_tflite_runtime_linkopt():
     return select({
-        "@platforms//os:linux": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX],
-        "@platforms//os:android": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [
-            "-Wl,-z,max-page-size=16384",
-            _EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX,
-        ],
-        "@platforms//os:chromiumos": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX],
-        "@platforms//os:macos": [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN],
-        "@platforms//os:ios": [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN],
+        "//litert:linux": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX],
+        "//litert:android": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + _LRT_ANDROID_PAGE_SIZE_LINKOPTS + [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX],
+        "//litert:chromiumos": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX],
+        "//litert:macos": [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN],
+        "//litert:ios": [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN],
+        "//conditions:default": [],
+    }) + symbol_opts()
+
+_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_LINUX = "//litert/build_common:export_litert_gpu_accelerator_linux.lds"
+_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_DARWIN = "//litert/build_common:export_litert_gpu_accelerator_darwin.lds"
+_GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_LINUX = make_linkopt("--version-script=$(location {})".format(_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_LINUX))
+_GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_DARWIN = make_linkopt("-exported_symbols_list,$(location {})".format(_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_DARWIN))
+
+def gpu_accelerator_exported_symbols_script():
+    return select({
+        "//litert:linux": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_LINUX],
+        "//litert:android": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_LINUX],
+        "//litert:chromiumos": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_LINUX],
+        "//litert:macos": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_DARWIN],
+        "//litert:ios": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_DARWIN],
+        "//conditions:default": [],
+    })
+
+def gpu_accelerator_exported_symbols_linkopt():
+    return select({
+        "//litert:linux": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_LINUX],
+        "//litert:android": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + _LRT_ANDROID_PAGE_SIZE_LINKOPTS + [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_LINUX],
+        "//litert:chromiumos": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_LINUX],
+        "//litert:macos": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_DARWIN],
+        "//litert:ios": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_DARWIN],
         "//conditions:default": [],
     }) + symbol_opts()
 
@@ -271,7 +296,8 @@ def _litert_base(
             cc_rule_kwargs,
             linkopts = selects.with_or({
                 ("//conditions:default", "//litert/build_common:linux_x86_64_grte"): _DEFAULT_LINK_OPTS,
-                "@platforms//os:macos": [],
+                "//litert:macos": [],
+                "//litert:ios": [],
                 "//litert/build_common:linux_x86_64_ungrte": _UNGRTE_LINK_OPTS + _DEFAULT_LINK_OPTS,
             }),
         )
@@ -279,7 +305,11 @@ def _litert_base(
     else:
         append_rule_kwargs(
             cc_rule_kwargs,
-            linkopts = _DEFAULT_LINK_OPTS,
+            linkopts = select({
+                "//litert:macos": [],
+                "//litert:ios": [],
+                "//conditions:default": _DEFAULT_LINK_OPTS,
+            }),
         )
 
     rule(**cc_rule_kwargs)
@@ -451,16 +481,81 @@ def litert_dynamic_lib(
 # )
 # copybara:uncomment_end
 
-def copy_file(name, src, target, visibility = None):
-    input_path = "$(location %s)" % src
-    output_path = "$(@D)/" + target
+def litert_dispatch_api(
+        name,
+        shared_lib_name,
+        so_name,
+        srcs = [],
+        hdrs = [],
+        deps = [],
+        static_srcs = [],
+        static_defines = ["LITERT_USE_STATIC_LINKED_DISPATCH_API"],
+        export_litert_only = True,
+        **kwargs):
+    """
+    LiteRT Dispatch API library rule.
 
-    native.genrule(
+    This macro defines the following targets:
+    - `{name}_common`: The cc_library containing the common sources and dependencies.
+    - `{name}`: The cc_library for the dynamic dispatch API.
+    - `{name}_so`: The cc_shared_library for the dynamic dispatch API.
+    - `{name}_static`: The statically linked variant of the dispatch API (if provided).
+
+    Args:
+      name: The name of the library.
+      shared_lib_name: The name of the shared library.
+      so_name: The name of the shared object file.
+      srcs: Source files for the library.
+      hdrs: Header files for the library.
+      deps: Dependencies for the library.
+      static_srcs: Source files for the static library.
+      static_defines: Defines for the static library.
+      export_litert_only: Whether to export only LiteRT symbols.
+      **kwargs: Keyword arguments to pass to the underlying rule.
+    """
+    common_name = name + "_common"
+
+    dynamic_kwargs = dict(kwargs)
+
+    kwargs_no_linkopts = dict(kwargs)
+    if "linkopts" in kwargs_no_linkopts:
+        kwargs_no_linkopts.pop("linkopts")
+
+    litert_lib(
+        name = common_name,
+        srcs = srcs,
+        hdrs = hdrs,
+        deps = deps,
+        alwayslink = 1,
+        **kwargs_no_linkopts
+    )
+
+    litert_dynamic_lib(
         name = name,
-        srcs = [src],
-        outs = [target],
+        shared_lib_name = shared_lib_name,
+        so_name = so_name,
+        export_litert_only = export_litert_only,
+        deps = [":" + common_name],
+        **dynamic_kwargs
+    )
+
+    if static_srcs:
+        static_kwargs = dict(kwargs_no_linkopts)
+        static_kwargs["defines"] = kwargs.get("defines", []) + static_defines
+        litert_lib(
+            name = name + "_static",
+            srcs = static_srcs,
+            deps = [":" + common_name] + deps,
+            alwayslink = 1,
+            **static_kwargs
+        )
+
+def copy_file(name, src, target, visibility = None):
+    skylib_copy_file(
+        name = name,
+        src = src,
+        out = target,
         visibility = visibility,
-        cmd = "cp %s %s" % (input_path, output_path),
     )
 
 def gtest_main_no_heapcheck_deps():
@@ -506,3 +601,139 @@ def cc_library_with_testonly_vis(
         visibility = testonly_vis,
         **rule_kwargs
     )
+
+def litert_c_api_library(
+        name,
+        srcs = [],
+        hdrs = [],
+        deps = [],
+        header_deps = [],
+        impl_deps = [],
+        tags = [],
+        header_kwargs = {},
+        **kwargs):
+    """
+    Defines a LiteRT C API library with separate header and implementation targets.
+
+    This macro defines three targets:
+    - `{name}_header`: A cc_library containing only the headers.
+    - `{name}_impl`: A cc_library containing the implementation (srcs) and internal dependencies.
+    - `{name}` (alias): An alias that selects the implementation mode.
+
+    Args:
+      name: The name of the library.
+      srcs: Source files for the implementation.
+      hdrs: Public header files.
+      deps: Dependencies for both header and implementation.
+      header_deps: Optional dependencies for the header target only.
+      impl_deps: Optional dependencies for the implementation target only.
+      tags: Tags for the implementation target.
+      header_kwargs: Additional arguments passed to the header target only.
+      **kwargs: Additional arguments passed to the implementation cc_library.
+    """
+    cc_library(
+        name = name + "_header",
+        hdrs = hdrs,
+        visibility = ["//litert:litert_internal_users"],
+        deps = deps + header_deps,
+        tags = tags + ["avoid_dep"],
+        **header_kwargs
+    )
+
+    cc_library(
+        name = name + "_impl",
+        srcs = srcs,
+        hdrs = hdrs,
+        deps = deps + [":" + name + "_header"] + impl_deps,
+        alwayslink = 1,
+        tags = tags + ["avoid_dep"],
+        **kwargs
+    )
+
+    native.alias(
+        name = name,
+        actual = select({
+            "//litert:litert_runtime_link_mode_dynamic": ":" + name + "_header",
+            "//litert:litert_runtime_link_mode_none": ":" + name + "_header",
+            "//conditions:default": ":" + name + "_impl",
+        }),
+    )
+
+def litert_accelerator_library(
+        name,
+        srcs = [],
+        hdrs = [],
+        visibility = [],
+        deps = [],
+        tags = [],
+        shared_lib_name = "",
+        macos_dylib = False,
+        **kwargs):
+    """
+    Defines a LiteRT Accelerator library.
+
+    This macro defines four targets:
+    - `{name}`: A cc_library for static linking.
+    - `{name}_runtimecapi`: A internal cc_library for dynamic linking.
+    - `{name}_so`: A cc_shared_library for dynamic linking depends on `{name}_runtimecapi`.
+    - `{name}_shared_lib`: A cc_library for dynamic linking depends on `{name}_so`.
+
+    Args:
+      name: The name of the library.
+      srcs: Source files for the implementation.
+      hdrs: Public header files.
+      visibility: Visibility for the library.
+      deps: Dependencies for both header and implementation.
+      tags: Tags for the implementation target.
+      shared_lib_name: The name of the shared library.
+      macos_dylib: Whether to use for a macOS dylib.
+      **kwargs: Additional arguments passed to the implementation cc_library.
+    """
+    cc_library(
+        name = name,
+        srcs = srcs,
+        hdrs = hdrs,
+        defines = ["LITERT_USE_STATIC_LINKED_GPU_ACCELERATOR"],
+        visibility = visibility,
+        deps = deps,
+        tags = tags,
+        alwayslink = 1,
+        **kwargs
+    )
+
+    cc_library(
+        name = name + "_runtimecapi",
+        srcs = srcs,
+        hdrs = hdrs,
+        visibility = visibility,
+        deps = deps,
+        tags = tags,
+        **kwargs
+    )
+
+    # TODO b/495569152 - Add support for macOS dylib and Windows dll.
+    if macos_dylib == False:
+        cc_shared_library(
+            name = name + "_so",
+            additional_linker_inputs = gpu_accelerator_exported_symbols_script(),
+            shared_lib_name = shared_lib_name,
+            user_link_flags = gpu_accelerator_exported_symbols_linkopt() + [
+                "-Wl,-soname=" + shared_lib_name,
+            ] + litert_android_linkopts(),
+            visibility = [
+                "//third_party/odml/litert:__subpackages__",
+                "//litert:litert_internal_users",
+            ],
+            deps = [name + "_runtimecapi"],
+        )
+
+        cc_library(
+            name = name + "_shared_lib",
+            srcs = [name + "_so"],
+            linkstatic = 1,
+            visibility = [
+                "//third_party/odml/litert:__subpackages__",
+                "//litert:__subpackages__",
+                "//third_party/odml/litert_lm:__subpackages__",
+            ],
+        )

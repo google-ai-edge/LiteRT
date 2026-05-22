@@ -49,21 +49,21 @@ set(LITERT_LIBS
     litert_runtime
 )
 
-target_link_libraries(run_model_simple
-    "-Wl,--start-group"
-    absl::die_if_null
-    absl::flags
-    absl::flags_parse
-    absl::log
-    absl::log_internal_check_op
-    absl::log_internal_message
-    absl::string_view
-    absl::span
-    absl::status
-    absl::statusor
-    ${LITERT_LIBS}
-    "-Wl,--end-group"
- )
+  target_link_libraries(run_model_simple
+      "-Wl,--start-group"
+      absl::die_if_null
+      absl::flags
+      absl::flags_parse
+      absl::log
+      absl::log_internal_check_op
+      absl::log_internal_message
+      absl::string_view
+      absl::span
+      absl::status
+      absl::statusor
+      ${LITERT_LIBS}
+      "-Wl,--end-group"
+  )
 
 add_executable(tflite_minimal
     tflite_minimal.cc

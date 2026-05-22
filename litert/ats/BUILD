@@ -28,6 +28,9 @@ package(
 
 # SUITES ###########################################################################################
 
+# Note: The `litert_define_ats` targets below define test suites that execute tests on-device
+# using the underlying base `ats` binary compiled further down in this file.
+
 litert_define_ats(
     name = "cpu_ats",
     backend = "cpu",
@@ -82,7 +85,6 @@ litert_define_ats(
     extra_flags = [
         "--data_seed=42",
         "--qualcomm_optimization_level=O3",
-        "--qualcomm_use_htp_preference=true",
         "--qualcomm_htp_performance_mode=burst",
         "--qualcomm_log_level=info",
         "--qualcomm_use_fold_relu=true",
@@ -90,6 +92,36 @@ litert_define_ats(
     ],
     jit_suffix = "",
 )
+
+# copybara:uncomment_begin(google-only)
+# litert_define_ats(
+#     name = "google_tensor_ats",
+#     backend = "google_tensor",
+#     compile_only_suffix = "_aot",
+#     do_register = [
+#         "SingleOp",
+#         "hf_all_minilm_l6_v2",
+#         "hf_mobilevit_small",
+#         "qai_hub_midas",
+#         "qai_hub_real_esrgan_x4plus",
+#         "torchvision_mobilenet_v2",
+#         "u2net_lite",
+#         "torchvision_resnet18",
+#         "torchvision_squeezenet1_1",
+#         "whisper_tiny_encoder",
+#         "yamnet",
+#         "yolo11n",
+#     ],
+#     dont_register = [
+#         "hf_all_minilm_l6_v2",
+#         "whisper_tiny_decoder",
+#         ".*5d.*",
+#         ".*6d.*",
+#     ],
+#     extra_flags = ["--soc_model=Tensor_G5"],
+#     jit_suffix = "",
+# )
+# copybara:uncomment_end
 
 litert_define_ats(
     name = "mediatek_ats",
@@ -125,6 +157,40 @@ litert_define_ats(
 )
 
 litert_define_ats(
+    name = "gpu_ats",
+    backend = "gpu",
+    compile_only_suffix = "_aot",
+    do_register = [
+        "SingleOp",
+        "hf_mobilevit_small",
+        "qai_hub_midas",
+        "torchvision_mobilenet_v2",
+        "u2net_lite",
+        "torchvision_squeezenet1_1",
+        "yamnet",
+        "yolo11n",
+    ],
+    dont_register = [
+        ".*tfl\\.sub.*",
+        ".*tfl\\.add.*i32.*",
+        ".*861.*",
+        ".*tfl\\.relu_0_to_1.*",
+        ".*resnet18.*",
+        ".*BinaryNoBroadcast.*",
+        ".*tfl\\.exp.*",
+        ".*f16.*",
+        ".*tfl\\.ceil.*",
+        ".*5d.*",
+        ".*6d.*",
+        ".*tfl\\.zeros_like.*",
+    ],
+    extra_flags = [
+        "--data_seed=42",
+    ],
+    jit_suffix = "",
+)
+
+litert_define_ats(
     name = "intel_openvino_ats",
     backend = "intel_openvino",
     compile_only_suffix = None,
@@ -152,15 +218,28 @@ litert_define_ats(
 
 # SOURCE CODES #####################################################################################
 
+# Note: The `litert_test` target below (`ats`) is the base test binary executed directly on the host
+# machine. In contrast, the `litert_define_ats` targets defined above generate test
+# suites that wrap this binary and execute it on-device.
 litert_test(
     name = "ats",
     srcs = ["ats.cc"],
+    args = [
+        "--dont_register=.*tfl\\.log.*f16.*",
+        "--dont_register=.*tfl\\.zeros_like.*f16.*",
+        "--dont_register=.*tfl\\.sign.*f16.*",
+        "--dont_register=.*tfl\\.relu_0_to_1.*f16.*",
+    ],
     copts = commandline_flag_copts(),
     linkstatic = True,
     no_main = True,
     tags = [
         "notap",
     ],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     ungrte = if_oss(True, False),
     use_sys_malloc = True,
     deps = [
@@ -170,11 +249,14 @@ litert_test(
         ":register",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_environment",
         "//litert/cc/internal:litert_c_types_printing",
         "//litert/cc/internal:litert_detail",
         "//litert/test/generators",
         "//litert/test/generators:common",
+        "//litert/test/generators:one_hot",
         "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_check",
@@ -199,6 +281,8 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_common",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_options",
@@ -255,12 +339,16 @@ cc_library(
 cc_test(
     name = "executor_test",
     srcs = ["executor_test.cc"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":executor",
-        "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_options",
         "//litert/core/model",
         "//litert/test:matchers",
@@ -286,11 +374,13 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_c_types_printing",
+        "//litert/cc/internal:litert_numerics",
         "//litert/core/model",
         "//litert/test:matchers_oss",
         "//litert/test:rng_fixture_oss",
         "//litert/test:simple_buffer",
         "//litert/test/generators:common",
+        "//tflite/types:half",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest",
@@ -326,10 +416,10 @@ litert_device_test(
     defines = ["_TEST_NPU"],
     deps = [
         ":executor",
-        "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_options",
         "//litert/core/model",
         "//litert/test:matchers",
@@ -347,7 +437,7 @@ cc_test(
     data = [
         "//litert/test:testdata/simple_model.tflite",
         "//litert/vendors/examples:example_dispatch_so",
-        "//litert/vendors/examples:example_plugin_so",
+        "//litert/vendors/examples:example_plugin_so_data",
     ],
     # Re-enable sans once test libs can be linked in a sans friendly way.
     tags = [
@@ -356,6 +446,10 @@ cc_test(
         "nosan",
         "notsan",
     ],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":common",
         ":compile_fixture",
@@ -365,6 +459,7 @@ cc_test(
         ":register",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_detail",
@@ -375,6 +470,7 @@ cc_test(
         "//litert/test:simple_buffer",
         "//litert/test/generators",
         "//litert/test/generators:common",
+        "//litert/test/generators:one_hot",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/flags:reflection",
@@ -468,7 +564,7 @@ cc_library(
         ":configure",
         ":print",
         "//litert/core/model",
-        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/strings:str_format",
     ],
 )
 

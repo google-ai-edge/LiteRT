@@ -104,6 +104,16 @@ LiteRtStatus LrtSetGpuOptionsGpuPriority(LrtGpuOptions* gpu_options,
 LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
     LrtGpuOptions* gpu_options, bool enable);
 
+// If true, the delegate hints waiting for completion. This is for some
+// backends, for example OpenCL on Mali, to wait for the enqueued commands to be
+// completed after each invoke.
+LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(
+    LrtGpuOptions* gpu_options, bool enable);
+
+// Sets the GPU kernel batch size for one flush.
+LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsKernelBatchSize(
+    LrtGpuOptions* gpu_options, int kernel_batch_size);
+
 // Sets the GPU accelerator precision. e.g. FP16, FP32, etc.
 LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsPrecision(
     LrtGpuOptions* gpu_options, LiteRtDelegatePrecision precision);
@@ -150,6 +160,14 @@ LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsModelCacheKey(
 // to determine where to read and write the program cache from.
 LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsProgramCacheFd(
     LrtGpuOptions* gpu_options, int program_cache_fd);
+
+// The file descriptor to use for weight caching.
+// If set, the delegate will use this file descriptor to read and write the
+// weight cache.
+// If it is not set, the delegate will use the serialization_dir + model_token
+// to determine where to read and write the weight cache from.
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsWeightCacheFd(
+    LrtGpuOptions* gpu_options, int weight_cache_fd);
 
 // When set to true AND the serialization_dir and model_cache_key are also set,
 // the delegate will serialize the program cache.
@@ -240,6 +258,12 @@ LiteRtStatus LrtGetGpuOptionsExternalTensorsMode(bool* enabled,
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
     bool* enabled, const LrtGpuOptions* options);
 
+LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(
+    bool* enabled, const LrtGpuOptions* options);
+
+LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsKernelBatchSize(
+    int* kernel_batch_size, const LrtGpuOptions* options);
+
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsPrecision(
     LiteRtDelegatePrecision* precision, const LrtGpuOptions* options);
 
@@ -263,6 +287,9 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsModelCacheKey(
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
     int* program_cache_fd, const LrtGpuOptions* options);
+
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsWeightCacheFd(
+    int* weight_cache_fd, const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
     bool* serialize_program_cache, const LrtGpuOptions* options);

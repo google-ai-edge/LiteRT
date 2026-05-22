@@ -22,19 +22,22 @@ namespace qnn {
 static const char* kQnnSuffix = "_qnn";
 class TensorPool {
  public:
-  TensorPool();
   // id: Number of tensors in TensorPool, used for ensure uniqueness of tensor
-  // name Tensors directly converted from framework: <id>_suffix_from_framework
-  // Tensors created by builder: <id>_qnn
-  TensorWrapper& CreateInputTensorWithSuffix(
-      Qnn_DataType_t data_type,
-      const QuantizeParamsWrapperVariant& quant_params,
-      const std::vector<std::uint32_t>& dimensions, std::string_view suffix);
+  // name. I/O tensors will use the exact same name as provided. Tensors
+  // directly converted from framework: `<id>_suffix_from_framework`. Tensors
+  // created by QNN: `<id>_qnn`.
 
-  TensorWrapper& CreateOutpuTensorWithSuffix(
-      Qnn_DataType_t data_type,
+  TensorPool();
+
+  TensorWrapper& CreateInputTensorWithName(
+      std::string_view name, Qnn_DataType_t data_type,
       const QuantizeParamsWrapperVariant& quant_params,
-      const std::vector<std::uint32_t>& dimensions, std::string_view suffix);
+      const std::vector<std::uint32_t>& dimensions);
+
+  TensorWrapper& CreateOutputTensorWithName(
+      std::string_view name, Qnn_DataType_t data_type,
+      const QuantizeParamsWrapperVariant& quant_params,
+      const std::vector<std::uint32_t>& dimensions);
 
   TensorWrapper& CreateNativeTensor(
       Qnn_DataType_t data_type,
@@ -67,6 +70,9 @@ class TensorPool {
 
   TensorWrapper& CloneNativeTensorFrom(
       const TensorWrapper& src, const std::vector<std::uint32_t>& dimensions);
+
+  TensorWrapper& CloneNativeTensorFrom(
+      const TensorWrapper& src, const QuantizeParamsWrapperVariant& quant);
 
   TensorWrapper& CloneStaticTensorFrom(const TensorWrapper& src,
                                        Qnn_DataType_t data_type);
@@ -101,8 +107,15 @@ bool FillData(const TensorWrapper& src_tensor, std::vector<Dst>& dst_data) {
   dst_data.clear();
   dst_data.reserve(src_data->size());
   for (size_t i = 0; i < src_data->size(); ++i) {
-    if ((*src_data)[i] > std::numeric_limits<Dst>::max() ||
-        (*src_data)[i] < std::numeric_limits<Dst>::lowest()) {
+    if (static_cast<double>((*src_data)[i]) >
+        static_cast<double>(std::numeric_limits<Dst>::max())) {
+      QNN_LOG_ERROR("Source data exceeds the range of destination data type.");
+
+      dst_data.clear();
+      return false;
+    }
+    if (static_cast<double>((*src_data)[i]) <
+        static_cast<double>(std::numeric_limits<Dst>::lowest())) {
       QNN_LOG_ERROR("Source data exceeds the range of destination data type.");
 
       dst_data.clear();

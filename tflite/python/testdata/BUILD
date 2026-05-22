@@ -1,4 +1,3 @@
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_library")
 load(
     "@org_tensorflow//tensorflow:tensorflow.bzl",
     "tf_custom_op_library",
@@ -9,6 +8,7 @@ load(
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension", "tf_custom_op_py_strict_library")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
 load("//tflite:build_def.bzl", "tf_to_tflite", "tflite_copts")
 
 package(
@@ -141,7 +141,7 @@ tf_gen_op_wrapper_py(
         "@org_tensorflow//tensorflow/python/util:deprecation",
         "@org_tensorflow//tensorflow/python/util:tf_export",
     ],
-    py_lib_rule = py_strict_library,
+    py_lib_rule = py_library,
     deps = [":double_op_and_kernels"],
 )
 

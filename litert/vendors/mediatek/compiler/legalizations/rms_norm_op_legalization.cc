@@ -20,8 +20,8 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_options.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
@@ -29,17 +29,17 @@ namespace litert::mediatek {
 
 namespace {
 
-absl::Span<const int32_t> GetDimensions(Tensor& op) {
+absl::Span<const int32_t> GetDimensions(const litert::compiler::Tensor& op) {
   LITERT_ASSIGN_OR_ABORT(auto tensor_type, op.RankedTensorType());
   return tensor_type.Layout().Dimensions();
 }
 
-inline ElementType GetElementType(const Tensor& tensor) {
+inline ElementType GetElementType(const litert::compiler::Tensor& tensor) {
   LITERT_ASSIGN_OR_ABORT(auto tensor_type, tensor.RankedTensorType());
   return tensor_type.ElementType();
 }
 
-size_t GetRank(Tensor& op) {
+size_t GetRank(const litert::compiler::Tensor& op) {
   LITERT_ASSIGN_OR_ABORT(auto tensor_type, op.RankedTensorType());
   return tensor_type.Layout().Rank();
 }
@@ -48,7 +48,7 @@ size_t GetRank(Tensor& op) {
 
 Expected<void> LegalizeRmsNormOp(const NeuronAdapterApi& neuron_adapter_api,
                                  NeuronModel* model, OperandMap& operand_map,
-                                 const litert::Op& op) {
+                                 const litert::compiler::Op& op) {
   LITERT_LOG(LITERT_INFO, "Legalize RMS Norm");
   std::vector<uint32_t> input_indices;
 

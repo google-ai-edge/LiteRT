@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_contrib_test", "pytype_strict_library")
+load("//litert/python:pytype.bzl", "pytype_strict_contrib_test", "pytype_strict_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -22,9 +22,13 @@ package(
 pytype_strict_contrib_test(
     name = "import_vendor_test",
     srcs = ["import_vendor_test.py"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":import_vendor",
-        "//litert/python/aot/core:types",
+        "//litert/python/aot/core:aot_types",
         "//litert/python/aot/vendors/example:example_backend",
         "@absl_py//absl/testing:absltest",
     ],
@@ -36,7 +40,7 @@ pytype_strict_library(
     visibility = ["//visibility:public"],
     deps = [
         ":fallback_backend",
-        "//litert/python/aot/core:types",
+        "//litert/python/aot/core:aot_types",
     ],
 )
 
@@ -47,8 +51,10 @@ pytype_strict_library(
     deps = [
         "//litert/python/aot/vendors/example:example_backend",  # buildcleaner: keep
         "//litert/python/aot/vendors/google_tensor:google_tensor_backend",  # buildcleaner: keep
+        "//litert/python/aot/vendors/intel_openvino:intel_openvino_backend",  # buildcleaner: keep
         "//litert/python/aot/vendors/mediatek:mediatek_backend",  # buildcleaner: keep
         "//litert/python/aot/vendors/qualcomm:qualcomm_backend",  # buildcleaner: keep
+        "//litert/python/aot/vendors/samsung:samsung_backend",  # buildcleaner: keep
     ],
 )
 
@@ -57,7 +63,7 @@ pytype_strict_library(
     srcs = ["fallback_backend.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//litert/python/aot/core:aot_types",
         "//litert/python/aot/core:components",
-        "//litert/python/aot/core:types",
     ],
 )

@@ -62,6 +62,10 @@ static_assert(offsetof(LiteRtLayout, strides) == 40,
 
 // Return the number of scalar elements in the provided tensor layout. Return an
 // error if the layout includes dynamic dimensions.
+//
+// Note: LiteRtLayout is a non-opaque type (struct is defined in this header).
+// Therefore, its access methods do not need to and should NOT be exported
+// from the dynamic C API library (e.g. libLiteRt.so).
 LiteRtStatus LiteRtGetNumLayoutElements(const LiteRtLayout* layout,
                                         size_t* num_elements);
 

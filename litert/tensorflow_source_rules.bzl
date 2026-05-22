@@ -36,6 +36,36 @@ def _tensorflow_source_repo_impl(ctx):
             stripPrefix = ctx.attr.strip_prefix,
         )
 
+    _patch_xla_windows_copts(ctx)
+    _apply_repo_patches(ctx)
+
+def _patch_xla_windows_copts(ctx):
+    """Switch XLA Windows copts to MSVC-style flags to avoid -Wno-sign-compare."""
+    tsl_bzl = "third_party/xla/xla/tsl/tsl.bzl"
+    content = ctx.read(tsl_bzl)
+    old = 'clean_dep("//xla/tsl:windows"): get_win_copts(is_external, is_msvc = False),'
+    new = 'clean_dep("//xla/tsl:windows"): get_win_copts(is_external, is_msvc = True),'
+    if old in content:
+        ctx.file(tsl_bzl, content.replace(old, new))
+
+def _apply_repo_patches(ctx):
+    # Apply patches after extraction/symlinking.
+    for patch in ctx.attr.patches:
+        ctx.patch(ctx.path(patch), strip = 1)
+
+    # Append protobuf-specific patches to XLA's protobuf.patch so that
+    # tf_workspace2()'s protobuf fetch applies them automatically.
+    if ctx.attr.protobuf_patches:
+        pb_patch_path = ctx.path("third_party/xla/third_party/protobuf/protobuf.patch")
+        existing = ctx.read(pb_patch_path)
+        extras = []
+        for pb_patch in ctx.attr.protobuf_patches:
+            extras.append(ctx.read(ctx.path(pb_patch)))
+        ctx.file(
+            "third_party/xla/third_party/protobuf/protobuf.patch",
+            content = existing + "\n" + "\n".join(extras),
+        )
+
 tensorflow_source_repo = repository_rule(
     implementation = _tensorflow_source_repo_impl,
     local = False,
@@ -43,6 +73,8 @@ tensorflow_source_repo = repository_rule(
         "sha256": attr.string(mandatory = False),
         "strip_prefix": attr.string(mandatory = True),
         "urls": attr.string_list(mandatory = True),
+        "patches": attr.label_list(default = []),
+        "protobuf_patches": attr.label_list(default = []),
     },
     doc = """
     A custom repository rule to select between a local TensorFlow source or a remote http_archive

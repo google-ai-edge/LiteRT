@@ -27,14 +27,15 @@ extern "C" {
 
 // WARNING: The values of the following enum are to be kept in sync with
 // tflite::LogSeverity.
-typedef enum : int8_t {
+typedef int8_t LiteRtLogSeverity;
+enum {
   kLiteRtLogSeverityDebug = -1,
   kLiteRtLogSeverityVerbose = 0,
   kLiteRtLogSeverityInfo = 1,
   kLiteRtLogSeverityWarning = 2,
   kLiteRtLogSeverityError = 3,
   kLiteRtLogSeveritySilent = 4,
-} LiteRtLogSeverity;
+};
 
 #define LITERT_DEBUG kLiteRtLogSeverityDebug
 #define LITERT_VERBOSE kLiteRtLogSeverityVerbose

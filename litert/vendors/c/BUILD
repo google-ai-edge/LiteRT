@@ -48,6 +48,7 @@ cc_library(
         "litert_dispatch_api.h",
     ],
     deps = [
+        "//litert/c/internal:litert_custom_tensor_buffer_handlers_def",
         # only depend on the headers, not the implementation.
         "//litert/c/internal:litert_dispatch_headers",
         "//litert/c/internal:litert_scheduling_info",

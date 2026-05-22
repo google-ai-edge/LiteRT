@@ -12,15 +12,26 @@
 
 namespace qnn {
 
-std::vector<OpWrapper> BuildElementwiseAddOp(
-    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs);
+OpWrapper CreateElementWiseAddOp(const TensorWrapper& input_0,
+                                 const TensorWrapper& input_1,
+                                 const TensorWrapper& output_0);
+
+OpWrapper CreateElementWiseMulOp(const TensorWrapper& input_0,
+                                 const TensorWrapper& input_1,
+                                 const TensorWrapper& output_0);
+
+OpWrapper CreateElementWiseNotOp(const TensorWrapper& input_0,
+                                 const TensorWrapper& output_0);
+
+OpWrapper CreateElementWiseEqualOp(const TensorWrapper& input_0,
+                                   const TensorWrapper& input_1,
+                                   const TensorWrapper& output_0);
+
+OpWrapper CreateElementWiseNotEqualOp(const TensorWrapper& input_0,
+                                      const TensorWrapper& input_1,
+                                      const TensorWrapper& output_0);
 
 std::vector<OpWrapper> BuildElementwiseSubOp(
-    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs);
-
-std::vector<OpWrapper> BuildElementwiseMulOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
 
@@ -92,10 +103,6 @@ std::vector<OpWrapper> BuildElementwiseFloorDivOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
 
-std::vector<OpWrapper> BuildElementwiseNotEqualOp(
-    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs);
-
 std::vector<OpWrapper> BuildElementwiseOrOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
@@ -108,19 +115,11 @@ std::vector<OpWrapper> BuildElementwiseLessEqualOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
 
-std::vector<OpWrapper> BuildElementwiseNotOp(
-    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs);
-
 std::vector<OpWrapper> BuildElementwiseGreaterEqualOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
 
 std::vector<OpWrapper> BuildElementwiseExpOp(
-    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs);
-
-std::vector<OpWrapper> BuildElementwiseEqualOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
 

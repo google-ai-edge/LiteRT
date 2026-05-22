@@ -53,8 +53,8 @@ class ScaleOffsetQuantizeParamsWrapper final {
 class AxisScaleOffsetQuantizeParamsWrapper final {
  public:
   explicit AxisScaleOffsetQuantizeParamsWrapper(
-      const std::int32_t axis, const absl::Span<const float> scales,
-      const absl::Span<const std::int32_t> zero_points);
+      std::int32_t axis, absl::Span<const float> scales,
+      absl::Span<const std::int32_t> zero_points);
 
   explicit AxisScaleOffsetQuantizeParamsWrapper(
       const Qnn_AxisScaleOffset_t& axis_scale_offset);
@@ -81,9 +81,9 @@ class AxisScaleOffsetQuantizeParamsWrapper final {
 
   void SetAxis(const std::int32_t axis);
 
-  void GetScales(std::vector<float>& scales) const;
+  std::vector<float> GetScales() const;
 
-  void GetZeroPoints(std::vector<std::int32_t>& zero_points) const;
+  std::vector<std::int32_t> GetZeroPoints() const;
 
  private:
   std::vector<Qnn_ScaleOffset_t> scale_offsets_;
@@ -102,6 +102,10 @@ class BwScaleOffsetQuantizeParamsWrapper final {
 
   std::uint32_t GetBitwidth() const {
     return qnn_quantize_param_.bwScaleOffsetEncoding.bitwidth;
+  }
+
+  void SetBitwidth(std::uint32_t bitwidth) {
+    qnn_quantize_param_.bwScaleOffsetEncoding.bitwidth = bitwidth;
   }
 
  private:
@@ -137,6 +141,10 @@ class BwAxisScaleOffsetQuantizeParamsWrapper final {
 
   std::uint32_t GetBitwidth() const {
     return qnn_quantize_param_.bwAxisScaleOffsetEncoding.bitwidth;
+  }
+
+  void SetBitwidth(std::uint32_t bitwidth) {
+    qnn_quantize_param_.bwAxisScaleOffsetEncoding.bitwidth = bitwidth;
   }
 
  private:

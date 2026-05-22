@@ -42,8 +42,8 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_consts.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_model_predicates.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
@@ -172,7 +172,13 @@ TEST(ModelLoadTest, BadFileData) {
   bad_file.close();
 
   LiteRtModel model = nullptr;
-  EXPECT_THAT(LiteRtCreateModelFromFile(test_file_path.c_str(), &model),
+#ifdef _WIN32
+  const std::string test_file_path_str = test_file_path.string();
+  const char* bad_file_path = test_file_path_str.c_str();
+#else
+  const char* bad_file_path = test_file_path.c_str();
+#endif
+  EXPECT_THAT(LiteRtCreateModelFromFile(bad_file_path, &model),
               IsError(kLiteRtStatusErrorFileIO));
   // NOLINTEND
 }
@@ -1238,6 +1244,91 @@ INSTANTIATE_TEST_SUITE_P(ModelSerializeOpCheckTest, ModelSerializeOpCheckTest,
 INSTANTIATE_TEST_SUITE_P(ModelSerializeQuantizedOpCheckTest,
                          ModelSerializeOpCheckTest,
                          ::testing::ValuesIn(kAllQModels));
+
+TEST(ModelLoadTest, IgnoreNonDispatchCustomOp) {
+  Expected<FlatbufferWrapper::Ptr> flatbuffer =
+      FlatbufferWrapper::CreateFromTflFile(GetTestFilePath(kAddSimple));
+  auto tfl_model = flatbuffer->get()->Unpack();
+
+  // Add a non-dispatch custom op with some dummy custom options
+  auto op_code = std::make_unique<tflite::OperatorCodeT>();
+  op_code->builtin_code = tflite::BuiltinOperator_CUSTOM;
+  op_code->custom_code = "NOT_DISPATCH_OP";
+  tfl_model->operator_codes.push_back(std::move(op_code));
+
+  auto op = std::make_unique<tflite::OperatorT>(
+      *tfl_model->subgraphs[0]->operators[0]);
+  op->opcode_index = tfl_model->operator_codes.size() - 1;
+  // A dummy custom_options that isn't a valid DispatchOpOptions
+  op->custom_options = {1, 2, 3, 4};
+
+  auto tensor = std::make_unique<tflite::TensorT>();
+  tensor->name = "dummy_tensor";
+  tensor->type = tflite::TensorType_FLOAT32;
+  tfl_model->subgraphs[0]->tensors.push_back(std::move(tensor));
+  // We just `push_back` a tensor into `tensor`, so the size of `tensors` should
+  // be non-zero.
+  int new_tensor_index = tfl_model->subgraphs[0]->tensors.size() - 1;
+
+  op->outputs.clear();
+  op->outputs.push_back(new_tensor_index);
+
+  tfl_model->subgraphs[0]->operators.push_back(std::move(op));
+
+  auto serialized = SerializeFlatbuffer(*tfl_model);
+  auto litert_model = LoadModelFromBuffer(serialized);
+  ASSERT_TRUE(litert_model);
+
+  // The model should load correctly but the custom op shouldn't have an asset
+  // attached
+  const auto litert_op = litert_model->get()->MainSubgraph()->Ops().back();
+  EXPECT_EQ(litert_op->OpCode(), kLiteRtOpCodeTflCustom);
+  EXPECT_FALSE(litert_model->get()->FindOpAsset(litert_op));
+}
+
+TEST(ModelSerializeTest, SerializeWithExistingDispatchOpCodeNotAtEnd) {
+  auto model = litert::testing::LoadTestFileModel(kAddSimple);
+  ASSERT_TRUE(model);
+  auto litert_model_val = std::move(*model.Get());
+  auto op = litert_model_val.MainSubgraph()->Ops().front();
+
+  OwningBufferRef<uint8_t> buffer("SOME_BYTE_CODE");
+  const auto buf_id =
+      litert_model_val.Buffers()->RegisterOwnedBuffer(std::move(buffer));
+  litert_model_val.AttachAssetToOp(op, buf_id, "foo");
+
+  op->SetOpCode(kLiteRtOpCodeTflCustom);
+  litert::internal::SetTflOpCodeInd(*op,
+                                    litert::internal::kDispatchOpCodeTflInd);
+
+  auto serialized1 = SerializeModel(std::move(litert_model_val));
+  ASSERT_TRUE(serialized1);
+
+  auto flatbuffer = FlatbufferWrapper::CreateFromBuffer(*serialized1);
+  auto tfl_model = flatbuffer->get()->Unpack();
+
+  // Add another custom op code AFTER the dispatch op code
+  auto op_code = std::make_unique<tflite::OperatorCodeT>();
+  op_code->builtin_code = tflite::BuiltinOperator_CUSTOM;
+  op_code->custom_code = "OTHER_CUSTOM_OP";
+  tfl_model->operator_codes.push_back(std::move(op_code));
+
+  auto serialized2 = SerializeFlatbuffer(*tfl_model);
+  auto litert_model2 = LoadModelFromBuffer(serialized2);
+  ASSERT_TRUE(litert_model2);
+
+  // Now serialize it again
+  auto serialized3 = SerializeModel(std::move(*litert_model2->get()));
+  ASSERT_TRUE(serialized3);
+
+  // Verify the new flatbuffer uses the correct custom code
+  auto fb3 = FlatbufferWrapper::CreateFromBuffer(*serialized3);
+  auto tfl3 = fb3->get()->Unpack();
+
+  const auto& tfl_op = tfl3->subgraphs[0]->operators[0];
+  const auto& code = tfl3->operator_codes[tfl_op->opcode_index];
+  EXPECT_EQ(code->custom_code, "DISPATCH_OP");
+}
 
 }  // namespace
 }  // namespace litert::internal

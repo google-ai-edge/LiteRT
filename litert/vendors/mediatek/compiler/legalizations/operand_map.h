@@ -32,8 +32,8 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/extra_data_mgr.h"
 #include "litert/vendors/mediatek/compiler/legalizations/neuron_utils.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
@@ -42,7 +42,7 @@ namespace litert::mediatek {
 
 class OperandType : public NeuronOperandType {
  public:
-  static Expected<OperandType> Create(const Tensor& t,
+  static Expected<OperandType> Create(const litert::compiler::Tensor& t,
                                       int32_t tensor_flags = 0) {
     auto ranked_tensor_type = t.RankedTensorType();
     if (!ranked_tensor_type) {
@@ -262,7 +262,7 @@ class OperandMap {
 
   // Find the operand index for a given tensor and, if not done already, add the
   // tensor as an operand in the model.
-  Expected<uint32_t> GetOperandIndex(const Tensor& t,
+  Expected<uint32_t> GetOperandIndex(const litert::compiler::Tensor& t,
                                      int32_t tensor_flags = 0) {
     auto i = map_.find(t.Get());
     if (i != map_.end()) {
@@ -279,7 +279,8 @@ class OperandMap {
   uint8_t* GetExtraData(size_t index) { return extra_data_mgr_.Get(index); }
 
  private:
-  Expected<uint32_t> Register(const Tensor& t, int32_t tensor_flags = 0);
+  Expected<uint32_t> Register(const litert::compiler::Tensor& t,
+                              int32_t tensor_flags = 0);
   Expected<uint32_t> Register(const NeuronOperandType& operand_type);
   uint32_t AllocateOperandIndex() { return next_operand_index_++; }
 

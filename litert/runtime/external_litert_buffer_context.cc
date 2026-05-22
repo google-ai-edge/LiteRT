@@ -73,6 +73,15 @@ LiteRtStatus LiteRtExternalLiteRtBufferContextT::RegisterTensorBuffer(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtExternalLiteRtBufferContextT::UnregisterTensorBuffer(
+    const TfLiteOpaqueTensor* tensor) {
+  TfLiteTensorIdentifier tensor_id = get_tensor_identifier_fn_(tensor);
+  if (tensor_buffers_.erase(tensor_id) == 0) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  return kLiteRtStatusOk;
+}
+
 litert::Expected<LiteRtTensorBufferPtr>
 LiteRtExternalLiteRtBufferContextT::GetTensorBuffer(
     const TfLiteOpaqueTensor* tensor) {

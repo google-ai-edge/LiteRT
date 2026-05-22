@@ -16,6 +16,7 @@
 #include <Python.h>
 #include <stdlib.h>
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -29,6 +30,7 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include "mlir/Conversion/Passes.h"
@@ -57,7 +59,10 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Transforms/Passes.h"
+#include "litert/compiler/mlir/flatbuffer_export.h"
 #include "litert/compiler/mlir/status_scoped_diagnostic_handler.h"
+#include "litert/compiler/mlir/tf_tfl_flatbuffer_helpers.h"
+#include "litert/compiler/mlir/tf_to_tfl_flatbuffer.h"
 #include "stablehlo/dialect/Register.h"
 #include "stablehlo/dialect/StablehloOps.h"
 #include "stablehlo/dialect/VhloOps.h"
@@ -65,13 +70,10 @@
 #include "stablehlo/transforms/optimization/Passes.h"
 #include "tflite/converter/common/tfl_pass_config.h"
 #include "tflite/converter/converter_flags.pb.h"
-#include "tflite/converter/flatbuffer_export.h"
 #include "tflite/converter/metrics/converter_error_data.pb.h"
 #include "tflite/converter/model_flags.pb.h"
-#include "tflite/converter/python/tf_tfl_flatbuffer_helpers.h"
 #include "tflite/converter/quantization/common/quantization_lib/quantization_config.h"
 #include "tflite/converter/stablehlo/transforms/stablehlo_passes.h"
-#include "tflite/converter/tf_to_tfl_flatbuffer.h"
 #include "tflite/converter/transforms/optimize_pass.h"
 #include "tflite/converter/transforms/passes.h"
 #include "tflite/converter/types.pb.h"
@@ -107,12 +109,12 @@ absl::Status ExportFlatbuffer(mlir::ModuleOp module_op,
   }
 
   // Export module to flatbuffer.
-  tflite::FlatbufferExportOptions options;
+  litert::FlatbufferExportOptions options;
   options.serialize_stablehlo_ops = true;
   // tflite::kModelUseStablehloTensorKey
   options.metadata["keep_stablehlo_constant"] = "true";
 
-  return tflite::MlirToFlatBufferTranslateFunction(module_op, options,
+  return litert::MlirToFlatBufferTranslateFunction(module_op, options,
                                                    export_stream);
 }
 
@@ -183,6 +185,8 @@ GetTFLConverterFlagsAndPassConfig(mlir::ModuleOp module_op,
       return absl::InvalidArgumentError(absl::StrCat(
           "Unknown model origin framework: ", config.model_origin_framework));
     }
+    converter_flags.set_unsafe_single_batch_rank_reduction(
+        config.unsafe_single_batch_rank_reduction);
   }
 
   mlir::TFL::QuantizationSpecs quant_specs;
@@ -192,7 +196,7 @@ GetTFLConverterFlagsAndPassConfig(mlir::ModuleOp module_op,
     std::vector<std::optional<std::vector<int>>> node_shapes;
     std::vector<std::optional<double>> node_mins;
     std::vector<std::optional<double>> node_maxs;
-    if (auto status = tensorflow::internal::PopulateQuantizationSpecs(
+    if (auto status = PopulateQuantizationSpecs(
             model_flags, converter_flags, &quant_specs, &node_names,
             &node_dtypes, &node_shapes, &node_mins, &node_maxs);
         !status.ok()) {
@@ -236,6 +240,8 @@ GetTFLConverterFlagsAndPassConfig(mlir::ModuleOp module_op,
         converter_flags.canonicalizing_inf_as_min_max_float();
     pass_config.unsafe_fuse_dynamic_shaped_broadcast =
         converter_flags.unsafe_fuse_dynamic_shaped_broadcast();
+    pass_config.unsafe_single_batch_rank_reduction =
+        converter_flags.unsafe_single_batch_rank_reduction();
 
     pass_config.enable_hlo_to_tf_conversion = true;
 
@@ -273,6 +279,14 @@ GetTFLConverterFlagsAndPassConfig(mlir::ModuleOp module_op,
   return std::make_pair(converter_flags, pass_config);
 }
 
+absl::StatusOr<mlir::ModuleOp> GetModuleOp(mlir::Operation* op) {
+  auto module_op = llvm::dyn_cast<mlir::ModuleOp>(op);
+  if (module_op == nullptr) {
+    return absl::InvalidArgumentError("Failed to cast input to module op.");
+  }
+  return module_op;
+}
+
 }  // namespace
 
 void RegisterPasses() {
@@ -290,6 +304,10 @@ void RegisterPasses() {
       []() { return mlir::TFL::CreatePrepareQuantizePass(); });
   mlir::PassRegistration<mlir::OperationPass<mlir::ModuleOp>>(
       []() { return mlir::TFL::CreatePropagateQsvPass(); });
+  mlir::PassRegistration<mlir::OperationPass<mlir::ModuleOp>>(
+      []() { return mlir::TFL::CreatePostQuantizePass(true); });
+  mlir::PassRegistration<mlir::OperationPass<mlir::ModuleOp>>(
+      []() { return mlir::TFL::CreateFuseQDQPass(); });
 }
 
 void PrepareMlirContext(mlir::MLIRContext* context) {
@@ -324,7 +342,7 @@ absl::Status RunConvertToTFLPasses(mlir::ModuleOp module_op,
   }
 
   auto [tfl_converter_flags, tfl_pass_config] = tfl_configs_or.value();
-  return tensorflow::RunConvertTFExecutorToTFLPasses(
+  return litert::RunConvertTFExecutorToTFLPasses(
       module_op, tfl_converter_flags, tfl_pass_config, pass_manager,
       /*saved_model_tags=*/{"serve"}, /*saved_model_dir=*/"");
 }
@@ -448,6 +466,15 @@ absl::StatusOr<llvm::SmallVector<char>> ExportFlatbufferToBytes(
   return std::move(buffer);
 }
 
+absl::StatusOr<llvm::SmallVector<char>> ExportFlatbufferToBytes(
+    mlir::Operation* op) {
+  auto module_op_or = GetModuleOp(op);
+  if (!module_op_or.ok()) {
+    return module_op_or.status();
+  }
+  return ExportFlatbufferToBytes(*module_op_or);
+}
+
 absl::Status ExportFlatbufferToFile(mlir::ModuleOp module_op,
                                     absl::string_view output_path) {
   std::error_code ec;
@@ -457,6 +484,66 @@ absl::Status ExportFlatbufferToFile(mlir::ModuleOp module_op,
                                             output_path, ": ", ec.message()));
   }
   return ExportFlatbuffer(module_op, export_stream);
+}
+
+absl::Status ExportFlatbufferToFile(mlir::Operation* op,
+                                    absl::string_view output_path) {
+  auto module_op_or = GetModuleOp(op);
+  if (!module_op_or.ok()) {
+    return module_op_or.status();
+  }
+  return ExportFlatbufferToFile(*module_op_or, output_path);
+}
+
+absl::StatusOr<NumpyArrayMeta> GetNumpyArrayMetaFromDenseResourceElementsAttr(
+    mlir::Attribute attr) {
+  auto resource_attr = mlir::dyn_cast<mlir::DenseResourceElementsAttr>(attr);
+  if (resource_attr == nullptr) {
+    return absl::InvalidArgumentError(
+        "Failed to cast the input to mlir::DenseResourceElementsAttr.");
+  }
+  auto shaped_type = mlir::dyn_cast<mlir::ShapedType>(resource_attr.getType());
+  if (shaped_type == nullptr) {
+    return absl::InvalidArgumentError(
+        "Failed to cast the input to mlir::ShapedType.");
+  }
+  auto element_type = shaped_type.getElementType();
+
+  auto mlir_shape = shaped_type.getShape();
+  std::vector<size_t> shape(mlir_shape.begin(), mlir_shape.end());
+
+  NumpyArrayMeta::DType dtype;
+  uint8_t bits = 0;
+  if (element_type.isF32()) {
+    dtype = NumpyArrayMeta::DType::kFloat;
+    bits = 32;
+  } else if (element_type.isF64()) {
+    dtype = NumpyArrayMeta::DType::kFloat;
+    bits = 64;
+  } else if (element_type.isInteger(32)) {
+    dtype = NumpyArrayMeta::DType::kInt;
+    bits = 32;
+  } else if (element_type.isInteger(64)) {
+    dtype = NumpyArrayMeta::DType::kInt;
+    bits = 64;
+  } else if (element_type.isInteger(8)) {
+    dtype = NumpyArrayMeta::DType::kInt;
+    bits = 8;
+  } else if (element_type.isInteger(1)) {
+    dtype = NumpyArrayMeta::DType::kBool;
+    bits = 8;
+  } else {
+    return absl::InvalidArgumentError("Unsupported MLIR element type.");
+  }
+
+  auto data = resource_attr.getData();
+
+  return NumpyArrayMeta{
+      .data = data.data(),
+      .shape = shape,
+      .dtype = dtype,
+      .bits = bits,
+  };
 }
 
 }  // namespace litert

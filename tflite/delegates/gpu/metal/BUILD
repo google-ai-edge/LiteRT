@@ -5,7 +5,6 @@ load(
     "@org_tensorflow//tensorflow/core/platform:build_config_root.bzl",
     "tf_gpu_tests_tags",
 )
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("//tflite:build_def.bzl", "CXX17_BAZEL_ONLY_COPTS")
 load(
@@ -27,11 +26,9 @@ DEFAULT_COPTS = [
 
 objc_library(
     name = "buffer",
-    srcs = ["buffer.cc"],
+    srcs = ["buffer.mm"],
     hdrs = ["buffer.h"],
-    copts = DEFAULT_COPTS + [
-        "-ObjC++",
-    ],
+    copts = DEFAULT_COPTS,
     sdk_frameworks = ["Metal"],
     deps = [
         ":gpu_object",
@@ -103,11 +100,9 @@ ios_unit_test(
 
 objc_library(
     name = "compute_task",
-    srcs = ["compute_task.cc"],
+    srcs = ["compute_task.mm"],
     hdrs = ["compute_task.h"],
-    copts = DEFAULT_COPTS + [
-        "-ObjC++",
-    ],
+    copts = DEFAULT_COPTS,
     sdk_frameworks = ["Metal"],
     deps = [
         ":common",
@@ -141,11 +136,9 @@ objc_library(
 
 objc_library(
     name = "inference_context",
-    srcs = ["inference_context.cc"],
+    srcs = ["inference_context.mm"],
     hdrs = ["inference_context.h"],
-    copts = DEFAULT_COPTS + [
-        "-ObjC++",
-    ],
+    copts = DEFAULT_COPTS,
     sdk_frameworks = ["Metal"],
     deps = [
         ":compute_task",
@@ -189,11 +182,9 @@ flatbuffer_cc_library(
 
 objc_library(
     name = "metal_arguments",
-    srcs = ["metal_arguments.cc"],
+    srcs = ["metal_arguments.mm"],
     hdrs = ["metal_arguments.h"],
-    copts = DEFAULT_COPTS + [
-        "-ObjC++",
-    ],
+    copts = DEFAULT_COPTS,
     sdk_frameworks = ["Metal"],
     deps = [
         ":buffer",
@@ -211,22 +202,18 @@ objc_library(
 
 objc_library(
     name = "metal_device",
-    srcs = ["metal_device.cc"],
+    srcs = ["metal_device.mm"],
     hdrs = ["metal_device.h"],
-    copts = DEFAULT_COPTS + [
-        "-ObjC++",
-    ],
+    copts = DEFAULT_COPTS,
     sdk_frameworks = ["Metal"],
     deps = ["//tflite/delegates/gpu/common:gpu_info"],
 )
 
 objc_library(
     name = "metal_spatial_tensor",
-    srcs = ["metal_spatial_tensor.cc"],
+    srcs = ["metal_spatial_tensor.mm"],
     hdrs = ["metal_spatial_tensor.h"],
-    copts = DEFAULT_COPTS + [
-        "-ObjC++",
-    ],
+    copts = DEFAULT_COPTS,
     sdk_frameworks = ["Metal"],
     deps = [
         ":common",
@@ -313,24 +300,3 @@ ios_unit_test(
 tflite_portable_test_suite()
 
 tflite_ios_per_kernel_test()
-
-cc_library(
-    name = "compute_task_cc",
-    srcs = ["compute_task.cc"],
-    hdrs = ["compute_task.h"],
-    deps = [
-        ":common",
-        ":metal_arguments",
-        ":metal_device",
-        ":metal_spatial_tensor",
-        "//tflite/delegates/gpu/common:kernel_info",
-        "//tflite/delegates/gpu/common:precision",
-        "//tflite/delegates/gpu/common:shape",
-        "//tflite/delegates/gpu/common:status",
-        "//tflite/delegates/gpu/common:types",
-        "//tflite/delegates/gpu/common:util",
-        "//tflite/delegates/gpu/common/task:gpu_operation",
-        "//tflite/delegates/gpu/common/task:tuning_type",
-        "@com_google_absl//absl/strings",
-    ],
-)

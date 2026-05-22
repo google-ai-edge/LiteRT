@@ -1,0 +1,17 @@
+{
+  "name": "@litertjs/tensor",
+  "version": "0.0.1",
+  "description": "LiteRT Tensor WASM bindings",
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./tensor_wasm_internal.js",
+  "types": "./tensor_wasm.d.ts",
+  "type": "module",
+  "files": [
+    "tensor_wasm_internal.js",
+    "tensor_wasm_internal.wasm",
+    "tensor_wasm.d.ts"
+  ],
+  "license": "Apache-2.0"
+}

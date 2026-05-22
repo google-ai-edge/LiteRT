@@ -18,6 +18,7 @@ include(FetchContent)
 
 set(NEUROPILOT_HEADERS_DIR "" CACHE PATH "Path to pre-downloaded NeuroPilot headers (root containing neuron/api)")
 set(QAIRT_HEADERS_DIR "" CACHE PATH "Path to pre-downloaded QAIRT/QNN headers (root containing Qnn*.h)")
+set(LITECORE_HEADERS_DIR "" CACHE PATH "Path to Samsung AI LiteCore headers (root containing graph_wrapper_api.h)")
 
 if(NOT NEUROPILOT_HEADERS_DIR)
   if(NOT NEUROPILOT_HEADERS_URL AND NOT NEUROPILOT_GIT_REPO)
@@ -59,8 +60,8 @@ endif()
 # LINT.IfChange(qairt_headers_dir)
 if(NOT QAIRT_HEADERS_DIR)
   if(NOT QAIRT_HEADERS_URL AND NOT QAIRT_GIT_REPO)
-    set(QAIRT_HEADERS_URL "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.42.0.251225/v2.42.0.251225.zip")
-    set(QAIRT_HEADERS_SUBDIR "qairt/2.42.0.251225")
+    set(QAIRT_HEADERS_URL "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.46.0.260424/v2.46.0.260424.zip")
+    set(QAIRT_HEADERS_SUBDIR "qairt/2.46.0.260424")
   endif()
   if(QAIRT_HEADERS_URL)
     set(_qnn_archive "${CMAKE_BINARY_DIR}/_deps/qnn_headers.zip")
@@ -100,12 +101,52 @@ endif()
 #     ../google/npu_runtime_libraries/fetch_qualcomm_library_jit.sh:fetch_qairt_sdk_version,
 # )
 
+# LINT.IfChange(litecore_headers_dir)
+if(NOT LITECORE_HEADERS_DIR)
+  if(NOT LITECORE_HEADERS_URL AND NOT LITECORE_GIT_REPO)
+    set(LITECORE_HEADERS_URL "https://soc-developer.semiconductor.samsung.com/api/v1/resource/download-file/1.1.0/ai-litecore-ubuntu2404-v1.1.0.tar.gz")
+  endif()
+  if(LITECORE_HEADERS_URL)
+    set(_litecore_archive "${CMAKE_BINARY_DIR}/_deps/litecore_headers.tar.gz")
+    file(DOWNLOAD "${LITECORE_HEADERS_URL}" "${_litecore_archive}" SHOW_PROGRESS)
+    set(_litecore_extract_dir "${CMAKE_BINARY_DIR}/_deps/litecore_headers")
+    file(MAKE_DIRECTORY "${_litecore_extract_dir}")
+    file(ARCHIVE_EXTRACT INPUT "${_litecore_archive}" DESTINATION "${_litecore_extract_dir}")
+    set(LITECORE_HEADERS_DIR "${_litecore_extract_dir}")
+  elseif(LITECORE_GIT_REPO)
+    FetchContent_Declare(litecore_headers GIT_REPOSITORY ${LITECORE_GIT_REPO} GIT_TAG ${LITECORE_GIT_TAG})
+    FetchContent_MakeAvailable(litecore_headers)
+    set(LITECORE_HEADERS_DIR ${litecore_headers_SOURCE_DIR})
+  endif()
+  if(LITECORE_HEADERS_SUBDIR)
+    set(LITECORE_HEADERS_DIR ${LITECORE_HEADERS_DIR}/${LITECORE_HEADERS_SUBDIR})
+  endif()
+  set(_litecore_candidates)
+  list(APPEND _litecore_candidates
+    "${LITECORE_HEADERS_DIR}/exynos-ai-litecore-v1.1.0/include"
+    "${LITECORE_HEADERS_DIR}/include"
+    "${LITECORE_HEADERS_DIR}"
+  )
+  foreach(_cand IN LISTS _litecore_candidates)
+    if(_cand AND EXISTS "${_cand}/graph_wrapper_api.h")
+      set(LITECORE_HEADERS_DIR "${_cand}")
+      break()
+    endif()
+  endforeach()
+  message(STATUS "Samsung AI LiteCore headers at: ${LITECORE_HEADERS_DIR}")
+endif()
+
+
 if(NEUROPILOT_HEADERS_DIR)
   list(APPEND CMAKE_REQUIRED_INCLUDES ${NEUROPILOT_HEADERS_DIR})
 endif()
 if(QAIRT_HEADERS_DIR)
   list(APPEND CMAKE_REQUIRED_INCLUDES ${QAIRT_HEADERS_DIR})
 endif()
+if(LITECORE_HEADERS_DIR)
+  list(APPEND CMAKE_REQUIRED_INCLUDES ${LITECORE_HEADERS_DIR})
+endif()
+
 
 function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
   set(SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/${DIR}")
@@ -193,6 +234,13 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
     endif()
   endif()
 
+  if(VENDOR STREQUAL "Samsung")
+    list(APPEND DISPATCH_SRCS
+      "${CMAKE_CURRENT_SOURCE_DIR}/samsung/ai_litecore_manager.cc"
+      "${CMAKE_CURRENT_SOURCE_DIR}/samsung/soc_model.cc"
+    )
+  endif()
+
   set(TGT "dispatch_api_${VENDOR}_so")
   add_library(${TGT} SHARED ${DISPATCH_SRCS})
   if(VENDOR STREQUAL "MediaTek")
@@ -208,6 +256,7 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/${DIR}>
       $<$<BOOL:${NEUROPILOT_HEADERS_DIR}>:${NEUROPILOT_HEADERS_DIR}>
       $<$<BOOL:${QAIRT_HEADERS_DIR}>:${QAIRT_HEADERS_DIR}>
+      $<$<BOOL:${LITECORE_HEADERS_DIR}>:${LITECORE_HEADERS_DIR}>
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/qualcomm>
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core>
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/utils>

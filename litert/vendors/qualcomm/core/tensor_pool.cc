@@ -23,22 +23,20 @@ namespace qnn {
 
 TensorPool::TensorPool() = default;
 
-TensorWrapper& TensorPool::CreateInputTensorWithSuffix(
-    Qnn_DataType_t data_type, const QuantizeParamsWrapperVariant& quant_params,
-    const std::vector<std::uint32_t>& dimensions, std::string_view suffix) {
-  const auto id = tensor_wrappers_.size();
-  auto tensor_name = std::to_string(id) + std::string(suffix);
-  return tensor_wrappers_.emplace_back(std::move(tensor_name),
+TensorWrapper& TensorPool::CreateInputTensorWithName(
+    std::string_view name, Qnn_DataType_t data_type,
+    const QuantizeParamsWrapperVariant& quant_params,
+    const std::vector<std::uint32_t>& dimensions) {
+  return tensor_wrappers_.emplace_back(std::string{name},
                                        QNN_TENSOR_TYPE_APP_WRITE, data_type,
                                        quant_params, dimensions);
 }
 
-TensorWrapper& TensorPool::CreateOutpuTensorWithSuffix(
-    Qnn_DataType_t data_type, const QuantizeParamsWrapperVariant& quant_params,
-    const std::vector<std::uint32_t>& dimensions, std::string_view suffix) {
-  const auto id = tensor_wrappers_.size();
-  auto tensor_name = std::to_string(id) + std::string(suffix);
-  return tensor_wrappers_.emplace_back(std::move(tensor_name),
+TensorWrapper& TensorPool::CreateOutputTensorWithName(
+    std::string_view name, Qnn_DataType_t data_type,
+    const QuantizeParamsWrapperVariant& quant_params,
+    const std::vector<std::uint32_t>& dimensions) {
+  return tensor_wrappers_.emplace_back(std::string{name},
                                        QNN_TENSOR_TYPE_APP_READ, data_type,
                                        quant_params, dimensions);
 }
@@ -96,8 +94,10 @@ TensorWrapper* TensorPool::CreateStaticTensorWithValue(
   if (std::holds_alternative<UndefinedQuantizeParamsWrapper>(quant_params)) {
     switch (data_type) {
       case Qnn_DataType_t::QNN_DATATYPE_INT_32: {
-        if (fill_value < std::numeric_limits<std::int32_t>::min() ||
-            fill_value > std::numeric_limits<std::int32_t>::max()) {
+        if (static_cast<double>(fill_value) <
+                static_cast<double>(std::numeric_limits<std::int32_t>::min()) ||
+            static_cast<double>(fill_value) >
+                static_cast<double>(std::numeric_limits<std::int32_t>::max())) {
           QNN_LOG_ERROR(
               "Fill value out of range when CreateStaticTensorWithValue.");
         }
@@ -106,8 +106,12 @@ TensorWrapper* TensorPool::CreateStaticTensorWithValue(
         break;
       }
       case Qnn_DataType_t::QNN_DATATYPE_UINT_32: {
-        if (fill_value < std::numeric_limits<std::uint32_t>::min() ||
-            fill_value > std::numeric_limits<std::uint32_t>::max()) {
+        if (static_cast<double>(fill_value) <
+                static_cast<double>(
+                    std::numeric_limits<std::uint32_t>::min()) ||
+            static_cast<double>(fill_value) >
+                static_cast<double>(
+                    std::numeric_limits<std::uint32_t>::max())) {
           QNN_LOG_ERROR(
               "Fill value out of range when CreateStaticTensorWithValue.");
         }
@@ -224,6 +228,15 @@ TensorWrapper& TensorPool::CloneNativeTensorFrom(
   return tensor_wrappers_.emplace_back(
       std::move(tensor_name), QNN_TENSOR_TYPE_NATIVE, src.GetDataType(),
       src.quantize_params_, dimensions);
+}
+
+TensorWrapper& TensorPool::CloneNativeTensorFrom(
+    const TensorWrapper& src, const QuantizeParamsWrapperVariant& quant) {
+  const auto id = tensor_wrappers_.size();
+  auto tensor_name = std::to_string(id) + kQnnSuffix;
+  return tensor_wrappers_.emplace_back(
+      std::move(tensor_name), QNN_TENSOR_TYPE_NATIVE, src.GetDataType(), quant,
+      src.dimensions_);
 }
 
 TensorWrapper& TensorPool::CloneStaticTensorFrom(const TensorWrapper& src,

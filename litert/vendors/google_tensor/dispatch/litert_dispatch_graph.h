@@ -77,6 +77,9 @@ class LiteRtDispatchGraphT {
                                   LiteRtDispatchExecutableHandle exec_handle,
                                   const char* absl_nullable function_name);
 
+  LiteRtStatus AnnotateSystemAttribute(const char* absl_nonnull key,
+                                       const char* absl_nonnull value);
+
   LiteRtStatus AnnotateGraph(const char* absl_nonnull key,
                              const char* absl_nonnull value);
 

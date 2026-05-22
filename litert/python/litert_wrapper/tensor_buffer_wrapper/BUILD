@@ -12,14 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# copybara:uncomment load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
-
-# copybara:uncomment load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@rules_python//python:py_library.bzl", "py_library")
+load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
 
 WINDOWS_PYBIND_UNDEFS = select({
-    "@platforms//os:windows": [
+    "//litert:windows": [
         "/UPROTOBUF_USE_DLLS",
         "/UABSL_CONSUME_DLL",
     ],
@@ -39,14 +38,17 @@ cc_library(
         "tensor_buffer_wrapper.h",
     ],
     deps = [
+        "//litert/c:litert_common",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/python/litert_wrapper/common:litert_wrapper_utils",
         "//tflite:framework",
         "//tflite/core:framework",
+        "//tflite/types:half",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/types:span",
         "@xla//third_party/python_runtime:headers",  # buildcleaner: keep
     ] + select({
-        "@platforms//os:windows": [
+        "//litert:windows": [
             "//litert/c:litert_runtime_c_api_import",
         ],
         "//conditions:default": [],
@@ -62,6 +64,11 @@ pybind_extension(
     common_lib_packages = ["litert/python"],
     copts = WINDOWS_PYBIND_UNDEFS,
     link_in_framework = True,
+    linkopts = select({
+        "//litert:ios": ["-framework Metal"],
+        "//litert:macos": ["-framework Metal"],
+        "//conditions:default": [],
+    }),
     pytype_srcs = [
         "_pywrap_litert_tensor_buffer_wrapper.pyi",
     ],
@@ -70,8 +77,6 @@ pybind_extension(
         ":tensor_buffer_wrapper_lib",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//tflite:framework",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/strings:string_view",
         "@pybind11",
         "@xla//third_party/python_runtime:headers",
     ],
@@ -82,15 +87,16 @@ py_library(
     srcs = [
         "tensor_buffer.py",
     ],
+    # copybara:uncomment strict_deps = False,
     visibility = ["//visibility:public"],
     deps = [
-        "//litert/python/litert_wrapper/tensor_buffer_wrapper:_pywrap_litert_tensor_buffer_wrapper",
+        ":_pywrap_litert_tensor_buffer_wrapper",
         "@org_tensorflow//third_party/py/numpy:headers",
     ],
 )
 
 # copybara:uncomment_begin(google-only)
-# py_strict_test(
+# py_test(
 #     name = "tensor_buffer_test",
 #     srcs = ["tensor_buffer_test.py"],
 #     # Static linking is required because this loads a cc_binary as a shared

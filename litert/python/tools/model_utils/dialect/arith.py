@@ -19,6 +19,7 @@ from litert.python.mlir import ir
 import numpy as np
 from xdsl import irdl
 
+from litert.python.mlir._mlir_libs import converter_api_ext
 from litert.python.tools.model_utils import core
 from litert.python.tools.model_utils.dialect import mlir
 
@@ -34,15 +35,21 @@ class ConstantOp(core.MlirOpBase):
 
   name = "arith.constant"
 
-  value = attr_def(mlir.DenseElementsAttr)
+  value = attr_def(mlir.MlirAttribute | mlir.DenseElementsAttr)
   output = result_def()
 
   def __init__(
       self,
-      value: mlir.DenseElementsAttr | np.ndarray | list[Any] | tuple[Any, ...],
+      value: (
+          mlir.MlirAttribute
+          | mlir.DenseElementsAttr
+          | np.ndarray
+          | list[Any]
+          | tuple[Any, ...]
+      ),
       location: ir.Location | None = None,
   ):
-    if not isinstance(value, mlir.DenseElementsAttr):
+    if not isinstance(value, (mlir.MlirAttribute, mlir.DenseElementsAttr)):
       value = mlir.DenseElementsAttr(value)
 
     super().__init__(
@@ -52,7 +59,11 @@ class ConstantOp(core.MlirOpBase):
     )
 
   def numpy(self):
-    return self.value.numpy()
+    if isinstance(self.value, mlir.DenseElementsAttr):
+      return self.value.numpy()
+    return converter_api_ext.dense_resource_elements_attr_to_numpy(
+        self.value.to_mlir()
+    )
 
 
 def constant(*args, **kwargs):

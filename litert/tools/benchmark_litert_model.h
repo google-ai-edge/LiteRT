@@ -249,10 +249,13 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
                             BenchmarkParam::Create<bool>(false));
     default_params.AddParam("gpu_backend",
                             BenchmarkParam::Create<std::string>(""));
-    default_params.AddParam("allow_fp16", BenchmarkParam::Create<bool>(true));
+    default_params.AddParam("gpu-precision",
+                            BenchmarkParam::Create<std::string>("auto"));
     default_params.AddParam("gpu_low_priority",
                             BenchmarkParam::Create<bool>(false));
     default_params.AddParam("enable_weight_sharing",
+                            BenchmarkParam::Create<bool>(false));
+    default_params.AddParam("convert_weights_on_gpu",
                             BenchmarkParam::Create<bool>(false));
     default_params.AddParam("result_file_path",
                             BenchmarkParam::Create<std::string>(""));
@@ -316,7 +319,7 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
   uint64_t ComputeInputBytes() override {
     uint64_t total_bytes = 0;
     for (const auto& buffer : *input_buffers_) {
-      LITERT_ASSIGN_OR_ABORT(const size_t buffer_bytes, buffer.Size());
+      LITERT_ASSIGN_OR_ABORT(const size_t buffer_bytes, buffer.PackedSize());
       total_bytes += buffer_bytes;
     }
     return total_bytes;
@@ -329,7 +332,7 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     float low_range = 0;
     float high_range = 0;
     LITERT_ASSIGN_OR_ABORT(const auto t_tensor_type, t.TensorType());
-    LITERT_ASSIGN_OR_ABORT(const size_t t_size, t.Size());
+    LITERT_ASSIGN_OR_ABORT(const size_t t_size, t.PackedSize());
     size_t num_elements = t_size / *GetByteWidth(t_tensor_type.ElementType());
     tflite::utils::GetDataRangesForType(
         static_cast<TfLiteType>(t_tensor_type.ElementType()), &low_range,
@@ -384,8 +387,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     flags.push_back(tflite::benchmark::CreateFlag<std::string>(
         "gpu_backend", &params_,
         "GPU backend to use when using GPU accelerator."));
-    flags.push_back(tflite::benchmark::CreateFlag<bool>(
-        "allow_fp16", &params_, "Whether to allow FP16."));
+    flags.push_back(tflite::benchmark::CreateFlag<std::string>(
+        "gpu-precision", &params_, "GPU precision option [auto|fp16|fp32]."));
     flags.push_back(tflite::benchmark::CreateFlag<bool>(
         "gpu_low_priority", &params_,
         "Whether to use low priority for GPU accelerator."));
@@ -404,6 +407,10 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
         "input layers. Each item is separated by ':', and the item value "
         "consists of input layer name and range values (both low and high are "
         "inclusive) separated by ',', e.g. input1,1.0,2.0:input2,0,254"));
+    flags.push_back(tflite::benchmark::CreateFlag<bool>(
+        "enable_weight_sharing", &params_, "Whether to enable weight (constant tensor) sharing."));
+    flags.push_back(tflite::benchmark::CreateFlag<bool>(
+        "convert_weights_on_gpu", &params_, "Whether to convert weights on the GPU."));
     return flags;
   }
 

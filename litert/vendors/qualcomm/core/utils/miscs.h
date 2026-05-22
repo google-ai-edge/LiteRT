@@ -35,7 +35,6 @@ inline bool IsStrEq(const char* input, const char* golden) {
 
 }  // namespace miscs
 
-constexpr uint32_t kUint16ZeroPoint = -std::numeric_limits<std::int16_t>::min();
 constexpr uint32_t kQuantBitWidth4 = 4;
 constexpr uint32_t kQuantBitWidth2 = 2;
 
@@ -63,20 +62,12 @@ void DequantizeInto(const absl::Span<const T>& in, const float scale,
   }
 }
 
-void ConvertDataFromInt16toUInt16(absl::Span<const std::int16_t> src,
-                                  std::vector<std::uint16_t>& dst);
-
-void ConvertDataFromUInt16toInt16(absl::Span<const std::uint16_t> src,
-                                  std::vector<std::int16_t>& dst);
-
-void ConvertDataFromInt4ToInt8(const void* src, size_t num_bytes,
-                               std::vector<std::int8_t>& dst);
-
-void ConvertDataFromInt2ToInt8(const void* src, size_t num_bytes,
-                               std::vector<std::int8_t>& dst);
-
 void ConvertDataFromInt8ToInt2(const std::vector<std::int8_t>& src,
                                std::vector<std::int8_t>& dst);
+
+std::vector<std::int8_t> UnpackInt2Data(const void* src, size_t src_bytes);
+
+std::vector<std::int8_t> UnpackInt4Data(const void* src, size_t src_bytes);
 
 bool CreateDirectoryRecursive(const std::filesystem::path& dir_name);
 

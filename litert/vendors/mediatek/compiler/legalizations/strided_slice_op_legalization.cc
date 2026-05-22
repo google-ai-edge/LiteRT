@@ -19,9 +19,8 @@
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
@@ -29,7 +28,7 @@ namespace litert::mediatek {
 
 Expected<void> LegalizeStridedSliceOp(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
-    OperandMap& operand_map, const litert::Op& op) {
+    OperandMap& operand_map, const litert::compiler::Op& op) {
   std::vector<uint32_t> input_indices;
   for (auto& input : op.Inputs()) {
     auto id = operand_map.GetOperandIndex(input);
@@ -40,9 +39,11 @@ Expected<void> LegalizeStridedSliceOp(
   }
 
   int32_t begin_mask;
-  if (auto status = LiteRtGetStridedSliceBeginMaskOption(op.Get(), &begin_mask);
+  if (auto status =
+          op.ctx()->get_strided_slice_begin_mask_option(op.Get(), &begin_mask);
       status != kLiteRtStatusOk) {
-    return Error(status, "Failed to get LiteRtGetStridedSliceBeginMaskOption");
+    return Error(status,
+                 "Failed to get op.ctx()->get_strided_slice_begin_mask_option");
   }
   auto begin_mask_operand_index = operand_map.AddScalarInt32(begin_mask);
   if (!begin_mask_operand_index) {
@@ -51,9 +52,11 @@ Expected<void> LegalizeStridedSliceOp(
   input_indices.push_back(*begin_mask_operand_index);
 
   int32_t end_mask;
-  if (auto status = LiteRtGetStridedSliceEndMaskOption(op.Get(), &end_mask);
+  if (auto status =
+          op.ctx()->get_strided_slice_end_mask_option(op.Get(), &end_mask);
       status != kLiteRtStatusOk) {
-    return Error(status, "Failed to get LiteRtGetStridedSliceEndMaskOption");
+    return Error(status,
+                 "Failed to get op.ctx()->get_strided_slice_end_mask_option");
   }
 
   auto end_mask_operand_index = operand_map.AddScalarInt32(end_mask);
@@ -63,11 +66,12 @@ Expected<void> LegalizeStridedSliceOp(
   input_indices.push_back(*end_mask_operand_index);
 
   int32_t shrink_axis_mask;
-  if (auto status = LiteRtGetStridedSliceShrinkAxisMaskOption(
+  if (auto status = op.ctx()->get_strided_slice_shrink_axis_mask_option(
           op.Get(), &shrink_axis_mask);
       status != kLiteRtStatusOk) {
-    return Error(status,
-                 "Failed to get LiteRtGetStridedSliceShrinkAxisMaskOption");
+    return Error(
+        status,
+        "Failed to get op.ctx()->get_strided_slice_shrink_axis_mask_option");
   }
 
   auto shrink_axis_mask_operand_index =

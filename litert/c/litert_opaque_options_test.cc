@@ -84,13 +84,6 @@ TEST_F(LiteRtOpaqueOptionsTest, GetIdentifier) {
             kLiteRtStatusErrorInvalidArgument);
 }
 
-TEST_F(LiteRtOpaqueOptionsTest, GetPayloadHashFailsIfUnset) {
-  uint64_t hash = 0;
-  // Fails as 'unsupported' because no hash function is set.
-  EXPECT_THAT(LiteRtGetOpaqueOptionsHash(options_, &hash),
-              IsError(kLiteRtStatusErrorUnsupported));
-}
-
 TEST_F(LiteRtOpaqueOptionsTest, GetPayloadHashWorks) {
   auto std_hash = [](const void* payload) -> uint64_t {
     const DummyOpaqueOptions* dummy_options =

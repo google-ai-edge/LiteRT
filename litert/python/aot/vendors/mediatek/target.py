@@ -4,7 +4,7 @@ import dataclasses
 import sys
 from typing import Any
 
-from litert.python.aot.core import types
+from litert.python.aot.core import aot_types
 
 # pylint: disable=g-importing-member
 # pylint: disable=g-import-not-at-top
@@ -41,6 +41,17 @@ class SocModel(StrEnum):
   MT8171 = "MT8171"
   MT8188 = "MT8188"
   MT8189 = "MT8189"
+  MT6993 = "MT6993"
+
+
+# TODO(weiyiw): Generate from supported_soc.csv.
+def map_soc_to_np_version(soc_model: SocModel) -> str:
+  """Returns the NP version for the given SOC model."""
+  match soc_model:
+    case SocModel.MT6993:
+      return "v9"
+    case _:
+      return "v8"
 
 
 class SocManufacturer(StrEnum):
@@ -58,7 +69,7 @@ class AndroidOsVersion(StrEnum):
 
 
 @dataclasses.dataclass
-class Target(types.Target):
+class Target(aot_types.Target):
   """Compilation target for MediaTek SOCs."""
 
   soc_model: SocModel
@@ -82,7 +93,7 @@ class Target(types.Target):
     )
 
   def __repr__(self) -> str:
-    return f"{self.soc_manufacturer.value}_{self.soc_model.value}_{self.android_os_version.value}"
+    return f"{self.soc_manufacturer.value}_{self.soc_model.value}"
 
   def flatten(self) -> dict[str, Any]:
     flattend_target = super().flatten()
@@ -92,3 +103,7 @@ class Target(types.Target):
         "android_os_version": self.android_os_version.value,
     })
     return flattend_target
+
+  @property
+  def recommended_np_version(self) -> str:
+    return map_soc_to_np_version(self.soc_model)

@@ -14,20 +14,19 @@
 
 """External versions of LiteRT build rules that differ outside of Google."""
 
-def litert_cc_users():
-    """Visibility to LiteRT C++ API.
-
-    Return the package group declaration for internal code locations that need
-    visibility to LiteRT C++ API."""
-
-    return []
-
 def litert_friends():
     """Internal visibility for packages outside of LiteRT code location.
 
     Return the package group declaration for internal code locations that need
     visibility to all LiteRT APIs"""
 
+    return []
+
+def friends_of_litert_runtime_builtin_static():
+    """Targets with access to litert_runtime_builtin_static target.
+
+    Return the targets outside of the LiteRT code location that nevertheless have
+    visibility into the internal `litert_runtime_builtin_static` target."""
     return []
 
 def gl_native_deps():
@@ -44,7 +43,7 @@ def gles_headers():
 
 def gles_linkopts():
     return select({
-        "@org_tensorflow//tensorflow:android": [
+        "//litert:android": [
             "-lGLESv3",
             "-lEGL",
         ],
@@ -54,14 +53,14 @@ def gles_linkopts():
 def litert_android_linkopts():
     return select({
         "//litert:litert_android_no_jni": ["-lnativewindow"],
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "//litert:android": ["-landroid"],
         "//conditions:default": [],
     })
 
 def litert_metal_opts():
     return select({
-        "@platforms//os:ios": ["-ObjC++"],
-        "@platforms//os:macos": ["-ObjC++"],
+        "//litert:ios": ["-ObjC++", "-fobjc-arc"],
+        "//litert:macos": ["-ObjC++", "-fobjc-arc"],
         "//conditions:default": [],
     })
 
@@ -71,15 +70,15 @@ def litert_metal_linkopts():
 
 def litert_metal_deps_without_gpu_environment():
     return select({
-        "@platforms//os:ios": ["//tflite/delegates/gpu/metal:metal_device"],
-        "@platforms//os:macos": ["//tflite/delegates/gpu/metal:metal_device"],
+        "//litert:ios": ["//tflite/delegates/gpu/metal:metal_device"],
+        "//litert:macos": ["//tflite/delegates/gpu/metal:metal_device"],
         "//conditions:default": [],
     })
 
 def litert_metal_deps():
     return litert_metal_deps_without_gpu_environment() + select({
-        "@platforms//os:ios": ["//litert/runtime:metal_info"],
-        "@platforms//os:macos": ["//litert/runtime:metal_info"],
+        "//litert:ios": ["//litert/runtime:metal_info"],
+        "//litert:macos": ["//litert/runtime:metal_info"],
         "//conditions:default": [],
     })
 
@@ -90,41 +89,35 @@ def litert_gpu_accelerator_deps():
 # Prebuilt dependencies for GPU accelerators for each platform.
 def litert_gpu_accelerator_prebuilts():
     return select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [
+        "//litert:linux_x86_64": [
             "@litert_prebuilts//:linux_x86_64/libLiteRtWebGpuAccelerator.so",  # copybara:comment
         ],
-        "@org_tensorflow//tensorflow:linux_aarch64": [
+        "//litert:linux_aarch64": [
             "@litert_prebuilts//:linux_arm64/libLiteRtWebGpuAccelerator.so",  # copybara:comment
         ],
-        "@org_tensorflow//tensorflow:macos_arm64": [
+        "//litert:macos_arm64": [
             "@litert_prebuilts//:macos_arm64/libLiteRtMetalAccelerator.dylib",  # copybara:comment
         ],
-        "@platforms//os:windows": [
+        "//litert:ios_arm64": [
+            "@litert_prebuilts//:ios_arm64/libLiteRtMetalAccelerator.dylib",  # copybara:comment
+        ],
+        "//litert:ios_sim_arm64": [
+            "@litert_prebuilts//:ios_sim_arm64/libLiteRtMetalAccelerator.dylib",  # copybara:comment
+        ],
+        "//litert:windows": [
             "@litert_prebuilts//:windows_x86_64/libLiteRtWebGpuAccelerator.dll",  # copybara:comment
         ],
-        "@org_tensorflow//tensorflow:android_arm64": [
+        "//litert:android_arm64": [
             "@litert_prebuilts//:android_arm64/libLiteRtClGlAccelerator.so",  # copybara:comment
         ],
         "//conditions:default": [],
     })
 
-# Prebuilt dependencies for LiteRT runtime shared library for each platform.
-def litert_runtime_prebuilts():
-    return select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [
-            "@litert_prebuilts//:linux_x86_64/libLiteRt.so",  # copybara:comment
-        ],
-        "@org_tensorflow//tensorflow:linux_aarch64": [
-            "@litert_prebuilts//:linux_arm64/libLiteRt.so",  # copybara:comment
-        ],
-        "@org_tensorflow//tensorflow:macos_arm64": [
-            "@litert_prebuilts//:macos_arm64/libLiteRt.dylib",  # copybara:comment
-        ],
-        "@platforms//os:windows": [
-            "@litert_prebuilts//:windows_x86_64/libLiteRt.dll",  # copybara:comment
-        ],
-        "@org_tensorflow//tensorflow:android_arm64": [
-            "@litert_prebuilts//:android_arm64/libLiteRt.so",  # copybara:comment
-        ],
-        "//conditions:default": [],
-    })
+# `compatible_with` value to use for annotating certain build targets, specifically those that might
+# form part of the header dependencies of litert_runtime_c_api.h.  In the internal build environment,
+# whenever `compatible_with = get_compatible_with_portable()` is used on a build target, it MUST
+# also be applied to ALL other targets that that target depends on.  However, this restriction is
+# currently not enforced in the OSS build environment.  To minimize maintainence effort, this
+# annotation should be used as sparingly as possible.
+def get_compatible_with_portable():
+    return None

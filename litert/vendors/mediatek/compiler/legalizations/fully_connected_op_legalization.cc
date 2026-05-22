@@ -21,10 +21,9 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_op_options.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/legalize_helper.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
@@ -33,12 +32,12 @@ namespace litert::mediatek {
 
 namespace {
 
-size_t GetRank(Tensor& op) {
+size_t GetRank(const litert::compiler::Tensor& op) {
   LITERT_ASSIGN_OR_ABORT(auto tensor_type, op.RankedTensorType());
   return tensor_type.Layout().Rank();
 }
 
-absl::Span<const int32_t> GetDimensions(Tensor& op) {
+absl::Span<const int32_t> GetDimensions(const litert::compiler::Tensor& op) {
   LITERT_ASSIGN_OR_ABORT(auto tensor_type, op.RankedTensorType());
   return tensor_type.Layout().Dimensions();
 }
@@ -47,7 +46,7 @@ absl::Span<const int32_t> GetDimensions(Tensor& op) {
 
 Expected<void> LegalizeFullyConnectedOp(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
-    OperandMap& operand_map, const litert::Op& op) {
+    OperandMap& operand_map, const litert::compiler::Op& op) {
   LITERT_LOG(LITERT_INFO, "Legalize Fully Connected");
   std::vector<uint32_t> input_indices;
   for (auto& input : op.Inputs()) {
@@ -72,7 +71,7 @@ Expected<void> LegalizeFullyConnectedOp(
   // A NEURON_FULLY_CONNECTED operation takes a 4rd scalar operand, which is
   // used to pass a TfLiteFusedActivation value.
   uint32_t tfl_fused_activation;
-  if (auto status = LiteRtGetFullyConnectedFusedActivationOption(
+  if (auto status = op.ctx()->get_fully_connected_fused_activation_option(
           op.Get(), &tfl_fused_activation);
       status != kLiteRtStatusOk) {
     return Error(status, "Failed to get fused activation");

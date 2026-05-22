@@ -676,7 +676,7 @@ cc_library_with_tflite(
         "//tflite/core/api:verifier",
         "//tflite/core/c:c_api_types",
         "//tflite/core/c:common",
-        "//tflite/delegates:telemetry",
+        # copybara:uncomment "//tflite/delegates:telemetry",
         "//tflite/delegates/xnnpack:tflite_with_xnnpack_qs8",
         "//tflite/delegates/xnnpack:tflite_with_xnnpack_qu8",
         "//tflite/experimental/resource",
@@ -767,7 +767,7 @@ cc_library(
     ],
     compatible_with = get_compatible_with_portable(),
     visibility = [
-        "//tflite/core:__subpackages__",
+        "//tflite:__subpackages__",
     ],
 )
 
@@ -1200,6 +1200,7 @@ cc_test(
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
         "//tflite/delegates/xnnpack:xnnpack_delegate",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -1216,6 +1217,7 @@ cc_library(
         ":macros",
         "//tflite/core/c:common",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
     ],
 )
 

@@ -304,6 +304,12 @@ TEST(ModelSubgraphTest, TransferTensorsFrom) {
   EXPECT_EQ(other_subgraph.Tensors().size(), 1);
 }
 
+TEST(ModelSubgraphTest, Name) {
+  LiteRtSubgraphT subgraph;
+  subgraph.SetName("MY_SUBGRAPH_NAME");
+  EXPECT_EQ(subgraph.Name(), "MY_SUBGRAPH_NAME");
+}
+
 //
 // Op
 //
@@ -763,6 +769,15 @@ TEST(PrintingTest, TflOptionsNoPrinter) {
   ::tflite::FullyConnectedOptionsT no_opts;
   opts.Set(std::move(no_opts));
   EXPECT_EQ(absl::StrFormat("%v", opts), "{!no_printer}");
+}
+
+TEST(PrintingTest, TflOptionsReshape) {
+  TflOptions opts;
+  opts.type = ::tflite::BuiltinOptions_ReshapeOptions;
+  ::tflite::ReshapeOptionsT reshape_opts;
+  reshape_opts.new_shape = {2, 3};
+  opts.Set(std::move(reshape_opts));
+  EXPECT_EQ(absl::StrFormat("%v", opts), "{new_shape=[2,3]}");
 }
 
 TEST(PrintingTest, TflOptions2NoPrinter) {

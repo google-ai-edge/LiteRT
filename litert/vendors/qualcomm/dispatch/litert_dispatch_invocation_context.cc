@@ -26,6 +26,7 @@
 #include <fstream>
 #include <ios>
 #include <iterator>
+#include <limits>
 #include <ostream>
 #include <sstream>
 #include <string>
@@ -34,11 +35,10 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
@@ -80,13 +80,13 @@ std::string_view inline GetEventUnit(QnnProfile_EventUnit_t unit) {
 LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
     litert::qnn::QnnManager& qnn_manager,
     const litert::qnn::ContextBinaryInfo& context_binary_info,
-    LiteRtDispatchDeviceContextT& device_context,
-    QnnManager::ContextHandle&& context_handle,
+    LiteRtDispatchDeviceContext device_context,
+    const litert::qnn::QnnManager::ContextHandle* context_handle,
     Qnn_ProfileHandle_t profile_handle, int graph_index,
     Qnn_GraphHandle_t graph_handle)
     : qnn_manager_(qnn_manager),
       device_context_(device_context),
-      context_handle_(std::move(context_handle)),
+      context_handle_(*context_handle),
       profile_handle_(profile_handle),
       graph_index_(graph_index),
       graph_handle_(graph_handle),
@@ -152,8 +152,6 @@ LiteRtDispatchInvocationContextT::Create(
                       "Function name not found");
   }
 
-  auto configs = QnnManager::DefaultContextConfigs();
-
   auto profiling_level = qnn.GetOptions().GetProfiling();
   Qnn_ProfileHandle_t profile_handle = nullptr;
   if (profiling_level != ::qnn::Profiling::kOff) {
@@ -166,17 +164,13 @@ LiteRtDispatchInvocationContextT::Create(
     }
   }
 
-  auto context_handle = qnn.CreateContextHandle(
-      configs,
-      absl::MakeSpan(static_cast<const uint8_t*>(exec_bytecode_ptr),
-                     exec_bytecode_buffer->size),
-      profile_handle);
-  if (!context_handle) {
-    return Unexpected(context_handle.Error());
-  }
+  LITERT_ASSIGN_OR_RETURN(
+      const auto& context_handle,
+      device_context.GetOrCreateContext(
+          exec_bytecode_ptr, exec_bytecode_buffer->size, profile_handle));
 
   Qnn_GraphHandle_t graph_handle;
-  if (auto status = qnn.Api()->graphRetrieve(context_handle->get(),
+  if (auto status = qnn.Api()->graphRetrieve(context_handle.Get(),
                                              function_name, &graph_handle);
       status != QNN_SUCCESS) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -184,24 +178,33 @@ LiteRtDispatchInvocationContextT::Create(
   }
 
   return Ptr(new LiteRtDispatchInvocationContextT(
-      qnn, std::move(*context_binary_info), device_context,
-      std::move(*context_handle), profile_handle, graph_index, graph_handle));
+      qnn, std::move(*context_binary_info), &device_context, &context_handle,
+      profile_handle, graph_index, graph_handle));
 }
 
-namespace {
-
-Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
+Expected<LiteRtTensorBufferRequirements>
+LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
     const LiteRtRankedTensorType& tensor_type) {
   if (tensor_type.layout.has_strides) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Tensor strides are not supported by QNN");
   }
 
+  static constexpr std::array<const LiteRtTensorBufferType, 1>
+      kRawTensorBufferTypes = {kLiteRtTensorBufferTypeHostMemory};
   static constexpr std::array<const LiteRtTensorBufferType, 2>
-      kSupportedTensorBufferTypes = {
+      kMemHandleTensorBufferTypes = {
           kLiteRtTensorBufferTypeFastRpc,
           kLiteRtTensorBufferTypeDmaBuf,
       };
+  const LiteRtTensorBufferType* supported_tensor_buffer_types =
+      kMemHandleTensorBufferTypes.data();
+  size_t num_supported_tensor_buffer_types = kMemHandleTensorBufferTypes.size();
+  if (qnn_manager_.GetOptions().GetGraphIOTensorMemType() ==
+      ::qnn::GraphIOTensorMemType::kRaw) {
+    supported_tensor_buffer_types = kRawTensorBufferTypes.data();
+    num_supported_tensor_buffer_types = kRawTensorBufferTypes.size();
+  }
 
   auto buffer_size = litert::internal::GetNumPackedBytes(tensor_type);
   if (!buffer_size) {
@@ -209,18 +212,18 @@ Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
   }
 
   LiteRtTensorBufferRequirements requirements;
-  if (auto status = LiteRtCreateTensorBufferRequirements(
-          kSupportedTensorBufferTypes.size(),
-          kSupportedTensorBufferTypes.data(), *buffer_size, /*num_strides=*/0,
-          /*strides=*/nullptr, &requirements);
+  if (auto status =
+          device_context_->runtime_context()->create_tensor_buffer_requirements(
+              num_supported_tensor_buffer_types, supported_tensor_buffer_types,
+              *buffer_size,
+              /*num_strides=*/0,
+              /*strides=*/nullptr, &requirements);
       status != kLiteRtStatusOk) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Not implemented");
   }
 
   return requirements;
 }
-
-}  // namespace
 
 Expected<LiteRtTensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetInputRequirements(
@@ -278,12 +281,58 @@ Expected<void> LiteRtDispatchInvocationContextT::DetachOutput(
 
 Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
     Qnn_Tensor_t& tensor, LiteRtTensorBufferHandle tensor_buffer_handle) {
-  auto tensor_buffer = device_context_.GetTensorBuffer(tensor_buffer_handle);
+  auto tensor_buffer = device_context_->GetTensorBuffer(tensor_buffer_handle);
   if (!tensor_buffer) {
     return Unexpected(tensor_buffer.Error());
   }
 
-  auto mem_handle = device_context_.GetMemHandle(tensor_buffer_handle, tensor);
+  LiteRtTensorBufferType tensor_buffer_type;
+  LITERT_RETURN_IF_ERROR(
+      device_context_->runtime_context()->get_tensor_buffer_type(
+          *tensor_buffer, &tensor_buffer_type));
+  if (tensor_buffer_type == kLiteRtTensorBufferTypeHostMemory) {
+    void* host_memory_addr = nullptr;
+    LITERT_RETURN_IF_ERROR(
+        device_context_->runtime_context()->get_tensor_buffer_host_memory(
+            *tensor_buffer, &host_memory_addr));
+
+    size_t tensor_buffer_size = 0;
+    LITERT_RETURN_IF_ERROR(
+        device_context_->runtime_context()->get_tensor_buffer_size(
+            *tensor_buffer, &tensor_buffer_size));
+
+    size_t tensor_buffer_offset = 0;
+    LITERT_RETURN_IF_ERROR(
+        device_context_->runtime_context()->get_tensor_buffer_offset(
+            *tensor_buffer, &tensor_buffer_offset));
+
+    if (tensor_buffer_size > std::numeric_limits<uint32_t>::max()) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Host tensor buffer is too large for QNN");
+    }
+    void* data =
+        static_cast<void*>(static_cast<uint8_t*>(host_memory_addr) +
+                           tensor_buffer_offset);
+    if (tensor.version == QNN_TENSOR_VERSION_1) {
+      tensor.v1.memType = QNN_TENSORMEMTYPE_RAW;
+      tensor.v1.clientBuf.data = data;
+      tensor.v1.clientBuf.dataSize = static_cast<uint32_t>(tensor_buffer_size);
+    } else if (tensor.version == QNN_TENSOR_VERSION_2) {
+      if (tensor.v2.isDynamicDimensions != nullptr) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "Dynamic dimensions not yet supported");
+      }
+      tensor.v2.memType = QNN_TENSORMEMTYPE_RAW;
+      tensor.v2.clientBuf.data = data;
+      tensor.v2.clientBuf.dataSize = static_cast<uint32_t>(tensor_buffer_size);
+    } else {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Unsupported QNN tensor version");
+    }
+    return {};
+  }
+
+  auto mem_handle = device_context_->GetMemHandle(tensor_buffer_handle, tensor);
   if (!mem_handle) {
     return Unexpected(mem_handle.Error());
   }
@@ -309,17 +358,18 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
 
 Expected<void> LiteRtDispatchInvocationContextT::DetachBuffer(
     Qnn_Tensor_t& tensor, LiteRtTensorBufferHandle tensor_buffer_handle) {
+  const auto mem_type = tensor.version == QNN_TENSOR_VERSION_1
+                            ? tensor.v1.memType
+                            : tensor.v2.memType;
+  if (mem_type == QNN_TENSORMEMTYPE_RAW) {
+    return device_context_->UnregisterTensorBuffer(tensor_buffer_handle);
+  }
   LITERT_RETURN_IF_ERROR(
-      device_context_.UnregisterTensorBuffer(tensor_buffer_handle, tensor));
+      device_context_->UnregisterTensorBuffer(tensor_buffer_handle, tensor));
   return {};
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::Execute() {
-  for (int i = 0; i < inputs_.size(); ++i) {
-    if (inputs_[i].IsQuantU16()) {
-      ConvertToUint16(input_buffer_handles_[i], inputs_[i].GetTensorBytes());
-    }
-  }
   const size_t num_ins = inputs_.size();
   LITERT_STACK_ARRAY(Qnn_Tensor_t, inputs, num_ins, QNN_TENSOR_INIT);
   for (size_t i = 0; i < num_ins; ++i) {
@@ -349,11 +399,6 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
     LITERT_RETURN_IF_ERROR(Profile());
   }
 
-  for (int i = 0; i < outputs_.size(); ++i) {
-    if (outputs_[i].IsQuantU16()) {
-      ConvertToInt16(output_buffer_handles_[i], outputs_[i].GetTensorBytes());
-    }
-  }
   // TODO (chunhsue-qti): pass folder as option
   std::string dump_folder = "/data/local/tmp/dumped_tensors/";
   for (int i = 0; i < outputs_.size(); ++i) {
@@ -365,54 +410,6 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
     }
   }
 
-  return {};
-}
-
-Expected<void> LiteRtDispatchInvocationContextT::ConvertToUint16(
-    LiteRtTensorBufferHandle tensor_buffer_handle, size_t bytes) {
-  auto tensor_buffer = device_context_.GetTensorBuffer(tensor_buffer_handle);
-  if (!tensor_buffer) {
-    return Unexpected(tensor_buffer.Error());
-  }
-  void* mem_addr;
-  if (auto status = LiteRtLockTensorBuffer(
-          *tensor_buffer, &mem_addr, kLiteRtTensorBufferLockModeReadWrite);
-      status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to lock the tensor buffer");
-  }
-  auto int16_data = absl::MakeSpan(static_cast<const std::int16_t*>(mem_addr),
-                                   bytes / sizeof(std::int16_t));
-  std::vector<std::uint16_t> uint16_data;
-  qnn::ConvertDataFromInt16toUInt16(int16_data, uint16_data);
-  std::memcpy(mem_addr, uint16_data.data(), bytes);
-  if (auto status = LiteRtUnlockTensorBuffer(*tensor_buffer);
-      status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to unlock the tensor buffer");
-  }
-  return {};
-}
-
-Expected<void> LiteRtDispatchInvocationContextT::ConvertToInt16(
-    LiteRtTensorBufferHandle tensor_buffer_handle, size_t bytes) {
-  auto tensor_buffer = device_context_.GetTensorBuffer(tensor_buffer_handle);
-  if (!tensor_buffer) {
-    return Unexpected(tensor_buffer.Error());
-  }
-  void* mem_addr;
-  if (auto status = LiteRtLockTensorBuffer(
-          *tensor_buffer, &mem_addr, kLiteRtTensorBufferLockModeReadWrite);
-      status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to lock the tensor buffer");
-  }
-  auto uint16_data = absl::MakeSpan(static_cast<const std::uint16_t*>(mem_addr),
-                                    bytes / sizeof(std::uint16_t));
-  std::vector<std::int16_t> int16_data;
-  qnn::ConvertDataFromUInt16toInt16(uint16_data, int16_data);
-  std::memcpy(mem_addr, int16_data.data(), bytes);
-  if (auto status = LiteRtUnlockTensorBuffer(*tensor_buffer);
-      status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to unlock the tensor buffer");
-  }
   return {};
 }
 

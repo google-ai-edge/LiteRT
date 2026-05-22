@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_bin", "litert_dynamic_lib", "litert_lib")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 
@@ -27,10 +28,14 @@ litert_dynamic_lib(
         "device_context.cc",
         "dispatch_api.cc",
         "invocation_context.cc",
+        "openvino_shared_core.cc",
+        "openvino_tensor_buffer.cc",
     ],
     hdrs = [
         "device_context.h",
         "invocation_context.h",
+        "openvino_shared_core.h",
+        "openvino_tensor_buffer.h",
     ],
     copts = [
         "-Os",
@@ -54,19 +59,38 @@ litert_dynamic_lib(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     linkopts = litert_android_linkopts() + [
         "-Wl,-soname=libLiteRtDispatch_IntelOpenvino.so",
-        "-Wl,-lc++abi",
-    ],
+    ] + select({
+        "//litert:android": ["-Wl,-lc++abi"],
+        "//conditions:default": [],
+    }),
     shared_lib_name = "dispatch_api_so",
     so_name = "libLiteRtDispatch_IntelOpenvino.so",
-    visibility = ["//litert:__subpackages__"],
+    visibility = [
+        "//ci/tools/python/wheel:__subpackages__",
+        "//litert:__subpackages__",
+    ],
     deps = [
         ":litert_dispatch_api",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_environment_header",
+        "//litert/c:litert_environment_options_header",
+        "//litert/c:litert_model_header",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer_header",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_custom_tensor_buffer_handlers_def",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_logging_helper_with_runtime_context",
+        "//litert/c/internal:litert_runtime_context_header",
         "//litert/c/internal:litert_scheduling_info",
-        "//litert/cc:litert_environment_options",
+        "//litert/c/options:litert_intel_openvino_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_context_wrapper",
+        "//litert/cc/internal:litert_handle",
+        "//litert/cc/internal:litert_options_wrapper",
+        "//litert/cc/options:litert_intel_openvino_options",
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/intel_openvino:ov_utils",
@@ -82,7 +106,7 @@ litert_bin(
         "dispatch_api.cc",
         "invocation_context.cc",
         "openvino_shared_core.cc",
-        "remote_tensor_buffer.cc",
+        "openvino_tensor_buffer.cc",
     ],
     copts = ["-fexceptions"] + select({
         "//litert/runtime/dispatch:windows_msvc": [
@@ -98,18 +122,29 @@ litert_bin(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     linkopts = litert_android_linkopts(),
     linkshared = 1,
-    visibility = ["//litert:__subpackages__"],
+    visibility = ["//visibility:public"],  # Allows LiteRT-LM packaging.
     deps = [
         ":litert_dispatch_api",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c:litert_tensor_buffer",
+        "//litert/c/internal:litert_custom_tensor_buffer_handlers_def",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_logging_helper_with_runtime_context",
         "//litert/c/internal:litert_scheduling_info",
+        "//litert/c/options:litert_intel_openvino_options",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_opaque_options",
+        "//litert/cc/dynamic_runtime:litert_options",
+        "//litert/cc/internal:litert_context_wrapper",
+        "//litert/cc/internal:litert_handle",
+        "//litert/cc/internal:litert_opaque_options_wrapper",
+        "//litert/cc/internal:litert_options_wrapper",
+        "//litert/cc/options:litert_intel_openvino_options",
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/intel_openvino:ov_utils",
@@ -124,18 +159,22 @@ litert_lib(
         "device_context.h",
         "invocation_context.h",
         "openvino_shared_core.h",
-        "remote_tensor_buffer.h",
+        "openvino_tensor_buffer.h",
     ],
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options_header",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer_header",
+        "//litert/c/internal:litert_runtime_context_header",
         "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/options:litert_intel_openvino_options",
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/intel_openvino:ov_utils",
@@ -159,12 +198,15 @@ cc_test(
     linkopts = litert_android_linkopts(),
     linkstatic = 1,
     tags = [
+        "manual",
         "no-remote-exec",
         "no_oss",
         "notap",
     ],
     deps = [
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_runtime_context_testonly",
         "//litert/cc:litert_any",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
@@ -180,5 +222,17 @@ cc_test(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+sh_test(
+    name = "intel_openvino_dispatch_so_symbol_test",
+    srcs = ["//litert/test:litert_c_api_dependency_test.sh"],
+    args = [
+        "LiteRtDispatchGetApi",
+        "$(location :dispatch_api_so)",
+    ],
+    data = [
+        ":dispatch_api_so",
     ],
 )

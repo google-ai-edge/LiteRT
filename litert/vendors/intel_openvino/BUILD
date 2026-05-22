@@ -16,6 +16,7 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(
+    # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
     default_visibility = ["//litert:__subpackages__"],
 )
 
@@ -23,8 +24,7 @@ cc_library(
     name = "ov_utils",
     hdrs = ["utils.h"],
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/c:litert_model_types",
         "@intel_openvino//:openvino",
     ],
 )

@@ -15,8 +15,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_INTERNAL_LITERT_RUNTIME_C_API_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_INTERNAL_LITERT_RUNTIME_C_API_H_
 
-#include <cstddef>
-#include <cstdint>
+#include <stddef.h>
+#include <stdint.h>
 
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
@@ -34,9 +34,25 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/litert_webgpu_types.h"
 
+#ifdef __cplusplus
 extern "C" {
+#endif
 
-// TODO(b/475253786): Clean up build time macros in the function table.
+// For any changes to this file that would affect the ABI,
+// don't forget to also bump the ABI version number.
+
+// LINT.IfChange(version_number)
+
+// LiteRT CompiledModels ABI version number, in semver 2 format
+// (see https://semver.org).  This is the ABI version number for
+// the methods in LiteRtRuntimeCApiStruct, which is defined below.
+#define LITERT_RUNTIME_ABI_VERSION "0.3.0"
+// TODO(b/493650900): declare that as an extern const (and
+// initialize it in a .cc file) rather than using a macro.
+
+// LINT.ThenChange()
+
+// LINT.IfChange(method_table)
 
 // A struct that contains all the LiteRT runtime C API functions.
 //
@@ -44,6 +60,17 @@ extern "C" {
 // regardless of the underlying runtime implementation.
 //
 // NOTE: All new fields should be added to the end of the struct.
+//
+// For binary backwards compatibility, EXISTING ENTRIES IN THESE TABLES SHOULD
+// NEVER BE DELETED, and should not be modified until they are no longer used,
+// including the usage in already built app binaries -- verifying this may
+// require adding logging.  Entries that are really not longer used at all,
+// even by old code, can be replaced by a placeholder of the same signature,
+// e.g. a function pointer that is set to a no-op function, but should not be
+// deleted, to avoid affecting the offsets of entries later in the table.  Any
+// new methods should only be added at the END of the table (unless reusing a
+// slot occupied by a placeholder).
+
 typedef struct LiteRtRuntimeCApiStruct {
   //
   // LiteRtEnvironment
@@ -414,7 +441,6 @@ typedef struct LiteRtRuntimeCApiStruct {
   // litert_tensor_buffer.h: LiteRtGetTensorBufferHostMemory
   LiteRtStatus (*litert_get_tensor_buffer_host_memory)(
       LiteRtTensorBuffer tensor_buffer, void** host_memory_addr);
-#if LITERT_HAS_AHWB_SUPPORT
   // litert_tensor_buffer.h: LiteRtCreateTensorBufferFromAhwb
   LiteRtStatus (*litert_create_tensor_buffer_from_ahwb)(
       LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
@@ -423,8 +449,6 @@ typedef struct LiteRtRuntimeCApiStruct {
   // litert_tensor_buffer.h: LiteRtGetTensorBufferAhwb
   LiteRtStatus (*litert_get_tensor_buffer_ahwb)(
       LiteRtTensorBuffer tensor_buffer, AHardwareBuffer** ahwb);
-#endif  // LITERT_HAS_AHWB_SUPPORT
-#if LITERT_HAS_ION_SUPPORT
   // litert_tensor_buffer.h: LiteRtCreateTensorBufferFromIonBuffer
   LiteRtStatus (*litert_create_tensor_buffer_from_ion_buffer)(
       const LiteRtRankedTensorType* tensor_type, void* ion_buffer_addr,
@@ -434,8 +458,6 @@ typedef struct LiteRtRuntimeCApiStruct {
   LiteRtStatus (*litert_get_tensor_buffer_ion_buffer)(LiteRtTensorBuffer buffer,
                                                       void** ion_buffer_addr,
                                                       int* ion_buffer_fd);
-#endif  // LITERT_HAS_ION_SUPPORT
-#if LITERT_HAS_DMABUF_SUPPORT
   // litert_tensor_buffer.h: LiteRtCreateTensorBufferFromDmaBufBuffer
   LiteRtStatus (*litert_create_tensor_buffer_from_dma_buf_buffer)(
       const LiteRtRankedTensorType* tensor_type, void* dmabuf_buffer_addr,
@@ -446,8 +468,6 @@ typedef struct LiteRtRuntimeCApiStruct {
   LiteRtStatus (*litert_get_tensor_buffer_dma_buf_buffer)(
       LiteRtTensorBuffer tensor_buffer, void** dmabuf_buffer_addr,
       int* dmabuf_buffer_fd);
-#endif  // LITERT_HAS_DMABUF_SUPPORT
-#if LITERT_HAS_FASTRPC_SUPPORT
   // litert_tensor_buffer.h: LiteRtCreateTensorBufferFromFastRpcBuffer
   LiteRtStatus (*litert_create_tensor_buffer_from_fast_rpc_buffer)(
       const LiteRtRankedTensorType* tensor_type, void* fastrpc_buffer_addr,
@@ -457,8 +477,6 @@ typedef struct LiteRtRuntimeCApiStruct {
   LiteRtStatus (*litert_get_tensor_buffer_fast_rpc_buffer)(
       LiteRtTensorBuffer tensor_buffer, void** fastrpc_buffer_addr,
       int* fastrpc_buffer_fd);
-#endif  // LITERT_HAS_FASTRPC_SUPPORT
-#if LITERT_HAS_OPENCL_SUPPORT
   // litert_tensor_buffer.h: LiteRtCreateTensorBufferFromOpenClMemory
   LiteRtStatus (*litert_create_tensor_buffer_from_opencl_memory)(
       LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
@@ -468,7 +486,6 @@ typedef struct LiteRtRuntimeCApiStruct {
   // litert_tensor_buffer.h: LiteRtGetTensorBufferOpenClMemory
   LiteRtStatus (*litert_get_tensor_buffer_opencl_memory)(
       LiteRtTensorBuffer tensor_buffer, LiteRtClMem* cl_mem_addr);
-#endif  // LITERT_HAS_OPENCL_SUPPORT
   // litert_tensor_buffer.h: LiteRtGetTensorBufferCustomTensorBufferHandle
   LiteRtStatus (*litert_get_tensor_buffer_custom_tensor_buffer_handle)(
       LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle);
@@ -491,7 +508,6 @@ typedef struct LiteRtRuntimeCApiStruct {
   LiteRtStatus (*litert_get_tensor_buffer_gl_texture)(
       LiteRtTensorBuffer tensor_buffer, LiteRtGLenum* target, LiteRtGLuint* id,
       LiteRtGLenum* format, size_t* size_bytes, LiteRtGLint* layer);
-#if LITERT_HAS_WEBGPU_SUPPORT
   // litert_tensor_buffer.h: LiteRtCreateTensorBufferFromWebGpuBuffer
   LiteRtStatus (*litert_create_tensor_buffer_from_web_gpu_buffer)(
       LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
@@ -506,8 +522,6 @@ typedef struct LiteRtRuntimeCApiStruct {
       void* webgpu_texture, size_t webgpu_texture_size,
       LiteRtWebGpuTextureDeallocator deallocator,
       LiteRtTensorBuffer* tensor_buffer);
-#endif  // LITERT_HAS_WEBGPU_SUPPORT
-#if LITERT_HAS_METAL_SUPPORT
   // litert_tensor_buffer.h: LiteRtCreateTensorBufferFromMetalMemory
   LiteRtStatus (*litert_create_tensor_buffer_from_metal_memory)(
       LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
@@ -517,12 +531,9 @@ typedef struct LiteRtRuntimeCApiStruct {
   // litert_tensor_buffer.h: LiteRtGetTensorBufferMetalMemory
   LiteRtStatus (*litert_get_tensor_buffer_metal_memory)(
       LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle);
-#endif  // LITERT_HAS_METAL_SUPPORT
-#if LITERT_HAS_VULKAN_SUPPORT
   // litert_tensor_buffer.h: LiteRtGetTensorBufferVulkanMemory
   LiteRtStatus (*litert_get_tensor_buffer_vulkan_memory)(
       LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle);
-#endif  // LITERT_HAS_VULKAN_SUPPORT
   // litert_tensor_buffer.h: LiteRtCreateManagedTensorBuffer
   LiteRtStatus (*litert_create_managed_tensor_buffer)(
       LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
@@ -732,8 +743,20 @@ typedef struct LiteRtRuntimeCApiStruct {
       size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
       size_t num_output_buffers, LiteRtTensorBuffer* output_buffers,
       bool* async, const LiteRtSchedulingInfo* scheduling_info);
+
+  // litert_environment.h: LiteRtEnvironmentSupportsFP16
+  LiteRtStatus (*litert_environment_supports_fp16)(
+      LiteRtEnvironment environment, bool* is_supported);
+
+  // litert_model.h: LiteRtCreateModelFromFd
+  LiteRtStatus (*litert_create_model_from_fd)(int fd, size_t offset,
+                                              size_t size, LiteRtModel* model);
 } LiteRtRuntimeCApiStruct;
 
+// LINT.ThenChange(:version_number)
+
+#ifdef __cplusplus
 }  // extern "C"
+#endif
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_C_INTERNAL_LITERT_RUNTIME_C_API_H_

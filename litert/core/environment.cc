@@ -95,3 +95,7 @@ bool LiteRtEnvironmentT::SupportsAhwbClInterop() {
 bool LiteRtEnvironmentT::SupportsAhwbGlInterop() {
   return gpu_env_ != nullptr && gpu_env_->SupportsAhwbGlInterop();
 }
+
+bool LiteRtEnvironmentT::SupportsFP16() {
+  return gpu_env_ != nullptr && gpu_env_->SupportsFP16();
+}

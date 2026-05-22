@@ -466,17 +466,39 @@ TEST(BackendTest, Parse) {
   }
 }
 
+TEST(GraphIOTensorMemTypeTest, Parse) {
+  std::string error;
+  QualcommOptions::GraphIOTensorMemType value;
+
+  {
+    static constexpr absl::string_view kRaw = "raw";
+    static constexpr QualcommOptions::GraphIOTensorMemType kRawEnum =
+        QualcommOptions::GraphIOTensorMemType::kRaw;
+    EXPECT_TRUE(AbslParseFlag(kRaw, &value, &error));
+    EXPECT_EQ(value, kRawEnum);
+    EXPECT_EQ(kRaw, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kMemHandle = "memhandle";
+    static constexpr QualcommOptions::GraphIOTensorMemType kMemHandleEnum =
+        QualcommOptions::GraphIOTensorMemType::kMemHandle;
+    EXPECT_TRUE(AbslParseFlag(kMemHandle, &value, &error));
+    EXPECT_EQ(value, kMemHandleEnum);
+    EXPECT_EQ(kMemHandle, AbslUnparseFlag(value));
+  }
+}
+
 TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   Expected<QualcommOptions> options = QualcommOptions::Create();
   ASSERT_TRUE(options.HasValue());
   ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetLogLevel(), QualcommOptions::LogLevel::kInfo);
   EXPECT_EQ(options.Value().GetProfiling(), QualcommOptions::Profiling::kOff);
-  EXPECT_FALSE(options.Value().GetUseHtpPreference());
-  EXPECT_FALSE(options.Value().GetUseQint16AsQuint16());
   EXPECT_FALSE(options.Value().GetEnableWeightSharing());
   EXPECT_TRUE(options.Value().GetUseConvHMX());
   EXPECT_TRUE(options.Value().GetUseFoldReLU());
+  EXPECT_EQ(options.Value().GetHtpPPoint(), 0);
   EXPECT_EQ(options.Value().GetHtpPerformanceMode(),
             QualcommOptions::HtpPerformanceMode::kDefault);
   EXPECT_TRUE(options.Value().GetDumpTensorIds().empty());
@@ -487,6 +509,8 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_EQ(options.Value().GetGraphPriority(),
             QualcommOptions::GraphPriority::kDefault);
   EXPECT_EQ(options.Value().GetBackend(), QualcommOptions::Backend::kHtp);
+  EXPECT_EQ(options.Value().GetGraphIOTensorMemType(),
+            QualcommOptions::GraphIOTensorMemType::kMemHandle);
 }
 
 }  // namespace

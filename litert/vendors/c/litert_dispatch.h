@@ -36,6 +36,8 @@ LITERT_DEFINE_HANDLE(LiteRtDispatchDeviceContext);
 LITERT_DEFINE_HANDLE(LiteRtDispatchInvocationContext);
 LITERT_DEFINE_HANDLE(LiteRtDispatchMetrics);
 
+typedef struct LiteRtRuntimeContext LiteRtRuntimeContext;
+
 typedef uint64_t LiteRtTensorBufferHandle;
 
 typedef enum LiteRtDispatchCapabilities {
@@ -43,6 +45,12 @@ typedef enum LiteRtDispatchCapabilities {
   kLiteRtDispatchCapabilitiesBasic = 1,  // The vendor supports the Basic API
   kLiteRtDispatchCapabilitiesAsync = 2,  // The vendor supports the Async API
   kLiteRtDispatchCapabilitiesGraph = 4,  // The vendor supports the Graph API
+#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+  // The vendor supports binding buffers to internal graph edges by edge_id.
+  kLiteRtDispatchCapabilitiesEdgeBufferBinding = 8,
+  // The vendor supports querying and attaching scratchpad buffers.
+  kLiteRtDispatchCapabilitiesScratchpad = 16,
+#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 } LiteRtDispatchCapabilities;
 
 // Types of executable that can run on the HW accelerators.
@@ -64,7 +72,8 @@ typedef struct LiteRtMemBuffer {
 // This function should be called before calling any other Dispatch API
 // functions.
 LITERT_CAPI_EXPORT LiteRtStatus
-LiteRtDispatchInitialize(LiteRtEnvironment environment, LiteRtOptions options);
+LiteRtDispatchInitialize(const LiteRtRuntimeContext* runtime_context,
+                         LiteRtEnvironment environment, LiteRtOptions options);
 
 // Return the version of the Dispatch API runtime.
 LITERT_CAPI_EXPORT LiteRtStatus
@@ -94,8 +103,9 @@ LiteRtDispatchGetCapabilities(int* capabilities);
 // the memory associated with the context and should call
 // LiteRtDispatchDeviceContextDestroy() to release it. Return NULL in case of
 // error.
-LITERT_CAPI_EXPORT LiteRtStatus
-LiteRtDispatchDeviceContextCreate(LiteRtDispatchDeviceContext* device_context);
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchDeviceContextCreate(
+    const LiteRtRuntimeContext* runtime_context, LiteRtOptions options,
+    LiteRtDispatchDeviceContext* device_context);
 
 // Release a `LiteRtDispatchDeviceContext` object.
 //
@@ -141,6 +151,7 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchUnregisterTensorBuffer(
 // executable. Parameter `function_name` is required if the provided executable
 // includes multiple functions.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchInvocationContextCreate(
+    const LiteRtRuntimeContext* runtime_context,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
@@ -292,6 +303,21 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchLoadExecutable(
 LITERT_CAPI_EXPORT LiteRtStatus
 LiteRtDispatchUnloadExecutable(LiteRtDispatchDeviceContext device_context,
                                LiteRtDispatchExecutableHandle exec_handle);
+#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+// Query scratchpad buffer requirements for a specific executable function.
+//
+// The returned `scratchpad_requirements` object is owned by the caller.
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetScratchpadRequirements(
+    LiteRtDispatchDeviceContext device_context,
+    LiteRtDispatchExecutableHandle exec_handle, const char* function_name,
+    LiteRtTensorBufferRequirements* scratchpad_requirements);
+
+// Attach a scratchpad buffer to a specific executable function.
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAttachScratchpadBuffer(
+    LiteRtDispatchDeviceContext device_context,
+    LiteRtDispatchExecutableHandle exec_handle, const char* function_name,
+    LiteRtTensorBufferHandle scratchpad_buffer_handle);
+#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 
 // Assign an executable function to a graph node. Parameter `function_name` is
 // mandatory if the given executable includes multiple functions.
@@ -317,6 +343,24 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAnnotateEdge(
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchInvocationContextCreateFromGraph(
     LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph graph,
     LiteRtDispatchInvocationContext* invocation_context);
+
+#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+// Attach a buffer to an internal graph edge by edge id.
+//
+// This is intended for advanced runtimes that want to provide buffers for
+// intermediate edges (and other internal edges) based on an external memory
+// plan (e.g., northbound).
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAttachEdgeBuffer(
+    LiteRtDispatchInvocationContext invocation_context,
+    LiteRtDispatchEdgeId edge_id,
+    LiteRtTensorBufferHandle tensor_buffer_handle);
+
+// Detach a buffer from an internal graph edge by edge id.
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchDetachEdgeBuffer(
+    LiteRtDispatchInvocationContext invocation_context,
+    LiteRtDispatchEdgeId edge_id,
+    LiteRtTensorBufferHandle tensor_buffer_handle);
+#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 
 // Get the dispatch graph associated with an invocation context.
 // Note:

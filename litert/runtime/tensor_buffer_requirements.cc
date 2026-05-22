@@ -44,7 +44,7 @@ namespace litert::internal {
 litert::Expected<std::unique_ptr<LiteRtTensorBufferRequirementsT>> Join(
     const LiteRtTensorBufferRequirementsT& src1,
     const LiteRtTensorBufferRequirementsT& src2) {
-  LITERT_LOG(LITERT_INFO, "Join src1=%s src2=%s", src1.ToString().c_str(),
+  LITERT_LOG(LITERT_VERBOSE, "Join src1=%s src2=%s", src1.ToString().c_str(),
              src2.ToString().c_str());
 
   // Find buffer types common to both requirements.

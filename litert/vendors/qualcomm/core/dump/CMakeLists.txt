@@ -5,22 +5,27 @@
 cmake_minimum_required(VERSION 3.20)
 
 # Create dump library with explicit source list
-add_library(qnn_dump STATIC)
+add_library(qnn_dump_graph STATIC)
 
-target_sources(qnn_dump
+target_sources(qnn_dump_graph
     PRIVATE
         dump_graph.cc
 )
 
-target_include_directories(qnn_dump
+target_include_directories(qnn_dump_graph
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
 
-target_link_libraries(qnn_dump
+target_link_libraries(qnn_dump_graph
     PUBLIC
-        qnn_core
+        absl::flat_hash_set
         absl::status
         absl::statusor
         nlohmann_json::nlohmann_json
+    PRIVATE
+        qnn_log
+        qnn_miscs
+        qnn_wrappers
+
 )

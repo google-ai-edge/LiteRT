@@ -16,24 +16,24 @@
 #define ODML_LITERT_LITERT_VENDORS_MEDIATEK_COMPILER_LEGALIZATIONS_COMMON_OP_LEGALIZATION_H_
 
 #include "litert/c/litert_common.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
 namespace litert::mediatek {
 
-bool VerifyCommonOp(const litert::Op& op, LiteRtOpCode op_code);
+bool VerifyCommonOp(const litert::compiler::Op& op, LiteRtOpCode op_code);
 
 Expected<void> LegalizeCommonOp(const NeuronAdapterApi& neuron_adapter_api,
                                 NeuronModel* model, OperandMap& operand_map,
-                                const litert::Op& op,
+                                const litert::compiler::Op& op,
                                 NeuronOperationType mtk_operation_type);
 
 template <typename... AdditionalOperands>
 Expected<void> LegalizeOp(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
-    OperandMap& operand_map, const litert::Op& op,
+    OperandMap& operand_map, const litert::compiler::Op& op,
     NeuronOperationType operation_type,
     std::tuple<AdditionalOperands...> additional_operands) {
   LITERT_LOG(LITERT_INFO, "Legalize Operation %d", op.Code());

@@ -22,9 +22,9 @@
 #include <utility>
 #include <vector>
 
-#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
-#include "litert/c/litert_common.h"
+#include "litert/cc/litert_api_types.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
 
@@ -44,23 +44,23 @@ class TensorBufferRequirements {
   TensorBufferRequirements() = default;
 
   static Expected<TensorBufferRequirements> Create(
-      absl::Span<const TensorBufferType> buffer_types, size_t buffer_size,
-      absl::Span<const uint32_t> strides =
-          absl::MakeSpan(static_cast<const uint32_t*>(nullptr), 0)) {
+      Span<const TensorBufferType> buffer_types, size_t buffer_size,
+      Span<const uint32_t> strides =
+          internal::MakeLiteRtSpan(static_cast<const uint32_t*>(nullptr), 0)) {
     return CreateWithAlignment(buffer_types, buffer_size,
                                kHostMemoryBufferAlignment, strides);
   }
 
   static Expected<TensorBufferRequirements> CreateWithAlignment(
-      absl::Span<const TensorBufferType> buffer_types, size_t buffer_size,
+      Span<const TensorBufferType> buffer_types, size_t buffer_size,
       size_t alignment,
-      absl::Span<const uint32_t> strides =
-          absl::MakeSpan(static_cast<const uint32_t*>(nullptr), 0)) {
+      Span<const uint32_t> strides =
+          internal::MakeLiteRtSpan(static_cast<const uint32_t*>(nullptr), 0)) {
     if (buffer_types.empty() || alignment == 0 ||
         (alignment & (alignment - 1)) != 0) {
       LITERT_LOG(LITERT_ERROR,
                  "Invalid parameters to create TensorBufferRequirements");
-      return Unexpected(kLiteRtStatusErrorInvalidArgument);
+      return Unexpected(Status::kErrorInvalidArgument);
     }
 
     std::vector<TensorBufferType> types(buffer_types.begin(),
@@ -72,7 +72,7 @@ class TensorBufferRequirements {
   Expected<TensorBufferType> SupportedType(int index) const {
     if (index < 0 || index >= supported_types_.size()) {
       LITERT_LOG(LITERT_ERROR, "Index out of bounds for supported types");
-      return Unexpected(kLiteRtStatusErrorInvalidArgument);
+      return Unexpected(Status::kErrorInvalidArgument);
     }
     return supported_types_[index];
   }
@@ -83,8 +83,11 @@ class TensorBufferRequirements {
 
   Expected<size_t> BufferSize() const { return buffer_size_; }
 
-  Expected<absl::Span<const uint32_t>> Strides() const {
-    return absl::MakeConstSpan(strides_);
+  /// @brief Returns the strides of the tensor buffer requirements.
+  ///
+  /// If the strides are not specified, an empty span is returned.
+  Expected<Span<const uint32_t>> Strides() const {
+    return internal::MakeLiteRtConstSpan(strides_);
   }
 
   Expected<size_t> Alignment() const { return alignment_; }
@@ -122,7 +125,7 @@ inline Expected<TensorBufferRequirements> Join(
   if (src1.strides_ == src2.strides_) {
     strides = src1.strides_;
   } else {
-    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+    return Unexpected(Status::kErrorInvalidArgument,
                       "Can't join requirements due to incompatible strides");
   }
 
@@ -137,7 +140,7 @@ inline Expected<TensorBufferRequirements> Join(
     }
   }
   if (buffer_types.empty()) {
-    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+    return Unexpected(Status::kErrorInvalidArgument,
                       "Can't join requirements due to incompatible supported "
                       "tensor buffer types");
   }

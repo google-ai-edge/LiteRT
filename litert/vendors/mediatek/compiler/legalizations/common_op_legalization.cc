@@ -21,16 +21,15 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/c/litert_op_options.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/neuron_utils.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
 namespace litert::mediatek {
 
-bool VerifyCommonOp(const litert::Op& op, LiteRtOpCode op_code) {
+bool VerifyCommonOp(const litert::compiler::Op& op, LiteRtOpCode op_code) {
   // Do some common check
   auto check_tensor_types = [&](const auto& tensors) {
     for (const auto& tensor : tensors) {
@@ -49,7 +48,8 @@ bool VerifyCommonOp(const litert::Op& op, LiteRtOpCode op_code) {
 
   if (op.Code() == kLiteRtOpCodeShloComposite) {
     const char* op_name;
-    if (LiteRtGetSHLOCompositeOpName(op.Get(), &op_name) != kLiteRtStatusOk) {
+    if (op.ctx()->get_shlo_composite_op_name(op.Get(), &op_name) !=
+        kLiteRtStatusOk) {
       return false;
     }
     if (std::string(op_name) == "odml.rms_norm" ||
@@ -64,7 +64,7 @@ bool VerifyCommonOp(const litert::Op& op, LiteRtOpCode op_code) {
 
 Expected<void> LegalizeCommonOp(const NeuronAdapterApi& neuron_adapter_api,
                                 NeuronModel* model, OperandMap& operand_map,
-                                const litert::Op& op,
+                                const litert::compiler::Op& op,
                                 NeuronOperationType mtk_operation_type) {
   LITERT_LOG(LITERT_INFO, "Legalize Op: %d", mtk_operation_type);
   std::vector<uint32_t> input_indices;

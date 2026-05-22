@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_test", "make_rpaths")
 
 package(
@@ -40,15 +41,19 @@ litert_dynamic_lib(
     deps = [
         ":compile_model",
         ":create_model",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_builder_header",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/c/internal:litert_logging_helper_with_compiler_context",
+        "//litert/c/options:litert_mediatek_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_opaque_options",
-        "//litert/cc/dynamic_runtime/options:litert_mediatek_options",
-        "//litert/vendors/cc:options_helper",
+        "//litert/cc/internal:litert_context_wrapper",
+        "//litert/cc/internal:litert_handle",
+        "//litert/cc/internal:litert_opaque_options_wrapper",
+        "//litert/cc/internal:litert_options_wrapper",
+        "//litert/compiler/cc:litert_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "//litert/vendors/mediatek/compiler/legalizations:common_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:operand_map",
@@ -65,11 +70,13 @@ cc_library(
     srcs = ["create_model.cc"],
     hdrs = ["create_model.h"],
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "//litert/vendors/mediatek/compiler/legalizations:add_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:batch_matmul_op_legalization",
@@ -94,7 +101,6 @@ cc_library(
         "//litert/vendors/mediatek/compiler/legalizations:sub_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:transpose_conv_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:transpose_op_legalization",
-        "//litert/vendors/mediatek/schema:mediatek_litert_schema",
         "@neuro_pilot//:v8_latest_host_headers",
     ],
 )
@@ -104,15 +110,15 @@ cc_library(
     srcs = ["compile_model.cc"],
     hdrs = ["compile_model.h"],
     local_defines = select({
-        "@org_tensorflow//tensorflow:android": ["LITERT_USE_JIT=1"],
-        "@org_tensorflow//tensorflow:chromiumos": ["LITERT_USE_JIT=1"],
+        "//litert:android": ["LITERT_USE_JIT=1"],
+        "//litert:chromiumos": ["LITERT_USE_JIT=1"],
         "//conditions:default": [],
     }),
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//litert/c/options:litert_mediatek_options",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime/options:litert_mediatek_options",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "@neuro_pilot//:v8_latest_host_headers",
     ],
@@ -128,7 +134,7 @@ litert_test(
         "//litert/test:tflite_test_data",
     ],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": [],
+        "//litert:android": [],
         "//conditions:default": [
             make_rpaths([
                 "//litert/c:litert_runtime_c_api_so",
@@ -137,6 +143,7 @@ litert_test(
     }),
     linkstatic = True,
     tags = [
+        "manual",
         # Tests with ungrte deps do not currently work on forge.
         "no-remote-exec",
         "notap",
@@ -145,15 +152,17 @@ litert_test(
     # Currently this test can only be run on Android because we don't have x86 shared libraries for
     # MTK.
     target_compatible_with = select({
-        "@platforms//os:android": [],
-        "@platforms//os:linux": [],
+        "//litert:android": [],
+        "//litert:linux": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,
     use_sys_malloc = True,
     deps = [
         ":compiler_plugin",  # buildcleaner: keep
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -166,5 +175,16 @@ litert_test(
         "//litert/vendors/mediatek:neuron_adapter_api",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+sh_test(
+    name = "mediatek_compiler_plugin_so_symbol_test",
+    srcs = ["//litert/test:litert_compiler_plugin_symbol_test.sh"],
+    args = [
+        "$(location :compiler_plugin_so)",
+    ],
+    data = [
+        ":compiler_plugin_so",
     ],
 )

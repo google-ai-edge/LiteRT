@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "litert/cc/litert_environment_options.h"
+#include <cstdint>
 
 #include <gtest/gtest.h>
 #include "litert/cc/litert_any.h"
@@ -37,6 +38,23 @@ TEST(EnvironmentOptionsTest, GetOption) {
   auto option = options->GetOption(kOptionTag);
   ASSERT_TRUE(option);
   EXPECT_STREQ(std::get<const char*>(*option), kOptionValue);
+}
+
+TEST(EnvironmentOptionsTest, GetIntOption) {
+  static constexpr auto kOptionTag =
+      EnvironmentOptions::Tag::kAutoRegisterAccelerators;
+  static constexpr int64_t kOptionValue = 3;
+
+  auto opts = EnvironmentOptions({{kOptionTag, kOptionValue}});
+  auto env = Environment::Create(opts);
+  ASSERT_TRUE(env);
+
+  auto options = env->GetOptions();
+  ASSERT_TRUE(options);
+
+  auto option = options->GetOption(kOptionTag);
+  ASSERT_TRUE(option);
+  EXPECT_EQ(std::get<int64_t>(*option), kOptionValue);
 }
 
 TEST(EnvironmentOptionsTest, OptionNotFound) {

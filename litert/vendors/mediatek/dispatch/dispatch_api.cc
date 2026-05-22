@@ -16,25 +16,32 @@
 #include <optional>
 #include <string>
 
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
-#include "litert/vendors/cc/options_helper.h"
 
 #if LITERT_HAS_AHWB_SUPPORT
 #include <android/hardware_buffer.h>
 #endif
 
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_opaque_options.h"
+#include "litert/c/litert_options.h"
+#include "litert/cc/internal/litert_context_wrapper.h"
+#include "litert/cc/internal/litert_opaque_options_wrapper.h"
+#include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/mediatek/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/mediatek/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
+#include "litert/vendors/mediatek/schema/schema_resolver.h"
 
 namespace {
 
@@ -55,9 +62,10 @@ namespace mediatek {
 // /////////////////////////////////////////////////////////////////////////////
 
 std::optional<std::string> GetSharedLibraryDir(
+    const LiteRtRuntimeContext* runtime_context,
     LiteRtEnvironmentOptions environment_options) {
   LiteRtAny dispatch_lib_dir_any;
-  auto status = LiteRtGetEnvironmentOptionsValue(
+  auto status = runtime_context->get_environment_options_value(
       environment_options, kLiteRtEnvOptionTagDispatchLibraryDir,
       &dispatch_lib_dir_any);
   if (status != kLiteRtStatusOk) {
@@ -68,44 +76,59 @@ std::optional<std::string> GetSharedLibraryDir(
   return std::string(dispatch_lib_dir_any.str_value);
 }
 
-LiteRtStatus LiteRtInitialize(LiteRtEnvironment environment,
+LiteRtStatus LiteRtInitialize(const LiteRtRuntimeContext* runtime_context,
+                              LiteRtEnvironment environment,
                               LiteRtOptions options) {
   LiteRtEnvironmentOptions environment_options;
-  LiteRtGetEnvironmentOptions(environment, &environment_options);
+  if (runtime_context->get_environment_options(
+          environment, &environment_options) == kLiteRtStatusOk) {
+    LiteRtPropagateMinLoggerSeverityWithRuntimeContext(runtime_context,
+                                                       environment_options);
+  }
   static_environment_options = environment_options;
   static_options = options;
 
-  auto [opts, opq_opts, mediatek_opts] =
-      litert::ParseOptions<litert::mediatek::MediatekOptions>(options);
-
-  if (!mediatek_opts) {
-    LITERT_ASSIGN_OR_RETURN(mediatek_opts,
-                            ::litert::mediatek::MediatekOptions::Create());
+  LrtMediatekOptions* mediatek_opts = nullptr;
+  const char* mt_payload = "";
+  if (options) {
+    litert::internal::OptionsWrapper internal_options(
+        litert::internal::ContextWrapper(runtime_context), options);
+    auto opaque_options_result = internal_options.GetOpaqueOptions();
+    if (opaque_options_result) {
+      auto payload_data_result =
+          opaque_options_result->FindOpaqueOptions("mediatek");
+      if (payload_data_result && payload_data_result.Value() != nullptr) {
+        mt_payload = reinterpret_cast<const char*>(payload_data_result.Value());
+      }
+    }
   }
 
-  auto shared_library_dir_opt = GetSharedLibraryDir(environment_options);
+  auto create_status =
+      LrtCreateMediatekOptionsFromToml(mt_payload, &mediatek_opts);
+  if (create_status != kLiteRtStatusOk) {
+    LITERT_LOG(LITERT_ERROR, "Failed to parse Mediatek options: %d",
+               create_status);
+    return create_status;
+  }
+
+  auto shared_library_dir_opt =
+      GetSharedLibraryDir(runtime_context, environment_options);
 
   if (auto neuron_adapter_api = litert::mediatek::NeuronAdapterApi::Create(
           shared_library_dir_opt, mediatek_opts);
       neuron_adapter_api) {
     static_neuron_adapter = neuron_adapter_api->release();
   } else {
+    LrtDestroyMediatekOptions(mediatek_opts);
     LITERT_LOG(LITERT_INFO, "Initialization failure: %s",
                neuron_adapter_api.Error().Message().c_str());
     return neuron_adapter_api.Error().Status();
   }
 
-  auto get_version = static_neuron_adapter->api().get_version;
-  if (!get_version) {
-    LITERT_LOG(LITERT_ERROR, "get_version not found");
-    return kLiteRtStatusErrorRuntimeFailure;
-  }
+  LrtDestroyMediatekOptions(mediatek_opts);
 
-  NeuronRuntimeVersion version;
-  if (get_version(&version) != NEURON_NO_ERROR) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get version");
-    return kLiteRtStatusErrorRuntimeFailure;
-  }
+  // Get cached Neuron SDK version (populated during Create)
+  const auto& version = static_neuron_adapter->RuntimeVersion();
   LITERT_LOG(LITERT_INFO, "Neuron SDK version: %d.%d.%d", version.major,
              version.minor, version.patch);
 
@@ -136,9 +159,10 @@ LiteRtStatus LiteRtGetCapabilities(int* capabilities) {
 }
 
 LiteRtStatus LiteRtDeviceContextCreate(
+    const LiteRtRuntimeContext* runtime_context, LiteRtOptions options,
     LiteRtDispatchDeviceContext* device_context) {
-  if (auto context =
-          LiteRtDispatchDeviceContextT::Create(*static_neuron_adapter);
+  if (auto context = LiteRtDispatchDeviceContextT::Create(
+          runtime_context, *static_neuron_adapter);
       context) {
     *device_context = context->release();
     return kLiteRtStatusOk;
@@ -216,11 +240,15 @@ LiteRtStatus LiteRtUnregisterTensorBuffer(
 }
 
 LiteRtStatus LiteRtInvocationContextCreate(
+    const LiteRtRuntimeContext* runtime_context,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
     int num_inputs, int num_outputs,
     LiteRtDispatchInvocationContext* invocation_context) {
+  // Neuron SDK version compatibility check is performed during context
+  // creation. Returns kLiteRtStatusErrorIncompatibleByteCodeVersion if major
+  // version mismatch.
   auto context = LiteRtDispatchInvocationContextT::Create(
       *static_neuron_adapter, device_context, exec_type, exec_bytecode_buffer,
       function_name, num_inputs, num_outputs);
@@ -229,6 +257,7 @@ LiteRtStatus LiteRtInvocationContextCreate(
                context.Error().Message().c_str());
     return context.Error().Status();
   }
+
   *invocation_context = context->release();
   return kLiteRtStatusOk;
 }
@@ -313,6 +342,27 @@ LiteRtStatus LiteRtInvoke(LiteRtDispatchInvocationContext invocation_context) {
 LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
                                        LiteRtEnvironmentOptions env,
                                        LiteRtOptions options) {
+  static constexpr LiteRtApiVersion kApiVersion{LITERT_API_VERSION_MAJOR,
+                                                LITERT_API_VERSION_MINOR,
+                                                LITERT_API_VERSION_PATCH};
+  if (LiteRtCompareApiVersion(api_version, kApiVersion) > 0) {
+    LITERT_LOG(LITERT_ERROR,
+               "LiteRT API version too new for dispatch runtime. Caller "
+               "version %d.%d.%d "
+               "requires runtime version <= %d.%d.%d.",
+               api_version.major, api_version.minor, api_version.patch,
+               kApiVersion.major, kApiVersion.minor, kApiVersion.patch);
+    return kLiteRtStatusErrorUnsupportedRuntimeVersion;
+  }
+
+  // Log Neuron SDK version for diagnostic purposes.
+  if (static_neuron_adapter != nullptr) {
+    const auto& version = static_neuron_adapter->RuntimeVersion();
+    LITERT_LOG(LITERT_INFO,
+               "Runtime compatibility check: Neuron SDK version %u.%u.%u",
+               version.major, version.minor, version.patch);
+  }
+
   return kLiteRtStatusOk;
 }
 

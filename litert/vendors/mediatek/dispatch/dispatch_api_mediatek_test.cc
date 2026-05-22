@@ -21,6 +21,7 @@
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/log/log.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
@@ -55,8 +56,12 @@ TEST(MediaTek, DispatchApiWithAhwb) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, ::litert::Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto litert_opts,
+                              litert::internal::LiteRtOptionsPtrBuilder::Build(
+                                  options, env.GetHolder()));
 
-  ASSERT_EQ(LiteRtDispatchInitialize(env.Get(), options.Get()),
+  ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(),
+                                     env.GetHolder().handle, litert_opts.get()),
             kLiteRtStatusOk);
 
   const char* vendor_id;
@@ -77,7 +82,8 @@ TEST(MediaTek, DispatchApiWithAhwb) {
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(&device_context),
+  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(
+                LrtGetRuntimeContext(), litert_opts.get(), &device_context),
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "device_context: " << device_context;
 
@@ -98,8 +104,9 @@ TEST(MediaTek, DispatchApiWithAhwb) {
                                           /*.size=*/model->Size()};
   LiteRtDispatchInvocationContext invocation_context = nullptr;
   EXPECT_EQ(LiteRtDispatchInvocationContextCreate(
-                device_context, kLiteRtDispatchExecutableTypeMlModel,
-                &exec_bytecode_buffer, /*function_name=*/nullptr,
+                LrtGetRuntimeContext(), device_context,
+                kLiteRtDispatchExecutableTypeMlModel, &exec_bytecode_buffer,
+                /*function_name=*/nullptr,
                 /*num_inputs=*/2, /*num_outputs=*/1, &invocation_context),
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "Invocation context: " << invocation_context;
@@ -364,7 +371,8 @@ TEST(MediaTek, DispatchApiWithDmaBuf) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
 
-  EXPECT_EQ(LiteRtDispatchInitialize(env.Get(), /*options=*/nullptr),
+  EXPECT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(), env.Get(),
+                                     /*options=*/nullptr),
             kLiteRtStatusOk);
 
   const char* vendor_id;
@@ -385,7 +393,8 @@ TEST(MediaTek, DispatchApiWithDmaBuf) {
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(&device_context),
+  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(
+                LrtGetRuntimeContext(), /*options=*/nullptr, &device_context),
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "device_context: " << device_context;
 
@@ -406,8 +415,9 @@ TEST(MediaTek, DispatchApiWithDmaBuf) {
                                           /*.size=*/model->Size()};
   LiteRtDispatchInvocationContext invocation_context = nullptr;
   EXPECT_EQ(LiteRtDispatchInvocationContextCreate(
-                device_context, kLiteRtDispatchExecutableTypeMlModel,
-                &exec_bytecode_buffer, /*function_name=*/nullptr,
+                LrtGetRuntimeContext(), device_context,
+                kLiteRtDispatchExecutableTypeMlModel, &exec_bytecode_buffer,
+                /*function_name=*/nullptr,
                 /*num_inputs=*/2, /*num_outputs=*/1, &invocation_context),
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "Invocation context: " << invocation_context;

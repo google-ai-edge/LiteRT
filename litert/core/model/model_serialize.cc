@@ -237,6 +237,10 @@ LiteRtStatus PackSubgraph(SerializationContext& builder,
                           LiteRtSubgraphT& litert_subgraph,
                           TflSubgraph& tfl_subgraph, TensorMap& tensor_map,
                           size_t subgraph_ind) {
+  if (!litert_subgraph.Name().empty()) {
+    tfl_subgraph.name = std::string(litert_subgraph.Name());
+  }
+
   for (auto* tensor : litert_subgraph.Tensors()) {
     tfl_subgraph.tensors.push_back(std::make_unique<TflTensor>());
     tensor_map.insert({tensor, tfl_subgraph.tensors.size() - 1});
@@ -363,6 +367,9 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
   const auto align = builder.BytecodeAlignment();
   // Pad the original model to the next multiple of the alignment.
   auto align_offset = [align](size_t& cur_offset) {
+    if (align == 0) {
+      return;
+    }
     cur_offset = (cur_offset + align - 1) & ~(align - 1);
   };
 
@@ -497,16 +504,19 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
   // Copy offset tensor buffers.
   for (auto it = offset_tensor_offsets.Begin();
        it != offset_tensor_offsets.End(); ++it) {
-    const auto buf_id = it->first;
+    const unsigned int tfl_buffer_ind = it->first;
+    const LiteRtModelT::BufferId litert_buf_id =
+        builder.OffsetTensorMap().at(tfl_buffer_ind);
 
-    auto offset_buf = litert_model.Buffers()->GetBuffer(buf_id);
-    if (!offset_buf) {
+    Expected<BufferRef<uint8_t>> litert_buf =
+        litert_model.Buffers()->GetBuffer(litert_buf_id);
+    if (!litert_buf) {
       LITERT_LOG(LITERT_ERROR, "Failed to find offset tensor buffer");
-      return offset_buf.Error();
+      return litert_buf.Error();
     }
 
     uint8_t* const offset = start + it->second.first;
-    std::memcpy(offset, offset_buf->Data(), offset_buf->Size());
+    std::memcpy(offset, litert_buf->Data(), litert_buf->Size());
   }
 
   return final_model;
@@ -520,19 +530,21 @@ Expected<OwningBufferRef<uint8_t>> SerializeModel(LiteRtModelT&& model,
   // op code for the dispatch ops
   auto tfl_op_codes = litert::internal::TakeTflOpCodes(model);
   // don't push dispatch op code if it already exists
-  bool found_dispatch_op_code = false;
-  for (const auto& op_code : tfl_op_codes) {
-    if (op_code->builtin_code == tflite::BuiltinOperator_CUSTOM) {
-      found_dispatch_op_code = true;
+  int32_t dispatch_op_code_index = -1;
+  for (size_t i = 0; i < tfl_op_codes.size(); ++i) {
+    if (tfl_op_codes[i]->builtin_code == tflite::BuiltinOperator_CUSTOM &&
+        tfl_op_codes[i]->custom_code == kLiteRtDispatchOpCustomName) {
+      dispatch_op_code_index = i;
       break;
     }
   }
-  if (!found_dispatch_op_code) {
+  if (dispatch_op_code_index == -1) {
     tfl_op_codes.push_back(
         MakeCustomOpCode(std::string(kLiteRtDispatchOpCustomName)));
+    dispatch_op_code_index = tfl_op_codes.size() - 1;
   }
 
-  SerializationContext builder(tfl_op_codes.size() - 1, model,
+  SerializationContext builder(dispatch_op_code_index, model,
                                bytecode_alignment);
   builder.Model().operator_codes = std::move(tfl_op_codes);
 

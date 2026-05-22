@@ -17,6 +17,7 @@
 
 #include <stddef.h>
 
+#include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_metrics.h"
@@ -29,8 +30,9 @@ extern "C" {
 
 // /////////////////////////////////////////////////////////////////////////////
 
-typedef LiteRtStatus (*LiteRtDispatchInitializeT)(LiteRtEnvironment environment,
-                                                  LiteRtOptions options);
+typedef LiteRtStatus (*LiteRtDispatchInitializeT)(
+    const LiteRtRuntimeContext* runtime_context, LiteRtEnvironment environment,
+    LiteRtOptions options);
 
 typedef LiteRtStatus (*LiteRtDispatchGetVendorIdT)(const char** vendor_id);
 
@@ -39,6 +41,7 @@ typedef LiteRtStatus (*LiteRtDispatchGetBuildIdT)(const char** build_id);
 typedef LiteRtStatus (*LiteRtDispatchGetCapabilitiesT)(int* capabilities);
 
 typedef LiteRtStatus (*LiteRtDispatchDeviceContextCreateT)(
+    const LiteRtRuntimeContext* runtime_context, LiteRtOptions options,
     LiteRtDispatchDeviceContext* device_context);
 
 typedef LiteRtStatus (*LiteRtDispatchDeviceContextDestroyT)(
@@ -64,6 +67,7 @@ typedef LiteRtStatus (*LiteRtDispatchUnregisterTensorBufferT)(
     LiteRtTensorBufferHandle handle);
 
 typedef LiteRtStatus (*LiteRtDispatchInvocationContextCreateT)(
+    const LiteRtRuntimeContext* runtime_context,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
@@ -95,6 +99,18 @@ typedef LiteRtStatus (*LiteRtDispatchDetachInputT)(
 typedef LiteRtStatus (*LiteRtDispatchDetachOutputT)(
     LiteRtDispatchInvocationContext invocation_context, int graph_output_index,
     LiteRtTensorBufferHandle tensor_buffer_handle);
+
+#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+typedef LiteRtStatus (*LiteRtDispatchAttachEdgeBufferT)(
+    LiteRtDispatchInvocationContext invocation_context,
+    LiteRtDispatchEdgeId edge_id,
+    LiteRtTensorBufferHandle tensor_buffer_handle);
+
+typedef LiteRtStatus (*LiteRtDispatchDetachEdgeBufferT)(
+    LiteRtDispatchInvocationContext invocation_context,
+    LiteRtDispatchEdgeId edge_id,
+    LiteRtTensorBufferHandle tensor_buffer_handle);
+#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 
 typedef LiteRtStatus (*LiteRtDispatchInvokeT)(
     LiteRtDispatchInvocationContext invocation_context);
@@ -147,6 +163,12 @@ typedef struct LiteRtDispatchInterface {
   LiteRtDispatchDestroyMetricsT destroy_metrics;
   LiteRtDispatchCheckRuntimeCompatibilityT check_runtime_compatibility;
   LiteRtDispatchInvocationContextSetOptionsT invocation_context_set_options;
+
+#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+  // Optional extensions (capability-gated).
+  LiteRtDispatchAttachEdgeBufferT attach_edge_buffer;
+  LiteRtDispatchDetachEdgeBufferT detach_edge_buffer;
+#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 } LiteRtDispatchInterface;
 
 // /////////////////////////////////////////////////////////////////////////////
@@ -201,6 +223,18 @@ typedef LiteRtStatus (*LiteRtDispatchUnloadExecutableT)(
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableHandle exec_handle);
 
+#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+typedef LiteRtStatus (*LiteRtDispatchGetScratchpadRequirementsT)(
+    LiteRtDispatchDeviceContext device_context,
+    LiteRtDispatchExecutableHandle exec_handle, const char* function_name,
+    LiteRtTensorBufferRequirements* scratchpad_requirements);
+
+typedef LiteRtStatus (*LiteRtDispatchAttachScratchpadBufferT)(
+    LiteRtDispatchDeviceContext device_context,
+    LiteRtDispatchExecutableHandle exec_handle, const char* function_name,
+    LiteRtTensorBufferHandle scratchpad_buffer_handle);
+#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+
 typedef LiteRtStatus (*LiteRtDispatchAssignNodeFunctionT)(
     LiteRtDispatchGraph graph, LiteRtDispatchNodeId node_id,
     LiteRtDispatchExecutableHandle exec_handle, const char* function_name);
@@ -243,19 +277,49 @@ typedef struct LiteRtDispatchGraphInterface {
   LiteRtDispatchInvocationContextCreateFromGraphT
       invocation_context_create_from_graph;
   LiteRtDispatchInvocationContextGetGraphT invocation_context_get_graph;
+#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+  // Optional extensions (capability-gated).
+  LiteRtDispatchGetScratchpadRequirementsT get_scratchpad_requirements;
+  LiteRtDispatchAttachScratchpadBufferT attach_scratchpad_buffer;
+#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 } LiteRtDispatchGraphInterface;
 
 // /////////////////////////////////////////////////////////////////////////////
 
-// FIXME See Vulkan and OpenCL extensions.
+/// A internal struct that holds pointers to all the Dispatch API functions.
+/// Dispatch Delegate will look up this struct to extract the Dispatch API
+/// functions.
+///
+/// @note This concrete type is shared between the runtime and the Dispatch
+///     plugin, so it must be ABI stable.
 typedef struct LiteRtDispatchApi {
   LiteRtApiVersion version;
   LiteRtDispatchInterface* interface;
   LiteRtDispatchAsyncInterface* async_interface;
   LiteRtDispatchGraphInterface* graph_interface;
+  LiteRtCustomTensorBufferHandlersDef* tensor_buffer_handlers_def;
 } LiteRtDispatchApi;
 
+#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
+    __SIZEOF_POINTER__ == 8
+static_assert(sizeof(LiteRtDispatchApi) == 48,
+              "LiteRtDispatchApi size mismatch");
+static_assert(offsetof(LiteRtDispatchApi, interface) == 16,
+              "LiteRtDispatchApi interface offset mismatch");
+static_assert(offsetof(LiteRtDispatchApi, tensor_buffer_handlers_def) == 40,
+              "LiteRtDispatchApi tensor_buffer_handlers_def offset mismatch");
+#endif  // __cplusplus
+
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api);
+
+// Pointer to a statically linked dispatch API implementation.
+// Vendors that are statically linked can set this pointer to their
+// implementation of LiteRtDispatchGetApi during static initialization.
+// The storage for this pointer is defined in the internal runtime at
+// litert/runtime/dispatch/litert_dispatch.cc.
+// The runtime will invoke this function to get the API instead of loading a
+// dynamic library if it is not null.
+extern LiteRtStatus (*LiteRtStaticLinkedDispatchGetApi)(LiteRtDispatchApi*);
 
 #ifdef __cplusplus
 }

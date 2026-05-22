@@ -19,10 +19,10 @@ function Convert-WslPathToWindows {
     [string]$Path
   )
   if ($Path -match '^/mnt/([a-zA-Z])/(.*)$') {
-    return ("$($matches[1].ToUpper()):\" + ($matches[2] -replace '/', '\'))
+    return "$($matches[1].ToUpper()):\$($matches[2] -replace '/', '\')"
   }
   if ($Path -match '^\\\\wsl\\\$\\[^\\]+\\mnt\\([a-zA-Z])\\(.*)$') {
-    return ("$($matches[1].ToUpper()):\" + $matches[2])
+    return "$($matches[1].ToUpper()):\$($matches[2])"
   }
   return $Path
 }
@@ -69,7 +69,13 @@ function Get-BazelInfo {
   Write-Host "Getting Bazel info: $Key..."
   $ProcInfo = New-Object System.Diagnostics.ProcessStartInfo
   $ProcInfo.FileName = $Bazel
-  $ProcInfo.Arguments = "info $Key"
+  if ($env:BAZEL_OUTPUT_USER_ROOT) {
+    $ProcInfo.Arguments = "--output_user_root=$($env:BAZEL_OUTPUT_USER_ROOT) info $Key"
+  }
+  else {
+    $ProcInfo.Arguments = "info $Key"
+  }
+  $ProcInfo.WorkingDirectory = $RepoRoot
   $ProcInfo.RedirectStandardOutput = $true
   $ProcInfo.RedirectStandardError = $true
   $ProcInfo.UseShellExecute = $false
@@ -138,10 +144,27 @@ if ($LASTEXITCODE -ne 0) {
   Write-Warning "Failed to check Bazel version. Exit code: $LASTEXITCODE"
 }
 
+if ($env:BAZEL_OUTPUT_USER_ROOT) {
+  $env:BAZEL_OUTPUT_USER_ROOT = Convert-WslPathToWindows $env:BAZEL_OUTPUT_USER_ROOT
+  if ($env:BAZEL_OUTPUT_USER_ROOT -match '^D:' -and -not (Test-Path 'D:\')) {
+    Write-Host 'D: drive not found, redirecting BAZEL_OUTPUT_USER_ROOT to C: drive.'
+    $env:BAZEL_OUTPUT_USER_ROOT = $env:BAZEL_OUTPUT_USER_ROOT -replace '^D:', 'C:'
+  }
+  $OutputUserRootParent = Split-Path -Parent $env:BAZEL_OUTPUT_USER_ROOT
+  if (-not (Test-Path $OutputUserRootParent)) {
+    New-Item -ItemType Directory -Path $OutputUserRootParent -Force | Out-Null
+  }
+}
+
 # Fetch dependencies first to ensure the Bazel server is running and external repos are populated.
 Write-Host 'Fetching dependencies...'
+$BazelStartupOpts = if ($env:BAZEL_OUTPUT_USER_ROOT) {
+  @("--output_user_root=$($env:BAZEL_OUTPUT_USER_ROOT)")
+} else {
+  @()
+}
 $FetchArgs = @('fetch', '--config=windows', '--repo_env=USE_PYWRAP_RULES=True', '//ci/tools/python/wheel:litert_wheel')
-& $Bazel $FetchArgs
+& $Bazel $BazelStartupOpts $FetchArgs
 if ($LASTEXITCODE -ne 0) {
   throw "Bazel fetch failed with exit code $LASTEXITCODE"
 }
@@ -368,7 +391,7 @@ if ($env:USE_LOCAL_TF -eq 'true') { $BazelArgs += '--config=use_local_tf' }
 if ($env:CUSTOM_BAZEL_FLAGS) { $BazelArgs += $env:CUSTOM_BAZEL_FLAGS.Split(' ') }
 
 Write-Host 'Starting bazel build...'
-& $Bazel @BazelArgs //ci/tools/python/wheel:litert_wheel
+& $Bazel $BazelStartupOpts @BazelArgs //ci/tools/python/wheel:litert_wheel
 if ($LASTEXITCODE -ne 0) {
   throw "Bazel build failed with exit code $LASTEXITCODE"
 }
@@ -378,4 +401,37 @@ if (Test-Path $DistDir) { Remove-Item -Recurse -Force $DistDir }
 New-Item -ItemType Directory -Path $DistDir | Out-Null
 
 Get-ChildItem -Path (Join-Path $RepoRoot 'bazel-bin\ci\tools\python\wheel\dist') -Filter *.whl | Move-Item -Destination $DistDir
+
+# Vendor SDK sdist packages
+$SdkArgs = @(
+  'build',
+  '-c',
+  'opt',
+  '--config=windows',
+  '--repo_env=USE_PYWRAP_RULES=True'
+)
+if ($env:HERMETIC_PYTHON_VERSION) { $SdkArgs += "--repo_env=HERMETIC_PYTHON_VERSION=$($env:HERMETIC_PYTHON_VERSION)" }
+if ($env:NIGHTLY_RELEASE_DATE) { $SdkArgs += "--//ci/tools/python/wheel:nightly_iso_date=$($env:NIGHTLY_RELEASE_DATE)" }
+if ($env:USE_LOCAL_TF -eq 'true') { $SdkArgs += '--config=use_local_tf' }
+if ($env:CUSTOM_BAZEL_FLAGS) { $SdkArgs += $env:CUSTOM_BAZEL_FLAGS.Split(' ') }
+
+$SdkTargets = @(
+  @{ Name = 'Qualcomm'; Target = '//ci/tools/python/vendor_sdk/qualcomm:ai_edge_litert_sdk_qualcomm_sdist'; Glob = 'qualcomm' },
+  @{ Name = 'MediaTek'; Target = '//ci/tools/python/vendor_sdk/mediatek:ai_edge_litert_sdk_mediatek_sdist'; Glob = 'mediatek' },
+  @{ Name = 'Intel';    Target = '//ci/tools/python/vendor_sdk/intel:ai_edge_litert_sdk_intel_sdist';       Glob = 'intel' },
+  @{ Name = 'Samsung';  Target = '//ci/tools/python/vendor_sdk/samsung:ai_edge_litert_sdk_samsung_sdist';   Glob = 'samsung' }
+)
+
+foreach ($Sdk in $SdkTargets) {
+  Write-Host "Building $($Sdk.Name) SDK sdist..."
+  & $Bazel $BazelStartupOpts @SdkArgs $Sdk.Target
+  if ($LASTEXITCODE -ne 0) {
+    Write-Warning "$($Sdk.Name) SDK build failed (non-fatal)"
+  }
+  else {
+    $SdkDist = Join-Path $RepoRoot "bazel-bin\ci\tools\python\vendor_sdk\$($Sdk.Glob)"
+    Get-ChildItem -Path $SdkDist -Filter *.tar.gz -ErrorAction SilentlyContinue | Move-Item -Destination $DistDir
+  }
+}
+
 Write-Host 'Output can be found here:' $DistDir

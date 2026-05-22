@@ -14,6 +14,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//litert/build_common:litert_build_defs.bzl", "make_rpaths")
 load("//litert/build_common:special_rule.bzl", "litert_metal_linkopts", "litert_metal_opts")
 
 package(
@@ -34,8 +35,11 @@ cc_library(
         "//litert/c:litert_builder",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_header",
+        "//litert/c:litert_model",
+        "//litert/c:litert_op_options",
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
+        "//litert/c/internal:litert_compiler_context",
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_compiler_options",
         "//litert/cc:litert_buffer_ref",
@@ -68,10 +72,23 @@ cc_test(
     name = "compiler_plugin_test",
     srcs = ["compiler_plugin_test.cc"],
     data = [
+        "//litert/c:libLiteRt.so",
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
-        "//litert/vendors/examples:example_plugin_so",
+        "//litert/vendors/examples:example_plugin_so_data",
     ],
+    linkopts = select({
+        "//litert:android": [],
+        "//litert:ios": [],
+        "//litert:macos": [],
+        "//litert:windows": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:libLiteRt.so",
+                "//litert/c:litert_so",
+            ]),
+        ],
+    }),
     # Workaround to disable mismatched-size-delete.
     # A compiler plugin uses `libLiteRt.so` but `compiler_plugin` is a static library for runtime.
     # So mixing of the two will cause mismatched-size-delete error.
@@ -103,6 +120,7 @@ cc_test(
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_opaque_options",
         "//litert/cc:litert_options_testonly",
+        "//litert/core/util:flatbuffer_tools_testonly",
         "//litert/core:build_stamp",
         "//litert/core:filesystem",
         "//litert/core/model",
@@ -110,6 +128,7 @@ cc_test(
         "//litert/test:matchers",
         "//litert/tools:dump",
         "//litert/vendors/c:litert_compiler_plugin",
+        "//tflite/converter/schema:schema_fbs",
     ],
 )
 
@@ -117,10 +136,23 @@ cc_test(
     name = "compiler_plugin_transformation_test",
     srcs = ["compiler_plugin_transformation_test.cc"],
     data = [
+        "//litert/c:libLiteRt.so",
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
-        "//litert/vendors/examples:example_plugin_so",
+        "//litert/vendors/examples:example_plugin_so_data",
     ],
+    linkopts = select({
+        "//litert:android": [],
+        "//litert:ios": [],
+        "//litert:macos": [],
+        "//litert:windows": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:libLiteRt.so",
+                "//litert/c:litert_so",
+            ]),
+        ],
+    }),
     # copybara:uncomment malloc = "//base:system_malloc",
     tags = [
         # Sanitizer runtimes are incompatible with RTLD_DEEPBIND.

@@ -35,9 +35,11 @@ typedef LiteRtStatus (*LiteRtGetCompilerPluginVersionT)(LiteRtApiVersion*);
 
 typedef const char* (*LiteRtGetCompilerPluginSocManufacturerT)();
 
-typedef LiteRtStatus (*LiteRtCreateCompilerPluginT)(LiteRtCompilerPlugin*,
-                                                    LiteRtEnvironmentOptions,
-                                                    LiteRtOptions);
+typedef struct LiteRtCompilerContext LiteRtCompilerContext;
+
+typedef LiteRtStatus (*LiteRtCreateCompilerPluginT)(
+    const LiteRtCompilerContext*, LiteRtCompilerPlugin*,
+    LiteRtEnvironmentOptions, LiteRtOptions);
 
 typedef void (*LiteRtDestroyCompilerPluginT)(LiteRtCompilerPlugin);
 
@@ -50,6 +52,9 @@ typedef LiteRtStatus (*LiteRtGetNumCompilerPluginSupportedSocModelsT)(
 typedef LiteRtStatus (*LiteRtGetCompilerPluginSupportedSocModelT)(
     LiteRtCompilerPlugin, LiteRtParamIndex soc_model_idx,
     const char** soc_moel_idx);
+
+typedef LiteRtStatus (*LiteRtGetCompilerPluginSDKVersionT)(LiteRtCompilerPlugin,
+                                                           const char**);
 
 typedef LiteRtStatus (*LiteRtCompilerPluginPartitionT)(
     LiteRtCompilerPlugin, const char* soc_model, LiteRtSubgraph subgraph,
@@ -101,6 +106,7 @@ struct LiteRtCompilerPluginApi {
       get_num_compiler_plugin_supported_models;
   LiteRtGetCompilerPluginSupportedSocModelT
       get_compiler_plugin_supported_soc_model;
+  LiteRtGetCompilerPluginSDKVersionT get_compiler_plugin_sdk_version;
 
   LiteRtCompilerPluginPartitionT compiler_plugin_partition;
   LiteRtCompilerPluginCompileT compiler_plugin_compile;
@@ -132,6 +138,8 @@ static constexpr absl::string_view
         "LiteRtGetNumCompilerPluginSupportedSocModels";
 static constexpr absl::string_view kLiteRtGetCompilerPluginSupportedSocModel =
     "LiteRtGetCompilerPluginSupportedSocModel";
+static constexpr absl::string_view kLiteRtGetCompilerPluginSDKVersion =
+    "LiteRtGetCompilerPluginSDKVersion";
 
 static constexpr absl::string_view kLiteRtCreateCompilerPlugin =
     "LiteRtCreateCompilerPlugin";

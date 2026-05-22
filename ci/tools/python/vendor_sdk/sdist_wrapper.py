@@ -23,6 +23,27 @@ import subprocess
 import sys
 
 
+def _get_python_subprocess_env():
+  """Returns the current Python runtime and import path for child processes."""
+  env = os.environ.copy()
+  pythonpath_entries = []
+
+  for entry in sys.path:
+    if entry and entry not in pythonpath_entries:
+      pythonpath_entries.append(entry)
+
+  existing_pythonpath = env.get("PYTHONPATH")
+  if existing_pythonpath:
+    for entry in existing_pythonpath.split(os.pathsep):
+      if entry and entry not in pythonpath_entries:
+        pythonpath_entries.append(entry)
+
+  if pythonpath_entries:
+    env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
+
+  return sys.executable, env
+
+
 def main():
   parser = argparse.ArgumentParser(
       description="Wrapper to create sdist using setup.py."
@@ -96,6 +117,12 @@ def main():
     with open(dest_init_py_path, "wt") as f:
       f.write(init_py_content)
 
+    if os.path.exists("TERMS_OF_USE.md"):
+      shutil.copy(
+          "TERMS_OF_USE.md",
+          os.path.join(build_dir, project_name, "TERMS_OF_USE.md"),
+      )
+
     print(f"Changing working directory to: {build_dir}")
     os.chdir(build_dir)
 
@@ -103,8 +130,9 @@ def main():
       shutil.rmtree(sdist_temp_output_dir)
     os.makedirs(sdist_temp_output_dir)
 
+    py_executable, env = _get_python_subprocess_env()
     cmd = [
-        sys.executable,
+        py_executable,
         tmp_setup_py_path,
         "sdist",
         "--dist-dir",
@@ -112,7 +140,13 @@ def main():
     ]
 
     print(f"Running command: {' '.join(cmd)}")
-    process = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    process = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
 
     if process.returncode != 0:
       print("Error running setup.py sdist:", file=sys.stderr)
@@ -161,7 +195,13 @@ def main():
     shutil.move(actual_sdist_file, final_output_path_abs)
 
     print(f"Successfully created sdist: {final_output_path_abs}")
-    shutil.rmtree(build_dir)
+    try:
+      shutil.rmtree(build_dir)
+    except OSError as e:
+      print(
+          f"Warning: Could not clean up {build_dir}: {e}",
+          file=sys.stderr,
+      )
 
   finally:
     os.chdir(original_cwd)

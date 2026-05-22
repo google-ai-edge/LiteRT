@@ -17,9 +17,11 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -30,18 +32,25 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
-#include "litert/c/litert_builder.h"
+#include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/c/litert_op_options.h"
+#include "litert/c/options/litert_google_tensor_options.h"
+#include "litert/c/options/litert_google_tensor_options_type.h"
+#include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/internal/litert_opaque_options_wrapper.h"
+#include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/options/litert_google_tensor_options.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
-#include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/google_tensor/adapter.h"
 #include "litert/vendors/google_tensor/compiler/google_tensor_options.pb.h"
+#include "google/protobuf/text_format.h"  // from @com_google_protobuf
+#include "re2/re2.h"  // from @com_googlesource_code_re2
 
 //
 // Configurations
@@ -57,6 +66,10 @@ using ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
     GoogleTensorOptionsShardingIntensity;
 using ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
     GoogleTensorOptionsTruncationType;
+using ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
+    OpFilter;
+using ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
+    OpFilters;
 
 namespace google_tensor {
 
@@ -135,6 +148,9 @@ constexpr LiteRtOpCode kUnSupportedOps[] = {
     kLiteRtOpCodeShloScatter,
     kLiteRtOpCodeShloWindow,
 };
+
+constexpr const char* kSupportedStableHloCompositeOps[] = {
+    "odml.rms_norm", "odml.group_norm", "odml.scaled_dot_product_attention"};
 // clang format on
 
 constexpr auto kNumPluginSocModels =
@@ -142,136 +158,105 @@ constexpr auto kNumPluginSocModels =
 
 }  // namespace google_tensor
 
-LiteRtStatus LiteRtOpaqueOptionsToGoogleTensorOptions(
-    LiteRtOpaqueOptions options,
+LiteRtStatus LrtOptionsToGoogleTensorOptions(
+    LrtGoogleTensorOptions lrt_options,
     third_party::odml::litert::litert::vendors::google_tensor::compiler::
-        GoogleTensorOptions* google_tensor_options) {
-  LiteRtGoogleTensorOptions google_tensor_options_data = nullptr;
-  if (LiteRtFindOpaqueOptionsData(
-          options, "google_tensor",
-          reinterpret_cast<void**>(&google_tensor_options_data)) !=
-      kLiteRtStatusOk) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
-  if (google_tensor_options_data == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
+        GoogleTensorOptions& google_tensor_options) {
   // FLOAT TRUNCATION TYPE
-  LiteRtGoogleTensorOptionsTruncationType float_truncation_type;
-  if (LiteRtGoogleTensorOptionsGetFloatTruncationType(
-          google_tensor_options_data, &float_truncation_type) !=
-      kLiteRtStatusOk) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  switch (float_truncation_type) {
+  LrtGoogleTensorOptionsTruncationType float_trunc;
+  LITERT_RETURN_IF_ERROR(
+      LrtGoogleTensorOptionsGetFloatTruncationType(lrt_options, &float_trunc));
+  switch (float_trunc) {
     case kLiteRtGoogleTensorFloatTruncationTypeAuto:
-      // set value in google_tensor_options proto
-      google_tensor_options->set_float_truncation_type(
+      google_tensor_options.set_float_truncation_type(
           GoogleTensorOptionsTruncationType::FLOAT_TRUNCATION_TYPE_AUTO);
       break;
     case kLiteRtGoogleTensorFloatTruncationTypeNoTruncation:
-      google_tensor_options->set_float_truncation_type(
+      google_tensor_options.set_float_truncation_type(
           GoogleTensorOptionsTruncationType::
               FLOAT_TRUNCATION_TYPE_NO_TRUNCATION);
       break;
     case kLiteRtGoogleTensorFloatTruncationTypeBfloat16:
-      google_tensor_options->set_float_truncation_type(
+      google_tensor_options.set_float_truncation_type(
           GoogleTensorOptionsTruncationType::FLOAT_TRUNCATION_TYPE_BFLOAT16);
       break;
     case kLiteRtGoogleTensorFloatTruncationTypeHalf:
-      google_tensor_options->set_float_truncation_type(
+      google_tensor_options.set_float_truncation_type(
           GoogleTensorOptionsTruncationType::FLOAT_TRUNCATION_TYPE_HALF);
       break;
   }
 
   // INT64 TO INT32 TRUNCATION
-  bool int64_to_int32_truncation;
-  if (LiteRtGoogleTensorOptionsGetInt64ToInt32Truncation(
-          google_tensor_options_data, &int64_to_int32_truncation) !=
-      kLiteRtStatusOk) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  google_tensor_options->set_int64_to_int32_truncation(
-      int64_to_int32_truncation);
+  bool int64_to_int32;
+  LITERT_RETURN_IF_ERROR(LrtGoogleTensorOptionsGetInt64ToInt32Truncation(
+      lrt_options, &int64_to_int32));
+  google_tensor_options.set_int64_to_int32_truncation(int64_to_int32);
 
   // DUMP OP TIMINGS
   bool dump_op_timings;
-  if (LiteRtGoogleTensorOptionsGetDumpOpTimings(
-          google_tensor_options_data, &dump_op_timings) != kLiteRtStatusOk) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  google_tensor_options->set_dump_op_timings(dump_op_timings);
+  LITERT_RETURN_IF_ERROR(
+      LrtGoogleTensorOptionsGetDumpOpTimings(lrt_options, &dump_op_timings));
+  google_tensor_options.set_dump_op_timings(dump_op_timings);
 
   // ENABLE LARGE MODEL SUPPORT
   bool enable_large_model_support;
-  if (LiteRtGoogleTensorOptionsGetEnableLargeModelSupport(
-          google_tensor_options_data, &enable_large_model_support) !=
-      kLiteRtStatusOk) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  google_tensor_options->set_enable_large_model_support(
+  LITERT_RETURN_IF_ERROR(LrtGoogleTensorOptionsGetEnableLargeModelSupport(
+      lrt_options, &enable_large_model_support));
+  google_tensor_options.set_enable_large_model_support(
       enable_large_model_support);
 
   // ENABLE 4BIT COMPILATION
-  bool enable_4bit_compilation;
-  if (LiteRtGoogleTensorOptionsGetEnable4BitCompilation(
-          google_tensor_options_data, &enable_4bit_compilation) !=
-      kLiteRtStatusOk) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  google_tensor_options->set_enable_four_bit_compilation(
-      enable_4bit_compilation);
+  bool enable_4bit;
+  LITERT_RETURN_IF_ERROR(LrtGoogleTensorOptionsGetEnable4BitCompilation(
+      lrt_options, &enable_4bit));
+  google_tensor_options.set_enable_four_bit_compilation(enable_4bit);
 
   // SHARDING INTENSITY
-  LiteRtGoogleTensorOptionsShardingIntensity sharding_intensity;
-  if (LiteRtGoogleTensorOptionsGetShardingIntensity(
-          google_tensor_options_data, &sharding_intensity) != kLiteRtStatusOk) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
+  LrtGoogleTensorOptionsShardingIntensity sharding_intensity;
+  LITERT_RETURN_IF_ERROR(LrtGoogleTensorOptionsGetShardingIntensity(
+      lrt_options, &sharding_intensity));
   switch (sharding_intensity) {
     case kLiteRtGoogleTensorShardingIntensityMinimal:
-      google_tensor_options->set_sharding_intensity(
+      google_tensor_options.set_sharding_intensity(
           GoogleTensorOptionsShardingIntensity::SHARDING_INTENSITY_MINIMAL);
       break;
     case kLiteRtGoogleTensorShardingIntensityModerate:
-      google_tensor_options->set_sharding_intensity(
+      google_tensor_options.set_sharding_intensity(
           GoogleTensorOptionsShardingIntensity::SHARDING_INTENSITY_MODERATE);
       break;
     case kLiteRtGoogleTensorShardingIntensityExtensive:
-      google_tensor_options->set_sharding_intensity(
+      google_tensor_options.set_sharding_intensity(
           GoogleTensorOptionsShardingIntensity::SHARDING_INTENSITY_EXTENSIVE);
       break;
     case kLiteRtGoogleTensorShardingIntensityMaximum:
-      google_tensor_options->set_sharding_intensity(
+      google_tensor_options.set_sharding_intensity(
           GoogleTensorOptionsShardingIntensity::SHARDING_INTENSITY_MAXIMUM);
       break;
     default:
-      google_tensor_options->set_sharding_intensity(
+      google_tensor_options.set_sharding_intensity(
           GoogleTensorOptionsShardingIntensity::SHARDING_INTENSITY_UNSPECIFIED);
       break;
   }
 
   // ENABLE DYNAMIC RANGE QUANTIZATION
-  bool enable_dynamic_range_quantization;
-  if (LiteRtGoogleTensorOptionsGetEnableDynamicRangeQuantization(
-          google_tensor_options_data, &enable_dynamic_range_quantization) !=
-      kLiteRtStatusOk) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  google_tensor_options->set_enable_dynamic_range_quantization(
-      enable_dynamic_range_quantization);
+  bool enable_drq;
+  LITERT_RETURN_IF_ERROR(
+      LrtGoogleTensorOptionsGetEnableDynamicRangeQuantization(lrt_options,
+                                                              &enable_drq));
+  google_tensor_options.set_enable_dynamic_range_quantization(enable_drq);
 
-  // TESTING FLAGS
-  std::vector<std::vector<std::string>> testing_flags;
-  if (LiteRtGoogleTensorOptionsGetTestingFlags(
-          google_tensor_options_data, &testing_flags) != kLiteRtStatusOk) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  for (const auto& flag : testing_flags) {
-    google_tensor_options->set_testing_flags(flag[0]);
-  }
+  // OP FILTERS PROTO TEXT FILE
+  const char* op_filters_path;
+  LITERT_RETURN_IF_ERROR(
+      LrtGoogleTensorOptionsGetOpFiltersProto(lrt_options, &op_filters_path));
+  google_tensor_options.set_op_filters_proto(op_filters_path);
+
+  // EXTRA OPTIONS PATH
+  const char* extra_options_path;
+  LITERT_RETURN_IF_ERROR(LrtGoogleTensorOptionsGetExtraOptionsPath(
+      lrt_options, &extra_options_path));
+  google_tensor_options.set_extra_options_path(extra_options_path);
+
   return kLiteRtStatusOk;
 }
 
@@ -325,6 +310,18 @@ LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *soc_model_name = google_tensor::kPluginSocModels[soc_model_idx];
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
+    LiteRtCompilerPlugin compiler_plugin, const char** sdk_version) {
+  if (compiler_plugin == nullptr || sdk_version == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "%s", "compiler_plugin or sdk_version is nullptr");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // No-op implementation for Google Tensor plugin.
+  // TODO: Add the SDK version to the plugin.
+  *sdk_version = "";
   return kLiteRtStatusOk;
 }
 
@@ -410,36 +407,132 @@ void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) {
 // Plugins can hold state.
 class LiteRtCompilerPluginT {
  public:
-  using GoogleTensorOptions = ::litert::google_tensor::GoogleTensorOptions;
-
-  LiteRtCompilerPluginT(LiteRtEnvironmentOptions env, LiteRtOptions options) {
-    std::tie(opts_, opq_, google_tensor_opts_) =
-        litert::ParseOptions<GoogleTensorOptions>(options);
+  explicit LiteRtCompilerPluginT(const LiteRtCompilerContext* ctx,
+                                 LiteRtEnvironmentOptions env,
+                                 LiteRtOptions options)
+      : ctx_(ctx) {
+    if (options) {
+      opts_ = litert::internal::OptionsWrapper(
+          litert::internal::ContextWrapper(ctx), options,
+          litert::OwnHandle::kNo);
+      if (opts_) {
+        opq_ = opts_->GetOpaqueOptions();
+      }
+    }
+    LITERT_LOG(LITERT_INFO, "%s", "Loading Google Tensor Compiler Adapter");
+    // TODO(b/508022996): Refactor LiteRtCompilerPluginT to avoid initialization
+    // in constructor.
+    adapter_or_ = litert::google_tensor::Adapter::Create(
+        /*shared_library_dir=*/std::nullopt);
   }
 
-  ::litert::Expected<GoogleTensorOptions>& GetGoogleTensorOptions() {
-    return google_tensor_opts_;
+  litert::Expected<LrtGoogleTensorOptions> CreateGoogleTensorOptions() const {
+    litert::Expected<LrtGoogleTensorOptions> google_tensor_opts =
+        litert::Error(kLiteRtStatusErrorNotFound, "No options found");
+
+    if (opq_) {
+      auto target_opq_status =
+          opq_->FindOpaqueOptions(LrtGoogleTensorOptionsGetIdentifier());
+      if (target_opq_status) {
+        const char* payload =
+            static_cast<const char*>(target_opq_status.Value());
+        LrtGoogleTensorOptions options;
+        auto status = LrtCreateGoogleTensorOptionsFromToml(payload, &options);
+        if (status == kLiteRtStatusOk) {
+          google_tensor_opts = options;
+        } else {
+          google_tensor_opts =
+              litert::Error(status, "Failed to parse Google Tensor options");
+        }
+      }
+    }
+
+    if (!google_tensor_opts) {
+      LITERT_LOG(LITERT_INFO, "%s",
+                 "No custom google tensor options found, creating default "
+                 "options");
+      LrtGoogleTensorOptions options;
+      auto status = LrtCreateGoogleTensorOptions(&options);
+      if (status == kLiteRtStatusOk) {
+        google_tensor_opts = options;
+      } else {
+        google_tensor_opts = litert::Error(
+            status, "Failed to create default Google Tensor options");
+      }
+    }
+
+    return google_tensor_opts;
   }
 
-  ::litert::Expected<litert::OpaqueOptions>& GetOpaqueOptions() { return opq_; }
+  ::litert::Expected<litert::internal::OpaqueOptionsWrapper>&
+  GetOpaqueOptions() {
+    return opq_;
+  }
   void SetLiteRtVersion(LiteRtApiVersion v) { litert_version_ = v; }
   LiteRtApiVersion GetLiteRtVersion() const { return litert_version_; }
+  const LiteRtCompilerContext* ctx() const { return ctx_; }
+
+  litert::Expected<litert::google_tensor::Adapter*> GetAdapter() {
+    if (!adapter_or_) {
+      return adapter_or_.Error();
+    }
+    return adapter_or_->get();
+  }
+
+  LiteRtStatus ReadOpFilters(const std::string& path,
+                             OpFilters& op_filters) const {
+    if (path.empty()) {
+      return kLiteRtStatusOk;
+    }
+
+#if defined(__ANDROID__) || defined(__APPLE__)
+    // On Android and iOS, google::protobuf::TextFormat is not supported
+    // due to the use of Proto Lite. We will skip loading OpFilters
+    // from a textproto file on these platforms.
+    LITERT_LOG(LITERT_INFO,
+               "OpFilters textproto parsing is disabled on mobile platforms.");
+    // Return OK, effectively using default/empty OpFilters.
+    return kLiteRtStatusOk;
+#else
+    std::ifstream ifs(path);
+    if (!ifs.is_open()) {
+      LITERT_LOG(LITERT_ERROR, "Failed to open OpFilters file: %s",
+                 path.c_str());
+      return kLiteRtStatusErrorNotFound;
+    }
+
+    std::stringstream ss;
+    ss << ifs.rdbuf();
+    std::string proto_text = ss.str();
+
+    if (!google::protobuf::TextFormat::ParseFromString(proto_text, &op_filters)) {
+      LITERT_LOG(LITERT_ERROR, "Failed to parse OpFilters proto text from: %s",
+                 path.c_str());
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    return kLiteRtStatusOk;
+#endif
+  }
 
  private:
-  litert::Expected<litert::Options> opts_ =
+  const LiteRtCompilerContext* ctx_;
+  litert::Expected<litert::internal::OptionsWrapper> opts_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
-  litert::Expected<litert::OpaqueOptions> opq_ =
+  litert::Expected<litert::internal::OpaqueOptionsWrapper> opq_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null opaque options");
-  litert::Expected<litert::google_tensor::GoogleTensorOptions>
-      google_tensor_opts_ = litert::Error(kLiteRtStatusErrorInvalidArgument,
-                                          "Null google tensor options");
-  LiteRtApiVersion litert_version_;
+  LiteRtApiVersion litert_version_{LITERT_API_VERSION_MAJOR,
+                                   LITERT_API_VERSION_MINOR,
+                                   LITERT_API_VERSION_PATCH};
+  litert::Expected<litert::google_tensor::Adapter::Ptr> adapter_or_;
 };
 
-LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
-                                        LiteRtEnvironmentOptions env,
-                                        LiteRtOptions options) {
-  *compiler_plugin = new LiteRtCompilerPluginT(env, options);
+LiteRtStatus LiteRtCreateCompilerPlugin(
+    const LiteRtCompilerContext* compiler_context,
+    LiteRtCompilerPlugin* compiler_plugin, LiteRtEnvironmentOptions env,
+    LiteRtOptions options) {
+  LiteRtPropagateMinLoggerSeverityWithCompilerContext(compiler_context, env);
+
+  *compiler_plugin = new LiteRtCompilerPluginT(compiler_context, env, options);
   return kLiteRtStatusOk;
 }
 
@@ -451,15 +544,109 @@ void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin) {
 }
 
 namespace google_tensor {
-//  TODO(abhirs): update the function to use the darwinn inbuilt way of
-//  finding supportedops
-bool IsOpSupported(const litert::Op& op) {
+
+// Enum to indicate the outcome of applying filters to an operation.
+enum class FilterOutcome {
+  // Filters indicate the operation should run on the TPU.
+  kRunOnTpu,
+  // Filters indicate the operation should NOT run on the TPU and should
+  // fall back to another delegate or CPU.
+  kDoNotRunOnTpu,
+};
+
+// Applies the OpFilters to the given op and returns whether the filters
+// indicate the op should run on TPU or not.
+FilterOutcome GetFilterOutcome(const litert::compiler::Op& op,
+                               const OpFilters& op_filters) {
+  const auto& filters = op_filters.filters();
+  // If there are no filters or op outputs to match against, run on TPU if
+  // filter behavior is `MATCHES_NOT_RUN_ON_TPU`, otherwise do not run on TPU.
+  if (filters.empty() || op.Outputs().empty()) {
+    return op_filters.filter_behavior() == OpFilters::MATCHES_NOT_RUN_ON_TPU
+               ? FilterOutcome::kRunOnTpu
+               : FilterOutcome::kDoNotRunOnTpu;
+  }
+  if (op_filters.filter_behavior() == OpFilters::MATCHES_NOT_RUN_ON_TPU) {
+    // Blocklist behavior: If any filter matches, do not run on TPU.
+    for (const auto& filter : filters) {
+      if (filter.op_name_pattern().empty()) {
+        LITERT_LOG(LITERT_WARNING, "Empty op_name_pattern in OpFilter.");
+        continue;
+      }
+      for (const auto& output : op.Outputs()) {
+        const auto& tensor_name = output.Name();
+        if (RE2::FullMatch(tensor_name, filter.op_name_pattern())) {
+          LITERT_LOG(LITERT_INFO,
+                     "Op with output tensor '%.*s' will NOT RUN ON TPU "
+                     "due to MATCHES_NOT_RUN_ON_TPU filter pattern '%s'",
+                     static_cast<int>(tensor_name.length()), tensor_name.data(),
+                     filter.op_name_pattern().c_str());
+          return FilterOutcome::kDoNotRunOnTpu;
+        }
+      }
+    }
+    // No filter matched -> run on TPU.
+    return FilterOutcome::kRunOnTpu;
+  } else {
+    // Allowlist behavior: If any filter matches, run on TPU.
+    for (const auto& filter : filters) {
+      if (filter.op_name_pattern().empty()) {
+        LITERT_LOG(LITERT_WARNING, "Empty op_name_pattern in OpFilter.");
+        continue;
+      }
+      for (const auto& output : op.Outputs()) {
+        const auto& tensor_name = output.Name();
+        if (RE2::FullMatch(tensor_name, filter.op_name_pattern())) {
+          LITERT_LOG(LITERT_INFO,
+                     "Op with output tensor '%.*s' will RUN ON TPU "
+                     "due to MATCHES_RUN_ON_TPU filter pattern '%s'",
+                     static_cast<int>(tensor_name.length()), tensor_name.data(),
+                     filter.op_name_pattern().c_str());
+          return FilterOutcome::kRunOnTpu;
+        }
+      }
+    }
+    // No filter matched -> do not run on TPU.
+    return FilterOutcome::kDoNotRunOnTpu;
+  }
+}
+
+bool IsShloCompositeOpSupported(const litert::compiler::Op& op) {
+  if (op.Code() == kLiteRtOpCodeShloComposite) {
+    const char* custom_op_name = nullptr;
+    if (LiteRtGetSHLOCompositeOpName(op.Get(), &custom_op_name) !=
+            kLiteRtStatusOk ||
+        custom_op_name == nullptr) {
+      return false;
+    }
+    // check if the name of the composite op is in the list of
+    // kSupportedStableHloCompositeOps.
+    for (auto supported_op : kSupportedStableHloCompositeOps) {
+      if (strcmp(supported_op, custom_op_name) == 0) {
+        return true;
+      }
+    }
+    LITERT_LOG(LITERT_INFO, "unsupported composite op: %s", custom_op_name);
+  }
+  return false;
+}
+
+bool IsOpSupported(const litert::compiler::Op& op,
+                   const OpFilters& op_filters) {
+  // Check if the composite op is supported.
+  if (op.Code() == kLiteRtOpCodeShloComposite) {
+    return IsShloCompositeOpSupported(op);
+  }
+  // Check if the op is in the list of unsupported ops.
   for (auto unsupported_op : kUnSupportedOps) {
     if (unsupported_op == op.Code()) {
       return false;
     }
   }
-  return true;
+
+  // Check against user-defined OpFilters. An op is supported for TPU
+  // delegation if the filters outcome is kRunOnTpu.
+  return GetFilterOutcome(op, op_filters) == FilterOutcome::kRunOnTpu;
 }
 
 }  // namespace google_tensor
@@ -468,9 +655,40 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            const char* soc_model,
                                            LiteRtSubgraph subgraph,
                                            LiteRtOpList selected_ops) {
-  ::litert::Subgraph graph(subgraph);
+  if (compiler_plugin == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "%s", "compiler_plugin is nullptr");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  third_party::odml::litert::litert::vendors::google_tensor::compiler::
+      GoogleTensorOptions google_tensor_options;
+
+  auto lrt_google_tensor_options_expected =
+      compiler_plugin->CreateGoogleTensorOptions();
+  if (!lrt_google_tensor_options_expected) {
+    LITERT_LOG(LITERT_ERROR, "Failed to create LrtGoogleTensorOptions: %s",
+               lrt_google_tensor_options_expected.Error().Message().c_str());
+    return lrt_google_tensor_options_expected.Error().Status();
+  }
+  auto lrt_google_tensor_options = *lrt_google_tensor_options_expected;
+
+  LiteRtStatus status = LrtOptionsToGoogleTensorOptions(
+      lrt_google_tensor_options, google_tensor_options);
+  LrtDestroyGoogleTensorOptions(lrt_google_tensor_options);
+
+  if (status != kLiteRtStatusOk) {
+    LITERT_LOG(LITERT_ERROR, "%s",
+               "Failed to convert LrtOptions to GoogleTensorOptions");
+    return status;
+  }
+
+  OpFilters op_filters;
+  LITERT_RETURN_IF_ERROR(compiler_plugin->ReadOpFilters(
+      google_tensor_options.op_filters_proto(), op_filters));
+
+  litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
   for (const auto& op : graph.Ops()) {
-    if (!google_tensor::IsOpSupported(op)) {
+    if (!google_tensor::IsOpSupported(op, op_filters)) {
       continue;
     }
 
@@ -504,14 +722,10 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       compiled_result == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
+  litert::compiler::Model model(compiler_plugin->ctx(), partitions);
   const auto num_partitions = model.NumSubgraphs();
 
-  // Loading Google Tensor Compiler Adapter
-  LITERT_LOG(LITERT_INFO, "%s", "Loading Google Tensor Compiler Adapter");
-  LITERT_ASSIGN_OR_RETURN(auto adapter,
-                          litert::google_tensor::Adapter::Create(
-                              /*shared_library_dir=*/std::nullopt));
+  LITERT_ASSIGN_OR_RETURN(auto adapter, compiler_plugin->GetAdapter());
   if (adapter->IsAot()) {
     // soc_model is required for AOT mode.
     if (soc_model == nullptr) {
@@ -545,7 +759,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   LITERT_LOG(LITERT_INFO, "%s", "Serializing model");
   litert::OwningBufferRef buf;
   auto [data, size, offset] = buf.GetWeak();
-  const auto opts = litert::SerializationOptions::Defaults();
+  LiteRtModelSerializationOptions opts{};
+  opts.bytecode_alignment = 1;
   char** signatures =
       static_cast<char**>(calloc(num_partitions, sizeof(char*)));
   if (signatures == nullptr) {
@@ -567,34 +782,16 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   // Compile model.
   LITERT_LOG(LITERT_INFO, "%s", "Compiling model...");
 
-  // Resolve custom google tensor options.
-  LiteRtOpaqueOptions opaque_options = {};
-  std::function<void(LiteRtOpaqueOptions)> deleter = nullptr;
-  absl::Cleanup opaque_options_cleanup = [&] {
-    if (deleter) {
-      deleter(opaque_options);
-    }
-  };
-  if (!compiler_plugin->GetGoogleTensorOptions()) {
-    LITERT_LOG(
-        LITERT_INFO,
-        "No custom google tensor options found, creating default options");
-    LITERT_ASSIGN_OR_RETURN(
-        auto google_tensor_opts,
-        ::litert::google_tensor::GoogleTensorOptions::Create());
-    deleter = google_tensor_opts.GetDeleter();
-    opaque_options = google_tensor_opts.Release();
-  } else {
-    LITERT_LOG(LITERT_INFO, "Using custom google tensor options");
-    opaque_options = compiler_plugin->GetOpaqueOptions()->Get();
-  }
-
   third_party::odml::litert::litert::vendors::google_tensor::compiler::
       GoogleTensorOptions google_tensor_options;
 
   // map to opaque options
-  LITERT_RETURN_IF_ERROR(LiteRtOpaqueOptionsToGoogleTensorOptions(
-      opaque_options, &google_tensor_options));
+  LITERT_ASSIGN_OR_RETURN(auto lrt_google_tensor_options,
+                          compiler_plugin->CreateGoogleTensorOptions());
+  LiteRtStatus lrt_status = LrtOptionsToGoogleTensorOptions(
+      lrt_google_tensor_options, google_tensor_options);
+  LrtDestroyGoogleTensorOptions(lrt_google_tensor_options);
+  LITERT_RETURN_IF_ERROR(lrt_status);
 
   // Set litert version string (e.g., "0.1.0")
   LiteRtApiVersion litert_version = compiler_plugin->GetLiteRtVersion();

@@ -13,10 +13,12 @@
 # limitations under the License.
 # copybara:uncomment load("INTERNAL_ACCEL_RUNTIME/common:build_defs.bzl", "compile_model")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
+
+# copybara:uncomment load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dispatch_api")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
-load("//litert/integration_test:litert_device.bzl", "litert_device_test")
+# copybara:uncomment load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -48,7 +50,40 @@ package(
 # )
 # copybara:uncomment_end
 
-litert_dynamic_lib(
+cc_library(
+    name = "dispatch_api_headers",
+    hdrs = [
+        "dispatch_api.h",
+        "dispatch_api_config.h",
+        "dispatch_api_macros.h",
+        "dispatch_api_utils.h",
+        "litert_dispatch_device_context.h",
+        "litert_dispatch_graph.h",
+        "litert_dispatch_invocation_context.h",
+        "litert_dispatch_metrics.h",
+        "sb_api.h",
+        "sb_api_features.h",
+    ],
+    deps = [
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/types:span",
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_metrics_header",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_runtime_context_header",
+        "//litert/c/options:litert_google_tensor_options_type",
+        "//litert/cc:litert_environment_options",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        # copybara:uncomment "//litert/vendors/google_tensor/dispatch/google:litert_darwinn_runtime_options",
+    ],
+)
+
+litert_dispatch_api(
     name = "dispatch_api",
     srcs = [
         "dispatch_api.cc",
@@ -70,7 +105,6 @@ litert_dynamic_lib(
         "litert_dispatch_metrics.h",
         "sb_api.h",
         "sb_api_features.h",
-        "sb_dispatch_annotations.h",
     ],
     copts = [
         "-Os",
@@ -80,12 +114,16 @@ litert_dynamic_lib(
         "-ffunction-sections",
         "-fdata-sections",
     ],
+    # copybara:uncomment defines = ["LITERT_HAS_DARWINN_OPTIONS_SUPPORT=1"],
     export_litert_only = True,
     linkopts = litert_android_linkopts() + [
         "-Wl,-soname=libLiteRtDispatch_GoogleTensor.so",
     ],
     shared_lib_name = "dispatch_api_so",
     so_name = "libLiteRtDispatch_GoogleTensor.so",
+    static_srcs = [
+        "dispatch_api_static.cc",
+    ],
     tags = [
         # Don't build/test in OSS until Southbound is available.
         "nobuilder",
@@ -95,6 +133,8 @@ litert_dynamic_lib(
         "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
     ],
     deps = [
+        # copybara:uncomment "//litert/vendors/google_tensor/dispatch/google:litert_darwinn_runtime_options",
+        # copybara:uncomment "//litert/vendors/google_tensor/dispatch/google:darwinn_options_utils",
         "@com_google_absl//absl/algorithm:container",
         "//litert/c/internal:litert_scheduling_info",
         "@com_google_absl//absl/base:no_destructor",
@@ -104,18 +144,27 @@ litert_dynamic_lib(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_header",
+        "//litert/c:litert_event_header",
+        "//litert/c:litert_event_type",
+        "//litert/c:litert_metrics_header",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer_header",
+        "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_logging_helper",
+        "//litert/c/internal:litert_logging_helper_with_runtime_context",
+        "//litert/c/internal:litert_runtime_context_header",
+        "//litert/c/options:litert_google_tensor_options",
+        "//litert/c/options:litert_google_tensor_options_type",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         # TODO: Remove this dependency.
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
-        "//litert/cc/dynamic_runtime:litert_opaque_options",
-        "//litert/cc/dynamic_runtime:litert_options",
-        "//litert/cc/dynamic_runtime/options:litert_darwinn_options",
-        "//litert/vendors/cc:options_helper",
     ],
 )
 
@@ -125,8 +174,13 @@ cc_library(
     srcs = ["dispatch_api_test_fixtures.cc"],
     hdrs = ["dispatch_api_test_fixtures.h"],
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_options",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_runtime_context_testonly",
         "//litert/cc:litert_buffer_ref",
         "//litert/core:filesystem_testonly",
         "//litert/test:common",
@@ -163,54 +217,86 @@ cc_library(
 #         "@com_google_absl//absl/time",
 #         "@com_google_absl//absl/types:span",
 #         "//third_party/darwinn/driver_shared/fence:fence_test_util",
+#         "//litert/c:litert_common",
 #         "//litert/c:litert_runtime_c_api_shared_lib",
 #         "//litert/c/internal:litert_logging",
+#         "//litert/c/internal:litert_runtime_context_testonly",
 #         "//litert/test:matchers",
 #         "//litert/test:simple_model_npu",
 #         "//litert/vendors/c:litert_dispatch_c_api",
 #         "INTERNAL_THREAD_PKG",
 #     ],
 # )
+#
+# litert_device_test(
+#     name = "dispatch_api_simple_model_test",
+#     srcs = ["dispatch_api_simple_model_test.cc"],
+#     backend_id = "google_tensor",
+#     data = [
+#         "//litert/test:testdata/simple_model_google_tensor.bin",
+#     ],
+#     tags = [
+#         "nobuilder",
+#         "notap",
+#     ],
+#     deps = [
+#         ":dispatch_api_test_fixtures",
+#         "//platforms/darwinn/tachyon/core/fence",
+#         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/strings:str_format",
+#         "@com_google_absl//absl/time",
+#         "@com_google_absl//absl/types:span",
+#         "//third_party/darwinn/driver_shared/fence:fence_test_util",
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_runtime_c_api_shared_lib",
+#         "//litert/c/internal:litert_logging",
+#         "//litert/c/internal:litert_runtime_context_testonly",
+#         "//litert/test:matchers",
+#         "//litert/test:simple_model_npu",
+#         "//litert/vendors/c:litert_dispatch_c_api",
+#         "INTERNAL_THREAD_PKG",
+#     ],
+# )
+#
+# cc_test(
+#     name = "dispatch_api_static_test",
+#     srcs = ["dispatch_api_static_test.cc"],
+#     data = [
+#         "simple_model_reference_google_tensor.bin",
+#         "//third_party/darwinn/litert/dispatch:libedgetpu_litert.so",
+#         "//litert/test:testdata/simple_model_npu.tflite",
+#     ],
+#     deps = [
+#         ":dispatch_api_static",
+#         "@com_google_googletest//:gtest_main",
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_compiled_model",
+#         "//litert/c:litert_environment",
+#         "//litert/c:litert_environment_options",
+#         "//litert/c:litert_model",
+#         "//litert/c:litert_model_types",
+#         "//litert/c:litert_options",
+#         "//litert/c:litert_tensor_buffer",
+#         "//litert/c:litert_tensor_buffer_types",
+#         "//litert/cc:litert_buffer_ref",
+#         "//litert/cc:litert_expected",
+#         "//litert/cc:litert_macros",
+#         "//litert/core/model:model_buffer",
+#         "//litert/test:common",
+#         "//litert/test:matchers",
+#     ],
+# )
+#
 # copybara:uncomment_end
 
-litert_device_test(
-    name = "dispatch_api_simple_model_test",
-    srcs = ["dispatch_api_simple_model_test.cc"],
-    backend_id = "google_tensor",
+sh_test(
+    name = "google_tensor_dispatch_so_symbol_test",
+    srcs = ["//litert/test:litert_c_api_dependency_test.sh"],
+    args = [
+        "LiteRtDispatchGetApi",
+        "$(location :dispatch_api_so)",
+    ],
     data = [
-        "//litert/test:testdata/simple_model_google_tensor.bin",
-    ],
-    tags = [
-        "nobuilder",
-        "notap",
-    ],
-    deps = [
-        "INTERNAL_THREAD_PKG",
-        ":dispatch_api_test_fixtures",
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/c/internal:litert_logging",
-        "//litert/test:matchers",
-        "//litert/test:simple_model_npu",
-        "//litert/vendors/c:litert_dispatch_c_api",
-        "//platforms/darwinn/tachyon/core/fence",
-        "//third_party/darwinn/driver_shared/fence:fence_test_util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/time",
-        "@com_google_absl//absl/types:span",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_test(
-    name = "darwinn_options_test",
-    srcs = ["darwinn_options_test.cc"],
-    deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_opaque_options",
-        "//litert/cc/dynamic_runtime:litert_options",
-        "//litert/cc/dynamic_runtime/options:litert_darwinn_options",
-        "//litert/cc/internal:litert_handle",
-        "@com_google_googletest//:gtest_main",
+        ":dispatch_api_so",
     ],
 )

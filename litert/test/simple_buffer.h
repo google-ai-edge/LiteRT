@@ -45,6 +45,8 @@
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/test/tflite_half_traits.h"
+#include "tflite/types/half.h"
 
 namespace litert {
 namespace testing {
@@ -56,7 +58,7 @@ namespace testing {
 class SimpleBuffer {
  private:
   struct FreeDeleter {
-    void operator()(void* ptr) const { free(ptr); }
+    void operator()(void* ptr) const { litert_aligned_free(ptr); }
   };
   // TODO: Update litert::OwningBufferRef to use support aligned allocs.
   using LiteRtAlignedMem = std::unique_ptr<uint8_t, FreeDeleter>;
@@ -184,7 +186,11 @@ class SimpleBuffer {
   Expected<void> WriteRandom(const RandomTensorDataBuilder& b, Rng& rng,
                              size_t start = 0,
                              std::optional<size_t> num_elements = {}) {
-    return b.Call<T, RandomTensorFunctor>(rng, start, num_elements, *this);
+    if constexpr (std::is_same_v<T, tflite::half>) {
+      return CallHalf<RandomTensorFunctor>(b, rng, start, num_elements, *this);
+    } else {
+      return b.Call<T, RandomTensorFunctor>(rng, start, num_elements, *this);
+    }
   }
 
   template <typename Rng>
@@ -200,6 +206,8 @@ class SimpleBuffer {
     } else if (Type().ElementType() == ElementType::Int64) {
       return b.Call<int64_t, RandomTensorFunctor>(rng, start, num_elements,
                                                   *this);
+    } else if (Type().ElementType() == ElementType::Float16) {
+      return CallHalf<RandomTensorFunctor>(b, rng, start, num_elements, *this);
     }
     // TODO: Add support for other types.
     return Error(kLiteRtStatusErrorInvalidArgument, "Unsupported element type");

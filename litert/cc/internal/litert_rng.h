@@ -16,9 +16,10 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_RNG_H_
 
 #include <bitset>
+#include <cstdint>
 #include <cstdlib>
-#include <functional>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <ostream>
 #include <random>
@@ -29,7 +30,6 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/internal/litert_detail.h"
@@ -349,7 +349,7 @@ class RandomTensorType {
  private:
   using DimSize = int32_t;
   using DimGenerator = DefaultRangedGenerator<DimSize>;
-  using ElementTypeInt = uint8_t;
+  using ElementTypeInt = unsigned int;
   using ElementTypeGenerator = DefaultRangedGenerator<ElementTypeInt>;
   static constexpr auto kNumElementTypes = sizeof...(ElementType);
   static_assert(kNumElementTypes > 0);
@@ -359,7 +359,7 @@ class RandomTensorType {
 
   // `std::pow` is not constexpr until C++26, so this cannot be constexpr.
   static DimSize MaxDimSize() {
-    const double rank = std::max(1lu, Rank);
+    const double rank = std::max(static_cast<size_t>(1), Rank);
     const double exp = 1.0 / rank;
     const double max_flat = MaxSize;
     const double max_dim = std::pow(max_flat, exp);
@@ -421,10 +421,10 @@ class RandomTensorType {
   /// any defaults.
   static Expected<ResolvedDimSpec> ResolveDimSpec(DimSize dim) {
     if (dim < kMinDimSize) {
-      return Error(kLiteRtStatusErrorInvalidArgument, "Dimension must be > 0");
+      return Error(Status::kErrorInvalidArgument, "Dimension must be > 0");
     }
     if (dim > kMaxDimSize) {
-      return Error(kLiteRtStatusErrorInvalidArgument,
+      return Error(Status::kErrorInvalidArgument,
                    "Dimension must be <= kMaxDimSize");
     }
     return ResolvedDimSpec(dim);
@@ -434,7 +434,7 @@ class RandomTensorType {
     LITERT_ASSIGN_OR_RETURN(auto l, ResolveDimSpec(dim.first));
     LITERT_ASSIGN_OR_RETURN(auto r, ResolveDimSpec(dim.second));
     if (l >= r) {
-      return Error(kLiteRtStatusErrorInvalidArgument,
+      return Error(Status::kErrorInvalidArgument,
                    "Left dimension must be < right dimension");
     }
     return ResolvedDimSpec(
@@ -488,8 +488,11 @@ class RandomTensorType {
 };
 
 template <size_t Rank, size_t MaxSize, LiteRtElementType... ElementType>
-const auto RandomTensorType<Rank, MaxSize, ElementType...>::kMaxDimSize =
-    MaxDimSize();
+const typename RandomTensorType<Rank, MaxSize, ElementType...>::DimSize
+    RandomTensorType<Rank, MaxSize, ElementType...>::kMaxDimSize = MaxDimSize();
+
+template <typename>
+inline constexpr bool kUnsupportedRandomTensorDataType = false;
 
 // RANDOM TENSOR DATA //////////////////////////////////////////////////////////
 
@@ -500,7 +503,6 @@ template <typename D, template <typename> typename Generator>
 class RandomTensorData {
  private:
   /// @todo Support on standard types.
-  static_assert(std::is_integral_v<D> || std::is_floating_point_v<D>);
   using Gen = Generator<D>;
 
  public:
@@ -540,12 +542,15 @@ class RandomTensorData {
   D High() const { return gen_.Max(); }
   D Low() const { return gen_.Min(); }
 
-  template <typename DD,
-            typename = std::enable_if_t<std::is_constructible_v<Gen, DD, DD>>>
+  template <typename DD, typename = typename std::enable_if_t<
+                             std::is_constructible_v<Gen, DD, DD>>>
   explicit RandomTensorData(DD min, DD max) : gen_(min, max) {}
 
-  template <typename = std::enable_if<std::is_constructible_v<Gen>>::type>
-  explicit RandomTensorData() : gen_() {}
+  template <typename DummyType = void>
+  explicit RandomTensorData(
+      typename std::enable_if<std::is_constructible_v<Gen>, DummyType>::type* =
+          nullptr)
+      : gen_() {}
 
  private:
   Gen gen_;
@@ -627,8 +632,10 @@ class RandomTensorDataBuilder {
         auto [min, max] = std::get<std::pair<D, D>>(int64_config_);
         return {static_cast<double>(min), static_cast<double>(max)};
       }
+
     } else {
-      static_assert(false, "Unsupported type");
+      static_assert(kUnsupportedRandomTensorDataType<D>,
+                    "Unsupported type in Bounds");
     }
   }
 
@@ -676,8 +683,10 @@ class RandomTensorDataBuilder {
         RandomTensorData<D, DefaultRangedGenerator> data(min, max);
         return Functor()(data, std::forward<Args>(args)...);
       }
+
     } else {
-      static_assert(false, "Unsupported type");
+      static_assert(kUnsupportedRandomTensorDataType<D>,
+                    "Unsupported type in Call");
     }
   }
 

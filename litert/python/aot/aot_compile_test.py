@@ -15,8 +15,8 @@
 
 from absl.testing import absltest as googletest
 from litert.python.aot import aot_compile as aot_compile_lib
+from litert.python.aot.core import aot_types
 from litert.python.aot.core import test_common
-from litert.python.aot.core import types
 from litert.python.aot.vendors.mediatek import target as mtk_target
 from litert.python.aot.vendors.qualcomm import target as qnn_target
 
@@ -31,7 +31,7 @@ class AotCompileTest(test_common.TestWithTfliteModels):
     for path in self.get_model_paths():
       results.append(
           aot_compile_lib.aot_compile(
-              types.Model.create_from_path(path),
+              aot_types.Model.create_from_path(path),
               output_dir=self.output_dir(),
               target=[sm8450_target, mt6989_target],
               keep_going=True,

@@ -15,34 +15,46 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_SCOPED_FILE_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_SCOPED_FILE_H_
 
-#if defined(_WIN32)
-#include <Windows.h>
-#endif
-
 #include <cstddef>
 
+#ifndef LITERT_NO_ABSL
+#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
+#else  // LITERT_NO_ABSL
+#include <string>
+#include <string_view>
+
+#include "litert/cc/litert_expected.h"
+#endif  // LITERT_NO_ABSL
+#include "litert/cc/litert_api_types.h"
 
 /// @file
 /// @brief Defines a file wrapper that automatically closes on destruction.
 
 namespace litert {
 
+#ifndef LITERT_NO_ABSL
+template <typename T>
+using ScopedFileStatusOr = absl::StatusOr<T>;
+#else   // LITERT_NO_ABSL
+template <typename T>
+using ScopedFileStatusOr = Expected<T>;
+#endif  // LITERT_NO_ABSL
+
 /// @brief A file wrapper that ensures the underlying file handle is
 /// automatically closed when the object goes out of scope.
 class ScopedFile {
  public:
 #if defined(_WIN32)
-  using PlatformFile = HANDLE;
+  using PlatformFile = void*;
   static const PlatformFile kInvalidPlatformFile;
 #else
   using PlatformFile = int;
   static constexpr PlatformFile kInvalidPlatformFile = -1;
 #endif
 
-  static absl::StatusOr<ScopedFile> Open(absl::string_view path);
-  static absl::StatusOr<ScopedFile> OpenWritable(absl::string_view path);
+  static ScopedFileStatusOr<ScopedFile> Open(StringView path);
+  static ScopedFileStatusOr<ScopedFile> OpenWritable(StringView path);
 
   ScopedFile() : file_(kInvalidPlatformFile) {}
   explicit ScopedFile(PlatformFile file) : file_(file) {}
@@ -68,11 +80,11 @@ class ScopedFile {
   bool IsValid() const { return file_ != kInvalidPlatformFile; }
 
   /// @brief Returns the size of the file in bytes.
-  static absl::StatusOr<size_t> GetSize(PlatformFile file);
-  absl::StatusOr<size_t> GetSize() const { return GetSize(file_); }
+  static ScopedFileStatusOr<size_t> GetSize(PlatformFile file);
+  ScopedFileStatusOr<size_t> GetSize() const { return GetSize(file_); }
 
   /// @brief Returns a `ScopedFile` pointing to the same underlying file.
-  absl::StatusOr<ScopedFile> Duplicate();
+  ScopedFileStatusOr<ScopedFile> Duplicate();
 
   /// @brief Releases ownership of the current file as a C file descriptor.
   ///
@@ -93,7 +105,7 @@ class ScopedFile {
   ///
   /// @warning While it is possible to get a `HANDLE` back from the file
   /// descriptor, **ownership will remain with the file descriptor**.
-  absl::StatusOr<int> Release();
+  ScopedFileStatusOr<int> Release();
 
  private:
   PlatformFile ReleasePlatformFile() {
@@ -107,11 +119,37 @@ class ScopedFile {
   /// The implementation can assume that the passed `PlatformFile` is valid.
   /// This must be ensured by the caller.
   static void CloseFile(PlatformFile file);
-  static absl::StatusOr<size_t> GetSizeImpl(PlatformFile file);
+  static ScopedFileStatusOr<size_t> GetSizeImpl(PlatformFile file);
 
   PlatformFile file_;
 };
 
+namespace internal::scoped_file_detail {
+
+inline bool IsFileValid(ScopedFile::PlatformFile file) {
+  return file != ScopedFile::kInvalidPlatformFile;
+}
+
+}  // namespace internal::scoped_file_detail
+
+inline ScopedFileStatusOr<size_t> ScopedFile::GetSize(PlatformFile file) {
+  if (!internal::scoped_file_detail::IsFileValid(file)) {
+#ifndef LITERT_NO_ABSL
+    return absl::FailedPreconditionError("Scoped file is not valid");
+#else   // LITERT_NO_ABSL
+    return Unexpected(Status::kErrorInvalidArgument,
+                      "Scoped file is not valid");
+#endif  // LITERT_NO_ABSL
+  }
+  return GetSizeImpl(file);
+}
+
 }  // namespace litert
+
+#if defined(_WIN32)
+#include "litert/cc/internal/scoped_file_win.h"
+#else
+#include "litert/cc/internal/scoped_file_posix.h"
+#endif
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_SCOPED_FILE_H_

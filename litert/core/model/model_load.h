@@ -22,6 +22,7 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
+#include "tflite/converter/allocation.h"
 
 namespace litert::internal {
 
@@ -30,6 +31,10 @@ namespace litert::internal {
 // flag and private mapping (not to update the model file on disk).
 Expected<std::unique_ptr<LiteRtModelT>> LoadModelFromFile(
     absl::string_view filename, bool allow_modifications = false);
+
+// Loads a model from an owned TFLite allocation.
+Expected<std::unique_ptr<LiteRtModelT>> LoadModelFromAllocation(
+    tflite::Allocation::Ptr allocation);
 
 Expected<std::unique_ptr<LiteRtModelT>> LoadModelFromBuffer(
     BufferRef<uint8_t> buffer);

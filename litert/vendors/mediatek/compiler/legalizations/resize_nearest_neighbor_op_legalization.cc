@@ -17,11 +17,11 @@
 #include <cstdint>
 #include <vector>
 
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_op_options.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
@@ -35,7 +35,7 @@ namespace litert::mediatek {
 
 Expected<void> LegalizeResizeNearestNeighborOp(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
-    OperandMap& operand_map, const litert::Op& op) {
+    OperandMap& operand_map, const litert::compiler::Op& op) {
   LITERT_LOG(LITERT_INFO, "Legalize ResizeNearestNeighbor");
 
   // Only the first input tensor is added. The second one,
@@ -51,17 +51,20 @@ Expected<void> LegalizeResizeNearestNeighborOp(
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "The second input of ResizeNearestNeighbor is not const.");
   }
-  auto new_shape_data = op.Inputs()[1].WeightsData<int32_t>();
-  if (!new_shape_data.HasValue()) {
+  auto new_shape_weights = op.Inputs()[1].Weights().Bytes();
+  if (new_shape_weights.empty()) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Fail to get data of second input.");
   }
-  const int32_t new_height = new_shape_data.Value()[1];
+  absl::Span<const int32_t> new_shape_data(
+      reinterpret_cast<const int32_t*>(new_shape_weights.data()),
+      new_shape_weights.size() / sizeof(int32_t));
+  const int32_t new_height = new_shape_data[1];
   auto new_height_operand_index = operand_map.AddScalarInt32(new_height);
   CHECK_OP_IDX_AND_RETURN_ERROR(new_height_operand_index);
   input_indices.push_back(*new_height_operand_index);
 
-  const int32_t new_width = new_shape_data.Value()[0];
+  const int32_t new_width = new_shape_data[0];
   auto new_width_operand_index = operand_map.AddScalarInt32(new_width);
   CHECK_OP_IDX_AND_RETURN_ERROR(new_width_operand_index);
   input_indices.push_back(*new_width_operand_index);
@@ -72,14 +75,15 @@ Expected<void> LegalizeResizeNearestNeighborOp(
   input_indices.push_back(*format_operand_index);
 
   bool align_corners;
-  if (auto status = LiteRtGetResizeNearestNeighborAlignCornersOption(
+  if (auto status = op.ctx()->get_resize_nearest_neighbor_align_corners_option(
           op.Get(), &align_corners);
       status != kLiteRtStatusOk) {
     return Error(status, "Failed to get align corners");
   }
   bool half_pixel_centers;
-  if (auto status = LiteRtGetResizeNearestNeighborHalfPixelCenterOption(
-          op.Get(), &half_pixel_centers);
+  if (auto status =
+          op.ctx()->get_resize_nearest_neighbor_half_pixel_center_option(
+              op.Get(), &half_pixel_centers);
       status != kLiteRtStatusOk) {
     return Error(status, "Failed to get align corners");
   }

@@ -185,11 +185,9 @@ TEST(AxisScaleOffsetQuantizeParamsWrapperTest, GetterTest) {
   std::vector<float> scales = {1.5f, 2.5f};
   std::vector<std::int32_t> zero_points = {10, 20};
   AxisScaleOffsetQuantizeParamsWrapper wrapper(axis, scales, zero_points);
-  std::vector<float> scales_out;
-  wrapper.GetScales(scales_out);
+  const auto scales_out = wrapper.GetScales();
   EXPECT_EQ(scales, scales_out);
-  std::vector<std::int32_t> zero_points_out;
-  wrapper.GetZeroPoints(zero_points_out);
+  const auto zero_points_out = wrapper.GetZeroPoints();
   EXPECT_EQ(zero_points, zero_points_out);
 }
 
@@ -268,6 +266,16 @@ TEST(BwScaleOffsetQuantizeParamsWrapperTest, GetBitwidthTest) {
   ASSERT_EQ(wrapper.GetBitwidth(), 4);
 }
 
+TEST(BwScaleOffsetQuantizeParamsWrapperTest, SetBitwidthTest) {
+  BwScaleOffsetQuantizeParamsWrapper wrapper(4, 1.5f, 10);
+  wrapper.SetBitwidth(2);
+  EXPECT_EQ(wrapper.GetBitwidth(), 2);
+  wrapper.SetBitwidth(4);
+  EXPECT_EQ(wrapper.GetBitwidth(), 4);
+  wrapper.SetBitwidth(8);
+  EXPECT_EQ(wrapper.GetBitwidth(), 8);
+}
+
 TEST(BwAxisScaleOffsetQuantizeParamsWrapperTest, CopyConstructorTest) {
   std::uint32_t bw = 4;
   std::int32_t axis = 1;
@@ -319,6 +327,20 @@ TEST(BwAxisScaleOffsetQuantizeParamsWrapperTest, GetBitwidthTest) {
   std::vector<std::int32_t> zero_points = {10, 20};
   BwAxisScaleOffsetQuantizeParamsWrapper wrapper(bw, axis, scales, zero_points);
   ASSERT_EQ(wrapper.GetBitwidth(), 4);
+}
+
+TEST(BwAxisScaleOffsetQuantizeParamsWrapperTest, SetBitwidthTest) {
+  std::uint32_t bw = 4;
+  std::int32_t axis = 1;
+  std::vector<float> scales = {1.5f, 2.5f};
+  std::vector<std::int32_t> zero_points = {10, 20};
+  BwAxisScaleOffsetQuantizeParamsWrapper wrapper(bw, axis, scales, zero_points);
+  wrapper.SetBitwidth(2);
+  EXPECT_EQ(wrapper.GetBitwidth(), 2);
+  wrapper.SetBitwidth(4);
+  EXPECT_EQ(wrapper.GetBitwidth(), 4);
+  wrapper.SetBitwidth(8);
+  EXPECT_EQ(wrapper.GetBitwidth(), 8);
 }
 using AxisScaleOffsetParamsWithType =
     std::tuple<int32_t, std::vector<float>, std::vector<int32_t>, int32_t,

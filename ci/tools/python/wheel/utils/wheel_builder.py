@@ -108,6 +108,33 @@ def _join_posix(root: str, posix_relpath: str) -> str:
   return os.path.join(root, *posix_relpath.split("/"))
 
 
+def _get_python_subprocess_env():
+  """Returns the current Python runtime and import path for child processes.
+
+  Bazel's Python binaries resolve third-party deps like setuptools via the
+  parent's sys.path. When we spawn a plain Python subprocess for wheel
+  packaging, preserve that import path explicitly so the child can import the
+  same dependencies.
+  """
+  env = os.environ.copy()
+  pythonpath_entries = []
+
+  for entry in sys.path:
+    if entry and entry not in pythonpath_entries:
+      pythonpath_entries.append(entry)
+
+  existing_pythonpath = env.get("PYTHONPATH")
+  if existing_pythonpath:
+    for entry in existing_pythonpath.split(os.pathsep):
+      if entry and entry not in pythonpath_entries:
+        pythonpath_entries.append(entry)
+
+  if pythonpath_entries:
+    env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
+
+  return sys.executable, env
+
+
 def _strip_bazel_out_prefix(path_posix: str) -> str:
   bazel_out = "bazel-out/"
   idx = path_posix.find(bazel_out)
@@ -129,6 +156,77 @@ def create_empty_init_files(dst_dir: str) -> None:
     create_empty_init_files(dir_name.path)
 
 
+_PLATFORM_INIT = """\
+import os as _os
+import sys as _sys
+
+if _sys.platform == "win32" and hasattr(_os, "add_dll_directory"):
+    # Collect DLL dirs and register them two ways:
+    #   1) os.add_dll_directory  -> honored by LoadLibraryExA(LOAD_LIBRARY_*).
+    #   2) prepend to PATH       -> honored by plain LoadLibraryA.
+    # Both are needed because LiteRT's C++ shared-library loader falls back to
+    # LoadLibraryA when LoadLibraryExA rejects the flag combination used with
+    # absolute paths; that fallback only consults PATH, not add_dll_directory.
+    _dll_dirs = []
+    _pkg_dir = _os.path.dirname(_os.path.abspath(__file__))
+    if _os.path.isdir(_pkg_dir):
+        _dll_dirs.append(_pkg_dir)
+    try:
+        import openvino as _ov
+        _ov_libs = _os.path.join(_os.path.dirname(_ov.__file__), "libs")
+        if _os.path.isdir(_ov_libs):
+            _dll_dirs.append(_ov_libs)
+    except ImportError:
+        pass
+    # Register vendor SDK data dirs so in-process dispatch DLLs can resolve
+    # vendor-shipped dependencies (e.g. openvino_intel_npu_compiler.dll).
+    # The SDK packages also self-register on import; this loop covers the
+    # case where the user imports ai_edge_litert before the SDK.
+    for _sdk_mod in ("ai_edge_litert_sdk_intel",):
+        try:
+            _sdk = __import__(_sdk_mod)
+        except ImportError:
+            continue
+        try:
+            _sdk_dir = _sdk.path_to_sdk_libs()
+        except AttributeError:
+            continue
+        if _sdk_dir and _os.path.isdir(str(_sdk_dir)):
+            _dll_dirs.append(str(_sdk_dir))
+    _seen = set()
+    for _d in _dll_dirs:
+        if _d in _seen:
+            continue
+        _seen.add(_d)
+        try:
+            _os.add_dll_directory(_d)
+        except OSError:
+            pass
+    if _dll_dirs:
+        _cur_path = _os.environ.get("PATH", "")
+        _path_parts = _cur_path.split(_os.pathsep) if _cur_path else []
+        _path_lower = {p.lower() for p in _path_parts}
+        _new_prefix = [d for d in _dll_dirs if d.lower() not in _path_lower]
+        if _new_prefix:
+            _os.environ["PATH"] = _os.pathsep.join(_new_prefix + _path_parts)
+else:
+    _pkg_dir = _os.path.dirname(_os.path.abspath(__file__))
+    _litert_so = _os.path.join(_pkg_dir, "libLiteRt.so")
+    if _os.path.isfile(_litert_so):
+        import ctypes as _ctypes
+        _ctypes.CDLL(_litert_so, mode=_os.RTLD_LAZY | _ctypes.RTLD_GLOBAL)
+    # Import vendor SDKs so their __init__.py runs (which on Linux copies
+    # bundled libraries like libopenvino_intel_npu_compiler.so into their
+    # expected locations under openvino/libs/). Silent on ImportError since
+    # the SDK packages are optional extras.
+    for _sdk_mod in ("ai_edge_litert_sdk_intel",):
+        try:
+            __import__(_sdk_mod)
+        except ImportError:
+            pass
+"""
+
+
 def create_init_files(dst_dir: str, meta_dict: Optional[dict[str, str]] = None):
   create_empty_init_files(dst_dir)
 
@@ -136,6 +234,7 @@ def create_init_files(dst_dir: str, meta_dict: Optional[dict[str, str]] = None):
     if meta_dict:
       for key, value in meta_dict.items():
         f.write(f'{key} = "{value}"\n')
+      f.write(_PLATFORM_INIT)
 
 
 def construct_meta_dict(args) -> dict[str, str]:
@@ -190,6 +289,65 @@ def _postprocess_macos_binaries(package_dir: str) -> None:
         _dedupe_macos_rpaths(os.path.join(root, name))
 
 
+# Add an RPATH hint to the Intel OpenVINO compiler plugin and dispatch library
+# so they can locate their OpenVINO runtime deps (libopenvino.so.* and the
+# device plugins libopenvino_intel_npu_plugin.so etc.) via the pip-installed
+# `openvino` package at `<site-packages>/openvino/libs/`.
+#
+# Without this, the plugin's dlopen fails on machines that don't have a
+# system-wide OpenVINO installation: the bundled plugin .so has no RPATH and
+# ld.so falls back to LD_LIBRARY_PATH / /etc/ld.so.cache, which don't know
+# about the venv's openvino/libs/.
+#
+# Scoped to intel_openvino only — other vendors ship their own SDK bundles
+# (Qualcomm QNN, MediaTek Neuron, etc.) and should not inherit an Intel path.
+_INTEL_OV_WHEEL_RPATH = "$ORIGIN/../../../../openvino/libs"
+
+
+def _postprocess_linux_binaries(package_dir: str) -> None:
+  """Postprocesses Linux binaries within the package directory.
+
+  This function adds an RPATH to Intel OpenVINO related shared libraries
+  to help them locate their dependencies within the pip-installed `openvino`
+  package. It uses `patchelf` to modify the binaries.
+
+  Args:
+    package_dir: The root directory of the Python package being built.
+  """
+  if sys.platform != "linux":
+    return
+  # package_dir is already <tree>/ai_edge_litert (see prepare_build_tree:
+  # src_dir = os.path.join(tree_path, project_name.replace("-", "_"))).
+  intel_ov_dir = os.path.join(package_dir, "vendors", "intel_openvino")
+  if not os.path.isdir(intel_ov_dir):
+    return
+  if not shutil.which("patchelf"):
+    print(
+        "warning: patchelf not found; skipping Intel OpenVINO RPATH injection."
+        " libLiteRtCompilerPlugin_IntelOpenvino.so will fail to locate"
+        " libopenvino.so at runtime unless LD_LIBRARY_PATH is set manually.",
+        file=sys.stderr,
+    )
+    return
+  for root, _, files in os.walk(intel_ov_dir):
+    for name in files:
+      if not name.endswith(".so"):
+        continue
+      path = os.path.join(root, name)
+      try:
+        subprocess.run(
+            ["patchelf", "--set-rpath", _INTEL_OV_WHEEL_RPATH, path],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+      except subprocess.CalledProcessError as e:
+        print(
+            f"warning: patchelf failed on {path}: {e.stderr}",
+            file=sys.stderr,
+        )
+
+
 def prepare_build_tree(tree_path, args, project_name: str):
   """Prepares the build tree for the wheel build.
 
@@ -211,7 +369,7 @@ def prepare_build_tree(tree_path, args, project_name: str):
     if src_posix.startswith("litert/python/"):
       src_path = src_posix.removeprefix("litert/python/")
     elif src_posix.startswith("bazel-out/"):
-      delimiter = None
+      delimiter = None  # pylint: disable=unused-variable
       if "litert/python/" in src_posix:
         delimiter = "litert/python/"
       elif "ai_edge_litert/" in src_posix:
@@ -271,6 +429,7 @@ def prepare_build_tree(tree_path, args, project_name: str):
       os.makedirs(os.path.dirname(dest), exist_ok=True)
       shutil.copyfile(src, dest)
   _postprocess_macos_binaries(src_dir)
+  _postprocess_linux_binaries(src_dir)
 
 
 def build_pyproject_wheel(
@@ -282,10 +441,10 @@ def build_pyproject_wheel(
     buildtree_path: Path to the build tree.
     platform_name: Platform name to be passed to build module.
   """
-  env = os.environ.copy()
+  py_executable, env = _get_python_subprocess_env()
 
   command = [
-      sys.executable,
+      py_executable,
       "-m",
       "build",
       "-w",
@@ -327,7 +486,7 @@ def build_setup_py_wheel(
     nightly_suffix: Suffix to be added to the name of the wheel for nightly
       builds. Does not affect the name of the module.
   """
-  env = os.environ.copy()
+  py_executable, env = _get_python_subprocess_env()
 
   env["PROJECT_NAME"] = (
       project_name + nightly_suffix if nightly_suffix else project_name
@@ -335,8 +494,8 @@ def build_setup_py_wheel(
   env["PACKAGE_VERSION"] = version
 
   command = [
-      sys.executable,
-      f"{buildtree_path}/setup.py",
+      py_executable,
+      os.path.join(buildtree_path, "setup.py"),
       "bdist_wheel",
       f"--plat-name={platform_name}",
   ]

@@ -3,7 +3,7 @@ load("//ci/tools/python/wheel/utils:platforms.bzl", "get_wheel_platform_name")
 load("//ci/tools/python/wheel/utils:py_manylinux_compliance_test.bzl", "verify_manylinux_compliance_test")
 load("//ci/tools/python/wheel/utils:py_wheel.bzl", "py_wheel")
 load("//litert:litert.bzl", "MANYLINUX_LEVEL")
-load("//litert:version.bzl", "LITERT_EXPERIMENTAL_VERSION")
+load("//litert:version.bzl", "LITERT_CONVERTER_VERSION", "LITERT_EXPERIMENTAL_VERSION")
 load("//litert/build_common:special_rule.bzl", "litert_gpu_accelerator_prebuilts")
 
 package(
@@ -29,6 +29,13 @@ genrule(
     name = "setup_py",
     srcs = ["//ci/tools/python/wheel:setup_with_binary.py"],
     outs = ["setup.py"],
+    cmd = "cat $< > $@",
+)
+
+genrule(
+    name = "converter_setup_py",
+    srcs = ["//ci/tools/python/wheel:converter_setup_with_binary.py"],
+    outs = ["converter_setup.py"],
     cmd = "cat $< > $@",
 )
 
@@ -103,6 +110,7 @@ py_library(
     name = "tflite_converter_protos",
     srcs = [":relocated_tflite_protos"],
     imports = ["."],
+    # copybara:uncomment strict_deps = False,
     visibility = ["//visibility:public"],
     deps = ["@com_google_protobuf//:protobuf_python"],
 )
@@ -115,7 +123,7 @@ ALL_PY_SRC_MODULES = [
     "//litert/python/aot:aot_compile",
     "//litert/python/aot/ai_pack:export_lib",
     "//litert/python/aot/core:common",
-    "//litert/python/aot/core:types",
+    "//litert/python/aot/core:aot_types",
     "//litert/python/aot/core:apply_plugin",
     "//litert/python/aot/core:mlir_transforms",
     "//litert/python/aot/core:components",
@@ -130,6 +138,10 @@ ALL_PY_SRC_MODULES = [
     "//litert/python/aot/vendors/mediatek:target",
     "//litert/python/aot/vendors/qualcomm:qualcomm_backend",
     "//litert/python/aot/vendors/qualcomm:target",
+    "//litert/python/aot/vendors/samsung:samsung_backend",
+    "//litert/python/aot/vendors/samsung:target",
+    "//litert/python/aot/vendors/intel_openvino:intel_openvino_backend",
+    "//litert/python/aot/vendors/intel_openvino:target",
     # TODO(b/445163709): Remove the following module once litert_lm publishes a pypi package.
     "//litert/python/internal:litertlm_core",
     "//litert/python/internal:litertlm_header_schema_py",
@@ -137,35 +149,45 @@ ALL_PY_SRC_MODULES = [
     "//litert/python/internal:sampler_params_py_pb2",
     "//litert/python/internal:litertlm_builder",
     "//litert/python/tools:flatbuffer_utils",
+    "//litert/python/tools:benchmark_litert_model",
 ] + select({
     ":build_converter_enabled": [
         "//litert/python/mlir",
         "//litert/python/tools/model_utils",
+        "//litert/python/tools/model_utils:testing",
     ],
     "//conditions:default": [],
 })
 
 # This includes the dependencies that lives outside of litert/python/. e.g. litert/tools/
 PACKAGE_DATA = select({
-    "@org_tensorflow//tensorflow:linux_x86_64": [
+    "//litert:linux_x86_64": [
         "//litert/tools:apply_plugin_main",
         "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
+        "//litert/vendors/intel_openvino/compiler:intel_openvino_compiler_plugin_so",
+        "//litert/vendors/intel_openvino/dispatch:dispatch_api_so",
         "//litert/vendors/mediatek/compiler:compiler_plugin_so",
         "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
+        "//litert/vendors/samsung/compiler:compiler_plugin_so",
+    ],
+    "//litert:windows": [
+        "//litert/tools:apply_plugin_main",
+        "//litert/vendors/intel_openvino/compiler:LiteRtCompilerPlugin",
+        "//litert/vendors/intel_openvino/dispatch:LiteRtDispatch",
     ],
     "//conditions:default": [],
 })
+
+WHEEL_PLATFORM_NAME = get_wheel_platform_name()
 
 LITERT_RUNTIME_SHARED_LIB = select({
     "@bazel_tools//src/conditions:windows": [
         "//litert/c:litert_runtime_c_api_dll",
     ],
-    "//conditions:default": ["//litert/c:libLiteRt.so"],
-}) + select({
-    "@platforms//os:macos": [
-        "@litert_prebuilts//:macos_arm64/libLiteRt.dylib",
+    "//litert:macos": [
+        "//litert/c:litert_runtime_c_api_dylib",
     ],
-    "//conditions:default": [],
+    "//conditions:default": ["//litert/c:libLiteRt.so"],
 })
 
 py_wheel(
@@ -175,6 +197,7 @@ py_wheel(
         ":fixed_pydeps",
     ] + LITERT_RUNTIME_SHARED_LIB + [
         "//litert/python/litert_wrapper/compiled_model_wrapper:compiled_model",
+        "//litert/python/litert_wrapper/environment_wrapper:environment",
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:tensor_buffer",
         "//tflite/profiling/proto:profiling_info_py",
         "//tflite/python:schema_py",
@@ -190,7 +213,7 @@ py_wheel(
     }),
     nightly_suffix = ":nightly_iso_date",
     package_data = PACKAGE_DATA,
-    platform_name = get_wheel_platform_name(),
+    platform_name = WHEEL_PLATFORM_NAME,
     project_name = "ai_edge_litert",
     py_srcs = ALL_PY_SRC_MODULES + [
         ":relocated_tflite_protos",
@@ -202,10 +225,39 @@ py_wheel(
     version = LITERT_EXPERIMENTAL_VERSION,
 )
 
+py_wheel(
+    name = "litert_converter_wheel",
+    srcs = [
+        "//litert/python:pywrap_litert_with_converter_binaries",
+        "//litert/python/mlir/_mlir_libs:libLiteRTCompilerMLIR.so",
+        "//tflite/python:schema_py",
+    ],
+    append_nightly_to_project_name = False,
+    nightly_suffix = ":nightly_iso_date",
+    platform_name = WHEEL_PLATFORM_NAME,
+    project_name = "litert_converter",
+    py_srcs = [
+        "//litert/python/mlir",
+        "//litert/python/tools/model_utils",
+        "//litert/python/tools/model_utils:testing",
+    ],
+    setup_py = ":converter_setup_py",
+    structured_deps = [],
+    version = LITERT_CONVERTER_VERSION,
+)
+
 verify_manylinux_compliance_test(
     name = "manylinux_compliance_test",
     aarch64_compliance_tag = MANYLINUX_LEVEL + "_aarch64",
     ppc64le_compliance_tag = MANYLINUX_LEVEL + "_ppc64le",
     wheel = ":litert_wheel",
+    x86_64_compliance_tag = MANYLINUX_LEVEL + "_x86_64",
+)
+
+verify_manylinux_compliance_test(
+    name = "manylinux_compliance_test_converter",
+    aarch64_compliance_tag = MANYLINUX_LEVEL + "_aarch64",
+    ppc64le_compliance_tag = MANYLINUX_LEVEL + "_ppc64le",
+    wheel = ":litert_converter_wheel",
     x86_64_compliance_tag = MANYLINUX_LEVEL + "_x86_64",
 )

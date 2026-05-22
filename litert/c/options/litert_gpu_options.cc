@@ -14,15 +14,15 @@
 
 #include "litert/c/options/litert_gpu_options.h"
 
-#include <string.h>  // NOLINT: To use strdup in some environments.
-
 #include <cstdlib>
+#include <cstring>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -138,6 +138,10 @@ struct LrtGpuOptions {
   // serialization_dir.
   std::optional<int> program_cache_fd;
 
+  // The file descriptor to use for weight caching. If set, it overrides the
+  // serialization_dir.
+  std::optional<int> weight_cache_fd;
+
   // Added in version 2.1.0.
   // If true, only the compiled programs will be cached. If false, gpu graph
   // info including work group sizes (and all compiled programs depending on
@@ -150,6 +154,16 @@ struct LrtGpuOptions {
   //
   // WARNING: This option is experimental and subject to change.
   std::vector<std::string> buffer_storage_tensor_patterns;
+
+  // Added in version 2.1.0.
+  // If true, the delegate will wait for gpu completion after each invoke.
+  // Only for specific model and specific chipset, e.g. Open source models on
+  // OpenCL on AMD and Mali GPUs, when lower quality is observed.
+  std::optional<bool> hint_waiting_for_completion;
+  // Added in version 2.1.5.
+  // If > 0, specifies the kernel (op) batch size, for a flush.
+  // Only for OpenCL backend.
+  std::optional<int> kernel_batch_size;
 };
 
 LiteRtStatus LrtCreateGpuOptions(LrtGpuOptions** options) {
@@ -190,6 +204,14 @@ LiteRtStatus LrtGetOpaqueGpuOptionsData(const LrtGpuOptions* options,
     ss << "allow_src_quantized_fc_conv_ops = "
        << (options->allow_src_quantized_fc_conv_ops.value() ? "true" : "false")
        << "\n";
+  }
+  if (options->hint_waiting_for_completion.has_value()) {
+    ss << "hint_waiting_for_completion = "
+       << (options->hint_waiting_for_completion.value() ? "true" : "false")
+       << "\n";
+  }
+  if (options->kernel_batch_size.has_value()) {
+    ss << "kernel_batch_size = " << options->kernel_batch_size.value() << "\n";
   }
   if (options->precision.has_value()) {
     ss << "precision = " << static_cast<int>(options->precision.value())
@@ -294,6 +316,10 @@ LiteRtStatus LrtGetOpaqueGpuOptionsData(const LrtGpuOptions* options,
     ss << "program_cache_fd = "
        << static_cast<int>(options->program_cache_fd.value()) << "\n";
   }
+  if (options->weight_cache_fd.has_value()) {
+    ss << "weight_cache_fd = "
+       << static_cast<int>(options->weight_cache_fd.value()) << "\n";
+  }
   if (options->cache_only_compiled_programs.has_value()) {
     ss << "cache_only_compiled_programs = "
        << (options->cache_only_compiled_programs.value() ? "true" : "false")
@@ -309,8 +335,8 @@ LiteRtStatus LrtGetOpaqueGpuOptionsData(const LrtGpuOptions* options,
     ss << "]\n";
   }
   *identifier = LrtGetGpuOptionsIdentifier();
-  *payload = strdup(ss.str().c_str());
-  *payload_deleter = [](void* p) { free(p); };
+  std::string toml_str = ss.str();
+  litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
   return kLiteRtStatusOk;
 }
 
@@ -340,6 +366,14 @@ LiteRtStatus LrtCreateGpuOptionsFromToml(const char* toml_string,
           auto res = ParseTomlBool(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
           (*options)->allow_src_quantized_fc_conv_ops = *res;
+        } else if (key == "hint_waiting_for_completion") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->hint_waiting_for_completion = *res;
+        } else if (key == "kernel_batch_size") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->kernel_batch_size = *res;
         } else if (key == "precision") {
           auto res = ParseTomlInt(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
@@ -427,6 +461,10 @@ LiteRtStatus LrtCreateGpuOptionsFromToml(const char* toml_string,
           auto res = ParseTomlInt(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
           (*options)->program_cache_fd = *res;
+        } else if (key == "weight_cache_fd") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->weight_cache_fd = *res;
         } else if (key == "cache_only_compiled_programs") {
           auto res = ParseTomlBool(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
@@ -519,6 +557,22 @@ LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(
+    LrtGpuOptions* gpu_options, bool enable) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->hint_waiting_for_completion = enable;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsKernelBatchSize(
+    LrtGpuOptions* gpu_options, int kernel_batch_size) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->kernel_batch_size = kernel_batch_size;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsPrecision(
     LrtGpuOptions* gpu_options, LiteRtDelegatePrecision precision) {
   if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
@@ -573,6 +627,14 @@ LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsProgramCacheFd(
   if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
 
   gpu_options->program_cache_fd = program_cache_fd;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsWeightCacheFd(
+    LrtGpuOptions* gpu_options, int weight_cache_fd) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->weight_cache_fd = weight_cache_fd;
   return kLiteRtStatusOk;
 }
 
@@ -771,6 +833,27 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(
+    bool* enabled, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *enabled = options->hint_waiting_for_completion.value_or(false);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsKernelBatchSize(
+    int* kernel_batch_size, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(kernel_batch_size,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`kernel_batch_size` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *kernel_batch_size = options->kernel_batch_size.value_or(-1);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsPrecision(
     LiteRtDelegatePrecision* precision, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(precision, ErrorStatusBuilder::InvalidArgument())
@@ -838,6 +921,16 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
   *program_cache_fd = options->program_cache_fd.value_or(-1);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsWeightCacheFd(
+    int* weight_cache_fd, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(weight_cache_fd, ErrorStatusBuilder::InvalidArgument())
+      << "`weight_cache_fd` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *weight_cache_fd = options->weight_cache_fd.value_or(-1);
   return kLiteRtStatusOk;
 }
 

@@ -56,9 +56,35 @@ message GoogleTensorCompilerConfig {
   string litert_version = 3;
 }
 
+// Message to filter operations based on their properties.
+message OpFilter {
+  // Regex pattern to match against an operation's identity.
+  //
+  // NOTE: This pattern is matched against the names of all output tensors
+  // of an operation. Operations with no outputs will not be matched.
+  string op_name_pattern = 1;
+}
+
+// A list of OpFilter rules.
+message OpFilters {
+  enum FilterBehavior {
+    // Default option. Ops matching any of the filter patterns will be marked as
+    // UNSUPPORTED and fall back to the CPU/GPU.
+    MATCHES_NOT_RUN_ON_TPU = 0;
+    // Ops matching any of the filter patterns will be marked as SUPPORTED
+    // and run on the TPU. Ops not matching any pattern fall back to the CPU.
+    MATCHES_RUN_ON_TPU = 1;
+  }
+
+  // Specifies how the filter patterns should be evaluated.
+  FilterBehavior filter_behavior = 1;
+
+  repeated OpFilter filters = 2;
+}
+
 // Message to hold various compilation options for the Google Tensor compiler
 // plugin.
-// NEXT ID: 11
+// NEXT ID: 13
 message GoogleTensorOptions {
   // Specifies the type of float truncation to be applied.
   GoogleTensorOptionsTruncationType float_truncation_type = 1;
@@ -74,11 +100,14 @@ message GoogleTensorOptions {
   bool enable_four_bit_compilation = 6;
   // Specifies the desired sharding intensity.
   GoogleTensorOptionsShardingIntensity sharding_intensity = 7;
-  // String of key=value pairs for testing purposes.
-  // Example: testing_flags = "flag1=value1,flag2=value2"
-  string testing_flags = 8;
   // The compiler configuration to be used by the compiler.
   GoogleTensorCompilerConfig compiler_config = 9;
   // Enables dynamic range quantization.
   bool enable_dynamic_range_quantization = 10;
+  // Path to a file containing proto text formatted OpFilters.
+  string op_filters_proto = 11;
+  // Path to a file containing binary compiler options.
+  string extra_options_path = 12;
+
+  reserved 8;
 }

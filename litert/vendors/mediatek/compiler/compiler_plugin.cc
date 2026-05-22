@@ -30,18 +30,18 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/internal/litert_extended_model.h"
-#include "litert/cc/litert_environment_options.h"
+#include "litert/c/options/litert_mediatek_options.h"
+#include "litert/cc/internal/litert_context_wrapper.h"
+#include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/internal/litert_opaque_options_wrapper.h"
+#include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
-#include "litert/cc/litert_options.h"
-#include "litert/cc/options/litert_mediatek_options.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
-#include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/mediatek/compiler/compile_model.h"
 #include "litert/vendors/mediatek/compiler/create_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/common_op_legalization.h"
@@ -132,6 +132,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflGreater,
     kLiteRtOpCodeTflMinimum,
     kLiteRtOpCodeShloComposite,
+    kLiteRtOpCodeTflL2Normalization,
 };
 // LINT.ThenChange(./MediaTek_Neuro_Compiler.md:supported_ops)
 // clang-format on
@@ -214,6 +215,17 @@ LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
+    LiteRtCompilerPlugin compiler_plugin, const char** sdk_version) {
+  if (!compiler_plugin || !sdk_version) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // No-op implementation for MediaTek plugin.
+  // TODO: Add the SDK version to the plugin.
+  *sdk_version = "";
+  return kLiteRtStatusOk;
+}
+
 //
 // Compiled Result Definition
 //
@@ -286,40 +298,63 @@ void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) {
 // Plugin Definition
 //
 
-// Plugins can hold state.
 class LiteRtCompilerPluginT {
  public:
-  using MediatekOptions = ::litert::mediatek::MediatekOptions;
-
-  LiteRtCompilerPluginT(LiteRtEnvironmentOptions env, LiteRtOptions options) {
-    std::tie(opts_, opq_, mediatek_opts_) =
-        litert::ParseOptions<MediatekOptions>(options);
+  LiteRtCompilerPluginT(const LiteRtCompilerContext* ctx,
+                        LiteRtEnvironmentOptions env, LiteRtOptions options)
+      : ctx_(ctx) {
+    const char* mt_payload = "";
+    if (options) {
+      opts_ = litert::internal::OptionsWrapper(
+          litert::internal::ContextWrapper(ctx), options,
+          litert::OwnHandle::kNo);
+      if (opts_) {
+        opq_ = opts_->GetOpaqueOptions();
+        if (opq_) {
+          auto target_opq_status = opq_->FindOpaqueOptions("mediatek");
+          if (target_opq_status) {
+            mt_payload = static_cast<const char*>(target_opq_status.Value());
+          }
+        }
+      }
+    }
+    if (auto status =
+            LrtCreateMediatekOptionsFromToml(mt_payload, &mediatek_opts_);
+        status != kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_ERROR, "Failed to parse mediatek options: %d", status);
+    }
   }
 
-  ::litert::Expected<MediatekOptions>& GetMediatekOptions() {
-    return mediatek_opts_;
-  }
+  ~LiteRtCompilerPluginT() { LrtDestroyMediatekOptions(mediatek_opts_); }
 
-  ::litert::Expected<litert::OpaqueOptions>& GetOpaqueOptions() { return opq_; }
+  LrtMediatekOptions* GetMediatekOptions() { return mediatek_opts_; }
+
+  ::litert::Expected<litert::internal::OpaqueOptionsWrapper>&
+  GetOpaqueOptions() {
+    return opq_;
+  }
 
   void SetSubgraphIndex(int index) { subgraph_index_ = index; }
   int GetSubgraphIndex() const { return subgraph_index_; }
+  const LiteRtCompilerContext* ctx() const { return ctx_; }
 
  private:
-  litert::Expected<litert::Options> opts_ =
+  const LiteRtCompilerContext* ctx_;
+  litert::Expected<litert::internal::OptionsWrapper> opts_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
-  litert::Expected<litert::OpaqueOptions> opq_ =
+  litert::Expected<litert::internal::OpaqueOptionsWrapper> opq_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null opaque options");
-  litert::Expected<litert::mediatek::MediatekOptions> mediatek_opts_ =
-      litert::Error(kLiteRtStatusErrorInvalidArgument,
-                    "Null google tensor options");
+  LrtMediatekOptions* mediatek_opts_ = nullptr;
   int subgraph_index_ = 0;
 };
 
-LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
-                                        LiteRtEnvironmentOptions env,
-                                        LiteRtOptions options) {
-  *compiler_plugin = new LiteRtCompilerPluginT(env, options);
+LiteRtStatus LiteRtCreateCompilerPlugin(
+    const LiteRtCompilerContext* compiler_context,
+    LiteRtCompilerPlugin* compiler_plugin, LiteRtEnvironmentOptions env,
+    LiteRtOptions options) {
+  LiteRtPropagateMinLoggerSeverityWithCompilerContext(compiler_context, env);
+
+  *compiler_plugin = new LiteRtCompilerPluginT(compiler_context, env, options);
   return kLiteRtStatusOk;
 }
 
@@ -372,11 +407,6 @@ CreateNeuronAdapterApi(const char* soc_model,
                  "Failed to create Neuron Adapter API");
   }
 
-  if (!compiler_plugin->GetMediatekOptions()) {
-    LITERT_ASSIGN_OR_RETURN(compiler_plugin->GetMediatekOptions(),
-                            ::litert::mediatek::MediatekOptions::Create());
-  }
-
   // Initialize SDK and load mediatek shared libraries.
   LITERT_ASSIGN_OR_RETURN(auto api, NeuronAdapterApi::Create(
                                         /*shared_library_dir=*/std::nullopt,
@@ -386,7 +416,7 @@ CreateNeuronAdapterApi(const char* soc_model,
 }
 
 // TODO update this function to match the new legalizations.
-bool IsOpSupported(const litert::Op& op) {
+bool IsOpSupported(const litert::compiler::Op& op) {
   // NOTE: Currently we are demoing by just mapping simple f32 mul ops.  Use a
   // very loose guard for now -- only checking if op code is supported.
   for (auto supported_op : kSupportedOps) {
@@ -411,9 +441,11 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     return soc_and_api.Error().Status();
   }
 
-  litert::mediatek::MediatekOptions& mtk_options =
-      compiler_plugin->GetMediatekOptions().Value();
-  if (!mtk_options.GetDisableDlaDirRemoval()) {
+  LrtMediatekOptions* mtk_options = compiler_plugin->GetMediatekOptions();
+  bool disable_dla_dir_removal = false;
+  LrtGetMediatekOptionsDisableDlaDirRemoval(mtk_options,
+                                            &disable_dla_dir_removal);
+  if (!disable_dla_dir_removal) {
     absl::Cleanup dla_directory_cleanup = [] {
       const char* dla_directory_name = std::getenv("MTKNN_ADAPTER_DLA_DIR");
       if (dla_directory_name) {
@@ -424,7 +456,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
   auto& [opt_soc_model, neuron_adapter_api] = soc_and_api.Value();
 
-  litert::Subgraph graph(subgraph);
+  litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
   auto num_ops = graph.Ops().size();
   const auto& ops = graph.Ops();
 
@@ -437,7 +469,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
       if (!IsOpSupported(op)) {
         continue;
       }
-      LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
+      LITERT_RETURN_IF_ERROR(op.ctx()->push_op(selected_ops, op.Get(), 0));
     }
     return kLiteRtStatusOk;
   }
@@ -456,8 +488,9 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   // Create Model of the subgraph
   LITERT_ASSIGN_OR_RETURN(auto model, neuron_adapter_api->CreateModel());
   OperandMap operand_map(*neuron_adapter_api, model.get());
-  status = CreateModel(*neuron_adapter_api, graph, "get supported graph",
-                       model.get(), &operand_map, &unknown_op_indices);
+  status = CreateModel(compiler_plugin->ctx(), *neuron_adapter_api, graph,
+                       "get supported graph", model.get(), &operand_map,
+                       &unknown_op_indices);
   if (!status) {
     LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
     return status.Error().Status();
@@ -476,7 +509,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   }
   for (int op_idx = 0; op_idx < num_ops; ++op_idx) {
     if (support_flags[op_idx]) {
-      LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, ops[op_idx].Get(), 0));
+      LITERT_RETURN_IF_ERROR(
+          ops[op_idx].ctx()->push_op(selected_ops, ops[op_idx].Get(), 0));
     }
   }
   return kLiteRtStatusOk;
@@ -485,14 +519,14 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 namespace {
 
 Expected<std::vector<uint8_t>> CompilePartition(
-    NeuronAdapterApi& neuron_adapter_api, const litert::Subgraph& partition,
-    const std::string& graph_name, std::optional<std::string> soc_model,
-    ::litert::Expected<litert::mediatek::MediatekOptions>& mediatek_opts,
+    const LiteRtCompilerContext* ctx, NeuronAdapterApi& neuron_adapter_api,
+    const litert::compiler::Subgraph& partition, const std::string& graph_name,
+    std::optional<std::string> soc_model, LrtMediatekOptions* mediatek_opts,
     const int subgraph_index) {
   LITERT_ASSIGN_OR_RETURN(auto model, neuron_adapter_api.CreateModel());
   OperandMap operand_map(neuron_adapter_api, model.get());
-  LITERT_RETURN_IF_ERROR(CreateModel(neuron_adapter_api, partition, graph_name,
-                                     model.get(), &operand_map));
+  LITERT_RETURN_IF_ERROR(CreateModel(ctx, neuron_adapter_api, partition,
+                                     graph_name, model.get(), &operand_map));
 
   auto compilation = CompileModel(neuron_adapter_api, model.get(), soc_model,
                                   mediatek_opts, subgraph_index);
@@ -530,9 +564,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     return soc_and_api.Error().Status();
   }
 
-  litert::mediatek::MediatekOptions& mtk_options =
-      compiler_plugin->GetMediatekOptions().Value();
-  if (!mtk_options.GetDisableDlaDirRemoval()) {
+  LrtMediatekOptions* mtk_options = compiler_plugin->GetMediatekOptions();
+  bool disable_dla_dir_removal = false;
+  LrtGetMediatekOptionsDisableDlaDirRemoval(mtk_options,
+                                            &disable_dla_dir_removal);
+  if (!disable_dla_dir_removal) {
     absl::Cleanup dla_directory_cleanup = [] {
       const char* dla_directory_name = std::getenv("MTKNN_ADAPTER_DLA_DIR");
       if (dla_directory_name) {
@@ -541,7 +577,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     };
   }
 
-  auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
+  litert::compiler::Model model(compiler_plugin->ctx(), partitions);
   const auto num_partitions = model.NumSubgraphs();
 
   LITERT_LOG(LITERT_INFO,
@@ -550,16 +586,25 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   auto& [opt_soc_model, api] = soc_and_api.Value();
 
+  // Record Neuron SDK version in bytecode schema for runtime compatibility
+  // check.
+  const auto& neuron_version = api->RuntimeVersion();
+  LITERT_LOG(LITERT_INFO, "Recording Neuron SDK version in bytecode: %u.%u.%u",
+             neuron_version.major, neuron_version.minor, neuron_version.patch);
+
   auto result = std::make_unique<LiteRtCompiledResultT>();
+  result->bytebuilder.SetNeuronVersion(
+      neuron_version.major, neuron_version.minor, neuron_version.patch);
 
   for (auto i = 0; i < num_partitions; ++i) {
     auto graph_name = absl::StrFormat("Partition_%d", i);
     LITERT_ASSIGN_OR_RETURN(auto subgraph, model.Subgraph(i));
     // TODO(b/424234937): Remove this once the bug is fixed.
     compiler_plugin->SetSubgraphIndex(i);
-    auto bytecode = CompilePartition(*api, subgraph, graph_name, opt_soc_model,
-                                     compiler_plugin->GetMediatekOptions(),
-                                     compiler_plugin->GetSubgraphIndex());
+    auto bytecode =
+        CompilePartition(compiler_plugin->ctx(), *api, subgraph, graph_name,
+                         opt_soc_model, compiler_plugin->GetMediatekOptions(),
+                         compiler_plugin->GetSubgraphIndex());
     if (!bytecode) {
       LITERT_LOG(LITERT_INFO, "%s", bytecode.Error().Message().c_str());
       return bytecode.Error().Status();
@@ -589,5 +634,31 @@ LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
     LiteRtApiVersion api_version, LiteRtCompilerPlugin compiler_plugin,
     LiteRtEnvironmentOptions env, LiteRtOptions options,
     const char* soc_model_name) {
+  // Check LiteRt API version for backward compatibility.
+  static constexpr LiteRtApiVersion kApiVersion{LITERT_API_VERSION_MAJOR,
+                                                LITERT_API_VERSION_MINOR,
+                                                LITERT_API_VERSION_PATCH};
+  if (LiteRtCompareApiVersion(api_version, kApiVersion) > 0) {
+    LITERT_LOG(LITERT_ERROR,
+               "LiteRT API version too new for compiler plugin. Caller version "
+               "%d.%d.%d "
+               "requires plugin version <= %d.%d.%d.",
+               api_version.major, api_version.minor, api_version.patch,
+               kApiVersion.major, kApiVersion.minor, kApiVersion.patch);
+    return kLiteRtStatusErrorUnsupportedCompilerVersion;
+  }
+
+  // Check if the SoC model is supported.
+  if (soc_model_name != nullptr) {
+    auto soc_model = FindSocModel(soc_model_name);
+    if (!soc_model.has_value()) {
+      LITERT_LOG(LITERT_ERROR, "Unsupported SoC model: %s", soc_model_name);
+      return kLiteRtStatusErrorUnsupportedCompilerVersion;
+    }
+    LITERT_LOG(LITERT_INFO, "SoC model %s is supported", soc_model_name);
+  } else {
+    LITERT_LOG(LITERT_INFO, "SoC model name is not specified");
+  }
+
   return kLiteRtStatusOk;
 }

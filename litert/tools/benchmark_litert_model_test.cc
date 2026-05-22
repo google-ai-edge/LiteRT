@@ -88,6 +88,27 @@ TEST_F(BenchmarkLiteRtModelTest, GetModelSizeFromPathSucceeded) {
   EXPECT_GE(listener.results_.model_size_mb(), 0);
 }
 
+TEST_F(BenchmarkLiteRtModelTest, CpuOnlyInitDoesNotProbeGpuAccelerator) {
+#if defined(LITERT_DISABLE_GPU)
+  GTEST_SKIP() << "GPU accelerator auto-registration is disabled.";
+#endif
+  BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
+  params.Set<std::string>("graph", kModelPath);
+  params.Set<std::string>("signature_to_run_for", kSignatureToRunFor);
+  params.Set<bool>("use_cpu", true);
+  params.Set<bool>("use_gpu", false);
+  params.Set<bool>("use_npu", false);
+  params.Set<bool>("require_full_delegation", false);
+
+  BenchmarkLiteRtModel benchmark = BenchmarkLiteRtModel(std::move(params));
+
+  testing::internal::CaptureStderr();
+  EXPECT_EQ(benchmark.Init(), kTfLiteOk);
+  const std::string logs = testing::internal::GetCapturedStderr();
+
+  EXPECT_EQ(logs.find("Attempting to load GPU accelerator("), std::string::npos) << logs;
+}
+
 TEST_F(BenchmarkLiteRtModelTest, BenchmarkWithResultFilePath) {
   BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
   params.Set<std::string>("graph", kModelPath);
@@ -206,7 +227,7 @@ TEST_F(BenchmarkLiteRtModelTest, BenchmarkWithInputLayerValueRange) {
   ASSERT_EQ(input_buffers.size(), 1);
   auto& buffer = input_buffers[0];
 
-  auto size_bytes_res = buffer.Size();
+  auto size_bytes_res = buffer.PackedSize();
   ASSERT_TRUE(size_bytes_res.HasValue());
   size_t size_bytes = size_bytes_res.Value();
   size_t num_elements = size_bytes / sizeof(float);

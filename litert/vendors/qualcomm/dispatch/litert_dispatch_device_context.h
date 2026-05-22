@@ -15,12 +15,18 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 
-#include "litert/c/litert_tensor_buffer.h"
+#include <cstddef>
+#include <memory>
+#include <utility>
+
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "litert/c/internal/litert_runtime_context.h"
+#include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/dispatch/registry.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "QnnInterface.h"  // from @qairt
+#include "QnnCommon.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 
 class LiteRtDispatchDeviceContextT {
@@ -29,7 +35,9 @@ class LiteRtDispatchDeviceContextT {
 
   ~LiteRtDispatchDeviceContextT() = default;
 
-  static litert::Expected<Ptr> Create(litert::qnn::QnnManager& qnn_manager);
+  static litert::Expected<Ptr> Create(
+      const LiteRtRuntimeContext* runtime_context,
+      litert::qnn::QnnManager& qnn_manager);
 
   litert::Expected<LiteRtTensorBufferHandle> RegisterTensorBuffer(
       LiteRtTensorBuffer tensor_buffer) {
@@ -58,6 +66,14 @@ class LiteRtDispatchDeviceContextT {
     invocation_context_ = invocation_context;
   }
 
+  litert::Expected<const litert::qnn::QnnManager::ContextHandle&>
+  GetOrCreateContext(const void* bytecode_ptr, size_t bytecode_size,
+                     Qnn_ProfileHandle_t profile_handle);
+
+  const LiteRtRuntimeContext* runtime_context() const {
+    return runtime_context_;
+  }
+
  private:
   struct TensorBufferRegistryEntry {
     LiteRtTensorBuffer tensor_buffer;
@@ -72,15 +88,35 @@ class LiteRtDispatchDeviceContextT {
   using TensorBufferRegistry = litert::qnn::Registry<LiteRtTensorBufferHandle,
                                                      TensorBufferRegistryEntry>;
 
-  LiteRtDispatchDeviceContextT(litert::qnn::QnnManager& qnn_manager)
-      : qnn_manager_(qnn_manager) {}
+  explicit LiteRtDispatchDeviceContextT(
+      const LiteRtRuntimeContext* runtime_context,
+      litert::qnn::QnnManager& qnn_manager)
+      : runtime_context_(runtime_context), qnn_manager_(qnn_manager) {}
 
   litert::Expected<Qnn_MemHandle_t> RegisterTensorBuffer(
       LiteRtTensorBuffer tensor_buffer, const Qnn_Tensor_t& tensor);
 
+  const LiteRtRuntimeContext* runtime_context_;
   litert::qnn::QnnManager& qnn_manager_;
   TensorBufferRegistry tensor_buffer_registry_;
   LiteRtDispatchInvocationContextT* invocation_context_ = nullptr;
+
+  struct ContextCacheKey {
+    const void* ptr;
+    size_t size;
+
+    bool operator==(const ContextCacheKey& other) const {
+      return ptr == other.ptr && size == other.size;
+    }
+    template <typename H>
+    friend H AbslHashValue(H h, const ContextCacheKey& k) {
+      return H::combine(std::move(h), k.ptr, k.size);
+    }
+  };
+  using UniqueContextHandle =
+      std::unique_ptr<litert::qnn::QnnManager::ContextHandle>;
+  // Lifetime of the context cache is the same as the device context.
+  absl::flat_hash_map<ContextCacheKey, UniqueContextHandle> context_cache_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_

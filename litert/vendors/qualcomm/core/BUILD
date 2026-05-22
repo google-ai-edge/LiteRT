@@ -8,6 +8,7 @@ load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:__subpackages__"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
 )
 
 cc_library(
@@ -53,6 +54,11 @@ cc_library(
     name = "common",
     srcs = ["common.cc"],
     hdrs = ["common.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
+    linkopts = select({
+        "//litert:android": ["-llog"],
+        "//conditions:default": [],
+    }),
     deps = [
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",

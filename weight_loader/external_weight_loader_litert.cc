@@ -14,6 +14,7 @@
 
 #include "weight_loader/external_weight_loader_litert.h"
 
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/cc/internal/scoped_weight_source.h"
 #include "litert/core/model/flatbuffer_to_litert.h"
 
@@ -23,6 +24,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#else
+#include <windows.h>
 #endif  // !defined(_WIN32)
 
 #include <cerrno>
@@ -46,14 +49,9 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
-#if LITERT_HAS_OPENCL_SUPPORT
-#include "litert/runtime/open_cl_sync.h"
-#include <CL/cl.h>
-#endif  // LITERT_HAS_OPENCL_SUPPORT
 #include "tflite/schema/schema_generated.h"
 
 namespace weight_loader {
@@ -167,13 +165,9 @@ std::string JoinPath(absl::string_view base, absl::string_view relative) {
 }
 
 struct CpuMapping {
-#if !defined(_WIN32)
   void* base = nullptr;
   size_t length = 0;
   size_t page_offset = 0;
-#else
-  uint8_t* owned_data = nullptr;
-#endif
   uint8_t* data = nullptr;
   size_t data_length = 0;
 };
@@ -222,15 +216,13 @@ absl::Status ReadScopedRangeWin32(HANDLE handle, uint64_t absolute_offset,
 
 void ReleaseEntry(Entry& entry) {
   entry.access.reset();
+  if (entry.cpu_mapping && entry.cpu_mapping->base) {
 #if !defined(_WIN32)
-  if (entry.cpu_mapping) {
     munmap(entry.cpu_mapping->base, entry.cpu_mapping->length);
-  }
 #else
-  if (entry.cpu_mapping && entry.cpu_mapping->owned_data) {
-    delete[] entry.cpu_mapping->owned_data;
-  }
+    UnmapViewOfFile(entry.cpu_mapping->base);
 #endif
+  }
   entry.cpu_mapping.reset();
 }
 
@@ -248,6 +240,36 @@ absl::StatusOr<std::string> ResolveGroupPath(
     return it->second;
   }
   return JoinPath(*model_directory, it->second);
+}
+
+struct MmapParams {
+  size_t page_offset;
+#if !defined(_WIN32)
+  off_t map_offset;
+#else
+  uint64_t map_offset;
+#endif
+  size_t map_length;
+};
+
+MmapParams GetMmapParams(uint64_t absolute_offset, uint64_t length) {
+  MmapParams params;
+#if !defined(_WIN32)
+  const int64_t page_size = sysconf(_SC_PAGESIZE);
+  params.page_offset =
+      static_cast<size_t>(absolute_offset % static_cast<uint64_t>(page_size));
+  params.map_offset = static_cast<off_t>(absolute_offset - params.page_offset);
+  params.map_length = params.page_offset + static_cast<size_t>(length);
+#else
+  SYSTEM_INFO sys_info;
+  GetSystemInfo(&sys_info);
+  const uint64_t alloc_granularity = sys_info.dwAllocationGranularity;
+  params.page_offset =
+      static_cast<size_t>(absolute_offset % alloc_granularity);
+  params.map_offset = absolute_offset - params.page_offset;
+  params.map_length = params.page_offset + static_cast<size_t>(length);
+#endif
+  return params;
 }
 
 absl::StatusOr<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
@@ -274,14 +296,10 @@ absl::StatusOr<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
         absl::StrFormat("External weight slice out of range for %s", path));
   }
 
-  const int64_t page_size = sysconf(_SC_PAGESIZE);
-  const size_t page_offset =
-      static_cast<size_t>(info.offset % static_cast<uint64_t>(page_size));
-  const off_t map_offset = static_cast<off_t>(info.offset - page_offset);
-  const size_t map_length = page_offset + static_cast<size_t>(info.length);
+  MmapParams params = GetMmapParams(info.offset, info.length);
 
-  void* base =
-      mmap(nullptr, map_length, PROT_READ, MAP_PRIVATE, fd, map_offset);
+  void* base = mmap(nullptr, params.map_length, PROT_READ, MAP_PRIVATE, fd,
+                    params.map_offset);
   int saved_errno = errno;
   close(fd);
   if (base == MAP_FAILED) {
@@ -289,43 +307,57 @@ absl::StatusOr<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
         "mmap failed for %s: %s", path.c_str(), strerror(saved_errno)));
   }
 
-  uint8_t* data_ptr = static_cast<uint8_t*>(base) + page_offset;
+  uint8_t* data_ptr = static_cast<uint8_t*>(base) + params.page_offset;
 
   CpuMapping mapping;
   mapping.base = base;
-  mapping.length = map_length;
-  mapping.page_offset = page_offset;
+  mapping.length = params.map_length;
+  mapping.page_offset = params.page_offset;
   mapping.data = data_ptr;
   mapping.data_length = static_cast<size_t>(info.length);
   return mapping;
 #else
-  std::ifstream file(path, std::ios::binary);
-  if (!file) {
+  HANDLE file_handle =
+      CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                  OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file_handle == INVALID_HANDLE_VALUE) {
     return absl::InternalError(absl::StrFormat("Failed to open %s", path));
   }
-  file.seekg(0, std::ios::end);
-  std::streamoff file_size = file.tellg();
-  if (file_size < 0) {
-    return absl::InternalError(
-        absl::StrFormat("Failed to determine size of %s", path));
-  }
-  if (static_cast<uint64_t>(file_size) < info.offset + info.length) {
+
+  LARGE_INTEGER file_size;
+  if (!GetFileSizeEx(file_handle, &file_size) ||
+      static_cast<uint64_t>(file_size.QuadPart) < info.offset + info.length) {
+    CloseHandle(file_handle);
     return absl::InvalidArgumentError(
         absl::StrFormat("External weight slice out of range for %s", path));
   }
-  file.seekg(static_cast<std::streamoff>(info.offset), std::ios::beg);
-  auto* buffer = new uint8_t[info.length];
-  file.read(reinterpret_cast<char*>(buffer), info.length);
-  if (!file) {
-    delete[] buffer;
-    return absl::InternalError(
-        absl::StrFormat("Failed to read %llu bytes from %s",
-                        static_cast<unsigned long long>(info.length), path));
+
+  MmapParams params = GetMmapParams(info.offset, info.length);
+
+  HANDLE mapping_handle =
+      CreateFileMappingA(file_handle, nullptr, PAGE_READONLY, 0, 0, nullptr);
+  CloseHandle(file_handle);
+
+  if (!mapping_handle) {
+    return absl::InternalError("CreateFileMappingA failed on Windows");
+  }
+
+  DWORD offset_high = static_cast<DWORD>(params.map_offset >> 32);
+  DWORD offset_low = static_cast<DWORD>(params.map_offset & 0xFFFFFFFFL);
+
+  void* base = MapViewOfFile(mapping_handle, FILE_MAP_READ, offset_high,
+                             offset_low, params.map_length);
+  CloseHandle(mapping_handle);
+
+  if (!base) {
+    return absl::InternalError("MapViewOfFile failed on Windows");
   }
 
   CpuMapping mapping;
-  mapping.owned_data = buffer;
-  mapping.data = buffer;
+  mapping.base = base;
+  mapping.length = params.map_length;
+  mapping.page_offset = params.page_offset;
+  mapping.data = static_cast<uint8_t*>(base) + params.page_offset;
   mapping.data_length = static_cast<size_t>(info.length);
   return mapping;
 #endif
@@ -387,13 +419,9 @@ absl::StatusOr<CpuMapping> MapScopedFileSlice(
   LITERT_RETURN_IF_ERROR(ValidateScopedSlice(info, section, &absolute_offset));
 #if !defined(_WIN32)
   int fd = source->file.file();
-  const int64_t page_size = sysconf(_SC_PAGESIZE);
-  const size_t page_offset =
-      static_cast<size_t>(absolute_offset % static_cast<uint64_t>(page_size));
-  const off_t map_offset = static_cast<off_t>(absolute_offset - page_offset);
-  const size_t map_length = page_offset + static_cast<size_t>(info.length);
-  void* base =
-      mmap(nullptr, map_length, PROT_READ, MAP_PRIVATE, fd, map_offset);
+  MmapParams params = GetMmapParams(absolute_offset, info.length);
+  void* base = mmap(nullptr, params.map_length, PROT_READ, MAP_PRIVATE, fd,
+                    params.map_offset);
   int saved_errno = errno;
   if (base == MAP_FAILED) {
     return absl::InternalError(
@@ -401,23 +429,40 @@ absl::StatusOr<CpuMapping> MapScopedFileSlice(
   }
   CpuMapping mapping;
   mapping.base = base;
-  mapping.length = map_length;
-  mapping.page_offset = page_offset;
-  mapping.data = static_cast<uint8_t*>(base) + page_offset;
+  mapping.length = params.map_length;
+  mapping.page_offset = params.page_offset;
+  mapping.data = static_cast<uint8_t*>(base) + params.page_offset;
   mapping.data_length = static_cast<size_t>(info.length);
   return mapping;
 #else
   HANDLE handle = source->file.file();
-  auto* buffer = new uint8_t[info.length];
-  absl::Status read_status = ReadScopedRangeWin32(
-      handle, absolute_offset, static_cast<size_t>(info.length), buffer);
-  if (!read_status.ok()) {
-    delete[] buffer;
-    return read_status;
+  MmapParams params = GetMmapParams(absolute_offset, info.length);
+
+  HANDLE mapping_handle =
+      CreateFileMappingA(handle, nullptr, PAGE_READONLY, 0, 0, nullptr);
+
+  if (!mapping_handle) {
+    return absl::InternalError("CreateFileMappingA failed on Windows");
   }
+
+  DWORD offset_high = static_cast<DWORD>(params.map_offset >> 32);
+  DWORD offset_low = static_cast<DWORD>(params.map_offset & 0xFFFFFFFFL);
+
+  void* base = MapViewOfFile(mapping_handle, FILE_MAP_READ, offset_high,
+                             offset_low, params.map_length);
+
+  // Safe to close; view stays active until UnmapViewOfFile
+  CloseHandle(mapping_handle);
+
+  if (!base) {
+    return absl::InternalError("MapViewOfFile failed on Windows");
+  }
+
   CpuMapping mapping;
-  mapping.owned_data = buffer;
-  mapping.data = buffer;
+  mapping.base = base;
+  mapping.length = params.map_length;
+  mapping.page_offset = params.page_offset;
+  mapping.data = static_cast<uint8_t*>(base) + params.page_offset;
   mapping.data_length = static_cast<size_t>(info.length);
   return mapping;
 #endif
@@ -479,15 +524,16 @@ absl::StatusOr<std::vector<uint8_t>> ReadWeightSlice(
   return ReadFileSliceFromPath(info, source.path);
 }
 
-absl::Status EnsureCpuTensorBuffer(Entry& entry, const LiteRtWeightInfo& info,
+absl::Status EnsureCpuTensorBuffer(LiteRtRuntimeContext* runtime_context,
+                                   Entry& entry, const LiteRtWeightInfo& info,
                                    const WeightSource& source) {
   if (!entry.access.has_value()) {
     entry.access.emplace();
   }
   if (entry.access->GetHostBuffer() != nullptr) {
     LiteRtTensorBufferType buffer_type;
-    if (LiteRtGetTensorBufferType(entry.access->GetHostBuffer(),
-                                  &buffer_type) == kLiteRtStatusOk &&
+    if (runtime_context->get_tensor_buffer_type(
+            entry.access->GetHostBuffer(), &buffer_type) == kLiteRtStatusOk &&
         buffer_type == kLiteRtTensorBufferTypeHostMemory) {
       return absl::OkStatus();
     }
@@ -502,15 +548,17 @@ absl::Status EnsureCpuTensorBuffer(Entry& entry, const LiteRtWeightInfo& info,
   }
 
   LiteRtTensorBuffer host_buffer;
-  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromHostMemory(
+  LITERT_RETURN_IF_ERROR(runtime_context->create_tensor_buffer_from_host_memory(
       &info.tensor_type, static_cast<void*>(entry.cpu_mapping->data),
       entry.cpu_mapping->data_length, /*deallocator=*/nullptr, &host_buffer));
-  entry.access->SetHostBuffer(LiteRtTensorBufferPtr(host_buffer));
+  entry.access->SetHostBuffer(LiteRtTensorBufferPtr(
+      host_buffer, LiteRtTensorBufferDeleter{runtime_context}));
   return absl::OkStatus();
 }
 
 #if LITERT_HAS_OPENCL_SUPPORT
-absl::Status EnsureOpenClTensorBuffer(Entry& entry,
+absl::Status EnsureOpenClTensorBuffer(LiteRtRuntimeContext* runtime_context,
+                                      Entry& entry,
                                       const LiteRtWeightInfo& info,
                                       const WeightSource& path,
                                       LiteRtEnvironmentT* env) {
@@ -522,30 +570,25 @@ absl::Status EnsureOpenClTensorBuffer(Entry& entry,
         "LiteRtEnvironment must not be null for OpenCL access");
   }
 
-  LITERT_ASSIGN_OR_RETURN(auto* gpu_env, env->GetGpuEnvironment());
+  LiteRtTensorBuffer device_buffer;
+  LITERT_RETURN_IF_ERROR(runtime_context->create_managed_tensor_buffer(
+      env, info.gpu_buffer_type, &info.tensor_type, info.length,
+      &device_buffer));
+  entry.access->SetDeviceBuffer(LiteRtTensorBufferPtr(
+      device_buffer, LiteRtTensorBufferDeleter{runtime_context}));
+
+  void* host_ptr;
+  LITERT_RETURN_IF_ERROR(runtime_context->lock_tensor_buffer(
+      entry.access->GetDeviceBuffer(), &host_ptr,
+      kLiteRtTensorBufferLockModeWrite));
 
   LITERT_ASSIGN_OR_RETURN(std::vector<uint8_t> data,
                           ReadWeightSlice(info, path));
+  std::memcpy(host_ptr, data.data(), data.size());
 
-  LiteRtTensorBuffer device_buffer;
-  LITERT_RETURN_IF_ERROR(LiteRtCreateManagedTensorBuffer(
-      env, info.gpu_buffer_type, &info.tensor_type, info.length,
-      &device_buffer));
-  entry.access->SetDeviceBuffer(LiteRtTensorBufferPtr(device_buffer));
+  LITERT_RETURN_IF_ERROR(
+      runtime_context->unlock_tensor_buffer(entry.access->GetDeviceBuffer()));
 
-  cl_mem cl_memory;
-  LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferOpenClMemory(
-      entry.access->GetDeviceBuffer(), &cl_memory));
-
-  LiteRtRankedTensorType tensor_type_c = info.tensor_type;
-  LiteRtStatus upload_status = ::litert::internal::LiteRtGpuMemoryUpload(
-      gpu_env, &tensor_type_c, info.gpu_buffer_type, info.length, data.data(),
-      cl_memory);
-  if (upload_status != kLiteRtStatusOk) {
-    return absl::InternalError(
-        absl::StrFormat("Failed to upload OpenCL buffer (status=%d)",
-                        static_cast<int>(upload_status)));
-  }
   return absl::OkStatus();
 }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
@@ -623,9 +666,11 @@ void ParseFlatBuffer(const tflite::Model& model,
 class LiteRtWeightLoader : public WeightLoader {
  public:
   LiteRtWeightLoader(
-      const tflite::Model* model, std::optional<std::string> model_directory,
+      LiteRtRuntimeContext* runtime_context, const tflite::Model* model,
+      std::optional<std::string> model_directory,
       std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source)
-      : model_directory_(std::move(model_directory)),
+      : runtime_context_(runtime_context),
+        model_directory_(std::move(model_directory)),
         scoped_weight_source_(std::move(scoped_weight_source)) {
     ParseFlatBuffer(*model, infos_, entries_, group_paths_);
     if (scoped_weight_source_) {
@@ -687,15 +732,16 @@ class LiteRtWeightLoader : public WeightLoader {
       }
 
       if (request.cpu) {
-        absl::Status status = EnsureCpuTensorBuffer(entry, info, source);
+        absl::Status status =
+            EnsureCpuTensorBuffer(runtime_context_, entry, info, source);
         if (!status.ok()) {
           return status;
         }
       }
       if (request.opencl) {
 #if LITERT_HAS_OPENCL_SUPPORT
-        absl::Status status =
-            EnsureOpenClTensorBuffer(entry, info, source, env);
+        absl::Status status = EnsureOpenClTensorBuffer(runtime_context_, entry,
+                                                       info, source, env);
         if (!status.ok()) {
           return status;
         }
@@ -730,6 +776,7 @@ class LiteRtWeightLoader : public WeightLoader {
   }
 
  private:
+  LiteRtRuntimeContext* runtime_context_;
   std::optional<std::string> model_directory_;
   std::vector<LiteRtWeightInfo> infos_;
   absl::flat_hash_map<uint32_t, Entry> entries_;
@@ -742,10 +789,12 @@ class LiteRtWeightLoader : public WeightLoader {
 }  // namespace
 
 std::unique_ptr<WeightLoader> CreateLiteRtWeightLoader(
-    const tflite::Model* flatbuffer, std::optional<std::string> model_directory,
+    LiteRtRuntimeContext* runtime_context, const tflite::Model* flatbuffer,
+    std::optional<std::string> model_directory,
     std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source) {
-  return std::make_unique<LiteRtWeightLoader>(
-      flatbuffer, std::move(model_directory), std::move(scoped_weight_source));
+  return std::make_unique<LiteRtWeightLoader>(runtime_context, flatbuffer,
+                                              std::move(model_directory),
+                                              std::move(scoped_weight_source));
 }
 
 }  // namespace weight_loader

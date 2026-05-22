@@ -52,6 +52,11 @@ enum class HtpPerformanceMode {
   kExtremePowerSaver = 9,
 };
 
+enum class GraphIOTensorMemType {
+  kRaw = 0,
+  kMemHandle = 1,
+};
+
 enum class DspPerformanceMode {
   kDefault = 0,
   kSustainedHighPerformance = 1,
@@ -91,12 +96,6 @@ class Options {
   void SetProfiling(Profiling profiling);
   Profiling GetProfiling() const;
 
-  void SetUseHtpPreference(bool use_htp_preference);
-  bool GetUseHtpPreference() const;
-
-  void SetUseQint16AsQuint16(bool use_qint16_as_quint16);
-  bool GetUseQint16AsQuint16() const;
-
   void SetUseInt64BiasAsInt32(bool use_int64_bias_as_int32);
   bool GetUseInt64BiasAsInt32() const;
 
@@ -108,6 +107,9 @@ class Options {
 
   void SetUseFoldReLU(bool use_fold_relu);
   bool GetUseFoldReLU() const;
+
+  void SetHtpPPoint(std::int32_t htp_p_point);
+  std::int32_t GetHtpPPoint() const;
 
   void SetHtpPerformanceMode(HtpPerformanceMode htp_performance_mode);
   HtpPerformanceMode GetHtpPerformanceMode() const;
@@ -142,16 +144,18 @@ class Options {
   absl::string_view GetSaverOutputDir() const;
   void SetSaverOutputDir(absl::string_view saver_output_dir);
 
+  void SetGraphIOTensorMemType(GraphIOTensorMemType mem_type);
+  GraphIOTensorMemType GetGraphIOTensorMemType() const;
+
  private:
   LogLevel log_level_ = LogLevel::kInfo;
   BackendType backend_type_ = BackendType::kHtpBackend;
   Profiling profiling_ = Profiling::kOff;
-  bool use_htp_preference_ = false;
-  bool use_qint16_as_quint16_ = false;
   bool use_int64_bias_as_int32_ = true;
   bool enable_weight_sharing_ = false;
   bool use_conv_hmx_ = true;
   bool use_fold_relu_ = true;
+  std::int32_t htp_p_point_ = 0;
   HtpPerformanceMode htp_performance_mode_ = HtpPerformanceMode::kDefault;
   DspPerformanceMode dsp_performance_mode_ = DspPerformanceMode::kDefault;
   std::vector<std::int32_t> dump_tensor_ids_;
@@ -163,6 +167,8 @@ class Options {
       OptimizationLevel::kHtpOptimizeForInferenceO3;
   GraphPriority graph_priority_ = GraphPriority::kDefault;
   std::string saver_output_dir_;
+  GraphIOTensorMemType graph_io_tensor_mem_type_ =
+      GraphIOTensorMemType::kMemHandle;
 };
 
 // Gets a default logger implementation to stdout.

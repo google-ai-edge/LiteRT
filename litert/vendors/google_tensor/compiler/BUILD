@@ -15,6 +15,7 @@
 load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "make_rpaths")
 
 package(
@@ -45,8 +46,8 @@ litert_dynamic_lib(
         "notap",
     ],
     target_compatible_with = select({
-        "@platforms//os:linux": [],
-        "@platforms//os:android": [],
+        "//litert:linux": [],
+        "//litert:android": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,
@@ -54,22 +55,35 @@ litert_dynamic_lib(
         "//ci/tools/python/wheel:__subpackages__",
         "//litert:__subpackages__",
         "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
+        "//research/drishti/benchmarking:__subpackages__",
         "//third_party/darwinn/litert:__subpackages__",
     ],
     deps = [
         ":google_tensor_options_cc_proto",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_builder_header",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
+        "//litert/c:litert_op_options",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_logging_helper_with_compiler_context",
+        "//litert/c/options:litert_google_tensor_options",
+        "//litert/c/options:litert_google_tensor_options_type",
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime/options:litert_google_tensor_options",
-        "//litert/vendors/cc:options_helper",
+        "//litert/cc/internal:litert_handle",
+        "//litert/cc/internal:litert_opaque_options_wrapper",
+        "//litert/cc/internal:litert_options_wrapper",
+        "//litert/cc/options:litert_google_tensor_options",
+        "//litert/compiler/cc:litert_model",
         "//litert/vendors/google_tensor:adapter",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_protobuf//:protobuf",
+        "@com_googlesource_code_re2//:re2",
     ],
 )
 
@@ -80,10 +94,11 @@ cc_test(
     ],
     data = [
         "//litert/test:mlir_test_data",
+        "//litert/test:mlir_test_data_stablehlo",
         "//litert/test:tflite_test_data",
     ],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": [],
+        "//litert:android": [],
         "//conditions:default": [
             make_rpaths([
                 "//litert/c:litert_runtime_c_api_so",
@@ -104,17 +119,21 @@ cc_test(
     ],
     # This test can only be run on Android and Linux.
     target_compatible_with = select({
-        "@platforms//os:linux": [],
-        "@platforms//os:android": [],
+        "//litert:linux": [],
+        "//litert:android": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
         ":compiler_plugin",  # buildcleaner: keep
+        ":google_tensor_options_cc_proto",
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_compiler_context_testonly",
         "//litert/c/options:litert_google_tensor_options",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/vendors/cc:litert_compiler_plugin",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
@@ -130,4 +149,15 @@ cc_proto_library(
     name = "google_tensor_options_cc_proto",
     visibility = ["//platforms/darwinn/compiler:__subpackages__"],
     deps = [":google_tensor_options_proto"],
+)
+
+sh_test(
+    name = "google_tensor_compiler_plugin_so_symbol_test",
+    srcs = ["//litert/test:litert_compiler_plugin_symbol_test.sh"],
+    args = [
+        "$(location :google_tensor_compiler_plugin_so)",
+    ],
+    data = [
+        ":google_tensor_compiler_plugin_so",
+    ],
 )

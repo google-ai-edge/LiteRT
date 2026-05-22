@@ -25,12 +25,12 @@ TEST_P(QnnModelTest, SingleTopK) {
   const uint32_t k_value = 3;
   const std::vector<std::uint32_t> outputDims{1, 3};
 
-  auto& input_tensor = tensor_pool_.CreateInputTensorWithSuffix(
-      QNN_DATATYPE_FLOAT_32, {}, inputDims, "");
-  auto& values_tensor = tensor_pool_.CreateOutpuTensorWithSuffix(
-      QNN_DATATYPE_FLOAT_32, {}, outputDims, "");
-  auto& indices_tensor = tensor_pool_.CreateOutpuTensorWithSuffix(
-      QNN_DATATYPE_UINT_32, {}, outputDims, "");
+  auto& input_tensor = tensor_pool_.CreateInputTensorWithName(
+      "in_0", QNN_DATATYPE_FLOAT_32, {}, inputDims);
+  auto& values_tensor = tensor_pool_.CreateOutputTensorWithName(
+      "out_0", QNN_DATATYPE_FLOAT_32, {}, outputDims);
+  auto& indices_tensor = tensor_pool_.CreateOutputTensorWithName(
+      "out_1", QNN_DATATYPE_UINT_32, {}, outputDims);
 
   auto ops = ::qnn::BuildTopKOp(tensor_pool_, {input_tensor},
                                 {values_tensor, indices_tensor}, k_value);

@@ -14,6 +14,7 @@
 
 """Utilities for generating device scripts with starlark."""
 
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@rules_platform//platform_data:defs.bzl", "platform_data")
 load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
 
@@ -147,8 +148,16 @@ def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, 
 # QUALCOMM
 
 def _QualcommSpec(version = "V75"):
-    stub_lib = "@qairt//:lib/aarch64-android/libQnnHtp%sStub.so" % version
-    skel_lib = "@qairt//:lib/hexagon-%s/unsigned/libQnnHtp%sSkel.so" % (version.lower(), version.upper())
+    # copybara:uncomment_begin(google-only)
+    # stub_lib = "//litert/integration_test:libQnnHtp%sStub.so" % version
+    # skel_lib = "//litert/integration_test:libQnnHtp%sSkel.so" % version
+    #
+    # copybara:uncomment_end
+    # copybara:comment_begin
+    stub_lib = "@qairt//:libQnnHtp%sStub.so" % version
+    skel_lib = "@qairt//:libQnnHtp%sSkel.so" % version
+
+    # copybara:comment_end
     version_suffix = version.lower()
     id = "qualcomm_%s" % version_suffix
 
@@ -172,11 +181,19 @@ def _QualcommSpec(version = "V75"):
         id: BackendSpec(
             id = id,
             libs = [
-                ("@qairt//:lib/aarch64-android/libQnnHtp.so", "LD_LIBRARY_PATH"),
+                # copybara:uncomment_begin(google-only)
+                # ("//litert/integration_test:libQnnHtp.so", "LD_LIBRARY_PATH"),
+                # (stub_lib, "LD_LIBRARY_PATH"),
+                # ("//litert/integration_test:libQnnSystem.so", "LD_LIBRARY_PATH"),
+                # ("//litert/integration_test:libQnnHtpPrepare.so", "LD_LIBRARY_PATH"),
+                # (skel_lib, "ADSP_LIBRARY_PATH"),
+                # copybara:uncomment_end_and_comment_begin
+                ("@qairt//:libQnnHtp.so", "LD_LIBRARY_PATH"),
                 (stub_lib, "LD_LIBRARY_PATH"),
-                ("@qairt//:lib/aarch64-android/libQnnSystem.so", "LD_LIBRARY_PATH"),
-                ("@qairt//:lib/aarch64-android/libQnnHtpPrepare.so", "LD_LIBRARY_PATH"),
+                ("@qairt//:libQnnSystem.so", "LD_LIBRARY_PATH"),
+                ("@qairt//:libQnnHtpPrepare.so", "LD_LIBRARY_PATH"),
                 (skel_lib, "ADSP_LIBRARY_PATH"),
+                # copybara:comment_end
                 ("//litert/vendors/qualcomm/dispatch:libLiteRtDispatch_Qualcomm.so", "LD_LIBRARY_PATH"),
                 ("//litert/vendors/qualcomm/compiler:libLiteRtCompilerPlugin_Qualcomm.so", "LD_LIBRARY_PATH"),
             ],
@@ -184,8 +201,13 @@ def _QualcommSpec(version = "V75"):
             plugin = "libLiteRtCompilerPlugin_Qualcomm.so",
             dispatch = "libLiteRtDispatch_Qualcomm.so",
             host_libs = [
-                "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
-                "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
+                # copybara:uncomment_begin(google-only)
+                # "//litert/integration_test:libQnnHtp.so",
+                # "//litert/integration_test:libQnnSystem.so",
+                # copybara:uncomment_end_and_comment_begin
+                "@qairt//:libQnnHtp.so",
+                "@qairt//:libQnnSystem.so",
+                # copybara:comment_end
             ],
             version_target_suffix = version_suffix,
         ),
@@ -255,6 +277,7 @@ def _GoogleTensorSpec():
             id = "google_tensor",
             libs = [
                 ("//litert/vendors/google_tensor/dispatch:libLiteRtDispatch_GoogleTensor.so", "LD_LIBRARY_PATH"),
+                ("//litert/vendors/google_tensor/compiler:libLiteRtCompilerPlugin_google_tensor.so", "LD_LIBRARY_PATH"),
             ],
             mh_devices = [{
                 "label": "odml-test",
@@ -262,6 +285,12 @@ def _GoogleTensorSpec():
             }],
             mh_user = "odml-team",
             dispatch = "libLiteRtDispatch_GoogleTensor.so",
+            plugin = "libLiteRtCompilerPlugin_google_tensor.so",
+            # copybara:uncomment_begin(google-only)
+            # host_libs = [
+            # "//platforms/darwinn/compiler/external:litert_plugin_compiler",
+            # ],
+            # copybara:uncomment_end
         ),
     }
 
@@ -298,6 +327,9 @@ def _GpuSpec():
     return {
         "gpu": BackendSpec(
             id = "gpu",
+            libs = [
+                ("//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator_so", "LD_LIBRARY_PATH"),
+            ],
         ),
     }
 
@@ -409,3 +441,21 @@ def split_dep_platform(
             device.append(":" + device_name)
 
     return struct(host = host, device = device)
+
+def _cc_import_files_impl(ctx):
+    cc_info = ctx.attr.target[CcInfo]
+    libs = []
+    for linker_input in cc_info.linking_context.linker_inputs.to_list():
+        for library in linker_input.libraries:
+            if library.dynamic_library:
+                libs.append(library.dynamic_library)
+            elif library.interface_library:
+                libs.append(library.interface_library)
+    return [DefaultInfo(files = depset(libs))]
+
+cc_import_files = rule(
+    implementation = _cc_import_files_impl,
+    attrs = {
+        "target": attr.label(providers = [CcInfo]),
+    },
+)

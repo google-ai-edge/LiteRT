@@ -48,7 +48,7 @@ litert_lib(
     ],
     ungrte = False,
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/core:dynamic_loading",
@@ -98,7 +98,7 @@ litert_lib(
     deps = [
         ":edgetpu_compiler_api",
         ":edgetpu_compiler_options_cc_proto",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -112,10 +112,10 @@ litert_lib(
     name = "adapter",
     hdrs = ["adapter.h"],
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
         "//litert/cc:litert_expected",
     ] + select({
-        "@org_tensorflow//tensorflow:android": [":adapter_odc"],
+        "//litert:android": [":adapter_odc"],
         "//conditions:default": [":adapter_aot"],
     }),
 )
@@ -141,8 +141,8 @@ cc_test(
     ],
     # This test can only be run on Android and Linux.
     target_compatible_with = select({
-        "@platforms//os:android": [],
-        "@platforms//os:linux": [],
+        "//litert:android": [],
+        "//litert:linux": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
