@@ -56,6 +56,15 @@ int g_webgpu_device_id = -1;
 
 void setWebGpuDeviceId(int device_id) { g_webgpu_device_id = device_id; }
 
+uintptr_t GetPreinitializedWebGpuDeviceId() {
+#ifdef __EMSCRIPTEN__
+  WGPUDevice device = emscripten_webgpu_get_device();
+  return reinterpret_cast<uintptr_t>(device);
+#else
+  return 0;
+#endif
+}
+
 template <typename RunnerPtr>
 bool SetInputBinaryCommon(RunnerPtr& runner, const std::string& name,
                           emscripten::val data) {
@@ -340,6 +349,15 @@ EmbindLambdaRunner CreateStaticLambdaRunner(const emscripten::val& inputs,
     env_options.push_back(
         {litert::Environment::OptionTag::WebGpuDevice,
          litert::LiteRtVariant(reinterpret_cast<void*>(g_webgpu_device_id))});
+    // Natively extract the associated Queue C handle pointer from
+    // the preinitialized Device context
+    WGPUDevice w_dev = reinterpret_cast<WGPUDevice>(g_webgpu_device_id);
+    WGPUQueue w_queue = wgpuDeviceGetQueue(w_dev);
+    if (w_queue) {
+      env_options.push_back(
+          {litert::Environment::OptionTag::WebGpuQueue,
+           litert::LiteRtVariant(reinterpret_cast<void*>(w_queue))});
+    }
   }
   auto env_or = litert::Environment::Create(env_options);
   auto options_or = litert::Options::Create();
@@ -510,6 +528,16 @@ EmbindDynamicRunner CreateDynamicRunnerFromBuffer(emscripten::val model_bytes,
     env_options.push_back(
         {litert::Environment::OptionTag::WebGpuDevice,
          litert::LiteRtVariant(reinterpret_cast<void*>(g_webgpu_device_id))});
+
+    // Natively extract the associated Queue C handle pointer from the
+    // preinitialized Device context
+    WGPUDevice w_dev = reinterpret_cast<WGPUDevice>(g_webgpu_device_id);
+    WGPUQueue w_queue = wgpuDeviceGetQueue(w_dev);
+    if (w_queue) {
+      env_options.push_back(
+          {litert::Environment::OptionTag::WebGpuQueue,
+           litert::LiteRtVariant(reinterpret_cast<void*>(w_queue))});
+    }
   }
   auto env_or = litert::Environment::Create(env_options);
   auto options_or = litert::Options::Create();
@@ -1724,6 +1752,8 @@ EMSCRIPTEN_BINDINGS(litert_tensor_core) {
   emscripten::function("createMultiSignatureRunnerInternal",
                        &CreateMultiSignatureRunner);
   emscripten::function("setWebGpuDeviceId", &setWebGpuDeviceId);
+  emscripten::function("emscripten_webgpu_get_device",
+                       &GetPreinitializedWebGpuDeviceId);
 
   // Lightweight facade mimicking WebGPU WGPUBuffer mapping for Task 3.2 pure
   // zero-copy staging

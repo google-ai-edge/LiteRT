@@ -64,8 +64,14 @@ Runner for dynamic models loaded from TFLite buffer.
 LiteRT WASM supports a high-performance **JIT (Just-In-Time) Compilation Mode** via `litert.jit()` and `litert.jitMulti()`. This allows you to write standard, readable mathematical JavaScript functions that look like normal eager code, but are compiled into optimized execution pipelines behind the scenes.
 
 ### How JIT Works
-1. **Lazy Tracing (First Execution)**: The JIT decorator intercepts the first call, creates placeholder "tracers" matching the argument shapes/types, executes your function under the hood to trace the DAG, and compiles an optimized `createGraphRunner`.
-2. **Cached Fast-Path Execution (Subsequent Runs)**: On all subsequent invocations, compilation is skipped entirely. The arguments are dynamically bound zero-copy to the compiled runner, executing immediately on the hardware accelerator.
+1. **Lazy Tracing (First Execution)**: The JIT decorator intercepts the first
+call, creates placeholder "tracers" matching the argument shapes/types,
+executes your function under the hood to trace the DAG, and compiles an optimized
+`createGraphRunner`.
+2. **Cached Fast-Path Execution (Subsequent Runs)**: On all subsequent
+invocations, compilation is skipped entirely. The arguments are dynamically
+bound zero-copy to the compiled runner, executing immediately on the hardware
+accelerator.
 
 ### 1. Single JIT Pipeline (`jit()`)
 
@@ -85,7 +91,9 @@ const outputTensor = await preprocess(imageTensor, scaleTensor, biasTensor);
 
 ### 2. Multi-Signature State Sharing (`jitMulti()`)
 
-Ideal for state-sharing pipelines, such as Large Language Models with persistent key-value caches. By defining shared state variables inside JavaScript closures, both subgraphs share the same persistent GPU buffers:
+Ideal for state-sharing pipelines, such as Large Language Models with
+persistent key-value caches. By defining shared state variables inside JavaScript
+closures, both subgraphs share the same persistent GPU buffers:
 
 ```javascript
 // Shared KV-Cache buffer allocated once on the GPU
@@ -184,24 +192,54 @@ Allows retrieving the `TensorHandle` for a specific input of a
 ## Performance Tips
 
 ### Prefer Graph Runners Over Eager Mode
-While Eager Execution Mode is convenient for debugging and step-by-step experimentation, it reduces performance significantly. Executing operations eagerly compiles small subgraphs on the fly and misses out on critical graph-level optimizations such as operator fusion, buffer sharing, and static memory allocation. For production workloads, always construct your complete computation graph upfront and execute it using `createGraphRunner` or `createModelRunner`.
+While Eager Execution Mode is convenient for debugging and step-by-step
+experimentation, it reduces performance significantly. Executing operations eagerly
+compiles small subgraphs on the fly and misses out on critical graph-level
+optimizations such as operator fusion, buffer sharing, and static memory
+allocation. For production workloads, always construct your complete computation
+graph upfront and execute it using `createGraphRunner` or `createModelRunner`.
 
-### Zero-Copy WebGPU Transfers and Buffer Sharing
+### Declarative Zero-Copy WebGPU Buffer Sharing
 
-To avoid the high overhead of copying data between JS and WASM heap, use direct GPU copies or buffer sharing when passing data between models:
+To maximize web camera/rendering inference speeds and avoid slow CPU staging
+copies, you can declaratively share WebGPU VRAM buffers directly inside your
+JIT execution graphs:
 
-#### Option 1: Direct GPU Copy
-If you have access to the underlying `GPUBuffer` objects, you can copy data directly on the GPU:
+#### 1. Allocate Eager WebGPU Placeholders
+When creating your placeholder tensors, declare `storage: "webgpu"` to indicate
+they will be written to via GPU queues:
 ```javascript
-const commandEncoder = device.createCommandEncoder();
-commandEncoder.copyBufferToBuffer(srcGpuBuffer, 0, dstGpuBuffer, 0, size);
-device.queue.submit([commandEncoder.finish()]);
+const rawImage = litert.createTensor({
+  type: "FP32",
+  shape: [1, 512, 512, 3],
+  name: "raw_image",
+  storage: "webgpu" // <--- Declarative GPU storage!
+});
 ```
 
-#### Option 2: Buffer Sharing via `setInput`
-A more idiomatic way in LiteRT WASM is to pass the output `TensorHandle` of one runner directly as the input to another runner using `setInput`. This shares the underlying WebGPU buffer without any copying:
+#### 2. Compile and Access the Shared GPUBuffer
+Compile your JIT graph runner. The JS runtime automatically aliases the
+placeholder's memory buffer to point directly to the compiled runner's internal
+graphics buffer:
 ```javascript
-const outputTensor = runnerA.getOutput("output_name");
-runnerB.setInput("input_name", outputTensor);
+await preprocess.compile(rawImage, scale, offset);
+
+// Grabs the native browser GPUBuffer instance directly!
+const gpuBuffer = rawImage.getWebGpuBuffer();
 ```
-This reduces the transfer time to absolute zero.
+
+#### 3. Zero-Copy Frame Loop Execution
+Stream your texture pixels directly into this native `GPUBuffer` on the side,
+and call your compiled JIT pipeline cleanly:
+```javascript
+// Write directly to VRAM
+device.queue.writeBuffer(gpuBuffer, 0, floatPixels);
+
+// Executes at absolute zero-copy speeds, automatically bypassing Wasm copies!
+const result = await preprocess(rawImage, scale, offset);
+```
+
+*Note: If a single placeholder tensor is shared among multiple compiled
+runners, the dynamic aliasing handles it contextually and automatically falls
+back to safe GPU-to-GPU copies for secondary runners to guarantee 100%
+numerical correctness.*
