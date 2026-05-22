@@ -125,9 +125,6 @@ ABSL_FLAG(LrtGoogleTensorOptionsShardingIntensity,
 ABSL_FLAG(bool, google_tensor_enable_dynamic_range_quantization, false,
           "Whether to enable dynamic range quantization.");
 
-ABSL_FLAG(std::string, google_tensor_testing_flags, "",
-          "Testing flags for Google Tensor. Flag1=value1,Flag2=value2");
-
 ABSL_FLAG(
     std::string, google_tensor_op_filters_proto, "",
     "A path to a file containing proto text formatted OpFilters for the Google "
@@ -210,7 +207,6 @@ Expected<void> UpdateGoogleTensorOptionsFromFlags(
       absl::GetFlag(FLAGS_google_tensor_sharding_intensity));
   options.SetEnableDynamicRangeQuantization(
       absl::GetFlag(FLAGS_google_tensor_enable_dynamic_range_quantization));
-  options.SetTestingFlags(absl::GetFlag(FLAGS_google_tensor_testing_flags));
   options.SetOpFiltersProto(
       absl::GetFlag(FLAGS_google_tensor_op_filters_proto));
   options.SetExtraOptionsPath(
