@@ -30,6 +30,7 @@ limitations under the License.
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "third_party/gloop/util/status/status_macros.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Path.h"
@@ -301,13 +302,12 @@ absl::Status RunConverter(const PassPipelineCLParser& pass_pipeline) {
   auto bundle = std::make_unique<tensorflow::SavedModelBundle>();
   bundle = nullptr;
 
-  TF_ASSIGN_OR_RETURN(
-      auto module,
-      ImportSavedModelOrMLIR(input_model, &context, &source_mgr, &bundle));
+  ASSIGN_OR_RETURN(auto module, ImportSavedModelOrMLIR(input_model, &context,
+                                                       &source_mgr, &bundle));
   if (verbose) {
-    TF_RETURN_IF_ERROR(ExportModule(*module,
-                                    absl::StrCat(verbose_dir, "/debug_tf.mlir"),
-                                    elide_large_elements_attrs));
+    RETURN_IF_ERROR(ExportModule(*module,
+                                 absl::StrCat(verbose_dir, "/debug_tf.mlir"),
+                                 elide_large_elements_attrs));
   }
 
   std::optional<tensorflow::Session*> session = std::nullopt;
