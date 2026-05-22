@@ -54,7 +54,7 @@ LiteRT is designed for cross-platform deployment on a wide range of hardware.
 
 | Platform   | CPU Support | GPU Support           | NPU Support                                                       |
 | ---------- | ----------- | --------------------- | ----------------------------------------------------------------- |
-| 🤖 Android | ✅          | ✅OpenCL<br>✅OpenGL | Google Tensor\*<br>✅ [Qualcomm](./litert/vendors/qualcomm/README.md)<br>✅ MediaTek<br>✅ Intel<br>S.LSI\* |
+| 🤖 Android | ✅          | ✅OpenCL<br>✅OpenGL | ✅ Google Tensor<br>✅ [Qualcomm](./litert/vendors/qualcomm/README.md)<br>✅ MediaTek<br>✅ Intel<br>S.LSI\* |
 | 🍎 iOS     | ✅          | ✅ Metal                 | ANE\*                                                             |
 | 🐧 Linux   | ✅          | ✅ WebGPU                | ✅ Intel                                                               |
 | 🍎 macOS   | ✅          | ✅ WebGPU<br>✅ Metal                 | ANE\*                                                            |
