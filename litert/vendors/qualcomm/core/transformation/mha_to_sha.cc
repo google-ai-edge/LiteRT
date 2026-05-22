@@ -216,12 +216,11 @@ std::vector<OpWrapper> TransformToSHA(
     const OpWrapper& scaling_mul, size_t num_heads) {
   std::vector<OpWrapper> new_ops;
 
-  const auto& split_input = ops[start_index].GetOutputTensor(0);
   // Prepare inputs for num_heads SHAs.
   std::vector<ConstTensorWrapperRef> sha_inputs;
   sha_inputs.reserve(num_heads);
   for (int i = 0; i < num_heads; ++i) {
-    auto head_input_dims = split_input.GetDimensions();
+    auto head_input_dims = mha_input.GetDimensions();
     head_input_dims[2] /= num_heads;
     const auto& split_output =
         tensor_pool.CloneNativeTensorFrom(mha_input, head_input_dims);
@@ -231,14 +230,14 @@ std::vector<OpWrapper> TransformToSHA(
   std::vector<std::uint32_t> split_indice;
   split_indice.reserve(num_heads);
   for (std::uint32_t i = 1; i < num_heads; i++) {
-    split_indice.emplace_back(i * split_input.GetDimension(2) / num_heads);
+    split_indice.emplace_back(i * mha_input.GetDimension(2) / num_heads);
   }
   const auto& split_indice_tensor = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_UINT_32, {},
       {static_cast<std::uint32_t>(split_indice.size())},
       sizeof(std::uint32_t) * split_indice.size(), split_indice.data());
   auto& split = new_ops.emplace_back(
-      CreateSplitOp(split_input, sha_inputs, 2, split_indice_tensor));
+      CreateSplitOp(mha_input, sha_inputs, 2, split_indice_tensor));
   CloneNamespace(ops[start_index], split);
   // Prepare outputs for num_heads SHAs.
   std::vector<ConstTensorWrapperRef> sha_outputs;
