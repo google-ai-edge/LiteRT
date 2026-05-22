@@ -60,8 +60,8 @@ endif()
 # LINT.IfChange(qairt_headers_dir)
 if(NOT QAIRT_HEADERS_DIR)
   if(NOT QAIRT_HEADERS_URL AND NOT QAIRT_GIT_REPO)
-    set(QAIRT_HEADERS_URL "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.44.0.260225/v2.44.0.260225.zip")
-    set(QAIRT_HEADERS_SUBDIR "qairt/2.44.0.260225")
+    set(QAIRT_HEADERS_URL "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.46.0.260424/v2.46.0.260424.zip")
+    set(QAIRT_HEADERS_SUBDIR "qairt/2.46.0.260424")
   endif()
   if(QAIRT_HEADERS_URL)
     set(_qnn_archive "${CMAKE_BINARY_DIR}/_deps/qnn_headers.zip")
@@ -94,6 +94,12 @@ if(NOT QAIRT_HEADERS_DIR)
   endforeach()
   message(STATUS "QAIRT/QNN headers at: ${QAIRT_HEADERS_DIR}")
 endif()
+
+# LINT.ThenChange(
+#     ../../opensource_only/ci/tools/python/vendor_sdk/qualcomm/setup.py:wheel_qairt_sdk_version,
+#     ../google/npu_runtime_libraries/fetch_qualcomm_library.sh:fetch_qairt_sdk_version,
+#     ../google/npu_runtime_libraries/fetch_qualcomm_library_jit.sh:fetch_qairt_sdk_version,
+# )
 
 # LINT.IfChange(litecore_headers_dir)
 if(NOT LITECORE_HEADERS_DIR)
@@ -130,11 +136,6 @@ if(NOT LITECORE_HEADERS_DIR)
   message(STATUS "Samsung AI LiteCore headers at: ${LITECORE_HEADERS_DIR}")
 endif()
 
-# LINT.ThenChange(
-#     ../../opensource_only/ci/tools/python/vendor_sdk/qualcomm/setup.py:wheel_qairt_sdk_version,
-#     ../google/npu_runtime_libraries/fetch_qualcomm_library.sh:fetch_qairt_sdk_version,
-#     ../google/npu_runtime_libraries/fetch_qualcomm_library_jit.sh:fetch_qairt_sdk_version,
-# )
 
 if(NEUROPILOT_HEADERS_DIR)
   list(APPEND CMAKE_REQUIRED_INCLUDES ${NEUROPILOT_HEADERS_DIR})
