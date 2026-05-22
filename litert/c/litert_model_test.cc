@@ -30,6 +30,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
@@ -63,6 +64,30 @@ TEST(LiteRtModelTest, CreateFromAllocation) {
 
   LiteRtDestroyModel(model);
 }
+
+#if !defined(LITERT_WINDOWS_OS)
+TEST(LiteRtModelTest, CreateFromFd) {
+  if (!tflite::MMAPAllocation::IsSupported()) {
+    GTEST_SKIP() << "MMAPAllocation is not supported";
+  }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model_file, litert::ScopedFile::Open(
+                           litert::testing::GetTestFilePath("one_mul.tflite")));
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t model_size, model_file.GetSize());
+
+  LiteRtModel model = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtCreateModelFromFd(model_file.file(), 0, model_size, &model));
+  ASSERT_NE(model, nullptr);
+
+  LiteRtParamIndex num_subgraphs;
+  LITERT_ASSERT_OK(LiteRtGetNumModelSubgraphs(model, &num_subgraphs));
+  EXPECT_EQ(num_subgraphs, 1);
+
+  LiteRtDestroyModel(model);
+}
+#endif  // !defined(LITERT_WINDOWS_OS)
 
 TEST(LiteRtWeightsTest, GetNullWeights) {
   LiteRtWeightsT weights = {};

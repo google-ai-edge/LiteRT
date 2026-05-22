@@ -46,7 +46,7 @@ extern "C" {
 // LiteRT CompiledModels ABI version number, in semver 2 format
 // (see https://semver.org).  This is the ABI version number for
 // the methods in LiteRtRuntimeCApiStruct, which is defined below.
-#define LITERT_RUNTIME_ABI_VERSION "0.2.0"
+#define LITERT_RUNTIME_ABI_VERSION "0.3.0"
 // TODO(b/493650900): declare that as an extern const (and
 // initialize it in a .cc file) rather than using a macro.
 
@@ -747,6 +747,10 @@ typedef struct LiteRtRuntimeCApiStruct {
   // litert_environment.h: LiteRtEnvironmentSupportsFP16
   LiteRtStatus (*litert_environment_supports_fp16)(
       LiteRtEnvironment environment, bool* is_supported);
+
+  // litert_model.h: LiteRtCreateModelFromFd
+  LiteRtStatus (*litert_create_model_from_fd)(int fd, size_t offset,
+                                              size_t size, LiteRtModel* model);
 } LiteRtRuntimeCApiStruct;
 
 // LINT.ThenChange(:version_number)

@@ -91,6 +91,7 @@ EXPORTS
   LiteRtCreateManagedTensorBufferFromRequirements
   LiteRtCreateMetrics
   LiteRtCreateModelFromBuffer
+  LiteRtCreateModelFromFd
   LiteRtCreateModelFromFile
   LiteRtCreateOpaqueOptions
   LiteRtCreateOptions
