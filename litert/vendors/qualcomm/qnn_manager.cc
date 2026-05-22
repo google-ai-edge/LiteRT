@@ -84,7 +84,7 @@ RtldFlags GetRtldFlags() {
   // Race condition segfault without NoDelete on android.
   return RtldFlags::Lazy().Local().NoDelete();
 #else
-  return RtldFlags::Default();
+  return RtldFlags::Lazy().Global();
 #endif
 }
 

@@ -67,17 +67,19 @@ LiteRtStatus ParseCustomOpPackageValue(absl::string_view value,
     const absl::string_view val = token.substr(colon_pos + 1);
 
     if (key == "name") {
-      package.name = std::string(val);
+      package.name = val;
     } else if (key == "interface_provider") {
-      package.interface_provider = std::string(val);
+      package.interface_provider = val;
     } else if (key == "compile_package_path") {
-      package.compile_package_path = std::string(val);
+      package.compile_package_path = val;
     } else if (key == "compile_target") {
-      package.compile_target = std::string(val);
+      package.compile_target = val;
     } else if (key == "dispatch_package_path") {
-      package.dispatch_package_path = std::string(val);
+      package.dispatch_package_path = val;
     } else if (key == "dispatch_target") {
-      package.dispatch_target = std::string(val);
+      package.dispatch_target = val;
+    } else {
+      return kLiteRtStatusErrorInvalidArgument;
     }
   }
 
@@ -350,22 +352,14 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   }
   if (options->custom_op_package.has_value()) {
     const auto& package = *options->custom_op_package;
-    std::string value;
-    value.append("name:").append(package.name).append(";");
-    value.append("interface_provider:")
-        .append(package.interface_provider)
-        .append(";");
-    value.append("compile_package_path:")
-        .append(package.compile_package_path)
-        .append(";");
-    value.append("compile_target:").append(package.compile_target).append(";");
-    value.append("dispatch_package_path:")
-        .append(package.dispatch_package_path)
-        .append(";");
-    value.append("dispatch_target:")
-        .append(package.dispatch_target)
-        .append(";");
-    toml << "custom_op_package = \"" << value << "\"\n";
+    toml << "custom_op_package = \""
+         << "name:" << package.name << ";"
+         << "interface_provider:" << package.interface_provider << ";"
+         << "compile_package_path:" << package.compile_package_path << ";"
+         << "compile_target:" << package.compile_target << ";"
+         << "dispatch_package_path:" << package.dispatch_package_path << ";"
+         << "dispatch_target:" << package.dispatch_target << ";"
+         << "\"\n";
   }
 
   *identifier = LrtQualcommOptionsGetIdentifier();
@@ -468,7 +462,7 @@ LiteRtStatus LrtQualcommOptionsSetCustomOpPackage(
   package.compile_target = compile_target;
   package.dispatch_package_path = dispatch_package_path;
   package.dispatch_target = dispatch_target;
-  options->custom_op_package = package;
+  options->custom_op_package = std::move(package);
 
   return kLiteRtStatusOk;
 }

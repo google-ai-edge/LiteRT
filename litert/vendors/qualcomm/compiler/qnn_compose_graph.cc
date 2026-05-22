@@ -179,28 +179,14 @@ FlexbufferScalarType GetUniformScalarType(const flexbuffers::Reference& ref) {
     if (vec.IsTheEmptyVector()) {
       return FlexbufferScalarType::kUnsupported;
     } else {
-      // Typed vectors are accepted but still validated recursively.
-      const auto first_type = GetUniformScalarType(vec[0]);
-      for (size_t i = 1; i < vec.size(); ++i) {
-        if (GetUniformScalarType(vec[i]) != first_type) {
-          return FlexbufferScalarType::kUnsupported;
-        }
-      }
-      return first_type;
+      return GetUniformScalarType(vec[0]);
     }
   } else if (ref.IsFixedTypedVector()) {
     const auto& vec = ref.AsFixedTypedVector();
     if (vec.IsTheEmptyFixedTypedVector()) {
       return FlexbufferScalarType::kUnsupported;
     } else {
-      // Fixed typed vectors follow the same uniformity check.
-      const auto first_type = GetUniformScalarType(vec[0]);
-      for (size_t i = 1; i < vec.size(); ++i) {
-        if (GetUniformScalarType(vec[i]) != first_type) {
-          return FlexbufferScalarType::kUnsupported;
-        }
-      }
-      return first_type;
+      return GetUniformScalarType(vec[0]);
     }
   } else {
     return FlexbufferScalarType::kUnsupported;

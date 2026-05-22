@@ -587,11 +587,9 @@ bool AbslParseFlag(absl::string_view text,
 
 std::string AbslUnparseFlag(QualcommOptions::CustomOpPackage options) {
   std::string value;
+  value.reserve(256);
   auto append_pair = [&value](absl::string_view key, absl::string_view val) {
-    value.append(std::string(key))
-        .append(":")
-        .append(std::string(val))
-        .append(";");
+    value.append(key).append(":").append(val).append(";");
   };
 
   append_pair("name", options.name);
