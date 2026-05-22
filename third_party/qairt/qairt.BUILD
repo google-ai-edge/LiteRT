@@ -27,33 +27,33 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
-alias(
+cc_import(
     name = "libQnnHtp.so",
-    actual = select({
+    shared_library = select({
         "@platforms//os:android": "lib/aarch64-android/libQnnHtp.so",
         "//conditions:default": "lib/x86_64-linux-clang/libQnnHtp.so",
     }),
 )
 
-alias(
+cc_import(
     name = "libQnnSystem.so",
-    actual = select({
+    shared_library = select({
         "@platforms//os:android": "lib/aarch64-android/libQnnSystem.so",
         "//conditions:default": "lib/x86_64-linux-clang/libQnnSystem.so",
     }),
 )
 
-alias(
+cc_import(
     name = "libQnnIr.so",
-    actual = select({
+    shared_library = select({
         "@platforms//os:android": "lib/aarch64-android/libQnnIr.so",
         "//conditions:default": "lib/x86_64-linux-clang/libQnnIr.so",
     }),
 )
 
-alias(
+cc_import(
     name = "libQnnSaver.so",
-    actual = select({
+    shared_library = select({
         "@platforms//os:android": "lib/aarch64-android/libQnnSaver.so",
         "//conditions:default": "lib/x86_64-linux-clang/libQnnSaver.so",
     }),

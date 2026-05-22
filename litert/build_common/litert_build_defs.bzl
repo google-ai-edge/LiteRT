@@ -82,7 +82,7 @@ def make_rpaths(rpaths):
 def append_rule_kwargs(rule_kwargs, **append):
     for k, v in append.items():
         append_to = rule_kwargs.pop(k, [])
-        append_to += v
+        append_to = append_to + v
         rule_kwargs[k] = append_to
 
 def absolute_label(label, package_name = None):

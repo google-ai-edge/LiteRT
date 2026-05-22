@@ -84,7 +84,21 @@ litert_dynamic_lib(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@qairt//:qnn_lib_headers",
-    ],
+    ] + select({
+        "//litert:android_arm64": [
+            "@qairt//:libQnnHtp.so",
+            "@qairt//:libQnnIr.so",
+            "@qairt//:libQnnSaver.so",
+            "@qairt//:libQnnSystem.so",
+        ],
+        "//litert:linux_x86_64": [
+            "@qairt//:libQnnHtp.so",
+            "@qairt//:libQnnIr.so",
+            "@qairt//:libQnnSaver.so",
+            "@qairt//:libQnnSystem.so",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 litert_bin(
