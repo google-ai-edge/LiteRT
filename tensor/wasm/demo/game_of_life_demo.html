@@ -22,6 +22,8 @@
   <!-- Load Emscripten WebAssembly sandbox -->
   <script src="../tensor_wasm_internal.js"></script>
   <script type="module">
+    import { createLiteRT } from '../tensor_wasm.js';
+
     async function runDemo() {
       const infoDiv = document.getElementById('info');
       const perfDiv = document.getElementById('perf');
@@ -37,135 +39,48 @@
       const device = await adapter.requestDevice();
 
       infoDiv.textContent = "Initializing LiteRT WASM module...";
-      // Load the LiteRT WebAssembly sandbox module
-      const litert = await createTensorModule({
+      // Load the LiteRT WebAssembly module cleanly using createLiteRT!
+      const litert = await createLiteRT({
         preinitializedWebGPUDevice: device
       });
  
       const H = 256;
       const W = 256;
  
-      function createShapeVector(dims) {
-        const shape = new litert.ShapeVector();
-        for (const dim of dims) {
-          shape.push_back(dim);
-        }
-        return shape;
-      }
- 
-      // 1. Create Tensors for Graph
-      const state = new litert.Tensor();
-      state.setName("state");
-      state.setType(litert.TensorType.kFP32);
-      const stateShape = createShapeVector([1, H, W, 1]);
-      state.setShape(stateShape);
- 
-      const kernel = new litert.Tensor();
-      kernel.setName("kernel");
-      kernel.setType(litert.TensorType.kFP32);
-      const kernelShape = createShapeVector([1, 3, 3, 1]);
-      kernel.setShape(kernelShape);
- 
-      const one = new litert.Tensor();
-      one.setName("one");
-      one.setType(litert.TensorType.kFP32);
-      const constShape = createShapeVector([1, 1, 1, 1]);
-      one.setShape(constShape);
- 
-      const two = new litert.Tensor();
-      two.setName("two");
-      two.setType(litert.TensorType.kFP32);
-      two.setShape(constShape);
- 
-      const three = new litert.Tensor();
-      three.setName("three");
-      three.setType(litert.TensorType.kFP32);
-      three.setShape(constShape);
- 
-      // Operations
-      // conv2d(filter, stride_h, stride_w, padding, dilation_h, dilation_w)
-      // Padding: 0=VALID, 1=SAME
-      const neighbors = state.conv2d(kernel, 1, 1, 0, 1, 1);
-      neighbors.setName("neighbors");
-      neighbors.setType(litert.TensorType.kFP32);
- 
-      // equals3 = (1 - abs(neighbors - 3)).relu()
-      const sub3 = neighbors.sub(three);
-      sub3.setName("sub3");
-      sub3.setType(litert.TensorType.kFP32);
-      const abs3 = sub3.abs();
-      abs3.setName("abs3");
-      abs3.setType(litert.TensorType.kFP32);
-      const subOne3 = one.sub(abs3);
-      subOne3.setName("subOne3");
-      subOne3.setType(litert.TensorType.kFP32);
-      const equals3 = subOne3.relu();
-      equals3.setName("equals3");
-      equals3.setType(litert.TensorType.kFP32);
-      
-      // equals2 = (1 - abs(neighbors - 2)).relu()
-      const sub2 = neighbors.sub(two);
-      sub2.setName("sub2");
-      sub2.setType(litert.TensorType.kFP32);
-      const abs2 = sub2.abs();
-      abs2.setName("abs2");
-      abs2.setType(litert.TensorType.kFP32);
-      const subOne2 = one.sub(abs2);
-      subOne2.setName("subOne2");
-      subOne2.setType(litert.TensorType.kFP32);
-      const equals2 = subOne2.relu();
-      equals2.setName("equals2");
-      equals2.setType(litert.TensorType.kFP32);
- 
-      // survival = (equals2 + equals3) * state
-      const add23 = equals2.add(equals3);
-      add23.setName("add23");
-      add23.setType(litert.TensorType.kFP32);
-      const survival = add23.mul(state);
-      survival.setName("survival");
-      survival.setType(litert.TensorType.kFP32);
- 
-      // birth = equals3 * (1 - state)
-      const oneMinusState = one.sub(state);
-      oneMinusState.setName("oneMinusState");
-      oneMinusState.setType(litert.TensorType.kFP32);
-      const birth = equals3.mul(oneMinusState);
-      birth.setName("birth");
-      birth.setType(litert.TensorType.kFP32);
- 
-      // newState = survival + birth
-      const newState = survival.add(birth);
-      newState.setName("newState");
-      newState.setType(litert.TensorType.kFP32);
- 
-      infoDiv.textContent = "Building graph...";
-      const runner = litert.createStaticLambdaRunner(
-        {
-          "state": state,
-          "kernel": kernel,
-          "one": one,
-          "two": two,
-          "three": three
-        },
-        {"newState": newState},
-        2
-      );
- 
-      infoDiv.textContent = "Graph built. Initializing data...";
- 
+      // 1. Eagerly allocate placeholders conformed to dynamic storage flags
+      const state = litert.createTensor({ type: "FP32", shape: [1, H, W, 1], name: "state", storage: "webgpu" });
+      const kernel = litert.createTensor({ type: "FP32", shape: [1, 3, 3, 1], name: "kernel" });
+      const one = litert.createTensor({ type: "FP32", shape: [1, 1, 1, 1], name: "one" });
+      const two = litert.createTensor({ type: "FP32", shape: [1, 1, 1, 1], name: "two" });
+      const three = litert.createTensor({ type: "FP32", shape: [1, 1, 1, 1], name: "three" });
+
+      // 2. Define the Conway's Game of Life JIT Graph Compiler pipeline
+      const gameOfLife = litert.jit((s, k, o1, o2, o3) => {
+        const neighbors = s.conv2d(k, 1, 1, 0, 1, 1);
+        const equals3 = o1.sub(neighbors.sub(o3).abs()).relu();
+        const equals2 = o1.sub(neighbors.sub(o2).abs()).relu();
+        const survival = equals2.add(equals3).mul(s);
+        const birth = equals3.mul(o1.sub(s));
+        return survival.add(birth);
+      }, { accelerators: litert.HwAccelerators.GPU });
+
+      infoDiv.textContent = "Compiling JIT graph compiler upfront...";
+      await gameOfLife.compile(state, kernel, one, two, three);
+
+      infoDiv.textContent = "Graph compiled. Initializing data...";
+
       // Initialize kernel: [[1,1,1],[1,0,1],[1,1,1]]
       const kernelData = new Float32Array([
         1, 1, 1,
         1, 0, 1,
         1, 1, 1
       ]);
-      // We need to pass it as [1, 3, 3, 1]!
-      runner.setInputBinary("kernel", new Uint8Array(kernelData.buffer));
- 
-      // Initialize constants
-      runner.setInputBinary("one", new Uint8Array(new Float32Array([1.0]).buffer));
-      runner.setInputBinary("two", new Uint8Array(new Float32Array([2.0]).buffer));
-      runner.setInputBinary("three", new Uint8Array(new Float32Array([3.0]).buffer));
+      await kernel.setData(kernelData);
+
+      // Initialize constant parameters once upfront (highly optimized)
+      await one.setData(new Float32Array([1.0]));
+      await two.setData(new Float32Array([2.0]));
+      await three.setData(new Float32Array([3.0]));
  
       // Initialize random state
       let currentState = new Float32Array(H * W * 1);
@@ -178,21 +93,16 @@
       async function step() {
         const t0 = performance.now();
         
-        const stateIn = runner.getInput("state");
-        const inBufferId = stateIn.getWebGpuBuffer();
-
+        // Stream pixels directly into the pre-allocated JIT execution WebGPU buffer (Zero-Copy!)
+        const inBuffer = state.getWebGpuBuffer();
+        device.queue.writeBuffer(inBuffer, 0, currentState);
         
-        if (inBufferId) {
-          const inBuffer = litert.WebGPU.getJsObject(inBufferId);
-          device.queue.writeBuffer(inBuffer, 0, currentState.buffer);
-        } else {
-          runner.setInputBinary("state", new Uint8Array(currentState.buffer));
-        }
+        // Execute our compiled JIT Conway graph cleanly
+        const outTensor = await gameOfLife(state, kernel, one, two, three);
         
-        await runner.run();
-        
-        const newStateOut = runner.getOutput("newState");
-        currentState = await newStateOut.getData();
+        // Read back the updated state values
+        currentState = await outTensor.getData();
+        outTensor.delete();
         
         const t1 = performance.now();
         perfDiv.textContent = `Step computed in ${(t1 - t0).toFixed(2)}ms`;

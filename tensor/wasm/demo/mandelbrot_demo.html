@@ -23,6 +23,8 @@
   <!-- Load Emscripten WebAssembly sandbox -->
   <script src="../tensor_wasm_internal.js"></script>
   <script type="module">
+    import { createLiteRT } from '../tensor_wasm.js';
+
     async function runDemo() {
       const infoDiv = document.getElementById('info');
       const perfDiv = document.getElementById('perf');
@@ -38,8 +40,8 @@
       const device = await adapter.requestDevice();
 
       infoDiv.textContent = "Initializing LiteRT WASM module...";
-      // Load the LiteRT WebAssembly sandbox module
-      const litert = await createTensorModule({
+      // Load the LiteRT WebAssembly module cleanly using createLiteRT!
+      const litert = await createLiteRT({
         preinitializedWebGPUDevice: device
       });
  
@@ -47,91 +49,29 @@
       const W = 256;
  
       // 1. Create Tensors for Graph
-      function createShapeVector(dims) {
-        const shape = new litert.ShapeVector();
-        for (const dim of dims) {
-          shape.push_back(dim);
-        }
-        return shape;
-      }
- 
-      const cReal = new litert.Tensor();
-      cReal.setName("cReal");
-      cReal.setType(litert.TensorType.kFP32);
-      cReal.setShape(createShapeVector([1, H, W, 1]));
- 
-      const cImag = new litert.Tensor();
-      cImag.setName("cImag");
-      cImag.setType(litert.TensorType.kFP32);
-      cImag.setShape(createShapeVector([1, H, W, 1]));
- 
-      const zRealIn = new litert.Tensor();
-      zRealIn.setName("zRealIn");
-      zRealIn.setType(litert.TensorType.kFP32);
-      zRealIn.setShape(createShapeVector([1, H, W, 1]));
- 
-      const zImagIn = new litert.Tensor();
-      zImagIn.setName("zImagIn");
-      zImagIn.setType(litert.TensorType.kFP32);
-      zImagIn.setShape(createShapeVector([1, H, W, 1]));
- 
-      const upperBound = new litert.Tensor();
-      upperBound.setName("upperBound");
-      upperBound.setType(litert.TensorType.kFP32);
-      upperBound.setShape(createShapeVector([1, 1, 1]));
- 
-      const lowerBound = new litert.Tensor();
-      lowerBound.setName("lowerBound");
-      lowerBound.setType(litert.TensorType.kFP32);
-      lowerBound.setShape(createShapeVector([1, 1, 1]));
- 
-      const dummyKernel = new litert.Tensor();
-      dummyKernel.setName("dummyKernel");
-      dummyKernel.setType(litert.TensorType.kFP32);
-      dummyKernel.setShape(createShapeVector([1, 1, 1, 1]));
- 
-      // Build Graph (10 steps)
-      let zReal = zRealIn;
-      let zImag = zImagIn;
-        const zRealSq = zReal.mul(zReal);
-        const zImagSq = zImag.mul(zImag);
-        const newZReal = zRealSq.sub(zImagSq).add(cReal);
-        const newZImag = zReal.mul(zImag).add(zReal.mul(zImag)).add(cImag);
-        
-        zReal = newZReal.minimum(upperBound).maximum(lowerBound);
-        zImag = newZImag.minimum(upperBound).maximum(lowerBound);
- 
-      const magnitudeSq = zReal.mul(zReal).add(zImag.mul(zImag));
-      magnitudeSq.setName("magnitudeSq");
-      zReal.setName("zRealOut");
-      zImag.setName("zImagOut");
- 
-      infoDiv.textContent = "Building graph...";
-      let runner = null;
-      function initRunner(acc) {
-        if (runner) {
-          runner.delete();
-        }
-        runner = litert.createStaticLambdaRunner(
-          {
-            "cReal": cReal,
-            "cImag": cImag,
-            "zRealIn": zRealIn,
-            "zImagIn": zImagIn,
-            "upperBound": upperBound,
-            "lowerBound": lowerBound
-          },
-          {
-            "zRealOut": zReal,
-            "zImagOut": zImag,
-            "magnitudeSq": magnitudeSq
-          },
-          1
-        );
-      }
-      
-      initRunner(1);
-      
+      // 1. Eagerly allocate placeholders conformed to JIT sizes
+      const cReal = litert.createTensor({ type: "FP32", shape: [1, H, W, 1], name: "cReal" });
+      const cImag = litert.createTensor({ type: "FP32", shape: [1, H, W, 1], name: "cImag" });
+      const zRealIn = litert.createTensor({ type: "FP32", shape: [1, H, W, 1], name: "zRealIn" });
+      const zImagIn = litert.createTensor({ type: "FP32", shape: [1, H, W, 1], name: "zImagIn" });
+      const upperBound = litert.createTensor({ type: "FP32", shape: [1, 1, 1, 1], name: "upperBound" });
+      const lowerBound = litert.createTensor({ type: "FP32", shape: [1, 1, 1, 1], name: "lowerBound" });
+
+      // 2. Define the Mandelbrot iteration JIT Graph Compiler pipeline
+      const mandelbrotStep = litert.jit((cr, ci, zr, zi, ub, lb) => {
+        const zRealSq = zr.mul(zr);
+        const zImagSq = zi.mul(zi);
+        const newZReal = zRealSq.sub(zImagSq).add(cr);
+        const newZImag = zr.mul(zi).add(zr.mul(zi)).add(ci);
+        const zRealOut = newZReal.minimum(ub).maximum(lb);
+        const zImagOut = newZImag.minimum(ub).maximum(lb);
+        const magnitudeSq = zRealOut.mul(zRealOut).add(zImagOut.mul(zImagOut));
+        return [zRealOut, zImagOut, magnitudeSq];
+      }, { accelerators: litert.HwAccelerators.CPU });
+
+      infoDiv.textContent = "Compiling JIT graph compiler upfront...";
+      await mandelbrotStep.compile(cReal, cImag, zRealIn, zImagIn, upperBound, lowerBound);
+
       document.getElementById('restartBtn').addEventListener('click', async () => {
         await compute();
       });
@@ -152,44 +92,36 @@
           }
         }
         
-        runner.setInputBinary("cReal", new Uint8Array(cRealData.buffer));
-        runner.setInputBinary("cImag", new Uint8Array(cImagData.buffer));
+        await cReal.setData(cRealData);
+        await cImag.setData(cImagData);
         
-        const zeros = new Float32Array(H * W).fill(0);
-        runner.setInputBinary("zRealIn", new Uint8Array(zeros.buffer));
-        runner.setInputBinary("zImagIn", new Uint8Array(zeros.buffer));
-        
-        runner.setInputBinary("upperBound", new Uint8Array(new Float32Array([100.0]).buffer));
-        runner.setInputBinary("lowerBound", new Uint8Array(new Float32Array([-100.0]).buffer));
+        await upperBound.setData(new Float32Array([100.0]));
+        await lowerBound.setData(new Float32Array([-100.0]));
  
         let currentZReal = new Float32Array(H * W).fill(0);
         let currentZImag = new Float32Array(H * W).fill(0);
         const escapeTimes = new Int32Array(H * W).fill(0);
- 
+  
         let step = 0;
         const maxSteps = 100;
- 
+  
         async function animLoop() {
           if (step >= maxSteps) {
             infoDiv.textContent = "Done! Click on canvas to zoom in!";
             return;
           }
- 
-          runner.setInputBinary("zRealIn", new Uint8Array(currentZReal.buffer));
-          runner.setInputBinary("zImagIn", new Uint8Array(currentZImag.buffer));
- 
-          await runner.run();
- 
-          const zRealOut = runner.getOutput("zRealOut");
-          const zImagOut = runner.getOutput("zImagOut");
-          const magnitudeSqOut = runner.getOutput("magnitudeSq");
+  
+          await zRealIn.setData(currentZReal);
+          await zImagIn.setData(currentZImag);
+  
+          // Run our dynamic JIT Mandelbrot step function!
+          const [realOut, imagOut, magSqOut] = await mandelbrotStep(
+            cReal, cImag, zRealIn, zImagIn, upperBound, lowerBound
+          );
           
-          const viewReal = await zRealOut.getData();
-          const viewImag = await zImagOut.getData();
-          const magnitudeSqData = await magnitudeSqOut.getData();
-          
-          currentZReal = new Float32Array(viewReal);
-          currentZImag = new Float32Array(viewImag);
+          currentZReal = await realOut.getData();
+          currentZImag = await imagOut.getData();
+          const magnitudeSqData = await magSqOut.getData();
           
           // Update escape times
           for (let i = 0; i < H * W; i++) {
@@ -198,8 +130,9 @@
             }
           }
           
-          zRealOut.delete();
-          zImagOut.delete();
+          realOut.delete();
+          imagOut.delete();
+          magSqOut.delete();
  
           // Render result with color mapping based on escape time!
           const imgData = ctx.createImageData(W, H);

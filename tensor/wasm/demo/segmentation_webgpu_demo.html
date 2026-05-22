@@ -79,6 +79,10 @@
         return;
       }
 
+      // Extract the compiled C++ runner's internal input WebGPU buffer (Zero-Copy!)
+      const inputBufferPtr = pipeline.getInputWebGpuBuffer("raw_image");
+      const dstBufferPre = Module.WebGPU.getJsObject(inputBufferPtr);
+
       infoDiv.textContent = "Pipeline initialized. Setting up webcam...";
 
       const video = document.getElementById('webcam');
@@ -97,7 +101,6 @@
       tmpCanvas.height = 512;
       const tmpCtx = tmpCanvas.getContext('2d', { willReadFrequently: true });
 
-      const inputPtr = Module._malloc(512 * 512 * 3 * 4);
       const origPtr = Module._malloc(256 * 256 * 3 * 4);
       const outputPtr = Module._malloc(256 * 256 * 3 * 4);
 
@@ -136,14 +139,16 @@
           origPixels[j + 2] = rawOrigPixels[i + 2] / 255.0;
         }
 
-        // Copy to WASM heap
-        Module.HEAPF32.set(floatPixels, inputPtr / 4);
+        // Write input frame directly into the pre-allocated WebGPU execution buffer (Zero-Copy!)
+        device.queue.writeBuffer(dstBufferPre, 0, floatPixels);
+
+        // Copy original image to WASM heap for C++ post-processing blending
         Module.HEAPF32.set(origPixels, origPtr / 4);
 
-        // 2. Process Frame in C++
-        const ok = await pipeline.processFrame(inputPtr, origPtr, outputPtr);
+        // 2. Process Frame in C++ using the optimized Zero-Copy method!
+        const ok = await pipeline.processFrameZeroCopy(origPtr, outputPtr);
         if (!ok) {
-          console.error("Failed to process frame in C++");
+          console.error("Failed to process frame in C++ (Zero-Copy)");
           isProcessing = false;
           return;
         }
