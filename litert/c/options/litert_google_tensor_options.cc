@@ -40,6 +40,7 @@ struct LrtGoogleTensorOptionsT {
   LrtGoogleTensorOptionsShardingIntensity sharding_intensity =
       kLiteRtGoogleTensorShardingIntensityMinimal;
   bool enable_dynamic_range_quantization = false;
+  std::vector<std::vector<std::string>> testing_flags = {};
   std::optional<LiteRtGoogleTensorOptionsPerformanceMode> performance_mode =
       std::nullopt;
   std::string op_filters_proto = "";
@@ -104,6 +105,27 @@ LiteRtStatus LrtGetOpaqueGoogleTensorOptionsData(
                           static_cast<int>(*options->performance_mode));
   }
 
+  if (!options->testing_flags.empty()) {
+    std::string testing_flags_str;
+    for (const auto& group : options->testing_flags) {
+      if (group.empty()) {
+        continue;
+      }
+      if (!testing_flags_str.empty()) {
+        testing_flags_str += ',';
+      }
+      if (group.size() >= 2) {
+        std::string escaped_value =
+            absl::StrReplaceAll(group[1], {{"\\", "\\\\"}, {"\"", "\\\""}});
+        absl::StrAppendFormat(&testing_flags_str, "%s=%s", group[0],
+                              escaped_value);
+      } else {
+        testing_flags_str += group[0];
+      }
+    }
+    absl::StrAppendFormat(&toml_str, "testing_flags = \"%s\"\n",
+                          testing_flags_str);
+  }
   if (!options->op_filters_proto.empty()) {
     absl::StrAppendFormat(&toml_str, "op_filters_proto = \"%s\"\n",
                           absl::Base64Escape(options->op_filters_proto));
@@ -168,6 +190,11 @@ LiteRtStatus LrtCreateGoogleTensorOptionsFromToml(
                                   litert::internal::ParseTomlInt(value));
           options_ref.performance_mode =
               static_cast<LiteRtGoogleTensorOptionsPerformanceMode>(val);
+        } else if (key == "testing_flags") {
+          std::string unescaped =
+              absl::StrReplaceAll(value, {{"\\\\", "\\"}, {"\\\"", "\""}});
+          LITERT_RETURN_IF_ERROR(
+              LrtGoogleTensorOptionsSetTestingFlags(&options_ref, unescaped));
         } else if (key == "op_filters_proto") {
           if (!absl::Base64Unescape(value, &options_ref.op_filters_proto)) {
             return kLiteRtStatusErrorInvalidArgument;
@@ -371,6 +398,53 @@ LiteRtStatus LrtGoogleTensorOptionsGetPerformanceMode(
     return kLiteRtStatusErrorNotFound;
   }
   *mode = *options->performance_mode;
+  return kLiteRtStatusOk;
+}
+
+// testing flags ---------------------------------------------------------------
+LiteRtStatus LrtGoogleTensorOptionsSetTestingFlags(
+    LrtGoogleTensorOptions options, const std::string& testing_flags) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (testing_flags.empty()) {
+    options->testing_flags = {};
+  }
+  std::vector<std::vector<std::string>> result;
+  std::stringstream ss(testing_flags);
+  std::string segment;
+
+  // Split the input string by ',' to get individual "key=value" segments
+  while (std::getline(ss, segment, ',')) {
+    std::vector<std::string> currentPair;
+    size_t delimiterPos = segment.find('=');
+
+    if (delimiterPos != std::string::npos) {
+      // '=' found, split into key and value
+      std::string key = segment.substr(0, delimiterPos);
+      std::string value = segment.substr(delimiterPos + 1);
+      currentPair.push_back(key);
+      currentPair.push_back(value);
+    } else {
+      // '=' not found, consider the whole segment as the key and an
+      // empty string as the value
+      currentPair.push_back(segment);
+      currentPair.push_back("");  // Empty value
+    }
+    result.push_back(currentPair);
+  }
+  options->testing_flags = result;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGoogleTensorOptionsGetTestingFlags(
+    LrtGoogleTensorOptions options,
+    std::vector<std::vector<std::string>>* testing_flags) {
+  if (options == nullptr || testing_flags == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *testing_flags = options->testing_flags;
   return kLiteRtStatusOk;
 }
 
