@@ -4,7 +4,6 @@ load(
     "if_mobile",
     "if_not_mobile",
     "tf_cc_test",
-    "tf_features_nolayering_check_if_ios",
     "tf_opts_nortti_if_lite_protos",
     "tf_opts_nortti_if_mobile",
 )
@@ -41,7 +40,6 @@ cc_library(
     hdrs = ["buffer_map.h"],
     compatible_with = get_compatible_with_portable(),
     copts = tf_opts_nortti_if_lite_protos(),
-    features = tf_features_nolayering_check_if_ios() + if_android(["-layering_check"]),
     deps = [
         ":buffer_map_util",
         ":util",
@@ -62,7 +60,6 @@ cc_library(
     hdrs = ["buffer_map_util.h"],
     compatible_with = get_compatible_with_portable(),
     copts = tf_opts_nortti_if_lite_protos(),
-    features = tf_features_nolayering_check_if_ios() + if_android(["-layering_check"]),
     deps = [
         ":util",
         "//tflite:string_util",
@@ -161,7 +158,6 @@ cc_library(
     ],
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts() + tf_opts_nortti_if_mobile(),
-    features = tf_features_nolayering_check_if_ios() + if_android(["-layering_check"]),
     visibility = ["//visibility:public"],
     deps = [
         ":buffer_map",
@@ -219,7 +215,6 @@ cc_library(
     hdrs = ["delegate_data.h"],
     compatible_with = get_compatible_with_portable(),
     copts = tf_opts_nortti_if_mobile(),
-    features = tf_features_nolayering_check_if_ios() + if_android(["-layering_check"]),
     visibility = ["//visibility:public"],
     deps = [
         ":buffer_map",
@@ -271,7 +266,6 @@ cc_library(
     hdrs = ["subgraph_resource.h"],
     compatible_with = get_compatible_with_portable(),
     copts = if_android(["-Wno-private-header"]),
-    features = tf_features_nolayering_check_if_ios(),
     deps = [
         "//tflite:cc_api_experimental",
         "//tflite/core/c:common",
@@ -327,7 +321,6 @@ cc_library(
     srcs = ["util.cc"],
     hdrs = ["util.h"],
     compatible_with = get_compatible_with_portable(),
-    features = tf_features_nolayering_check_if_ios() + if_android(["-layering_check"]),
     #TODO(b/206038955): Consider restrict the visibility to '//third_party/fcp/client:__subpackages__'.
     visibility = ["//visibility:public"],
     deps = [
@@ -383,7 +376,6 @@ tf_cc_test(
         "allowlisted_flex_ops_test.cc",
     ],
     extra_copts = if_android(["-Wno-private-header"]),
-    features = tf_features_nolayering_check_if_ios(),
     deps = [
         ":delegate",
         "//tflite/converter/delegates/flex:allowlisted_flex_ops_lib",
@@ -414,7 +406,6 @@ cc_library(
     srcs = ["tflite_subgraph_execute.cc"],
     compatible_with = get_compatible_with_portable(),
     copts = tf_opts_nortti_if_mobile(),
-    features = tf_features_nolayering_check_if_ios() + if_android(["-layering_check"]),
     deps = [
         ":buffer_map_util",
         ":subgraph_resource",
