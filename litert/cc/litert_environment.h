@@ -93,7 +93,6 @@ class Environment {
         kLiteRtEnvOptionTagCompilerCacheMaxConfigsPerModel,
      CompilerCacheMaxTotalSize = kLiteRtEnvOptionTagCompilerCacheMaxTotalSize,
     WebGpuInstance = kLiteRtEnvOptionTagWebGpuInstance,
-    WebGpuProcs = kLiteRtEnvOptionTagWebGpuProcs,
     RuntimeLibraryDir = kLiteRtEnvOptionTagRuntimeLibraryDir,
     AutoRegisterAccelerators = kLiteRtEnvOptionTagAutoRegisterAccelerators,
   };
