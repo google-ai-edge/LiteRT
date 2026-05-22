@@ -18,7 +18,6 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-#include <filesystem>
 #include <fstream>
 #include <ios>
 #include <iostream>
@@ -52,6 +51,7 @@
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/compiler/plugin/algo.h"
+#include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_serialize.h"
 #include "litert/core/util/flatbuffer_tools.h"
@@ -73,6 +73,25 @@ std::string CsvEscape(const std::string& s) {
     return s;
   }
   return absl::StrFormat("\"%s\"", absl::StrReplaceAll(s, {{"\"", "\"\""}}));
+}
+
+absl::Status DumpBufferToFile(TensorBuffer& buffer,
+                              const std::string& file_path) {
+  auto size_res = buffer.Size();
+  if (!size_res) {
+    return absl::InternalError("Failed to get buffer size for dumping");
+  }
+  std::vector<char> data(*size_res);
+  auto read_status = buffer.Read<char>(absl::MakeSpan(data));
+  if (!read_status) {
+    return absl::InternalError("Failed to read buffer for dumping");
+  }
+  std::ofstream file(file_path, std::ios::binary);
+  if (!file.is_open()) {
+    return absl::InternalError("Failed to open file for dumping: " + file_path);
+  }
+  file.write(data.data(), data.size());
+  return absl::OkStatus();
 }
 
 }  // namespace
@@ -760,7 +779,24 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
       if (out) global_consumer_counts[out]++;
   }
 
-  std::filesystem::create_directories(options.output_dir);
+  if (auto status = litert::internal::MkDir(options.output_dir); !status) {
+    return absl::InternalError(absl::StrCat(
+        "Failed to create output directory: ", status.Error().Message()));
+  }
+  if (options.dump_tensors) {
+    if (auto status = litert::internal::MkDir(
+            litert::internal::Join({options.output_dir, "cpu"}));
+        !status) {
+      return absl::InternalError(absl::StrCat(
+          "Failed to create CPU dump directory: ", status.Error().Message()));
+    }
+    if (auto status = litert::internal::MkDir(
+            litert::internal::Join({options.output_dir, options.accelerator}));
+        !status) {
+      return absl::InternalError(absl::StrCat(
+          "Failed to create Accel dump directory: ", status.Error().Message()));
+    }
+  }
 
   struct WorkUnit {
     std::vector<const LiteRtOpT*> ops;
@@ -809,9 +845,11 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
     auto serialized = std::move(*serialized_res);
 
     if (options.dump_only) {
-      std::string dump_path = absl::StrFormat(
-          "%s/op_%04d_%s_i%d_o%d.tflite", options.output_dir, global_op_counter,
-          sanitized_opcode, em.inputs.size(), em.outputs.size());
+      std::string filename = absl::StrFormat(
+          "op_%04d_%s_i%d_o%d.tflite", global_op_counter, sanitized_opcode,
+          em.inputs.size(), em.outputs.size());
+      std::string dump_path =
+          litert::internal::Join({options.output_dir, filename});
       std::ofstream dump_file(dump_path, std::ios::binary);
       if (!dump_file.is_open()) {
         ABSL_LOG(ERROR) << "Failed to open dump file: " << dump_path;
@@ -848,6 +886,19 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
       if (!fill_status) {
         ABSL_LOG(WARNING) << "Failed to fill inputs from " << options.input_dir
                           << ": " << fill_status.Error().Message();
+      } else {
+        for (size_t i = 0; i < em.inputs.size(); ++i) {
+          const auto* orig = em.inputs[i];
+          if (!orig) continue;
+          auto size_res = cpu_inputs[i].Size();
+          if (!size_res) continue;
+          std::vector<char> tmp(*size_res);
+          auto read_status = cpu_inputs[i].Read<char>(absl::MakeSpan(tmp));
+          if (read_status) {
+            cpu_tensor_values[orig] = tmp;
+            accel_tensor_values[orig] = std::move(tmp);
+          }
+        }
       }
     }
 
@@ -894,6 +945,39 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
       (void)cpu_outputs[i].Read<char>(absl::MakeSpan(cpu_data));
       if (em.outputs[i]) {
         cpu_tensor_values[em.outputs[i]] = std::move(cpu_data);
+      }
+    }
+
+    if (options.dump_tensors) {
+      for (size_t i = 0; i < em.inputs.size(); ++i) {
+        std::string t_name =
+            em.inputs[i] ? SanitizeFilename(std::string(em.inputs[i]->Name()))
+                         : "null";
+        std::string filename =
+            absl::StrFormat("op_%04d_%s_in_%d_%s.raw", global_op_counter,
+                            sanitized_opcode, i, t_name);
+        std::string path =
+            litert::internal::Join({options.output_dir, "cpu", filename});
+        auto status = DumpBufferToFile(cpu_inputs[i], path);
+        if (!status.ok()) {
+          ABSL_LOG(WARNING) << "Failed to dump CPU input tensor to " << path
+                            << ": " << status.message();
+        }
+      }
+      for (size_t i = 0; i < em.outputs.size(); ++i) {
+        std::string t_name =
+            em.outputs[i] ? SanitizeFilename(std::string(em.outputs[i]->Name()))
+                          : "null";
+        std::string filename =
+            absl::StrFormat("op_%04d_%s_out_%d_%s.raw", global_op_counter,
+                            sanitized_opcode, i, t_name);
+        std::string path =
+            litert::internal::Join({options.output_dir, "cpu", filename});
+        auto status = DumpBufferToFile(cpu_outputs[i], path);
+        if (!status.ok()) {
+          ABSL_LOG(WARNING) << "Failed to dump CPU output tensor to " << path
+                            << ": " << status.message();
+        }
       }
     }
 
@@ -982,6 +1066,42 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
                 (void)accel_outputs[i].Read<char>(absl::MakeSpan(accel_data));
                 accel_tensor_values[em.outputs[i]] = std::move(accel_data);
               }
+
+              if (options.dump_tensors) {
+                for (size_t i = 0; i < em.inputs.size(); ++i) {
+                  std::string t_name =
+                      em.inputs[i]
+                          ? SanitizeFilename(std::string(em.inputs[i]->Name()))
+                          : "null";
+                  std::string filename = absl::StrFormat(
+                      "op_%04d_%s_in_%d_%s.raw", global_op_counter,
+                      sanitized_opcode, i, t_name);
+                  std::string path = litert::internal::Join(
+                      {options.output_dir, options.accelerator, filename});
+                  auto status = DumpBufferToFile(accel_inputs[i], path);
+                  if (!status.ok()) {
+                    ABSL_LOG(WARNING) << "Failed to dump Accel input tensor to "
+                                      << path << ": " << status.message();
+                  }
+                }
+                for (size_t i = 0; i < em.outputs.size(); ++i) {
+                  std::string t_name =
+                      em.outputs[i]
+                          ? SanitizeFilename(std::string(em.outputs[i]->Name()))
+                          : "null";
+                  std::string filename = absl::StrFormat(
+                      "op_%04d_%s_out_%d_%s.raw", global_op_counter,
+                      sanitized_opcode, i, t_name);
+                  std::string path = litert::internal::Join(
+                      {options.output_dir, options.accelerator, filename});
+                  auto status = DumpBufferToFile(accel_outputs[i], path);
+                  if (!status.ok()) {
+                    ABSL_LOG(WARNING)
+                        << "Failed to dump Accel output tensor to " << path
+                        << ": " << status.message();
+                  }
+                }
+              }
             }
           }
         }
@@ -1006,10 +1126,14 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
 
     if (options.save_failing_models &&
         (worst_res.failed || any_tensor_failed)) {
-      std::string base = absl::StrFormat(
-          "%s/op_%04d_%s_i%d_o%d", options.output_dir, global_op_counter,
-          sanitized_opcode, em.inputs.size(), em.outputs.size());
-      std::filesystem::create_directories(base);
+      std::string filename = absl::StrFormat(
+          "op_%04d_%s_i%d_o%d", global_op_counter, sanitized_opcode,
+          em.inputs.size(), em.outputs.size());
+      std::string base = litert::internal::Join({options.output_dir, filename});
+      if (auto status = litert::internal::MkDir(base); !status) {
+        return absl::InternalError(absl::StrCat(
+            "Failed to create base directory: ", status.Error().Message()));
+      }
       std::ofstream model_file(base + ".tflite", std::ios::binary);
       model_file.write(reinterpret_cast<const char*>(serialized.Data()),
                        serialized.Size());
@@ -1024,7 +1148,7 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
         if (source_map.contains(orig)) {
           std::string file_name =
               absl::StrCat((signature_input_names)[i], ".raw");
-          std::ofstream in_file(absl::StrFormat("%s/%s", base, file_name),
+          std::ofstream in_file(litert::internal::Join({base, file_name}),
                                 std::ios::binary);
           in_file.write(source_map.at(orig).data(), source_map.at(orig).size());
         }
@@ -1046,7 +1170,7 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
   if (summary) {
     summary->LogSummary(options);
     summary->SaveToCsv(
-        absl::StrFormat("%s/accuracy_summary.csv", options.output_dir));
+        litert::internal::Join({options.output_dir, "accuracy_summary.csv"}));
   }
   return absl::OkStatus();
 }
