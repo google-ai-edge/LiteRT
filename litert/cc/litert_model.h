@@ -113,6 +113,17 @@ inline LiteRtQuantizationPerChannel FetchTensorQuantizationPerChannel(
   return per_channel_quantization;
 }
 
+inline LiteRtQuantizationBlockWise FetchTensorQuantizationBlockWise(
+    LiteRtTensor tensor) {
+  if (FetchTensorQuantizationTypeId(tensor) != kLiteRtQuantizationBlockWise) {
+    return {};
+  }
+  LiteRtQuantizationBlockWise block_wise_quantization;
+  internal::AssertOk(LiteRtGetBlockWiseQuantization, tensor,
+                     &block_wise_quantization);
+  return block_wise_quantization;
+}
+
 inline StringView FetchSignatureKey(LiteRtSignature signature) {
   const char* key;
   internal::AssertOk(LiteRtGetSignatureKey, signature, &key);
@@ -163,7 +174,8 @@ inline std::vector<std::unique_ptr<SimpleTensor>> FetchSignatureInputTensors(
         FetchTensorType(tensor, FetchTensorTypeId(tensor)),
         FetchTensorQuantizationTypeId(tensor),
         FetchTensorQuantizationPerTensor(tensor),
-        FetchTensorQuantizationPerChannel(tensor)));
+        FetchTensorQuantizationPerChannel(tensor),
+        FetchTensorQuantizationBlockWise(tensor)));
   }
   return input_tensors;
 }
@@ -184,7 +196,8 @@ inline std::vector<std::unique_ptr<SimpleTensor>> FetchSignatureOutputTensors(
         FetchTensorType(tensor, FetchTensorTypeId(tensor)),
         FetchTensorQuantizationTypeId(tensor),
         FetchTensorQuantizationPerTensor(tensor),
-        FetchTensorQuantizationPerChannel(tensor)));
+        FetchTensorQuantizationPerChannel(tensor),
+        FetchTensorQuantizationBlockWise(tensor)));
   }
   return output_tensors;
 }

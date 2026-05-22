@@ -143,6 +143,7 @@ EXPORTS
   LiteRtGetBatchMatmulAdjXOption
   LiteRtGetBatchMatmulAdjYOption
   LiteRtGetBatchMatmulAsymmetricQuantizeInputOption
+  LiteRtGetBlockWiseQuantization
   LiteRtGetCompiledModelEnvironment
   LiteRtGetCompiledModelInputBufferRequirements
   LiteRtGetCompiledModelInputTensorLayout

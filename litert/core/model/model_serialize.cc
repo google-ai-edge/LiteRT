@@ -207,7 +207,8 @@ LiteRtStatus PackOp(SerializationContext& builder, LiteRtOpT& litert_op,
 }
 
 LiteRtStatus PackTensor(SerializationContext& builder,
-                        LiteRtTensorT& litert_tensor, TflTensor& tfl_tensor) {
+                        LiteRtTensorT& litert_tensor, TflTensor& tfl_tensor,
+                        const TensorMap& tensor_map) {
   auto tfl_tensor_type = MapTensorType(litert_tensor.Type());
   if (!tfl_tensor_type) {
     return tfl_tensor_type.Error().Status();
@@ -220,7 +221,7 @@ LiteRtStatus PackTensor(SerializationContext& builder,
   tfl_tensor.shape_signature.assign(tfl_shape.shape_signature.begin(),
                                     tfl_shape.shape_signature.end());
 
-  auto tfl_quantization = MapQuantization(litert_tensor.Qparams());
+  auto tfl_quantization = MapQuantization(litert_tensor.Qparams(), tensor_map);
   if (!tfl_quantization) {
     return tfl_quantization.Error().Status();
   }
@@ -244,8 +245,12 @@ LiteRtStatus PackSubgraph(SerializationContext& builder,
   for (auto* tensor : litert_subgraph.Tensors()) {
     tfl_subgraph.tensors.push_back(std::make_unique<TflTensor>());
     tensor_map.insert({tensor, tfl_subgraph.tensors.size() - 1});
+  }
+
+  for (size_t i = 0; i < litert_subgraph.Tensors().size(); ++i) {
+    auto* tensor = litert_subgraph.Tensors()[i];
     LITERT_RETURN_IF_ERROR(
-        PackTensor(builder, *tensor, *tfl_subgraph.tensors.back()));
+        PackTensor(builder, *tensor, *tfl_subgraph.tensors[i], tensor_map));
   }
 
   for (auto i = 0; i < litert_subgraph.Ops().size(); ++i) {

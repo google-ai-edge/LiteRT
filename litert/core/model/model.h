@@ -167,6 +167,7 @@ TensorType MakeRankedTensorType(LiteRtElementType element_type,
 typedef union {
   LiteRtQuantizationPerTensor per_tensor;
   LiteRtQuantizationPerChannel per_channel;
+  LiteRtQuantizationBlockWise block_wise;
 } QuantizationDetail;
 
 // Union and identifier for quantization types.
@@ -206,6 +207,18 @@ Quantization MakePerChannelQuantization(const Scales& scales,
   res.second.per_channel.scales = scales_buf;
   res.second.per_channel.zero_points = zeros_buf;
 
+  return res;
+}
+
+// Construct quantization type as block wise.
+inline Quantization MakeBlockWiseQuantization(LiteRtTensor scales,
+                                              LiteRtTensor zero_points,
+                                              int32_t block_size) {
+  Quantization res;
+  res.first = kLiteRtQuantizationBlockWise;
+  res.second.block_wise.scales = scales;
+  res.second.block_wise.zero_points = zero_points;
+  res.second.block_wise.block_size = block_size;
   return res;
 }
 

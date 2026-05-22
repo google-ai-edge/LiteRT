@@ -308,7 +308,8 @@ TEST(CcSimpleTensorTest, QuantizationNone) {
                       /*type=*/LiteRtUnrankedTensorType{},
                       /*quantization_type_id=*/kLiteRtQuantizationNone,
                       /*per_tensor_quantization=*/{},
-                      /*per_channel_quantization=*/{});
+                      /*per_channel_quantization=*/{},
+                      /*block_wise_quantization=*/{});
   LiteRtQuantizationTypeId quantization_type_id = tensor.QTypeId();
   EXPECT_EQ(quantization_type_id, kLiteRtQuantizationNone);
 }
@@ -325,7 +326,8 @@ TEST(CcSimpleTensorTest, QuantizationPerTensor) {
                       /*type=*/RankedTensorType(kTensorType),
                       /*quantization_type_id=*/kLiteRtQuantizationPerTensor,
                       /*per_tensor_quantization=*/{kScale, kZeroPoint},
-                      /*per_channel_quantization=*/{});
+                      /*per_channel_quantization=*/{},
+                      /*block_wise_quantization=*/{});
   ASSERT_EQ(tensor.QTypeId(), kLiteRtQuantizationPerTensor);
   ASSERT_TRUE(tensor.HasQuantization());
 
@@ -353,7 +355,8 @@ TEST(CcSimpleTensorTest, QuantizationPerChannel) {
       /*per_tensor_quantization=*/{},
       /*per_channel_quantization=*/
       {kQuantizedDimension, kNumChannels, const_cast<float*>(kScales),
-       const_cast<int64_t*>(kZeroPoints)});
+       const_cast<int64_t*>(kZeroPoints)},
+      /*block_wise_quantization=*/{});
   ASSERT_EQ(tensor.QTypeId(), kLiteRtQuantizationPerChannel);
   ASSERT_TRUE(tensor.HasQuantization());
 
@@ -366,6 +369,29 @@ TEST(CcSimpleTensorTest, QuantizationPerChannel) {
       ::testing::ElementsAreArray(kZeroPoints));
   EXPECT_EQ(per_channel_quantization.num_channels, kNumChannels);
   EXPECT_EQ(per_channel_quantization.quantized_dimension, kQuantizedDimension);
+}
+
+TEST(CcSimpleTensorTest, QuantizationBlockWise) {
+  LiteRtTensorT scales_tensor;
+  LiteRtTensorT zero_points_tensor;
+  constexpr int32_t kBlockSize = 32;
+
+  SimpleTensor tensor(
+      /*index=*/0, /*name=*/"foo",
+      /*type_id=*/kLiteRtRankedTensorType,
+      /*type=*/RankedTensorType(kTensorType),
+      /*quantization_type_id=*/kLiteRtQuantizationBlockWise,
+      /*per_tensor_quantization=*/{},
+      /*per_channel_quantization=*/{},
+      /*block_wise_quantization=*/
+      {&scales_tensor, &zero_points_tensor, kBlockSize});
+  ASSERT_EQ(tensor.QTypeId(), kLiteRtQuantizationBlockWise);
+  ASSERT_TRUE(tensor.HasQuantization());
+
+  auto block_wise_quantization = tensor.BlockWiseQuantization();
+  EXPECT_EQ(block_wise_quantization.scales, &scales_tensor);
+  EXPECT_EQ(block_wise_quantization.zero_points, &zero_points_tensor);
+  EXPECT_EQ(block_wise_quantization.block_size, kBlockSize);
 }
 
 }  // namespace

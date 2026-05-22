@@ -126,6 +126,43 @@ MapQuantizationDetail<LiteRtQuantizationPerChannel>(
   return tfl_quantization;
 }
 
+Expected<TflQuantizationPtr> MapQuantizationBlockWise(
+    const LiteRtQuantizationBlockWise& litert_quantization,
+    const absl::flat_hash_map<LiteRtTensor, int32_t>& tensor_map) {
+  auto tfl_quantization = std::make_unique<TflQuantization>();
+
+  auto blockwise_details = std::make_unique<tflite::BlockwiseQuantizationT>();
+
+  auto scales_it = tensor_map.find(litert_quantization.scales);
+  if (scales_it == tensor_map.end()) {
+    LITERT_LOG(LITERT_ERROR,
+               "Failed to find scales tensor in map during serialization");
+    return Error(kLiteRtStatusErrorInvalidArgument);
+  }
+  blockwise_details->scales = scales_it->second;
+
+  if (litert_quantization.zero_points) {
+    auto zps_it = tensor_map.find(litert_quantization.zero_points);
+    if (zps_it == tensor_map.end()) {
+      LITERT_LOG(
+          LITERT_ERROR,
+          "Failed to find zero points tensor in map during serialization");
+      return Error(kLiteRtStatusErrorInvalidArgument);
+    }
+    blockwise_details->zero_points = zps_it->second;
+  } else {
+    blockwise_details->zero_points = -1;
+  }
+
+  blockwise_details->block_size = litert_quantization.block_size;
+
+  tfl_quantization->details.type =
+      tflite::QuantizationDetails_BlockwiseQuantization;
+  tfl_quantization->details.value = blockwise_details.release();
+
+  return tfl_quantization;
+}
+
 }  // namespace
 
 Expected<TflTensorType> MapTensorType(const TensorType& litert_tensor_type) {
@@ -138,7 +175,8 @@ Expected<TflTensorType> MapTensorType(const TensorType& litert_tensor_type) {
 }
 
 Expected<TflQuantizationPtr> MapQuantization(
-    const Quantization& litert_quantization) {
+    const Quantization& litert_quantization,
+    const absl::flat_hash_map<LiteRtTensor, int32_t>& tensor_map) {
   switch (litert_quantization.first) {
     case kLiteRtQuantizationNone:
       return TflQuantizationPtr(nullptr);
@@ -146,6 +184,9 @@ Expected<TflQuantizationPtr> MapQuantization(
       return MapQuantizationDetail(litert_quantization.second.per_tensor);
     case kLiteRtQuantizationPerChannel:
       return MapQuantizationDetail(litert_quantization.second.per_channel);
+    case kLiteRtQuantizationBlockWise:
+      return MapQuantizationBlockWise(litert_quantization.second.block_wise,
+                                      tensor_map);
     default:
       return Error(kLiteRtStatusErrorUnsupported);
   }

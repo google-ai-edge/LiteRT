@@ -155,6 +155,27 @@ static_assert(offsetof(LiteRtQuantizationPerChannel, zero_points) == 24,
               "LiteRtQuantizationPerChannel zero_points offset mismatch");
 #endif  // __cplusplus
 
+// Schema for tensors quantized across blocks of fixed size.
+///
+/// @note This concrete type is part of the public API and is ABI stable.
+typedef struct {
+  LiteRtTensor scales;
+  LiteRtTensor zero_points;
+  int32_t block_size;
+} LiteRtQuantizationBlockWise;
+
+#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
+    __SIZEOF_POINTER__ == 8
+static_assert(sizeof(LiteRtQuantizationBlockWise) == 24,
+              "LiteRtQuantizationBlockWise size mismatch");
+static_assert(offsetof(LiteRtQuantizationBlockWise, scales) == 0,
+              "LiteRtQuantizationBlockWise scales offset mismatch");
+static_assert(offsetof(LiteRtQuantizationBlockWise, zero_points) == 8,
+              "LiteRtQuantizationBlockWise zero_points offset mismatch");
+static_assert(offsetof(LiteRtQuantizationBlockWise, block_size) == 16,
+              "LiteRtQuantizationBlockWise block_size offset mismatch");
+#endif  // __cplusplus
+
 // The identifier for quantization scheme type union.
 ///
 /// @note This concrete type is part of the public API and is ABI stable.
@@ -183,6 +204,10 @@ LiteRtStatus LiteRtGetPerTensorQuantization(
 LiteRtStatus LiteRtGetPerChannelQuantization(
     LiteRtTensor tensor,
     LiteRtQuantizationPerChannel* per_channel_quantization);
+
+// Get the block-wise quantization information for a given tensor if it has it.
+LiteRtStatus LiteRtGetBlockWiseQuantization(
+    LiteRtTensor tensor, LiteRtQuantizationBlockWise* block_wise_quantization);
 
 // EDGES
 

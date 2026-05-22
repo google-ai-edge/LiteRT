@@ -688,6 +688,20 @@ LiteRtStatus LiteRtGetPerChannelQuantization(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetBlockWiseQuantization(
+    LiteRtTensor tensor, LiteRtQuantizationBlockWise* block_wise_quantization) {
+  if (!tensor || !block_wise_quantization) {
+    return kLiteRtStatusErrorInvalidArgument;
+  } else if (tensor->Qparams().first != kLiteRtQuantizationBlockWise) {
+    return kLiteRtStatusErrorInvalidIrType;
+  }
+  auto& block_wise = tensor->Qparams().second.block_wise;
+  block_wise_quantization->scales = block_wise.scales;
+  block_wise_quantization->zero_points = block_wise.zero_points;
+  block_wise_quantization->block_size = block_wise.block_size;
+  return kLiteRtStatusOk;
+}
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

@@ -44,7 +44,8 @@ LiteRtStatus LiteRtBuilderBuildTensor(
     LiteRtUnrankedTensorType unranked_tensor_type, LiteRtWeights weights,
     LiteRtQuantizationTypeId quantization_type_id,
     LiteRtQuantizationPerTensor per_tensor_quantization,
-    LiteRtQuantizationPerChannel per_channel_quantization, const char* name,
+    LiteRtQuantizationPerChannel per_channel_quantization,
+    LiteRtQuantizationBlockWise block_wise_quantization, const char* name,
     LiteRtTensor* new_tensor) {
   // Pack tensor type to internal type.
   TensorType tensor_type;
@@ -69,6 +70,10 @@ LiteRtStatus LiteRtBuilderBuildTensor(
     case kLiteRtQuantizationPerChannel:
       quantization.first = kLiteRtQuantizationPerChannel;
       quantization.second.per_channel = per_channel_quantization;
+      break;
+    case kLiteRtQuantizationBlockWise:
+      quantization.first = kLiteRtQuantizationBlockWise;
+      quantization.second.block_wise = block_wise_quantization;
       break;
     case kLiteRtQuantizationNone:
       quantization.first = kLiteRtQuantizationNone;

@@ -58,14 +58,16 @@ class SimpleTensor {
       std::variant<LiteRtUnrankedTensorType, litert::RankedTensorType>&& type,
       LiteRtQuantizationTypeId quantization_type_id,
       LiteRtQuantizationPerTensor per_tensor_quantization,
-      LiteRtQuantizationPerChannel per_channel_quantization)
+      LiteRtQuantizationPerChannel per_channel_quantization,
+      LiteRtQuantizationBlockWise block_wise_quantization)
       : index_(index),
         name_(name),
         type_id_(type_id),
         type_(std::move(type)),
         quantization_type_id_(quantization_type_id),
         per_tensor_quantization_(per_tensor_quantization),
-        per_channel_quantization_(per_channel_quantization) {}
+        per_channel_quantization_(per_channel_quantization),
+        block_wise_quantization_(block_wise_quantization) {}
 
   // Allow copying SimpleTensors.
   SimpleTensor(const SimpleTensor& other) = default;
@@ -145,6 +147,11 @@ class SimpleTensor {
     return per_channel_quantization_;
   }
 
+  /// @brief Returns the block-wise quantization of the tensor.
+  LiteRtQuantizationBlockWise BlockWiseQuantization() const {
+    return block_wise_quantization_;
+  }
+
  private:
   std::uint32_t index_;
   std::string_view name_;
@@ -153,6 +160,7 @@ class SimpleTensor {
   LiteRtQuantizationTypeId quantization_type_id_;
   LiteRtQuantizationPerTensor per_tensor_quantization_;
   LiteRtQuantizationPerChannel per_channel_quantization_;
+  LiteRtQuantizationBlockWise block_wise_quantization_;
 };
 
 /// @brief A simplified C++ wrapper for `LiteRtSignature`, representing a model
