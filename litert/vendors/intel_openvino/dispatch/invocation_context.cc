@@ -24,7 +24,12 @@
 #include <istream>
 #include <streambuf>
 #include <string>
+#if defined(__ANDROID__) && defined(ENABLE_NPU_HAL)
+#include <dlfcn.h>
+#include <unistd.h>
+#endif
 
+#include "openvino/runtime/properties.hpp"
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/tensor.hpp"
@@ -42,7 +47,52 @@
 #include "litert/vendors/c/litert_dispatch.h"
 
 namespace {
+ov::hint::Priority ToOvModelPriority(int32_t job_priority) {
+  // LiteRT priority is [0, 1000] where lower value means higher priority.
+  if (job_priority <= 333) {
+    return ov::hint::Priority::HIGH;
+  }
+  if (job_priority <= 666) {
+    return ov::hint::Priority::MEDIUM;
+  }
+  return ov::hint::Priority::LOW;
+}
 
+#if defined(__ANDROID__) && defined(ENABLE_NPU_HAL)
+// Function pointer type matching npu_hal_submit_inference_async() from
+// libnpu_hal_hook.so.
+using NpuHalSubmitInferenceAsyncFn = int (*)(npu_hal_context_t** ctx,
+                                             void* infer_request,
+                                             int32_t job_priority,
+                                             int32_t original_uid);
+
+// Lazily loads libnpu_hal_hook.so and resolves the
+// npu_hal_submit_inference_async symbol at runtime. Returns nullptr if the
+// library cannot be loaded or the symbol cannot be resolved. The handle is
+// intentionally kept open for the lifetime of the process.
+NpuHalSubmitInferenceAsyncFn GetNpuHalSubmitInferenceAsync() {
+  static NpuHalSubmitInferenceAsyncFn fn = []() -> NpuHalSubmitInferenceAsyncFn {
+    void* handle = dlopen("libnpu_hal_hook.so", RTLD_NOW | RTLD_GLOBAL);
+    if (handle == nullptr) {
+      LITERT_LOG(LITERT_ERROR, "Failed to load libnpu_hal_hook.so: %s",
+                 dlerror());
+      return nullptr;
+    }
+    // Clear any existing error before dlsym.
+    dlerror();
+    auto symbol = reinterpret_cast<NpuHalSubmitInferenceAsyncFn>(
+        dlsym(handle, "npu_hal_submit_inference_async"));
+    if (symbol == nullptr) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Failed to resolve npu_hal_submit_inference_async: %s",
+                 dlerror());
+    }
+    return symbol;
+  }();
+  return fn;
+}
+
+#endif
 // This class is copied from the OpenVINO codebase with minor modifications
 // for Google C++ Style Guide compliance. It wraps a pre-allocated memory
 // buffer to provide a std::streambuf interface, enabling zero-copy stream
@@ -184,8 +234,9 @@ LiteRtDispatchInvocationContextT::Create(
   auto infer_request = compiled_model.create_infer_request();
   LITERT_LOG(LITERT_INFO, "Openvino InvocationContext Initialize SUCCESS");
   // TODO: add support for loading cached model
-  return Ptr(new LiteRtDispatchInvocationContextT(infer_request, device_context,
-                                                  num_inputs, num_outputs));
+  return Ptr(new LiteRtDispatchInvocationContextT(
+      infer_request, device_context, num_inputs, num_outputs, exec_bytecode_ptr,
+      exec_bytecode_size, device));
 }
 
 litert::Expected<LiteRtTensorBufferRequirements>
@@ -238,6 +289,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
   // TODO: visit this if need to maintain graph indices for inputs and outputs
   // in dispatch_api
   infer_request_.set_input_tensor(graph_input_index, ov_tensor);
+  input_tensors_[graph_input_index] = ov_tensor;
   return {};
 }
 
@@ -248,11 +300,116 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
   // TODO: visit this if need to maintain graph indices for inputs and outputs
   // in dispatch_api
   infer_request_.set_output_tensor(graph_output_index, ov_tensor);
+  output_tensors_[graph_output_index] = ov_tensor;
+  return {};
+}
+
+struct ov_infer_request_wrapper {
+  std::shared_ptr<ov::InferRequest> object;
+};
+
+litert::Expected<void> LiteRtDispatchInvocationContextT::ApplyModelPriority(
+    int32_t job_priority) {
+  auto core = device_context_.getCore();
+  if (!core) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        "Failed to get OpenVINO core from device context");
+  }
+  if (exec_bytecode_ptr_ == nullptr || exec_bytecode_size_ == 0) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        "Model bytecode is not available for re-import");
+  }
+  SharedStreamBuffer membuf(static_cast<const char*>(exec_bytecode_ptr_),
+                            exec_bytecode_size_);
+  std::istream model_stream(&membuf);
+  ov::CompiledModel compiled_model;
+  const ov::hint::Priority requested_priority = ToOvModelPriority(job_priority);
+  try {
+    compiled_model =
+        core->import_model(model_stream, device_,
+                           {ov::hint::model_priority(requested_priority)});
+  } catch (const std::exception& e) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrFormat("Failed to import model with priority: %s", e.what()));
+  }
+  // Read the priority back from the compiled model to confirm the NPU plugin
+  // actually accepted it. This makes the effect observable from logcat when
+  // running via benchmark_model.
+  try {
+    const ov::hint::Priority applied_priority =
+        compiled_model.get_property(ov::hint::model_priority);
+    LITERT_LOG(LITERT_INFO,
+               "Applied NPU model priority: job_priority=%d requested=%d "
+               "readback=%d",
+               job_priority, static_cast<int>(requested_priority),
+               static_cast<int>(applied_priority));
+  } catch (const std::exception& e) {
+    LITERT_LOG(LITERT_WARNING,
+               "Could not read back model_priority (plugin may not expose it): "
+               "%s",
+               e.what());
+  }
+  infer_request_ = compiled_model.create_infer_request();
+  // Re-bind previously attached input/output tensors to the new infer request.
+  for (const auto& [index, tensor] : input_tensors_) {
+    infer_request_.set_input_tensor(index, tensor);
+  }
+  for (const auto& [index, tensor] : output_tensors_) {
+    infer_request_.set_output_tensor(index, tensor);
+  }
   return {};
 }
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
+  // Apply the requested NPU job priority through OpenVINO. Because
+  // ov::hint::model_priority is a compile-time hint, a priority change only
+  // takes effect by re-importing the model with it. This is cached so the
+  // model is re-imported only when the requested priority actually changes.
+  const LiteRtSchedulingInfo* scheduling_info = GetSchedulingInfo();
+  if (scheduling_info != nullptr &&
+      (scheduling_info->fields_mask & kLiteRtSchedulingInfoFieldJobPriority)) {
+    const int32_t desired_priority = scheduling_info->job_priority;
+    if (!applied_job_priority_.has_value() ||
+        *applied_job_priority_ != desired_priority) {
+      if (auto res = ApplyModelPriority(desired_priority); !res) {
+        return litert::Unexpected(res.Error());
+      }
+      applied_job_priority_ = desired_priority;
+    }
+  } else {
+    LITERT_LOG(LITERT_INFO, "Scheduling with default priority setting");
+  }
+
+#if defined(__ANDROID__) && defined(ENABLE_NPU_HAL)
+  if (scheduling_info == nullptr) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorInvalidArgument,
+        "Scheduling info with job priority is required for Android NPU HAL");
+  }
+  auto* wrapper = new ov_infer_request_wrapper();
+  wrapper->object = std::make_shared<ov::InferRequest>(infer_request_);
+  auto npu_hal_submit_inference_async_fn = GetNpuHalSubmitInferenceAsync();
+  if (npu_hal_submit_inference_async_fn == nullptr) {
+    delete wrapper;
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        "Failed to load npu_hal_submit_inference_async from "
+        "libnpu_hal_hook.so");
+  }
+  if (npu_hal_submit_inference_async_fn(&ctx, static_cast<void*>(wrapper),
+                                        scheduling_info->job_priority,
+                                        scheduling_info->original_uid) != 0) {
+    infer_request_ = {};
+    delete wrapper;
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Inference submission rejected by NPU HAL");
+  }
+#else
   infer_request_.start_async();
+#endif
   if (!infer_request_.wait_for(
           std::chrono::milliseconds(kInferRequestTimeoutMs)))
     return litert::Unexpected(
