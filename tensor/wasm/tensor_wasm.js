@@ -17,10 +17,17 @@
  * @suppress {missingProperties, globalThis}
  */
 
+let nextRunnerId = 1;
+
 class LiteRTRunner {
   constructor(underlyingRunner, module) {
     this.runner = underlyingRunner;
     this.module = module;
+    this.id = nextRunnerId++;
+  }
+
+  getId() {
+    return this.id;
   }
 
   async run() {
@@ -93,6 +100,11 @@ class LiteRtMultiSignatureRunner {
   constructor(underlyingRunner, module) {
     this.runner = underlyingRunner;
     this.module = module;
+    this.id = nextRunnerId++;
+  }
+
+  getId() {
+    return this.id;
   }
 
   async run(signatureName) {
@@ -185,12 +197,20 @@ export function wrapLiteRTModule(module) {
       } else {
         t.setName(`js_unnamed_tensor_${unnamedTensorIdx++}`);
       }
+      if (options.storage) {
+        t.storage = options.storage;
+      }
+      t._aliasedBuffers = new Map();
       return t;
     }
     
 
     const shape = options.shape || [1];
     const t = module.createPlaceholderTensor(type.value !== undefined ? type.value : type, shape, options.name || null);
+    if (options.storage) {
+      t.storage = options.storage;
+    }
+    t._aliasedBuffers = new Map();
     return t;
   };
 
@@ -359,9 +379,30 @@ export function wrapLiteRTModule(module) {
           options.accelerators !== undefined ? (typeof options.accelerators === 'object' ? options.accelerators.value : options.accelerators) : (module.HwAccelerators.GPU ? module.HwAccelerators.GPU.value : 2)
         );
         compiledRunner = new LiteRTRunner(rawRunner, module);
+
+        // Multi-Runner Registry and Dynamic Buffer Aliasing!
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] && args[i].storage === 'webgpu') {
+            const internalInput = compiledRunner.getInput(inputNames[i]);
+            const pointerId = internalInput.getWebGpuBuffer();
+            
+            // Register the mapping inside the placeholder's Map
+            args[i]._aliasedBuffers.set(compiledRunner.getId(), pointerId);
+            
+            // Override getWebGpuBuffer to fetch contextually based on target compiled runner
+            args[i].getWebGpuBuffer = function(targetRunner) {
+              const runnerKey = targetRunner ? (targetRunner.getId ? targetRunner.getId() : targetRunner) : Array.from(this._aliasedBuffers.keys())[0];
+              const ptr = this._aliasedBuffers.get(runnerKey);
+              return ptr ? module.WebGPU.getJsObject(ptr) : null;
+            };
+          }
+        }
       }
 
+      const runnerId = compiledRunner.getId();
       for (let i = 0; i < args.length; i++) {
+        // Self-healing bypass check: skip only if natively aliased to this specific runner!
+        if (args[i] && args[i]._aliasedBuffers && args[i]._aliasedBuffers.has(runnerId)) continue;
         compiledRunner.setInput(inputNames[i], args[i]);
       }
 
@@ -476,7 +517,9 @@ export function wrapLiteRTModule(module) {
         }
 
         const inputNames = sigInputNames[sigName];
+        const runnerId = compiledRunner.getId();
         for (let i = 0; i < args.length; i++) {
+          if (args[i] && args[i]._aliasedBuffers && args[i]._aliasedBuffers.has(runnerId)) continue;
           compiledRunner.setInput(sigName, inputNames[i], args[i]);
         }
 
@@ -494,6 +537,31 @@ export function wrapLiteRTModule(module) {
       }
       compilationPromise = compileAll(sampleInputs);
       await compilationPromise;
+
+      // Multi-Runner Registry and Dynamic Buffer Aliasing for jitMulti!
+      if (sampleInputs && typeof sampleInputs === 'object' && sampleInputs !== null) {
+        for (const [sigName, sigArgs] of Object.entries(sampleInputs)) {
+          if (Array.isArray(sigArgs)) {
+            const inputNames = sigInputNames[sigName];
+            for (let i = 0; i < sigArgs.length; i++) {
+              if (sigArgs[i] && sigArgs[i].storage === 'webgpu') {
+                const internalInput = compiledRunner.getInput(sigName, inputNames[i]);
+                const pointerId = internalInput.getWebGpuBuffer();
+                
+                // Register the mapping inside the placeholder's Map
+                sigArgs[i]._aliasedBuffers.set(compiledRunner.getId(), pointerId);
+                
+                // Override getWebGpuBuffer contextually
+                sigArgs[i].getWebGpuBuffer = function(targetRunner) {
+                  const runnerKey = targetRunner ? (targetRunner.getId ? targetRunner.getId() : targetRunner) : Array.from(this._aliasedBuffers.keys())[0];
+                  const ptr = this._aliasedBuffers.get(runnerKey);
+                  return ptr ? module.WebGPU.getJsObject(ptr) : null;
+                };
+              }
+            }
+          }
+        }
+      }
     };
 
     return jittedObject;

@@ -66,7 +66,7 @@
       video.srcObject = stream;
       await video.play();
       // 1. Allocate intermediate persistent Tensors
-      const rawImage = litert.createTensor({ type: "FP32", shape: [1, 512, 512, 3], name: "raw_image" });
+      const rawImage = litert.createTensor({ type: "FP32", shape: [1, 512, 512, 3], name: "raw_image", storage: "webgpu" });
       const scaleTensor = litert.createTensor({ type: "FP32", shape: [1], name: "scale" });
       const offsetTensor = litert.createTensor({ type: "FP32", shape: [1], name: "offset" });
       const colors = litert.createTensor({ type: "FP32", shape: [6, 4], name: "colors" });
@@ -106,10 +106,8 @@
       infoDiv.textContent = "Compiling post-processing pipeline...";
       await postprocess.compile(coreRunner.getOutput(0), colors);
 
-      // 6. Extract the persistent WebGPU input buffer of the compiled runner once upfront
-      const preInputTensor = preprocess.getRunner().getInput(preprocess.getInputName(0));
-      const dstBufferIdPre = preInputTensor.getWebGpuBuffer();
-      const dstBufferPre = litert.WebGPU.getJsObject(dstBufferIdPre);
+      // 6. Extract the persistent WebGPU input buffer using the elegant placeholder API
+      const dstBufferPre = rawImage.getWebGpuBuffer();
 
 
 
