@@ -34,6 +34,11 @@
 #include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/tensor.hpp"
+#if defined(__ANDROID__)
+#include <unistd.h>
+#endif
+
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
@@ -48,10 +53,10 @@
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/intel_openvino/bytecode_header.h"
 #include "litert/vendors/intel_openvino/compiler/global_graph.h"
+#include "litert/vendors/intel_openvino/dispatch/npu_hal_wrapper.h"
 #include "litert/vendors/intel_openvino/dispatch/weight_bank_runtime.h"
 
 namespace {
-
 // This class is copied from the OpenVINO codebase with minor modifications
 // for Google C++ Style Guide compliance. It wraps a pre-allocated memory
 // buffer to provide a std::streambuf interface, enabling zero-copy stream
@@ -464,7 +469,82 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
   return {};
 }
 
+struct ov_infer_request_wrapper {
+  std::shared_ptr<ov::InferRequest> object;
+};
+
 litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
+#if defined(__ANDROID__)
+  const LiteRtSchedulingInfo* scheduling_info = GetSchedulingInfo();
+  const bool has_job_priority =
+      scheduling_info != nullptr &&
+      (scheduling_info->fields_mask & kLiteRtSchedulingInfoFieldJobPriority);
+  const litert::openvino::NpuHalHooks& npu_hal_hooks =
+      litert::openvino::GetNpuHalHooks();
+
+  // The HAL library loaded but is missing a required entry point: this is a
+  // broken HAL, not a HAL-less device. Abort instead of silently continuing.
+  if (npu_hal_hooks.load_error) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        "libnpu_hal_hook.so loaded but required symbols are missing");
+  }
+
+  // Route every inference through the NPU HAL whenever the hook is present.
+  // When the caller supplied no job priority, schedule at the default priority
+  // instead of bypassing the HAL.
+  if (npu_hal_hooks.submit_inference_async != nullptr) {
+    const int32_t job_priority =
+        has_job_priority ? scheduling_info->job_priority
+                         : litert::openvino::kDefaultJobPriority;
+    const bool has_original_uid =
+        scheduling_info != nullptr &&
+        (scheduling_info->fields_mask & kLiteRtSchedulingInfoFieldOriginalUid);
+    const int32_t original_uid = has_original_uid
+                                     ? scheduling_info->original_uid
+                                     : static_cast<int32_t>(getuid());
+
+    // Best-effort: some OpenVINO/NPU driver versions expose MODEL_PRIORITY as
+    // read-only on a compiled model. If it can't be set, ignore and continue.
+    try {
+      auto compiled_model = infer_request_.get_compiled_model();
+      compiled_model.set_property(ov::hint::model_priority(
+          litert::openvino::ToOvModelPriority(job_priority)));
+    } catch (const std::exception& e) {
+      LITERT_LOG(LITERT_WARNING,
+                 "NPU HAL model priority not applied, ignoring: %s", e.what());
+    }
+
+    auto wrapper = std::make_unique<ov_infer_request_wrapper>();
+    wrapper->object = std::make_shared<ov::InferRequest>(infer_request_);
+    if (npu_hal_hooks.submit_inference_async(&ctx,
+                                             static_cast<void*>(wrapper.get()),
+                                             job_priority, original_uid) != 0) {
+      infer_request_ = {};
+      return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                "Inference submission rejected by NPU HAL");
+    }
+
+    // Block until the async NPU inference the HAL started has finished, then
+    // release the HAL context and the infer-request wrapper it borrowed. Per
+    // the HAL contract the wrapper (owned by unique_ptr, freed at scope exit)
+    // must outlive npu_hal_release_context().
+    const bool completed = infer_request_.wait_for(
+        std::chrono::milliseconds(kInferRequestTimeoutMs));
+    if (ctx != nullptr) {
+      if (npu_hal_hooks.release_context != nullptr) {
+        npu_hal_hooks.release_context(ctx);
+      }
+      ctx = nullptr;
+    }
+    if (!completed) {
+      return litert::Unexpected(
+          kLiteRtStatusErrorRuntimeFailure,
+          "Failed to execute inference request due to timeout");
+    }
+    return {};
+  }
+#endif
   infer_request_.start_async();
   if (!infer_request_.wait_for(
           std::chrono::milliseconds(kInferRequestTimeoutMs)))

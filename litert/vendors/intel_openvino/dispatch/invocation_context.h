@@ -29,6 +29,7 @@
 #include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
+#include "openvino/runtime/infer_request.hpp"
 
 class LiteRtDispatchDeviceContextT;
 
@@ -102,6 +103,9 @@ class LiteRtDispatchInvocationContextT {
   static constexpr int kInferRequestTimeoutMs = 10000;
 
   std::optional<LiteRtSchedulingInfo> scheduling_info_;
+#if defined(__ANDROID__)
+  void* ctx = nullptr;
+#endif
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
