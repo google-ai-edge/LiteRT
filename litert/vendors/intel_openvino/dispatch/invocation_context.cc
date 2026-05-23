@@ -24,7 +24,11 @@
 #include <istream>
 #include <streambuf>
 #include <string>
+#if defined(__ANDROID__) && defined(ENABLE_NPU_HAL)
+#include <unistd.h>
+#endif
 
+#include "openvino/runtime/properties.hpp"
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/tensor.hpp"
@@ -42,7 +46,19 @@
 #include "litert/vendors/c/litert_dispatch.h"
 
 namespace {
+#if defined(__ANDROID__) && defined(ENABLE_NPU_HAL)
+ov::hint::Priority ToOvModelPriority(int32_t job_priority) {
+  // LiteRT priority is [0, 1000] where lower value means higher priority.
+  if (job_priority <= 333) {
+    return ov::hint::Priority::HIGH;
+  }
+  if (job_priority <= 666) {
+    return ov::hint::Priority::MEDIUM;
+  }
+  return ov::hint::Priority::LOW;
+}
 
+#endif
 // This class is copied from the OpenVINO codebase with minor modifications
 // for Google C++ Style Guide compliance. It wraps a pre-allocated memory
 // buffer to provide a std::streambuf interface, enabling zero-copy stream
@@ -251,8 +267,49 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
   return {};
 }
 
+struct ov_infer_request_wrapper {
+  std::shared_ptr<ov::InferRequest> object;
+};
+
 litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
+#if defined(__ANDROID__) && defined(ENABLE_NPU_HAL)
+  const LiteRtSchedulingInfo* scheduling_info = GetSchedulingInfo();
+  if (scheduling_info == nullptr) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorInvalidArgument,
+        "Scheduling info with job priority is required for Android NPU HAL");
+  }
+  if (!(scheduling_info->fields_mask & kLiteRtSchedulingInfoFieldJobPriority)) {
+    LITERT_LOG(LITERT_INFO, "Scheduling with default priority setting");
+    infer_request_.start_async();
+  }
+
+  try {
+    auto compiled_model = infer_request_.get_compiled_model();
+    compiled_model.set_property(
+      ov::hint::model_priority(
+        ToOvModelPriority(scheduling_info->job_priority)));
+  } catch (const ov::Exception& e) {
+    return litert::Unexpected(
+      kLiteRtStatusErrorRuntimeFailure,
+      absl::StrFormat("Failed to set OpenVINO model priority: %s",
+              e.what()));
+  }
+
+  auto* wrapper = new ov_infer_request_wrapper();
+  wrapper->object = std::make_shared<ov::InferRequest>(infer_request_);
+  if (npu_hal_submit_inference_async(&ctx, static_cast<void*>(wrapper),
+                     scheduling_info->job_priority,
+                     scheduling_info->original_uid) != 0) {
+    infer_request_ = {};
+    delete wrapper;
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Inference submission rejected by NPU HAL");
+  }
+#else
+
   infer_request_.start_async();
+#endif
   if (!infer_request_.wait_for(
           std::chrono::milliseconds(kInferRequestTimeoutMs)))
     return litert::Unexpected(

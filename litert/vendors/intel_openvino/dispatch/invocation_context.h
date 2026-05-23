@@ -26,6 +26,9 @@
 #include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
+#if defined(__ANDROID__) && defined(ENABLE_NPU_HAL)
+#include "litert/vendors/intel_openvino/dispatch/npu_hal_hook/npu_hal_hook.h"
+#endif
 
 class LiteRtDispatchDeviceContextT;
 
@@ -91,6 +94,9 @@ class LiteRtDispatchInvocationContextT {
   static constexpr int kInferRequestTimeoutMs = 10000;
 
   std::optional<LiteRtSchedulingInfo> scheduling_info_;
+#if defined(__ANDROID__) && defined(ENABLE_NPU_HAL)
+  npu_hal_context_t* ctx = nullptr;
+#endif
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
