@@ -316,6 +316,14 @@ else()
   message(STATUS "Skipping OpenVINO dispatch: openvino/openvino.hpp not found")
 endif()
 
+# Hailo
+check_include_file_cxx("hailo/hailort.hpp" HAVE_HAILO_HDR)
+if(HAVE_HAILO_HDR)
+  _litert_add_dispatch_so(Hailo "hailo/dispatch" "Hailo")
+else()
+  message(STATUS "Skipping Hailo dispatch: hailo/hailort.hpp not found")
+endif()
+
 # Qualcomm
 option(LITERT_ENABLE_QUALCOMM "Enable Qualcomm dispatch build (requires QNN SDK headers/libs)" OFF)
 if(QAIRT_HEADERS_DIR AND NOT LITERT_ENABLE_QUALCOMM)

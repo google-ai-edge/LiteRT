@@ -374,3 +374,9 @@ openvino_configure()
 load("//third_party/exynos_ai_litecore:workspace.bzl", "exynos_ai_litecore")
 
 exynos_ai_litecore()
+
+# HAILO NPU ---------------------------------------------------------------------------------------
+load("//third_party/hailo:hailo.bzl", "hailo_configure")
+
+hailo_configure()
+
