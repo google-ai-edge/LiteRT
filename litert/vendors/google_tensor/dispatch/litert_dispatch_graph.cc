@@ -153,8 +153,6 @@ LiteRtStatus LiteRtDispatchGraphT::ConnectPositionalNodeInput(
                                gt::ToThrEdgeId(edge_id)),
       "Failed to connect positional node %" PRIu64 " to input edge %" PRIu64,
       node_id, edge_id);
-
-  input_edge_ids_.insert_or_assign(input_edge_ids_.size(), edge_id);
   return kLiteRtStatusOk;
 }
 
@@ -165,8 +163,6 @@ LiteRtStatus LiteRtDispatchGraphT::ConnectPositionalNodeOutput(
                                 gt::ToThrEdgeId(edge_id)),
       "Failed to connect positional node %" PRIu64 " to output edge %" PRIu64,
       node_id, edge_id);
-
-  output_edge_ids_.insert_or_assign(output_edge_ids_.size(), edge_id);
   return kLiteRtStatusOk;
 }
 
@@ -194,8 +190,6 @@ LiteRtStatus LiteRtDispatchGraphT::ConnectIndexedNodeInput(
                             "Failed to connect indexed node %" PRIu64
                             " to input edge %" PRIu64 " at index %d",
                             node_id, edge_id, input_index);
-
-  input_edge_ids_.insert_or_assign(input_index, edge_id);
   return kLiteRtStatusOk;
 }
 
@@ -209,7 +203,6 @@ LiteRtStatus LiteRtDispatchGraphT::ConnectIndexedNodeOutput(
                             " to output edge %" PRIu64 " at index %d",
                             node_id, edge_id, output_index);
 
-  output_edge_ids_.insert_or_assign(output_index, edge_id);
   return kLiteRtStatusOk;
 }
 
@@ -222,20 +215,36 @@ LiteRtStatus LiteRtDispatchGraphT::AddEdge(LiteRtDispatchEdgeId edge_id) {
 }
 
 LiteRtStatus LiteRtDispatchGraphT::ConnectGraphInput(
-    LiteRtDispatchEdgeId edge_id) {
+    int input_index, LiteRtDispatchEdgeId edge_id) {
   GT_LOG_RETURN_IF_SB_ERROR(
       thrGraphSetInputEdge(thr_graph_, gt::ToThrEdgeId(edge_id)),
       "Failed to set input edge %" PRIu64 " on SB graph", edge_id);
-
+  auto [it, inserted] = input_edge_ids_.insert({input_index, edge_id});
+  if (!inserted) {
+    LITERT_LOG(LITERT_ERROR,
+               "Received duplicate connection request for graph input on "
+               "position %d with edge_id %" PRIu64 ". Already connected to "
+               "edge_id %" PRIu64 ".",
+               input_index, edge_id, it->second);
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtDispatchGraphT::ConnectGraphOutput(
-    LiteRtDispatchEdgeId edge_id) {
+    int output_index, LiteRtDispatchEdgeId edge_id) {
   GT_LOG_RETURN_IF_SB_ERROR(
       thrGraphSetOutputEdge(thr_graph_, gt::ToThrEdgeId(edge_id)),
       "Failed to set output edge %" PRIu64 " on SB graph", edge_id);
-
+  auto [it, inserted] = output_edge_ids_.insert({output_index, edge_id});
+  if (!inserted) {
+    LITERT_LOG(LITERT_ERROR,
+               "Received duplicate connection request for graph output on "
+               "position %d with edge_id %" PRIu64 ". Already connected to "
+               "edge_id %" PRIu64 ".",
+               output_index, edge_id, it->second);
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   return kLiteRtStatusOk;
 }
 
