@@ -376,6 +376,7 @@ cc_library(
     hdrs = ["outstream.h"],
     deps = [
         "//litert/c/internal:litert_logging",
+        "//litert/core:filesystem",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
     ],
