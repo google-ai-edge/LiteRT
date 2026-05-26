@@ -15,7 +15,10 @@
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 
 #include <cstddef>
+#include <string>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -32,6 +35,7 @@ struct Payload {
   const void* alloc_base = nullptr;
   // File descriptor for the backing file of the allocation.
   int alloc_base_fd = -1;
+  absl::flat_hash_map<std::string, LiteRtJitExecutable> jit_executable_handles;
   // Byte offset of alloc_base in the backing file when alloc_base_fd is used.
   size_t alloc_base_file_offset = 0;
   // Size in bytes of the model rooted at alloc_base.
@@ -80,6 +84,23 @@ Expected<void> DispatchDelegateOptions::SetAllocBaseFd(int alloc_base_fd) {
 Expected<int> DispatchDelegateOptions::GetAllocBaseFd() {
   LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
   return payload->alloc_base_fd;
+}
+
+Expected<void> DispatchDelegateOptions::AddExecHandle(
+    absl::string_view name, LiteRtJitExecutable handle) {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  payload->jit_executable_handles[name] = handle;
+  return {};
+}
+
+Expected<LiteRtJitExecutable> DispatchDelegateOptions::GetExecHandle(
+    absl::string_view name) {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  auto it = payload->jit_executable_handles.find(name);
+  if (it != payload->jit_executable_handles.end()) {
+    return it->second;
+  }
+  return nullptr;
 }
 
 Expected<void> DispatchDelegateOptions::SetAllocBaseFileOffset(

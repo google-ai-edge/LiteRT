@@ -128,13 +128,15 @@ std::string GetTfliteFilePath(absl::string_view filename) {
 std::string GetLiteRtPath(absl::string_view rel_path) {
   const auto runfiles_path = GetRunfilesLiteRtPath(rel_path);
   if (!runfiles_path.empty() && internal::Exists(runfiles_path)) {
-    return runfiles_path;
+    return std::filesystem::absolute(runfiles_path).string();
   }
+  std::string fallback;
   if constexpr (!IsOss()) {
-    return internal::Join({kBaseDir, kInternalPrefx, kLiteRtDir, rel_path});
+    fallback = internal::Join({kBaseDir, kInternalPrefx, kLiteRtDir, rel_path});
   } else {
-    return internal::Join({kBaseDir, kLiteRtDir, rel_path});
+    fallback = internal::Join({kBaseDir, kLiteRtDir, rel_path});
   }
+  return std::filesystem::absolute(fallback).string();
 }
 
 ExtendedModel LoadTestFileModel(absl::string_view filename) {

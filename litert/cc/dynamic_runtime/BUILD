@@ -424,6 +424,10 @@ cc_test(
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
     ],
+    features = select({
+        "//litert:windows": ["-static_link_msvcrt"],
+        "//conditions:default": [],
+    }),
     # Things allocated accros ABI boundaries are causing mismatched-size-delete.
     # use system_malloc, and gunit_main_no_heapcheck to avoid this. Those workaound will be removed
     # once in OSS.

@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -62,6 +63,11 @@ class CompiledResult {
   // There will be oe entry point for each subgraph compiled for.
   Expected<CallInformation> CallInfo(LiteRtParamIndex call_idx) const;
 
+  // Get the opaque JIT executable handle to the compiled artifact for JIT
+  // execution.
+  Expected<LiteRtJitExecutable> GetHandle(
+      LiteRtParamIndex byte_code_idx = 0) const;
+
   // Get the number of entry points in the compiled module. This will be equal
   // to the number of subgraphs passed to the compilation step.
   Expected<LiteRtParamIndex> NumCalls() const;
@@ -69,8 +75,8 @@ class CompiledResult {
   explicit CompiledResult(const LiteRtCompilerPluginApi& parent)
       : parent_(parent) {}
 
-  CompiledResult(CompiledResult&& other);
-  CompiledResult& operator=(CompiledResult&& other);
+  CompiledResult(CompiledResult&& other) noexcept;
+  CompiledResult& operator=(CompiledResult&& other) noexcept;
   CompiledResult(const CompiledResult& other) = delete;
   CompiledResult& operator=(const CompiledResult& other) = delete;
 
@@ -209,18 +215,43 @@ Expected<PartitionResult> PartitionModel(
 Expected<PartitionResult> PartitionModelDirect(
     std::vector<LiteRtOpWithPartitionIndex> selected_ops, LiteRtModelT& model);
 
+// Note: The following C++ structures and functions are internal utilities
+// used within the LiteRT Runtime library (e.g., by CompiledModel).
+// They are NOT exposed to or used by vendor compiler plugins, which only
+// interact via the ABI-stable C API (litert_compiler_plugin.h).
+// Therefore, they are safe from ABI version mismatches across the shared
+// library boundary.
+struct ApplyPluginsResult {
+  size_t num_applied_plugins;
+  std::string success_message;
+  std::string error_message;
+
+  // Keep the compiler plugins (and their loaded DLLs) alive.
+  // MUST be declared before compiled_results so it is destroyed
+  // AFTER compiled_results!
+  std::vector<CompilerPlugin> compiler_plugins;
+
+  // Holds opaque JIT executable handles keyed by the dispatch op name.
+  absl::flat_hash_map<std::string, LiteRtJitExecutable> jit_executable_handles;
+
+  // Keep the compiled results alive.
+  std::vector<CompiledResult> compiled_results;
+};
+
 // Applies both the partition and compile steps to the model. Generated
 // byte_code will be internalized within the model for later serialization.
 Expected<void> ApplyPlugin(
     CompilerPlugin& compiler_plugin, LiteRtModelT& model,
-    absl::string_view soc_model = "",
-    const absl::flat_hash_set<uint32_t>& subgraphs_to_partition = {});
+    absl::string_view soc_model,
+    const absl::flat_hash_set<uint32_t>& subgraphs_to_partition,
+    ApplyPluginsResult& result);
 
 // Applies the compilation step to the model given a predetermined partition.
 Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
                                         LiteRtModelT& model,
                                         PartitionResult partitions,
-                                        absl::string_view soc_model = "");
+                                        absl::string_view soc_model,
+                                        ApplyPluginsResult& result);
 
 // Applies the transformation registered by vendor plugin to the model.
 Expected<void> TransformModel(CompilerPlugin& compiler_plugin,
@@ -233,11 +264,6 @@ Expected<void> TransformModel(CompilerPlugin& compiler_plugin,
 // plugins that were successfully applied, and (3) a string listing the compiler
 // plugins that failed to apply with an associated error message. This mutates
 // the given model.
-struct ApplyPluginsResult {
-  size_t num_applied_plugins;
-  std::string success_message;
-  std::string error_message;
-};
 
 Expected<ApplyPluginsResult> ApplyPlugins(
     LiteRtEnvironment environment, LiteRtOptions options, LiteRtModel model,

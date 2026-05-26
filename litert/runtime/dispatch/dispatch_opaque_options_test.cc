@@ -17,6 +17,7 @@
 #include <cstddef>
 
 #include <gtest/gtest.h>
+#include "litert/c/litert_common.h"
 #include "litert/cc/litert_opaque_options.h"
 
 namespace litert::internal {
@@ -71,6 +72,32 @@ TEST(DispatchDelegateOptionsTest, SetAllocBaseFd) {
   auto alloc_base_fd = options->GetAllocBaseFd();
   ASSERT_TRUE(alloc_base_fd);
   ASSERT_EQ(*alloc_base_fd, dummy_fd);
+}
+
+TEST(DispatchDelegateOptionsTest, GetExecHandleNotFound) {
+  auto options = DispatchDelegateOptions::Create();
+  ASSERT_TRUE(options);
+
+  auto handle_or = options->GetExecHandle("nonexistent_op");
+  ASSERT_TRUE(handle_or.HasValue());
+  EXPECT_EQ(handle_or.Value(), nullptr);
+}
+
+TEST(DispatchDelegateOptionsTest, AddAndGetExecHandle) {
+  auto options = DispatchDelegateOptions::Create();
+  ASSERT_TRUE(options);
+
+  int dummy_val = 1;
+  void* dummy_addr = &dummy_val;
+
+  auto status = options->AddExecHandle(
+      "my_op", reinterpret_cast<LiteRtJitExecutable>(dummy_addr));
+  ASSERT_TRUE(status.HasValue());
+
+  auto handle_or = options->GetExecHandle("my_op");
+  ASSERT_TRUE(handle_or.HasValue());
+  EXPECT_EQ(handle_or.Value(),
+            reinterpret_cast<LiteRtJitExecutable>(dummy_addr));
 }
 
 TEST(DispatchDelegateOptionsTest, SetAllocBaseFileRegion) {

@@ -71,6 +71,9 @@ LITERT_DEFINE_HANDLE(LiteRtAccelerator);
 LITERT_DEFINE_HANDLE(LiteRtDelegateWrapper);
 // LiteRT CompiledModel object. (litert_compiled_model.h)
 LITERT_DEFINE_HANDLE(LiteRtCompiledModel);
+// Opaque handle to a JIT compiled executable. (LiteRtJitExecutableT is
+// intentionally left out as an opaque type)
+LITERT_DEFINE_HANDLE(LiteRtJitExecutable);
 // LiteRT Environment object. (litert_environment.h)
 LITERT_DEFINE_HANDLE(LiteRtEnvironment);
 // LiteRT EnvironmentOptions object. (litert_environment_options.h)
@@ -404,7 +407,7 @@ typedef size_t LiteRtParamIndex;
 // allocated by posix_memalign() for cross-platform compatibility.
 // https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/aligned-malloc?view=msvc-170
 // litert_ prefix is added to avoid name conflicts with one defined in
-// base/port.h, for example, included in unittests.
+// base/port.h, for example, included in unit tests.
 #define litert_aligned_free _aligned_free
 
 #else  // _WIN32

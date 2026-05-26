@@ -113,6 +113,8 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_handle",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -121,6 +123,7 @@ cc_test(
     srcs = ["dispatch_opaque_options_test.cc"],
     deps = [
         ":dispatch_opaque_options",
+        "//litert/c:litert_common",
         "//litert/cc:litert_opaque_options",
         "@com_google_googletest//:gtest_main",
     ],
