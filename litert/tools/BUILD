@@ -592,6 +592,7 @@ cc_binary(
     deps = [
         "//litert/c:litert_model_types",
         "//litert/cc:litert_element_type",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_model",
         "//litert/cc:litert_model_types",
@@ -773,6 +774,7 @@ cc_binary(
         ":tool_display",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
         "//litert/cc/internal:litert_logging",

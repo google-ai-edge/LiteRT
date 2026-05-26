@@ -47,7 +47,8 @@ extern "C" {
 // Model
 //
 
-LiteRtStatus LiteRtCreateModelFromFile(const char* filename,
+LiteRtStatus LiteRtCreateModelFromFile(LiteRtEnvironment environment,
+                                       const char* filename,
                                        LiteRtModel* model) {
   if (!filename || !model) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -59,7 +60,8 @@ LiteRtStatus LiteRtCreateModelFromFile(const char* filename,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtCreateModelFromBuffer(const void* buffer_addr,
+LiteRtStatus LiteRtCreateModelFromBuffer(LiteRtEnvironment environment,
+                                         const void* buffer_addr,
                                          size_t buffer_size,
                                          LiteRtModel* model) {
   if (!buffer_addr || !buffer_size || !model) {
@@ -74,7 +76,8 @@ LiteRtStatus LiteRtCreateModelFromBuffer(const void* buffer_addr,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtCreateModelFromFd(int fd, size_t offset, size_t size,
+LiteRtStatus LiteRtCreateModelFromFd(LiteRtEnvironment environment, int fd,
+                                     size_t offset, size_t size,
                                      LiteRtModel* model) {
   if (fd < 0 || size == 0 || !model) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -693,7 +696,8 @@ LiteRtStatus LiteRtGetPerChannelQuantization(
 #endif
 
 LiteRtStatus LiteRtCreateModelFromAllocation(
-    std::unique_ptr<tflite::Allocation> allocation, LiteRtModel* model) {
+    LiteRtEnvironment env, std::unique_ptr<tflite::Allocation> allocation,
+    LiteRtModel* model) {
   if (!model) {
     return kLiteRtStatusErrorInvalidArgument;
   }

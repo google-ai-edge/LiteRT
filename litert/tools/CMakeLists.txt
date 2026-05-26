@@ -483,16 +483,18 @@ endif()
 
 # Platform-specific configurations for all executables
 if(LITERT_PLATFORM_ANDROID)
-    target_link_libraries(run_model PRIVATE ${LOG_LIB})
     target_link_libraries(analyze_model PRIVATE ${LOG_LIB})
     target_link_libraries(apply_plugin_main PRIVATE ${LOG_LIB})
     target_link_libraries(extract_bytecode PRIVATE ${LOG_LIB})
+    target_link_libraries(run_model PRIVATE ${LOG_LIB})
     # Statically link TFLite GPU/GL core objects for tool executables on Android.
     if(TARGET litert_tflite_gpu_gl_core)
-        target_link_libraries(npu_numerics_check PRIVATE litert_tflite_gpu_gl_core)
-        target_link_libraries(litert_npu_numerics_check PRIVATE litert_tflite_gpu_gl_core)
-        target_link_libraries(run_model PRIVATE litert_tflite_gpu_gl_core)
+        target_link_libraries(analyze_model PRIVATE litert_tflite_gpu_gl_core)
         target_link_libraries(apply_plugin_main PRIVATE litert_tflite_gpu_gl_core)
+        target_link_libraries(extract_bytecode PRIVATE litert_tflite_gpu_gl_core)
+        target_link_libraries(litert_npu_numerics_check PRIVATE litert_tflite_gpu_gl_core)
+        target_link_libraries(npu_numerics_check PRIVATE litert_tflite_gpu_gl_core)
+        target_link_libraries(run_model PRIVATE litert_tflite_gpu_gl_core)
     endif()
 endif()
 

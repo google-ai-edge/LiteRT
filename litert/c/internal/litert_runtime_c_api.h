@@ -231,10 +231,12 @@ typedef struct LiteRtRuntimeCApiStruct {
   // LiteRtModel
   //
   // litert_model.h: LiteRtCreateModelFromFile
-  LiteRtStatus (*litert_create_model_from_file)(const char* filename,
+  LiteRtStatus (*litert_create_model_from_file)(LiteRtEnvironment environment,
+                                                const char* filename,
                                                 LiteRtModel* model);
   // litert_model.h: LiteRtCreateModelFromBuffer
-  LiteRtStatus (*litert_create_model_from_buffer)(const void* buffer_addr,
+  LiteRtStatus (*litert_create_model_from_buffer)(LiteRtEnvironment environment,
+                                                  const void* buffer_addr,
                                                   size_t buffer_size,
                                                   LiteRtModel* model);
   // litert_model.h: LiteRtGetModelMetadata
@@ -749,7 +751,8 @@ typedef struct LiteRtRuntimeCApiStruct {
       LiteRtEnvironment environment, bool* is_supported);
 
   // litert_model.h: LiteRtCreateModelFromFd
-  LiteRtStatus (*litert_create_model_from_fd)(int fd, size_t offset,
+  LiteRtStatus (*litert_create_model_from_fd)(LiteRtEnvironment environment,
+                                              int fd, size_t offset,
                                               size_t size, LiteRtModel* model);
 } LiteRtRuntimeCApiStruct;
 

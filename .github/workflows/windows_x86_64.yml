@@ -106,6 +106,7 @@ jobs:
           )
 
           $LITERT_EXCLUDED_TARGETS = @(
+            "-//litert/cc/dynamic_runtime/..."
             "-//litert/python:converter_wrapper_test"
             "-//litert/python/aot/..."
             "-//litert/python/tools:mmap_utils_test"

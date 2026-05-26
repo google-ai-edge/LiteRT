@@ -175,6 +175,7 @@ cc_library(
         "//litert:litert_public",
     ],
     deps = [
+        ":litert_environment",
         "//litert/cc:litert_api_types",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
@@ -222,6 +223,7 @@ cc_library(
         "//litert:litert_public",
     ],
     deps = [
+        ":litert_environment",
         ":litert_model",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
@@ -318,6 +320,7 @@ cc_test(
         "//litert/cc/internal:scoped_file",
         "//litert/core/model",
         "//litert/test:common",
+        "//litert/test:load_test_model_runtimecapi",
         "//litert/test:matchers",
         "//tflite:stderr_reporter",
         "//tflite/converter:allocation",
@@ -332,6 +335,7 @@ cc_library(
     hdrs = ["//litert/cc/internal:litert_model_predicates.h"],
     visibility = ["//litert:litert_public"],
     deps = [
+        ":litert_environment",
         ":litert_extended_model",
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
@@ -354,7 +358,7 @@ cc_test(
         ":litert_model_predicates",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_element_type",
-        "//litert/test:common",
+        "//litert/test:load_test_model_runtimecapi",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
@@ -452,6 +456,7 @@ cc_test(
         "//litert/core/model:buffer_manager",
         "//litert/core/util:flatbuffer_tools",
         "//litert/test:common",
+        "//litert/test:load_test_model_runtimecapi",
         "//tflite/schema:schema_fbs",
     ],
 )
