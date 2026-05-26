@@ -168,6 +168,14 @@ absl::string_view Options::GetDlcDir() const { return dlc_dir_; }
 
 void Options::SetDlcDir(absl::string_view dlc_dir) { dlc_dir_ = dlc_dir; }
 
+absl::string_view Options::GetGraphTransform() const {
+  return graph_transform_;
+}
+
+void Options::SetGraphTransform(absl::string_view graph_transform) {
+  graph_transform_ = graph_transform;
+}
+
 std::uint32_t Options::GetVtcmSize() const { return vtcm_size_; }
 
 void Options::SetVtcmSize(std::uint32_t vtcm_size) { vtcm_size_ = vtcm_size; }
@@ -258,6 +266,7 @@ GpuPrecision: %d\n\
 DumpTensorIds: %s\n\
 IrJsonDir: %s\n\
 DlcDir: %s\n\
+GraphTransform: %s\n\
 VtcmSize: %d\n\
 HvxThread: %d\n\
 OptimizationLevel: %d\n\
@@ -279,8 +288,8 @@ CustomOpPackage: {\n\
       use_int64_bias_as_int32_, enable_weight_sharing_, enable_just_in_time_,
       use_conv_hmx_, use_fold_relu_, htp_p_point_, htp_performance_mode_,
       dsp_performance_mode_, gpu_performance_mode_, gpu_precision_,
-      dump_tensor_ids, ir_json_dir_, dlc_dir_, vtcm_size_, num_hvx_threads_,
-      optimization_level_, graph_priority_, saver_output_dir_,
+      dump_tensor_ids, ir_json_dir_, dlc_dir_, graph_transform_, vtcm_size_,
+      num_hvx_threads_, optimization_level_, graph_priority_, saver_output_dir_,
       graph_io_tensor_mem_type_, custom_op_package_.name,
       custom_op_package_.interface_provider,
       custom_op_package_.compile_package_path,
