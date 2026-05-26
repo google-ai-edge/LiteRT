@@ -69,6 +69,8 @@ class OpWrapper final {
 
   void AddSuffixToName(absl::string_view suffix);
 
+  size_t GetInputTensorCount() const { return input_tensors_.size(); }
+
  private:
   const char* type_name_{nullptr};
   std::string name_{};  // human readable name

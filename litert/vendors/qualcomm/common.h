@@ -137,6 +137,7 @@ inline LiteRtStatus InitQnnOptions(
       qualcomm_options.GetDspPerformanceMode()));
   qnn_options.SetIrJsonDir(qualcomm_options.GetIrJsonDir());
   qnn_options.SetDlcDir(qualcomm_options.GetDlcDir());
+  qnn_options.SetGraphTransform(qualcomm_options.GetGraphTransform());
   qnn_options.SetVtcmSize(qualcomm_options.GetVtcmSize());
   qnn_options.SetNumHvxThreads(qualcomm_options.GetNumHvxThreads());
   qnn_options.SetOptimizationLevel(static_cast<::qnn::OptimizationLevel>(
