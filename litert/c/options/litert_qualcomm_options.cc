@@ -44,6 +44,8 @@ struct LrtQualcommOptionsT {
   std::optional<bool> use_conv_hmx;
   std::optional<bool> use_fold_relu;
   std::optional<std::int32_t> htp_p_point;
+  std::optional<bool> htp_dlbc;
+  std::optional<bool> htp_dlbc_weights;
   std::optional<LrtQualcommOptionsHtpPerformanceMode> htp_performance_mode;
   std::optional<LrtQualcommOptionsDspPerformanceMode> dsp_performance_mode;
   std::optional<std::vector<std::int32_t>> dump_tensor_ids;
@@ -116,6 +118,14 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           status = LrtQualcommOptionsSetHtpPPoint(parsed_options, *v);
+        } else if (key == "htp_dlbc") {
+          auto v = litert::internal::ParseTomlBool(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetHtpDlbc(parsed_options, *v);
+        } else if (key == "htp_dlbc_weights") {
+          auto v = litert::internal::ParseTomlBool(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetHtpDlbcWeights(parsed_options, *v);
         } else if (key == "htp_performance_mode") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
@@ -244,6 +254,13 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   }
   if (options->htp_p_point.has_value()) {
     toml << "htp_p_point = " << *options->htp_p_point << "\n";
+  }
+  if (options->htp_dlbc.has_value()) {
+    toml << "htp_dlbc = " << (*options->htp_dlbc ? "true" : "false") << "\n";
+  }
+  if (options->htp_dlbc_weights.has_value()) {
+    toml << "htp_dlbc_weights = "
+         << (*options->htp_dlbc_weights ? "true" : "false") << "\n";
   }
   if (options->htp_performance_mode.has_value()) {
     toml << "htp_performance_mode = "
@@ -527,6 +544,50 @@ LiteRtStatus LrtQualcommOptionsGetUseFoldReLU(LrtQualcommOptions options,
   }
 
   *use_fold_relu = options->use_fold_relu.value_or(true);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetHtpDlbc(LrtQualcommOptions options,
+                                          bool htp_dlbc) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->htp_dlbc = htp_dlbc;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetHtpDlbc(LrtQualcommOptions options,
+                                          bool* htp_dlbc) {
+  if (htp_dlbc == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *htp_dlbc = options->htp_dlbc.value_or(false);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetHtpDlbcWeights(LrtQualcommOptions options,
+                                                 bool htp_dlbc_weights) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->htp_dlbc_weights = htp_dlbc_weights;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetHtpDlbcWeights(LrtQualcommOptions options,
+                                                 bool* htp_dlbc_weights) {
+  if (htp_dlbc_weights == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *htp_dlbc_weights = options->htp_dlbc_weights.value_or(false);
 
   return kLiteRtStatusOk;
 }

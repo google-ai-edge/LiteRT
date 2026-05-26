@@ -19,6 +19,8 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "litert/cc/options/litert_qualcomm_options.h"
+#include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/utils/test_utils.h"
@@ -202,6 +204,60 @@ TEST(QnnManagerTest, AdspLibraryPathNoDuplicate) {
   } else {
     unsetenv(kAdsp);
   }
+}
+
+// Tests that InitQnnOptions correctly enforces the DLBC weights vs.
+// weight_sharing mutual exclusivity rule (QAIRT 2.36+ requirement). When both
+// are requested at the public API layer, the bridge must force-off DLBC
+// weights at the core layer.
+TEST(InitQnnOptionsDlbcTest, HtpDlbcWeightsAlonePropagates) {
+  auto qualcomm_options = litert::qualcomm::QualcommOptions::Create();
+  ASSERT_TRUE(qualcomm_options);
+  qualcomm_options->SetEnableWeightSharing(false);
+  qualcomm_options->SetHtpDlbcWeights(true);
+
+  ::qnn::Options qnn_options;
+  ASSERT_EQ(InitQnnOptions(qnn_options, *qualcomm_options), kLiteRtStatusOk);
+  EXPECT_TRUE(qnn_options.GetHtpDlbcWeights());
+}
+
+TEST(InitQnnOptionsDlbcTest, WeightSharingAloneLeavesHtpDlbcDefault) {
+  auto qualcomm_options = litert::qualcomm::QualcommOptions::Create();
+  ASSERT_TRUE(qualcomm_options);
+  qualcomm_options->SetEnableWeightSharing(true);
+
+  ::qnn::Options qnn_options;
+  ASSERT_EQ(InitQnnOptions(qnn_options, *qualcomm_options), kLiteRtStatusOk);
+  EXPECT_TRUE(qnn_options.GetEnableWeightSharing());
+  EXPECT_FALSE(qnn_options.GetHtpDlbcWeights());
+}
+
+TEST(InitQnnOptionsDlbcTest, BothEnabledForcesHtpDlbcWeightsOff) {
+  auto qualcomm_options = litert::qualcomm::QualcommOptions::Create();
+  ASSERT_TRUE(qualcomm_options);
+  qualcomm_options->SetEnableWeightSharing(true);
+  qualcomm_options->SetHtpDlbcWeights(true);
+
+  ::qnn::Options qnn_options;
+  ASSERT_EQ(InitQnnOptions(qnn_options, *qualcomm_options), kLiteRtStatusOk);
+  EXPECT_TRUE(qnn_options.GetEnableWeightSharing());
+  // The bridge silently force-offs to match QAIRT 2.36+ behavior.
+  EXPECT_FALSE(qnn_options.GetHtpDlbcWeights());
+}
+
+// DLBC (activations) is independent of weight_sharing — no mutex enforcement
+// needed there. Sanity-check that it propagates regardless and does not bleed
+// into htp_dlbc_weights.
+TEST(InitQnnOptionsDlbcTest, HtpDlbcUnaffectedByWeightSharing) {
+  auto qualcomm_options = litert::qualcomm::QualcommOptions::Create();
+  ASSERT_TRUE(qualcomm_options);
+  qualcomm_options->SetEnableWeightSharing(true);
+  qualcomm_options->SetHtpDlbc(true);
+
+  ::qnn::Options qnn_options;
+  ASSERT_EQ(InitQnnOptions(qnn_options, *qualcomm_options), kLiteRtStatusOk);
+  EXPECT_TRUE(qnn_options.GetHtpDlbc());
+  EXPECT_FALSE(qnn_options.GetHtpDlbcWeights());
 }
 
 }  // namespace

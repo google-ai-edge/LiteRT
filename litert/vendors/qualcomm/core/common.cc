@@ -128,6 +128,16 @@ void Options::SetHtpPPoint(std::int32_t htp_p_point) {
 
 std::int32_t Options::GetHtpPPoint() const { return htp_p_point_; }
 
+void Options::SetHtpDlbc(bool htp_dlbc) { htp_dlbc_ = htp_dlbc; }
+
+bool Options::GetHtpDlbc() const { return htp_dlbc_; }
+
+void Options::SetHtpDlbcWeights(bool htp_dlbc_weights) {
+  htp_dlbc_weights_ = htp_dlbc_weights;
+}
+
+bool Options::GetHtpDlbcWeights() const { return htp_dlbc_weights_; }
+
 void Options::SetHtpPerformanceMode(HtpPerformanceMode htp_performance_mode) {
   htp_performance_mode_ = htp_performance_mode;
 }
@@ -213,6 +223,8 @@ UseInt64BiasAsInt32: %v\n\
 EnableWeightSharing: %v\n\
 UseConvHMX: %v\n\
 UseFoldReLU: %v\n\
+HtpDlbc: %v\n\
+HtpDlbcWeights: %v\n\
 HtpPPoint: %d\n\
 HtpPerformanceMode: %d\n\
 DspPerformanceMode: %d\n\
@@ -231,10 +243,10 @@ GraphIOTensorMemType: %d\n";  // NOLINT
   return absl::StrFormat(
       kQnnOptionsDumpFormat, log_level_, backend_type_, profiling_,
       use_int64_bias_as_int32_, enable_weight_sharing_, use_conv_hmx_,
-      use_fold_relu_, htp_p_point_, htp_performance_mode_,
-      dsp_performance_mode_, dump_tensor_ids, ir_json_dir_, dlc_dir_,
-      vtcm_size_, num_hvx_threads_, optimization_level_, graph_priority_,
-      saver_output_dir_, graph_io_tensor_mem_type_);
+      use_fold_relu_, htp_dlbc_, htp_dlbc_weights_, htp_p_point_,
+      htp_performance_mode_, dsp_performance_mode_, dump_tensor_ids,
+      ir_json_dir_, dlc_dir_, vtcm_size_, num_hvx_threads_, optimization_level_,
+      graph_priority_, saver_output_dir_, graph_io_tensor_mem_type_);
 }
 
 QnnLog_Callback_t GetDefaultStdOutLogger() { return DefaultStdOutLogger; }
