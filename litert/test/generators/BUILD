@@ -144,6 +144,12 @@ cc_library(
         "//litert/cc/internal:litert_rng",
         "//litert/core/model",
         "//litert/test:simple_buffer",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "//tensor/backends/tflite:arithmetic_tflite",
+        "//tensor/backends/tflite:tflite_flatbuffer_conversion",
         "//tflite/types:half",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -196,6 +202,8 @@ cc_library(
         "//litert/core/model:model_load",
         "//litert/core/model:model_serialize",
         "//litert/core/util:flatbuffer_tools",
+        "//tensor",
+        "//tensor/backends/tflite:tflite_flatbuffer_conversion",
     ],
 )
 

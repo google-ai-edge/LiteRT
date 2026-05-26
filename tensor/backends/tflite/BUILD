@@ -31,6 +31,7 @@ cc_library(
         "//tensor/internal:mixin",
         "//tensor/utils:macros",
         "//tflite/schema:schema_fbs_with_mutable",
+        "//tflite/types:half",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:string_view",

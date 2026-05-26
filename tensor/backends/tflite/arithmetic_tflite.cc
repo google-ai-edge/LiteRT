@@ -118,6 +118,21 @@ OpMixin<Relu6OperationTag, TfLiteMixinTag>::ToTfLite() const {
 }
 
 absl::StatusOr<TfLiteOpBuildInfo>
+OpMixin<ReluN1To1OperationTag, TfLiteMixinTag>::ToTfLite() const {
+  return TfLiteOpBuildInfo(::tflite::BuiltinOperator_RELU_N1_TO_1);
+}
+
+absl::StatusOr<TfLiteOpBuildInfo>
+OpMixin<ZerosLikeOperationTag, TfLiteMixinTag>::ToTfLite() const {
+  return TfLiteOpBuildInfo(::tflite::BuiltinOperator_ZEROS_LIKE);
+}
+
+absl::StatusOr<TfLiteOpBuildInfo>
+OpMixin<Relu0To1OperationTag, TfLiteMixinTag>::ToTfLite() const {
+  return TfLiteOpBuildInfo(::tflite::BuiltinOperator_RELU_0_TO_1);
+}
+
+absl::StatusOr<TfLiteOpBuildInfo>
 OpMixin<LeakyReluOperationTag, TfLiteMixinTag>::ToTfLite() const {
   auto data = dynamic_cast<const LeakyReluOperationData*>(this);
   if (data == nullptr) {

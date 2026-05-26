@@ -166,6 +166,30 @@ Tensor<Mixins...> Relu6(Tensor<Mixins...> a,
 }
 
 template <class... Mixins>
+Tensor<Mixins...> ReluN1To1(Tensor<Mixins...> a,
+                            source_location loc = source_location::current()) {
+  Tensor<Mixins...> output =
+      ElementwiseOp<graph::ReluN1To1Operation<Mixins...>>(loc, a);
+  return output;
+}
+
+template <class... Mixins>
+Tensor<Mixins...> ZerosLike(Tensor<Mixins...> a,
+                            source_location loc = source_location::current()) {
+  Tensor<Mixins...> output =
+      ElementwiseOp<graph::ZerosLikeOperation<Mixins...>>(loc, a);
+  return output;
+}
+
+template <class... Mixins>
+Tensor<Mixins...> Relu0To1(Tensor<Mixins...> a,
+                           source_location loc = source_location::current()) {
+  Tensor<Mixins...> output =
+      ElementwiseOp<graph::Relu0To1Operation<Mixins...>>(loc, a);
+  return output;
+}
+
+template <class... Mixins>
 Tensor<Mixins...> LeakyRelu(Tensor<Mixins...> a, float alpha = 0.2f,
                             source_location loc = source_location::current()) {
   auto op = std::make_shared<graph::LeakyReluOperation<Mixins...>>();

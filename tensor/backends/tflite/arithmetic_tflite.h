@@ -24,10 +24,14 @@ limitations under the License.
 #include "tensor/arithmetic_graph.h"
 #include "tensor/internal/mixin.h"
 #include "tflite/schema/mutable/schema_generated.h"
+#include "tflite/types/half.h"
 
 namespace litert::tensor {
 
 struct TfLiteMixinTag {};
+
+template <>
+struct ApiType<tflite::half> : internal::StorageImpl<Type::kFP16, fp16_t> {};
 
 namespace graph {
 
@@ -84,6 +88,24 @@ class OpMixin<ReluOperationTag, TfLiteMixinTag> : public TfLiteOperation {
 
 template <>
 class OpMixin<Relu6OperationTag, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+};
+
+template <>
+class OpMixin<ReluN1To1OperationTag, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+};
+
+template <>
+class OpMixin<ZerosLikeOperationTag, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+};
+
+template <>
+class OpMixin<Relu0To1OperationTag, TfLiteMixinTag> : public TfLiteOperation {
  public:
   absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
 };

@@ -83,6 +83,27 @@ struct Relu6Operation : virtual Operation,
   absl::string_view GetName() const override { return "Relu6"; }
 };
 
+template <class... Mixins>
+struct ReluN1To1Operation
+    : virtual Operation,
+      virtual OpMixin<struct ReluN1To1OperationTag, Mixins>... {
+  absl::string_view GetName() const override { return "ReluN1To1"; }
+};
+
+template <class... Mixins>
+struct ZerosLikeOperation
+    : virtual Operation,
+      virtual OpMixin<struct ZerosLikeOperationTag, Mixins>... {
+  absl::string_view GetName() const override { return "ZerosLike"; }
+};
+
+template <class... Mixins>
+struct Relu0To1Operation
+    : virtual Operation,
+      virtual OpMixin<struct Relu0To1OperationTag, Mixins>... {
+  absl::string_view GetName() const override { return "Relu0To1"; }
+};
+
 struct LeakyReluOperationData {
   float alpha;
 };
