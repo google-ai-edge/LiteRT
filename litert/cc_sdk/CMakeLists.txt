@@ -60,9 +60,16 @@ find_package(FlatBuffers REQUIRED)
 find_package(opencl_headers QUIET)
 
 # C API library
+if (WIN32)
+    set(LITERT_C_API_LIB_NAME "libLiteRt.dll")
+elseif (APPLE)
+    set(LITERT_C_API_LIB_NAME "libLiteRt.dylib")
+else()
+    set(LITERT_C_API_LIB_NAME "libLiteRt.so")
+endif()
 add_library(litert_c_api SHARED IMPORTED)
 set_target_properties(litert_c_api PROPERTIES
-  IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/libLiteRt.so"
+  IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/${LITERT_C_API_LIB_NAME}"
 )
 
 file(READ ${CMAKE_CURRENT_SOURCE_DIR}/litert_cc_sdk_hdrs.txt FILE_CONTENTS)
