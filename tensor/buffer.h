@@ -30,9 +30,11 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/datatypes.h"
+#include "tensor/internal/type_id.h"
 
 namespace litert::tensor {
 
@@ -101,28 +103,66 @@ class Buffer {
  public:
   virtual ~Buffer() = default;
 
+  // Returns the type identifier of the buffer.
+  //
+  // This should generally be implemented as:
+  //
+  // ```cpp
+  // internal::TypeId GetTypeId() const override {
+  //   return internal::TypeId::Get<TYPE_OF_BUFFER_DERIVED_CLASS>();
+  // }
+  // ```
+  virtual internal::TypeId GetTypeId() const = 0;
+
+  // Returns true if the buffer concrete type corresponds to the given type
+  // identifier.
+  //
+  // This should generally be implemented as:
+  //
+  // ```cpp
+  // bool IsA(internal::TypeId id) const override {
+  //   return id == internal::TypeId::Get<TYPE_OF_BUFFER_DERIVED_CLASS>() ||
+  //      BASE_CLASS::IsA(id);
+  // }
+  // ```
+  virtual bool IsA(internal::TypeId id) const = 0;
+
   // Locks the buffer so that it's accessible from the CPU and returns an RAII
   // object that allows reading the data.
   //
   // Warning: the RAII object may not manage the data lifetime, only whether
   // it's accessible from the cpu or not.
   virtual LockedBufferSpan<const std::byte> Lock() = 0;
-};
-
-class MutableBuffer : public virtual Buffer {
- public:
-  ~MutableBuffer() override = default;
 
   // Locks the buffer so that it's accessible from the CPU and returns an RAII
-  // object that allows reading the data.
+  // object that allows reading and writing the data.
   //
-  // Warning: the RAII object may not manage the data lifetime, only whether
-  // it's accessible from the cpu or not.
-  virtual LockedBufferSpan<std::byte> LockMutable() = 0;
+  // On error, returns an empty span.
+  virtual LockedBufferSpan<std::byte> LockMutable() {
+    return LockedBufferSpan<std::byte>::Empty();
+  }
+
+  // Tries to cast the buffer to the given type T.
+  template <typename T>
+  absl::StatusOr<T&> As() {
+    if (IsA(internal::TypeId::Get<T>())) {
+      return *static_cast<T*>(this);
+    }
+    return absl::InvalidArgumentError("Wrong buffer type.");
+  }
+
+  // Tries to cast the buffer to the given type T.
+  template <typename T>
+  absl::StatusOr<const T&> As() const {
+    if (IsA(internal::TypeId::Get<T>())) {
+      return *static_cast<const T*>(this);
+    }
+    return absl::InvalidArgumentError("Wrong buffer type.");
+  }
 };
 
 // Provides a view to constant data.
-class SpanCpuBuffer : public virtual Buffer {
+class SpanCpuBuffer : public Buffer {
  public:
   SpanCpuBuffer() = default;
   ~SpanCpuBuffer() override = default;
@@ -141,6 +181,13 @@ class SpanCpuBuffer : public virtual Buffer {
   template <class T, size_t N>
   explicit SpanCpuBuffer(const T (&arr)[N])
       : SpanCpuBuffer(reinterpret_cast<const std::byte*>(arr), sizeof(arr)) {}
+
+  internal::TypeId GetTypeId() const override {
+    return internal::TypeId::Get<SpanCpuBuffer>();
+  }
+  bool IsA(internal::TypeId id) const override {
+    return id == internal::TypeId::Get<SpanCpuBuffer>();
+  }
 
   // Locks the buffer so that it's accessible from the CPU and returns an RAII
   // object that allows reading the data.
@@ -172,7 +219,7 @@ class SpanCpuBuffer : public virtual Buffer {
 };
 
 // Provides a view to mutable data.
-class MutableSpanCpuBuffer : public SpanCpuBuffer, public MutableBuffer {
+class MutableSpanCpuBuffer : public SpanCpuBuffer {
  public:
   MutableSpanCpuBuffer() = default;
   ~MutableSpanCpuBuffer() override = default;
@@ -188,6 +235,14 @@ class MutableSpanCpuBuffer : public SpanCpuBuffer, public MutableBuffer {
   // Don't create a mutable span buffer over constant data.
   template <class T, size_t N>
   explicit MutableSpanCpuBuffer(const T (&arr)[N]) = delete;
+
+  internal::TypeId GetTypeId() const override {
+    return internal::TypeId::Get<MutableSpanCpuBuffer>();
+  }
+  bool IsA(internal::TypeId id) const override {
+    return id == internal::TypeId::Get<MutableSpanCpuBuffer>() ||
+           SpanCpuBuffer::IsA(id);
+  }
 
   // Locks the buffer so that it's accessible from the CPU and returns an RAII
   // object that allows reading the data.
@@ -211,7 +266,7 @@ class MutableSpanCpuBuffer : public SpanCpuBuffer, public MutableBuffer {
 };
 
 // Manages tensor data.
-class OwningCpuBuffer : public MutableBuffer {
+class OwningCpuBuffer : public Buffer {
  protected:
   static constexpr struct PassKey {
   } kPass{};
@@ -240,6 +295,13 @@ class OwningCpuBuffer : public MutableBuffer {
     data_ = std::move(other.data_);
     bytes_ = std::exchange(other.bytes_, 0);
     return *this;
+  }
+
+  internal::TypeId GetTypeId() const override {
+    return internal::TypeId::Get<OwningCpuBuffer>();
+  }
+  bool IsA(internal::TypeId id) const override {
+    return id == internal::TypeId::Get<OwningCpuBuffer>();
   }
 
   // Locks the buffer so that it's accessible from the CPU and returns an RAII

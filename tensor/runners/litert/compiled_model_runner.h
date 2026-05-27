@@ -177,10 +177,9 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::BuildModel(
   LITERT_ASSIGN_OR_RETURN(compiled_model_,
                           CompiledModel::Create(env_, model_buffer, options_));
 
-  LITERT_ASSIGN_OR_RETURN(input_buffers_,
-                              compiled_model_.CreateInputBuffers());
+  LITERT_ASSIGN_OR_RETURN(input_buffers_, compiled_model_.CreateInputBuffers());
   LITERT_ASSIGN_OR_RETURN(output_buffers_,
-                              compiled_model_.CreateOutputBuffers());
+                          compiled_model_.CreateOutputBuffers());
   return absl::OkStatus();
 }
 
@@ -204,7 +203,7 @@ CompiledModelRunner<ModelFunctor, Inputs, Outputs>::AddTensorsAsOutputs(
   }
 
   LITERT_ASSIGN_OR_RETURN(auto execution_plan,
-                              GetExecutionPlan(original_output_handles));
+                          GetExecutionPlan(original_output_handles));
   absl::flat_hash_map<const graph::Operation*, int> op_to_id;
   for (int i = 0; i < execution_plan.size(); ++i) {
     op_to_id[execution_plan[i]] = i;
@@ -242,8 +241,7 @@ CompiledModelRunner<ModelFunctor, Inputs, Outputs>::AddTensorsAsOutputs(
             probed_tensor.SetName(probe_it->second);
             output_tensors.push_back(probed_tensor);
           } else {
-            LITERT_RETURN_IF_ERROR(
-                graph::SetName(tensor, probe_it->second));
+            LITERT_RETURN_IF_ERROR(graph::SetName(tensor, probe_it->second));
             output_tensors.push_back(TensorTf(tensor));
           }
         }
@@ -303,14 +301,10 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
 
   for (int i = 0; i < signature.InputNames().size(); ++i) {
     if (signature.InputNames()[i] == name) {
-      auto buffer_or = tensor.GetBuffer();
-      if (!buffer_or.ok()) {
-        return absl::InvalidArgumentError("Tensor has no buffer");
-      }
-      Buffer& buffer = *buffer_or;
-      auto* litert_buffer = dynamic_cast<LitertBuffer*>(&buffer);
-      if (litert_buffer != nullptr) {
-        auto dup_or = litert_buffer->tensor_buffer().Duplicate();
+      LITERT_ASSIGN_OR_RETURN(Buffer & buffer, tensor.GetBuffer());
+      if (auto litert_buffer_or = buffer.As<LitertBuffer>();
+          litert_buffer_or.ok()) {
+        auto dup_or = litert_buffer_or->tensor_buffer().Duplicate();
         if (!dup_or.HasValue()) {
           return absl::InternalError("Failed to duplicate TensorBuffer");
         }
@@ -359,9 +353,9 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetOutput(
         return absl::InvalidArgumentError("Tensor has no buffer");
       }
       Buffer& buffer = *buffer_or;
-      auto* litert_buffer = dynamic_cast<LitertBuffer*>(&buffer);
-      if (litert_buffer != nullptr) {
-        auto dup_or = litert_buffer->tensor_buffer().Duplicate();
+      auto litert_buffer_or = buffer.As<LitertBuffer>();
+      if (litert_buffer_or.ok()) {
+        auto dup_or = litert_buffer_or->tensor_buffer().Duplicate();
         if (!dup_or.HasValue()) {
           return absl::InternalError("Failed to duplicate TensorBuffer");
         }
@@ -407,8 +401,7 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
 
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::Run() {
-  LITERT_RETURN_IF_ERROR(
-      compiled_model_.Run(input_buffers_, output_buffers_));
+  LITERT_RETURN_IF_ERROR(compiled_model_.Run(input_buffers_, output_buffers_));
   return absl::OkStatus();
 }
 
@@ -420,7 +413,7 @@ CompiledModelRunner<ModelFunctor, Inputs, Outputs>::GetFloatOutput(
   for (int i = 0; i < signature.OutputNames().size(); ++i) {
     if (signature.OutputNames()[i] == name) {
       LITERT_ASSIGN_OR_RETURN(auto ranked_tensor_type,
-                                  compiled_model_.GetOutputTensorType(0, i));
+                              compiled_model_.GetOutputTensorType(0, i));
       size_t num_elements = 1;
       for (int dim : ranked_tensor_type.Layout().Dimensions()) {
         num_elements *= dim;
@@ -442,7 +435,7 @@ CompiledModelRunner<ModelFunctor, Inputs, Outputs>::GetInt32Output(
   for (int i = 0; i < signature.OutputNames().size(); ++i) {
     if (signature.OutputNames()[i] == name) {
       LITERT_ASSIGN_OR_RETURN(auto ranked_tensor_type,
-                                  compiled_model_.GetOutputTensorType(0, i));
+                              compiled_model_.GetOutputTensorType(0, i));
       size_t num_elements = 1;
       for (int dim : ranked_tensor_type.Layout().Dimensions()) {
         num_elements *= dim;
@@ -464,7 +457,7 @@ CompiledModelRunner<ModelFunctor, Inputs, Outputs>::GetBoolOutput(
   for (int i = 0; i < signature.OutputNames().size(); ++i) {
     if (signature.OutputNames()[i] == name) {
       LITERT_ASSIGN_OR_RETURN(auto ranked_tensor_type,
-                                  compiled_model_.GetOutputTensorType(0, i));
+                              compiled_model_.GetOutputTensorType(0, i));
       size_t num_elements = 1;
       for (int dim : ranked_tensor_type.Layout().Dimensions()) {
         num_elements *= dim;
@@ -487,7 +480,7 @@ CompiledModelRunner<ModelFunctor, Inputs, Outputs>::GetOutput(
   for (int i = 0; i < signature.OutputNames().size(); ++i) {
     if (signature.OutputNames()[i] == name) {
       LITERT_ASSIGN_OR_RETURN(auto ranked_tensor_type,
-                                  compiled_model_.GetOutputTensorType(0, i));
+                              compiled_model_.GetOutputTensorType(0, i));
 
       auto dup_or = output_buffers_[i].Duplicate();
       if (!dup_or.HasValue()) {

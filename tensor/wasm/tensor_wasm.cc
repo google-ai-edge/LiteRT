@@ -180,12 +180,11 @@ val GetMutableTensorData(const TensorHandle& tensor) {
   }
 
   auto& buffer = *statusor_buf;
-  auto* mutable_buffer = dynamic_cast<litert::tensor::MutableBuffer*>(&buffer);
-  if (!mutable_buffer) {
+  auto span = buffer.LockMutable();
+  if (span.data() == nullptr) {
     return val::null();
   }
 
-  auto span = mutable_buffer->LockMutable();
   const size_t bytes = span.size();
   void* ptr = span.data();
 
@@ -219,11 +218,10 @@ emscripten::val GetTensorWebGpuBufferId(const TensorHandle& tensor) {
   auto statusor_buf = tensor.GetBuffer();
   if (!statusor_buf.ok()) return emscripten::val::null();
 
-  auto* litert_buffer =
-      dynamic_cast<litert::tensor::LitertBuffer*>(&*statusor_buf);
-  if (!litert_buffer) return emscripten::val::null();
+  auto litert_buffer_or = statusor_buf->As<litert::tensor::LitertBuffer>();
+  if (!litert_buffer_or.ok()) return emscripten::val::null();
 
-  auto& tb = litert_buffer->tensor_buffer();
+  auto& tb = litert_buffer_or->tensor_buffer();
   LiteRtTensorBuffer raw_tb = tb.Get();
   auto* tb_t = reinterpret_cast<LiteRtTensorBufferT*>(raw_tb);
 
@@ -914,14 +912,12 @@ EMSCRIPTEN_BINDINGS(litert_tensor_core) {
               return 0;
             }
             auto& buffer = *statusor_buf;
-            auto* mutable_buffer =
-                dynamic_cast<litert::tensor::MutableBuffer*>(&buffer);
-            if (!mutable_buffer) {
-              ABSL_LOG(ERROR) << "JITSI_LOG: getDataPointer: dynamic_cast to "
-                                 "MutableBuffer failed!";
+            auto span = buffer.LockMutable();
+            if (span.data() == nullptr) {
+              ABSL_LOG(ERROR)
+                  << "JITSI_LOG: getDataPointer: LockMutable failed!";
               return 0;
             }
-            auto span = mutable_buffer->LockMutable();
             return reinterpret_cast<uintptr_t>(span.data());
           }) LITERT_EM_ASYNC)
       .function(

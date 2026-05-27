@@ -26,7 +26,6 @@ cc_library(
     deps = [
         ":litert_buffer",
         "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment",
@@ -69,6 +68,7 @@ cc_library(
         "//tensor",
         "//tensor:buffer",
         "//tensor:datatypes",
+        "//tensor/utils:macros",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
@@ -98,6 +98,7 @@ cc_library(
     deps = [
         "//litert/cc:litert_tensor_buffer",
         "//tensor:buffer",
+        "//tensor/internal:type_id",
         "@com_google_absl//absl/log:absl_check",
     ],
 )
@@ -112,6 +113,9 @@ cc_test(
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc:litert_tensor_buffer_types",
+        "//tensor:buffer",
+        "//tensor/internal:type_id",
+        "//tensor/utils:matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )

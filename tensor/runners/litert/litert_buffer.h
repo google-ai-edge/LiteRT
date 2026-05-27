@@ -23,13 +23,14 @@ limitations under the License.
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "litert/cc/litert_tensor_buffer.h"
 #include "tensor/buffer.h"
+#include "tensor/internal/type_id.h"
 
 namespace litert::tensor {
 
 // A custom buffer implementation that wraps a LiteRT TensorBuffer.
 // This allows passing accelerated buffers (e.g., GPU) between runners
 // using the high-level Tensor abstraction.
-class LitertBuffer : public MutableBuffer {
+class LitertBuffer : public Buffer {
  public:
   explicit LitertBuffer(litert::TensorBuffer tensor_buffer)
       : tensor_buffer_(std::move(tensor_buffer)) {}
@@ -37,6 +38,13 @@ class LitertBuffer : public MutableBuffer {
   ~LitertBuffer() override = default;
 
   const litert::TensorBuffer& tensor_buffer() const { return tensor_buffer_; }
+
+  internal::TypeId GetTypeId() const override {
+    return internal::TypeId::Get<LitertBuffer>();
+  }
+  bool IsA(internal::TypeId id) const override {
+    return id == internal::TypeId::Get<LitertBuffer>();
+  }
 
   LockedBufferSpan<const std::byte> Lock() override {
     auto dup_or = tensor_buffer_.Duplicate();

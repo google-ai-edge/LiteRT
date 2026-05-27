@@ -151,29 +151,15 @@ class LitertDynamicRunner {
     if (index >= input_buffers.size())
       return absl::NotFoundError("Index out of bounds");
 
-    auto buffer_or = tensor.GetBuffer();
-    if (!buffer_or.ok()) {
-      return absl::InvalidArgumentError("Tensor has no buffer");
-    }
-
-    Buffer& buffer = *buffer_or;
-    auto* litert_buffer = dynamic_cast<LitertBuffer*>(&buffer);
-    if (litert_buffer != nullptr) {
-      auto dup_or = litert_buffer->tensor_buffer().Duplicate();
-      if (!dup_or.HasValue()) {
-        return absl::InternalError("Failed to duplicate TensorBuffer");
-      }
-      input_buffers[index] = std::move(*dup_or);
-
+    LITERT_ASSIGN_OR_RETURN(Buffer & buffer, tensor.GetBuffer());
+    auto litert_buffer_or = buffer.As<LitertBuffer>();
+    if (litert_buffer_or.ok()) {
+      LITERT_ASSIGN_OR_RETURN(input_buffers[index],
+                              litert_buffer_or->tensor_buffer().Duplicate());
     } else {
-      auto locked_span = buffer.Lock();
-      auto span = absl::MakeConstSpan(
-          reinterpret_cast<const uint8_t*>(locked_span.data()),
-          locked_span.size());
-      auto res = input_buffers[index].Write(span);
-      if (!res.HasValue()) {
-        return absl::InternalError("Failed to write input buffer");
-      }
+      auto locked_span = buffer.Lock().As<const uint8_t>();
+      LITERT_RETURN_IF_ERROR(
+          input_buffers[index].Write(absl::Span<const uint8_t>(locked_span)));
     }
     return absl::OkStatus();
   }

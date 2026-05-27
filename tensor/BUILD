@@ -50,6 +50,7 @@ cc_library(
     includes = ["utils"],  # copybara:comment
     deps = [
         "//tensor:datatypes",
+        "//tensor/internal:type_id",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/types:span",
@@ -63,6 +64,7 @@ cc_test(
         ":buffer",
         "//tensor:datatypes",
         "//tensor/internal:matchers",
+        "//tensor/internal:type_id",
         "//tensor/utils:matchers",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_googletest//:gtest_main",

@@ -19,15 +19,22 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
+#include "tensor/buffer.h"
+#include "tensor/internal/type_id.h"
+#include "tensor/utils/matchers.h"
 
 namespace litert::tensor {
 namespace {
+
+using ::litert::tensor::IsOk;
+using ::testing::Not;
 
 TEST(LitertBufferTest, LockAndWrite) {
   auto env_or = Environment::Create({});
@@ -66,6 +73,81 @@ TEST(LitertBufferTest, LockAndWrite) {
     EXPECT_EQ(data[2], 3.0f);
     EXPECT_EQ(data[3], 4.0f);
   }
+}
+
+TEST(LitertBufferTest, GetTypeId) {
+  auto env_or = Environment::Create({});
+  ASSERT_TRUE(env_or.HasValue());
+  auto env = std::move(*env_or);
+
+  LiteRtRankedTensorType c_type;
+  c_type.element_type = kLiteRtElementTypeFloat32;
+  c_type.layout.rank = 2;
+  c_type.layout.dimensions[0] = 1;
+  c_type.layout.dimensions[1] = 4;
+  RankedTensorType tensor_type(c_type);
+
+  auto tb_or = TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory,
+                                           tensor_type, 4 * sizeof(float));
+  ASSERT_TRUE(tb_or.HasValue());
+  auto tb = std::move(*tb_or);
+
+  LitertBuffer buffer(std::move(tb));
+  EXPECT_EQ(buffer.GetTypeId(), internal::TypeId::Get<LitertBuffer>());
+}
+
+TEST(LitertBufferTest, IsA) {
+  auto env_or = Environment::Create({});
+  ASSERT_TRUE(env_or.HasValue());
+  auto env = std::move(*env_or);
+
+  LiteRtRankedTensorType c_type;
+  c_type.element_type = kLiteRtElementTypeFloat32;
+  c_type.layout.rank = 2;
+  c_type.layout.dimensions[0] = 1;
+  c_type.layout.dimensions[1] = 4;
+  RankedTensorType tensor_type(c_type);
+
+  auto tb_or = TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory,
+                                           tensor_type, 4 * sizeof(float));
+  ASSERT_TRUE(tb_or.HasValue());
+  auto tb = std::move(*tb_or);
+
+  LitertBuffer buffer(std::move(tb));
+  EXPECT_TRUE(buffer.IsA(internal::TypeId::Get<LitertBuffer>()));
+  EXPECT_FALSE(buffer.IsA(internal::TypeId::Get<SpanCpuBuffer>()));
+}
+
+TEST(LitertBufferTest, As) {
+  auto env_or = Environment::Create({});
+  ASSERT_TRUE(env_or.HasValue());
+  auto env = std::move(*env_or);
+
+  LiteRtRankedTensorType c_type;
+  c_type.element_type = kLiteRtElementTypeFloat32;
+  c_type.layout.rank = 2;
+  c_type.layout.dimensions[0] = 1;
+  c_type.layout.dimensions[1] = 4;
+  RankedTensorType tensor_type(c_type);
+
+  auto tb_or = TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory,
+                                           tensor_type, 4 * sizeof(float));
+  ASSERT_TRUE(tb_or.HasValue());
+  auto tb = std::move(*tb_or);
+
+  LitertBuffer buffer(std::move(tb));
+  Buffer& buffer_ref = buffer;
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(LitertBuffer & buffer_as,
+                                  buffer_ref.As<LitertBuffer>());
+  EXPECT_EQ(&buffer_as, &buffer);
+  EXPECT_THAT(buffer_ref.As<SpanCpuBuffer>(), Not(IsOk()));
+
+  const Buffer& const_buffer_ref = buffer;
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const LitertBuffer& const_buffer_as,
+                                  const_buffer_ref.As<LitertBuffer>());
+  EXPECT_EQ(&const_buffer_as, &buffer);
+  EXPECT_THAT(const_buffer_ref.As<SpanCpuBuffer>(), Not(IsOk()));
 }
 
 }  // namespace

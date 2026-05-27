@@ -29,6 +29,7 @@ limitations under the License.
 #include "absl/algorithm/container.h"  // from @com_google_absl
 #include "tensor/datatypes.h"
 #include "tensor/internal/matchers.h"
+#include "tensor/internal/type_id.h"
 #include "tensor/utils/matchers.h"
 
 namespace litert::tensor {
@@ -199,6 +200,75 @@ TEST(OwningCpuBuffer, CopyFromBF16) {
   ASSERT_THAT(buffer, NotNull());
   ASSERT_THAT(buffer->LockMutable().As<int>(),
               ElementsAreArray(reference_data));
+}
+
+TEST(BufferTest, GetTypeId) {
+  const int32_t backing_array[] = {1, 2, 3, 4, 5};
+  SpanCpuBuffer span_buffer(backing_array);
+  EXPECT_EQ(span_buffer.GetTypeId(), internal::TypeId::Get<SpanCpuBuffer>());
+
+  int32_t mutable_array[] = {1, 2, 3, 4, 5};
+  MutableSpanCpuBuffer mutable_span_buffer(mutable_array);
+  EXPECT_EQ(mutable_span_buffer.GetTypeId(),
+            internal::TypeId::Get<MutableSpanCpuBuffer>());
+
+  auto owning_buffer = OwningCpuBuffer::Copy(
+      reinterpret_cast<const char*>(backing_array), sizeof(backing_array));
+  EXPECT_EQ(owning_buffer->GetTypeId(),
+            internal::TypeId::Get<OwningCpuBuffer>());
+}
+
+TEST(BufferTest, IsA) {
+  const int32_t backing_array[] = {1, 2, 3, 4, 5};
+  SpanCpuBuffer span_buffer(backing_array);
+  EXPECT_TRUE(span_buffer.IsA(internal::TypeId::Get<SpanCpuBuffer>()));
+  EXPECT_FALSE(span_buffer.IsA(internal::TypeId::Get<MutableSpanCpuBuffer>()));
+  EXPECT_FALSE(span_buffer.IsA(internal::TypeId::Get<OwningCpuBuffer>()));
+
+  int32_t mutable_array[] = {1, 2, 3, 4, 5};
+  MutableSpanCpuBuffer mutable_span_buffer(mutable_array);
+  EXPECT_TRUE(
+      mutable_span_buffer.IsA(internal::TypeId::Get<MutableSpanCpuBuffer>()));
+  EXPECT_TRUE(mutable_span_buffer.IsA(internal::TypeId::Get<SpanCpuBuffer>()));
+  EXPECT_FALSE(
+      mutable_span_buffer.IsA(internal::TypeId::Get<OwningCpuBuffer>()));
+
+  auto owning_buffer = OwningCpuBuffer::Copy(
+      reinterpret_cast<const char*>(backing_array), sizeof(backing_array));
+  EXPECT_TRUE(owning_buffer->IsA(internal::TypeId::Get<OwningCpuBuffer>()));
+  EXPECT_FALSE(owning_buffer->IsA(internal::TypeId::Get<SpanCpuBuffer>()));
+  EXPECT_FALSE(
+      owning_buffer->IsA(internal::TypeId::Get<MutableSpanCpuBuffer>()));
+}
+
+TEST(BufferTest, As) {
+  const int32_t backing_array[] = {1, 2, 3, 4, 5};
+  SpanCpuBuffer span_buffer(backing_array);
+  Buffer& buffer_ref = span_buffer;
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(SpanCpuBuffer & span_buffer_as,
+                                  buffer_ref.As<SpanCpuBuffer>());
+  EXPECT_EQ(&span_buffer_as, &span_buffer);
+  EXPECT_THAT(buffer_ref.As<MutableSpanCpuBuffer>(), Not(IsOk()));
+  EXPECT_THAT(buffer_ref.As<OwningCpuBuffer>(), Not(IsOk()));
+
+  const Buffer& const_buffer_ref = span_buffer;
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const SpanCpuBuffer& const_span_buffer_as,
+                                  const_buffer_ref.As<SpanCpuBuffer>());
+  EXPECT_EQ(&const_span_buffer_as, &span_buffer);
+  EXPECT_THAT(const_buffer_ref.As<MutableSpanCpuBuffer>(), Not(IsOk()));
+  EXPECT_THAT(const_buffer_ref.As<OwningCpuBuffer>(), Not(IsOk()));
+
+  int32_t mutable_array[] = {1, 2, 3, 4, 5};
+  MutableSpanCpuBuffer mutable_span_buffer(mutable_array);
+  Buffer& mutable_buffer_ref = mutable_span_buffer;
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      MutableSpanCpuBuffer & mutable_span_buffer_as,
+      mutable_buffer_ref.As<MutableSpanCpuBuffer>());
+  EXPECT_EQ(&mutable_span_buffer_as, &mutable_span_buffer);
+  EXPECT_THAT(mutable_buffer_ref.As<SpanCpuBuffer>(), IsOk());
+  EXPECT_THAT(mutable_buffer_ref.As<OwningCpuBuffer>(), Not(IsOk()));
 }
 
 }  // namespace
