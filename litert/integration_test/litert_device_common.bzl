@@ -35,6 +35,9 @@ def device_rlocation(label = None, get_parent = False):
     if not label:
         return DEVICE_RLOCATION_ROOT
     abs_label = absolute_label(label)
+    if "exynos_ai_litecore" in abs_label:
+        abs_label = abs_label.replace(":lib_arm64_v8a", ":lib/arm64-v8a/")
+        abs_label = abs_label.replace(":lib_x86_64_linux", ":lib/x86_64-linux/")
     res = DEVICE_RLOCATION_ROOT + "/" + abs_label.replace("@", "external/").replace("//", "").replace(":", "/")
     if get_parent:
         return res[:res.rfind("/")]

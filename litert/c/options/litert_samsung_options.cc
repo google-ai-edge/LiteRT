@@ -67,7 +67,7 @@ LiteRtStatus LrtCreateSamsungOptionsFromToml(const char* toml_payload,
                                   litert::internal::ParseTomlBool(value));
           return kLiteRtStatusOk;
         }
-        if (key == "soc_model") {
+        if (key == "samsung_soc_model") {
           options_ref.soc_model = std::string(value);
           return kLiteRtStatusOk;
         }
