@@ -53,8 +53,7 @@ typedef struct {
                                   LiteRtAccelerator accelerator,
                                   LiteRtOptions options,
                                   LiteRtDelegateWrapper* delegate_wrapper);
-  void (*destroy_delegate)(LiteRtRuntimeContext* runtime_context,
-                           LiteRtDelegateWrapper delegate_wrapper);
+
   LiteRtStatus (*start_metrics_collection)(
       LiteRtRuntimeContext* runtime_context, LiteRtDelegateWrapper delegate,
       int detail_level);
@@ -71,7 +70,7 @@ typedef struct {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtAcceleratorDefV1) == 200,
+static_assert(sizeof(LiteRtAcceleratorDefV1) == 192,
               "LiteRtAcceleratorDefV1 size mismatch");
 static_assert(offsetof(LiteRtAcceleratorDefV1, version) == 0,
               "LiteRtAcceleratorDefV1 version offset mismatch");
@@ -88,14 +87,12 @@ static_assert(
     "offset mismatch");
 static_assert(offsetof(LiteRtAcceleratorDefV1, create_delegate) == 40,
               "LiteRtAcceleratorDefV1 create_delegate offset mismatch");
-static_assert(offsetof(LiteRtAcceleratorDefV1, destroy_delegate) == 48,
-              "LiteRtAcceleratorDefV1 destroy_delegate offset mismatch");
 static_assert(
-    offsetof(LiteRtAcceleratorDefV1, start_metrics_collection) == 56,
+    offsetof(LiteRtAcceleratorDefV1, start_metrics_collection) == 48,
     "LiteRtAcceleratorDefV1 start_metrics_collection offset mismatch");
-static_assert(offsetof(LiteRtAcceleratorDefV1, stop_metrics_collection) == 64,
+static_assert(offsetof(LiteRtAcceleratorDefV1, stop_metrics_collection) == 56,
               "LiteRtAcceleratorDefV1 stop_metrics_collection offset mismatch");
-static_assert(offsetof(LiteRtAcceleratorDefV1, buffer_handlers) == 72,
+static_assert(offsetof(LiteRtAcceleratorDefV1, buffer_handlers) == 64,
               "LiteRtAcceleratorDefV1 buffer_handlers offset mismatch");
 #endif  // __cplusplus
 

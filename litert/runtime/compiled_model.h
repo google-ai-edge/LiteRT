@@ -276,7 +276,7 @@ class LiteRtCompiledModelT {
   // A opaque delegate and its metrics collection functions.
   struct Delegate {
     std::unique_ptr<LiteRtDelegateWrapperT,
-                    std::function<void(LiteRtDelegateWrapper)>>
+                    void (*)(LiteRtDelegateWrapper)>
         delegate;
     // NOLINTBEGIN(*-readability-class-member-naming)
     // Starts collection of HW-specific metrics at a specific level of detail.

@@ -78,9 +78,7 @@ LiteRtStatus LiteRtSetDelegateFunction(
                                    LiteRtEnvironment env,
                                    LiteRtAccelerator accelerator,
                                    LiteRtOptions options,
-                                   LiteRtDelegateWrapper* delegate),
-    void (*DestroyDelegate)(LiteRtRuntimeContext* runtime_context,
-                            LiteRtDelegateWrapper delegate));
+                                   LiteRtDelegateWrapper* delegate));
 
 // Sets the function used to surface whether the delegate created by the
 // accelerator does JIT compilation or not.

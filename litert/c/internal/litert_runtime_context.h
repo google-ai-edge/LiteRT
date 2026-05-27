@@ -92,6 +92,7 @@ typedef struct LiteRtRuntimeContext {
                                          const LiteRtEnvOption* options);
 
   LiteRtStatus (*wrap_delegate)(TfLiteOpaqueDelegate* delegate,
+                                void (*deleter)(TfLiteOpaqueDelegate*),
                                 LiteRtDelegateWrapper* wrapper);
   LiteRtStatus (*unwrap_delegate)(LiteRtDelegateWrapper wrapper,
                                   TfLiteOpaqueDelegate** delegate);

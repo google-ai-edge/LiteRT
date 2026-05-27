@@ -63,8 +63,6 @@ class DummyAccelerator {
     return kLiteRtStatusOk;
   }
 
-  static void DestroyDelegate(LiteRtRuntimeContext* runtime_context,
-                              LiteRtDelegateWrapper delegate) {}
 
   LiteRtHwAccelerators hardware_support_;
 };
@@ -99,13 +97,11 @@ TEST(LiteRtAcceleratorRegistrationTest, SetAcceleratorGetHardwareSupportWorks) {
 
 TEST(LiteRtAcceleratorRegistrationTest, SetDelegateFunctionsWorks) {
   LiteRtAcceleratorT accelerator;
-  EXPECT_EQ(LiteRtSetDelegateFunction(nullptr, DummyAccelerator::CreateDelegate,
-                                      DummyAccelerator::DestroyDelegate),
-            kLiteRtStatusErrorInvalidArgument);
-  LiteRtSetDelegateFunction(&accelerator, DummyAccelerator::CreateDelegate,
-                            DummyAccelerator::DestroyDelegate);
+  EXPECT_EQ(
+      LiteRtSetDelegateFunction(nullptr, DummyAccelerator::CreateDelegate),
+      kLiteRtStatusErrorInvalidArgument);
+  LiteRtSetDelegateFunction(&accelerator, DummyAccelerator::CreateDelegate);
   EXPECT_EQ(accelerator.CreateDelegate, DummyAccelerator::CreateDelegate);
-  EXPECT_EQ(accelerator.DestroyDelegate, DummyAccelerator::DestroyDelegate);
 }
 
 TEST(LiteRtAcceleratorRegistrationTest, CreateDestroyAcceleratorDoesntLeak) {

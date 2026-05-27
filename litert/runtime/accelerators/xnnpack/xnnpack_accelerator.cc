@@ -102,22 +102,13 @@ class CpuAccelerator final
     LITERT_RETURN_IF_ERROR(xnnpack_delegate != nullptr,
                            ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure))
         << "XNNPack delegate failed to be created.";
-    LITERT_RETURN_IF_ERROR(
-        runtime_context->wrap_delegate(xnnpack_delegate, delegate_wrapper));
+    LITERT_RETURN_IF_ERROR(runtime_context->wrap_delegate(
+        xnnpack_delegate, TfLiteXNNPackDelegateDelete, delegate_wrapper));
 
     return kLiteRtStatusOk;
   }
 
-  // Destroys an XNNPack delegate instance.
-  static void DestroyDelegate(LiteRtRuntimeContext* runtime_context,
-                              LiteRtDelegateWrapper delegate_wrapper) {
-    if (delegate_wrapper == nullptr) {
-      return;
-    }
-    TfLiteOpaqueDelegate* xnnpack_delegate;
-    runtime_context->unwrap_delegate(delegate_wrapper, &xnnpack_delegate);
-    TfLiteXNNPackDelegateDelete(xnnpack_delegate);
-  }
+
 
   // Returns true to indicate the XNNPack delegate is responsible for JIT
   // compilation.
@@ -151,7 +142,6 @@ static LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
     .is_tflite_delegate_responsible_for_jit_compilation =
         litert::CpuAccelerator::IsTfLiteDelegateResponsibleForJitCompilation,
     .create_delegate = litert::CpuAccelerator::CreateDelegate,
-    .destroy_delegate = litert::CpuAccelerator::DestroyDelegate,
     .buffer_handlers =
         {
             .create_func = nullptr,

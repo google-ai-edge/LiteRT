@@ -86,7 +86,8 @@ class NpuAccelerator final
                            ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure))
         << "Dispatch delegate failed to be created.";
 
-    runtime_context->wrap_delegate(dispatch_delegate.release(),
+    auto deleter = dispatch_delegate.get_deleter();
+    runtime_context->wrap_delegate(dispatch_delegate.release(), deleter,
                                    delegate_wrapper);
     return kLiteRtStatusOk;
   }
@@ -121,13 +122,6 @@ class NpuAccelerator final
     runtime_context->unwrap_delegate(delegate_wrapper, &delegate);
     LITERT_LOG(LITERT_INFO, "Dispatch delegate stopped metrics collection.");
     return LiteRtDispatchDelegateStopMetricsCollection(delegate, metrics);
-  }
-
-  static void DestroyDelegate(LiteRtRuntimeContext* runtime_context,
-                              LiteRtDelegateWrapper delegate_wrapper) {
-    TfLiteOpaqueDelegate* delegate;
-    runtime_context->unwrap_delegate(delegate_wrapper, &delegate);
-    LiteRtDestroyDispatchDelegate(delegate);
   }
 };
 

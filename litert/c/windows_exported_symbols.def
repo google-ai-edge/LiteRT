@@ -109,6 +109,7 @@ EXPORTS
   LiteRtCreateTensorBufferRequirements
   LiteRtCreateTensorBufferRequirementsWithAlignment
   LiteRtDestroyCompiledModel
+  LiteRtDestroyDelegateWrapper
   LiteRtDestroyEnvironment
   LiteRtDestroyEvent
   LiteRtDestroyMetrics

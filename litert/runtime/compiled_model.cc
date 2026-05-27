@@ -57,6 +57,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_accelerator.h"
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_delegate_wrapper.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
@@ -960,14 +961,11 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
     }
 
     TfLiteOpaqueDelegate* delegate_ptr = nullptr;
-    LrtGetRuntimeContext()->unwrap_delegate(delegate_wrapper, &delegate_ptr);
+    LiteRtUnwrapDelegate(delegate_wrapper, &delegate_ptr);
 
     auto delegate = std::unique_ptr<LiteRtDelegateWrapperT,
-                                    std::function<void(LiteRtDelegateWrapper)>>{
-        delegate_wrapper, [destroy_fn = accelerator->DestroyDelegate](
-                              LiteRtDelegateWrapper wrapper) {
-          if (destroy_fn) destroy_fn(LrtGetRuntimeContext(), wrapper);
-        }};
+                                    void (*)(LiteRtDelegateWrapper)>{
+        delegate_wrapper, &LiteRtDestroyDelegateWrapper};
 
     if (compiled_model->interp_->ModifyGraphWithDelegate(delegate_ptr) !=
         kTfLiteOk) {

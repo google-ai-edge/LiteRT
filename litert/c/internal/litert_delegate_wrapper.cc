@@ -14,8 +14,11 @@
 
 #include "litert/c/internal/litert_delegate_wrapper.h"
 
+#include <new>
+
 #include "litert/c/litert_common.h"
 #include "tflite/c/common.h"
+#include "tflite/core/api/op_resolver.h"
 
 // Definition for LiteRtDelegateWrapperT.
 //
@@ -35,41 +38,45 @@
 // need conditional namespacing to avoid ODR violations for strict C++ standards
 // compliance.
 //
-// We never actually allocate or dereference this struct, instead just casting
-// the pointer to this struct to/from to a pointer to the address of its first
-// member before invoking any of the functions that would actually dereference
-// the pointer.
+// We define this struct purely for the benefit of automatic ABI checking tools
+// and to encapsulate the delegate deleter function.
 //
-// We define this struct purely for the benefit of automatic ABI checking tools.
-//
-// This type is defined as a _union_ containing both TfLiteDelegate and
-// TfLiteOpaqueDelegate, rather than just as a struct wrapper around
+// This type includes a _union_ containing pointers to both TfLiteDelegate and
 // TfLiteOpaqueDelegate. The reason for this is that using a union ensures
 // that ABI checking tools will complain about an ABI change if the definition
 // of `TfLiteDelegate` changes in incompatible ways.
+//
+// In addition, we store the associated deleter function to enable
+// self-contained lifecycle management without requiring global maps or static
+// variables in accelerators to handle multiple delegates properly.
 
 struct LiteRtDelegateWrapperT {
-  union {
-    TfLiteOpaqueDelegate opaque_delegate;
-    TfLiteDelegate delegate;
-  };
+  tflite::OpResolver::TfLiteOpaqueDelegatePtr delegate;
 };
 
 LiteRtStatus LiteRtWrapDelegate(TfLiteOpaqueDelegate* delegate,
+                                void (*deleter)(TfLiteOpaqueDelegate*),
                                 LiteRtDelegateWrapper* wrapper) {
-  // Using a cast here avoids needing to allocate a LiteRtDelegateWrapperT
-  // struct, and importantly avoids needing to deallocate it afterwards,
-  // which would complicate things considerably.
-  // It is safe to cast from one pointer type to another pointer type,
-  // as long as we always cast back again before dereferencing the pointer.
-  *wrapper = reinterpret_cast<LiteRtDelegateWrapperT*>(delegate);
+  if (!delegate || !wrapper) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *wrapper = new (std::nothrow) LiteRtDelegateWrapperT{
+      tflite::OpResolver::TfLiteOpaqueDelegatePtr(delegate, deleter)};
+  if (*wrapper == nullptr) {
+    return kLiteRtStatusErrorMemoryAllocationFailure;
+  }
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtUnwrapDelegate(LiteRtDelegateWrapper wrapper,
                                   TfLiteOpaqueDelegate** delegate) {
-  *delegate = reinterpret_cast<TfLiteOpaqueDelegate*>(wrapper);
-  // Or equivalently, we could also write:
-  //   *delegate = &wrapper->opaque_delegate;
+  if (!wrapper || !delegate) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *delegate = wrapper->delegate.get();
   return kLiteRtStatusOk;
+}
+
+void LiteRtDestroyDelegateWrapper(LiteRtDelegateWrapper wrapper) {
+  delete wrapper;
 }

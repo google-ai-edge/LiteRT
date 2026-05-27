@@ -41,7 +41,6 @@ LiteRtStatus RegisterAcceleratorFromDef(
       accelerator_def->is_tflite_delegate_responsible_for_jit_compilation ==
           nullptr ||
       accelerator_def->create_delegate == nullptr ||
-      accelerator_def->destroy_delegate == nullptr ||
       accelerator_def->buffer_handlers.num_supported_buffer_types >=
           LITERT_CUSTOM_BUFFER_HANDLERS_DEF_MAX_SUPPORTED_BUFFER_TYPES) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -56,8 +55,7 @@ LiteRtStatus RegisterAcceleratorFromDef(
   LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorGetHardwareSupport(
       accelerator, accelerator_def->get_hardware_support));
   LITERT_RETURN_IF_ERROR(
-      LiteRtSetDelegateFunction(accelerator, accelerator_def->create_delegate,
-                                accelerator_def->destroy_delegate));
+      LiteRtSetDelegateFunction(accelerator, accelerator_def->create_delegate));
   LITERT_RETURN_IF_ERROR(
       LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation(
           accelerator,

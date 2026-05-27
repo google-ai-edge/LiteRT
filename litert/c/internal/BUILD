@@ -425,6 +425,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//tflite/c:common",
+        "//tflite/core/api",
     ],
 )
 
