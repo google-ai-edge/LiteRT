@@ -241,6 +241,29 @@ cc_test(
     ],
 )
 
+# copybara:uncomment_begin(g3)
+# cc_test(
+#     name = "dispatch_delegate_device_context_test",
+#     srcs = ["dispatch_delegate_device_context_test.cc"],
+#     data = [
+#         "//tflite:testdata/multi_signatures.bin",
+#     ],
+#     deps = [
+#         "@com_google_googletest//:gtest_main",
+#         "//litert/c:litert_common",
+#         "//litert/cc:litert_environment",
+#         "//litert/cc:litert_options",
+#         "//litert/cc/internal:litert_dispatch_delegate",
+#         "//litert/core/util:flatbuffer_tools",
+#         "//litert/test:common",
+#         "//litert/test:matchers",
+#         "//litert/vendors/c:litert_dispatch_c_api",
+#         "//tflite:framework_stable",
+#         "//tflite/c:c_api_types",
+#     ],
+# )
+# copybara:uncomment_end(g3)
+
 cc_library(
     name = "dispatch_delegate_kernel",
     srcs = [

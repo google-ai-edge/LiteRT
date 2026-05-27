@@ -170,6 +170,10 @@ litert::Expected<LiteRtMetricsT> DispatchDelegate::StopMetricsCollection() {
 }
 
 litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
+  if (device_context_ != nullptr) {
+    LITERT_LOG(LITERT_DEBUG, "Dispatch API is already initialized.");
+    return {};
+  }
   LITERT_RETURN_IF_ERROR(
       LiteRtDispatchInitialize(LrtGetRuntimeContext(), env_, options_));
   // Check if Library needed by dispatch api is compatible.
@@ -209,8 +213,10 @@ litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
                         capabilities));
   }
 
+  LiteRtDispatchDeviceContext device_context = nullptr;
   LITERT_RETURN_IF_ERROR(LiteRtDispatchDeviceContextCreate(
-      LrtGetRuntimeContext(), options_, &device_context_));
+      LrtGetRuntimeContext(), options_, &device_context));
+  device_context_ = device_context;
 
   return {};
 }
