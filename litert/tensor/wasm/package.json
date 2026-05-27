@@ -4,6 +4,7 @@
   "description": "High-performance multidimensional array programming and JIT execution engine for the web using WebGPU and Wasm SIMD.",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
+  "type": "module",
   "types": "dist/index.d.ts",
   "files": [
     "dist",

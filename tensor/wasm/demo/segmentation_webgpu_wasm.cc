@@ -248,6 +248,52 @@ class SegmentationPipeline {
     return absl::OkStatus();
   }
 
+  uintptr_t GetInputWebGpuBuffer(const std::string& name) {
+    if (!pre_runner_) return 0;
+    auto buf_or = pre_runner_->GetInputBuffer(name);
+    return buf_or.ok() ? reinterpret_cast<uintptr_t>(*buf_or) : 0;
+  }
+
+  absl::Status ProcessFrameZeroCopy(uintptr_t original_data_ptr,
+                                    uintptr_t output_data_ptr) {
+    // 1. Run Pre-processing directly on VRAM populated on the JS side!
+    LRT_TENSOR_RETURN_IF_ERROR(pre_runner_->Run());
+
+    // 2. Core Model
+    auto norm_tensor_or = pre_runner_->GetOutput(0);
+    if (!norm_tensor_or.ok()) return norm_tensor_or.status();
+    LRT_TENSOR_RETURN_IF_ERROR(core_runner_->SetInput(0, *norm_tensor_or));
+    LRT_TENSOR_RETURN_IF_ERROR(core_runner_->Run());
+
+    // 3. Post-processing
+    auto core_output_or = core_runner_->GetOutput(0);
+    if (!core_output_or.ok()) return core_output_or.status();
+    LRT_TENSOR_RETURN_IF_ERROR(
+        post_runner_->SetInput("model_output", *core_output_or));
+
+    const float* orig_ptr = reinterpret_cast<const float*>(original_data_ptr);
+    std::vector<float> orig_vec(orig_ptr, orig_ptr + 1 * 256 * 256 * 3);
+    auto orig_tensor = Create("original_image", Type::kFP32, {1, 256, 256, 3},
+                              std::move(orig_vec));
+    LRT_TENSOR_RETURN_IF_ERROR(
+        post_runner_->SetInput("original_image", orig_tensor));
+
+    LRT_TENSOR_RETURN_IF_ERROR(post_runner_->Run());
+
+    // 4. Retrieve Output
+    auto blended_tensor_or = post_runner_->GetOutput(0);
+    if (!blended_tensor_or.ok()) return blended_tensor_or.status();
+
+    auto buffer_or = blended_tensor_or->GetBuffer();
+    if (!buffer_or.ok()) return buffer_or.status();
+    auto lock_span = buffer_or->Lock();
+
+    std::memcpy(reinterpret_cast<void*>(output_data_ptr), lock_span.data(),
+                lock_span.size());
+
+    return absl::OkStatus();
+  }
+
   absl::Status ProcessFrame(uintptr_t input_data_ptr,
                             uintptr_t original_data_ptr,
                             uintptr_t output_data_ptr) {
@@ -338,6 +384,18 @@ EMSCRIPTEN_BINDINGS(segmentation_webgpu) {
                                         output_data_ptr)
                           .ok();
                     }),
-                emscripten::async());
+                emscripten::async())
+      // New zero-copy WebGPU method bindings
+      .function("getInputWebGpuBuffer",
+                &SegmentationPipeline::GetInputWebGpuBuffer)
+      .function(
+          "processFrameZeroCopy",
+          emscripten::optional_override([](SegmentationPipeline& self,
+                                           uintptr_t original_data_ptr,
+                                           uintptr_t output_data_ptr) -> bool {
+            return self.ProcessFrameZeroCopy(original_data_ptr, output_data_ptr)
+                .ok();
+          }),
+          emscripten::async());
 }
 #endif

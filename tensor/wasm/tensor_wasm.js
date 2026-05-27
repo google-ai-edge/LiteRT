@@ -19,6 +19,25 @@
 
 let nextRunnerId = 1;
 
+/**
+ * Helper to get the JS object behind a pointer ID.
+ * @param {number|!Object} ptrId
+ * @param {!Object} module
+ * @return {!Object|null}
+ */
+const getBrowserGpuBuffer = function(ptrId, module) {
+  if (!ptrId) return null;
+  if (typeof ptrId === 'object' && ptrId !== null) return /** @type {!Object} */ (ptrId);
+
+  const webGpu = module.WebGPU || globalThis.WebGPU || (typeof window !== 'undefined' ? window.WebGPU : null);
+  if (webGpu && webGpu.Internals && webGpu.Internals.jsObjects) {
+    const unsignedPtr = ptrId >>> 0;
+    const jsBuffer = webGpu.Internals.jsObjects[unsignedPtr];
+    return jsBuffer || null;
+  }
+  return null;
+};
+
 class LiteRTRunner {
   constructor(underlyingRunner, module) {
     this.runner = underlyingRunner;
@@ -240,6 +259,14 @@ export function wrapLiteRTModule(module) {
       vector.delete();
       return result;
     };
+
+    const originalGetWgpuBuf = module.Tensor.prototype.getWebGpuBuffer;
+    if (originalGetWgpuBuf) {
+      module.Tensor.prototype.getWebGpuBuffer = function() {
+        const ptrId = originalGetWgpuBuf.call(this);
+        return getBrowserGpuBuffer(ptrId, module);
+      };
+    }
   }
 
   let eagerMode = false;
@@ -335,7 +362,8 @@ export function wrapLiteRTModule(module) {
   module.jit = function(func, options = {}) {
     let compiledRunner = null;
     let inputNames = [];
-    const outputName = "jit_output";
+    let outputNames = [];
+    let isArrayOutput = false;
 
     const jittedFn = async function(...args) {
       if (!compiledRunner) {
@@ -366,12 +394,29 @@ export function wrapLiteRTModule(module) {
           eagerMode = wasEager;
         }
 
-        if (!tracedOutput || !tracedOutput.getName) {
-          throw new Error("The jitted function must return a LiteRT Tensor.");
+        // Normalize output list to handle both single Tensors and Arrays beautifully!
+        let outputsList = [];
+        if (Array.isArray(tracedOutput)) {
+          outputsList = tracedOutput;
+          isArrayOutput = true;
+        } else {
+          outputsList = [tracedOutput];
+          isArrayOutput = false;
         }
 
-        tracedOutput.setName(outputName);
-        const outputBindings = { [outputName]: tracedOutput };
+        outputsList.forEach((out, idx) => {
+          if (!out || !out.getName) {
+            throw new Error(`The jitted function returned an invalid element at index ${idx}. Every element must be a valid LiteRT Tensor.`);
+          }
+        });
+
+        const outputBindings = {};
+        outputNames = outputsList.map((out, idx) => {
+          const name = `jit_output_${idx}`;
+          out.setName(name);
+          outputBindings[name] = out;
+          return name;
+        });
 
         const rawRunner = await module.createStaticLambdaRunner(
           inputBindings,
@@ -393,7 +438,7 @@ export function wrapLiteRTModule(module) {
             args[i].getWebGpuBuffer = function(targetRunner) {
               const runnerKey = targetRunner ? (targetRunner.getId ? targetRunner.getId() : targetRunner) : Array.from(this._aliasedBuffers.keys())[0];
               const ptr = this._aliasedBuffers.get(runnerKey);
-              return ptr ? module.WebGPU.getJsObject(ptr) : null;
+              return getBrowserGpuBuffer(ptr, module);
             };
           }
         }
@@ -407,7 +452,10 @@ export function wrapLiteRTModule(module) {
       }
 
       await compiledRunner.run();
-      return compiledRunner.getOutput(outputName);
+
+      // Return single output or conformed Array of outputs symmetrically!
+      const outputs = outputNames.map(name => compiledRunner.getOutput(name));
+      return isArrayOutput ? outputs : outputs[0];
     };
 
     jittedFn.getRunner = () => compiledRunner;
@@ -555,7 +603,7 @@ export function wrapLiteRTModule(module) {
                 sigArgs[i].getWebGpuBuffer = function(targetRunner) {
                   const runnerKey = targetRunner ? (targetRunner.getId ? targetRunner.getId() : targetRunner) : Array.from(this._aliasedBuffers.keys())[0];
                   const ptr = this._aliasedBuffers.get(runnerKey);
-                  return ptr ? module.WebGPU.getJsObject(ptr) : null;
+                  return getBrowserGpuBuffer(ptr, module);
                 };
               }
             }
@@ -573,13 +621,26 @@ export function wrapLiteRTModule(module) {
 /**
  * Loads the LiteRT WASM module and returns the augmented instance.
  * Assumes createTensorModule is available globally (e.g., loaded via script tag).
- * @param {!Object} options Emscripten module options.
+ * @param {Object=} options Emscripten module options.
  * @return {!Promise<!Object>} The augmented module instance.
  */
-export async function createLiteRT(options) {
-  if (typeof createTensorModule !== 'function') {
+export async function createLiteRT(options = {}) {
+  let loader = options.createTensorModule || globalThis.createTensorModule || (typeof createTensorModule !== 'undefined' ? createTensorModule : null);
+  if (loader && loader.default) {
+    loader = loader.default;
+  }
+  if (typeof loader !== 'function') {
     throw new Error("createTensorModule is not defined. Make sure to load tensor_wasm_internal.js first.");
   }
-  const module = await createTensorModule(options);
+  const module = await loader(options);
+  
+  // Register the preinitialized WebGPU device pointer ID inside C++ to share device contexts seamlessly!
+  if (module.setWebGpuDeviceId && options && options.preinitializedWebGPUDevice) {
+    if (module.emscripten_webgpu_get_device) {
+      const deviceId = module.emscripten_webgpu_get_device();
+      module.setWebGpuDeviceId(deviceId);
+    }
+  }
+
   return wrapLiteRTModule(module);
 }

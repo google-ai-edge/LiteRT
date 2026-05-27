@@ -240,8 +240,7 @@
           const tDraw0 = performance.now();
 
 
-          const bufferId = postOutputTensor.getWebGpuBuffer();
-          const gpuBuffer = litert.WebGPU.getJsObject(bufferId);
+          const gpuBuffer = postOutputTensor.getWebGpuBuffer();
 
           const textureView = gpu_context.getCurrentTexture().createView();
 
