@@ -31,7 +31,7 @@ RUN cd ${ANDROID_DEV_HOME} && \
     "platforms;android-${ANDROID_API_LEVEL}"
 
 # Install Android NDK.
-ENV ANDROID_NDK_FILENAME android-ndk-r25b-linux.zip
+ENV ANDROID_NDK_FILENAME android-ndk-r26d-linux.zip
 ENV ANDROID_NDK_URL https://dl.google.com/android/repository/${ANDROID_NDK_FILENAME}
 ENV ANDROID_NDK_HOME ${ANDROID_DEV_HOME}/ndk
 ENV PATH ${PATH}:${ANDROID_NDK_HOME}
