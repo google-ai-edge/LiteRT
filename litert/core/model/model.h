@@ -60,12 +60,12 @@
 //
 // Unless deleted as a result of calls c api client, the lifetime of all "IR
 // Objects" (definitions of opaque types) are designed to be transitively owned
-// by the LiteRtModelT which is generally the longset living object. See various
+// by the LiteRtModelT which is generally the longest living object. See various
 // "Emplace" methods.
 //
-// Since c api clients interface with pointers to IR Ojbects, a form of pointer
+// Since C api clients interface with pointers to IR Objects, a form of pointer
 // stability is desirable. Classes in this file enforce that pointers to IR
-// Objects are valid for their entire life time. Thus a c api client may store
+// Objects are valid for their entire life time. Thus a C api client may store
 // pointers and depend on referential equality of IR Objects thoughout different
 // calls. This also facilitates storing edge/parent-references as pointers
 // within IR Objects.
