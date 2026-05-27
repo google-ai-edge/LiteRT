@@ -26,6 +26,23 @@ cc_library(
 )
 
 cc_library(
+    name = "type_id",
+    hdrs = ["type_id.h"],
+    deps = [
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "type_id_test",
+    srcs = ["type_id_test.cc"],
+    deps = [
+        ":type_id",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "arithmetic_helpers",
     hdrs = ["arithmetic_helpers.h"],
     deps = [
