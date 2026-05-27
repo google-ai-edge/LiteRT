@@ -176,10 +176,16 @@ prepare_pom_and_artifact() {
 # To configure Android via TF's 'configure' script.
 export TF_SET_ANDROID_WORKSPACE=1
 
+if [[ "$IS_PRESUBMIT_JOB" == "true" ]]; then
+  FAT_APK_CPU="arm64-v8a,x86_64"
+else
+  FAT_APK_CPU="x86,x86_64,arm64-v8a,armeabi-v7a"
+fi
+
 BUILD_FLAGS=("-c" "opt" \
     "--cxxopt=--std=c++17" \
     "--config=android_arm64" \
-    "--fat_apk_cpu=x86,x86_64,arm64-v8a,armeabi-v7a" \
+    "--fat_apk_cpu=${FAT_APK_CPU}" \
     "--define=android_dexmerger_tool=d8_dexmerger" \
     "--define=android_incremental_dexing_tool=d8_dexbuilder" \
     "--repo_env=HERMETIC_PYTHON_VERSION=3.11" \
@@ -203,9 +209,10 @@ fi
 
 # TODO(b/503213161): Avoid piggybacking Tensor API's bazel build test on
 # LiteRT's wheel kokoro job.
-bazel build "${BUILD_FLAGS[@]}" //tensor/...
 
-bazel build "${BUILD_FLAGS[@]}" \
+echo "Including Tensor API tests for presubmit/continuous run."
+BAZEL_BUILD_TARGETS=(\
+    //tensor/... \
     //tflite/java:tensorflow-lite-api \
     //tflite/java:tensorflow-lite \
     //tflite/java:tensorflow-lite-gpu-api \
@@ -213,6 +220,10 @@ bazel build "${BUILD_FLAGS[@]}" \
     //tflite/acceleration/configuration:gpu_plugin \
     //tflite/acceleration/configuration:nnapi_plugin
     # //tflite/delegates/hexagon/java:tensorflow-lite-hexagon
+    )
+
+echo "Executing unified Bazel build..."
+bazel build "${BUILD_FLAGS[@]}" "${BAZEL_BUILD_TARGETS[@]}"
 
 export VERSION="${RELEASE_VERSION:-0.0.0-nightly-SNAPSHOT}"
 
