@@ -33,6 +33,7 @@ if [ ! -d /root_dir ]; then
     -e BAZEL_CONFIG_FLAGS="${BAZEL_CONFIG_FLAGS}" \
     -e BUILD_LITERT_KOTLIN_API="${BUILD_LITERT_KOTLIN_API}" \
     -e USE_LOCAL_TF="${USE_LOCAL_TF}" \
+    -e IS_PRESUBMIT_JOB="${IS_PRESUBMIT_JOB:-false}" \
     --entrypoint /script_dir/build_maven_with_docker.sh tflite-builder
 
   echo "Output can be found here:"
@@ -90,7 +91,7 @@ else
   mkdir -p ${LITERT_GPU_API_DIR}
   cp ./ci/gen/litert-gpu-api-$VERSION/* ${LITERT_GPU_API_DIR}
 
-  if [[ "$VERSION" == "0.0.0-nightly-SNAPSHOT" ]]; then
+  if [[ "$VERSION" == "0.0.0-nightly-SNAPSHOT" && "$IS_PRESUBMIT_JOB" != "true" ]]; then
     # Package debug version of litert, litert-gpu
     LITERT_DEBUG_DIR=${PACKAGE_PATH}/litert/${DEBUG_VERSION}
     mkdir -p ${LITERT_DEBUG_DIR}

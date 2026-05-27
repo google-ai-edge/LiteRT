@@ -230,7 +230,7 @@ prepare_pom_and_artifact "litert-gpu" "LiteRT GPU implementation" \
 #     "bazel-bin/tflite/delegates/hexagon/java/tensorflow-lite-hexagon.aar" \
 #     "${VERSION}"
 
-if [[ "$VERSION" == "0.0.0-nightly-SNAPSHOT" ]]; then
+if [[ "$VERSION" == "0.0.0-nightly-SNAPSHOT" && "$IS_PRESUBMIT_JOB" != "true" ]]; then
   # Build debug version of litert, litert-gpu
   bazel build "${BUILD_FLAGS[@]}" \
       --define=tflite_keep_symbols=true \
