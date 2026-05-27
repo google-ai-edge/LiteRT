@@ -42,6 +42,27 @@ namespace litert::internal {
 #define SO_EXT ".so"
 #endif
 
+#if defined(__APPLE__)
+std::filesystem::path AppleFrameworkBinaryPath(
+    const std::filesystem::path& runtime_lib_path,
+    absl::string_view plugin_path) {
+  if (runtime_lib_path.empty()) {
+    return {};
+  }
+  std::string framework_name(plugin_path);
+  if (framework_name.rfind("lib", 0) == 0) {
+    framework_name.erase(0, 3);
+  }
+  const std::string suffix = SO_EXT;
+  if (framework_name.size() >= suffix.size() &&
+      framework_name.compare(framework_name.size() - suffix.size(),
+                             suffix.size(), suffix) == 0) {
+    framework_name.erase(framework_name.size() - suffix.size());
+  }
+  return runtime_lib_path / (framework_name + ".framework") / framework_name;
+}
+#endif  // defined(__APPLE__)
+
 LiteRtStatus RegisterGpuAccelerator(LiteRtEnvironment environment) {
 #if !defined(LITERT_DISABLE_GPU)
   static constexpr absl::string_view kGpuAcceleratorLibs[] = {
@@ -110,6 +131,26 @@ LiteRtStatus RegisterGpuAccelerator(LiteRtEnvironment environment) {
         gpu_accelerator_registered = true;
         break;
       }
+#if defined(__APPLE__)
+      const auto framework_plugin_path =
+          AppleFrameworkBinaryPath(runtime_lib_path, plugin_path);
+      if (!framework_plugin_path.empty()) {
+        LITERT_LOG(LITERT_INFO,
+                   "Loading GPU accelerator Apple framework binary(%s).",
+                   framework_plugin_path.c_str());
+        registration = RegisterSharedObjectAcceleratorViaAcceleratorDef(
+            *environment, framework_plugin_path.string(), "LiteRtAcceleratorImpl",
+            /*try_default_on_failure=*/false);
+        if (registration.HasValue()) {
+          LITERT_LOG(LITERT_INFO,
+                     "Dynamically loaded GPU accelerator Apple framework(%s) "
+                     "registered.",
+                     framework_plugin_path.c_str());
+          gpu_accelerator_registered = true;
+          break;
+        }
+      }
+#endif  // defined(__APPLE__)
       // Try to load a GPU accelerator using `LiteRtRegisterGpuAccelerator`
       // symbol.
       registration = RegisterSharedObjectAcceleratorViaFunctionPointer(
