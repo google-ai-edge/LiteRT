@@ -14,6 +14,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dispatch_api")
 load("//litert/build_common:special_rule.bzl", "gles_linkopts", "litert_metal_opts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
@@ -162,6 +163,55 @@ cc_test(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "dispatch_delegate_async_test",
+    srcs = ["dispatch_delegate_async_test.cc"],
+    data = [
+        ":libLiteRtDispatch_Mock_Async.so",
+        "//litert/test:mlir_test_data",
+        "//litert/vendors/examples:example_dispatch_so",
+        "//litert/vendors/examples:example_plugin_so_data",
+    ],
+    tags = [
+        "nomacos",
+        "nowindows",
+    ],
+    deps = [
+        ":dispatch",
+        "//litert/c:litert_common",
+        "//litert/c:litert_event",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_environment_options",
+        "//litert/cc/dynamic_runtime:litert_compiled_model",
+        "//litert/cc/dynamic_runtime:litert_environment",
+        "//litert/cc/dynamic_runtime:litert_options",
+        "//litert/cc/dynamic_runtime:litert_tensor_buffer",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+litert_dispatch_api(
+    name = "mock_async_dispatch",
+    srcs = ["mock_async_dispatch.cc"],
+    export_litert_only = False,
+    shared_lib_name = "mock_async_dispatch_so",
+    so_name = "libLiteRtDispatch_Mock_Async.so",
+    tags = [
+        "nomacos",
+        "nowindows",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_event",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "@com_google_absl//absl/container:flat_hash_map",
     ],
 )
 

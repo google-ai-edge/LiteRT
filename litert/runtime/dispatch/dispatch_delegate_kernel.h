@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/container/node_hash_map.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
@@ -115,6 +116,16 @@ class DispatchDelegateKernel
   Expected<void> AttachBuffersToInvocationContextsIfNeeded(
       TfLiteOpaqueContext* context);
 
+  // Allocates a new tensor buffer or reuses an existing one, registering it
+  // with the dispatch API. Defers unregistration of replaced buffers if needed.
+  Expected<void> AllocateAndRegisterBuffer(
+      int tensor_id, TfLiteOpaqueContext* context,
+      const absl::flat_hash_set<int>& io_tensor_ids);
+
+  // Polls fences for stale buffers in deferred_unregistrations_ and unregisters
+  // them if their execution has completed.
+  void ProcessDeferredUnregistrations();
+
   Expected<void> ScheduleAsyncExecution(TfLiteOpaqueContext* context);
   Expected<void> ScheduleSyncExecution(TfLiteOpaqueContext* context);
 
@@ -143,7 +154,7 @@ class DispatchDelegateKernel
   std::vector<std::vector<int>> node_input_tensor_indices_;
   std::vector<std::vector<int>> node_output_tensor_indices_;
 
-  // Store tensor IDs - get tensors on demand to avoid stale pointers
+  // Store TFlite Tensor indices - get tensors on demand to avoid stale pointers
   std::vector<int> input_tensor_ids_;
   std::vector<int> output_tensor_ids_;
   std::vector<int> internal_tensor_ids_;
@@ -157,6 +168,9 @@ class DispatchDelegateKernel
     bool maybe_sync_with_cpu = false;
     size_t tensor_buffer_used_size = 0;
     bool attached = false;
+    // Tensor buffer that holds out-fence, allowing for deferred unregistration
+    // of tensor_buffer.
+    LiteRtTensorBufferPtr out_fence_buffer;
 
     TensorInfo() = default;
 
@@ -183,6 +197,9 @@ class DispatchDelegateKernel
   // Tensor ID will be stable across reallocations.
   absl::flat_hash_map<int, std::vector<PortConnection>>
       io_tensors_port_connections_;
+
+  // Hold stale TensorInfo records for non-blocking out-fence unregistration.
+  std::vector<std::pair<int, TensorInfo>> deferred_unregistrations_;
 };
 
 }  // namespace litert::internal
