@@ -310,19 +310,14 @@ absl::Status ModelFactory::Build() {
     LRT_TENSOR_ASSIGN_OR_RETURN(t.type, ToTfLite(tensor_info.type),
                                 _ << DebugInfo(tensor));
     if (tensor_info.quantization) {
-      if (PerChannelAffineQuantization* tensor_quantization =
-              dynamic_cast<PerChannelAffineQuantization*>(
-                  tensor_info.quantization.get());
-          tensor_quantization) {
-        t.quantization = std::make_unique<tflite::QuantizationParametersT>();
-        t.quantization->scale = tensor_quantization->scales;
-        t.quantization->zero_point = tensor_quantization->zero_points;
-        t.quantization->quantized_dimension =
-            tensor_quantization->quantized_dimension;
-      } else {
-        return absl::InvalidArgumentError(
-            "Quantization scheme is not supported.");
-      }
+      LRT_TENSOR_ASSIGN_OR_RETURN(
+          const PerChannelAffineQuantization& tensor_quantization,
+          tensor_info.quantization->As<const PerChannelAffineQuantization>());
+      t.quantization = std::make_unique<tflite::QuantizationParametersT>();
+      t.quantization->scale = tensor_quantization.scales;
+      t.quantization->zero_point = tensor_quantization.zero_points;
+      t.quantization->quantized_dimension =
+          tensor_quantization.quantized_dimension;
     }
   }
 

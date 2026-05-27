@@ -106,6 +106,7 @@ cc_library(
     }),
     includes = ["../utils"],  # copybara:comment
     deps = [
+        ":type_id",
         "//tensor:buffer",
         "//tensor:datatypes",
         "//tensor/utils:macros",
@@ -123,6 +124,7 @@ cc_test(
     srcs = ["graph_test.cc"],
     deps = [
         ":graph",
+        ":type_id",
         "//tensor:buffer",
         "//tensor:datatypes",
         "//tensor/utils:matchers",

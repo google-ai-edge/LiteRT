@@ -50,6 +50,7 @@ limitations under the License.
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
+#include "tensor/internal/type_id.h"
 #include "tensor/utils/source_location.h"
 
 namespace litert::tensor::graph {
@@ -58,21 +59,21 @@ struct Operation;
 
 struct Quantization {
   virtual ~Quantization() = default;
+  virtual internal::TypeId GetTypeId() const = 0;
+  virtual bool IsA(internal::TypeId id) const = 0;
 
   template <class T>
   absl::StatusOr<T&> As() {
-    T* ptr = dynamic_cast<T*>(this);
-    if (ptr) {
-      return *ptr;
+    if (IsA(internal::TypeId::Get<T>())) {
+      return *static_cast<T*>(this);
     }
     return absl::InvalidArgumentError("Wrong quantization type.");
   }
 
   template <class T>
   absl::StatusOr<const T&> As() const {
-    const T* ptr = dynamic_cast<const T*>(this);
-    if (ptr) {
-      return *ptr;
+    if (IsA(internal::TypeId::Get<T>())) {
+      return *static_cast<const T*>(this);
     }
     return absl::InvalidArgumentError("Wrong quantization type.");
   }
@@ -88,6 +89,13 @@ struct PerChannelAffineQuantization : Quantization {
       : scales(std::move(scales)),
         zero_points(std::move(zero_points)),
         quantized_dimension(quantized_dimension) {}
+
+  internal::TypeId GetTypeId() const override {
+    return internal::TypeId::Get<PerChannelAffineQuantization>();
+  }
+  bool IsA(internal::TypeId id) const override {
+    return id == internal::TypeId::Get<PerChannelAffineQuantization>();
+  }
 
   std::vector<float> scales;
   std::vector<int64_t> zero_points;

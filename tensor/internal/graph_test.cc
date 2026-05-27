@@ -20,6 +20,7 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
+#include "tensor/internal/type_id.h"
 #include "tensor/utils/matchers.h"
 #include "tensor/utils/source_location.h"
 
@@ -83,6 +84,43 @@ TEST(TensorTest, TensorWithWringIndexIsInvalid) {
   Tensor a = NewTensor(source_location::current());
   a.index = 3;
   EXPECT_THAT(GetStatus(a), Not(IsOk()));
+}
+
+TEST(QuantizationTest, GetTypeId) {
+  PerChannelAffineQuantization quant({1.0f}, {0}, 0);
+  EXPECT_EQ(quant.GetTypeId(),
+            internal::TypeId::Get<PerChannelAffineQuantization>());
+}
+
+TEST(QuantizationTest, IsA) {
+  PerChannelAffineQuantization quant({1.0f}, {0}, 0);
+  EXPECT_TRUE(quant.IsA(internal::TypeId::Get<PerChannelAffineQuantization>()));
+}
+
+struct DummyQuantization : Quantization {
+  internal::TypeId GetTypeId() const override {
+    return internal::TypeId::Get<DummyQuantization>();
+  }
+  bool IsA(internal::TypeId id) const override {
+    return id == internal::TypeId::Get<DummyQuantization>();
+  }
+};
+
+TEST(QuantizationTest, As) {
+  PerChannelAffineQuantization quant({1.0f}, {0}, 0);
+  Quantization& quant_ref = quant;
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(PerChannelAffineQuantization & quant_as,
+                                  quant_ref.As<PerChannelAffineQuantization>());
+  EXPECT_EQ(&quant_as, &quant);
+  EXPECT_THAT(quant_ref.As<DummyQuantization>(), Not(IsOk()));
+
+  const Quantization& const_quant_ref = quant;
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      const PerChannelAffineQuantization& const_quant_as,
+      const_quant_ref.As<PerChannelAffineQuantization>());
+  EXPECT_EQ(&const_quant_as, &quant);
+  EXPECT_THAT(const_quant_ref.As<DummyQuantization>(), Not(IsOk()));
 }
 
 }  // namespace
