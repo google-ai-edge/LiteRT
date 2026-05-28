@@ -1122,16 +1122,13 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
   bool has_jit_handles = apply_plugins_result_.has_value() &&
                          !apply_plugins_result_->jit_executable_handles.empty();
 
-  if (cache_key.has_value()) {
-    if (!has_jit_handles) {
-      LITERT_LOG(LITERT_DEBUG, "Saving JIT compiled model to cache.");
-      LITERT_RETURN_IF_ERROR(compilation_cache_.value().SaveModel(
-          serialized, cache_key.value(), model_name));
-    } else {
-      LITERT_LOG(
-          LITERT_INFO,
-          "JIT execution handles detected. Disabling JIT model caching.");
-    }
+  if (has_jit_handles) {
+    LITERT_LOG(LITERT_INFO,
+               "JIT execution handles detected. Disabling JIT model caching.");
+  } else if (cache_key.has_value()) {
+    LITERT_LOG(LITERT_DEBUG, "Saving JIT compiled model to cache.");
+    LITERT_RETURN_IF_ERROR(compilation_cache_.value().SaveModel(
+        serialized, cache_key.value(), model_name));
   }
 
   model_buf_ = std::move(serialized);
