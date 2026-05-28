@@ -499,7 +499,7 @@ private constructor(
 
   companion object {
     init {
-      System.loadLibrary("LiteRt")
+      System.loadLibrary("litert_jni")
     }
 
     private fun createFromAsset(

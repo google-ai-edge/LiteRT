@@ -51,7 +51,7 @@ class Environment private constructor(handle: Long) : JniHandle(handle) {
 
   companion object {
     init {
-      System.loadLibrary("LiteRt")
+      System.loadLibrary("litert_jni")
     }
 
     @Throws(LiteRtException::class)
