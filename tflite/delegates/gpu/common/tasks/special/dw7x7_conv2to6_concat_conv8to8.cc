@@ -15,7 +15,8 @@ limitations under the License.
 
 #include "tflite/delegates/gpu/common/tasks/special/dw7x7_conv2to6_concat_conv8to8.h"
 
-#include <any>
+#include <cstdint>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <set>
@@ -24,6 +25,7 @@ limitations under the License.
 #include <variant>
 #include <vector>
 
+#include "absl/types/any.h"
 #include "tflite/delegates/gpu/common/data_type.h"
 #include "tflite/delegates/gpu/common/flops_util.h"
 #include "tflite/delegates/gpu/common/operations.h"
