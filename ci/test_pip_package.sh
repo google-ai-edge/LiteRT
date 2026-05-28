@@ -28,21 +28,22 @@ echo "Testing on Python version ${PYTHON_VERSION}"
 function create_venv {
 
   if [[ "${INSTALL_APT_DEPS}" == true ]]; then
-  # Install libssl-dev to use pyenv.
-  # https://github.com/pyenv/pyenv/wiki/Common-build-problems#0-first-check
-  sudo apt-get update -y
-  sudo apt install libssl-dev build-essential libbz2-dev libncurses5-dev \
-    libncursesw5-dev libffi-dev libreadline-dev libsqlite3-dev liblzma-dev zlib1g-dev -y
+    # Install libssl-dev to use pyenv.
+    # https://github.com/pyenv/pyenv/wiki/Common-build-problems#0-first-check
+    sudo apt-get update -y
+    sudo apt install libssl-dev build-essential libbz2-dev libncurses5-dev \
+      libncursesw5-dev libffi-dev libreadline-dev libsqlite3-dev liblzma-dev zlib1g-dev -y
   fi
 
-  PYENV_ROOT="$(pwd)/pyenv"
-  if ! git clone https://github.com/pyenv/pyenv.git 2>/dev/null && [ -d "${PYENV_ROOT}" ] ; then
-      echo "${PYENV_ROOT} exists"
+  if ! command -v pyenv &> /dev/null; then
+    PYENV_ROOT="$(pwd)/pyenv"
+    if ! git clone https://github.com/pyenv/pyenv.git 2>/dev/null && [ -d "${PYENV_ROOT}" ] ; then
+        echo "${PYENV_ROOT} exists"
+    fi
+    export PATH="$PYENV_ROOT/bin:$PATH"
+    eval "$(pyenv init -)"
   fi
 
-  export PATH="$PYENV_ROOT/bin:$PATH"
-
-  eval "$(pyenv init -)"
   pyenv install -s "${PYTHON_VERSION}"
   pyenv global "${PYTHON_VERSION}"
 
