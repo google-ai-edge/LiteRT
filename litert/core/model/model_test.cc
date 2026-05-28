@@ -766,7 +766,7 @@ TEST(PrintingTest, TflOptions) {
 TEST(PrintingTest, TflOptionsNoPrinter) {
   TflOptions opts;
   opts.type = ::tflite::BuiltinOptions_NONE;
-  ::tflite::FullyConnectedOptionsT no_opts;
+  ::tflite::ConcatenationOptionsT no_opts;
   opts.Set(std::move(no_opts));
   EXPECT_EQ(absl::StrFormat("%v", opts), "{!no_printer}");
 }

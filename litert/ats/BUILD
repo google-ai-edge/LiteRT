@@ -333,6 +333,7 @@ cc_library(
         "//litert/cc/internal:litert_rng",
         "//litert/core:filesystem",
         "//litert/test/generators",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
