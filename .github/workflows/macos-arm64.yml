@@ -124,6 +124,7 @@ jobs:
             "${BUILD_FLAGS[@]}" \
             -- \
             //litert/... \
+            //tensor/... \
             //weight_loader/... \
             "${LITERT_EXCLUDED_TARGETS[@]}"
 
