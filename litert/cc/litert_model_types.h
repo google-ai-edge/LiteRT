@@ -74,10 +74,10 @@ class SimpleTensor {
   SimpleTensor& operator=(SimpleTensor&&) = default;
 
   /// @brief Returns the element type of the tensor.
-  ElementType ElementType() const {
+  ::litert::ElementType ElementType() const {
     if (type_id_ == kLiteRtUnrankedTensorType) {
       LITERT_ASSIGN_OR_ABORT(auto tensor_type, UnrankedTensorType());
-      return static_cast<enum ElementType>(tensor_type.element_type);
+      return static_cast<enum ::litert::ElementType>(tensor_type.element_type);
     } else {
       LITERT_ASSIGN_OR_ABORT(auto tensor_type, RankedTensorType());
       return tensor_type.ElementType();
@@ -86,7 +86,7 @@ class SimpleTensor {
 
   /// @brief Returns whether the tensor has the given ranked tensor type.
   /// @param type The ranked tensor type to check.
-  bool HasType(const RankedTensorType& type) const {
+  bool HasType(const ::litert::RankedTensorType& type) const {
     auto t = RankedTensorType();
     return t && *t == type;
   }
@@ -114,7 +114,7 @@ class SimpleTensor {
 
   /// @brief Returns the ranked tensor type of the tensor.
   /// @return The ranked tensor type, or an error if the tensor is not ranked.
-  Expected<RankedTensorType> RankedTensorType() const {
+  Expected<::litert::RankedTensorType> RankedTensorType() const {
     if (type_id_ != kLiteRtRankedTensorType) {
       return Error(Status::kErrorInvalidArgument, "Not a ranked tensor type");
     }
@@ -208,7 +208,7 @@ class SimpleSignature {
   /// @param name The name of the input tensor.
   /// @return The ranked tensor type, or an error if the tensor is not found or
   /// not ranked.
-  Expected<RankedTensorType> InputTensorType(StringView name) const {
+  Expected<::litert::RankedTensorType> InputTensorType(StringView name) const {
     LITERT_ASSIGN_OR_RETURN(auto tensor, InputTensor(name));
     return tensor.RankedTensorType();
   }
@@ -217,7 +217,7 @@ class SimpleSignature {
   /// @param index The index of the input tensor.
   /// @return The ranked tensor type, or an error if the index is out of bounds
   /// or the tensor is not ranked.
-  Expected<RankedTensorType> InputTensorType(size_t index) const {
+  Expected<::litert::RankedTensorType> InputTensorType(size_t index) const {
     LITERT_ASSIGN_OR_RETURN(auto tensor, InputTensor(index));
     return tensor.RankedTensorType();
   }
@@ -227,7 +227,7 @@ class SimpleSignature {
   /// @param name The name of the output tensor.
   /// @return The ranked tensor type, or an error if the tensor is not found or
   /// not ranked.
-  Expected<RankedTensorType> OutputTensorType(StringView name) const {
+  Expected<::litert::RankedTensorType> OutputTensorType(StringView name) const {
     LITERT_ASSIGN_OR_RETURN(auto tensor, OutputTensor(name));
     return tensor.RankedTensorType();
   }
@@ -236,7 +236,7 @@ class SimpleSignature {
   /// @param index The index of the output tensor.
   /// @return The ranked tensor type, or an error if the index is out of bounds
   /// or the tensor is not ranked.
-  Expected<RankedTensorType> OutputTensorType(size_t index) const {
+  Expected<::litert::RankedTensorType> OutputTensorType(size_t index) const {
     LITERT_ASSIGN_OR_RETURN(auto tensor, OutputTensor(index));
     return tensor.RankedTensorType();
   }
