@@ -857,6 +857,7 @@ tf_cc_binary(
         "//tflite/converter:canonicalize_boundary_value",
         "//tflite/converter:flatbuffer_export",
         "//tflite/converter:tf_to_tfl_flatbuffer",
+        "//third_party/gloop/util/status:status_macros",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",

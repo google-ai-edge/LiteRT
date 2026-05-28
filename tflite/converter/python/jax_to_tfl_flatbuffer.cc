@@ -24,6 +24,7 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "third_party/gloop/util/status/status_macros.h"
 #include "llvm/ADT/SmallVector.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
 #include "mlir/IR/Attributes.h"  // from @llvm-project
@@ -95,14 +96,14 @@ absl::Status ConvertJaxToTFLiteFlatBuffer(
   std::vector<std::optional<double>> node_maxs;
 
   // Populate quantization specs.
-  TF_RETURN_IF_ERROR(internal::PopulateQuantizationSpecs(
+  RETURN_IF_ERROR(internal::PopulateQuantizationSpecs(
       model_flags, converter_flags, &quant_specs, &node_names, &node_dtypes,
       &node_shapes, &node_mins, &node_maxs));
 
   internal::WarningUnusedFlags(model_flags, converter_flags);
 
   // Register all custom ops, including user-specified custom ops.
-  TF_RETURN_IF_ERROR(internal::RegisterAllCustomOps(converter_flags));
+  RETURN_IF_ERROR(internal::RegisterAllCustomOps(converter_flags));
 
   mlir::TFL::PassConfig pass_config(quant_specs);
   bool emit_builtin_tflite_ops = !converter_flags.force_select_tf_ops();
@@ -125,14 +126,14 @@ absl::Status ConvertJaxToTFLiteFlatBuffer(
   mlir::OwningOpRef<mlir::ModuleOp> module;
   std::string content(input.data(), input.size());
   if (model_flags.hlo_file_type() == tflite::ModelFlags::HLO_TEXT) {
-    TF_ASSIGN_OR_RETURN(auto hlo_module,
-                        xla::ParseAndReturnUnverifiedModule(content));
-    TF_ASSIGN_OR_RETURN(auto module,
-                        xla::ConvertHloToStablehlo(*context, hlo_module.get()));
+    ASSIGN_OR_RETURN(auto hlo_module,
+                     xla::ParseAndReturnUnverifiedModule(content));
+    ASSIGN_OR_RETURN(auto module,
+                     xla::ConvertHloToStablehlo(*context, hlo_module.get()));
   } else if (model_flags.hlo_file_type() == tflite::ModelFlags::HLO_PROTO) {
-    TF_ASSIGN_OR_RETURN(xla::HloProto hlo_proto, LoadHloProto(content));
-    TF_ASSIGN_OR_RETURN(module, xla::ConvertHloToStablehlo(
-                                    *context, hlo_proto.mutable_hlo_module()));
+    ASSIGN_OR_RETURN(xla::HloProto hlo_proto, LoadHloProto(content));
+    ASSIGN_OR_RETURN(module, xla::ConvertHloToStablehlo(
+                                 *context, hlo_proto.mutable_hlo_module()));
   } else {
     return absl::InvalidArgumentError("Unknown hlo format type");
   }
