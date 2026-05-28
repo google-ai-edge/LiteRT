@@ -126,5 +126,6 @@ litert_device_test(
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+        "@neuro_pilot//:v8_latest_host_headers",
     ],
 )

@@ -170,6 +170,24 @@ TEST(UpdateMediatekOptionsFromFlagsTest, SetDisableDlaDirRemovalToFalse) {
   EXPECT_FALSE(options.Value().GetDisableDlaDirRemoval());
 }
 
+TEST(UpdateMediatekOptionsFromFlagsTest, SetUseGetSupportedOperationsToFalse) {
+  absl::SetFlag(&FLAGS_mediatek_use_get_supported_operations, false);
+  Expected<MediatekOptions> options = MediatekOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_FALSE(options.Value().GetUseGetSupportedOperations());
+  // Reset to default.
+  absl::SetFlag(&FLAGS_mediatek_use_get_supported_operations, true);
+}
+
+TEST(UpdateMediatekOptionsFromFlagsTest, SetUseGetSupportedOperationsToTrue) {
+  absl::SetFlag(&FLAGS_mediatek_use_get_supported_operations, true);
+  Expected<MediatekOptions> options = MediatekOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_TRUE(options.Value().GetUseGetSupportedOperations());
+}
+
 TEST(UpdateMediatekOptionsFromFlagsTest, SetOptimizationHint) {
   absl::SetFlag(&FLAGS_mediatek_optimization_hint,
                 MediatekOptions::OptimizationHint::kLowLatency);

@@ -301,6 +301,14 @@ Expected<void> CreateModel(const LiteRtCompilerContext* ctx,
         status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
                                   NEURON_MINIMUM);
         break;
+      case kLiteRtOpCodeTflTile:
+        status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                  NEURON_TILE);
+        break;
+      case kLiteRtOpCodeTflUnpack:
+        status = LegalizeOp(neuron_adapter_api, model, *operand_map, op,
+                            "unpackmtk", std::make_tuple(AddUnpackAxisOption));
+        break;
       case kLiteRtOpCodeShloComposite:
         const char* op_name;
         if (!ctx || !ctx->get_shlo_composite_op_name ||
