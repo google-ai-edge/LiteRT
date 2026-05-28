@@ -39,7 +39,7 @@ ABSL_FLAG(
     "List of directories in which to search for suitable "
     "shared libraries.");
 
-ABSL_FLAG(std::vector<std::string>, o, std::vector<std::string>({"-"}),
+ABSL_FLAG(std::vector<std::string>, o, std::vector<std::string>({"none"}),
           "Path to files for output, \"-\" indicates standard out, "
           "\"--\" for standard err, \"none\" for null stream.");
 
