@@ -69,7 +69,7 @@ def _is_mobile_device_backend(backend: aot_types.Backend):
   if backend.id() == samsung_backend.SamsungBackend.id():
     target = cast(exynos_target.Target, target)
     # Non Android Phone Samsung targets.
-    if target.soc_model in (exynos_target.SocModel.E9965,):
+    if target.soc_model in ():
       return False
   return True
 
