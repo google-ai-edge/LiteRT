@@ -411,6 +411,12 @@ TfLiteStatus InterpreterBuilder::ParseQuantization(
   if (src_quantization && src_quantization->details_type() ==
                               QuantizationDetails_BlockwiseQuantization) {
     auto* src_quant = src_quantization->details_as_BlockwiseQuantization();
+    if (!src_quant) {
+      TF_LITE_REPORT_ERROR(error_reporter_,
+                           "Quantization parameters has BlockwiseQuantization "
+                           "type but null details.");
+      return kTfLiteError;
+    }
     quantization->type = kTfLiteBlockwiseQuantization;
     auto* blockwise_quantization =
         reinterpret_cast<TfLiteBlockwiseQuantization*>(
@@ -831,7 +837,7 @@ TfLiteStatus InterpreterBuilder::operator()(
   auto* subgraphs = model_->subgraphs();
   auto* buffers = model_->buffers();
 
-  if (subgraphs->size() == 0) {
+  if (!subgraphs || subgraphs->size() == 0) {
     TF_LITE_REPORT_ERROR(error_reporter_, "No subgraph in the model.\n");
     return kTfLiteError;
   }
