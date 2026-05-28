@@ -527,6 +527,16 @@ LiteRtStatus LiteRtGetCustomCode(LiteRtOp op, const char** code) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetCustomOptions(LiteRtOp op, const uint8_t** custom_options,
+                                    int32_t* size) {
+  if (!op || !custom_options || !size) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *custom_options = op->CustomOptions().Data();
+  *size = op->CustomOptions().Size();
+  return kLiteRtStatusOk;
+}
+
 //
 // Weights
 //
