@@ -662,9 +662,11 @@ ThrStatus thrInvocationContextPrepareForInvoke(ThrInvocationContext* icontext,
 ThrStatus thrInvocationContextPrepareForInvoke2(ThrInvocationContext* icontext,
                                                 ThrFenceType output_fence_type);
 
-// Expects the user has already attached the required arguments. Can be called
-// again to re-invoke the executor, but only after the previous invocation has
-// completed.
+// Expects the user has already attached the required arguments.
+//
+// Can be called again to re-invoke the executor. Most executors require that
+// the previous invocation has completed, but an implementation may relax this
+// constraint if able.
 ThrStatus thrInvocationContextInvokeOnce(ThrInvocationContext* icontext);
 
 // Waits for the ThrInvocationContext to complete execution. Returns immediately
