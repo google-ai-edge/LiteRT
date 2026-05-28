@@ -298,6 +298,7 @@ def _litert_base(
                 ("//conditions:default", "//litert/build_common:linux_x86_64_grte"): _DEFAULT_LINK_OPTS,
                 "//litert:macos": [],
                 "//litert:ios": [],
+                "//litert:windows": [],
                 "//litert/build_common:linux_x86_64_ungrte": _UNGRTE_LINK_OPTS + _DEFAULT_LINK_OPTS,
             }),
         )
@@ -308,6 +309,7 @@ def _litert_base(
             linkopts = select({
                 "//litert:macos": [],
                 "//litert:ios": [],
+                "//litert:windows": [],
                 "//conditions:default": _DEFAULT_LINK_OPTS,
             }),
         )
