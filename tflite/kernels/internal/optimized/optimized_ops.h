@@ -5095,6 +5095,12 @@ inline void TransposeConvV2(
   float* output_data_p = output_data;
   std::fill_n(output_data, output_offset * batch_size, 0.0f);
   for (int i = 0; i < batch_size; ++i) {
+#if defined(__clang__)
+#if __has_feature(memory_sanitizer)
+    std::fill_n(col2im_data, hwoi_ordered_filter_total_size * input_image_size,
+                0.0f);
+#endif
+#endif
     cpu_backend_gemm::MatrixParams<float> rhs_params;
     rhs_params.order = cpu_backend_gemm::Order::kColMajor;
     rhs_params.rows = input_depth;
@@ -5605,6 +5611,12 @@ inline void TransposeConvV2(
   std::fill_n(scratch_data, output_offset * batch_size,
               static_cast<int32_t>(0));
   for (int i = 0; i < batch_size; ++i) {
+#if defined(__clang__)
+#if __has_feature(memory_sanitizer)
+    std::fill_n(col2im_data, hwoi_ordered_filter_total_size * input_image_size,
+                0);
+#endif
+#endif
     cpu_backend_gemm::MatrixParams<uint8_t> rhs_params;
     rhs_params.order = cpu_backend_gemm::Order::kColMajor;
     rhs_params.rows = input_depth;
@@ -8053,6 +8065,11 @@ inline void Conv3DTranspose(
   float* output_data_p = output_data;
   std::fill_n(output_data, output_offset * batch_size, 0.0f);
   for (int i = 0; i < batch_size; ++i) {
+#if defined(__clang__)
+#if __has_feature(memory_sanitizer)
+    std::fill_n(col2im_data, filter_total_size * input_spatial_size, 0.0f);
+#endif
+#endif
     cpu_backend_gemm::MatrixParams<float> rhs_params;
     rhs_params.order = cpu_backend_gemm::Order::kColMajor;
     rhs_params.rows = input_channel;
