@@ -60,7 +60,7 @@
 //
 // Unless deleted as a result of calls c api client, the lifetime of all "IR
 // Objects" (definitions of opaque types) are designed to be transitively owned
-// by the LiteRtModelT which is generally the longset living object. See various
+// by the LiteRtModelT which is generally the longest living object. See various
 // "Emplace" methods.
 //
 // Since c api clients interface with pointers to IR Ojbects, a form of pointer
