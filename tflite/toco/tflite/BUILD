@@ -124,6 +124,7 @@ cc_library(
         "//tflite/toco:toco_port",
         "//tflite/toco:tooling_util",
         "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@flatbuffers",
         "@org_tensorflow//tensorflow/core:lib_proto_parsing",
