@@ -34,6 +34,7 @@ target_link_libraries(qnn_compiler_plugin
         qnn_transformation
         qnn_dump_graph
         qnn_context_binary_info
+        qnn_flexbuffer_helpers
         tensorflow-lite
         absl::log
         absl::check

@@ -43,6 +43,7 @@ LiteRtStatus ConvertTensor(
     bool is_tensor_output = false);
 
 LiteRtStatus ConvertOp(bool use_int64_bias_as_int32,
+                       const ::qnn::CustomOpPackage& custom_op_package,
                        const litert::compiler::Op& litert_op,
                        ::qnn::TensorPool& tensor_pool,
                        std::vector<::qnn::TensorWrapperRef>& input_tensors,

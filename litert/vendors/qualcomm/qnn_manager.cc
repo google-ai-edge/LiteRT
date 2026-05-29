@@ -80,12 +80,13 @@ LiteRtStatus SetEnvVar(const char* name, const char* value) {
   return kLiteRtStatusOk;
 }
 
-RtldFlags GetRtldFlags() {
+RtldFlags GetRtldFlags(bool needs_global_symbols) {
 #if defined(__ANDROID__)
   // Race condition segfault without NoDelete on android.
   return RtldFlags::Lazy().Local().NoDelete();
 #else
-  return RtldFlags::Default();
+  return needs_global_symbols ? RtldFlags::Lazy().Global()
+                              : RtldFlags::Default();
 #endif
 }
 
@@ -134,10 +135,12 @@ QnnManager::~QnnManager() = default;
 
 LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
   auto saver_output_dir = options_.GetSaverOutputDir();
+  const bool needs_global_symbols =
+      !options_.GetCustomOpPackage().name.empty();
   if (saver_output_dir.empty()) {
     LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
                path.data());
-    auto lib_or = SharedLibrary::Load(path, GetRtldFlags());
+    auto lib_or = SharedLibrary::Load(path, GetRtldFlags(needs_global_symbols));
     if (!lib_or) {
       LITERT_LOG(LITERT_ERROR,
                  "Failed to load qnn shared library from \"%s\": %s",
@@ -149,7 +152,7 @@ LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
     path = kSaverLibraryName;
     LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
                path.data());
-    auto lib_or = SharedLibrary::Load(path, GetRtldFlags());
+    auto lib_or = SharedLibrary::Load(path, GetRtldFlags(needs_global_symbols));
     if (!lib_or) {
       LITERT_LOG(LITERT_ERROR,
                  "Failed to load qnn shared library from \"%s\": %s",
@@ -172,7 +175,10 @@ LiteRtStatus QnnManager::LoadSystemLib(absl::string_view path) {
   }
   LITERT_LOG(LITERT_INFO, "Loading qnn system shared library from \"%s\"",
              resolved_path.c_str());
-  auto lib_system_or = SharedLibrary::Load(resolved_path, GetRtldFlags());
+  const bool needs_global_symbols =
+      !options_.GetCustomOpPackage().name.empty();
+  auto lib_system_or =
+      SharedLibrary::Load(resolved_path, GetRtldFlags(needs_global_symbols));
   if (!lib_system_or) {
     LITERT_LOG(LITERT_ERROR, "%s", lib_system_or.Error().Message().data());
     return lib_system_or.Error().Status();
@@ -435,6 +441,28 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::OpWrapper& op) {
     return kLiteRtStatusErrorInvalidLegalization;
   }
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus QnnManager::RegisterOpPackage(
+    const std::string& package_path, const std::string& interface_provider,
+    const std::string& target) {
+  if (options_.GetBackendType() == ::qnn::BackendType::kIrBackend) {
+    LITERT_LOG(LITERT_INFO,
+               "Custom op package is not supported in IrBackend. Ignore.");
+    return kLiteRtStatusOk;
+  }
+
+  if (auto status = Api()->backendRegisterOpPackage(
+          backend_->GetBackendHandle(), package_path.c_str(),
+          interface_provider.c_str(), target.c_str());
+      status != QNN_SUCCESS) {
+    LITERT_LOG(LITERT_ERROR, "Failed to register op package. Error code: %d",
+               status);
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  LITERT_LOG(LITERT_INFO, "Op package loaded successfully.");
   return kLiteRtStatusOk;
 }
 

@@ -87,6 +87,10 @@ bool IsWeightSharingSupported(::qnn::DspArch dsp_arch) {
 #endif
 }
 
+// Compile-time custom-op packages always target the CPU backend; this is
+// the value passed to QNN's RegisterOpPackage for compilation.
+constexpr char kCustomOpPackageCompileTarget[] = "CPU";
+
 }  // namespace
 
 LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion* api_version) {
@@ -268,8 +272,15 @@ class LiteRtCompilerPluginT {
 
   const ::qnn::Options& Options() const { return qnn_options_; }
 
-  void initQnnManager(std::unique_ptr<QnnManager> qnn_manager) {
+  LiteRtStatus initQnnManager(std::unique_ptr<QnnManager> qnn_manager) {
+    if (const auto& custom_op_package = qnn_options_.GetCustomOpPackage();
+        !custom_op_package.name.empty()) {
+      LITERT_RETURN_IF_ERROR(qnn_manager->RegisterOpPackage(
+          custom_op_package.compile_package_path,
+          custom_op_package.interface_provider, kCustomOpPackageCompileTarget));
+    }
     qnn_manager_ = std::move(qnn_manager);
+    return kLiteRtStatusOk;
   }
 
   QnnManager* QNN() { return qnn_manager_.get(); }
@@ -336,7 +347,8 @@ LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
                  qnn_manager_or.Error().Message().data());
       return qnn_manager_or.Error().Status();
     }
-    compiler_plugin->initQnnManager(std::move(*qnn_manager_or));
+    LITERT_RETURN_IF_ERROR(
+        compiler_plugin->initQnnManager(std::move(*qnn_manager_or)));
     qnn_manager = compiler_plugin->QNN();
   }
 
@@ -369,7 +381,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
       return qnn_manager_or.Error().Status();
     }
     LITERT_LOG(LITERT_INFO, "%s", "QNN manager created");
-    compiler_plugin->initQnnManager(std::move(*qnn_manager_or));
+    LITERT_RETURN_IF_ERROR(
+        compiler_plugin->initQnnManager(std::move(*qnn_manager_or)));
     qnn_manager = compiler_plugin->QNN();
   }
 
@@ -394,7 +407,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
     std::vector<::qnn::OpWrapper> op_wrappers;
     LITERT_RETURN_IF_ERROR(litert::qnn::ConvertOp(
-        compiler_plugin->Options().GetUseInt64BiasAsInt32(), op, tensor_pool,
+        compiler_plugin->Options().GetUseInt64BiasAsInt32(),
+        compiler_plugin->Options().GetCustomOpPackage(), op, tensor_pool,
         input_tensors, output_tensors, op_wrappers));
 
     // Empty op_wrappers means the op is not supported by QNN.
@@ -483,7 +497,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       return qnn_manager_or.Error().Status();
     }
     LITERT_LOG(LITERT_INFO, "%s", "QNN manager created");
-    compiler_plugin->initQnnManager(std::move(*qnn_manager_or));
+    LITERT_RETURN_IF_ERROR(
+        compiler_plugin->initQnnManager(std::move(*qnn_manager_or)));
     qnn_manager = compiler_plugin->QNN();
   }
 

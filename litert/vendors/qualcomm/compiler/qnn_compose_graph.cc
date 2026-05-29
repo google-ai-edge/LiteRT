@@ -58,6 +58,7 @@
 #include "litert/vendors/qualcomm/core/builders/conv2d_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/conv3d_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/cumsum_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/custom_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/depthwise_conv2d_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/dynamic_update_slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
@@ -105,6 +106,7 @@
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/dump/dump_graph.h"
 #include "litert/vendors/qualcomm/core/transformation/graph_to_graph.h"
+#include "litert/vendors/qualcomm/core/utils/flexbuffer_helpers.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
@@ -135,6 +137,7 @@ std::string SanitizeName(std::string_view name) {
   }
   return out;
 }
+
 }  // namespace
 
 LiteRtStatus ConvertPaddingType(const uint32_t litert_padding,
@@ -1407,9 +1410,139 @@ constexpr std::array<OpBuilder, kLiteRtOpCodeShloComposite + 1> kOpBuilders =
     GetOpBuilders();
 static_assert(kOpBuilders.size() == kLiteRtOpCodeShloComposite + 1);
 
+LiteRtStatus BuildCustomOp(const litert::compiler::Op& litert_op,
+                           ::qnn::TensorPool& tensor_pool,
+                           std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                           std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                           std::vector<::qnn::OpWrapper>& op_wrappers,
+                           const ::qnn::CustomOpPackage& custom_op_package) {
+  // Use tflite custom code as op type in QNN custom op package.
+  auto custom_code = litert_op.CustomCode();
+  if (!custom_code.HasValue() || custom_code->empty()) {
+    LITERT_LOG(LITERT_ERROR, "Custom op missing custom code.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  auto custom_options = litert_op.CustomOptions();
+  if (!custom_options.HasValue()) {
+    LITERT_LOG(LITERT_ERROR, "Custom op missing custom options.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  const char* package_name = custom_op_package.name.empty()
+                                 ? QNN_OP_PACKAGE_NAME_QTI_AISW
+                                 : custom_op_package.name.c_str();
+  auto& custom_op = op_wrappers.emplace_back(::qnn::CreateCustomOp(
+      package_name, custom_code->data(),
+      std::vector<::qnn::ConstTensorWrapperRef>(input_tensors.begin(),
+                                                input_tensors.end()),
+      std::vector<::qnn::ConstTensorWrapperRef>(output_tensors.begin(),
+                                                output_tensors.end())));
+
+  // TODO(weilhuan): Will cause seg fault if checked by flexbuffers::GetRoot().IsNull for some
+  // reason, use < 2 here to avoid this.
+  if (custom_options->size() < 2) {
+    LITERT_LOG(
+        LITERT_WARNING,
+        "Custom op custom options are too small to be a flexbuffer map, maybe "
+        "there is no custom options in custom op.");
+    return kLiteRtStatusOk;
+  }
+
+  // GetRoot trusts the buffer's internal offsets; validate first since custom
+  // options come from the .tflite (external input).
+  if (!flexbuffers::VerifyBuffer(custom_options->data(),
+                                 custom_options->size())) {
+    LITERT_LOG(LITERT_ERROR,
+               "Custom op custom options are not a valid flexbuffer.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  const auto root =
+      flexbuffers::GetRoot(custom_options->data(), custom_options->size());
+  if (!root.IsMap()) {
+    LITERT_LOG(LITERT_ERROR,
+               "Custom op custom options are not a flexbuffer "
+               "map.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  const auto map = root.AsMap();
+  const auto keys = map.Keys();
+  const auto values = map.Values();
+  for (size_t i = 0; i < map.size(); ++i) {
+    const char* key = keys[i].AsKey();
+    const auto& value = values[i];
+
+    if (value.IsUntypedVector() || value.IsTypedVector() ||
+        value.IsFixedTypedVector()) {
+      const auto dimensions = ::qnn::InferShape(value);
+      if (!dimensions.has_value()) {
+        LITERT_LOG(LITERT_ERROR,
+                   "BuildCustomOp: custom options key '%s' has ragged vector "
+                   "dimensions.",
+                   key);
+        return kLiteRtStatusErrorUnsupported;
+      }
+
+      const uint32_t num_elements =
+          std::accumulate(dimensions->begin(), dimensions->end(), uint32_t{1},
+                          std::multiplies<uint32_t>());
+
+      // Resolve the uniform scalar type once, then fill with the matching T.
+      auto fill_vector = [&](auto type_tag, Qnn_DataType_t qnn_dtype) {
+        using T = decltype(type_tag);
+        std::vector<T> data;
+        data.reserve(num_elements);
+        ::qnn::FillBuffer<T>(value, data);
+        auto& tensor = tensor_pool.CreateStaticTensor(
+            qnn_dtype, {}, dimensions.value(),
+            static_cast<uint32_t>(num_elements * sizeof(T)), data.data());
+        custom_op.AddTensorParam(key, tensor);
+      };
+
+      switch (::qnn::GetUniformScalarType(value)) {
+        case ::qnn::FlexbufferScalarType::kBool:
+          fill_vector(uint8_t{}, QNN_DATATYPE_BOOL_8);
+          break;
+        case ::qnn::FlexbufferScalarType::kInt:
+          fill_vector(int32_t{}, QNN_DATATYPE_INT_32);
+          break;
+        case ::qnn::FlexbufferScalarType::kUint:
+          fill_vector(uint32_t{}, QNN_DATATYPE_UINT_32);
+          break;
+        case ::qnn::FlexbufferScalarType::kFloat:
+          fill_vector(float{}, QNN_DATATYPE_FLOAT_32);
+          break;
+        default:
+          LITERT_LOG(LITERT_ERROR,
+                     "BuildCustomOp: unsupported scalar type for vector "
+                     "param key '%s'.",
+                     key);
+          return kLiteRtStatusErrorUnsupported;
+      }
+    } else if (value.IsBool()) {
+      custom_op.AddScalarParam<bool>(key, value.AsBool());
+    } else if (value.IsInt()) {
+      custom_op.AddScalarParam<std::int32_t>(key, value.AsInt32());
+    } else if (value.IsUInt()) {
+      custom_op.AddScalarParam<std::uint32_t>(key, value.AsUInt32());
+    } else if (value.IsFloat()) {
+      custom_op.AddScalarParam<float>(key, value.AsFloat());
+    } else {
+      LITERT_LOG(LITERT_ERROR,
+                 "BuildCustomOp: unsupported scalar type for param key '%s'.",
+                 key);
+      return kLiteRtStatusErrorUnsupported;
+    }
+  }
+  return kLiteRtStatusOk;
+}
+
 }  // namespace
 
 LiteRtStatus ConvertOp(const bool use_int64_bias_as_int32,
+                       const ::qnn::CustomOpPackage& custom_op_package,
                        const litert::compiler::Op& litert_op,
                        ::qnn::TensorPool& tensor_pool,
                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
@@ -1421,6 +1554,10 @@ LiteRtStatus ConvertOp(const bool use_int64_bias_as_int32,
     return builders[op_code](litert_op, tensor_pool, input_tensors,
                              output_tensors, op_wrappers,
                              use_int64_bias_as_int32);
+  }
+  if (op_code == kLiteRtOpCodeTflCustom) {
+    return BuildCustomOp(litert_op, tensor_pool, input_tensors, output_tensors,
+                         op_wrappers, custom_op_package);
   }
   LITERT_LOG(LITERT_ERROR,
              "LiteRT Op Code: %d is not supported in Qualcomm Compiler.",
@@ -1539,9 +1676,9 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
     }
 
     std::vector<::qnn::OpWrapper> op_wrappers;
-    LITERT_RETURN_IF_ERROR(ConvertOp(options.GetUseInt64BiasAsInt32(), op,
-                                     tensor_pool, input_tensors, output_tensors,
-                                     op_wrappers));
+    LITERT_RETURN_IF_ERROR(ConvertOp(
+        options.GetUseInt64BiasAsInt32(), options.GetCustomOpPackage(), op,
+        tensor_pool, input_tensors, output_tensors, op_wrappers));
     for (auto& op_wrapper : op_wrappers) {
       // Add litert op id to qnn op name to preserve op mapping
       op_wrapper.AddSuffixToName(
