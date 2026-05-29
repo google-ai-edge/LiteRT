@@ -25,6 +25,9 @@ limitations under the License.
 #include "tflite/nnapi/NeuralNetworksTypes.h"
 #include "tflite/nnapi/nnapi_implementation.h"
 
+// WARNING: this header file is DEPRECATED.
+// See https://developer.android.com/ndk/guides/neuralnetworks/migration-guide.
+
 struct NnApiSLDriverImplFL5;
 struct NnapiDelegateVendorPlugin;
 typedef struct ANeuralNetworksMemory ANeuralNetworksMemory;
