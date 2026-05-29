@@ -541,7 +541,11 @@ void NeonUnpack(float* output_ptr, const int32_t* dst, int batch_size,
   }
 }
 
-inline bool HasSDot() { return cpuinfo_has_arm_neon_dot(); }
+inline bool HasSDot() {
+  static bool cpuinfo_initialized = cpuinfo_initialize();
+  (void)cpuinfo_initialized;
+  return cpuinfo_has_arm_neon_dot();
+}
 
 template <int RowsLeft, int RowsRight, int Cols>
 void NeonRunKernel(const uint8_t* lhs, const int8_t* rhs, int32_t* dst,
