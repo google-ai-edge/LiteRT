@@ -54,72 +54,57 @@ DOTPROD_ATTRIBUTE void NeonRunKernelSDot<4, 1, 32>(
   for (int i = start_row; i < outer_rows; ++i) {
     int left_index = i * rows_left * lhs_layout_cols / 2;
     const uint8_t* lhs_ptr_data = lhs + left_index;
+    __builtin_prefetch(lhs_ptr_data, 0, 3);
     for (int j = start_col; j < outer_cols; ++j) {
       const uint8_t* lhs_ptr = lhs_ptr_data;
       int right_index = j * rows_right * rhs_layout_cols;
       const int8_t* rhs_ptr = rhs + right_index;
+      __builtin_prefetch(rhs_ptr, 0, 3);
+      // General register allocation:
+      // v0-v3: int32 accumulators for the dot products
+      // v16-v19: high int4 values of LHS (after USHR)
+      // v20-v23: low int4 values of LHS (after AND)
+      // v24-v25: int8 values of RHS
+      // v31: mask for AND
       asm volatile(
           R"asm(
-          movi v24.16b, #15
-          ld1 {v4.16b}, [%[lhs_ptr]], #16
-          movi v16.4s, #0
-          movi v17.4s, #0
-          ld1 {v5.16b}, [%[lhs_ptr]], #16
-          movi v18.4s, #0
-          movi v19.4s, #0
-          ld1 {v6.16b, v7.16b}, [%[lhs_ptr]], #32
-          and v8.16b, v4.16b, v24.16b
-          and v9.16b, v5.16b, v24.16b
-          ushr v12.16b, v4.16b, #4
-          ushr v13.16b, v5.16b, #4
-          ld1 {v0.16b, v1.16b}, [%[rhs_ptr]], #32
-          and v10.16b, v6.16b, v24.16b
-          and v11.16b, v7.16b, v24.16b
-          ushr v14.16b, v6.16b, #4
-          ushr v15.16b, v7.16b, #4
+          movi v31.16b, #15
+          movi v0.4s, #0
+          movi v1.4s, #0
+          movi v2.4s, #0
+          movi v3.4s, #0
           mov w3, %w[run_depth]
-          subs w3, w3, #1
-          b.ls 1f /* skip loop */
             0: /* loop start */
-            ld1 {v4.16b, v5.16b, v6.16b, v7.16b}, [%[lhs_ptr]], #64
-            sdot v16.4s, v8.16b, v1.16b
-            sdot v17.4s, v9.16b, v1.16b
-            sdot v18.4s, v10.16b, v1.16b
-            sdot v19.4s, v11.16b, v1.16b
-            sdot v16.4s, v12.16b, v0.16b
-            sdot v17.4s, v13.16b, v0.16b
-            sdot v18.4s, v14.16b, v0.16b
-            sdot v19.4s, v15.16b, v0.16b
-            and v8.16b, v4.16b, v24.16b
-            and v9.16b, v5.16b, v24.16b
-            ushr v12.16b, v4.16b, #4
-            ushr v13.16b, v5.16b, #4
-            ld1 {v0.16b, v1.16b}, [%[rhs_ptr]], #32
-            and v10.16b, v6.16b, v24.16b
-            and v11.16b, v7.16b, v24.16b
-            ushr v14.16b, v6.16b, #4
-            ushr v15.16b, v7.16b, #4
+            ld1 {v16.16b, v17.16b, v18.16b, v19.16b}, [%[lhs_ptr]], #64
+            ld1 {v24.16b, v25.16b}, [%[rhs_ptr]], #32
+            and v20.16b, v16.16b, v31.16b
+            and v21.16b, v17.16b, v31.16b
+            and v22.16b, v18.16b, v31.16b
+            and v23.16b, v19.16b, v31.16b
+            ushr v16.16b, v16.16b, #4
+            ushr v17.16b, v17.16b, #4
+            ushr v18.16b, v18.16b, #4
+            ushr v19.16b, v19.16b, #4
+            sdot v0.4s, v16.16b, v24.16b
+            sdot v1.4s, v17.16b, v24.16b
+            sdot v2.4s, v18.16b, v24.16b
+            sdot v3.4s, v19.16b, v24.16b
+            sdot v0.4s, v20.16b, v25.16b
+            sdot v1.4s, v21.16b, v25.16b
+            sdot v2.4s, v22.16b, v25.16b
+            sdot v3.4s, v23.16b, v25.16b
             subs w3, w3, #1
             b.hi 0b /* loop branch */
           1: /* loop end */
-          sdot v16.4s, v8.16b, v1.16b
-          sdot v17.4s, v9.16b, v1.16b
-          sdot v18.4s, v10.16b, v1.16b
-          sdot v19.4s, v11.16b, v1.16b
-          sdot v16.4s, v12.16b, v0.16b
-          sdot v17.4s, v13.16b, v0.16b
-          sdot v18.4s, v14.16b, v0.16b
-          sdot v19.4s, v15.16b, v0.16b
-          addp v4.4s, v16.4s, v17.4s
-          addp v5.4s, v18.4s, v19.4s
-          addp v6.4s, v4.4s, v5.4s
-          st1 {v6.4s}, [%[dst]], #16
+          addp v0.4s, v0.4s, v1.4s
+          addp v2.4s, v2.4s, v3.4s
+          addp v0.4s, v0.4s, v2.4s
+          st1 {v0.4s}, [%[dst]], #16
           )asm"
           : [lhs_ptr] "+r"(lhs_ptr), [rhs_ptr] "+r"(rhs_ptr), [dst] "+r"(dst)
           : [run_depth] "r"(run_depth)
-          : "cc", "memory", "w3", "v0", "v1", "v4", "v5", "v6", "v7", "v8",
-            "v9", "v10", "v11", "v12", "v13", "v14", "v15", "v16", "v17", "v18",
-            "v19", "v24");
+          : "cc", "memory", "w3", "v0", "v1", "v2", "v3", "v16", "v17", "v18",
+            "v19", "v20", "v21", "v22", "v23", "v24", "v25", "v31");
     }
   }
 }
@@ -145,95 +130,74 @@ DOTPROD_ATTRIBUTE void NeonRunKernelSDot<4, 2, 32>(
   for (int i = start_row; i < outer_rows; ++i) {
     int left_index = i * rows_left * lhs_layout_cols / 2;
     const uint8_t* lhs_ptr_data = lhs + left_index;
+    __builtin_prefetch(lhs_ptr_data, 0, 3);
     for (int j = start_col; j < outer_cols; ++j) {
       const uint8_t* lhs_ptr = lhs_ptr_data;
       int right_index = j * rows_right * rhs_layout_cols;
       const int8_t* rhs_ptr = rhs + right_index;
+      __builtin_prefetch(rhs_ptr, 0, 3);
+      // General register allocation:
+      // v0-v7: int32 accumulators for the dot products
+      // v16-v19: high int4 values of LHS (after USHR)
+      // v20-v23: low int4 values of LHS (after AND)
+      // v24-v27: int8 values of RHS (rows 0 and 1)
+      // v31: mask for AND
       asm volatile(
           R"asm(
-          movi v24.16b, #15
-          ld1 {v4.16b}, [%[lhs_ptr]], #16
-          movi v16.4s, #0
-          movi v17.4s, #0
-          ld1 {v5.16b}, [%[lhs_ptr]], #16
-          movi v18.4s, #0
-          movi v19.4s, #0
-          ld1 {v6.16b, v7.16b}, [%[lhs_ptr]], #32
-          movi v20.4s, #0
-          movi v21.4s, #0
-          and v8.16b, v4.16b, v24.16b
-          and v9.16b, v5.16b, v24.16b
-          movi v22.4s, #0
-          movi v23.4s, #0
-          ushr v12.16b, v4.16b, #4
-          ushr v13.16b, v5.16b, #4
-          ld1 {v0.16b, v1.16b, v2.16b, v3.16b}, [%[rhs_ptr]], #64
-          and v10.16b, v6.16b, v24.16b
-          and v11.16b, v7.16b, v24.16b
-          ushr v14.16b, v6.16b, #4
-          ushr v15.16b, v7.16b, #4
+          movi v31.16b, #15
+          movi v0.4s, #0
+          movi v1.4s, #0
+          movi v2.4s, #0
+          movi v3.4s, #0
+          movi v4.4s, #0
+          movi v5.4s, #0
+          movi v6.4s, #0
+          movi v7.4s, #0
           mov w3, %w[run_depth]
-          subs w3, w3, #1
-          b.ls 1f /* skip loop */
             0: /* loop start */
-            ld1 {v4.16b, v5.16b, v6.16b, v7.16b}, [%[lhs_ptr]], #64
-            sdot v16.4s, v12.16b, v0.16b
-            sdot v17.4s, v13.16b, v0.16b
-            sdot v18.4s, v14.16b, v0.16b
-            sdot v19.4s, v15.16b, v0.16b
-            sdot v16.4s, v8.16b, v1.16b
-            sdot v17.4s, v9.16b, v1.16b
-            sdot v18.4s, v10.16b, v1.16b
-            sdot v19.4s, v11.16b, v1.16b
-            sdot v20.4s, v12.16b, v2.16b
-            sdot v21.4s, v13.16b, v2.16b
-            sdot v22.4s, v14.16b, v2.16b
-            sdot v23.4s, v15.16b, v2.16b
-            sdot v20.4s, v8.16b, v3.16b
-            sdot v21.4s, v9.16b, v3.16b
-            sdot v22.4s, v10.16b, v3.16b
-            sdot v23.4s, v11.16b, v3.16b
-            and v8.16b, v4.16b, v24.16b
-            and v9.16b, v5.16b, v24.16b
-            ushr v12.16b, v4.16b, #4
-            ld1 {v0.16b, v1.16b, v2.16b, v3.16b}, [%[rhs_ptr]], #64
-            ushr v13.16b, v5.16b, #4
-            and v10.16b, v6.16b, v24.16b
-            and v11.16b, v7.16b, v24.16b
-            ushr v14.16b, v6.16b, #4
-            ushr v15.16b, v7.16b, #4
+            ld1 {v16.16b, v17.16b, v18.16b, v19.16b}, [%[lhs_ptr]], #64
+            ld1 {v24.16b, v25.16b, v26.16b, v27.16b}, [%[rhs_ptr]], #64
+            and v20.16b, v16.16b, v31.16b
+            and v21.16b, v17.16b, v31.16b
+            and v22.16b, v18.16b, v31.16b
+            and v23.16b, v19.16b, v31.16b
+            ushr v16.16b, v16.16b, #4
+            ushr v17.16b, v17.16b, #4
+            ushr v18.16b, v18.16b, #4
+            ushr v19.16b, v19.16b, #4
+            sdot v0.4s, v16.16b, v24.16b
+            sdot v1.4s, v17.16b, v24.16b
+            sdot v2.4s, v18.16b, v24.16b
+            sdot v3.4s, v19.16b, v24.16b
+            sdot v0.4s, v20.16b, v25.16b
+            sdot v1.4s, v21.16b, v25.16b
+            sdot v2.4s, v22.16b, v25.16b
+            sdot v3.4s, v23.16b, v25.16b
+            sdot v4.4s, v16.16b, v26.16b
+            sdot v5.4s, v17.16b, v26.16b
+            sdot v6.4s, v18.16b, v26.16b
+            sdot v7.4s, v19.16b, v26.16b
+            sdot v4.4s, v20.16b, v27.16b
+            sdot v5.4s, v21.16b, v27.16b
+            sdot v6.4s, v22.16b, v27.16b
+            sdot v7.4s, v23.16b, v27.16b
             subs w3, w3, #1
             b.hi 0b /* loop branch */
           1: /* loop end */
-          sdot v16.4s, v12.16b, v0.16b
-          sdot v17.4s, v13.16b, v0.16b
-          sdot v18.4s, v14.16b, v0.16b
-          sdot v19.4s, v15.16b, v0.16b
-          sdot v16.4s, v8.16b, v1.16b
-          sdot v17.4s, v9.16b, v1.16b
-          sdot v18.4s, v10.16b, v1.16b
-          sdot v19.4s, v11.16b, v1.16b
-          sdot v20.4s, v12.16b, v2.16b
-          sdot v21.4s, v13.16b, v2.16b
-          sdot v22.4s, v14.16b, v2.16b
-          sdot v23.4s, v15.16b, v2.16b
-          sdot v20.4s, v8.16b, v3.16b
-          sdot v21.4s, v9.16b, v3.16b
-          sdot v22.4s, v10.16b, v3.16b
-          sdot v23.4s, v11.16b, v3.16b
-          addp v4.4s, v16.4s, v17.4s
-          addp v5.4s, v18.4s, v19.4s
-          addp v8.4s, v20.4s, v21.4s
-          addp v9.4s, v22.4s, v23.4s
-          addp v6.4s, v4.4s, v5.4s
-          addp v7.4s, v8.4s, v9.4s
-          st1 {v6.4s, v7.4s}, [%[dst]], #32
+          addp v0.4s, v0.4s, v1.4s
+          addp v2.4s, v2.4s, v3.4s
+          addp v4.4s, v4.4s, v5.4s
+          addp v6.4s, v6.4s, v7.4s
+          addp v0.4s, v0.4s, v2.4s
+          addp v4.4s, v4.4s, v6.4s
+          st1 {v0.4s}, [%[dst]], #16
+          st1 {v4.4s}, [%[dst]], #16
           )asm"
           : [lhs_ptr] "+r"(lhs_ptr), [rhs_ptr] "+r"(rhs_ptr), [dst] "+r"(dst)
           : [run_depth] "r"(run_depth)
           : "cc", "memory", "w3", "v0", "v1", "v2", "v3", "v4", "v5", "v6",
-            "v7", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "v16",
-            "v17", "v18", "v19", "v20", "v21", "v22", "v23", "v24");
+            "v7", "v16", "v17", "v18", "v19", "v20", "v21", "v22", "v23", "v24",
+            "v25", "v26", "v27", "v31");
     }
   }
 }
@@ -259,155 +223,109 @@ DOTPROD_ATTRIBUTE void NeonRunKernelSDot<4, 4, 32>(
   for (int i = start_row; i < outer_rows; ++i) {
     int left_index = i * rows_left * lhs_layout_cols / 2;
     const uint8_t* lhs_ptr_data = lhs + left_index;
+    __builtin_prefetch(lhs_ptr_data, 0, 3);
     for (int j = start_col; j < outer_cols; ++j) {
       const uint8_t* lhs_ptr = lhs_ptr_data;
       int right_index = j * rows_right * rhs_layout_cols;
       const int8_t* rhs_ptr = rhs + right_index;
+      __builtin_prefetch(rhs_ptr, 0, 3);
+      // General register allocation:
+      // v0-v15: int32 accumulators for the dot products
+      // v16-v19: high int4 values of LHS (after USHR)
+      // v20-v23: low int4 values of LHS (after AND)
+      // v24-v29: int8 values of RHS (hoisted and interleaved)
+      // v31: mask for AND
       asm volatile(
           R"asm(
-          movi v3.16b, #15
-          ld1 {v4.16b}, [%[lhs_ptr]], #16
-          movi v16.4s, #0
-          movi v17.4s, #0
-          ld1 {v5.16b}, [%[lhs_ptr]], #16
-          movi v18.4s, #0
-          movi v19.4s, #0
-          ld1 {v6.16b, v7.16b}, [%[lhs_ptr]], #32
-          and v8.16b, v4.16b, v3.16b
-          and v9.16b, v5.16b, v3.16b
-          movi v20.4s, #0
-          movi v21.4s, #0
-          movi v22.4s, #0
-          movi v23.4s, #0
-          movi v24.4s, #0
-          movi v25.4s, #0
-          movi v26.4s, #0
-          movi v27.4s, #0
-          movi v28.4s, #0
-          movi v29.4s, #0
-          movi v30.4s, #0
-          movi v31.4s, #0
-          ushr v12.16b, v4.16b, #4
-          ushr v13.16b, v5.16b, #4
-          ld1 {v0.16b, v1.16b}, [%[rhs_ptr]], #32
-          and v10.16b, v6.16b, v3.16b
-          and v11.16b, v7.16b, v3.16b
-          ushr v14.16b, v6.16b, #4
-          ushr v15.16b, v7.16b, #4
+          movi v31.16b, #15
+          movi v0.4s, #0
+          movi v1.4s, #0
+          movi v2.4s, #0
+          movi v3.4s, #0
+          movi v4.4s, #0
+          movi v5.4s, #0
+          movi v6.4s, #0
+          movi v7.4s, #0
+          movi v8.4s, #0
+          movi v9.4s, #0
+          movi v10.4s, #0
+          movi v11.4s, #0
+          movi v12.4s, #0
+          movi v13.4s, #0
+          movi v14.4s, #0
+          movi v15.4s, #0
           mov w3, %w[run_depth]
-          subs w3, w3, #1
-          b.ls 1f /* skip loop */
             0: /* loop start */
-            ld1 {v4.16b, v5.16b, v6.16b, v7.16b}, [%[lhs_ptr]], #64
-            sdot v16.4s, v12.16b, v0.16b
-            sdot v17.4s, v13.16b, v0.16b
-            sdot v18.4s, v14.16b, v0.16b
-            sdot v19.4s, v15.16b, v0.16b
-            ld1 {v2.16b}, [%[rhs_ptr]], #16
-            sdot v16.4s, v8.16b, v1.16b
-            sdot v17.4s, v9.16b, v1.16b
-            sdot v18.4s, v10.16b, v1.16b
-            sdot v19.4s, v11.16b, v1.16b
-            ld1 {v0.16b}, [%[rhs_ptr]], #16
-            sdot v20.4s, v12.16b, v2.16b
-            sdot v21.4s, v13.16b, v2.16b
-            sdot v22.4s, v14.16b, v2.16b
-            sdot v23.4s, v15.16b, v2.16b
-            ld1 {v1.16b}, [%[rhs_ptr]], #16
-            sdot v20.4s, v8.16b, v0.16b
-            sdot v21.4s, v9.16b, v0.16b
-            sdot v22.4s, v10.16b, v0.16b
-            sdot v23.4s, v11.16b, v0.16b
-            ld1 {v2.16b}, [%[rhs_ptr]], #16
-            sdot v24.4s, v12.16b, v1.16b
-            sdot v25.4s, v13.16b, v1.16b
-            sdot v26.4s, v14.16b, v1.16b
-            sdot v27.4s, v15.16b, v1.16b
-            ld1 {v0.16b}, [%[rhs_ptr]], #16
-            sdot v24.4s, v8.16b, v2.16b
-            sdot v25.4s, v9.16b, v2.16b
-            sdot v26.4s, v10.16b, v2.16b
-            sdot v27.4s, v11.16b, v2.16b
-            ld1 {v1.16b}, [%[rhs_ptr]], #16
-            sdot v28.4s, v12.16b, v0.16b
-            sdot v29.4s, v13.16b, v0.16b
-            sdot v30.4s, v14.16b, v0.16b
-            sdot v31.4s, v15.16b, v0.16b
-            sdot v28.4s, v8.16b, v1.16b
-            sdot v29.4s, v9.16b, v1.16b
-            sdot v30.4s, v10.16b, v1.16b
-            sdot v31.4s, v11.16b, v1.16b
-            ld1 {v0.16b}, [%[rhs_ptr]], #16
-            and v8.16b, v4.16b, v3.16b
-            and v9.16b, v5.16b, v3.16b
-            ushr v12.16b, v4.16b, #4
-            ushr v13.16b, v5.16b, #4
-            ld1 {v1.16b}, [%[rhs_ptr]], #16
-            and v10.16b, v6.16b, v3.16b
-            and v11.16b, v7.16b, v3.16b
-            ushr v14.16b, v6.16b, #4
-            ushr v15.16b, v7.16b, #4
+            ld1 {v16.16b, v17.16b, v18.16b, v19.16b}, [%[lhs_ptr]], #64
+            ld1 {v24.16b, v25.16b, v26.16b, v27.16b}, [%[rhs_ptr]], #64
+            and v20.16b, v16.16b, v31.16b
+            and v21.16b, v17.16b, v31.16b
+            and v22.16b, v18.16b, v31.16b
+            and v23.16b, v19.16b, v31.16b
+            ushr v16.16b, v16.16b, #4
+            ushr v17.16b, v17.16b, #4
+            ushr v18.16b, v18.16b, #4
+            ushr v19.16b, v19.16b, #4
+            sdot v0.4s, v16.16b, v24.16b
+            sdot v1.4s, v17.16b, v24.16b
+            sdot v2.4s, v18.16b, v24.16b
+            sdot v3.4s, v19.16b, v24.16b
+            sdot v0.4s, v20.16b, v25.16b
+            sdot v1.4s, v21.16b, v25.16b
+            sdot v2.4s, v22.16b, v25.16b
+            sdot v3.4s, v23.16b, v25.16b
+            ld1 {v28.16b, v29.16b}, [%[rhs_ptr]], #32
+            sdot v4.4s, v16.16b, v26.16b
+            sdot v5.4s, v17.16b, v26.16b
+            sdot v6.4s, v18.16b, v26.16b
+            sdot v7.4s, v19.16b, v26.16b
+            sdot v4.4s, v20.16b, v27.16b
+            sdot v5.4s, v21.16b, v27.16b
+            sdot v6.4s, v22.16b, v27.16b
+            sdot v7.4s, v23.16b, v27.16b
+            ld1 {v24.16b, v25.16b}, [%[rhs_ptr]], #32
+            sdot v8.4s, v16.16b, v28.16b
+            sdot v9.4s, v17.16b, v28.16b
+            sdot v10.4s, v18.16b, v28.16b
+            sdot v11.4s, v19.16b, v28.16b
+            sdot v8.4s, v20.16b, v29.16b
+            sdot v9.4s, v21.16b, v29.16b
+            sdot v10.4s, v22.16b, v29.16b
+            sdot v11.4s, v23.16b, v29.16b
+            sdot v12.4s, v16.16b, v24.16b
+            sdot v13.4s, v17.16b, v24.16b
+            sdot v14.4s, v18.16b, v24.16b
+            sdot v15.4s, v19.16b, v24.16b
+            sdot v12.4s, v20.16b, v25.16b
+            sdot v13.4s, v21.16b, v25.16b
+            sdot v14.4s, v22.16b, v25.16b
+            sdot v15.4s, v23.16b, v25.16b
             subs w3, w3, #1
             b.hi 0b /* loop branch */
           1: /* loop end */
-          sdot v16.4s, v12.16b, v0.16b
-          sdot v17.4s, v13.16b, v0.16b
-          sdot v18.4s, v14.16b, v0.16b
-          sdot v19.4s, v15.16b, v0.16b
-          ld1 {v2.16b}, [%[rhs_ptr]], #16
-          sdot v16.4s, v8.16b, v1.16b
-          sdot v17.4s, v9.16b, v1.16b
-          sdot v18.4s, v10.16b, v1.16b
-          sdot v19.4s, v11.16b, v1.16b
-          ld1 {v0.16b}, [%[rhs_ptr]], #16
-          sdot v20.4s, v12.16b, v2.16b
-          sdot v21.4s, v13.16b, v2.16b
-          sdot v22.4s, v14.16b, v2.16b
-          sdot v23.4s, v15.16b, v2.16b
-          ld1 {v1.16b}, [%[rhs_ptr]], #16
-          sdot v20.4s, v8.16b, v0.16b
-          sdot v21.4s, v9.16b, v0.16b
-          sdot v22.4s, v10.16b, v0.16b
-          sdot v23.4s, v11.16b, v0.16b
-          ld1 {v2.16b}, [%[rhs_ptr]], #16
-          sdot v24.4s, v12.16b, v1.16b
-          sdot v25.4s, v13.16b, v1.16b
-          sdot v26.4s, v14.16b, v1.16b
-          sdot v27.4s, v15.16b, v1.16b
-          ld1 {v0.16b}, [%[rhs_ptr]], #16
-          sdot v24.4s, v8.16b, v2.16b
-          sdot v25.4s, v9.16b, v2.16b
-          sdot v26.4s, v10.16b, v2.16b
-          sdot v27.4s, v11.16b, v2.16b
-          ld1 {v1.16b}, [%[rhs_ptr]], #16
-          sdot v28.4s, v12.16b, v0.16b
-          sdot v29.4s, v13.16b, v0.16b
-          sdot v30.4s, v14.16b, v0.16b
-          sdot v31.4s, v15.16b, v0.16b
-          sdot v28.4s, v8.16b, v1.16b
-          sdot v29.4s, v9.16b, v1.16b
-          sdot v30.4s, v10.16b, v1.16b
-          sdot v31.4s, v11.16b, v1.16b
-          addp v14.4s, v16.4s, v17.4s
-          addp v15.4s, v18.4s, v19.4s
-          addp v12.4s, v20.4s, v21.4s
-          addp v13.4s, v22.4s, v23.4s
-          addp v10.4s, v24.4s, v25.4s
-          addp v11.4s, v26.4s, v27.4s
-          addp v8.4s, v28.4s, v29.4s
-          addp v9.4s, v30.4s, v31.4s
-          addp v4.4s, v14.4s, v15.4s
-          addp v5.4s, v12.4s, v13.4s
-          addp v6.4s, v10.4s, v11.4s
-          addp v7.4s, v8.4s, v9.4s
-          st1 {v4.4s, v5.4s, v6.4s, v7.4s}, [%[dst]], #64
+          addp v0.4s, v0.4s, v1.4s
+          addp v2.4s, v2.4s, v3.4s
+          addp v4.4s, v4.4s, v5.4s
+          addp v6.4s, v6.4s, v7.4s
+          addp v8.4s, v8.4s, v9.4s
+          addp v10.4s, v10.4s, v11.4s
+          addp v12.4s, v12.4s, v13.4s
+          addp v14.4s, v14.4s, v15.4s
+          addp v0.4s, v0.4s, v2.4s
+          addp v4.4s, v4.4s, v6.4s
+          addp v8.4s, v8.4s, v10.4s
+          addp v12.4s, v12.4s, v14.4s
+          st1 {v0.4s}, [%[dst]], #16
+          st1 {v4.4s}, [%[dst]], #16
+          st1 {v8.4s}, [%[dst]], #16
+          st1 {v12.4s}, [%[dst]], #16
           )asm"
           : [lhs_ptr] "+r"(lhs_ptr), [rhs_ptr] "+r"(rhs_ptr), [dst] "+r"(dst)
           : [run_depth] "r"(run_depth)
           : "cc", "memory", "w3", "v0", "v1", "v2", "v3", "v4", "v5", "v6",
             "v7", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "v16",
             "v17", "v18", "v19", "v20", "v21", "v22", "v23", "v24", "v25",
-            "v26", "v27", "v28", "v29", "v30", "v31");
+            "v26", "v27", "v28", "v29", "v31");
     }
   }
 }

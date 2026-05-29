@@ -54,102 +54,71 @@ void NeonRunKernelNoSDot<4, 1, 32>(const uint8_t* lhs, const int8_t* rhs,
   for (int i = start_row; i < outer_rows; ++i) {
     int left_index = i * rows_left * lhs_layout_cols / 2;
     const uint8_t* lhs_ptr_data = lhs + left_index;
+    __builtin_prefetch(lhs_ptr_data, 0, 3);
     for (int j = start_col; j < outer_cols; ++j) {
       const uint8_t* lhs_ptr = lhs_ptr_data;
       int right_index = j * rows_right * rhs_layout_cols;
       const int8_t* rhs_ptr = rhs + right_index;
+      __builtin_prefetch(rhs_ptr, 0, 3);
+      // General register allocation:
+      // v0-v3: int32 accumulators for the dot products
+      // v16-v19: high int4 values of LHS (after USHR)
+      // v20-v23: low int4 values of LHS (after AND)
+      // v24-v25: int8 values of RHS
+      // v26-v29: temp; int16 accumulators within the 4x1x32 block
+      // v31: mask for AND
       asm volatile(
           R"asm(
-          movi v24.16b, #15
-          ld1 {v4.16b}, [%[lhs_ptr]], #16
-          movi v16.4s, #0
-          movi v17.4s, #0
-          ld1 {v5.16b}, [%[lhs_ptr]], #16
-          movi v18.4s, #0
-          movi v19.4s, #0
-          ld1 {v6.16b}, [%[lhs_ptr]], #16
-          and v8.16b, v4.16b, v24.16b
-          and v9.16b, v5.16b, v24.16b
-          ld1 {v7.16b}, [%[lhs_ptr]], #16
-          ushr v12.16b, v4.16b, #4
-          ushr v13.16b, v5.16b, #4
-          ld1 {v0.16b}, [%[rhs_ptr]], #16
-          and v10.16b, v6.16b, v24.16b
-          and v11.16b, v7.16b, v24.16b
-          ld1 {v1.16b}, [%[rhs_ptr]], #16
-          ushr v14.16b, v6.16b, #4
-          ushr v15.16b, v7.16b, #4
+          movi v31.16b, #15
+          movi v0.4s, #0
+          movi v1.4s, #0
+          movi v2.4s, #0
+          movi v3.4s, #0
           mov w3, %w[run_depth]
-          subs w3, w3, #1
-          b.ls 1f /* skip loop */
             0: /* loop start */
-            ld1 {v4.16b}, [%[lhs_ptr]], #16
-            smull v20.8h, v12.8b, v0.8b
-            smull v21.8h, v13.8b, v0.8b
-            smull v22.8h, v14.8b, v0.8b
-            ld1 {v5.16b}, [%[lhs_ptr]], #16
-            smull v23.8h, v15.8b, v0.8b
-            smlal v20.8h, v8.8b, v1.8b
-            smlal v21.8h, v9.8b, v1.8b
-            ld1 {v6.16b}, [%[lhs_ptr]], #16
-            smlal v22.8h, v10.8b, v1.8b
-            smlal v23.8h, v11.8b, v1.8b
-            smlal2 v20.8h, v12.16b, v0.16b
-            ld1 {v7.16b}, [%[lhs_ptr]], #16
-            smlal2 v21.8h, v13.16b, v0.16b
-            smlal2 v22.8h, v14.16b, v0.16b
-            smlal2 v23.8h, v15.16b, v0.16b
-            smlal2 v20.8h, v8.16b, v1.16b
-            smlal2 v21.8h, v9.16b, v1.16b
-            smlal2 v22.8h, v10.16b, v1.16b
-            ld1 {v0.16b}, [%[rhs_ptr]], #16
-            smlal2 v23.8h, v11.16b, v1.16b
-            sadalp v16.4s, v20.8h
-            sadalp v17.4s, v21.8h
-            sadalp v18.4s, v22.8h
-            sadalp v19.4s, v23.8h
-            ld1 {v1.16b}, [%[rhs_ptr]], #16
-            and v8.16b, v4.16b, v24.16b
-            and v9.16b, v5.16b, v24.16b
-            ushr v12.16b, v4.16b, #4
-            ushr v13.16b, v5.16b, #4
-            and v10.16b, v6.16b, v24.16b
-            and v11.16b, v7.16b, v24.16b
-            ushr v14.16b, v6.16b, #4
-            ushr v15.16b, v7.16b, #4
+            ld1 {v16.16b, v17.16b, v18.16b, v19.16b}, [%[lhs_ptr]], #64
+            ld1 {v24.16b, v25.16b}, [%[rhs_ptr]], #32
+            and v20.16b, v16.16b, v31.16b
+            and v21.16b, v17.16b, v31.16b
+            and v22.16b, v18.16b, v31.16b
+            and v23.16b, v19.16b, v31.16b
+            ushr v16.16b, v16.16b, #4
+            ushr v17.16b, v17.16b, #4
+            ushr v18.16b, v18.16b, #4
+            ushr v19.16b, v19.16b, #4
+            smull v26.8h, v16.8b, v24.8b
+            smull v27.8h, v17.8b, v24.8b
+            smull v28.8h, v18.8b, v24.8b
+            smull v29.8h, v19.8b, v24.8b
+            smlal v26.8h, v20.8b, v25.8b
+            smlal v27.8h, v21.8b, v25.8b
+            smlal v28.8h, v22.8b, v25.8b
+            smlal v29.8h, v23.8b, v25.8b
+            smlal2 v26.8h, v16.16b, v24.16b
+            smlal2 v27.8h, v17.16b, v24.16b
+            smlal2 v28.8h, v18.16b, v24.16b
+            smlal2 v29.8h, v19.16b, v24.16b
+            smlal2 v26.8h, v20.16b, v25.16b
+            smlal2 v27.8h, v21.16b, v25.16b
+            smlal2 v28.8h, v22.16b, v25.16b
+            smlal2 v29.8h, v23.16b, v25.16b
+            sadalp v0.4s, v26.8h
+            sadalp v1.4s, v27.8h
+            sadalp v2.4s, v28.8h
+            sadalp v3.4s, v29.8h
             subs w3, w3, #1
             b.hi 0b /* loop branch */
           1: /* loop end */
-          smull v20.8h, v12.8b, v0.8b
-          smull v21.8h, v13.8b, v0.8b
-          smull v22.8h, v14.8b, v0.8b
-          smull v23.8h, v15.8b, v0.8b
-          smlal v20.8h, v8.8b, v1.8b
-          smlal v21.8h, v9.8b, v1.8b
-          smlal v22.8h, v10.8b, v1.8b
-          smlal v23.8h, v11.8b, v1.8b
-          smlal2 v20.8h, v12.16b, v0.16b
-          smlal2 v21.8h, v13.16b, v0.16b
-          smlal2 v22.8h, v14.16b, v0.16b
-          smlal2 v23.8h, v15.16b, v0.16b
-          smlal2 v20.8h, v8.16b, v1.16b
-          smlal2 v21.8h, v9.16b, v1.16b
-          smlal2 v22.8h, v10.16b, v1.16b
-          smlal2 v23.8h, v11.16b, v1.16b
-          sadalp v16.4s, v20.8h
-          sadalp v17.4s, v21.8h
-          sadalp v18.4s, v22.8h
-          sadalp v19.4s, v23.8h
-          addp v4.4s, v16.4s, v17.4s
-          addp v5.4s, v18.4s, v19.4s
-          addp v6.4s, v4.4s, v5.4s
-          st1 {v6.4s}, [%[dst]], #16
+          addp v0.4s, v0.4s, v1.4s
+          addp v2.4s, v2.4s, v3.4s
+          addp v0.4s, v0.4s, v2.4s
+          st1 {v0.4s}, [%[dst]], #16
           )asm"
           : [lhs_ptr] "+r"(lhs_ptr), [rhs_ptr] "+r"(rhs_ptr), [dst] "+r"(dst)
           : [run_depth] "r"(run_depth)
-          : "cc", "memory", "w3", "v0", "v1", "v4", "v5", "v6", "v7", "v8",
-            "v9", "v10", "v11", "v12", "v13", "v14", "v15", "v16", "v17", "v18",
-            "v19", "v20", "v21", "v22", "v23", "v24");
+          : "cc", "memory", "w3", "v0", "v1", "v2", "v3", "v16", "v17", "v18",
+            "v19", "v20", "v21", "v22", "v23", "v24", "v25", "v26", "v27",
+            "v28", "v29", "v31");
     }
   }
 }
@@ -176,154 +145,99 @@ void NeonRunKernelNoSDot<4, 2, 32>(const uint8_t* lhs, const int8_t* rhs,
   for (int i = start_row; i < outer_rows; ++i) {
     int left_index = i * rows_left * lhs_layout_cols / 2;
     const uint8_t* lhs_ptr_data = lhs + left_index;
+    __builtin_prefetch(lhs_ptr_data, 0, 3);
     for (int j = start_col; j < outer_cols; ++j) {
       const uint8_t* lhs_ptr = lhs_ptr_data;
       int right_index = j * rows_right * rhs_layout_cols;
       const int8_t* rhs_ptr = rhs + right_index;
+      __builtin_prefetch(rhs_ptr, 0, 3);
+      // General register allocation:
+      // v0-v7: int32 accumulators for the dot products
+      // v8-v11: int8 values of RHS (rows 0 and 1)
+      // v16-v19: high int4 values of LHS (after USHR)
+      // v20-v23: low int4 values of LHS (after AND)
+      // v26-v29: temp; int16 accumulators within the 4x2x32 block
+      // v31: mask for AND
       asm volatile(
           R"asm(
-          ld1 {v4.16b}, [%[lhs_ptr]], #16
           movi v31.16b, #15
-          movi v16.4s, #0
-          movi v17.4s, #0
-          ld1 {v5.16b}, [%[lhs_ptr]], #16
-          movi v18.4s, #0
-          movi v19.4s, #0
-          ld1 {v6.16b}, [%[lhs_ptr]], #16
-          and v8.16b, v4.16b, v31.16b
-          and v9.16b, v5.16b, v31.16b
-          ld1 {v7.16b}, [%[lhs_ptr]], #16
-          ushr v12.16b, v4.16b, #4
-          ushr v13.16b, v5.16b, #4
-          movi v24.4s, #0
-          ld1 {v0.16b}, [%[rhs_ptr]], #16
-          movi v25.4s, #0
-          movi v26.4s, #0
-          ld1 {v1.16b}, [%[rhs_ptr]], #16
-          movi v27.4s, #0
-          and v10.16b, v6.16b, v31.16b
-          ld1 {v2.16b}, [%[rhs_ptr]], #16
-          and v11.16b, v7.16b, v31.16b
-          ushr v14.16b, v6.16b, #4
-          ld1 {v3.16b}, [%[rhs_ptr]], #16
-          ushr v15.16b, v7.16b, #4
+          movi v0.4s, #0
+          movi v1.4s, #0
+          movi v2.4s, #0
+          movi v3.4s, #0
+          movi v4.4s, #0
+          movi v5.4s, #0
+          movi v6.4s, #0
+          movi v7.4s, #0
           mov w3, %w[run_depth]
-          subs w3, w3, #1
-          b.ls 1f /* skip loop */
             0: /* loop start */
-            smull v20.8h, v12.8b, v0.8b
-            smull v21.8h, v13.8b, v0.8b
-            smull v22.8h, v14.8b, v0.8b
-            ld1 {v4.16b}, [%[lhs_ptr]], #16
-            smull v23.8h, v15.8b, v0.8b
-            smlal v20.8h, v8.8b, v1.8b
-            smlal v21.8h, v9.8b, v1.8b
-            ld1 {v5.16b}, [%[lhs_ptr]], #16
-            smlal v22.8h, v10.8b, v1.8b
-            smlal v23.8h, v11.8b, v1.8b
-            smlal2 v20.8h, v12.16b, v0.16b
-            ld1 {v6.16b}, [%[lhs_ptr]], #16
-            smlal2 v21.8h, v13.16b, v0.16b
-            smlal2 v22.8h, v14.16b, v0.16b
-            smlal2 v23.8h, v15.16b, v0.16b
-            ld1 {v7.16b}, [%[lhs_ptr]], #16
-            smlal2 v20.8h, v8.16b, v1.16b
-            smlal2 v21.8h, v9.16b, v1.16b
-            smlal2 v22.8h, v10.16b, v1.16b
-            smlal2 v23.8h, v11.16b, v1.16b
-            ld1 {v0.16b}, [%[rhs_ptr]], #16
-            sadalp v16.4s, v20.8h
-            sadalp v17.4s, v21.8h
-            sadalp v18.4s, v22.8h
-            sadalp v19.4s, v23.8h
-            ld1 {v1.16b}, [%[rhs_ptr]], #16
-            smull v28.8h, v12.8b, v2.8b
-            smull v29.8h, v13.8b, v2.8b
-            smull v30.8h, v14.8b, v2.8b
-            smull v20.8h, v15.8b, v2.8b
-            smlal v28.8h, v8.8b, v3.8b
-            smlal v29.8h, v9.8b, v3.8b
-            smlal v30.8h, v10.8b, v3.8b
-            smlal v20.8h, v11.8b, v3.8b
-            smlal2 v28.8h, v12.16b, v2.16b
-            smlal2 v29.8h, v13.16b, v2.16b
-            smlal2 v30.8h, v14.16b, v2.16b
-            smlal2 v20.8h, v15.16b, v2.16b
-            smlal2 v28.8h, v8.16b, v3.16b
-            smlal2 v29.8h, v9.16b, v3.16b
-            smlal2 v30.8h, v10.16b, v3.16b
-            smlal2 v20.8h, v11.16b, v3.16b
-            ld1 {v2.16b}, [%[rhs_ptr]], #16
-            sadalp v24.4s, v28.8h
-            sadalp v25.4s, v29.8h
-            sadalp v26.4s, v30.8h
-            sadalp v27.4s, v20.8h
-            ld1 {v3.16b}, [%[rhs_ptr]], #16
-            and v8.16b, v4.16b, v31.16b
-            and v9.16b, v5.16b, v31.16b
-            ushr v12.16b, v4.16b, #4
-            ushr v13.16b, v5.16b, #4
+            ld1 {v16.16b, v17.16b, v18.16b, v19.16b}, [%[lhs_ptr]], #64
+            ld1 {v8.16b, v9.16b, v10.16b, v11.16b}, [%[rhs_ptr]], #64
+            and v20.16b, v16.16b, v31.16b
+            and v21.16b, v17.16b, v31.16b
+            and v22.16b, v18.16b, v31.16b
+            and v23.16b, v19.16b, v31.16b
+            ushr v16.16b, v16.16b, #4
+            ushr v17.16b, v17.16b, #4
+            ushr v18.16b, v18.16b, #4
+            ushr v19.16b, v19.16b, #4
+            smull v26.8h, v16.8b, v8.8b
+            smull v27.8h, v17.8b, v8.8b
+            smull v28.8h, v18.8b, v8.8b
+            smull v29.8h, v19.8b, v8.8b
+            smlal v26.8h, v20.8b, v9.8b
+            smlal v27.8h, v21.8b, v9.8b
+            smlal v28.8h, v22.8b, v9.8b
+            smlal v29.8h, v23.8b, v9.8b
+            smlal2 v26.8h, v16.16b, v8.16b
+            smlal2 v27.8h, v17.16b, v8.16b
+            smlal2 v28.8h, v18.16b, v8.16b
+            smlal2 v29.8h, v19.16b, v8.16b
+            smlal2 v26.8h, v20.16b, v9.16b
+            smlal2 v27.8h, v21.16b, v9.16b
+            smlal2 v28.8h, v22.16b, v9.16b
+            smlal2 v29.8h, v23.16b, v9.16b
+            sadalp v0.4s, v26.8h
+            sadalp v1.4s, v27.8h
+            sadalp v2.4s, v28.8h
+            sadalp v3.4s, v29.8h
+            smull v26.8h, v16.8b, v10.8b
+            smull v27.8h, v17.8b, v10.8b
+            smull v28.8h, v18.8b, v10.8b
+            smull v29.8h, v19.8b, v10.8b
+            smlal v26.8h, v20.8b, v11.8b
+            smlal v27.8h, v21.8b, v11.8b
+            smlal v28.8h, v22.8b, v11.8b
+            smlal v29.8h, v23.8b, v11.8b
+            smlal2 v26.8h, v16.16b, v10.16b
+            smlal2 v27.8h, v17.16b, v10.16b
+            smlal2 v28.8h, v18.16b, v10.16b
+            smlal2 v29.8h, v19.16b, v10.16b
+            smlal2 v26.8h, v20.16b, v11.16b
+            smlal2 v27.8h, v21.16b, v11.16b
+            smlal2 v28.8h, v22.16b, v11.16b
+            smlal2 v29.8h, v23.16b, v11.16b
+            sadalp v4.4s, v26.8h
+            sadalp v5.4s, v27.8h
+            sadalp v6.4s, v28.8h
+            sadalp v7.4s, v29.8h
             subs w3, w3, #1
-            and v10.16b, v6.16b, v31.16b
-            and v11.16b, v7.16b, v31.16b
-            ushr v14.16b, v6.16b, #4
-            ushr v15.16b, v7.16b, #4
             b.hi 0b /* loop branch */
           1: /* loop end */
-          smull v20.8h, v12.8b, v0.8b
-          smull v21.8h, v13.8b, v0.8b
-          smull v22.8h, v14.8b, v0.8b
-          smull v23.8h, v15.8b, v0.8b
-          smlal v20.8h, v8.8b, v1.8b
-          smlal v21.8h, v9.8b, v1.8b
-          smlal v22.8h, v10.8b, v1.8b
-          smlal v23.8h, v11.8b, v1.8b
-          smlal2 v20.8h, v12.16b, v0.16b
-          smlal2 v21.8h, v13.16b, v0.16b
-          smlal2 v22.8h, v14.16b, v0.16b
-          smlal2 v23.8h, v15.16b, v0.16b
-          smlal2 v20.8h, v8.16b, v1.16b
-          smlal2 v21.8h, v9.16b, v1.16b
-          smlal2 v22.8h, v10.16b, v1.16b
-          smlal2 v23.8h, v11.16b, v1.16b
-          smull v28.8h, v12.8b, v2.8b
-          smull v29.8h, v13.8b, v2.8b
-          smull v30.8h, v14.8b, v2.8b
-          smull v31.8h, v15.8b, v2.8b
-          smlal v28.8h, v8.8b, v3.8b
-          smlal v29.8h, v9.8b, v3.8b
-          smlal v30.8h, v10.8b, v3.8b
-          smlal v31.8h, v11.8b, v3.8b
-          smlal2 v28.8h, v12.16b, v2.16b
-          smlal2 v29.8h, v13.16b, v2.16b
-          smlal2 v30.8h, v14.16b, v2.16b
-          smlal2 v31.8h, v15.16b, v2.16b
-          smlal2 v28.8h, v8.16b, v3.16b
-          smlal2 v29.8h, v9.16b, v3.16b
-          smlal2 v30.8h, v10.16b, v3.16b
-          smlal2 v31.8h, v11.16b, v3.16b
-          sadalp v16.4s, v20.8h
-          sadalp v17.4s, v21.8h
-          sadalp v18.4s, v22.8h
-          sadalp v19.4s, v23.8h
-          sadalp v24.4s, v28.8h
-          sadalp v25.4s, v29.8h
-          sadalp v26.4s, v30.8h
-          sadalp v27.4s, v31.8h
-          addp v4.4s, v16.4s, v17.4s
-          addp v5.4s, v18.4s, v19.4s
-          addp v8.4s, v24.4s, v25.4s
-          addp v9.4s, v26.4s, v27.4s
-          addp v6.4s, v4.4s, v5.4s
-          addp v7.4s, v8.4s, v9.4s
-          st1 {v6.4s, v7.4s}, [%[dst]], #32
+          addp v0.4s, v0.4s, v1.4s
+          addp v2.4s, v2.4s, v3.4s
+          addp v4.4s, v4.4s, v5.4s
+          addp v6.4s, v6.4s, v7.4s
+          addp v0.4s, v0.4s, v2.4s
+          addp v4.4s, v4.4s, v6.4s
+          st1 {v0.4s}, [%[dst]], #16
+          st1 {v4.4s}, [%[dst]], #16
           )asm"
           : [lhs_ptr] "+r"(lhs_ptr), [rhs_ptr] "+r"(rhs_ptr), [dst] "+r"(dst)
           : [run_depth] "r"(run_depth)
           : "cc", "memory", "w3", "v0", "v1", "v2", "v3", "v4", "v5", "v6",
-            "v7", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "v16",
-            "v17", "v18", "v19", "v20", "v21", "v22", "v23", "v24", "v25",
-            "v26", "v27", "v28", "v29", "v30", "v31");
+            "v7", "v8", "v9", "v10", "v11", "v16", "v17", "v18", "v19", "v20",
+            "v21", "v22", "v23", "v26", "v27", "v28", "v29", "v31");
     }
   }
 }
@@ -350,256 +264,159 @@ void NeonRunKernelNoSDot<4, 4, 32>(const uint8_t* lhs, const int8_t* rhs,
   for (int i = start_row; i < outer_rows; ++i) {
     int left_index = i * rows_left * lhs_layout_cols / 2;
     const uint8_t* lhs_ptr_data = lhs + left_index;
+    __builtin_prefetch(lhs_ptr_data, 0, 3);
     for (int j = start_col; j < outer_cols; ++j) {
       const uint8_t* lhs_ptr = lhs_ptr_data;
       int right_index = j * rows_right * rhs_layout_cols;
       const int8_t* rhs_ptr = rhs + right_index;
+      __builtin_prefetch(rhs_ptr, 0, 3);
+      // General register allocation:
+      // v0-v15: int32 accumulators for the dot products
+      // v16-v19: high int4 values of LHS (after USHR)
+      // v20-v23: low int4 values of LHS (after AND)
+      // v24-v25: int8 values of RHS
+      // v26-v29: temp; int16 accumulators within the 4x4x32 block
+      // v31: mask for AND
       asm volatile(
           R"asm(
-          movi v3.16b, #15
-          ld1 {v4.16b}, [%[lhs_ptr]], #16
-          movi v16.4s, #0
-          movi v17.4s, #0
-          movi v18.4s, #0
-          movi v19.4s, #0
-          ld1 {v5.16b}, [%[lhs_ptr]], #16
-          movi v20.4s, #0
-          movi v21.4s, #0
-          movi v22.4s, #0
-          ld1 {v6.16b}, [%[lhs_ptr]], #16
-          movi v23.4s, #0
-          movi v24.4s, #0
-          movi v25.4s, #0
-          ld1 {v7.16b}, [%[lhs_ptr]], #16
-          movi v26.4s, #0
-          movi v27.4s, #0
-          movi v28.4s, #0
-          movi v29.4s, #0
-          ld1 {v0.16b}, [%[rhs_ptr]], #16
-          movi v30.4s, #0
-          movi v31.4s, #0
+          movi v31.16b, #15
+          movi v0.4s, #0
+          movi v1.4s, #0
+          movi v2.4s, #0
+          movi v3.4s, #0
+          movi v4.4s, #0
+          movi v5.4s, #0
+          movi v6.4s, #0
+          movi v7.4s, #0
+          movi v8.4s, #0
+          movi v9.4s, #0
+          movi v10.4s, #0
+          movi v11.4s, #0
+          movi v12.4s, #0
+          movi v13.4s, #0
+          movi v14.4s, #0
+          movi v15.4s, #0
           mov w3, %w[run_depth]
-          ld1 {v1.16b}, [%[rhs_ptr]], #16
-          and v8.16b, v4.16b, v3.16b
-          and v9.16b, v5.16b, v3.16b
-          and v10.16b, v6.16b, v3.16b
-          and v11.16b, v7.16b, v3.16b
-          ushr v12.16b, v4.16b, #4
-          ushr v13.16b, v5.16b, #4
-          ushr v14.16b, v6.16b, #4
-          ushr v15.16b, v7.16b, #4
-          subs w3, w3, #1
-          b.ls 1f /* skip loop */
             0: /* loop start */
-            smull v4.8h, v12.8b, v0.8b
-            smull v5.8h, v13.8b, v0.8b
-            smull v6.8h, v14.8b, v0.8b
-            smull v7.8h, v15.8b, v0.8b
-            smlal2 v4.8h, v12.16b, v0.16b
-            smlal2 v5.8h, v13.16b, v0.16b
-            smlal2 v6.8h, v14.16b, v0.16b
-            smlal2 v7.8h, v15.16b, v0.16b
-            ld1 {v2.16b}, [%[rhs_ptr]], #16
-            smlal v4.8h, v8.8b, v1.8b
-            smlal v5.8h, v9.8b, v1.8b
-            smlal v6.8h, v10.8b, v1.8b
-            smlal v7.8h, v11.8b, v1.8b
-            smlal2 v4.8h, v8.16b, v1.16b
-            smlal2 v5.8h, v9.16b, v1.16b
-            smlal2 v6.8h, v10.16b, v1.16b
-            smlal2 v7.8h, v11.16b, v1.16b
-            ld1 {v0.16b}, [%[rhs_ptr]], #16
-            sadalp v16.4s, v4.8h
-            sadalp v17.4s, v5.8h
-            sadalp v18.4s, v6.8h
-            sadalp v19.4s, v7.8h
-            smull v4.8h, v12.8b, v2.8b
-            smull v5.8h, v13.8b, v2.8b
-            smull v6.8h, v14.8b, v2.8b
-            smull v7.8h, v15.8b, v2.8b
-            smlal2 v4.8h, v12.16b, v2.16b
-            smlal2 v5.8h, v13.16b, v2.16b
-            smlal2 v6.8h, v14.16b, v2.16b
-            smlal2 v7.8h, v15.16b, v2.16b
-            ld1 {v1.16b}, [%[rhs_ptr]], #16
-            smlal v4.8h, v8.8b, v0.8b
-            smlal v5.8h, v9.8b, v0.8b
-            smlal v6.8h, v10.8b, v0.8b
-            smlal v7.8h, v11.8b, v0.8b
-            smlal2 v4.8h, v8.16b, v0.16b
-            smlal2 v5.8h, v9.16b, v0.16b
-            smlal2 v6.8h, v10.16b, v0.16b
-            smlal2 v7.8h, v11.16b, v0.16b
-            ld1 {v2.16b}, [%[rhs_ptr]], #16
-            sadalp v20.4s, v4.8h
-            sadalp v21.4s, v5.8h
-            sadalp v22.4s, v6.8h
-            sadalp v23.4s, v7.8h
-            smull v4.8h, v12.8b, v1.8b
-            smull v5.8h, v13.8b, v1.8b
-            smull v6.8h, v14.8b, v1.8b
-            smull v7.8h, v15.8b, v1.8b
-            smlal2 v4.8h, v12.16b, v1.16b
-            smlal2 v5.8h, v13.16b, v1.16b
-            smlal2 v6.8h, v14.16b, v1.16b
-            smlal2 v7.8h, v15.16b, v1.16b
-            ld1 {v0.16b}, [%[rhs_ptr]], #16
-            smlal v4.8h, v8.8b, v2.8b
-            smlal v5.8h, v9.8b, v2.8b
-            smlal v6.8h, v10.8b, v2.8b
-            smlal v7.8h, v11.8b, v2.8b
-            smlal2 v4.8h, v8.16b, v2.16b
-            smlal2 v5.8h, v9.16b, v2.16b
-            smlal2 v6.8h, v10.16b, v2.16b
-            smlal2 v7.8h, v11.16b, v2.16b
-            ld1 {v1.16b}, [%[rhs_ptr]], #16
-            sadalp v24.4s, v4.8h
-            sadalp v25.4s, v5.8h
-            sadalp v26.4s, v6.8h
-            sadalp v27.4s, v7.8h
-            smull v4.8h, v12.8b, v0.8b
-            smull v5.8h, v13.8b, v0.8b
-            smull v6.8h, v14.8b, v0.8b
-            smull v7.8h, v15.8b, v0.8b
-            smlal2 v4.8h, v12.16b, v0.16b
-            smlal2 v5.8h, v13.16b, v0.16b
-            smlal2 v6.8h, v14.16b, v0.16b
-            smlal2 v7.8h, v15.16b, v0.16b
-            ld1 {v12.16b}, [%[lhs_ptr]], #16
-            smlal v4.8h, v8.8b, v1.8b
-            smlal v5.8h, v9.8b, v1.8b
-            smlal v6.8h, v10.8b, v1.8b
-            smlal v7.8h, v11.8b, v1.8b
-            ld1 {v13.16b}, [%[lhs_ptr]], #16
-            smlal2 v4.8h, v8.16b, v1.16b
-            smlal2 v5.8h, v9.16b, v1.16b
-            smlal2 v6.8h, v10.16b, v1.16b
-            smlal2 v7.8h, v11.16b, v1.16b
-            ld1 {v14.16b}, [%[lhs_ptr]], #16
-            sadalp v28.4s, v4.8h
-            sadalp v29.4s, v5.8h
-            sadalp v30.4s, v6.8h
-            sadalp v31.4s, v7.8h
-            ld1 {v15.16b}, [%[lhs_ptr]], #16
-            and v8.16b, v12.16b, v3.16b
-            and v9.16b, v13.16b, v3.16b
-            and v10.16b, v14.16b, v3.16b
-            ld1 {v0.16b}, [%[rhs_ptr]], #16
-            and v11.16b, v15.16b, v3.16b
-            ushr v12.16b, v12.16b, #4
-            ushr v13.16b, v13.16b, #4
-            ld1 {v1.16b}, [%[rhs_ptr]], #16
-            ushr v14.16b, v14.16b, #4
-            ushr v15.16b, v15.16b, #4
+            ld1 {v16.16b, v17.16b, v18.16b, v19.16b}, [%[lhs_ptr]], #64
+            ld1 {v24.16b, v25.16b}, [%[rhs_ptr]], #32
+            and v20.16b, v16.16b, v31.16b
+            and v21.16b, v17.16b, v31.16b
+            and v22.16b, v18.16b, v31.16b
+            and v23.16b, v19.16b, v31.16b
+            ushr v16.16b, v16.16b, #4
+            ushr v17.16b, v17.16b, #4
+            ushr v18.16b, v18.16b, #4
+            ushr v19.16b, v19.16b, #4
+            smull v26.8h, v16.8b, v24.8b
+            smull v27.8h, v17.8b, v24.8b
+            smull v28.8h, v18.8b, v24.8b
+            smull v29.8h, v19.8b, v24.8b
+            smlal2 v26.8h, v16.16b, v24.16b
+            smlal2 v27.8h, v17.16b, v24.16b
+            smlal2 v28.8h, v18.16b, v24.16b
+            smlal2 v29.8h, v19.16b, v24.16b
+            smlal v26.8h, v20.8b, v25.8b
+            smlal v27.8h, v21.8b, v25.8b
+            smlal v28.8h, v22.8b, v25.8b
+            smlal v29.8h, v23.8b, v25.8b
+            smlal2 v26.8h, v20.16b, v25.16b
+            smlal2 v27.8h, v21.16b, v25.16b
+            smlal2 v28.8h, v22.16b, v25.16b
+            smlal2 v29.8h, v23.16b, v25.16b
+            ld1 {v24.16b, v25.16b}, [%[rhs_ptr]], #32
+            sadalp v0.4s, v26.8h
+            sadalp v1.4s, v27.8h
+            sadalp v2.4s, v28.8h
+            sadalp v3.4s, v29.8h
+            smull v26.8h, v16.8b, v24.8b
+            smull v27.8h, v17.8b, v24.8b
+            smull v28.8h, v18.8b, v24.8b
+            smull v29.8h, v19.8b, v24.8b
+            smlal2 v26.8h, v16.16b, v24.16b
+            smlal2 v27.8h, v17.16b, v24.16b
+            smlal2 v28.8h, v18.16b, v24.16b
+            smlal2 v29.8h, v19.16b, v24.16b
+            smlal v26.8h, v20.8b, v25.8b
+            smlal v27.8h, v21.8b, v25.8b
+            smlal v28.8h, v22.8b, v25.8b
+            smlal v29.8h, v23.8b, v25.8b
+            smlal2 v26.8h, v20.16b, v25.16b
+            smlal2 v27.8h, v21.16b, v25.16b
+            smlal2 v28.8h, v22.16b, v25.16b
+            smlal2 v29.8h, v23.16b, v25.16b
+            ld1 {v24.16b, v25.16b}, [%[rhs_ptr]], #32
+            sadalp v4.4s, v26.8h
+            sadalp v5.4s, v27.8h
+            sadalp v6.4s, v28.8h
+            sadalp v7.4s, v29.8h
+            smull v26.8h, v16.8b, v24.8b
+            smull v27.8h, v17.8b, v24.8b
+            smull v28.8h, v18.8b, v24.8b
+            smull v29.8h, v19.8b, v24.8b
+            smlal2 v26.8h, v16.16b, v24.16b
+            smlal2 v27.8h, v17.16b, v24.16b
+            smlal2 v28.8h, v18.16b, v24.16b
+            smlal2 v29.8h, v19.16b, v24.16b
+            smlal v26.8h, v20.8b, v25.8b
+            smlal v27.8h, v21.8b, v25.8b
+            smlal v28.8h, v22.8b, v25.8b
+            smlal v29.8h, v23.8b, v25.8b
+            smlal2 v26.8h, v20.16b, v25.16b
+            smlal2 v27.8h, v21.16b, v25.16b
+            smlal2 v28.8h, v22.16b, v25.16b
+            smlal2 v29.8h, v23.16b, v25.16b
+            ld1 {v24.16b, v25.16b}, [%[rhs_ptr]], #32
+            sadalp v8.4s, v26.8h
+            sadalp v9.4s, v27.8h
+            sadalp v10.4s, v28.8h
+            sadalp v11.4s, v29.8h
+            smull v26.8h, v16.8b, v24.8b
+            smull v27.8h, v17.8b, v24.8b
+            smull v28.8h, v18.8b, v24.8b
+            smull v29.8h, v19.8b, v24.8b
+            smlal2 v26.8h, v16.16b, v24.16b
+            smlal2 v27.8h, v17.16b, v24.16b
+            smlal2 v28.8h, v18.16b, v24.16b
+            smlal2 v29.8h, v19.16b, v24.16b
+            smlal v26.8h, v20.8b, v25.8b
+            smlal v27.8h, v21.8b, v25.8b
+            smlal v28.8h, v22.8b, v25.8b
+            smlal v29.8h, v23.8b, v25.8b
+            smlal2 v26.8h, v20.16b, v25.16b
+            smlal2 v27.8h, v21.16b, v25.16b
+            smlal2 v28.8h, v22.16b, v25.16b
+            smlal2 v29.8h, v23.16b, v25.16b
+            sadalp v12.4s, v26.8h
+            sadalp v13.4s, v27.8h
+            sadalp v14.4s, v28.8h
+            sadalp v15.4s, v29.8h
             subs w3, w3, #1
             b.hi 0b /* loop branch */
           1: /* loop end */
-          smull v4.8h, v12.8b, v0.8b
-          smull v5.8h, v13.8b, v0.8b
-          smull v6.8h, v14.8b, v0.8b
-          smull v7.8h, v15.8b, v0.8b
-          smlal2 v4.8h, v12.16b, v0.16b
-          smlal2 v5.8h, v13.16b, v0.16b
-          smlal2 v6.8h, v14.16b, v0.16b
-          smlal2 v7.8h, v15.16b, v0.16b
-          ld1 {v2.16b}, [%[rhs_ptr]], #16
-          smlal v4.8h, v8.8b, v1.8b
-          smlal v5.8h, v9.8b, v1.8b
-          smlal v6.8h, v10.8b, v1.8b
-          smlal v7.8h, v11.8b, v1.8b
-          smlal2 v4.8h, v8.16b, v1.16b
-          smlal2 v5.8h, v9.16b, v1.16b
-          smlal2 v6.8h, v10.16b, v1.16b
-          smlal2 v7.8h, v11.16b, v1.16b
-          ld1 {v0.16b}, [%[rhs_ptr]], #16
-          sadalp v16.4s, v4.8h
-          sadalp v17.4s, v5.8h
-          sadalp v18.4s, v6.8h
-          sadalp v19.4s, v7.8h
-          smull v4.8h, v12.8b, v2.8b
-          smull v5.8h, v13.8b, v2.8b
-          smull v6.8h, v14.8b, v2.8b
-          smull v7.8h, v15.8b, v2.8b
-          smlal2 v4.8h, v12.16b, v2.16b
-          smlal2 v5.8h, v13.16b, v2.16b
-          smlal2 v6.8h, v14.16b, v2.16b
-          smlal2 v7.8h, v15.16b, v2.16b
-          ld1 {v1.16b}, [%[rhs_ptr]], #16
-          smlal v4.8h, v8.8b, v0.8b
-          smlal v5.8h, v9.8b, v0.8b
-          smlal v6.8h, v10.8b, v0.8b
-          smlal v7.8h, v11.8b, v0.8b
-          smlal2 v4.8h, v8.16b, v0.16b
-          smlal2 v5.8h, v9.16b, v0.16b
-          smlal2 v6.8h, v10.16b, v0.16b
-          smlal2 v7.8h, v11.16b, v0.16b
-          ld1 {v2.16b}, [%[rhs_ptr]], #16
-          sadalp v20.4s, v4.8h
-          sadalp v21.4s, v5.8h
-          sadalp v22.4s, v6.8h
-          sadalp v23.4s, v7.8h
-          smull v4.8h, v12.8b, v1.8b
-          smull v5.8h, v13.8b, v1.8b
-          smull v6.8h, v14.8b, v1.8b
-          smull v7.8h, v15.8b, v1.8b
-          smlal2 v4.8h, v12.16b, v1.16b
-          smlal2 v5.8h, v13.16b, v1.16b
-          smlal2 v6.8h, v14.16b, v1.16b
-          smlal2 v7.8h, v15.16b, v1.16b
-          ld1 {v0.16b}, [%[rhs_ptr]], #16
-          smlal v4.8h, v8.8b, v2.8b
-          smlal v5.8h, v9.8b, v2.8b
-          smlal v6.8h, v10.8b, v2.8b
-          smlal v7.8h, v11.8b, v2.8b
-          smlal2 v4.8h, v8.16b, v2.16b
-          smlal2 v5.8h, v9.16b, v2.16b
-          smlal2 v6.8h, v10.16b, v2.16b
-          smlal2 v7.8h, v11.16b, v2.16b
-          ld1 {v1.16b}, [%[rhs_ptr]], #16
-          sadalp v24.4s, v4.8h
-          sadalp v25.4s, v5.8h
-          sadalp v26.4s, v6.8h
-          sadalp v27.4s, v7.8h
-          smull v4.8h, v12.8b, v0.8b
-          smull v5.8h, v13.8b, v0.8b
-          smull v6.8h, v14.8b, v0.8b
-          smull v7.8h, v15.8b, v0.8b
-          smlal2 v4.8h, v12.16b, v0.16b
-          smlal2 v5.8h, v13.16b, v0.16b
-          smlal2 v6.8h, v14.16b, v0.16b
-          smlal2 v7.8h, v15.16b, v0.16b
-          smlal v4.8h, v8.8b, v1.8b
-          smlal v5.8h, v9.8b, v1.8b
-          smlal v6.8h, v10.8b, v1.8b
-          smlal v7.8h, v11.8b, v1.8b
-          smlal2 v4.8h, v8.16b, v1.16b
-          smlal2 v5.8h, v9.16b, v1.16b
-          smlal2 v6.8h, v10.16b, v1.16b
-          smlal2 v7.8h, v11.16b, v1.16b
-          sadalp v28.4s, v4.8h
-          sadalp v29.4s, v5.8h
-          sadalp v30.4s, v6.8h
-          sadalp v31.4s, v7.8h
-          addp v14.4s, v16.4s, v17.4s
-          addp v15.4s, v18.4s, v19.4s
-          addp v12.4s, v20.4s, v21.4s
-          addp v13.4s, v22.4s, v23.4s
-          addp v10.4s, v24.4s, v25.4s
-          addp v11.4s, v26.4s, v27.4s
-          addp v8.4s, v28.4s, v29.4s
-          addp v9.4s, v30.4s, v31.4s
-          addp v4.4s, v14.4s, v15.4s
-          addp v5.4s, v12.4s, v13.4s
-          addp v6.4s, v10.4s, v11.4s
-          addp v7.4s, v8.4s, v9.4s
-          st1 {v4.4s, v5.4s, v6.4s, v7.4s}, [%[dst]], #64
+          addp v0.4s, v0.4s, v1.4s
+          addp v2.4s, v2.4s, v3.4s
+          addp v4.4s, v4.4s, v5.4s
+          addp v6.4s, v6.4s, v7.4s
+          addp v8.4s, v8.4s, v9.4s
+          addp v10.4s, v10.4s, v11.4s
+          addp v12.4s, v12.4s, v13.4s
+          addp v14.4s, v14.4s, v15.4s
+          addp v0.4s, v0.4s, v2.4s
+          addp v4.4s, v4.4s, v6.4s
+          addp v8.4s, v8.4s, v10.4s
+          addp v12.4s, v12.4s, v14.4s
+          st1 {v0.4s}, [%[dst]], #16
+          st1 {v4.4s}, [%[dst]], #16
+          st1 {v8.4s}, [%[dst]], #16
+          st1 {v12.4s}, [%[dst]], #16
           )asm"
           : [lhs_ptr] "+r"(lhs_ptr), [rhs_ptr] "+r"(rhs_ptr), [dst] "+r"(dst)
           : [run_depth] "r"(run_depth)
           : "cc", "memory", "w3", "v0", "v1", "v2", "v3", "v4", "v5", "v6",
             "v7", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "v16",
             "v17", "v18", "v19", "v20", "v21", "v22", "v23", "v24", "v25",
-            "v26", "v27", "v28", "v29", "v30", "v31");
+            "v26", "v27", "v28", "v29", "v31");
     }
   }
 }
