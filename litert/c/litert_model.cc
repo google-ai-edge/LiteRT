@@ -688,19 +688,24 @@ LiteRtStatus LiteRtGetPerChannelQuantization(
   return kLiteRtStatusOk;
 }
 
-#ifdef __cplusplus
-}  // extern "C"
-#endif
+LiteRtStatus LiteRtCreateModelFromAllocation(LiteRtAllocation allocation,
+                                             LiteRtModel* model) {
+  std::unique_ptr<tflite::Allocation> tflite_allocation(allocation);
 
-LiteRtStatus LiteRtCreateModelFromAllocation(
-    std::unique_ptr<tflite::Allocation> allocation, LiteRtModel* model) {
   if (!model) {
     return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!tflite_allocation) {
+    return kLiteRtStatusErrorFileIO;
   }
 
   LITERT_ASSIGN_OR_RETURN(
       LiteRtModelT::Ptr new_model,
-      litert::internal::LoadModelFromAllocation(std::move(allocation)));
+      litert::internal::LoadModelFromAllocation(std::move(tflite_allocation)));
   *model = new_model.release();
   return kLiteRtStatusOk;
 }
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
