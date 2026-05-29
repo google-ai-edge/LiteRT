@@ -53,9 +53,11 @@ static LiteRtEnvironment g_env = nullptr;
 
 extern "C" {
 
-void MockDispatchSetEnvironment(LiteRtEnvironment env) { g_env = env; }
+void LiteRtDispatch_MockDispatchSetEnvironment(LiteRtEnvironment env) {
+  g_env = env;
+}
 
-void MockDispatchSignalNextJob() {
+void LiteRtDispatch_MockDispatchSignalNextJob() {
   if (!GetPendingJobs().empty()) {
     auto job = GetPendingJobs().front();
     char dummy = 1;
@@ -65,12 +67,14 @@ void MockDispatchSignalNextJob() {
   }
 }
 
-bool MockDispatchIsBufferUnregistered(LiteRtTensorBufferHandle handle) {
+bool LiteRtDispatch_MockDispatchIsBufferUnregistered(
+    LiteRtTensorBufferHandle handle) {
   return GetUnregisteredHandles().find(handle) !=
          GetUnregisteredHandles().end();
 }
 
-LiteRtTensorBufferHandle MockDispatchGetHandle(LiteRtTensorBuffer buffer) {
+LiteRtTensorBufferHandle LiteRtDispatch_MockDispatchGetHandle(
+    LiteRtTensorBuffer buffer) {
   auto it = GetBufferToHandle().find(buffer);
   if (it != GetBufferToHandle().end()) return it->second;
   return 0;
@@ -164,15 +168,17 @@ LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
 
 extern "C" {
 
-void MockDispatchSetEnvironment(LiteRtEnvironment env) {}
+void LiteRtDispatch_MockDispatchSetEnvironment(LiteRtEnvironment env) {}
 
-void MockDispatchSignalNextJob() {}
+void LiteRtDispatch_MockDispatchSignalNextJob() {}
 
-bool MockDispatchIsBufferUnregistered(LiteRtTensorBufferHandle handle) {
+bool LiteRtDispatch_MockDispatchIsBufferUnregistered(
+    LiteRtTensorBufferHandle handle) {
   return false;
 }
 
-LiteRtTensorBufferHandle MockDispatchGetHandle(LiteRtTensorBuffer buffer) {
+LiteRtTensorBufferHandle LiteRtDispatch_MockDispatchGetHandle(
+    LiteRtTensorBuffer buffer) {
   return 0;
 }
 

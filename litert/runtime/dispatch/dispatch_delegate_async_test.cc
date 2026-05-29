@@ -72,13 +72,13 @@ class DispatchDelegateAsyncTest : public ::testing::Test {
     ASSERT_NE(mock_lib_handle_, nullptr);
 
     mock_set_env_ = (void (*)(LiteRtEnvironment))dlsym(
-        mock_lib_handle_, "MockDispatchSetEnvironment");
-    mock_signal_next_job_ =
-        (void (*)())dlsym(mock_lib_handle_, "MockDispatchSignalNextJob");
+        mock_lib_handle_, "LiteRtDispatch_MockDispatchSetEnvironment");
+    mock_signal_next_job_ = (void (*)())dlsym(
+        mock_lib_handle_, "LiteRtDispatch_MockDispatchSignalNextJob");
     mock_is_unregistered_ = (bool (*)(LiteRtTensorBufferHandle))dlsym(
-        mock_lib_handle_, "MockDispatchIsBufferUnregistered");
+        mock_lib_handle_, "LiteRtDispatch_MockDispatchIsBufferUnregistered");
     mock_get_handle_ = (LiteRtTensorBufferHandle (*)(LiteRtTensorBuffer))dlsym(
-        mock_lib_handle_, "MockDispatchGetHandle");
+        mock_lib_handle_, "LiteRtDispatch_MockDispatchGetHandle");
 
     ASSERT_NE(mock_set_env_, nullptr);
     ASSERT_NE(mock_signal_next_job_, nullptr);

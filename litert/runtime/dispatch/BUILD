@@ -200,7 +200,7 @@ cc_test(
 litert_dispatch_api(
     name = "mock_async_dispatch",
     srcs = ["mock_async_dispatch.cc"],
-    export_litert_only = False,
+    export_litert_only = True,
     shared_lib_name = "mock_async_dispatch_so",
     so_name = "libLiteRtDispatch_Mock_Async.so",
     tags = [
