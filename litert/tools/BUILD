@@ -102,10 +102,6 @@ litert_bin(
             "//litert/vendors/examples:example_plugin_so_data",
             "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
             "//litert/vendors/samsung/compiler:compiler_plugin_so",
-            "@qairt//:libQnnHtp.so",
-            "@qairt//:libQnnIr.so",
-            "@qairt//:libQnnSaver.so",
-            "@qairt//:libQnnSystem.so",
             "@neuro_pilot//:v9_latest/host/lib/libneuron_adapter.so",
             "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
             "@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so",
@@ -149,6 +145,10 @@ litert_bin(
         "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@qairt//:libQnnHtp.so",
+        "@qairt//:libQnnIr.so",
+        "@qairt//:libQnnSaver.so",
+        "@qairt//:libQnnSystem.so",
     ] + select({
         "//litert:windows": [],
         "//conditions:default": [
