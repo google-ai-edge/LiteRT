@@ -124,6 +124,9 @@ class Options {
   absl::string_view GetDlcDir() const;
   void SetDlcDir(absl::string_view dlc_dir);
 
+  absl::string_view GetGraphTransform() const;
+  void SetGraphTransform(absl::string_view graph_transform);
+
   std::uint32_t GetVtcmSize() const;
   void SetVtcmSize(std::uint32_t vtcm_size);
 
@@ -157,6 +160,7 @@ class Options {
   std::vector<std::int32_t> dump_tensor_ids_;
   std::string ir_json_dir_;
   std::string dlc_dir_;
+  std::string graph_transform_;
   std::uint32_t vtcm_size_ = 0;
   std::uint32_t num_hvx_threads_ = 0;
   OptimizationLevel optimization_level_ =

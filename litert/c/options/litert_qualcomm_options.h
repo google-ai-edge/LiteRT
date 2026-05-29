@@ -253,6 +253,12 @@ LiteRtStatus LrtQualcommOptionsSetDlcDir(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetDlcDir(LrtQualcommOptions options,
                                          const char** dlc_dir);
 
+LiteRtStatus LrtQualcommOptionsSetGraphTransform(LrtQualcommOptions options,
+                                                 const char* graph_transform);
+
+LiteRtStatus LrtQualcommOptionsGetGraphTransform(LrtQualcommOptions options,
+                                                 const char** graph_transform);
+
 LiteRtStatus LrtQualcommOptionsSetVtcmSize(LrtQualcommOptions options,
                                            uint32_t vtcm_size);
 

@@ -94,8 +94,7 @@ TEST(MatMulConvertTest, Gemma3Prefill) {
 
   ASSERT_EQ(op_wrappers.size(), 3);
 
-  const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMatMulConvert;
-  GraphToGraphTransform(g2g_option, op_wrappers, tensor_pool,
+  GraphToGraphTransform(::qnn::G2GConfig::kGqa, op_wrappers, tensor_pool,
                         [](OpWrapper& op) { return true; });
 
   ASSERT_EQ(op_wrappers.size(), 2);
@@ -158,8 +157,7 @@ TEST(MatMulConvertTest, Gemma3Decode) {
 
   ASSERT_EQ(op_wrappers.size(), 2);
 
-  const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMatMulConvert;
-  GraphToGraphTransform(g2g_option, op_wrappers, tensor_pool,
+  GraphToGraphTransform(::qnn::G2GConfig::kGqa, op_wrappers, tensor_pool,
                         [](OpWrapper& op) { return true; });
 
   ASSERT_EQ(op_wrappers.size(), 1);
@@ -373,8 +371,7 @@ TEST(MHAOptimization, Gemma3Prefill) {
 
   ASSERT_EQ(op_wrappers.size(), 18);
 
-  const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOptPrefill;
-  GraphToGraphTransform(g2g_option, op_wrappers, tensor_pool,
+  GraphToGraphTransform(::qnn::G2GConfig::kGqa, op_wrappers, tensor_pool,
                         [](OpWrapper& op) { return true; });
 
   ASSERT_EQ(op_wrappers.size(), 49);
@@ -580,9 +577,8 @@ TEST(MHAOptimization, Gemma3Decode) {
 
   ASSERT_EQ(op_wrappers.size(), 14);
 
-  const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOpt;
-  GraphToGraphTransform(g2g_option, op_wrappers, tensor_pool,
-                        [](OpWrapper& op) { return true; });
+  GraphToGraphTransform(::qnn::G2GConfig::kExperimental, op_wrappers,
+                        tensor_pool, [](OpWrapper& op) { return true; });
 
   ASSERT_EQ(op_wrappers.size(), 47);
 
@@ -681,8 +677,7 @@ TEST(MaskTransformTest, Gemma3Mask) {
   op_wrappers.emplace_back(
       CreateElementWiseMulOp(quant_output, mul_const, pattern_output));
 
-  const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOpt;
-  GraphToGraphTransform(g2g_option, op_wrappers, tensor_pool,
+  GraphToGraphTransform(::qnn::G2GConfig::kMasking, op_wrappers, tensor_pool,
                         [](OpWrapper& op) { return true; });
   ASSERT_EQ(op_wrappers.size(), 1);
   ASSERT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kElementWiseSelect));
@@ -749,7 +744,7 @@ TEST(MaskTransformTest, Gemma4Mask) {
                  CreateElementWiseMulOp(cast_output, mul_const, mul_output),
                  CreateQuantizeOp(mul_output, pattern_output));
 
-  GraphToGraphTransform(::qnn::G2GConfig::kMHAOpt, op_wrappers, tensor_pool,
+  GraphToGraphTransform(::qnn::G2GConfig::kMasking, op_wrappers, tensor_pool,
                         [](OpWrapper& op) { return true; });
   ASSERT_EQ(op_wrappers.size(), 1);
   ASSERT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kElementWiseSelect));
@@ -938,8 +933,7 @@ TEST(MHASHATest, FastVlmPrefill) {
 
   ASSERT_EQ(op_wrappers.size(), 19);
 
-  const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOptPrefill;
-  GraphToGraphTransform(g2g_option, op_wrappers, tensor_pool,
+  GraphToGraphTransform(::qnn::G2GConfig::kGqa, op_wrappers, tensor_pool,
                         [](OpWrapper& op) { return true; });
 
   // Check total size after G2G.
@@ -1144,8 +1138,8 @@ TEST(MHASHATest, KananaGqaPrefill) {
 
   ASSERT_EQ(op_wrappers.size(), 18);
 
-  GraphToGraphTransform(::qnn::G2GConfig::kMHAOptPrefill, op_wrappers,
-                        tensor_pool, [](OpWrapper& op) { return true; });
+  GraphToGraphTransform(::qnn::G2GConfig::kGqa, op_wrappers, tensor_pool,
+                        [](OpWrapper& op) { return true; });
 
   // Expected post-G2G size: 1 (Add0) + 1 (Transpose0) + 5 (Splits)
   //   + kNumHead * kShaFromGqa (per-head SHA ops)
@@ -1339,8 +1333,8 @@ TEST(MHASHATest, TinyTinyGqaPrefill) {
 
   ASSERT_EQ(op_wrappers.size(), 17);
 
-  GraphToGraphTransform(::qnn::G2GConfig::kMHAOptPrefill, op_wrappers,
-                        tensor_pool, [](OpWrapper& op) { return true; });
+  GraphToGraphTransform(::qnn::G2GConfig::kGqa, op_wrappers, tensor_pool,
+                        [](OpWrapper& op) { return true; });
 
   // Expected post-G2G size: 1 (Transpose0) + 5 (Splits)
   //   + kNumHead * kShaFromGqa (per-head SHA ops, no scale Mul)
@@ -1523,8 +1517,7 @@ TEST(MHASHATest, FastVlmDecode) {
 
   ASSERT_EQ(op_wrappers.size(), 16);
 
-  const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOptPrefill;
-  GraphToGraphTransform(g2g_option, op_wrappers, tensor_pool,
+  GraphToGraphTransform(::qnn::G2GConfig::kGqa, op_wrappers, tensor_pool,
                         [](OpWrapper& op) { return true; });
 
   // Check total size after G2G.
@@ -1707,8 +1700,8 @@ TEST(MHASHATest, KananaGqaDecode) {
 
   ASSERT_EQ(op_wrappers.size(), 15);
 
-  GraphToGraphTransform(::qnn::G2GConfig::kMHAOptPrefill, op_wrappers,
-                        tensor_pool, [](OpWrapper& op) { return true; });
+  GraphToGraphTransform(::qnn::G2GConfig::kGqa, op_wrappers, tensor_pool,
+                        [](OpWrapper& op) { return true; });
 
   // Expected post-G2G size: 1 (Add0) + 5 (Splits)
   //   + kNumHead * kShaFromGqa (per-head SHA ops)
@@ -1876,8 +1869,8 @@ TEST(MHASHATest, TinyTinyGqaDecode) {
 
   ASSERT_EQ(op_wrappers.size(), 14);
 
-  GraphToGraphTransform(::qnn::G2GConfig::kMHAOptPrefill, op_wrappers,
-                        tensor_pool, [](OpWrapper& op) { return true; });
+  GraphToGraphTransform(::qnn::G2GConfig::kGqa, op_wrappers, tensor_pool,
+                        [](OpWrapper& op) { return true; });
 
   // Expected post-G2G size: 5 (Splits)
   //   + kNumHead * kShaFromGqa (per-head SHA ops, no scale Mul)
@@ -2091,8 +2084,7 @@ TEST(MHAOptimization, TinyGemma3Prefill) {
 
   ASSERT_EQ(op_wrappers.size(), 16);
 
-  const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOptPrefill;
-  GraphToGraphTransform(g2g_option, op_wrappers, tensor_pool,
+  GraphToGraphTransform(::qnn::G2GConfig::kGqa, op_wrappers, tensor_pool,
                         [](OpWrapper& op) { return true; });
 
   ASSERT_EQ(op_wrappers.size(), 49);
@@ -2283,8 +2275,7 @@ TEST(MHAOptimization, AttentionWithSelect) {
       CreateTransposeOp(matmul_transpose, transpose_o0_out, transpose_o0_perm));
 
   // Transform the graph.
-  const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOpt;
-  GraphToGraphTransform(g2g_option, op_wrappers, tensor_pool,
+  GraphToGraphTransform(::qnn::G2GConfig::kGqa, op_wrappers, tensor_pool,
                         [](OpWrapper& op) { return true; });
   // Check the optimized graph is correct.
   ASSERT_EQ(op_wrappers.size(), 42);

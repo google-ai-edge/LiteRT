@@ -48,6 +48,7 @@ struct LrtQualcommOptionsT {
   std::optional<std::vector<std::int32_t>> dump_tensor_ids;
   std::optional<std::string> ir_json_dir;
   std::optional<std::string> dlc_dir;
+  std::optional<std::string> graph_transform;
   std::optional<std::uint32_t> vtcm_size;
   std::optional<std::uint32_t> num_hvx_threads;
   std::optional<LrtQualcommOptionsOptimizationLevel> optimization_level;
@@ -140,6 +141,9 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
         } else if (key == "dlc_dir") {
           status = LrtQualcommOptionsSetDlcDir(parsed_options,
                                                std::string(value).c_str());
+        } else if (key == "graph_transform") {
+          status = LrtQualcommOptionsSetGraphTransform(
+              parsed_options, std::string(value).c_str());
         } else if (key == "vtcm_size") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
@@ -258,6 +262,9 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   }
   if (options->dlc_dir.has_value()) {
     toml << "dlc_dir = \"" << *options->dlc_dir << "\"\n";
+  }
+  if (options->graph_transform.has_value()) {
+    toml << "graph_transform = \"" << *options->graph_transform << "\"\n";
   }
   if (options->vtcm_size.has_value()) {
     toml << "vtcm_size = " << *options->vtcm_size << "\n";
@@ -643,6 +650,30 @@ LiteRtStatus LrtQualcommOptionsGetDlcDir(LrtQualcommOptions options,
   }
 
   *dlc_dir = options->dlc_dir.has_value() ? options->dlc_dir->c_str() : "";
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetGraphTransform(
+    LrtQualcommOptions options, const char* graph_transform) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->graph_transform = graph_transform;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetGraphTransform(
+    LrtQualcommOptions options, const char** graph_transform) {
+  if (options == nullptr || graph_transform == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *graph_transform = options->graph_transform.has_value()
+                         ? options->graph_transform->c_str()
+                         : "";
 
   return kLiteRtStatusOk;
 }

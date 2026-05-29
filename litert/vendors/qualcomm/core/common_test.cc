@@ -205,6 +205,15 @@ TEST(QnnOptionTest, SetDlcDir) {
   EXPECT_TRUE(options.GetDlcDir().empty());
 }
 
+TEST(QnnOptionTest, SetGraphTransform) {
+  Options options;
+  options.SetGraphTransform("gqa-sha,masking");
+  EXPECT_FALSE(options.GetGraphTransform().empty());
+  EXPECT_EQ(options.GetGraphTransform(), "gqa-sha,masking");
+  options.SetGraphTransform("");
+  EXPECT_TRUE(options.GetGraphTransform().empty());
+}
+
 TEST(QnnOptionTest, SetVtcmSize) {
   Options options;
   options.SetVtcmSize(4);
@@ -257,6 +266,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetDspPerformanceMode(), DspPerformanceMode::kDefault);
   EXPECT_TRUE(options.GetIrJsonDir().empty());
   EXPECT_TRUE(options.GetDlcDir().empty());
+  EXPECT_TRUE(options.GetGraphTransform().empty());
   EXPECT_EQ(options.GetVtcmSize(), 0);
   EXPECT_EQ(options.GetNumHvxThreads(), 0);
   EXPECT_EQ(options.GetOptimizationLevel(),
