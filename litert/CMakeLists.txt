@@ -205,19 +205,28 @@ if(EXISTS "${CMAKE_BINARY_DIR}/FP16-source/include")
 endif()
 
 # Find FlatBuffers
+#
+# TFLite is added via add_subdirectory(... "${TFLITE_BUILD_DIR}"), but its
+# FetchContent of FlatBuffers materializes under ${CMAKE_BINARY_DIR} (the
+# top-level binary dir, which does not change inside add_subdirectory), NOT
+# under ${TFLITE_BUILD_DIR}. Point at ${CMAKE_BINARY_DIR} so the headers and
+# library resolve for targets that reference FlatBuffers directly (e.g.
+# qnn_flexbuffer_helpers) rather than transitively through tensorflow-lite.
+set(LITERT_FLATBUFFERS_DIR "${CMAKE_BINARY_DIR}/flatbuffers")
+set(LITERT_FLATBUFFERS_BUILD_DIR "${CMAKE_BINARY_DIR}/_deps/flatbuffers-build")
 find_package(flatbuffers QUIET
     PATHS
-      ${TFLITE_BUILD_DIR}/_deps/flatbuffers-build
-      ${TFLITE_BUILD_DIR}/flatbuffers/CMake
-      ${TFLITE_BUILD_DIR}/flatbuffers-flatc/lib/cmake/flatbuffers
+      ${LITERT_FLATBUFFERS_BUILD_DIR}
+      ${LITERT_FLATBUFFERS_DIR}/CMake
+      ${CMAKE_BINARY_DIR}/flatbuffers-flatc/lib/cmake/flatbuffers
     NO_DEFAULT_PATH
 )
 
 if(NOT TARGET flatbuffers::flatbuffers)
   add_library(flatbuffers::flatbuffers STATIC IMPORTED)
   set_target_properties(flatbuffers::flatbuffers PROPERTIES
-    IMPORTED_LOCATION "${TFLITE_BUILD_DIR}/_deps/flatbuffers-build/libflatbuffers.a"
-    INTERFACE_INCLUDE_DIRECTORIES "${TFLITE_BUILD_DIR}/flatbuffers/include"
+    IMPORTED_LOCATION "${LITERT_FLATBUFFERS_BUILD_DIR}/libflatbuffers.a"
+    INTERFACE_INCLUDE_DIRECTORIES "${LITERT_FLATBUFFERS_DIR}/include"
   )
 endif()
 

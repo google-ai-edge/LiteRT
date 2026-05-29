@@ -20,7 +20,7 @@ target_include_directories(qnn_compiler_plugin
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
     PRIVATE
-        ${TFLITE_BUILD_DIR}/flatbuffers/include
+        ${CMAKE_BINARY_DIR}/flatbuffers/include
 )
 
 target_link_libraries(qnn_compiler_plugin
@@ -34,6 +34,7 @@ target_link_libraries(qnn_compiler_plugin
         qnn_transformation
         qnn_dump_graph
         qnn_context_binary_info
+        qnn_flexbuffer_helpers
         tensorflow-lite
         absl::log
         absl::check

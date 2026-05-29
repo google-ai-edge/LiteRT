@@ -71,7 +71,7 @@ target_include_directories(samsung_compiler_plugin
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
     PRIVATE
-        ${TFLITE_BUILD_DIR}/flatbuffers/include
+        ${CMAKE_BINARY_DIR}/flatbuffers/include
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/builders>
         $<$<BOOL:${LITECORE_HEADERS_DIR}>:${LITECORE_HEADERS_DIR}>

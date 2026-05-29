@@ -23,6 +23,11 @@ elseif(TFLITE_BUILD_DIR AND EXISTS "${TFLITE_BUILD_DIR}/host_flatc/_deps/flatbuf
   set(FLATC_EXECUTABLE "${TFLITE_BUILD_DIR}/host_flatc/_deps/flatbuffers-build/flatc")
 elseif(TFLITE_BUILD_DIR AND EXISTS "${TFLITE_BUILD_DIR}/_deps/flatbuffers-build/flatc")
   set(FLATC_EXECUTABLE "${TFLITE_BUILD_DIR}/_deps/flatbuffers-build/flatc")
+elseif(EXISTS "${CMAKE_BINARY_DIR}/_deps/flatbuffers-build/flatc")
+  # TFLite's FetchContent of FlatBuffers lands under ${CMAKE_BINARY_DIR}, not
+  # ${TFLITE_BUILD_DIR} (see the flatbuffers::flatbuffers target in the top
+  # CMakeLists.txt for the same path correction).
+  set(FLATC_EXECUTABLE "${CMAKE_BINARY_DIR}/_deps/flatbuffers-build/flatc")
 endif()
 
 if(NOT FLATC_EXECUTABLE)

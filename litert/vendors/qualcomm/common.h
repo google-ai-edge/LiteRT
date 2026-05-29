@@ -147,7 +147,12 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetSaverOutputDir(qualcomm_options.GetSaverOutputDir());
   qnn_options.SetGraphIOTensorMemType(static_cast<::qnn::GraphIOTensorMemType>(
       qualcomm_options.GetGraphIOTensorMemType()));
-
+  const auto custom_op_package = qualcomm_options.GetCustomOpPackage();
+  qnn_options.SetCustomOpPackage(
+      custom_op_package.name, custom_op_package.interface_provider,
+      custom_op_package.compile_package_path,
+      custom_op_package.dispatch_package_path,
+      custom_op_package.target);
   LITERT_LOG(LITERT_INFO, "\n%s", qnn_options.Dump().data());
   return kLiteRtStatusOk;
 }
