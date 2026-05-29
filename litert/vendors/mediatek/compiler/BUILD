@@ -101,6 +101,7 @@ cc_library(
         "//litert/vendors/mediatek/compiler/legalizations:sub_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:transpose_conv_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:transpose_op_legalization",
+        "//litert/vendors/mediatek/schema:mediatek_litert_schema",
         "@neuro_pilot//:v8_latest_host_headers",
     ],
 )
@@ -120,6 +121,8 @@ cc_library(
         "//litert/c/options:litert_mediatek_options",
         "//litert/cc:litert_expected",
         "//litert/vendors/mediatek:neuron_adapter_api",
+        "//litert/vendors/mediatek/schema:mediatek_litert_schema",
+        "@com_google_absl//absl/strings:string_view",
         "@neuro_pilot//:v8_latest_host_headers",
     ],
 )

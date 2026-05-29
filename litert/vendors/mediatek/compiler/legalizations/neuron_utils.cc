@@ -14,6 +14,7 @@
 
 #include "litert/vendors/mediatek/compiler/legalizations/neuron_utils.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -38,8 +39,13 @@ Expected<NeuronTensorType> GetNeuronTensorType(
 
   const bool use_int8_asymm_signed =
       tensor_flags & NN_TENSOR_FLAG_USE_INT8_ASYMM_SIGNED;
-  const bool use_invalid_tensor_type =
-      tensor_flags & NN_TENSOR_FLAG_USE_INVALID_TENSOR_TYPE;
+
+  auto has_non_zero_zp = [&]() {
+    auto quant_info = t.PerChannelQuantization();
+    return std::any_of(quant_info.zero_points,
+                       quant_info.zero_points + quant_info.num_channels,
+                       [](int64_t zp) { return zp != 0; });
+  };
 
   int32_t mtk_type = -1;
   switch (element_type) {
@@ -61,15 +67,23 @@ Expected<NeuronTensorType> GetNeuronTensorType(
       }
       break;
     case ElementType::UInt8:
-      mtk_type = NEURON_TENSOR_QUANT8_ASYMM;
+      mtk_type = t.QTypeId() == kLiteRtQuantizationPerChannel
+                     ? NEURON_EXT_TENSOR_QUANT8_ASYMM_PER_CHANNEL
+                     : NEURON_TENSOR_QUANT8_ASYMM;
       break;
     case ElementType::Int8:
       if (use_int8_asymm_signed) {
         mtk_type = NEURON_TENSOR_QUANT8_ASYMM_SIGNED;
       } else if (t.QTypeId() == kLiteRtQuantizationPerTensor) {
-        mtk_type = NEURON_TENSOR_QUANT8_SYMM;
+        if (t.PerTensorQuantization().zero_point != 0) {
+          mtk_type = NEURON_TENSOR_QUANT8_ASYMM_SIGNED;
+        } else {
+          mtk_type = NEURON_TENSOR_QUANT8_SYMM;
+        }
       } else if (t.QTypeId() == kLiteRtQuantizationPerChannel) {
-        mtk_type = NEURON_TENSOR_QUANT8_SYMM_PER_CHANNEL;
+        mtk_type = has_non_zero_zp()
+                       ? NEURON_EXT_TENSOR_QUANT8_ASYMM_SIGNED_PER_CHANNEL
+                       : NEURON_TENSOR_QUANT8_SYMM_PER_CHANNEL;
       } else {
         return Error(kLiteRtStatusErrorRuntimeFailure,
                      "Int8 is not supported.");
@@ -77,9 +91,14 @@ Expected<NeuronTensorType> GetNeuronTensorType(
       break;
     case ElementType::Int4:
       if (t.QTypeId() == kLiteRtQuantizationPerTensor) {
-        mtk_type = NEURON_EXT_TENSOR_QUANT4_SYMM;
+        if (t.PerTensorQuantization().zero_point != 0) {
+          mtk_type = NEURON_EXT_TENSOR_QUANT4_ASYMM_SIGNED;
+        } else {
+          mtk_type = NEURON_EXT_TENSOR_QUANT4_SYMM;
+        }
       } else if (t.QTypeId() == kLiteRtQuantizationPerChannel) {
-        mtk_type = NEURON_EXT_TENSOR_QUANT4_SYMM_PER_CHANNEL;
+        mtk_type = has_non_zero_zp() ? NEURON_TENSOR_QUANT4_ASYMM_SIGNED_PER_CHANNEL
+                                    : NEURON_EXT_TENSOR_QUANT4_SYMM_PER_CHANNEL;
       } else {
         return Error(kLiteRtStatusErrorRuntimeFailure,
                      "Int4 is not supported.");
@@ -103,18 +122,29 @@ Expected<NeuronTensorType> GetNeuronTensorType(
                    "Currently force casting int64 to int32 on constant.");
       }
       break;
+    case ElementType::Int2:
+      if (t.QTypeId() == kLiteRtQuantizationPerTensor) {
+        if (t.PerTensorQuantization().zero_point != 0) {
+          mtk_type = NEURON_EXT_TENSOR_QUANT2_ASYMM_SIGNED;
+        } else {
+          mtk_type = NEURON_EXT_TENSOR_QUANT2_SYMM;
+        }
+      } else if (t.QTypeId() == kLiteRtQuantizationPerChannel) {
+        mtk_type = has_non_zero_zp()
+                       ? NEURON_EXT_TENSOR_QUANT2_ASYMM_SIGNED_PER_CHANNEL
+                       : NEURON_EXT_TENSOR_QUANT2_SYMM_PER_CHANNEL;
+      } else {
+        return Error(kLiteRtStatusErrorRuntimeFailure,
+                     "Int2 is not supported.");
+      }
+      break;
     default:
       break;
   }
-  // Currently use TQ8AS as invalid tensor type
   if (mtk_type == -1) {
-    if (use_invalid_tensor_type) {
-      mtk_type = NEURON_TENSOR_QUANT8_ASYMM_SIGNED;
-    } else {
-      return Error(
-          kLiteRtStatusErrorRuntimeFailure,
-          absl::StrFormat("Unsupported element type: %d", element_type));
-    }
+    return Error(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrFormat("Unsupported element type: %d", element_type));
   }
   return mtk_type;
 }
@@ -227,29 +257,20 @@ size_t PackOemScalarString(const char* str, uint8_t** out_buffer) {
   return out_len;
 }
 
-Expected<void> UnpackDenseInt4IntoInt8(const int8_t* src_buffer,
-                                       int num_elements, int8_t* dst_buffer) {
-  // num_elements means the number of elements regardless of packed or
-  // For example, 3 elements means both
-  //   1) Packed: 3 int4's = 12 bit -> 16 bits (padded) = 2 bytes.
-  //      stored in src_buffer[0] and src_buffer[1] (i = 0..1)
-  //   2) Unpacked: 3 int8's = 3 bytes.
-  //.     stored in dst_buffer[0], dst_buffer[1] and dst_buffer[2] (j =
-  for (int i = 0; i < num_elements / 2; i++) {
-    int8_t byte = src_buffer[i];
-    // Shift left first so that sign is properly extended when shifted
-    int8_t lower = static_cast<int8_t>(byte << 4) >> 4;
-    int8_t higher = byte >> 4;
-    dst_buffer[2 * i] = lower;
-    dst_buffer[2 * i + 1] = higher;
+bool IsPerChannelQuantizedNeuronType(NeuronTensorType type) {
+  switch (type) {
+    case NEURON_TENSOR_QUANT8_SYMM_PER_CHANNEL:
+    case NEURON_EXT_TENSOR_QUANT8_ASYMM_SIGNED_PER_CHANNEL:
+    case NEURON_EXT_TENSOR_QUANT8_ASYMM_PER_CHANNEL:
+    case NEURON_EXT_TENSOR_QUANT4_SYMM_PER_CHANNEL:
+    case NEURON_TENSOR_QUANT4_ASYMM_SIGNED_PER_CHANNEL:
+    case NEURON_EXT_TENSOR_INT32_SYMM_PER_CHANNEL:
+    case NEURON_EXT_TENSOR_QUANT2_SYMM_PER_CHANNEL:
+    case NEURON_EXT_TENSOR_QUANT2_ASYMM_SIGNED_PER_CHANNEL:
+      return true;
+    default:
+      return false;
   }
-
-  // If the buffer size is odd, extract the final lower nibble.
-  if (num_elements % 2 != 0) {
-    dst_buffer[num_elements - 1] =
-        static_cast<int8_t>(src_buffer[num_elements / 2] << 4) >> 4;
-  }
-  return {};
 }
 
 Expected<void> CastInt64IntoInt32(const int64_t* src_buffer, int num_elements,

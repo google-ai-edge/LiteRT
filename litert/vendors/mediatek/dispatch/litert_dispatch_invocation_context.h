@@ -63,13 +63,8 @@ class LiteRtDispatchInvocationContextT {
 
   litert::Expected<void> Invoke();
 
-  void SetSchedulingInfo(const LiteRtSchedulingInfo* scheduling_info) {
-    if (scheduling_info == nullptr) {
-      scheduling_info_ = std::nullopt;
-      return;
-    }
-    scheduling_info_ = *scheduling_info;
-  }
+  litert::Expected<void> SetSchedulingInfo(
+      const LiteRtSchedulingInfo* scheduling_info);
 
   const LiteRtSchedulingInfo* GetSchedulingInfo() const {
     return scheduling_info_.has_value() ? &scheduling_info_.value() : nullptr;

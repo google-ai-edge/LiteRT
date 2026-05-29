@@ -131,6 +131,8 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflAbs,
     kLiteRtOpCodeTflGreater,
     kLiteRtOpCodeTflMinimum,
+    kLiteRtOpCodeTflTile,
+    kLiteRtOpCodeTflUnpack,
     kLiteRtOpCodeShloComposite,
     kLiteRtOpCodeTflL2Normalization,
 };
@@ -212,17 +214,6 @@ LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *soc_model_name = kPluginSocModels[soc_model_idx].first;
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
-    LiteRtCompilerPlugin compiler_plugin, const char** sdk_version) {
-  if (!compiler_plugin || !sdk_version) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  // No-op implementation for MediaTek plugin.
-  // TODO: Add the SDK version to the plugin.
-  *sdk_version = "";
   return kLiteRtStatusOk;
 }
 
@@ -338,6 +329,13 @@ class LiteRtCompilerPluginT {
   int GetSubgraphIndex() const { return subgraph_index_; }
   const LiteRtCompilerContext* ctx() const { return ctx_; }
 
+  const std::string* CachedSdkVersion() const {
+    return sdk_version_.has_value() ? &*sdk_version_ : nullptr;
+  }
+  void SetSdkVersion(std::string sdk_version) {
+    sdk_version_ = std::move(sdk_version);
+  }
+
  private:
   const LiteRtCompilerContext* ctx_;
   litert::Expected<litert::internal::OptionsWrapper> opts_ =
@@ -346,6 +344,7 @@ class LiteRtCompilerPluginT {
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null opaque options");
   LrtMediatekOptions* mediatek_opts_ = nullptr;
   int subgraph_index_ = 0;
+  std::optional<std::string> sdk_version_;
 };
 
 LiteRtStatus LiteRtCreateCompilerPlugin(
@@ -360,6 +359,32 @@ LiteRtStatus LiteRtCreateCompilerPlugin(
 
 void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin) {
   delete compiler_plugin;
+}
+
+LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
+    LiteRtCompilerPlugin compiler_plugin, const char** sdk_version) {
+  if (!compiler_plugin || !sdk_version) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (const std::string* cached = compiler_plugin->CachedSdkVersion()) {
+    *sdk_version = cached->c_str();
+    return kLiteRtStatusOk;
+  }
+
+  // Load NeuronAdapter once to read the runtime version (e.g. "np8.2.24").
+  auto api = NeuronAdapterApi::Create(
+      /*shared_library_dir=*/std::nullopt,
+      compiler_plugin->GetMediatekOptions());
+  if (!api) {
+    LITERT_LOG(LITERT_ERROR, "Failed to load NeuronAdapter for SDK version: %s",
+               api.Error().Message().c_str());
+    return api.Error().Status();
+  }
+  const NeuronRuntimeVersion& v = (*api)->RuntimeVersion();
+  compiler_plugin->SetSdkVersion(
+      absl::StrFormat("np%u.%u.%u", v.major, v.minor, v.patch));
+  *sdk_version = compiler_plugin->CachedSdkVersion()->c_str();
+  return kLiteRtStatusOk;
 }
 
 namespace {
@@ -460,10 +485,15 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   auto num_ops = graph.Ops().size();
   const auto& ops = graph.Ops();
 
-  // If an unknown operation is not supported in the SDK, use the supported list
-  // directly to determine whether the operations are supported. If they are,
-  // try to get the supported status of the whole model from the compiler.
-  if (!neuron_adapter_api->IsFeatureEnabled(
+  bool use_get_supported_operations = true;
+  LrtGetMediatekOptionsUseGetSupportedOperations(mtk_options,
+                                                 &use_get_supported_operations);
+
+  // Use the static IsOpSupported list when either the SDK can't handle
+  // NEURON_UNKNOWN ops or the user opted out of the get_supported_operations
+  // path. Otherwise let the Neuron compiler decide which ops it can run.
+  if (!use_get_supported_operations ||
+      !neuron_adapter_api->IsFeatureEnabled(
           litert::mediatek::NeuronFeatureType::NEURON_FEATURE_UNKNOWN_OP)) {
     for (const auto& op : ops) {
       if (!IsOpSupported(op)) {
@@ -481,6 +511,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   for (int op_idx = 0; op_idx < num_ops; ++op_idx) {
     const auto& op = ops[op_idx];
     if (!IsOpSupported(op)) {
+      LITERT_LOG(LITERT_ERROR, "Unlegalized op: %d", op.Code());
       unknown_op_indices.insert(op_idx);
     }
   }

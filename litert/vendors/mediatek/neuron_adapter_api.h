@@ -33,10 +33,19 @@ struct AHardwareBuffer {};
 
 namespace litert::mediatek {
 
-/** Workaround for the adapter header without definition */
-/* Extended data type -A tensor of 32 bit signed integers that represent real
- * numbers. */
-#define NEURON_EXT_TENSOR_INT32_SYMM_PER_CHANNEL 9014
+// Workarounds for adapter headers that pre-date these operand codes.
+enum {
+  /* A tensor of 32 bit signed integers that represent real numbers. */
+  NEURON_EXT_TENSOR_INT32_SYMM_PER_CHANNEL = 9014,
+  /* A tensor of 2 bit signed integers, per-tensor asymmetric quant. */
+  NEURON_EXT_TENSOR_QUANT2_ASYMM_SIGNED = 9015,
+  /* A tensor of 2 bit signed integers, per-tensor symmetric quant. */
+  NEURON_EXT_TENSOR_QUANT2_SYMM = 9016,
+  /* A tensor of 2 bit signed integers, per-channel symmetric quant. */
+  NEURON_EXT_TENSOR_QUANT2_SYMM_PER_CHANNEL = 9017,
+  /* A tensor of 2 bit signed integers, per-channel asymmetric quant. */
+  NEURON_EXT_TENSOR_QUANT2_ASYMM_SIGNED_PER_CHANNEL = 9018,
+};
 
 /** Workaround for the adapter header without definition */
 /* NeuronOperationType */
@@ -45,11 +54,12 @@ namespace litert::mediatek {
 static constexpr const char* kExtensionGeneralOpration =
     "com.mediatek.general_operation";
 static constexpr int32_t kMinMagicNumberForNeuronService = 300;
+static constexpr int32_t kMinMagicNumberForNP10 = 400;
 
 /** Option `import_forever` has been recommended by MediaTek to reduce memory */
 /* footprint when using the same I/O buffers across multiple invocations. */
 static constexpr char kDefaultAotCompilationOptions[] =
-    "--apusys-config \"{ \\\"import_forever\\\": true }\"";
+    "--opt-accuracy --opt 3";
 
 // Extension operand
 enum {
@@ -91,7 +101,7 @@ class NeuronAdapterApi {
     return aot_compilation_options_;
   }
 
-  absl::string_view JitCompileOptions() const { return ""; }
+  absl::string_view JitCompileOptions() const { return " --opt-accuracy --opt 3"; }
 
   Expected<NeuronModelPtr> CreateModel() const;
 
@@ -166,6 +176,7 @@ struct NeuronAdapterApi::Api {
   decltype(&NeuronExecution_create) execution_create = nullptr;
   decltype(&NeuronExecution_free) execution_free = nullptr;
   decltype(&NeuronExecution_setBoostHint) execution_set_boost_hint = nullptr;
+  decltype(&NeuronExecution_setConfig) execution_set_config = nullptr;
   decltype(&NeuronExecution_setInputFromMemory)
       execution_set_input_from_memory = nullptr;
   decltype(&NeuronExecution_setOutputFromMemory)
@@ -191,6 +202,8 @@ struct NeuronAdapterApi::Api {
   decltype(&NeuronModel_setOperandValue) model_set_operand_value = nullptr;
   decltype(&NeuronModel_setOperandSymmPerChannelQuantParams)
       model_set_symm_per_channel_quant_params = nullptr;
+  decltype(&NeuronModel_setOperandPerChannelQuantParams)
+      model_set_per_channel_quant_params = nullptr;
   decltype(&Neuron_getVersion) get_version = nullptr;
   decltype(&NeuronModel_relaxComputationFloat32toFloat16) relax_fp32_to_fp16 =
       nullptr;

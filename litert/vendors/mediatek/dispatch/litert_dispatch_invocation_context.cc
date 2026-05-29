@@ -370,9 +370,9 @@ LiteRtDispatchInvocationContextT::IoRequirementsBuilder::Create(
     const LiteRtRuntimeContext* runtime_context) {
   static constexpr std::array kSupportedTensorBufferTypes = {
 #if defined(__ANDROID__)
-      kLiteRtTensorBufferTypeAhwb,
+    kLiteRtTensorBufferTypeAhwb,
 #endif  // __ANDROID__
-      kLiteRtTensorBufferTypeDmaBuf,
+    kLiteRtTensorBufferTypeDmaBuf,
   };
 
   LiteRtTensorBufferRequirements requirements;
@@ -565,6 +565,33 @@ Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
       NEURON_NO_ERROR) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to execute network");
+  }
+  return {};
+}
+
+Expected<void> LiteRtDispatchInvocationContextT::SetSchedulingInfo(
+    const LiteRtSchedulingInfo* scheduling_info) {
+  if (scheduling_info == nullptr) {
+    scheduling_info_ = std::nullopt;
+    return {};
+  }
+  scheduling_info_ = *scheduling_info;
+  if (scheduling_info_.has_value() &&
+      neuron_adapter_api_.api().execution_set_config) {
+    if (neuron_adapter_api_.api().execution_set_config(
+            execution_, NEURON_EXECUTION_CONFIG_UID,
+            &scheduling_info_->original_uid,
+            sizeof(int32_t)) != NEURON_NO_ERROR) {
+      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                           "Failed to set execution config: uid");
+    }
+    if (neuron_adapter_api_.api().execution_set_config(
+            execution_, NEURON_EXECUTION_CONFIG_JOB_PRIORITY,
+            &scheduling_info_->job_priority,
+            sizeof(int32_t)) != NEURON_NO_ERROR) {
+      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                           "Failed to set execution config: priority");
+    }
   }
   return {};
 }
