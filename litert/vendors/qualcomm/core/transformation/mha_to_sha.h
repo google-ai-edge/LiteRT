@@ -17,6 +17,12 @@ std::vector<ConstTensorWrapperRef> UnpackTensor(TensorPool& tensor_pool,
                                                 const TensorWrapper& input,
                                                 size_t unpack_dims = 1);
 
+std::vector<ConstTensorWrapperRef> SplitTensor(TensorPool& tensor_pool,
+                                               std::vector<OpWrapper>& new_ops,
+                                               const TensorWrapper& input,
+                                               size_t axis = 1,
+                                               size_t tile_size = 1);
+
 TensorWrapper& BuildSingleSHAByUnpackAxis1(
     std::vector<OpWrapper>& new_ops, TensorPool& tensor_pool,
     const uint32_t num_attn_per_kv_heads, const TensorWrapper& scale_mul_input,
@@ -29,6 +35,31 @@ TensorWrapper& BuildSingleSHAByUnpackAxis1(
     const OpWrapper& qk_vslice_slice, const OpWrapper& qk_vcache_matmul,
     const OpWrapper& qk_vslice_matmul, const OpWrapper& qkv_add);
 
+size_t SimplifyMaskingAdd(std::function<bool(OpWrapper&)> validate_op_config,
+                          std::vector<OpWrapper>& ops, size_t start_index,
+                          TensorPool& tensor_pool, size_t pattern_size);
+
+size_t DuplicateOrRemoveConcat(
+    std::function<bool(OpWrapper&)> validate_op_config,
+    std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
+    size_t pattern_size);
+
+size_t FuseConcatReshape(std::function<bool(OpWrapper&)> validate_op_config,
+                         std::vector<OpWrapper>& ops, size_t start_index,
+                         TensorPool& tensor_pool, size_t pattern_size);
+
+TensorWrapper& BuildShaFromGqa(
+    std::vector<OpWrapper>& new_ops, TensorPool& tensor_pool,
+    const uint32_t num_attn_per_kv_heads, const TensorWrapper& input,
+    const TensorWrapper& k_cache, const TensorWrapper& k_slice,
+    const TensorWrapper& v_cache, const TensorWrapper& v_slice,
+    const OpWrapper* scale_mul, const OpWrapper& q_kcache_matmul,
+    const OpWrapper& q_kslice_matmul, const OpWrapper& qk_concat,
+    const OpWrapper& mask_add, const OpWrapper& softmax,
+    const OpWrapper& qk_vcache_slice, const OpWrapper& qk_vslice_slice,
+    const OpWrapper& qk_vcache_matmul, const OpWrapper& qk_vslice_matmul,
+    const OpWrapper& qkv_add);
+
 size_t OptimizeMHAPrefill(std::function<bool(OpWrapper&)> validate_op_config,
                           std::vector<OpWrapper>& ops, size_t start_index,
                           TensorPool& tensor_pool, size_t pattern_size);
@@ -37,12 +68,12 @@ size_t OptimizeMHADecode(std::function<bool(OpWrapper&)> validate_op_config,
                          std::vector<OpWrapper>& ops, size_t start_index,
                          TensorPool& tensor_pool, size_t pattern_size);
 
-size_t OptimizeMHAFastVlmPrefill(
+size_t OptimizeGqaPrefill(
     std::function<bool(OpWrapper&)> validate_op_config,
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size);
 
-size_t OptimizeMHAFastVlmDecode(
+size_t OptimizeGqaDecode(
     std::function<bool(OpWrapper&)> validate_op_config,
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size);
