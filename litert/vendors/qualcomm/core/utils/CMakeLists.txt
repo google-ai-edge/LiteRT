@@ -68,3 +68,14 @@ target_link_libraries(qnn_model
         qnn_log
         qnn_wrappers
 )
+
+# flexbuffer_helpers
+add_library(qnn_flexbuffer_helpers STATIC)
+
+target_sources(qnn_flexbuffer_helpers PRIVATE flexbuffer_helpers.cc)
+
+target_include_directories(qnn_flexbuffer_helpers
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        ${TFLITE_BUILD_DIR}/flatbuffers/include
+)

@@ -489,6 +489,21 @@ TEST(GraphIOTensorMemTypeTest, Parse) {
   }
 }
 
+TEST(CustomOpPackageFlagTest, ParseUnparse) {
+  std::string error;
+  QualcommOptions::CustomOpPackage value;
+  static constexpr absl::string_view kFlagValue =
+      "name:pkg;interface_provider:provider;compile_package_path:compile.so;"
+      "dispatch_package_path:dispatch.so;target:HTP;";
+  EXPECT_TRUE(AbslParseFlag(kFlagValue, &value, &error));
+  EXPECT_EQ(value.name, "pkg");
+  EXPECT_EQ(value.interface_provider, "provider");
+  EXPECT_EQ(value.compile_package_path, "compile.so");
+  EXPECT_EQ(value.dispatch_package_path, "dispatch.so");
+  EXPECT_EQ(value.target, "HTP");
+  EXPECT_EQ(AbslUnparseFlag(value), kFlagValue);
+}
+
 TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   Expected<QualcommOptions> options = QualcommOptions::Create();
   ASSERT_TRUE(options.HasValue());

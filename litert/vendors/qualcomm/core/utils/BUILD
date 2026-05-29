@@ -3,6 +3,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//litert/build_common:litert_build_defs.bzl", "litert_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
 package(
@@ -100,5 +101,23 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
+    name = "flexbuffer_helpers",
+    srcs = ["flexbuffer_helpers.cc"],
+    hdrs = ["flexbuffer_helpers.h"],
+    deps = [
+        "@flatbuffers//:runtime_cc",
+    ],
+)
+
+litert_test(
+    name = "flexbuffer_helpers_test",
+    srcs = ["flexbuffer_helpers_test.cc"],
+    deps = [
+        ":flexbuffer_helpers",
+        "@flatbuffers",
     ],
 )

@@ -120,6 +120,12 @@ LiteRtStatus LiteRtGetOpCode(LiteRtOp op, LiteRtOpCode* code);
 // Get custom code for given op, returns error if op is not a custom op.
 LiteRtStatus LiteRtGetCustomCode(LiteRtOp op, const char** code);
 
+// Gets the custom options for the given op.
+// If no custom options exist, *custom_options_size is set to 0.
+LiteRtStatus LiteRtGetCustomOptions(LiteRtOp op,
+                                    const uint8_t** custom_options_data,
+                                    size_t* custom_options_size);
+
 // Get input tensors of given op.
 LiteRtStatus LiteRtGetNumOpInputs(LiteRtOp op, LiteRtParamIndex* num_inputs);
 LiteRtStatus LiteRtGetOpInput(LiteRtOp op, LiteRtParamIndex input_index,

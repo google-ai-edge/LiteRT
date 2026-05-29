@@ -33,6 +33,58 @@
 
 using litert::internal::ParseToml;
 
+namespace {
+
+struct CustomOpPackage {
+  std::string name = "";
+  std::string interface_provider = "";
+  std::string compile_package_path = "";
+  std::string dispatch_package_path = "";
+  std::string target = "";
+};
+
+LiteRtStatus ParseCustomOpPackageValue(absl::string_view value,
+                                       CustomOpPackage& package) {
+  size_t start = 0;
+  while (start <= value.size()) {
+    const size_t end = value.find(';', start);
+    const size_t token_end =
+        (end == absl::string_view::npos) ? value.size() : end;
+    absl::string_view token = value.substr(start, token_end - start);
+    start = token_end + 1;
+
+    if (token.empty()) {
+      continue;
+    }
+
+    const size_t colon_pos = token.find(':');
+    if (colon_pos == absl::string_view::npos) {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+
+    const absl::string_view key = token.substr(0, colon_pos);
+    const absl::string_view val = token.substr(colon_pos + 1);
+
+    if (key == "name") {
+      package.name = val;
+    } else if (key == "interface_provider") {
+      package.interface_provider = val;
+    } else if (key == "compile_package_path") {
+      package.compile_package_path = val;
+    } else if (key == "dispatch_package_path") {
+      package.dispatch_package_path = val;
+    } else if (key == "target") {
+      package.target = val;
+    } else {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+  }
+
+  return kLiteRtStatusOk;
+}
+
+}  // namespace
+
 struct LrtQualcommOptionsT {
   std::optional<LrtQualcommOptionsLogLevel> log_level;
   std::optional<LrtQualcommOptionsProfiling> profiling;
@@ -57,6 +109,7 @@ struct LrtQualcommOptionsT {
   std::optional<std::string> saver_output_dir;
   std::optional<LrtQualcommOptionsGraphIOTensorMemType>
       graph_io_tensor_mem_type;
+  std::optional<CustomOpPackage> custom_op_package;
 };
 
 LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
@@ -180,6 +233,12 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           status = LrtQualcommOptionsSetGraphIOTensorMemType(
               parsed_options,
               static_cast<LrtQualcommOptionsGraphIOTensorMemType>(*v));
+        } else if (key == "custom_op_package") {
+          CustomOpPackage package;
+          status = ParseCustomOpPackageValue(value, package);
+          if (status == kLiteRtStatusOk) {
+            parsed_options->custom_op_package = package;
+          }
         }
 
         return status;
@@ -297,6 +356,17 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
     toml << "graph_io_tensor_mem_type = "
          << static_cast<int>(*options->graph_io_tensor_mem_type) << "\n";
   }
+  if (options->custom_op_package.has_value()) {
+    const auto& package = *options->custom_op_package;
+    toml << "custom_op_package = \""
+         << "name:" << package.name << ";"
+         << "interface_provider:" << package.interface_provider << ";"
+         << "compile_package_path:" << package.compile_package_path << ";"
+         << "dispatch_package_path:" << package.dispatch_package_path << ";"
+         << "target:" << package.target << ";"
+         << "\"\n";
+  }
+
   *identifier = LrtQualcommOptionsGetIdentifier();
   std::string toml_str = toml.str();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
@@ -378,6 +448,54 @@ LiteRtStatus LrtQualcommOptionsGetSaverOutputDir(
                           ? options->saver_output_dir->c_str()
                           : "";
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetCustomOpPackage(
+    LrtQualcommOptions options, const char* name,
+    const char* interface_provider, const char* compile_package_path,
+    const char* dispatch_package_path, const char* target) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  CustomOpPackage package;
+  package.name = name;
+  package.interface_provider = interface_provider;
+  package.compile_package_path = compile_package_path;
+  package.dispatch_package_path = dispatch_package_path;
+  package.target = target;
+
+  options->custom_op_package = std::move(package);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetCustomOpPackage(
+    LrtQualcommOptions options, const char** name,
+    const char** interface_provider, const char** compile_package_path,
+    const char** dispatch_package_path, const char** target) {
+  if (options == nullptr || name == nullptr || interface_provider == nullptr ||
+      compile_package_path == nullptr ||
+      dispatch_package_path == nullptr || target == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  if (!options->custom_op_package.has_value()) {
+    *name = "";
+    *interface_provider = "";
+    *compile_package_path = "";
+    *dispatch_package_path = "";
+    *target = "";
+    return kLiteRtStatusOk;
+  }
+
+  const auto& package = *options->custom_op_package;
+  *name = package.name.c_str();
+  *interface_provider = package.interface_provider.c_str();
+  *compile_package_path = package.compile_package_path.c_str();
+  *dispatch_package_path = package.dispatch_package_path.c_str();
+  *target = package.target.c_str();
   return kLiteRtStatusOk;
 }
 
