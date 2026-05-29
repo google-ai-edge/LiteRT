@@ -28,6 +28,7 @@ limitations under the License.
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
+#include "tensor/internal/type_id.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/matchers.h"
 
@@ -38,6 +39,7 @@ using ::litert::tensor::IsOk;
 using ::litert::tensor::IsOkAndHolds;
 using ::testing::Contains;
 using ::testing::ElementsAre;
+using ::testing::Not;
 using ::testing::UnorderedElementsAre;
 
 MATCHER(IsValidTensor, "") {
@@ -477,9 +479,9 @@ TEST(ArithmeticTest, SplitWorks) {
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::shared_ptr op, GetProducer(b[0]));
   ASSERT_NE(op, nullptr);
-  auto* split_op = dynamic_cast<graph::SplitOperation<>*>(op.get());
-  ASSERT_NE(split_op, nullptr);
-  EXPECT_EQ(split_op->num_splits, 2);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const graph::SplitOperation& split_op,
+                                  op->As<graph::SplitOperation>());
+  EXPECT_EQ(split_op.num_splits, 2);
 }
 
 TEST(ArithmeticTest, GeluWorks) {
@@ -711,10 +713,10 @@ TEST(ArithmeticTest, CustomWorks) {
   EXPECT_THAT(b_info.shape, UnorderedElementsAre(2, 4));
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::shared_ptr op, GetProducer(b));
   ASSERT_NE(op, nullptr);
-  auto* custom_op = dynamic_cast<graph::CustomOperationData*>(op.get());
-  ASSERT_NE(custom_op, nullptr);
-  EXPECT_EQ(custom_op->custom_code, "MyCustomOp");
-  EXPECT_THAT(custom_op->custom_options, ElementsAre(1, 2, 3));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const graph::CustomOperation& custom_op,
+                                  op->As<graph::CustomOperation>());
+  EXPECT_EQ(custom_op.custom_code, "MyCustomOp");
+  EXPECT_THAT(custom_op.custom_options, ElementsAre(1, 2, 3));
 }
 
 TEST(ArithmeticTest, TileWorks) {
@@ -983,6 +985,594 @@ TEST(ArithmeticTest, NonMaxSuppressionV5DynamicMaxOutputSizeFails) {
         output.GetStatus().message(),
         ::testing::HasSubstr("max_output_size must be a constant tensor"));
   }
+}
+
+struct DummyOperation : graph::Operation {
+  absl::string_view GetName() const override { return "Dummy"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
+};
+
+template <typename OpType>
+void VerifyOperationRTTI(TensorHandle tensor) {
+  ASSERT_TRUE(tensor.GetStatus().ok());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::shared_ptr<graph::Operation> op,
+                                  GetProducer(tensor.GetRaw()));
+  ASSERT_NE(op, nullptr);
+
+  EXPECT_EQ(op->GetTypeId(), internal::TypeId::Get<OpType>());
+  EXPECT_TRUE(op->IsA(internal::TypeId::Get<OpType>()));
+  EXPECT_TRUE(op->IsA(internal::TypeId::Get<graph::Operation>()));
+  EXPECT_FALSE(op->IsA(internal::TypeId::Get<DummyOperation>()));
+
+  graph::Operation& op_ref = *op;
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(OpType & op_as, op_ref.As<OpType>());
+  EXPECT_EQ(&op_as, op.get());
+
+  EXPECT_THAT(op_ref.As<DummyOperation>(), Not(IsOk()));
+
+  const graph::Operation& const_op_ref = *op;
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const OpType& const_op_as,
+                                  const_op_ref.As<OpType>());
+  EXPECT_EQ(&const_op_as, op.get());
+
+  EXPECT_THAT(const_op_ref.As<DummyOperation>(), Not(IsOk()));
+}
+
+TEST(OperationCastTest, Add) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::AddOperation>(Add(a, b));
+}
+
+TEST(OperationCastTest, Mul) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::MulOperation>(Mul(a, b));
+}
+
+TEST(OperationCastTest, Sub) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::SubOperation>(Sub(a, b));
+}
+
+TEST(OperationCastTest, Div) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::DivOperation>(Div(a, b));
+}
+
+TEST(OperationCastTest, LeakyRelu) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::LeakyReluOperation>(LeakyRelu(a, 0.1f));
+}
+
+TEST(OperationCastTest, Softmax) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::SoftmaxOperation>(Softmax(a, 1.0));
+}
+
+TEST(OperationCastTest, Gelu) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::GeluOperation>(Gelu(a, false));
+}
+
+TEST(OperationCastTest, Cast) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::CastOperation>(Cast(a, Type::kI32));
+}
+
+TEST(OperationCastTest, ExpandDims) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::ExpandDimsOperation>(ExpandDims(a, 1));
+}
+
+TEST(OperationCastTest, Reshape) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::ReshapeOperation>(Reshape(a, {4, 2}));
+}
+
+TEST(OperationCastTest, Cumsum) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor axis_cumsum(
+      {.type = Type::kI32, .shape = {}, .buffer = std::vector<int32_t>{1}});
+  VerifyOperationRTTI<graph::CumsumOperation>(
+      Cumsum(a, axis_cumsum, true, true));
+}
+
+TEST(OperationCastTest, Sum) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor p_sum(
+      {.type = Type::kI32, .shape = {1}, .buffer = std::vector<int32_t>{0}});
+  VerifyOperationRTTI<graph::SumOperation>(Sum(a, p_sum, false));
+}
+
+TEST(OperationCastTest, ReduceMax) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor p_sum(
+      {.type = Type::kI32, .shape = {1}, .buffer = std::vector<int32_t>{0}});
+  VerifyOperationRTTI<graph::ReduceMaxOperation>(ReduceMax(a, p_sum, false));
+}
+
+TEST(OperationCastTest, Mean) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor p_sum(
+      {.type = Type::kI32, .shape = {1}, .buffer = std::vector<int32_t>{0}});
+  VerifyOperationRTTI<graph::MeanOperation>(Mean(a, p_sum, false));
+}
+
+TEST(OperationCastTest, BatchMatMul) {
+  Tensor x_bmm({.type = Type::kFP32, .shape = {2, 3, 4}});
+  Tensor y_bmm({.type = Type::kFP32, .shape = {2, 4, 5}});
+  VerifyOperationRTTI<graph::BatchMatMulOperation>(
+      BatchMatMul(x_bmm, y_bmm, false, false));
+}
+
+TEST(OperationCastTest, FullyConnected) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor w_fc({.type = Type::kFP32, .shape = {4, 4}});
+  Tensor bias_fc({.type = Type::kFP32, .shape = {4}});
+  VerifyOperationRTTI<graph::FullyConnectedOperation>(
+      FullyConnected(a, w_fc, bias_fc, kActNone, false));
+}
+
+TEST(OperationCastTest, Concatenation) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::ConcatenationOperation>(
+      Concatenation({a, b}, 1, kActNone));
+}
+
+TEST(OperationCastTest, Pack) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::PackOperation>(Pack({a, b}, 0));
+}
+
+TEST(OperationCastTest, Unpack) {
+  Tensor a_unpack({.type = Type::kFP32, .shape = {2, 3, 4}});
+  VerifyOperationRTTI<graph::UnpackOperation>(Unpack(a_unpack, 2, 0)[0]);
+}
+
+TEST(OperationCastTest, SpaceToDepth) {
+  Tensor a_s2d({.type = Type::kFP32, .shape = {1, 4, 4, 1}});
+  VerifyOperationRTTI<graph::SpaceToDepthOperation>(SpaceToDepth(a_s2d, 2));
+}
+
+TEST(OperationCastTest, DepthToSpace) {
+  Tensor a_d2s({.type = Type::kFP32, .shape = {1, 2, 2, 4}});
+  VerifyOperationRTTI<graph::DepthToSpaceOperation>(DepthToSpace(a_d2s, 2));
+}
+
+TEST(OperationCastTest, Split) {
+  Tensor a_split({.type = Type::kFP32, .shape = {2, 4, 6}});
+  VerifyOperationRTTI<graph::SplitOperation>(Split(a_split, 1, 2)[0]);
+}
+
+TEST(OperationCastTest, AveragePool2D) {
+  Tensor a_pool({.type = Type::kFP32, .shape = {1, 5, 5, 1}});
+  VerifyOperationRTTI<graph::AveragePool2DOperation>(
+      AveragePool2D(a_pool, 2, 2, 2, 2, kPaddingSame));
+}
+
+TEST(OperationCastTest, MaxPool2D) {
+  Tensor a_pool({.type = Type::kFP32, .shape = {1, 5, 5, 1}});
+  VerifyOperationRTTI<graph::MaxPool2DOperation>(
+      MaxPool2D(a_pool, 2, 2, 2, 2, kPaddingSame));
+}
+
+TEST(OperationCastTest, Conv2D) {
+  Tensor a_pool({.type = Type::kFP32, .shape = {1, 5, 5, 1}});
+  Tensor filter_conv({.type = Type::kFP32, .shape = {1, 3, 3, 1}});
+  Tensor bias_conv({.type = Type::kFP32, .shape = {1}});
+  VerifyOperationRTTI<graph::Conv2DOperation>(
+      Conv2D(a_pool, filter_conv, bias_conv, 2, 2, kPaddingSame));
+}
+
+TEST(OperationCastTest, DepthwiseConv2D) {
+  Tensor a_pool({.type = Type::kFP32, .shape = {1, 5, 5, 1}});
+  Tensor filter_conv({.type = Type::kFP32, .shape = {1, 3, 3, 1}});
+  Tensor bias_conv({.type = Type::kFP32, .shape = {1}});
+  VerifyOperationRTTI<graph::DepthwiseConv2DOperation>(
+      DepthwiseConv2D(a_pool, filter_conv, bias_conv, 2, 2, kPaddingSame));
+}
+
+TEST(OperationCastTest, Squeeze) {
+  Tensor a_squeeze({.type = Type::kFP32, .shape = {1, 2, 1, 3, 1}});
+  VerifyOperationRTTI<graph::SqueezeOperation>(Squeeze(a_squeeze));
+}
+
+TEST(OperationCastTest, Custom) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::CustomOperation>(
+      Custom({a}, "MyCustomOp", {1, 2, 3}, {{2, 4}}, {Type::kFP32})[0]);
+}
+
+TEST(OperationCastTest, ArgMax) {
+  Tensor a_unpack({.type = Type::kFP32, .shape = {2, 3, 4}});
+  VerifyOperationRTTI<graph::ArgMaxOperation>(ArgMax(a_unpack, 1));
+}
+
+TEST(OperationCastTest, Gather) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor indices_gather({.type = Type::kI32, .shape = {2}});
+  VerifyOperationRTTI<graph::GatherOperation>(Gather(a, indices_gather, 0));
+}
+
+TEST(OperationCastTest, OneHot) {
+  Tensor indices_onehot({.type = Type::kI32, .shape = {4}});
+  Tensor depth_onehot(
+      {.type = Type::kI32, .shape = {}, .buffer = std::vector<int32_t>{3}});
+  Tensor on_onehot(
+      {.type = Type::kFP32, .shape = {}, .buffer = std::vector<float>{1.0f}});
+  Tensor off_onehot(
+      {.type = Type::kFP32, .shape = {}, .buffer = std::vector<float>{0.0f}});
+  VerifyOperationRTTI<graph::OneHotOperation>(
+      OneHot(indices_onehot, depth_onehot, on_onehot, off_onehot, -1));
+}
+
+TEST(OperationCastTest, ResizeBilinear) {
+  Tensor a_s2d({.type = Type::kFP32, .shape = {1, 4, 4, 1}});
+  Tensor size_resize(
+      {.type = Type::kI32, .shape = {2}, .buffer = std::vector<int32_t>{2, 2}});
+  VerifyOperationRTTI<graph::ResizeBilinearOperation>(
+      ResizeBilinear(a_s2d, size_resize, false, false));
+}
+
+TEST(OperationCastTest, ResizeNearestNeighbor) {
+  Tensor a_s2d({.type = Type::kFP32, .shape = {1, 4, 4, 1}});
+  Tensor size_resize(
+      {.type = Type::kI32, .shape = {2}, .buffer = std::vector<int32_t>{2, 2}});
+  VerifyOperationRTTI<graph::ResizeNearestNeighborOperation>(
+      ResizeNearestNeighbor(a_s2d, size_resize, false, false));
+}
+
+TEST(OperationCastTest, TransposeConv) {
+  Tensor filter_tc({.type = Type::kFP32, .shape = {1, 3, 3, 1}});
+  Tensor input_tc({.type = Type::kFP32, .shape = {1, 5, 5, 1}});
+  Tensor bias_tc({.type = Type::kFP32, .shape = {1}});
+  Tensor add_output = TransposeConv(filter_tc, input_tc, bias_tc,
+                                    {1, 10, 10, 1}, kPaddingSame, 2, 2);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::shared_ptr<graph::Operation> add_op,
+                                  GetProducer(add_output.GetRaw()));
+  ASSERT_NE(add_op, nullptr);
+  ASSERT_FALSE(add_op->inputs.empty());
+  VerifyOperationRTTI<graph::TransposeConvOperation>(
+      TensorHandle(add_op->inputs[0]));
+}
+
+TEST(OperationCastTest, TransposeConv2D) {
+  Tensor filter_tc({.type = Type::kFP32, .shape = {1, 3, 3, 1}});
+  Tensor input_tc({.type = Type::kFP32, .shape = {1, 5, 5, 1}});
+  Tensor bias_tc({.type = Type::kFP32, .shape = {1}});
+  Tensor add_output = TransposeConv2D(filter_tc, input_tc, bias_tc,
+                                      {1, 10, 10, 1}, kPaddingSame, 2, 2);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::shared_ptr<graph::Operation> add_op,
+                                  GetProducer(add_output.GetRaw()));
+  ASSERT_NE(add_op, nullptr);
+  ASSERT_FALSE(add_op->inputs.empty());
+  VerifyOperationRTTI<graph::TransposeConv2DOperation>(
+      TensorHandle(add_op->inputs[0]));
+}
+
+TEST(OperationCastTest, Abs) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::AbsOperation>(Abs(a));
+}
+
+TEST(OperationCastTest, Relu) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::ReluOperation>(Relu(a));
+}
+
+TEST(OperationCastTest, Relu6) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::Relu6Operation>(Relu6(a));
+}
+
+TEST(OperationCastTest, Elu) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::EluOperation>(Elu(a));
+}
+
+TEST(OperationCastTest, HardSwish) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::HardSwishOperation>(HardSwish(a));
+}
+
+TEST(OperationCastTest, PRelu) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {4}});
+  VerifyOperationRTTI<graph::PReluOperation>(PRelu(a, b));
+}
+
+TEST(OperationCastTest, L2Normalization) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::L2NormalizationOperation>(L2Normalization(a));
+}
+
+TEST(OperationCastTest, Square) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::SquareOperation>(Square(a));
+}
+
+TEST(OperationCastTest, Rsqrt) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::RsqrtOperation>(Rsqrt(a));
+}
+
+TEST(OperationCastTest, Pow) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::PowOperation>(Pow(a, b));
+}
+
+TEST(OperationCastTest, Neg) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::NegOperation>(Neg(a));
+}
+
+TEST(OperationCastTest, Pad) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kI32,
+            .shape = {2, 2},
+            .buffer = std::vector<int32_t>{0, 0, 0, 0}});
+  VerifyOperationRTTI<graph::PadOperation>(Pad(a, b));
+}
+
+TEST(OperationCastTest, PadV2) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kI32,
+            .shape = {2, 2},
+            .buffer = std::vector<int32_t>{0, 0, 0, 0}});
+  Tensor c(
+      {.type = Type::kFP32, .shape = {}, .buffer = std::vector<float>{0.0f}});
+  VerifyOperationRTTI<graph::PadV2Operation>(PadV2(a, b, c));
+}
+
+TEST(OperationCastTest, Sqrt) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::SqrtOperation>(Sqrt(a));
+}
+
+TEST(OperationCastTest, Exp) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::ExpOperation>(Exp(a));
+}
+
+TEST(OperationCastTest, Log) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::LogOperation>(Log(a));
+}
+
+TEST(OperationCastTest, Ceil) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::CeilOperation>(Ceil(a));
+}
+
+TEST(OperationCastTest, Floor) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::FloorOperation>(Floor(a));
+}
+
+TEST(OperationCastTest, FloorDiv) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::FloorDivOperation>(FloorDiv(a, b));
+}
+
+TEST(OperationCastTest, FloorMod) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::FloorModOperation>(FloorMod(a, b));
+}
+
+TEST(OperationCastTest, Sign) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::SignOperation>(Sign(a));
+}
+
+TEST(OperationCastTest, Round) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::RoundOperation>(Round(a));
+}
+
+TEST(OperationCastTest, LogSoftmax) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::LogSoftmaxOperation>(LogSoftmax(a));
+}
+
+TEST(OperationCastTest, Transpose) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b(
+      {.type = Type::kI32, .shape = {2}, .buffer = std::vector<int32_t>{1, 0}});
+  VerifyOperationRTTI<graph::TransposeOperation>(Transpose(a, b));
+}
+
+TEST(OperationCastTest, Tile) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b(
+      {.type = Type::kI32, .shape = {2}, .buffer = std::vector<int32_t>{1, 1}});
+  VerifyOperationRTTI<graph::TileOperation>(Tile(a, b));
+}
+
+TEST(OperationCastTest, Lstm) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::LstmOperation>(Lstm(a, b)[0]);
+}
+
+TEST(OperationCastTest, Tanh) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::TanhOperation>(Tanh(a));
+}
+
+TEST(OperationCastTest, Select) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor cond({.type = Type::kI32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::SelectOperation>(Select(cond, a, b));
+}
+
+TEST(OperationCastTest, SelectV2) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor cond({.type = Type::kI32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::SelectV2Operation>(SelectV2(cond, a, b));
+}
+
+TEST(OperationCastTest, Slice) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor begin(
+      {.type = Type::kI32, .shape = {2}, .buffer = std::vector<int32_t>{0, 0}});
+  Tensor size(
+      {.type = Type::kI32, .shape = {2}, .buffer = std::vector<int32_t>{1, 1}});
+  VerifyOperationRTTI<graph::SliceOperation>(Slice(a, begin, size));
+}
+
+TEST(OperationCastTest, Less) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::LessOperation>(Less(a, b));
+}
+
+TEST(OperationCastTest, Greater) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::GreaterOperation>(Greater(a, b));
+}
+
+TEST(OperationCastTest, GreaterEqual) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::GreaterEqualOperation>(GreaterEqual(a, b));
+}
+
+TEST(OperationCastTest, Equal) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::EqualOperation>(Equal(a, b));
+}
+
+TEST(OperationCastTest, NotEqual) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::NotEqualOperation>(NotEqual(a, b));
+}
+
+TEST(OperationCastTest, Minimum) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::MinimumOperation>(Minimum(a, b));
+}
+
+TEST(OperationCastTest, Maximum) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::MaximumOperation>(Maximum(a, b));
+}
+
+TEST(OperationCastTest, LogicalAnd) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::LogicalAndOperation>(LogicalAnd(a, b));
+}
+
+TEST(OperationCastTest, LogicalOr) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::LogicalOrOperation>(LogicalOr(a, b));
+}
+
+TEST(OperationCastTest, LogicalNot) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::LogicalNotOperation>(LogicalNot(a));
+}
+
+TEST(OperationCastTest, BitwiseXor) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::BitwiseXorOperation>(BitwiseXor(a, b));
+}
+
+TEST(OperationCastTest, RightShift) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::RightShiftOperation>(RightShift(a, b));
+}
+
+TEST(OperationCastTest, Cos) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::CosOperation>(Cos(a));
+}
+
+TEST(OperationCastTest, Sin) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::SinOperation>(Sin(a));
+}
+
+TEST(OperationCastTest, Logistic) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::LogisticOperation>(Logistic(a));
+}
+
+TEST(OperationCastTest, EmbeddingLookup) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kI32, .shape = {2}});
+  VerifyOperationRTTI<graph::EmbeddingLookupOperation>(EmbeddingLookup(b, a));
+}
+
+TEST(OperationCastTest, DynamicUpdateSlice) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {1, 1}});
+  Tensor c(
+      {.type = Type::kI32, .shape = {2}, .buffer = std::vector<int32_t>{0, 0}});
+  VerifyOperationRTTI<graph::DynamicUpdateSliceOperation>(
+      DynamicUpdateSlice(a, b, c));
+}
+
+TEST(OperationCastTest, TopK) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::TopKOperation>(TopK(a, 1)[0]);
+}
+
+TEST(OperationCastTest, Quantize) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::QuantizeOperation>(
+      Quantize(a, Type::kI8, {1.0f}, {0}));
+}
+
+TEST(OperationCastTest, Reverse) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b(
+      {.type = Type::kI32, .shape = {1}, .buffer = std::vector<int32_t>{0}});
+  VerifyOperationRTTI<graph::ReverseOperation>(Reverse(a, b));
+}
+
+TEST(OperationCastTest, Dequantize) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::DequantizeOperation>(Dequantize(a));
+}
+
+TEST(OperationCastTest, GatherNd) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kI32, .shape = {2, 2}});
+  VerifyOperationRTTI<graph::GatherNdOperation>(GatherNd(a, b));
+}
+
+TEST(OperationCastTest, Probe) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::ProbeOperation>(Probe(a));
+}
+
+TEST(OperationCastTest, NonMaxSuppressionV5) {
+  Tensor boxes({.type = Type::kFP32, .shape = {2, 10, 4}});
+  Tensor scores({.type = Type::kFP32, .shape = {2, 10}});
+  Tensor iou_threshold({.type = Type::kFP32, .shape = {}});
+  Tensor score_threshold({.type = Type::kFP32, .shape = {}});
+  Tensor soft_nms_sigma({.type = Type::kFP32, .shape = {}});
+  VerifyOperationRTTI<graph::NonMaxSuppressionV5Operation>(NonMaxSuppressionV5(
+      boxes, scores, 3, iou_threshold, score_threshold, soft_nms_sigma)[0]);
 }
 
 }  // namespace

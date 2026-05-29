@@ -22,7 +22,6 @@ limitations under the License.
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
-#include "tensor/internal/mixin.h"
 
 namespace litert::tensor {
 
@@ -51,273 +50,217 @@ struct BinaryOperationData {
   litert::tensor::FusedActivation activation = litert::tensor::kActNone;
 };
 
-template <class... Mixins>
-struct AddOperation : BinaryOperationData,
-                      virtual Operation,
-                      virtual OpMixin<struct AddOperationTag, Mixins>... {
+struct AddOperation : BinaryOperationData, Operation {
   absl::string_view GetName() const override { return "Add"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct MulOperation : BinaryOperationData,
-                      virtual Operation,
-                      virtual OpMixin<struct MulOperationTag, Mixins>... {
+struct MulOperation : BinaryOperationData, Operation {
   absl::string_view GetName() const override { return "Mul"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct AbsOperation : virtual Operation,
-                      virtual OpMixin<struct AbsOperationTag, Mixins>... {
+struct AbsOperation : Operation {
   absl::string_view GetName() const override { return "Abs"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct ReluOperation : virtual Operation,
-                       virtual OpMixin<struct ReluOperationTag, Mixins>... {
+struct ReluOperation : Operation {
   absl::string_view GetName() const override { return "Relu"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct Relu6Operation : virtual Operation,
-                        virtual OpMixin<struct Relu6OperationTag, Mixins>... {
+struct Relu6Operation : Operation {
   absl::string_view GetName() const override { return "Relu6"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct ReluN1To1Operation
-    : virtual Operation,
-      virtual OpMixin<struct ReluN1To1OperationTag, Mixins>... {
+struct ReluN1To1Operation : Operation {
   absl::string_view GetName() const override { return "ReluN1To1"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct ZerosLikeOperation
-    : virtual Operation,
-      virtual OpMixin<struct ZerosLikeOperationTag, Mixins>... {
+struct ZerosLikeOperation : Operation {
   absl::string_view GetName() const override { return "ZerosLike"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct Relu0To1Operation
-    : virtual Operation,
-      virtual OpMixin<struct Relu0To1OperationTag, Mixins>... {
+struct Relu0To1Operation : Operation {
   absl::string_view GetName() const override { return "Relu0To1"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct LeakyReluOperationData {
   float alpha;
 };
 
-template <class... Mixins>
-struct LeakyReluOperation
-    : LeakyReluOperationData,
-      virtual Operation,
-      virtual OpMixin<struct LeakyReluOperationTag, Mixins>... {
+struct LeakyReluOperation : LeakyReluOperationData, Operation {
   absl::string_view GetName() const override { return "LeakyRelu"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct EluOperation : virtual Operation,
-                      virtual OpMixin<struct EluOperationTag, Mixins>... {
+struct EluOperation : Operation {
   absl::string_view GetName() const override { return "Elu"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct HardSwishOperationTag {};
 
-template <class... Mixins>
-struct HardSwishOperation
-    : virtual Operation,
-      virtual OpMixin<struct HardSwishOperationTag, Mixins>... {
+struct HardSwishOperation : Operation {
   absl::string_view GetName() const override { return "HardSwish"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct PReluOperationTag {};
 
-template <class... Mixins>
-struct PReluOperation
-    : virtual Operation,
-      virtual OpMixin<struct PReluOperationTag, Mixins>... {
+struct PReluOperation : Operation {
   absl::string_view GetName() const override { return "PRelu"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct L2NormalizationOperationTag {};
 
-template <class... Mixins>
-struct L2NormalizationOperation
-    : virtual Operation,
-      virtual OpMixin<struct L2NormalizationOperationTag, Mixins>... {
+struct L2NormalizationOperation : Operation {
   absl::string_view GetName() const override { return "L2Normalization"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct SubOperation : BinaryOperationData,
-                      virtual Operation,
-                      virtual OpMixin<struct SubOperationTag, Mixins>... {
+struct SubOperation : BinaryOperationData, Operation {
   absl::string_view GetName() const override { return "Sub"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct DivOperation : BinaryOperationData,
-                      virtual Operation,
-                      virtual OpMixin<struct DivOperationTag, Mixins>... {
+struct DivOperation : BinaryOperationData, Operation {
   absl::string_view GetName() const override { return "Div"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct SquareOperation : virtual Operation,
-                         virtual OpMixin<struct SquareOperationTag, Mixins>... {
+struct SquareOperation : Operation {
   absl::string_view GetName() const override { return "Square"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct RsqrtOperation : virtual Operation,
-                        virtual OpMixin<struct RsqrtOperationTag, Mixins>... {
+struct RsqrtOperation : Operation {
   absl::string_view GetName() const override { return "Rsqrt"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct PowOperation : virtual Operation,
-                      virtual OpMixin<struct PowOperationTag, Mixins>... {
+struct PowOperation : Operation {
   absl::string_view GetName() const override { return "Pow"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct NegOperation : virtual Operation,
-                      virtual OpMixin<struct NegOperationTag, Mixins>... {
+struct NegOperation : Operation {
   absl::string_view GetName() const override { return "Neg"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct PadOperation : virtual Operation,
-                      virtual OpMixin<struct PadOperationTag, Mixins>... {
+struct PadOperation : Operation {
   absl::string_view GetName() const override { return "Pad"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct PadV2Operation : virtual Operation,
-                        virtual OpMixin<struct PadV2OperationTag, Mixins>... {
+struct PadV2Operation : Operation {
   absl::string_view GetName() const override { return "PadV2"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct SqrtOperation : virtual Operation,
-                       virtual OpMixin<struct SqrtOperationTag, Mixins>... {
+struct SqrtOperation : Operation {
   absl::string_view GetName() const override { return "Sqrt"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct ExpOperation : virtual Operation,
-                      virtual OpMixin<struct ExpOperationTag, Mixins>... {
+struct ExpOperation : Operation {
   absl::string_view GetName() const override { return "Exp"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct LogOperationTag {};
 
-template <class... Mixins>
-struct LogOperation : virtual Operation,
-                      virtual OpMixin<struct LogOperationTag, Mixins>... {
+struct LogOperation : Operation {
   absl::string_view GetName() const override { return "Log"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct CeilOperationTag {};
 
-template <class... Mixins>
-struct CeilOperation : virtual Operation,
-                       virtual OpMixin<struct CeilOperationTag, Mixins>... {
+struct CeilOperation : Operation {
   absl::string_view GetName() const override { return "Ceil"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct FloorOperationTag {};
 
-template <class... Mixins>
-struct FloorOperation : virtual Operation,
-                        virtual OpMixin<struct FloorOperationTag, Mixins>... {
+struct FloorOperation : Operation {
   absl::string_view GetName() const override { return "Floor"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct FloorDivOperation
-    : virtual Operation,
-      virtual OpMixin<struct FloorDivOperationTag, Mixins>... {
+struct FloorDivOperation : Operation {
   absl::string_view GetName() const override { return "FloorDiv"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct FloorModOperation
-    : virtual Operation,
-      virtual OpMixin<struct FloorModOperationTag, Mixins>... {
+struct FloorModOperation : Operation {
   absl::string_view GetName() const override { return "FloorMod"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct SignOperationTag {};
 
-template <class... Mixins>
-struct SignOperation : virtual Operation,
-                       virtual OpMixin<struct SignOperationTag, Mixins>... {
+struct SignOperation : Operation {
   absl::string_view GetName() const override { return "Sign"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct RoundOperationTag {};
 
-template <class... Mixins>
-struct RoundOperation : virtual Operation,
-                        virtual OpMixin<struct RoundOperationTag, Mixins>... {
+struct RoundOperation : Operation {
   absl::string_view GetName() const override { return "Round"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct SoftmaxOperationData {
   float beta;
 };
 
-template <class... Mixins>
-struct SoftmaxOperation
-    : SoftmaxOperationData,
-      virtual Operation,
-      virtual OpMixin<struct SoftmaxOperationTag, Mixins>... {
+struct SoftmaxOperation : SoftmaxOperationData, Operation {
   absl::string_view GetName() const override { return "Softmax"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct LogSoftmaxOperationTag {};
 
-template <class... Mixins>
-struct LogSoftmaxOperation
-    : virtual Operation,
-      virtual OpMixin<struct LogSoftmaxOperationTag, Mixins>... {
+struct LogSoftmaxOperation : Operation {
   absl::string_view GetName() const override { return "LogSoftmax"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct SumOperationData {
   bool keep_dims;
 };
 
-template <class... Mixins>
-struct SumOperation : SumOperationData,
-                      virtual Operation,
-                      virtual OpMixin<struct SumOperationTag, Mixins>... {
+struct SumOperation : SumOperationData, Operation {
   absl::string_view GetName() const override { return "Sum"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct ReduceMaxOperationData {
   bool keep_dims;
 };
 
-template <class... Mixins>
-struct ReduceMaxOperation
-    : ReduceMaxOperationData,
-      virtual Operation,
-      virtual OpMixin<struct ReduceMaxOperationTag, Mixins>... {
+struct ReduceMaxOperation : ReduceMaxOperationData, Operation {
   absl::string_view GetName() const override { return "ReduceMax"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct MeanOperationData {
   bool keep_dims;
 };
 
-template <class... Mixins>
-struct MeanOperation : MeanOperationData,
-                       virtual Operation,
-                       virtual OpMixin<struct MeanOperationTag, Mixins>... {
+struct MeanOperation : MeanOperationData, Operation {
   absl::string_view GetName() const override { return "Mean"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct BatchMatMulOperationData {
@@ -325,12 +268,9 @@ struct BatchMatMulOperationData {
   bool adj_y;
 };
 
-template <class... Mixins>
-struct BatchMatMulOperation
-    : BatchMatMulOperationData,
-      virtual Operation,
-      virtual OpMixin<struct BatchMatMulOperationTag, Mixins>... {
+struct BatchMatMulOperation : BatchMatMulOperationData, Operation {
   absl::string_view GetName() const override { return "BatchMatMul"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct FullyConnectedOperationData {
@@ -338,12 +278,9 @@ struct FullyConnectedOperationData {
   bool keep_num_dims;
 };
 
-template <class... Mixins>
-struct FullyConnectedOperation
-    : FullyConnectedOperationData,
-      virtual Operation,
-      virtual OpMixin<struct FullyConnectedOperationTag, Mixins>... {
+struct FullyConnectedOperation : FullyConnectedOperationData, Operation {
   absl::string_view GetName() const override { return "FullyConnected"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct ConcatenationOperationData {
@@ -351,23 +288,18 @@ struct ConcatenationOperationData {
   litert::tensor::FusedActivation activation;
 };
 
-template <class... Mixins>
-struct ConcatenationOperation
-    : ConcatenationOperationData,
-      virtual Operation,
-      virtual OpMixin<struct ConcatenationOperationTag, Mixins>... {
+struct ConcatenationOperation : ConcatenationOperationData, Operation {
   absl::string_view GetName() const override { return "Concatenation"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct PackOperationData {
   int axis;
 };
 
-template <class... Mixins>
-struct PackOperation : PackOperationData,
-                       virtual Operation,
-                       virtual OpMixin<struct PackOperationTag, Mixins>... {
+struct PackOperation : PackOperationData, Operation {
   absl::string_view GetName() const override { return "Pack"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct UnpackOperationData {
@@ -375,46 +307,36 @@ struct UnpackOperationData {
   int axis;
 };
 
-template <class... Mixins>
-struct UnpackOperation : UnpackOperationData,
-                         virtual Operation,
-                         virtual OpMixin<struct UnpackOperationTag, Mixins>... {
+struct UnpackOperation : UnpackOperationData, Operation {
   absl::string_view GetName() const override { return "Unpack"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct SpaceToDepthOperationData {
   int block_size;
 };
 
-template <class... Mixins>
-struct SpaceToDepthOperation
-    : SpaceToDepthOperationData,
-      virtual Operation,
-      virtual OpMixin<struct SpaceToDepthOperationTag, Mixins>... {
+struct SpaceToDepthOperation : SpaceToDepthOperationData, Operation {
   absl::string_view GetName() const override { return "SpaceToDepth"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct DepthToSpaceOperationData {
   int block_size;
 };
 
-template <class... Mixins>
-struct DepthToSpaceOperation
-    : DepthToSpaceOperationData,
-      virtual Operation,
-      virtual OpMixin<struct DepthToSpaceOperationTag, Mixins>... {
+struct DepthToSpaceOperation : DepthToSpaceOperationData, Operation {
   absl::string_view GetName() const override { return "DepthToSpace"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct SplitOperationData {
   int num_splits;
 };
 
-template <class... Mixins>
-struct SplitOperation : SplitOperationData,
-                        virtual Operation,
-                        virtual OpMixin<struct SplitOperationTag, Mixins>... {
+struct SplitOperation : SplitOperationData, Operation {
   absl::string_view GetName() const override { return "Split"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct AveragePool2DOperationData {
@@ -426,12 +348,9 @@ struct AveragePool2DOperationData {
   litert::tensor::FusedActivation activation;
 };
 
-template <class... Mixins>
-struct AveragePool2DOperation
-    : AveragePool2DOperationData,
-      virtual Operation,
-      virtual OpMixin<struct AveragePool2DOperationTag, Mixins>... {
+struct AveragePool2DOperation : AveragePool2DOperationData, Operation {
   absl::string_view GetName() const override { return "AveragePool2D"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct MaxPool2DOperationData {
@@ -443,12 +362,9 @@ struct MaxPool2DOperationData {
   litert::tensor::FusedActivation activation;
 };
 
-template <class... Mixins>
-struct MaxPool2DOperation
-    : MaxPool2DOperationData,
-      virtual Operation,
-      virtual OpMixin<struct MaxPool2DOperationTag, Mixins>... {
+struct MaxPool2DOperation : MaxPool2DOperationData, Operation {
   absl::string_view GetName() const override { return "MaxPool2D"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct Conv2DOperationData {
@@ -460,11 +376,9 @@ struct Conv2DOperationData {
   litert::tensor::FusedActivation activation;
 };
 
-template <class... Mixins>
-struct Conv2DOperation : Conv2DOperationData,
-                         virtual Operation,
-                         virtual OpMixin<struct Conv2DOperationTag, Mixins>... {
+struct Conv2DOperation : Conv2DOperationData, Operation {
   absl::string_view GetName() const override { return "Conv2DOperation"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct DepthwiseConv2DOperationData {
@@ -477,233 +391,178 @@ struct DepthwiseConv2DOperationData {
   litert::tensor::FusedActivation activation;
 };
 
-template <class... Mixins>
-struct DepthwiseConv2DOperation
-    : DepthwiseConv2DOperationData,
-      virtual Operation,
-      virtual OpMixin<struct DepthwiseConv2DOperationTag, Mixins>... {
+struct DepthwiseConv2DOperation : DepthwiseConv2DOperationData, Operation {
   absl::string_view GetName() const override {
     return "DepthwiseConv2DOperation";
   }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct TransposeOperation
-    : virtual Operation,
-      virtual OpMixin<struct TransposeOperationTag, Mixins>... {
+struct TransposeOperation : Operation {
   absl::string_view GetName() const override { return "Transpose"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct TileOperation : virtual Operation,
-                       virtual OpMixin<struct TileOperationTag, Mixins>... {
+struct TileOperation : Operation {
   absl::string_view GetName() const override { return "Tile"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct LstmOperationTag {};
 
-template <class... Mixins>
-struct LstmOperation : virtual Operation,
-                       virtual OpMixin<struct LstmOperationTag, Mixins>... {
+struct LstmOperation : Operation {
   absl::string_view GetName() const override { return "Lstm"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct GeluOperationData {
   bool approximate;
 };
 
-template <class... Mixins>
-struct GeluOperation : GeluOperationData,
-                       virtual Operation,
-                       virtual OpMixin<struct GeluOperationTag, Mixins>... {
+struct GeluOperation : GeluOperationData, Operation {
   absl::string_view GetName() const override { return "Gelu"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct TanhOperation : virtual Operation,
-                       virtual OpMixin<struct TanhOperationTag, Mixins>... {
+struct TanhOperation : Operation {
   absl::string_view GetName() const override { return "Tanh"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct CastOperationData {
   Type to;
 };
 
-template <class... Mixins>
-struct CastOperation : CastOperationData,
-                       virtual Operation,
-                       virtual OpMixin<struct CastOperationTag, Mixins>... {
+struct CastOperation : CastOperationData, Operation {
   absl::string_view GetName() const override { return "Cast"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct SelectOperation : virtual Operation,
-                         virtual OpMixin<struct SelectOperationTag, Mixins>... {
+struct SelectOperation : Operation {
   absl::string_view GetName() const override { return "Select"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct SelectV2Operation
-    : virtual Operation,
-      virtual OpMixin<struct SelectV2OperationTag, Mixins>... {
+struct SelectV2Operation : Operation {
   absl::string_view GetName() const override { return "SelectV2"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct SliceOperation : virtual Operation,
-                        virtual OpMixin<struct SliceOperationTag, Mixins>... {
+struct SliceOperation : Operation {
   absl::string_view GetName() const override { return "Slice"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct LessOperation : virtual Operation,
-                       virtual OpMixin<struct LessOperationTag, Mixins>... {
+struct LessOperation : Operation {
   absl::string_view GetName() const override { return "Less"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct GreaterOperation
-    : virtual Operation,
-      virtual OpMixin<struct GreaterOperationTag, Mixins>... {
+struct GreaterOperation : Operation {
   absl::string_view GetName() const override { return "Greater"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct GreaterEqualOperation
-    : virtual Operation,
-      virtual OpMixin<struct GreaterEqualOperationTag, Mixins>... {
+struct GreaterEqualOperation : Operation {
   absl::string_view GetName() const override { return "GreaterEqual"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct EqualOperation : virtual Operation,
-                        virtual OpMixin<struct EqualOperationTag, Mixins>... {
+struct EqualOperation : Operation {
   absl::string_view GetName() const override { return "Equal"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct NotEqualOperation
-    : virtual Operation,
-      virtual OpMixin<struct NotEqualOperationTag, Mixins>... {
+struct NotEqualOperation : Operation {
   absl::string_view GetName() const override { return "NotEqual"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct MinimumOperation
-    : virtual Operation,
-      virtual OpMixin<struct MinimumOperationTag, Mixins>... {
+struct MinimumOperation : Operation {
   absl::string_view GetName() const override { return "Minimum"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct MaximumOperation
-    : virtual Operation,
-      virtual OpMixin<struct MaximumOperationTag, Mixins>... {
+struct MaximumOperation : Operation {
   absl::string_view GetName() const override { return "Maximum"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct LogicalAndOperation
-    : virtual Operation,
-      virtual OpMixin<struct LogicalAndOperationTag, Mixins>... {
+struct LogicalAndOperation : Operation {
   absl::string_view GetName() const override { return "LogicalAnd"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct LogicalOrOperation
-    : virtual Operation,
-      virtual OpMixin<struct LogicalOrOperationTag, Mixins>... {
+struct LogicalOrOperation : Operation {
   absl::string_view GetName() const override { return "LogicalOr"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct LogicalNotOperation
-    : virtual Operation,
-      virtual OpMixin<struct LogicalNotOperationTag, Mixins>... {
+struct LogicalNotOperation : Operation {
   absl::string_view GetName() const override { return "LogicalNot"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct BitwiseXorOperation
-    : virtual Operation,
-      virtual OpMixin<struct BitwiseXorOperationTag, Mixins>... {
+struct BitwiseXorOperation : Operation {
   absl::string_view GetName() const override { return "BitwiseXor"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct RightShiftOperation
-    : virtual Operation,
-      virtual OpMixin<struct RightShiftOperationTag, Mixins>... {
+struct RightShiftOperation : Operation {
   absl::string_view GetName() const override { return "RightShift"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct CosOperation : virtual Operation,
-                      virtual OpMixin<struct CosOperationTag, Mixins>... {
+struct CosOperation : Operation {
   absl::string_view GetName() const override { return "Cos"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct SinOperation : virtual Operation,
-                      virtual OpMixin<struct SinOperationTag, Mixins>... {
+struct SinOperation : Operation {
   absl::string_view GetName() const override { return "Sin"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct ReshapeOperationData {
   std::vector<int> new_shape;
 };
 
-template <class... Mixins>
-struct ReshapeOperation
-    : ReshapeOperationData,
-      virtual Operation,
-      virtual OpMixin<struct ReshapeOperationTag, Mixins>... {
+struct ReshapeOperation : ReshapeOperationData, Operation {
   absl::string_view GetName() const override { return "Reshape"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct SqueezeOperationData {
   std::vector<int> squeeze_dims;
 };
 
-template <class... Mixins>
-struct SqueezeOperation
-    : SqueezeOperationData,
-      virtual Operation,
-      virtual OpMixin<struct SqueezeOperationTag, Mixins>... {
+struct SqueezeOperation : SqueezeOperationData, Operation {
   absl::string_view GetName() const override { return "Squeeze"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct ExpandDimsOperationData {
   int axis;
 };
 
-template <class... Mixins>
-struct ExpandDimsOperation
-    : ExpandDimsOperationData,
-      virtual Operation,
-      virtual OpMixin<struct ExpandDimsOperationTag, Mixins>... {
+struct ExpandDimsOperation : ExpandDimsOperationData, Operation {
   absl::string_view GetName() const override { return "ExpandDims"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct LogisticOperation
-    : virtual Operation,
-      virtual OpMixin<struct LogisticOperationTag, Mixins>... {
+struct LogisticOperation : Operation {
   absl::string_view GetName() const override { return "Logistic"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct EmbeddingLookupOperation
-    : virtual Operation,
-      virtual OpMixin<struct EmbeddingLookupOperationTag, Mixins>... {
+struct EmbeddingLookupOperation : Operation {
   absl::string_view GetName() const override { return "EmbeddingLookup"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct DynamicUpdateSliceOperation
-    : virtual Operation,
-      virtual OpMixin<struct DynamicUpdateSliceOperationTag, Mixins>... {
+struct DynamicUpdateSliceOperation : Operation {
   absl::string_view GetName() const override { return "DynamicUpdateSlice"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct CustomOperationData {
@@ -711,17 +570,14 @@ struct CustomOperationData {
   std::vector<uint8_t> custom_options;
 };
 
-template <class... Mixins>
-struct CustomOperation : CustomOperationData,
-                         virtual Operation,
-                         virtual OpMixin<struct CustomOperationTag, Mixins>... {
+struct CustomOperation : CustomOperationData, Operation {
   absl::string_view GetName() const override { return "Custom"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct TopKOperation : virtual Operation,
-                       virtual OpMixin<struct TopKOperationTag, Mixins>... {
+struct TopKOperation : Operation {
   absl::string_view GetName() const override { return "TopK"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct ArgMaxOperationData {
@@ -730,18 +586,14 @@ struct ArgMaxOperationData {
 
 struct ArgMaxOperationTag {};
 
-template <class... Mixins>
-struct ArgMaxOperation : ArgMaxOperationData,
-                         virtual Operation,
-                         virtual OpMixin<struct ArgMaxOperationTag, Mixins>... {
+struct ArgMaxOperation : ArgMaxOperationData, Operation {
   absl::string_view GetName() const override { return "ArgMax"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct QuantizeOperation
-    : virtual Operation,
-      virtual OpMixin<struct QuantizeOperationTag, Mixins>... {
+struct QuantizeOperation : Operation {
   absl::string_view GetName() const override { return "Quantize"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct CumsumOperationData {
@@ -749,27 +601,21 @@ struct CumsumOperationData {
   bool reverse;
 };
 
-template <class... Mixins>
-struct CumsumOperation : CumsumOperationData,
-                         virtual Operation,
-                         virtual OpMixin<struct CumsumOperationTag, Mixins>... {
+struct CumsumOperation : CumsumOperationData, Operation {
   absl::string_view GetName() const override { return "Cumsum"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct ReverseOperationTag {};
 
-template <class... Mixins>
-struct ReverseOperation
-    : virtual Operation,
-      virtual OpMixin<struct ReverseOperationTag, Mixins>... {
+struct ReverseOperation : Operation {
   absl::string_view GetName() const override { return "Reverse"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct DequantizeOperation
-    : virtual Operation,
-      virtual OpMixin<struct DequantizeOperationTag, Mixins>... {
+struct DequantizeOperation : Operation {
   absl::string_view GetName() const override { return "Dequantize"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct GatherOperationData {
@@ -777,37 +623,30 @@ struct GatherOperationData {
   int batch_dims;
 };
 
-template <class... Mixins>
-struct GatherOperation : GatherOperationData,
-                         virtual Operation,
-                         virtual OpMixin<struct GatherOperationTag, Mixins>... {
+struct GatherOperation : GatherOperationData, Operation {
   absl::string_view GetName() const override { return "Gather"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct GatherNdOperationTag {};
 
-template <class... Mixins>
-struct GatherNdOperation
-    : virtual Operation,
-      virtual OpMixin<struct GatherNdOperationTag, Mixins>... {
+struct GatherNdOperation : Operation {
   absl::string_view GetName() const override { return "GatherNd"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct OneHotOperationData {
   int axis;
 };
 
-template <class... Mixins>
-struct OneHotOperation : OneHotOperationData,
-                         virtual Operation,
-                         virtual OpMixin<struct OneHotOperationTag, Mixins>... {
+struct OneHotOperation : OneHotOperationData, Operation {
   absl::string_view GetName() const override { return "OneHot"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct ProbeOperation : virtual Operation,
-                        virtual OpMixin<struct ProbeOperationTag, Mixins>... {
+struct ProbeOperation : Operation {
   absl::string_view GetName() const override { return "Probe"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct ResizeBilinearOperationData {
@@ -815,12 +654,9 @@ struct ResizeBilinearOperationData {
   bool half_pixel_centers;
 };
 
-template <class... Mixins>
-struct ResizeBilinearOperation
-    : ResizeBilinearOperationData,
-      virtual Operation,
-      virtual OpMixin<struct ResizeBilinearOperationTag, Mixins>... {
+struct ResizeBilinearOperation : ResizeBilinearOperationData, Operation {
   absl::string_view GetName() const override { return "ResizeBilinear"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct ResizeNearestNeighborOperationData {
@@ -828,19 +664,15 @@ struct ResizeNearestNeighborOperationData {
   bool half_pixel_centers;
 };
 
-template <class... Mixins>
-struct ResizeNearestNeighborOperation
-    : ResizeNearestNeighborOperationData,
-      virtual Operation,
-      virtual OpMixin<struct ResizeNearestNeighborOperationTag, Mixins>... {
+struct ResizeNearestNeighborOperation : ResizeNearestNeighborOperationData,
+                                        Operation {
   absl::string_view GetName() const override { return "ResizeNearestNeighbor"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct NonMaxSuppressionV5Operation
-    : virtual Operation,
-      virtual OpMixin<struct NonMaxSuppressionV5OperationTag, Mixins>... {
+struct NonMaxSuppressionV5Operation : Operation {
   absl::string_view GetName() const override { return "NonMaxSuppressionV5"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct TransposeConvOperationData {
@@ -849,12 +681,9 @@ struct TransposeConvOperationData {
   int stride_w;
 };
 
-template <class... Mixins>
-struct TransposeConvOperation
-    : TransposeConvOperationData,
-      virtual Operation,
-      virtual OpMixin<struct TransposeConvOperationTag, Mixins>... {
+struct TransposeConvOperation : TransposeConvOperationData, Operation {
   absl::string_view GetName() const override { return "TransposeConv"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct TransposeConv2DOperationData {
@@ -863,12 +692,9 @@ struct TransposeConv2DOperationData {
   int stride_w;
 };
 
-template <class... Mixins>
-struct TransposeConv2DOperation
-    : TransposeConv2DOperationData,
-      virtual Operation,
-      virtual OpMixin<struct TransposeConv2DOperationTag, Mixins>... {
+struct TransposeConv2DOperation : TransposeConv2DOperationData, Operation {
   absl::string_view GetName() const override { return "TransposeConv2D"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 }  // namespace litert::tensor::graph

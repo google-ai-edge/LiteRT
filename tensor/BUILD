@@ -94,7 +94,6 @@ cc_library(
     deps = [
         "//tensor:datatypes",
         "//tensor/internal:graph",
-        "//tensor/internal:mixin",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -146,6 +145,7 @@ cc_test(
         "//tensor:buffer",
         "//tensor:datatypes",
         "//tensor/internal:graph",
+        "//tensor/internal:type_id",
         "//tensor/utils:matchers",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings:string_view",

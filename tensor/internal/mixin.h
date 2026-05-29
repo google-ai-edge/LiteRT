@@ -24,9 +24,9 @@ class TensorMixin {};
 namespace graph {
 // Provides custom behaviour to operations.
 //
-// - OpTag is the operation that is being specialized, as per the CRTP.
+// - Op is the operation that is being specialized.
 // - Mixin is a tag to identify the mix-in.
-template <class OpTag, class Mixin>
+template <class Op, class Mixin>
 class OpMixin {};
 
 }  // namespace graph

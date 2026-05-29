@@ -327,7 +327,7 @@ absl::Status ModelFactory::Build() {
     // [[maybe_unused]] OpSerializationInfo& build_info =
     // operations_[operation];
 
-    auto tflite_op = dynamic_cast<const graph::TfLiteOperation*>(operation);
+    auto tflite_op = operation->GetExtension<graph::TfLiteOperation>();
     if (tflite_op == nullptr) {
       return absl::InvalidArgumentError(
           absl::StrCat("Operation ", operation->GetName(),
@@ -335,7 +335,7 @@ absl::Status ModelFactory::Build() {
     }
 
     LRT_TENSOR_ASSIGN_OR_RETURN(graph::TfLiteOpBuildInfo build_info,
-                                tflite_op->ToTfLite());
+                                tflite_op->ToTfLite(*operation));
 
     auto [it, inserted] = operator_codes.emplace(build_info.builtin_code, -1);
     if (inserted) {
