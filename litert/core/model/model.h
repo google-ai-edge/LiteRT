@@ -63,7 +63,7 @@
 // by the LiteRtModelT which is generally the longset living object. See various
 // "Emplace" methods.
 //
-// Since c api clients interface with pointers to IR Ojbects, a form of pointer
+// Since c api clients interface with pointers to IR Objects, a form of pointer
 // stability is desirable. Classes in this file enforce that pointers to IR
 // Objects are valid for their entire life time. Thus a c api client may store
 // pointers and depend on referential equality of IR Objects thoughout different
