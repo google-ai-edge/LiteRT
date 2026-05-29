@@ -269,6 +269,13 @@ class LiteRtCompilerPluginT {
   const ::qnn::Options& Options() const { return qnn_options_; }
 
   void initQnnManager(std::unique_ptr<QnnManager> qnn_manager) {
+    if (const auto& custom_op_package = qnn_options_.GetCustomOpPackage();
+        !custom_op_package.name.empty()) {
+      qnn_manager->RegisterOpPackage(
+          custom_op_package.compile_package_path.c_str(),
+          custom_op_package.interface_provider.c_str(),
+          custom_op_package.compile_target.c_str());
+    }
     qnn_manager_ = std::move(qnn_manager);
   }
 
@@ -394,7 +401,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
     std::vector<::qnn::OpWrapper> op_wrappers;
     LITERT_RETURN_IF_ERROR(litert::qnn::ConvertOp(
-        compiler_plugin->Options().GetUseInt64BiasAsInt32(), op, tensor_pool,
+        compiler_plugin->Options().GetUseInt64BiasAsInt32(),
+        compiler_plugin->Options().GetCustomOpPackage(), op, tensor_pool,
         input_tensors, output_tensors, op_wrappers));
 
     // Empty op_wrappers means the op is not supported by QNN.

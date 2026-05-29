@@ -78,6 +78,21 @@ TEST(OpWrapperTest, SanityTest) {
   EXPECT_EQ(op_config_v1.outputTensors, nullptr);
 }
 
+TEST(OpWrapperTest, PackageNameConstructor) {
+  OpWrapper op_wrapper{"name", "custom_pkg", "OP_TYPE", QnnOpCode::kUnknown};
+  const Qnn_OpConfig_t op_config = op_wrapper.GetOpConfig();
+  EXPECT_EQ(op_config.version, QNN_OPCONFIG_VERSION_1);
+  EXPECT_STREQ(op_config.v1.packageName, "custom_pkg");
+  EXPECT_STREQ(op_config.v1.typeName, "OP_TYPE");
+  EXPECT_STREQ(op_config.v1.name, "name");
+  EXPECT_EQ(op_config.v1.numOfParams, 0);
+  EXPECT_EQ(op_config.v1.params, nullptr);
+  EXPECT_EQ(op_config.v1.numOfInputs, 0);
+  EXPECT_EQ(op_config.v1.inputTensors, nullptr);
+  EXPECT_EQ(op_config.v1.numOfOutputs, 0);
+  EXPECT_EQ(op_config.v1.outputTensors, nullptr);
+}
+
 TEST(OpWrapperTest, MoveCtorSanityTest) {
   OpWrapper op_wrapper{"name", "OP_TYPE", QnnOpCode::kUnknown};
   OpWrapper moved{std::move(op_wrapper)};
