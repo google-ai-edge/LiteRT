@@ -52,6 +52,7 @@ litert_dynamic_lib(
         ":create_model",
         "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper",
         "//litert/c/options:litert_samsung_options",
