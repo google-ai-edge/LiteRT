@@ -456,6 +456,9 @@ void CloneTo(const LiteRtOpT& src, LiteRtOpT& dest) {
   litert::internal::SetTflOpCodeInd(dest,
                                     litert::internal::GetTflOpCodeInd(src));
   dest.SetOpCode(src.OpCode());
+  if (auto custom_code = src.CustomCode(); custom_code.HasValue()) {
+    dest.SetCustomCode(std::string(*custom_code));
+  }
 }
 
 LiteRtTensorT& MakeClone(LiteRtSubgraphT& parent, const LiteRtTensorT& src) {
