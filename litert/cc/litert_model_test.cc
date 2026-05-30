@@ -38,6 +38,7 @@
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
+#include "litert/test/load_test_model.h"
 #include "litert/test/matchers.h"
 #include "tflite/converter/allocation.h"
 #include "tflite/stderr_reporter.h"

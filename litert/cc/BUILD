@@ -950,6 +950,7 @@ cc_test(
         "//litert/cc/internal:scoped_file",
         "//litert/core/model",
         "//litert/test:common",
+        "//litert/test:load_test_model",
         "//litert/test:matchers",
         "//tflite:stderr_reporter",
         "//tflite/converter:allocation",

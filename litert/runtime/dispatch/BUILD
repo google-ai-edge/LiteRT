@@ -200,6 +200,17 @@ cc_test(
 litert_dispatch_api(
     name = "mock_async_dispatch",
     srcs = ["mock_async_dispatch.cc"],
+    copts = select({
+        ":windows_msvc": [
+            "/DLITERT_COMPILE_LIBRARY",
+            "/wd4018",  # -Wno-sign-compare
+        ],
+        ":windows_lexan": [
+            "-DLITERT_COMPILE_LIBRARY",
+            "-Wno-sign-compare",
+        ],
+        "//conditions:default": [],
+    }),
     export_litert_only = True,
     shared_lib_name = "mock_async_dispatch_so",
     so_name = "libLiteRtDispatch_Mock_Async.so",
@@ -350,6 +361,17 @@ cc_library(
 cc_library(
     name = "litert_dispatch_dummy",
     srcs = ["litert_dispatch_dummy.cc"],
+    copts = select({
+        ":windows_msvc": [
+            "/DLITERT_COMPILE_LIBRARY",
+            "/wd4018",  # -Wno-sign-compare
+        ],
+        ":windows_lexan": [
+            "-DLITERT_COMPILE_LIBRARY",
+            "-Wno-sign-compare",
+        ],
+        "//conditions:default": [],
+    }),
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_metrics",
@@ -357,6 +379,7 @@ cc_library(
         "//litert/c/internal:litert_scheduling_info",
         "//litert/vendors/c:litert_dispatch_c_api",
     ],
+    alwayslink = 1,
 )
 
 litert_device_test(
