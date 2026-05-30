@@ -68,6 +68,10 @@ std::string AbslUnparseFlag(LrtGoogleTensorOptionsTruncationType options) {
 bool AbslParseFlag(absl::string_view text,
                    LrtGoogleTensorOptionsShardingIntensity* options,
                    std::string* error) {
+  if (text == "unspecified") {
+    *options = kLiteRtGoogleTensorShardingIntensityUnspecified;
+    return true;
+  }
   if (text == "minimal") {
     *options = kLiteRtGoogleTensorShardingIntensityMinimal;
     return true;
@@ -90,6 +94,8 @@ bool AbslParseFlag(absl::string_view text,
 
 std::string AbslUnparseFlag(LrtGoogleTensorOptionsShardingIntensity options) {
   switch (options) {
+    case kLiteRtGoogleTensorShardingIntensityUnspecified:
+      return "unspecified";
     case kLiteRtGoogleTensorShardingIntensityMinimal:
       return "minimal";
     case kLiteRtGoogleTensorShardingIntensityModerate:
@@ -119,7 +125,7 @@ ABSL_FLAG(bool, google_tensor_enable_4bit_compilation, false,
 
 ABSL_FLAG(LrtGoogleTensorOptionsShardingIntensity,
           google_tensor_sharding_intensity,
-          kLiteRtGoogleTensorShardingIntensityMinimal,
+          kLiteRtGoogleTensorShardingIntensityUnspecified,
           "Sharding intensity for Google Tensor.");
 
 ABSL_FLAG(bool, google_tensor_enable_dynamic_range_quantization, false,
