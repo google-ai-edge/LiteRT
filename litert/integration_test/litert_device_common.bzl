@@ -310,7 +310,7 @@ def _SamsungSpec():
                 # ("//third_party/odml/litert/opensource_only/third_party/exynos_ai_litecore:lib_arm64_v8a", "LD_LIBRARY_PATH"),
                 # copybara:uncomment_end(google-only)
                 # copybara:comment_begin(oss samsung)
-                ("/third_party/odml/litert/exynos/v1_1_0:lib_arm64_v8a", "LD_LIBRARY_PATH"),
+                ("@exynos_ai_litecore//:lib_arm64_v8a", "LD_LIBRARY_PATH"),
                 # copybara:comment_end
             ],
             plugin = "libLiteRtCompilerPlugin_Samsung.so",
@@ -324,7 +324,7 @@ def _SamsungSpec():
                 # "//third_party/odml/litert/opensource_only/third_party/exynos_ai_litecore:lib_x86_64_linux",
                 # copybara:uncomment_end(google-only)
                 # copybara:comment_begin(oss samsung)
-                ("@exynos_ai_litecore//:lib_x86_64_linux", "LD_LIBRARY_PATH"),
+                "@exynos_ai_litecore//:lib_x86_64_linux",
                 # copybara:comment_end
             ],
         ),
