@@ -440,6 +440,25 @@ LiteRtStatus ShapeInferenceEngine::SpecializeSubgraph(
     tensor_map[tensor] = &MakeClone(dest, *tensor);
   }
 
+  // Remap blockwise quantization tensor pointers to the cloned tensors.
+  for (auto* tensor : dest.Tensors()) {
+    if (tensor->Qparams().first == kLiteRtQuantizationBlockWise) {
+      auto& block_wise = tensor->Qparams().second.block_wise;
+      if (block_wise.scales) {
+        auto it = tensor_map.find(block_wise.scales);
+        if (it != tensor_map.end()) {
+          block_wise.scales = it->second;
+        }
+      }
+      if (block_wise.zero_points) {
+        auto it = tensor_map.find(block_wise.zero_points);
+        if (it != tensor_map.end()) {
+          block_wise.zero_points = it->second;
+        }
+      }
+    }
+  }
+
   for (auto* input : subgraph->Inputs()) {
     dest.Inputs().push_back(tensor_map[input]);
   }

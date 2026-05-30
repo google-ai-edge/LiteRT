@@ -215,6 +215,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/core/util:flatbuffer_tools",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -429,9 +430,11 @@ cc_test(
     deps = [
         ":buffer_manager",
         ":model",
+        ":model_load",
         ":model_serialize",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_macros",
         "//litert/core/util:flatbuffer_tools_testonly",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",

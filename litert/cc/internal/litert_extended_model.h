@@ -153,6 +153,18 @@ inline LiteRtQuantizationPerChannel FetchExtendedTensorQuantizationPerChannel(
   return per_channel_quantization;
 }
 
+inline LiteRtQuantizationBlockWise FetchExtendedTensorQuantizationBlockWise(
+    LiteRtTensor tensor) {
+  if (FetchExtendedTensorQuantizationTypeId(tensor) !=
+      kLiteRtQuantizationBlockWise) {
+    return {};
+  }
+  LiteRtQuantizationBlockWise block_wise_quantization;
+  internal::AssertOk(LiteRtGetBlockWiseQuantization, tensor,
+                     &block_wise_quantization);
+  return block_wise_quantization;
+}
+
 }  // namespace internal::extended_model_detail
 
 /// @brief A C++ wrapper for `LiteRtTensor`, representing a tensor in the model.
@@ -174,7 +186,9 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor>,
             internal::extended_model_detail::
                 FetchExtendedTensorQuantizationPerTensor(tensor),
             internal::extended_model_detail::
-                FetchExtendedTensorQuantizationPerChannel(tensor)) {}
+                FetchExtendedTensorQuantizationPerChannel(tensor),
+            internal::extended_model_detail::
+                FetchExtendedTensorQuantizationBlockWise(tensor)) {}
 
   // Allow copying Tensors.
   Tensor(const Tensor& other)
@@ -212,6 +226,13 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor>,
     internal::AssertOk(LiteRtGetPerChannelQuantization, Get(),
                        &per_channel_quantization);
     return per_channel_quantization;
+  }
+
+  LiteRtQuantizationBlockWise BlockWiseQuantization() const {
+    LiteRtQuantizationBlockWise block_wise_quantization;
+    internal::AssertOk(LiteRtGetBlockWiseQuantization, Get(),
+                       &block_wise_quantization);
+    return block_wise_quantization;
   }
 
   bool HasWeights() const {

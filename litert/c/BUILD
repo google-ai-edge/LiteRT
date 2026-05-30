@@ -248,6 +248,7 @@ cc_test(
     srcs = ["litert_model_test.cc"],
     data = [
         "//litert/test:mlir_test_data",
+        "//litert/test:tflite_test_data",
     ],
     deps = [
         ":litert_common",

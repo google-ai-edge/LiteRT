@@ -413,9 +413,11 @@ exports_files(
     srcs = [
         "litert_c_api_dependency_test.sh",
         "litert_compiler_plugin_symbol_test.sh",
+        "testdata/blockwise_quantized.tflite",
         "testdata/mobilenet_v2_1.0_224.tflite",
         "testdata/model_magic_test.tflite",
         "testdata/model_with_external_weights.tflite",
+        "testdata/qwen_fc_blockwise_quantized.tflite",
         "testdata/shared_input_cpu_npu_google_tensor_precompiled.tflite",
         "testdata/simple_add_op_google_tensor_p25_precompiled.tflite",
         "testdata/simple_add_op_qc_v75_precompiled.tflite",
