@@ -252,9 +252,10 @@ litert::Expected<Environment> CreateDefaultEnvironment(
 TfLiteStatus BenchmarkLiteRtModel::LoadModel() {
   std::string fd_or_graph_path = params_.Get<std::string>("graph");
   LITERT_LOG(LITERT_INFO, "Loading model from: %s", fd_or_graph_path.c_str());
-  LITERT_ASSIGN_OR_RETURN(auto model_result,
-                          litert::Model::CreateFromFile(fd_or_graph_path),
-                          AsTfLiteStatus(_ << "Failed to load model."));
+  LITERT_ASSIGN_OR_RETURN(
+      auto model_result,
+      litert::Model::CreateFromFile(*environment_, fd_or_graph_path),
+      AsTfLiteStatus(_ << "Failed to load model."));
   model_ = std::make_unique<litert::Model>(std::move(model_result));
   return kTfLiteOk;
 }
@@ -301,12 +302,12 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
     litert::internal::InitializePerfetto();
   }
 
-  TF_LITE_ENSURE_STATUS(LoadModel());
-
   LITERT_ASSIGN_OR_RETURN(
       auto env_result, CreateDefaultEnvironment(params_),
       AsTfLiteStatus(_ << "Failed to create litert environment."));
   environment_ = std::make_unique<litert::Environment>(std::move(env_result));
+
+  TF_LITE_ENSURE_STATUS(LoadModel());
 
   auto compilation_options = CreateCompiledModelOptions(params_);
   LITERT_ASSIGN_OR_RETURN(auto compiled_model_result,

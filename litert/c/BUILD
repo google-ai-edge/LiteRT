@@ -251,6 +251,8 @@ cc_test(
     ],
     deps = [
         ":litert_common",
+        ":litert_environment",
+        ":litert_environment_options",
         ":litert_model",
         ":litert_op_code",
         "//litert/cc:litert_buffer_ref",

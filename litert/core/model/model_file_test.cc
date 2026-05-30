@@ -47,6 +47,7 @@
 #include "litert/cc/internal/litert_model_predicates.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/dispatch_op_schema.h"
@@ -98,7 +99,8 @@ GetTestBufferCache() {
 
 // Load a model, then serialize and re-load. Used to test serialization.
 Expected<ExtendedModel> LoadModelThroughRoundTrip(absl::string_view filename) {
-  auto model = ExtendedModel::CreateFromFile(GetTestFilePath(filename));
+  LITERT_ASSIGN_OR_RETURN(auto env, Environment::Create({}));
+  auto model = ExtendedModel::CreateFromFile(env, GetTestFilePath(filename));
   if (!model) {
     return model.Error();
   }
@@ -118,7 +120,7 @@ Expected<ExtendedModel> LoadModelThroughRoundTrip(absl::string_view filename) {
   LiteRtModel result = nullptr;
   auto& cached_buf = GetTestBufferCache()[key];
   LITERT_RETURN_IF_ERROR(LiteRtCreateModelFromBuffer(
-      cached_buf.Data(), cached_buf.Size(), &result));
+      env.Get(), cached_buf.Data(), cached_buf.Size(), &result));
 
   return ExtendedModel::CreateFromOwnedHandle(result);
 }
@@ -128,7 +130,7 @@ ModelFactory MakeRoundTripFactory(absl::string_view filename) {
 }
 
 ModelFactory MakeLoadFactory(absl::string_view filename) {
-  return [=]() {
+  return [=]() -> Expected<ExtendedModel> {
     return ExtendedModel::CreateFromFile(GetTestFilePath(filename));
   };
 }
@@ -151,8 +153,9 @@ class TestWithModelFactory : public ::testing::TestWithParam<ModelFactory> {
 //===---------------------------------------------------------------------------
 
 TEST(ModelLoadTest, BadFilepath) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LiteRtModel model = nullptr;
-  EXPECT_THAT(LiteRtCreateModelFromFile("bad_path", &model),
+  EXPECT_THAT(LiteRtCreateModelFromFile(env.Get(), "bad_path", &model),
               IsError(kLiteRtStatusErrorFileIO));
 }
 
@@ -171,6 +174,7 @@ TEST(ModelLoadTest, BadFileData) {
   bad_file << "not_tflite";
   bad_file.close();
 
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LiteRtModel model = nullptr;
 #ifdef _WIN32
   const std::string test_file_path_str = test_file_path.string();
@@ -178,7 +182,7 @@ TEST(ModelLoadTest, BadFileData) {
 #else
   const char* bad_file_path = test_file_path.c_str();
 #endif
-  EXPECT_THAT(LiteRtCreateModelFromFile(bad_file_path, &model),
+  EXPECT_THAT(LiteRtCreateModelFromFile(env.Get(), bad_file_path, &model),
               IsError(kLiteRtStatusErrorFileIO));
   // NOLINTEND
 }
@@ -846,9 +850,10 @@ TEST(ModelSerializeTest,
 
   // Reload model using the cached buffer.
   LiteRtModel result_model = nullptr;
-  EXPECT_EQ(LiteRtCreateModelFromBuffer(serialized->Data(), serialized->Size(),
-                                        &result_model),
-            kLiteRtStatusOk);
+  EXPECT_EQ(
+      LiteRtCreateModelFromBuffer(/*environment=*/nullptr, serialized->Data(),
+                                  serialized->Size(), &result_model),
+      kLiteRtStatusOk);
 
   // Check dispatch op is present.
   ASSERT_TRUE(result_model);

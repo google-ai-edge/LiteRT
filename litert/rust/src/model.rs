@@ -360,7 +360,7 @@ impl Model {
         let mut raw_model_ptr: LiteRtModel = std::ptr::null_mut();
         call_check_status!(
             // SAFETY: c_ptr is a valid pointer to the memory buffer provided by safe Rust code.
-            unsafe { LiteRtCreateModelFromFile(c_ptr, &mut raw_model_ptr) },
+            unsafe { LiteRtCreateModelFromFile(std::ptr::null_mut(), c_ptr, &mut raw_model_ptr) },
             ErrorCause::CreateModelFromFile
         );
         Ok(Model { raw_model: raw_model_ptr })
@@ -373,6 +373,7 @@ impl Model {
             // SAFETY: buffer is a valid pointer to the memory buffer provided by safe Rust code.
             unsafe {
                 LiteRtCreateModelFromBuffer(
+                    std::ptr::null_mut(),
                     buffer.as_ptr() as *const c_void,
                     buffer.len(),
                     &mut raw_model_ptr,
@@ -424,7 +425,7 @@ impl Model {
             unsafe { LiteRtGetModelSignature(self.raw_model, index, &mut raw_signature_ptr) },
             ErrorCause::GetModelSignature
         );
-        Ok(Signature { raw_signature: raw_signature_ptr, _phantom: PhantomData{} })
+        Ok(Signature { raw_signature: raw_signature_ptr, _phantom: PhantomData {} })
     }
 }
 

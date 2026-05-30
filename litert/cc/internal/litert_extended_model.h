@@ -37,6 +37,7 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
@@ -619,9 +620,25 @@ class ExtendedModel : public litert::Model {
     return ExtendedModel(model, OwnHandle::kNo);
   }
 
-  static Expected<ExtendedModel> CreateFromFile(const std::string& filename) {
+  /// @brief Creates a model from a file.
+  static Expected<ExtendedModel> CreateFromFile(Environment& env,
+                                                const std::string& filename) {
     LiteRtModel model;
-    if (auto status = LiteRtCreateModelFromFile(filename.c_str(), &model);
+    if (auto status =
+            LiteRtCreateModelFromFile(env.Get(), filename.c_str(), &model);
+        status != kLiteRtStatusOk) {
+      return Unexpected(ToStatus(status), "Failed to load model from file");
+    }
+    return CreateFromOwnedHandle(model);
+  }
+
+  /// @brief Creates a model from a file.
+  /// @deprecated Use API with explicit Environment instead.
+  static Expected<ExtendedModel> CreateFromFile(const std::string& filename) {
+    const auto& env = GetDefaultEnvironment();
+    LiteRtModel model;
+    if (auto status =
+            LiteRtCreateModelFromFile(env->Get(), filename.c_str(), &model);
         status != kLiteRtStatusOk) {
       return Unexpected(ToStatus(status), "Failed to load model from file");
     }
@@ -632,10 +649,27 @@ class ExtendedModel : public litert::Model {
   ///
   /// The caller must ensure that the buffer remains valid for the lifetime of
   /// the model.
-  static Expected<ExtendedModel> CreateFromBuffer(BufferRef<uint8_t> buffer) {
+  static Expected<ExtendedModel> CreateFromBuffer(Environment& env,
+                                                  BufferRef<uint8_t> buffer) {
     LiteRtModel model;
-    if (auto status =
-            LiteRtCreateModelFromBuffer(buffer.Data(), buffer.Size(), &model);
+    if (auto status = LiteRtCreateModelFromBuffer(env.Get(), buffer.Data(),
+                                                  buffer.Size(), &model);
+        status != kLiteRtStatusOk) {
+      return Unexpected(ToStatus(status), "Failed to load model from buffer");
+    }
+    return CreateFromOwnedHandle(model);
+  }
+
+  /// @brief Creates a model from a buffer.
+  ///
+  /// The caller must ensure that the buffer remains valid for the lifetime of
+  /// the model.
+  /// @deprecated Use API with explicit Environment instead.
+  static Expected<ExtendedModel> CreateFromBuffer(BufferRef<uint8_t> buffer) {
+    const auto& env = GetDefaultEnvironment();
+    LiteRtModel model;
+    if (auto status = LiteRtCreateModelFromBuffer(env->Get(), buffer.Data(),
+                                                  buffer.Size(), &model);
         status != kLiteRtStatusOk) {
       return Unexpected(ToStatus(status), "Failed to load model from buffer");
     }
@@ -643,16 +677,27 @@ class ExtendedModel : public litert::Model {
   }
 
 #if !defined(LITERT_DYNAMIC_RUNTIME)
-// copybara:uncomment_begin(google_only)
-//   /// @brief Creates a model from an owned TFLite allocation.
-//   ///
-//   /// LiteRT takes ownership of the allocation wrapper.
-//   static Expected<ExtendedModel> CreateFromAllocation(
-//       std::unique_ptr<tflite::Allocation> allocation) {
-//     LITERT_ASSIGN_OR_RETURN(
-//         auto model, litert::Model::CreateFromAllocation(std::move(allocation)));
-//     return CreateFromOwnedHandle(model.Release());
-//   }
+  // copybara:uncomment_begin(google_only)
+  // /// @brief Creates a model from an owned TFLite allocation.
+  // ///
+  // /// LiteRT takes ownership of the allocation wrapper.
+  // static Expected<ExtendedModel> CreateFromAllocation(
+      // Environment& env, std::unique_ptr<tflite::Allocation> allocation) {
+    // LITERT_ASSIGN_OR_RETURN(auto model, litert::Model::CreateFromAllocation(
+                                            // env, std::move(allocation)));
+    // return CreateFromOwnedHandle(model.Release());
+  // }
+// 
+  // /// @brief Creates a model from an owned TFLite allocation.
+  // ///
+  // /// LiteRT takes ownership of the allocation wrapper.
+  // /// @deprecated Use API with explicit Environment instead.
+  // static Expected<ExtendedModel> CreateFromAllocation(
+      // std::unique_ptr<tflite::Allocation> allocation) {
+    // LITERT_ASSIGN_OR_RETURN(
+        // auto model, litert::Model::CreateFromAllocation(std::move(allocation)));
+    // return CreateFromOwnedHandle(model.Release());
+  // }
 // copybara:uncomment_end
 #endif  // !defined(LITERT_DYNAMIC_RUNTIME)
 

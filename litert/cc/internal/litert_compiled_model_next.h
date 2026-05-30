@@ -99,7 +99,7 @@ class CompiledModelNext : public CompiledModel {
         CompiledModel::BuildOptions(compilation_options, env.GetHolder()));
     LiteRtModel litert_model;
     if (auto status = env_holder.runtime->CreateModelFromFile(
-            model_filename.c_str(), &litert_model);
+            env_holder.handle, model_filename.c_str(), &litert_model);
         status != kLiteRtStatusOk) {
       return Unexpected(ToStatus(status), "Failed to load model from file");
     }
