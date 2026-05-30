@@ -14,8 +14,6 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/experimental/acceleration/mini_benchmark/benchmark_result_evaluator.h"
 
-#include <memory>
-
 #include "tflite/acceleration/configuration/configuration_generated.h"
 
 namespace tflite {
