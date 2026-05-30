@@ -138,8 +138,8 @@ class TfLiteSubgraphExecute : public OpKernel {
     TfLiteStatus status = subgraph_selected.Invoke();
     if (status != kTfLiteOk) {
       CleanUpCustomOutputs();
-      ctx->CtxFailure(errors::Internal("Failed to invoke tflite subgraph",
-                                       subgraph_selected.GetName()));
+      ctx->CtxFailure(absl::InternalError(absl::StrCat(
+          "Failed to invoke tflite subgraph", subgraph_selected.GetName())));
       return;
     }
 
