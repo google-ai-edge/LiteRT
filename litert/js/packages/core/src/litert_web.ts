@@ -113,6 +113,22 @@ export class LiteRt {
   }
 
   /**
+   * Registers an object to be deleted when this LiteRt instance is deleted.
+   * Internal use only.
+   */
+  _registerObjectForDeletion(object: Deletable) {
+    this.objectsToDelete.add(object);
+  }
+
+  /**
+   * Unregisters an object from being deleted when this LiteRt instance is
+   * deleted. Internal use only.
+   */
+  _unregisterObjectForDeletion(object: Deletable) {
+    this.objectsToDelete.delete(object);
+  }
+
+  /**
    * Loads and compiles a LiteRt model.
    *
    * @param model The model data. This can be a string (the model url), a URL
