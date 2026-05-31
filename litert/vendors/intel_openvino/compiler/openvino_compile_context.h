@@ -36,9 +36,14 @@ class OpenVinoCompileContext {
   // no value the returned context holds the default configuration (NPU
   // device, LATENCY mode); otherwise it is populated from the contained
   // IntelOpenVinoOptions.
+  //
+  // If |graph_index| is non-negative and the options contain a per-graph
+  // override for that index, the device and any per-graph configs map
+  // entries override the model-wide values.
   static ::litert::Expected<OpenVinoCompileContext> Create(
       const ::litert::Expected< ::litert::intel_openvino::IntelOpenVinoOptions>&
-          opts);
+          opts,
+      int graph_index = -1);
 
   // If the target device is NPU, applies SoC-model-specific compilation
   // parameters (e.g. NPU_PLATFORM).  |soc_model| may be nullptr.

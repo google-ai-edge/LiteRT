@@ -47,21 +47,18 @@ LiteRtStatus LrtCreateIntelOpenVinoOptionsFromToml(
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
-// device_type ----------------------------------------------------------------
-typedef enum LiteRtIntelOpenVinoDeviceType {
-  kLiteRtIntelOpenVinoDeviceTypeCPU = 0,
-  kLiteRtIntelOpenVinoDeviceTypeGPU = 1,
-  kLiteRtIntelOpenVinoDeviceTypeNPU = 2,
-  kLiteRtIntelOpenVinoDeviceTypeAUTO = 3,
-} LiteRtIntelOpenVinoDeviceType;
-
-LiteRtStatus LrtIntelOpenVinoOptionsSetDeviceType(
-    LrtIntelOpenVinoOptions options,
-    enum LiteRtIntelOpenVinoDeviceType device_type);
-
-LiteRtStatus LrtIntelOpenVinoOptionsGetDeviceType(
-    LrtIntelOpenVinoOptions options,
-    enum LiteRtIntelOpenVinoDeviceType* device_type);
+// graph_backend -----------------------------------------------------------------
+//
+// The OpenVINO target device for a graph (partition).  Each partition in a
+// compiled model carries its own graph type and is dispatched on the
+// corresponding OpenVINO device.  There is no longer a model-wide "device
+// type"; configure each partition individually via the per-graph API below.
+typedef enum LiteRtIntelOpenVinoGraphBackend {
+  kLiteRtIntelOpenVinoGraphBackendCPU = 0,
+  kLiteRtIntelOpenVinoGraphBackendGPU = 1,
+  kLiteRtIntelOpenVinoGraphBackendNPU = 2,
+  kLiteRtIntelOpenVinoGraphBackendAUTO = 3,
+} LiteRtIntelOpenVinoGraphBackend;
 
 // performance_mode -----------------------------------------------------------
 
@@ -105,6 +102,61 @@ LiteRtStatus LrtIntelOpenVinoOptionsGetNumConfigsMapOptions(
 LiteRtStatus LrtIntelOpenVinoOptionsGetConfigsMapOption(
     LrtIntelOpenVinoOptions options, int index, const char** key,
     const char** value);
+
+// per-graph backend overrides ------------------------------------------------
+//
+// The OpenVINO compiler plugin compiles each partition for its configured
+// graph type (device), and the dispatcher imports each partition's bytecode
+// on that same device automatically.
+//
+// `graph_index` corresponds to the partition index produced by the LiteRT
+// partitioner (i.e. the order of subgraphs in the partitioned model passed
+// to `LiteRtCompilerPluginCompile`).  Applications that want to map a model
+// signature key to a graph index should resolve that mapping themselves and
+// pass the resulting integer index here.
+
+// Sets the OpenVINO graph backend (target device) for a specific graph
+// (partition) index.  Pass `graph_index = -1` as a wildcard to set the default
+// backend used by all graphs that do not have an explicit per-index override.
+// Partitions without either an explicit or wildcard override fall back to NPU.
+LiteRtStatus LrtIntelOpenVinoOptionsSetGraphBackend(
+    LrtIntelOpenVinoOptions options, int graph_index,
+    enum LiteRtIntelOpenVinoGraphBackend graph_backend);
+
+// Gets the graph backend override for a specific graph index.  Falls back to
+// the wildcard (`graph_index = -1`) entry when no per-index override exists.
+// Returns `kLiteRtStatusErrorNotFound` when neither is set.
+LiteRtStatus LrtIntelOpenVinoOptionsGetGraphBackend(
+    LrtIntelOpenVinoOptions options, int graph_index,
+    enum LiteRtIntelOpenVinoGraphBackend* graph_backend);
+
+// Sets an OpenVINO config map option for a specific graph index.  These
+// per-graph configs are merged on top of the model-wide configs at compile
+// time, with the per-graph values taking precedence.
+LiteRtStatus LrtIntelOpenVinoOptionsSetGraphConfigsMapOption(
+    LrtIntelOpenVinoOptions options, int graph_index, const char* key,
+    const char* value);
+
+// Number of graphs that have at least one per-graph override (device and/or
+// config map entries).
+LiteRtStatus LrtIntelOpenVinoOptionsGetNumGraphOverrides(
+    LrtIntelOpenVinoOptions options, int* num_overrides);
+
+// Returns the graph index at slot `slot_index`.  Use together with
+// `LrtIntelOpenVinoOptionsGetNumGraphOverrides` to enumerate overrides.
+LiteRtStatus LrtIntelOpenVinoOptionsGetGraphOverrideIndex(
+    LrtIntelOpenVinoOptions options, int slot_index, int* graph_index);
+
+// Number of per-graph config map entries set for `graph_index`.  Returns 0
+// if no overrides are set for that graph.
+LiteRtStatus LrtIntelOpenVinoOptionsGetNumGraphConfigsMapOptions(
+    LrtIntelOpenVinoOptions options, int graph_index, int* num_options);
+
+// Returns the (key, value) of the `index`-th config map entry for
+// `graph_index`.
+LiteRtStatus LrtIntelOpenVinoOptionsGetGraphConfigsMapOption(
+    LrtIntelOpenVinoOptions options, int graph_index, int index,
+    const char** key, const char** value);
 
 #ifdef __cplusplus
 

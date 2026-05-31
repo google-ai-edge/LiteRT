@@ -40,6 +40,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/util/tensor_type_util.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/intel_openvino/bytecode_header.h"
 
 namespace {
 
@@ -136,25 +137,31 @@ LiteRtDispatchInvocationContextT::Create(
       static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr) +
       exec_bytecode_buffer->offset;
   auto exec_bytecode_size = exec_bytecode_buffer->size;
+
+  // If the compiler embedded a self-describing header, honor the device
+  // recorded there.  Per-partition bytecode produced by the LiteRT OpenVINO
+  // compiler plugin always carries this header, so each partition can be
+  // dispatched to its own target device (NPU/CPU/GPU/AUTO) even when the
+  // model-wide options request a different default.
   std::string device = "NPU";  // Default device
-  if (intel_openvino_opts) {
-    const auto& intel_opts = *intel_openvino_opts;
-    // Configure device type
-    auto device_type = intel_opts.GetDeviceType();
-    switch (device_type) {
-      case kLiteRtIntelOpenVinoDeviceTypeCPU:
-        device = "CPU";
-        break;
-      case kLiteRtIntelOpenVinoDeviceTypeGPU:
-        device = "GPU";
-        break;
-      case kLiteRtIntelOpenVinoDeviceTypeNPU:
-        device = "NPU";
-        break;
-      case kLiteRtIntelOpenVinoDeviceTypeAUTO:
-        device = "AUTO";
-        break;
-    }
+  LiteRtIntelOpenVinoGraphBackend embedded_graph_backend =
+      kLiteRtIntelOpenVinoGraphBackendNPU;
+  size_t payload_offset = 0;
+  bool device_from_header = litert::openvino::TryParseBytecodeHeader(
+      exec_bytecode_ptr, exec_bytecode_size, &embedded_graph_backend,
+      &payload_offset);
+  if (device_from_header) {
+    device = litert::openvino::GraphBackendToString(embedded_graph_backend);
+    exec_bytecode_ptr = static_cast<const uint8_t*>(exec_bytecode_ptr) +
+                        payload_offset;
+    exec_bytecode_size -= payload_offset;
+    LITERT_LOG(LITERT_INFO,
+               "Dispatch: using device '%s' from bytecode header",
+               device.c_str());
+  } else {
+    LITERT_LOG(LITERT_INFO,
+               "Dispatch: no bytecode header found, defaulting to '%s'",
+               device.c_str());
   }
   OpenVINOSharedCore::GetInstance()->SetDevice(device);
 
