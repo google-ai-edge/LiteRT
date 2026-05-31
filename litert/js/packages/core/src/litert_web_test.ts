@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {CompiledModel, Environment, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, supportsFeature, Tensor, TensorBufferType, type TypedArray, unloadLiteRt} from '@litertjs/core';
+import {CompiledModel, Environment, LiteRt, loadAndCompile, loadLiteRt, loadModelAndWeights, type LoadLiteRtOptions, supportsFeature, Tensor, TensorBufferType, type TypedArray, unloadLiteRt} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 
 describe('LiteRt', () => {
@@ -468,55 +468,167 @@ describe('LiteRt', () => {
       })).toBeRejectedWithError(/Invalid WebGPU precision: invalid/);
     });
 
-    it('loads with compileOptions with webnn accelerator', async () => {
-      // TODO: markoristic - migrate this test to jspi section once webnn
-      // execution is supported. (i.e. run is async)
-      try {
-        const model = await loadAndCompile(modelPath, {accelerator: 'webnn'});
-        expect(model).toBeDefined();
+    describe('loadModelAndWeights', () => {
+      beforeEach(() => resetLiteRt(true, {jspi: true}));
+      const extModelPath = '/testdata/extWeight/model.tflite';
+      const extWeightsPath = '/testdata/extWeight/weights.bin';
+
+
+      it('loads and runs a model with external weights', async () => {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) throw new Error('No GPU adapter found.');
+        const device = await adapter.requestDevice();
+        liteRt.setWebGpuDevice(device);
+
+        const writeBufferSpy = spyOn(device.queue, 'writeBuffer').and.callThrough();
+
+        const modelResponse = await fetch(extModelPath);
+        const modelData = new Uint8Array(await modelResponse.arrayBuffer());
+
+        const weightsResponse = await fetch(extWeightsPath);
+        const weightsStream = weightsResponse.body!;
+
+        const model = await loadModelAndWeights(
+            modelData, weightsStream, {environment: new Environment({webGpuDevice: device}), accelerator: 'webgpu'});
+
+        expect(writeBufferSpy).toHaveBeenCalled();
+
+        const inputDetails = model.getInputDetails();
+        const outputDetails = model.getOutputDetails();
+
+        expect(inputDetails.length).toBe(1);
+        expect(outputDetails.length).toBe(1);
+
+        expect(inputDetails[0].shape).toEqual(new Int32Array([1, 32]));
+        expect(outputDetails[0].shape).toEqual(new Int32Array([1, 64]));
+
+        const input0Data = new Float32Array(32).fill(0.5);
+        const input0 =
+            await (new Tensor(input0Data, Array.from(inputDetails[0].shape)))
+                .moveTo('webgpu');
+
+        const inputs: {[key: string]: Tensor} = {};
+        inputs[inputDetails[0].name] = input0;
+
+        const result = await model.run(inputs);
+        const output0 = await result[outputDetails[0].name].data();
+        console.log('output0 values: ', Array.from(output0));
+        expect(output0.length).toBe(64);
+
         model.delete();
-      } catch (e) {
-        const errorMessage = (e as Error).message;
-        expect(errorMessage).not.toContain('Invalid accelerator');
-      }
+        input0.delete();
+        for (const name of Object.keys(result)) {
+          result[name].delete();
+        }
+      });
+
+      it('loads and runs a complex model with external weights', async () => {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) throw new Error('No GPU adapter found.');
+        const device = await adapter.requestDevice();
+        liteRt.setWebGpuDevice(device);
+
+        const writeBufferSpy =
+            spyOn(device.queue, 'writeBuffer').and.callThrough();
+
+        const modelResponse =
+            await fetch('/testdata/complexExtWeight/model.tflite');
+        const modelData = new Uint8Array(await modelResponse.arrayBuffer());
+
+        const weightsResponse =
+            await fetch('/testdata/complexExtWeight/weights.bin');
+        const weightsStream = weightsResponse.body!;
+
+        const model = await loadModelAndWeights(modelData, weightsStream, {
+          environment: new Environment({webGpuDevice: device}),
+          accelerator: 'webgpu'
+        });
+
+        expect(writeBufferSpy).toHaveBeenCalled();
+
+        const inputDetails = model.getInputDetails();
+        const outputDetails = model.getOutputDetails();
+
+        expect(inputDetails.length).toBe(2);
+        expect(outputDetails.length).toBe(1);
+
+        const input0Data = new Float32Array(32).fill(0.5);
+        const input0 =
+            await (new Tensor(input0Data, Array.from(inputDetails[0].shape)))
+                .moveTo('webgpu');
+
+        const input1Data = new Float32Array(32).fill(0.5);
+        const input1 =
+            await (new Tensor(input1Data, Array.from(inputDetails[1].shape)))
+                .moveTo('webgpu');
+
+        const inputs: {[key: string]: Tensor} = {};
+        inputs[inputDetails[0].name] = input0;
+        inputs[inputDetails[1].name] = input1;
+
+        const result = await model.run(inputs);
+        const output0 = await result[outputDetails[0].name].data();
+        console.log('complex model output0 values: ', Array.from(output0));
+        expect(output0.length).toBe(64);
+
+        model.delete();
+        input0.delete();
+        input1.delete();
+        for (const name of Object.keys(result)) {
+          result[name].delete();
+        }
+      });
+
+      it('loads with compileOptions with webnn accelerator', async () => {
+        // TODO: markoristic - migrate this test to jspi section once webnn
+        // execution is supported. (i.e. run is async)
+        try {
+          const model = await loadAndCompile(modelPath, {accelerator: 'webnn'});
+          expect(model).toBeDefined();
+          model.delete();
+        } catch (e) {
+          const errorMessage = (e as Error).message;
+          expect(errorMessage).not.toContain('Invalid accelerator');
+        }
+      });
+
+      it('loads with compileOptions with multiple accelerators array (webgpu and wasm)',
+         async () => {
+           const adapter = await navigator.gpu.requestAdapter();
+           if (!adapter) {
+             throw new Error('No GPU adapter found.');
+           }
+           const device = await adapter.requestDevice();
+           liteRt.setWebGpuDevice(device);
+
+           const model = await loadAndCompile(modelPath, {
+             environment: new Environment({webGpuDevice: device}),
+             accelerator: ['webgpu', 'wasm'],
+           });
+
+           expect(model).toBeDefined();
+           expect(model.options.accelerator).toEqual(['webgpu', 'wasm']);
+           model.delete();
+         });
+
+      it('loads with compileOptions with an array of a single accelerator (wasm)',
+         async () => {
+           const model = await loadAndCompile(modelPath, {
+             accelerator: ['wasm'],
+           });
+           expect(model).toBeDefined();
+           expect(model.options.accelerator).toEqual(['wasm']);
+           model.delete();
+         });
+
+      it('throws an error if WebGPU is in the accelerators array but no WebGPU device is available',
+         async () => {
+           await expectAsync(loadAndCompile(modelPath, {
+             environment: new Environment({webGpuDevice: null}),
+             accelerator: ['webgpu', 'wasm'],
+           })).toBeRejectedWithError(/no WebGPU device is set/);
+         });
     });
-
-    it('loads with compileOptions with multiple accelerators array (webgpu and wasm)',
-       async () => {
-         const adapter = await navigator.gpu.requestAdapter();
-         if (!adapter) {
-           throw new Error('No GPU adapter found.');
-         }
-         const device = await adapter.requestDevice();
-         liteRt.setWebGpuDevice(device);
-
-         const model = await loadAndCompile(modelPath, {
-           environment: new Environment({webGpuDevice: device}),
-           accelerator: ['webgpu', 'wasm'],
-         });
-
-         expect(model).toBeDefined();
-         expect(model.options.accelerator).toEqual(['webgpu', 'wasm']);
-         model.delete();
-       });
-
-    it('loads with compileOptions with an array of a single accelerator (wasm)',
-       async () => {
-         const model = await loadAndCompile(modelPath, {
-           accelerator: ['wasm'],
-         });
-         expect(model).toBeDefined();
-         expect(model.options.accelerator).toEqual(['wasm']);
-         model.delete();
-       });
-
-    it('throws an error if WebGPU is in the accelerators array but no WebGPU device is available',
-       async () => {
-         await expectAsync(loadAndCompile(modelPath, {
-           environment: new Environment({webGpuDevice: null}),
-           accelerator: ['webgpu', 'wasm'],
-         })).toBeRejectedWithError(/no WebGPU device is set/);
-       });
   });
 
   describe('input / output details', () => {
