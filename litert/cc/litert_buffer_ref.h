@@ -24,6 +24,7 @@
 #include <iostream>
 #include <iterator>
 #include <ostream>
+#include <string>
 #include <tuple>
 #include <type_traits>
 #include <vector>
@@ -163,6 +164,12 @@ class BufferRef {
   /// @brief Prints information about this buffer.
   void Dump(std::ostream& out) const {
     out << TypeName() << "[" << start_offset_ << ":" << end_offset_ << "]\n";
+  }
+
+  // Get info about this buffer as a string.
+  std::string DebugString() const {
+    return absl::StrFormat("%s[%lu:%lu]\n", TypeName(), start_offset_,
+                           end_offset_);
   }
 
   BufferRef(const BufferRef& other) = default;
