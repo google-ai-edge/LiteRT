@@ -146,8 +146,8 @@ py_library(
     deps = [
         "//tflite/python:schema_py",
         "//tflite/python:schema_util",
-        "@flatbuffers//:runtime_py",
         "@org_tensorflow//tensorflow/python/platform:gfile",
+        "@pypi//flatbuffers",
     ],
 )
 
@@ -171,7 +171,7 @@ py_library(
     strict_deps = True,
     deps = [
         "//tflite/python:schema_py",
-        "@flatbuffers//:runtime_py",
+        "@pypi//flatbuffers",
     ],
 )
 
