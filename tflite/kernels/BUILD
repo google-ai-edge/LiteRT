@@ -1307,10 +1307,12 @@ cc_test(
         ":test_util",
         "//tflite:cc_api_stable",
         "//tflite/c:common",
+        "//tflite/core/kernels:builtin_ops",
         "//tflite/delegates/xnnpack:xnnpack_delegate_hdrs_only",
         "//tflite/kernels/internal:tensor_ctypes",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest",
+        "@flatbuffers//:runtime_cc",
     ],
 )
 
