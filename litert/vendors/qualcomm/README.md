@@ -16,13 +16,28 @@ energy efficiency of Qualcomm NPUs in their LiteRT applications.
 
 ## Build Instructions 🛠️
 
-Detailed build instructions can be found in
+Covers building the Qualcomm compiler plugin and dispatch library via both
+**Bazel** and **CMake** flows. See
 [BUILD_INSTRUCTIONS.md](./doc/BUILD_INSTRUCTIONS.md).
 
 ## IoT Instructions 🌐
 
-Detailed IoT instructions can be found in
+Covers flashing supported IoT devices (e.g. IQ-8275 / QCS8275) with both
+**oe-linux** and **Ubuntu** images. See
 [IOT_INSTRUCTIONS.md](./doc/IOT_INSTRUCTIONS.md).
+
+## Debug Features 🐞
+
+Three compile-time knobs emit QNN native artifacts during AOT compilation:
+
+*   `--qualcomm_saver_output_dir`: Use the **Saver Backend** to record QNN
+    API calls as `saver_output.c` + `params.bin` for offline replay.
+*   `--qualcomm_ir_json_dir`: Dump the composed QNN graph as
+    `<graph>.json` for quick inspection.
+*   `--qualcomm_dlc_dir`: Use the **IR Backend** to produce Qualcomm `.dlc`
+    files consumable by QNN native tools.
+
+See [DEBUG_FEATURES.md](./doc/DEBUG_FEATURES.md) for full usage and details.
 
 ## Supported Devices 📱
 
