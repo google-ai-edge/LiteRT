@@ -489,10 +489,10 @@ if(LITERT_PLATFORM_ANDROID)
     target_link_libraries(extract_bytecode PRIVATE ${LOG_LIB})
     # Statically link TFLite GPU/GL core objects for tool executables on Android.
     if(TARGET litert_tflite_gpu_gl_core)
-        target_link_libraries(npu_numerics_check PRIVATE litert_tflite_gpu_gl_core)
         target_link_libraries(litert_npu_numerics_check PRIVATE litert_tflite_gpu_gl_core)
         target_link_libraries(run_model PRIVATE litert_tflite_gpu_gl_core)
         target_link_libraries(apply_plugin_main PRIVATE litert_tflite_gpu_gl_core)
+        target_link_libraries(npu_numerics_check PRIVATE -Wl,--whole-archive litert_tflite_gpu_gl_core -Wl,--no-whole-archive)
     endif()
 endif()
 
