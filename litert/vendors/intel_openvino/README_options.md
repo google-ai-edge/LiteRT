@@ -6,7 +6,8 @@ LiteRT, allowing fine-grained control over Intel OpenVINO inference parameters.
 ## Overview
 
 The Intel OpenVINO options provide a way to configure various aspects of Intel
-OpenVINO inference, including device selection and performance tuning.
+OpenVINO inference, including per-partition device selection and performance
+tuning.
 
 ## Files Structure
 
@@ -25,11 +26,14 @@ litert/
 
 ## Available Options
 
-### Device Type
+### Graph Backend (per partition)
 
--   **CPU**: Run inference on Intel CPU
--   **GPU**: Run inference on Intel GPU
--   **NPU**: Run inference on Intel NPU
+The target OpenVINO device is selected per partition / signature. Supported
+backends:
+
+-   **CPU**: Run partition on Intel CPU
+-   **GPU**: Run partition on Intel GPU
+-   **NPU**: Run partition on Intel NPU (default when no override is set)
 -   **AUTO**: Let OpenVINO automatically select the best device
 
 ### Performance Mode
@@ -80,7 +84,7 @@ apply_plugin_main \
     --soc_model=PTL \
     --libs=/path/to/plugin/dir \
     --o=/path/to/output.tflite \
-    --intel_openvino_device_type=npu \
+    --intel_openvino_graph_backends=0:npu \
     --intel_openvino_performance_mode=latency \
     --intel_openvino_configs_map="optimize_fq_after_matmul=true,INFERENCE_PRECISION_HINT=f16"
 ```
@@ -101,8 +105,8 @@ using litert::intel_openvino::IntelOpenVinoOptions;
 // Create options
 auto options = IntelOpenVinoOptions::Create().Value();
 
-// Configure device and performance
-options.SetDeviceType(kLiteRtIntelOpenVinoDeviceTypeNPU);
+// Configure backend for partition 0 and performance mode
+options.SetGraphBackend(/*graph_index=*/0, kLiteRtIntelOpenVinoGraphBackendNPU);
 options.SetPerformanceMode(kLiteRtIntelOpenVinoPerformanceModeLatency);
 
 // Set custom OpenVINO configuration properties
@@ -120,7 +124,8 @@ LrtIntelOpenVinoOptions options;
 LrtIntelOpenVinoOptionsCreate(&options);
 
 // Configure options
-LrtIntelOpenVinoOptionsSetDeviceType(options, kLiteRtIntelOpenVinoDeviceTypeNPU);
+LrtIntelOpenVinoOptionsSetGraphBackend(options, /*graph_index=*/0,
+                                       kLiteRtIntelOpenVinoGraphBackendNPU);
 LrtIntelOpenVinoOptionsSetPerformanceMode(options, kLiteRtIntelOpenVinoPerformanceModeLatency);
 
 // Set custom configuration properties
@@ -146,9 +151,9 @@ Intel OpenVINO options can also be parsed directly from a TOML-formatted string 
 #include "litert/c/options/litert_intel_openvino_options.h"
 
 const char* toml_payload =
-    "device_type = 2\n"  // NPU
     "performance_mode = 0\n" // Latency
-    "configs_map.INFERENCE_PRECISION_HINT = \"f16\"\n";
+    "configs_map.INFERENCE_PRECISION_HINT = \"f16\"\n"
+    "graph.0.graph_backend = 2\n";  // NPU for partition 0
 
 LrtIntelOpenVinoOptions options = NULL;
 LiteRtStatus status = LrtCreateIntelOpenVinoOptionsFromToml(toml_payload, &options);
@@ -158,6 +163,50 @@ if (status == kLiteRtStatusOk) {
 
   LrtDestroyIntelOpenVinoOptions(options);
 }
+```
+
+## Per-Graph Backend Selection
+
+When a model contains multiple subgraphs (for example, distinct signatures
+for `prefill` and `decode`), each partition can be compiled for and dispatched
+to a different OpenVINO device. The compiler plugin records the chosen device
+in a self-describing header prepended to each partition's bytecode, so the
+dispatcher imports every partition on the device it was compiled for &mdash;
+no additional plumbing is required between the compile and dispatch steps.
+
+There is no model-wide device default; partitions without an explicit graph
+backend fall back to NPU.
+
+The override key is the **graph (partition) index** assigned by the LiteRT
+partitioner. Applications that work in terms of TFLite signatures should map
+the signature key to its subgraph index (e.g. via `LiteRtGetSignatureSubgraph`)
+before calling these APIs.
+
+### C++ API
+
+```cpp
+auto options = IntelOpenVinoOptions::Create().Value();
+
+// Compile and dispatch partition 0 on NPU.
+options.SetGraphBackend(/*graph_index=*/0,
+                        kLiteRtIntelOpenVinoGraphBackendNPU);
+
+// Compile and dispatch partition 1 on CPU, with a per-graph precision hint
+// that takes precedence over the model-wide configs_map.
+options.SetGraphBackend(/*graph_index=*/1,
+                        kLiteRtIntelOpenVinoGraphBackendCPU);
+options.SetGraphConfigsMapOption(/*graph_index=*/1,
+                                 "INFERENCE_PRECISION_HINT", "f32");
+```
+
+### TOML payload
+
+Per-graph overrides are also expressible directly in the TOML payload:
+
+```toml
+graph.0.graph_backend = 2                      # NPU
+graph.1.graph_backend = 0                      # CPU
+graph.1.configs_map.INFERENCE_PRECISION_HINT = "f32"
 ```
 
 ## Integration with Intel OpenVINO Compiler Plugin
@@ -171,9 +220,13 @@ Example integration in the compiler plugin:
 
 ```cpp
 // In openvino_compiler_plugin.cc
-void ConfigureOpenVinoFromOptions(ov::Core& core, const IntelOpenVinoOptions& options) {
-  // Set device
-  std::string device = DeviceTypeToString(options.GetDeviceType());
+void ConfigureOpenVinoFromOptions(ov::Core& core, const IntelOpenVinoOptions& options,
+                                  int graph_index) {
+  // Resolve the partition's backend (defaults to NPU when no override exists).
+  auto backend_or = options.GetGraphBackend(graph_index);
+  LiteRtIntelOpenVinoGraphBackend backend =
+      backend_or ? *backend_or : kLiteRtIntelOpenVinoGraphBackendNPU;
+  std::string device = GraphBackendToString(backend);
 
   // Configure performance hints
   if (options.GetPerformanceMode() == kLiteRtIntelOpenVinoPerformanceModeLatency) {
@@ -184,7 +237,7 @@ void ConfigureOpenVinoFromOptions(ov::Core& core, const IntelOpenVinoOptions& op
 
 ## Default Values
 
--   Device Type: NPU
+-   Graph Backend (per partition, when no override is set): NPU
 -   Performance Mode: Latency
 
 ## Artificial Intelligence

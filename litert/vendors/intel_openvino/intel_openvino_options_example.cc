@@ -30,9 +30,6 @@ void example_intel_openvino_options_usage() {
   }
   auto options = std::move(options_result.Value());
 
-  // Configure device type (NPU, CPU, GPU, AUTO)
-  options.SetDeviceType(kLiteRtIntelOpenVinoDeviceTypeNPU);
-
   // Configure performance mode
   options.SetPerformanceMode(kLiteRtIntelOpenVinoPerformanceModeLatency);
 
@@ -47,12 +44,22 @@ void example_intel_openvino_options_usage() {
   // Enable model caching for faster subsequent loads
   options.SetConfigsMapOption("CACHE_DIR", "/tmp/ov_cache");
 
+  // Run partition 0 (e.g. the "prefill" signature) on the NPU.
+  options.SetGraphBackend(/*graph_index=*/0, kLiteRtIntelOpenVinoGraphBackendNPU);
+
+  // Run partition 1 (e.g. the "decode" signature) on the CPU for lower
+  // first-token latency.
+  options.SetGraphBackend(/*graph_index=*/1, kLiteRtIntelOpenVinoGraphBackendCPU);
+
+  // Override the inference precision just for that partition.
+  options.SetGraphConfigsMapOption(/*graph_index=*/1,
+                                   "INFERENCE_PRECISION_HINT", "f32");
+  // ---------------------------------------------------------------------
+
   // Read back configured values
-  auto device_type = options.GetDeviceType();
   auto performance_mode = options.GetPerformanceMode();
 
-  LITERT_LOG(LITERT_INFO,
-             "Intel OpenVINO Options - Device: %d, Performance: %d",
-             device_type, performance_mode);
+  LITERT_LOG(LITERT_INFO, "Intel OpenVINO Options - Performance: %d",
+             performance_mode);
   LITERT_LOG(LITERT_INFO, "Custom configurations applied via configs_map");
 }

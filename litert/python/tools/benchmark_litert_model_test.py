@@ -305,7 +305,7 @@ class VendorOptionsFlatteningTest(unittest.TestCase):
   def test_intel_openvino_options_flatten_to_pybind_kwargs(self):
     options = options_lib.Options.create()
     intel_options = options.intel_openvino_options
-    intel_options.device_type = options_lib.IntelOpenVinoOptions.DEVICE_TYPE.NPU
+    intel_options.graph_backend = options_lib.IntelOpenVinoOptions.GRAPH_BACKEND.NPU
     intel_options.performance_mode = (
         options_lib.IntelOpenVinoOptions.PERFORMANCE_MODE.THROUGHPUT
     )
@@ -313,7 +313,7 @@ class VendorOptionsFlatteningTest(unittest.TestCase):
 
     kwargs = options._as_flat_kwargs()
 
-    self.assertEqual(kwargs['intel_openvino_device_type'], 2)
+    self.assertEqual(kwargs['intel_openvino_graph_backend'], 2)
     self.assertEqual(kwargs['intel_openvino_performance_mode'], 1)
     self.assertEqual(
         kwargs['intel_openvino_configs_map'],

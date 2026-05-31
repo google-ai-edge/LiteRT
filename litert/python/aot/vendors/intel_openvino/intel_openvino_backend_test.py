@@ -121,7 +121,7 @@ class IntelOpenVinoBackendTest(test_common.TestWithTfliteModels):
       self, mock_apply_plugin_call: mock.Mock
   ):
     config = self.basic_config
-    config["intel_openvino_device_type"] = "npu"
+    config["intel_openvino_graph_backends"] = "0:npu"
     config["intel_openvino_performance_mode"] = "latency"
     config["intel_openvino_configs_map"] = "CACHE_DIR=/tmp/ov_cache"
     config["Unsupported_flag"] = "unsupported_value"
@@ -132,7 +132,7 @@ class IntelOpenVinoBackendTest(test_common.TestWithTfliteModels):
     backend.call_component(model, output_model, component)
     mock_apply_plugin_call.assert_called_once()
     _, kwargs = mock_apply_plugin_call.call_args
-    self.assertEqual(kwargs["intel_openvino_device_type"], "npu")
+    self.assertEqual(kwargs["intel_openvino_graph_backends"], "0:npu")
     self.assertEqual(kwargs["intel_openvino_performance_mode"], "latency")
     self.assertEqual(
         kwargs["intel_openvino_configs_map"], "CACHE_DIR=/tmp/ov_cache"
@@ -145,7 +145,7 @@ class IntelOpenVinoBackendTest(test_common.TestWithTfliteModels):
   ):
     config = self.basic_config
     config["compilation_config"] = {
-        "intel_openvino_device_type": "auto",
+        "intel_openvino_graph_backends": "0:auto",
         "intel_openvino_performance_mode": "throughput",
     }
     backend = intel_openvino_backend.IntelOpenVinoBackend.create(config)
@@ -155,7 +155,7 @@ class IntelOpenVinoBackendTest(test_common.TestWithTfliteModels):
     backend.call_component(model, output_model, component)
     mock_apply_plugin_call.assert_called_once()
     _, kwargs = mock_apply_plugin_call.call_args
-    self.assertEqual(kwargs["intel_openvino_device_type"], "auto")
+    self.assertEqual(kwargs["intel_openvino_graph_backends"], "0:auto")
     self.assertEqual(kwargs["intel_openvino_performance_mode"], "throughput")
 
 

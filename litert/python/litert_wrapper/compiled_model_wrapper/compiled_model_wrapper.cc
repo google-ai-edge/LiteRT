@@ -164,7 +164,7 @@ bool HasQualcommOptions(const CompilationOptions& compilation_options) {
 }
 
 bool HasIntelOpenVinoOptions(const CompilationOptions& compilation_options) {
-  return compilation_options.intel_openvino_device_type >= 0 ||
+  return compilation_options.intel_openvino_graph_backend >= 0 ||
          compilation_options.intel_openvino_performance_mode >= 0 ||
          !compilation_options.intel_openvino_configs_map.empty();
 }
@@ -333,10 +333,11 @@ bool PopulateCompilationOptions(litert::Options& options,
       return false;
     }
     auto& intel_openvino_options = *intel_openvino_options_or;
-    if (compilation_options.intel_openvino_device_type >= 0) {
-      intel_openvino_options.SetDeviceType(
-          static_cast<LiteRtIntelOpenVinoDeviceType>(
-              compilation_options.intel_openvino_device_type));
+    if (compilation_options.intel_openvino_graph_backend >= 0) {
+      intel_openvino_options.SetGraphBackend(
+          /*graph_index=*/0,
+          static_cast<LiteRtIntelOpenVinoGraphBackend>(
+              compilation_options.intel_openvino_graph_backend));
     }
     if (compilation_options.intel_openvino_performance_mode >= 0) {
       intel_openvino_options.SetPerformanceMode(
