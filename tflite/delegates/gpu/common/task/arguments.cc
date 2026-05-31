@@ -16,6 +16,8 @@ limitations under the License.
 #include "tflite/delegates/gpu/common/task/arguments.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstring>
 #include <map>
 #include <string>
 #include <utility>
@@ -25,8 +27,6 @@ limitations under the License.
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
-#include "absl/strings/str_replace.h"
-#include "absl/strings/substitute.h"
 #include "tflite/delegates/gpu/common/data_type.h"
 #include "tflite/delegates/gpu/common/status.h"
 #include "tflite/delegates/gpu/common/task/buffer_desc.h"
