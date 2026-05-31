@@ -75,6 +75,7 @@ cc_library(
     deps = [
         ":compatibility",
         ":runtime_shape",
+        "//tflite/types:half",
     ],
 )
 
