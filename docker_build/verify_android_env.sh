@@ -1,3 +1,4 @@
+#!/bin/bash
 # Copyright 2025 Google LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,8 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-#!/bin/bash
 
 # This script is designed to be executed inside the container to verify Android SDK/NDK setup
 # You can run it outside of the container too if you want ot check your local environment setup
