@@ -109,7 +109,7 @@ struct GpuEnvironmentOptions {
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT
-  MetalInfoPtr metal_info;
+  MetalInfoPtr metal_info = nullptr;
 #endif  // LITERT_HAS_METAL_SUPPORT
 
 #if LITERT_HAS_VULKAN_SUPPORT
