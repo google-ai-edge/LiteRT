@@ -21,6 +21,7 @@ limitations under the License.
 #include <type_traits>
 #include <vector>
 
+#include "fp16/fp16.h"  // from @FP16
 #include "Eigen/Core"  // from @eigen_archive
 #include "tflite/core/c/common.h"
 #include "tflite/core/subgraph.h"
@@ -29,7 +30,6 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
 #include "tflite/kernels/op_macros.h"
-#include "tflite/types/fp16.h"
 #include "tflite/types/half.h"
 
 #ifdef __ARM_NEON
