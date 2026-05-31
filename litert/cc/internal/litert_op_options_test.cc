@@ -30,6 +30,7 @@
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/common.h"
+#include "litert/test/load_test_model.h"
 #include "tflite/schema/schema_generated.h"
 
 using ::testing::ElementsAre;

@@ -662,9 +662,8 @@ TEST(CompiledModelTest, RunWithOptionsAndSchedulingInfoOverloads) {
 
   LITERT_ASSERT_OK(
       compiled_model.Run(input_buffers, output_buffers, &run_options));
-  LITERT_ASSERT_OK(compiled_model.Run(
-      /*signature_index=*/size_t(0), input_buffers, output_buffers,
-      scheduling_info));
+  LITERT_ASSERT_OK(
+      compiled_model.Run(input_buffers, output_buffers, scheduling_info));
   LITERT_ASSERT_OK(compiled_model.SetSchedulingInfo(scheduling_info));
   LITERT_ASSERT_OK(compiled_model.ClearSchedulingInfo());
 
