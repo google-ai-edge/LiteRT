@@ -42,6 +42,8 @@
 namespace litert::internal {
 namespace {
 
+constexpr absl::string_view kLlmModelTypeName = "odml.infra.LlmModelType";
+
 // Provides a view of model-level resources when constructing litert graph.
 class FlatbufferContext {
  public:
@@ -419,7 +421,7 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
       tfl_signatures.push_back(TflSignaturePtr(tfl_signature->UnPack()));
     }
     LITERT_RETURN_IF_ERROR(UnpackSignatures(tfl_signatures, *litert_model));
-  } else {
+  } else if (litert_model->MainSubgraph()) {
     litert_model->EmplaceSignature(
         MakeDefaultSignature(litert_model->MainSubgraph()));
   }
@@ -429,6 +431,11 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
     for (auto i = 0; i < num_metadata; ++i) {
       const auto* tfl_metadata = packed_model->metadata()->Get(i);
       auto name = tfl_metadata->name()->str();
+      // kLlmModelTypeName is used to store an LlmModelType enum value rather
+      // than a buffer index.
+      if (name == kLlmModelTypeName) {
+        continue;
+      }
       const auto buf_id = tfl_metadata->buffer();
       auto buf = ReadBuffer(context, buf_id);
       if (!buf) {
