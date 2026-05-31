@@ -1257,6 +1257,7 @@ cc_test(
         "//tflite/kernels/internal:tensor_utils_no_eigen",
         "//tflite/kernels/internal:types",
         "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
     ],
@@ -1434,6 +1435,7 @@ cc_test(
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
         "@com_google_googletest//:gtest",
     ],
 )
