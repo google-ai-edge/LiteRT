@@ -1,7 +1,6 @@
 load(
     "@org_tensorflow//tensorflow:tensorflow.bzl",
     "tf_custom_op_library",
-    "tf_features_nolayering_check_if_ios",
     "tf_gen_op_wrapper_py",
     "tf_opts_nortti_if_android",
 )
@@ -109,7 +108,6 @@ cc_library(
         "@org_tensorflow//tensorflow:android": ["-Wno-private-header"],
         "//conditions:default": [],
     }),
-    features = tf_features_nolayering_check_if_ios(),
     deps = select({
         "@org_tensorflow//tensorflow:android": [
             "@org_tensorflow//tensorflow/core:portable_tensorflow_lib_lite",
