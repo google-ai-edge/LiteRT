@@ -60,7 +60,7 @@ QualcommGraphPriority = qualcomm_options_lib.QualcommGraphPriority
 QualcommBackend = qualcomm_options_lib.QualcommBackend
 QualcommGraphIOTensorMemType = qualcomm_options_lib.QualcommGraphIOTensorMemType
 IntelOpenVinoOptions = intel_openvino_options_lib.IntelOpenVinoOptions
-IntelOpenVinoDeviceType = intel_openvino_options_lib.IntelOpenVinoDeviceType
+IntelOpenVinoGraphBackend = intel_openvino_options_lib.IntelOpenVinoGraphBackend
 IntelOpenVinoPerformanceMode = (
     intel_openvino_options_lib.IntelOpenVinoPerformanceMode
 )
@@ -157,7 +157,7 @@ class Options:
         "qualcomm_backend": -1,
         "qualcomm_saver_output_dir": "",
         "qualcomm_graph_io_tensor_mem_type": -1,
-        "intel_openvino_device_type": -1,
+        "intel_openvino_graph_backend": -1,
         "intel_openvino_performance_mode": -1,
         "intel_openvino_configs_map": {},
     }

@@ -14,7 +14,11 @@
 
 #include "litert/vendors/intel_openvino//dispatch/openvino_shared_core.h"
 
+#include <exception>
 #include <memory>
+#include <mutex>  // NOLINT
+#include <string>
+#include <vector>
 
 #include "openvino/runtime/core.hpp"
 
@@ -27,4 +31,15 @@ OpenVINOSharedCore::~OpenVINOSharedCore() = default;
 OpenVINOSharedCore* OpenVINOSharedCore::GetInstance() {
   static OpenVINOSharedCore* instance = new OpenVINOSharedCore();
   return instance;
+}
+
+const std::vector<std::string>& OpenVINOSharedCore::GetAvailableDevices() {
+  std::call_once(available_devices_once_, [this]() {
+    try {
+      available_devices_ = core_->get_available_devices();
+    } catch (const std::exception&) {
+      available_devices_.clear();
+    }
+  });
+  return available_devices_;
 }

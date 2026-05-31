@@ -37,7 +37,8 @@ OpenVinoCompileContext::OpenVinoCompileContext() {
 
 ::litert::Expected<OpenVinoCompileContext> OpenVinoCompileContext::Create(
     const ::litert::Expected< ::litert::intel_openvino::IntelOpenVinoOptions>&
-        opts) {
+        opts,
+    int graph_index) {
   OpenVinoCompileContext context;
   if (!opts.HasValue()) {
     LITERT_LOG(LITERT_INFO, "Using default configuration (LATENCY mode)");
@@ -45,16 +46,28 @@ OpenVinoCompileContext::OpenVinoCompileContext() {
   }
   const auto& options = opts.Value();
 
-  // Configure device type.
-  auto device_type = options.GetDeviceType();
-  switch (device_type) {
-    case kLiteRtIntelOpenVinoDeviceTypeCPU:
+  // Resolve the OpenVINO target device for this graph from the per-graph
+  // graph_backend override.  When no override is set, fall back to NPU.
+  LiteRtIntelOpenVinoGraphBackend graph_backend = kLiteRtIntelOpenVinoGraphBackendNPU;
+  if (graph_index >= 0) {
+    auto override = options.GetGraphBackend(graph_index);
+    if (override.HasValue()) {
+      graph_backend = *override;
+      LITERT_LOG(LITERT_INFO, "Graph %d: graph_backend -> %d", graph_index,
+                 graph_backend);
+    }
+  }
+  switch (graph_backend) {
+    case kLiteRtIntelOpenVinoGraphBackendCPU:
       context.device_ = "CPU";
       break;
-    case kLiteRtIntelOpenVinoDeviceTypeGPU:
+    case kLiteRtIntelOpenVinoGraphBackendGPU:
       context.device_ = "GPU";
       break;
-    case kLiteRtIntelOpenVinoDeviceTypeNPU:
+    case kLiteRtIntelOpenVinoGraphBackendNPU:
+      context.device_ = "NPU";
+      break;
+    case kLiteRtIntelOpenVinoGraphBackendMax:
       context.device_ = "NPU";
       break;
   }
@@ -107,6 +120,22 @@ OpenVinoCompileContext::OpenVinoCompileContext() {
         LITERT_LOG(LITERT_INFO, "Performance mode: CUMULATIVE_THROUGHPUT");
       }
       break;
+  }
+
+  // Apply per-graph configs map overrides on top of the model-wide configs.
+  if (graph_index >= 0) {
+    int num_graph_configs = options.GetNumGraphConfigsMapOptions(graph_index);
+    for (int i = 0; i < num_graph_configs; ++i) {
+      auto [key, value] = options.GetGraphConfigsMapOption(graph_index, i);
+      if (key.empty()) continue;
+      if (key == "optimize_fq_after_matmul") {
+        context.eliminate_fq_after_matmul_ = (value == "true");
+        continue;
+      }
+      context.configs_map_[key] = value;
+      LITERT_LOG(LITERT_INFO, "Graph %d custom config: %s = %s", graph_index,
+                 key.c_str(), value.c_str());
+    }
   }
 
   return context;
