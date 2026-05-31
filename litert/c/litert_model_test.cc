@@ -55,7 +55,7 @@ TEST(LiteRtModelTest, CreateFromAllocation) {
 
   LiteRtModel model = nullptr;
   LITERT_ASSERT_OK(
-      LiteRtCreateModelFromAllocation(std::move(allocation), &model));
+      LiteRtCreateModelFromAllocation(allocation.release(), &model));
   ASSERT_NE(model, nullptr);
 
   LiteRtParamIndex num_subgraphs;

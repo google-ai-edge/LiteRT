@@ -71,6 +71,7 @@ LiteRtCreateManagedEvent
 LiteRtCreateManagedTensorBuffer
 LiteRtCreateManagedTensorBufferFromRequirements
 LiteRtCreateMetrics
+LiteRtCreateModelFromAllocation
 LiteRtCreateModelFromBuffer
 LiteRtCreateModelFromFd
 LiteRtCreateModelFromFile

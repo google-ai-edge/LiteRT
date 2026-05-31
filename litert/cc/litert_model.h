@@ -252,8 +252,8 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   // static Expected<Model> CreateFromAllocation(
       // std::unique_ptr<tflite::Allocation> allocation) {
     // LiteRtModel model;
-    // if (auto status =
-            // LiteRtCreateModelFromAllocation(std::move(allocation), &model);
+    // LiteRtAllocation c_allocation = allocation.release();
+    // if (auto status = LiteRtCreateModelFromAllocation(c_allocation, &model);
         // status != kLiteRtStatusOk) {
       // return Unexpected(ToStatus(status),
                         // "Failed to load model from allocation");
