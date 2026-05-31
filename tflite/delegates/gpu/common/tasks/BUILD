@@ -159,6 +159,7 @@ cc_library(
         "//tflite/delegates/gpu/common/task:weights_conversion",
         "//tflite/delegates/gpu/common/task:weights_layout",
         "//tflite/delegates/gpu/common/task:work_group_picking",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -230,6 +231,7 @@ cc_library(
         "//tflite/delegates/gpu/common/task:weights_conversion",
         "//tflite/delegates/gpu/common/task:weights_layout",
         "//tflite/delegates/gpu/common/task:work_group_picking",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
     ],
 )
