@@ -19,6 +19,7 @@
 #include <optional>
 #include <utility>
 
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/common.h"
 #include "litert/ats/configure.h"
 #include "litert/c/internal/litert_logging.h"
@@ -66,7 +67,7 @@ class RegisterFunctor {
       }
       auto names = NamesForNextTest(
           test_id_, options_,
-          absl::StrFormat("%s_%s", "SingleOp", Fixture::Name()), Logic::Name(),
+          absl::StrFormat("%s_%s", prefix_, Fixture::Name()), Logic::Name(),
           test_graph.Value()->Graph());
       if (!names) {
         continue;
@@ -77,14 +78,19 @@ class RegisterFunctor {
   }
 
   RegisterFunctor(size_t iters, size_t& test_id, const AtsConf& options,
-                  typename Fixture::Capture& cap)
-      : iters_(iters), test_id_(test_id), options_(options), cap_(cap) {}
+                  typename Fixture::Capture& cap, absl::string_view prefix)
+      : iters_(iters),
+        test_id_(test_id),
+        options_(options),
+        cap_(cap),
+        prefix_(prefix) {}
 
  private:
   const size_t iters_;
   size_t& test_id_;
   const AtsConf& options_;
   typename Fixture::Capture& cap_;
+  absl::string_view prefix_;
 };
 
 // Specializes the given test logic template with the cartesian product of
@@ -94,8 +100,9 @@ class RegisterFunctor {
 template <typename Fixture, template <typename...> typename Logic,
           typename... Lists>
 void RegisterCombinations(size_t iters, size_t& test_id, const AtsConf& options,
-                          typename Fixture::Capture& cap) {
-  RegisterFunctor<Fixture> f(iters, test_id, options, cap);
+                          typename Fixture::Capture& cap,
+                          absl::string_view prefix = "SingleOp") {
+  RegisterFunctor<Fixture> f(iters, test_id, options, cap, prefix);
   ExpandProduct<Logic, Lists...>(f);
 }
 
