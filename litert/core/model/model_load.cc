@@ -190,7 +190,7 @@ Expected<TflBufferContext> ReadBuffer(FlatbufferContext& context,
   }
 }
 
-LiteRtStatus UnpackTensor(FlatbufferContext& context,
+LiteRtStatus UnpackTensor(FlatbufferContext& context, LiteRtSubgraphT& parent,
                           const TflPackedTensor& tfl_tensor,
                           LiteRtTensorT& litert_tensor) {
   const auto buffer_ind = tfl_tensor.buffer();
@@ -226,11 +226,32 @@ LiteRtStatus UnpackTensor(FlatbufferContext& context,
   // QUANTIZATION
 
   if (tfl_tensor.quantization()) {
-    auto quantization = MapQuantization(tfl_tensor.quantization());
-    if (!quantization) {
-      return quantization.Error().Status();
+    if (IsBlockWiseQuantized(tfl_tensor.quantization())) {
+      const auto* details =
+          tfl_tensor.quantization()->details_as_BlockwiseQuantization();
+      if (!details) {
+        LITERT_LOG(LITERT_ERROR, "Malformed blockwise quantization details");
+        return kLiteRtStatusErrorInvalidFlatbuffer;
+      }
+      int scales_tensor_ind = details->scales();
+      int zero_points_tensor_ind = details->zero_points();
+      int block_size = details->block_size();
+
+      LiteRtTensor scales_tensor = &parent.Tensor(scales_tensor_ind);
+      LiteRtTensor zero_points_tensor = nullptr;
+      if (zero_points_tensor_ind != -1) {
+        zero_points_tensor = &parent.Tensor(zero_points_tensor_ind);
+      }
+
+      litert_tensor.SetQarams(MakeBlockWiseQuantization(
+          scales_tensor, zero_points_tensor, block_size));
+    } else {
+      auto quantization = MapQuantization(tfl_tensor.quantization());
+      if (!quantization) {
+        return quantization.Error().Status();
+      }
+      litert_tensor.SetQarams(std::move(*quantization));
     }
-    litert_tensor.SetQarams(std::move(*quantization));
   }
 
   // MISC
@@ -267,13 +288,20 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
     litert_subgraph.SetName(tfl_subgraph.name()->str());
   }
 
-  // Unpack tensors.
+  // Emplace all tensors first to resolve potential cross-referencing in
+  // blockwise quantization.
   const auto num_tensors =
       tfl_subgraph.tensors() ? tfl_subgraph.tensors()->size() : 0;
   for (auto i = 0; i < num_tensors; ++i) {
+    litert_subgraph.EmplaceTensor();
+  }
+
+  // Unpack tensors.
+  for (auto i = 0; i < num_tensors; ++i) {
     const auto* tfl_tensor = tfl_subgraph.tensors()->Get(i);
-    auto& litert_tensor = litert_subgraph.EmplaceTensor();
-    LITERT_RETURN_IF_ERROR(UnpackTensor(context, *tfl_tensor, litert_tensor));
+    auto& litert_tensor = litert_subgraph.Tensor(i);
+    LITERT_RETURN_IF_ERROR(
+        UnpackTensor(context, litert_subgraph, *tfl_tensor, litert_tensor));
     litert_tensor.SetTensorIndex(i);
   }
 

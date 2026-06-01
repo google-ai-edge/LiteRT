@@ -17,14 +17,16 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <utility>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "litert/c/litert_model.h"
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
+#include "tflite/converter/schema/schema_generated.h"
 
 namespace litert::internal {
 namespace {
@@ -70,6 +72,30 @@ TEST(LiteRtToFlatbufferTest, MapPerChannelQuantization) {
   ASSERT_TRUE(tfl_q);
   EXPECT_THAT(tfl_q->get()->scale, ElementsAreArray(kScales));
   EXPECT_THAT(tfl_q->get()->zero_point, ElementsAreArray(kZps));
+}
+
+TEST(LiteRtToFlatbufferTest, MapBlockWiseQuantization) {
+  LiteRtTensorT scales_tensor;
+  LiteRtTensorT zero_points_tensor;
+  constexpr int32_t kBlockSize = 32;
+
+  Quantization q = MakeBlockWiseQuantization(&scales_tensor,
+                                             &zero_points_tensor, kBlockSize);
+
+  absl::flat_hash_map<LiteRtTensor, int32_t> tensor_map;
+  tensor_map[&scales_tensor] = 10;
+  tensor_map[&zero_points_tensor] = 11;
+
+  auto tfl_q = MapQuantization(q, tensor_map);
+  ASSERT_TRUE(tfl_q);
+  ASSERT_EQ(tfl_q->get()->details.type,
+            tflite::QuantizationDetails_BlockwiseQuantization);
+
+  auto* details = tfl_q->get()->details.AsBlockwiseQuantization();
+  ASSERT_NE(details, nullptr);
+  EXPECT_EQ(details->scales, 10);
+  EXPECT_EQ(details->zero_points, 11);
+  EXPECT_EQ(details->block_size, kBlockSize);
 }
 
 TEST(LiteRtToFlatbufferTest, MapDynamicTensorType) {

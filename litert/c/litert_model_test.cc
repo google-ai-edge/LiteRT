@@ -311,6 +311,115 @@ TEST(LiteRtTensorTest, QuantizationPerChannel) {
   ASSERT_EQ(per_channel_quantization.quantized_dimension, kQuantizedDimension);
 }
 
+TEST(LiteRtTensorTest, QuantizationBlockWise) {
+  auto runtime =
+      litert::testing::MakeRuntimeFromTestFile("blockwise_quantized.tflite");
+  ASSERT_TRUE(runtime);
+
+  const auto model_buffer = (*runtime)->Flatbuffer().Buf();
+  auto allocation = std::make_unique<tflite::MemoryAllocation>(
+      model_buffer.Data(), model_buffer.Size(), tflite::DefaultErrorReporter());
+
+  LiteRtModel model = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtCreateModelFromAllocation(std::move(allocation), &model));
+  ASSERT_NE(model, nullptr);
+
+  LiteRtSubgraph subgraph;
+  LITERT_ASSERT_OK(LiteRtGetModelSubgraph(model, 0, &subgraph));
+  ASSERT_NE(subgraph, nullptr);
+
+  LiteRtOp op;
+  LITERT_ASSERT_OK(LiteRtGetSubgraphOp(subgraph, 0, &op));
+  ASSERT_NE(op, nullptr);
+
+  LiteRtParamIndex num_inputs;
+  LITERT_ASSERT_OK(LiteRtGetNumOpInputs(op, &num_inputs));
+  ASSERT_EQ(num_inputs, 2);
+
+  LiteRtTensor quantized_tensor = nullptr;
+  for (int i = 0; i < num_inputs; ++i) {
+    LiteRtTensor input;
+    LITERT_ASSERT_OK(LiteRtGetOpInput(op, i, &input));
+    const char* name;
+    LITERT_ASSERT_OK(LiteRtGetTensorName(input, &name));
+    if (absl::string_view(name) == "quantized_tensor") {
+      quantized_tensor = input;
+      break;
+    }
+  }
+  ASSERT_NE(quantized_tensor, nullptr);
+
+  LiteRtQuantizationTypeId q_type_id;
+  LITERT_ASSERT_OK(LiteRtGetQuantizationTypeId(quantized_tensor, &q_type_id));
+  ASSERT_EQ(q_type_id, kLiteRtQuantizationBlockWise);
+
+  LiteRtQuantizationBlockWise block_wise_quantization;
+  LITERT_ASSERT_OK(LiteRtGetBlockWiseQuantization(quantized_tensor,
+                                                  &block_wise_quantization));
+
+  ASSERT_NE(block_wise_quantization.scales, nullptr);
+  const char* scales_name;
+  LITERT_ASSERT_OK(
+      LiteRtGetTensorName(block_wise_quantization.scales, &scales_name));
+  EXPECT_STREQ(scales_name, "scales");
+
+  ASSERT_NE(block_wise_quantization.zero_points, nullptr);
+  const char* zps_name;
+  LITERT_ASSERT_OK(
+      LiteRtGetTensorName(block_wise_quantization.zero_points, &zps_name));
+  EXPECT_STREQ(zps_name, "zps");
+
+  EXPECT_EQ(block_wise_quantization.block_size, 32);
+
+  LiteRtDestroyModel(model);
+}
+
+TEST(LiteRtTensorTest, QwenQuantizationBlockWise) {
+  auto runtime = litert::testing::MakeRuntimeFromTestFile(
+      "qwen_fc_blockwise_quantized.tflite");
+  ASSERT_TRUE(runtime);
+
+  const auto model_buffer = (*runtime)->Flatbuffer().Buf();
+  auto allocation = std::make_unique<tflite::MemoryAllocation>(
+      model_buffer.Data(), model_buffer.Size(), tflite::DefaultErrorReporter());
+
+  LiteRtModel model = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtCreateModelFromAllocation(std::move(allocation), &model));
+  ASSERT_NE(model, nullptr);
+
+  LiteRtSubgraph subgraph;
+  LITERT_ASSERT_OK(LiteRtGetModelSubgraph(model, 0, &subgraph));
+  ASSERT_NE(subgraph, nullptr);
+
+  LiteRtOp op;
+  LITERT_ASSERT_OK(LiteRtGetSubgraphOp(subgraph, 0, &op));
+  ASSERT_NE(op, nullptr);
+
+  LiteRtParamIndex num_inputs;
+  LITERT_ASSERT_OK(LiteRtGetNumOpInputs(op, &num_inputs));
+  ASSERT_GE(num_inputs, 2);
+
+  LiteRtTensor weights_tensor;
+  LITERT_ASSERT_OK(LiteRtGetOpInput(op, 1, &weights_tensor));
+  ASSERT_NE(weights_tensor, nullptr);
+
+  LiteRtQuantizationTypeId q_type_id;
+  LITERT_ASSERT_OK(LiteRtGetQuantizationTypeId(weights_tensor, &q_type_id));
+  ASSERT_EQ(q_type_id, kLiteRtQuantizationBlockWise);
+
+  LiteRtQuantizationBlockWise block_wise_quantization;
+  LITERT_ASSERT_OK(
+      LiteRtGetBlockWiseQuantization(weights_tensor, &block_wise_quantization));
+
+  ASSERT_NE(block_wise_quantization.scales, nullptr);
+
+  EXPECT_EQ(block_wise_quantization.block_size, 32);
+
+  LiteRtDestroyModel(model);
+}
+
 TEST(LiteRtOpTest, GetOpCode) {
   static constexpr auto kCode = kLiteRtOpCodeTflCustom;
 

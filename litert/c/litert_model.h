@@ -73,6 +73,10 @@ LiteRtStatus LiteRtGetPerChannelQuantization(
     LiteRtTensor tensor,
     LiteRtQuantizationPerChannel* per_channel_quantization);
 
+// Get the block-wise quantization information for a given tensor if it has it.
+LiteRtStatus LiteRtGetBlockWiseQuantization(
+    LiteRtTensor tensor, LiteRtQuantizationBlockWise* block_wise_quantization);
+
 // EDGES
 
 // Get all the ops that reference given tensor, and at what operand index.

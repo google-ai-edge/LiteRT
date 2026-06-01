@@ -23,13 +23,13 @@
 #include <utility>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_consts.h"
@@ -620,8 +620,24 @@ void Drop(LiteRtOpT& litert_op) {
 bool DCE(LiteRtSubgraphT& subgraph) {
   const auto ops_removed = subgraph.RemoveOpIf(IsOpDead);
 
-  auto rm_tensor = [&subgraph = std::as_const(subgraph)](const auto& t) {
-    return IsTensorDead(t) && !IsIO(subgraph, t);
+  absl::flat_hash_set<const LiteRtTensorT*> referenced_tensors;
+  for (const auto* tensor : subgraph.Tensors()) {
+    if (tensor->Qparams().first == kLiteRtQuantizationBlockWise) {
+      const auto& block_wise = tensor->Qparams().second.block_wise;
+      if (block_wise.scales) {
+        referenced_tensors.insert(
+            static_cast<const LiteRtTensorT*>(block_wise.scales));
+      }
+      if (block_wise.zero_points) {
+        referenced_tensors.insert(
+            static_cast<const LiteRtTensorT*>(block_wise.zero_points));
+      }
+    }
+  }
+
+  auto rm_tensor = [&subgraph, &referenced_tensors](const auto& t) {
+    return IsTensorDead(t) && !IsIO(subgraph, t) &&
+           !referenced_tensors.contains(&t);
   };
   const auto tensors_removed = subgraph.RemoveTensorIf(rm_tensor);
   LITERT_LOG(LITERT_DEBUG, "DCE removed %d ops, %d tensors", ops_removed,

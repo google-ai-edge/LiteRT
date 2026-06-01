@@ -1229,6 +1229,13 @@ class RuntimeProxy {
                                is_supported);
   }
 
+  LiteRtStatus GetBlockWiseQuantization(
+      LiteRtTensor tensor,
+      LiteRtQuantizationBlockWise* block_wise_quantization) {
+    LITERT_PROXY_METHOD_STATUS(litert_get_block_wise_quantization, tensor,
+                               block_wise_quantization);
+  }
+
  protected:
   const LiteRtRuntimeCApiStruct* runtime_c_api_;
 };

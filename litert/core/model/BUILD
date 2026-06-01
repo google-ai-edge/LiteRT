@@ -213,9 +213,11 @@ cc_library(
     deps = [
         ":model",
         "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/core/util:flatbuffer_tools",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -226,9 +228,12 @@ cc_test(
     deps = [
         ":litert_to_flatbuffer",
         ":model",
+        "//litert/c:litert_common",
         "//litert/c:litert_model",
         "//litert/cc:litert_layout",
         "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -430,9 +435,11 @@ cc_test(
     deps = [
         ":buffer_manager",
         ":model",
+        ":model_load",
         ":model_serialize",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_macros",
         "//litert/core/util:flatbuffer_tools_testonly",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
