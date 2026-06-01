@@ -16,6 +16,7 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_FIXTURE_H_
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -216,6 +217,25 @@ class AtsInferenceTest : public RngTest {
     double tol = std::max(
         Tol(), static_cast<double>(NumericLimits<T>::Epsilon()) * 10.0);
     EXPECT_THAT(actual.data, MeanSquaredErrorLt(ref.data, tol, &mse));
+    if (mse > tol) {
+      LITERT_LOG(LITERT_ERROR, "[NUMERICAL DISCREPANCY DETAIL]");
+      LITERT_LOG(LITERT_ERROR, "Tolerance: %g, Actual MSE: %g", tol, mse);
+      LITERT_LOG(LITERT_ERROR,
+                 "Side-by-side comparison (showing first 10 mismatches):");
+      size_t printed = 0;
+      for (size_t i = 0; i < actual.data.size() && printed < 10; ++i) {
+        double a_val = static_cast<double>(actual.data[i]);
+        double r_val = static_cast<double>(ref.data[i]);
+        double diff = std::abs(a_val - r_val);
+        if (diff > tol) {
+          LITERT_LOG(LITERT_ERROR,
+                     "  Index %zu: Actual=%g\tExpected=%g\tDiff=%g", i, a_val,
+                     r_val, diff);
+          printed++;
+        }
+      }
+      LITERT_LOG(LITERT_ERROR, "----------------------------------------");
+    }
     cap_.numerics.NewMse(mse);
   }
 
