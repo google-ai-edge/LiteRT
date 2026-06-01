@@ -921,6 +921,18 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
     LITERT_RETURN_IF_ERROR(compiled_model->RestoreExternalWeightsForCpu());
   }
 
+  if (hardware_accelerators & kLiteRtHwAcceleratorNpu) {
+    // Gives the user a warning if they are trying to use NPU without setting
+    // the dispatch library directory.
+    auto dispatch_lib_dir =
+        env->GetOption(kLiteRtEnvOptionTagDispatchLibraryDir);
+    if (!dispatch_lib_dir.has_value()) {
+      LITERT_LOG(
+          LITERT_WARNING,
+          "You should provide the `DispatchLibraryDir` option to use NPU.");
+    }
+  }
+
   // Apply accelerators matching the requested hardware support to the
   // model in the order they were registered.
   for (auto& accelerator : env->GetAcceleratorRegistry()) {
