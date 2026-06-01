@@ -410,6 +410,7 @@ cc_library(
         "//tflite/delegates/utils/experimental/stable_delegate:delegate_loader",
         "//tflite/tools:logging",
         "@com_google_absl//absl/memory",
+        "@flatbuffers//:runtime_cc",
     ],
     alwayslink = 1,  # For registration to always run.
 )
