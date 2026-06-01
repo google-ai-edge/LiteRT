@@ -254,6 +254,21 @@ LiteRtStatus LiteRtDispatchGraphT::AssignNodeFunction(
 
 LiteRtStatus LiteRtDispatchGraphT::AnnotateGraph(
     const char* absl_nonnull key, const char* absl_nonnull value) {
+  constexpr char kEdgetpuPerformanceMode[] = "edgetpu_performance_mode";
+  if (std::strcmp(key, kEdgetpuPerformanceMode) == 0) {
+    // Prevent driver crashes by bypassing edgetpu_performance_mode on legacy/Tachyon southbound runtimes (version < 0.18).
+    if (GoogleTensorSouthBoundMajorVersion() == 0 &&
+        GoogleTensorSouthBoundMinorVersion() < 18) {
+      LITERT_LOG(LITERT_WARNING,
+                 "Skipped applying edgetpu_performance_mode (%s) to safe-guard "
+                 "against driver crashes on older southbound runtime version "
+                 "(got: %d.%d, requires: >=0.18).",
+                 value, GoogleTensorSouthBoundMajorVersion(),
+                 GoogleTensorSouthBoundMinorVersion());
+      return kLiteRtStatusOk;
+    }
+  }
+
   GT_LOG_RETURN_IF_SB_ERROR(
       thrGraphAnnotateGraph(thr_graph_, key, value),
       "Failed to annotate SB graph with key '%s' and value '%s'", key, value);
