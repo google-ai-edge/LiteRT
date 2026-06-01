@@ -27,6 +27,18 @@ provided_models=()
 dry_run=""
 no_push=""
 
+function append_to_path() {
+  local path_var_val="$1"
+  local new_path="$2"
+  if [[ -z "$path_var_val" ]]; then
+    echo "$new_path"
+  elif [[ ":$path_var_val:" == *":$new_path:"* ]]; then
+    echo "$path_var_val"
+  else
+    echo "$path_var_val:$new_path"
+  fi
+}
+
 # Resolves user provided data paths (files or directories) to absolute paths.
 # If a directory is provided, it resolves all files within it (non-recursive).
 # copybara:comment_begin(google-only)
@@ -154,6 +166,41 @@ function print_args() {
 # Push and execute #############################################################
 
 setup_context "${extra_args[*]}"
+
+# Update env vars with actual library paths on device.
+old_ld_path=""
+old_adsp_path=""
+other_env_vars=()
+
+for env_var in "${d_env_vars[@]}"; do
+  if [[ "$env_var" == LD_LIBRARY_PATH=* ]]; then
+    old_ld_path="${env_var#*=}"
+  elif [[ "$env_var" == ADSP_LIBRARY_PATH=* ]]; then
+    old_adsp_path="${env_var#*=}"
+  else
+    other_env_vars+=("$env_var")
+  fi
+done
+
+for lib in "${d_libs[@]}"; do
+  dev_path=$(device_path "$lib")
+  dev_dir=$(dirname "$dev_path")
+
+  if [[ "$lib" == *Skel* ]]; then
+    old_adsp_path=$(append_to_path "$old_adsp_path" "$dev_dir")
+  else
+    old_ld_path=$(append_to_path "$old_ld_path" "$dev_dir")
+  fi
+done
+
+d_env_vars=("${other_env_vars[@]}")
+if [[ -n "$old_ld_path" ]]; then
+  d_env_vars+=("LD_LIBRARY_PATH=$old_ld_path")
+fi
+if [[ -n "$old_adsp_path" ]]; then
+  old_adsp_path="${old_adsp_path//:/;}"
+  d_env_vars+=("ADSP_LIBRARY_PATH=\"$old_adsp_path\"")
+fi
 
 print_args
 

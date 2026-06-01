@@ -684,3 +684,15 @@ cc_import_files(
     testonly = True,
     target = "@qairt//:libQnnHtpV79Skel.so",
 )
+
+cc_import_files(
+    name = "libQnnHtpV81Stub.so",
+    testonly = True,
+    target = "@qairt//:libQnnHtpV81Stub.so",
+)
+
+cc_import_files(
+    name = "libQnnHtpV81Skel.so",
+    testonly = True,
+    target = "@qairt//:libQnnHtpV81Skel.so",
+)

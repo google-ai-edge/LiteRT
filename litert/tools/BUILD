@@ -799,6 +799,7 @@ cc_library(
         ":benchmark_litert_model",
         "//tflite/c:c_api_types",
         "//tflite/tools:logging",
+        "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/flags:reflection",
         "@com_google_absl//absl/strings",
     ],

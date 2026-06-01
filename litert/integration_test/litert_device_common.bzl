@@ -179,6 +179,11 @@ def _QualcommSpec(version = "V75"):
             "model": "regex:sm-s938*",
             "pool": "shared",
         }
+    elif version == "V81":
+        mh = {
+            "model": "regex:sm-s948*",
+            "pool": "shared",
+        }
 
     return {
         id: BackendSpec(
@@ -372,7 +377,18 @@ def _GpuSpec():
 # COMMON
 
 def _Specs(name):
-    return (_QualcommSpec() | _QualcommSpec("V79") | _GoogleTensorSpec() | _MediatekSpec() | _IntelOpenVinoSpec() | _SamsungSpec() | _CpuSpec() | _GpuSpec() | _ExampleSpec())[name]
+    return (
+        _QualcommSpec() |
+        _QualcommSpec("V79") |
+        _QualcommSpec("V81") |
+        _GoogleTensorSpec() |
+        _MediatekSpec() |
+        _IntelOpenVinoSpec() |
+        _SamsungSpec() |
+        _CpuSpec() |
+        _GpuSpec() |
+        _ExampleSpec()
+    )[name]
 
 # Check if the backend maps to an NPU backend.
 def is_npu_backend(name):
