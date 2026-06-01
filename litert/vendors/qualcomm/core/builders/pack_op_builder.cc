@@ -37,8 +37,12 @@ std::vector<OpWrapper> BuildPackOp(TensorPool& tensor_pool,
     }
     concat_op.AddOutputTensor(outputs[0]);
   } else {
+    // TFLite PACK axis is relative to the output rank (input rank + 1), since PACK
+    // inserts a new stacked dimension. For a negative axis, add the output rank.
+    // e.g. axis=-2, inputs rank=4: correct adjusted = -2+5=3; wrong (bug) = -2+4=2,
+    // which made QNN report "Expected 2 but got 32" on output[2].
     std::uint32_t adjusted_axis =
-        axis < 0 ? axis + inputs[0].get().GetRank() : axis;
+        axis < 0 ? axis + outputs[0].get().GetRank() : axis;
     res.emplace_back(CreatePackOp(
         std::vector<ConstTensorWrapperRef>(inputs.begin(), inputs.end()),
         outputs[0], adjusted_axis));
