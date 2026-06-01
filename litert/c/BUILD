@@ -306,6 +306,7 @@ cc_test(
         "//litert/core/model",
         "//litert/core/model:buffer_manager",
         "//litert/test:common",
+        "//litert/test:load_test_model",
         "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers//:runtime_cc",

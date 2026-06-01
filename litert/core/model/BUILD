@@ -142,6 +142,7 @@ cc_test(
         "//litert/core:dispatch_op_schema",
         "//litert/core/util:flatbuffer_tools",
         "//litert/test:common",
+        "//litert/test:load_test_model",
         "//litert/test:matchers",
         "//litert/test:test_models",
         "//tflite/converter/schema:schema_fbs_with_mutable",

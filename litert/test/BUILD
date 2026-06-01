@@ -121,8 +121,6 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
-        "//litert/cc/internal:litert_extended_model",
         "//litert/core:filesystem",
         "//litert/core/model:model_buffer",
         "//litert/core/util:flatbuffer_tools",
@@ -142,12 +140,38 @@ cc_library(
 )
 
 cc_library(
+    name = "load_test_model",
+    testonly = 1,
+    srcs = ["load_test_model.cc"],
+    hdrs = ["load_test_model.h"],
+    deps = [
+        ":common",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_extended_model",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "load_test_model_runtimecapi",
+    testonly = 1,
+    srcs = ["load_test_model.cc"],
+    hdrs = ["load_test_model.h"],
+    deps = [
+        ":common",
+        "//litert/cc:litert_macros",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
     name = "simple_model",
     testonly = 1,
     hdrs = ["testdata/simple_model_test_vectors.h"],
     data = ["testdata/simple_model.tflite"],
     deps = [
-        "//litert/c:litert_model",
+        "//litert/c:litert_model_header",
         "//litert/cc:litert_layout",
     ],
 )
@@ -159,7 +183,7 @@ cc_library(
     hdrs = ["testdata/simple_model_custom_op_test_vectors.h"],
     data = ["testdata/simple_model_custom_op.tflite"],
     deps = [
-        "//litert/c:litert_model",
+        "//litert/c:litert_model_header",
         "//litert/cc:litert_layout",
     ],
 )
@@ -177,7 +201,7 @@ cc_library(
         "testdata/simple_model_qualcomm.bin",
     ],
     deps = [
-        "//litert/c:litert_model",
+        "//litert/c:litert_model_header",
         "//litert/cc:litert_layout",
     ],
 )

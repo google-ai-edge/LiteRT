@@ -26,6 +26,7 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
+#include "litert/test/load_test_model.h"
 #include "litert/test/matchers.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/litert_compiler_plugin.h"

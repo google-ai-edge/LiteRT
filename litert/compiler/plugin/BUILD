@@ -131,6 +131,7 @@ cc_test(
         "//litert/core/model",
         "//litert/test:common",
         "//litert/test:matchers",
+        "//litert/test:load_test_model",
         "//litert/tools:dump",
         "//litert/vendors/c:litert_compiler_plugin",
         "//tflite/converter/schema:schema_fbs",
@@ -186,6 +187,7 @@ cc_test(
         "//litert/core/model:model_serialize",
         "//litert/core/util:flatbuffer_tools_testonly",
         "//litert/test:common",
+        "//litert/test:load_test_model",
     ],
 )
 
@@ -224,6 +226,7 @@ cc_test(
         "//litert/core/model:graph_validation",
         "//litert/core/model:model_serialize",
         "//litert/test:common",
+        "//litert/test:load_test_model",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_googletest//:gtest_main",
     ],

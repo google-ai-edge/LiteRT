@@ -374,6 +374,7 @@ cc_test(
         "//litert/c:litert_tensor_buffer",
         "//litert/core/model",
         "//litert/test:common",
+        "//litert/test:load_test_model",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],

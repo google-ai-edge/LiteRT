@@ -58,6 +58,7 @@
 #include "litert/core/model/model_serialize.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/common.h"
+#include "litert/test/load_test_model.h"
 #include "litert/test/matchers.h"
 #include "litert/test/test_models.h"
 #include "tflite/schema/mutable/schema_generated.h"

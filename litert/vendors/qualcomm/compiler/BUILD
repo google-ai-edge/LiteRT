@@ -213,6 +213,7 @@ litert_test(
         "//litert/core:environment_options",
         "//litert/core/model:model_testonly",
         "//litert/test:common",
+        "//litert/test:load_test_model_runtimecapi",
         "//litert/test:matchers_oss",
         "//litert/test:test_models",
         "//litert/vendors/cc:litert_compiler_plugin",

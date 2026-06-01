@@ -41,6 +41,7 @@
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/common.h"
+#include "litert/test/load_test_model.h"
 #include "litert/test/matchers.h"
 #include "litert/tools/dump.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
