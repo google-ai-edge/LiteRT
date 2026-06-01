@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_DMABUF_BUFFER_H_
 #define ODML_LITERT_LITERT_RUNTIME_DMABUF_BUFFER_H_
 
+#include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 
 namespace litert::internal {
@@ -26,6 +27,8 @@ struct DmaBufBuffer {
   static bool IsSupported();
   static Expected<DmaBufBuffer> Alloc(size_t size);
   static void Free(void* addr);
+  static Expected<void> Lock(int fd, LiteRtTensorBufferLockMode mode);
+  static Expected<void> Unlock(int fd, LiteRtTensorBufferLockMode mode);
 };
 
 }  // namespace litert::internal
