@@ -393,7 +393,7 @@ TfLiteStatus BenchmarkLiteRtModel::PrepareInputData() {
     auto res = buffer.Write<char>(absl::MakeSpan(
         reinterpret_cast<char*>(t_data.data.get()), t_data.bytes));
     if (!res.HasValue()) {
-      LITERT_LOG(LITERT_ERROR, "PrepareInputData: %s",
+      LITERT_LOG(LITERT_ERROR, "PrepareInputData '%s' failed: %s", name.c_str(),
                  res.Error().Message().c_str());
       return kTfLiteError;
     }
