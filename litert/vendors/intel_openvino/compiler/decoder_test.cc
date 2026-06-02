@@ -22,11 +22,13 @@
 
 #include "openvino/frontend/tensorflow_lite/decoder.hpp"
 #include <gtest/gtest.h>
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/test_models.h"
@@ -37,12 +39,17 @@ namespace openvino {
 using ::testing::Values;
 
 TEST(TestLiteOvDecoder, ConstructDecoderOp) {
-  auto model =
+  auto cc_model =
       testing::LoadTestFileModel("simple_conv_2d_fused_relu_op.tflite");
-  auto graph = model.Subgraph(0);
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  litert::compiler::Model model(ctx, cc_model.Get());
+  auto graph_or = model.Subgraph(0);
+  ASSERT_TRUE(graph_or.HasValue());
+  auto graph = graph_or.Value();
   size_t index = 0;
-  for (const auto& op : graph->Ops()) {
+  for (const auto& op : graph.Ops()) {
     auto sample_ov_decode_op = DecoderOperation(
+        /*ctx=*/ctx,
         /*input_tensor_info=*/std::vector<
             ov::frontend::tensorflow_lite::TensorMetaInfo>(),
         /*output_tensor_info=*/
@@ -52,12 +59,17 @@ TEST(TestLiteOvDecoder, ConstructDecoderOp) {
 }
 
 TEST(TestLiteOvDecoder, VerifyDecoderConv2dOp) {
-  auto model =
+  auto cc_model =
       testing::LoadTestFileModel("simple_conv_2d_fused_relu_op.tflite");
-  auto graph = model.Subgraph(0);
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  litert::compiler::Model model(ctx, cc_model.Get());
+  auto graph_or = model.Subgraph(0);
+  ASSERT_TRUE(graph_or.HasValue());
+  auto graph = graph_or.Value();
   size_t index = 0;
-  for (const auto& op : graph->Ops()) {
+  for (const auto& op : graph.Ops()) {
     auto sample_ov_decode_op = DecoderOperation(
+        /*ctx=*/ctx,
         /*input_tensor_info=*/std::vector<
             ov::frontend::tensorflow_lite::TensorMetaInfo>(),
         /*output_tensor_info=*/
@@ -85,6 +97,39 @@ TEST(TestLiteOvDecoder, VerifyDecoderConv2dOp) {
     LITERT_LOG(LITERT_INFO, "Activation : %s", activation_str.c_str());
     ASSERT_EQ(activation_str, "RELU");
   }
+}
+
+TEST(TestLiteOvDecoder, VerifyDecoderTileOp) {
+  auto cc_model = testing::LoadTestFileModel("simple_tile_op.tflite");
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  litert::compiler::Model model(ctx, cc_model.Get());
+  auto graph_or = model.Subgraph(0);
+  ASSERT_TRUE(graph_or.HasValue());
+  auto graph = graph_or.Value();
+  size_t index = 0;
+  bool saw_tile = false;
+  for (const auto& op : graph.Ops()) {
+    auto sample_ov_decode_op = DecoderOperation(
+        /*ctx=*/ctx,
+        /*input_tensor_info=*/std::vector<
+            ov::frontend::tensorflow_lite::TensorMetaInfo>(),
+        /*output_tensor_info=*/
+        std::vector<ov::frontend::tensorflow_lite::TensorMetaInfo>(),
+        /*litert_op=*/op, index++);
+    if (op.Code() != kLiteRtOpCodeTflTile) {
+      continue;
+    }
+    saw_tile = true;
+    LITERT_LOG(LITERT_INFO, "op_type : %s",
+               sample_ov_decode_op.get_op_type().c_str());
+    ASSERT_EQ(sample_ov_decode_op.get_op_type(), "TILE");
+    // TILE has no op options in TFLite (the `multiples` vector is passed as an
+    // input tensor, not an attribute). get_attribute for an unsupported name
+    // should return an empty ov::Any rather than crash.
+    auto multiples_attr = sample_ov_decode_op.get_attribute("multiples");
+    ASSERT_TRUE(multiples_attr.empty());
+  }
+  ASSERT_TRUE(saw_tile) << "simple_tile_op.tflite did not contain a TILE op";
 }
 
 }  // namespace openvino
