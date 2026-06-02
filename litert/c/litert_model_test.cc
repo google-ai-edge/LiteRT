@@ -62,7 +62,7 @@ TEST(LiteRtModelTest, CreateFromAllocation) {
 
   LiteRtModel model = nullptr;
   LITERT_ASSERT_OK(LiteRtCreateModelFromAllocation(
-      environment, std::move(allocation), &model));
+      environment, allocation.release(), &model));
   ASSERT_NE(model, nullptr);
 
   LiteRtParamIndex num_subgraphs;
@@ -341,7 +341,7 @@ TEST(LiteRtTensorTest, QuantizationBlockWise) {
 
   LiteRtModel model = nullptr;
   LITERT_ASSERT_OK(LiteRtCreateModelFromAllocation(
-      environment, std::move(allocation), &model));
+      environment, allocation.release(), &model));
   ASSERT_NE(model, nullptr);
 
   LiteRtSubgraph subgraph;
@@ -411,7 +411,7 @@ TEST(LiteRtTensorTest, QwenQuantizationBlockWise) {
 
   LiteRtModel model = nullptr;
   LITERT_ASSERT_OK(LiteRtCreateModelFromAllocation(
-      environment, std::move(allocation), &model));
+      environment, allocation.release(), &model));
   ASSERT_NE(model, nullptr);
 
   LiteRtSubgraph subgraph;

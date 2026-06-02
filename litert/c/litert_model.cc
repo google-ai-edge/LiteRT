@@ -715,20 +715,24 @@ LiteRtStatus LiteRtGetBlockWiseQuantization(
   return kLiteRtStatusOk;
 }
 
-#ifdef __cplusplus
-}  // extern "C"
-#endif
-
-LiteRtStatus LiteRtCreateModelFromAllocation(
-    LiteRtEnvironment env, std::unique_ptr<tflite::Allocation> allocation,
-    LiteRtModel* model) {
+LiteRtStatus LiteRtCreateModelFromAllocation(LiteRtEnvironment environment,
+                                             LiteRtAllocation allocation,
+                                             LiteRtModel* model) {
+  std::unique_ptr<tflite::Allocation> tflite_allocation(allocation);
   if (!model) {
     return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!tflite_allocation) {
+    return kLiteRtStatusErrorFileIO;
   }
 
   LITERT_ASSIGN_OR_RETURN(
       LiteRtModelT::Ptr new_model,
-      litert::internal::LoadModelFromAllocation(std::move(allocation)));
+      litert::internal::LoadModelFromAllocation(std::move(tflite_allocation)));
   *model = new_model.release();
   return kLiteRtStatusOk;
 }
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif

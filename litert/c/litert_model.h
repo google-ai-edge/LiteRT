@@ -24,12 +24,18 @@
 #include "litert/c/litert_op_code.h"
 
 #ifdef __cplusplus
-#include <memory>
-
 namespace tflite {
 class Allocation;
-}  // namespace tflite
+}
+using LiteRtAllocationT = tflite::Allocation;
+typedef LiteRtAllocationT* LiteRtAllocation;
+typedef const LiteRtAllocationT* LiteRtAllocationConst;
+#else
+typedef struct LiteRtAllocationT* LiteRtAllocation;
+typedef const struct LiteRtAllocationT* LiteRtAllocationConst;
+#endif
 
+#ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
 
@@ -331,18 +337,20 @@ LiteRtStatus LiteRtSerializeModel(LiteRtModel model, uint8_t** buf,
                                   bool destroy_model,
                                   LiteRtModelSerializationOptions options);
 
-#ifdef __cplusplus
-}  // extern "C"
-#endif  // __cplusplus
-
-#ifdef __cplusplus
 // Loading a model from an owned TFLite allocation.
 // This is an internal experimetal API which is not available through
 // libLiteRt.so. It's not part of the official LiteRT public C API.
-// TODO(b/493996317): Provide C linkage for the following method.
-LiteRtStatus LiteRtCreateModelFromAllocation(
-    LiteRtEnvironment environment,
-    std::unique_ptr<tflite::Allocation> allocation, LiteRtModel* model);
+//
+// This function takes ownership of the `allocation` object. The caller must
+// not use or attempt to delete the `allocation` after calling this function.
+// The allocation will be automatically freed by this function even in case
+// of failure.
+LiteRtStatus LiteRtCreateModelFromAllocation(LiteRtEnvironment environment,
+                                             LiteRtAllocation allocation,
+                                             LiteRtModel* model);
+
+#ifdef __cplusplus
+}  // extern "C"
 #endif  // __cplusplus
 
 #endif  // ODML_LITERT_LITERT_C_LITERT_MODEL_H_

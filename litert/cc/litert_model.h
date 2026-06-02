@@ -316,8 +316,9 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   // static Expected<Model> CreateFromAllocation(
       // Environment& env, std::unique_ptr<tflite::Allocation> allocation) {
     // LiteRtModel model;
+    // LiteRtAllocation c_allocation = allocation.release();
     // if (auto status = LiteRtCreateModelFromAllocation(
-            // env.Get(), std::move(allocation), &model);
+            // env.Get(), c_allocation, &model);
         // status != kLiteRtStatusOk) {
       // return Unexpected(ToStatus(status),
                         // "Failed to load model from allocation");
@@ -333,8 +334,9 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   // static Expected<Model> CreateFromAllocation(
       // std::unique_ptr<tflite::Allocation> allocation) {
     // LiteRtModel model;
+    // LiteRtAllocation c_allocation = allocation.release();
     // if (auto status = LiteRtCreateModelFromAllocation(
-            // /*environment=*/nullptr, std::move(allocation), &model);
+            // /*environment=*/nullptr, c_allocation, &model);
         // status != kLiteRtStatusOk) {
       // return Unexpected(ToStatus(status),
                         // "Failed to load model from allocation");
