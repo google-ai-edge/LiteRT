@@ -52,7 +52,7 @@ typedef enum {
   kLiteRtEnvOptionTagWebGpuInstance = 19,
   // Dawn procedure table pointer for shared libraries to populate their tables
   // with the shared procedures instead of their own procedures.
-  kLiteRtEnvOptionTagWebGpuProcs = 20,
+  kLiteRtEnvOptionTagWebGpuProcs = 20,  // Deprecated.
   kLiteRtEnvOptionTagCustomTensorBufferHandlers_deprecated = 21,  // Deprecated.
   kLiteRtEnvOptionTagRuntimeLibraryDir = 22,
   /// \internal This is for internal use only, for a custom runtime.

@@ -78,9 +78,6 @@ class EnvironmentOptions {
     /// Singleton ML Drift WebGPU/Dawn instance. Required for shared libraries
     /// to prevent them from creating their own instances.
     kWebGpuInstance = kLiteRtEnvOptionTagWebGpuInstance,
-    /// Dawn procedure table pointer. This allows shared libraries to use the
-    /// shared procedures instead of their own.
-    kWebGpuProcs = kLiteRtEnvOptionTagWebGpuProcs,
     /// Directory for the runtime library.
     kRuntimeLibraryDir = kLiteRtEnvOptionTagRuntimeLibraryDir,
     /// \internal This is for internal use only.
