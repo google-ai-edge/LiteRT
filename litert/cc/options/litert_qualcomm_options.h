@@ -459,6 +459,23 @@ class QualcommOptions {
     return static_cast<GraphIOTensorMemType>(val);
   }
 
+  /// @brief Target SoC model name (e.g., "SM8650").
+  ///
+  /// When set, this overrides the SoC detected from the device or QAIRT's
+  /// default during offline preparation. An empty string means "not specified"
+  /// and lets the backend pick.
+  void SetSocModel(const std::string& soc_model) {
+    LrtQualcommOptionsSetSocModel(options_, soc_model.c_str());
+  }
+  StringView GetSocModel() {
+    const char* val;
+    auto status = LrtQualcommOptionsGetSocModel(options_, &val);
+    if (status != kLiteRtStatusOk) {
+      return "";
+    }
+    return val;
+  }
+
  private:
   LrtQualcommOptions options_;
 };

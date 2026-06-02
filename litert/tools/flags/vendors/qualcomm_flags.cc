@@ -386,6 +386,13 @@ ABSL_FLAG(std::string, qualcomm_saver_output_dir, "",
           "can be replayed on any QNN backend. See Qualcomm "
           "AI Runtime (QAIRT) SDK document for more details.");
 
+ABSL_FLAG(std::string, qualcomm_soc_model, "",
+          "Target SoC model name (e.g., 'SM8650'). When set, this overrides "
+          "the SoC detected from the device or QAIRT's default during offline "
+          "preparation. Affects both compile (graph finalize / partition) and "
+          "dispatch (deviceCreate) paths. Leave empty to let the backend "
+          "pick.");
+
 namespace litert::qualcomm {
 
 bool AbslParseFlag(absl::string_view text,
@@ -598,6 +605,9 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto graph_io_tensor_mem_type =
       absl::GetFlag(FLAGS_qualcomm_graph_io_tensor_mem_type);
   opts.SetGraphIOTensorMemType(graph_io_tensor_mem_type);
+
+  const std::string soc_model = absl::GetFlag(FLAGS_qualcomm_soc_model);
+  opts.SetSocModel(soc_model);
 
   return {};
 }

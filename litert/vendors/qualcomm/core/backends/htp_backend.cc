@@ -402,9 +402,7 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
     QNN_LOG_INFO("Using provided SoC info. SoC name: %s.", soc_info->soc_name);
     soc_info_ = *soc_info;
   } else {
-#if defined(__x86_64__) || defined(_M_X64)
-    // Offline compilation on desktop hosts cannot query the target device.
-#else
+    // QNN HTP use emulation on x86_64
     if (auto device_platform_info = CreateDevicePlatformInfo();
         device_platform_info) {
       auto soc_model =
@@ -421,7 +419,6 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
           "fallback for Snapdragon X Elite.");
       soc_info_ = FindSocInfo(SnapdragonModel::SC8380XP).value_or(kSocInfos[0]);
     }
-#endif
 #endif
   }
   if (soc_info_.dsp_arch == DspArch::NONE) {

@@ -334,6 +334,18 @@ LiteRtStatus LrtQualcommOptionsSetSaverOutputDir(LrtQualcommOptions options,
 
 LiteRtStatus LrtQualcommOptionsGetSaverOutputDir(LrtQualcommOptions options,
                                                  const char** saver_output_dir);
+
+// soc_model
+
+// Target SoC model name (e.g., "SM8650"). When set, this overrides the SoC
+// detected from the device or from QAIRT's default during offline preparation.
+// An empty string means "not specified" and lets the backend pick.
+
+LiteRtStatus LrtQualcommOptionsSetSocModel(LrtQualcommOptions options,
+                                           const char* soc_model);
+
+LiteRtStatus LrtQualcommOptionsGetSocModel(LrtQualcommOptions options,
+                                           const char** soc_model);
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

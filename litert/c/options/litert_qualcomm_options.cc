@@ -57,6 +57,7 @@ struct LrtQualcommOptionsT {
   std::optional<std::string> saver_output_dir;
   std::optional<LrtQualcommOptionsGraphIOTensorMemType>
       graph_io_tensor_mem_type;
+  std::optional<std::string> soc_model;
 };
 
 LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
@@ -180,6 +181,9 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           status = LrtQualcommOptionsSetGraphIOTensorMemType(
               parsed_options,
               static_cast<LrtQualcommOptionsGraphIOTensorMemType>(*v));
+        } else if (key == "soc_model") {
+          status = LrtQualcommOptionsSetSocModel(parsed_options,
+                                                 std::string(value).c_str());
         }
 
         return status;
@@ -296,6 +300,9 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->graph_io_tensor_mem_type.has_value()) {
     toml << "graph_io_tensor_mem_type = "
          << static_cast<int>(*options->graph_io_tensor_mem_type) << "\n";
+  }
+  if (options->soc_model.has_value()) {
+    toml << "soc_model = \"" << *options->soc_model << "\"\n";
   }
   *identifier = LrtQualcommOptionsGetIdentifier();
   std::string toml_str = toml.str();
@@ -821,6 +828,29 @@ LiteRtStatus LrtQualcommOptionsGetBackend(
   }
 
   *qnn_backend = options->qnn_backend.value_or(kLiteRtQualcommBackendHtp);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetSocModel(LrtQualcommOptions options,
+                                           const char* soc_model) {
+  if (options == nullptr || soc_model == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->soc_model = soc_model;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetSocModel(LrtQualcommOptions options,
+                                           const char** soc_model) {
+  if (options == nullptr || soc_model == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *soc_model =
+      options->soc_model.has_value() ? options->soc_model->c_str() : "";
 
   return kLiteRtStatusOk;
 }

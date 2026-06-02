@@ -268,6 +268,18 @@ class LiteRtCompilerPluginT {
 
   const ::qnn::Options& Options() const { return qnn_options_; }
 
+  // Returns the soc_model from the user-supplied LrtQualcommOptions, or an
+  // empty string if no Qualcomm options were provided or no soc_model was set.
+  // Used as a fallback for the JIT path, where the soc_model argument to
+  // `LiteRtCompilerPluginPartition` / `LiteRtCompilerPluginCompile` is
+  // typically nullptr.
+  absl::string_view SocModelFromOptions() {
+    if (qualcomm_options_) {
+      return qualcomm_options_.Value().GetSocModel();
+    }
+    return "";
+  }
+
   void initQnnManager(std::unique_ptr<QnnManager> qnn_manager) {
     qnn_manager_ = std::move(qnn_manager);
   }
@@ -361,9 +373,13 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   ::litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
   QnnManager* qnn_manager = compiler_plugin->QNN();
   if (!qnn_manager) {
+    absl::string_view effective_soc_model =
+        (soc_model && *soc_model) ? absl::string_view(soc_model)
+                                  : compiler_plugin->SocModelFromOptions();
     auto qnn_manager_or = QnnManager::Create(
         compiler_plugin->Options(), compiler_plugin->shared_library_dir(),
-        soc_model ? qnn::FindSocModel(soc_model) : std::nullopt);
+        !effective_soc_model.empty() ? qnn::FindSocModel(effective_soc_model)
+                                     : std::nullopt);
     if (!qnn_manager_or) {
       LITERT_LOG(LITERT_ERROR, "%s", qnn_manager_or.Error().Message().data());
       return qnn_manager_or.Error().Status();
@@ -425,15 +441,26 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   litert::compiler::Model model(compiler_plugin->ctx(), partitions);
   auto num_partitions = model.NumSubgraphs();
 
+  absl::string_view effective_soc_model =
+      (soc_model && *soc_model) ? absl::string_view(soc_model)
+                                : compiler_plugin->SocModelFromOptions();
+
   LITERT_LOG(LITERT_INFO,
              "Starting QNN Compilation for %d subgraphs, soc_model=%s",
-             num_partitions, soc_model);
+             num_partitions,
+             effective_soc_model.empty()
+                 ? "<unset>"
+                 : std::string(effective_soc_model).c_str());
 
-  auto opt_soc_model = soc_model ? qnn::FindSocModel(soc_model) : std::nullopt;
+  auto opt_soc_model = !effective_soc_model.empty()
+                           ? qnn::FindSocModel(effective_soc_model)
+                           : std::nullopt;
   if (opt_soc_model) {
-    LITERT_LOG(LITERT_INFO, "Compiling QNN SoC model: %s", soc_model);
-  } else if (soc_model) {
-    LITERT_LOG(LITERT_ERROR, "Unexpected SoC model: %s", soc_model);
+    LITERT_LOG(LITERT_INFO, "Compiling QNN SoC model: %s",
+               opt_soc_model->soc_name);
+  } else if (!effective_soc_model.empty()) {
+    LITERT_LOG(LITERT_ERROR, "Unexpected SoC model: %s",
+               std::string(effective_soc_model).c_str());
     return kLiteRtStatusErrorInvalidArgument;
   }
 

@@ -151,6 +151,8 @@ std::string AbslUnparseFlag(QualcommOptions::Profiling options);
 
 }  // namespace litert::qualcomm
 
+ABSL_DECLARE_FLAG(std::string, qualcomm_soc_model);
+
 // TO OBJECT (internal) ////////////////////////////////////////////////////////
 
 namespace litert::qualcomm {

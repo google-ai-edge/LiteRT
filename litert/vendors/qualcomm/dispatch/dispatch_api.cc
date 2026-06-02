@@ -40,6 +40,7 @@
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/common.h"
+#include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
@@ -120,8 +121,22 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
 
   // TODO(Alen): initialize qnn_options from LiteRtOptions
   ::qnn::Options qnn_options;
+  std::optional<::qnn::SocInfo> soc_info_opt = std::nullopt;
   if (qnn_opts) {
     InitQnnOptions(qnn_options, qnn_opts.Value());
+    const absl::string_view soc_model_name = qnn_opts.Value().GetSocModel();
+    if (!soc_model_name.empty()) {
+      soc_info_opt = ::qnn::FindSocModel(soc_model_name);
+      if (!soc_info_opt) {
+        LITERT_LOG(LITERT_WARNING,
+                   "Unrecognized qualcomm_soc_model '%s', falling back to "
+                   "device-detected SoC.",
+                   std::string(soc_model_name).c_str());
+      } else {
+        LITERT_LOG(LITERT_INFO, "Dispatch using user-specified SoC model: %s",
+                   soc_info_opt->soc_name);
+      }
+    }
   } else {
     LITERT_LOG(LITERT_ERROR,
                "Failed to parse qnn options, using default settings. %s",
@@ -130,7 +145,7 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
   if (auto qnn_manager = QnnManager::Create(
           /*options=*/qnn_options,
           /*shared_library_dir=*/shared_library_dir_opt,
-          /*soc_model*/ std::nullopt);
+          /*soc_info=*/soc_info_opt);
       !qnn_manager) {
     LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().c_str());
     return qnn_manager.Error().Status();
