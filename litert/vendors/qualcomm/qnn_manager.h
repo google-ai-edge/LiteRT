@@ -178,6 +178,11 @@ class QnnManager {
   // called.
   Qnn_BackendHandle_t BackendHandle() { return backend_->GetBackendHandle(); }
 
+  // Get the owned backend. Nullptr before Init succeeds. Used by graph
+  // create/retrieve call sites to invoke backend-specific graph config hooks
+  // without knowing the concrete backend type.
+  ::qnn::QnnBackend* GetBackend() { return backend_.get(); }
+
   const ::qnn::Options& GetOptions() const { return options_; }
 
   // Gets SDK version from build ID.

@@ -36,12 +36,8 @@ class DspBackend : public QnnBackend {
 
   explicit DspBackend(const QNN_INTERFACE_VER_TYPE* qnn_api);
 
+  // Out-of-line: dsp_perf_control_ is a unique_ptr to an incomplete type.
   ~DspBackend();
-
-  DspBackend(const DspBackend&) = delete;
-  DspBackend& operator=(const DspBackend&) = delete;
-  DspBackend(DspBackend&&) = delete;
-  DspBackend& operator=(DspBackend&&) = delete;
 
   bool Init(const Options& options, std::optional<SocInfo> soc_info) override;
 

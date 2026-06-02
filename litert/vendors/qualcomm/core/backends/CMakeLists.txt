@@ -13,6 +13,7 @@ target_sources(qnn_backends
         dsp_backend.cc
         htp_backend.cc
         ir_backend.cc
+        lpai_backend.cc
         qnn_backend.cc
 )
 

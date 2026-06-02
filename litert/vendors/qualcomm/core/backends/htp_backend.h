@@ -8,12 +8,16 @@
 #include <memory>
 #include <optional>
 
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "HTP/QnnHtpCommon.h"  // from @qairt
 #include "HTP/QnnHtpDevice.h"  // from @qairt
+#include "HTP/QnnHtpGraph.h"  // from @qairt
 #include "QnnDevice.h"  // from @qairt
+#include "QnnGraph.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 
@@ -49,14 +53,13 @@ class HtpBackend : public QnnBackend {
 
   explicit HtpBackend(const QNN_INTERFACE_VER_TYPE* qnn_api);
 
+  // Out-of-line: htp_perf_control_ is a unique_ptr to an incomplete type.
   ~HtpBackend();
 
-  HtpBackend(const HtpBackend&) = delete;
-  HtpBackend& operator=(const HtpBackend&) = delete;
-  HtpBackend(HtpBackend&&) = delete;
-  HtpBackend& operator=(HtpBackend&&) = delete;
-
   bool Init(const Options& options, std::optional<SocInfo> soc_info) override;
+
+  GraphConfigBuilder BuildGraphConfigs(
+      const Options& options, absl::string_view qnn_graph_name) override;
 
   SocInfo GetSocInfo() { return soc_info_; }
 

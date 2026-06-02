@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "LPAI/QnnLpaiGraph.h"  // from @qairt
 #include "QnnLog.h"  // from @qairt
 
 // c++ enum and wrapper without dependency.
@@ -37,6 +38,7 @@ enum class BackendType {
   kHtpBackend,
   kDspBackend,
   kIrBackend,
+  kLpaiBackend,
 };
 
 enum class HtpPerformanceMode {
@@ -104,6 +106,31 @@ enum class GpuPerformanceMode {
   kHigh = 1,
   kNormal = 2,
   kLow = 3,
+};
+
+// LPAI (Low Power AI) options. The graph perf/affinity options below are
+// pushed into a graph after creation (see LpaiBackend); the target env and
+// hardware version feed the backend HW-info config at LpaiBackend::Init.
+// Sentinel zero values mean "user did not opt in" — let the QNN SDK pick its
+// default.
+enum class LpaiClientPerfType {
+  kDefault = 0,
+  kRealTime = 1,
+  kNonRealTime = 2,
+};
+
+enum class LpaiCoreAffinityType {
+  kDefault = 0,
+  kSoft = 1,
+  kHard = 2,
+};
+
+enum class LpaiTarget {
+  kUnknown = 0,
+  kX86 = 1,
+  kArm = 2,
+  kAdsp = 3,
+  kTensilica = 4,
 };
 
 class Options {
@@ -195,6 +222,25 @@ class Options {
                           absl::string_view target);
   const CustomOpPackage& GetCustomOpPackage() const;
 
+  // LPAI options.
+  void SetLpaiTarget(LpaiTarget lpai_target_env);
+  LpaiTarget GetLpaiTarget() const;
+
+  void SetLpaiFps(std::uint32_t lpai_fps);
+  std::uint32_t GetLpaiFps() const;
+
+  void SetLpaiFtrtRatio(std::uint32_t lpai_ftrt_ratio);
+  std::uint32_t GetLpaiFtrtRatio() const;
+
+  void SetLpaiClientPerfType(LpaiClientPerfType lpai_client_perf_type);
+  LpaiClientPerfType GetLpaiClientPerfType() const;
+
+  void SetLpaiCoreAffinityType(LpaiCoreAffinityType lpai_core_affinity);
+  LpaiCoreAffinityType GetLpaiCoreAffinityType() const;
+
+  void SetLpaiCoreSelection(std::uint32_t lpai_core_selection);
+  std::uint32_t GetLpaiCoreSelection() const;
+
  private:
   LogLevel log_level_ = LogLevel::kInfo;
   BackendType backend_type_ = BackendType::kHtpBackend;
@@ -225,6 +271,12 @@ class Options {
   std::string schematic_dir_;
   // Currently we only support one custom op package.
   CustomOpPackage custom_op_package_;
+  LpaiTarget lpai_target_env_ = LpaiTarget::kUnknown;
+  std::uint32_t lpai_fps_ = QNN_LPAI_GRAPH_DEFAULT_FPS;
+  std::uint32_t lpai_ftrt_ratio_ = QNN_LPAI_GRAPH_DEFAULT_FTRT_RATIO;
+  LpaiClientPerfType lpai_client_perf_type_ = LpaiClientPerfType::kDefault;
+  LpaiCoreAffinityType lpai_core_affinity_ = LpaiCoreAffinityType::kDefault;
+  std::uint32_t lpai_core_selection_ = 0;
 };
 
 // Gets a default logger implementation to stdout.

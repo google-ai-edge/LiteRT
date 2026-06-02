@@ -412,6 +412,7 @@ class QualcommOptions {
     kHtp = kLiteRtQualcommBackendHtp,
     kDsp = kLiteRtQualcommBackendDsp,
     kIr = kLiteRtQualcommBackendIr,
+    kLpai = kLiteRtQualcommBackendLpai,
   };
 
   void SetBackend(Backend backend) {
@@ -507,6 +508,105 @@ class QualcommOptions {
     custom_op_package.dispatch_package_path = dispatch_package_path;
     custom_op_package.target = target;
     return custom_op_package;
+  }
+
+  // LPAI options.
+
+  enum class LpaiTarget : int {
+    kUnknown = kLiteRtQualcommLpaiTargetUnknown,
+    kX86 = kLiteRtQualcommLpaiTargetX86,
+    kArm = kLiteRtQualcommLpaiTargetArm,
+    kAdsp = kLiteRtQualcommLpaiTargetAdsp,
+    kTensilica = kLiteRtQualcommLpaiTargetTensilica,
+  };
+
+  void SetLpaiTarget(LpaiTarget lpai_target_env) {
+    LrtQualcommOptionsSetLpaiTarget(
+        options_, static_cast<LrtQualcommOptionsLpaiTarget>(lpai_target_env));
+  }
+  LpaiTarget GetLpaiTarget() {
+    LrtQualcommOptionsLpaiTarget val;
+    auto status = LrtQualcommOptionsGetLpaiTarget(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return LpaiTarget::kUnknown;
+    }
+    return static_cast<LpaiTarget>(val);
+  }
+
+  void SetLpaiFps(std::uint32_t lpai_fps) {
+    LrtQualcommOptionsSetLpaiFps(options_, lpai_fps);
+  }
+  std::uint32_t GetLpaiFps() {
+    std::uint32_t val;
+    auto status = LrtQualcommOptionsGetLpaiFps(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return 1;
+    }
+    return val;
+  }
+
+  void SetLpaiFtrtRatio(std::uint32_t lpai_ftrt_ratio) {
+    LrtQualcommOptionsSetLpaiFtrtRatio(options_, lpai_ftrt_ratio);
+  }
+  std::uint32_t GetLpaiFtrtRatio() {
+    std::uint32_t val;
+    auto status = LrtQualcommOptionsGetLpaiFtrtRatio(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return 10;
+    }
+    return val;
+  }
+
+  enum class LpaiClientPerfType : int {
+    kDefault = kLiteRtQualcommLpaiClientPerfTypeDefault,
+    kRealTime = kLiteRtQualcommLpaiClientPerfTypeRealTime,
+    kNonRealTime = kLiteRtQualcommLpaiClientPerfTypeNonRealTime,
+  };
+
+  void SetLpaiClientPerfType(LpaiClientPerfType lpai_client_perf_type) {
+    LrtQualcommOptionsSetLpaiClientPerfType(
+        options_, static_cast<LrtQualcommOptionsLpaiClientPerfType>(
+                      lpai_client_perf_type));
+  }
+  LpaiClientPerfType GetLpaiClientPerfType() {
+    LrtQualcommOptionsLpaiClientPerfType val;
+    auto status = LrtQualcommOptionsGetLpaiClientPerfType(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return LpaiClientPerfType::kDefault;
+    }
+    return static_cast<LpaiClientPerfType>(val);
+  }
+
+  enum class LpaiCoreAffinityType : int {
+    kDefault = kLiteRtQualcommLpaiCoreAffinityTypeDefault,
+    kSoft = kLiteRtQualcommLpaiCoreAffinityTypeSoft,
+    kHard = kLiteRtQualcommLpaiCoreAffinityTypeHard,
+  };
+
+  void SetLpaiCoreAffinityType(LpaiCoreAffinityType lpai_core_affinity) {
+    LrtQualcommOptionsSetLpaiCoreAffinityType(
+        options_, static_cast<LrtQualcommOptionsLpaiCoreAffinityType>(
+                      lpai_core_affinity));
+  }
+  LpaiCoreAffinityType GetLpaiCoreAffinityType() {
+    LrtQualcommOptionsLpaiCoreAffinityType val;
+    auto status = LrtQualcommOptionsGetLpaiCoreAffinityType(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return LpaiCoreAffinityType::kDefault;
+    }
+    return static_cast<LpaiCoreAffinityType>(val);
+  }
+
+  void SetLpaiCoreSelection(std::uint32_t lpai_core_selection) {
+    LrtQualcommOptionsSetLpaiCoreSelection(options_, lpai_core_selection);
+  }
+  std::uint32_t GetLpaiCoreSelection() {
+    std::uint32_t val;
+    auto status = LrtQualcommOptionsGetLpaiCoreSelection(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return 0;
+    }
+    return val;
   }
 
  private:

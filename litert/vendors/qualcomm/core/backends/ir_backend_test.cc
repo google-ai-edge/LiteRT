@@ -9,6 +9,9 @@
 #include <gtest/gtest.h>
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
+#include "IR/QnnIrGraph.h"
+#include "QnnGraph.h"  // from @qairt
+#include "QnnInterface.h"  // from @qairt
 
 namespace qnn {
 namespace {
@@ -48,6 +51,33 @@ TEST_F(IrBackendTest, DISABLED_InitializeWithLogLevelVerboseTest) {
 
   ASSERT_TRUE(backend_->GetBackendHandle());
   ASSERT_TRUE(backend_->GetLogHandle());
+}
+
+// BuildGraphConfigs only reads options and the graph name; it never touches the
+// QNN API, so a default-constructed fake API is enough and no backend library
+// is needed.
+TEST(IrBackendGraphConfigTest, ConfigsCarrySerializationAndDlcPath) {
+  QNN_INTERFACE_VER_TYPE api{};
+  IrBackend backend(&api);
+
+  Options options;
+  options.SetDlcDir("/tmp/dlc");
+  auto mgr = backend.BuildGraphConfigs(options, "my_graph");
+  auto configs = mgr.Configs();
+
+  // The span is null-terminated, so it holds [serialization_config, nullptr].
+  ASSERT_EQ(configs.size(), 2u);
+  ASSERT_NE(configs[0], nullptr);
+  EXPECT_EQ(configs[1], nullptr);
+  EXPECT_EQ(configs[0]->option, QNN_GRAPH_CONFIG_OPTION_CUSTOM);
+
+  auto* custom =
+      static_cast<QnnIrGraph_CustomConfig_t*>(configs[0]->customConfig);
+  ASSERT_NE(custom, nullptr);
+  EXPECT_EQ(custom->option, QNN_IR_GRAPH_CONFIG_OPTION_SERIALIZATION);
+  EXPECT_EQ(custom->serializationOption.serializationType,
+            QNN_IR_GRAPH_SERIALIZATION_TYPE_FLAT_BUFFER);
+  EXPECT_STREQ(custom->serializationOption.outputPath, "/tmp/dlc/my_graph.dlc");
 }
 
 }  // namespace

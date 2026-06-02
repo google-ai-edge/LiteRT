@@ -3,28 +3,66 @@
 
 #include "litert/vendors/qualcomm/core/backends/htp_backend.h"
 
-#include <array>
-#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <utility>
 #include <vector>
 
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/backends/backend_utils.h"
+#include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "HTP/QnnHtpDevice.h"  // from @qairt
+#include "HTP/QnnHtpGraph.h"  // from @qairt
 #include "HTP/QnnHtpPerfInfrastructure.h"  // from @qairt
 #include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnDevice.h"  // from @qairt
+#include "QnnGraph.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 
 namespace qnn {
+
+namespace {
+
+float GetOptimizationValue(OptimizationLevel level) {
+  // Default optimization level value is 2
+  switch (level) {
+    case OptimizationLevel::kHtpOptimizeForInference:
+      return 2.0f;
+    case OptimizationLevel::kHtpOptimizeForPrepare:
+      return 1.0f;
+    case OptimizationLevel::kHtpOptimizeForInferenceO3:
+      return 3.0f;
+    default:
+      return 2.0f;
+  }
+}
+
+Qnn_Priority_t GetGraphPriorityValue(GraphPriority graph_priority) {
+  // Default priority is NORMAL
+  switch (graph_priority) {
+    case GraphPriority::kDefault:
+      return QNN_PRIORITY_DEFAULT;
+    case GraphPriority::kLow:
+      return QNN_PRIORITY_LOW;
+    case GraphPriority::kNormal:
+      return QNN_PRIORITY_NORMAL;
+    case GraphPriority::kNormalHigh:
+      return QNN_PRIORITY_NORMAL_HIGH;
+    case GraphPriority::kHigh:
+      return QNN_PRIORITY_HIGH;
+    default:
+      return QNN_PRIORITY_UNDEFINED;
+  }
+}
+
+}  // namespace
 
 // HTP PERF CONTROL /////////////////////////////////////////////////////////
 class HtpBackend::HtpPerfControl {
@@ -406,9 +444,8 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
 #else
     if (auto device_platform_info = CreateDevicePlatformInfo();
         device_platform_info) {
-      auto soc_model =
-          device_platform_info->v1.hwDevices->v1.deviceInfoExtension
-              ->onChipDevice.socModel;
+      auto soc_model = device_platform_info->v1.hwDevices->v1
+                           .deviceInfoExtension->onChipDevice.socModel;
       auto soc_info_online =
           FindSocInfo(static_cast<SnapdragonModel>(soc_model));
       soc_info_ = soc_info_online.value_or(kSocInfos[0]);
@@ -520,16 +557,15 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
           "Failed to initialize HTP performance Control, using default "
           "performance mode.");
       return false;
-    } else {
-      if (soc_info_.dsp_arch >= DspArch::V69) {
-        if (!htp_perf_control_->SetRpcPolling(performance_mode)) {
-          QNN_LOG_ERROR("Failed to initialize HTP RPC polling.");
-          return false;
-        }
-      }
-
-      htp_perf_control_->UpVote();
     }
+    if (soc_info_.dsp_arch >= DspArch::V69) {
+      if (!htp_perf_control_->SetRpcPolling(performance_mode)) {
+        QNN_LOG_ERROR("Failed to initialize HTP RPC polling.");
+        return false;
+      }
+    }
+
+    htp_perf_control_->UpVote();
   }
 
   // Follow RAII pattern to manage handles.
@@ -538,6 +574,107 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   device_handle_ = std::move(local_device_handle);
 
   return true;
+}
+
+GraphConfigBuilder HtpBackend::BuildGraphConfigs(
+    const Options& options, absl::string_view /*qnn_graph_name*/) {
+  // FP16 support gates the relax-precision config and P-point; older archs use
+  // the legacy config set. Mirrors QnnManager::IsFp16Supported.
+  // TODO(jiunkaiy): Remove this branch after upgrading to stricter SDK
+  // restrictions.
+  const bool fp16_supported = soc_info_.dsp_arch != DspArch::V68 &&
+                              soc_info_.soc_model != SnapdragonModel::SAR2230P;
+
+  GraphConfigBuilder mgr;
+
+  if (fp16_supported) {
+    // QNN suggest always enable relax precision.
+    auto& precision = mgr.AddCustom<QnnHtpGraph_CustomConfig_t>(
+        QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT);
+    precision.option = QNN_HTP_GRAPH_CONFIG_OPTION_PRECISION;
+    precision.precision = QNN_PRECISION_FLOAT16;
+  }
+
+  // Default use O3 for now.
+  auto& optimization = mgr.AddCustom<QnnHtpGraph_CustomConfig_t>(
+      QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT);
+  optimization.option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
+  optimization.optimizationOption.type =
+      QNN_HTP_GRAPH_OPTIMIZATION_TYPE_FINALIZE_OPTIMIZATION_FLAG;
+  optimization.optimizationOption.floatValue =
+      GetOptimizationValue(options.GetOptimizationLevel());
+
+  // VTCM — default value is 0 which means the MAX value.
+  auto& vtcm = mgr.AddCustom<QnnHtpGraph_CustomConfig_t>(
+      QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT);
+  vtcm.option = QNN_HTP_GRAPH_CONFIG_OPTION_VTCM_SIZE;
+  vtcm.vtcmSizeInMB = options.GetVtcmSize();
+
+  // FoldRelu Off
+  auto& fold_relu = mgr.AddCustom<QnnHtpGraph_CustomConfig_t>(
+      QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT);
+  fold_relu.option =
+      QNN_HTP_GRAPH_CONFIG_OPTION_FOLD_RELU_ACTIVATION_INTO_CONV_OFF;
+  fold_relu.foldReluActivationIntoConvOff = !options.GetUseFoldReLU();
+
+  // ConvHMX Off
+  auto& conv_hmx = mgr.AddCustom<QnnHtpGraph_CustomConfig_t>(
+      QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT);
+  conv_hmx.option = QNN_HTP_GRAPH_CONFIG_OPTION_SHORT_DEPTH_CONV_ON_HMX_OFF;
+  conv_hmx.shortDepthConvOnHmxOff = !options.GetUseConvHMX();
+
+  if (fp16_supported) {
+    // P Point — only on fp16-capable arches; legacy arches don't support it.
+    const std::int32_t htp_p_point = options.GetHtpPPoint();
+    if (htp_p_point > 0) {
+      auto& p_point = mgr.AddCustom<QnnHtpGraph_CustomConfig_t>(
+          QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT);
+      p_point.option = QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG;
+      p_point.finalizeConfig.key = "P";
+      p_point.finalizeConfig.value = {QNN_DATATYPE_INT_32,
+                                      {.int32Value = htp_p_point}};
+    } else if (htp_p_point < 0) {
+      QNN_LOG_WARNING(
+          "Invalid P point (%d): negative values not supported, skipping "
+          "P point config.",
+          htp_p_point);
+    }
+  }
+
+  // Hvx Thread
+  if (const std::uint32_t num_hvx_threads = options.GetNumHvxThreads();
+      num_hvx_threads > 0) {
+    auto& hvx_threads = mgr.AddCustom<QnnHtpGraph_CustomConfig_t>(
+        QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT);
+    hvx_threads.option = QNN_HTP_GRAPH_CONFIG_OPTION_NUM_HVX_THREADS;
+    hvx_threads.numHvxThreads = num_hvx_threads;
+  }
+
+  // DLBC (activations / inputs). Offline-prep only.
+  if (options.GetHtpDlbc()) {
+    auto& dlbc = mgr.AddCustom<QnnHtpGraph_CustomConfig_t>(
+        QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT);
+    dlbc.option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
+    dlbc.optimizationOption.type = QNN_HTP_GRAPH_OPTIMIZATION_TYPE_ENABLE_DLBC;
+    dlbc.optimizationOption.floatValue = 1.0f;
+  }
+
+  // DLBC weights. Offline-prep only.
+  if (options.GetHtpDlbcWeights()) {
+    auto& dlbc_weights = mgr.AddCustom<QnnHtpGraph_CustomConfig_t>(
+        QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT);
+    dlbc_weights.option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
+    dlbc_weights.optimizationOption.type =
+        QNN_HTP_GRAPH_OPTIMIZATION_TYPE_ENABLE_DLBC_WEIGHTS;
+    dlbc_weights.optimizationOption.floatValue = 1.0f;
+  }
+
+  // Graph Priority
+  auto& priority = mgr.AddGraphConfig();
+  priority.option = QNN_GRAPH_CONFIG_OPTION_PRIORITY;
+  priority.priority = GetGraphPriorityValue(options.GetGraphPriority());
+
+  return mgr;
 }
 
 }  // namespace qnn
