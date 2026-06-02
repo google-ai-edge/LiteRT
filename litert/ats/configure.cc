@@ -99,7 +99,7 @@ ABSL_FLAG(std::string, csv, "",
           "If specified, a CSV file will be written to this path containing "
           "the results of the test run.");
 
-ABSL_FLAG(bool, dump_report, true,
+ABSL_FLAG(bool, dump_report, false,
           "Whether to dump the report to the user after completion.");
 
 ABSL_FLAG(bool, compile_mode, false,
