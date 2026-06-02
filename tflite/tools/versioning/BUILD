@@ -101,6 +101,7 @@ tf_cc_test(
         "//tflite/core/c:common",
         "//tflite/kernels/internal:types",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_googletest//:gtest_main",
         "@org_tensorflow//tensorflow/core/platform:resource_loader",
     ],
