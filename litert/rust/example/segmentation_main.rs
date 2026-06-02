@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 /// Simplified port of litert/samples/async_segmentation/segmentation_model.cc
 ///
 /// This example shows how to use LiteRT Rust bindings to run a segmentation model.
@@ -49,8 +48,8 @@ struct SegmentationModel {
 
 impl SegmentationModel {
     fn initialize(model_path: &str) -> Result<SegmentationModel, litert::Error> {
-        let m = litert::Model::create_model_from_file(model_path)?;
         let env = litert::EnvironmentBuilder::build_default()?;
+        let m = litert::Model::create_model_from_file(&env, model_path)?;
         let options = litert::Options::create_with_accelerator(litert::LiteRtHwAccelerator::Cpu)?;
         let cm = litert::CompiledModel::create(&env, &m, &options)?;
         Ok(SegmentationModel { model: m, env: env, compiled_model: cm })

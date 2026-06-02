@@ -40,7 +40,7 @@ namespace {
 // Simulates a precompiled device model so that we can run tests on the x86
 // NPU Simulator.
 Expected<litert::OwningBufferRef<uint8_t>> CreateModelFromReferenceData(
-    LiteRtModel* model) {
+    LiteRtEnvironment env, LiteRtModel* model) {
   auto tfl_path = testing::GetTestFilePath("simple_model_npu.tflite");
   auto bin_path = testing::GetLiteRtPath(
       "vendors/google_tensor/dispatch/"
@@ -50,8 +50,9 @@ Expected<litert::OwningBufferRef<uint8_t>> CreateModelFromReferenceData(
       auto model_buf_with_bytecode,
       litert::internal::GetModelBufWithByteCode(tfl_path, bin_path));
 
-  LITERT_RETURN_IF_ERROR(LiteRtCreateModelFromBuffer(
-      model_buf_with_bytecode.Data(), model_buf_with_bytecode.Size(), model));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtCreateModelFromBuffer(env, model_buf_with_bytecode.Data(),
+                                  model_buf_with_bytecode.Size(), model));
 
   return model_buf_with_bytecode;
 }
@@ -67,19 +68,19 @@ TEST(DispatchApiStaticLinkTest, RegistersStaticallyLinkedAccelerator) {
 }
 
 TEST(DispatchApiStaticLinkTest, CanCreateCompiledModel) {
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
+            kLiteRtStatusOk);
+
   LiteRtModel model;
-  LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_holder,
-                              CreateModelFromReferenceData(&model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto buffer_holder, CreateModelFromReferenceData(environment, &model));
 
   LiteRtOptions compilation_options;
   ASSERT_EQ(LiteRtCreateOptions(&compilation_options), kLiteRtStatusOk);
   ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(compilation_options,
                                                  kLiteRtHwAcceleratorNpu),
-            kLiteRtStatusOk);
-
-  LiteRtEnvironment environment;
-  LiteRtEnvOption options = {};
-  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
             kLiteRtStatusOk);
 
   LiteRtCompiledModel compiled_model;
@@ -94,19 +95,19 @@ TEST(DispatchApiStaticLinkTest, CanCreateCompiledModel) {
 }
 
 TEST(DispatchApiStaticLinkTest, CanRunCompiledModel) {
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
+            kLiteRtStatusOk);
+
   LiteRtModel model;
-  LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_holder,
-                              CreateModelFromReferenceData(&model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto buffer_holder, CreateModelFromReferenceData(environment, &model));
 
   LiteRtOptions compilation_options;
   ASSERT_EQ(LiteRtCreateOptions(&compilation_options), kLiteRtStatusOk);
   ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(compilation_options,
                                                  kLiteRtHwAcceleratorNpu),
-            kLiteRtStatusOk);
-
-  LiteRtEnvironment environment;
-  LiteRtEnvOption options = {};
-  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
             kLiteRtStatusOk);
 
   LiteRtCompiledModel compiled_model;

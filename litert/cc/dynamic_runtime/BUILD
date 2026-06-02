@@ -175,6 +175,7 @@ cc_library(
         "//litert:litert_public",
     ],
     deps = [
+        ":litert_environment",
         "//litert/cc:litert_api_types",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
@@ -222,6 +223,7 @@ cc_library(
         "//litert:litert_public",
     ],
     deps = [
+        ":litert_environment",
         ":litert_model",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
@@ -333,6 +335,7 @@ cc_library(
     hdrs = ["//litert/cc/internal:litert_model_predicates.h"],
     visibility = ["//litert:litert_public"],
     deps = [
+        ":litert_environment",
         ":litert_extended_model",
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",

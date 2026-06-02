@@ -329,20 +329,24 @@ class RuntimeProxy {
   // LiteRtModel
   //
 
-  LiteRtStatus CreateModelFromFile(const char* filename, LiteRtModel* model) {
-    LITERT_PROXY_METHOD_STATUS(litert_create_model_from_file, filename, model);
+  LiteRtStatus CreateModelFromFile(LiteRtEnvironment environment,
+                                   const char* filename, LiteRtModel* model) {
+    LITERT_PROXY_METHOD_STATUS(litert_create_model_from_file, environment,
+                               filename, model);
   }
 
-  LiteRtStatus CreateModelFromBuffer(const void* buffer_addr,
+  LiteRtStatus CreateModelFromBuffer(LiteRtEnvironment environment,
+                                     const void* buffer_addr,
                                      size_t buffer_size, LiteRtModel* model) {
-    LITERT_PROXY_METHOD_STATUS(litert_create_model_from_buffer, buffer_addr,
-                               buffer_size, model);
+    LITERT_PROXY_METHOD_STATUS(litert_create_model_from_buffer, environment,
+                               buffer_addr, buffer_size, model);
   }
 
-  LiteRtStatus CreateModelFromFd(int fd, size_t offset, size_t size,
+  LiteRtStatus CreateModelFromFd(LiteRtEnvironment environment, int fd,
+                                 size_t offset, size_t size,
                                  LiteRtModel* model) {
-    LITERT_PROXY_METHOD_STATUS(litert_create_model_from_fd, fd, offset, size,
-                               model);
+    LITERT_PROXY_METHOD_STATUS(litert_create_model_from_fd, environment, fd,
+                               offset, size, model);
   }
 
   LiteRtStatus GetModelMetadata(LiteRtModel model, const char* metadata_key,

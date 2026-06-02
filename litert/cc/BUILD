@@ -874,6 +874,7 @@ cc_library(
         ":litert_buffer_ref",
         ":litert_common",
         ":litert_element_type",
+        ":litert_environment",
         ":litert_expected",
         ":litert_macros",
         ":litert_model_types",

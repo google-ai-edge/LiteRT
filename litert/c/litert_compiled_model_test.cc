@@ -47,18 +47,19 @@ namespace {
 TEST(CompiledModelTest, Basic) {
   auto path = testing::GetTestFilePath(kModelFileName);
 
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  LITERT_ASSERT_OK(
+      LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment));
+
   LiteRtModel model;
-  LITERT_ASSERT_OK(LiteRtCreateModelFromFile(path.c_str(), &model));
+  LITERT_ASSERT_OK(
+      LiteRtCreateModelFromFile(environment, path.c_str(), &model));
 
   LiteRtOptions jit_compilation_options;
   LITERT_ASSERT_OK(LiteRtCreateOptions(&jit_compilation_options));
   LITERT_ASSERT_OK(LiteRtSetOptionsHardwareAccelerators(
       jit_compilation_options, kLiteRtHwAcceleratorCpu));
-
-  LiteRtEnvironment environment;
-  LiteRtEnvOption options = {};
-  LITERT_ASSERT_OK(
-      LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment));
 
   LiteRtCompiledModel compiled_model;
   LITERT_ASSERT_OK(LiteRtCreateCompiledModel(
@@ -166,18 +167,19 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
   // Use the dynamic model for testing resize functionality
   auto path = testing::GetTestFilePath(kDynamicModelFileName);
 
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  LITERT_ASSERT_OK(
+      LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment));
+
   LiteRtModel model;
-  LITERT_ASSERT_OK(LiteRtCreateModelFromFile(path.c_str(), &model));
+  LITERT_ASSERT_OK(
+      LiteRtCreateModelFromFile(environment, path.c_str(), &model));
 
   LiteRtOptions jit_compilation_options;
   LITERT_ASSERT_OK(LiteRtCreateOptions(&jit_compilation_options));
   LITERT_ASSERT_OK(LiteRtSetOptionsHardwareAccelerators(
       jit_compilation_options, kLiteRtHwAcceleratorCpu));
-
-  LiteRtEnvironment environment;
-  LiteRtEnvOption options = {};
-  LITERT_ASSERT_OK(
-      LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment));
 
   LiteRtCompiledModel compiled_model;
   LITERT_ASSERT_OK(LiteRtCreateCompiledModel(
@@ -236,18 +238,19 @@ TEST(CompiledModelTest, ResizeInputTensorWithStaticModel) {
   // Use the simple model to ensure resize will error out.
   auto path = testing::GetTestFilePath(kModelFileName);
 
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  LITERT_ASSERT_OK(
+      LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment));
+
   LiteRtModel model;
-  LITERT_ASSERT_OK(LiteRtCreateModelFromFile(path.c_str(), &model));
+  LITERT_ASSERT_OK(
+      LiteRtCreateModelFromFile(environment, path.c_str(), &model));
 
   LiteRtOptions jit_compilation_options;
   LITERT_ASSERT_OK(LiteRtCreateOptions(&jit_compilation_options));
   LITERT_ASSERT_OK(LiteRtSetOptionsHardwareAccelerators(
       jit_compilation_options, kLiteRtHwAcceleratorCpu));
-
-  LiteRtEnvironment environment;
-  LiteRtEnvOption options = {};
-  LITERT_ASSERT_OK(
-      LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment));
 
   LiteRtCompiledModel compiled_model;
   LITERT_ASSERT_OK(LiteRtCreateCompiledModel(
@@ -277,18 +280,19 @@ TEST(CompiledModelTest, GetOutputTensorLayoutsWithDynamicModel) {
   // Use the dynamic model for testing resize functionality
   auto path = testing::GetTestFilePath(kDynamicModelFileName);
 
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  LITERT_ASSERT_OK(
+      LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment));
+
   LiteRtModel model;
-  LITERT_ASSERT_OK(LiteRtCreateModelFromFile(path.c_str(), &model));
+  LITERT_ASSERT_OK(
+      LiteRtCreateModelFromFile(environment, path.c_str(), &model));
 
   LiteRtOptions jit_compilation_options;
   LITERT_ASSERT_OK(LiteRtCreateOptions(&jit_compilation_options));
   LITERT_ASSERT_OK(LiteRtSetOptionsHardwareAccelerators(
       jit_compilation_options, kLiteRtHwAcceleratorCpu));
-
-  LiteRtEnvironment environment;
-  LiteRtEnvOption options = {};
-  LITERT_ASSERT_OK(
-      LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment));
 
   LiteRtCompiledModel compiled_model;
   LITERT_ASSERT_OK(LiteRtCreateCompiledModel(

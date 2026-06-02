@@ -28,6 +28,8 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/scoped_file.h"
@@ -53,9 +55,14 @@ TEST(LiteRtModelTest, CreateFromAllocation) {
   auto allocation = std::make_unique<tflite::MemoryAllocation>(
       model_buffer.Data(), model_buffer.Size(), tflite::DefaultErrorReporter());
 
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
+            kLiteRtStatusOk);
+
   LiteRtModel model = nullptr;
-  LITERT_ASSERT_OK(
-      LiteRtCreateModelFromAllocation(std::move(allocation), &model));
+  LITERT_ASSERT_OK(LiteRtCreateModelFromAllocation(
+      environment, std::move(allocation), &model));
   ASSERT_NE(model, nullptr);
 
   LiteRtParamIndex num_subgraphs;
@@ -63,6 +70,7 @@ TEST(LiteRtModelTest, CreateFromAllocation) {
   EXPECT_EQ(num_subgraphs, 1);
 
   LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
 }
 
 #if !defined(LITERT_WINDOWS_OS)
@@ -71,14 +79,19 @@ TEST(LiteRtModelTest, CreateFromFd) {
     GTEST_SKIP() << "MMAPAllocation is not supported";
   }
 
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
+            kLiteRtStatusOk);
+
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto model_file, litert::ScopedFile::Open(
                            litert::testing::GetTestFilePath("one_mul.tflite")));
   LITERT_ASSERT_OK_AND_ASSIGN(size_t model_size, model_file.GetSize());
 
   LiteRtModel model = nullptr;
-  LITERT_ASSERT_OK(
-      LiteRtCreateModelFromFd(model_file.file(), 0, model_size, &model));
+  LITERT_ASSERT_OK(LiteRtCreateModelFromFd(environment, model_file.file(), 0,
+                                           model_size, &model));
   ASSERT_NE(model, nullptr);
 
   LiteRtParamIndex num_subgraphs;
@@ -86,6 +99,7 @@ TEST(LiteRtModelTest, CreateFromFd) {
   EXPECT_EQ(num_subgraphs, 1);
 
   LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
 }
 #endif  // !defined(LITERT_WINDOWS_OS)
 
@@ -312,6 +326,11 @@ TEST(LiteRtTensorTest, QuantizationPerChannel) {
 }
 
 TEST(LiteRtTensorTest, QuantizationBlockWise) {
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
+            kLiteRtStatusOk);
+
   auto runtime =
       litert::testing::MakeRuntimeFromTestFile("blockwise_quantized.tflite");
   ASSERT_TRUE(runtime);
@@ -321,8 +340,8 @@ TEST(LiteRtTensorTest, QuantizationBlockWise) {
       model_buffer.Data(), model_buffer.Size(), tflite::DefaultErrorReporter());
 
   LiteRtModel model = nullptr;
-  LITERT_ASSERT_OK(
-      LiteRtCreateModelFromAllocation(std::move(allocation), &model));
+  LITERT_ASSERT_OK(LiteRtCreateModelFromAllocation(
+      environment, std::move(allocation), &model));
   ASSERT_NE(model, nullptr);
 
   LiteRtSubgraph subgraph;
@@ -373,9 +392,15 @@ TEST(LiteRtTensorTest, QuantizationBlockWise) {
   EXPECT_EQ(block_wise_quantization.block_size, 32);
 
   LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
 }
 
 TEST(LiteRtTensorTest, QwenQuantizationBlockWise) {
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
+            kLiteRtStatusOk);
+
   auto runtime = litert::testing::MakeRuntimeFromTestFile(
       "qwen_fc_blockwise_quantized.tflite");
   ASSERT_TRUE(runtime);
@@ -385,8 +410,8 @@ TEST(LiteRtTensorTest, QwenQuantizationBlockWise) {
       model_buffer.Data(), model_buffer.Size(), tflite::DefaultErrorReporter());
 
   LiteRtModel model = nullptr;
-  LITERT_ASSERT_OK(
-      LiteRtCreateModelFromAllocation(std::move(allocation), &model));
+  LITERT_ASSERT_OK(LiteRtCreateModelFromAllocation(
+      environment, std::move(allocation), &model));
   ASSERT_NE(model, nullptr);
 
   LiteRtSubgraph subgraph;
@@ -418,6 +443,7 @@ TEST(LiteRtTensorTest, QwenQuantizationBlockWise) {
   EXPECT_EQ(block_wise_quantization.block_size, 32);
 
   LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
 }
 
 TEST(LiteRtOpTest, GetOpCode) {

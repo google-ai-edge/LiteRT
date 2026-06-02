@@ -16,6 +16,7 @@
 
 use crate::bindings::*;
 use crate::call_check_status;
+use crate::environment::Environment;
 use crate::error::{Error, ErrorCause};
 use crate::helper_funs::c_str_to_str;
 use crate::ElementType;
@@ -353,26 +354,32 @@ impl<'a> Subgraph<'a> {
 
 impl Model {
     /// Creates a model from a file path.
-    pub fn create_model_from_file(path: &str) -> Result<Self, Error> {
+    pub fn create_model_from_file(environment: &Environment, path: &str) -> Result<Self, Error> {
         let path_c_string =
             CString::new(path).expect("CString::new failed: string contains null bytes");
         let c_ptr: *const c_char = path_c_string.as_ptr();
         let mut raw_model_ptr: LiteRtModel = std::ptr::null_mut();
         call_check_status!(
             // SAFETY: c_ptr is a valid pointer to the memory buffer provided by safe Rust code.
-            unsafe { LiteRtCreateModelFromFile(c_ptr, &mut raw_model_ptr) },
+            unsafe {
+                LiteRtCreateModelFromFile(environment.raw_environment, c_ptr, &mut raw_model_ptr)
+            },
             ErrorCause::CreateModelFromFile
         );
         Ok(Model { raw_model: raw_model_ptr })
     }
 
     /// Creates a model from a memory buffer.
-    pub fn create_model_from_buffer(buffer: &mut [u8]) -> Result<Self, Error> {
+    pub fn create_model_from_buffer(
+        environment: &Environment,
+        buffer: &mut [u8],
+    ) -> Result<Self, Error> {
         let mut raw_model_ptr: LiteRtModel = std::ptr::null_mut();
         call_check_status!(
             // SAFETY: buffer is a valid pointer to the memory buffer provided by safe Rust code.
             unsafe {
                 LiteRtCreateModelFromBuffer(
+                    environment.raw_environment,
                     buffer.as_ptr() as *const c_void,
                     buffer.len(),
                     &mut raw_model_ptr,
@@ -424,7 +431,7 @@ impl Model {
             unsafe { LiteRtGetModelSignature(self.raw_model, index, &mut raw_signature_ptr) },
             ErrorCause::GetModelSignature
         );
-        Ok(Signature { raw_signature: raw_signature_ptr, _phantom: PhantomData{} })
+        Ok(Signature { raw_signature: raw_signature_ptr, _phantom: PhantomData {} })
     }
 }
 
