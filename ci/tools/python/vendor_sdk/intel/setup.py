@@ -53,23 +53,20 @@ IS_X86_ARCHITECTURE = platform.machine() in ('x86_64', 'AMD64', 'i386', 'i686')
 # the Intel OV compiler plugin and dispatch library at build time; the
 # archive URL below pins the matching toolkit build from which we extract
 # the NPU compiler shared library at pip install time. OpenVINO's build
-# number (the numeric segment in `2026.2.0-21820-<commit>/`) uniquely
-# identifies a build — ci/check_openvino_version_sync.py enforces that
-# this file and openvino.bzl pin the same one.
+# number (the numeric segment after the base version, e.g. `21903` in
+# `2026.2.0.21903.52ddc073857`) uniquely identifies a build —
+# ci/check_openvino_version_sync.py enforces that this file and
+# openvino.bzl pin the same one.
 #
 # install_requires pins the matching PyPI `openvino` wheel by PEP 440
-# version string (date-stamped, e.g. `2026.2.0.dev20260506`). PyPI does
-# not allow direct-URL dependencies in hosted packages, so users need
-# `--extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly`
-# at install time to locate the nightly wheel.
+# version string (e.g. `2026.2.0`).
 # LINT.IfChange(wheel_openvino_sdk_version)
-_OV_BUILD_NUMBER = '21820'
-_OV_COMMIT = '9a25caa5a15'
-_OV_PEP440_VERSION = '2026.2.0.dev20260506'
-_OV_ARCHIVE_DIR = f'2026.2.0-{_OV_BUILD_NUMBER}-{_OV_COMMIT}'
+_OV_BUILD_NUMBER = '21903'
+_OV_COMMIT = '52ddc073857'
+_OV_PEP440_VERSION = '2026.2.0'
+_OV_FILENAME_VERSION = f'2026.2.0.{_OV_BUILD_NUMBER}.{_OV_COMMIT}'
 _OV_BASE_URL = (
-    'https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly'
-    f'/{_OV_ARCHIVE_DIR}'
+    'https://storage.openvinotoolkit.org/repositories/openvino/packages/2026.2'
 )
 # LINT.ThenChange(
 #   ../../../../../third_party/intel_openvino/openvino.bzl:openvino_packages,
@@ -112,19 +109,19 @@ _WINDOWS_MEMBERS = (
 _ARCHIVES = {
     'ubuntu22': {
         'url': (
-            f'{_OV_BASE_URL}/openvino_toolkit_ubuntu22_{_OV_PEP440_VERSION}_x86_64.tgz'
+            f'{_OV_BASE_URL}/linux/openvino_toolkit_ubuntu22_{_OV_FILENAME_VERSION}_x86_64.tgz'
         ),
         'members': _LINUX_MEMBERS,
     },
     'ubuntu24': {
         'url': (
-            f'{_OV_BASE_URL}/openvino_toolkit_ubuntu24_{_OV_PEP440_VERSION}_x86_64.tgz'
+            f'{_OV_BASE_URL}/linux/openvino_toolkit_ubuntu24_{_OV_FILENAME_VERSION}_x86_64.tgz'
         ),
         'members': _LINUX_MEMBERS,
     },
     'windows': {
         'url': (
-            f'{_OV_BASE_URL}/openvino_toolkit_windows_{_OV_PEP440_VERSION}_x86_64.zip'
+            f'{_OV_BASE_URL}/windows/openvino_toolkit_windows_{_OV_FILENAME_VERSION}_x86_64.zip'
         ),
         'members': _WINDOWS_MEMBERS,
     },

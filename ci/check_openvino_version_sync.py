@@ -19,9 +19,8 @@ OpenVINO SDK pinned in third_party/intel_openvino/openvino.bzl. The NPU
 compiler shared library and the `openvino` PyPI wheel pinned by
 install_requires are both wired up in ci/tools/python/vendor_sdk/intel/
 setup.py. All three must pin the same OpenVINO build; the build number
-(the numeric segment in `2026.2.0-21820-<commit>/`) is the unique
-identifier — it appears both in the toolkit archive directory and as the
-PyPI wheel filename's build tag.
+(e.g. `21903` in `2026.2.0.21903.52ddc073857`) is the unique
+identifier — it appears in the toolkit archive filename.
 """
 
 import pathlib
@@ -32,10 +31,10 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 BZL = REPO_ROOT / "third_party/intel_openvino/openvino.bzl"
 SETUP = REPO_ROOT / "ci/tools/python/vendor_sdk/intel/setup.py"
 
-# Nightly archive paths look like:
-#   .../packages/nightly/2026.2.0-21820-9a25caa5a15/openvino_toolkit_*.tgz
-# We extract the build number (21820) as the canonical sync key.
-_BZL_BUILD_RE = re.compile(r"/nightly/\d{4}\.\d+\.\d+-(\d+)-[0-9a-f]{7,40}/")
+# Official release archive filenames look like:
+#   openvino_toolkit_ubuntu24_2026.2.0.21903.52ddc073857_x86_64.tgz
+# We extract the build number (21903) as the canonical sync key.
+_BZL_BUILD_RE = re.compile(r"\d{4}\.\d+\.\d+\.(\d+)\.[0-9a-f]{7,40}")
 _SETUP_BUILD_RE = re.compile(r"_OV_BUILD_NUMBER\s*=\s*'(\d+)'")
 
 
@@ -49,8 +48,8 @@ def main() -> int:
 
   if not bzl_builds:
     print(
-        f"ERROR: {BZL} contains no nightly OpenVINO URLs matching the"
-        " expected `/nightly/<version>-<build>-<commit>/` schema.",
+        f"ERROR: {BZL} contains no OpenVINO URLs matching the"
+        " expected `<version>.<build>.<commit>` filename schema.",
         file=sys.stderr,
     )
     return 1
