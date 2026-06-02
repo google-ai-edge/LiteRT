@@ -865,6 +865,9 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
         return ov::Any(keep_dims);
       }
       break;
+    case LiteRtOpCode::kLiteRtOpCodeTflTile:
+      // No attribute to be handled for Tile op.
+      break;
     default:
       LITERT_LOG(LITERT_ERROR, "Unsupported op type %s", op_type_.c_str());
       return ov::Any(nullptr);

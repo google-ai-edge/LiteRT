@@ -236,8 +236,10 @@ litert_test(
     deps = [
         ":decoder",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_compiler_context",
         "//litert/c/internal:litert_logging",
         "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
         "//litert/test:common",
         "//litert/test:matchers_oss",
         "//litert/test:test_models",
