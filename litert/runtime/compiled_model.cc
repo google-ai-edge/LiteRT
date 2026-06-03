@@ -56,8 +56,8 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_accelerator.h"
-#include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_delegate_wrapper.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
@@ -631,8 +631,9 @@ Expected<ModelSourceInfo> GetModelSourceInfoFromAllocation(
 
   return ModelSourceInfo{
       .fd = fd,
-      .file_offset = mmap_allocation.mmapped_buffer_offset_in_file() +
-                     static_cast<size_t>(base - mapped_base),
+      .file_offset =
+          static_cast<size_t>(mmap_allocation.mmapped_buffer_offset_in_file() +
+                              static_cast<size_t>(base - mapped_base)),
       .size = mmap_allocation.bytes(),
   };
 }
