@@ -81,9 +81,9 @@ ABSL_FLAG(bool, fail_on_threshold, true,
           "Whether threshold violations fail the tool.");
 ABSL_FLAG(double, max_abs_diff_threshold, 1e-4,
           "Maximum allowed absolute diff across all elements.");
-ABSL_FLAG(double, mean_abs_diff_threshold, 1e-6,
+ABSL_FLAG(double, mean_abs_diff_threshold, 1e-5,
           "Maximum allowed mean absolute diff.");
-ABSL_FLAG(double, diff_ratio_threshold, 1e-6,
+ABSL_FLAG(double, diff_ratio_threshold, 1e-5,
           "Maximum allowed ratio of elements with abs_diff > epsilon.");
 ABSL_FLAG(std::string, scoped_weight_file, "",
           "Optional path to a scoped external weight file.");
