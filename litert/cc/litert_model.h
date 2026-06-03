@@ -311,7 +311,7 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   // /// @internal
   // /// @brief Creates a model from an owned TFLite allocation.
   // ///
-  // /// @note This is an internal experimetal API which is not available through
+  // /// @note This is an internal experimental API which is not available through
   // /// libLiteRt.so. It's not part of the official LiteRT public C++ API.
   // static Expected<Model> CreateFromAllocation(
       // Environment& env, std::unique_ptr<tflite::Allocation> allocation) {
@@ -329,7 +329,7 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   // /// @internal
   // /// @brief Creates a model from an owned TFLite allocation.
   // ///
-  // /// @note This is an internal experimetal API which is not available through
+  // /// @note This is an internal experimental API which is not available through
   // /// libLiteRt.so. It's not part of the official LiteRT public C++ API.
   // static Expected<Model> CreateFromAllocation(
       // std::unique_ptr<tflite::Allocation> allocation) {
