@@ -1357,6 +1357,7 @@ cc_library(
     name = "stablehlo_reduce_window_test_util",
     hdrs = ["stablehlo_reduce_window_test_util.h"],
     deps = [
+        "//tflite:util",
         "@com_google_absl//absl/algorithm:container",
     ],
 )
