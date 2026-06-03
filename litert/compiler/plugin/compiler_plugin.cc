@@ -510,7 +510,8 @@ LiteRtStatus PartitionSubgraph(
     std::vector<LiteRtOpWithPartitionIndex> selected_ops,
     LiteRtSubgraphT& subgraph, std::vector<LiteRtOp>& res_ops,
     LiteRtModelT& model,
-    const LiteRtCompilerOptionsPartitionStrategy& partition_strategy_option) {
+    const LiteRtCompilerOptionsPartitionStrategy& partition_strategy_option,
+    size_t max_partitions = 0) {
   // Pick partition strategy based on compiler options.
   std::vector<std::vector<LiteRtOp>> (*partition_strategy_func)(
       const std::vector<LiteRtOpWithPartitionIndex>&, LiteRtSubgraph) =
@@ -525,6 +526,14 @@ LiteRtStatus PartitionSubgraph(
   auto islands = partition_strategy_func(selected_ops, &subgraph);
   if (islands.empty()) {
     return kLiteRtStatusOk;
+  }
+
+  if (max_partitions > 0 && islands.size() > max_partitions) {
+    LITERT_LOG(LITERT_ERROR,
+               "Partitioning yielded %lu NPU islands, which exceeds the "
+               "maximum allowed (%lu).",
+               islands.size(), max_partitions);
+    return kLiteRtStatusErrorRuntimeFailure;
   }
 
   // For each connected island, slice into new subgraph and replace use with
@@ -715,11 +724,15 @@ Expected<PartitionResult> PartitionModel(
     auto compiler_options = compiler_plugin.CompilerOptions();
     LiteRtCompilerOptionsPartitionStrategy strategy =
         kLiteRtCompilerOptionsPartitionStrategyDefault;
+    size_t max_partitions = 0;
     if (compiler_options.HasValue()) {
       strategy = compiler_options->partition_strategy;
+      max_partitions = compiler_options->max_partitions;
     }
+
     LITERT_RETURN_IF_ERROR(PartitionSubgraph(
-        std::move(*selected_ops), *subgraph, dispatch_ops, model, strategy));
+        std::move(*selected_ops), *subgraph, dispatch_ops, model, strategy,
+        max_partitions));
     num_partitions = dispatch_ops.size() - num_partitions;
     LITERT_LOG(LITERT_INFO,
                "Partitioned subgraph<%d>, selected %lu "

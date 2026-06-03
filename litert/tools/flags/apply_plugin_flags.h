@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_APPLY_PLUGIN_FLAGS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_APPLY_PLUGIN_FLAGS_H_
 
+#include <cstddef>
 #include <string>
 
 #include "absl/flags/declare.h"  // from @com_google_absl
@@ -35,6 +36,8 @@ bool AbslParseFlag(absl::string_view text,
                    std::string* error);
 std::string AbslUnparseFlag(
     LiteRtCompilerOptionsPartitionStrategy partition_strategy);
+
+ABSL_DECLARE_FLAG(size_t, compiler_options_max_partitions);
 
 namespace litert {
 
