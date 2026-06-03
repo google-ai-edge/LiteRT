@@ -579,7 +579,7 @@ Expected<void> LiteRtDispatchInvocationContextT::SetSchedulingInfo(
   if (scheduling_info_.has_value() &&
       neuron_adapter_api_.api().execution_set_config) {
     if (neuron_adapter_api_.api().execution_set_config(
-            execution_, NEURON_EXECUTION_CONFIG_UID,
+            execution_, NEURON_EXECUTION_CONFIG_ORIGINAL_UID,
             &scheduling_info_->original_uid,
             sizeof(int32_t)) != NEURON_NO_ERROR) {
       return litert::Error(kLiteRtStatusErrorRuntimeFailure,
