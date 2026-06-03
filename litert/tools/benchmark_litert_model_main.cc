@@ -16,6 +16,7 @@ limitations under the License.
 #include <cstdlib>
 #include <iostream>
 
+#include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/flags/reflection.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -35,6 +36,30 @@ int Main(int argc, char** argv) {
     }
   }
 
+  // Filter argv for absl flags (starting with vendor prefixes)
+  std::vector<char*> absl_argv;
+  absl_argv.push_back(argv[0]);
+  std::vector<char*> remaining_argv;
+  remaining_argv.push_back(argv[0]);
+
+  for (int i = 1; i < argc; ++i) {
+    absl::string_view arg(argv[i]);
+    if (arg.starts_with("--qualcomm_") || arg.starts_with("--mediatek_") ||
+        arg.starts_with("--google_tensor_")) {
+      absl_argv.push_back(argv[i]);
+    } else {
+      remaining_argv.push_back(argv[i]);
+    }
+  }
+
+  if (absl_argv.size() > 1) {
+    int absl_argc = absl_argv.size();
+    absl::ParseCommandLine(absl_argc, absl_argv.data());
+  }
+
+  int remaining_argc = remaining_argv.size();
+  char** remaining_argv_ptr = remaining_argv.data();
+
   if (has_help) {
     std::cout << "\n  NPU Vendor Flags from LiteRT:\n";
     auto flags = absl::GetAllFlags();
@@ -49,7 +74,7 @@ int Main(int argc, char** argv) {
 
   TFLITE_LOG(INFO) << "STARTING!";
   BenchmarkLiteRtModel benchmark;
-  if (benchmark.Run(argc, argv) != kTfLiteOk) {
+  if (benchmark.Run(remaining_argc, remaining_argv_ptr) != kTfLiteOk) {
     // If help was requested, tflite benchmark returns kTfLiteError, which is
     // fine
     if (has_help) {
