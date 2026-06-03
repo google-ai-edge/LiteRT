@@ -35,6 +35,9 @@ def device_rlocation(label = None, get_parent = False):
     if not label:
         return DEVICE_RLOCATION_ROOT
     abs_label = absolute_label(label)
+    if "exynos_ai_litecore" in abs_label:
+        abs_label = abs_label.replace(":lib_arm64_v8a", ":lib/arm64-v8a/")
+        abs_label = abs_label.replace(":lib_x86_64_linux", ":lib/x86_64-linux/")
     res = DEVICE_RLOCATION_ROOT + "/" + abs_label.replace("@", "external/").replace("//", "").replace(":", "/")
     if get_parent:
         return res[:res.rfind("/")]
@@ -294,6 +297,39 @@ def _GoogleTensorSpec():
         ),
     }
 
+# SAMSUNG
+
+def _SamsungSpec():
+    return {
+        "samsung": BackendSpec(
+            id = "samsung",
+            libs = [
+                ("//litert/vendors/samsung/dispatch:libLiteRtDispatch_Samsung.so", "LD_LIBRARY_PATH"),
+                ("//litert/vendors/samsung/compiler:libLiteRtCompilerPlugin_Samsung.so", "LD_LIBRARY_PATH"),
+                # copybara:uncomment_begin(google-only)
+                # ("//third_party/odml/litert/opensource_only/third_party/exynos_ai_litecore:lib_arm64_v8a", "LD_LIBRARY_PATH"),
+                # copybara:uncomment_end(google-only)
+                # copybara:comment_begin(oss samsung)
+                ("@exynos_ai_litecore//:lib_arm64_v8a", "LD_LIBRARY_PATH"),
+                # copybara:comment_end
+            ],
+            plugin = "libLiteRtCompilerPlugin_Samsung.so",
+            dispatch = "libLiteRtDispatch_Samsung.so",
+            mh_devices = [{
+                "hardware": "E9965",
+                "pool": "shared",
+            }],
+            host_libs = [
+                # copybara:uncomment_begin(google-only)
+                # "//third_party/odml/litert/opensource_only/third_party/exynos_ai_litecore:lib_x86_64_linux",
+                # copybara:uncomment_end(google-only)
+                # copybara:comment_begin(oss samsung)
+                "@exynos_ai_litecore//:lib_x86_64_linux",
+                # copybara:comment_end
+            ],
+        ),
+    }
+
 # EXAMPLE
 
 def _ExampleSpec():
@@ -336,11 +372,11 @@ def _GpuSpec():
 # COMMON
 
 def _Specs(name):
-    return (_QualcommSpec() | _QualcommSpec("V79") | _GoogleTensorSpec() | _MediatekSpec() | _IntelOpenVinoSpec() | _CpuSpec() | _GpuSpec() | _ExampleSpec())[name]
+    return (_QualcommSpec() | _QualcommSpec("V79") | _GoogleTensorSpec() | _MediatekSpec() | _IntelOpenVinoSpec() | _SamsungSpec() | _CpuSpec() | _GpuSpec() | _ExampleSpec())[name]
 
 # Check if the backend maps to an NPU backend.
 def is_npu_backend(name):
-    return "qualcomm" in name or name in ["mediatek", "google_tensor", "intel_openvino", "example"]
+    return "qualcomm" in name or name in ["mediatek", "google_tensor", "intel_openvino", "samsung", "example"]
 
 # Get the libs for the given backend.
 def get_libs(name):

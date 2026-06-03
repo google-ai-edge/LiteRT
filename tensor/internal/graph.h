@@ -42,9 +42,11 @@ limitations under the License.
 #include <cstring>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
+#include "absl/container/inlined_vector.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -161,15 +163,67 @@ struct Tensor {
   }
 };
 
+class BackendExtension {
+ public:
+  virtual ~BackendExtension() = default;
+  virtual internal::TypeId GetTypeId() const = 0;
+};
+
+#define LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION                        \
+  internal::TypeId GetTypeId() const override {                                \
+    return internal::TypeId::Get<                                              \
+        std::decay_t<std::remove_pointer_t<decltype(this)>>>();                \
+  }                                                                            \
+  bool IsA(internal::TypeId id) const override {                               \
+    return id == internal::TypeId::Get<                                        \
+                     std::decay_t<std::remove_pointer_t<decltype(this)>>>() || \
+           Operation::IsA(id);                                                 \
+  }
+
 // Represents an ML operation.
 struct Operation {
   virtual ~Operation();
+
+  virtual internal::TypeId GetTypeId() const {
+    return internal::TypeId::Get<Operation>();
+  }
+  virtual bool IsA(internal::TypeId id) const {
+    return id == internal::TypeId::Get<Operation>();
+  }
+
+  template <class T>
+  absl::StatusOr<T&> As() {
+    if (IsA(internal::TypeId::Get<T>())) {
+      return *static_cast<T*>(this);
+    }
+    return absl::InvalidArgumentError("Wrong operation type.");
+  }
+
+  template <class T>
+  absl::StatusOr<const T&> As() const {
+    if (IsA(internal::TypeId::Get<T>())) {
+      return *static_cast<const T*>(this);
+    }
+    return absl::InvalidArgumentError("Wrong operation type.");
+  }
+
+  template <typename T>
+  const T* GetExtension() const {
+    for (const auto& ext : extensions) {
+      if (ext->GetTypeId() == internal::TypeId::Get<T>()) {
+        return static_cast<const T*>(ext.get());
+      }
+    }
+    return nullptr;
+  }
 
   std::vector<Tensor> inputs;
   std::weak_ptr<TensorGroup> outputs_group;
 
   // For testing and debugging purposes only.
   virtual absl::string_view GetName() const = 0;
+
+  absl::InlinedVector<std::unique_ptr<BackendExtension>, 4> extensions;
 };
 
 class OpDebugger {

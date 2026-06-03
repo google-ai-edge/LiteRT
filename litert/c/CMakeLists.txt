@@ -194,6 +194,7 @@ target_link_libraries(litert_c_api
         litert_cc_internal
         litert_core
         litert_core_model
+        litert_runtime
         litert_logging
         absl::status
         absl::statusor

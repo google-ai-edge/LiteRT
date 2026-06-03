@@ -171,6 +171,30 @@ cc_test(
 )
 
 cc_library(
+    name = "transformer_layer",
+    testonly = True,
+    hdrs = ["transformer_layer.h"],
+    deps = [
+        ":common",
+        ":graph_helpers",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_rng",
+        "//litert/core/model",
+        "//litert/test:simple_buffer",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "//tensor/backends/tflite:arithmetic_tflite",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
     name = "extra_model",
     testonly = True,
     hdrs = ["extra_model.h"],
@@ -418,6 +442,7 @@ cc_library(
         ":pooling",
         ":reduction",
         ":reshape",
+        ":transformer_layer",
         ":unary",
     ],
 )

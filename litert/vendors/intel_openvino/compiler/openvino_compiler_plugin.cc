@@ -131,6 +131,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflSquare,
     kLiteRtOpCodeTflFloorMod,
     kLiteRtOpCodeTflSign,
+    kLiteRtOpCodeTflTile,
 };
 // clang format on
 

@@ -77,7 +77,7 @@ class AtsCompileTest : public ::testing::Test {
   }
 
   void TearDown() override {
-    if (HasFailure()) {
+    if (HasFailure() || ::testing::Test::IsSkipped()) {
       return;
     }
     LITERT_ASSERT_OK(

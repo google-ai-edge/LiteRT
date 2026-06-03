@@ -2638,6 +2638,7 @@ cc_test(
     deps = [
         ":test_main",
         ":test_util",
+        "//tflite/c:c_api_types",
         "//tflite/core/c:common",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",

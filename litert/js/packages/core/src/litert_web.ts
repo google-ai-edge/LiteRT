@@ -23,6 +23,7 @@ import {readableStreamDefaultReaderToUint8Array, urlToUint8Array} from './load_u
 import {Model} from './model';
 import {CompileOptions} from './model_types';
 import {Deletable, LiteRtWasm} from './wasm_binding_types';
+import {isJspiSupported} from './wasm_feature_detect';
 
 /**
  * Check if the browser supports WebGPU.
@@ -184,6 +185,21 @@ export class LiteRt {
 
     // Currently, compiledModel will delete the loadedModel when it is deleted.
     this.objectsToDelete.add(compiledModel);
+
+    if (!isJspiSupported() && acceleratorIncludesWebGpu) {
+      if (!compiledModel.isFullyAccelerated) {
+        console.warn(
+            'Model not fully delegated to WebGPU on non-JSPI browser. ' +
+            'Falling back to WASM.');
+        compiledModel.delete();
+        const fallbackCompileOptions = {
+          ...compileOptions,
+          accelerator: 'wasm' as const,
+        };
+        return this.loadAndCompile(modelData, fallbackCompileOptions);
+      }
+    }
+
     return compiledModel;
   }
 

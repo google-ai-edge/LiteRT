@@ -45,8 +45,8 @@ IS_X86_ARCHITECTURE = platform.machine() in ('x86_64', 'i386', 'i686')
 
 
 # --- Configuration for samsung SDK Download ---
-EXYNOS_AI_LITECORE_URL = 'https://soc-developer.semiconductor.samsung.com/api/v1/resource/download-file/1.1.0/ai-litecore-ubuntu2404-v1.1.0.tar.gz'  # pylint: disable=line-too-long
-EXYNOS_AI_LITECORE_CONTENT_DIR = f'exynos-ai-litecore-v{PACKAGE_VERSION}'
+EXYNOS_AI_LITECORE_URL = 'https://soc-developer.semiconductor.samsung.com/api/v1/resource/download-file/ai-litecore-ubuntu2404-v1.2.0.tar.gz'  # pylint: disable=line-too-long
+EXYNOS_AI_LITECORE_CONTENT_DIR = 'exynos-ai-litecore-v1.2.0'
 EXYNOS_AI_LITECORE_TARGET_DIR = 'ai_edge_litert_sdk_samsung/data'
 # ---
 

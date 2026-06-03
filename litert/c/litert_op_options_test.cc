@@ -29,6 +29,7 @@
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
+#include "litert/test/load_test_model.h"
 #include "litert/test/matchers.h"
 
 namespace {

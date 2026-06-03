@@ -41,14 +41,8 @@ if [ ! -d /root_dir ]; then
 
   exit 0
 else
-  # Running inside docker container, download the SDK first.
+  # Running inside docker container.
   cd /root_dir
-  licenses=('y' 'y' 'y' 'y' 'y' 'y' 'y')
-  printf '%s\n' "${licenses[@]}" | sdkmanager --licenses
-  sdkmanager \
-    "build-tools;${ANDROID_BUILD_TOOLS_VERSION}" \
-    "platform-tools" \
-    "platforms;android-${ANDROID_API_LEVEL}"
 
   # Run configure.
   configs=(

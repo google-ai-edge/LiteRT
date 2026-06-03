@@ -206,6 +206,18 @@ inline LiteRtQuantizationPerChannel FetchTensorQuantizationPerChannel(
   return per_channel_quantization;
 }
 
+inline LiteRtQuantizationBlockWise FetchTensorQuantizationBlockWise(
+    const internal::EnvironmentHolder& env, LiteRtTensor tensor) {
+  if (FetchTensorQuantizationTypeId(env, tensor) !=
+      kLiteRtQuantizationBlockWise) {
+    return {};
+  }
+  LiteRtQuantizationBlockWise block_wise_quantization;
+  LITERT_ABORT_IF_ERROR(
+      env.runtime->GetBlockWiseQuantization(tensor, &block_wise_quantization));
+  return block_wise_quantization;
+}
+
 inline StringView FetchSignatureKey(const internal::EnvironmentHolder& env,
                                     LiteRtSignature signature) {
   const char* key;
@@ -262,7 +274,8 @@ inline std::vector<std::unique_ptr<SimpleTensor>> FetchSignatureInputTensors(
         FetchTensorType(env, tensor, FetchTensorTypeId(env, tensor)),
         FetchTensorQuantizationTypeId(env, tensor),
         FetchTensorQuantizationPerTensor(env, tensor),
-        FetchTensorQuantizationPerChannel(env, tensor)));
+        FetchTensorQuantizationPerChannel(env, tensor),
+        FetchTensorQuantizationBlockWise(env, tensor)));
   }
   return input_tensors;
 }
@@ -284,7 +297,8 @@ inline std::vector<std::unique_ptr<SimpleTensor>> FetchSignatureOutputTensors(
         FetchTensorType(env, tensor, FetchTensorTypeId(env, tensor)),
         FetchTensorQuantizationTypeId(env, tensor),
         FetchTensorQuantizationPerTensor(env, tensor),
-        FetchTensorQuantizationPerChannel(env, tensor)));
+        FetchTensorQuantizationPerChannel(env, tensor),
+        FetchTensorQuantizationBlockWise(env, tensor)));
   }
   return output_tensors;
 }
@@ -345,7 +359,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                             BuildOptions(compilation_options, env_holder));
     LiteRtModel litert_model;
     if (auto status = env_holder.runtime->CreateModelFromFile(
-            model_filename.c_str(), &litert_model);
+            env_holder.handle, model_filename.c_str(), &litert_model);
         status != kLiteRtStatusOk) {
       return Unexpected(ToStatus(status), "Failed to load model from file");
     }
@@ -373,7 +387,8 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
         BuildOptions(std::move(compilation_options), env.GetHolder()));
     LiteRtModel litert_model;
     if (auto status = env_holder.runtime->CreateModelFromBuffer(
-            model_buffer.Data(), model_buffer.Size(), &litert_model);
+            env_holder.handle, model_buffer.Data(), model_buffer.Size(),
+            &litert_model);
         status != kLiteRtStatusOk) {
       return Unexpected(ToStatus(status), "Failed to load model from buffer");
     }

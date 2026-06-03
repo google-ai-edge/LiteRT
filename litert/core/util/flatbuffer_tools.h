@@ -236,6 +236,7 @@ bool IsPerChannelQuantized(const TflQuantization* tfl_quantization);
 
 // Is the tensor block-wise quantized.
 bool IsBlockWiseQuantized(const TflQuantization* tfl_quantization);
+bool IsBlockWiseQuantized(const TflPackedQuantization* tfl_quantization);
 
 // Does tensor have custom quantization.
 bool IsCustomQuantized(const TflQuantization* tfl_quantization);

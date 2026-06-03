@@ -70,7 +70,7 @@ TEST(LiteRtBuilderTest, CanBuildUnrankedTensor) {
       &builder, kLiteRtUnrankedTensorType, LiteRtRankedTensorType(),
       unranked_tensor_type, LiteRtWeights(), kLiteRtQuantizationNone,
       LiteRtQuantizationPerTensor(), LiteRtQuantizationPerChannel(),
-      kName.data(), &tensor));
+      LiteRtQuantizationBlockWise(), kName.data(), &tensor));
   EXPECT_EQ(tensor->Type().first, kLiteRtUnrankedTensorType);
   EXPECT_EQ(tensor->Type().second.unranked_tensor_type.element_type,
             kLiteRtElementTypeFloat32);
@@ -94,7 +94,7 @@ TEST(LiteRtBuilderTest, BuildingUnrankedTensorWithInvalidArgumentReturnsError) {
                 &builder, kLiteRtUnrankedTensorType, LiteRtRankedTensorType(),
                 unranked_tensor_type, &weights, kLiteRtQuantizationNone,
                 LiteRtQuantizationPerTensor(), LiteRtQuantizationPerChannel(),
-                "", &tensor),
+                LiteRtQuantizationBlockWise(), "", &tensor),
             kLiteRtStatusErrorInvalidArgument);
 }
 
@@ -108,7 +108,7 @@ TEST(LiteRtBuilderTest, CanBuildRankedTensor) {
       &builder, kLiteRtRankedTensorType, ranked_tensor_type,
       LiteRtUnrankedTensorType(), LiteRtWeights(), kLiteRtQuantizationNone,
       LiteRtQuantizationPerTensor(), LiteRtQuantizationPerChannel(),
-      kName.data(), &tensor));
+      LiteRtQuantizationBlockWise(), kName.data(), &tensor));
 
   EXPECT_EQ(tensor->Type().first, kLiteRtRankedTensorType);
   EXPECT_EQ(tensor->Type().second.ranked_tensor_type.element_type,
@@ -137,8 +137,8 @@ TEST(LiteRtBuilderTest, CanBuildRankedTensorWithWeights) {
   LITERT_ASSERT_OK(LiteRtBuilderBuildTensor(
       &builder, kLiteRtRankedTensorType, ranked_tensor_type,
       LiteRtUnrankedTensorType(), &weights, kLiteRtQuantizationNone,
-      LiteRtQuantizationPerTensor(), LiteRtQuantizationPerChannel(), "",
-      &tensor));
+      LiteRtQuantizationPerTensor(), LiteRtQuantizationPerChannel(),
+      LiteRtQuantizationBlockWise(), "", &tensor));
 
   EXPECT_EQ(tensor->Weights().GetBufferId(), 1);
   EXPECT_EQ(tensor->Weights().GetBufferManager(), &manager);
@@ -157,8 +157,8 @@ TEST(LiteRtBuilderTest, CanBuildTensorWithPerTensorQuantization) {
   LITERT_ASSERT_OK(LiteRtBuilderBuildTensor(
       &builder, kLiteRtRankedTensorType, ranked_tensor_type,
       LiteRtUnrankedTensorType(), LiteRtWeights(), kLiteRtQuantizationPerTensor,
-      per_tensor_quantization, LiteRtQuantizationPerChannel(), kName.data(),
-      &tensor));
+      per_tensor_quantization, LiteRtQuantizationPerChannel(),
+      LiteRtQuantizationBlockWise(), kName.data(), &tensor));
   EXPECT_EQ(tensor->Qparams().first, kLiteRtQuantizationPerTensor);
   EXPECT_EQ(tensor->Qparams().second.per_tensor.scale, 1.0);
   EXPECT_EQ(tensor->Qparams().second.per_tensor.zero_point, 1);
@@ -185,7 +185,8 @@ TEST(LiteRtBuilderTest, CanBuildTensorWithPerChannelQuantization) {
       &builder, kLiteRtRankedTensorType, ranked_tensor_type,
       LiteRtUnrankedTensorType(), LiteRtWeights(),
       kLiteRtQuantizationPerChannel, LiteRtQuantizationPerTensor(),
-      per_channel_quantization, kName.data(), &tensor));
+      per_channel_quantization, LiteRtQuantizationBlockWise(), kName.data(),
+      &tensor));
 
   LiteRtQuantizationPerChannel built_per_channel_quantization =
       tensor->Qparams().second.per_channel;
@@ -198,6 +199,51 @@ TEST(LiteRtBuilderTest, CanBuildTensorWithPerChannelQuantization) {
   EXPECT_EQ(built_per_channel_quantization.num_channels, kNumChannels);
   EXPECT_EQ(built_per_channel_quantization.quantized_dimension,
             kQuantizedDimension);
+}
+
+TEST(LiteRtBuilderTest, CanBuildTensorWithBlockWiseQuantization) {
+  LiteRtBuilderT builder;
+  LiteRtTensor scales_tensor;
+  LiteRtTensor zps_tensor;
+  LiteRtTensor tensor;
+
+  LiteRtRankedTensorType scales_type = {
+      .element_type = kLiteRtElementTypeFloat32,
+      .layout = {.rank = 1, .dimensions = {2}}};
+  LITERT_ASSERT_OK(LiteRtBuilderBuildTensor(
+      &builder, kLiteRtRankedTensorType, scales_type,
+      LiteRtUnrankedTensorType(), LiteRtWeights(), kLiteRtQuantizationNone,
+      LiteRtQuantizationPerTensor(), LiteRtQuantizationPerChannel(),
+      LiteRtQuantizationBlockWise(), "scales", &scales_tensor));
+
+  LiteRtRankedTensorType zps_type = {.element_type = kLiteRtElementTypeInt32,
+                                     .layout = {.rank = 1, .dimensions = {2}}};
+  LITERT_ASSERT_OK(LiteRtBuilderBuildTensor(
+      &builder, kLiteRtRankedTensorType, zps_type, LiteRtUnrankedTensorType(),
+      LiteRtWeights(), kLiteRtQuantizationNone, LiteRtQuantizationPerTensor(),
+      LiteRtQuantizationPerChannel(), LiteRtQuantizationBlockWise(), "zps",
+      &zps_tensor));
+
+  LiteRtRankedTensorType ranked_tensor_type = {
+      .element_type = kLiteRtElementTypeInt8,
+      .layout = {.rank = 2, .dimensions = {3, 3}}};
+
+  constexpr int32_t kBlockSize = 32;
+  LiteRtQuantizationBlockWise block_wise_quantization = {
+      .scales = scales_tensor,
+      .zero_points = zps_tensor,
+      .block_size = kBlockSize};
+
+  LITERT_ASSERT_OK(LiteRtBuilderBuildTensor(
+      &builder, kLiteRtRankedTensorType, ranked_tensor_type,
+      LiteRtUnrankedTensorType(), LiteRtWeights(), kLiteRtQuantizationBlockWise,
+      LiteRtQuantizationPerTensor(), LiteRtQuantizationPerChannel(),
+      block_wise_quantization, kName.data(), &tensor));
+
+  EXPECT_EQ(tensor->Qparams().first, kLiteRtQuantizationBlockWise);
+  EXPECT_EQ(tensor->Qparams().second.block_wise.scales, scales_tensor);
+  EXPECT_EQ(tensor->Qparams().second.block_wise.zero_points, zps_tensor);
+  EXPECT_EQ(tensor->Qparams().second.block_wise.block_size, kBlockSize);
 }
 
 TEST(LiteRtBuilderTest, CanBuildOpTest) {
@@ -231,8 +277,8 @@ TEST(LiteRtBuilderTest, BuildWeights) {
   LITERT_ASSERT_OK(LiteRtBuilderBuildTensor(
       &builder, kLiteRtRankedTensorType, ranked_tensor_type,
       LiteRtUnrankedTensorType(), nullptr, kLiteRtQuantizationNone,
-      LiteRtQuantizationPerTensor(), LiteRtQuantizationPerChannel(), "",
-      &tensor));
+      LiteRtQuantizationPerTensor(), LiteRtQuantizationPerChannel(),
+      LiteRtQuantizationBlockWise(), "", &tensor));
 
   LiteRtWeights weights;
   LITERT_ASSERT_OK(LiteRtBuilderBuildWeights(&builder, data, kData.size(),

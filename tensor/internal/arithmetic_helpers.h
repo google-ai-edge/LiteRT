@@ -25,6 +25,7 @@ limitations under the License.
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
+#include "tensor/internal/mixin.h"
 #include "tensor/internal/shape.h"
 #include "tensor/internal/utils.h"
 #include "tensor/tensor.h"
@@ -92,11 +93,25 @@ absl::Status CheckTensors(Tensors... tensors) {
   return status;
 }
 
-template <class Op, class... Tensors>
+template <class... Mixins, class Op>
+void RegisterMixins(std::shared_ptr<Op>& operation) {
+  // We use this indirection to filter out operations that are not implemented
+  // by specific backends.
+  [[maybe_unused]] auto RegisterMixin = [&](auto mixin_tag) {
+    using MixinType = graph::OpMixin<Op, decltype(mixin_tag)>;
+    if constexpr (std::is_base_of_v<graph::BackendExtension, MixinType>) {
+      operation->extensions.emplace_back(std::make_unique<MixinType>());
+    }
+  };
+  (RegisterMixin(Mixins{}), ...);
+}
+
+template <class Op, class... Mixins, class... Tensors>
 TensorHandle ElementwiseOp(source_location loc, TensorHandle a,
                            Tensors&... tensors) {
   LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(a, tensors...));
   auto operation = std::make_shared<Op>();
+  RegisterMixins<Mixins...>(operation);
   AddInputs(operation, a, tensors...);
   TensorHandle output = AddOutput(operation, loc);
   LRT_TENSOR_ASSIGN_OR_RETURN(const graph::TensorInformation& a_info,

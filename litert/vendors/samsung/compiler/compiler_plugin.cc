@@ -236,7 +236,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            const char* soc_model,
                                            LiteRtSubgraph subgraph,
                                            LiteRtOpList selected_ops) {
-  if (!compiler_plugin || !soc_model) {
+  if (!compiler_plugin) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
@@ -269,8 +269,25 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                                        compiler_plugin->ctx(), subgraph));
 
     // Compile graph and return binary
+    const char* soc_model_to_use = nullptr;
+    auto* plugin = static_cast<LiteRtCompilerPluginT*>(compiler_plugin);
+
+    if (plugin->GetSamsungOptions().HasValue()) {
+      auto opt_soc_model = plugin->GetSamsungOptions()->GetSocModel();
+      if (opt_soc_model.HasValue()) {
+        soc_model_to_use = opt_soc_model.Value();
+      }
+    }
+
+    if (soc_model_to_use == nullptr || soc_model_to_use[0] == '\0') {
+      soc_model_to_use = soc_model;
+    }
+    if (soc_model_to_use == nullptr || soc_model_to_use[0] == '\0') {
+      soc_model_to_use = litert::samsung::kSocModels[0].soc_name;
+    }
+    LITERT_LOG(LITERT_INFO, "Compiling for SoC model: %s", soc_model_to_use);
     LITERT_ASSIGN_OR_RETURN(auto soc_model_id,
-                            litert::samsung::GetSocModelID(soc_model));
+                            litert::samsung::GetSocModelID(soc_model_to_use));
     LITERT_ASSIGN_OR_RETURN(
         auto compiled_binary,
         litert::samsung::Compile(ai_lite_core.get(), graph_buffer,

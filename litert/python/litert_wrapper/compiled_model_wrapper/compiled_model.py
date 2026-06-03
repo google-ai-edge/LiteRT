@@ -106,6 +106,23 @@ class CompiledModel:
     self._model = c_model_ptr  # Pointer to C++ CompiledModelWrapper
     self._environment = environment
 
+  def __enter__(self) -> "CompiledModel":
+    return self
+
+  def __exit__(self, exc_type, exc_val, exc_tb):
+    """Closes the compiled model when exiting a 'with' statement.
+
+    Args:
+      exc_type: The exception type, if any.
+      exc_val: The exception value, if any.
+      exc_tb: The exception traceback, if any.
+    """
+    self.close()
+
+  def close(self):
+    """Releases the underlying resources held by the CompiledModel."""
+    self._model = None
+
   @classmethod
   def from_file(
       cls,

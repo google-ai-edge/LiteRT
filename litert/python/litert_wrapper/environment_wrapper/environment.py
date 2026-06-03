@@ -148,6 +148,15 @@ class Environment:
     self._capsule = capsule
     self._options = options
 
+  def __enter__(self) -> "Environment":
+    return self
+
+  def __exit__(self, exc_type, exc_val, exc_tb):
+    self.close()
+
+  def close(self):
+    self._capsule = None
+
   @classmethod
   def create(
       cls,

@@ -47,6 +47,7 @@ cc_library(
     hdrs = ["arithmetic_helpers.h"],
     deps = [
         ":graph",
+        ":mixin",
         ":shape",
         ":utils",
         "//tensor",
@@ -111,6 +112,7 @@ cc_library(
         "//tensor:datatypes",
         "//tensor/utils:macros",
         "//tensor/utils:source_location",
+        "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",

@@ -29,6 +29,7 @@ cc_library(
         "//tensor:datatypes",
         "//tensor/internal:graph",
         "//tensor/internal:mixin",
+        "//tensor/internal:type_id",
         "//tensor/utils:macros",
         "//tflite/schema:schema_fbs_with_mutable",
         "//tflite/types:half",

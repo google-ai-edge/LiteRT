@@ -170,20 +170,7 @@ litert_define_ats(
         "yamnet",
         "yolo11n",
     ],
-    dont_register = [
-        ".*tfl\\.sub.*",
-        ".*tfl\\.add.*i32.*",
-        ".*861.*",
-        ".*tfl\\.relu_0_to_1.*",
-        ".*resnet18.*",
-        ".*BinaryNoBroadcast.*",
-        ".*tfl\\.exp.*",
-        ".*f16.*",
-        ".*tfl\\.ceil.*",
-        ".*5d.*",
-        ".*6d.*",
-        ".*tfl\\.zeros_like.*",
-    ],
+    dont_register = [],
     extra_flags = [
         "--data_seed=42",
     ],
@@ -212,6 +199,30 @@ litert_define_ats(
         "hf_all_minilm_l6_v2",
         "whisper_tiny_decoder",
         "qai_hub_real_esrgan_x4plus",
+    ],
+    jit_suffix = "",
+)
+
+litert_define_ats(
+    name = "samsung_ats",
+    backend = "samsung",
+    compile_only_suffix = "_aot",
+    do_register = [
+    ],
+    dont_register = [
+        "whisper_tiny_decoder",
+        "hf_all_minilm_l6_v2",
+        "hf_mobilevit_small",
+        ".*5d.*",
+        ".*6d.*",
+        ".*tfl.elu.*",
+        ".*tfl.neg.*",
+        ".*tfl.square.*",
+        ".*tfl.zeros_like.*",
+        ".*tfl.round.*",
+        ".*tfl.sign.*",
+    ],
+    extra_flags = [
     ],
     jit_suffix = "",
 )
@@ -275,6 +286,8 @@ cc_library(
         "-DINCLUDE_QUALCOMM_RUNTIME_FLAGS",
         "-DINCLUDE_MEDIATEK_COMPILE_FLAGS",
         "-DINCLUDE_MEDIATEK_RUNTIME_FLAGS",
+        "-DINCLUDE_SAMSUNG_COMPILE_FLAGS",
+        "-DINCLUDE_SAMSUNG_RUNTIME_FLAGS",
     ],
     deps = [
         ":common",
@@ -292,6 +305,7 @@ cc_library(
         "//litert/core/model:model_serialize",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
+        "//litert/tools/flags/vendors:samsung_flags",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings",
@@ -333,6 +347,7 @@ cc_library(
         "//litert/cc/internal:litert_rng",
         "//litert/core:filesystem",
         "//litert/test/generators",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 

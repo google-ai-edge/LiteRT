@@ -175,6 +175,7 @@ cc_library(
         "//litert:litert_public",
     ],
     deps = [
+        ":litert_environment",
         "//litert/cc:litert_api_types",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
@@ -222,6 +223,7 @@ cc_library(
         "//litert:litert_public",
     ],
     deps = [
+        ":litert_environment",
         ":litert_model",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
@@ -318,6 +320,7 @@ cc_test(
         "//litert/cc/internal:scoped_file",
         "//litert/core/model",
         "//litert/test:common",
+        "//litert/test:load_test_model_runtimecapi",
         "//litert/test:matchers",
         "//tflite:stderr_reporter",
         "//tflite/converter:allocation",
@@ -332,6 +335,7 @@ cc_library(
     hdrs = ["//litert/cc/internal:litert_model_predicates.h"],
     visibility = ["//litert:litert_public"],
     deps = [
+        ":litert_environment",
         ":litert_extended_model",
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
@@ -354,7 +358,7 @@ cc_test(
         ":litert_model_predicates",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_element_type",
-        "//litert/test:common",
+        "//litert/test:load_test_model_runtimecapi",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
@@ -415,45 +419,6 @@ cc_library(
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
     }),
-)
-
-cc_test(
-    name = "litert_op_options_test",
-    srcs = ["//litert/cc/internal:litert_op_options_test.cc"],
-    data = [
-        "//litert/test:mlir_test_data",
-        "//litert/test:tflite_test_data",
-    ],
-    features = select({
-        "//litert:windows": ["-static_link_msvcrt"],
-        "//conditions:default": [],
-    }),
-    # Things allocated accros ABI boundaries are causing mismatched-size-delete.
-    # use system_malloc, and gunit_main_no_heapcheck to avoid this. Those workaound will be removed
-    # once in OSS.
-    # copybara:uncomment malloc = "//base:system_malloc",
-    tags = [
-        "nosan",
-    ],
-    deps = [
-        ":litert_op_options",
-        # copybara:uncomment_begin(no OSS for gunit_main_no_heapcheck)
-        # "@com_google_googletest//:gtest_main_no_heapcheck",
-        # copybara:uncomment_end_and_comment_begin
-        "@com_google_googletest//:gtest_main",
-        # copybara:comment_end
-        "@com_google_absl//absl/strings:string_view",
-        "//litert/c:litert_common",
-        "//litert/cc:litert_common",
-        "//litert/c:litert_op_code",
-        "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_expected",
-        "//litert/core/model",
-        "//litert/core/model:buffer_manager",
-        "//litert/core/util:flatbuffer_tools",
-        "//litert/test:common",
-        "//tflite/schema:schema_fbs",
-    ],
 )
 
 cc_library(

@@ -27,6 +27,7 @@
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_serialize.h"
 #include "litert/test/common.h"
+#include "litert/test/load_test_model.h"
 
 namespace litert::internal {
 namespace {

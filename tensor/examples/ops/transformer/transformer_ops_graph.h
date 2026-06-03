@@ -17,9 +17,9 @@ limitations under the License.
 #define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_OPS_TRANSFORMER_TRANSFORMER_OPS_GRAPH_H_
 
 #include <optional>
+
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "tensor/internal/graph.h"
-#include "tensor/internal/mixin.h"
 
 namespace litert::tensor::graph {
 
@@ -28,39 +28,28 @@ struct RotaryEmbeddingOperationData {
   float max_timescale;
 };
 
-template <class... Mixins>
-struct RotaryEmbeddingOperation
-    : public RotaryEmbeddingOperationData,
-      virtual Operation,
-      virtual OpMixin<struct RotaryEmbeddingOperationTag, Mixins...> {
- public:
+struct RotaryEmbeddingOperation : public RotaryEmbeddingOperationData,
+                                  Operation {
   absl::string_view GetName() const override { return "RotaryEmbedding"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct RmsNormOperationData {
   float epsilon;
 };
 
-template <class... Mixins>
-struct RmsNormOperation : public RmsNormOperationData,
-                          virtual Operation,
-                          virtual OpMixin<struct RmsNormOperationTag, Mixins...>
-                          {
- public:
+struct RmsNormOperation : public RmsNormOperationData, Operation {
   absl::string_view GetName() const override { return "RmsNorm"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct FillSegmentPosOperationData {
   int param_index;
 };
 
-template <class... Mixins>
-struct FillSegmentPosOperation
-    : public FillSegmentPosOperationData,
-      virtual Operation,
-      virtual OpMixin<struct FillSegmentPosOperationTag, Mixins...> {
- public:
+struct FillSegmentPosOperation : public FillSegmentPosOperationData, Operation {
   absl::string_view GetName() const override { return "FillSegmentPos"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct FillAttentionMaskOperationData {
@@ -72,22 +61,15 @@ struct FillRopeCosSinOperationData {
   float rope_base;
 };
 
-template <class... Mixins>
-struct FillAttentionMaskOperation
-    : public FillAttentionMaskOperationData,
-      virtual Operation,
-      virtual OpMixin<struct FillAttentionMaskOperationTag, Mixins...> {
- public:
+struct FillAttentionMaskOperation : public FillAttentionMaskOperationData,
+                                    Operation {
   absl::string_view GetName() const override { return "FillAttentionMask"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct FillRopeCosSinOperation
-    : virtual Operation,
-      FillRopeCosSinOperationData,
-      virtual OpMixin<struct FillRopeCosSinOperationTag, Mixins>... {
- public:
+struct FillRopeCosSinOperation : public FillRopeCosSinOperationData, Operation {
   absl::string_view GetName() const override { return "FillRopeCosSin"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct AddValuesToKvCacheOperationData {
@@ -99,13 +81,10 @@ struct AddValuesToKvCacheOperationData {
   int head_dimension;
 };
 
-template <class... Mixins>
-struct AddValuesToKvCacheOperation
-    : public AddValuesToKvCacheOperationData,
-      virtual Operation,
-      virtual OpMixin<struct AddValuesToKvCacheOperationTag, Mixins...> {
- public:
+struct AddValuesToKvCacheOperation : public AddValuesToKvCacheOperationData,
+                                     Operation {
   absl::string_view GetName() const override { return "AddValuesToKvCache"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct AddValuesToCacheOperationData {
@@ -117,64 +96,45 @@ struct AddValuesToCacheOperationData {
   int head_dimension;
 };
 
-template <class... Mixins>
-struct AddValuesToCacheOperation
-    : public AddValuesToCacheOperationData,
-      virtual Operation,
-      virtual OpMixin<struct AddValuesToCacheOperationTag, Mixins...> {
- public:
+struct AddValuesToCacheOperation : public AddValuesToCacheOperationData,
+                                   Operation {
   absl::string_view GetName() const override { return "AddValuesToCache"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct QkNormOperation : virtual Operation,
-                         virtual OpMixin<struct QkNormOperationTag, Mixins...> {
- public:
+struct QkNormOperation : Operation {
   absl::string_view GetName() const override { return "QkNorm"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct ActivationSparsityOperationData {
   float stddev_multiplier;
 };
 
-template <class... Mixins>
-struct ActivationSparsityOperation
-    : public ActivationSparsityOperationData,
-      virtual Operation,
-      virtual OpMixin<struct ActivationSparsityOperationTag, Mixins...> {
- public:
+struct ActivationSparsityOperation : public ActivationSparsityOperationData,
+                                     Operation {
   absl::string_view GetName() const override { return "ActivationSparsity"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct SelectMaskOperation
-    : virtual Operation,
-      virtual OpMixin<struct SelectMaskOperationTag, Mixins...> {
- public:
+struct SelectMaskOperation : Operation {
   absl::string_view GetName() const override { return "SelectMask"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-template <class... Mixins>
-struct WriteCurrentTokensOperation
-    : virtual Operation,
-      virtual OpMixin<struct WriteCurrentTokensOperationTag, Mixins...> {
- public:
-  absl::string_view GetName() const override {
-    return "WriteCurrentTokens";
-  }
+struct WriteCurrentTokensOperation : Operation {
+  absl::string_view GetName() const override { return "WriteCurrentTokens"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct MatMulWithCacheOperationData {
   bool is_v = false;
 };
 
-template <class... Mixins>
-struct MatMulWithCacheOperation
-    : public MatMulWithCacheOperationData,
-      virtual Operation,
-      virtual OpMixin<struct MatMulWithCacheOperationTag, Mixins...> {
- public:
+struct MatMulWithCacheOperation : public MatMulWithCacheOperationData,
+                                  Operation {
   absl::string_view GetName() const override { return "MatMulWithCache"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 struct SoftmaxWithRuntimeCheckOperationData {
@@ -182,15 +142,13 @@ struct SoftmaxWithRuntimeCheckOperationData {
   std::optional<int> end_ch_index;
 };
 
-template <class... Mixins>
 struct SoftmaxWithRuntimeCheckOperation
     : public SoftmaxWithRuntimeCheckOperationData,
-      virtual Operation,
-      virtual OpMixin<struct SoftmaxWithRuntimeCheckOperationTag, Mixins...> {
- public:
+      Operation {
   absl::string_view GetName() const override {
     return "SoftmaxWithRuntimeCheck";
   }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
 }  // namespace litert::tensor::graph

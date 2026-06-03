@@ -45,23 +45,29 @@ import {loadLiteRt, loadAndCompile, Tensor} from '@litertjs/core';
 // 1. Initialize LiteRT.js's Wasm runtime components.
 // These files are located in `node_modules/@litertjs/core/wasm/`
 // and need to be served statically by your web server.
-// alternatively they can be loaded via
+// Alternatively, they can be loaded via
 // https://cdn.jsdelivr.net/npm/@litertjs/core/wasm/
-await loadLiteRt('/path/to/wasm/directory/');
+// Pass `{jspi: true}` to enable JSPI-supporting WebAssembly, which is
+// required for WebNN or for model partitioning on WebGPU / WASM.
+await loadLiteRt('/path/to/wasm/directory/', {jspi: true});
 
 // 2. Load and compile the model.
 // Determine the appropriate accelerator based on device support:
 // - 'wasm' acts as a high-performance CPU executor.
 // - 'webgpu' targets integrated or dedicated graphics acceleration.
 // - 'webnn' [experimental] targets integrated NPUs or OS-level acceleration.
-// Note: In the case where a model cannot be fully delegated to the specified
-// accelerator, LiteRT will fall back to wasm execution, as it has the widest
-// model coverage & operator support.
+// Note on WebGPU delegation fallback:
+// - On JSPI-supporting browsers: If a model has operators unsupported by WebGPU,
+//   LiteRT.js will run supported ops on WebGPU and fall back to WASM on a per-op
+//   basis (model partitioning).
+// - On non-JSPI browsers: WebGPU/WASM partitioning is not supported due to
+//   synchronous boundary constraints. If a model cannot be fully delegated to WebGPU,
+//   the entire model will completely fall back to WASM execution (logging a warning).
 const model = await loadAndCompile(
   '/path/to/your/model/torchvision_mobilenet_v2.tflite',
   {accelerator: 'webgpu'}, // Alternatively, use 'webnn' or 'wasm'
-  // If using 'webnn', the 'jspi' option must be passed as true when calling
-  // loadLiteRt() in step 1
+  // If using 'webnn', or to support mixed execution on WebGPU, the 'jspi' option
+  // must be passed as true when calling loadLiteRt() in step 1
 );
 
 // 3. Construct the input tensor.

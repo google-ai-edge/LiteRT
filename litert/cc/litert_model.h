@@ -33,6 +33,7 @@
 #include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_common.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model_types.h"
@@ -113,6 +114,17 @@ inline LiteRtQuantizationPerChannel FetchTensorQuantizationPerChannel(
   return per_channel_quantization;
 }
 
+inline LiteRtQuantizationBlockWise FetchTensorQuantizationBlockWise(
+    LiteRtTensor tensor) {
+  if (FetchTensorQuantizationTypeId(tensor) != kLiteRtQuantizationBlockWise) {
+    return {};
+  }
+  LiteRtQuantizationBlockWise block_wise_quantization;
+  internal::AssertOk(LiteRtGetBlockWiseQuantization, tensor,
+                     &block_wise_quantization);
+  return block_wise_quantization;
+}
+
 inline StringView FetchSignatureKey(LiteRtSignature signature) {
   const char* key;
   internal::AssertOk(LiteRtGetSignatureKey, signature, &key);
@@ -163,7 +175,8 @@ inline std::vector<std::unique_ptr<SimpleTensor>> FetchSignatureInputTensors(
         FetchTensorType(tensor, FetchTensorTypeId(tensor)),
         FetchTensorQuantizationTypeId(tensor),
         FetchTensorQuantizationPerTensor(tensor),
-        FetchTensorQuantizationPerChannel(tensor)));
+        FetchTensorQuantizationPerChannel(tensor),
+        FetchTensorQuantizationBlockWise(tensor)));
   }
   return input_tensors;
 }
@@ -184,7 +197,8 @@ inline std::vector<std::unique_ptr<SimpleTensor>> FetchSignatureOutputTensors(
         FetchTensorType(tensor, FetchTensorTypeId(tensor)),
         FetchTensorQuantizationTypeId(tensor),
         FetchTensorQuantizationPerTensor(tensor),
-        FetchTensorQuantizationPerChannel(tensor)));
+        FetchTensorQuantizationPerChannel(tensor),
+        FetchTensorQuantizationBlockWise(tensor)));
   }
   return output_tensors;
 }
@@ -206,9 +220,24 @@ class Model : public internal::BaseHandle<LiteRtModel> {
     return Model(model, OwnHandle::kNo);
   }
 
-  static Expected<Model> CreateFromFile(const std::string& filename) {
+  static Expected<Model> CreateFromFile(Environment& env,
+                                        const std::string& filename) {
     LiteRtModel model;
-    if (auto status = LiteRtCreateModelFromFile(filename.c_str(), &model);
+    if (auto status =
+            LiteRtCreateModelFromFile(env.Get(), filename.c_str(), &model);
+        status != kLiteRtStatusOk) {
+      return Unexpected(ToStatus(status), "Failed to load model from file");
+    }
+    return CreateFromOwnedHandle(model);
+  }
+
+  /// @deprecated Use API with explicit Environment instead.
+  [[deprecated("Use API with explicit Environment instead.")]]
+  static Expected<Model> CreateFromFile(const std::string& filename) {
+    const auto& env = GetDefaultEnvironment();
+    LiteRtModel model;
+    if (auto status =
+            LiteRtCreateModelFromFile(env->Get(), filename.c_str(), &model);
         status != kLiteRtStatusOk) {
       return Unexpected(ToStatus(status), "Failed to load model from file");
     }
@@ -219,10 +248,27 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   ///
   /// The caller must ensure that the buffer remains valid for the lifetime of
   /// the model.
-  static Expected<Model> CreateFromBuffer(BufferRef<uint8_t> buffer) {
+  static Expected<Model> CreateFromBuffer(Environment& env,
+                                          BufferRef<uint8_t> buffer) {
     LiteRtModel model;
-    if (auto status =
-            LiteRtCreateModelFromBuffer(buffer.Data(), buffer.Size(), &model);
+    if (auto status = LiteRtCreateModelFromBuffer(env.Get(), buffer.Data(),
+                                                  buffer.Size(), &model);
+        status != kLiteRtStatusOk) {
+      return Unexpected(ToStatus(status), "Failed to load model from buffer");
+    }
+    return CreateFromOwnedHandle(model);
+  }
+
+  /// @brief Creates a model from a buffer.
+  ///
+  /// The caller must ensure that the buffer remains valid for the lifetime of
+  /// the model.
+  /// @deprecated Use API with explicit Environment instead.
+  static Expected<Model> CreateFromBuffer(BufferRef<uint8_t> buffer) {
+    const auto& env = GetDefaultEnvironment();
+    LiteRtModel model;
+    if (auto status = LiteRtCreateModelFromBuffer(env->Get(), buffer.Data(),
+                                                  buffer.Size(), &model);
         status != kLiteRtStatusOk) {
       return Unexpected(ToStatus(status), "Failed to load model from buffer");
     }
@@ -233,9 +279,27 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   ///
   /// LiteRT duplicates the file descriptor internally; the caller retains
   /// ownership of `fd`.
-  static Expected<Model> CreateFromFd(int fd, size_t offset, size_t size) {
+  static Expected<Model> CreateFromFd(Environment& env, int fd, size_t offset,
+                                      size_t size) {
     LiteRtModel model;
-    if (auto status = LiteRtCreateModelFromFd(fd, offset, size, &model);
+    if (auto status =
+            LiteRtCreateModelFromFd(env.Get(), fd, offset, size, &model);
+        status != kLiteRtStatusOk) {
+      return Unexpected(ToStatus(status), "Failed to load model from fd");
+    }
+    return CreateFromOwnedHandle(model);
+  }
+
+  /// @brief Creates a model from a file descriptor region.
+  ///
+  /// LiteRT duplicates the file descriptor internally; the caller retains
+  /// ownership of `fd`.
+  /// @deprecated Use API with explicit Environment instead.
+  static Expected<Model> CreateFromFd(int fd, size_t offset, size_t size) {
+    const auto& env = GetDefaultEnvironment();
+    LiteRtModel model;
+    if (auto status =
+            LiteRtCreateModelFromFd(env->Get(), fd, offset, size, &model);
         status != kLiteRtStatusOk) {
       return Unexpected(ToStatus(status), "Failed to load model from fd");
     }
@@ -250,10 +314,29 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   // /// @note This is an internal experimetal API which is not available through
   // /// libLiteRt.so. It's not part of the official LiteRT public C++ API.
   // static Expected<Model> CreateFromAllocation(
+      // Environment& env, std::unique_ptr<tflite::Allocation> allocation) {
+    // LiteRtModel model;
+    // LiteRtAllocation c_allocation = allocation.release();
+    // if (auto status = LiteRtCreateModelFromAllocation(
+            // env.Get(), c_allocation, &model);
+        // status != kLiteRtStatusOk) {
+      // return Unexpected(ToStatus(status),
+                        // "Failed to load model from allocation");
+    // }
+    // return CreateFromOwnedHandle(model);
+  // }
+// 
+  // /// @internal
+  // /// @brief Creates a model from an owned TFLite allocation.
+  // ///
+  // /// @note This is an internal experimetal API which is not available through
+  // /// libLiteRt.so. It's not part of the official LiteRT public C++ API.
+  // static Expected<Model> CreateFromAllocation(
       // std::unique_ptr<tflite::Allocation> allocation) {
     // LiteRtModel model;
-    // if (auto status =
-            // LiteRtCreateModelFromAllocation(std::move(allocation), &model);
+    // LiteRtAllocation c_allocation = allocation.release();
+    // if (auto status = LiteRtCreateModelFromAllocation(
+            // /*environment=*/nullptr, c_allocation, &model);
         // status != kLiteRtStatusOk) {
       // return Unexpected(ToStatus(status),
                         // "Failed to load model from allocation");
@@ -448,6 +531,15 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   /// ownership of the provided `tensor_buffer` handle.
   Model(LiteRtModel model, OwnHandle owned)
       : internal::BaseHandle<LiteRtModel>(model, LiteRtDestroyModel, owned) {}
+
+  // This is only used for managing the lifetime of ad-hoc environment for
+  // legacy cases.
+  [[deprecated("Do not use this field.")]]
+  static const Expected<Environment>& GetDefaultEnvironment() {
+    static const Expected<Environment>* kDefaultEnvironment =
+        new Expected<Environment>(Environment::Create({}));
+    return *kDefaultEnvironment;
+  }
 
  private:
   Expected<std::vector<StringView>> GetSignatureKeysImpl() const {

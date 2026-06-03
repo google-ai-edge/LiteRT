@@ -48,6 +48,8 @@ bazel run //litert/ats:ats -- [flags]
     pattern. Can be specified multiple times.
 *   `--dont_register=<pattern>`: Skip tests whose names match the given regex
     pattern. Can be specified multiple times.
+*   `--models_out=<path>`: Optional directory path where ATS will serialize and
+    export generated `.tflite` model artifacts during test teardown.
 *   `--quiet`: Suppress printing the report summary to standard output.
 
 > [!NOTE]
@@ -75,6 +77,11 @@ Debug a specific test case using a GTest filter and suppress the summary
 report:
 ```bash
 bazel run //litert/ats:cpu_ats -- --gtest_filter="*ats_42*" --quiet
+```
+
+Export generated `TransformerLayer` `.tflite` models to a directory on the host machine without printing the summary report:
+```bash
+bazel run //litert/ats:ats -- --models_out=/tmp/ats_transformer_models --do_register=TransformerLayer --quiet=true
 ```
 
 ## Output

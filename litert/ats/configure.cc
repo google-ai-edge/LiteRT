@@ -42,6 +42,7 @@
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/tools/flags/vendors/mediatek_flags.h"
 #include "litert/tools/flags/vendors/qualcomm_flags.h"
+#include "litert/tools/flags/vendors/samsung_flags.h"
 
 ABSL_FLAG(std::optional<int>, data_seed, std::nullopt,
           "Seed for the buffer data generation.");
@@ -56,6 +57,9 @@ ABSL_FLAG(bool, quiet, false, "Minimize logging.");
 
 ABSL_FLAG(std::string, backend, "cpu",
           "Which backend to use as the \"actual\".");
+
+ABSL_FLAG(bool, cpu_hint_fully_delegated, false,
+          "Whether to hint at fully delegating to a single delegate for CPU.");
 
 ABSL_FLAG(std::string, dispatch_dir, "",
           "Path to directory containing the dispatch library. Only relevant "
@@ -95,7 +99,7 @@ ABSL_FLAG(std::string, csv, "",
           "If specified, a CSV file will be written to this path containing "
           "the results of the test run.");
 
-ABSL_FLAG(bool, dump_report, true,
+ABSL_FLAG(bool, dump_report, false,
           "Whether to dump the report to the user after completion.");
 
 ABSL_FLAG(bool, compile_mode, false,
@@ -121,6 +125,7 @@ namespace litert::testing {
 
 namespace {
 
+using litert::samsung::UpdateSamsungOptionsFromFlags;
 using mediatek::UpdateMediatekOptionsFromFlags;
 using qualcomm::UpdateQualcommOptionsFromFlags;
 
@@ -161,9 +166,15 @@ Expected<Options> ParseOptions(ExecutionBackend backend) {
     LITERT_RETURN_IF_ERROR(UpdateQualcommOptionsFromFlags(qnn_opts));
     LITERT_ASSIGN_OR_RETURN(auto& mediatek_opts, options.GetMediatekOptions());
     LITERT_RETURN_IF_ERROR(UpdateMediatekOptionsFromFlags(mediatek_opts));
+    LITERT_ASSIGN_OR_RETURN(auto& samsung_opts, options.GetSamsungOptions());
+    LITERT_RETURN_IF_ERROR(UpdateSamsungOptionsFromFlags(samsung_opts));
     options.SetHardwareAccelerators(HwAccelerators::kNpu);
   } else if (backend == ExecutionBackend::kCpu) {
     options.SetHardwareAccelerators(HwAccelerators::kCpu);
+    LITERT_ASSIGN_OR_RETURN(auto& cpu_opts, options.GetCpuOptions());
+    LITERT_RETURN_IF_ERROR(
+        cpu_opts.SetHintFullyDelegatedToSingleDelegate(
+            absl::GetFlag(FLAGS_cpu_hint_fully_delegated)));
   } else if (backend == ExecutionBackend::kGpu) {
     options.SetHardwareAccelerators(HwAccelerators::kGpu);
     LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());

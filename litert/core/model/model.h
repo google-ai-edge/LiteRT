@@ -63,7 +63,7 @@
 // by the LiteRtModelT which is generally the longset living object. See various
 // "Emplace" methods.
 //
-// Since c api clients interface with pointers to IR Ojbects, a form of pointer
+// Since c api clients interface with pointers to IR Objects, a form of pointer
 // stability is desirable. Classes in this file enforce that pointers to IR
 // Objects are valid for their entire life time. Thus a c api client may store
 // pointers and depend on referential equality of IR Objects thoughout different
@@ -167,6 +167,7 @@ TensorType MakeRankedTensorType(LiteRtElementType element_type,
 typedef union {
   LiteRtQuantizationPerTensor per_tensor;
   LiteRtQuantizationPerChannel per_channel;
+  LiteRtQuantizationBlockWise block_wise;
 } QuantizationDetail;
 
 // Union and identifier for quantization types.
@@ -206,6 +207,18 @@ Quantization MakePerChannelQuantization(const Scales& scales,
   res.second.per_channel.scales = scales_buf;
   res.second.per_channel.zero_points = zeros_buf;
 
+  return res;
+}
+
+// Construct quantization type as block wise.
+inline Quantization MakeBlockWiseQuantization(LiteRtTensor scales,
+                                              LiteRtTensor zero_points,
+                                              int32_t block_size) {
+  Quantization res;
+  res.first = kLiteRtQuantizationBlockWise;
+  res.second.block_wise.scales = scales;
+  res.second.block_wise.zero_points = zero_points;
+  res.second.block_wise.block_size = block_size;
   return res;
 }
 
@@ -1541,6 +1554,21 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
       absl::Format(&sink, "%v", one_hot_opts);
       break;
     }
+    case tflite::BuiltinOptions_FullyConnectedOptions: {
+      const auto* fc_opts = opts.AsFullyConnectedOptions();
+      absl::Format(&sink, "%v", fc_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_BatchMatMulOptions: {
+      const auto* bmm_opts = opts.AsBatchMatMulOptions();
+      absl::Format(&sink, "%v", bmm_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_SoftmaxOptions: {
+      const auto* softmax_opts = opts.AsSoftmaxOptions();
+      absl::Format(&sink, "%v", softmax_opts);
+      break;
+    }
     case tflite::BuiltinOptions_NONE: {
       absl::Format(&sink, "{}");
       break;
@@ -1766,6 +1794,40 @@ void AbslStringify(Sink& sink, const GeluOptionsT& opts) {
 
 template <class Sink>
 void AbslStringify(Sink& sink, const GeluOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const FullyConnectedOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("fa", opts.fused_activation_function);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const FullyConnectedOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const BatchMatMulOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("adj_x", opts.adj_x);
+  b("adj_y", opts.adj_y);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const BatchMatMulOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const SoftmaxOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("beta", opts.beta);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const SoftmaxOptionsT* opts) {
   ::litert::internal::PrintNullableOpts(sink, opts);
 }
 

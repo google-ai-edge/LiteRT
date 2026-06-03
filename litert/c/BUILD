@@ -248,9 +248,12 @@ cc_test(
     srcs = ["litert_model_test.cc"],
     data = [
         "//litert/test:mlir_test_data",
+        "//litert/test:tflite_test_data",
     ],
     deps = [
         ":litert_common",
+        ":litert_environment",
+        ":litert_environment_options",
         ":litert_model",
         ":litert_op_code",
         "//litert/cc:litert_buffer_ref",
@@ -306,6 +309,7 @@ cc_test(
         "//litert/core/model",
         "//litert/core/model:buffer_manager",
         "//litert/test:common",
+        "//litert/test:load_test_model",
         "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers//:runtime_cc",

@@ -50,6 +50,7 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_compiler_context",
         "//litert/test:common",
+        "//litert/test:load_test_model",
         "@com_google_googletest//:gtest_main",
     ],
 )

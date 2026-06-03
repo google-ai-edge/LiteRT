@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_OPS_TRANSFORMER_TRANSFORMER_OPS_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_OPS_TRANSFORMER_TRANSFORMER_OPS_H_
 
+#include <memory>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -35,7 +36,8 @@ Tensor<Mixins...> RotaryEmbedding(const Tensor<Mixins...>& input,
                                   const Tensor<Mixins...>& segment_pos,
                                   float min_timescale, float max_timescale,
                                   float rope_wavelength) {
-  auto op = std::make_shared<graph::RotaryEmbeddingOperation<Mixins...>>();
+  auto op = std::make_shared<graph::RotaryEmbeddingOperation>();
+  RegisterMixins<Mixins...>(op);
   op->min_timescale = min_timescale;
   op->max_timescale = max_timescale;
   // op->rope_wavelength = rope_wavelength;
@@ -53,7 +55,8 @@ template <class... Mixins>
 Tensor<Mixins...> RmsNorm(const Tensor<Mixins...>& input,
                           const Tensor<Mixins...>& scale,
                           const Tensor<Mixins...>& epsilon) {
-  auto op = std::make_shared<graph::RmsNormOperation<Mixins...>>();
+  auto op = std::make_shared<graph::RmsNormOperation>();
+  RegisterMixins<Mixins...>(op);
   op->inputs = {input.GetRaw(), scale.GetRaw(), epsilon.GetRaw()};
   Tensor<Mixins...> output = AddOutput(op, source_location::current());
   const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
@@ -68,7 +71,8 @@ template <class... Mixins>
 Tensor<Mixins...> FillSegmentPos(const Tensor<Mixins...>& params,
                                  const std::vector<int>& shape,
                                  int param_index) {
-  auto op = std::make_shared<graph::FillSegmentPosOperation<Mixins...>>();
+  auto op = std::make_shared<graph::FillSegmentPosOperation>();
+  RegisterMixins<Mixins...>(op);
   op->param_index = param_index;
   op->inputs = {params.GetRaw()};
   Tensor<Mixins...> output = AddOutput(op, source_location::current());
@@ -83,7 +87,8 @@ template <class... Mixins>
 Tensor<Mixins...> FillAttentionMask(const Tensor<Mixins...>& params,
                                     const std::vector<int>& shape,
                                     bool is_local, int sliding_window_size) {
-  auto op = std::make_shared<graph::FillAttentionMaskOperation<Mixins...>>();
+  auto op = std::make_shared<graph::FillAttentionMaskOperation>();
+  RegisterMixins<Mixins...>(op);
   op->is_local = is_local;
   op->sliding_window_size = sliding_window_size;
   op->inputs = {params.GetRaw()};
@@ -98,7 +103,8 @@ Tensor<Mixins...> FillAttentionMask(const Tensor<Mixins...>& params,
 template <class... Mixins>
 std::pair<Tensor<Mixins...>, Tensor<Mixins...>> FillRopeCosSin(
     int seq_len, int head_dim, float rope_base) {
-  auto op = std::make_shared<graph::FillRopeCosSinOperation<Mixins...>>();
+  auto op = std::make_shared<graph::FillRopeCosSinOperation>();
+  RegisterMixins<Mixins...>(op);
   op->rope_base = rope_base;
 
   auto out_group = graph::NewTensorGroup(2, source_location::current());
@@ -127,7 +133,8 @@ std::vector<Tensor<Mixins...>> AddValuesToKvCache(
     const Tensor<Mixins...>& params, int num_of_kv_heads,
     int kv_cache_batch_size, int cache_size, int head_dimension,
     int token_index_offset, int active_tokens) {
-  auto op = std::make_shared<graph::AddValuesToKvCacheOperation<Mixins...>>();
+  auto op = std::make_shared<graph::AddValuesToKvCacheOperation>();
+  RegisterMixins<Mixins...>(op);
   op->num_of_kv_heads = num_of_kv_heads;
   op->kv_cache_batch_size = kv_cache_batch_size;
   op->token_index_offset = token_index_offset;
@@ -167,7 +174,8 @@ std::vector<Tensor<Mixins...>> AddValuesToCache(
     const Tensor<Mixins...>& params, int num_of_kv_heads,
     int kv_cache_batch_size, int cache_size, int head_dimension,
     int token_index_offset, int active_tokens) {
-  auto op = std::make_shared<graph::AddValuesToCacheOperation<Mixins...>>();
+  auto op = std::make_shared<graph::AddValuesToCacheOperation>();
+  RegisterMixins<Mixins...>(op);
   op->num_of_kv_heads = num_of_kv_heads;
   op->kv_cache_batch_size = kv_cache_batch_size;
   op->token_index_offset = token_index_offset;
@@ -203,7 +211,8 @@ std::vector<Tensor<Mixins...>> AddValuesToCache(
 template <class... Mixins>
 Tensor<Mixins...> QkNorm(const Tensor<Mixins...>& input,
                          const Tensor<Mixins...>& scale) {
-  auto op = std::make_shared<graph::QkNormOperation<Mixins...>>();
+  auto op = std::make_shared<graph::QkNormOperation>();
+  RegisterMixins<Mixins...>(op);
   op->inputs = {input.GetRaw(), scale.GetRaw()};
   Tensor<Mixins...> output = AddOutput(op, source_location::current());
   const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
@@ -217,7 +226,8 @@ Tensor<Mixins...> QkNorm(const Tensor<Mixins...>& input,
 template <class... Mixins>
 Tensor<Mixins...> ActivationSparsity(const Tensor<Mixins...>& input,
                                      float stddev_multiplier) {
-  auto op = std::make_shared<graph::ActivationSparsityOperation<Mixins...>>();
+  auto op = std::make_shared<graph::ActivationSparsityOperation>();
+  RegisterMixins<Mixins...>(op);
   op->stddev_multiplier = stddev_multiplier;
   op->inputs = {input.GetRaw()};
   Tensor<Mixins...> output = AddOutput(op, source_location::current());
@@ -232,7 +242,8 @@ Tensor<Mixins...> ActivationSparsity(const Tensor<Mixins...>& input,
 template <class... Mixins>
 Tensor<Mixins...> SelectMask(const Tensor<Mixins...>& scores,
                              const Tensor<Mixins...>& mask) {
-  auto op = std::make_shared<graph::SelectMaskOperation<Mixins...>>();
+  auto op = std::make_shared<graph::SelectMaskOperation>();
+  RegisterMixins<Mixins...>(op);
   op->inputs = {scores.GetRaw(), mask.GetRaw()};
   Tensor<Mixins...> output = AddOutput(op, source_location::current());
   const graph::TensorInformation& scores_info = *GetInfo(scores.GetRaw());
@@ -246,7 +257,8 @@ Tensor<Mixins...> SelectMask(const Tensor<Mixins...>& scores,
 template <class... Mixins>
 Tensor<Mixins...> WriteCurrentTokens(const Tensor<Mixins...>& input,
                                      const Tensor<Mixins...>& params) {
-  auto op = std::make_shared<graph::WriteCurrentTokensOperation<Mixins...>>();
+  auto op = std::make_shared<graph::WriteCurrentTokensOperation>();
+  RegisterMixins<Mixins...>(op);
   op->inputs = {input.GetRaw(), params.GetRaw()};
   LRT_TENSOR_ASSIGN_OR_ABORT(auto input_info, graph::GetInfo(input.GetRaw()));
   Tensor<Mixins...> output = AddOutput(op, source_location::current());
@@ -262,7 +274,8 @@ Tensor<Mixins...> MatMulWithCache(const Tensor<Mixins...>& lhs,
                                   const Tensor<Mixins...>& rhs,
                                   const Tensor<Mixins...>& params,
                                   bool is_v = false) {
-  auto op = std::make_shared<graph::MatMulWithCacheOperation<Mixins...>>();
+  auto op = std::make_shared<graph::MatMulWithCacheOperation>();
+  RegisterMixins<Mixins...>(op);
   op->inputs = {lhs.GetRaw(), rhs.GetRaw(), params.GetRaw()};
   op->is_v = is_v;
   LRT_TENSOR_ASSIGN_OR_ABORT(auto lhs_info, graph::GetInfo(lhs.GetRaw()));
@@ -290,8 +303,8 @@ Tensor<Mixins...> SoftmaxWithRuntimeCheck(
     const Tensor<Mixins...>& input, const Tensor<Mixins...>& params,
     std::optional<int> start_ch_index = std::nullopt,
     std::optional<int> end_ch_index = std::nullopt) {
-  auto op =
-      std::make_shared<graph::SoftmaxWithRuntimeCheckOperation<Mixins...>>();
+  auto op = std::make_shared<graph::SoftmaxWithRuntimeCheckOperation>();
+  RegisterMixins<Mixins...>(op);
   op->start_ch_index = start_ch_index;
   op->end_ch_index = end_ch_index;
   op->inputs = {input.GetRaw(), params.GetRaw()};

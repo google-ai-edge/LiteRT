@@ -33,6 +33,7 @@ struct LrtCpuOptions {
   std::optional<uint32_t> flags;
   std::optional<std::string> weight_cache_file_path;
   std::optional<int> weight_cache_file_descriptor;
+  std::optional<bool> hint_fully_delegated_to_single_delegate;
 };
 
 namespace {
@@ -96,6 +97,14 @@ LiteRtStatus LrtGetOpaqueCpuOptionsData(const LrtCpuOptions* options,
   if (options->flags.has_value()) {
     absl::StrAppend(&toml_data,
                     absl::StrFormat("flags = %u\n", *options->flags));
+  }
+  if (options->hint_fully_delegated_to_single_delegate.has_value()) {
+    absl::StrAppend(
+        &toml_data,
+        absl::StrFormat("hint_fully_delegated_to_single_delegate = %s\n",
+                        *options->hint_fully_delegated_to_single_delegate
+                            ? "true"
+                            : "false"));
   }
   if (options->weight_cache_file_path.has_value()) {
     absl::StrAppend(&toml_data,
@@ -165,6 +174,15 @@ LiteRtStatus LrtSetCpuOptionsXNNPackFlags(LrtCpuOptions* options,
   LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
                 "options is null.");
   options->flags = flags;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetCpuOptionsHintFullyDelegatedToSingleDelegate(
+    LrtCpuOptions* options, bool hint_fully_delegated_to_single_delegate) {
+  LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "options is null.");
+  options->hint_fully_delegated_to_single_delegate =
+      hint_fully_delegated_to_single_delegate;
   return kLiteRtStatusOk;
 }
 

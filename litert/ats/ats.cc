@@ -321,6 +321,24 @@ void RegisterReshape(const AtsConf& options, size_t& test_id, size_t iters,
 }
 
 template <typename Fixture>
+void RegisterTransformerLayer(const AtsConf& options, size_t& test_id,
+                              size_t iters, typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      TransformerLayer,
+      TypeList<std::integral_constant<AttentionType, AttentionType::kMHA>,
+               std::integral_constant<AttentionType, AttentionType::kGQA>>,
+      TypeList<std::integral_constant<NormType, NormType::kLayerNorm>,
+               std::integral_constant<NormType, NormType::kRMSNorm>>,
+      TypeList<std::integral_constant<FfnType, FfnType::kStandard>,
+               std::integral_constant<FfnType, FfnType::kSwiGLU>>,
+      TypeList<float>>
+    (iters, test_id, options, cap, "Transformer");
+  // clang-format on
+}
+
+template <typename Fixture>
 void RegisterAll(const AtsConf& options, size_t& test_id,
                  typename Fixture::Capture& cap) {
   RegisterExtraModels<Fixture>(test_id, options, cap);
@@ -334,6 +352,7 @@ void RegisterAll(const AtsConf& options, size_t& test_id,
   RegisterPooling<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterOneHot<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterReshape<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterTransformerLayer<Fixture>(options, test_id, /*iters=*/2, cap);
 }
 
 int Ats() {

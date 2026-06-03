@@ -193,7 +193,6 @@ class Reduction : public TestGraph {
 
     LITERT_RETURN_IF_ERROR(litert::internal::InferReduce(
         op, absl::MakeSpan(input_shapes), output_shapes));
-    LITERT_LOG(LITERT_INFO, "Output shape size: %lu", output_shapes[0].size());
 
     params.output_shape = {output_shapes[0].begin(), output_shapes[0].end()};
 

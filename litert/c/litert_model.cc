@@ -47,7 +47,8 @@ extern "C" {
 // Model
 //
 
-LiteRtStatus LiteRtCreateModelFromFile(const char* filename,
+LiteRtStatus LiteRtCreateModelFromFile(LiteRtEnvironment environment,
+                                       const char* filename,
                                        LiteRtModel* model) {
   if (!filename || !model) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -59,7 +60,8 @@ LiteRtStatus LiteRtCreateModelFromFile(const char* filename,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtCreateModelFromBuffer(const void* buffer_addr,
+LiteRtStatus LiteRtCreateModelFromBuffer(LiteRtEnvironment environment,
+                                         const void* buffer_addr,
                                          size_t buffer_size,
                                          LiteRtModel* model) {
   if (!buffer_addr || !buffer_size || !model) {
@@ -74,7 +76,8 @@ LiteRtStatus LiteRtCreateModelFromBuffer(const void* buffer_addr,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtCreateModelFromFd(int fd, size_t offset, size_t size,
+LiteRtStatus LiteRtCreateModelFromFd(LiteRtEnvironment environment, int fd,
+                                     size_t offset, size_t size,
                                      LiteRtModel* model) {
   if (fd < 0 || size == 0 || !model) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -527,6 +530,16 @@ LiteRtStatus LiteRtGetCustomCode(LiteRtOp op, const char** code) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetCustomOptions(LiteRtOp op, const uint8_t** custom_options,
+                                    int32_t* size) {
+  if (!op || !custom_options || !size) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *custom_options = op->CustomOptions().Data();
+  *size = op->CustomOptions().Size();
+  return kLiteRtStatusOk;
+}
+
 //
 // Weights
 //
@@ -688,19 +701,38 @@ LiteRtStatus LiteRtGetPerChannelQuantization(
   return kLiteRtStatusOk;
 }
 
-#ifdef __cplusplus
-}  // extern "C"
-#endif
+LiteRtStatus LiteRtGetBlockWiseQuantization(
+    LiteRtTensor tensor, LiteRtQuantizationBlockWise* block_wise_quantization) {
+  if (!tensor || !block_wise_quantization) {
+    return kLiteRtStatusErrorInvalidArgument;
+  } else if (tensor->Qparams().first != kLiteRtQuantizationBlockWise) {
+    return kLiteRtStatusErrorInvalidIrType;
+  }
+  auto& block_wise = tensor->Qparams().second.block_wise;
+  block_wise_quantization->scales = block_wise.scales;
+  block_wise_quantization->zero_points = block_wise.zero_points;
+  block_wise_quantization->block_size = block_wise.block_size;
+  return kLiteRtStatusOk;
+}
 
-LiteRtStatus LiteRtCreateModelFromAllocation(
-    std::unique_ptr<tflite::Allocation> allocation, LiteRtModel* model) {
+LiteRtStatus LiteRtCreateModelFromAllocation(LiteRtEnvironment environment,
+                                             LiteRtAllocation allocation,
+                                             LiteRtModel* model) {
+  std::unique_ptr<tflite::Allocation> tflite_allocation(allocation);
   if (!model) {
     return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!tflite_allocation) {
+    return kLiteRtStatusErrorFileIO;
   }
 
   LITERT_ASSIGN_OR_RETURN(
       LiteRtModelT::Ptr new_model,
-      litert::internal::LoadModelFromAllocation(std::move(allocation)));
+      litert::internal::LoadModelFromAllocation(std::move(tflite_allocation)));
   *model = new_model.release();
   return kLiteRtStatusOk;
 }
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif

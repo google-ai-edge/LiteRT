@@ -92,6 +92,17 @@ class CpuOptions {
     return flags;
   }
 
+  /// @brief Sets whether to hint at fully delegating to a single delegate so
+  /// certain allocations can be skipped.
+  /// Bypassing early graph validation on operations missing reference kernel
+  /// support (e.g. float16) requires that the graph be fully delegated or
+  /// loading will fail.
+  Expected<void> SetHintFullyDelegatedToSingleDelegate(bool enabled) {
+    LITERT_RETURN_IF_ERROR(LrtSetCpuOptionsHintFullyDelegatedToSingleDelegate(
+        options_.get(), enabled));
+    return {};
+  }
+
   /// @brief Sets the XNNPack weight cache file path.
   Expected<void> SetXNNPackWeightCachePath(const char* path) {
     LITERT_RETURN_IF_ERROR(

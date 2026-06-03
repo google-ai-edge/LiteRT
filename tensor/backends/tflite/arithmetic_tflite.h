@@ -22,7 +22,10 @@ limitations under the License.
 
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "tensor/arithmetic_graph.h"
+#include "tensor/datatypes.h"
+#include "tensor/internal/graph.h"
 #include "tensor/internal/mixin.h"
+#include "tensor/internal/type_id.h"
 #include "tflite/schema/mutable/schema_generated.h"
 #include "tflite/types/half.h"
 
@@ -56,578 +59,665 @@ struct TfLiteOpBuildInfo {
 };
 
 // Base class for operations that defines conversion to TfLite flatbuffer.
-class TfLiteOperation {
+class TfLiteOperation : public graph::BackendExtension {
  public:
-  virtual ~TfLiteOperation() = default;
-  virtual absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const = 0;
+  internal::TypeId GetTypeId() const override {
+    return internal::TypeId::Get<TfLiteOperation>();
+  }
+  virtual absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const = 0;
 };
 
 template <>
-class OpMixin<AddOperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<AddOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<MulOperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<MulOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<AbsOperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<AbsOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<ReluOperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<ReluOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<Relu6OperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<Relu6Operation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<ReluN1To1OperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<ReluN1To1Operation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<ZerosLikeOperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<ZerosLikeOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<Relu0To1OperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<Relu0To1Operation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<LeakyReluOperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<LeakyReluOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<EluOperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<EluOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<HardSwishOperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<HardSwishOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<PReluOperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<PReluOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<L2NormalizationOperationTag, TfLiteMixinTag> :
-    public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<SubOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<DivOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<SquareOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<RsqrtOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<PowOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<NegOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<SqrtOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<ExpOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<LogOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<CeilOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<FloorOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<FloorDivOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<FloorModOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<SignOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<RoundOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<TransposeOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<LogisticOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<EmbeddingLookupOperationTag, TfLiteMixinTag>
+class OpMixin<L2NormalizationOperation, TfLiteMixinTag>
     : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<DynamicUpdateSliceOperationTag, TfLiteMixinTag>
+class OpMixin<SubOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<DivOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<SquareOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<RsqrtOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<PowOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<NegOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<SqrtOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<ExpOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<LogOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<CeilOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<FloorOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<FloorDivOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<FloorModOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<SignOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<RoundOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<TransposeOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<LogisticOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<EmbeddingLookupOperation, TfLiteMixinTag>
     : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<TileOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<GeluOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<TanhOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<CastOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<SelectOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<SelectV2OperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<SliceOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<LessOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<GreaterOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<GreaterEqualOperationTag, TfLiteMixinTag>
+class OpMixin<DynamicUpdateSliceOperation, TfLiteMixinTag>
     : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<NotEqualOperationTag, TfLiteMixinTag>
+class OpMixin<TileOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<GeluOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<TanhOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<CastOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<SelectOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<SelectV2Operation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<SliceOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<LessOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<GreaterOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<GreaterEqualOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<NotEqualOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+template <>
+class OpMixin<EqualOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<MinimumOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<MaximumOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<LogicalAndOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<LogicalOrOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<LogicalNotOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<BitwiseXorOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<RightShiftOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<CosOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<SinOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<SoftmaxOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<LogSoftmaxOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<ReshapeOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<SqueezeOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<ExpandDimsOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<BatchMatMulOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<FullyConnectedOperation, TfLiteMixinTag>
     : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-template <>
-class OpMixin<EqualOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<MinimumOperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<ConcatenationOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<MaximumOperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<PackOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<LogicalAndOperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<UnpackOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<LogicalOrOperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<SplitOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<LogicalNotOperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<CustomOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<BitwiseXorOperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<AveragePool2DOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<RightShiftOperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<MaxPool2DOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<CosOperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<Conv2DOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<SinOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<SoftmaxOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<LogSoftmaxOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<ReshapeOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<SqueezeOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<ExpandDimsOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<BatchMatMulOperationTag, TfLiteMixinTag>
+class OpMixin<DepthwiseConv2DOperation, TfLiteMixinTag>
     : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<FullyConnectedOperationTag, TfLiteMixinTag>
+class OpMixin<PadOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<PadV2Operation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<SumOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<TopKOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<QuantizeOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<DequantizeOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<CumsumOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<ReverseOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<SpaceToDepthOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<DepthToSpaceOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<GatherOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<GatherNdOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<OneHotOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<ReduceMaxOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<MeanOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<ProbeOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<ResizeBilinearOperation, TfLiteMixinTag>
     : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<ConcatenationOperationTag, TfLiteMixinTag>
+class OpMixin<ResizeNearestNeighborOperation, TfLiteMixinTag>
     : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<PackOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<UnpackOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<SplitOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<CustomOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<AveragePool2DOperationTag, TfLiteMixinTag> :
-    public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<MaxPool2DOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<Conv2DOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<DepthwiseConv2DOperationTag, TfLiteMixinTag>
+class OpMixin<NonMaxSuppressionV5Operation, TfLiteMixinTag>
     : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<PadOperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<TransposeConvOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<PadV2OperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<SumOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<TopKOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<QuantizeOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<DequantizeOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<CumsumOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<ReverseOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<SpaceToDepthOperationTag, TfLiteMixinTag>
+class OpMixin<TransposeConv2DOperation, TfLiteMixinTag>
     : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<DepthToSpaceOperationTag, TfLiteMixinTag>
-    : public TfLiteOperation {
+class OpMixin<LstmOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 template <>
-class OpMixin<GatherOperationTag, TfLiteMixinTag> : public TfLiteOperation {
+class OpMixin<ArgMaxOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<GatherNdOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<OneHotOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<ReduceMaxOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<MeanOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<ProbeOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<ResizeBilinearOperationTag, TfLiteMixinTag>
-    : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<ResizeNearestNeighborOperationTag, TfLiteMixinTag>
-    : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<NonMaxSuppressionV5OperationTag, TfLiteMixinTag>
-    : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<TransposeConvOperationTag, TfLiteMixinTag>
-    : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<TransposeConv2DOperationTag, TfLiteMixinTag>
-    : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<LstmOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
-};
-
-template <>
-class OpMixin<ArgMaxOperationTag, TfLiteMixinTag> : public TfLiteOperation {
- public:
-  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite() const override;
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
 };
 
 }  // namespace graph
