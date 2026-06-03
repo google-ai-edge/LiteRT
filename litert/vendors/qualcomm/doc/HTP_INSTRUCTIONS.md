@@ -9,21 +9,12 @@ below cover the following modes:
 > `.tflite` graph into a QNN context binary), not building the LiteRT source
 > code.
 
-| Mode        | Where      | Recompiles each     | Section                   |
-:             : compiled   : load                :                           :
-| ----------- | ---------- | ------------------- | ------------------------- |
-| **AOT       | Host (x86  | No, compiled        | [AOT Flow](#aot-flow) >   |
-: (Bazel)**   : Linux)     : offline             : [Build with               :
-:             :            :                     : Bazel](#build-with-bazel) :
-| **AOT       | Host (x86  | No, compiled        | [AOT Flow](#aot-flow) >   |
-: (CMake)**   : Linux)     : offline             : [Build with               :
-:             :            :                     : CMake](#build-with-cmake) :
-| **Real      | Device, at | Yes, in memory      | [JIT on                   |
-: JIT**       : load time  : without             : Android](#jit-on-android) :
-:             :            : serialization/cache :                           :
-| **On-device | Device, on | No, cached after    | [JIT on                   |
-: AOT**       : the first  : first load          : Android](#jit-on-android) :
-:             : load       :                     :                           :
+| Mode              | Where compiled            | Recompiles each load              | Section                                          |
+| ----------------- | ------------------------- | --------------------------------- | ------------------------------------------------ |
+| **AOT (Bazel)**   | Host (x86 Linux)          | No, compiled offline              | [AOT Flow](#aot-flow) > [Build with Bazel](#build-with-bazel) |
+| **AOT (CMake)**   | Host (x86 Linux)          | No, compiled offline              | [AOT Flow](#aot-flow) > [Build with CMake](#build-with-cmake) |
+| **Real JIT**      | Device, at load time      | Yes, in memory without serialization/cache | [JIT on Android](#jit-on-android)            |
+| **On-device AOT** | Device, on the first load | No, cached after first load       | [JIT on Android](#jit-on-android)                |
 
 AOT is the most common path. Choose JIT when you cannot pre-compile on a host.
 **Real JIT** recompiles in memory every load, while **On-device AOT** compiles
@@ -40,34 +31,34 @@ libraries in [QAIRT_SDK.md](./QAIRT_SDK.md) are understood.
 The commands below refer to the following `${}` variables. Configure them for
 your environment before running any step.
 
-Variable                 | Description
------------------------- | -----------
-`${LITERT}`              | The path of LiteRT source code.
-`${QAIRT}`               | The root path of the unzipped QAIRT SDK.
-`${SOC_MODEL}`           | Target SoC. Search "Supported Snapdragon devices" in the [QNN general overview](https://docs.qualcomm.com/doc/80-63442-10/topic/QNN_general_overview.html) and use the "Snapdragon Device/Chip" value. For example, `SM8850` for "Snapdragon 8 Elite Gen 5".
-`${HTP_ARCH}`            | HTP architecture of the target `${SOC_MODEL}`, matching the QNN library casing (uppercase `V` plus version number, e.g. `V81`, `V79`, `V75`). In the same "Supported Snapdragon devices" table of the [QNN general overview](https://docs.qualcomm.com/doc/80-63442-10/topic/QNN_general_overview.html), use the "Hexagon Arch" column. For example, `V81` for `SM8850`, `V79` for `SM8750`, `V75` for `SM8650`.
-`${HEXAGON_ARCH}`        | The same Hexagon architecture as `${HTP_ARCH}` but lowercase, to match the QAIRT directory name `hexagon-vXX`. For example, `v81`, `v79`, `v75`.
-`${SOURCE_MODEL_DIR}`    | The host directory that holds the input `.tflite` model (and where the compiled output is written).
-`${SOURCE_MODEL_PATH}`   | The file name of the input `.tflite` model (e.g. `model.tflite`). On the host it lives at `${SOURCE_MODEL_DIR}/${SOURCE_MODEL_PATH}`; for JIT it is pushed into `${TEST_FOLDER}`, so on the device it lives at `${TEST_FOLDER}/${SOURCE_MODEL_PATH}`.
-`${COMPILED_MODEL_PATH}` | The file name of the AOT-compiled output `.tflite` model (e.g. `model_compiled.tflite`). Written on the host to `${SOURCE_MODEL_DIR}/${COMPILED_MODEL_PATH}`, then pushed into `${TEST_FOLDER}`, so on the device it lives at `${TEST_FOLDER}/${COMPILED_MODEL_PATH}`.
-`${TEST_FOLDER}`         | The path of the test folder on the device.
+| Variable                 | Description                                                                 |
+| ------------------------ | --------------------------------------------------------------------------- |
+| `${LITERT}`              | The path of LiteRT source code.                                             |
+| `${QAIRT}`               | The root path of the unzipped QAIRT SDK.                                    |
+| `${SOC_MODEL}`           | Target SoC. Search "Supported Snapdragon devices" in the [QNN general overview](https://docs.qualcomm.com/doc/80-63442-10/topic/QNN_general_overview.html) and use the "Snapdragon Device/Chip" value. For example, `SM8850` for "Snapdragon 8 Elite Gen 5". |
+| `${HTP_ARCH}`            | HTP architecture of the target `${SOC_MODEL}`, matching the QNN library casing (uppercase `V` plus version number, e.g. `V81`, `V79`, `V75`). In the same "Supported Snapdragon devices" table of the [QNN general overview](https://docs.qualcomm.com/doc/80-63442-10/topic/QNN_general_overview.html), use the "Hexagon Arch" column. For example, `V81` for `SM8850`, `V79` for `SM8750`, `V75` for `SM8650`. |
+| `${HEXAGON_ARCH}`        | The same Hexagon architecture as `${HTP_ARCH}` but lowercase, to match the QAIRT directory name `hexagon-vXX`. For example, `v81`, `v79`, `v75`. |
+| `${SOURCE_MODEL_DIR}`    | The host directory that holds the input `.tflite` model (and where the compiled output is written). |
+| `${SOURCE_MODEL_PATH}`   | The file name of the input `.tflite` model (e.g. `model.tflite`). On the host it lives at `${SOURCE_MODEL_DIR}/${SOURCE_MODEL_PATH}`; for JIT it is pushed into `${TEST_FOLDER}`, so on the device it lives at `${TEST_FOLDER}/${SOURCE_MODEL_PATH}`. |
+| `${COMPILED_MODEL_PATH}` | The file name of the AOT-compiled output `.tflite` model (e.g. `model_compiled.tflite`). Written on the host to `${SOURCE_MODEL_DIR}/${COMPILED_MODEL_PATH}`, then pushed into `${TEST_FOLDER}`, so on the device it lives at `${TEST_FOLDER}/${COMPILED_MODEL_PATH}`. |
+| `${TEST_FOLDER}`         | The path of the test folder on the device.                                  |
 
 These variables are only needed by specific sections:
 
-Variable                    | Used by
---------------------------- | -------
-`${EXTRACTED_BYTECODE_DIR}` | [(Optional) Extract bytecode from compiled model for QNN Runtime](#optional-extract-bytecode-from-compiled-model-for-qnn-runtime)
-`${ANDROID_NDK_HOME}`       | [Build with CMake](#build-with-cmake)
-`${IOT_DIR}`                | [Build with CMake](#build-with-cmake) > [Run on device (IoT device with oe-linux)](#run-on-device-iot-device-with-oe-linux)
-`${CACHE_DIR}`              | [On-device AOT (cached JIT)](#on-device-aot-cached-jit). A writable directory on the device for the cached context binary.
+| Variable                    | Used by                                                                |
+| --------------------------- | ---------------------------------------------------------------------- |
+| `${EXTRACTED_BYTECODE_DIR}` | [(Optional) Extract bytecode from compiled model for QNN Runtime](#optional-extract-bytecode-from-compiled-model-for-qnn-runtime) |
+| `${ANDROID_NDK_HOME}`       | [Build with CMake](#build-with-cmake)                                  |
+| `${IOT_DIR}`                | [Build with CMake](#build-with-cmake) > [Run on device (IoT device with oe-linux)](#run-on-device-iot-device-with-oe-linux) |
+| `${CACHE_DIR}`              | [On-device AOT (cached JIT)](#on-device-aot-cached-jit). A writable directory on the device for the cached context binary. |
 
 --------------------------------------------------------------------------------
 
 ## AOT Flow
 
 The model is compiled into a QNN context binary on the host (x86 Linux) ahead of
-time, then the compiled `.tflite` is pushed to the device and executed. Two
-build systems are supported: Bazel and CMake.
+time, then the compiled `.tflite` is pushed to the device and executed. Two build
+systems are supported: Bazel and CMake.
 
 ### Build with Bazel
 
@@ -332,25 +323,15 @@ The [AOT flow](#aot-flow) above compiles the model into a QNN context binary on
 the host ahead of time. Alternatively, the model can be compiled **on the
 device** at runtime by loading the compiler plugin directly. This is referred to
 as JIT (Just-In-Time) and removes the host pre-compilation step. `run_model` is
-given the original `.tflite` model and compiles it on the device on its first
-load.
+given
+the original `.tflite` model and compiles it on the device on its first load.
 
 There are two JIT sub-modes, controlled by which flag is set:
 
-| Sub-mode     | Flags                             | Serialization           |
-| ------------ | --------------------------------- | ----------------------- |
-| **Real JIT** | `--compiler_plugin_library_dir` + | Compiles in memory and  |
-:              : `--qualcomm_enable_just_in_time`  : **bypasses              :
-:              :                                   : serialization**.        :
-:              :                                   : Recompiles on every     :
-:              :                                   : load with no cache.     :
-| **On-device  | `--compiler_plugin_library_dir` + | Compiles on the first   |
-: AOT**        : `--compiler_cache_dir`            : run and **caches** the  :
-:              :                                   : context binary to       :
-:              :                                   : `--compiler_cache_dir`. :
-:              :                                   : Later runs load from    :
-:              :                                   : the cache instead of    :
-:              :                                   : recompiling.            :
+| Sub-mode          | Flags                                                              | Serialization                                                                  |
+| ----------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| **Real JIT**      | `--compiler_plugin_library_dir` + `--qualcomm_enable_just_in_time` | Compiles in memory and **bypasses serialization**. Recompiles on every load with no cache. |
+| **On-device AOT** | `--compiler_plugin_library_dir` + `--compiler_cache_dir`           | Compiles on the first run and **caches** the context binary to `--compiler_cache_dir`. Later runs load from the cache instead of recompiling. |
 
 In both cases the model is partitioned and compiled on the device, so the NPU
 accelerator must be requested via `--accelerator npu`.
