@@ -100,6 +100,7 @@ tf_cc_test(
         "//tflite/core:model_builder",
         "//tflite/core/c:common",
         "//tflite/kernels/internal:types",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_matchers",
         "@com_google_googletest//:gtest_main",
