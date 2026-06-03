@@ -334,6 +334,7 @@ package_group(
     packages = [
         "//litert/kotlin/...",
         "//litert/rust/...",
+        "//litert/swift/...",
         "//litert/vendors/...",
     ],
 )
