@@ -47,6 +47,15 @@ enum {
   NEURON_EXT_TENSOR_QUANT2_ASYMM_SIGNED_PER_CHANNEL = 9018,
 };
 
+// Workaround for adapter headers that pre-date NeuronExecutionConfigType
+// (Available since 10.0.0).
+#ifndef NEURON_EXECUTION_CONFIG_UID
+typedef enum {
+  NEURON_EXECUTION_CONFIG_ORIGINAL_UID = 1,
+  NEURON_EXECUTION_CONFIG_JOB_PRIORITY = 2,
+} NeuronExecutionConfigType;
+#endif
+
 /** Workaround for the adapter header without definition */
 /* NeuronOperationType */
 #define NEURON_UNKNOWN static_cast<NeuronOperationType>(10001)
@@ -141,10 +150,12 @@ class NeuronAdapterApi {
   std::string aot_compilation_options_;
 };
 
-// This is not part of the provided NeuronAdapter header for some reason.
+// These functions may be absent from older NeuronAdapter headers.
 int NeuronCompilation_createWithOptions(NeuronModel* model,
                                         NeuronCompilation** compilation,
                                         const char* options);
+int NeuronExecution_setConfig(NeuronExecution* execution, int32_t type,
+                              const void* buffer, size_t length);
 
 // A convenient struct for holding function pointers to NeuronAdapter API
 // symbols. These function pointers will be loaded to the shared library on
