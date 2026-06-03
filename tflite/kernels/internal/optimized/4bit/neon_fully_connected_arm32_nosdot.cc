@@ -15,14 +15,10 @@ limitations under the License.
 
 #if defined(FC_4BIT_NEON) && (defined(__ARM_NEON__) || defined(__ARM_NEON))
 
-#include <arm_neon.h>
 #include <stdint.h>
 
 #include <algorithm>
-#include <vector>
 
-#include "tflite/kernels/internal/cppmath.h"
-#include "tflite/kernels/internal/optimized/4bit/fully_connected_common.h"
 #include "tflite/kernels/internal/optimized/4bit/neon_fully_connected_impl.h"
 
 namespace tflite {
@@ -32,7 +28,7 @@ template <int RowsLeft, int RowsRight, int Cols>
 void NeonRunKernelNoSDot(const uint8_t* lhs, const int8_t* rhs, int32_t* dst,
                          int lhs_layout_rows, int lhs_layout_cols,
                          int rhs_layout_rows, int rhs_layout_cols,
-                         int dst_layout_rows, int dst_layout_cols) {}
+                         int dst_layout_rows, int dst_layout_cols);
 
 template <>
 void NeonRunKernelNoSDot<4, 1, 32>(const uint8_t* lhs, const int8_t* rhs,
@@ -152,9 +148,8 @@ void NeonRunKernelNoSDot<4, 1, 32>(const uint8_t* lhs, const int8_t* rhs,
           : "cc", "memory", "r3", "d0", "d1", "d2", "d3", "d4", "d5", "d6",
             "d7", "d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15", "d16",
             "d17", "d18", "d19", "d20", "d21", "d22", "d23", "d24", "d25",
-            "d26", "d27", "d28", "d29", "d30", "d31", "q0", "q1", "q2", "q3",
-            "q4", "q5", "q6", "q7", "q8", "q9", "q10", "q11", "q12", "q13",
-            "q14", "q15");
+            "d26", "d27", "q0", "q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8",
+            "q9", "q10", "q11", "q14", "q15");
     }
   }
 }
