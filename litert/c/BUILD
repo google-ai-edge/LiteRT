@@ -340,6 +340,17 @@ litert_c_api_library(
     ],
 )
 
+cc_test(
+    name = "litert_event_test",
+    srcs = ["litert_event_test.cc"],
+    deps = [
+        ":litert_common",
+        ":litert_event",
+        ":litert_event_type",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "litert_tensor_buffer_types",
     hdrs = ["litert_tensor_buffer_types.h"],
