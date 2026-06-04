@@ -213,6 +213,9 @@ void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) {
 
 LiteRtStatus LiteRtCompiledResultNumByteCodeModules(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex* num_byte_code) {
+  if (!compiled_result || !num_byte_code) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   *num_byte_code = !compiled_result->jit_graphs.empty()
                        ? compiled_result->jit_graphs.size()
                        : compiled_result->context_bin.size();

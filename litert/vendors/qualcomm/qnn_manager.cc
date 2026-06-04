@@ -167,12 +167,20 @@ LiteRtStatus QnnManager::LoadSystemLib(absl::string_view path) {
   std::string resolved_path;
   if (shared_library_dir_) {
     resolved_path = litert::internal::Join({*shared_library_dir_, path});
-  } else {
-    resolved_path = std::string(path);
+    LITERT_LOG(LITERT_INFO, "Loading qnn system shared library from \"%s\"",
+               resolved_path.c_str());
+    auto lib_system_or = SharedLibrary::Load(resolved_path, GetRtldFlags());
+    if (lib_system_or) {
+      lib_system_ = std::move(lib_system_or.Value());
+      return kLiteRtStatusOk;
+    }
+    LITERT_LOG(LITERT_INFO,
+               "Falling back to loading qnn system shared library from \"%s\"",
+               path.data());
   }
   LITERT_LOG(LITERT_INFO, "Loading qnn system shared library from \"%s\"",
-             resolved_path.c_str());
-  auto lib_system_or = SharedLibrary::Load(resolved_path, GetRtldFlags());
+             path.data());
+  auto lib_system_or = SharedLibrary::Load(path, GetRtldFlags());
   if (!lib_system_or) {
     LITERT_LOG(LITERT_ERROR, "%s", lib_system_or.Error().Message().data());
     return lib_system_or.Error().Status();
