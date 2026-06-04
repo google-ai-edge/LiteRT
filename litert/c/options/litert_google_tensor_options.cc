@@ -38,7 +38,7 @@ struct LrtGoogleTensorOptionsT {
   bool enable_large_model_support = false;
   bool enable_4bit_compilation = false;
   LrtGoogleTensorOptionsShardingIntensity sharding_intensity =
-      kLiteRtGoogleTensorShardingIntensityMinimal;
+      kLiteRtGoogleTensorShardingIntensityUnspecified;
   bool enable_dynamic_range_quantization = false;
   std::optional<LiteRtGoogleTensorOptionsPerformanceMode> performance_mode =
       std::nullopt;
@@ -91,7 +91,7 @@ LiteRtStatus LrtGetOpaqueGoogleTensorOptionsData(
     absl::StrAppendFormat(&toml_str, "enable_four_bit_compilation = true\n");
   }
   if (options->sharding_intensity !=
-      kLiteRtGoogleTensorShardingIntensityMinimal) {
+      kLiteRtGoogleTensorShardingIntensityUnspecified) {
     absl::StrAppendFormat(&toml_str, "sharding_intensity = %d\n",
                           static_cast<int>(options->sharding_intensity));
   }
