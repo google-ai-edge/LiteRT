@@ -1726,6 +1726,9 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
   if (has_graph_transform("masking")) {
     g2g_option |= ::qnn::G2GConfig::kMasking;
   }
+  if (has_graph_transform("rotation_quant")) {
+    g2g_option |= ::qnn::G2GConfig::kRotationQuant;
+  }
   GraphToGraphTransform(g2g_option, graph_op_wrappers, tensor_pool,
                         [&qnn](::qnn::OpWrapper& op) -> bool {
                           return qnn.ValidateOp(op) == kLiteRtStatusOk;

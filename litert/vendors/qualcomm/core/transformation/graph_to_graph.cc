@@ -319,21 +319,22 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
     };
     Transform(validate_op_config, ops, tensor_pool, attn, OptimizeMHAAttn);
   }
+  if (HasG2GFlag(g2g_option, G2GConfig::kRotationQuant)) {
+    // FC -> Hadamard Transform
+    const std::vector<QnnOpCode> fc = {
+        QnnOpCode::kFullyConnected,
+    };
+    Transform(validate_op_config, ops, tensor_pool, fc,
+                ConvertFcToHadamardTransform);
 
-  // FC -> Hadamard Transform
-  const std::vector<QnnOpCode> fc = {
-      QnnOpCode::kFullyConnected,
-  };
-  Transform(validate_op_config, ops, tensor_pool, fc,
-            ConvertFcToHadamardTransform);
-
-  // Non-power-of-two Hadamard Transform
-  const std::vector<QnnOpCode> hadamard_transform = {
-      QnnOpCode::kReshape,
-      QnnOpCode::kHadamardTransform,
-      QnnOpCode::kReshape,
-  };
-  Transform(validate_op_config, ops, tensor_pool, hadamard_transform,
-            ParallelizeHadamardTransform);
+    // Non-power-of-two Hadamard Transform
+    const std::vector<QnnOpCode> hadamard_transform = {
+        QnnOpCode::kReshape,
+        QnnOpCode::kHadamardTransform,
+        QnnOpCode::kReshape,
+    };
+    Transform(validate_op_config, ops, tensor_pool, hadamard_transform,
+                ParallelizeHadamardTransform);
+  }
 }
 }  // namespace qnn

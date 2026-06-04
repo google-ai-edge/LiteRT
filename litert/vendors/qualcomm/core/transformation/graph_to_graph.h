@@ -22,9 +22,10 @@ enum class G2GConfig : std::uint32_t {
   // Simplify masking pattern. Selected when "masking" appears in
   // graph_transform.
   kMasking = 1u << 1,
+  kRotationQuant = 1u << 2,
   // Experimental MHA decode optimization. Not selectable from the
   // graph_transform flag; used by tests only.
-  kExperimental = 1u << 2,
+  kExperimental = 1u << 3,
 };
 
 // Bitwise operators so G2GConfig can be combined as a flag set
