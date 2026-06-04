@@ -16,12 +16,10 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <vector>
 
 #include "openvino/core/shape.hpp"
 #include "openvino/core/type/element_type.hpp"
-#include "openvino/runtime/core.hpp"
 #include "openvino/runtime/intel_npu/level_zero/level_zero.hpp"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
@@ -37,7 +35,6 @@ litert::Expected<void> OpenVinoTensorBuffer::Alloc(
   }
 
   // TODO:: Release the shared OpenVINO Core.
-  std::shared_ptr<ov::Core> core = OpenVINOSharedCore::GetInstance()->getCore();
   std::string device = OpenVINOSharedCore::GetInstance()->GetDevice();
   ov::element::Type ov_element_type =
       litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
@@ -48,7 +45,7 @@ litert::Expected<void> OpenVinoTensorBuffer::Alloc(
   ov::Shape ov_shape{ov_shape_vec.begin(), ov_shape_vec.end()};
 
   if (device == "NPU" || device == "GPU") {
-    auto context = core->get_default_context(device);
+    auto context = OpenVINOSharedCore::GetInstance()->GetRemoteContext();
     ov_tensor_ = context.create_host_tensor(ov_element_type, ov_shape);
   } else if (device == "CPU") {
     ov_tensor_ = ov::Tensor(ov_element_type, ov_shape);
