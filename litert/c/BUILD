@@ -1105,11 +1105,11 @@ objc_library(
         ":litert_model",
         ":litert_tensor_buffer",
         ":litert_tensor_buffer_types",
+        # Dependency placeholder: apple_frameworks Metal,
+        # Dependency placeholder: apple_frameworks XCTest,
         "//litert/cc:litert_any",
         "//litert/cc:litert_layout",
         "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
-        "//third_party/apple_frameworks:Metal",
-        "//third_party/apple_frameworks:XCTest",
     ],
 )
 

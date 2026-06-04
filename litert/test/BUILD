@@ -427,8 +427,8 @@ objc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_tensor_buffer",
-        "//third_party/apple_frameworks:Metal",
-        "//third_party/apple_frameworks:XCTest",
+        # Dependency placeholder: apple_frameworks Metal,
+        # Dependency placeholder: apple_frameworks XCTest,
         "@com_google_absl//absl/types:span",
     ],
 )

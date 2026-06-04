@@ -555,8 +555,8 @@ litert_device_test(
 #         "@com_google_absl//absl/log:absl_log",
 #         "@com_google_absl//absl/strings",
 #         "@com_google_absl//absl/types:span",
-#         "//third_party/apple_frameworks:Metal",
-#         "//third_party/apple_frameworks:XCTest",
+#         # Dependency placeholder: apple_frameworks Metal,
+#         # Dependency placeholder: apple_frameworks XCTest,
 #         "//litert/c:litert_common",
 #         "//litert/c:litert_environment_options",
 #         "//litert/cc/options:litert_gpu_options",
@@ -1222,8 +1222,8 @@ objc_library(
         "//litert/test:metal_test_helper",
         "//litert/test:simple_model",
         "//tflite/delegates/gpu/metal:metal_device",
-        "//third_party/apple_frameworks:Metal",
-        "//third_party/apple_frameworks:XCTest",
+        # Dependency placeholder: apple_frameworks Metal,
+        # Dependency placeholder: apple_frameworks XCTest,
     ],
 )
 
