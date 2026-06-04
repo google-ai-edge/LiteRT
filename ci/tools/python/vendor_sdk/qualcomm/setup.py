@@ -44,8 +44,8 @@ IS_X86_ARCHITECTURE = platform.machine() in ('x86_64', 'i386', 'i686')
 # --- Configuration for Qualcomm SDK Download ---
 # Qairt version doesn't not necessarily match the SDK version though.
 # LINT.IfChange(wheel_qairt_sdk_version)
-QAIRT_URL = 'https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.46.0.260424/v2.46.0.260424.zip'
-QAIRT_CONTENT_DIR = 'qairt/2.46.0.260424'
+QAIRT_URL = 'https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.47.0.260601/v2.47.0.260601.zip'
+QAIRT_CONTENT_DIR = 'qairt/2.47.0.260601'
 # LINT.ThenChange(
 # ../../../../../../opensource_only/third_party/qairt/workspace.bzl:bazel_qairt_sdk_version,
 # ../../../../../../litert/google/npu_runtime_libraries/fetch_qualcomm_library.sh:fetch_qairt_sdk_version,
