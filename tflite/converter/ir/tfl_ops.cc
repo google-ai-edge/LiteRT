@@ -5562,6 +5562,22 @@ bool WhileOp::isDefinedOutsideOfLoop(Value value) {
 // LogisticOp
 //===----------------------------------------------------------------------===//
 
+OpFoldResult LogisticOp::fold(FoldAdaptor adaptor) {
+  if (!ShouldFoldOperation(this->getOperation())) return {};
+
+  auto operands = adaptor.getOperands();
+  Type result_type = getType();
+  // Only constant fold for tensor of f32 is implemented.
+  if (!IsF32ShapedType(result_type)) return nullptr;
+
+  auto compute = [](APFloat value) -> APFloat {
+    float f = value.convertToFloat();
+    float result = 1.0f / (1.0f + std::exp(-f));
+    return APFloat(result);
+  };
+  return ConstFoldUnaryOp(result_type, operands[0], compute);
+}
+
 int64_t LogisticOp::GetArithmeticCount(Operation* op) {
   int64_t count;
   // As a very rough ballpark, the cost of evaluating a math function

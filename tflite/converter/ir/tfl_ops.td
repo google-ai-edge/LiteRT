@@ -2218,6 +2218,8 @@ def TFL_LogisticOp: TFL_Op<"logistic", [
     DeclareOpInterfaceMethods<TFL_ArithmeticCount>]> {
   let summary = "Logistic operator";
 
+  let hasFolder = 1;
+
   let description = [{
     Computes element-wise Sigmoid of input
   }];
