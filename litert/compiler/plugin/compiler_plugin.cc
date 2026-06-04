@@ -920,6 +920,23 @@ Expected<void> ApplyPlugin(
     absl::string_view soc_model,
     const absl::flat_hash_set<uint32_t>& subgraphs_to_partition,
     ApplyPluginsResult& result) {
+  if (auto sdk_version = compiler_plugin.SdkVersion(); sdk_version.HasValue()) {
+    if (!sdk_version->empty()) {
+      LITERT_LOG(LITERT_INFO, "Applying plugin with SDK version: %s",
+                 sdk_version->c_str());
+    } else {
+      LITERT_LOG(
+          LITERT_WARNING,
+          "Applying plugin with unknown SDK version, because the "
+          "targeted SoC Manufacturer does not report its SDK version. If you "
+          "are seeing this message, please be aware that on-device compilation "
+          "caching won't be updated if using a different version of the SDK.");
+    }
+  } else {
+    LITERT_LOG(LITERT_WARNING, "Failed to get plugin SDK version: %s",
+               sdk_version.Error().Message().c_str());
+  }
+
   // Check compiler compatibility.
   const auto compatibility =
       compiler_plugin.CheckCompilerCompatibility(soc_model);
@@ -965,9 +982,9 @@ Expected<ApplyPluginsResult> ApplyPlugins(
   if (!compiler_plugins) {
     return compiler_plugins.Error();
   }
-  LITERT_ASSIGN_OR_RETURN(
-      auto result, ApplyPlugins(model, selected_hw_accelerators,
-                                compiler_plugins.Value(), mutated));
+  LITERT_ASSIGN_OR_RETURN(auto result,
+                          ApplyPlugins(model, selected_hw_accelerators,
+                                       compiler_plugins.Value(), mutated));
   result.compiler_plugins = std::move(*compiler_plugins);
   return result;
 }
