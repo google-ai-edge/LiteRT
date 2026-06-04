@@ -200,6 +200,16 @@ cc_library(
     deps = [":litert_common"],
 )
 
+cc_test(
+    name = "litert_layout_test",
+    srcs = ["litert_layout_test.cc"],
+    deps = [
+        ":litert_common",
+        ":litert_layout",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "litert_model_types",
     hdrs = ["litert_model_types.h"],
