@@ -57,9 +57,6 @@ OpenVinoCompileContext::OpenVinoCompileContext() {
     case kLiteRtIntelOpenVinoDeviceTypeNPU:
       context.device_ = "NPU";
       break;
-    case kLiteRtIntelOpenVinoDeviceTypeAUTO:
-      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                           "AUTO device type is not supported");
   }
 
   LITERT_LOG(LITERT_INFO, "Using Intel OpenVINO device: %s",

@@ -30,7 +30,6 @@ litert/
 -   **CPU**: Run inference on Intel CPU
 -   **GPU**: Run inference on Intel GPU
 -   **NPU**: Run inference on Intel NPU
--   **AUTO**: Let OpenVINO automatically select the best device
 
 ### Performance Mode
 

@@ -151,9 +151,6 @@ LiteRtDispatchInvocationContextT::Create(
       case kLiteRtIntelOpenVinoDeviceTypeNPU:
         device = "NPU";
         break;
-      case kLiteRtIntelOpenVinoDeviceTypeAUTO:
-        return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                             "AUTO device type is not supported");
     }
   }
   LITERT_LOG(LITERT_INFO, "Using Intel OpenVINO device: %s", device.c_str());

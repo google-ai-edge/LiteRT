@@ -30,7 +30,7 @@ void example_intel_openvino_options_usage() {
   }
   auto options = std::move(options_result.Value());
 
-  // Configure device type (NPU, CPU, GPU, AUTO)
+  // Configure device type (NPU, CPU, GPU)
   options.SetDeviceType(kLiteRtIntelOpenVinoDeviceTypeNPU);
 
   // Configure performance mode
