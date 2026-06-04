@@ -41,6 +41,9 @@ LiteRtStatus LiteRtCreateEnvironment(int num_options,
                                      LiteRtEnvironment* environment) {
   LITERT_RETURN_IF_ERROR(environment != nullptr,
                          kLiteRtStatusErrorInvalidArgument);
+  LITERT_RETURN_IF_ERROR(
+      num_options >= 0 && (num_options == 0 || options != nullptr),
+      kLiteRtStatusErrorInvalidArgument);
 
   ABSL_CONST_INIT static absl::Mutex environment_create_mutex(absl::kConstInit);
   // TODO b/491180241 - Experimental multi-threading support for Environment
@@ -49,17 +52,21 @@ LiteRtStatus LiteRtCreateEnvironment(int num_options,
   // multi-threading.
   absl::MutexLock lock(environment_create_mutex);
 
-  auto min_logger_severity = std::find_if(
-      options, options + num_options, [](const LiteRtEnvOption& option) {
-        return option.tag == kLiteRtEnvOptionTagMinLoggerSeverity;
-      });
-  if (min_logger_severity != options + num_options) {
+  auto options_span = num_options == 0
+                          ? absl::Span<const LiteRtEnvOption>()
+                          : absl::MakeConstSpan(options, num_options);
+
+  auto min_logger_severity =
+      std::find_if(options_span.begin(), options_span.end(),
+                   [](const LiteRtEnvOption& option) {
+                     return option.tag == kLiteRtEnvOptionTagMinLoggerSeverity;
+                   });
+  if (min_logger_severity != options_span.end()) {
     LiteRtSetMinLoggerSeverity(
         LiteRtGetDefaultLogger(),
         static_cast<LiteRtLogSeverity>(min_logger_severity->value.int_value));
   }
 
-  auto options_span = absl::MakeSpan(options, num_options);
   LITERT_ASSIGN_OR_RETURN(auto env,
                           LiteRtEnvironmentT::CreateWithOptions(options_span));
   litert::TriggerAcceleratorAutomaticRegistration(*env);
@@ -126,16 +133,17 @@ LiteRtStatus LiteRtAddEnvironmentOptions(LiteRtEnvironment environment,
       environment, litert::ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument)
                        << "Environment pointer is null.");
   LITERT_RETURN_IF_ERROR(
-      options, litert::ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument)
-                   << "Options pointer is null.");
-  LITERT_RETURN_IF_ERROR(
-      environment->AddOptions(absl::MakeSpan(options, num_options), overwrite));
+      num_options >= 0 && options != nullptr,
+      litert::ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument)
+          << "Invalid options arguments.");
+  LITERT_RETURN_IF_ERROR(environment->AddOptions(
+      absl::MakeConstSpan(options, num_options), overwrite));
 #if !defined(LITERT_DISABLE_GPU)
   if (environment->HasGpuEnvironment()) {
     LITERT_ASSIGN_OR_RETURN(litert::internal::GpuEnvironment * gpu_env,
                             environment->GetGpuEnvironment());
-    LITERT_RETURN_IF_ERROR(
-        gpu_env->AddEnvironmentOptions(absl::MakeSpan(options, num_options)));
+    LITERT_RETURN_IF_ERROR(gpu_env->AddEnvironmentOptions(
+        absl::MakeConstSpan(options, num_options)));
   }
 #endif  // !defined(LITERT_DISABLE_GPU)
   return kLiteRtStatusOk;
@@ -146,7 +154,15 @@ LiteRtStatus LiteRtGpuEnvironmentCreate(LiteRtEnvironment environment,
                                         const LiteRtEnvOption* options) {
 #if !defined(LITERT_DISABLE_GPU)
   LITERT_RETURN_IF_ERROR(
-      environment->AddOptions(absl::MakeSpan(options, num_options)));
+      environment, litert::ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument)
+                       << "Environment pointer is null.");
+  LITERT_RETURN_IF_ERROR(
+      num_options >= 0 && (num_options == 0 || options != nullptr),
+      kLiteRtStatusErrorInvalidArgument);
+  auto options_span = num_options == 0
+                          ? absl::Span<const LiteRtEnvOption>()
+                          : absl::MakeConstSpan(options, num_options);
+  LITERT_RETURN_IF_ERROR(environment->AddOptions(options_span));
   LITERT_ASSIGN_OR_RETURN(
       auto gpu_env,
       litert::internal::GpuEnvironment::Create(environment->GetOptions()));
@@ -159,24 +175,42 @@ LiteRtStatus LiteRtGpuEnvironmentCreate(LiteRtEnvironment environment,
 
 LiteRtStatus LiteRtEnvironmentSupportsClGlInterop(LiteRtEnvironment environment,
                                                   bool* is_supported) {
-  LITERT_RETURN_IF_ERROR(environment != nullptr)
-      << "Environment pointer is null.";
+  LITERT_RETURN_IF_ERROR(
+      environment != nullptr,
+      litert::ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument)
+          << "Environment pointer is null.");
+  LITERT_RETURN_IF_ERROR(
+      is_supported != nullptr,
+      litert::ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument)
+          << "Output pointer is null.");
   *is_supported = environment->SupportsClGlInterop();
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtEnvironmentSupportsAhwbClInterop(
     LiteRtEnvironment environment, bool* is_supported) {
-  LITERT_RETURN_IF_ERROR(environment != nullptr)
-      << "Environment pointer is null.";
+  LITERT_RETURN_IF_ERROR(
+      environment != nullptr,
+      litert::ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument)
+          << "Environment pointer is null.");
+  LITERT_RETURN_IF_ERROR(
+      is_supported != nullptr,
+      litert::ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument)
+          << "Output pointer is null.");
   *is_supported = environment->SupportsAhwbClInterop();
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtEnvironmentSupportsAhwbGlInterop(
     LiteRtEnvironment environment, bool* is_supported) {
-  LITERT_RETURN_IF_ERROR(environment != nullptr)
-      << "Environment pointer is null.";
+  LITERT_RETURN_IF_ERROR(
+      environment != nullptr,
+      litert::ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument)
+          << "Environment pointer is null.");
+  LITERT_RETURN_IF_ERROR(
+      is_supported != nullptr,
+      litert::ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument)
+          << "Output pointer is null.");
   *is_supported = environment->SupportsAhwbGlInterop();
   return kLiteRtStatusOk;
 }
@@ -187,12 +221,19 @@ LiteRtStatus LiteRtEnvironmentSupportsFP16(LiteRtEnvironment environment,
       environment != nullptr,
       litert::ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument)
           << "Environment pointer is null.");
+  LITERT_RETURN_IF_ERROR(
+      is_supported != nullptr,
+      litert::ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument)
+          << "Output pointer is null.");
   *is_supported = environment->SupportsFP16();
   return kLiteRtStatusOk;
 }
 
 void LiteRtEnvironmentHasGpuEnvironment(LiteRtEnvironment environment,
                                         bool* has_gpu_environment) {
+  if (has_gpu_environment == nullptr) {
+    return;
+  }
   if (environment == nullptr) {
     *has_gpu_environment = false;
     return;
