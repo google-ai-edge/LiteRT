@@ -152,6 +152,37 @@ TEST(TensorBufferRequirements, InvalidAlignment) {
             kLiteRtStatusErrorInvalidArgument);
 }
 
+TEST(TensorBufferRequirements, InvalidStridesArguments) {
+  LiteRtTensorBufferRequirements requirements;
+
+  EXPECT_EQ(
+      LiteRtCreateTensorBufferRequirements(
+          kNumSupportedTensorBufferTypes, kSupportedTensorBufferTypes,
+          kBufferSize, /*num_strides=*/-1, /*strides=*/nullptr, &requirements),
+      kLiteRtStatusErrorInvalidArgument);
+
+  EXPECT_EQ(
+      LiteRtCreateTensorBufferRequirements(
+          kNumSupportedTensorBufferTypes, kSupportedTensorBufferTypes,
+          kBufferSize, /*num_strides=*/1, /*strides=*/nullptr, &requirements),
+      kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(TensorBufferRequirements, GetSupportedBufferTypeRejectsNullOutput) {
+  LiteRtTensorBufferRequirements requirements;
+  ASSERT_EQ(
+      LiteRtCreateTensorBufferRequirements(
+          kNumSupportedTensorBufferTypes, kSupportedTensorBufferTypes,
+          kBufferSize, /*num_strides=*/0, /*strides=*/nullptr, &requirements),
+      kLiteRtStatusOk);
+
+  EXPECT_EQ(LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
+                requirements, /*type_index=*/0, /*type=*/nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LiteRtDestroyTensorBufferRequirements(requirements);
+}
+
 TEST(TensorBufferRequirements, JoinWithDifferentAlignments) {
   constexpr std::array<uint32_t, 2> kStrides = {100, 4};
 
