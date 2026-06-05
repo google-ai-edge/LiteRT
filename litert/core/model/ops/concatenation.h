@@ -17,13 +17,16 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <utility>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/ops/simple_binary.h"
 #include "litert/core/model/shape_inference_types.h"
+#include "tflite/converter/schema/schema_generated.h"
 
 namespace litert::internal {
 
@@ -82,6 +85,50 @@ inline LiteRtStatus InferConcatenation(const LiteRtOpT& op,
 
   output_shapes[0] = std::move(out_shape);
   return kLiteRtStatusOk;
+}
+
+template <typename T>
+inline void ReferenceConcatenation(absl::Span<const T* const> input_buffers,
+                                   absl::Span<const Dims> input_dims,
+                                   T* output_data, int axis,
+                                   tflite::ActivationFunctionType faf) {
+  if (input_buffers.empty() || input_dims.empty()) return;
+  int rank = input_dims[0].size();
+  if (axis < 0) axis += rank;
+  if (axis < 0 || axis >= rank) return;
+
+  int64_t outer_size = 1;
+  for (int i = 0; i < axis; ++i) {
+    outer_size *= input_dims[0][i];
+  }
+
+  int64_t inner_size = 1;
+  for (int i = axis + 1; i < rank; ++i) {
+    inner_size *= input_dims[0][i];
+  }
+
+  int64_t total_concat_dim = 0;
+  for (const auto& dims : input_dims) {
+    total_concat_dim += dims[axis];
+  }
+
+  for (int64_t o = 0; o < outer_size; ++o) {
+    int64_t out_concat_offset = 0;
+    for (size_t i = 0; i < input_buffers.size(); ++i) {
+      int64_t concat_dim = input_dims[i][axis];
+      int64_t copy_size = concat_dim * inner_size;
+      const T* in_ptr = input_buffers[i] + o * copy_size;
+      T* out_ptr = output_data + o * (total_concat_dim * inner_size) +
+                   out_concat_offset * inner_size;
+      std::memcpy(out_ptr, in_ptr, copy_size * sizeof(T));
+      out_concat_offset += concat_dim;
+    }
+  }
+
+  if constexpr (std::is_same_v<T, float>) {
+    litert::internal::ApplyActivation(
+        output_data, outer_size * total_concat_dim * inner_size, faf);
+  }
 }
 
 }  // namespace litert::internal

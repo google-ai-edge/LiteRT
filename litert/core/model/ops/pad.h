@@ -92,6 +92,48 @@ inline LiteRtStatus InferMirrorPad(const LiteRtOpT& op,
   return InferPad(op, input_shapes, output_shapes);
 }
 
+template <typename T>
+inline void ReferencePad(const T* input_data, const int32_t* input_dims,
+                         const int32_t* paddings, T pad_value, int rank,
+                         T* output_data) {
+  if (rank <= 0) return;
+  int64_t in_strides[6];
+  int64_t out_strides[6];
+  int64_t out_dims[6];
+
+  for (int i = 0; i < rank; ++i) {
+    out_dims[i] = input_dims[i] + paddings[i * 2] + paddings[i * 2 + 1];
+  }
+
+  in_strides[rank - 1] = 1;
+  for (int i = rank - 2; i >= 0; --i) {
+    in_strides[i] = in_strides[i + 1] * input_dims[i + 1];
+  }
+
+  out_strides[rank - 1] = 1;
+  for (int i = rank - 2; i >= 0; --i) {
+    out_strides[i] = out_strides[i + 1] * out_dims[i + 1];
+  }
+
+  int64_t num_elements = out_strides[0] * out_dims[0];
+
+  for (int64_t o = 0; o < num_elements; ++o) {
+    int64_t temp = o;
+    int64_t in_idx = 0;
+    bool in_bounds = true;
+    for (int i = 0; i < rank; ++i) {
+      int64_t coord = temp / out_strides[i];
+      temp %= out_strides[i];
+      int64_t in_coord = coord - paddings[i * 2];
+      if (in_coord < 0 || in_coord >= input_dims[i]) {
+        in_bounds = false;
+      }
+      in_idx += in_coord * in_strides[i];
+    }
+    output_data[o] = in_bounds ? input_data[in_idx] : pad_value;
+  }
+}
+
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_CORE_MODEL_OPS_PAD_H_
