@@ -145,7 +145,6 @@ EXPORTS
   LiteRtGetBatchMatmulAdjYOption
   LiteRtGetBatchMatmulAsymmetricQuantizeInputOption
   LiteRtGetBlockWiseQuantization
-  LiteRtGetCompiledModelEnvironment
   LiteRtGetCompiledModelInputBufferRequirements
   LiteRtGetCompiledModelInputTensorLayout
   LiteRtGetCompiledModelOutputBufferRequirements
@@ -339,7 +338,6 @@ EXPORTS
   LiteRtSetCompiledModelCancellationFunction
   LiteRtSetCustomEvent
   LiteRtSetDelegateFunction
-  LiteRtSetEnvironmentOptionsValue
   LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation
   LiteRtSetOpaqueOptionsHash
   LiteRtSetOptionsHardwareAccelerators

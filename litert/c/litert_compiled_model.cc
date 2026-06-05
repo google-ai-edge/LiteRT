@@ -107,14 +107,6 @@ LiteRtStatus LiteRtGetCompiledModelInputTensorLayout(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetCompiledModelEnvironment(
-    LiteRtCompiledModel compiled_model, LiteRtEnvironment* environment) {
-  if (!compiled_model || !environment) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  LITERT_ASSIGN_OR_RETURN(*environment, compiled_model->GetEnvironment());
-  return kLiteRtStatusOk;
-}
 
 LiteRtStatus LiteRtGetCompiledModelOutputTensorLayouts(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,

@@ -299,10 +299,6 @@ pub fn LiteRtGetCompiledModelOutputTensorLayouts(
         update_allocation: bool,
     ) -> LiteRtStatus { unimplemented!() }
 
-pub fn LiteRtGetCompiledModelEnvironment(
-        compiled_model: LiteRtCompiledModel,
-        environment: *mut LiteRtEnvironment,
-    ) -> LiteRtStatus { unimplemented!() }
 
 pub fn LiteRtRunCompiledModel(
         compiled_model: LiteRtCompiledModel,

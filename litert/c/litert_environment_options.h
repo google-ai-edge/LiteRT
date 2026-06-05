@@ -144,8 +144,6 @@ LiteRtStatus LiteRtGetEnvironmentOptionsValue(LiteRtEnvironmentOptions options,
                                               LiteRtEnvOptionTag tag,
                                               LiteRtAny* value);
 
-LiteRtStatus LiteRtSetEnvironmentOptionsValue(LiteRtEnvironmentOptions options,
-                                              LiteRtEnvOption env_option);
 #ifdef __cplusplus
 }
 #endif  // __cplusplus
