@@ -1119,21 +1119,21 @@ size_t DuplicateOrRemoveConcat(
 
   // Build replacement ops first; only commit them if every one validates.
   std::vector<std::pair<size_t, OpWrapper>> add_replacements;
-  std::vector<std::pair<size_t, OpWrapper>> concat_inserts;
   add_replacements.reserve(share_mask_add_indices.size());
-  if (!can_remove_concat) {
-    concat_inserts.reserve(share_mask_add_indices.size());
-  }
-  const std::vector<qnn::ConstTensorWrapperRef> concat_inputs(
-      concat_op.GetInputCount(), concat_op.GetInputTensor(0));
-  for (size_t i : share_mask_add_indices) {
-    if (can_remove_concat) {
+  std::vector<std::pair<size_t, OpWrapper>> concat_inserts;
+  if (can_remove_concat) {
+    for (size_t i : share_mask_add_indices) {
       auto add = CreateElementWiseAddOp(ops[i].GetInputTensor(0), mask,
                                         ops[i].GetOutputTensor(0));
       CloneNamespace(ops[i], add);
       add.AddSuffixToName(absl::StrCat("_qcg2g_", i));
       add_replacements.emplace_back(i, std::move(add));
-    } else {
+    }
+  } else {
+    concat_inserts.reserve(share_mask_add_indices.size());
+    const std::vector<qnn::ConstTensorWrapperRef> concat_inputs(
+        concat_op.GetInputCount(), concat_op.GetInputTensor(0));
+    for (size_t i : share_mask_add_indices) {
       const auto& duplicated_concat_output =
           tensor_pool.CloneNativeTensorFrom(concat_output);
       auto add = CreateElementWiseAddOp(ops[i].GetInputTensor(0),
@@ -1142,7 +1142,6 @@ size_t DuplicateOrRemoveConcat(
       CloneNamespace(ops[i], add);
       add.AddSuffixToName(absl::StrCat("_qcg2g_", i));
       add_replacements.emplace_back(i, std::move(add));
-
       auto concat = CreateOpWithSameParams(concat_op, concat_inputs,
                                            {duplicated_concat_output});
       CloneNamespace(ops[i], concat);
