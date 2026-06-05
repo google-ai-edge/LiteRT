@@ -189,13 +189,19 @@ cc_test(
     srcs = [
         "dispatch_api_openvino_test.cc",
     ],
-    copts = ["-fexceptions"],
+    copts = ["-fexceptions"] + select({
+        "//litert:windows": ["/DLITERT_COMPILE_LIBRARY"],
+        "//conditions:default": [],
+    }),
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     #TODO:Uncomment this when NPU bin test data file is added in follow-up PR
     #data = [
     #    "//litert/test:testdata/ov_model_add1d_FP32.blob",
     #],
-    linkopts = litert_android_linkopts(),
+    linkopts = litert_android_linkopts() + select({
+        "//litert:windows": ["/FORCE:MULTIPLE"],
+        "//conditions:default": [],
+    }),
     linkstatic = 1,
     tags = [
         "manual",
