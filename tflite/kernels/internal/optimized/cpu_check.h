@@ -23,17 +23,9 @@ limitations under the License.
 
 namespace tflite {
 
-// On A64, returns true if the dotprod extension is present.
-// On other architectures, returns false unconditionally.
-bool DetectArmNeonDotprod();
+struct CpuFlags {};
 
-struct CpuFlags {
-  bool neon_dotprod = false;
-};
-
-inline void GetCpuFlags(CpuFlags* cpu_flags) {
-  cpu_flags->neon_dotprod = DetectArmNeonDotprod();
-}
+inline void GetCpuFlags(CpuFlags* cpu_flags) {}
 
 }  // namespace tflite
 
