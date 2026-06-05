@@ -217,12 +217,16 @@ LiteRtStatus LiteRtSerializeModelWithSignatures(
 
     std::vector<std::string> input_names;
     std::vector<LiteRtTensor> input_tensors;
+    input_names.reserve(subgraph.NumInputs());
+    input_tensors.reserve(subgraph.NumInputs());
     for (auto& tensor : subgraph.Inputs()) {
       input_names.push_back(std::string(tensor->Name()));
       input_tensors.push_back(tensor);
     }
     std::vector<std::string> output_names;
     std::vector<LiteRtTensor> output_tensors;
+    output_names.reserve(subgraph.NumOutputs());
+    output_tensors.reserve(subgraph.NumOutputs());
     for (auto& tensor : subgraph.Outputs()) {
       output_names.push_back(std::string(tensor->Name()));
       output_tensors.push_back(tensor);
