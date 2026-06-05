@@ -185,8 +185,14 @@ TEST(CcSignatureTest, Basic) {
   auto input_names = signature.InputNames();
   EXPECT_THAT(input_names[0], "arg0");
   EXPECT_THAT(input_names[1], "arg1");
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto& input0, signature.InputTensor(0));
+  EXPECT_THAT(input0.Name(), "arg0");
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto& input1, signature.InputTensor(1));
+  EXPECT_THAT(input1.Name(), "arg1");
   auto output_names = signature.OutputNames();
   EXPECT_THAT(output_names[0], "tfl.mul");
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto& output0, signature.OutputTensor(0));
+  EXPECT_THAT(output0.Name(), "tfl.mul");
 }
 
 TEST(CcSignatureTest, Lookup) {

@@ -269,7 +269,7 @@ class SimpleSignature {
     if (index >= input_names_.size()) {
       return Error(Status::kErrorInvalidArgument, "Input index out of bounds");
     }
-    return InputTensor(input_names_[index]);
+    return *input_tensors_[index];
   }
 
   /// @brief Returns the output tensor for the given output signature name.
@@ -291,7 +291,7 @@ class SimpleSignature {
     if (index >= output_names_.size()) {
       return Error(Status::kErrorInvalidArgument, "Output index out of bounds");
     }
-    return OutputTensor(output_names_[index]);
+    return *output_tensors_[index];
   }
 
  private:
