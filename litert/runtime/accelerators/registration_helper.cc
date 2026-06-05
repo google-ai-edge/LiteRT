@@ -27,21 +27,34 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
+#include "litert/runtime/accelerators/legacy_compatibility_layer.h"
 
 namespace litert::internal {
 
 LiteRtStatus RegisterAcceleratorFromDef(
     LiteRtEnvironment env, const LiteRtAcceleratorDef* accelerator_def) {
-  if (accelerator_def->version != LITERT_ACCELERATOR_DEF_CURRENT_VERSION)
-    return kLiteRtStatusErrorWrongVersion;
+  const LiteRtAcceleratorDef* active_def = accelerator_def;
+  LiteRtAcceleratorDef adapted_def;
+  void* wrapper_data = nullptr;
+  WrapperDeleter wrapper_deleter = nullptr;
 
-  if (accelerator_def->get_name == nullptr ||
-      accelerator_def->get_version == nullptr ||
-      accelerator_def->get_hardware_support == nullptr ||
-      accelerator_def->is_tflite_delegate_responsible_for_jit_compilation ==
+  if (accelerator_def->version != LITERT_ACCELERATOR_DEF_CURRENT_VERSION) {
+    auto adapter =
+        AcceleratorDefAdapterFactory::Create(accelerator_def->version);
+    if (!adapter) {
+      return kLiteRtStatusErrorWrongVersion;
+    }
+    LITERT_RETURN_IF_ERROR(adapter->Adapt(accelerator_def, &adapted_def,
+                                          &wrapper_data, &wrapper_deleter));
+    active_def = &adapted_def;
+  }
+
+  if (active_def->get_name == nullptr || active_def->get_version == nullptr ||
+      active_def->get_hardware_support == nullptr ||
+      active_def->is_tflite_delegate_responsible_for_jit_compilation ==
           nullptr ||
-      accelerator_def->create_delegate == nullptr ||
-      accelerator_def->buffer_handlers.num_supported_buffer_types >=
+      active_def->create_delegate == nullptr ||
+      active_def->buffer_handlers.num_supported_buffer_types >=
           LITERT_CUSTOM_BUFFER_HANDLERS_DEF_MAX_SUPPORTED_BUFFER_TYPES) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -49,33 +62,32 @@ LiteRtStatus RegisterAcceleratorFromDef(
   LiteRtAccelerator accelerator;
   LITERT_RETURN_IF_ERROR(LiteRtCreateAccelerator(&accelerator));
   LITERT_RETURN_IF_ERROR(
-      LiteRtSetAcceleratorGetName(accelerator, accelerator_def->get_name));
-  LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorGetVersion(
-      accelerator, accelerator_def->get_version));
-  LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorGetHardwareSupport(
-      accelerator, accelerator_def->get_hardware_support));
+      LiteRtSetAcceleratorGetName(accelerator, active_def->get_name));
   LITERT_RETURN_IF_ERROR(
-      LiteRtSetDelegateFunction(accelerator, accelerator_def->create_delegate));
+      LiteRtSetAcceleratorGetVersion(accelerator, active_def->get_version));
+  LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorGetHardwareSupport(
+      accelerator, active_def->get_hardware_support));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtSetDelegateFunction(accelerator, active_def->create_delegate));
   LITERT_RETURN_IF_ERROR(
       LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation(
           accelerator,
-          accelerator_def->is_tflite_delegate_responsible_for_jit_compilation));
+          active_def->is_tflite_delegate_responsible_for_jit_compilation));
+  LITERT_RETURN_IF_ERROR(LiteRtRegisterAccelerator(
+      env, accelerator, wrapper_data, wrapper_deleter));
 
-  LITERT_RETURN_IF_ERROR(
-      LiteRtRegisterAccelerator(env, accelerator, nullptr, nullptr));
-
-  for (size_t i = 0;
-       i < accelerator_def->buffer_handlers.num_supported_buffer_types; ++i) {
+  for (size_t i = 0; i < active_def->buffer_handlers.num_supported_buffer_types;
+       ++i) {
     LITERT_RETURN_IF_ERROR(LiteRtRegisterTensorBufferHandlers(
-        env, accelerator_def->buffer_handlers.supported_buffer_types[i],
-        accelerator_def->buffer_handlers.create_func,
-        accelerator_def->buffer_handlers.destroy_func,
-        accelerator_def->buffer_handlers.lock_func,
-        accelerator_def->buffer_handlers.unlock_func,
-        accelerator_def->buffer_handlers.clear_func,
-        accelerator_def->buffer_handlers.import_func,
-        accelerator_def->buffer_handlers.device_tag,
-        accelerator_def->buffer_handlers.queue_tag));
+        env, active_def->buffer_handlers.supported_buffer_types[i],
+        active_def->buffer_handlers.create_func,
+        active_def->buffer_handlers.destroy_func,
+        active_def->buffer_handlers.lock_func,
+        active_def->buffer_handlers.unlock_func,
+        active_def->buffer_handlers.clear_func,
+        active_def->buffer_handlers.import_func,
+        active_def->buffer_handlers.device_tag,
+        active_def->buffer_handlers.queue_tag));
   }
 
   return kLiteRtStatusOk;
