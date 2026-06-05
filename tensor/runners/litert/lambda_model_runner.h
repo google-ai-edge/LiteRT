@@ -17,6 +17,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_RUNNERS_LITERT_LAMBDA_MODEL_RUNNER_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_RUNNERS_LITERT_LAMBDA_MODEL_RUNNER_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -92,8 +93,16 @@ class LambdaModelRunner {
   }
 
   absl::Status SetInput(const std::string& name,
-                        absl::Span<const uint8_t> data) {
+                        absl::Span<const std::byte> data) {
     return runner_.SetInput(name, data);
+  }
+
+  // [OBSOLETE]: Use SetInput with absl::Span<const std::byte> instead.
+  absl::Status SetInput(const std::string& name,
+                        absl::Span<const uint8_t> data) {
+    return runner_.SetInput(
+        name, absl::MakeSpan(reinterpret_cast<const std::byte*>(data.data()),
+                             data.size()));
   }
 
   absl::StatusOr<TensorHandle> GetInput(const std::string& name) {
@@ -108,6 +117,10 @@ class LambdaModelRunner {
 
   absl::Status SetOutput(const std::string& name, const TensorHandle& tensor) {
     return runner_.SetOutput(name, tensor);
+  }
+
+  absl::Status SetOutput(const std::string& name, absl::Span<std::byte> data) {
+    return runner_.SetOutput(name, data);
   }
 
  private:
