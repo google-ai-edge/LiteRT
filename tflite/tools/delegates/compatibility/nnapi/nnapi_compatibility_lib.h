@@ -23,6 +23,9 @@ limitations under the License.
 #include "tflite/core/c/common.h"
 #include "tflite/delegates/nnapi/nnapi_delegate_kernel.h"
 
+// WARNING: this header file is DEPRECATED.
+// See https://developer.android.com/ndk/guides/neuralnetworks/migration-guide.
+
 namespace tflite {
 namespace tools {
 
