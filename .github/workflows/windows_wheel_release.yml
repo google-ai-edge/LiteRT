@@ -35,6 +35,10 @@ jobs:
           # If inputs.ref is empty, checkout the latest commit on the default branch.
           ref: ${{ inputs.ref }}
 
+      - name: Add GNU tar to PATH
+        shell: bash
+        run: echo "C:/Program Files/Git/usr/bin" >> $GITHUB_PATH
+
       - name: Mount Bazel
         uses: bazelbuild/setup-bazelisk@v3
 
@@ -84,8 +88,8 @@ jobs:
           echo "CACHE_RESTORE_KEY_0=$CACHE_RESTORE_KEY_0" >> "$env:GITHUB_OUTPUT"
           echo "CACHE_RESTORE_KEY_HEAD=$CACHE_RESTORE_KEY_HEAD" >> "$env:GITHUB_OUTPUT"
           echo "CACHE_KEY=$CACHE_KEY" >> "$env:GITHUB_OUTPUT"
-          # D: is faster than C: for I/O.
-          echo "BAZEL_OUTPUT_USER_ROOT=D:/.cache/bazel" >> "$env:GITHUB_ENV"
+          # D: is faster than C: for I/O, but self-hosted runners only have C:.
+          echo "BAZEL_OUTPUT_USER_ROOT=C:/.cache/bazel" >> "$env:GITHUB_ENV"
 
       - name: Clean build outputs if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
@@ -95,6 +99,9 @@ jobs:
         id: bazel-cache
         if: env.REFRESH_CACHE != 'true'
         uses: actions/cache/restore@v4
+        env:
+          windir: ""
+          PATH: "C:/Program Files/Git/usr/bin;C:/Windows/System32;C:/Windows"
         with:
           path: ~/.cache/bazel-windows
           key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
@@ -138,9 +145,16 @@ jobs:
           name: ai-edge-litert-windows-${{ matrix.python-version }}
           path: dist/*.whl
 
+      - name: Shutdown bazel server before saving cache.
+        if: always()
+        run: bazel --output_user_root="$env:BAZEL_OUTPUT_USER_ROOT" shutdown
+
       - name: Save bazel cache
         uses: actions/cache/save@v4
         if: always()
+        env:
+          windir: ""
+          PATH: "C:/Program Files/Git/usr/bin;C:/Windows/System32;C:/Windows"
         with:
           path: ~/.cache/bazel-windows
           key: ${{ steps.cache-keys.outputs.CACHE_KEY }}

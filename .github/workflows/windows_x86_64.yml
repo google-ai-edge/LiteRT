@@ -38,6 +38,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Add GNU tar to PATH
+        shell: bash
+        run: echo "C:/Program Files/Git/usr/bin" >> $GITHUB_PATH
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -68,6 +72,8 @@ jobs:
           echo "CACHE_KEY=$CACHE_KEY" >> "$env:GITHUB_OUTPUT"
           $SHORT_SHA=$("${{ github.sha }}".SubString(0, 8))
           echo "BAZEL_OUTPUT_BASE=C:/actions-runner/_work/bazel_output" >> "$env:GITHUB_ENV"
+          $CacheDir = Join-Path $env:USERPROFILE (Join-Path ".cache" "bazel-windows")
+          echo "BAZEL_DISK_CACHE=$CacheDir" >> "$env:GITHUB_ENV"
 
       - name: Clean build outputs if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
@@ -79,6 +85,9 @@ jobs:
         id: bazel-cache
         if: env.REFRESH_CACHE != 'true'
         uses: actions/cache/restore@v4
+        env:
+          windir: ""
+          PATH: "C:/Program Files/Git/usr/bin;C:/Windows/System32;C:/Windows"
         with:
           path: ~/.cache/bazel-windows
           key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
@@ -126,7 +135,7 @@ jobs:
           $BAZEL_ARGS = @(
             "--output_base=$env:BAZEL_OUTPUT_BASE"
             "test"
-            "--disk_cache=~/.cache/bazel-windows"
+            "--disk_cache=$env:BAZEL_DISK_CACHE"
           ) + $BUILD_FLAGS + @(
             "--"
             "//litert/..."
@@ -147,18 +156,18 @@ jobs:
 
       - name: Build tools for Windows
         run: |
-          bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache=~/.cache/bazel-windows --config=windows -- `
+          bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache="$env:BAZEL_DISK_CACHE" --config=windows -- `
             //litert/tools:run_model
 
       - name: Build example plugin for Windows
         run: |
-          bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache=~/.cache/bazel-windows --config=windows -- `
+          bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache="$env:BAZEL_DISK_CACHE" --config=windows -- `
             //litert/vendors/examples:LiteRtCompilerPlugin `
             //litert/vendors/examples:LiteRtDispatch
 
       - name: Build Intel OpenVINO plugin for Windows
         run: |
-          bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache=~/.cache/bazel-windows --config=windows -- `
+          bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache="$env:BAZEL_DISK_CACHE" --config=windows -- `
             //litert/vendors/intel_openvino/compiler:LiteRtCompilerPlugin `
             //litert/vendors/intel_openvino/dispatch:LiteRtDispatch
 
@@ -167,9 +176,15 @@ jobs:
         continue-on-error: true  # Ignore errors when cache is not found.
         run: gh cache delete ${{ steps.cache-keys.outputs.CACHE_KEY }}
 
+      - name: Shutdown bazel server before saving cache.
+        run: bazel --output_base="$env:BAZEL_OUTPUT_BASE" shutdown
+
       - name: Save bazel cache if it's new or being refreshed.
         uses: actions/cache/save@v4
         if: env.REFRESH_CACHE == 'true' || steps.bazel-cache.outputs.cache-hit != 'true'
+        env:
+          windir: ""
+          PATH: "C:/Program Files/Git/usr/bin;C:/Windows/System32;C:/Windows"
         with:
           path: ~/.cache/bazel-windows
           key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
