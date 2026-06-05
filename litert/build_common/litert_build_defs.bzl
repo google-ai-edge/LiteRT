@@ -151,6 +151,7 @@ def symbol_opts():
         "//litert:debug": [],
         "//litert:macos": [],
         "//litert:ios": [],
+        "//litert:windows": [],
         "//conditions:default": [
             # Omit symbol table, for all non debug builds
             "-Wl,-s",
@@ -159,12 +160,10 @@ def symbol_opts():
 
 def export_lrt_only_script():
     return select({
-        "//litert:linux": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
-        "//litert:android": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
-        "//litert:chromiumos": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
         "//litert:macos": [_EXPORT_LRT_ONLY_SCRIPT_DARWIN],
         "//litert:ios": [_EXPORT_LRT_ONLY_SCRIPT_DARWIN],
-        "//conditions:default": [],
+        "//litert:windows": [],
+        "//conditions:default": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
     })
 
 _LRT_ANDROID_PAGE_SIZE_LINKOPTS = [
@@ -175,12 +174,11 @@ _LRT_ANDROID_PAGE_SIZE_LINKOPTS = [
 
 def export_lrt_only_linkopt():
     return select({
-        "//litert:linux": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
         "//litert:android": _LRT_ANDROID_PAGE_SIZE_LINKOPTS + [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
-        "//litert:chromiumos": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
         "//litert:macos": [_EXPORT_LRT_ONLY_LINKOPT_DARWIN],
         "//litert:ios": [_EXPORT_LRT_ONLY_LINKOPT_DARWIN],
-        "//conditions:default": [],
+        "//litert:windows": [],
+        "//conditions:default": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
     }) + symbol_opts()
 
 _EXPORT_LRT_RUNTIME_ONLY_SCRIPT_LINUX = "//litert/build_common:export_litert_runtime_only_linux.lds"
@@ -197,22 +195,19 @@ _EXPORT_LRT_COMMON_LINKOPTS_LINUX = [
 
 def export_lrt_runtime_only_script():
     return select({
-        "//litert:linux": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_LINUX],
-        "//litert:android": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_LINUX],
-        "//litert:chromiumos": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_LINUX],
         "//litert:macos": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_DARWIN],
         "//litert:ios": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_DARWIN],
-        "//conditions:default": [],
+        "//litert:windows": [],
+        "//conditions:default": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_LINUX],
     })
 
 def export_lrt_runtime_only_linkopt():
     return select({
-        "//litert:linux": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX],
         "//litert:android": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + _LRT_ANDROID_PAGE_SIZE_LINKOPTS + [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX],
-        "//litert:chromiumos": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX],
         "//litert:macos": [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_DARWIN],
         "//litert:ios": [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_DARWIN],
-        "//conditions:default": [],
+        "//litert:windows": [],
+        "//conditions:default": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX],
     }) + symbol_opts()
 
 _EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX = "//litert/build_common:export_litert_tflite_runtime_linux.lds"
@@ -222,22 +217,19 @@ _EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN = make_linkopt("-exported_symbols_list
 
 def export_lrt_tflite_runtime_script():
     return select({
-        "//litert:linux": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
-        "//litert:android": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
-        "//litert:chromiumos": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
         "//litert:macos": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_DARWIN],
         "//litert:ios": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_DARWIN],
-        "//conditions:default": [],
+        "//litert:windows": [],
+        "//conditions:default": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
     })
 
 def export_lrt_tflite_runtime_linkopt():
     return select({
-        "//litert:linux": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX],
         "//litert:android": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + _LRT_ANDROID_PAGE_SIZE_LINKOPTS + [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX],
-        "//litert:chromiumos": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX],
         "//litert:macos": [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN],
         "//litert:ios": [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN],
-        "//conditions:default": [],
+        "//litert:windows": [],
+        "//conditions:default": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX],
     }) + symbol_opts()
 
 _GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_LINUX = "//litert/build_common:export_litert_gpu_accelerator_linux.lds"
@@ -247,22 +239,19 @@ _GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_DARWIN = make_linkopt("-exported_symbo
 
 def gpu_accelerator_exported_symbols_script():
     return select({
-        "//litert:linux": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_LINUX],
-        "//litert:android": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_LINUX],
-        "//litert:chromiumos": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_LINUX],
         "//litert:macos": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_DARWIN],
         "//litert:ios": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_DARWIN],
-        "//conditions:default": [],
+        "//litert:windows": [],
+        "//conditions:default": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_LINUX],
     })
 
 def gpu_accelerator_exported_symbols_linkopt():
     return select({
-        "//litert:linux": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_LINUX],
         "//litert:android": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + _LRT_ANDROID_PAGE_SIZE_LINKOPTS + [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_LINUX],
-        "//litert:chromiumos": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_LINUX],
         "//litert:macos": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_DARWIN],
         "//litert:ios": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_DARWIN],
-        "//conditions:default": [],
+        "//litert:windows": [],
+        "//conditions:default": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_LINUX],
     }) + symbol_opts()
 
 ####################################################################################################
@@ -298,6 +287,7 @@ def _litert_base(
                 ("//conditions:default", "//litert/build_common:linux_x86_64_grte"): _DEFAULT_LINK_OPTS,
                 "//litert:macos": [],
                 "//litert:ios": [],
+                "//litert:windows": [],
                 "//litert/build_common:linux_x86_64_ungrte": _UNGRTE_LINK_OPTS + _DEFAULT_LINK_OPTS,
             }),
         )
@@ -308,6 +298,7 @@ def _litert_base(
             linkopts = select({
                 "//litert:macos": [],
                 "//litert:ios": [],
+                "//litert:windows": [],
                 "//conditions:default": _DEFAULT_LINK_OPTS,
             }),
         )
