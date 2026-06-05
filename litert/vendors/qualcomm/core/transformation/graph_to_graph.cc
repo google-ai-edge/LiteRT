@@ -109,6 +109,8 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
               FuseMatMulConvertPrefill);
   }
   // MHA Optimization
+  // Regression observed in Gemma3 decode after MHA→SHA transformation.
+  // Keep this under kExperimental and enable only if it shows performance gains.
   if (g2g_option == G2GConfig::kExperimental) {
     const std::vector<QnnOpCode> gemma3_mha_decode = {
         QnnOpCode::kElementWiseBinary,

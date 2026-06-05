@@ -1480,17 +1480,6 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
   absl::flat_hash_set<std::int32_t> ids_to_dump(dump_ids.begin(),
                                                 dump_ids.end());
 
-  // Parse comma-separated graph_transform option (e.g. "gqa,masking") into
-  // a set so individual transformations can be queried below.
-  absl::flat_hash_set<std::string> graph_transforms;
-  for (absl::string_view part :
-       absl::StrSplit(options.GetGraphTransform(), ',', absl::SkipEmpty())) {
-    graph_transforms.emplace(absl::StripAsciiWhitespace(part));
-  }
-  const auto has_graph_transform = [&graph_transforms](absl::string_view name) {
-    return graph_transforms.contains(name);
-  };
-
   for (const auto& subgraph_input : graph_mapper.Graph().Inputs()) {
     ::qnn::TensorWrapper* tensor_wrapper{nullptr};
     LITERT_RETURN_IF_ERROR(ConvertTensor(subgraph_input, tensor_pool,
@@ -1578,6 +1567,16 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
               std::back_inserter(graph_op_wrappers));
   }
 
+  // Parse comma-separated graph_transform option (e.g. "gqa,masking") into
+  // a set so individual transformations can be queried below.
+  absl::flat_hash_set<std::string> graph_transforms;
+  for (absl::string_view part :
+       absl::StrSplit(options.GetGraphTransform(), ',', absl::SkipEmpty())) {
+    graph_transforms.emplace(absl::StripAsciiWhitespace(part));
+  }
+  const auto has_graph_transform = [&graph_transforms](absl::string_view name) {
+    return graph_transforms.contains(name);
+  };
   ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kOff;
   if (has_graph_transform("gqa")) {
     g2g_option |= ::qnn::G2GConfig::kGqa;

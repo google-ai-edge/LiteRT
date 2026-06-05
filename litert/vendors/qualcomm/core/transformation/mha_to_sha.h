@@ -20,8 +20,7 @@ std::vector<ConstTensorWrapperRef> UnpackTensor(TensorPool& tensor_pool,
 std::vector<ConstTensorWrapperRef> SplitTensor(TensorPool& tensor_pool,
                                                std::vector<OpWrapper>& new_ops,
                                                const TensorWrapper& input,
-                                               size_t axis = 1,
-                                               size_t tile_size = 1);
+                                               size_t axis, size_t tile_size);
 
 TensorWrapper& BuildSingleSHAByUnpackAxis1(
     std::vector<OpWrapper>& new_ops, TensorPool& tensor_pool,

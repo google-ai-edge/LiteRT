@@ -892,24 +892,31 @@ size_t OptimizeGqaPrefill(std::function<bool(OpWrapper&)> validate_op_config,
   QNN_LOG_INFO("[G2G] GQA optimization (Prefill)");
   std::vector<OpWrapper> new_ops;
 
-  // QKV Unpack
+  // QKV Split
+  static constexpr size_t kTileSize = 1;
+  static constexpr size_t kUnpackAxis = 1;
   const auto& k_cache =
       ops[start_index + q_kcache_matmul_idx].GetInputTensor(1);
-  auto k_cache_unpack_outputs = SplitTensor(tensor_pool, new_ops, k_cache);
-  constexpr size_t kUnpackAxis = 1;
-  auto k_slice_unpack_outputs = SplitTensor(
-      tensor_pool, new_ops,
-      ops[start_index + q_kslice_matmul_idx].GetInputTensor(1), kUnpackAxis);
+  auto k_cache_unpack_outputs =
+      SplitTensor(tensor_pool, new_ops, k_cache, kUnpackAxis, kTileSize);
+
+  auto k_slice_unpack_outputs =
+      SplitTensor(tensor_pool, new_ops,
+                  ops[start_index + q_kslice_matmul_idx].GetInputTensor(1),
+                  kUnpackAxis, kTileSize);
   auto q_inputs =
-      SplitTensor(tensor_pool, new_ops, ops[start_index].GetInputTensor(0));
+      SplitTensor(tensor_pool, new_ops, ops[start_index].GetInputTensor(0),
+                  kUnpackAxis, kTileSize);
 
   const auto& v_cache =
       ops[start_index + qkv_cache_matmul_idx].GetInputTensor(1);
-  auto v_cache_unpack_outputs = SplitTensor(tensor_pool, new_ops, v_cache);
+  auto v_cache_unpack_outputs =
+      SplitTensor(tensor_pool, new_ops, v_cache, kUnpackAxis, kTileSize);
 
   const auto& v_slice =
       ops[start_index + qkv_slice_matmul_idx].GetInputTensor(1);
-  auto v_slice_unpack_outputs = SplitTensor(tensor_pool, new_ops, v_slice);
+  auto v_slice_unpack_outputs =
+      SplitTensor(tensor_pool, new_ops, v_slice, kUnpackAxis, kTileSize);
 
   auto group_size = num_q_heads / num_kv_heads;
   // Remove unnecessary concat mask.
@@ -1061,26 +1068,22 @@ size_t DuplicateOrRemoveConcat(
     return 1;
   }
   // Check if this concat is only for broadcast.
-  size_t num_elements = concat_output.GetTensorNumElements();
-  size_t input_cnt = 0;
-  while (num_elements > 0) {
-    auto& concat_input = concat_op.GetInputTensor(input_cnt);
+  for (size_t i = 0; i < concat_op.GetInputCount(); ++i) {
+    auto& concat_input = concat_op.GetInputTensor(i);
     if (concat_input != mask) {
       return 1;
     }
-    num_elements -= concat_input.GetTensorNumElements();
-    input_cnt++;
   }
 
   // Find all add indices. Iterate in descending order so later commits
   // (concat insertions) don't shift indices we still need to touch.
-  std::vector<size_t> indices;
+  std::vector<size_t> share_mask_add_indices;
   for (size_t i = ops.size(); i-- > 0;) {
     if (IsElementWiseAdd(ops[i]) && concat_output == ops[i].GetInputTensor(1)) {
-      indices.push_back(i);
+      share_mask_add_indices.push_back(i);
     }
   }
-  if (indices.empty()) {
+  if (share_mask_add_indices.empty()) {
     return 1;
   }
 
@@ -1099,13 +1102,13 @@ size_t DuplicateOrRemoveConcat(
   // Build replacement ops first; only commit them if every one validates.
   std::vector<std::pair<size_t, OpWrapper>> add_replacements;
   std::vector<std::pair<size_t, OpWrapper>> concat_inserts;
-  add_replacements.reserve(indices.size());
+  add_replacements.reserve(share_mask_add_indices.size());
   if (!can_remove_concat) {
-    concat_inserts.reserve(indices.size());
+    concat_inserts.reserve(share_mask_add_indices.size());
   }
   const std::vector<qnn::ConstTensorWrapperRef> concat_inputs(
-      input_cnt, concat_op.GetInputTensor(0));
-  for (size_t i : indices) {
+      concat_op.GetInputCount(), concat_op.GetInputTensor(0));
+  for (size_t i : share_mask_add_indices) {
     if (can_remove_concat) {
       auto add = CreateElementWiseAddOp(ops[i].GetInputTensor(0), mask,
                                         ops[i].GetOutputTensor(0));
@@ -1142,9 +1145,9 @@ size_t DuplicateOrRemoveConcat(
         "[G2G] Validation failed. Rolling back to the original graph.");
     return 1;
   }
-  // Commit: replace add ops, then insert duplicated concat ops. `indices` is
-  // in descending order, so concat insertions don't shift any index we still
-  // need to touch.
+  // Replace add ops, then insert duplicated concat ops.
+  // `share_mask_add_indices` is in descending order, so concat insertions
+  // don't shift any index we still need to touch.
   for (auto& [i, op] : add_replacements) {
     ops[i] = std::move(op);
   }
@@ -1162,13 +1165,13 @@ size_t DuplicateOrRemoveConcat(
 size_t FuseConcatReshape(std::function<bool(OpWrapper&)> validate_op_config,
                          std::vector<OpWrapper>& ops, size_t start_index,
                          TensorPool& tensor_pool, size_t pattern_size) {
-  static constexpr size_t kFusedConcatIndex = 0;
-  static constexpr size_t kFusedReshapeIndex = 1;
-  auto& concat = ops[start_index + kFusedConcatIndex];
-  auto& reshape = ops[start_index + kFusedReshapeIndex];
+  static constexpr size_t kConcatIndex = 0;
+  static constexpr size_t kReshapeIndex = 1;
+  auto& concat = ops[start_index + kConcatIndex];
+  auto& reshape = ops[start_index + kReshapeIndex];
 
   // Connection check
-  if (!IS_CONNECTED(kFusedConcatIndex, 0, kFusedReshapeIndex, 0)) {
+  if (!IS_CONNECTED(kConcatIndex, 0, kReshapeIndex, 0)) {
     return 1;
   }
   // Check the indices with different dim.
@@ -1182,8 +1185,8 @@ size_t FuseConcatReshape(std::function<bool(OpWrapper&)> validate_op_config,
       diff_indices.emplace_back(i);
     }
   }
-  static constexpr size_t kDiffIndices = 2;
-  if (diff_indices.size() != kDiffIndices ||
+  static constexpr size_t kNumDiffIndices = 2;
+  if (diff_indices.size() != kNumDiffIndices ||
       reshape_output_dims[diff_indices[0]] != 1) {
     return 1;
   }
@@ -1284,7 +1287,6 @@ size_t OptimizeGqaDecode(
   }
 
   static constexpr size_t kSupportedRank = 4;
-  static constexpr size_t kUnpackAxis = 1;
   // Guard the dimension reads below: every tensor we index by axis must have
   // the expected rank, otherwise GetDimension() may read past the end.
   if (ops[start_index].GetInputTensor(0).GetRank() != kSupportedRank ||
@@ -1322,20 +1324,27 @@ size_t OptimizeGqaDecode(
   QNN_LOG_INFO("[G2G] GQA optimization (Decode)");
 
   std::vector<OpWrapper> new_ops;
-  auto q_inputs = SplitTensor(tensor_pool, new_ops,
-                              ops[start_index].GetInputTensor(0), split_index);
-  auto k_cache_outputs = SplitTensor(
-      tensor_pool, new_ops,
-      ops[start_index + q_kcache_matmul_idx].GetInputTensor(1), kUnpackAxis);
-  auto k_slice_outputs = SplitTensor(
-      tensor_pool, new_ops,
-      ops[start_index + q_kslice_matmul_idx].GetInputTensor(1), kUnpackAxis);
-  auto v_cache_outputs = SplitTensor(
-      tensor_pool, new_ops,
-      ops[start_index + qkv_cache_matmul_idx].GetInputTensor(1), kUnpackAxis);
-  auto v_slice_outputs = SplitTensor(
-      tensor_pool, new_ops,
-      ops[start_index + qkv_slice_matmul_idx].GetInputTensor(1), kUnpackAxis);
+  static constexpr size_t kTileSize = 1;
+  static constexpr size_t kUnpackAxis = 1;
+  auto q_inputs =
+      SplitTensor(tensor_pool, new_ops, ops[start_index].GetInputTensor(0),
+                  split_index, kTileSize);
+  auto k_cache_outputs =
+      SplitTensor(tensor_pool, new_ops,
+                  ops[start_index + q_kcache_matmul_idx].GetInputTensor(1),
+                  kUnpackAxis, kTileSize);
+  auto k_slice_outputs =
+      SplitTensor(tensor_pool, new_ops,
+                  ops[start_index + q_kslice_matmul_idx].GetInputTensor(1),
+                  kUnpackAxis, kTileSize);
+  auto v_cache_outputs =
+      SplitTensor(tensor_pool, new_ops,
+                  ops[start_index + qkv_cache_matmul_idx].GetInputTensor(1),
+                  kUnpackAxis, kTileSize);
+  auto v_slice_outputs =
+      SplitTensor(tensor_pool, new_ops,
+                  ops[start_index + qkv_slice_matmul_idx].GetInputTensor(1),
+                  kUnpackAxis, kTileSize);
 
   // Build SHA
   const auto group_size = num_q_heads / num_kv_heads;
