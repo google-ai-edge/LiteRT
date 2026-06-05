@@ -1193,8 +1193,8 @@ size_t FuseConcatReshape(std::function<bool(OpWrapper&)> validate_op_config,
   // 1st.
   QNN_LOG_INFO("[G2G] convert-reshape fusion");
   std::vector<ConstTensorWrapperRef> concat_inputs;
-  concat_inputs.reserve(concat.GetInputTensorCount());
-  for (size_t i = 0; i < concat.GetInputTensorCount(); ++i) {
+  concat_inputs.reserve(concat.GetInputCount());
+  for (size_t i = 0; i < concat.GetInputCount(); ++i) {
     concat_inputs.emplace_back(concat.GetInputTensor(i));
   }
   auto new_concat = CreateConcatenationOp(
