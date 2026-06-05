@@ -877,6 +877,24 @@ size_t OptimizeGqaPrefill(std::function<bool(OpWrapper&)> validate_op_config,
     return 1;
   }
 
+  static constexpr size_t kSupportedRank = 4;
+  // Guard the dimension reads below: every tensor we index by axis must have
+  // the expected rank, otherwise GetDimension() may read past the end.
+  if (ops[start_index].GetInputTensor(0).GetRank() != kSupportedRank ||
+      ops[start_index + q_kcache_matmul_idx].GetInputTensor(1).GetRank() !=
+          kSupportedRank ||
+      ops[start_index + q_kslice_matmul_idx].GetInputTensor(1).GetRank() !=
+          kSupportedRank ||
+      ops[start_index + qkv_cache_matmul_idx].GetInputTensor(1).GetRank() !=
+          kSupportedRank ||
+      ops[start_index + qkv_slice_matmul_idx].GetInputTensor(1).GetRank() !=
+          kSupportedRank) {
+    QNN_LOG_WARNING(
+        "[G2G] Failed to check ranks when doing MHA-SHA transformation "
+        "for GQA prefill.");
+    return 1;
+  }
+
   const size_t num_q_heads = ops[start_index].GetInputTensor(0).GetDimension(1);
   const size_t num_kv_heads =
       ops[start_index + q_kslice_matmul_idx].GetInputTensor(1).GetDimension(1);
