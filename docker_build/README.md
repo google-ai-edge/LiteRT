@@ -95,7 +95,9 @@ runs build ./build_with_docker.sh --use_existing_image # skip image rebuild
 ### Alternative: Override CMD without editing files
 
 You can also pass a one-off command directly via `docker run`, without modifying
-`run_build.sh`: ```bash
+`run_build.sh`:
+
+```bash
 
 # From the repository root:
 
@@ -107,8 +109,8 @@ docker run --rm \
 -e https_proxy="${https_proxy:-}" \
 -v $(pwd):/litert_build \
 litert_build_env \
-bash -c 'source /setup_bazel_env.sh && bazel ${EXTRA_STARTUP} build
-//litert/your_custom:target' ```
+bash -c 'source /setup_bazel_env.sh && bazel ${EXTRA_STARTUP} build //litert/your_custom:target'
+```
 
 ## Accessing Build Artifacts
 
