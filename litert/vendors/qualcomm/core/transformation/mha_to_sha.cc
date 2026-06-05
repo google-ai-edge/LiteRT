@@ -1194,9 +1194,9 @@ size_t FuseConcatReshape(std::function<bool(OpWrapper&)> validate_op_config,
   // Check the indices with different dim.
   const auto& reshape_input_dims = reshape.GetInputTensor(0).GetDimensions();
   const auto& reshape_output_dims = reshape.GetOutputTensor(0).GetDimensions();
+  if (reshape_input_dims.size() != reshape_output_dims.size()) return 1;
   std::vector<size_t> diff_indices;
-  diff_indices.reserve(
-      std::max(reshape_input_dims.size(), reshape_output_dims.size()));
+  diff_indices.reserve(reshape_input_dims.size());
   for (size_t i = 0; i < reshape_input_dims.size(); ++i) {
     if (reshape_input_dims[i] != reshape_output_dims[i]) {
       diff_indices.emplace_back(i);
