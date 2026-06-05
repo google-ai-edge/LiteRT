@@ -483,6 +483,19 @@ void RegisterFullyConnected(const AtsConf& options, size_t& test_id,
 }
 
 template <typename Fixture>
+void RegisterSlice(const AtsConf& options, size_t& test_id, size_t iters,
+                   typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Slice,
+      SizeListC<1, 2, 3, 4>,
+      TypeList<float>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
 void RegisterSoftmax(const AtsConf& options, size_t& test_id, size_t iters,
                      typename Fixture::Capture& cap) {
   // clang-format off
@@ -517,6 +530,7 @@ void RegisterAll(const AtsConf& options, size_t& test_id,
   RegisterTranspose<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterBatchMatmul<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterFullyConnected<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterSlice<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterSoftmax<Fixture>(options, test_id, /*iters=*/10, cap);
 }
 

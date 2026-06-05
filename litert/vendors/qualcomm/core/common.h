@@ -185,6 +185,9 @@ class Options {
   void SetGraphIOTensorMemType(GraphIOTensorMemType mem_type);
   GraphIOTensorMemType GetGraphIOTensorMemType() const;
 
+  absl::string_view GetSchematicDir() const;
+  void SetSchematicDir(absl::string_view schematic_dir);
+
   void SetCustomOpPackage(absl::string_view name,
                           absl::string_view interface_provider,
                           absl::string_view compile_package_path,
@@ -219,6 +222,7 @@ class Options {
   std::string saver_output_dir_;
   GraphIOTensorMemType graph_io_tensor_mem_type_ =
       GraphIOTensorMemType::kMemHandle;
+  std::string schematic_dir_;
   // Currently we only support one custom op package.
   CustomOpPackage custom_op_package_;
 };

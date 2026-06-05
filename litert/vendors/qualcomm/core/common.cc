@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+
 #if defined(__ANDROID__)
 #include <android/log.h>
 #endif  // defined(__ANDROID__)
@@ -484,6 +485,12 @@ GraphIOTensorMemType Options::GetGraphIOTensorMemType() const {
   return graph_io_tensor_mem_type_;
 }
 
+absl::string_view Options::GetSchematicDir() const { return schematic_dir_; }
+
+void Options::SetSchematicDir(absl::string_view schematic_dir) {
+  schematic_dir_ = schematic_dir;
+}
+
 void Options::SetCustomOpPackage(absl::string_view name,
                                  absl::string_view interface_provider,
                                  absl::string_view compile_package_path,
@@ -568,6 +575,7 @@ std::string Options::Dump() const {
   // --- DEBUG ---
   absl::StrAppend(&out, "[DEBUG]\n");
   field(2, "DumpTensorIds", absl::StrJoin(dump_tensor_ids_, ","));
+  field(2, "SchematicDir", schematic_dir_);
 
   // Strip the trailing space empty values leave after " : ".
   return absl::StrReplaceAll(out, {{" \n", "\n"}});
