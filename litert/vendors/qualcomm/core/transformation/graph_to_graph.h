@@ -22,10 +22,28 @@ enum class G2GConfig : std::uint32_t {
   // Simplify masking pattern. Selected when "masking" appears in
   // graph_transform.
   kMasking = 1u << 1,
+  // Tile large MatMul ops along the K or N axis. Selected when "matmul_tiling"
+  // appears in graph_transform.
+  kMatMulTiling = 1u << 2,
   // Experimental MHA decode optimization. Not selectable from the
   // graph_transform flag; used by tests only.
-  kExperimental = 1u << 2,
+  kExperimental = 1u << 3,
 };
+
+// Each enumerator above must occupy a distinct bit so the values can be OR'd
+// into a flag set. Update this static_assert when adding new flags.
+static_assert(static_cast<std::uint32_t>(G2GConfig::kGqa) == 0b0001,
+              "G2GConfig::kGqa must occupy bit 0 (value 0b0001) so it can be "
+              "OR'd into a flag set without colliding with other flags.");
+static_assert(static_cast<std::uint32_t>(G2GConfig::kMasking) == 0b0010,
+              "G2GConfig::kMasking must occupy bit 1 (value 0b0010) so it can "
+              "be OR'd into a flag set without colliding with other flags.");
+static_assert(static_cast<std::uint32_t>(G2GConfig::kMatMulTiling) == 0b0100,
+              "G2GConfig::kMatMulTiling must occupy bit 2 (value 0b0100) so it "
+              "can be OR'd into a flag set without colliding with other flags.");
+static_assert(static_cast<std::uint32_t>(G2GConfig::kExperimental) == 0b1000,
+              "G2GConfig::kExperimental must occupy bit 3 (value 0b1000) so it "
+              "can be OR'd into a flag set without colliding with other flags.");
 
 // Bitwise operators so G2GConfig can be combined as a flag set
 // (e.g. kGqa | kMasking).

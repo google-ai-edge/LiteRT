@@ -320,5 +320,12 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
     };
     Transform(validate_op_config, ops, tensor_pool, attn, OptimizeMHAAttn);
   }
+
+  if (HasG2GFlag(g2g_option, G2GConfig::kMatMulTiling)) {
+    const std::vector<QnnOpCode> matmul_tiling = {
+        QnnOpCode::kMatMul,
+    };
+    Transform(validate_op_config, ops, tensor_pool, matmul_tiling, TileMatMul);
+  }
 }
 }  // namespace qnn

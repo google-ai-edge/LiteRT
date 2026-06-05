@@ -4,6 +4,7 @@
 #include "litert/vendors/qualcomm/core/transformation/mha_to_sha.h"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -201,18 +202,21 @@ const TensorWrapper& BuildSingleSHA(
   return add_2_output;
 }
 
-void CloneNamespace(const OpWrapper& source, OpWrapper& destination) {
+void CloneNamespace(const OpWrapper& source, OpWrapper& destination,
+                    absl::string_view additional_namespace = "/") {
   absl::string_view start_op_name = source.GetName();
   size_t pos = start_op_name.rfind('/');
   if (pos == absl::string_view::npos) {
     return;
   }
-  destination.AddPrefixToName(absl::StrCat(start_op_name.substr(0, pos), "/"));
+  destination.AddPrefixToName(
+      absl::StrCat(start_op_name.substr(0, pos), additional_namespace));
 }
 
-void CloneNamespace(const OpWrapper& source, std::vector<OpWrapper>& ops) {
+void CloneNamespace(const OpWrapper& source, std::vector<OpWrapper>& ops,
+                    absl::string_view additional_namespace = "/") {
   for (auto& op : ops) {
-    CloneNamespace(source, op);
+    CloneNamespace(source, op, additional_namespace);
   }
 }
 
@@ -1967,6 +1971,171 @@ size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
     }
     new_ops.clear();
   }
+  return 1;
+}
+
+size_t LookupTileSizeOverride(size_t m, size_t k, size_t n) {
+  // Per-shape overrides for the tile size. Empty list => use the default above.
+  struct MatMulTilingOverride {
+    size_t m;
+    size_t k;
+    size_t n;
+    size_t tile_size;
+  };
+  static constexpr std::array<MatMulTilingOverride, 2> kMatMulTilingOverrides =
+      {{
+          {128, 4095, 512, 256},
+          {128, 4095, 256, 256},
+      }};
+  for (const auto& o : kMatMulTilingOverrides) {
+    if (o.m == m && o.k == k && o.n == n) {
+      return o.tile_size;
+    }
+  }
+  return 0;
+}
+
+size_t TileMatMul(std::function<bool(OpWrapper&)> validate_op_config,
+                  std::vector<OpWrapper>& ops, size_t start_index,
+                  TensorPool& tensor_pool, size_t pattern_size) {
+  constexpr size_t kLargeMatMulIndex = 0;
+  auto& matmul = ops[start_index + kLargeMatMulIndex];
+  auto& input = matmul.GetInputTensor(0);
+  auto& input_dims = input.GetDimensions();
+  auto& rhs = matmul.GetInputTensor(1);
+  auto& rhs_dims = rhs.GetDimensions();
+  auto& output = matmul.GetOutputTensor(0);
+  // Rank check: this transformation only handles 4-D MatMul.
+  if (input_dims.size() != 4 || rhs_dims.size() != 4) {
+    return 1;
+  }
+  // Original graph:
+  // In[0]: [..., M, K]
+  // In[1]: [..., K, N]
+  // Out[0]: [..., M, N]
+  const size_t m = input_dims[2];
+  const size_t k = input_dims[3];
+  const size_t n = rhs_dims[3];
+  const size_t override_tile = LookupTileSizeOverride(m, k, n);
+  std::vector<OpWrapper> new_ops;
+  // TensorPool uses std::list, so references to tensors created below stay
+  // valid as we keep emplacing new ones. See qualcomm/core README.
+  auto name = matmul.GetName();
+  static constexpr size_t kTileTriggerDim = 4095;
+  static constexpr size_t kSplitMatMulConcatTileSize = 32;
+  static constexpr size_t kSplitMatMulAddTileSize = 128;
+  if (n == kTileTriggerDim) {
+    QNN_LOG_INFO(
+        "Found MatMul (Tile axis: 3):\n>> Name: %.*s\n  In[0] Dims: [%zu, %zu, "
+        "%zu, %zu]\n  In[1] Dims: [%zu, %zu, %zu, %zu]",
+        static_cast<int>(name.size()), name.data(), input_dims[0],
+        input_dims[1], input_dims[2], input_dims[3], rhs_dims[0], rhs_dims[1],
+        rhs_dims[2], rhs_dims[3]);
+    const size_t tsize =
+        override_tile ? override_tile : kSplitMatMulConcatTileSize;
+    // After G2G:
+    // Concat(
+    //   ([..., M, K] * [..., K, Nt]),
+    //   ([..., M, K] * [..., K, Nt]),
+    //   ...,)
+    // = [..., M, N]
+    auto k_split =
+        SplitTensor(tensor_pool, new_ops, matmul.GetInputTensor(1), 3, tsize);
+    std::vector<ConstTensorWrapperRef> matmul_outputs;
+    matmul_outputs.reserve(k_split.size());
+    for (size_t i = 0; i < k_split.size(); ++i) {
+      auto output_dims = output.GetDimensions();
+      output_dims[3] = k_split[i].get().GetDimension(3);
+      auto& matmul_output = matmul_outputs.emplace_back(
+          tensor_pool.CloneNativeTensorFrom(output, output_dims));
+      new_ops.emplace_back(CreateOpWithSameParams(
+          matmul, {matmul.GetInputTensor(0), k_split[i]}, {matmul_output}));
+    }
+    new_ops.emplace_back(CreateConcatenationOp(matmul_outputs, output, 3));
+  } else if (k == kTileTriggerDim && rhs_dims[2] == kTileTriggerDim) {
+    QNN_LOG_INFO(
+        "Found MatMul (Tile axis: 2):\n>> Name: %.*s\n  In[0] Dims: [%zu, %zu, "
+        "%zu, %zu]\n  In[1] Dims: [%zu, %zu, %zu, %zu]",
+        static_cast<int>(name.size()), name.data(), input_dims[0],
+        input_dims[1], input_dims[2], input_dims[3], rhs_dims[0], rhs_dims[1],
+        rhs_dims[2], rhs_dims[3]);
+    // After G2G:
+    // ([..., M, Kt] * [..., Kt, N])
+    // + ([..., M, Kt] * [..., Kt, N])
+    // + ...
+    // = [..., M, N]
+    const size_t tsize =
+        override_tile ? override_tile : kSplitMatMulAddTileSize;
+    auto inputs =
+        SplitTensor(tensor_pool, new_ops, matmul.GetInputTensor(0), 3, tsize);
+    auto v =
+        SplitTensor(tensor_pool, new_ops, matmul.GetInputTensor(1), 2, tsize);
+    // Create one MatMul per (inputs[i], v[i]) split pair.
+    // Each produces [..., M, N] — same shape as the full output.
+    std::vector<ConstTensorWrapperRef> matmul_outputs;
+    matmul_outputs.reserve(inputs.size());
+    for (size_t i = 0; i < inputs.size(); ++i) {
+      auto& mm_output = matmul_outputs.emplace_back(
+          tensor_pool.CloneNativeTensorFrom(output, output.GetDimensions()));
+      new_ops.emplace_back(
+          CreateOpWithSameParams(matmul, {inputs[i], v[i]}, {mm_output}));
+    }
+    if (matmul_outputs.size() == 1) {
+      // Only one tile (K <= kSplitMatMulAddTileSize): redo the sole matmul
+      // directly into `output` instead of the intermediate tensor.
+      new_ops.pop_back();
+      new_ops.emplace_back(
+          CreateOpWithSameParams(matmul, {inputs[0], v[0]}, {output}));
+    } else {
+      // Sequential chain: accumulate left-to-right.
+      // acc = matmul_outputs[0] + matmul_outputs[1] + ... + matmul_outputs[N-1]
+      ConstTensorWrapperRef acc = matmul_outputs[0];
+      for (size_t i = 1; i + 1 < matmul_outputs.size(); ++i) {
+        auto& add_output =
+            tensor_pool.CloneNativeTensorFrom(output, output.GetDimensions());
+        new_ops.emplace_back(
+            CreateElementWiseAddOp(acc, matmul_outputs[i], add_output));
+        acc = add_output;
+      }
+      // Final add — wire directly to the original `output` tensor.
+      new_ops.emplace_back(
+          CreateElementWiseAddOp(acc, matmul_outputs.back(), output));
+    }
+  } else {
+    return 1;
+  }
+  // Process-wide counter so the tiling_id is unique across every TileMatMul
+  // call and survives across multiple GraphToGraphTransform invocations.
+  // Not thread-safe; G2G is expected to run single-threaded per process.
+  size_t matmul_tiling_cnt = 0;
+  const size_t tiling_id = matmul_tiling_cnt++;
+  CloneNamespace(matmul, new_ops,
+                 absl::StrCat("matmul_tiling_", tiling_id, "/"));
+  // Validate new graph.
+  const bool is_valid =
+      std::all_of(new_ops.begin(), new_ops.end(),
+                  [validate_op_config](::qnn::OpWrapper& op_wrapper) -> bool {
+                    return validate_op_config(op_wrapper);
+                  });
+  if (is_valid) {
+    // Adjust the name to avoid a name collision in the Qnn JSON dump.
+    // (tiling_id, i) is unique across all TileMatMul invocations.
+    for (size_t i = 0; i < new_ops.size(); ++i) {
+      new_ops[i].AddSuffixToName(
+          absl::StrCat("_qcg2g_", tiling_id, "_", i));
+    }
+    // Replace the matched pattern with a newly generated subgraph.
+    size_t step_size = new_ops.size();
+    ops.insert(ops.begin() + start_index + pattern_size,
+               std::make_move_iterator(new_ops.begin()),
+               std::make_move_iterator(new_ops.end()));
+    ops.erase(ops.begin() + start_index,
+              ops.begin() + start_index + pattern_size);
+    QNN_LOG_INFO("[G2G] Matmul Tiling done.");
+    return step_size;
+  }
+  QNN_LOG_WARNING(
+      "[G2G] Validation failed. Rolling back to the original graph.");
   return 1;
 }
 

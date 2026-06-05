@@ -2305,5 +2305,125 @@ TEST(MHAOptimization, AttentionWithSelect) {
   ASSERT_TRUE(op_wrappers[41].IsOpCode(QnnOpCode::kPack));
 }
 
+TEST(TileMatMulTest, TileNAxis) {
+  // n == 4095: split rhs along the N axis (dim 3) into ceil(N / tsize) tiles,
+  // run a MatMul per tile, then Concat back along axis 3.
+  TensorPool tensor_pool;
+  QuantizeParamsWrapperVariant quant_param{
+      ScaleOffsetQuantizeParamsWrapper{1e-4f, 0}};
+
+  auto& input = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
+                                               quant_param, {1, 1, 128, 256});
+  auto& rhs = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
+                                             quant_param, {1, 1, 256, 4095});
+  auto& output = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
+                                                quant_param, {1, 1, 128, 4095});
+
+  std::vector<OpWrapper> op_wrappers =
+      MakeVector(CreateMatmulOp(input, rhs, output, false, false));
+
+  // (m=128, k=256, n=4095) — does not match LookupTileSizeOverride, so the
+  // default kSplitMatMulConcatTileSize=32 applies.
+  static constexpr size_t kTileSize = 32;
+  static constexpr size_t kNumTiles = (4095 + kTileSize - 1) / kTileSize;
+  static constexpr size_t kNumOps = 1 /*split*/ + kNumTiles + 1 /*concat*/;
+
+  // Transform the graph.
+  GraphToGraphTransform(::qnn::G2GConfig::kMatMulTiling, op_wrappers,
+                        tensor_pool, [](OpWrapper& op) { return true; });
+
+  ASSERT_EQ(op_wrappers.size(), kNumOps);
+  EXPECT_TRUE(op_wrappers.front().IsOpCode(QnnOpCode::kSplit));
+  for (size_t i = 0; i < kNumTiles; ++i) {
+    EXPECT_TRUE(op_wrappers[1 + i].IsOpCode(QnnOpCode::kMatMul));
+  }
+  EXPECT_TRUE(op_wrappers.back().IsOpCode(QnnOpCode::kConcat));
+}
+
+TEST(TileMatMulTest, TileKAxis) {
+  // k == 4095 && rhs_dims[2] == 4095: split inputs along K, run a MatMul per
+  // tile, accumulate with a chain of element-wise Adds.
+  TensorPool tensor_pool;
+  QuantizeParamsWrapperVariant quant_param{
+      ScaleOffsetQuantizeParamsWrapper{1e-4f, 0}};
+
+  auto& input = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
+                                               quant_param, {1, 1, 128, 4095});
+  auto& rhs = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
+                                             quant_param, {1, 1, 4095, 128});
+  auto& output = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
+                                                quant_param, {1, 1, 128, 128});
+
+  std::vector<OpWrapper> op_wrappers =
+      MakeVector(CreateMatmulOp(input, rhs, output, false, false));
+
+  // (m=128, k=4095, n=128) — does not match LookupTileSizeOverride, so the
+  // default kSplitMatMulAddTileSize=128 applies.
+  static constexpr size_t kTileSize = 128;
+  static constexpr size_t kNumTiles = (4095 + kTileSize - 1) / kTileSize;
+  static constexpr size_t kNumOps =
+      2 /*splits*/ + kNumTiles /*matmuls*/ + (kNumTiles - 1) /*adds*/;
+
+  // Transform the graph.
+  GraphToGraphTransform(::qnn::G2GConfig::kMatMulTiling, op_wrappers,
+                        tensor_pool, [](OpWrapper& op) { return true; });
+
+  ASSERT_EQ(op_wrappers.size(), kNumOps);
+  EXPECT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kSplit));
+  EXPECT_TRUE(op_wrappers[1].IsOpCode(QnnOpCode::kSplit));
+  for (size_t i = 0; i < kNumTiles; ++i) {
+    EXPECT_TRUE(op_wrappers[2 + i].IsOpCode(QnnOpCode::kMatMul));
+  }
+  for (size_t i = 0; i < kNumTiles - 1; ++i) {
+    EXPECT_TRUE(IsElementWiseAdd(op_wrappers[2 + kNumTiles + i]));
+  }
+}
+
+TEST(TileMatMulTest, NoTriggerDimsLeavesGraphUnchanged) {
+  TensorPool tensor_pool;
+  QuantizeParamsWrapperVariant quant_param{
+      ScaleOffsetQuantizeParamsWrapper{1e-4f, 0}};
+
+  auto& input = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
+                                               quant_param, {1, 1, 128, 256});
+  auto& rhs = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
+                                             quant_param, {1, 1, 256, 512});
+  auto& output = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
+                                                quant_param, {1, 1, 128, 512});
+
+  std::vector<OpWrapper> op_wrappers =
+      MakeVector(CreateMatmulOp(input, rhs, output, false, false));
+
+  // Transform the graph.
+  GraphToGraphTransform(::qnn::G2GConfig::kMatMulTiling, op_wrappers,
+                        tensor_pool, [](OpWrapper& op) { return true; });
+
+  ASSERT_EQ(op_wrappers.size(), 1u);
+  EXPECT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kMatMul));
+}
+
+TEST(TileMatMulTest, NonFourDInputLeavesGraphUnchanged) {
+  TensorPool tensor_pool;
+  QuantizeParamsWrapperVariant quant_param{
+      ScaleOffsetQuantizeParamsWrapper{1e-4f, 0}};
+
+  auto& input = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
+                                               quant_param, {1, 128, 256});
+  auto& rhs = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
+                                             quant_param, {1, 256, 4095});
+  auto& output = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
+                                                quant_param, {1, 128, 4095});
+
+  std::vector<OpWrapper> op_wrappers =
+      MakeVector(CreateMatmulOp(input, rhs, output, false, false));
+
+  // Transform the graph.
+  GraphToGraphTransform(::qnn::G2GConfig::kMatMulTiling, op_wrappers,
+                        tensor_pool, [](OpWrapper& op) { return true; });
+
+  ASSERT_EQ(op_wrappers.size(), 1u);
+  EXPECT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kMatMul));
+}
+
 }  // namespace
 }  // namespace qnn

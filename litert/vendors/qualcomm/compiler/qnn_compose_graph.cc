@@ -1569,9 +1569,10 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
 
   // Parse comma-separated graph_transform option (e.g. "gqa,masking") and
   // OR in the corresponding G2GConfig flags. Unknown keywords are warned.
-  static constexpr std::array<std::pair<absl::string_view, ::qnn::G2GConfig>, 2>
+  static constexpr std::array<std::pair<absl::string_view, ::qnn::G2GConfig>, 3>
       kKnownGraphTransforms = {{{"gqa", ::qnn::G2GConfig::kGqa},
-                                {"masking", ::qnn::G2GConfig::kMasking}}};
+                                {"masking", ::qnn::G2GConfig::kMasking},
+                                {"matmul_tiling", ::qnn::G2GConfig::kMatMulTiling}}};
   ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kOff;
   for (absl::string_view part :
        absl::StrSplit(options.GetGraphTransform(), ',', absl::SkipEmpty())) {
