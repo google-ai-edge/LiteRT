@@ -93,7 +93,9 @@ class Environment {
         kLiteRtEnvOptionTagCompilerCacheMaxConfigsPerModel,
      CompilerCacheMaxTotalSize = kLiteRtEnvOptionTagCompilerCacheMaxTotalSize,
     WebGpuInstance = kLiteRtEnvOptionTagWebGpuInstance,
-    WebGpuProcs = kLiteRtEnvOptionTagWebGpuProcs,
+    // TODO(b/515525631): Remove WebGpuProcs once downstream dependencies are
+    // updated.
+    WebGpuProcs = kLiteRtEnvOptionTagWebGpuProcs,  // Deprecated.
     RuntimeLibraryDir = kLiteRtEnvOptionTagRuntimeLibraryDir,
     AutoRegisterAccelerators = kLiteRtEnvOptionTagAutoRegisterAccelerators,
   };
