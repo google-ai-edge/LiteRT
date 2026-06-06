@@ -70,15 +70,6 @@ TEST(DeviceTypeFlagTest, Parse) {
     EXPECT_EQ(value, kDeviceEnum);
     EXPECT_EQ(kDevice, absl::UnparseFlag(value));
   }
-
-  {
-    static constexpr absl::string_view kDevice = "auto";
-    static constexpr LiteRtIntelOpenVinoDeviceType kDeviceEnum =
-        kLiteRtIntelOpenVinoDeviceTypeAUTO;
-    EXPECT_TRUE(absl::ParseFlag(kDevice, &value, &error));
-    EXPECT_EQ(value, kDeviceEnum);
-    EXPECT_EQ(kDevice, absl::UnparseFlag(value));
-  }
 }
 
 TEST(PerformanceModeFlagTest, Parse) {

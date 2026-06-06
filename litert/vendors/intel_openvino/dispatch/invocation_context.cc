@@ -151,11 +151,10 @@ LiteRtDispatchInvocationContextT::Create(
       case kLiteRtIntelOpenVinoDeviceTypeNPU:
         device = "NPU";
         break;
-      case kLiteRtIntelOpenVinoDeviceTypeAUTO:
-        device = "AUTO";
-        break;
     }
   }
+  LITERT_LOG(LITERT_INFO, "Using Intel OpenVINO device: %s", device.c_str());
+
   OpenVINOSharedCore::GetInstance()->SetDevice(device);
 
   if (!exec_bytecode_ptr || exec_bytecode_size == 0) {

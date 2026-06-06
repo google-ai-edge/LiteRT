@@ -194,7 +194,7 @@ TEST(IntelOpenVinoOptionsCApiTest, RoundTripSerialization) {
   EXPECT_EQ(LrtIntelOpenVinoOptionsCreate(&options), kLiteRtStatusOk);
 
   EXPECT_EQ(LrtIntelOpenVinoOptionsSetDeviceType(
-                options, kLiteRtIntelOpenVinoDeviceTypeAUTO),
+                options, kLiteRtIntelOpenVinoDeviceTypeNPU),
             kLiteRtStatusOk);
   EXPECT_EQ(
       LrtIntelOpenVinoOptionsSetConfigsMapOption(options, "key1", "value1"),
@@ -206,7 +206,7 @@ TEST(IntelOpenVinoOptionsCApiTest, RoundTripSerialization) {
   LiteRtIntelOpenVinoDeviceType dev_type;
   ASSERT_EQ(LrtIntelOpenVinoOptionsGetDeviceType(parsed, &dev_type),
             kLiteRtStatusOk);
-  EXPECT_EQ(dev_type, kLiteRtIntelOpenVinoDeviceTypeAUTO);
+  EXPECT_EQ(dev_type, kLiteRtIntelOpenVinoDeviceTypeNPU);
 
   int num_configs;
   ASSERT_EQ(

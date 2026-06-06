@@ -16,9 +16,11 @@
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_OPENVINO_SHARED_CORE_H_
 
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "openvino/runtime/core.hpp"
+#include "openvino/runtime/remote_context.hpp"
 
 class OpenVINOSharedCore {
  public:
@@ -32,8 +34,18 @@ class OpenVINOSharedCore {
   // Return the core shared_pointer.
   std::shared_ptr<ov::Core> getCore() const { return core_; }
 
-  void SetDevice(const std::string device) { device_ = device; }
+  void SetDevice(const std::string device) {
+    device_ = device;
+    remote_context_.reset();
+  }
   std::string GetDevice() { return device_; }
+
+  ov::RemoteContext GetRemoteContext() {
+    if (!remote_context_.has_value()) {
+      remote_context_ = core_->get_default_context(device_);
+    }
+    return *remote_context_;
+  }
 
  private:
   OpenVINOSharedCore();
@@ -41,6 +53,7 @@ class OpenVINOSharedCore {
 
   std::shared_ptr<ov::Core> core_;
   std::string device_ = "NPU";  // Default device
+  std::optional<ov::RemoteContext> remote_context_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_OPENVINO_SHARED_CORE_H_

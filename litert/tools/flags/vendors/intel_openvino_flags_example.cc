@@ -60,9 +60,6 @@ void ExampleIntelOpenVinoFlagsUsage(int argc, char** argv) {
     case kLiteRtIntelOpenVinoDeviceTypeNPU:
       std::cout << "NPU";
       break;
-    case kLiteRtIntelOpenVinoDeviceTypeAUTO:
-      std::cout << "AUTO";
-      break;
   }
   std::cout << "\n";
 

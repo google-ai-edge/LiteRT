@@ -57,9 +57,6 @@ OpenVinoCompileContext::OpenVinoCompileContext() {
     case kLiteRtIntelOpenVinoDeviceTypeNPU:
       context.device_ = "NPU";
       break;
-    case kLiteRtIntelOpenVinoDeviceTypeAUTO:
-      context.device_ = "AUTO";
-      break;
   }
 
   LITERT_LOG(LITERT_INFO, "Using Intel OpenVINO device: %s",

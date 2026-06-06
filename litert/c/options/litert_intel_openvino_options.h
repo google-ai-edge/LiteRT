@@ -52,7 +52,6 @@ typedef enum LiteRtIntelOpenVinoDeviceType {
   kLiteRtIntelOpenVinoDeviceTypeCPU = 0,
   kLiteRtIntelOpenVinoDeviceTypeGPU = 1,
   kLiteRtIntelOpenVinoDeviceTypeNPU = 2,
-  kLiteRtIntelOpenVinoDeviceTypeAUTO = 3,
 } LiteRtIntelOpenVinoDeviceType;
 
 LiteRtStatus LrtIntelOpenVinoOptionsSetDeviceType(

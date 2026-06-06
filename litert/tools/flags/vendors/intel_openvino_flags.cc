@@ -37,7 +37,7 @@
 
 ABSL_FLAG(LiteRtIntelOpenVinoDeviceType, intel_openvino_device_type,
           kLiteRtIntelOpenVinoDeviceTypeNPU,
-          "Device type for Intel OpenVINO inference (cpu, gpu, npu, auto).");
+          "Device type for Intel OpenVINO inference (cpu, gpu, npu).");
 
 ABSL_FLAG(LiteRtIntelOpenVinoPerformanceMode, intel_openvino_performance_mode,
           kLiteRtIntelOpenVinoPerformanceModeLatency,
@@ -66,11 +66,6 @@ bool AbslParseFlag(absl::string_view text,
     return true;
   }
 
-  if (text == "auto") {
-    *options = kLiteRtIntelOpenVinoDeviceTypeAUTO;
-    return true;
-  }
-
   *error = "Unknown Intel OpenVINO device type";
   return false;
 }
@@ -83,8 +78,6 @@ std::string AbslUnparseFlag(LiteRtIntelOpenVinoDeviceType options) {
       return "gpu";
     case kLiteRtIntelOpenVinoDeviceTypeNPU:
       return "npu";
-    case kLiteRtIntelOpenVinoDeviceTypeAUTO:
-      return "auto";
   }
 }
 
