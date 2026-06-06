@@ -2195,7 +2195,10 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts_warnings(),
     visibility = ["//visibility:public"],
-    deps = ["//tflite/converter/core/api:error_reporter"],
+    deps = [
+        "//tflite:util",
+        "//tflite/converter/core/api:error_reporter",
+    ],
 )
 
 exports_files(srcs = ["utils/control_edges.h"])
