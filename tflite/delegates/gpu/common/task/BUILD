@@ -77,7 +77,10 @@ cc_library(
         "//tflite/delegates/gpu/common:precision",
         "//tflite/delegates/gpu/common:status",
         "//tflite/delegates/gpu/common:types",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -105,6 +108,7 @@ cc_library(
     deps = [
         ":gpu_object_desc",
         "//tflite/delegates/gpu/common:status",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -123,6 +127,8 @@ cc_library(
         "//tflite/delegates/gpu/common:precision",
         "//tflite/delegates/gpu/common:status",
         "//tflite/delegates/gpu/common:types",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
     ],
 )
 
@@ -146,6 +152,8 @@ cc_library(
         "//tflite/delegates/gpu/common:tensor",
         "//tflite/delegates/gpu/common:types",
         "//tflite/delegates/gpu/common:util",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -164,6 +172,8 @@ cc_library(
         "//tflite/delegates/gpu/common:precision",
         "//tflite/delegates/gpu/common:shape",
         "//tflite/delegates/gpu/common:tensor",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -184,7 +194,9 @@ cc_library(
         "//tflite/delegates/gpu/common:precision",
         "//tflite/delegates/gpu/common:types",
         "//tflite/delegates/gpu/common:util",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
