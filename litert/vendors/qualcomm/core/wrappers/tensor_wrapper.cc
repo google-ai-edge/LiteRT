@@ -12,6 +12,7 @@
 #include <iterator>
 #include <limits>
 #include <numeric>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <variant>
@@ -362,5 +363,26 @@ void TensorWrapper::SetQuantBitwidth(std::uint32_t bitwidth) {
   }
 
   UpdateQnnQuantParams();
+}
+
+std::string TensorWrapper::ToString() const {
+  std::ostringstream out;
+  out << "name=\"" << GetName() << "\" dtype=" << QnnDataTypeName(GetDataType());
+  out << " dims=[";
+  for (size_t i = 0; i < dimensions_.size(); ++i) {
+    out << (i == 0 ? "" : ",") << dimensions_[i];
+  }
+  out << "]";
+  // Quantization kind, stated factually without diagnosing any failure.
+  if (IsPerChannelQuant()) {
+    out << " per-channel-quant";
+  } else if (IsPerTensorQuant()) {
+    out << " per-tensor-quant";
+  } else if (IsQuant()) {
+    out << " quant";
+  } else {
+    out << " (no quantization)";
+  }
+  return out.str();
 }
 }  // namespace qnn

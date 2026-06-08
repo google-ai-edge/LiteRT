@@ -446,8 +446,13 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::OpWrapper& op) {
   if (Qnn_ErrorHandle_t error =
           Api()->backendValidateOpConfig(BackendHandle(), op_config);
       QNN_SUCCESS != error) {
-    LITERT_LOG(LITERT_ERROR, "Failed to validate op %s\n, error: %lld",
-               op_config.v1.name, static_cast<long long>(error));
+    // Detailed message on the failure path only: which op failed, the QNN
+    // error code, and every operand's dtype / dims / quantization kind.
+    LITERT_LOG(LITERT_ERROR,
+               "\nQNN op validation failed: %s\n"
+               "  QNN error=%lld. See the QNN validator log lines above for the "
+               "specific reason.",
+               op.ToString().c_str(), static_cast<long long>(error));
     return kLiteRtStatusErrorInvalidLegalization;
   }
 

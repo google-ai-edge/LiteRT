@@ -77,6 +77,10 @@ class OpWrapper final {
 
   void AddSuffixToName(absl::string_view suffix);
 
+  // Multi-line description (name, type, and every input/output tensor), for
+  // logging.
+  std::string ToString() const;
+
  private:
   // Borrowed pointer. Must point to a string that outlives this OpWrapper --
   // in practice, the QualcommOptions instance held by LiteRtCompilerPluginT.

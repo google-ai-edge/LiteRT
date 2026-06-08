@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMPILER_QNN_COMPOSE_GRAPH_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMPILER_QNN_COMPOSE_GRAPH_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -42,13 +43,18 @@ LiteRtStatus ConvertTensor(
     const absl::flat_hash_set<std::int32_t>& ids_to_dump = {},
     bool is_tensor_output = false);
 
+// `op_index` is the topological index of the op within its subgraph; it is
+// included in the "unsupported op" error message so a specific op can be
+// located (and cross-referenced with the "_LiteRt_OpId_<n>" suffix added to
+// the QNN op name).
 LiteRtStatus ConvertOp(bool use_int64_bias_as_int32,
                        const ::qnn::CustomOpPackage& custom_op_package,
                        const litert::compiler::Op& litert_op,
                        ::qnn::TensorPool& tensor_pool,
                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
                        std::vector<::qnn::TensorWrapperRef>& output_tensors,
-                       std::vector<::qnn::OpWrapper>& op_wrappers);
+                       std::vector<::qnn::OpWrapper>& op_wrappers,
+                       size_t op_index);
 
 // Composes a new QNN Graph from given LiteRt Graph. Qnn Graph is written to
 // context behind "qnn". Uses given graph_name to name entry point.
