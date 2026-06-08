@@ -2094,6 +2094,8 @@ cc_test(
     deps = [
         ":test_main",
         ":test_util",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
         "//tflite/core/c:common",
         "//tflite/kernels/internal:tensor_utils",
         "//tflite/schema:schema_fbs",
