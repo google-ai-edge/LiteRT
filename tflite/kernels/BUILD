@@ -1764,6 +1764,7 @@ cc_test(
         "//tflite/core/c:common",
         "//tflite/kernels/internal:tensor_utils_no_eigen",
         "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
         "@com_google_googletest//:gtest",
     ],
 )
