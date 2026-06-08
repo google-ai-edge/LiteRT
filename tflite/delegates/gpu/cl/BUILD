@@ -388,6 +388,34 @@ cc_library(
 
 # copybara:uncomment_begin(google-only)
 # cc_library(
+#     name = "gl_interop_no_gl",
+#     srcs = ["gl_interop.cc"],
+#     hdrs = ["gl_interop.h"],
+#     defines = ["CL_DELEGATE_NO_GL"],
+#     deps = [
+#         ":cl_command_queue",
+#         ":cl_device",
+#         ":environment",
+#         "@org_tensorflow//third_party/GL:EGL_headers",
+#         "//tflite/delegates/gpu:spi",
+#         "//tflite/delegates/gpu/common:access_type",
+#         "//tflite/delegates/gpu/common:status",
+#     ],
+# )
+#
+# cc_test(
+#     name = "gl_interop_no_gl_test",
+#     srcs = ["gl_interop_no_gl_test.cc"],
+#     tags = ["requires-gpu-nvidia"],
+#     deps = [
+#         ":gl_interop_no_gl",
+#         "@com_google_googletest//:gtest_main",
+#     ],
+# )
+# copybara:uncomment_end
+
+# copybara:uncomment_begin(google-only)
+# cc_library(
 #     name = "gpu_api_delegate_no_gl",
 #     srcs = ["gpu_api_delegate.cc"],
 #     hdrs = ["gpu_api_delegate.h"],
