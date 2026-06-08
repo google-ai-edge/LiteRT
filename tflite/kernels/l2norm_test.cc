@@ -19,7 +19,7 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "flatbuffers/flatbuffers.h"  // from @flatbuffers
+#include "tflite/core/c/common.h"
 #include "tflite/kernels/test_util.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -27,6 +27,8 @@ namespace tflite {
 namespace {
 
 using ::testing::ElementsAreArray;
+using ::testing::Pointwise;
+using ::tflite::FloatingPointEq;
 
 class L2NormOpModel : public SingleOpModel {
  public:
@@ -82,6 +84,13 @@ TEST(L2NormOpTest, SimpleFloatTest) {
       m.GetOutput<float>(),
       Pointwise(FloatingPointEq(), {-0.55, 0.3, 0.35, 0.6, -0.35, 0.05}));
 }
+
+#if GTEST_HAS_DEATH_TEST
+TEST(L2NormOpTest, ScalarTensorFailsPrepare) {
+  EXPECT_DEATH(
+      L2NormOpModel({}, TensorType_FLOAT32, ActivationFunctionType_NONE), "");
+}
+#endif
 
 TEST(L2NormOpTest, ZerosVectorFloatTest) {
   L2NormOpModel m({1, 1, 1, 6}, TensorType_FLOAT32,
