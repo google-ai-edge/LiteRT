@@ -531,6 +531,18 @@ LiteRtStatus LiteRtGetSplitNumSplitsOption(LiteRtOp op, int32_t* num_splits) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetSplitVNumSplitsOption(LiteRtOp op, int32_t* num_splits) {
+  if (op->OpCode() != kLiteRtOpCodeTflSplitV) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *num_splits = opts.AsSplitVOptions()->num_splits;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetSHLOCompositeOpName(LiteRtOp op, const char** name) {
   if (op->OpCode() != kLiteRtOpCodeShloComposite) {
     return kLiteRtStatusErrorInvalidArgument;

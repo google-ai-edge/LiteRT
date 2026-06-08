@@ -323,6 +323,15 @@ LiteRtStatus LiteRtBuilderBuildSplitOpOption(LiteRtBuilder builder, LiteRtOp op,
 
 //==============================================================================
 //
+// Get option APIs for LiteRt SplitV op.
+//  Options:
+// - num_splits : int32_t
+//
+//==============================================================================
+LiteRtStatus LiteRtGetSplitVNumSplitsOption(LiteRtOp op, int32_t* num_splits);
+
+//==============================================================================
+//
 // Get option APIs for LiteRt SHLO Composite op.
 //  Options:
 // - name : string
