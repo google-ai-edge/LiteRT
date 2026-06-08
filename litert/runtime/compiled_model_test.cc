@@ -71,6 +71,7 @@
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 #include "third_party/odml/litert/ml_drift/delegate/buffer_handler_opencl.h"
+#include "tflite/c/common.h"
 #include "tflite/interpreter.h"
 
 namespace litert {
@@ -1534,6 +1535,71 @@ TEST(CompiledModelTest, CheckResizeFail) {
       InputTensorNeedsResize(compiled_model.get(), input_tensor1, {2, 128, 4}),
       IsError(kLiteRtStatusErrorInvalidArgument));
 
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+// Verifies auto-resize behavior for tensors that have no dims_signature (e.g.
+// KV-cache tensors in LLM models exported without dynamic-shape annotations).
+// Such tensors should be resizable as long as the rank matches and all new
+// dimensions are positive.
+TEST(CompiledModelTest, CheckResizeNoDimsSignature) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // A CompiledModel instance is only needed to reach the static
+  // InputTensorNeedsResize helper via the test-only friend function.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
+
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+
+  // Build a synthetic tensor with static dims [1, 128, 4] but no
+  // dims_signature.
+  char tensor_name[] = "kv_cache";
+  TfLiteTensor tensor = {};
+  tensor.name = tensor_name;
+  tensor.dims = TfLiteIntArrayCreate(3);
+  tensor.dims->data[0] = 1;
+  tensor.dims->data[1] = 128;
+  tensor.dims->data[2] = 4;
+  tensor.dims_signature = nullptr;
+
+  {
+    // Same shape -> no resize needed.
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        bool need_resize,
+        InputTensorNeedsResize(compiled_model.get(), &tensor, {1, 128, 4}));
+    EXPECT_FALSE(need_resize);
+  }
+  {
+    // Different shape, matching rank, positive dims -> resize allowed.
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        bool need_resize,
+        InputTensorNeedsResize(compiled_model.get(), &tensor, {2, 128, 4}));
+    EXPECT_TRUE(need_resize);
+  }
+  // Rank mismatch -> error.
+  EXPECT_THAT(InputTensorNeedsResize(compiled_model.get(), &tensor, {2, 128}),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  // Non-positive dimension -> error.
+  EXPECT_THAT(
+      InputTensorNeedsResize(compiled_model.get(), &tensor, {2, -1, 4}),
+      IsError(kLiteRtStatusErrorInvalidArgument));
+
+  TfLiteIntArrayFree(tensor.dims);
   LiteRtDestroyOptions(jit_compilation_options);
   LiteRtDestroyModel(model);
   LiteRtDestroyEnvironment(env_ptr);
