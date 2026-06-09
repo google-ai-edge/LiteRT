@@ -316,6 +316,9 @@ if(LITERT_PLATFORM_ANDROID)
   set_source_files_properties(
     ${TFLITE_SOURCE_DIR}/delegates/gpu/cl/egl_sync.cc
     PROPERTIES COMPILE_DEFINITIONS "EGL_EGLEXT_PROTOTYPES")
+  set_source_files_properties(
+    ${TFLITE_SOURCE_DIR}/delegates/gpu/cl/gl_interop.cc
+    PROPERTIES COMPILE_DEFINITIONS "CL_DELEGATE_NO_GL")
   target_sources(litert_tflite_gpu_gl_core PRIVATE
     ${TFLITE_SOURCE_DIR}/delegates/utils/async_type_helpers.cc
     ${TFLITE_SOURCE_DIR}/delegates/utils/utils.cc
@@ -334,7 +337,9 @@ if(LITERT_PLATFORM_ANDROID)
       absl::strings
       absl::span
       absl::flat_hash_map
-      flatbuffers::flatbuffers)
+      flatbuffers::flatbuffers
+      tensorflow-lite)
+  target_compile_definitions(litert_tflite_gpu_gl_core PRIVATE CL_DELEGATE_NO_GL EGL_NO_X11)
   list(APPEND _litert_runtime_c_api_private_archives litert_tflite_gpu_gl_core)
 endif()
 
