@@ -2290,6 +2290,21 @@ Tensor<Mixins...> TransposeConv2D(
   return output;
 }
 
+template <class... Mixins>
+Tensor<Mixins...> Rope(Tensor<Mixins...> input, Tensor<Mixins...> weights,
+                       source_location loc = source_location::current()) {
+  auto op = std::make_shared<graph::RopeOperation>();
+  RegisterMixins<Mixins...>(op);
+  AddInputs(op, input, weights);
+  Tensor<Mixins...> output = AddOutput(op, loc);
+  const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
+  graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
+  output_info.type = input_info.type;
+  output_info.shape = input_info.shape;
+  graph::OpDebugger::DebugOp(*op);
+  return output;
+}
+
 }  // namespace litert::tensor
 
 #endif  // THIRD_PARTY_ODML_LITERT_TENSOR_ARITHMETIC_H_
