@@ -15,6 +15,8 @@
 #ifndef ODML_LITERT_LITERT_CORE_MODEL_OPS_SIMPLE_UNARY_H_
 #define ODML_LITERT_LITERT_CORE_MODEL_OPS_SIMPLE_UNARY_H_
 
+#include <algorithm>
+#include <cmath>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
@@ -59,6 +61,7 @@ DEFINE_SIMPLE_UNARY_INFER(LeakyRelu)
 DEFINE_SIMPLE_UNARY_INFER(Log)
 DEFINE_SIMPLE_UNARY_INFER(LogicalNot)
 DEFINE_SIMPLE_UNARY_INFER(Logistic)
+DEFINE_SIMPLE_UNARY_INFER(LogSoftmax)
 DEFINE_SIMPLE_UNARY_INFER(Neg)
 DEFINE_SIMPLE_UNARY_INFER(Quantize)
 DEFINE_SIMPLE_UNARY_INFER(Relu)
@@ -76,6 +79,52 @@ DEFINE_SIMPLE_UNARY_INFER(Square)
 DEFINE_SIMPLE_UNARY_INFER(Tanh)
 
 #undef DEFINE_SIMPLE_UNARY_INFER
+
+template <typename T>
+inline void ReferenceSoftmax(const T* input_data, T* output_data, int batch,
+                             int depth, float beta) {
+  for (int b = 0; b < batch; ++b) {
+    float max_val = static_cast<float>(input_data[b * depth]);
+    for (int d = 1; d < depth; ++d) {
+      max_val =
+          std::max(max_val, static_cast<float>(input_data[b * depth + d]));
+    }
+    float sum = 0;
+    for (int d = 0; d < depth; ++d) {
+      sum += std::exp(
+          beta * (static_cast<float>(input_data[b * depth + d]) - max_val));
+    }
+    for (int d = 0; d < depth; ++d) {
+      float val =
+          std::exp(beta *
+                   (static_cast<float>(input_data[b * depth + d]) - max_val)) /
+          sum;
+      output_data[b * depth + d] = static_cast<T>(val);
+    }
+  }
+}
+
+template <typename T>
+inline void ReferenceLogSoftmax(const T* input_data, T* output_data, int batch,
+                                int depth) {
+  for (int b = 0; b < batch; ++b) {
+    float max_val = static_cast<float>(input_data[b * depth]);
+    for (int d = 1; d < depth; ++d) {
+      max_val =
+          std::max(max_val, static_cast<float>(input_data[b * depth + d]));
+    }
+    float sum = 0;
+    for (int d = 0; d < depth; ++d) {
+      sum += std::exp(static_cast<float>(input_data[b * depth + d]) - max_val);
+    }
+    float log_sum = std::log(sum);
+    for (int d = 0; d < depth; ++d) {
+      float val =
+          (static_cast<float>(input_data[b * depth + d]) - max_val) - log_sum;
+      output_data[b * depth + d] = static_cast<T>(val);
+    }
+  }
+}
 
 }  // namespace litert::internal
 

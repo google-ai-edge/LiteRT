@@ -160,6 +160,39 @@ inline LiteRtStatus InferDynamicUpdateSlice(const LiteRtOpT& op,
   return kLiteRtStatusOk;
 }
 
+template <typename T>
+inline void ReferenceSlice(const T* input_data, const int32_t* input_dims,
+                           const int32_t* begin, const int32_t* size, int rank,
+                           T* output_data) {
+  if (rank <= 0) return;
+  int64_t in_strides[6];
+  int64_t out_strides[6];
+
+  in_strides[rank - 1] = 1;
+  for (int i = rank - 2; i >= 0; --i) {
+    in_strides[i] = in_strides[i + 1] * input_dims[i + 1];
+  }
+
+  out_strides[rank - 1] = 1;
+  for (int i = rank - 2; i >= 0; --i) {
+    out_strides[i] = out_strides[i + 1] * size[i + 1];
+  }
+
+  int64_t num_elements = out_strides[0] * size[0];
+
+  for (int64_t o = 0; o < num_elements; ++o) {
+    int64_t temp = o;
+    int64_t in_idx = 0;
+    for (int i = 0; i < rank; ++i) {
+      int64_t coord = temp / out_strides[i];
+      temp %= out_strides[i];
+      int64_t in_coord = begin[i] + coord;
+      in_idx += in_coord * in_strides[i];
+    }
+    output_data[o] = input_data[in_idx];
+  }
+}
+
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_CORE_MODEL_OPS_SLICE_H_

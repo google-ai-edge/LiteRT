@@ -339,6 +339,128 @@ void RegisterTransformerLayer(const AtsConf& options, size_t& test_id,
 }
 
 template <typename Fixture>
+void RegisterBatchMatmul(const AtsConf& options, size_t& test_id, size_t iters,
+                         typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      BatchMatmul,
+      SizeListC<2, 3, 4>,
+      SizeListC<2, 3, 4>,
+      TypeList<float>,
+      TypeList<std::true_type, std::false_type>,
+      TypeList<std::true_type, std::false_type>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
+void RegisterFullyConnected(const AtsConf& options, size_t& test_id,
+                            size_t iters, typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      FullyConnected,
+      SizeListC<2, 3, 4>,
+      TypeList<float>,
+      OpCodeListC<kLiteRtOpCodeTflFullyConnected>,
+      TypeList<std::true_type, std::false_type>,
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>,
+               FaC<tflite::ActivationFunctionType_RELU>>,
+      TypeList<std::true_type, std::false_type>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
+void RegisterConcatenation(const AtsConf& options, size_t& test_id,
+                           size_t iters, typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Concatenation,
+      SizeListC<2, 3, 4>,
+      TypeList<float>,
+      OpCodeListC<kLiteRtOpCodeTflConcatenation>,
+      SizeListC<0, 1>,
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>,
+               FaC<tflite::ActivationFunctionType_RELU>>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
+void RegisterTranspose(const AtsConf& options, size_t& test_id, size_t iters,
+                       typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Transpose,
+      SizeListC<1, 2, 3, 4, 5, 6>,
+      TypeList<float>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
+void RegisterSplit(const AtsConf& options, size_t& test_id, size_t iters,
+                   typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Split,
+      SizeListC<2, 3, 4>,
+      TypeList<float>,
+      OpCodeListC<kLiteRtOpCodeTflSplit>,
+      SizeListC<0, 1>,
+      SizeListC<2, 3>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
+void RegisterSoftmax(const AtsConf& options, size_t& test_id, size_t iters,
+                     typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Softmax,
+      SizeListC<2, 3, 4>,
+      TypeList<float>,
+      OpCodeListC<kLiteRtOpCodeTflSoftmax, kLiteRtOpCodeTflLogSoftmax>,
+      SizeListC<1>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
+void RegisterSlice(const AtsConf& options, size_t& test_id, size_t iters,
+                   typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Slice,
+      SizeListC<1, 2, 3, 4>,
+      TypeList<float>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
+void RegisterPad(const AtsConf& options, size_t& test_id, size_t iters,
+                 typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Pad,
+      SizeListC<1, 2, 3, 4>,
+      TypeList<float>,
+      OpCodeListC<kLiteRtOpCodeTflPad, kLiteRtOpCodeTflPadv2>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
 void RegisterAll(const AtsConf& options, size_t& test_id,
                  typename Fixture::Capture& cap) {
   RegisterExtraModels<Fixture>(test_id, options, cap);
@@ -353,6 +475,14 @@ void RegisterAll(const AtsConf& options, size_t& test_id,
   RegisterOneHot<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterReshape<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterTransformerLayer<Fixture>(options, test_id, /*iters=*/2, cap);
+  RegisterBatchMatmul<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterFullyConnected<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterConcatenation<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterTranspose<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterSplit<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterSoftmax<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterSlice<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterPad<Fixture>(options, test_id, /*iters=*/10, cap);
 }
 
 int Ats() {

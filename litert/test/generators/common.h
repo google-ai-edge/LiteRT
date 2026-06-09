@@ -215,7 +215,45 @@ using FbOpTypes =
                        tflite::BuiltinOptions_DivOptions>,
         std::bool_constant<OpCode == kLiteRtOpCodeTflReshape>,
             FbOpTraits<tflite::ReshapeOptionsT, tflite::BuiltinOperator_RESHAPE,
-                       tflite::BuiltinOptions_ReshapeOptions>
+                       tflite::BuiltinOptions_ReshapeOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflBatchMatmul>,
+            FbOpTraits<tflite::BatchMatMulOptionsT,
+                       tflite::BuiltinOperator_BATCH_MATMUL,
+                       tflite::BuiltinOptions_BatchMatMulOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflFullyConnected>,
+            FbOpTraits<tflite::FullyConnectedOptionsT,
+                       tflite::BuiltinOperator_FULLY_CONNECTED,
+                       tflite::BuiltinOptions_FullyConnectedOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflConcatenation>,
+            FbOpTraits<tflite::ConcatenationOptionsT,
+                       tflite::BuiltinOperator_CONCATENATION,
+                       tflite::BuiltinOptions_ConcatenationOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflTranspose>,
+            FbOpTraits<tflite::TransposeOptionsT,
+                       tflite::BuiltinOperator_TRANSPOSE,
+                       tflite::BuiltinOptions_TransposeOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflSplit>,
+            FbOpTraits<tflite::SplitOptionsT,
+                       tflite::BuiltinOperator_SPLIT,
+                       tflite::BuiltinOptions_SplitOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflSoftmax>,
+            FbOpTraits<tflite::SoftmaxOptionsT,
+                       tflite::BuiltinOperator_SOFTMAX,
+                       tflite::BuiltinOptions_SoftmaxOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflLogSoftmax>,
+            FbOpTraitsNoOptions<tflite::BuiltinOperator_LOG_SOFTMAX>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflSlice>,
+            FbOpTraits<tflite::SliceOptionsT,
+                       tflite::BuiltinOperator_SLICE,
+                       tflite::BuiltinOptions_SliceOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflPad>,
+            FbOpTraits<tflite::PadOptionsT,
+                       tflite::BuiltinOperator_PAD,
+                       tflite::BuiltinOptions_PadOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflPadv2>,
+            FbOpTraits<tflite::PadV2OptionsT,
+                       tflite::BuiltinOperator_PADV2,
+                       tflite::BuiltinOptions_PadV2Options>
     >;
 // clang-format on
 static_assert(FbOpTypes<kLiteRtOpCodeTflAdd>::kHasOptions);
@@ -241,7 +279,7 @@ struct TestLogicTraits {
   // Metaprogramming helper to grab the typed views from the tensor buffers
   // to pass to the reference implementation.
   template <typename ReferenceTensors, typename Buffers, size_t... Is>
-  static Expected<ReferenceTensors> MakeReferenceTensors(
+  static Expected<ReferenceTensors> MakeInputReferenceTensors(
       Buffers& inputs, std::index_sequence<Is...>) {
     const bool types_ok =
         (true && ... &&
@@ -252,10 +290,31 @@ struct TestLogicTraits {
     }
     return ReferenceTensors{inputs[Is].template AsView<InputDataType<Is>>()...};
   }
+  template <typename ReferenceTensors, typename Buffers, size_t... Is>
+  static Expected<ReferenceTensors> MakeOutputReferenceTensors(
+      Buffers& outputs, std::index_sequence<Is...>) {
+    const bool types_ok =
+        (true && ... &&
+         (outputs[Is].ElementType() == GetElementType<OutputDataType<Is>>()));
+    if (!types_ok) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Output types do not match reference implementation types");
+    }
+    return ReferenceTensors{
+        outputs[Is].template AsView<OutputDataType<Is>>()...};
+  }
+
   template <typename ReferenceTensors, typename Buffers>
-  static Expected<ReferenceTensors> MakeReferenceTensors(Buffers& inputs) {
-    return MakeReferenceTensors<ReferenceTensors>(
+  static Expected<ReferenceTensors> MakeInputReferenceTensors(Buffers& inputs) {
+    return MakeInputReferenceTensors<ReferenceTensors>(
         inputs,
+        std::make_index_sequence<std::tuple_size_v<ReferenceTensors>>());
+  }
+  template <typename ReferenceTensors, typename Buffers>
+  static Expected<ReferenceTensors> MakeOutputReferenceTensors(
+      Buffers& outputs) {
+    return MakeOutputReferenceTensors<ReferenceTensors>(
+        outputs,
         std::make_index_sequence<std::tuple_size_v<ReferenceTensors>>());
   }
 
@@ -292,7 +351,7 @@ struct TestLogicTraits {
                    absl::StrFormat("Expected %d inputs, got %d", kNumInputs,
                                    inputs.size()));
     }
-    return MakeReferenceTensors<ReferenceInputs>(inputs);
+    return MakeInputReferenceTensors<ReferenceInputs>(inputs);
   }
 
   // Get the typed reference output views from the output buffers.
@@ -302,7 +361,7 @@ struct TestLogicTraits {
                    absl::StrFormat("Expected %d inputs, got %d", kNumOutputs,
                                    outputs.size()));
     }
-    return MakeReferenceTensors<ReferenceOutputs>(outputs);
+    return MakeOutputReferenceTensors<ReferenceOutputs>(outputs);
   }
 };
 
