@@ -41,6 +41,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
@@ -196,6 +197,24 @@ struct Entry {
   size_t info_index = 0;
   std::optional<WeightAccess> access;
   std::optional<CpuMapping> cpu_mapping;
+};
+
+struct ExternalWeightSliceKey {
+  uint32_t group_id = 0;
+  uint64_t offset = 0;
+  uint64_t length = 0;
+  std::string packing;
+
+  bool operator==(const ExternalWeightSliceKey& other) const {
+    return group_id == other.group_id && offset == other.offset &&
+           length == other.length && packing == other.packing;
+  }
+
+  template <typename H>
+  friend H AbslHashValue(H h, const ExternalWeightSliceKey& key) {
+    return H::combine(std::move(h), key.group_id, key.offset, key.length,
+                      key.packing);
+  }
 };
 
 struct WeightSource {
@@ -674,6 +693,7 @@ absl::Status PrepareEntryAccess(LiteRtRuntimeContext* runtime_context,
 void ParseFlatBuffer(const tflite::Model& model,
                      std::vector<LiteRtWeightInfo>& infos,
                      absl::flat_hash_map<uint32_t, Entry>& entries,
+                     absl::flat_hash_map<uint32_t, uint32_t>& canonical_ids,
                      absl::flat_hash_map<uint32_t, std::string>& group_paths) {
   const auto* buffers = model.external_buffers();
   const auto* groups = model.external_buffer_groups();
@@ -689,6 +709,7 @@ void ParseFlatBuffer(const tflite::Model& model,
   }
 
   absl::flat_hash_map<uint32_t, GroupPtr> group_lookup;
+  absl::flat_hash_map<ExternalWeightSliceKey, uint32_t> canonical_slice_ids;
   if (groups) {
     for (int i = 0; i < groups->size(); ++i) {
       GroupPtr group = groups->Get(i);
@@ -734,6 +755,14 @@ void ParseFlatBuffer(const tflite::Model& model,
         group_paths.try_emplace(info.group_id, group_it->second->name()->str());
       }
 
+      ExternalWeightSliceKey slice_key;
+      slice_key.group_id = info.group_id;
+      slice_key.offset = info.offset;
+      slice_key.length = info.length;
+      slice_key.packing = std::string(info.packing);
+      auto [canonical_it, _] = canonical_slice_ids.emplace(
+          std::move(slice_key), info.external_buffer_id);
+      canonical_ids.emplace(info.external_buffer_id, canonical_it->second);
       entries.emplace(info.external_buffer_id, Entry{infos.size()});
       infos.push_back(info);
     }
@@ -749,7 +778,8 @@ class LiteRtWeightLoader : public WeightLoader {
       : runtime_context_(runtime_context),
         model_directory_(std::move(model_directory)),
         scoped_weight_source_(std::move(scoped_weight_source)) {
-    ParseFlatBuffer(*model, infos_, entries_, group_paths_);
+    ParseFlatBuffer(*model, infos_, entries_, canonical_external_buffer_ids_,
+                    group_paths_);
     if (scoped_weight_source_) {
       for (const auto& [group_id, group_path] : group_paths_) {
         auto section_it = scoped_weight_source_->sections.find(group_path);
@@ -779,18 +809,31 @@ class LiteRtWeightLoader : public WeightLoader {
 
   const WeightInfo* FindWeightInfoByBuffer(
       uint32_t external_buffer_id) const override {
-    auto it = entries_.find(external_buffer_id);
+    auto it = entries_.find(GetCanonicalExternalBufferId(external_buffer_id));
     if (it == entries_.end()) {
       return nullptr;
     }
     return &infos_[it->second.info_index];
   }
 
+  uint32_t GetCanonicalExternalBufferId(
+      uint32_t external_buffer_id) const override {
+    auto it = canonical_external_buffer_ids_.find(external_buffer_id);
+    return it == canonical_external_buffer_ids_.end() ? external_buffer_id
+                                                      : it->second;
+  }
+
   absl::Status PrepareAccess(const WeightAccessRequest& request,
                              LiteRtEnvironmentT* env) override {
+    absl::flat_hash_set<uint32_t> prepared_ids;
     for (const auto& [external_buffer_id, _] : entries_) {
+      const uint32_t canonical_external_buffer_id =
+          GetCanonicalExternalBufferId(external_buffer_id);
+      if (!prepared_ids.insert(canonical_external_buffer_id).second) {
+        continue;
+      }
       LITERT_RETURN_IF_ERROR(
-          PrepareAccessForBuffer(external_buffer_id, request, env));
+          PrepareAccessForBuffer(canonical_external_buffer_id, request, env));
     }
     return absl::OkStatus();
   }
@@ -798,7 +841,7 @@ class LiteRtWeightLoader : public WeightLoader {
   absl::Status PrepareAccessForBuffer(uint32_t external_buffer_id,
                                       const WeightAccessRequest& request,
                                       LiteRtEnvironmentT* env) override {
-    auto it = entries_.find(external_buffer_id);
+    auto it = entries_.find(GetCanonicalExternalBufferId(external_buffer_id));
     if (it == entries_.end()) {
       return absl::InvalidArgumentError(
           absl::StrFormat("Unknown external buffer id %u", external_buffer_id));
@@ -811,7 +854,7 @@ class LiteRtWeightLoader : public WeightLoader {
 
   absl::Status SetExternalWeightByBuffer(uint32_t external_buffer_id,
                                          WeightAccess access) override {
-    auto it = entries_.find(external_buffer_id);
+    auto it = entries_.find(GetCanonicalExternalBufferId(external_buffer_id));
     if (it == entries_.end()) {
       return absl::InvalidArgumentError(
           absl::StrFormat("Unknown external buffer id %u", external_buffer_id));
@@ -823,7 +866,7 @@ class LiteRtWeightLoader : public WeightLoader {
 
   const WeightAccess* GetExternalWeightByBuffer(
       uint32_t external_buffer_id) const override {
-    auto it = entries_.find(external_buffer_id);
+    auto it = entries_.find(GetCanonicalExternalBufferId(external_buffer_id));
     if (it == entries_.end() || !it->second.access) {
       return nullptr;
     }
@@ -832,7 +875,7 @@ class LiteRtWeightLoader : public WeightLoader {
 
   absl::Status DiscardExternalWeightByBuffer(
       uint32_t external_buffer_id) override {
-    auto it = entries_.find(external_buffer_id);
+    auto it = entries_.find(GetCanonicalExternalBufferId(external_buffer_id));
     if (it == entries_.end()) {
       return absl::InvalidArgumentError(
           absl::StrFormat("Unknown external buffer id %u", external_buffer_id));
@@ -845,7 +888,7 @@ class LiteRtWeightLoader : public WeightLoader {
 
   absl::Status ReleaseExternalWeightByBuffer(
       uint32_t external_buffer_id) override {
-    auto it = entries_.find(external_buffer_id);
+    auto it = entries_.find(GetCanonicalExternalBufferId(external_buffer_id));
     if (it == entries_.end()) {
       return absl::InvalidArgumentError(
           absl::StrFormat("Unknown external buffer id %u", external_buffer_id));
@@ -882,6 +925,7 @@ class LiteRtWeightLoader : public WeightLoader {
   std::optional<std::string> model_directory_;
   std::vector<LiteRtWeightInfo> infos_;
   absl::flat_hash_map<uint32_t, Entry> entries_;
+  absl::flat_hash_map<uint32_t, uint32_t> canonical_external_buffer_ids_;
   absl::flat_hash_map<uint32_t, std::string> group_paths_;
   std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source_;
   absl::flat_hash_map<uint32_t, litert::ScopedWeightSection> group_sections_;
