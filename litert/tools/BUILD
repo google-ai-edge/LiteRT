@@ -161,6 +161,70 @@ litert_bin(
 )
 
 litert_bin(
+    name = "apply_plugin_main_mtk",
+    srcs = ["apply_plugin_main.cc"],
+    data = select({
+        "//litert:windows": [],
+        "//conditions:default": [
+            "//litert/vendors/mediatek/compiler:compiler_plugin_so",
+            "@neuro_pilot//:neuron_sdk/host/lib/libatomic.so.1",
+            "@neuro_pilot//:neuron_sdk/host/lib/libc++abi.so.1",
+            "@neuro_pilot//:neuron_sdk/host/lib/libgcc_s.so.1",
+            "@neuro_pilot//:v7_latest/host/lib/libc++.so.1",
+            "@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so",
+            "@neuro_pilot//:v8_latest/host/lib/libc++.so.1",
+            "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
+            "@neuro_pilot//:v9_latest/host/lib/libc++.so.1",
+            "@neuro_pilot//:v9_latest/host/lib/libneuron_adapter.so",
+            "@neuro_pilot//:v9_latest/host/lib/libunwind.so.1",
+        ],
+    }),
+    features = select({
+        "//litert:windows": ["-static_link_msvcrt"],
+        "//conditions:default": [],
+    }),
+    linkstatic = 1,
+    # copybara:uncomment malloc = "//base:system_malloc",
+    tags = [
+        "noasan",
+        "nomsan",
+        "nosan",
+    ],
+    target_compatible_with = select({
+        "//litert:linux": [],
+        "//litert:windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    ungrte = False,
+    visibility = ["//litert:litert_public"],
+    deps = [
+        ":apply_plugin_runtimecapi",
+        ":outstream",
+        "//litert/c:litert_common",
+        "//litert/c/options:litert_google_tensor_options",
+        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/core:build_stamp",
+        "//litert/tools/flags:apply_plugin_flags",
+        "//litert/tools/flags:common_flags",
+        "//litert/tools/flags:flag_types",
+        "//litert/tools/flags/vendors:intel_openvino_flags_with_dynamic_runtime",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/functional:function_ref",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+    ] + select({
+        "//litert:windows": [],
+        "//conditions:default": [
+            "//litert/tools/flags/vendors:google_tensor_flags_with_dynamic_runtime",
+            "//litert/tools/flags/vendors:mediatek_flags_with_dynamic_runtime",
+            "//litert/tools/flags/vendors:qualcomm_flags_with_dynamic_runtime",
+            "//litert/tools/flags/vendors:samsung_flags_with_dynamic_runtime",
+        ],
+    }),
+)
+
+litert_bin(
     name = "apply_plugin_main_for_google_tensor",
     srcs = ["apply_plugin_main.cc"],
     data = [
