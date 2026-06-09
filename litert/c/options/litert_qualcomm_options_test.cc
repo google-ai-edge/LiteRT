@@ -209,6 +209,19 @@ TEST(LiteRtQualcommOptionsTest, DlcDir) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, GraphTransform) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetGraphTransform(qualcomm_options,
+                                                       "gqa,masking"));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetGraphTransform(), "gqa,masking");
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, VtcmSize) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -366,6 +379,10 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_EQ(options->GetDlcDir(), "");
   options->SetDlcDir("tmp");
   EXPECT_EQ(options->GetDlcDir(), "tmp");
+
+  EXPECT_EQ(options->GetGraphTransform(), "");
+  options->SetGraphTransform("gqa,masking");
+  EXPECT_EQ(options->GetGraphTransform(), "gqa,masking");
 
   EXPECT_EQ(options->GetVtcmSize(), 0);
   options->SetVtcmSize(4);

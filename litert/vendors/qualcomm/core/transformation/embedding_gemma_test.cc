@@ -163,8 +163,7 @@ TEST(MHASHATest, EmbeddingGemma) {
   op_wrappers.emplace_back(CreateReshapeOp(transpose1_output, reshape2_output));
   ASSERT_EQ(op_wrappers.size(), 10);
 
-  const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMatMulConvert;
-  GraphToGraphTransform(g2g_option, op_wrappers, tensor_pool,
+  GraphToGraphTransform(::qnn::G2GConfig::kGqa, op_wrappers, tensor_pool,
                         [](OpWrapper& op) { return true; });
   ASSERT_EQ(op_wrappers.size(), 20);
 

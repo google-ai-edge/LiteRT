@@ -198,6 +198,27 @@ TEST(OpWrapperTest, GetInputOutputTensorTest) {
   EXPECT_EQ(op_wrapper.GetOutputTensor(0), tensor_wrapper_output);
 }
 
+TEST(OpWrapperTest, GetInputCount) {
+  OpWrapper op_wrapper{"name", "OP_TYPE", QnnOpCode::kUnknown};
+  EXPECT_EQ(op_wrapper.GetInputCount(), 0);
+
+  TensorWrapper tensor_wrapper_input1{};
+  op_wrapper.AddInputTensor(tensor_wrapper_input1);
+  EXPECT_EQ(op_wrapper.GetInputCount(), 1);
+
+  TensorWrapper tensor_wrapper_input2{};
+  op_wrapper.AddInputTensor(tensor_wrapper_input2);
+  EXPECT_EQ(op_wrapper.GetInputCount(), 2);
+
+  // Adding output tensors must not affect the input count.
+  TensorWrapper tensor_wrapper_output{};
+  op_wrapper.AddOutputTensor(tensor_wrapper_output);
+  EXPECT_EQ(op_wrapper.GetInputCount(), 2);
+
+  op_wrapper.ClearInputOutputTensors();
+  EXPECT_EQ(op_wrapper.GetInputCount(), 0);
+}
+
 TEST(OpWrapperTest, GetTypeName) {
   OpWrapper src{"src", "OP_TYPE", QnnOpCode::kMatMul};
   EXPECT_STREQ(src.GetTypeName(), "OP_TYPE");

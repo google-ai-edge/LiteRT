@@ -310,19 +310,3 @@ target_link_libraries(graph_to_graph_test
         qnn_wrappers
         GTest::gtest_main
 )
-
-add_executable(kv_swapped_attn_test)
-
-target_sources(kv_swapped_attn_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../core/transformation/kv_swapped_attn_test.cc
-)
-
-target_link_libraries(kv_swapped_attn_test
-    PRIVATE
-        qnn_transformation
-        qnn_builders
-        qnn_tensor_pool
-        qnn_wrappers
-        GTest::gtest_main
-)

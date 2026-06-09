@@ -1566,8 +1566,28 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
     std::move(op_wrappers.begin(), op_wrappers.end(),
               std::back_inserter(graph_op_wrappers));
   }
-  // TODO (jiunkaiy): Set this graph-to-graph transformation as a compile flag.
-  const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOptPrefill;
+
+  // Parse comma-separated graph_transform option (e.g. "gqa,masking") and
+  // OR in the corresponding G2GConfig flags. Unknown keywords are warned.
+  static constexpr std::array<std::pair<absl::string_view, ::qnn::G2GConfig>, 3>
+      kKnownGraphTransforms = {{{"gqa", ::qnn::G2GConfig::kGqa},
+                                {"masking", ::qnn::G2GConfig::kMasking},
+                                {"matmul_tiling", ::qnn::G2GConfig::kMatMulTiling}}};
+  ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kOff;
+  for (absl::string_view part :
+       absl::StrSplit(options.GetGraphTransform(), ',', absl::SkipEmpty())) {
+    const absl::string_view transform = absl::StripAsciiWhitespace(part);
+    const auto it = std::find_if(
+        kKnownGraphTransforms.begin(), kKnownGraphTransforms.end(),
+        [&transform](const auto& kv) { return kv.first == transform; });
+    if (it == kKnownGraphTransforms.end()) {
+      LITERT_LOG(LITERT_WARNING,
+                 "Unrecognized graph_transform keyword: '%s'.",
+                 std::string(transform).c_str());
+      continue;
+    }
+    g2g_option |= it->second;
+  }
   GraphToGraphTransform(g2g_option, graph_op_wrappers, tensor_pool,
                         [&qnn](::qnn::OpWrapper& op) -> bool {
                           return qnn.ValidateOp(op) == kLiteRtStatusOk;

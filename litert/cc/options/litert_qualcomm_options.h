@@ -341,6 +341,18 @@ class QualcommOptions {
     return val;
   }
 
+  void SetGraphTransform(const std::string& graph_transform) {
+    LrtQualcommOptionsSetGraphTransform(options_, graph_transform.c_str());
+  }
+  absl::string_view GetGraphTransform() {
+    const char* val;
+    auto status = LrtQualcommOptionsGetGraphTransform(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return "";
+    }
+    return val;
+  }
+
   void SetVtcmSize(std::uint32_t vtcm_size) {
     LrtQualcommOptionsSetVtcmSize(options_, vtcm_size);
   }
