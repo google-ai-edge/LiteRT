@@ -36,6 +36,23 @@ litert_define_ats(
     backend = "cpu",
     compile_only_suffix = None,
     dont_register = [
+        ".*i32.*",  # XNNPACK does not support int32
+        ".*OneHot.*",  # XNNPACK does not support OneHot
+        ".*Transformer.*",  # XNNPACK does not support TransformerLayer flex/custom ops
+        ".*tfl\\.floor_div.*",  # XNNPACK does not support FloorDiv
+        ".*tfl\\.pow.*",  # XNNPACK does not support Pow
+        ".*tfl\\.prelu.*",  # XNNPACK requires PRelu alpha to be statically allocated
+        ".*tfl\\.zeros_like.*",  # XNNPACK does not support ZerosLike
+        ".*tfl\\.sign.*",  # XNNPACK does not support Sign
+        ".*tfl\\.relu_0_to_1.*",  # XNNPACK does not support Relu0To1
+        ".*tfl\\.elu.*",  # XNNPACK does not support Elu
+        ".*tfl\\.reduce_max.*",  # XNNPACK does not support ReduceMax
+        ".*tfl\\.reduce_min.*",  # XNNPACK does not support ReduceMin
+        ".*tfl\\.reduce_prod.*",  # XNNPACK does not support ReduceProd
+        ".*Pooling.*",  # XNNPACK rejects pooling when stride > filter size
+        ".*Conv2d.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 Conv2d
+        # Explicit ExtraModel exclusions (unsupported by XNNPACK):
+        ".*simple_add_dynamic_shape.*",
         "hf_all_minilm_l6_v2",
         "u2net_lite",
         "whisper_tiny_decoder",
@@ -236,10 +253,27 @@ litert_test(
     name = "ats",
     srcs = ["ats.cc"],
     args = [
-        "--dont_register=.*tfl\\.log.*f16.*",
-        "--dont_register=.*tfl\\.zeros_like.*f16.*",
-        "--dont_register=.*tfl\\.sign.*f16.*",
-        "--dont_register=.*tfl\\.relu_0_to_1.*f16.*",
+        "--dont_register=.*i32.*",  # XNNPACK does not support int32
+        "--dont_register=.*OneHot.*",  # XNNPACK does not support OneHot
+        "--dont_register=.*Transformer.*",  # XNNPACK does not support TransformerLayer flex/custom ops
+        "--dont_register=.*tfl\\.floor_div.*",  # XNNPACK does not support FloorDiv
+        "--dont_register=.*tfl\\.pow.*",  # XNNPACK does not support Pow
+        "--dont_register=.*tfl\\.prelu.*",  # XNNPACK requires PRelu alpha to be statically allocated
+        "--dont_register=.*tfl\\.zeros_like.*",  # XNNPACK does not support ZerosLike
+        "--dont_register=.*tfl\\.sign.*",  # XNNPACK does not support Sign
+        "--dont_register=.*tfl\\.relu_0_to_1.*",  # XNNPACK does not support Relu0To1
+        "--dont_register=.*tfl\\.elu.*",  # XNNPACK does not support Elu
+        "--dont_register=.*tfl\\.reduce_max.*",  # XNNPACK does not support ReduceMax
+        "--dont_register=.*tfl\\.reduce_min.*",  # XNNPACK does not support ReduceMin
+        "--dont_register=.*tfl\\.reduce_prod.*",  # XNNPACK does not support ReduceProd
+        "--dont_register=.*Pooling.*",  # XNNPACK rejects pooling when stride > filter size
+        "--dont_register=.*Conv2d.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 Conv2d
+        # Explicit ExtraModel exclusions (unsupported by XNNPACK):
+        "--dont_register=.*simple_add_dynamic_shape.*",
+        "--dont_register=.*hf_all_minilm_l6_v2.*",
+        "--dont_register=.*u2net_lite.*",
+        "--dont_register=.*whisper_tiny_decoder.*",
+        "--dont_register=.*yolo11n.*",
     ],
     copts = commandline_flag_copts(),
     linkstatic = True,
@@ -448,6 +482,9 @@ litert_device_test(
 cc_test(
     name = "check_ats",
     srcs = ["check_ats.cc"],
+    args = [
+        "--dont_register=.*add.*i32.*",  # XNNPACK does not support int32 add
+    ],
     copts = commandline_flag_copts(),
     data = [
         "//litert/test:testdata/simple_model.tflite",

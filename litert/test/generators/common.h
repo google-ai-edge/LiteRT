@@ -26,6 +26,7 @@
 #include <variant>
 #include <vector>
 
+#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -241,7 +242,7 @@ struct TestLogicTraits {
   // Metaprogramming helper to grab the typed views from the tensor buffers
   // to pass to the reference implementation.
   template <typename ReferenceTensors, typename Buffers, size_t... Is>
-  static Expected<ReferenceTensors> MakeReferenceTensors(
+  static Expected<ReferenceTensors> MakeReferenceInputTensors(
       Buffers& inputs, std::index_sequence<Is...>) {
     const bool types_ok =
         (true && ... &&
@@ -252,11 +253,19 @@ struct TestLogicTraits {
     }
     return ReferenceTensors{inputs[Is].template AsView<InputDataType<Is>>()...};
   }
-  template <typename ReferenceTensors, typename Buffers>
-  static Expected<ReferenceTensors> MakeReferenceTensors(Buffers& inputs) {
-    return MakeReferenceTensors<ReferenceTensors>(
-        inputs,
-        std::make_index_sequence<std::tuple_size_v<ReferenceTensors>>());
+
+  template <typename ReferenceTensors, typename Buffers, size_t... Is>
+  static Expected<ReferenceTensors> MakeReferenceOutputTensors(
+      Buffers& outputs, std::index_sequence<Is...>) {
+    const bool types_ok =
+        (true && ... &&
+         (outputs[Is].ElementType() == GetElementType<OutputDataType<Is>>()));
+    if (!types_ok) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Output types do not match reference implementation types");
+    }
+    return ReferenceTensors{
+        outputs[Is].template AsView<OutputDataType<Is>>()...};
   }
 
  public:
@@ -292,7 +301,8 @@ struct TestLogicTraits {
                    absl::StrFormat("Expected %d inputs, got %d", kNumInputs,
                                    inputs.size()));
     }
-    return MakeReferenceTensors<ReferenceInputs>(inputs);
+    return MakeReferenceInputTensors<ReferenceInputs>(
+        inputs, std::make_index_sequence<std::tuple_size_v<ReferenceInputs>>());
   }
 
   // Get the typed reference output views from the output buffers.
@@ -302,7 +312,9 @@ struct TestLogicTraits {
                    absl::StrFormat("Expected %d inputs, got %d", kNumOutputs,
                                    outputs.size()));
     }
-    return MakeReferenceTensors<ReferenceOutputs>(outputs);
+    return MakeReferenceOutputTensors<ReferenceOutputs>(
+        outputs,
+        std::make_index_sequence<std::tuple_size_v<ReferenceOutputs>>());
   }
 };
 
@@ -375,6 +387,23 @@ template <typename T>
 inline OwningBufferRef<uint8_t> MakeOwningBufferRef(const std::vector<T>& vec) {
   return OwningBufferRef<uint8_t>(reinterpret_cast<const uint8_t*>(vec.data()),
                                   vec.size() * sizeof(T));
+}
+
+template <typename T>
+inline std::vector<float> UnpackToFloat(absl::Span<const T> data) {
+  std::vector<float> res(data.size());
+  for (size_t i = 0; i < data.size(); ++i) {
+    res[i] = static_cast<float>(data[i]);
+  }
+  return res;
+}
+
+template <typename T>
+inline void PackFromFloat(absl::Span<const float> src, absl::Span<T> dst) {
+  ABSL_CHECK_EQ(src.size(), dst.size());
+  for (size_t i = 0; i < src.size(); ++i) {
+    dst[i] = static_cast<T>(src[i]);
+  }
 }
 
 }  // namespace litert::testing

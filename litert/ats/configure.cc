@@ -58,7 +58,7 @@ ABSL_FLAG(bool, quiet, false, "Minimize logging.");
 ABSL_FLAG(std::string, backend, "cpu",
           "Which backend to use as the \"actual\".");
 
-ABSL_FLAG(bool, cpu_hint_fully_delegated, false,
+ABSL_FLAG(bool, cpu_hint_fully_delegated, true,
           "Whether to hint at fully delegating to a single delegate for CPU.");
 
 ABSL_FLAG(std::string, dispatch_dir, "",
