@@ -389,6 +389,45 @@ TEST(ExternalWeightLoaderTest, LoadsWeightsFromScopedFile) {
   ExpectHostBufferEquals(access, expected);
 }
 
+TEST(ExternalWeightLoaderTest, ReleasesAndReloadsSingleBufferAccess) {
+  constexpr absl::string_view kGroupName = "weights.bin";
+  const std::string payload = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ4545454545";
+  auto model = BuildModel(kGroupName);
+  WriteWeightsFile(kGroupName, payload);
+
+  auto loader = CreateLiteRtWeightLoader(
+      LrtGetRuntimeContext(), model.model(),
+      /*model_directory=*/std::string(::testing::TempDir()),
+      /*scoped_weight_source=*/nullptr);
+  ASSERT_NE(loader, nullptr);
+  const auto& weight_info = GetSingleWeightInfo(*loader);
+
+  WeightAccessRequest request;
+  request.cpu = true;
+  ASSERT_TRUE(loader
+                  ->PrepareAccessForBuffer(weight_info.external_buffer_id,
+                                           request, /*env=*/nullptr)
+                  .ok());
+
+  const auto* access =
+      loader->GetExternalWeightByBuffer(weight_info.external_buffer_id);
+  auto expected = ExpectedSlice(payload);
+  ExpectHostBufferEquals(access, expected);
+
+  ASSERT_TRUE(
+      loader->ReleaseExternalWeightByBuffer(weight_info.external_buffer_id)
+          .ok());
+  EXPECT_EQ(loader->GetExternalWeightByBuffer(weight_info.external_buffer_id),
+            nullptr);
+
+  ASSERT_TRUE(loader
+                  ->PrepareAccessForBuffer(weight_info.external_buffer_id,
+                                           request, /*env=*/nullptr)
+                  .ok());
+  access = loader->GetExternalWeightByBuffer(weight_info.external_buffer_id);
+  ExpectHostBufferEquals(access, expected);
+}
+
 TEST(ExternalWeightLoaderTest, LoadsWeightsIntoMetalDeviceBuffer) {
   constexpr absl::string_view kGroupName = "metal_weights.bin";
   const std::string payload = "ABCDEFGH0123456789";
