@@ -107,6 +107,12 @@ class WeightLoader {
   virtual absl::Status PrepareAccess(const WeightAccessRequest& request,
                                      LiteRtEnvironmentT* env) = 0;
 
+  // Prepares access to one external weight tensor. This is used by delegates
+  // that only need a CPU mapping while a specific tensor is being uploaded.
+  virtual absl::Status PrepareAccessForBuffer(
+      uint32_t external_buffer_id, const WeightAccessRequest& request,
+      LiteRtEnvironmentT* env) = 0;
+
   // Finds the `WeightInfo` for the external weight tensor with the given
   // buffer ID. Returns `nullptr` if no such tensor exists.
   virtual const WeightInfo* FindWeightInfoByBuffer(
@@ -121,6 +127,16 @@ class WeightLoader {
   // buffer ID. Returns `nullptr` if no such tensor exists.
   virtual const WeightAccess* GetExternalWeightByBuffer(
       uint32_t external_buffer_id) const = 0;
+
+  // Marks the host mapping for the external weight tensor as discardable.
+  virtual absl::Status DiscardExternalWeightByBuffer(
+      uint32_t external_buffer_id) = 0;
+
+  // Releases the prepared host/device access for one external weight tensor.
+  // Callers must only use this after all consumers have finished reading the
+  // data returned by GetExternalWeightByBuffer().
+  virtual absl::Status ReleaseExternalWeightByBuffer(
+      uint32_t external_buffer_id) = 0;
 };
 
 // Provides access to the data of an external weight tensor.
