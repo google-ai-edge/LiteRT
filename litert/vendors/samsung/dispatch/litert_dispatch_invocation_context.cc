@@ -19,6 +19,7 @@
 
 #include <unistd.h>
 
+#include <cstdint>
 #include <fstream>
 #include <memory>
 
@@ -38,8 +39,10 @@
 
 namespace litert::samsung {
 
-#define TO_FILE_OFFSET(header_offset, buffer_offset) \
+#define TO_MEM_OFFSET(header_offset, buffer_offset) \
   ((header_offset) + (buffer_offset))
+#define TO_FILE_OFFSET(header_offset, buffer_offset, alloc_base_file_offset) \
+  ((header_offset) + (buffer_offset) + (alloc_base_file_offset))
 
 struct EnnModelHandle {
   EnnModelId id;
@@ -70,8 +73,10 @@ static EnnModelPtr MakeEnnModelPtr(const ::litert::samsung::EnnManager* manager,
 // Structure to hold separated weight information
 struct SeparatedWeightInfo {
   std::string signature;
-  int64_t start_offset;
-  int64_t end_offset;
+  int64_t start_memory_offset;
+  int64_t end_memory_offset;
+  int64_t start_file_offset;
+  int64_t end_file_offset;
 };
 
 // Structure to hold model loading information
@@ -81,7 +86,8 @@ struct ModelLoadInfo {
   const void* model_addr = nullptr;
   size_t model_size = 0;
   int fd = -1;
-  uint32_t model_offset = 0;
+  uint32_t model_memory_offset = 0;
+  uint32_t model_file_offset = 0;
   std::vector<SeparatedWeightInfo> separated_weights;
   std::vector<std::string> signatures;
 };
@@ -107,7 +113,11 @@ static Expected<ModelLoadInfo> AnalyzeModelLoadStrategy(
       litert::samsung::schema::GetLiteRTSamsungHeader(exec_bytecode_ptr);
   if (!header_buf) {
     LITERT_LOG(LITERT_INFO, "No valid Samsung header found - using old format");
-    info.model_offset = static_cast<uint32_t>(exec_bytecode_buffer->offset);
+    info.model_memory_offset =
+        static_cast<uint32_t>(exec_bytecode_buffer->offset);
+    info.model_file_offset =
+        static_cast<uint32_t>(exec_bytecode_buffer->alloc_base_file_offset +
+                              exec_bytecode_buffer->offset);
     info.model_size = exec_bytecode_size;
     return info;
   }
@@ -120,7 +130,11 @@ static Expected<ModelLoadInfo> AnalyzeModelLoadStrategy(
 
   if (!fb_generated) {
     LITERT_LOG(LITERT_INFO, "Header verification failed - using old format");
-    info.model_offset = static_cast<uint32_t>(exec_bytecode_buffer->offset);
+    info.model_memory_offset =
+        static_cast<uint32_t>(exec_bytecode_buffer->offset);
+    info.model_file_offset =
+        static_cast<uint32_t>(exec_bytecode_buffer->alloc_base_file_offset +
+                              exec_bytecode_buffer->offset);
     info.model_size = exec_bytecode_size;
     return info;
   }
@@ -144,15 +158,21 @@ static Expected<ModelLoadInfo> AnalyzeModelLoadStrategy(
       const auto* weight = separated_weights->Get(i);
       SeparatedWeightInfo weight_info;
       weight_info.signature = weight->signature()->str();
-      weight_info.start_offset = TO_FILE_OFFSET(weight->buf()->start_offset(),
-                                                exec_bytecode_buffer->offset);
-      weight_info.end_offset = TO_FILE_OFFSET(weight->buf()->end_offset(),
-                                              exec_bytecode_buffer->offset);
+      weight_info.start_memory_offset = TO_MEM_OFFSET(
+          weight->buf()->start_offset(), exec_bytecode_buffer->offset);
+      weight_info.end_memory_offset = TO_MEM_OFFSET(
+          weight->buf()->end_offset(), exec_bytecode_buffer->offset);
+      weight_info.start_file_offset = TO_FILE_OFFSET(
+          weight->buf()->start_offset(), exec_bytecode_buffer->offset,
+          exec_bytecode_buffer->alloc_base_file_offset);
+      weight_info.end_file_offset = TO_FILE_OFFSET(
+          weight->buf()->end_offset(), exec_bytecode_buffer->offset,
+          exec_bytecode_buffer->alloc_base_file_offset);
       info.separated_weights.push_back(weight_info);
       LITERT_LOG(LITERT_SILENT,
                  "Separated Weight[%d]: signature=%s, offset=%ld-%ld", i,
-                 weight_info.signature.c_str(), weight_info.start_offset,
-                 weight_info.end_offset);
+                 weight_info.signature.c_str(), weight_info.start_file_offset,
+                 weight_info.end_file_offset);
     }
     LITERT_LOG(LITERT_SILENT, "Total separated weights: %zu",
                info.separated_weights.size());
@@ -160,21 +180,27 @@ static Expected<ModelLoadInfo> AnalyzeModelLoadStrategy(
 
   if (info.use_external_weights) {
     LITERT_LOG(LITERT_VERBOSE, "Valid header with external weights");
-    info.model_offset = static_cast<uint32_t>(TO_FILE_OFFSET(
+    info.model_memory_offset = static_cast<uint32_t>(TO_MEM_OFFSET(
         buf_section->start_offset(), exec_bytecode_buffer->offset));
+    info.model_file_offset = static_cast<uint32_t>(TO_FILE_OFFSET(
+        buf_section->start_offset(), exec_bytecode_buffer->offset,
+        exec_bytecode_buffer->alloc_base_file_offset));
     info.model_size = buf_section->end_offset() - buf_section->start_offset();
     LITERT_LOG(LITERT_SILENT, "Model offset: %u, Model size: %zu",
-               info.model_offset, info.model_size);
+               info.model_file_offset, info.model_size);
     for (int32_t i = 0; i < external_weights->size(); i++) {
       info.signatures.emplace_back(external_weights->Get(i)->str());
     }
   } else {
     LITERT_LOG(LITERT_VERBOSE, "Valid header without external weights");
-    info.model_offset = static_cast<uint32_t>(TO_FILE_OFFSET(
+    info.model_memory_offset = static_cast<uint32_t>(TO_MEM_OFFSET(
         buf_section->start_offset(), exec_bytecode_buffer->offset));
+    info.model_file_offset = static_cast<uint32_t>(TO_FILE_OFFSET(
+        buf_section->start_offset(), exec_bytecode_buffer->offset,
+        exec_bytecode_buffer->alloc_base_file_offset));
     info.model_size = buf_section->end_offset() - buf_section->start_offset();
     LITERT_LOG(LITERT_SILENT, "Model offset: %u, Model size: %zu",
-               info.model_offset, info.model_size);
+               info.model_file_offset, info.model_size);
   }
   return info;
 }
@@ -251,9 +277,15 @@ LiteRtDispatchInvocationContextT::Create(
       // If separated_weights has the corresponding entry, use its offset/size
       if (!load_info.separated_weights.empty() &&
           i < load_info.separated_weights.size()) {
-        offset = load_info.separated_weights[i].start_offset;
-        size = load_info.separated_weights[i].end_offset -
-               load_info.separated_weights[i].start_offset;
+        if (load_info.fd >= 0) {
+          offset = load_info.separated_weights[i].start_file_offset;
+          size = load_info.separated_weights[i].end_file_offset -
+                 load_info.separated_weights[i].start_file_offset;
+        } else {
+          offset = load_info.separated_weights[i].start_memory_offset;
+          size = load_info.separated_weights[i].end_memory_offset -
+                 load_info.separated_weights[i].start_memory_offset;
+        }
       }
       litert::Expected<EnnBufferPtr> buffer;
       if (load_info.fd >= 0) {
@@ -273,7 +305,7 @@ LiteRtDispatchInvocationContextT::Create(
     }
     if (load_info.fd >= 0) {
       if (enn_manager->Api().EnnOpenModelWithFileOpenFdWeight(
-              load_info.fd, load_info.model_size, load_info.model_offset,
+              load_info.fd, load_info.model_size, load_info.model_file_offset,
               &weight_buffers[0], weight_buffers.size(),
               &model_id) != ENN_RET_SUCCESS)
         return litert::Error(kLiteRtStatusErrorRuntimeFailure,
@@ -281,7 +313,7 @@ LiteRtDispatchInvocationContextT::Create(
     } else {
       const void* model_addr =
           static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr) +
-          load_info.model_offset;
+          load_info.model_memory_offset;
       if (enn_manager->Api().EnnOpenModelFromMemoryWithWeight(
               reinterpret_cast<const char*>(model_addr), load_info.model_size,
               &weight_buffers[0], weight_buffers.size(),
@@ -292,13 +324,13 @@ LiteRtDispatchInvocationContextT::Create(
   } else {
     if (exec_bytecode_buffer->fd >= 0) {
       LITERT_LOG(LITERT_SILENT, "fd: %d, Model offset: %u, Model size: %zu",
-                 exec_bytecode_buffer->fd, load_info.model_offset,
+                 exec_bytecode_buffer->fd, load_info.model_file_offset,
                  load_info.model_size);
 
       if (enn_manager->Api().EnnOpenModelWithFileOpenFd(
               exec_bytecode_buffer->fd,
               static_cast<uint32_t>(load_info.model_size),
-              load_info.model_offset, &model_id) != ENN_RET_SUCCESS)
+              load_info.model_file_offset, &model_id) != ENN_RET_SUCCESS)
         return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                              "Fail to load model from fd.");
     } else {
@@ -307,7 +339,7 @@ LiteRtDispatchInvocationContextT::Create(
 
       const void* model_addr =
           static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr) +
-          load_info.model_offset;
+          load_info.model_memory_offset;
       size_t model_size = load_info.model_size;
 
       LITERT_LOG(LITERT_SILENT, "Model addr: %p, Model size: %zu", model_addr,
