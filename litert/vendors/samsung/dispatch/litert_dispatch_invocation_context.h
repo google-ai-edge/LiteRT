@@ -64,7 +64,9 @@ class LiteRtDispatchInvocationContextT {
 
   litert::Expected<void> Invoke();
 
-private:
+  void SetSchedulingInfo(const LiteRtSchedulingInfo* scheduling_info);
+
+ private:
   // Commit state for caching
   enum class CommitState {
     kUncommitted,     // Initial state or all buffers detached

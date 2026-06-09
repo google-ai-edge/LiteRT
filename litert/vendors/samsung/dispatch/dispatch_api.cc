@@ -228,16 +228,6 @@ LiteRtStatus LiteRtSamsungInvocationContextDestroy(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSamsungInvocationContextSetSchedulingInfo(
-    LiteRtDispatchInvocationContext invocation_context,
-    const LiteRtSchedulingInfo* scheduling_info) {
-  if (invocation_context == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  invocation_context->SetSchedulingInfo(scheduling_info);
-  return kLiteRtStatusOk;
-}
-
 LiteRtStatus LiteRtSamsungAttachInput(
     LiteRtDispatchInvocationContext invocation_context, int graph_input_index,
     LiteRtTensorBufferHandle tensor_buffer_handle) {
@@ -311,8 +301,7 @@ LiteRtDispatchInterface TheInterface = {
     /*.unregister_tensor_buffer=*/LiteRtSamsungUnregisterTensorBuffer,
     /*.invocation_context_create=*/LiteRtSamsungInvocationContextCreate,
     /*.invocation_context_destroy=*/LiteRtSamsungInvocationContextDestroy,
-    /*.invocation_context_set_scheduling_info=*/
-    LiteRtSamsungInvocationContextSetSchedulingInfo,
+    /*.invocation_context_set_scheduling_info=*/nullptr,
     /*.attach_input=*/LiteRtSamsungAttachInput,
     /*.attach_output=*/LiteRtSamsungAttachOutput,
     /*.detach_input=*/LiteRtSamsungDetachInput,

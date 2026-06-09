@@ -578,4 +578,13 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
   return {};
 }
 
+void LiteRtDispatchInvocationContextT::SetSchedulingInfo(
+    const LiteRtSchedulingInfo* scheduling_info) {
+  if (scheduling_info != nullptr) {
+    scheduling_info_ = *scheduling_info;
+  } else {
+    scheduling_info_.reset();
+  }
+}
+
 // SetInputBuffers and SetOutputBuffers removed - no longer needed with commit caching
