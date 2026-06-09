@@ -18,6 +18,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <cstdint>
+
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
@@ -355,6 +357,10 @@ typedef struct LiteRtCompilerContext {
                                           const int32_t** squeeze_dims,
                                           int32_t* num_squeeze_dims);
 
+  // Op inspection
+  LiteRtStatus (*get_custom_options)(LiteRtOp op,
+                                     const uint8_t** custom_options,
+                                     int32_t* custom_options_size);
 } LiteRtCompilerContext;
 
 // ABI compatibility check for LiteRtCompilerContext.
@@ -363,7 +369,7 @@ typedef struct LiteRtCompilerContext {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtCompilerContext) == 1024,
+static_assert(sizeof(LiteRtCompilerContext) == 1032,
               "LiteRtCompilerContext size mismatch");
 static_assert(offsetof(LiteRtCompilerContext, get_num_model_subgraphs) == 0,
               "LiteRtCompilerContext get_num_model_subgraphs offset mismatch");
@@ -865,6 +871,8 @@ static_assert(
     "LiteRtCompilerContext get_mirror_pad_mode_option offset mismatch");
 static_assert(offsetof(LiteRtCompilerContext, get_squeeze_dims_option) == 1016,
               "LiteRtCompilerContext get_squeeze_dims_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_custom_options) == 1024,
+              "LiteRtCompilerContext get_custom_options offset mismatch");
 #endif  // __cplusplus
 
 LiteRtCompilerContext* LrtGetCompilerContext();

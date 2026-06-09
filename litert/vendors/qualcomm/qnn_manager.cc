@@ -29,6 +29,16 @@
 #include <utility>
 #include <vector>
 
+#include "HTP/QnnHtpContext.h"  // from @qairt
+#include "HTP/QnnHtpProfile.h"  // from @qairt
+#include "QnnCommon.h"  // from @qairt
+#include "QnnContext.h"  // from @qairt
+#include "QnnInterface.h"  // from @qairt
+#include "QnnProfile.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
+#include "System/QnnSystemCommon.h"  // from @qairt
+#include "System/QnnSystemContext.h"  // from @qairt
+#include "System/QnnSystemInterface.h"  // from @qairt
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -49,16 +59,6 @@
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_saver_utils.h"
-#include "HTP/QnnHtpContext.h"  // from @qairt
-#include "HTP/QnnHtpProfile.h"  // from @qairt
-#include "QnnCommon.h"  // from @qairt
-#include "QnnContext.h"  // from @qairt
-#include "QnnInterface.h"  // from @qairt
-#include "QnnProfile.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
-#include "System/QnnSystemCommon.h"  // from @qairt
-#include "System/QnnSystemContext.h"  // from @qairt
-#include "System/QnnSystemInterface.h"  // from @qairt
 
 namespace {
 static constexpr int kRequiredNumProviders{1};
@@ -80,12 +80,13 @@ LiteRtStatus SetEnvVar(const char* name, const char* value) {
   return kLiteRtStatusOk;
 }
 
-RtldFlags GetRtldFlags() {
+RtldFlags GetRtldFlags(bool needs_global_symbols) {
 #if defined(__ANDROID__)
   // Race condition segfault without NoDelete on android.
   return RtldFlags::Lazy().Local().NoDelete();
 #else
-  return RtldFlags::Default();
+  return needs_global_symbols ? RtldFlags::Lazy().Global()
+                              : RtldFlags::Default();
 #endif
 }
 
@@ -134,10 +135,11 @@ QnnManager::~QnnManager() = default;
 
 LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
   auto saver_output_dir = options_.GetSaverOutputDir();
+  const bool needs_global_symbols = !options_.GetCustomOpPackage().name.empty();
   if (saver_output_dir.empty()) {
     LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
                path.data());
-    auto lib_or = SharedLibrary::Load(path, GetRtldFlags());
+    auto lib_or = SharedLibrary::Load(path, GetRtldFlags(needs_global_symbols));
     if (!lib_or) {
       LITERT_LOG(LITERT_ERROR,
                  "Failed to load qnn shared library from \"%s\": %s",
@@ -149,7 +151,7 @@ LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
     path = kSaverLibraryName;
     LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
                path.data());
-    auto lib_or = SharedLibrary::Load(path, GetRtldFlags());
+    auto lib_or = SharedLibrary::Load(path, GetRtldFlags(needs_global_symbols));
     if (!lib_or) {
       LITERT_LOG(LITERT_ERROR,
                  "Failed to load qnn shared library from \"%s\": %s",
@@ -165,11 +167,13 @@ LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
 
 LiteRtStatus QnnManager::LoadSystemLib(absl::string_view path) {
   std::string resolved_path;
+  const bool needs_global_symbols = !options_.GetCustomOpPackage().name.empty();
   if (shared_library_dir_) {
     resolved_path = litert::internal::Join({*shared_library_dir_, path});
     LITERT_LOG(LITERT_INFO, "Loading qnn system shared library from \"%s\"",
                resolved_path.c_str());
-    auto lib_system_or = SharedLibrary::Load(resolved_path, GetRtldFlags());
+    auto lib_system_or =
+        SharedLibrary::Load(resolved_path, GetRtldFlags(needs_global_symbols));
     if (lib_system_or) {
       lib_system_ = std::move(lib_system_or.Value());
       return kLiteRtStatusOk;
@@ -179,8 +183,10 @@ LiteRtStatus QnnManager::LoadSystemLib(absl::string_view path) {
                path.data());
   }
   LITERT_LOG(LITERT_INFO, "Loading qnn system shared library from \"%s\"",
-             path.data());
-  auto lib_system_or = SharedLibrary::Load(path, GetRtldFlags());
+             resolved_path.c_str());
+
+  auto lib_system_or =
+      SharedLibrary::Load(resolved_path, GetRtldFlags(needs_global_symbols));
   if (!lib_system_or) {
     LITERT_LOG(LITERT_ERROR, "%s", lib_system_or.Error().Message().data());
     return lib_system_or.Error().Status();
@@ -446,6 +452,28 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::OpWrapper& op) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus QnnManager::RegisterOpPackage(
+    const std::string& package_path, const std::string& interface_provider,
+    const std::string& target) {
+  if (options_.GetBackendType() == ::qnn::BackendType::kIrBackend) {
+    LITERT_LOG(LITERT_INFO,
+               "Custom op package is not supported in IrBackend. Ignore.");
+    return kLiteRtStatusOk;
+  }
+
+  if (auto status = Api()->backendRegisterOpPackage(
+          backend_->GetBackendHandle(), package_path.c_str(),
+          interface_provider.c_str(), target.c_str());
+      status != QNN_SUCCESS) {
+    LITERT_LOG(LITERT_ERROR, "Failed to register op package. Error code: %d",
+               status);
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  LITERT_LOG(LITERT_INFO, "Op package loaded successfully.");
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
                               std::optional<::qnn::SocInfo> soc_info,
                               const ::qnn::Options& options) {
@@ -477,8 +505,7 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
       if (!found) {
         auto new_adsp_library_path =
             absl::StrCat(shared_library_dir.value(), ";", adsp_library_path);
-        LITERT_RETURN_IF_ERROR(
-            SetEnvVar(kAdsp, new_adsp_library_path.c_str()));
+        LITERT_RETURN_IF_ERROR(SetEnvVar(kAdsp, new_adsp_library_path.c_str()));
       }
     }
     LITERT_LOG(LITERT_DEBUG, "ADSP_LIBRARY_PATH: %s", getenv(kAdsp));

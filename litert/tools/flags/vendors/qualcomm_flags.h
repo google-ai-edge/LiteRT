@@ -15,8 +15,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_VENDORS_QUALCOMM_FLAGS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_VENDORS_QUALCOMM_FLAGS_H_
 
+#include <cstdint>
 #include <string>
-#include <vector>
 
 #include "absl/flags/declare.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -31,7 +31,7 @@ ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::LogLevel,
 
 namespace litert::qualcomm {
 
-std::string AbslUnparseFlag(QualcommOptions::LogLevel opts);
+std::string AbslUnparseFlag(QualcommOptions::LogLevel options);
 
 bool AbslParseFlag(absl::string_view text, QualcommOptions::LogLevel* options,
                    std::string* error);
@@ -46,6 +46,19 @@ bool AbslParseFlag(absl::string_view text, QualcommOptions::Backend* options,
                    std::string* error);
 
 std::string AbslUnparseFlag(QualcommOptions::Backend options);
+
+}  // namespace litert::qualcomm
+
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::CustomOpPackage,
+                  qualcomm_custom_op_package);
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::CustomOpPackage* options,
+                   std::string* error);
+
+std::string AbslUnparseFlag(QualcommOptions::CustomOpPackage options);
 
 }  // namespace litert::qualcomm
 

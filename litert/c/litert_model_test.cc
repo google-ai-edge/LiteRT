@@ -244,7 +244,7 @@ TEST(LiteRtTensorTest, Name) {
   static constexpr const char kName[] = "foo";
 
   LiteRtTensorT tensor;
-  tensor.SetName(std::string(kName));
+  tensor.SetName(kName);
 
   const char* name;
   LITERT_ASSERT_OK(LiteRtGetTensorName(&tensor, &name));
@@ -512,6 +512,21 @@ TEST(LiteRtOpTest, GetCustomCodeNotCustom) {
   op.SetOpCode(kLiteRtOpCodeTflAdd);
   const char* code;
   EXPECT_NE(LiteRtGetCustomCode(&op, &code), kLiteRtStatusOk);
+}
+
+TEST(LiteRtOpTest, GetCustomOptions) {
+  static constexpr std::array<uint8_t, 4> kOptions = {0x01, 0x02, 0x03, 0x04};
+
+  LiteRtOpT op;
+  op.SetCustomOptions(kOptions.data(), kOptions.size());
+
+  const uint8_t* options = nullptr;
+  int32_t options_size = 0;
+  LITERT_ASSERT_OK(LiteRtGetCustomOptions(&op, &options, &options_size));
+
+  ASSERT_EQ(options_size, kOptions.size());
+  ASSERT_THAT(absl::MakeConstSpan(options, options_size),
+              ElementsAreArray(kOptions));
 }
 
 TEST(LiteRtSubgraphTest, GetInputs) {

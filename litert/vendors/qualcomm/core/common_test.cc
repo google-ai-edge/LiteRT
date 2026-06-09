@@ -253,6 +253,25 @@ TEST(QnnOptionTest, SetGraphPriority) {
   EXPECT_EQ(options.GetGraphPriority(), GraphPriority::kDefault);
 }
 
+TEST(QnnOptionTest, SetCustomOpPackage) {
+  Options options;
+  const std::string name = "TestPackage";
+  const std::string interface_provider = "TestInterfaceProvider";
+  const std::string compile_package_path = "/tmp/compile_pkg.so";
+  const std::string dispatch_package_path = "/tmp/dispatch_pkg.so";
+  const std::string target = "HTP";
+
+  options.SetCustomOpPackage(name, interface_provider, compile_package_path,
+                             dispatch_package_path, target);
+
+  const CustomOpPackage& package = options.GetCustomOpPackage();
+  EXPECT_EQ(package.name, name);
+  EXPECT_EQ(package.interface_provider, interface_provider);
+  EXPECT_EQ(package.compile_package_path, compile_package_path);
+  EXPECT_EQ(package.dispatch_package_path, dispatch_package_path);
+  EXPECT_EQ(package.target, target);
+}
+
 TEST(QnnOptionTest, Default) {
   Options options;
   EXPECT_EQ(options.GetLogLevel(), LogLevel::kInfo);
@@ -274,6 +293,12 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetGraphPriority(), GraphPriority::kDefault);
   EXPECT_EQ(options.GetGraphIOTensorMemType(),
             GraphIOTensorMemType::kMemHandle);
+  const CustomOpPackage& custom_op_package = options.GetCustomOpPackage();
+  EXPECT_TRUE(custom_op_package.name.empty());
+  EXPECT_TRUE(custom_op_package.interface_provider.empty());
+  EXPECT_TRUE(custom_op_package.compile_package_path.empty());
+  EXPECT_TRUE(custom_op_package.dispatch_package_path.empty());
+  EXPECT_TRUE(custom_op_package.target.empty());
 }
 
 TEST(QnnOptionTest, SetGraphIOTensorMemType) {
