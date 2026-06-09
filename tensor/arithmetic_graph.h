@@ -697,6 +697,11 @@ struct TransposeConv2DOperation : TransposeConv2DOperationData, Operation {
   LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
+struct RopeOperation : Operation {
+  absl::string_view GetName() const override { return "Rope"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
+};
+
 }  // namespace litert::tensor::graph
 
 #endif  // THIRD_PARTY_ODML_LITERT_TENSOR_ARITHMETIC_GRAPH_H_
