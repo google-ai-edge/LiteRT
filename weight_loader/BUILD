@@ -53,11 +53,13 @@ cc_test(
     deps = [
         ":external_weight_loader",
         "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_environment",  # buildcleaner: keep
         "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer",
         "//litert/c/internal:litert_runtime_context_testonly",
+        "//litert/c/internal:litert_tensor_buffer_registry",
         "//litert/cc/internal:scoped_file",
         "//litert/cc/internal:scoped_weight_source",
         "//tflite/schema:schema_fbs",

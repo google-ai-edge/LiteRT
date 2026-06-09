@@ -92,8 +92,6 @@ struct LiteRtWeightInfo : public WeightInfo {
   // TODO(b/453768409): Refactor external weight loader to only use cc API.
   // The type of the tensor.
   LiteRtRankedTensorType tensor_type;
-  // The GPU buffer type for the tensor data.
-  LiteRtTensorBufferType gpu_buffer_type;
 };
 
 absl::StatusOr<LiteRtRankedTensorType> BuildRankedTensorType(
@@ -127,9 +125,15 @@ absl::StatusOr<LiteRtRankedTensorType> BuildRankedTensorType(
   return type;
 }
 
-LiteRtTensorBufferType SelectGpuBufferType() {
+LiteRtTensorBufferType SelectOpenClBufferType() {
   return kLiteRtTensorBufferTypeOpenClBuffer;
 }
+
+#if LITERT_HAS_METAL_SUPPORT
+LiteRtTensorBufferType SelectMetalBufferType() {
+  return kLiteRtTensorBufferTypeMetalBufferPacked;
+}
+#endif  // LITERT_HAS_METAL_SUPPORT
 
 bool IsAbsolutePath(absl::string_view path) {
   if (path.empty()) {
@@ -556,42 +560,63 @@ absl::Status EnsureCpuTensorBuffer(LiteRtRuntimeContext* runtime_context,
   return absl::OkStatus();
 }
 
-#if LITERT_HAS_OPENCL_SUPPORT
-absl::Status EnsureOpenClTensorBuffer(LiteRtRuntimeContext* runtime_context,
+absl::Status EnsureDeviceTensorBuffer(LiteRtRuntimeContext* runtime_context,
                                       Entry& entry,
                                       const LiteRtWeightInfo& info,
-                                      const WeightSource& path,
-                                      LiteRtEnvironmentT* env) {
+                                      const WeightSource& source,
+                                      LiteRtEnvironmentT* env,
+                                      LiteRtTensorBufferType buffer_type,
+                                      absl::string_view backend_name) {
   if (!entry.access.has_value()) {
     entry.access.emplace();
   }
   if (!env) {
-    return absl::FailedPreconditionError(
-        "LiteRtEnvironment must not be null for OpenCL access");
+    return absl::FailedPreconditionError(absl::StrFormat(
+        "LiteRtEnvironment must not be null for %s access", backend_name));
   }
+
+  LITERT_ASSIGN_OR_RETURN(std::vector<uint8_t> data,
+                          ReadWeightSlice(info, source));
 
   LiteRtTensorBuffer device_buffer;
   LITERT_RETURN_IF_ERROR(runtime_context->create_managed_tensor_buffer(
-      env, info.gpu_buffer_type, &info.tensor_type, info.length,
-      &device_buffer));
-  entry.access->SetDeviceBuffer(LiteRtTensorBufferPtr(
-      device_buffer, LiteRtTensorBufferDeleter{runtime_context}));
+      env, buffer_type, &info.tensor_type, info.length, &device_buffer));
+  LiteRtTensorBufferPtr device_buffer_ptr(
+      device_buffer, LiteRtTensorBufferDeleter{runtime_context});
 
   void* host_ptr;
   LITERT_RETURN_IF_ERROR(runtime_context->lock_tensor_buffer(
-      entry.access->GetDeviceBuffer(), &host_ptr,
-      kLiteRtTensorBufferLockModeWrite));
+      device_buffer_ptr.get(), &host_ptr, kLiteRtTensorBufferLockModeWrite));
 
-  LITERT_ASSIGN_OR_RETURN(std::vector<uint8_t> data,
-                          ReadWeightSlice(info, path));
   std::memcpy(host_ptr, data.data(), data.size());
 
   LITERT_RETURN_IF_ERROR(
-      runtime_context->unlock_tensor_buffer(entry.access->GetDeviceBuffer()));
+      runtime_context->unlock_tensor_buffer(device_buffer_ptr.get()));
 
+  entry.access->SetDeviceBuffer(std::move(device_buffer_ptr));
   return absl::OkStatus();
 }
+
+#if LITERT_HAS_OPENCL_SUPPORT
+absl::Status EnsureOpenClTensorBuffer(LiteRtRuntimeContext* runtime_context,
+                                      Entry& entry,
+                                      const LiteRtWeightInfo& info,
+                                      const WeightSource& source,
+                                      LiteRtEnvironmentT* env) {
+  return EnsureDeviceTensorBuffer(runtime_context, entry, info, source, env,
+                                  SelectOpenClBufferType(), "OpenCL");
+}
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+absl::Status EnsureMetalTensorBuffer(LiteRtRuntimeContext* runtime_context,
+                                     Entry& entry, const LiteRtWeightInfo& info,
+                                     const WeightSource& source,
+                                     LiteRtEnvironmentT* env) {
+  return EnsureDeviceTensorBuffer(runtime_context, entry, info, source, env,
+                                  SelectMetalBufferType(), "Metal");
+}
+#endif  // LITERT_HAS_METAL_SUPPORT
 
 void ParseFlatBuffer(const tflite::Model& model,
                      std::vector<LiteRtWeightInfo>& infos,
@@ -649,7 +674,6 @@ void ParseFlatBuffer(const tflite::Model& model,
         continue;
       }
       info.tensor_type = *ranked_type;
-      info.gpu_buffer_type = SelectGpuBufferType();
 
       auto group_it = group_lookup.find(info.group_id);
       if (group_it != group_lookup.end() && group_it->second &&
@@ -748,6 +772,18 @@ class LiteRtWeightLoader : public WeightLoader {
 #else
         return absl::UnimplementedError(
             "OpenCL support not enabled in this build");
+#endif
+      }
+      if (request.metal) {
+#if LITERT_HAS_METAL_SUPPORT
+        absl::Status status =
+            EnsureMetalTensorBuffer(runtime_context_, entry, info, source, env);
+        if (!status.ok()) {
+          return status;
+        }
+#else
+        return absl::UnimplementedError(
+            "Metal support not enabled in this build");
 #endif
       }
     }
