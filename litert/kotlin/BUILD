@@ -16,7 +16,11 @@ load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@build_bazel_rules_android//android:rules.bzl", "android_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")
-load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
+load(
+    "//litert/build_common:special_rule.bzl",
+    "litert_android_linkopts",
+    "litert_jni_friends",
+)
 load(
     "//tflite:build_def.bzl",
     "tflite_jni_binary",
@@ -137,6 +141,7 @@ cc_library(
 #     force_android = True,
 #     lds = ":litert_api_version_script.lds",
 #     linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + litert_android_linkopts(),
+#     visibility = litert_jni_friends(),
 #     deps = [
 #         ":litert_compiled_model_jni",
 #         ":litert_environment_jni",
@@ -201,7 +206,7 @@ cc_library(
 # as a workaround.
 android_library(
     name = "litert_api_jni",
-    visibility = ["//visibility:public"],
+    visibility = litert_jni_friends(),
     exports = [
         ":litert_api_jni_lib",
     ],
@@ -209,6 +214,8 @@ android_library(
 
 android_library(
     name = "litert_impl_jni",
+    # Prevent build_cleaner from removing this dependency as it's a JNI runtime dependency.
+    tags = ["keep_dep"],
     exports = [
         ":litert_impl_jni_lib",
     ],
@@ -310,7 +317,7 @@ kt_android_library(
     }),
     manifest = "src/main/AndroidManifest.xml",
     proguard_specs = ["//tflite/java:proguard.flags"],
-    visibility = ["//visibility:public"],
+    visibility = litert_jni_friends(),
     deps = LITERT_KOTLIN_DEPS,
 )
 
@@ -360,7 +367,7 @@ kt_android_library(
     visibility = ["//visibility:private"],
     deps = [
         ":litert_api_no_jni",
-        ":litert_impl_jni",
+        ":litert_impl_jni",  # native implementation needed for the target
         "@org_checkerframework_qual",
     ] + select({
         # GPU accelerator is not supported on armv7.
@@ -386,7 +393,7 @@ kt_android_library(
     visibility = ["//visibility:public"],
     deps = [
         ":litert_api",
-        ":litert_impl_jni",
+        ":litert_impl_jni",  # native implementation needed for the target
         "@org_checkerframework_qual",
     ] + select({
         # GPU accelerator is not supported on armv7.
