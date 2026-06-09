@@ -254,7 +254,7 @@ inline size_t ReducedOutputOffset(const int num_dims, const int* dims,
 // calling ops to ensure that they perform verification checks on tensor shapes
 // if they don't support a particular behavior.
 
-inline int Offset(const Dims<4>& dims, int i0, int i1, int i2, int i3) {
+inline int64_t Offset(const Dims<4>& dims, int i0, int i1, int i2, int i3) {
   TFLITE_DCHECK((i0 == 0 && dims.sizes[0] == 0) ||
                 (i0 >= 0 && i0 < dims.sizes[0]));
   TFLITE_DCHECK((i1 == 0 && dims.sizes[1] == 0) ||
@@ -263,11 +263,13 @@ inline int Offset(const Dims<4>& dims, int i0, int i1, int i2, int i3) {
                 (i2 >= 0 && i2 < dims.sizes[2]));
   TFLITE_DCHECK((i3 == 0 && dims.sizes[3] == 0) ||
                 (i3 >= 0 && i3 < dims.sizes[3]));
-  return i0 * dims.strides[0] + i1 * dims.strides[1] + i2 * dims.strides[2] +
-         i3 * dims.strides[3];
+  return static_cast<int64_t>(i0) * dims.strides[0] +
+         static_cast<int64_t>(i1) * dims.strides[1] +
+         static_cast<int64_t>(i2) * dims.strides[2] +
+         static_cast<int64_t>(i3) * dims.strides[3];
 }
 
-inline int Offset(const Dims<4>& dims, int* index) {
+inline int64_t Offset(const Dims<4>& dims, const int* index) {
   return Offset(dims, index[0], index[1], index[2], index[3]);
 }
 
@@ -276,22 +278,22 @@ inline int Offset(const Dims<4>& dims, int* index) {
 // Note that this will be phased out with Dims<4>, since RuntimeShape::Dims()
 // already performs this check.
 template <int N>
-int ArraySize(const Dims<N>& array, int index) {
+int64_t ArraySize(const Dims<N>& array, int index) {
   TFLITE_DCHECK(index >= 0 && index < N);
   return array.sizes[index];
 }
 
 // Get common array size, DCHECKing that they all agree.
 template <typename ArrayType1, typename ArrayType2>
-int MatchingArraySize(const ArrayType1& array1, int index1,
-                      const ArrayType2& array2, int index2) {
+int64_t MatchingArraySize(const ArrayType1& array1, int index1,
+                          const ArrayType2& array2, int index2) {
   TFLITE_DCHECK_EQ(ArraySize(array1, index1), ArraySize(array2, index2));
   return ArraySize(array1, index1);
 }
 
 template <typename ArrayType1, typename ArrayType2, typename... Args>
-int MatchingArraySize(const ArrayType1& array1, int index1,
-                      const ArrayType2& array2, int index2, Args... args) {
+int64_t MatchingArraySize(const ArrayType1& array1, int index1,
+                          const ArrayType2& array2, int index2, Args... args) {
   TFLITE_DCHECK_EQ(ArraySize(array1, index1), ArraySize(array2, index2));
   return MatchingArraySize(array1, index1, args...);
 }
@@ -312,8 +314,8 @@ int MatchingDim(const RuntimeShape& shape1, int index1,
 
 // Will be phased out with Dims<4>, replaced by RuntimeShape::FlatSize().
 template <int N>
-inline int FlatSize(const Dims<N>& dims) {
-  int flat_size = 1;
+inline int64_t FlatSize(const Dims<N>& dims) {
+  int64_t flat_size = 1;
   for (int i = 0; i < N; ++i) {
     flat_size *= dims.sizes[i];
   }
@@ -321,24 +323,24 @@ inline int FlatSize(const Dims<N>& dims) {
 }
 
 TFLITE_DEPRECATED("Prefer FlatSize.")
-inline int RequiredBufferSizeForDims(const Dims<4>& dims) {
+inline int64_t RequiredBufferSizeForDims(const Dims<4>& dims) {
   return FlatSize(dims);
 }
 
-inline int MatchingElementsSize(const RuntimeShape& shape,
-                                const RuntimeShape& check_shape_0) {
-  const int size_1 = shape.FlatSize();
-  const int size_2 = check_shape_0.FlatSize();
+inline int64_t MatchingElementsSize(const RuntimeShape& shape,
+                                    const RuntimeShape& check_shape_0) {
+  const int64_t size_1 = shape.FlatSize();
+  const int64_t size_2 = check_shape_0.FlatSize();
   TFLITE_CHECK_EQ(size_1, size_2);
   return size_1;
 }
 
-inline int MatchingElementsSize(const RuntimeShape& shape,
-                                const RuntimeShape& check_shape_0,
-                                const RuntimeShape& check_shape_1) {
-  const int size_1 = shape.FlatSize();
-  const int size_2 = check_shape_0.FlatSize();
-  const int size_3 = check_shape_1.FlatSize();
+inline int64_t MatchingElementsSize(const RuntimeShape& shape,
+                                    const RuntimeShape& check_shape_0,
+                                    const RuntimeShape& check_shape_1) {
+  const int64_t size_1 = shape.FlatSize();
+  const int64_t size_2 = check_shape_0.FlatSize();
+  const int64_t size_3 = check_shape_1.FlatSize();
   TFLITE_CHECK_EQ(size_1, size_2);
   TFLITE_CHECK_EQ(size_2, size_3);
   return size_1;
@@ -346,8 +348,12 @@ inline int MatchingElementsSize(const RuntimeShape& shape,
 
 // Flat size calculation, checking that dimensions match with one or more other
 // arrays.
-inline int MatchingFlatSize(const RuntimeShape& shape,
-                            const RuntimeShape& check_shape_0) {
+// Flat size calculation, checking that dimensions match with one or more other
+// arrays.
+// Flat size calculation, checking that dimensions match with one or more other
+// arrays.
+inline int64_t MatchingFlatSize(const RuntimeShape& shape,
+                                const RuntimeShape& check_shape_0) {
   TFLITE_DCHECK_EQ(shape.DimensionsCount(), check_shape_0.DimensionsCount());
   const int dims_count = shape.DimensionsCount();
   for (int i = 0; i < dims_count; ++i) {
@@ -356,9 +362,9 @@ inline int MatchingFlatSize(const RuntimeShape& shape,
   return shape.FlatSize();
 }
 
-inline int MatchingFlatSize(const RuntimeShape& shape,
-                            const RuntimeShape& check_shape_0,
-                            const RuntimeShape& check_shape_1) {
+inline int64_t MatchingFlatSize(const RuntimeShape& shape,
+                                const RuntimeShape& check_shape_0,
+                                const RuntimeShape& check_shape_1) {
   TFLITE_DCHECK_EQ(shape.DimensionsCount(), check_shape_0.DimensionsCount());
   const int dims_count = shape.DimensionsCount();
   for (int i = 0; i < dims_count; ++i) {
@@ -367,10 +373,10 @@ inline int MatchingFlatSize(const RuntimeShape& shape,
   return MatchingFlatSize(shape, check_shape_1);
 }
 
-inline int MatchingFlatSize(const RuntimeShape& shape,
-                            const RuntimeShape& check_shape_0,
-                            const RuntimeShape& check_shape_1,
-                            const RuntimeShape& check_shape_2) {
+inline int64_t MatchingFlatSize(const RuntimeShape& shape,
+                                const RuntimeShape& check_shape_0,
+                                const RuntimeShape& check_shape_1,
+                                const RuntimeShape& check_shape_2) {
   TFLITE_DCHECK_EQ(shape.DimensionsCount(), check_shape_0.DimensionsCount());
   const int dims_count = shape.DimensionsCount();
   for (int i = 0; i < dims_count; ++i) {
@@ -379,11 +385,11 @@ inline int MatchingFlatSize(const RuntimeShape& shape,
   return MatchingFlatSize(shape, check_shape_1, check_shape_2);
 }
 
-inline int MatchingFlatSize(const RuntimeShape& shape,
-                            const RuntimeShape& check_shape_0,
-                            const RuntimeShape& check_shape_1,
-                            const RuntimeShape& check_shape_2,
-                            const RuntimeShape& check_shape_3) {
+inline int64_t MatchingFlatSize(const RuntimeShape& shape,
+                                const RuntimeShape& check_shape_0,
+                                const RuntimeShape& check_shape_1,
+                                const RuntimeShape& check_shape_2,
+                                const RuntimeShape& check_shape_3) {
   TFLITE_DCHECK_EQ(shape.DimensionsCount(), check_shape_0.DimensionsCount());
   const int dims_count = shape.DimensionsCount();
   for (int i = 0; i < dims_count; ++i) {
@@ -395,7 +401,8 @@ inline int MatchingFlatSize(const RuntimeShape& shape,
 // Flat size calculation, checking that dimensions match with one or more other
 // arrays.
 template <int N>
-inline int MatchingFlatSize(const Dims<N>& dims, const Dims<N>& check_dims_0) {
+inline int64_t MatchingFlatSize(const Dims<N>& dims,
+                                const Dims<N>& check_dims_0) {
   for (int i = 0; i < N; ++i) {
     TFLITE_DCHECK_EQ(ArraySize(dims, i), ArraySize(check_dims_0, i));
   }
@@ -403,8 +410,9 @@ inline int MatchingFlatSize(const Dims<N>& dims, const Dims<N>& check_dims_0) {
 }
 
 template <int N>
-inline int MatchingFlatSize(const Dims<N>& dims, const Dims<N>& check_dims_0,
-                            const Dims<N>& check_dims_1) {
+inline int64_t MatchingFlatSize(const Dims<N>& dims,
+                                const Dims<N>& check_dims_0,
+                                const Dims<N>& check_dims_1) {
   for (int i = 0; i < N; ++i) {
     TFLITE_DCHECK_EQ(ArraySize(dims, i), ArraySize(check_dims_0, i));
   }
@@ -412,9 +420,10 @@ inline int MatchingFlatSize(const Dims<N>& dims, const Dims<N>& check_dims_0,
 }
 
 template <int N>
-inline int MatchingFlatSize(const Dims<N>& dims, const Dims<N>& check_dims_0,
-                            const Dims<N>& check_dims_1,
-                            const Dims<N>& check_dims_2) {
+inline int64_t MatchingFlatSize(const Dims<N>& dims,
+                                const Dims<N>& check_dims_0,
+                                const Dims<N>& check_dims_1,
+                                const Dims<N>& check_dims_2) {
   for (int i = 0; i < N; ++i) {
     TFLITE_DCHECK_EQ(ArraySize(dims, i), ArraySize(check_dims_0, i));
   }
@@ -422,10 +431,11 @@ inline int MatchingFlatSize(const Dims<N>& dims, const Dims<N>& check_dims_0,
 }
 
 template <int N>
-inline int MatchingFlatSize(const Dims<N>& dims, const Dims<N>& check_dims_0,
-                            const Dims<N>& check_dims_1,
-                            const Dims<N>& check_dims_2,
-                            const Dims<N>& check_dims_3) {
+inline int64_t MatchingFlatSize(const Dims<N>& dims,
+                                const Dims<N>& check_dims_0,
+                                const Dims<N>& check_dims_1,
+                                const Dims<N>& check_dims_2,
+                                const Dims<N>& check_dims_3) {
   for (int i = 0; i < N; ++i) {
     TFLITE_DCHECK_EQ(ArraySize(dims, i), ArraySize(check_dims_0, i));
   }
@@ -433,8 +443,8 @@ inline int MatchingFlatSize(const Dims<N>& dims, const Dims<N>& check_dims_0,
 }
 
 // Flat size calculation, checking if their extended shapes match.
-inline int MatchingExtendedShapeFlatSize(const RuntimeShape& shape,
-                                         const RuntimeShape& check_shape_0) {
+inline int64_t MatchingExtendedShapeFlatSize(
+    const RuntimeShape& shape, const RuntimeShape& check_shape_0) {
   const int shape_dims = shape.DimensionsCount();
   const int check_shape_0_dims = check_shape_0.DimensionsCount();
   const int min_dims = std::min(shape_dims, check_shape_0_dims);
@@ -452,32 +462,30 @@ inline int MatchingExtendedShapeFlatSize(const RuntimeShape& shape,
   return shape.FlatSize();
 }
 
-inline int MatchingExtendedShapeFlatSize(const RuntimeShape& shape,
-                                         const RuntimeShape& check_shape_0,
-                                         const RuntimeShape& check_shape_1) {
-  const int flat_size = MatchingExtendedShapeFlatSize(shape, check_shape_0);
+inline int64_t MatchingExtendedShapeFlatSize(
+    const RuntimeShape& shape, const RuntimeShape& check_shape_0,
+    const RuntimeShape& check_shape_1) {
+  const int64_t flat_size = MatchingExtendedShapeFlatSize(shape, check_shape_0);
   TFLITE_DCHECK_EQ(MatchingExtendedShapeFlatSize(shape, check_shape_1),
                    flat_size);
   return flat_size;
 }
 
-inline int MatchingExtendedShapeFlatSize(const RuntimeShape& shape,
-                                         const RuntimeShape& check_shape_0,
-                                         const RuntimeShape& check_shape_1,
-                                         const RuntimeShape& check_shape_2) {
-  const int flat_size = MatchingExtendedShapeFlatSize(shape, check_shape_0);
+inline int64_t MatchingExtendedShapeFlatSize(
+    const RuntimeShape& shape, const RuntimeShape& check_shape_0,
+    const RuntimeShape& check_shape_1, const RuntimeShape& check_shape_2) {
+  const int64_t flat_size = MatchingExtendedShapeFlatSize(shape, check_shape_0);
   TFLITE_DCHECK_EQ(
       MatchingExtendedShapeFlatSize(shape, check_shape_1, check_shape_2),
       flat_size);
   return flat_size;
 }
 
-inline int MatchingExtendedShapeFlatSize(const RuntimeShape& shape,
-                                         const RuntimeShape& check_shape_0,
-                                         const RuntimeShape& check_shape_1,
-                                         const RuntimeShape& check_shape_2,
-                                         const RuntimeShape& check_shape_3) {
-  const int flat_size = MatchingExtendedShapeFlatSize(shape, check_shape_0);
+inline int64_t MatchingExtendedShapeFlatSize(
+    const RuntimeShape& shape, const RuntimeShape& check_shape_0,
+    const RuntimeShape& check_shape_1, const RuntimeShape& check_shape_2,
+    const RuntimeShape& check_shape_3) {
+  const int64_t flat_size = MatchingExtendedShapeFlatSize(shape, check_shape_0);
   TFLITE_DCHECK_EQ(MatchingExtendedShapeFlatSize(shape, check_shape_1,
                                                  check_shape_2, check_shape_3),
                    flat_size);
@@ -488,9 +496,9 @@ inline int MatchingExtendedShapeFlatSize(const RuntimeShape& shape,
 // full array flat size or the flat size with one dimension skipped (commonly
 // the depth).
 template <int N>
-inline int FlatSizeSkipDim(const Dims<N>& dims, int skip_dim) {
+inline int64_t FlatSizeSkipDim(const Dims<N>& dims, int skip_dim) {
   TFLITE_DCHECK(skip_dim >= 0 && skip_dim < N);
-  int flat_size = 1;
+  int64_t flat_size = 1;
   for (int i = 0; i < N; ++i) {
     flat_size *= (i == skip_dim) ? 1 : dims.sizes[i];
   }
@@ -499,8 +507,8 @@ inline int FlatSizeSkipDim(const Dims<N>& dims, int skip_dim) {
 
 // A combination of MatchingFlatSize() and FlatSizeSkipDim().
 template <int N>
-inline int MatchingFlatSizeSkipDim(const Dims<N>& dims, int skip_dim,
-                                   const Dims<N>& check_dims_0) {
+inline int64_t MatchingFlatSizeSkipDim(const Dims<N>& dims, int skip_dim,
+                                       const Dims<N>& check_dims_0) {
   for (int i = 0; i < N; ++i) {
     if (i != skip_dim) {
       TFLITE_DCHECK_EQ(ArraySize(dims, i), ArraySize(check_dims_0, i));
@@ -510,9 +518,9 @@ inline int MatchingFlatSizeSkipDim(const Dims<N>& dims, int skip_dim,
 }
 
 template <int N>
-inline int MatchingFlatSizeSkipDim(const Dims<N>& dims, int skip_dim,
-                                   const Dims<N>& check_dims_0,
-                                   const Dims<N>& check_dims_1) {
+inline int64_t MatchingFlatSizeSkipDim(const Dims<N>& dims, int skip_dim,
+                                       const Dims<N>& check_dims_0,
+                                       const Dims<N>& check_dims_1) {
   for (int i = 0; i < N; ++i) {
     if (i != skip_dim) {
       TFLITE_DCHECK_EQ(ArraySize(dims, i), ArraySize(check_dims_0, i));
@@ -522,10 +530,10 @@ inline int MatchingFlatSizeSkipDim(const Dims<N>& dims, int skip_dim,
 }
 
 template <int N>
-inline int MatchingFlatSizeSkipDim(const Dims<N>& dims, int skip_dim,
-                                   const Dims<N>& check_dims_0,
-                                   const Dims<N>& check_dims_1,
-                                   const Dims<N>& check_dims_2) {
+inline int64_t MatchingFlatSizeSkipDim(const Dims<N>& dims, int skip_dim,
+                                       const Dims<N>& check_dims_0,
+                                       const Dims<N>& check_dims_1,
+                                       const Dims<N>& check_dims_2) {
   for (int i = 0; i < N; ++i) {
     if (i != skip_dim) {
       TFLITE_DCHECK_EQ(ArraySize(dims, i), ArraySize(check_dims_0, i));
@@ -535,11 +543,11 @@ inline int MatchingFlatSizeSkipDim(const Dims<N>& dims, int skip_dim,
 }
 
 template <int N>
-inline int MatchingFlatSizeSkipDim(const Dims<N>& dims, int skip_dim,
-                                   const Dims<N>& check_dims_0,
-                                   const Dims<N>& check_dims_1,
-                                   const Dims<N>& check_dims_2,
-                                   const Dims<N>& check_dims_3) {
+inline int64_t MatchingFlatSizeSkipDim(const Dims<N>& dims, int skip_dim,
+                                       const Dims<N>& check_dims_0,
+                                       const Dims<N>& check_dims_1,
+                                       const Dims<N>& check_dims_2,
+                                       const Dims<N>& check_dims_3) {
   for (int i = 0; i < N; ++i) {
     if (i != skip_dim) {
       TFLITE_DCHECK_EQ(ArraySize(dims, i), ArraySize(check_dims_0, i));
@@ -552,20 +560,20 @@ inline int MatchingFlatSizeSkipDim(const Dims<N>& dims, int skip_dim,
 // Data is required to be contiguous, and so many operators can use either the
 // full array flat size or the flat size with one dimension skipped (commonly
 // the depth).
-inline int FlatSizeSkipDim(const RuntimeShape& shape, int skip_dim) {
+inline int64_t FlatSizeSkipDim(const RuntimeShape& shape, int skip_dim) {
   const int dims_count = shape.DimensionsCount();
   TFLITE_DCHECK(skip_dim >= 0 && skip_dim < dims_count);
   const auto* dims_data = shape.DimsData();
-  int flat_size = 1;
+  int64_t flat_size = 1;
   for (int i = 0; i < dims_count; ++i) {
-    flat_size *= (i == skip_dim) ? 1 : dims_data[i];
+    flat_size *= (i == skip_dim) ? 1 : static_cast<int64_t>(dims_data[i]);
   }
   return flat_size;
 }
 
 // A combination of MatchingFlatSize() and FlatSizeSkipDim().
-inline int MatchingFlatSizeSkipDim(const RuntimeShape& shape, int skip_dim,
-                                   const RuntimeShape& check_shape_0) {
+inline int64_t MatchingFlatSizeSkipDim(const RuntimeShape& shape, int skip_dim,
+                                       const RuntimeShape& check_shape_0) {
   const int dims_count = shape.DimensionsCount();
   for (int i = 0; i < dims_count; ++i) {
     if (i != skip_dim) {
@@ -575,9 +583,9 @@ inline int MatchingFlatSizeSkipDim(const RuntimeShape& shape, int skip_dim,
   return FlatSizeSkipDim(shape, skip_dim);
 }
 
-inline int MatchingFlatSizeSkipDim(const RuntimeShape& shape, int skip_dim,
-                                   const RuntimeShape& check_shape_0,
-                                   const RuntimeShape& check_shape_1) {
+inline int64_t MatchingFlatSizeSkipDim(const RuntimeShape& shape, int skip_dim,
+                                       const RuntimeShape& check_shape_0,
+                                       const RuntimeShape& check_shape_1) {
   const int dims_count = shape.DimensionsCount();
   for (int i = 0; i < dims_count; ++i) {
     if (i != skip_dim) {
@@ -587,10 +595,10 @@ inline int MatchingFlatSizeSkipDim(const RuntimeShape& shape, int skip_dim,
   return MatchingFlatSizeSkipDim(shape, skip_dim, check_shape_1);
 }
 
-inline int MatchingFlatSizeSkipDim(const RuntimeShape& shape, int skip_dim,
-                                   const RuntimeShape& check_shape_0,
-                                   const RuntimeShape& check_shape_1,
-                                   const RuntimeShape& check_shape_2) {
+inline int64_t MatchingFlatSizeSkipDim(const RuntimeShape& shape, int skip_dim,
+                                       const RuntimeShape& check_shape_0,
+                                       const RuntimeShape& check_shape_1,
+                                       const RuntimeShape& check_shape_2) {
   const int dims_count = shape.DimensionsCount();
   for (int i = 0; i < dims_count; ++i) {
     if (i != skip_dim) {
@@ -600,11 +608,11 @@ inline int MatchingFlatSizeSkipDim(const RuntimeShape& shape, int skip_dim,
   return MatchingFlatSizeSkipDim(shape, skip_dim, check_shape_1, check_shape_2);
 }
 
-inline int MatchingFlatSizeSkipDim(const RuntimeShape& shape, int skip_dim,
-                                   const RuntimeShape& check_shape_0,
-                                   const RuntimeShape& check_shape_1,
-                                   const RuntimeShape& check_shape_2,
-                                   const RuntimeShape& check_shape_3) {
+inline int64_t MatchingFlatSizeSkipDim(const RuntimeShape& shape, int skip_dim,
+                                       const RuntimeShape& check_shape_0,
+                                       const RuntimeShape& check_shape_1,
+                                       const RuntimeShape& check_shape_2,
+                                       const RuntimeShape& check_shape_3) {
   const int dims_count = shape.DimensionsCount();
   for (int i = 0; i < dims_count; ++i) {
     if (i != skip_dim) {
@@ -617,7 +625,7 @@ inline int MatchingFlatSizeSkipDim(const RuntimeShape& shape, int skip_dim,
 
 template <int N>
 bool IsPackedWithoutStrides(const Dims<N>& dims) {
-  int expected_stride = 1;
+  int64_t expected_stride = 1;
   for (int d = 0; d < N; d++) {
     if (dims.strides[d] != expected_stride) return false;
     expected_stride *= dims.sizes[d];
