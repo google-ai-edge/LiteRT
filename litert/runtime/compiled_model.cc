@@ -489,15 +489,17 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
                  "External weight loader: no external weight tensors found");
       return {};
     }
-    weight_loader::WeightAccessRequest request;
-    request.cpu = true;
-    // TODO(b/456318365): Handle weight access request to support multiple
-    // backends.
-    request.opencl = false;
-    absl::Status prepare_status = weight_loader_->PrepareAccess(request, env);
-    if (!prepare_status.ok()) {
-      return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                std::string(prepare_status.message()));
+    if (hardware_accelerators & kLiteRtHwAcceleratorCpu) {
+      weight_loader::WeightAccessRequest request;
+      request.cpu = true;
+      // TODO(b/456318365): Handle weight access request to support multiple
+      // backends.
+      request.opencl = false;
+      absl::Status prepare_status = weight_loader_->PrepareAccess(request, env);
+      if (!prepare_status.ok()) {
+        return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                  std::string(prepare_status.message()));
+      }
     }
 
     if (options_impl != nullptr) {
