@@ -354,24 +354,31 @@ impl<'a> Subgraph<'a> {
 
 impl Model {
     /// Creates a model from a file path.
-    pub fn create_model_from_file(environment: &Environment, path: &str) -> Result<Self, Error> {
+    ///
+    /// The `_environment` argument is retained in the public signature for
+    /// forward compatibility, but the bindings are generated against the
+    /// published prebuilt runtime, whose `LiteRtCreateModelFromFile` does not
+    /// yet take a `LiteRtEnvironment` and uses a default environment instead.
+    pub fn create_model_from_file(_environment: &Environment, path: &str) -> Result<Self, Error> {
         let path_c_string =
             CString::new(path).expect("CString::new failed: string contains null bytes");
         let c_ptr: *const c_char = path_c_string.as_ptr();
         let mut raw_model_ptr: LiteRtModel = std::ptr::null_mut();
         call_check_status!(
             // SAFETY: c_ptr is a valid pointer to the memory buffer provided by safe Rust code.
-            unsafe {
-                LiteRtCreateModelFromFile(environment.raw_environment, c_ptr, &mut raw_model_ptr)
-            },
+            unsafe { LiteRtCreateModelFromFile(c_ptr, &mut raw_model_ptr) },
             ErrorCause::CreateModelFromFile
         );
         Ok(Model { raw_model: raw_model_ptr })
     }
 
     /// Creates a model from a memory buffer.
+    ///
+    /// As with [`Model::create_model_from_file`], the `_environment` argument is
+    /// kept for forward compatibility; the published runtime's
+    /// `LiteRtCreateModelFromBuffer` does not yet take a `LiteRtEnvironment`.
     pub fn create_model_from_buffer(
-        environment: &Environment,
+        _environment: &Environment,
         buffer: &mut [u8],
     ) -> Result<Self, Error> {
         let mut raw_model_ptr: LiteRtModel = std::ptr::null_mut();
@@ -379,7 +386,6 @@ impl Model {
             // SAFETY: buffer is a valid pointer to the memory buffer provided by safe Rust code.
             unsafe {
                 LiteRtCreateModelFromBuffer(
-                    environment.raw_environment,
                     buffer.as_ptr() as *const c_void,
                     buffer.len(),
                     &mut raw_model_ptr,
