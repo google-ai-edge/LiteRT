@@ -15,6 +15,7 @@
 #include "litert/compiler/plugin/litert_compiler_options.h"
 
 #include <cstddef>
+#include <string>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -37,6 +38,10 @@ LiteRtStatus ParseLiteRtCompilerOptions(const void* data, size_t size,
               static_cast<LiteRtCompilerOptionsPartitionStrategy>(strategy);
         } else if (key == "dummy_option") {
           LITERT_ASSIGN_OR_RETURN(options->dummy_option, ParseTomlBool(value));
+        } else if (key == "transformer_layer_cuts") {
+          // The value is the per-signature spec string; ParseToml has already
+          // stripped the surrounding quotes.
+          options->transformer_layer_cuts = std::string(value);
         }
         return kLiteRtStatusOk;
       });

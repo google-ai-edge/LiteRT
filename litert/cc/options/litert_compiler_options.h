@@ -16,6 +16,7 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_COMPILER_OPTIONS_H_
 
 #include <memory>
+#include <string>
 
 #include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/litert_expected.h"
@@ -63,6 +64,29 @@ class CompilerOptions {
     LITERT_RETURN_IF_ERROR(
         LrtGetCompilerOptionsDummyOption(options_.get(), &dummy_option));
     return dummy_option;
+  }
+
+  /// @brief Sets the transformer layer cut spec (TransformerLayerCut strategy).
+  /// The spec is a per-signature string, e.g. "prefill_128=16,32;decode=8" or a
+  /// bare "16" applied to all signatures.
+  Expected<void> SetTransformerLayerCuts(const std::string& spec) {
+    LITERT_RETURN_IF_ERROR(
+        LrtSetCompilerOptionsTransformerLayerCuts(options_.get(), spec.c_str()));
+    return {};
+  }
+
+  /// @brief Gets the transformer layer cut spec. Empty if none set.
+  Expected<std::string> GetTransformerLayerCuts() const {
+    const char* spec = nullptr;
+    const LiteRtStatus status =
+        LrtGetCompilerOptionsTransformerLayerCuts(options_.get(), &spec);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return std::string{};
+    }
+    if (status != kLiteRtStatusOk) {
+      return Error(status);
+    }
+    return std::string(spec);
   }
 
   /// @brief Returns the underlying C handle.

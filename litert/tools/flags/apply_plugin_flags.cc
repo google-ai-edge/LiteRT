@@ -33,7 +33,17 @@ ABSL_FLAG(::litert::tools::IntList, subgraphs, ::litert::tools::IntList{},
 
 ABSL_FLAG(LiteRtCompilerOptionsPartitionStrategy, partition_strategy,
           kLiteRtCompilerOptionsPartitionStrategyDefault,
-          "Partition strategy for the compiler.");
+          "Partition strategy for the compiler. One of: default, "
+          "weakly_connected, transformer_block, transformer_layer_cut.");
+
+ABSL_FLAG(std::string, transformer_layer_cuts, "",
+          "Per-signature layer-cut spec for the transformer_layer_cut strategy. "
+          "Format: ';'-separated 'signature=cuts' groups, each cuts a "
+          "','-separated list of layer indices; a bare list (or empty key) is "
+          "the default for all signatures. Examples: "
+          "--transformer_layer_cuts=16  or  "
+          "--transformer_layer_cuts=\"prefill_128=16,32;decode=8\". Only used "
+          "with --partition_strategy=transformer_layer_cut.");
 
 // NOLINTBEGIN(*alien-types*)
 // TODO: Move absl parse/unparse function to same file as enum types if
@@ -51,7 +61,19 @@ bool AbslParseFlag(absl::string_view text,
         kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected;
     return true;
   }
-  *error = "Unknown partition strategy";
+  if (text == "transformer_block") {
+    *partition_strategy =
+        kLiteRtCompilerOptionsPartitionStrategyTransformerBlock;
+    return true;
+  }
+  if (text == "transformer_layer_cut") {
+    *partition_strategy =
+        kLiteRtCompilerOptionsPartitionStrategyTransformerLayerCut;
+    return true;
+  }
+  *error =
+      "Unknown partition strategy (expected: default, weakly_connected, "
+      "transformer_block, transformer_layer_cut)";
   return false;
 }
 
@@ -62,7 +84,12 @@ std::string AbslUnparseFlag(
       return "default";
     case kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected:
       return "weakly_connected";
+    case kLiteRtCompilerOptionsPartitionStrategyTransformerBlock:
+      return "transformer_block";
+    case kLiteRtCompilerOptionsPartitionStrategyTransformerLayerCut:
+      return "transformer_layer_cut";
   }
+  return "default";
 }
 // NOLINTEND(*alien-types*)
 
@@ -71,6 +98,11 @@ namespace litert {
 Expected<void> UpdateCompilerOptionsFromFlags(CompilerOptions& options) {
   LITERT_RETURN_IF_ERROR(
       options.SetPartitionStrategy(absl::GetFlag(FLAGS_partition_strategy)));
+
+  const auto cuts_spec = absl::GetFlag(FLAGS_transformer_layer_cuts);
+  if (!cuts_spec.empty()) {
+    LITERT_RETURN_IF_ERROR(options.SetTransformerLayerCuts(cuts_spec));
+  }
 
   return {};
 }

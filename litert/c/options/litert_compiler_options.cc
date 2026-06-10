@@ -25,6 +25,8 @@
 struct LrtCompilerOptions {
   std::optional<LiteRtCompilerOptionsPartitionStrategy> partition_strategy;
   std::optional<bool> dummy_option;
+  // Per-signature layer-cut spec string (see header for grammar).
+  std::string transformer_layer_cuts;
 };
 
 LiteRtStatus LrtCreateCompilerOptions(LrtCompilerOptions** options) {
@@ -61,6 +63,12 @@ LiteRtStatus LrtGetOpaqueCompilerOptionsData(const LrtCompilerOptions* options,
     ss << "dummy_option = "
        << (options->dummy_option.value() ? "true" : "false") << "\n";
   }
+  if (!options->transformer_layer_cuts.empty()) {
+    // Quote the spec: it contains ';', '=', and ',' which the TOML reader would
+    // otherwise have to special-case. The parser strips the surrounding quotes.
+    ss << "transformer_layer_cuts = \"" << options->transformer_layer_cuts
+       << "\"\n";
+  }
 
   *identifier = LrtGetCompilerOptionsIdentifier();
   std::string toml_str = ss.str();
@@ -89,6 +97,27 @@ LiteRtStatus LrtGetCompilerOptionsPartitionStrategy(
     return kLiteRtStatusErrorNotFound;
   }
   *partition_strategy = options->partition_strategy.value();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetCompilerOptionsTransformerLayerCuts(LrtCompilerOptions* options,
+                                                       const char* spec) {
+  if (!options || !spec) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->transformer_layer_cuts = spec;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetCompilerOptionsTransformerLayerCuts(
+    const LrtCompilerOptions* options, const char** spec) {
+  if (!options || !spec) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (options->transformer_layer_cuts.empty()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *spec = options->transformer_layer_cuts.c_str();
   return kLiteRtStatusOk;
 }
 

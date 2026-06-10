@@ -790,6 +790,27 @@ cc_binary(
     ],
 )
 
+cc_binary(
+    name = "detect_transformer_blocks_main",
+    srcs = ["detect_transformer_blocks_main.cc"],
+    visibility = ["//litert:litert_internal_users"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_op_options",
+        "//litert/compiler/plugin:transformer_detector",
+        "//litert/core/model",
+        "//litert/core/model:model_load",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
 # We create a library for benchmark_main.cc to faciliate the creation of a
 # customized benchmark model binary that only needs linking with extra
 # dependency, e.g., enabling creating of benchmark binaries with a custom

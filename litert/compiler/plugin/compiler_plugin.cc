@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"  // from @com_google_absl
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -50,6 +51,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/compiler/plugin/algo.h"
 #include "litert/compiler/plugin/litert_compiler_options.h"
+#include "litert/compiler/plugin/transformer_detector.h"
 #include "litert/core/build_stamp.h"
 #include "litert/core/dynamic_loading.h"
 #include "litert/core/environment.h"
@@ -510,7 +512,8 @@ LiteRtStatus PartitionSubgraph(
     std::vector<LiteRtOpWithPartitionIndex> selected_ops,
     LiteRtSubgraphT& subgraph, std::vector<LiteRtOp>& res_ops,
     LiteRtModelT& model,
-    const LiteRtCompilerOptionsPartitionStrategy& partition_strategy_option) {
+    const LiteRtCompilerOptionsPartitionStrategy& partition_strategy_option,
+    const std::vector<int32_t>& transformer_layer_cuts = {}) {
   // Pick partition strategy based on compiler options.
   std::vector<std::vector<LiteRtOp>> (*partition_strategy_func)(
       const std::vector<LiteRtOpWithPartitionIndex>&, LiteRtSubgraph) =
@@ -520,6 +523,29 @@ LiteRtStatus PartitionSubgraph(
     partition_strategy_func = GroupPartitionsV2;
   }
   LITERT_LOG(LITERT_INFO, "Partition strategy: %d", partition_strategy_option);
+
+  // For the transformer-block / transformer-layer-cut strategies, detect
+  // transformer layers among the vendor-selected ops and rewrite their
+  // partition indices. With TransformerBlock each layer becomes its own island;
+  // with TransformerLayerCut, consecutive layers are coalesced into one island
+  // per inter-cut chunk. The resulting islands are connected sub-DAGs sharing a
+  // unique index, so the weakly-connected (union-find) grouping then emits one
+  // partition per island. If no layer is found the rewrite is a no-op.
+  if (partition_strategy_option ==
+          kLiteRtCompilerOptionsPartitionStrategyTransformerBlock ||
+      partition_strategy_option ==
+          kLiteRtCompilerOptionsPartitionStrategyTransformerLayerCut) {
+    TransformerDetectorOptions detector_options;
+    if (partition_strategy_option ==
+        kLiteRtCompilerOptionsPartitionStrategyTransformerLayerCut) {
+      detector_options.layer_cut_indices = transformer_layer_cuts;
+      // Under the layer-cut strategy, a graph with no cuts coalesces into a
+      // single partition ("cut nowhere") rather than one partition per layer.
+      detector_options.coalesce_layers = true;
+    }
+    RepartitionByTransformerBlocks(selected_ops, &subgraph, detector_options);
+    partition_strategy_func = GroupPartitions;
+  }
 
   // Group selected ops into connected islands.
   auto islands = partition_strategy_func(selected_ops, &subgraph);
@@ -619,6 +645,24 @@ Expected<PartitionResult> PartitionModel(
     }
   });
 
+  // Read partition strategy and (for the layer-cut strategy) the per-signature
+  // cut spec from the compiler options once, up front.
+  auto compiler_options = compiler_plugin.CompilerOptions();
+  LiteRtCompilerOptionsPartitionStrategy strategy =
+      kLiteRtCompilerOptionsPartitionStrategyDefault;
+  std::string layer_cut_spec;
+  if (compiler_options.HasValue()) {
+    strategy = compiler_options->partition_strategy;
+    layer_cut_spec = compiler_options->transformer_layer_cuts;
+  }
+
+  // Map each subgraph to its signature key so per-signature layer cuts can be
+  // resolved. A subgraph may be referenced by at most one signature.
+  absl::flat_hash_map<LiteRtSubgraph, std::string> subgraph_to_signature;
+  for (auto* sig : model.Signatures()) {
+    subgraph_to_signature[&sig->GetSubgraph()] = std::string(sig->Key());
+  }
+
   // Build partition result via calling plugin on non-decomposition subgraphs.
   std::vector<LiteRtOp> dispatch_ops;
   for (auto i = 0; i < input_num_sgs; ++i) {
@@ -711,15 +755,25 @@ Expected<PartitionResult> PartitionModel(
     auto num_ops = subgraph->Ops().size();
 
     auto num_partitions = dispatch_ops.size();
-    // Get partition strategy from compiler options.
-    auto compiler_options = compiler_plugin.CompilerOptions();
-    LiteRtCompilerOptionsPartitionStrategy strategy =
-        kLiteRtCompilerOptionsPartitionStrategyDefault;
-    if (compiler_options.HasValue()) {
-      strategy = compiler_options->partition_strategy;
+    // Resolve this subgraph's layer cuts from the per-signature spec.
+    std::vector<int32_t> transformer_layer_cuts;
+    if (strategy == kLiteRtCompilerOptionsPartitionStrategyTransformerLayerCut &&
+        !layer_cut_spec.empty()) {
+      absl::string_view signature_key;
+      if (auto it = subgraph_to_signature.find(subgraph);
+          it != subgraph_to_signature.end()) {
+        signature_key = it->second;
+      }
+      auto cuts = ResolveLayerCuts(layer_cut_spec, signature_key);
+      transformer_layer_cuts.assign(cuts.begin(), cuts.end());
+      LITERT_LOG(LITERT_INFO,
+                 "Subgraph<%d> signature '%s': resolved %lu layer cut(s).", i,
+                 std::string(signature_key).c_str(),
+                 transformer_layer_cuts.size());
     }
     LITERT_RETURN_IF_ERROR(PartitionSubgraph(
-        std::move(*selected_ops), *subgraph, dispatch_ops, model, strategy));
+        std::move(*selected_ops), *subgraph, dispatch_ops, model, strategy,
+        transformer_layer_cuts));
     num_partitions = dispatch_ops.size() - num_partitions;
     LITERT_LOG(LITERT_INFO,
                "Partitioned subgraph<%d>, selected %lu "
