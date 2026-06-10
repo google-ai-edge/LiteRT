@@ -204,4 +204,42 @@ TEST(QnnManagerTest, AdspLibraryPathNoDuplicate) {
   }
 }
 
+// Tests that ::qnn::Options correctly enforces the DLBC weights vs.
+// weight_sharing mutual exclusivity rule (QAIRT 2.36+ requirement). The
+// mutual exclusion is now enforced inside SetHtpDlbcWeights at the internal
+// layer.
+TEST(InitQnnOptionsDlbcTest, HtpDlbcWeightsAlonePropagates) {
+  ::qnn::Options qnn_options;
+  qnn_options.SetEnableWeightSharing(false);
+  qnn_options.SetHtpDlbcWeights(true);
+  EXPECT_TRUE(qnn_options.GetHtpDlbcWeights());
+}
+
+TEST(InitQnnOptionsDlbcTest, WeightSharingAloneLeavesHtpDlbcDefault) {
+  ::qnn::Options qnn_options;
+  qnn_options.SetEnableWeightSharing(true);
+  EXPECT_TRUE(qnn_options.GetEnableWeightSharing());
+  EXPECT_FALSE(qnn_options.GetHtpDlbcWeights());
+}
+
+TEST(InitQnnOptionsDlbcTest, BothEnabledForcesHtpDlbcWeightsOff) {
+  ::qnn::Options qnn_options;
+  qnn_options.SetEnableWeightSharing(true);
+  qnn_options.SetHtpDlbcWeights(true);
+  EXPECT_TRUE(qnn_options.GetEnableWeightSharing());
+  // SetHtpDlbcWeights silently force-offs to match QAIRT 2.36+ behavior.
+  EXPECT_FALSE(qnn_options.GetHtpDlbcWeights());
+}
+
+// DLBC (activations) is independent of weight_sharing — no mutex enforcement
+// needed there. Sanity-check that it propagates regardless and does not bleed
+// into htp_dlbc_weights.
+TEST(InitQnnOptionsDlbcTest, HtpDlbcUnaffectedByWeightSharing) {
+  ::qnn::Options qnn_options;
+  qnn_options.SetEnableWeightSharing(true);
+  qnn_options.SetHtpDlbc(true);
+  EXPECT_TRUE(qnn_options.GetHtpDlbc());
+  EXPECT_FALSE(qnn_options.GetHtpDlbcWeights());
+}
+
 }  // namespace

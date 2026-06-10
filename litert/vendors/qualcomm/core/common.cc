@@ -134,6 +134,17 @@ void Options::SetHtpPPoint(std::int32_t htp_p_point) {
 
 std::int32_t Options::GetHtpPPoint() const { return htp_p_point_; }
 
+void Options::SetHtpDlbc(bool htp_dlbc) { htp_dlbc_ = htp_dlbc; }
+
+bool Options::GetHtpDlbc() const { return htp_dlbc_; }
+
+void Options::SetHtpDlbcWeights(bool htp_dlbc_weights) {
+  // DLBC weights is mutually exclusive with weight sharing (QAIRT 2.36+).
+  htp_dlbc_weights_ = htp_dlbc_weights && !enable_weight_sharing_;
+}
+
+bool Options::GetHtpDlbcWeights() const { return htp_dlbc_weights_; }
+
 void Options::SetHtpPerformanceMode(HtpPerformanceMode htp_performance_mode) {
   htp_performance_mode_ = htp_performance_mode;
 }
@@ -236,6 +247,8 @@ EnableWeightSharing: %v\n\
 EnableJustInTime: %v\n\
 UseConvHMX: %v\n\
 UseFoldReLU: %v\n\
+HtpDlbc: %v\n\
+HtpDlbcWeights: %v\n\
 HtpPPoint: %d\n\
 HtpPerformanceMode: %d\n\
 DspPerformanceMode: %d\n\
@@ -261,11 +274,11 @@ CustomOpPackage: {\n\
   return absl::StrFormat(
       kQnnOptionsDumpFormat, log_level_, backend_type_, profiling_,
       use_int64_bias_as_int32_, enable_weight_sharing_, enable_just_in_time_,
-      use_conv_hmx_, use_fold_relu_, htp_p_point_, htp_performance_mode_,
-      dsp_performance_mode_, dump_tensor_ids, ir_json_dir_, dlc_dir_,
-      vtcm_size_, num_hvx_threads_, optimization_level_, graph_priority_,
-      saver_output_dir_, graph_io_tensor_mem_type_, custom_op_package_.name,
-      custom_op_package_.interface_provider,
+      use_conv_hmx_, use_fold_relu_, htp_dlbc_, htp_dlbc_weights_, htp_p_point_,
+      htp_performance_mode_, dsp_performance_mode_, dump_tensor_ids,
+      ir_json_dir_, dlc_dir_, vtcm_size_, num_hvx_threads_, optimization_level_,
+      graph_priority_, saver_output_dir_, graph_io_tensor_mem_type_,
+      custom_op_package_.name, custom_op_package_.interface_provider,
       custom_op_package_.compile_package_path,
       custom_op_package_.dispatch_package_path, custom_op_package_.target);
 }
