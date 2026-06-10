@@ -176,6 +176,22 @@ struct CpuMapping {
   size_t data_length = 0;
 };
 
+absl::Status DiscardCpuMappingPages(const CpuMapping& mapping) {
+  if (mapping.base == nullptr || mapping.length == 0) {
+    return absl::OkStatus();
+  }
+#if !defined(_WIN32)
+  if (madvise(mapping.base, mapping.length, MADV_DONTNEED) != 0) {
+    return absl::InternalError(
+        absl::StrFormat("madvise failed: %s", strerror(errno)));
+  }
+#else
+  // Windows does not provide MADV_DONTNEED for file mappings. The view remains
+  // valid and will be released by ReleaseEntry().
+#endif
+  return absl::OkStatus();
+}
+
 struct Entry {
   size_t info_index = 0;
   std::optional<WeightAccess> access;
@@ -302,7 +318,7 @@ absl::StatusOr<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
 
   MmapParams params = GetMmapParams(info.offset, info.length);
 
-  void* base = mmap(nullptr, params.map_length, PROT_READ, MAP_PRIVATE, fd,
+  void* base = mmap(nullptr, params.map_length, PROT_READ, MAP_SHARED, fd,
                     params.map_offset);
   int saved_errno = errno;
   close(fd);
@@ -424,7 +440,7 @@ absl::StatusOr<CpuMapping> MapScopedFileSlice(
 #if !defined(_WIN32)
   int fd = source->file.file();
   MmapParams params = GetMmapParams(absolute_offset, info.length);
-  void* base = mmap(nullptr, params.map_length, PROT_READ, MAP_PRIVATE, fd,
+  void* base = mmap(nullptr, params.map_length, PROT_READ, MAP_SHARED, fd,
                     params.map_offset);
   int saved_errno = errno;
   if (base == MAP_FAILED) {
@@ -618,6 +634,43 @@ absl::Status EnsureMetalTensorBuffer(LiteRtRuntimeContext* runtime_context,
 }
 #endif  // LITERT_HAS_METAL_SUPPORT
 
+absl::Status PrepareEntryAccess(LiteRtRuntimeContext* runtime_context,
+                                Entry& entry, const LiteRtWeightInfo& info,
+                                const WeightSource& source,
+                                const WeightAccessRequest& request,
+                                LiteRtEnvironmentT* env) {
+  if (request.cpu) {
+    absl::Status status =
+        EnsureCpuTensorBuffer(runtime_context, entry, info, source);
+    if (!status.ok()) {
+      return status;
+    }
+  }
+  if (request.opencl) {
+#if LITERT_HAS_OPENCL_SUPPORT
+    absl::Status status =
+        EnsureOpenClTensorBuffer(runtime_context, entry, info, source, env);
+    if (!status.ok()) {
+      return status;
+    }
+#else
+    return absl::UnimplementedError("OpenCL support not enabled in this build");
+#endif
+  }
+  if (request.metal) {
+#if LITERT_HAS_METAL_SUPPORT
+    absl::Status status =
+        EnsureMetalTensorBuffer(runtime_context, entry, info, source, env);
+    if (!status.ok()) {
+      return status;
+    }
+#else
+    return absl::UnimplementedError("Metal support not enabled in this build");
+#endif
+  }
+  return absl::OkStatus();
+}
+
 void ParseFlatBuffer(const tflite::Model& model,
                      std::vector<LiteRtWeightInfo>& infos,
                      absl::flat_hash_map<uint32_t, Entry>& entries,
@@ -735,59 +788,25 @@ class LiteRtWeightLoader : public WeightLoader {
 
   absl::Status PrepareAccess(const WeightAccessRequest& request,
                              LiteRtEnvironmentT* env) override {
-    for (auto& [tensor_id, entry] : entries_) {
-      const LiteRtWeightInfo& info = infos_[entry.info_index];
-      WeightSource source;
-      auto section_it = scoped_weight_source_
-                            ? group_sections_.find(info.group_id)
-                            : group_sections_.end();
-      if (section_it != group_sections_.end()) {
-        source.kind = WeightSource::Kind::kScopedFile;
-        source.section = &section_it->second;
-        source.scoped_source = scoped_weight_source_.get();
-      } else {
-        absl::StatusOr<std::string> path =
-            ResolveGroupPath(info.group_id, group_paths_, model_directory_);
-        if (!path.ok()) {
-          return path.status();
-        }
-        source.kind = WeightSource::Kind::kFilePath;
-        source.path = std::move(*path);
-      }
-
-      if (request.cpu) {
-        absl::Status status =
-            EnsureCpuTensorBuffer(runtime_context_, entry, info, source);
-        if (!status.ok()) {
-          return status;
-        }
-      }
-      if (request.opencl) {
-#if LITERT_HAS_OPENCL_SUPPORT
-        absl::Status status = EnsureOpenClTensorBuffer(runtime_context_, entry,
-                                                       info, source, env);
-        if (!status.ok()) {
-          return status;
-        }
-#else
-        return absl::UnimplementedError(
-            "OpenCL support not enabled in this build");
-#endif
-      }
-      if (request.metal) {
-#if LITERT_HAS_METAL_SUPPORT
-        absl::Status status =
-            EnsureMetalTensorBuffer(runtime_context_, entry, info, source, env);
-        if (!status.ok()) {
-          return status;
-        }
-#else
-        return absl::UnimplementedError(
-            "Metal support not enabled in this build");
-#endif
-      }
+    for (const auto& [external_buffer_id, _] : entries_) {
+      LITERT_RETURN_IF_ERROR(
+          PrepareAccessForBuffer(external_buffer_id, request, env));
     }
     return absl::OkStatus();
+  }
+
+  absl::Status PrepareAccessForBuffer(uint32_t external_buffer_id,
+                                      const WeightAccessRequest& request,
+                                      LiteRtEnvironmentT* env) override {
+    auto it = entries_.find(external_buffer_id);
+    if (it == entries_.end()) {
+      return absl::InvalidArgumentError(
+          absl::StrFormat("Unknown external buffer id %u", external_buffer_id));
+    }
+    const LiteRtWeightInfo& info = infos_[it->second.info_index];
+    LITERT_ASSIGN_OR_RETURN(WeightSource source, ResolveWeightSource(info));
+    return PrepareEntryAccess(runtime_context_, it->second, info, source,
+                              request, env);
   }
 
   absl::Status SetExternalWeightByBuffer(uint32_t external_buffer_id,
@@ -811,7 +830,54 @@ class LiteRtWeightLoader : public WeightLoader {
     return &(*it->second.access);
   }
 
+  absl::Status DiscardExternalWeightByBuffer(
+      uint32_t external_buffer_id) override {
+    auto it = entries_.find(external_buffer_id);
+    if (it == entries_.end()) {
+      return absl::InvalidArgumentError(
+          absl::StrFormat("Unknown external buffer id %u", external_buffer_id));
+    }
+    if (!it->second.cpu_mapping.has_value()) {
+      return absl::OkStatus();
+    }
+    return DiscardCpuMappingPages(*it->second.cpu_mapping);
+  }
+
+  absl::Status ReleaseExternalWeightByBuffer(
+      uint32_t external_buffer_id) override {
+    auto it = entries_.find(external_buffer_id);
+    if (it == entries_.end()) {
+      return absl::InvalidArgumentError(
+          absl::StrFormat("Unknown external buffer id %u", external_buffer_id));
+    }
+    ReleaseEntry(it->second);
+    return absl::OkStatus();
+  }
+
  private:
+  absl::StatusOr<WeightSource> ResolveWeightSource(
+      const LiteRtWeightInfo& info) {
+    WeightSource source;
+    auto section_it = scoped_weight_source_
+                          ? group_sections_.find(info.group_id)
+                          : group_sections_.end();
+    if (section_it != group_sections_.end()) {
+      source.kind = WeightSource::Kind::kScopedFile;
+      source.section = &section_it->second;
+      source.scoped_source = scoped_weight_source_.get();
+      return source;
+    }
+
+    absl::StatusOr<std::string> path =
+        ResolveGroupPath(info.group_id, group_paths_, model_directory_);
+    if (!path.ok()) {
+      return path.status();
+    }
+    source.kind = WeightSource::Kind::kFilePath;
+    source.path = std::move(*path);
+    return source;
+  }
+
   LiteRtRuntimeContext* runtime_context_;
   std::optional<std::string> model_directory_;
   std::vector<LiteRtWeightInfo> infos_;
