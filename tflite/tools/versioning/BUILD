@@ -102,7 +102,6 @@ tf_cc_test(
         "//tflite/kernels/internal:types",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:status_matchers",
         "@com_google_googletest//:gtest_main",
         "@org_tensorflow//tensorflow/core/platform:resource_loader",
     ],
