@@ -85,6 +85,8 @@ struct WeightAccessRequest {
   bool cpu = true;
   // Whether to access the data on an OpenCL device.
   bool opencl = false;
+  // Whether to access the data on a Metal device.
+  bool metal = false;
 };
 
 struct WeightAccess;

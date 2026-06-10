@@ -14,6 +14,7 @@
 
 #include "weight_loader/external_weight_loader_litert.h"
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -34,7 +35,10 @@
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "flatbuffers/flatbuffers.h"  // from @flatbuffers  // IWYU pragma: keep
 #include "litert/c/internal/litert_runtime_context.h"
+#include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_tensor_buffer.h"
+#include "litert/c/litert_environment.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -56,6 +60,54 @@ constexpr uint32_t kGroupId = 1;
 constexpr uint32_t kTensorElementCount = 8;
 constexpr uint64_t kSliceOffset = 0;
 constexpr uint64_t kSliceLengthBytes = kTensorElementCount;
+
+struct FakeMetalMemoryInfo : HwMemoryInfo {
+  explicit FakeMetalMemoryInfo(size_t size) : storage(size) {
+    memory_handle = storage.data();
+    raw_handle = storage.data();
+  }
+
+  std::vector<uint8_t> storage;
+};
+
+LiteRtStatus CreateFakeMetalMemory(LiteRtGpuDeviceId device_id,
+                                   LiteRtGpuQueueId queue_id,
+                                   const LiteRtRankedTensorType* tensor_type,
+                                   LiteRtTensorBufferType buffer_type,
+                                   size_t bytes, size_t packed_bytes,
+                                   HwMemoryInfoPtr* hw_memory_info) {
+  (void)device_id;
+  (void)queue_id;
+  (void)bytes;
+  if (tensor_type == nullptr || hw_memory_info == nullptr ||
+      buffer_type != kLiteRtTensorBufferTypeMetalBufferPacked) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *hw_memory_info = new FakeMetalMemoryInfo(packed_bytes);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus DestroyFakeMetalMemory(HwMemoryInfoPtr hw_memory_info) {
+  delete static_cast<FakeMetalMemoryInfo*>(hw_memory_info);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LockFakeMetalMemory(HwMemoryInfoPtr hw_memory_info,
+                                 LiteRtTensorBufferLockMode mode,
+                                 void** host_memory_ptr) {
+  (void)mode;
+  if (hw_memory_info == nullptr || host_memory_ptr == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *host_memory_ptr =
+      static_cast<FakeMetalMemoryInfo*>(hw_memory_info)->storage.data();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus UnlockFakeMetalMemory(HwMemoryInfoPtr hw_memory_info) {
+  return hw_memory_info == nullptr ? kLiteRtStatusErrorInvalidArgument
+                                   : kLiteRtStatusOk;
+}
 
 struct ModelBuffer {
   std::vector<uint8_t> data;
@@ -200,6 +252,48 @@ void ExpectHostBufferEquals(const WeightAccess* access,
   auto actual = absl::MakeSpan(static_cast<const uint8_t*>(host_mem_addr),
                                expected.size());
   EXPECT_EQ(actual, expected);
+  ASSERT_EQ(LrtGetRuntimeContext()->unlock_tensor_buffer(host_buffer),
+            kLiteRtStatusOk);
+}
+
+void ExpectDeviceBufferEquals(const WeightAccess* access,
+                              LiteRtTensorBufferType expected_buffer_type,
+                              absl::Span<const uint8_t> expected) {
+  ASSERT_NE(access, nullptr);
+  const auto device_buffer = access->GetDeviceBuffer();
+  ASSERT_NE(device_buffer, nullptr);
+  LiteRtTensorBufferType buffer_type;
+  ASSERT_EQ(LrtGetRuntimeContext()->get_tensor_buffer_type(device_buffer,
+                                                           &buffer_type),
+            kLiteRtStatusOk);
+  EXPECT_EQ(buffer_type, expected_buffer_type);
+
+  void* device_mem_addr;
+  ASSERT_EQ(
+      LrtGetRuntimeContext()->lock_tensor_buffer(
+          device_buffer, &device_mem_addr, kLiteRtTensorBufferLockModeRead),
+      kLiteRtStatusOk);
+  auto actual = absl::MakeSpan(static_cast<const uint8_t*>(device_mem_addr),
+                               expected.size());
+  EXPECT_EQ(actual, expected);
+  ASSERT_EQ(LrtGetRuntimeContext()->unlock_tensor_buffer(device_buffer),
+            kLiteRtStatusOk);
+}
+
+LiteRtEnvironment CreateEnvironmentWithFakeMetalBufferHandlers() {
+  std::array<LiteRtEnvOption, 0> environment_options = {};
+  LiteRtEnvironment env = nullptr;
+  EXPECT_EQ(LiteRtCreateEnvironment(environment_options.size(),
+                                    environment_options.data(), &env),
+            kLiteRtStatusOk);
+  EXPECT_EQ(
+      LiteRtRegisterTensorBufferHandlers(
+          env, kLiteRtTensorBufferTypeMetalBufferPacked, CreateFakeMetalMemory,
+          DestroyFakeMetalMemory, LockFakeMetalMemory, UnlockFakeMetalMemory,
+          /*clear_func=*/nullptr, /*import_func=*/nullptr,
+          kLiteRtEnvOptionTagNull, kLiteRtEnvOptionTagNull),
+      kLiteRtStatusOk);
+  return env;
 }
 
 const WeightInfo& GetSingleWeightInfo(const WeightLoader& loader) {
@@ -295,6 +389,51 @@ TEST(ExternalWeightLoaderTest, LoadsWeightsFromScopedFile) {
   ExpectHostBufferEquals(access, expected);
 }
 
+TEST(ExternalWeightLoaderTest, LoadsWeightsIntoMetalDeviceBuffer) {
+  constexpr absl::string_view kGroupName = "metal_weights.bin";
+  const std::string payload = "ABCDEFGH0123456789";
+  auto model = BuildModel(kGroupName);
+  WriteWeightsFile(kGroupName, payload);
+
+#if LITERT_HAS_METAL_SUPPORT
+  LiteRtEnvironment env = CreateEnvironmentWithFakeMetalBufferHandlers();
+  {
+    auto loader = CreateLiteRtWeightLoader(
+        LrtGetRuntimeContext(), model.model(),
+        /*model_directory=*/std::string(::testing::TempDir()),
+        /*scoped_weight_source=*/nullptr);
+    ASSERT_NE(loader, nullptr);
+    const auto& weight_info = GetSingleWeightInfo(*loader);
+    ExpectWeightInfo(weight_info);
+
+    WeightAccessRequest request;
+    request.cpu = false;
+    request.metal = true;
+    absl::Status status = loader->PrepareAccess(request, env);
+    ASSERT_TRUE(status.ok()) << status.message();
+
+    const auto* access =
+        loader->GetExternalWeightByBuffer(weight_info.external_buffer_id);
+    auto expected = ExpectedSlice(payload);
+    ExpectDeviceBufferEquals(access, kLiteRtTensorBufferTypeMetalBufferPacked,
+                             expected);
+    EXPECT_EQ(access->GetHostBuffer(), nullptr);
+  }
+  LiteRtDestroyEnvironment(env);
+#else
+  auto loader = CreateLiteRtWeightLoader(
+      LrtGetRuntimeContext(), model.model(),
+      /*model_directory=*/std::string(::testing::TempDir()),
+      /*scoped_weight_source=*/nullptr);
+  ASSERT_NE(loader, nullptr);
+  WeightAccessRequest request;
+  request.cpu = false;
+  request.metal = true;
+  absl::Status status = loader->PrepareAccess(request, /*env=*/nullptr);
+  EXPECT_EQ(status.code(), absl::StatusCode::kUnimplemented);
+#endif
+}
+
 TEST(ExternalWeightLoaderTest, NoExternalWeightsIsNoOp) {
   auto model = BuildModelWithoutExternalWeights();
   auto loader = CreateLiteRtWeightLoader(LrtGetRuntimeContext(), model.model());
@@ -304,6 +443,7 @@ TEST(ExternalWeightLoaderTest, NoExternalWeightsIsNoOp) {
   WeightAccessRequest request;
   request.cpu = true;
   request.opencl = false;
+  request.metal = true;
   EXPECT_TRUE(loader->PrepareAccess(request, /*env=*/nullptr).ok());
 }
 
