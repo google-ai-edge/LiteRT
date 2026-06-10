@@ -1,5 +1,6 @@
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -224,5 +225,19 @@ cc_library(
         "//tflite/delegates/gpu/common:types",
         "//tflite/delegates/gpu/common:util",
         "//tflite/delegates/gpu/common:workgroup_selection",
+    ],
+)
+
+cc_test(
+    name = "weights_conversion_test",
+    srcs = ["weights_conversion_test.cc"],
+    deps = [
+        ":weights_conversion",
+        ":weights_layout",
+        "//tflite/delegates/gpu/common:data_type",
+        "//tflite/delegates/gpu/common:shape",
+        "//tflite/delegates/gpu/common:tensor",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
     ],
 )
