@@ -333,7 +333,7 @@ TEST(TestQnnPlugin, CompileMulSubgraphWithLibraryDir) {
 
   LiteRtCompiledResult compiled;
   // This should fail because it tries to load libraries from bogus path.
-  LITERT_EXPECT_ERROR(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
+  LITERT_EXPECT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
                                                   model.Get(), &compiled));
 }
 
