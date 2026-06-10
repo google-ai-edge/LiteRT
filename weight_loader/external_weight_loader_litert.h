@@ -118,6 +118,11 @@ class WeightLoader {
   virtual const WeightInfo* FindWeightInfoByBuffer(
       uint32_t external_buffer_id) const = 0;
 
+  // Returns the first external buffer ID that references the same backing
+  // weight slice. Unknown IDs are returned unchanged.
+  virtual uint32_t GetCanonicalExternalBufferId(
+      uint32_t external_buffer_id) const = 0;
+
   // Sets the external weight tensor with the given buffer ID. The `access`
   // parameter provides access to the tensor data.
   virtual absl::Status SetExternalWeightByBuffer(uint32_t external_buffer_id,

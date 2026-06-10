@@ -54,6 +54,7 @@ using litert::ScopedWeightSection;
 using litert::ScopedWeightSource;
 
 constexpr uint32_t kExternalBufferId = 1;
+constexpr uint32_t kDuplicateExternalBufferId = 2;
 constexpr uint32_t kGroupId = 1;
 
 // Vector tensor for testing.
@@ -164,6 +165,78 @@ ModelBuffer BuildModel(absl::string_view group_name) {
       builder.CreateString(""));
   auto ext_buffers_vec = builder.CreateVector(
       std::vector<flatbuffers::Offset<tflite::ExternalBuffer>>{ext_buffer});
+
+  auto model =
+      tflite::CreateModel(builder, /*version=*/3,
+                          /*operator_codes=*/0, subgraphs_vec,
+                          builder.CreateString("test_model"), buffers_vec,
+                          /*metadata_buffer=*/0, /*metadata=*/0,
+                          /*signature_defs=*/0, groups_vec, ext_buffers_vec);
+  tflite::FinishModelBuffer(builder, model);
+
+  ModelBuffer result;
+  result.data.assign(builder.GetBufferPointer(),
+                     builder.GetBufferPointer() + builder.GetSize());
+  return result;
+}
+
+ModelBuffer BuildModelWithDuplicateExternalBuffers(
+    absl::string_view group_name) {
+  flatbuffers::FlatBufferBuilder builder;
+
+  const std::vector<int32_t> tensor_shape = {
+      static_cast<int32_t>(kTensorElementCount)};
+  auto tensor_0 = tflite::CreateTensor(
+      builder, builder.CreateVector(tensor_shape), tflite::TensorType_UINT8,
+      /*buffer=*/0, builder.CreateString("external_tensor_0"),
+      /*quantization=*/0,
+      /*is_variable=*/false,
+      /*sparsity=*/0,
+      /*shape_signature=*/0,
+      /*has_rank=*/false,
+      /*variant_tensors=*/0, kExternalBufferId);
+  auto tensor_1 = tflite::CreateTensor(
+      builder, builder.CreateVector(tensor_shape), tflite::TensorType_UINT8,
+      /*buffer=*/0, builder.CreateString("external_tensor_1"),
+      /*quantization=*/0,
+      /*is_variable=*/false,
+      /*sparsity=*/0,
+      /*shape_signature=*/0,
+      /*has_rank=*/false,
+      /*variant_tensors=*/0, kDuplicateExternalBufferId);
+
+  auto tensors_vec = builder.CreateVector(
+      std::vector<flatbuffers::Offset<tflite::Tensor>>{tensor_0, tensor_1});
+  auto empty_int_vec = builder.CreateVector<int32_t>(std::vector<int32_t>{});
+  auto empty_op_vec = builder.CreateVector(
+      std::vector<flatbuffers::Offset<tflite::Operator>>{});
+
+  auto subgraph =
+      tflite::CreateSubGraph(builder, tensors_vec, empty_int_vec, empty_int_vec,
+                             empty_op_vec, builder.CreateString("main"));
+  auto subgraphs_vec = builder.CreateVector(
+      std::vector<flatbuffers::Offset<tflite::SubGraph>>{subgraph});
+
+  auto buffer = tflite::CreateBuffer(builder);
+  auto buffers_vec = builder.CreateVector(
+      std::vector<flatbuffers::Offset<tflite::Buffer>>{buffer});
+
+  auto placeholder_group = tflite::CreateExternalBufferGroupDirect(builder, "");
+  auto group = tflite::CreateExternalBufferGroupDirect(
+      builder, std::string(group_name).c_str());
+  auto groups_vec = builder.CreateVector(
+      std::vector<flatbuffers::Offset<tflite::ExternalBufferGroup>>{
+          placeholder_group, group});
+
+  auto ext_buffer_0 = tflite::CreateExternalBuffer(
+      builder, kExternalBufferId, kGroupId, kSliceOffset, kSliceLengthBytes,
+      builder.CreateString(""));
+  auto ext_buffer_1 = tflite::CreateExternalBuffer(
+      builder, kDuplicateExternalBufferId, kGroupId, kSliceOffset,
+      kSliceLengthBytes, builder.CreateString(""));
+  auto ext_buffers_vec = builder.CreateVector(
+      std::vector<flatbuffers::Offset<tflite::ExternalBuffer>>{ext_buffer_0,
+                                                               ext_buffer_1});
 
   auto model =
       tflite::CreateModel(builder, /*version=*/3,
@@ -426,6 +499,43 @@ TEST(ExternalWeightLoaderTest, ReleasesAndReloadsSingleBufferAccess) {
                   .ok());
   access = loader->GetExternalWeightByBuffer(weight_info.external_buffer_id);
   ExpectHostBufferEquals(access, expected);
+}
+
+TEST(ExternalWeightLoaderTest, CanonicalizesDuplicateExternalBufferSlices) {
+  constexpr absl::string_view kGroupName = "deduped_weights.bin";
+  const std::string payload = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ4545454545";
+  auto model = BuildModelWithDuplicateExternalBuffers(kGroupName);
+  WriteWeightsFile(kGroupName, payload);
+
+  auto loader = CreateLiteRtWeightLoader(
+      LrtGetRuntimeContext(), model.model(),
+      /*model_directory=*/std::string(::testing::TempDir()),
+      /*scoped_weight_source=*/nullptr);
+  ASSERT_NE(loader, nullptr);
+  ASSERT_EQ(loader->GetWeightInfo().size(), 2);
+  EXPECT_EQ(loader->GetCanonicalExternalBufferId(kExternalBufferId),
+            kExternalBufferId);
+  EXPECT_EQ(loader->GetCanonicalExternalBufferId(kDuplicateExternalBufferId),
+            kExternalBufferId);
+
+  WeightAccessRequest request;
+  request.cpu = true;
+  ASSERT_TRUE(loader
+                  ->PrepareAccessForBuffer(kDuplicateExternalBufferId, request,
+                                           /*env=*/nullptr)
+                  .ok());
+
+  const auto* canonical_access =
+      loader->GetExternalWeightByBuffer(kExternalBufferId);
+  const auto* duplicate_access =
+      loader->GetExternalWeightByBuffer(kDuplicateExternalBufferId);
+  ASSERT_NE(canonical_access, nullptr);
+  EXPECT_EQ(canonical_access, duplicate_access);
+  ExpectHostBufferEquals(duplicate_access, ExpectedSlice(payload));
+
+  ASSERT_TRUE(
+      loader->ReleaseExternalWeightByBuffer(kDuplicateExternalBufferId).ok());
+  EXPECT_EQ(loader->GetExternalWeightByBuffer(kExternalBufferId), nullptr);
 }
 
 TEST(ExternalWeightLoaderTest, LoadsWeightsIntoMetalDeviceBuffer) {
