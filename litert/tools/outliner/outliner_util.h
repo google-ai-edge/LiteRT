@@ -37,6 +37,12 @@ litert::Expected<void> OutlineSubgraph(LiteRtModelT& model,
                                        size_t subgraph_index,
                                        const OutlinerOptions& options);
 
+// Identifies operations between boundaries for preview.
+litert::Expected<std::vector<LiteRtOpT*>> IdentifyIdentifiedOps(
+    LiteRtSubgraphT& subgraph,
+    const std::vector<std::string>& start_tensor_names,
+    const std::vector<std::string>& end_tensor_names);
+
 }  // namespace litert::tools
 
 #endif  // ODML_LITERT_LITERT_TOOLS_OUTLINER_OUTLINER_UTIL_H_

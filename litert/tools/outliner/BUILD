@@ -39,10 +39,26 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "outliner_gui",
+    srcs = ["outliner_gui.cc"],
+    hdrs = ["outliner_gui.h"],
+    deps = [
+        ":outliner_util",
+        "//litert/cc:litert_expected",
+        "//litert/core/model",
+        "//litert/tools:dump",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
 cc_binary(
     name = "outliner",
     srcs = ["outliner_main.cc"],
     deps = [
+        ":outliner_gui",
         ":outliner_util",
         "//litert/c:litert_op_code",
         "//litert/core/model",
