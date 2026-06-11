@@ -1898,6 +1898,96 @@ TEST(SerializationTest, CanSerializeDequantize) {
             tflite::BuiltinOperator_DEQUANTIZE);
 }
 
+TEST(SerializationTest, CanSerializeBlockwiseQuantization) {
+  const std::string model_path = testing::TempDir() + "/blockwise_quant.tflite";
+  std::vector<float> scales = {0.5f, 1.5f};
+  std::vector<int64_t> zero_points = {12, 34};
+  int block_size = 16;
+  int quantized_dimension = 0;
+  auto quantization = std::make_shared<BlockwiseQuantization>(
+      scales, zero_points, block_size, quantized_dimension);
+
+  std::vector<int8_t> buffer_data = {1, 2, 3, 4};
+  TensorTf a({.name = "quantized_weights",
+              .type = Type::kI8,
+              .shape = {2, 2},
+              .buffer = buffer_data,
+              .quantization = quantization});
+
+  TensorTf c = Dequantize(a);
+  c.SetName("dequantized_output");
+
+  ASSERT_THAT(Save({c}, model_path), IsOk());
+
+  auto model = tflite::FlatBufferModel::BuildFromFile(model_path.c_str());
+  ASSERT_NE(model, nullptr);
+  const tflite::Model* model_fb = model->GetModel();
+  ASSERT_NE(model_fb, nullptr);
+  ASSERT_EQ(model_fb->subgraphs()->size(), 1);
+  const tflite::SubGraph* subgraph = model_fb->subgraphs()->Get(0);
+
+  const tflite::Tensor* weight_tensor = nullptr;
+  for (int i = 0; i < subgraph->tensors()->size(); ++i) {
+    auto t = subgraph->tensors()->Get(i);
+    if (t->name() && t->name()->str() == "quantized_weights") {
+      weight_tensor = t;
+      break;
+    }
+  }
+  ASSERT_NE(weight_tensor, nullptr);
+
+  const tflite::QuantizationParameters* q_params =
+      weight_tensor->quantization();
+  ASSERT_NE(q_params, nullptr);
+  ASSERT_EQ(q_params->details_type(),
+            tflite::QuantizationDetails_BlockwiseQuantization);
+  const tflite::BlockwiseQuantization* bwq_fb =
+      q_params->details_as_BlockwiseQuantization();
+  ASSERT_NE(bwq_fb, nullptr);
+
+  EXPECT_EQ(bwq_fb->block_size(), block_size);
+
+  int scale_tensor_idx = bwq_fb->scales();
+  int zero_point_tensor_idx = bwq_fb->zero_points();
+
+  ASSERT_GE(scale_tensor_idx, 0);
+  ASSERT_LT(scale_tensor_idx, subgraph->tensors()->size());
+  const tflite::Tensor* scale_tensor =
+      subgraph->tensors()->Get(scale_tensor_idx);
+  EXPECT_EQ(scale_tensor->type(), tflite::TensorType_FLOAT16);
+
+  ASSERT_GE(zero_point_tensor_idx, 0);
+  ASSERT_LT(zero_point_tensor_idx, subgraph->tensors()->size());
+  const tflite::Tensor* zp_tensor =
+      subgraph->tensors()->Get(zero_point_tensor_idx);
+  EXPECT_EQ(zp_tensor->type(), tflite::TensorType_INT64);
+
+  // Now load interpreter to verify data.
+  std::unique_ptr<tflite::Interpreter> interpreter;
+  tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates resolver;
+  ASSERT_EQ(tflite::InterpreterBuilder(*model, resolver)(&interpreter),
+            kTfLiteOk);
+  ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
+
+  const TfLiteTensor* scale_tensor_tflite =
+      interpreter->tensor(scale_tensor_idx);
+  ASSERT_NE(scale_tensor_tflite, nullptr);
+  EXPECT_EQ(scale_tensor_tflite->type, kTfLiteFloat16);
+  const fp16_t* scale_data =
+      reinterpret_cast<const fp16_t*>(scale_tensor_tflite->data.raw);
+  EXPECT_FLOAT_EQ(static_cast<float>(scale_data[0]), 0.5f);
+  EXPECT_FLOAT_EQ(static_cast<float>(scale_data[1]), 1.5f);
+
+  const TfLiteTensor* zp_tensor_tflite =
+      interpreter->tensor(zero_point_tensor_idx);
+  ASSERT_NE(zp_tensor_tflite, nullptr);
+  EXPECT_EQ(zp_tensor_tflite->type, kTfLiteInt64);
+  const int64_t* zp_data =
+      reinterpret_cast<const int64_t*>(zp_tensor_tflite->data.raw);
+  EXPECT_EQ(zp_data[0], 12);
+  EXPECT_EQ(zp_data[1], 34);
+}
+
 TEST(SerializationTest, CanSerializeCumsum) {
   const std::string model_path = testing::TempDir() + "/cumsum.tflite";
   TensorTf a({.type = Type::kFP32, .shape = {2, 5}});
