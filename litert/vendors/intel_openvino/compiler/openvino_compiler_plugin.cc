@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstring>
+#include <future>
 #include <ios>
 #include <limits>
 #include <memory>
@@ -466,22 +468,33 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     auto result = std::make_unique<LiteRtCompiledResultT>();
     result->byte_code.resize(num_partitions);
     result->graph_names.resize(num_partitions);
-    auto tflite_fe =
-        std::make_shared<ov::frontend::tensorflow_lite::FrontEnd>();
 
+    // ov::Core is documented as thread-safe and is shared across the
+    // per-partition compile tasks below. The TFLite FrontEnd, in contrast,
+    // carries mutable state during load/convert, so each task constructs its
+    // own instance.
     ov::Core core;
-    for (int partition_idx = 0; partition_idx < num_partitions;
-         ++partition_idx) {
-      auto graph_name = absl::StrFormat("Partition_%d", partition_idx);
-      litert::Expected<litert::compiler::Subgraph> expected_subgraph =
-          model.Subgraph(partition_idx);
-      if (expected_subgraph.HasValue()) {
+
+    auto compile_partition = [&](int partition_idx) -> LiteRtStatus {
+      try {
+        auto graph_name = absl::StrFormat("Partition_%d", partition_idx);
+        litert::Expected<litert::compiler::Subgraph> expected_subgraph =
+            model.Subgraph(partition_idx);
+        if (!expected_subgraph.HasValue()) {
+          LITERT_LOG(LITERT_INFO,
+                     "Failed to retrieve Subgraph for partition %d",
+                     partition_idx);
+          return kLiteRtStatusErrorCompilation;
+        }
+
+        auto tflite_fe =
+            std::make_shared<ov::frontend::tensorflow_lite::FrontEnd>();
         std::shared_ptr<ov::frontend::tensorflow_lite::GraphIterator>
             graph_delegate =
                 std::make_shared<litert::openvino::GraphIteratorDelegate>(
                     compiler_plugin->ctx(), &expected_subgraph.Value());
         auto input_model = tflite_fe->load(graph_delegate);
-        LITERT_LOG(LITERT_INFO, "Model loaded");
+        LITERT_LOG(LITERT_INFO, "Partition %d: model loaded", partition_idx);
         auto ov_model = tflite_fe->convert(input_model);
 
         // Run NPU-specific optimization passes.
@@ -494,14 +507,54 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         CustomOStreamBuf obuf;
         std::ostream oss(&obuf);
         compiled_model.export_model(oss);
-        LITERT_LOG(LITERT_INFO, "Model export done");
-        result->byte_code[partition_idx] = obuf.drain_str();
+        LITERT_LOG(LITERT_INFO, "Partition %d: model export done",
+                   partition_idx);
 
-        result->graph_names.emplace_back(graph_name);
-      } else {
-        LITERT_LOG(LITERT_INFO, "Failed to retrieve Subgraph");
+        result->byte_code[partition_idx] = obuf.drain_str();
+        result->graph_names[partition_idx] = std::move(graph_name);
+        return kLiteRtStatusOk;
+      } catch (const ov::Exception& e) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Exception compiling partition %d: %s", partition_idx,
+                   e.what());
+        return kLiteRtStatusErrorCompilation;
+      } catch (const std::exception& e) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Exception compiling partition %d: %s", partition_idx,
+                   e.what());
         return kLiteRtStatusErrorCompilation;
       }
+    };
+
+    // Cap concurrency to bound peak compilation memory. Each in-flight task
+    // holds its own ov::Model, compiled model, and exported byte-code blob,
+    // so peak memory scales with the number of partitions compiled at once.
+    constexpr int kMaxParallelCompiles = 4;
+    const int max_parallel =
+        std::min(static_cast<int>(num_partitions), kMaxParallelCompiles);
+
+    LiteRtStatus first_error = kLiteRtStatusOk;
+    for (int start = 0; start < static_cast<int>(num_partitions);
+         start += max_parallel) {
+      const int end =
+          std::min(start + max_parallel, static_cast<int>(num_partitions));
+      std::vector<std::future<LiteRtStatus>> futures;
+      futures.reserve(end - start);
+      for (int idx = start; idx < end; ++idx) {
+        futures.emplace_back(
+            std::async(std::launch::async, compile_partition, idx));
+      }
+      for (auto& f : futures) {
+        const LiteRtStatus status = f.get();
+        if (status != kLiteRtStatusOk && first_error == kLiteRtStatusOk) {
+          first_error = status;
+        }
+      }
+      if (first_error != kLiteRtStatusOk) break;
+    }
+
+    if (first_error != kLiteRtStatusOk) {
+      return first_error;
     }
     *compiled_result = result.release();
     // TODO: Add support for caching
