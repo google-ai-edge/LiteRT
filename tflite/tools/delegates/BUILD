@@ -237,3 +237,22 @@ cc_test_with_tflite(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+# copybara:uncomment_begin(google-only)
+# cc_library(
+#     name = "hexagon_ynn_delegate_provider",
+#     srcs = ["hexagon_ynn_delegate_provider.cc"],
+#     copts = common_copts,
+#     deps = [
+#         ":delegate_provider_hdr",
+#         "//tflite/tools:command_line_flags",
+#         "//tflite/tools:tool_params",
+#     ] + select({
+#         "@org_tensorflow//tensorflow:arm_any": [
+#             "//tflite/delegates/hexagon_ynn:hexagon_ynn_delegate",
+#         ],
+#         "//conditions:default": [],
+#     }),
+#     alwayslink = 1,
+# )
+# copybara:uncomment_end
