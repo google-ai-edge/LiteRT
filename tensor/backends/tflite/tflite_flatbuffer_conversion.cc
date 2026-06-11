@@ -310,14 +310,63 @@ absl::Status ModelFactory::Build() {
     LRT_TENSOR_ASSIGN_OR_RETURN(t.type, ToTfLite(tensor_info.type),
                                 _ << DebugInfo(tensor));
     if (tensor_info.quantization) {
-      LRT_TENSOR_ASSIGN_OR_RETURN(
-          const PerChannelAffineQuantization& tensor_quantization,
-          tensor_info.quantization->As<const PerChannelAffineQuantization>());
-      t.quantization = std::make_unique<tflite::QuantizationParametersT>();
-      t.quantization->scale = tensor_quantization.scales;
-      t.quantization->zero_point = tensor_quantization.zero_points;
-      t.quantization->quantized_dimension =
-          tensor_quantization.quantized_dimension;
+      if (auto pcq = tensor_info.quantization
+                         ->As<const PerChannelAffineQuantization>();
+          pcq.ok()) {
+        t.quantization = std::make_unique<tflite::QuantizationParametersT>();
+        t.quantization->scale = pcq->scales;
+        t.quantization->zero_point = pcq->zero_points;
+        t.quantization->quantized_dimension = pcq->quantized_dimension;
+      } else if (auto bwq = tensor_info.quantization
+                                ->As<const BlockwiseQuantization>();
+                 bwq.ok()) {
+        t.quantization = std::make_unique<tflite::QuantizationParametersT>();
+        t.quantization->quantized_dimension = bwq->quantized_dimension;
+
+        // Block quantization scales and zero points are passed as tensors.
+        std::vector<fp16_t> scales_f16(bwq->scales.begin(), bwq->scales.end());
+        auto scale_buffer = OwningCpuBuffer::Copy<Type::kFP16>(scales_f16);
+        auto [it, inserted] =
+            buffers_.insert({scale_buffer, BufferSerializationInfo{}});
+        if (inserted) {
+          it->second.index = buffer_list_.size() + 1;
+          buffer_list_.push_back(scale_buffer);
+        }
+        auto scale_tensor = std::make_unique<tflite::TensorT>();
+        scale_tensor->shape = {static_cast<int>(bwq->scales.size())};
+        scale_tensor->type = tflite::TensorType_FLOAT16;
+        scale_tensor->name = absl::StrCat(tensor_info.name, "_scales");
+        scale_tensor->buffer = it->second.index;
+        subgraph.tensors.push_back(std::move(scale_tensor));
+        int scale_tensor_idx = subgraph.tensors.size() - 1;
+
+        int zero_point_tensor_idx = -1;  // Default to 0 zero point.
+        if (!bwq->zero_points.empty()) {
+          auto zp_buffer = OwningCpuBuffer::Copy<Type::kI64>(bwq->zero_points);
+          auto [it, inserted] =
+              buffers_.insert({zp_buffer, BufferSerializationInfo{}});
+          if (inserted) {
+            it->second.index = buffer_list_.size() + 1;
+            buffer_list_.push_back(zp_buffer);
+          }
+          auto zp_tensor = std::make_unique<tflite::TensorT>();
+          zp_tensor->shape = {static_cast<int>(bwq->zero_points.size())};
+          zp_tensor->type = tflite::TensorType_INT64;
+          zp_tensor->name = absl::StrCat(tensor_info.name, "_zero_points");
+          zp_tensor->buffer = it->second.index;
+          subgraph.tensors.push_back(std::move(zp_tensor));
+          zero_point_tensor_idx = subgraph.tensors.size() - 1;
+        }
+
+        tflite::BlockwiseQuantizationT q_details;
+        q_details.scales = scale_tensor_idx;
+        q_details.zero_points = zero_point_tensor_idx;
+        q_details.block_size = bwq->block_size;
+        t.quantization->details.Set(std::move(q_details));
+      } else {
+        return absl::InvalidArgumentError(
+            "Unsupported quantization type for TFLite serialization.");
+      }
     }
   }
 
