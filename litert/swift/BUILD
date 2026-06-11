@@ -14,6 +14,7 @@
 
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_interop_hint", "swift_library", "swift_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//litert/build_common:special_rule.bzl", "litert_gpu_accelerator_prebuilts")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -61,11 +62,14 @@ swift_library(
 swift_test(
     name = "litert_swift_test",
     srcs = glob(["Tests/*.swift"]),
-    data = ["//litert/test:testdata/simple_model.tflite"],
+    data = [
+        "//litert/test:testdata/simple_model.tflite",
+    ] + litert_gpu_accelerator_prebuilts(),
     deps = [
         ":litert_c",
         ":litert_swift",
         # Dependency placeholder: apple_frameworks Metal,
+        # Dependency placeholder: swift foundation,
         # Dependency placeholder: swift xctest,
     ],
 )

@@ -48,56 +48,59 @@ final class TensorBufferTests: XCTestCase {
 
   func testManualLocking() throws {
     let env = try Environment()
-    let tensorType = TensorType(elementType: .float32, layout: Layout(dimensions: [2]))
-    let buf = try TensorBuffer(
-      environment: env,
-      bufferType: .hostMemory,
-      tensorType: tensorType,
-      size: 8
-    )
-    XCTAssertEqual(buf.offset, 0)
-    let addr = try buf.lock(mode: .write)
-    let typedPtr = addr.bindMemory(to: Float.self, capacity: 2)
-    typedPtr[0] = 5.5
-    typedPtr[1] = 6.6
-    try buf.unlock()
+    try withExtendedLifetime(env) {
+      let tensorType = TensorType(elementType: .float32, layout: Layout(dimensions: [2]))
+      let buf = try TensorBuffer(
+        environment: env,
+        bufferType: .hostMemory,
+        tensorType: tensorType,
+        size: 8
+      )
+      XCTAssertEqual(buf.offset, 0)
+      let addr = try buf.lock(mode: .write)
+      let typedPtr = addr.bindMemory(to: Float.self, capacity: 2)
+      typedPtr[0] = 5.5
+      typedPtr[1] = 6.6
+      try buf.unlock()
 
-    let readBack: [Float] = try buf.read()
-    XCTAssertEqual(readBack, [5.5, 6.6])
+      let readBack: [Float] = try buf.read()
+      XCTAssertEqual(readBack, [5.5, 6.6])
+    }
   }
 
 #if canImport(Metal)
-  // TODO: Enable this test when GPU accelerator dynamic loading is fixed for Swift package.
-  func disabled_testMetalBuffer() throws {
+  func testMetalBuffer() throws {
     guard let device = MTLCreateSystemDefaultDevice() else {
       print("Metal is not supported on this device/environment, skipping test.")
       return
     }
 
-    let env = try Environment()
-    let size = 1024
-    guard let mtlBuffer = device.makeBuffer(length: size, options: []) else {
-      XCTFail("Failed to create MTLBuffer")
-      return
+    let env = try createTestEnvironment()
+    try withExtendedLifetime(env) {
+      let size = 1024
+      guard let mtlBuffer = device.makeBuffer(length: size, options: []) else {
+        XCTFail("Failed to create MTLBuffer")
+        return
+      }
+
+      let layout = Layout(dimensions: [256]) // 256 * 4 bytes = 1024 bytes for Float32
+      let tensorType = TensorType(elementType: .float32, layout: layout)
+
+      let rawPointer = Unmanaged.passUnretained(mtlBuffer).toOpaque()
+
+      let customBuf = try TensorBuffer(
+        metalBuffer: rawPointer,
+        size: size,
+        tensorType: tensorType,
+        bufferType: .metalBuffer,
+        environment: env
+      )
+      XCTAssertEqual(customBuf.size, size)
+      XCTAssertEqual(customBuf.type, .metalBuffer)
+
+      let retrievedPointer = try customBuf.metalMemory()
+      XCTAssertEqual(retrievedPointer, rawPointer)
     }
-
-    let layout = Layout(dimensions: [256]) // 256 * 4 bytes = 1024 bytes for Float32
-    let tensorType = TensorType(elementType: .float32, layout: layout)
-
-    let rawPointer = Unmanaged.passUnretained(mtlBuffer).toOpaque()
-
-    let customBuf = try TensorBuffer(
-      metalBuffer: rawPointer,
-      size: size,
-      tensorType: tensorType,
-      bufferType: .metalBuffer,
-      environment: env
-    )
-    XCTAssertEqual(customBuf.size, size)
-    XCTAssertEqual(customBuf.type, .metalBuffer)
-
-    let retrievedPointer = try customBuf.metalMemory()
-    XCTAssertEqual(retrievedPointer, rawPointer)
   }
 #endif
 }
