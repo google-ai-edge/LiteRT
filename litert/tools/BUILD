@@ -622,6 +622,7 @@ cc_binary(
         "mediatek",
         "cpu",
         "example",
+        "google_tensor",
     ]
 ]
 
