@@ -132,7 +132,15 @@ ENV USE_BAZEL_VERSION=7.4.1
 ENV CLANG_COMPILER_PATH=/usr/lib/llvm-18/bin/clang
 ENV TF_NEED_CLANG=1
 
-RUN echo y | ${ANDROID_SDK_HOME}/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_SDK_HOME} "build-tools;${ANDROID_BUILD_TOOLS_VERSION}" "platforms;android-${ANDROID_SDK_API_LEVEL}" "platform-tools"
+RUN if [ -z "$HTTP_PROXY" ]; then unset HTTP_PROXY; fi && \
+    if [ -z "$HTTPS_PROXY" ]; then unset HTTPS_PROXY; fi && \
+    if [ -z "$http_proxy" ]; then unset http_proxy; fi && \
+    if [ -z "$https_proxy" ]; then unset https_proxy; fi && \
+    echo y | ${ANDROID_SDK_HOME}/cmdline-tools/latest/bin/sdkmanager \
+           --sdk_root=${ANDROID_SDK_HOME} \
+           "build-tools;${ANDROID_BUILD_TOOLS_VERSION}" \
+           "platforms;android-${ANDROID_SDK_API_LEVEL}" \
+           "platform-tools"
 # Set up work directory
 WORKDIR /litert_build
 
