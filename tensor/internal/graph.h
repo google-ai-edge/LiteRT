@@ -104,6 +104,31 @@ struct PerChannelAffineQuantization : Quantization {
   int quantized_dimension;
 };
 
+// Holds blockwise quantization parameters for a tensor.
+struct BlockwiseQuantization : Quantization {
+  BlockwiseQuantization() = default;
+
+  BlockwiseQuantization(std::vector<float> scales,
+                        std::vector<int64_t> zero_points, int block_size,
+                        int quantized_dimension = 0)
+      : scales(std::move(scales)),
+        zero_points(std::move(zero_points)),
+        block_size(block_size),
+        quantized_dimension(quantized_dimension) {}
+
+  internal::TypeId GetTypeId() const override {
+    return internal::TypeId::Get<BlockwiseQuantization>();
+  }
+  bool IsA(internal::TypeId id) const override {
+    return id == internal::TypeId::Get<BlockwiseQuantization>();
+  }
+
+  std::vector<float> scales;
+  std::vector<int64_t> zero_points;
+  int block_size;
+  int quantized_dimension;
+};
+
 using Shape = std::vector<int32_t>;
 
 // Holds information about a tensor.

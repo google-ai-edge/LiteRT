@@ -74,6 +74,8 @@ TensorHandle& TensorHandle::Set(TensorInit init, source_location loc) & {
           info.buffer = OwningCpuBuffer::Copy<Type::kI32>(arg);
         } else if constexpr (std::is_same_v<T, std::vector<int8_t>>) {
           info.buffer = OwningCpuBuffer::Copy<Type::kI8>(arg);
+        } else if constexpr (std::is_same_v<T, std::vector<int4_t>>) {
+          info.buffer = OwningCpuBuffer::Copy<Type::kI4>(arg);
         } else {
           ABSL_LOG(ERROR) << "Failed to create buffer from typed vector: "
                              "unsupported datatype.";

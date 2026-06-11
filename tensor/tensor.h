@@ -37,13 +37,14 @@ namespace litert::tensor {
 using Shape = graph::Shape;
 using Quantization = graph::Quantization;
 using PerChannelAffineQuantization = graph::PerChannelAffineQuantization;
+using BlockwiseQuantization = graph::BlockwiseQuantization;
 
 struct TensorInit {
   std::string name;
   Type type = Type::kUnknown;
   Shape shape;
   std::variant<std::shared_ptr<Buffer>, std::vector<float>,
-               std::vector<int32_t>, std::vector<int8_t>>
+               std::vector<int32_t>, std::vector<int8_t>, std::vector<int4_t>>
       buffer;
   std::shared_ptr<Quantization> quantization;
 };
