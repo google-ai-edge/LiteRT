@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_COMPILER_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_COMPILER_OPTIONS_H_
 
+#include <cstddef>
 #include <memory>
 
 #include "litert/c/options/litert_compiler_options.h"
@@ -63,6 +64,21 @@ class CompilerOptions {
     LITERT_RETURN_IF_ERROR(
         LrtGetCompilerOptionsDummyOption(options_.get(), &dummy_option));
     return dummy_option;
+  }
+
+  /// @brief Sets the maximum number of partitions allowed.
+  Expected<void> SetMaxPartitions(size_t max_partitions) {
+    LITERT_RETURN_IF_ERROR(
+        LrtSetCompilerOptionsMaxPartitions(options_.get(), max_partitions));
+    return {};
+  }
+
+  /// @brief Gets the maximum number of partitions allowed.
+  Expected<size_t> GetMaxPartitions() const {
+    size_t max_partitions;
+    LITERT_RETURN_IF_ERROR(
+        LrtGetCompilerOptionsMaxPartitions(options_.get(), &max_partitions));
+    return max_partitions;
   }
 
   /// @brief Returns the underlying C handle.

@@ -45,7 +45,7 @@ load(
     "litert_metal_opts",
 )
 
-LITERT_MIN_IOS_VERSION = "14.0"
+LITERT_MIN_IOS_VERSION = "15.0"
 
 LITERT_MIN_MACOS_VERSION = "14.0"
 

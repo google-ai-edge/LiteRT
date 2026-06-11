@@ -16,6 +16,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_COMPILER_PLUGIN_LITERT_COMPILER_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_COMPILER_PLUGIN_LITERT_COMPILER_OPTIONS_H_
 
+#include <cstddef>
+
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_compiler_options.h"
 
@@ -25,6 +27,8 @@ struct LiteRtCompilerOptionsT {
       kLiteRtCompilerOptionsPartitionStrategyDefault;
 
   bool dummy_option = false;
+
+  size_t max_partitions = 0;
 
   static const char* Identifier() { return "compiler_options_string"; }
 };

@@ -1,4 +1,4 @@
-# Setup IoT Device
+# IoT Device Setup
 
 Ensure that the `${}` variable is properly configured before proceeding:
 

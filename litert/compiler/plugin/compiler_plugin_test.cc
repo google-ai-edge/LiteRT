@@ -440,6 +440,166 @@ TEST(PartitionModelTest, ProtectedCpuCall) {
   EXPECT_EQ(new_model.NumSubgraphs(), 0);
 }
 
+void BuildMulAddMulModel(LiteRtModelT& model) {
+  auto& subgraph = model.EmplaceSubgraph();
+
+  auto& t_in = subgraph.EmplaceTensor();
+  t_in.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1}));
+  auto& t_tmp1 = subgraph.EmplaceTensor();
+  t_tmp1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1}));
+  auto& t_tmp2 = subgraph.EmplaceTensor();
+  t_tmp2.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1}));
+  auto& t_out = subgraph.EmplaceTensor();
+  t_out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1}));
+
+  subgraph.Inputs().push_back(&t_in);
+  subgraph.Outputs().push_back(&t_out);
+
+  auto& mul1 = subgraph.EmplaceOp();
+  mul1.SetOpCode(kLiteRtOpCodeTflMul);
+  AttachInput(&t_in, mul1);
+  AttachInput(&t_in, mul1);
+  AttachOutput(&t_tmp1, mul1);
+
+  auto& add = subgraph.EmplaceOp();
+  add.SetOpCode(kLiteRtOpCodeTflAdd);
+  AttachInput(&t_tmp1, add);
+  AttachInput(&t_tmp1, add);
+  AttachOutput(&t_tmp2, add);
+
+  auto& mul2 = subgraph.EmplaceOp();
+  mul2.SetOpCode(kLiteRtOpCodeTflMul);
+  AttachInput(&t_tmp2, mul2);
+  AttachInput(&t_tmp2, mul2);
+  AttachOutput(&t_out, mul2);
+}
+
+TEST(PartitionModelTest, MaxPartitionsSuccess) {
+  auto model_wrap = testing::LoadTestFileModel("mul_simple.tflite");
+  auto& model = *model_wrap.Get();
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  auto litert_options = Options::Create();
+  ASSERT_TRUE(litert_options);
+  auto compiler_options = CompilerOptions::Create();
+  ASSERT_TRUE(compiler_options);
+  LITERT_ASSERT_OK(compiler_options->SetMaxPartitions(1));
+
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  LITERT_ASSERT_OK(LrtGetOpaqueCompilerOptionsData(
+      compiler_options->Get(), &identifier, &payload, &payload_deleter));
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateOpaqueOptions(
+      identifier, payload, payload_deleter, &opaque_opts));
+  auto opaque_compiler_options =
+      litert::OpaqueOptions::WrapCObject(opaque_opts, litert::OwnHandle::kYes);
+  litert_options->AddOpaqueOptions(std::move(opaque_compiler_options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto litert_built_options,
+                              litert::internal::LiteRtOptionsPtrBuilder::Build(
+                                  *litert_options, env.GetHolder()));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin,
+      CompilerPlugin::FindPlugin(kTestManufacturer,
+                                 {GetLiteRtPath(kTestPluginSearchPath)},
+                                 /*env=*/nullptr,
+                                 litert_built_options.get()));
+
+  auto partition_result = PartitionModel(plugin, model);
+  ASSERT_TRUE(partition_result);
+  ASSERT_EQ(model.NumSubgraphs(), 1);
+
+  const auto& [ops, new_model] = *partition_result;
+  EXPECT_EQ(ops.size(), 1);
+  EXPECT_EQ(new_model.NumSubgraphs(), 1);
+}
+
+TEST(PartitionModelTest, MaxPartitionsFail) {
+  LiteRtModelT model;
+  BuildMulAddMulModel(model);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  auto litert_options = Options::Create();
+  ASSERT_TRUE(litert_options);
+  auto compiler_options = CompilerOptions::Create();
+  ASSERT_TRUE(compiler_options);
+  LITERT_ASSERT_OK(compiler_options->SetMaxPartitions(1));
+
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  LITERT_ASSERT_OK(LrtGetOpaqueCompilerOptionsData(
+      compiler_options->Get(), &identifier, &payload, &payload_deleter));
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateOpaqueOptions(
+      identifier, payload, payload_deleter, &opaque_opts));
+  auto opaque_compiler_options =
+      litert::OpaqueOptions::WrapCObject(opaque_opts, litert::OwnHandle::kYes);
+  litert_options->AddOpaqueOptions(std::move(opaque_compiler_options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto litert_built_options,
+                              litert::internal::LiteRtOptionsPtrBuilder::Build(
+                                  *litert_options, env.GetHolder()));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin,
+      CompilerPlugin::FindPlugin(kTestManufacturer,
+                                 {GetLiteRtPath(kTestPluginSearchPath)},
+                                 /*env=*/nullptr,
+                                 litert_built_options.get()));
+
+  auto partition_result = PartitionModel(plugin, model);
+  EXPECT_FALSE(partition_result);
+  EXPECT_EQ(partition_result.Error().Status(),
+            kLiteRtStatusErrorRuntimeFailure);
+}
+
+TEST(PartitionModelTest, MaxPartitionsSuccessLimit2) {
+  LiteRtModelT model;
+  BuildMulAddMulModel(model);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  auto litert_options = Options::Create();
+  ASSERT_TRUE(litert_options);
+  auto compiler_options = CompilerOptions::Create();
+  ASSERT_TRUE(compiler_options);
+  LITERT_ASSERT_OK(compiler_options->SetMaxPartitions(2));
+
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  LITERT_ASSERT_OK(LrtGetOpaqueCompilerOptionsData(
+      compiler_options->Get(), &identifier, &payload, &payload_deleter));
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateOpaqueOptions(
+      identifier, payload, payload_deleter, &opaque_opts));
+  auto opaque_compiler_options =
+      litert::OpaqueOptions::WrapCObject(opaque_opts, litert::OwnHandle::kYes);
+  litert_options->AddOpaqueOptions(std::move(opaque_compiler_options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto litert_built_options,
+                              litert::internal::LiteRtOptionsPtrBuilder::Build(
+                                  *litert_options, env.GetHolder()));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin,
+      CompilerPlugin::FindPlugin(kTestManufacturer,
+                                 {GetLiteRtPath(kTestPluginSearchPath)},
+                                 /*env=*/nullptr,
+                                 litert_built_options.get()));
+
+  auto partition_result = PartitionModel(plugin, model);
+  ASSERT_TRUE(partition_result);
+  ASSERT_EQ(model.NumSubgraphs(), 1);
+
+  const auto& [ops, new_model] = *partition_result;
+  EXPECT_EQ(ops.size(), 2);
+  EXPECT_EQ(new_model.NumSubgraphs(), 2);
+}
+
 TEST(PartitionModelTest, CstMultiSubgraph) {
   auto model_wrap = testing::LoadTestFileModel("multi_use_cst.tflite");
   auto& model = *model_wrap.Get();
