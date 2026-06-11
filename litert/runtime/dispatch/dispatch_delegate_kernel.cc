@@ -68,7 +68,6 @@ Expected<LiteRtMemBuffer> BuildExecutableBytecodeBuffer(
                       "Found dispatch op with missing bytecode offset");
   }
 
-  size_t bytecode_offset = dispatch_options.bytecode_offset;
   if (has_alloc_base_file_region) {
     if (dispatch_options.bytecode_offset + dispatch_options.bytecode_size >
         alloc_base_size) {
@@ -80,14 +79,15 @@ Expected<LiteRtMemBuffer> BuildExecutableBytecodeBuffer(
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "alloc_base_fd should be provided");
     }
-    bytecode_offset += alloc_base_file_offset;
   }
 
   return LiteRtMemBuffer{
       /*.fd=*/alloc_base_fd,
       /*.base_addr=*/alloc_base,
-      /*.offset=*/bytecode_offset,
+      /*.offset=*/dispatch_options.bytecode_offset,
       /*.size=*/dispatch_options.bytecode_size,
+      /*.alloc_base_file_offset=*/
+      has_alloc_base_file_region ? alloc_base_file_offset : 0,
   };
 }
 
