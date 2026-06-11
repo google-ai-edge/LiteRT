@@ -39,6 +39,12 @@ Three compile-time knobs emit QNN native artifacts during AOT compilation:
 
 See [DEBUG_FEATURES.md](./doc/DEBUG_FEATURES.md) for full usage and details.
 
+## Custom Op Package 🧩
+
+Covers building a QNN custom op package and using it with the Qualcomm compiler
+and dispatch plugins to support TFLite custom ops on the NPU. See
+[CUSTOM_OP_INSTRUCTIONS.md](./doc/CUSTOM_OP_INSTRUCTIONS.md).
+
 ## Supported Devices 📱
 
 LiteRT supports a wide range of Qualcomm SoCs through the QNN SDK.
