@@ -266,11 +266,23 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
           kLiteRtTensorBufferTypeFastRpc,
           kLiteRtTensorBufferTypeDmaBuf,
       };
+  // QnnGpu imports the DMA-BUF fd as OpenCL memory and rejects
+  // QNN_MEM_TYPE_ION (i.e. FastRPC-backed buffers), so advertise only
+  // DMA-BUF for the GPU backend.
+  static constexpr std::array<const LiteRtTensorBufferType, 1>
+      kGpuSupportedTensorBufferTypes = {
+          kLiteRtTensorBufferTypeDmaBuf,
+      };
+
   const LiteRtTensorBufferType* supported_tensor_buffer_types =
       kMemHandleTensorBufferTypes.data();
   size_t num_supported_tensor_buffer_types = kMemHandleTensorBufferTypes.size();
-  if (qnn_manager_.GetOptions().GetGraphIOTensorMemType() ==
-      ::qnn::GraphIOTensorMemType::kRaw) {
+  if (qnn_manager_.GetOptions().GetBackendType() ==
+      ::qnn::BackendType::kGpuBackend) {
+    supported_tensor_buffer_types = kGpuSupportedTensorBufferTypes.data();
+    num_supported_tensor_buffer_types = kGpuSupportedTensorBufferTypes.size();
+  } else if (qnn_manager_.GetOptions().GetGraphIOTensorMemType() ==
+             ::qnn::GraphIOTensorMemType::kRaw) {
     supported_tensor_buffer_types = kRawTensorBufferTypes.data();
     num_supported_tensor_buffer_types = kRawTensorBufferTypes.size();
   }

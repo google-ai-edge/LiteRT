@@ -19,6 +19,8 @@ bool IsTestHtpBackend() { return GetTestBackend() == BackendType::kHtpBackend; }
 
 bool IsTestDspBackend() { return GetTestBackend() == BackendType::kDspBackend; }
 
+bool IsTestGpuBackend() { return GetTestBackend() == BackendType::kGpuBackend; }
+
 void SetTestBackend(BackendType backend_type) {
   GetTestBackend() = backend_type;
 }
