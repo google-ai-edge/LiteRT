@@ -183,6 +183,8 @@ class QnnManager {
 
   SdkVersion GetSdkVersion() const { return sdk_version_; }
 
+  const ::qnn::SocInfo& GetSocInfo() const { return soc_info_; }
+
  private:
   QnnManager() = default;
 

@@ -227,6 +227,23 @@ TEST(TestQnnPlugin, GetSDKVersion) {
   LITERT_LOG(LITERT_INFO, "QNN SDK Version: %s", sdk_version);
 }
 
+TEST(TestQnnPlugin, CompileAfterGetSDKVersion) {
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
+
+  const char* sdk_version = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtGetCompilerPluginSDKVersion(plugin.get(), &sdk_version));
+  ASSERT_NE(sdk_version, nullptr);
+
+  auto model = testing::LoadTestFileModel("one_mul.tflite");
+  LiteRtCompiledResult compiled;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
+                                               model.Get(), &compiled));
+
+  LiteRtDestroyCompiledResult(compiled);
+}
+
+
 TEST(TestQnnPlugin, PartitionMulOps) {
   auto plugin = CreatePlugin(LrtGetCompilerContext());
   auto model = testing::LoadTestFileModel("one_mul.tflite");

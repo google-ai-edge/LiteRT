@@ -375,10 +375,22 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            LiteRtOpList selected_ops) {
   ::litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
   QnnManager* qnn_manager = compiler_plugin->QNN();
-  if (!qnn_manager) {
+  auto opt_soc_model = soc_model ? qnn::FindSocModel(soc_model) : std::nullopt;
+  bool soc_model_mismatch = false;
+  if (qnn_manager && opt_soc_model.has_value()) {
+    soc_model_mismatch =
+        (qnn_manager->GetSocInfo().soc_model != opt_soc_model->soc_model);
+  }
+  if (!qnn_manager || soc_model_mismatch) {
+    if (soc_model_mismatch) {
+      LITERT_LOG(LITERT_INFO,
+                 "Recreating QNN manager due to SoC mismatch: current %s, "
+                 "target %s",
+                 qnn_manager->GetSocInfo().soc_name, opt_soc_model->soc_name);
+    }
     auto qnn_manager_or = QnnManager::Create(
         compiler_plugin->Options(), compiler_plugin->shared_library_dir(),
-        soc_model ? qnn::FindSocModel(soc_model) : std::nullopt);
+        opt_soc_model);
     if (!qnn_manager_or) {
       LITERT_LOG(LITERT_ERROR, "%s", qnn_manager_or.Error().Message().data());
       return qnn_manager_or.Error().Status();
@@ -490,7 +502,19 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     }
   }
 
-  if (!qnn_manager || ir_backend_override) {
+  bool soc_model_mismatch = false;
+  if (qnn_manager && opt_soc_model.has_value()) {
+    soc_model_mismatch =
+        (qnn_manager->GetSocInfo().soc_model != opt_soc_model->soc_model);
+  }
+
+  if (!qnn_manager || ir_backend_override || soc_model_mismatch) {
+    if (soc_model_mismatch) {
+      LITERT_LOG(LITERT_INFO,
+                 "Recreating QNN manager due to SoC mismatch: current %s, "
+                 "target %s",
+                 qnn_manager->GetSocInfo().soc_name, opt_soc_model->soc_name);
+    }
     // Initialize SDK and load qnn shared libraries.
     LITERT_LOG(LITERT_INFO, "%s", "Creating QNN manager");
     auto qnn_manager_or = QnnManager::Create(
