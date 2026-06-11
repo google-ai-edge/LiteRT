@@ -278,9 +278,7 @@ litert_test(
     copts = commandline_flag_copts(),
     linkstatic = True,
     no_main = True,
-    tags = [
-        "notap",
-    ],
+    shard_count = 10,
     target_compatible_with = select({
         "//litert:windows": ["@platforms//:incompatible"],
         "//conditions:default": [],
