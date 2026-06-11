@@ -166,10 +166,10 @@ LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
 }
 
 LiteRtStatus QnnManager::LoadSystemLib(absl::string_view path) {
-  std::string resolved_path;
   const bool needs_global_symbols = !options_.GetCustomOpPackage().name.empty();
   if (shared_library_dir_) {
-    resolved_path = litert::internal::Join({*shared_library_dir_, path});
+    std::string resolved_path =
+        litert::internal::Join({*shared_library_dir_, path});
     LITERT_LOG(LITERT_INFO, "Loading qnn system shared library from \"%s\"",
                resolved_path.c_str());
     auto lib_system_or =
@@ -183,10 +183,10 @@ LiteRtStatus QnnManager::LoadSystemLib(absl::string_view path) {
                path.data());
   }
   LITERT_LOG(LITERT_INFO, "Loading qnn system shared library from \"%s\"",
-             resolved_path.c_str());
+             path.data());
 
   auto lib_system_or =
-      SharedLibrary::Load(resolved_path, GetRtldFlags(needs_global_symbols));
+      SharedLibrary::Load(path, GetRtldFlags(needs_global_symbols));
   if (!lib_system_or) {
     LITERT_LOG(LITERT_ERROR, "%s", lib_system_or.Error().Message().data());
     return lib_system_or.Error().Status();
