@@ -93,6 +93,7 @@ litert_dispatch_api(
         "litert_dispatch_graph.cc",
         "litert_dispatch_invocation_context.cc",
         "sb_api_late_binding.cc",
+        # copybara:uncomment "//litert/vendors/google_tensor:darwinn_hook.cc",
     ],
     hdrs = [
         "dispatch_api.h",
@@ -114,7 +115,10 @@ litert_dispatch_api(
         "-ffunction-sections",
         "-fdata-sections",
     ],
-    # copybara:uncomment defines = ["LITERT_HAS_DARWINN_OPTIONS_SUPPORT=1"],
+    defines = [
+        # copybara:uncomment "LITERT_HAS_DARWINN_OPTIONS_SUPPORT=1",
+        # copybara:uncomment "LITERT_GOOGLE_TENSOR_HAS_HOOKS=1",
+    ],
     export_litert_only = True,
     linkopts = litert_android_linkopts() + [
         "-Wl,-soname=libLiteRtDispatch_GoogleTensor.so",
@@ -133,6 +137,8 @@ litert_dispatch_api(
         "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
     ],
     deps = [
+        # copybara:uncomment "//platforms/darwinn/devtools/power_stats",
+        "//litert/c:litert_profiler_types",
         # copybara:uncomment "//litert/vendors/google_tensor/dispatch/google:litert_darwinn_runtime_options",
         # copybara:uncomment "//litert/vendors/google_tensor/dispatch/google:darwinn_options_utils",
         "@com_google_absl//absl/algorithm:container",

@@ -21,6 +21,7 @@
 #if LITERT_HAS_AHWB_SUPPORT
 #include <android/hardware_buffer.h>
 #endif
+
 #include <cstddef>
 #include <optional>
 
@@ -29,6 +30,7 @@
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_profiler_types.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/util/tensor_type_util.h"
@@ -85,6 +87,7 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
   runtime_context->get_environment_options(env, &environment_options);
   LiteRtPropagateMinLoggerSeverityWithRuntimeContext(runtime_context,
                                                      environment_options);
+
   return InitializeDispatchApiConfig(environment_options, options);
 }
 
@@ -93,6 +96,18 @@ LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
                                        LiteRtOptions options) {
   return kLiteRtStatusOk;
 }
+
+#if defined(LITERT_GOOGLE_TENSOR_HAS_HOOKS)
+extern "C" void LiteRtVendorHook(LiteRtHookType type, const void* data,
+                                 size_t size, void* user_data);
+
+LiteRtStatus GetHooks(LiteRtDispatchDeviceContext device_context,
+                      LiteRtHook* hook, void** user_data) {
+  *hook = LiteRtVendorHook;
+  *user_data = nullptr;
+  return kLiteRtStatusOk;
+}
+#endif  // defined(LITERT_GOOGLE_TENSOR_HAS_HOOKS)
 
 LiteRtStatus GetVendorId(const char** vendor_id) {
   GT_LOG_RETURN_IF_NULL(vendor_id);
@@ -481,6 +496,11 @@ LiteRtDispatchInterface TheInterface = {
         litert::google_tensor::CheckRuntimeCompatibility,
     .invocation_context_set_options =
         litert::google_tensor::InvocationContextSetOptions,
+#if defined(LITERT_GOOGLE_TENSOR_HAS_HOOKS)
+    .get_hooks = litert::google_tensor::GetHooks,
+#else
+    .get_hooks = nullptr,
+#endif  // defined(LITERT_GOOGLE_TENSOR_HAS_HOOKS)
 };
 
 LiteRtDispatchAsyncInterface TheAsyncInterface = {
