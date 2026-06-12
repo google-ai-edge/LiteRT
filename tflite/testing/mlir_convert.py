@@ -13,7 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 """Converts a model's graph def into a tflite model with MLIR-based conversion."""
-import os
+import shlex
+import subprocess
 import tempfile
 
 import numpy as np
@@ -166,8 +167,7 @@ def mlir_convert_file(graph_def_filename,
   bin_path = resource_loader.get_path_to_datafile(
       "../../../../compiler/mlir/lite/tf_tfl_translate")
 
-  with tempfile.NamedTemporaryFile() as output_file, \
-       tempfile.NamedTemporaryFile("w+") as stdout_file:
+  with tempfile.NamedTemporaryFile() as output_file:
     input_shapes = []
     for input_tensor in input_tensors:
       shape = input_tensor[1]
@@ -176,28 +176,47 @@ def mlir_convert_file(graph_def_filename,
 
     input_types = ",".join([x[2] for x in input_tensors])
 
-    quant_flags = ""
+    cmd_args = [
+        bin_path,
+        "-tf-input-arrays=" + ",".join([x[0] for x in input_tensors]),
+        "-tf-input-data-types=" + input_types,
+        "-tf-input-shapes=" + input_shapes_str,
+        "-tf-output-arrays=" + ",".join(output_tensors),
+    ]
+
     if quantization_params is not None:
       min_vals = ",".join([str(val) for val in quantization_params[1]])
       max_vals = ",".join([str(val) for val in quantization_params[2]])
-      quant_flags = ("-tf-inference-type=" + quantization_params[0] +
-                     " -tf-input-min-values='" + min_vals +
-                     "' -tf-input-max-values='" + max_vals + "' " +
-                     "-emit-quant-adaptor-ops ")
-    cmd = ("%s -tf-input-arrays=%s -tf-input-data-types=%s -tf-input-shapes=%s "
-           "-tf-output-arrays=%s " + quant_flags + additional_flags +
-           "%s -o %s")
-    cmd = cmd % (
-        bin_path,
-        ",".join([x[0] for x in input_tensors]),
-        input_types,
-        input_shapes_str,
-        ",".join(output_tensors),
-        graph_def_filename,
-        output_file.name,
-    )
-    exit_code = os.system(cmd)
+      cmd_args.extend([
+          "-tf-inference-type=" + quantization_params[0],
+          "-tf-input-min-values=" + min_vals,
+          "-tf-input-max-values=" + max_vals,
+          "-emit-quant-adaptor-ops",
+      ])
+
+    if additional_flags:
+      cmd_args.extend(shlex.split(additional_flags))
+
+    cmd_args.extend([graph_def_filename, "-o", output_file.name])
+
+    try:
+      proc = subprocess.run(
+          cmd_args,
+          stdout=subprocess.PIPE,
+          stderr=subprocess.STDOUT,
+          universal_newlines=True,
+          check=False,
+      )
+      exit_code = proc.returncode
+      output_text = proc.stdout
+    except Exception as e:  # pylint: disable=broad-except
+      exit_code = -1
+      output_text = str(e)
+
+    cmd_str = " ".join(shlex.quote(arg) for arg in cmd_args)
     log = (
-        cmd + "exited with code %d" % exit_code + "\n------------------\n" +
-        stdout_file.read())
+        f"{cmd_str} exited with code {exit_code}\n"
+        "------------------\n"
+        f"{output_text}"
+    )
     return (None if exit_code != 0 else output_file.read()), log

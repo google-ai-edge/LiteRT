@@ -9,6 +9,7 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
 load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
+load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
 load(
     "//tflite:build_def.bzl",
     "tflite_custom_android_library",
@@ -139,6 +140,16 @@ py_library(
         "@org_tensorflow//tensorflow/python/platform:resource_loader",
         "@org_tensorflow//tensorflow/python/saved_model:signature_constants",
         "@org_tensorflow//third_party/py/numpy",
+    ],
+)
+
+py_test(
+    name = "mlir_convert_test",
+    srcs = ["mlir_convert_test.py"],
+    deps = [
+        ":mlir_convert",
+        "@absl_py//absl/testing:parameterized",
+        "@org_tensorflow//tensorflow:tensorflow_py",
     ],
 )
 
