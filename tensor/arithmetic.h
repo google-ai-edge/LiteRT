@@ -981,7 +981,11 @@ Tensor<Mixins...> FullyConnected(
     output_info.shape = input_info.shape;
     output_info.shape.back() = weights_info.shape[0];
   } else {
-    output_info.shape = {input_info.shape[0], weights_info.shape[0]};
+    int batch = 1;
+    for (size_t i = 0; i < input_info.shape.size() - 1; ++i) {
+      batch *= input_info.shape[i];
+    }
+    output_info.shape = {batch, weights_info.shape[0]};
   }
   output_info.type = input_info.type;
 

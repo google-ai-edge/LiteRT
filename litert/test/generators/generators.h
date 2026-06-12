@@ -29,5 +29,6 @@
 #include "litert/test/generators/reshape.h"  // IWYU pragma: export
 #include "litert/test/generators/transformer_layer.h"  // IWYU pragma: export
 #include "litert/test/generators/batch_matmul.h"  // IWYU pragma: export
+#include "litert/test/generators/fully_connected.h"  // IWYU pragma: export
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_

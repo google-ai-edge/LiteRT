@@ -178,7 +178,7 @@ TEST(TensorTest, FullyConnectedFlatten) {
   Tensor output = FullyConnected(input, weights, bias, kActNone,
                                  /*keep_num_dims=*/false);
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const auto& output_info, GetInfo(output));
-  EXPECT_THAT(output_info.shape, ElementsAre(2, 5));
+  EXPECT_THAT(output_info.shape, ElementsAre(12, 5));
 }
 
 TEST(TensorTest, SetQuantizationWorks) {

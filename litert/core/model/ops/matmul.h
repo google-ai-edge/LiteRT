@@ -24,7 +24,9 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/ops/simple_binary.h"
 #include "litert/core/model/shape_inference_types.h"
+#include "tflite/converter/schema/schema_generated.h"
 
 namespace litert::internal {
 
@@ -213,6 +215,24 @@ inline void ReferenceBatchMatmul(const float* lhs_data, const int32_t* lhs_dims,
       }
     }
   }
+}
+
+inline void ReferenceFullyConnected(const float* input_data,
+                                    const float* weights_data,
+                                    const float* bias_data, float* output_data,
+                                    int64_t batch_size, int64_t input_dim,
+                                    int64_t output_dim,
+                                    tflite::ActivationFunctionType faf) {
+  for (int64_t b = 0; b < batch_size; ++b) {
+    for (int64_t o = 0; o < output_dim; ++o) {
+      float sum = bias_data ? bias_data[o] : 0.0f;
+      for (int64_t i = 0; i < input_dim; ++i) {
+        sum += input_data[b * input_dim + i] * weights_data[o * input_dim + i];
+      }
+      output_data[b * output_dim + o] = sum;
+    }
+  }
+  litert::internal::ApplyActivation(output_data, batch_size * output_dim, faf);
 }
 
 }  // namespace litert::internal
