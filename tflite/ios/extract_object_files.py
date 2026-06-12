@@ -80,7 +80,12 @@ def extract_object_files(archive_file: io.BufferedIOBase,
         extracted_files[final_name] = digest
 
         # Write the file content to the desired final path.
-        with open(os.path.join(dest_dir, final_name), 'wb') as object_file:
+        joined_path = os.path.join(dest_dir, final_name)
+        if not os.path.abspath(joined_path).startswith(
+            os.path.abspath(dest_dir) + os.sep
+        ):
+          raise ValueError('Invalid filename in archive: {}'.format(final_name))
+        with open(joined_path, 'wb') as object_file:
           object_file.write(file_content)
         break
 
