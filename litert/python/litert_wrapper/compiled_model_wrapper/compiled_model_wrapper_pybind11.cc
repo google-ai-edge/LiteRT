@@ -47,7 +47,7 @@ CompilationOptions BuildCompilationOptions(
     int qualcomm_num_hvx_threads, int qualcomm_optimization_level,
     int qualcomm_graph_priority, int qualcomm_backend,
     const std::string& qualcomm_saver_output_dir,
-    int qualcomm_graph_io_tensor_mem_type, int intel_openvino_device_type,
+    int qualcomm_graph_io_tensor_mem_type, int intel_openvino_graph_backend,
     int intel_openvino_performance_mode,
     const std::map<std::string, std::string>& intel_openvino_configs_map) {
   CompilationOptions options;
@@ -84,7 +84,7 @@ CompilationOptions BuildCompilationOptions(
   options.qualcomm_backend = qualcomm_backend;
   options.qualcomm_saver_output_dir = qualcomm_saver_output_dir;
   options.qualcomm_graph_io_tensor_mem_type = qualcomm_graph_io_tensor_mem_type;
-  options.intel_openvino_device_type = intel_openvino_device_type;
+  options.intel_openvino_graph_backend = intel_openvino_graph_backend;
   options.intel_openvino_performance_mode = intel_openvino_performance_mode;
   options.intel_openvino_configs_map = intel_openvino_configs_map;
   return options;
@@ -120,8 +120,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
          int qualcomm_num_hvx_threads, int qualcomm_optimization_level,
          int qualcomm_graph_priority, int qualcomm_backend,
          const std::string& qualcomm_saver_output_dir,
-         int qualcomm_graph_io_tensor_mem_type, int intel_openvino_device_type,
-         int intel_openvino_performance_mode,
+         int qualcomm_graph_io_tensor_mem_type,
+         int intel_openvino_graph_backend, int intel_openvino_performance_mode,
          const std::map<std::string, std::string>& intel_openvino_configs_map) {
         std::string error;
         CompilationOptions compilation_options = BuildCompilationOptions(
@@ -139,7 +139,7 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
             qualcomm_num_hvx_threads, qualcomm_optimization_level,
             qualcomm_graph_priority, qualcomm_backend,
             qualcomm_saver_output_dir, qualcomm_graph_io_tensor_mem_type,
-            intel_openvino_device_type, intel_openvino_performance_mode,
+            intel_openvino_graph_backend, intel_openvino_performance_mode,
             intel_openvino_configs_map);
         CompiledModelWrapper* wrapper =
             CompiledModelWrapper::CreateWrapperFromFile(
@@ -178,7 +178,7 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       py::arg("qualcomm_graph_priority") = -1, py::arg("qualcomm_backend") = -1,
       py::arg("qualcomm_saver_output_dir") = "",
       py::arg("qualcomm_graph_io_tensor_mem_type") = -1,
-      py::arg("intel_openvino_device_type") = -1,
+      py::arg("intel_openvino_graph_backend") = -1,
       py::arg("intel_openvino_performance_mode") = -1,
       py::arg("intel_openvino_configs_map") =
           std::map<std::string, std::string>());
@@ -205,8 +205,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
          int qualcomm_num_hvx_threads, int qualcomm_optimization_level,
          int qualcomm_graph_priority, int qualcomm_backend,
          const std::string& qualcomm_saver_output_dir,
-         int qualcomm_graph_io_tensor_mem_type, int intel_openvino_device_type,
-         int intel_openvino_performance_mode,
+         int qualcomm_graph_io_tensor_mem_type,
+         int intel_openvino_graph_backend, int intel_openvino_performance_mode,
          const std::map<std::string, std::string>& intel_openvino_configs_map) {
         std::string error;
         PyObject* data_obj = model_data.ptr();
@@ -225,7 +225,7 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
             qualcomm_num_hvx_threads, qualcomm_optimization_level,
             qualcomm_graph_priority, qualcomm_backend,
             qualcomm_saver_output_dir, qualcomm_graph_io_tensor_mem_type,
-            intel_openvino_device_type, intel_openvino_performance_mode,
+            intel_openvino_graph_backend, intel_openvino_performance_mode,
             intel_openvino_configs_map);
         CompiledModelWrapper* wrapper =
             CompiledModelWrapper::CreateWrapperFromBuffer(
@@ -264,7 +264,7 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       py::arg("qualcomm_graph_priority") = -1, py::arg("qualcomm_backend") = -1,
       py::arg("qualcomm_saver_output_dir") = "",
       py::arg("qualcomm_graph_io_tensor_mem_type") = -1,
-      py::arg("intel_openvino_device_type") = -1,
+      py::arg("intel_openvino_graph_backend") = -1,
       py::arg("intel_openvino_performance_mode") = -1,
       py::arg("intel_openvino_configs_map") =
           std::map<std::string, std::string>());

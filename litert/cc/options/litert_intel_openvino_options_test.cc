@@ -60,10 +60,11 @@ TEST_F(IntelOpenVinoOptionsTest, DefaultValues) {
   LrtIntelOpenVinoOptions parsed = nullptr;
   SerializeAndParse(options_->Get(), &parsed);
 
-  LiteRtIntelOpenVinoDeviceType dev_type;
-  ASSERT_EQ(LrtIntelOpenVinoOptionsGetDeviceType(parsed, &dev_type),
+  // No per-graph overrides are configured by default.
+  int num_overrides = -1;
+  ASSERT_EQ(LrtIntelOpenVinoOptionsGetNumGraphOverrides(parsed, &num_overrides),
             kLiteRtStatusOk);
-  EXPECT_EQ(dev_type, kLiteRtIntelOpenVinoDeviceTypeNPU);
+  EXPECT_EQ(num_overrides, 0);
 
   LiteRtIntelOpenVinoPerformanceMode perf_mode;
   ASSERT_EQ(LrtIntelOpenVinoOptionsGetPerformanceMode(parsed, &perf_mode),
@@ -79,24 +80,28 @@ TEST_F(IntelOpenVinoOptionsTest, DefaultValues) {
   LrtDestroyIntelOpenVinoOptions(parsed);
 }
 
-TEST_F(IntelOpenVinoOptionsTest, SetAndGetDeviceType) {
-  options_->SetDeviceType(kLiteRtIntelOpenVinoDeviceTypeCPU);
+TEST_F(IntelOpenVinoOptionsTest, SetAndGetGraphBackend) {
+  options_->SetGraphBackend(/*graph_index=*/0,
+                            kLiteRtIntelOpenVinoGraphBackendCPU);
   LrtIntelOpenVinoOptions parsed = nullptr;
   SerializeAndParse(options_->Get(), &parsed);
 
-  LiteRtIntelOpenVinoDeviceType dev_type;
-  ASSERT_EQ(LrtIntelOpenVinoOptionsGetDeviceType(parsed, &dev_type),
+  LiteRtIntelOpenVinoGraphBackend graph_backend;
+  ASSERT_EQ(LrtIntelOpenVinoOptionsGetGraphBackend(parsed, /*graph_index=*/0,
+                                                   &graph_backend),
             kLiteRtStatusOk);
-  EXPECT_EQ(dev_type, kLiteRtIntelOpenVinoDeviceTypeCPU);
+  EXPECT_EQ(graph_backend, kLiteRtIntelOpenVinoGraphBackendCPU);
   LrtDestroyIntelOpenVinoOptions(parsed);
 
-  options_->SetDeviceType(kLiteRtIntelOpenVinoDeviceTypeGPU);
+  options_->SetGraphBackend(/*graph_index=*/0,
+                            kLiteRtIntelOpenVinoGraphBackendGPU);
   LrtIntelOpenVinoOptions parsed2 = nullptr;
   SerializeAndParse(options_->Get(), &parsed2);
 
-  ASSERT_EQ(LrtIntelOpenVinoOptionsGetDeviceType(parsed2, &dev_type),
+  ASSERT_EQ(LrtIntelOpenVinoOptionsGetGraphBackend(parsed2, /*graph_index=*/0,
+                                                   &graph_backend),
             kLiteRtStatusOk);
-  EXPECT_EQ(dev_type, kLiteRtIntelOpenVinoDeviceTypeGPU);
+  EXPECT_EQ(graph_backend, kLiteRtIntelOpenVinoGraphBackendGPU);
   LrtDestroyIntelOpenVinoOptions(parsed2);
 }
 
@@ -157,17 +162,19 @@ TEST(IntelOpenVinoOptionsCApiTest, CreateAndDestroy) {
   LrtIntelOpenVinoOptions options;
   EXPECT_EQ(LrtIntelOpenVinoOptionsCreate(&options), kLiteRtStatusOk);
 
-  EXPECT_EQ(LrtIntelOpenVinoOptionsSetDeviceType(
-                options, kLiteRtIntelOpenVinoDeviceTypeCPU),
-            kLiteRtStatusOk);
+  EXPECT_EQ(
+      LrtIntelOpenVinoOptionsSetGraphBackend(
+          options, /*graph_index=*/0, kLiteRtIntelOpenVinoGraphBackendCPU),
+      kLiteRtStatusOk);
   EXPECT_EQ(LrtIntelOpenVinoOptionsSetPerformanceMode(
                 options, kLiteRtIntelOpenVinoPerformanceModeThroughput),
             kLiteRtStatusOk);
 
-  LiteRtIntelOpenVinoDeviceType device_type;
-  EXPECT_EQ(LrtIntelOpenVinoOptionsGetDeviceType(options, &device_type),
+  LiteRtIntelOpenVinoGraphBackend graph_backend;
+  EXPECT_EQ(LrtIntelOpenVinoOptionsGetGraphBackend(options, /*graph_index=*/0,
+                                                   &graph_backend),
             kLiteRtStatusOk);
-  EXPECT_EQ(device_type, kLiteRtIntelOpenVinoDeviceTypeCPU);
+  EXPECT_EQ(graph_backend, kLiteRtIntelOpenVinoGraphBackendCPU);
 
   LrtDestroyIntelOpenVinoOptions(options);
 }
@@ -179,11 +186,13 @@ TEST(IntelOpenVinoOptionsCApiTest, InvalidArguments) {
   LrtIntelOpenVinoOptions options;
   EXPECT_EQ(LrtIntelOpenVinoOptionsCreate(&options), kLiteRtStatusOk);
 
-  EXPECT_EQ(LrtIntelOpenVinoOptionsSetDeviceType(
-                nullptr, kLiteRtIntelOpenVinoDeviceTypeCPU),
-            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(
+      LrtIntelOpenVinoOptionsSetGraphBackend(
+          nullptr, /*graph_index=*/0, kLiteRtIntelOpenVinoGraphBackendCPU),
+      kLiteRtStatusErrorInvalidArgument);
 
-  EXPECT_EQ(LrtIntelOpenVinoOptionsGetDeviceType(options, nullptr),
+  EXPECT_EQ(LrtIntelOpenVinoOptionsGetGraphBackend(options, /*graph_index=*/0,
+                                                   nullptr),
             kLiteRtStatusErrorInvalidArgument);
 
   LrtDestroyIntelOpenVinoOptions(options);
@@ -193,9 +202,10 @@ TEST(IntelOpenVinoOptionsCApiTest, RoundTripSerialization) {
   LrtIntelOpenVinoOptions options;
   EXPECT_EQ(LrtIntelOpenVinoOptionsCreate(&options), kLiteRtStatusOk);
 
-  EXPECT_EQ(LrtIntelOpenVinoOptionsSetDeviceType(
-                options, kLiteRtIntelOpenVinoDeviceTypeNPU),
-            kLiteRtStatusOk);
+  EXPECT_EQ(
+      LrtIntelOpenVinoOptionsSetGraphBackend(
+          options, /*graph_index=*/0, kLiteRtIntelOpenVinoGraphBackendGPU),
+      kLiteRtStatusOk);
   EXPECT_EQ(
       LrtIntelOpenVinoOptionsSetConfigsMapOption(options, "key1", "value1"),
       kLiteRtStatusOk);
@@ -203,10 +213,11 @@ TEST(IntelOpenVinoOptionsCApiTest, RoundTripSerialization) {
   LrtIntelOpenVinoOptions parsed = nullptr;
   SerializeAndParse(options, &parsed);
 
-  LiteRtIntelOpenVinoDeviceType dev_type;
-  ASSERT_EQ(LrtIntelOpenVinoOptionsGetDeviceType(parsed, &dev_type),
+  LiteRtIntelOpenVinoGraphBackend graph_backend;
+  ASSERT_EQ(LrtIntelOpenVinoOptionsGetGraphBackend(parsed, /*graph_index=*/0,
+                                                   &graph_backend),
             kLiteRtStatusOk);
-  EXPECT_EQ(dev_type, kLiteRtIntelOpenVinoDeviceTypeNPU);
+  EXPECT_EQ(graph_backend, kLiteRtIntelOpenVinoGraphBackendGPU);
 
   int num_configs;
   ASSERT_EQ(

@@ -28,3 +28,11 @@ cc_library(
         "@intel_openvino//:openvino",
     ],
 )
+
+cc_library(
+    name = "bytecode_header",
+    hdrs = ["bytecode_header.h"],
+    deps = [
+        "//litert/c/options:litert_intel_openvino_options",
+    ],
+)

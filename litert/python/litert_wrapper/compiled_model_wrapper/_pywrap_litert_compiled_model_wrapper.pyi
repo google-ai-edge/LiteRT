@@ -203,7 +203,7 @@ def CreateCompiledModelFromFile(
         qualcomm_backend: int = ...,
         qualcomm_saver_output_dir: str = ...,
         qualcomm_graph_io_tensor_mem_type: int = ...,
-        intel_openvino_device_type: int = ...,
+        intel_openvino_graph_backend: int = ...,
         intel_openvino_performance_mode: int = ...,
         intel_openvino_configs_map: Dict[str, str] = ...,
 ) -> CompiledModelWrapper:
@@ -254,7 +254,7 @@ def CreateCompiledModelFromBuffer(
         qualcomm_backend: int = ...,
         qualcomm_saver_output_dir: str = ...,
         qualcomm_graph_io_tensor_mem_type: int = ...,
-        intel_openvino_device_type: int = ...,
+        intel_openvino_graph_backend: int = ...,
         intel_openvino_performance_mode: int = ...,
         intel_openvino_configs_map: Dict[str, str] = ...,
 ) -> CompiledModelWrapper:
