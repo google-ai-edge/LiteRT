@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_RUNNERS_LITERT_COMPILED_MODEL_RUNNER_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_RUNNERS_LITERT_COMPILED_MODEL_RUNNER_H_
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -37,6 +38,7 @@ limitations under the License.
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "tensor/arithmetic.h"
 #include "tensor/backends/tflite/arithmetic_tflite.h"
 #include "tensor/backends/tflite/tflite_flatbuffer_conversion.h"
@@ -132,6 +134,15 @@ class CompiledModelRunner {
   }
 
   using TensorTf = Tensor<TfLiteMixinTag>;
+
+  bool IsHostMemorySupported(const std::string& name) {
+    auto req = compiled_model_.GetInputBufferRequirements(name);
+    if (!req.HasValue()) return false;
+    auto types = req->SupportedTypes();
+    if (!types.HasValue()) return false;
+    return std::find(types->begin(), types->end(),
+                     TensorBufferType::kHostMemory) != types->end();
+  }
 
   // The same value of LITERT_HOST_MEMORY_BUFFER_ALIGNMENT in
   // litert_tensor_buffer.h to avoid unnecessary dependencies.
@@ -339,7 +350,7 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
 
   for (int i = 0; i < signature.InputNames().size(); ++i) {
     if (signature.InputNames()[i] == name) {
-      if (IsAligned(data.data())) {
+      if (IsHostMemorySupported(name) && IsAligned(data.data())) {
         replaced_buffers_.emplace_back(
             ReplacedBuffer{.type = ReplacedBuffer::kOriginalInput, .index = i});
         LITERT_ASSIGN_OR_RETURN(auto tensor_type, signature.InputTensorType(i));
@@ -380,7 +391,7 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetOutput(
   LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
   for (int i = 0; i < signature.OutputNames().size(); ++i) {
     if (signature.OutputNames()[i] == name) {
-      if (IsAligned(data.data())) {
+      if (IsHostMemorySupported(name) && IsAligned(data.data())) {
         replaced_buffers_.emplace_back(ReplacedBuffer{
             .type = ReplacedBuffer::kOriginalOutput, .index = i});
         LITERT_ASSIGN_OR_RETURN(auto tensor_type,
