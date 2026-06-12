@@ -26,6 +26,7 @@
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_profiler_types.h"
 #include "litert/cc/internal/litert_dispatch_delegate.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -78,6 +79,8 @@ class DispatchDelegate : public tflite::SimpleOpaqueDelegateInterface {
   litert::Expected<void> StartMetricsCollection(int detail_level);
 
   litert::Expected<LiteRtMetricsT> StopMetricsCollection();
+
+  LiteRtStatus GetHooks(LiteRtHook* hook, void** user_data);
 
  private:
   static constexpr absl::string_view kDelegateName = "DispatchDelegate";
@@ -167,6 +170,16 @@ litert::Expected<LiteRtMetricsT> DispatchDelegate::StopMetricsCollection() {
   return LiteRtMetricsT{.metrics = std::move(metrics)};
 }
 
+LiteRtStatus DispatchDelegate::GetHooks(LiteRtHook* hook, void** user_data) {
+  if (device_context_ == nullptr) {
+    LITERT_LOG(LITERT_INFO, "Lazy initializing Dispatch API for GetHooks.");
+    if (auto status = InitializeDispatchApi(); !status) {
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
+  }
+  return LiteRtDispatchGetHooks(device_context_, hook, user_data);
+}
+
 litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
   if (device_context_ != nullptr) {
     LITERT_LOG(LITERT_DEBUG, "Dispatch API is already initialized.");
@@ -249,6 +262,15 @@ LiteRtStatus LiteRtDispatchDelegateStopMetricsCollection(
                           dispatch_delegate->StopMetricsCollection());
   *metrics = std::move(liter_metrics);
   return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtDispatchDelegateGetHooks(TfLiteOpaqueDelegate* delegate,
+                                            LiteRtHook* hook,
+                                            void** user_data) {
+  if (!delegate) return kLiteRtStatusErrorInvalidArgument;
+  auto* dispatch_delegate = reinterpret_cast<DispatchDelegate*>(
+      TfLiteOpaqueDelegateGetData(delegate));
+  return dispatch_delegate->GetHooks(hook, user_data);
 }
 
 namespace litert {

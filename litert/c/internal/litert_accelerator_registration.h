@@ -18,6 +18,7 @@
 #include <stdbool.h>  // NOLINT
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_profiler_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -107,6 +108,13 @@ LiteRtStatus LiteRtSetAcceleratorStopMetricsCollection(
     LiteRtStatus (*StopMetricsCollection)(LiteRtRuntimeContext* runtime_context,
                                           LiteRtDelegateWrapper delegate,
                                           LiteRtMetrics metrics));
+
+// Sets the function used to retrieve the native vendor hooks.
+LiteRtStatus LiteRtSetAcceleratorGetHooks(
+    LiteRtAccelerator accelerator,
+    LiteRtStatus (*GetHooks)(LiteRtRuntimeContext* runtime_context,
+                             LiteRtDelegateWrapper delegate, LiteRtHook* hook,
+                             void** user_data));
 
 #ifdef __cplusplus
 }  // extern "C"

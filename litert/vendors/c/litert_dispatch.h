@@ -23,6 +23,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_profiler_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -230,6 +231,10 @@ LiteRtDispatchDestroyMetrics(LiteRtDispatchMetrics metrics);
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchCheckRuntimeCompatibility(
     LiteRtApiVersion api_version, LiteRtEnvironmentOptions env,
     LiteRtOptions options);
+
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchGetHooks(LiteRtDispatchDeviceContext device_context,
+                       LiteRtHook* hook, void** user_data);
 
 // /////////////////////////////////////////////////////////////////////////////
 // Async Execution API
