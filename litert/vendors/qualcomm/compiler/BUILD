@@ -16,7 +16,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_bin", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
+load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps", "litert_bin", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
@@ -178,12 +178,12 @@ litert_test(
         ],
     }),
     linkstatic = True,
+    no_main = True,
     tags = [
-        # Tests with ungrte deps do not currently work on forge.
-        "manual",
-        "no-remote-exec",
-        "notap",
+        "noasan",
+        "nomsan",
         "nosan",
+        "notsan",
     ],
     # This test can be run only on Android and Linux.
     target_compatible_with = select({
@@ -214,7 +214,7 @@ litert_test(
         "//litert/core/model:model_testonly",
         "//litert/test:common",
         "//litert/test:load_test_model_runtimecapi",
-        "//litert/test:matchers_oss",
+        "//litert/test:matchers",
         "//litert/test:test_models",
         "//litert/vendors/cc:litert_compiler_plugin",
         "//litert/vendors/qualcomm/core/schema:soc_table",
@@ -222,7 +222,14 @@ litert_test(
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
         "@qairt//:qnn_lib_headers",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:linux_x86_64": [
+            # copybara:uncomment_begin(google-only)
+            # "@qairt//:linux_deps",
+            # copybara:uncomment_end
+        ],
+        "//conditions:default": [],
+    }) + gtest_main_no_heapcheck_deps(),
 )
 
 litert_device_exec(

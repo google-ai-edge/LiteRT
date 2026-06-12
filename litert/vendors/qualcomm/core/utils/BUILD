@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
@@ -61,27 +60,72 @@ cc_library(
     srcs = ["test_main.cc"],
     deps = [
         ":test_utils",
-        "//litert/vendors/qualcomm/core:common",
-        "@com_google_absl//absl/strings",
+        # copybara:uncomment_begin(google-only)
+        # "//testing/base/public:gunit_for_library_testonly",
+        # copybara:uncomment_end
+        # copybara:comment_begin(oss-only)
         "@com_google_googletest//:gtest",
+        # copybara:comment_end
+        "@com_google_absl//absl/strings",
+        "//litert/vendors/qualcomm/core:common",
     ],
+    alwayslink = 1,
 )
 
-cc_test(
+cc_library(
+    name = "test_main_no_heapcheck",
+    testonly = True,
+    srcs = ["test_main.cc"],
+    deps = [
+        ":test_utils",
+        # copybara:uncomment_begin(google-only)
+        # "//testing/base/public:gunit_for_library_testonly",
+        # copybara:uncomment_end
+        # copybara:comment_begin(oss-only)
+        "@com_google_googletest//:gtest",
+        # copybara:comment_end
+        "@com_google_absl//absl/strings",
+        "//litert/vendors/qualcomm/core:common",
+    ],
+    alwayslink = 1,
+)
+
+litert_test(
     name = "utils_test",
     srcs = [
         "utils_test.cc",
     ],
+    no_main = True,
+    tags = [
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
+    ],
+    # This test can be run only on Android and Linux.
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    ungrte = True,
+    use_sys_malloc = True,
     deps = [
         ":log",
         ":miscs",
-        ":test_main",
+        ":test_main_no_heapcheck",
         ":test_utils",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/backends:htp_backend",
         "//litert/vendors/qualcomm/core/backends:ir_backend",
-        "@com_google_googletest//:gtest",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:linux_x86_64": [
+            # copybara:uncomment_begin(google-only)
+            # "@qairt//:linux_deps",
+            # copybara:uncomment_end
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 litert_device_exec(

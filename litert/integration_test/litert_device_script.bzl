@@ -218,7 +218,8 @@ def litert_device_script(
         exec_args = [],
         backend_id = "cpu",
         build_for_host = False,
-        build_for_device = True):
+        build_for_device = True,
+        tags = []):
     """Generates a shell script and runfiles for executing a binary on a device.
 
     This macro sets up a build environment to run a specified binary (`bin`) on a target device,
@@ -282,6 +283,7 @@ def litert_device_script(
         testonly = testonly,
         exec_env_vars = backend.env_paths,
         model_providers = model_providers,
+        tags = tags,
     )
 
     sh_library(
@@ -294,6 +296,7 @@ def litert_device_script(
             # copybara:uncomment_end
         ],
         testonly = testonly,
+        tags = tags,
     )
 
     sh_binary(
@@ -302,6 +305,7 @@ def litert_device_script(
         deps = [":" + name + "_lib"],
         testonly = testonly,
         args = exec_args,
+        tags = tags,
     )
 
 def make_download_model_provider(name, url, testonly = True):

@@ -321,9 +321,18 @@ def litert_test(
       no_main: Whether to use the default main function.
       **cc_test_kwargs: Keyword arguments to pass to the underlying rule.
     """
+
     if use_sys_malloc:
-        # copybara:uncomment cc_test_kwargs["malloc"] = "//base:system_malloc"
+        # copybara:uncomment_begin(google-only)
+        # cc_test_kwargs["malloc"] = "//base:system_malloc"
+        # append_rule_kwargs(
+        # cc_test_kwargs,
+        # args = ["--heap_check="],
+        # )
+        # copybara:uncomment_end
+        # copybara:comment_begin(oss-only)
         pass
+        # copybara:comment_end
 
     if not no_main:
         append_rule_kwargs(

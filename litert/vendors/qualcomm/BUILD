@@ -114,10 +114,13 @@ litert_test(
     linkstatic = True,
     no_main = True,
     tags = [
-        "manual",
-        "no-remote-exec",
+        "noasan",
+        "nomsan",
         "nosan",
-        "notap",
+        "notsan",
+        # copybara:comment_begin(oss-only)
+        "manual",
+        # copybara:comment_end
     ],
     # This test can be run only on Android and Linux.
     target_compatible_with = select({
@@ -130,14 +133,20 @@ litert_test(
     deps = [
         ":qnn_manager",
         "//litert/test:common",
-        "//litert/test:matchers_oss",
+        "//litert/test:matchers",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
-        "//litert/vendors/qualcomm/core/utils:test_main",
+        "//litert/vendors/qualcomm/core/utils:test_main_no_heapcheck",
         "//litert/vendors/qualcomm/core/utils:test_utils",
         "//litert/vendors/qualcomm/tools:dump",
-        "@com_google_googletest//:gtest",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:linux_x86_64": [
+            # copybara:uncomment_begin(google-only)
+            # "@qairt//:linux_deps",
+            # copybara:uncomment_end
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 litert_device_exec(

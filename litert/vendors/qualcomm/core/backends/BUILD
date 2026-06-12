@@ -3,6 +3,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -157,6 +158,13 @@ cc_test(
     srcs = [
         "htp_backend_test.cc",
     ],
+    # copybara:uncomment malloc = "//base:system_malloc",
+    tags = [
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
+    ],
     deps = [
         ":backend_utils",
         ":htp_backend",
@@ -164,7 +172,13 @@ cc_test(
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/utils:miscs",
         "@com_google_absl//absl/base:no_destructor",
-        "@com_google_googletest//:gtest_main",
         "@qairt//:qnn_lib_headers",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:linux_x86_64": [
+            # copybara:uncomment_begin(google-only)
+            # "@qairt//:linux_deps",
+            # copybara:uncomment_end
+        ],
+        "//conditions:default": [],
+    }) + gtest_main_no_heapcheck_deps(),
 )
