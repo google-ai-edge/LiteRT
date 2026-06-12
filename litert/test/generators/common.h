@@ -216,7 +216,11 @@ using FbOpTypes =
                        tflite::BuiltinOptions_DivOptions>,
         std::bool_constant<OpCode == kLiteRtOpCodeTflReshape>,
             FbOpTraits<tflite::ReshapeOptionsT, tflite::BuiltinOperator_RESHAPE,
-                       tflite::BuiltinOptions_ReshapeOptions>
+                       tflite::BuiltinOptions_ReshapeOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflBatchMatmul>,
+            FbOpTraits<tflite::BatchMatMulOptionsT,
+                       tflite::BuiltinOperator_BATCH_MATMUL,
+                       tflite::BuiltinOptions_BatchMatMulOptions>
     >;
 // clang-format on
 static_assert(FbOpTypes<kLiteRtOpCodeTflAdd>::kHasOptions);

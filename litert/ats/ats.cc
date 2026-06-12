@@ -343,6 +343,24 @@ void RegisterTransformerLayer(const AtsConf& options, size_t& test_id,
 }
 
 template <typename Fixture>
+void RegisterBatchMatmul(const AtsConf& options, size_t& test_id, size_t iters,
+                         typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      BatchMatmul,
+      SizeListC<2, 3, 4>,
+      SizeListC<2, 3, 4>,
+      TypeList<TypeTuple<float, float>,
+               TypeTuple<tflite::half, tflite::half>,
+               TypeTuple<tflite::half, float>>,
+      TypeList<std::true_type, std::false_type>,
+      TypeList<std::true_type, std::false_type>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
 void RegisterAll(const AtsConf& options, size_t& test_id,
                  typename Fixture::Capture& cap) {
   RegisterExtraModels<Fixture>(test_id, options, cap);
@@ -357,6 +375,7 @@ void RegisterAll(const AtsConf& options, size_t& test_id,
   RegisterOneHot<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterReshape<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterTransformerLayer<Fixture>(options, test_id, /*iters=*/2, cap);
+  RegisterBatchMatmul<Fixture>(options, test_id, /*iters=*/10, cap);
 }
 
 int Ats() {

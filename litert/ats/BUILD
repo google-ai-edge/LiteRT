@@ -51,6 +51,7 @@ litert_define_ats(
         ".*tfl\\.reduce_prod.*",  # XNNPACK does not support ReduceProd
         ".*Pooling.*",  # XNNPACK rejects pooling when stride > filter size
         ".*Conv2d.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 Conv2d
+        ".*BatchMatmul.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 BatchMatmul
         # Explicit ExtraModel exclusions (unsupported by XNNPACK):
         ".*simple_add_dynamic_shape.*",
         "hf_all_minilm_l6_v2",
@@ -268,6 +269,7 @@ litert_test(
         "--dont_register=.*tfl\\.reduce_prod.*",  # XNNPACK does not support ReduceProd
         "--dont_register=.*Pooling.*",  # XNNPACK rejects pooling when stride > filter size
         "--dont_register=.*Conv2d.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 Conv2d
+        "--dont_register=.*BatchMatmul.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 BatchMatmul
         # Explicit ExtraModel exclusions (unsupported by XNNPACK):
         "--dont_register=.*simple_add_dynamic_shape.*",
         "--dont_register=.*hf_all_minilm_l6_v2.*",

@@ -146,6 +146,75 @@ inline LiteRtStatus InferFullyConnected(const LiteRtOpT& op,
   return kLiteRtStatusOk;
 }
 
+inline void ReferenceBatchMatmul(const float* lhs_data, const int32_t* lhs_dims,
+                                 size_t lhs_rank, const float* rhs_data,
+                                 const int32_t* rhs_dims, size_t rhs_rank,
+                                 float* out_data, const int32_t* out_dims,
+                                 size_t out_rank, bool adj_x, bool adj_y) {
+  if (out_rank < 2 || lhs_rank < 2 || rhs_rank < 2) {
+    return;
+  }
+  int64_t m = out_dims[out_rank - 2];
+  int64_t n = out_dims[out_rank - 1];
+  int64_t k = adj_x ? lhs_dims[lhs_rank - 2] : lhs_dims[lhs_rank - 1];
+
+  int64_t out_batch_size = 1;
+  for (size_t i = 0; i < out_rank - 2; ++i) {
+    out_batch_size *= out_dims[i];
+  }
+
+  for (int64_t b = 0; b < out_batch_size; ++b) {
+    int64_t temp = b;
+    int64_t lhs_batch_offset = 0;
+    int64_t rhs_batch_offset = 0;
+
+    int64_t lhs_stride = 1;
+    int64_t rhs_stride = 1;
+
+    for (size_t i = 1; i <= out_rank - 2; ++i) {
+      int out_batch_idx = out_rank - 2 - i;
+      int lhs_batch_idx = lhs_rank - 2 - i;
+      int rhs_batch_idx = rhs_rank - 2 - i;
+
+      int64_t out_dim = out_dims[out_batch_idx];
+      int64_t coord = (temp % out_dim);
+      temp /= out_dim;
+
+      if (lhs_batch_idx >= 0) {
+        int64_t lhs_dim = lhs_dims[lhs_batch_idx];
+        if (lhs_dim > 1) {
+          lhs_batch_offset += coord * lhs_stride;
+        }
+        lhs_stride *= lhs_dim;
+      }
+
+      if (rhs_batch_idx >= 0) {
+        int64_t rhs_dim = rhs_dims[rhs_batch_idx];
+        if (rhs_dim > 1) {
+          rhs_batch_offset += coord * rhs_stride;
+        }
+        rhs_stride *= rhs_dim;
+      }
+    }
+
+    const float* curr_lhs = lhs_data + lhs_batch_offset * (m * k);
+    const float* curr_rhs = rhs_data + rhs_batch_offset * (k * n);
+    float* curr_out = out_data + b * (m * n);
+
+    for (int64_t row = 0; row < m; ++row) {
+      for (int64_t col = 0; col < n; ++col) {
+        float sum = 0;
+        for (int64_t i = 0; i < k; ++i) {
+          int64_t lhs_idx = adj_x ? (i * m + row) : (row * k + i);
+          int64_t rhs_idx = adj_y ? (col * k + i) : (i * n + col);
+          sum += curr_lhs[lhs_idx] * curr_rhs[rhs_idx];
+        }
+        curr_out[row * n + col] = sum;
+      }
+    }
+  }
+}
+
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_CORE_MODEL_OPS_MATMUL_H_
