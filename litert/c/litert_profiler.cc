@@ -14,10 +14,13 @@
 
 #include "litert/c/litert_profiler.h"
 
+#include <cstddef>
 #include <string>
+#include <vector>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_profiler_event.h"
+#include "litert/c/litert_profiler_types.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/compiled_model.h"
 #include "litert/runtime/profiler.h"
@@ -130,4 +133,21 @@ LiteRtStatus LiteRtGetProfileSummary(LiteRtProfiler profiler,
   *summary = strdup(summary_str.c_str());
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus LiteRtRegisterHook(LiteRtProfiler profiler, LiteRtHook hook,
+                                void* user_data) {
+  if (!profiler) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  return profiler->RegisterHook(hook, user_data);
+}
+
+LiteRtStatus LiteRtTriggerHook(LiteRtProfiler profiler, LiteRtHookType type,
+                               const void* data, size_t size) {
+  if (!profiler) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  return profiler->TriggerHook(type, data, size);
+}
+
 }  // extern "C"

@@ -221,6 +221,7 @@ LiteRtGetDepthwiseConv2dStrideWOption
 LiteRtGetDivFusedActivationOption
 LiteRtGetEnvironmentOptions
 LiteRtGetEnvironmentOptionsValue
+LiteRtGetEnvironmentProfiler
 LiteRtGetEventCustomNativeEvent
 LiteRtGetEventEglSync
 LiteRtGetEventEventType
@@ -373,6 +374,7 @@ LiteRtLockTensorBuffer
 LiteRtPopOpaqueOptions
 LiteRtPushOp
 LiteRtRegisterAccelerator
+LiteRtRegisterHook
 LiteRtRegisterNpuAccelerator
 LiteRtRegisterTensorBufferHandlers
 LiteRtResetProfiler
@@ -400,6 +402,7 @@ LiteRtSetTensorBufferEvent
 LiteRtSignalEvent
 LiteRtStartProfiler
 LiteRtStopProfiler
+LiteRtTriggerHook
 LiteRtUnlockTensorBuffer
 LiteRtUnwrapDelegate
 LiteRtWaitEvent

@@ -93,6 +93,7 @@ litert_dispatch_api(
         "litert_dispatch_graph.cc",
         "litert_dispatch_invocation_context.cc",
         "sb_api_late_binding.cc",
+        "//litert/vendors/google_tensor:darwinn_hook.cc",
     ],
     hdrs = [
         "dispatch_api.h",
@@ -133,6 +134,10 @@ litert_dispatch_api(
         "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
     ],
     deps = [
+        "//platforms/darwinn/devtools/power_stats",
+        "//litert/c:litert_profiler",
+        "//litert/c:litert_profiler_types",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         # copybara:uncomment "//litert/vendors/google_tensor/dispatch/google:litert_darwinn_runtime_options",
         # copybara:uncomment "//litert/vendors/google_tensor/dispatch/google:darwinn_options_utils",
         "@com_google_absl//absl/algorithm:container",

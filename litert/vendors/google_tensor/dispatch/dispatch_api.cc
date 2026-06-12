@@ -21,6 +21,7 @@
 #if LITERT_HAS_AHWB_SUPPORT
 #include <android/hardware_buffer.h>
 #endif
+
 #include <cstddef>
 #include <optional>
 
@@ -29,6 +30,8 @@
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_profiler.h"
+#include "litert/c/litert_profiler_types.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/util/tensor_type_util.h"
@@ -78,6 +81,9 @@ LiteRtStatus CreateTensorBufferRequirements(
 // Basic Execution API
 // /////////////////////////////////////////////////////////////////////////////
 
+extern "C" void LiteRtVendorHook(LiteRtHookType type, const void* data,
+                                 size_t size, void* user_data);
+
 LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
                         LiteRtEnvironment env, LiteRtOptions options) {
   GT_LOG_RETURN_IF_SB_ERROR(thrInitialize(), "Failed to initialize SB");
@@ -85,6 +91,15 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
   runtime_context->get_environment_options(env, &environment_options);
   LiteRtPropagateMinLoggerSeverityWithRuntimeContext(runtime_context,
                                                      environment_options);
+
+  LiteRtProfiler profiler;
+  if (LiteRtGetEnvironmentProfiler(env, &profiler) == kLiteRtStatusOk) {
+    LITERT_LOG(LITERT_INFO,
+               "Dispatch: Registering hook on environment profiler %p",
+               profiler);
+    LiteRtRegisterHook(profiler, LiteRtVendorHook, nullptr);
+  }
+
   return InitializeDispatchApiConfig(environment_options, options);
 }
 

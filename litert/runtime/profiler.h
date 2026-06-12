@@ -25,11 +25,10 @@
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_profiler_event.h"
+#include "litert/c/litert_profiler_types.h"
 #include "litert/runtime/profiler_summarizer.h"
-#include "tflite/core/api/profiler.h"
-#include "tflite/core/interpreter.h"
-#include "tflite/profiling/profile_buffer.h"
 
 class LiteRtProfilerT : public tflite::Profiler {
  public:
@@ -109,7 +108,30 @@ class LiteRtProfilerT : public tflite::Profiler {
   // litert::profiling::LiteRtProfileSummarizer class.
   std::string GetProfileSummary(const tflite::Interpreter& interpreter);
 
+  LiteRtStatus RegisterHook(LiteRtHook hook, void* user_data) {
+    hooks_.push_back({hook, user_data});
+    return kLiteRtStatusOk;
+  }
+
+  // Triggers all registered hooks of the specified type.
+  LiteRtStatus TriggerHook(LiteRtHookType type, const void* data, size_t size) {
+    for (const auto& hook_info : hooks_) {
+      if (hook_info.hook != nullptr) {
+        hook_info.hook(type, data, size, hook_info.user_data);
+      }
+    }
+    return kLiteRtStatusOk;
+  }
+
  private:
+  struct HookInfo {
+    LiteRtHook hook;
+    void* user_data;
+  };
+
+  // Registered trace hooks.
+  std::vector<HookInfo> hooks_;
+
   // Collection to own unique copies of tag strings
   std::set<std::string> owned_tags_set_;
 

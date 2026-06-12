@@ -15,12 +15,23 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_LITERT_PROFILER_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_LITERT_PROFILER_H_
 
+#include <stddef.h>
+
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_profiler_event.h"
+#include "litert/c/litert_profiler_types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
+
+// Registers a hook.
+LiteRtStatus LiteRtRegisterHook(LiteRtProfiler profiler, LiteRtHook hook,
+                                void* user_data);
+
+// Triggers a hook of the specified type.
+LiteRtStatus LiteRtTriggerHook(LiteRtProfiler profiler, LiteRtHookType type,
+                               const void* data, size_t size);
 
 // Creates a compilation option object.
 LiteRtStatus LiteRtCreateProfiler(int size, LiteRtProfiler* profiler);

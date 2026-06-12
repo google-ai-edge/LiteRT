@@ -28,6 +28,8 @@
 #include "litert/runtime/accelerator_registry.h"
 #include "litert/runtime/tensor_buffer_registry.h"
 
+class LiteRtProfilerT;
+
 namespace litert::internal {
 class GpuEnvironment;
 }  // namespace litert::internal
@@ -90,6 +92,9 @@ class LiteRtEnvironmentT {
 
   bool SupportsFP16();
 
+  // Returns the profiler.
+  LiteRtProfilerT& GetProfiler() { return *profiler_; }
+
  private:
   litert::internal::AcceleratorRegistry accelerators_;
   litert::internal::TensorBufferRegistry tensor_buffer_registry_;
@@ -97,6 +102,7 @@ class LiteRtEnvironmentT {
 #ifndef LITERT_DISABLE_GPU
   std::unique_ptr<litert::internal::GpuEnvironment> gpu_env_;
 #endif
+  std::unique_ptr<LiteRtProfilerT> profiler_;
 };
 
 #endif  // ODML_LITERT_LITERT_CORE_ENVIRONMENT_H_

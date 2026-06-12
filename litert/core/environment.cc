@@ -23,6 +23,7 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/runtime/profiler.h"
 #if !defined(LITERT_DISABLE_GPU)
 #include "litert/runtime/gpu_environment.h"
 #else
@@ -51,7 +52,8 @@ litert::Expected<void> LiteRtEnvironmentT::AddOptions(
   return {};
 }
 
-LiteRtEnvironmentT::LiteRtEnvironmentT() = default;
+LiteRtEnvironmentT::LiteRtEnvironmentT()
+    : profiler_(std::make_unique<LiteRtProfilerT>()) {}
 
 LiteRtEnvironmentT::~LiteRtEnvironmentT() = default;
 

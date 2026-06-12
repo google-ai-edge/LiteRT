@@ -152,12 +152,14 @@ litert_c_api_library(
     header_kwargs = {"compatible_with": get_compatible_with_portable()},
     impl_deps = [
         ":litert_environment_options",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
+        "//litert/c:litert_profiler",
         "//litert/runtime/accelerators:auto_registration",
     ] + select({
         "//litert/build_common:build_include_gpu_enabled": [
@@ -701,10 +703,18 @@ cc_library(
     deps = [":litert_common"],
 )
 
+cc_library(
+    name = "litert_profiler_types",
+    hdrs = ["litert_profiler_types.h"],
+    compatible_with = get_compatible_with_portable(),
+    deps = [":litert_common"],
+)
+
 litert_c_api_library(
     name = "litert_profiler",
     srcs = ["litert_profiler.cc"],
     hdrs = ["litert_profiler.h"],
+    header_kwargs = {"compatible_with": get_compatible_with_portable()},
     impl_deps = [
         "//litert/cc:litert_macros",
         "//litert/runtime:compiled_model",
@@ -713,12 +723,14 @@ litert_c_api_library(
     deps = [
         ":litert_common",
         ":litert_profiler_event",
+        ":litert_profiler_types",
     ],
 )
 
 cc_library(
     name = "litert_profiler_event",
     hdrs = ["litert_profiler_event.h"],
+    compatible_with = get_compatible_with_portable(),
 )
 
 cc_test(
@@ -729,6 +741,7 @@ cc_test(
         ":litert_environment",
         ":litert_profiler",
         ":litert_profiler_event",
+        ":litert_profiler_types",
         "@com_google_googletest//:gtest_main",
     ],
 )
