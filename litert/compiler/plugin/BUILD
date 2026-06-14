@@ -31,6 +31,7 @@ cc_library(
     deps = [
         ":algo",
         ":litert_compiler_options",
+        ":transformer_detector",
         "//litert/c:litert_any",
         "//litert/c:litert_builder",
         "//litert/c:litert_common",
@@ -227,6 +228,43 @@ cc_test(
         "//litert/core/model:model_serialize",
         "//litert/test:common",
         "//litert/test:load_test_model",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "transformer_detector",
+    srcs = ["transformer_detector.cc"],
+    hdrs = ["transformer_detector.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc/internal:litert_op_options",
+        "//litert/core/model",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "transformer_detector_test",
+    srcs = ["transformer_detector_test.cc"],
+    data = [
+        "//litert/test:mlir_test_data",
+    ],
+    deps = [
+        ":transformer_detector",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_op_options",
+        "//litert/core/model",
+        "//litert/test:common",
+        "//litert/test:load_test_model",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_googletest//:gtest_main",
     ],

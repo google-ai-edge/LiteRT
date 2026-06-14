@@ -30,6 +30,10 @@ ABSL_DECLARE_FLAG(::litert::tools::IntList, subgraphs);
 
 // Compiler plugin partition strategy flag.
 ABSL_DECLARE_FLAG(LiteRtCompilerOptionsPartitionStrategy, partition_strategy);
+
+// Per-signature layer-cut spec for the transformer_layer_cut partition strategy.
+ABSL_DECLARE_FLAG(std::string, transformer_layer_cuts);
+
 bool AbslParseFlag(absl::string_view text,
                    LiteRtCompilerOptionsPartitionStrategy* partition_strategy,
                    std::string* error);

@@ -135,12 +135,15 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-#if !defined(LITERT_WINDOWS_OS)
+  // Common compiler options (e.g. --partition_strategy) apply to all backends,
+  // including the OpenVINO NPU path used on Windows, so this is parsed
+  // unconditionally.
   ParseOptionsFlags(
       run->dump_out, "Compiler", [&] { return opts->GetCompilerOptions(); },
       litert::UpdateCompilerOptionsFromFlags,
       "Failed to add Compiler options to list\n ");
 
+#if !defined(LITERT_WINDOWS_OS)
   ParseOptionsFlags(
       run->dump_out, "Google Tensor",
       [&] { return opts->GetGoogleTensorOptions(); },

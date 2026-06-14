@@ -42,6 +42,10 @@ TEST(ApplyPluginFlagsTest, ParsePartitionStrategySuccess) {
   EXPECT_EQ(partition_strategy,
             kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
   EXPECT_EQ(AbslUnparseFlag(partition_strategy), "weakly_connected");
+  EXPECT_TRUE(AbslParseFlag("transformer_block", &partition_strategy, &error));
+  EXPECT_EQ(partition_strategy,
+            kLiteRtCompilerOptionsPartitionStrategyTransformerBlock);
+  EXPECT_EQ(AbslUnparseFlag(partition_strategy), "transformer_block");
 }
 
 TEST(ApplyPluginFlagsTest, UnparsePartitionStrategySuccess) {
@@ -50,6 +54,9 @@ TEST(ApplyPluginFlagsTest, UnparsePartitionStrategySuccess) {
   EXPECT_EQ(
       AbslUnparseFlag(kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected),
       "weakly_connected");
+  EXPECT_EQ(
+      AbslUnparseFlag(kLiteRtCompilerOptionsPartitionStrategyTransformerBlock),
+      "transformer_block");
 }
 
 TEST(ApplyPluginFlagsTest, ParseFlagsAndGetPartitionStrategySuccess) {

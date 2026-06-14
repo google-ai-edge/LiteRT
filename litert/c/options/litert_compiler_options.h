@@ -15,6 +15,9 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_COMPILER_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_COMPILER_OPTIONS_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "litert/c/litert_common.h"
 
 #ifdef __cplusplus
@@ -34,9 +37,35 @@ typedef struct LrtCompilerOptions LrtCompilerOptions;
 //   incorrect partition where there exists a path from a selected to another,
 //   where there is an unselected node in between. This feature is currently in
 //   experimental stage.
+//
+// Transformer block (experimental feature):
+//   Detects transformer-block structure (attention, feed-forward, and
+//   normalization clusters) among the ops the vendor plugin selected, and
+//   groups each detected block into a single partition before requesting
+//   compilation from the IHV delegate. This keeps a whole block self-contained
+//   so the delegate can schedule it as one unit instead of many small islands.
+//   Falls back to the default strategy when no block is found.
+//
+// Transformer layer cut (experimental feature):
+//   Like Transformer block, but instead of one partition per transformer layer,
+//   groups CONSECUTIVE layers into a single partition, breaking only at the
+//   layer indices supplied via LrtSetCompilerOptionsTransformerLayerCuts. This
+//   lets a caller carve the decoder stack into a chosen number of multi-layer
+//   chunks (e.g. cuts {16,32} on a 48-layer model -> three 16-layer
+//   partitions). With no cuts set, behaves like Transformer block.
+//
+//   Cuts are supplied as a per-signature spec string: a ';'-separated list of
+//   "signature_key=cuts" groups, where `cuts` is a ','-separated list of layer
+//   indices. A bare list (or empty key) is the default applied to signatures
+//   without an explicit group. Examples:
+//     "16"                          -> all signatures cut at layer 16
+//     "prefill_128=16,32;decode=8"  -> per-signature cuts
+//     "=16;decode=8"                -> decode at 8, all others at 16
 typedef enum LiteRtCompilerOptionsPartitionStrategy {
   kLiteRtCompilerOptionsPartitionStrategyDefault = 0,
   kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected = 1,
+  kLiteRtCompilerOptionsPartitionStrategyTransformerBlock = 2,
+  kLiteRtCompilerOptionsPartitionStrategyTransformerLayerCut = 3,
 } LiteRtCompilerOptionsPartitionStrategy;
 
 // Creates a compiler options object.
@@ -68,6 +97,18 @@ LiteRtStatus LrtSetCompilerOptionsPartitionStrategy(
 LiteRtStatus LrtGetCompilerOptionsPartitionStrategy(
     const LrtCompilerOptions* options,
     LiteRtCompilerOptionsPartitionStrategy* partition_strategy);
+
+// Sets the transformer layer cut spec used by the TransformerLayerCut partition
+// strategy. `spec` is a null-terminated per-signature spec string (see the enum
+// comment above for the grammar). The string is copied.
+LiteRtStatus LrtSetCompilerOptionsTransformerLayerCuts(LrtCompilerOptions* options,
+                                                       const char* spec);
+
+// Gets the transformer layer cut spec. Returns a pointer to the internally held
+// string (valid until the options are modified or destroyed) via `*spec`.
+// Returns kLiteRtStatusErrorNotFound if no spec is set.
+LiteRtStatus LrtGetCompilerOptionsTransformerLayerCuts(
+    const LrtCompilerOptions* options, const char** spec);
 
 // Sets the dummy option for testing.
 LiteRtStatus LrtSetCompilerOptionsDummyOption(LrtCompilerOptions* options,
