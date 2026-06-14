@@ -25,7 +25,10 @@
 #include <string.h>
 
 #include <cstdint>
+#include <limits>
 #include <vector>
+
+#include "litert/c/litert_layout.h"
 
 #if LITERT_HAS_AHWB_SUPPORT
 #include <sys/socket.h>
@@ -36,8 +39,10 @@
 #include <openvino/runtime/remote_context.hpp>
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/vendors/intel_openvino/utils.h"
 
 #include "litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.h"
@@ -109,6 +114,69 @@ litert::Expected<int> GetFdFromUnixHandle(AHardwareBuffer* ahwb) {
 }
 #endif  // LITERT_HAS_AHWB_SUPPORT
 
+namespace {
+
+// Builds an OpenVINO shape from an untrusted LiteRtRankedTensorType and
+// validates that the resulting tensor fits within the host buffer of
+// `buffer_size` bytes.
+litert::Expected<std::vector<int32_t>> BuildAndValidateShape(
+    const LiteRtRankedTensorType& tensor_type, size_t element_bit_width,
+    size_t buffer_size) {
+  const auto& layout = tensor_type.layout;
+
+  // `rank` is a 7-bit field, but guard explicitly against the array bound so a
+  // crafted value can never index past `dimensions[LITERT_TENSOR_MAX_RANK]`.
+  if (layout.rank > LITERT_TENSOR_MAX_RANK) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Tensor rank exceeds maximum supported rank");
+  }
+
+  if (element_bit_width == 0) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Unsupported/unknown tensor element type");
+  }
+
+  std::vector<int32_t> ov_shape_vec(layout.rank);
+  // Number of elements implied by the declared shape, computed in 64-bit with
+  // overflow checks before it is multiplied by the element size.
+  uint64_t num_elements = 1;
+  for (uint32_t i = 0; i < layout.rank; ++i) {
+    const int32_t dim = layout.dimensions[i];
+    if (dim <= 0) {
+      return litert::Unexpected(
+          kLiteRtStatusErrorInvalidArgument,
+          "Dynamic/negative/zero tensor dimensions are not supported");
+    }
+    ov_shape_vec[i] = dim;
+    if (num_elements != 0 &&
+        static_cast<uint64_t>(dim) >
+            std::numeric_limits<uint64_t>::max() / num_elements) {
+      return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                                "Tensor element count overflow");
+    }
+    num_elements *= static_cast<uint64_t>(dim);
+  }
+
+  if (num_elements != 0 &&
+      static_cast<uint64_t>(element_bit_width) >
+          std::numeric_limits<uint64_t>::max() / num_elements) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Tensor byte size overflow");
+  }
+  const uint64_t required_bits = num_elements * element_bit_width;
+  const uint64_t required_bytes = (required_bits + 7) / 8;
+
+  if (required_bytes > buffer_size) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorInvalidArgument,
+        "Declared tensor shape exceeds the mapped buffer size");
+  }
+
+  return ov_shape_vec;
+}
+
+}  // namespace
+
 litert::Expected<LiteRtTensorBufferHandle>
 LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
     LiteRtTensorBuffer tensor_buffer) {
@@ -158,10 +226,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 
       LITERT_ASSIGN_OR_RETURN(auto openvino_tensor,
                               custom_tensor_buffer->GetOVTensor());
-      tensor_handle_map_.emplace((LiteRtTensorBufferHandle)next_handle_,
-                                 RegisteredTensor{.tensor = openvino_tensor});
-
-      return next_handle_++;
+      return InsertTensor(RegisteredTensor{.tensor = openvino_tensor});
     }
     case kLiteRtTensorBufferTypeDmaBuf: {
 #if LITERT_HAS_DMABUF_SUPPORT
@@ -177,16 +242,15 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       auto context = getCore()
                          ->get_default_context("NPU")
                          .as<ov::intel_npu::level_zero::ZeroContext>();
-      std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
-      for (int i = 0; i < ov_shape_vec.size(); i++)
-        ov_shape_vec[i] = tensor_type.layout.dimensions[i];
+      LITERT_ASSIGN_OR_RETURN(
+          std::vector<int32_t> ov_shape_vec,
+          BuildAndValidateShape(tensor_type, ov_element_type.bitwidth(),
+                                tensor_buffer_size));
 
       auto remote_tensor = context.create_tensor(
           ov_element_type, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()},
           buffer_fd);
-      tensor_handle_map_.emplace((LiteRtTensorBufferHandle)next_handle_,
-                                 RegisteredTensor{.tensor = remote_tensor});
-      return next_handle_++;
+      return InsertTensor(RegisteredTensor{.tensor = remote_tensor});
 
 #else
       return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -205,14 +269,16 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
           litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                              "Failed to get LiteRT Tensor Buffer for AHWB"));
 
+      LITERT_ASSIGN_OR_RETURN(
+          std::vector<int32_t> ov_shape_vec,
+          BuildAndValidateShape(tensor_type, ov_element_type.bitwidth(),
+                                tensor_buffer_size));
+
       LITERT_ASSIGN_OR_RETURN(int fd, GetFdFromUnixHandle(ahwb));
       LITERT_RETURN_IF_ERROR(
           fd != -1, litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                        "Failed to get FD from unix handle"));
 
-      std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
-      for (int i = 0; i < ov_shape_vec.size(); i++)
-        ov_shape_vec[i] = tensor_type.layout.dimensions[i];
       auto context = getCore()
                          ->get_default_context("NPU")
                          .as<ov::intel_npu::level_zero::ZeroContext>();
@@ -229,10 +295,8 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       ov::Tensor ov_tensor(ov_element_type,
                            ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()},
                            buffer);
-      tensor_handle_map_.emplace(
-          (LiteRtTensorBufferHandle)next_handle_,
-          RegisteredTensor{.tensor = ov_tensor, .cleanup = std::move(cleanup)});
-      return next_handle_++;
+      return InsertTensor(RegisteredTensor{.tensor = ov_tensor,
+                                           .cleanup = std::move(cleanup)});
 
 #else
       return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -249,6 +313,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 
 litert::Expected<void> LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(
     LiteRtTensorBufferHandle tensor_buffer_handle) {
+  absl::MutexLock lock(&tensor_handle_mutex_);
   auto it = tensor_handle_map_.find(tensor_buffer_handle);
   if (it != tensor_handle_map_.end()) {
     tensor_handle_map_.erase(tensor_buffer_handle);

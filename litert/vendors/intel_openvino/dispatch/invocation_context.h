@@ -72,6 +72,7 @@ class LiteRtDispatchInvocationContextT {
   void SetSchedulingInfo(const LiteRtSchedulingInfo* scheduling_info) {
     if (scheduling_info == nullptr) {
       scheduling_info_ = std::nullopt;
+      return;
     }
     scheduling_info_ = *scheduling_info;
   }
