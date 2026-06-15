@@ -269,8 +269,8 @@ litert_test(
         "--dont_register=.*tfl\\.reduce_min.*",  # XNNPACK does not support ReduceMin
         "--dont_register=.*tfl\\.reduce_prod.*",  # XNNPACK does not support ReduceProd
         "--dont_register=.*Pooling.*",  # XNNPACK rejects pooling when stride > filter size
-        "--dont_register=.*Conv2d.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 Conv2d
-        "--dont_register=.*BatchMatmul.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 BatchMatmul
+        # "--dont_register=.*Conv2d.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 Conv2d
+        # "--dont_register=.*BatchMatmul.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 BatchMatmul
         "--dont_register=.*FullyConnected.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 FullyConnected
         # Explicit ExtraModel exclusions (unsupported by XNNPACK):
         "--dont_register=.*simple_add_dynamic_shape.*",
@@ -282,9 +282,6 @@ litert_test(
     copts = commandline_flag_copts(),
     linkstatic = True,
     no_main = True,
-    tags = [
-        "notap",
-    ],
     target_compatible_with = select({
         "//litert:windows": ["@platforms//:incompatible"],
         "//conditions:default": [],
