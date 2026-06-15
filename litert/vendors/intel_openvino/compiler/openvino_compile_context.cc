@@ -75,6 +75,19 @@ OpenVinoCompileContext::OpenVinoCompileContext() {
         context.eliminate_fq_after_matmul_ = (value == "true");
         continue;
       }
+      if (key == "fuse_split_attention_to_sdpa") {
+        LITERT_LOG(LITERT_INFO,
+                   "Custom config: fuse_split_attention_to_sdpa = %s",
+                   value.c_str());
+        context.fuse_split_attention_to_sdpa_ = (value == "true");
+        continue;
+      }
+      if (key == "sdpa_pad_kv_to_alignment") {
+        LITERT_LOG(LITERT_INFO, "Custom config: sdpa_pad_kv_to_alignment = %s",
+                   value.c_str());
+        context.sdpa_pad_kv_to_alignment_ = (value == "true");
+        continue;
+      }
       context.configs_map_[key] = value;
       LITERT_LOG(LITERT_INFO, "Custom config: %s = %s", key.c_str(),
                  value.c_str());
@@ -125,6 +138,8 @@ void OpenVinoCompileContext::OptimizeModel(
   if (device_ == "NPU") {
     NpuOptimizer()
         .SetEliminateMatMulFakeQuantize(eliminate_fq_after_matmul_)
+        .SetFuseSplitAttentionToSDPA(fuse_split_attention_to_sdpa_)
+        .SetSdpaPadKvToAlignment(sdpa_pad_kv_to_alignment_)
         .Run(model);
   }
 }

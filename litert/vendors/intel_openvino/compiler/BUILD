@@ -42,6 +42,23 @@ litert_lib(
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
+        "//litert/c/internal:litert_logging",
+        "@intel_openvino//:openvino",
+    ],
+)
+
+litert_test(
+    name = "npu_optimizer_test",
+    srcs = ["npu_optimizer_test.cc"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":npu_optimizer",
         "@intel_openvino//:openvino",
     ],
 )

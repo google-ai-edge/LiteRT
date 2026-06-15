@@ -58,6 +58,12 @@ class OpenVinoCompileContext {
   std::string device_ = "NPU";
   ov::AnyMap configs_map_;
   bool eliminate_fq_after_matmul_ = false;
+  bool fuse_split_attention_to_sdpa_ = false;
+  // `sdpa_pad_kv_to_alignment_` is only meaningful when
+  // `fuse_split_attention_to_sdpa_` is true and enabled by default. It controls
+  // whether the `FuseSplitAttentionToSDPA` pass pads KV sequences up to the NPU
+  // SDPA kernel's required alignment when fusing.
+  bool sdpa_pad_kv_to_alignment_ = true;
 };
 
 }  // namespace openvino
