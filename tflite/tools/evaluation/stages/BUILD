@@ -43,6 +43,7 @@ cc_library(
     deps = [
         "//tflite:string",
         "//tflite/c:c_api_types",
+        "//tflite/c:common",
         "//tflite/kernels/internal:reference_base",
         "//tflite/kernels/internal:types",
         "//tflite/profiling:time",
@@ -52,6 +53,7 @@ cc_library(
         "//tflite/tools/evaluation/proto:preprocessing_steps_cc_proto",
         "@com_google_absl//absl/base",
         "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings",
         "@libjpeg_turbo//:jpeg",
         "@org_tensorflow//tensorflow/core:tflite_portable_logging",
@@ -77,6 +79,7 @@ cc_test(
         "//tflite/c:c_api_types",
         "//tflite/tools/evaluation/proto:evaluation_config_cc_proto",
         "//tflite/tools/evaluation/proto:evaluation_stages_cc_proto",
+        "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ],
 )
