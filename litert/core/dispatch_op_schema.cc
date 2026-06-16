@@ -16,11 +16,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <utility>
 
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
+#include "litert/c/litert_common.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_expected.h"
 
 namespace litert {
 namespace internal {
@@ -57,31 +60,67 @@ OwningBufferRef<uint8_t> MakeDispatchOpOptions(DispatchOpOptions options) {
 
 bool UpdateDispatchOpOptionsInPlace(DispatchOpOptions options,
                                     MutableBufferRef<uint8_t> buffer) {
-  auto opts = flexbuffers::GetRoot(buffer.Data(), buffer.Size()).AsMap();
+  if (!buffer.Data() ||
+      !flexbuffers::VerifyBuffer(buffer.Data(), buffer.Size())) {
+    return false;
+  }
+  auto root = flexbuffers::GetRoot(buffer.Data(), buffer.Size());
+  if (!root.IsMap()) {
+    return false;
+  }
+  auto opts = root.AsMap();
 
   // Update name if same len.
-  const auto name_ok = opts[kNameKey].MutateString(options.name);
+  auto name = opts[kNameKey];
+  auto size = opts[kBytecodeSizeKey];
+  auto offset = opts[kBytecodeOffsetKey];
+  if (!name.IsString() || !size.IsUInt() || !offset.IsUInt()) {
+    return false;
+  }
+  const auto name_ok = name.MutateString(options.name);
 
   // Update bytecode size and offset. Since min scalar bit width is set to max
   // possible value, it shouldn't fail in theory.
-  const auto size_ok = opts[kBytecodeSizeKey].MutateUInt(options.bytecode_size);
-  const auto offset_ok =
-      opts[kBytecodeOffsetKey].MutateUInt(options.bytecode_offset);
+  const auto size_ok = size.MutateUInt(options.bytecode_size);
+  const auto offset_ok = offset.MutateUInt(options.bytecode_offset);
 
   return name_ok && size_ok && offset_ok;
 }
 
-DispatchOpOptions GetDispatchOpOptions(BufferRef<uint8_t> buffer) {
-  const auto opts = flexbuffers::GetRoot(buffer.Data(), buffer.Size()).AsMap();
+Expected<DispatchOpOptions> GetDispatchOpOptions(BufferRef<uint8_t> buffer) {
+  if (!buffer.Data() ||
+      !flexbuffers::VerifyBuffer(buffer.Data(), buffer.Size())) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Invalid dispatch op options flexbuffer");
+  }
+  const auto root = flexbuffers::GetRoot(buffer.Data(), buffer.Size());
+  if (!root.IsMap()) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Dispatch op options must be a map");
+  }
+  const auto opts = root.AsMap();
 
-  const size_t bytecode_size = opts[kBytecodeSizeKey].AsUInt64();
-  const size_t bytecode_offset = opts[kBytecodeOffsetKey].AsUInt64();
-  std::string name(opts[kNameKey].AsString().c_str());
+  const auto bytecode_size_ref = opts[kBytecodeSizeKey];
+  const auto bytecode_offset_ref = opts[kBytecodeOffsetKey];
+  const auto name_ref = opts[kNameKey];
+  if (!bytecode_size_ref.IsUInt() || !bytecode_offset_ref.IsUInt() ||
+      !name_ref.IsString()) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Dispatch op options have invalid fields");
+  }
+
+  const uint64_t bytecode_size = bytecode_size_ref.AsUInt64();
+  const uint64_t bytecode_offset = bytecode_offset_ref.AsUInt64();
+  if (bytecode_size > std::numeric_limits<size_t>::max() ||
+      bytecode_offset > std::numeric_limits<size_t>::max()) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Dispatch op bytecode range exceeds size_t");
+  }
 
   return DispatchOpOptions{
-      bytecode_size,
-      bytecode_offset,
-      std::move(name),
+      static_cast<size_t>(bytecode_size),
+      static_cast<size_t>(bytecode_offset),
+      name_ref.AsString().str(),
   };
 }
 

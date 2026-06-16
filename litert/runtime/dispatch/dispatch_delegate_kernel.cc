@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <set>
 #include <string>
@@ -69,8 +70,9 @@ Expected<LiteRtMemBuffer> BuildExecutableBytecodeBuffer(
   }
 
   if (has_alloc_base_file_region) {
-    if (dispatch_options.bytecode_offset + dispatch_options.bytecode_size >
-        alloc_base_size) {
+    if (dispatch_options.bytecode_offset > alloc_base_size ||
+        dispatch_options.bytecode_size >
+            alloc_base_size - dispatch_options.bytecode_offset) {
       return Unexpected(
           kLiteRtStatusErrorRuntimeFailure,
           "Dispatch bytecode range exceeds the model file region bounds");
@@ -622,7 +624,8 @@ DispatchDelegateKernel::CreateNodeInvocationContext(
 
   // Read offset and size (relative to alloc_base) from the custom options (and
   // name).
-  const auto dispatch_opts = GetDispatchOpOptions(custom_opts);
+  LITERT_ASSIGN_OR_RETURN(const auto dispatch_opts,
+                          GetDispatchOpOptions(custom_opts));
   const auto& function_name = dispatch_opts.name;
 
   auto num_node_inputs = TfLiteOpaqueNodeNumberOfInputs(node);

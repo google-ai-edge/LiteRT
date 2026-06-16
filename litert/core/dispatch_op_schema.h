@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_CORE_DISPATCH_OP_SCHEMA_H_
 
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_expected.h"
 
 // Utilities for working with the dispatch op custom options buffer. These
 // functions leverage the flexbuffer api under the hood which allows for inplace
@@ -50,7 +51,7 @@ bool UpdateDispatchOpOptionsInPlace(DispatchOpOptions options,
 
 // Get the dispatch op options from the given buffer. The buffer should be the
 // custom options buffer of the dispatch op.
-DispatchOpOptions GetDispatchOpOptions(BufferRef<uint8_t> buffer);
+Expected<DispatchOpOptions> GetDispatchOpOptions(BufferRef<uint8_t> buffer);
 
 }  // namespace litert::internal
 

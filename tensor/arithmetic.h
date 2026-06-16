@@ -964,11 +964,15 @@ Tensor<Mixins...> FullyConnected(
     Tensor<Mixins...> input, Tensor<Mixins...> weights,
     std::optional<Tensor<Mixins...>> bias,
     FusedActivation activation = kActNone, bool keep_num_dims = true,
+    bool asymmetric_quantize_inputs = false,
+    FullyConnectedWeightsFormat weights_format = kWeightsFormatDefault,
     source_location loc = source_location::current()) {
   auto op = std::make_shared<graph::FullyConnectedOperation>();
   RegisterMixins<Mixins...>(op);
   op->activation = activation;
   op->keep_num_dims = keep_num_dims;
+  op->asymmetric_quantize_inputs = asymmetric_quantize_inputs;
+  op->weights_format = weights_format;
   AddInputs(op, input, weights);
   if (bias.has_value()) {
     AddInputs(op, bias.value());
@@ -997,19 +1001,25 @@ template <class... Mixins>
 Tensor<Mixins...> FullyConnected(
     Tensor<Mixins...> input, Tensor<Mixins...> weights, Tensor<Mixins...> bias,
     FusedActivation activation = kActNone, bool keep_num_dims = true,
+    bool asymmetric_quantize_inputs = false,
+    FullyConnectedWeightsFormat weights_format = kWeightsFormatDefault,
     source_location loc = source_location::current()) {
   return FullyConnected(input, weights, std::optional(std::move(bias)),
-                        activation, keep_num_dims, loc);
+                        activation, keep_num_dims, asymmetric_quantize_inputs,
+                        weights_format, loc);
 }
 
 template <class... Mixins>
 Tensor<Mixins...> FullyConnected(
     Tensor<Mixins...> input, Tensor<Mixins...> weights,
     FusedActivation activation = kActNone, bool keep_num_dims = true,
+    bool asymmetric_quantize_inputs = false,
+    FullyConnectedWeightsFormat weights_format = kWeightsFormatDefault,
     source_location loc = source_location::current()) {
   return FullyConnected(input, weights,
                         /*bias=*/std::optional<Tensor<Mixins...>>(std::nullopt),
-                        activation, keep_num_dims, loc);
+                        activation, keep_num_dims, asymmetric_quantize_inputs,
+                        weights_format, loc);
 }
 
 template <class... Mixins>
