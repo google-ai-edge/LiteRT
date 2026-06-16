@@ -33,6 +33,7 @@ cc_library(
     deps = [
         "//ml_drift_delegate/delegate:unowned_tensor_desc",
         "//ml_drift_delegate/delegate/serialization_weight_cache",
+        "//ml_drift_delegate/delegate/serialization_weight_cache:serialization_schema",
         "//ml_drift_delegate/tflite:model_builder_helper",
         "//ml_drift_delegate/tflite:shared_const_tensor_map",
         "//tflite/core/c:private_common",

@@ -127,7 +127,11 @@ struct SerializationWeightCacheTest : public ::testing::TestWithParam<bool> {
 
   void InsertTensors(bool is_quantization_param_tensor) {
     for (const auto& [id, tensor_desc] : tensor_descs) {
-      ASSERT_OK(cache.Insert(id, is_quantization_param_tensor, tensor_desc));
+      ASSERT_OK(
+          cache.Insert(id, is_quantization_param_tensor,
+                       /*packing_algorithm=*/
+                       ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                       tensor_desc));
     }
   }
 
@@ -171,7 +175,10 @@ TEST_P(SerializationWeightCacheTest,
   uint32_t global_tensor_id = 12345;
   ml_drift::TensorDescriptor tensor_desc;
   EXPECT_THAT(
-      cache.LookUp(global_tensor_id, GetQuantizationParamTensor(), tensor_desc),
+      cache.LookUp(global_tensor_id, GetQuantizationParamTensor(),
+                   /*packing_algorithm=*/
+                   ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                   tensor_desc),
       StatusIs(::util::error::INVALID_ARGUMENT,
                HasSubstr("Failed to look up ")));
 }
@@ -179,6 +186,8 @@ TEST_P(SerializationWeightCacheTest,
 TEST_P(SerializationWeightCacheTest, InsertFailsWhenCacheIsNotBuilding) {
   EXPECT_THAT(
       cache.Insert(tensor_descs.begin()->first, GetQuantizationParamTensor(),
+                   /*packing_algorithm=*/
+                   ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
                    tensor_descs.begin()->second),
       StatusIs(
           ::util::error::INVALID_ARGUMENT,
@@ -191,11 +200,15 @@ TEST_P(SerializationWeightCacheTest,
   ASSERT_OK(cache.StartBuild(
       tmp_dir, "insert_fails_when_tensor_descriptor_is_already_inserted",
       unique_model_identifier));
-  ASSERT_OK(cache.Insert(tensor_descs.begin()->first,
-                         GetQuantizationParamTensor(),
-                         tensor_descs.begin()->second));
+  ASSERT_OK(
+      cache.Insert(tensor_descs.begin()->first, GetQuantizationParamTensor(),
+                   /*packing_algorithm=*/
+                   ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                   tensor_descs.begin()->second));
   EXPECT_THAT(
       cache.Insert(tensor_descs.begin()->first, GetQuantizationParamTensor(),
+                   /*packing_algorithm=*/
+                   ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
                    tensor_descs.begin()->second),
       StatusIs(::util::error::INVALID_ARGUMENT,
                HasSubstr("Tensor already exists in cache")));
@@ -212,7 +225,10 @@ TEST_P(SerializationWeightCacheTest, LookUpFailsIfKeyDoesntMatch) {
   ml_drift::TensorDescriptor tensor_desc;
   tensor_desc.SetAccess(ml_drift::AccessType::READ);
   EXPECT_THAT(
-      cache.LookUp(global_tensor_id, GetQuantizationParamTensor(), tensor_desc),
+      cache.LookUp(global_tensor_id, GetQuantizationParamTensor(),
+                   /*packing_algorithm=*/
+                   ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                   tensor_desc),
       StatusIs(::util::error::INVALID_ARGUMENT,
                HasSubstr("Failed to look up ")));
 }
@@ -226,7 +242,10 @@ TEST_P(SerializationWeightCacheTest, LookUpFailsIfCacheIsBuilding) {
   for (const auto& [id, tensor_desc] : tensor_descs) {
     ml_drift::TensorDescriptor looked_up_tensor_desc;
     EXPECT_THAT(
-        cache.LookUp(id, GetQuantizationParamTensor(), looked_up_tensor_desc),
+        cache.LookUp(id, GetQuantizationParamTensor(),
+                     /*packing_algorithm=*/
+                     ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                     looked_up_tensor_desc),
         StatusIs(
             ::util::error::INVALID_ARGUMENT,
             HasSubstr("Cannot look up a buffer in a cache that is building")));
@@ -244,7 +263,10 @@ TEST_P(SerializationWeightCacheTest, LookUpSucceeds) {
   for (const auto& [id, tensor_desc] : tensor_descs) {
     ml_drift::TensorDescriptor looked_up_tensor_desc;
     ASSERT_OK(
-        cache.LookUp(id, GetQuantizationParamTensor(), looked_up_tensor_desc));
+        cache.LookUp(id, GetQuantizationParamTensor(),
+                     /*packing_algorithm=*/
+                     ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                     looked_up_tensor_desc));
     EXPECT_THAT(looked_up_tensor_desc, TensorDescEq(tensor_desc));
   }
 }
@@ -258,8 +280,10 @@ TEST_P(SerializationWeightCacheTest,
   uint32_t global_tensor_id = 10;
   ml_drift::TensorDescriptor tensor_desc;
   tensor_desc.SetAccess(ml_drift::AccessType::READ);
-  ASSERT_OK(cache.Insert(global_tensor_id, GetQuantizationParamTensor(),
-                         tensor_desc));
+  ASSERT_OK(cache.Insert(
+      global_tensor_id, GetQuantizationParamTensor(),
+      /*packing_algorithm=*/
+      ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN, tensor_desc));
   EXPECT_OK(cache.StopBuild());
 
   ASSERT_OK(cache.Load(
@@ -267,8 +291,11 @@ TEST_P(SerializationWeightCacheTest,
       unique_model_identifier));
 
   ml_drift::TensorDescriptor looked_up_tensor_desc;
-  ASSERT_OK(cache.LookUp(global_tensor_id, GetQuantizationParamTensor(),
-                         looked_up_tensor_desc));
+  ASSERT_OK(
+      cache.LookUp(global_tensor_id, GetQuantizationParamTensor(),
+                   /*packing_algorithm=*/
+                   ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                   looked_up_tensor_desc));
   EXPECT_THAT(looked_up_tensor_desc, TensorDescEq(tensor_desc));
 }
 
@@ -280,8 +307,10 @@ TEST_P(SerializationWeightCacheTest, LookUpIntegerOverflowFails) {
   ml_drift::TensorDescriptor tensor_desc;
   tensor_desc.SetAccess(ml_drift::AccessType::READ);
   tensor_desc.SetData({1, 2, 3, 4});
-  ASSERT_OK(cache.Insert(global_tensor_id, GetQuantizationParamTensor(),
-                         tensor_desc));
+  ASSERT_OK(cache.Insert(
+      global_tensor_id, GetQuantizationParamTensor(),
+      /*packing_algorithm=*/
+      ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN, tensor_desc));
   EXPECT_OK(cache.StopBuild());
 
   ASSERT_OK(cache.Load(tmp_dir, "look_up_integer_overflow_fails",
@@ -294,10 +323,13 @@ TEST_P(SerializationWeightCacheTest, LookUpIntegerOverflowFails) {
       cache, global_tensor_id, GetQuantizationParamTensor(), huge_offset, 4);
 
   ml_drift::TensorDescriptor looked_up_tensor_desc;
-  EXPECT_THAT(cache.LookUp(global_tensor_id, GetQuantizationParamTensor(),
-                           looked_up_tensor_desc),
-              StatusIs(::util::error::INVALID_ARGUMENT,
-                       HasSubstr("Cache entry offset integer overflow:")));
+  EXPECT_THAT(
+      cache.LookUp(global_tensor_id, GetQuantizationParamTensor(),
+                   /*packing_algorithm=*/
+                   ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                   looked_up_tensor_desc),
+      StatusIs(::util::error::INVALID_ARGUMENT,
+               HasSubstr("Cache entry offset integer overflow:")));
 }
 
 TEST_P(SerializationWeightCacheTest, LookUpOutOfBoundsFails) {
@@ -308,8 +340,10 @@ TEST_P(SerializationWeightCacheTest, LookUpOutOfBoundsFails) {
   ml_drift::TensorDescriptor tensor_desc;
   tensor_desc.SetAccess(ml_drift::AccessType::READ);
   tensor_desc.SetData({1, 2, 3, 4});
-  ASSERT_OK(cache.Insert(global_tensor_id, GetQuantizationParamTensor(),
-                         tensor_desc));
+  ASSERT_OK(cache.Insert(
+      global_tensor_id, GetQuantizationParamTensor(),
+      /*packing_algorithm=*/
+      ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN, tensor_desc));
   EXPECT_OK(cache.StopBuild());
 
   ASSERT_OK(cache.Load(tmp_dir, "look_up_out_of_bounds_fails",
@@ -321,10 +355,13 @@ TEST_P(SerializationWeightCacheTest, LookUpOutOfBoundsFails) {
       std::numeric_limits<size_t>::max() / 2);
 
   ml_drift::TensorDescriptor looked_up_tensor_desc;
-  EXPECT_THAT(cache.LookUp(global_tensor_id, GetQuantizationParamTensor(),
-                           looked_up_tensor_desc),
-              StatusIs(::util::error::INVALID_ARGUMENT,
-                       HasSubstr("Cache entry location out of bounds:")));
+  EXPECT_THAT(
+      cache.LookUp(global_tensor_id, GetQuantizationParamTensor(),
+                   /*packing_algorithm=*/
+                   ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                   looked_up_tensor_desc),
+      StatusIs(::util::error::INVALID_ARGUMENT,
+               HasSubstr("Cache entry location out of bounds:")));
 }
 
 class OOMTensorDescriptor : public ml_drift::TensorDescriptor {
@@ -346,7 +383,10 @@ TEST_P(SerializationWeightCacheTest, InsertHandlesOOMGracefully) {
   OOMTensorDescriptor tensor_desc;
 
   EXPECT_THAT(
-      cache.Insert(global_tensor_id, GetQuantizationParamTensor(), tensor_desc),
+      cache.Insert(global_tensor_id, GetQuantizationParamTensor(),
+                   /*packing_algorithm=*/
+                   ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                   tensor_desc),
       StatusIs(
           ::util::error::RESOURCE_EXHAUSTED,
           HasSubstr("Failed to allocate memory for cache staging buffer.")));
@@ -361,7 +401,10 @@ TEST_P(SerializationWeightCacheTest, ExceedsMaxSupportedSubgraphsFails) {
   for (int i = 0; i <= ml_drift::kMaxSupportedSubgraphs; ++i) {
     ASSERT_OK(cache.StartBuild(tmp_dir, "exceeds_max_subgraphs",
                                unique_model_identifier_base + i));
-    ASSERT_OK(cache.Insert(i, GetQuantizationParamTensor(), tensor_desc));
+    ASSERT_OK(cache.Insert(
+        i, GetQuantizationParamTensor(),
+        /*packing_algorithm=*/
+        ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN, tensor_desc));
     ASSERT_OK(cache.StopBuild());
   }
 
@@ -383,8 +426,11 @@ TEST_P(SerializationWeightCacheTest, LookUpWithoutLoadFails) {
   for (const auto& [id, tensor_desc] : tensor_descs) {
     ml_drift::TensorDescriptor looked_up_tensor_desc;
     EXPECT_THAT(
-        new_cache.LookUp(id, GetQuantizationParamTensor(),
-                         looked_up_tensor_desc),
+        new_cache.LookUp(
+            id, GetQuantizationParamTensor(),
+            /*packing_algorithm=*/
+            ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+            looked_up_tensor_desc),
         StatusIs(::util::error::INVALID_ARGUMENT,
                  HasSubstr("Cannot look up a buffer in a cache that is not "
                            "loaded.")));
@@ -399,8 +445,10 @@ TEST_P(SerializationWeightCacheTest, UniqueModelIdentifierIsUsedToRejectCache) {
   uint32_t global_tensor_id = 10;
   ml_drift::TensorDescriptor tensor_desc;
   tensor_desc.SetAccess(ml_drift::AccessType::READ);
-  ASSERT_OK(cache.Insert(global_tensor_id, GetQuantizationParamTensor(),
-                         tensor_desc));
+  ASSERT_OK(cache.Insert(
+      global_tensor_id, GetQuantizationParamTensor(),
+      /*packing_algorithm=*/
+      ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN, tensor_desc));
   EXPECT_OK(cache.StopBuild());
 
   const uint64_t different_unique_model_identifier = 67890;
@@ -420,7 +468,10 @@ TEST_P(SerializationWeightCacheTest, MultipleSubgraphsShareCacheWorks) {
   uint32_t id1 = 10;
   ml_drift::TensorDescriptor desc1;
   desc1.SetAccess(ml_drift::AccessType::READ);
-  ASSERT_OK(cache.Insert(id1, GetQuantizationParamTensor(), desc1));
+  ASSERT_OK(cache.Insert(
+      id1, GetQuantizationParamTensor(),
+      /*packing_algorithm=*/
+      ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN, desc1));
   EXPECT_OK(cache.StopBuild());
 
   // Now build for another subgraph on the same file.
@@ -430,19 +481,30 @@ TEST_P(SerializationWeightCacheTest, MultipleSubgraphsShareCacheWorks) {
   uint32_t id2 = 20;
   ml_drift::TensorDescriptor desc2;
   desc2.SetAccess(ml_drift::AccessType::WRITE);
-  ASSERT_OK(cache.Insert(id2, GetQuantizationParamTensor(), desc2));
+  ASSERT_OK(cache.Insert(
+      id2, GetQuantizationParamTensor(),
+      /*packing_algorithm=*/
+      ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN, desc2));
   EXPECT_OK(cache.StopBuild());
 
   // Verify we can load and find tensors for subgraph 1.
   ASSERT_OK(cache.Load(tmp_dir, "multiple_subgraphs_share_cache", 111));
   ml_drift::TensorDescriptor looked_up_desc1;
-  ASSERT_OK(cache.LookUp(id1, GetQuantizationParamTensor(), looked_up_desc1));
+  ASSERT_OK(
+      cache.LookUp(id1, GetQuantizationParamTensor(),
+                   /*packing_algorithm=*/
+                   ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                   looked_up_desc1));
   EXPECT_THAT(looked_up_desc1, TensorDescEq(desc1));
 
   // Verify we can load and find tensors for subgraph 2.
   ASSERT_OK(cache.Load(tmp_dir, "multiple_subgraphs_share_cache", 222));
   ml_drift::TensorDescriptor looked_up_desc2;
-  ASSERT_OK(cache.LookUp(id2, GetQuantizationParamTensor(), looked_up_desc2));
+  ASSERT_OK(
+      cache.LookUp(id2, GetQuantizationParamTensor(),
+                   /*packing_algorithm=*/
+                   ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                   looked_up_desc2));
   EXPECT_THAT(looked_up_desc2, TensorDescEq(desc2));
 }
 
@@ -456,7 +518,10 @@ TEST_P(SerializationWeightCacheTest, LoadFailureThenStartBuildSucceeds) {
   uint32_t id1 = 10;
   ml_drift::TensorDescriptor desc1;
   desc1.SetAccess(ml_drift::AccessType::READ);
-  ASSERT_OK(cache.Insert(id1, GetQuantizationParamTensor(), desc1));
+  ASSERT_OK(cache.Insert(
+      id1, GetQuantizationParamTensor(),
+      /*packing_algorithm=*/
+      ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN, desc1));
   EXPECT_OK(cache.StopBuild());
 
   // Create a new cache instance to simulate a new session/process.
@@ -474,20 +539,29 @@ TEST_P(SerializationWeightCacheTest, LoadFailureThenStartBuildSucceeds) {
   uint32_t id2 = 20;
   ml_drift::TensorDescriptor desc2;
   desc2.SetAccess(ml_drift::AccessType::WRITE);
-  ASSERT_OK(new_cache.Insert(id2, GetQuantizationParamTensor(), desc2));
+  ASSERT_OK(new_cache.Insert(
+      id2, GetQuantizationParamTensor(),
+      /*packing_algorithm=*/
+      ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN, desc2));
   EXPECT_OK(new_cache.StopBuild());
 
   // Verify we can load both now.
   ASSERT_OK(new_cache.Load(tmp_dir, model_token, identifier1));
   ml_drift::TensorDescriptor looked_up_desc1;
   ASSERT_OK(
-      new_cache.LookUp(id1, GetQuantizationParamTensor(), looked_up_desc1));
+      new_cache.LookUp(id1, GetQuantizationParamTensor(),
+                       /*packing_algorithm=*/
+                       ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                       looked_up_desc1));
   EXPECT_THAT(looked_up_desc1, TensorDescEq(desc1));
 
   ASSERT_OK(new_cache.Load(tmp_dir, model_token, identifier2));
   ml_drift::TensorDescriptor looked_up_desc2;
   ASSERT_OK(
-      new_cache.LookUp(id2, GetQuantizationParamTensor(), looked_up_desc2));
+      new_cache.LookUp(id2, GetQuantizationParamTensor(),
+                       /*packing_algorithm=*/
+                       ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                       looked_up_desc2));
   EXPECT_THAT(looked_up_desc2, TensorDescEq(desc2));
 }
 
@@ -514,8 +588,10 @@ TEST(SerializationWeightCacheTest, FileDescriptorSupportWorks) {
   std::vector<uint8_t> data = {1, 2, 3, 4};
   desc.SetData(std::move(data));
 
-  ASSERT_OK(
-      cache.Insert(tensor_id, /*is_quantization_param_tensor=*/false, desc));
+  ASSERT_OK(cache.Insert(
+      tensor_id, /*is_quantization_param_tensor=*/false,
+      /*packing_algorithm=*/
+      ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN, desc));
   EXPECT_OK(cache.StopBuild());
 
   // Test Load with FD.
@@ -527,8 +603,11 @@ TEST(SerializationWeightCacheTest, FileDescriptorSupportWorks) {
   ASSERT_OK(cache.Load(fd_read, identifier));
 
   ml_drift::TensorDescriptor looked_up_desc;
-  ASSERT_OK(cache.LookUp(tensor_id, /*is_quantization_param_tensor=*/false,
-                         looked_up_desc));
+  ASSERT_OK(
+      cache.LookUp(tensor_id, /*is_quantization_param_tensor=*/false,
+                   /*packing_algorithm=*/
+                   ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                   looked_up_desc));
 
   EXPECT_THAT(looked_up_desc, TensorDescEq(desc));
 

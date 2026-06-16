@@ -25,12 +25,16 @@
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/precision.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/cache_builder.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/file_util.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/mmap_handle.h"
+#include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_schema_generated.h"
 #include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "tflite/c/common.h"
 
@@ -39,6 +43,10 @@ namespace ml_drift {
 using ::litert::ml_drift::ReleaseDataCallback;
 using ::litert::ml_drift::UnownedDataTensorDescriptor;
 
+absl::StatusOr<ml_drift::cache::schema::PackingAlgorithm> ToPackingAlgorithm(
+    Layout layout);
+absl::StatusOr<ml_drift::cache::schema::PackingAlgorithm> ToPackingAlgorithm(
+    WeightsLayout layout);
 // The key to identify a cache entry. It is not enough to use the global tensor
 // id to identify a cache entry because quantization tensors have a different
 // global tensor id space.
@@ -71,11 +79,15 @@ struct CacheKey {
 // The location and descriptor of a buffer in the cache. This information is
 // used to construct the flatbuffer.
 struct CacheEntry {
-  CacheEntry(BufferLocation location, TensorDescriptor tensor_desc)
-      : location(std::move(location)), tensor_desc(std::move(tensor_desc)) {}
+  CacheEntry(BufferLocation location, TensorDescriptor tensor_desc,
+             ml_drift::cache::schema::PackingAlgorithm packing_algorithm)
+      : location(std::move(location)),
+        tensor_desc(std::move(tensor_desc)),
+        packing_algorithm(packing_algorithm) {}
 
   BufferLocation location;
   TensorDescriptor tensor_desc;
+  ml_drift::cache::schema::PackingAlgorithm packing_algorithm;
 };
 
 // Allows MLDrift to directly load packed weights from disk instead of having to
@@ -114,10 +126,12 @@ class SerializationWeightCache {
   absl::Status Load(int fd, uint64_t unique_model_identifier);
 
   // Returns the TensorDescriptor for the given global_tensor_id. Will error if
-  // the global_tensor_id is not found.
-  absl::Status LookUp(uint32_t global_tensor_id,
-                      bool is_quantization_param_tensor,
-                      TensorDescriptor& tensor_desc);
+  // the global_tensor_id is not found or if the packing_algorithm doesn't
+  // match.
+  absl::Status LookUp(
+      uint32_t global_tensor_id, bool is_quantization_param_tensor,
+      ml_drift::cache::schema::PackingAlgorithm packing_algorithm,
+      TensorDescriptor& tensor_desc);
 
   // Similar to the above, but returns an unowned data tensor descriptor which
   // is backed by mmap'd memory. This is used to avoid unnecessary copies when
@@ -131,20 +145,21 @@ class SerializationWeightCache {
   //   - release_data_callback: A callback to release the data when it is no
   //       longer needed. The user is responsible for calling this callback
   //       when they are done using the data.
-  absl::Status LookUp(uint32_t global_tensor_id,
-                      bool is_quantization_param_tensor,
-                      UnownedDataTensorDescriptor& unowned_data_tensor_desc,
-                      size_t& page_adjusted_offset,
-                      ReleaseDataCallback& release_data_callback);
+  absl::Status LookUp(
+      uint32_t global_tensor_id, bool is_quantization_param_tensor,
+      ml_drift::cache::schema::PackingAlgorithm packing_algorithm,
+      UnownedDataTensorDescriptor& unowned_data_tensor_desc,
+      size_t& page_adjusted_offset, ReleaseDataCallback& release_data_callback);
 
   // Returns true if the cache is ready for Insert() to be called.
   bool IsReadyForInsert() const { return IsBuilding(); }
 
   // Inserts a new TensorDescriptor into the cache using the global_tensor_id as
   // the key.
-  absl::Status Insert(uint32_t global_tensor_id,
-                      bool is_quantization_param_tensor,
-                      const TensorDescriptor& tensor_desc);
+  absl::Status Insert(
+      uint32_t global_tensor_id, bool is_quantization_param_tensor,
+      ml_drift::cache::schema::PackingAlgorithm packing_algorithm,
+      const TensorDescriptor& tensor_desc);
 
   // Releases the cache's memory.
   void Release();

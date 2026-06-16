@@ -71,6 +71,7 @@
 #include "ml_drift_delegate/tflite/model_builder_helper.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
 // clang-format off
+#include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_schema_generated.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 // clang-format on
 #include "tflite/core/c/common.h"
@@ -490,7 +491,9 @@ SharedMemoryManager::SharedMemoryManager(
 }
 
 absl::Status SharedMemoryManager::TryRestoringSerializedTensor(
-    const uint32_t global_tensor_id, SharedConstTensor& shared_tensor) {
+    const uint32_t global_tensor_id,
+    ml_drift::cache::schema::PackingAlgorithm packing_algorithm,
+    SharedConstTensor& shared_tensor) {
   if (!serialization_cache_) {
     return absl::FailedPreconditionError("Serialization is not supported.");
   }
@@ -501,14 +504,16 @@ absl::Status SharedMemoryManager::TryRestoringSerializedTensor(
   // TODO: b/421171145 - Evaluate non-Apple platforms to see if this is a
   // memory or init time improvement. At the very least, Web will need to
   // continue using the old path because it does not support mmaping.
-  UnownedDataTensorDescriptor tensor_desc;
+  litert::ml_drift::UnownedDataTensorDescriptor tensor_desc;
   ABSL_RETURN_IF_ERROR(serialization_cache_->LookUp(
-      global_tensor_id, /*is_quantization_param_tensor=*/false, tensor_desc,
-      page_adjusted_offset, release_data_callback));
+      global_tensor_id, /*is_quantization_param_tensor=*/false,
+      packing_algorithm, tensor_desc, page_adjusted_offset,
+      release_data_callback));
 #else
   TensorDescriptor tensor_desc;
   ABSL_RETURN_IF_ERROR(serialization_cache_->LookUp(
-      global_tensor_id, /*is_quantization_param_tensor=*/false, tensor_desc));
+      global_tensor_id, /*is_quantization_param_tensor=*/false,
+      packing_algorithm, tensor_desc));
 #endif
 
   // If the tensor was prepacked and serialized previously, restore it from
@@ -519,12 +524,14 @@ absl::Status SharedMemoryManager::TryRestoringSerializedTensor(
 }
 
 absl::Status SharedMemoryManager::TryStoringSerializedTensor(
-    const uint32_t global_tensor_id, const TensorDescriptor& tensor_desc) {
+    const uint32_t global_tensor_id,
+    ml_drift::cache::schema::PackingAlgorithm packing_algorithm,
+    const TensorDescriptor& tensor_desc) {
   // If serialization is enabled, store the prepacked tensor descriptor.
   if (serialization_cache_ && serialization_cache_->IsReadyForInsert()) {
     ABSL_RETURN_IF_ERROR(serialization_cache_->Insert(
-        global_tensor_id,
-        /*is_quantization_param_tensor=*/false, tensor_desc));
+        global_tensor_id, /*is_quantization_param_tensor=*/false,
+        packing_algorithm, tensor_desc));
   }
   return absl::OkStatus();
 }
@@ -552,10 +559,17 @@ absl::Status SharedMemoryManager::CreateQuantizedInt8WeightsTensor(
   // ML Drift's optimal performance requires the weights to be arranged in a
   // certain layout, which is typically different from TFL flatbuffer's weight
   // layouts.
+  ABSL_ASSIGN_OR_RETURN(
+      ml_drift::cache::schema::PackingAlgorithm packing_algorithm,
+      ToPackingAlgorithm(weights_desc.layout));
+  global_tensor_id_to_packing_algorithm_[global_tensor_id] = packing_algorithm;
+
   // If the packed weight tensor was serialized previously, restore from it
   // directly.
   bool serialized_tensor_found =
-      TryRestoringSerializedTensor(global_tensor_id, shared_tensor).ok();
+      TryRestoringSerializedTensor(global_tensor_id, packing_algorithm,
+                                   shared_tensor)
+          .ok();
   if (!serialized_tensor_found) {
     if (has_prepacked_tflite_tensors_) {
       // If the tflite tensor is prepacked, restore from it directly.
@@ -588,8 +602,8 @@ absl::Status SharedMemoryManager::CreateQuantizedInt8WeightsTensor(
           /*release_data_callback=*/nullptr, shared_tensor.weights));
 
       // If serialization is enabled, store the serialized tensor descriptor.
-      ABSL_RETURN_IF_ERROR(
-          TryStoringSerializedTensor(global_tensor_id, weights_i8_td));
+      ABSL_RETURN_IF_ERROR(TryStoringSerializedTensor(
+          global_tensor_id, packing_algorithm, weights_i8_td));
     }
   }
 
@@ -619,9 +633,16 @@ absl::Status SharedMemoryManager::CreateQuantizedInt4WeightsTensor(
       gpu_info_, shape,
       create_info_.hints.Check(ModelHints::kPreferTextureWeights));
 
+  ABSL_ASSIGN_OR_RETURN(
+      ml_drift::cache::schema::PackingAlgorithm packing_algorithm,
+      ToPackingAlgorithm(weights_desc.layout));
+  global_tensor_id_to_packing_algorithm_[global_tensor_id] = packing_algorithm;
+
   // If the tensor was serialized previously, restore from it directly.
   bool serialized_tensor_found =
-      TryRestoringSerializedTensor(global_tensor_id, shared_tensor).ok();
+      TryRestoringSerializedTensor(global_tensor_id, packing_algorithm,
+                                   shared_tensor)
+          .ok();
   if (!serialized_tensor_found) {
     if (has_prepacked_tflite_tensors_) {
       // If the tflite tensor is prepacked, restore from it directly.
@@ -658,8 +679,8 @@ absl::Status SharedMemoryManager::CreateQuantizedInt4WeightsTensor(
           /*release_data_callback=*/nullptr, shared_tensor.weights));
 
       // If serialization is enabled, store the serialized tensor descriptor.
-      ABSL_RETURN_IF_ERROR(
-          TryStoringSerializedTensor(global_tensor_id, weights_i4_td));
+      ABSL_RETURN_IF_ERROR(TryStoringSerializedTensor(
+          global_tensor_id, packing_algorithm, weights_i4_td));
     }
   }
 
@@ -689,9 +710,16 @@ absl::Status SharedMemoryManager::CreateQuantizedInt2WeightsTensor(
       gpu_info_, shape,
       create_info_.hints.Check(ModelHints::kPreferTextureWeights));
 
+  ABSL_ASSIGN_OR_RETURN(
+      ml_drift::cache::schema::PackingAlgorithm packing_algorithm,
+      ToPackingAlgorithm(weights_desc.layout));
+  global_tensor_id_to_packing_algorithm_[global_tensor_id] = packing_algorithm;
+
   // If the tensor was serialized previously, restore from it directly.
   bool serialized_tensor_found =
-      TryRestoringSerializedTensor(global_tensor_id, shared_tensor).ok();
+      TryRestoringSerializedTensor(global_tensor_id, packing_algorithm,
+                                   shared_tensor)
+          .ok();
   if (!serialized_tensor_found) {
     if (has_prepacked_tflite_tensors_) {
       // If the tflite tensor is prepacked, restore from it directly.
@@ -724,8 +752,8 @@ absl::Status SharedMemoryManager::CreateQuantizedInt2WeightsTensor(
           /*release_data_callback=*/nullptr, shared_tensor.weights));
 
       // If serialization is enabled, store the serialized tensor descriptor.
-      ABSL_RETURN_IF_ERROR(
-          TryStoringSerializedTensor(global_tensor_id, weights_i2_td));
+      ABSL_RETURN_IF_ERROR(TryStoringSerializedTensor(
+          global_tensor_id, packing_algorithm, weights_i2_td));
     }
   }
 
@@ -794,6 +822,7 @@ absl::Status SharedMemoryManager::CreateAffineQuantizationParams(
         serialization_cache_
             ->LookUp(shared_tensor->weights_sum_i_global_tensor_id.value(),
                      /*is_quantization_param_tensor=*/true,
+                     ml_drift::cache::schema::PackingAlgorithm_LAYOUT_LINEAR,
                      serialized_tensor_desc)
             .ok();
 
@@ -1073,6 +1102,7 @@ absl::StatusOr<ValueId> SharedMemoryManager::AddInputWithData(
         serialization_cache_
             ->LookUp(global_tensor_id,
                      /*is_quantization_param_tensor=*/true,
+                     ml_drift::cache::schema::PackingAlgorithm_LAYOUT_LINEAR,
                      serialized_tensor_desc)
             .ok();
     if (serialized_tensor_found) {
@@ -1105,7 +1135,9 @@ absl::StatusOr<ValueId> SharedMemoryManager::AddInputWithData(
     if (serialization_cache_ && serialization_cache_->IsReadyForInsert()) {
       ABSL_RETURN_IF_ERROR(serialization_cache_->Insert(
           global_tensor_id,
-          /*is_quantization_param_tensor=*/true, tensor_desc));
+          /*is_quantization_param_tensor=*/true,
+          ml_drift::cache::schema::PackingAlgorithm_LAYOUT_LINEAR,
+          tensor_desc));
     }
   }
 
@@ -1269,6 +1301,7 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
                     ->LookUp(
                         shared_tensor.weights_sum_i_global_tensor_id.value(),
                         /*is_quantization_param_tensor=*/true,
+                        ml_drift::cache::schema::PackingAlgorithm_LAYOUT_LINEAR,
                         serialized_tensor_desc)
                     .ok();
             // If we do not have the weights_sum_i cached in RAM and it was not
@@ -1652,6 +1685,17 @@ uint64_t GetSharedMemorySizeFromMap(
     size += shared_tensor.GetWeights()->GetDescriptor().GetMemorySizeInBytes();
   }
   return size;
+}
+
+absl::StatusOr<ml_drift::cache::schema::PackingAlgorithm>
+SharedMemoryManager::GetPackingAlgorithm(uint32_t global_tensor_id) const {
+  auto it = global_tensor_id_to_packing_algorithm_.find(global_tensor_id);
+  if (it != global_tensor_id_to_packing_algorithm_.end()) {
+    return it->second;
+  }
+  return absl::NotFoundError(
+      absl::StrCat("Packing algorithm for global tensor ID ", global_tensor_id,
+                   " not found."));
 }
 
 }  // namespace ml_drift
