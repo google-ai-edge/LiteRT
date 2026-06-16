@@ -136,10 +136,10 @@ describe('LiteRt', () => {
          if (await supportsFeature('webnn')) {
            await resetLiteRt(/* loadFromDirectory= */ true, {jspi: true});
            const model = await loadAndCompile('/testdata/add_10x10.tflite', {
-             accelerator: ['webnn', 'wasm'],
+             accelerator: 'webnn',
              webNNOptions: {devicePreference: 'npu'}
            });
-           expect(model.options.accelerator).toEqual(['webnn', 'wasm']);
+           expect(model.options.accelerator).toEqual('webnn');
            expect(model.isFullyAccelerated).toBeTrue();
            model.delete();
            await resetLiteRt();
@@ -247,6 +247,18 @@ describe('LiteRt', () => {
 
       it('is not fully accelerated (falls back to CPU)', () => {
         expect(model.isFullyAccelerated).toBeFalse();
+      });
+
+      it('logs a warning about partial delegation', async () => {
+        const warnSpy = spyOn(console, 'warn');
+        const tempModel = await loadAndCompile(
+            '/testdata/fallback_model.tflite', {accelerator: 'webgpu'});
+        expect(warnSpy).toHaveBeenCalledWith(
+            '%c[LiteRT]%c Model not fully compiled for webgpu. Partially delegating to WASM execution.',
+            'background: #FFA000; color: black; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+            'font-weight: bold;'
+        );
+        tempModel.delete();
       });
 
       it('runs successfully with fallback', async () => {
@@ -481,40 +493,11 @@ describe('LiteRt', () => {
       }
     });
 
-    it('loads with compileOptions with multiple accelerators array (webgpu and wasm)',
-       async () => {
-         const adapter = await navigator.gpu.requestAdapter();
-         if (!adapter) {
-           throw new Error('No GPU adapter found.');
-         }
-         const device = await adapter.requestDevice();
-         liteRt.setWebGpuDevice(device);
-
-         const model = await loadAndCompile(modelPath, {
-           environment: new Environment({webGpuDevice: device}),
-           accelerator: ['webgpu', 'wasm'],
-         });
-
-         expect(model).toBeDefined();
-         expect(model.options.accelerator).toEqual(['webgpu', 'wasm']);
-         model.delete();
-       });
-
-    it('loads with compileOptions with an array of a single accelerator (wasm)',
-       async () => {
-         const model = await loadAndCompile(modelPath, {
-           accelerator: ['wasm'],
-         });
-         expect(model).toBeDefined();
-         expect(model.options.accelerator).toEqual(['wasm']);
-         model.delete();
-       });
-
-    it('throws an error if WebGPU is in the accelerators array but no WebGPU device is available',
+    it('throws an error if WebGPU is requested but no WebGPU device is available',
        async () => {
          await expectAsync(loadAndCompile(modelPath, {
            environment: new Environment({webGpuDevice: null}),
-           accelerator: ['webgpu', 'wasm'],
+           accelerator: 'webgpu',
          })).toBeRejectedWithError(/no WebGPU device is set/);
        });
 

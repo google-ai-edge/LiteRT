@@ -10,18 +10,18 @@
 #include <optional>
 #include <utility>
 
-#include "absl/types/span.h"  // from @com_google_absl
-#include "litert/vendors/qualcomm/core/backends/backend_utils.h"
-#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
-#include "litert/vendors/qualcomm/core/common.h"
-#include "litert/vendors/qualcomm/core/schema/soc_table.h"
-#include "litert/vendors/qualcomm/core/utils/log.h"
 #include "DSP/QnnDspDevice.h"  // from @qairt
 #include "DSP/QnnDspPerfInfrastructure.h"  // from @qairt
 #include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnDevice.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/vendors/qualcomm/core/backends/backend_utils.h"
+#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
+#include "litert/vendors/qualcomm/core/common.h"
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
+#include "litert/vendors/qualcomm/core/utils/log.h"
 
 namespace qnn {
 
@@ -246,6 +246,34 @@ bool DspBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   log_handle_ = std::move(local_log_handle);
   backend_handle_ = std::move(local_backend_handle);
 
+  return true;
+}
+
+bool DspBackend::SetPerformanceMode(const Options& options) {
+  DspPerformanceMode performance_mode = options.GetDspPerformanceMode();
+  if (performance_mode == DspPerformanceMode::kDefault) {
+    if (dsp_perf_control_) {
+      dsp_perf_control_->DownVote();
+      dsp_perf_control_.reset();
+    }
+    return true;
+  }
+
+  if (!dsp_perf_control_) {
+    dsp_perf_control_ = std::make_unique<DspPerfControl>(QnnApi());
+    if (!dsp_perf_control_->Init(performance_mode)) {
+      QNN_LOG_ERROR("Failed to init DspPerfControl");
+      return false;
+    }
+  } else {
+    dsp_perf_control_->DownVote();
+    if (!dsp_perf_control_->Init(performance_mode)) {
+      QNN_LOG_ERROR("Failed to re-init DspPerfControl");
+      return false;
+    }
+  }
+
+  dsp_perf_control_->UpVote();
   return true;
 }
 

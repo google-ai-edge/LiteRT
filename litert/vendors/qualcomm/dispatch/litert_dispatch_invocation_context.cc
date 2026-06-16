@@ -27,6 +27,7 @@
 #include <ios>
 #include <iterator>
 #include <limits>
+#include <optional>
 #include <ostream>
 #include <sstream>
 #include <string>
@@ -34,16 +35,24 @@
 #include <variant>
 #include <vector>
 
+#include "HTP/QnnHtpProfile.h"  // from @qairt
+#include "QnnCommon.h"  // from @qairt
+#include "QnnProfile.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 #include "absl/base/no_destructor.h"  // from @com_google_absl
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/options/litert_qualcomm_options.h"
+#include "litert/cc/internal/litert_context_wrapper.h"
+#include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/core/util/tensor_type_util.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/common.h"
@@ -54,10 +63,6 @@
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "HTP/QnnHtpProfile.h"  // from @qairt
-#include "QnnCommon.h"  // from @qairt
-#include "QnnProfile.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 using litert::Expected;
 using litert::Unexpected;
@@ -151,6 +156,11 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
             std::back_inserter(outputs_));
   std::move(dumped_outputs.begin(), dumped_outputs.end(),
             std::back_inserter(outputs_));
+}
+
+LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
+  ::qnn::Options default_options;
+  (void)qnn_manager_.SetPerformanceMode(default_options);
 }
 
 Expected<LiteRtDispatchInvocationContextT::Ptr>
@@ -391,9 +401,8 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Host tensor buffer is too large for QNN");
     }
-    void* data =
-        static_cast<void*>(static_cast<uint8_t*>(host_memory_addr) +
-                           tensor_buffer_offset);
+    void* data = static_cast<void*>(static_cast<uint8_t*>(host_memory_addr) +
+                                    tensor_buffer_offset);
     if (tensor.version == QNN_TENSOR_VERSION_1) {
       tensor.v1.memType = QNN_TENSORMEMTYPE_RAW;
       tensor.v1.clientBuf.data = data;
@@ -451,6 +460,17 @@ Expected<void> LiteRtDispatchInvocationContextT::DetachBuffer(
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::Execute() {
+  ::qnn::Options effective_options = qnn_manager_.GetOptions();
+  if (run_options_.has_value()) {
+    effective_options = *run_options_;
+  }
+  LITERT_RETURN_IF_ERROR(qnn_manager_.SetPerformanceMode(effective_options));
+
+  absl::Cleanup restore_perf_mode = [this]() {
+    ::qnn::Options default_options;
+    (void)qnn_manager_.SetPerformanceMode(default_options);
+  };
+
   const size_t num_ins = inputs_.size();
   LITERT_STACK_ARRAY(Qnn_Tensor_t, inputs, num_ins, QNN_TENSOR_INIT);
   for (size_t i = 0; i < num_ins; ++i) {
@@ -586,5 +606,44 @@ Expected<void> LiteRtDispatchInvocationContextT::WriteTensorTo(
   quant_ss << scale << "," << zero_point << "\n";
   quant_file << quant_ss.str();
   quant_file.close();
+  return {};
+}
+Expected<void> LiteRtDispatchInvocationContextT::SetOptions(
+    LiteRtOptions options) {
+  if (options == nullptr) {
+    run_options_ = std::nullopt;
+    return {};
+  }
+
+  litert::internal::OptionsWrapper internal_options(
+      litert::internal::ContextWrapper(device_context_->runtime_context()),
+      options);
+  auto opaque_options_result = internal_options.GetOpaqueOptions();
+  if (!opaque_options_result) {
+    return Unexpected(opaque_options_result.Error().Status(),
+                      "Failed to get opaque options");
+  }
+
+  auto payload_data_result = opaque_options_result->FindOpaqueOptions(
+      litert::qualcomm::QualcommOptions::Discriminator());
+  if (!payload_data_result || payload_data_result.Value() == nullptr) {
+    return Unexpected(kLiteRtStatusErrorNotFound,
+                      "Failed to find Qualcomm options");
+  }
+
+  LrtQualcommOptions options_handle = nullptr;
+  if (LrtCreateQualcommOptionsFromToml(
+          reinterpret_cast<const char*>(payload_data_result.Value()),
+          &options_handle) != kLiteRtStatusOk) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Failed to parse Qualcomm options");
+  }
+
+  auto qualcomm_options = litert::qualcomm::QualcommOptions(options_handle);
+  ::qnn::Options qnn_options;
+  LITERT_RETURN_IF_ERROR(InitQnnOptions(qnn_options, qualcomm_options));
+
+  run_options_ = qnn_options;
+
   return {};
 }

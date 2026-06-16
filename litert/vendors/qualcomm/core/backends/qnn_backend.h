@@ -9,13 +9,13 @@
 #include <optional>
 #include <type_traits>
 
-#include "absl/types/span.h"  // from @com_google_absl
-#include "litert/vendors/qualcomm/core/common.h"
-#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnDevice.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/vendors/qualcomm/core/common.h"
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 
 namespace qnn {
 
@@ -37,6 +37,8 @@ class QnnBackend {
 
   virtual bool Init(const Options& options,
                     std::optional<::qnn::SocInfo> soc_info) = 0;
+
+  virtual bool SetPerformanceMode(const Options& options) { return true; }
 
   Qnn_BackendHandle_t GetBackendHandle();
 

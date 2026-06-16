@@ -27,6 +27,12 @@
 #include <utility>
 #include <vector>
 
+#include "QnnCommon.h"  // from @qairt
+#include "QnnContext.h"  // from @qairt
+#include "QnnInterface.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
+#include "System/QnnSystemContext.h"  // from @qairt
+#include "System/QnnSystemInterface.h"  // from @qairt
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -39,12 +45,6 @@
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
-#include "QnnCommon.h"  // from @qairt
-#include "QnnContext.h"  // from @qairt
-#include "QnnInterface.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
-#include "System/QnnSystemContext.h"  // from @qairt
-#include "System/QnnSystemInterface.h"  // from @qairt
 
 //===----------------------------------------------------------------------===//
 //
@@ -177,6 +177,15 @@ class QnnManager {
   // Get qnn backend handle. Nullptr if backendCreate has not been successfully
   // called.
   Qnn_BackendHandle_t BackendHandle() { return backend_->GetBackendHandle(); }
+
+  LiteRtStatus SetPerformanceMode(const ::qnn::Options& options) {
+    if (backend_) {
+      if (backend_->SetPerformanceMode(options)) {
+        return kLiteRtStatusOk;
+      }
+    }
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
 
   const ::qnn::Options& GetOptions() const { return options_; }
 

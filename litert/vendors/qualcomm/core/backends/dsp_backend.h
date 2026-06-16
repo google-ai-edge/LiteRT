@@ -7,12 +7,12 @@
 #include <memory>
 #include <optional>
 
-#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
-#include "litert/vendors/qualcomm/core/common.h"
-#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "DSP/QnnDspCommon.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
+#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
+#include "litert/vendors/qualcomm/core/common.h"
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 
 namespace qnn {
 
@@ -44,6 +44,8 @@ class DspBackend : public QnnBackend {
   DspBackend& operator=(DspBackend&&) = delete;
 
   bool Init(const Options& options, std::optional<SocInfo> soc_info) override;
+
+  bool SetPerformanceMode(const Options& options) override;
 
  private:
   class DspPerfControl;
