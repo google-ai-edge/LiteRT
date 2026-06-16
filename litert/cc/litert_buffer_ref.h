@@ -127,11 +127,18 @@ class BufferRef {
         start_offset_(0),
         data_(const_cast<ByteT*>(data.data())) {}
 
+  /// @brief Returns whether the configured offsets describe a valid range.
+  bool HasValidRange() const { return start_offset_ <= end_offset_; }
+
   /// @brief Returns a pointer to the start of the actual data.
-  const ByteT* Data() const { return data_ + start_offset_; }
+  const ByteT* Data() const {
+    return HasValidRange() ? data_ + start_offset_ : nullptr;
+  }
 
   /// @brief Returns the size of the actual data.
-  size_t Size() const { return end_offset_ - start_offset_; }
+  size_t Size() const {
+    return HasValidRange() ? end_offset_ - start_offset_ : 0;
+  }
 
   /// @brief Returns the buffer details as a tuple.
   TupleT Get() const { return TupleT(data_, end_offset_, start_offset_); }
@@ -210,7 +217,9 @@ class MutableBufferRef : public BufferRef<ByteT> {
   MutableBufferRef(const void*, size_t, size_t) = delete;
 
   /// @brief Returns a mutable pointer to the start of the actual data.
-  ByteT* Data() { return this->data_ + this->start_offset_; }
+  ByteT* Data() {
+    return this->HasValidRange() ? this->data_ + this->start_offset_ : nullptr;
+  }
 
   /// @brief Returns a mutable char pointer to the start of the actual data.
   char* StrData() { return reinterpret_cast<char*>(Data()); }
@@ -229,10 +238,18 @@ class MutableBufferRef : public BufferRef<ByteT> {
   /// @return `true` if the entire string fits and is written, `false`
   /// otherwise.
   bool WriteInto(StringView str, size_t offset = 0) {
-    if (str.size() > this->Size() - offset) {
+    const size_t size = this->Size();
+    if (offset > size || str.size() > size - offset) {
       return false;
     }
-    std::memcpy(Data() + offset, str.data(), str.size());
+    if (str.empty()) {
+      return true;
+    }
+    ByteT* data = Data();
+    if (data == nullptr) {
+      return false;
+    }
+    std::memcpy(data + offset, str.data(), str.size());
     return true;
   }
 

@@ -79,6 +79,7 @@ class FlatbufferContext {
   BufferManager* GetBufferManager() { return buffer_manager_; }
 
   const uint8_t* AllocBase() const { return tfl_flatbuffer_.AllocBase(); }
+  size_t AllocSize() const { return tfl_flatbuffer_.Buf().Size(); }
 
   const TflPackedModel* PackedModel() const {
     return tfl_flatbuffer_.PackedModel();
@@ -91,6 +92,10 @@ class FlatbufferContext {
   BufferManager* buffer_manager_;
   BufferIdMap registered_tfl_buffer_ids_;
 };
+
+bool IsRangeInAllocation(size_t offset, size_t size, size_t allocation_size) {
+  return offset <= allocation_size && size <= allocation_size - offset;
+}
 
 LiteRtStatus UnpackOp(FlatbufferContext& context, LiteRtSubgraphT& parent,
                       const TflPackedOp& tfl_op, LiteRtOpT& litert_op,
@@ -117,12 +122,25 @@ LiteRtStatus UnpackOp(FlatbufferContext& context, LiteRtSubgraphT& parent,
     if (input_ind == -1) {
       continue;
     }
+    if (input_ind < 0 ||
+        static_cast<size_t>(input_ind) >= parent.Tensors().size()) {
+      LITERT_LOG(LITERT_ERROR,
+                 "flatbuffer model has invalid op input index: %d", input_ind);
+      return kLiteRtStatusErrorInvalidFlatbuffer;
+    }
     AttachInput(&parent.Tensor(input_ind), litert_op);
   }
 
   const auto num_outputs = tfl_op.outputs() ? tfl_op.outputs()->size() : 0;
   for (auto i = 0; i < num_outputs; ++i) {
     const auto output_ind = tfl_op.outputs()->Get(i);
+    if (output_ind < 0 ||
+        static_cast<size_t>(output_ind) >= parent.Tensors().size()) {
+      LITERT_LOG(LITERT_ERROR,
+                 "flatbuffer model has invalid op output index: %d",
+                 output_ind);
+      return kLiteRtStatusErrorInvalidFlatbuffer;
+    }
     AttachOutput(&parent.Tensor(output_ind), litert_op);
   }
 
@@ -175,6 +193,13 @@ Expected<TflBufferContext> ReadBuffer(FlatbufferContext& context,
     const auto* alloc_base = context.AllocBase();
     const auto offset = tfl_buffer.offset();
     const auto size = tfl_buffer.size();
+    if (!IsRangeInAllocation(offset, size, context.AllocSize())) {
+      LITERT_LOG(LITERT_ERROR,
+                 "flatbuffer model has invalid external buffer range: offset "
+                 "%zu, size %zu, allocation size %zu",
+                 offset, size, context.AllocSize());
+      return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+    }
 
     return TflBufferContext{BufferRef<uint8_t>(alloc_base + offset, size),
                             true};
@@ -375,6 +400,11 @@ LiteRtStatus UnpackSignatures(std::vector<TflSignaturePtr>& tfl_signatures,
     absl::flat_hash_map<LiteRtTensor, std::string> input_aliases;
     input_aliases.reserve(tfl_inputs.size());
     for (const auto& tfl_input : tfl_inputs) {
+      if (tfl_input->tensor_index >= litert_subgraph->Tensors().size()) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Signature input does not refer to a valid tensor index.");
+        return kLiteRtStatusErrorInvalidFlatbuffer;
+      }
       auto* tensor = litert_subgraph->Tensors().at(tfl_input->tensor_index);
       const std::string& name = tfl_input->name;
       input_aliases[tensor] =
@@ -384,6 +414,11 @@ LiteRtStatus UnpackSignatures(std::vector<TflSignaturePtr>& tfl_signatures,
     absl::flat_hash_map<LiteRtTensor, std::string> output_aliases;
     output_aliases.reserve(tfl_outputs.size());
     for (const auto& tfl_output : tfl_outputs) {
+      if (tfl_output->tensor_index >= litert_subgraph->Tensors().size()) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Signature output does not refer to a valid tensor index.");
+        return kLiteRtStatusErrorInvalidFlatbuffer;
+      }
       auto* tensor = litert_subgraph->Tensors().at(tfl_output->tensor_index);
       const std::string& name = tfl_output->name;
       output_aliases[tensor] =
@@ -522,6 +557,8 @@ Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
 
   // Load bytecode of each dispatch op and attach it to the model.
   absl::flat_hash_map<size_t, unsigned int> buffer_id_map;
+  const auto& model_flatbuffer = GetTflFlatbuffer(*model);
+  const auto allocation_size = model_flatbuffer.Buf().Size();
   for (const LiteRtSubgraph& subgraph : model->Subgraphs()) {
     for (LiteRtOp op : subgraph->Ops()) {
       if (auto custom_code = op->CustomCode();
@@ -531,9 +568,19 @@ Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
         DispatchOpOptions dispatch_opts =
             GetDispatchOpOptions(op->CustomOptions());
         if (!buffer_id_map.contains(dispatch_opts.bytecode_offset)) {
-          BufferRef<uint8_t> byte_code(GetTflFlatbuffer(*model).AllocBase() +
-                                           dispatch_opts.bytecode_offset,
-                                       dispatch_opts.bytecode_size);
+          if (!IsRangeInAllocation(dispatch_opts.bytecode_offset,
+                                   dispatch_opts.bytecode_size,
+                                   allocation_size)) {
+            LITERT_LOG(LITERT_ERROR,
+                       "dispatch op bytecode range is outside the model "
+                       "allocation: offset %zu, size %zu, allocation size %zu",
+                       dispatch_opts.bytecode_offset,
+                       dispatch_opts.bytecode_size, allocation_size);
+            return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+          }
+          BufferRef<uint8_t> byte_code(
+              model_flatbuffer.AllocBase() + dispatch_opts.bytecode_offset,
+              dispatch_opts.bytecode_size);
           const BufferManager::BufferId buf_id =
               model->Buffers()->RegisterNonOwnedBuffer(byte_code);
           buffer_id_map.insert({dispatch_opts.bytecode_offset, buf_id});

@@ -658,12 +658,93 @@ TEST(LiteRtModelTest, GetSubgraph) {
   EXPECT_EQ(actual_subgraph, &subgraph);
 }
 
+TEST(LiteRtModelTest, GetSubgraphRejectsNullArguments) {
+  LiteRtModelT model;
+  model.EmplaceSubgraph();
+
+  LiteRtParamIndex num_subgraphs;
+  EXPECT_THAT(LiteRtGetNumModelSubgraphs(nullptr, &num_subgraphs),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtGetNumModelSubgraphs(&model, nullptr),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+
+  LiteRtSubgraph actual_subgraph;
+  EXPECT_THAT(LiteRtGetModelSubgraph(nullptr, 0, &actual_subgraph),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtGetModelSubgraph(&model, 0, nullptr),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+}
+
 TEST(LiteRtModelTest, GetSubgraphOOB) {
   LiteRtModelT model;
 
   LiteRtSubgraph actual_subgraph;
   EXPECT_THAT(LiteRtGetModelSubgraph(&model, 0, &actual_subgraph),
               IsError(kLiteRtStatusErrorIndexOOB));
+}
+
+TEST(LiteRtModelTest, GetSignatureSubgraphRejectsNullOutput) {
+  LiteRtSubgraphT subgraph;
+  LiteRtSignatureT signature(&subgraph, {}, {}, {}, {}, "signature");
+
+  LiteRtSubgraph actual_subgraph;
+  EXPECT_THAT(LiteRtGetSignatureSubgraph(nullptr, &actual_subgraph),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtGetSignatureSubgraph(&signature, nullptr),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+}
+
+TEST(LiteRtModelTest, SerializeModelRejectsNullArguments) {
+  LiteRtModelT model;
+  uint8_t* buf = nullptr;
+  size_t size = 0;
+  size_t offset = 0;
+  const LiteRtModelSerializationOptions options = {/*bytecode_alignment=*/64};
+
+  EXPECT_THAT(LiteRtSerializeModel(nullptr, &buf, &size, &offset,
+                                   /*destroy_model=*/false, options),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtSerializeModel(&model, nullptr, &size, &offset,
+                                   /*destroy_model=*/false, options),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtSerializeModel(&model, &buf, nullptr, &offset,
+                                   /*destroy_model=*/false, options),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtSerializeModel(&model, &buf, &size, nullptr,
+                                   /*destroy_model=*/false, options),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+}
+
+TEST(LiteRtModelTest, SerializeModelWithSignaturesRejectsNullArguments) {
+  LiteRtModelT model;
+  model.EmplaceSubgraph();
+  uint8_t* buf = nullptr;
+  size_t size = 0;
+  size_t offset = 0;
+  const LiteRtModelSerializationOptions options = {/*bytecode_alignment=*/64};
+  char signature[] = "signature";
+  char* signatures[] = {signature};
+
+  EXPECT_THAT(LiteRtSerializeModelWithSignatures(
+                  nullptr, &buf, &size, &offset, /*destroy_model=*/false,
+                  signatures, /*num_signatures=*/1, options),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtSerializeModelWithSignatures(
+                  &model, nullptr, &size, &offset, /*destroy_model=*/false,
+                  signatures, /*num_signatures=*/1, options),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtSerializeModelWithSignatures(
+                  &model, &buf, nullptr, &offset, /*destroy_model=*/false,
+                  signatures, /*num_signatures=*/1, options),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtSerializeModelWithSignatures(
+                  &model, &buf, &size, nullptr, /*destroy_model=*/false,
+                  signatures, /*num_signatures=*/1, options),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtSerializeModelWithSignatures(
+                  &model, &buf, &size, &offset, /*destroy_model=*/false,
+                  nullptr, /*num_signatures=*/1, options),
+              IsError(kLiteRtStatusErrorInvalidArgument));
 }
 
 TEST(LiteRtModelTest, SerializeModelWithSignaturesWithOneSignature) {
