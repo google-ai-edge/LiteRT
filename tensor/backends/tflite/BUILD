@@ -53,6 +53,7 @@ cc_library(
         ":arithmetic_tflite",
         ":linked_flat_hash_map",
         "//tensor",
+        "//tensor:arithmetic_graph",
         "//tensor:buffer",
         "//tensor:datatypes",
         "//tensor/internal:graph",
@@ -105,5 +106,6 @@ cc_test(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+        "@flatbuffers//:runtime_cc",
     ],
 )
