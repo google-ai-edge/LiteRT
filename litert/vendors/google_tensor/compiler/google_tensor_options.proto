@@ -38,6 +38,9 @@ enum DeviceType {
   DEVICE_TYPE_TENSOR_G4 = 2;  // Pixel 9 Series
   DEVICE_TYPE_TENSOR_G5 = 3;  // Pixel 10 Series
   DEVICE_TYPE_TENSOR_G6 = 4;  // Pixel 11 Series
+  // copybara:comment_begin(google-only)
+  DEVICE_TYPE_TENSOR_G7 = 5;  // Pixel 12 Series
+  // copybara:comment_end
 }
 
 // Message to hold the configuration for the Google Tensor compiler.
