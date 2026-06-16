@@ -476,6 +476,10 @@ LiteRtStatus LiteRtCreateManagedTensorBufferFromRequirements(
           requirements, &num_requirement_strides, &requirement_strides) ==
           kLiteRtStatusOk &&
       requirement_strides != nullptr && num_requirement_strides > 0) {
+    if (num_requirement_strides > LITERT_TENSOR_MAX_RANK ||
+        num_requirement_strides != tensor_type->layout.rank) {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
     tensor_type_with_strides = *tensor_type;
     tensor_type_with_strides.layout.has_strides = true;
     for (int i = 0; i < num_requirement_strides; ++i) {
@@ -622,6 +626,9 @@ LiteRtStatus LiteRtClearTensorBuffer(LiteRtTensorBuffer tensor_buffer) {
 }
 
 void LiteRtDestroyTensorBuffer(LiteRtTensorBuffer tensor_buffer) {
+  if (!tensor_buffer) {
+    return;
+  }
   if (tensor_buffer->Unref()) {
     delete tensor_buffer;
   }

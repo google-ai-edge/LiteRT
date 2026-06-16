@@ -440,6 +440,7 @@ litert_c_api_library(
     ],
     deps = [
         ":litert_common",
+        ":litert_layout",
         ":litert_tensor_buffer_types",
     ],
 )
@@ -453,8 +454,10 @@ cc_test(
         ":litert_common",
         ":litert_environment",
         ":litert_environment_options",
+        ":litert_layout",
         ":litert_platform_support",
         ":litert_tensor_buffer",
+        ":litert_tensor_buffer_requirements",
         ":litert_tensor_buffer_types",
         "//litert/c/internal:litert_tensor_buffer_registry",
         "//litert/cc:litert_any",
@@ -534,6 +537,7 @@ cc_test(
     deps = [
         ":litert_common",
         ":litert_environment",
+        ":litert_layout",
         ":litert_tensor_buffer",
         ":litert_tensor_buffer_types",
         "@com_google_googletest//:gtest_main",

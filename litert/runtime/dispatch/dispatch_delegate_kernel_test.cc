@@ -14,6 +14,8 @@
 
 #include "litert/runtime/dispatch/dispatch_delegate_kernel.h"
 
+#include <limits>
+
 #include <gtest/gtest.h>
 #include "litert/core/dispatch_op_schema.h"
 
@@ -76,6 +78,38 @@ TEST(DispatchDelegateKernelTest,
                                     /*alloc_base_file_offset=*/4096,
                                     /*alloc_base_size=*/191,
                                     /*has_alloc_base_file_region=*/true);
+  ASSERT_FALSE(bytecode_buffer);
+}
+
+TEST(DispatchDelegateKernelTest,
+     BuildExecutableBytecodeBufferRejectsBytecodeRangeOverflow) {
+  const DispatchOpOptions dispatch_options = {
+      .bytecode_size = 64,
+      .bytecode_offset = std::numeric_limits<size_t>::max() - 10,
+      .name = "main",
+  };
+
+  auto bytecode_buffer = BuildExecutableBytecodeBuffer(
+      dispatch_options, /*alloc_base=*/nullptr,
+      /*alloc_base_fd=*/17, /*alloc_base_file_offset=*/0,
+      /*alloc_base_size=*/std::numeric_limits<size_t>::max(),
+      /*has_alloc_base_file_region=*/true);
+  ASSERT_FALSE(bytecode_buffer);
+}
+
+TEST(DispatchDelegateKernelTest,
+     BuildExecutableBytecodeBufferRejectsFileOffsetOverflow) {
+  const DispatchOpOptions dispatch_options = {
+      .bytecode_size = 64,
+      .bytecode_offset = 128,
+      .name = "main",
+  };
+
+  auto bytecode_buffer = BuildExecutableBytecodeBuffer(
+      dispatch_options, /*alloc_base=*/nullptr,
+      /*alloc_base_fd=*/17,
+      /*alloc_base_file_offset=*/std::numeric_limits<size_t>::max() - 100,
+      /*alloc_base_size=*/8192, /*has_alloc_base_file_region=*/true);
   ASSERT_FALSE(bytecode_buffer);
 }
 

@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
@@ -47,7 +48,8 @@ LiteRtStatus LiteRtCreateTensorBufferRequirementsWithAlignment(
     size_t alignment, LiteRtTensorBufferRequirements* requirements) {
   if (num_supported_tensor_buffer_types < 1 || !supported_tensor_buffer_types ||
       !requirements || num_strides < 0 || (num_strides > 0 && !strides) ||
-      alignment == 0 || (alignment & (alignment - 1)) != 0) {
+      num_strides > LITERT_TENSOR_MAX_RANK || alignment == 0 ||
+      (alignment & (alignment - 1)) != 0) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   std::vector<uint32_t> strides_vec;

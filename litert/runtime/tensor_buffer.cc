@@ -94,6 +94,15 @@ void Copy(size_t array_size, const T* array, std::vector<T>& vec) {
 // in another function.
 void FreeHostMemory(void* ptr) { litert_aligned_free(ptr); }
 
+Expected<void> ValidateTensorTypeLayout(
+    const LiteRtRankedTensorType& tensor_type) {
+  if (tensor_type.layout.rank > LITERT_TENSOR_MAX_RANK) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Tensor rank exceeds maximum supported rank");
+  }
+  return {};
+}
+
 }  // namespace
 
 // C API defined in environment.cc to workaround Windows build issue.
@@ -230,6 +239,8 @@ LiteRtTensorBufferT::~LiteRtTensorBufferT() {
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromHostMemory(
     const LiteRtRankedTensorType& tensor_type, absl::Span<uint8_t> host_memory,
     LiteRtHostMemoryDeallocator deallocator) {
+  LITERT_RETURN_IF_ERROR(ValidateTensorTypeLayout(tensor_type));
+
   Ptr tensor_buffer(new LiteRtTensorBufferT(/*env=*/nullptr, tensor_type,
                                             kLiteRtTensorBufferTypeHostMemory,
                                             host_memory.size()));
@@ -282,6 +293,8 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromAhwb(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     AHardwareBuffer* ahwb, size_t ahwb_offset,
     LiteRtAhwbDeallocator deallocator) {
+  LITERT_RETURN_IF_ERROR(ValidateTensorTypeLayout(tensor_type));
+
   LITERT_ASSIGN_OR_RETURN(size_t buffer_size,
                           litert::internal::AhwbBuffer::GetSize(ahwb));
 
@@ -314,6 +327,8 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromIonBuffer(
     const LiteRtRankedTensorType& tensor_type, void* ion_buffer_addr,
     int ion_buffer_fd, size_t ion_buffer_size, size_t ion_buffer_offset,
     LiteRtIonDeallocator deallocator) {
+  LITERT_RETURN_IF_ERROR(ValidateTensorTypeLayout(tensor_type));
+
   if (!ion_buffer_addr) {
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
                       "Invalid ION buffer address");
@@ -357,6 +372,8 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromDmaBufBuffer(
     const LiteRtRankedTensorType& tensor_type, void* dmabuf_buffer_addr,
     int dmabuf_buffer_fd, size_t dmabuf_buffer_size,
     size_t dmabuf_buffer_offset, LiteRtDmaBufDeallocator deallocator) {
+  LITERT_RETURN_IF_ERROR(ValidateTensorTypeLayout(tensor_type));
+
   if (!dmabuf_buffer_addr) {
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
                       "Invalid DMA-BUF buffer address");
@@ -400,6 +417,8 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromFastRpcBuffer(
     const LiteRtRankedTensorType& tensor_type, void* fastrpc_buffer_addr,
     int fastrpc_buffer_fd, size_t fastrpc_buffer_size,
     size_t fastrpc_buffer_offset, LiteRtFastRpcDeallocator deallocator) {
+  LITERT_RETURN_IF_ERROR(ValidateTensorTypeLayout(tensor_type));
+
   if (!fastrpc_buffer_addr) {
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
                       "Invalid FastRPC buffer address");
@@ -443,6 +462,8 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromOpenClMemory(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, LiteRtClMem buffer,
     size_t buffer_size) {
+  LITERT_RETURN_IF_ERROR(ValidateTensorTypeLayout(tensor_type));
+
   LITERT_ASSIGN_OR_RETURN(size_t packed_size,
                           litert::internal::GetNumPackedBytes(tensor_type));
   LITERT_ASSIGN_OR_RETURN(
@@ -461,6 +482,8 @@ Expected<LiteRtTensorBufferT::Ptr>
 LiteRtTensorBufferT::CreateManagedOpenClMemory(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t buffer_size) {
+  LITERT_RETURN_IF_ERROR(ValidateTensorTypeLayout(tensor_type));
+
   LITERT_ASSIGN_OR_RETURN(size_t packed_size,
                           litert::internal::GetNumPackedBytes(tensor_type));
   auto buffer = litert::internal::CustomBuffer::Alloc(
@@ -482,6 +505,8 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromWebGpuBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, LiteRtWGPUBuffer buffer,
     size_t buffer_size) {
+  LITERT_RETURN_IF_ERROR(ValidateTensorTypeLayout(tensor_type));
+
   LITERT_ASSIGN_OR_RETURN(size_t packed_size,
                           litert::internal::GetNumPackedBytes(tensor_type));
   LITERT_ASSIGN_OR_RETURN(
@@ -500,6 +525,8 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromWebGpuBuffer(
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromWebGpuTexture(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     void* texture, size_t buffer_size) {
+  LITERT_RETURN_IF_ERROR(ValidateTensorTypeLayout(tensor_type));
+
   LITERT_ASSIGN_OR_RETURN(size_t packed_size,
                           litert::internal::GetNumPackedBytes(tensor_type));
   LITERT_ASSIGN_OR_RETURN(
@@ -521,6 +548,8 @@ Expected<LiteRtTensorBufferT::Ptr>
 LiteRtTensorBufferT::CreateManagedWebGpuBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t buffer_size) {
+  LITERT_RETURN_IF_ERROR(ValidateTensorTypeLayout(tensor_type));
+
   LITERT_ASSIGN_OR_RETURN(size_t packed_size,
                           litert::internal::GetNumPackedBytes(tensor_type));
   auto buffer = litert::internal::CustomBuffer::Alloc(
@@ -542,6 +571,8 @@ Expected<LiteRtTensorBufferT::Ptr>
 LiteRtTensorBufferT::CreateManagedMetalMemory(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t buffer_size) {
+  LITERT_RETURN_IF_ERROR(ValidateTensorTypeLayout(tensor_type));
+
   LITERT_ASSIGN_OR_RETURN(size_t packed_size,
                           litert::internal::GetNumPackedBytes(tensor_type));
   auto buffer = litert::internal::CustomBuffer::Alloc(
@@ -562,6 +593,8 @@ Expected<LiteRtTensorBufferT::Ptr>
 LiteRtTensorBufferT::CreateManagedVulkanMemory(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t buffer_size) {
+  LITERT_RETURN_IF_ERROR(ValidateTensorTypeLayout(tensor_type));
+
   LITERT_ASSIGN_OR_RETURN(auto packed_size,
                           litert::internal::GetNumPackedBytes(tensor_type));
   auto buffer = litert::internal::CustomBuffer::Alloc(
@@ -582,6 +615,8 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset,
     LiteRtGlBufferDeallocator deallocator) {
+  LITERT_RETURN_IF_ERROR(ValidateTensorTypeLayout(tensor_type));
+
   Ptr tensor_buffer(new LiteRtTensorBufferT(
       env, tensor_type, kLiteRtTensorBufferTypeGlBuffer, size_bytes));
   LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetGpuEnvironment(env));
@@ -593,6 +628,8 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlBuffer(
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManagedGlBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     size_t buffer_size) {
+  LITERT_RETURN_IF_ERROR(ValidateTensorTypeLayout(tensor_type));
+
   LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetGpuEnvironment(env));
   auto buffer = litert::internal::GlBuffer::Alloc(gpu_env, buffer_size);
   if (!buffer) {
@@ -610,6 +647,8 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlTexture(
     LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
     size_t size_bytes, LiteRtGLint layer,
     LiteRtGlTextureDeallocator deallocator) {
+  LITERT_RETURN_IF_ERROR(ValidateTensorTypeLayout(tensor_type));
+
   Ptr tensor_buffer(new LiteRtTensorBufferT(
       env, tensor_type, kLiteRtTensorBufferTypeGlTexture, size_bytes));
   tensor_buffer->buffer_.emplace<litert::internal::GlTexture>(
@@ -624,6 +663,8 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromMetalMemory(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, void* metal_buffer,
     size_t buffer_size) {
+  LITERT_RETURN_IF_ERROR(ValidateTensorTypeLayout(tensor_type));
+
   LITERT_ASSIGN_OR_RETURN(size_t packed_size,
                           litert::internal::GetNumPackedBytes(tensor_type));
   // Use CustomBuffer::Wrap to create a non-owning wrapper
@@ -645,6 +686,8 @@ Expected<LiteRtTensorBufferT::Ptr>
 LiteRtTensorBufferT::CreateManagedCustomTensorBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t buffer_size) {
+  LITERT_RETURN_IF_ERROR(ValidateTensorTypeLayout(tensor_type));
+
   LITERT_ASSIGN_OR_RETURN(size_t packed_size,
                           litert::internal::GetNumPackedBytes(tensor_type));
   auto buffer = litert::internal::CustomBuffer::Alloc(
@@ -672,6 +715,8 @@ LiteRtTensorBufferT::CreateManagedWithAlignment(
     LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
     const LiteRtRankedTensorType& tensor_type, size_t buffer_size,
     size_t alignment) {
+  LITERT_RETURN_IF_ERROR(ValidateTensorTypeLayout(tensor_type));
+
   switch (buffer_type) {
     case kLiteRtTensorBufferTypeHostMemory:
       return CreateManagedOnHostMemory(tensor_type, buffer_size, alignment);
