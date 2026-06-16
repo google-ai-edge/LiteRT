@@ -463,11 +463,19 @@ OpMixin<FullyConnectedOperation, TfLiteMixinTag>::ToTfLite(
                               op.As<FullyConnectedOperation>());
   LRT_TENSOR_ASSIGN_OR_RETURN(auto tflite_activation,
                               ToTflite(data.activation));
-  return TfLiteOpBuildInfo(::tflite::BuiltinOperator_FULLY_CONNECTED,
-                           tflite::FullyConnectedOptionsT{
-                               .fused_activation_function = tflite_activation,
-                               .keep_num_dims = data.keep_num_dims,
-                           });
+  auto weights_format = tflite::FullyConnectedOptionsWeightsFormat_DEFAULT;
+  if (data.weights_format == litert::tensor::kWeightsFormatShuffled4x16Int8) {
+    weights_format =
+        tflite::FullyConnectedOptionsWeightsFormat_SHUFFLED4x16INT8;
+  }
+  return TfLiteOpBuildInfo(
+      ::tflite::BuiltinOperator_FULLY_CONNECTED,
+      tflite::FullyConnectedOptionsT{
+          .fused_activation_function = tflite_activation,
+          .weights_format = weights_format,
+          .keep_num_dims = data.keep_num_dims,
+          .asymmetric_quantize_inputs = data.asymmetric_quantize_inputs,
+      });
 }
 
 absl::StatusOr<TfLiteOpBuildInfo>
