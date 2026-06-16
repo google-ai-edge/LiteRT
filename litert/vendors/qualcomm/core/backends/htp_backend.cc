@@ -235,18 +235,34 @@ class HtpBackend::HtpPerfControl {
       case HtpPerformanceMode::kBurst:
       case HtpPerformanceMode::kSustainedHighPerformance:
       case HtpPerformanceMode::kHighPerformance:
-      case HtpPerformanceMode::kBalanced:
         SetPowerConfigs(down_vote_power_configs_, power_config_id_,
                         PowerConfig::kDcvsEnable,
                         QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_ADJUST_UP_DOWN,
-                        PowerConfig::kSleepMaxLatency,
-                        DCVS_VOLTAGE_VCORNER_SVS2, DCVS_VOLTAGE_VCORNER_SVS,
-                        DCVS_VOLTAGE_VCORNER_SVS, DCVS_VOLTAGE_VCORNER_SVS2,
-                        DCVS_VOLTAGE_VCORNER_SVS, DCVS_VOLTAGE_VCORNER_SVS);
+                        PowerConfig::kSleepHighLatency,
+                        DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER,
+                        DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER,
+                        DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER,
+                        DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER,
+                        DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER,
+                        DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER);
+        break;
+      case HtpPerformanceMode::kBalanced:
+        SetPowerConfigs(down_vote_power_configs_, power_config_id_,
+                        PowerConfig::kDcvsEnable,
+                        QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_POWER_SAVER_MODE,
+                        PowerConfig::kSleepHighLatency,
+                        DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER,
+                        DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER,
+                        DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER,
+                        DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER,
+                        DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER,
+                        DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER);
         break;
       case HtpPerformanceMode::kPowerSaver:
       case HtpPerformanceMode::kLowPowerSaver:
       case HtpPerformanceMode::kHighPowerSaver:
+      case HtpPerformanceMode::kLowBalanced:
+      case HtpPerformanceMode::kExtremePowerSaver:
         SetPowerConfigs(down_vote_power_configs_, power_config_id_,
                         PowerConfig::kDcvsEnable,
                         QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_POWER_SAVER_MODE,
@@ -257,25 +273,6 @@ class HtpBackend::HtpPerfControl {
                         DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER,
                         DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER,
                         DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER);
-        break;
-      case HtpPerformanceMode::kLowBalanced:
-        SetPowerConfigs(down_vote_power_configs_, power_config_id_,
-                        PowerConfig::kDcvsEnable,
-                        QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_POWER_SAVER_MODE,
-                        PowerConfig::kSleepMaxLatency,
-                        DCVS_VOLTAGE_VCORNER_SVS2, DCVS_VOLTAGE_VCORNER_SVS,
-                        DCVS_VOLTAGE_VCORNER_SVS, DCVS_VOLTAGE_VCORNER_SVS2,
-                        DCVS_VOLTAGE_VCORNER_SVS, DCVS_VOLTAGE_VCORNER_SVS);
-        break;
-      case HtpPerformanceMode::kExtremePowerSaver:
-        SetPowerConfigs(
-            down_vote_power_configs_, power_config_id_,
-            PowerConfig::kDcvsEnable,
-            QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_POWER_SAVER_MODE,
-            PowerConfig::kSleepMaxLatency, DCVS_VOLTAGE_CORNER_DISABLE,
-            DCVS_VOLTAGE_CORNER_DISABLE, DCVS_VOLTAGE_CORNER_DISABLE,
-            DCVS_VOLTAGE_CORNER_DISABLE, DCVS_VOLTAGE_CORNER_DISABLE,
-            DCVS_VOLTAGE_CORNER_DISABLE);
         break;
       default:
         QNN_LOG_ERROR(
