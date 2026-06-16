@@ -76,10 +76,10 @@ namespace google_tensor {
 constexpr char kPluginManufacturer[] = "Google";
 
 constexpr const char* kPluginSocModels[] = {
-    "Tensor_G3",
-    "Tensor_G4",
-    "Tensor_G5",
-    "Tensor_G6",
+    "Tensor_G3", "Tensor_G4", "Tensor_G5", "Tensor_G6",
+#ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
+    "Tensor_G7",
+#endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
 };  // get the name for plugin soc model
 
 LiteRtStatus GetDeviceType(absl::string_view soc_model,
@@ -96,6 +96,11 @@ LiteRtStatus GetDeviceType(absl::string_view soc_model,
   } else if (soc_model == "Tensor_G6") {
     *device_type = ::third_party::odml::litert::litert::vendors::google_tensor::
         compiler::DEVICE_TYPE_TENSOR_G6;
+#ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
+  } else if (soc_model == "Tensor_G7") {
+    *device_type = ::third_party::odml::litert::litert::vendors::google_tensor::
+        compiler::DEVICE_TYPE_TENSOR_G7;
+#endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
   } else {
     return kLiteRtStatusErrorInvalidArgument;
   }
