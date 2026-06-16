@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <set>
 #include <string>
@@ -69,8 +70,9 @@ Expected<LiteRtMemBuffer> BuildExecutableBytecodeBuffer(
   }
 
   if (has_alloc_base_file_region) {
-    if (dispatch_options.bytecode_offset + dispatch_options.bytecode_size >
-        alloc_base_size) {
+    if (dispatch_options.bytecode_offset > alloc_base_size ||
+        dispatch_options.bytecode_size >
+            alloc_base_size - dispatch_options.bytecode_offset) {
       return Unexpected(
           kLiteRtStatusErrorRuntimeFailure,
           "Dispatch bytecode range exceeds the model file region bounds");
