@@ -424,7 +424,6 @@ cc_library(
         "//ml_drift_delegate/tflite:shared_const_tensor_map",
         "//third_party/odml/infra/ml_drift_delegate:shared_memory_manager",
         "//third_party/odml/infra/ml_drift_delegate/serialization_weight_cache",
-        "@com_google_absl//absl/synchronization",
         "@ml_drift//ml_drift/common:executor",
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common/task:gpu_tensor",
@@ -468,7 +467,7 @@ cc_library(
     srcs = ["delegate_kernel.cc"],
     hdrs = ["delegate_kernel.h"],
     deps = [
-        "//litert/c:litert_common",
+        "//third_party/odml/infra/ml_drift_delegate/serialization_weight_cache:serialization_schema",
         # copybara:uncomment "//third_party/odml/litert/weight_loader:external_weight_loader",
         "//weight_loader:external_weight_loader",  # copybara:comment
         ":delegate_data",

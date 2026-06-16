@@ -79,6 +79,20 @@ struct MlDriftDelegateData {
   // Precision used by the delegate.
   ::ml_drift::CalculationsPrecision calculation_precision;
 
+  // Shared weight cache for all subgraphs of the model.
+  //
+  // NOTE ON DESTRUCTION ORDER:
+  // C++ destroys class members in the reverse order of their declaration.
+  // `shared_const_tensors` below contains `MMapHandle` objects which hold
+  // active memory mappings to the weight cache file. If `serialization_cache`
+  // is flagged for invalidation, its destructor will attempt to truncate the
+  // cache file to 0 bytes (`ftruncate`). On Windows, truncating a file that has
+  // active memory mappings will fail. Therefore, `serialization_cache` MUST be
+  // declared BEFORE `shared_const_tensors` so that `shared_const_tensors` is
+  // destroyed first, releasing all mmap handles before the cache's destructor
+  // runs.
+  std::unique_ptr<::ml_drift::SerializationWeightCache> serialization_cache;
+
   // WebGPU only.
   //
   // The map which stores the information about the shared constant tensors. It
@@ -95,9 +109,6 @@ struct MlDriftDelegateData {
 
   // Non-owning pointer to the shared LiteRT WeightLoader.
   weight_loader::WeightLoader* weight_loader = nullptr;
-
-  // Shared weight cache for all subgraphs of the model.
-  std::unique_ptr<::ml_drift::SerializationWeightCache> serialization_cache;
 };
 
 }  // namespace litert::ml_drift
