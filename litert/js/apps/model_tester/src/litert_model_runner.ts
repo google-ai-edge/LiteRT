@@ -78,10 +78,10 @@ export class LiteRtModelRunner implements ModelRunner {
         await toMaybe(() => loadAndCompile(data, {accelerator: 'webgpu'}));
     const cpuModel =
         await toMaybe(() => loadAndCompile(data, {accelerator: 'wasm'}));
-    const webnnModel = await toMaybe(() => loadAndCompile(data, {
-                                       accelerator: ['webnn', 'wasm'],
-                                       webNNOptions: {devicePreference: 'npu'}
-                                     }));
+    const webnnModel = await toMaybe(
+        () => loadAndCompile(
+            data,
+            {accelerator: 'webnn', webNNOptions: {devicePreference: 'npu'}}));
 
     if (gpuModel.error && cpuModel.error && webnnModel.error) {
       console.error('GPU, CPU, and WebNN models failed to load');
