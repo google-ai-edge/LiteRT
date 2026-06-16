@@ -101,7 +101,7 @@ LiteRtStatus LiteRtCreateModelFromFd(LiteRtEnvironment environment, int fd,
 
 LiteRtStatus LiteRtGetNumModelSubgraphs(LiteRtModel model,
                                         LiteRtParamIndex* num_subgraphs) {
-  if (model == nullptr) {
+  if (model == nullptr || num_subgraphs == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   *num_subgraphs = model->Subgraphs().size();
@@ -111,7 +111,7 @@ LiteRtStatus LiteRtGetNumModelSubgraphs(LiteRtModel model,
 LiteRtStatus LiteRtGetModelSubgraph(LiteRtModel model,
                                     LiteRtParamIndex subgraph_index,
                                     LiteRtSubgraph* subgraph) {
-  if (model == nullptr) {
+  if (model == nullptr || subgraph == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (subgraph_index >= model->Subgraphs().size()) {
@@ -200,6 +200,10 @@ LiteRtStatus LiteRtSerializeModelWithSignatures(
     LiteRtModel model, uint8_t** buf, size_t* size, size_t* offset,
     bool destroy_model, char** signatures, LiteRtParamIndex num_signatures,
     LiteRtModelSerializationOptions options) {
+  if (!model || !buf || !size || !offset ||
+      (num_signatures > 0 && signatures == nullptr)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   size_t num_subgraphs = model->NumSubgraphs();
   if (num_subgraphs != num_signatures) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -245,10 +249,10 @@ LiteRtStatus LiteRtSerializeModel(LiteRtModel model, uint8_t** buf,
                                   size_t* size, size_t* offset,
                                   bool destroy_model,
                                   LiteRtModelSerializationOptions options) {
-#if defined(LITERT_DISABLE_NPU)
   if (!model || !buf || !size || !offset) {
     return kLiteRtStatusErrorInvalidArgument;
   }
+#if defined(LITERT_DISABLE_NPU)
   if (destroy_model) {
     delete model;
   }
@@ -296,7 +300,7 @@ LiteRtStatus LiteRtGetSignatureKey(LiteRtSignature signature,
 
 LiteRtStatus LiteRtGetSignatureSubgraph(LiteRtSignature signature,
                                         LiteRtSubgraph* subgraph) {
-  if (signature == nullptr) {
+  if (signature == nullptr || subgraph == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   *subgraph = &signature->GetSubgraph();
