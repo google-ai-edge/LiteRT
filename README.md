@@ -205,3 +205,4 @@ This project is dedicated to fostering an open and welcoming environment. Please
 ## 📜 License
 
 LiteRT is licensed under the [Apache-2.0 License](LICENSE).
+
