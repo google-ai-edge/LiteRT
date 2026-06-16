@@ -108,16 +108,22 @@ cc_library(
 
 cc_library(
     name = "nnapi_delegate_provider",
-    srcs = ["nnapi_delegate_provider.cc"],
+    srcs = select({
+        "@org_tensorflow//tensorflow:windows": [],
+        "//conditions:default": ["nnapi_delegate_provider.cc"],
+    }),
     copts = common_copts,
-    deps = [
-        ":delegate_provider_hdr",
-        "//tflite/delegates/nnapi:nnapi_delegate",
-        "//tflite/nnapi:nnapi_implementation",
-        "//tflite/nnapi:nnapi_util",
-        "//tflite/nnapi/sl:nnapi_support_library",
-        "//tflite/nnapi/sl:nnapi_support_library_headers",
-    ],
+    deps = select({
+        "@org_tensorflow//tensorflow:windows": [],
+        "//conditions:default": [
+            ":delegate_provider_hdr",
+            "//tflite/delegates/nnapi:nnapi_delegate",
+            "//tflite/nnapi:nnapi_implementation",
+            "//tflite/nnapi:nnapi_util",
+            "//tflite/nnapi/sl:nnapi_support_library",
+            "//tflite/nnapi/sl:nnapi_support_library_headers",
+        ],
+    }),
     alwayslink = 1,
 )
 
