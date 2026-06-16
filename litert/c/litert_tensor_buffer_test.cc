@@ -25,7 +25,9 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_platform_support.h"
+#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_layout.h"
@@ -110,6 +112,61 @@ TEST(TensorBuffer, HostMemory) {
   LiteRtDestroyTensorBuffer(tensor_buffer);
   LiteRtDestroyEnvironment(env);
 }
+
+TEST(TensorBuffer, RejectsRankPastLayoutStorage) {
+  LiteRtEnvironment env;
+  LITERT_ASSERT_OK(
+      LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
+
+  LiteRtRankedTensorType tensor_type = kTensorType;
+  tensor_type.layout.rank = LITERT_TENSOR_MAX_RANK + 1;
+
+  LiteRtTensorBuffer tensor_buffer = nullptr;
+  EXPECT_EQ(LiteRtCreateManagedTensorBuffer(
+                env, kLiteRtTensorBufferTypeHostMemory, &tensor_type,
+                sizeof(kTensorData), &tensor_buffer),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(tensor_buffer, nullptr);
+
+  alignas(LITERT_HOST_MEMORY_BUFFER_ALIGNMENT) std::array<uint8_t, 64>
+      host_memory = {};
+  EXPECT_EQ(LiteRtCreateTensorBufferFromHostMemory(
+                &tensor_type, host_memory.data(), host_memory.size(),
+                /*deallocator=*/nullptr, &tensor_buffer),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(tensor_buffer, nullptr);
+
+  LiteRtDestroyEnvironment(env);
+}
+
+TEST(TensorBuffer, RejectsRequirementStridesWithWrongRank) {
+  LiteRtEnvironment env;
+  LITERT_ASSERT_OK(
+      LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
+
+  constexpr LiteRtTensorBufferType kSupportedTensorBufferTypes[] = {
+      kLiteRtTensorBufferTypeHostMemory,
+  };
+  constexpr std::array<uint32_t, 2> kStrides = {4, 1};
+  LiteRtTensorBufferRequirements requirements;
+  ASSERT_EQ(LiteRtCreateTensorBufferRequirements(
+                sizeof(kSupportedTensorBufferTypes) /
+                    sizeof(kSupportedTensorBufferTypes[0]),
+                kSupportedTensorBufferTypes, sizeof(kTensorData),
+                kStrides.size(), kStrides.data(), &requirements),
+            kLiteRtStatusOk);
+
+  LiteRtTensorBuffer tensor_buffer = nullptr;
+  EXPECT_EQ(LiteRtCreateManagedTensorBufferFromRequirements(
+                env, &kTensorType, requirements, &tensor_buffer),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(tensor_buffer, nullptr);
+
+  LiteRtDestroyTensorBufferRequirements(requirements);
+  LiteRtDestroyEnvironment(env);
+}
+
+TEST(TensorBuffer, DestroyNullIsNoOp) { LiteRtDestroyTensorBuffer(nullptr); }
 
 TEST(TensorBuffer, Ahwb) {
   if (!LiteRtHasAhwbSupport()) {

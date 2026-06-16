@@ -214,7 +214,9 @@ cc_library(
     hdrs = ["dispatch_op_schema.h"],
     copts = ["-DFLATBUFFERS_LOCALE_INDEPENDENT=0"],
     deps = [
+        "//litert/c:litert_common",
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_expected",
         "@flatbuffers//:runtime_cc",
     ],
 )

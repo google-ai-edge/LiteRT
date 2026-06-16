@@ -20,6 +20,7 @@
 #include <filesystem>  // NOLINT
 #include <fstream>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -369,6 +370,90 @@ TEST(ModelLoadTest, WithOffsetTensorBuffer) {
   }
 }
 
+TEST(ModelLoadTest, RejectsExternalBufferPastAllocation) {
+  auto flatbuffer =
+      FlatbufferWrapper::CreateFromTflFile(GetTestFilePath(kAddSimple));
+  auto tfl_model = flatbuffer->get()->Unpack();
+  const auto buf_ind = tfl_model->subgraphs[0]->tensors[0]->buffer;
+  auto& tfl_buffer = tfl_model->buffers[buf_ind];
+  tfl_buffer->offset = 1;
+  tfl_buffer->size = 1;
+
+  auto model_buf = SerializeFlatbuffer(*tfl_model);
+  auto* packed_tfl = tflite::GetMutableModel(model_buf.Data());
+  auto* buf = packed_tfl->mutable_buffers()->GetMutableObject(buf_ind);
+  ASSERT_TRUE(buf->mutate_offset(model_buf.Size() + 1));
+  ASSERT_TRUE(buf->mutate_size(1));
+
+  auto litert_model = LoadModelFromBuffer(model_buf);
+  ASSERT_FALSE(litert_model);
+  EXPECT_EQ(litert_model.Error().Status(), kLiteRtStatusErrorInvalidFlatbuffer);
+}
+
+TEST(ModelLoadTest, RejectsInvalidOperatorTensorIndex) {
+  auto flatbuffer =
+      FlatbufferWrapper::CreateFromTflFile(GetTestFilePath(kAddSimple));
+  auto tfl_model = flatbuffer->get()->Unpack();
+  auto& subgraph = *tfl_model->subgraphs[0];
+  subgraph.operators[0]->inputs[0] = subgraph.tensors.size();
+
+  auto serialized = SerializeFlatbuffer(*tfl_model);
+  auto litert_model = LoadModelFromBuffer(serialized);
+  ASSERT_FALSE(litert_model);
+  EXPECT_EQ(litert_model.Error().Status(), kLiteRtStatusErrorInvalidFlatbuffer);
+}
+
+TEST(ModelLoadTest, RejectsInvalidSignatureTensorIndex) {
+  auto flatbuffer = FlatbufferWrapper::CreateFromTflFile(
+      GetTestFilePath("reverse_signature_model.tflite"));
+  auto tfl_model = flatbuffer->get()->Unpack();
+  ASSERT_FALSE(tfl_model->signature_defs.empty());
+  ASSERT_FALSE(tfl_model->signature_defs[0]->inputs.empty());
+
+  tfl_model->signature_defs[0]->inputs[0]->tensor_index =
+      tfl_model->subgraphs[0]->tensors.size();
+
+  auto serialized = SerializeFlatbuffer(*tfl_model);
+  auto litert_model = LoadModelFromBuffer(serialized);
+  ASSERT_FALSE(litert_model);
+  EXPECT_EQ(litert_model.Error().Status(), kLiteRtStatusErrorInvalidFlatbuffer);
+}
+
+TEST(ModelLoadTest, RejectsDispatchBytecodePastAllocation) {
+  static constexpr absl::string_view kByteCode = "SOME_BYTE_CODE";
+
+  LiteRtModelT root;
+  auto& sg = root.EmplaceSubgraph();
+  auto& op = sg.EmplaceOp();
+  OwningBufferRef<uint8_t> buffer(kByteCode);
+  const auto buf_id = root.Buffers()->RegisterOwnedBuffer(std::move(buffer));
+  root.AttachAssetToOp(&op, buf_id, "foo");
+
+  auto serialized = SerializeModel(std::move(root));
+  ASSERT_TRUE(serialized);
+
+  auto flatbuffer = FlatbufferWrapper::CreateFromBuffer(*serialized);
+  ASSERT_TRUE(flatbuffer);
+  auto tfl_model = flatbuffer->get()->Unpack();
+  auto& opts = tfl_model->subgraphs[0]->operators[0]->custom_options;
+  MutableBufferRef<uint8_t> opts_buffer(opts.data(), opts.size());
+  auto dispatch_opts = GetDispatchOpOptions(opts_buffer);
+  ASSERT_TRUE(dispatch_opts);
+  dispatch_opts->bytecode_offset = std::numeric_limits<size_t>::max();
+  ASSERT_TRUE(UpdateDispatchOpOptionsInPlace(*dispatch_opts, opts_buffer));
+
+  auto mutated = SerializeFlatbuffer(*tfl_model);
+  const std::filesystem::path test_file_path =
+      std::filesystem::path(::testing::TempDir()) / "bad_dispatch.tflite";
+  std::ofstream output(test_file_path, std::ios::binary);
+  output.write(reinterpret_cast<const char*>(mutated.Data()), mutated.Size());
+  output.close();
+
+  auto litert_model = LoadModelFromFile(test_file_path.string());
+  ASSERT_FALSE(litert_model);
+  EXPECT_EQ(litert_model.Error().Status(), kLiteRtStatusErrorInvalidFlatbuffer);
+}
+
 TEST(ModelTestCApi, Int2) {
   auto model = LoadModelThroughRoundTrip("FFW-2-bit.tflite");
   ASSERT_TRUE(model);
@@ -626,9 +711,10 @@ TEST(ModelSerializeTest, WithSingleExternalBuffer) {
   BufferRef<uint8_t> opts_buffer(opts.data(), opts.size());
 
   auto dispatch_opts = GetDispatchOpOptions(opts_buffer);
-  EXPECT_EQ(dispatch_opts.name, kName);
-  EXPECT_EQ(serialized->StrView().substr(dispatch_opts.bytecode_offset,
-                                         dispatch_opts.bytecode_size),
+  ASSERT_TRUE(dispatch_opts);
+  EXPECT_EQ(dispatch_opts->name, kName);
+  EXPECT_EQ(serialized->StrView().substr(dispatch_opts->bytecode_offset,
+                                         dispatch_opts->bytecode_size),
             kByteCode);
 }
 
@@ -666,9 +752,10 @@ TEST(ModelSerializeTest, WithMultipleUniqueExternalBuffer) {
     BufferRef<uint8_t> opts_buffer(opts.data(), opts.size());
 
     auto dispatch_opts = GetDispatchOpOptions(opts_buffer);
-    EXPECT_EQ(dispatch_opts.name, kName);
-    EXPECT_EQ(serialized->StrView().substr(dispatch_opts.bytecode_offset,
-                                           dispatch_opts.bytecode_size),
+    ASSERT_TRUE(dispatch_opts);
+    EXPECT_EQ(dispatch_opts->name, kName);
+    EXPECT_EQ(serialized->StrView().substr(dispatch_opts->bytecode_offset,
+                                           dispatch_opts->bytecode_size),
               kByteCode);
   }
 
@@ -677,9 +764,10 @@ TEST(ModelSerializeTest, WithMultipleUniqueExternalBuffer) {
     BufferRef<uint8_t> opts_buffer(opts.data(), opts.size());
 
     auto dispatch_opts = GetDispatchOpOptions(opts_buffer);
-    EXPECT_EQ(dispatch_opts.name, kName2);
-    EXPECT_EQ(serialized->StrView().substr(dispatch_opts.bytecode_offset,
-                                           dispatch_opts.bytecode_size),
+    ASSERT_TRUE(dispatch_opts);
+    EXPECT_EQ(dispatch_opts->name, kName2);
+    EXPECT_EQ(serialized->StrView().substr(dispatch_opts->bytecode_offset,
+                                           dispatch_opts->bytecode_size),
               kByteCode2);
   }
 }
@@ -714,9 +802,10 @@ TEST(ModelSerializeTest, WithSharedExternalBuffer) {
     BufferRef<uint8_t> opts_buffer(opts.data(), opts.size());
 
     auto dispatch_opts = GetDispatchOpOptions(opts_buffer);
-    EXPECT_EQ(dispatch_opts.name, kName);
-    EXPECT_EQ(serialized->StrView().substr(dispatch_opts.bytecode_offset,
-                                           dispatch_opts.bytecode_size),
+    ASSERT_TRUE(dispatch_opts);
+    EXPECT_EQ(dispatch_opts->name, kName);
+    EXPECT_EQ(serialized->StrView().substr(dispatch_opts->bytecode_offset,
+                                           dispatch_opts->bytecode_size),
               kByteCode);
   }
 
@@ -725,9 +814,10 @@ TEST(ModelSerializeTest, WithSharedExternalBuffer) {
     BufferRef<uint8_t> opts_buffer(opts.data(), opts.size());
 
     auto dispatch_opts = GetDispatchOpOptions(opts_buffer);
-    EXPECT_EQ(dispatch_opts.name, kName2);
-    EXPECT_EQ(serialized->StrView().substr(dispatch_opts.bytecode_offset,
-                                           dispatch_opts.bytecode_size),
+    ASSERT_TRUE(dispatch_opts);
+    EXPECT_EQ(dispatch_opts->name, kName2);
+    EXPECT_EQ(serialized->StrView().substr(dispatch_opts->bytecode_offset,
+                                           dispatch_opts->bytecode_size),
               kByteCode);
   }
 }
@@ -780,9 +870,10 @@ TEST(ModelSerializeTest, WithOffsetTensorBufferAndOpAsset) {
     BufferRef<uint8_t> opts_buffer(opts.data(), opts.size());
 
     auto dispatch_opts = GetDispatchOpOptions(opts_buffer);
-    EXPECT_EQ(dispatch_opts.name, kName);
-    EXPECT_EQ(serialized->StrView().substr(dispatch_opts.bytecode_offset,
-                                           dispatch_opts.bytecode_size),
+    ASSERT_TRUE(dispatch_opts);
+    EXPECT_EQ(dispatch_opts->name, kName);
+    EXPECT_EQ(serialized->StrView().substr(dispatch_opts->bytecode_offset,
+                                           dispatch_opts->bytecode_size),
               kByteCode);
   }
 }
@@ -836,10 +927,11 @@ TEST(ModelSerializeTest, WithOffsetTensorBufferAndOpAssetHasAlignment) {
     BufferRef<uint8_t> opts_buffer(opts.data(), opts.size());
 
     auto dispatch_opts = GetDispatchOpOptions(opts_buffer);
-    EXPECT_EQ(dispatch_opts.name, kName);
-    ASSERT_EQ(dispatch_opts.bytecode_offset % kAlignment, 0);
-    EXPECT_EQ(serialized->StrView().substr(dispatch_opts.bytecode_offset,
-                                           dispatch_opts.bytecode_size),
+    ASSERT_TRUE(dispatch_opts);
+    EXPECT_EQ(dispatch_opts->name, kName);
+    ASSERT_EQ(dispatch_opts->bytecode_offset % kAlignment, 0);
+    EXPECT_EQ(serialized->StrView().substr(dispatch_opts->bytecode_offset,
+                                           dispatch_opts->bytecode_size),
               kByteCode);
   }
 }

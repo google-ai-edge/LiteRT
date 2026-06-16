@@ -37,9 +37,10 @@ TEST(DispatchOpSchemaTest, DispatchOpOptions) {
   ASSERT_GT(buffer.Size(), 0);
 
   auto parsed_options = GetDispatchOpOptions(buffer);
-  ASSERT_EQ(parsed_options.bytecode_size, kBufferSize);
-  ASSERT_EQ(parsed_options.bytecode_offset, kBufferOffset);
-  ASSERT_EQ(parsed_options.name, kName);
+  ASSERT_TRUE(parsed_options);
+  ASSERT_EQ(parsed_options->bytecode_size, kBufferSize);
+  ASSERT_EQ(parsed_options->bytecode_offset, kBufferOffset);
+  ASSERT_EQ(parsed_options->name, kName);
 }
 
 TEST(DispatchOpSchemaTest, UpdateDispatchOpOptions) {
@@ -64,9 +65,26 @@ TEST(DispatchOpSchemaTest, UpdateDispatchOpOptions) {
   ASSERT_TRUE(UpdateDispatchOpOptionsInPlace(new_options, buffer));
 
   auto parsed_options = GetDispatchOpOptions(buffer);
-  ASSERT_EQ(parsed_options.bytecode_size, kNewBufferSize);
-  ASSERT_EQ(parsed_options.bytecode_offset, kNewBufferOffset);
-  ASSERT_EQ(parsed_options.name, kName);
+  ASSERT_TRUE(parsed_options);
+  ASSERT_EQ(parsed_options->bytecode_size, kNewBufferSize);
+  ASSERT_EQ(parsed_options->bytecode_offset, kNewBufferOffset);
+  ASSERT_EQ(parsed_options->name, kName);
+}
+
+TEST(DispatchOpSchemaTest, RejectsInvalidDispatchOpOptions) {
+  uint8_t invalid_options[] = {1, 2, 3};
+  BufferRef<uint8_t> buffer(invalid_options, sizeof(invalid_options));
+
+  EXPECT_FALSE(GetDispatchOpOptions(buffer));
+
+  DispatchOpOptions options = {
+      kBufferSize,
+      kBufferOffset,
+      kName,
+  };
+  MutableBufferRef<uint8_t> mutable_buffer(invalid_options,
+                                           sizeof(invalid_options));
+  EXPECT_FALSE(UpdateDispatchOpOptionsInPlace(options, mutable_buffer));
 }
 
 }  // namespace

@@ -20,6 +20,7 @@
 
 #include <gtest/gtest.h>  // NOLINT: Need when ANDROID_API_LEVEL >= 26
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 
 namespace {
@@ -166,6 +167,13 @@ TEST(TensorBufferRequirements, InvalidStridesArguments) {
           kNumSupportedTensorBufferTypes, kSupportedTensorBufferTypes,
           kBufferSize, /*num_strides=*/1, /*strides=*/nullptr, &requirements),
       kLiteRtStatusErrorInvalidArgument);
+
+  std::array<uint32_t, LITERT_TENSOR_MAX_RANK + 1> too_many_strides = {};
+  EXPECT_EQ(LiteRtCreateTensorBufferRequirements(
+                kNumSupportedTensorBufferTypes, kSupportedTensorBufferTypes,
+                kBufferSize, too_many_strides.size(), too_many_strides.data(),
+                &requirements),
+            kLiteRtStatusErrorInvalidArgument);
 }
 
 TEST(TensorBufferRequirements, GetSupportedBufferTypeRejectsNullOutput) {

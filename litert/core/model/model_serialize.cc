@@ -457,7 +457,8 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
           op->mutable_custom_options()->size());
 
       // Update with real size and offset.
-      DispatchOpOptions dispach_opts(GetDispatchOpOptions(old_raw_opts));
+      LITERT_ASSIGN_OR_RETURN(DispatchOpOptions dispach_opts,
+                              GetDispatchOpOptions(old_raw_opts));
       dispach_opts.bytecode_offset = offset;
       dispach_opts.bytecode_size = size;
 
