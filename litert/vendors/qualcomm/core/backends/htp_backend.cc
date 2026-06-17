@@ -404,6 +404,7 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   } else {
 #if defined(__x86_64__) || defined(_M_X64)
     // Offline compilation on desktop hosts cannot query the target device.
+    soc_info_ = SocInfo("SM8850", SnapdragonModel::SM8850, DspArch::V81, 8 /* vtcm_size_in_mb */);
 #else
     if (auto device_platform_info = CreateDevicePlatformInfo();
         device_platform_info) {
