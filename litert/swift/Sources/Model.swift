@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import Foundation
-import LiteRtC
+import CLiteRT
 
 public final class Model {
   internal let cModel: LiteRtModel

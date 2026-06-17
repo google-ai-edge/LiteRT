@@ -64,7 +64,7 @@ results.
 
 ```swift
 import Foundation
-import LiteRt
+import LiteRT
 
 func runInference() throws {
   // 1. Initialize the LiteRT Environment

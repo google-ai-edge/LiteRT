@@ -569,7 +569,7 @@ _HEADER_FILES_FOR_SHARED_LIB = [
     "litert_tensor_buffer_registry.h",
 ]
 
-exports_files(srcs = _HEADER_FILES_FOR_SHARED_LIB)
+exports_files(srcs = _HEADER_FILES_FOR_SHARED_LIB + ["litert_scheduling_info.h"])
 
 filegroup(
     name = "internal_headers",

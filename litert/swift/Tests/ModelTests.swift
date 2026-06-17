@@ -13,8 +13,8 @@
 // limitations under the License.
 
 import XCTest
-import LiteRtC
-@testable import LiteRt
+
+@testable import LiteRT
 
 final class ModelTests: XCTestCase {
   func testSignatureKeys() throws {
@@ -30,9 +30,10 @@ final class ModelTests: XCTestCase {
     let fileHandle = try FileHandle(forReadingFrom: fileURL)
     let fd = fileHandle.fileDescriptor
 
-    let fileSize = try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+    let fileSize = try fileHandle.seekToEnd()
+    try fileHandle.seek(toOffset: 0)
 
-    let model = try Model(fd: fd, offset: 0, size: fileSize)
+    let model = try Model(fd: fd, offset: 0, size: Int(fileSize))
     XCTAssertNotNil(model)
 
     try fileHandle.close()

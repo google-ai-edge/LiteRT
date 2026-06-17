@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import Foundation
-import LiteRtC
+import CLiteRT
 
 public enum Accelerator: Int32 {
   case none = 0

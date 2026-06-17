@@ -14,7 +14,7 @@
 
 import Foundation
 import XCTest
-@testable import LiteRt
+@testable import LiteRT
 
 func createTestEnvironment(options: [Environment.Option] = []) throws -> Environment {
   var resolvedOptions = options

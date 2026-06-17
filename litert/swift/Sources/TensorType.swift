@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import Foundation
-import LiteRtC
+import CLiteRT
 
 public enum ElementType: UInt32 {
   case none = 0

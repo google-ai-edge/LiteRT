@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import CLiteRT
 import XCTest
-import LiteRtC
-@testable import LiteRt
+
+@testable import LiteRT
 
 final class OptionsTests: XCTestCase {
   func testExternalTensorBinding() throws {

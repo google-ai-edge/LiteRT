@@ -13,8 +13,7 @@
 // limitations under the License.
 
 import XCTest
-import LiteRtC
-@testable import LiteRt
+@testable import LiteRT
 
 final class TensorTypeTests: XCTestCase {
   func testLayoutElementCount() {

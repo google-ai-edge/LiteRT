@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import Foundation
-import LiteRtC
+import CLiteRT
 
 /// A compiled LiteRT model ready for execution.
 public final class CompiledModel {

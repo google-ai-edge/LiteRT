@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import LiteRtC
 import XCTest
 
-@testable import LiteRt
+@testable import LiteRT
 
 final class CompiledModelTests: XCTestCase {
   func testIsFullyAccelerated() throws {

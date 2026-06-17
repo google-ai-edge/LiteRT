@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import Foundation
-import LiteRtC
+import CLiteRT
 
 public final class Environment {
   internal let cEnvironment: LiteRtEnvironment
