@@ -14,17 +14,30 @@ compiled QNN graphs on the target device.
 By using this integration, developers can leverage the high performance and
 energy efficiency of Qualcomm NPUs in their LiteRT applications.
 
-## Build Instructions 🛠️
+## Getting Started 🚀
 
-Covers building the Qualcomm compiler plugin and dispatch library via both
-**Bazel** and **CMake** flows. See
-[BUILD_INSTRUCTIONS.md](./doc/BUILD_INSTRUCTIONS.md).
+The build and run docs live in [doc/](./doc/). Read them in this order:
 
-## IoT Instructions 🌐
+```mermaid
+flowchart LR
+    A[PREREQUISITES.md<br/>Install toolchain] --> B[QAIRT_SDK.md<br/>QNN concepts and libraries]
+    B --> C[HTP_INSTRUCTIONS.md<br/>Compile and execute]
+    C -.IoT target.-> D[IOT_DEVICE_SETUP.md<br/>Flash oe-linux device]
+```
 
-Covers flashing supported IoT devices (e.g. IQ-8275 / QCS8275) with both
-**oe-linux** and **Ubuntu** images. See
-[IOT_INSTRUCTIONS.md](./doc/IOT_INSTRUCTIONS.md).
+-   [PREREQUISITES.md](./doc/PREREQUISITES.md): read once when setting up a new
+    host. Skip if your toolchain is already installed.
+-   [QAIRT_SDK.md](./doc/QAIRT_SDK.md): read to understand QNN backends,
+    platforms, and how to locate the required QNN libraries. Refer back to it
+    whenever you need to find a specific shared library(`.so`).
+-   [HTP_INSTRUCTIONS.md](./doc/HTP_INSTRUCTIONS.md): the main guide for
+    compiling and running a model. Covers AOT on the host (Bazel and CMake) and
+    JIT on the device (Real JIT and On-device AOT).
+-   [IOT_DEVICE_SETUP.md](./doc/IOT_DEVICE_SETUP.md): only when targeting an IoT
+    device (e.g. IQ-8275 / QCS8275) with either oe-linux or Ubuntu images. Flash
+    the device first, then follow
+    [Run on device (IoT device with oe-linux)](./doc/HTP_INSTRUCTIONS.md#run-on-device-iot-device-with-oe-linux)
+    in HTP_INSTRUCTIONS.md.
 
 ## Debug Features 🐞
 
