@@ -27,6 +27,7 @@
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
@@ -55,14 +56,26 @@ LiteRtOptionsT GetTestOptions() {
   };
 }
 
-TEST(CompilationCacheTest, CacheMiss) {
+class CompilationCacheTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    ASSERT_EQ(LiteRtCreateEnvironment(0, nullptr, &env_), kLiteRtStatusOk);
+  }
+
+  void TearDown() override { LiteRtDestroyEnvironment(env_); }
+
+  LiteRtEnvironment env_;
+};
+
+TEST_F(CompilationCacheTest, CacheMiss) {
   // GIVEN: a compilation cache and a model
   const std::string cache_root_path = ::testing::TempDir();
   LITERT_ASSIGN_OR_ABORT(CompilationCache compilation_cache,
                          CompilationCache::Create(cache_root_path));
   LITERT_ASSIGN_OR_ABORT(
       std::unique_ptr<LiteRtModelT> model,
-      LoadModelFromFile(litert::testing::GetTestFilePath(kModelFileName)));
+      LoadModelFromFile(env_,
+                        litert::testing::GetTestFilePath(kModelFileName)));
 
   // WHEN: the model has not been saved to the cache
   LITERT_ASSIGN_OR_ABORT(
@@ -72,18 +85,19 @@ TEST(CompilationCacheTest, CacheMiss) {
 
   // THEN: the model is not found in the cache
   LITERT_ASSIGN_OR_ABORT(std::optional<LiteRtModelT::Ptr> cache_miss,
-                         compilation_cache.TryLoadModel(cache_key));
+                         compilation_cache.TryLoadModel(env_, cache_key));
   EXPECT_FALSE(cache_miss.has_value());
 }
 
-TEST(CompilationCacheTest, CacheHit) {
+TEST_F(CompilationCacheTest, CacheHit) {
   // GIVEN: a compilation cache and a model
   const std::string cache_root_path = ::testing::TempDir();
   LITERT_ASSIGN_OR_ABORT(CompilationCache compilation_cache,
                          CompilationCache::Create(cache_root_path));
   LITERT_ASSIGN_OR_ABORT(
       std::unique_ptr<LiteRtModelT> model,
-      LoadModelFromFile(litert::testing::GetTestFilePath(kModelFileName)));
+      LoadModelFromFile(env_,
+                        litert::testing::GetTestFilePath(kModelFileName)));
 
   // WHEN: the model is saved to the cache
   LITERT_ASSIGN_OR_ABORT(
@@ -94,11 +108,11 @@ TEST(CompilationCacheTest, CacheHit) {
 
   // THEN: the model can be found in the cache
   LITERT_ASSIGN_OR_ABORT(std::optional<LiteRtModelT::Ptr> cache_hit,
-                         compilation_cache.TryLoadModel(cache_key));
+                         compilation_cache.TryLoadModel(env_, cache_key));
   EXPECT_TRUE(cache_hit.has_value());
 }
 
-TEST(CompilationCacheTest, CacheHitWithModelName) {
+TEST_F(CompilationCacheTest, CacheHitWithModelName) {
   // GIVEN: a compilation cache and a model
   const std::string cache_root_path =
       ::testing::TempDir() + "/CacheHitWithModelName";
@@ -107,7 +121,8 @@ TEST(CompilationCacheTest, CacheHitWithModelName) {
                          CompilationCache::Create(cache_root_path));
   LITERT_ASSIGN_OR_ABORT(
       std::unique_ptr<LiteRtModelT> model,
-      LoadModelFromFile(litert::testing::GetTestFilePath(kModelFileName)));
+      LoadModelFromFile(env_,
+                        litert::testing::GetTestFilePath(kModelFileName)));
 
   // WHEN: the model is saved to the cache with a model name
   LITERT_ASSIGN_OR_ABORT(
@@ -119,17 +134,18 @@ TEST(CompilationCacheTest, CacheHitWithModelName) {
       compilation_cache.SaveModel(*model, cache_key, model_name));
 
   // THEN: the model can be found in the cache using the model name
-  LITERT_ASSIGN_OR_ABORT(std::optional<LiteRtModelT::Ptr> cache_hit_with_name,
-                         compilation_cache.TryLoadModel(cache_key, model_name));
+  LITERT_ASSIGN_OR_ABORT(
+      std::optional<LiteRtModelT::Ptr> cache_hit_with_name,
+      compilation_cache.TryLoadModel(env_, cache_key, model_name));
   EXPECT_TRUE(cache_hit_with_name.has_value());
 
   // AND: loading WITHOUT name fails because it was stored WITH name
   LITERT_ASSIGN_OR_ABORT(std::optional<LiteRtModelT::Ptr> cache_miss,
-                         compilation_cache.TryLoadModel(cache_key, ""));
+                         compilation_cache.TryLoadModel(env_, cache_key, ""));
   EXPECT_FALSE(cache_miss.has_value());
 }
 
-TEST(CompilationCacheTest, CacheHitFallbackToHashOnly) {
+TEST_F(CompilationCacheTest, CacheHitFallbackToHashOnly) {
   // GIVEN: a compilation cache and a model
   const std::string cache_root_path =
       ::testing::TempDir() + "/CacheHitFallbackToHashOnly";
@@ -138,7 +154,8 @@ TEST(CompilationCacheTest, CacheHitFallbackToHashOnly) {
                          CompilationCache::Create(cache_root_path));
   LITERT_ASSIGN_OR_ABORT(
       std::unique_ptr<LiteRtModelT> model,
-      LoadModelFromFile(litert::testing::GetTestFilePath(kModelFileName)));
+      LoadModelFromFile(env_,
+                        litert::testing::GetTestFilePath(kModelFileName)));
 
   // WHEN: the model is saved to the cache WITHOUT a model name
   LITERT_ASSIGN_OR_ABORT(
@@ -150,19 +167,21 @@ TEST(CompilationCacheTest, CacheHitFallbackToHashOnly) {
   // THEN: the model can be found in the cache even if we PROVIDE a model name
   // (due to fallback)
   std::string model_name = "test_model";
-  LITERT_ASSIGN_OR_ABORT(std::optional<LiteRtModelT::Ptr> cache_hit,
-                         compilation_cache.TryLoadModel(cache_key, model_name));
+  LITERT_ASSIGN_OR_ABORT(
+      std::optional<LiteRtModelT::Ptr> cache_hit,
+      compilation_cache.TryLoadModel(env_, cache_key, model_name));
   EXPECT_TRUE(cache_hit.has_value());
 }
 
-TEST(CompilationCacheTest, CompilerPluginVersionChange_CacheMiss) {
+TEST_F(CompilationCacheTest, CompilerPluginVersionChange_CacheMiss) {
   // GIVEN: a compilation cache and a model, saved to the cache
   const std::string cache_root_path = ::testing::TempDir();
   LITERT_ASSIGN_OR_ABORT(CompilationCache compilation_cache,
                          CompilationCache::Create(cache_root_path));
   LITERT_ASSIGN_OR_ABORT(
       std::unique_ptr<LiteRtModelT> model,
-      LoadModelFromFile(litert::testing::GetTestFilePath(kModelFileName)));
+      LoadModelFromFile(env_,
+                        litert::testing::GetTestFilePath(kModelFileName)));
 
   CompilationCache::CompilerPluginInfo compiler_plugin_info =
       GetTestCompilerPluginInfo();
@@ -180,19 +199,21 @@ TEST(CompilationCacheTest, CompilerPluginVersionChange_CacheMiss) {
                              *model, GetTestOptions(), compiler_plugin_info));
 
   // THEN: the model can not be loaded from the cache
-  LITERT_ASSIGN_OR_ABORT(std::optional<LiteRtModelT::Ptr> cache_hit,
-                         compilation_cache.TryLoadModel(cache_key_updated));
+  LITERT_ASSIGN_OR_ABORT(
+      std::optional<LiteRtModelT::Ptr> cache_hit,
+      compilation_cache.TryLoadModel(env_, cache_key_updated));
   EXPECT_FALSE(cache_hit.has_value());
 }
 
-TEST(CompilationCacheTest, CompilerPluginSdkVersionChange_CacheMiss) {
+TEST_F(CompilationCacheTest, CompilerPluginSdkVersionChange_CacheMiss) {
   // GIVEN: a compilation cache and a model, saved to the cache
   const std::string cache_root_path = ::testing::TempDir();
   LITERT_ASSIGN_OR_ABORT(CompilationCache compilation_cache,
                          CompilationCache::Create(cache_root_path));
   LITERT_ASSIGN_OR_ABORT(
       std::unique_ptr<LiteRtModelT> model,
-      LoadModelFromFile(litert::testing::GetTestFilePath(kModelFileName)));
+      LoadModelFromFile(env_,
+                        litert::testing::GetTestFilePath(kModelFileName)));
 
   CompilationCache::CompilerPluginInfo compiler_plugin_info =
       GetTestCompilerPluginInfo();
@@ -211,18 +232,20 @@ TEST(CompilationCacheTest, CompilerPluginSdkVersionChange_CacheMiss) {
                              *model, GetTestOptions(), compiler_plugin_info));
 
   // THEN: the model can not be loaded from the cache
-  LITERT_ASSIGN_OR_ABORT(std::optional<LiteRtModelT::Ptr> cache_hit,
-                         compilation_cache.TryLoadModel(cache_key_updated));
+  LITERT_ASSIGN_OR_ABORT(
+      std::optional<LiteRtModelT::Ptr> cache_hit,
+      compilation_cache.TryLoadModel(env_, cache_key_updated));
   EXPECT_FALSE(cache_hit.has_value());
 }
 
-TEST(CompilationCacheTest, MultipleCompilerPlugins) {
+TEST_F(CompilationCacheTest, MultipleCompilerPlugins) {
   const std::string cache_root_path = ::testing::TempDir();
   LITERT_ASSIGN_OR_ABORT(CompilationCache compilation_cache,
                          CompilationCache::Create(cache_root_path));
   LITERT_ASSIGN_OR_ABORT(
       std::unique_ptr<LiteRtModelT> model,
-      LoadModelFromFile(litert::testing::GetTestFilePath(kModelFileName)));
+      LoadModelFromFile(env_,
+                        litert::testing::GetTestFilePath(kModelFileName)));
   CompilationCache::CompilerPluginInfo compiler_plugin_info_first =
       GetTestCompilerPluginInfo();
   CompilationCache::CompilerPluginInfo compiler_plugin_info_second = {
@@ -258,14 +281,15 @@ TEST(CompilationCacheTest, MultipleCompilerPlugins) {
   EXPECT_EQ(cache_key_first.content_hash, cache_key_third.content_hash);
 }
 
-TEST(CompilationCacheTest, DifferentLiteRtOptions_CacheMiss) {
+TEST_F(CompilationCacheTest, DifferentLiteRtOptions_CacheMiss) {
   // GIVEN: a compilation cache and a model, saved to the cache
   const std::string cache_root_path = ::testing::TempDir();
   LITERT_ASSIGN_OR_ABORT(CompilationCache compilation_cache,
                          CompilationCache::Create(cache_root_path));
   LITERT_ASSIGN_OR_ABORT(
       std::unique_ptr<LiteRtModelT> model,
-      LoadModelFromFile(litert::testing::GetTestFilePath(kModelFileName)));
+      LoadModelFromFile(env_,
+                        litert::testing::GetTestFilePath(kModelFileName)));
 
   LiteRtOptionsT options = GetTestOptions();
 
@@ -282,25 +306,28 @@ TEST(CompilationCacheTest, DifferentLiteRtOptions_CacheMiss) {
                              *model, options, GetTestCompilerPluginInfo()));
 
   // THEN: the model can not be loaded from the cache.
-  LITERT_ASSIGN_OR_ABORT(std::optional<LiteRtModelT::Ptr> cache_hit,
-                         compilation_cache.TryLoadModel(cache_key_updated));
+  LITERT_ASSIGN_OR_ABORT(
+      std::optional<LiteRtModelT::Ptr> cache_hit,
+      compilation_cache.TryLoadModel(env_, cache_key_updated));
   EXPECT_FALSE(cache_hit.has_value());
 }
 
-TEST(CompilationCacheTest, DifferentModelContent_DifferentCachePath) {
+TEST_F(CompilationCacheTest, DifferentModelContent_DifferentCachePath) {
   const std::string cache_root_path =
       ::testing::TempDir() + "/DifferentModelContent";
   LITERT_ABORT_IF_ERROR(litert::internal::MkDir(cache_root_path));
   LITERT_ASSIGN_OR_ABORT(CompilationCache compilation_cache,
                          CompilationCache::Create(cache_root_path));
 
-  LITERT_ASSIGN_OR_ABORT(std::unique_ptr<LiteRtModelT> model_1,
-                         LoadModelFromFile(litert::testing::GetTestFilePath(
-                             "simple_model.tflite")));
+  LITERT_ASSIGN_OR_ABORT(
+      std::unique_ptr<LiteRtModelT> model_1,
+      LoadModelFromFile(
+          env_, litert::testing::GetTestFilePath("simple_model.tflite")));
 
-  LITERT_ASSIGN_OR_ABORT(std::unique_ptr<LiteRtModelT> model_2,
-                         LoadModelFromFile(litert::testing::GetTestFilePath(
-                             "simple_add_dynamic_shape.tflite")));
+  LITERT_ASSIGN_OR_ABORT(
+      std::unique_ptr<LiteRtModelT> model_2,
+      LoadModelFromFile(env_, litert::testing::GetTestFilePath(
+                                  "simple_add_dynamic_shape.tflite")));
 
   std::string model_name_1 = "model_a";
   std::string model_name_2 = "model_b";
@@ -333,7 +360,7 @@ TEST(CompilationCacheTest, DifferentModelContent_DifferentCachePath) {
   EXPECT_TRUE(litert::internal::Exists(path_2));
 }
 
-TEST(CompilationCacheTest, SameModelContent_DifferentOptions_SameDirectory) {
+TEST_F(CompilationCacheTest, SameModelContent_DifferentOptions_SameDirectory) {
   const std::string cache_root_path =
       ::testing::TempDir() + "/SameModelContent";
   LITERT_ABORT_IF_ERROR(litert::internal::MkDir(cache_root_path));
@@ -342,9 +369,10 @@ TEST(CompilationCacheTest, SameModelContent_DifferentOptions_SameDirectory) {
 
   compilation_cache.SetMaxConfigsPerModel(2);
 
-  LITERT_ASSIGN_OR_ABORT(std::unique_ptr<LiteRtModelT> model,
-                         LoadModelFromFile(litert::testing::GetTestFilePath(
-                             "simple_model.tflite")));
+  LITERT_ASSIGN_OR_ABORT(
+      std::unique_ptr<LiteRtModelT> model,
+      LoadModelFromFile(
+          env_, litert::testing::GetTestFilePath("simple_model.tflite")));
 
   std::string model_name = "shared_name";
 
@@ -384,15 +412,16 @@ TEST(CompilationCacheTest, SameModelContent_DifferentOptions_SameDirectory) {
   EXPECT_TRUE(litert::internal::Exists(path_2));
 }
 
-TEST(CompilationCacheTest, UnnamedModel_StoredInMemDirectory) {
+TEST_F(CompilationCacheTest, UnnamedModel_StoredInMemDirectory) {
   const std::string cache_root_path = ::testing::TempDir() + "/UnnamedModel";
   LITERT_ABORT_IF_ERROR(litert::internal::MkDir(cache_root_path));
   LITERT_ASSIGN_OR_ABORT(CompilationCache compilation_cache,
                          CompilationCache::Create(cache_root_path));
 
-  LITERT_ASSIGN_OR_ABORT(std::unique_ptr<LiteRtModelT> model,
-                         LoadModelFromFile(litert::testing::GetTestFilePath(
-                             "simple_model.tflite")));
+  LITERT_ASSIGN_OR_ABORT(
+      std::unique_ptr<LiteRtModelT> model,
+      LoadModelFromFile(
+          env_, litert::testing::GetTestFilePath("simple_model.tflite")));
 
   LITERT_ASSIGN_OR_ABORT(
       CompilationCache::CacheKey cache_key,
@@ -408,7 +437,7 @@ TEST(CompilationCacheTest, UnnamedModel_StoredInMemDirectory) {
   EXPECT_TRUE(litert::internal::Exists(path));
 }
 
-TEST(CompilationCacheTest, BuildInventoryComplex) {
+TEST_F(CompilationCacheTest, BuildInventoryComplex) {
   const std::string cache_root_path =
       ::testing::TempDir() + "/BuildInventoryComplex";
   LITERT_ABORT_IF_ERROR(litert::internal::MkDir(cache_root_path));
@@ -417,13 +446,15 @@ TEST(CompilationCacheTest, BuildInventoryComplex) {
 
   compilation_cache.SetMaxConfigsPerModel(2);
 
-  LITERT_ASSIGN_OR_ABORT(std::unique_ptr<LiteRtModelT> model_1,
-                         LoadModelFromFile(litert::testing::GetTestFilePath(
-                             "simple_model.tflite")));
+  LITERT_ASSIGN_OR_ABORT(
+      std::unique_ptr<LiteRtModelT> model_1,
+      LoadModelFromFile(
+          env_, litert::testing::GetTestFilePath("simple_model.tflite")));
 
-  LITERT_ASSIGN_OR_ABORT(std::unique_ptr<LiteRtModelT> model_2,
-                         LoadModelFromFile(litert::testing::GetTestFilePath(
-                             "simple_add_dynamic_shape.tflite")));
+  LITERT_ASSIGN_OR_ABORT(
+      std::unique_ptr<LiteRtModelT> model_2,
+      LoadModelFromFile(env_, litert::testing::GetTestFilePath(
+                                  "simple_add_dynamic_shape.tflite")));
 
   std::string model_name = "model_a";
 
@@ -487,20 +518,22 @@ TEST(CompilationCacheTest, BuildInventoryComplex) {
       find_entry(key_unnamed.content_hash, key_unnamed.config_hash, "mem"));
 }
 
-TEST(CompilationCacheTest, Case1_ModelUpdate_RemovesOldDirectory) {
+TEST_F(CompilationCacheTest, Case1_ModelUpdate_RemovesOldDirectory) {
   const std::string cache_root_path =
       ::testing::TempDir() + "/Case1_ModelUpdate";
   LITERT_ABORT_IF_ERROR(litert::internal::MkDir(cache_root_path));
   LITERT_ASSIGN_OR_ABORT(CompilationCache compilation_cache,
                          CompilationCache::Create(cache_root_path));
 
-  LITERT_ASSIGN_OR_ABORT(std::unique_ptr<LiteRtModelT> model_1,
-                         LoadModelFromFile(litert::testing::GetTestFilePath(
-                             "simple_model.tflite")));
+  LITERT_ASSIGN_OR_ABORT(
+      std::unique_ptr<LiteRtModelT> model_1,
+      LoadModelFromFile(
+          env_, litert::testing::GetTestFilePath("simple_model.tflite")));
 
-  LITERT_ASSIGN_OR_ABORT(std::unique_ptr<LiteRtModelT> model_2,
-                         LoadModelFromFile(litert::testing::GetTestFilePath(
-                             "simple_add_dynamic_shape.tflite")));
+  LITERT_ASSIGN_OR_ABORT(
+      std::unique_ptr<LiteRtModelT> model_2,
+      LoadModelFromFile(env_, litert::testing::GetTestFilePath(
+                                  "simple_add_dynamic_shape.tflite")));
 
   std::string model_name = "my_model";
 
@@ -534,7 +567,7 @@ TEST(CompilationCacheTest, Case1_ModelUpdate_RemovesOldDirectory) {
   EXPECT_FALSE(litert::internal::Exists(dir_1));
 }
 
-TEST(CompilationCacheTest, Case2_ConfigLimit_RemovesOldestConfig) {
+TEST_F(CompilationCacheTest, Case2_ConfigLimit_RemovesOldestConfig) {
   const std::string cache_root_path =
       ::testing::TempDir() + "/Case2_ConfigLimit";
   LITERT_ABORT_IF_ERROR(litert::internal::MkDir(cache_root_path));
@@ -543,9 +576,10 @@ TEST(CompilationCacheTest, Case2_ConfigLimit_RemovesOldestConfig) {
 
   compilation_cache.SetMaxConfigsPerModel(2);
 
-  LITERT_ASSIGN_OR_ABORT(std::unique_ptr<LiteRtModelT> model,
-                         LoadModelFromFile(litert::testing::GetTestFilePath(
-                             "simple_model.tflite")));
+  LITERT_ASSIGN_OR_ABORT(
+      std::unique_ptr<LiteRtModelT> model,
+      LoadModelFromFile(
+          env_, litert::testing::GetTestFilePath("simple_model.tflite")));
 
   std::string model_name = "my_model";
 
@@ -595,15 +629,16 @@ TEST(CompilationCacheTest, Case2_ConfigLimit_RemovesOldestConfig) {
   EXPECT_TRUE(litert::internal::Exists(path_2));
 }
 
-TEST(CompilationCacheTest, Case3_GlobalLRU_RemovesOldestFiles) {
+TEST_F(CompilationCacheTest, Case3_GlobalLRU_RemovesOldestFiles) {
   const std::string cache_root_path = ::testing::TempDir() + "/Case3_GlobalLRU";
   LITERT_ABORT_IF_ERROR(litert::internal::MkDir(cache_root_path));
   LITERT_ASSIGN_OR_ABORT(CompilationCache compilation_cache,
                          CompilationCache::Create(cache_root_path));
 
-  LITERT_ASSIGN_OR_ABORT(std::unique_ptr<LiteRtModelT> model,
-                         LoadModelFromFile(litert::testing::GetTestFilePath(
-                             "simple_model.tflite")));
+  LITERT_ASSIGN_OR_ABORT(
+      std::unique_ptr<LiteRtModelT> model,
+      LoadModelFromFile(
+          env_, litert::testing::GetTestFilePath("simple_model.tflite")));
 
   // Get size of one file to set limit appropriately
   LITERT_ASSIGN_OR_ABORT(
@@ -665,16 +700,17 @@ TEST(CompilationCacheTest, Case3_GlobalLRU_RemovesOldestFiles) {
   EXPECT_TRUE(litert::internal::Exists(path_2));
 }
 
-TEST(CompilationCacheTest, Case3_GlobalLRU_TouchUpdatesTimestamp) {
+TEST_F(CompilationCacheTest, Case3_GlobalLRU_TouchUpdatesTimestamp) {
   const std::string cache_root_path =
       ::testing::TempDir() + "/Case3_GlobalLRU_Touch";
   LITERT_ABORT_IF_ERROR(litert::internal::MkDir(cache_root_path));
   LITERT_ASSIGN_OR_ABORT(CompilationCache compilation_cache,
                          CompilationCache::Create(cache_root_path));
 
-  LITERT_ASSIGN_OR_ABORT(std::unique_ptr<LiteRtModelT> model,
-                         LoadModelFromFile(litert::testing::GetTestFilePath(
-                             "simple_model.tflite")));
+  LITERT_ASSIGN_OR_ABORT(
+      std::unique_ptr<LiteRtModelT> model,
+      LoadModelFromFile(
+          env_, litert::testing::GetTestFilePath("simple_model.tflite")));
 
   // Get size of one file to set limit appropriately
   LITERT_ASSIGN_OR_ABORT(
@@ -719,8 +755,9 @@ TEST(CompilationCacheTest, Case3_GlobalLRU_TouchUpdatesTimestamp) {
   EXPECT_TRUE(litert::internal::Exists(path_2));
 
   // 3. Access File 1 (Updates timestamp to be newer than File 2)
-  LITERT_ASSIGN_OR_ABORT(std::optional<LiteRtModelT::Ptr> cache_hit,
-                         compilation_cache.TryLoadModel(key_1, "model_a"));
+  LITERT_ASSIGN_OR_ABORT(
+      std::optional<LiteRtModelT::Ptr> cache_hit,
+      compilation_cache.TryLoadModel(env_, key_1, "model_a"));
   EXPECT_TRUE(cache_hit.has_value());
   absl::SleepFor(absl::Milliseconds(100));
 
@@ -741,16 +778,17 @@ TEST(CompilationCacheTest, Case3_GlobalLRU_TouchUpdatesTimestamp) {
   EXPECT_FALSE(litert::internal::Exists(path_2));
 }
 
-TEST(CompilationCacheTest, Case4_Corruption_RemovesCorruptedFile) {
+TEST_F(CompilationCacheTest, Case4_Corruption_RemovesCorruptedFile) {
   const std::string cache_root_path =
       ::testing::TempDir() + "/Case4_Corruption";
   LITERT_ABORT_IF_ERROR(litert::internal::MkDir(cache_root_path));
   LITERT_ASSIGN_OR_ABORT(CompilationCache compilation_cache,
                          CompilationCache::Create(cache_root_path));
 
-  LITERT_ASSIGN_OR_ABORT(std::unique_ptr<LiteRtModelT> model,
-                         LoadModelFromFile(litert::testing::GetTestFilePath(
-                             "simple_model.tflite")));
+  LITERT_ASSIGN_OR_ABORT(
+      std::unique_ptr<LiteRtModelT> model,
+      LoadModelFromFile(
+          env_, litert::testing::GetTestFilePath("simple_model.tflite")));
 
   LITERT_ASSIGN_OR_ABORT(
       CompilationCache::CacheKey key,
@@ -774,7 +812,7 @@ TEST(CompilationCacheTest, Case4_Corruption_RemovesCorruptedFile) {
 
   // Try to load it
   LITERT_ASSIGN_OR_ABORT(std::optional<LiteRtModelT::Ptr> cache_hit,
-                         compilation_cache.TryLoadModel(key, model_name));
+                         compilation_cache.TryLoadModel(env_, key, model_name));
 
   // Verify it returns nullopt (clean cache miss after removal)
   EXPECT_FALSE(cache_hit.has_value());

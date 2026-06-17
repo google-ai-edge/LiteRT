@@ -476,6 +476,7 @@ cc_test(
     deps = [
         ":litert_op_options",
         "//litert/c:litert_common",
+        "//litert/c:litert_environment_header",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
@@ -583,6 +584,7 @@ cc_test(
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_model_types",
         "//litert/core/model",

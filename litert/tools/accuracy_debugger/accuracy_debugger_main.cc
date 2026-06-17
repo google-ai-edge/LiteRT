@@ -198,7 +198,8 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  auto model_res = litert::internal::LoadModelFromFile(model_path);
+  auto model_res = litert::internal::LoadModelFromFile(
+      env_res->GetHolder().handle, model_path);
   if (!model_res) {
     ABSL_LOG(ERROR) << "Failed to load model: " << model_res.Error().Message();
     return 1;

@@ -20,6 +20,8 @@
 #include <gtest/gtest.h>
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/core/model/model.h"
@@ -45,9 +47,20 @@ static constexpr absl::string_view kTfliteFile = "simple_model_npu.tflite";
 static constexpr absl::string_view kCascadedTfliteFile =
     "simple_cascade_model_npu.tflite";
 
-TEST(GetModelBufWithByteCode, CreateInterpreter) {
+class GetModelBufWithByteCodeTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    ASSERT_EQ(LiteRtCreateEnvironment(0, nullptr, &env_), kLiteRtStatusOk);
+  }
+
+  void TearDown() override { LiteRtDestroyEnvironment(env_); }
+
+  LiteRtEnvironment env_;
+};
+
+TEST_F(GetModelBufWithByteCodeTest, CreateInterpreter) {
   auto model_with_byte_code =
-      GetModelBufWithByteCode(testing::GetTestFilePath(kTfliteFile),
+      GetModelBufWithByteCode(env_, testing::GetTestFilePath(kTfliteFile),
                               testing::GetTestFilePath(kNpuFile));
   ASSERT_TRUE(model_with_byte_code);
 
@@ -69,13 +82,13 @@ TEST(GetModelBufWithByteCode, CreateInterpreter) {
   EXPECT_NE(interpreter, nullptr);
 }
 
-TEST(GetModelBufWithByteCode, CheckAppended) {
+TEST_F(GetModelBufWithByteCodeTest, CheckAppended) {
   auto model_with_byte_code =
-      GetModelBufWithByteCode(testing::GetTestFilePath(kTfliteFile),
+      GetModelBufWithByteCode(env_, testing::GetTestFilePath(kTfliteFile),
                               testing::GetTestFilePath(kNpuFile));
   ASSERT_TRUE(model_with_byte_code);
 
-  auto model = LoadModelFromBuffer(*model_with_byte_code);
+  auto model = LoadModelFromBuffer(env_, *model_with_byte_code);
   ASSERT_TRUE(model);
 
   auto* op = model->get()->Subgraphs().front()->Ops().front();
@@ -86,7 +99,7 @@ TEST(GetModelBufWithByteCode, CheckAppended) {
             model_with_byte_code->Size());
 }
 
-TEST(GetModelBufWithByteCode, CreateInterpreterWithMultpleNpuNodes) {
+TEST_F(GetModelBufWithByteCodeTest, CreateInterpreterWithMultipleNpuNodes) {
   absl::flat_hash_map<std::string, std::string> custom_code_to_npu_file = {
       {"DISPATCH_OP_1", testing::GetTestFilePath(kNpuFile)},
       {"DISPATCH_OP_2", testing::GetTestFilePath(kNpuFile)},
@@ -94,7 +107,8 @@ TEST(GetModelBufWithByteCode, CreateInterpreterWithMultpleNpuNodes) {
   };
 
   auto model_with_byte_code = GetModelBufWithByteCode(
-      testing::GetTestFilePath(kCascadedTfliteFile), custom_code_to_npu_file);
+      env_, testing::GetTestFilePath(kCascadedTfliteFile),
+      custom_code_to_npu_file);
   ASSERT_TRUE(model_with_byte_code);
 
   auto alloc = std::make_unique<tflite::MemoryAllocation>(
@@ -115,7 +129,7 @@ TEST(GetModelBufWithByteCode, CreateInterpreterWithMultpleNpuNodes) {
   EXPECT_NE(interpreter, nullptr);
 }
 
-TEST(GetModelBufWithByteCode, CheckAppendedWithMultipleNpuOps) {
+TEST_F(GetModelBufWithByteCodeTest, CheckAppendedWithMultipleNpuOps) {
   absl::flat_hash_map<std::string, std::string> custom_code_to_npu_file = {
       {"DISPATCH_OP_1", testing::GetTestFilePath(kNpuFile)},
       {"DISPATCH_OP_2", testing::GetTestFilePath(kNpuFile)},
@@ -123,10 +137,11 @@ TEST(GetModelBufWithByteCode, CheckAppendedWithMultipleNpuOps) {
   };
 
   auto model_with_byte_code = GetModelBufWithByteCode(
-      testing::GetTestFilePath(kCascadedTfliteFile), custom_code_to_npu_file);
+      env_, testing::GetTestFilePath(kCascadedTfliteFile),
+      custom_code_to_npu_file);
   ASSERT_TRUE(model_with_byte_code);
 
-  auto model = LoadModelFromBuffer(*model_with_byte_code);
+  auto model = LoadModelFromBuffer(env_, *model_with_byte_code);
   ASSERT_TRUE(model);
 
   for (auto& op : model->get()->Subgraphs().front()->Ops()) {

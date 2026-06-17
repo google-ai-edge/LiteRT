@@ -67,11 +67,11 @@ Expected<OwningBufferRef<uint8_t>> GetModelBufWithByteCode(
 }
 
 Expected<OwningBufferRef<uint8_t>> GetModelBufWithByteCode(
-    absl::string_view tfl_file,
+    LiteRtEnvironment environment, absl::string_view tfl_file,
     const absl::flat_hash_map<std::string, std::string>&
         custom_code_to_npu_file,
     size_t bytecode_alignment) {
-  auto model = LoadModelFromFile(tfl_file);
+  auto model = LoadModelFromFile(environment, tfl_file);
   if (!model) {
     return model.Error();
   }
@@ -114,9 +114,9 @@ Expected<OwningBufferRef<uint8_t>> GetModelBufWithByteCode(
 }
 
 Expected<OwningBufferRef<uint8_t>> GetModelBufWithByteCode(
-    absl::string_view tfl_file, absl::string_view npu_file,
-    size_t bytecode_alignment) {
-  auto model = LoadModelFromFile(tfl_file);
+    LiteRtEnvironment environment, absl::string_view tfl_file,
+    absl::string_view npu_file, size_t bytecode_alignment) {
+  auto model = LoadModelFromFile(environment, tfl_file);
   if (!model) {
     return model.Error();
   }

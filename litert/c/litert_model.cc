@@ -52,12 +52,13 @@ LiteRtStatus LiteRtCreateModelFromFile(LiteRtEnvironment environment,
                                        const char* filename,
                                        LiteRtModel* model) {
   LITERT_PERFETTO_TRACE_EVENT("LiteRT Graph Loading From File");
-  if (!filename || !model) {
+  if (!environment || !filename || !model) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  LITERT_ASSIGN_OR_RETURN(LiteRtModelT::Ptr new_model,
-                          litert::internal::LoadModelFromFile(filename));
+  LITERT_ASSIGN_OR_RETURN(
+      LiteRtModelT::Ptr new_model,
+      litert::internal::LoadModelFromFile(environment, filename));
   *model = new_model.release();
   return kLiteRtStatusOk;
 }
@@ -67,14 +68,14 @@ LiteRtStatus LiteRtCreateModelFromBuffer(LiteRtEnvironment environment,
                                          size_t buffer_size,
                                          LiteRtModel* model) {
   LITERT_PERFETTO_TRACE_EVENT("LiteRT Graph Loading From Buffer");
-  if (!buffer_addr || !buffer_size || !model) {
+  if (!environment || !buffer_addr || !buffer_size || !model) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
   LITERT_ASSIGN_OR_RETURN(
       LiteRtModelT::Ptr new_model,
       litert::internal::LoadModelFromBuffer(
-          litert::BufferRef<uint8_t>(buffer_addr, buffer_size)));
+          environment, litert::BufferRef<uint8_t>(buffer_addr, buffer_size)));
   *model = new_model.release();
   return kLiteRtStatusOk;
 }
@@ -83,7 +84,7 @@ LiteRtStatus LiteRtCreateModelFromFd(LiteRtEnvironment environment, int fd,
                                      size_t offset, size_t size,
                                      LiteRtModel* model) {
   LITERT_PERFETTO_TRACE_EVENT("LiteRT Graph Loading From Fd");
-  if (fd < 0 || size == 0 || !model) {
+  if (!environment || fd < 0 || size == 0 || !model) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!tflite::MMAPAllocation::IsSupported()) {
@@ -96,9 +97,9 @@ LiteRtStatus LiteRtCreateModelFromFd(LiteRtEnvironment environment, int fd,
     return kLiteRtStatusErrorFileIO;
   }
 
-  LITERT_ASSIGN_OR_RETURN(
-      LiteRtModelT::Ptr new_model,
-      litert::internal::LoadModelFromAllocation(std::move(allocation)));
+  LITERT_ASSIGN_OR_RETURN(LiteRtModelT::Ptr new_model,
+                          litert::internal::LoadModelFromAllocation(
+                              environment, std::move(allocation)));
   *model = new_model.release();
   return kLiteRtStatusOk;
 }
@@ -195,6 +196,16 @@ LiteRtStatus LiteRtGetModelSignature(LiteRtModel model,
     return kLiteRtStatusErrorIndexOOB;
   }
   *signature = model->Signatures().at(signature_index);
+  return kLiteRtStatusOk;
+}
+
+// Get the environment of the model
+LiteRtStatus LiteRtGetModelEnvironment(LiteRtModel model,
+                                       LiteRtEnvironment* environment) {
+  if (!model || !environment) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *environment = model->GetEnvironment();
   return kLiteRtStatusOk;
 }
 
@@ -734,16 +745,16 @@ LiteRtStatus LiteRtCreateModelFromAllocation(LiteRtEnvironment environment,
                                              LiteRtAllocation allocation,
                                              LiteRtModel* model) {
   std::unique_ptr<tflite::Allocation> tflite_allocation(allocation);
-  if (!model) {
+  if (!environment || !model) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!tflite_allocation) {
     return kLiteRtStatusErrorFileIO;
   }
 
-  LITERT_ASSIGN_OR_RETURN(
-      LiteRtModelT::Ptr new_model,
-      litert::internal::LoadModelFromAllocation(std::move(tflite_allocation)));
+  LITERT_ASSIGN_OR_RETURN(LiteRtModelT::Ptr new_model,
+                          litert::internal::LoadModelFromAllocation(
+                              environment, std::move(tflite_allocation)));
   *model = new_model.release();
   return kLiteRtStatusOk;
 }
