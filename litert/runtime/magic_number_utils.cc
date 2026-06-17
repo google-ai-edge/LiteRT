@@ -265,8 +265,18 @@ Expected<int> UpdateMagicNumberInCompositeAttributes(
     int64_t magic_number, int64_t target_number, const LiteRtOpT& op,
     const tflite::Operator& tflite_op) {
   LITERT_ASSIGN_OR_RETURN(const auto* opts, GetStableHLOCompositeOptions(op));
-  flexbuffers::Map flexbuffer_map =
-      flexbuffers::GetRoot(opts->composite_attributes).AsMap();
+  if (opts->composite_attributes.empty() ||
+      !flexbuffers::VerifyBuffer(opts->composite_attributes.data(),
+                                 opts->composite_attributes.size())) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Invalid composite attributes");
+  }
+  auto root = flexbuffers::GetRoot(opts->composite_attributes);
+  if (!root.IsMap()) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Invalid composite attributes");
+  }
+  flexbuffers::Map flexbuffer_map = root.AsMap();
   auto keys = flexbuffer_map.Keys();
   int num_updated = 0;
   for (int k = 0; k < keys.size(); ++k) {

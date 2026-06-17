@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <utility>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -61,6 +62,31 @@ TEST(OpOptionsTest, GetCompositeOptions) {
   EXPECT_EQ(res->name, kName);
   EXPECT_EQ(res->subgraph, kSubgraph);
   EXPECT_FALSE(res->attributes_map.has_value());
+}
+
+TEST(OpOptionsTest, RejectsInvalidCompositeAttributes) {
+  static constexpr auto kOptsType =
+      ::tflite::BuiltinOptions2_StableHLOCompositeOptions;
+  static constexpr absl::string_view kName = "test.composite";
+  static constexpr int kSubgraph = 1;
+
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeShloComposite);
+
+  tflite::StableHLOCompositeOptionsT options;
+  options.name = kName;
+  options.decomposition_subgraph_index = kSubgraph;
+  options.composite_attributes = std::vector<uint8_t>{1, 2, 3};
+
+  internal::TflOptions2 tfl_options;
+  tfl_options.type = kOptsType;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions2(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<CompositeOptions>(&op);
+  EXPECT_FALSE(res);
+  EXPECT_EQ(ToLiteRtStatus(res.Error().StatusCC()),
+            kLiteRtStatusErrorInvalidArgument);
 }
 
 TEST(OpOptionsTest, GetUnsupportedOptions) {
