@@ -56,7 +56,14 @@ namespace litert::testing {
 template <typename Rank, typename T_in, typename T_out, typename OpCode,
           typename KeepNumDims = std::false_type,
           typename Fa = FaC<tflite::ActivationFunctionType_NONE>,
-          typename HasBias = std::true_type>
+          typename HasBias = std::true_type,
+          typename AsymmetricQuantizeInputs = std::false_type,
+          typename WeightsFormat = std::integral_constant<
+              litert::tensor::FullyConnectedWeightsFormat,
+              litert::tensor::kWeightsFormatDefault>,
+          typename PerChannel = std::false_type,
+          typename DynamicFilter = std::false_type,
+          typename DynamicBias = std::false_type>
 class FullyConnected : public TestGraph {
   static_assert(std::is_same_v<typename Rank::value_type, size_t>);
   static constexpr size_t kRank = Rank::value;
@@ -80,7 +87,10 @@ class FullyConnected : public TestGraph {
   };
 
  public:
-  using InputTypesT = TypeList<T_in>;
+  using InputTypesT = std::conditional_t<
+      DynamicFilter::value && DynamicBias::value, TypeList<T_in, T_in, T_out>,
+      std::conditional_t<DynamicFilter::value, TypeList<T_in, T_in>,
+                         TypeList<T_in>>>;
   using Traits = TestLogicTraits<InputTypesT, TypeList<T_out>, Params>;
   using Ptr = std::unique_ptr<FullyConnected>;
 
@@ -111,7 +121,13 @@ class FullyConnected : public TestGraph {
     options->keep_num_dims = kKeepNumDims;
     options->weights_format =
         tflite::FullyConnectedOptionsWeightsFormat_DEFAULT;
+    if constexpr (WeightsFormat::value ==
+                  litert::tensor::kWeightsFormatShuffled4x16Int8) {
+      options->weights_format =
+          tflite::FullyConnectedOptionsWeightsFormat_SHUFFLED4x16INT8;
+    }
     options->fused_activation_function = kFa;
+    options->asymmetric_quantize_inputs = AsymmetricQuantizeInputs::value;
 
     TflOptions tfl_opts;
     tfl_opts.type = tflite::BuiltinOptions_FullyConnectedOptions;
@@ -163,7 +179,8 @@ class FullyConnected : public TestGraph {
       DefaultDevice& device,
       const RandomTensorDataBuilder& data_builder) const override {
     VarBuffers inputs;
-    inputs.reserve(1);
+    inputs.reserve(1 + (DynamicFilter::value ? 1 : 0) +
+                   (DynamicBias::value ? 1 : 0));
     RandomTensorDataBuilder modified_data_builder = data_builder;
     modified_data_builder.SetFloatRange(-2.0f, 2.0f);
 
@@ -172,6 +189,22 @@ class FullyConnected : public TestGraph {
     LITERT_RETURN_IF_ERROR(
         (input.template WriteRandom<T_in>(modified_data_builder, device)));
     inputs.push_back(std::move(input));
+
+    if constexpr (DynamicFilter::value) {
+      LITERT_ASSIGN_OR_RETURN(
+          auto weights, SimpleBuffer::Create<T_in>(params_.weights_shape));
+      LITERT_RETURN_IF_ERROR(
+          (weights.template WriteRandom<T_in>(modified_data_builder, device)));
+      inputs.push_back(std::move(weights));
+    }
+
+    if constexpr (DynamicBias::value) {
+      LITERT_ASSIGN_OR_RETURN(auto bias,
+                              SimpleBuffer::Create<T_out>(params_.bias_shape));
+      LITERT_RETURN_IF_ERROR(
+          (bias.template WriteRandom<T_out>(modified_data_builder, device)));
+      inputs.push_back(std::move(bias));
+    }
 
     return inputs;
   }
@@ -190,23 +223,48 @@ class FullyConnected : public TestGraph {
     int64_t input_dim = params_.input_shape[kRank - 1];
     int64_t output_dim = params_.weights_shape[0];
 
-    auto [input] = ref_inputs;
     auto [output] = ref_outputs;
     std::vector<float> out_f32(output.data.size());
-    std::vector<float> in_f32 = UnpackToFloat(input.data);
-    std::vector<float> wt_f32 =
-        UnpackToFloat(absl::MakeConstSpan(params_.weights_data));
 
-    if constexpr (kHasBias) {
-      std::vector<float> bs_f32 =
-          UnpackToFloat(absl::MakeConstSpan(params_.bias_data));
+    if constexpr (DynamicFilter::value && DynamicBias::value) {
+      auto [input, weights, bias] = ref_inputs;
+      std::vector<float> in_f32 = UnpackToFloat(input.data);
+      std::vector<float> wt_f32 = UnpackToFloat(weights.data);
+      std::vector<float> bs_f32 = UnpackToFloat(bias.data);
       litert::internal::ReferenceFullyConnected(
           in_f32.data(), wt_f32.data(), bs_f32.data(), out_f32.data(),
           batch_size, input_dim, output_dim, kFa);
+    } else if constexpr (DynamicFilter::value) {
+      auto [input, weights] = ref_inputs;
+      std::vector<float> in_f32 = UnpackToFloat(input.data);
+      std::vector<float> wt_f32 = UnpackToFloat(weights.data);
+      if constexpr (kHasBias) {
+        std::vector<float> bs_f32 =
+            UnpackToFloat(absl::MakeConstSpan(params_.bias_data));
+        litert::internal::ReferenceFullyConnected(
+            in_f32.data(), wt_f32.data(), bs_f32.data(), out_f32.data(),
+            batch_size, input_dim, output_dim, kFa);
+      } else {
+        litert::internal::ReferenceFullyConnected(
+            in_f32.data(), wt_f32.data(), nullptr, out_f32.data(), batch_size,
+            input_dim, output_dim, kFa);
+      }
     } else {
-      litert::internal::ReferenceFullyConnected(
-          in_f32.data(), wt_f32.data(), nullptr, out_f32.data(), batch_size,
-          input_dim, output_dim, kFa);
+      auto [input] = ref_inputs;
+      std::vector<float> in_f32 = UnpackToFloat(input.data);
+      std::vector<float> wt_f32 =
+          UnpackToFloat(absl::MakeConstSpan(params_.weights_data));
+      if constexpr (kHasBias) {
+        std::vector<float> bs_f32 =
+            UnpackToFloat(absl::MakeConstSpan(params_.bias_data));
+        litert::internal::ReferenceFullyConnected(
+            in_f32.data(), wt_f32.data(), bs_f32.data(), out_f32.data(),
+            batch_size, input_dim, output_dim, kFa);
+      } else {
+        litert::internal::ReferenceFullyConnected(
+            in_f32.data(), wt_f32.data(), nullptr, out_f32.data(), batch_size,
+            input_dim, output_dim, kFa);
+      }
     }
 
     PackFromFloat(absl::MakeConstSpan(out_f32), output.data);
@@ -228,23 +286,64 @@ class FullyConnected : public TestGraph {
         litert::tensor::Create(std::string(kInputNames[0]),
                                litert::tensor::ApiType<T_in>::value, dims_in);
 
-    auto weights_buf = std::make_shared<litert::tensor::SpanCpuBuffer>(
-        reinterpret_cast<const std::byte*>(params.weights_data.data()),
-        params.weights_data.size() * sizeof(T_in));
-    TensorTf weights = litert::tensor::Create(
-        std::string(kInputNames[1]), litert::tensor::ApiType<T_in>::value,
-        dims_wt, std::move(weights_buf));
+    TensorTf weights;
+    if constexpr (!DynamicFilter::value) {
+      auto weights_buf = std::make_shared<litert::tensor::SpanCpuBuffer>(
+          reinterpret_cast<const std::byte*>(params.weights_data.data()),
+          params.weights_data.size() * sizeof(T_in));
+      weights = litert::tensor::Create(std::string(kInputNames[1]),
+                                       litert::tensor::ApiType<T_in>::value,
+                                       dims_wt, std::move(weights_buf));
+    } else {
+      weights =
+          litert::tensor::Create(std::string(kInputNames[1]),
+                                 litert::tensor::ApiType<T_in>::value, dims_wt);
+    }
+
+    if constexpr (PerChannel::value && !DynamicFilter::value) {
+      std::vector<float> scales(dims_wt[0], 0.01f);
+      std::vector<int64_t> zero_points(dims_wt[0], 0);
+      weights.SetQuantization(
+          std::make_shared<litert::tensor::PerChannelAffineQuantization>(
+              scales, zero_points, 0));
+    } else if constexpr (std::is_integral_v<T_in> && !DynamicFilter::value) {
+      weights.SetQuantization(
+          std::make_shared<litert::tensor::Quantization>(0.01f, 0));
+    }
 
     std::optional<TensorTf> bias_opt = std::nullopt;
     if constexpr (kHasBias) {
       std::vector<int32_t> dims_bs(params.bias_shape.begin(),
                                    params.bias_shape.end());
-      auto bias_buf = std::make_shared<litert::tensor::SpanCpuBuffer>(
-          reinterpret_cast<const std::byte*>(params.bias_data.data()),
-          params.bias_data.size() * sizeof(T_out));
-      bias_opt = litert::tensor::Create(std::string(kInputNames[2]),
-                                        litert::tensor::ApiType<T_out>::value,
-                                        dims_bs, std::move(bias_buf));
+      TensorTf bias;
+      if constexpr (!DynamicBias::value) {
+        auto bias_buf = std::make_shared<litert::tensor::SpanCpuBuffer>(
+            reinterpret_cast<const std::byte*>(params.bias_data.data()),
+            params.bias_data.size() * sizeof(T_out));
+        bias = litert::tensor::Create(std::string(kInputNames[2]),
+                                      litert::tensor::ApiType<T_out>::value,
+                                      dims_bs, std::move(bias_buf));
+      } else {
+        bias = litert::tensor::Create(std::string(kInputNames[2]),
+                                      litert::tensor::ApiType<T_out>::value,
+                                      dims_bs);
+      }
+      if constexpr (PerChannel::value && !DynamicBias::value) {
+        std::vector<float> scales(dims_bs[0], 0.0001f);
+        std::vector<int64_t> zero_points(dims_bs[0], 0);
+        bias.SetQuantization(
+            std::make_shared<litert::tensor::PerChannelAffineQuantization>(
+                scales, zero_points, 0));
+      } else if constexpr (std::is_integral_v<T_out> && !DynamicBias::value) {
+        bias.SetQuantization(
+            std::make_shared<litert::tensor::Quantization>(0.0001f, 0));
+      }
+      bias_opt = std::move(bias);
+    }
+
+    if constexpr (std::is_integral_v<T_in>) {
+      input.SetQuantization(
+          std::make_shared<litert::tensor::Quantization>(0.01f, 0));
     }
 
     litert::tensor::FusedActivation act = litert::tensor::kActNone;
@@ -256,9 +355,14 @@ class FullyConnected : public TestGraph {
       act = litert::tensor::kActRelu6;
     }
 
-    TensorTf output = litert::tensor::FullyConnected(input, weights, bias_opt,
-                                                     act, kKeepNumDims);
+    TensorTf output = litert::tensor::FullyConnected(
+        input, weights, bias_opt, act, kKeepNumDims,
+        AsymmetricQuantizeInputs::value, WeightsFormat::value);
     output.SetType(litert::tensor::ApiType<T_out>::value);
+    if constexpr (std::is_integral_v<T_out>) {
+      output.SetQuantization(
+          std::make_shared<litert::tensor::Quantization>(0.01f, 0));
+    }
     output.SetName(std::string(kOutputNames[0]));
 
     return SaveTensorGraph({output});
