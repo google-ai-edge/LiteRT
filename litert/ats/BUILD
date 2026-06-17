@@ -424,7 +424,6 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_c_types_printing",
-        "//litert/cc/internal:litert_numerics",
         "//litert/core/model",
         "//litert/test:matchers_oss",
         "//litert/test:rng_fixture_oss",
@@ -433,6 +432,7 @@ cc_library(
         "//tflite/types:half",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest",
     ],
 )

@@ -42,6 +42,7 @@
 #include "litert/test/generators/graph_helpers.h"
 #include "litert/test/simple_buffer.h"
 #include "tflite/schema/schema_generated.h"
+#include "tflite/types/half.h"
 
 namespace litert::testing {
 
@@ -175,6 +176,19 @@ class DepthwiseConv2d : public TestGraph {
   }
 
   bool HasReference() const override { return true; }
+
+  ConformanceSpec GetConformanceSpec() const override {
+    ConformanceSpec spec;
+    spec.comparator_kind = ConformanceComparatorKind::kFloatAccumulationAware;
+    spec.accumulation_depth = params_.filter_shape[1] * params_.filter_shape[2];
+    if constexpr (std::is_same_v<T_in, tflite::half> ||
+                  std::is_same_v<T_out, tflite::half>) {
+      spec.relative_tolerance = 5e-3;
+    } else {
+      spec.relative_tolerance = 1e-4;
+    }
+    return spec;
+  }
 
   Expected<VarBuffers> MakeInputs(
       DefaultDevice& device,

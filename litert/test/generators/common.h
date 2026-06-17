@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -44,6 +45,33 @@
 #include "tflite/schema/schema_generated.h"
 
 namespace litert::testing {
+
+// Describes how ATS should compare actual outputs against the reference outputs
+// produced for a generated graph.
+enum class ConformanceComparatorKind {
+  // Compare outputs by Mean Squared Error against `absolute_tolerance`.
+  kMse,
+  // Compare outputs by exact equality (element-by-element or byte-by-byte for
+  // packed types).
+  kExact,
+  // Compare outputs by using atol and rtol against the reference output, scaled
+  // by accumulation length.
+  kFloatAccumulationAware,
+  // Allow integers to differ by up to `bucket_tolerance` which is usually 1.
+  kQuantizedBucket,
+  // Compare outputs by using pure atol and rtol elementwise against reference.
+  kFloatElementwise,
+};
+
+struct ConformanceSpec {
+  ConformanceComparatorKind comparator_kind = ConformanceComparatorKind::kMse;
+  double absolute_tolerance = 0.0;
+  double relative_tolerance = 0.0;
+  // Only used for kQuantizedBucket. It should be set to 1 for most cases.
+  int64_t bucket_tolerance = 0;
+  // Reduction length K for accumulation-aware float comparators.
+  int64_t accumulation_depth = 1;
+};
 
 class DummyShapeInferenceContext
     : public ::litert::internal::ShapeInferenceContext {
@@ -361,6 +389,25 @@ class TestGraph {
   // Reference implementation of the graph under test.
   virtual Expected<void> Reference(const VarBuffers& inputs,
                                    VarBuffers& outputs) const = 0;
+
+  // Output comparison policy for the graph under test.
+  virtual ConformanceSpec GetConformanceSpec() const {
+    ConformanceSpec spec;
+    if (HasReference()) {
+      spec.comparator_kind = ConformanceComparatorKind::kFloatElementwise;
+      spec.absolute_tolerance = ReferenceTolerance().value_or(1e-4);
+      spec.relative_tolerance = 1e-4;
+    } else {
+      spec.comparator_kind = ConformanceComparatorKind::kMse;
+      spec.absolute_tolerance = 1e2;
+    }
+    return spec;
+  }
+
+  // Optional output-comparison tolerance override for custom references.
+  virtual std::optional<double> ReferenceTolerance() const {
+    return std::nullopt;
+  }
 
   virtual ~TestGraph() = default;
 

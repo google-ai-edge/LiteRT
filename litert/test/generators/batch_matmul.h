@@ -47,6 +47,7 @@
 #include "tensor/datatypes.h"
 #include "tensor/tensor.h"
 #include "tflite/schema/schema_generated.h"
+#include "tflite/types/half.h"
 
 namespace litert::testing {
 
@@ -168,6 +169,19 @@ class BatchMatmul : public TestGraph {
   }
 
   bool HasReference() const override { return true; }
+
+  ConformanceSpec GetConformanceSpec() const override {
+    ConformanceSpec spec;
+    spec.comparator_kind = ConformanceComparatorKind::kFloatAccumulationAware;
+    spec.accumulation_depth = params_.input1_shape[kRank1 - 1];
+    if constexpr (std::is_same_v<T_in, tflite::half> ||
+                  std::is_same_v<T_out, tflite::half>) {
+      spec.relative_tolerance = 5e-3;
+    } else {
+      spec.relative_tolerance = 1e-4;
+    }
+    return spec;
+  }
 
   Expected<VarBuffers> MakeInputs(
       DefaultDevice& device,
