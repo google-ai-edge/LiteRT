@@ -53,7 +53,11 @@ cc_library(
     hdrs = ["test_utils.h"],
     deps = [
         "//litert/test:common",
+        "//litert/vendors/qualcomm:qnn_api_loader",
         "//litert/vendors/qualcomm:qnn_manager",
+        "//litert/vendors/qualcomm:qnn_context_configs",
+        "//litert/vendors/qualcomm:qnn_handles",
+        "//litert/vendors/qualcomm:qnn_sdk_version",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/utils:miscs",

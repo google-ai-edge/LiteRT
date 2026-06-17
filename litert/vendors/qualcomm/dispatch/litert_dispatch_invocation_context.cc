@@ -40,7 +40,6 @@
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -53,6 +52,8 @@
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
+#include "litert/vendors/qualcomm/qnn_api_loader.h"
+#include "litert/vendors/qualcomm/qnn_handles.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "HTP/QnnHtpProfile.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
@@ -61,6 +62,7 @@
 
 using litert::Expected;
 using litert::Unexpected;
+using litert::qnn::QnnApiLoader;
 using litert::qnn::QnnManager;
 
 std::string_view inline GetEventUnit(QnnProfile_EventUnit_t unit) {
@@ -82,7 +84,7 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
     litert::qnn::QnnManager& qnn_manager,
     const litert::qnn::ContextBinaryInfo& context_binary_info,
     LiteRtDispatchDeviceContext device_context,
-    const litert::qnn::QnnManager::ContextHandle* context_handle,
+    const litert::qnn::ContextHandle* context_handle,
     Qnn_ProfileHandle_t profile_handle, int graph_index,
     Qnn_GraphHandle_t graph_handle)
     : qnn_manager_(qnn_manager),
@@ -118,7 +120,7 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
 LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
     litert::qnn::QnnManager& qnn_manager,
     LiteRtDispatchDeviceContext device_context,
-    const litert::qnn::QnnManager::ContextHandle* context_handle,
+    const litert::qnn::ContextHandle* context_handle,
     Qnn_ContextHandle_t raw_context_handle, Qnn_ProfileHandle_t profile_handle,
     int graph_index, Qnn_GraphHandle_t graph_handle,
     std::vector<::qnn::TensorWrapper> inputs,
@@ -169,9 +171,9 @@ LiteRtDispatchInvocationContextT::Create(
     }
 
     Qnn_GraphHandle_t graph_handle;
-    if (auto status = qnn.Api()->graphRetrieve(jit_graph->context_handle,
-                                               jit_graph->graph_name.c_str(),
-                                               &graph_handle);
+    if (auto status = qnn.Api()->graphRetrieve(
+            jit_graph->context_handle, jit_graph->graph_name.c_str(),
+            &graph_handle);
         status != QNN_SUCCESS) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Failed to retrieve graph from JIT handle");
@@ -179,7 +181,7 @@ LiteRtDispatchInvocationContextT::Create(
 
     // Pass an empty context handle since the compiler plugin manages its
     // lifecycle.
-    static absl::NoDestructor<QnnManager::ContextHandle> empty_context_handle;
+    static absl::NoDestructor<litert::qnn::ContextHandle> empty_context_handle;
     return Ptr(new LiteRtDispatchInvocationContextT(
         qnn, &device_context, empty_context_handle.get(),
         jit_graph->context_handle, nullptr, 0, graph_handle, jit_graph->inputs,
@@ -239,16 +241,16 @@ LiteRtDispatchInvocationContextT::Create(
           exec_bytecode_ptr, exec_bytecode_buffer->size, profile_handle));
 
   Qnn_GraphHandle_t graph_handle;
-  if (auto status = qnn.Api()->graphRetrieve(context_handle.Get(),
-                                             function_name, &graph_handle);
+  if (auto status = qnn.Api()->graphRetrieve(
+          context_handle.Get(), function_name, &graph_handle);
       status != QNN_SUCCESS) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to retrieve graph");
   }
 
   return Ptr(new LiteRtDispatchInvocationContextT(
-      qnn, std::move(*context_binary_info), &device_context, &context_handle,
-      profile_handle, graph_index, graph_handle));
+      qnn, std::move(*context_binary_info), &device_context,
+      &context_handle, profile_handle, graph_index, graph_handle));
 }
 
 Expected<LiteRtTensorBufferRequirements>
@@ -391,9 +393,8 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Host tensor buffer is too large for QNN");
     }
-    void* data =
-        static_cast<void*>(static_cast<uint8_t*>(host_memory_addr) +
-                           tensor_buffer_offset);
+    void* data = static_cast<void*>(static_cast<uint8_t*>(host_memory_addr) +
+                                    tensor_buffer_offset);
     if (tensor.version == QNN_TENSOR_VERSION_1) {
       tensor.v1.memType = QNN_TENSORMEMTYPE_RAW;
       tensor.v1.clientBuf.data = data;

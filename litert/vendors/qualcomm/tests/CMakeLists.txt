@@ -42,20 +42,22 @@ target_link_libraries(qnn_compiler_plugin_test
         GTest::gtest_main
 )
 
-# QNN manager test
-add_executable(qnn_manager_test)
+# QNN API loader test
+add_executable(qnn_api_loader_test)
 
-target_sources(qnn_manager_test
+target_sources(qnn_api_loader_test
     PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_manager_test.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_api_loader_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../tools/dump.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../core/utils/test_main.cc
 )
 
-target_link_libraries(qnn_manager_test
+target_link_libraries(qnn_api_loader_test
     PRIVATE
         absl::log_internal_message
+        qnn_api_loader
         qnn_manager
+        qnn_sdk_version
         litert_test_common
         GTest::gtest
 )

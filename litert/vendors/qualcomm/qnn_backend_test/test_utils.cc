@@ -14,7 +14,9 @@
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/utils/qnn_model.h"
+#include "litert/vendors/qualcomm/qnn_api_loader.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
+#include "litert/vendors/qualcomm/qnn_context_configs.h"
 namespace litert::qnn {
 
 std::string QnnTestPrinter(
@@ -51,23 +53,25 @@ std::string QnnTestPrinter(
 void QnnModelTest::SetUpQnnModel(const ::qnn::Options& options,
                                  std::string_view soc_model_name) {
   // TODO (chunhsue-qti) get rid of QnnManager and move to core/
-  auto qnn_manager = QnnManager::Create(options, std::nullopt,
-                                        ::qnn::FindSocModel(soc_model_name));
-  ASSERT_TRUE(qnn_manager) << qnn_manager.Error();
-  auto context_configs = QnnManager::DefaultContextConfigs();
-  auto context_handle =
-      (**qnn_manager)
-          .CreateContextHandle(context_configs, options.GetProfiling());
-  ASSERT_TRUE(context_handle) << context_handle.Error();
+  auto loader = QnnApiLoader::Create(options);
+  ASSERT_TRUE(loader) << loader.Error();
+  std::swap(loader_, *loader);
 
-  std::swap(qnn_manager_ptr_, *qnn_manager);
+  auto backend = QnnManager::Create(
+      *loader_, ::qnn::FindSocModel(soc_model_name), QnnManagerMode::kCompile);
+  ASSERT_TRUE(backend) << backend.Error();
+  qnn_manager_.emplace(std::move(*backend));
+
+  auto context_configs = ::litert::qnn::DefaultContextConfigs();
+  auto context_handle = qnn_manager_->CreateContextHandle(
+      context_configs, options.GetProfiling());
+  ASSERT_TRUE(context_handle) << context_handle.Error();
   context_handle_ = std::move(context_handle.Value());
 
-  auto qnn_model =
-      ::qnn::QnnModel(qnn_manager_ptr_->BackendHandle(),
-                      qnn_manager_ptr_->Api(), context_handle_.Get());
+  auto qnn_model = ::qnn::QnnModel(qnn_manager_->BackendHandle(),
+                                   qnn_manager_->Api(), context_handle_.Get());
 
   std::swap(qnn_model_, qnn_model);
-  is_fp16_supported_ = qnn_manager_ptr_->IsFp16Supported();
+  is_fp16_supported_ = qnn_manager_->IsFp16Supported();
 }
 }  // namespace litert::qnn

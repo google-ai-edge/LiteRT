@@ -21,10 +21,11 @@
 
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
-#include "litert/vendors/qualcomm/qnn_manager.h"
 #include "System/QnnSystemContext.h"  // from @qairt
 
 namespace litert::qnn {
+
+class QnnManager;
 
 class GraphInfo {
  public:

@@ -22,277 +22,118 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <tuple>
-#include <type_traits>
-#include <utility>
 #include <vector>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_macros.h"  // IWYU pragma: keep
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
+#include "litert/vendors/qualcomm/qnn_api_loader.h"
+#include "litert/vendors/qualcomm/qnn_handles.h"
+#include "litert/vendors/qualcomm/qnn_sdk_version.h"
 #include "QnnCommon.h"  // from @qairt
 #include "QnnContext.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
-#include "System/QnnSystemContext.h"  // from @qairt
 #include "System/QnnSystemInterface.h"  // from @qairt
 
 //===----------------------------------------------------------------------===//
 //
-//                                                                   QnnManger
+//                                                                  QnnManager
 //
-// Syntactic sugar for various Qnn Sdk routines.
-//
-// Provides various utilities for linking shared libraries at runtime
-// against Qnn symbols as well as convenience getters and storage of handles
-// (pointers). Provides simple wrappers for freeing handles and returning
-// LiteRtStatus rather than Qnn ones. Additionally exposes hooks for dumping
-// api and shared library details.
-//
-// Does not own any memory and will always have trivial cstor/dstor. The
-// user is responsible for freeing any Qnn handles explicitly. Note,
-// Qnn handles will be automatically freed when the library is unloaded
-// if they have been already.
+// The SoC layer: a QNN backend + device bound to one SoC, produced by
+// QnnManager::Create() against an already-loaded QnnApiLoader. All accessors
+// are non-null after a successful Create(). Api / SystemApi / Options alias
+// storage owned by the parent QnnApiLoader, so a QnnManager must not outlive
+// the loader that created it. Move-only.
 //
 //===----------------------------------------------------------------------===//
 
 namespace litert::qnn {
 
-class QnnManager;
-
-namespace internal {
-
-std::string Dump(const QnnManager& qnn);
-
-}  // namespace internal
-
-struct SdkVersion {
-  int major, minor, patch;
-
-  friend constexpr bool operator==(const SdkVersion& lhs,
-                                   const SdkVersion& rhs) noexcept {
-    return std::tie(lhs.major, lhs.minor, lhs.patch) ==
-           std::tie(rhs.major, rhs.minor, rhs.patch);
-  }
-  friend constexpr bool operator!=(const SdkVersion& lhs,
-                                   const SdkVersion& rhs) noexcept {
-    return !(lhs == rhs);
-  }
-  friend constexpr bool operator<(const SdkVersion& lhs,
-                                  const SdkVersion& rhs) noexcept {
-    return std::tie(lhs.major, lhs.minor, lhs.patch) <
-           std::tie(rhs.major, rhs.minor, rhs.patch);
-  }
-  friend constexpr bool operator>(const SdkVersion& lhs,
-                                  const SdkVersion& rhs) noexcept {
-    return rhs < lhs;
-  }
-  friend constexpr bool operator<=(const SdkVersion& lhs,
-                                   const SdkVersion& rhs) noexcept {
-    return !(rhs < lhs);
-  }
-  friend constexpr bool operator>=(const SdkVersion& lhs,
-                                   const SdkVersion& rhs) noexcept {
-    return !(lhs < rhs);
-  }
+// Which side of the compile/dispatch flow this QnnManager is bound to.
+// Determines which fields of the custom-op-package option are consumed by
+// Create().
+enum class QnnManagerMode {
+  kCompile,
+  kDispatch,
 };
 
 class QnnManager {
-  friend std::string internal::Dump(const QnnManager& qnn);
-
  public:
-  using Ptr = std::unique_ptr<QnnManager>;
-  using SystemContextHandle =
-      std::unique_ptr<std::remove_pointer<QnnSystemContext_Handle_t>::type,
-                      QnnSystemContext_FreeFn_t>;
-  class ContextHandle;
+  // Binds `soc_info` to a ready-to-use QnnManager using the libraries owned
+  // by `loader`. Callable repeatedly with different SoCs -- libraries are not
+  // reloaded. `mode` selects which fields of the custom-op-package option
+  // are consumed.
+  static Expected<QnnManager> Create(const QnnApiLoader& loader,
+                                     std::optional<::qnn::SocInfo> soc_info,
+                                     QnnManagerMode mode);
 
-  ~QnnManager();
+  // Move-only: backend_ uniquely owns the QNN backend + device handles.
+  QnnManager(QnnManager&&) = default;
+  QnnManager& operator=(QnnManager&&) = default;
+  QnnManager(const QnnManager&) = delete;
+  QnnManager& operator=(const QnnManager&) = delete;
+  ~QnnManager() = default;
 
-  static Expected<Ptr> Create(
-      const ::qnn::Options& options,
-      std::optional<std::string> shared_library_dir = std::nullopt,
-      std::optional<::qnn::SocInfo> soc_info = std::nullopt);
+  Qnn_BackendHandle_t BackendHandle() { return backend_->GetBackendHandle(); }
+  const ::qnn::SocInfo& GetSocInfo() const { return soc_info_; }
 
-  static absl::Span<const QnnContext_Config_t*> DefaultContextConfigs();
-  static absl::Span<const QnnContext_Config_t*> WeightSharingContextConfigs();
-  static absl::Span<const QnnContext_Config_t*> GpuPerformanceContextConfigs(
-      ::qnn::GpuPerformanceMode performance_mode);
-  // Get resolved function pointers for qnn sdk calls. Nullptr if functions
-  // have not been resolved yet.
-  const QnnApi* Api() const;
-
-  // Get resolved function pointers for qnn sdk calls. Nullptr if functions
-  // have not been resolved yet.
-  const QnnSystemApi* SystemApi() const;
-
-  //
-  // QNN SDK Objects.
-  //
-
-  // Create system context handle.
-  Expected<SystemContextHandle> CreateSystemContextHandle();
-
-  // Create a context handle for compilation.
-  Expected<ContextHandle> CreateContextHandle(
-      absl::Span<const QnnContext_Config_t*> configs,
-      ::qnn::Profiling profiling_level);
-
-  // Create a context handle for inference, from a given bytecode.
-  Expected<ContextHandle> CreateContextHandle(
-      absl::Span<const QnnContext_Config_t*> configs,
-      absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle);
-
-  //
-  // Context Binary
-  //
-
-  // Generates QNN context binary from current context. Writes to given
-  // buffer.
-  LiteRtStatus GenerateContextBinary(Qnn_ContextHandle_t context_handle,
-                                     std::vector<char>& buffer);
-
-  LiteRtStatus ValidateOp(::qnn::OpWrapper& op);
-
-  LiteRtStatus RegisterOpPackage(const std::string& package_path,
-                                 const std::string& interface_provider,
-                                 const std::string& target);
-
-  bool IsFp16Supported() {
-    // TODO(jiunkaiy): Remove this function after upgrading to stricter SDK
-    // restrictions.
+  // Whether this SoC supports FP16 operations.
+  // TODO(jiunkaiy): Remove once the SDK enforces this itself.
+  bool IsFp16Supported() const {
     return soc_info_.dsp_arch != ::qnn::DspArch::V68 &&
            soc_info_.soc_model != ::qnn::SnapdragonModel::SAR2230P;
   }
 
-  // Get qnn backend handle. Nullptr if backendCreate has not been successfully
-  // called.
-  Qnn_BackendHandle_t BackendHandle() { return backend_->GetBackendHandle(); }
+  LiteRtStatus ValidateOp(::qnn::OpWrapper& op);
 
-  const ::qnn::Options& GetOptions() const { return options_; }
+  Expected<ContextHandle> CreateContextHandle(
+      absl::Span<const QnnContext_Config_t*> configs,
+      ::qnn::Profiling profiling_level);
+  Expected<ContextHandle> CreateContextHandle(
+      absl::Span<const QnnContext_Config_t*> configs,
+      absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle);
 
-  // Gets SDK version from build ID.
-  static Expected<SdkVersion> ParseSdkVersion(const char* build_id);
+  LiteRtStatus GenerateContextBinary(Qnn_ContextHandle_t context_handle,
+                                     std::vector<char>& buffer);
 
+  const QnnApi* Api() const { return api_; }
+  const QnnSystemApi* SystemApi() const { return system_api_; }
+  const ::qnn::Options& GetOptions() const { return *options_; }
   SdkVersion GetSdkVersion() const { return sdk_version_; }
+  QnnManagerMode GetMode() const { return mode_; }
 
-  const ::qnn::SocInfo& GetSocInfo() const { return soc_info_; }
+  Expected<SystemContextHandle> CreateSystemContextHandle();
 
  private:
-  QnnManager() = default;
+  QnnManager(const QnnApi* api, const QnnSystemApi* system_api,
+             const ::qnn::Options* options, SdkVersion sdk_version,
+             std::unique_ptr<::qnn::QnnBackend> backend,
+             ::qnn::SocInfo soc_info, QnnManagerMode mode)
+      : api_(api),
+        system_api_(system_api),
+        options_(options),
+        sdk_version_(sdk_version),
+        backend_(std::move(backend)),
+        soc_info_(soc_info),
+        mode_(mode) {}
 
-  LiteRtStatus Init(std::optional<std::string> shared_library_dir,
-                    std::optional<::qnn::SocInfo> soc_info,
-                    const ::qnn::Options& options);
-
-  //
-  // Manage libQnn*.so Loading
-  //
-
-  // Loads the libQnn*.so at given path.
-  LiteRtStatus LoadLib(absl::string_view path);
-
-  // Loads the libQnnSystem.so at given path.
-  LiteRtStatus LoadSystemLib(absl::string_view path);
-
-  //
-  // Resolve and Access QNN SDK Functions
-  //
-
-  // Resolve all available QNN SDK functions from (already) loaded so. If
-  // multiple providers are found, selects the first one with a suitable
-  // version. Fails if none can be found.
-  LiteRtStatus ResolveApi(Qnn_Version_t expected_qnn_version);
-
-  // Resolve all available QNN SDK functions from (already) loaded so. If
-  // multiple providers are found, selects the first one with a suitable
-  // version. Fails if none can be found.
-  LiteRtStatus ResolveSystemApi();
-
-  // Get qnn device handle. Nullptr if deviceCreate has not been successfully
-  // called.
   Qnn_DeviceHandle_t DeviceHandle() { return backend_->GetDeviceHandle(); }
 
-  // Handle to the shared library that implements the API. The library is
-  // released when the manager is destroyed.
-  SharedLibrary lib_;
-
-  // Handle to the system shared library that implements the API. The library is
-  // released when the manager is destroyed.
-  SharedLibrary lib_system_;
-
-  const QnnInterface_t* interface_ = nullptr;
-  const QnnSystemInterface_t* system_interface_ = nullptr;
-
-  std::unique_ptr<::qnn::QnnBackend> backend_ = nullptr;
-  ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[0];
-  ::qnn::Options options_;
-  std::optional<std::string> shared_library_dir_;
+  const QnnApi* api_ = nullptr;
+  const QnnSystemApi* system_api_ = nullptr;
+  // Aliases the parent QnnApiLoader, which must outlive this QnnManager.
+  const ::qnn::Options* options_ = nullptr;
   SdkVersion sdk_version_{};
-};
-
-// Unfortunately we can't use std::unique_ptr with a deleter because
-// QnnContext_FreeFn_t takes a profile handle as a second argument.
-class QnnManager::ContextHandle {
- public:
-  ContextHandle(Qnn_ContextHandle_t context_handle, Qnn_ProfileHandle_t profile,
-                QnnContext_FreeFn_t free_fn,
-                QnnProfile_FreeFn_t profile_free_fn)
-      : context_handle_(context_handle),
-        profile_(profile),
-        free_fn_(free_fn),
-        profile_free_fn_(profile_free_fn) {}
-
-  ContextHandle() = default;
-
-  ~ContextHandle() {
-    if (profile_ && profile_free_fn_) {
-      if (auto status = profile_free_fn_(profile_); status != QNN_SUCCESS) {
-        LITERT_LOG(LITERT_ERROR, "%s", "Failed to free profile handle\n");
-      }
-      profile_ = nullptr;
-    }
-    if (context_handle_ && free_fn_) {
-      if (auto status = free_fn_(context_handle_, profile_);
-          status != QNN_SUCCESS) {
-        LITERT_LOG(LITERT_ERROR, "%s", "Failed to free context handle\n");
-      }
-      context_handle_ = nullptr;
-    }
-  }
-
-  ContextHandle(ContextHandle&& other) { *this = std::move(other); }
-
-  ContextHandle(const ContextHandle& other) = delete;
-
-  ContextHandle& operator=(ContextHandle&& other) {
-    std::swap(context_handle_, other.context_handle_);
-    std::swap(profile_, other.profile_);
-    std::swap(free_fn_, other.free_fn_);
-    std::swap(profile_free_fn_, other.profile_free_fn_);
-    return *this;
-  }
-
-  ContextHandle& operator=(const ContextHandle& other) = delete;
-
-  Qnn_ContextHandle_t Get() const noexcept { return context_handle_; }
-  Qnn_ProfileHandle_t get_profile_handle() const noexcept { return profile_; }
-  explicit operator bool() const noexcept { return context_handle_ != nullptr; }
-
- private:
-  Qnn_ContextHandle_t context_handle_ = nullptr;
-  Qnn_ProfileHandle_t profile_ = nullptr;
-  QnnContext_FreeFn_t free_fn_ = nullptr;
-  QnnProfile_FreeFn_t profile_free_fn_ = nullptr;
+  // Owns the underlying QNN backend + device handles.
+  std::unique_ptr<::qnn::QnnBackend> backend_;
+  ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[0];
+  QnnManagerMode mode_ = QnnManagerMode::kCompile;
 };
 
 }  // namespace litert::qnn

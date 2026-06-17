@@ -17,11 +17,11 @@
 
 #include <string>
 
-#include "litert/vendors/qualcomm/qnn_manager.h"
+#include "litert/vendors/qualcomm/qnn_api_loader.h"
 
 namespace litert::qnn::internal {
 
-std::string Dump(const QnnManager& qnn);
+std::string Dump(const QnnApiLoader& loader);
 }
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_TOOLS_DUMP_H_

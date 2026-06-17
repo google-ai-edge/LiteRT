@@ -45,20 +45,62 @@ cc_library(
 )
 
 cc_library(
-    name = "qnn_manager_hdr",
-    hdrs = ["qnn_manager.h"],
+    name = "qnn_sdk_version",
+    srcs = ["qnn_sdk_version.cc"],
+    hdrs = ["qnn_sdk_version.h"],
     features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+    ],
+)
+
+cc_library(
+    name = "qnn_handles",
+    hdrs = ["qnn_handles.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
+    deps = [
+        "//litert/c/internal:litert_logging",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
+    name = "qnn_context_configs",
+    srcs = ["qnn_context_configs.cc"],
+    hdrs = ["qnn_context_configs.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
+    deps = [
+        "//litert/vendors/qualcomm/core:common",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+litert_cc_lib_with_qnn(
+    name = "qnn_api_loader",
+    srcs = ["qnn_api_loader.cc"],
+    hdrs = ["qnn_api_loader.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
+    include_system = True,
+    ungrte = True,
+    deps = [
         ":common",
+        ":qnn_saver_utils",
+        ":qnn_sdk_version",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_shared_library",
+        "//litert/core:dynamic_loading",
+        "//litert/core:filesystem",
         "//litert/vendors/qualcomm/core:common",
-        "//litert/vendors/qualcomm/core/backends:qnn_backend",
-        "//litert/vendors/qualcomm/core/schema:soc_table",
-        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/backends:dsp_backend",
+        "//litert/vendors/qualcomm/core/backends:gpu_backend",
+        "//litert/vendors/qualcomm/core/backends:htp_backend",
+        "//litert/vendors/qualcomm/core/backends:ir_backend",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
@@ -67,23 +109,20 @@ cc_library(
 
 litert_cc_lib_with_qnn(
     name = "qnn_manager",
-    srcs = [
-        "qnn_manager.cc",
-    ],
+    srcs = ["qnn_manager.cc"],
     hdrs = ["qnn_manager.h"],
     features = ["-layering_check"],  # buildifier: disable=no-layering-check
     include_system = True,
     ungrte = True,
     deps = [
         ":common",
-        ":qnn_saver_utils",
+        ":qnn_api_loader",
+        ":qnn_handles",
+        ":qnn_sdk_version",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/internal:litert_shared_library",
-        "//litert/core:dynamic_loading",
-        "//litert/core:filesystem",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core/backends:dsp_backend",
@@ -93,16 +132,14 @@ litert_cc_lib_with_qnn(
         "//litert/vendors/qualcomm/core/backends:qnn_backend",
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],
 )
 
 litert_test(
-    name = "qnn_manager_test",
-    srcs = ["qnn_manager_test.cc"],
+    name = "qnn_api_loader_test",
+    srcs = ["qnn_api_loader_test.cc"],
     linkopts = select({
         "//litert:android": [],
         "//conditions:default": [
@@ -131,11 +168,14 @@ litert_test(
     ungrte = True,
     use_sys_malloc = True,
     deps = [
+        ":qnn_api_loader",
         ":qnn_manager",
+        ":qnn_sdk_version",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/utils:test_main_no_heapcheck",
         "//litert/vendors/qualcomm/core/utils:test_utils",
         "//litert/vendors/qualcomm/tools:dump",
@@ -150,9 +190,9 @@ litert_test(
 )
 
 litert_device_exec(
-    name = "qnn_manager_device_test",
+    name = "qnn_api_loader_device_test",
     backend_id = "qualcomm",
-    target = ":qnn_manager_test",
+    target = ":qnn_api_loader_test",
 )
 
 cc_library(
@@ -161,6 +201,7 @@ cc_library(
     hdrs = ["context_binary_info.h"],
     deps = [
         ":qnn_manager",
+        ":qnn_sdk_version",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",

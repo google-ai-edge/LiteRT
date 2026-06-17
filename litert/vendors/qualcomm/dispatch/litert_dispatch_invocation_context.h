@@ -31,9 +31,13 @@
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/context_binary_info.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
-#include "litert/vendors/qualcomm/qnn_manager.h"
+#include "litert/vendors/qualcomm/qnn_handles.h"
 #include "QnnCommon.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
+
+namespace litert::qnn {
+class QnnManager;
+}  // namespace litert::qnn
 
 class LiteRtDispatchDeviceContextT;
 
@@ -88,14 +92,14 @@ class LiteRtDispatchInvocationContextT {
       litert::qnn::QnnManager& qnn_manager,
       const litert::qnn::ContextBinaryInfo& context_binary_info,
       LiteRtDispatchDeviceContext device_context,
-      const litert::qnn::QnnManager::ContextHandle* context_handle,
+      const litert::qnn::ContextHandle* context_handle,
       Qnn_ProfileHandle_t profile_handle, int graph_index,
       Qnn_GraphHandle_t graph_handle);
 
   LiteRtDispatchInvocationContextT(
       litert::qnn::QnnManager& qnn_manager,
       LiteRtDispatchDeviceContext device_context,
-      const litert::qnn::QnnManager::ContextHandle* context_handle,
+      const litert::qnn::ContextHandle* context_handle,
       Qnn_ContextHandle_t raw_context_handle,
       Qnn_ProfileHandle_t profile_handle, int graph_index,
       Qnn_GraphHandle_t graph_handle, std::vector<::qnn::TensorWrapper> inputs,
@@ -115,7 +119,7 @@ class LiteRtDispatchInvocationContextT {
 
   litert::qnn::QnnManager& qnn_manager_;
   LiteRtDispatchDeviceContext device_context_;
-  const litert::qnn::QnnManager::ContextHandle& context_handle_;
+  const litert::qnn::ContextHandle& context_handle_;
   Qnn_ContextHandle_t raw_context_handle_;
   Qnn_ProfileHandle_t profile_handle_;
   int graph_index_;

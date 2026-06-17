@@ -19,7 +19,7 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl  // For concatenating strings efficiently
 #include "absl/strings/str_format.h"  // from @com_google_absl  // Use StrFormat to return strings
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/vendors/qualcomm/qnn_manager.h"  // For QnnManager definition
+#include "litert/vendors/qualcomm/qnn_api_loader.h"  // For QnnApiLoader definition
 #include "QnnInterface.h"  // from @qairt
 #include "System/QnnSystemInterface.h"  // from @qairt
 
@@ -86,10 +86,8 @@ std::string Dump(const QnnSystemInterface_t* interface) {
 
 }  // namespace
 
-// Changed signature: Returns std::string
-std::string Dump(const QnnManager& qnn) {
-  // Call the internal Dump functions, get their strings, and concatenate them.
-  // absl::StrCat is generally preferred over repeated string operator+=
-  return absl::StrCat(Dump(qnn.interface_), Dump(qnn.system_interface_));
+// Dumps the underlying loader interfaces.
+std::string Dump(const QnnApiLoader& loader) {
+  return absl::StrCat(Dump(loader.interface_), Dump(loader.system_interface_));
 }
 }  // namespace litert::qnn::internal

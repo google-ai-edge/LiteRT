@@ -25,7 +25,7 @@ cc_library(
     srcs = ["dump.cc"],
     hdrs = ["dump.h"],
     deps = [
-        "//litert/vendors/qualcomm:qnn_manager_hdr",
+        "//litert/vendors/qualcomm:qnn_api_loader",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",

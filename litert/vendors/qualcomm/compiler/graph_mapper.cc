@@ -309,13 +309,13 @@ LiteRtStatus GraphMapper::InitQnnGraph(absl::string_view qnn_graph_name,
       // No graph configs for DSP backend.
       break;
     default:
-      LITERT_LOG(LITERT_ERROR, "Unsupported Backend to create graph");
+      LITERT_LOG(LITERT_ERROR, "Unsupported backend to create graph");
       return kLiteRtStatusErrorUnsupported;
   }
 
   LITERT_RETURN_STATUS_IF_QNN_NOT_OK(
       qnn_.Api()->graphCreate(context_handle_, qnn_graph_name.data(),
-                              graph_configs.data(), &QnnGraph()));
+                                      graph_configs.data(), &QnnGraph()));
 
   return kLiteRtStatusOk;
 }

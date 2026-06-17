@@ -4,6 +4,7 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_QNN_BACKEND_TEST_TEST_UTILS_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_QNN_BACKEND_TEST_TEST_UTILS_H_
 
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -13,7 +14,9 @@
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/utils/qnn_model.h"
 #include "litert/vendors/qualcomm/core/utils/test_utils.h"
+#include "litert/vendors/qualcomm/qnn_api_loader.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
+#include "litert/vendors/qualcomm/qnn_handles.h"
 
 namespace litert::qnn {
 const ::qnn::Options kTestingDefaultQnnOptions{};
@@ -25,8 +28,9 @@ std::string QnnTestPrinter(
 class QnnModelTest : public testing::TestWithParam<
                          std::tuple<::qnn::Options, std::string_view>> {
  protected:
-  QnnManager::Ptr qnn_manager_ptr_{};
-  QnnManager::ContextHandle context_handle_{};
+  QnnApiLoader::Ptr loader_{};
+  std::optional<QnnManager> qnn_manager_{};
+  ContextHandle context_handle_{};
   ::qnn::QnnModel qnn_model_{};
   ::qnn::TensorPool tensor_pool_{};
   bool is_fp16_supported_{false};

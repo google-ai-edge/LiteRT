@@ -22,7 +22,9 @@ target_link_libraries(qnn_test_utils
         qnn_tensor_pool
         qnn_miscs
         qnn_model
+        qnn_api_loader
         qnn_manager
+        qnn_context_configs
     PRIVATE
         GTest::gtest
 )

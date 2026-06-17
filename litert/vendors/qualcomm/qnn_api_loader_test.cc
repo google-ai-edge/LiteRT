@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 
-#include "litert/vendors/qualcomm/qnn_manager.h"
+#include "litert/vendors/qualcomm/qnn_api_loader.h"
 
 #include <cstdlib>
 #include <optional>
@@ -21,24 +21,25 @@
 #include <gtest/gtest.h>
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
+#include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/utils/test_utils.h"
+#include "litert/vendors/qualcomm/qnn_manager.h"
+#include "litert/vendors/qualcomm/qnn_sdk_version.h"
 #include "litert/vendors/qualcomm/tools/dump.h"
 
 namespace {
 
+using ::litert::qnn::QnnApiLoader;
 using ::litert::qnn::QnnManager;
+using ::litert::qnn::QnnManagerMode;
 using ::litert::qnn::SdkVersion;
 using ::litert::qnn::internal::Dump;
 using ::testing::HasSubstr;
 
 // NOTE: This tests that all of the dynamic loading works properly and
 // the QNN SDK instance can be properly initialized and destroyed.
-auto CreateQnnManager(const ::qnn::Options& options) {
-#if defined(__x86_64__) || defined(_M_X64)
-  return QnnManager::Create(options, {}, ::qnn::kSocInfos[8]);
-#else
-  return QnnManager::Create(options);
-#endif
+auto CreateLoader(const ::qnn::Options& options) {
+  return QnnApiLoader::Create(options);
 }
 
 // Helper to get options based on target
@@ -59,23 +60,23 @@ std::optional<::qnn::Options> GetOptionsForTarget() {
   return std::nullopt;
 }
 
-TEST(QnnManagerTest, SetupQnnManager) {
+TEST(QnnApiLoaderTest, LoadsLibraries) {
   auto options = GetOptionsForTarget();
   if (!options) {
     GTEST_SKIP() << "Skipping test because targeted backend is not supported";
   }
 
-  auto qnn = CreateQnnManager(*options);
+  auto qnn = CreateLoader(*options);
   ASSERT_TRUE(qnn);
 }
 
-TEST(QnnManagerTest, Dump) {
+TEST(QnnApiLoaderTest, Dump) {
   auto options = GetOptionsForTarget();
   if (!options) {
     GTEST_SKIP() << "Skipping test because targeted backend is not supported";
   }
 
-  auto qnn = CreateQnnManager(*options);
+  auto qnn = CreateLoader(*options);
   ASSERT_TRUE(qnn);
 
   auto dump = Dump(**qnn);
@@ -84,13 +85,13 @@ TEST(QnnManagerTest, Dump) {
   EXPECT_THAT(dump, HasSubstr("< QnnSystemInterface_t >"));
 }
 
-TEST(QnnManagerTest, GetOptions) {
+TEST(QnnApiLoaderTest, GetOptions) {
   auto options = GetOptionsForTarget();
   if (!options) {
     GTEST_SKIP() << "Skipping test because targeted backend is not supported";
   }
 
-  auto qnn = CreateQnnManager(*options);
+  auto qnn = CreateLoader(*options);
   ASSERT_TRUE(qnn);
 
   const auto& options_ref = (*qnn)->GetOptions();
@@ -107,18 +108,81 @@ TEST(QnnManagerTest, GetOptions) {
   EXPECT_EQ(options->GetDlcDir(), options_ref.GetDlcDir());
 }
 
-TEST(QnnManagerTest, GetSdkVersion) {
+TEST(QnnApiLoaderTest, GetSdkVersion) {
   auto options = GetOptionsForTarget();
   if (!options) {
     GTEST_SKIP() << "Skipping test because targeted backend is not supported";
   }
 
-  auto qnn = CreateQnnManager(*options);
+  auto qnn = CreateLoader(*options);
   ASSERT_TRUE(qnn);
   const auto sdk_version = qnn.Value().get()->GetSdkVersion();
   static constexpr SdkVersion kInitSdkVersion{0, 0, 0};
   EXPECT_NE(sdk_version, kInitSdkVersion);
 }
+
+// QnnManager::Create() returns a ready QnnManager, and binding a second,
+// different SoC off the same loader also returns a ready QnnManager (correct
+// SoC) with no library reload.
+TEST(QnnApiLoaderTest, QnnManagerRebindsAcrossSocs) {
+  auto options = GetOptionsForTarget();
+  if (!options || !::qnn::IsTestHtpBackend()) {
+    GTEST_SKIP() << "QnnManager SoC-rebind test requires the HTP backend";
+  }
+
+  // Library-only manager (no SoC bound yet).
+  auto qnn = QnnApiLoader::Create(*options);
+  ASSERT_TRUE(qnn);
+
+  const auto soc_a = ::qnn::FindSocModel("SM8650");
+  const auto soc_b = ::qnn::FindSocModel("SM8750");
+  ASSERT_TRUE(soc_a.has_value());
+  ASSERT_TRUE(soc_b.has_value());
+
+  auto qnn_manager_a =
+      QnnManager::Create(**qnn, soc_a, QnnManagerMode::kCompile);
+  ASSERT_TRUE(qnn_manager_a);
+  EXPECT_NE(qnn_manager_a->BackendHandle(), nullptr);
+  EXPECT_EQ(qnn_manager_a->GetSocInfo().soc_model, soc_a->soc_model);
+
+  auto qnn_manager_b =
+      QnnManager::Create(**qnn, soc_b, QnnManagerMode::kCompile);
+  ASSERT_TRUE(qnn_manager_b);
+  EXPECT_NE(qnn_manager_b->BackendHandle(), nullptr);
+  EXPECT_EQ(qnn_manager_b->GetSocInfo().soc_model, soc_b->soc_model);
+}
+
+// On device (non-x86), QnnManager::Create() can auto-detect the SoC from the
+// running platform, so callers need not pass a SoC. Binding with std::nullopt
+// must still return a fully-ready QnnManager (valid handle, resolved SoC). On
+// x86 hosts the target device cannot be queried, so a SoC is mandatory there
+// and this scenario is skipped.
+#if defined(__x86_64__) || defined(_M_X64)
+TEST(QnnApiLoaderTest, QnnManagerAutoDetectRequiresDeviceSkippedOnHost) {
+  GTEST_SKIP() << "Host build cannot auto-detect a SoC; a SoC is required.";
+}
+#else
+TEST(QnnApiLoaderTest, QnnManagerAutoDetectsSocOnDevice) {
+  auto options = GetOptionsForTarget();
+  if (!options || !::qnn::IsTestHtpBackend()) {
+    GTEST_SKIP() << "QnnManager SoC auto-detect test requires the HTP "
+                    "backend";
+  }
+
+  // Library-only loader (no SoC bound yet).
+  auto qnn = QnnApiLoader::Create(*options);
+  ASSERT_TRUE(qnn);
+
+  // No SoC passed -- the QnnManager is expected to resolve it from the device.
+  auto qnn_manager =
+      QnnManager::Create(**qnn, std::nullopt, QnnManagerMode::kCompile);
+  ASSERT_TRUE(qnn_manager);
+  EXPECT_NE(qnn_manager->BackendHandle(), nullptr);
+  // A successfully-created HTP QnnManager always has a resolved DSP
+  // architecture.
+  EXPECT_NE(qnn_manager->GetSocInfo().dsp_arch, ::qnn::DspArch::NONE);
+}
+#endif
 
 struct SdkVersionTest : public ::testing::Test {
   const SdkVersion v1_0_0{1, 0, 0};
@@ -175,7 +239,7 @@ TEST_F(SdkVersionTest, HandlesGreaterThanOrEqual) {
   EXPECT_FALSE(v1_0_0 >= v1_0_1);
 }
 
-TEST(QnnManagerTest, AdspLibraryPathNoDuplicate) {
+TEST(QnnApiLoaderTest, AdspLibraryPathNoDuplicate) {
   static constexpr char kAdsp[] = "ADSP_LIBRARY_PATH";
   const char* original_adsp_ptr = getenv(kAdsp);
   std::optional<std::string> original_adsp;
@@ -189,14 +253,14 @@ TEST(QnnManagerTest, AdspLibraryPathNoDuplicate) {
   auto options = ::qnn::Options();
 
   // This will fail to load libraries but should update env var.
-  auto qnn = QnnManager::Create(options, "/my/path");
+  auto qnn = QnnApiLoader::Create(options, "/my/path");
 
   // Verify that it didn't duplicate
   const char* new_adsp = getenv(kAdsp);
   EXPECT_STREQ(new_adsp, "/my/path");
 
   // Now try to add a new one
-  auto qnn2 = QnnManager::Create(options, "/another/path");
+  auto qnn2 = QnnApiLoader::Create(options, "/another/path");
   new_adsp = getenv(kAdsp);
   EXPECT_STREQ(new_adsp, "/another/path;/my/path");
 

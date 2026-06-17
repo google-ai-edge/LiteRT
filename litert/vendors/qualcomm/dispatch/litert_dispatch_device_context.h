@@ -25,9 +25,13 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/dispatch/registry.h"
-#include "litert/vendors/qualcomm/qnn_manager.h"
+#include "litert/vendors/qualcomm/qnn_handles.h"
 #include "QnnCommon.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
+
+namespace litert::qnn {
+class QnnManager;
+}  // namespace litert::qnn
 
 class LiteRtDispatchDeviceContextT {
  public:
@@ -66,9 +70,9 @@ class LiteRtDispatchDeviceContextT {
     invocation_context_ = invocation_context;
   }
 
-  litert::Expected<const litert::qnn::QnnManager::ContextHandle&>
-  GetOrCreateContext(const void* bytecode_ptr, size_t bytecode_size,
-                     Qnn_ProfileHandle_t profile_handle);
+  litert::Expected<const litert::qnn::ContextHandle&> GetOrCreateContext(
+      const void* bytecode_ptr, size_t bytecode_size,
+      Qnn_ProfileHandle_t profile_handle);
 
   const LiteRtRuntimeContext* runtime_context() const {
     return runtime_context_;
@@ -113,8 +117,7 @@ class LiteRtDispatchDeviceContextT {
       return H::combine(std::move(h), k.ptr, k.size);
     }
   };
-  using UniqueContextHandle =
-      std::unique_ptr<litert::qnn::QnnManager::ContextHandle>;
+  using UniqueContextHandle = std::unique_ptr<litert::qnn::ContextHandle>;
   // Lifetime of the context cache is the same as the device context.
   absl::flat_hash_map<ContextCacheKey, UniqueContextHandle> context_cache_;
 };

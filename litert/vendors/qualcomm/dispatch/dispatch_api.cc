@@ -19,17 +19,15 @@
 #include <utility>
 
 #include "absl/base/no_destructor.h"  // from @com_google_absl
+#include "absl/log/check.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_opaque_options.h"
-#include "litert/c/litert_options.h"
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_options_wrapper.h"
@@ -42,20 +40,36 @@
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
+#include "litert/vendors/qualcomm/qnn_api_loader.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "QnnCommon.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 
 namespace {
 
+using ::litert::qnn::QnnApiLoader;
 using ::litert::qnn::QnnManager;
+using ::litert::qnn::QnnManagerMode;
 
-static std::unique_ptr<QnnManager>& QnnManagerStorage() {
-  static absl::NoDestructor<std::unique_ptr<QnnManager>> storage;
+static std::unique_ptr<QnnApiLoader>& LoaderStorage() {
+  static absl::NoDestructor<std::unique_ptr<QnnApiLoader>> storage;
   return *storage;
 }
 
-QnnManager& Qnn() { return *QnnManagerStorage(); }
+// The SoC-bound backend for dispatch. Bound once at Initialize(), off the same
+// manager, and reused for every device/invocation context.
+static std::optional<QnnManager>& QnnManagerStorage() {
+  static absl::NoDestructor<std::optional<QnnManager>> storage;
+  return *storage;
+}
+
+QnnApiLoader& Loader() { return *LoaderStorage(); }
+
+QnnManager& GetQnnManager() {
+  ABSL_CHECK(QnnManagerStorage().has_value())
+      << "GetQnnManager() called before Initialize() bound a backend";
+  return *QnnManagerStorage();
+}
 
 LiteRtEnvironmentOptions TheEnvironmentOptions = nullptr;
 
@@ -127,35 +141,35 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
                "Failed to parse qnn options, using default settings. %s",
                qnn_opts.Error().Message().c_str());
   }
-  if (auto qnn_manager = QnnManager::Create(
+  if (auto loader = QnnApiLoader::Create(
           /*options=*/qnn_options,
-          /*shared_library_dir=*/shared_library_dir_opt,
-          /*soc_model*/ std::nullopt);
-      !qnn_manager) {
-    LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().c_str());
-    return qnn_manager.Error().Status();
+          /*shared_library_dir=*/shared_library_dir_opt);
+      !loader) {
+    LITERT_LOG(LITERT_ERROR, "%s", loader.Error().Message().c_str());
+    return loader.Error().Status();
   } else {
-    if (const auto& custom_op_package = qnn_options.GetCustomOpPackage();
-        !custom_op_package.name.empty()) {
-      LITERT_RETURN_IF_ERROR(
-          (*qnn_manager)
-              ->RegisterOpPackage(custom_op_package.dispatch_package_path,
-                                  custom_op_package.interface_provider,
-                                  custom_op_package.target));
-    }
-
-    std::swap(QnnManagerStorage(), *qnn_manager);
+    std::swap(LoaderStorage(), *loader);
+  }
+  // Dispatch runs on the local device; bind with no explicit SoC.
+  if (auto backend = QnnManager::Create(Loader(), /*soc_info=*/std::nullopt,
+                                        QnnManagerMode::kDispatch);
+      !backend) {
+    LITERT_LOG(LITERT_ERROR, "%s", backend.Error().Message().c_str());
+    return backend.Error().Status();
+  } else {
+    QnnManagerStorage().emplace(std::move(*backend));
   }
 
   Qnn_ApiVersion_t qnn_api_version;
-  if (auto status = Qnn().Api()->backendGetApiVersion(&qnn_api_version);
+  if (auto status =
+          GetQnnManager().Api()->backendGetApiVersion(&qnn_api_version);
       status != QNN_SUCCESS) {
     LITERT_LOG(LITERT_ERROR, "Failed to get QNN API version: %d", status);
     return kLiteRtStatusErrorRuntimeFailure;
   }
 
   const char* build_id;
-  if (auto status = Qnn().Api()->backendGetBuildId(&build_id);
+  if (auto status = GetQnnManager().Api()->backendGetBuildId(&build_id);
       status != QNN_SUCCESS) {
     LITERT_LOG(LITERT_ERROR, "Failed to get QNN build ID: %d", status);
     return kLiteRtStatusErrorRuntimeFailure;
@@ -191,8 +205,8 @@ LiteRtStatus GetCapabilities(int* capabilities) {
 LiteRtStatus DeviceContextCreate(const LiteRtRuntimeContext* runtime_context,
                                  LiteRtOptions options,
                                  LiteRtDispatchDeviceContext* device_context) {
-  if (auto context =
-          LiteRtDispatchDeviceContextT::Create(runtime_context, Qnn());
+  if (auto context = LiteRtDispatchDeviceContextT::Create(runtime_context,
+                                                          GetQnnManager());
       context) {
     *device_context = context->release();
     return kLiteRtStatusOk;
@@ -272,7 +286,8 @@ LiteRtStatus InvocationContextCreate(
     int num_inputs, int num_outputs,
     LiteRtDispatchInvocationContext* invocation_context) {
   auto context = LiteRtDispatchInvocationContextT::Create(
-      Qnn(), *device_context, exec_type, exec_bytecode_buffer, function_name);
+      GetQnnManager(), *device_context, exec_type, exec_bytecode_buffer,
+      function_name);
   if (!context) {
     LITERT_LOG(LITERT_ERROR,
                "Failed to create context from context binary: %s for function "

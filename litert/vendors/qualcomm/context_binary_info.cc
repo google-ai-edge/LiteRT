@@ -24,6 +24,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
+#include "litert/vendors/qualcomm/qnn_sdk_version.h"
 #include "QnnCommon.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 #include "System/QnnSystemContext.h"  // from @qairt
@@ -178,7 +179,8 @@ Expected<void> ContextBinaryInfo::Init(
 }
 
 Expected<ContextBinaryInfo> ContextBinaryInfo::Create(
-    QnnManager& qnn, const void* exec_bytecode_ptr, size_t exec_bytecode_size) {
+    QnnManager& qnn, const void* exec_bytecode_ptr,
+    size_t exec_bytecode_size) {
   auto system_context_handle = qnn.CreateSystemContextHandle();
   if (!system_context_handle) {
     return Unexpected(system_context_handle.Error());
@@ -204,8 +206,8 @@ Expected<ContextBinaryInfo> ContextBinaryInfo::Create(
   SdkVersion binary_version;
   LITERT_ASSIGN_OR_RETURN(
       binary_version,
-      QnnManager::ParseSdkVersion(binary_info->contextBinaryInfoV1.buildId));
-  const auto sdk_version = qnn.GetSdkVersion();
+      ::litert::qnn::ParseSdkVersion(binary_info->contextBinaryInfoV1.buildId));
+  const auto& sdk_version = qnn.GetSdkVersion();
   if (binary_version > sdk_version) {
     LITERT_LOG(LITERT_ERROR,
                "Context binary (%d.%d.%d) is newer than the current SDK "

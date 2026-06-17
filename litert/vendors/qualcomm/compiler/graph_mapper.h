@@ -15,7 +15,6 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMPILER_GRAPH_MAPPER_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMPILER_GRAPH_MAPPER_H_
 
-
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
