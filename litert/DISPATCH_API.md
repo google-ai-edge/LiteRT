@@ -319,7 +319,7 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchUnregisterTensorBuffer(
 ## An example NPU inference with Dispatch API
 
 As stated previously, you won't need to use the Dispatch API directly since it's
-called via the DispatchDelegate. The following example, however, helps
+called via the `DispatchDelegate`. The following example, however, helps
 illustrate how it operates.
 
 ```
