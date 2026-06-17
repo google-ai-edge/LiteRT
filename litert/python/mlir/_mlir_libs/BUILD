@@ -60,9 +60,13 @@ cc_binary(
         "//litert:macos": [
             "-Wl,-undefined,dynamic_lookup",
             "-Wl,-install_name,@loader_path/libLiteRTCompilerMLIR.so",
+            "-Wl,-exported_symbols_list,$(location :export_litert_compiler_mlir_darwin.lds)",
         ],
         "//litert:windows": [],
-        "//conditions:default": ["-Wl,-Bsymbolic"],
+        "//conditions:default": [
+            "-Wl,-Bsymbolic",
+            "-Wl,--version-script,$(location :export_litert_compiler_mlir_linux.lds)",
+        ],
     }),
     linkshared = 1,
     tags = [
@@ -70,6 +74,8 @@ cc_binary(
         "notap",
     ],
     deps = [
+        ":export_litert_compiler_mlir_darwin.lds",
+        ":export_litert_compiler_mlir_linux.lds",
         "//litert/compiler/mlir:converter_api_core",
         "//litert/compiler/mlir:model_utils_core",
         "@llvm-project//mlir:CAPIArithObjects",
