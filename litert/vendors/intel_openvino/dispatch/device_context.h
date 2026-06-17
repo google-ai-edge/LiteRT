@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>  // NOLINT
 #include <unordered_map>
 #include <utility>
 
@@ -53,6 +54,7 @@ class LiteRtDispatchDeviceContextT {
 
   litert::Expected<ov::Tensor> getOVTensor(
       const LiteRtTensorBufferHandle& handle) const {
+    std::lock_guard<std::mutex> lock(tensor_handle_mutex_);
     auto it = tensor_handle_map_.find(handle);
     if (it != tensor_handle_map_.end()) {
       return it->second.tensor;
@@ -107,10 +109,24 @@ class LiteRtDispatchDeviceContextT {
     CleanupAction cleanup;
   };
 
+  // Inserts `tensor` under a freshly allocated handle while holding
+  // `tensor_handle_mutex_`, and returns that handle.
+  LiteRtTensorBufferHandle InsertTensor(RegisteredTensor tensor) {
+    std::lock_guard<std::mutex> lock(tensor_handle_mutex_);
+    LiteRtTensorBufferHandle handle = (LiteRtTensorBufferHandle)next_handle_;
+    tensor_handle_map_.emplace(handle, std::move(tensor));
+    ++next_handle_;
+    return handle;
+  }
+
   explicit LiteRtDispatchDeviceContextT(
       const LiteRtRuntimeContext* runtime_context)
       : runtime_context_(runtime_context), next_handle_(0) {}
   const LiteRtRuntimeContext* runtime_context_;
+  // Guards `tensor_handle_map_` and `next_handle_`, which are mutated by
+  // Register/Unregister and read by getOVTensor from potentially concurrent
+  // host threads. `mutable` so the const getOVTensor accessor can lock it.
+  mutable std::mutex tensor_handle_mutex_;
   std::unordered_map<LiteRtTensorBufferHandle, RegisteredTensor>
       tensor_handle_map_;
   uint64_t next_handle_;

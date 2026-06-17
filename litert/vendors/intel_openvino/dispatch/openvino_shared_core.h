@@ -37,12 +37,17 @@ class OpenVINOSharedCore {
   std::shared_ptr<ov::Core> getCore() const { return core_; }
 
   void SetDevice(const std::string device) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
     device_ = device;
     remote_context_.reset();
   }
-  std::string GetDevice() { return device_; }
+  std::string GetDevice() {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    return device_;
+  }
 
   ov::RemoteContext GetRemoteContext() {
+    std::lock_guard<std::mutex> lock(state_mutex_);
     if (!remote_context_.has_value()) {
       remote_context_ = core_->get_default_context(device_);
     }
@@ -61,6 +66,8 @@ class OpenVINOSharedCore {
   ~OpenVINOSharedCore();
 
   std::shared_ptr<ov::Core> core_;
+  // Guards mutable device selection state.
+  std::mutex state_mutex_;
   std::string device_ = "NPU";  // Default device
   std::optional<ov::RemoteContext> remote_context_;
   std::once_flag available_devices_once_;
