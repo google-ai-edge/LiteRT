@@ -19,11 +19,13 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <ostream>
 #include <random>
 #include <type_traits>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -598,14 +600,14 @@ class RandomTensorDataBuilder {
 
   template <typename D>
   std::pair<double, double> Bounds() const {
-    if constexpr (std::is_same_v<D, int32_t>) {
+    if constexpr (std::is_integral_v<D> && !std::is_same_v<D, int64_t>) {
       if (std::holds_alternative<Dummy>(int_config_)) {
         return {0, static_cast<double>(std::numeric_limits<D>::max())};
       } else if (std::holds_alternative<NullOpt>(int_config_)) {
         return {std::numeric_limits<D>::min(),
                 static_cast<double>(std::numeric_limits<D>::max())};
       } else {
-        auto [min, max] = std::get<std::pair<D, D>>(int_config_);
+        auto [min, max] = std::get<std::pair<int32_t, int32_t>>(int_config_);
         return {static_cast<double>(min), static_cast<double>(max)};
       }
     } else if constexpr (std::is_same_v<D, float>) {
@@ -629,7 +631,7 @@ class RandomTensorDataBuilder {
         return {std::numeric_limits<D>::min(),
                 static_cast<double>(std::numeric_limits<D>::max())};
       } else {
-        auto [min, max] = std::get<std::pair<D, D>>(int64_config_);
+        auto [min, max] = std::get<std::pair<int64_t, int64_t>>(int64_config_);
         return {static_cast<double>(min), static_cast<double>(max)};
       }
 
@@ -641,7 +643,7 @@ class RandomTensorDataBuilder {
 
   template <typename D, typename Functor, typename... Args>
   auto Call(Args&&... args) const {
-    if constexpr (std::is_same_v<D, int32_t>) {
+    if constexpr (std::is_integral_v<D> && !std::is_same_v<D, int64_t>) {
       if (std::holds_alternative<Dummy>(int_config_)) {
         RandomTensorData<D, DummyGenerator> data;
         return Functor()(data, std::forward<Args>(args)...);
@@ -649,8 +651,9 @@ class RandomTensorDataBuilder {
         RandomTensorData<D, DefaultGenerator> data;
         return Functor()(data, std::forward<Args>(args)...);
       } else {
-        auto [min, max] = std::get<std::pair<D, D>>(int_config_);
-        RandomTensorData<D, DefaultRangedGenerator> data(min, max);
+        auto [min, max] = std::get<std::pair<int32_t, int32_t>>(int_config_);
+        RandomTensorData<D, DefaultRangedGenerator> data(static_cast<D>(min),
+                                                         static_cast<D>(max));
         return Functor()(data, std::forward<Args>(args)...);
       }
     } else if constexpr (std::is_same_v<D, float>) {
@@ -667,7 +670,7 @@ class RandomTensorDataBuilder {
         RandomTensorData<D, SinGenerator> data;
         return Functor()(data, std::forward<Args>(args)...);
       } else {
-        auto [min, max] = std::get<std::pair<D, D>>(float_config_);
+        auto [min, max] = std::get<std::pair<float, float>>(float_config_);
         RandomTensorData<D, DefaultRangedGenerator> data(min, max);
         return Functor()(data, std::forward<Args>(args)...);
       }
@@ -679,7 +682,7 @@ class RandomTensorDataBuilder {
         RandomTensorData<D, DefaultGenerator> data;
         return Functor()(data, std::forward<Args>(args)...);
       } else {
-        auto [min, max] = std::get<std::pair<D, D>>(int64_config_);
+        auto [min, max] = std::get<std::pair<int64_t, int64_t>>(int64_config_);
         RandomTensorData<D, DefaultRangedGenerator> data(min, max);
         return Functor()(data, std::forward<Args>(args)...);
       }

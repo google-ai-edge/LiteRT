@@ -35,6 +35,7 @@
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/generators.h"
 #include "litert/test/generators/one_hot.h"
+#include "tensor/arithmetic_graph.h"
 #include "tflite/schema/schema_generated.h"
 #include "tflite/types/half.h"
 
@@ -364,19 +365,88 @@ template <typename Fixture>
 void RegisterFullyConnected(const AtsConf& options, size_t& test_id,
                             size_t iters, typename Fixture::Capture& cap) {
   // clang-format off
+  // Floating-Point Static
   RegisterCombinations<
       Fixture,
       FullyConnected,
       SizeListC<2, 3, 4>,
       TypeList<TypeTuple<float, float>,              // Uniform FP32
                TypeTuple<tflite::half, tflite::half>,  // Uniform FP16
-               TypeTuple<tflite::half, float>>,  // FP16 inputs/weights,
-                                                 // FP32 bias/output
+               TypeTuple<tflite::half, float>>,      // FP16 in/wt, FP32 bs/out
       OpCodeListC<kLiteRtOpCodeTflFullyConnected>,
-      TypeList<std::true_type, std::false_type>,
+      TypeList<std::true_type, std::false_type>,     // KeepNumDims
       TypeList<FaC<tflite::ActivationFunctionType_NONE>,
-               FaC<tflite::ActivationFunctionType_RELU>>,
-      TypeList<std::true_type, std::false_type>>
+               FaC<tflite::ActivationFunctionType_RELU>>,  // FusedActivation
+      TypeList<std::true_type, std::false_type>,     // HasBias
+      TypeList<std::false_type>,                     // AsymmetricQuantizeInputs
+      TypeList<std::integral_constant<
+          litert::tensor::FullyConnectedWeightsFormat,
+                                      litert::tensor::kWeightsFormatDefault>>,
+      TypeList<std::false_type>,                     // PerChannel
+      TypeList<std::false_type>,                     // DynamicFilter
+      TypeList<std::false_type>>                     // DynamicBias
+    (iters, test_id, options, cap);
+
+  // Floating-Point Dynamic Filter & Bias
+  RegisterCombinations<
+      Fixture,
+      FullyConnected,
+      SizeListC<2, 3>,
+      TypeList<TypeTuple<float, float>>,             // Uniform FP32
+      OpCodeListC<kLiteRtOpCodeTflFullyConnected>,
+      TypeList<std::false_type>,                     // KeepNumDims
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>>,  // FusedActivation
+      TypeList<std::true_type>,                      // HasBias
+      TypeList<std::false_type>,                     // AsymmetricQuantizeInputs
+      TypeList<std::integral_constant<
+          litert::tensor::FullyConnectedWeightsFormat,
+                             litert::tensor::kWeightsFormatDefault>>,
+      TypeList<std::false_type>,                     // PerChannel
+      TypeList<std::true_type, std::false_type>,     // DynamicFilter
+      TypeList<std::true_type, std::false_type>>     // DynamicBias
+    (iters, test_id, options, cap);
+
+  // Hybrid Quantization (FP32 activations x INT8 weights)
+  RegisterCombinations<
+      Fixture,
+      FullyConnected,
+      SizeListC<2, 3>,
+      TypeList<TypeTuple<float, float>>,             // T_in=float, T_out=float
+      OpCodeListC<kLiteRtOpCodeTflFullyConnected>,
+      TypeList<std::false_type>,                     // KeepNumDims
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>>,  // FusedActivation
+      TypeList<std::true_type>,                      // HasBias
+      TypeList<std::true_type, std::false_type>,     // AsymmetricQuantizeInputs
+      TypeList<std::integral_constant<
+          litert::tensor::FullyConnectedWeightsFormat,
+          litert::tensor::kWeightsFormatDefault>>,
+      TypeList<std::true_type, std::false_type>,     // PerChannel
+      TypeList<std::false_type>,                     // DynamicFilter
+      TypeList<std::false_type>>                     // DynamicBias
+    (iters, test_id, options, cap);
+
+  // Full Integer Quantization (INT8/UINT8 activations & weights)
+  RegisterCombinations<
+      Fixture,
+      FullyConnected,
+      SizeListC<2, 3>,
+      TypeList<TypeTuple<int8_t, int8_t>,            // INT8 in/wt, INT8 out
+               TypeTuple<uint8_t, uint8_t>>,         // UINT8 in/wt, UINT8 out
+      OpCodeListC<kLiteRtOpCodeTflFullyConnected>,
+      TypeList<std::true_type, std::false_type>,     // KeepNumDims
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>,
+               FaC<tflite::ActivationFunctionType_RELU>>,  // FusedActivation
+      TypeList<std::true_type, std::false_type>,     // HasBias
+      TypeList<std::false_type>,                     // AsymmetricQuantizeInputs
+      TypeList<std::integral_constant<
+          litert::tensor::FullyConnectedWeightsFormat,
+                                      litert::tensor::kWeightsFormatDefault>,
+               std::integral_constant<
+                   litert::tensor::FullyConnectedWeightsFormat,
+                   litert::tensor::kWeightsFormatShuffled4x16Int8>>,
+      TypeList<std::true_type, std::false_type>,     // PerChannel
+      TypeList<std::false_type>,                     // DynamicFilter
+      TypeList<std::false_type>>                     // DynamicBias
     (iters, test_id, options, cap);
   // clang-format on
 }

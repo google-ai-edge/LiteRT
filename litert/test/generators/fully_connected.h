@@ -308,7 +308,8 @@ class FullyConnected : public TestGraph {
               scales, zero_points, 0));
     } else if constexpr (std::is_integral_v<T_in> && !DynamicFilter::value) {
       weights.SetQuantization(
-          std::make_shared<litert::tensor::Quantization>(0.01f, 0));
+          std::make_shared<litert::tensor::PerChannelAffineQuantization>(
+              std::vector<float>{0.01f}, std::vector<int64_t>{0}, 0));
     }
 
     std::optional<TensorTf> bias_opt = std::nullopt;
@@ -336,14 +337,16 @@ class FullyConnected : public TestGraph {
                 scales, zero_points, 0));
       } else if constexpr (std::is_integral_v<T_out> && !DynamicBias::value) {
         bias.SetQuantization(
-            std::make_shared<litert::tensor::Quantization>(0.0001f, 0));
+            std::make_shared<litert::tensor::PerChannelAffineQuantization>(
+                std::vector<float>{0.0001f}, std::vector<int64_t>{0}, 0));
       }
       bias_opt = std::move(bias);
     }
 
     if constexpr (std::is_integral_v<T_in>) {
       input.SetQuantization(
-          std::make_shared<litert::tensor::Quantization>(0.01f, 0));
+          std::make_shared<litert::tensor::PerChannelAffineQuantization>(
+              std::vector<float>{0.01f}, std::vector<int64_t>{0}, 0));
     }
 
     litert::tensor::FusedActivation act = litert::tensor::kActNone;
@@ -361,7 +364,8 @@ class FullyConnected : public TestGraph {
     output.SetType(litert::tensor::ApiType<T_out>::value);
     if constexpr (std::is_integral_v<T_out>) {
       output.SetQuantization(
-          std::make_shared<litert::tensor::Quantization>(0.01f, 0));
+          std::make_shared<litert::tensor::PerChannelAffineQuantization>(
+              std::vector<float>{0.01f}, std::vector<int64_t>{0}, 0));
     }
     output.SetName(std::string(kOutputNames[0]));
 
