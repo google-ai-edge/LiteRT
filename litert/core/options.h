@@ -73,8 +73,8 @@ struct LiteRtOptionsT {
   // single file with group sections.
   std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source;
   // Optional in-memory weight map for heap weight loading.
-  absl::flat_hash_map<std::string, absl::Span<const std::byte>>
-      weight_in_memory_map;
+  const absl::flat_hash_map<std::string, absl::Span<const std::byte>>*
+      weight_in_memory_map = nullptr;
 };
 
 #endif  // ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_
