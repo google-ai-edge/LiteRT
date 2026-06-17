@@ -20,7 +20,7 @@ load("//litert/build_common:litert_build_defs.bzl", "cc_library_with_testonly_vi
 load("//litert/build_common:special_rule.bzl", "get_compatible_with_portable", "gles_headers", "gles_linkopts", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
 
-LITERT_MIN_IOS_VERSION = "14.0"
+LITERT_MIN_IOS_VERSION = "15.0"
 
 # TODO(b/502961597): Re-enable litert_tensor_buffer_test_cc_macos test once the test is fixed.
 # LITERT_MIN_MACOS_VERSION = "14.0"
