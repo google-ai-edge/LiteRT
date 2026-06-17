@@ -97,6 +97,11 @@ constexpr char kLibQnnGetProvidersSymbol[] = "QnnInterface_getProviders";
 constexpr char kLibQnnSystemGetProvidersSymbol[] =
     "QnnSystemInterface_getProviders";
 
+// Compile-time custom-op packages always target the CPU backend; this is the
+// value passed to QNN's RegisterOpPackage for compilation. Dispatch uses the
+// per-option target instead.
+constexpr char kCustomOpPackageCompileTarget[] = "CPU";
+
 typedef Qnn_ErrorHandle_t (*QnnInterfaceGetProvidersFn_t)(
     const QnnInterface_t*** provider_list, uint32_t* num_providers);
 
@@ -476,9 +481,12 @@ LiteRtStatus QnnManager::RegisterOpPackage(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
-                              std::optional<::qnn::SocInfo> soc_info,
-                              const ::qnn::Options& options) {
+LiteRtStatus QnnManager::LoadLibraries(
+    std::optional<std::string> shared_library_dir,
+    const ::qnn::Options& options) {
+  if (libraries_loaded_) {
+    return kLiteRtStatusOk;
+  }
   shared_library_dir_ = shared_library_dir;
   options_ = options;
   auto backend_type = options_.GetBackendType();
@@ -537,46 +545,77 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
   LITERT_RETURN_IF_ERROR(ResolveSystemApi());
 
   switch (backend_type) {
-    case ::qnn::BackendType::kGpuBackend: {
+    case ::qnn::BackendType::kGpuBackend:
       LITERT_RETURN_IF_ERROR(LoadLib(::qnn::GpuBackend::GetLibraryName()));
       LITERT_RETURN_IF_ERROR(
           ResolveApi(::qnn::GpuBackend::GetExpectedBackendVersion()));
-
-      backend_ = std::make_unique<::qnn::GpuBackend>(Api());
-      LITERT_RETURN_IF_ERROR(backend_->Init(options_, std::nullopt));
-
       break;
-    }
-    case ::qnn::BackendType::kHtpBackend: {
+    case ::qnn::BackendType::kHtpBackend:
       LITERT_RETURN_IF_ERROR(LoadLib(::qnn::HtpBackend::GetLibraryName()));
       LITERT_RETURN_IF_ERROR(
           ResolveApi(::qnn::HtpBackend::GetExpectedBackendVersion()));
-
-      auto htp_backend = std::make_unique<::qnn::HtpBackend>(Api());
-      LITERT_RETURN_IF_ERROR(htp_backend->Init(options_, soc_info));
-      soc_info_ = htp_backend->GetSocInfo();
-      backend_ = std::move(htp_backend);
-
       break;
-    }
-    case ::qnn::BackendType::kIrBackend: {
+    case ::qnn::BackendType::kIrBackend:
       LITERT_RETURN_IF_ERROR(LoadLib(::qnn::IrBackend::GetLibraryName()));
       LITERT_RETURN_IF_ERROR(
           ResolveApi(::qnn::IrBackend::GetExpectedBackendVersion()));
-
-      backend_ = std::make_unique<::qnn::IrBackend>(Api());
-      LITERT_RETURN_IF_ERROR(backend_->Init(options_, std::nullopt));
-
       break;
-    }
-    case ::qnn::BackendType::kDspBackend: {
+    case ::qnn::BackendType::kDspBackend:
       LITERT_RETURN_IF_ERROR(LoadLib(::qnn::DspBackend::GetLibraryName()));
       LITERT_RETURN_IF_ERROR(
           ResolveApi(::qnn::DspBackend::GetExpectedBackendVersion()));
+      break;
+    default:
+      LITERT_LOG(LITERT_ERROR, "Unsupported backend type: %d",
+                 options_.GetBackendType());
+      return kLiteRtStatusErrorRuntimeFailure;
+  }
 
+  // Get SDK version from build ID. This is SoC-independent and available now,
+  // since QnnBackend_getBuildId is safe to call before backend creation.
+  const char* build_id;
+  if (Api()->backendGetBuildId(&build_id) != QNN_SUCCESS) {
+    LITERT_LOG(LITERT_ERROR, "%s", "Failed to get QNN backend build ID");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  LITERT_ASSIGN_OR_RETURN(sdk_version_, ParseSdkVersion(build_id));
+
+  libraries_loaded_ = true;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus QnnManager::BindSoc(std::optional<::qnn::SocInfo> soc_info) {
+  if (!libraries_loaded_) {
+    LITERT_LOG(LITERT_ERROR, "%s", "BindSoc called before libraries loaded");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  // Release any previously-bound backend/device handles first. The loaded
+  // libraries (lib_, lib_system_, interface_) are untouched, so no
+  // dlclose/dlopen happens here.
+  backend_.reset();
+
+  switch (options_.GetBackendType()) {
+    case ::qnn::BackendType::kGpuBackend: {
+      backend_ = std::make_unique<::qnn::GpuBackend>(Api());
+      LITERT_RETURN_IF_ERROR(backend_->Init(options_, std::nullopt));
+      break;
+    }
+    case ::qnn::BackendType::kHtpBackend: {
+      auto htp_backend = std::make_unique<::qnn::HtpBackend>(Api());
+      LITERT_RETURN_IF_ERROR(htp_backend->Init(options_, soc_info));
+      // soc_info_ tracks the HTP backend only; other backends ignore the SoC.
+      soc_info_ = htp_backend->GetSocInfo();
+      backend_ = std::move(htp_backend);
+      break;
+    }
+    case ::qnn::BackendType::kIrBackend: {
+      backend_ = std::make_unique<::qnn::IrBackend>(Api());
+      LITERT_RETURN_IF_ERROR(backend_->Init(options_, std::nullopt));
+      break;
+    }
+    case ::qnn::BackendType::kDspBackend: {
       backend_ = std::make_unique<::qnn::DspBackend>(Api());
       LITERT_RETURN_IF_ERROR(backend_->Init(options_, soc_info));
-
       break;
     }
     default: {
@@ -585,12 +624,37 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
       return kLiteRtStatusErrorRuntimeFailure;
     }
   }
-
-  // Get SDK version from build ID.
-  const char* build_id;
-  Api()->backendGetBuildId(&build_id);
-  LITERT_ASSIGN_OR_RETURN(sdk_version_, ParseSdkVersion(build_id));
+  // The backend handle is new; re-register the configured op package against
+  // it.
+  LITERT_RETURN_IF_ERROR(RegisterConfiguredOpPackage());
   return kLiteRtStatusOk;
+}
+
+LiteRtStatus QnnManager::RegisterConfiguredOpPackage() {
+  if (backend_ == nullptr) {
+    // No backend bound yet; the package is applied on the next BindSoc().
+    return kLiteRtStatusOk;
+  }
+  const auto& custom_op_package = options_.GetCustomOpPackage();
+  if (custom_op_package.name.empty()) {
+    return kLiteRtStatusOk;
+  }
+  // Compile and dispatch read different fields of the same option.
+  const bool is_compile = mode_ == Mode::kCompile;
+  const std::string& package_path =
+      is_compile ? custom_op_package.compile_package_path
+                 : custom_op_package.dispatch_package_path;
+  const std::string target =
+      is_compile ? kCustomOpPackageCompileTarget : custom_op_package.target;
+  return RegisterOpPackage(package_path, custom_op_package.interface_provider,
+                           target);
+}
+
+LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
+                              std::optional<::qnn::SocInfo> soc_info,
+                              const ::qnn::Options& options) {
+  LITERT_RETURN_IF_ERROR(LoadLibraries(shared_library_dir, options));
+  return BindSoc(soc_info);
 }
 
 Expected<QnnManager::SystemContextHandle>
@@ -681,13 +745,49 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
 Expected<QnnManager::Ptr> QnnManager::Create(
     const ::qnn::Options& options,
     std::optional<std::string> shared_library_dir,
-    std::optional<::qnn::SocInfo> soc_info) {
+    std::optional<::qnn::SocInfo> soc_info, Mode mode) {
   Ptr qnn_manager(new QnnManager);
+  // Set before Init() so the backend bind inside Init() registers the package.
+  qnn_manager->mode_ = mode;
   if (auto status = qnn_manager->Init(shared_library_dir, soc_info, options);
       status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to set up QNN manager");
   }
   return qnn_manager;
+}
+
+Expected<QnnManager::Ptr> QnnManager::CreateWithoutBackend(
+    const ::qnn::Options& options,
+    std::optional<std::string> shared_library_dir, Mode mode) {
+  Ptr qnn_manager(new QnnManager);
+  // No backend is bound here, so nothing is registered yet; the first
+  // EnsureSocBound()/BindSoc() applies the configured op package.
+  qnn_manager->mode_ = mode;
+  if (auto status = qnn_manager->LoadLibraries(shared_library_dir, options);
+      status != kLiteRtStatusOk) {
+    return Unexpected(status, "Failed to load QNN libraries");
+  }
+  return qnn_manager;
+}
+
+Expected<void> QnnManager::EnsureSocBound(
+    std::optional<::qnn::SocInfo> soc_info) {
+  // Already bound? No-op unless the requested SoC genuinely differs.
+  if (backend_ != nullptr) {
+    const bool same_soc =
+        !soc_info.has_value() || soc_info->soc_model == soc_info_.soc_model;
+    if (same_soc) {
+      return {};
+    }
+    LITERT_LOG(LITERT_INFO,
+               "Rebinding QNN backend SoC (libraries stay loaded): %s -> %s",
+               soc_info_.soc_name, soc_info->soc_name);
+  }
+  // BindSoc re-registers op packages against the new handle.
+  if (auto status = BindSoc(soc_info); status != kLiteRtStatusOk) {
+    return Unexpected(status, "Failed to bind SoC");
+  }
+  return {};
 }
 
 absl::Span<const QnnContext_Config_t*> QnnManager::DefaultContextConfigs() {

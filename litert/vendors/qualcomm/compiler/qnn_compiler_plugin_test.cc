@@ -243,6 +243,64 @@ TEST(TestQnnPlugin, CompileAfterGetSDKVersion) {
   LiteRtDestroyCompiledResult(compiled);
 }
 
+// The SDK-version query loads the QNN libraries without binding a SoC. A
+// subsequent Compile must bind the requested SoC on that same manager (reusing
+// the already-loaded libraries) and produce byte code -- this is the
+// regression guard for the previously hardcoded SM8750 manager that had to be
+// recreated on a SoC mismatch.
+TEST(TestQnnPlugin, CompileAfterGetSDKVersionRebindsSoc) {
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
+
+  const char* sdk_version = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtGetCompilerPluginSDKVersion(plugin.get(), &sdk_version));
+  ASSERT_NE(sdk_version, nullptr);
+
+  auto model = testing::LoadTestFileModel("one_mul.tflite");
+  LiteRtCompiledResult compiled;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
+                                               model.Get(), &compiled));
+
+  const void* byte_code;
+  size_t byte_code_size;
+  LITERT_ASSERT_OK(LiteRtGetCompiledResultByteCode(
+      compiled, /*byte_code_idx=*/0, &byte_code, &byte_code_size));
+  absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
+                                     byte_code_size);
+  EXPECT_FALSE(byte_code_string.empty());
+
+  LiteRtDestroyCompiledResult(compiled);
+}
+
+// Partition then Compile on the same plugin instance with two different SoCs.
+// The manager loads its libraries once (during the first call) and only
+// rebinds the backend/device handles to the second SoC -- no library reload,
+// no manager recreate. Both calls must succeed.
+TEST(TestQnnPlugin, PartitionThenCompileDifferentSocRebinds) {
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  auto model = testing::LoadTestFileModel("one_mul.tflite");
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
+  LiteRtOpListT selected_op_list;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
+      plugin.get(), "SM8650", subgraph.Get(), &selected_op_list));
+  ASSERT_EQ(selected_op_list.Values().size(), 1);
+
+  LiteRtCompiledResult compiled;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8750",
+                                               model.Get(), &compiled));
+
+  const void* byte_code;
+  size_t byte_code_size;
+  LITERT_ASSERT_OK(LiteRtGetCompiledResultByteCode(
+      compiled, /*byte_code_idx=*/0, &byte_code, &byte_code_size));
+  absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
+                                     byte_code_size);
+  EXPECT_FALSE(byte_code_string.empty());
+
+  LiteRtDestroyCompiledResult(compiled);
+}
+
 
 TEST(TestQnnPlugin, PartitionMulOps) {
   auto plugin = CreatePlugin(LrtGetCompilerContext());

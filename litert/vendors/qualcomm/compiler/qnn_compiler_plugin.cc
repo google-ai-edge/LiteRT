@@ -87,10 +87,6 @@ bool IsWeightSharingSupported(::qnn::DspArch dsp_arch) {
 #endif
 }
 
-// Compile-time custom-op packages always target the CPU backend; this is
-// the value passed to QNN's RegisterOpPackage for compilation.
-constexpr char kCustomOpPackageCompileTarget[] = "CPU";
-
 }  // namespace
 
 LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion* api_version) {
@@ -276,12 +272,6 @@ class LiteRtCompilerPluginT {
   const ::qnn::Options& Options() const { return qnn_options_; }
 
   LiteRtStatus initQnnManager(std::unique_ptr<QnnManager> qnn_manager) {
-    if (const auto& custom_op_package = qnn_options_.GetCustomOpPackage();
-        !custom_op_package.name.empty()) {
-      LITERT_RETURN_IF_ERROR(qnn_manager->RegisterOpPackage(
-          custom_op_package.compile_package_path,
-          custom_op_package.interface_provider, kCustomOpPackageCompileTarget));
-    }
     qnn_manager_ = std::move(qnn_manager);
     return kLiteRtStatusOk;
   }
@@ -339,12 +329,13 @@ LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
   }
   QnnManager* qnn_manager = compiler_plugin->QNN();
   if (!qnn_manager) {
-    std::optional<::qnn::SocInfo> soc_info = std::nullopt;
-#if defined(__x86_64__) || defined(_M_X64)
-    soc_info = qnn::FindSocModel("SM8750");
-#endif
-    auto qnn_manager_or =
-        QnnManager::Create(compiler_plugin->Options(), std::nullopt, soc_info);
+    // No SoC is known yet at the SDK-version query. Load + resolve the QNN
+    // libraries once, without binding a SoC; the build id is SoC-independent
+    // and available immediately. The SoC is bound later by
+    // Partition/Compile via QnnManager::EnsureSocBound, reusing these
+    // already-loaded libraries.
+    auto qnn_manager_or = QnnManager::CreateWithoutBackend(
+        compiler_plugin->Options(), compiler_plugin->shared_library_dir());
     if (!qnn_manager_or) {
       LITERT_LOG(LITERT_ERROR, "Failed to create QNN manager: %s",
                  qnn_manager_or.Error().Message().data());
@@ -376,18 +367,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   ::litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
   QnnManager* qnn_manager = compiler_plugin->QNN();
   auto opt_soc_model = soc_model ? qnn::FindSocModel(soc_model) : std::nullopt;
-  bool soc_model_mismatch = false;
-  if (qnn_manager && opt_soc_model.has_value()) {
-    soc_model_mismatch =
-        (qnn_manager->GetSocInfo().soc_model != opt_soc_model->soc_model);
-  }
-  if (!qnn_manager || soc_model_mismatch) {
-    if (soc_model_mismatch) {
-      LITERT_LOG(LITERT_INFO,
-                 "Recreating QNN manager due to SoC mismatch: current %s, "
-                 "target %s",
-                 qnn_manager->GetSocInfo().soc_name, opt_soc_model->soc_name);
-    }
+  if (!qnn_manager) {
+    // SDK-version query never ran; create a fully-bound manager directly.
     auto qnn_manager_or = QnnManager::Create(
         compiler_plugin->Options(), compiler_plugin->shared_library_dir(),
         opt_soc_model);
@@ -399,6 +380,11 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     LITERT_RETURN_IF_ERROR(
         compiler_plugin->initQnnManager(std::move(*qnn_manager_or)));
     qnn_manager = compiler_plugin->QNN();
+  } else {
+    // Libraries already loaded (e.g. by the SDK-version query). Bind the SoC
+    // only -- no library reload. No-op if already bound to this SoC. BindSoc
+    // re-registers any declared op packages against the new handle.
+    LITERT_RETURN_IF_ERROR(qnn_manager->EnsureSocBound(opt_soc_model));
   }
 
   for (const auto& op : graph.Ops()) {
@@ -502,19 +488,10 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     }
   }
 
-  bool soc_model_mismatch = false;
-  if (qnn_manager && opt_soc_model.has_value()) {
-    soc_model_mismatch =
-        (qnn_manager->GetSocInfo().soc_model != opt_soc_model->soc_model);
-  }
-
-  if (!qnn_manager || ir_backend_override || soc_model_mismatch) {
-    if (soc_model_mismatch) {
-      LITERT_LOG(LITERT_INFO,
-                 "Recreating QNN manager due to SoC mismatch: current %s, "
-                 "target %s",
-                 qnn_manager->GetSocInfo().soc_name, opt_soc_model->soc_name);
-    }
+  if (!qnn_manager || ir_backend_override) {
+    // No manager yet, or the backend TYPE changed (a different library must be
+    // loaded) -> full create. SoC-only changes are handled below by
+    // EnsureSocBound, which keeps the already-loaded libraries.
     // Initialize SDK and load qnn shared libraries.
     LITERT_LOG(LITERT_INFO, "%s", "Creating QNN manager");
     auto qnn_manager_or = QnnManager::Create(
@@ -527,6 +504,10 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LITERT_RETURN_IF_ERROR(
         compiler_plugin->initQnnManager(std::move(*qnn_manager_or)));
     qnn_manager = compiler_plugin->QNN();
+  } else {
+    // Bind the SoC on the existing manager, reusing its loaded libraries.
+    // BindSoc re-registers any declared op packages against the new handle.
+    LITERT_RETURN_IF_ERROR(qnn_manager->EnsureSocBound(opt_soc_model));
   }
 
   // Map of LiteRt buffer id to context handle index.

@@ -118,10 +118,38 @@ class QnnManager {
 
   ~QnnManager();
 
+  // Whether this manager drives ahead-of-time compilation or on-device
+  // dispatch. The two phases differ in how some options are interpreted -- e.g.
+  // a custom op package registers `compile_package_path` against the "CPU"
+  // target at compile time, but `dispatch_package_path` against `target` at
+  // dispatch time.
+  enum class Mode {
+    kCompile,
+    kDispatch,
+  };
+
   static Expected<Ptr> Create(
       const ::qnn::Options& options,
       std::optional<std::string> shared_library_dir = std::nullopt,
-      std::optional<::qnn::SocInfo> soc_info = std::nullopt);
+      std::optional<::qnn::SocInfo> soc_info = std::nullopt,
+      Mode mode = Mode::kCompile);
+
+  // Loads + resolves the QNN libraries WITHOUT binding a SoC/backend handle.
+  // Use when the SoC is not yet known (e.g. SDK-version query). The build id is
+  // available immediately after this returns (QnnBackend_getBuildId is safe to
+  // call before backend creation). Call EnsureSocBound() later to bind the SoC,
+  // at which point the configured custom op package (if any) is registered.
+  static Expected<Ptr> CreateWithoutBackend(
+      const ::qnn::Options& options,
+      std::optional<std::string> shared_library_dir = std::nullopt,
+      Mode mode = Mode::kCompile);
+
+  // Ensures the backend/device handles are bound to `soc_info`, WITHOUT
+  // reloading the shared libraries. If the backend is unbound, binds it. If it
+  // is already bound to a different SoC, rebuilds only the backend layer (the
+  // libraries stay loaded) and re-registers any declared op packages. No-op if
+  // already bound to the same SoC.
+  Expected<void> EnsureSocBound(std::optional<::qnn::SocInfo> soc_info);
 
   static absl::Span<const QnnContext_Config_t*> DefaultContextConfigs();
   static absl::Span<const QnnContext_Config_t*> WeightSharingContextConfigs();
@@ -190,6 +218,25 @@ class QnnManager {
  private:
   QnnManager() = default;
 
+  // Phase 1: ADSP path setup + load libQnnSystem + backend lib + resolve API +
+  // read build id. SoC-independent; runs once (idempotent via
+  // libraries_loaded_).
+  LiteRtStatus LoadLibraries(std::optional<std::string> shared_library_dir,
+                             const ::qnn::Options& options);
+
+  // Phase 2: (re)create the backend/device handles for `soc_info`. Assumes
+  // LoadLibraries() already ran. Resets any existing backend_ first; the loaded
+  // libraries are left untouched.
+  LiteRtStatus BindSoc(std::optional<::qnn::SocInfo> soc_info);
+
+  // Registers the configured custom op package (options_.GetCustomOpPackage())
+  // against the current backend handle, selecting the package path/target by
+  // mode_. No-op when no backend is bound, no custom op package is configured,
+  // or the backend is IR.
+  LiteRtStatus RegisterConfiguredOpPackage();
+
+  // Composes LoadLibraries() + BindSoc() for callers that want both in one
+  // step.
   LiteRtStatus Init(std::optional<std::string> shared_library_dir,
                     std::optional<::qnn::SocInfo> soc_info,
                     const ::qnn::Options& options);
@@ -238,6 +285,13 @@ class QnnManager {
   ::qnn::Options options_;
   std::optional<std::string> shared_library_dir_;
   SdkVersion sdk_version_{};
+  // True once LoadLibraries() has loaded + resolved the QNN libraries. Guards
+  // against reloading the shared libraries on SoC rebind.
+  bool libraries_loaded_ = false;
+  // Whether this manager drives compilation or dispatch. Set at creation;
+  // affects how some options (e.g. the custom op package path/target) are
+  // interpreted on every backend (re)bind.
+  Mode mode_ = Mode::kCompile;
 };
 
 // Unfortunately we can't use std::unique_ptr with a deleter because
