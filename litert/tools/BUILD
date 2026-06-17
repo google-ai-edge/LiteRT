@@ -15,6 +15,8 @@
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
+# copybara:uncomment load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
 load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps", "litert_bin")
 load("//litert/build_common:special_rule.bzl", "litert_gpu_accelerator_deps", "litert_gpu_accelerator_prebuilts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
@@ -36,6 +38,18 @@ exports_files([
     "run_model.cc",
     "gpu_numerics_check.cc",
 ])
+
+# copybara:uncomment_begin(google-only)
+# py_binary(
+#     name = "externalize_tflite_flatbuffer",
+#     srcs = ["externalize_tflite_flatbuffer.py"],
+#     deps = [
+#         "//third_party/py/flatbuffers",
+#         "@org_tensorflow//third_party/py/numpy:headers",
+#         "//tflite/python:schema_py",
+#     ],
+# )
+# copybara:uncomment_end
 
 # This user library should depend on libLiteRt.so to allow
 # CompilerPlugin to use the same libLiteRt.so

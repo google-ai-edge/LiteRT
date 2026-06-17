@@ -45,6 +45,108 @@ message GenericModel {
   // If true, force the content from the model to be a string instead of an
   // array. Some legacy templates only support string content.
   optional bool force_string_content = 2;
+
+  // --- Multimodal Configurations ---
+
+  // High-level switches
+  // Whether to enable image modality.
+  optional bool image_enabled = 3;
+  // Whether to enable audio modality.
+  optional bool audio_enabled = 4;
+
+  // Delimiters & Matchers
+  // Regex to split the prompt into chunks for multimodal processing.
+  optional string delimiter_regex = 5;
+  // Regex to match image token placeholders in the prompt.
+  optional string image_token_regex = 6;
+  // Regex to match audio token placeholders in the prompt.
+  optional string audio_token_regex = 7;
+
+  // Image preprocessing parameters
+  // The height of the image tensor that image preprocessor should resize to.
+  optional int32 image_tensor_height = 8;
+  // The width of the image tensor that image preprocessor should resize to.
+  optional int32 image_tensor_width = 9;
+
+  // Optional patchify config
+  // The width of the image patch that the image preprocessor should patchify
+  // the image to.
+  optional int32 patch_width = 10;
+  // The height of the image patch that the image preprocessor should patchify
+  // the image to.
+  optional int32 patch_height = 11;
+  // The maximum number of patches that the image preprocessor should patchify
+  // the image to. If the number of patches that the patchified input image
+  // would produce is more than this, the input image will be downsampled to the
+  // max size that can fit the max number of patches, with respect to the aspect
+  // ratio, before patchifying.
+  optional int32 max_num_patches = 12;
+  // The pooling kernel size that the image preprocessor should use for
+  // patchifying the image.
+  optional int32 pooling_kernel_size = 13;
+
+  // Image formatting
+  // The start of image token indicates the start of image in the prompt.
+  optional TokenUnion start_of_image_token = 14;
+  // The end of image token indicates the end of image in the prompt.
+  optional TokenUnion end_of_image_token = 15;
+  // The prefix to add before the image in the prompt.
+  optional string image_prefix = 16;
+  // The suffix to add after the image in the prompt.
+  optional string image_suffix = 17;
+  // Whether to add the end of image token after the image in the prompt.
+  optional bool add_image_end = 18;
+
+  // Audio preprocessing parameters
+  // Whether to skip the Mel spectrogram extraction.
+  optional bool skip_mel_spectrogram_extraction = 19;
+  // The sample rate of the audio input.
+  optional int32 audio_sample_rate_hz = 20;
+  // The number of audio channels.
+  optional int32 audio_num_channels = 21;
+  // The length of the audio frame in samples.
+  optional int32 audio_frame_length = 22;
+  // The hop length of the audio frame in samples.
+  optional int32 audio_hop_length = 23;
+  // The length of the FFT in samples.
+  optional int32 audio_fft_length = 24;
+  // The scale factor to apply to the audio input.
+  optional float audio_input_scale = 25;
+  // The pre-emphasis factor of the audio input.
+  optional float audio_pre_emphasis_factor = 26;
+  // The number of mel bins in the audio mel spectrogram.
+  optional int32 audio_num_mel_bins = 27;
+  // The lowest frequency in Hz of the audio mel spectrogram.
+  optional float audio_mel_low_hz = 28;
+  // The highest frequency in Hz of the audio mel spectrogram.
+  optional float audio_mel_high_hz = 29;
+  // The floor of the audio mel spectrogram.
+  optional float audio_mel_floor = 30;
+  // Whether to normalize the audio mel spectrogram.
+  optional bool audio_normalize_mel = 31;
+  // Whether to add the floor to the audio mel spectrogram before taking the
+  // log.
+  optional bool audio_add_floor_to_mel_before_log = 32;
+  // Whether to pad the audio semicausally.
+  optional bool audio_semicausal_padding = 33;
+  // Whether to use a non-zero hanning window for the audio FFT.
+  optional bool audio_non_zero_hanning = 34;
+  // Whether to use a periodic hanning window for the audio FFT.
+  optional bool audio_periodic_hanning = 35;
+  // The padding type of for FFT bins.
+  optional FftPaddingType audio_fft_padding_type = 36;
+
+  // Audio formatting
+  // The start of audio token indicates the start of audio in the prompt.
+  optional TokenUnion start_of_audio_token = 37;
+  // The end of audio token indicates the end of audio in the prompt.
+  optional TokenUnion end_of_audio_token = 38;
+  // The prefix to add before the audio in the prompt.
+  optional string audio_prefix = 39;
+  // The suffix to add after the audio in the prompt.
+  optional string audio_suffix = 40;
+  // Whether to add the end of audio token after the audio in the prompt.
+  optional bool add_audio_end = 41;
 }
 
 // Google's Gemma3N model.
@@ -73,6 +175,13 @@ enum ConstraintMode {
   CONSTRAINT_MODE_TEXT_AND_OR = 1;
   // Only function call is allowed.
   CONSTRAINT_MODE_FUNCTION_CALL_ONLY = 2;
+}
+
+// The padding type of for FFT bins.
+enum FftPaddingType {
+  FFT_PADDING_TYPE_UNSPECIFIED = 0;
+  FFT_PADDING_TYPE_RIGHT = 1;
+  FFT_PADDING_TYPE_CENTER = 2;
 }
 
 // Google's Function Gemma model.

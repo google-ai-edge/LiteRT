@@ -39,6 +39,7 @@ using ::litert::tensor::IsOk;
 using ::litert::tensor::IsOkAndHolds;
 using ::testing::Contains;
 using ::testing::ElementsAre;
+using ::testing::HasSubstr;
 using ::testing::Not;
 using ::testing::UnorderedElementsAre;
 
@@ -131,6 +132,24 @@ TEST(ArithmeticTest, AddWorks) {
   Tensor a({.type = Type::kFP32, .shape = {3, 3}}),
       b({.type = Type::kFP32, .shape = {3, 3}});
   ASSERT_NO_FATAL_FAILURE(IsABinaryElementwiseOp("Add", a, b, Add(a, b)));
+}
+
+TEST(ArithmeticTest,
+     StableHloCompositeRejectsDecompositionFromCompositeInputGraph) {
+  Tensor input({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor weight({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor decomposition = Add(input, weight);
+
+  std::vector<Tensor<>> outputs =
+      StableHloComposite({input, weight}, "odml.test_composite",
+                         /*composite_attributes=*/{}, {decomposition});
+
+  ASSERT_EQ(outputs.size(), 1);
+  ASSERT_FALSE(outputs[0].GetStatus().ok());
+  EXPECT_EQ(outputs[0].GetStatus().code(),
+            absl::StatusCode::kInvalidArgument);
+  EXPECT_THAT(outputs[0].GetStatus().message(),
+              HasSubstr("separate decomposition graph"));
 }
 
 TEST(ArithmeticTest, MulWorks) {
