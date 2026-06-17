@@ -1169,8 +1169,9 @@ Tensor<Mixins...> Conv2D(Tensor<Mixins...> input, Tensor<Mixins...> filter,
                          int dilation_h_factor = 1, int dilation_w_factor = 1,
                          FusedActivation activation = kActNone,
                          source_location loc = source_location::current()) {
-  return Conv2DImpl(input, filter, absl::nullopt, stride_h, stride_w, padding,
-                    dilation_h_factor, dilation_w_factor, activation, loc);
+  return Conv2DImpl(input, filter, absl::optional<Tensor<Mixins...>>(),
+                    stride_h, stride_w, padding, dilation_h_factor,
+                    dilation_w_factor, activation, loc);
 }
 
 template <class... Mixins>
@@ -1243,9 +1244,10 @@ Tensor<Mixins...> DepthwiseConv2D(
     int dilation_w_factor = 1, int depth_multiplier = 1,
     FusedActivation activation = kActNone,
     source_location loc = source_location::current()) {
-  return DepthwiseConv2DImpl(input, filter, absl::nullopt, stride_h, stride_w,
-                             padding, dilation_h_factor, dilation_w_factor,
-                             depth_multiplier, activation, loc);
+  return DepthwiseConv2DImpl(input, filter, absl::optional<Tensor<Mixins...>>(),
+                             stride_h, stride_w, padding, dilation_h_factor,
+                             dilation_w_factor, depth_multiplier, activation,
+                             loc);
 }
 
 template <class... Mixins>
