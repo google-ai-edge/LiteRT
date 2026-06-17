@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
+#include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
@@ -27,22 +28,18 @@ constexpr int kBiasIdx = 2;
 std::vector<OpWrapper> BuildFullyConnectedOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs, const bool keep_num_dims,
-    bool use_int64_bias_as_int32) {
+    bool use_int64_bias_as_int32, SdkVersion sdk_version) {
   std::vector<OpWrapper> res;
   OpWrapper& fully_connected_op = CreateOpWrapper(res, QNN_OP_FULLY_CONNECTED);
 
-  TensorWrapper& input_tensor = inputs[0];
+  const TensorWrapper& input_tensor = inputs[0];
   fully_connected_op.AddInputTensor(input_tensor);
 
   TensorWrapper& weight_tensor = inputs[1];
-  // TODO (chunhsue-qti): Treat a8w2 as a8w4, 2-bit quant weight tensor is
-  // QNN_DATATYPE_SFIXED_POINT_8 with bitwidth 2. Remove this after a8w2 is
-  // supported.
-
-  // Check input tensor is QNN_DATATYPE_SFIXED_POINT_8 so that a16w2 will be
-  // intact.
+  // Treat a8w2 as a8w4 if sdk version < 2.47.0.
   if (input_tensor.IsQuantI8() && weight_tensor.IsQuantI8() &&
-      weight_tensor.IsQuantBitwidth(kQuantBitWidth2)) {
+      weight_tensor.IsQuantBitwidth(kQuantBitWidth2) &&
+      sdk_version < SdkVersion{2, 47, 0}) {
     QNN_LOG_WARNING(
         "Aggressively convert the a8w2 Fully Connected Op to a8w4.");
     weight_tensor.SetQuantBitwidth(kQuantBitWidth4);
@@ -50,7 +47,7 @@ std::vector<OpWrapper> BuildFullyConnectedOp(
   fully_connected_op.AddInputTensor(weight_tensor);
 
   if (inputs.size() - 1 >= kBiasIdx) {
-    TensorWrapper& bias_tensor = inputs[kBiasIdx];
+    const TensorWrapper& bias_tensor = inputs[kBiasIdx];
     if (use_int64_bias_as_int32 && bias_tensor.IsTensorStatic() &&
         bias_tensor.GetDataType() == QNN_DATATYPE_INT_64) {
       auto* converted_bias_tensor =
@@ -66,7 +63,7 @@ std::vector<OpWrapper> BuildFullyConnectedOp(
     }
   }
 
-  TensorWrapper& output_tensor = outputs[0];
+  const TensorWrapper& output_tensor = outputs[0];
   if (keep_num_dims) {
     auto& input_dims = input_tensor.GetDimensions();
     std::uint32_t input_size = std::accumulate(

@@ -6,7 +6,11 @@
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
+#include <charconv>
+#include <optional>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <vector>
 
 
@@ -582,5 +586,41 @@ std::string Options::Dump() const {
 }
 
 QnnLog_Callback_t GetDefaultStdOutLogger() { return DefaultStdOutLogger; }
+
+std::optional<SdkVersion> ParseSdkVersion(const char* build_id) {
+  if (!build_id) return std::nullopt;
+
+  std::string_view version_str = build_id;
+
+  // Check for and remove the 'v' prefix.
+  if (version_str.empty() || version_str.front() != 'v') {
+    return std::nullopt;
+  }
+  version_str.remove_prefix(1);
+
+  SdkVersion version{};
+  const char* current = version_str.data();
+  const char* const end = version_str.data() + version_str.size();
+
+  auto parse_component = [&current, &end](int& component) {
+    auto [ptr, ec] = std::from_chars(current, end, component);
+    if (ec != std::errc()) {
+      return false;
+    }
+    current = ptr;
+    return true;
+  };
+
+  // Parse major, minor, and patch versions, checking for dots in between.
+  if (!parse_component(version.major)) return std::nullopt;
+
+  if (current == end || *current++ != '.') return std::nullopt;
+  if (!parse_component(version.minor)) return std::nullopt;
+
+  if (current == end || *current++ != '.') return std::nullopt;
+  if (!parse_component(version.patch)) return std::nullopt;
+
+  return version;
+}
 
 }  // namespace qnn
