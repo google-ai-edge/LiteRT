@@ -257,12 +257,16 @@ litert_test(
     srcs = [
         "openvino_compiler_plugin_test.cc",
     ],
-    copts = ["-fexceptions"],
+    copts = ["-fexceptions"] + select({
+        "//litert:windows": ["/DLITERT_COMPILE_LIBRARY"],
+        "//conditions:default": [],
+    }),
     data = [
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
     ],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    linkstatic = 1,
     tags = [
         # Tests with ungrte deps do not currently work on forge.
         "no-remote-exec",
@@ -290,6 +294,7 @@ litert_test(
         "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime:litert_model_predicates",
         "//litert/test:common",
+        "//litert/test:load_test_model_runtimecapi",
         "//litert/test:matchers_oss",
         "//litert/test:test_models",
         "//litert/vendors/cc:litert_compiler_plugin",

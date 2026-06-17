@@ -14,6 +14,8 @@
 
 #include "litert/c/options/litert_compiler_options.h"
 
+#include <cstddef>
+
 #include <gtest/gtest.h>
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -58,6 +60,23 @@ TEST(LiteRtCompilerOptionsTest, DummyOptions) {
   bool dummy_option;
   LITERT_ASSERT_OK(LrtGetCompilerOptionsDummyOption(options, &dummy_option));
   EXPECT_TRUE(dummy_option);
+}
+
+TEST(LiteRtCompilerOptionsTest, MaxPartitions) {
+  LrtCompilerOptions* options;
+  LITERT_ASSERT_OK(LrtCreateCompilerOptions(&options));
+  auto options_cleanup =
+      absl::MakeCleanup([options] { LrtDestroyCompilerOptions(options); });
+
+  size_t max_partitions;
+  EXPECT_EQ(LrtGetCompilerOptionsMaxPartitions(options, &max_partitions),
+            kLiteRtStatusErrorNotFound);
+
+  LITERT_ASSERT_OK(LrtSetCompilerOptionsMaxPartitions(options, 5));
+
+  LITERT_ASSERT_OK(
+      LrtGetCompilerOptionsMaxPartitions(options, &max_partitions));
+  EXPECT_EQ(max_partitions, 5);
 }
 
 TEST(LiteRtCompilerOptionsTest, GetDefaultPartitionStrategy) {
