@@ -115,7 +115,6 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 
   void* buffer_host_addr;
   int buffer_fd;
-  (void)buffer_host_addr;
 
   switch (tensor_buffer_type) {
     case kLiteRtTensorBufferTypeFastRpc:
@@ -161,6 +160,17 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 
   QnnMemHtp_Descriptor_t mem_htp_descriptor = {};
   switch (qnn_manager_.GetOptions().GetBackendType()) {
+    case ::qnn::BackendType::kGpuBackend:
+      // QnnGpu imports the DMA-BUF fd as OpenCL memory; it does not accept
+      // QNN_MEM_TYPE_ION (returns QNN_MEM_ERROR_UNSUPPORTED_MEMTYPE, 8005).
+      if (tensor_buffer_type != kLiteRtTensorBufferTypeDmaBuf) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "GPU backend only supports DMA-BUF tensor buffers");
+      }
+      mem_descriptor.memType = QNN_MEM_TYPE_DMA_BUF;
+      mem_descriptor.dmaBufInfo =
+          Qnn_MemDmaBufInfo_t{buffer_fd, buffer_host_addr};
+      break;
     // DSP Backend only supports QNN_MEM_TYPE_ION.
     case ::qnn::BackendType::kDspBackend:
       mem_descriptor.memType = QNN_MEM_TYPE_ION;

@@ -6,6 +6,16 @@ workspace(name = "litert")
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+# Darts Clone. Declare this before TensorFlow's workspace macros so they do not
+# install their own incompatible BUILD overlay.
+http_archive(
+    name = "darts_clone",
+    build_file = "@//:BUILD.darts_clone",
+    sha256 = "4a562824ec2fbb0ef7bd0058d9f73300173d20757b33bb69baa7e50349f65820",
+    strip_prefix = "darts-clone-e40ce4627526985a7767444b6ed6893ab6ff8983",
+    url = "https://github.com/s-yata/darts-clone/archive/e40ce4627526985a7767444b6ed6893ab6ff8983.tar.gz",
+)
+
 http_archive(
     name = "rules_shell",
     sha256 = "bc61ef94facc78e20a645726f64756e5e285a045037c7a61f65af2941f4c25e1",
@@ -91,9 +101,9 @@ tensorflow_source_repo(
     name = "org_tensorflow",
     patches = ["//:PATCH.flatbuffers_windows_no_bash"],
     protobuf_patches = ["//:PATCH.protobuf_port_msvc_compat"],
-    sha256 = "ad40291c7b7153d99d29211b7e2c7f51f512e8139b1da93a3ef12e162bd434a7",
-    strip_prefix = "tensorflow-590800be33a3e4801d5a57b15a7c907d8d562363",
-    urls = ["https://github.com/tensorflow/tensorflow/archive/590800be33a3e4801d5a57b15a7c907d8d562363.tar.gz"],
+    sha256 = "2817c642c748821744ccdee20ffe5866949a1c567f06a4523c45793c3fe59452",
+    strip_prefix = "tensorflow-f8440bf0b8bc1132e5791a55edd2c4c7c510a79c",
+    urls = ["https://github.com/tensorflow/tensorflow/archive/f8440bf0b8bc1132e5791a55edd2c4c7c510a79c.tar.gz"],
 )
 
 # Initialize the TensorFlow repository and all dependencies.
@@ -126,6 +136,7 @@ python_init_repositories(
         "3.11": "@org_tensorflow//:requirements_lock_3_11.txt",
         "3.12": "@org_tensorflow//:requirements_lock_3_12.txt",
         "3.13": "@org_tensorflow//:requirements_lock_3_13.txt",
+        "3.14": "@org_tensorflow//:requirements_lock_3_14.txt",
     },
 )
 
@@ -279,15 +290,6 @@ http_archive(
     sha256 = "9970f0a0afee1648890293321665e5b2efa04eaec9f1671fcf8048f456f5bb86",
     strip_prefix = "sentencepiece-0.2.0/src",
     url = "https://github.com/google/sentencepiece/archive/refs/tags/v0.2.0.tar.gz",
-)
-
-# Darts Clone
-http_archive(
-    name = "darts_clone",
-    build_file = "@//:BUILD.darts_clone",
-    sha256 = "4a562824ec2fbb0ef7bd0058d9f73300173d20757b33bb69baa7e50349f65820",
-    strip_prefix = "darts-clone-e40ce4627526985a7767444b6ed6893ab6ff8983",
-    url = "https://github.com/s-yata/darts-clone/archive/e40ce4627526985a7767444b6ed6893ab6ff8983.tar.gz",
 )
 
 # tomlplusplus

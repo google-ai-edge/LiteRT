@@ -242,7 +242,11 @@ cc_library(
     deps = [
         ":convolution_transposed",
         "//tflite/delegates/gpu/common:operations",
+        "//tflite/delegates/gpu/common:precision",
+        "//tflite/delegates/gpu/common:shape",
         "//tflite/delegates/gpu/common:status",
+        "//tflite/delegates/gpu/common:tensor",
+        "//tflite/delegates/gpu/common/task:gpu_operation",
         "//tflite/delegates/gpu/common/task:testing_util",
     ],
 )

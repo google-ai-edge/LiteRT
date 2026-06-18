@@ -36,6 +36,31 @@ litert_define_ats(
     backend = "cpu",
     compile_only_suffix = None,
     dont_register = [
+        ".*i32.*",  # XNNPACK does not support int32
+        ".*OneHot.*",  # XNNPACK does not support OneHot
+        ".*Transformer.*",  # XNNPACK does not support TransformerLayer flex/custom ops
+        ".*tfl\\.floor_div.*",  # XNNPACK does not support FloorDiv
+        ".*tfl\\.pow.*",  # XNNPACK does not support Pow
+        ".*tfl\\.prelu.*",  # XNNPACK requires PRelu alpha to be statically allocated
+        ".*tfl\\.zeros_like.*",  # XNNPACK does not support ZerosLike
+        ".*tfl\\.sign.*",  # XNNPACK does not support Sign
+        ".*tfl\\.relu_0_to_1.*",  # XNNPACK does not support Relu0To1
+        ".*tfl\\.elu.*",  # XNNPACK does not support Elu
+        ".*tfl\\.reduce_max.*",  # XNNPACK does not support ReduceMax
+        ".*tfl\\.reduce_min.*",  # XNNPACK does not support ReduceMin
+        ".*tfl\\.reduce_prod.*",  # XNNPACK does not support ReduceProd
+        ".*LogSoftmax.*",  # XNNPACK does not support LogSoftmax
+        ".*Pooling.*",  # XNNPACK rejects pooling when stride > filter size
+        ".*Conv2d.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 Conv2d
+        ".*BatchMatmul.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 BatchMatmul
+        ".*Softmax.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 Softmax
+        ".*FullyConnected.*(f16|i8|u8|SHUFFLED).*",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
+        ".*FullyConnected.*,2d_f32.*,1d_f32.*",
+        ".*FullyConnected.*,2d_f32[^c].*",
+        ".*FullyConnected.*_cst.*,1d_f32[^c].*",
+        ".*Transpose.*(f16|i4|bool|u16|u32|u64|i64).*",  # XNNPACK delegate at ToT does not yet support these Transpose presets
+        # Explicit ExtraModel exclusions (unsupported by XNNPACK):
+        ".*simple_add_dynamic_shape.*",
         "hf_all_minilm_l6_v2",
         "u2net_lite",
         "whisper_tiny_decoder",
@@ -170,20 +195,7 @@ litert_define_ats(
         "yamnet",
         "yolo11n",
     ],
-    dont_register = [
-        ".*tfl\\.sub.*",
-        ".*tfl\\.add.*i32.*",
-        ".*861.*",
-        ".*tfl\\.relu_0_to_1.*",
-        ".*resnet18.*",
-        ".*BinaryNoBroadcast.*",
-        ".*tfl\\.exp.*",
-        ".*f16.*",
-        ".*tfl\\.ceil.*",
-        ".*5d.*",
-        ".*6d.*",
-        ".*tfl\\.zeros_like.*",
-    ],
+    dont_register = [],
     extra_flags = [
         "--data_seed=42",
     ],
@@ -216,6 +228,30 @@ litert_define_ats(
     jit_suffix = "",
 )
 
+litert_define_ats(
+    name = "samsung_ats",
+    backend = "samsung",
+    compile_only_suffix = "_aot",
+    do_register = [
+    ],
+    dont_register = [
+        "whisper_tiny_decoder",
+        "hf_all_minilm_l6_v2",
+        "hf_mobilevit_small",
+        ".*5d.*",
+        ".*6d.*",
+        ".*tfl.elu.*",
+        ".*tfl.neg.*",
+        ".*tfl.square.*",
+        ".*tfl.zeros_like.*",
+        ".*tfl.round.*",
+        ".*tfl.sign.*",
+    ],
+    extra_flags = [
+    ],
+    jit_suffix = "",
+)
+
 # SOURCE CODES #####################################################################################
 
 # Note: The `litert_test` target below (`ats`) is the base test binary executed directly on the host
@@ -225,17 +261,43 @@ litert_test(
     name = "ats",
     srcs = ["ats.cc"],
     args = [
-        "--dont_register=.*tfl\\.log.*f16.*",
-        "--dont_register=.*tfl\\.zeros_like.*f16.*",
-        "--dont_register=.*tfl\\.sign.*f16.*",
-        "--dont_register=.*tfl\\.relu_0_to_1.*f16.*",
+        "--dont_register=.*i32.*",  # XNNPACK does not support int32
+        "--dont_register=.*OneHot.*",  # XNNPACK does not support OneHot
+        "--dont_register=.*Transformer.*",  # XNNPACK does not support TransformerLayer flex/custom ops
+        "--dont_register=.*tfl\\.floor_div.*",  # XNNPACK does not support FloorDiv
+        "--dont_register=.*tfl\\.pow.*",  # XNNPACK does not support Pow
+        "--dont_register=.*tfl\\.prelu.*",  # XNNPACK requires PRelu alpha to be statically allocated
+        "--dont_register=.*tfl\\.zeros_like.*",  # XNNPACK does not support ZerosLike
+        "--dont_register=.*tfl\\.sign.*",  # XNNPACK does not support Sign
+        "--dont_register=.*tfl\\.relu_0_to_1.*",  # XNNPACK does not support Relu0To1
+        "--dont_register=.*tfl\\.elu.*",  # XNNPACK does not support Elu
+        "--dont_register=.*tfl\\.reduce_max.*",  # XNNPACK does not support ReduceMax
+        "--dont_register=.*tfl\\.reduce_min.*",  # XNNPACK does not support ReduceMin
+        "--dont_register=.*tfl\\.reduce_prod.*",  # XNNPACK does not support ReduceProd
+        "--dont_register=.*LogSoftmax.*",  # XNNPACK does not support LogSoftmax
+        "--dont_register=.*Pooling.*",  # XNNPACK rejects pooling when stride > filter size
+        "--dont_register=.*Conv2d.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 Conv2d
+        "--dont_register=.*BatchMatmul.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 BatchMatmul
+        "--dont_register=.*Softmax.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 Softmax
+        "--dont_register=.*FullyConnected.*(f16|i8|u8|SHUFFLED).*",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
+        "--dont_register=.*FullyConnected.*,2d_f32.*,1d_f32.*",
+        "--dont_register=.*FullyConnected.*,2d_f32[^c].*",
+        "--dont_register=.*FullyConnected.*_cst.*,1d_f32[^c].*",
+        "--dont_register=.*Transpose.*(f16|i4|bool|u16|u32|u64|i64).*",  # XNNPACK delegate at ToT does not yet support these Transpose presets
+        # Explicit ExtraModel exclusions (unsupported by XNNPACK):
+        "--dont_register=.*simple_add_dynamic_shape.*",
+        "--dont_register=.*hf_all_minilm_l6_v2.*",
+        "--dont_register=.*u2net_lite.*",
+        "--dont_register=.*whisper_tiny_decoder.*",
+        "--dont_register=.*yolo11n.*",
     ],
     copts = commandline_flag_copts(),
     linkstatic = True,
     no_main = True,
-    tags = [
-        "notap",
-    ],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     ungrte = if_oss(True, False),
     use_sys_malloc = True,
     deps = [
@@ -250,6 +312,10 @@ litert_test(
         "//litert/cc/internal:litert_detail",
         "//litert/test/generators",
         "//litert/test/generators:common",
+        "//litert/test/generators:one_hot",
+        "//tensor:arithmetic",
+        "//tensor:arithmetic_graph",
+        "//tensor:datatypes",
         "//tflite/schema:schema_fbs",
         "//tflite/types:half",
         "@com_google_absl//absl/flags:flag",
@@ -270,6 +336,8 @@ cc_library(
         "-DINCLUDE_QUALCOMM_RUNTIME_FLAGS",
         "-DINCLUDE_MEDIATEK_COMPILE_FLAGS",
         "-DINCLUDE_MEDIATEK_RUNTIME_FLAGS",
+        "-DINCLUDE_SAMSUNG_COMPILE_FLAGS",
+        "-DINCLUDE_SAMSUNG_RUNTIME_FLAGS",
     ],
     deps = [
         ":common",
@@ -287,6 +355,7 @@ cc_library(
         "//litert/core/model:model_serialize",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
+        "//litert/tools/flags/vendors:samsung_flags",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings",
@@ -328,12 +397,17 @@ cc_library(
         "//litert/cc/internal:litert_rng",
         "//litert/core:filesystem",
         "//litert/test/generators",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
 cc_test(
     name = "executor_test",
     srcs = ["executor_test.cc"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":executor",
         "//litert/c:litert_op_code",
@@ -365,7 +439,6 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_c_types_printing",
-        "//litert/cc/internal:litert_numerics",
         "//litert/core/model",
         "//litert/test:matchers_oss",
         "//litert/test:rng_fixture_oss",
@@ -374,6 +447,7 @@ cc_library(
         "//tflite/types:half",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -424,11 +498,14 @@ litert_device_test(
 cc_test(
     name = "check_ats",
     srcs = ["check_ats.cc"],
+    args = [
+        "--dont_register=.*add.*i32.*",  # XNNPACK does not support int32 add
+    ],
     copts = commandline_flag_copts(),
     data = [
         "//litert/test:testdata/simple_model.tflite",
         "//litert/vendors/examples:example_dispatch_so",
-        "//litert/vendors/examples:example_plugin_so",
+        "//litert/vendors/examples:example_plugin_so_data",
     ],
     # Re-enable sans once test libs can be linked in a sans friendly way.
     tags = [
@@ -437,6 +514,10 @@ cc_test(
         "nosan",
         "notsan",
     ],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":common",
         ":compile_fixture",
@@ -457,6 +538,7 @@ cc_test(
         "//litert/test:simple_buffer",
         "//litert/test/generators",
         "//litert/test/generators:common",
+        "//litert/test/generators:one_hot",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/flags:reflection",
@@ -550,7 +632,7 @@ cc_library(
         ":configure",
         ":print",
         "//litert/core/model",
-        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/strings:str_format",
     ],
 )
 

@@ -24,8 +24,15 @@ cc_library(
     name = "ov_utils",
     hdrs = ["utils.h"],
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/c:litert_model_types",
         "@intel_openvino//:openvino",
+    ],
+)
+
+cc_library(
+    name = "bytecode_header",
+    hdrs = ["bytecode_header.h"],
+    deps = [
+        "//litert/c/options:litert_intel_openvino_options",
     ],
 )

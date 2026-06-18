@@ -15,6 +15,7 @@
 
 #include <cstdlib>
 #include <optional>
+#include <string>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -49,6 +50,10 @@ std::optional<::qnn::Options> GetOptionsForTarget() {
   }
   if (::qnn::IsTestDspBackend()) {
     options.SetBackendType(::qnn::BackendType::kDspBackend);
+    return options;
+  }
+  if (::qnn::IsTestGpuBackend()) {
+    options.SetBackendType(::qnn::BackendType::kGpuBackend);
     return options;
   }
   return std::nullopt;
@@ -172,7 +177,11 @@ TEST_F(SdkVersionTest, HandlesGreaterThanOrEqual) {
 
 TEST(QnnManagerTest, AdspLibraryPathNoDuplicate) {
   static constexpr char kAdsp[] = "ADSP_LIBRARY_PATH";
-  const char* original_adsp = getenv(kAdsp);
+  const char* original_adsp_ptr = getenv(kAdsp);
+  std::optional<std::string> original_adsp;
+  if (original_adsp_ptr) {
+    original_adsp = original_adsp_ptr;
+  }
 
   // Set a known value
   setenv(kAdsp, "/my/path", /*overwrite=*/1);
@@ -193,7 +202,7 @@ TEST(QnnManagerTest, AdspLibraryPathNoDuplicate) {
 
   // Restore original value
   if (original_adsp) {
-    setenv(kAdsp, original_adsp, /*overwrite=*/1);
+    setenv(kAdsp, original_adsp->c_str(), /*overwrite=*/1);
   } else {
     unsetenv(kAdsp);
   }

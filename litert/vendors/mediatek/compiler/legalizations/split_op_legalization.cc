@@ -19,9 +19,8 @@
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
@@ -29,7 +28,7 @@ namespace litert::mediatek {
 
 Expected<void> LegalizeSplitOp(const NeuronAdapterApi& neuron_adapter_api,
                                NeuronModel* model, OperandMap& operand_map,
-                               const litert::Op& op) {
+                               const litert::compiler::Op& op) {
   std::vector<uint32_t> input_indices;
 
   // op.Inputs()[1] is the input data
@@ -43,9 +42,10 @@ Expected<void> LegalizeSplitOp(const NeuronAdapterApi& neuron_adapter_api,
   input_indices.push_back(axis_tensor_id);
 
   int32_t num_splits;
-  if (auto status = LiteRtGetSplitNumSplitsOption(op.Get(), &num_splits);
+  if (auto status =
+          op.ctx()->get_split_num_splits_option(op.Get(), &num_splits);
       status != kLiteRtStatusOk) {
-    return Error(status, "Failed to get LiteRtGetSplitNumSplitsOption");
+    return Error(status, "Failed to get op.ctx()->get_split_num_splits_option");
   }
   auto num_splits_operand_index = operand_map.AddScalarInt32(num_splits);
   if (!num_splits_operand_index) {

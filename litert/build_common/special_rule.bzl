@@ -121,3 +121,20 @@ def litert_gpu_accelerator_prebuilts():
 # annotation should be used as sparingly as possible.
 def get_compatible_with_portable():
     return None
+
+def exclude_windows_target_compatible_with():
+    """Target compatibility to mark shared libraries that conflict with cc_binary on Windows as incompatible.
+
+    Return the target_compatible_with select block that excludes Windows."""
+    return select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    })
+
+def litert_jni_friends():
+    """Internal visibility for direct clients of LiteRT JNI libraries.
+
+    Return the package group declaration for internal code locations that use
+    "litert/kotlin:litert_api_no_jni" and "litert/kotlin:litert_api_jni" libraries directly."""
+
+    return ["//visibility:private"]

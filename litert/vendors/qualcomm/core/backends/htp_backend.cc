@@ -384,8 +384,7 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   }
 
   // Backend Handle
-  std::vector<const QnnBackend_Config_t*> backend_configs;
-  backend_configs.emplace_back(nullptr);
+  std::array<const QnnBackend_Config_t*, 1> backend_configs = {nullptr};
 
   auto local_backend_handle = CreateBackendHandle(
       local_log_handle.get(), absl::MakeSpan(backend_configs));
@@ -398,20 +397,32 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   // this API is called during offline preparation. However, it will always
   // return the default SoC info (SM8350). If user specifies a SoC, we will
   // override the default.
-#if defined(__x86_64__) || defined(_M_X64)
   if (soc_info.has_value()) {
     QNN_LOG_INFO("Using provided SoC info. SoC name: %s.", soc_info->soc_name);
     soc_info_ = *soc_info;
-  }
+  } else {
+#if defined(__x86_64__) || defined(_M_X64)
+    // Offline compilation on desktop hosts cannot query the target device.
 #else
-  if (auto device_platform_info = CreateDevicePlatformInfo();
-      device_platform_info) {
-    auto soc_model = device_platform_info->v1.hwDevices->v1.deviceInfoExtension
-                         ->onChipDevice.socModel;
-    auto soc_info_online = FindSocInfo(static_cast<SnapdragonModel>(soc_model));
-    soc_info_ = soc_info_online.value_or(kSocInfos[0]);
-  }
+    if (auto device_platform_info = CreateDevicePlatformInfo();
+        device_platform_info) {
+      auto soc_model =
+          device_platform_info->v1.hwDevices->v1.deviceInfoExtension
+              ->onChipDevice.socModel;
+      auto soc_info_online =
+          FindSocInfo(static_cast<SnapdragonModel>(soc_model));
+      soc_info_ = soc_info_online.value_or(kSocInfos[0]);
+    }
+#if defined(_WIN32) && defined(_M_ARM64)
+    if (soc_info_.dsp_arch == DspArch::NONE) {
+      QNN_LOG_WARNING(
+          "Unable to map Windows ARM64 QNN platform info; using SC8380XP "
+          "fallback for Snapdragon X Elite.");
+      soc_info_ = FindSocInfo(SnapdragonModel::SC8380XP).value_or(kSocInfos[0]);
+    }
 #endif
+#endif
+  }
   if (soc_info_.dsp_arch == DspArch::NONE) {
     QNN_LOG_ERROR("SoC info was not configured successfully.")
     return false;

@@ -25,25 +25,34 @@ add_library(samsung_compiler_plugin SHARED
     create_model.cc
     builders/argmax_op_builder.cc
     builders/batch_matmul_op_builder.cc
+    builders/broadcastto_op_builder.cc
     builders/cast_op_builder.cc
     builders/concat_op_builder.cc
     builders/conv2d_op_builder.cc
+    builders/conv3d_op_builder.cc
     builders/cumsum_op_builder.cc
+    builders/dequantize_op_builder.cc
     builders/elementwise_op_builder.cc
     builders/fully_connected_op_builder.cc
     builders/gather_op_builder.cc
     builders/gathernd_op_builder.cc
     builders/gelu_op_builder.cc
     builders/hardswish_op_builder.cc
+    builders/l2normalization_op_builder.cc
     builders/leakyrelu_op_builder.cc
     builders/logistic_op_builder.cc
     builders/pad_op_builder.cc
     builders/pool2d_op_builder.cc
+    builders/quantize_op_builder.cc
     builders/reduce_op_builder.cc
     builders/relu_op_builder.cc
+    builders/relu1_op_builder.cc
+    builders/relu6_op_builder.cc
+    builders/relun1to1_op_builder.cc
     builders/reshape_op_builder.cc
     builders/resizebilinear_op_builder.cc
     builders/resizenearestneighbor_op_builder.cc
+    builders/reversev2_op_builder.cc
     builders/rms_norm_op_builder.cc
     builders/select_op_builder.cc
     builders/selectv2_op_builder.cc
@@ -62,7 +71,7 @@ target_include_directories(samsung_compiler_plugin
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
     PRIVATE
-        ${TFLITE_BUILD_DIR}/flatbuffers/include
+        ${CMAKE_BINARY_DIR}/flatbuffers/include
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/builders>
         $<$<BOOL:${LITECORE_HEADERS_DIR}>:${LITECORE_HEADERS_DIR}>

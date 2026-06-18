@@ -83,6 +83,29 @@ enum class GraphPriority {
   kHigh = 4,
 };
 
+struct CustomOpPackage {
+  std::string name;
+  std::string interface_provider;
+  std::string compile_package_path;
+  std::string dispatch_package_path;
+  // QNN backend target at dispatch time (e.g., "HTP", "GPU").
+  std::string target;
+};
+
+enum class GpuPrecision {
+  kUserProvided = 0,
+  kFp32 = 1,
+  kFp16 = 2,
+  kHybrid = 3,
+};
+
+enum class GpuPerformanceMode {
+  kDefault = 0,
+  kHigh = 1,
+  kNormal = 2,
+  kLow = 3,
+};
+
 class Options {
  public:
   Options() = default;
@@ -102,11 +125,17 @@ class Options {
   void SetEnableWeightSharing(bool enable_weight_sharing);
   bool GetEnableWeightSharing() const;
 
+  void SetEnableJustInTime(bool enable_just_in_time);
+  bool GetEnableJustInTime() const;
+
   void SetUseConvHMX(bool use_conv_hmx);
   bool GetUseConvHMX() const;
 
   void SetUseFoldReLU(bool use_fold_relu);
   bool GetUseFoldReLU() const;
+
+  void SetHtpPPoint(std::int32_t htp_p_point);
+  std::int32_t GetHtpPPoint() const;
 
   void SetHtpPerformanceMode(HtpPerformanceMode htp_performance_mode);
   HtpPerformanceMode GetHtpPerformanceMode() const;
@@ -136,6 +165,12 @@ class Options {
   void SetGraphPriority(GraphPriority graph_priority);
   GraphPriority GetGraphPriority() const;
 
+  void SetGpuPrecision(GpuPrecision gpu_precision);
+  GpuPrecision GetGpuPrecision() const;
+
+  void SetGpuPerformanceMode(GpuPerformanceMode gpu_performance_mode);
+  GpuPerformanceMode GetGpuPerformanceMode() const;
+
   std::string Dump() const;
 
   absl::string_view GetSaverOutputDir() const;
@@ -144,14 +179,23 @@ class Options {
   void SetGraphIOTensorMemType(GraphIOTensorMemType mem_type);
   GraphIOTensorMemType GetGraphIOTensorMemType() const;
 
+  void SetCustomOpPackage(absl::string_view name,
+                          absl::string_view interface_provider,
+                          absl::string_view compile_package_path,
+                          absl::string_view dispatch_package_path,
+                          absl::string_view target);
+  const CustomOpPackage& GetCustomOpPackage() const;
+
  private:
   LogLevel log_level_ = LogLevel::kInfo;
   BackendType backend_type_ = BackendType::kHtpBackend;
   Profiling profiling_ = Profiling::kOff;
   bool use_int64_bias_as_int32_ = true;
   bool enable_weight_sharing_ = false;
+  bool enable_just_in_time_ = false;
   bool use_conv_hmx_ = true;
   bool use_fold_relu_ = true;
+  std::int32_t htp_p_point_ = 0;
   HtpPerformanceMode htp_performance_mode_ = HtpPerformanceMode::kDefault;
   DspPerformanceMode dsp_performance_mode_ = DspPerformanceMode::kDefault;
   std::vector<std::int32_t> dump_tensor_ids_;
@@ -162,9 +206,13 @@ class Options {
   OptimizationLevel optimization_level_ =
       OptimizationLevel::kHtpOptimizeForInferenceO3;
   GraphPriority graph_priority_ = GraphPriority::kDefault;
+  GpuPrecision gpu_precision_ = GpuPrecision::kFp16;
+  GpuPerformanceMode gpu_performance_mode_ = GpuPerformanceMode::kHigh;
   std::string saver_output_dir_;
   GraphIOTensorMemType graph_io_tensor_mem_type_ =
       GraphIOTensorMemType::kMemHandle;
+  // Currently we only support one custom op package.
+  CustomOpPackage custom_op_package_;
 };
 
 // Gets a default logger implementation to stdout.

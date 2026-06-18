@@ -135,6 +135,15 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
     LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().c_str());
     return qnn_manager.Error().Status();
   } else {
+    if (const auto& custom_op_package = qnn_options.GetCustomOpPackage();
+        !custom_op_package.name.empty()) {
+      LITERT_RETURN_IF_ERROR(
+          (*qnn_manager)
+              ->RegisterOpPackage(custom_op_package.dispatch_package_path,
+                                  custom_op_package.interface_provider,
+                                  custom_op_package.target));
+    }
+
     std::swap(QnnManagerStorage(), *qnn_manager);
   }
 
@@ -263,7 +272,7 @@ LiteRtStatus InvocationContextCreate(
     int num_inputs, int num_outputs,
     LiteRtDispatchInvocationContext* invocation_context) {
   auto context = LiteRtDispatchInvocationContextT::Create(
-      Qnn(), *device_context, exec_bytecode_buffer, function_name);
+      Qnn(), *device_context, exec_type, exec_bytecode_buffer, function_name);
   if (!context) {
     LITERT_LOG(LITERT_ERROR,
                "Failed to create context from context binary: %s for function "

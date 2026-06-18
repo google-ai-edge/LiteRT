@@ -19,9 +19,8 @@
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_op_options.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
@@ -30,7 +29,7 @@ namespace litert::mediatek {
 Expected<void> LegalizeBatchMatMulOp(const NeuronAdapterApi& neuron_adapter_api,
                                      NeuronModel* model,
                                      OperandMap& operand_map,
-                                     const litert::Op& op) {
+                                     const litert::compiler::Op& op) {
   LITERT_LOG(LITERT_INFO, "Legalize BatchMatMul");
   std::vector<uint32_t> input_indices;
   for (auto& input : op.Inputs()) {
@@ -44,14 +43,14 @@ Expected<void> LegalizeBatchMatMulOp(const NeuronAdapterApi& neuron_adapter_api,
   // A NEURON_BATCH_MATMUL operation takes 2 scalar operand, which is used to
   // pass a adjX, adjY value.
   bool tfl_matmul_param_adj_x = 0, tfl_matmul_param_adj_y = 0;
-  if (auto status =
-          LiteRtGetBatchMatmulAdjXOption(op.Get(), &tfl_matmul_param_adj_x);
+  if (auto status = op.ctx()->get_batch_matmul_adj_x_option(
+          op.Get(), &tfl_matmul_param_adj_x);
       status != kLiteRtStatusOk) {
     return Error(status, "Failed to get batch matmul adjX");
   }
 
-  if (auto status =
-          LiteRtGetBatchMatmulAdjYOption(op.Get(), &tfl_matmul_param_adj_y);
+  if (auto status = op.ctx()->get_batch_matmul_adj_y_option(
+          op.Get(), &tfl_matmul_param_adj_y);
       status != kLiteRtStatusOk) {
     return Error(status, "Failed to get batch matmul adjY");
   }

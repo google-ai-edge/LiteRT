@@ -11,12 +11,12 @@
     "build": "rimraf dist && npm run copy-static-files  && esbuild --bundle --target=es2020 --outfile=dist/_demo_bin.js --sourcemap src/index.ts"
   },
   "dependencies": {
-    "@litertjs/core": "^2.0.0",
+    "@litertjs/core": "^2.5.0",
     "lit": "^3.1.0",
     "esbuild": "^0.25.9"
   },
   "devDependencies": {
-    "@litertjs/tsconfig": "^2.0.0",
+    "@litertjs/tsconfig": "^2.5.0",
     "mkdirp": "^3.0.1",
     "rimraf": "^6.0.1",
     "typescript": "^5.0.0"

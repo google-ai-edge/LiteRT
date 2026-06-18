@@ -90,6 +90,7 @@ struct AccuracyDebuggerOptions {
   std::vector<std::string> boundary_tensors;
   bool use_gpu_ref = false;
   bool dump_only = false;
+  bool dump_tensors = false;
   AccuracyThresholds thresholds;
 };
 

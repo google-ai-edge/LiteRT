@@ -15,29 +15,103 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_COMMON_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_COMMON_H_
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_rng.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/shape_inference_types.h"
+#include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/simple_buffer.h"
 #include "tflite/schema/schema_generated.h"
 
 namespace litert::testing {
+
+// Describes how ATS should compare actual outputs against the reference outputs
+// produced for a generated graph.
+enum class ConformanceComparatorKind {
+  // Compare outputs by Mean Squared Error against `absolute_tolerance`.
+  kMse,
+  // Compare outputs by exact equality (element-by-element or byte-by-byte for
+  // packed types).
+  kExact,
+  // Compare outputs by using atol and rtol against the reference output, scaled
+  // by accumulation length.
+  kFloatAccumulationAware,
+  // Allow integers to differ by up to `bucket_tolerance` which is usually 1.
+  kQuantizedBucket,
+  // Compare outputs by using pure atol and rtol elementwise against reference.
+  kFloatElementwise,
+};
+
+struct ConformanceSpec {
+  ConformanceComparatorKind comparator_kind = ConformanceComparatorKind::kMse;
+  double absolute_tolerance = 0.0;
+  double relative_tolerance = 0.0;
+  // Only used for kQuantizedBucket. It should be set to 1 for most cases.
+  int64_t bucket_tolerance = 0;
+  // Reduction length K for accumulation-aware float comparators.
+  int64_t accumulation_depth = 1;
+};
+
+class DummyShapeInferenceContext
+    : public ::litert::internal::ShapeInferenceContext {
+ public:
+  explicit DummyShapeInferenceContext(const LiteRtOpT& op) : op_(op) {}
+
+  ::litert::internal::Dims GetInputShape(size_t index) const override {
+    if (index >= op_.Inputs().size() || op_.Inputs()[index] == nullptr) {
+      return {};
+    }
+    const auto& tensor = *op_.Inputs()[index];
+    if (tensor.Type().first == kLiteRtRankedTensorType) {
+      const auto& layout = tensor.Type().second.ranked_tensor_type.layout;
+      return ::litert::internal::Dims(layout.dimensions,
+                                      layout.dimensions + layout.rank);
+    }
+    return {};
+  }
+
+  absl::Span<const uint8_t> GetInputData(size_t index) const override {
+    if (index >= op_.Inputs().size() || op_.Inputs()[index] == nullptr) {
+      return {};
+    }
+    const auto& tensor = *op_.Inputs()[index];
+    if (tensor.Weights().Buffer().Size() > 0) {
+      auto weights = tensor.Weights().Buffer();
+      return absl::MakeConstSpan(weights.Data(), weights.Size());
+    }
+    return {};
+  }
+
+  const ::litert::internal::TflOptions& GetOptions() const override {
+    return ::litert::internal::GetTflOptions(op_);
+  }
+
+  LiteRtOpCode GetOpCode() const override { return op_.OpCode(); }
+
+ private:
+  const LiteRtOpT& op_;
+};
 
 // Helpers for defining generators and their consituent types.
 
@@ -127,7 +201,72 @@ using FbOpTypes =
         std::bool_constant<OpCode == kLiteRtOpCodeTflDepthwiseConv2d>,
             FbOpTraits<tflite::DepthwiseConv2DOptionsT,
                        tflite::BuiltinOperator_DEPTHWISE_CONV_2D,
-                       tflite::BuiltinOptions_DepthwiseConv2DOptions>
+                       tflite::BuiltinOptions_DepthwiseConv2DOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflReduceMax>,
+            FbOpTraits<tflite::ReducerOptionsT,
+                       tflite::BuiltinOperator_REDUCE_MAX,
+                       tflite::BuiltinOptions_ReducerOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflReduceMin>,
+            FbOpTraits<tflite::ReducerOptionsT,
+                       tflite::BuiltinOperator_REDUCE_MIN,
+                       tflite::BuiltinOptions_ReducerOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflReduceProd>,
+            FbOpTraits<tflite::ReducerOptionsT,
+                       tflite::BuiltinOperator_REDUCE_PROD,
+                       tflite::BuiltinOptions_ReducerOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflReduceAny>,
+            FbOpTraits<tflite::ReducerOptionsT,
+                       tflite::BuiltinOperator_REDUCE_ANY,
+                       tflite::BuiltinOptions_ReducerOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflReduceAll>,
+            FbOpTraits<tflite::ReducerOptionsT,
+                       tflite::BuiltinOperator_REDUCE_ALL,
+                       tflite::BuiltinOptions_ReducerOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflSum>,
+            FbOpTraits<tflite::ReducerOptionsT,
+                       tflite::BuiltinOperator_SUM,
+                       tflite::BuiltinOptions_ReducerOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflMaxPool2d>,
+            FbOpTraits<tflite::Pool2DOptionsT,
+                       tflite::BuiltinOperator_MAX_POOL_2D,
+                       tflite::BuiltinOptions_Pool2DOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflAveragePool2d>,
+            FbOpTraits<tflite::Pool2DOptionsT,
+                       tflite::BuiltinOperator_AVERAGE_POOL_2D,
+                       tflite::BuiltinOptions_Pool2DOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflMul>,
+            FbOpTraits<tflite::MulOptionsT,
+                       tflite::BuiltinOperator_MUL,
+                       tflite::BuiltinOptions_MulOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflDiv>,
+            FbOpTraits<tflite::DivOptionsT,
+                       tflite::BuiltinOperator_DIV,
+                       tflite::BuiltinOptions_DivOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflReshape>,
+            FbOpTraits<tflite::ReshapeOptionsT, tflite::BuiltinOperator_RESHAPE,
+                       tflite::BuiltinOptions_ReshapeOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflBatchMatmul>,
+            FbOpTraits<tflite::BatchMatMulOptionsT,
+                       tflite::BuiltinOperator_BATCH_MATMUL,
+                       tflite::BuiltinOptions_BatchMatMulOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflFullyConnected>,
+            FbOpTraits<tflite::FullyConnectedOptionsT,
+                       tflite::BuiltinOperator_FULLY_CONNECTED,
+                       tflite::BuiltinOptions_FullyConnectedOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflConcatenation>,
+            FbOpTraits<tflite::ConcatenationOptionsT,
+                       tflite::BuiltinOperator_CONCATENATION,
+                       tflite::BuiltinOptions_ConcatenationOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflTranspose>,
+            FbOpTraits<tflite::TransposeOptionsT,
+                       tflite::BuiltinOperator_TRANSPOSE,
+                       tflite::BuiltinOptions_TransposeOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflSoftmax>,
+            FbOpTraits<tflite::SoftmaxOptionsT,
+                       tflite::BuiltinOperator_SOFTMAX,
+                       tflite::BuiltinOptions_SoftmaxOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflLogSoftmax>,
+            FbOpTraitsNoOptions<tflite::BuiltinOperator_LOG_SOFTMAX>
     >;
 // clang-format on
 static_assert(FbOpTypes<kLiteRtOpCodeTflAdd>::kHasOptions);
@@ -153,7 +292,7 @@ struct TestLogicTraits {
   // Metaprogramming helper to grab the typed views from the tensor buffers
   // to pass to the reference implementation.
   template <typename ReferenceTensors, typename Buffers, size_t... Is>
-  static Expected<ReferenceTensors> MakeReferenceTensors(
+  static Expected<ReferenceTensors> MakeReferenceInputTensors(
       Buffers& inputs, std::index_sequence<Is...>) {
     const bool types_ok =
         (true && ... &&
@@ -164,11 +303,19 @@ struct TestLogicTraits {
     }
     return ReferenceTensors{inputs[Is].template AsView<InputDataType<Is>>()...};
   }
-  template <typename ReferenceTensors, typename Buffers>
-  static Expected<ReferenceTensors> MakeReferenceTensors(Buffers& inputs) {
-    return MakeReferenceTensors<ReferenceTensors>(
-        inputs,
-        std::make_index_sequence<std::tuple_size_v<ReferenceTensors>>());
+
+  template <typename ReferenceTensors, typename Buffers, size_t... Is>
+  static Expected<ReferenceTensors> MakeReferenceOutputTensors(
+      Buffers& outputs, std::index_sequence<Is...>) {
+    const bool types_ok =
+        (true && ... &&
+         (outputs[Is].ElementType() == GetElementType<OutputDataType<Is>>()));
+    if (!types_ok) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Output types do not match reference implementation types");
+    }
+    return ReferenceTensors{
+        outputs[Is].template AsView<OutputDataType<Is>>()...};
   }
 
  public:
@@ -204,7 +351,8 @@ struct TestLogicTraits {
                    absl::StrFormat("Expected %d inputs, got %d", kNumInputs,
                                    inputs.size()));
     }
-    return MakeReferenceTensors<ReferenceInputs>(inputs);
+    return MakeReferenceInputTensors<ReferenceInputs>(
+        inputs, std::make_index_sequence<std::tuple_size_v<ReferenceInputs>>());
   }
 
   // Get the typed reference output views from the output buffers.
@@ -214,7 +362,9 @@ struct TestLogicTraits {
                    absl::StrFormat("Expected %d inputs, got %d", kNumOutputs,
                                    outputs.size()));
     }
-    return MakeReferenceTensors<ReferenceOutputs>(outputs);
+    return MakeReferenceOutputTensors<ReferenceOutputs>(
+        outputs,
+        std::make_index_sequence<std::tuple_size_v<ReferenceOutputs>>());
   }
 };
 
@@ -258,6 +408,25 @@ class TestGraph {
   virtual Expected<void> Reference(const VarBuffers& inputs,
                                    VarBuffers& outputs) const = 0;
 
+  // Output comparison policy for the graph under test.
+  virtual ConformanceSpec GetConformanceSpec() const {
+    ConformanceSpec spec;
+    if (HasReference()) {
+      spec.comparator_kind = ConformanceComparatorKind::kFloatElementwise;
+      spec.absolute_tolerance = ReferenceTolerance().value_or(1e-4);
+      spec.relative_tolerance = 1e-4;
+    } else {
+      spec.comparator_kind = ConformanceComparatorKind::kMse;
+      spec.absolute_tolerance = 1e2;
+    }
+    return spec;
+  }
+
+  // Optional output-comparison tolerance override for custom references.
+  virtual std::optional<double> ReferenceTolerance() const {
+    return std::nullopt;
+  }
+
   virtual ~TestGraph() = default;
 
   TestGraph(const TestGraph&) = delete;
@@ -278,7 +447,7 @@ inline int ComputePaddingBefore(int in_size, int filter_size, int stride,
   if (padding == tflite::Padding_SAME) {
     int effective_filter_size = (filter_size - 1) * dilation + 1;
     int pad_along = (out_size - 1) * stride + effective_filter_size - in_size;
-    return pad_along / 2;
+    return std::max(0, pad_along) / 2;
   }
   return 0;
 }
@@ -287,6 +456,23 @@ template <typename T>
 inline OwningBufferRef<uint8_t> MakeOwningBufferRef(const std::vector<T>& vec) {
   return OwningBufferRef<uint8_t>(reinterpret_cast<const uint8_t*>(vec.data()),
                                   vec.size() * sizeof(T));
+}
+
+template <typename T>
+inline std::vector<float> UnpackToFloat(absl::Span<const T> data) {
+  std::vector<float> res(data.size());
+  for (size_t i = 0; i < data.size(); ++i) {
+    res[i] = static_cast<float>(data[i]);
+  }
+  return res;
+}
+
+template <typename T>
+inline void PackFromFloat(absl::Span<const float> src, absl::Span<T> dst) {
+  ABSL_CHECK_EQ(src.size(), dst.size());
+  for (size_t i = 0; i < src.size(); ++i) {
+    dst[i] = static_cast<T>(src[i]);
+  }
 }
 
 }  // namespace litert::testing

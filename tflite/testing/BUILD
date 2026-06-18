@@ -2,7 +2,6 @@ load(
     "@org_tensorflow//tensorflow:tensorflow.bzl",
     "tf_cc_binary",
     "tf_cc_test",
-    "tf_features_nolayering_check_if_ios",
 )
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 load("@org_tensorflow//tensorflow/core/platform:build_config_root.bzl", "if_pywrap")
@@ -447,7 +446,6 @@ cc_library(
     name = "tf_driver",
     srcs = ["tf_driver.cc"],
     hdrs = ["tf_driver.h"],
-    features = tf_features_nolayering_check_if_ios(),
     deps = [
         ":join",
         ":split",
@@ -499,7 +497,6 @@ cc_library(
     name = "generate_testspec",
     srcs = ["generate_testspec.cc"],
     hdrs = ["generate_testspec.h"],
-    features = tf_features_nolayering_check_if_ios(),
     deps = [
         ":join",
         ":split",
@@ -580,7 +577,6 @@ cc_library(
 cc_library(
     name = "tflite_diff_flags",
     hdrs = ["tflite_diff_flags.h"],
-    features = tf_features_nolayering_check_if_ios(),
     deps = [
         ":split",
         ":tflite_diff_util",
@@ -706,6 +702,7 @@ cc_test(
         "//tflite:framework",
         "//tflite/core:cc_api_stable",
         "//tflite/core/c:common",
+        "@com_google_absl//absl/log",
         "@com_google_googletest//:gtest_main",
         "@org_tensorflow//tensorflow/core:tflite_portable_logging",
     ],

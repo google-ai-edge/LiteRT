@@ -12,9 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# copybara:uncomment load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
-
-# copybara:uncomment load("//litert/python:strict.bzl", "py_strict_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
 
@@ -88,6 +87,7 @@ py_library(
     srcs = [
         "tensor_buffer.py",
     ],
+    # copybara:uncomment strict_deps = False,
     visibility = ["//visibility:public"],
     deps = [
         ":_pywrap_litert_tensor_buffer_wrapper",
@@ -96,7 +96,7 @@ py_library(
 )
 
 # copybara:uncomment_begin(google-only)
-# py_strict_test(
+# py_test(
 #     name = "tensor_buffer_test",
 #     srcs = ["tensor_buffer_test.py"],
 #     # Static linking is required because this loads a cc_binary as a shared

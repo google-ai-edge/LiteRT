@@ -702,9 +702,11 @@ cc_library(
         "//litert/core:build_stamp",
         "//litert/core:environment",
         "//litert/core:error_reporter",
+        "//litert/core:filesystem",
         "//litert/core:options",
         "//litert/core/model",
         "//litert/core/util:flatbuffer_tools",
+        "//litert/core/util:perfetto_profiling",
         "//litert/runtime/dispatch:dispatch_opaque_options",
         # copybara:uncomment "//third_party/odml/litert/weight_loader:external_weight_loader",
         "//weight_loader:external_weight_loader",  # copybara:comment
@@ -726,7 +728,6 @@ cc_library(
     # "//third_party/odml/infra/northbound/aot:hardware_buffer",
     # "//third_party/odml/infra/northbound/aot:program_analysis",
     # "//third_party/odml/infra/northbound/graph:identifiers",
-    # "//litert/core:filesystem",
     # "//litert/vendors/c:litert_dispatch_c_api",
     # ],
     # "//conditions:default": [],
@@ -774,6 +775,8 @@ cc_test(
     data = [
         "//litert/test:testdata/simple_add_dynamic_shape.tflite",
         "//litert/test:testdata/simple_model.tflite",
+        "//litert/vendors/examples:example_dispatch_so",
+        "//litert/vendors/examples:example_plugin_so",
     ],
     linkopts = litert_android_linkopts(),
     # require GPU to run OpenCL tests.
@@ -843,6 +846,10 @@ cc_test(
         "nomacos",
         "nowindows",
     ],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":ahwb_buffer",
         ":gl_buffer",

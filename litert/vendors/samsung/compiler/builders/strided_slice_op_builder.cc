@@ -15,7 +15,14 @@
 
 #include "litert/vendors/samsung/compiler/builders/strided_slice_op_builder.h"
 
+#include <cstdint>
+
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_op_options.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
@@ -25,7 +32,8 @@ constexpr int kBeginIndex = 1;
 constexpr int kEndIndex = 2;
 constexpr int kStridesIndex = 3;
 
-Expected<OpWrapper> BuildStridedSliceOp(const Op& op) {
+Expected<OpWrapper> BuildStridedSliceOp(const LiteRtCompilerContext* ctx,
+                                        const litert::compiler::Op& op) {
   OpWrapper op_wrapper("StridedSlice");
 
   op_wrapper.AddInput(op.Inputs()[kIOIndex]);
@@ -35,16 +43,17 @@ Expected<OpWrapper> BuildStridedSliceOp(const Op& op) {
           shrink_axis_mask = 0;
   bool offset = false;
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetStridedSliceBeginMaskOption(op.Get(), &begin_mask));
+      ctx->get_strided_slice_begin_mask_option(op.Get(), &begin_mask));
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetStridedSliceEndMaskOption(op.Get(), &end_mask));
+      ctx->get_strided_slice_end_mask_option(op.Get(), &end_mask));
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetStridedSliceEllipsisMaskOption(op.Get(), &ellipsis_mask));
+      ctx->get_strided_slice_ellipsis_mask_option(op.Get(), &ellipsis_mask));
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetStridedSliceNewAxisMaskOption(op.Get(), &new_axis_mask));
+      ctx->get_strided_slice_new_axis_mask_option(op.Get(), &new_axis_mask));
+  LITERT_RETURN_IF_ERROR(ctx->get_strided_slice_shrink_axis_mask_option(
+      op.Get(), &shrink_axis_mask));
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetStridedSliceShrinkAxisMaskOption(op.Get(), &shrink_axis_mask));
-  LITERT_RETURN_IF_ERROR(LiteRtGetStridedSliceOffsetOption(op.Get(), &offset));
+      ctx->get_strided_slice_offset_option(op.Get(), &offset));
 
   if (offset) {
     return Error(kLiteRtStatusErrorUnsupported,

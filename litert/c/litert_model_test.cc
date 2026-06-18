@@ -28,8 +28,11 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
@@ -52,9 +55,14 @@ TEST(LiteRtModelTest, CreateFromAllocation) {
   auto allocation = std::make_unique<tflite::MemoryAllocation>(
       model_buffer.Data(), model_buffer.Size(), tflite::DefaultErrorReporter());
 
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
+            kLiteRtStatusOk);
+
   LiteRtModel model = nullptr;
-  LITERT_ASSERT_OK(
-      LiteRtCreateModelFromAllocation(std::move(allocation), &model));
+  LITERT_ASSERT_OK(LiteRtCreateModelFromAllocation(
+      environment, allocation.release(), &model));
   ASSERT_NE(model, nullptr);
 
   LiteRtParamIndex num_subgraphs;
@@ -62,7 +70,38 @@ TEST(LiteRtModelTest, CreateFromAllocation) {
   EXPECT_EQ(num_subgraphs, 1);
 
   LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
 }
+
+#if !defined(LITERT_WINDOWS_OS)
+TEST(LiteRtModelTest, CreateFromFd) {
+  if (!tflite::MMAPAllocation::IsSupported()) {
+    GTEST_SKIP() << "MMAPAllocation is not supported";
+  }
+
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
+            kLiteRtStatusOk);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model_file, litert::ScopedFile::Open(
+                           litert::testing::GetTestFilePath("one_mul.tflite")));
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t model_size, model_file.GetSize());
+
+  LiteRtModel model = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateModelFromFd(environment, model_file.file(), 0,
+                                           model_size, &model));
+  ASSERT_NE(model, nullptr);
+
+  LiteRtParamIndex num_subgraphs;
+  LITERT_ASSERT_OK(LiteRtGetNumModelSubgraphs(model, &num_subgraphs));
+  EXPECT_EQ(num_subgraphs, 1);
+
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
+}
+#endif  // !defined(LITERT_WINDOWS_OS)
 
 TEST(LiteRtWeightsTest, GetNullWeights) {
   LiteRtWeightsT weights = {};
@@ -205,7 +244,7 @@ TEST(LiteRtTensorTest, Name) {
   static constexpr const char kName[] = "foo";
 
   LiteRtTensorT tensor;
-  tensor.SetName(std::string(kName));
+  tensor.SetName(kName);
 
   const char* name;
   LITERT_ASSERT_OK(LiteRtGetTensorName(&tensor, &name));
@@ -286,6 +325,127 @@ TEST(LiteRtTensorTest, QuantizationPerChannel) {
   ASSERT_EQ(per_channel_quantization.quantized_dimension, kQuantizedDimension);
 }
 
+TEST(LiteRtTensorTest, QuantizationBlockWise) {
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
+            kLiteRtStatusOk);
+
+  auto runtime =
+      litert::testing::MakeRuntimeFromTestFile("blockwise_quantized.tflite");
+  ASSERT_TRUE(runtime);
+
+  const auto model_buffer = (*runtime)->Flatbuffer().Buf();
+  auto allocation = std::make_unique<tflite::MemoryAllocation>(
+      model_buffer.Data(), model_buffer.Size(), tflite::DefaultErrorReporter());
+
+  LiteRtModel model = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateModelFromAllocation(
+      environment, allocation.release(), &model));
+  ASSERT_NE(model, nullptr);
+
+  LiteRtSubgraph subgraph;
+  LITERT_ASSERT_OK(LiteRtGetModelSubgraph(model, 0, &subgraph));
+  ASSERT_NE(subgraph, nullptr);
+
+  LiteRtOp op;
+  LITERT_ASSERT_OK(LiteRtGetSubgraphOp(subgraph, 0, &op));
+  ASSERT_NE(op, nullptr);
+
+  LiteRtParamIndex num_inputs;
+  LITERT_ASSERT_OK(LiteRtGetNumOpInputs(op, &num_inputs));
+  ASSERT_EQ(num_inputs, 2);
+
+  LiteRtTensor quantized_tensor = nullptr;
+  for (int i = 0; i < num_inputs; ++i) {
+    LiteRtTensor input;
+    LITERT_ASSERT_OK(LiteRtGetOpInput(op, i, &input));
+    const char* name;
+    LITERT_ASSERT_OK(LiteRtGetTensorName(input, &name));
+    if (absl::string_view(name) == "quantized_tensor") {
+      quantized_tensor = input;
+      break;
+    }
+  }
+  ASSERT_NE(quantized_tensor, nullptr);
+
+  LiteRtQuantizationTypeId q_type_id;
+  LITERT_ASSERT_OK(LiteRtGetQuantizationTypeId(quantized_tensor, &q_type_id));
+  ASSERT_EQ(q_type_id, kLiteRtQuantizationBlockWise);
+
+  LiteRtQuantizationBlockWise block_wise_quantization;
+  LITERT_ASSERT_OK(LiteRtGetBlockWiseQuantization(quantized_tensor,
+                                                  &block_wise_quantization));
+
+  ASSERT_NE(block_wise_quantization.scales, nullptr);
+  const char* scales_name;
+  LITERT_ASSERT_OK(
+      LiteRtGetTensorName(block_wise_quantization.scales, &scales_name));
+  EXPECT_STREQ(scales_name, "scales");
+
+  ASSERT_NE(block_wise_quantization.zero_points, nullptr);
+  const char* zps_name;
+  LITERT_ASSERT_OK(
+      LiteRtGetTensorName(block_wise_quantization.zero_points, &zps_name));
+  EXPECT_STREQ(zps_name, "zps");
+
+  EXPECT_EQ(block_wise_quantization.block_size, 32);
+
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
+}
+
+TEST(LiteRtTensorTest, QwenQuantizationBlockWise) {
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
+            kLiteRtStatusOk);
+
+  auto runtime = litert::testing::MakeRuntimeFromTestFile(
+      "qwen_fc_blockwise_quantized.tflite");
+  ASSERT_TRUE(runtime);
+
+  const auto model_buffer = (*runtime)->Flatbuffer().Buf();
+  auto allocation = std::make_unique<tflite::MemoryAllocation>(
+      model_buffer.Data(), model_buffer.Size(), tflite::DefaultErrorReporter());
+
+  LiteRtModel model = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateModelFromAllocation(
+      environment, allocation.release(), &model));
+  ASSERT_NE(model, nullptr);
+
+  LiteRtSubgraph subgraph;
+  LITERT_ASSERT_OK(LiteRtGetModelSubgraph(model, 0, &subgraph));
+  ASSERT_NE(subgraph, nullptr);
+
+  LiteRtOp op;
+  LITERT_ASSERT_OK(LiteRtGetSubgraphOp(subgraph, 0, &op));
+  ASSERT_NE(op, nullptr);
+
+  LiteRtParamIndex num_inputs;
+  LITERT_ASSERT_OK(LiteRtGetNumOpInputs(op, &num_inputs));
+  ASSERT_GE(num_inputs, 2);
+
+  LiteRtTensor weights_tensor;
+  LITERT_ASSERT_OK(LiteRtGetOpInput(op, 1, &weights_tensor));
+  ASSERT_NE(weights_tensor, nullptr);
+
+  LiteRtQuantizationTypeId q_type_id;
+  LITERT_ASSERT_OK(LiteRtGetQuantizationTypeId(weights_tensor, &q_type_id));
+  ASSERT_EQ(q_type_id, kLiteRtQuantizationBlockWise);
+
+  LiteRtQuantizationBlockWise block_wise_quantization;
+  LITERT_ASSERT_OK(
+      LiteRtGetBlockWiseQuantization(weights_tensor, &block_wise_quantization));
+
+  ASSERT_NE(block_wise_quantization.scales, nullptr);
+
+  EXPECT_EQ(block_wise_quantization.block_size, 32);
+
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
+}
+
 TEST(LiteRtOpTest, GetOpCode) {
   static constexpr auto kCode = kLiteRtOpCodeTflCustom;
 
@@ -352,6 +512,21 @@ TEST(LiteRtOpTest, GetCustomCodeNotCustom) {
   op.SetOpCode(kLiteRtOpCodeTflAdd);
   const char* code;
   EXPECT_NE(LiteRtGetCustomCode(&op, &code), kLiteRtStatusOk);
+}
+
+TEST(LiteRtOpTest, GetCustomOptions) {
+  static constexpr std::array<uint8_t, 4> kOptions = {0x01, 0x02, 0x03, 0x04};
+
+  LiteRtOpT op;
+  op.SetCustomOptions(kOptions.data(), kOptions.size());
+
+  const uint8_t* options = nullptr;
+  int32_t options_size = 0;
+  LITERT_ASSERT_OK(LiteRtGetCustomOptions(&op, &options, &options_size));
+
+  ASSERT_EQ(options_size, kOptions.size());
+  ASSERT_THAT(absl::MakeConstSpan(options, options_size),
+              ElementsAreArray(kOptions));
 }
 
 TEST(LiteRtSubgraphTest, GetInputs) {
@@ -483,12 +658,93 @@ TEST(LiteRtModelTest, GetSubgraph) {
   EXPECT_EQ(actual_subgraph, &subgraph);
 }
 
+TEST(LiteRtModelTest, GetSubgraphRejectsNullArguments) {
+  LiteRtModelT model;
+  model.EmplaceSubgraph();
+
+  LiteRtParamIndex num_subgraphs;
+  EXPECT_THAT(LiteRtGetNumModelSubgraphs(nullptr, &num_subgraphs),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtGetNumModelSubgraphs(&model, nullptr),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+
+  LiteRtSubgraph actual_subgraph;
+  EXPECT_THAT(LiteRtGetModelSubgraph(nullptr, 0, &actual_subgraph),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtGetModelSubgraph(&model, 0, nullptr),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+}
+
 TEST(LiteRtModelTest, GetSubgraphOOB) {
   LiteRtModelT model;
 
   LiteRtSubgraph actual_subgraph;
   EXPECT_THAT(LiteRtGetModelSubgraph(&model, 0, &actual_subgraph),
               IsError(kLiteRtStatusErrorIndexOOB));
+}
+
+TEST(LiteRtModelTest, GetSignatureSubgraphRejectsNullOutput) {
+  LiteRtSubgraphT subgraph;
+  LiteRtSignatureT signature(&subgraph, {}, {}, {}, {}, "signature");
+
+  LiteRtSubgraph actual_subgraph;
+  EXPECT_THAT(LiteRtGetSignatureSubgraph(nullptr, &actual_subgraph),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtGetSignatureSubgraph(&signature, nullptr),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+}
+
+TEST(LiteRtModelTest, SerializeModelRejectsNullArguments) {
+  LiteRtModelT model;
+  uint8_t* buf = nullptr;
+  size_t size = 0;
+  size_t offset = 0;
+  const LiteRtModelSerializationOptions options = {/*bytecode_alignment=*/64};
+
+  EXPECT_THAT(LiteRtSerializeModel(nullptr, &buf, &size, &offset,
+                                   /*destroy_model=*/false, options),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtSerializeModel(&model, nullptr, &size, &offset,
+                                   /*destroy_model=*/false, options),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtSerializeModel(&model, &buf, nullptr, &offset,
+                                   /*destroy_model=*/false, options),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtSerializeModel(&model, &buf, &size, nullptr,
+                                   /*destroy_model=*/false, options),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+}
+
+TEST(LiteRtModelTest, SerializeModelWithSignaturesRejectsNullArguments) {
+  LiteRtModelT model;
+  model.EmplaceSubgraph();
+  uint8_t* buf = nullptr;
+  size_t size = 0;
+  size_t offset = 0;
+  const LiteRtModelSerializationOptions options = {/*bytecode_alignment=*/64};
+  char signature[] = "signature";
+  char* signatures[] = {signature};
+
+  EXPECT_THAT(LiteRtSerializeModelWithSignatures(
+                  nullptr, &buf, &size, &offset, /*destroy_model=*/false,
+                  signatures, /*num_signatures=*/1, options),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtSerializeModelWithSignatures(
+                  &model, nullptr, &size, &offset, /*destroy_model=*/false,
+                  signatures, /*num_signatures=*/1, options),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtSerializeModelWithSignatures(
+                  &model, &buf, nullptr, &offset, /*destroy_model=*/false,
+                  signatures, /*num_signatures=*/1, options),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtSerializeModelWithSignatures(
+                  &model, &buf, &size, nullptr, /*destroy_model=*/false,
+                  signatures, /*num_signatures=*/1, options),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtSerializeModelWithSignatures(
+                  &model, &buf, &size, &offset, /*destroy_model=*/false,
+                  nullptr, /*num_signatures=*/1, options),
+              IsError(kLiteRtStatusErrorInvalidArgument));
 }
 
 TEST(LiteRtModelTest, SerializeModelWithSignaturesWithOneSignature) {

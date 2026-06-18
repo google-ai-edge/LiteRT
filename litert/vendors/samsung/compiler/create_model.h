@@ -20,10 +20,11 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/inlined_vector.h"  // from @com_google_absl
 #include "common-types.h"  // from @exynos_ai_litecore
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_consts.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/samsung/ai_litecore_manager.h"
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
@@ -31,18 +32,19 @@ namespace litert::samsung {
 
 class GraphCreator {
  public:
-  GraphCreator(AiLiteCoreManager::Ptr ai_lite_core, graph_handler_t handler);
+  GraphCreator(AiLiteCoreManager::Ptr ai_lite_core, graph_handler_t handler,
+               const LiteRtCompilerContext* ctx);
 
   GraphCreator(const GraphCreator&) = delete;
   GraphCreator& operator=(const GraphCreator&) = delete;
 
-  LiteRtStatus CreateTensor(const Tensor& t);
+  LiteRtStatus CreateTensor(const litert::compiler::Tensor& t);
 
   LiteRtStatus CreateOpNode(const OpWrapper& op_wrapper);
 
-  LiteRtStatus AddInput(const Tensor& t_input);
+  LiteRtStatus AddInput(const litert::compiler::Tensor& t_input);
 
-  LiteRtStatus AddOutput(const Tensor& t_output);
+  LiteRtStatus AddOutput(const litert::compiler::Tensor& t_output);
 
   LiteRtStatus Finish() const;
 
@@ -51,6 +53,7 @@ class GraphCreator {
  private:
   AiLiteCoreManager::Ptr ai_lite_core_;
   graph_handler_t handler_;
+  const LiteRtCompilerContext* ctx_;
   // tensor map record the LiteRtTensor which is already registered
   absl::flat_hash_map<uint32_t, TENSOR_ID_T> tensors_map_;
   // graph inputs/outputs
@@ -60,10 +63,12 @@ class GraphCreator {
       output_indices_;
 
   /* private function */
-  LiteRtStatus CreateQParam(const Tensor& t);
+  LiteRtStatus CreateQParam(const litert::compiler::Tensor& t);
 };
 
-Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
-                                        const Subgraph& partition);
+Expected<std::vector<char>> CreateModel(
+    AiLiteCoreManager::Ptr ai_lite_core,
+    const LiteRtCompilerContext* compiler_context,
+    const litert::compiler::Subgraph& partition);
 }  // namespace litert::samsung
 #endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_CREATE_MODEL_H_

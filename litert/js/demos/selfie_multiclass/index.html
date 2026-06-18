@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<!--
+ Copyright 2026 Google LLC
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LiteRT.js Selfie Multiclass Segmentation Demo</title>
+  <style>
+    body {
+      font-family: 'Roboto', sans-serif;
+      display: flex;
+      justify-content: center;
+      background-color: #f0f0f0;
+    }
+
+    .video-wrapper {
+      position: relative;
+      width: 640px;
+      height: 480px;
+    }
+
+    #webcam, #canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 640px;
+      height: 480px;
+      border-radius: 10px;
+    }
+
+    #webcam {
+      transform: rotateY(180deg); /* Mirror view for natural feel */
+    }
+
+    #canvas {
+      transform: rotateY(180deg); 
+      z-index: 1;
+    }
+
+    .controls {
+      text-align: center;
+      margin-top: 20px;
+    }
+  </style>
+  <script src="./_demo_bin.js" defer></script>
+</head>
+<body>
+  <div id="container">
+    <div class="video-wrapper">
+      <video id="webcam" autoplay playsinline></video>
+      <canvas id="canvas"></canvas>
+    </div>
+    
+    <div class="controls">
+      <label for="backendSelect">Backend:</label>
+      <select id="backendSelect">
+        <option value="webnn">WebNN</option>
+        <option value="webgpu" selected>WebGPU</option>
+        <option value="wasm">WASM</option>
+      </select>
+      <button id="webcamButton">ENABLE WEBCAM</button>
+      <p id="status">Loading LiteRT...</p>
+    </div>
+  </div>
+</body>
+</html>

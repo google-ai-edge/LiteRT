@@ -136,10 +136,10 @@ describe('LiteRt', () => {
          if (await supportsFeature('webnn')) {
            await resetLiteRt(/* loadFromDirectory= */ true, {jspi: true});
            const model = await loadAndCompile('/testdata/add_10x10.tflite', {
-             accelerator: ['webnn', 'wasm'],
+             accelerator: 'webnn',
              webNNOptions: {devicePreference: 'npu'}
            });
-           expect(model.options.accelerator).toEqual(['webnn', 'wasm']);
+           expect(model.options.accelerator).toEqual('webnn');
            expect(model.isFullyAccelerated).toBeTrue();
            model.delete();
            await resetLiteRt();
@@ -219,6 +219,65 @@ describe('LiteRt', () => {
       }
       wasmModel.delete();
       wasmModule._free(ptr);
+    });
+
+    describe('fallback model', () => {
+      let model: CompiledModel;
+
+      beforeAll(async () => {
+        if (!(await supportsFeature('jspi'))) {
+          pending('This browser does not support JSPI');
+          return;
+        }
+        await resetLiteRt(/* loadFromDirectory= */ true, {jspi: true});
+        model = await loadAndCompile(
+            '/testdata/fallback_model.tflite', {accelerator: 'webgpu'});
+      });
+
+      afterAll(async () => {
+        if (model) {
+          model.delete();
+        }
+        await resetLiteRt();
+      });
+
+      it('loads the model', () => {
+        expect(model).toBeDefined();
+      });
+
+      it('is not fully accelerated (falls back to CPU)', () => {
+        expect(model.isFullyAccelerated).toBeFalse();
+      });
+
+      it('logs a warning about partial delegation', async () => {
+        const warnSpy = spyOn(console, 'warn');
+        const tempModel = await loadAndCompile(
+            '/testdata/fallback_model.tflite', {accelerator: 'webgpu'});
+        expect(warnSpy).toHaveBeenCalledWith(
+            '%c[LiteRT]%c Model not fully compiled for webgpu. Partially delegating to WASM execution.',
+            'background: #FFA000; color: black; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+            'font-weight: bold;'
+        );
+        tempModel.delete();
+      });
+
+      it('runs successfully with fallback', async () => {
+        const inputData = new Float32Array([1, 2, 3, 4]);
+        const input = new Tensor(inputData, [1, 4]);
+        const outputs = await model.run([input]);
+        expect(outputs).toBeDefined();
+        expect(outputs.length).toBe(1);
+
+        const outputTensor = outputs[0];
+        expect(outputTensor).toBeDefined();
+
+        const outputData = await outputTensor.data();
+        const expectedOutput = new Float32Array([0, 0, 0, 0, 2, 3, 4, 5]);
+        expect(outputData).toEqual(expectedOutput);
+
+        input.delete();
+        outputTensor.delete();
+      });
     });
   });
 
@@ -434,42 +493,80 @@ describe('LiteRt', () => {
       }
     });
 
-    it('loads with compileOptions with multiple accelerators array (webgpu and wasm)',
-       async () => {
-         const adapter = await navigator.gpu.requestAdapter();
-         if (!adapter) {
-           throw new Error('No GPU adapter found.');
-         }
-         const device = await adapter.requestDevice();
-         liteRt.setWebGpuDevice(device);
-
-         const model = await loadAndCompile(modelPath, {
-           environment: new Environment({webGpuDevice: device}),
-           accelerator: ['webgpu', 'wasm'],
-         });
-
-         expect(model).toBeDefined();
-         expect(model.options.accelerator).toEqual(['webgpu', 'wasm']);
-         model.delete();
-       });
-
-    it('loads with compileOptions with an array of a single accelerator (wasm)',
-       async () => {
-         const model = await loadAndCompile(modelPath, {
-           accelerator: ['wasm'],
-         });
-         expect(model).toBeDefined();
-         expect(model.options.accelerator).toEqual(['wasm']);
-         model.delete();
-       });
-
-    it('throws an error if WebGPU is in the accelerators array but no WebGPU device is available',
+    it('throws an error if WebGPU is requested but no WebGPU device is available',
        async () => {
          await expectAsync(loadAndCompile(modelPath, {
            environment: new Environment({webGpuDevice: null}),
-           accelerator: ['webgpu', 'wasm'],
+           accelerator: 'webgpu',
          })).toBeRejectedWithError(/no WebGPU device is set/);
        });
+
+    describe('fallback on non-JSPI', () => {
+      beforeEach(resetLiteRt);
+
+      it('falls back to WASM if model is not fully delegated to WebGPU on non-JSPI',
+         async () => {
+           const device = liteRt.getWebGpuDevice();
+           if (!device) {
+             pending('No WebGPU device found in default environment.');
+             return;
+           }
+           // tslint:disable-next-line:no-any
+           const originalSuspending = (globalThis.WebAssembly as any).Suspending;
+           const needToMock = 'Suspending' in globalThis.WebAssembly;
+           let jspiMocked = false;
+
+           if (needToMock) {
+             try {
+               // In strict mode, delete will throw if the property is non-configurable.
+               // tslint:disable-next-line:no-any
+               jspiMocked = delete (globalThis.WebAssembly as any).Suspending;
+               if (!jspiMocked) {
+                 pending('Cannot mock JSPI (delete returned false).');
+                 return;
+               }
+             } catch (e) {
+               pending(`Cannot mock JSPI (delete threw error: ${e}).`);
+               return;
+             }
+           }
+
+           try {
+             const model = await loadAndCompile('/testdata/fallback_model.tflite', {
+               environment: new Environment({webGpuDevice: device}),
+               accelerator: 'webgpu',
+             });
+
+             expect(model).toBeDefined();
+             // Assert that it fell back to WASM
+             expect(model.options.accelerator).toBe('wasm');
+
+             // Run the model to make sure it works
+             const inputData = new Float32Array([1, 2, 3, 4]);
+             const input = new Tensor(inputData, [1, 4]);
+             const outputs = await model.run([input]);
+             expect(outputs).toBeDefined();
+             expect(outputs.length).toBe(1);
+
+             const outputTensor = outputs[0];
+             expect(outputTensor).toBeDefined();
+
+             const outputData = await outputTensor.data();
+             const expectedOutput = new Float32Array([0, 0, 0, 0, 2, 3, 4, 5]);
+             expect(outputData).toEqual(expectedOutput);
+
+             input.delete();
+             outputTensor.delete();
+             model.delete();
+           } finally {
+             // Restore JSPI support status if we mocked it
+             if (needToMock && jspiMocked && originalSuspending) {
+               // tslint:disable-next-line:no-any
+               (globalThis.WebAssembly as any).Suspending = originalSuspending;
+             }
+           }
+         });
+    });
   });
 
   describe('input / output details', () => {

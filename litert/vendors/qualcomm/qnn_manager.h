@@ -125,6 +125,8 @@ class QnnManager {
 
   static absl::Span<const QnnContext_Config_t*> DefaultContextConfigs();
   static absl::Span<const QnnContext_Config_t*> WeightSharingContextConfigs();
+  static absl::Span<const QnnContext_Config_t*> GpuPerformanceContextConfigs(
+      ::qnn::GpuPerformanceMode performance_mode);
   // Get resolved function pointers for qnn sdk calls. Nullptr if functions
   // have not been resolved yet.
   const QnnApi* Api() const;
@@ -161,6 +163,10 @@ class QnnManager {
 
   LiteRtStatus ValidateOp(::qnn::OpWrapper& op);
 
+  LiteRtStatus RegisterOpPackage(const std::string& package_path,
+                                 const std::string& interface_provider,
+                                 const std::string& target);
+
   bool IsFp16Supported() {
     // TODO(jiunkaiy): Remove this function after upgrading to stricter SDK
     // restrictions.
@@ -178,6 +184,8 @@ class QnnManager {
   static Expected<SdkVersion> ParseSdkVersion(const char* build_id);
 
   SdkVersion GetSdkVersion() const { return sdk_version_; }
+
+  const ::qnn::SocInfo& GetSocInfo() const { return soc_info_; }
 
  private:
   QnnManager() = default;
@@ -228,6 +236,7 @@ class QnnManager {
   std::unique_ptr<::qnn::QnnBackend> backend_ = nullptr;
   ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[0];
   ::qnn::Options options_;
+  std::optional<std::string> shared_library_dir_;
   SdkVersion sdk_version_{};
 };
 

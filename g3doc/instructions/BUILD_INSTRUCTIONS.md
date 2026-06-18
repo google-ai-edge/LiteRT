@@ -215,7 +215,7 @@ adb push "${HOST_NPU_LIB}/aarch64-android/libQnnHtpPrepare.so" "${DEVICE_NPU_LIB
 adb push "${HOST_NPU_LIB}/${QNN_SKEL_PATH_ARCH}/unsigned/${QNN_SKEL_LIB}" "${DEVICE_NPU_LIBRARY_DIR}/"
 
 # Push GPU libraries
-adb push "${HOST_GPU_LIBRARY_DIR}/libLiteRtGpuAccelerator.so" "${DEVICE_BASE_DIR}/"
+adb push "${HOST_GPU_LIBRARY_DIR}/libLiteRtClGlAccelerator.so" "${DEVICE_BASE_DIR}/"
 
 # For Qualcomm NPU (ADSP_LIBRARY_PATH needs to be specified)
 FULL_COMMAND="cd ${DEVICE_BASE_DIR} && LD_LIBRARY_PATH=\"${LD_LIBRARY_PATH}\" ADSP_LIBRARY_PATH=\"${ADSP_LIBRARY_PATH}\" ${RUN_COMMAND}"

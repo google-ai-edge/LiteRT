@@ -18,6 +18,7 @@
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/test/common.h"
+#include "litert/test/load_test_model.h"
 
 namespace litert {
 namespace {

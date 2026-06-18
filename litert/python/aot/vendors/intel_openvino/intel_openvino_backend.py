@@ -177,6 +177,21 @@ def _apply_plugin(
     lib_dir = os.path.dirname(plugin_path)
 
     sdk_libs_path = _get_openvino_libs_path()
+    try:
+      # pytype: disable=import-error
+      import ai_edge_litert_sdk_intel  # pylint: disable=g-import-not-at-top
+      # pytype: enable=import-error
+
+      intel_sdk_libs = ai_edge_litert_sdk_intel.path_to_sdk_libs()
+      if intel_sdk_libs:
+        sdk_libs_path = (
+            f"{intel_sdk_libs}{os.pathsep}{sdk_libs_path}"
+            if sdk_libs_path
+            else str(intel_sdk_libs)
+        )
+    except ImportError:
+      pass
+
     extra_kwargs = {
         "libs": lib_dir,
         "sdk_libs_path": sdk_libs_path,

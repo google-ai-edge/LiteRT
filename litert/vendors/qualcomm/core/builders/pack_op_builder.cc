@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
+#include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
@@ -36,18 +37,29 @@ std::vector<OpWrapper> BuildPackOp(TensorPool& tensor_pool,
     }
     concat_op.AddOutputTensor(outputs[0]);
   } else {
-    auto& pack_op = CreateOpWrapper(res, QNN_OP_PACK);
-    for (const auto& input : inputs) {
-      pack_op.AddInputTensor(input);
-    }
+    // TFLite PACK axis is relative to the output rank (input rank + 1), since
+    // PACK inserts a new stacked dimension. For a negative axis, add the output
+    // rank. e.g. axis=-2, inputs rank=4: correct adjusted = -2+5=3; wrong (bug)
+    // = -2+4=2, which made QNN report "Expected 2 but got 32" on output[2].
     std::uint32_t adjusted_axis =
-        axis < 0 ? axis + inputs[0].get().GetRank() : axis;
-    pack_op.AddScalarParam<std::uint32_t>(QNN_OP_PACK_PARAM_AXIS,
-                                          adjusted_axis);
-    pack_op.AddOutputTensor(outputs[0]);
+        axis < 0 ? axis + outputs[0].get().GetRank() : axis;
+    res.emplace_back(CreatePackOp(
+        std::vector<ConstTensorWrapperRef>(inputs.begin(), inputs.end()),
+        outputs[0], adjusted_axis));
   }
 
   return res;
+}
+
+OpWrapper CreatePackOp(const std::vector<ConstTensorWrapperRef>& inputs,
+                       const TensorWrapper& output_0, std::uint32_t axis) {
+  OpWrapper op(GetUniqueOpName(QNN_OP_PACK), QNN_OP_PACK, QnnOpCode::kPack);
+  for (const auto& input : inputs) {
+    op.AddInputTensor(input);
+  }
+  op.AddOutputTensor(output_0);
+  op.AddScalarParam<uint32_t>(QNN_OP_PACK_PARAM_AXIS, axis);
+  return op;
 }
 
 }  // namespace qnn

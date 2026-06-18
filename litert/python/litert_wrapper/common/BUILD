@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# copybara:uncomment load("//litert/python:strict.bzl", "py_strict_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+# copybara:uncomment load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
 # copybara:uncomment load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 
 package(
@@ -47,7 +47,7 @@ cc_library(
 #     ],
 # )
 #
-# py_strict_test(
+# py_test(
 #     name = "litert_wrapper_utils_test",
 #     srcs = ["litert_wrapper_utils_test.py"],
 #     deps = [

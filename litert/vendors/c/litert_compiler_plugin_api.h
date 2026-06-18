@@ -53,6 +53,9 @@ typedef LiteRtStatus (*LiteRtGetCompilerPluginSupportedSocModelT)(
     LiteRtCompilerPlugin, LiteRtParamIndex soc_model_idx,
     const char** soc_moel_idx);
 
+typedef LiteRtStatus (*LiteRtGetCompilerPluginSDKVersionT)(LiteRtCompilerPlugin,
+                                                           const char**);
+
 typedef LiteRtStatus (*LiteRtCompilerPluginPartitionT)(
     LiteRtCompilerPlugin, const char* soc_model, LiteRtSubgraph subgraph,
     LiteRtOpList selected_ops);
@@ -66,6 +69,10 @@ typedef void (*LiteRtDestroyCompiledResultT)(LiteRtCompiledResult);
 typedef LiteRtStatus (*LiteRtGetCompiledResultByteCodeT)(
     LiteRtCompiledResult, LiteRtParamIndex byte_code_idx,
     const void** byte_code, size_t* byte_code_size);
+
+typedef LiteRtStatus (*LiteRtGetCompiledResultHandleT)(
+    LiteRtCompiledResult, LiteRtParamIndex call_idx,
+    LiteRtJitExecutable* handle);
 
 typedef LiteRtStatus (*LiteRtCompiledResultNumByteCodeModulesT)(
     LiteRtCompiledResult, LiteRtParamIndex* num_byte_code);
@@ -103,12 +110,14 @@ struct LiteRtCompilerPluginApi {
       get_num_compiler_plugin_supported_models;
   LiteRtGetCompilerPluginSupportedSocModelT
       get_compiler_plugin_supported_soc_model;
+  LiteRtGetCompilerPluginSDKVersionT get_compiler_plugin_sdk_version;
 
   LiteRtCompilerPluginPartitionT compiler_plugin_partition;
   LiteRtCompilerPluginCompileT compiler_plugin_compile;
 
   LiteRtDestroyCompiledResultT destroy_compiled_result;
   LiteRtGetCompiledResultByteCodeT get_compiled_result_byte_code;
+  LiteRtGetCompiledResultHandleT get_compiled_result_handle;
   LiteRtCompiledResultNumByteCodeModulesT get_compiled_result_num_byte_code;
   LiteRtGetCompiledResultCallInfoT get_compiled_result_call_info;
   LiteRtGetNumCompiledResultCallsT get_compiled_result_num_calls;
@@ -134,6 +143,8 @@ static constexpr absl::string_view
         "LiteRtGetNumCompilerPluginSupportedSocModels";
 static constexpr absl::string_view kLiteRtGetCompilerPluginSupportedSocModel =
     "LiteRtGetCompilerPluginSupportedSocModel";
+static constexpr absl::string_view kLiteRtGetCompilerPluginSDKVersion =
+    "LiteRtGetCompilerPluginSDKVersion";
 
 static constexpr absl::string_view kLiteRtCreateCompilerPlugin =
     "LiteRtCreateCompilerPlugin";
@@ -149,6 +160,8 @@ static constexpr absl::string_view kLiteRtDestroyCompiledResult =
     "LiteRtDestroyCompiledResult";
 static constexpr absl::string_view kLiteRtGetCompiledResultByteCode =
     "LiteRtGetCompiledResultByteCode";
+static constexpr absl::string_view kLiteRtGetCompiledResultHandle =
+    "LiteRtGetCompiledResultHandle";
 static constexpr absl::string_view kLiteRtCompiledResultNumByteCodeModules =
     "LiteRtCompiledResultNumByteCodeModules";
 static constexpr absl::string_view kLiteRtGetCompiledResultCallInfo =

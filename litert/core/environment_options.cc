@@ -28,8 +28,9 @@ litert::Expected<LiteRtAny> LiteRtEnvironmentOptionsT::GetOption(
   if (auto it = options_.find(tag); it != options_.end()) {
     return it->second;
   }
-  return litert::Error(kLiteRtStatusErrorNotFound,
-                       "Option was not set for this environment.");
+  return litert::Error(
+      kLiteRtStatusErrorNotFound,
+      absl::StrCat("Option ", tag, " was not set for this environment."));
 }
 
 litert::Expected<void> LiteRtEnvironmentOptionsT::SetOption(

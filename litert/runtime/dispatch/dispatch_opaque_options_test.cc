@@ -14,7 +14,10 @@
 
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 
+#include <cstddef>
+
 #include <gtest/gtest.h>
+#include "litert/c/litert_common.h"
 #include "litert/cc/litert_opaque_options.h"
 
 namespace litert::internal {
@@ -25,6 +28,9 @@ TEST(DispatchDelegateOptionsTest, Create) {
   ASSERT_TRUE(options);
   ASSERT_TRUE(options->GetAllocBase());
   ASSERT_TRUE(options->GetAllocBaseFd());
+  ASSERT_TRUE(options->GetAllocBaseFileOffset());
+  ASSERT_TRUE(options->GetAllocBaseSize());
+  ASSERT_TRUE(options->HasAllocBaseFileRegion());
 }
 
 TEST(DispatchDelegateOptionsTest, CreateFromOpaqueOptions) {
@@ -66,6 +72,55 @@ TEST(DispatchDelegateOptionsTest, SetAllocBaseFd) {
   auto alloc_base_fd = options->GetAllocBaseFd();
   ASSERT_TRUE(alloc_base_fd);
   ASSERT_EQ(*alloc_base_fd, dummy_fd);
+}
+
+TEST(DispatchDelegateOptionsTest, GetExecHandleNotFound) {
+  auto options = DispatchDelegateOptions::Create();
+  ASSERT_TRUE(options);
+
+  auto handle_or = options->GetExecHandle("nonexistent_op");
+  ASSERT_TRUE(handle_or.HasValue());
+  EXPECT_EQ(handle_or.Value(), nullptr);
+}
+
+TEST(DispatchDelegateOptionsTest, AddAndGetExecHandle) {
+  auto options = DispatchDelegateOptions::Create();
+  ASSERT_TRUE(options);
+
+  int dummy_val = 1;
+  void* dummy_addr = &dummy_val;
+
+  auto status = options->AddExecHandle(
+      "my_op", reinterpret_cast<LiteRtJitExecutable>(dummy_addr));
+  ASSERT_TRUE(status.HasValue());
+
+  auto handle_or = options->GetExecHandle("my_op");
+  ASSERT_TRUE(handle_or.HasValue());
+  EXPECT_EQ(handle_or.Value(),
+            reinterpret_cast<LiteRtJitExecutable>(dummy_addr));
+}
+
+TEST(DispatchDelegateOptionsTest, SetAllocBaseFileRegion) {
+  auto options = DispatchDelegateOptions::Create();
+  ASSERT_TRUE(options);
+
+  constexpr size_t kDummyOffset = 4096;
+  constexpr size_t kDummySize = 8192;
+
+  ASSERT_TRUE(options->SetAllocBaseFileOffset(kDummyOffset));
+  ASSERT_TRUE(options->SetAllocBaseSize(kDummySize));
+
+  auto alloc_base_file_offset = options->GetAllocBaseFileOffset();
+  ASSERT_TRUE(alloc_base_file_offset);
+  ASSERT_EQ(*alloc_base_file_offset, kDummyOffset);
+
+  auto alloc_base_size = options->GetAllocBaseSize();
+  ASSERT_TRUE(alloc_base_size);
+  ASSERT_EQ(*alloc_base_size, kDummySize);
+
+  auto has_alloc_base_file_region = options->HasAllocBaseFileRegion();
+  ASSERT_TRUE(has_alloc_base_file_region);
+  ASSERT_TRUE(*has_alloc_base_file_region);
 }
 
 }  // namespace

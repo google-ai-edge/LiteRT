@@ -1,6 +1,6 @@
 """ Macros for manylinux compliance verification test. """
 
-load("//litert/python:strict.bzl", "py_strict_test")
+load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
 
 def verify_manylinux_compliance_test(
         name,
@@ -9,7 +9,7 @@ def verify_manylinux_compliance_test(
         x86_64_compliance_tag,
         ppc64le_compliance_tag,
         test_tags = []):
-    py_strict_test(
+    py_test(
         name = name,
         srcs = [Label("//ci/tools/python/wheel/utils:manylinux_compliance_test")],
         data = [

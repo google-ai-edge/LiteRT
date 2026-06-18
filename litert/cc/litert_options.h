@@ -23,7 +23,6 @@
 #include <utility>
 #include <vector>
 
-#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
 #include "litert/c/options/litert_compiler_options.h"
@@ -39,6 +38,7 @@
 #include "litert/cc/internal/litert_runtime_proxy.h"
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/internal/scoped_weight_source.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_custom_op_kernel.h"
 #include "litert/cc/litert_environment.h"
@@ -135,8 +135,7 @@ class Options {
   /// A weight section contains the offset and length of a contiguous region
   /// inside a `ScopedFile` that backs a single external buffer group. This map
   /// provides the mapping between the group name and its section.
-  using ScopedWeightSectionMap =
-      absl::flat_hash_map<std::string, ScopedWeightSection>;
+  using ScopedWeightSectionMap = FlatHashMap<std::string, ScopedWeightSection>;
 
   Options() = default;
 

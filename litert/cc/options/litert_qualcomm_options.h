@@ -22,9 +22,9 @@
 #include <string>
 #include <vector>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_qualcomm_options.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
@@ -216,6 +216,21 @@ class QualcommOptions {
     return val;
   }
 
+  /// @brief Just-In-Time allows passing the QNN Context directly from the
+  /// compiler plugin to the dispatcher in-memory, bypassing graph finalization.
+  /// Defaults to `false`.
+  void SetEnableJustInTime(bool enable_just_in_time) {
+    LrtQualcommOptionsSetEnableJustInTime(options_, enable_just_in_time);
+  }
+  bool GetEnableJustInTime() {
+    bool val;
+    auto status = LrtQualcommOptionsGetEnableJustInTime(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return val;
+  }
+
   /// @brief When using short conv hmx, one might have better performance, but
   /// convolutions with short depth and/or non-symmetric weights could exhibit
   /// inaccurate results.
@@ -243,6 +258,22 @@ class QualcommOptions {
     auto status = LrtQualcommOptionsGetUseFoldReLU(options_, &val);
     if (status == kLiteRtStatusErrorNotFound) {
       return true;
+    }
+    return val;
+  }
+
+  /// @brief This option controls P point to change compiler configurations.
+  ///
+  /// P points are experimental (HTP backend with O3 only) and map to predefined
+  /// compiler configurations affecting latency and DRAM bandwidth.
+  void SetHtpPPoint(std::int32_t p_point) {
+    LrtQualcommOptionsSetHtpPPoint(options_, p_point);
+  }
+  std::int32_t GetHtpPPoint() {
+    std::int32_t val;
+    auto status = LrtQualcommOptionsGetHtpPPoint(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return 0;
     }
     return val;
   }
@@ -289,7 +320,7 @@ class QualcommOptions {
   void SetIrJsonDir(const std::string& ir_json_dir) {
     LrtQualcommOptionsSetIrJsonDir(options_, ir_json_dir.c_str());
   }
-  absl::string_view GetIrJsonDir() {
+  StringView GetIrJsonDir() {
     const char* val;
     auto status = LrtQualcommOptionsGetIrJsonDir(options_, &val);
     if (status == kLiteRtStatusErrorNotFound) {
@@ -301,7 +332,7 @@ class QualcommOptions {
   void SetDlcDir(const std::string& dlc_dir) {
     LrtQualcommOptionsSetDlcDir(options_, dlc_dir.c_str());
   }
-  absl::string_view GetDlcDir() {
+  StringView GetDlcDir() {
     const char* val;
     auto status = LrtQualcommOptionsGetDlcDir(options_, &val);
     if (status == kLiteRtStatusErrorNotFound) {
@@ -399,7 +430,7 @@ class QualcommOptions {
   void SetSaverOutputDir(const std::string& saver_output_dir) {
     LrtQualcommOptionsSetSaverOutputDir(options_, saver_output_dir.c_str());
   }
-  absl::string_view GetSaverOutputDir() {
+  StringView GetSaverOutputDir() {
     const char* val;
     auto status = LrtQualcommOptionsGetSaverOutputDir(options_, &val);
     if (status == kLiteRtStatusErrorNotFound) {
@@ -426,6 +457,44 @@ class QualcommOptions {
       return GraphIOTensorMemType::kMemHandle;
     }
     return static_cast<GraphIOTensorMemType>(val);
+  }
+
+  struct CustomOpPackage {
+    std::string name;
+    std::string interface_provider;
+    std::string compile_package_path;
+    std::string dispatch_package_path;
+    std::string target;
+  };
+
+  LiteRtStatus SetCustomOpPackage(const CustomOpPackage& custom_op_package) {
+    return LrtQualcommOptionsSetCustomOpPackage(
+        options_, custom_op_package.name.c_str(),
+        custom_op_package.interface_provider.c_str(),
+        custom_op_package.compile_package_path.c_str(),
+        custom_op_package.dispatch_package_path.c_str(),
+        custom_op_package.target.c_str());
+  }
+
+  CustomOpPackage GetCustomOpPackage() const {
+    const char* name = "";
+    const char* interface_provider = "";
+    const char* compile_package_path = "";
+    const char* dispatch_package_path = "";
+    const char* target = "";
+    auto status = LrtQualcommOptionsGetCustomOpPackage(
+        options_, &name, &interface_provider, &compile_package_path,
+        &dispatch_package_path, &target);
+    if (status != kLiteRtStatusOk) {
+      return {};
+    }
+    CustomOpPackage custom_op_package;
+    custom_op_package.name = name;
+    custom_op_package.interface_provider = interface_provider;
+    custom_op_package.compile_package_path = compile_package_path;
+    custom_op_package.dispatch_package_path = dispatch_package_path;
+    custom_op_package.target = target;
+    return custom_op_package;
   }
 
  private:

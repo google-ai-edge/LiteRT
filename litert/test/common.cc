@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>  // NOLINT
 #include <ios>
 #include <memory>
@@ -31,9 +32,7 @@
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_macros.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "tflite/core/interpreter_builder.h"
@@ -89,6 +88,23 @@ constexpr char kBaseDir[] = "";
 constexpr absl::string_view kLiteRtDir = "litert";
 constexpr absl::string_view kInternalPrefx = "third_party/odml/litert";
 
+namespace {
+
+std::string GetRunfilesLiteRtPath(absl::string_view rel_path) {
+  const char* test_srcdir = std::getenv("TEST_SRCDIR");
+  if (test_srcdir == nullptr || test_srcdir[0] == '\0') {
+    return {};
+  }
+
+  if constexpr (!IsOss()) {
+    return internal::Join({test_srcdir, kInternalPrefx, kLiteRtDir, rel_path});
+  } else {
+    return internal::Join({test_srcdir, "litert", kLiteRtDir, rel_path});
+  }
+}
+
+}  // namespace
+
 std::string GetTestFilePath(absl::string_view filename) {
   static constexpr absl::string_view kTestDataDir = "test/testdata/";
   if constexpr (!IsOss()) {
@@ -108,17 +124,17 @@ std::string GetTfliteFilePath(absl::string_view filename) {
 }
 
 std::string GetLiteRtPath(absl::string_view rel_path) {
-  if constexpr (!IsOss()) {
-    return internal::Join({kBaseDir, kInternalPrefx, kLiteRtDir, rel_path});
-  } else {
-    return internal::Join({kBaseDir, kLiteRtDir, rel_path});
+  const auto runfiles_path = GetRunfilesLiteRtPath(rel_path);
+  if (!runfiles_path.empty() && internal::Exists(runfiles_path)) {
+    return std::filesystem::absolute(runfiles_path).string();
   }
-}
-
-ExtendedModel LoadTestFileModel(absl::string_view filename) {
-  LITERT_ASSIGN_OR_ABORT(
-      auto model, ExtendedModel::CreateFromFile(GetTestFilePath(filename)));
-  return model;
+  std::string fallback;
+  if constexpr (!IsOss()) {
+    fallback = internal::Join({kBaseDir, kInternalPrefx, kLiteRtDir, rel_path});
+  } else {
+    fallback = internal::Join({kBaseDir, kLiteRtDir, rel_path});
+  }
+  return std::filesystem::absolute(fallback).string();
 }
 
 Expected<TflRuntime::Ptr> TflRuntime::CreateFromFlatBuffer(

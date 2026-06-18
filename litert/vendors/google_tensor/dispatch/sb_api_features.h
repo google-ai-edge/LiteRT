@@ -61,6 +61,12 @@ enum class GoogleTensorSouthBoundFeature {
   kOriginalUidDispatchDirective = 7,
   // BufferDirectiveAnnotations::kRequestFence
   kRequestFence = 8,
+  // When using Tachyon, thrGraphAssignSq with `func_name` not empty
+  kTachyonNamedSqFunctions = 9,
+  // thrLoadSqContainerFdWithOffset
+  kSqContainerFdWithOffset = 10,
+  // thrGraphAnnotateGraph with `key == kEdgetpuPerformanceMode`
+  kPerformanceModeAnnotation = 11,
 };
 
 // Returns `true` if `feature` is supported by the available Google Tensor
@@ -91,8 +97,16 @@ inline bool GoogleTensorSouthBoundFeatureSupported(
       return GoogleTensorSouthBoundMajorVersion() > 0 ||
              GoogleTensorSouthBoundMinorVersion() >= 16;
     case GoogleTensorSouthBoundFeature::kRequestFence:
+    case GoogleTensorSouthBoundFeature::kTachyonNamedSqFunctions:
       return GoogleTensorSouthBoundMajorVersion() > 0 ||
              GoogleTensorSouthBoundMinorVersion() >= 17;
+    case GoogleTensorSouthBoundFeature::kSqContainerFdWithOffset:
+      // TODO(google-tensor): confirm minor version.
+      return GoogleTensorSouthBoundMajorVersion() > 0 ||
+             GoogleTensorSouthBoundMinorVersion() >= 18;
+    case GoogleTensorSouthBoundFeature::kPerformanceModeAnnotation:
+      return GoogleTensorSouthBoundMajorVersion() > 0 ||
+             GoogleTensorSouthBoundMinorVersion() >= 18;
   }
 }
 

@@ -46,7 +46,7 @@ extern "C" {
 // LiteRT CompiledModels ABI version number, in semver 2 format
 // (see https://semver.org).  This is the ABI version number for
 // the methods in LiteRtRuntimeCApiStruct, which is defined below.
-#define LITERT_RUNTIME_ABI_VERSION "0.2.0"
+#define LITERT_RUNTIME_ABI_VERSION "1.0.0"
 // TODO(b/493650900): declare that as an extern const (and
 // initialize it in a .cc file) rather than using a macro.
 
@@ -113,9 +113,6 @@ typedef struct LiteRtRuntimeCApiStruct {
   LiteRtStatus (*litert_get_environment_options_value)(
       LiteRtEnvironmentOptions options, LiteRtEnvOptionTag tag,
       LiteRtAny* value);
-  // litert_environment_options.h: LiteRtSetEnvironmentOptionsValue
-  LiteRtStatus (*litert_set_environment_options_value)(
-      LiteRtEnvironmentOptions options, LiteRtEnvOption env_option);
 
   //
   // LiteRtTensor
@@ -203,10 +200,6 @@ typedef struct LiteRtRuntimeCApiStruct {
   LiteRtStatus (*litert_get_signature_input_name)(LiteRtSignature signature,
                                                   LiteRtParamIndex input_idx,
                                                   const char** input_name);
-  // litert_model.h: LiteRtGetSignatureInputTensor
-  LiteRtStatus (*litert_get_signature_input_tensor)(LiteRtSignature signature,
-                                                    const char* input_name,
-                                                    LiteRtTensor* tensor);
   // litert_model.h: LiteRtGetSignatureInputTensorByIndex
   LiteRtStatus (*litert_get_signature_input_tensor_by_index)(
       LiteRtSignature signature, LiteRtParamIndex input_idx,
@@ -218,10 +211,6 @@ typedef struct LiteRtRuntimeCApiStruct {
   LiteRtStatus (*litert_get_signature_output_name)(LiteRtSignature signature,
                                                    LiteRtParamIndex output_idx,
                                                    const char** output_name);
-  // litert_model.h: LiteRtGetSignatureOutputTensor
-  LiteRtStatus (*litert_get_signature_output_tensor)(LiteRtSignature signature,
-                                                     const char* output_name,
-                                                     LiteRtTensor* tensor);
   // litert_model.h: LiteRtGetSignatureOutputTensorByIndex
   LiteRtStatus (*litert_get_signature_output_tensor_by_index)(
       LiteRtSignature signature, LiteRtParamIndex output_idx,
@@ -231,10 +220,12 @@ typedef struct LiteRtRuntimeCApiStruct {
   // LiteRtModel
   //
   // litert_model.h: LiteRtCreateModelFromFile
-  LiteRtStatus (*litert_create_model_from_file)(const char* filename,
+  LiteRtStatus (*litert_create_model_from_file)(LiteRtEnvironment environment,
+                                                const char* filename,
                                                 LiteRtModel* model);
   // litert_model.h: LiteRtCreateModelFromBuffer
-  LiteRtStatus (*litert_create_model_from_buffer)(const void* buffer_addr,
+  LiteRtStatus (*litert_create_model_from_buffer)(LiteRtEnvironment environment,
+                                                  const void* buffer_addr,
                                                   size_t buffer_size,
                                                   LiteRtModel* model);
   // litert_model.h: LiteRtGetModelMetadata
@@ -304,9 +295,6 @@ typedef struct LiteRtRuntimeCApiStruct {
   LiteRtStatus (*litert_get_compiled_model_output_tensor_layouts)(
       LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
       size_t num_layouts, LiteRtLayout* layouts, bool update_allocation);
-  // litert_compiled_model.h: LiteRtGetCompiledModelEnvironment
-  LiteRtStatus (*litert_get_compiled_model_environment)(
-      LiteRtCompiledModel compiled_model, LiteRtEnvironment* environment);
   // litert_compiled_model.h: LiteRtRunCompiledModel
   LiteRtStatus (*litert_run_compiled_model)(LiteRtCompiledModel compiled_model,
                                             LiteRtParamIndex signature_index,
@@ -747,6 +735,15 @@ typedef struct LiteRtRuntimeCApiStruct {
   // litert_environment.h: LiteRtEnvironmentSupportsFP16
   LiteRtStatus (*litert_environment_supports_fp16)(
       LiteRtEnvironment environment, bool* is_supported);
+
+  // litert_model.h: LiteRtCreateModelFromFd
+  LiteRtStatus (*litert_create_model_from_fd)(LiteRtEnvironment environment,
+                                              int fd, size_t offset,
+                                              size_t size, LiteRtModel* model);
+  // litert_model.h: LiteRtGetBlockWiseQuantization
+  LiteRtStatus (*litert_get_block_wise_quantization)(
+      LiteRtTensor tensor,
+      LiteRtQuantizationBlockWise* block_wise_quantization);
 } LiteRtRuntimeCApiStruct;
 
 // LINT.ThenChange(:version_number)

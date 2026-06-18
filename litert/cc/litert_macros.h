@@ -23,12 +23,15 @@
 #include <type_traits>
 #include <utility>
 
+#ifndef LITERT_NO_ABSL
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#endif  // LITERT_NO_ABSL
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_source_location.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 
@@ -152,12 +155,14 @@ class ErrorStatusBuilder {
     return litert::Unexpected(error_.StatusCC(), LogMessage());
   }
 
+#ifndef LITERT_NO_ABSL
   operator absl::Status() const noexcept { return ToAbslStatus(); }
 
   template <class T>
   operator absl::StatusOr<T>() const noexcept {
     return ToAbslStatus();
   }
+#endif  // LITERT_NO_ABSL
   // NOLINTEND(*-explicit-constructor)
 
   template <class T>
@@ -235,6 +240,7 @@ class ErrorStatusBuilder {
     return e.Value();
   }
 
+#ifndef LITERT_NO_ABSL
   template <class T>
   static T&& ForwardWrappedValue(absl::StatusOr<T>& e) {
     return std::move(e).value();
@@ -244,6 +250,7 @@ class ErrorStatusBuilder {
   static T& ForwardWrappedValue(absl::StatusOr<T&>& e) {
     return e.value();
   }
+#endif  // LITERT_NO_ABSL
 
  private:
   bool ShouldLog() const noexcept {
@@ -251,7 +258,9 @@ class ErrorStatusBuilder {
            (!error_.Message().empty() || extra_log_);
   }
 
+#ifndef LITERT_NO_ABSL
   absl::Status ToAbslStatus() const noexcept;
+#endif  // LITERT_NO_ABSL
   std::string LogMessage() const;
 
   litert::Error error_;
@@ -311,6 +320,7 @@ struct ErrorStatusBuilder::ErrorConversion<litert::Unexpected> {
   }
 };
 
+#ifndef LITERT_NO_ABSL
 template <>
 struct ErrorStatusBuilder::ErrorConversion<absl::Status> {
   static bool IsError(const absl::Status& value) { return !value.ok(); };
@@ -329,6 +339,7 @@ struct ErrorStatusBuilder::ErrorConversion<absl::StatusOr<T>> {
         std::move(value.status()));
   }
 };
+#endif  // LITERT_NO_ABSL
 
 // NOLINTEND(*-explicit-constructor)
 
@@ -447,7 +458,8 @@ class LogBeforeAbort {
 #define _LITERT_VAN_LITERT_ISH
 #endif
 
-#define LITERT_CHECK_STATUS_HAS_CODE(expr, code) ABSL_CHECK(expr == code);
+#define LITERT_CHECK_STATUS_HAS_CODE(expr, code) \
+  LITERT_INTERNAL_CHECK((expr) == (code));
 
 #define LITERT_CHECK_STATUS_OK(expr) \
   LITERT_CHECK_STATUS_HAS_CODE(expr, kLiteRtStatusOk);
@@ -472,6 +484,7 @@ class LogBeforeAbort {
     *e = init;                                  \
   }
 
+#ifndef LITERT_NO_ABSL
 namespace litert::internal::macros_detail {
 
 inline LiteRtStatus ToLiteRtStatus(const absl::StatusCode& code) {
@@ -593,6 +606,11 @@ inline absl::Status ErrorStatusBuilder::ToAbslStatus() const noexcept {
   }
   return absl::UnknownError(LogMessage());
 }
+
+}  // namespace litert
+#endif  // LITERT_NO_ABSL
+
+namespace litert {
 
 inline std::string ErrorStatusBuilder::LogMessage() const {
   LiteRtLogger logger = LiteRtGetDefaultLogger();

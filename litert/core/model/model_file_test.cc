@@ -20,6 +20,8 @@
 #include <filesystem>  // NOLINT
 #include <fstream>
 #include <functional>
+#include <ios>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -47,6 +49,7 @@
 #include "litert/cc/internal/litert_model_predicates.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/dispatch_op_schema.h"
@@ -58,6 +61,7 @@
 #include "litert/core/model/model_serialize.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/common.h"
+#include "litert/test/load_test_model.h"
 #include "litert/test/matchers.h"
 #include "litert/test/test_models.h"
 #include "tflite/schema/mutable/schema_generated.h"
@@ -98,7 +102,8 @@ GetTestBufferCache() {
 
 // Load a model, then serialize and re-load. Used to test serialization.
 Expected<ExtendedModel> LoadModelThroughRoundTrip(absl::string_view filename) {
-  auto model = ExtendedModel::CreateFromFile(GetTestFilePath(filename));
+  LITERT_ASSIGN_OR_RETURN(auto env, Environment::Create({}));
+  auto model = ExtendedModel::CreateFromFile(env, GetTestFilePath(filename));
   if (!model) {
     return model.Error();
   }
@@ -118,7 +123,7 @@ Expected<ExtendedModel> LoadModelThroughRoundTrip(absl::string_view filename) {
   LiteRtModel result = nullptr;
   auto& cached_buf = GetTestBufferCache()[key];
   LITERT_RETURN_IF_ERROR(LiteRtCreateModelFromBuffer(
-      cached_buf.Data(), cached_buf.Size(), &result));
+      env.Get(), cached_buf.Data(), cached_buf.Size(), &result));
 
   return ExtendedModel::CreateFromOwnedHandle(result);
 }
@@ -128,7 +133,7 @@ ModelFactory MakeRoundTripFactory(absl::string_view filename) {
 }
 
 ModelFactory MakeLoadFactory(absl::string_view filename) {
-  return [=]() {
+  return [=]() -> Expected<ExtendedModel> {
     return ExtendedModel::CreateFromFile(GetTestFilePath(filename));
   };
 }
@@ -151,8 +156,9 @@ class TestWithModelFactory : public ::testing::TestWithParam<ModelFactory> {
 //===---------------------------------------------------------------------------
 
 TEST(ModelLoadTest, BadFilepath) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LiteRtModel model = nullptr;
-  EXPECT_THAT(LiteRtCreateModelFromFile("bad_path", &model),
+  EXPECT_THAT(LiteRtCreateModelFromFile(env.Get(), "bad_path", &model),
               IsError(kLiteRtStatusErrorFileIO));
 }
 
@@ -171,8 +177,15 @@ TEST(ModelLoadTest, BadFileData) {
   bad_file << "not_tflite";
   bad_file.close();
 
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LiteRtModel model = nullptr;
-  EXPECT_THAT(LiteRtCreateModelFromFile(test_file_path.c_str(), &model),
+#ifdef _WIN32
+  const std::string test_file_path_str = test_file_path.string();
+  const char* bad_file_path = test_file_path_str.c_str();
+#else
+  const char* bad_file_path = test_file_path.c_str();
+#endif
+  EXPECT_THAT(LiteRtCreateModelFromFile(env.Get(), bad_file_path, &model),
               IsError(kLiteRtStatusErrorFileIO));
   // NOLINTEND
 }
@@ -358,6 +371,89 @@ TEST(ModelLoadTest, WithOffsetTensorBuffer) {
   }
 }
 
+TEST(ModelLoadTest, RejectsExternalBufferPastAllocation) {
+  auto flatbuffer =
+      FlatbufferWrapper::CreateFromTflFile(GetTestFilePath(kAddSimple));
+  auto tfl_model = flatbuffer->get()->Unpack();
+  const auto buf_ind = tfl_model->subgraphs[0]->tensors[0]->buffer;
+  auto& tfl_buffer = tfl_model->buffers[buf_ind];
+  tfl_buffer->offset = 1;
+  tfl_buffer->size = 1;
+
+  auto model_buf = SerializeFlatbuffer(*tfl_model);
+  auto* packed_tfl = tflite::GetMutableModel(model_buf.Data());
+  auto* buf = packed_tfl->mutable_buffers()->GetMutableObject(buf_ind);
+  ASSERT_TRUE(buf->mutate_offset(model_buf.Size() + 1));
+  ASSERT_TRUE(buf->mutate_size(1));
+
+  auto litert_model = LoadModelFromBuffer(model_buf);
+  ASSERT_FALSE(litert_model);
+  EXPECT_EQ(litert_model.Error().Status(), kLiteRtStatusErrorInvalidFlatbuffer);
+}
+
+TEST(ModelLoadTest, RejectsInvalidOperatorTensorIndex) {
+  auto flatbuffer =
+      FlatbufferWrapper::CreateFromTflFile(GetTestFilePath(kAddSimple));
+  auto tfl_model = flatbuffer->get()->Unpack();
+  auto& subgraph = *tfl_model->subgraphs[0];
+  subgraph.operators[0]->inputs[0] = subgraph.tensors.size();
+
+  auto serialized = SerializeFlatbuffer(*tfl_model);
+  auto litert_model = LoadModelFromBuffer(serialized);
+  ASSERT_FALSE(litert_model);
+  EXPECT_EQ(litert_model.Error().Status(), kLiteRtStatusErrorInvalidFlatbuffer);
+}
+
+TEST(ModelLoadTest, RejectsInvalidSignatureTensorIndex) {
+  auto flatbuffer = FlatbufferWrapper::CreateFromTflFile(
+      GetTestFilePath("reverse_signature_model.tflite"));
+  auto tfl_model = flatbuffer->get()->Unpack();
+  ASSERT_FALSE(tfl_model->signature_defs.empty());
+  ASSERT_FALSE(tfl_model->signature_defs[0]->inputs.empty());
+
+  tfl_model->signature_defs[0]->inputs[0]->tensor_index =
+      tfl_model->subgraphs[0]->tensors.size();
+
+  auto serialized = SerializeFlatbuffer(*tfl_model);
+  auto litert_model = LoadModelFromBuffer(serialized);
+  ASSERT_FALSE(litert_model);
+  EXPECT_EQ(litert_model.Error().Status(), kLiteRtStatusErrorInvalidFlatbuffer);
+}
+
+TEST(ModelLoadTest, RejectsDispatchBytecodePastAllocation) {
+  static constexpr absl::string_view kByteCode = "SOME_BYTE_CODE";
+
+  LiteRtModelT root;
+  auto& sg = root.EmplaceSubgraph();
+  auto& op = sg.EmplaceOp();
+  OwningBufferRef<uint8_t> buffer(kByteCode);
+  const auto buf_id = root.Buffers()->RegisterOwnedBuffer(std::move(buffer));
+  root.AttachAssetToOp(&op, buf_id, "foo");
+
+  auto serialized = SerializeModel(std::move(root));
+  ASSERT_TRUE(serialized);
+
+  auto flatbuffer = FlatbufferWrapper::CreateFromBuffer(*serialized);
+  ASSERT_TRUE(flatbuffer);
+  auto tfl_model = flatbuffer->get()->Unpack();
+  auto& opts = tfl_model->subgraphs[0]->operators[0]->custom_options;
+  MutableBufferRef<uint8_t> opts_buffer(opts.data(), opts.size());
+  auto dispatch_opts = GetDispatchOpOptions(opts_buffer);
+  dispatch_opts.bytecode_offset = std::numeric_limits<size_t>::max();
+  ASSERT_TRUE(UpdateDispatchOpOptionsInPlace(dispatch_opts, opts_buffer));
+
+  auto mutated = SerializeFlatbuffer(*tfl_model);
+  const std::filesystem::path test_file_path =
+      std::filesystem::path(::testing::TempDir()) / "bad_dispatch.tflite";
+  std::ofstream output(test_file_path, std::ios::binary);
+  output.write(reinterpret_cast<const char*>(mutated.Data()), mutated.Size());
+  output.close();
+
+  auto litert_model = LoadModelFromFile(test_file_path.string());
+  ASSERT_FALSE(litert_model);
+  EXPECT_EQ(litert_model.Error().Status(), kLiteRtStatusErrorInvalidFlatbuffer);
+}
+
 TEST(ModelTestCApi, Int2) {
   auto model = LoadModelThroughRoundTrip("FFW-2-bit.tflite");
   ASSERT_TRUE(model);
@@ -416,6 +512,81 @@ TEST(ModelTestCCApi, Int2) {
   const auto num_channels = q_params.num_channels;
   ASSERT_EQ(num_channels, layout.Dimensions()[q_dim]);
   EXPECT_THAT(absl::MakeConstSpan(q_params.zero_points, num_channels), Each(0));
+}
+
+TEST(ModelTestCCApi, BlockWiseQuantization) {
+  auto model = LoadModelThroughRoundTrip("blockwise_quantized.tflite");
+  ASSERT_TRUE(model);
+
+  const auto& litert_model = *model;
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto sg, litert_model.MainSubgraph());
+  const auto ops = sg.Ops();
+
+  ASSERT_EQ(ops.size(), 1);
+  const auto& add = ops[0];
+  ASSERT_EQ(add.Code(), kLiteRtOpCodeTflAdd);
+
+  const auto inputs = add.Inputs();
+  ASSERT_EQ(inputs.size(), 2);
+
+  Tensor quantized_tensor(nullptr);
+  for (const auto& input : inputs) {
+    if (input.Name() == "quantized_tensor") {
+      quantized_tensor = input;
+      break;
+    }
+  }
+  ASSERT_NE(quantized_tensor.Get(), nullptr);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto rtt,
+                              quantized_tensor.RankedTensorType());
+  ASSERT_EQ(rtt.ElementType(), ElementType::Int8);
+
+  ASSERT_TRUE(quantized_tensor.HasQuantization());
+  ASSERT_EQ(quantized_tensor.QTypeId(), kLiteRtQuantizationBlockWise);
+
+  const auto q_params = quantized_tensor.BlockWiseQuantization();
+  EXPECT_EQ(q_params.block_size, 32);
+
+  ASSERT_NE(q_params.scales, nullptr);
+  const char* scales_name;
+  LITERT_ASSERT_OK(LiteRtGetTensorName(q_params.scales, &scales_name));
+  EXPECT_STREQ(scales_name, "scales");
+
+  ASSERT_NE(q_params.zero_points, nullptr);
+  const char* zps_name;
+  LITERT_ASSERT_OK(LiteRtGetTensorName(q_params.zero_points, &zps_name));
+  EXPECT_STREQ(zps_name, "zps");
+}
+
+TEST(ModelTestCCApi, QwenBlockWiseQuantization) {
+  auto model = LoadModelThroughRoundTrip("qwen_fc_blockwise_quantized.tflite");
+  ASSERT_TRUE(model);
+
+  const auto& litert_model = *model;
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto sg, litert_model.MainSubgraph());
+  const auto ops = sg.Ops();
+
+  ASSERT_EQ(ops.size(), 1);
+  const auto& fc = ops[0];
+  ASSERT_EQ(fc.Code(), kLiteRtOpCodeTflFullyConnected);
+
+  const auto inputs = fc.Inputs();
+  ASSERT_GE(inputs.size(), 2);
+
+  const auto& weights_tensor = inputs[1];
+
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto rtt,
+                              weights_tensor.RankedTensorType());
+  ASSERT_EQ(rtt.ElementType(), ElementType::Int4);
+
+  ASSERT_TRUE(weights_tensor.HasQuantization());
+  ASSERT_EQ(weights_tensor.QTypeId(), kLiteRtQuantizationBlockWise);
+
+  const auto q_params = weights_tensor.BlockWiseQuantization();
+  EXPECT_EQ(q_params.block_size, 32);
+
+  ASSERT_NE(q_params.scales, nullptr);
 }
 
 TEST(ModelSerializeTest, WithOffsetTensorBuffer) {
@@ -840,9 +1011,10 @@ TEST(ModelSerializeTest,
 
   // Reload model using the cached buffer.
   LiteRtModel result_model = nullptr;
-  EXPECT_EQ(LiteRtCreateModelFromBuffer(serialized->Data(), serialized->Size(),
-                                        &result_model),
-            kLiteRtStatusOk);
+  EXPECT_EQ(
+      LiteRtCreateModelFromBuffer(/*environment=*/nullptr, serialized->Data(),
+                                  serialized->Size(), &result_model),
+      kLiteRtStatusOk);
 
   // Check dispatch op is present.
   ASSERT_TRUE(result_model);

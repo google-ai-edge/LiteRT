@@ -27,6 +27,7 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/litert_webgpu_types.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/util/perfetto_profiling.h"
 #include "litert/runtime/custom_buffer.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
@@ -39,6 +40,7 @@ LiteRtStatus LiteRtCreateTensorBufferFromHostMemory(
     const LiteRtRankedTensorType* tensor_type, void* host_buffer_addr,
     size_t size, LiteRtHostMemoryDeallocator deallocator,
     LiteRtTensorBuffer* tensor_buffer) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT TensorBuffer Allocation");
   if (!tensor_type || !host_buffer_addr || !tensor_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -56,6 +58,7 @@ LiteRtStatus LiteRtCreateTensorBufferFromAhwb(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     AHardwareBuffer* ahwb, size_t ahwb_offset,
     LiteRtAhwbDeallocator deallocator, LiteRtTensorBuffer* tensor_buffer) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT TensorBuffer Allocation");
 #if LITERT_HAS_AHWB_SUPPORT
   if (!tensor_type || !ahwb || !tensor_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -91,6 +94,7 @@ LiteRtStatus LiteRtCreateTensorBufferFromIonBuffer(
     const LiteRtRankedTensorType* tensor_type, void* ion_buffer_addr,
     int ion_buffer_fd, size_t ion_buffer_size, size_t ion_buffer_offset,
     LiteRtIonDeallocator deallocator, LiteRtTensorBuffer* tensor_buffer) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT TensorBuffer Allocation");
 #if LITERT_HAS_ION_SUPPORT
   if (!tensor_type || !tensor_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -129,6 +133,7 @@ LiteRtStatus LiteRtCreateTensorBufferFromDmaBufBuffer(
     int dmabuf_buffer_fd, size_t dmabuf_buffer_size,
     size_t dmabuf_buffer_offset, LiteRtDmaBufDeallocator deallocator,
     LiteRtTensorBuffer* tensor_buffer) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT TensorBuffer Allocation");
 #if LITERT_HAS_DMABUF_SUPPORT
   if (!tensor_type || !tensor_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -168,6 +173,7 @@ LiteRtStatus LiteRtCreateTensorBufferFromOpenClMemory(
     LiteRtTensorBufferType buffer_type, LiteRtClMem cl_mem_addr,
     size_t opencl_buffer_size, LiteRtOpenClDeallocator deallocator,
     LiteRtTensorBuffer* buffer) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT TensorBuffer Allocation");
 #if LITERT_HAS_OPENCL_SUPPORT
   if (!tensor_type || !buffer) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -215,6 +221,7 @@ LiteRtStatus LiteRtCreateTensorBufferFromMetalMemory(
     LiteRtTensorBufferType buffer_type, void* metal_buffer,
     size_t metal_buffer_size, LiteRtMetalDeallocator deallocator,
     LiteRtTensorBuffer* tensor_buffer) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT TensorBuffer Allocation");
 #if LITERT_HAS_METAL_SUPPORT
   if (!tensor_type || !tensor_buffer || !metal_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -251,6 +258,7 @@ LiteRtStatus LiteRtCreateTensorBufferFromFastRpcBuffer(
     int fastrpc_buffer_fd, size_t fastrpc_buffer_size,
     size_t fastrpc_buffer_offset, LiteRtFastRpcDeallocator deallocator,
     LiteRtTensorBuffer* tensor_buffer) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT TensorBuffer Allocation");
 #if LITERT_HAS_FASTRPC_SUPPORT
   if (!tensor_type || !tensor_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -290,6 +298,7 @@ LiteRtStatus LiteRtCreateTensorBufferFromGlBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset,
     LiteRtGlBufferDeallocator deallocator, LiteRtTensorBuffer* tensor_buffer) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT TensorBuffer Allocation");
 #if LITERT_HAS_OPENGL_SUPPORT
   if (!tensor_type || !tensor_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -331,6 +340,7 @@ LiteRtStatus LiteRtCreateTensorBufferFromGlTexture(
     LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
     size_t size_bytes, LiteRtGLint layer,
     LiteRtGlTextureDeallocator deallocator, LiteRtTensorBuffer* tensor_buffer) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT TensorBuffer Allocation");
 #if LITERT_HAS_OPENGL_SUPPORT
   if (!tensor_type || !tensor_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -370,6 +380,7 @@ LiteRtStatus LiteRtCreateTensorBufferFromWebGpuBuffer(
     LiteRtTensorBufferType buffer_type, LiteRtWGPUBuffer wgpu_buffer,
     size_t wgpu_buffer_size, LiteRtWebGpuBufferDeallocator deallocator,
     LiteRtTensorBuffer* tensor_buffer) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT TensorBuffer Allocation");
 #if LITERT_HAS_WEBGPU_SUPPORT
   if (!tensor_type || !tensor_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -390,6 +401,7 @@ LiteRtStatus LiteRtCreateTensorBufferFromWebGpuTexture(
     void* webgpu_texture, size_t webgpu_texture_size,
     LiteRtWebGpuTextureDeallocator deallocator,
     LiteRtTensorBuffer* tensor_buffer) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT TensorBuffer Allocation");
 #if LITERT_HAS_WEBGPU_SUPPORT
   if (!tensor_type || !tensor_buffer || !webgpu_texture) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -442,6 +454,7 @@ LiteRtStatus LiteRtCreateManagedTensorBuffer(
     LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
     const LiteRtRankedTensorType* tensor_type, size_t buffer_size,
     LiteRtTensorBuffer* tensor_buffer) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT TensorBuffer Allocation");
   if (!tensor_type || !tensor_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -456,6 +469,7 @@ LiteRtStatus LiteRtCreateManagedTensorBufferFromRequirements(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferRequirements requirements,
     LiteRtTensorBuffer* tensor_buffer) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT TensorBuffer Allocation");
   if (!tensor_type || !requirements || !tensor_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -622,6 +636,7 @@ LiteRtStatus LiteRtClearTensorBuffer(LiteRtTensorBuffer tensor_buffer) {
 }
 
 void LiteRtDestroyTensorBuffer(LiteRtTensorBuffer tensor_buffer) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT TensorBuffer Destruction");
   if (tensor_buffer->Unref()) {
     delete tensor_buffer;
   }

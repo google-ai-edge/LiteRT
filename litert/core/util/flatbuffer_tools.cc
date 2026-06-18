@@ -241,9 +241,15 @@ bool IsPerTensorQuantized(const TflQuantization* tfl_quantization) {
   return tfl_quantization && tfl_quantization->scale.size() == 1;
 }
 
-bool IsBlockwiseQuantized(const TflQuantization* tfl_quantization) {
+bool IsBlockWiseQuantized(const TflQuantization* tfl_quantization) {
   return tfl_quantization &&
          tfl_quantization->details.type ==
+             tflite::QuantizationDetails_BlockwiseQuantization;
+}
+
+bool IsBlockWiseQuantized(const TflPackedQuantization* tfl_quantization) {
+  return tfl_quantization &&
+         tfl_quantization->details_type() ==
              tflite::QuantizationDetails_BlockwiseQuantization;
 }
 

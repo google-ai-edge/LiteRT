@@ -117,6 +117,13 @@ TEST(BufferRefTest, WithDataAndOffset) {
   EXPECT_EQ(buf.StrView(), kData.substr(kOffset, buf.Size()));
 }
 
+TEST(BufferRefTest, OffsetPastEndIsEmpty) {
+  auto data = MakeConstFbData(kData);
+  BufferRef buf(data.data(), data.size(), data.size() + 1);
+  EXPECT_EQ(buf.Size(), 0);
+  EXPECT_EQ(buf.Data(), nullptr);
+}
+
 TEST(BufferRefTest, ToVec) {
   auto data = MakeConstFbData(kData);
   BufferRef buf(data.data(), data.size());
@@ -182,6 +189,21 @@ TEST(MutableBufferRefTest, WriteIntoOffsetData) {
   ASSERT_TRUE(buf.WriteInto("RAW", kOffset));
   EXPECT_THAT(buf.Span(), ElementsAreArray(MakeConstFbData(kExpData)));
   EXPECT_EQ(buf.StrView(), kExpData);
+}
+
+TEST(MutableBufferRefTest, WriteIntoOffsetPastEnd) {
+  auto v_data = MakeFbDataVec(kOtherData);
+  MutableBufferRef buf(v_data.data(), v_data.size());
+  EXPECT_FALSE(buf.WriteInto("RAW", v_data.size() + 1));
+  EXPECT_THAT(buf.Span(), ElementsAreArray(MakeConstFbData(kOtherData)));
+}
+
+TEST(MutableBufferRefTest, WriteIntoInvalidView) {
+  auto v_data = MakeFbDataVec(kOtherData);
+  MutableBufferRef buf(v_data.data(), v_data.size(), v_data.size() + 1);
+  EXPECT_EQ(buf.Size(), 0);
+  EXPECT_EQ(buf.Data(), nullptr);
+  EXPECT_FALSE(buf.WriteInto("RAW"));
 }
 
 TEST(MutableBufferRefTest, TupleGet) {

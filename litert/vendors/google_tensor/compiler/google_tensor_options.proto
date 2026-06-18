@@ -38,6 +38,9 @@ enum DeviceType {
   DEVICE_TYPE_TENSOR_G4 = 2;  // Pixel 9 Series
   DEVICE_TYPE_TENSOR_G5 = 3;  // Pixel 10 Series
   DEVICE_TYPE_TENSOR_G6 = 4;  // Pixel 11 Series
+  // copybara:comment_begin(google-only)
+  DEVICE_TYPE_TENSOR_G7 = 5;  // Pixel 12 Series
+  // copybara:comment_end
 }
 
 // Message to hold the configuration for the Google Tensor compiler.
@@ -84,7 +87,7 @@ message OpFilters {
 
 // Message to hold various compilation options for the Google Tensor compiler
 // plugin.
-// NEXT ID: 12
+// NEXT ID: 13
 message GoogleTensorOptions {
   // Specifies the type of float truncation to be applied.
   GoogleTensorOptionsTruncationType float_truncation_type = 1;
@@ -100,13 +103,14 @@ message GoogleTensorOptions {
   bool enable_four_bit_compilation = 6;
   // Specifies the desired sharding intensity.
   GoogleTensorOptionsShardingIntensity sharding_intensity = 7;
-  // String of key=value pairs for testing purposes.
-  // Example: testing_flags = "flag1=value1,flag2=value2"
-  string testing_flags = 8;
   // The compiler configuration to be used by the compiler.
   GoogleTensorCompilerConfig compiler_config = 9;
   // Enables dynamic range quantization.
   bool enable_dynamic_range_quantization = 10;
   // Path to a file containing proto text formatted OpFilters.
   string op_filters_proto = 11;
+  // Path to a file containing binary compiler options.
+  string extra_options_path = 12;
+
+  reserved 8;
 }

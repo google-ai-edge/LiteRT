@@ -47,4 +47,15 @@ message SamplerParameters {
   float temperature = 4;
   // The seed used to initialize the random number generator.
   optional int32 seed = 5;
+
+  // The backend to use for sampling.
+  enum Backend {
+    // Use the default backend, which is the same backend as the main model.
+    UNSPECIFIED = 0;
+    // Use the CPU for sampling.
+    CPU = 1;
+    // Use the GPU for sampling.
+    GPU = 2;
+  }
+  Backend backend = 6;
 }

@@ -229,6 +229,52 @@ absl::Status DumpOps(LiteRtModelT& model, const DumpOptions& options,
         output_indices.push_back(tensor_idx);
       }
 
+      // Collect all referenced blockwise tensors.
+      std::vector<const LiteRtTensorT*> original_refs_to_clone;
+      for (const auto* new_tensor : new_subgraph.Tensors()) {
+        if (new_tensor->Qparams().first == kLiteRtQuantizationBlockWise) {
+          const auto& block_wise = new_tensor->Qparams().second.block_wise;
+          if (block_wise.scales) {
+            original_refs_to_clone.push_back(
+                static_cast<const LiteRtTensorT*>(block_wise.scales));
+          }
+          if (block_wise.zero_points) {
+            original_refs_to_clone.push_back(
+                static_cast<const LiteRtTensorT*>(block_wise.zero_points));
+          }
+        }
+      }
+
+      // Clone them.
+      absl::flat_hash_map<const LiteRtTensorT*, LiteRtTensorT*>
+          referenced_tensor_map;
+      for (const auto* original_ref : original_refs_to_clone) {
+        if (referenced_tensor_map.contains(original_ref)) continue;
+        auto& new_ref = new_subgraph.EmplaceTensor();
+        litert::internal::CloneTo(*original_ref, new_ref);
+        if (litert::internal::IsConstant(*original_ref)) {
+          SetWeightsFromUnownedBuffer(new_ref.Weights(),
+                                      original_ref->Weights().Buffer());
+        }
+        referenced_tensor_map[original_ref] = &new_ref;
+      }
+
+      // Remap pointers.
+      for (auto* new_tensor : new_subgraph.Tensors()) {
+        if (new_tensor->Qparams().first == kLiteRtQuantizationBlockWise) {
+          auto& dest_q = new_tensor->Qparams();
+          auto& dest_bw = dest_q.second.block_wise;
+          if (dest_bw.scales) {
+            dest_bw.scales = referenced_tensor_map.at(
+                static_cast<const LiteRtTensorT*>(dest_bw.scales));
+          }
+          if (dest_bw.zero_points) {
+            dest_bw.zero_points = referenced_tensor_map.at(
+                static_cast<const LiteRtTensorT*>(dest_bw.zero_points));
+          }
+        }
+      }
+
       // NOTE: We do this after all tensors are created to avoid reference
       // invalidation caused by std::vector reallocation in EmplaceTensor.
       auto tensors = new_subgraph.Tensors();

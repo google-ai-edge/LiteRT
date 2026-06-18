@@ -276,7 +276,7 @@ class LiteRtCompiledModelT {
   // A opaque delegate and its metrics collection functions.
   struct Delegate {
     std::unique_ptr<LiteRtDelegateWrapperT,
-                    std::function<void(LiteRtDelegateWrapper)>>
+                    void (*)(LiteRtDelegateWrapper)>
         delegate;
     // NOLINTBEGIN(*-readability-class-member-naming)
     // Starts collection of HW-specific metrics at a specific level of detail.
@@ -454,7 +454,9 @@ class LiteRtCompiledModelT {
 
   // Tries to load the model from the cache. Returns true if the model is loaded
   // from the cache, false otherwise.
-  bool TryLoadingFromCache(uint64_t model_hash);
+  bool TryLoadingFromCache(
+      litert::internal::CompilationCache::CacheKey cache_key,
+      absl::string_view model_name = "");
 #endif  // !defined(LITERT_DISABLE_NPU)
 
   // The environment associated with the compiled model.
@@ -482,6 +484,10 @@ class LiteRtCompiledModelT {
   // a newly serialized flatbuffer owned by the compiled model. If the model is
   // loaded from the cache, the fd belongs to the cached flatbuffer.
   int fb_model_fd_ = -1;
+  size_t fb_model_file_offset_ = 0;
+  // Size of the flatbuffer model. Note that this is only available when
+  // fb_model_fd_ refers to a file.
+  size_t fb_model_size_ = 0;
 
 #if !defined(LITERT_DISABLE_NPU)
   // The compilation cache used to store the compiled model. If the model is
@@ -490,6 +496,7 @@ class LiteRtCompiledModelT {
   std::optional<litert::internal::CompilationCache> compilation_cache_;
   std::optional<LiteRtModelT::Ptr> cached_model_;
   std::vector<litert::internal::CompilerPlugin> maybe_compiled_plugins_;
+  std::optional<litert::internal::ApplyPluginsResult> apply_plugins_result_;
 #endif  // !defined(LITERT_DISABLE_NPU)
 
   // The buffer requirement maps for CPU buffers. For delegates with CPU

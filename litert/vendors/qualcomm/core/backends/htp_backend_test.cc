@@ -9,10 +9,10 @@
 #include <utility>
 #include <vector>
 
-#include "HTP/QnnHtpDevice.h"
-#include "HTP/QnnHtpPerfInfrastructure.h"
-#include "QnnCommon.h"
-#include "QnnInterface.h"
+#include "HTP/QnnHtpDevice.h"  // from @qairt
+#include "HTP/QnnHtpPerfInfrastructure.h"  // from @qairt
+#include "QnnCommon.h"  // from @qairt
+#include "QnnInterface.h"  // from @qairt
 #include <gtest/gtest.h>
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/backends/backend_utils.h"

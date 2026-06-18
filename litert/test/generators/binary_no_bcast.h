@@ -87,17 +87,20 @@ class BinaryNoBroadcast : public TestGraph {
 
   // TODO finish support for other op codes and activation functions.
   static_assert(kOpCode == kLiteRtOpCodeTflAdd ||
-                kOpCode == kLiteRtOpCodeTflSub);
+                kOpCode == kLiteRtOpCodeTflSub ||
+                kOpCode == kLiteRtOpCodeTflMul ||
+                kOpCode == kLiteRtOpCodeTflDiv);
   static_assert(kFa == tflite::ActivationFunctionType_NONE);
 
   static constexpr TensorNames<2> kInputNames = {"lhs", "rhs"};
   static constexpr TensorNames<2> kOutputNames = {"output"};
   static constexpr absl::string_view kSignatureName = "default";
 
-  using ReferenceOperator =
-      SelectT<std::bool_constant<kOpCode == kLiteRtOpCodeTflAdd>, std::plus<T>,
-              std::bool_constant<kOpCode == kLiteRtOpCodeTflSub>,
-              std::minus<T>>;
+  using ReferenceOperator = SelectT<
+      std::bool_constant<kOpCode == kLiteRtOpCodeTflAdd>, std::plus<T>,
+      std::bool_constant<kOpCode == kLiteRtOpCodeTflSub>, std::minus<T>,
+      std::bool_constant<kOpCode == kLiteRtOpCodeTflMul>, std::multiplies<T>,
+      std::bool_constant<kOpCode == kLiteRtOpCodeTflDiv>, std::divides<T>>;
 
   static constexpr ElementType kElementType = GetElementType<T>();
 
@@ -186,8 +189,13 @@ class BinaryNoBroadcast : public TestGraph {
     outputs[0] = TensorDetails{dims, LiteRtElementType(kElementType),
                                std::string(kOutputNames[0])};
 
-    return SingleOpModel<kOpCode>(inputs, outputs, kFa,
-                                  /*pot_scale_int16=*/false);
+    if constexpr (kOpCode == kLiteRtOpCodeTflAdd ||
+                  kOpCode == kLiteRtOpCodeTflSub) {
+      return SingleOpModel<kOpCode>(inputs, outputs, kFa,
+                                    /*pot_scale_int16=*/false);
+    } else {
+      return SingleOpModel<kOpCode>(inputs, outputs, kFa);
+    }
   }
   Expected<void> ReferenceImpl(
       const typename Traits::ReferenceInputs& inputs,

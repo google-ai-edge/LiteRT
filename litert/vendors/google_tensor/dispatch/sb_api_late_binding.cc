@@ -185,6 +185,9 @@ T GetValForSymUnavailable() {
 
 constexpr char kDefaultSouthBoundLibPath[] =
 #ifdef __ANDROID__
+    // Use bare soname instead of absolute vendor path so that Android's linker
+    // namespace resolves the library via public.libraries.txt. The absolute
+    // path is blocked for untrusted_app contexts on Android 12+.
     "libedgetpu_litert.so";
 #else
     "third_party/darwinn/litert/dispatch/libedgetpu_litert.so";

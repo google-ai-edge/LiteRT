@@ -16,7 +16,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
+load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps", "litert_bin", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
@@ -25,6 +25,7 @@ package(
     default_visibility = [
         "//visibility:private",
     ],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
 )
 
 litert_dynamic_lib(
@@ -55,9 +56,9 @@ litert_dynamic_lib(
     deps = [
         ":qnn_compose_graph",
         "//litert/c:litert_any",
-        "//litert/c:litert_builder",
+        "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
-        "//litert/c:litert_environment_options",
+        "//litert/c:litert_environment_options_header",
         "//litert/c:litert_model_header",
         "//litert/c:litert_opaque_options_header",
         "//litert/c:litert_options_header",
@@ -82,6 +83,81 @@ litert_dynamic_lib(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@qairt//:qnn_lib_headers",
+    ] + select({
+        "//litert:android_arm64": [
+            "@qairt//:libQnnHtp.so",
+            "@qairt//:libQnnIr.so",
+            "@qairt//:libQnnSaver.so",
+            "@qairt//:libQnnSystem.so",
+        ],
+        "//litert:linux_x86_64": [
+            "@qairt//:libQnnHtp.so",
+            "@qairt//:libQnnIr.so",
+            "@qairt//:libQnnSaver.so",
+            "@qairt//:libQnnSystem.so",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+litert_bin(
+    name = "LiteRtCompilerPlugin_Qualcomm",
+    srcs = [
+        "qnn_compiler_plugin.cc",
+        "//litert/vendors/c:litert_compiler_plugin.h",
+    ],
+    copts = select({
+        "//litert:windows": [
+            "/DLITERT_COMPILE_LIBRARY",
+            "/wd4018",  # -Wno-sign-compare
+        ],
+        "//conditions:default": [],
+    }),
+    linkshared = 1,
+    linkstatic = 1,
+    tags = [
+        "nobuilder",
+        "notap",
+        "windows",
+    ],
+    target_compatible_with = select({
+        "//litert:windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//litert:litert_public"],
+    deps = [
+        ":qnn_compose_graph",
+        "//litert/c:litert_any",
+        "//litert/c:litert_builder",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_model_header",
+        "//litert/c:litert_opaque_options_header",
+        "//litert/c:litert_options_header",
+        "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_logging_helper_with_compiler_context",
+        "//litert/c/options:litert_qualcomm_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_context_wrapper",
+        "//litert/cc/internal:litert_handle",
+        "//litert/cc/internal:litert_options_wrapper",
+        "//litert/cc/options:litert_qualcomm_options",
+        "//litert/compiler/cc:litert_model",
+        "//litert/vendors/cc:namespace_heuristics",
+        "//litert/vendors/qualcomm:common",
+        "//litert/vendors/qualcomm:qnn_manager",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/utils:miscs",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -102,12 +178,12 @@ litert_test(
         ],
     }),
     linkstatic = True,
+    no_main = True,
     tags = [
-        # Tests with ungrte deps do not currently work on forge.
-        "manual",
-        "no-remote-exec",
-        "notap",
+        "noasan",
+        "nomsan",
         "nosan",
+        "notsan",
     ],
     # This test can be run only on Android and Linux.
     target_compatible_with = select({
@@ -123,7 +199,7 @@ litert_test(
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_header",
         "//litert/c:litert_op_code",
-        "//litert/c/internal:litert_compiler_context_testonly",
+        "//litert/c/internal:litert_compiler_context",
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_qualcomm_options",
         "//litert/cc:litert_expected",
@@ -137,7 +213,8 @@ litert_test(
         "//litert/core:environment_options",
         "//litert/core/model:model_testonly",
         "//litert/test:common",
-        "//litert/test:matchers_oss",
+        "//litert/test:load_test_model_runtimecapi",
+        "//litert/test:matchers",
         "//litert/test:test_models",
         "//litert/vendors/cc:litert_compiler_plugin",
         "//litert/vendors/qualcomm/core/schema:soc_table",
@@ -145,7 +222,14 @@ litert_test(
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
         "@qairt//:qnn_lib_headers",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:linux_x86_64": [
+            # copybara:uncomment_begin(google-only)
+            # "@qairt//:linux_deps",
+            # copybara:uncomment_end
+        ],
+        "//conditions:default": [],
+    }) + gtest_main_no_heapcheck_deps(),
 )
 
 litert_device_exec(
@@ -159,12 +243,13 @@ litert_lib(
     name = "qnn_compose_graph",
     srcs = ["qnn_compose_graph.cc"],
     hdrs = ["qnn_compose_graph.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
         ":graph_mapper",
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
-        "//litert/c:litert_op_options",
+        "//litert/c:litert_op_options_header",
         "//litert/c/internal:litert_compiler_context_header",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_element_type",
@@ -185,6 +270,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:conv2d_op_builder",
         "//litert/vendors/qualcomm/core/builders:conv3d_op_builder",
         "//litert/vendors/qualcomm/core/builders:cumsum_op_builder",
+        "//litert/vendors/qualcomm/core/builders:custom_op_builder",
         "//litert/vendors/qualcomm/core/builders:depthwise_conv2d_op_builder",
         "//litert/vendors/qualcomm/core/builders:dynamic_update_slice_op_builder",
         "//litert/vendors/qualcomm/core/builders:elementwise_op_builder",
@@ -231,6 +317,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:unpack_op_builder",
         "//litert/vendors/qualcomm/core/dump:dump_graph",
         "//litert/vendors/qualcomm/core/transformation:graph_to_graph",
+        "//litert/vendors/qualcomm/core/utils:flexbuffer_helpers",
         "//litert/vendors/qualcomm/core/utils:log",
         "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
@@ -242,6 +329,7 @@ litert_lib(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+        "@flatbuffers//:runtime_cc",
         "@qairt//:qnn_lib_headers",
     ],
 )
@@ -250,6 +338,7 @@ litert_lib(
     name = "graph_mapper",
     srcs = ["graph_mapper.cc"],
     hdrs = ["graph_mapper.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
     visibility = ["//litert:__subpackages__"],
     deps = [
         "//litert/c:litert_common",

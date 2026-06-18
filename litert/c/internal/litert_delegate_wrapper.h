@@ -37,6 +37,7 @@ extern "C" {
 // The lifetime of the wrapper returned in `*wrapper` is the same
 // as the lifetime of the delegate passed in.
 LiteRtStatus LiteRtWrapDelegate(TfLiteOpaqueDelegate* delegate,
+                                void (*deleter)(TfLiteOpaqueDelegate*),
                                 LiteRtDelegateWrapper* wrapper);
 
 // Extract a TF Lite opaque delegate from a LiteRT delegate wrapper.
@@ -44,6 +45,9 @@ LiteRtStatus LiteRtWrapDelegate(TfLiteOpaqueDelegate* delegate,
 // lifetime of the wrapper.
 LiteRtStatus LiteRtUnwrapDelegate(LiteRtDelegateWrapper wrapper,
                                   TfLiteOpaqueDelegate** delegate);
+
+// Destroy a LiteRT delegate wrapper and its underlying TF Lite delegate.
+void LiteRtDestroyDelegateWrapper(LiteRtDelegateWrapper wrapper);
 
 #ifdef __cplusplus
 }  // extern "C"

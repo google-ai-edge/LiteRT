@@ -16,6 +16,7 @@
 #ifndef ODML_LITERT_LITERT_CORE_MODEL_LITERT_TO_FLATBUFFER_H_
 #define ODML_LITERT_LITERT_CORE_MODEL_LITERT_TO_FLATBUFFER_H_
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
@@ -25,7 +26,13 @@ namespace litert::internal {
 Expected<TflTensorType> MapTensorType(const TensorType& litert_tensor_type);
 
 Expected<TflQuantizationPtr> MapQuantization(
-    const Quantization& litert_quantization);
+    const Quantization& litert_quantization,
+    const absl::flat_hash_map<LiteRtTensor, int32_t>& tensor_map);
+
+inline Expected<TflQuantizationPtr> MapQuantization(
+    const Quantization& litert_quantization) {
+  return MapQuantization(litert_quantization, {});
+}
 
 }  // namespace litert::internal
 

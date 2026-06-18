@@ -188,6 +188,10 @@ TEST(GoogleTensorOptionsTest, CppApi) {
   EXPECT_EQ(options->GetOpFiltersProto(), "");
   options->SetOpFiltersProto("test_proto_string");
   EXPECT_EQ(options->GetOpFiltersProto(), "test_proto_string");
+
+  EXPECT_EQ(options->GetExtraOptionsPath(), "");
+  options->SetExtraOptionsPath("/tmp/extra_options.bin");
+  EXPECT_EQ(options->GetExtraOptionsPath(), "/tmp/extra_options.bin");
 }
 
 TEST(LrtGoogleTensorOptionsTest, OpFiltersProto) {
@@ -211,6 +215,32 @@ TEST(LrtGoogleTensorOptionsTest, OpFiltersProto) {
   LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetOpFiltersProto(
       parsed, &parsed_op_filters_proto));
   EXPECT_STREQ(parsed_op_filters_proto, "some_\"proto\"path\\");
+
+  LrtDestroyGoogleTensorOptions(parsed);
+  LrtDestroyGoogleTensorOptions(options);
+}
+
+TEST(LrtGoogleTensorOptionsTest, ExtraOptionsPath) {
+  LrtGoogleTensorOptions options;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
+
+  const char* extra_options_path;
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetExtraOptionsPath(
+      options, &extra_options_path));
+  ASSERT_STREQ(extra_options_path, "");
+
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetExtraOptionsPath(
+      options, "/tmp/extra_options.bin"));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetExtraOptionsPath(
+      options, &extra_options_path));
+  ASSERT_STREQ(extra_options_path, "/tmp/extra_options.bin");
+
+  LrtGoogleTensorOptions parsed;
+  SerializeAndParse(options, &parsed);
+  const char* parsed_extra_options_path;
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetExtraOptionsPath(
+      parsed, &parsed_extra_options_path));
+  EXPECT_STREQ(parsed_extra_options_path, "/tmp/extra_options.bin");
 
   LrtDestroyGoogleTensorOptions(parsed);
   LrtDestroyGoogleTensorOptions(options);
@@ -275,84 +305,6 @@ TEST(LrtGoogleTensorOptionsTest, PerformanceMode) {
   EXPECT_EQ(performance_mode,
             kLiteRtGoogleTensorOptionsPerformanceModeHighPerformance);
 
-  LrtDestroyGoogleTensorOptions(options);
-}
-
-TEST(LrtGoogleTensorOptionsTest, TestingFlagsCAPI) {
-  LrtGoogleTensorOptions options;
-  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
-
-  // Default is empty
-  std::vector<std::vector<std::string>> flags;
-  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetTestingFlags(options, &flags));
-  EXPECT_TRUE(flags.empty());
-
-  // Set multiple flags
-  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetTestingFlags(
-      options, "flag1=val1,flag2=val2,flag3"));
-  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetTestingFlags(options, &flags));
-  ASSERT_EQ(flags.size(), 3);
-  EXPECT_THAT(flags[0], testing::ElementsAre("flag1", "val1"));
-  EXPECT_THAT(flags[1], testing::ElementsAre("flag2", "val2"));
-  // Parser behavior: "flag3" becomes {"flag3", ""}
-  EXPECT_THAT(flags[2], testing::ElementsAre("flag3", ""));
-
-  // Round trip serialization
-  LrtGoogleTensorOptions parsed;
-  SerializeAndParse(options, &parsed);
-  std::vector<std::vector<std::string>> parsed_flags;
-  LITERT_ASSERT_OK(
-      LrtGoogleTensorOptionsGetTestingFlags(parsed, &parsed_flags));
-  ASSERT_EQ(parsed_flags.size(), 3);
-  EXPECT_THAT(parsed_flags[0], testing::ElementsAre("flag1", "val1"));
-  EXPECT_THAT(parsed_flags[1], testing::ElementsAre("flag2", "val2"));
-  EXPECT_THAT(parsed_flags[2], testing::ElementsAre("flag3", ""));
-
-  LrtDestroyGoogleTensorOptions(parsed);
-  LrtDestroyGoogleTensorOptions(options);
-}
-
-TEST(GoogleTensorOptionsTest, TestingFlagsCppAPI) {
-  auto options = GoogleTensorOptions::Create();
-  ASSERT_TRUE(options);
-
-  // Set flags
-  options->SetTestingFlags("enable_reference=true");
-  auto flags = options->GetTestingFlags();
-
-  ASSERT_EQ(flags.size(), 1);
-  EXPECT_THAT(flags[0], testing::ElementsAre("enable_reference", "true"));
-
-  options->SetTestingFlags("key=value");
-  flags = options->GetTestingFlags();
-  ASSERT_EQ(flags.size(), 1);
-  EXPECT_THAT(flags[0], testing::ElementsAre("key", "value"));
-
-  // No = here
-  options->SetTestingFlags("another_flag");
-  flags = options->GetTestingFlags();
-  ASSERT_EQ(flags.size(), 1);
-  EXPECT_THAT(flags[0], testing::ElementsAre("another_flag", ""));
-}
-
-TEST(LrtGoogleTensorOptionsTest, TestingFlagsEscaping) {
-  LrtGoogleTensorOptions options;
-  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
-
-  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetTestingFlags(
-      options, "key=\"value\",path=C:\\foo"));
-
-  LrtGoogleTensorOptions parsed;
-  SerializeAndParse(options, &parsed);
-
-  std::vector<std::vector<std::string>> parsed_flags;
-  LITERT_ASSERT_OK(
-      LrtGoogleTensorOptionsGetTestingFlags(parsed, &parsed_flags));
-  ASSERT_EQ(parsed_flags.size(), 2);
-  EXPECT_THAT(parsed_flags[0], testing::ElementsAre("key", "\"value\""));
-  EXPECT_THAT(parsed_flags[1], testing::ElementsAre("path", "C:\\foo"));
-
-  LrtDestroyGoogleTensorOptions(parsed);
   LrtDestroyGoogleTensorOptions(options);
 }
 

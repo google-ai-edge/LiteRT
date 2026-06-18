@@ -508,7 +508,8 @@ build --config=litert_prefixes
 build --define=disable_tf_lite_py=true
 
 # Config to use a gcs bucket as remote cache.
-build:public_cache --remote_cache="https://storage.googleapis.com/litert-bazel-artifacts" --remote_upload_local_results=false
+# Unset DOCKER_CACHEBUSTER variables to prevent random container injection from breaking action cache keys across CI environments.
+build:public_cache --remote_cache="https://storage.googleapis.com/litert-bazel-artifacts" --remote_upload_local_results=false --action_env=DOCKER_CACHEBUSTER= --action_env=DOCKER_HOST_CACHEBUSTER=
 
 # Cache pushes are limited to CI system.
 # WARNING: THIS OPTION WONT WORK IF YOU DO NOT HAVE PROPER AUTHENTICATION AND PERMISSIONS

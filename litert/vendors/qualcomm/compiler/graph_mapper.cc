@@ -20,10 +20,16 @@
 #include <stdio.h>
 
 #include <array>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 
+#include "GPU/QnnGpuGraph.h"  // from @qairt
+#include "HTP/QnnHtpGraph.h"  // from @qairt
 #include "IR/QnnIrGraph.h"
+#include "QnnCommon.h"  // from @qairt
+#include "QnnGraph.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -32,10 +38,6 @@
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "HTP/QnnHtpGraph.h"  // from @qairt
-#include "QnnCommon.h"  // from @qairt
-#include "QnnGraph.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 namespace litert::qnn {
 
@@ -71,11 +73,27 @@ Qnn_Priority_t GetGraphPriorityValue(::qnn::GraphPriority graph_priority) {
   }
 }
 
+QnnGpu_Precision_t GetGpuPrecisionValue(::qnn::GpuPrecision precision) {
+  switch (precision) {
+    case ::qnn::GpuPrecision::kUserProvided:
+      return QNN_GPU_PRECISION_USER_PROVIDED;
+    case ::qnn::GpuPrecision::kFp32:
+      return QNN_GPU_PRECISION_FP32;
+    case ::qnn::GpuPrecision::kFp16:
+      return QNN_GPU_PRECISION_FP16;
+    case ::qnn::GpuPrecision::kHybrid:
+      return QNN_GPU_PRECISION_HYBRID;
+    default:
+      return QNN_GPU_PRECISION_FP16;
+  }
+}
+
 inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs(
     const ::qnn::Options& options) {
-  static std::array<QnnHtpGraph_CustomConfig_t, 6> graph_custom_configs;
-  static std::array<QnnGraph_Config_t, 7> graph_configs;
-  static std::array<const QnnGraph_Config_t*, 8> result;
+  static std::array<QnnHtpGraph_CustomConfig_t, 7> graph_custom_configs;
+  static std::array<QnnGraph_Config_t, 8> graph_configs;
+  static std::array<const QnnGraph_Config_t*, 9> result;
+  size_t num_config = 5;
 
   // QNN suggest always enable relax precision.
   graph_custom_configs[0] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
@@ -106,16 +124,33 @@ inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs(
       QNN_HTP_GRAPH_CONFIG_OPTION_SHORT_DEPTH_CONV_ON_HMX_OFF;
   graph_custom_configs[4].shortDepthConvOnHmxOff = !options.GetUseConvHMX();
 
-  // Hvx Thread
-  bool has_hvx = options.GetNumHvxThreads() != 0;
-  if (has_hvx) {
-    graph_custom_configs[5] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
-    graph_custom_configs[5].option =
-        QNN_HTP_GRAPH_CONFIG_OPTION_NUM_HVX_THREADS;
-    graph_custom_configs[5].numHvxThreads = options.GetNumHvxThreads();
+  // P Point
+  const std::int32_t htp_p_point = options.GetHtpPPoint();
+  if (htp_p_point > 0) {
+    graph_custom_configs[num_config] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    graph_custom_configs[num_config].option =
+        QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG;
+    graph_custom_configs[num_config].finalizeConfig.key = "P";
+    graph_custom_configs[num_config].finalizeConfig.value = {
+        QNN_DATATYPE_INT_32, {.int32Value = htp_p_point}};
+    num_config++;
+  } else if (htp_p_point < 0) {
+    LITERT_LOG(LITERT_WARNING,
+               "Invalid P point (%d): negative values not supported, skipping "
+               "P point config.",
+               htp_p_point);
   }
 
-  size_t num_config = has_hvx ? 6 : 5;
+  // Hvx Thread
+  const std::uint32_t num_hvx_threads = options.GetNumHvxThreads();
+  if (num_hvx_threads > 0) {
+    graph_custom_configs[num_config] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    graph_custom_configs[num_config].option =
+        QNN_HTP_GRAPH_CONFIG_OPTION_NUM_HVX_THREADS;
+    graph_custom_configs[num_config].numHvxThreads = num_hvx_threads;
+    num_config++;
+  }
+
   for (size_t i = 0; i < num_config; ++i) {
     graph_configs[i] = QNN_GRAPH_CONFIG_INIT;
     graph_configs[i].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
@@ -195,6 +230,26 @@ inline absl::Span<const QnnGraph_Config_t*> GetLegacyGraphConfigs(
   return absl::MakeSpan(result.data(), num_config + 1);
 }
 
+inline absl::Span<const QnnGraph_Config_t*> GetGpuGraphConfigs(
+    const ::qnn::Options& options) {
+  static std::array<QnnGpuGraph_CustomConfig_t, 1> graph_custom_configs;
+  static std::array<QnnGraph_Config_t, 1> graph_configs;
+  static std::array<const QnnGraph_Config_t*, 2> result;
+
+  // Precision
+  graph_custom_configs[0] = QNN_GPU_GRAPH_CUSTOM_CONFIG_INIT;
+  graph_custom_configs[0].precision =
+      GetGpuPrecisionValue(options.GetGpuPrecision());
+
+  graph_configs[0] = QNN_GRAPH_CONFIG_INIT;
+  graph_configs[0].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
+  graph_configs[0].customConfig = &graph_custom_configs[0];
+  result[0] = &graph_configs[0];
+
+  result[1] = nullptr;
+  return absl::MakeSpan(result.data(), 2);
+}
+
 absl::Span<const QnnGraph_Config_t*> GetDefaultIrGraphConfigs(
     const ::qnn::Options& options, absl::string_view qnn_graph_name) {
   static std::array<QnnIrGraph_CustomConfig_t, 1> graph_custom_configs;
@@ -243,6 +298,9 @@ LiteRtStatus GraphMapper::InitQnnGraph(absl::string_view qnn_graph_name,
   switch (options.GetBackendType()) {
     case ::qnn::BackendType::kHtpBackend:
       graph_configs = PickGraphConfigHeuristic(options);
+      break;
+    case ::qnn::BackendType::kGpuBackend:
+      graph_configs = GetGpuGraphConfigs(options);
       break;
     case ::qnn::BackendType::kIrBackend:
       graph_configs = GetDefaultIrGraphConfigs(options, qnn_graph_name);

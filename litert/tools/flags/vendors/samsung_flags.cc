@@ -28,12 +28,21 @@
 #include "litert/cc/options/litert_samsung_options.h"
 #include "litert/tools/flags/options_parser_registry.h"
 
+ABSL_FLAG(std::string, samsung_soc_model, "E9965", "Target SoC model.");
 ABSL_FLAG(bool, samsung_large_model_support, false,
           "Whether to enable large model support.");
 
 namespace litert::samsung {
 
 Expected<void> UpdateSamsungOptionsFromFlags(SamsungOptions& options) {
+  bool large_model_support = absl::GetFlag(FLAGS_samsung_large_model_support);
+  LITERT_RETURN_IF_ERROR(
+      options.SetEnableLargeModelSupport(large_model_support));
+
+  std::string soc_model_str = absl::GetFlag(FLAGS_samsung_soc_model);
+  if (!soc_model_str.empty()) {
+    LITERT_RETURN_IF_ERROR(options.SetSocModel(soc_model_str.c_str()));
+  }
   return {};
 }
 

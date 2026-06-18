@@ -88,6 +88,9 @@ ABSL_FLAG(bool, use_gpu_ref, false,
           "Use GPU FP32 as reference path instead of CPU");
 ABSL_FLAG(bool, dump_only, false,
           "Only extract and save models, do not run accuracy checking.");
+ABSL_FLAG(bool, dump_tensors, false,
+          "Whether to dump all input and output tensors for both CPU and "
+          "accelerator.");
 ABSL_FLAG(bool, use_gpu_fp32_as_accel, false,
           "Use FP32 as when using GPU accelerator.");
 
@@ -225,6 +228,7 @@ int main(int argc, char** argv) {
       absl::GetFlag(FLAGS_save_failing_models);
   checker_options.use_gpu_ref = absl::GetFlag(FLAGS_use_gpu_ref);
   checker_options.dump_only = absl::GetFlag(FLAGS_dump_only);
+  checker_options.dump_tensors = absl::GetFlag(FLAGS_dump_tensors);
 
   std::string boundary_tensors_str = absl::GetFlag(FLAGS_boundary_tensors);
   if (!boundary_tensors_str.empty()) {

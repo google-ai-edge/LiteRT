@@ -42,6 +42,7 @@
 #include "litert/test/generators/graph_helpers.h"
 #include "litert/test/simple_buffer.h"
 #include "tflite/schema/schema_generated.h"
+#include "tflite/types/half.h"
 
 namespace litert::testing {
 
@@ -82,7 +83,7 @@ struct OpDetails<kLiteRtOpCodeTflDepthwiseConv2d> {
   OptionsT options;
 };
 
-template <typename Rank, typename T, typename OpCode,
+template <typename Rank, typename T_in, typename T_out, typename OpCode,
           typename Padding =
               std::integral_constant<tflite::Padding, tflite::Padding_VALID>,
           typename StrideH = SizeC<1>, typename StrideW = SizeC<1>,
@@ -102,7 +103,8 @@ class DepthwiseConv2d : public TestGraph {
   static constexpr TensorNames<1> kInputNames = {"input"};
   static constexpr TensorNames<1> kOutputNames = {"output"};
 
-  static constexpr ElementType kElementType = GetElementType<T>();
+  static constexpr ElementType kInElementType = GetElementType<T_in>();
+  static constexpr ElementType kOutElementType = GetElementType<T_out>();
 
   static constexpr tflite::Padding kPadding = Padding::value;
   static constexpr int32_t kStrideH = StrideH::value;
@@ -117,12 +119,12 @@ class DepthwiseConv2d : public TestGraph {
     std::array<Layout::Dim, 4> filter_shape;
     std::array<Layout::Dim, 1> bias_shape;
     std::array<Layout::Dim, 4> output_shape;
-    std::vector<T> filter_data;
-    std::vector<T> bias_data;
+    std::vector<T_in> filter_data;
+    std::vector<T_out> bias_data;
   };
 
  public:
-  using Traits = TestLogicTraits<TypeList<T>, TypeList<T>, Params>;
+  using Traits = TestLogicTraits<TypeList<T_in>, TypeList<T_out>, Params>;
   using Ptr = std::unique_ptr<DepthwiseConv2d>;
 
   static constexpr absl::string_view Name() { return "DepthwiseConv2d"; }
@@ -135,8 +137,9 @@ class DepthwiseConv2d : public TestGraph {
     params.bias_shape = {kDepthMultiplier};
 
     // Fill filter and bias with fixed representative values
-    params.filter_data.assign(3 * 3 * kDepthMultiplier, 1.0f);
-    params.bias_data.assign(kDepthMultiplier, 0.0f);
+    params.filter_data.assign(3 * 3 * kDepthMultiplier,
+                              static_cast<T_in>(1.0f));
+    params.bias_data.assign(kDepthMultiplier, static_cast<T_out>(0.0f));
 
     // Leverage shape inference to compute output shape
     LiteRtOpT op;
@@ -174,14 +177,27 @@ class DepthwiseConv2d : public TestGraph {
 
   bool HasReference() const override { return true; }
 
+  ConformanceSpec GetConformanceSpec() const override {
+    ConformanceSpec spec;
+    spec.comparator_kind = ConformanceComparatorKind::kFloatAccumulationAware;
+    spec.accumulation_depth = params_.filter_shape[1] * params_.filter_shape[2];
+    if constexpr (std::is_same_v<T_in, tflite::half> ||
+                  std::is_same_v<T_out, tflite::half>) {
+      spec.relative_tolerance = 5e-3;
+    } else {
+      spec.relative_tolerance = 1e-4;
+    }
+    return spec;
+  }
+
   Expected<VarBuffers> MakeInputs(
       DefaultDevice& device,
       const RandomTensorDataBuilder& data_builder) const override {
     VarBuffers inputs;
     LITERT_ASSIGN_OR_RETURN(auto input,
-                            SimpleBuffer::Create<T>(params_.input_shape));
+                            SimpleBuffer::Create<T_in>(params_.input_shape));
     LITERT_RETURN_IF_ERROR(
-        (input.template WriteRandom<T>(data_builder, device)));
+        (input.template WriteRandom<T_in>(data_builder, device)));
     inputs.push_back(std::move(input));
     return inputs;
   }
@@ -213,12 +229,20 @@ class DepthwiseConv2d : public TestGraph {
     int pad_l = ComputePaddingBefore(in_w, filter_w, kStrideW, kDilationW,
                                      kPadding, out_w);
 
-    // Simple reference for C=1, M=1 (same as Conv2D with 1 channel)
+    std::vector<float> input_f32 = UnpackToFloat(input.data);
+    std::vector<float> filter_f32 =
+        UnpackToFloat(absl::MakeConstSpan(params_.filter_data));
+    std::vector<float> bias_f32 =
+        UnpackToFloat(absl::MakeConstSpan(params_.bias_data));
+    std::vector<float> output_f32(output.data.size());
+
     litert::internal::ReferenceDepthwiseConv2D(
-        input.data.data(), params_.filter_data.data(), params_.bias_data.data(),
-        output.data.data(), batch, in_h, in_w, in_c, out_h, out_w, out_c,
-        filter_h, filter_w, kStrideH, kStrideW, kDilationH, kDilationW, pad_t,
-        pad_l, kDepthMultiplier, kFa);
+        input_f32.data(), filter_f32.data(), bias_f32.data(), output_f32.data(),
+        batch, in_h, in_w, in_c, out_h, out_w, out_c, filter_h, filter_w,
+        kStrideH, kStrideW, kDilationH, kDilationW, pad_t, pad_l,
+        kDepthMultiplier, kFa);
+
+    PackFromFloat(absl::MakeConstSpan(output_f32), output.data);
     return {};
   }
 
@@ -233,26 +257,26 @@ class DepthwiseConv2d : public TestGraph {
     op_inputs[0] = TensorDetails{
         std::vector<int32_t>(params.input_shape.begin(),
                              params.input_shape.end()),
-        LiteRtElementType(kElementType), std::string(kInputNames[0])};
+        LiteRtElementType(kInElementType), std::string(kInputNames[0])};
 
     auto filter_buf = MakeOwningBufferRef(params.filter_data);
 
     op_inputs[1] = TensorDetails{
         std::vector<int32_t>(params.filter_shape.begin(),
                              params.filter_shape.end()),
-        LiteRtElementType(kElementType), "filter", std::move(filter_buf)};
+        LiteRtElementType(kInElementType), "filter", std::move(filter_buf)};
 
     auto bias_buf = MakeOwningBufferRef(params.bias_data);
 
     op_inputs[2] = TensorDetails{std::vector<int32_t>(params.bias_shape.begin(),
                                                       params.bias_shape.end()),
-                                 LiteRtElementType(kElementType), "bias",
+                                 LiteRtElementType(kOutElementType), "bias",
                                  std::move(bias_buf)};
 
     op_outputs[0] = TensorDetails{
         std::vector<int32_t>(params.output_shape.begin(),
                              params.output_shape.end()),
-        LiteRtElementType(kElementType), std::string(kOutputNames[0])};
+        LiteRtElementType(kOutElementType), std::string(kOutputNames[0])};
 
     return SingleOpModel<kLiteRtOpCodeTflDepthwiseConv2d>(
         op_inputs, op_outputs, kPadding, kStrideW, kStrideH, kDepthMultiplier,

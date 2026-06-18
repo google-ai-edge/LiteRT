@@ -68,6 +68,10 @@ std::string AbslUnparseFlag(LrtGoogleTensorOptionsTruncationType options) {
 bool AbslParseFlag(absl::string_view text,
                    LrtGoogleTensorOptionsShardingIntensity* options,
                    std::string* error) {
+  if (text == "unspecified") {
+    *options = kLiteRtGoogleTensorShardingIntensityUnspecified;
+    return true;
+  }
   if (text == "minimal") {
     *options = kLiteRtGoogleTensorShardingIntensityMinimal;
     return true;
@@ -90,6 +94,8 @@ bool AbslParseFlag(absl::string_view text,
 
 std::string AbslUnparseFlag(LrtGoogleTensorOptionsShardingIntensity options) {
   switch (options) {
+    case kLiteRtGoogleTensorShardingIntensityUnspecified:
+      return "unspecified";
     case kLiteRtGoogleTensorShardingIntensityMinimal:
       return "minimal";
     case kLiteRtGoogleTensorShardingIntensityModerate:
@@ -119,19 +125,20 @@ ABSL_FLAG(bool, google_tensor_enable_4bit_compilation, false,
 
 ABSL_FLAG(LrtGoogleTensorOptionsShardingIntensity,
           google_tensor_sharding_intensity,
-          kLiteRtGoogleTensorShardingIntensityMinimal,
+          kLiteRtGoogleTensorShardingIntensityUnspecified,
           "Sharding intensity for Google Tensor.");
 
 ABSL_FLAG(bool, google_tensor_enable_dynamic_range_quantization, false,
           "Whether to enable dynamic range quantization.");
 
-ABSL_FLAG(std::string, google_tensor_testing_flags, "",
-          "Testing flags for Google Tensor. Flag1=value1,Flag2=value2");
-
 ABSL_FLAG(
     std::string, google_tensor_op_filters_proto, "",
     "A path to a file containing proto text formatted OpFilters for the Google "
     "Tensor plugin.");
+
+ABSL_FLAG(
+    std::string, google_tensor_extra_options_path, "",
+    "Path to a file containing extra compiler options file for Google Tensor.");
 
 ABSL_FLAG(
     litert::google_tensor::GoogleTensorOptions::PerformanceMode,
@@ -206,9 +213,10 @@ Expected<void> UpdateGoogleTensorOptionsFromFlags(
       absl::GetFlag(FLAGS_google_tensor_sharding_intensity));
   options.SetEnableDynamicRangeQuantization(
       absl::GetFlag(FLAGS_google_tensor_enable_dynamic_range_quantization));
-  options.SetTestingFlags(absl::GetFlag(FLAGS_google_tensor_testing_flags));
   options.SetOpFiltersProto(
       absl::GetFlag(FLAGS_google_tensor_op_filters_proto));
+  options.SetExtraOptionsPath(
+      absl::GetFlag(FLAGS_google_tensor_extra_options_path));
   options.SetPerformanceMode(
       ::absl::GetFlag(::FLAGS_google_tensor_performance_mode));
   return {};

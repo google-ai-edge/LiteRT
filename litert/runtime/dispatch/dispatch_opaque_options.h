@@ -15,11 +15,19 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_DISPATCH_DISPATCH_OPAQUE_OPTIONS_H_
 #define ODML_LITERT_LITERT_RUNTIME_DISPATCH_DISPATCH_OPAQUE_OPTIONS_H_
 
+#include <cstddef>
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
 
 namespace litert::internal {
 
+// The DispatchDelegateOptions is used to share information between the
+// CompiledModel and the DispatchDelegate.
+//
+// Note: Since they're alway build together, this structure doesn't need to be
+// ABI stable.
 class DispatchDelegateOptions : public OpaqueOptions {
  public:
   using OpaqueOptions::OpaqueOptions;
@@ -55,6 +63,32 @@ class DispatchDelegateOptions : public OpaqueOptions {
 
   // Get alloc base fd.
   Expected<int> GetAllocBaseFd();
+
+  // Add an opaque executable handle for JIT
+  Expected<void> AddExecHandle(absl::string_view name,
+                               LiteRtJitExecutable handle);
+
+  // Get the opaque executable handle for JIT
+  Expected<LiteRtJitExecutable> GetExecHandle(absl::string_view name);
+
+  // alloc_base_file_offset ----------------------------------------------------
+
+  // Byte offset of alloc_base in the backing file when alloc_base_fd is used.
+  Expected<void> SetAllocBaseFileOffset(size_t alloc_base_file_offset);
+
+  // Get alloc base file offset.
+  Expected<size_t> GetAllocBaseFileOffset();
+
+  // alloc_base_size -----------------------------------------------------------
+
+  // Size in bytes of the model rooted at alloc_base when alloc_base_fd is used.
+  Expected<void> SetAllocBaseSize(size_t alloc_base_size);
+
+  // Get alloc base size.
+  Expected<size_t> GetAllocBaseSize();
+
+  // Returns whether the file region metadata (offset or size) is populated.
+  Expected<bool> HasAllocBaseFileRegion();
 };
 
 }  // namespace litert::internal

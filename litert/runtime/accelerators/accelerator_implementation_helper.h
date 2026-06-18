@@ -48,8 +48,8 @@ Expected<void> SetAcceleratorBoilerplateFunctions(
       LiteRtSetAcceleratorGetVersion(accelerator.get(), T::GetVersion));
   LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorGetHardwareSupport(
       accelerator.get(), T::GetHardwareSupport));
-  LITERT_RETURN_IF_ERROR(LiteRtSetDelegateFunction(
-      accelerator.get(), T::CreateDelegate, T::DestroyDelegate));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtSetDelegateFunction(accelerator.get(), T::CreateDelegate));
   return {};
 }
 

@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
+#include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
@@ -26,14 +27,21 @@ std::vector<OpWrapper> BuildTransposeOp(
     return res;
   }
 
-  auto& transpose_op = CreateOpWrapper(res, QNN_OP_TRANSPOSE);
-  transpose_op.AddInputTensor(inputs[0]);
-  transpose_op.AddOutputTensor(outputs[0]);
-  transpose_op.AddTensorParam(
-      QNN_OP_TRANSPOSE_PARAM_PERM,
-      tensor_pool.CloneStaticTensorFrom(perm_tensor, QNN_DATATYPE_UINT_32));
-
+  const auto& uint32_perm =
+      tensor_pool.CloneStaticTensorFrom(perm_tensor, QNN_DATATYPE_UINT_32);
+  res.emplace_back(CreateTransposeOp(inputs[0], outputs[0], uint32_perm));
   return res;
+}
+
+OpWrapper CreateTransposeOp(const TensorWrapper& input_0,
+                            const TensorWrapper& output_0,
+                            const TensorWrapper& perm) {
+  OpWrapper op(GetUniqueOpName(QNN_OP_TRANSPOSE), QNN_OP_TRANSPOSE,
+               QnnOpCode::kTranspose);
+  op.AddInputTensor(input_0);
+  op.AddOutputTensor(output_0);
+  op.AddTensorParam(QNN_OP_TRANSPOSE_PARAM_PERM, perm);
+  return op;
 }
 
 }  // namespace qnn

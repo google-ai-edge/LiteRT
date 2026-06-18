@@ -3,10 +3,12 @@
 
 #include "litert/vendors/qualcomm/core/builders/split_op_builder.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
+#include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
@@ -25,18 +27,16 @@ std::vector<OpWrapper> BuildSplitOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs,
     const std::uint32_t num_splits) {
-  std::vector<OpWrapper> res;
-
   const TensorWrapper& axis_tensor = inputs[kAxisIndex];
   if (!axis_tensor.IsTensorStatic()) {
-    return res;
+    return {};
   }
 
   const TensorWrapper& input_tensor = inputs[kInputIndex];
   auto axis_data = axis_tensor.GetTensorData<int32_t>();
   if (!axis_data.has_value()) {
     QNN_LOG_ERROR("Get axis_data failed.");
-    return res;
+    return {};
   }
   std::uint32_t axis = (*axis_data)[0] >= 0
                            ? (*axis_data)[0]
@@ -54,16 +54,23 @@ std::vector<OpWrapper> BuildSplitOp(
   TensorWrapper& split_indice_tensor = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_UINT_32, axis_tensor.GetQuantParams(), {num_splits - 1},
       sizeof(std::uint32_t) * split_indice.size(), split_indice.data());
+  return MakeVector(CreateSplitOp(
+      input_tensor,
+      std::vector<ConstTensorWrapperRef>(outputs.begin(), outputs.end()), axis,
+      split_indice_tensor));
+}
 
-  auto& split_op = CreateOpWrapper(res, QNN_OP_SPLIT);
-  split_op.AddInputTensor(input_tensor);
+OpWrapper CreateSplitOp(const TensorWrapper& input_0,
+                        const std::vector<ConstTensorWrapperRef>& outputs,
+                        std::uint32_t axis, const TensorWrapper& split_index) {
+  OpWrapper op(GetUniqueOpName(QNN_OP_SPLIT), QNN_OP_SPLIT, QnnOpCode::kSplit);
+  op.AddInputTensor(input_0);
   for (const auto& output : outputs) {
-    split_op.AddOutputTensor(output);
+    op.AddOutputTensor(output);
   }
-  split_op.AddScalarParam<std::uint32_t>(QNN_OP_SPLIT_PARAM_AXIS, axis);
-  split_op.AddTensorParam(QNN_OP_SPLIT_PARAM_SPLIT_INDEX, split_indice_tensor);
-
-  return res;
+  op.AddScalarParam<std::uint32_t>(QNN_OP_SPLIT_PARAM_AXIS, axis);
+  op.AddTensorParam(QNN_OP_SPLIT_PARAM_SPLIT_INDEX, split_index);
+  return op;
 }
 
 }  // namespace qnn

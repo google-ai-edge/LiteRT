@@ -19,10 +19,9 @@
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_op_options.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
@@ -30,7 +29,7 @@ namespace litert::mediatek {
 
 namespace {
 
-absl::Span<const int32_t> GetDimensions(Tensor& op) {
+absl::Span<const int32_t> GetDimensions(const litert::compiler::Tensor& op) {
   LITERT_ASSIGN_OR_ABORT(auto tensor_type, op.RankedTensorType());
   return tensor_type.Layout().Dimensions();
 }
@@ -39,7 +38,7 @@ absl::Span<const int32_t> GetDimensions(Tensor& op) {
 
 Expected<void> LegalizeResizeBilinearOp(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
-    OperandMap& operand_map, const litert::Op& op) {
+    OperandMap& operand_map, const litert::compiler::Op& op) {
   LITERT_LOG(LITERT_INFO, "Legalize ResizeBilinear");
 
   // Only the first input tensor is added. The second one,
@@ -68,8 +67,8 @@ Expected<void> LegalizeResizeBilinearOp(
   input_indices.push_back(format_operand_index);
 
   bool align_corners;
-  if (auto status =
-          LiteRtGetResizeBilinearAlignCornersOption(op.Get(), &align_corners);
+  if (auto status = op.ctx()->get_resize_bilinear_align_corners_option(
+          op.Get(), &align_corners);
       status != kLiteRtStatusOk) {
     return Error(status, "Failed to get align corners");
   }
@@ -78,7 +77,7 @@ Expected<void> LegalizeResizeBilinearOp(
   input_indices.push_back(align_corners_operand_index);
 
   bool half_pixel_centers;
-  if (auto status = LiteRtGetResizeBilinearHalfPixelCenterOption(
+  if (auto status = op.ctx()->get_resize_bilinear_half_pixel_center_option(
           op.Get(), &half_pixel_centers);
       status != kLiteRtStatusOk) {
     return Error(status, "Failed to get align corners");

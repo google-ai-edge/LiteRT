@@ -30,6 +30,7 @@ cc_library(
     name = "stb_image_hdrs",
     srcs = [
         "stb_image.h",
+        "stb_image_resize.h",
         "stb_image_write.h",
     ],
     includes = ["."],

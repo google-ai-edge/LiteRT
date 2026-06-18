@@ -21,13 +21,13 @@
 #include <vector>
 
 #include "neuron/api/NeuronAdapter.h"
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/c/litert_op_options.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/add_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/batch_matmul_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/common_op_legalization.h"
@@ -55,8 +55,9 @@
 
 namespace litert::mediatek {
 
-Expected<void> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
-                           const litert::Subgraph& partition,
+Expected<void> CreateModel(const LiteRtCompilerContext* ctx,
+                           const NeuronAdapterApi& neuron_adapter_api,
+                           const litert::compiler::Subgraph& partition,
                            const std::string& model_name, NeuronModel* model,
                            OperandMap* operand_map,
                            std::unordered_set<int>* unknown_op_indices) {
@@ -302,10 +303,11 @@ Expected<void> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
         break;
       case kLiteRtOpCodeShloComposite:
         const char* op_name;
-        if (LiteRtGetSHLOCompositeOpName(op.Get(), &op_name) !=
-            kLiteRtStatusOk) {
+        if (!ctx || !ctx->get_shlo_composite_op_name ||
+            ctx->get_shlo_composite_op_name(op.Get(), &op_name) !=
+                kLiteRtStatusOk) {
           return Error(kLiteRtStatusErrorRuntimeFailure,
-                       "LiteRtGetSHLOCompositeOpName returns an error");
+                       "get_shlo_composite_op_name returns an error");
         }
         if (std::string(op_name) == "odml.rms_norm") {
           status =

@@ -28,6 +28,7 @@ TEST(LiteRtCompilerOptionsTest, ParseLiteRtCompilerOptions) {
   auto toml_string = R"(
     partition_strategy = 1
     dummy_option = true
+    max_partitions = 3
   )";
 
   LiteRtCompilerOptionsT options;
@@ -38,6 +39,7 @@ TEST(LiteRtCompilerOptionsTest, ParseLiteRtCompilerOptions) {
   EXPECT_EQ(options.partition_strategy,
             kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
   EXPECT_TRUE(options.dummy_option);
+  EXPECT_EQ(options.max_partitions, 3);
 }
 
 TEST(LiteRtCompilerOptionsTest, ParseLiteRtCompilerOptionsDefaults) {
@@ -48,6 +50,7 @@ TEST(LiteRtCompilerOptionsTest, ParseLiteRtCompilerOptionsDefaults) {
   EXPECT_EQ(options.partition_strategy,
             kLiteRtCompilerOptionsPartitionStrategyDefault);
   EXPECT_FALSE(options.dummy_option);
+  EXPECT_EQ(options.max_partitions, 0);
 }
 
 }  // namespace

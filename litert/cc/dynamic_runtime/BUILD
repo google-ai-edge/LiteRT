@@ -175,6 +175,8 @@ cc_library(
         "//litert:litert_public",
     ],
     deps = [
+        ":litert_environment",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
@@ -221,6 +223,7 @@ cc_library(
         "//litert:litert_public",
     ],
     deps = [
+        ":litert_environment",
         ":litert_model",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
@@ -254,6 +257,7 @@ cc_library(
     deps = [
         ":litert_extended_model",
         ":litert_op_options",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
@@ -297,6 +301,10 @@ cc_test(
         "//litert/test:tflite_test_data",
     ],
     defines = ["LITERT_DYNAMIC_RUNTIME"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":litert_model",
         "//litert/c:litert_common",
@@ -309,8 +317,10 @@ cc_test(
         "//litert/cc:litert_model_types",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_extended_model",
+        "//litert/cc/internal:scoped_file",
         "//litert/core/model",
         "//litert/test:common",
+        "//litert/test:load_test_model_runtimecapi",
         "//litert/test:matchers",
         "//tflite:stderr_reporter",
         "//tflite/converter:allocation",
@@ -325,10 +335,12 @@ cc_library(
     hdrs = ["//litert/cc/internal:litert_model_predicates.h"],
     visibility = ["//litert:litert_public"],
     deps = [
+        ":litert_environment",
         ":litert_extended_model",
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_detail",
@@ -346,7 +358,7 @@ cc_test(
         ":litert_model_predicates",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_element_type",
-        "//litert/test:common",
+        "//litert/test:load_test_model_runtimecapi",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
@@ -358,6 +370,7 @@ cc_library(
     name = "litert_opaque_options",
     hdrs = ["//litert/cc:litert_opaque_options.h"],
     deps = [
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -408,41 +421,6 @@ cc_library(
     }),
 )
 
-cc_test(
-    name = "litert_op_options_test",
-    srcs = ["//litert/cc/internal:litert_op_options_test.cc"],
-    data = [
-        "//litert/test:mlir_test_data",
-        "//litert/test:tflite_test_data",
-    ],
-    # Things allocated accros ABI boundaries are causing mismatched-size-delete.
-    # use system_malloc, and gunit_main_no_heapcheck to avoid this. Those workaound will be removed
-    # once in OSS.
-    # copybara:uncomment malloc = "//base:system_malloc",
-    tags = [
-        "nosan",
-    ],
-    deps = [
-        ":litert_op_options",
-        # copybara:uncomment_begin(no OSS for gunit_main_no_heapcheck)
-        # "@com_google_googletest//:gtest_main_no_heapcheck",
-        # copybara:uncomment_end_and_comment_begin
-        "@com_google_googletest//:gtest_main",
-        # copybara:comment_end
-        "@com_google_absl//absl/strings:string_view",
-        "//litert/c:litert_common",
-        "//litert/cc:litert_common",
-        "//litert/c:litert_op_code",
-        "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_expected",
-        "//litert/core/model",
-        "//litert/core/model:buffer_manager",
-        "//litert/core/util:flatbuffer_tools",
-        "//litert/test:common",
-        "//tflite/schema:schema_fbs",
-    ],
-)
-
 cc_library(
     name = "litert_tensor_buffer",
     hdrs = [
@@ -451,6 +429,7 @@ cc_library(
     deps = [
         ":litert_environment",
         ":litert_event",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -476,6 +455,10 @@ cc_test(
     name = "litert_tensor_buffer_test",
     srcs = ["//litert/cc:litert_tensor_buffer_test.cc"],
     linkopts = litert_android_linkopts(),
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":litert_environment",
         ":litert_event",
@@ -531,6 +514,7 @@ cc_library(
     hdrs = ["//litert/cc:litert_environment.h"],
     deps = [
         "//litert/cc:litert_any",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_common",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
@@ -585,6 +569,7 @@ cc_library(
         ":litert_profiler",
         ":litert_tensor_buffer",
         "//litert/c/internal:litert_scheduling_info",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
@@ -625,6 +610,12 @@ cc_test(
         ":litert_options",
         ":litert_profiler",
         ":litert_tensor_buffer",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_tensor_buffer_header",
         "//litert/c:litert_tensor_buffer_types",
@@ -638,6 +629,7 @@ cc_test(
         "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc:litert_tensor_buffer_types",
         "//litert/cc/options:litert_runtime_options",
+        # copybara:uncomment "//litert/runtime:compiled_model",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
@@ -645,12 +637,6 @@ cc_test(
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
         "//tflite/kernels:builtin_ops",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -703,6 +689,7 @@ cc_library(
         "//litert/c/options:litert_qualcomm_options",
         "//litert/c/options:litert_runtime_options",
         "//litert/c/options:litert_samsung_options",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -819,4 +806,8 @@ sh_test(
         ":libdynamic_runtime_test.so",
         "//litert/c:litert_runtime_c_api_so",
     ],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )

@@ -31,11 +31,11 @@
 #include "openvino/runtime/core.hpp"
 #include "openvino/runtime/intel_npu/level_zero/level_zero.hpp"
 #include "openvino/runtime/remote_context.hpp"
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
-
 #include "litert/vendors/intel_openvino/dispatch/openvino_shared_core.h"
 
 class LiteRtDispatchDeviceContextT {
@@ -43,7 +43,8 @@ class LiteRtDispatchDeviceContextT {
   using Ptr = std::unique_ptr<LiteRtDispatchDeviceContextT>;
 
   ~LiteRtDispatchDeviceContextT() = default;
-  static litert::Expected<Ptr> Create();
+  static litert::Expected<Ptr> Create(
+      const LiteRtRuntimeContext* runtime_context);
   litert::Expected<LiteRtTensorBufferHandle> RegisterTensorBuffer(
       LiteRtTensorBuffer tensor_buffer);
 
@@ -64,6 +65,10 @@ class LiteRtDispatchDeviceContextT {
   // Return the core shared_pointer.
   std::shared_ptr<ov::Core> getCore() const {
     return OpenVINOSharedCore::GetInstance()->getCore();
+  }
+
+  const LiteRtRuntimeContext* runtime_context() const {
+    return runtime_context_;
   }
 
  private:
@@ -102,7 +107,10 @@ class LiteRtDispatchDeviceContextT {
     CleanupAction cleanup;
   };
 
-  explicit LiteRtDispatchDeviceContextT() : next_handle_(0) {}
+  explicit LiteRtDispatchDeviceContextT(
+      const LiteRtRuntimeContext* runtime_context)
+      : runtime_context_(runtime_context), next_handle_(0) {}
+  const LiteRtRuntimeContext* runtime_context_;
   std::unordered_map<LiteRtTensorBufferHandle, RegisteredTensor>
       tensor_handle_map_;
   uint64_t next_handle_;

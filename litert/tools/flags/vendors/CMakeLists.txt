@@ -121,4 +121,5 @@ target_include_directories(litert_tool_flags_samsung
 target_link_libraries(litert_tool_flags_samsung
     PUBLIC
         absl::flags
+        litert_tool_flags_common
 )

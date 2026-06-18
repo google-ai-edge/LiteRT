@@ -52,7 +52,7 @@ typedef enum {
   kLiteRtEnvOptionTagWebGpuInstance = 19,
   // Dawn procedure table pointer for shared libraries to populate their tables
   // with the shared procedures instead of their own procedures.
-  kLiteRtEnvOptionTagWebGpuProcs = 20,
+  kLiteRtEnvOptionTagWebGpuProcs = 20,  // Deprecated.
   kLiteRtEnvOptionTagCustomTensorBufferHandlers_deprecated = 21,  // Deprecated.
   kLiteRtEnvOptionTagRuntimeLibraryDir = 22,
   /// \internal This is for internal use only, for a custom runtime.
@@ -62,7 +62,9 @@ typedef enum {
   kLiteRtEnvOptionTagAutoRegisterAccelerators = 24,
   // Minimum logger severity for the environment.
   kLiteRtEnvOptionTagMinLoggerSeverity = 25,
-
+  // Maximum number of configurations to store per model in the compiler cache.
+  kLiteRtEnvOptionTagCompilerCacheMaxConfigsPerModel = 26,
+  kLiteRtEnvOptionTagCompilerCacheMaxTotalSize = 27,
   // Internal use only. Virtual null tag for option that is not defined.
   kLiteRtEnvOptionTagNull = 255,
 } LiteRtEnvOptionTag;
@@ -135,15 +137,6 @@ typedef struct {
   LiteRtMagicNumberVerification verifications[_LITERT_ARBITRARY_ARRAY_SIZE];
 } LiteRtMagicNumberVerifications;
 
-typedef struct {
-  CreateCustomTensorBuffer create_func;
-  DestroyCustomTensorBuffer destroy_func;
-  LockCustomTensorBuffer lock_func;
-  UnlockCustomTensorBuffer unlock_func;
-  ClearCustomTensorBuffer clear_func;
-  ImportCustomTensorBuffer import_func;
-} LiteRtCustomTensorBufferHandlers;
-
 // Retrieves the value corresponding to the given tag.
 //
 // Returns kLiteRtStatusErrorNotFound if the option tag is not found.
@@ -151,8 +144,6 @@ LiteRtStatus LiteRtGetEnvironmentOptionsValue(LiteRtEnvironmentOptions options,
                                               LiteRtEnvOptionTag tag,
                                               LiteRtAny* value);
 
-LiteRtStatus LiteRtSetEnvironmentOptionsValue(LiteRtEnvironmentOptions options,
-                                              LiteRtEnvOption env_option);
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

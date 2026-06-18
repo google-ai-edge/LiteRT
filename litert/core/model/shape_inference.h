@@ -15,8 +15,6 @@
 #ifndef ODML_LITERT_LITERT_CORE_MODEL_SHAPE_INFERENCE_H_
 #define ODML_LITERT_LITERT_CORE_MODEL_SHAPE_INFERENCE_H_
 
-#include <unordered_map>
-#include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -34,7 +32,7 @@ class ShapeInferenceEngine {
   ShapeInferenceEngine();
 
   // Register a shape inferrer for a specific op code.
-  void RegisterInferrer(LiteRtOpCode op_code, OpShapeInferrer inferrer);
+  void RegisterInferrer(LiteRtOpCode op_code, StatelessOpInferrer inferrer);
 
   // Perform shape inference on the entire model (all subgraphs).
   // If `validation_only` is true, verifies that existing tensor shapes match
@@ -60,8 +58,8 @@ class ShapeInferenceEngine {
 
   // Helper to infer shapes for a single op with provided inputs.
   // This function is stateless and pure calculation.
-  LiteRtStatus InferOpShapes(const LiteRtOpT& op, absl::Span<Dims> input_shapes,
-                             std::vector<Dims>& output_shapes);
+  LiteRtStatus InferOpShapes(const ShapeInferenceContext& ctx,
+                             InferenceResult& result);
 
   // Creates a new subgraph in the model which is a copy of `subgraph` but with
   // input shapes fixed to `input_shapes`. The shapes of all other tensors in
@@ -76,7 +74,8 @@ class ShapeInferenceEngine {
   void RegisterStandardOps();
 
   LiteRtModelT* model_ = nullptr;
-  absl::flat_hash_map<LiteRtOpCode, OpShapeInferrer> registry_;
+  absl::flat_hash_map<LiteRtOpCode, StatelessOpInferrer> registry_;
+  TensorDataMap transient_data_;
 };
 
 }  // namespace litert::internal

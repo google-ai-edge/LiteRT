@@ -30,6 +30,15 @@
 #include "litert/core/util/flatbuffer_tools.h"
 #include "tflite/converter/schema/schema_generated.h"
 
+namespace {
+
+template <typename... Ptrs>
+bool HasNullOptionPtr(Ptrs... ptrs) {
+  return ((ptrs == nullptr) || ...);
+}
+
+}  // namespace
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -44,8 +53,13 @@ LiteRtStatus LiteRtBuilderBuildTensor(
     LiteRtUnrankedTensorType unranked_tensor_type, LiteRtWeights weights,
     LiteRtQuantizationTypeId quantization_type_id,
     LiteRtQuantizationPerTensor per_tensor_quantization,
-    LiteRtQuantizationPerChannel per_channel_quantization, const char* name,
+    LiteRtQuantizationPerChannel per_channel_quantization,
+    LiteRtQuantizationBlockWise block_wise_quantization, const char* name,
     LiteRtTensor* new_tensor) {
+  if (builder == nullptr || new_tensor == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
   // Pack tensor type to internal type.
   TensorType tensor_type;
   tensor_type.first = tensor_type_id;
@@ -56,6 +70,8 @@ LiteRtStatus LiteRtBuilderBuildTensor(
     if (weights) {
       return kLiteRtStatusErrorInvalidArgument;
     }
+  } else {
+    return kLiteRtStatusErrorInvalidArgument;
   }
 
   // Pack quantization type to internal type.
@@ -69,6 +85,10 @@ LiteRtStatus LiteRtBuilderBuildTensor(
     case kLiteRtQuantizationPerChannel:
       quantization.first = kLiteRtQuantizationPerChannel;
       quantization.second.per_channel = per_channel_quantization;
+      break;
+    case kLiteRtQuantizationBlockWise:
+      quantization.first = kLiteRtQuantizationBlockWise;
+      quantization.second.block_wise = block_wise_quantization;
       break;
     case kLiteRtQuantizationNone:
       quantization.first = kLiteRtQuantizationNone;
@@ -116,7 +136,8 @@ LiteRtStatus LiteRtBuilderBuildWeights(LiteRtBuilder builder,
                                        LiteRtTensor tensor,
 
                                        LiteRtWeights* new_weights) {
-  if (builder == nullptr || tensor == nullptr) {
+  if (builder == nullptr || tensor == nullptr || new_weights == nullptr ||
+      (size > 0 && data == nullptr)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   *new_weights = &builder->BuildWeights(data, size, tensor);
@@ -128,21 +149,23 @@ LiteRtStatus LiteRtBuilderBuildOp(LiteRtBuilder builder, LiteRtOpCode op_code,
                                   LiteRtTensor* inputs,
                                   LiteRtParamIndex num_outputs,
                                   LiteRtTensor* outputs, LiteRtOp* new_op) {
-  if (builder == nullptr) {
+  if (builder == nullptr || new_op == nullptr ||
+      (num_inputs > 0 && inputs == nullptr) ||
+      (num_outputs > 0 && outputs == nullptr)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
   std::vector<LiteRtTensor> input_tensors;
   std::vector<LiteRtTensor> output_tensors;
 
-  for (int i = 0; i < num_inputs; ++i) {
+  for (LiteRtParamIndex i = 0; i < num_inputs; ++i) {
     if (inputs[i] == nullptr) {
       return kLiteRtStatusErrorInvalidArgument;
     }
     input_tensors.push_back(inputs[i]);
   }
 
-  for (int i = 0; i < num_outputs; ++i) {
+  for (LiteRtParamIndex i = 0; i < num_outputs; ++i) {
     if (outputs[i] == nullptr) {
       return kLiteRtStatusErrorInvalidArgument;
     }
@@ -166,7 +189,8 @@ LiteRtStatus LiteRtBuilderEraseOp(LiteRtBuilder builder, LiteRtOp op_to_erase) {
 
 LiteRtStatus LiteRtBuilderBuildAddOpOption(LiteRtBuilder builder, LiteRtOp op,
                                            uint32_t* fused_activation) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(fused_activation)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -189,7 +213,8 @@ LiteRtStatus LiteRtBuilderBuildAddOpOption(LiteRtBuilder builder, LiteRtOp op,
 LiteRtStatus LiteRtBuilderBuildBatchMatmulOpOption(
     LiteRtBuilder builder, LiteRtOp op, bool* adj_x, bool* adj_y,
     bool* asymmetric_quantize_input) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(adj_x, adj_y, asymmetric_quantize_input)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -214,7 +239,8 @@ LiteRtStatus LiteRtBuilderBuildConcatenationOpOption(LiteRtBuilder builder,
                                                      LiteRtOp op,
                                                      uint32_t* fused_activation,
                                                      int32_t* axis) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(fused_activation, axis)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -237,7 +263,8 @@ LiteRtStatus LiteRtBuilderBuildConcatenationOpOption(LiteRtBuilder builder,
 
 LiteRtStatus LiteRtBuilderBuildDivOpOption(LiteRtBuilder builder, LiteRtOp op,
                                            uint32_t* fused_activation) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(fused_activation)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -261,7 +288,9 @@ LiteRtStatus LiteRtBuilderBuildFullyConnectedOpOption(
     LiteRtBuilder builder, LiteRtOp op, uint32_t* fused_activation,
     uint32_t* weights_format, bool* keep_num_dims,
     uint32_t* quantized_bias_type, bool* asymmetric_quantize_input) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(fused_activation, weights_format, keep_num_dims,
+                       quantized_bias_type, asymmetric_quantize_input)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -289,7 +318,8 @@ LiteRtStatus LiteRtBuilderBuildFullyConnectedOpOption(
 
 LiteRtStatus LiteRtBuilderBuildMulOpOption(LiteRtBuilder builder, LiteRtOp op,
                                            uint32_t* fused_activation) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(fused_activation)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -311,7 +341,7 @@ LiteRtStatus LiteRtBuilderBuildMulOpOption(LiteRtBuilder builder, LiteRtOp op,
 
 LiteRtStatus LiteRtBuilderBuildSoftmaxOpOption(LiteRtBuilder builder,
                                                LiteRtOp op, float* beta) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr || HasNullOptionPtr(beta)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -334,7 +364,9 @@ LiteRtStatus LiteRtBuilderBuildStridedSliceOpOption(
     LiteRtBuilder builder, LiteRtOp op, int32_t* begin_mask, int32_t* end_mask,
     int32_t* ellipsis_mask, int32_t* new_axis_mask, int32_t* shrink_axis_mask,
     bool* offset) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(begin_mask, end_mask, ellipsis_mask, new_axis_mask,
+                       shrink_axis_mask, offset)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -360,7 +392,8 @@ LiteRtStatus LiteRtBuilderBuildStridedSliceOpOption(
 
 LiteRtStatus LiteRtBuilderBuildSubOpOption(LiteRtBuilder builder, LiteRtOp op,
                                            uint32_t* fused_activation) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(fused_activation)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -383,7 +416,8 @@ LiteRtStatus LiteRtBuilderBuildSubOpOption(LiteRtBuilder builder, LiteRtOp op,
 LiteRtStatus LiteRtBuilderBuildReshapeOpOption(LiteRtBuilder builder,
                                                LiteRtOp op, int32_t* new_shape,
                                                int32_t new_shape_size) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr || new_shape_size < 0 ||
+      (new_shape_size > 0 && new_shape == nullptr)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -396,7 +430,9 @@ LiteRtStatus LiteRtBuilderBuildReshapeOpOption(LiteRtBuilder builder,
   litert::internal::TflOptions tfl_options;
   tfl_options.type = tflite::BuiltinOptions_ReshapeOptions;
   auto options = std::make_unique<tflite::ReshapeOptionsT>();
-  options->new_shape.assign(new_shape, new_shape + new_shape_size);
+  if (new_shape_size > 0) {
+    options->new_shape.assign(new_shape, new_shape + new_shape_size);
+  }
   tfl_options.value = options.release();
   litert::internal::SetTflOptions(*op, std::move(tfl_options));
   return kLiteRtStatusOk;
@@ -404,7 +440,7 @@ LiteRtStatus LiteRtBuilderBuildReshapeOpOption(LiteRtBuilder builder,
 
 LiteRtStatus LiteRtBuilderBuildSumOpOption(LiteRtBuilder builder, LiteRtOp op,
                                            bool* keepdims) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr || HasNullOptionPtr(keepdims)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -425,7 +461,7 @@ LiteRtStatus LiteRtBuilderBuildSumOpOption(LiteRtBuilder builder, LiteRtOp op,
 
 LiteRtStatus LiteRtBuilderBuildReduceMaxOpOption(LiteRtBuilder builder,
                                                  LiteRtOp op, bool* keepdims) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr || HasNullOptionPtr(keepdims)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -446,7 +482,7 @@ LiteRtStatus LiteRtBuilderBuildReduceMaxOpOption(LiteRtBuilder builder,
 
 LiteRtStatus LiteRtBuilderBuildReduceMinOpOption(LiteRtBuilder builder,
                                                  LiteRtOp op, bool* keepdims) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr || HasNullOptionPtr(keepdims)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -467,7 +503,7 @@ LiteRtStatus LiteRtBuilderBuildReduceMinOpOption(LiteRtBuilder builder,
 
 LiteRtStatus LiteRtBuilderBuildReduceAnyOpOption(LiteRtBuilder builder,
                                                  LiteRtOp op, bool* keepdims) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr || HasNullOptionPtr(keepdims)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -488,7 +524,7 @@ LiteRtStatus LiteRtBuilderBuildReduceAnyOpOption(LiteRtBuilder builder,
 
 LiteRtStatus LiteRtBuilderBuildReduceAllOpOption(LiteRtBuilder builder,
                                                  LiteRtOp op, bool* keepdims) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr || HasNullOptionPtr(keepdims)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -510,7 +546,8 @@ LiteRtStatus LiteRtBuilderBuildReduceAllOpOption(LiteRtBuilder builder,
 LiteRtStatus LiteRtBuilderBuildPackOpOption(LiteRtBuilder builder, LiteRtOp op,
                                             int32_t* axis,
                                             int32_t* values_count) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(axis, values_count)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -533,7 +570,7 @@ LiteRtStatus LiteRtBuilderBuildPackOpOption(LiteRtBuilder builder, LiteRtOp op,
 LiteRtStatus LiteRtBuilderBuildUnpackOpOption(LiteRtBuilder builder,
                                               LiteRtOp op, int32_t* axis,
                                               int32_t* num) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr || HasNullOptionPtr(axis, num)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -556,7 +593,8 @@ LiteRtStatus LiteRtBuilderBuildUnpackOpOption(LiteRtBuilder builder,
 LiteRtStatus LiteRtBuilderBuildGatherOpOption(LiteRtBuilder builder,
                                               LiteRtOp op, int32_t* axis,
                                               int32_t* batch_dims) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(axis, batch_dims)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -578,7 +616,7 @@ LiteRtStatus LiteRtBuilderBuildGatherOpOption(LiteRtBuilder builder,
 
 LiteRtStatus LiteRtBuilderBuildMeanOpOption(LiteRtBuilder builder, LiteRtOp op,
                                             bool* keepdims) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr || HasNullOptionPtr(keepdims)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -599,7 +637,7 @@ LiteRtStatus LiteRtBuilderBuildMeanOpOption(LiteRtBuilder builder, LiteRtOp op,
 
 LiteRtStatus LiteRtBuilderBuildSplitOpOption(LiteRtBuilder builder, LiteRtOp op,
                                              int32_t* num_splits) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr || HasNullOptionPtr(num_splits)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -622,7 +660,9 @@ LiteRtStatus LiteRtBuilderBuildConv2dOpOption(
     LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
     int32_t* stride_h, int32_t* dilation_w_factor, int32_t* dilation_h_factor,
     uint32_t* fused_activation_function) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(padding, stride_w, stride_h, dilation_w_factor,
+                       dilation_h_factor, fused_activation_function)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -652,7 +692,10 @@ LiteRtStatus LiteRtBuilderBuildConv3dOpOption(
     int32_t* stride_h, int32_t* stride_d, int32_t* dilation_w_factor,
     int32_t* dilation_h_factor, int32_t* dilation_d_factor,
     uint32_t* fused_activation_function) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(padding, stride_w, stride_h, stride_d, dilation_w_factor,
+                       dilation_h_factor, dilation_d_factor,
+                       fused_activation_function)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -684,7 +727,10 @@ LiteRtStatus LiteRtBuilderBuildDepthwiseConv2dOpOption(
     int32_t* stride_h, int32_t* depth_multiplier,
     uint32_t* fused_activation_function, int32_t* dilation_w_factor,
     int32_t* dilation_h_factor) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(padding, stride_w, stride_h, depth_multiplier,
+                       fused_activation_function, dilation_w_factor,
+                       dilation_h_factor)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -713,7 +759,9 @@ LiteRtStatus LiteRtBuilderBuildDepthwiseConv2dOpOption(
 LiteRtStatus LiteRtBuilderBuildTransposeConvOpOption(
     LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
     int32_t* stride_h, uint32_t* fused_activation_function) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(padding, stride_w, stride_h,
+                       fused_activation_function)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -740,7 +788,9 @@ LiteRtStatus LiteRtBuilderBuildAveragePool2dOpOption(
     LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
     int32_t* stride_h, int32_t* filter_width, int32_t* filter_height,
     uint32_t* fused_activation_function) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(padding, stride_w, stride_h, filter_width, filter_height,
+                       fused_activation_function)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -769,7 +819,9 @@ LiteRtStatus LiteRtBuilderBuildMaxPool2dOpOption(
     LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
     int32_t* stride_h, int32_t* filter_width, int32_t* filter_height,
     uint32_t* fused_activation_function) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(padding, stride_w, stride_h, filter_width, filter_height,
+                       fused_activation_function)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -798,7 +850,9 @@ LiteRtStatus LiteRtBuilderBuildL2Pool2dOpOption(
     LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
     int32_t* stride_h, int32_t* filter_width, int32_t* filter_height,
     uint32_t* fused_activation_function) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(padding, stride_w, stride_h, filter_width, filter_height,
+                       fused_activation_function)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -826,7 +880,8 @@ LiteRtStatus LiteRtBuilderBuildL2Pool2dOpOption(
 LiteRtStatus LiteRtBuilderBuildResizeBilinearOpOption(
     LiteRtBuilder builder, LiteRtOp op, bool* align_corners,
     bool* half_pixel_centers) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(align_corners, half_pixel_centers)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -848,7 +903,7 @@ LiteRtStatus LiteRtBuilderBuildResizeBilinearOpOption(
 
 LiteRtStatus LiteRtBuilderBuildLeakyReluOpOption(LiteRtBuilder builder,
                                                  LiteRtOp op, float* alpha) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr || HasNullOptionPtr(alpha)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -870,7 +925,7 @@ LiteRtStatus LiteRtBuilderBuildLeakyReluOpOption(LiteRtBuilder builder,
 LiteRtStatus LiteRtBuilderBuildDepthToSpaceOpOption(LiteRtBuilder builder,
                                                     LiteRtOp op,
                                                     int32_t* block_size) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr || HasNullOptionPtr(block_size)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -892,7 +947,7 @@ LiteRtStatus LiteRtBuilderBuildDepthToSpaceOpOption(LiteRtBuilder builder,
 LiteRtStatus LiteRtBuilderBuildSpaceToDepthOpOption(LiteRtBuilder builder,
                                                     LiteRtOp op,
                                                     int32_t* block_size) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr || HasNullOptionPtr(block_size)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -914,7 +969,8 @@ LiteRtStatus LiteRtBuilderBuildSpaceToDepthOpOption(LiteRtBuilder builder,
 LiteRtStatus LiteRtBuilderBuildResizeNearestNeighborOpOption(
     LiteRtBuilder builder, LiteRtOp op, bool* align_corners,
     bool* half_pixel_centers) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(align_corners, half_pixel_centers)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -937,7 +993,8 @@ LiteRtStatus LiteRtBuilderBuildResizeNearestNeighborOpOption(
 LiteRtStatus LiteRtBuilderBuildCumsumOpOption(LiteRtBuilder builder,
                                               LiteRtOp op, bool* exclusive,
                                               bool* reverse) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(exclusive, reverse)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -959,7 +1016,7 @@ LiteRtStatus LiteRtBuilderBuildCumsumOpOption(LiteRtBuilder builder,
 
 LiteRtStatus LiteRtBuilderBuildGeluOpOption(LiteRtBuilder builder, LiteRtOp op,
                                             bool* approximate) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr || HasNullOptionPtr(approximate)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -980,7 +1037,7 @@ LiteRtStatus LiteRtBuilderBuildGeluOpOption(LiteRtBuilder builder, LiteRtOp op,
 
 LiteRtStatus LiteRtBuilderBuildMirrorPadOpOption(LiteRtBuilder builder,
                                                  LiteRtOp op, uint32_t* mode) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr || HasNullOptionPtr(mode)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -1003,7 +1060,8 @@ LiteRtStatus LiteRtBuilderBuildSqueezeOpOption(LiteRtBuilder builder,
                                                LiteRtOp op,
                                                const int32_t* squeeze_dims,
                                                int32_t num_squeeze_dims) {
-  if (builder == nullptr || op == nullptr) {
+  if (builder == nullptr || op == nullptr || num_squeeze_dims < 0 ||
+      (num_squeeze_dims > 0 && squeeze_dims == nullptr)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (!builder->IsOpAllocated(op)) {
@@ -1016,7 +1074,9 @@ LiteRtStatus LiteRtBuilderBuildSqueezeOpOption(LiteRtBuilder builder,
   litert::internal::TflOptions tfl_options;
   tfl_options.type = tflite::BuiltinOptions_SqueezeOptions;
   auto options = std::make_unique<tflite::SqueezeOptionsT>();
-  options->squeeze_dims.assign(squeeze_dims, squeeze_dims + num_squeeze_dims);
+  if (num_squeeze_dims > 0) {
+    options->squeeze_dims.assign(squeeze_dims, squeeze_dims + num_squeeze_dims);
+  }
   tfl_options.value = options.release();
   litert::internal::SetTflOptions(*op, std::move(tfl_options));
   return kLiteRtStatusOk;

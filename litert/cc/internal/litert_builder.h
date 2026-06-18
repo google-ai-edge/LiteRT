@@ -22,7 +22,6 @@
 #include <utility>
 #include <vector>
 
-#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_builder.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
@@ -32,6 +31,7 @@
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_op_options.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
@@ -51,6 +51,7 @@ struct RankedTensorSpec {
   std::optional<Weights> weights;
   std::optional<LiteRtQuantizationPerTensor> per_tensor_quantization;
   std::optional<LiteRtQuantizationPerChannel> per_channel_quantization;
+  std::optional<LiteRtQuantizationBlockWise> block_wise_quantization;
   std::optional<std::string> tensor_name;
 };
 
@@ -81,16 +82,24 @@ class RankedTensorSpecBuilder {
     return std::move(*this);
   }
 
+  RankedTensorSpecBuilder&& WithBlockWiseQuantization(
+      LiteRtQuantizationBlockWise q) && {
+    block_wise_quantization_ = std::move(q);
+    return std::move(*this);
+  }
+
   RankedTensorSpecBuilder&& WithTensorName(std::string name) && {
     tensor_name_ = std::move(name);
     return std::move(*this);
   }
 
   RankedTensorSpec Build() && {
-    return RankedTensorSpec{
-        *std::move(ranked_tensor_type_), std::move(weights_),
-        std::move(per_tensor_quantization_),
-        std::move(per_channel_quantization_), std::move(tensor_name_)};
+    return RankedTensorSpec{*std::move(ranked_tensor_type_),
+                            std::move(weights_),
+                            std::move(per_tensor_quantization_),
+                            std::move(per_channel_quantization_),
+                            std::move(block_wise_quantization_),
+                            std::move(tensor_name_)};
   }
 
  private:
@@ -98,6 +107,7 @@ class RankedTensorSpecBuilder {
   std::optional<Weights> weights_;
   std::optional<LiteRtQuantizationPerTensor> per_tensor_quantization_;
   std::optional<LiteRtQuantizationPerChannel> per_channel_quantization_;
+  std::optional<LiteRtQuantizationBlockWise> block_wise_quantization_;
   std::optional<std::string> tensor_name_;
 };
 
@@ -139,12 +149,18 @@ class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
       litert_per_channel_quantization = *spec.per_channel_quantization;
       quantization_type_id = kLiteRtQuantizationPerChannel;
     }
+    LiteRtQuantizationBlockWise litert_block_wise_quantization;
+    if (spec.block_wise_quantization.has_value()) {
+      litert_block_wise_quantization = *spec.block_wise_quantization;
+      quantization_type_id = kLiteRtQuantizationBlockWise;
+    }
     const char* name = spec.tensor_name ? spec.tensor_name->c_str() : nullptr;
     internal::AssertOk(LiteRtBuilderBuildTensor, Get(), kLiteRtRankedTensorType,
                        ranked_tensor_type_litert, LiteRtUnrankedTensorType(),
                        litert_weights, quantization_type_id,
                        litert_per_tensor_quantization,
-                       litert_per_channel_quantization, name, &tensor);
+                       litert_per_channel_quantization,
+                       litert_block_wise_quantization, name, &tensor);
     return Tensor(tensor);
   }
 
@@ -174,6 +190,10 @@ class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
         spec_builder =
             std::move(spec_builder)
                 .WithPerChannelQuantization(src.PerChannelQuantization());
+      } else if (q_type == kLiteRtQuantizationBlockWise) {
+        spec_builder =
+            std::move(spec_builder)
+                .WithBlockWiseQuantization(src.BlockWiseQuantization());
       }
     }
 
@@ -184,8 +204,7 @@ class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
 
   /// @brief Builds weights for a tensor.
   template <typename T>
-  Expected<Weights> BuildWeights(absl::Span<const T> data,
-                                 Tensor& tensor) const {
+  Expected<Weights> BuildWeights(Span<const T> data, Tensor& tensor) const {
     const uint8_t* data_uint8 = reinterpret_cast<const uint8_t*>(data.data());
     size_t size_uint8 = data.size() * sizeof(T);
     LiteRtWeights weights;
@@ -193,14 +212,6 @@ class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
                        size_uint8, tensor.Get(), &weights);
     return Weights(weights);
   }
-
-#ifdef LITERT_NO_ABSL
-  template <typename T>
-  Expected<Weights> BuildWeights(std::span<const T> data,
-                                 Tensor& tensor) const {
-    return BuildWeights(internal::ToAbslSpan(data), tensor);
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief A trait for building scalars.
   Expected<Tensor> BuildScalar(
@@ -214,7 +225,8 @@ class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
                        kLiteRtUnrankedTensorType, LiteRtRankedTensorType(),
                        unranked_tensor_type, LiteRtWeights(),
                        kLiteRtQuantizationNone, LiteRtQuantizationPerTensor(),
-                       LiteRtQuantizationPerChannel(), name_ptr, &tensor);
+                       LiteRtQuantizationPerChannel(),
+                       LiteRtQuantizationBlockWise(), name_ptr, &tensor);
     return Tensor(tensor);
   }
 

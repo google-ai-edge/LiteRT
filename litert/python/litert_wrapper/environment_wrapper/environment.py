@@ -14,10 +14,13 @@
 
 """Python wrapper for LiteRT environments."""
 
+import dataclasses
+import glob
 import os
-from typing import Optional
+import sys
+from typing import Optional, Union
 
-# pylint: disable=g-import-not-at-top
+# pylint: disable=g-import-not-at-top,g-bad-import-order
 if not os.path.splitext(__file__)[0].endswith(
     os.path.join("ai_edge_litert", "environment")
 ):
@@ -26,7 +29,112 @@ if not os.path.splitext(__file__)[0].endswith(
   )
 else:
   from ai_edge_litert import _pywrap_litert_environment_wrapper as _env
-# pylint: enable=g-import-not-at-top
+# pylint: enable=g-import-not-at-top,g-bad-import-order
+
+
+def _vendors_dir() -> str:
+  """Returns `<ai_edge_litert>/vendors`, or "" when the package is missing."""
+  try:
+    # pylint: disable=g-import-not-at-top
+    import ai_edge_litert  # pytype: disable=import-error
+    # pylint: enable=g-import-not-at-top
+  except ImportError:
+    return ""
+  path = os.path.join(
+      os.path.dirname(os.path.abspath(ai_edge_litert.__file__)), "vendors"
+  )
+  return path if os.path.isdir(path) else ""
+
+
+def _vendor_subdir_if_has_lib(
+    vendor: str, subdir: str, win_glob: str, nix_glob: str
+) -> str:
+  """Returns `<vendors>/<vendor>/<subdir>/` iff it has a matching library."""
+  base = _vendors_dir()
+  if not base:
+    return ""
+  lib_glob = win_glob if sys.platform == "win32" else nix_glob
+  path = os.path.join(base, vendor, subdir)
+  if os.path.isdir(path) and glob.glob(os.path.join(path, lib_glob)):
+    return path
+  return ""
+
+
+def _find_first_vendor_with_library(
+    subdir: str, win_glob: str, nix_glob: str
+) -> str:
+  """Returns the vendor name of the first `<vendors>/<vendor>/<subdir>/` dir.
+
+  that contains a matching library, or "" when none is found.
+
+  Args:
+    subdir: The subdirectory within the vendor directory to search.
+    win_glob: The glob pattern for the library file on Windows.
+    nix_glob: The glob pattern for the library file on Unix-like systems.
+  """
+  base = _vendors_dir()
+  if not base:
+    return ""
+  try:
+    entries = sorted(os.listdir(base))
+  except OSError:
+    return ""
+  for entry in entries:
+    if _vendor_subdir_if_has_lib(entry, subdir, win_glob, nix_glob):
+      return entry
+  return ""
+
+
+def _autodiscover_dispatch_library_path() -> str:
+  """Returns a vendor dispatch directory under the installed ai_edge_litert."""
+  vendor = _find_first_vendor_with_library(
+      "dispatch", "LiteRtDispatch*.dll", "libLiteRtDispatch_*.so"
+  )
+  if not vendor:
+    return ""
+  return _vendor_subdir_if_has_lib(
+      vendor, "dispatch", "LiteRtDispatch*.dll", "libLiteRtDispatch_*.so"
+  )
+
+
+def _autodiscover_compiler_plugin_path(preferred_vendor: str = "") -> str:
+  """Returns a vendor compiler-plugin directory under the installed.
+
+  ai_edge_litert.
+
+  When `preferred_vendor` is set, prefer that vendor's compiler plugin so the
+  compiler and dispatch libraries come from the same vendor. Falls back to the
+  first vendor with a compiler plugin otherwise.
+
+  Args:
+    preferred_vendor: The vendor to prefer when searching for the compiler
+      plugin.
+  """
+  compiler_win = "LiteRtCompilerPlugin*.dll"
+  compiler_nix = "libLiteRtCompilerPlugin_*.so"
+  if preferred_vendor:
+    path = _vendor_subdir_if_has_lib(
+        preferred_vendor, "compiler", compiler_win, compiler_nix
+    )
+    if path:
+      return path
+  vendor = _find_first_vendor_with_library(
+      "compiler", compiler_win, compiler_nix
+  )
+  if not vendor:
+    return ""
+  return _vendor_subdir_if_has_lib(
+      vendor, "compiler", compiler_win, compiler_nix
+  )
+
+
+@dataclasses.dataclass(frozen=True)
+class EnvironmentOptions:
+  """Environment-level options for a shared LiteRT environment."""
+
+  runtime_path: Optional[str] = None
+  compiler_plugin_path: str = ""
+  dispatch_library_path: str = ""
 
 
 class Environment:
@@ -35,96 +143,116 @@ class Environment:
   def __init__(
       self,
       capsule,
-      cpu_num_threads: int = 0,
-      gpu_enforce_f32: bool = False,
-      gpu_share_constant_tensors: bool = False,
-      cpu_kernel_mode: int = -1,
-      xnnpack_flags: int = -1,
-      xnnpack_weight_cache_path: str = "",
-      enable_constant_tensor_sharing: bool = False,
-      enable_infinite_float_capping: bool = False,
-      enable_benchmark_mode: bool = False,
-      enable_allow_src_quantized_fc_conv_ops: bool = False,
-      enable_hint_waiting_for_completion: bool = False,
+      options: EnvironmentOptions,
   ):
     self._capsule = capsule
-    self.cpu_num_threads = cpu_num_threads
-    self.gpu_enforce_f32 = gpu_enforce_f32
-    self.gpu_share_constant_tensors = gpu_share_constant_tensors
-    self.cpu_kernel_mode = cpu_kernel_mode
-    self.xnnpack_flags = xnnpack_flags
-    self.xnnpack_weight_cache_path = xnnpack_weight_cache_path
-    self.enable_constant_tensor_sharing = enable_constant_tensor_sharing
-    self.enable_infinite_float_capping = enable_infinite_float_capping
-    self.enable_benchmark_mode = enable_benchmark_mode
-    self.enable_allow_src_quantized_fc_conv_ops = (
-        enable_allow_src_quantized_fc_conv_ops
-    )
-    self.enable_hint_waiting_for_completion = enable_hint_waiting_for_completion
+    self._options = options
+
+  def __enter__(self) -> "Environment":
+    return self
+
+  def __exit__(self, exc_type, exc_val, exc_tb):
+    self.close()
+
+  def close(self):
+    self._capsule = None
 
   @classmethod
   def create(
       cls,
+      *,
+      options: Optional[Union[EnvironmentOptions, str]] = None,
       runtime_path: Optional[str] = None,
       compiler_plugin_path: str = "",
       dispatch_library_path: str = "",
-      cpu_num_threads: int = 1,
-      gpu_enforce_f32: bool = False,
-      gpu_share_constant_tensors: bool = False,
-      cpu_kernel_mode: int = -1,
-      xnnpack_flags: int = -1,
-      xnnpack_weight_cache_path: str = "",
-      enable_constant_tensor_sharing: bool = False,
-      enable_infinite_float_capping: bool = False,
-      enable_benchmark_mode: bool = False,
-      enable_allow_src_quantized_fc_conv_ops: bool = False,
-      enable_hint_waiting_for_completion: bool = False,
   ) -> "Environment":
     """Creates a reusable LiteRT environment.
 
     Args:
-      runtime_path: Optional path to the LiteRT runtime library directory.
-        Defaults to the directory containing the Python wheel modules.
-      compiler_plugin_path: Optional path to compiler plugin libraries.
-      dispatch_library_path: Optional path to dispatch libraries.
-      cpu_num_threads: Number of threads for CPU execution.
-      gpu_enforce_f32: Enforce F32 precision on GPU.
-      gpu_share_constant_tensors: Share constant tensors among subgraphs on GPU.
-      cpu_kernel_mode: CPU kernel mode option.
-      xnnpack_flags: XNNPACK flags option.
-      xnnpack_weight_cache_path: XNNPACK weight cache path option.
-      enable_constant_tensor_sharing: Enable constant tensor sharing on GPU.
-      enable_infinite_float_capping: Enable infinite float capping on GPU.
-      enable_benchmark_mode: Enable benchmark mode on GPU.
-      enable_allow_src_quantized_fc_conv_ops: Enable allow src quantized fc conv
-        ops on GPU.
-      enable_hint_waiting_for_completion: Enable hint waiting for completion on
-        GPU.
+      options: Optional grouped environment options. Use this to mirror the
+        native C++ EnvironmentOptions API.
+      runtime_path: Optional path to the LiteRT runtime library directory. This
+        shortcut is mutually exclusive with options.
+      compiler_plugin_path: Optional path to compiler plugin libraries. This
+        shortcut is mutually exclusive with options. When omitted or empty,
+        auto-discovers a vendor compiler-plugin directory under the installed
+        `ai_edge_litert` package (the first `vendors/<vendor>/compiler/` dir
+        that contains a compiler-plugin shared library). Needed for JIT
+        compilation of raw .tflite models.
+      dispatch_library_path: Optional path to dispatch libraries. This shortcut
+        is mutually exclusive with options. When omitted or empty, auto-
+        discovers a vendor dispatch directory under the installed
+        `ai_edge_litert` package (the first `vendors/<vendor>/dispatch/` dir
+        that contains a dispatch shared library).
 
     Returns:
       A new Environment instance.
     """
-    if runtime_path is None:
-      runtime_path = os.path.dirname(os.path.abspath(__file__))
+    provided_runtime_path = runtime_path
+    if isinstance(options, str):
+      if provided_runtime_path is not None:
+        raise ValueError("runtime_path was provided twice.")
+      provided_runtime_path = options
+      options = None
+    if options is not None and (
+        provided_runtime_path is not None
+        or compiler_plugin_path
+        or dispatch_library_path
+    ):
+      raise ValueError("Pass either options or environment path shortcuts.")
+    if options is None:
+      options = EnvironmentOptions(
+          runtime_path=provided_runtime_path,
+          compiler_plugin_path=compiler_plugin_path,
+          dispatch_library_path=dispatch_library_path,
+      )
+
+    # Auto-discover a vendor dispatch directory when the caller did not set
+    # one, so NPU accelerator registration succeeds out of the box.
+    if not options.dispatch_library_path:
+      discovered = _autodiscover_dispatch_library_path()
+      if discovered:
+        options = dataclasses.replace(options, dispatch_library_path=discovered)
+
+    # Auto-discover the compiler-plugin directory too, so JIT compilation
+    # for raw .tflite models works out of the box. Without this, dispatch
+    # loads and silently returns a non-partitioned model that the TFLite
+    # fallback interpreter runs on CPU while the benchmark still reports
+    # "Fully accelerated: True". Pair the compiler plugin with whichever
+    # vendor's dispatch library was selected, so mixed wheels (e.g.
+    # google_tensor + intel_openvino) do not cross-wire an Intel compile
+    # into a google_tensor dispatch path.
+    if not options.compiler_plugin_path:
+      preferred_vendor = ""
+      if options.dispatch_library_path:
+        # dispatch path looks like <vendors>/<vendor>/dispatch/ — extract
+        # <vendor>.
+        parent = os.path.dirname(options.dispatch_library_path.rstrip(os.sep))
+        preferred_vendor = os.path.basename(parent)
+      discovered = _autodiscover_compiler_plugin_path(preferred_vendor)
+      if discovered:
+        options = dataclasses.replace(options, compiler_plugin_path=discovered)
+
+    # Determine the final runtime path to be used.
+    final_runtime_path = (
+        provided_runtime_path
+        or options.runtime_path
+        or os.path.dirname(os.path.abspath(__file__))
+    )
+
     capsule = _env.CreateEnvironment(
-        runtime_path=runtime_path,
-        compiler_plugin_path=compiler_plugin_path,
-        dispatch_library_path=dispatch_library_path,
+        runtime_path=final_runtime_path,
+        compiler_plugin_path=options.compiler_plugin_path,
+        dispatch_library_path=options.dispatch_library_path,
     )
     return cls(
-        capsule,
-        cpu_num_threads,
-        gpu_enforce_f32,
-        gpu_share_constant_tensors,
-        cpu_kernel_mode,
-        xnnpack_flags,
-        xnnpack_weight_cache_path,
-        enable_constant_tensor_sharing,
-        enable_infinite_float_capping,
-        enable_benchmark_mode,
-        enable_allow_src_quantized_fc_conv_ops,
-        enable_hint_waiting_for_completion,
+        capsule, dataclasses.replace(options, runtime_path=final_runtime_path)
     )
+
+  @property
+  def options(self) -> EnvironmentOptions:
+    """Returns the environment options used to create this environment."""
+    return self._options
 
   @property
   def capsule(self):

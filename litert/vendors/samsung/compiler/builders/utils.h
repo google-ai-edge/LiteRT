@@ -19,20 +19,20 @@
 #include <string>
 
 #include "litert/c/litert_common.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 
 namespace litert::samsung {
 
 Expected<std::string> GetFusedActivationName(uint32_t tfl_fused_activation);
 
 absl::InlinedVector<int32_t, kExpectedMaxTensorRank> GetDimensions(
-    const Tensor& t);
+    const litert::compiler::Tensor& t);
 
 Expected<const char*> MapToElementTypeStr(ElementType element_type);
 
 template <typename T>
-Expected<std::vector<T>> GetWeightDataAs(const Tensor& t) {
+Expected<std::vector<T>> GetWeightDataAs(const litert::compiler::Tensor& t) {
   LITERT_ASSIGN_OR_RETURN(auto ranked_tensor_type, t.RankedTensorType());
 
   std::vector<T> data;

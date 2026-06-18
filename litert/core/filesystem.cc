@@ -14,16 +14,19 @@
 
 #include "litert/core/filesystem.h"
 
+#include <chrono>  // NOLINT
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>  // NOLINT
 #include <fstream>
 #include <string>
-#include <system_error> // NOLINT
+#include <system_error>  // NOLINT
 #include <vector>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/time/clock.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_buffer_ref.h"
@@ -84,9 +87,36 @@ Expected<size_t> Size(absl::string_view path) {
   auto std_path = MakeStdPath(path);
   if (!StdExists(std_path)) {
     return Error(kLiteRtStatusErrorNotFound,
-                 absl::StrFormat("File not found: %s", std_path.c_str()));
+                 absl::StrFormat("File not found: %s", path));
   }
   return StdSize(std_path);
+}
+
+Expected<absl::Time> GetLastWriteTime(absl::string_view path) {
+  auto std_path = MakeStdPath(path);
+  std::error_code ec;
+  auto ftime = std::filesystem::last_write_time(std_path, ec);
+  if (ec) {
+    return Error(kLiteRtStatusErrorFileIO,
+                 absl::StrFormat("Failed to get last write time: %s, error: %s",
+                                 path, ec.message().c_str()));
+  }
+  return absl::Now() +
+         absl::FromChrono(ftime -
+                          std::filesystem::file_time_type::clock::now());
+}
+
+Expected<void> TouchFile(absl::string_view path) {
+  auto std_path = MakeStdPath(path);
+  std::error_code ec;
+  std::filesystem::last_write_time(
+      std_path, std::filesystem::file_time_type::clock::now(), ec);
+  if (ec) {
+    return Error(kLiteRtStatusErrorFileIO,
+                 absl::StrFormat("Failed to touch file: %s, error: %s",
+                                 path, ec.message().c_str()));
+  }
+  return {};
 }
 
 Expected<OwningBufferRef<uint8_t>> LoadBinaryFile(absl::string_view path) {
@@ -94,14 +124,14 @@ Expected<OwningBufferRef<uint8_t>> LoadBinaryFile(absl::string_view path) {
 
   if (!StdExists(std_path)) {
     return Error(kLiteRtStatusErrorNotFound,
-                 absl::StrFormat("File not found: %s", std_path.c_str()));
+                 absl::StrFormat("File not found: %s", path));
   }
 
   OwningBufferRef<uint8_t> buf(StdSize(std_path));
   if (auto status = StdIFRead(std_path, buf.StrData(), buf.Size());
       status != kLiteRtStatusOk) {
     return Error(status,
-                 absl::StrFormat("Failed to read: %s", std_path.c_str()));
+                 absl::StrFormat("Failed to read: %s", path));
   }
 
   return buf;
@@ -111,7 +141,7 @@ Expected<std::vector<std::string>> ListDir(absl::string_view path) {
   auto std_path = MakeStdPath(path);
   if (!StdExists(std_path)) {
     return Error(kLiteRtStatusErrorNotFound,
-                 absl::StrFormat("Directory not found: %s", std_path.c_str()));
+                 absl::StrFormat("Directory not found: %s", path));
   }
   std::vector<std::string> res;
   for (const auto& entry : std::filesystem::directory_iterator(std_path)) {
@@ -122,11 +152,33 @@ Expected<std::vector<std::string>> ListDir(absl::string_view path) {
   return res;
 }
 
+Expected<std::vector<std::string>> RecursiveListDir(absl::string_view path) {
+  auto std_path = MakeStdPath(path);
+  if (!StdExists(std_path)) {
+    return Error(kLiteRtStatusErrorNotFound,
+                 absl::StrFormat("Directory not found: %s", path));
+  }
+  std::vector<std::string> res;
+  std::error_code ec;
+  for (const auto& entry :
+       std::filesystem::recursive_directory_iterator(std_path, ec)) {
+    if (std::filesystem::is_regular_file(entry)) {
+      res.push_back(entry.path().generic_string());
+    }
+  }
+  if (ec) {
+    return Error(kLiteRtStatusErrorFileIO,
+                 absl::StrFormat("Recursive directory iteration failed: %s",
+                                 ec.message().c_str()));
+  }
+  return res;
+}
+
 Expected<std::string> Filename(absl::string_view path) {
   auto std_path = MakeStdPath(path);
   if (!StdExists(std_path)) {
     return Error(kLiteRtStatusErrorNotFound,
-                 absl::StrFormat("File not found: %s", std_path.c_str()));
+                 absl::StrFormat("File not found: %s", path));
   }
   return std_path.filename().generic_string();
 }
@@ -143,14 +195,14 @@ Expected<void> MkDir(absl::string_view path) {
   if (Exists(path)) {
     return Error(
         kLiteRtStatusErrorAlreadyExists,
-        absl::StrFormat("Path exists and is not a directory: %s", path.data()));
+        absl::StrFormat("Path exists and is not a directory: %s", path));
   }
   auto std_path = MakeStdPath(path);
   const auto stat = std::filesystem::create_directories(std_path);
   if (!stat) {
     return Error(
         kLiteRtStatusErrorFileIO,
-        absl::StrFormat("Failed to create directory: %s", std_path.c_str()));
+        absl::StrFormat("Failed to create directory: %s", path));
   }
   return {};
 }
@@ -158,6 +210,32 @@ Expected<void> MkDir(absl::string_view path) {
 Expected<std::string> Parent(absl::string_view path) {
   auto std_path = MakeStdPath(path);
   return std_path.parent_path().generic_string();
+}
+
+Expected<void> RemoveFile(absl::string_view path) {
+  auto std_path = MakeStdPath(path);
+  std::error_code ec;
+  std::filesystem::remove(std_path, ec);
+  if (ec) {
+    return Error(kLiteRtStatusErrorFileIO,
+                 absl::StrFormat("Failed to remove file: %s, error: %s",
+                                 path, ec.message().c_str()));
+  }
+  return {};
+}
+
+Expected<std::string> Relative(absl::string_view path, absl::string_view base) {
+  auto std_path = MakeStdPath(path);
+  auto std_base = MakeStdPath(base);
+  std::error_code ec;
+  auto rel = std::filesystem::relative(std_path, std_base, ec);
+  if (ec) {
+    return Error(
+        kLiteRtStatusErrorFileIO,
+        absl::StrFormat("Failed to compute relative path for %s w.r.t %s: %s",
+                        path, base, ec.message().c_str()));
+  }
+  return rel.generic_string();
 }
 
 Expected<void> RmDir(std::string path_to_remove) {
@@ -180,9 +258,9 @@ Expected<void> RmDir(std::string path_to_remove) {
     // If count == 0 and it doesn't exist, it means it never existed. Still Ok.
     return {};
   } else {
-    return Error(kLiteRtStatusErrorFileIO,
-                 absl::StrFormat("Could not fully remove: %s",
-                                 path_to_remove.c_str()));
+    return Error(
+        kLiteRtStatusErrorFileIO,
+        absl::StrFormat("Could not fully remove: %s", path_to_remove.c_str()));
   }
 }
 

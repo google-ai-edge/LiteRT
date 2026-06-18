@@ -79,6 +79,7 @@ class FlatbufferContext {
   BufferManager* GetBufferManager() { return buffer_manager_; }
 
   const uint8_t* AllocBase() const { return tfl_flatbuffer_.AllocBase(); }
+  size_t AllocSize() const { return tfl_flatbuffer_.Buf().Size(); }
 
   const TflPackedModel* PackedModel() const {
     return tfl_flatbuffer_.PackedModel();
@@ -92,37 +93,54 @@ class FlatbufferContext {
   BufferIdMap registered_tfl_buffer_ids_;
 };
 
+bool IsRangeInAllocation(size_t offset, size_t size, size_t allocation_size) {
+  return offset <= allocation_size && size <= allocation_size - offset;
+}
+
 LiteRtStatus UnpackOp(FlatbufferContext& context, LiteRtSubgraphT& parent,
                       const TflPackedOp& tfl_op, LiteRtOpT& litert_op,
                       size_t op_index) {
   // I/O TENSORS
 
-  if (tfl_op.intermediates() && tfl_op.intermediates()->size() != 0) {
+  if (tfl_op.intermediates() && !tfl_op.intermediates()->empty()) {
     // TODO: b/365299994 - Support intermediates.
     LITERT_LOG(LITERT_ERROR, "Intermediate tensors not yet supported.");
     return kLiteRtStatusErrorUnsupported;
   }
 
   if (tfl_op.mutating_variable_inputs() &&
-      tfl_op.mutating_variable_inputs()->size() != 0) {
+      !tfl_op.mutating_variable_inputs()->empty()) {
     // TODO: b/365299994 - Support mutating variable inputs.
     LITERT_LOG(LITERT_ERROR, "Mutating variable inputs not yet supported.");
     return kLiteRtStatusErrorUnsupported;
   }
 
-  const auto num_inputs = tfl_op.inputs()->size();
+  const auto num_inputs = tfl_op.inputs() ? tfl_op.inputs()->size() : 0;
   for (auto i = 0; i < num_inputs; ++i) {
     const auto input_ind = tfl_op.inputs()->Get(i);
     // Skipping optional input tensor.
     if (input_ind == -1) {
       continue;
     }
+    if (input_ind < 0 ||
+        static_cast<size_t>(input_ind) >= parent.Tensors().size()) {
+      LITERT_LOG(LITERT_ERROR,
+                 "flatbuffer model has invalid op input index: %d", input_ind);
+      return kLiteRtStatusErrorInvalidFlatbuffer;
+    }
     AttachInput(&parent.Tensor(input_ind), litert_op);
   }
 
-  const auto num_outputs = tfl_op.outputs()->size();
+  const auto num_outputs = tfl_op.outputs() ? tfl_op.outputs()->size() : 0;
   for (auto i = 0; i < num_outputs; ++i) {
     const auto output_ind = tfl_op.outputs()->Get(i);
+    if (output_ind < 0 ||
+        static_cast<size_t>(output_ind) >= parent.Tensors().size()) {
+      LITERT_LOG(LITERT_ERROR,
+                 "flatbuffer model has invalid op output index: %d",
+                 output_ind);
+      return kLiteRtStatusErrorInvalidFlatbuffer;
+    }
     AttachOutput(&parent.Tensor(output_ind), litert_op);
   }
 
@@ -175,6 +193,13 @@ Expected<TflBufferContext> ReadBuffer(FlatbufferContext& context,
     const auto* alloc_base = context.AllocBase();
     const auto offset = tfl_buffer.offset();
     const auto size = tfl_buffer.size();
+    if (!IsRangeInAllocation(offset, size, context.AllocSize())) {
+      LITERT_LOG(LITERT_ERROR,
+                 "flatbuffer model has invalid external buffer range: offset "
+                 "%zu, size %zu, allocation size %zu",
+                 offset, size, context.AllocSize());
+      return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+    }
 
     return TflBufferContext{BufferRef<uint8_t>(alloc_base + offset, size),
                             true};
@@ -190,7 +215,7 @@ Expected<TflBufferContext> ReadBuffer(FlatbufferContext& context,
   }
 }
 
-LiteRtStatus UnpackTensor(FlatbufferContext& context,
+LiteRtStatus UnpackTensor(FlatbufferContext& context, LiteRtSubgraphT& parent,
                           const TflPackedTensor& tfl_tensor,
                           LiteRtTensorT& litert_tensor) {
   const auto buffer_ind = tfl_tensor.buffer();
@@ -226,11 +251,32 @@ LiteRtStatus UnpackTensor(FlatbufferContext& context,
   // QUANTIZATION
 
   if (tfl_tensor.quantization()) {
-    auto quantization = MapQuantization(tfl_tensor.quantization());
-    if (!quantization) {
-      return quantization.Error().Status();
+    if (IsBlockWiseQuantized(tfl_tensor.quantization())) {
+      const auto* details =
+          tfl_tensor.quantization()->details_as_BlockwiseQuantization();
+      if (!details) {
+        LITERT_LOG(LITERT_ERROR, "Malformed blockwise quantization details");
+        return kLiteRtStatusErrorInvalidFlatbuffer;
+      }
+      int scales_tensor_ind = details->scales();
+      int zero_points_tensor_ind = details->zero_points();
+      int block_size = details->block_size();
+
+      LiteRtTensor scales_tensor = &parent.Tensor(scales_tensor_ind);
+      LiteRtTensor zero_points_tensor = nullptr;
+      if (zero_points_tensor_ind != -1) {
+        zero_points_tensor = &parent.Tensor(zero_points_tensor_ind);
+      }
+
+      litert_tensor.SetQarams(MakeBlockWiseQuantization(
+          scales_tensor, zero_points_tensor, block_size));
+    } else {
+      auto quantization = MapQuantization(tfl_tensor.quantization());
+      if (!quantization) {
+        return quantization.Error().Status();
+      }
+      litert_tensor.SetQarams(std::move(*quantization));
     }
-    litert_tensor.SetQarams(std::move(*quantization));
   }
 
   // MISC
@@ -245,8 +291,7 @@ LiteRtStatus UnpackTensor(FlatbufferContext& context,
     return kLiteRtStatusErrorUnsupported;
   }
 
-  if (tfl_tensor.variant_tensors() &&
-      tfl_tensor.variant_tensors()->size() != 0) {
+  if (tfl_tensor.variant_tensors() && !tfl_tensor.variant_tensors()->empty()) {
     // TODO: b/365299994 - Support variant tensors.
     LITERT_LOG(LITERT_ERROR, "Variant tensors not yet supported.");
     return kLiteRtStatusErrorUnsupported;
@@ -264,18 +309,31 @@ LiteRtStatus UnpackTensor(FlatbufferContext& context,
 LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
                             const TflPackedSubgraph& tfl_subgraph,
                             LiteRtSubgraphT& litert_subgraph) {
+  if (tfl_subgraph.name() != nullptr) {
+    litert_subgraph.SetName(tfl_subgraph.name()->str());
+  }
+
+  // Emplace all tensors first to resolve potential cross-referencing in
+  // blockwise quantization.
+  const auto num_tensors =
+      tfl_subgraph.tensors() ? tfl_subgraph.tensors()->size() : 0;
+  for (auto i = 0; i < num_tensors; ++i) {
+    litert_subgraph.EmplaceTensor();
+  }
+
   // Unpack tensors.
-  const auto num_tensors = tfl_subgraph.tensors()->size();
   for (auto i = 0; i < num_tensors; ++i) {
     const auto* tfl_tensor = tfl_subgraph.tensors()->Get(i);
-    auto& litert_tensor = litert_subgraph.EmplaceTensor();
-    LITERT_RETURN_IF_ERROR(UnpackTensor(context, *tfl_tensor, litert_tensor));
+    auto& litert_tensor = litert_subgraph.Tensor(i);
+    LITERT_RETURN_IF_ERROR(
+        UnpackTensor(context, litert_subgraph, *tfl_tensor, litert_tensor));
     litert_tensor.SetTensorIndex(i);
   }
 
   // Unpack ops, pass litert_subgraph so they can look up the new litert
   // tensors.
-  const auto num_ops = tfl_subgraph.operators()->size();
+  const auto num_ops =
+      tfl_subgraph.operators() ? tfl_subgraph.operators()->size() : 0;
   for (auto i = 0; i < num_ops; ++i) {
     const auto* tfl_op = tfl_subgraph.operators()->Get(i);
     LITERT_RETURN_IF_ERROR(UnpackOp(context, litert_subgraph, *tfl_op,
@@ -283,7 +341,8 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
   }
 
   // Update subgraph I/O.
-  const auto num_inputs = tfl_subgraph.inputs()->size();
+  const auto num_inputs =
+      tfl_subgraph.inputs() ? tfl_subgraph.inputs()->size() : 0;
   for (auto i = 0; i < num_inputs; ++i) {
     const auto tfl_input_ind = tfl_subgraph.inputs()->Get(i);
     if (tfl_input_ind < 0 ||
@@ -295,7 +354,8 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
     }
     litert_subgraph.Inputs().push_back(&litert_subgraph.Tensor(tfl_input_ind));
   }
-  const auto num_outputs = tfl_subgraph.outputs()->size();
+  const auto num_outputs =
+      tfl_subgraph.outputs() ? tfl_subgraph.outputs()->size() : 0;
   for (auto i = 0; i < num_outputs; ++i) {
     const auto tfl_output_ind = tfl_subgraph.outputs()->Get(i);
     if (tfl_output_ind < 0 ||
@@ -340,6 +400,11 @@ LiteRtStatus UnpackSignatures(std::vector<TflSignaturePtr>& tfl_signatures,
     absl::flat_hash_map<LiteRtTensor, std::string> input_aliases;
     input_aliases.reserve(tfl_inputs.size());
     for (const auto& tfl_input : tfl_inputs) {
+      if (tfl_input->tensor_index >= litert_subgraph->Tensors().size()) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Signature input does not refer to a valid tensor index.");
+        return kLiteRtStatusErrorInvalidFlatbuffer;
+      }
       auto* tensor = litert_subgraph->Tensors().at(tfl_input->tensor_index);
       const std::string& name = tfl_input->name;
       input_aliases[tensor] =
@@ -349,6 +414,11 @@ LiteRtStatus UnpackSignatures(std::vector<TflSignaturePtr>& tfl_signatures,
     absl::flat_hash_map<LiteRtTensor, std::string> output_aliases;
     output_aliases.reserve(tfl_outputs.size());
     for (const auto& tfl_output : tfl_outputs) {
+      if (tfl_output->tensor_index >= litert_subgraph->Tensors().size()) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Signature output does not refer to a valid tensor index.");
+        return kLiteRtStatusErrorInvalidFlatbuffer;
+      }
       auto* tensor = litert_subgraph->Tensors().at(tfl_output->tensor_index);
       const std::string& name = tfl_output->name;
       output_aliases[tensor] =
@@ -487,6 +557,8 @@ Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
 
   // Load bytecode of each dispatch op and attach it to the model.
   absl::flat_hash_map<size_t, unsigned int> buffer_id_map;
+  const auto& model_flatbuffer = GetTflFlatbuffer(*model);
+  const auto allocation_size = model_flatbuffer.Buf().Size();
   for (const LiteRtSubgraph& subgraph : model->Subgraphs()) {
     for (LiteRtOp op : subgraph->Ops()) {
       if (auto custom_code = op->CustomCode();
@@ -496,9 +568,19 @@ Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
         DispatchOpOptions dispatch_opts =
             GetDispatchOpOptions(op->CustomOptions());
         if (!buffer_id_map.contains(dispatch_opts.bytecode_offset)) {
-          BufferRef<uint8_t> byte_code(GetTflFlatbuffer(*model).AllocBase() +
-                                           dispatch_opts.bytecode_offset,
-                                       dispatch_opts.bytecode_size);
+          if (!IsRangeInAllocation(dispatch_opts.bytecode_offset,
+                                   dispatch_opts.bytecode_size,
+                                   allocation_size)) {
+            LITERT_LOG(LITERT_ERROR,
+                       "dispatch op bytecode range is outside the model "
+                       "allocation: offset %zu, size %zu, allocation size %zu",
+                       dispatch_opts.bytecode_offset,
+                       dispatch_opts.bytecode_size, allocation_size);
+            return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+          }
+          BufferRef<uint8_t> byte_code(
+              model_flatbuffer.AllocBase() + dispatch_opts.bytecode_offset,
+              dispatch_opts.bytecode_size);
           const BufferManager::BufferId buf_id =
               model->Buffers()->RegisterNonOwnedBuffer(byte_code);
           buffer_id_map.insert({dispatch_opts.bytecode_offset, buf_id});

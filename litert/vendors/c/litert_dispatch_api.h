@@ -17,6 +17,7 @@
 
 #include <stddef.h>
 
+#include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_metrics.h"
@@ -285,13 +286,29 @@ typedef struct LiteRtDispatchGraphInterface {
 
 // /////////////////////////////////////////////////////////////////////////////
 
-// FIXME See Vulkan and OpenCL extensions.
+/// A internal struct that holds pointers to all the Dispatch API functions.
+/// Dispatch Delegate will look up this struct to extract the Dispatch API
+/// functions.
+///
+/// @note This concrete type is shared between the runtime and the Dispatch
+///     plugin, so it must be ABI stable.
 typedef struct LiteRtDispatchApi {
   LiteRtApiVersion version;
   LiteRtDispatchInterface* interface;
   LiteRtDispatchAsyncInterface* async_interface;
   LiteRtDispatchGraphInterface* graph_interface;
+  LiteRtCustomTensorBufferHandlersDef* tensor_buffer_handlers_def;
 } LiteRtDispatchApi;
+
+#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
+    __SIZEOF_POINTER__ == 8
+static_assert(sizeof(LiteRtDispatchApi) == 48,
+              "LiteRtDispatchApi size mismatch");
+static_assert(offsetof(LiteRtDispatchApi, interface) == 16,
+              "LiteRtDispatchApi interface offset mismatch");
+static_assert(offsetof(LiteRtDispatchApi, tensor_buffer_handlers_def) == 40,
+              "LiteRtDispatchApi tensor_buffer_handlers_def offset mismatch");
+#endif  // __cplusplus
 
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api);
 

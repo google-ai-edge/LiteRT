@@ -44,6 +44,9 @@ ABSL_DECLARE_FLAG(std::optional<int>, data_seed);
 // Which backend to use as the "actual".
 ABSL_DECLARE_FLAG(std::string, backend);
 
+// Whether to hint at fully delegating to a single delegate for CPU.
+ABSL_DECLARE_FLAG(bool, cpu_hint_fully_delegated);
+
 // Comma-separated test-generator/seed pairings in the form
 // <generator_name>:<seed>. This seed will be used to generator the randomized
 // parameters for all invocations of the respective test-generator.

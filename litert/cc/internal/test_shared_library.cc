@@ -12,8 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#if defined(_WIN32)
+#define LITERT_TEST_SHARED_LIBRARY_EXPORT __declspec(dllexport)
+#else
+#define LITERT_TEST_SHARED_LIBRARY_EXPORT __attribute__((visibility("default")))
+#endif
+
 extern "C" {
 
-const char* TestFunction() { return "test_shared_library"; }
+LITERT_TEST_SHARED_LIBRARY_EXPORT const char* TestFunction() {
+  return "test_shared_library";
+}
 
 }  // extern "C"

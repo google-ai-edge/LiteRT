@@ -17,9 +17,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
-#include "absl/log/absl_check.h"  // from @com_google_absl
-#include "absl/log/die_if_null.h"  // from @com_google_absl
 #include "litert/c/internal/litert_runtime_c_api.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
@@ -37,17 +36,18 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/litert_webgpu_types.h"
 #include "litert/cc/internal/litert_runtime_builtin.h"
+#include "litert/cc/litert_api_types.h"
 
 namespace litert {
 class Options;
 namespace internal {
 
-#define LITERT_PROXY_METHOD_STATUS(method, ...) \
-  ABSL_CHECK(runtime_c_api_->method);           \
+#define LITERT_PROXY_METHOD_STATUS(method, ...)  \
+  LITERT_INTERNAL_CHECK(runtime_c_api_->method); \
   return runtime_c_api_->method(__VA_ARGS__);
 
-#define LITERT_PROXY_METHOD_VOID(method, ...) \
-  ABSL_CHECK(runtime_c_api_->method);         \
+#define LITERT_PROXY_METHOD_VOID(method, ...)    \
+  LITERT_INTERNAL_CHECK(runtime_c_api_->method); \
   runtime_c_api_->method(__VA_ARGS__);
 
 // A proxy class that provides a C++ interface to the LiteRT Runtime C Api.
@@ -63,9 +63,9 @@ class RuntimeProxy {
   /// If the system runtime handle is not provided, the builtin runtime will be
   /// used.
   explicit RuntimeProxy(const LiteRtRuntimeCApiStruct* runtime_c_api)
-      : runtime_c_api_(ABSL_DIE_IF_NULL(runtime_c_api == nullptr
-                                            ? kLiteRtRuntimeBuiltin
-                                            : runtime_c_api)) {};
+      : runtime_c_api_(LITERT_INTERNAL_DIE_IF_NULL(runtime_c_api == nullptr
+                                                       ? kLiteRtRuntimeBuiltin
+                                                       : runtime_c_api)) {};
 
   ~RuntimeProxy() = default;
 
@@ -138,12 +138,6 @@ class RuntimeProxy {
                                           LiteRtAny* value) {
     LITERT_PROXY_METHOD_STATUS(litert_get_environment_options_value, options,
                                tag, value);
-  }
-
-  LiteRtStatus SetEnvironmentOptionsValue(LiteRtEnvironmentOptions options,
-                                          LiteRtEnvOption env_option) {
-    LITERT_PROXY_METHOD_STATUS(litert_set_environment_options_value, options,
-                               env_option);
   }
 
   //
@@ -284,12 +278,7 @@ class RuntimeProxy {
                                input_idx, input_name);
   }
 
-  LiteRtStatus GetSignatureInputTensor(LiteRtSignature signature,
-                                       const char* input_name,
-                                       LiteRtTensor* tensor) {
-    LITERT_PROXY_METHOD_STATUS(litert_get_signature_input_tensor, signature,
-                               input_name, tensor);
-  }
+
 
   LiteRtStatus GetSignatureInputTensorByIndex(LiteRtSignature signature,
                                               LiteRtParamIndex input_idx,
@@ -311,12 +300,7 @@ class RuntimeProxy {
                                output_idx, output_name);
   }
 
-  LiteRtStatus GetSignatureOutputTensor(LiteRtSignature signature,
-                                        const char* output_name,
-                                        LiteRtTensor* tensor) {
-    LITERT_PROXY_METHOD_STATUS(litert_get_signature_output_tensor, signature,
-                               output_name, tensor);
-  }
+
 
   LiteRtStatus GetSignatureOutputTensorByIndex(LiteRtSignature signature,
                                                LiteRtParamIndex output_idx,
@@ -329,14 +313,24 @@ class RuntimeProxy {
   // LiteRtModel
   //
 
-  LiteRtStatus CreateModelFromFile(const char* filename, LiteRtModel* model) {
-    LITERT_PROXY_METHOD_STATUS(litert_create_model_from_file, filename, model);
+  LiteRtStatus CreateModelFromFile(LiteRtEnvironment environment,
+                                   const char* filename, LiteRtModel* model) {
+    LITERT_PROXY_METHOD_STATUS(litert_create_model_from_file, environment,
+                               filename, model);
   }
 
-  LiteRtStatus CreateModelFromBuffer(const void* buffer_addr,
+  LiteRtStatus CreateModelFromBuffer(LiteRtEnvironment environment,
+                                     const void* buffer_addr,
                                      size_t buffer_size, LiteRtModel* model) {
-    LITERT_PROXY_METHOD_STATUS(litert_create_model_from_buffer, buffer_addr,
-                               buffer_size, model);
+    LITERT_PROXY_METHOD_STATUS(litert_create_model_from_buffer, environment,
+                               buffer_addr, buffer_size, model);
+  }
+
+  LiteRtStatus CreateModelFromFd(LiteRtEnvironment environment, int fd,
+                                 size_t offset, size_t size,
+                                 LiteRtModel* model) {
+    LITERT_PROXY_METHOD_STATUS(litert_create_model_from_fd, environment, fd,
+                               offset, size, model);
   }
 
   LiteRtStatus GetModelMetadata(LiteRtModel model, const char* metadata_key,
@@ -454,12 +448,6 @@ class RuntimeProxy {
     LITERT_PROXY_METHOD_STATUS(litert_get_compiled_model_output_tensor_layouts,
                                compiled_model, signature_index, num_layouts,
                                layouts, update_allocation);
-  }
-
-  LiteRtStatus GetCompiledModelEnvironment(LiteRtCompiledModel compiled_model,
-                                           LiteRtEnvironment* environment) {
-    LITERT_PROXY_METHOD_STATUS(litert_get_compiled_model_environment,
-                               compiled_model, environment);
   }
 
   LiteRtStatus RunCompiledModel(LiteRtCompiledModel compiled_model,
@@ -616,7 +604,7 @@ class RuntimeProxy {
                                         const char* format, Args&&... args) {
     // We cannot forward variadic arguments, so this function cannot use the
     // macro.
-    ABSL_CHECK(runtime_c_api_->litert_compiled_model_report_error);
+    LITERT_INTERNAL_CHECK(runtime_c_api_->litert_compiled_model_report_error);
     return runtime_c_api_->litert_compiled_model_report_error(
         compiled_model, format, std::forward<Args>(args)...);
   }
@@ -1221,6 +1209,13 @@ class RuntimeProxy {
                                        bool* is_supported) {
     LITERT_PROXY_METHOD_STATUS(litert_environment_supports_fp16, environment,
                                is_supported);
+  }
+
+  LiteRtStatus GetBlockWiseQuantization(
+      LiteRtTensor tensor,
+      LiteRtQuantizationBlockWise* block_wise_quantization) {
+    LITERT_PROXY_METHOD_STATUS(litert_get_block_wise_quantization, tensor,
+                               block_wise_quantization);
   }
 
  protected:

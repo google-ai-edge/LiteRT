@@ -205,7 +205,8 @@ TEST(CompiledModelTest, Basic) {
   // Create LiteRtModel and check signatures.
   std::string path = testing::GetTestFilePath(kModelFileName);
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
 
   absl::Span<LiteRtSignature> signatures = model->Signatures();
   ASSERT_EQ(signatures.size(), 1);
@@ -328,7 +329,8 @@ TEST(CompiledModelTest,
   // Create LiteRtModel and check signatures.
   std::string path = testing::GetTestFilePath(kModelFileName);
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
 
   // Create CompiledModel with options.
   LiteRtOptions jit_compilation_options;
@@ -357,7 +359,8 @@ TEST(CompiledModelTest, UseAhwbBuffer) {
   // Create LiteRtModel and check signatures.
   std::string path = testing::GetTestFilePath(kModelFileName);
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
 
   absl::Span<LiteRtSignature> signatures = model->Signatures();
   ASSERT_EQ(signatures.size(), 1);
@@ -474,6 +477,9 @@ TEST(CompiledModelTest, UseAhwbBuffer) {
 }
 
 TEST(CompiledModelTest, UseOpenCLBuffer) {
+#if defined(_WIN32)
+  GTEST_SKIP() << "OpenCL buffer coverage is not linked on Windows.";
+#else
   // MSAN does not support GPU tests.
 #if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
   GTEST_SKIP() << "GPU tests are not supported In msan";
@@ -529,7 +535,8 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
   // Create LiteRtModel and check signatures.
   std::string path = testing::GetTestFilePath(kModelFileName);
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
 
   absl::Span<LiteRtSignature> signatures = model->Signatures();
   ASSERT_EQ(signatures.size(), 1);
@@ -646,6 +653,7 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
 
   LiteRtDestroyModel(model);
   LiteRtDestroyEnvironment(env_ptr);
+#endif
 }
 
 TEST(CompiledModelTest, WithProfiler) {
@@ -657,7 +665,8 @@ TEST(CompiledModelTest, WithProfiler) {
   // Create LiteRtModel and check signatures.
   std::string path = testing::GetTestFilePath(kModelFileName);
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
 
   absl::Span<LiteRtSignature> signatures = model->Signatures();
   ASSERT_EQ(signatures.size(), 1);
@@ -805,7 +814,8 @@ TEST(CompiledModelTest, WithCpuOptions) {
   // Create LiteRtModel.
   std::string path = testing::GetTestFilePath(kModelFileName);
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
 
   // Create CompiledModel with options.
   LiteRtOptions jit_compilation_options;
@@ -857,7 +867,8 @@ TEST(CompiledModelTest, ErrorReporterBufferMode) {
   // Create LiteRtModel.
   std::string path = testing::GetTestFilePath(kModelFileName);
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
 
   // Create CompiledModel with options.
   LiteRtOptions jit_compilation_options;
@@ -926,7 +937,8 @@ TEST(CompiledModelTest, ErrorReporterStderrMode) {
   // Create LiteRtModel.
   std::string path = testing::GetTestFilePath(kModelFileName);
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
 
   // Create CompiledModel with options.
   LiteRtOptions jit_compilation_options;
@@ -983,7 +995,8 @@ TEST(CompiledModelTest, ErrorReporterNoneMode) {
   // Create LiteRtModel.
   std::string path = testing::GetTestFilePath(kModelFileName);
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
 
   // Create CompiledModel with options.
   LiteRtOptions jit_compilation_options;
@@ -1044,7 +1057,8 @@ TEST(CompiledModelTest, ErrorReporterWithMultipleModels) {
 
   // Create first model with buffer reporter
   LiteRtModel model1;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model1), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model1),
+            kLiteRtStatusOk);
 
   LiteRtOptions options1;
   ASSERT_EQ(LiteRtCreateOptions(&options1), kLiteRtStatusOk);
@@ -1076,7 +1090,8 @@ TEST(CompiledModelTest, ErrorReporterWithMultipleModels) {
 
   // Create second model with stderr reporter
   LiteRtModel model2;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model2), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model2),
+            kLiteRtStatusOk);
 
   LiteRtOptions options2;
   ASSERT_EQ(LiteRtCreateOptions(&options2), kLiteRtStatusOk);
@@ -1132,7 +1147,8 @@ TEST(CompiledModelTest, ErrorReporterDefaultMode) {
 
   std::string path = testing::GetTestFilePath(kModelFileName);
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
 
   // Create CompiledModel without setting error reporter mode
   LiteRtOptions options;
@@ -1166,7 +1182,8 @@ TEST(CompiledModelTest, ErrorReporterWithProfilingEnabled) {
 
   std::string path = testing::GetTestFilePath(kModelFileName);
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
 
   LiteRtOptions options;
   ASSERT_EQ(LiteRtCreateOptions(&options), kLiteRtStatusOk);
@@ -1227,7 +1244,8 @@ TEST(CompiledModelTest, BindExternalWeightBuffer) {
   // Create LiteRtModel.
   std::string path = testing::GetTestFilePath(kModelFileName);
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
   std::string signature_key = std::string(model->Signatures()[0]->Key());
 
   // Define the external weight buffer. The values should be added to the input.
@@ -1322,7 +1340,8 @@ TEST(CompiledModelTest, NonExternalModelKeepsWeightLoaderNull) {
 
   std::string path = testing::GetTestFilePath(kModelFileName);
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
 
   LiteRtOptions options;
   ASSERT_EQ(LiteRtCreateOptions(&options), kLiteRtStatusOk);
@@ -1351,7 +1370,8 @@ TEST(CompiledModelTest, GetInterpreter) {
   // Create LiteRtModel and check signatures.
   std::string path = testing::GetTestFilePath(kModelFileName);
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
 
   // Create CompiledModel with options.
   LiteRtOptions jit_compilation_options;
@@ -1380,7 +1400,8 @@ TEST(CompiledModelTest, GetOutputTensorShapes) {
   // Create LiteRtModel and check signatures.
   std::string path = testing::GetTestFilePath(kModelFileName);
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
 
   // Create CompiledModel with options.
   LiteRtOptions jit_compilation_options;
@@ -1418,7 +1439,8 @@ TEST(CompiledModelTest, CheckResize) {
   // Create LiteRtModel and check signatures.
   std::string path = testing::GetTestFilePath(kSimpleAddDynamicShapeModel);
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
 
   // Create CompiledModel with options.
   LiteRtOptions jit_compilation_options;
@@ -1486,7 +1508,8 @@ TEST(CompiledModelTest, CheckResizeFail) {
   // Create LiteRtModel and check signatures.
   std::string path = testing::GetTestFilePath(kModelFileName);
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
 
   // Create CompiledModel with options.
   LiteRtOptions jit_compilation_options;
@@ -1528,7 +1551,8 @@ TEST(CompiledModelTest, DynamicResizeWithCustomAllocationsSimple) {
   // Create LiteRtModel and check signatures.
   std::string path = testing::GetTestFilePath(kSimpleAddDynamicShapeModel);
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
 
   absl::Span<LiteRtSignature> signatures = model->Signatures();
   ASSERT_EQ(signatures.size(), 1);

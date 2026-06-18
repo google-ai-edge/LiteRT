@@ -14,6 +14,7 @@
 
 #include "litert/tools/flags/vendors/qualcomm_flags.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -90,6 +91,9 @@ std::string AbslUnparseFlag(QualcommOptions::LogLevel options) {
 ABSL_FLAG(bool, qualcomm_enable_weight_sharing, false,
           "Whether to enable weight sharing, this is unsupported on mobile "
           "platforms.");
+
+ABSL_FLAG(bool, qualcomm_enable_just_in_time, false,
+          "Whether to enable Just-In-Time in QNN, bypassing serialization.");
 
 ABSL_RETIRED_FLAG(
     bool, qualcomm_use_htp_preference, false,
@@ -475,6 +479,11 @@ ABSL_FLAG(bool, qualcomm_use_fold_relu, true,
           "optimization is correct when quantization ranges for convolution "
           "are equal to or are subset of the Relu operation.");
 
+ABSL_FLAG(
+    std::int32_t, qualcomm_htp_p_point, 0,
+    "P points are experimental (HTP backend with O3 only) and map to "
+    "predefined compiler configurations affecting latency and DRAM bandwidth.");
+
 ABSL_FLAG(litert::qualcomm::QualcommOptions::Backend, qualcomm_backend,
           litert::qualcomm::QualcommOptions::Backend::kHtp,
           "QNN backend to use.");
@@ -519,6 +528,84 @@ std::string AbslUnparseFlag(QualcommOptions::Backend options) {
 }
 
 }  // namespace litert::qualcomm
+
+ABSL_FLAG(
+    litert::qualcomm::QualcommOptions::CustomOpPackage,
+    qualcomm_custom_op_package, {},
+    "Custom op package settings as key:value pairs separated by ';'. "
+    "Required keys: name, interface_provider, compile_package_path, "
+    "dispatch_package_path, target. "
+    "target MUST match the chosen QNN backend (e.g., 'HTP' for the HTP "
+    "backend, 'GPU' for the GPU backend). "
+    "For compiler plugin, name/interface_provider/compile_package_path are "
+    "used. For dispatch plugin, name/interface_provider/"
+    "dispatch_package_path/target are used. Example: "
+    "\"name:TestPackage;interface_provider:Provider;compile_package_path:"
+    "libQnnTestPackage.so;dispatch_package_path:"
+    "libQnnTestPackage.so;target:HTP;\"");
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::CustomOpPackage* options,
+                   std::string* error) {
+  if (!text.empty()) {
+    size_t start = 0;
+    while (start <= text.size()) {
+      const size_t end = text.find(';', start);
+      const size_t token_end =
+          end == absl::string_view::npos ? text.size() : end;
+      const absl::string_view token = text.substr(start, token_end - start);
+      start = token_end + 1;
+
+      if (token.empty()) {
+        continue;
+      }
+
+      const size_t colon_pos = token.find(':');
+      if (colon_pos == absl::string_view::npos) {
+        *error = "Invalid custom op package flag.";
+        return false;
+      }
+
+      const absl::string_view key = token.substr(0, colon_pos);
+      const absl::string_view value = token.substr(colon_pos + 1);
+      if (key == "name") {
+        options->name = value;
+      } else if (key == "interface_provider") {
+        options->interface_provider = value;
+      } else if (key == "compile_package_path") {
+        options->compile_package_path = value;
+      } else if (key == "dispatch_package_path") {
+        options->dispatch_package_path = value;
+      } else if (key == "target") {
+        options->target = value;
+      } else {
+        *error = "Unsupported key in custom op package flag.";
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+std::string AbslUnparseFlag(QualcommOptions::CustomOpPackage options) {
+  std::string value;
+  value.reserve(256);
+  auto append_pair = [&value](absl::string_view key, absl::string_view val) {
+    value.append(key).append(":").append(val).append(";");
+  };
+
+  append_pair("name", options.name);
+  append_pair("interface_provider", options.interface_provider);
+  append_pair("compile_package_path", options.compile_package_path);
+  append_pair("dispatch_package_path", options.dispatch_package_path);
+  append_pair("target", options.target);
+  return value;
+}
+
+}  // namespace litert::qualcomm
+
 // NOLINTEND(*alien-types*)
 
 namespace litert::qualcomm {
@@ -526,6 +613,9 @@ namespace litert::qualcomm {
 Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto weight_share = absl::GetFlag(FLAGS_qualcomm_enable_weight_sharing);
   opts.SetEnableWeightSharing(weight_share);
+
+  const auto just_in_time = absl::GetFlag(FLAGS_qualcomm_enable_just_in_time);
+  opts.SetEnableJustInTime(just_in_time);
 
   const auto log_level = absl::GetFlag(FLAGS_qualcomm_log_level);
   opts.SetLogLevel(log_level);
@@ -574,6 +664,9 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto use_fold_relu = absl::GetFlag(FLAGS_qualcomm_use_fold_relu);
   opts.SetUseFoldReLU(use_fold_relu);
 
+  const auto htp_p_point = absl::GetFlag(FLAGS_qualcomm_htp_p_point);
+  opts.SetHtpPPoint(htp_p_point);
+
   const auto qnn_backend = absl::GetFlag(FLAGS_qualcomm_backend);
   opts.SetBackend(qnn_backend);
 
@@ -584,6 +677,10 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto graph_io_tensor_mem_type =
       absl::GetFlag(FLAGS_qualcomm_graph_io_tensor_mem_type);
   opts.SetGraphIOTensorMemType(graph_io_tensor_mem_type);
+
+  const auto custom_op_package =
+      absl::GetFlag(FLAGS_qualcomm_custom_op_package);
+  LITERT_RETURN_IF_ERROR(opts.SetCustomOpPackage(custom_op_package));
 
   return {};
 }

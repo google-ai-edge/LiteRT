@@ -37,9 +37,10 @@ std::vector<OpWrapper> BuildQuantizeOp(
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
-  const char* qnn_op = nullptr;
   if (inputs[0].get().IsPerTensorQuantWithOffsetDiff(outputs[0].get())) {
-    qnn_op = QNN_OP_CAST;
+    auto& op = CreateOpWrapper(res, QNN_OP_CAST);
+    op.AddInputTensor(inputs[0]);
+    op.AddOutputTensor(outputs[0]);
   } else if ((inputs[0].get().IsQuantI8() || inputs[0].get().IsQuantU8() ||
               inputs[0].get().IsQuantI16() || inputs[0].get().IsQuantU16()) &&
              (outputs[0].get().IsQuantI8() || outputs[0].get().IsQuantU8() ||
@@ -49,10 +50,6 @@ std::vector<OpWrapper> BuildQuantizeOp(
   } else {
     return MakeVector(CreateQuantizeOp(inputs[0], outputs[0]));
   }
-
-  auto& quantize_op = CreateOpWrapper(res, qnn_op);
-  quantize_op.AddInputTensor(inputs[0]);
-  quantize_op.AddOutputTensor(outputs[0]);
 
   return res;
 }

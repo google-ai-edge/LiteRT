@@ -138,10 +138,8 @@ DispatchDelegate::CreateDelegateKernelInterface() {
       std::move(dispatch_graph_name), environment_options_, options_,
       device_context_);
   if (kernel) {
-    auto* kernel_ptr =
-        dynamic_cast<typename litert::internal::DispatchDelegateKernel*>(
-            kernel->get());
-    kernels_.push_back(kernel_ptr);
+    kernels_.push_back(kernel->get());
+    // The compiler handles upcasting to the function return type.
     return std::move(*kernel);
   } else {
     LITERT_FATAL("Failed to create a dispatch delegate kernel: %s",
@@ -172,6 +170,10 @@ litert::Expected<LiteRtMetricsT> DispatchDelegate::StopMetricsCollection() {
 }
 
 litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
+  if (device_context_ != nullptr) {
+    LITERT_LOG(LITERT_DEBUG, "Dispatch API is already initialized.");
+    return {};
+  }
   LITERT_RETURN_IF_ERROR(
       LiteRtDispatchInitialize(LrtGetRuntimeContext(), env_, options_));
   // Check if Library needed by dispatch api is compatible.
@@ -211,8 +213,10 @@ litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
                         capabilities));
   }
 
+  LiteRtDispatchDeviceContext device_context = nullptr;
   LITERT_RETURN_IF_ERROR(LiteRtDispatchDeviceContextCreate(
-      LrtGetRuntimeContext(), options_, &device_context_));
+      LrtGetRuntimeContext(), options_, &device_context));
+  device_context_ = device_context;
 
   return {};
 }

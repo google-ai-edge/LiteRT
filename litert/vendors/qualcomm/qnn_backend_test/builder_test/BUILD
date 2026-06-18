@@ -6,6 +6,7 @@ load("//litert/build_common:litert_build_defs.bzl", "litert_test", "make_rpaths"
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:__subpackages__"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
 )
 
 litert_test(
@@ -29,6 +30,11 @@ litert_test(
         "notap",
         "manual",
     ],
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     ungrte = True,
     use_sys_malloc = True,
     deps = [
@@ -61,6 +67,11 @@ litert_test(
         "notap",
         "manual",
     ],
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     ungrte = True,
     use_sys_malloc = True,
     deps = [
@@ -93,6 +104,11 @@ litert_test(
         "notap",
         "manual",
     ],
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     ungrte = True,
     use_sys_malloc = True,
     deps = [
@@ -174,6 +190,38 @@ litert_test(
 )
 
 litert_test(
+    name = "pack_test",
+    srcs = [
+        "pack_test.cc",
+    ],
+    linkopts = select({
+        "//litert:android": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:litert_runtime_c_api_so",
+            ]),
+        ],
+    }),
+    linkstatic = True,
+    tags = [
+        # Don't build/test in OS until qnn is available.
+        "no-remote-exec",
+        "nobuilder",
+        "notap",
+        "manual",
+    ],
+    ungrte = True,
+    use_sys_malloc = True,
+    deps = [
+        "//litert/vendors/qualcomm/core/builders:pack_op_builder",
+        "//litert/vendors/qualcomm/core/utils:test_main",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+litert_test(
     name = "fully_connected_int2_test",
     srcs = [
         "fully_connected_int2_test.cc",
@@ -194,6 +242,11 @@ litert_test(
         "notap",
         "manual",
     ],
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     ungrte = True,
     use_sys_malloc = True,
     deps = [

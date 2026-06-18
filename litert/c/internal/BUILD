@@ -91,8 +91,16 @@ cc_library(
     name = "litert_accelerator_def",
     hdrs = ["litert_accelerator_def.h"],
     deps = [
+        ":litert_custom_tensor_buffer_handlers_def",
         ":litert_runtime_context_header",
         "//litert/c:litert_common",
+    ],
+)
+
+cc_library(
+    name = "litert_custom_tensor_buffer_handlers_def",
+    hdrs = ["litert_custom_tensor_buffer_handlers_def.h"],
+    deps = [
         "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_environment_options_header",
         "//litert/c:litert_tensor_buffer_types",
@@ -124,13 +132,13 @@ cc_library(
     deps = [
         "//litert/c:litert_any",
         "//litert/c:litert_common",
-        "//litert/c:litert_environment_options",
-        "//litert/c:litert_model",
+        "//litert/c:litert_environment_options_impl",
+        "//litert/c:litert_model_impl",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
-        "//litert/c:litert_op_options",
-        "//litert/c:litert_opaque_options",
-        "//litert/c:litert_options",
+        "//litert/c:litert_op_options_impl",
+        "//litert/c:litert_opaque_options_impl",
+        "//litert/c:litert_options_impl",
     ],
 )
 
@@ -284,6 +292,7 @@ cc_library(
         # "//litert/runtime:__subpackages__",
         # "//third_party/odml/litert/ml_drift:__subpackages__",
         # "//litert/kotlin:__subpackages__",
+        # "//third_party/odml/litert/weight_loader:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
@@ -417,6 +426,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//tflite/c:common",
+        "//tflite/core/api",
     ],
 )
 
@@ -550,6 +560,7 @@ cc_library(
 _HEADER_FILES_FOR_SHARED_LIB = [
     "litert_accelerator.h",
     "litert_runtime_context.h",
+    "litert_custom_tensor_buffer_handlers_def.h",
     "litert_accelerator_def.h",
     "litert_accelerator_registration.h",
     "litert_delegate_wrapper.h",
@@ -558,7 +569,7 @@ _HEADER_FILES_FOR_SHARED_LIB = [
     "litert_tensor_buffer_registry.h",
 ]
 
-exports_files(srcs = _HEADER_FILES_FOR_SHARED_LIB)
+exports_files(srcs = _HEADER_FILES_FOR_SHARED_LIB + ["litert_scheduling_info.h"])
 
 filegroup(
     name = "internal_headers",

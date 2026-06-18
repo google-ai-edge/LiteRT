@@ -33,6 +33,7 @@
 #include "litert/c/litert_layout.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/util/perfetto_profiling.h"
 #include "litert/runtime/compiled_model.h"
 
 #ifdef __cplusplus
@@ -43,6 +44,7 @@ LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
                                        LiteRtModel model,
                                        LiteRtOptions jit_compilation_options,
                                        LiteRtCompiledModel* compiled_model) {
+  LITERT_PERFETTO_TRACE_EVENT("CompiledModel Creation");
   if (!environment || !model || !compiled_model) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -107,14 +109,6 @@ LiteRtStatus LiteRtGetCompiledModelInputTensorLayout(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetCompiledModelEnvironment(
-    LiteRtCompiledModel compiled_model, LiteRtEnvironment* environment) {
-  if (!compiled_model || !environment) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  LITERT_ASSIGN_OR_RETURN(*environment, compiled_model->GetEnvironment());
-  return kLiteRtStatusOk;
-}
 
 LiteRtStatus LiteRtGetCompiledModelOutputTensorLayouts(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
@@ -277,6 +271,7 @@ LiteRtStatus LiteRtSetCompiledModelCancellationFunction(
 }
 
 void LiteRtDestroyCompiledModel(LiteRtCompiledModel compiled_model) {
+  LITERT_PERFETTO_TRACE_EVENT("CompiledModel Destruction");
   delete compiled_model;
 }
 
@@ -325,6 +320,8 @@ LiteRtStatus LiteRtCompiledModelResizeInputTensorNonStrict(
     LiteRtParamIndex input_index, const int* dims, size_t dims_size) {
   LITERT_RETURN_IF_ERROR(compiled_model != nullptr,
                          kLiteRtStatusErrorInvalidArgument);
+  LITERT_RETURN_IF_ERROR(dims_size == 0 || dims != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
   LITERT_RETURN_IF_ERROR(compiled_model->ResizeInputTensorNonStrict(
       signature_index, input_index, absl::MakeConstSpan(dims, dims_size)));
   return kLiteRtStatusOk;
@@ -334,6 +331,8 @@ LiteRtStatus LiteRtCompiledModelResizeInputTensor(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
     LiteRtParamIndex input_index, const int* dims, size_t dims_size) {
   LITERT_RETURN_IF_ERROR(compiled_model != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
+  LITERT_RETURN_IF_ERROR(dims_size == 0 || dims != nullptr,
                          kLiteRtStatusErrorInvalidArgument);
   LITERT_RETURN_IF_ERROR(compiled_model->ResizeInputTensor(
       signature_index, input_index, absl::MakeConstSpan(dims, dims_size)));

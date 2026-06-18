@@ -40,6 +40,10 @@ pytype_strict_library(
 pytype_strict_contrib_test(
     name = "mediatek_backend_test",
     srcs = ["mediatek_backend_test.py"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":mediatek_backend",
         ":target",

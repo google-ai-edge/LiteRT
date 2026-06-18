@@ -15,13 +15,15 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_RESIZEBILINEAR_OP_BUILDER_H_
 #define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_RESIZEBILINEAR_OP_BUILDER_H_
 
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildResizeBilinearOp(const Op& op);
+Expected<OpWrapper> BuildResizeBilinearOp(const LiteRtCompilerContext* ctx,
+                                          const litert::compiler::Op& op);
 }
 #endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_RESIZEBILINEAR_OP_BUILDER_H_

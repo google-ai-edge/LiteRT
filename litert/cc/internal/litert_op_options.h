@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_OP_OPTIONS_H_
 #define ODML_LITERT_LITERT_CC_LITERT_OP_OPTIONS_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <type_traits>
@@ -235,9 +236,20 @@ struct CompositeOptions : public OpOptions {
     LITERT_RETURN_IF_ERROR(LiteRtGetSHLOCompositeOpAttributes(
         op, &impl_attributes, &impl_attributes_size));
 
+    if (impl_attributes_size < 0) {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
     if (impl_attributes_size > 0) {
-      attributes_map =
-          flexbuffers::GetRoot(impl_attributes, impl_attributes_size).AsMap();
+      if (impl_attributes == nullptr ||
+          !flexbuffers::VerifyBuffer(
+              impl_attributes, static_cast<size_t>(impl_attributes_size))) {
+        return kLiteRtStatusErrorInvalidArgument;
+      }
+      auto root = flexbuffers::GetRoot(impl_attributes, impl_attributes_size);
+      if (!root.IsMap()) {
+        return kLiteRtStatusErrorInvalidArgument;
+      }
+      attributes_map = root.AsMap();
     }
     this->op = op;
 

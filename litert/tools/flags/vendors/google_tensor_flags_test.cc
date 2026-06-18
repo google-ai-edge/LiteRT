@@ -159,6 +159,23 @@ TEST(UpdateGoogleTensorOptionsFromFlagsTest, SetPerformanceMode) {
                 GoogleTensorOptions::PerformanceMode::kBalanced);
 }
 
+TEST(UpdateGoogleTensorOptionsFromFlagsTest, SetExtraOptionsPath) {
+  Expected<GoogleTensorOptions> options = GoogleTensorOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  // Default value should be empty.
+  ASSERT_TRUE(UpdateGoogleTensorOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_EQ(options.Value().GetExtraOptionsPath(), "");
+  // Update flag value.
+  absl::SetFlag(&FLAGS_google_tensor_extra_options_path,
+                "/tmp/extra_options.bin");
+  ASSERT_TRUE(UpdateGoogleTensorOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_EQ(options.Value().GetExtraOptionsPath(),
+            "/tmp/extra_options.bin");
+
+  // Reset flag to default to avoid affecting other tests.
+  absl::SetFlag(&FLAGS_google_tensor_extra_options_path, "");
+}
+
 }  // namespace
 
 }  // namespace litert::google_tensor

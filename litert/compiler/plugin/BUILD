@@ -14,6 +14,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//litert/build_common:litert_build_defs.bzl", "make_rpaths")
 load("//litert/build_common:special_rule.bzl", "litert_metal_linkopts", "litert_metal_opts")
 
 package(
@@ -58,6 +59,7 @@ cc_library(
         "//litert/vendors/c:litert_compiler_plugin",
         "//litert/vendors/c:litert_compiler_plugin_api",
         "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
@@ -71,10 +73,27 @@ cc_test(
     name = "compiler_plugin_test",
     srcs = ["compiler_plugin_test.cc"],
     data = [
+        "//litert/c:libLiteRt.so",
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
-        "//litert/vendors/examples:example_plugin_so",
+        "//litert/vendors/examples:example_plugin_so_data",
     ],
+    features = select({
+        "//litert:windows": ["-static_link_msvcrt"],
+        "//conditions:default": [],
+    }),
+    linkopts = select({
+        "//litert:android": [],
+        "//litert:ios": [],
+        "//litert:macos": [],
+        "//litert:windows": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:libLiteRt.so",
+                "//litert/c:litert_so",
+            ]),
+        ],
+    }),
     # Workaround to disable mismatched-size-delete.
     # A compiler plugin uses `libLiteRt.so` but `compiler_plugin` is a static library for runtime.
     # So mixing of the two will cause mismatched-size-delete error.
@@ -112,6 +131,7 @@ cc_test(
         "//litert/core/model",
         "//litert/test:common",
         "//litert/test:matchers",
+        "//litert/test:load_test_model",
         "//litert/tools:dump",
         "//litert/vendors/c:litert_compiler_plugin",
         "//tflite/converter/schema:schema_fbs",
@@ -122,10 +142,27 @@ cc_test(
     name = "compiler_plugin_transformation_test",
     srcs = ["compiler_plugin_transformation_test.cc"],
     data = [
+        "//litert/c:libLiteRt.so",
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
-        "//litert/vendors/examples:example_plugin_so",
+        "//litert/vendors/examples:example_plugin_so_data",
     ],
+    features = select({
+        "//litert:windows": ["-static_link_msvcrt"],
+        "//conditions:default": [],
+    }),
+    linkopts = select({
+        "//litert:android": [],
+        "//litert:ios": [],
+        "//litert:macos": [],
+        "//litert:windows": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:libLiteRt.so",
+                "//litert/c:litert_so",
+            ]),
+        ],
+    }),
     # copybara:uncomment malloc = "//base:system_malloc",
     tags = [
         # Sanitizer runtimes are incompatible with RTLD_DEEPBIND.
@@ -150,6 +187,7 @@ cc_test(
         "//litert/core/model:model_serialize",
         "//litert/core/util:flatbuffer_tools_testonly",
         "//litert/test:common",
+        "//litert/test:load_test_model",
     ],
 )
 
@@ -188,6 +226,7 @@ cc_test(
         "//litert/core/model:graph_validation",
         "//litert/core/model:model_serialize",
         "//litert/test:common",
+        "//litert/test:load_test_model",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_googletest//:gtest_main",
     ],

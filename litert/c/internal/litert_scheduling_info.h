@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_INTERNAL_LITERT_SCHEDULING_INFO_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_INTERNAL_LITERT_SCHEDULING_INFO_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -49,7 +50,9 @@ typedef enum LiteRtSchedulingJobPriority {
 // `fields_mask`.
 //
 // This is reserved for 1P access only (Android NPU Manager).
-// TODO (b/484042050): Apply ABI check to ensure this struct remains ABI stable.
+//
+// Note: This concrete type is shared with LiteRT runtime and Dispatch APIs. So
+// it must be ABI stable.
 typedef struct LiteRtSchedulingInfo {
   uint32_t fields_mask;
   int32_t original_uid;
@@ -63,6 +66,26 @@ typedef struct LiteRtSchedulingInfo {
   // Raw 16-byte UUID identifying a related scheduling group.
   uint8_t group_id[kLiteRtSchedulingInfoGroupIdSize];
 } LiteRtSchedulingInfo;
+
+// ABI compatibility check for LiteRtSchedulingInfo.
+//
+// Note: Please get review from the LiteRT ABI compatibility team when you make
+// changes to this struct.
+#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
+    __SIZEOF_POINTER__ == 8
+static_assert(sizeof(LiteRtSchedulingInfo) == 40,
+              "LiteRtSchedulingInfo size mismatch");
+static_assert(offsetof(LiteRtSchedulingInfo, fields_mask) == 0,
+              "LiteRtSchedulingInfo fields_mask offset mismatch");
+static_assert(offsetof(LiteRtSchedulingInfo, original_uid) == 4,
+              "LiteRtSchedulingInfo original_uid offset mismatch");
+static_assert(offsetof(LiteRtSchedulingInfo, debug_feature_id) == 8,
+              "LiteRtSchedulingInfo debug_feature_id offset mismatch");
+static_assert(offsetof(LiteRtSchedulingInfo, job_priority) == 16,
+              "LiteRtSchedulingInfo job_priority offset mismatch");
+static_assert(offsetof(LiteRtSchedulingInfo, group_id) == 20,
+              "LiteRtSchedulingInfo group_id offset mismatch");
+#endif  // __cplusplus
 
 #ifdef __cplusplus
 }  // extern "C"

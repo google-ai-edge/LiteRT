@@ -32,10 +32,13 @@
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_utils.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
+#include "litert/vendors/google_tensor/dispatch/sb_api_features.h"
 
 namespace gt = litert::google_tensor;
 
 namespace {
+
+constexpr char kPerformanceModeKey[] = "edgetpu_performance_mode";
 
 LiteRtStatus ToThrNodeType(LiteRtDispatchNodeType node_type,
                            ThrNodeType& thr_node_type) {
@@ -77,15 +80,27 @@ LiteRtStatus LiteRtDispatchGraphT::Create(
 #endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
 
   // Apply Google Tensor specific options.
-  constexpr char kEdgetpuPerformanceMode[] = "edgetpu_performance_mode";
   if (const auto& options = device_context->google_tensor_options();
       options.has_value() && options->performance_mode.has_value()) {
-    // Ignore the return value as this is unsupported on older runtime.
-    if (graph->AnnotateGraph(
-            kEdgetpuPerformanceMode,
-            std::to_string(static_cast<int>(*options->performance_mode))
-                .c_str()) != kLiteRtStatusOk) {
-      LITERT_LOG(LITERT_WARNING, "Failed to apply edgetpu_performance_mode.");
+    if (GoogleTensorSouthBoundFeatureSupported(
+            GoogleTensorSouthBoundFeature::kPerformanceModeAnnotation)) {
+      // TODO: b/520090381 - Use warning status/log macro on failure when
+      // available.
+      if (graph->AnnotateGraph(
+              kPerformanceModeKey,
+              std::to_string(static_cast<int>(*options->performance_mode))
+                  .c_str()) != kLiteRtStatusOk) {
+        LITERT_LOG(LITERT_WARNING, "Failed to apply edgetpu_performance_mode.");
+      }
+    } else {
+      LITERT_LOG(
+          LITERT_WARNING,
+          "Skipped applying edgetpu_performance_mode (%s) - unsupported "
+          "feature on older southbound runtime version (got: %d.%d, "
+          "requires: >=0.18).",
+          std::to_string(static_cast<int>(*options->performance_mode)).c_str(),
+          GoogleTensorSouthBoundMajorVersion(),
+          GoogleTensorSouthBoundMinorVersion());
     }
   }
 
@@ -227,13 +242,26 @@ LiteRtStatus LiteRtDispatchGraphT::AssignNodeFunction(
   // An empty function name represents no function name being provided, and
   // therefore we must pass `nullptr` to the call below, otherwise SB expects a
   // model with a signature - b/378913220.
+  const char* valid_function_name =
+      (!function_name || *function_name == '\0') ? nullptr : function_name;
+
+  if (!device_context_->IsTfliteExecutable(exec_handle) &&
+      valid_function_name != nullptr &&
+      !GoogleTensorSouthBoundFeatureSupported(
+          GoogleTensorSouthBoundFeature::kTachyonNamedSqFunctions)) {
+    LITERT_LOG(LITERT_VERBOSE,
+               "Named SQ functions are not supported, so overriding function "
+               "name '%s' to ''",
+               valid_function_name);
+    valid_function_name = nullptr;
+  }
+
   GT_LOG_RETURN_IF_SB_ERROR(
-      thrGraphAssignSq(
-          thr_graph_, gt::ToThrNodeId(node_id), exec_handle,
-          !function_name || *function_name == '\0' ? nullptr : function_name),
+      thrGraphAssignSq(thr_graph_, gt::ToThrNodeId(node_id), exec_handle,
+                       valid_function_name),
       "Failed to assign function '%s' from executable %" PRIu64
       " to node %" PRIu64,
-      function_name, exec_handle, node_id);
+      valid_function_name, exec_handle, node_id);
 
   return kLiteRtStatusOk;
 }

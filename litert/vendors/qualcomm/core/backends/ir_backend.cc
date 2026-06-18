@@ -3,24 +3,22 @@
 
 #include "litert/vendors/qualcomm/core/backends/ir_backend.h"
 
+#include <array>
 #include <optional>
 #include <utility>
-#include <vector>
 
+#include "QnnBackend.h"  // from @qairt
+#include "QnnInterface.h"  // from @qairt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
-#include "QnnBackend.h"  // from @qairt
-#include "QnnInterface.h"  // from @qairt
 
 namespace qnn {
 
 IrBackend::IrBackend(const QNN_INTERFACE_VER_TYPE* qnn_api)
     : QnnBackend(qnn_api) {}
-
-IrBackend::~IrBackend() = default;
 
 bool IrBackend::Init(const Options& options,
                      std::optional<::qnn::SocInfo> soc_info) {
@@ -32,8 +30,7 @@ bool IrBackend::Init(const Options& options,
   }
 
   // Backend Handle
-  std::vector<const QnnBackend_Config_t*> backend_configs;
-  backend_configs.emplace_back(nullptr);
+  std::array<const QnnBackend_Config_t*, 1> backend_configs = {nullptr};
 
   auto local_backend_handle = CreateBackendHandle(
       local_log_handle.get(), absl::MakeSpan(backend_configs));

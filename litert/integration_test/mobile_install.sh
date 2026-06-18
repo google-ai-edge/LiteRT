@@ -97,7 +97,7 @@ function setup_context() {
       d_args+=("${a}")
     fi
   done
- 
+
   if [[ -z "${no_push}" && -z "${has_user_models}" ]]; then
     provided_models=($(get_provided_models))
     if [ $? -ne 0 ]; then

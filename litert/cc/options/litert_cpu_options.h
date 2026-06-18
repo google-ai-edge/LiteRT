@@ -18,9 +18,9 @@
 #include <cstdint>
 #include <memory>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_cpu_options.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
@@ -92,6 +92,17 @@ class CpuOptions {
     return flags;
   }
 
+  /// @brief Sets whether to hint at fully delegating to a single delegate so
+  /// certain allocations can be skipped.
+  /// Bypassing early graph validation on operations missing reference kernel
+  /// support (e.g. float16) requires that the graph be fully delegated or
+  /// loading will fail.
+  Expected<void> SetHintFullyDelegatedToSingleDelegate(bool enabled) {
+    LITERT_RETURN_IF_ERROR(LrtSetCpuOptionsHintFullyDelegatedToSingleDelegate(
+        options_.get(), enabled));
+    return {};
+  }
+
   /// @brief Sets the XNNPack weight cache file path.
   Expected<void> SetXNNPackWeightCachePath(const char* path) {
     LITERT_RETURN_IF_ERROR(
@@ -99,35 +110,16 @@ class CpuOptions {
     return {};
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<void> SetXNNPackWeightCachePath(std::string_view path) {
-    const std::string owned_path(path);
-    return SetXNNPackWeightCachePath(owned_path.c_str());
-  }
-#endif
-
   /// @brief Gets the XNNPack weight cache file path.
-#ifdef LITERT_NO_ABSL
-  Expected<std::string_view> GetXNNPackWeightCachePath() const {
+  Expected<StringView> GetXNNPackWeightCachePath() const {
     const char* path;
     auto s = LrtGetCpuOptionsXnnPackWeightCachePath(options_.get(), &path);
     if (s == kLiteRtStatusErrorNotFound) {
-      return std::string_view();
+      return StringView();
     }
     LITERT_RETURN_IF_ERROR(s);
-    return std::string_view(path ? path : "");
+    return internal::NullSafeStringView(path);
   }
-#else
-  Expected<absl::string_view> GetXNNPackWeightCachePath() const {
-    const char* path;
-    auto s = LrtGetCpuOptionsXnnPackWeightCachePath(options_.get(), &path);
-    if (s == kLiteRtStatusErrorNotFound) {
-      return absl::string_view();
-    }
-    LITERT_RETURN_IF_ERROR(s);
-    return absl::NullSafeStringView(path);
-  }
-#endif
 
   /// @brief Sets the XNNPack weight cache file descriptor.
   Expected<void> SetXNNPackWeightCacheFileDescriptor(int fd) {

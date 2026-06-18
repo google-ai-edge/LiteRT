@@ -35,6 +35,7 @@ py_library(
             "model_explorer_integration/**/*",
         ],
     ),
+    # copybara:uncomment strict_deps = False,
     deps = [
         # Dependency placeholder: gfile,
         "//litert/python/mlir/_mlir_libs:converter_api_ext",

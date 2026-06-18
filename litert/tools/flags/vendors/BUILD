@@ -157,7 +157,6 @@ cc_library(
         "-DINCLUDE_MEDIATEK_RUNTIME_FLAGS",
     ],
     deps = [
-        "//litert/c/options:litert_mediatek_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_options",

@@ -70,7 +70,12 @@ LiteRtStatus EnnManager::LoadEnnRuntimeLibrary(absl::string_view path) {
 
   ENN_LOAD_API(enn_runtime_lib_, EnnInitialize);
   ENN_LOAD_API(enn_runtime_lib_, EnnOpenModelFromMemory);
+  ENN_LOAD_API(enn_runtime_lib_, EnnOpenModelFromMemoryWithWeight);
   ENN_LOAD_API(enn_runtime_lib_, EnnCreateBufferFromFdWithOffset);
+  ENN_LOAD_API(enn_runtime_lib_, EnnCreateBufferCache);
+  ENN_LOAD_API(enn_runtime_lib_, EnnOpenModelFromFdWithWeight);
+  ENN_LOAD_API(enn_runtime_lib_, EnnOpenModelWithFileOpenFdWeight);
+  ENN_LOAD_API(enn_runtime_lib_, EnnOpenModelWithFileOpenFd);
   ENN_LOAD_API(enn_runtime_lib_, EnnBufferCommit);
   ENN_LOAD_API(enn_runtime_lib_, EnnGetBuffersInfo);
   ENN_LOAD_API(enn_runtime_lib_, EnnSetBufferByIndex);

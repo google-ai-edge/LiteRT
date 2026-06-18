@@ -49,15 +49,6 @@ class LiteRtDispatchDeviceContextT {
     return tensor_buffer_registry_.Find(tensor_buffer_handle);
   }
 
-  litert::Expected<EnnBufferPtr*> GetEnnCommittedBuffer(void) {
-    return _commit_buf_set;
-  }
-
-  litert::Expected<void> SetEnnCommittedBuffer(EnnBufferPtr* update) {
-    _commit_buf_set = update;
-    return {};
-  }
-
   const LiteRtRuntimeContext* runtime_context() const {
     return runtime_context_;
   }
@@ -88,7 +79,6 @@ class LiteRtDispatchDeviceContextT {
   const LiteRtRuntimeContext* runtime_context_;
   const litert::samsung::EnnManager* enn_manager_;
   EnnBufferRegistry tensor_buffer_registry_;
-  EnnBufferPtr* _commit_buf_set;
 };
 
 #endif  // LITERT_VENDORS_SAMSUNG_DISPATCH_DEVICE_CONTEXT_H_

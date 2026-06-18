@@ -23,9 +23,11 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/container/node_hash_map.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/core/dispatch_op_schema.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/metrics.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -37,19 +39,23 @@ class LiteRtExternalLiteRtBufferContextT;
 
 namespace litert::internal {
 
+// Builds a memory buffer containing the executable bytecode for a dispatch op,
+// using the provided dispatch options and allocation base information.
+Expected<LiteRtMemBuffer> BuildExecutableBytecodeBuffer(
+    const DispatchOpOptions& dispatch_options, const void* alloc_base,
+    int alloc_base_fd, size_t alloc_base_file_offset, size_t alloc_base_size,
+    bool has_alloc_base_file_region);
+
 // A TFL kernel that the interpreter calls to dispatch execution through the
 // Dispatch API.
 class DispatchDelegateKernel
     : public tflite::SimpleOpaqueDelegateKernelInterface {
  public:
-  using Ptr = std::unique_ptr<tflite::SimpleOpaqueDelegateKernelInterface>;
-
   ~DispatchDelegateKernel() override;
 
-  static Expected<Ptr> Create(std::string&& graph_name,
-                              LiteRtEnvironmentOptions environment_options,
-                              LiteRtOptions options,
-                              LiteRtDispatchDeviceContext device_context);
+  static Expected<std::unique_ptr<DispatchDelegateKernel>> Create(
+      std::string&& graph_name, LiteRtEnvironmentOptions environment_options,
+      LiteRtOptions options, LiteRtDispatchDeviceContext device_context);
 
   TfLiteStatus Init(TfLiteOpaqueContext* context,
                     const TfLiteOpaqueDelegateParams* params) override;
@@ -110,11 +116,30 @@ class DispatchDelegateKernel
   Expected<void> AttachBuffersToInvocationContextsIfNeeded(
       TfLiteOpaqueContext* context);
 
+  // Allocates a new tensor buffer or reuses an existing one, registering it
+  // with the dispatch API. Defers unregistration of replaced buffers if needed.
+  Expected<void> AllocateAndRegisterBuffer(
+      int tensor_id, TfLiteOpaqueContext* context,
+      const absl::flat_hash_set<int>& io_tensor_ids);
+
+  // Polls fences for stale buffers in deferred_unregistrations_ and unregisters
+  // them if their execution has completed.
+  void ProcessDeferredUnregistrations();
+
   Expected<void> ScheduleAsyncExecution(TfLiteOpaqueContext* context);
   Expected<void> ScheduleSyncExecution(TfLiteOpaqueContext* context);
 
+  // Retrieves the allocation base from the options.
   Expected<const void*> FindAllocBase() const;
+  // Retrieves the allocation base file descriptor from the options.
   Expected<int> FindAllocBaseFd() const;
+  // Retrieves the allocation base file offset from the options.
+  Expected<size_t> FindAllocBaseFileOffset() const;
+  // Retrieves the allocation base size from the options.
+  Expected<size_t> FindAllocBaseSize() const;
+  // Checks if the allocation base file region (offset and size) is set in the
+  // options.
+  Expected<bool> HasAllocBaseFileRegion() const;
 
   LiteRtEnvironmentOptions environment_options_;
   LiteRtOptions options_;
@@ -129,7 +154,7 @@ class DispatchDelegateKernel
   std::vector<std::vector<int>> node_input_tensor_indices_;
   std::vector<std::vector<int>> node_output_tensor_indices_;
 
-  // Store tensor IDs - get tensors on demand to avoid stale pointers
+  // Store TFlite Tensor indices - get tensors on demand to avoid stale pointers
   std::vector<int> input_tensor_ids_;
   std::vector<int> output_tensor_ids_;
   std::vector<int> internal_tensor_ids_;
@@ -143,6 +168,9 @@ class DispatchDelegateKernel
     bool maybe_sync_with_cpu = false;
     size_t tensor_buffer_used_size = 0;
     bool attached = false;
+    // Tensor buffer that holds out-fence, allowing for deferred unregistration
+    // of tensor_buffer.
+    LiteRtTensorBufferPtr out_fence_buffer;
 
     TensorInfo() = default;
 
@@ -169,6 +197,9 @@ class DispatchDelegateKernel
   // Tensor ID will be stable across reallocations.
   absl::flat_hash_map<int, std::vector<PortConnection>>
       io_tensors_port_connections_;
+
+  // Hold stale TensorInfo records for non-blocking out-fence unregistration.
+  std::vector<std::pair<int, TensorInfo>> deferred_unregistrations_;
 };
 
 }  // namespace litert::internal

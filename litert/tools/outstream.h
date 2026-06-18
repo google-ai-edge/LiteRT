@@ -25,6 +25,7 @@
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/core/filesystem.h"
 
 namespace litert::tools {
 
@@ -48,6 +49,14 @@ class UserStream {
     } else {
       // File stream.
       LITERT_LOG(LITERT_INFO, "Setup file stream\n", "");
+      if (auto parent = litert::internal::Parent(flag);
+          parent && !parent.Value().empty()) {
+        if (auto status = litert::internal::MkDir(parent.Value()); !status) {
+          LITERT_LOG(LITERT_WARNING,
+                     "Failed to create parent directory %s: %s\n",
+                     parent.Value().c_str(), status.Error().Message().c_str());
+        }
+      }
       auto ofstream = std::make_unique<std::ofstream>();
       ofstream->open(flag.data(), std::ios::out | std::ios::binary);
       ABSL_CHECK(!ofstream->fail()) << "Unable to open file: " << flag.data();

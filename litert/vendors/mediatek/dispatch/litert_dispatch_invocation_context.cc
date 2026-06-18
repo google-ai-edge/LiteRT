@@ -347,12 +347,14 @@ LiteRtDispatchInvocationContextT::IoRequirementsBuilder::IoRequirementsBuilder(
   auto rank = padded_dimensions.size();
   bool has_strides = false;
   strides_.resize(rank);
-  strides_[0] = 1;
-  for (auto i = 1; i < rank; ++i) {
-    strides_[i] = padded_dimensions[i - 1];
-    if (i - 1 < tensor_type.layout.rank &&
-        padded_dimensions[i - 1] != tensor_type.layout.dimensions[i - 1]) {
-      has_strides = true;
+  if (rank > 0) {
+    strides_[0] = 1;
+    for (auto i = 1; i < rank; ++i) {
+      strides_[i] = padded_dimensions[i - 1];
+      if (i - 1 < tensor_type.layout.rank &&
+          padded_dimensions[i - 1] != tensor_type.layout.dimensions[i - 1]) {
+        has_strides = true;
+      }
     }
   }
 

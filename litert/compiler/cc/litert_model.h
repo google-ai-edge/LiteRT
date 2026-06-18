@@ -127,6 +127,40 @@ class Tensor {
     return litert::compiler::Weights(ctx_, weights);
   }
 
+  template <typename T>
+  Expected<absl::Span<const T>> WeightsData() const {
+    auto ranked_tensor_type = RankedTensorType();
+    if (!ranked_tensor_type) {
+      return ranked_tensor_type.Error();
+    }
+
+    const enum ElementType ty = ranked_tensor_type->ElementType();
+    if (ty != GetElementType<T>()) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument);
+    }
+
+    if (!HasWeights()) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument);
+    }
+    const absl::Span<const uint8_t> weights = Weights().Bytes();
+
+    auto num_elements = ranked_tensor_type->Layout().NumElements();
+    if (!num_elements) {
+      return num_elements.Error();
+    }
+    auto byte_width = GetByteWidth(ty);
+    if (!byte_width.has_value()) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument);
+    }
+
+    if (byte_width.value() * *num_elements != weights.size()) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument);
+    }
+
+    return absl::MakeConstSpan(reinterpret_cast<const T*>(weights.data()),
+                               *num_elements);
+  }
+
   std::optional<LiteRtTensorDefiningOp> DefiningOp() const {
     bool has_defining_op = false;
     LiteRtTensorDefiningOp defining_op;
@@ -206,6 +240,8 @@ class Op {
 
   LiteRtOp Get() const { return op_; }
 
+  const LiteRtCompilerContext* ctx() const { return ctx_; }
+
   LiteRtOpCode Code() const {
     LiteRtOpCode opcode = kLiteRtOpCodeTflCustom;
     if (ctx_ && ctx_->get_op_code) {
@@ -258,6 +294,17 @@ class Op {
       return Error(status, "Failed to get custom code");
     }
     return absl::string_view(custom_code);
+  }
+
+  Expected<absl::Span<const uint8_t>> CustomOptions() const {
+    const uint8_t* custom_options_data = nullptr;
+    int32_t custom_options_size = 0;
+    auto status = ctx_->get_custom_options(Get(), &custom_options_data,
+                                           &custom_options_size);
+    if (status != kLiteRtStatusOk) {
+      return Error(status, "Failed to get custom options");
+    }
+    return absl::MakeConstSpan(custom_options_data, custom_options_size);
   }
 
   bool Is(LiteRtOpCode code) const { return Code() == code; }

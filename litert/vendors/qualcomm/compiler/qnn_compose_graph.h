@@ -43,6 +43,7 @@ LiteRtStatus ConvertTensor(
     bool is_tensor_output = false);
 
 LiteRtStatus ConvertOp(bool use_int64_bias_as_int32,
+                       const ::qnn::CustomOpPackage& custom_op_package,
                        const litert::compiler::Op& litert_op,
                        ::qnn::TensorPool& tensor_pool,
                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
@@ -56,7 +57,9 @@ LiteRtStatus ComposeGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
                           Qnn_ProfileHandle_t profile_handle,
                           LiteRtSubgraph subgraph,
                           absl::string_view qnn_graph_name,
-                          const ::qnn::Options& options);
+                          const ::qnn::Options& options,
+                          std::vector<::qnn::TensorWrapper>* inputs = nullptr,
+                          std::vector<::qnn::TensorWrapper>* outputs = nullptr);
 
 }  // namespace litert::qnn
 

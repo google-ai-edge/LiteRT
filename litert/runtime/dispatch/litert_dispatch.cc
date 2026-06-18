@@ -14,23 +14,25 @@
 
 #include "litert/vendors/c/litert_dispatch.h"
 
-#include "litert/c/internal/litert_runtime_context.h"
-#include "litert/c/internal/litert_scheduling_info.h"
-#include "litert/c/litert_any.h"
-#include "litert/c/litert_model_types.h"
+#include <cstddef>
+#include <string>
+#include <vector>
 
 #if !defined(LITERT_WINDOWS_OS)
 #include <dlfcn.h>
 #endif  // !defined(LITERT_WINDOWS_OS)
 
-#include <string>
-#include <vector>
-
+#include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_runtime_context.h"
+#include "litert/c/internal/litert_scheduling_info.h"
+#include "litert/c/internal/litert_tensor_buffer_registry.h"
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_metrics.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -60,6 +62,7 @@
     LITERT_LOG(LITERT_ERROR, #function " not found");                   \
     return kLiteRtStatusErrorRuntimeFailure;                            \
   }                                                                     \
+  LITERT_PERFETTO_TRACE_EVENT("Dispatch API " #function);               \
   return TheApi.async_interface->function(__VA_ARGS__);
 
 #define INVOKE_GRAPH_FUNC(function, ...)                                \
@@ -71,6 +74,7 @@
     LITERT_LOG(LITERT_ERROR, #function " not found");                   \
     return kLiteRtStatusErrorRuntimeFailure;                            \
   }                                                                     \
+  LITERT_PERFETTO_TRACE_EVENT("Dispatch API " #function);               \
   return TheApi.graph_interface->function(__VA_ARGS__);
 
 extern "C" {
@@ -87,6 +91,7 @@ LiteRtDispatchApi TheApi = {
     /*.interface=*/nullptr,
     /*.async_interface=*/nullptr,
     /*.graph_interface=*/nullptr,
+    /*.tensor_buffer_handlers=*/nullptr,
 };
 
 LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
@@ -100,10 +105,11 @@ litert::Expected<std::string> GetSharedLibraryPath(
   LiteRtAny dispatch_lib_dir;
   auto status = LiteRtGetEnvironmentOptionsValue(
       env_options, kLiteRtEnvOptionTagDispatchLibraryDir, &dispatch_lib_dir);
-  if (status == kLiteRtStatusOk) {
-    litert::internal::FindLiteRtDispatchSharedLibs(dispatch_lib_dir.str_value,
-                                                   dispatch_lib_paths);
+  if (status != kLiteRtStatusOk) {
+    return litert::Error(status, "Dispatch library directory option not set.");
   }
+  litert::internal::FindLiteRtDispatchSharedLibs(dispatch_lib_dir.str_value,
+                                                 dispatch_lib_paths);
   if (dispatch_lib_paths.empty()) {
     LITERT_LOG(LITERT_ERROR, "No dispatch library found in %s",
                dispatch_lib_dir.str_value);
@@ -124,6 +130,7 @@ litert::Expected<std::string> GetSharedLibraryPath(
 LiteRtStatus LiteRtDispatchInitialize(
     const LiteRtRuntimeContext* runtime_context, LiteRtEnvironment env,
     LiteRtOptions options) {
+  LITERT_PERFETTO_TRACE_EVENT("Dispatch API Initialization");
   if (IsTheApiInitialized) {
     return kLiteRtStatusOk;
   }
@@ -171,6 +178,24 @@ LiteRtStatus LiteRtDispatchInitialize(
   if (!litert::internal::IsSameVersionAsRuntime(TheApi.version)) {
     LITERT_LOG(LITERT_ERROR, "Unsupported dispatch runtime version");
     return kLiteRtStatusErrorWrongVersion;
+  }
+
+  if (TheApi.tensor_buffer_handlers_def != nullptr) {
+    for (size_t i = 0;
+         i < TheApi.tensor_buffer_handlers_def->num_supported_buffer_types &&
+         i < LITERT_CUSTOM_BUFFER_HANDLERS_DEF_MAX_SUPPORTED_BUFFER_TYPES;
+         ++i) {
+      LITERT_RETURN_IF_ERROR(LiteRtRegisterTensorBufferHandlers(
+          env, TheApi.tensor_buffer_handlers_def->supported_buffer_types[i],
+          TheApi.tensor_buffer_handlers_def->create_func,
+          TheApi.tensor_buffer_handlers_def->destroy_func,
+          TheApi.tensor_buffer_handlers_def->lock_func,
+          TheApi.tensor_buffer_handlers_def->unlock_func,
+          TheApi.tensor_buffer_handlers_def->clear_func,
+          TheApi.tensor_buffer_handlers_def->import_func,
+          TheApi.tensor_buffer_handlers_def->device_tag,
+          TheApi.tensor_buffer_handlers_def->queue_tag));
+    }
   }
 
   auto status = Initialize(runtime_context, env, options);
@@ -332,6 +357,8 @@ LiteRtStatus LiteRtDispatchInvocationContextSetSchedulingInfo(
       !TheApi.interface->invocation_context_set_scheduling_info) {
     return kLiteRtStatusErrorUnsupported;
   }
+  LITERT_PERFETTO_TRACE_EVENT(
+      "Dispatch API invocation_context_set_scheduling_info");
   return TheApi.interface->invocation_context_set_scheduling_info(
       invocation_context, scheduling_info);
 }
@@ -401,6 +428,7 @@ LiteRtStatus LiteRtDispatchAttachEdgeBuffer(
     LITERT_LOG(LITERT_ERROR, "attach_edge_buffer not found");
     return kLiteRtStatusErrorUnsupported;
   }
+  LITERT_PERFETTO_TRACE_EVENT("Dispatch API attach_edge_buffer");
   return TheApi.interface->attach_edge_buffer(invocation_context, edge_id,
                                               tensor_buffer_handle);
 }
@@ -417,6 +445,7 @@ LiteRtStatus LiteRtDispatchDetachEdgeBuffer(
     LITERT_LOG(LITERT_ERROR, "detach_edge_buffer not found");
     return kLiteRtStatusErrorUnsupported;
   }
+  LITERT_PERFETTO_TRACE_EVENT("Dispatch API detach_edge_buffer");
   return TheApi.interface->detach_edge_buffer(invocation_context, edge_id,
                                               tensor_buffer_handle);
 }

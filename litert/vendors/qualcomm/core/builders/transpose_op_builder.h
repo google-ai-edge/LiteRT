@@ -15,6 +15,10 @@ std::vector<OpWrapper> BuildTransposeOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
 
+OpWrapper CreateTransposeOp(const TensorWrapper& input_0,
+                            const TensorWrapper& output_0,
+                            const TensorWrapper& perm);
+
 }  // namespace qnn
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_TRANSPOSE_OP_BUILDER_H_

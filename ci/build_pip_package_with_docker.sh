@@ -72,6 +72,7 @@ else
 
   if [[ "${TEST_WHEEL}" == "true" ]]; then
     # Source test_pip_package.sh to get environment variables.
+    export INSTALL_APT_DEPS="false"
     source /script_dir/test_pip_package.sh
     create_venv
     initialize_pip_wheel_environment

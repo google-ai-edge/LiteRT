@@ -28,21 +28,22 @@ echo "Testing on Python version ${PYTHON_VERSION}"
 function create_venv {
 
   if [[ "${INSTALL_APT_DEPS}" == true ]]; then
-  # Install libssl-dev to use pyenv.
-  # https://github.com/pyenv/pyenv/wiki/Common-build-problems#0-first-check
-  sudo apt-get update -y
-  sudo apt install libssl-dev build-essential libbz2-dev libncurses5-dev \
-    libncursesw5-dev libffi-dev libreadline-dev libsqlite3-dev liblzma-dev zlib1g-dev -y
+    # Install libssl-dev to use pyenv.
+    # https://github.com/pyenv/pyenv/wiki/Common-build-problems#0-first-check
+    sudo apt-get update -y
+    sudo apt install libssl-dev build-essential libbz2-dev libncurses5-dev \
+      libncursesw5-dev libffi-dev libreadline-dev libsqlite3-dev liblzma-dev zlib1g-dev -y
   fi
 
-  PYENV_ROOT="$(pwd)/pyenv"
-  if ! git clone https://github.com/pyenv/pyenv.git 2>/dev/null && [ -d "${PYENV_ROOT}" ] ; then
-      echo "${PYENV_ROOT} exists"
+  if ! command -v pyenv &> /dev/null; then
+    PYENV_ROOT="$(pwd)/pyenv"
+    if ! git clone https://github.com/pyenv/pyenv.git 2>/dev/null && [ -d "${PYENV_ROOT}" ] ; then
+        echo "${PYENV_ROOT} exists"
+    fi
+    export PATH="$PYENV_ROOT/bin:$PATH"
+    eval "$(pyenv init -)"
   fi
 
-  export PATH="$PYENV_ROOT/bin:$PATH"
-
-  eval "$(pyenv init -)"
   pyenv install -s "${PYTHON_VERSION}"
   pyenv global "${PYTHON_VERSION}"
 
@@ -93,8 +94,11 @@ function install_sdk {
   local mtk_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_mediatek*.tar.gz)"
   SKIP_SDK_DOWNLOAD="true" ${PYTHON_BIN} -m pip install ${mtk_dist_pkg?} --ignore-installed
 
+  local gt_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_google_tensor*.tar.gz)"
+  SKIP_SDK_DOWNLOAD="true" ${PYTHON_BIN} -m pip install ${gt_dist_pkg?} --ignore-installed
+
   local intel_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_intel*.tar.gz)"
-  ${PYTHON_BIN} -m pip install ${intel_dist_pkg?} --ignore-installed
+  ${PYTHON_BIN} -m pip install --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly ${intel_dist_pkg?} --ignore-installed
 
   echo
 }
@@ -122,6 +126,10 @@ function uninstall_pip {
 
   yes | ${PYTHON_BIN} -m pip uninstall ${mtk_pip_pkg}
 
+  local google_tensor_pip_pkg="ai_edge_litert_sdk_google_tensor"
+
+  yes | ${PYTHON_BIN} -m pip uninstall ${google_tensor_pip_pkg}
+
   local intel_pip_pkg="ai_edge_litert_sdk_intel"
 
   yes | ${PYTHON_BIN} -m pip uninstall ${intel_pip_pkg}
@@ -136,6 +144,7 @@ function test_import {
   ${PYTHON_BIN} -c "import ai_edge_litert.environment"
   ${PYTHON_BIN} -c "import ai_edge_litert_sdk_qualcomm"
   ${PYTHON_BIN} -c "import ai_edge_litert_sdk_mediatek"
+  ${PYTHON_BIN} -c "import ai_edge_litert_sdk_google_tensor"
   ${PYTHON_BIN} -c "import ai_edge_litert_sdk_intel"
 
   # Intel OpenVINO backend imports

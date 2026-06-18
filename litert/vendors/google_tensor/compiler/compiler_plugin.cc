@@ -32,20 +32,20 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
-#include "litert/c/internal/litert_logging_helper.h"
+#include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/c/options/litert_google_tensor_options.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_opaque_options_wrapper.h"
 #include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/google_tensor/adapter.h"
 #include "litert/vendors/google_tensor/compiler/google_tensor_options.pb.h"
@@ -76,10 +76,10 @@ namespace google_tensor {
 constexpr char kPluginManufacturer[] = "Google";
 
 constexpr const char* kPluginSocModels[] = {
-    "Tensor_G3",
-    "Tensor_G4",
-    "Tensor_G5",
-    "Tensor_G6",
+    "Tensor_G3", "Tensor_G4", "Tensor_G5", "Tensor_G6",
+#ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
+    "Tensor_G7",
+#endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
 };  // get the name for plugin soc model
 
 LiteRtStatus GetDeviceType(absl::string_view soc_model,
@@ -96,6 +96,11 @@ LiteRtStatus GetDeviceType(absl::string_view soc_model,
   } else if (soc_model == "Tensor_G6") {
     *device_type = ::third_party::odml::litert::litert::vendors::google_tensor::
         compiler::DEVICE_TYPE_TENSOR_G6;
+#ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
+  } else if (soc_model == "Tensor_G7") {
+    *device_type = ::third_party::odml::litert::litert::vendors::google_tensor::
+        compiler::DEVICE_TYPE_TENSOR_G7;
+#endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
   } else {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -245,38 +250,17 @@ LiteRtStatus LrtOptionsToGoogleTensorOptions(
                                                               &enable_drq));
   google_tensor_options.set_enable_dynamic_range_quantization(enable_drq);
 
-  // TESTING FLAGS
-  std::vector<std::vector<std::string>> testing_flags;
-  LITERT_RETURN_IF_ERROR(
-      LrtGoogleTensorOptionsGetTestingFlags(lrt_options, &testing_flags));
-
-  std::string merged_testing_flags;
-  for (const auto& group : testing_flags) {
-    if (group.empty()) {
-      continue;
-    }
-    if (!merged_testing_flags.empty()) {
-      merged_testing_flags += ',';
-    }
-    if (group.size() >= 2) {
-      absl::StrAppend(&merged_testing_flags, group[0], "=", group[1]);
-    } else {
-      merged_testing_flags += group[0];
-    }
-  }
-
-  if (!merged_testing_flags.empty()) {
-    google_tensor_options.set_testing_flags(merged_testing_flags);
-    LITERT_LOG(LITERT_INFO,
-               "GoogleTensor Compiler Plugin using testing_flags: '%s'",
-               merged_testing_flags.c_str());
-  }
-
   // OP FILTERS PROTO TEXT FILE
   const char* op_filters_path;
   LITERT_RETURN_IF_ERROR(
       LrtGoogleTensorOptionsGetOpFiltersProto(lrt_options, &op_filters_path));
   google_tensor_options.set_op_filters_proto(op_filters_path);
+
+  // EXTRA OPTIONS PATH
+  const char* extra_options_path;
+  LITERT_RETURN_IF_ERROR(LrtGoogleTensorOptionsGetExtraOptionsPath(
+      lrt_options, &extra_options_path));
+  google_tensor_options.set_extra_options_path(extra_options_path);
 
   return kLiteRtStatusOk;
 }
@@ -331,6 +315,18 @@ LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *soc_model_name = google_tensor::kPluginSocModels[soc_model_idx];
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
+    LiteRtCompilerPlugin compiler_plugin, const char** sdk_version) {
+  if (compiler_plugin == nullptr || sdk_version == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "%s", "compiler_plugin or sdk_version is nullptr");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // No-op implementation for Google Tensor plugin.
+  // TODO: Add the SDK version to the plugin.
+  *sdk_version = "";
   return kLiteRtStatusOk;
 }
 
@@ -479,6 +475,7 @@ class LiteRtCompilerPluginT {
   }
   void SetLiteRtVersion(LiteRtApiVersion v) { litert_version_ = v; }
   LiteRtApiVersion GetLiteRtVersion() const { return litert_version_; }
+  const LiteRtCompilerContext* ctx() const { return ctx_; }
 
   litert::Expected<litert::google_tensor::Adapter*> GetAdapter() {
     if (!adapter_or_) {
@@ -538,7 +535,7 @@ LiteRtStatus LiteRtCreateCompilerPlugin(
     const LiteRtCompilerContext* compiler_context,
     LiteRtCompilerPlugin* compiler_plugin, LiteRtEnvironmentOptions env,
     LiteRtOptions options) {
-  LiteRtPropagateMinLoggerSeverity(env);
+  LiteRtPropagateMinLoggerSeverityWithCompilerContext(compiler_context, env);
 
   *compiler_plugin = new LiteRtCompilerPluginT(compiler_context, env, options);
   return kLiteRtStatusOk;
@@ -564,7 +561,7 @@ enum class FilterOutcome {
 
 // Applies the OpFilters to the given op and returns whether the filters
 // indicate the op should run on TPU or not.
-FilterOutcome GetFilterOutcome(const litert::Op& op,
+FilterOutcome GetFilterOutcome(const litert::compiler::Op& op,
                                const OpFilters& op_filters) {
   const auto& filters = op_filters.filters();
   // If there are no filters or op outputs to match against, run on TPU if
@@ -619,7 +616,7 @@ FilterOutcome GetFilterOutcome(const litert::Op& op,
   }
 }
 
-bool IsShloCompositeOpSupported(const litert::Op& op) {
+bool IsShloCompositeOpSupported(const litert::compiler::Op& op) {
   if (op.Code() == kLiteRtOpCodeShloComposite) {
     const char* custom_op_name = nullptr;
     if (LiteRtGetSHLOCompositeOpName(op.Get(), &custom_op_name) !=
@@ -639,7 +636,8 @@ bool IsShloCompositeOpSupported(const litert::Op& op) {
   return false;
 }
 
-bool IsOpSupported(const litert::Op& op, const OpFilters& op_filters) {
+bool IsOpSupported(const litert::compiler::Op& op,
+                   const OpFilters& op_filters) {
   // Check if the composite op is supported.
   if (op.Code() == kLiteRtOpCodeShloComposite) {
     return IsShloCompositeOpSupported(op);
@@ -693,7 +691,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   LITERT_RETURN_IF_ERROR(compiler_plugin->ReadOpFilters(
       google_tensor_options.op_filters_proto(), op_filters));
 
-  ::litert::Subgraph graph(subgraph);
+  litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
   for (const auto& op : graph.Ops()) {
     if (!google_tensor::IsOpSupported(op, op_filters)) {
       continue;
@@ -729,7 +727,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       compiled_result == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
+  litert::compiler::Model model(compiler_plugin->ctx(), partitions);
   const auto num_partitions = model.NumSubgraphs();
 
   LITERT_ASSIGN_OR_RETURN(auto adapter, compiler_plugin->GetAdapter());
@@ -766,7 +764,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   LITERT_LOG(LITERT_INFO, "%s", "Serializing model");
   litert::OwningBufferRef buf;
   auto [data, size, offset] = buf.GetWeak();
-  const auto opts = litert::SerializationOptions::Defaults();
+  LiteRtModelSerializationOptions opts{};
+  opts.bytecode_alignment = 1;
   char** signatures =
       static_cast<char**>(calloc(num_partitions, sizeof(char*)));
   if (signatures == nullptr) {

@@ -80,6 +80,10 @@ pytype_strict_contrib_test(
         "noasan",
         "nosan",
     ],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":aot_types",
         ":apply_plugin",
@@ -94,6 +98,10 @@ pytype_strict_contrib_test(
     data = [
         "//litert/test:testdata/add_simple.tflite",
     ],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":common",
         "@absl_py//absl/testing:absltest",
@@ -128,6 +136,10 @@ pytype_strict_library(
 pytype_strict_contrib_test(
     name = "mlir_transforms_test",
     srcs = ["mlir_transforms_test.py"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":aot_types",
         ":common",

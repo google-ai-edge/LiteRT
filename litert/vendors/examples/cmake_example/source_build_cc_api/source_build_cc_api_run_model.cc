@@ -31,11 +31,10 @@
 #include <utility>
 #include <vector>
 
-#include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_accelerator.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_cpu_options.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
@@ -67,7 +66,7 @@
 namespace {
 
 using TensorBufferMap =
-    absl::flat_hash_map<absl::string_view, litert::TensorBuffer>;
+    litert::FlatHashMap<litert::StringView, litert::TensorBuffer>;
 
 struct Config {
   std::string model_path;
@@ -88,15 +87,28 @@ struct Config {
   size_t iterations = 1;
   size_t sample_size = 8;
   bool print_tensors = false;
+  bool registration_only = false;
   bool use_async = false;
   bool use_named_maps = false;
   bool non_strict_resize = false;
   bool resize_input_dims_explicit = false;
+  std::optional<LiteRtHwAcceleratorSet> auto_register_accelerators;
+  std::optional<LiteRtHwAcceleratorSet> require_registered_accelerator;
   std::vector<int> resize_input_dims;
   std::string input_dir;
 };
 
-std::string ToString(absl::string_view value) {
+template <typename T>
+litert::Span<T> MakeSpan(std::vector<T>& values) {
+  return litert::Span<T>(values.data(), values.size());
+}
+
+template <typename T>
+litert::Span<const T> MakeConstSpan(const std::vector<T>& values) {
+  return litert::Span<const T>(values.data(), values.size());
+}
+
+std::string ToString(litert::StringView value) {
   return std::string(value.data(), value.size());
 }
 
@@ -105,8 +117,18 @@ litert::Unexpected InvalidArgument(std::string message) {
                             std::move(message));
 }
 
+litert::Expected<void> CheckLiteRtStatus(LiteRtStatus status,
+                                         std::string_view operation) {
+  if (status == kLiteRtStatusOk) {
+    return {};
+  }
+  return litert::Unexpected(
+      litert::ToStatus(status),
+      std::string(operation) + " failed: " + LiteRtGetStatusString(status));
+}
+
 template <typename T>
-std::string SpanToString(absl::Span<const T> values) {
+std::string SpanToString(litert::Span<const T> values) {
   std::ostringstream os;
   os << "[";
   for (size_t i = 0; i < values.size(); ++i) {
@@ -204,6 +226,31 @@ bool AcceleratorListMentionsGpu(std::string_view accelerator_list) {
   return false;
 }
 
+litert::Expected<LiteRtHwAcceleratorSet> ParseAcceleratorBitmask(
+    std::string_view accelerator_list, std::string_view flag_name) {
+  LiteRtHwAcceleratorSet accelerators = kLiteRtHwAcceleratorNone;
+  for (const std::string& accelerator : SplitComma(accelerator_list)) {
+    if (accelerator == "none") {
+      continue;
+    }
+    if (accelerator == "cpu") {
+      accelerators |= kLiteRtHwAcceleratorCpu;
+    } else if (accelerator == "gpu") {
+      accelerators |= kLiteRtHwAcceleratorGpu;
+    } else if (accelerator == "npu") {
+      accelerators |= kLiteRtHwAcceleratorNpu;
+#if defined(__EMSCRIPTEN__)
+    } else if (accelerator == "webnn") {
+      accelerators |= kLiteRtHwAcceleratorWebNn;
+#endif
+    } else {
+      return InvalidArgument("Unknown accelerator in " +
+                             std::string(flag_name) + ": " + accelerator);
+    }
+  }
+  return accelerators;
+}
+
 void PrintUsage(const char* argv0) {
   std::cout
       << "Usage: " << argv0 << " [--model=/path/model.tflite] [options]\n\n"
@@ -216,6 +263,9 @@ void PrintUsage(const char* argv0) {
       << "  --signature_index=N                 Default: 0\n"
       << "  --iterations=N                      Default: 1\n"
       << "  --print_tensors[=true|false]        Print input/output samples\n"
+      << "  --registration_only[=true|false]    Create the environment, print "
+         "registered accelerators, then exit\n"
+      << "  --require_registered_accelerator=cpu|gpu|npu\n"
       << "  --sample_size=N                     Default: 8\n"
       << "  --use_async[=true|false]            Call RunAsync\n"
       << "  --use_named_maps[=true|false]       Run with name->TensorBuffer "
@@ -227,6 +277,7 @@ void PrintUsage(const char* argv0) {
       << "Runtime lookup options:\n"
       << "  --runtime_library_dir=DIR|none      Directory for accelerator "
          "dylibs\n"
+      << "  --auto_register_accelerators=cpu|gpu|npu|none\n"
       << "  --dispatch_library_dir=DIR\n"
       << "  --compiler_plugin_library_dir=DIR\n"
       << "  --compiler_cache_dir=DIR\n\n"
@@ -294,6 +345,18 @@ litert::Expected<Config> ParseArgs(int argc, char** argv) {
       LITERT_ASSIGN_OR_RETURN(config.compiler_cache_dir, require_value());
     } else if (key == "accelerator") {
       LITERT_ASSIGN_OR_RETURN(config.accelerator, require_value());
+    } else if (key == "auto_register_accelerators") {
+      std::string value;
+      LITERT_ASSIGN_OR_RETURN(value, require_value());
+      LITERT_ASSIGN_OR_RETURN(
+          config.auto_register_accelerators,
+          ParseAcceleratorBitmask(value, "--auto_register_accelerators"));
+    } else if (key == "require_registered_accelerator") {
+      std::string value;
+      LITERT_ASSIGN_OR_RETURN(value, require_value());
+      LITERT_ASSIGN_OR_RETURN(
+          config.require_registered_accelerator,
+          ParseAcceleratorBitmask(value, "--require_registered_accelerator"));
     } else if (key == "signature_index") {
       std::string value;
       LITERT_ASSIGN_OR_RETURN(value, require_value());
@@ -311,6 +374,8 @@ litert::Expected<Config> ParseArgs(int argc, char** argv) {
                               ParseSize(value, "--sample_size"));
     } else if (key == "print_tensors") {
       LITERT_ASSIGN_OR_RETURN(config.print_tensors, optional_bool_value());
+    } else if (key == "registration_only") {
+      LITERT_ASSIGN_OR_RETURN(config.registration_only, optional_bool_value());
     } else if (key == "use_async") {
       LITERT_ASSIGN_OR_RETURN(config.use_async, optional_bool_value());
     } else if (key == "use_named_maps") {
@@ -421,6 +486,36 @@ std::string ElementTypeToString(litert::ElementType type) {
   return "unknown";
 }
 
+std::string HardwareSetToString(LiteRtHwAcceleratorSet hardware) {
+  std::vector<std::string> names;
+  if (hardware & kLiteRtHwAcceleratorCpu) {
+    names.push_back("cpu");
+  }
+  if (hardware & kLiteRtHwAcceleratorGpu) {
+    names.push_back("gpu");
+  }
+  if (hardware & kLiteRtHwAcceleratorNpu) {
+    names.push_back("npu");
+  }
+#if defined(__EMSCRIPTEN__)
+  if (hardware & kLiteRtHwAcceleratorWebNn) {
+    names.push_back("webnn");
+  }
+#endif
+  if (names.empty()) {
+    return "none";
+  }
+
+  std::ostringstream os;
+  for (size_t i = 0; i < names.size(); ++i) {
+    if (i != 0) {
+      os << ",";
+    }
+    os << names[i];
+  }
+  return os.str();
+}
+
 void PrintRankedTensorType(const litert::RankedTensorType& type) {
   const litert::Layout& layout = type.Layout();
   auto num_elements = layout.NumElements();
@@ -503,26 +598,70 @@ litert::Expected<litert::Environment> CreateEnvironment(const Config& config) {
   if (!config.runtime_library_dir.empty()) {
     env_options.push_back(litert::EnvironmentOptions::Option{
         litert::EnvironmentOptions::Tag::kRuntimeLibraryDir,
-        absl::string_view(config.runtime_library_dir)});
+        litert::StringView(config.runtime_library_dir)});
   }
   if (!config.dispatch_library_dir.empty()) {
     env_options.push_back(litert::EnvironmentOptions::Option{
         litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
-        absl::string_view(config.dispatch_library_dir)});
+        litert::StringView(config.dispatch_library_dir)});
   }
   if (!config.compiler_plugin_library_dir.empty()) {
     env_options.push_back(litert::EnvironmentOptions::Option{
         litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
-        absl::string_view(config.compiler_plugin_library_dir)});
+        litert::StringView(config.compiler_plugin_library_dir)});
   }
   if (!config.compiler_cache_dir.empty()) {
     env_options.push_back(litert::EnvironmentOptions::Option{
         litert::EnvironmentOptions::Tag::kCompilerCacheDir,
-        absl::string_view(config.compiler_cache_dir)});
+        litert::StringView(config.compiler_cache_dir)});
+  }
+  if (config.auto_register_accelerators.has_value()) {
+    env_options.push_back(litert::EnvironmentOptions::Option{
+        litert::EnvironmentOptions::Tag::kAutoRegisterAccelerators,
+        static_cast<int64_t>(*config.auto_register_accelerators)});
   }
 
   return litert::Environment::Create(
-      litert::EnvironmentOptions(absl::MakeConstSpan(env_options)));
+      litert::EnvironmentOptions(MakeConstSpan(env_options)));
+}
+
+litert::Expected<LiteRtHwAcceleratorSet> PrintRegisteredAccelerators(
+    const litert::Environment& env) {
+  LiteRtParamIndex num_accelerators = 0;
+  LITERT_RETURN_IF_ERROR(CheckLiteRtStatus(
+      LiteRtGetNumAccelerators(env.GetHolder().handle, &num_accelerators),
+      "LiteRtGetNumAccelerators"));
+
+  std::cout << "Registered accelerators: " << num_accelerators << "\n";
+  LiteRtHwAcceleratorSet registered_hardware = kLiteRtHwAcceleratorNone;
+  for (LiteRtParamIndex i = 0; i < num_accelerators; ++i) {
+    LiteRtAccelerator accelerator = nullptr;
+    LITERT_RETURN_IF_ERROR(CheckLiteRtStatus(
+        LiteRtGetAccelerator(env.GetHolder().handle, i, &accelerator),
+        "LiteRtGetAccelerator"));
+
+    const char* name = nullptr;
+    LITERT_RETURN_IF_ERROR(
+        CheckLiteRtStatus(LiteRtGetAcceleratorName(accelerator, &name),
+                          "LiteRtGetAcceleratorName"));
+
+    LiteRtHwAcceleratorSet hardware = kLiteRtHwAcceleratorNone;
+    LITERT_RETURN_IF_ERROR(CheckLiteRtStatus(
+        LiteRtGetAcceleratorHardwareSupport(accelerator, &hardware),
+        "LiteRtGetAcceleratorHardwareSupport"));
+    registered_hardware |= hardware;
+
+    LiteRtApiVersion version = {};
+    LITERT_RETURN_IF_ERROR(
+        CheckLiteRtStatus(LiteRtGetAcceleratorVersion(accelerator, &version),
+                          "LiteRtGetAcceleratorVersion"));
+
+    std::cout << "  [" << i << "] " << name
+              << " hardware=" << HardwareSetToString(hardware)
+              << " version=" << version.major << "." << version.minor << "."
+              << version.patch << "\n";
+  }
+  return registered_hardware;
 }
 
 litert::Expected<void> ConfigureCpuOptions(const Config& config,
@@ -676,7 +815,7 @@ litert::Expected<void> FillTypedInput(litert::TensorBuffer& buffer,
   for (size_t i = 0; i < data.size(); ++i) {
     data[i] = SampleValue<T>(i, input_index);
   }
-  return buffer.Write<T>(absl::MakeConstSpan(data));
+  return buffer.Write<T>(MakeConstSpan(data));
 }
 
 litert::Expected<void> FillInputBuffer(litert::TensorBuffer& buffer,
@@ -737,7 +876,7 @@ litert::Expected<std::vector<uint8_t>> ReadFileBytes(
 }
 
 litert::Expected<void> FillInputBuffers(
-    const Config& config, absl::Span<const absl::string_view> input_names,
+    const Config& config, litert::Span<const litert::StringView> input_names,
     std::vector<litert::TensorBuffer>& input_buffers) {
   if (!config.input_dir.empty()) {
     for (size_t i = 0; i < input_buffers.size(); ++i) {
@@ -748,7 +887,7 @@ litert::Expected<void> FillInputBuffers(
                               ReadFileBytes(raw_path));
       LITERT_RETURN_IF_ERROR(input_buffers[i].Clear());
       LITERT_RETURN_IF_ERROR(
-          input_buffers[i].Write<uint8_t>(absl::MakeConstSpan(data)));
+          input_buffers[i].Write<uint8_t>(MakeConstSpan(data)));
     }
     return {};
   }
@@ -773,7 +912,7 @@ litert::Expected<void> PrintTypedSamples(litert::TensorBuffer& buffer,
                                          size_t sample_size) {
   LITERT_ASSIGN_OR_RETURN(size_t num_elements, GetNumElements(buffer));
   std::vector<T> data(num_elements);
-  LITERT_RETURN_IF_ERROR(buffer.Read<T>(absl::MakeSpan(data)));
+  LITERT_RETURN_IF_ERROR(buffer.Read<T>(MakeSpan(data)));
   if (data.empty()) {
     std::cout << "    values=[]\n";
     return {};
@@ -809,7 +948,7 @@ litert::Expected<void> PrintTypedSamples(litert::TensorBuffer& buffer,
 
 litert::Expected<void> PrintTensorBuffer(litert::TensorBuffer& buffer,
                                          std::string_view role,
-                                         absl::string_view name,
+                                         litert::StringView name,
                                          bool print_values,
                                          size_t sample_size) {
   LITERT_ASSIGN_OR_RETURN(auto type, buffer.TensorType());
@@ -890,7 +1029,7 @@ litert::Expected<void> PrintRequirements(
 }
 
 litert::Expected<TensorBufferMap> DuplicateNamedBuffers(
-    absl::Span<const absl::string_view> names,
+    litert::Span<const litert::StringView> names,
     const std::vector<litert::TensorBuffer>& buffers) {
   TensorBufferMap map;
   for (size_t i = 0; i < buffers.size(); ++i) {
@@ -902,7 +1041,7 @@ litert::Expected<TensorBufferMap> DuplicateNamedBuffers(
 }
 
 litert::Expected<void> PrintVectorBuffers(
-    absl::Span<const absl::string_view> names,
+    litert::Span<const litert::StringView> names,
     std::vector<litert::TensorBuffer>& buffers, std::string_view role,
     bool print_values, size_t sample_size) {
   for (size_t i = 0; i < buffers.size(); ++i) {
@@ -913,9 +1052,9 @@ litert::Expected<void> PrintVectorBuffers(
 }
 
 litert::Expected<void> PrintMapBuffers(
-    absl::Span<const absl::string_view> names, TensorBufferMap& buffers,
+    litert::Span<const litert::StringView> names, TensorBufferMap& buffers,
     std::string_view role, bool print_values, size_t sample_size) {
-  for (absl::string_view name : names) {
+  for (litert::StringView name : names) {
     auto it = buffers.find(name);
     if (it == buffers.end()) {
       return InvalidArgument("Missing named tensor buffer: " + ToString(name));
@@ -928,31 +1067,28 @@ litert::Expected<void> PrintMapBuffers(
 
 litert::Expected<void> ApplyInputResize(
     const Config& config, litert::CompiledModel& compiled_model,
-    absl::Span<const absl::string_view> input_names) {
+    litert::Span<const litert::StringView> input_names) {
   if (config.resize_input_dims.empty()) {
     return {};
   }
   for (size_t i = 0; i < input_names.size(); ++i) {
     if (config.non_strict_resize) {
       LITERT_RETURN_IF_ERROR(compiled_model.ResizeInputTensorNonStrict(
-          config.signature_index, i,
-          absl::MakeConstSpan(config.resize_input_dims)));
+          config.signature_index, i, MakeConstSpan(config.resize_input_dims)));
     } else {
       LITERT_RETURN_IF_ERROR(compiled_model.ResizeInputTensor(
-          config.signature_index, i,
-          absl::MakeConstSpan(config.resize_input_dims)));
+          config.signature_index, i, MakeConstSpan(config.resize_input_dims)));
     }
     std::cout << "Resized input " << input_names[i] << " to "
-              << SpanToString(absl::MakeConstSpan(config.resize_input_dims))
-              << "\n";
+              << SpanToString(MakeConstSpan(config.resize_input_dims)) << "\n";
   }
   return {};
 }
 
 litert::Expected<void> PrintTensorMetadata(
     litert::CompiledModel& compiled_model, size_t signature_index,
-    absl::Span<const absl::string_view> input_names,
-    absl::Span<const absl::string_view> output_names) {
+    litert::Span<const litert::StringView> input_names,
+    litert::Span<const litert::StringView> output_names) {
   std::cout << "Input tensor metadata:\n";
   for (size_t i = 0; i < input_names.size(); ++i) {
     LITERT_ASSIGN_OR_RETURN(auto type, compiled_model.GetInputTensorType(
@@ -993,8 +1129,8 @@ litert::Expected<void> PrintTensorMetadata(
 
 litert::Expected<void> ExerciseDispatchAnnotations(
     litert::CompiledModel& compiled_model, size_t signature_index) {
-  constexpr absl::string_view kKey = "source_build_cc_api_example";
-  constexpr absl::string_view kValue = "cmake";
+  constexpr litert::StringView kKey = "source_build_cc_api_example";
+  constexpr litert::StringView kValue = "cmake";
   auto set =
       compiled_model.SetDispatchAnnotation(signature_index, kKey, kValue);
   if (!set) {
@@ -1013,7 +1149,7 @@ litert::Expected<void> ExerciseDispatchAnnotations(
 
 litert::Expected<void> RunIterations(
     const Config& config, litert::CompiledModel& compiled_model,
-    absl::string_view signature_key,
+    litert::StringView signature_key,
     const std::vector<litert::TensorBuffer>& input_buffers,
     const std::vector<litert::TensorBuffer>& output_buffers,
     TensorBufferMap* input_map, TensorBufferMap* output_map) {
@@ -1060,13 +1196,23 @@ litert::Expected<void> RunIterations(
 }
 
 litert::Expected<void> RunExample(const Config& config) {
-  if (!std::filesystem::exists(config.model_path)) {
+  if (!config.registration_only &&
+      !std::filesystem::exists(config.model_path)) {
     return litert::Unexpected(litert::Status::kErrorFileIO,
                               "Model does not exist: " + config.model_path);
   }
 
-  std::cout << "Model: " << config.model_path << "\n"
-            << "Accelerators: " << config.accelerator << "\n";
+  if (config.registration_only) {
+    std::cout << "Registration-only mode\n";
+  } else {
+    std::cout << "Model: " << config.model_path << "\n";
+  }
+  std::cout << "Accelerators: " << config.accelerator << "\n";
+  if (config.auto_register_accelerators.has_value()) {
+    std::cout << "Auto-register accelerators: "
+              << HardwareSetToString(*config.auto_register_accelerators)
+              << "\n";
+  }
   if (!config.runtime_library_dir.empty()) {
     std::cout << "Runtime library dir: " << config.runtime_library_dir << "\n";
   }
@@ -1079,6 +1225,19 @@ litert::Expected<void> RunExample(const Config& config) {
             << (env.SupportsAhwbClInterop() ? "yes" : "no")
             << " ahwb_gl_interop="
             << (env.SupportsAhwbGlInterop() ? "yes" : "no") << "\n";
+  LITERT_ASSIGN_OR_RETURN(LiteRtHwAcceleratorSet registered_hardware,
+                          PrintRegisteredAccelerators(env));
+  if (config.require_registered_accelerator.has_value() &&
+      (registered_hardware & *config.require_registered_accelerator) !=
+          *config.require_registered_accelerator) {
+    return InvalidArgument(
+        "Required registered accelerator missing: " +
+        HardwareSetToString(*config.require_registered_accelerator) +
+        "; registered=" + HardwareSetToString(registered_hardware));
+  }
+  if (config.registration_only) {
+    return {};
+  }
 
   LITERT_ASSIGN_OR_RETURN(litert::Options options, CreateOptions(config));
   LITERT_ASSIGN_OR_RETURN(
@@ -1092,7 +1251,7 @@ litert::Expected<void> RunExample(const Config& config) {
   if (config.signature_index >= signature_keys.size()) {
     return InvalidArgument("--signature_index is out of range");
   }
-  const absl::string_view signature_key =
+  const litert::StringView signature_key =
       signature_keys[config.signature_index];
   LITERT_ASSIGN_OR_RETURN(
       auto input_names,
@@ -1103,11 +1262,11 @@ litert::Expected<void> RunExample(const Config& config) {
   std::cout << "Selected signature[" << config.signature_index
             << "] key=" << signature_key << "\n";
 
-  LITERT_RETURN_IF_ERROR(ApplyInputResize(config, compiled_model,
-                                          absl::MakeConstSpan(input_names)));
+  LITERT_RETURN_IF_ERROR(
+      ApplyInputResize(config, compiled_model, MakeConstSpan(input_names)));
   LITERT_RETURN_IF_ERROR(PrintTensorMetadata(
-      compiled_model, config.signature_index, absl::MakeConstSpan(input_names),
-      absl::MakeConstSpan(output_names)));
+      compiled_model, config.signature_index, MakeConstSpan(input_names),
+      MakeConstSpan(output_names)));
   LITERT_RETURN_IF_ERROR(
       ExerciseDispatchAnnotations(compiled_model, config.signature_index));
 
@@ -1127,29 +1286,29 @@ litert::Expected<void> RunExample(const Config& config) {
       std::vector<litert::TensorBuffer> output_buffers,
       compiled_model.CreateOutputBuffers(config.signature_index));
 
-  LITERT_RETURN_IF_ERROR(FillInputBuffers(
-      config, absl::MakeConstSpan(input_names), input_buffers));
+  LITERT_RETURN_IF_ERROR(
+      FillInputBuffers(config, MakeConstSpan(input_names), input_buffers));
 
   std::optional<TensorBufferMap> input_map;
   std::optional<TensorBufferMap> output_map;
   if (config.use_named_maps) {
     LITERT_ASSIGN_OR_RETURN(
         input_map,
-        DuplicateNamedBuffers(absl::MakeConstSpan(input_names), input_buffers));
+        DuplicateNamedBuffers(MakeConstSpan(input_names), input_buffers));
     LITERT_ASSIGN_OR_RETURN(
-        output_map, DuplicateNamedBuffers(absl::MakeConstSpan(output_names),
-                                          output_buffers));
+        output_map,
+        DuplicateNamedBuffers(MakeConstSpan(output_names), output_buffers));
   }
 
   std::cout << "Input buffers:\n";
   if (config.use_named_maps) {
     LITERT_RETURN_IF_ERROR(
-        PrintMapBuffers(absl::MakeConstSpan(input_names), *input_map, "input",
+        PrintMapBuffers(MakeConstSpan(input_names), *input_map, "input",
                         config.print_tensors, config.sample_size));
   } else {
     LITERT_RETURN_IF_ERROR(
-        PrintVectorBuffers(absl::MakeConstSpan(input_names), input_buffers,
-                           "input", config.print_tensors, config.sample_size));
+        PrintVectorBuffers(MakeConstSpan(input_names), input_buffers, "input",
+                           config.print_tensors, config.sample_size));
   }
 
   LITERT_RETURN_IF_ERROR(RunIterations(
@@ -1159,11 +1318,11 @@ litert::Expected<void> RunExample(const Config& config) {
   std::cout << "Output buffers:\n";
   if (config.use_named_maps) {
     LITERT_RETURN_IF_ERROR(
-        PrintMapBuffers(absl::MakeConstSpan(output_names), *output_map,
-                        "output", config.print_tensors, config.sample_size));
+        PrintMapBuffers(MakeConstSpan(output_names), *output_map, "output",
+                        config.print_tensors, config.sample_size));
   } else {
     LITERT_RETURN_IF_ERROR(
-        PrintVectorBuffers(absl::MakeConstSpan(output_names), output_buffers,
+        PrintVectorBuffers(MakeConstSpan(output_names), output_buffers,
                            "output", config.print_tensors, config.sample_size));
   }
 

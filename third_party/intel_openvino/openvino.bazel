@@ -53,3 +53,5 @@ cc_library(
 )
 
 exports_files(glob(["**/*.so"]))
+
+exports_files(glob(["**/*.dll"]))

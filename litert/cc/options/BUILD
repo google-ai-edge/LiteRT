@@ -32,6 +32,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c/options:litert_cpu_options",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_handle",
@@ -139,6 +140,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/options:litert_google_tensor_options",
         "//litert/c/options:litert_google_tensor_options_type",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_detail",
@@ -153,6 +155,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c/options:litert_qualcomm_options",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_detail",
@@ -168,6 +171,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c/options:litert_mediatek_options",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_detail",

@@ -22,10 +22,10 @@
 #include <string_view>
 #include <type_traits>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -56,21 +56,12 @@ class OpaqueOptions : public internal::BaseHandle<LiteRtOpaqueOptions> {
     return OpaqueOptions(options, OwnHandle::kYes);
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<std::string_view> GetIdentifier() const {
+  Expected<StringView> GetIdentifier() const {
     const char* payload_identifier;
     LITERT_RETURN_IF_ERROR(
         LiteRtGetOpaqueOptionsIdentifier(Get(), &payload_identifier));
-    return std::string_view(payload_identifier);
+    return StringView(payload_identifier);
   }
-#else
-  Expected<absl::string_view> GetIdentifier() const {
-    const char* payload_identifier;
-    LITERT_RETURN_IF_ERROR(
-        LiteRtGetOpaqueOptionsIdentifier(Get(), &payload_identifier));
-    return absl::string_view(payload_identifier);
-  }
-#endif
 
   template <typename T>
   Expected<T*> GetData() const {

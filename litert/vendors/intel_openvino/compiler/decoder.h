@@ -21,8 +21,8 @@
 #include <vector>
 
 #include "litert/c/internal/litert_logging.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_model.h"
 
 namespace litert {
 namespace openvino {
@@ -32,11 +32,12 @@ class DecoderOperation
  public:
   // TODO: in/out _tensor_info copy has to be avoided
   explicit DecoderOperation(
+      const LiteRtCompilerContext* ctx,
       std::vector<ov::frontend::tensorflow_lite::TensorMetaInfo>
           input_tensor_info,
       std::vector<ov::frontend::tensorflow_lite::TensorMetaInfo>
           output_tensor_info,
-      const litert::Op& litert_op, size_t node_index);
+      const litert::compiler::Op& litert_op, size_t node_index);
   virtual ~DecoderOperation() = default;
 
   // DecoderBase Interface implementations :
@@ -98,6 +99,7 @@ class DecoderOperation
   std::vector<ov::frontend::tensorflow_lite::TensorMetaInfo> input_tensor_info_;
   std::vector<ov::frontend::tensorflow_lite::TensorMetaInfo>
       output_tensor_info_;
+  const LiteRtCompilerContext* ctx_;
   const LiteRtOp litert_op_;
   const LiteRtOpCode litert_op_code_;
 };

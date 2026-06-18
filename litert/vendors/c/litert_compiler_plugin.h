@@ -79,6 +79,11 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
     LiteRtCompilerPlugin compiler_plugin, LiteRtParamIndex soc_model_idx,
     const char** soc_model_name);
 
+// Gets the SDK version of the vendor's compiler plugin. The memory
+// associated with the returned version string is owned by the plugin.
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
+    LiteRtCompilerPlugin compiler_plugin, const char** sdk_version);
+
 // Select desired ops for compilation. This will only be called once
 // per subgraph, plugins should select all supportable ops.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompilerPluginPartition(
@@ -106,6 +111,12 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetCompiledResultByteCode(
 // The number of individual byte code modules.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompiledResultNumByteCodeModules(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex* num_byte_code);
+
+// Gets an opaque handle to the compiled artifact (for JIT execution).
+// The handle remains valid as long as the compiled_result is valid.
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetCompiledResultHandle(
+    LiteRtCompiledResult compiled_result, LiteRtParamIndex call_idx,
+    LiteRtJitExecutable* handle);
 
 // Get per-op info related to a particular compiled partition as well as the
 // index of the respective byte code buffer.

@@ -25,8 +25,8 @@ cc_library(
     hdrs = ["xnnpack_accelerator.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_environment_options_header",
         "//litert/c/internal:litert_accelerator_def",
-        "//litert/c/internal:litert_delegate_wrapper",
         "//litert/c/internal:litert_runtime_context_header",
         "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_expected",
@@ -35,6 +35,7 @@ cc_library(
         "//litert/runtime:litert_cpu_options",
         "//litert/runtime/accelerators:accelerator_implementation_helper",
         "//tflite/c:c_api_types",
+        "//tflite/core/c:private_common",
         "//tflite/delegates/xnnpack:xnnpack_delegate",
     ],
     alwayslink = 1,  # Keep the symbols in Windows and macOS.

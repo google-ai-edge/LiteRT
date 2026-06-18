@@ -15,9 +15,13 @@
 
 #include "litert/vendors/samsung/compiler/builders/selectv2_op_builder.h"
 
+#include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildSelectV2Op(const Op& op) {
+Expected<OpWrapper> BuildSelectV2Op(const litert::compiler::Op& op) {
   OpWrapper op_wrapper("SelectV2");
 
   for (const auto& input : op.Inputs()) {

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LiteRT WASM Game of Life Demo</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    canvas { border: 1px solid black; }
+    #info { margin-top: 10px; font-weight: bold; }
+    #perf { font-family: monospace; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>LiteRT WASM Game of Life Demo</h1>
+  <canvas id="outputCanvas" width="256" height="256"></canvas>
+  <div id="info">Initializing...</div>
+  <div id="perf"></div>
+  <button id="startBtn">Start/Stop</button>
+  <button id="stepBtn">Step</button>
+ 
+  <!-- Load Emscripten WebAssembly sandbox -->
+  <script src="../tensor_wasm_internal.js"></script>
+  <script type="module">
+    import { createLiteRT } from '../tensor_wasm.js';
+
+    async function runDemo() {
+      const infoDiv = document.getElementById('info');
+      const perfDiv = document.getElementById('perf');
+      const canvas = document.getElementById('outputCanvas');
+      const ctx = canvas.getContext('2d');
+ 
+      // Request WebGPU adapter and device
+      if (!navigator.gpu) {
+        infoDiv.textContent = "Error: WebGPU is not supported by this browser.";
+        return;
+      }
+      const adapter = await navigator.gpu.requestAdapter();
+      const device = await adapter.requestDevice();
+
+      infoDiv.textContent = "Initializing LiteRT WASM module...";
+      // Load the LiteRT WebAssembly module cleanly using createLiteRT!
+      const litert = await createLiteRT({
+        preinitializedWebGPUDevice: device
+      });
+ 
+      const H = 256;
+      const W = 256;
+ 
+      // 1. Eagerly allocate placeholders conformed to dynamic storage flags
+      const state = litert.createTensor({ type: "FP32", shape: [1, H, W, 1], name: "state", storage: "webgpu" });
+      const kernel = litert.createTensor({ type: "FP32", shape: [1, 3, 3, 1], name: "kernel" });
+      const one = litert.createTensor({ type: "FP32", shape: [1, 1, 1, 1], name: "one" });
+      const two = litert.createTensor({ type: "FP32", shape: [1, 1, 1, 1], name: "two" });
+      const three = litert.createTensor({ type: "FP32", shape: [1, 1, 1, 1], name: "three" });
+
+      // 2. Define the Conway's Game of Life JIT Graph Compiler pipeline
+      const gameOfLife = litert.jit((s, k, o1, o2, o3) => {
+        const neighbors = s.conv2d(k, 1, 1, 0, 1, 1);
+        const equals3 = o1.sub(neighbors.sub(o3).abs()).relu();
+        const equals2 = o1.sub(neighbors.sub(o2).abs()).relu();
+        const survival = equals2.add(equals3).mul(s);
+        const birth = equals3.mul(o1.sub(s));
+        return survival.add(birth);
+      }, { accelerators: litert.HwAccelerators.GPU });
+
+      infoDiv.textContent = "Compiling JIT graph compiler upfront...";
+      await gameOfLife.compile(state, kernel, one, two, three);
+
+      infoDiv.textContent = "Graph compiled. Initializing data...";
+
+      // Initialize kernel: [[1,1,1],[1,0,1],[1,1,1]]
+      const kernelData = new Float32Array([
+        1, 1, 1,
+        1, 0, 1,
+        1, 1, 1
+      ]);
+      await kernel.setData(kernelData);
+
+      // Initialize constant parameters once upfront (highly optimized)
+      await one.setData(new Float32Array([1.0]));
+      await two.setData(new Float32Array([2.0]));
+      await three.setData(new Float32Array([3.0]));
+ 
+      // Initialize random state
+      let currentState = new Float32Array(H * W * 1);
+      for (let i = 0; i < H * W; i++) {
+        currentState[i] = Math.random() > 0.5 ? 1.0 : 0.0;
+      }
+ 
+      const imgData = ctx.createImageData(W, H);
+ 
+      async function step() {
+        const t0 = performance.now();
+        
+        // Stream pixels directly into the pre-allocated JIT execution WebGPU buffer (Zero-Copy!)
+        const inBuffer = state.getWebGpuBuffer();
+        device.queue.writeBuffer(inBuffer, 0, currentState);
+        
+        // Execute our compiled JIT Conway graph cleanly
+        const outTensor = await gameOfLife(state, kernel, one, two, three);
+        
+        // Read back the updated state values
+        currentState = await outTensor.getData();
+        outTensor.delete();
+        
+        const t1 = performance.now();
+        perfDiv.textContent = `Step computed in ${(t1 - t0).toFixed(2)}ms`;
+ 
+        // Render
+        for (let i = 0; i < H * W; i++) {
+          const val = currentState[i];
+          const idx = i * 4;
+          imgData.data[idx] = val > 0.5 ? 255 : 0;
+          imgData.data[idx + 1] = val > 0.5 ? 255 : 0;
+          imgData.data[idx + 2] = val > 0.5 ? 255 : 0;
+          imgData.data[idx + 3] = 255;
+        }
+        ctx.putImageData(imgData, 0, 0);
+      }
+ 
+      let running = false;
+      async function loop() {
+        if (!running) return;
+        await step();
+        requestAnimationFrame(loop);
+      }
+ 
+      document.getElementById('startBtn').addEventListener('click', () => {
+        running = !running;
+        if (running) {
+          document.getElementById('startBtn').textContent = "Stop";
+          loop();
+        } else {
+          document.getElementById('startBtn').textContent = "Start";
+        }
+      });
+ 
+      document.getElementById('stepBtn').addEventListener('click', async () => {
+        if (!running) await step();
+      });
+ 
+      await step(); // Initial render
+      infoDiv.textContent = "Ready!";
+    }
+ 
+    runDemo().catch(err => {
+      console.error(err);
+      document.getElementById('info').textContent = `Error: ${err.message}`;
+    });
+  </script>
+</body>
+</html>

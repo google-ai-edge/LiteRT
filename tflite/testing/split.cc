@@ -14,6 +14,10 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/testing/split.h"
 
+#include <cstddef>
+#include <utility>
+#include <vector>
+
 #include "tflite/string_type.h"
 
 namespace tflite {

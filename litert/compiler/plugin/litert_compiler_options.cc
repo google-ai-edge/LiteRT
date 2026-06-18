@@ -37,6 +37,9 @@ LiteRtStatus ParseLiteRtCompilerOptions(const void* data, size_t size,
               static_cast<LiteRtCompilerOptionsPartitionStrategy>(strategy);
         } else if (key == "dummy_option") {
           LITERT_ASSIGN_OR_RETURN(options->dummy_option, ParseTomlBool(value));
+        } else if (key == "max_partitions") {
+          LITERT_ASSIGN_OR_RETURN(auto max_partitions, ParseTomlInt(value));
+          options->max_partitions = static_cast<size_t>(max_partitions);
         }
         return kLiteRtStatusOk;
       });

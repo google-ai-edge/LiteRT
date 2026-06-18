@@ -78,6 +78,21 @@ TEST(OpWrapperTest, SanityTest) {
   EXPECT_EQ(op_config_v1.outputTensors, nullptr);
 }
 
+TEST(OpWrapperTest, PackageNameConstructor) {
+  OpWrapper op_wrapper{"name", "custom_pkg", "OP_TYPE", QnnOpCode::kUnknown};
+  const Qnn_OpConfig_t op_config = op_wrapper.GetOpConfig();
+  EXPECT_EQ(op_config.version, QNN_OPCONFIG_VERSION_1);
+  EXPECT_STREQ(op_config.v1.packageName, "custom_pkg");
+  EXPECT_STREQ(op_config.v1.typeName, "OP_TYPE");
+  EXPECT_STREQ(op_config.v1.name, "name");
+  EXPECT_EQ(op_config.v1.numOfParams, 0);
+  EXPECT_EQ(op_config.v1.params, nullptr);
+  EXPECT_EQ(op_config.v1.numOfInputs, 0);
+  EXPECT_EQ(op_config.v1.inputTensors, nullptr);
+  EXPECT_EQ(op_config.v1.numOfOutputs, 0);
+  EXPECT_EQ(op_config.v1.outputTensors, nullptr);
+}
+
 TEST(OpWrapperTest, MoveCtorSanityTest) {
   OpWrapper op_wrapper{"name", "OP_TYPE", QnnOpCode::kUnknown};
   OpWrapper moved{std::move(op_wrapper)};
@@ -198,24 +213,9 @@ TEST(OpWrapperTest, GetInputOutputTensorTest) {
   EXPECT_EQ(op_wrapper.GetOutputTensor(0), tensor_wrapper_output);
 }
 
-TEST(OpWrapperTest, SwapOutputsTest) {
-  TensorWrapper input_1{};
-  TensorWrapper output_1{};
-  OpWrapper op_wrapper_1{"name", "OP_TYPE", QnnOpCode::kUnknown};
-  op_wrapper_1.AddInputTensor(input_1);
-  op_wrapper_1.AddOutputTensor(output_1);
-
-  TensorWrapper input_2{};
-  TensorWrapper output_2{};
-  OpWrapper op_wrapper_2{"name", "OP_TYPE", QnnOpCode::kUnknown};
-  op_wrapper_2.AddInputTensor(input_2);
-  op_wrapper_2.AddOutputTensor(output_2);
-
-  EXPECT_EQ(op_wrapper_1.GetOutputTensor(0), output_1);
-  op_wrapper_1.SwapOutputs(op_wrapper_2);
-  EXPECT_EQ(op_wrapper_1.GetOutputTensor(0), output_2);
-  op_wrapper_1.SwapOutputs(op_wrapper_2);
-  EXPECT_EQ(op_wrapper_1.GetOutputTensor(0), output_1);
+TEST(OpWrapperTest, GetTypeName) {
+  OpWrapper src{"src", "OP_TYPE", QnnOpCode::kMatMul};
+  EXPECT_STREQ(src.GetTypeName(), "OP_TYPE");
 }
 
 TEST(OpWrapperTest, GetName) {

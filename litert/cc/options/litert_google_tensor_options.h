@@ -19,11 +19,11 @@
 #include <string>
 #include <vector>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_google_tensor_options.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/internal/litert_detail.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
@@ -76,17 +76,17 @@ class GoogleTensorOptions {
     return int64_to_int32_truncation;
   }
 
-  void SetOutputDir(absl::string_view output_dir) {
+  void SetOutputDir(StringView output_dir) {
     internal::AssertOk(LrtGoogleTensorOptionsSetOutputDir, Get(),
                        output_dir.data());
   }
 
-  absl::string_view GetOutputDir() const {
+  StringView GetOutputDir() const {
     LrtGoogleTensorOptions options_data = Get();
     const char* output_dir;
     internal::AssertOk(LrtGoogleTensorOptionsGetOutputDir, options_data,
                        &output_dir);
-    return absl::string_view(output_dir);
+    return StringView(output_dir);
   }
 
   void SetDumpOpTimings(bool dump_op_timings) {
@@ -155,18 +155,6 @@ class GoogleTensorOptions {
                        Get(), enable_dynamic_range_quantization);
   }
 
-  std::vector<std::vector<std::string>> GetTestingFlags() const {
-    LrtGoogleTensorOptions options_data = Get();
-    std::vector<std::vector<std::string>> testing_flags;
-    LrtGoogleTensorOptionsGetTestingFlags(options_data, &testing_flags);
-    return testing_flags;
-  }
-
-  void SetTestingFlags(const std::string& testing_flags) {
-    internal::AssertOk(LrtGoogleTensorOptionsSetTestingFlags, Get(),
-                       testing_flags);
-  }
-
   enum class PerformanceMode {
     kExtremePowerSaver =
         kLiteRtGoogleTensorOptionsPerformanceModeExtremePowerSaver,
@@ -197,17 +185,30 @@ class GoogleTensorOptions {
     return static_cast<PerformanceMode>(performance_mode);
   }
 
-  void SetOpFiltersProto(absl::string_view op_filters_proto) {
+  void SetOpFiltersProto(StringView op_filters_proto) {
     internal::AssertOk(LrtGoogleTensorOptionsSetOpFiltersProto, Get(),
                        op_filters_proto.data());
   }
 
-  absl::string_view GetOpFiltersProto() const {
+  StringView GetOpFiltersProto() const {
     LrtGoogleTensorOptions options_data = Get();
     const char* op_filters_proto;
     internal::AssertOk(LrtGoogleTensorOptionsGetOpFiltersProto, options_data,
                        &op_filters_proto);
-    return absl::string_view(op_filters_proto);
+    return StringView(op_filters_proto);
+  }
+
+  void SetExtraOptionsPath(StringView extra_options_path) {
+    internal::AssertOk(LrtGoogleTensorOptionsSetExtraOptionsPath, Get(),
+                       std::string(extra_options_path).c_str());
+  }
+
+  StringView GetExtraOptionsPath() const {
+    LrtGoogleTensorOptions options_data = Get();
+    const char* extra_options_path;
+    internal::AssertOk(LrtGoogleTensorOptionsGetExtraOptionsPath,
+                       options_data, &extra_options_path);
+    return StringView(extra_options_path);
   }
 
  private:

@@ -14,7 +14,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_bin", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
+load("//litert/build_common:litert_build_defs.bzl", "copy_file", "litert_bin", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -28,7 +28,19 @@ litert_dynamic_lib(
     ],
     hdrs = ["//litert/vendors/c:litert_compiler_plugin.h"],
     export_litert_only = True,
+    features = select({
+        "//litert:windows": ["-static_link_msvcrt"],
+        "//conditions:default": [],
+    }),
+    linkopts = select({
+        "//litert:windows": [],
+        "//conditions:default": ["-Wl,-rpath,$$ORIGIN"],
+    }),
     linkstatic = 1,
+    local_defines = select({
+        "//litert:windows": ["LITERT_COMPILE_LIBRARY"],
+        "//conditions:default": [],
+    }),
     shared_lib_name = "example_plugin_so",
     so_name = "libLiteRtCompilerPlugin_Example.so",
     visibility = ["//litert:litert_public"],
@@ -49,6 +61,29 @@ litert_dynamic_lib(
     ],
 )
 
+copy_file(
+    name = "example_plugin_runtime_dll",
+    src = "//litert/c:litert_runtime_c_api_dll",
+    target = "libLiteRt.dll",
+    visibility = ["//litert:litert_public"],
+)
+
+copy_file(
+    name = "example_plugin_runtime_so",
+    src = "//litert/c:litert_runtime_c_api_so",
+    target = "libLiteRt.so",
+    visibility = ["//litert:litert_public"],
+)
+
+filegroup(
+    name = "example_plugin_so_data",
+    srcs = [":example_plugin_so"] + select({
+        "//litert:windows": [":example_plugin_runtime_dll"],
+        "//conditions:default": [":example_plugin_runtime_so"],
+    }),
+    visibility = ["//litert:litert_public"],
+)
+
 litert_dynamic_lib(
     name = "example_dispatch_lib",
     srcs = [
@@ -56,7 +91,19 @@ litert_dynamic_lib(
     ],
     hdrs = ["//litert/vendors/c:litert_dispatch.h"],
     export_litert_only = True,
+    features = select({
+        "//litert:windows": ["-static_link_msvcrt"],
+        "//conditions:default": [],
+    }),
+    linkopts = select({
+        "//litert:windows": [],
+        "//conditions:default": ["-Wl,-rpath,$$ORIGIN"],
+    }),
     linkstatic = 1,
+    local_defines = select({
+        "//litert:windows": ["LITERT_COMPILE_LIBRARY"],
+        "//conditions:default": [],
+    }),
     shared_lib_name = "example_dispatch_so",
     so_name = "libLiteRtDispatch_Example.so",
     visibility = ["//litert:litert_public"],
@@ -88,6 +135,10 @@ litert_bin(
             "-DLITERT_COMPILE_LIBRARY",
             "-Wno-sign-compare",
         ],
+        "//conditions:default": [],
+    }),
+    features = select({
+        "//litert:windows": ["-static_link_msvcrt"],
         "//conditions:default": [],
     }),
     linkshared = 1,
@@ -134,6 +185,10 @@ litert_bin(
             "-DLITERT_COMPILE_LIBRARY",
             "-Wno-sign-compare",
         ],
+        "//conditions:default": [],
+    }),
+    features = select({
+        "//litert:windows": ["-static_link_msvcrt"],
         "//conditions:default": [],
     }),
     linkshared = 1,
@@ -186,14 +241,21 @@ cc_test(
         "nosan",
         "notsan",
     ],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
+        ":example_common",
         ":example_plugin",  # buildcleaner: keep
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_compiler_context",
+        "//litert/cc:litert_buffer_ref",
         "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/core/model:model_testonly",
         "//litert/test:common",
+        "//litert/test:load_test_model",
         "//litert/test:matchers",
         "//litert/vendors/cc:litert_compiler_plugin",
         "@com_google_absl//absl/strings:string_view",
@@ -254,7 +316,12 @@ cc_library(
 cc_test(
     name = "example_dispatch_test",
     srcs = ["example_dispatch_test.cc"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
+        ":example_common",
         ":example_dispatch",  # buildcleaner: keep
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
@@ -274,7 +341,7 @@ cc_test(
     srcs = ["end_to_end_test.cc"],
     data = [
         ":example_dispatch_so",
-        ":libLiteRtCompilerPlugin_Example.so",
+        ":example_plugin_so",
         "//litert/test:mlir_test_data",
     ],
     # This test dlopens, so sanitzers are prone to false positive.
@@ -335,6 +402,10 @@ litert_test(
         "notap",
         "nosan",
     ],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     ungrte = True,
     use_sys_malloc = True,
     deps = [
@@ -350,6 +421,7 @@ litert_test(
         "//litert/core/model:model_testonly",
         "//litert/core/util:flatbuffer_tools",
         "//litert/test:common",
+        "//litert/test:load_test_model_runtimecapi",
         "//litert/test:matchers_oss",
         "//tflite/converter/schema:schema_fbs",
         "@com_google_absl//absl/types:span",

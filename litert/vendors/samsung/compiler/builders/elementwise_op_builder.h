@@ -15,59 +15,84 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_ELEMENTWISE_OP_BUILDER_H_
 #define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_ELEMENTWISE_OP_BUILDER_H_
 
-#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildAddOp(const Op& op);
+Expected<OpWrapper> BuildAddOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildMulOp(const Op& op);
+Expected<OpWrapper> BuildMulOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildDivOp(const Op& op);
+Expected<OpWrapper> BuildDivOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildExpOp(const Op& op);
+Expected<OpWrapper> BuildExpOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildGreaterOp(const Op& op);
+Expected<OpWrapper> BuildGreaterOp(const LiteRtCompilerContext* ctx,
+                                   const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildGreaterEqualOp(const Op& op);
+Expected<OpWrapper> BuildGreaterEqualOp(const LiteRtCompilerContext* ctx,
+                                        const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildMaxOp(const Op& op);
+Expected<OpWrapper> BuildMaxOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildMinOp(const Op& op);
+Expected<OpWrapper> BuildMinOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildCosOp(const Op& op);
+Expected<OpWrapper> BuildCosOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildSinOp(const Op& op);
+Expected<OpWrapper> BuildSinOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildRsqrtOp(const Op& op);
+Expected<OpWrapper> BuildRsqrtOp(const LiteRtCompilerContext* ctx,
+                                 const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildSqrtOp(const Op& op);
+Expected<OpWrapper> BuildSqrtOp(const LiteRtCompilerContext* ctx,
+                                const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildSubOp(const Op& op);
+Expected<OpWrapper> BuildSubOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildSquaredDifferenceOp(const Op& op);
+Expected<OpWrapper> BuildSquaredDifferenceOp(const LiteRtCompilerContext* ctx,
+                                             const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildAbsOp(const Op& op);
+Expected<OpWrapper> BuildAbsOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildEqualOp(const Op& op);
+Expected<OpWrapper> BuildEqualOp(const LiteRtCompilerContext* ctx,
+                                 const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildCeilOp(const Op& op);
+Expected<OpWrapper> BuildCeilOp(const LiteRtCompilerContext* ctx,
+                                const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildFloorOp(const Op& op);
+Expected<OpWrapper> BuildFloorOp(const LiteRtCompilerContext* ctx,
+                                 const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildFloorDivOp(const Op& op);
+Expected<OpWrapper> BuildFloorDivOp(const LiteRtCompilerContext* ctx,
+                                    const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildLessOp(const Op& op);
+Expected<OpWrapper> BuildLessOp(const LiteRtCompilerContext* ctx,
+                                const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildLogOp(const Op& op);
+Expected<OpWrapper> BuildLogOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildPowOp(const Op& op);
+Expected<OpWrapper> BuildPowOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildLogicalAndOp(const Op& op);
+Expected<OpWrapper> BuildLogicalAndOp(const LiteRtCompilerContext* ctx,
+                                      const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildNotEqualOp(const Op& op);
+Expected<OpWrapper> BuildNotEqualOp(const LiteRtCompilerContext* ctx,
+                                    const litert::compiler::Op& op);
 
 }  // namespace litert::samsung
 

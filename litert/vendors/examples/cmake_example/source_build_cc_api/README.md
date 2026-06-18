@@ -8,6 +8,13 @@ runtime shared library:
 target_link_libraries(my_app PRIVATE litert_cc_api_with_dynamic_runtime)
 ```
 
+It also builds a no-Abseil variant that compiles the same sample against
+`litert_cc_api_no_absl_with_dynamic_runtime`:
+
+```cmake
+target_link_libraries(my_app PRIVATE litert_cc_api_no_absl_with_dynamic_runtime)
+```
+
 ## Files
 
 `CMakeLists.txt` is the downstream consumer project. It vendors the LiteRT
@@ -22,16 +29,25 @@ set(LITERT_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/litert_build")
 add_subdirectory("${LITERT_SOURCE_DIR}" "${LITERT_BUILD_DIR}" EXCLUDE_FROM_ALL)
 ```
 
-It then links only the convenience target:
+It then builds the regular executable and a no-Abseil executable from the same
+source file:
 
 ```cmake
 add_executable(litert_source_build_cc_api_run_model
+    source_build_cc_api_run_model.cc
+)
+add_executable(litert_source_build_cc_api_no_absl_run_model
     source_build_cc_api_run_model.cc
 )
 
 target_link_libraries(litert_source_build_cc_api_run_model
     PRIVATE
         litert_cc_api_with_dynamic_runtime
+)
+
+target_link_libraries(litert_source_build_cc_api_no_absl_run_model
+    PRIVATE
+        litert_cc_api_no_absl_with_dynamic_runtime
 )
 ```
 
@@ -63,7 +79,9 @@ cmake -S litert/vendors/examples/cmake_example/source_build_cc_api \
   -DLITERT_ENABLE_NPU=OFF
 
 cmake --build /tmp/litert_source_build_cc_api_example \
-  --target litert_source_build_cc_api_run_model -j
+  --target litert_source_build_cc_api_run_model \
+  --target litert_source_build_cc_api_no_absl_run_model \
+  -j
 ```
 
 Run the default checked-in CPU model:
@@ -73,6 +91,23 @@ Run the default checked-in CPU model:
   --iterations=2 \
   --print_tensors \
   --sample_size=6
+```
+
+Run the same checked-in model through the no-Abseil C++ API target:
+
+```bash
+/tmp/litert_source_build_cc_api_example/litert_source_build_cc_api_no_absl_run_model \
+  --iterations=2 \
+  --use_named_maps \
+  --sample_size=6
+```
+
+Validate only environment creation and accelerator registration:
+
+```bash
+/tmp/litert_source_build_cc_api_example/litert_source_build_cc_api_no_absl_run_model \
+  --registration_only \
+  --auto_register_accelerators=cpu
 ```
 
 Use a different model:
@@ -87,7 +122,7 @@ When no `--model` is passed, the sample uses `--resize_inputs=1,128,4` for the
 CPU default `simple_add_dynamic_shape.tflite`. For explicit models, the default
 is no resize; pass `--resize_inputs=d0,d1,...` only for dynamic-shape models.
 
-## Build The GPU Example
+## Build The Host GPU Example
 
 This example mirrors that SDK flow for the accelerator artifact, but keeps the
 CMake intentionally small. When `LITERT_ENABLE_GPU=ON`, CMake picks the
@@ -110,7 +145,9 @@ cmake -S litert/vendors/examples/cmake_example/source_build_cc_api \
   -DLITERT_ENABLE_NPU=OFF
 
 cmake --build /tmp/litert_source_build_cc_api_gpu_example \
-  --target litert_source_build_cc_api_run_model -j
+  --target litert_source_build_cc_api_run_model \
+  --target litert_source_build_cc_api_no_absl_run_model \
+  -j
 ```
 
 On macOS arm64, the post-build step stages:
@@ -137,6 +174,121 @@ Run with Metal:
 
 Because no `--model` is passed, that command uses the static GPU default
 `mobilenet_v2_1.0_224.tflite`.
+
+If model compilation hits a GPU ABI issue, validate that the no-Abseil
+executable can still load and register the staged Metal accelerator:
+
+```bash
+/tmp/litert_source_build_cc_api_gpu_example/litert_source_build_cc_api_no_absl_run_model \
+  --registration_only \
+  --auto_register_accelerators=gpu \
+  --require_registered_accelerator=gpu
+```
+
+## Cross-Build And Deploy The Android GPU Example
+
+The Android GPU flow uses the same source-built C++ example, cross-compiled
+with the Android NDK. Configure with `LITERT_ENABLE_GPU=ON` so CMake downloads
+and stages the Android arm64 accelerator:
+
+```text
+https://storage.googleapis.com/litert/binaries/latest/android_arm64/libLiteRtClGlAccelerator.so
+```
+
+From the repository root, pick an Android build directory and configure with
+the NDK toolchain:
+
+```bash
+export ANDROID_BUILD_DIR=/tmp/litert_source_build_cc_api_android_arm64
+
+cmake -S litert/vendors/examples/cmake_example/source_build_cc_api \
+  -B "${ANDROID_BUILD_DIR}" \
+  -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake" \
+  -DCMAKE_SYSTEM_NAME=Android \
+  -DANDROID_ABI=arm64-v8a \
+  -DANDROID_PLATFORM=26 \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DLITERT_ENABLE_GPU=ON \
+  -DLITERT_ENABLE_NPU=OFF \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+```
+
+Build the executable. This also builds the source `libLiteRt.so` runtime and
+copies `libLiteRtClGlAccelerator.so` next to it:
+
+```bash
+cmake --build "${ANDROID_BUILD_DIR}" \
+  --target litert_source_build_cc_api_run_model \
+  --parallel 8
+```
+
+Stage the files that need to live together on the device:
+
+```bash
+cmake -E rm -rf "${ANDROID_BUILD_DIR}/deploy"
+cmake -E make_directory "${ANDROID_BUILD_DIR}/deploy"
+cmake -E copy_if_different \
+  "${ANDROID_BUILD_DIR}/litert_source_build_cc_api_run_model" \
+  "${ANDROID_BUILD_DIR}/deploy/"
+cmake -E copy_if_different \
+  "${ANDROID_BUILD_DIR}/litert_build/c/libLiteRt.so" \
+  "${ANDROID_BUILD_DIR}/deploy/"
+cmake -E copy_if_different \
+  "${ANDROID_BUILD_DIR}/litert_build/c/libLiteRtClGlAccelerator.so" \
+  "${ANDROID_BUILD_DIR}/deploy/"
+cmake -E copy_if_different \
+  litert/test/testdata/mobilenet_v2_1.0_224.tflite \
+  "${ANDROID_BUILD_DIR}/deploy/"
+```
+
+Deploy with adb:
+
+```bash
+export ANDROID_DEVICE_DIR=/data/local/tmp/litert_source_build_cc_api
+
+adb shell "rm -rf ${ANDROID_DEVICE_DIR} && mkdir -p ${ANDROID_DEVICE_DIR}"
+adb push "${ANDROID_BUILD_DIR}/deploy/." "${ANDROID_DEVICE_DIR}/"
+```
+
+Run the GPU example on the device. `LD_LIBRARY_PATH=.` and
+`--runtime_library_dir=.` are both important because the executable, source-built
+`libLiteRt.so`, downloaded accelerator, and model are pushed into the same
+directory:
+
+```bash
+adb shell "cd ${ANDROID_DEVICE_DIR} && \
+  LD_LIBRARY_PATH=. ./litert_source_build_cc_api_run_model \
+    --runtime_library_dir=. \
+    --model=./mobilenet_v2_1.0_224.tflite \
+    --accelerator=gpu,cpu \
+    --gpu_backend=opengl \
+    --gpu_precision=fp16 \
+    --iterations=1 \
+    --sample_size=3"
+```
+
+The expected successful OpenGL path logs the downloaded accelerator registration
+and full delegation:
+
+```text
+Dynamically loaded GPU accelerator(libLiteRtClGlAccelerator.so) registered.
+Replacing 66 out of 66 node(s) with delegate (LITERT_OPENGL) node
+Compiled model fully accelerated: yes
+```
+
+Use `--gpu_backend=opencl` instead of `--gpu_backend=opengl` only when the
+downloaded accelerator and target device support the OpenCL path you want to
+validate.
+
+If the GPU command crashes after the accelerator is registered but the same
+binary works with `--accelerator=cpu`, check that the source-built `libLiteRt`
+runtime and downloaded `latest` accelerator were built against a compatible
+`LiteRtRuntimeContext` function-table ABI and ensure the versions match.
+
+The accelerator calls that table
+during delegate creation, so an ABI layout mismatch can fail before any model
+inference runs.
 
 ## Convenience Target
 
@@ -169,10 +321,30 @@ target_link_libraries(litert_cc_api_with_dynamic_runtime
         litert_cc_api_headers
         litert_runtime_c_api_shared_lib
 )
+
+add_library(litert_cc_api_no_absl_headers INTERFACE)
+
+target_compile_definitions(litert_cc_api_no_absl_headers
+    INTERFACE
+        LITERT_NO_ABSL
+)
+
+add_library(litert_cc_api_no_absl_with_dynamic_runtime INTERFACE)
+
+target_link_libraries(litert_cc_api_no_absl_with_dynamic_runtime
+    INTERFACE
+        litert_cc_api_no_absl_headers
+        litert_runtime_c_api_shared_lib
+)
 ```
 
 `litert_cc_api_headers` is header-only usage requirements: include paths,
 C++20, and public header dependencies.
+
+`litert_cc_api_no_absl_headers` is the no-Abseil header variant. It provides
+the same include paths and C++20 requirement, but adds the `LITERT_NO_ABSL`
+compile definition so public C++ API aliases resolve to standard-library types
+such as `std::string_view`, `std::span`, and `std::unordered_map`.
 
 `litert_cc_api_with_dynamic_runtime` adds the runtime shared library target.
 When an executable links this interface target, CMake has a real target
@@ -211,4 +383,3 @@ add_subdirectory("${LITERT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/_deps/litert")
 add_executable(my_litert_app main.cc)
 target_link_libraries(my_litert_app PRIVATE litert_cc_api_with_dynamic_runtime)
 ```
-

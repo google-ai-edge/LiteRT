@@ -19,6 +19,7 @@ set(LITERT_C_INTERNAL_HEADERS
     internal/litert_accelerator_def.h
     internal/litert_accelerator_registration.h
     internal/litert_compiler_context.h
+    internal/litert_custom_tensor_buffer_handlers_def.h
     internal/litert_delegate_wrapper.h
     internal/litert_dispatch_delegate.h
     internal/litert_external_litert_buffer_context.h

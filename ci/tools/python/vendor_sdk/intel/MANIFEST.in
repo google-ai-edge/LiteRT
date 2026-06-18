@@ -1,1 +1,2 @@
+graft ai_edge_litert_sdk_intel/data
 include ai_edge_litert_sdk_intel/__init__.py

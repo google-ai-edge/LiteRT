@@ -16,8 +16,10 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_FIXTURE_H_
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -29,6 +31,7 @@
 #include <gtest/gtest.h>
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/ats/common.h"
 #include "litert/ats/configure.h"
 #include "litert/ats/executor.h"
@@ -36,7 +39,6 @@
 #include "litert/c/internal/litert_logging.h"  // IWYU pragma: keep
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_c_types_printing.h"  // IWYU pragma: keep
-#include "litert/cc/internal/litert_numerics.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -74,13 +76,13 @@ class AtsInferenceTest : public RngTest {
   }
 
   void SetUp() override {
+    cap_.model.SetFields(names_, Graph());
     if (names_.should_skip) {
       GTEST_SKIP() << "Filtered by dont_register";
     }
     ASSERT_EQ(Graph().NumSubgraphs(), 1);
     LITERT_LOG(LITERT_INFO, "Setting up test for %s",
                absl::StrFormat("%v", conf_.Backend()).c_str());
-    cap_.model.SetFields(names_, Graph());
     cap_.run.num_iterations = conf_.ItersPerTest();
     cap_.numerics.reference_type =
         graph_->HasReference() ? ReferenceType::kCustom : ReferenceType::kCpu;
@@ -109,13 +111,18 @@ class AtsInferenceTest : public RngTest {
 
     if (::testing::Test::IsSkipped()) {
       cap_.run.status = RunStatus::kSkipped;
+      return;
     } else if (HasFailure()) {
       cap_.run.status = RunStatus::kError;
+      return;
     } else if (TimedOut()) {
       cap_.run.status = RunStatus::kTimeout;
+      return;
     } else {
       cap_.run.status = RunStatus::kOk;
     }
+    LITERT_ASSERT_OK(
+        conf_.SaveModel(names_.report_id, std::move(graph_->Graph())));
   }
 
  private:
@@ -186,32 +193,200 @@ class AtsInferenceTest : public RngTest {
                                        Graph().Subgraph(0).Outputs().end());
   }
 
-  void CheckOutputs(const VarBuffers& actual, const VarBuffers& ref) {
-    ASSERT_EQ(actual.size(), ref.size());
-    for (size_t i = 0; i < actual.size(); ++i) {
-      ASSERT_EQ(actual[i].Type(), ref[i].Type());
-      if (actual[i].Type().ElementType() == ElementType::Float32) {
-        CheckOutputImpl(actual[i].AsView<float>(), ref[i].AsView<float>());
-      } else if (actual[i].Type().ElementType() == ElementType::Float16) {
-        CheckOutputImpl(actual[i].AsView<tflite::half>(),
-                        ref[i].AsView<tflite::half>());
-      } else if (actual[i].Type().ElementType() == ElementType::Int32) {
-        CheckOutputImpl(actual[i].AsView<int32_t>(), ref[i].AsView<int32_t>());
-      } else {
-        // TODO: Finish type support and pull specialization logic into
-        // generic helper.
-        FAIL() << "Unsupported element type";
-      }
+  ConformanceSpec Conformance() const { return graph_->GetConformanceSpec(); }
+
+  template <typename T>
+  static double MeanSquaredError(absl::Span<const T> actual,
+                                 absl::Span<const T> ref) {
+    if (actual.empty()) {
+      return 0.0;
     }
+    double mse = 0.0;
+    for (size_t i = 0; i < actual.size(); ++i) {
+      const double diff =
+          static_cast<double>(actual[i]) - static_cast<double>(ref[i]);
+      mse += diff * diff;
+    }
+    return mse / static_cast<double>(actual.size());
   }
 
   template <typename T>
-  void CheckOutputImpl(const BufferView<T>& actual, const BufferView<T>& ref) {
+  void CheckMseOutputImpl(const BufferView<T>& actual, const BufferView<T>& ref,
+                          double tol) {
     double mse = std::numeric_limits<double>::max();
-    double tol = std::max(
-        Tol(), static_cast<double>(NumericLimits<T>::Epsilon()) * 10.0);
     EXPECT_THAT(actual.data, MeanSquaredErrorLt(ref.data, tol, &mse));
+    if (mse > tol) {
+      LITERT_LOG(LITERT_ERROR, "[NUMERICAL DISCREPANCY DETAIL]");
+      LITERT_LOG(LITERT_ERROR, "Tolerance: %g, Actual MSE: %g", tol, mse);
+      LITERT_LOG(LITERT_ERROR,
+                 "Side-by-side comparison (showing first 10 mismatches):");
+      size_t printed = 0;
+      for (size_t i = 0; i < actual.data.size() && printed < 10; ++i) {
+        double a_val = static_cast<double>(actual.data[i]);
+        double r_val = static_cast<double>(ref.data[i]);
+        double diff = std::abs(a_val - r_val);
+        if (diff > tol) {
+          LITERT_LOG(LITERT_ERROR,
+                     "  Index %zu: Actual=%g\tExpected=%g\tDiff=%g", i, a_val,
+                     r_val, diff);
+          printed++;
+        }
+      }
+      LITERT_LOG(LITERT_ERROR, "----------------------------------------");
+    }
     cap_.numerics.NewMse(mse);
+  }
+
+  template <typename T>
+  void CheckExactOutputImpl(const BufferView<T>& actual,
+                            const BufferView<T>& ref) {
+    ASSERT_EQ(actual.data.size(), ref.data.size());
+    for (size_t i = 0; i < actual.data.size(); ++i) {
+      EXPECT_EQ(actual.data[i], ref.data[i]) << "index=" << i;
+    }
+    cap_.numerics.NewMse(MeanSquaredError(actual.data, ref.data));
+  }
+
+  void CheckExactOutputBytesImpl(const SimpleBuffer& actual,
+                                 const SimpleBuffer& ref) {
+    const auto actual_bytes = actual.Span<uint8_t>();
+    const auto ref_bytes = ref.Span<uint8_t>();
+    ASSERT_EQ(actual_bytes.size(), ref_bytes.size());
+    for (size_t i = 0; i < actual_bytes.size(); ++i) {
+      EXPECT_EQ(actual_bytes[i], ref_bytes[i]) << "byte=" << i;
+    }
+    cap_.numerics.NewMse(0.0);
+  }
+
+  template <typename T>
+  void CheckFloatAccumulationAwareOutputImpl(const BufferView<T>& actual,
+                                             const BufferView<T>& ref,
+                                             const ConformanceSpec& spec) {
+    ASSERT_EQ(actual.data.size(), ref.data.size());
+    const double eps = static_cast<double>(std::numeric_limits<T>::epsilon());
+    const double rtol = std::max(
+        spec.relative_tolerance,
+        10.0 * eps * std::sqrt(static_cast<double>(spec.accumulation_depth)));
+    const double atol = std::max(spec.absolute_tolerance, 10.0 * eps);
+    for (size_t i = 0; i < actual.data.size(); ++i) {
+      const double expected = static_cast<double>(ref.data[i]);
+      const double diff =
+          std::abs(static_cast<double>(actual.data[i]) - expected);
+      const double tol = atol + rtol * std::abs(expected);
+      EXPECT_LE(diff, tol) << "index=" << i << ", expected=" << expected
+                           << ", actual=" << static_cast<double>(actual.data[i])
+                           << ", rtol=" << rtol << ", atol=" << atol;
+    }
+    cap_.numerics.NewMse(MeanSquaredError(actual.data, ref.data));
+  }
+
+  template <typename T>
+  void CheckFloatElementwiseOutputImpl(const BufferView<T>& actual,
+                                       const BufferView<T>& ref,
+                                       const ConformanceSpec& spec) {
+    ASSERT_EQ(actual.data.size(), ref.data.size());
+    const double eps = static_cast<double>(std::numeric_limits<T>::epsilon());
+    const double rtol = std::max(spec.relative_tolerance, 10.0 * eps);
+    const double atol = std::max(spec.absolute_tolerance, 10.0 * eps);
+    for (size_t i = 0; i < actual.data.size(); ++i) {
+      const double expected = static_cast<double>(ref.data[i]);
+      const double diff =
+          std::abs(static_cast<double>(actual.data[i]) - expected);
+      const double tol = atol + rtol * std::abs(expected);
+      EXPECT_LE(diff, tol) << "index=" << i << ", expected=" << expected
+                           << ", actual="
+                           << static_cast<double>(actual.data[i]);
+    }
+    cap_.numerics.NewMse(MeanSquaredError(actual.data, ref.data));
+  }
+
+  template <typename T>
+  void CheckQuantizedBucketOutputImpl(const BufferView<T>& actual,
+                                      const BufferView<T>& ref,
+                                      int64_t bucket_tolerance) {
+    ASSERT_EQ(actual.data.size(), ref.data.size());
+    for (size_t i = 0; i < actual.data.size(); ++i) {
+      const int64_t diff = std::llabs(static_cast<int64_t>(actual.data[i]) -
+                                      static_cast<int64_t>(ref.data[i]));
+      EXPECT_LE(diff, bucket_tolerance)
+          << "index=" << i << ", expected=" << static_cast<int64_t>(ref.data[i])
+          << ", actual=" << static_cast<int64_t>(actual.data[i]);
+    }
+    cap_.numerics.NewMse(MeanSquaredError(actual.data, ref.data));
+  }
+
+  void CheckOutputs(const VarBuffers& actual, const VarBuffers& ref) {
+    const ConformanceSpec spec = Conformance();
+    ASSERT_EQ(actual.size(), ref.size());
+    for (size_t i = 0; i < actual.size(); ++i) {
+      ASSERT_EQ(actual[i].Type(), ref[i].Type());
+      if (spec.comparator_kind == ConformanceComparatorKind::kExact) {
+        CheckExactOutputBytesImpl(actual[i], ref[i]);
+      } else if (spec.comparator_kind ==
+                 ConformanceComparatorKind::kQuantizedBucket) {
+        if (actual[i].Type().ElementType() == ElementType::Int8) {
+          CheckQuantizedBucketOutputImpl(actual[i].AsView<int8_t>(),
+                                         ref[i].AsView<int8_t>(),
+                                         spec.bucket_tolerance);
+        } else if (actual[i].Type().ElementType() == ElementType::UInt8) {
+          CheckQuantizedBucketOutputImpl(actual[i].AsView<uint8_t>(),
+                                         ref[i].AsView<uint8_t>(),
+                                         spec.bucket_tolerance);
+        } else if (actual[i].Type().ElementType() == ElementType::Int16) {
+          CheckQuantizedBucketOutputImpl(actual[i].AsView<int16_t>(),
+                                         ref[i].AsView<int16_t>(),
+                                         spec.bucket_tolerance);
+        } else if (actual[i].Type().ElementType() == ElementType::Int32) {
+          CheckQuantizedBucketOutputImpl(actual[i].AsView<int32_t>(),
+                                         ref[i].AsView<int32_t>(),
+                                         spec.bucket_tolerance);
+        } else if (actual[i].Type().ElementType() == ElementType::Int64) {
+          CheckQuantizedBucketOutputImpl(actual[i].AsView<int64_t>(),
+                                         ref[i].AsView<int64_t>(),
+                                         spec.bucket_tolerance);
+        } else {
+          FAIL() << "Unsupported quantized bucket element type";
+        }
+      } else if (spec.comparator_kind ==
+                 ConformanceComparatorKind::kFloatElementwise) {
+        if (actual[i].Type().ElementType() == ElementType::Float32) {
+          CheckFloatElementwiseOutputImpl(actual[i].AsView<float>(),
+                                          ref[i].AsView<float>(), spec);
+        } else if (actual[i].Type().ElementType() == ElementType::Float16) {
+          CheckFloatElementwiseOutputImpl(actual[i].AsView<tflite::half>(),
+                                          ref[i].AsView<tflite::half>(), spec);
+        } else {
+          FAIL() << "Unsupported float elementwise element type";
+        }
+      } else if (spec.comparator_kind ==
+                 ConformanceComparatorKind::kFloatAccumulationAware) {
+        if (actual[i].Type().ElementType() == ElementType::Float32) {
+          CheckFloatAccumulationAwareOutputImpl(actual[i].AsView<float>(),
+                                                ref[i].AsView<float>(), spec);
+        } else if (actual[i].Type().ElementType() == ElementType::Float16) {
+          CheckFloatAccumulationAwareOutputImpl(
+              actual[i].AsView<tflite::half>(), ref[i].AsView<tflite::half>(),
+              spec);
+        } else {
+          FAIL() << "Unsupported float accumulation aware element type";
+        }
+      } else {
+        // kMse
+        if (actual[i].Type().ElementType() == ElementType::Float32) {
+          CheckMseOutputImpl(actual[i].AsView<float>(), ref[i].AsView<float>(),
+                             spec.absolute_tolerance);
+        } else if (actual[i].Type().ElementType() == ElementType::Float16) {
+          CheckMseOutputImpl(actual[i].AsView<tflite::half>(),
+                             ref[i].AsView<tflite::half>(),
+                             spec.absolute_tolerance);
+        } else if (actual[i].Type().ElementType() == ElementType::Int32) {
+          CheckMseOutputImpl(actual[i].AsView<int32_t>(),
+                             ref[i].AsView<int32_t>(), spec.absolute_tolerance);
+        } else {
+          FAIL() << "Unsupported MSE element type";
+        }
+      }
+    }
   }
 
   LiteRtModelT& Graph() const { return graph_->Graph(); }

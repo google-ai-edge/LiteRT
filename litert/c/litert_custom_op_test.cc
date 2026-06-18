@@ -116,8 +116,14 @@ LiteRtStatus Destroy(void* user_data) {
 TEST(CompiledModelTest, CustomOp) {
   auto path = testing::GetTestFilePath(kModelFileName);
 
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
+            kLiteRtStatusOk);
+
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateModelFromFile(environment, path.c_str(), &model),
+            kLiteRtStatusOk);
 
   LiteRtOptions jit_compilation_options;
   ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
@@ -135,11 +141,6 @@ TEST(CompiledModelTest, CustomOp) {
                 jit_compilation_options, mycustomop::kCustomOpName,
                 mycustomop::kCustomOpVersion, &custom_op_kernel,
                 /*custom_op_kernel_user_data=*/nullptr),
-            kLiteRtStatusOk);
-
-  LiteRtEnvironment environment;
-  LiteRtEnvOption options = {};
-  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
             kLiteRtStatusOk);
 
   LiteRtCompiledModel compiled_model;

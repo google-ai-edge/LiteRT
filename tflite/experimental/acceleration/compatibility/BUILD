@@ -226,7 +226,7 @@ cc_library(
         ":gpu_compatibility_binary_embed",
         "//tflite/delegates/gpu:delegate_options",
         "//tflite/delegates/gpu/common:gpu_info",
-        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
         "@flatbuffers",
     ],

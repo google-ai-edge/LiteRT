@@ -12,9 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# copybara:uncomment load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
-
-# copybara:uncomment load("//litert/python:strict.bzl", "py_strict_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
 
@@ -47,6 +46,8 @@ cc_library(
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_model_types",
         "//litert/cc/options:litert_gpu_options",
+        "//litert/cc/options:litert_intel_openvino_options",
+        "//litert/cc/options:litert_qualcomm_options",
         "//litert/python/litert_wrapper/common:litert_wrapper_utils",
         "//tflite:framework",
         "//tflite/core:framework",
@@ -91,12 +92,35 @@ pybind_extension(
 )
 
 py_library(
+    name = "options",
+    srcs = [
+        "cpu_kernel_mode.py",
+        "cpu_options.py",
+        "gpu_options.py",
+        "hardware_accelerator.py",
+        "intel_openvino_options.py",
+        "option_utils.py",
+        "options.py",
+        "qualcomm_options.py",
+    ],
+    # copybara:uncomment strict_deps = False,
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "compiled_model",
     srcs = [
         "compiled_model.py",
         "cpu_kernel_mode.py",
+        "cpu_options.py",
+        "gpu_options.py",
         "hardware_accelerator.py",
+        "intel_openvino_options.py",
+        "option_utils.py",
+        "options.py",
+        "qualcomm_options.py",
     ],
+    # copybara:uncomment strict_deps = False,
     visibility = ["//visibility:public"],
     deps = [
         ":_pywrap_litert_compiled_model_wrapper",
@@ -106,7 +130,7 @@ py_library(
 )
 
 # copybara:uncomment_begin(google-only)
-# py_strict_test(
+# py_test(
 #     name = "compiled_model_unit_test",
 #     srcs = ["compiled_model_unit_test.py"],
 #     tags = [

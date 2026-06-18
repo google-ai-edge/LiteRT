@@ -42,6 +42,10 @@ pytype_strict_library(
 pytype_strict_contrib_test(
     name = "google_tensor_backend_test",
     srcs = ["google_tensor_backend_test.py"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":google_tensor_backend",
         ":target",

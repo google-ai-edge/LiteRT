@@ -8,10 +8,17 @@ LiteRt, to identify performance bottlenecks.
 
 ## Usage
 
-To run LiteRT compilation and QAIRT profiling tools, execute the following
-command: `python3 run.py \ --model path/to/model.tflite \ --soc_model <SoC
-model, e.g., SM8650> \ --hostname <hostname> \ --serial <serial number> \
---htp_arch <HTP architecture, e.g., V75> \ --output_dir path/to/output_dir`
+To run LiteRT compilation and QAIRT profiling tools, use `bazel run`:
+
+```bash
+bazel run //litert/vendors/qualcomm/debugger/optrace_profiling:run -- \
+  --model path/to/model.tflite \
+  --soc_model <SoC model, e.g., SM8650> \
+  --hostname <hostname> \
+  --serial <serial number> \
+  --htp_arch <HTP architecture, e.g., V75> \
+  --output_dir path/to/output_dir
+```
 
 The `path/to/output_dir` directory contains a QNN HTP Analysis Summary (QHAS)
 HTML file and a Chrometrace JSON file.

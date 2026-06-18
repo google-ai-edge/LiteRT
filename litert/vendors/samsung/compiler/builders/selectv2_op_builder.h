@@ -15,10 +15,12 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_SELECTV2_OP_BUILDER_H_
 #define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_SELECTV2_OP_BUILDER_H_
 
+#include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildSelectV2Op(const Op& op);
+Expected<OpWrapper> BuildSelectV2Op(const litert::compiler::Op& op);
 }
 #endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_SELECTV2_OP_BUILDE

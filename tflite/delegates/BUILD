@@ -136,6 +136,7 @@ cc_test(
         "//tflite/core/c:c_api_types",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
+        "//tflite/delegates/external:external_delegate",
         "//tflite/kernels:builtin_ops",
         "//tflite/kernels:kernel_util",
         "//tflite/schema:schema_fbs",

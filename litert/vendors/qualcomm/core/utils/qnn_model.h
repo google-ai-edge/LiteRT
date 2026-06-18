@@ -10,8 +10,8 @@
 #include <optional>
 #include <vector>
 
-#include "QnnCommon.h"
-#include "QnnInterface.h"
+#include "QnnCommon.h"  // from @qairt
+#include "QnnInterface.h"  // from @qairt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
@@ -64,7 +64,11 @@ class QnnModel {
 
   bool Execute();
 
-  void MoveOpsToGraph(std::vector<::qnn::OpWrapper>&& ops) {
+  void MoveOpToGraph(OpWrapper&& op) {
+    op_wrappers_.emplace_back(std::move(op));
+  }
+
+  void MoveOpsToGraph(std::vector<OpWrapper>&& ops) {
     std::move(ops.begin(), ops.end(), std::back_inserter(op_wrappers_));
   }
 

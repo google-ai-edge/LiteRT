@@ -18,11 +18,12 @@
 #include <cstdint>
 #include <vector>
 
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
 namespace litert::samsung {
@@ -30,7 +31,8 @@ namespace litert::samsung {
 constexpr int32_t kInputIndex = 0;
 constexpr int32_t kOutputIndex = 0;
 
-Expected<OpWrapper> BuildReshapeOp(const Op& op) {
+Expected<OpWrapper> BuildReshapeOp(const LiteRtCompilerContext* ctx,
+                                   const litert::compiler::Op& op) {
   OpWrapper op_wrapper("Reshape");
 
   op_wrapper.AddInput(op.Inputs()[kInputIndex]);
@@ -38,8 +40,8 @@ Expected<OpWrapper> BuildReshapeOp(const Op& op) {
 
   const int32_t* reshape_new_shape;
   int32_t new_shape_size;
-  if (auto status = LiteRtGetReshapeNewShapeOption(op.Get(), &reshape_new_shape,
-                                                   &new_shape_size);
+  if (auto status = ctx->get_reshape_new_shape_option(
+          op.Get(), &reshape_new_shape, &new_shape_size);
       status != kLiteRtStatusOk) {
     return Error(static_cast<litert::Status>(status), "Fail to get new shape.");
   }

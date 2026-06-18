@@ -15,7 +15,9 @@
 #include "litert/core/util/tensor_type_util.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 
 #include <gtest/gtest.h>  // NOLINT: Need when ANDROID_API_LEVEL >= 26
 #include "absl/types/span.h"  // from @com_google_absl
@@ -45,6 +47,16 @@ TEST(TensorTypeUtil, GetNumElementsWithZeroDimension) {
   EXPECT_FALSE(num_elements);
 }
 
+TEST(TensorTypeUtil, GetNumElementsWithOverflow) {
+  constexpr std::array<int32_t, 3> dimensions = {
+      std::numeric_limits<int32_t>::max(),
+      std::numeric_limits<int32_t>::max(),
+      std::numeric_limits<int32_t>::max(),
+  };
+  auto num_elements = GetNumElements(absl::MakeSpan(dimensions));
+  EXPECT_FALSE(num_elements);
+}
+
 TEST(TensorTypeUtil, GetNumPackedBytes) {
   LiteRtElementType element_type = kLiteRtElementTypeInt32;
   constexpr std::array<int, 3> dimensions = {3, 2, 1};
@@ -61,6 +73,14 @@ TEST(TensorTypeUtil, GetNumPackedBytesComplex64) {
   EXPECT_EQ(*num_bytes, 6 * 8);
 }
 
+TEST(TensorTypeUtil, GetNumPackedBytesWithOverflow) {
+  LiteRtElementType element_type = kLiteRtElementTypeComplex128;
+  constexpr std::array<size_t, 1> dimensions = {
+      std::numeric_limits<size_t>::max() / 32 + 1};
+  auto num_bytes = GetNumPackedBytes(element_type, absl::MakeSpan(dimensions));
+  EXPECT_FALSE(num_bytes);
+}
+
 TEST(TensorTypeUtil, GetNumBytes) {
   LiteRtElementType element_type = kLiteRtElementTypeInt32;
   constexpr std::array<int, 3> dimensions = {3, 2, 1};
@@ -75,4 +95,30 @@ TEST(TensorTypeUtil, GetNumBytes) {
                                absl::MakeSpan(strides));
   EXPECT_TRUE(num_bytes);
   EXPECT_EQ(*num_bytes, sizeof(int32_t) * 7);
+}
+
+TEST(TensorTypeUtil, GetNumBytesWithNegativeStride) {
+  LiteRtElementType element_type = kLiteRtElementTypeInt32;
+  constexpr std::array<int, 1> dimensions = {3};
+  constexpr std::array<int, 1> strides = {-1};
+  auto num_bytes = GetNumBytes(element_type, absl::MakeSpan(dimensions),
+                               absl::MakeSpan(strides));
+  EXPECT_FALSE(num_bytes);
+}
+
+TEST(TensorTypeUtil, GetNumBytesWithStrideOverflow) {
+  LiteRtElementType element_type = kLiteRtElementTypeInt32;
+  constexpr std::array<int32_t, 3> dimensions = {
+      std::numeric_limits<int32_t>::max(),
+      std::numeric_limits<int32_t>::max(),
+      std::numeric_limits<int32_t>::max(),
+  };
+  constexpr std::array<uint32_t, 3> strides = {
+      std::numeric_limits<uint32_t>::max(),
+      std::numeric_limits<uint32_t>::max(),
+      std::numeric_limits<uint32_t>::max(),
+  };
+  auto num_bytes = GetNumBytes(element_type, absl::MakeSpan(dimensions),
+                               absl::MakeSpan(strides));
+  EXPECT_FALSE(num_bytes);
 }

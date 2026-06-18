@@ -32,7 +32,10 @@ static const char kEnvAiLiteCoreVar[] = "EXYNOS_AI_LITECORE_ROOT";
 static const char kGraphWrapperLibName[] = "graph_wrapper";
 static const char kBackendLibName[] = "graphgen_api";
 
-#if defined(__linux__)
+#if defined(__ANDROID__)
+static constexpr absl::string_view kLibSuffix = ".so";
+static constexpr absl::string_view kRelativePath = "/lib/arm64-v8a";
+#elif defined(__linux__)
 static constexpr absl::string_view kLibSuffix = ".so";
 static constexpr absl::string_view kRelativePath = "/lib/x86_64-linux";
 #else

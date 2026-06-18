@@ -35,6 +35,7 @@ load(
 )
 load(
     "//litert/build_common:special_rule.bzl",
+    "exclude_windows_target_compatible_with",
     "get_compatible_with_portable",
     "gles_deps",
     "gles_headers",
@@ -44,7 +45,7 @@ load(
     "litert_metal_opts",
 )
 
-LITERT_MIN_IOS_VERSION = "14.0"
+LITERT_MIN_IOS_VERSION = "15.0"
 
 LITERT_MIN_MACOS_VERSION = "14.0"
 
@@ -133,6 +134,16 @@ litert_c_api_library(
     ],
 )
 
+cc_test(
+    name = "litert_metrics_test",
+    srcs = ["litert_metrics_test.cc"],
+    deps = [
+        ":litert_common",
+        ":litert_metrics",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 litert_c_api_library(
     name = "litert_environment",
     srcs = ["litert_environment.cc"],
@@ -199,6 +210,16 @@ cc_library(
     deps = [":litert_common"],
 )
 
+cc_test(
+    name = "litert_layout_test",
+    srcs = ["litert_layout_test.cc"],
+    deps = [
+        ":litert_common",
+        ":litert_layout",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "litert_model_types",
     hdrs = ["litert_model_types.h"],
@@ -224,8 +245,10 @@ litert_c_api_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_common",
         "//litert/core/model",
-        "//tflite/converter:allocation",
         "//litert/core/model:model_load",
+        "//litert/core/util:perfetto_profiling",
+        "//tflite:stderr_reporter",
+        "//tflite/converter:allocation",
         "//tflite/core/c:private_c_api_types",
     ] + select({
         "//litert/build_common:build_include_npu_enabled": [
@@ -246,12 +269,16 @@ cc_test(
     srcs = ["litert_model_test.cc"],
     data = [
         "//litert/test:mlir_test_data",
+        "//litert/test:tflite_test_data",
     ],
     deps = [
         ":litert_common",
+        ":litert_environment",
+        ":litert_environment_options",
         ":litert_model",
         ":litert_op_code",
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc/internal:scoped_file",
         "//litert/core/model",
         "//litert/test:common",
         "//litert/test:matchers",
@@ -303,6 +330,7 @@ cc_test(
         "//litert/core/model",
         "//litert/core/model:buffer_manager",
         "//litert/test:common",
+        "//litert/test:load_test_model",
         "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers//:runtime_cc",
@@ -330,6 +358,17 @@ litert_c_api_library(
         ":litert_event_type",
         ":litert_gl_types",
         ":litert_opencl_types",
+    ],
+)
+
+cc_test(
+    name = "litert_event_test",
+    srcs = ["litert_event_test.cc"],
+    deps = [
+        ":litert_common",
+        ":litert_event",
+        ":litert_event_type",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -374,10 +413,11 @@ litert_c_api_library(
         "//litert/c/internal:litert_tensor_buffer_registry",  # buildcleaner: keep
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/core/util:perfetto_profiling",
         "//litert/runtime:tensor_buffer",
         "//litert/runtime:tensor_buffer_requirements",
         "@opencl_headers",
-        ":litert_tensor_buffer_requirements",
+        ":litert_tensor_buffer_requirements_impl",
     ] + gles_deps(),
     linkopts = litert_android_linkopts() + gles_linkopts() + litert_metal_linkopts(),
     deps = [
@@ -557,6 +597,7 @@ litert_c_api_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_common",
+        "//litert/core/util:perfetto_profiling",
         "//litert/runtime:compiled_model",
     ],
     deps = [
@@ -692,19 +733,22 @@ cc_test(
     ],
 )
 
-cc_library(
+litert_c_api_library(
     name = "litert_builder",
     srcs = ["litert_builder.cc"],
     hdrs = ["litert_builder.h"],
-    deps = [
-        ":litert_common",
-        ":litert_model",
-        ":litert_op_code",
-        ":litert_op_options",
+    impl_deps = [
+        ":litert_model_impl",
+        ":litert_op_options_impl",
         "//litert/core/model",
         "//litert/core/model:buffer_manager",
         "//litert/core/util:flatbuffer_tools",
         "//tflite/converter/schema:schema_fbs",
+    ],
+    deps = [
+        ":litert_common",
+        ":litert_model_types",
+        ":litert_op_code",
     ],
 )
 
@@ -812,6 +856,7 @@ cc_shared_library(
     name = "litert_runtime_c_api_so",
     additional_linker_inputs = export_lrt_runtime_only_script(),
     shared_lib_name = "libLiteRt.so",
+    target_compatible_with = exclude_windows_target_compatible_with(),
     user_link_flags = export_lrt_runtime_only_linkopt() + select({
         "//litert:macos": ["-Wl,-install_name,@rpath/libLiteRt.so"],
         "//conditions:default": ["-Wl,-soname=libLiteRt.so"],
@@ -864,6 +909,7 @@ ios_framework(
 # Target for windows libLiteRt.dll.
 cc_binary(
     name = "libLiteRt",
+    features = ["-static_link_msvcrt"],
     linkshared = 1,
     tags = [
         "nobuilder",
@@ -950,6 +996,7 @@ cc_shared_library(
     additional_linker_inputs = export_lrt_tflite_runtime_script(),
     shared_lib_name = "libLiteRt.so",
     tags = ["manual"],  # To prevent build together with `litert_runtime_c_api_so`.
+    target_compatible_with = exclude_windows_target_compatible_with(),
     user_link_flags = export_lrt_tflite_runtime_linkopt() + litert_android_linkopts(),
     deps = [":litert_tflite_runtime_c_api_so_shim"],
 )
@@ -1061,11 +1108,11 @@ objc_library(
         ":litert_model",
         ":litert_tensor_buffer",
         ":litert_tensor_buffer_types",
+        # Dependency placeholder: apple_frameworks Metal,
+        # Dependency placeholder: apple_frameworks XCTest,
         "//litert/cc:litert_any",
         "//litert/cc:litert_layout",
         "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
-        "//third_party/apple_frameworks:Metal",
-        "//third_party/apple_frameworks:XCTest",
     ],
 )
 

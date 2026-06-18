@@ -14,6 +14,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dispatch_api")
 load("//litert/build_common:special_rule.bzl", "gles_linkopts", "litert_metal_opts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
@@ -81,13 +82,17 @@ cc_library(
     deps = [
         "//litert/c:litert_any",
         "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_environment_header",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_metrics",
         "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_custom_tensor_buffer_handlers_def",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_runtime_context_header",
         "//litert/c/internal:litert_scheduling_info",
+        "//litert/c/internal:litert_tensor_buffer_registry_header",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_shared_library",
@@ -109,6 +114,8 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_handle",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -117,7 +124,20 @@ cc_test(
     srcs = ["dispatch_opaque_options_test.cc"],
     deps = [
         ":dispatch_opaque_options",
+        "//litert/c:litert_common",
         "//litert/cc:litert_opaque_options",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "dispatch_delegate_kernel_test",
+    srcs = ["dispatch_delegate_kernel_test.cc"],
+    deps = [
+        ":dispatch_delegate",
+        ":dispatch_delegate_kernel",
+        "//litert/c:litert_environment",
+        "//litert/core:dispatch_op_schema",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -128,7 +148,7 @@ cc_test(
     data = [
         "//litert/test:mlir_test_data",
         "//litert/vendors/examples:example_dispatch_so",
-        "//litert/vendors/examples:example_plugin_so",
+        "//litert/vendors/examples:example_plugin_so_data",
     ],
     deps = [
         "//litert/cc:litert_common",
@@ -147,12 +167,72 @@ cc_test(
 )
 
 cc_test(
+    name = "dispatch_delegate_async_test",
+    srcs = ["dispatch_delegate_async_test.cc"],
+    data = [
+        ":libLiteRtDispatch_Mock_Async.so",
+        "//litert/test:mlir_test_data",
+        "//litert/vendors/examples:example_dispatch_so",
+        "//litert/vendors/examples:example_plugin_so_data",
+    ],
+    tags = [
+        "nomacos",
+        "nowindows",
+    ],
+    deps = [
+        ":dispatch",
+        "//litert/c:litert_common",
+        "//litert/c:litert_event",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_environment_options",
+        "//litert/cc/dynamic_runtime:litert_compiled_model",
+        "//litert/cc/dynamic_runtime:litert_environment",
+        "//litert/cc/dynamic_runtime:litert_options",
+        "//litert/cc/dynamic_runtime:litert_tensor_buffer",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+litert_dispatch_api(
+    name = "mock_async_dispatch",
+    srcs = ["mock_async_dispatch.cc"],
+    copts = select({
+        ":windows_msvc": [
+            "/DLITERT_COMPILE_LIBRARY",
+            "/wd4018",  # -Wno-sign-compare
+        ],
+        ":windows_lexan": [
+            "-DLITERT_COMPILE_LIBRARY",
+            "-Wno-sign-compare",
+        ],
+        "//conditions:default": [],
+    }),
+    export_litert_only = True,
+    shared_lib_name = "mock_async_dispatch_so",
+    so_name = "libLiteRtDispatch_Mock_Async.so",
+    tags = [
+        "nomacos",
+        "nowindows",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_event",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "@com_google_absl//absl/container:flat_hash_map",
+    ],
+)
+
+cc_test(
     name = "dispatch_delegate_scheduling_info_test",
     srcs = ["dispatch_delegate_scheduling_info_test.cc"],
     data = [
         "//litert/test:mlir_test_data",
         "//litert/vendors/examples:example_dispatch_so",
-        "//litert/vendors/examples:example_plugin_so",
+        "//litert/vendors/examples:example_plugin_so_data",
     ],
     deps = [
         "//litert/c:litert_common",
@@ -172,16 +252,36 @@ cc_test(
     ],
 )
 
+# copybara:uncomment_begin(g3)
+# cc_test(
+#     name = "dispatch_delegate_device_context_test",
+#     srcs = ["dispatch_delegate_device_context_test.cc"],
+#     data = [
+#         "//tflite:testdata/multi_signatures.bin",
+#     ],
+#     deps = [
+#         "@com_google_googletest//:gtest_main",
+#         "//litert/c:litert_common",
+#         "//litert/cc:litert_environment",
+#         "//litert/cc:litert_options",
+#         "//litert/cc/internal:litert_dispatch_delegate",
+#         "//litert/core/util:flatbuffer_tools",
+#         "//litert/test:common",
+#         "//litert/test:matchers",
+#         "//litert/vendors/c:litert_dispatch_c_api",
+#         "//tflite:framework_stable",
+#         "//tflite/c:c_api_types",
+#     ],
+# )
+# copybara:uncomment_end(g3)
+
 cc_library(
-    name = "dispatch_delegate",
+    name = "dispatch_delegate_kernel",
     srcs = [
-        "dispatch_delegate.cc",
         "dispatch_delegate_kernel.cc",
     ],
     hdrs = [
         "dispatch_delegate_kernel.h",
-        "//litert/c/internal:litert_dispatch_delegate.h",
-        "//litert/cc/internal:litert_dispatch_delegate.h",
     ],
     copts = litert_metal_opts(),
     deps = [
@@ -200,7 +300,6 @@ cc_library(
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_tflite_error_status_builder",
-        "//litert/core:build_stamp",
         "//litert/core:dispatch_op_schema",
         "//litert/runtime:external_litert_buffer_context",
         "//litert/runtime:metrics",
@@ -219,6 +318,40 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/container:node_hash_map",
         "@com_google_absl//absl/container:node_hash_set",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_library(
+    name = "dispatch_delegate",
+    srcs = [
+        "dispatch_delegate.cc",
+    ],
+    hdrs = [
+        "//litert/c/internal:litert_dispatch_delegate.h",
+        "//litert/cc/internal:litert_dispatch_delegate.h",
+    ],
+    copts = litert_metal_opts(),
+    deps = [
+        ":dispatch",
+        ":dispatch_delegate_kernel",
+        "//litert/c:litert_common",
+        "//litert/c:litert_metrics",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_requirements",
+        "//litert/c/internal:litert_dispatch_headers",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/core:build_stamp",
+        "//litert/runtime:metrics",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "//tflite/c:c_api",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/delegates/utils:simple_opaque_delegate",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
@@ -228,6 +361,17 @@ cc_library(
 cc_library(
     name = "litert_dispatch_dummy",
     srcs = ["litert_dispatch_dummy.cc"],
+    copts = select({
+        ":windows_msvc": [
+            "/DLITERT_COMPILE_LIBRARY",
+            "/wd4018",  # -Wno-sign-compare
+        ],
+        ":windows_lexan": [
+            "-DLITERT_COMPILE_LIBRARY",
+            "-Wno-sign-compare",
+        ],
+        "//conditions:default": [],
+    }),
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_metrics",
@@ -235,6 +379,7 @@ cc_library(
         "//litert/c/internal:litert_scheduling_info",
         "//litert/vendors/c:litert_dispatch_c_api",
     ],
+    alwayslink = 1,
 )
 
 litert_device_test(

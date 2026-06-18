@@ -134,6 +134,7 @@ cc_test(
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_element_type",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_consts",
@@ -142,6 +143,7 @@ cc_test(
         "//litert/core:dispatch_op_schema",
         "//litert/core/util:flatbuffer_tools",
         "//litert/test:common",
+        "//litert/test:load_test_model",
         "//litert/test:matchers",
         "//litert/test:test_models",
         "//tflite/converter/schema:schema_fbs_with_mutable",
@@ -212,9 +214,11 @@ cc_library(
     deps = [
         ":model",
         "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/core/util:flatbuffer_tools",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -225,9 +229,12 @@ cc_test(
     deps = [
         ":litert_to_flatbuffer",
         ":model",
+        "//litert/c:litert_common",
         "//litert/c:litert_model",
         "//litert/cc:litert_layout",
         "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -310,21 +317,27 @@ cc_library(
     hdrs = ["shape_inference.h"],
     deps = [
         ":model",
+        ":ops_broadcast_args",
         ":ops_broadcast_to",
         ":ops_concatenation",
         ":ops_convolution",
+        ":ops_expand_dims",
         ":ops_gather",
         ":ops_matmul",
+        ":ops_one_hot",
         ":ops_pack",
         ":ops_pad",
         ":ops_pooling",
+        ":ops_range",
         ":ops_reductions",
         ":ops_reshape",
         ":ops_select",
+        ":ops_shape",
         ":ops_simple_binary",
         ":ops_simple_unary",
         ":ops_slice",
         ":ops_spatial",
+        ":ops_squeeze",
         ":ops_topk",
         ":ops_transpose",
         ":ops_unpack",
@@ -333,6 +346,8 @@ cc_library(
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/util:flatbuffer_tools",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/types:span",
     ],
@@ -350,7 +365,7 @@ cc_test(
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/core/util:flatbuffer_tools_testonly",
-        "//tflite/converter/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
@@ -421,9 +436,11 @@ cc_test(
     deps = [
         ":buffer_manager",
         ":model",
+        ":model_load",
         ":model_serialize",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_macros",
         "//litert/core/util:flatbuffer_tools_testonly",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
@@ -437,7 +454,6 @@ cc_library(
     deps = [
         ":shape_inference_types",
         "//litert/c:litert_common",
-        "//tflite/converter/schema:schema_fbs",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -449,6 +465,9 @@ cc_library(
     deps = [
         ":model",
         "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/core/util:flatbuffer_tools",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -461,6 +480,9 @@ cc_library(
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//tflite/converter/schema:schema_fbs",
+        "//tflite/kernels/internal:reference_base",
+        "//tflite/kernels/internal:types",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -541,8 +563,10 @@ cc_library(
     hdrs = ["ops/matmul.h"],
     deps = [
         ":model",
+        ":ops_simple_binary",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//tflite/converter/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -566,6 +590,18 @@ cc_library(
         ":op_shape_inference_utils",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_one_hot",
+    hdrs = ["ops/one_hot.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
         "//tflite/converter/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
     ],
@@ -578,6 +614,8 @@ cc_library(
         ":model",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//tflite/kernels/internal:reference_base",
+        "//tflite/kernels/internal:types",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -645,6 +683,7 @@ cc_library(
         ":model",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -661,6 +700,42 @@ cc_library(
 )
 
 cc_library(
+    name = "ops_expand_dims",
+    hdrs = ["ops/expand_dims.h"],
+    deps = [
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+    ],
+)
+
+cc_library(
+    name = "ops_squeeze",
+    hdrs = ["ops/squeeze.h"],
+    deps = [
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+    ],
+)
+
+cc_library(
+    name = "ops_range",
+    hdrs = ["ops/range.h"],
+    deps = [
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+    ],
+)
+
+cc_library(
+    name = "ops_broadcast_args",
+    hdrs = ["ops/broadcast_args.h"],
+    deps = [
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+    ],
+)
+
+cc_library(
     name = "ops_topk",
     hdrs = ["ops/topk.h"],
     deps = [
@@ -668,6 +743,92 @@ cc_library(
         ":shape_inference_types",
         "//litert/c:litert_common",
         "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_shape",
+    hdrs = ["ops/shape.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+    ],
+)
+
+cc_test(
+    name = "ops_shape_test",
+    srcs = ["ops/shape_test.cc"],
+    deps = [
+        ":model",
+        ":ops_shape",
+        ":shape_inference",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_expand_dims_test",
+    srcs = ["ops/expand_dims_test.cc"],
+    deps = [
+        ":model",
+        ":shape_inference",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_squeeze_test",
+    srcs = ["ops/squeeze_test.cc"],
+    deps = [
+        ":model",
+        ":shape_inference",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/core/util:flatbuffer_tools_testonly",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_googletest//:gtest",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_range_test",
+    srcs = ["ops/range_test.cc"],
+    deps = [
+        ":model",
+        ":shape_inference",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_broadcast_args_test",
+    srcs = ["ops/broadcast_args_test.cc"],
+    deps = [
+        ":model",
+        ":shape_inference",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
+        "@com_google_googletest//:gtest",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -694,7 +855,7 @@ cc_test(
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//litert/core/util:flatbuffer_tools",
-        "//tflite/converter/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
@@ -710,7 +871,7 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/cc:litert_buffer_ref",
         "//litert/core/util:flatbuffer_tools",
-        "//tflite/converter/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
@@ -726,7 +887,7 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/cc:litert_buffer_ref",
         "//litert/core/util:flatbuffer_tools",
-        "//tflite/converter/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
@@ -767,7 +928,7 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/cc:litert_buffer_ref",
         "//litert/core/util:flatbuffer_tools_testonly",
-        "//tflite/converter/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
@@ -783,7 +944,7 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/cc:litert_buffer_ref",
         "//litert/core/util:flatbuffer_tools_testonly",
-        "//tflite/converter/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
@@ -810,9 +971,10 @@ cc_test(
         ":ops_reshape",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/core/util:flatbuffer_tools_testonly",
-        "//tflite/converter/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
@@ -830,7 +992,7 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/cc:litert_buffer_ref",
         "//litert/core/util:flatbuffer_tools_testonly",
-        "//tflite/converter/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
@@ -845,7 +1007,7 @@ cc_test(
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//litert/core/util:flatbuffer_tools",
-        "//tflite/converter/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
@@ -874,7 +1036,7 @@ cc_test(
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//litert/core/util:flatbuffer_tools",
-        "//tflite/converter/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
@@ -889,7 +1051,7 @@ cc_test(
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//litert/core/util:flatbuffer_tools",
-        "//tflite/converter/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
@@ -904,7 +1066,7 @@ cc_test(
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//litert/core/util:flatbuffer_tools",
-        "//tflite/converter/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
@@ -920,7 +1082,7 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/cc:litert_buffer_ref",
         "//litert/core/util:flatbuffer_tools_testonly",
-        "//tflite/converter/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
@@ -935,7 +1097,7 @@ cc_test(
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//litert/core/util:flatbuffer_tools",
-        "//tflite/converter/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
@@ -950,7 +1112,7 @@ cc_test(
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//litert/core/util:flatbuffer_tools",
-        "//tflite/converter/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],

@@ -76,6 +76,10 @@ LiteRtStatus LrtSetCpuOptionsXNNPackFlags(LrtCpuOptions* options,
 LiteRtStatus LrtGetCpuOptionsXNNPackFlags(const LrtCpuOptions* options,
                                           uint32_t* flags);
 
+// Sets whether to hint at fully delegating to a single delegate.
+LiteRtStatus LrtSetCpuOptionsHintFullyDelegatedToSingleDelegate(
+    LrtCpuOptions* options, bool hint_fully_delegated_to_single_delegate);
+
 // Sets the XNNPack weight cache file path used by the CPU accelerator in
 // XNNPACK mode.
 // Weight cache file path and descriptor must not both be set.

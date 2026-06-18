@@ -69,7 +69,7 @@ def _is_mobile_device_backend(backend: aot_types.Backend):
   if backend.id() == samsung_backend.SamsungBackend.id():
     target = cast(exynos_target.Target, target)
     # Non Android Phone Samsung targets.
-    if target.soc_model in (exynos_target.SocModel.E9965,):
+    if target.soc_model in ():
       return False
   return True
 
@@ -222,6 +222,16 @@ def _target_to_ai_pack_info(target: aot_types.Target) -> str | None:
         device_group_name=group_name, device_selectors=device_selector
     )
     return device_group
+  elif isinstance(target, exynos_target.Target):
+    group_name = str(target)
+    selector = _process_exynos_target(target)
+    device_selector = _DEVICE_SELECTOR_TEMPLATE.format(
+        soc_man=selector[0], soc_model=selector[1]
+    )
+    device_group = _DEVICE_GROUP_TEMPLATE.format(
+        device_group_name=group_name, device_selectors=device_selector
+    )
+    return device_group
   elif isinstance(target, fallback_backend.FallbackTarget):
     # Don't need to have device selector for fallback target.
     return None
@@ -256,6 +266,13 @@ def _process_google_tensor_target(
 ) -> tuple[str, str]:
   """Returns tuple of (manufacturer, model) for the given Google Tensor target."""
   return str(target.soc_manufacturer), str(target.soc_model).replace('_', ' ')
+
+
+def _process_exynos_target(
+    target: exynos_target.Target,
+) -> tuple[str, str]:
+  """Returns tuple of (manufacturer, model) for the given ENN target."""
+  return str(target.soc_manufacturer), str(target.soc_model)
 
 
 def _write_targeting_config(

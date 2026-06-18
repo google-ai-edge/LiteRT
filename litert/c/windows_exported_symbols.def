@@ -91,6 +91,7 @@ EXPORTS
   LiteRtCreateManagedTensorBufferFromRequirements
   LiteRtCreateMetrics
   LiteRtCreateModelFromBuffer
+  LiteRtCreateModelFromFd
   LiteRtCreateModelFromFile
   LiteRtCreateOpaqueOptions
   LiteRtCreateOptions
@@ -108,6 +109,7 @@ EXPORTS
   LiteRtCreateTensorBufferRequirements
   LiteRtCreateTensorBufferRequirementsWithAlignment
   LiteRtDestroyCompiledModel
+  LiteRtDestroyDelegateWrapper
   LiteRtDestroyEnvironment
   LiteRtDestroyEvent
   LiteRtDestroyMetrics
@@ -142,7 +144,7 @@ EXPORTS
   LiteRtGetBatchMatmulAdjXOption
   LiteRtGetBatchMatmulAdjYOption
   LiteRtGetBatchMatmulAsymmetricQuantizeInputOption
-  LiteRtGetCompiledModelEnvironment
+  LiteRtGetBlockWiseQuantization
   LiteRtGetCompiledModelInputBufferRequirements
   LiteRtGetCompiledModelInputTensorLayout
   LiteRtGetCompiledModelOutputBufferRequirements
@@ -271,6 +273,7 @@ EXPORTS
   LiteRtGetStridedSliceShrinkAxisMaskOption
   LiteRtGetSubFusedActivationOption
   LiteRtGetSubgraphInput
+  LiteRtGetSubgraphName
   LiteRtGetSubgraphOp
   LiteRtGetSubgraphOutput
   LiteRtGetSumKeepDimsOption
@@ -335,7 +338,6 @@ EXPORTS
   LiteRtSetCompiledModelCancellationFunction
   LiteRtSetCustomEvent
   LiteRtSetDelegateFunction
-  LiteRtSetEnvironmentOptionsValue
   LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation
   LiteRtSetOpaqueOptionsHash
   LiteRtSetOptionsHardwareAccelerators

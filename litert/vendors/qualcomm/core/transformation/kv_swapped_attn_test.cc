@@ -116,81 +116,62 @@ TEST(MHASHATest, FastVlmKVSwapped) {
       kMulVal.size() * sizeof(kMulVal[0]), kMulVal.data());
   auto& q_scale_mul_output =
       tensor_pool.CloneNativeTensorFrom(q_scale_in, {1, 16, 128, 128});
-  auto q_scale_mul = BuildElementwiseMulOp(
-      tensor_pool, {q_scale_in, q_scale_mul_const}, {q_scale_mul_output});
-  std::move(q_scale_mul.begin(), q_scale_mul.end(),
-            std::back_inserter(op_wrappers));
+  op_wrappers.emplace_back(CreateElementWiseMulOp(q_scale_in, q_scale_mul_const,
+                                                  q_scale_mul_output));
 
   // QScaleReshape
   auto& q_scale_reshape_output =
       tensor_pool.CloneNativeTensorFrom(q_scale_mul_output, {1, 8, 256, 128});
-  auto q_scale_reshape = BuildReshapeOp(tensor_pool, {q_scale_mul_output},
-                                        {q_scale_reshape_output});
-  std::move(q_scale_reshape.begin(), q_scale_reshape.end(),
-            std::back_inserter(op_wrappers));
+  op_wrappers.emplace_back(
+      CreateReshapeOp(q_scale_mul_output, q_scale_reshape_output));
 
   // QKCacheMatmul
   auto& k_cache = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_SFIXED_POINT_16, quant_param, {1, 8, 128, 2048});
   auto& q_kcache_matmul_output = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_SFIXED_POINT_16, quant_param, {1, 8, 256, 2048});
-  auto q_kcache_matmul =
-      BuildMatmulOp(tensor_pool, {q_scale_reshape_output, k_cache},
-                    {q_kcache_matmul_output}, false, false);
-  std::move(q_kcache_matmul.begin(), q_kcache_matmul.end(),
-            std::back_inserter(op_wrappers));
+  op_wrappers.emplace_back(CreateMatmulOp(
+      q_scale_reshape_output, k_cache, q_kcache_matmul_output, false, false));
 
   // QKSliceMatmul
   auto& k_slice = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
                                                  quant_param, {1, 8, 128, 128});
   auto& q_kslice_matmul_output = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_SFIXED_POINT_16, quant_param, {1, 8, 256, 128});
-  auto q_kslice_matmul =
-      BuildMatmulOp(tensor_pool, {q_scale_reshape_output, k_slice},
-                    {q_kslice_matmul_output}, false, false);
-  std::move(q_kslice_matmul.begin(), q_kslice_matmul.end(),
-            std::back_inserter(op_wrappers));
+  op_wrappers.emplace_back(CreateMatmulOp(
+      q_scale_reshape_output, k_slice, q_kslice_matmul_output, false, false));
 
   // QKConcat
   auto& qk_concat_output = tensor_pool.CloneNativeTensorFrom(
       q_kcache_matmul_output, {1, 8, 256, 2176});
-  auto qk_concat = BuildConcatenationOp(
-      tensor_pool, {q_kcache_matmul_output, q_kslice_matmul_output},
-      {qk_concat_output}, 3);
-  std::move(qk_concat.begin(), qk_concat.end(),
-            std::back_inserter(op_wrappers));
+  op_wrappers.emplace_back(CreateConcatenationOp(
+      {q_kcache_matmul_output, q_kslice_matmul_output}, qk_concat_output, 3));
 
   // PreMaskReshape
   auto& premask_reshape_output =
       tensor_pool.CloneNativeTensorFrom(qk_concat_output, {8, 2, 128, 2176});
-  auto premask_reshape =
-      BuildReshapeOp(tensor_pool, {qk_concat_output}, {premask_reshape_output});
-  std::move(premask_reshape.begin(), premask_reshape.end(),
-            std::back_inserter(op_wrappers));
+  op_wrappers.emplace_back(
+      CreateReshapeOp(qk_concat_output, premask_reshape_output));
 
   // MaskAdd
   auto& mask = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
                                               quant_param, {1, 1, 128, 2176});
   auto& mask_add_output =
       tensor_pool.CloneNativeTensorFrom(premask_reshape_output);
-  auto mask_add = BuildElementwiseAddOp(
-      tensor_pool, {premask_reshape_output, mask}, {mask_add_output});
-  std::move(mask_add.begin(), mask_add.end(), std::back_inserter(op_wrappers));
+  op_wrappers.emplace_back(
+      CreateElementWiseAddOp(premask_reshape_output, mask, mask_add_output));
 
   // PostMaskReshape
   auto& postmask_reshape_output =
       tensor_pool.CloneNativeTensorFrom(mask_add_output, {1, 8, 256, 2176});
-  auto postmask_reshape =
-      BuildReshapeOp(tensor_pool, {mask_add_output}, {postmask_reshape_output});
-  std::move(postmask_reshape.begin(), postmask_reshape.end(),
-            std::back_inserter(op_wrappers));
+  op_wrappers.emplace_back(
+      CreateReshapeOp(mask_add_output, postmask_reshape_output));
 
   // Softmax
   auto& softmax_output =
       tensor_pool.CloneNativeTensorFrom(postmask_reshape_output);
-  auto softmax = BuildSoftmaxOp(tensor_pool, {postmask_reshape_output},
-                                {softmax_output}, 1.0f);
-  std::move(softmax.begin(), softmax.end(), std::back_inserter(op_wrappers));
+  op_wrappers.emplace_back(
+      CreateSoftmaxOp(postmask_reshape_output, softmax_output, 1.0f));
 
   // QKVCacheSlice
   constexpr std::array<int32_t, 4> kQKVCacheSliceBeginData{0, 0, 0, 0};
@@ -237,38 +218,27 @@ TEST(MHASHATest, FastVlmKVSwapped) {
       QNN_DATATYPE_SFIXED_POINT_16, quant_param, {1, 8, 2048, 128});
   auto& qk_vcache_matmul_output = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_SFIXED_POINT_16, quant_param, {1, 8, 256, 128});
-  auto qk_vcache_matmul =
-      BuildMatmulOp(tensor_pool, {qk_vcache_slice_output, v_cache},
-                    {qk_vcache_matmul_output}, false, false);
-  std::move(qk_vcache_matmul.begin(), qk_vcache_matmul.end(),
-            std::back_inserter(op_wrappers));
+  op_wrappers.emplace_back(CreateMatmulOp(
+      qk_vcache_slice_output, v_cache, qk_vcache_matmul_output, false, false));
 
   // QKVSliceMatmul
   auto& v_slice =
       tensor_pool.CloneNativeTensorFrom(q_scale_mul_output, {1, 8, 128, 128});
   auto& qk_vslice_matmul_output = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_SFIXED_POINT_16, quant_param, {1, 8, 256, 128});
-  auto qk_vslice_matmul =
-      BuildMatmulOp(tensor_pool, {qk_vslice_slice_output, v_slice},
-                    {qk_vslice_matmul_output}, false, false);
-  std::move(qk_vslice_matmul.begin(), qk_vslice_matmul.end(),
-            std::back_inserter(op_wrappers));
+  op_wrappers.emplace_back(CreateMatmulOp(
+      qk_vslice_slice_output, v_slice, qk_vslice_matmul_output, false, false));
 
   // QKVAdd
   auto& qkv_add_output =
       tensor_pool.CloneNativeTensorFrom(qk_vslice_matmul_output);
-  auto qkv_add = BuildElementwiseAddOp(
-      tensor_pool, {qk_vcache_matmul_output, qk_vslice_matmul_output},
-      {qkv_add_output});
-  std::move(qkv_add.begin(), qkv_add.end(), std::back_inserter(op_wrappers));
+  op_wrappers.emplace_back(CreateElementWiseAddOp(
+      qk_vcache_matmul_output, qk_vslice_matmul_output, qkv_add_output));
 
   // QKVReshape
   auto& qkv_reshape_output =
       tensor_pool.CloneNativeTensorFrom(qkv_add_output, {1, 16, 128, 128});
-  auto qkv_reshape =
-      BuildReshapeOp(tensor_pool, {qkv_add_output}, {qkv_reshape_output});
-  std::move(qkv_reshape.begin(), qkv_reshape.end(),
-            std::back_inserter(op_wrappers));
+  op_wrappers.emplace_back(CreateReshapeOp(qkv_add_output, qkv_reshape_output));
 
   // QKVTranspose
   constexpr std::array<int32_t, 4> kQKVTransposeVal = {0, 2, 1, 3};
@@ -287,10 +257,8 @@ TEST(MHASHATest, FastVlmKVSwapped) {
   // OProjReshape
   auto& oproj_reshape_output =
       tensor_pool.CloneNativeTensorFrom(qkv_transpose_output, {1, 128, 2048});
-  auto oproj_reshape = BuildReshapeOp(tensor_pool, {qkv_transpose_output},
-                                      {oproj_reshape_output});
-  std::move(oproj_reshape.begin(), oproj_reshape.end(),
-            std::back_inserter(op_wrappers));
+  op_wrappers.emplace_back(
+      CreateReshapeOp(qkv_transpose_output, oproj_reshape_output));
 
   ASSERT_EQ(op_wrappers.size(), 17);
 

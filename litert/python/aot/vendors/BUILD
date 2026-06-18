@@ -22,6 +22,10 @@ package(
 pytype_strict_contrib_test(
     name = "import_vendor_test",
     srcs = ["import_vendor_test.py"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":import_vendor",
         "//litert/python/aot/core:aot_types",

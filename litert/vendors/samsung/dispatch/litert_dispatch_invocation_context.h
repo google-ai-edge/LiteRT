@@ -15,8 +15,8 @@
 // Copyright (C) 2026 Samsung Electronics Co. LTD.
 // SPDX-License-Identifier: Apache-2.0
 
-#ifndef LITERT_VENDORS_SAMSUNG_DISPATCH_INVOCATION_CONTEXT_H_
-#define LITERT_VENDORS_SAMSUNG_DISPATCH_INVOCATION_CONTEXT_H_
+#ifndef ODML_LITERT_VENDORS_SAMSUNG_DISPATCH_INVOCATION_CONTEXT_H_
+#define ODML_LITERT_VENDORS_SAMSUNG_DISPATCH_INVOCATION_CONTEXT_H_
 
 #include <optional>
 
@@ -60,6 +60,15 @@ class LiteRtDispatchInvocationContextT {
 
   litert::Expected<void> Invoke();
 
+  litert::Expected<EnnBufferPtr*> GetEnnCommittedBuffer(void) const {
+    return committed_buf_;
+  }
+
+  litert::Expected<void> SetEnnCommittedBuffer(EnnBufferPtr* update) {
+    committed_buf_ = update;
+    return {};
+  }
+
   void SetSchedulingInfo(const LiteRtSchedulingInfo* scheduling_info) {
     if (scheduling_info == nullptr) {
       scheduling_info_ = std::nullopt;
@@ -81,12 +90,18 @@ class LiteRtDispatchInvocationContextT {
   litert::Expected<void> SetInputBuffers() const;
   litert::Expected<void> SetOutputBuffers() const;
 
+  void SetWeightSignatures(std::vector<std::string> signatures) {
+    weight_signatures_ = std::move(signatures);
+  }
+
   const ::litert::samsung::EnnManager* enn_manager_;
   LiteRtDispatchDeviceContext device_context_;
   std::optional<LiteRtSchedulingInfo> scheduling_info_;
   EnnModelId model_id_;
   std::vector<EnnBufferPtr> inputs_buf_;
   std::vector<EnnBufferPtr> outputs_buf_;
+  std::vector<std::string> weight_signatures_;
+  EnnBufferPtr* committed_buf_;
 };
 
-#endif  // LITERT_VENDORS_SAMSUNG_DISPATCH_INVOCATION_CONTEXT_H_
+#endif  // ODML_LITERT_VENDORS_SAMSUNG_DISPATCH_INVOCATION_CONTEXT_H_

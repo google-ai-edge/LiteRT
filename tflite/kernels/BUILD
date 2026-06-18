@@ -157,6 +157,7 @@ cc_library(
         "//tflite/core/kernels:builtin_ops",
         "//tflite/delegates/nnapi:acceleration_test_util",
         "//tflite/delegates/nnapi:nnapi_delegate",
+        "//tflite/kernels/internal:runtime_shape",
         "//tflite/kernels/internal:tensor_ctypes",
         "//tflite/kernels/internal:tensor_utils",
         "//tflite/kernels/internal/utils:sparsity_format_converter",
@@ -1256,6 +1257,7 @@ cc_test(
         "//tflite/kernels/internal:tensor_utils_no_eigen",
         "//tflite/kernels/internal:types",
         "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
     ],
@@ -1356,7 +1358,9 @@ cc_library(
     name = "stablehlo_reduce_window_test_util",
     hdrs = ["stablehlo_reduce_window_test_util.h"],
     deps = [
+        "//tflite:util",
         "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/log:absl_check",
     ],
 )
 
@@ -1762,6 +1766,7 @@ cc_test(
         "//tflite/core/c:common",
         "//tflite/kernels/internal:tensor_utils_no_eigen",
         "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -2091,6 +2096,8 @@ cc_test(
     deps = [
         ":test_main",
         ":test_util",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
         "//tflite/core/c:common",
         "//tflite/kernels/internal:tensor_utils",
         "//tflite/schema:schema_fbs",
@@ -2637,6 +2644,7 @@ cc_test(
     deps = [
         ":test_main",
         ":test_util",
+        "//tflite/c:c_api_types",
         "//tflite/core/c:common",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",

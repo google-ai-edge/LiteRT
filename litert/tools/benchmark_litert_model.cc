@@ -81,12 +81,13 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   auto use_npu = params.Get<bool>("use_npu");
   auto use_cpu = params.Get<bool>("use_cpu");
   auto gpu_backend = params.Get<std::string>("gpu_backend");
-  auto allow_fp16 = params.Get<bool>("allow_fp16");
+  auto gpu_precision = params.Get<std::string>("gpu-precision");
   auto gpu_low_priority = params.Get<bool>("gpu_low_priority");
   auto use_profiler = params.Get<bool>("use_profiler");
   auto require_full_delegation = params.Get<bool>("require_full_delegation");
   auto num_threads = params.Get<int>("num_threads");
   auto enable_weight_sharing = params.Get<bool>("enable_weight_sharing");
+  auto convert_weights_on_gpu = params.Get<bool>("convert_weights_on_gpu");
   auto mediatek_nerun_pilot_version =
       params.Get<std::string>("mediatek_nerun_pilot_version");
   LITERT_ASSIGN_OR_ABORT(Options compilation_options,
@@ -120,10 +121,10 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
                            compilation_options.GetMediatekOptions());
     if (mediatek_nerun_pilot_version == "version9") {
       mtk_opts.SetNeronSDKVersionType(
-          kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9);
+          litert::mediatek::MediatekOptions::NeronSDKVersion::kVersion9);
     }
     mtk_opts.SetPerformanceMode(
-        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferTurboBoost);
+        litert::mediatek::MediatekOptions::PerformanceMode::kTurboBoost);
     mtk_opts.SetEnableL1CacheOptimizations(true);
 
     // Google Tensor options
@@ -152,14 +153,25 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     } else if (gpu_backend == "opengl" || gpu_backend == "gl") {
       gpu_options.SetBackend(GpuOptions::Backend::kOpenGl);
     }
-    if (allow_fp16 == false) {
+    if (gpu_precision == "fp32") {
       gpu_options.SetPrecision(GpuOptions::Precision::kFp32);
+    } else if (gpu_precision == "fp16") {
+      gpu_options.SetPrecision(GpuOptions::Precision::kFp16);
+    } else if (gpu_precision == "auto") {
+      gpu_options.SetPrecision(GpuOptions::Precision::kDefault);
+    } else {
+      LITERT_LOG(LITERT_ERROR, "Invalid gpu-precision: %s",
+                 gpu_precision.c_str());
+      std::abort();
     }
     if (gpu_low_priority) {
       gpu_options.SetPriority(GpuOptions::Priority::kLow);
     }
     if (enable_weight_sharing) {
       gpu_options.EnableConstantTensorSharing(true);
+    }
+    if (convert_weights_on_gpu) {
+      gpu_options.SetConvertWeightsOnGpu(true);
     }
 
     auto use_profiler = params.Get<bool>("use_profiler");
@@ -240,9 +252,10 @@ litert::Expected<Environment> CreateDefaultEnvironment(
 TfLiteStatus BenchmarkLiteRtModel::LoadModel() {
   std::string fd_or_graph_path = params_.Get<std::string>("graph");
   LITERT_LOG(LITERT_INFO, "Loading model from: %s", fd_or_graph_path.c_str());
-  LITERT_ASSIGN_OR_RETURN(auto model_result,
-                          litert::Model::CreateFromFile(fd_or_graph_path),
-                          AsTfLiteStatus(_ << "Failed to load model."));
+  LITERT_ASSIGN_OR_RETURN(
+      auto model_result,
+      litert::Model::CreateFromFile(*environment_, fd_or_graph_path),
+      AsTfLiteStatus(_ << "Failed to load model."));
   model_ = std::make_unique<litert::Model>(std::move(model_result));
   return kTfLiteOk;
 }
@@ -289,12 +302,12 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
     litert::internal::InitializePerfetto();
   }
 
-  TF_LITE_ENSURE_STATUS(LoadModel());
-
   LITERT_ASSIGN_OR_RETURN(
       auto env_result, CreateDefaultEnvironment(params_),
       AsTfLiteStatus(_ << "Failed to create litert environment."));
   environment_ = std::make_unique<litert::Environment>(std::move(env_result));
+
+  TF_LITE_ENSURE_STATUS(LoadModel());
 
   auto compilation_options = CreateCompiledModelOptions(params_);
   LITERT_ASSIGN_OR_RETURN(auto compiled_model_result,
@@ -380,7 +393,7 @@ TfLiteStatus BenchmarkLiteRtModel::PrepareInputData() {
     auto res = buffer.Write<char>(absl::MakeSpan(
         reinterpret_cast<char*>(t_data.data.get()), t_data.bytes));
     if (!res.HasValue()) {
-      LITERT_LOG(LITERT_ERROR, "PrepareInputData: %s",
+      LITERT_LOG(LITERT_ERROR, "PrepareInputData '%s' failed: %s", name.c_str(),
                  res.Error().Message().c_str());
       return kTfLiteError;
     }

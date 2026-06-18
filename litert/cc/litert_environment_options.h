@@ -20,10 +20,9 @@
 #include <variant>
 #include <vector>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_any.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 
@@ -79,13 +78,21 @@ class EnvironmentOptions {
     /// Singleton ML Drift WebGPU/Dawn instance. Required for shared libraries
     /// to prevent them from creating their own instances.
     kWebGpuInstance = kLiteRtEnvOptionTagWebGpuInstance,
+    // TODO(b/515525631): Remove kWebGpuProcs once downstream dependencies are
+    // updated.
     /// Dawn procedure table pointer. This allows shared libraries to use the
     /// shared procedures instead of their own.
-    kWebGpuProcs = kLiteRtEnvOptionTagWebGpuProcs,
+    kWebGpuProcs = kLiteRtEnvOptionTagWebGpuProcs,  // Deprecated.
     /// Directory for the runtime library.
     kRuntimeLibraryDir = kLiteRtEnvOptionTagRuntimeLibraryDir,
     /// \internal This is for internal use only.
     kSystemRuntimeHandle = kLiteRtEnvOptionTagSystemRuntimeHandle,
+    /// Maximum number of configurations to store per model in the compiler
+    /// cache.
+    kCompilerCacheMaxConfigsPerModel =
+        kLiteRtEnvOptionTagCompilerCacheMaxConfigsPerModel,
+    /// Maximum total size of the compiler cache in bytes.
+    kCompilerCacheMaxTotalSize = kLiteRtEnvOptionTagCompilerCacheMaxTotalSize,
     /// Bitmask of LiteRtHwAccelerators to auto-register during environment
     /// creation. If unset, LiteRT auto-registers all supported accelerators.
     kAutoRegisterAccelerators = kLiteRtEnvOptionTagAutoRegisterAccelerators,
@@ -100,8 +107,8 @@ class EnvironmentOptions {
     std::string str_value;
 
     Option(Tag param_tag, LiteRtVariant param_value) : tag(param_tag) {
-      if (std::holds_alternative<absl::string_view>(param_value)) {
-        str_value = std::get<absl::string_view>(param_value);
+      if (std::holds_alternative<StringView>(param_value)) {
+        str_value = std::get<StringView>(param_value);
         value = str_value.c_str();
       } else if (std::holds_alternative<const char*>(param_value)) {
         str_value = std::get<const char*>(param_value);
@@ -158,13 +165,13 @@ class EnvironmentOptions {
   /// Constructs an `EnvironmentOptions` object from a span of options.
   /// @param options A span of `Option` objects to initialize the environment
   /// options with.
-  explicit EnvironmentOptions(absl::Span<const Option> options)
+  explicit EnvironmentOptions(Span<const Option> options)
       : options_(options.begin(), options.end()) {}
 
   /// Retrieves all options.
   /// @return A span of all options.
-  absl::Span<const Option> GetOptions() const {
-    return absl::MakeConstSpan(options_);
+  Span<const Option> GetOptions() const {
+    return internal::MakeLiteRtConstSpan(options_);
   }
 
   /// Retrieves the value of an option specified by a tag.

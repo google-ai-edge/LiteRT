@@ -59,6 +59,9 @@ struct ConvertToTFLConfig {
 
   // If false, downcast x64 tensors and inputs to x32.
   bool enable_x64 = true;
+
+  // If true, enable unsafe single batch rank reduction.
+  bool unsafe_single_batch_rank_reduction = false;
 };
 
 struct NumpyArrayMeta {

@@ -14,6 +14,7 @@
 
 """Utilities for generating device scripts with starlark."""
 
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@rules_platform//platform_data:defs.bzl", "platform_data")
 load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
 
@@ -34,6 +35,9 @@ def device_rlocation(label = None, get_parent = False):
     if not label:
         return DEVICE_RLOCATION_ROOT
     abs_label = absolute_label(label)
+    if "exynos_ai_litecore" in abs_label:
+        abs_label = abs_label.replace(":lib_arm64_v8a", ":lib/arm64-v8a/")
+        abs_label = abs_label.replace(":lib_x86_64_linux", ":lib/x86_64-linux/")
     res = DEVICE_RLOCATION_ROOT + "/" + abs_label.replace("@", "external/").replace("//", "").replace(":", "/")
     if get_parent:
         return res[:res.rfind("/")]
@@ -147,8 +151,16 @@ def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, 
 # QUALCOMM
 
 def _QualcommSpec(version = "V75"):
-    stub_lib = "@qairt//:lib/aarch64-android/libQnnHtp%sStub.so" % version
-    skel_lib = "@qairt//:lib/hexagon-%s/unsigned/libQnnHtp%sSkel.so" % (version.lower(), version.upper())
+    # copybara:uncomment_begin(google-only)
+    # stub_lib = "//litert/integration_test:libQnnHtp%sStub.so" % version
+    # skel_lib = "//litert/integration_test:libQnnHtp%sSkel.so" % version
+    #
+    # copybara:uncomment_end
+    # copybara:comment_begin
+    stub_lib = "@qairt//:libQnnHtp%sStub.so" % version
+    skel_lib = "@qairt//:libQnnHtp%sSkel.so" % version
+
+    # copybara:comment_end
     version_suffix = version.lower()
     id = "qualcomm_%s" % version_suffix
 
@@ -172,11 +184,23 @@ def _QualcommSpec(version = "V75"):
         id: BackendSpec(
             id = id,
             libs = [
-                ("@qairt//:lib/aarch64-android/libQnnHtp.so", "LD_LIBRARY_PATH"),
+                # copybara:uncomment_begin(google-only)
+                # ("//litert/integration_test:libQnnHtp.so", "LD_LIBRARY_PATH"),
+                # (stub_lib, "LD_LIBRARY_PATH"),
+                # ("//litert/integration_test:libQnnSystem.so", "LD_LIBRARY_PATH"),
+                # ("//litert/integration_test:libQnnHtpPrepare.so", "LD_LIBRARY_PATH"),
+                # ("//litert/integration_test:libQnnIr.so", "LD_LIBRARY_PATH"),
+                # ("//litert/integration_test:libQnnSaver.so", "LD_LIBRARY_PATH"),
+                # (skel_lib, "ADSP_LIBRARY_PATH"),
+                # copybara:uncomment_end_and_comment_begin
+                ("@qairt//:libQnnHtp.so", "LD_LIBRARY_PATH"),
                 (stub_lib, "LD_LIBRARY_PATH"),
-                ("@qairt//:lib/aarch64-android/libQnnSystem.so", "LD_LIBRARY_PATH"),
-                ("@qairt//:lib/aarch64-android/libQnnHtpPrepare.so", "LD_LIBRARY_PATH"),
+                ("@qairt//:libQnnSystem.so", "LD_LIBRARY_PATH"),
+                ("@qairt//:libQnnHtpPrepare.so", "LD_LIBRARY_PATH"),
+                ("@qairt//:libQnnIr.so", "LD_LIBRARY_PATH"),
+                ("@qairt//:libQnnSaver.so", "LD_LIBRARY_PATH"),
                 (skel_lib, "ADSP_LIBRARY_PATH"),
+                # copybara:comment_end
                 ("//litert/vendors/qualcomm/dispatch:libLiteRtDispatch_Qualcomm.so", "LD_LIBRARY_PATH"),
                 ("//litert/vendors/qualcomm/compiler:libLiteRtCompilerPlugin_Qualcomm.so", "LD_LIBRARY_PATH"),
             ],
@@ -184,8 +208,17 @@ def _QualcommSpec(version = "V75"):
             plugin = "libLiteRtCompilerPlugin_Qualcomm.so",
             dispatch = "libLiteRtDispatch_Qualcomm.so",
             host_libs = [
-                "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
-                "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
+                # copybara:uncomment_begin(google-only)
+                # "//litert/integration_test:libQnnHtp.so",
+                # "//litert/integration_test:libQnnSystem.so",
+                # "//litert/integration_test:libQnnIr.so",
+                # "//litert/integration_test:libQnnSaver.so",
+                # copybara:uncomment_end_and_comment_begin
+                "@qairt//:libQnnHtp.so",
+                "@qairt//:libQnnSystem.so",
+                "@qairt//:libQnnIr.so",
+                "@qairt//:libQnnSaver.so",
+                # copybara:comment_end
             ],
             version_target_suffix = version_suffix,
         ),
@@ -272,6 +305,39 @@ def _GoogleTensorSpec():
         ),
     }
 
+# SAMSUNG
+
+def _SamsungSpec():
+    return {
+        "samsung": BackendSpec(
+            id = "samsung",
+            libs = [
+                ("//litert/vendors/samsung/dispatch:libLiteRtDispatch_Samsung.so", "LD_LIBRARY_PATH"),
+                ("//litert/vendors/samsung/compiler:libLiteRtCompilerPlugin_Samsung.so", "LD_LIBRARY_PATH"),
+                # copybara:uncomment_begin(google-only)
+                # ("//third_party/odml/litert/opensource_only/third_party/exynos_ai_litecore:lib_arm64_v8a", "LD_LIBRARY_PATH"),
+                # copybara:uncomment_end(google-only)
+                # copybara:comment_begin(oss samsung)
+                ("@exynos_ai_litecore//:lib_arm64_v8a", "LD_LIBRARY_PATH"),
+                # copybara:comment_end
+            ],
+            plugin = "libLiteRtCompilerPlugin_Samsung.so",
+            dispatch = "libLiteRtDispatch_Samsung.so",
+            mh_devices = [{
+                "hardware": "E9965",
+                "pool": "shared",
+            }],
+            host_libs = [
+                # copybara:uncomment_begin(google-only)
+                # "//third_party/odml/litert/opensource_only/third_party/exynos_ai_litecore:lib_x86_64_linux",
+                # copybara:uncomment_end(google-only)
+                # copybara:comment_begin(oss samsung)
+                "@exynos_ai_litecore//:lib_x86_64_linux",
+                # copybara:comment_end
+            ],
+        ),
+    }
+
 # EXAMPLE
 
 def _ExampleSpec():
@@ -314,11 +380,11 @@ def _GpuSpec():
 # COMMON
 
 def _Specs(name):
-    return (_QualcommSpec() | _QualcommSpec("V79") | _GoogleTensorSpec() | _MediatekSpec() | _IntelOpenVinoSpec() | _CpuSpec() | _GpuSpec() | _ExampleSpec())[name]
+    return (_QualcommSpec() | _QualcommSpec("V79") | _GoogleTensorSpec() | _MediatekSpec() | _IntelOpenVinoSpec() | _SamsungSpec() | _CpuSpec() | _GpuSpec() | _ExampleSpec())[name]
 
 # Check if the backend maps to an NPU backend.
 def is_npu_backend(name):
-    return "qualcomm" in name or name in ["mediatek", "google_tensor", "intel_openvino", "example"]
+    return "qualcomm" in name or name in ["mediatek", "google_tensor", "intel_openvino", "samsung", "example"]
 
 # Get the libs for the given backend.
 def get_libs(name):
@@ -419,3 +485,33 @@ def split_dep_platform(
             device.append(":" + device_name)
 
     return struct(host = host, device = device)
+
+def _cc_import_files_impl(ctx):
+    cc_info = ctx.attr.target[CcInfo]
+    libs = []
+    for linker_input in cc_info.linking_context.linker_inputs.to_list():
+        for library in linker_input.libraries:
+            if library.dynamic_library:
+                libs.append(library.dynamic_library)
+            elif library.interface_library:
+                libs.append(library.interface_library)
+
+    out_files = []
+    for f in libs:
+        out = ctx.actions.declare_file(f.basename)
+        ctx.actions.run_shell(
+            outputs = [out],
+            inputs = [f],
+            command = "cp -f '{}' '{}'".format(f.path, out.path),
+            mnemonic = "CopyCcImportFile",
+        )
+        out_files.append(out)
+
+    return [DefaultInfo(files = depset(out_files))]
+
+cc_import_files = rule(
+    implementation = _cc_import_files_impl,
+    attrs = {
+        "target": attr.label(providers = [CcInfo]),
+    },
+)

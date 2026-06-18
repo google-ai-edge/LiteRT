@@ -40,6 +40,10 @@ pytype_strict_library(
 pytype_strict_contrib_test(
     name = "qualcomm_backend_test",
     srcs = ["qualcomm_backend_test.py"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":qualcomm_backend",
         ":target",

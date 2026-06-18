@@ -112,6 +112,12 @@ void Options::SetEnableWeightSharing(bool enable_weight_sharing) {
 
 bool Options::GetEnableWeightSharing() const { return enable_weight_sharing_; }
 
+void Options::SetEnableJustInTime(bool enable_just_in_time) {
+  enable_just_in_time_ = enable_just_in_time;
+}
+
+bool Options::GetEnableJustInTime() const { return enable_just_in_time_; }
+
 void Options::SetUseConvHMX(bool use_conv_hmx) { use_conv_hmx_ = use_conv_hmx; }
 
 bool Options::GetUseConvHMX() const { return use_conv_hmx_; }
@@ -121,6 +127,12 @@ void Options::SetUseFoldReLU(bool use_fold_relu) {
 }
 
 bool Options::GetUseFoldReLU() const { return use_fold_relu_; }
+
+void Options::SetHtpPPoint(std::int32_t htp_p_point) {
+  htp_p_point_ = htp_p_point;
+}
+
+std::int32_t Options::GetHtpPPoint() const { return htp_p_point_; }
 
 void Options::SetHtpPerformanceMode(HtpPerformanceMode htp_performance_mode) {
   htp_performance_mode_ = htp_performance_mode;
@@ -180,6 +192,20 @@ void Options::SetGraphPriority(GraphPriority graph_priority) {
   graph_priority_ = graph_priority;
 }
 
+void Options::SetGpuPrecision(GpuPrecision gpu_precision) {
+  gpu_precision_ = gpu_precision;
+}
+
+GpuPrecision Options::GetGpuPrecision() const { return gpu_precision_; }
+
+void Options::SetGpuPerformanceMode(GpuPerformanceMode gpu_performance_mode) {
+  gpu_performance_mode_ = gpu_performance_mode;
+}
+
+GpuPerformanceMode Options::GetGpuPerformanceMode() const {
+  return gpu_performance_mode_;
+}
+
 absl::string_view Options::GetSaverOutputDir() const {
   return saver_output_dir_;
 }
@@ -196,6 +222,22 @@ GraphIOTensorMemType Options::GetGraphIOTensorMemType() const {
   return graph_io_tensor_mem_type_;
 }
 
+void Options::SetCustomOpPackage(absl::string_view name,
+                                 absl::string_view interface_provider,
+                                 absl::string_view compile_package_path,
+                                 absl::string_view dispatch_package_path,
+                                 absl::string_view target) {
+  custom_op_package_.name = name;
+  custom_op_package_.interface_provider = interface_provider;
+  custom_op_package_.compile_package_path = compile_package_path;
+  custom_op_package_.dispatch_package_path = dispatch_package_path;
+  custom_op_package_.target = target;
+}
+
+const CustomOpPackage& Options::GetCustomOpPackage() const {
+  return custom_op_package_;
+}
+
 std::string Options::Dump() const {
   static constexpr absl::string_view kQnnOptionsDumpFormat =
       "\
@@ -205,10 +247,14 @@ BackendType: %d\n\
 Profiling: %d\n\
 UseInt64BiasAsInt32: %v\n\
 EnableWeightSharing: %v\n\
+EnableJustInTime: %v\n\
 UseConvHMX: %v\n\
 UseFoldReLU: %v\n\
+HtpPPoint: %d\n\
 HtpPerformanceMode: %d\n\
 DspPerformanceMode: %d\n\
+GpuPerformanceMode: %d\n\
+GpuPrecision: %d\n\
 DumpTensorIds: %s\n\
 IrJsonDir: %s\n\
 DlcDir: %s\n\
@@ -217,17 +263,28 @@ HvxThread: %d\n\
 OptimizationLevel: %d\n\
 GraphPriority: %d\n\
 SaverOutputDir: %s\n\
-GraphIOTensorMemType: %d\n";  // NOLINT
+GraphIOTensorMemType: %d\n\
+CustomOpPackage: {\n\
+  name: %s\n\
+  interface_provider: %s\n\
+  compile_package_path: %s\n\
+  dispatch_package_path: %s\n\
+  target: %s\n\
+}";  // NOLINT
 
   std::string dump_tensor_ids = absl::StrJoin(dump_tensor_ids_, ",");
 
-  return absl::StrFormat(kQnnOptionsDumpFormat, log_level_, backend_type_,
-                         profiling_, use_int64_bias_as_int32_,
-                         enable_weight_sharing_, use_conv_hmx_, use_fold_relu_,
-                         htp_performance_mode_, dsp_performance_mode_,
-                         dump_tensor_ids, ir_json_dir_, dlc_dir_, vtcm_size_,
-                         num_hvx_threads_, optimization_level_, graph_priority_,
-                         saver_output_dir_, graph_io_tensor_mem_type_);
+  return absl::StrFormat(
+      kQnnOptionsDumpFormat, log_level_, backend_type_, profiling_,
+      use_int64_bias_as_int32_, enable_weight_sharing_, enable_just_in_time_,
+      use_conv_hmx_, use_fold_relu_, htp_p_point_, htp_performance_mode_,
+      dsp_performance_mode_, gpu_performance_mode_, gpu_precision_,
+      dump_tensor_ids, ir_json_dir_, dlc_dir_, vtcm_size_, num_hvx_threads_,
+      optimization_level_, graph_priority_, saver_output_dir_,
+      graph_io_tensor_mem_type_, custom_op_package_.name,
+      custom_op_package_.interface_provider,
+      custom_op_package_.compile_package_path,
+      custom_op_package_.dispatch_package_path, custom_op_package_.target);
 }
 
 QnnLog_Callback_t GetDefaultStdOutLogger() { return DefaultStdOutLogger; }

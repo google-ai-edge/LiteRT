@@ -25,7 +25,7 @@
 
 #include "common-types.h"  // from @exynos_ai_litecore
 #include "litert/c/litert_common.h"
-#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/compiler/cc/litert_model.h"
 
 namespace litert::samsung {
 template <class T>
@@ -110,17 +110,13 @@ class OpWrapper {
     op_name_ = "litert_" + type + std::to_string(GenId());
   }
 
-  OpWrapper& AddInput(const Tensor& t) {
-    LiteRtTensor input = t.Get();
-    inputs_.emplace_back(Tensor(input));
-
+  OpWrapper& AddInput(const litert::compiler::Tensor& t) {
+    inputs_.push_back(t);
     return *this;
   }
 
-  OpWrapper& AddOutput(const Tensor& t) {
-    LiteRtTensor output = t.Get();
-    outputs_.emplace_back(Tensor(output));
-
+  OpWrapper& AddOutput(const litert::compiler::Tensor& t) {
+    outputs_.push_back(t);
     return *this;
   }
 
@@ -151,9 +147,13 @@ class OpWrapper {
     return op_params_.at(index);
   }
 
-  const std::vector<Tensor>& GetInputs() const { return inputs_; }
+  const std::vector<litert::compiler::Tensor>& GetInputs() const {
+    return inputs_;
+  }
 
-  const std::vector<Tensor>& GetOutputs() const { return outputs_; }
+  const std::vector<litert::compiler::Tensor>& GetOutputs() const {
+    return outputs_;
+  }
 
   const char* GetCName() const { return op_name_.c_str(); }
 
@@ -162,8 +162,8 @@ class OpWrapper {
  private:
   std::string op_name_;
   std::string op_type_;
-  std::vector<Tensor> inputs_;
-  std::vector<Tensor> outputs_;
+  std::vector<litert::compiler::Tensor> inputs_;
+  std::vector<litert::compiler::Tensor> outputs_;
 
   std::vector<OpParamWrapper> op_params_;
 

@@ -110,6 +110,7 @@ py_library(
     name = "tflite_converter_protos",
     srcs = [":relocated_tflite_protos"],
     imports = ["."],
+    # copybara:uncomment strict_deps = False,
     visibility = ["//visibility:public"],
     deps = ["@com_google_protobuf//:protobuf_python"],
 )

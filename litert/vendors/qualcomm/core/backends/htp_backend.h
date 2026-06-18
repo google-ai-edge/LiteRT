@@ -31,7 +31,13 @@ class HtpBackend : public QnnBackend {
   using QnnDevicePlatformInfo =
       std::unique_ptr<const QnnDevice_PlatformInfo_t, PlatformInfoDeleter>;
 
-  static const char* GetLibraryName() { return "libQnnHtp.so"; }
+  static const char* GetLibraryName() {
+#if defined(_WIN32)
+    return "QnnHtp.dll";
+#else
+    return "libQnnHtp.so";
+#endif
+  }
 
   static Qnn_Version_t GetExpectedBackendVersion() {
     Qnn_Version_t backend_version;

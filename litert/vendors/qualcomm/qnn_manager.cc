@@ -29,25 +29,7 @@
 #include <utility>
 #include <vector>
 
-#include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/str_split.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/internal/litert_logging.h"
-#include "litert/c/litert_common.h"
-#include "litert/cc/internal/litert_shared_library.h"
-#include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_macros.h"
-#include "litert/core/dynamic_loading.h"
-#include "litert/vendors/qualcomm/common.h"
-#include "litert/vendors/qualcomm/core/backends/dsp_backend.h"
-#include "litert/vendors/qualcomm/core/backends/htp_backend.h"
-#include "litert/vendors/qualcomm/core/backends/ir_backend.h"
-#include "litert/vendors/qualcomm/core/common.h"
-#include "litert/vendors/qualcomm/core/op_code.h"
-#include "litert/vendors/qualcomm/core/schema/soc_table.h"
-#include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
-#include "litert/vendors/qualcomm/qnn_saver_utils.h"
+#include "GPU/QnnGpuContext.h"  // from @qairt
 #include "HTP/QnnHtpContext.h"  // from @qairt
 #include "HTP/QnnHtpProfile.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
@@ -58,6 +40,27 @@
 #include "System/QnnSystemCommon.h"  // from @qairt
 #include "System/QnnSystemContext.h"  // from @qairt
 #include "System/QnnSystemInterface.h"  // from @qairt
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_split.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
+#include "litert/c/litert_common.h"
+#include "litert/cc/internal/litert_shared_library.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/core/dynamic_loading.h"
+#include "litert/core/filesystem.h"
+#include "litert/vendors/qualcomm/common.h"
+#include "litert/vendors/qualcomm/core/backends/dsp_backend.h"
+#include "litert/vendors/qualcomm/core/backends/gpu_backend.h"
+#include "litert/vendors/qualcomm/core/backends/htp_backend.h"
+#include "litert/vendors/qualcomm/core/backends/ir_backend.h"
+#include "litert/vendors/qualcomm/core/common.h"
+#include "litert/vendors/qualcomm/core/op_code.h"
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
+#include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
+#include "litert/vendors/qualcomm/qnn_saver_utils.h"
 
 namespace {
 static constexpr int kRequiredNumProviders{1};
@@ -66,12 +69,26 @@ namespace litert::qnn {
 
 namespace {
 
-RtldFlags GetRtldFlags() {
+LiteRtStatus SetEnvVar(const char* name, const char* value) {
+#if defined(_WIN32)
+  if (_putenv_s(name, value) != 0) {
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+#else
+  if (setenv(name, value, /*overwrite=*/1) != 0) {
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+#endif
+  return kLiteRtStatusOk;
+}
+
+RtldFlags GetRtldFlags(bool needs_global_symbols) {
 #if defined(__ANDROID__)
   // Race condition segfault without NoDelete on android.
   return RtldFlags::Lazy().Local().NoDelete();
 #else
-  return RtldFlags::Default();
+  return needs_global_symbols ? RtldFlags::Lazy().Global()
+                              : RtldFlags::Default();
 #endif
 }
 
@@ -120,15 +137,30 @@ QnnManager::~QnnManager() = default;
 
 LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
   auto saver_output_dir = options_.GetSaverOutputDir();
+  const bool needs_global_symbols = !options_.GetCustomOpPackage().name.empty();
   if (saver_output_dir.empty()) {
     LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
                path.data());
-    LITERT_ASSIGN_OR_RETURN(lib_, SharedLibrary::Load(path, GetRtldFlags()));
+    auto lib_or = SharedLibrary::Load(path, GetRtldFlags(needs_global_symbols));
+    if (!lib_or) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Failed to load qnn shared library from \"%s\": %s",
+                 path.data(), lib_or.Error().Message().data());
+      return lib_or.Error().Status();
+    }
+    lib_ = std::move(lib_or.Value());
   } else {
     path = kSaverLibraryName;
     LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
                path.data());
-    LITERT_ASSIGN_OR_RETURN(lib_, SharedLibrary::Load(path, GetRtldFlags()));
+    auto lib_or = SharedLibrary::Load(path, GetRtldFlags(needs_global_symbols));
+    if (!lib_or) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Failed to load qnn shared library from \"%s\": %s",
+                 path.data(), lib_or.Error().Message().data());
+      return lib_or.Error().Status();
+    }
+    lib_ = std::move(lib_or.Value());
     LITERT_RETURN_IF_ERROR(InitSaver(lib_, saver_output_dir));
   }
   LITERT_LOG(LITERT_INFO, "Loaded qnn shared library", "");
@@ -136,7 +168,27 @@ LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
 }
 
 LiteRtStatus QnnManager::LoadSystemLib(absl::string_view path) {
-  auto lib_system_or = SharedLibrary::Load(path, GetRtldFlags());
+  const bool needs_global_symbols = !options_.GetCustomOpPackage().name.empty();
+  if (shared_library_dir_) {
+    std::string resolved_path =
+        litert::internal::Join({*shared_library_dir_, path});
+    LITERT_LOG(LITERT_INFO, "Loading qnn system shared library from \"%s\"",
+               resolved_path.c_str());
+    auto lib_system_or =
+        SharedLibrary::Load(resolved_path, GetRtldFlags(needs_global_symbols));
+    if (lib_system_or) {
+      lib_system_ = std::move(lib_system_or.Value());
+      return kLiteRtStatusOk;
+    }
+    LITERT_LOG(LITERT_INFO,
+               "Falling back to loading qnn system shared library from \"%s\"",
+               path.data());
+  }
+  LITERT_LOG(LITERT_INFO, "Loading qnn system shared library from \"%s\"",
+             path.data());
+
+  auto lib_system_or =
+      SharedLibrary::Load(path, GetRtldFlags(needs_global_symbols));
   if (!lib_system_or) {
     LITERT_LOG(LITERT_ERROR, "%s", lib_system_or.Error().Message().data());
     return lib_system_or.Error().Status();
@@ -159,7 +211,14 @@ LiteRtStatus QnnManager::ResolveApi(Qnn_Version_t expected_qnn_version) {
     return kLiteRtStatusErrorDynamicLoading;
   }
 
-  LITERT_ASSIGN_OR_RETURN(auto providers, LoadProvidersFromLib(lib_));
+  auto providers_or = LoadProvidersFromLib(lib_);
+  if (!providers_or) {
+    LITERT_LOG(LITERT_ERROR, "Failed to load providers from library: %s",
+               providers_or.Error().Message().data());
+    return providers_or.Error().Status();
+  }
+  auto providers = std::move(providers_or.Value());
+
   if (providers.size() != kRequiredNumProviders) {
     LITERT_LOG(LITERT_ERROR, "Found %zu providers, expected %u",
                providers.size(), kRequiredNumProviders);
@@ -254,8 +313,14 @@ LiteRtStatus QnnManager::ResolveApi(Qnn_Version_t expected_qnn_version) {
 }
 
 LiteRtStatus QnnManager::ResolveSystemApi() {
-  LITERT_ASSIGN_OR_RETURN(auto system_providers,
-                          LoadSystemProvidersFromLib(lib_system_));
+  auto system_providers_or = LoadSystemProvidersFromLib(lib_system_);
+  if (!system_providers_or) {
+    LITERT_LOG(LITERT_ERROR, "Failed to load system providers: %s",
+               system_providers_or.Error().Message().data());
+    return system_providers_or.Error().Status();
+  }
+  auto system_providers = std::move(system_providers_or.Value());
+
   if (system_providers.size() != kRequiredNumProviders) {
     LITERT_LOG(LITERT_ERROR, "Found %zu system providers, expected %u",
                system_providers.size(), kRequiredNumProviders);
@@ -389,10 +454,35 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::OpWrapper& op) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus QnnManager::RegisterOpPackage(
+    const std::string& package_path, const std::string& interface_provider,
+    const std::string& target) {
+  if (options_.GetBackendType() == ::qnn::BackendType::kIrBackend) {
+    LITERT_LOG(LITERT_INFO,
+               "Custom op package is not supported in IrBackend. Ignore.");
+    return kLiteRtStatusOk;
+  }
+
+  if (auto status = Api()->backendRegisterOpPackage(
+          backend_->GetBackendHandle(), package_path.c_str(),
+          interface_provider.c_str(), target.c_str());
+      status != QNN_SUCCESS) {
+    LITERT_LOG(LITERT_ERROR, "Failed to register op package. Error code: %d",
+               status);
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  LITERT_LOG(LITERT_INFO, "Op package loaded successfully.");
+  return kLiteRtStatusOk;
+}
 
 LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
                               std::optional<::qnn::SocInfo> soc_info,
                               const ::qnn::Options& options) {
+  shared_library_dir_ = shared_library_dir;
+  options_ = options;
+  auto backend_type = options_.GetBackendType();
+
   // If shared_library_dir is provided, add it to the path as it may contain
   // libs to be loaded.
   // TOOD: This should probably be done upstream in litert_dispatch.
@@ -405,7 +495,7 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
     static constexpr char kAdsp[] = "ADSP_LIBRARY_PATH";
     const char* adsp_library_path = getenv(kAdsp);
     if (adsp_library_path == nullptr) {
-      setenv(kAdsp, shared_library_dir->data(), /*overwrite=*/1);
+      LITERT_RETURN_IF_ERROR(SetEnvVar(kAdsp, shared_library_dir->c_str()));
     } else {
       bool found = false;
       for (absl::string_view part : absl::StrSplit(adsp_library_path, ';')) {
@@ -417,21 +507,46 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
       if (!found) {
         auto new_adsp_library_path =
             absl::StrCat(shared_library_dir.value(), ";", adsp_library_path);
-        setenv(kAdsp, new_adsp_library_path.c_str(), /*overwrite=*/1);
+        LITERT_RETURN_IF_ERROR(SetEnvVar(kAdsp, new_adsp_library_path.c_str()));
       }
     }
     LITERT_LOG(LITERT_DEBUG, "ADSP_LIBRARY_PATH: %s", getenv(kAdsp));
 
-    // TODO: Put dynamic loading module in cc or vendor/cc.
-    litert::internal::PutLibOnLdPath(*shared_library_dir,
-                                     ::qnn::HtpBackend::GetLibraryName());
+    const char* lib_name = nullptr;
+    switch (backend_type) {
+      case ::qnn::BackendType::kHtpBackend:
+        lib_name = ::qnn::HtpBackend::GetLibraryName();
+        break;
+      case ::qnn::BackendType::kIrBackend:
+        lib_name = ::qnn::IrBackend::GetLibraryName();
+        break;
+      case ::qnn::BackendType::kDspBackend:
+        lib_name = ::qnn::DspBackend::GetLibraryName();
+        break;
+      default:
+        break;
+    }
+
+    if (lib_name) {
+      // TODO: Put dynamic loading module in cc or vendor/cc.
+      litert::internal::PutLibOnLdPath(*shared_library_dir, lib_name);
+    }
   }
 
   LITERT_RETURN_IF_ERROR(LoadSystemLib(kLibQnnSystemSo));
   LITERT_RETURN_IF_ERROR(ResolveSystemApi());
 
-  options_ = options;
-  switch (options_.GetBackendType()) {
+  switch (backend_type) {
+    case ::qnn::BackendType::kGpuBackend: {
+      LITERT_RETURN_IF_ERROR(LoadLib(::qnn::GpuBackend::GetLibraryName()));
+      LITERT_RETURN_IF_ERROR(
+          ResolveApi(::qnn::GpuBackend::GetExpectedBackendVersion()));
+
+      backend_ = std::make_unique<::qnn::GpuBackend>(Api());
+      LITERT_RETURN_IF_ERROR(backend_->Init(options_, std::nullopt));
+
+      break;
+    }
     case ::qnn::BackendType::kHtpBackend: {
       LITERT_RETURN_IF_ERROR(LoadLib(::qnn::HtpBackend::GetLibraryName()));
       LITERT_RETURN_IF_ERROR(
@@ -630,6 +745,33 @@ Expected<SdkVersion> QnnManager::ParseSdkVersion(const char* build_id) {
   if (!parse_component(version.patch)) return parsing_error;
 
   return version;
+}
+
+absl::Span<const QnnContext_Config_t*> QnnManager::GpuPerformanceContextConfigs(
+    ::qnn::GpuPerformanceMode performance_mode) {
+  static QnnGpuContext_CustomConfig_t customConfig =
+      QNN_GPU_CONTEXT_CUSTOM_CONFIG_INIT;
+  customConfig.option = QNN_GPU_CONTEXT_CONFIG_OPTION_PERF_HINT;
+  switch (performance_mode) {
+    case ::qnn::GpuPerformanceMode::kHigh:
+      customConfig.perfHint = QNN_GPU_CONTEXT_PERF_HINT_HIGH;
+      break;
+    case ::qnn::GpuPerformanceMode::kNormal:
+      customConfig.perfHint = QNN_GPU_CONTEXT_PERF_HINT_NORMAL;
+      break;
+    case ::qnn::GpuPerformanceMode::kLow:
+      customConfig.perfHint = QNN_GPU_CONTEXT_PERF_HINT_LOW;
+      break;
+    case ::qnn::GpuPerformanceMode::kDefault:
+    default:
+      return DefaultContextConfigs();
+  }
+
+  static QnnContext_Config_t contextConfig = QNN_CONTEXT_CONFIG_INIT;
+  contextConfig.option = QNN_CONTEXT_CONFIG_OPTION_CUSTOM;
+  contextConfig.customConfig = &customConfig;
+  static const QnnContext_Config_t* configs[2] = {&contextConfig, nullptr};
+  return absl::MakeSpan(configs);
 }
 
 };  // namespace litert::qnn

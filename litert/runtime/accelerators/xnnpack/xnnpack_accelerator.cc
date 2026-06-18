@@ -19,6 +19,7 @@
 #include "litert/c/internal/litert_accelerator_def.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -26,6 +27,7 @@
 #include "litert/runtime/accelerators/accelerator_implementation_helper.h"
 #include "litert/runtime/litert_cpu_options.h"
 #include "tflite/c/c_api_types.h"
+#include "tflite/core/c/common.h"
 #include "tflite/delegates/xnnpack/xnnpack_delegate.h"
 
 namespace litert {
@@ -101,22 +103,19 @@ class CpuAccelerator final
     LITERT_RETURN_IF_ERROR(xnnpack_delegate != nullptr,
                            ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure))
         << "XNNPack delegate failed to be created.";
-    LITERT_RETURN_IF_ERROR(
-        runtime_context->wrap_delegate(xnnpack_delegate, delegate_wrapper));
+
+    if (parsed_options.hint_fully_delegated_to_single_delegate) {
+      reinterpret_cast<TfLiteDelegate*>(xnnpack_delegate)->flags |=
+          kTfLiteDelegateFlagsHintFullyDelegatedToSingleDelegate;
+    }
+
+    LITERT_RETURN_IF_ERROR(runtime_context->wrap_delegate(
+        xnnpack_delegate, TfLiteXNNPackDelegateDelete, delegate_wrapper));
 
     return kLiteRtStatusOk;
   }
 
-  // Destroys an XNNPack delegate instance.
-  static void DestroyDelegate(LiteRtRuntimeContext* runtime_context,
-                              LiteRtDelegateWrapper delegate_wrapper) {
-    if (delegate_wrapper == nullptr) {
-      return;
-    }
-    TfLiteOpaqueDelegate* xnnpack_delegate;
-    runtime_context->unwrap_delegate(delegate_wrapper, &xnnpack_delegate);
-    TfLiteXNNPackDelegateDelete(xnnpack_delegate);
-  }
+
 
   // Returns true to indicate the XNNPack delegate is responsible for JIT
   // compilation.
@@ -150,14 +149,18 @@ static LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
     .is_tflite_delegate_responsible_for_jit_compilation =
         litert::CpuAccelerator::IsTfLiteDelegateResponsibleForJitCompilation,
     .create_delegate = litert::CpuAccelerator::CreateDelegate,
-    .destroy_delegate = litert::CpuAccelerator::DestroyDelegate,
-    .create_func = nullptr,
-    .destroy_func = nullptr,
-    .lock_func = nullptr,
-    .unlock_func = nullptr,
-    .clear_func = nullptr,
-    .import_func = nullptr,
-    .num_supported_buffer_types = 0,
+    .buffer_handlers =
+        {
+            .create_func = nullptr,
+            .destroy_func = nullptr,
+            .lock_func = nullptr,
+            .unlock_func = nullptr,
+            .clear_func = nullptr,
+            .import_func = nullptr,
+            .device_tag = kLiteRtEnvOptionTagNull,
+            .queue_tag = kLiteRtEnvOptionTagNull,
+            .num_supported_buffer_types = 0,
+        },
 };
 
 // Accelerator definition pointer referenced by auto_registration.cc.

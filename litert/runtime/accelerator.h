@@ -57,10 +57,6 @@ struct LiteRtAcceleratorT {
                                  LiteRtOptions compilation_options,
                                  LiteRtDelegateWrapper* delegate);
 
-  // Destroys created delegate for the accelerator.
-  void (*DestroyDelegate)(LiteRtRuntimeContext* runtime_context,
-                          LiteRtDelegateWrapper delegate);
-
   LiteRtStatus (*IsTfLiteDelegateResponsibleForJitCompilation)(
       LiteRtAcceleratorT* accelerator, bool* does_jit_compilation);
 

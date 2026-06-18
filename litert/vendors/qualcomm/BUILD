@@ -24,11 +24,13 @@ load("//litert/vendors/qualcomm:qualcomm_build_defs.bzl", "litert_cc_lib_with_qn
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:__subpackages__"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
 )
 
 cc_library(
     name = "common",
     hdrs = ["common.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
@@ -37,6 +39,7 @@ cc_library(
         "//litert/cc/options:litert_qualcomm_options",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@qairt//:qnn_lib_headers",
     ],
 )
@@ -44,6 +47,7 @@ cc_library(
 cc_library(
     name = "qnn_manager_hdr",
     hdrs = ["qnn_manager.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
         ":common",
         "//litert/c:litert_common",
@@ -67,6 +71,7 @@ litert_cc_lib_with_qnn(
         "qnn_manager.cc",
     ],
     hdrs = ["qnn_manager.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
     include_system = True,
     ungrte = True,
     deps = [
@@ -78,9 +83,11 @@ litert_cc_lib_with_qnn(
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_shared_library",
         "//litert/core:dynamic_loading",
+        "//litert/core:filesystem",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core/backends:dsp_backend",
+        "//litert/vendors/qualcomm/core/backends:gpu_backend",
         "//litert/vendors/qualcomm/core/backends:htp_backend",
         "//litert/vendors/qualcomm/core/backends:ir_backend",
         "//litert/vendors/qualcomm/core/backends:qnn_backend",
@@ -107,10 +114,13 @@ litert_test(
     linkstatic = True,
     no_main = True,
     tags = [
-        "manual",
-        "no-remote-exec",
+        "noasan",
+        "nomsan",
         "nosan",
-        "notap",
+        "notsan",
+        # copybara:comment_begin(oss-only)
+        "manual",
+        # copybara:comment_end
     ],
     # This test can be run only on Android and Linux.
     target_compatible_with = select({
@@ -123,14 +133,20 @@ litert_test(
     deps = [
         ":qnn_manager",
         "//litert/test:common",
-        "//litert/test:matchers_oss",
+        "//litert/test:matchers",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
-        "//litert/vendors/qualcomm/core/utils:test_main",
+        "//litert/vendors/qualcomm/core/utils:test_main_no_heapcheck",
         "//litert/vendors/qualcomm/core/utils:test_utils",
         "//litert/vendors/qualcomm/tools:dump",
-        "@com_google_googletest//:gtest",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:linux_x86_64": [
+            # copybara:uncomment_begin(google-only)
+            # "@qairt//:linux_deps",
+            # copybara:uncomment_end
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 litert_device_exec(
@@ -166,6 +182,7 @@ cc_library(
     name = "qnn_saver_utils",
     srcs = ["qnn_saver_utils.cc"],
     hdrs = ["qnn_saver_utils.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",

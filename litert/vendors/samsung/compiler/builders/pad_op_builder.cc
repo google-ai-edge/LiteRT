@@ -14,11 +14,15 @@
 // limitations under the License.
 #include "litert/vendors/samsung/compiler/builders/pad_op_builder.h"
 
+#include <cstdint>
+
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/utils.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -44,7 +48,7 @@ Expected<std::vector<int32_t>> ConvertPaddings(int32_t num_of_pad_axes,
   return converted_paddings;
 }
 
-Expected<OpWrapper> BuildGeneralPadOp(const Op& op) {
+Expected<OpWrapper> BuildGeneralPadOp(const litert::compiler::Op& op) {
   OpWrapper op_wrapper("Pad");
 
   op_wrapper.AddInput(op.Inputs()[kIOIndex]);
@@ -55,15 +59,15 @@ Expected<OpWrapper> BuildGeneralPadOp(const Op& op) {
   LITERT_ASSIGN_OR_RETURN(auto pad_ranked_tensor_type,
                           op.Inputs()[kPaddingIndex].RankedTensorType());
   if (pad_ranked_tensor_type.ElementType() == ElementType::Int32) {
-    LITERT_ASSIGN_OR_RETURN(auto paddings,
-                            op.Inputs()[kPaddingIndex].WeightsData<int32_t>());
-    LITERT_ASSIGN_OR_RETURN(converted_paddings,
-                            ConvertPaddings(num_of_pad_axes, paddings));
+    LITERT_ASSIGN_OR_RETURN(
+        auto paddings, GetWeightDataAs<int32_t>(op.Inputs()[kPaddingIndex]));
+    LITERT_ASSIGN_OR_RETURN(converted_paddings, ConvertPaddings<int32_t>(
+                                                    num_of_pad_axes, paddings));
   } else if (pad_ranked_tensor_type.ElementType() == ElementType::Int64) {
-    LITERT_ASSIGN_OR_RETURN(auto paddings,
-                            op.Inputs()[kPaddingIndex].WeightsData<int64_t>());
-    LITERT_ASSIGN_OR_RETURN(converted_paddings,
-                            ConvertPaddings(num_of_pad_axes, paddings));
+    LITERT_ASSIGN_OR_RETURN(
+        auto paddings, GetWeightDataAs<int64_t>(op.Inputs()[kPaddingIndex]));
+    LITERT_ASSIGN_OR_RETURN(converted_paddings, ConvertPaddings<int64_t>(
+                                                    num_of_pad_axes, paddings));
   } else {
     return Error(kLiteRtStatusErrorUnsupported, "Unsupported type of paddings");
   }
@@ -72,7 +76,8 @@ Expected<OpWrapper> BuildGeneralPadOp(const Op& op) {
   return op_wrapper;
 }
 
-Expected<OpWrapper> BuildPadOp(const Op& op) {
+Expected<OpWrapper> BuildPadOp(const LiteRtCompilerContext* ctx,
+                               const litert::compiler::Op& op) {
   LITERT_ASSIGN_OR_RETURN(auto op_wrapper, BuildGeneralPadOp(op));
 
   const auto input = std::move(op.Inputs()[kIOIndex]);
@@ -95,11 +100,12 @@ Expected<OpWrapper> BuildPadOp(const Op& op) {
   return op_wrapper;
 }
 
-Expected<OpWrapper> BuildMirrorPadOp(const Op& op) {
+Expected<OpWrapper> BuildMirrorPadOp(const LiteRtCompilerContext* ctx,
+                                     const litert::compiler::Op& op) {
   LITERT_ASSIGN_OR_RETURN(auto op_wrapper, BuildGeneralPadOp(op));
 
   uint32_t mode = 0;
-  LITERT_RETURN_IF_ERROR(LiteRtGetMirrorPadModeOption(op.Get(), &mode));
+  LITERT_RETURN_IF_ERROR(ctx->get_mirror_pad_mode_option(op.Get(), &mode));
   const char* pad_mode = tflite::EnumNamesMirrorPadMode()[mode];
   op_wrapper.AddParam("mode", pad_mode);
 

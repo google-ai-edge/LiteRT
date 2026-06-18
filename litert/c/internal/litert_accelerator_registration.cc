@@ -100,14 +100,11 @@ LiteRtStatus LiteRtSetDelegateFunction(
                                    LiteRtEnvironment env,
                                    LiteRtAccelerator accelerator,
                                    LiteRtOptions options,
-                                   LiteRtDelegateWrapper* delegate),
-    void (*DestroyDelegate)(LiteRtRuntimeContext* runtime_context,
-                            LiteRtDelegateWrapper delegate)) {
+                                   LiteRtDelegateWrapper* delegate)) {
   if (!accelerator) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   accelerator->CreateDelegate = CreateDelegate;
-  accelerator->DestroyDelegate = DestroyDelegate;
   return kLiteRtStatusOk;
 }
 

@@ -16,11 +16,13 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_FULLY_CONNECTED_OP_BUILDER_H_
 #define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_FULLY_CONNECTED_OP_BUILDER_H_
 
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildFullyConnectedOp(const Op& op);
+Expected<OpWrapper> BuildFullyConnectedOp(const LiteRtCompilerContext* ctx,
+                                          const litert::compiler::Op& op);
 }
 
 #endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_FULLY_CONNECTED_OP_BUILDER_H_

@@ -204,6 +204,7 @@ cc_library_with_testonly_vis(
         "//litert/cc:litert_expected",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/time",
     ],
 )
 
@@ -225,6 +226,7 @@ cc_test(
         ":filesystem",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
     ],
 )

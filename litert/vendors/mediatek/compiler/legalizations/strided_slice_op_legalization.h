@@ -17,7 +17,7 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
@@ -25,7 +25,7 @@ namespace litert::mediatek {
 
 Expected<void> LegalizeStridedSliceOp(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
-    OperandMap& operand_map, const litert::Op& op);
+    OperandMap& operand_map, const litert::compiler::Op& op);
 
 }  // namespace litert::mediatek
 

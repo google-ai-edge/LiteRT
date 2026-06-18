@@ -21,6 +21,7 @@
 #include <type_traits>
 
 #include "litert/c/litert_model_types.h"
+#include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_numerics.h"
 
 /// @file
@@ -56,7 +57,7 @@ enum class ElementType {
 };
 
 /// @brief Gets the number of bytes of a single element of a given type.
-inline constexpr std::optional<ByteWidth> GetByteWidth(ElementType ty) {
+constexpr std::optional<ByteWidth> GetByteWidth(ElementType ty) {
   if (ty == ElementType::Bool)
     return ByteWidth(1);
   else if (ty == ElementType::Int4)
@@ -96,7 +97,7 @@ inline constexpr std::optional<ByteWidth> GetByteWidth(ElementType ty) {
 /// @brief Gets the number of bytes of a single element of a given type via a
 /// template parameter.
 template <ElementType Ty>
-inline constexpr ByteWidth GetByteWidth() {
+constexpr ByteWidth GetByteWidth() {
   constexpr auto byte_width = GetByteWidth(Ty);
   static_assert(byte_width.has_value(), "Type does not have byte width");
   return byte_width.value();
@@ -107,64 +108,92 @@ constexpr bool dependent_false = false;  // workaround before CWG2518/P2593R1
 
 /// @brief Gets the `litert::ElementType` associated with a given C++ type.
 template <typename T>
-inline constexpr ElementType GetElementType() {
+constexpr ElementType GetElementType() {
   static_assert(dependent_false<T>, "Uknown C++ type");
   return ElementType::None;
 }
 
 template <>
-inline constexpr ElementType GetElementType<bool>() {
+constexpr ElementType GetElementType<bool>() {
   return ElementType::Bool;
 }
 
 template <>
-inline constexpr ElementType GetElementType<int8_t>() {
+constexpr ElementType GetElementType<int8_t>() {
   return ElementType::Int8;
 }
 
 template <>
-inline constexpr ElementType GetElementType<uint8_t>() {
+constexpr ElementType GetElementType<uint8_t>() {
   return ElementType::UInt8;
 }
 
 template <>
-inline constexpr ElementType GetElementType<int16_t>() {
+constexpr ElementType GetElementType<int16_t>() {
   return ElementType::Int16;
 }
 
 template <>
-inline constexpr ElementType GetElementType<uint16_t>() {
+constexpr ElementType GetElementType<uint16_t>() {
   return ElementType::UInt16;
 }
 
 template <>
-inline constexpr ElementType GetElementType<int32_t>() {
+constexpr ElementType GetElementType<int32_t>() {
   return ElementType::Int32;
 }
 
 template <>
-inline constexpr ElementType GetElementType<uint32_t>() {
+constexpr ElementType GetElementType<uint32_t>() {
   return ElementType::UInt32;
 }
 
 template <>
-inline constexpr ElementType GetElementType<int64_t>() {
+constexpr ElementType GetElementType<int64_t>() {
   return ElementType::Int64;
 }
 
 template <>
-inline constexpr ElementType GetElementType<uint64_t>() {
+constexpr ElementType GetElementType<uint64_t>() {
   return ElementType::UInt64;
 }
 
 template <>
-inline constexpr ElementType GetElementType<float>() {
+constexpr ElementType GetElementType<float>() {
   return ElementType::Float32;
 }
 
 template <>
-inline constexpr ElementType GetElementType<double>() {
+constexpr ElementType GetElementType<double>() {
   return ElementType::Float64;
+}
+
+}  // namespace litert
+
+namespace tflite { struct half; }
+namespace litert::tensor { struct int4_t; struct int2_t; struct bf16_t; }
+struct TfLiteComplex64;
+
+namespace litert {
+
+template <>
+constexpr ElementType GetElementType<litert::tensor::bf16_t>() {
+  return ElementType::BFloat16;
+}
+
+template <>
+constexpr ElementType GetElementType<litert::tensor::int4_t>() {
+  return ElementType::Int4;
+}
+
+template <>
+constexpr ElementType GetElementType<litert::tensor::int2_t>() {
+  return ElementType::Int2;
+}
+
+template <>
+constexpr ElementType GetElementType<TfLiteComplex64>() {
+  return ElementType::Complex64;
 }
 
 // clang format off

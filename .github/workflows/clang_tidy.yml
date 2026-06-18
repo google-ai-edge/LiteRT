@@ -1,0 +1,146 @@
+name: "clang-tidy"
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clang-tidy:
+    name: "clang-tidy"
+    runs-on: linux-x86-n2-16
+    container:
+      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build:latest
+    env:
+      CLANG_TIDY_CHECKS: "clang-diagnostic-*,clang-analyzer-*"
+      CMAKE_BUILD_DIR: "litert/cmake_build_clang_tidy"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install clang-tidy dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang-18 \
+            clang-tidy-18 \
+            libc++-18-dev \
+            libc++abi-18-dev \
+            python3-pip
+          pip3 install cmake==3.28.3
+          cmake --version
+          clang-tidy-18 --version
+
+      - name: Configure CMake compile database
+        run: |
+          cmake -S litert -B "${CMAKE_BUILD_DIR}" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DCMAKE_C_COMPILER=clang-18 \
+            -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -DLITERT_BUILD_TESTS=OFF \
+            -DLITERT_ENABLE_GPU=OFF \
+            -DLITERT_ENABLE_NPU=OFF
+          test -f "${CMAKE_BUILD_DIR}/compile_commands.json"
+
+      - name: Select files for clang-tidy
+        id: select-files
+        run: |
+          python3 <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          repo = Path.cwd().resolve()
+          build_dir = repo / os.environ["CMAKE_BUILD_DIR"]
+          compile_db = json.loads((build_dir / "compile_commands.json").read_text())
+
+          compilable = set()
+          for entry in compile_db:
+            source = Path(entry["file"])
+            if not source.is_absolute():
+              source = (Path(entry.get("directory", ".")) / source).resolve()
+            else:
+              source = source.resolve()
+            try:
+              compilable.add(source.relative_to(repo).as_posix())
+            except ValueError:
+              pass
+
+          source_suffixes = {".c", ".cc", ".cpp", ".cxx"}
+          changed = []
+          event_name = os.environ["GITHUB_EVENT_NAME"]
+          if event_name == "pull_request":
+            event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+            base_sha = event["pull_request"]["base"]["sha"]
+            head_sha = event["pull_request"]["head"]["sha"]
+            subprocess.run(
+                ["git", "config", "--global", "--add", "safe.directory", str(repo)],
+                check=True,
+            )
+            diff = subprocess.check_output(
+                [
+                    "git",
+                    "diff",
+                    "--name-only",
+                    "--diff-filter=ACMRT",
+                    base_sha,
+                    head_sha,
+                ],
+                text=True,
+            )
+            changed = [
+                path for path in diff.splitlines()
+                if Path(path).suffix in source_suffixes
+            ]
+          else:
+            print(f"No pull request file list for {event_name}; running smoke source only.")
+
+          selected = []
+          missing = []
+          for source in changed:
+            if source in compilable:
+              selected.append(source)
+            else:
+              missing.append(source)
+
+          smoke_source = "litert/c/empty.cc"
+          if smoke_source in compilable and smoke_source not in selected:
+            selected.append(smoke_source)
+
+          if missing:
+            print("Changed C/C++ sources missing from the CMake compile database:")
+            for source in missing:
+              print(f"  {source}")
+            raise SystemExit(1)
+
+          if not selected:
+            print("No C/C++ source files selected for clang-tidy.")
+            raise SystemExit(1)
+
+          Path("/tmp/clang_tidy_files.txt").write_text("\n".join(selected) + "\n")
+          print("Selected clang-tidy files:")
+          for source in selected:
+            print(f"  {source}")
+          PY
+
+      - name: Run clang-tidy
+        run: |
+          xargs \
+            clang-tidy-18 \
+            -p "${CMAKE_BUILD_DIR}" \
+            --checks="${CLANG_TIDY_CHECKS}" \
+            < /tmp/clang_tidy_files.txt

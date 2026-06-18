@@ -1,4 +1,4 @@
-// Copyright 22026 Google LLC.
+// Copyright 2026 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,7 +13,9 @@
 // limitations under the License.
 
 #include <cstddef>
+#include <cstring>
 #include <ios>
+#include <limits>
 #include <memory>
 #include <ostream>
 #include <streambuf>
@@ -29,20 +31,20 @@
 #include "openvino/runtime/core.hpp"
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
-#include "litert/c/internal/litert_logging_helper.h"
+#include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_opaque_options_wrapper.h"
 #include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_intel_openvino_options.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/intel_openvino/bytecode_header.h"
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
 #include "litert/vendors/intel_openvino/compiler/openvino_compile_context.h"
 #include "litert/vendors/intel_openvino/compiler/openvino_soc_config.h"
@@ -132,33 +134,99 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflSquare,
     kLiteRtOpCodeTflFloorMod,
     kLiteRtOpCodeTflSign,
+    kLiteRtOpCodeTflTile,
 };
 // clang format on
 
-// When exporting a model via the OpenVINO NPU plugin, standard string streams
-// might encounter a 32-bit std::streamsize limitation on specific platforms,
-// which restricts model export capacity. This custom output stream buffer
-// bypasses that limitation, enabling support for larger models.
+// When exporting a model via the OpenVINO, standard string streams might
+// encounter a 32-bit std::streamsize limitation on specific platforms, which
+// restricts model export capacity. This custom output stream buffer bypasses
+// that limitation, enabling support for larger models.
 class CustomOStreamBuf : public std::streambuf {
  public:
-  CustomOStreamBuf() = default;
+  CustomOStreamBuf() : pos_(0) {}
   std::string drain_str() { return std::move(target_); }
 
  protected:
   std::streamsize xsputn(const char* s, std::streamsize n) override {
-    target_.append(s, n);
+    if (n <= 0) {
+      return 0;
+    }
+    const size_t write_size = static_cast<size_t>(n);
+    if (write_size > target_.size() - pos_) {
+      target_.resize(pos_ + write_size);
+    }
+    std::memcpy(&target_[pos_], s, write_size);
+    pos_ += write_size;
     return n;
   }
   int_type overflow(int_type ch) override {
     if (ch != traits_type::eof()) {
-      target_.push_back(static_cast<char>(ch));
+      char c = static_cast<char>(ch);
+      if (pos_ >= target_.size()) {
+        target_.push_back(c);
+      } else {
+        target_[pos_] = c;
+      }
+      ++pos_;
       return ch;
     }
     return traits_type::eof();
   }
 
+  pos_type seekoff(off_type off, std::ios_base::seekdir dir,
+                   std::ios_base::openmode which) override {
+    // This buffer is output-only; reject seeks for other directions.
+    if (!(which & std::ios_base::out)) {
+      return pos_type(off_type(-1));
+    }
+
+    if (target_.size() >
+        static_cast<size_t>(std::numeric_limits<off_type>::max())) {
+      return pos_type(off_type(-1));
+    }
+
+    off_type base_pos = 0;
+    switch (dir) {
+      case std::ios_base::beg:
+        base_pos = 0;
+        break;
+      case std::ios_base::cur:
+        if (pos_ > static_cast<size_t>(std::numeric_limits<off_type>::max())) {
+          return pos_type(off_type(-1));
+        }
+        base_pos = static_cast<off_type>(pos_);
+        break;
+      case std::ios_base::end:
+        base_pos = static_cast<off_type>(target_.size());
+        break;
+      default:
+        return pos_type(off_type(-1));
+    }
+
+    // Guard against signed overflow when computing base_pos + off.
+    if ((off > 0 && base_pos > std::numeric_limits<off_type>::max() - off) ||
+        (off < 0 && base_pos < std::numeric_limits<off_type>::min() - off)) {
+      return pos_type(off_type(-1));
+    }
+
+    const off_type new_pos = base_pos + off;
+    // Keep position within [0, target_.size()] for valid write seeks.
+    if (new_pos < 0 || static_cast<size_t>(new_pos) > target_.size()) {
+      return pos_type(off_type(-1));
+    }
+
+    pos_ = static_cast<size_t>(new_pos);
+    return pos_type(pos_);
+  }
+
+  pos_type seekpos(pos_type pos, std::ios_base::openmode which) override {
+    return seekoff(off_type(pos), std::ios_base::beg, which);
+  }
+
  private:
   std::string target_;
+  size_t pos_;
 };
 }  // namespace
 
@@ -205,6 +273,17 @@ LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *soc_model_name = litert::openvino::GetSocModelName(soc_model_idx);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
+    LiteRtCompilerPlugin compiler_plugin, const char** sdk_version) {
+  if (compiler_plugin == nullptr || sdk_version == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // No-op implementation for Intel OpenVINO plugin.
+  // TODO: Add the SDK version to the plugin.
+  *sdk_version = "";
   return kLiteRtStatusOk;
 }
 
@@ -266,7 +345,8 @@ class LiteRtCompilerPluginT {
   using IntelOpenVinoOptions = ::litert::intel_openvino::IntelOpenVinoOptions;
 
   LiteRtCompilerPluginT(const LiteRtCompilerContext* ctx,
-                        LiteRtEnvironmentOptions env, LiteRtOptions options) {
+                        LiteRtEnvironmentOptions env, LiteRtOptions options)
+      : ctx_(ctx) {
     if (options == nullptr) return;
     compiler_opts_ = litert::internal::OptionsWrapper(
         litert::internal::ContextWrapper(ctx), options, litert::OwnHandle::kNo);
@@ -296,7 +376,11 @@ class LiteRtCompilerPluginT {
     return opq_;
   }
 
+ public:
+  const LiteRtCompilerContext* ctx() const { return ctx_; }
+
  private:
+  const LiteRtCompilerContext* ctx_;
   litert::Expected<litert::internal::OptionsWrapper> compiler_opts_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
   litert::Expected<litert::internal::OpaqueOptionsWrapper> opq_ =
@@ -310,7 +394,7 @@ LiteRtStatus LiteRtCreateCompilerPlugin(
     LiteRtCompilerPlugin* compiler_plugin, LiteRtEnvironmentOptions env,
     LiteRtOptions options) {
   LiteRtSetMinLoggerSeverity(LiteRtGetDefaultLogger(), LITERT_INFO);
-  LiteRtPropagateMinLoggerSeverity(env);
+  LiteRtPropagateMinLoggerSeverityWithCompilerContext(compiler_context, env);
   auto* plugin = new LiteRtCompilerPluginT(compiler_context, env, options);
   *compiler_plugin = plugin;
   return kLiteRtStatusOk;
@@ -320,7 +404,7 @@ void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin) {
   delete compiler_plugin;
 }
 
-bool IsOpSupported(const ::litert::Op& op) {
+bool IsOpSupported(const litert::compiler::Op& op) {
   for (const auto& supportedOp : kSupportedOps) {
     if (op.Code() == supportedOp) return true;
   }
@@ -334,7 +418,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            const char* soc_model,
                                            LiteRtSubgraph subgraph,
                                            LiteRtOpList selected_ops) {
-  ::litert::Subgraph graph(subgraph);
+  litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
 
   // Check if any subgraph input has dims.size() >= 6.
   auto subgraph_inputs = graph.Inputs();
@@ -358,7 +442,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
       LITERT_LOG(LITERT_INFO, "op type %d is not supported", op.Code());
       continue;
     }
-    LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
+    LITERT_RETURN_IF_ERROR(op.ctx()->push_op(selected_ops, op.Get(), 0));
   }
 
   return kLiteRtStatusOk;
@@ -371,14 +455,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
   try {
-    auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
+    litert::compiler::Model model(compiler_plugin->ctx(), partitions);
     const auto num_partitions = model.NumSubgraphs();
-
-    // Build the OpenVINO compile context from options.
-    LITERT_ASSIGN_OR_RETURN(litert::openvino::OpenVinoCompileContext context,
-                            litert::openvino::OpenVinoCompileContext::Create(
-                                compiler_plugin->GetIntelOpenVinoOptions()));
-    LITERT_RETURN_IF_ERROR(context.ConfigureForSoc(soc_model));
 
     auto result = std::make_unique<LiteRtCompiledResultT>();
     result->byte_code.resize(num_partitions);
@@ -389,14 +467,22 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     ov::Core core;
     for (int partition_idx = 0; partition_idx < num_partitions;
          ++partition_idx) {
+      // Build a per-partition compile context.  This honours any per-graph
+      // backend / configs overrides specified on the options.
+      LITERT_ASSIGN_OR_RETURN(
+          litert::openvino::OpenVinoCompileContext context,
+          litert::openvino::OpenVinoCompileContext::Create(
+              compiler_plugin->GetIntelOpenVinoOptions(), partition_idx));
+      LITERT_RETURN_IF_ERROR(context.ConfigureForSoc(soc_model));
+
       auto graph_name = absl::StrFormat("Partition_%d", partition_idx);
-      litert::Expected<litert::Subgraph> expected_subgraph =
+      litert::Expected<litert::compiler::Subgraph> expected_subgraph =
           model.Subgraph(partition_idx);
       if (expected_subgraph.HasValue()) {
         std::shared_ptr<ov::frontend::tensorflow_lite::GraphIterator>
             graph_delegate =
                 std::make_shared<litert::openvino::GraphIteratorDelegate>(
-                    &expected_subgraph.Value());
+                    compiler_plugin->ctx(), &expected_subgraph.Value());
         auto input_model = tflite_fe->load(graph_delegate);
         LITERT_LOG(LITERT_INFO, "Model loaded");
         auto ov_model = tflite_fe->convert(input_model);
@@ -404,7 +490,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         // Run NPU-specific optimization passes.
         context.OptimizeModel(ov_model);
 
-        // Compile using the configured device and properties.
+        // Compile using the per-partition device and properties.
+        LITERT_LOG(LITERT_INFO, "Compiling partition %d for device %s",
+                   partition_idx, context.Device().c_str());
         auto compiled_model = core.compile_model(ov_model, context.Device(),
                                                  context.ConfigsMap());
 
@@ -412,7 +500,23 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         std::ostream oss(&obuf);
         compiled_model.export_model(oss);
         LITERT_LOG(LITERT_INFO, "Model export done");
-        result->byte_code[partition_idx] = obuf.drain_str();
+
+        // Resolve the graph type enum corresponding to context.Device() so
+        // the dispatcher can import on the same device.  We translate the
+        // string back to the enum to avoid duplicating the resolution logic.
+        LiteRtIntelOpenVinoGraphBackend graph_backend_enum =
+            kLiteRtIntelOpenVinoGraphBackendNPU;
+        const std::string& dev = context.Device();
+        if (dev == "CPU")
+          graph_backend_enum = kLiteRtIntelOpenVinoGraphBackendCPU;
+        else if (dev == "GPU")
+          graph_backend_enum = kLiteRtIntelOpenVinoGraphBackendGPU;
+
+        // Prepend a self-describing header so the dispatcher knows which
+        // device the bytecode was compiled for.
+        result->byte_code[partition_idx] =
+            litert::openvino::MakeBytecodeHeader(graph_backend_enum) +
+            obuf.drain_str();
 
         result->graph_names.emplace_back(graph_name);
       } else {

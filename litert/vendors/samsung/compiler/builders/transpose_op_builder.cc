@@ -14,10 +14,14 @@
 // limitations under the License.
 #include "litert/vendors/samsung/compiler/builders/transpose_op_builder.h"
 
+#include <cstdint>
+
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
@@ -25,7 +29,7 @@ namespace litert::samsung {
 constexpr int32_t kIOIndex = 0;
 constexpr int32_t kPermIndex = 1;
 
-Expected<OpWrapper> BuildTransposeOp(const Op& op) {
+Expected<OpWrapper> BuildTransposeOp(const litert::compiler::Op& op) {
   OpWrapper op_wrapper("Transpose");
 
   const auto input = std::move(op.Inputs()[kIOIndex]);

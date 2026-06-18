@@ -19,6 +19,7 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -140,7 +141,7 @@ int main(int argc, char **argv) {
       saved_model_version = 1;
     }
     if (input_mlir)
-      module = tensorflow::errors::InvalidArgument(
+      module = absl::InvalidArgumentError(
           "Importing saved model should not have input_mlir set");
 
     tags = absl::StrSplit(saved_model_tags, ',');

@@ -49,6 +49,10 @@ pytype_strict_contrib_test(
         "notap",
         "notsan",
     ],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":aot_compile",
         "//litert/python/aot/core:aot_types",
@@ -77,6 +81,10 @@ pytype_strict_library(
 pytype_strict_contrib_test(
     name = "prepare_for_npu_test",
     srcs = ["prepare_for_npu_test.py"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":prepare_for_npu",
         "//litert/python/aot/core:aot_types",

@@ -194,6 +194,7 @@ target_link_libraries(litert_c_api
         litert_cc_internal
         litert_core
         litert_core_model
+        litert_runtime
         litert_logging
         absl::status
         absl::statusor
@@ -334,6 +335,7 @@ if(LITERT_PLATFORM_ANDROID)
       absl::span
       absl::flat_hash_map
       flatbuffers::flatbuffers)
+  target_compile_definitions(litert_tflite_gpu_gl_core PRIVATE CL_DELEGATE_NO_GL EGL_NO_X11)
   list(APPEND _litert_runtime_c_api_private_archives litert_tflite_gpu_gl_core)
 endif()
 

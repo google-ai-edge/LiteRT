@@ -161,6 +161,14 @@ LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsModelCacheKey(
 LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsProgramCacheFd(
     LrtGpuOptions* gpu_options, int program_cache_fd);
 
+// The file descriptor to use for weight caching.
+// If set, the delegate will use this file descriptor to read and write the
+// weight cache.
+// If it is not set, the delegate will use the serialization_dir + model_token
+// to determine where to read and write the weight cache from.
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsWeightCacheFd(
+    LrtGpuOptions* gpu_options, int weight_cache_fd);
+
 // When set to true AND the serialization_dir and model_cache_key are also set,
 // the delegate will serialize the program cache.
 LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsSerializeProgramCache(
@@ -279,6 +287,9 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsModelCacheKey(
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
     int* program_cache_fd, const LrtGpuOptions* options);
+
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsWeightCacheFd(
+    int* weight_cache_fd, const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
     bool* serialize_program_cache, const LrtGpuOptions* options);

@@ -22,9 +22,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -57,6 +59,7 @@
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
+#include "QnnCommon.h"  // from @qairt
 
 using ::litert::qnn::QnnManager;
 using LiteRtBufferId = uint32_t;
@@ -83,6 +86,10 @@ bool IsWeightSharingSupported(::qnn::DspArch dsp_arch) {
   return false;
 #endif
 }
+
+// Compile-time custom-op packages always target the CPU backend; this is
+// the value passed to QNN's RegisterOpPackage for compilation.
+constexpr char kCustomOpPackageCompileTarget[] = "CPU";
 
 }  // namespace
 
@@ -142,7 +149,29 @@ struct LiteRtCompiledResultT {
   // byte_code_index[i] is the index of the byte code in context_bin that
   // corresponds to the i-th call.
   std::vector<size_t> byte_code_index;
+  // Hold the context handles for Just-In-Time if enabled.
+  std::vector<QnnManager::ContextHandle> context_handles;
+  // Hold the QnnJitGraph for each subgraph for Just-In-Time.
+  std::vector<std::unique_ptr<litert::qnn::QnnJitGraph>> jit_graphs;
 };
+
+LiteRtStatus LiteRtGetCompiledResultHandle(LiteRtCompiledResult compiled_result,
+                                           LiteRtParamIndex call_idx,
+                                           LiteRtJitExecutable* handle) {
+  if (!compiled_result || !handle) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (compiled_result->jit_graphs.empty()) {
+    *handle = nullptr;
+    return kLiteRtStatusOk;
+  }
+  if (call_idx >= compiled_result->jit_graphs.size()) {
+    return kLiteRtStatusErrorIndexOOB;
+  }
+  *handle = reinterpret_cast<LiteRtJitExecutable>(
+      compiled_result->jit_graphs[call_idx].get());
+  return kLiteRtStatusOk;
+}
 
 LiteRtStatus LiteRtGetCompiledResultByteCode(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex byte_code_idx,
@@ -188,7 +217,12 @@ void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) {
 
 LiteRtStatus LiteRtCompiledResultNumByteCodeModules(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex* num_byte_code) {
-  *num_byte_code = compiled_result->context_bin.size();
+  if (!compiled_result || !num_byte_code) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *num_byte_code = !compiled_result->jit_graphs.empty()
+                       ? compiled_result->jit_graphs.size()
+                       : compiled_result->context_bin.size();
   return kLiteRtStatusOk;
 }
 
@@ -227,7 +261,7 @@ class LiteRtCompilerPluginT {
       }
     }
 
-    if (env_options) {
+    if (env_options && ctx) {
       LiteRtAny compiler_plugin_lib_dir_any;
       auto status = ctx->get_environment_options_value(
           env_options, kLiteRtEnvOptionTagCompilerPluginLibraryDir,
@@ -241,8 +275,15 @@ class LiteRtCompilerPluginT {
 
   const ::qnn::Options& Options() const { return qnn_options_; }
 
-  void initQnnManager(std::unique_ptr<QnnManager> qnn_manager) {
+  LiteRtStatus initQnnManager(std::unique_ptr<QnnManager> qnn_manager) {
+    if (const auto& custom_op_package = qnn_options_.GetCustomOpPackage();
+        !custom_op_package.name.empty()) {
+      LITERT_RETURN_IF_ERROR(qnn_manager->RegisterOpPackage(
+          custom_op_package.compile_package_path,
+          custom_op_package.interface_provider, kCustomOpPackageCompileTarget));
+    }
     qnn_manager_ = std::move(qnn_manager);
+    return kLiteRtStatusOk;
   }
 
   QnnManager* QNN() { return qnn_manager_.get(); }
@@ -268,13 +309,19 @@ LiteRtStatus LiteRtCreateCompilerPlugin(
     const LiteRtCompilerContext* compiler_context,
     LiteRtCompilerPlugin* compiler_plugin, LiteRtEnvironmentOptions env,
     LiteRtOptions options) {
+  if (compiler_context == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "Compiler context is null");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   if (options == nullptr || env == nullptr) {
     LITERT_LOG(LITERT_WARNING,
                "QNN compiler plugin created with null options, these will be "
                "defaulted.");
   }
   // Propagate the min logger severity from the environment.
-  LiteRtPropagateMinLoggerSeverityWithCompilerContext(compiler_context, env);
+  if (env != nullptr) {
+    LiteRtPropagateMinLoggerSeverityWithCompilerContext(compiler_context, env);
+  }
 
   auto* plugin = new LiteRtCompilerPluginT(compiler_context, env, options);
   *compiler_plugin = plugin;
@@ -285,22 +332,72 @@ void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin) {
   delete compiler_plugin;
 }
 
+LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
+    LiteRtCompilerPlugin compiler_plugin, const char** sdk_version) {
+  if (!compiler_plugin || !sdk_version) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  QnnManager* qnn_manager = compiler_plugin->QNN();
+  if (!qnn_manager) {
+    std::optional<::qnn::SocInfo> soc_info = std::nullopt;
+#if defined(__x86_64__) || defined(_M_X64)
+    soc_info = qnn::FindSocModel("SM8750");
+#endif
+    auto qnn_manager_or =
+        QnnManager::Create(compiler_plugin->Options(), std::nullopt, soc_info);
+    if (!qnn_manager_or) {
+      LITERT_LOG(LITERT_ERROR, "Failed to create QNN manager: %s",
+                 qnn_manager_or.Error().Message().data());
+      return qnn_manager_or.Error().Status();
+    }
+    LITERT_RETURN_IF_ERROR(
+        compiler_plugin->initQnnManager(std::move(*qnn_manager_or)));
+    qnn_manager = compiler_plugin->QNN();
+  }
+
+  const char* build_id = nullptr;
+  if (qnn_manager->Api() == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "QNN API not resolved");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  if (qnn_manager->Api()->backendGetBuildId(&build_id) != QNN_SUCCESS) {
+    LITERT_LOG(LITERT_ERROR, "Failed to get QNN backend build ID");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  *sdk_version = build_id;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            const char* soc_model,
                                            LiteRtSubgraph subgraph,
                                            LiteRtOpList selected_ops) {
   ::litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
   QnnManager* qnn_manager = compiler_plugin->QNN();
-  if (!qnn_manager) {
+  auto opt_soc_model = soc_model ? qnn::FindSocModel(soc_model) : std::nullopt;
+  bool soc_model_mismatch = false;
+  if (qnn_manager && opt_soc_model.has_value()) {
+    soc_model_mismatch =
+        (qnn_manager->GetSocInfo().soc_model != opt_soc_model->soc_model);
+  }
+  if (!qnn_manager || soc_model_mismatch) {
+    if (soc_model_mismatch) {
+      LITERT_LOG(LITERT_INFO,
+                 "Recreating QNN manager due to SoC mismatch: current %s, "
+                 "target %s",
+                 qnn_manager->GetSocInfo().soc_name, opt_soc_model->soc_name);
+    }
     auto qnn_manager_or = QnnManager::Create(
         compiler_plugin->Options(), compiler_plugin->shared_library_dir(),
-        soc_model ? qnn::FindSocModel(soc_model) : std::nullopt);
+        opt_soc_model);
     if (!qnn_manager_or) {
       LITERT_LOG(LITERT_ERROR, "%s", qnn_manager_or.Error().Message().data());
       return qnn_manager_or.Error().Status();
     }
     LITERT_LOG(LITERT_INFO, "%s", "QNN manager created");
-    compiler_plugin->initQnnManager(std::move(*qnn_manager_or));
+    LITERT_RETURN_IF_ERROR(
+        compiler_plugin->initQnnManager(std::move(*qnn_manager_or)));
     qnn_manager = compiler_plugin->QNN();
   }
 
@@ -325,7 +422,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
     std::vector<::qnn::OpWrapper> op_wrappers;
     LITERT_RETURN_IF_ERROR(litert::qnn::ConvertOp(
-        compiler_plugin->Options().GetUseInt64BiasAsInt32(), op, tensor_pool,
+        compiler_plugin->Options().GetUseInt64BiasAsInt32(),
+        compiler_plugin->Options().GetCustomOpPackage(), op, tensor_pool,
         input_tensors, output_tensors, op_wrappers));
 
     // Empty op_wrappers means the op is not supported by QNN.
@@ -376,6 +474,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   result->byte_code_index.resize(num_partitions);
   QnnManager* qnn_manager = compiler_plugin->QNN();
   auto options = compiler_plugin->Options();
+  if (!options.GetSaverOutputDir().empty()) {
+    LITERT_LOG(
+        LITERT_WARNING,
+        "Overriding graph IO tensor mem type to Raw because Saver is enabled.");
+    options.SetGraphIOTensorMemType(::qnn::GraphIOTensorMemType::kRaw);
+  }
   const bool ir_backend_override =
       !options.GetDlcDir().empty() &&
       options.GetBackendType() != ::qnn::BackendType::kIrBackend;
@@ -384,7 +488,33 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                "Overriding backend type to IR Backend because DLC dir is set.");
     options.SetBackendType(::qnn::BackendType::kIrBackend);
   }
-  if (!qnn_manager || ir_backend_override) {
+
+  if (options.GetBackendType() == ::qnn::BackendType::kIrBackend) {
+    std::string dlc_dir(options.GetDlcDir());
+    if (!dlc_dir.empty()) {
+      std::error_code ec;
+      std::filesystem::create_directories(dlc_dir, ec);
+      if (ec) {
+        LITERT_LOG(LITERT_ERROR, "Failed to create DLC directory %s: %s",
+                   dlc_dir.c_str(), ec.message().c_str());
+        return kLiteRtStatusErrorRuntimeFailure;
+      }
+    }
+  }
+
+  bool soc_model_mismatch = false;
+  if (qnn_manager && opt_soc_model.has_value()) {
+    soc_model_mismatch =
+        (qnn_manager->GetSocInfo().soc_model != opt_soc_model->soc_model);
+  }
+
+  if (!qnn_manager || ir_backend_override || soc_model_mismatch) {
+    if (soc_model_mismatch) {
+      LITERT_LOG(LITERT_INFO,
+                 "Recreating QNN manager due to SoC mismatch: current %s, "
+                 "target %s",
+                 qnn_manager->GetSocInfo().soc_name, opt_soc_model->soc_name);
+    }
     // Initialize SDK and load qnn shared libraries.
     LITERT_LOG(LITERT_INFO, "%s", "Creating QNN manager");
     auto qnn_manager_or = QnnManager::Create(
@@ -394,7 +524,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       return qnn_manager_or.Error().Status();
     }
     LITERT_LOG(LITERT_INFO, "%s", "QNN manager created");
-    compiler_plugin->initQnnManager(std::move(*qnn_manager_or));
+    LITERT_RETURN_IF_ERROR(
+        compiler_plugin->initQnnManager(std::move(*qnn_manager_or)));
     qnn_manager = compiler_plugin->QNN();
   }
 
@@ -455,11 +586,18 @@ LiteRtStatus LiteRtCompilerPluginCompile(
             break;
           }
           default: {
-            LITERT_LOG(LITERT_WARNING,
-                       "Only support weight sharing feature in Htp Backend, "
-                       "disable weight sharing feature");
-            break;
+            LITERT_LOG(LITERT_ERROR,
+                       "Weight sharing is only supported in HTP backend.");
+            return kLiteRtStatusErrorInvalidArgument;
           }
+        }
+      } else if (options.GetBackendType() == ::qnn::BackendType::kGpuBackend) {
+        if (options.GetGpuPerformanceMode() !=
+            ::qnn::GpuPerformanceMode::kDefault) {
+          context_configs = QnnManager::GpuPerformanceContextConfigs(
+              options.GetGpuPerformanceMode());
+          LITERT_LOG(LITERT_INFO, "Enable GPU performance mode: %d",
+                     static_cast<int>(options.GetGpuPerformanceMode()));
         }
       }
       auto context_handle = qnn_manager->CreateContextHandle(
@@ -490,19 +628,46 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     entry_point_name = absl::StrFormat(kEntryPointNameFmt, partition_idx);
     LITERT_LOG(LITERT_INFO, "Entry point name: %s", entry_point_name.c_str());
 
+    std::vector<::qnn::TensorWrapper> inputs;
+    std::vector<::qnn::TensorWrapper> outputs;
+
     LITERT_RETURN_IF_ERROR(litert::qnn::ComposeGraph(
         compiler_plugin->ctx(), *qnn_manager,
         context_handles[context_handle_idx].Get(),
         context_handles[context_handle_idx].get_profile_handle(),
-        partition.Get(), entry_point_name, options));
+        partition.Get(), entry_point_name, options, &inputs, &outputs));
     LITERT_LOG(LITERT_INFO, "%s", "Graph composed");
+
+    if (options.GetEnableJustInTime()) {
+      auto jit_graph = std::make_unique<litert::qnn::QnnJitGraph>();
+      jit_graph->context_handle = context_handles[context_handle_idx].Get();
+      jit_graph->graph_name = entry_point_name;
+      jit_graph->inputs = std::move(inputs);
+      jit_graph->outputs = std::move(outputs);
+      result->jit_graphs.push_back(std::move(jit_graph));
+    }
+  }
+
+  if (!options.GetSaverOutputDir().empty()) {
+    LITERT_LOG(LITERT_WARNING,
+               "Since Saver is enabled, functional context binaries are "
+               "excluded from the compiled TFLite.");
+    result->context_bin.resize(next_context_handle_idx);
+    *compiled_result = result.release();
+    return kLiteRtStatusOk;
   }
 
   if (options.GetBackendType() == ::qnn::BackendType::kIrBackend) {
     LITERT_LOG(LITERT_WARNING,
                "Since IR backend is enabled, functional context binaries are "
                "excluded from the compiled TFLite.");
-    return kLiteRtStatusErrorUnsupported;
+    result->context_bin.resize(next_context_handle_idx);
+    *compiled_result = result.release();
+    return kLiteRtStatusOk;
+  } else if (options.GetEnableJustInTime()) {
+    LITERT_LOG(LITERT_INFO,
+               "Just-In-Time enabled. Skipping context binary generation.");
+    result->context_handles = std::move(context_handles);
   } else {
     // Generate context binary.
     result->context_bin.resize(next_context_handle_idx);

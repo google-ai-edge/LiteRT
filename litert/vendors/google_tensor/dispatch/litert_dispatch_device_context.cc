@@ -15,6 +15,8 @@
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 
 #include <inttypes.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
 #include <cstddef>
 #include <optional>
@@ -28,6 +30,7 @@
 
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
@@ -43,6 +46,7 @@
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_macros.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
+#include "litert/vendors/google_tensor/dispatch/sb_api_features.h"
 
 namespace gt = litert::google_tensor;
 
@@ -84,6 +88,21 @@ GetGoogleTensorOptions(const LiteRtRuntimeContext* runtime_context,
   }
 
   return google_tensor_options_data;
+}
+bool IsTflite(const void* addr, size_t size) {
+  if (size < 8 || addr == nullptr) {
+    return false;
+  }
+  absl::string_view bytes(static_cast<const char*>(addr), size);
+  return bytes.substr(4, 4) == "TFL3";
+}
+
+bool IsTflite(int fd, size_t offset) {
+  char header[8];
+  if (pread(fd, header, sizeof(header), offset) == sizeof(header)) {
+    return absl::string_view(header + 4, 4) == "TFL3";
+  }
+  return false;
 }
 }  // namespace
 
@@ -133,6 +152,14 @@ LiteRtStatus LiteRtDispatchDeviceContextT::Destroy() {
     LITERT_LOG(LITERT_ERROR,
                "Cannot destroy device context with %zu graphs registered",
                registered_graphs_.size());
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  if (!mmap_regions_.empty()) {
+    LITERT_LOG(LITERT_ERROR,
+               "Cannot destroy device context with %zu mmap'd executable(s) "
+               "still loaded",
+               mmap_regions_.size());
     return kLiteRtStatusErrorRuntimeFailure;
   }
 
@@ -246,13 +273,66 @@ LiteRtStatus LiteRtDispatchDeviceContextT::LoadExecutable(
   }
 
   if (bytecode_buffer.fd >= 0) {
+    const size_t fd_offset =
+        bytecode_buffer.alloc_base_file_offset + bytecode_buffer.offset;
+    if (GoogleTensorSouthBoundFeatureSupported(
+            GoogleTensorSouthBoundFeature::kSqContainerFdWithOffset)) {
+      GT_LOG_RETURN_IF_SB_ERROR(
+          thrLoadSqContainerFdWithOffset(
+              thr_context_, thr_type, bytecode_buffer.fd, bytecode_buffer.size,
+              fd_offset, /*lazy_loading=*/false, &exec_handle),
+          "Failed to load SQ container from FD with offset");
+      if (IsTflite(bytecode_buffer.fd, fd_offset)) {
+        tflite_executables_.insert(exec_handle);
+      }
+      return kLiteRtStatusOk;
+    }
+
+    // Old SouthBound, offset == 0: legacy FD entry point handles it directly.
+    if (fd_offset == 0) {
+      GT_LOG_RETURN_IF_SB_ERROR(
+          thrLoadSqContainerFd(thr_context_, thr_type, bytecode_buffer.fd,
+                               bytecode_buffer.size, /*lazy_loading=*/false,
+                               &exec_handle),
+          "Failed to load SQ container from FD");
+      if (IsTflite(bytecode_buffer.fd, 0)) {
+        tflite_executables_.insert(exec_handle);
+      }
+      return kLiteRtStatusOk;
+    }
+
+    // Old SouthBound, offset > 0 (e.g. AOT .tflite with embedded DISPATCH_OP):
+    // mmap a page-aligned region and load via the pointer-based API.
+    const size_t page_size = static_cast<size_t>(sysconf(_SC_PAGESIZE));
+    const size_t aligned_offset = fd_offset & ~(page_size - 1);
+    const size_t offset_delta = fd_offset - aligned_offset;
+    const size_t map_length = bytecode_buffer.size + offset_delta;
+    void* mapped = mmap(nullptr, map_length, PROT_READ, MAP_PRIVATE,
+                        bytecode_buffer.fd, static_cast<off_t>(aligned_offset));
+    if (mapped == MAP_FAILED) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Failed to mmap SQ bytecode (fd=%d, size=%zu, offset=%zu)",
+                 bytecode_buffer.fd, bytecode_buffer.size, fd_offset);
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
+    absl::Cleanup mmap_cleanup = [mapped, map_length] {
+      munmap(mapped, map_length);
+    };
+
+    const void* bytecode_ptr =
+        static_cast<const std::byte*>(mapped) + offset_delta;
     GT_LOG_RETURN_IF_SB_ERROR(
-        thrLoadSqContainerFdWithOffset(thr_context_, thr_type,
-                                       bytecode_buffer.fd, bytecode_buffer.size,
-                                       bytecode_buffer.offset,
-                                       /*lazy_loading=*/false, &exec_handle),
-        "Failed to load SQ container from fd %d with size %zu and offset %zu",
-        bytecode_buffer.fd, bytecode_buffer.size, bytecode_buffer.offset);
+        thrLoadSqContainer(thr_context_, thr_type, bytecode_ptr,
+                           bytecode_buffer.size, &exec_handle),
+        "Failed to load SQ container from mmap'd buffer");
+
+    if (IsTflite(bytecode_ptr, bytecode_buffer.size)) {
+      tflite_executables_.insert(exec_handle);
+    }
+
+    mmap_regions_.push_back({exec_handle, mapped, map_length});
+    std::move(mmap_cleanup).Cancel();
+    return kLiteRtStatusOk;
   } else {
     const auto* sq_bytecode =
         static_cast<const std::byte*>(bytecode_buffer.base_addr) +
@@ -263,16 +343,35 @@ LiteRtStatus LiteRtDispatchDeviceContextT::LoadExecutable(
                            bytecode_buffer.size, &exec_handle),
         "Failed to load SQ container from buffer with base 0x%p and size %zu",
         sq_bytecode, bytecode_buffer.size);
+
+    if (IsTflite(sq_bytecode, bytecode_buffer.size)) {
+      tflite_executables_.insert(exec_handle);
+    }
   }
 
   return kLiteRtStatusOk;
 }
 
+bool LiteRtDispatchDeviceContextT::IsTfliteExecutable(
+    LiteRtDispatchExecutableHandle exec_handle) const {
+  return tflite_executables_.contains(exec_handle);
+}
+
 LiteRtStatus LiteRtDispatchDeviceContextT::UnloadExecutable(
     LiteRtDispatchExecutableHandle exec_handle) {
+  tflite_executables_.erase(exec_handle);
   GT_LOG_RETURN_IF_SB_ERROR(thrUnloadSqContainer(thr_context_, exec_handle),
                             "Failed to unload SQ container %" PRIu64,
                             exec_handle);
+
+  // Release any mmap'd region associated with this executable.
+  for (auto it = mmap_regions_.begin(); it != mmap_regions_.end(); ++it) {
+    if (it->exec_handle == exec_handle) {
+      munmap(it->addr, it->length);
+      mmap_regions_.erase(it);
+      break;
+    }
+  }
 
   return kLiteRtStatusOk;
 }

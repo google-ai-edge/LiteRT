@@ -20,7 +20,7 @@ load("//litert/build_common:litert_build_defs.bzl", "cc_library_with_testonly_vi
 load("//litert/build_common:special_rule.bzl", "get_compatible_with_portable", "gles_headers", "gles_linkopts", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
 
-LITERT_MIN_IOS_VERSION = "14.0"
+LITERT_MIN_IOS_VERSION = "15.0"
 
 # TODO(b/502961597): Re-enable litert_tensor_buffer_test_cc_macos test once the test is fixed.
 # LITERT_MIN_MACOS_VERSION = "14.0"
@@ -44,10 +44,24 @@ package(
 # -----------------------------------------------------------------------------
 
 cc_library(
+    name = "litert_api_types",
+    hdrs = ["litert_api_types.h"],
+    compatible_with = get_compatible_with_portable(),
+    deps = [
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/functional:any_invocable",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
     name = "litert_any",
     hdrs = ["litert_any.h"],
     compatible_with = get_compatible_with_portable(),
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_expected",
         ":litert_macros",
@@ -77,6 +91,7 @@ cc_library(
     name = "litert_buffer_ref",
     hdrs = ["litert_buffer_ref.h"],
     deps = [
+        ":litert_api_types",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
@@ -109,6 +124,7 @@ cc_library(
     hdrs = ["litert_macros.h"],
     compatible_with = get_compatible_with_portable(),
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_expected",
         "//litert/c:litert_common",
@@ -141,6 +157,7 @@ cc_library(
     hdrs = ["litert_expected.h"],
     compatible_with = get_compatible_with_portable(),
     deps = [
+        ":litert_api_types",
         ":litert_common",
         "//litert/c:litert_common",
         "@com_google_absl//absl/log:absl_check",
@@ -186,12 +203,11 @@ cc_library(
     name = "litert_layout",
     hdrs = ["litert_layout.h"],
     deps = [
+        ":litert_api_types",
         ":litert_expected",
         ":litert_macros",
         "//litert/c:litert_layout",
         "//litert/cc/internal:litert_consts",
-        "@com_google_absl//absl/container:inlined_vector",
-        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -208,6 +224,7 @@ cc_library(
     name = "litert_opaque_options",
     hdrs = ["litert_opaque_options.h"],
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_expected",
         ":litert_macros",
@@ -239,6 +256,7 @@ cc_library(
     hdrs = ["litert_environment_options.h"],
     deps = [
         ":litert_any",
+        ":litert_api_types",
         ":litert_common",
         ":litert_expected",
         "//litert/c:litert_environment_options_header",
@@ -278,6 +296,7 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_buffer_ref",
         ":litert_common",
         ":litert_environment",
@@ -536,8 +555,8 @@ litert_device_test(
 #         "@com_google_absl//absl/log:absl_log",
 #         "@com_google_absl//absl/strings",
 #         "@com_google_absl//absl/types:span",
-#         "//third_party/apple_frameworks:Metal",
-#         "//third_party/apple_frameworks:XCTest",
+#         # Dependency placeholder: apple_frameworks Metal,
+#         # Dependency placeholder: apple_frameworks XCTest,
 #         "//litert/c:litert_common",
 #         "//litert/c:litert_environment_options",
 #         "//litert/cc/options:litert_gpu_options",
@@ -699,6 +718,7 @@ cc_test(
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_scheduling_info",
         "//litert/cc/options:litert_runtime_options",
+        "//litert/runtime:compiled_model",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
@@ -727,6 +747,7 @@ cc_library_with_testonly_vis(
     ],
     deps = [
         ":litert_any",
+        ":litert_api_types",
         ":litert_common",
         ":litert_environment_options",
         ":litert_expected",
@@ -751,6 +772,7 @@ cc_test(
     }),
     deps = [
         ":litert_any",
+        ":litert_api_types",
         ":litert_common",
         ":litert_compiled_model",
         ":litert_environment",
@@ -821,6 +843,7 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_element_type",
         ":litert_expected",
@@ -847,9 +870,11 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_buffer_ref",
         ":litert_common",
         ":litert_element_type",
+        ":litert_environment",
         ":litert_expected",
         ":litert_macros",
         ":litert_model_types",
@@ -878,6 +903,7 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_element_type",
         ":litert_expected",
@@ -922,8 +948,10 @@ cc_test(
         "//litert/c:litert_layout",
         "//litert/c:litert_op_code",
         "//litert/cc/internal:litert_extended_model",
+        "//litert/cc/internal:scoped_file",
         "//litert/core/model",
         "//litert/test:common",
+        "//litert/test:load_test_model",
         "//litert/test:matchers",
         "//tflite:stderr_reporter",
         "//tflite/converter:allocation",
@@ -944,6 +972,7 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_expected",
         ":litert_tensor_buffer_types",
@@ -979,6 +1008,7 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_environment",
         ":litert_event",
@@ -1091,6 +1121,7 @@ cc_library_with_testonly_vis(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_custom_op_kernel",
         ":litert_environment",
@@ -1191,8 +1222,8 @@ objc_library(
         "//litert/test:metal_test_helper",
         "//litert/test:simple_model",
         "//tflite/delegates/gpu/metal:metal_device",
-        "//third_party/apple_frameworks:Metal",
-        "//third_party/apple_frameworks:XCTest",
+        # Dependency placeholder: apple_frameworks Metal,
+        # Dependency placeholder: apple_frameworks XCTest,
     ],
 )
 
@@ -1230,6 +1261,7 @@ cc_library(
     name = "litert_api_with_dynamic_runtime",
     hdrs = [
         # C++ API headers.
+        "litert_api_types.h",
         "litert_any.h",
         "litert_common.h",
         "//litert/c/internal:litert_scheduling_info",
@@ -1312,6 +1344,7 @@ cc_library(
         "//litert/cc/options:litert_intel_openvino_options",
         "//litert/cc/options:litert_qualcomm_options",
         # Other (static) C++ API targets.
+        ":litert_api_types",
         ":litert_any",
         ":litert_buffer_ref",
         ":litert_common",

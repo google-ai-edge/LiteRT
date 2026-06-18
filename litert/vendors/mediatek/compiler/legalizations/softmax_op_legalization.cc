@@ -19,9 +19,8 @@
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_op_options.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
@@ -29,7 +28,7 @@ namespace litert::mediatek {
 
 Expected<void> LegalizeSoftmaxOp(const NeuronAdapterApi& neuron_adapter_api,
                                  NeuronModel* model, OperandMap& operand_map,
-                                 const litert::Op& op) {
+                                 const litert::compiler::Op& op) {
   LITERT_LOG(LITERT_INFO, "Legalize Softmax");
   std::vector<uint32_t> input_indices;
   for (auto& input : op.Inputs()) {
@@ -43,7 +42,7 @@ Expected<void> LegalizeSoftmaxOp(const NeuronAdapterApi& neuron_adapter_api,
   // A NEURON_Softmax operation takes an additional scalar operand, which is
   // used to pass a Beta value.
   float beta;
-  if (auto status = LiteRtGetSoftmaxBetaOption(op.Get(), &beta);
+  if (auto status = op.ctx()->get_softmax_beta_option(op.Get(), &beta);
       status != kLiteRtStatusOk) {
     return Error(status, "Failed to get beta");
   }

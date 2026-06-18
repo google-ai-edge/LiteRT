@@ -14,9 +14,8 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/testing/tflite_diff_util.h"
 
-#include <cstdarg>
 #include <cstdio>
-#include <cstdlib>
+#include <memory>
 #include <sstream>
 #include <string>
 

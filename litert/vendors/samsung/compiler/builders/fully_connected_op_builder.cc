@@ -15,14 +15,21 @@
 
 #include "litert/vendors/samsung/compiler/builders/fully_connected_op_builder.h"
 
+#include <cstdint>
+
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_op_options.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
 
 constexpr int kKernelIndex = 1;
 
-Expected<OpWrapper> BuildFullyConnectedOp(const Op& op) {
+Expected<OpWrapper> BuildFullyConnectedOp(const LiteRtCompilerContext* ctx,
+                                          const litert::compiler::Op& op) {
   OpWrapper op_wrapper("FC");
 
   for (const auto& input : op.Inputs()) {
@@ -45,7 +52,7 @@ Expected<OpWrapper> BuildFullyConnectedOp(const Op& op) {
   op_wrapper.AddParam("out_channels", kernel_dimensions[0]);
 
   uint32_t tfl_fused_activation;
-  if (auto status = LiteRtGetFullyConnectedFusedActivationOption(
+  if (auto status = ctx->get_fully_connected_fused_activation_option(
           op.Get(), &tfl_fused_activation);
       status != kLiteRtStatusOk) {
     return Error(status, "Fail to get fused activation");

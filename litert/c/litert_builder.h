@@ -42,7 +42,8 @@ LiteRtStatus LiteRtBuilderBuildTensor(
     LiteRtUnrankedTensorType unranked_tensor_type, LiteRtWeights weights,
     LiteRtQuantizationTypeId quantization_type_id,
     LiteRtQuantizationPerTensor per_tensor_quantization,
-    LiteRtQuantizationPerChannel per_channel_quantization, const char* name,
+    LiteRtQuantizationPerChannel per_channel_quantization,
+    LiteRtQuantizationBlockWise block_wise_quantization, const char* name,
     LiteRtTensor* new_tensor);
 
 // Builds weights for a tensor. Builder will take the ownership of the data,

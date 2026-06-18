@@ -28,17 +28,20 @@
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
-ABSL_DECLARE_FLAG(LiteRtIntelOpenVinoDeviceType, intel_openvino_device_type);
-
 ABSL_DECLARE_FLAG(LiteRtIntelOpenVinoPerformanceMode,
                   intel_openvino_performance_mode);
 
 ABSL_DECLARE_FLAG(std::string, intel_openvino_configs_map);
 
-bool AbslParseFlag(absl::string_view text,
-                   LiteRtIntelOpenVinoDeviceType* options, std::string* error);
+ABSL_DECLARE_FLAG(std::string, intel_openvino_graph_backends);
 
-std::string AbslUnparseFlag(LiteRtIntelOpenVinoDeviceType options);
+ABSL_DECLARE_FLAG(std::string, intel_openvino_graph_configs_map);
+
+bool AbslParseFlag(absl::string_view text,
+                   LiteRtIntelOpenVinoGraphBackend* options,
+                   std::string* error);
+
+std::string AbslUnparseFlag(LiteRtIntelOpenVinoGraphBackend options);
 
 bool AbslParseFlag(absl::string_view text,
                    LiteRtIntelOpenVinoPerformanceMode* options,

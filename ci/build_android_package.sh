@@ -176,10 +176,16 @@ prepare_pom_and_artifact() {
 # To configure Android via TF's 'configure' script.
 export TF_SET_ANDROID_WORKSPACE=1
 
+if [[ "$IS_PRESUBMIT_JOB" == "true" ]]; then
+  FAT_APK_CPU="arm64-v8a,x86_64"
+else
+  FAT_APK_CPU="x86,x86_64,arm64-v8a,armeabi-v7a"
+fi
+
 BUILD_FLAGS=("-c" "opt" \
     "--cxxopt=--std=c++17" \
     "--config=android_arm64" \
-    "--fat_apk_cpu=x86,x86_64,arm64-v8a,armeabi-v7a" \
+    "--fat_apk_cpu=${FAT_APK_CPU}" \
     "--define=android_dexmerger_tool=d8_dexmerger" \
     "--define=android_incremental_dexing_tool=d8_dexbuilder" \
     "--repo_env=HERMETIC_PYTHON_VERSION=3.11" \
@@ -196,16 +202,18 @@ fi
 if [[ "$BUILD_LITERT_KOTLIN_API" == "true" ]]; then
   echo "Building Litert Kotlin API."
   bazel build "${BUILD_FLAGS[@]}" --action_env ANDROID_NDK_API_LEVEL=23 \
-      //litert/kotlin:litert
+      --define=litert_runtime_link_mode=dynamic \
+      //litert/kotlin:litert-api-aar
+  bazel build "${BUILD_FLAGS[@]}" --action_env ANDROID_NDK_API_LEVEL=23 \
+      //litert/kotlin:litert-aar
 else
   echo "Skipping building Litert Kotlin API."
 fi
 
 # TODO(b/503213161): Avoid piggybacking Tensor API's bazel build test on
-# LiteRT's wheel kokoro job.
-bazel build "${BUILD_FLAGS[@]}" //tensor/...
-
+# LiteRT's wheel kokoro job (i.e. //tensor/...).
 bazel build "${BUILD_FLAGS[@]}" \
+    //tensor/... \
     //tflite/java:tensorflow-lite-api \
     //tflite/java:tensorflow-lite \
     //tflite/java:tensorflow-lite-gpu-api \
@@ -230,7 +238,7 @@ prepare_pom_and_artifact "litert-gpu" "LiteRT GPU implementation" \
 #     "bazel-bin/tflite/delegates/hexagon/java/tensorflow-lite-hexagon.aar" \
 #     "${VERSION}"
 
-if [[ "$VERSION" == "0.0.0-nightly-SNAPSHOT" ]]; then
+if [[ "$VERSION" == "0.0.0-nightly-SNAPSHOT" && "$IS_PRESUBMIT_JOB" != "true" ]]; then
   # Build debug version of litert, litert-gpu
   bazel build "${BUILD_FLAGS[@]}" \
       --define=tflite_keep_symbols=true \

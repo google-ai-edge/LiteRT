@@ -31,6 +31,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_logging.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
 #include "litert/core/model/model.h"
@@ -258,7 +259,8 @@ void PrintSummary(std::ostream& out, const AnalysisResult& summary) {
 
 // Analyzes a single model and prints details to stdout/stderr.
 // This is used when the tool is run in single-model mode.
-Expected<void> RunSingleModelAnalysis(const std::string& model_path,
+Expected<void> RunSingleModelAnalysis(litert::Environment& env,
+                                      const std::string& model_path,
                                       bool no_ops, bool only_summarize,
                                       bool validate_shape) {
   ToolDisplay display(std::cerr, "LITERT_MODEL_ANALYZE");
@@ -270,7 +272,7 @@ Expected<void> RunSingleModelAnalysis(const std::string& model_path,
       no_ops, only_summarize, validate_shape, model_path);
 
   display.Start("Loading model");
-  auto model_obj = Model::CreateFromFile(model_path);
+  auto model_obj = Model::CreateFromFile(env, model_path);
   if (!model_obj) {
     display.Labeled() << absl::StreamFormat("Failed to load model: %s\n",
                                             model_obj.Error().Message());
@@ -313,12 +315,13 @@ Expected<void> RunSingleModelAnalysis(const std::string& model_path,
 }
 
 // Analyzes a model without verbose ABSL_LOGging, suitable for batch processing.
-AnalysisResult AnalyzeModelSilent(const std::string& model_path,
+AnalysisResult AnalyzeModelSilent(litert::Environment& env,
+                                  const std::string& model_path,
                                   bool validate_shape) {
   AnalysisResult result;
   result.model_name = fs::path(model_path).filename().string();
 
-  auto model_obj = Model::CreateFromFile(model_path);
+  auto model_obj = Model::CreateFromFile(env, model_path);
   if (!model_obj) {
     result.load_success = false;
     result.error_msg = model_obj.Error().Message();
@@ -336,7 +339,7 @@ AnalysisResult AnalyzeModelSilent(const std::string& model_path,
 }
 
 // Driver for batch analysis mode.
-void RunBatchAnalysis(const std::string& input_dir,
+void RunBatchAnalysis(litert::Environment& env, const std::string& input_dir,
                       const std::string& output_csv, bool validate_shape) {
   std::vector<std::string> tflite_files;
   std::error_code ec;
@@ -377,7 +380,7 @@ void RunBatchAnalysis(const std::string& input_dir,
     ABSL_LOG(INFO) << "Processing " << fs::path(file).filename().string()
                    << " ... ";
 
-    AnalysisResult res = AnalyzeModelSilent(file, validate_shape);
+    AnalysisResult res = AnalyzeModelSilent(env, file, validate_shape);
 
     if (res.load_success) {
       ABSL_LOG(INFO) << "Done";
@@ -407,9 +410,11 @@ int main(int argc, char* argv[]) {
   const auto no_ops = absl::GetFlag(FLAGS_no_ops);
   const auto only_summarize = absl::GetFlag(FLAGS_only_summarize);
   const auto validate_shape = absl::GetFlag(FLAGS_validate_shape);
+  auto env = litert::Environment::Create({});
 
   if (!input_dir.empty()) {
-    litert::tools::RunBatchAnalysis(input_dir, output_csv, validate_shape);
+    litert::tools::RunBatchAnalysis(*env, input_dir, output_csv,
+                                    validate_shape);
     return 0;
   } else {
     if (model_path.empty()) {
@@ -418,7 +423,7 @@ int main(int argc, char* argv[]) {
       return 1;
     }
     return !litert::tools::RunSingleModelAnalysis(
-                model_path, no_ops, only_summarize, validate_shape)
+                *env, model_path, no_ops, only_summarize, validate_shape)
                 .HasValue();
   }
 }

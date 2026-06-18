@@ -31,12 +31,14 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_model_types.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
+#include "litert/test/load_test_model.h"
 #include "litert/test/matchers.h"
 #include "tflite/converter/allocation.h"
 #include "tflite/stderr_reporter.h"
@@ -113,6 +115,30 @@ TEST(CcModelTest, SimpleModelSignature) {
   EXPECT_EQ(output_names->at(1), "prod");
 }
 
+#if !defined(LITERT_WINDOWS_OS)
+TEST(CcModelTest, CreateFromFd) {
+  if (!tflite::MMAPAllocation::IsSupported()) {
+    GTEST_SKIP() << "MMAPAllocation is not supported";
+  }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model_file,
+      ScopedFile::Open(testing::GetTestFilePath("one_mul.tflite")));
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t model_size, model_file.GetSize());
+
+  auto model = Model::CreateFromFd(model_file.file(), 0, model_size);
+  ASSERT_TRUE(model);
+  EXPECT_EQ(model->GetNumSignatures(), 1);
+
+  auto signature = model->FindSignature(Model::DefaultSignatureKey());
+  ASSERT_TRUE(signature);
+  EXPECT_THAT(signature->InputNames(),
+              ::testing::ElementsAreArray({"arg0", "arg1"}));
+  EXPECT_THAT(signature->OutputNames(),
+              ::testing::ElementsAreArray({"tfl.mul"}));
+}
+#endif  // !defined(LITERT_WINDOWS_OS)
+
 #if !defined(LITERT_DYNAMIC_RUNTIME)
 // copybara:uncomment_begin(google_only)
 // TEST(CcModelTest, CreateFromMemoryAllocation) {
@@ -159,8 +185,14 @@ TEST(CcSignatureTest, Basic) {
   auto input_names = signature.InputNames();
   EXPECT_THAT(input_names[0], "arg0");
   EXPECT_THAT(input_names[1], "arg1");
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto& input0, signature.InputTensor(0));
+  EXPECT_THAT(input0.Name(), "arg0");
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto& input1, signature.InputTensor(1));
+  EXPECT_THAT(input1.Name(), "arg1");
   auto output_names = signature.OutputNames();
   EXPECT_THAT(output_names[0], "tfl.mul");
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto& output0, signature.OutputTensor(0));
+  EXPECT_THAT(output0.Name(), "tfl.mul");
 }
 
 TEST(CcSignatureTest, Lookup) {
@@ -283,7 +315,8 @@ TEST(CcSimpleTensorTest, QuantizationNone) {
                       /*type=*/LiteRtUnrankedTensorType{},
                       /*quantization_type_id=*/kLiteRtQuantizationNone,
                       /*per_tensor_quantization=*/{},
-                      /*per_channel_quantization=*/{});
+                      /*per_channel_quantization=*/{},
+                      /*block_wise_quantization=*/{});
   LiteRtQuantizationTypeId quantization_type_id = tensor.QTypeId();
   EXPECT_EQ(quantization_type_id, kLiteRtQuantizationNone);
 }
@@ -300,7 +333,8 @@ TEST(CcSimpleTensorTest, QuantizationPerTensor) {
                       /*type=*/RankedTensorType(kTensorType),
                       /*quantization_type_id=*/kLiteRtQuantizationPerTensor,
                       /*per_tensor_quantization=*/{kScale, kZeroPoint},
-                      /*per_channel_quantization=*/{});
+                      /*per_channel_quantization=*/{},
+                      /*block_wise_quantization=*/{});
   ASSERT_EQ(tensor.QTypeId(), kLiteRtQuantizationPerTensor);
   ASSERT_TRUE(tensor.HasQuantization());
 
@@ -328,7 +362,8 @@ TEST(CcSimpleTensorTest, QuantizationPerChannel) {
       /*per_tensor_quantization=*/{},
       /*per_channel_quantization=*/
       {kQuantizedDimension, kNumChannels, const_cast<float*>(kScales),
-       const_cast<int64_t*>(kZeroPoints)});
+       const_cast<int64_t*>(kZeroPoints)},
+      /*block_wise_quantization=*/{});
   ASSERT_EQ(tensor.QTypeId(), kLiteRtQuantizationPerChannel);
   ASSERT_TRUE(tensor.HasQuantization());
 
@@ -341,6 +376,29 @@ TEST(CcSimpleTensorTest, QuantizationPerChannel) {
       ::testing::ElementsAreArray(kZeroPoints));
   EXPECT_EQ(per_channel_quantization.num_channels, kNumChannels);
   EXPECT_EQ(per_channel_quantization.quantized_dimension, kQuantizedDimension);
+}
+
+TEST(CcSimpleTensorTest, QuantizationBlockWise) {
+  LiteRtTensorT scales_tensor;
+  LiteRtTensorT zero_points_tensor;
+  constexpr int32_t kBlockSize = 32;
+
+  SimpleTensor tensor(
+      /*index=*/0, /*name=*/"foo",
+      /*type_id=*/kLiteRtRankedTensorType,
+      /*type=*/RankedTensorType(kTensorType),
+      /*quantization_type_id=*/kLiteRtQuantizationBlockWise,
+      /*per_tensor_quantization=*/{},
+      /*per_channel_quantization=*/{},
+      /*block_wise_quantization=*/
+      {&scales_tensor, &zero_points_tensor, kBlockSize});
+  ASSERT_EQ(tensor.QTypeId(), kLiteRtQuantizationBlockWise);
+  ASSERT_TRUE(tensor.HasQuantization());
+
+  auto block_wise_quantization = tensor.BlockWiseQuantization();
+  EXPECT_EQ(block_wise_quantization.scales, &scales_tensor);
+  EXPECT_EQ(block_wise_quantization.zero_points, &zero_points_tensor);
+  EXPECT_EQ(block_wise_quantization.block_size, kBlockSize);
 }
 
 }  // namespace

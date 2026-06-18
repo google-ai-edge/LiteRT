@@ -32,6 +32,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/internal/scoped_weight_source.h"
 #include "litert/cc/litert_common.h"
@@ -43,6 +44,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/options/litert_gpu_options.h"
 #include "litert/tools/flags/options_parser_registry.h"
 #include "litert/tools/tensor_utils.h"
 #include "tflite/profiling/time.h"
@@ -56,8 +58,10 @@ ABSL_FLAG(std::string, compiler_cache_dir, "",
           "Path to the compiler cache directory. Only for JIT compilation.");
 ABSL_FLAG(std::string, accelerator, "cpu",
           "Which backend to use. Comma delimited string of accelerators (e.g. "
-          "cpu,gpu,npu). Will delegate to NPU, GPU, then CPU if they are "
-          "specified in this flag.");
+          "cpu,gpu,npu). Will delegate to NPU, GPU, then CPU. CPU is always "
+          "included as a fallback.");
+ABSL_FLAG(std::string, gpu_precision, "auto",
+          "GPU precision option [auto|fp16|fp32].");
 ABSL_FLAG(size_t, signature_index, 0, "Index of the signature to run.");
 ABSL_FLAG(bool, print_tensors, false, "Print tensor values after execution.");
 ABSL_FLAG(bool, compare_numerical, false,
@@ -99,7 +103,7 @@ namespace {
 litert::HwAcceleratorSet GetAccelerator() {
   const std::string accelerator_str = absl::GetFlag(FLAGS_accelerator);
   litert::HwAcceleratorSet accelerators(
-      static_cast<int>(litert::HwAccelerators::kNone));
+      static_cast<int>(litert::HwAccelerators::kCpu));
   for (absl::string_view accelerator : absl::StrSplit(accelerator_str, ',')) {
     if (accelerator == "gpu") {
       accelerators |= litert::HwAccelerators::kGpu;
@@ -114,6 +118,10 @@ litert::HwAcceleratorSet GetAccelerator() {
 
 Expected<Environment> GetEnvironment() {
   std::vector<litert::EnvironmentOptions::Option> environment_options = {};
+
+  environment_options.push_back(litert::EnvironmentOptions::Option{
+      litert::EnvironmentOptions::Tag::kAutoRegisterAccelerators,
+      static_cast<int64_t>(GetAccelerator().value)});
 
   const auto dispatch_library_dir = absl::GetFlag(FLAGS_dispatch_library_dir);
   if (!dispatch_library_dir.empty()) {
@@ -225,6 +233,23 @@ Expected<Options> GetOptions() {
       LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
       LITERT_RETURN_IF_ERROR(gpu_opts.SetKernelBatchSize(kernel_batch_size));
     }
+    std::string gpu_precision = absl::GetFlag(FLAGS_gpu_precision);
+    if (gpu_precision == "fp32") {
+      LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
+      LITERT_RETURN_IF_ERROR(
+          gpu_opts.SetPrecision(GpuOptions::Precision::kFp32));
+    } else if (gpu_precision == "fp16") {
+      LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
+      LITERT_RETURN_IF_ERROR(
+          gpu_opts.SetPrecision(GpuOptions::Precision::kFp16));
+    } else if (gpu_precision == "auto") {
+      LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
+      LITERT_RETURN_IF_ERROR(
+          gpu_opts.SetPrecision(GpuOptions::Precision::kDefault));
+    } else {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Invalid gpu_precision flag value.");
+    }
   }
 
   const std::string kernel_mode_str = absl::GetFlag(FLAGS_cpu_kernel_mode);
@@ -260,26 +285,6 @@ Expected<size_t> GetTotalElements(const TensorBuffer& buffer) {
     total_elements *= layout.Dimensions()[d];
   }
   return total_elements;
-}
-
-// Fills a tensor buffer with sample data based on element type
-Expected<void> FillInputBuffer(TensorBuffer& buffer) {
-  if (!absl::GetFlag(FLAGS_compare_numerical)) {
-    return {};
-  }
-
-  LITERT_ASSIGN_OR_RETURN(const size_t total_elements,
-                          GetTotalElements(buffer));
-
-  // Always treat input as float and fill with rotating values from 0.0 to 0.9
-  std::vector<float> data(total_elements);
-  for (size_t i = 0; i < total_elements; ++i) {
-    // Rotate through 0.0, 0.1, 0.2, ..., 0.9, 0.0, 0.1, ...
-    data[i] = static_cast<float>(i % 10) * 0.1f;
-  }
-
-  // Write the data to the tensor buffer
-  return buffer.Write<float>(absl::MakeConstSpan(data));
 }
 
 // Fills input buffers for a language model with sample data.

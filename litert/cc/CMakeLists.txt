@@ -17,6 +17,7 @@ cmake_minimum_required(VERSION 3.20)
 
 set(LITERT_CC_PUBLIC_HEADERS
     litert_any.h
+    litert_api_types.h
     litert_buffer_ref.h
     litert_common.h
     litert_compiled_model.h
@@ -147,14 +148,18 @@ set_target_properties(litert_cc_api PROPERTIES
 # shared library.
 add_library(litert_cc_api_headers INTERFACE)
 
+set(_LITERT_CC_API_HEADER_INCLUDE_DIRS
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
+    $<BUILD_INTERFACE:${LITERT_GENERATED_INCLUDE_DIR}>
+    $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/opencl_headers>
+)
+
 target_include_directories(litert_cc_api_headers
     INTERFACE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
-        $<BUILD_INTERFACE:${LITERT_GENERATED_INCLUDE_DIR}>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
-        $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
-        $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/opencl_headers>
+        ${_LITERT_CC_API_HEADER_INCLUDE_DIRS}
 )
 
 target_compile_features(litert_cc_api_headers INTERFACE cxx_std_20)
@@ -174,11 +179,33 @@ target_link_libraries(litert_cc_api_headers
         absl::die_if_null
 )
 
+add_library(litert_cc_api_no_absl_headers INTERFACE)
+
+target_include_directories(litert_cc_api_no_absl_headers
+    INTERFACE
+        ${_LITERT_CC_API_HEADER_INCLUDE_DIRS}
+)
+
+target_compile_definitions(litert_cc_api_no_absl_headers
+    INTERFACE
+        LITERT_NO_ABSL
+)
+
+target_compile_features(litert_cc_api_no_absl_headers INTERFACE cxx_std_20)
+
 add_library(litert_cc_api_with_dynamic_runtime INTERFACE)
 
 target_link_libraries(litert_cc_api_with_dynamic_runtime
     INTERFACE
         litert_cc_api_headers
+        litert_runtime_c_api_shared_lib
+)
+
+add_library(litert_cc_api_no_absl_with_dynamic_runtime INTERFACE)
+
+target_link_libraries(litert_cc_api_no_absl_with_dynamic_runtime
+    INTERFACE
+        litert_cc_api_no_absl_headers
         litert_runtime_c_api_shared_lib
 )
 

@@ -20,10 +20,11 @@
 #include <string_view>
 #include <utility>
 
+#ifndef LITERT_NO_ABSL
 #include "absl/debugging/leak_check.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
+#endif  // LITERT_NO_ABSL
 #include "litert/c/internal/litert_logging.h"  // IWYU pragma: keep
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -199,17 +200,10 @@ class SharedLibrary {
   ~SharedLibrary() noexcept { Close(); }
 
   /// @brief Loads the library at the given path.
-  static Expected<SharedLibrary> Load(absl::string_view path,
+  static Expected<SharedLibrary> Load(StringView path,
                                       RtldFlags flags) noexcept {
     return LoadImpl(HandleKind::kPath, path, flags);
   }
-
-#ifdef LITERT_NO_ABSL
-  static Expected<SharedLibrary> Load(std::string_view path,
-                                      RtldFlags flags) noexcept {
-    return Load(internal::ToAbslStringView(path), flags);
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief Loads the library as the `RTLD_NEXT` special handle.
   static Expected<SharedLibrary> Load(RtldFlags::NextTag) noexcept {
@@ -224,13 +218,7 @@ class SharedLibrary {
   /// @brief Gets the last shared library operation error, if any.
   ///
   /// If there was no error, returns an empty view.
-#ifdef LITERT_NO_ABSL
-  static std::string_view DlError() noexcept {
-    return internal::ToStdStringView(DlErrorImpl());
-  }
-#else
-  static absl::string_view DlError() noexcept { return DlErrorImpl(); }
-#endif
+  static StringView DlError() noexcept { return DlErrorImpl(); }
 
   friend std::ostream& operator<<(std::ostream& os, const SharedLibrary& lib);
 
@@ -271,7 +259,7 @@ class SharedLibrary {
 
  private:
   enum class HandleKind { kInvalid, kPath, kRtldNext, kRtldDefault };
-  static absl::string_view DlErrorImpl() noexcept {
+  static StringView DlErrorImpl() noexcept {
     const char* error = internal::shared_library_detail::DlError();
     if (!error) {
       return {};
@@ -280,8 +268,7 @@ class SharedLibrary {
   }
 
   static Expected<SharedLibrary> LoadImpl(HandleKind handle_kind,
-                                          absl::string_view path,
-                                          RtldFlags flags) {
+                                          StringView path, RtldFlags flags) {
     SharedLibrary lib;
     switch (handle_kind) {
       case HandleKind::kInvalid:
@@ -296,7 +283,9 @@ class SharedLibrary {
         }
         lib.path_ = path;
         {
+#ifndef LITERT_NO_ABSL
           absl::LeakCheckDisabler disabler;
+#endif  // LITERT_NO_ABSL
           lib.handle_ = internal::shared_library_detail::DlOpen(
               lib.Path().c_str(),
               internal::shared_library_detail::SanitizeFlagsInCaseOfAsan(
@@ -304,8 +293,8 @@ class SharedLibrary {
         }
         if (!lib.handle_) {
           return Error(Status::kErrorDynamicLoading,
-                       absl::StrFormat("Could not load shared library %s: %s.",
-                                       lib.path_, DlError()));
+                       "Could not load shared library " + lib.path_ + ": " +
+                           std::string(DlError()) + ".");
         }
         break;
       case HandleKind::kRtldNext:
@@ -324,8 +313,8 @@ class SharedLibrary {
 
     if (!symbol) {
       return Error(Status::kErrorDynamicLoading,
-                   absl::StrFormat("Could not load symbol %s: %s.", symbol_name,
-                                   DlError()));
+                   "Could not load symbol " + std::string(symbol_name) + ": " +
+                       std::string(DlError()) + ".");
     }
     return symbol;
   }
@@ -336,8 +325,8 @@ class SharedLibrary {
 };
 
 inline std::ostream& operator<<(std::ostream& os, const SharedLibrary& lib) {
-  static constexpr absl::string_view kHeader = "/// DLL Info ///\n";
-  static constexpr absl::string_view kFooter = "////////////////\n";
+  static constexpr StringView kHeader = "/// DLL Info ///\n";
+  static constexpr StringView kFooter = "////////////////\n";
 
   if (lib.handle_ == nullptr) {
     os << kHeader << "Handle is nullptr.\n" << kFooter;

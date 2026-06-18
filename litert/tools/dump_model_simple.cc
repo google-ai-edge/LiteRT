@@ -19,6 +19,7 @@
 
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_element_type.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_model_types.h"
@@ -101,7 +102,12 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  auto model = litert::Model::CreateFromFile(argv[1]);
+  auto env = litert::Environment::Create({});
+  if (!env) {
+    std::cerr << "Failed to create environment\n";
+    return 1;
+  }
+  auto model = litert::Model::CreateFromFile(*env, argv[1]);
   if (!model) {
     std::cerr << "Failed to load model from file: " << argv[1] << "\n";
     return 1;

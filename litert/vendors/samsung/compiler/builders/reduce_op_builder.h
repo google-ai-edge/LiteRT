@@ -15,20 +15,25 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_REDUCE_OP_BUILDER_H_
 #define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_REDUCE_OP_BUILDER_H_
 
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildReduceSumOp(const Op& op);
+Expected<OpWrapper> BuildReduceSumOp(const LiteRtCompilerContext* ctx,
+                                     const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildReduceMeanOp(const Op& op);
+Expected<OpWrapper> BuildReduceMeanOp(const LiteRtCompilerContext* ctx,
+                                      const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildReduceMaxOp(const Op& op);
+Expected<OpWrapper> BuildReduceMaxOp(const LiteRtCompilerContext* ctx,
+                                     const litert::compiler::Op& op);
 
-Expected<OpWrapper> BuildReduceMinOp(const Op& op);
+Expected<OpWrapper> BuildReduceMinOp(const LiteRtCompilerContext* ctx,
+                                     const litert::compiler::Op& op);
 
 }  // namespace litert::samsung
 #endif

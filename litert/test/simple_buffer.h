@@ -188,6 +188,14 @@ class SimpleBuffer {
                              std::optional<size_t> num_elements = {}) {
     if constexpr (std::is_same_v<T, tflite::half>) {
       return CallHalf<RandomTensorFunctor>(b, rng, start, num_elements, *this);
+    } else if constexpr (std::is_same_v<T, litert::tensor::bf16_t>) {
+      return CallBfloat16<RandomTensorFunctor>(b, rng, start, num_elements,
+                                               *this);
+    } else if constexpr (sizeof(T) == 1 && !std::is_same_v<T, int8_t> &&
+                         !std::is_same_v<T, uint8_t> &&
+                         !std::is_same_v<T, bool>) {
+      return b.Call<int8_t, RandomTensorFunctor>(rng, start, num_elements,
+                                                 *this);
     } else {
       return b.Call<T, RandomTensorFunctor>(rng, start, num_elements, *this);
     }
@@ -208,6 +216,9 @@ class SimpleBuffer {
                                                   *this);
     } else if (Type().ElementType() == ElementType::Float16) {
       return CallHalf<RandomTensorFunctor>(b, rng, start, num_elements, *this);
+    } else if (Type().ElementType() == ElementType::BFloat16) {
+      return CallBfloat16<RandomTensorFunctor>(b, rng, start, num_elements,
+                                               *this);
     }
     // TODO: Add support for other types.
     return Error(kLiteRtStatusErrorInvalidArgument, "Unsupported element type");

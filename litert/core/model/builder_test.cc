@@ -25,8 +25,10 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/model_load.h"
 #include "litert/core/model/model_serialize.h"
 #include "litert/core/util/flatbuffer_tools.h"
 
@@ -236,6 +238,86 @@ TEST(BuilderTest, AddOpToMulOpTransformation) {
   auto model_wrap = FlatbufferWrapper::CreateFromBuffer(*serialized);
   ASSERT_TRUE(model_wrap);
   EXPECT_EQ(model_wrap->get()->Unpack()->subgraphs.size(), 1);
+}
+
+TEST(BuilderTest, BuildBlockWiseQuantizedTensor) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+
+  LiteRtBuilderT builder;
+
+  BufferManager manager;
+  LiteRtWeightsT scales_weights;
+  scales_weights.SetBufferManager(&manager);
+  static constexpr float kScalesData[] = {1.0f, 2.0f};
+  {
+    OwningBufferRef<uint8_t> buf(reinterpret_cast<const uint8_t*>(kScalesData),
+                                 sizeof(kScalesData));
+    SetWeightsFromOwnedBuffer(scales_weights, std::move(buf));
+  }
+  auto& scales_tensor = builder.BuildTensor(
+      scales_weights, Quantization(),
+      MakeRankedTensorType(kLiteRtElementTypeFloat32, {2}), "scales");
+
+  LiteRtWeightsT zps_weights;
+  zps_weights.SetBufferManager(&manager);
+  static constexpr int32_t kZpsData[] = {0, 0};
+  {
+    OwningBufferRef<uint8_t> buf(reinterpret_cast<const uint8_t*>(kZpsData),
+                                 sizeof(kZpsData));
+    SetWeightsFromOwnedBuffer(zps_weights, std::move(buf));
+  }
+  auto& zps_tensor = builder.BuildTensor(
+      zps_weights, Quantization(),
+      MakeRankedTensorType(kLiteRtElementTypeInt32, {2}), "zps");
+
+  constexpr int32_t kBlockSize = 32;
+  auto blockwise_quant =
+      MakeBlockWiseQuantization(&scales_tensor, &zps_tensor, kBlockSize);
+
+  LiteRtWeightsT dummy_weights;
+  auto& quantized_tensor = builder.BuildTensor(
+      dummy_weights, blockwise_quant,
+      MakeRankedTensorType(kLiteRtElementTypeInt8, {64}), "quantized_tensor");
+
+  builder.Subgraph().Outputs().push_back(&quantized_tensor);
+  subgraph.Outputs().push_back(&quantized_tensor);
+
+  builder.ApplyChanges(&subgraph);
+
+  EXPECT_EQ(subgraph.Tensors().size(), 3);
+
+  auto serialized = SerializeModel(std::move(model));
+  ASSERT_TRUE(VerifyFlatbuffer(serialized->Span()));
+
+  LITERT_ASSIGN_OR_ABORT(auto model_wrap,
+                         FlatbufferWrapper::CreateFromBuffer(*serialized));
+
+  LITERT_ASSIGN_OR_ABORT(auto loaded_model, LoadModelFromBuffer(*serialized));
+
+  ASSERT_EQ(loaded_model->Subgraphs().size(), 1);
+  auto& loaded_subgraph = loaded_model->Subgraph(0);
+
+  LiteRtTensorT* loaded_quantized_tensor = nullptr;
+  for (auto* t : loaded_subgraph.Tensors()) {
+    if (t->Name() == "quantized_tensor") {
+      loaded_quantized_tensor = t;
+      break;
+    }
+  }
+  ASSERT_NE(loaded_quantized_tensor, nullptr);
+
+  EXPECT_EQ(loaded_quantized_tensor->Qparams().first,
+            kLiteRtQuantizationBlockWise);
+  const auto& loaded_blockwise =
+      loaded_quantized_tensor->Qparams().second.block_wise;
+  EXPECT_EQ(loaded_blockwise.block_size, kBlockSize);
+
+  ASSERT_NE(loaded_blockwise.scales, nullptr);
+  EXPECT_EQ(loaded_blockwise.scales->Name(), "scales");
+
+  ASSERT_NE(loaded_blockwise.zero_points, nullptr);
+  EXPECT_EQ(loaded_blockwise.zero_points->Name(), "zps");
 }
 
 TEST(BuilderTest, AddOpToMulOpAndAddOpTransformation) {

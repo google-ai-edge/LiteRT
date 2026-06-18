@@ -287,6 +287,10 @@ Subgraph::Subgraph(ErrorReporter* error_reporter,
   context_.GetTensor = nullptr;
   context_.GetEvalTensor = nullptr;
   context_.GetModelMetadata = GetModelMetadata;
+#if defined(_WIN32)
+  context_.TfLiteIntArrayCreate = TfLiteIntArrayCreate;
+  context_.TfLiteIntArrayFree = TfLiteIntArrayFree;
+#endif  // defined(_WIN32)
 
   // Reserve some space for the tensors to avoid excessive resizing.
   tensors_.reserve(kTensorsReservedCapacity);
@@ -506,7 +510,8 @@ TfLiteStatus Subgraph::PartitionGraph(const TfLiteIntArray* nodes_to_replace,
                                       std::vector<NodeSubset>* node_subsets) {
   const InterpreterInfo info(this);
   // Tensor preservation requires node fusion to be disabled.
-  const bool disable_node_fusion = ShouldPreserveAllTensors();
+  const bool disable_node_fusion =
+      ShouldPreserveAllTensors() || DisableDelegateNodeFusion();
   return tflite::PartitionGraphIntoIndependentNodeSubsets(
       &info, nodes_to_replace, node_subsets,
       /*greedily=*/!DisableDelegateClustering(), control_edges_,

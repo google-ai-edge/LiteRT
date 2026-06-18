@@ -14,7 +14,9 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/testing/tokenize.h"
 
+#include <cctype>
 #include <istream>
+#include <iterator>
 #include <string>
 
 #include "tflite/string_type.h"

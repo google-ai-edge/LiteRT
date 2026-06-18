@@ -57,6 +57,7 @@ litert/cc/internal/litert_source_location.h
 litert/cc/internal/litert_tensor_buffer_utils.h
 litert/cc/internal/litert_tflite_error_status_builder.h
 litert/cc/litert_any.h
+litert/cc/litert_api_types.h
 litert/cc/litert_buffer_ref.h
 litert/cc/litert_common.h
 litert/cc/litert_compiled_model.h

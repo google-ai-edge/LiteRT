@@ -23,6 +23,7 @@ import {readableStreamDefaultReaderToUint8Array, urlToUint8Array} from './load_u
 import {Model} from './model';
 import {CompileOptions} from './model_types';
 import {Deletable, LiteRtWasm} from './wasm_binding_types';
+import {isJspiSupported} from './wasm_feature_detect';
 
 /**
  * Check if the browser supports WebGPU.
@@ -143,11 +144,9 @@ export class LiteRt {
     const accelerator = compileOptions.accelerator ??
         (environment.webGpuDevice ? 'webgpu' : 'wasm');
 
-    const acceleratorIncludesWebGpu = Array.isArray(accelerator) ?
-        accelerator.includes('webgpu') :
-        accelerator === 'webgpu';
+    const isWebGpu = accelerator === 'webgpu';
 
-    if (acceleratorIncludesWebGpu && !environment.webGpuDevice) {
+    if (isWebGpu && !environment.webGpuDevice) {
       throw new Error(
           'WebGPU was requested but no WebGPU device is set in the ' +
           'environment.');
@@ -184,6 +183,34 @@ export class LiteRt {
 
     // Currently, compiledModel will delete the loadedModel when it is deleted.
     this.objectsToDelete.add(compiledModel);
+
+    const isWebNn = accelerator === 'webnn';
+    const acceleratorRequested = isWebGpu || isWebNn;
+
+    if (acceleratorRequested && !compiledModel.isFullyAccelerated) {
+      if (isJspiSupported()) {
+        console.warn(
+            `%c[LiteRT]%c Model not fully compiled for ${accelerator}. ` +
+            'Partially delegating to WASM execution.',
+            'background: #FFA000; color: black; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+            'font-weight: bold;'
+        );
+      } else {
+        console.warn(
+            `%c[LiteRT]%c Model not fully compiled for ${accelerator} on non-JSPI browser. ` +
+            'Falling back to WASM execution.',
+            'background: #D32F2F; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+            'color: #D32F2F; font-weight: bold;'
+        );
+        compiledModel.delete();
+        const fallbackCompileOptions = {
+          ...compileOptions,
+          accelerator: 'wasm' as const,
+        };
+        return this.loadAndCompile(modelData, fallbackCompileOptions);
+      }
+    }
+
     return compiledModel;
   }
 

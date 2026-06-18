@@ -102,6 +102,10 @@ LiteRtStatus ParseLiteRtCpuOptions(const void* data, size_t size,
         } else if (key == "weight_cache_file_descriptor") {
           LITERT_ASSIGN_OR_RETURN(options->xnn.weight_cache_file_descriptor,
                                   litert::internal::ParseTomlInt(value));
+        } else if (key == "hint_fully_delegated_to_single_delegate") {
+          LITERT_ASSIGN_OR_RETURN(auto val,
+                                  litert::internal::ParseTomlBool(value));
+          options->hint_fully_delegated_to_single_delegate = val;
         }
         return kLiteRtStatusOk;
       });

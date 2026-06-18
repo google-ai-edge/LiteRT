@@ -1,4 +1,4 @@
-load("@org_tensorflow//tensorflow:tensorflow.bzl", "tf_cc_test", "tf_features_nolayering_check_if_ios")
+load("@org_tensorflow//tensorflow:tensorflow.bzl", "tf_cc_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//tflite:special_rules.bzl", "nonportable_visibility_allowlist")
@@ -23,7 +23,6 @@ cc_library(
         "parse_example.h",
     ],
     compatible_with = get_compatible_with_portable(),
-    features = tf_features_nolayering_check_if_ios(),
     deps = [
         "//tflite:framework",
         "//tflite:string_util",
@@ -38,7 +37,6 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/core/platform:hash",
     ] + select({
         "@org_tensorflow//tensorflow:android": [
             "@org_tensorflow//tensorflow/core:portable_tensorflow_lib_lite",
@@ -54,6 +52,7 @@ cc_library(
             "@org_tensorflow//tensorflow/core:lib",
             "@org_tensorflow//tensorflow/core:lib_internal",
             "@org_tensorflow//tensorflow/core:protos_all_cc",
+            "@org_tensorflow//tensorflow/core/platform:hash",
         ],
     }),
 )
@@ -61,7 +60,6 @@ cc_library(
 tf_cc_test(
     name = "parse_example_test",
     srcs = ["parse_example_test.cc"],
-    features = tf_features_nolayering_check_if_ios(),
     deps = [
         ":parse_example",
         "//tflite:framework",
@@ -73,6 +71,7 @@ tf_cc_test(
         "//tflite/kernels:test_main",
         "//tflite/kernels:test_util",
         "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest",
         "@flatbuffers",
     ] + select({
         "@org_tensorflow//tensorflow:android": [
@@ -117,7 +116,6 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/core:core_cpu",
         "@org_tensorflow//tensorflow/core:feature_util",
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core:framework_internal",
@@ -142,6 +140,7 @@ tf_cc_test(
         "//tflite/kernels:test_main",
         "//tflite/kernels:test_util",
         "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest",
         "@flatbuffers",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core/example:feature_util",
