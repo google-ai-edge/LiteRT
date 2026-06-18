@@ -37,37 +37,37 @@
   DECL = std::move(*TMP_VAR)
 #endif  // !defined(ASSERT_OK_AND_ASSIGN)
 
-//copybara:uncomment_begin
-// namespace testing::status {
-// namespace {
-//
-// // Helper functions and templates to get absl::Status from arbitrary class.
-// const absl::Status& GetStatus(const absl::Status& status) {
-  // return status;
-// }
-//
-// template <class T>
-// const absl::Status& GetStatus(const absl::StatusOr<T>& statusor) {
-  // return statusor.status();
-// }
-//
-// }  // namespace
-//
-// MATCHER_P(StatusIs, code, "") {
-  // return GetStatus(arg).code() == code;
-// }
-//
-// MATCHER_P2(StatusIs, code, msg, "") {
-  // const auto& status = GetStatus(arg);
-  // return status.code() == code &&
-    // testing::ExplainMatchResult(msg, status.message(), result_listener);
-// }
-//
-// MATCHER_P(IsOkAndHolds, value, "") {
-  // return arg.ok() && *arg == static_cast<decltype(*arg)>(value);
-// }
-//
-// }  // namespapce testing::status
+// copybara:comment_begin
+namespace testing::status {
+namespace {
+
+// Helper functions and templates to get absl::Status from arbitrary class.
+const absl::Status& GetStatus(const absl::Status& status) {
+  return status;
+}
+
+template <class T>
+const absl::Status& GetStatus(const absl::StatusOr<T>& statusor) {
+  return statusor.status();
+}
+
+}  // namespace
+
+MATCHER_P(StatusIs, code, "") {
+  return GetStatus(arg).code() == code;
+}
+
+MATCHER_P2(StatusIs, code, msg, "") {
+  const auto& status = GetStatus(arg);
+  return status.code() == code &&
+      testing::ExplainMatchResult(msg, status.message(), result_listener);
+}
+
+MATCHER_P(IsOkAndHolds, value, "") {
+  return arg.ok() && *arg == static_cast<decltype(*arg)>(value);
+}
+
+}  // namespapce testing::status
 // copybara:comment_end
 
 #endif  // THIRD_PARTY_ODML_LITERT_SUPPORT_UTIL_TEST_UTILS_H_
