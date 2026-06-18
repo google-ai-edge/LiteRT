@@ -11,18 +11,19 @@
 #include <utility>
 #include <vector>
 
+#include "HTP/QnnHtpDevice.h"  // from @qairt
+#include "HTP/QnnHtpDeviceConfigShared.h"  // from @qairt
+#include "HTP/QnnHtpPerfInfrastructure.h"  // from @qairt
+#include "QnnBackend.h"  // from @qairt
+#include "QnnCommon.h"  // from @qairt
+#include "QnnDevice.h"  // from @qairt
+#include "QnnInterface.h"  // from @qairt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/backends/backend_utils.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
-#include "HTP/QnnHtpDevice.h"  // from @qairt
-#include "HTP/QnnHtpPerfInfrastructure.h"  // from @qairt
-#include "QnnBackend.h"  // from @qairt
-#include "QnnCommon.h"  // from @qairt
-#include "QnnDevice.h"  // from @qairt
-#include "QnnInterface.h"  // from @qairt
 
 namespace qnn {
 
@@ -406,9 +407,8 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
 #else
     if (auto device_platform_info = CreateDevicePlatformInfo();
         device_platform_info) {
-      auto soc_model =
-          device_platform_info->v1.hwDevices->v1.deviceInfoExtension
-              ->onChipDevice.socModel;
+      auto soc_model = device_platform_info->v1.hwDevices->v1
+                           .deviceInfoExtension->onChipDevice.socModel;
       auto soc_info_online =
           FindSocInfo(static_cast<SnapdragonModel>(soc_model));
       soc_info_ = soc_info_online.value_or(kSocInfos[0]);
@@ -537,6 +537,41 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   backend_handle_ = std::move(local_backend_handle);
   device_handle_ = std::move(local_device_handle);
 
+  return true;
+}
+
+bool HtpBackend::SetPerformanceMode(const Options& options) {
+  HtpPerformanceMode performance_mode = options.GetHtpPerformanceMode();
+  if (performance_mode == HtpPerformanceMode::kDefault) {
+    if (htp_perf_control_) {
+      htp_perf_control_->DownVote();
+      htp_perf_control_.reset();
+    }
+    return true;
+  }
+
+  if (!htp_perf_control_) {
+    htp_perf_control_ = std::make_unique<HtpPerfControl>(QnnApi());
+    if (!htp_perf_control_->Init(performance_mode)) {
+      QNN_LOG_ERROR("Failed to init HtpPerfControl");
+      return false;
+    }
+  } else {
+    htp_perf_control_->DownVote();
+    if (!htp_perf_control_->Init(performance_mode)) {
+      QNN_LOG_ERROR("Failed to re-init HtpPerfControl");
+      return false;
+    }
+  }
+
+  if (soc_info_.dsp_arch >= DspArch::V69) {
+    if (!htp_perf_control_->SetRpcPolling(performance_mode)) {
+      QNN_LOG_ERROR("Failed to set RPC Polling");
+      return false;
+    }
+  }
+
+  htp_perf_control_->UpVote();
   return true;
 }
 

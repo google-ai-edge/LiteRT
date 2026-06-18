@@ -8,14 +8,15 @@
 #include <memory>
 #include <optional>
 
-#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
-#include "litert/vendors/qualcomm/core/common.h"
-#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "HTP/QnnHtpCommon.h"  // from @qairt
 #include "HTP/QnnHtpDevice.h"  // from @qairt
 #include "QnnDevice.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
+#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
+#include "litert/vendors/qualcomm/core/common.h"
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
+#include "third_party/qairt/latest/include/QNN/HTP/QnnHtpDeviceConfigShared.h"
 
 namespace qnn {
 
@@ -57,6 +58,8 @@ class HtpBackend : public QnnBackend {
   HtpBackend& operator=(HtpBackend&&) = delete;
 
   bool Init(const Options& options, std::optional<SocInfo> soc_info) override;
+
+  bool SetPerformanceMode(const Options& options) override;
 
   SocInfo GetSocInfo() { return soc_info_; }
 

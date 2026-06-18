@@ -18,6 +18,8 @@
 #include <string>
 #include <utility>
 
+#include "QnnCommon.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -25,11 +27,8 @@
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_opaque_options.h"
-#include "litert/c/litert_options.h"
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_options_wrapper.h"
@@ -43,8 +42,6 @@
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "QnnCommon.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 namespace {
 
@@ -302,6 +299,19 @@ LiteRtStatus InvocationContextSetSchedulingInfo(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus InvocationContextSetOptions(
+    LiteRtDispatchInvocationContext invocation_context, LiteRtOptions options) {
+  if (invocation_context == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (auto status = invocation_context->SetOptions(options); !status) {
+    LITERT_LOG(LITERT_ERROR, "Failed to set invocation context options: %s",
+               status.Error().Message().c_str());
+    return status.Error().Status();
+  }
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus AttachInput(LiteRtDispatchInvocationContext invocation_context,
                          int graph_input_index,
                          LiteRtTensorBufferHandle tensor_buffer_handle) {
@@ -406,6 +416,7 @@ LiteRtDispatchInterface TheInterface = {
     /*.get_metric=*/nullptr,
     /*.destroy_metrics=*/nullptr,
     /*.check_runtime_compatibility=*/CheckRuntimeCompatibility,
+    /*.invocation_context_set_options=*/InvocationContextSetOptions,
 };
 
 LiteRtDispatchApi TheApi = {
