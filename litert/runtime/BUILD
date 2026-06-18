@@ -706,6 +706,7 @@ cc_library(
         "//litert/core:options",
         "//litert/core/model",
         "//litert/core/util:flatbuffer_tools",
+        "//litert/core/util:perfetto_profiling",
         "//litert/runtime/dispatch:dispatch_opaque_options",
         # copybara:uncomment "//third_party/odml/litert/weight_loader:external_weight_loader",
         "//weight_loader:external_weight_loader",  # copybara:comment

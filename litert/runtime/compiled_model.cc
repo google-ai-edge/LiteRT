@@ -79,6 +79,7 @@
 #include "litert/core/build_stamp.h"
 #include "litert/core/error_reporter.h"
 #include "litert/core/model/model.h"
+#include "litert/core/util/perfetto_profiling.h"
 #include "tflite/model_builder.h"
 #if !defined(LITERT_DISABLE_NPU)
 #include "litert/compiler/plugin/compiler_plugin.h"
@@ -272,6 +273,7 @@ LiteRtCompiledModelT::~LiteRtCompiledModelT() {
 Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     LiteRtEnvironmentT* env, LiteRtHwAcceleratorSet hardware_accelerators,
     LiteRtOptions jit_compilation_options) {
+  LITERT_PERFETTO_TRACE_EVENT("CompiledModel Runtime Initialization");
   int num_threads = 1;
   [[maybe_unused]] bool use_non_xnnpack_cpu_backend = false;
   bool use_reference_cpu_kernels = false;
@@ -413,7 +415,10 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   tflite::InterpreterBuilder builder(
       fb_model_->GetModel(), *resolver, error_reporter_.get(),
       &interpreter_options, fb_model_->allocation());
-  builder(&interp_);
+  {
+    LITERT_PERFETTO_TRACE_EVENT("CompiledModel TFLite Graph Conversion");
+    builder(&interp_);
+  }
   if (interp_ == nullptr) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to build TFL interpreter");
@@ -748,6 +753,7 @@ void TryApplyPluginsImpl(
 Expected<void> LiteRtCompiledModelT::InitializeModel(
     LiteRtModelT& model, LiteRtHwAcceleratorSet hw_accelerators,
     LiteRtOptions options, LiteRtEnvironmentT& env) {
+  LITERT_PERFETTO_TRACE_EVENT("CompiledModel Graph Loading");
   LITERT_RETURN_IF_ERROR(
       litert::internal::ReplaceMagicNumbersIfAny(env, model));
 
@@ -846,6 +852,7 @@ class ScopedCompilationOptionsModifier {
 LITERT_NO_CFI_CHECK Expected<LiteRtCompiledModelT::Ptr>
 LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
                              LiteRtOptions jit_compilation_options) {
+  LITERT_PERFETTO_TRACE_EVENT("CompiledModel Creation");
   if (!jit_compilation_options) {
     return litert::ErrorStatusBuilder::InvalidArgument()
            << "No compilation options passed.";
@@ -966,30 +973,33 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
       }
     });
 
-    LiteRtDelegateWrapper delegate_wrapper = nullptr;
-    LITERT_RETURN_IF_ERROR(accelerator->CreateDelegate(
-        LrtGetRuntimeContext(), env, accelerator.get(), jit_compilation_options,
-        &delegate_wrapper));
-    if (delegate_wrapper == nullptr) {
-      continue;
+    {
+      LITERT_PERFETTO_TRACE_EVENT("CompiledModel Delegate Graph Conversion");
+      LiteRtDelegateWrapper delegate_wrapper = nullptr;
+      LITERT_RETURN_IF_ERROR(accelerator->CreateDelegate(
+          LrtGetRuntimeContext(), env, accelerator.get(),
+          jit_compilation_options, &delegate_wrapper));
+      if (delegate_wrapper == nullptr) {
+        continue;
+      }
+
+      TfLiteOpaqueDelegate* delegate_ptr = nullptr;
+      LiteRtUnwrapDelegate(delegate_wrapper, &delegate_ptr);
+
+      auto delegate = std::unique_ptr<LiteRtDelegateWrapperT,
+                                      void (*)(LiteRtDelegateWrapper)>{
+          delegate_wrapper, &LiteRtDestroyDelegateWrapper};
+
+      if (compiled_model->interp_->ModifyGraphWithDelegate(delegate_ptr) !=
+          kTfLiteOk) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "Failed to modify graph with delegate");
+      }
+
+      compiled_model->RegisterDelegate({std::move(delegate),
+                                        accelerator->StartMetricsCollection,
+                                        accelerator->StopMetricsCollection});
     }
-
-    TfLiteOpaqueDelegate* delegate_ptr = nullptr;
-    LiteRtUnwrapDelegate(delegate_wrapper, &delegate_ptr);
-
-    auto delegate = std::unique_ptr<LiteRtDelegateWrapperT,
-                                    void (*)(LiteRtDelegateWrapper)>{
-        delegate_wrapper, &LiteRtDestroyDelegateWrapper};
-
-    if (compiled_model->interp_->ModifyGraphWithDelegate(delegate_ptr) !=
-        kTfLiteOk) {
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "Failed to modify graph with delegate");
-    }
-
-    compiled_model->RegisterDelegate({std::move(delegate),
-                                      accelerator->StartMetricsCollection,
-                                      accelerator->StopMetricsCollection});
   }
 
   LITERT_ASSIGN_OR_RETURN(bool has_non_delegated_ops,
@@ -1075,6 +1085,7 @@ void LiteRtCompiledModelT::CheckCpuTensors() {
 Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
     LiteRtModelT& model, LiteRtHwAcceleratorSet hw_accelerators,
     LiteRtOptionsT& options, LiteRtEnvironmentT& env) {
+  LITERT_PERFETTO_TRACE_EVENT("CompiledModel Graph Conversion");
   bool need_reserialization = false;
   compilation_cache_ = MaybeCreateCompilationCache(env);
   std::optional<litert::internal::CompilationCache::CacheKey> cache_key =
@@ -1164,6 +1175,7 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
 bool LiteRtCompiledModelT::TryLoadingFromCache(
     litert::internal::CompilationCache::CacheKey cache_key,
     absl::string_view model_name) {
+  LITERT_PERFETTO_TRACE_EVENT("CompiledModel Graph Loading From Cache");
   if (!compilation_cache_.has_value()) {
     return false;
   }
@@ -1430,6 +1442,7 @@ Expected<void> LiteRtCompiledModelT::GetOutputTensorShapes(
                           SignatureNeedsAllocation(runner));
   needs_allocation = update_allocation || needs_allocation;
   if (needs_allocation) {
+    LITERT_PERFETTO_TRACE_EVENT("CompiledModel Buffer Allocation");
     if (auto res = runner->AllocateTensors(); res != kTfLiteOk) {
       if (error_reporter_) {
         error_reporter_->Report("Failed to allocate tensors for execution");
@@ -1479,6 +1492,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     const char* tensor_name, LiteRtTensorBufferT* buffer, bool is_input,
     std::vector<LiteRtTensorBuffer>& locked_buffers,
     std::vector<ConstantOutputInfo>& constant_outputs) {
+  LITERT_PERFETTO_TRACE_EVENT("CompiledModel Buffer Registration");
   LITERT_DEBUG_CODE({
     absl::string_view io = is_input ? "input" : "output";
     auto buffer_type = litert::BufferTypeToString(buffer->buffer_type());
@@ -1739,6 +1753,7 @@ Expected<void> LiteRtCompiledModelT::Run(
     const std::vector<LiteRtTensorBuffer>& input_buffers,
     const std::vector<LiteRtTensorBuffer>& output_buffers, bool& async,
     LiteRtOptions run_options, const LiteRtSchedulingInfo* scheduling_info) {
+  LITERT_PERFETTO_TRACE_EVENT("CompiledModel Inference");
 #if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
   if (fabric_runtime_) {
     return RunWithFabric(signature_key, input_buffers, output_buffers, async);
@@ -1870,10 +1885,13 @@ Expected<void> LiteRtCompiledModelT::Run(
   }
 
   TfLiteStatus allocate_status = kTfLiteOk;
-  if (use_interpreter_directly) {
-    allocate_status = interp_->AllocateTensors();
-  } else {
-    allocate_status = runner->AllocateTensors();
+  {
+    LITERT_PERFETTO_TRACE_EVENT("CompiledModel Buffer Allocation");
+    if (use_interpreter_directly) {
+      allocate_status = interp_->AllocateTensors();
+    } else {
+      allocate_status = runner->AllocateTensors();
+    }
   }
   if (allocate_status != kTfLiteOk) {
     if (error_reporter_) {
@@ -1914,10 +1932,13 @@ Expected<void> LiteRtCompiledModelT::Run(
   };
 
   TfLiteStatus invoke_status = kTfLiteOk;
-  if (use_interpreter_directly) {
-    invoke_status = interp_->Invoke();
-  } else {
-    invoke_status = runner->Invoke();
+  {
+    LITERT_PERFETTO_TRACE_EVENT("CompiledModel Invoke");
+    if (use_interpreter_directly) {
+      invoke_status = interp_->Invoke();
+    } else {
+      invoke_status = runner->Invoke();
+    }
   }
   if (invoke_status != kTfLiteOk) {
     if (invoke_status == kTfLiteCancelled) {

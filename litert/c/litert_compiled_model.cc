@@ -33,6 +33,7 @@
 #include "litert/c/litert_layout.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/util/perfetto_profiling.h"
 #include "litert/runtime/compiled_model.h"
 
 #ifdef __cplusplus
@@ -43,6 +44,7 @@ LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
                                        LiteRtModel model,
                                        LiteRtOptions jit_compilation_options,
                                        LiteRtCompiledModel* compiled_model) {
+  LITERT_PERFETTO_TRACE_EVENT("CompiledModel Creation");
   if (!environment || !model || !compiled_model) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -269,6 +271,7 @@ LiteRtStatus LiteRtSetCompiledModelCancellationFunction(
 }
 
 void LiteRtDestroyCompiledModel(LiteRtCompiledModel compiled_model) {
+  LITERT_PERFETTO_TRACE_EVENT("CompiledModel Destruction");
   delete compiled_model;
 }
 

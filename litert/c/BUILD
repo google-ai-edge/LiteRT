@@ -246,6 +246,7 @@ litert_c_api_library(
         "//litert/cc:litert_common",
         "//litert/core/model",
         "//litert/core/model:model_load",
+        "//litert/core/util:perfetto_profiling",
         "//tflite:stderr_reporter",
         "//tflite/converter:allocation",
         "//tflite/core/c:private_c_api_types",
@@ -412,6 +413,7 @@ litert_c_api_library(
         "//litert/c/internal:litert_tensor_buffer_registry",  # buildcleaner: keep
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/core/util:perfetto_profiling",
         "//litert/runtime:tensor_buffer",
         "//litert/runtime:tensor_buffer_requirements",
         "@opencl_headers",
@@ -595,6 +597,7 @@ litert_c_api_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_common",
+        "//litert/core/util:perfetto_profiling",
         "//litert/runtime:compiled_model",
     ],
     deps = [

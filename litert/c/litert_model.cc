@@ -33,6 +33,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_load.h"
+#include "litert/core/util/perfetto_profiling.h"
 #include "tflite/converter/allocation.h"
 #include "tflite/stderr_reporter.h"
 #if !defined(LITERT_DISABLE_NPU)
@@ -50,6 +51,7 @@ extern "C" {
 LiteRtStatus LiteRtCreateModelFromFile(LiteRtEnvironment environment,
                                        const char* filename,
                                        LiteRtModel* model) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT Graph Loading From File");
   if (!filename || !model) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -64,6 +66,7 @@ LiteRtStatus LiteRtCreateModelFromBuffer(LiteRtEnvironment environment,
                                          const void* buffer_addr,
                                          size_t buffer_size,
                                          LiteRtModel* model) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT Graph Loading From Buffer");
   if (!buffer_addr || !buffer_size || !model) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -79,6 +82,7 @@ LiteRtStatus LiteRtCreateModelFromBuffer(LiteRtEnvironment environment,
 LiteRtStatus LiteRtCreateModelFromFd(LiteRtEnvironment environment, int fd,
                                      size_t offset, size_t size,
                                      LiteRtModel* model) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT Graph Loading From Fd");
   if (fd < 0 || size == 0 || !model) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -194,7 +198,10 @@ LiteRtStatus LiteRtGetModelSignature(LiteRtModel model,
   return kLiteRtStatusOk;
 }
 
-void LiteRtDestroyModel(LiteRtModel model) { delete model; }
+void LiteRtDestroyModel(LiteRtModel model) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT Model Destruction");
+  delete model;
+}
 
 LiteRtStatus LiteRtSerializeModelWithSignatures(
     LiteRtModel model, uint8_t** buf, size_t* size, size_t* offset,
