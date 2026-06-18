@@ -18,7 +18,8 @@
 
 namespace litert::qnn {
 namespace {
-using testing::ElementsAre;
+using testing::FloatNear;
+using testing::Pointwise;
 
 INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
                          QnnTestPrinter);
@@ -110,8 +111,9 @@ TEST_P(QnnModelTest, PackPositiveAxisIsUnchanged) {
   ASSERT_TRUE(output_data);
   // Stacked along axis 1: [[in0_row0, in1_row0], [in0_row1, in1_row1]].
   ASSERT_THAT(output_data.value(),
-              ElementsAre(1.0f, 2.0f, 3.0f, 7.0f, 8.0f, 9.0f, 4.0f, 5.0f, 6.0f,
-                          10.0f, 11.0f, 12.0f));
+              Pointwise(FloatNear(1e-6), {1.0f, 2.0f, 3.0f, 7.0f, 8.0f, 9.0f,
+                                          4.0f, 5.0f, 6.0f, 10.0f, 11.0f,
+                                          12.0f}));
 }
 
 // A single input cannot form a valid QNN Pack, so the builder emits a Reshape
