@@ -556,6 +556,9 @@ CompiledModelRunner<ModelFunctor, Inputs, Outputs>::GetOutput(
         case ElementType::Int8:
           type = Type::kI8;
           break;
+        case ElementType::Bool:
+          type = Type::kBOOL;
+          break;
         default:
           break;
       }
