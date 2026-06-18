@@ -62,6 +62,7 @@
     LITERT_LOG(LITERT_ERROR, #function " not found");                   \
     return kLiteRtStatusErrorRuntimeFailure;                            \
   }                                                                     \
+  LITERT_PERFETTO_TRACE_EVENT("Dispatch API " #function);               \
   return TheApi.async_interface->function(__VA_ARGS__);
 
 #define INVOKE_GRAPH_FUNC(function, ...)                                \
@@ -73,6 +74,7 @@
     LITERT_LOG(LITERT_ERROR, #function " not found");                   \
     return kLiteRtStatusErrorRuntimeFailure;                            \
   }                                                                     \
+  LITERT_PERFETTO_TRACE_EVENT("Dispatch API " #function);               \
   return TheApi.graph_interface->function(__VA_ARGS__);
 
 extern "C" {
@@ -128,6 +130,7 @@ litert::Expected<std::string> GetSharedLibraryPath(
 LiteRtStatus LiteRtDispatchInitialize(
     const LiteRtRuntimeContext* runtime_context, LiteRtEnvironment env,
     LiteRtOptions options) {
+  LITERT_PERFETTO_TRACE_EVENT("Dispatch API Initialization");
   if (IsTheApiInitialized) {
     return kLiteRtStatusOk;
   }
@@ -354,6 +357,8 @@ LiteRtStatus LiteRtDispatchInvocationContextSetSchedulingInfo(
       !TheApi.interface->invocation_context_set_scheduling_info) {
     return kLiteRtStatusErrorUnsupported;
   }
+  LITERT_PERFETTO_TRACE_EVENT(
+      "Dispatch API invocation_context_set_scheduling_info");
   return TheApi.interface->invocation_context_set_scheduling_info(
       invocation_context, scheduling_info);
 }
@@ -423,6 +428,7 @@ LiteRtStatus LiteRtDispatchAttachEdgeBuffer(
     LITERT_LOG(LITERT_ERROR, "attach_edge_buffer not found");
     return kLiteRtStatusErrorUnsupported;
   }
+  LITERT_PERFETTO_TRACE_EVENT("Dispatch API attach_edge_buffer");
   return TheApi.interface->attach_edge_buffer(invocation_context, edge_id,
                                               tensor_buffer_handle);
 }
@@ -439,6 +445,7 @@ LiteRtStatus LiteRtDispatchDetachEdgeBuffer(
     LITERT_LOG(LITERT_ERROR, "detach_edge_buffer not found");
     return kLiteRtStatusErrorUnsupported;
   }
+  LITERT_PERFETTO_TRACE_EVENT("Dispatch API detach_edge_buffer");
   return TheApi.interface->detach_edge_buffer(invocation_context, edge_id,
                                               tensor_buffer_handle);
 }
