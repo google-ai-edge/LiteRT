@@ -260,7 +260,13 @@ using FbOpTypes =
         std::bool_constant<OpCode == kLiteRtOpCodeTflTranspose>,
             FbOpTraits<tflite::TransposeOptionsT,
                        tflite::BuiltinOperator_TRANSPOSE,
-                       tflite::BuiltinOptions_TransposeOptions>
+                       tflite::BuiltinOptions_TransposeOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflSoftmax>,
+            FbOpTraits<tflite::SoftmaxOptionsT,
+                       tflite::BuiltinOperator_SOFTMAX,
+                       tflite::BuiltinOptions_SoftmaxOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflLogSoftmax>,
+            FbOpTraitsNoOptions<tflite::BuiltinOperator_LOG_SOFTMAX>
     >;
 // clang-format on
 static_assert(FbOpTypes<kLiteRtOpCodeTflAdd>::kHasOptions);
