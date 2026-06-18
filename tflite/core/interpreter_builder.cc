@@ -668,7 +668,8 @@ TfLiteStatus InterpreterBuilder::ParseTensors(
           *buffer_data = reinterpret_cast<const char*>(array->data());
           return kTfLiteOk;
         } else if (offset > 1 && allocation_) {
-          if (offset + buffer->size() > allocation_->bytes()) {
+          if (offset > allocation_->bytes() ||
+              buffer->size() > allocation_->bytes() - offset) {
             TF_LITE_REPORT_ERROR(
                 error_reporter_,
                 "Constant buffer %d specified an out of range offset.\n",
