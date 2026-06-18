@@ -28,6 +28,7 @@
 #include "litert/test/generators/binary_broadcast.h"  // IWYU pragma: export
 #include "litert/test/generators/reshape.h"  // IWYU pragma: export
 #include "litert/test/generators/transformer_layer.h"  // IWYU pragma: export
+#include "litert/test/generators/transpose.h"  // IWYU pragma: export
 #include "litert/test/generators/batch_matmul.h"  // IWYU pragma: export
 #include "litert/test/generators/fully_connected.h"  // IWYU pragma: export
 

@@ -248,7 +248,19 @@ using FbOpTypes =
         std::bool_constant<OpCode == kLiteRtOpCodeTflBatchMatmul>,
             FbOpTraits<tflite::BatchMatMulOptionsT,
                        tflite::BuiltinOperator_BATCH_MATMUL,
-                       tflite::BuiltinOptions_BatchMatMulOptions>
+                       tflite::BuiltinOptions_BatchMatMulOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflFullyConnected>,
+            FbOpTraits<tflite::FullyConnectedOptionsT,
+                       tflite::BuiltinOperator_FULLY_CONNECTED,
+                       tflite::BuiltinOptions_FullyConnectedOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflConcatenation>,
+            FbOpTraits<tflite::ConcatenationOptionsT,
+                       tflite::BuiltinOperator_CONCATENATION,
+                       tflite::BuiltinOptions_ConcatenationOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflTranspose>,
+            FbOpTraits<tflite::TransposeOptionsT,
+                       tflite::BuiltinOperator_TRANSPOSE,
+                       tflite::BuiltinOptions_TransposeOptions>
     >;
 // clang-format on
 static_assert(FbOpTypes<kLiteRtOpCodeTflAdd>::kHasOptions);

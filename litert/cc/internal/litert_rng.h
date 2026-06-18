@@ -321,20 +321,59 @@ class DummyGenerator final : public DataGeneratorBase<D> {
   D val_ = 0;
 };
 
+template <>
+class DummyGenerator<bool> final : public DataGeneratorBase<bool> {
+ public:
+  using DataType = bool;
+
+  DummyGenerator() = default;
+
+  template <typename Rng>
+  DataType operator()(Rng& rng) {
+    bool curr = val_;
+    val_ = !val_;
+    return curr;
+  }
+
+  DataType Max() const override { return true; }
+  DataType Min() const override { return false; }
+
+ private:
+  bool val_ = false;
+};
+
+class BoolGenerator final : public DataGeneratorBase<bool> {
+ public:
+  using DataType = bool;
+
+  explicit BoolGenerator(bool min = false, bool max = true) : dist_(0.5) {}
+
+  template <typename Rng>
+  DataType operator()(Rng& rng) {
+    return dist_(rng);
+  }
+
+  DataType Max() const override { return true; }
+  DataType Min() const override { return false; }
+
+ private:
+  std::bernoulli_distribution dist_{0.5};
+};
+
 // DEFAULTS FOR DATA GENERATORS ////////////////////////////////////////////////
 
 template <typename D>
 using DefaultGenerator =
     SelectT<std::is_floating_point<D>,
             ReinterpretGenerator<D, std::uniform_real_distribution>,
-            std::is_integral<D>,
+            std::is_same<D, bool>, BoolGenerator, std::is_integral<D>,
             RangedGenerator<D, std::uniform_int_distribution>>;
 
 template <typename D>
 using DefaultRangedGenerator =
     SelectT<std::is_floating_point<D>,
             RangedGenerator<D, std::uniform_real_distribution>,
-            std::is_integral<D>,
+            std::is_same<D, bool>, BoolGenerator, std::is_integral<D>,
             RangedGenerator<D, std::uniform_int_distribution>>;
 
 using DefaultDevice = RandomDevice<std::mt19937>;

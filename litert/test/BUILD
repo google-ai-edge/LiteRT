@@ -351,6 +351,8 @@ cc_library(
         "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_numerics",
         "//litert/cc/internal:litert_rng",
+        "//tensor:datatypes",
+        "//tensor/internal:fp16",
         "//tflite/types:half",
     ],
 )

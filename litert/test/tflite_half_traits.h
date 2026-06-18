@@ -26,6 +26,8 @@
 #include "litert/cc/internal/litert_numerics.h"
 #include "litert/cc/internal/litert_rng.h"
 #include "litert/cc/litert_element_type.h"
+#include "tensor/datatypes.h"
+#include "tensor/internal/fp16.h"
 #include "tflite/types/half.h"
 
 namespace litert {
@@ -37,6 +39,25 @@ namespace litert {
 // -----------------------------------------------------------------------------
 // NumericLimits
 // -----------------------------------------------------------------------------
+
+template <>
+struct NumericLimits<litert::tensor::bf16_t> {
+ public:
+  using DataType = litert::tensor::bf16_t;
+
+  static constexpr DataType Min() {
+    return litert::tensor::bit_cast<DataType>(uint16_t{0x0080});
+  }
+  static constexpr DataType Max() {
+    return litert::tensor::bit_cast<DataType>(uint16_t{0x7f7f});
+  }
+  static constexpr DataType Lowest() {
+    return litert::tensor::bit_cast<DataType>(uint16_t{0xff7f});
+  }
+  static constexpr DataType Epsilon() {
+    return litert::tensor::bit_cast<DataType>(uint16_t{0x3c00});
+  }
+};
 
 template <>
 struct NumericLimits<tflite::half> {
@@ -171,6 +192,100 @@ auto CallHalf(const RandomTensorDataBuilder& b, Args&&... args) {
 
     RandomTensorData<tflite::half, HalfGen> data(
         static_cast<tflite::half>(min), static_cast<tflite::half>(max));
+    return Functor()(data, std::forward<Args>(args)...);
+  }
+}
+
+template <template <typename> typename Dist>
+class RangedGenerator<litert::tensor::bf16_t, Dist> final
+    : public DataGeneratorBase<litert::tensor::bf16_t> {
+ public:
+  using DataType = litert::tensor::bf16_t;
+  using Wide = float;
+
+  explicit RangedGenerator(Wide min = NumericLimits<DataType>::Lowest(),
+                           Wide max = NumericLimits<DataType>::Max())
+      : dist_(static_cast<float>(min), static_cast<float>(max)) {}
+
+  template <typename Rng>
+  DataType operator()(Rng& rng) {
+    return DataType(dist_(rng));
+  }
+
+  DataType Max() const override { return DataType(dist_.max()); }
+  DataType Min() const override { return DataType(dist_.min()); }
+
+ private:
+  Dist<float> dist_;
+};
+
+template <template <typename> typename Dist>
+class ReinterpretGenerator<litert::tensor::bf16_t, Dist> final
+    : public DataGeneratorBase<litert::tensor::bf16_t> {
+ public:
+  using DataType = litert::tensor::bf16_t;
+  using Wide = float;
+
+  template <typename Rng>
+  DataType operator()(Rng& rng) {
+    DataType res;
+    auto bits = dist_(rng);
+    memcpy(&res, &bits, sizeof(res));
+    return res;
+  }
+
+  ReinterpretGenerator() { ConstructAt(&dist_, 0, 0xFFFF); }
+  ReinterpretGenerator(const ReinterpretGenerator&) = default;
+  ReinterpretGenerator& operator=(const ReinterpretGenerator&) = default;
+  ReinterpretGenerator(ReinterpretGenerator&&) = default;
+  ReinterpretGenerator& operator=(ReinterpretGenerator&&) = default;
+
+  DataType Max() const override { return NumericLimits<DataType>::Max(); }
+  DataType Min() const override { return NumericLimits<DataType>::Lowest(); }
+
+ private:
+  std::uniform_int_distribution<uint16_t> dist_;
+};
+
+template <>
+class DummyGenerator<litert::tensor::bf16_t> final
+    : public DataGeneratorBase<litert::tensor::bf16_t> {
+ public:
+  using DataType = litert::tensor::bf16_t;
+
+  DummyGenerator() = default;
+
+  template <typename Rng>
+  DataType operator()(Rng& rng) {
+    return DataType(val_++);
+  }
+
+  DataType Max() const override { return NumericLimits<DataType>::Max(); }
+  DataType Min() const override { return DataType(0.0f); }
+
+ private:
+  float val_ = 0;
+};
+
+template <typename D>
+using BFloat16Gen = RangedGenerator<D, std::uniform_real_distribution>;
+
+template <typename Functor, typename... Args>
+auto CallBfloat16(const RandomTensorDataBuilder& b, Args&&... args) {
+  if (b.IsFloatDummy()) {
+    RandomTensorData<litert::tensor::bf16_t, DummyGenerator> data;
+    return Functor()(data, std::forward<Args>(args)...);
+  } else {
+    auto bounds = b.Bounds<float>();
+    float min = std::max(
+        static_cast<float>(bounds.first),
+        static_cast<float>(NumericLimits<litert::tensor::bf16_t>::Lowest()));
+    float max = std::min(
+        static_cast<float>(bounds.second),
+        static_cast<float>(NumericLimits<litert::tensor::bf16_t>::Max()));
+
+    RandomTensorData<litert::tensor::bf16_t, BFloat16Gen> data{
+        litert::tensor::bf16_t(min), litert::tensor::bf16_t(max)};
     return Functor()(data, std::forward<Args>(args)...);
   }
 }

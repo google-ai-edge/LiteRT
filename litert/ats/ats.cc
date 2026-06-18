@@ -36,6 +36,7 @@
 #include "litert/test/generators/generators.h"
 #include "litert/test/generators/one_hot.h"
 #include "tensor/arithmetic_graph.h"
+#include "tensor/datatypes.h"
 #include "tflite/schema/schema_generated.h"
 #include "tflite/types/half.h"
 
@@ -344,6 +345,36 @@ void RegisterTransformerLayer(const AtsConf& options, size_t& test_id,
 }
 
 template <typename Fixture>
+void RegisterTranspose(const AtsConf& options, size_t& test_id, size_t iters,
+                       typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Transpose,
+      SizeListC<1, 2, 3, 4, 5, 6, 7, 8>,
+      TypeList<
+          bool,
+          int8_t,
+          uint8_t,
+          int16_t,
+          uint16_t,
+          int32_t,
+          uint32_t,
+          int64_t,
+          uint64_t,
+          float,
+          tflite::half,
+          litert::tensor::bf16_t>>
+    (iters, test_id, options, cap);
+  RegisterCombinations<
+      Fixture,
+      TransposeInt4,
+      SizeListC<1, 2, 3, 4, 5, 6, 7, 8>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
 void RegisterBatchMatmul(const AtsConf& options, size_t& test_id, size_t iters,
                          typename Fixture::Capture& cap) {
   // clang-format off
@@ -466,6 +497,7 @@ void RegisterAll(const AtsConf& options, size_t& test_id,
   RegisterOneHot<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterReshape<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterTransformerLayer<Fixture>(options, test_id, /*iters=*/2, cap);
+  RegisterTranspose<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterBatchMatmul<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterFullyConnected<Fixture>(options, test_id, /*iters=*/10, cap);
 }

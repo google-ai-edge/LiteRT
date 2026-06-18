@@ -56,6 +56,7 @@ litert_define_ats(
         ".*FullyConnected.*,2d_f32.*,1d_f32.*",
         ".*FullyConnected.*,2d_f32[^c].*",
         ".*FullyConnected.*_cst.*,1d_f32[^c].*",
+        ".*Transpose.*(f16|i4|bool|u16|u32|u64|i64).*",  # XNNPACK delegate at ToT does not yet support these Transpose presets
         # Explicit ExtraModel exclusions (unsupported by XNNPACK):
         ".*simple_add_dynamic_shape.*",
         "hf_all_minilm_l6_v2",
@@ -278,6 +279,7 @@ litert_test(
         "--dont_register=.*FullyConnected.*,2d_f32.*,1d_f32.*",
         "--dont_register=.*FullyConnected.*,2d_f32[^c].*",
         "--dont_register=.*FullyConnected.*_cst.*,1d_f32[^c].*",
+        "--dont_register=.*Transpose.*(f16|i4|bool|u16|u32|u64|i64).*",  # XNNPACK delegate at ToT does not yet support these Transpose presets
         # Explicit ExtraModel exclusions (unsupported by XNNPACK):
         "--dont_register=.*simple_add_dynamic_shape.*",
         "--dont_register=.*hf_all_minilm_l6_v2.*",
@@ -307,7 +309,9 @@ litert_test(
         "//litert/test/generators",
         "//litert/test/generators:common",
         "//litert/test/generators:one_hot",
+        "//tensor:arithmetic",
         "//tensor:arithmetic_graph",
+        "//tensor:datatypes",
         "//tflite/schema:schema_fbs",
         "//tflite/types:half",
         "@com_google_absl//absl/flags:flag",
