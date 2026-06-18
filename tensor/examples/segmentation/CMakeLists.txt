@@ -56,6 +56,7 @@ target_link_libraries(litert_tensor_segmentation_example
         "-Wl,--start-group"
         litert_cc_api
         litert_runtime_c_api_static
+        litert_core
         litert_runtime
         litert_c_api
         litert_tensor_api_core
