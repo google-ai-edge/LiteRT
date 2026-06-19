@@ -19,6 +19,7 @@ let package = Package(
   name: "LiteRT",
   platforms: [
     .iOS(.v15),
+    .macOS(.v12),
   ],
   products: [
     .library(
@@ -32,11 +33,16 @@ let package = Package(
       name: "CLiteRT",
       path: "prebuilt/CLiteRT.xcframework.zip"
     ),
+    .binaryTarget(
+      name: "CLiteRT_mac",
+      path: "prebuilt/CLiteRT_mac.xcframework.zip"
+    ),
     // The Swift Wrapper Target
     .target(
       name: "LiteRT",
       dependencies: [
         .target(name: "CLiteRT", condition: .when(platforms: [.iOS])),
+        .target(name: "CLiteRT_mac", condition: .when(platforms: [.macOS])),
       ],
       path: "litert/swift/Sources",
       exclude: [

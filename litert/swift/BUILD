@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@build_bazel_rules_apple//apple:apple.bzl", "apple_xcframework")
+load("@build_bazel_rules_apple//apple:apple.bzl", "apple_universal_binary", "apple_xcframework")
+load("@build_bazel_rules_apple//apple:macos.bzl", "macos_dylib")
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_interop_hint", "swift_library", "swift_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//litert/build_common:ios.bzl", "strip_common_include_path_prefix")
@@ -121,29 +122,59 @@ apple_xcframework(
         "ios": "15.0",
     },
     public_hdrs = [
-        ":build_config.h",
-        ":litert_any.h",
-        ":litert_common.h",
-        ":litert_compiled_model.h",
-        ":litert_custom_op_kernel.h",
-        ":litert_custom_tensor_buffer.h",
-        ":litert_environment.h",
-        ":litert_environment_options.h",
-        ":litert_gl_types.h",
-        ":litert_layout.h",
-        ":litert_model.h",
-        ":litert_model_types.h",
-        ":litert_op_code.h",
-        ":litert_opaque_options.h",
-        ":litert_opencl_types.h",
-        ":litert_options.h",
-        ":litert_tensor_buffer.h",
-        ":litert_tensor_buffer_requirements.h",
-        ":litert_tensor_buffer_types.h",
-        ":litert_webgpu_types.h",
-        ":litert_scheduling_info.h",
+        ":CLiteRT_headers",
     ],
     deps = [
         ":CLiteRT_objc",
     ],
+)
+
+macos_dylib(
+    name = "CLiteRT_dylib",
+    features = ["exported_symbols"],
+    linkopts = [
+        "-undefined dynamic_lookup",
+        "-install_name @rpath/libCLiteRT_mac.dylib",
+    ],
+    minimum_os_version = "12.0",
+    visibility = ["//visibility:public"],
+    deps = [":CLiteRT_objc"],
+)
+
+apple_universal_binary(
+    name = "CLiteRT_universal",
+    binary = ":CLiteRT_dylib",
+    forced_cpus = [
+        "arm64",
+        "x86_64",
+    ],
+    minimum_os_version = "12.0",
+    platform_type = "macos",
+)
+
+genrule(
+    name = "CLiteRT_mac",
+    srcs = [
+        ":CLiteRT_universal",
+        ":CLiteRT_headers",
+    ],
+    outs = ["CLiteRT_mac.zip"],
+    cmd = """
+       mkdir -p CLiteRT_mac/Headers
+       # Copy the universal dylib
+       cp $(location :CLiteRT_universal) CLiteRT_mac/libCLiteRT_mac.dylib
+       # Copy the headers
+       cp $(locations :CLiteRT_headers) CLiteRT_mac/Headers/
+       # Create module map
+       echo "module CLiteRT {" > CLiteRT_mac/Headers/module.modulemap
+       for FILE in $(locations :CLiteRT_headers); do
+         echo "   header \\"$$(basename $$FILE)\\"" >> CLiteRT_mac/Headers/module.modulemap
+       done
+       echo "   export *" >> CLiteRT_mac/Headers/module.modulemap
+       echo "}" >> CLiteRT_mac/Headers/module.modulemap
+       # Zip it all up
+       zip -q -r $@ CLiteRT_mac
+       rm -rf CLiteRT_mac
+    """,
+    visibility = ["//visibility:public"],
 )

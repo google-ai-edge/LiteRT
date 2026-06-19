@@ -24,6 +24,7 @@ def strip_common_include_path_prefix(name, hdr_labels, prefix = ""):
       prefix: Optional prefix path to prepend to the final inclusion path.
     """
 
+    outs = []
     for hdr_label in hdr_labels:
         hdr_filename = hdr_label.split(":")[-1]
         hdr_basename = hdr_filename.split(".")[0]
@@ -38,3 +39,9 @@ def strip_common_include_path_prefix(name, hdr_labels, prefix = ""):
             > "$@"
             """.format(prefix, hdr_label),
         )
+        outs.append(hdr_filename)
+
+    native.filegroup(
+        name = name,
+        srcs = outs,
+    )
