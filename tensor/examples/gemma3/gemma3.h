@@ -61,6 +61,7 @@ void InsertTensor(absl::flat_hash_map<std::string, Tensor<Mixins...>>& map,
 
 template <class... Mixins>
 struct Inputs {
+  Tensor<Mixins...> input_ids = TensorHandle::Invalid();
   Tensor<Mixins...> embedded_input = TensorHandle::Invalid();
   Tensor<Mixins...> rope_global_cos = TensorHandle::Invalid();
   Tensor<Mixins...> rope_global_sin = TensorHandle::Invalid();
@@ -69,14 +70,22 @@ struct Inputs {
   Tensor<Mixins...> sliding_attention_mask = TensorHandle::Invalid();
   Tensor<Mixins...> global_attention_mask = TensorHandle::Invalid();
   Tensor<Mixins...> slice_index = TensorHandle::Invalid();
+  std::optional<Tensor<Mixins...>> key_cache_params;
+  std::optional<Tensor<Mixins...>> value_cache_params;
   std::optional<Tensor<Mixins...>> cache_params;
+  Tensor<Mixins...> slice_offset_1 = TensorHandle::Invalid();
+  Tensor<Mixins...> slice_size_1 = TensorHandle::Invalid();
+  Tensor<Mixins...> slice_offset_2 = TensorHandle::Invalid();
+  Tensor<Mixins...> slice_size_2 = TensorHandle::Invalid();
 
   std::vector<Tensor<Mixins...>> key_caches;
   std::vector<Tensor<Mixins...>> value_caches;
   absl::flat_hash_map<std::string, Tensor<Mixins...>> weights;
 
   void Check() {
-    LITERT_ABORT_IF_ERROR(embedded_input.GetStatus());
+    if (!input_ids.GetStatus().ok() && !embedded_input.GetStatus().ok()) {
+      LITERT_ABORT_IF_ERROR(input_ids.GetStatus());
+    }
     LITERT_ABORT_IF_ERROR(rope_global_cos.GetStatus());
     LITERT_ABORT_IF_ERROR(rope_global_sin.GetStatus());
     LITERT_ABORT_IF_ERROR(rope_local_cos.GetStatus());
@@ -84,11 +93,20 @@ struct Inputs {
     LITERT_ABORT_IF_ERROR(sliding_attention_mask.GetStatus());
     LITERT_ABORT_IF_ERROR(global_attention_mask.GetStatus());
     LITERT_ABORT_IF_ERROR(slice_index.GetStatus());
+    LITERT_ABORT_IF_ERROR(slice_offset_1.GetStatus());
+    LITERT_ABORT_IF_ERROR(slice_size_1.GetStatus());
+    LITERT_ABORT_IF_ERROR(slice_offset_2.GetStatus());
+    LITERT_ABORT_IF_ERROR(slice_size_2.GetStatus());
   }
 
   absl::flat_hash_map<std::string, Tensor<Mixins...>> tensors() {
     absl::flat_hash_map<std::string, Tensor<Mixins...>> map;
-    InsertTensor(map, embedded_input);
+    if (input_ids.GetStatus().ok()) {
+      InsertTensor(map, input_ids);
+    }
+    if (embedded_input.GetStatus().ok()) {
+      InsertTensor(map, embedded_input);
+    }
     InsertTensor(map, rope_global_cos);
     InsertTensor(map, rope_global_sin);
     InsertTensor(map, rope_local_cos);
@@ -96,7 +114,13 @@ struct Inputs {
     InsertTensor(map, sliding_attention_mask);
     InsertTensor(map, global_attention_mask);
     InsertTensor(map, slice_index);
+    InsertTensor(map, key_cache_params);
+    InsertTensor(map, value_cache_params);
     InsertTensor(map, cache_params);
+    InsertTensor(map, slice_offset_1);
+    InsertTensor(map, slice_size_1);
+    InsertTensor(map, slice_offset_2);
+    InsertTensor(map, slice_size_2);
     InsertTensors(map, key_caches, "key_cache_");
     InsertTensors(map, value_caches, "value_cache_");
     map.insert(weights.begin(), weights.end());
@@ -162,12 +186,13 @@ Outputs<Mixins...> BuildGraph(Inputs<Mixins...>& inputs, const Config& config) {
 
     SelfAttentionOutput attn_output = MakeSelfAttentionLayer(
         normed_input, absl::StrCat(layer_prefix, ".self_attn"), config,
-        is_sliding, attention_mask, cos, sin,
+        is_sliding, attention_mask, cos, sin, inputs.slice_offset_1,
+        inputs.slice_size_1, inputs.slice_offset_2, inputs.slice_size_2,
         layer_idx < inputs.key_caches.size() ? inputs.key_caches[layer_idx]
                                              : Tensor<Mixins...>(),
         layer_idx < inputs.value_caches.size() ? inputs.value_caches[layer_idx]
                                                : Tensor<Mixins...>(),
-        inputs.weights, inputs.cache_params);
+        inputs.weights, inputs.key_cache_params);
 
     updated_key_caches.push_back(attn_output.key_cache);
     updated_value_caches.push_back(attn_output.value_cache);

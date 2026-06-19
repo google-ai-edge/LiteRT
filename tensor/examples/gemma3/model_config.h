@@ -23,6 +23,8 @@ limitations under the License.
 
 namespace litert::tensor::examples {
 
+class TfliteLoader;
+
 enum class Gemma3ModelVariant {
   kAuto,
   k270M,
@@ -40,6 +42,9 @@ absl::StatusOr<Gemma3Config> InferGemma3ConfigFromLoader(
     const SafetensorLoader& loader, const Gemma3Config& fallback);
 
 absl::StatusOr<Gemma3Config> ResolveGemma3Config(const SafetensorLoader& loader,
+                                                 Gemma3ModelVariant variant);
+
+absl::StatusOr<Gemma3Config> ResolveGemma3Config(const TfliteLoader& loader,
                                                  Gemma3ModelVariant variant);
 
 }  // namespace litert::tensor::examples

@@ -33,6 +33,7 @@ limitations under the License.
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "tensor/examples/gemma3/gemma3_graph.h"
 #include "tensor/examples/gemma3/safetensor_loader.h"
+#include "tensor/examples/gemma3/tflite_loader.h"
 
 namespace litert::tensor::examples {
 
@@ -59,8 +60,9 @@ bool ParseLayerIndex(absl::string_view tensor_name, int* layer_index) {
   return true;
 }
 
-absl::StatusOr<std::vector<int>> ToShape(
-    const SafetensorTensorInfo& tensor_info, absl::string_view tensor_name) {
+template <typename TensorInfoType>
+absl::StatusOr<std::vector<int>> ToShape(const TensorInfoType& tensor_info,
+                                         absl::string_view tensor_name) {
   std::vector<int> shape;
   shape.reserve(tensor_info.shape.size());
   for (int64_t dim : tensor_info.shape) {
@@ -73,53 +75,9 @@ absl::StatusOr<std::vector<int>> ToShape(
   return shape;
 }
 
-}  // namespace
-
-absl::StatusOr<Gemma3ModelVariant> ParseGemma3ModelVariant(
-    absl::string_view variant) {
-  std::string normalized = std::string(variant);
-  absl::AsciiStrToLower(&normalized);
-  if (normalized == "auto" || normalized == "infer") {
-    return Gemma3ModelVariant::kAuto;
-  }
-  if (normalized == "270m" || normalized == "gemma3_270m" ||
-      normalized == "gemma-3-270m" || normalized == "gemma-3-270m-it") {
-    return Gemma3ModelVariant::k270M;
-  }
-  if (normalized == "1b" || normalized == "gemma3_1b" ||
-      normalized == "gemma-3-1b" || normalized == "gemma-3-1b-it") {
-    return Gemma3ModelVariant::k1B;
-  }
-  return absl::InvalidArgumentError(
-      absl::StrCat("Unsupported model variant: ", variant,
-                   ". Expected one of: auto, 270m, 1b"));
-}
-
-absl::string_view Gemma3ModelVariantToString(Gemma3ModelVariant variant) {
-  switch (variant) {
-    case Gemma3ModelVariant::kAuto:
-      return "auto";
-    case Gemma3ModelVariant::k270M:
-      return "270m";
-    case Gemma3ModelVariant::k1B:
-      return "1b";
-  }
-  return "unknown";
-}
-
-Gemma3Config GetGemma3BaseConfig(Gemma3ModelVariant variant) {
-  switch (variant) {
-    case Gemma3ModelVariant::k1B:
-      return GetGemma3_1B_Config();
-    case Gemma3ModelVariant::k270M:
-    case Gemma3ModelVariant::kAuto:
-      return GetGemma3_270M_Config();
-  }
-  return GetGemma3_270M_Config();
-}
-
-absl::StatusOr<Gemma3Config> InferGemma3ConfigFromLoader(
-    const SafetensorLoader& loader, const Gemma3Config& fallback) {
+template <typename LoaderType>
+absl::StatusOr<Gemma3Config> InferGemma3ConfigFromLoaderImpl(
+    const LoaderType& loader, const Gemma3Config& fallback) {
   Gemma3Config config = fallback;
 
   int max_layer_index = -1;
@@ -236,6 +194,56 @@ absl::StatusOr<Gemma3Config> InferGemma3ConfigFromLoader(
   return config;
 }
 
+}  // namespace
+
+absl::StatusOr<Gemma3ModelVariant> ParseGemma3ModelVariant(
+    absl::string_view variant) {
+  std::string normalized = std::string(variant);
+  absl::AsciiStrToLower(&normalized);
+  if (normalized == "auto" || normalized == "infer") {
+    return Gemma3ModelVariant::kAuto;
+  }
+  if (normalized == "270m" || normalized == "gemma3_270m" ||
+      normalized == "gemma-3-270m" || normalized == "gemma-3-270m-it") {
+    return Gemma3ModelVariant::k270M;
+  }
+  if (normalized == "1b" || normalized == "gemma3_1b" ||
+      normalized == "gemma-3-1b" || normalized == "gemma-3-1b-it") {
+    return Gemma3ModelVariant::k1B;
+  }
+  return absl::InvalidArgumentError(
+      absl::StrCat("Unsupported model variant: ", variant,
+                   ". Expected one of: auto, 270m, 1b"));
+}
+
+absl::string_view Gemma3ModelVariantToString(Gemma3ModelVariant variant) {
+  switch (variant) {
+    case Gemma3ModelVariant::kAuto:
+      return "auto";
+    case Gemma3ModelVariant::k270M:
+      return "270m";
+    case Gemma3ModelVariant::k1B:
+      return "1b";
+  }
+  return "unknown";
+}
+
+Gemma3Config GetGemma3BaseConfig(Gemma3ModelVariant variant) {
+  switch (variant) {
+    case Gemma3ModelVariant::k1B:
+      return GetGemma3_1B_Config();
+    case Gemma3ModelVariant::k270M:
+    case Gemma3ModelVariant::kAuto:
+      return GetGemma3_270M_Config();
+  }
+  return GetGemma3_270M_Config();
+}
+
+absl::StatusOr<Gemma3Config> InferGemma3ConfigFromLoader(
+    const SafetensorLoader& loader, const Gemma3Config& fallback) {
+  return InferGemma3ConfigFromLoaderImpl(loader, fallback);
+}
+
 absl::StatusOr<Gemma3Config> ResolveGemma3Config(const SafetensorLoader& loader,
                                                  Gemma3ModelVariant variant) {
   Gemma3Config base = GetGemma3BaseConfig(variant);
@@ -257,6 +265,16 @@ absl::StatusOr<Gemma3Config> ResolveGemma3Config(const SafetensorLoader& loader,
   }
 
   return resolved;
+}
+
+absl::StatusOr<Gemma3Config> ResolveGemma3Config(const TfliteLoader& loader,
+                                                 Gemma3ModelVariant variant) {
+  if (variant == Gemma3ModelVariant::kAuto) {
+    return absl::InvalidArgumentError(
+        "Automatic model variant inference is not supported for TFLite models. "
+        "Please specify --model_variant explicitly (e.g., 1b or 270m).");
+  }
+  return GetGemma3BaseConfig(variant);
 }
 
 }  // namespace litert::tensor::examples

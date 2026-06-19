@@ -57,11 +57,14 @@ void RopeCosSin(const int start, const int seq_len, const float rope_base,
                 const absl::Span<float> cos, const absl::Span<float> sin) {
   const int head_dim = cos.size() / seq_len;
   const int half_dim = head_dim / 2;
+  std::vector<float> inv_freq(half_dim);
+  for (int i = 0; i < half_dim; ++i) {
+    inv_freq[i] = 1.0f / std::pow(rope_base, 2.0f * i / head_dim);
+  }
   for (int s = 0, position = start; s < seq_len; ++s, ++position) {
     const size_t embedding_offset = s * head_dim;
     for (int i = 0; i < half_dim; ++i) {
-      const float freq = 1.0f / std::pow(rope_base, 2.0f * i / head_dim);
-      const float angle = static_cast<float>(position) * freq;
+      const float angle = static_cast<float>(position) * inv_freq[i];
       const float cos_val = std::cos(angle);
       const float sin_val = std::sin(angle);
       // Duplicate both halves to match ApplyRotaryEmbedding implementation.

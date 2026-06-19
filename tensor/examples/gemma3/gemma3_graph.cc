@@ -25,15 +25,16 @@ limitations under the License.
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
 #include "tensor/backends/ml_drift/arithmetic_ml_drift.h"  // IWYU pragma: keep
 #include "tensor/backends/xnnpack/arithmetic.h"  // IWYU pragma: keep
+#include "tensor/buffer.h"
+#include "tensor/datatypes.h"
 #include "tensor/examples/ops/transformer/transformer_ops.h"
 #include "tensor/examples/ops/transformer/transformer_ops_ml_drift.h"  // IWYU pragma: keep
 #include "tensor/examples/ops/transformer/transformer_ops_xnnpack.h"  // IWYU pragma: keep
-#include "tensor/buffer.h"
-#include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
 #include "tensor/tensor.h"
 
@@ -118,17 +119,7 @@ Tensor<Mixins...> Gemma3RmsNorm(const Tensor<Mixins...>& input,
   // Normalize
   Tensor x_norm = Mul(input, inv_rms);
 
-  // Apply Gemma's zero-centered scale: $out = x_norm * (1 + scale)$.
-  //
-  // Note: Gemma uses: $out = x_norm * (1 + scale)$ instead of $out = x_norm *
-  // scale$.
-  Tensor one_tensor =
-      Tensor<Mixins...>({.type = Type::kFP32,
-                         .shape = {1},
-                         .buffer = OwningCpuBuffer::Copy<Type::kFP32>({1.0f})});
-  Tensor scale_plus_one = Add(scale, one_tensor);
-
-  return Mul(x_norm, scale_plus_one);
+  return Mul(x_norm, scale);
 }
 
 // GELU activation with tanh approximation.
@@ -153,9 +144,17 @@ Tensor<Mixins...> MakeFeedForwardLayer(
                 {config.emb_dim, config.hidden_dim});
 
   // SwiGLU: out = down_proj(gelu(gate_proj(x)) * up_proj(x)).
-  Tensor gate = GeluTanh(FullyConnected(input, gate_proj));
+  Tensor gate_proj_tensor = FullyConnected(input, gate_proj);
+  gate_proj_tensor.SetName(absl::StrCat(name, ".gate_proj"));
+  Tensor gate = GeluTanh(gate_proj_tensor);
+  gate.SetName(absl::StrCat(name, ".gate_gelu"));
   Tensor up = FullyConnected(input, up_proj);
-  return FullyConnected(Mul(gate, up), down_proj);
+  up.SetName(absl::StrCat(name, ".up_proj"));
+  Tensor mul_out = Mul(gate, up);
+  mul_out.SetName(absl::StrCat(name, ".mul_out"));
+  Tensor output = FullyConnected(mul_out, down_proj);
+  output.SetName(absl::StrCat(name, ".output"));
+  return output;
 }
 
 // Rotary positional embedding.
@@ -227,8 +226,11 @@ SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
 
   // Project Q, K, V.
   Tensor q = FullyConnected(input, q_proj);
+  q.SetName(absl::StrCat(name, ".q_raw"));
   Tensor k = FullyConnected(input, k_proj);
+  k.SetName(absl::StrCat(name, ".k_raw"));
   Tensor v = FullyConnected(input, v_proj);
+  v.SetName(absl::StrCat(name, ".v_raw"));
 
   // Get input shape for reshaping.
   const Shape& input_shape = input.GetShape();
@@ -253,7 +255,9 @@ SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
 
   // Apply rotary positional embedding.
   q = ApplyRotaryEmbedding(q, cos, sin);
+  q.SetName(absl::StrCat(name, ".q_rope"));
   k = ApplyRotaryEmbedding(k, cos, sin);
+  k.SetName(absl::StrCat(name, ".k_rope"));
 
   Tensor updated_key_cache = k;
   Tensor updated_value_cache = v;
@@ -340,8 +344,11 @@ SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
     scores = BatchMatMul(q, k_for_attn, /*adj_x=*/false, /*adj_y=*/true);
     scores = Mul(scores, scale_tensor);
     scores = Add(scores, attention_mask);
+    scores.SetName(absl::StrCat(name, ".scores"));
     attn_weights = Softmax(scores);
+    attn_weights.SetName(absl::StrCat(name, ".attn_weights"));
     attn_output = BatchMatMul(attn_weights, v_for_attn);
+    attn_output.SetName(absl::StrCat(name, ".attn_output"));
   }
 
   // Reshape back: [batch, n_heads, seq, head_dim] -> [batch, seq, n_heads *
@@ -351,6 +358,7 @@ SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
 
   // Output projection.
   Tensor output = FullyConnected(attn_output, o_proj);
+  output.SetName(absl::StrCat(name, ".output"));
 
   return {output, updated_key_cache, updated_value_cache};
 }
@@ -444,6 +452,7 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings(
         Type::kFP32, {config.emb_dim});
     Tensor normed_input =
         Gemma3RmsNorm(hidden_states, input_norm_scale, config.rms_norm_eps);
+    normed_input.SetName(absl::StrCat(layer_prefix, ".input_layernorm.output"));
 
     // Self-attention.
     SelfAttentionOutput attn_output = MakeSelfAttentionLayer(
@@ -464,9 +473,13 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings(
         Type::kFP32, {config.emb_dim});
     Tensor normed_attn_output = Gemma3RmsNorm(
         attn_output.output, post_attn_norm_scale, config.rms_norm_eps);
+    normed_attn_output.SetName(
+        absl::StrCat(layer_prefix, ".post_attention_layernorm.output"));
 
     // Residual connection after attention.
     hidden_states = Add(hidden_states, normed_attn_output);
+    hidden_states.SetName(
+        absl::StrCat(layer_prefix, ".hidden_states_post_attn"));
 
     // Pre-FFN RMS normalization.
     Tensor pre_ffn_norm_scale = GetWeight(
@@ -475,6 +488,8 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings(
         Type::kFP32, {config.emb_dim});
     Tensor normed_for_ffn =
         Gemma3RmsNorm(hidden_states, pre_ffn_norm_scale, config.rms_norm_eps);
+    normed_for_ffn.SetName(
+        absl::StrCat(layer_prefix, ".pre_feedforward_layernorm.output"));
 
     // Feed-forward network.
     Tensor ffn_output = MakeFeedForwardLayer(
@@ -487,9 +502,13 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings(
         Type::kFP32, {config.emb_dim});
     Tensor normed_ffn_output =
         Gemma3RmsNorm(ffn_output, post_ffn_norm_scale, config.rms_norm_eps);
+    normed_ffn_output.SetName(
+        absl::StrCat(layer_prefix, ".post_feedforward_layernorm.output"));
 
     // Residual connection after FFN.
     hidden_states = Add(hidden_states, normed_ffn_output);
+    hidden_states.SetName(
+        absl::StrCat(layer_prefix, ".hidden_states_post_ffn"));
   }
 
   // Final RMS normalization.
@@ -497,6 +516,7 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings(
       GetWeight(weights, "model.norm.weight", Type::kFP32, {config.emb_dim});
   Tensor final_output =
       Gemma3RmsNorm(hidden_states, final_norm_scale, config.rms_norm_eps);
+  final_output.SetName("model.norm.output");
 
   // Output head - need embedding table for tied weights.
   Tensor embedding_table =
@@ -713,11 +733,20 @@ Gemma3_Xnnpack_Outputs Gemma3_Xnnpack_Model::operator()(
 template <>
 Gemma3_MlDrift_Outputs Gemma3_MlDrift_Model::operator()(
     Gemma3_MlDrift_Inputs& inputs) {
+  auto emb_it = inputs.weights.find("model.embed_tokens.weight");
+  ABSL_CHECK(emb_it != inputs.weights.end())
+      << "Embedding table weight not found";
+  Tensor<MlDriftMixinTag> embedding_table = emb_it->second;
+
+  Tensor<MlDriftMixinTag> embedded_input =
+      EmbeddingLookup(inputs.input_ids, embedding_table);
+  embedded_input.SetName("embedded_input");
+
   auto model_outputs = BuildGemma3_FromEmbeddings(
-      config, inputs.embedded_input, inputs.position_ids, inputs.key_caches,
+      config, embedded_input, inputs.position_ids, inputs.key_caches,
       inputs.value_caches, inputs.weights);
   return {model_outputs.output, model_outputs.key_caches,
-          model_outputs.value_caches};
+          model_outputs.value_caches, embedded_input};
 }
 
 template <>
@@ -735,9 +764,18 @@ Gemma3_Xnnpack_Decode_Outputs Gemma3_Xnnpack_Decode_Model::operator()(
 template <>
 Gemma3_MlDrift_Decode_Outputs Gemma3_MlDrift_Decode_Model::operator()(
     Gemma3_MlDrift_Decode_Inputs& inputs) {
+  auto emb_it = inputs.weights.find("model.embed_tokens.weight");
+  ABSL_CHECK(emb_it != inputs.weights.end())
+      << "Embedding table weight not found";
+  Tensor<MlDriftMixinTag> embedding_table = emb_it->second;
+
+  Tensor<MlDriftMixinTag> embedded_input =
+      EmbeddingLookup(inputs.input_ids, embedding_table);
+  embedded_input.SetName("embedded_input");
+
   auto model_outputs = BuildGemma3_FromEmbeddings_Decode(
-      config, inputs.embedded_input, inputs.rope_global_cos,
-      inputs.rope_global_sin, inputs.rope_local_cos, inputs.rope_local_sin,
+      config, embedded_input, inputs.rope_global_cos, inputs.rope_global_sin,
+      inputs.rope_local_cos, inputs.rope_local_sin,
       inputs.sliding_attention_mask, inputs.key_caches, inputs.value_caches,
       inputs.weights, &inputs.global_attention_mask, &inputs.cache_params);
   return {model_outputs.output, model_outputs.key_caches,

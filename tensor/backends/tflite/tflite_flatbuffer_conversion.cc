@@ -168,42 +168,43 @@ std::string DebugInfo(const graph::Tensor& tensor) {
 
   if (const auto& info = GetInfo(tensor); info.ok()) {
     if (!info->name.empty()) {
-      dbg_str += "name: ";
-      dbg_str += info->name;
+      absl::StrAppend(&dbg_str, "name: ", info->name);
       sep = ", ";
     }
     {
-      dbg_str += sep;
-      dbg_str += "type: ";
-      dbg_str += ToString(info->type);
+      absl::StrAppend(&dbg_str, sep, "type: ", ToString(info->type));
+      sep = ", ";
     }
     if (!info->shape.empty()) {
-      dbg_str += sep;
-      dbg_str += "shape: [";
+      absl::StrAppend(&dbg_str, sep, "shape: [");
       sep = "";
       for (int dim : info->shape) {
-        dbg_str += sep;
-        dbg_str += dim;
+        absl::StrAppend(&dbg_str, sep, dim);
         sep = ", ";
       }
-      dbg_str += ']';
+      absl::StrAppend(&dbg_str, "]");
       sep = ", ";
     }
   }
   {
-    dbg_str += sep;
-    dbg_str += "idx: ";
-    dbg_str += tensor.index;
+    absl::StrAppend(&dbg_str, sep, "idx: ", tensor.index);
+    sep = ", ";
   }
-  if (const auto& maybe_producer = GetProducer(tensor);
-      maybe_producer.ok() && *maybe_producer) {
-    dbg_str += sep;
-    dbg_str += "prod: ";
-    dbg_str += (*maybe_producer)->GetName();
+  if (tensor.group) {
+    absl::StrAppend(&dbg_str, sep,
+                    "created_at: ", tensor.group->loc.file_name(), ":",
+                    tensor.group->loc.line());
     sep = ", ";
   }
 
-  dbg_str += '}';
+  if (const auto& maybe_producer = GetProducer(tensor);
+
+      maybe_producer.ok() && *maybe_producer) {
+    absl::StrAppend(&dbg_str, sep, "prod: ", (*maybe_producer)->GetName());
+    sep = ", ";
+  }
+
+  absl::StrAppend(&dbg_str, "}");
   return dbg_str;
 }
 
@@ -376,7 +377,7 @@ absl::Status ModelFactory::Build() {
     // [[maybe_unused]] OpSerializationInfo& build_info =
     // operations_[operation];
 
-    auto tflite_op = operation->GetExtension<graph::TfLiteOperation>();
+    const auto* tflite_op = operation->GetExtension<graph::TfLiteOperation>();
     if (tflite_op == nullptr) {
       return absl::InvalidArgumentError(
           absl::StrCat("Operation ", operation->GetName(),

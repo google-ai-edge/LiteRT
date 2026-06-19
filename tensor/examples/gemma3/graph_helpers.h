@@ -24,6 +24,7 @@ limitations under the License.
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -49,6 +50,7 @@ Tensor<Mixins...> GetWeight(
   if (it != weights.end()) {
     return it->second;
   }
+  ABSL_LOG(WARNING) << "!!! WEIGHT NOT FOUND !!!: " << name;
   // Create placeholder weight tensor if not provided.
   return Tensor<Mixins...>(
       {.name = std::move(name), .type = type, .shape = shape});
@@ -77,29 +79,7 @@ Tensor<Mixins...> Gemma3RmsNorm(const Tensor<Mixins...>& input,
   // Normalize
   Tensor x_norm = Mul(input, inv_rms);
 
-  // Apply Gemma's zero-centered scale: $out = x_norm * (1 + scale)$.
-  Tensor<Mixins...> scale_plus_one;
-  auto scale_buf_or = scale.GetBuffer();
-  if (scale_buf_or.ok()) {
-    auto lock = scale_buf_or->Lock().template As<const float>();
-    std::vector<float> folded(lock.size());
-    for (size_t i = 0; i < lock.size(); ++i) {
-      folded[i] = lock.data()[i] + 1.0f;
-    }
-    scale_plus_one = Tensor<Mixins...>(
-        {.name = absl::StrCat(scale.GetName(), "_plus_one"),
-         .type = Type::kFP32,
-         .shape = scale.GetShape(),
-         .buffer = OwningCpuBuffer::Copy<Type::kFP32>(folded)});
-  } else {
-    Tensor one_tensor = Tensor<Mixins...>(
-        {.type = Type::kFP32,
-         .shape = {1},
-         .buffer = OwningCpuBuffer::Copy<Type::kFP32>({1.0f})});
-    scale_plus_one = Add(scale, one_tensor);
-  }
-
-  return Mul(x_norm, scale_plus_one);
+  return Mul(x_norm, scale);
 }
 
 // GELU activation with tanh approximation.
@@ -126,24 +106,59 @@ Tensor<Mixins...> MakeFeedForwardLayer(
   // SwiGLU: out = down_proj(gelu(gate_proj(x)) * up_proj(x)).
   Tensor gate = GeluTanh(FullyConnected(input, gate_proj));
   Tensor up = FullyConnected(input, up_proj);
-  return FullyConnected(Mul(gate, up), down_proj);
+  Tensor ffn_out = FullyConnected(Mul(gate, up), down_proj);
+  ffn_out.SetName(absl::StrCat(name, ".output"));
+  return ffn_out;
+}
+
+// Rotary positional embedding (statically sliced for CPU/standard runners).
+template <class... Mixins>
+Tensor<Mixins...> ApplyRotaryEmbedding(const Tensor<Mixins...>& x,
+                                       const Tensor<Mixins...>& cos,
+                                       const Tensor<Mixins...>& sin) {
+  const Shape& x_shape = x.GetShape();
+  int num_dims = static_cast<int>(x_shape.size());
+
+  std::vector<int> begin1(num_dims, 0);
+  std::vector<int> size1(num_dims, -1);
+  size1[num_dims - 1] = x_shape[num_dims - 1] / 2;
+
+  std::vector<int> begin2(num_dims, 0);
+  begin2[num_dims - 1] = x_shape[num_dims - 1] / 2;
+  std::vector<int> size2(num_dims, -1);
+  size2[num_dims - 1] = x_shape[num_dims - 1] / 2;
+
+  Tensor x1 = Slice(x, begin1, size1);
+  Tensor x2 = Slice(x, begin2, size2);
+
+  // rotated = cat(-x2, x1).
+  Tensor neg_one = Tensor<Mixins...>(
+      {.type = Type::kFP32,
+       .shape = {1},
+       .buffer = OwningCpuBuffer::Copy<Type::kFP32>({-1.0f})});
+  Tensor neg_x2 = Mul(x2, neg_one);
+  Tensor rotated = Concatenation({neg_x2, x1}, /*axis=*/num_dims - 1);
+
+  // Apply rotation: x * cos + rotated * sin.
+  Tensor x_cos = Mul(x, cos);
+  Tensor rotated_sin = Mul(rotated, sin);
+
+  return Add(x_cos, rotated_sin);
 }
 
 // Rotary positional embedding.
 template <class... Mixins>
 Tensor<Mixins...> ApplyRotaryEmbedding(const Tensor<Mixins...>& x,
                                        const Tensor<Mixins...>& cos,
-                                       const Tensor<Mixins...>& sin) {
-  // x shape: [batch, n_heads, seq_len, head_dim].
-  const auto& x_shape = x.GetShape();
-  int head_dim = x_shape[3];
-  int half_dim = head_dim / 2;
-
-  // Split x into first and second half along head_dim.
-  Tensor x1 =
-      Slice(x, {0, 0, 0, 0}, {x_shape[0], x_shape[1], x_shape[2], half_dim});
-  Tensor x2 = Slice(x, {0, 0, 0, half_dim},
-                    {x_shape[0], x_shape[1], x_shape[2], half_dim});
+                                       const Tensor<Mixins...>& sin,
+                                       const Tensor<Mixins...>& slice_offset_1,
+                                       const Tensor<Mixins...>& slice_size_1,
+                                       const Tensor<Mixins...>& slice_offset_2,
+                                       const Tensor<Mixins...>& slice_size_2) {
+  // Split x into first and second half along head_dim using dynamic CPU-staged
+  // slices!
+  Tensor x1 = Slice(x, slice_offset_1, slice_size_1);
+  Tensor x2 = Slice(x, slice_offset_2, slice_size_2);
 
   // rotated = cat(-x2, x1).
   Tensor neg_one = Tensor<Mixins...>(
@@ -156,6 +171,7 @@ Tensor<Mixins...> ApplyRotaryEmbedding(const Tensor<Mixins...>& x,
   // Apply rotation: x * cos + rotated * sin.
   Tensor x_cos = Mul(x, cos);
   Tensor rotated_sin = Mul(rotated, sin);
+
   return Add(x_cos, rotated_sin);
 }
 
@@ -175,7 +191,10 @@ SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
     const Tensor<Mixins...>& input, const std::string& name,
     const Config& config, bool is_sliding_attention,
     const Tensor<Mixins...>& attention_mask, const Tensor<Mixins...>& cos,
-    const Tensor<Mixins...>& sin, const Tensor<Mixins...>& key_cache,
+    const Tensor<Mixins...>& sin, const Tensor<Mixins...>& slice_offset_1,
+    const Tensor<Mixins...>& slice_size_1,
+    const Tensor<Mixins...>& slice_offset_2,
+    const Tensor<Mixins...>& slice_size_2, const Tensor<Mixins...>& key_cache,
     const Tensor<Mixins...>& value_cache,
     const absl::flat_hash_map<std::string, Tensor<Mixins...>>& weights,
     const std::optional<Tensor<Mixins...>> cache_params = std::nullopt) {
@@ -225,8 +244,10 @@ SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
   k = Gemma3RmsNorm(k, k_norm, config.rms_norm_eps);
 
   // Apply rotary positional embedding.
-  q = ApplyRotaryEmbedding(q, cos, sin);
-  k = ApplyRotaryEmbedding(k, cos, sin);
+  q = ApplyRotaryEmbedding(q, cos, sin, slice_offset_1, slice_size_1,
+                           slice_offset_2, slice_size_2);
+  k = ApplyRotaryEmbedding(k, cos, sin, slice_offset_1, slice_size_1,
+                           slice_offset_2, slice_size_2);
 
   Tensor updated_key_cache = k;
   Tensor updated_value_cache = v;

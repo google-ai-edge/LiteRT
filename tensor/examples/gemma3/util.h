@@ -113,6 +113,24 @@ class Timer {
   std::vector<struct Lap> laps_;
 };
 
+struct PrefillTiming {
+  Timer prefill{"prefill"};
+  Timer cpu_prep{"cpu_prep"};
+  Timer uploads{"uploads"};
+  Timer run{"run"};
+  Timer readback{"readback"};
+  Timer cache_readback{"cache_readback"};
+
+  std::string Stats() const {
+    std::stringstream os;
+    os << "Prefill breakdown " << prefill.PerSec() << " <=> " << prefill.Stats()
+       << " ms/tok { " << cpu_prep.Stats() << ", " << uploads.Stats() << ", "
+       << run.Stats() << ", " << readback.Stats() << ", "
+       << cache_readback.Stats() << " }";
+    return os.str();
+  }
+};
+
 struct DecodeTiming {
   Timer decode{"decode"};
   Timer cpu_prep{"cpu_prep"};
