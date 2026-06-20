@@ -119,6 +119,9 @@ TfLiteStatus copy_ledger(const TfLiteSparsity* sparsity, TfLiteTensor* ledger) {
   for (int i = 0; i < array_segments->size - 1; i++) {
     int row_start = array_segments->data[i];
     int row_end = array_segments->data[i + 1];
+    if (row_start < 0 || row_start > row_end || row_end > array_indices->size) {
+      return kTfLiteError;
+    }
     if (row_end - row_start > UINT8_MAX) {
       return kTfLiteError;
     }
@@ -1976,28 +1979,33 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
               &context->tensors[op_data->ledger_index +
                                 kProjectionWeightsLedgerOffset];
           if (!op_data->ledger_initialized) {
-            copy_ledger(input_to_input_weights == nullptr
-                            ? nullptr
-                            : input_to_input_weights->sparsity,
-                        input_to_input_weights_ledger);
-            copy_ledger(input_to_forget_weights->sparsity,
-                        input_to_forget_weights_ledger);
-            copy_ledger(input_to_cell_weights->sparsity,
-                        input_to_cell_weights_ledger);
-            copy_ledger(input_to_output_weights->sparsity,
-                        input_to_output_weights_ledger);
-            copy_ledger(recurrent_to_input_weights == nullptr
-                            ? nullptr
-                            : recurrent_to_input_weights->sparsity,
-                        recurrent_to_input_weights_ledger);
-            copy_ledger(recurrent_to_forget_weights->sparsity,
-                        recurrent_to_forget_weights_ledger);
-            copy_ledger(recurrent_to_cell_weights->sparsity,
-                        recurrent_to_cell_weights_ledger);
-            copy_ledger(recurrent_to_output_weights->sparsity,
-                        recurrent_to_output_weights_ledger);
-            copy_ledger(projection_weights->sparsity,
-                        projection_weights_ledger);
+            TF_LITE_ENSURE_STATUS(
+                copy_ledger(input_to_input_weights == nullptr
+                                ? nullptr
+                                : input_to_input_weights->sparsity,
+                            input_to_input_weights_ledger));
+            TF_LITE_ENSURE_STATUS(copy_ledger(input_to_forget_weights->sparsity,
+                                              input_to_forget_weights_ledger));
+            TF_LITE_ENSURE_STATUS(copy_ledger(input_to_cell_weights->sparsity,
+                                              input_to_cell_weights_ledger));
+            TF_LITE_ENSURE_STATUS(copy_ledger(input_to_output_weights->sparsity,
+                                              input_to_output_weights_ledger));
+            TF_LITE_ENSURE_STATUS(
+                copy_ledger(recurrent_to_input_weights == nullptr
+                                ? nullptr
+                                : recurrent_to_input_weights->sparsity,
+                            recurrent_to_input_weights_ledger));
+            TF_LITE_ENSURE_STATUS(
+                copy_ledger(recurrent_to_forget_weights->sparsity,
+                            recurrent_to_forget_weights_ledger));
+            TF_LITE_ENSURE_STATUS(
+                copy_ledger(recurrent_to_cell_weights->sparsity,
+                            recurrent_to_cell_weights_ledger));
+            TF_LITE_ENSURE_STATUS(
+                copy_ledger(recurrent_to_output_weights->sparsity,
+                            recurrent_to_output_weights_ledger));
+            TF_LITE_ENSURE_STATUS(copy_ledger(projection_weights->sparsity,
+                                              projection_weights_ledger));
             op_data->ledger_initialized = true;
           }
           return lstm_eval::EvalHybrid(
