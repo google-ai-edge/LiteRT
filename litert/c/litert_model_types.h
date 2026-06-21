@@ -81,15 +81,14 @@ typedef struct {
   LiteRtLayout layout;
 } LiteRtRankedTensorType;
 
+// `LiteRtRankedTensorType` embeds `LiteRtLayout`, whose layout is now identical
+// across MSVC and GCC/Clang (see litert/c/litert_layout.h), so this size no
+// longer diverges by compiler. The assert intentionally has no `_MSC_VER`
+// branch.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-#if !defined(_MSC_VER)
 static_assert(sizeof(LiteRtRankedTensorType) == 72,
               "LiteRtRankedTensorType size mismatch");
-#else   // !defined(_MSC_VER)
-static_assert(sizeof(LiteRtRankedTensorType) == 76,
-              "LiteRtRankedTensorType size mismatch");
-#endif  // !defined(_MSC_VER)
 static_assert(offsetof(LiteRtRankedTensorType, layout) == 4,
               "LiteRtRankedTensorType layout offset mismatch");
 #endif  // __cplusplus
