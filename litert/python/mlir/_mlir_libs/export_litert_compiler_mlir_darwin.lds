@@ -1,3 +1,4 @@
+*absl*
 *mlir*
 *stablehlo*
 *litert*
