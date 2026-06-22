@@ -847,11 +847,6 @@ cc_library(
         "//litert:litert_runtime_link_mode_none": [
             ":litert_runtime_builtin_none",
         ],
-        # copybara:uncomment_begin(google-only)
-        # "//third_party/java/android/android_sdk_linux:internal_system": [
-        # ":litert_runtime_builtin_none",
-        # ],
-        # copybara:uncomment_end
         "//conditions:default": [":litert_runtime_builtin_static"],
     }),
 )
