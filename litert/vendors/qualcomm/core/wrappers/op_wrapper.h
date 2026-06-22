@@ -77,6 +77,8 @@ class OpWrapper final {
 
   void AddSuffixToName(absl::string_view suffix);
 
+  size_t GetInputTensorCount() const { return input_tensors_.size(); }
+
  private:
   // Borrowed pointer. Must point to a string that outlives this OpWrapper --
   // in practice, the QualcommOptions instance held by LiteRtCompilerPluginT.

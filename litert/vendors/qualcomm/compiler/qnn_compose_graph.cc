@@ -71,6 +71,7 @@
 #include "litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/embedding_lookup_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/fully_connected_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/hadamard_transform_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/gather_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/gathernd_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/gelu_op_builder.h"
@@ -635,11 +636,9 @@ LiteRtStatus BuildFullyConnectedOp(
 
   auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
       tensor_pool, fused_activation, output_tensors);
-  if (op_wrappers.empty()) {
-    op_wrappers = ::qnn::BuildFullyConnectedOp(
-        tensor_pool, input_tensors, {activation_input}, keep_num_dims,
-        use_int64_bias_as_int32);
-  }
+  op_wrappers = ::qnn::BuildFullyConnectedOp(
+      tensor_pool, input_tensors, {activation_input}, keep_num_dims,
+      use_int64_bias_as_int32);
   ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
                                 output_tensors[0]);
   return kLiteRtStatusOk;
@@ -1622,6 +1621,17 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
   absl::flat_hash_set<std::int32_t> ids_to_dump(dump_ids.begin(),
                                                 dump_ids.end());
 
+  // Parse comma-separated graph_transform option (e.g. "gqa,masking") into
+  // a set so individual transformations can be queried below.
+  absl::flat_hash_set<std::string> graph_transforms;
+  for (absl::string_view part :
+       absl::StrSplit(options.GetGraphTransform(), ',', absl::SkipEmpty())) {
+    graph_transforms.emplace(absl::StripAsciiWhitespace(part));
+  }
+  const auto has_graph_transform = [&graph_transforms](absl::string_view name) {
+    return graph_transforms.contains(name);
+  };
+
   for (const auto& subgraph_input : graph_mapper.Graph().Inputs()) {
     ::qnn::TensorWrapper* tensor_wrapper{nullptr};
     LITERT_RETURN_IF_ERROR(ConvertTensor(subgraph_input, tensor_pool,
@@ -1708,8 +1718,17 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
     std::move(op_wrappers.begin(), op_wrappers.end(),
               std::back_inserter(graph_op_wrappers));
   }
-  // TODO (jiunkaiy): Set this graph-to-graph transformation as a compile flag.
-  const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOptPrefill;
+
+  ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kOff;
+  if (has_graph_transform("gqa")) {
+    g2g_option |= ::qnn::G2GConfig::kGqa;
+  }
+  if (has_graph_transform("masking")) {
+    g2g_option |= ::qnn::G2GConfig::kMasking;
+  }
+  if (has_graph_transform("rotation_quant")) {
+    g2g_option |= ::qnn::G2GConfig::kRotationQuant;
+  }
   GraphToGraphTransform(g2g_option, graph_op_wrappers, tensor_pool,
                         [&qnn](::qnn::OpWrapper& op) -> bool {
                           return qnn.ValidateOp(op) == kLiteRtStatusOk;
