@@ -22,7 +22,8 @@ The build and run docs live in [doc/](./doc/). Read them in this order:
 flowchart LR
     A[PREREQUISITES.md<br/>Install toolchain] --> B[QAIRT_SDK.md<br/>QNN concepts and libraries]
     B --> C[HTP_INSTRUCTIONS.md<br/>Compile and execute]
-    C -.IoT target.-> D[IOT_DEVICE_SETUP.md<br/>Flash oe-linux device]
+    C -. "IoT target" .-> D[IOT_DEVICE_SETUP.md<br/>Flash oe-linux device]
+    C -. "LPAI target" .-> E[LPAI_INSTRUCTIONS.md<br/>Always-on low-power engine]
 ```
 
 -   [PREREQUISITES.md](./doc/PREREQUISITES.md): read once when setting up a new
@@ -38,6 +39,9 @@ flowchart LR
     the device first, then follow
     [Run on device (IoT device with oe-linux)](./doc/HTP_INSTRUCTIONS.md#run-on-device-iot-device-with-oe-linux)
     in HTP_INSTRUCTIONS.md.
+-   [LPAI_INSTRUCTIONS.md](./doc/LPAI_INSTRUCTIONS.md): only when targeting the
+    LPAI (Low Power AI) backend, a low-power ML engine for always-on embedded
+    use cases.
 
 ## Debug Features 🐞
 
