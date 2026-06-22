@@ -39,13 +39,13 @@
 #include "support/preprocessor/mel_filterbank.h"
 #include "support/util/io_types.h"
 #include "support/util/status_macros.h"  // IWYU pragma: keep
-#include "third_party/rive_miniaudio/miniaudio.h"
+#include "miniaudio.h"  // from @miniaudio
 // copybara:uncomment_begin(internal)
 // #include "third_party/kissfft/kiss_fft.h"
 // #include "third_party/kissfft/kiss_fft_impl.h"
-// #include "third_party/kissfft/tools/kiss_fftr_impl.h"
+// #include "kiss_fftr_impl.h"  // from @kissfft
 // copybara:uncomment_end
-#include "third_party/kissfft/tools/kiss_fftr.h"
+#include "kiss_fftr.h"  // from @kissfft
 
 namespace litert::support {
 
