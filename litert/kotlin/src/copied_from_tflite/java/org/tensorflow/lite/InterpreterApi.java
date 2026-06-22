@@ -184,7 +184,7 @@ public interface InterpreterApi extends AutoCloseable {
 
       /**
        * Use a TF Lite runtime implementation provided by the OS or system services. This will be
-       * obtained from a system library / shared object / service, such as Google Play Services. It
+       * obtained from a system library / shared object / service, such as Google Play services. It
        * may be newer than the version linked into the application (if any). If there is no suitable
        * TF Lite runtime implementation provided by the system, then attempting to create an
        * InterpreterApi instance with this TfLiteRuntime setting will throw an IllegalStateException
@@ -397,24 +397,27 @@ public interface InterpreterApi extends AutoCloseable {
   void allocateTensors();
 
   /**
-   * Resizes idx-th input of the native model to the given dims.
+   * Resizes the input at the given index of the native model to the given dims.
    *
-   * @throws IllegalArgumentException if {@code idx} is negative or is not smaller than the number
-   *     of model inputs; or if error occurs when resizing the idx-th input.
+   * @throws IllegalArgumentException if {@code index} is negative or is not smaller than the number
+   *     of model inputs; or if error occurs when resizing the input at the given index.
    */
-  void resizeInput(int idx, int @NonNull [] dims);
+  @SuppressWarnings("NonApiType")
+  void resizeInput(int index, int @NonNull [] dims);
 
   /**
-   * Resizes idx-th input of the native model to the given dims.
+   * Resizes the input at the given index of the native model to the given dims.
    *
    * <p>When `strict` is True, only unknown dimensions can be resized. Unknown dimensions are
    * indicated as `-1` in the array returned by `Tensor.shapeSignature()`.
    *
-   * @throws IllegalArgumentException if {@code idx} is negative or is not smaller than the number
-   *     of model inputs; or if error occurs when resizing the idx-th input. Additionally, the error
-   *     occurs when attempting to resize a tensor with fixed dimensions when `strict` is True.
+   * @throws IllegalArgumentException if {@code index} is negative or is not smaller than the number
+   *     of model inputs; or if error occurs when resizing the input at the given index.
+   *     Additionally, the error occurs when attempting to resize a tensor with fixed dimensions
+   *     when `strict` is True.
    */
-  void resizeInput(int idx, int @NonNull [] dims, boolean strict);
+  @SuppressWarnings("NonApiType")
+  void resizeInput(int index, int @NonNull [] dims, boolean strict);
 
   /** Gets the number of input tensors. */
   int getInputTensorCount();
