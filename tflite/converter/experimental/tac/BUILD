@@ -270,6 +270,7 @@ cc_library(
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:cluster_util",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:error_util",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:tensorflow_analysis",
+        "@stablehlo//:stablehlo_ops",
     ],
     alwayslink = 1,
 )
