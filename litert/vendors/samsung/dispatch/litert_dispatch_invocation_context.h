@@ -30,7 +30,6 @@
 
 // Note: This class is NOT thread-safe.
 // Caller must ensure that only one thread accesses a given instance at a time.
-// For concurrent access, external synchronization is required.
 class LiteRtDispatchInvocationContextT {
  public:
   using UniquePtr = std::unique_ptr<LiteRtDispatchInvocationContextT>;

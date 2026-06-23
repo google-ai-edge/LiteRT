@@ -78,6 +78,7 @@ LiteRtStatus LiteRtSamsungInitialize(
 
   if (auto enn_manager = ::litert::samsung::EnnManager::Create(); enn_manager) {
     static_enn_manager.reset(enn_manager->release());
+    SetGenAiPerfConfigFromSoc(static_enn_manager->Api());
   } else {
     LITERT_LOG(LITERT_INFO, "Failed to initialize: %s",
                enn_manager.Error().Message().c_str());
