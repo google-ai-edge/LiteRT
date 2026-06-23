@@ -103,10 +103,10 @@ Tensor<Mixins...> MakeFeedForwardLayer(
       GetWeight(weights, absl::StrCat(name, ".down_proj.weight"), Type::kFP32,
                 {config.emb_dim, config.hidden_dim});
 
-  // SwiGLU: out = down_proj(gelu(gate_proj(x)) * up_proj(x)).
-  Tensor gate = GeluTanh(FullyConnected(input, gate_proj));
+  // SwiGLU: out = down_proj(up_proj(x) * gelu(gate_proj(x))).
   Tensor up = FullyConnected(input, up_proj);
-  Tensor ffn_out = FullyConnected(Mul(gate, up), down_proj);
+  Tensor gate = GeluTanh(FullyConnected(input, gate_proj));
+  Tensor ffn_out = FullyConnected(Mul(up, gate), down_proj);
   ffn_out.SetName(absl::StrCat(name, ".output"));
   return ffn_out;
 }

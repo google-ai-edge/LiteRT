@@ -273,11 +273,14 @@ template <class... Mixins>
 Tensor<Mixins...> MatMulWithCache(const Tensor<Mixins...>& lhs,
                                   const Tensor<Mixins...>& rhs,
                                   const Tensor<Mixins...>& params,
-                                  bool is_v = false) {
+                                  bool is_v = false, bool is_local = false,
+                                  int sliding_window_size = 0) {
   auto op = std::make_shared<graph::MatMulWithCacheOperation>();
   RegisterMixins<Mixins...>(op);
   op->inputs = {lhs.GetRaw(), rhs.GetRaw(), params.GetRaw()};
   op->is_v = is_v;
+  op->is_local = is_local;
+  op->sliding_window_size = sliding_window_size;
   LRT_TENSOR_ASSIGN_OR_ABORT(auto lhs_info, graph::GetInfo(lhs.GetRaw()));
   LRT_TENSOR_ASSIGN_OR_ABORT(auto rhs_info, graph::GetInfo(rhs.GetRaw()));
   Tensor<Mixins...> output = AddOutput(op, source_location::current());
