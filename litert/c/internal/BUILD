@@ -183,6 +183,7 @@ cc_library(
     srcs = ["litert_runtime_context.cc"],
     hdrs = ["litert_runtime_context.h"],
     visibility = [
+        # copybara:uncomment(oss litert_lm) "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
         "//litert/runtime:__pkg__",
         "//litert/vendors:__subpackages__",
         "//third_party/odml/litert/weight_loader:__subpackages__",
@@ -287,6 +288,7 @@ cc_library(
     hdrs = ["litert_tensor_buffer_registry.h"],
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
+        # "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
         # "//litert/c:__subpackages__",
         # "//litert/cc:__subpackages__",
         # "//litert/runtime:__subpackages__",
