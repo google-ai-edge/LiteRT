@@ -940,7 +940,7 @@ TEST(MHASHATest, Gemma4BPrefill) {
   const size_t num_op_in_sha = 11;
 
   // TODO: Check the sha_init_idx according to the number of Unpack Op and Ops outside SHA
-  const size_t sha_init_idx = 11;
+  const size_t sha_init_idx = 5;
 
   // ASSERT the Unpack Op
 
