@@ -20,7 +20,9 @@ namespace qnn {
 
 namespace {
 
-constexpr size_t kQnnOpCodeSize = static_cast<size_t>(QnnOpCode::kUnknown);
+// We add 1 to include `kUnknown` in the table size, as custom ops are mapped to
+// `kUnknown` and will look up the table during pattern matching.
+constexpr size_t kQnnOpCodeSize = static_cast<size_t>(QnnOpCode::kUnknown) + 1;
 
 std::vector<size_t> CreateBadMatchTable(
     const std::vector<QnnOpCode>& pattern_ops) {
