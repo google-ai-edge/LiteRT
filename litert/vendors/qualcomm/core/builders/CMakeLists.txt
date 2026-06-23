@@ -55,6 +55,7 @@ target_sources(qnn_builders
         softmax_op_builder.cc
         spatial_transform_op_builder.cc
         split_op_builder.cc
+        splitv_op_builder.cc
         strided_slice_op_builder.cc
         tanh_op_builder.cc
         tile_op_builder.cc

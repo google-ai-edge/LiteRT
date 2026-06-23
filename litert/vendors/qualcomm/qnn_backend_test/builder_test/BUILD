@@ -222,6 +222,38 @@ litert_test(
 )
 
 litert_test(
+    name = "splitv_test",
+    srcs = [
+        "splitv_test.cc",
+    ],
+    linkopts = select({
+        "//litert:android": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:litert_runtime_c_api_so",
+            ]),
+        ],
+    }),
+    linkstatic = True,
+    tags = [
+        # Don't build/test in OS until qnn is available.
+        "no-remote-exec",
+        "nobuilder",
+        "notap",
+        "manual",
+    ],
+    ungrte = True,
+    use_sys_malloc = True,
+    deps = [
+        "//litert/vendors/qualcomm/core:op_code",
+        "//litert/vendors/qualcomm/core/builders:splitv_op_builder",
+        "//litert/vendors/qualcomm/core/utils:test_main",
+        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+litert_test(
     name = "fully_connected_int2_test",
     srcs = [
         "fully_connected_int2_test.cc",

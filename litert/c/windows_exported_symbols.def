@@ -264,6 +264,7 @@ EXPORTS
   LiteRtGetSoftmaxBetaOption
   LiteRtGetSpaceToDepthBlockSizeOption
   LiteRtGetSplitNumSplitsOption
+  LiteRtGetSplitVNumSplitsOption
   LiteRtGetSqueezeDimsOption
   LiteRtGetStridedSliceBeginMaskOption
   LiteRtGetStridedSliceEllipsisMaskOption
