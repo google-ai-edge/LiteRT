@@ -14,7 +14,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//third_party/bazel_rules/rules_rust/rust:defs.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
@@ -71,7 +71,6 @@ cc_library(
     deps = [
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/types:source_location",
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",

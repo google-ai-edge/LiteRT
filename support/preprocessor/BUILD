@@ -36,8 +36,8 @@ cc_library(
     name = "audio_preprocessor",
     hdrs = ["audio_preprocessor.h"],
     deps = [
-        "//third_party/odml/litert/support/util:io_types",
-        "//third_party/odml/litert/support/util:litert_status_util",
+        "//support/util:io_types",
+        "//support/util:litert_status_util",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:string_view",
@@ -63,9 +63,9 @@ cc_test(
         "//litert/cc:litert_layout",
         "//litert/cc:litert_tensor_buffer",
         "//litert/test:matchers",
-        "//third_party/odml/litert/support/util:convert_tensor_buffer",
-        "//third_party/odml/litert/support/util:io_types",
-        "//third_party/odml/litert/support/util:test_utils",
+        "//support/util:convert_tensor_buffer",
+        "//support/util:io_types",
+        "//support/util:test_utils",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
@@ -88,14 +88,14 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-        # copybara:uncomment "//third_party/kissfft",
-        "//third_party/kissfft:kissfftr",
+        # copybara:uncomment "@kissfft",
+        "@kissfft//:kissfftr",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc:litert_tensor_buffer_types",
-        "//third_party/odml/litert/support/util:io_types",
-        "//third_party/odml/litert/support/util:litert_status_util",
+        "//support/util:io_types",
+        "//support/util:litert_status_util",
         # copybara:uncomment_begin(oss litert)
         # ] + select({
         # "@platforms//os:ios": ["//third_party/rive_miniaudio:rive_miniaudio_objc"],
@@ -112,8 +112,8 @@ cc_library(
         # }),
         # copybara:uncomment_end_and_comment_begin
     ] + select({
-        "@platforms///os:ios": ["@miniaudio//:miniaudio_objc"],
-        "@platforms///os:macos": ["@miniaudio//:miniaudio_objc"],
+        "@platforms//os:ios": ["@miniaudio//:miniaudio_objc"],
+        "@platforms//os:macos": ["@miniaudio//:miniaudio_objc"],
         "//conditions:default": ["@miniaudio"],
     }),
     # copybara:comment_end
@@ -123,7 +123,7 @@ cc_test(
     name = "audio_preprocessor_miniaudio_test",
     srcs = ["audio_preprocessor_miniaudio_test.cc"],
     data = [
-        "//third_party/odml/litert/support/preprocessor/testdata",
+        "//support/preprocessor/testdata",
     ],
     tags = ["requires-mac-inputs:hard"],  # Required for running on Forge on Mac.
     deps = [
@@ -138,9 +138,9 @@ cc_test(
         "//litert/cc:litert_model",
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
-        "//third_party/odml/litert/support/util:io_types",
-        "//third_party/odml/litert/support/util:litert_status_util",
-        "//third_party/odml/litert/support/util:test_utils",
+        "//support/util:io_types",
+        "//support/util:litert_status_util",
+        "//support/util:test_utils",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
@@ -172,7 +172,7 @@ cc_test(
     deps = [
         ":mel_filterbank",
         ":signal_vector_util",
-        "//third_party/odml/litert/support/util:test_utils",
+        "//support/util:test_utils",
         "@com_google_absl//absl/random",
         "@com_google_googletest//:gtest_main",
     ],
@@ -191,7 +191,7 @@ cc_test(
     srcs = ["signal_vector_util_test.cc"],
     deps = [
         ":signal_vector_util",
-        "//third_party/odml/litert/support/util:test_utils",
+        "//support/util:test_utils",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -200,8 +200,8 @@ cc_library(
     name = "image_preprocessor",
     hdrs = ["image_preprocessor.h"],
     deps = [
-        "//third_party/odml/litert/support/util:io_types",
-        "//third_party/odml/litert/support/util:litert_status_util",
+        "//support/util:io_types",
+        "//support/util:litert_status_util",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:string_view",
@@ -235,9 +235,9 @@ cc_test(
         "//litert/cc:litert_layout",
         "//litert/cc:litert_tensor_buffer",
         "//litert/test:matchers",
-        "//third_party/odml/litert/support/util:convert_tensor_buffer",
-        "//third_party/odml/litert/support/util:io_types",
-        "//third_party/odml/litert/support/util:test_utils",
+        "//support/util:convert_tensor_buffer",
+        "//support/util:io_types",
+        "//support/util:test_utils",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/types:span",
@@ -250,8 +250,8 @@ cc_library(
     hdrs = ["by_pass_audio_preprocessor.h"],
     deps = [
         ":audio_preprocessor",
-        "//third_party/odml/litert/support/util:io_types",
-        "//third_party/odml/litert/support/util:litert_status_util",
+        "//support/util:io_types",
+        "//support/util:litert_status_util",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
     ] + select({
@@ -274,9 +274,9 @@ cc_test(
         "//litert/cc:litert_layout",
         "//litert/cc:litert_tensor_buffer",
         "//litert/test:matchers",
-        "//third_party/odml/litert/support/util:convert_tensor_buffer",
-        "//third_party/odml/litert/support/util:io_types",
-        "//third_party/odml/litert/support/util:test_utils",
+        "//support/util:convert_tensor_buffer",
+        "//support/util:io_types",
+        "//support/util:test_utils",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/types:span",
@@ -289,8 +289,8 @@ cc_library(
     hdrs = ["by_pass_image_preprocessor.h"],
     deps = [
         ":image_preprocessor",
-        "//third_party/odml/litert/support/util:io_types",
-        "//third_party/odml/litert/support/util:litert_status_util",
+        "//support/util:io_types",
+        "//support/util:litert_status_util",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
     ] + select({
@@ -313,9 +313,9 @@ cc_test(
         "//litert/cc:litert_layout",
         "//litert/cc:litert_tensor_buffer",
         "//litert/test:matchers",
-        "//third_party/odml/litert/support/util:convert_tensor_buffer",
-        "//third_party/odml/litert/support/util:io_types",
-        "//third_party/odml/litert/support/util:test_utils",
+        "//support/util:convert_tensor_buffer",
+        "//support/util:io_types",
+        "//support/util:test_utils",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/types:span",
@@ -331,9 +331,9 @@ cc_library(
         ":image_preprocessor",
         ":image_preprocessor_utils",
         "//litert/cc:litert_tensor_buffer_types",
-        "//third_party/odml/litert/support/util:convert_tensor_buffer",
-        "//third_party/odml/litert/support/util:io_types",
-        "//third_party/odml/litert/support/util:litert_status_util",
+        "//support/util:convert_tensor_buffer",
+        "//support/util:io_types",
+        "//support/util:litert_status_util",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_log",
@@ -358,7 +358,7 @@ cc_library(
 cc_test(
     name = "stb_image_preprocessor_test",
     srcs = ["stb_image_preprocessor_test.cc"],
-    data = ["//third_party/odml/litert/support/preprocessor/testdata"],
+    data = ["//support/preprocessor/testdata"],
     tags = ["requires-mac-inputs:hard"],  # Required for running on Forge on Mac.
     deps = [
         ":image_preprocessor",
@@ -366,8 +366,8 @@ cc_test(
         "//litert/cc:litert_layout",
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc:litert_tensor_buffer_types",
-        "//third_party/odml/litert/support/util:io_types",
-        "//third_party/odml/litert/support/util:test_utils",
+        "//support/util:io_types",
+        "//support/util:test_utils",
         "@com_google_absl//absl/status",
         "@com_google_googletest//:gtest_main",
     ],
@@ -386,9 +386,9 @@ cc_library(
     hdrs = ["skia_image_preprocessor.h"],
     deps = [
         ":image_preprocessor",
-        "//third_party/odml/litert/support/util:convert_tensor_buffer",
-        "//third_party/odml/litert/support/util:io_types",
-        "//third_party/odml/litert/support/util:litert_status_util",
+        "//support/util:convert_tensor_buffer",
+        "//support/util:io_types",
+        "//support/util:litert_status_util",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
@@ -413,7 +413,7 @@ cc_library(
 # cc_test(
 #     name = "skia_image_preprocessor_test",
 #     srcs = ["skia_image_preprocessor_test.cc"],
-#     data = ["//third_party/odml/litert/support/preprocessor/testdata"],
+#     data = ["//support/preprocessor/testdata"],
 #     tags = ["requires-mac-inputs:hard"],  # Required for running on Forge on Mac.
 #     deps = [
 #         ":image_preprocessor",
@@ -424,9 +424,9 @@ cc_library(
 #         "//litert/cc:litert_layout",
 #         "//litert/cc:litert_tensor_buffer",
 #         "//litert/cc:litert_tensor_buffer_types",
-#         "//third_party/odml/litert/support/util:convert_tensor_buffer",
-#         "//third_party/odml/litert/support/util:io_types",
-#         "//third_party/odml/litert/support/util:test_utils",
+#         "//support/util:convert_tensor_buffer",
+#         "//support/util:io_types",
+#         "//support/util:test_utils",
 #     ],
 # )
 # copybara:uncomment_end
