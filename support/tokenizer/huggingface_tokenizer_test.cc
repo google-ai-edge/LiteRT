@@ -37,6 +37,7 @@ namespace litert::support {
 namespace {
 
 using ::testing::status::IsOkAndHolds;
+using ::testing::status::StatusIs;
 
 constexpr char kTestdataDir[] =
     "litert/support/tokenizer/testdata/";
@@ -102,6 +103,19 @@ TEST(HuggingFaceTokenizerTest, TokenToId) {
   ASSERT_OK_AND_ASSIGN(auto tokenizer, HuggingFaceTokenizer::CreateFromFile(
                                            GetHuggingFaceModelPath()));
   EXPECT_THAT(tokenizer->TokenToId("X"), IsOkAndHolds(72));
+}
+
+TEST(HuggingFaceTokenizerTest, TokenToIdMissingToken) {
+  ASSERT_OK_AND_ASSIGN(auto tokenizer, HuggingFaceTokenizer::CreateFromFile(
+                                           GetHuggingFaceModelPath()));
+  EXPECT_THAT(tokenizer->TokenToId("NON_EXISTENT_TOKEN"),
+              StatusIs(absl::StatusCode::kNotFound));
+}
+
+TEST(HuggingFaceTokenizerTest, TokenToIdEmpty) {
+  ASSERT_OK_AND_ASSIGN(auto tokenizer, HuggingFaceTokenizer::CreateFromFile(
+                                           GetHuggingFaceModelPath()));
+  EXPECT_THAT(tokenizer->TokenToId(""), StatusIs(absl::StatusCode::kNotFound));
 }
 
 TEST(HuggingFaceTokenizerTest, TokenIdsToText) {

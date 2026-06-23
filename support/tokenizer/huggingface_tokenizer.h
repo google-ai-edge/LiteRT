@@ -56,6 +56,8 @@ class HuggingFaceTokenizer : public Tokenizer {
 
   std::vector<std::string> GetTokens() const override;
 
+  int GetVocabSize() const override;
+
  private:
   // Constructor.
   explicit HuggingFaceTokenizer(

@@ -24,6 +24,7 @@
 #include "absl/memory/memory.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "support/tokenizer/tokenizer.h"
 #include "support/util/memory_mapped_file.h"
@@ -64,7 +65,11 @@ absl::StatusOr<std::vector<int>> HuggingFaceTokenizer::TextToTokenIds(
 }
 
 absl::StatusOr<int> HuggingFaceTokenizer::TokenToId(absl::string_view token) {
-  return tokenizer_->TokenToId(std::string{token});
+  int id = tokenizer_->TokenToId(std::string{token});
+  if (id == -1) {
+    return absl::NotFoundError(absl::StrCat("Unknown token: ", token));
+  }
+  return id;
 }
 
 // Decodes the given TensorBuffer of token ids into a vector of strings.
@@ -95,6 +100,10 @@ std::vector<std::string> HuggingFaceTokenizer::GetTokens() const {
     tokens.push_back(token);
   }
   return tokens;
+}
+
+int HuggingFaceTokenizer::GetVocabSize() const {
+  return tokenizer_->GetVocabSize();
 }
 
 }  // namespace litert::support

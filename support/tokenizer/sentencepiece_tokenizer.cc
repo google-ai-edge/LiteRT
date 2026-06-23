@@ -138,4 +138,8 @@ std::vector<std::string> SentencePieceTokenizer::GetTokens() const {
   return tokens;
 }
 
+int SentencePieceTokenizer::GetVocabSize() const {
+  return processor_->GetPieceSize();
+}
+
 }  // namespace litert::support

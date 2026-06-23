@@ -386,6 +386,7 @@ cc_library(
     hdrs = ["skia_image_preprocessor.h"],
     deps = [
         ":image_preprocessor",
+        ":image_preprocessor_utils",
         "//support/util:convert_tensor_buffer",
         "//support/util:io_types",
         "//support/util:litert_status_util",
@@ -420,11 +421,9 @@ cc_library(
 #         ":skia_image_preprocessor",
 #         "@com_google_googletest//:gtest_main",
 #         "@com_google_absl//absl/status",
-#         "@com_google_absl//absl/strings:string_view",
 #         "//litert/cc:litert_layout",
 #         "//litert/cc:litert_tensor_buffer",
 #         "//litert/cc:litert_tensor_buffer_types",
-#         "//support/util:convert_tensor_buffer",
 #         "//support/util:io_types",
 #         "//support/util:test_utils",
 #     ],
@@ -437,9 +436,16 @@ cc_library(
     hdrs = ["image_preprocessor_utils.h"],
     deps = [
         ":image_preprocessor",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/cc:litert_tensor_buffer",
+        "//support/util:io_types",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -449,6 +455,8 @@ cc_test(
     deps = [
         ":image_preprocessor",
         ":image_preprocessor_utils",
+        "//litert/cc:litert_tensor_buffer",
+        "//support/util:test_utils",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_googletest//:gtest_main",

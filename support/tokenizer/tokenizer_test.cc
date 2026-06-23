@@ -44,6 +44,7 @@ class MockTokenizer : public Tokenizer {
               (const std::vector<int>& token_ids), (override));
   MOCK_METHOD(TokenizerType, GetTokenizerType, (), (const, override));
   MOCK_METHOD(std::vector<std::string>, GetTokens, (), (const, override));
+  MOCK_METHOD(int, GetVocabSize, (), (const, override));
 };
 
 TEST(TokenizerTest, TextToTensorBuffer) {
@@ -143,6 +144,22 @@ TEST(TokenizerTest, HasBpeSuffix) {
   EXPECT_FALSE(Tokenizer::HasBpeSuffix("test"));
   EXPECT_FALSE(Tokenizer::HasBpeSuffix(""));
   EXPECT_FALSE(Tokenizer::HasBpeSuffix("\xef\xbf\xbdtest"));
+}
+
+TEST(TokenizerTest, GetTokens) {
+  auto tokenizer = std::make_unique<MockTokenizer>();
+  EXPECT_CALL(*tokenizer, GetTokens())
+      .WillRepeatedly(
+          testing::Return(std::vector<std::string>{"Hello", "World!"}));
+  EXPECT_EQ(tokenizer->GetTokens().size(), 2);
+  EXPECT_EQ(tokenizer->GetTokens()[0], "Hello");
+  EXPECT_EQ(tokenizer->GetTokens()[1], "World!");
+}
+
+TEST(TokenizerTest, GetVocabSize) {
+  auto tokenizer = std::make_unique<MockTokenizer>();
+  EXPECT_CALL(*tokenizer, GetVocabSize()).WillRepeatedly(testing::Return(100));
+  EXPECT_EQ(tokenizer->GetVocabSize(), 100);
 }
 
 }  // namespace

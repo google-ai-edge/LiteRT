@@ -18,7 +18,9 @@
 #include <utility>
 
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "support/preprocessor/image_preprocessor.h"
+#include "support/util/io_types.h"
 
 namespace litert::support {
 
@@ -40,6 +42,18 @@ namespace litert::support {
 absl::StatusOr<std::pair<int, int>> GetAspectRatioPreservingSize(
     int width, int height,
     const ImagePreprocessParameter::PatchifyConfig& patchify_config);
+
+// Patchify the image into a tensor buffer.
+//
+// args:
+//   image_data: The flat image data in RGB float format.
+//   parameter: The image preprocess parameter containing patchify config.
+//
+// returns:
+//   The InputImage containing the patchified image and positions.
+absl::StatusOr<InputImage> PatchifyImage(
+    absl::Span<const float> image_data,
+    const ImagePreprocessParameter& parameter);
 
 }  // namespace litert::support
 
