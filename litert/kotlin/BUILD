@@ -369,13 +369,8 @@ kt_android_library(
         ":litert_api_no_jni",
         ":litert_impl_jni",  # native implementation needed for the target
         "@org_checkerframework_qual",
-    ] + select({
-        # GPU accelerator is not supported on armv7.
-        "@platforms//cpu:armv7": [],
-        "//conditions:default": [
-            # copybara:uncomment "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator_shared_lib",
-        ],
-    }),
+        # copybara:uncomment "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator_shared_lib",
+    ],
 )
 
 # This library is for Bazel clients who want to depend on the "litert_api" and "litert" targets at
@@ -395,13 +390,8 @@ kt_android_library(
         ":litert_api",
         ":litert_impl_jni",  # native implementation needed for the target
         "@org_checkerframework_qual",
-    ] + select({
-        # GPU accelerator is not supported on armv7.
-        "@platforms//cpu:armv7": [],
-        "//conditions:default": [
-            # copybara:uncomment "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator_shared_lib",
-        ],
-    }),
+        # copybara:uncomment "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator_shared_lib",
+    ],
 )
 
 # bazel build --config=android_arm64 --android_ndk_min_sdk_version=23 \
