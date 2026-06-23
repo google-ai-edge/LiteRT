@@ -355,6 +355,7 @@ cc_binary(
 #         ":model_config",
 #         ":safetensor_loader",
 #         ":tokenizer",
+#         "@com_google_absl//absl/algorithm:container",
 #         "@com_google_absl//absl/container:flat_hash_map",
 #         "@com_google_absl//absl/flags:flag",
 #         "@com_google_absl//absl/flags:parse",
