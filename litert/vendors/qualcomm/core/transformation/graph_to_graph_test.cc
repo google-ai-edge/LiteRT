@@ -922,7 +922,7 @@ TEST(MHASHATest, Gemma4BPrefill) {
   auto& quant_output = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_SFIXED_POINT_8, quant_param_out, {1, 2, 512, 256});
   op_wrappers.emplace_back(
-      CreateQuantizeOp(add2_output, quant_output));
+      CreateConvertOp(add2_output, quant_output));
 
   // Reshape1
   auto& reshape1_output =
@@ -961,9 +961,9 @@ TEST(MHASHATest, Gemma4BPrefill) {
     ASSERT_TRUE(
         op_wrappers[(sha_init_idx+9) + num_op_in_sha * i].IsOpCode(QnnOpCode::kElementWiseBinary));
     ASSERT_TRUE(IsElementWiseAdd(op_wrappers[(sha_init_idx+9) + num_op_in_sha * i]));
-    // TODO: Check if we can move this kQuantize after Concatenate
+    // TODO: Check if we can move this kConvert after Concatenate
     ASSERT_TRUE(
-        op_wrappers[(sha_init_idx+10) + num_op_in_sha * i].IsOpCode(QnnOpCode::kQuantize));
+        op_wrappers[(sha_init_idx+10) + num_op_in_sha * i].IsOpCode(QnnOpCode::kConvert));
   }
 }
 
