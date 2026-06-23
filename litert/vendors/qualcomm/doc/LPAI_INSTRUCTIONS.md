@@ -16,14 +16,10 @@ low-power applications. It is optimized for deeply embedded use cases such as:
 
 ## Execution Modes
 
-| Mode                   | Mechanism              | When to use              |
-| ---------------------- | ---------------------- | ------------------------ |
-| **Traditional mode     | ARM process dispatches | General ARM applications |
-: (cDSP)**               : inference to cDSP via  :                          :
-:                        : FastRPC communication  :                          :
-| **Direct mode (aDSP)** | Graph runs natively on | Audio/sensor workloads   |
-:                        : aDSP, no per-inference : living directly on aDSP  :
-:                        : FastRPC communication  :                          :
+| Mode | Mechanism | When to use |
+| --------------------------- | ---------------------------------------------------- | ---------------------------------------------- |
+| **Traditional mode (cDSP)** | ARM process dispatches inference to cDSP via FastRPC communication | General ARM applications |
+| **Direct mode (aDSP)**      | Graph runs natively on aDSP, no per-inference FastRPC communication | Audio/sensor workloads living directly on aDSP |
 
 Both modes consume the same offline-compiled context binary, compile once and
 pick mode at execution time.
@@ -104,15 +100,11 @@ and `{M}` throughout the rest of this guide (e.g. `lpai-v6`, `hexagon-v81`).
 
 **SoC to LPAI and Hexagon version mapping:**
 
-| SoC family | LPAI hw version | Hexagon arch (`{M}`) | SDK lib paths     |
-:            : (`{N}`)         :                      :                   :
-| ---------- | :-------------: | :------------------: | ----------------- |
-| SM8850     | v6              | v81                  | `lib/lpai-v6`,    |
-:            :                 :                      : `lib/hexagon-v81` :
-| SM8750     | v5              | v79                  | `lib/lpai-v5`,    |
-:            :                 :                      : `lib/hexagon-v79` :
-| SM8650     | v5              | v75                  | `lib/lpai-v5`,    |
-:            :                 :                      : `lib/hexagon-v75` :
+| SoC family | LPAI hw version (`{N}`) | Hexagon arch (`{M}`) | SDK lib paths |
+| ---------- | :---------------------: | :------------------: | --------------------------------- |
+| SM8850     | v6                      | v81                  | `lib/lpai-v6`, `lib/hexagon-v81`   |
+| SM8750     | v5                      | v79                  | `lib/lpai-v5`, `lib/hexagon-v79`   |
+| SM8650     | v5                      | v75                  | `lib/lpai-v5`, `lib/hexagon-v75`   |
 
 For the full SoC-to-version mapping, see
 `${QAIRT}/docs/QAIRT-Docs/QNN/general/lpai/lpai_backend.html`.

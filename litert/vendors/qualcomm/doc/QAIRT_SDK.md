@@ -21,7 +21,7 @@ should know.
 ### Backend
 
 Currently, LiteRT QC compiler plugin supports the following QNN backends: `Htp`,
-`Dsp`, `Ir`, `Saver`.
+`Dsp`, `Ir`, `Saver`, `Gpu`.
 
 ### Platform
 

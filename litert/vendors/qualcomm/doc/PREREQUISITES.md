@@ -6,11 +6,9 @@ setup environment, the instructions below are what we used in our development
 environment.
 
 1.  Operating System
-
     -   Ubuntu 22.04
 
 2.  Bazel
-
     -   Download .deb file from
         [Bazelisk release](https://github.com/bazelbuild/bazelisk/releases) and
         install.
@@ -22,7 +20,6 @@ environment.
     ```
 
 3.  Clang
-
     -   Currently we use Clang-17.
 
     ```bash
@@ -31,7 +28,6 @@ environment.
     ```
 
 4.  Android NDK
-
     -   Currently we use android-ndk-r25c.
 
     ```bash
@@ -40,7 +36,6 @@ environment.
     ```
 
 5.  Android SDK
-
     -   Currently we use android-sdk-30.
 
     > Please refer to the Android official document to download sdkmanager first
@@ -48,7 +43,6 @@ environment.
     > https://developer.android.com/tools/releases/platform-tools#downloads.
 
 6.  Configure bazel
-
     -   Please set the following environment variables for the
         [Bazel Flow](./HTP_INSTRUCTIONS.md#build-with-bazel) in
         HTP_INSTRUCTIONS.md.
@@ -104,7 +98,6 @@ environment.
     ```
 
 7.  CMake
-
     -   Currently we use 4.0.1, please set up this for the CMake flow in
         [HTP_INSTRUCTIONS.md](./HTP_INSTRUCTIONS.md).
 
