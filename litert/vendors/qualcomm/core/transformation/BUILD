@@ -194,8 +194,11 @@ cc_library(
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/utils:log",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/builders:elementwise_op_builder",
         "//litert/vendors/qualcomm/core/builders:hadamard_transform_op_builder",
+        "//litert/vendors/qualcomm/core/builders:op_builder",
         "//litert/vendors/qualcomm/core/builders:split_op_builder",
         "//litert/vendors/qualcomm/core/builders:concatenation_op_builder",
+        "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
     ],
 )

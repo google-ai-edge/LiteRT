@@ -326,7 +326,15 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
     };
     Transform(validate_op_config, ops, tensor_pool, fc,
                 ConvertFcToHadamardTransform);
-
+    // // Non-power-of-two Hadamard Transform w/ FC
+    // const std::vector<QnnOpCode> hadamard_transform_with_fc = {
+    //     QnnOpCode::kReshape,
+    //     QnnOpCode::kHadamardTransform,
+    //     QnnOpCode::kReshape,
+    //     QnnOpCode::kFullyConnected,
+    // };
+    // Transform(validate_op_config, ops, tensor_pool, hadamard_transform_with_fc,
+    //             ParallelizeHadamardTransform);
     // Non-power-of-two Hadamard Transform
     const std::vector<QnnOpCode> hadamard_transform = {
         QnnOpCode::kReshape,
