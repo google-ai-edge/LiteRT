@@ -1462,14 +1462,55 @@ Tensor<Mixins...> Transpose(Tensor<Mixins...> input, Tensor<Mixins...> perm,
   AddInputs(op, input, perm);
   Tensor<Mixins...> output = AddOutput(op, loc);
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
+  ABSL_LOG(INFO) << "Transpose shape inference: output_info address = "
+                 << &output_info;
+  ABSL_LOG(INFO) << "Transpose shape inference: output_info.shape address = "
+                 << &output_info.shape;
+  ABSL_LOG(INFO)
+      << "Transpose shape inference: BEFORE shape = ["
+      << (output_info.shape.size() > 0 ? std::to_string(output_info.shape[0])
+                                       : "N/A")
+      << ", "
+      << (output_info.shape.size() > 1 ? std::to_string(output_info.shape[1])
+                                       : "N/A")
+      << ", "
+      << (output_info.shape.size() > 2 ? std::to_string(output_info.shape[2])
+                                       : "N/A")
+      << ", "
+      << (output_info.shape.size() > 3 ? std::to_string(output_info.shape[3])
+                                       : "N/A")
+      << "]";
+
   if (perm_info.buffer) {
+    ABSL_LOG(INFO) << "Transpose shape inference: perm buffer is NOT null";
     const auto perm_data = perm_info.buffer->Lock().As<const int32_t>();
+    ABSL_LOG(INFO) << "Transpose shape inference: perm size = "
+                   << perm_data.size();
+    if (perm_data.size() == 4) {
+      ABSL_LOG(INFO) << "Transpose shape inference: perm values = ["
+                     << perm_data.data()[0] << ", " << perm_data.data()[1]
+                     << ", " << perm_data.data()[2] << ", "
+                     << perm_data.data()[3] << "]";
+    }
     const auto& input_shape = input_info.shape;
     output_info.shape.resize(input_shape.size());
     for (size_t i = 0; i < perm_data.size(); ++i) {
-      output_info.shape[i] = input_shape[perm_data.data()[i]];
+      int perm_val = perm_data.data()[i];
+      int input_dim = input_shape[perm_val];
+      output_info.shape[i] = input_dim;
+      ABSL_LOG(INFO) << "Transpose loop: i=" << i << " perm_val=" << perm_val
+                     << " input_shape[" << perm_val << "]=" << input_dim
+                     << " -> output_info.shape[" << i
+                     << "]=" << output_info.shape[i];
+    }
+    if (output_info.shape.size() == 4) {
+      ABSL_LOG(INFO) << "Transpose shape inference: AFTER shape = ["
+                     << output_info.shape[0] << ", " << output_info.shape[1]
+                     << ", " << output_info.shape[2] << ", "
+                     << output_info.shape[3] << "]";
     }
   } else {
+    ABSL_LOG(WARNING) << "Transpose shape inference: perm buffer is NULL!";
     // If perm is not a constant, we cannot infer the shape at this time.
     // TODO(piyu): Support dynamic shape inference.
     output_info.shape = input_info.shape;
