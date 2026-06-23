@@ -23,6 +23,8 @@
 
 #include "openvino/runtime/core.hpp"
 #include "openvino/runtime/remote_context.hpp"
+#include "absl/base/thread_annotations.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 
 class OpenVINOSharedCore {
  public:
@@ -37,12 +39,17 @@ class OpenVINOSharedCore {
   std::shared_ptr<ov::Core> getCore() const { return core_; }
 
   void SetDevice(const std::string device) {
+    absl::MutexLock lock(&state_mutex_);
     device_ = device;
     remote_context_.reset();
   }
-  std::string GetDevice() { return device_; }
+  std::string GetDevice() {
+    absl::MutexLock lock(&state_mutex_);
+    return device_;
+  }
 
   ov::RemoteContext GetRemoteContext() {
+    absl::MutexLock lock(&state_mutex_);
     if (!remote_context_.has_value()) {
       remote_context_ = core_->get_default_context(device_);
     }
@@ -61,8 +68,11 @@ class OpenVINOSharedCore {
   ~OpenVINOSharedCore();
 
   std::shared_ptr<ov::Core> core_;
-  std::string device_ = "NPU";  // Default device
-  std::optional<ov::RemoteContext> remote_context_;
+  // Guards device_ and remote_context_.
+  absl::Mutex state_mutex_;
+  std::string device_ ABSL_GUARDED_BY(state_mutex_) = "NPU";  // Default device
+  std::optional<ov::RemoteContext> remote_context_
+      ABSL_GUARDED_BY(state_mutex_);
   std::once_flag available_devices_once_;
   std::vector<std::string> available_devices_;
 };

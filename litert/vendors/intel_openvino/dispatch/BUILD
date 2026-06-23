@@ -75,6 +75,7 @@ litert_dynamic_lib(
         "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_environment_header",
         "//litert/c:litert_environment_options_header",
+        "//litert/c:litert_layout",
         "//litert/c:litert_model_header",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_header",
@@ -95,7 +96,9 @@ litert_dynamic_lib(
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/intel_openvino:bytecode_header",
         "//litert/vendors/intel_openvino:ov_utils",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/synchronization",
         "@intel_openvino//:openvino",
     ],
 )
@@ -127,6 +130,7 @@ litert_bin(
     deps = [
         ":litert_dispatch_api",
         "//litert/c:litert_common",
+        "//litert/c:litert_layout",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c:litert_tensor_buffer",
         "//litert/c/internal:litert_custom_tensor_buffer_handlers_def",
@@ -150,7 +154,9 @@ litert_bin(
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/intel_openvino:bytecode_header",
         "//litert/vendors/intel_openvino:ov_utils",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/synchronization",
         "@intel_openvino//:openvino",
     ],
 )
@@ -181,7 +187,9 @@ litert_lib(
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/intel_openvino:bytecode_header",
         "//litert/vendors/intel_openvino:ov_utils",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/synchronization",
         "@intel_openvino//:openvino",
     ],
 )
