@@ -6,9 +6,15 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <mutex>
 #include <optional>
+#include <queue>
+#include <thread>
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
@@ -47,6 +53,73 @@ inline std::optional<SocInfo> FindSocInfo(const SnapdragonModel& soc_model) {
   }
   return std::nullopt;
 }
+
+// Serialises async upvote/downvote on a background thread; avoids blocking Execute() with slow FastRPC setPowerConfig().
+inline constexpr std::chrono::milliseconds kDownVoteDelayMs{300};
+
+class VotingThread {
+ public:
+  enum class VoteType { kUpVote, kDownVote };
+
+  explicit VotingThread(std::function<void(VoteType)> apply_vote)
+      : apply_vote_(std::move(apply_vote)),
+        thread_(&VotingThread::WorkerLoop, this) {}
+
+  ~VotingThread() {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      stop_ = true;
+    }
+    cv_.notify_all();
+    if (thread_.joinable()) thread_.join();
+  }
+
+  void Enqueue(VoteType vote, bool debounce = false) {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (vote == VoteType::kUpVote) {
+        while (!queue_.empty()) queue_.pop();
+      }
+      queue_.push({vote, debounce});
+    }
+    cv_.notify_one();
+  }
+
+ private:
+  struct VoteInfo { VoteType vote; bool debounce; };
+
+  void WorkerLoop() {
+    while (true) {
+      VoteType vote;
+      {
+        std::unique_lock<std::mutex> lock(mutex_);
+        cv_.wait(lock, [this] { return !queue_.empty() || stop_; });
+        if (stop_ && queue_.empty()) break;
+
+        auto [v, debounce] = queue_.front();
+        queue_.pop();
+
+        // Debounce a downvote: if a new message arrives within the window,
+        // drop this downvote and restart the loop.
+        if (v == VoteType::kDownVote && debounce) {
+          if (cv_.wait_for(lock, kDownVoteDelayMs,
+                           [this] { return !queue_.empty() || stop_; })) {
+            continue;
+          }
+        }
+        vote = v;
+      }  // release lock before the slow apply_vote_ (FastRPC) call
+      apply_vote_(vote);
+    }
+  }
+
+  std::function<void(VoteType)> apply_vote_;
+  std::mutex mutex_;
+  std::condition_variable cv_;
+  std::queue<VoteInfo> queue_;
+  bool stop_{false};
+  std::thread thread_;
+};
 
 }  // namespace qnn
 

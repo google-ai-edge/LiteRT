@@ -100,6 +100,8 @@ struct LrtQualcommOptionsT {
   std::optional<std::int32_t> htp_p_point;
   std::optional<LrtQualcommOptionsHtpPerformanceMode> htp_performance_mode;
   std::optional<LrtQualcommOptionsDspPerformanceMode> dsp_performance_mode;
+  std::optional<LrtQualcommOptionsHtpPerfCtrlMode> htp_perf_ctrl_mode;
+  std::optional<LrtQualcommOptionsDspPerfCtrlMode> dsp_perf_ctrl_mode;
   std::optional<std::vector<std::int32_t>> dump_tensor_ids;
   std::optional<std::string> ir_json_dir;
   std::optional<std::string> dlc_dir;
@@ -187,6 +189,18 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           status = LrtQualcommOptionsSetDspPerformanceMode(
               parsed_options,
               static_cast<LrtQualcommOptionsDspPerformanceMode>(*v));
+        } else if (key == "htp_perf_ctrl_mode") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetHtpPerfCtrlMode(
+              parsed_options,
+              static_cast<LrtQualcommOptionsHtpPerfCtrlMode>(*v));
+        } else if (key == "dsp_perf_ctrl_mode") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetDspPerfCtrlMode(
+              parsed_options,
+              static_cast<LrtQualcommOptionsDspPerfCtrlMode>(*v));
         } else if (key == "dump_tensor_ids") {
           auto parts = litert::internal::ParseTomlStringArray(value);
           if (!parts) return litert::ToLiteRtStatus(parts.Error().StatusCC());
@@ -321,6 +335,14 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->dsp_performance_mode.has_value()) {
     toml << "dsp_performance_mode = "
          << static_cast<int>(*options->dsp_performance_mode) << "\n";
+  }
+  if (options->htp_perf_ctrl_mode.has_value()) {
+    toml << "htp_perf_ctrl_mode = "
+         << static_cast<int>(*options->htp_perf_ctrl_mode) << "\n";
+  }
+  if (options->dsp_perf_ctrl_mode.has_value()) {
+    toml << "dsp_perf_ctrl_mode = "
+         << static_cast<int>(*options->dsp_perf_ctrl_mode) << "\n";
   }
   if (options->dump_tensor_ids.has_value()) {
     toml << "dump_tensor_ids = [";
@@ -779,6 +801,56 @@ LiteRtStatus LrtQualcommOptionsGetDspPerformanceMode(
 
   *dsp_performance_mode = options->dsp_performance_mode.value_or(
       kLiteRtQualcommDspPerformanceModeDefault);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetHtpPerfCtrlMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsHtpPerfCtrlMode htp_perf_ctrl_mode) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->htp_perf_ctrl_mode = htp_perf_ctrl_mode;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetHtpPerfCtrlMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsHtpPerfCtrlMode* htp_perf_ctrl_mode) {
+  if (options == nullptr || htp_perf_ctrl_mode == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *htp_perf_ctrl_mode = options->htp_perf_ctrl_mode.value_or(
+      kLiteRtQualcommHtpPerfCtrlModeManual);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetDspPerfCtrlMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsDspPerfCtrlMode dsp_perf_ctrl_mode) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->dsp_perf_ctrl_mode = dsp_perf_ctrl_mode;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetDspPerfCtrlMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsDspPerfCtrlMode* dsp_perf_ctrl_mode) {
+  if (options == nullptr || dsp_perf_ctrl_mode == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *dsp_perf_ctrl_mode = options->dsp_perf_ctrl_mode.value_or(
+      kLiteRtQualcommDspPerfCtrlModeManual);
 
   return kLiteRtStatusOk;
 }

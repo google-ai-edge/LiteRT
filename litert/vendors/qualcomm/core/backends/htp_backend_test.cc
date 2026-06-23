@@ -3,9 +3,11 @@
 
 #include "litert/vendors/qualcomm/core/backends/htp_backend.h"
 
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -319,6 +321,50 @@ TEST_F(HtpBackendTest, DISABLED_InitializeWithLogLevelVerboseTest) {
 
   ASSERT_TRUE(backend_->GetBackendHandle());
   ASSERT_TRUE(backend_->GetLogHandle());
+}
+
+// SETPERFORMANCEMODE /////////////////////////////////////////////////////////
+TEST_P(HtpBackendRPCPollingPerfParamTest, ManualSameModeSkipsRevote) {
+  const auto& params = GetParam();
+  Options options;
+  options.SetHtpPerformanceMode(params.mode);
+  options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kManual);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kSocInfos[8]));
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+#endif
+
+  const size_t configs_after_init = captured_configs->size();
+
+  // Manual + same mode: init already upvoted, so no extra setPowerConfig.
+  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(captured_configs->size(), configs_after_init);
+}
+
+TEST_P(HtpBackendRPCPollingPerfParamTest, AutoSameModeRevotes) {
+  const auto& params = GetParam();
+  Options options;
+  options.SetHtpPerformanceMode(params.mode);
+  options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kAuto);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kSocInfos[8]));
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+#endif
+
+  // Auto mode does not upvote at init.
+  const size_t configs_after_init = captured_configs->size();
+
+  // Auto + same mode: re-votes (async upvote) since Execute downvoted before.
+  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(captured_configs->size(), configs_after_init + 1);
 }
 
 }  // namespace

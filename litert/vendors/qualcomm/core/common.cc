@@ -150,6 +150,22 @@ DspPerformanceMode Options::GetDspPerformanceMode() const {
   return dsp_performance_mode_;
 }
 
+void Options::SetHtpPerfCtrlMode(HtpPerfCtrlMode htp_perf_ctrl_mode) {
+  htp_perf_ctrl_mode_ = htp_perf_ctrl_mode;
+}
+
+HtpPerfCtrlMode Options::GetHtpPerfCtrlMode() const {
+  return htp_perf_ctrl_mode_;
+}
+
+void Options::SetDspPerfCtrlMode(DspPerfCtrlMode dsp_perf_ctrl_mode) {
+  dsp_perf_ctrl_mode_ = dsp_perf_ctrl_mode;
+}
+
+DspPerfCtrlMode Options::GetDspPerfCtrlMode() const {
+  return dsp_perf_ctrl_mode_;
+}
+
 void Options::SetDumpTensorIds(const std::vector<std::int32_t>& ids) {
   dump_tensor_ids_ = ids;
 }

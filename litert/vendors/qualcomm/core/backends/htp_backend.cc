@@ -69,6 +69,7 @@ class HtpBackend::HtpPerfControl {
     // 2. DownVote config: for resetting/cleanup.
     InitUpVotePowerConfigs(performance_mode);
     InitDownVotePowerConfigs(performance_mode);
+    current_mode_ = performance_mode;
 
     return true;
   }
@@ -101,7 +102,42 @@ class HtpBackend::HtpPerfControl {
     }
   }
 
+  void ScheduleUpVote() {
+    EnsureVotingThread();
+    voting_thread_->Enqueue(VotingThread::VoteType::kUpVote);
+  }
+
+  // Debounce only for burst/sustained_high_performance (Option 3, aligns with SNPE).
+  void ScheduleDownVote() {
+    EnsureVotingThread();
+    const bool debounce =
+        current_mode_ == HtpPerformanceMode::kBurst ||
+        current_mode_ == HtpPerformanceMode::kSustainedHighPerformance;
+    voting_thread_->Enqueue(VotingThread::VoteType::kDownVote, debounce);
+  }
+
+  bool ReinitIfNeeded(HtpPerformanceMode new_mode) {
+    if (htp_perf_infra_ != nullptr && new_mode == current_mode_) {
+      ScheduleUpVote();
+      return true;
+    }
+    if (!Init(new_mode)) return false;
+    ScheduleUpVote();
+    return true;
+  }
+
+  HtpPerformanceMode CurrentMode() const { return current_mode_; }
+
  private:
+  void EnsureVotingThread() {
+    if (!voting_thread_) {
+      voting_thread_ = std::make_unique<VotingThread>(
+          [this](VotingThread::VoteType v) {
+            v == VotingThread::VoteType::kUpVote ? UpVote() : DownVote();
+          });
+    }
+  }
+
   static constexpr size_t kNumPowerConfigs = 1;
   static constexpr size_t kNumRpcPollingPowerConfigs = 2;
 
@@ -340,6 +376,9 @@ class HtpBackend::HtpPerfControl {
   const QNN_INTERFACE_VER_TYPE* api_{nullptr};
   std::uint32_t power_config_id_{0};
   QnnDevice_Infrastructure_t htp_perf_infra_{nullptr};
+  // Tracks the mode used for the last successful Init()/ReinitIfNeeded() call
+  // so we can skip redundant setPowerConfig calls when the mode is unchanged.
+  HtpPerformanceMode current_mode_{HtpPerformanceMode::kDefault};
   std::array<QnnHtpPerfInfrastructure_PowerConfig_t, kNumPowerConfigs>
       up_vote_power_configs_;
   std::array<QnnHtpPerfInfrastructure_PowerConfig_t, kNumPowerConfigs>
@@ -355,6 +394,8 @@ class HtpBackend::HtpPerfControl {
   std::array<const QnnHtpPerfInfrastructure_PowerConfig_t*,
              kNumPowerConfigs + 1>
       down_vote_power_configs_ptr_;
+  // Declared last — destroyed first, before power-config arrays are freed.
+  std::unique_ptr<VotingThread> voting_thread_;
 };
 
 // HTP BACKEND /////////////////////////////////////////////////////////
@@ -528,7 +569,10 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
         }
       }
 
-      htp_perf_control_->UpVote();
+      // Manual mode upvotes at init; auto mode defers the upvote to Execute().
+      if (options.GetHtpPerfCtrlMode() == HtpPerfCtrlMode::kManual) {
+        htp_perf_control_->UpVote();
+      }
     }
   }
 
@@ -536,6 +580,47 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   log_handle_ = std::move(local_log_handle);
   backend_handle_ = std::move(local_backend_handle);
   device_handle_ = std::move(local_device_handle);
+
+  return true;
+}
+
+bool HtpBackend::SetPerformanceMode(const Options& options) {
+  HtpPerformanceMode performance_mode = options.GetHtpPerformanceMode();
+
+  if (performance_mode == HtpPerformanceMode::kDefault) {
+    if (htp_perf_control_) {
+      htp_perf_control_->ScheduleDownVote();
+    }
+    return true;
+  }
+
+  if (!htp_perf_control_) {
+    htp_perf_control_ = std::make_unique<HtpPerfControl>(QnnApi());
+  }
+
+  const bool mode_changed =
+      htp_perf_control_->CurrentMode() != performance_mode;
+
+  // Manual mode already upvoted at init; skip redundant re-vote on same mode.
+  // Auto mode must re-vote every call (previous Execute downvoted).
+  if (!mode_changed &&
+      options.GetHtpPerfCtrlMode() == HtpPerfCtrlMode::kManual) {
+    return true;
+  }
+
+  if (!htp_perf_control_->ReinitIfNeeded(performance_mode)) {
+    QNN_LOG_ERROR("Failed to set HTP performance mode in SetPerformanceMode");
+    return false;
+  }
+
+  // RpcPolling config only needs to be (re-)applied when the mode changes,
+  // since it is part of the power config built during ReinitIfNeeded.
+  if (mode_changed && soc_info_.dsp_arch >= DspArch::V69) {
+    if (!htp_perf_control_->SetRpcPolling(performance_mode)) {
+      QNN_LOG_ERROR("Failed to set RPC Polling in SetPerformanceMode");
+      return false;
+    }
+  }
 
   return true;
 }

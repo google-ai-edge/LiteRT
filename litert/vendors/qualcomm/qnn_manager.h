@@ -178,6 +178,14 @@ class QnnManager {
   // called.
   Qnn_BackendHandle_t BackendHandle() { return backend_->GetBackendHandle(); }
 
+  // Update the HTP/DSP performance mode at runtime (e.g. before each
+  // inference). Delegates to the active backend's SetPerformanceMode().
+  LiteRtStatus SetPerformanceMode(const ::qnn::Options& options) {
+    if (!backend_) return kLiteRtStatusOk;  // not yet initialized, nothing to do
+    if (backend_->SetPerformanceMode(options)) return kLiteRtStatusOk;
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
   const ::qnn::Options& GetOptions() const { return options_; }
 
   // Gets SDK version from build ID.

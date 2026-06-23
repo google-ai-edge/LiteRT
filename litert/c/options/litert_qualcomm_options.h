@@ -243,6 +243,37 @@ LiteRtStatus LrtQualcommOptionsGetDspPerformanceMode(
     LrtQualcommOptions options,
     LrtQualcommOptionsDspPerformanceMode* dsp_performance_mode);
 
+// htp_perf_ctrl_mode
+// Controls whether per-inference performance voting with a 300ms debounce
+// timer is enabled (auto) or whether the caller manages voting manually
+// (manual, the default).
+typedef enum LrtQualcommOptionsHtpPerfCtrlMode {
+  kLiteRtQualcommHtpPerfCtrlModeManual = 0,  // default: upvote at init, downvote at destroy
+  kLiteRtQualcommHtpPerfCtrlModeAuto = 1,    // per-inference upvote + 300ms debounce downvote
+} LrtQualcommOptionsHtpPerfCtrlMode;
+
+LiteRtStatus LrtQualcommOptionsSetHtpPerfCtrlMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsHtpPerfCtrlMode htp_perf_ctrl_mode);
+
+LiteRtStatus LrtQualcommOptionsGetHtpPerfCtrlMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsHtpPerfCtrlMode* htp_perf_ctrl_mode);
+
+// dsp_perf_ctrl_mode
+typedef enum LrtQualcommOptionsDspPerfCtrlMode {
+  kLiteRtQualcommDspPerfCtrlModeManual = 0,
+  kLiteRtQualcommDspPerfCtrlModeAuto = 1,
+} LrtQualcommOptionsDspPerfCtrlMode;
+
+LiteRtStatus LrtQualcommOptionsSetDspPerfCtrlMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsDspPerfCtrlMode dsp_perf_ctrl_mode);
+
+LiteRtStatus LrtQualcommOptionsGetDspPerfCtrlMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsDspPerfCtrlMode* dsp_perf_ctrl_mode);
+
 // profiling
 
 // This option controls the profiling level. A higher level results in a more
