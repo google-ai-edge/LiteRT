@@ -934,6 +934,37 @@ TEST(MHASHATest, Gemma4BPrefill) {
   const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOptPrefill;
   GraphToGraphTransform(g2g_option, op_wrappers, tensor_pool,
                         [](OpWrapper& op) { return true; });
+
+  // Check OpCode after G2G
+  const size_t num_head = 8; // 2 groups in KV Cache serving 8 queries
+  const size_t num_op_in_sha = 11;
+
+  // TODO: Check the sha_init_idx according to the number of Unpack Op and Ops outside SHA
+  const size_t sha_init_idx = 11;
+
+  // ASSERT the Unpack Op
+
+  for (size_t i = 0; i < num_head; ++i) {
+    ASSERT_TRUE(op_wrappers[sha_init_idx + num_op_in_sha * i].IsOpCode(QnnOpCode::kMatMul));
+    ASSERT_TRUE(op_wrappers[(sha_init_idx+1) + num_op_in_sha * i].IsOpCode(QnnOpCode::kMatMul));
+    ASSERT_TRUE(op_wrappers[(sha_init_idx+2) + num_op_in_sha * i].IsOpCode(QnnOpCode::kConcat));
+    ASSERT_TRUE(
+        op_wrappers[(sha_init_idx+3) + num_op_in_sha * i].IsOpCode(QnnOpCode::kElementWiseBinary));
+    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[(sha_init_idx+3) + num_op_in_sha * i]));
+    ASSERT_TRUE(op_wrappers[(sha_init_idx+4) + num_op_in_sha * i].IsOpCode(QnnOpCode::kSoftmax));
+    ASSERT_TRUE(
+        op_wrappers[(sha_init_idx+5) + num_op_in_sha * i].IsOpCode(QnnOpCode::kStridedSlice));
+    ASSERT_TRUE(
+        op_wrappers[(sha_init_idx+6) + num_op_in_sha * i].IsOpCode(QnnOpCode::kStridedSlice));
+    ASSERT_TRUE(op_wrappers[(sha_init_idx+7) + num_op_in_sha * i].IsOpCode(QnnOpCode::kMatMul));
+    ASSERT_TRUE(op_wrappers[(sha_init_idx+8) + num_op_in_sha * i].IsOpCode(QnnOpCode::kMatMul));
+    ASSERT_TRUE(
+        op_wrappers[(sha_init_idx+9) + num_op_in_sha * i].IsOpCode(QnnOpCode::kElementWiseBinary));
+    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[(sha_init_idx+9) + num_op_in_sha * i]));
+    // TODO: Check if we can move this kQuantize after Concatenate
+    ASSERT_TRUE(
+        op_wrappers[(sha_init_idx+10) + num_op_in_sha * i].IsOpCode(QnnOpCode::kQuantize));
+  }
 }
 
 TEST(MHASHATest, FastVlm) {
