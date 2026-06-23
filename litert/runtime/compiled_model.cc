@@ -490,58 +490,64 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   } else {
     weight_loader_ = jit_compilation_options->weight_loader;
   }
-  auto weight_infos = weight_loader_->GetWeightInfo();
-  if (weight_infos.empty()) {
-    weight_loader_ = nullptr;
-    LITERT_LOG(LITERT_DEBUG,
-               "External weight loader: no external weight tensors found");
-    return {};
-  }
+  if (weight_loader_ != nullptr) {
+    auto weight_infos = weight_loader_->GetWeightInfo();
+    if (weight_infos.empty()) {
+      weight_loader_ = nullptr;
+      LITERT_LOG(LITERT_DEBUG,
+                 "External weight loader: no external weight tensors found");
+      return {};
+    }
 
-  if (hardware_accelerators & kLiteRtHwAcceleratorCpu) {
-    weight_loader::WeightAccessRequest request;
-    request.cpu = true;
-    // TODO(b/456318365): Handle weight access request to support multiple
-    // backends.
-    request.opencl = false;
-    absl::Status prepare_status = weight_loader_->PrepareAccess(request, env);
+    if (hardware_accelerators & kLiteRtHwAcceleratorCpu) {
+      weight_loader::WeightAccessRequest request;
+      request.cpu = true;
+      // TODO(b/456318365): Handle weight access request to support multiple
+      // backends.
+      request.opencl = false;
+      absl::Status prepare_status = weight_loader_->PrepareAccess(request, env);
 #ifdef __EMSCRIPTEN__
       if (!prepare_status.ok()) {
-        LITERT_LOG(LITERT_WARNING,
-                  "External weight loader: failed to prepare CPU access: %s. "
-                  "Continuing as weights may be provided via other means (e.g. "
-                  "streaming).",
-                  std::string(prepare_status.message()).c_str());
+        LITERT_LOG(
+            LITERT_WARNING,
+            "External weight loader: failed to prepare CPU access: %s. "
+            "Continuing as weights may be provided via other means (e.g. "
+            "streaming).",
+            std::string(prepare_status.message()).c_str());
       }
 #else
-    if (!prepare_status.ok()) {
-      weight_loader_ = nullptr;
+      if (!prepare_status.ok()) {
+        weight_loader_ = nullptr;
         return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                   std::string(prepare_status.message()));
       }
 #endif
-  }
+    }
+    // Inform delegates and the other components about the weight loader.
+    if (jit_compilation_options != nullptr) {
+      jit_compilation_options->weight_loader = weight_loader_;
+    }
 
-  // Inform delegates and the other components about the weight loader.
-  if (jit_compilation_options != nullptr) {
-    jit_compilation_options->weight_loader = weight_loader_;
-  }
-
-  // Inspect the weight infos to log the available weights for GPU delegates.
-  LITERT_LOG(LITERT_DEBUG,
-             "External weight loader: %zu weight tensors available for GPU "
-             "delegates",
-             weight_infos.size());
-  for (const auto& info : weight_infos) {
-    if (info.packing.empty()) {
-      LITERT_LOG(LITERT_DEBUG,
-                 "  Weight tensor: external_buffer_id=%u, packing=<none>",
-                 info.external_buffer_id);
-    } else {
-      LITERT_LOG(LITERT_DEBUG,
-                 "  Weight tensor: external_buffer_id=%u, packing=%.*s",
-                 info.external_buffer_id, static_cast<int>(info.packing.size()),
-                 info.packing.data());
+    // Inspect the weight infos to log the available weights for GPU delegates.
+    LITERT_LOG(LITERT_DEBUG,
+               "External weight loader: %zu weight tensors available for GPU "
+               "delegates",
+               weight_infos.size());
+    for (const auto& info : weight_infos) {
+      if (info.packing.empty()) {
+        LITERT_LOG(LITERT_DEBUG,
+                   "  Weight tensor: external_buffer_id=%u, packing=<none>",
+                   info.external_buffer_id);
+      } else {
+        LITERT_LOG(LITERT_DEBUG,
+                   "  Weight tensor: external_buffer_id=%u, packing=%.*s",
+                   info.external_buffer_id,
+                   static_cast<int>(info.packing.size()), info.packing.data());
+      }
+    }
+  } else {
+    if (jit_compilation_options != nullptr) {
+      jit_compilation_options->weight_loader = nullptr;
     }
   }
   return {};

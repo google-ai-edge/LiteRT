@@ -213,6 +213,18 @@ class GpuInferenceContextWebGpu : public GpuInferenceContext {
                                        absl::Span<const uint8_t> data) override;
   absl::Status ReadWeightTensorToDescriptor(
       ::ml_drift::ValueId id, ::ml_drift::TensorDescriptor& desc) override;
+#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER) && defined(__EMSCRIPTEN__)
+  absl::Status UploadWeightsOnWeb(
+      weight_loader::WeightLoader* weight_loader,
+      const ::ml_drift::GpuModel& gpu_model,
+      const absl::flat_hash_map<::ml_drift::ValueId, ::ml_drift::ValueId>&
+          io_mapping,
+      const absl::flat_hash_map<::ml_drift::ValueId, uint32_t>&
+          weight_id_to_external_buffer_id,
+      std::vector<::ml_drift::WeightsManager::UploadWeightsInfo>& upload_infos)
+      override;
+#endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER) &&
+        // defined(__EMSCRIPTEN__)
   absl::Status Dispatch() override;
   absl::StatusOr<GpuEventHandle> GetPreDispatchEvent() override;
   absl::StatusOr<GpuEventHandle> GetPostDispatchEvent(
