@@ -15,7 +15,9 @@ limitations under the License.
 
 #include <cstdlib>
 #include <iostream>
+#include <vector>
 
+#include "absl/flags/parse.h"       // from @com_google_absl
 #include "absl/flags/reflection.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -45,6 +47,17 @@ int Main(int argc, char** argv) {
       }
     }
     std::cout << std::endl;
+  }
+
+  // Populate ABSL_FLAG values (e.g. --intel_openvino_configs_map) from argv.
+  // Must use ParseAbseilFlagsOnly, not ParseCommandLine: tflite's
+  // BenchmarkModel owns flags such as --graph and --use_npu and parses them
+  // itself from argv below. ParseCommandLine would abort on those as
+  // "unknown"; ParseAbseilFlagsOnly leaves them in argv for tflite.
+  {
+    std::vector<char*> positional_args;
+    std::vector<absl::UnrecognizedFlag> unrecognized_flags;
+    absl::ParseAbseilFlagsOnly(argc, argv, positional_args, unrecognized_flags);
   }
 
   TFLITE_LOG(INFO) << "STARTING!";
