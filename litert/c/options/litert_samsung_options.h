@@ -29,9 +29,17 @@ LITERT_DEFINE_HANDLE(LrtSamsungOptions);
 
 // The string identifier that discriminates samsung options.
 const char* LrtSamsungOptionsGetIdentifier();
+// Backward-compat alias expected by newer dynamic LiteRT-LM binaries.
+const char* LiteRtSamsungOptionsGetIdentifier();
 
 // Create a samsung options object.
 LiteRtStatus LrtCreateSamsungOptions(LrtSamsungOptions* options);
+// Backward-compat alias expected by newer dynamic LiteRT-LM binaries.
+LiteRtStatus LiteRtSamsungOptionsCreate(LrtSamsungOptions* options);
+
+// Backward-compat accessor expected by newer dynamic LiteRT-LM binaries.
+LiteRtStatus LiteRtSamsungOptionsGet(LrtSamsungOptions options,
+                                     bool* enable_large_model_support);
 
 #ifdef __cplusplus
 // Create a qualcomm options object mapped from a TOML payload.

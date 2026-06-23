@@ -14,6 +14,7 @@
 
 #include "litert/runtime/magic_number_utils.h"
 
+#include <algorithm>
 #include <cinttypes>
 #include <cstdint>
 #include <cstring>
@@ -312,6 +313,49 @@ Expected<int> UpdateMagicNumberInCompositeAttributes(
   return num_updated;
 }
 
+Expected<int> UpdateMagicNumberInReshapeOptions(
+    int64_t magic_number, int64_t target_number, const LiteRtOpT& op,
+    const tflite::Operator& tflite_op) {
+  LITERT_RETURN_IF_ERROR(op.OpCode() == kLiteRtOpCodeTflReshape);
+  auto* opts = const_cast<tflite::ReshapeOptionsT*>(
+      GetTflOptions(op).AsReshapeOptions());
+  if (opts == nullptr || opts->new_shape.empty()) {
+    return 0;
+  }
+
+  const auto* tflite_opts = tflite_op.builtin_options_as_ReshapeOptions();
+  if (tflite_opts == nullptr || tflite_opts->new_shape() == nullptr) {
+    return 0;
+  }
+  auto* tflite_new_shape =
+      const_cast<::flatbuffers::Vector<int32_t>*>(tflite_opts->new_shape());
+  if (tflite_new_shape->size() != opts->new_shape.size()) {
+    LITERT_LOG(LITERT_WARNING,
+               "RESHAPE option new_shape size mismatch, LiteRT=%zu TFLite=%u",
+               opts->new_shape.size(), tflite_new_shape->size());
+  }
+
+  int num_updated = 0;
+  const size_t n = std::min<size_t>(opts->new_shape.size(),
+                                    tflite_new_shape->size());
+  for (size_t i = 0; i < n; ++i) {
+    int64_t factor = GetMagicNumberFactor(opts->new_shape[i], magic_number);
+    if (factor == 0) {
+      continue;
+    }
+
+    int32_t new_value = static_cast<int32_t>(target_number * factor);
+    LITERT_LOG(LITERT_DEBUG,
+               "Update RESHAPE new_shape[%zu] from %" PRId64 " to %d, "
+               "factor=%" PRId64,
+               i, magic_number, new_value, factor);
+    opts->new_shape[i] = new_value;
+    tflite_new_shape->Mutate(i, new_value);
+    ++num_updated;
+  }
+  return num_updated;
+}
+
 Expected<int> GetDecompositionSubgraphIndex(const LiteRtModelT& model,
                                             const LiteRtOpT& op) {
   LITERT_ASSIGN_OR_RETURN(const auto* opts, GetStableHLOCompositeOptions(op));
@@ -335,9 +379,18 @@ Expected<int> ReplaceMagicNumberInSubgraph(
     const tflite::SubGraph& tfl_subgraph, LiteRtSubgraphT& subgraph) {
   int updated_tensors = 0;
   for (auto* tensor : subgraph.Tensors()) {
-    LITERT_ASSIGN_OR_RETURN(int num_updated, UpdateMagicNumberInDimensions(
-                                                 magic_number, target_number,
-                                                 *tensor, tfl_subgraph));
+    auto num_updated_or =
+        UpdateMagicNumberInDimensions(magic_number, target_number, *tensor,
+                                      tfl_subgraph);
+    if (!num_updated_or.HasValue()) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Failed to update magic dimensions for tensor=%d "
+                 "magic_number=%" PRId64 " target_number=%" PRId64 ": %s",
+                 tensor->TensorIndex(), magic_number, target_number,
+                 num_updated_or.Error().Message().c_str());
+      return num_updated_or.Error();
+    }
+    int num_updated = num_updated_or.Value();
     updated_tensors += num_updated;
   }
 
@@ -349,15 +402,40 @@ Expected<int> ReplaceMagicNumberInSubgraph(
 
     if (op->OpCode() == kLiteRtOpCodeShloComposite) {
       // Update subgraphs of this composite op.
-      LITERT_ASSIGN_OR_RETURN(int decomp_index,
-                              GetDecompositionSubgraphIndex(model, *op));
+      auto decomp_index_or = GetDecompositionSubgraphIndex(model, *op);
+      if (!decomp_index_or.HasValue()) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Failed to get decomposition subgraph index for op[%d]=%d "
+                   "inputs=[%s] outputs=[%s]: %s",
+                   i, op->OpCode(), GetParamIndices(op->Inputs()).c_str(),
+                   GetParamIndices(op->Outputs()).c_str(),
+                   decomp_index_or.Error().Message().c_str());
+        return decomp_index_or.Error();
+      }
+      int decomp_index = decomp_index_or.Value();
       const auto* decomp_subgraph = fb_model->subgraphs()->Get(decomp_index);
-      LITERT_RETURN_IF_ERROR(decomp_subgraph != nullptr);
-      LITERT_ASSIGN_OR_RETURN(
-          auto num_tensors_updated,
+      if (decomp_subgraph == nullptr) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Missing TFLite decomposition subgraph=%d for op[%d]=%d",
+                   decomp_index, i, op->OpCode());
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "Missing TFLite decomposition subgraph");
+      }
+      auto num_tensors_updated_or =
           ReplaceMagicNumberInSubgraph(magic_number, target_number, model,
                                        fb_model, *decomp_subgraph,
-                                       model.Subgraph(decomp_index)));
+                                       model.Subgraph(decomp_index));
+      if (!num_tensors_updated_or.HasValue()) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Failed to update decomposition subgraph=%d from op[%d]=%d "
+                   "inputs=[%s] outputs=[%s]: %s",
+                   decomp_index, i, op->OpCode(),
+                   GetParamIndices(op->Inputs()).c_str(),
+                   GetParamIndices(op->Outputs()).c_str(),
+                   num_tensors_updated_or.Error().Message().c_str());
+        return num_tensors_updated_or.Error();
+      }
+      auto num_tensors_updated = num_tensors_updated_or.Value();
       if (num_tensors_updated > 0) {
         LITERT_LOG(LITERT_DEBUG,
                    "%d tensors of subgraph %d have been updated for magic "
@@ -368,10 +446,25 @@ Expected<int> ReplaceMagicNumberInSubgraph(
 
       if (IsOpRequiredToUpdateCompositeAttributes(*op)) {
         const auto* tflite_op = tfl_subgraph.operators()->Get(i);
-        LITERT_RETURN_IF_ERROR(tflite_op != nullptr);
-        LITERT_ASSIGN_OR_RETURN(
-            int num_updated, UpdateMagicNumberInCompositeAttributes(
-                                 magic_number, target_number, *op, *tflite_op));
+        if (tflite_op == nullptr) {
+          LITERT_LOG(LITERT_ERROR,
+                     "Missing TFLite op for composite op[%d]=%d", i,
+                     op->OpCode());
+          return Error(kLiteRtStatusErrorInvalidArgument,
+                       "Missing TFLite composite op");
+        }
+        auto num_updated_or = UpdateMagicNumberInCompositeAttributes(
+            magic_number, target_number, *op, *tflite_op);
+        if (!num_updated_or.HasValue()) {
+          LITERT_LOG(LITERT_ERROR,
+                     "Failed to update composite attrs for op[%d]=%d "
+                     "inputs=[%s] outputs=[%s]: %s",
+                     i, op->OpCode(), GetParamIndices(op->Inputs()).c_str(),
+                     GetParamIndices(op->Outputs()).c_str(),
+                     num_updated_or.Error().Message().c_str());
+          return num_updated_or.Error();
+        }
+        int num_updated = num_updated_or.Value();
         updated_tensors += num_updated;
       }
 
@@ -383,12 +476,53 @@ Expected<int> ReplaceMagicNumberInSubgraph(
     if (magic_param_index == -1) {
       continue;
     }
-    LITERT_RETURN_IF_ERROR(magic_param_index < op->NumInputs());
-    LITERT_ASSIGN_OR_RETURN(
-        int num_updated,
+    if (magic_param_index >= op->NumInputs()) {
+      if (op->OpCode() == kLiteRtOpCodeTflReshape) {
+        const auto* tflite_op = tfl_subgraph.operators()->Get(i);
+        if (tflite_op == nullptr) {
+          LITERT_LOG(LITERT_ERROR, "Missing TFLite RESHAPE op for op[%d]=%d",
+                     i, op->OpCode());
+          return Error(kLiteRtStatusErrorInvalidArgument,
+                       "Missing TFLite RESHAPE op");
+        }
+        auto num_updated_or = UpdateMagicNumberInReshapeOptions(
+            magic_number, target_number, *op, *tflite_op);
+        if (!num_updated_or.HasValue()) {
+          LITERT_LOG(LITERT_ERROR,
+                     "Failed to update RESHAPE options for op[%d]=%d "
+                     "inputs=[%s] outputs=[%s]: %s",
+                     i, op->OpCode(), GetParamIndices(op->Inputs()).c_str(),
+                     GetParamIndices(op->Outputs()).c_str(),
+                     num_updated_or.Error().Message().c_str());
+          return num_updated_or.Error();
+        }
+        updated_tensors += num_updated_or.Value();
+        continue;
+      }
+      LITERT_LOG(LITERT_ERROR,
+                 "Magic param index %d out of range for op[%d]=%d "
+                 "num_inputs=%d inputs=[%s] outputs=[%s]",
+                 magic_param_index, i, op->OpCode(), op->NumInputs(),
+                 GetParamIndices(op->Inputs()).c_str(),
+                 GetParamIndices(op->Outputs()).c_str());
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Magic param index out of range");
+    }
+    auto num_updated_or =
         UpdateMagicNumberInParam(magic_number, target_number, op->OpCode(),
                                  op->Input(magic_param_index), fb_model,
-                                 tfl_subgraph));
+                                 tfl_subgraph);
+    if (!num_updated_or.HasValue()) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Failed to update magic param input=%d tensor=%d for op[%d]=%d "
+                 "inputs=[%s] outputs=[%s]: %s",
+                 magic_param_index, op->Input(magic_param_index).TensorIndex(),
+                 i, op->OpCode(), GetParamIndices(op->Inputs()).c_str(),
+                 GetParamIndices(op->Outputs()).c_str(),
+                 num_updated_or.Error().Message().c_str());
+      return num_updated_or.Error();
+    }
+    int num_updated = num_updated_or.Value();
     updated_tensors += num_updated;
   }
 
@@ -417,10 +551,19 @@ Expected<int> UpdateMagicNumbersInModel(
       LITERT_LOG(LITERT_DEBUG,
                  "Replacing magic number %" PRId64 " in signature=%s",
                  config.magic_number, signature->Key().data());
-      LITERT_ASSIGN_OR_RETURN(int updated_tensors,
-                              ReplaceMagicNumberInSubgraph(
-                                  config.magic_number, config.target_number,
-                                  model, fb_model, *tfl_subgraph, subgraph));
+      auto updated_tensors_or = ReplaceMagicNumberInSubgraph(
+          config.magic_number, config.target_number, model, fb_model,
+          *tfl_subgraph, subgraph);
+      if (!updated_tensors_or.HasValue()) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Failed replacing magic number %" PRId64
+                   " -> %" PRId64 " in signature=%s subgraph=%d: %s",
+                   config.magic_number, config.target_number,
+                   signature->Key().data(), subgraph_index,
+                   updated_tensors_or.Error().Message().c_str());
+        return updated_tensors_or.Error();
+      }
+      int updated_tensors = updated_tensors_or.Value();
       if (updated_tensors == 0) {
         LITERT_LOG(LITERT_DEBUG,
                    "No magic number %" PRId64 " found in signature=%s",

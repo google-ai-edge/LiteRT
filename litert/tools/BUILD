@@ -851,6 +851,47 @@ litert_bin(
     deps = [":benchmark_model_main"] + litert_gpu_accelerator_deps(),
 )
 
+litert_bin(
+    name = "imagenet_eval_runner",
+    srcs = ["imagenet_eval_runner.cc"],
+    export_litert_only = True,
+    ungrte = True,
+    deps = [
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_options",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/options:litert_gpu_options",
+        "//litert/cc/options:litert_intel_openvino_options",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+        "@stblib//:stb_image_hdrs",
+    ] + litert_gpu_accelerator_deps(),
+)
+
+litert_bin(
+    name = "imagenet_eval_runner_dynamic_runtime",
+    srcs = ["imagenet_eval_runner.cc"],
+    data = [
+        "//litert/c:libLiteRt.so",
+    ] + litert_gpu_accelerator_prebuilts(),
+    linkopts = ["-lm"],
+    ungrte = True,
+    deps = [
+        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/cc/options:litert_intel_openvino_options",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+        "@stblib//:stb_image_hdrs",
+    ],
+)
+
 cc_binary(
     name = "benchmark_model_allgpu",
     deps = [

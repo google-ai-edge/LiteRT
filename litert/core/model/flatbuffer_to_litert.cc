@@ -103,16 +103,24 @@ LiteRtElementType MapElementType(TflElementType type) {
       return kLiteRtElementTypeInt32;
     case tflite::TensorType_UINT32:
       return kLiteRtElementTypeUInt32;
-    case tflite::TensorType_INT64:
-      return kLiteRtElementTypeInt64;
+    case tflite::TensorType_UINT16:
+      return kLiteRtElementTypeUInt16;
     case tflite::TensorType_UINT64:
       return kLiteRtElementTypeUInt64;
+    case tflite::TensorType_COMPLEX128:
+      return kLiteRtElementTypeComplex128;
+    case tflite::TensorType_RESOURCE:
+      return kLiteRtElementTypeTfResource;
+    case tflite::TensorType_VARIANT:
+      return kLiteRtElementTypeTfVariant;
+    case tflite::TensorType_STRING:
+      return kLiteRtElementTypeTfString;
+    case tflite::TensorType_INT64:
+      return kLiteRtElementTypeInt64;
     case tflite::TensorType_BOOL:
       return kLiteRtElementTypeBool;
     case tflite::TensorType_INT16:
       return kLiteRtElementTypeInt16;
-    case tflite::TensorType_UINT16:
-      return kLiteRtElementTypeUInt16;
     case tflite::TensorType_INT8:
       return kLiteRtElementTypeInt8;
     case tflite::TensorType_UINT8:
@@ -121,10 +129,6 @@ LiteRtElementType MapElementType(TflElementType type) {
       return kLiteRtElementTypeInt4;
     case tflite::TensorType_INT2:
       return kLiteRtElementTypeInt2;
-    case tflite::TensorType_RESOURCE:
-      return kLiteRtElementTypeTfResource;
-    case tflite::TensorType_STRING:
-      return kLiteRtElementTypeTfString;
     default:
       return kLiteRtElementTypeNone;
   }

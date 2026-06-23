@@ -32,12 +32,20 @@ struct LrtSamsungOptionsT {
 
 const char* LrtSamsungOptionsGetIdentifier() { return "samsung"; }
 
+const char* LiteRtSamsungOptionsGetIdentifier() {
+  return LrtSamsungOptionsGetIdentifier();
+}
+
 LiteRtStatus LrtCreateSamsungOptions(LrtSamsungOptions* options) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   *options = new LrtSamsungOptionsT;
   return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSamsungOptionsCreate(LrtSamsungOptions* options) {
+  return LrtCreateSamsungOptions(options);
 }
 
 void LrtDestroySamsungOptions(LrtSamsungOptions options) {
@@ -124,6 +132,12 @@ LiteRtStatus LrtSamsungOptionsGetEnableLargeModelSupport(
   *enable_large_model_support =
       options->enable_large_model_support.value_or(false);
   return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSamsungOptionsGet(LrtSamsungOptions options,
+                                     bool* enable_large_model_support) {
+  return LrtSamsungOptionsGetEnableLargeModelSupport(
+      options, enable_large_model_support);
 }
 
 LiteRtStatus LrtSamsungOptionsSetSocModel(LrtSamsungOptions options,

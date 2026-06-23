@@ -61,12 +61,38 @@ limitations under the License.
 #include "tflite/tensorflow_profiler_logger.h"
 #endif  // TF_LITE_TENSORFLOW_PROFILER
 
+#if defined(__linux__) && defined(__has_include)
+#if __has_include(<sys/sdt.h>)
+#include <sys/sdt.h>
+#define LITERT_RT_USDT_TFLITE_OP_BEGIN(subgraph, node, builtin, name, delegated) \
+  STAP_PROBE5(litert_rt, tflite_op_begin, subgraph, node, builtin, name, delegated)
+#define LITERT_RT_USDT_TFLITE_OP_END(subgraph, node, builtin, name, delegated) \
+  STAP_PROBE5(litert_rt, tflite_op_end, subgraph, node, builtin, name, delegated)
+#else
+#define LITERT_RT_USDT_TFLITE_OP_BEGIN(subgraph, node, builtin, name, delegated)
+#define LITERT_RT_USDT_TFLITE_OP_END(subgraph, node, builtin, name, delegated)
+#endif
+#else
+#define LITERT_RT_USDT_TFLITE_OP_BEGIN(subgraph, node, builtin, name, delegated)
+#define LITERT_RT_USDT_TFLITE_OP_END(subgraph, node, builtin, name, delegated)
+#endif
+
 namespace tflite {
 
 namespace {
 
 constexpr size_t kExtraNodeCapacity = 10;
 constexpr float kTensorCapacityInc = 1.1f;
+
+bool ShouldInlineStableHloComposite(const TfLiteNode& node) {
+  const auto* params =
+      reinterpret_cast<const TfLiteStablehloCompositeParams*>(
+          node.builtin_data);
+  if (params == nullptr || params->name == nullptr) {
+    return true;
+  }
+  return std::strncmp(params->name, "odml.", 5) != 0;
+}
 
 struct TfLiteQuantizationDeleter {
   void operator()(TfLiteQuantization* q) {
@@ -1245,6 +1271,9 @@ TfLiteStatus Subgraph::ResizeInputTensor(int tensor_index,
   if (graph_is_immutable) {
     // Undo delegation if it resulted in the graph being immutable.
     TF_LITE_ENSURE_STATUS(UndoAllDelegates());
+    // Undoing delegates can mutate the tensor arena. Re-read the graph input
+    // after delegate rollback before handing it to ResizeTensorImpl.
+    tensor = &context_.tensors[tensor_index];
   }
   state_ = kStateUninvokable;
   return ResizeTensorImpl(tensor, BuildTfLiteArray(rank, dims_data).release());
@@ -1767,11 +1796,20 @@ TfLiteStatus Subgraph::InvokeImpl() {
 
     EnsureTensorsVectorCapacity();
     tensor_resized_since_op_invoke_ = false;
+    LITERT_RT_USDT_TFLITE_OP_BEGIN(
+        subgraph_index_, node_index, registration.builtin_code,
+        op_name ? op_name : "", node.delegate != nullptr);
     if (auto s = OpInvoke(registration, &node); s != kTfLiteOk) {
+      LITERT_RT_USDT_TFLITE_OP_END(
+          subgraph_index_, node_index, registration.builtin_code,
+          op_name ? op_name : "", node.delegate != nullptr);
       auto err = ReportOpError(&context_, node, registration, node_index,
                                "failed to invoke");
       return s == kTfLiteCancelled ? s : err;
     }
+    LITERT_RT_USDT_TFLITE_OP_END(
+        subgraph_index_, node_index, registration.builtin_code,
+        op_name ? op_name : "", node.delegate != nullptr);
 
     // Force execution prep for downstream ops if the latest op triggered the
     // resize of a dynamic tensor.
@@ -2408,7 +2446,8 @@ TfLiteStatus Subgraph::InlineCompositeNodes() {
     composite_nodes_execution_indices.clear();
     for (const int i : execution_plan_) {
       auto& [node, reg] = nodes_and_registration_[i];
-      if (reg.builtin_code == kTfLiteBuiltinStablehloComposite) {
+      if (reg.builtin_code == kTfLiteBuiltinStablehloComposite &&
+          ShouldInlineStableHloComposite(node)) {
         composite_nodes_execution_indices.insert(i);
       }
     }

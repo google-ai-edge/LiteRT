@@ -163,6 +163,25 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 
       return next_handle_++;
     }
+    case kLiteRtTensorBufferTypeHostMemory: {
+      void* host_memory_addr;
+      LITERT_RETURN_IF_ERROR(
+          runtime_context_->get_tensor_buffer_host_memory(tensor_buffer,
+                                                          &host_memory_addr),
+          litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                             "Failed to get host memory buffer"));
+      ov::element::Type ov_element_type =
+          litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
+      std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
+      for (int i = 0; i < ov_shape_vec.size(); i++)
+        ov_shape_vec[i] = tensor_type.layout.dimensions[i];
+      ov::Tensor ov_tensor(ov_element_type,
+                           ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()},
+                           host_memory_addr);
+      tensor_handle_map_.emplace((LiteRtTensorBufferHandle)next_handle_,
+                                 RegisteredTensor{.tensor = ov_tensor});
+      return next_handle_++;
+    }
     case kLiteRtTensorBufferTypeDmaBuf: {
 #if LITERT_HAS_DMABUF_SUPPORT
       ov::element::Type ov_element_type =

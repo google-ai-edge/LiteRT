@@ -42,6 +42,7 @@
 #include "litert/core/util/tensor_type_util.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/intel_openvino/bytecode_header.h"
+#include "litert/vendors/intel_openvino/dispatch/openvino_shared_core.h"
 
 namespace {
 
@@ -229,17 +230,18 @@ LiteRtDispatchInvocationContextT::Create(
 litert::Expected<LiteRtTensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
     const LiteRtRankedTensorType& tensor_type) {
-  LiteRtTensorBufferType supported_tensor_buffer_types[] = {
-      kLiteRtTensorBufferTypeOpenVINOTensorBuffer,
-      // OpenVINO RemoteTensor doesn't support copy-free AHWB buffer. Until
-      // it's supported, we use DMA-BUF.
-      kLiteRtTensorBufferTypeDmaBuf,
-      kLiteRtTensorBufferTypeAhwb,
-  };
-
-  int num_supported_tensor_buffer_types =
-      sizeof(supported_tensor_buffer_types) /
-      sizeof(supported_tensor_buffer_types[0]);
+  std::vector<LiteRtTensorBufferType> supported_tensor_buffer_types;
+  if (OpenVINOSharedCore::GetInstance()->GetDevice() == "CPU") {
+    supported_tensor_buffer_types = {kLiteRtTensorBufferTypeHostMemory};
+  } else {
+    supported_tensor_buffer_types = {
+        kLiteRtTensorBufferTypeOpenVINOTensorBuffer,
+        // OpenVINO RemoteTensor doesn't support copy-free AHWB buffer. Until
+        // it's supported, we use DMA-BUF.
+        kLiteRtTensorBufferTypeDmaBuf,
+        kLiteRtTensorBufferTypeAhwb,
+    };
+  }
   auto buffer_size = litert::internal::GetNumPackedBytes(tensor_type);
   if (!buffer_size) {
     return litert::Unexpected(buffer_size.Error());
@@ -248,8 +250,9 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
   LiteRtTensorBufferRequirements requirements;
   auto status =
       device_context_.runtime_context()->create_tensor_buffer_requirements(
-          num_supported_tensor_buffer_types, supported_tensor_buffer_types,
-          *buffer_size, 0, /*strides=*/nullptr, &requirements);
+          supported_tensor_buffer_types.size(),
+          supported_tensor_buffer_types.data(), *buffer_size, 0,
+          /*strides=*/nullptr, &requirements);
   if (status != kLiteRtStatusOk)
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                               "Failed to get buffer requirements");

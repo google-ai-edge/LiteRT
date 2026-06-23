@@ -1312,6 +1312,7 @@ cc_test(
         "//tflite/kernels/internal:tensor_ctypes",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest",
+        "@flatbuffers",
     ],
 )
 

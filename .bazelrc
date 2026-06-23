@@ -142,6 +142,24 @@ common --registry=https://raw.githubusercontent.com/bazelbuild/bazel-central-reg
 
 # Default options should come above this line.
 
+# Linux builds that need ABI compatibility with LiteRT-LM's GPU stack must use
+# local clang + libc++ instead of the hermetic sysroot toolchain, which still
+# injects libstdc++ on Linux.
+build:linux_libcxx --config=linux
+build:linux_libcxx --noincompatible_enable_cc_toolchain_resolution
+build:linux_libcxx --@rules_ml_toolchain//common:enable_hermetic_cc=False
+build:linux_libcxx --repo_env USE_HERMETIC_CC_TOOLCHAIN=0
+build:linux_libcxx --crosstool_top=@local_config_cuda//crosstool:toolchain
+build:linux_libcxx --host_crosstool_top=@local_config_cuda//crosstool:toolchain
+build:linux_libcxx --action_env=CC=clang
+build:linux_libcxx --action_env=CXX=clang++
+build:linux_libcxx --cxxopt=-stdlib=libc++
+build:linux_libcxx --host_cxxopt=-stdlib=libc++
+build:linux_libcxx --linkopt=-stdlib=libc++
+build:linux_libcxx --host_linkopt=-stdlib=libc++
+build:linux_libcxx --linkopt=-lc++abi
+build:linux_libcxx --host_linkopt=-lc++abi
+
 # Android configs. Bazel needs to have --cpu and --fat_apk_cpu both set to the
 # target CPU to build transient dependencies correctly. See
 # https://docs.bazel.build/versions/master/user-manual.html#flag--fat_apk_cpu
@@ -242,16 +260,8 @@ build:monolithic --experimental_link_static_libraries_once=false  # b/229868128
 
 # Debug config
 build:dbg -c dbg
-# Only include debug info for files under tensorflow/, excluding kernels, to
-# reduce the size of the debug info in the binary. This is because if the debug
-# sections in the ELF binary are too large, errors can occur. See
-# https://github.com/tensorflow/tensorflow/issues/48919.
-# Users can still include debug info for a specific kernel, e.g. with:
-#     --config=dbg --per_file_copt=+tensorflow/core/kernels/identity_op.*@-g
-# Since this .bazelrc file is synced between the tensorflow/tensorflow repo and
-# the openxla/xla repo, also include debug info for files under xla/.
-build:dbg --per_file_copt=+.*,-tensorflow.*,-xla.*@-g0
-build:dbg --per_file_copt=+tensorflow/core/kernels.*@-g0
+# Opt config
+build:opt -c opt
 # for now, disable arm_neon. see: https://github.com/tensorflow/tensorflow/issues/33360
 build:dbg --cxxopt -DTF_LITE_DISABLE_X86_NEON
 # AWS SDK must be compiled in release mode. see: https://github.com/tensorflow/tensorflow/issues/37498

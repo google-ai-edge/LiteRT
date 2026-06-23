@@ -45,3 +45,13 @@ advertises a different shape, LiteRT:
 
 This is especially useful when your input buffers are produced by a
 preprocessing pipeline that naturally encodes the desired shape.
+
+## Known Issue
+
+There is a known runtime issue when a dynamic-shape model is executed with
+custom input/output `TensorBuffer`s, then resized to a different shape and run
+again on the same `CompiledModel`. In that case LiteRT can fail with a stale
+custom-allocation error even if the caller recreates buffers.
+
+See [LiteRT Dynamic Resize with Custom Tensor Buffers: Known
+Issue](./litert_dynamic_resize_custom_allocations.md).

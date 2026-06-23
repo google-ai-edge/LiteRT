@@ -357,6 +357,24 @@ void AbslStringify(Sink& sink, const LiteRtElementType& type) {
     case kLiteRtElementTypeUInt64:
       dtype_str = ::litert::kElementTypeStrU64;
       break;
+    case kLiteRtElementTypeBFloat16:
+      dtype_str = "bf16";
+      break;
+    case kLiteRtElementTypeComplex64:
+      dtype_str = "c64";
+      break;
+    case kLiteRtElementTypeComplex128:
+      dtype_str = "c128";
+      break;
+    case kLiteRtElementTypeTfResource:
+      dtype_str = "resource";
+      break;
+    case kLiteRtElementTypeTfVariant:
+      dtype_str = "variant";
+      break;
+    case kLiteRtElementTypeTfString:
+      dtype_str = "string";
+      break;
     case kLiteRtElementTypeInt4:
       dtype_str = ::litert::kElementTypeStrI4;
       break;

@@ -64,6 +64,18 @@ limitations under the License.
 #include "tflite/schema/schema_generated.h"
 #include "tflite/tools/optimize/reduced_precision_support.h"
 
+#if defined(__linux__) && defined(__has_include)
+#if __has_include(<sys/sdt.h>)
+#include <sys/sdt.h>
+#define LITERT_RT_USDT_XNN_OP_PROFILE(op_index, op_name, elapsed_us, num_ops) \
+  STAP_PROBE4(litert_rt, xnn_op_profile, op_index, op_name, elapsed_us, num_ops)
+#else
+#define LITERT_RT_USDT_XNN_OP_PROFILE(op_index, op_name, elapsed_us, num_ops)
+#endif
+#else
+#define LITERT_RT_USDT_XNN_OP_PROFILE(op_index, op_name, elapsed_us, num_ops)
+#endif
+
 // NOLINTBEGIN(*-runtime-unneeded-pointer-stability-check): We use
 // `std::unordered_map` and friends since we don't want to add a dependency on
 // `absl`.
@@ -74,6 +86,17 @@ namespace tflite {
 namespace xnnpack {
 namespace {
 
+// Older XNNPACK headers used by LiteRT-LM's current TensorFlow baseline do not
+// declare all per-tensor low-bit datatype symbols, while newer LiteRT revisions
+// reference them. Use the upstream enum values directly to keep the delegate
+// code buildable across both baselines. On older XNNPACK these paths remain
+// effectively unsupported at runtime unless the backend also understands the
+// values.
+constexpr xnn_datatype kXnnDatatypeQint4Compat =
+    static_cast<xnn_datatype>(19);
+constexpr xnn_datatype kXnnDatatypeQint2Compat =
+    static_cast<xnn_datatype>(20);
+
 // VisitDotAttentionNode uses a clamp to add a constant value to the XNNPack
 // subgraph. The constant data must outlive the XNNPack delegate and there is no
 // simple way of doing this. Therefore a clamp was used to clamp some arbitrary
@@ -82,6 +105,14 @@ namespace {
 const float kConstantClampData = 0.f;
 
 constexpr char kOdmlSDPA[] = "odml.scaled_dot_product_attention";
+
+bool IsXnnUsdtOpProfileEnabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("LITERT_RT_USDT_XNN_OP_PROFILE");
+    return value != nullptr && value[0] != '\0' && value[0] != '0';
+  }();
+  return enabled;
+}
 
 // Use this to create a maybe unique_ptr that owns its data.
 auto kOwned = [](auto* v) { delete v; };
@@ -310,13 +341,13 @@ xnn_datatype GetXNNPackDatatype(TfLiteContext* context,
                         context, tensor, t, -8, 7, *quantization_zero_point)) {
                   return xnn_datatype_invalid;
                 }
-                return xnn_datatype_qint4;
+                return kXnnDatatypeQint4Compat;
               case kTfLiteInt2:
                 if (!CheckZeroPointForPerTensorQuantization(
                         context, tensor, t, -2, 1, *quantization_zero_point)) {
                   return xnn_datatype_invalid;
                 }
-                return xnn_datatype_qint2;
+                return kXnnDatatypeQint2Compat;
               default:
                 TF_LITE_KERNEL_LOG(
                     context,
@@ -543,8 +574,8 @@ TfLiteStatus DefineXNNPACKValue(TfLiteContext* context, xnn_subgraph_t subgraph,
 
   xnn_status status = xnn_status_success;
   switch (datatype) {
-    case xnn_datatype_qint2:
-    case xnn_datatype_qint4:
+    case kXnnDatatypeQint2Compat:
+    case kXnnDatatypeQint4Compat:
     case xnn_datatype_qint8:
     case xnn_datatype_quint8:
     case xnn_datatype_qint32: {
@@ -1244,7 +1275,7 @@ class Subgraph {
         }
       }
     }
-    if (context->profiler) {
+    if (context->profiler || IsXnnUsdtOpProfileEnabled()) {
       flags |= XNN_FLAG_BASIC_PROFILING;
     }
     flags |= delegate.runtime_flags();
@@ -1470,9 +1501,11 @@ class Subgraph {
       return kTfLiteError;
     }
 
-    if (context->profiler) {
-      if (AddEventsToProfiler(reinterpret_cast<Profiler*>(context->profiler),
-                              runtime_.get()) != kTfLiteOk) {
+    if (context->profiler || IsXnnUsdtOpProfileEnabled()) {
+      if (AddEventsToProfiler(
+              context->profiler ? reinterpret_cast<Profiler*>(context->profiler)
+                                : nullptr,
+              runtime_.get()) != kTfLiteOk) {
         TF_LITE_KERNEL_LOG(context,
                            "failed to get XNNPACK profile information.");
       }
@@ -1531,10 +1564,15 @@ class Subgraph {
     for (size_t node_index = 0; node_index < num_operators; ++node_index) {
       operator_name = &operator_names[name_len];
       name_len += strlen(operator_name) + 1;
-      profiler->AddEvent(
-          operator_name,
-          Profiler::EventType::DELEGATE_PROFILED_OPERATOR_INVOKE_EVENT,
-          operator_timings[node_index], node_index);
+      if (profiler != nullptr) {
+        profiler->AddEvent(
+            operator_name,
+            Profiler::EventType::DELEGATE_PROFILED_OPERATOR_INVOKE_EVENT,
+            operator_timings[node_index], node_index);
+      }
+      LITERT_RT_USDT_XNN_OP_PROFILE(node_index, operator_name,
+                                    operator_timings[node_index],
+                                    num_operators);
     }
     return kTfLiteOk;
   }
@@ -4753,12 +4791,13 @@ class Subgraph {
         xnn_datatype filter_datatype = GetXNNPackDatatype(
             logging_context, filter_tensor, filter_tensor_id);
         if (filter_datatype == xnn_datatype_qint8 ||
-            filter_datatype == xnn_datatype_qint4 ||
-            filter_datatype == xnn_datatype_qint2) {
+            filter_datatype == kXnnDatatypeQint4Compat ||
+            filter_datatype == kXnnDatatypeQint2Compat) {
           filter_datatype =
               filter_datatype == xnn_datatype_qint8   ? xnn_datatype_qcint8
-              : filter_datatype == xnn_datatype_qint4 ? xnn_datatype_qcint4
-                                                      : xnn_datatype_qcint2;
+              : filter_datatype == kXnnDatatypeQint4Compat
+                  ? xnn_datatype_qcint4
+                  : xnn_datatype_qcint2;
           // Check whether we have to re-allocated the scale..
           if (output_channels > 1) {
             TfLiteFloatArrayFree(filter_quant_params->scale);

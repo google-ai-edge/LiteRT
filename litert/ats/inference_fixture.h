@@ -126,7 +126,7 @@ class AtsInferenceTest : public RngTest {
   }
 
  private:
-  double Tol() const { return graph_->HasReference() ? 1e-4 : 1e2; }
+  double Tol() const { return 1e-4; }
 
   Expected<CompiledModelExecutor::Ptr> MakeExecutor() {
     auto& env = conf_.GetEnvironment();

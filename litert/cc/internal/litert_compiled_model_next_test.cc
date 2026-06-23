@@ -206,6 +206,66 @@ TEST(CompiledModelNextTest, WithProfiler) {
   }
 }
 
+TEST(CompiledModelNextTest, ReusesRegisteredBuffersOnRepeatedRun) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  LITERT_ASSIGN_OR_ABORT(litert::Options compilation_options,
+                         litert::Options::Create());
+  compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
+  LITERT_ASSIGN_OR_ABORT(auto& runtime_options,
+                         compilation_options.GetRuntimeOptions());
+  runtime_options.SetEnableProfiling(/*enabled=*/true);
+
+  Model model = testing::LoadTestFileModel(kModelFileName);
+  ASSERT_TRUE(model);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModelNext::Create(env, model, compilation_options));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto profiler, compiled_model.GetProfiler());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
+
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  ASSERT_TRUE(profiler.Reset());
+  ASSERT_TRUE(profiler.StartProfiling());
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+
+  const float second_input0[] = {3.0f, 4.0f};
+  const float second_input1[] = {10.0f, 20.0f};
+  ASSERT_TRUE(
+      input_buffers[0].Write<float>(absl::MakeConstSpan(second_input0, 2)));
+  ASSERT_TRUE(
+      input_buffers[1].Write<float>(absl::MakeConstSpan(second_input1, 2)));
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+  ASSERT_TRUE(profiler.StopProfiling());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto events, profiler.GetEvents());
+  int buffer_registration_events = 0;
+  for (const auto& event : events) {
+    if (event.tag != nullptr &&
+        absl::string_view(event.tag) ==
+            "LiteRT::Run[apply buffer bindings]") {
+      ++buffer_registration_events;
+    }
+  }
+  EXPECT_EQ(buffer_registration_events, 1);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto lock_and_addr, litert::TensorBufferScopedLock::Create<const float>(
+                              output_buffers[0], TensorBuffer::LockMode::kRead));
+  const float expected_output[] = {13.0f, 24.0f};
+  auto output = absl::MakeSpan(lock_and_addr.second, 2);
+  EXPECT_THAT(output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
 TEST(CompiledModelNextTest, DispatchAnnotations) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
