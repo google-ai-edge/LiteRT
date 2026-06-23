@@ -110,6 +110,8 @@ litert::HwAcceleratorSet GetAccelerator() {
       accelerators |= litert::HwAccelerators::kGpu;
     } else if (accelerator == "npu") {
       accelerators |= litert::HwAccelerators::kNpu;
+    } else if (accelerator == "cpu_ref") {
+      accelerators |= litert::HwAccelerators::kCpu;
     }
   }
   return accelerators;

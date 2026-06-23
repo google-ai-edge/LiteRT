@@ -158,8 +158,11 @@ absl::StatusOr<Type> FromTfLite(const TfLiteType type) {
     case kTfLiteInt2:
       return Type::kI2;
     case kTfLiteFloat8E4M3FN:
+      return absl::FailedPreconditionError(
+          "Float8E4M3FN type is not supported.");
     case kTfLiteFloat8E5M2:
-      return absl::FailedPreconditionError("Float8 type is not supported.");
+      return absl::FailedPreconditionError(
+          "Float8E5M2 type is not supported.");
   }
   return absl::UnimplementedError(
       "Type was not handled in the conversion from TFLite value.");
