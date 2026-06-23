@@ -26,6 +26,15 @@ _SERIAL = flags.DEFINE_string("serial", None, "serial for adb", short_name="s")
 _SOC_MODEL = flags.DEFINE_string("soc_model", None, "SoC Model (e.g. SM8650)")
 _HTP_ARCH = flags.DEFINE_string("htp_arch", None, "HTP Arch (e.g. V75)")
 _QAIRT_SDK = flags.DEFINE_string("qairt_sdk", None, "Path to qairt sdk folder")
+_SUBGRAPHS = flags.DEFINE_string(
+    "subgraphs",
+    None,
+    "Comma-separated subgraph indices to apply the plugin to (e.g. '0' or"
+    " '0,2'). If unset, all subgraphs are compiled. Use this to profile a"
+    " single signature (e.g. decode or prefill) and avoid packing every graph"
+    " into one oversized context binary. Run apply_plugin_main with '--cmd=info'"
+    " to find which subgraph index backs each signature.",
+)
 
 flags.mark_flag_as_required(_MODEL.name)
 flags.mark_flag_as_required(_OUTPUT_DIR.name)
@@ -391,7 +400,7 @@ def _generate_profiler_output(
 
 
 def _generate_ctx_bin(
-    model_path: Path, soc_model: str, qairt_sdk: Path
+    model_path: Path, soc_model: str, qairt_sdk: Path, subgraphs: Optional[str]
 ) -> Path:
   """Generate the ctx.bin file from a given model.
 
@@ -399,6 +408,8 @@ def _generate_ctx_bin(
       model_path (Path): The path to the model.
       soc_model (str): The SOC model to use.
       qairt_sdk (Path): The path to the QAIRT SDK.
+      subgraphs (Optional[str]): Comma-separated subgraph indices to apply the
+        plugin to. If None, all subgraphs are compiled.
 
   Returns:
       Optional[Path]: The path to the generated ctx.bin file, or None if the
@@ -436,6 +447,8 @@ def _generate_ctx_bin(
       "--qualcomm_profiling=optrace",
       f"--qualcomm_ir_json_dir={_OUTPUT_DIR.value}",
   ]
+  if subgraphs is not None:
+    apply_plugin_main_cmd.append(f"--subgraphs={subgraphs}")
 
   env = os.environ.copy()
   qairt_host_lib_path = qairt_sdk.resolve() / "lib" / "x86_64-linux-clang"
@@ -500,7 +513,9 @@ def main(argv):
 
   os.makedirs(_OUTPUT_DIR.value, exist_ok=True)
 
-  ctx_bin = _generate_ctx_bin(Path(_MODEL.value), _SOC_MODEL.value, qairt_sdk)
+  ctx_bin = _generate_ctx_bin(
+      Path(_MODEL.value), _SOC_MODEL.value, qairt_sdk, _SUBGRAPHS.value
+  )
   ctx_bin_info = _get_ctx_bin_info(str(ctx_bin), qairt_sdk)
   adb_cmd = _get_adb_cmd(_HOSTNAME.value, _SERIAL.value)
 

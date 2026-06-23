@@ -582,6 +582,15 @@ size_t OptimizeMHADecode(std::function<bool(OpWrapper&)> validate_op_config,
   return 1;
 }
 
+size_t OptimizeMHAGemma4BPrefill(
+    std::function<bool(OpWrapper&)> validate_op_config,
+    std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
+    size_t pattern_size) {
+    // Graph transform
+    QNN_LOG_INFO("[G2G] MHA Gemma4B (Prefill)");
+    return 1;
+}
+
 size_t OptimizeMHAFastVlmPrefill(
     std::function<bool(OpWrapper&)> validate_op_config,
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,

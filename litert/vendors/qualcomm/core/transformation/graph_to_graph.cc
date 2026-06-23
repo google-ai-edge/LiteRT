@@ -241,6 +241,25 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
   Transform(validate_op_config, ops, tensor_pool, embedding_gemma,
             TransformEmbeddingGemma);
 
+  // Gemma 4 Optimization
+  const std::vector<QnnOpCode> gemma_4_mha_prefill = {
+      QnnOpCode::kReshape,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kConcat,
+      QnnOpCode::kElementWiseBinary,
+      QnnOpCode::kSoftmax,
+      QnnOpCode::kStridedSlice,
+      QnnOpCode::kStridedSlice,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kElementWiseBinary,
+      QnnOpCode::kQuantize,
+      QnnOpCode::kReshape,
+    };
+  Transform(validate_op_config, ops, tensor_pool, gemma_4_mha_prefill,
+            OptimizeMHAGemma4BPrefill);
+
   // Fast Vlm Optimization
   const std::vector<QnnOpCode> fast_vlm_mha_prefill = {
       QnnOpCode::kElementWiseBinary,
