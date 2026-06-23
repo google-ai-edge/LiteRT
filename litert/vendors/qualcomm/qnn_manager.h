@@ -146,6 +146,13 @@ class QnnManager {
   // called.
   Qnn_BackendHandle_t BackendHandle() { return backend_->GetBackendHandle(); }
 
+  LiteRtStatus SetPerformanceMode(const ::qnn::Options& options) {
+    // Not yet initialized — nothing to do.
+    if (!backend_) return kLiteRtStatusOk;
+    if (backend_->SetPerformanceMode(options)) return kLiteRtStatusOk;
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
   const ::qnn::Options& GetOptions() const { return options_; }
 
   ::qnn::SdkVersion GetSdkVersion() const { return sdk_version_; }
