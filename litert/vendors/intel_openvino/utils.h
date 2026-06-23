@@ -24,6 +24,9 @@ static const ov::element::Type MapLiteTypeToOV(
     case kLiteRtElementTypeInt4:
       ov_type = ov::element::i4;
       break;
+    case kLiteRtElementTypeUInt4:
+      ov_type = ov::element::u4;
+      break;
     case kLiteRtElementTypeInt8:
       ov_type = ov::element::i8;
       break;
@@ -50,6 +53,12 @@ static const ov::element::Type MapLiteTypeToOV(
       break;
     case kLiteRtElementTypeFloat16:
       ov_type = ov::element::f16;
+      break;
+    case kLiteRtElementTypeFloat8E4M3FN:
+      ov_type = ov::element::f8e4m3;
+      break;
+    case kLiteRtElementTypeFloat8E5M2:
+      ov_type = ov::element::f8e5m2;
       break;
     case kLiteRtElementTypeFloat32:
       ov_type = ov::element::f32;
