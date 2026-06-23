@@ -16,6 +16,7 @@
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
+load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
 
 WINDOWS_PYBIND_UNDEFS = select({
     "//litert:windows": [
@@ -91,6 +92,18 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":_pywrap_litert_tensor_buffer_wrapper",
+        "@ml_dtypes_py//ml_dtypes",
+        "@org_tensorflow//third_party/py/numpy:headers",
+    ],
+)
+
+py_test(
+    name = "tensor_buffer_test",
+    srcs = ["tensor_buffer_test.py"],
+    deps = [
+        ":tensor_buffer",
+        "//litert/python:pywrap_litert",
+        "@ml_dtypes_py//ml_dtypes",
         "@org_tensorflow//third_party/py/numpy:headers",
     ],
 )
