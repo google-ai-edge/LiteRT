@@ -241,6 +241,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
                             BenchmarkParam::Create<std::string>(""));
     default_params.AddParam("compiler_cache_path",
                             BenchmarkParam::Create<std::string>(""));
+    default_params.AddParam("qualcomm_graph_io_tensor_mem_type",
+                            BenchmarkParam::Create<std::string>("memhandle"));
     default_params.AddParam("require_full_delegation",
                             BenchmarkParam::Create<bool>(false));
     default_params.AddParam("use_profiler",
@@ -377,6 +379,9 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     flags.push_back(tflite::benchmark::CreateFlag<std::string>(
         "compiler_cache_path", &params_,
         "Compiler plugin cache path, used to store JIT-compiled models."));
+    flags.push_back(tflite::benchmark::CreateFlag<std::string>(
+        "qualcomm_graph_io_tensor_mem_type", &params_,
+        "Qualcomm graph IO tensor memory type [raw|memhandle]."));
     flags.push_back(tflite::benchmark::CreateFlag<bool>(
         "require_full_delegation", &params_,
         "Whether to require full delegation."));
