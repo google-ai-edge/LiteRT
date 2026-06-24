@@ -720,6 +720,14 @@ size_t OptimizeMHAGemma4BPrefill(
           q_kcache_matmul, {query, k_cache_unpack_outputs[i]},
           {qk_cache_output}));
       std::cout << new_ops.back().GetName() << std::endl;
+      for (auto i = 0; i < 2; i++) {
+        auto t = new_ops.back().GetInputTensor(i);
+        std::cout << "In t.GetDataType(): " << t.GetDataType() << std::endl;
+      }
+      for (auto i = 0; i < 1; i++) {
+        auto t = new_ops.back().GetOutputTensor(i);
+        std::cout << "Out t.GetDataType(): " << t.GetDataType() << std::endl;
+      }
 
       // Q x K slice.
       auto& qk_slice_output = tensor_pool.CloneNativeTensorFrom(
@@ -907,7 +915,28 @@ size_t OptimizeMHAGemma4BPrefill(
                     return validate_op_config(op_wrapper);
                   });
     for (size_t i = 0; i < new_ops.size(); ++i) {
-      std::cout << "new_ops: " << new_ops[i].GetName() << std::endl;
+      const auto cfg = new_ops[i].GetOpConfig();
+      std::cout << "new_ops[" << i << "]: " << new_ops[i].GetName() << std::endl;
+      for (uint32_t j = 0; j < cfg.v1.numOfInputs; ++j) {
+        const auto& t = new_ops[i].GetInputTensor(j);
+        std::cout << "  In[" << j << "] name=" << t.GetName()
+                  << " dtype=" << t.GetDataType() << " dims=[";
+        for (uint32_t k = 0; k < t.GetRank(); ++k) {
+          if (k) std::cout << ",";
+          std::cout << t.GetDimension(k);
+        }
+        std::cout << "]" << std::endl;
+      }
+      for (uint32_t j = 0; j < cfg.v1.numOfOutputs; ++j) {
+        const auto& t = new_ops[i].GetOutputTensor(j);
+        std::cout << "  Out[" << j << "] name=" << t.GetName()
+                  << " dtype=" << t.GetDataType() << " dims=[";
+        for (uint32_t k = 0; k < t.GetRank(); ++k) {
+          if (k) std::cout << ",";
+          std::cout << t.GetDimension(k);
+        }
+        std::cout << "]" << std::endl;
+      }
     }
   if (is_valid) {
     // Adjust the name to avoid a name collision in the Qnn JSON dump.
