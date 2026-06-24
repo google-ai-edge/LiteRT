@@ -674,7 +674,8 @@ size_t OptimizeMHAGemma4BPrefill(
   const auto head_dims = [&](const OpWrapper& op) {
     auto dims = op.GetOutputTensor(0).GetDimensions();
     dims.erase(dims.begin() + 1);
-    // dims[1] /= static_cast<std::uint32_t>(num_attn_per_kv_heads);
+    // Since there is not Reshape now
+    dims[1] /= static_cast<std::uint32_t>(num_attn_per_kv_heads);
     return dims;
   };
 
@@ -696,7 +697,9 @@ size_t OptimizeMHAGemma4BPrefill(
   auto& vcache_slice_ranges = build_slice_ranges(qk_vcache_slice);
   auto& vslice_slice_ranges = build_slice_ranges(qk_vslice_slice);
 
-  const auto& mask = mask_add.GetInputTensor(0);
+  constexpr size_t kMaskUnpackAxis = 2;
+  auto mask_unpack_outputs = UnpackTensor(
+      tensor_pool, new_ops, mask_add.GetInputTensor(1), kMaskUnpackAxis);
 
   // Build num_attn_heads SHAs.
   std::vector<ConstTensorWrapperRef> sha_outputs;
@@ -762,7 +765,7 @@ size_t OptimizeMHAGemma4BPrefill(
       }
       std::cout << std::endl;
       new_ops.emplace_back(
-          CreateElementWiseAddOp(concat_output, mask, mask_add_output));
+          CreateElementWiseAddOp(concat_output, mask_unpack_outputs[j], mask_add_output));
 
       // Softmax.
       auto& softmax_output = tensor_pool.CloneNativeTensorFrom(
@@ -865,50 +868,50 @@ size_t OptimizeMHAGemma4BPrefill(
                         // op_wrapper.GetName() == "ElementWiseBinary_3966" ||
                         // op_wrapper.GetName() == "ElementWiseBinary_3977" ||
                         op_wrapper.GetName() == "Pack_3985" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_3994" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4005" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4016" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4027" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4038" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4049" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4060" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4071" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_3994" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4005" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4016" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4027" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4038" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4049" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4060" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4071" ||
                         op_wrapper.GetName() == "Pack_4079" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4088" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4099" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4110" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4121" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4132" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4143" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4154" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4165" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4088" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4099" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4110" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4121" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4132" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4143" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4154" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4165" ||
                         op_wrapper.GetName() == "Pack_4173" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4182" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4193" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4204" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4215" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4226" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4237" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4248" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4259" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4182" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4193" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4204" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4215" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4226" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4237" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4248" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4259" ||
                         op_wrapper.GetName() == "Pack_4267" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4276" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4287" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4298" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4309" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4320" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4331" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4342" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4353" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4276" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4287" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4298" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4309" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4320" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4331" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4342" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4353" ||
                         op_wrapper.GetName() == "Pack_4361" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4370" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4381" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4392" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4403" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4414" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4425" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4436" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_4447" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4370" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4381" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4392" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4403" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4414" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4425" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4436" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_4447" ||
                         op_wrapper.GetName() == "Pack_4455") {
                         return true;
                     }
