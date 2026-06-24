@@ -889,15 +889,27 @@ size_t OptimizeMHAGemma4BPrefill(
     for (size_t i = 0; i < new_ops.size(); ++i) {
       new_ops[i].AddSuffixToName(absl::StrCat("_qcg2g_", i));
     }
-    // Replace the matched pattern with a newly generated subgraph.
-    size_t step_size = new_ops.size();
-    ops.insert(ops.begin() + start_index + pattern_size,
+    // Remove 13 ops spanning kReshape0Idx (-2) through kReshape1Idx (+12),
+    // keeping the Convert at -1 and the Quantize at +8 in place.
+    // Perform erases in reverse-index order so earlier positions stay valid.
+
+    // Insert new_ops after +12 (before +13).
+    ops.insert(ops.begin() + start_index + 13,
                std::make_move_iterator(new_ops.begin()),
                std::make_move_iterator(new_ops.end()));
+    // Erase +9..+12 (4 ops).
+    ops.erase(ops.begin() + start_index + 9,
+              ops.begin() + start_index + 13);
+    // Erase 0..+7 (8 ops).
     ops.erase(ops.begin() + start_index,
-              ops.begin() + start_index + pattern_size);
+              ops.begin() + start_index + 8);
+    // Erase -2 (1 op).
+    ops.erase(ops.begin() + start_index - 2);
+
     QNN_LOG_INFO("[G2G] MHA Gemma4B (Prefill) Success");
-    return step_size;
+    // After the three erases the new_ops land at [start_index .. start_index +
+    // new_ops.size() - 1], so Transform's next scan position is correct with:
+    return new_ops.size();
   }
   QNN_LOG_WARNING(
       "[G2G] Validation failed. Rolling back to the original graph.");
