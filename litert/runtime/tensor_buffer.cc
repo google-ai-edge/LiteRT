@@ -1055,7 +1055,7 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
 #if LITERT_HAS_OPENGL_SUPPORT
       LITERT_ASSIGN_OR_RETURN(auto gl_buffer, GetGlBuffer());
       LITERT_ASSIGN_OR_RETURN(float* const host_memory_ptr,
-                              gl_buffer->Lock<float>());
+                              gl_buffer->Lock<float>(mode));
       return host_memory_ptr;
 #else
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,

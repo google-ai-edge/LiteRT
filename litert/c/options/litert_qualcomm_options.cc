@@ -110,6 +110,7 @@ struct LrtQualcommOptionsT {
   std::optional<std::string> saver_output_dir;
   std::optional<LrtQualcommOptionsGraphIOTensorMemType>
       graph_io_tensor_mem_type;
+  std::optional<std::string> schematic_dir;
   std::optional<CustomOpPackage> custom_op_package;
 };
 
@@ -227,6 +228,9 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
               parsed_options, static_cast<LrtQualcommOptionsGraphPriority>(*v));
         } else if (key == "saver_output_dir") {
           status = LrtQualcommOptionsSetSaverOutputDir(
+              parsed_options, std::string(value).c_str());
+        } else if (key == "schematic_dir") {
+          status = LrtQualcommOptionsSetSchematicDir(
               parsed_options, std::string(value).c_str());
         } else if (key == "graph_io_tensor_mem_type") {
           auto v = litert::internal::ParseTomlInt(value);
@@ -353,6 +357,9 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->saver_output_dir.has_value()) {
     toml << "saver_output_dir = \"" << *options->saver_output_dir << "\"\n";
   }
+  if (options->schematic_dir.has_value()) {
+    toml << "schematic_dir = \"" << *options->schematic_dir << "\"\n";
+  }
   if (options->graph_io_tensor_mem_type.has_value()) {
     toml << "graph_io_tensor_mem_type = "
          << static_cast<int>(*options->graph_io_tensor_mem_type) << "\n";
@@ -448,6 +455,29 @@ LiteRtStatus LrtQualcommOptionsGetSaverOutputDir(
   *saver_output_dir = options->saver_output_dir.has_value()
                           ? options->saver_output_dir->c_str()
                           : "";
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetSchematicDir(LrtQualcommOptions options,
+                                               const char* schematic_dir) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->schematic_dir = schematic_dir;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetSchematicDir(LrtQualcommOptions options,
+                                               const char** schematic_dir) {
+  if (options == nullptr || schematic_dir == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *schematic_dir =
+      options->schematic_dir.has_value() ? options->schematic_dir->c_str() : "";
 
   return kLiteRtStatusOk;
 }

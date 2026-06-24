@@ -41,10 +41,13 @@ enum class ElementType {
   Int16 = kLiteRtElementTypeInt16,
   Int32 = kLiteRtElementTypeInt32,
   Int64 = kLiteRtElementTypeInt64,
+  UInt4 = kLiteRtElementTypeUInt4,
   UInt8 = kLiteRtElementTypeUInt8,
   UInt16 = kLiteRtElementTypeUInt16,
   UInt32 = kLiteRtElementTypeUInt32,
   UInt64 = kLiteRtElementTypeUInt64,
+  Float8E4M3FN = kLiteRtElementTypeFloat8E4M3FN,
+  Float8E5M2 = kLiteRtElementTypeFloat8E5M2,
   Float16 = kLiteRtElementTypeFloat16,
   BFloat16 = kLiteRtElementTypeBFloat16,
   Float32 = kLiteRtElementTypeFloat32,
@@ -61,6 +64,8 @@ constexpr std::optional<ByteWidth> GetByteWidth(ElementType ty) {
   if (ty == ElementType::Bool)
     return ByteWidth(1);
   else if (ty == ElementType::Int4)
+    return ByteWidth(1, 2);
+  else if (ty == ElementType::UInt4)
     return ByteWidth(1, 2);
   else if (ty == ElementType::Int8)
     return ByteWidth(1);
@@ -82,6 +87,10 @@ constexpr std::optional<ByteWidth> GetByteWidth(ElementType ty) {
     return ByteWidth(2);
   else if (ty == ElementType::BFloat16)
     return ByteWidth(2);
+  else if (ty == ElementType::Float8E4M3FN)
+    return ByteWidth(1);
+  else if (ty == ElementType::Float8E5M2)
+    return ByteWidth(1);
   else if (ty == ElementType::Float32)
     return ByteWidth(4);
   else if (ty == ElementType::Float64)
