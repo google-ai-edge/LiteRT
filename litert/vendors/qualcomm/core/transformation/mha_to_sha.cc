@@ -674,7 +674,7 @@ size_t OptimizeMHAGemma4BPrefill(
   const auto head_dims = [&](const OpWrapper& op) {
     auto dims = op.GetOutputTensor(0).GetDimensions();
     dims.erase(dims.begin() + 1);
-    dims[1] /= static_cast<std::uint32_t>(num_attn_per_kv_heads);
+    // dims[1] /= static_cast<std::uint32_t>(num_attn_per_kv_heads);
     return dims;
   };
 
@@ -701,57 +701,102 @@ size_t OptimizeMHAGemma4BPrefill(
   // Build num_attn_heads SHAs.
   std::vector<ConstTensorWrapperRef> sha_outputs;
   sha_outputs.reserve(num_attn_heads);
+  std::cout << "num_kv_heads: " << num_kv_heads << std::endl;
+  std::cout << "num_attn_per_kv_heads: " << num_attn_per_kv_heads << std::endl;
   for (size_t i = 0; i < num_kv_heads; ++i) {
     for (size_t j = 0; j < num_attn_per_kv_heads; ++j) {
+      std::cout << "kv_heads: " << i << " attn_per_kv_heads: " << j << std::endl;
       const auto& query = query_unpack_outputs[i * num_attn_per_kv_heads + j];
 
       // Q x K cache.
       auto& qk_cache_output = tensor_pool.CloneNativeTensorFrom(
           q_kcache_matmul.GetOutputTensor(0), head_dims(q_kcache_matmul));
+      std::cout << "head_dims(q_kcache_matmul): " << std::endl;
+      for (auto e : head_dims(q_kcache_matmul)) {
+        std::cout << e << " ";
+      }
+      std::cout << std::endl;
       new_ops.emplace_back(CreateOpWithSameParams(
           q_kcache_matmul, {query, k_cache_unpack_outputs[i]},
           {qk_cache_output}));
+      std::cout << new_ops.back().GetName() << std::endl;
 
       // Q x K slice.
       auto& qk_slice_output = tensor_pool.CloneNativeTensorFrom(
           q_kslice_matmul.GetOutputTensor(0), head_dims(q_kslice_matmul));
+      std::cout << "head_dims(q_kslice_matmul): " << std::endl;
+      for (auto e : head_dims(q_kslice_matmul)) {
+        std::cout << e << " ";
+      }
+      std::cout << std::endl;
       new_ops.emplace_back(CreateOpWithSameParams(
           q_kslice_matmul, {query, k_slice_unpack_outputs[i]},
           {qk_slice_output}));
+      std::cout << new_ops.back().GetName() << std::endl;
 
       // Concat.
       auto& concat_output = tensor_pool.CloneNativeTensorFrom(
           qk_concat.GetOutputTensor(0), head_dims(qk_concat));
+      std::cout << "head_dims(qk_concat): " << std::endl;
+      for (auto e : head_dims(qk_concat)) {
+        std::cout << e << " ";
+      }
+      std::cout << std::endl;
       new_ops.emplace_back(CreateConcatenationOp(
           {qk_cache_output, qk_slice_output}, concat_output, 2));
 
       // Mask add.
       auto& mask_add_output = tensor_pool.CloneNativeTensorFrom(
           mask_add.GetOutputTensor(0), head_dims(mask_add));
+      std::cout << "head_dims(mask_add): " << std::endl;
+      for (auto e : head_dims(mask_add)) {
+        std::cout << e << " ";
+      }
+      std::cout << std::endl;
       new_ops.emplace_back(
           CreateElementWiseAddOp(concat_output, mask, mask_add_output));
 
       // Softmax.
       auto& softmax_output = tensor_pool.CloneNativeTensorFrom(
           softmax.GetOutputTensor(0), head_dims(softmax));
+      std::cout << "head_dims(softmax): " << std::endl;
+      for (auto e : head_dims(softmax)) {
+        std::cout << e << " ";
+      }
+      std::cout << std::endl;
       new_ops.emplace_back(
           CreateOpWithSameParams(softmax, {mask_add_output}, {softmax_output}));
 
       // Slice V cache.
       auto& vcache_slice_output = tensor_pool.CloneNativeTensorFrom(
           qk_vcache_slice.GetOutputTensor(0), head_dims(qk_vcache_slice));
+      std::cout << "head_dims(qk_vcache_slice): " << std::endl;
+      for (auto e : head_dims(qk_vcache_slice)) {
+        std::cout << e << " ";
+      }
+      std::cout << std::endl;
       new_ops.emplace_back(CreateSliceOp(softmax_output, vcache_slice_output,
                                          vcache_slice_ranges));
 
       // Slice V slice.
       auto& vslice_slice_output = tensor_pool.CloneNativeTensorFrom(
           qk_vslice_slice.GetOutputTensor(0), head_dims(qk_vslice_slice));
+      std::cout << "head_dims(qk_vslice_slice): " << std::endl;
+      for (auto e : head_dims(qk_vslice_slice)) {
+        std::cout << e << " ";
+      }
+      std::cout << std::endl;
       new_ops.emplace_back(CreateSliceOp(softmax_output, vslice_slice_output,
                                          vslice_slice_ranges));
 
       // QK x V cache.
       auto& qkv_cache_output = tensor_pool.CloneNativeTensorFrom(
           qk_vcache_matmul.GetOutputTensor(0), head_dims(qk_vcache_matmul));
+      std::cout << "head_dims(qk_vcache_matmul): " << std::endl;
+      for (auto e : head_dims(qk_vcache_matmul)) {
+        std::cout << e << " ";
+      }
+      std::cout << std::endl;
       new_ops.emplace_back(CreateOpWithSameParams(
           qk_vcache_matmul, {vcache_slice_output, v_cache_unpack_outputs[i]},
           {qkv_cache_output}));
@@ -759,6 +804,11 @@ size_t OptimizeMHAGemma4BPrefill(
       // QK x V slice.
       auto& qkv_slice_output = tensor_pool.CloneNativeTensorFrom(
           qk_vslice_matmul.GetOutputTensor(0), head_dims(qk_vslice_matmul));
+      std::cout << "head_dims(qk_vslice_matmul): " << std::endl;
+      for (auto e : head_dims(qk_vslice_matmul)) {
+        std::cout << e << " ";
+      }
+      std::cout << std::endl;
       new_ops.emplace_back(CreateOpWithSameParams(
           qk_vslice_matmul, {vslice_slice_output, v_slice_unpack_outputs[i]},
           {qkv_slice_output}));
@@ -766,12 +816,22 @@ size_t OptimizeMHAGemma4BPrefill(
       // QKV add.
       auto& qkv_add_output = tensor_pool.CloneNativeTensorFrom(
           qkv_add.GetOutputTensor(0), head_dims(qkv_add));
+      std::cout << "head_dims(qkv_add): " << std::endl;
+      for (auto e : head_dims(qkv_add)) {
+        std::cout << e << " ";
+      }
+      std::cout << std::endl;
       new_ops.emplace_back(CreateElementWiseAddOp(
           qkv_cache_output, qkv_slice_output, qkv_add_output));
 
       // Quantize.
       auto& quantize_output = tensor_pool.CloneNativeTensorFrom(
           quantize.GetOutputTensor(0), head_dims(quantize));
+      std::cout << "head_dims(quantize): " << std::endl;
+      for (auto e : head_dims(quantize)) {
+        std::cout << e << " ";
+      }
+      std::cout << std::endl;
       new_ops.emplace_back(
           CreateOpWithSameParams(quantize, {qkv_add_output}, {quantize_output}));
       sha_outputs.emplace_back(quantize_output);
@@ -788,19 +848,67 @@ size_t OptimizeMHAGemma4BPrefill(
       std::all_of(new_ops.begin(), new_ops.end(),
                   [validate_op_config](OpWrapper& op_wrapper) -> bool {
                     std::cout << "op_wrapper.GetName(): " << op_wrapper.GetName() << std::endl;
-                    if (op_wrapper.GetName() == "ElementWiseBinary_3900" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_3911" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_3922" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_3933" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_3944" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_3955" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_3966" ||
-                        op_wrapper.GetName() == "ElementWiseBinary_3977" ||
-                        op_wrapper.GetName() == "Pack_3985") {
+                    if ( /* op_wrapper.GetName() == "ElementWiseBinary_3900" || */
+                        // op_wrapper.GetName() == "ElementWiseBinary_3911" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_3922" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_3933" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_3944" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_3955" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_3966" ||
+                        // op_wrapper.GetName() == "ElementWiseBinary_3977" ||
+                        op_wrapper.GetName() == "Pack_3985" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_3994" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4005" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4016" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4027" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4038" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4049" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4060" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4071" ||
+                        op_wrapper.GetName() == "Pack_4079" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4088" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4099" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4110" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4121" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4132" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4143" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4154" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4165" ||
+                        op_wrapper.GetName() == "Pack_4173" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4182" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4193" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4204" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4215" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4226" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4237" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4248" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4259" ||
+                        op_wrapper.GetName() == "Pack_4267" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4276" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4287" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4298" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4309" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4320" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4331" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4342" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4353" ||
+                        op_wrapper.GetName() == "Pack_4361" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4370" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4381" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4392" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4403" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4414" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4425" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4436" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_4447" ||
+                        op_wrapper.GetName() == "Pack_4455") {
                         return true;
                     }
                     return validate_op_config(op_wrapper);
                   });
+    for (size_t i = 0; i < new_ops.size(); ++i) {
+      std::cout << "new_ops: " << new_ops[i].GetName() << std::endl;
+    }
   if (is_valid) {
     // Adjust the name to avoid a name collision in the Qnn JSON dump.
     for (size_t i = 0; i < new_ops.size(); ++i) {
