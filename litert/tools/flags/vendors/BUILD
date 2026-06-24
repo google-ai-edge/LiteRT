@@ -278,7 +278,7 @@ cc_library(
     name = "samsung_flags",
     srcs = ["samsung_flags.cc"],
     hdrs = ["samsung_flags.h"],
-    copts = [
+    copts = commandline_flag_copts() + [
         "-DINCLUDE_SAMSUNG_COMPILE_FLAGS",
         "-DINCLUDE_SAMSUNG_RUNTIME_FLAGS",
     ],
