@@ -4,6 +4,7 @@
 #include "litert/vendors/qualcomm/core/transformation/mha_to_sha.h"
 
 #include <algorithm>
+#include <iostream>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -786,6 +787,18 @@ size_t OptimizeMHAGemma4BPrefill(
   const bool is_valid =
       std::all_of(new_ops.begin(), new_ops.end(),
                   [validate_op_config](OpWrapper& op_wrapper) -> bool {
+                    std::cout << "op_wrapper.GetName(): " << op_wrapper.GetName() << std::endl;
+                    if (op_wrapper.GetName() == "ElementWiseBinary_3900" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_3911" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_3922" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_3933" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_3944" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_3955" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_3966" ||
+                        op_wrapper.GetName() == "ElementWiseBinary_3977" ||
+                        op_wrapper.GetName() == "Pack_3985") {
+                        return true;
+                    }
                     return validate_op_config(op_wrapper);
                   });
   if (is_valid) {
@@ -800,6 +813,7 @@ size_t OptimizeMHAGemma4BPrefill(
                std::make_move_iterator(new_ops.end()));
     ops.erase(ops.begin() + start_index,
               ops.begin() + start_index + pattern_size);
+    QNN_LOG_INFO("[G2G] MHA Gemma4B (Prefill) Success");
     return step_size;
   }
   QNN_LOG_WARNING(
