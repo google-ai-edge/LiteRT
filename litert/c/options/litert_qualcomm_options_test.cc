@@ -273,6 +273,20 @@ TEST(LiteRtQualcommOptionsTest, SaverOutputDir) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, SchematicDir) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsSetSchematicDir(qualcomm_options, "test_dir"));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetSchematicDir(), "test_dir");
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+
 TEST(LiteRtQualcommOptionsTest, GraphIOTensorMemType) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -445,6 +459,11 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_EQ(options->GetSaverOutputDir(), "");
   options->SetSaverOutputDir("tmp");
   EXPECT_EQ(options->GetSaverOutputDir(), "tmp");
+
+  EXPECT_EQ(options->GetSchematicDir(), "");
+  options->SetSchematicDir("tmp");
+  EXPECT_EQ(options->GetSchematicDir(), "tmp");
+
 
   EXPECT_EQ(options->GetGraphIOTensorMemType(),
             QualcommOptions::GraphIOTensorMemType::kMemHandle);
