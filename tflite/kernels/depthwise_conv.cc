@@ -162,7 +162,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
       TF_LITE_ENSURE_TYPES_EQ(context, bias->type, kTfLiteInt32);
       TF_LITE_ENSURE_EQ(context, bias->params.zero_point, 0);
     } else if (data_type == kTfLiteInt16) {
-      TF_LITE_ENSURE_TYPES_EQ(context, bias->type, kTfLiteInt64);
+      TF_LITE_ENSURE(context,
+                     bias->type == kTfLiteInt64 || bias->type == kTfLiteInt32);
       TF_LITE_ENSURE_EQ(context, bias->params.zero_point, 0);
     } else {
       TF_LITE_ENSURE_TYPES_EQ(context, bias->type, data_type);
@@ -490,6 +491,7 @@ TfLiteStatus EvalQuantizedPerChannel(TfLiteContext* context, TfLiteNode* node,
   return kTfLiteOk;
 }
 
+template <typename BiasType>
 TfLiteStatus EvalQuantizedPerChannel16x8(
     const TfLiteDepthwiseConvParams* params, const OpData* data,
     const TfLiteTensor* input, const TfLiteTensor* filter,
@@ -512,7 +514,7 @@ TfLiteStatus EvalQuantizedPerChannel16x8(
       data->per_channel_output_shift.data(), GetTensorShape(input),
       GetTensorData<int16>(input), GetTensorShape(filter),
       GetTensorData<int8>(filter), GetTensorShape(bias),
-      GetTensorData<std::int64_t>(bias), GetTensorShape(output),
+      GetTensorData<BiasType>(bias), GetTensorShape(output),
       GetTensorData<int16>(output));
 
   return kTfLiteOk;
@@ -634,8 +636,17 @@ TfLiteStatus EvalImpl(TfLiteContext* context, TfLiteNode* node) {
                                                   input, filter, bias, output);
       break;
     case kTfLiteInt16:
-      return EvalQuantizedPerChannel16x8(params, data, input, filter, bias,
-                                         output);
+      if (bias->type == kTfLiteInt64) {
+        return EvalQuantizedPerChannel16x8<int64_t>(params, data, input, filter,
+                                                    bias, output);
+      } else if (bias->type == kTfLiteInt32) {
+        return EvalQuantizedPerChannel16x8<int32_t>(params, data, input, filter,
+                                                    bias, output);
+      } else {
+        TF_LITE_KERNEL_LOG(context, "Bias type %s not supported for 16x8.",
+                           TfLiteTypeGetName(bias->type));
+        return kTfLiteError;
+      }
       break;
     default:
       TF_LITE_KERNEL_LOG(context, "Type %d not currently supported.",
