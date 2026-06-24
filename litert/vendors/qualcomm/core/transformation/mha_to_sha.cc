@@ -586,18 +586,19 @@ size_t OptimizeMHAGemma4BPrefill(
     std::function<bool(OpWrapper&)> validate_op_config,
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size) {
-  constexpr size_t kReshape0Idx = 0;
-  constexpr size_t kQKCacheMatmulIdx = 1;
-  constexpr size_t kQKSliceMatmulIdx = 2;
-  constexpr size_t kQKConcatIdx = 3;
-  constexpr size_t kMaskAddIdx = 4;
-  constexpr size_t kSoftmaxIdx = 5;
-  constexpr size_t kQKVCacheSliceIdx = 6;
-  constexpr size_t kQKVSliceSliceIdx = 7;
-  constexpr size_t kQKVCacheMatmulIdx = 8;
+  constexpr size_t kReshape0Idx = -2;
+  constexpr size_t kQKCacheMatmulIdx = 0;
+  constexpr size_t kQKSliceMatmulIdx = 1;
+  constexpr size_t kQKConcatIdx = 2;
+  constexpr size_t kMaskAddIdx = 3;
+  constexpr size_t kSoftmaxIdx = 4;
+  constexpr size_t kQKVCacheSliceIdx = 5;
+  constexpr size_t kQKVSliceSliceIdx = 6;
+  constexpr size_t kQKVCacheMatmulIdx = 7;
   constexpr size_t kQKVSliceMatmulIdx = 9;
   constexpr size_t kQKVAddIdx = 10;
   constexpr size_t kQuantizeIdx = 11;
+  constexpr size_t kReshape1Idx = 12;
 
   const auto& reshape0 = ops[start_index + kReshape0Idx];
   const auto& q_kcache_matmul = ops[start_index + kQKCacheMatmulIdx];
@@ -623,7 +624,7 @@ size_t OptimizeMHAGemma4BPrefill(
         is_connected(reshape0, 0, q_kslice_matmul, 0) &&
         is_connected(q_kcache_matmul, 0, qk_concat, 0) &&
         is_connected(q_kslice_matmul, 0, qk_concat, 1) &&
-        is_connected(qk_concat, 0, mask_add, 1) &&
+        is_connected(qk_concat, 0, mask_add, 0) &&
         is_connected(mask_add, 0, softmax, 0) &&
         is_connected(softmax, 0, qk_vcache_slice, 0) &&
         is_connected(softmax, 0, qk_vslice_slice, 0) &&
