@@ -421,6 +421,7 @@ REGISTER_SIMPLE_OP_BUILDER(BuildMaximumOp, BuildElementwiseMaximumOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildEluOp, BuildElementwiseEluOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildFloorOp, BuildElementwiseFloorOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildFloorDivOp, BuildElementwiseFloorDivOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildFloorModOp, BuildElementwiseFloorModOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildLogicalOrOp, BuildElementwiseOrOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildEmbeddingLookupOp, BuildEmbeddingLookupOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildGeluOp, BuildGeluOp)
@@ -1453,6 +1454,7 @@ GetOpBuilders() {
   builders[kLiteRtOpCodeTflUnpack] = Adapt<BuildUnpackOp>;
   builders[kLiteRtOpCodeTflReduceMin] = Adapt<BuildReduceMinOp>;
   builders[kLiteRtOpCodeTflFloorDiv] = Adapt<BuildFloorDivOp>;
+  builders[kLiteRtOpCodeTflFloorMod] = Adapt<BuildFloorModOp>;
   builders[kLiteRtOpCodeTflReduceAny] = Adapt<BuildReduceAnyOp>;
   builders[kLiteRtOpCodeTflSquare] = Adapt<BuildSquareOp>;
   builders[kLiteRtOpCodeTflResizeNearestNeighbor] =
