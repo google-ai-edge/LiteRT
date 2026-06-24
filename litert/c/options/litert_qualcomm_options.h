@@ -339,6 +339,13 @@ LiteRtStatus LrtQualcommOptionsSetSaverOutputDir(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetSaverOutputDir(LrtQualcommOptions options,
                                                  const char** saver_output_dir);
 
+LiteRtStatus LrtQualcommOptionsSetSchematicDir(LrtQualcommOptions options,
+                                               const char* schematic_dir);
+
+LiteRtStatus LrtQualcommOptionsGetSchematicDir(LrtQualcommOptions options,
+                                               const char** schematic_dir);
+
+
 LiteRtStatus LrtQualcommOptionsSetCustomOpPackage(
     LrtQualcommOptions options, const char* name,
     const char* interface_provider, const char* compile_package_path,

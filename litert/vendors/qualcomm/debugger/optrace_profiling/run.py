@@ -16,6 +16,15 @@ import numpy as np
 _MODEL = flags.DEFINE_string(
     "model", None, "path to the tflite model", short_name="m"
 )
+_CONTEXT_BINARY = flags.DEFINE_string(
+    "context_binary", None, "path to pre-existing QNN context binary (optional)"
+)
+_SCHEMATIC_FILE = flags.DEFINE_list(
+    "schematic_file",
+    None,
+    "comma-separated paths to schematic files (required if context_binary is"
+    " provided)",
+)
 _OUTPUT_DIR = flags.DEFINE_string(
     "output_dir", None, "path to output folder", short_name="o"
 )
@@ -27,7 +36,6 @@ _SOC_MODEL = flags.DEFINE_string("soc_model", None, "SoC Model (e.g. SM8650)")
 _HTP_ARCH = flags.DEFINE_string("htp_arch", None, "HTP Arch (e.g. V75)")
 _QAIRT_SDK = flags.DEFINE_string("qairt_sdk", None, "Path to qairt sdk folder")
 
-flags.mark_flag_as_required(_MODEL.name)
 flags.mark_flag_as_required(_OUTPUT_DIR.name)
 flags.mark_flag_as_required(_SERIAL.name)
 flags.mark_flag_as_required(_SOC_MODEL.name)
@@ -322,7 +330,11 @@ def _run_ctx_bin(
 
 
 def _generate_profiler_output(
-    adb_cmd: str, ctx_bin_name: str, output_dir: str, qairt_sdk: Path
+    adb_cmd: str,
+    ctx_bin_name: str,
+    output_dir: str,
+    qairt_sdk: Path,
+    schematic_file: Optional[str] = None,
 ) -> None:
   """Generate profiler output.
 
@@ -331,6 +343,7 @@ def _generate_profiler_output(
       ctx_bin_name (str): The name of the context binary.
       output_dir (str): The path to the output directory.
       qairt_sdk (Path): The path to the QAIRT SDK.
+      schematic_file (Optional[str]): The path to the schematic file.
   """
   logging.info("Exectuing qnn-profile-viewer with the outputs...")
   os.makedirs(output_dir, exist_ok=True)
@@ -338,24 +351,27 @@ def _generate_profiler_output(
   subprocess.run(cmd, check=True, shell=True)
   log_path = Path(_OUTPUT_DIR.value) / "output_htp" / "qnn-profiling-data_0.log"
 
-  workspace_dir = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
-  schematic_path = None
-  if workspace_dir:
-    schematic_path = (
-        Path(workspace_dir)
-        / "bazel-bin"
-        / "litert"
-        / "tools"
-        / "apply_plugin_main.runfiles"
-        / "litert"
-        / f"{ctx_bin_name}_schematic.bin"
-    )
+  if schematic_file:
+    schematic_path = Path(schematic_file)
+  else:
+    workspace_dir = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
+    schematic_path = None
+    if workspace_dir:
+      schematic_path = (
+          Path(workspace_dir)
+          / "bazel-bin"
+          / "litert"
+          / "tools"
+          / "apply_plugin_main.runfiles"
+          / "litert"
+          / f"{ctx_bin_name}_schematic.bin"
+      )
 
-  if not schematic_path or not schematic_path.exists():
-    schematic_path = Path(_OUTPUT_DIR.value) / f"{ctx_bin_name}_schematic.bin"
+    if not schematic_path or not schematic_path.exists():
+      schematic_path = Path(_OUTPUT_DIR.value) / f"{ctx_bin_name}_schematic.bin"
 
-  if not schematic_path.exists():
-    schematic_path = Path(f"{ctx_bin_name}_schematic.bin")
+    if not schematic_path.exists():
+      schematic_path = Path(f"{ctx_bin_name}_schematic.bin")
 
   logging.info("schematic_path %s", schematic_path)
 
@@ -435,6 +451,7 @@ def _generate_ctx_bin(
       f"--soc_model={soc_model.upper()}",
       "--qualcomm_profiling=optrace",
       f"--qualcomm_ir_json_dir={_OUTPUT_DIR.value}",
+      f"--qualcomm_schematic_dir={_OUTPUT_DIR.value}",
   ]
 
   env = os.environ.copy()
@@ -480,6 +497,13 @@ def main(argv):
   if len(argv) > 1:
     raise app.UsageError("Too many command-line arguments.")
 
+  if not _MODEL.value and not _CONTEXT_BINARY.value:
+    raise app.UsageError("Either --model or --context_binary must be provided.")
+  if _CONTEXT_BINARY.value and not _SCHEMATIC_FILE.value:
+    raise app.UsageError(
+        "--schematic_file is required if --context_binary is provided."
+    )
+
   working_dir = os.environ.get("BUILD_WORKING_DIRECTORY")
   if working_dir:
     logging.info("Changing working directory to %s", working_dir)
@@ -500,8 +524,23 @@ def main(argv):
 
   os.makedirs(_OUTPUT_DIR.value, exist_ok=True)
 
-  ctx_bin = _generate_ctx_bin(Path(_MODEL.value), _SOC_MODEL.value, qairt_sdk)
+  ctx_bin_provided = _CONTEXT_BINARY.value is not None
+
+  if ctx_bin_provided:
+    ctx_bin = Path(_CONTEXT_BINARY.value)
+  else:
+    ctx_bin = _generate_ctx_bin(Path(_MODEL.value), _SOC_MODEL.value, qairt_sdk)
+
   ctx_bin_info = _get_ctx_bin_info(str(ctx_bin), qairt_sdk)
+
+  if ctx_bin_provided:
+    num_graphs = len(ctx_bin_info["graphs"])
+    if len(_SCHEMATIC_FILE.value) != num_graphs:
+      raise app.UsageError(
+          f"Number of schematic files ({len(_SCHEMATIC_FILE.value)}) "
+          f"must match number of graphs ({num_graphs}) in context binary."
+      )
+
   adb_cmd = _get_adb_cmd(_HOSTNAME.value, _SERIAL.value)
 
   for index, _ in enumerate(ctx_bin_info["graphs"]):
@@ -515,15 +554,24 @@ def main(argv):
         len(ctx_bin_info["graphs"]),
     )
     profiling_output_dir = Path(_OUTPUT_DIR.value) / f"qnn_partition_{index}"
+    if ctx_bin_provided:
+      schematic_to_use = _SCHEMATIC_FILE.value[index]
+    else:
+      schematic_to_use = str(
+          Path(_OUTPUT_DIR.value) / f"qnn_partition_{index}_schematic.bin"
+      )
+
     _generate_profiler_output(
         adb_cmd,
         f"qnn_partition_{index}",
         str(profiling_output_dir),
         qairt_sdk,
+        schematic_file=schematic_to_use,
     )
     logging.info("Profiling data for qnn_partition_%d is generated.", index)
 
-  os.remove(ctx_bin)
+  if not ctx_bin_provided:
+    os.remove(ctx_bin)
   logging.info("Success! Profiling data is in %s", _OUTPUT_DIR.value)
 
 

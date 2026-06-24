@@ -130,5 +130,23 @@ TEST(LiteRtToFlatbufferTest, MapStaticTensorType) {
   EXPECT_TRUE(tfl_t->second.shape_signature.empty());
 }
 
+TEST(LiteRtToFlatbufferTest, MapStaticTensorFloat8Type) {
+  static constexpr int32_t kDims[] = {2, 2};
+
+  TensorType t;
+  t.first = kLiteRtRankedTensorType;
+  t.second.ranked_tensor_type.layout = BuildLayout(kDims);
+
+  t.second.ranked_tensor_type.element_type = kLiteRtElementTypeFloat8E4M3FN;
+  auto e4m3fn = MapTensorType(t);
+  ASSERT_TRUE(e4m3fn);
+  EXPECT_EQ(e4m3fn->first, TflElementType::TensorType_FLOAT8_E4M3FN);
+
+  t.second.ranked_tensor_type.element_type = kLiteRtElementTypeFloat8E5M2;
+  auto e5m2 = MapTensorType(t);
+  ASSERT_TRUE(e5m2);
+  EXPECT_EQ(e5m2->first, TflElementType::TensorType_FLOAT8_E5M2);
+}
+
 }  // namespace
 }  // namespace litert::internal

@@ -20,6 +20,7 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -30,6 +31,7 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_compiled_model.h"
@@ -49,6 +51,7 @@ limitations under the License.
 #include "tensor/internal/graph_traversal.h"
 #include "tensor/runners/litert/litert_buffer.h"
 #include "tensor/tensor.h"
+#include "tensor/utils/file_utils.h"
 
 namespace litert {
 namespace tensor {
@@ -58,7 +61,13 @@ class CompiledModelRunner {
  public:
   explicit CompiledModelRunner(Environment& env, Options& options,
                                ModelFunctor model_func,
-                               bool build_model_now = true);
+                               bool build_model_now = true,
+                               bool use_tmp_file = false);
+  ~CompiledModelRunner() {
+    if (!model_path_.empty()) {
+      RemoveFile(model_path_).IgnoreError();
+    }
+  }
 
   absl::Status BuildModel(
       const std::vector<Tensor<TfLiteMixinTag>>& output_tensors = {});
@@ -128,6 +137,8 @@ class CompiledModelRunner {
                                 GraphProbe::StableTensorIdHash>& probe_tensors);
 
  private:
+  static constexpr absl::string_view kTmpPathPrefix = "lrt";
+
   static Environment CreateEnvironmentOrDie() {
     LITERT_ASSIGN_OR_ABORT(auto env, Environment::Create({}));
     return env;
@@ -151,14 +162,11 @@ class CompiledModelRunner {
     return (reinterpret_cast<uintptr_t>(ptr) % kBufferAlignment) == 0;
   }
 
-  ModelFunctor model_func_;
-  Inputs inputs_;
-  Outputs outputs_;
+  std::optional<Outputs> outputs_;
 
   absl::flat_hash_map<GraphProbe::StableTensorId, std::string,
                       GraphProbe::StableTensorIdHash>
       probed_tensors_;
-  std::vector<char> model_buffer_;
   Environment& env_;
   Options& options_;
   CompiledModel compiled_model_;
@@ -173,17 +181,21 @@ class CompiledModelRunner {
     int index;
   };
   std::vector<ReplacedBuffer> replaced_buffers_;
+  std::vector<char> model_buffer_;
+  std::string model_path_;
+  bool use_tmp_file_;
 };
 
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 CompiledModelRunner<ModelFunctor, Inputs, Outputs>::CompiledModelRunner(
     Environment& env, Options& options, ModelFunctor model_func,
-    bool build_model_now)
-    : model_func_(model_func), env_(env), options_(options) {
-  outputs_ = model_func_(inputs_);
+    bool build_model_now, bool use_tmp_file)
+    : env_(env), options_(options), use_tmp_file_(use_tmp_file) {
+  Inputs inputs;
+  outputs_ = model_func(inputs);
   if (build_model_now) {
     std::vector<TensorTf> output_tensors;
-    for (auto const& [name, tensor_ptr] : outputs_.tensors()) {
+    for (auto const& [name, tensor_ptr] : outputs_->tensors()) {
       tensor_ptr->SetName(name);
       output_tensors.push_back(*tensor_ptr);
     }
@@ -194,16 +206,27 @@ CompiledModelRunner<ModelFunctor, Inputs, Outputs>::CompiledModelRunner(
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::BuildModel(
     const std::vector<TensorTf>& output_tensors) {
-  absl::Status status = Save(output_tensors, model_buffer_);
-  ABSL_CHECK_OK(status) << "Failed to serialize model to flatbuffer.";
-
-  BufferRef<> model_buffer(model_buffer_.data(), model_buffer_.size());
-  LITERT_ASSIGN_OR_RETURN(compiled_model_,
-                          CompiledModel::Create(env_, model_buffer, options_));
+  if (use_tmp_file_) {
+    if (!model_path_.empty()) {
+      LITERT_RETURN_IF_ERROR(RemoveFile(model_path_));
+      model_path_.clear();
+    }
+    LITERT_ASSIGN_OR_RETURN(model_path_, CreateTempFile(kTmpPathPrefix));
+    LITERT_RETURN_IF_ERROR(Save(output_tensors, model_path_));
+    LITERT_ASSIGN_OR_RETURN(compiled_model_,
+                            CompiledModel::Create(env_, model_path_, options_));
+  } else {
+    LITERT_RETURN_IF_ERROR(Save(output_tensors, model_buffer_));
+    BufferRef<> model_buffer(model_buffer_.data(), model_buffer_.size());
+    LITERT_ASSIGN_OR_RETURN(
+        compiled_model_, CompiledModel::Create(env_, model_buffer, options_));
+  }
 
   LITERT_ASSIGN_OR_RETURN(input_buffers_, compiled_model_.CreateInputBuffers());
   LITERT_ASSIGN_OR_RETURN(output_buffers_,
                           compiled_model_.CreateOutputBuffers());
+  // Okay to release the output tensors now as output buffers are created.
+  outputs_.reset();
   return absl::OkStatus();
 }
 
@@ -215,7 +238,7 @@ CompiledModelRunner<ModelFunctor, Inputs, Outputs>::AddTensorsAsOutputs(
   probed_tensors_ = probe_tensors;
 
   std::vector<TensorTf> original_output_tensors;
-  for (auto const& [name, tensor_ptr] : outputs_.tensors()) {
+  for (auto const& [name, tensor_ptr] : outputs_->tensors()) {
     tensor_ptr->SetName(name);
     original_output_tensors.push_back(*tensor_ptr);
   }
