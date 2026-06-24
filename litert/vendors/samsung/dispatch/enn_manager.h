@@ -40,6 +40,11 @@ class EnnManager {
   const PublicApi& Api() const;
   ~EnnManager();
 
+  // Guard flag for cross-destructor safety.
+  // WeightBinaryManager sets this in its destructor to call EnnDeinitialize()
+  // before EnnManager is destroyed (static destruction order is unspecified).
+  bool _enn_deinitialized_ = false;
+
  private:
   EnnManager();
   // Loads and resolve compiler related api

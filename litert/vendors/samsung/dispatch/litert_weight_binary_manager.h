@@ -30,7 +30,7 @@ namespace litert::samsung {
 
 class WeightBinaryManager {
  public:
-  static WeightBinaryManager& GetInstance(const EnnManager* enn_manager);
+  static WeightBinaryManager& GetInstance(EnnManager* enn_manager);
 
   WeightBinaryManager(const WeightBinaryManager&) = delete;
   WeightBinaryManager& operator=(const WeightBinaryManager&) = delete;
@@ -50,7 +50,7 @@ class WeightBinaryManager {
   void ClearAll();
 
  private:
-  explicit WeightBinaryManager(const EnnManager* enn_manager);
+  explicit WeightBinaryManager(EnnManager* enn_manager);
   ~WeightBinaryManager();
 
   struct Entry {
@@ -59,7 +59,7 @@ class WeightBinaryManager {
     int ref_count = 0;
   };
 
-  const EnnManager* enn_manager_;
+  EnnManager* enn_manager_;
   std::list<Entry> entries_;
   std::mutex mutex_;
 };

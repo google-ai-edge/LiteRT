@@ -233,7 +233,7 @@ Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
 }  // namespace litert::samsung
 
 LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
-    const ::litert::samsung::EnnManager* enn_manager,
+    ::litert::samsung::EnnManager* enn_manager,
     LiteRtDispatchDeviceContext device_context, const EnnModelId& model_id,
     int num_inputs, int num_outputs)
     : enn_manager_(enn_manager),
@@ -244,7 +244,7 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
 
 litert::Expected<LiteRtDispatchInvocationContextT::UniquePtr>
 LiteRtDispatchInvocationContextT::Create(
-    const ::litert::samsung::EnnManager* enn_manager,
+    ::litert::samsung::EnnManager* enn_manager,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,

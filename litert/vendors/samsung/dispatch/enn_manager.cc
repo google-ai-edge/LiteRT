@@ -57,7 +57,12 @@ Expected<EnnManager::UniquePtr> EnnManager::Create() {
 
 const EnnManager::PublicApi& EnnManager::Api() const { return *api_.get(); }
 
-EnnManager::~EnnManager() { Api().EnnDeinitialize(); }
+EnnManager::~EnnManager() {
+  if (!_enn_deinitialized_) {
+    _enn_deinitialized_ = true;
+    Api().EnnDeinitialize();
+  }
+}
 
 LiteRtStatus EnnManager::LoadEnnRuntimeLibrary(absl::string_view path) {
   auto loading_lib = SharedLibrary::Load(path, RtldFlags::Default());

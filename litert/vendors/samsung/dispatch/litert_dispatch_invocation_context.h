@@ -36,7 +36,7 @@ class LiteRtDispatchInvocationContextT {
   using UniquePtr = std::unique_ptr<LiteRtDispatchInvocationContextT>;
 
   static litert::Expected<UniquePtr> Create(
-      const ::litert::samsung::EnnManager* enn_manager,
+      ::litert::samsung::EnnManager* enn_manager,
       LiteRtDispatchDeviceContext device_context,
       LiteRtDispatchExecutableType exec_type,
       const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
@@ -73,7 +73,7 @@ private:
   };
 
   LiteRtDispatchInvocationContextT(
-      const ::litert::samsung::EnnManager* enn_manager,
+      ::litert::samsung::EnnManager* enn_manager,
       LiteRtDispatchDeviceContext device_context, const EnnModelId& model_id,
       int num_inputs, int num_outputs);
 
@@ -92,7 +92,7 @@ private:
     weight_signatures_ = std::move(signatures);
   }
 
-  const ::litert::samsung::EnnManager* enn_manager_;
+  ::litert::samsung::EnnManager* enn_manager_;
   LiteRtDispatchDeviceContext device_context_;
   std::optional<LiteRtSchedulingInfo> scheduling_info_;
   EnnModelId model_id_;
