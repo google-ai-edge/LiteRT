@@ -14,7 +14,6 @@
 #include "litert/vendors/qualcomm/core/transformation/mask.h"
 #include "litert/vendors/qualcomm/core/transformation/matmul_convert.h"
 #include "litert/vendors/qualcomm/core/transformation/mha_to_sha.h"
-#include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 
 namespace qnn {
@@ -255,7 +254,7 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
       QnnOpCode::kMatMul,
       QnnOpCode::kMatMul,
       QnnOpCode::kElementWiseBinary,
-      QnnOpCode::kConvert,
+      QnnOpCode::kQuantize,
       QnnOpCode::kReshape,
     };
   Transform(validate_op_config, ops, tensor_pool, gemma_4_mha_prefill,

@@ -19,7 +19,6 @@
 #include "litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/pack_op_builder.h"
-#include "litert/vendors/qualcomm/core/builders/quantize_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/reshape_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/split_op_builder.h"
@@ -598,7 +597,7 @@ size_t OptimizeMHAGemma4BPrefill(
   constexpr size_t kQKVCacheMatmulIdx = 8;
   constexpr size_t kQKVSliceMatmulIdx = 9;
   constexpr size_t kQKVAddIdx = 10;
-  constexpr size_t kConvertIdx = 11;
+  constexpr size_t kQuantizeIdx = 11;
 
   const auto& reshape0 = ops[start_index + kReshape0Idx];
   const auto& q_kcache_matmul = ops[start_index + kQKCacheMatmulIdx];
@@ -611,7 +610,7 @@ size_t OptimizeMHAGemma4BPrefill(
   const auto& qk_vcache_matmul = ops[start_index + kQKVCacheMatmulIdx];
   const auto& qk_vslice_matmul = ops[start_index + kQKVSliceMatmulIdx];
   const auto& qkv_add = ops[start_index + kQKVAddIdx];
-  const auto& convert = ops[start_index + kConvertIdx];
+  const auto& quantize = ops[start_index + kQuantizeIdx];
 
   // Connection check.
   const auto is_connected =
@@ -620,25 +619,11 @@ size_t OptimizeMHAGemma4BPrefill(
     return output.GetOutputTensor(output_tensor_index) ==
            input.GetInputTensor(input_tensor_index);
   };
-  // The mask-add takes the concat output and the mask in an unspecified order
-  // (the real model feeds concat as input 0, while some graphs use input 1).
-  // Detect which operand is the concat so the mask is the other one.
-  size_t mask_add_concat_idx = 0;
-  if (is_connected(qk_concat, 0, mask_add, 0)) {
-    mask_add_concat_idx = 0;
-  } else if (is_connected(qk_concat, 0, mask_add, 1)) {
-    mask_add_concat_idx = 1;
-  } else {
-    QNN_LOG_WARNING(
-        "[G2G] Failed to check connectivity when doing MHA-SHA transformation "
-        "for Gemma4B prefill.");
-    return 1;
-  }
-  const size_t mask_add_mask_idx = 1 - mask_add_concat_idx;
   if (!(is_connected(reshape0, 0, q_kcache_matmul, 0) &&
         is_connected(reshape0, 0, q_kslice_matmul, 0) &&
         is_connected(q_kcache_matmul, 0, qk_concat, 0) &&
         is_connected(q_kslice_matmul, 0, qk_concat, 1) &&
+        is_connected(qk_concat, 0, mask_add, 1) &&
         is_connected(mask_add, 0, softmax, 0) &&
         is_connected(softmax, 0, qk_vcache_slice, 0) &&
         is_connected(softmax, 0, qk_vslice_slice, 0) &&
@@ -646,7 +631,7 @@ size_t OptimizeMHAGemma4BPrefill(
         is_connected(qk_vslice_slice, 0, qk_vslice_matmul, 0) &&
         is_connected(qk_vcache_matmul, 0, qkv_add, 0) &&
         is_connected(qk_vslice_matmul, 0, qkv_add, 1) &&
-        is_connected(qkv_add, 0, convert, 0) &&
+        is_connected(qkv_add, 0, quantize, 0) &&
         IsElementWiseAdd(mask_add) && IsElementWiseAdd(qkv_add))) {
     QNN_LOG_WARNING(
         "[G2G] Failed to check connectivity when doing MHA-SHA transformation "
@@ -709,7 +694,7 @@ size_t OptimizeMHAGemma4BPrefill(
   auto& vcache_slice_ranges = build_slice_ranges(qk_vcache_slice);
   auto& vslice_slice_ranges = build_slice_ranges(qk_vslice_slice);
 
-  const auto& mask = mask_add.GetInputTensor(mask_add_mask_idx);
+  const auto& mask = mask_add.GetInputTensor(0);
 
   // Build num_attn_heads SHAs.
   std::vector<ConstTensorWrapperRef> sha_outputs;
@@ -782,12 +767,12 @@ size_t OptimizeMHAGemma4BPrefill(
       new_ops.emplace_back(CreateElementWiseAddOp(
           qkv_cache_output, qkv_slice_output, qkv_add_output));
 
-      // Convert.
-      auto& convert_output = tensor_pool.CloneNativeTensorFrom(
-          convert.GetOutputTensor(0), head_dims(convert));
+      // Quantize.
+      auto& quantize_output = tensor_pool.CloneNativeTensorFrom(
+          quantize.GetOutputTensor(0), head_dims(quantize));
       new_ops.emplace_back(
-          CreateConvertOp(qkv_add_output, convert_output));
-      sha_outputs.emplace_back(convert_output);
+          CreateOpWithSameParams(quantize, {qkv_add_output}, {quantize_output}));
+      sha_outputs.emplace_back(quantize_output);
     }
   }
 
