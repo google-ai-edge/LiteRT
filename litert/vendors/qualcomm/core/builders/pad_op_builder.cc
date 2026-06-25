@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -25,6 +26,38 @@ constexpr size_t kInputIndex = 0;
 constexpr size_t kPadAmountIndex = 1;
 constexpr size_t kPadConstValueIndex = 2;
 constexpr size_t kOutputIndex = 0;
+
+template <typename T>
+std::optional<std::int32_t> ReadPadConstValueAsInt32(
+    const TensorWrapper& tensor) {
+  const auto pad_const_data = tensor.GetTensorData<T>();
+  if (!pad_const_data.has_value()) {
+    QNN_LOG_ERROR("Failed to get pad const value data.");
+    return std::nullopt;
+  }
+  return static_cast<std::int32_t>(pad_const_data.value()[0]);
+}
+
+std::optional<std::int32_t> GetQuantizedPadConstValue(
+    const TensorWrapper& tensor) {
+  switch (tensor.GetDataType()) {
+    case QNN_DATATYPE_SFIXED_POINT_8:
+      return ReadPadConstValueAsInt32<std::int8_t>(tensor);
+    case QNN_DATATYPE_UFIXED_POINT_8:
+      return ReadPadConstValueAsInt32<std::uint8_t>(tensor);
+    case QNN_DATATYPE_SFIXED_POINT_16:
+      return ReadPadConstValueAsInt32<std::int16_t>(tensor);
+    case QNN_DATATYPE_UFIXED_POINT_16:
+      return ReadPadConstValueAsInt32<std::uint16_t>(tensor);
+    case QNN_DATATYPE_INT_32:
+    case QNN_DATATYPE_SFIXED_POINT_32:
+      return ReadPadConstValueAsInt32<std::int32_t>(tensor);
+    default:
+      QNN_LOG_ERROR("Unsupported pad const value tensor data type %d.",
+                    tensor.GetDataType());
+      return std::nullopt;
+  }
+}
 
 }  // namespace
 
@@ -58,12 +91,11 @@ std::vector<OpWrapper> BuildPadOp(TensorPool& tensor_pool,
     std::int32_t pad_const_value = 0;
     if (inputs.size() >= kPadConstValueIndex + 1) {
       const auto pad_const_data =
-          inputs[kPadConstValueIndex].get().GetTensorData<std::int32_t>();
+          GetQuantizedPadConstValue(inputs[kPadConstValueIndex]);
       if (!pad_const_data.has_value()) {
-        QNN_LOG_ERROR("Failed to get pad const value data.");
         return {};
       }
-      pad_const_value = pad_const_data.value()[0];
+      pad_const_value = pad_const_data.value();
     } else {
       if (std::holds_alternative<ScaleOffsetQuantizeParamsWrapper>(
               input_tensor.GetQuantParams())) {
