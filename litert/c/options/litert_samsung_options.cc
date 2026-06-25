@@ -99,6 +99,10 @@ LiteRtStatus LrtGetOpaqueSamsungOptionsData(LrtSamsungOptions options,
          << (*options->enable_large_model_support ? "true" : "false") << "\n";
   }
 
+  if (options->soc_model.has_value()) {
+    toml << "samsung_soc_model = " << *options->soc_model << "\n";
+  }
+
   std::string toml_str = toml.str();
   *payload = new char[toml_str.size() + 1];
   memcpy(*payload, toml_str.c_str(), toml_str.size() + 1);

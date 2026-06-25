@@ -19,9 +19,9 @@ syntax = "proto3";
 
 package litert.lm.proto;
 
-import "litert/python/internal/llm_model_type.proto";
-import "litert/python/internal/sampler_params.proto";
-import "litert/python/internal/token.proto";
+import "third_party/odml/litert/litert/python/internal/llm_model_type.proto";
+import "third_party/odml/litert/litert/python/internal/sampler_params.proto";
+import "third_party/odml/litert/litert/python/internal/token.proto";
 
 message PromptAffixes {
   // Text prepended to the input prompt on the first chunck of the prefill call.

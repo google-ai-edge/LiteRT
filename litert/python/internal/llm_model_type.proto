@@ -19,7 +19,7 @@ syntax = "proto3";
 
 package litert.lm.proto;
 
-import "litert/python/internal/token.proto";
+import "third_party/odml/litert/litert/python/internal/token.proto";
 
 // The model type of the LLM.
 message LlmModelType {
