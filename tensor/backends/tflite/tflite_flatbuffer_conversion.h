@@ -34,11 +34,15 @@ limitations under the License.
 #include "tensor/backends/tflite/arithmetic_tflite.h"
 #include "tensor/backends/tflite/linked_flat_hash_map.h"
 #include "tensor/buffer.h"
+#include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
 #include "tensor/tensor.h"
+#include "tflite/c/c_api_types.h"
 #include "tflite/schema/mutable/schema_generated.h"
 
 namespace litert::tensor {
+
+absl::StatusOr<Type> FromTfLite(TfLiteType type);
 
 class ModelFactory {
  public:
