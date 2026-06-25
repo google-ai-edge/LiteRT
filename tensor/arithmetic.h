@@ -1812,6 +1812,58 @@ std::vector<Tensor<Mixins...>> Custom(
 }
 
 template <class... Mixins>
+std::vector<Tensor<Mixins...>> StableHloComposite(
+    absl::Span<Tensor<Mixins...>> inputs, std::string name,
+    std::vector<uint8_t> composite_attributes,
+    absl::Span<const Tensor<Mixins...>> decomposition_outputs,
+    int32_t version = 0, source_location loc = source_location::current()) {
+  if (decomposition_outputs.empty()) {
+    return {Tensor<Mixins...>(graph::ErrorTensor(
+        absl::InvalidArgumentError(
+            "StableHloComposite requires at least one decomposition output."),
+        loc))};
+  }
+
+  auto op = std::make_shared<graph::StableHloCompositeOperation>();
+  RegisterMixins<Mixins...>(op);
+  op->name = std::move(name);
+  op->composite_attributes = std::move(composite_attributes);
+  op->version = version;
+  AddInputs(op, inputs);
+
+  std::vector<Tensor<Mixins...>> outputs;
+  outputs.reserve(decomposition_outputs.size());
+  op->decomposition_outputs.reserve(decomposition_outputs.size());
+  for (const auto& decomposition_output : decomposition_outputs) {
+    op->decomposition_outputs.push_back(decomposition_output.GetRaw());
+    const graph::TensorInformation& decomposition_info =
+        *GetInfo(decomposition_output.GetRaw());
+    Tensor<Mixins...> output = AddOutput(op, loc);
+    graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
+    output_info.shape = decomposition_info.shape;
+    output_info.type = decomposition_info.type;
+    output_info.quantization = decomposition_info.quantization;
+    outputs.push_back(output);
+  }
+  graph::OpDebugger::DebugOp(*op);
+  return outputs;
+}
+
+template <class... Mixins>
+std::vector<Tensor<Mixins...>> StableHloComposite(
+    std::initializer_list<Tensor<Mixins...>> inputs, std::string name,
+    std::vector<uint8_t> composite_attributes,
+    std::initializer_list<Tensor<Mixins...>> decomposition_outputs,
+    int32_t version = 0, source_location loc = source_location::current()) {
+  std::vector input_storage(inputs);
+  std::vector decomposition_output_storage(decomposition_outputs);
+  return StableHloComposite(absl::MakeSpan(input_storage), std::move(name),
+                            std::move(composite_attributes),
+                            absl::MakeConstSpan(decomposition_output_storage),
+                            version, loc);
+}
+
+template <class... Mixins>
 std::vector<Tensor<Mixins...>> TopK(
     Tensor<Mixins...> input, Tensor<Mixins...> k,
     source_location loc = source_location::current()) {
