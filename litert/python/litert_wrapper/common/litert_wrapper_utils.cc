@@ -82,6 +82,12 @@ const char* ElementTypeToString(ElementType dtype) {
       return "float32";
     case ElementType::Float16:
       return "float16";
+    case ElementType::BFloat16:
+      return "bfloat16";
+    case ElementType::Float8E4M3FN:
+      return "float8_e4m3fn";
+    case ElementType::Float8E5M2:
+      return "float8_e5m2";
     case ElementType::Int32:
       return "int32";
     case ElementType::UInt8:
