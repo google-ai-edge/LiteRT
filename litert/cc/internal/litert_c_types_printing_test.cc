@@ -27,6 +27,9 @@ namespace {
 TEST(LitertCTypesPrintingTest, LiteRtElementType) {
   EXPECT_EQ(absl::StrFormat("%v", kLiteRtElementTypeInt32), "i32");
   EXPECT_EQ(absl::StrFormat("%v", kLiteRtElementTypeFloat32), "f32");
+  EXPECT_EQ(absl::StrFormat("%v", kLiteRtElementTypeFloat8E4M3FN),
+            "f8e4m3fn");
+  EXPECT_EQ(absl::StrFormat("%v", kLiteRtElementTypeFloat8E5M2), "f8e5m2");
 }
 
 TEST(LitertCTypesPrintingTest, LiteRtLayoutScalar) {

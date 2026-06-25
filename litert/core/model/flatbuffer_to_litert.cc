@@ -117,6 +117,8 @@ LiteRtElementType MapElementType(TflElementType type) {
       return kLiteRtElementTypeInt8;
     case tflite::TensorType_UINT8:
       return kLiteRtElementTypeUInt8;
+    case tflite::TensorType_UINT4:
+      return kLiteRtElementTypeUInt4;
     case tflite::TensorType_INT4:
       return kLiteRtElementTypeInt4;
     case tflite::TensorType_INT2:
@@ -125,6 +127,10 @@ LiteRtElementType MapElementType(TflElementType type) {
       return kLiteRtElementTypeTfResource;
     case tflite::TensorType_STRING:
       return kLiteRtElementTypeTfString;
+    case tflite::TensorType_FLOAT8_E4M3FN:
+      return kLiteRtElementTypeFloat8E4M3FN;
+    case tflite::TensorType_FLOAT8_E5M2:
+      return kLiteRtElementTypeFloat8E5M2;
     default:
       return kLiteRtElementTypeNone;
   }
