@@ -326,6 +326,23 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
     };
     Transform(validate_op_config, ops, tensor_pool, fc,
                 ConvertFcToHadamardTransform);
+    // // SwiGLU + Hadamard + down-projection FC: parallel Proj blocks w/ Add.
+    // const std::vector<QnnOpCode> swiglu_hadamard_with_fc = {
+    //     QnnOpCode::kFullyConnected,     // gate FC
+    //     QnnOpCode::kReshape,            // reshape after gate FC (keep_num_dims)
+    //     QnnOpCode::kElementWiseNeuron,  // logistic (sigmoid)
+    //     QnnOpCode::kElementWiseBinary,  // mul: gate × sigmoid = SiLU
+    //     QnnOpCode::kFullyConnected,     // up FC
+    //     QnnOpCode::kReshape,            // reshape after up FC (keep_num_dims)
+    //     QnnOpCode::kElementWiseBinary,  // mul: SiLU × up
+    //     QnnOpCode::kReshape,            // pre-Hadamard reshape
+    //     QnnOpCode::kHadamardTransform,
+    //     QnnOpCode::kReshape,            // post-Hadamard reshape
+    //     QnnOpCode::kFullyConnected,     // down FC
+    //     QnnOpCode::kReshape,            // reshape after down FC
+    // };
+    // Transform(validate_op_config, ops, tensor_pool, swiglu_hadamard_with_fc,
+    //           ParallelizeSwiGLUHadamardTransform);
     // SwiGLU + Hadamard Transform: parallel Proj blocks.
     const std::vector<QnnOpCode> swiglu_hadamard = {
         QnnOpCode::kFullyConnected,     // gate FC

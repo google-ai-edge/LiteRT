@@ -22,6 +22,11 @@
 namespace qnn {
 namespace {
 
+// Set to 1 to use a balanced adder tree for the down-projection partial-sum
+// reduction in ParallelizeSwiGLUHadamardTransform (depth = ceil(log2(N))).
+// Set to 0 (default) for a sequential linear chain (depth = N-1).
+#define QNN_G2G_SWIGLU_ADDER_TREE 1
+
 void CloneNamespace(const OpWrapper& source, OpWrapper& destination,
                     absl::string_view additional_namespace = {}) {
   absl::string_view start_op_name = source.GetName();
@@ -78,6 +83,8 @@ size_t ParallelizeSwiGLUHadamardTransform(
   static constexpr size_t kPreReshapeIdx   = 7;
   static constexpr size_t kHadamardIdx     = 8;
   static constexpr size_t kPostReshapeIdx  = 9;
+  static constexpr size_t kFcDownIdx       = 10;
+  static constexpr size_t kReshapeDownIdx  = 11;
 
   const auto& fc_gate       = ops[start_index + kFcGateIdx];
   const auto& reshape_gate  = ops[start_index + kReshapeGateIdx];
@@ -189,6 +196,39 @@ size_t ParallelizeSwiGLUHadamardTransform(
     return 1;
   }
   const std::uint32_t N = NxH / H;
+
+  // Early validation for the 12-op case (down FC + reshape).
+  if (pattern_size >= 12) {
+    const auto& fc_down      = ops[start_index + kFcDownIdx];
+    const auto& reshape_down = ops[start_index + kReshapeDownIdx];
+    if (fc_down.GetInputTensor(0) != final_output) {
+      QNN_LOG_WARNING("[G2G] SwiGLU bail: fc_down input != post-hadamard reshape output");
+      return 1;
+    }
+    if (reshape_down.GetInputTensor(0) != fc_down.GetOutputTensor(0)) {
+      QNN_LOG_WARNING("[G2G] SwiGLU bail: reshape_down input != fc_down output");
+      return 1;
+    }
+    const auto& w_down = fc_down.GetInputTensor(1);
+    if (w_down.GetRank() != 2 || !w_down.IsTensorStatic()) {
+      QNN_LOG_WARNING("[G2G] SwiGLU bail: w_down rank=%d static=%d",
+                      w_down.GetRank(), w_down.IsTensorStatic());
+      return 1;
+    }
+    if (w_down.GetDimension(1) != NxH) {
+      QNN_LOG_WARNING("[G2G] SwiGLU bail: w_down in_features=%d != NxH=%d",
+                      w_down.GetDimension(1), NxH);
+      return 1;
+    }
+    if (w_down.IsPerChannelQuant()) {
+      const auto* aq = std::get_if<AxisScaleOffsetQuantizeParamsWrapper>(
+          &w_down.GetQuantParams());
+      if (aq == nullptr || aq->GetAxis() != 0) {
+        QNN_LOG_WARNING("[G2G] SwiGLU bail: w_down per-channel quant axis != 0");
+        return 1;
+      }
+    }
+  }
 
   // Weight byte-slicing helpers (axis 0: output-channel dimension).
   auto make_weight_bytes = [](const TensorWrapper& weight, std::uint32_t chunk,
@@ -341,11 +381,97 @@ size_t ParallelizeSwiGLUHadamardTransform(
     proj_outputs.emplace_back(had_out_i);
   }
 
-  // Concat all Hadamard outputs → final_output.
-  const std::uint32_t concat_axis = final_output.GetRank() - 1;
-  auto& concat = new_ops.emplace_back(
-      CreateConcatenationOp(proj_outputs, final_output, concat_axis));
-  CloneNamespace(fc_gate, concat, std::to_string(start_index));
+  if (pattern_size >= 12) {
+    // Down-projection FC splitting + Add accumulation.
+    const auto& fc_down       = ops[start_index + kFcDownIdx];
+    const auto& reshape_down  = ops[start_index + kReshapeDownIdx];
+    const auto& w_down        = fc_down.GetInputTensor(1);
+    const std::uint32_t num_units    = w_down.GetDimension(0);
+    const auto& fc_down_output       = fc_down.GetOutputTensor(0);
+    const auto& final_reshape_output = reshape_down.GetOutputTensor(0);
+
+    const Qnn_Tensor_t& w_qnn    = w_down.GetQnnTensor();
+    const auto* raw_bytes = static_cast<const std::byte*>(w_qnn.v2.clientBuf.data);
+    const size_t total_bytes     = w_qnn.v2.clientBuf.dataSize;
+    if (raw_bytes == nullptr || total_bytes == 0 || total_bytes % num_units != 0) return 1;
+    const size_t bytes_per_row   = total_bytes / num_units;
+    if (bytes_per_row % N != 0) return 1;
+    const size_t bytes_per_chunk = bytes_per_row / N;
+
+    const bool has_bias = fc_down.GetInputTensorCount() >= 3;
+
+    std::vector<qnn::ConstTensorWrapperRef> partial_outputs;
+    partial_outputs.reserve(N);
+    for (std::uint32_t i = 0; i < N; ++i) {
+      std::vector<std::byte> chunk(num_units * bytes_per_chunk);
+      for (std::uint32_t r = 0; r < num_units; ++r) {
+        std::memcpy(chunk.data() + r * bytes_per_chunk,
+                    raw_bytes + r * bytes_per_row + i * bytes_per_chunk,
+                    bytes_per_chunk);
+      }
+      auto& sliced_w = tensor_pool.CreateStaticTensor(
+          w_down.GetDataType(), w_down.GetQuantParams(),
+          {num_units, H},
+          static_cast<std::uint32_t>(chunk.size()), chunk.data());
+
+      const auto& partial_out = tensor_pool.CloneNativeTensorFrom(fc_down_output);
+      std::vector<qnn::ConstTensorWrapperRef> fc_inputs;
+      fc_inputs.emplace_back(proj_outputs[i]);
+      fc_inputs.emplace_back(sliced_w);
+      if (i == 0 && has_bias) fc_inputs.emplace_back(fc_down.GetInputTensor(2));
+      auto& partial_fc = new_ops.emplace_back(
+          CreateOpWithSameParams(fc_down, fc_inputs, {partial_out}));
+      CloneNamespace(fc_gate, partial_fc, std::to_string(i));
+      partial_outputs.emplace_back(partial_out);
+    }
+
+    // Accumulate partial FC outputs into fc_down_output.
+#if QNN_G2G_SWIGLU_ADDER_TREE
+    // Balanced adder tree: depth = ceil(log2(N)).
+    std::vector<qnn::ConstTensorWrapperRef> level_inputs = partial_outputs;
+    while (level_inputs.size() > 1) {
+      std::vector<qnn::ConstTensorWrapperRef> level_outputs;
+      level_outputs.reserve((level_inputs.size() + 1) / 2);
+      for (size_t j = 0; j + 1 < level_inputs.size(); j += 2) {
+        const bool is_very_last = (level_inputs.size() == 2 && j == 0);
+        const TensorWrapper& add_out =
+            is_very_last ? fc_down_output
+                         : tensor_pool.CloneNativeTensorFrom(fc_down_output);
+        auto& add = new_ops.emplace_back(CreateElementWiseAddOp(
+            level_inputs[j].get(), level_inputs[j + 1].get(), add_out));
+        CloneNamespace(fc_gate, add, absl::StrCat("tree_", j));
+        level_outputs.emplace_back(add_out);
+      }
+      if (level_inputs.size() % 2 == 1) {
+        level_outputs.emplace_back(level_inputs.back());
+      }
+      level_inputs = std::move(level_outputs);
+    }
+#else
+    // Linear chain: depth = N-1.
+    qnn::ConstTensorWrapperRef running_sum = partial_outputs[0];
+    for (std::uint32_t i = 1; i < N; ++i) {
+      const bool is_last = (i + 1 == N);
+      const TensorWrapper& add_out =
+          is_last ? fc_down_output
+                  : tensor_pool.CloneNativeTensorFrom(fc_down_output);
+      auto& add = new_ops.emplace_back(
+          CreateElementWiseAddOp(running_sum.get(), partial_outputs[i].get(), add_out));
+      CloneNamespace(fc_gate, add, std::to_string(i));
+      running_sum = add_out;
+    }
+#endif
+
+    // Preserve the reshape that follows the down FC.
+    make_reshape_op(reshape_down, fc_down_output, final_reshape_output,
+                    static_cast<std::uint32_t>(start_index));
+  } else {
+    // Concat all Hadamard outputs → final_output.
+    const std::uint32_t concat_axis = final_output.GetRank() - 1;
+    auto& concat = new_ops.emplace_back(
+        CreateConcatenationOp(proj_outputs, final_output, concat_axis));
+    CloneNamespace(fc_gate, concat, std::to_string(start_index));
+  }
 
   // Validate new graph.
   const bool is_valid = true;
@@ -354,8 +480,8 @@ size_t ParallelizeSwiGLUHadamardTransform(
                 return validate_op_config(op_wrapper);
               });
   if (is_valid) {
-    QNN_LOG_INFO("[G2G] ParallelizeSwiGLUHadamardTransform @ %d, N=%d",
-                 start_index, N);
+    QNN_LOG_INFO("[G2G] ParallelizeSwiGLUHadamardTransform @ %d, N=%d, with_down_fc=%d",
+                 start_index, N, pattern_size >= 12 ? 1 : 0);
     for (size_t i = 0; i < new_ops.size(); ++i) {
       new_ops[i].AddSuffixToName(absl::StrCat("_qcg2g_", i));
     }
