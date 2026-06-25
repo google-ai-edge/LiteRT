@@ -587,19 +587,20 @@ size_t OptimizeMHAGemma4BPrefill(
     std::function<bool(OpWrapper&)> validate_op_config,
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size) {
-  constexpr size_t kReshape0Idx = -2;
-  constexpr size_t kQKCacheMatmulIdx = 0;
-  constexpr size_t kQKSliceMatmulIdx = 1;
-  constexpr size_t kQKConcatIdx = 2;
-  constexpr size_t kMaskAddIdx = 3;
-  constexpr size_t kSoftmaxIdx = 4;
-  constexpr size_t kQKVCacheSliceIdx = 5;
-  constexpr size_t kQKVSliceSliceIdx = 6;
-  constexpr size_t kQKVCacheMatmulIdx = 7;
-  constexpr size_t kQKVSliceMatmulIdx = 9;
-  constexpr size_t kQKVAddIdx = 10;
-  constexpr size_t kQuantizeIdx = 11;
-  constexpr size_t kReshape1Idx = 12;
+  constexpr size_t kReshape0Idx = 0;
+  // A Convert (Quantize) far away
+  constexpr size_t kQKCacheMatmulIdx = 2;
+  constexpr size_t kQKSliceMatmulIdx = 3;
+  constexpr size_t kQKConcatIdx = 4;
+  constexpr size_t kMaskAddIdx = 5;
+  constexpr size_t kSoftmaxIdx = 6;
+  constexpr size_t kQKVCacheSliceIdx = 7;
+  constexpr size_t kQKVSliceSliceIdx = 8;
+  constexpr size_t kQKVCacheMatmulIdx = 9;
+  constexpr size_t kQKVSliceMatmulIdx = 10;
+  constexpr size_t kQKVAddIdx = 11;
+  constexpr size_t kQuantizeIdx = 12;
+  constexpr size_t kReshape1Idx = 13;
 
   const auto& reshape0 = ops[start_index + kReshape0Idx];
   const auto& q_kcache_matmul = ops[start_index + kQKCacheMatmulIdx];
@@ -613,6 +614,7 @@ size_t OptimizeMHAGemma4BPrefill(
   const auto& qk_vslice_matmul = ops[start_index + kQKVSliceMatmulIdx];
   const auto& qkv_add = ops[start_index + kQKVAddIdx];
   const auto& quantize = ops[start_index + kQuantizeIdx];
+  const auto& reshape1 = ops[start_index + kReshape1Idx];
 
   // Connection check.
   const auto is_connected =
@@ -898,26 +900,18 @@ size_t OptimizeMHAGemma4BPrefill(
     for (size_t i = 0; i < new_ops.size(); ++i) {
       new_ops[i].AddSuffixToName(absl::StrCat("_qcg2g_", i));
     }
-    // Remove 13 ops spanning kReshape0Idx (-2) through kReshape1Idx (+12),
-    // keeping the Convert at -1 and the Quantize at +8 in place.
-    // Perform erases in reverse-index order so earlier positions stay valid.
-
-    // Insert new_ops after +12 (before +13).
-    ops.insert(ops.begin() + start_index + 13,
+    // Insert new_ops
+    ops.insert(ops.begin() + start_index + pattern_size,
                std::make_move_iterator(new_ops.begin()),
                std::make_move_iterator(new_ops.end()));
-    // Erase +9..+12 (4 ops).
-    ops.erase(ops.begin() + start_index + 9,
-              ops.begin() + start_index + 13);
-    // Erase 0..+7 (8 ops).
-    ops.erase(ops.begin() + start_index,
-              ops.begin() + start_index + 8);
-    // Erase -2 (1 op).
-    ops.erase(ops.begin() + start_index - 2);
+    // Remove 13 ops in the pattern except the far away kQuantize (kConvert)
+    // Erase 2..13 (12 ops).
+    ops.erase(ops.begin() + start_index + kQKCacheMatmulIdx,
+              ops.begin() + start_index + kReshape1Idx + 1);
+    // Erase kReshape (1 op).
+    ops.erase(ops.begin() + start_index + kReshape0Idx);
 
     QNN_LOG_INFO("[G2G] MHA Gemma4B (Prefill) Success");
-    // After the three erases the new_ops land at [start_index .. start_index +
-    // new_ops.size() - 1], so Transform's next scan position is correct with:
     return new_ops.size();
   }
   QNN_LOG_WARNING(

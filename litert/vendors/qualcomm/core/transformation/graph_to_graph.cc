@@ -112,6 +112,12 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
     };
     Transform(validate_op_config, ops, tensor_pool, matmul_convert_prefill,
               FuseMatMulConvertPrefill);
+    const std::vector<QnnOpCode> convert_matmul_prefill = {
+        QnnOpCode::kConvert,
+        QnnOpCode::kMatMul,
+    };
+    Transform(validate_op_config, ops, tensor_pool, convert_matmul_prefill,
+              FuseConvertMatMulPrefill);
   }
   // MHA Optimization
   if (g2g_option == G2GConfig::kMHAOpt) {
@@ -243,21 +249,20 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
 
   // Gemma 4 Optimization
   const std::vector<QnnOpCode> gemma_4_mha_prefill = {
-      // QnnOpCode::kReshape, // 269
-      // QnnOpCode::kConvert, // 270
-      QnnOpCode::kMatMul, // 271
-      QnnOpCode::kMatMul, // 272
-      QnnOpCode::kConcat, // 273
-      QnnOpCode::kElementWiseBinary, // 274
-      QnnOpCode::kSoftmax, // 275
-      QnnOpCode::kStridedSlice, // 276
-      QnnOpCode::kStridedSlice, // 277
+      QnnOpCode::kReshape, // 121
+      QnnOpCode::kConvert, // 122 Far away
+      QnnOpCode::kMatMul, // 123
+      QnnOpCode::kMatMul, // 125
+      QnnOpCode::kConcat, // 126
+      QnnOpCode::kElementWiseBinary, // 127
+      QnnOpCode::kSoftmax, // 128
+      QnnOpCode::kStridedSlice, // 129
+      QnnOpCode::kStridedSlice, // 130
       QnnOpCode::kMatMul, // 278
-      // QnnOpCode::kQuantize, // 279
-      // QnnOpCode::kMatMul, // 280
-      // QnnOpCode::kElementWiseBinary, // 281
-      // QnnOpCode::kQuantize, // 282
-      // QnnOpCode::kReshape, // 283
+      QnnOpCode::kMatMul, // 280
+      QnnOpCode::kElementWiseBinary, // 281
+      QnnOpCode::kConvert, // 282
+      QnnOpCode::kReshape, // 283
     };
   Transform(validate_op_config, ops, tensor_pool, gemma_4_mha_prefill,
             OptimizeMHAGemma4BPrefill);
