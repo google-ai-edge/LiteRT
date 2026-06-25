@@ -35,6 +35,7 @@ limitations under the License.
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
+#include "tensor/arithmetic_graph.h"
 #include "tensor/backends/tflite/arithmetic_tflite.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
@@ -411,6 +412,9 @@ absl::Status ModelFactory::Build() {
     if (build_info.builtin_options.has_value()) {
       op.builtin_options = *build_info.builtin_options;
     }
+    if (build_info.builtin_options_2.has_value()) {
+      op.builtin_options_2 = std::move(*build_info.builtin_options_2);
+    }
     if (build_info.builtin_code == tflite::BuiltinOperator_CUSTOM) {
       if (build_info.custom_options != nullptr) {
         op.custom_options = *build_info.custom_options;
@@ -508,10 +512,51 @@ absl::Status ModelFactory::WriteBufferData(std::ofstream& output_file) {
   return absl::OkStatus();
 }
 
+absl::Status ModelFactory::AddReferencedSubgraphs(
+    const std::vector<TensorHandle>& outputs) {
+  LRT_TENSOR_ASSIGN_OR_RETURN(auto execution_plan,
+                              GetExecutionPlan(absl::MakeConstSpan(outputs)));
+  for (const graph::Operation* operation : execution_plan) {
+    auto composite_data =
+        dynamic_cast<const graph::StableHloCompositeOperation*>(operation);
+    if (composite_data == nullptr) {
+      continue;
+    }
+    if (composite_data->decomposition_outputs.empty()) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          operation->GetName(), " requires a decomposition subgraph."));
+    }
+
+    std::vector<TensorHandle> decomposition_outputs;
+    decomposition_outputs.reserve(composite_data->decomposition_outputs.size());
+    for (const graph::Tensor& output : composite_data->decomposition_outputs) {
+      decomposition_outputs.emplace_back(output);
+    }
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        int decomposition_subgraph_index,
+        AddSubgraphWithIndex(std::move(decomposition_outputs)));
+    auto* mutable_composite_data =
+        const_cast<graph::StableHloCompositeOperation*>(composite_data);
+    mutable_composite_data->decomposition_subgraph_index =
+        decomposition_subgraph_index;
+  }
+  return absl::OkStatus();
+}
+
 absl::Status ModelFactory::AddSubgraph(std::vector<TensorHandle> outputs) {
+  LRT_TENSOR_ASSIGN_OR_RETURN(auto subgraph_index,
+                              AddSubgraphWithIndex(std::move(outputs)));
+  (void)subgraph_index;
+  return absl::OkStatus();
+}
+
+absl::StatusOr<int> ModelFactory::AddSubgraphWithIndex(
+    std::vector<TensorHandle> outputs) {
+  LRT_TENSOR_RETURN_IF_ERROR(AddReferencedSubgraphs(outputs));
+  const int subgraph_index = model_.subgraphs.size();
   LRT_TENSOR_RETURN_IF_ERROR(Explore(std::move(outputs)));
   LRT_TENSOR_RETURN_IF_ERROR(Build());
-  return absl::OkStatus();
+  return subgraph_index;
 }
 
 absl::Status ModelFactory::AddSignature(std::vector<TensorHandle> outputs,

@@ -1799,6 +1799,66 @@ std::vector<Tensor<Mixins...>> Custom(
   return outputs;
 }
 
+namespace detail {
+
+inline bool ContainsTensor(const std::vector<graph::Tensor>& tensors,
+                           const graph::Tensor& tensor) {
+  return absl::c_find(tensors, tensor) != tensors.end();
+}
+
+inline absl::Status CollectProducerGraphTensors(
+    const graph::Tensor& tensor, std::vector<graph::Tensor>& tensors) {
+  if (ContainsTensor(tensors, tensor)) {
+    return absl::OkStatus();
+  }
+  LRT_TENSOR_RETURN_IF_ERROR(graph::GetStatus(tensor));
+  tensors.push_back(tensor);
+
+  auto producer_or = graph::GetProducer(tensor);
+  if (!producer_or.ok()) {
+    return producer_or.status();
+  }
+  std::shared_ptr<graph::Operation> producer = *producer_or;
+  if (producer == nullptr) {
+    return absl::OkStatus();
+  }
+  for (const graph::Tensor& input : producer->inputs) {
+    LRT_TENSOR_RETURN_IF_ERROR(CollectProducerGraphTensors(input, tensors));
+  }
+  return absl::OkStatus();
+}
+
+inline absl::Status ValidateStableHloCompositeDecompositionGraph(
+    const std::vector<graph::Tensor>& inputs,
+    const std::vector<graph::Tensor>& decomposition_outputs) {
+  std::vector<graph::Tensor> input_graph_tensors;
+  for (const graph::Tensor& input : inputs) {
+    LRT_TENSOR_RETURN_IF_ERROR(
+        CollectProducerGraphTensors(input, input_graph_tensors));
+  }
+
+  std::vector<graph::Tensor> decomposition_graph_tensors;
+  for (const graph::Tensor& decomposition_output : decomposition_outputs) {
+    LRT_TENSOR_RETURN_IF_ERROR(CollectProducerGraphTensors(
+        decomposition_output, decomposition_graph_tensors));
+  }
+
+  for (const graph::Tensor& decomposition_tensor :
+       decomposition_graph_tensors) {
+    if (ContainsTensor(input_graph_tensors, decomposition_tensor)) {
+      return absl::InvalidArgumentError(
+          "StableHloComposite decomposition outputs must belong to a separate "
+          "decomposition graph and cannot share Tensor API tensors with the "
+          "composite input graph.");
+    }
+  }
+  return absl::OkStatus();
+}
+
+}  // namespace detail
+
+
+
 template <class... Mixins>
 std::vector<Tensor<Mixins...>> Custom(
     std::initializer_list<Tensor<Mixins...>> inputs, std::string custom_code,
@@ -1809,6 +1869,72 @@ std::vector<Tensor<Mixins...>> Custom(
   std::vector input_storage(inputs);
   return Custom(absl::MakeSpan(input_storage), std::move(custom_code),
                 std::move(custom_options), output_shapes, output_types, loc);
+}
+
+template <class... Mixins>
+std::vector<Tensor<Mixins...>> StableHloComposite(
+    absl::Span<Tensor<Mixins...>> inputs, std::string name,
+    std::vector<uint8_t> composite_attributes,
+    absl::Span<const Tensor<Mixins...>> decomposition_outputs,
+    int32_t version = 0, source_location loc = source_location::current()) {
+  if (decomposition_outputs.empty()) {
+    return {Tensor<Mixins...>(graph::ErrorTensor(
+        absl::InvalidArgumentError(
+            "StableHloComposite requires at least one decomposition output."),
+        loc))};
+  }
+
+  auto op = std::make_shared<graph::StableHloCompositeOperation>();
+  RegisterMixins<Mixins...>(op);
+  std::vector<graph::Tensor> raw_inputs;
+  raw_inputs.reserve(inputs.size());
+  for (const auto& input : inputs) {
+    raw_inputs.push_back(input.GetRaw());
+  }
+  op->decomposition_outputs.reserve(decomposition_outputs.size());
+  for (const auto& decomposition_output : decomposition_outputs) {
+    op->decomposition_outputs.push_back(decomposition_output.GetRaw());
+  }
+  if (absl::Status status =
+          detail::ValidateStableHloCompositeDecompositionGraph(
+              raw_inputs, op->decomposition_outputs);
+      !status.ok()) {
+    return {Tensor<Mixins...>(graph::ErrorTensor(status, loc))};
+  }
+
+  op->name = std::move(name);
+  op->composite_attributes = std::move(composite_attributes);
+  op->version = version;
+  AddInputs(op, inputs);
+
+  std::vector<Tensor<Mixins...>> outputs;
+  outputs.reserve(decomposition_outputs.size());
+  for (const auto& decomposition_output : decomposition_outputs) {
+    const graph::TensorInformation& decomposition_info =
+        *GetInfo(decomposition_output.GetRaw());
+    Tensor<Mixins...> output = AddOutput(op, loc);
+    graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
+    output_info.shape = decomposition_info.shape;
+    output_info.type = decomposition_info.type;
+    output_info.quantization = decomposition_info.quantization;
+    outputs.push_back(output);
+  }
+  graph::OpDebugger::DebugOp(*op);
+  return outputs;
+}
+
+template <class... Mixins>
+std::vector<Tensor<Mixins...>> StableHloComposite(
+    std::initializer_list<Tensor<Mixins...>> inputs, std::string name,
+    std::vector<uint8_t> composite_attributes,
+    std::initializer_list<Tensor<Mixins...>> decomposition_outputs,
+    int32_t version = 0, source_location loc = source_location::current()) {
+  std::vector input_storage(inputs);
+  std::vector decomposition_output_storage(decomposition_outputs);
+  return StableHloComposite(absl::MakeSpan(input_storage), std::move(name),
+                            std::move(composite_attributes),
+                            absl::MakeConstSpan(decomposition_output_storage),
+                            version, loc);
 }
 
 template <class... Mixins>

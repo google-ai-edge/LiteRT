@@ -20,6 +20,7 @@ limitations under the License.
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -28,6 +29,7 @@ limitations under the License.
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "tensor/arithmetic.h"
 #include "tensor/backends/tflite/arithmetic_tflite.h"
 #include "tensor/buffer.h"
@@ -42,6 +44,7 @@ limitations under the License.
 #include "tflite/interpreter.h"
 #include "tflite/model_builder.h"
 #include "tflite/schema/mutable/schema_generated.h"
+#include "tflite/signature_runner.h"
 #include "tflite/test_util.h"
 
 namespace litert::tensor {
@@ -51,10 +54,12 @@ using ::litert::tensor::IsOk;
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
 using ::testing::Eq;
+using ::testing::FloatNear;
 using ::testing::IsNull;
 using ::testing::Lt;
 using ::testing::Not;
 using ::testing::Pointee;
+using ::testing::Pointwise;
 using ::testing::SizeIs;
 using ::testing::StrEq;
 using ::testing::UnorderedElementsAre;
@@ -1641,6 +1646,226 @@ TEST(SerializationTest, CanSerializeCustom) {
               ElementsAre(1, 2, 3));
 }
 
+TEST(SerializationTest, CanSerializeStableHloComposite) {
+  const std::vector<uint8_t> composite_attributes = {1, 2, 3};
+  std::vector<char> model_data;
+  {
+    TensorTf a({.name = "a", .type = Type::kFP32, .shape = {2, 5}});
+    TensorTf b({.name = "b", .type = Type::kFP32, .shape = {2, 5}});
+    TensorTf decomposition_a(
+        {.name = "decomposition_a", .type = Type::kFP32, .shape = {2, 5}});
+    TensorTf decomposition_b(
+        {.name = "decomposition_b", .type = Type::kFP32, .shape = {2, 5}});
+    TensorTf decomposition =
+        Add(decomposition_a, decomposition_b).SetName("decomposition");
+    std::vector<TensorTf> outputs = StableHloComposite(
+        {a, b}, "odml.test_composite", composite_attributes, {decomposition},
+        /*version=*/7);
+    outputs[0].SetName("composite");
+
+    ASSERT_THAT(Save(outputs, model_data), IsOk());
+  }
+
+  auto model = tflite::FlatBufferModel::BuildFromBuffer(model_data.data(),
+                                                        model_data.size());
+  ASSERT_NE(model, nullptr);
+  const auto* tfl_model = model->GetModel();
+  ASSERT_THAT(tfl_model->subgraphs(), Pointee(SizeIs(2)));
+  ASSERT_THAT(tfl_model->operator_codes(), Pointee(SizeIs(2)));
+
+  const auto* decomposition_subgraph = tfl_model->subgraphs()->Get(0);
+  ASSERT_THAT(decomposition_subgraph->inputs(), Pointee(SizeIs(2)));
+  ASSERT_THAT(decomposition_subgraph->operators(), Pointee(SizeIs(1)));
+  const auto* decomposition_a_tensor = decomposition_subgraph->tensors()->Get(
+      decomposition_subgraph->inputs()->Get(0));
+  const auto* decomposition_b_tensor = decomposition_subgraph->tensors()->Get(
+      decomposition_subgraph->inputs()->Get(1));
+  ASSERT_NE(decomposition_a_tensor, nullptr);
+  ASSERT_NE(decomposition_b_tensor, nullptr);
+  ASSERT_NE(decomposition_a_tensor->name(), nullptr);
+  ASSERT_NE(decomposition_b_tensor->name(), nullptr);
+  EXPECT_THAT(decomposition_a_tensor->name()->str(), StrEq("decomposition_a"));
+  EXPECT_THAT(decomposition_b_tensor->name()->str(), StrEq("decomposition_b"));
+  const auto* decomposition_op = decomposition_subgraph->operators()->Get(0);
+  const int decomposition_opcode_index = decomposition_op->opcode_index();
+  EXPECT_EQ(tfl_model->operator_codes()
+                ->Get(decomposition_opcode_index)
+                ->builtin_code(),
+            tflite::BuiltinOperator_ADD);
+
+  const auto* composite_subgraph = tfl_model->subgraphs()->Get(1);
+  ASSERT_THAT(composite_subgraph->inputs(), Pointee(SizeIs(2)));
+  ASSERT_THAT(composite_subgraph->operators(), Pointee(SizeIs(1)));
+  const auto* composite_a_tensor =
+      composite_subgraph->tensors()->Get(composite_subgraph->inputs()->Get(0));
+  const auto* composite_b_tensor =
+      composite_subgraph->tensors()->Get(composite_subgraph->inputs()->Get(1));
+  ASSERT_NE(composite_a_tensor, nullptr);
+  ASSERT_NE(composite_b_tensor, nullptr);
+  ASSERT_NE(composite_a_tensor->name(), nullptr);
+  ASSERT_NE(composite_b_tensor->name(), nullptr);
+  EXPECT_THAT(composite_a_tensor->name()->str(), StrEq("a"));
+  EXPECT_THAT(composite_b_tensor->name()->str(), StrEq("b"));
+  EXPECT_NE(decomposition_a_tensor, composite_a_tensor);
+  EXPECT_NE(decomposition_b_tensor, composite_b_tensor);
+  const auto* composite_op = composite_subgraph->operators()->Get(0);
+  const int composite_opcode_index = composite_op->opcode_index();
+  EXPECT_EQ(
+      tfl_model->operator_codes()->Get(composite_opcode_index)->builtin_code(),
+      tflite::BuiltinOperator_STABLEHLO_COMPOSITE);
+  ASSERT_EQ(composite_op->builtin_options_2_type(),
+            tflite::BuiltinOptions2_StableHLOCompositeOptions);
+  const auto* composite_options =
+      composite_op->builtin_options_2_as_StableHLOCompositeOptions();
+  ASSERT_NE(composite_options, nullptr);
+  ASSERT_NE(composite_options->name(), nullptr);
+  EXPECT_THAT(composite_options->name()->str(), StrEq("odml.test_composite"));
+  EXPECT_EQ(composite_options->decomposition_subgraph_index(), 0);
+  EXPECT_EQ(composite_options->version(), 7);
+  EXPECT_EQ(composite_options->composite_attributes_format(),
+            tflite::CustomOptionsFormat_FLEXBUFFERS);
+  ASSERT_NE(composite_options->composite_attributes(), nullptr);
+  EXPECT_THAT(*composite_options->composite_attributes(),
+              ElementsAreArray(composite_attributes));
+}
+
+TEST(SerializationTest, CanAuthorAndRunStableHloCompositeRmsNorm) {
+  constexpr char kSignature[] = "rms_norm";
+  constexpr float kEpsilon = 1.0e-6f;
+  flexbuffers::Builder attrs_builder;
+  attrs_builder.Map([&]() { attrs_builder.Float("epsilon", kEpsilon); });
+  attrs_builder.Finish();
+  const std::vector<uint8_t> composite_attributes = attrs_builder.GetBuffer();
+  const std::vector<float> input_data = {1.0f, 2.0f, 3.0f,  4.0f,
+                                         2.0f, 0.0f, -2.0f, 4.0f};
+  const std::vector<float> weight_data = {1.0f, 2.0f, 3.0f, 4.0f};
+  std::vector<char> model_data;
+  {
+    TensorTf input({.name = "input", .type = Type::kFP32, .shape = {2, 4}});
+    TensorTf weight({.name = "weight", .type = Type::kFP32, .shape = {4}});
+    TensorTf decomposition_input(
+        {.name = "decomposition_input", .type = Type::kFP32, .shape = {2, 4}});
+    TensorTf decomposition_weight(
+        {.name = "decomposition_weight", .type = Type::kFP32, .shape = {4}});
+
+    TensorTf square = Mul(decomposition_input, decomposition_input)
+                          .SetName("rms_norm_square");
+    TensorTf mean =
+        Mean(square, /*axes=*/{1}, /*keep_dims=*/true).SetName("rms_norm_mean");
+    TensorTf variance = Add(mean, kEpsilon).SetName("rms_norm_variance");
+    TensorTf inv_rms = Rsqrt(variance).SetName("rms_norm_inv_rms");
+    TensorTf normalized =
+        Mul(decomposition_input, inv_rms).SetName("rms_norm_normalized");
+    TensorTf rms_norm =
+        Mul(normalized, decomposition_weight).SetName("rms_norm");
+
+    std::vector<TensorTf> outputs =
+        StableHloComposite({input, weight}, "odml.rms_norm",
+                           composite_attributes, {rms_norm}, /*version=*/1);
+    outputs[0].SetName("composite_rms_norm");
+
+    ModelFactory model_builder;
+    std::vector<TensorHandle> erased_outputs(outputs.begin(), outputs.end());
+    ASSERT_THAT(
+        model_builder.AddSignature(std::move(erased_outputs), kSignature),
+        IsOk());
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(model_data,
+                                    model_builder.CreateFlatbuffer());
+  }
+
+  auto model = tflite::FlatBufferModel::BuildFromBuffer(model_data.data(),
+                                                        model_data.size());
+  ASSERT_NE(model, nullptr);
+  const auto* tfl_model = model->GetModel();
+  ASSERT_THAT(tfl_model->subgraphs(), Pointee(SizeIs(2)));
+  ASSERT_THAT(tfl_model->signature_defs(), Pointee(SizeIs(1)));
+  const auto* signature_def = tfl_model->signature_defs()->Get(0);
+  ASSERT_NE(signature_def, nullptr);
+  ASSERT_NE(signature_def->signature_key(), nullptr);
+  EXPECT_THAT(signature_def->signature_key()->str(), StrEq(kSignature));
+  EXPECT_EQ(signature_def->subgraph_index(), 1);
+
+  const auto GetBuiltinCode = [&](const tflite::SubGraph* subgraph,
+                                  int operator_index) {
+    const auto* op = subgraph->operators()->Get(operator_index);
+    const int opcode_index = op->opcode_index();
+    return tfl_model->operator_codes()->Get(opcode_index)->builtin_code();
+  };
+
+  const auto* decomposition_subgraph = tfl_model->subgraphs()->Get(0);
+  ASSERT_THAT(decomposition_subgraph->operators(), Pointee(SizeIs(6)));
+  EXPECT_THAT(
+      (std::vector<tflite::BuiltinOperator>{
+          GetBuiltinCode(decomposition_subgraph, 0),
+          GetBuiltinCode(decomposition_subgraph, 1),
+          GetBuiltinCode(decomposition_subgraph, 2),
+          GetBuiltinCode(decomposition_subgraph, 3),
+          GetBuiltinCode(decomposition_subgraph, 4),
+          GetBuiltinCode(decomposition_subgraph, 5),
+      }),
+      ElementsAre(tflite::BuiltinOperator_MUL, tflite::BuiltinOperator_MEAN,
+                  tflite::BuiltinOperator_ADD, tflite::BuiltinOperator_RSQRT,
+                  tflite::BuiltinOperator_MUL, tflite::BuiltinOperator_MUL));
+
+  const auto* composite_subgraph = tfl_model->subgraphs()->Get(1);
+  ASSERT_THAT(composite_subgraph->operators(), Pointee(SizeIs(1)));
+  const auto* composite_op = composite_subgraph->operators()->Get(0);
+  ASSERT_EQ(GetBuiltinCode(composite_subgraph, 0),
+            tflite::BuiltinOperator_STABLEHLO_COMPOSITE);
+  const auto* composite_options =
+      composite_op->builtin_options_2_as_StableHLOCompositeOptions();
+  ASSERT_NE(composite_options, nullptr);
+  ASSERT_NE(composite_options->name(), nullptr);
+  EXPECT_THAT(composite_options->name()->str(), StrEq("odml.rms_norm"));
+  EXPECT_EQ(composite_options->decomposition_subgraph_index(), 0);
+  EXPECT_EQ(composite_options->version(), 1);
+  EXPECT_EQ(composite_options->composite_attributes_format(),
+            tflite::CustomOptionsFormat_FLEXBUFFERS);
+  ASSERT_NE(composite_options->composite_attributes(), nullptr);
+  EXPECT_THAT(*composite_options->composite_attributes(),
+              ElementsAreArray(composite_attributes));
+  const flexbuffers::Map composite_attributes_map =
+      flexbuffers::GetRoot(composite_options->composite_attributes()->data(),
+                           composite_options->composite_attributes()->size())
+          .AsMap();
+  EXPECT_FLOAT_EQ(composite_attributes_map["epsilon"].AsFloat(), kEpsilon);
+
+  std::unique_ptr<tflite::Interpreter> interpreter;
+  tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates resolver;
+  ASSERT_EQ(tflite::InterpreterBuilder(*model, resolver)(&interpreter),
+            kTfLiteOk);
+
+  tflite::SignatureRunner* signature_runner =
+      interpreter->GetSignatureRunner(kSignature);
+  ASSERT_NE(signature_runner, nullptr);
+  ASSERT_EQ(signature_runner->input_size(), 2);
+  ASSERT_EQ(signature_runner->output_size(), 1);
+  ASSERT_EQ(signature_runner->AllocateTensors(), kTfLiteOk);
+
+  TfLiteTensor* runtime_input = signature_runner->input_tensor("input");
+  TfLiteTensor* runtime_weight = signature_runner->input_tensor("weight");
+  ASSERT_NE(runtime_input, nullptr);
+  ASSERT_NE(runtime_weight, nullptr);
+  ASSERT_THAT(runtime_input->dims, TfLiteArrayIs({2, 4}));
+  ASSERT_THAT(runtime_weight->dims, TfLiteArrayIs({4}));
+  std::memcpy(runtime_input->data.f, input_data.data(),
+              input_data.size() * sizeof(float));
+  std::memcpy(runtime_weight->data.f, weight_data.data(),
+              weight_data.size() * sizeof(float));
+
+  ASSERT_EQ(signature_runner->Invoke(), kTfLiteOk);
+
+  const TfLiteTensor* output =
+      signature_runner->output_tensor("composite_rms_norm");
+  ASSERT_NE(output, nullptr);
+  ASSERT_THAT(output->dims, TfLiteArrayIs({2, 4}));
+  absl::Span<const float> output_data(output->data.f, input_data.size());
+  const std::vector<float> expected = {0.36514834f, 1.46059334f, 3.286335f,
+                                       5.8423734f,  0.81649655f, 0.0f,
+                                       -2.4494896f, 6.5319724f};
+  EXPECT_THAT(output_data, Pointwise(FloatNear(1e-5), expected));
+}
+
 TEST(SerializationTest, CanSerializeTile) {
   const std::string model_path = testing::TempDir() + "/tile.tflite";
   TensorTf a({.type = Type::kFP32, .shape = {2, 3}});
@@ -2402,8 +2627,7 @@ TEST(SerializationTest, CanSerializeArgMax) {
   ASSERT_EQ(interpreter->nodes_size(), 1);
   const auto* node_and_reg = interpreter->node_and_registration(0);
   ASSERT_NE(node_and_reg, nullptr);
-  EXPECT_EQ(node_and_reg->second.builtin_code,
-            tflite::BuiltinOperator_ARG_MAX);
+  EXPECT_EQ(node_and_reg->second.builtin_code, tflite::BuiltinOperator_ARG_MAX);
   const auto* argmax_options = reinterpret_cast<const TfLiteArgMaxParams*>(
       node_and_reg->first.builtin_data);
   ASSERT_NE(argmax_options, nullptr);
