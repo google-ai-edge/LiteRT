@@ -78,6 +78,23 @@ TEST(FlatbufferToLiteRtTest, MapStaticTensorInt2Type) {
             kDimsSpan);
 }
 
+TEST(FlatbufferToLiteRtTest, MapStaticTensorFloat8Type) {
+  static constexpr int32_t kDims[] = {2, 2};
+  static constexpr auto kDimsSpan = absl::MakeConstSpan(kDims);
+
+  auto e4m3fn = MapTensorType(std::make_pair(
+      TflElementType::TensorType_FLOAT8_E4M3FN, TflShapeInfo(kDimsSpan)));
+  ASSERT_TRUE(e4m3fn);
+  EXPECT_EQ(e4m3fn->second.ranked_tensor_type.element_type,
+            kLiteRtElementTypeFloat8E4M3FN);
+
+  auto e5m2 = MapTensorType(std::make_pair(
+      TflElementType::TensorType_FLOAT8_E5M2, TflShapeInfo(kDimsSpan)));
+  ASSERT_TRUE(e5m2);
+  EXPECT_EQ(e5m2->second.ranked_tensor_type.element_type,
+            kLiteRtElementTypeFloat8E5M2);
+}
+
 TEST(FlatbufferToLiteRtTest, MapDynamicTensorType) {
   static constexpr int32_t kDims[] = {-1, 2};
   static constexpr auto kDimsSpan = absl::MakeConstSpan(kDims);

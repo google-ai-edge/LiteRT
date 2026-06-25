@@ -347,6 +347,7 @@ cc_library(
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
+        "//litert/cc/internal:litert_tensor_buffer_utils",
         "//litert/core/util:to_string",
     ],
 )

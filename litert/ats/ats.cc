@@ -363,8 +363,7 @@ void RegisterTranspose(const AtsConf& options, size_t& test_id, size_t iters,
           int64_t,
           uint64_t,
           float,
-          tflite::half,
-          litert::tensor::bf16_t>>
+          tflite::half>>
     (iters, test_id, options, cap);
   RegisterCombinations<
       Fixture,
@@ -483,6 +482,22 @@ void RegisterFullyConnected(const AtsConf& options, size_t& test_id,
 }
 
 template <typename Fixture>
+void RegisterConcatenation(const AtsConf& options, size_t& test_id,
+                           size_t iters, typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Concatenation,
+      SizeListC<2, 3, 4>,
+      TypeList<float>,
+      OpCodeListC<kLiteRtOpCodeTflConcatenation>,
+      SizeListC<0, 1>,
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
 void RegisterSoftmax(const AtsConf& options, size_t& test_id, size_t iters,
                      typename Fixture::Capture& cap) {
   // clang-format off
@@ -517,6 +532,7 @@ void RegisterAll(const AtsConf& options, size_t& test_id,
   RegisterTranspose<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterBatchMatmul<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterFullyConnected<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterConcatenation<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterSoftmax<Fixture>(options, test_id, /*iters=*/10, cap);
 }
 
