@@ -15,16 +15,15 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_TOOLS_EVALUATION_STAGES_TFLITE_INFERENCE_STAGE_H_
 #define TENSORFLOW_LITE_TOOLS_EVALUATION_STAGES_TFLITE_INFERENCE_STAGE_H_
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <memory>
 #include <vector>
 
 #include "xla/tsl/util/stats_calculator.h"
-#include "tflite/core/c/common.h"
-#include "tflite/core/interpreter.h"
-#include "tflite/core/kernels/register.h"
-#include "tflite/core/model.h"
+#include "tflite/c/common.h"
+#include "tflite/interpreter.h"
+#include "tflite/kernels/register.h"
+#include "tflite/model.h"
 #include "tflite/model_builder.h"
 #include "tflite/tools/evaluation/evaluation_delegate_provider.h"
 #include "tflite/tools/evaluation/evaluation_stage.h"
@@ -73,10 +72,10 @@ class TfliteInferenceStage : public EvaluationStage {
 
   // Provides a read-only view to the model's output tensor(s). Retains
   // ownership of object.
-  const std::vector<void*>* GetOutputs() const { return &outputs_; }
+  const std::vector<void*>* GetOutputs() const;
 
  private:
-  // Sets model_info_ & outputs_ after interpreter tensors are (re)allocated.
+  // Sets model_info_ after interpreter tensors are (re)allocated.
   void UpdateModelInfo();
 
   std::unique_ptr<FlatBufferModel> model_;
@@ -86,7 +85,7 @@ class TfliteInferenceStage : public EvaluationStage {
 
   TfLiteModelInfo model_info_;
   const std::vector<void*>* inputs_ = nullptr;
-  std::vector<void*> outputs_;
+  mutable std::vector<void*> outputs_;
 
   tsl::Stat<int64_t> latency_stats_;
 };
