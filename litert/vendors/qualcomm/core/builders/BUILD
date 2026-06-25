@@ -331,6 +331,22 @@ cc_library(
 )
 
 cc_library(
+    name = "splitv_op_builder",
+    srcs = ["splitv_op_builder.cc"],
+    hdrs = ["splitv_op_builder.h"],
+    deps = [
+        ":op_builder",
+        ":reshape_op_builder",
+        ":split_op_builder",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
     name = "tanh_op_builder",
     srcs = ["tanh_op_builder.cc"],
     hdrs = ["tanh_op_builder.h"],

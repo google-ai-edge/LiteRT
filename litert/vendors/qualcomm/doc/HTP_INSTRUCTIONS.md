@@ -9,21 +9,12 @@ below cover the following modes:
 > `.tflite` graph into a QNN context binary), not building the LiteRT source
 > code.
 
-| Mode        | Where      | Recompiles each     | Section                   |
-:             : compiled   : load                :                           :
+| Mode | Where compiled | Recompiles each load | Section |
 | ----------- | ---------- | ------------------- | ------------------------- |
-| **AOT       | Host (x86  | No, compiled        | [AOT Flow](#aot-flow) >   |
-: (Bazel)**   : Linux)     : offline             : [Build with               :
-:             :            :                     : Bazel](#build-with-bazel) :
-| **AOT       | Host (x86  | No, compiled        | [AOT Flow](#aot-flow) >   |
-: (CMake)**   : Linux)     : offline             : [Build with               :
-:             :            :                     : CMake](#build-with-cmake) :
-| **Real      | Device, at | Yes, in memory      | [JIT on                   |
-: JIT**       : load time  : without             : Android](#jit-on-android) :
-:             :            : serialization/cache :                           :
-| **On-device | Device, on | No, cached after    | [JIT on                   |
-: AOT**       : the first  : first load          : Android](#jit-on-android) :
-:             : load       :                     :                           :
+| **AOT (Bazel)** | Host (x86 Linux) | No, compiled offline | [AOT Flow](#aot-flow) > [Build with Bazel](#build-with-bazel) |
+| **AOT (CMake)** | Host (x86 Linux) | No, compiled offline | [AOT Flow](#aot-flow) > [Build with CMake](#build-with-cmake) |
+| **Real JIT** | Device, at load time | Yes, in memory without serialization/cache | [JIT on Android](#jit-on-android) |
+| **On-device AOT** | Device, on the first load | No, cached after first load | [JIT on Android](#jit-on-android) |
 
 AOT is the most common path. Choose JIT when you cannot pre-compile on a host.
 **Real JIT** recompiles in memory every load, while **On-device AOT** compiles
@@ -337,20 +328,10 @@ load.
 
 There are two JIT sub-modes, controlled by which flag is set:
 
-| Sub-mode     | Flags                             | Serialization           |
+| Sub-mode | Flags | Serialization |
 | ------------ | --------------------------------- | ----------------------- |
-| **Real JIT** | `--compiler_plugin_library_dir` + | Compiles in memory and  |
-:              : `--qualcomm_enable_just_in_time`  : **bypasses              :
-:              :                                   : serialization**.        :
-:              :                                   : Recompiles on every     :
-:              :                                   : load with no cache.     :
-| **On-device  | `--compiler_plugin_library_dir` + | Compiles on the first   |
-: AOT**        : `--compiler_cache_dir`            : run and **caches** the  :
-:              :                                   : context binary to       :
-:              :                                   : `--compiler_cache_dir`. :
-:              :                                   : Later runs load from    :
-:              :                                   : the cache instead of    :
-:              :                                   : recompiling.            :
+| **Real JIT** | `--compiler_plugin_library_dir` + `--qualcomm_enable_just_in_time` | Compiles in memory and **bypasses serialization**. Recompiles on every load with no cache. |
+| **On-device AOT** | `--compiler_plugin_library_dir` + `--compiler_cache_dir` | Compiles on the first run and **caches** the context binary to `--compiler_cache_dir`. Later runs load from the cache instead of recompiling. |
 
 In both cases the model is partitioned and compiled on the device, so the NPU
 accelerator must be requested via `--accelerator npu`.

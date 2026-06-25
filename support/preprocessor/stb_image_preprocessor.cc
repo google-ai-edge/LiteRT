@@ -138,110 +138,7 @@ absl::Status MaybeResizeImageWithSameAspectRatio(
 
 }  // namespace
 
-absl::StatusOr<InputImage> StbImagePreprocessor::PatchifyImage(
-    std::vector<float> image_data, const ImagePreprocessParameter& parameter) {
-  const auto& patchify_config = parameter.GetPatchifyConfig();
-  if (!patchify_config.has_value()) {
-    return absl::InternalError("Patchify config is not set.");
-  }
-  const int patch_width = patchify_config->patch_width;
-  if (patch_width <= 0) {
-    return absl::InvalidArgumentError("Patch width must be positive.");
-  }
 
-  const int patch_height = patchify_config->patch_height;
-  if (patch_height <= 0) {
-    return absl::InvalidArgumentError("Patch height must be positive.");
-  }
-
-  const Dimensions& target_dimensions = parameter.GetTargetDimensions();
-  if (target_dimensions.size() != 4) {
-    return absl::InvalidArgumentError("Target dimensions must be 4.");
-  }
-  const int batch_size = target_dimensions[0];
-  const int height = target_dimensions[1];
-  const int width = target_dimensions[2];
-  const int channels = target_dimensions[3];
-
-  if (image_data.size() != batch_size * height * width * channels) {
-    return absl::InvalidArgumentError(
-        "Image data size does not match target dimensions.");
-  }
-
-  if (height % patch_height != 0 || width % patch_width != 0) {
-    return absl::InvalidArgumentError(
-        "Image dimensions must be divisible by patch size.");
-  }
-
-  const int num_patches_h = height / patch_height;
-  const int num_patches_w = width / patch_width;
-  const int num_patches = num_patches_h * num_patches_w;
-
-  if (patchify_config->max_num_patches > 0 &&
-      num_patches > patchify_config->max_num_patches) {
-    return absl::InvalidArgumentError(absl::StrCat(
-        "Number of patches (", num_patches, ") exceeds max_num_patches (",
-        patchify_config->max_num_patches, ")."));
-  }
-
-  const int patch_dim = patch_width * patch_height * channels;
-
-  LITERT_ASSIGN_OR_RETURN(
-      auto patches_buffer,
-      ::litert::TensorBuffer::CreateManagedHostMemory(
-          MakeRankedTensorType<float>({batch_size, num_patches, patch_dim}),
-          batch_size * num_patches * patch_dim * sizeof(float)));
-
-  LITERT_ASSIGN_OR_RETURN(
-      auto positions_buffer,
-      ::litert::TensorBuffer::CreateManagedHostMemory(
-          MakeRankedTensorType<int32_t>({batch_size, num_patches, 2}),
-          batch_size * num_patches * 2 * sizeof(int32_t)));
-
-  LITERT_ASSIGN_OR_RETURN(
-      auto patches_lock,
-      ::litert::TensorBufferScopedLock::Create(
-          patches_buffer, ::litert::TensorBuffer::LockMode::kWrite));
-  float* patches_ptr = reinterpret_cast<float*>(patches_lock.second);
-
-  LITERT_ASSIGN_OR_RETURN(
-      auto positions_lock,
-      ::litert::TensorBufferScopedLock::Create(
-          positions_buffer, ::litert::TensorBuffer::LockMode::kWrite));
-  int32_t* positions_ptr = reinterpret_cast<int32_t*>(positions_lock.second);
-
-  for (int b = 0; b < batch_size; ++b) {
-    for (int h = 0; h < num_patches_h; ++h) {
-      for (int w = 0; w < num_patches_w; ++w) {
-        int patch_idx = h * num_patches_w + w;
-        int global_patch_idx = b * num_patches + patch_idx;
-
-        positions_ptr[global_patch_idx * 2] = w;
-        positions_ptr[global_patch_idx * 2 + 1] = h;
-
-        for (int ph = 0; ph < patch_height; ++ph) {
-          for (int pw = 0; pw < patch_width; ++pw) {
-            for (int c = 0; c < channels; ++c) {
-              int src_h = h * patch_height + ph;
-              int src_w = w * patch_width + pw;
-              int src_idx =
-                  ((b * height + src_h) * width + src_w) * channels + c;
-              int dest_idx = global_patch_idx * patch_dim +
-                             ((ph * patch_width + pw) * channels + c);
-              patches_ptr[dest_idx] = static_cast<float>(image_data[src_idx]);
-            }
-          }
-        }
-      }
-    }
-  }
-
-  absl::flat_hash_map<std::string, TensorBuffer> tensor_map;
-  tensor_map["images"] = std::move(patches_buffer);
-  tensor_map["positions_xy"] = std::move(positions_buffer);
-
-  return InputImage(std::move(tensor_map));
-}
 
 absl::StatusOr<InputImage> StbImagePreprocessor::Preprocess(
     const InputImage& input_image, const ImagePreprocessParameter& parameter) {
@@ -301,7 +198,7 @@ absl::StatusOr<InputImage> StbImagePreprocessor::Preprocess(
     for (size_t i = 0; i < resized_image_data.size(); ++i) {
       float_image[i] = static_cast<float>(resized_image_data[i]) / 255.0f;
     }
-    return PatchifyImage(std::move(float_image), updated_parameter);
+    return PatchifyImage(float_image, updated_parameter);
   } else {
     const int batch_size = target_dimensions.at(0);
     const int target_height = target_dimensions.at(1);

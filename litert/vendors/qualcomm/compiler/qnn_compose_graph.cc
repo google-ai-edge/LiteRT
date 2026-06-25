@@ -36,8 +36,8 @@
 #include <vector>
 
 #include "QnnCommon.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 #include "QnnOpDef.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/ascii.h"  // from @com_google_absl
@@ -103,6 +103,7 @@
 #include "litert/vendors/qualcomm/core/builders/softmax_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/spatial_transform_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/split_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/splitv_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/strided_slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/tanh_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/tile_op_builder.h"
@@ -781,6 +782,22 @@ LiteRtStatus BuildSplitOp(const litert::compiler::Op& litert_op,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus BuildSplitVOp(const litert::compiler::Op& litert_op,
+                           ::qnn::TensorPool& tensor_pool,
+                           std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                           std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                           std::vector<::qnn::OpWrapper>& op_wrappers) {
+  int32_t num_splits{};
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetSplitVNumSplitsOption(litert_op.Get(), &num_splits));
+  if (num_splits <= 0) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  op_wrappers = ::qnn::BuildSplitVOp(tensor_pool, input_tensors, output_tensors,
+                                     static_cast<std::uint32_t>(num_splits));
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus BuildTopkV2Op(const litert::compiler::Op& litert_op,
                            ::qnn::TensorPool& tensor_pool,
                            std::vector<::qnn::TensorWrapperRef>& input_tensors,
@@ -1345,6 +1362,7 @@ GetOpBuilders() {
   builders[kLiteRtOpCodeTflExp] = Adapt<BuildExpOp>;
   builders[kLiteRtOpCodeTflTopkV2] = Adapt<BuildTopkV2Op>;
   builders[kLiteRtOpCodeTflSplit] = Adapt<BuildSplitOp>;
+  builders[kLiteRtOpCodeTflSplitV] = Adapt<BuildSplitVOp>;
   builders[kLiteRtOpCodeTflLogSoftmax] = Adapt<BuildLogSoftmaxOp>;
   builders[kLiteRtOpCodeTflCast] = Adapt<BuildCastOp>;
   builders[kLiteRtOpCodeTflPrelu] = Adapt<BuildPreluOp>;

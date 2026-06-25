@@ -15,8 +15,6 @@
 #ifndef THIRD_PARTY_ODML_LITERT_SUPPORT_PREPROCESSOR_STB_IMAGE_PREPROCESSOR_H_
 #define THIRD_PARTY_ODML_LITERT_SUPPORT_PREPROCESSOR_STB_IMAGE_PREPROCESSOR_H_
 
-#include <vector>
-
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "support/preprocessor/image_preprocessor.h"
 #include "support/util/io_types.h"
@@ -35,11 +33,6 @@ class StbImagePreprocessor : public ImagePreprocessor {
   absl::StatusOr<InputImage> Preprocess(
       const InputImage& input_image,
       const ImagePreprocessParameter& parameter) override;
-
- private:
-  // Patchify the image into a tensor buffer.
-  absl::StatusOr<InputImage> PatchifyImage(
-      std::vector<float> image_data, const ImagePreprocessParameter& parameter);
 };
 
 }  // namespace litert::support

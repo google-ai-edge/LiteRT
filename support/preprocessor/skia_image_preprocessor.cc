@@ -18,6 +18,7 @@
 #include <memory>
 #include <tuple>  // IWYU pragma: keep
 #include <utility>
+#include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
@@ -28,6 +29,7 @@
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "support/preprocessor/image_preprocessor.h"
+#include "support/preprocessor/image_preprocessor_utils.h"
 #include "support/util/io_types.h"
 #include "support/util/status_macros.h"  // IWYU pragma: keep
 #include "include/codec/SkBmpDecoder.h"  // from @skia
@@ -49,6 +51,8 @@ std::unique_ptr<ImagePreprocessor> ImagePreprocessor::Create() {
 }
 
 namespace {
+
+constexpr int kDesiredChannels = 3;
 
 absl::StatusOr<sk_sp<SkImage>> DecodeDataAsImage(sk_sp<SkData> data) {
   if (!data) {
@@ -93,9 +97,52 @@ absl::StatusOr<InputImage> SkiaImagePreprocessor::Preprocess(
   }
 
   if (parameter.GetPatchifyConfig().has_value()) {
-    // TODO(b/515828541): Support patchify in SkiaImagePreprocessor.
-    return absl::UnimplementedError(
-        "Patchify is not supported in SkiaImagePreprocessor yet.");
+    ASSIGN_OR_RETURN(absl::string_view image_bytes,
+                     input_image.GetRawImageBytes());
+    sk_sp<SkData> image_data =
+        SkData::MakeWithoutCopy(image_bytes.data(), image_bytes.size());
+    ASSIGN_OR_RETURN(sk_sp<SkImage> image, DecodeDataAsImage(image_data));
+
+    // Get the target dimensions based on patchify config.
+    ASSIGN_OR_RETURN(auto size, GetAspectRatioPreservingSize(
+                                    image->width(), image->height(),
+                                    parameter.GetPatchifyConfig().value()));
+    int new_height = size.first;
+    int new_width = size.second;
+
+    // Resize the image to the target size.
+    SkImageInfo image_info =
+        SkImageInfo::MakeN32(new_width, new_height, image->alphaType());
+
+    const SkSamplingOptions options(SkCubicResampler::Mitchell());
+    sk_sp<SkImage> scaled_image = image->makeScaled(image_info, options);
+    if (!scaled_image) {
+      return absl::InvalidArgumentError("Failed to scale image.");
+    }
+
+    SkPixmap resized_pixels;
+    if (!scaled_image->peekPixels(&resized_pixels)) {
+      return absl::InvalidArgumentError("Failed to peek pixels.");
+    }
+
+    // Convert the image to float RGB.
+    // Skia doesn't have 24bpp RGB float, so we do it manually.
+    std::vector<float> float_image;
+    float_image.reserve(new_height * new_width * kDesiredChannels);
+    for (int h = 0; h < resized_pixels.height(); ++h) {
+      for (int w = 0; w < resized_pixels.width(); ++w) {
+        SkColor pixel = resized_pixels.getColor(w, h);
+        float_image.push_back(static_cast<float>(SkColorGetR(pixel)) / 255.0f);
+        float_image.push_back(static_cast<float>(SkColorGetG(pixel)) / 255.0f);
+        float_image.push_back(static_cast<float>(SkColorGetB(pixel)) / 255.0f);
+      }
+    }
+
+    ImagePreprocessParameter updated_parameter = parameter;
+    updated_parameter.SetTargetDimensions(
+        {1, new_height, new_width, kDesiredChannels});
+
+    return PatchifyImage(std::move(float_image), updated_parameter);
   }
 
   const Dimensions& target_dimensions = parameter.GetTargetDimensions();

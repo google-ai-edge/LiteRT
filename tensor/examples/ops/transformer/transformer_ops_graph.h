@@ -129,6 +129,8 @@ struct WriteCurrentTokensOperation : Operation {
 
 struct MatMulWithCacheOperationData {
   bool is_v = false;
+  bool is_local = false;
+  int sliding_window_size = 0;
 };
 
 struct MatMulWithCacheOperation : public MatMulWithCacheOperationData,

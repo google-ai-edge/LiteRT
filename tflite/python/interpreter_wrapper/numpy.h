@@ -49,8 +49,8 @@ limitations under the License.
 
 #include <Python.h>
 
-#include "numpy/arrayobject.h"
-#include "numpy/ufuncobject.h"
+#include "numpy/arrayobject.h"  // IWYU pragma: export
+#include "numpy/ufuncobject.h"  // IWYU pragma: export
 #include "tflite/core/c/common.h"
 #include "tflite/string_util.h"
 

@@ -42,7 +42,7 @@ extern "C" {
 // 6. Evaluate the output LiteRtTensorBuffer
 
 // Creates a LiteRtCompiledModel from a LiteRtModel object. Parameter
-// `jit_compilation_options` is optional and can be null, and is owned by the
+// `compilation_options` is optional and can be null, and is owned by the
 // caller.  The model is loaded into memory and the caller takes ownership of
 // the returned object.
 //

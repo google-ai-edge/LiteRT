@@ -428,9 +428,7 @@ else()
             Threads::Threads
             "-Wl,--start-group"
             litert_tool_display
-            litert_cc_internal
-            litert_core
-            litert_core_model
+            ${LITERT_TOOL_COMMON_LIBS}
             ${ABSEIL_TOOL_LIBS}
             "-Wl,--end-group"
             ${CMAKE_DL_LIBS}

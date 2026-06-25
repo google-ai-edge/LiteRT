@@ -140,9 +140,9 @@ cc_library(
     hdrs = ["test_utils.h"],
     deps = [
         "//litert/cc:litert_macros",
-        "//testing/base/public:gunit_for_library_testonly",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_googletest//:gtest_for_library",
     ],
 )
 
@@ -195,3 +195,5 @@ cc_library(
     srcs = ["alloc_defs.cc"],
     alwayslink = True,
 )
+
+# Dummy comment to trigger copybara.

@@ -118,6 +118,10 @@ LiteRtStatus LrtQualcommOptionsGetUseInt64BiasAsInt32(
 
 // Weight sharing indicates whether different subgraphs may share weight
 // tensors. This is only supported on x86 AOT. Defaults to false.
+//
+// Note: weight sharing is mutually exclusive with HTP DLBC weights (QAIRT
+// 2.36+). When both are requested, weight sharing wins and DLBC weights is
+// forced off.
 
 LiteRtStatus LrtQualcommOptionsSetEnableWeightSharing(
     LrtQualcommOptions options, bool enable_weight_sharing);

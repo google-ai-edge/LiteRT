@@ -798,7 +798,7 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_op_options_impl",
     ":litert_opaque_options_impl",
     ":litert_profiler_impl",
-    ":litert_builder",
+    ":litert_builder_impl",
     ":litert_tensor_buffer_impl",
     ":litert_tensor_buffer_requirements_impl",
     "//litert/c/internal:litert_accelerator_registration",

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
+SPDX-License-Identifier: Apache-2.0
+-->
+<OpDefCollection
+        PackageName="ExampleOpPackage"
+        Domain="aisw"
+        Version="1.0"
+        UseQHPI="true"
+>
+    <OpDefList>
+        <OpDef>
+            <Name>ExampleCustomOp</Name>
+            <Description>
+                <Content>
+                    ExampleCustomOp for testing OP package registration functionality.
+                </Content>
+            </Description>
+
+            <Input>
+                <Name>input</Name>
+                <Description>
+                    <Content>input activation</Content>
+                </Description>
+                <Mandatory>true</Mandatory>
+                <Datatype>QNN_DATATYPE_FLOAT_32</Datatype>
+                <Shape>
+                    <Rank>4D</Rank>
+                    <Layout>NHWC</Layout>
+                    <Text>a tensor of 4 dimension</Text>
+                </Shape>
+            </Input>
+
+            <Output>
+                <Name>output</Name>
+                <Description>
+                    <Content>output activation</Content>
+                </Description>
+                <Mandatory>true</Mandatory>
+                <Datatype>QNN_DATATYPE_FLOAT_32</Datatype>
+                <Shape>
+                    <Rank>4D</Rank>
+                    <Layout>NHWC</Layout>
+                    <Text>a tensor of 4 dimension</Text>
+                </Shape>
+            </Output>
+
+            <Parameter>
+                <Name>alpha</Name>
+                <Description>
+                    <Content>
+                        Negative slope for the leaky ReLU. Decoded from the
+                        TFLite custom op's flexbuffer options and forwarded as a
+                        named scalar parameter by the compiler plugin.
+                    </Content>
+                </Description>
+                <Mandatory>true</Mandatory>
+                <Datatype>QNN_DATATYPE_FLOAT_32</Datatype>
+                <Shape>
+                    <Rank>SCALAR</Rank>
+                    <Text>scalar</Text>
+                </Shape>
+                <Default>0.0</Default>
+            </Parameter>
+
+            <!--This Op is implemented on these Backends-->
+            <SupportedBackend>HTP</SupportedBackend>
+        </OpDef>
+
+    </OpDefList>
+
+</OpDefCollection>

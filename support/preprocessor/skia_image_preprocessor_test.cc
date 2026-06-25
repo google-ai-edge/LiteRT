@@ -15,6 +15,7 @@
 #include "support/preprocessor/skia_image_preprocessor.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>  // NOLINT: Required for path manipulation.
 #include <fstream>
 #include <ios>
@@ -176,6 +177,141 @@ TEST(SkiaImagePreprocessorTest, PreprocessFailedWithInvalidImage) {
   EXPECT_THAT(
       preprocessor.Preprocess(InputImage(invalid_image_bytes), parameter),
       StatusIs(absl::StatusCode::kInvalidArgument, "Failed to decode image."));
+}
+
+TEST(SkiaImagePreprocessorTest, PreprocessWithPatchify) {
+  SkiaImagePreprocessor preprocessor;
+
+  // Load the image file.
+  const std::string image_path =
+      (std::filesystem::path(::testing::SrcDir()) / kTestdataDir / "apple.bmp")
+          .string();
+  std::ifstream file_stream(image_path, std::ios::binary);
+  ASSERT_TRUE(file_stream.is_open())
+      << "Failed to open image file: " << image_path;
+  std::stringstream buffer;
+  buffer << file_stream.rdbuf();
+  std::string image_bytes = buffer.str();
+
+  ImagePreprocessParameter parameter;
+  constexpr int kPatchSize = 16;
+  parameter.SetPatchifyConfig({.patch_width = kPatchSize,
+                               .patch_height = kPatchSize,
+                               .max_num_patches = 4096,
+                               .pooling_kernel_size = 3});
+
+  auto input_image = InputImage(image_bytes);
+  ASSERT_OK_AND_ASSIGN(auto preprocessed_image,
+                       preprocessor.Preprocess(input_image, parameter));
+
+  ASSERT_TRUE(preprocessed_image.IsTensorBufferMap());
+  ASSERT_OK_AND_ASSIGN(auto tensor_map,
+                       preprocessed_image.GetPreprocessedImageTensorMap());
+  ASSERT_NE(tensor_map, nullptr);
+  EXPECT_TRUE(tensor_map->contains("images"));
+  EXPECT_TRUE(tensor_map->contains("positions_xy"));
+
+  const auto& images_tensor = tensor_map->at("images");
+  auto images_tensor_type = images_tensor.TensorType();
+  ASSERT_TRUE(images_tensor_type.HasValue());
+  // The apple.bmp is 1024x1024.
+  // With pooling_kernel_size = 3 and patch_size = 16,
+  // GetAspectRatioPreservingSize returns 1008x1008 (since 1024 is rounded down
+  // to multiple of 3*16 = 48, which is 1008). 1008 / 16 = 63. 63 * 63 = 3969
+  // patches. 16 * 16 * 3 = 768 elements per patch.
+  EXPECT_THAT(images_tensor_type.Value().Layout().Dimensions(),
+              ElementsAre(1, 3969, 768));
+
+  const auto& positions_tensor = tensor_map->at("positions_xy");
+  auto positions_tensor_type = positions_tensor.TensorType();
+  ASSERT_TRUE(positions_tensor_type.HasValue());
+  EXPECT_THAT(positions_tensor_type.Value().Layout().Dimensions(),
+              ElementsAre(1, 3969, 2));
+
+  // Verify positions.
+  auto positions_lock = ::litert::TensorBufferScopedLock::Create(
+      positions_tensor, ::litert::TensorBuffer::LockMode::kRead);
+  ASSERT_TRUE(positions_lock.HasValue());
+  const int32_t* positions_ptr =
+      reinterpret_cast<const int32_t*>(positions_lock->second);
+  for (int h = 0; h < 63; ++h) {
+    for (int w = 0; w < 63; ++w) {
+      int idx = h * 63 + w;
+      EXPECT_EQ(positions_ptr[idx * 2], w);
+      EXPECT_EQ(positions_ptr[idx * 2 + 1], h);
+    }
+  }
+
+  // Verify image values.
+  auto images_lock = ::litert::TensorBufferScopedLock::Create(
+      images_tensor, ::litert::TensorBuffer::LockMode::kRead);
+  ASSERT_TRUE(images_lock.HasValue());
+  const float* data = reinterpret_cast<const float*>(images_lock->second);
+
+  size_t num_elements = 3969 * 768;
+  for (size_t i = 0; i < num_elements; ++i) {
+    EXPECT_GE(data[i], 0.0f);
+    EXPECT_LE(data[i], 1.0f);
+  }
+}
+
+TEST(SkiaImagePreprocessorTest, PreprocessWithPatchifyResize) {
+  SkiaImagePreprocessor preprocessor;
+
+  // Load the image file.
+  const std::string image_path =
+      (std::filesystem::path(::testing::SrcDir()) / kTestdataDir / "apple.bmp")
+          .string();
+  std::ifstream file_stream(image_path, std::ios::binary);
+  ASSERT_TRUE(file_stream.is_open())
+      << "Failed to open image file: " << image_path;
+  std::stringstream buffer;
+  buffer << file_stream.rdbuf();
+  std::string image_bytes = buffer.str();
+
+  ImagePreprocessParameter parameter;
+  // Max 49 patches means it should resize.
+  // With patch_size = 16, pooling_kernel_size = 3, side_mult = 48.
+  // Max px = 49 * 256 = 12544.
+  // Square image target side = sqrt(12544) = 112.
+  // Multiple of 48 below 112 is 96.
+  // So it should resize to 96x96.
+  // 96 / 16 = 6. 6 * 6 = 36 patches.
+  constexpr int kPatchSize = 16;
+  parameter.SetPatchifyConfig({.patch_width = kPatchSize,
+                               .patch_height = kPatchSize,
+                               .max_num_patches = 49,
+                               .pooling_kernel_size = 3});
+
+  auto input_image = InputImage(image_bytes);
+  ASSERT_OK_AND_ASSIGN(auto preprocessed_image,
+                       preprocessor.Preprocess(input_image, parameter));
+
+  ASSERT_TRUE(preprocessed_image.IsTensorBufferMap());
+  ASSERT_OK_AND_ASSIGN(auto tensor_map,
+                       preprocessed_image.GetPreprocessedImageTensorMap());
+  const auto& images_tensor = tensor_map->at("images");
+  auto images_tensor_type = images_tensor.TensorType();
+  ASSERT_TRUE(images_tensor_type.HasValue());
+  EXPECT_THAT(images_tensor_type.Value().Layout().Dimensions(),
+              ElementsAre(1, 36, 768));
+
+  const auto& positions_tensor = tensor_map->at("positions_xy");
+  auto positions_tensor_type = positions_tensor.TensorType();
+  ASSERT_TRUE(positions_tensor_type.HasValue());
+  EXPECT_THAT(positions_tensor_type.Value().Layout().Dimensions(),
+              ElementsAre(1, 36, 2));
+
+  // Verify image values range.
+  auto images_lock = ::litert::TensorBufferScopedLock::Create(
+      images_tensor, ::litert::TensorBuffer::LockMode::kRead);
+  ASSERT_TRUE(images_lock.HasValue());
+  const float* data = reinterpret_cast<const float*>(images_lock->second);
+  size_t num_elements = 36 * 768;
+  for (size_t i = 0; i < num_elements; ++i) {
+    EXPECT_GE(data[i], 0.0f);
+    EXPECT_LE(data[i], 1.0f);
+  }
 }
 
 }  // namespace
