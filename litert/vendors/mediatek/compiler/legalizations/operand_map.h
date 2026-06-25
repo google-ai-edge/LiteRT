@@ -22,12 +22,10 @@
 #include <functional>
 #include <iterator>
 #include <numeric>
-#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "neuron/api/NeuronAdapter.h"
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -37,6 +35,7 @@
 #include "litert/vendors/mediatek/compiler/legalizations/extra_data_mgr.h"
 #include "litert/vendors/mediatek/compiler/legalizations/neuron_utils.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
+#include "neuron/api/NeuronAdapter.h"
 
 namespace litert::mediatek {
 
@@ -78,20 +77,12 @@ class OperandType : public NeuronOperandType {
       LITERT_LOG(LITERT_DEBUG, "zeroPoint: %d, scale: %f",
                  quant_info.zero_point, quant_info.scale);
       return OperandType(*mtk_type, std::move(mtk_dimensions), quant_info.scale,
-                         quant_info.zero_point, std::nullopt);
+                         quant_info.zero_point);
     } else if (t.QTypeId() == kLiteRtQuantizationPerChannel) {
-      auto quant_info = t.PerChannelQuantization();
-      NeuronSymmPerChannelQuantParams params;
-      params.scaleCount = quant_info.num_channels;
-      params.scales = quant_info.scales;
-      params.channelDim = quant_info.quantized_dimension;
-      LITERT_LOG(LITERT_DEBUG, "quantized_dimension: %d",
-                 quant_info.quantized_dimension);
-      LITERT_LOG(LITERT_DEBUG, "params.channelDim: %d", params.channelDim);
-      return OperandType(*mtk_type, std::move(mtk_dimensions), 0, 0, params);
+      return OperandType(*mtk_type, std::move(mtk_dimensions), 0, 0);
     } else {
       return OperandType(*mtk_type, std::move(mtk_dimensions), /*scale*/ 0,
-                         /*zero_point*/ 0, std::nullopt);
+                         /*zero_point*/ 0);
     }
   }
 
@@ -113,9 +104,7 @@ class OperandType : public NeuronOperandType {
 
   OperandType(const OperandType&) = delete;
 
-  OperandType(OperandType&& other)
-      : dimensions_(std::move(other.dimensions_)),
-        neuron_per_channel_params_(other.neuron_per_channel_params_) {
+  OperandType(OperandType&& other) : dimensions_(std::move(other.dimensions_)) {
     // Copy all the scalar fields from other.
     *static_cast<NeuronOperandType*>(this) =
         *static_cast<NeuronOperandType*>(&other);
@@ -136,13 +125,6 @@ class OperandType : public NeuronOperandType {
     return {};
   }
 
-  Expected<NeuronSymmPerChannelQuantParams> GetPerChannelQuantParams() {
-    if (!neuron_per_channel_params_.has_value()) {
-      return Error(kLiteRtStatusErrorRuntimeFailure, "No quant param is set");
-    }
-    return neuron_per_channel_params_.value();
-  }
-
   int32_t GetNeuronType() const { return this->type; }
 
   std::vector<uint32_t> GetDimension() { return this->dimensions_; }
@@ -159,10 +141,8 @@ class OperandType : public NeuronOperandType {
 
  private:
   explicit OperandType(int32_t mtk_type, std::vector<uint32_t>&& mtk_dimensions,
-                       float scale, int32_t zero_point,
-                       std::optional<NeuronSymmPerChannelQuantParams> pararms)
-      : dimensions_(std::move(mtk_dimensions)),
-        neuron_per_channel_params_(pararms) {
+                       float scale, int32_t zero_point)
+      : dimensions_(std::move(mtk_dimensions)) {
     this->scale = scale;
     this->zeroPoint = zero_point;
     this->type = mtk_type;
@@ -171,9 +151,6 @@ class OperandType : public NeuronOperandType {
   }
 
   std::vector<uint32_t> dimensions_;
-
-  std::optional<NeuronSymmPerChannelQuantParams> neuron_per_channel_params_ =
-      std::nullopt;
 };
 
 // This class takes care of registering Tensors and scalars with a given
