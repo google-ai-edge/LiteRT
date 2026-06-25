@@ -23,5 +23,10 @@ size_t FuseMatMulConvertPrefill(
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size);
 
+size_t FuseConvertMatMulPrefill(
+    std::function<bool(OpWrapper&)> validate_op_config,
+    std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
+    size_t pattern_size);
+
 }  // namespace qnn
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_TRANSFORMATION_MATMUL_CONVERT_H_
