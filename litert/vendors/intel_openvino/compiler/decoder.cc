@@ -894,6 +894,17 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
         return ov::Any(epsilon);
       }
       break;
+    case LiteRtOpCode::kLiteRtOpCodeTflTopkV2:
+      // TFLite TOPK_V2 carries no options table; K is input 1. The OpenVINO
+      // translator only queries these two attributes, both with defaults that
+      // match TFLite semantics (i32 indices, sorted values). Return them
+      // explicitly so the translator never reaches the default nullptr branch.
+      if (name == "index_type") {
+        return ov::Any(ov::element::i32);
+      } else if (name == "sorted") {
+        return ov::Any(true);
+      }
+      break;
     default:
       LITERT_LOG(LITERT_ERROR, "Unsupported op type %s", op_type_.c_str());
       return ov::Any(nullptr);
