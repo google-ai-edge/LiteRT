@@ -58,7 +58,6 @@ litert_dispatch_api(
     deps = [
         "//litert/cc/internal:litert_context_wrapper",
         "//litert/cc/internal:litert_options_wrapper",
-        "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
