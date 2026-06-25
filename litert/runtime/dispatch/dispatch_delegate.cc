@@ -30,7 +30,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/build_stamp.h"
-#include "litert/runtime/dispatch/dispatch_delegate_kernel.h"
+#include "litert/runtime/dispatch/dispatch_kernel_facade.h"
 #include "litert/runtime/metrics.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "tflite/c/c_api_opaque.h"
@@ -96,7 +96,8 @@ class DispatchDelegate : public tflite::SimpleOpaqueDelegateInterface {
   LiteRtOptions options_;
   bool has_dispatch_runtime_ = false;
   int dispatch_graph_name_id_ = 0;
-  std::vector<litert::internal::DispatchDelegateKernel*> kernels_;
+  std::vector<litert::internal::DispatchKernelFacade*>
+      kernels_;
   LiteRtDispatchDeviceContext device_context_ = nullptr;
 };
 
@@ -133,19 +134,15 @@ DispatchDelegate::CreateDelegateKernelInterface() {
 
   std::string dispatch_graph_name =
       absl::StrFormat("DispatchGraph_%d", dispatch_graph_name_id_++);
-
-  auto kernel = litert::internal::DispatchDelegateKernel::Create(
+  auto kernel = litert::internal::DispatchKernelFacade::Create(
       std::move(dispatch_graph_name), environment_options_, options_,
       device_context_);
-  if (kernel) {
-    kernels_.push_back(kernel->get());
-    // The compiler handles upcasting to the function return type.
-    return std::move(*kernel);
-  } else {
-    LITERT_FATAL("Failed to create a dispatch delegate kernel: %s",
-                 kernel.Error().Message().c_str());
+  if (!kernel) {
+    LITERT_FATAL("Failed to create a dispatch delegate kernel facade");
     return nullptr;
   }
+  kernels_.push_back(kernel.get());
+  return kernel;
 }
 
 litert::Expected<void> DispatchDelegate::StartMetricsCollection(
