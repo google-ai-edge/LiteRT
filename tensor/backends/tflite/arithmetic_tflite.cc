@@ -15,6 +15,7 @@ limitations under the License.
 #include "tensor/backends/tflite/arithmetic_tflite.h"
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
@@ -531,6 +532,29 @@ OpMixin<CustomOperation, TfLiteMixinTag>::ToTfLite(
   TfLiteOpBuildInfo info(::tflite::BuiltinOperator_CUSTOM);
   info.custom_code = &data.custom_code;
   info.custom_options = &data.custom_options;
+  return info;
+}
+
+absl::StatusOr<TfLiteOpBuildInfo>
+OpMixin<StableHloCompositeOperation, TfLiteMixinTag>::ToTfLite(
+    const graph::Operation& op) const {
+  LRT_TENSOR_ASSIGN_OR_RETURN(const StableHloCompositeOperation& data,
+                              op.As<StableHloCompositeOperation>());
+  if (data.decomposition_subgraph_index < 0) {
+    return absl::FailedPreconditionError(
+        "StableHloComposite decomposition subgraph has not been serialized.");
+  }
+
+  tflite::StableHLOCompositeOptionsT options;
+  options.name = data.name;
+  options.decomposition_subgraph_index = data.decomposition_subgraph_index;
+  options.composite_attributes = data.composite_attributes;
+  options.composite_attributes_format = tflite::CustomOptionsFormat_FLEXBUFFERS;
+  options.version = data.version;
+
+  TfLiteOpBuildInfo info(::tflite::BuiltinOperator_STABLEHLO_COMPOSITE);
+  info.builtin_options_2.emplace();
+  info.builtin_options_2->Set(std::move(options));
   return info;
 }
 
