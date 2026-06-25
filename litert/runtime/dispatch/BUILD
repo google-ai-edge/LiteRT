@@ -104,6 +104,23 @@ cc_library(
 )
 
 cc_library(
+    name = "dispatch_kernel_interface",
+    hdrs = ["dispatch_kernel_interface.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/runtime:external_litert_buffer_context",
+        "//litert/runtime:metrics",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/delegates/utils:simple_opaque_delegate",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:node_hash_map",
+    ],
+)
+
+cc_library(
     name = "dispatch_opaque_options",
     srcs = ["dispatch_opaque_options.cc"],
     hdrs = ["dispatch_opaque_options.h"],
@@ -286,6 +303,7 @@ cc_library(
     copts = litert_metal_opts(),
     deps = [
         ":dispatch",
+        ":dispatch_kernel_interface",
         ":dispatch_opaque_options",
         "//litert/c:litert_common",
         "//litert/c:litert_metrics",
@@ -324,6 +342,27 @@ cc_library(
 )
 
 cc_library(
+    name = "dispatch_kernel_facade",
+    srcs = [
+        "dispatch_kernel_facade.cc",
+    ],
+    hdrs = [
+        "dispatch_kernel_facade.h",
+    ],
+    copts = litert_metal_opts(),
+    deps = [
+        ":dispatch_delegate_kernel",
+        ":dispatch_kernel_interface",
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+    ],
+)
+
+cc_library(
     name = "dispatch_delegate",
     srcs = [
         "dispatch_delegate.cc",
@@ -335,7 +374,7 @@ cc_library(
     copts = litert_metal_opts(),
     deps = [
         ":dispatch",
-        ":dispatch_delegate_kernel",
+        ":dispatch_kernel_facade",
         "//litert/c:litert_common",
         "//litert/c:litert_metrics",
         "//litert/c:litert_tensor_buffer",
