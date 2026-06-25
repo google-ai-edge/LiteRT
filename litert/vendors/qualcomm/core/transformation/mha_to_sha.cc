@@ -697,9 +697,18 @@ size_t OptimizeMHAGemma4BPrefill(
   auto& vcache_slice_ranges = build_slice_ranges(qk_vcache_slice);
   auto& vslice_slice_ranges = build_slice_ranges(qk_vslice_slice);
 
-  constexpr size_t kMaskUnpackAxis = 2;
-  auto mask_unpack_outputs = UnpackTensor(
-      tensor_pool, new_ops, mask_add.GetInputTensor(1), kMaskUnpackAxis);
+  // Reshape mask from (1,1,512,2688) -> (1,num_attn_per_kv_heads,128,2688)
+  // so that unpacking on axis=1 gives one (1,128,2688) mask per query head.
+  const auto& mask_orig = mask_add.GetInputTensor(1);
+  auto mask_reshaped_dims = mask_orig.GetDimensions();
+  mask_reshaped_dims[1] = static_cast<std::uint32_t>(num_attn_per_kv_heads);
+  mask_reshaped_dims[2] /= static_cast<std::uint32_t>(num_attn_per_kv_heads);
+  auto& mask_reshaped =
+      tensor_pool.CloneNativeTensorFrom(mask_orig, mask_reshaped_dims);
+  new_ops.emplace_back(CreateReshapeOp(mask_orig, mask_reshaped));
+  constexpr size_t kMaskUnpackAxis = 1;
+  auto mask_unpack_outputs =
+      UnpackTensor(tensor_pool, new_ops, mask_reshaped, kMaskUnpackAxis);
 
   // Build num_attn_heads SHAs.
   std::vector<ConstTensorWrapperRef> sha_outputs;
