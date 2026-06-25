@@ -141,6 +141,7 @@ litert_bin(
         ":openvino_soc_config",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
+        "//litert/c:litert_op_options_header",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper_with_compiler_context",
         "//litert/c/options:litert_compiler_options",
