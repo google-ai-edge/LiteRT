@@ -636,9 +636,11 @@ LiteRtStatus BuildFullyConnectedOp(
 
   auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
       tensor_pool, fused_activation, output_tensors);
-  op_wrappers = ::qnn::BuildFullyConnectedOp(tensor_pool, input_tensors,
-                                             {activation_input}, keep_num_dims,
-                                             use_int64_bias_as_int32);
+  if (op_wrappers.empty()) {
+    op_wrappers = ::qnn::BuildFullyConnectedOp(
+        tensor_pool, input_tensors, {activation_input}, keep_num_dims,
+        use_int64_bias_as_int32);
+  }
   ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
                                 output_tensors[0]);
   return kLiteRtStatusOk;
