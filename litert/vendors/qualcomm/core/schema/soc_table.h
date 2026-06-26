@@ -12,6 +12,7 @@ enum class SnapdragonModel {
   SM6350 = 29,
   SA8295 = 39,
   SM8350 = 30,
+  QCM6490 = 35,
   SM8450 = 36,
   SM8475 = 42,
   SM8550 = 43,
@@ -25,6 +26,7 @@ enum class SnapdragonModel {
   QCS9100 = 77,
   QCS8300 = 82,
   SM8850 = 87,
+  QCS6490 = 93,
   SAR2230P = 95,
   SW6100 = 96,
 };
