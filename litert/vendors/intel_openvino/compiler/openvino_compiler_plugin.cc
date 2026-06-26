@@ -139,6 +139,9 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflFloorMod,
     kLiteRtOpCodeTflSign,
     kLiteRtOpCodeTflTile,
+    // TOPK_V2 only calls get_attribute for index_type/sorted, both defaulted.
+    // Support is gated on a constant K (see IsOpSupported).
+    kLiteRtOpCodeTflTopkV2,
 };
 // clang format on
 
@@ -409,6 +412,20 @@ void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin) {
 }
 
 bool IsOpSupported(const litert::compiler::Op& op) {
+  // TOPK_V2 is only NPU-safe when K (input 1) is a compile-time constant.
+  // A runtime K leaves the sorted-axis dimension dynamic (OpenVINO TopK shape
+  // inference yields [0, dim]), which NPU compilation rejects.  Fall back to
+  // CPU in that case by reporting the op as unsupported.
+  if (op.Code() == kLiteRtOpCodeTflTopkV2) {
+    const auto inputs = op.Inputs();
+    if (inputs.size() < 2 || !inputs[1].HasWeights()) {
+      LITERT_LOG(LITERT_INFO,
+                 "TOPK_V2 with non-constant K is not supported on NPU; "
+                 "leaving op on CPU.");
+      return false;
+    }
+    return true;
+  }
   for (const auto& supportedOp : kSupportedOps) {
     if (op.Code() == supportedOp) return true;
   }
