@@ -37,6 +37,16 @@ static const char kEnnApiLibName[] = "libenn_public_api_cpp.so";
     return kLiteRtStatusErrorDynamicLoading;                                \
   }
 
+#define ENN_LOAD_API_OPTIONAL(LIB, SYM)                                     \
+  if (auto symbol = LIB.LookupSymbol<void*>(#SYM); symbol.HasValue()) {     \
+    api_->SYM =                                                             \
+        reinterpret_cast<decltype(api_->SYM)>(std::move(symbol.Value())); \
+  } else {                                                                  \
+    LITERT_LOG(LITERT_INFO, "Optional symbol %s not found: %s", #SYM,       \
+               LIB.DlError());                                              \
+    api_->SYM = nullptr;                                                    \
+  }
+
 namespace litert::samsung {
 EnnManager::EnnManager() : api_(std::make_unique<EnnManager::PublicApi>()) {}
 
@@ -57,7 +67,11 @@ Expected<EnnManager::UniquePtr> EnnManager::Create() {
 
 const EnnManager::PublicApi& EnnManager::Api() const { return *api_.get(); }
 
-EnnManager::~EnnManager() { Api().EnnDeinitialize(); }
+EnnManager::~EnnManager() {
+  if (api_->EnnDeinitialize != nullptr) {
+    Api().EnnDeinitialize();
+  }
+}
 
 LiteRtStatus EnnManager::LoadEnnRuntimeLibrary(absl::string_view path) {
   auto loading_lib = SharedLibrary::Load(path, RtldFlags::Default());
@@ -69,13 +83,13 @@ LiteRtStatus EnnManager::LoadEnnRuntimeLibrary(absl::string_view path) {
   enn_runtime_lib_ = std::move(loading_lib.Value());
 
   ENN_LOAD_API(enn_runtime_lib_, EnnInitialize);
-  ENN_LOAD_API(enn_runtime_lib_, EnnOpenModelFromMemory);
-  ENN_LOAD_API(enn_runtime_lib_, EnnOpenModelFromMemoryWithWeight);
+  ENN_LOAD_API_OPTIONAL(enn_runtime_lib_, EnnOpenModelFromMemory);
+  ENN_LOAD_API_OPTIONAL(enn_runtime_lib_, EnnOpenModelFromMemoryWithWeight);
   ENN_LOAD_API(enn_runtime_lib_, EnnCreateBufferFromFdWithOffset);
   ENN_LOAD_API(enn_runtime_lib_, EnnCreateBufferCache);
-  ENN_LOAD_API(enn_runtime_lib_, EnnOpenModelFromFdWithWeight);
-  ENN_LOAD_API(enn_runtime_lib_, EnnOpenModelWithFileOpenFdWeight);
-  ENN_LOAD_API(enn_runtime_lib_, EnnOpenModelWithFileOpenFd);
+  ENN_LOAD_API_OPTIONAL(enn_runtime_lib_, EnnOpenModelFromFdWithWeight);
+  ENN_LOAD_API_OPTIONAL(enn_runtime_lib_, EnnOpenModelWithFileOpenFdWeight);
+  ENN_LOAD_API_OPTIONAL(enn_runtime_lib_, EnnOpenModelWithFileOpenFd);
   ENN_LOAD_API(enn_runtime_lib_, EnnBufferCommit);
   ENN_LOAD_API(enn_runtime_lib_, EnnGetBuffersInfo);
   ENN_LOAD_API(enn_runtime_lib_, EnnSetBufferByIndex);

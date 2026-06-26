@@ -13,8 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
+load("//tools/build_defs/android:rules.bzl", "android_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -91,5 +93,18 @@ sh_test(
     ],
     data = [
         ":dispatch_api_so",
+    ],
+)
+
+cc_import(
+    name = "dispatch_api_so_import",
+    shared_library = ":dispatch_api_so",
+)
+
+android_library(
+    name = "samsung_npu_runtime",
+    visibility = ["//litert:litert_public"],
+    exports = [
+        ":dispatch_api_so_import",
     ],
 )
