@@ -233,7 +233,7 @@ Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
 }  // namespace litert::samsung
 
 LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
-    const ::litert::samsung::EnnManager* enn_manager,
+    ::litert::samsung::EnnManager* enn_manager,
     LiteRtDispatchDeviceContext device_context, const EnnModelId& model_id,
     int num_inputs, int num_outputs)
     : enn_manager_(enn_manager),
@@ -244,7 +244,7 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
 
 litert::Expected<LiteRtDispatchInvocationContextT::UniquePtr>
 LiteRtDispatchInvocationContextT::Create(
-    const ::litert::samsung::EnnManager* enn_manager,
+    ::litert::samsung::EnnManager* enn_manager,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
@@ -370,25 +370,17 @@ LiteRtDispatchInvocationContextT::Create(
                          "Number of inputs/outputs is invalid");
   }
 
-  // Allocate buffers
-  EnnBufferPtr* tmp_buf_ptr;
-  if (enn_manager->Api().EnnAllocateAllBuffers(
-          model_id, &tmp_buf_ptr, &buffer_info) != ENN_RET_SUCCESS) {
-    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                         "EnnAllocateAllBuffers Failed");
-  }
-  LITERT_LOG(LITERT_INFO, "Buffers allocated successfully");
-
-  LITERT_LOG(LITERT_INFO, "=== Model Loading Complete ===");
-
+  // Release ownership since we're successfully creating the context
   model_guard.release();
 
   auto context = LiteRtDispatchInvocationContextT::UniquePtr(
       new LiteRtDispatchInvocationContextT(enn_manager, device_context,
                                            model_id, num_inputs, num_outputs));
 
-  // Set committed buffer for this model
-  context->SetEnnCommittedBuffer(tmp_buf_ptr);
+  // Initialize commit caching state
+  context->commit_state_ = CommitState::kUncommitted;
+  context->attached_input_count_ = 0;
+  context->attached_output_count_ = 0;
 
   // Set weight signatures for later release
   context->SetWeightSignatures(std::move(signatures));
@@ -397,6 +389,13 @@ LiteRtDispatchInvocationContextT::Create(
 }
 
 LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
+  // If committed, uncommit and unset buffers
+  if (commit_state_ == CommitState::kCommitted) {
+    enn_manager_->Api().EnnBufferUncommit(model_id_);
+    enn_manager_->Api().EnnUnsetBuffers(model_id_);
+  }
+
+  // Release weight buffers from global weight manager
   auto& weight_mgr =
       litert::samsung::WeightBinaryManager::GetInstance(enn_manager_);
   for (const auto& sig : weight_signatures_) {
@@ -404,6 +403,45 @@ LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
   }
 
   enn_manager_->Api().EnnCloseModel(model_id_);
+}
+
+litert::Expected<void>
+LiteRtDispatchInvocationContextT::TransitionToCommitted() {
+  if (enn_manager_->Api().EnnBufferCommit(model_id_) != ENN_RET_SUCCESS) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Fail to commit buffer");
+  }
+  commit_state_ = CommitState::kCommitted;
+  return {};
+}
+
+litert::Expected<void>
+LiteRtDispatchInvocationContextT::TransitionToUncommitted() {
+  if (enn_manager_->Api().EnnBufferUncommit(model_id_) != ENN_RET_SUCCESS) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Fail to uncommit buffer");
+  }
+  commit_state_ = CommitState::kUncommitted;
+  return {};
+}
+
+litert::Expected<void>
+LiteRtDispatchInvocationContextT::UpdateStateAfterAttach() {
+  if (AreAllBuffersAttached()) {
+    // Perform actual commit
+    if (enn_manager_->Api().EnnBufferCommit(model_id_) != ENN_RET_SUCCESS) {
+      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                           "Fail to commit buffer");
+    }
+    commit_state_ = CommitState::kCommitted;
+  } else {
+    commit_state_ = CommitState::kPartialAttach;
+  }
+  return {};
+}
+
+void LiteRtDispatchInvocationContextT::UpdateStateAfterDetach() {
+  commit_state_ = CommitState::kPartialAttach;
 }
 
 litert::Expected<LiteRtTensorBufferRequirements>
@@ -425,11 +463,33 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
                          "Invalid input index");
   }
 
+  // Check if already attached
+  if (inputs_buf_[graph_input_index] != nullptr) {
+    return litert::Error(kLiteRtStatusErrorInvalidArgument,
+                         "Input already attached");
+  }
+
+  // If committed, uncommit first before modifying buffers
+  if (commit_state_ == CommitState::kCommitted) {
+    LITERT_RETURN_IF_ERROR(TransitionToUncommitted());
+  }
+
   auto enn_buffer = device_context_->GetEnnBuffer(tensor_buffer_handle);
   if (!enn_buffer) {
     return enn_buffer.Error();
   }
   inputs_buf_[graph_input_index] = enn_buffer.Value();
+
+  // Register buffer with ENN
+  if (enn_manager_->Api().EnnSetBufferByIndex(
+          model_id_, ENN_DIR_IN, graph_input_index, enn_buffer.Value()) !=
+      ENN_RET_SUCCESS) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Fail to set input buffer");
+  }
+
+  attached_input_count_.fetch_add(1, std::memory_order_relaxed);
+  LITERT_RETURN_IF_ERROR(UpdateStateAfterAttach());
 
   return {};
 }
@@ -438,7 +498,18 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
   if (graph_output_index < 0 || graph_output_index >= outputs_buf_.size()) {
     return litert::Error(kLiteRtStatusErrorInvalidArgument,
-                         "Invalid input index");
+                         "Invalid output index");
+  }
+
+  // Check if already attached
+  if (outputs_buf_[graph_output_index] != nullptr) {
+    return litert::Error(kLiteRtStatusErrorInvalidArgument,
+                         "Output already attached");
+  }
+
+  // If committed, uncommit first before modifying buffers
+  if (commit_state_ == CommitState::kCommitted) {
+    LITERT_RETURN_IF_ERROR(TransitionToUncommitted());
   }
 
   auto enn_buffer = device_context_->GetEnnBuffer(tensor_buffer_handle);
@@ -446,6 +517,17 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
     return enn_buffer.Error();
   }
   outputs_buf_[graph_output_index] = enn_buffer.Value();
+
+  // Register buffer with ENN
+  if (enn_manager_->Api().EnnSetBufferByIndex(
+          model_id_, ENN_DIR_OUT, graph_output_index, enn_buffer.Value()) !=
+      ENN_RET_SUCCESS) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Fail to set output buffer");
+  }
+
+  attached_output_count_.fetch_add(1, std::memory_order_relaxed);
+  LITERT_RETURN_IF_ERROR(UpdateStateAfterAttach());
 
   return {};
 }
@@ -456,7 +538,15 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::DetachInput(
     return litert::Error(kLiteRtStatusErrorInvalidArgument,
                          "Invalid input index");
   }
+
+  // If committed, uncommit first
+  if (commit_state_ == CommitState::kCommitted) {
+    LITERT_RETURN_IF_ERROR(TransitionToUncommitted());
+  }
+
   inputs_buf_[graph_input_index] = nullptr;
+  attached_input_count_.fetch_sub(1, std::memory_order_relaxed);
+  UpdateStateAfterDetach();
 
   return {};
 }
@@ -465,61 +555,44 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::DetachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
   if (graph_output_index < 0 || graph_output_index >= outputs_buf_.size()) {
     return litert::Error(kLiteRtStatusErrorInvalidArgument,
-                         "Invalid input index");
+                         "Invalid output index");
   }
+
+  // If committed, uncommit first
+  if (commit_state_ == CommitState::kCommitted) {
+    LITERT_RETURN_IF_ERROR(TransitionToUncommitted());
+  }
+
   outputs_buf_[graph_output_index] = nullptr;
+  attached_output_count_.fetch_sub(1, std::memory_order_relaxed);
+  UpdateStateAfterDetach();
 
   return {};
 }
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
-  if (auto status = SetInputBuffers(); !status) {
-    return status.Error();
+  // Check if buffers are committed
+  if (commit_state_ != CommitState::kCommitted) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Buffers not committed. Attach all buffers first.");
   }
 
+  // Execute model (no memcpy needed)
   if (enn_manager_->Api().EnnExecuteModel(model_id_) != ENN_RET_SUCCESS) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure, "Fail to execute");
   }
 
-  if (auto status = SetOutputBuffers(); !status) {
-    return status.Error();
-  }
-
   return {};
 }
 
-litert::Expected<void> LiteRtDispatchInvocationContextT::SetInputBuffers()
-    const {
-  bool input_prepared =
-      std::all_of(inputs_buf_.begin(), inputs_buf_.end(),
-                  [](const EnnBufferPtr& val) { return val != nullptr; });
-  bool output_prepared =
-      std::all_of(outputs_buf_.begin(), outputs_buf_.end(),
-                  [](const EnnBufferPtr& val) { return val != nullptr; });
-  if (!input_prepared || !output_prepared) {
-    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                         "Inputs/outputs not prepared.");
+void LiteRtDispatchInvocationContextT::SetSchedulingInfo(
+    const LiteRtSchedulingInfo* scheduling_info) {
+  if (scheduling_info != nullptr) {
+    scheduling_info_ = *scheduling_info;
+  } else {
+    scheduling_info_.reset();
   }
-  LITERT_ASSIGN_OR_RETURN(auto committed_buf, GetEnnCommittedBuffer());
-
-  for (int idx = 0; idx < inputs_buf_.size(); idx++) {
-    auto usr_buf = inputs_buf_.at(idx);
-    auto target_buf = committed_buf[idx];
-    memcpy(target_buf->va, usr_buf->va, usr_buf->size);
-  }
-
-  return {};
 }
 
-litert::Expected<void> LiteRtDispatchInvocationContextT::SetOutputBuffers()
-    const {
-  LITERT_ASSIGN_OR_RETURN(auto committed_buf, GetEnnCommittedBuffer());
-
-  int _input_buf_size = inputs_buf_.size();
-  for (int idx = 0; idx < outputs_buf_.size(); idx++) {
-    auto usr_buf = outputs_buf_.at(idx);
-    auto target_buf = committed_buf[idx + _input_buf_size];
-    memcpy(usr_buf->va, target_buf->va, usr_buf->size);
-  }
-  return {};
-}
+// SetInputBuffers and SetOutputBuffers removed - no longer needed with commit
+// caching

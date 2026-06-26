@@ -18,6 +18,7 @@
 #ifndef ODML_LITERT_VENDORS_SAMSUNG_DISPATCH_INVOCATION_CONTEXT_H_
 #define ODML_LITERT_VENDORS_SAMSUNG_DISPATCH_INVOCATION_CONTEXT_H_
 
+#include <atomic>
 #include <optional>
 
 #include "litert/c/internal/litert_scheduling_info.h"
@@ -27,12 +28,14 @@
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/samsung/dispatch/enn_manager.h"
 
+// Note: This class is NOT thread-safe.
+// Caller must ensure that only one thread accesses a given instance at a time.
 class LiteRtDispatchInvocationContextT {
  public:
   using UniquePtr = std::unique_ptr<LiteRtDispatchInvocationContextT>;
 
   static litert::Expected<UniquePtr> Create(
-      const ::litert::samsung::EnnManager* enn_manager,
+      ::litert::samsung::EnnManager* enn_manager,
       LiteRtDispatchDeviceContext device_context,
       LiteRtDispatchExecutableType exec_type,
       const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
@@ -60,48 +63,50 @@ class LiteRtDispatchInvocationContextT {
 
   litert::Expected<void> Invoke();
 
-  litert::Expected<EnnBufferPtr*> GetEnnCommittedBuffer(void) const {
-    return committed_buf_;
-  }
-
-  litert::Expected<void> SetEnnCommittedBuffer(EnnBufferPtr* update) {
-    committed_buf_ = update;
-    return {};
-  }
-
-  void SetSchedulingInfo(const LiteRtSchedulingInfo* scheduling_info) {
-    if (scheduling_info == nullptr) {
-      scheduling_info_ = std::nullopt;
-      return;
-    }
-    scheduling_info_ = *scheduling_info;
-  }
-
-  const LiteRtSchedulingInfo* GetSchedulingInfo() const {
-    return scheduling_info_.has_value() ? &scheduling_info_.value() : nullptr;
-  }
+  void SetSchedulingInfo(const LiteRtSchedulingInfo* scheduling_info);
 
  private:
-  LiteRtDispatchInvocationContextT(
-      const ::litert::samsung::EnnManager* enn_manager,
-      LiteRtDispatchDeviceContext device_context, const EnnModelId& model_id,
-      int num_inputs, int num_outputs);
+  // Commit state for caching
+  enum class CommitState {
+    kUncommitted,    // Initial state or all buffers detached
+    kCommitted,      // All buffers attached and committed
+    kPartialAttach,  // Some buffers attached, waiting for commit
+  };
 
-  litert::Expected<void> SetInputBuffers() const;
-  litert::Expected<void> SetOutputBuffers() const;
+  LiteRtDispatchInvocationContextT(::litert::samsung::EnnManager* enn_manager,
+                                   LiteRtDispatchDeviceContext device_context,
+                                   const EnnModelId& model_id, int num_inputs,
+                                   int num_outputs);
+
+  bool AreAllBuffersAttached() const {
+    return attached_input_count_.load(std::memory_order_relaxed) ==
+               inputs_buf_.size() &&
+           attached_output_count_.load(std::memory_order_relaxed) ==
+               outputs_buf_.size();
+  }
+
+  // Helper methods for state transitions
+  litert::Expected<void> TransitionToCommitted();
+  litert::Expected<void> TransitionToUncommitted();
+  litert::Expected<void> UpdateStateAfterAttach();
+  void UpdateStateAfterDetach();
 
   void SetWeightSignatures(std::vector<std::string> signatures) {
     weight_signatures_ = std::move(signatures);
   }
 
-  const ::litert::samsung::EnnManager* enn_manager_;
+  ::litert::samsung::EnnManager* enn_manager_;
   LiteRtDispatchDeviceContext device_context_;
   std::optional<LiteRtSchedulingInfo> scheduling_info_;
   EnnModelId model_id_;
   std::vector<EnnBufferPtr> inputs_buf_;
   std::vector<EnnBufferPtr> outputs_buf_;
   std::vector<std::string> weight_signatures_;
-  EnnBufferPtr* committed_buf_;
+
+  // Commit caching state
+  CommitState commit_state_ = CommitState::kUncommitted;
+  std::atomic<int> attached_input_count_{0};
+  std::atomic<int> attached_output_count_{0};
 };
 
 #endif  // ODML_LITERT_VENDORS_SAMSUNG_DISPATCH_INVOCATION_CONTEXT_H_
