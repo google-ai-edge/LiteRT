@@ -71,7 +71,7 @@ jobs:
           echo "CACHE_RESTORE_KEY_HEAD=$CACHE_RESTORE_KEY_HEAD" >> "$env:GITHUB_OUTPUT"
           echo "CACHE_KEY=$CACHE_KEY" >> "$env:GITHUB_OUTPUT"
           $SHORT_SHA=$("${{ github.sha }}".SubString(0, 8))
-          echo "BAZEL_OUTPUT_BASE=C:/actions-runner/_work/bazel_output" >> "$env:GITHUB_ENV"
+          echo "BAZEL_OUTPUT_BASE=C:/_w/out" >> "$env:GITHUB_ENV"
           $CacheDir = Join-Path $env:USERPROFILE (Join-Path ".cache" "bazel-windows")
           echo "BAZEL_DISK_CACHE=$CacheDir" >> "$env:GITHUB_ENV"
 
@@ -130,6 +130,7 @@ jobs:
             "-//litert/vendors/intel_openvino/compiler:decoder_test"
             "-//litert/vendors/intel_openvino/dispatch:dispatch_api_openvino_test"
             "-//litert/vendors/intel_openvino/compiler:openvino_compiler_plugin_test"
+            "-//litert/vendors/qualcomm/qnn_backend_test/builder_test:hadamard_transform_test"
           )
 
           $BAZEL_ARGS = @(
