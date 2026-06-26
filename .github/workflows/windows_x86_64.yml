@@ -36,14 +36,14 @@ jobs:
                          (github.event_name == 'workflow_dispatch' && inputs.REFRESH_CACHE) }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Add GNU tar to PATH
         shell: bash
         run: echo "C:/Program Files/Git/usr/bin" >> $GITHUB_PATH
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -84,7 +84,7 @@ jobs:
       - name: Restore bazel cache if cache is not being refreshed.
         id: bazel-cache
         if: env.REFRESH_CACHE != 'true'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         env:
           windir: ""
           PATH: "C:/Program Files/Git/usr/bin;C:/Windows/System32;C:/Windows"
@@ -146,7 +146,7 @@ jobs:
 
       - name: Upload failing bazel test logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: windows-bazel-testlogs-${{ github.run_id }}
           if-no-files-found: ignore
@@ -182,7 +182,7 @@ jobs:
         run: bazel --output_base="$env:BAZEL_OUTPUT_BASE" shutdown
 
       - name: Save bazel cache if it's new or being refreshed.
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         if: env.REFRESH_CACHE == 'true' || steps.bazel-cache.outputs.cache-hit != 'true'
         env:
           windir: ""
