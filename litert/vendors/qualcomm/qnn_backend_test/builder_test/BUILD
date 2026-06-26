@@ -298,7 +298,7 @@ litert_test(
         "hadamard_transform_test.cc",
     ],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": [],
+        "//litert:android": [],
         "//conditions:default": [
             make_rpaths([
                 "//litert/c:litert_runtime_c_api_so",
@@ -311,7 +311,13 @@ litert_test(
         "no-remote-exec",
         "nobuilder",
         "notap",
+        "manual",
     ],
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     ungrte = True,
     use_sys_malloc = True,
     deps = [
