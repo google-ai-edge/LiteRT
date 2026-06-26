@@ -267,6 +267,28 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
   Transform(validate_op_config, ops, tensor_pool, gemma_4_mha_prefill,
             OptimizeMHAGemma4BPrefill);
 
+  // Gemma 4 Attention with local/global mask
+  const std::vector<QnnOpCode> gemma_4_mha_prefill_with_local_or_global_mask = {
+      QnnOpCode::kReshape, // 46
+      QnnOpCode::kConvert, // 47 Far away
+      QnnOpCode::kMatMul, // 48
+      QnnOpCode::kMatMul, // 49
+      QnnOpCode::kConcat, // 50
+      QnnOpCode::kConcat, // 51 local/global mask
+      QnnOpCode::kReshape, // 52 local/global mask
+      QnnOpCode::kElementWiseBinary, // 53
+      QnnOpCode::kSoftmax, // 54
+      QnnOpCode::kStridedSlice, // 55
+      QnnOpCode::kStridedSlice, // 56
+      QnnOpCode::kMatMul, // 57
+      QnnOpCode::kMatMul, // 58
+      QnnOpCode::kElementWiseBinary, // 59
+      QnnOpCode::kConvert, // 60
+      QnnOpCode::kReshape, // 61
+    };
+  Transform(validate_op_config, ops, tensor_pool, gemma_4_mha_prefill_with_local_or_global_mask,
+            OptimizeMHAGemma4BPrefill);
+
   // Fast Vlm Optimization
   const std::vector<QnnOpCode> fast_vlm_mha_prefill = {
       QnnOpCode::kElementWiseBinary,

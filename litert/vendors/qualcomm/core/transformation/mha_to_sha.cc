@@ -587,20 +587,33 @@ size_t OptimizeMHAGemma4BPrefill(
     std::function<bool(OpWrapper&)> validate_op_config,
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size) {
-  constexpr size_t kReshape0Idx = 0;
+  size_t offset_after_mask = 0;
+  size_t kMaskConcatIdx = -1;
+  size_t kMaskReshapeIdx = -1;
+
+  size_t kReshape0Idx = 0;
   // A Convert (Quantize) far away
-  constexpr size_t kQKCacheMatmulIdx = 2;
-  constexpr size_t kQKSliceMatmulIdx = 3;
-  constexpr size_t kQKConcatIdx = 4;
-  constexpr size_t kMaskAddIdx = 5;
-  constexpr size_t kSoftmaxIdx = 6;
-  constexpr size_t kQKVCacheSliceIdx = 7;
-  constexpr size_t kQKVSliceSliceIdx = 8;
-  constexpr size_t kQKVCacheMatmulIdx = 9;
-  constexpr size_t kQKVSliceMatmulIdx = 10;
-  constexpr size_t kQKVAddIdx = 11;
-  constexpr size_t kQuantizeIdx = 12;
-  constexpr size_t kReshape1Idx = 13;
+  size_t kQKCacheMatmulIdx = 2;
+  size_t kQKSliceMatmulIdx = 3;
+  size_t kQKConcatIdx = 4;
+  if (pattern_size == 16) {
+    // pattern_size == 16 with local/global mask
+    kMaskConcatIdx = 5;
+    kMaskReshapeIdx = 6;
+    offset_after_mask = 2;
+    QNN_LOG_INFO("[G2G] MHA Gemma4B with local/global mask");
+  } else {
+    QNN_LOG_INFO("[G2G] MHA Gemma4B (Prefill)");
+  }
+  size_t kMaskAddIdx = 5 + offset_after_mask;
+  size_t kSoftmaxIdx = 6 + offset_after_mask;
+  size_t kQKVCacheSliceIdx = 7 + offset_after_mask;
+  size_t kQKVSliceSliceIdx = 8 + offset_after_mask;
+  size_t kQKVCacheMatmulIdx = 9 + offset_after_mask;
+  size_t kQKVSliceMatmulIdx = 10 + offset_after_mask;
+  size_t kQKVAddIdx = 11 + offset_after_mask;
+  size_t kQuantizeIdx = 12 + offset_after_mask;
+  size_t kReshape1Idx = 13 + offset_after_mask;
 
   const auto& reshape0 = ops[start_index + kReshape0Idx];
   const auto& q_kcache_matmul = ops[start_index + kQKCacheMatmulIdx];
@@ -643,7 +656,6 @@ size_t OptimizeMHAGemma4BPrefill(
     return 1;
   }
 
-  QNN_LOG_INFO("[G2G] MHA Gemma4B (Prefill)");
   std::vector<OpWrapper> new_ops;
 
   // Unpack Query (In0), Key cache (KIn), Key slice (In1), Value cache (VIn) and
@@ -904,10 +916,13 @@ size_t OptimizeMHAGemma4BPrefill(
     ops.insert(ops.begin() + start_index + pattern_size,
                std::make_move_iterator(new_ops.begin()),
                std::make_move_iterator(new_ops.end()));
-    // Remove 13 ops in the pattern except the far away kQuantize (kConvert)
-    // Erase 2..13 (12 ops).
-    ops.erase(ops.begin() + start_index + kQKCacheMatmulIdx,
+    // Remove 13 ops in the pattern except the far away kQuantize (kConvert), Mask Concat, Mask Reshape
+    // Remove 9 ops (Add -> Softmax -> ... -> Reshape)
+    ops.erase(ops.begin() + start_index + kMaskAddIdx,
               ops.begin() + start_index + kReshape1Idx + 1);
+    // Remove 3 ops (Matmul -> Matmul -> Concat)
+    ops.erase(ops.begin() + start_index + kQKCacheMatmulIdx,
+              ops.begin() + start_index + kQKConcatIdx + 1);
     // Erase kReshape (1 op).
     ops.erase(ops.begin() + start_index + kReshape0Idx);
 
