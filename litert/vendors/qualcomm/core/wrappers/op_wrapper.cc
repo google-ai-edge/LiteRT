@@ -123,8 +123,6 @@ const TensorWrapper& OpWrapper::GetInputTensor(size_t i) const {
   return input_tensors_[i].get();
 }
 
-size_t OpWrapper::GetInputCount() const { return input_tensors_.size(); }
-
 const TensorWrapper& OpWrapper::GetOutputTensor(size_t i) const {
   assert(i < output_tensors_.size());
   return output_tensors_[i].get();
