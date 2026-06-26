@@ -77,6 +77,24 @@ size_t FuseConvertMatMulPrefill(
   if (convert.GetOutputTensor(0) != matmul.GetInputTensor(1)) {
     return 1;
   }
+  // Safety check: the Convert's output must be used only by this MatMul.
+  // If it's shared across multiple consumers, removing the Convert would
+  // orphan the other consumers (e.g. when the same K-slice tensor feeds
+  // multiple attention head MatMuls).
+  const TensorWrapper& convert_output = convert.GetOutputTensor(0);
+  for (size_t i = 0; i < ops.size(); ++i) {
+    if (i == start_index || i == start_index + 1) {
+      continue;  // skip the Convert itself and the MatMul being fused
+    }
+    for (const auto& t : ops[i].GetAllTensors()) {
+      if (&t.get() == &convert_output) {
+        QNN_LOG_WARNING(
+            "[G2G] Convert-MatMul fusion (Prefill) skipped: Convert output "
+            "is used by multiple consumers.");
+        return 1;
+      }
+    }
+  }
   // Graph transform
   QNN_LOG_INFO("[G2G] Convert-MatMul fusion (Prefill)");
   auto new_matmul = CreateOpWithSameParams(
