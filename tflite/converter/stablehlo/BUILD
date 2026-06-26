@@ -854,8 +854,6 @@ tf_cc_binary(
         ":op_stat_pass",
         ":stablehlo_util",
         ":transforms",
-        "//tflite/converter:canonicalize_boundary_value",
-        "//tflite/converter:flatbuffer_export",
         "//tflite/converter:tf_to_tfl_flatbuffer",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status",
@@ -869,8 +867,8 @@ tf_cc_binary(
         "@llvm-project//mlir:Parser",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:QuantOps",
-        "@llvm-project//mlir:RegisterAllDialects",
-        "@llvm-project//mlir:RegisterAllPasses",
+        "@llvm-project//mlir:RegisterAllDialects",  # buildcleaner: keep
+        "@llvm-project//mlir:RegisterAllPasses",  # buildcleaner: keep
         "@llvm-project//mlir:Support",
         "@org_tensorflow//tensorflow/cc/saved_model:loader",
         "@org_tensorflow//tensorflow/compiler/mlir:init_mlir",
@@ -888,7 +886,6 @@ tf_cc_binary(
         "@org_tensorflow//tensorflow/core:lib",
         "@org_tensorflow//tensorflow/core/ir/types:Dialect",
         "@stablehlo//:register",
-        "@xla//xla/mlir/framework/transforms:passes",
         "@xla//xla/mlir_hlo:all_passes",
         "@xla//xla/mlir_hlo:hlo_dialect_registration",
     ],
