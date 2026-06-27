@@ -121,6 +121,7 @@ cc_library(
 #         "@ml_drift//ml_drift/common:tensor",
 #         "@ml_drift//ml_drift/common/task:tensor_desc",
 #         "//tensor",
+#         "//tensor:arithmetic",
 #         "//tensor:datatypes",
 #         "//tensor/backends/ml_drift:arithmetic_ml_drift",
 #         "//tensor/backends/ml_drift:ml_drift_conversion",

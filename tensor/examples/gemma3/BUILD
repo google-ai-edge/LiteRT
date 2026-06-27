@@ -451,6 +451,7 @@ cc_binary(
 #         "@com_google_absl//absl/strings:string_view",
 #         "@com_google_absl//absl/time",
 #         "@com_google_absl//absl/types:span",
+#         "//third_party/gloop/base:init_google",
 #         "@ml_drift//ml_drift/cl:environment",
 #         "@ml_drift//ml_drift/cl:opencl_wrapper",
 #         "@ml_drift//ml_drift/common:gpu_model",
