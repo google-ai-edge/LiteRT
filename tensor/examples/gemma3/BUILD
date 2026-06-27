@@ -46,22 +46,26 @@ cc_library(
 )
 
 cc_library(
+    name = "gemma3_config",
+    hdrs = ["gemma3_config.h"],
+)
+
+cc_library(
     name = "safetensor_loader",
     srcs = ["safetensor_loader.cc"],
     hdrs = ["safetensor_loader.h"],
     deps = [
         ":safetensors",
+        "//tensor",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "//tensor/utils:macros",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
-        "//tensor",
-        "//tensor:buffer",
-        "//tensor:datatypes",
-        # copybara:uncomment "//tensor/backends/xnnpack:arithmetic",
-        "//tensor/utils:macros",
     ],
 )
 
@@ -71,6 +75,7 @@ cc_library(
 #     srcs = ["gemma3_graph.cc"],
 #     hdrs = ["gemma3_graph.h"],
 #     deps = [
+#         ":gemma3_config",
 #         "@com_google_absl//absl/container:flat_hash_map",
 #         "@com_google_absl//absl/log:absl_check",
 #         "@com_google_absl//absl/log:absl_log",
@@ -83,6 +88,51 @@ cc_library(
 #         "//tensor/backends/xnnpack:arithmetic",
 #         "//tensor/examples/ops/transformer:transformer_ops",
 #         "//tensor/examples/ops/transformer:transformer_ops_ml_drift",
+#         "//tensor/examples/ops/transformer:transformer_ops_xnnpack",
+#         "//tensor/internal:graph",
+#     ],
+# )
+#
+# cc_library(
+#     name = "gemma3_graph_ml_drift",
+#     srcs = ["gemma3_graph.cc"],
+#     hdrs = ["gemma3_graph.h"],
+#     defines = ["GEMMA3_ML_DRIFT_ONLY"],
+#     deps = [
+#         ":gemma3_config",
+#         "@com_google_absl//absl/container:flat_hash_map",
+#         "@com_google_absl//absl/log:absl_check",
+#         "@com_google_absl//absl/log:absl_log",
+#         "@com_google_absl//absl/strings",
+#         "//tensor",
+#         "//tensor:arithmetic",
+#         "//tensor:buffer",
+#         "//tensor:datatypes",
+#         "//tensor/backends/ml_drift:arithmetic_ml_drift",
+#         "//tensor/examples/ops/transformer:transformer_ops",
+#         "//tensor/examples/ops/transformer:transformer_ops_ml_drift",
+#         "//tensor/internal:graph",
+#     ],
+# )
+#
+# cc_library(
+#     name = "gemma3_graph_xnnpack",
+#     srcs = ["gemma3_graph.cc"],
+#     hdrs = ["gemma3_graph.h"],
+#     defines = ["GEMMA3_XNNPACK_ONLY"],
+#     deps = [
+#         ":gemma3_config",
+#         "@com_google_absl//absl/container:flat_hash_map",
+#         "@com_google_absl//absl/log:absl_check",
+#         "@com_google_absl//absl/log:absl_log",
+#         "@com_google_absl//absl/strings",
+#         "//tensor",
+#         "//tensor:arithmetic",
+#         "//tensor:buffer",
+#         "//tensor:datatypes",
+#         "//tensor/backends/xnnpack:arithmetic",
+#         "//tensor/backends/xnnpack:conversion",
+#         "//tensor/examples/ops/transformer:transformer_ops",
 #         "//tensor/examples/ops/transformer:transformer_ops_xnnpack",
 #         "//tensor/internal:graph",
 #     ],
@@ -178,7 +228,7 @@ cc_library(
 #     srcs = ["model_config.cc"],
 #     hdrs = ["model_config.h"],
 #     deps = [
-#         ":gemma3_graph",
+#         ":gemma3_config",
 #         ":safetensor_loader",
 #         ":tflite_loader",
 #         "@com_google_absl//absl/log:absl_log",

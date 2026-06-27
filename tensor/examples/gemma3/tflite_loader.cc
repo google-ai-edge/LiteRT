@@ -97,15 +97,8 @@ absl::StatusOr<size_t> NumElements(const std::vector<int64_t>& shape) {
 
 }  // namespace
 
-absl::StatusOr<TfliteLoader> TfliteLoader::Load(const std::string& path) {
-  TfliteLoader loader;
-  loader.model_ = tflite::FlatBufferModel::BuildFromFile(path.c_str());
-  if (!loader.model_) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("Failed to load TFLite model from: ", path));
-  }
-
-  const tflite::Model* model = loader.model_->GetModel();
+absl::Status TfliteLoader::InitFromModel() {
+  const tflite::Model* model = model_->GetModel();
   if (!model) {
     return absl::InvalidArgumentError("Model is null");
   }
@@ -144,7 +137,7 @@ absl::StatusOr<TfliteLoader> TfliteLoader::Load(const std::string& path) {
         name = absl::StrCat("subgraph_", sg_idx, "_tensor_", t_idx);
       }
 
-      if (loader.tensor_infos_.contains(name)) {
+      if (tensor_infos_.contains(name)) {
         // Handle duplicate names if any, maybe append subgraph index.
         name = absl::StrCat("subgraph_", sg_idx, "_", name);
       }
@@ -166,7 +159,7 @@ absl::StatusOr<TfliteLoader> TfliteLoader::Load(const std::string& path) {
 
       info.data = reinterpret_cast<const std::byte*>(buffer->data()->data());
       info.data_size = buffer->data()->size();
-      info.model_keep_alive = loader.model_;
+      info.model_keep_alive = model_;
 
       // Extract quantization parameters
       const auto* quant = tensor->quantization();
@@ -188,11 +181,44 @@ absl::StatusOr<TfliteLoader> TfliteLoader::Load(const std::string& path) {
         }
       }
 
-      loader.tensor_infos_[name] = std::move(info);
+      tensor_infos_[name] = std::move(info);
     }
   }
+  return absl::OkStatus();
+}
+
+absl::StatusOr<TfliteLoader> TfliteLoader::Load(absl::string_view path) {
+  // Note: tflite::FlatBufferModel::BuildFromFile requires a null-terminated
+  // const char*, so a std::string copy is necessary here from the
+  // absl::string_view.
+  TfliteLoader loader;
+  std::string path_str(path);
+  loader.model_ = tflite::FlatBufferModel::BuildFromFile(path_str.c_str());
+  if (!loader.model_) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Failed to load TFLite model from: ", path));
+  }
+
+  LRT_TENSOR_RETURN_IF_ERROR(loader.InitFromModel());
 
   ABSL_LOG(INFO) << "Loaded TFLite model: " << path << " with "
+                 << loader.tensor_infos_.size() << " weight tensors";
+  return loader;
+}
+
+absl::StatusOr<TfliteLoader> TfliteLoader::LoadFromBuffer(
+    absl::string_view buffer) {
+  TfliteLoader loader;
+  loader.model_ =
+      tflite::FlatBufferModel::BuildFromBuffer(buffer.data(), buffer.size());
+  if (!loader.model_) {
+    return absl::InvalidArgumentError(
+        "Failed to load TFLite model from buffer");
+  }
+
+  LRT_TENSOR_RETURN_IF_ERROR(loader.InitFromModel());
+
+  ABSL_LOG(INFO) << "Loaded TFLite model from buffer with "
                  << loader.tensor_infos_.size() << " weight tensors";
   return loader;
 }

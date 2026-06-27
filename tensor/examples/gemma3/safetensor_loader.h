@@ -26,9 +26,6 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-// copybara:uncomment_begin(google_only)
-// #include "tensor/backends/xnnpack/arithmetic.h"
-// copybara:uncomment_end
 #include "tensor/datatypes.h"
 #include "tensor/examples/gemma3/safetensors.h"
 #include "tensor/tensor.h"

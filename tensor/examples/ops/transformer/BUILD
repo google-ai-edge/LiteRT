@@ -90,6 +90,7 @@ cc_library(
 #         "//tensor:buffer",
 #         "//tensor:datatypes",
 #         "//tensor/backends/xnnpack:arithmetic",
+#         "//tensor/backends/xnnpack:conversion",
 #         "//tensor/internal:graph",
 #         "//tensor/internal:mixin",
 #         "//tensor/utils:macros",
