@@ -15,10 +15,14 @@ limitations under the License.
 
 #include "tflite/delegates/gpu/gl/serialization.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <variant>
+#include <vector>
 
+#include "absl/types/span.h"
 #include "absl/types/variant.h"
 #include "tflite/delegates/gpu/common/data_type.h"
 #include "tflite/delegates/gpu/common/status.h"
