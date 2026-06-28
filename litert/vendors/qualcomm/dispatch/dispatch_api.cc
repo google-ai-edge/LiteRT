@@ -51,8 +51,9 @@ namespace {
 using ::litert::qnn::QnnManager;
 
 static std::unique_ptr<QnnManager>& QnnManagerStorage() {
-  static absl::NoDestructor<std::unique_ptr<QnnManager>> storage;
-  return *storage;
+  // TODO(jiunkaiy): Apply absl::NoDestructor if we can bypass the downvote.
+  static std::unique_ptr<QnnManager> storage;
+  return storage;
 }
 
 QnnManager& Qnn() { return *QnnManagerStorage(); }
