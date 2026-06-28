@@ -180,6 +180,8 @@ litert_test(
     linkstatic = True,
     no_main = True,
     tags = [
+        # Tests with ungrte deps do not currently work on forge.
+        "no-remote-exec",
         "noasan",
         "nomsan",
         "nosan",
