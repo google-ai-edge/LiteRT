@@ -855,6 +855,7 @@ tf_cc_binary(
         ":stablehlo_util",
         ":transforms",
         "//tflite/converter:tf_to_tfl_flatbuffer",
+        "//third_party/gloop/util/status:status_macros",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",

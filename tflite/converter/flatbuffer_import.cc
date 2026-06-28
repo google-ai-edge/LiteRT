@@ -38,6 +38,7 @@ limitations under the License.
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "third_party/gloop/util/status/status_macros.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -314,7 +315,7 @@ Status ParseAndBuildLocation(
     if (attribute_types->Get(i) == debug_metadata::Attribute_Location) {
       auto location =
           static_cast<const debug_metadata::Location*>(attributes->Get(i));
-      TF_ASSIGN_OR_RETURN(
+      ASSIGN_OR_RETURN(
           auto mlir_location,
           BuildLocation(builder, *location, debug_metadata_locations,
                         attribute_location_idx_map));
@@ -392,8 +393,8 @@ Status ParseDebugMetadata(Builder builder, const char* data, size_t size,
       auto conversion_debug_metadata =
           static_cast<const debug_metadata::ConversionDebugMetadata*>(
               debug_metadata_fb->debug_metadata()->Get(i));
-      TF_RETURN_IF_ERROR(ParseAndBuildLocation(
-          builder, conversion_debug_metadata, debug_metadata_var));
+      RETURN_IF_ERROR(ParseAndBuildLocation(builder, conversion_debug_metadata,
+                                            debug_metadata_var));
     } else {
       LOG(WARNING) << "Unsupported DebugMetadataType: "
                    << debug_metadata_fb->debug_metadata_type()->Get(i);
@@ -522,9 +523,9 @@ std::string GetMlirOpName(const tflite::OperatorT& op,
 StatusOr<Operation*> BuildExternalConstOpWithBufferIndex(
     const tflite::TensorT& tensor, int32_t buffer_index, OpBuilder builder,
     Location loc) {
-  TF_ASSIGN_OR_RETURN(mlir::TensorType type,
-                      tfl::GetTensorType(tensor, builder,
-                                         /*is_constant=*/true));
+  ASSIGN_OR_RETURN(mlir::TensorType type,
+                   tfl::GetTensorType(tensor, builder,
+                                      /*is_constant=*/true));
   auto shaped_type = llvm::dyn_cast<mlir::RankedTensorType>(type);
   if (!shaped_type) {
     return absl::InternalError("Constant doesn't have a shape");
@@ -539,9 +540,9 @@ StatusOr<Operation*> BuildExternalConstOpWithBufferIndex(
 StatusOr<Operation*> BuildExternalConstOpWithExternalBuffer(
     const tflite::ModelT& model, const tflite::TensorT& tensor,
     OpBuilder builder, Location loc) {
-  TF_ASSIGN_OR_RETURN(mlir::TensorType type,
-                      tfl::GetTensorType(tensor, builder,
-                                         /*is_constant=*/true));
+  ASSIGN_OR_RETURN(mlir::TensorType type,
+                   tfl::GetTensorType(tensor, builder,
+                                      /*is_constant=*/true));
   auto shaped_type = llvm::dyn_cast<mlir::RankedTensorType>(type);
   if (!shaped_type) {
     return absl::InternalError("Constant doesn't have a shape");
@@ -579,9 +580,9 @@ StatusOr<Operation*> BuildExternalConstOpWithExternalBuffer(
 // of flatbuffer. `shaped_type` is the ShapedType for the const op.
 StatusOr<Operation*> BuildVariableOp(const tflite::TensorT& tensor,
                                      OpBuilder builder, Location loc) {
-  TF_ASSIGN_OR_RETURN(mlir::TensorType type,
-                      tfl::GetTensorType(tensor, builder,
-                                         /*is_constant=*/true));
+  ASSIGN_OR_RETURN(mlir::TensorType type,
+                   tfl::GetTensorType(tensor, builder,
+                                      /*is_constant=*/true));
   auto shaped_type = llvm::dyn_cast<mlir::RankedTensorType>(type);
   if (!shaped_type) {
     return absl::InternalError("Constant doesn't have a shape");
@@ -633,18 +634,18 @@ static StatusOr<Operation*> BuildSparseConstOp(const tflite::TensorT& tensor,
                                                llvm::ArrayRef<uint8_t> buffer,
                                                OpBuilder& builder,
                                                Location loc) {
-  TF_ASSIGN_OR_RETURN(mlir::TensorType type,
-                      tfl::GetTensorType(tensor, builder,
-                                         /*is_constant=*/true));
+  ASSIGN_OR_RETURN(mlir::TensorType type,
+                   tfl::GetTensorType(tensor, builder,
+                                      /*is_constant=*/true));
   auto shaped_type = llvm::dyn_cast<mlir::RankedTensorType>(type);
   if (!shaped_type) {
     return absl::InternalError("Constant doesn't have a shape");
   }
 
-  TF_ASSIGN_OR_RETURN(type, tfl::GetTensorType(tensor, builder,
-                                               /*is_constant=*/true,
-                                               /*is_intermediate=*/false,
-                                               /*get_storage=*/true));
+  ASSIGN_OR_RETURN(type, tfl::GetTensorType(tensor, builder,
+                                            /*is_constant=*/true,
+                                            /*is_intermediate=*/false,
+                                            /*get_storage=*/true));
   auto value_type = mlir::dyn_cast<mlir::RankedTensorType>(type);
 
   tensorflow::TensorProto repr = tfl::ConvertTfliteConstTensor(tensor, buffer);
@@ -656,8 +657,8 @@ static StatusOr<Operation*> BuildSparseConstOp(const tflite::TensorT& tensor,
     repr.mutable_tensor_shape()->add_dim()->set_size(
         buffer.size() / (shaped_type.getElementTypeBitWidth() / CHAR_BIT));
   }
-  TF_ASSIGN_OR_RETURN(mlir::ElementsAttr compressed_data,
-                      tensorflow::ConvertTensorProto(repr, &builder));
+  ASSIGN_OR_RETURN(mlir::ElementsAttr compressed_data,
+                   tensorflow::ConvertTensorProto(repr, &builder));
 
   const int dim_metadata_size = tensor.sparsity->dim_metadata.size();
   std::vector<mlir::TFL::DimensionMetadataAttr> dim_metadata(dim_metadata_size);
@@ -671,12 +672,12 @@ static StatusOr<Operation*> BuildSparseConstOp(const tflite::TensorT& tensor,
           tensor.sparsity->dim_metadata[i]->dense_size, {}, {});
     } else if (tensor.sparsity->dim_metadata[i]->format ==
                tflite::DimensionType_SPARSE_CSR) {
-      TF_ASSIGN_OR_RETURN(
-          auto segments, ConvertSparseIndexVector(
-                             tensor.sparsity->dim_metadata[i]->array_segments));
-      TF_ASSIGN_OR_RETURN(auto indices,
-                          ConvertSparseIndexVector(
-                              tensor.sparsity->dim_metadata[i]->array_indices));
+      ASSIGN_OR_RETURN(auto segments,
+                       ConvertSparseIndexVector(
+                           tensor.sparsity->dim_metadata[i]->array_segments));
+      ASSIGN_OR_RETURN(auto indices,
+                       ConvertSparseIndexVector(
+                           tensor.sparsity->dim_metadata[i]->array_indices));
       dim_metadata[i] = tfl::DimensionMetadataAttr::get(
           builder.getContext(),
           mlir::TFL::DimensionTypeAttr::get(builder.getContext(),
@@ -719,11 +720,11 @@ StatusOr<Operation*> BuildConstOp(const tflite::TensorT& tensor,
     return BuildVariableOp(tensor, builder, loc);
   }
 
-  TF_ASSIGN_OR_RETURN(mlir::TensorType type,
-                      tfl::GetTensorType(tensor, builder,
-                                         /*is_constant=*/true,
-                                         /*is_intermediate=*/false,
-                                         /*get_storage=*/true));
+  ASSIGN_OR_RETURN(mlir::TensorType type,
+                   tfl::GetTensorType(tensor, builder,
+                                      /*is_constant=*/true,
+                                      /*is_intermediate=*/false,
+                                      /*get_storage=*/true));
   auto shaped_type = llvm::dyn_cast<mlir::RankedTensorType>(type);
   if (!shaped_type) {
     return absl::InternalError("Constant doesn't have a shape");
@@ -732,9 +733,9 @@ StatusOr<Operation*> BuildConstOp(const tflite::TensorT& tensor,
   mlir::ElementsAttr value;
   if (tfl::IsQuantized(tensor)) {
     bool truncate = shaped_type.getElementType().getIntOrFloatBitWidth() == 64;
-    TF_ASSIGN_OR_RETURN(value,
-                        tfl::ConvertIntBuffer(shaped_type, buffer, truncate));
-    TF_ASSIGN_OR_RETURN(
+    ASSIGN_OR_RETURN(value,
+                     tfl::ConvertIntBuffer(shaped_type, buffer, truncate));
+    ASSIGN_OR_RETURN(
         mlir::quant::QuantizedType type,
         tfl::GetQuantizedType(tensor, builder, /*is_constant=*/true,
                               /*storage_type=*/value.getElementType()));
@@ -746,9 +747,9 @@ StatusOr<Operation*> BuildConstOp(const tflite::TensorT& tensor,
 
   auto elem_type = shaped_type.getElementType();
   if (auto float_type = llvm::dyn_cast<mlir::FloatType>(elem_type)) {
-    TF_ASSIGN_OR_RETURN(value, tfl::ConvertFloatBuffer(shaped_type, buffer));
+    ASSIGN_OR_RETURN(value, tfl::ConvertFloatBuffer(shaped_type, buffer));
   } else if (llvm::isa<mlir::IntegerType>(elem_type)) {
-    TF_ASSIGN_OR_RETURN(value, tfl::ConvertIntBuffer(shaped_type, buffer));
+    ASSIGN_OR_RETURN(value, tfl::ConvertIntBuffer(shaped_type, buffer));
   } else if (llvm::isa<mlir::TF::StringType>(elem_type)) {
     tensorflow::TensorProto repr =
         tfl::ConvertTfliteConstTensor(tensor, buffer);
@@ -1147,9 +1148,9 @@ StatusOr<Operation*> ConvertOp(
 
   // Handle the conversion from subgraph index to functions for If and While. We
   // will add CallOps in the region to call the functions later for While.
-  TF_ASSIGN_OR_RETURN(auto function_ref_attrs,
-                      ConvertSubgraphIdxsToFunctionAttrs(op.builtin_options,
-                                                         func_names, builder));
+  ASSIGN_OR_RETURN(auto function_ref_attrs,
+                   ConvertSubgraphIdxsToFunctionAttrs(op.builtin_options,
+                                                      func_names, builder));
   op_state.addAttributes(function_ref_attrs);
   // Handle conversion from subgraph to regions in StableHLO ops.
   auto status =
@@ -1501,8 +1502,8 @@ StatusOr<FuncOp> ConvertSubgraph(
       return absl::InvalidArgumentError(
           "input-arrays should be used with experimental pruning flag");
     }
-    TF_ASSIGN_OR_RETURN(func_inputs,
-                        GetTensorIndices(subgraph, ordered_input_arrays));
+    ASSIGN_OR_RETURN(func_inputs,
+                     GetTensorIndices(subgraph, ordered_input_arrays));
   }
 
   for (int input : func_inputs) {
@@ -1530,8 +1531,8 @@ StatusOr<FuncOp> ConvertSubgraph(
 
   std::vector<int> func_outputs = subgraph.outputs;
   if (is_entry_point && !ordered_output_arrays.empty()) {
-    TF_ASSIGN_OR_RETURN(func_outputs,
-                        GetTensorIndices(subgraph, ordered_output_arrays));
+    ASSIGN_OR_RETURN(func_outputs,
+                     GetTensorIndices(subgraph, ordered_output_arrays));
   }
 
   for (auto output : func_outputs) {
@@ -1614,8 +1615,8 @@ StatusOr<FuncOp> ConvertSubgraph(
 
   absl::flat_hash_set<const tflite::OperatorT*> pruned_subgraph_ops;
   if (experimental_prune_unreachable_nodes_unconditionally) {
-    TF_ASSIGN_OR_RETURN(pruned_subgraph_ops,
-                        PruneSubgraph(subgraph, func_inputs, func_outputs));
+    ASSIGN_OR_RETURN(pruned_subgraph_ops,
+                     PruneSubgraph(subgraph, func_inputs, func_outputs));
   }
 
   // Construct MLIR operators from TFLite operators
@@ -1681,7 +1682,7 @@ StatusOr<FuncOp> ConvertSubgraph(
     std::vector<mlir::TensorType> intermediate_types;
     intermediate_types.reserve(5);
     for (auto intermediate : op->intermediates) {
-      TF_ASSIGN_OR_RETURN(
+      ASSIGN_OR_RETURN(
           mlir::TensorType type,
           tfl::GetTensorType(*subgraph.tensors[intermediate], builder,
                              /*is_constant=*/false,
@@ -1693,7 +1694,7 @@ StatusOr<FuncOp> ConvertSubgraph(
 
     // If there's an optional argument, maybe_optional_arg_marker has been set
     // to a valid Value
-    TF_ASSIGN_OR_RETURN(
+    ASSIGN_OR_RETURN(
         auto* mlir_op,
         ConvertOp(*op, vals_map, intermediate_types, maybe_optional_arg_marker,
                   op_codes, func_names, subgraph.tensors, op_loc, op_builder,
