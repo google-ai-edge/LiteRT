@@ -52,18 +52,29 @@ cc_library(
 
 cc_library(
     name = "registration_helper",
-    srcs = ["registration_helper.cc"],
-    hdrs = ["registration_helper.h"],
+    srcs = [
+        "legacy_compatibility_layer.cc",
+        "registration_helper.cc",
+    ],
+    hdrs = [
+        "legacy_compatibility_layer.h",
+        "registration_helper.h",
+    ],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_accelerator_def",
         "//litert/c/internal:litert_accelerator_registration",
         "//litert/c/internal:litert_custom_tensor_buffer_handlers_def",
+        "//litert/c/internal:litert_runtime_context_header",
         "//litert/c/internal:litert_tensor_buffer_registry_header",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_shared_library",
         "//litert/core:environment",
+        "//litert/runtime:accelerator",
         "@com_google_absl//absl/strings:string_view",
     ],
 )

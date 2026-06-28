@@ -142,7 +142,7 @@ extern "C" {
 // Discovery C object for the CPU (Xnnpack) accelerator by LiteRT.
 // This object is used by the LiteRT environment constructor.
 static LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
-    .version = 1,  // LiteRtAcceleratorDefV1
+    .version = LITERT_ACCELERATOR_DEF_CURRENT_VERSION,
     .get_name = litert::CpuAccelerator::GetName,
     .get_version = litert::CpuAccelerator::GetVersion,
     .get_hardware_support = litert::CpuAccelerator::GetHardwareSupport,
