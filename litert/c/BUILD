@@ -65,6 +65,14 @@ cc_library(
     srcs = ["litert_common.cc"],
     hdrs = ["litert_common.h"],
     compatible_with = get_compatible_with_portable(),
+    visibility = [
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//android/aicore/backend/litert:__pkg__",
+        # "//litert:litert_c_users",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
+    ],
     deps = ["//litert/build_common:build_config"],
 )
 
@@ -840,7 +848,7 @@ cc_test(
     ],
 )
 
-# TODO: b/437381008
+# TODO(b/437381008): factor out runtime shim C API
 cc_library(
     name = "litert_runtime_c_api_so_shim",
     linkopts = select({
@@ -972,7 +980,7 @@ alias(
 
 exports_files(srcs = ["windows_exported_symbols.def"])
 
-# TODO: b/437381008
+# TODO(b/437381008): factor out runtime shim C API
 cc_library(
     name = "litert_tflite_runtime_c_api_so_shim",
     linkopts = select({
@@ -1084,6 +1092,12 @@ cc_library(
         "//litert:windows": [":litert_runtime_c_api_import"],
         "//conditions:default": [],
     }),
+)
+
+cc_library(
+    name = "empty",
+    srcs = ["empty.cc"],
+    alwayslink = 1,
 )
 
 # copybara:uncomment_begin(google-only)
