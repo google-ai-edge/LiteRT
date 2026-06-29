@@ -68,6 +68,8 @@ std::vector<OpWrapper> BuildPadOp(TensorPool& tensor_pool,
                                   const std::vector<TensorWrapperRef>& outputs,
                                   const std::uint32_t scheme_value) {
   std::vector<OpWrapper> res;
+  // TFLite Pad has input and padding tensors; PadV2 adds a third scalar
+  // constant-value tensor.
   if (inputs.size() < 2 || outputs.empty()) {
     QNN_LOG_ERROR("Invalid number of inputs or outputs for Pad op.");
     return res;
