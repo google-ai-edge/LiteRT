@@ -387,6 +387,7 @@ cc_test(
         ":framework",
         "//tflite:framework",
         "//tflite:string_util",
+        "//tflite:version",
         "//tflite/converter:allocation",
         "//tflite/core/api",
         "//tflite/core/api:verifier",
