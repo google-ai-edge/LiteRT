@@ -619,7 +619,7 @@ FilterOutcome GetFilterOutcome(const litert::compiler::Op& op,
 bool IsShloCompositeOpSupported(const litert::compiler::Op& op) {
   if (op.Code() == kLiteRtOpCodeShloComposite) {
     const char* custom_op_name = nullptr;
-    if (LiteRtGetSHLOCompositeOpName(op.Get(), &custom_op_name) !=
+    if (op.ctx()->get_shlo_composite_op_name(op.Get(), &custom_op_name) !=
             kLiteRtStatusOk ||
         custom_op_name == nullptr) {
       return false;
@@ -697,7 +697,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
       continue;
     }
 
-    LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
+    LITERT_RETURN_IF_ERROR(
+        compiler_plugin->ctx()->push_op(selected_ops, op.Get(), 0));
   }
 
   return kLiteRtStatusOk;
@@ -777,9 +778,10 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   };
 
   MakeUniqueSignatureKeysPerSubgraph(model.Get(), num_partitions, signatures);
-  LITERT_RETURN_IF_ERROR(LiteRtSerializeModelWithSignatures(
-      partitions, &data, &size, &offset, false, signatures, num_partitions,
-      opts));
+  LITERT_RETURN_IF_ERROR(
+      compiler_plugin->ctx()->serialize_model_with_signatures(
+          partitions, &data, &size, &offset, false, signatures, num_partitions,
+          opts));
 
   absl::string_view buffer_str(reinterpret_cast<const char*>(buf.Data()),
                                buf.Size());
