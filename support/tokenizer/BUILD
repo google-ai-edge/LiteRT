@@ -36,21 +36,15 @@ cc_library(
     name = "tokenizer",
     hdrs = ["tokenizer.h"],
     deps = [
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_tensor_buffer",
         "//support/util:convert_tensor_buffer",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-    ] + select({
-        "//litert:litert_link_capi_so": [
-            "//litert/cc:litert_api_with_dynamic_runtime",
-        ],
-        "//conditions:default": [
-            "//litert/cc:litert_macros",
-            "//litert/cc:litert_tensor_buffer",
-        ],
-    }),
+    ],
 )
 
 cc_test(

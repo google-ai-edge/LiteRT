@@ -36,22 +36,16 @@ cc_library(
     name = "audio_preprocessor",
     hdrs = ["audio_preprocessor.h"],
     deps = [
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/cc:litert_tensor_buffer",
         "//support/util:io_types",
         "//support/util:litert_status_util",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:string_view",
-    ] + select({
-        "//litert:litert_link_capi_so": [
-            "//litert/cc:litert_api_with_dynamic_runtime",
-        ],
-        "//conditions:default": [
-            "//litert/cc:litert_layout",
-            "//litert/cc:litert_macros",
-            "//litert/cc:litert_ranked_tensor_type",
-            "//litert/cc:litert_tensor_buffer",
-        ],
-    }),
+    ],
 )
 
 cc_test(
@@ -96,19 +90,13 @@ cc_library(
         "//litert/cc:litert_tensor_buffer_types",
         "//support/util:io_types",
         "//support/util:litert_status_util",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_tensor_buffer",
         # copybara:uncomment_begin(oss litert)
         # ] + select({
         # "@platforms//os:ios": ["//third_party/rive_miniaudio:rive_miniaudio_objc"],
         # "@platforms//os:macos": ["//third_party/rive_miniaudio:rive_miniaudio_objc"],
         # "//conditions:default": ["//third_party/rive_miniaudio"],
-        # }) + select({
-        # "//litert:litert_link_capi_so": [
-        # "//litert/cc:litert_api_with_dynamic_runtime",
-        # ],
-        # "//conditions:default": [
-        # "//litert/cc:litert_layout",
-        # "//litert/cc:litert_tensor_buffer",
-        # ],
         # }),
         # copybara:uncomment_end_and_comment_begin
     ] + select({
@@ -200,21 +188,15 @@ cc_library(
     name = "image_preprocessor",
     hdrs = ["image_preprocessor.h"],
     deps = [
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_tensor_buffer",
         "//support/util:io_types",
         "//support/util:litert_status_util",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:string_view",
-    ] + select({
-        "//litert:litert_link_capi_so": [
-            "//litert/cc:litert_api_with_dynamic_runtime",
-        ],
-        "//conditions:default": [
-            "//litert/cc:litert_layout",
-            "//litert/cc:litert_macros",
-            "//litert/cc:litert_tensor_buffer",
-        ],
-    }),
+    ],
 )
 
 alias(
@@ -250,19 +232,13 @@ cc_library(
     hdrs = ["by_pass_audio_preprocessor.h"],
     deps = [
         ":audio_preprocessor",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_tensor_buffer",
         "//support/util:io_types",
         "//support/util:litert_status_util",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
-    ] + select({
-        "//litert:litert_link_capi_so": [
-            "//litert/cc:litert_api_with_dynamic_runtime",
-        ],
-        "//conditions:default": [
-            "//litert/cc:litert_macros",
-            "//litert/cc:litert_tensor_buffer",
-        ],
-    }),
+    ],
 )
 
 cc_test(
@@ -289,19 +265,13 @@ cc_library(
     hdrs = ["by_pass_image_preprocessor.h"],
     deps = [
         ":image_preprocessor",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_tensor_buffer",
         "//support/util:io_types",
         "//support/util:litert_status_util",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
-    ] + select({
-        "//litert:litert_link_capi_so": [
-            "//litert/cc:litert_api_with_dynamic_runtime",
-        ],
-        "//conditions:default": [
-            "//litert/cc:litert_macros",
-            "//litert/cc:litert_tensor_buffer",
-        ],
-    }),
+    ],
 )
 
 cc_test(
@@ -330,6 +300,11 @@ cc_library(
     deps = [
         ":image_preprocessor",
         ":image_preprocessor_utils",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/cc:litert_tensor_buffer",
         "//litert/cc:litert_tensor_buffer_types",
         "//support/util:convert_tensor_buffer",
         "//support/util:io_types",
@@ -341,18 +316,7 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@stblib",
-    ] + select({
-        "//litert:litert_link_capi_so": [
-            "//litert/cc:litert_api_with_dynamic_runtime",
-        ],
-        "//conditions:default": [
-            "//litert/cc:litert_layout",
-            "//litert/cc:litert_macros",
-            "//litert/cc:litert_model",
-            "//litert/cc:litert_ranked_tensor_type",
-            "//litert/cc:litert_tensor_buffer",
-        ],
-    }),
+    ],
 )
 
 cc_test(
@@ -387,6 +351,12 @@ cc_library(
     deps = [
         ":image_preprocessor",
         ":image_preprocessor_utils",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc:litert_tensor_buffer_types",
         "//support/util:convert_tensor_buffer",
         "//support/util:io_types",
         "//support/util:litert_status_util",
@@ -395,19 +365,7 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@skia//:bmp_decode_codec",
         "@skia//:core",
-    ] + select({
-        "//litert:litert_link_capi_so": [
-            "//litert/cc:litert_api_with_dynamic_runtime",
-        ],
-        "//conditions:default": [
-            "//litert/cc:litert_layout",
-            "//litert/cc:litert_macros",
-            "//litert/cc:litert_model",
-            "//litert/cc:litert_ranked_tensor_type",
-            "//litert/cc:litert_tensor_buffer",
-            "//litert/cc:litert_tensor_buffer_types",
-        ],
-    }),
+    ],
 )
 
 # copybara:uncomment_begin(oss litert)

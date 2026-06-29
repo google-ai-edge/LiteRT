@@ -42,6 +42,23 @@ litert_lib(
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
+        "//litert/c/internal:litert_logging",
+        "@intel_openvino//:openvino",
+    ],
+)
+
+litert_test(
+    name = "npu_optimizer_test",
+    srcs = ["npu_optimizer_test.cc"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":npu_optimizer",
         "@intel_openvino//:openvino",
     ],
 )
@@ -97,6 +114,7 @@ litert_dynamic_lib(
         "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
+        "//litert/c:litert_op_options_header",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper_with_compiler_context",
         "//litert/c/options:litert_intel_openvino_options",
@@ -104,12 +122,14 @@ litert_dynamic_lib(
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_context_wrapper",
         "//litert/cc/internal:litert_handle",
+        "//litert/cc/internal:litert_op_options",
         "//litert/cc/internal:litert_opaque_options_wrapper",
         "//litert/cc/internal:litert_options_wrapper",
         "//litert/cc/options:litert_intel_openvino_options",
         "//litert/compiler/cc:litert_model",
         "//litert/vendors/intel_openvino:bytecode_header",
         "@com_google_absl//absl/strings:str_format",
+        "@flatbuffers",
         "@intel_openvino//:openvino",
     ],
 )
@@ -138,6 +158,7 @@ litert_bin(
         ":openvino_soc_config",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
+        "//litert/c:litert_op_options_header",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper_with_compiler_context",
         "//litert/c/options:litert_compiler_options",
@@ -146,6 +167,7 @@ litert_bin(
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_context_wrapper",
         "//litert/cc/internal:litert_handle",
+        "//litert/cc/internal:litert_op_options",
         "//litert/cc/internal:litert_opaque_options_wrapper",
         "//litert/cc/internal:litert_options_wrapper",
         "//litert/cc/options:litert_intel_openvino_options",
@@ -212,6 +234,7 @@ litert_lib(
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_op_options",
         "//litert/compiler/cc:litert_model",
         "//litert/vendors/intel_openvino:ov_utils",
         "//tflite/schema:schema_fbs",
@@ -288,6 +311,7 @@ litert_test(
         ":openvino_soc_config",
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_compiler_context",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",

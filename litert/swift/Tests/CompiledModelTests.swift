@@ -20,10 +20,9 @@ final class CompiledModelTests: XCTestCase {
   func testIsFullyAccelerated() throws {
     let env = try Environment()
     let modelPath = "litert/test/testdata/simple_model.tflite"
-    let model = try Model(filePath: modelPath)
     let options = try Options()
     try options.setHardwareAccelerators([.cpu])
-    let compiledModel = try CompiledModel(environment: env, model: model, options: options)
+    let compiledModel = try CompiledModel(filePath: modelPath, environment: env, options: options)
     do {
       _ = try compiledModel.isFullyAccelerated()
     } catch {
@@ -36,10 +35,9 @@ final class CompiledModelTests: XCTestCase {
   func testResizeInputTensor() throws {
     let env = try Environment()
     let modelPath = "litert/test/testdata/simple_model.tflite"
-    let model = try Model(filePath: modelPath)
     let options = try Options()
     try options.setHardwareAccelerators([.cpu])
-    let compiledModel = try CompiledModel(environment: env, model: model, options: options)
+    let compiledModel = try CompiledModel(filePath: modelPath, environment: env, options: options)
     do {
       try compiledModel.resizeInputTensor(inputIndex: 0, dimensions: [2])
     } catch {
@@ -51,10 +49,9 @@ final class CompiledModelTests: XCTestCase {
   func testErrorReporter() throws {
     let env = try Environment()
     let modelPath = "litert/test/testdata/simple_model.tflite"
-    let model = try Model(filePath: modelPath)
     let options = try Options()
     try options.setHardwareAccelerators([.cpu])
-    let compiledModel = try CompiledModel(environment: env, model: model, options: options)
+    let compiledModel = try CompiledModel(filePath: modelPath, environment: env, options: options)
     do {
       try compiledModel.clearErrors()
       let _ = try compiledModel.getErrorMessages()
@@ -68,10 +65,9 @@ final class CompiledModelTests: XCTestCase {
   func testRuntimeLayoutQueries() throws {
     let env = try Environment()
     let modelPath = "litert/test/testdata/simple_model.tflite"
-    let model = try Model(filePath: modelPath)
     let options = try Options()
     try options.setHardwareAccelerators([.cpu])
-    let compiledModel = try CompiledModel(environment: env, model: model, options: options)
+    let compiledModel = try CompiledModel(filePath: modelPath, environment: env, options: options)
 
     let inLayout = try compiledModel.getInputTensorLayout(inputIndex: 0)
     let outLayouts = try compiledModel.getOutputTensorLayouts()
@@ -84,10 +80,9 @@ final class CompiledModelTests: XCTestCase {
   func testRunWithOptions() throws {
     let env = try Environment()
     let modelPath = "litert/test/testdata/simple_model.tflite"
-    let model = try Model(filePath: modelPath)
     let compOptions = try Options()
     try compOptions.setHardwareAccelerators([.cpu])
-    let compiledModel = try CompiledModel(environment: env, model: model, options: compOptions)
+    let compiledModel = try CompiledModel(filePath: modelPath, environment: env, options: compOptions)
 
     let inputBuffers = try compiledModel.createInputBuffers()
     let outputBuffers = try compiledModel.createOutputBuffers()
@@ -104,10 +99,9 @@ final class CompiledModelTests: XCTestCase {
   func testDispatch() throws {
     let env = try Environment()
     let modelPath = "litert/test/testdata/simple_model.tflite"
-    let model = try Model(filePath: modelPath)
     let compOptions = try Options()
     try compOptions.setHardwareAccelerators([.cpu])
-    let compiledModel = try CompiledModel(environment: env, model: model, options: compOptions)
+    let compiledModel = try CompiledModel(filePath: modelPath, environment: env, options: compOptions)
 
     let inputBuffers = try compiledModel.createInputBuffers()
     let outputBuffers = try compiledModel.createOutputBuffers()
@@ -124,10 +118,9 @@ final class CompiledModelTests: XCTestCase {
   func testCancellationFunction() throws {
     let env = try Environment()
     let modelPath = "litert/test/testdata/simple_model.tflite"
-    let model = try Model(filePath: modelPath)
     let compOptions = try Options()
     try compOptions.setHardwareAccelerators([.cpu])
-    let compiledModel = try CompiledModel(environment: env, model: model, options: compOptions)
+    let compiledModel = try CompiledModel(filePath: modelPath, environment: env, options: compOptions)
 
     try compiledModel.setCancellationFunction(userData: nil) { _ in
       return false
@@ -142,5 +135,43 @@ final class CompiledModelTests: XCTestCase {
 
     let outputData: [Float] = try outputBuffers[0].read()
     XCTAssertEqual(outputData[0], 11.0, accuracy: 0.0001)
+  }
+
+  func testSignatureKeys() throws {
+    let env = try Environment()
+    let modelPath = "litert/test/testdata/simple_model.tflite"
+    let compiledModel = try CompiledModel(filePath: modelPath, environment: env)
+    let keys = try compiledModel.signatureKeys()
+    XCTAssertFalse(keys.isEmpty)
+  }
+
+  func testModelCreationFromFd() throws {
+    let env = try Environment()
+    let modelPath = "litert/test/testdata/simple_model.tflite"
+    let fileURL = URL(fileURLWithPath: modelPath)
+    let fileHandle = try FileHandle(forReadingFrom: fileURL)
+    let fd = fileHandle.fileDescriptor
+
+    let fileSize = try fileHandle.seekToEnd()
+    try fileHandle.seek(toOffset: 0)
+
+    let compiledModel = try CompiledModel(fd: fd, offset: 0, size: Int(fileSize), environment: env)
+    XCTAssertNotNil(compiledModel)
+
+    try fileHandle.close()
+  }
+
+  func testModelMetadata() throws {
+    let env = try Environment()
+    let modelPath = "litert/test/testdata/simple_model.tflite"
+    let compiledModel = try CompiledModel(filePath: modelPath, environment: env)
+
+    let metadataKey = "test_key"
+    let metadataValue = try XCTUnwrap("test_value".data(using: .utf8))
+
+    try compiledModel.addMetadata(key: metadataKey, data: metadataValue)
+
+    let readValue = try compiledModel.metadata(key: metadataKey)
+    XCTAssertEqual(readValue, metadataValue)
   }
 }

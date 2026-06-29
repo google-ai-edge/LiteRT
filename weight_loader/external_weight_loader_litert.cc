@@ -336,9 +336,10 @@ absl::StatusOr<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
   }
 
   MmapParams params = GetMmapParams(info.offset, info.length);
-
-  void* base = mmap(nullptr, params.map_length, PROT_READ, MAP_SHARED, fd,
-                    params.map_offset);
+  // MAP_PRIVATE with PROT_WRITE is required for Nvidia vulkan driver to use
+  // host mapped pointer for zero copy weight loading.
+  void* base = mmap(nullptr, params.map_length, PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE, fd, params.map_offset);
   int saved_errno = errno;
   close(fd);
   if (base == MAP_FAILED) {
@@ -459,8 +460,10 @@ absl::StatusOr<CpuMapping> MapScopedFileSlice(
 #if !defined(_WIN32)
   int fd = source->file.file();
   MmapParams params = GetMmapParams(absolute_offset, info.length);
-  void* base = mmap(nullptr, params.map_length, PROT_READ, MAP_SHARED, fd,
-                    params.map_offset);
+  // MAP_PRIVATE with PROT_WRITE is required for Nvidia vulkan driver to use
+  // host mapped pointer for zero copy weight loading.
+  void* base = mmap(nullptr, params.map_length, PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE, fd, params.map_offset);
   int saved_errno = errno;
   if (base == MAP_FAILED) {
     return absl::InternalError(

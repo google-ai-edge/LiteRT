@@ -71,7 +71,8 @@ TEST(Buffer, GlBufferAlloc) {
   ASSERT_TRUE(buffer);
 
   // Test lock and unlock.
-  LITERT_ASSERT_OK_AND_ASSIGN(float* data, buffer->Lock<float>());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      float* data, buffer->Lock<float>(kLiteRtTensorBufferLockModeReadWrite));
   EXPECT_NE(data, nullptr);
   LITERT_ASSERT_OK(buffer->Unlock<float>());
 }
@@ -97,7 +98,9 @@ TEST(Buffer, GlBufferAllocFromAhwb) {
       GlBuffer gl_buffer, GlBuffer::AllocFromAhwbBuffer(gpu_env, ahwb_buffer));
 
   // Read from GL buffer backed by AHWB.
-  LITERT_ASSERT_OK_AND_ASSIGN(float* gl_host_data, gl_buffer.Lock<float>());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      float* gl_host_data,
+      gl_buffer.Lock<float>(kLiteRtTensorBufferLockModeRead));
   ASSERT_NE(gl_host_data, nullptr);
   EXPECT_EQ(std::memcmp(gl_host_data, kTensorData, sizeof(kTensorData)), 0);
   LITERT_EXPECT_OK(gl_buffer.Unlock<float>());
@@ -127,7 +130,8 @@ TEST(Buffer, GlBufferNullDeallocator) {
   {
     GlBuffer gl_buffer(gpu_env, target, id, size_bytes, offset,
                        /*deallocator=*/nullptr);
-    LITERT_ASSERT_OK_AND_ASSIGN(float* data, gl_buffer.Lock<float>());
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        float* data, gl_buffer.Lock<float>(kLiteRtTensorBufferLockModeWrite));
     EXPECT_NE(data, nullptr);
     for (int i = 0; i < 4; ++i) {
       data[i] = i;
@@ -137,7 +141,8 @@ TEST(Buffer, GlBufferNullDeallocator) {
   // buffer id should not be deallocated here and can be reused.
   GlBuffer gl_buffer(gpu_env, target, id, size_bytes, offset,
                      /*deallocator=*/nullptr);
-  LITERT_ASSERT_OK_AND_ASSIGN(float* data, gl_buffer.Lock<float>());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      float* data, gl_buffer.Lock<float>(kLiteRtTensorBufferLockModeRead));
   EXPECT_NE(data, nullptr);
   for (int i = 0; i < 4; ++i) {
     EXPECT_EQ(data[i], i);

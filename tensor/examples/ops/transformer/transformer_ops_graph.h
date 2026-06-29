@@ -153,6 +153,20 @@ struct SoftmaxWithRuntimeCheckOperation
   LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
+struct ExtractLocalCacheOperationData {
+  int local_cache_size;
+  int kv_heads_count;
+  int head_size;
+  int window_size;
+  int global_cache_size;
+};
+
+struct ExtractLocalCacheOperation : public ExtractLocalCacheOperationData,
+                                    Operation {
+  absl::string_view GetName() const override { return "ExtractLocalCache"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
+};
+
 }  // namespace litert::tensor::graph
 
 #endif  // THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_OPS_TRANSFORMER_TRANSFORMER_OPS_GRAPH_H_

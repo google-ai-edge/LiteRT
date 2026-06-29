@@ -522,6 +522,35 @@ cc_library(
 )
 
 cc_library(
+    name = "concatenation",
+    testonly = True,
+    hdrs = ["concatenation.h"],
+    deps = [
+        ":common",
+        ":graph_helpers",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_rng",
+        "//litert/core/model",
+        "//litert/core/model:ops_concatenation",
+        "//litert/core/model:shape_inference_types",
+        "//litert/test:simple_buffer",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:datatypes",
+        "//tensor/backends/tflite:arithmetic_tflite",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
     name = "softmax",
     testonly = True,
     hdrs = ["softmax.h"],
@@ -560,6 +589,7 @@ cc_library(
         ":binary_broadcast",
         ":binary_no_bcast",
         ":common",
+        ":concatenation",
         ":conv_2d",
         ":depthwise_conv_2d",
         ":extra_model",

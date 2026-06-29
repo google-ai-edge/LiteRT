@@ -63,10 +63,13 @@ cc_library(
     deps = [
         ":util",
         "//tflite:string_util",
+        "//tflite:util",
         "//tflite/c:c_api_types",
         "//tflite/core/c:common",
         "//tflite/experimental/resource",
         "@com_google_absl//absl/status",
+        "@eigen_archive//:eigen3",
+        "@org_tensorflow//tensorflow/core/platform:tstring",
     ] + if_mobile([
         "@org_tensorflow//tensorflow/core:portable_tensorflow_lib_lite",
     ]) + if_not_mobile([
@@ -368,6 +371,7 @@ tf_cc_test(
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core/platform:errors",
         "@org_tensorflow//tensorflow/core/platform:status",
+        "@org_tensorflow//tensorflow/core/platform:tstring",
         "@org_tensorflow//tensorflow/core/protobuf:error_codes_proto_impl_cc",
     ],
 )
