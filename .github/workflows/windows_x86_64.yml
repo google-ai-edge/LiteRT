@@ -112,6 +112,7 @@ jobs:
             "--keep_going"
             "--repo_env=USE_PYWRAP_RULES=True"
             "--define=protobuf_allow_msvc=true"
+            "--config=public_cache"
           )
 
           $LITERT_EXCLUDED_TARGETS = @(
@@ -157,18 +158,18 @@ jobs:
 
       - name: Build tools for Windows
         run: |
-          bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache="$env:BAZEL_DISK_CACHE" --config=windows -- `
+          bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache="$env:BAZEL_DISK_CACHE" --config=windows --config=public_cache -- `
             //litert/tools:run_model
 
       - name: Build example plugin for Windows
         run: |
-          bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache="$env:BAZEL_DISK_CACHE" --config=windows -- `
+          bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache="$env:BAZEL_DISK_CACHE" --config=windows --config=public_cache -- `
             //litert/vendors/examples:LiteRtCompilerPlugin `
             //litert/vendors/examples:LiteRtDispatch
 
       - name: Build Intel OpenVINO plugin for Windows
         run: |
-          bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache="$env:BAZEL_DISK_CACHE" --config=windows -- `
+          bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache="$env:BAZEL_DISK_CACHE" --config=windows --config=public_cache -- `
             //litert/vendors/intel_openvino/compiler:LiteRtCompilerPlugin `
             //litert/vendors/intel_openvino/dispatch:LiteRtDispatch `
             //litert/vendors/intel_openvino/compiler:openvino_compiler_plugin_test `

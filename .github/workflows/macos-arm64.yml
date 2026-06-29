@@ -102,6 +102,7 @@ jobs:
             "--test_lang_filters=${TEST_LANG_FILTERS}"
             "--keep_going"
             "--repo_env=USE_PYWRAP_RULES=True"
+            "--config=public_cache"
           )
 
           LITERT_EXCLUDED_TARGETS=(
