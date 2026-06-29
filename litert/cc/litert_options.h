@@ -255,20 +255,20 @@ class Options {
     return {};
   }
 
-  /// Sets the in-memory weights map used for the model.
+  /// Sets the in-memory weights map owned by the client and used for the model.
   /// @param map The weight map mapping group names to contiguous buffers.
   /// @return An `Expected` object that is empty on success, or contains an
   /// error.
   Expected<void> SetWeightInMemoryMap(
-      absl::flat_hash_map<std::string, absl::Span<const std::byte>> map) {
+      const absl::flat_hash_map<std::string, absl::Span<const std::byte>>*
+          map) {
     build_actions_.push_back(
-        [map = std::move(map)](internal::RuntimeProxy* runtime,
-                               LiteRtOptions options) mutable {
+        [map](internal::RuntimeProxy* runtime, LiteRtOptions options) {
           auto* options_impl = reinterpret_cast<LiteRtOptionsT*>(options);
           if (!options_impl) {
             return kLiteRtStatusErrorRuntimeFailure;
           }
-          options_impl->weight_in_memory_map = std::move(map);
+          options_impl->weight_in_memory_map = map;
           return kLiteRtStatusOk;
         });
     return {};

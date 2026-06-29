@@ -18,10 +18,15 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-google-ai-edge-litert = { version = "0.1", path = ".." }
+google-ai-edge-litert = { version = "0.1", path = "..", features = ["async_support"] }
 clap = { version = "4.5", features = ["derive"] }
 image = "0.25.9"
+tokio = { version = "1", features = ["full"] }
 
 [[bin]]
 name = "segmentation"
 path = "segmentation_main.rs"
+
+[[bin]]
+name = "segmentation_async"
+path = "segmentation_async_main.rs"
