@@ -108,6 +108,7 @@ cc_library(
 #         ":transformer_ops_ml_drift",
 #         "@com_google_googletest//:gtest_main",
 #         "@com_google_absl//absl/container:flat_hash_map",
+#         "@com_google_absl//absl/log:absl_log",
 #         "@com_google_absl//absl/types:any",
 #         "@ml_drift//ml_drift/cl:environment",
 #         "@ml_drift//ml_drift/cl:inference_context",

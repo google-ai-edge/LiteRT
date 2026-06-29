@@ -69,8 +69,8 @@ Tensor<Mixins...> RmsNorm(const Tensor<Mixins...>& input,
 
 template <class... Mixins>
 Tensor<Mixins...> FillSegmentPos(const Tensor<Mixins...>& params,
-                                 const std::vector<int>& shape,
-                                 int param_index) {
+                                 const std::vector<int>& shape, int param_index,
+                                 Type output_type = Type::kI32) {
   auto op = std::make_shared<graph::FillSegmentPosOperation>();
   RegisterMixins<Mixins...>(op);
   op->param_index = param_index;
@@ -78,7 +78,7 @@ Tensor<Mixins...> FillSegmentPos(const Tensor<Mixins...>& params,
   Tensor<Mixins...> output = AddOutput(op, source_location::current());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = shape;
-  output_info.type = Type::kI32;
+  output_info.type = output_type;
   graph::OpDebugger::DebugOp(*op);
   return output;
 }
@@ -86,11 +86,13 @@ Tensor<Mixins...> FillSegmentPos(const Tensor<Mixins...>& params,
 template <class... Mixins>
 Tensor<Mixins...> FillAttentionMask(const Tensor<Mixins...>& params,
                                     const std::vector<int>& shape,
-                                    bool is_local, int sliding_window_size) {
+                                    bool is_local, int sliding_window_size,
+                                    bool is_decode = false) {
   auto op = std::make_shared<graph::FillAttentionMaskOperation>();
   RegisterMixins<Mixins...>(op);
   op->is_local = is_local;
   op->sliding_window_size = sliding_window_size;
+  op->is_decode = is_decode;
   op->inputs = {params.GetRaw()};
   Tensor<Mixins...> output = AddOutput(op, source_location::current());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
@@ -302,6 +304,42 @@ Tensor<Mixins...> MatMulWithCache(const Tensor<Mixins...>& lhs,
 }
 
 template <class... Mixins>
+std::pair<Tensor<Mixins...>, Tensor<Mixins...>> ExtractLocalCache(
+    const Tensor<Mixins...>& k, const Tensor<Mixins...>& v,
+    const Tensor<Mixins...>& params, int local_cache_size, int kv_heads_count,
+    int head_size, int window_size, int global_cache_size) {
+  auto op = std::make_shared<graph::ExtractLocalCacheOperation>();
+  RegisterMixins<Mixins...>(op);
+  op->local_cache_size = local_cache_size;
+  op->kv_heads_count = kv_heads_count;
+  op->head_size = head_size;
+  op->window_size = window_size;
+  op->global_cache_size = global_cache_size;
+  op->inputs = {k.GetRaw(), v.GetRaw(), params.GetRaw()};
+
+  auto out_group = graph::NewTensorGroup(2, source_location::current());
+  op->outputs_group = out_group;
+  out_group->producer = op;
+
+  std::pair<Tensor<Mixins...>, Tensor<Mixins...>> outputs{
+      Tensor<Mixins...>(graph::GetTensor(0, out_group)),
+      Tensor<Mixins...>(graph::GetTensor(1, out_group))};
+
+  LRT_TENSOR_ASSIGN_OR_ABORT(auto k_info, graph::GetInfo(k.GetRaw()));
+
+  graph::TensorInformation& k_local_info = *GetInfo(outputs.first.GetRaw());
+  k_local_info.shape = {1, kv_heads_count, local_cache_size, head_size};
+  k_local_info.type = k_info.type;
+
+  graph::TensorInformation& v_local_info = *GetInfo(outputs.second.GetRaw());
+  v_local_info.shape = {1, kv_heads_count, head_size, local_cache_size};
+  v_local_info.type = k_info.type;
+
+  graph::OpDebugger::DebugOp(*op);
+  return outputs;
+}
+
+template <class... Mixins>
 Tensor<Mixins...> SoftmaxWithRuntimeCheck(
     const Tensor<Mixins...>& input, const Tensor<Mixins...>& params,
     std::optional<int> start_ch_index = std::nullopt,
@@ -318,44 +356,6 @@ Tensor<Mixins...> SoftmaxWithRuntimeCheck(
   output_info.type = input_info.type;
   graph::OpDebugger::DebugOp(*op);
   return output;
-}
-
-template <class... Mixins>
-std::pair<Tensor<Mixins...>, Tensor<Mixins...>> ExtractLocalCache(
-    const Tensor<Mixins...>& key, const Tensor<Mixins...>& value,
-    const Tensor<Mixins...>& params, int local_cache_size, int kv_heads_count,
-    int head_size, int window_size, int global_cache_size) {
-  auto op = std::make_shared<graph::ExtractLocalCacheOperation>();
-  RegisterMixins<Mixins...>(op);
-  op->local_cache_size = local_cache_size;
-  op->kv_heads_count = kv_heads_count;
-  op->head_size = head_size;
-  op->window_size = window_size;
-  op->global_cache_size = global_cache_size;
-  op->inputs = {key.GetRaw(), value.GetRaw(), params.GetRaw()};
-
-  auto out_group = graph::NewTensorGroup(2, source_location::current());
-  op->outputs_group = out_group;
-  out_group->producer = op;
-
-  std::pair<Tensor<Mixins...>, Tensor<Mixins...>> outputs{
-      Tensor<Mixins...>(graph::GetTensor(0, out_group)),
-      Tensor<Mixins...>(graph::GetTensor(1, out_group))};
-
-  int elements = local_cache_size * kv_heads_count * head_size;
-  LRT_TENSOR_ASSIGN_OR_ABORT(auto key_info, graph::GetInfo(key.GetRaw()));
-
-  graph::TensorInformation& k_local_info = *GetInfo(outputs.first.GetRaw());
-  k_local_info.shape = {1, 1, 1, elements};
-  k_local_info.type = key_info.type;
-
-  LRT_TENSOR_ASSIGN_OR_ABORT(auto value_info, graph::GetInfo(value.GetRaw()));
-  graph::TensorInformation& v_local_info = *GetInfo(outputs.second.GetRaw());
-  v_local_info.shape = {1, 1, 1, elements};
-  v_local_info.type = value_info.type;
-
-  graph::OpDebugger::DebugOp(*op);
-  return outputs;
 }
 
 }  // namespace litert::tensor
