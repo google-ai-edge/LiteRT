@@ -16,6 +16,7 @@ The build and run docs live in [doc/](./doc/). Read them in this order:
 flowchart LR
     A[PREREQUISITES.md<br/>Install toolchain] --> B[QAIRT_SDK.md<br/>QNN concepts and libraries]
     B --> C[HTP_INSTRUCTIONS.md<br/>Compile and execute]
+    B -. "QNN Native Path" .-> G[LITERT_QNN_NATIVE_RUN.md<br/>Run a .dlc via qnn-net-run]
     C -. "IoT target" .-> D[IOT_DEVICE_SETUP.md<br/>Flash oe-linux device]
     C -. "LPAI target" .-> E[LPAI_INSTRUCTIONS.md<br/>Always-on low-power engine]
     C -. "Custom TFLite op" .-> F[CUSTOM_OP_INSTRUCTIONS.md<br/>Build and use a QNN custom op package]
@@ -29,6 +30,7 @@ flowchart LR
 | [IOT_DEVICE_SETUP.md](./doc/IOT_DEVICE_SETUP.md) | Conditional | Flash an IoT device (e.g. IQ-8275 / QCS8275, oe-linux or Ubuntu), then follow [Run on device (IoT device with oe-linux)](./doc/HTP_INSTRUCTIONS.md#run-on-device-iot-device-with-oe-linux) in HTP_INSTRUCTIONS.md. |
 | [LPAI_INSTRUCTIONS.md](./doc/LPAI_INSTRUCTIONS.md) | Conditional | Target the LPAI (Low Power AI) backend for always-on embedded use cases. |
 | [CUSTOM_OP_INSTRUCTIONS.md](./doc/CUSTOM_OP_INSTRUCTIONS.md) | Conditional | Build a QNN custom op package and run TFLite custom ops on the NPU. |
+| [LITERT_QNN_NATIVE_RUN.md](./doc/LITERT_QNN_NATIVE_RUN.md) | Conditional | Compile a `.tflite` to a `.dlc` with LiteRT, then run the QNN graph natively through the QAIRT native tools (`qnn-context-binary-generator` → `qnn-net-run`) on host or device. |
 | [OPTIONS_REFERENCE.md](./doc/OPTIONS_REFERENCE.md) | Reference | Every `--qualcomm_*` option: values, defaults, compile vs. dispatch, and how to set it from CLI / TOML / C / C++. |
 
 ## Debug Features 🐞
@@ -39,7 +41,6 @@ Three compile-time knobs emit QNN native artifacts during AOT compilation:
 |------|-------|
 | `--qualcomm_saver_output_dir` | Saver Backend: records QNN API calls as `saver_output.c` + `params.bin` for offline replay. |
 | `--qualcomm_ir_json_dir` | Dumps the composed QNN graph as `<graph>.json` for quick inspection. |
-| `--qualcomm_dlc_dir` | IR Backend: produces Qualcomm `.dlc` files consumable by QNN native tools. |
 
 See [DEBUG_FEATURES.md](./doc/DEBUG_FEATURES.md) for full usage and details.
 

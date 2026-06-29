@@ -7,7 +7,7 @@ implementation under `dispatch/`. Backend-specific options are declared in
 `litert/c/options/litert_qualcomm_options.h` and exposed as `--qualcomm_*` CLI
 flags via `litert/tools/flags/vendors/qualcomm_flags.h`.
 
-LiteRT exposes three compile-time debug knobs that map directly to QNN native
+LiteRT exposes two compile-time debug knobs that map directly to QNN native
 artifacts. They are independent and can be combined in a single compile run.
 Each one takes an output **directory** path; if the directory is empty (the
 default), the feature is off.
@@ -16,9 +16,8 @@ Option flag                         | Artifact                        | C++ sett
 ----------------------------------- | ------------------------------- | ----------
 `--qualcomm_saver_output_dir=<dir>` | `saver_output.c` + `params.bin` | `SetSaverOutputDir()`
 `--qualcomm_ir_json_dir=<dir>`      | `<graph>.json`                  | `SetIrJsonDir()`
-`--qualcomm_dlc_dir=<dir>`          | `<graph>.dlc`                   | `SetDlcDir()`
 
-All three are wired through `apply_plugin_main` (the AOT compile entry point). A
+All are wired through `apply_plugin_main` (the AOT compile entry point). A
 typical compile invocation looks like:
 
 ```bash
@@ -113,42 +112,3 @@ tensors, and their attributes/encodings.
 > *content* describes the QNN graph (op types, tensor shapes, quantization
 > parameters), so the QAIRT SDK documentation under `general/operations.html`
 > and the QNN op definition references are useful when interpreting the dump.
-
---------------------------------------------------------------------------------
-
-## DLC
-
-DLC (Deep Learning Container) is Qualcomm's serialized model format. QNN
-provides a dedicated **IR Backend** (`libQnnIr.so`) whose only job is to
-serialize a composed graph into DLC. Setting `--qualcomm_dlc_dir` causes LiteRT
-to switch to the IR Backend at compile time and ask it to write a `.dlc` file
-per partition.
-
-Enable it:
-
-```bash
-bazel build //litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so
-
-bazel run //litert/tools:apply_plugin_main -- \
-  --cmd apply \
-  --model <input.tflite> \
-  --soc_manufacturer Qualcomm --soc_model SM8650 \
-  --libs litert/vendors/qualcomm/compiler \
-  -o <output.tflite> \
-  --qualcomm_dlc_dir /tmp/qnn_dlc
-```
-
-You will get one `<graph_name>.dlc` per partition.
-
-> ⚠️ **Side effect.** When `--qualcomm_dlc_dir` is non-empty, the compiler
-> automatically overrides the backend to the IR Backend (a warning is logged).
-> The resulting compiled `.tflite` therefore reflects IR-Backend semantics, not
-> HTP/CPU/GPU execution. Use this flag for artifact extraction, not for
-> producing a deployable model.
-
-> **QNN relationship.** The output DLC files are standard QNN/SNPE artifacts and
-> can be consumed by QNN native tools (for example, `qnn-net-run` and
-> `qnn-context-binary-generator` accept `--dlc_path`, and Qualcomm Neural
-> Processing SDK provides `dlc-info` / `dlc-viewer` for inspection). See
-> `general/overview.html`, `general/tools.html`, and the "Utilizing DLCs"
-> tutorial (`general/tutorial5.html`) in the QAIRT SDK documentation.
