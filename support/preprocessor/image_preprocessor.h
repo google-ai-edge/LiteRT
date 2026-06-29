@@ -18,6 +18,7 @@
 #include <memory>
 #include <optional>
 #include <utility>
+#include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
@@ -40,6 +41,15 @@ class ImagePreprocessParameter {
     int max_num_patches;
     // The pooling kernel size.
     int pooling_kernel_size;
+    // use position tensor.
+    bool emit_positions = true;
+  };
+
+  // The config for normalization
+  struct NormalizationConfig {
+    std::vector<float> mean;
+    std::vector<float> std;
+    float rescale_factor = 1.0;
   };
 
   // Gets the target dimensions for preprocessing.
@@ -60,9 +70,20 @@ class ImagePreprocessParameter {
     patchify_config_ = patchify_config;
   }
 
+  // Gets the Normalization config for preprocessing.
+  const std::optional<NormalizationConfig>& GetNormalizationConfig() const {
+    return normalization_config_;
+  }
+
+  // Sets the Normalization config for preprocessing
+  void SetNormalizationConfig(const NormalizationConfig& normalization_config) {
+      normalization_config_ = normalization_config;
+  }
+
  private:
   Dimensions dimensions_;
   std::optional<PatchifyConfig> patchify_config_;
+  std::optional<NormalizationConfig> normalization_config_;
 };
 
 // Preprocessor for image.

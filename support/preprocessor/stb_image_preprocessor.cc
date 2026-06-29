@@ -180,32 +180,27 @@ absl::StatusOr<InputImage> StbImagePreprocessor::Preprocess(
   std::unique_ptr<unsigned char[], void (*)(void*)> decoded_image_ptr(
       decoded_image, stbi_image_free);
 
-  if (parameter.GetPatchifyConfig().has_value()) {
-    // Patchify the image if patchify config is set.
+  std::vector<unsigned char> resized_image;
+  ImagePreprocessParameter updated_parameter = parameter;
+  if (parameter.GetTargetDimensions().empty()) {
+    // No fixed target dimensions: resize while preserving the aspect ratio so
+    // the image fits the patchify constraints (used by patchifying encoders).
     const size_t num_elements = static_cast<size_t>(original_width) *
                                 original_height * kDesiredChannels;
-    // Resize the image if needed.
-    ImagePreprocessParameter updated_parameter = parameter;
     updated_parameter.SetTargetDimensions(
         {1, original_height, original_width, kDesiredChannels});
     std::vector<unsigned char> image_data(decoded_image,
                                           decoded_image + num_elements);
-    std::vector<unsigned char> resized_image_data;
     RETURN_IF_ERROR(MaybeResizeImageWithSameAspectRatio(
-        image_data, resized_image_data, updated_parameter));
-    // Convert the image to float.
-    std::vector<float> float_image(resized_image_data.size());
-    for (size_t i = 0; i < resized_image_data.size(); ++i) {
-      float_image[i] = static_cast<float>(resized_image_data[i]) / 255.0f;
-    }
-    return PatchifyImage(float_image, updated_parameter);
+        image_data, resized_image, updated_parameter));
   } else {
-    const int batch_size = target_dimensions.at(0);
+    // Fixed target dimensions: resize directly to the requested size.
     const int target_height = target_dimensions.at(1);
     const int target_width = target_dimensions.at(2);
     const int target_channels = target_dimensions.at(3);
-    std::vector<uint8_t> resized_image(static_cast<size_t>(target_width) *
-                                       target_height * target_channels);
+
+    resized_image.resize(static_cast<size_t>(target_width) * target_height *
+                         target_channels);
 
     int alpha_channel = -1;
     if (target_channels == 4) {
@@ -231,33 +226,69 @@ absl::StatusOr<InputImage> StbImagePreprocessor::Preprocess(
                      STBIR_FILTER_CATMULLROM) == 0) {
       return absl::InternalError("Failed to resize image.");
     }
-    // copybara:comment_end
-    const int num_elements =
-        batch_size * target_height * target_width * target_channels;
-    const size_t buffer_size = num_elements * sizeof(float);
-
-    LITERT_ASSIGN_OR_RETURN(
-        auto processed_tensor_buffer,
-        ::litert::TensorBuffer::CreateManagedHostMemory(
-            MakeRankedTensorType<float>(
-                {batch_size, target_height, target_width, target_channels}),
-            buffer_size));
-
-    LITERT_ASSIGN_OR_RETURN(
-        auto processed_tensor_lock_and_addr,
-        ::litert::TensorBufferScopedLock::Create(
-            processed_tensor_buffer, ::litert::TensorBuffer::LockMode::kWrite));
-    float* float_buffer_ptr =
-        reinterpret_cast<float*>(processed_tensor_lock_and_addr.second);
-    // Normalize pixel values from [0, 255] to [0.0f, 1.0f].
-    for (size_t i = 0; i < resized_image.size(); ++i) {
-      float_buffer_ptr[i] = static_cast<float>(resized_image[i]) / 255.0f;
-    }
-
-    InputImage processed_image(std::move(processed_tensor_buffer));
-
-    return processed_image;
   }
+
+  const Dimensions &final_dimensions = updated_parameter.GetTargetDimensions();
+  const int batch_size = final_dimensions.at(0);
+  const int target_height = final_dimensions.at(1);
+  const int target_width = final_dimensions.at(2);
+  const int target_channels = final_dimensions.at(3);
+
+  // Rescale the pixel values into floats. Defaults to the [0, 255] -> [0, 1]
+  // mapping unless an explicit rescale factor is provided.
+  const float rescale_factor =
+      updated_parameter.GetNormalizationConfig().has_value()
+          ? updated_parameter.GetNormalizationConfig()->rescale_factor
+          : (1.0f / 255.0f);
+  std::vector<float> float_image(resized_image.size());
+  for (size_t i = 0; i < resized_image.size(); ++i) {
+    float_image[i] = static_cast<float>(resized_image[i]) * rescale_factor;
+  }
+
+    // Optionally apply per-channel mean/std normalization.
+  if (updated_parameter.GetNormalizationConfig().has_value()) {
+    const auto& normalization_config =
+        *updated_parameter.GetNormalizationConfig();
+    if (normalization_config.mean.size() !=
+            static_cast<size_t>(desired_channels) ||
+        normalization_config.std.size() !=
+            static_cast<size_t>(desired_channels)) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Normalization mean/std size does not match the number of channels (",
+          desired_channels, ")."));
+    }
+    for (size_t index = 0; index < float_image.size(); ++index) {
+      const int ch = index % desired_channels;
+      float_image[index] = (float_image[index] - normalization_config.mean[ch]) /
+                           normalization_config.std[ch];
+     }
+  }
+
+  if (updated_parameter.GetPatchifyConfig().has_value()) {
+    return PatchifyImage(std::move(float_image), updated_parameter);
+  }
+
+  const size_t num_elements = static_cast<size_t>(batch_size) * target_height *
+                              target_width * target_channels;
+  const size_t buffer_size = num_elements * sizeof(float);
+  LITERT_ASSIGN_OR_RETURN(
+      auto processed_tensor_buffer,
+      ::litert::TensorBuffer::CreateManagedHostMemory(
+          MakeRankedTensorType<float>(
+              {batch_size, target_height, target_width, target_channels}),
+          buffer_size));
+  LITERT_ASSIGN_OR_RETURN(
+      auto processed_tensor_lock_and_addr,
+      ::litert::TensorBufferScopedLock::Create(
+          processed_tensor_buffer, ::litert::TensorBuffer::LockMode::kWrite));
+  float* float_buffer_ptr =
+      reinterpret_cast<float*>(processed_tensor_lock_and_addr.second);
+  for (size_t i = 0; i < float_image.size(); ++i) {
+    float_buffer_ptr[i] = float_image[i];
+  }
+  InputImage processed_image(std::move(processed_tensor_buffer));
+
+  return processed_image;
 }
 
 }  // namespace litert::support
