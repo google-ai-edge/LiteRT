@@ -257,6 +257,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
                             BenchmarkParam::Create<bool>(false));
     default_params.AddParam("convert_weights_on_gpu",
                             BenchmarkParam::Create<bool>(false));
+    default_params.AddParam("xnnpack_weight_cache_file_path",
+                            BenchmarkParam::Create<std::string>(""));
     default_params.AddParam("result_file_path",
                             BenchmarkParam::Create<std::string>(""));
     default_params.AddParam("model_runtime_info_output_file",
@@ -408,9 +410,15 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
         "consists of input layer name and range values (both low and high are "
         "inclusive) separated by ',', e.g. input1,1.0,2.0:input2,0,254"));
     flags.push_back(tflite::benchmark::CreateFlag<bool>(
-        "enable_weight_sharing", &params_, "Whether to enable weight (constant tensor) sharing."));
+        "enable_weight_sharing", &params_,
+        "Whether to enable weight (constant tensor) sharing."));
     flags.push_back(tflite::benchmark::CreateFlag<bool>(
-        "convert_weights_on_gpu", &params_, "Whether to convert weights on the GPU."));
+        "convert_weights_on_gpu", &params_,
+        "Whether to convert weights on the GPU."));
+    flags.push_back(tflite::benchmark::CreateFlag<std::string>(
+        "xnnpack_weight_cache_file_path", &params_,
+        "Path to an XNNPACK packed-weight cache file. Use ':memory' for an "
+        "in-memory cache on supported builds."));
     return flags;
   }
 
