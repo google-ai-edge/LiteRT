@@ -100,6 +100,7 @@ jobs:
             "--config=bulk_test_cpu"
             "--config=macos_arm64"
             "--test_lang_filters=${TEST_LANG_FILTERS}"
+            "--test_output=errors"
             "--keep_going"
             "--repo_env=USE_PYWRAP_RULES=True"
           )
