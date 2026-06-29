@@ -20,6 +20,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <numeric>
 #include <sstream>
 #include <string>
@@ -188,13 +189,17 @@ litert::Expected<void> SetOpenVinoDevice(litert::Options& options,
   LITERT_ASSIGN_OR_RETURN(auto& openvino_options,
                           options.GetIntelOpenVinoOptions());
   if (device == "cpu") {
-    openvino_options.SetDeviceType(kLiteRtIntelOpenVinoDeviceTypeCPU);
+    openvino_options.SetGraphBackend(/*graph_index=*/-1,
+                                     kLiteRtIntelOpenVinoGraphBackendCPU);
   } else if (device == "gpu") {
-    openvino_options.SetDeviceType(kLiteRtIntelOpenVinoDeviceTypeGPU);
+    openvino_options.SetGraphBackend(/*graph_index=*/-1,
+                                     kLiteRtIntelOpenVinoGraphBackendGPU);
   } else if (device == "npu") {
-    openvino_options.SetDeviceType(kLiteRtIntelOpenVinoDeviceTypeNPU);
+    openvino_options.SetGraphBackend(/*graph_index=*/-1,
+                                     kLiteRtIntelOpenVinoGraphBackendNPU);
   } else if (device == "auto") {
-    openvino_options.SetDeviceType(kLiteRtIntelOpenVinoDeviceTypeAUTO);
+    return litert::Error(kLiteRtStatusErrorInvalidArgument,
+                         "openvino_device=auto is not supported");
   } else {
     return litert::Error(kLiteRtStatusErrorInvalidArgument,
                          "Unknown openvino_device");
@@ -378,6 +383,126 @@ std::vector<int> TopK(const std::vector<float>& scores, int k) {
   return indices;
 }
 
+bool IsSupportedIoElementType(litert::ElementType element_type) {
+  return element_type == litert::ElementType::Float32 ||
+         element_type == litert::ElementType::Int8 ||
+         element_type == litert::ElementType::UInt8;
+}
+
+litert::Expected<LiteRtQuantizationPerTensor> GetPerTensorQuantization(
+    const litert::SimpleTensor& tensor, const char* tensor_name) {
+  if (tensor.QTypeId() != kLiteRtQuantizationPerTensor) {
+    return litert::Error(kLiteRtStatusErrorInvalidArgument,
+                         std::string(tensor_name) +
+                             " must use per-tensor quantization");
+  }
+  LiteRtQuantizationPerTensor quantization = tensor.PerTensorQuantization();
+  if (quantization.scale == 0.0f) {
+    return litert::Error(kLiteRtStatusErrorInvalidArgument,
+                         std::string(tensor_name) +
+                             " has zero quantization scale");
+  }
+  return quantization;
+}
+
+template <typename T>
+std::vector<T> QuantizePerTensor(
+    const std::vector<float>& values,
+    const LiteRtQuantizationPerTensor& quantization) {
+  std::vector<T> out(values.size());
+  const int64_t q_min = static_cast<int64_t>(std::numeric_limits<T>::min());
+  const int64_t q_max = static_cast<int64_t>(std::numeric_limits<T>::max());
+  for (size_t i = 0; i < values.size(); ++i) {
+    int64_t q = static_cast<int64_t>(
+        std::llround(values[i] / quantization.scale + quantization.zero_point));
+    q = std::clamp(q, q_min, q_max);
+    out[i] = static_cast<T>(q);
+  }
+  return out;
+}
+
+template <typename T>
+std::vector<float> DequantizePerTensor(
+    absl::Span<const T> values,
+    const LiteRtQuantizationPerTensor& quantization) {
+  std::vector<float> out(values.size());
+  for (size_t i = 0; i < values.size(); ++i) {
+    out[i] =
+        (static_cast<int64_t>(values[i]) - quantization.zero_point) *
+        quantization.scale;
+  }
+  return out;
+}
+
+litert::Expected<void> WriteInputTensor(
+    litert::TensorBuffer& input_buffer, const std::vector<float>& input,
+    const litert::RankedTensorType& input_type,
+    const litert::SimpleTensor& input_tensor) {
+  switch (input_type.ElementType()) {
+    case litert::ElementType::Float32:
+      LITERT_RETURN_IF_ERROR(input_buffer.Write<float>(absl::MakeSpan(input)));
+      return {};
+    case litert::ElementType::Int8: {
+      LITERT_ASSIGN_OR_RETURN(auto quantization,
+                              GetPerTensorQuantization(input_tensor, "input"));
+      std::vector<int8_t> quantized =
+          QuantizePerTensor<int8_t>(input, quantization);
+      LITERT_RETURN_IF_ERROR(
+          input_buffer.Write<int8_t>(absl::MakeSpan(quantized)));
+      return {};
+    }
+    case litert::ElementType::UInt8: {
+      LITERT_ASSIGN_OR_RETURN(auto quantization,
+                              GetPerTensorQuantization(input_tensor, "input"));
+      std::vector<uint8_t> quantized =
+          QuantizePerTensor<uint8_t>(input, quantization);
+      LITERT_RETURN_IF_ERROR(
+          input_buffer.Write<uint8_t>(absl::MakeSpan(quantized)));
+      return {};
+    }
+    default:
+      return litert::Error(kLiteRtStatusErrorInvalidArgument,
+                           "Unsupported input element type");
+  }
+}
+
+litert::Expected<std::vector<float>> ReadOutputTensor(
+    litert::TensorBuffer& output_buffer,
+    const litert::RankedTensorType& output_type,
+    const litert::SimpleTensor& output_tensor, size_t output_size) {
+  switch (output_type.ElementType()) {
+    case litert::ElementType::Float32: {
+      std::vector<float> scores(output_size);
+      LITERT_RETURN_IF_ERROR(
+          output_buffer.Read<float>(absl::MakeSpan(scores)));
+      return scores;
+    }
+    case litert::ElementType::Int8: {
+      LITERT_ASSIGN_OR_RETURN(auto quantization,
+                              GetPerTensorQuantization(output_tensor,
+                                                       "output"));
+      std::vector<int8_t> quantized(output_size);
+      LITERT_RETURN_IF_ERROR(
+          output_buffer.Read<int8_t>(absl::MakeSpan(quantized)));
+      return DequantizePerTensor<int8_t>(absl::MakeConstSpan(quantized),
+                                         quantization);
+    }
+    case litert::ElementType::UInt8: {
+      LITERT_ASSIGN_OR_RETURN(auto quantization,
+                              GetPerTensorQuantization(output_tensor,
+                                                       "output"));
+      std::vector<uint8_t> quantized(output_size);
+      LITERT_RETURN_IF_ERROR(
+          output_buffer.Read<uint8_t>(absl::MakeSpan(quantized)));
+      return DequantizePerTensor<uint8_t>(absl::MakeConstSpan(quantized),
+                                          quantization);
+    }
+    default:
+      return litert::Error(kLiteRtStatusErrorInvalidArgument,
+                           "Unsupported output element type");
+  }
+}
+
 litert::Expected<void> Run(const Config& cfg) {
   std::vector<litert::EnvironmentOptions::Option> env_options;
   if (!cfg.dispatch_library_dir.empty()) {
@@ -421,14 +546,18 @@ litert::Expected<void> Run(const Config& cfg) {
   }
   LITERT_ASSIGN_OR_RETURN(
       auto model, litert::CompiledModel::Create(env, cfg.model, options));
+  LITERT_ASSIGN_OR_RETURN(auto signature, model.GetSignature(0));
+  LITERT_ASSIGN_OR_RETURN(const auto& input_tensor, signature.InputTensor(0));
+  LITERT_ASSIGN_OR_RETURN(const auto& output_tensor, signature.OutputTensor(0));
   LITERT_ASSIGN_OR_RETURN(auto input_buffers, model.CreateInputBuffers(0));
   LITERT_ASSIGN_OR_RETURN(auto output_buffers, model.CreateOutputBuffers(0));
   LITERT_ASSIGN_OR_RETURN(auto input_type, input_buffers[0].TensorType());
   LITERT_ASSIGN_OR_RETURN(auto output_type, output_buffers[0].TensorType());
-  if (input_type.ElementType() != litert::ElementType::Float32 ||
-      output_type.ElementType() != litert::ElementType::Float32) {
+  if (!IsSupportedIoElementType(input_type.ElementType()) ||
+      !IsSupportedIoElementType(output_type.ElementType())) {
     return litert::Error(kLiteRtStatusErrorInvalidArgument,
-                         "This prototype supports float32 input/output only");
+                         "This prototype supports float32, int8, and uint8 "
+                         "input/output only");
   }
 
   const auto dims = input_type.Layout().Dimensions();
@@ -457,7 +586,6 @@ litert::Expected<void> Run(const Config& cfg) {
   const auto output_dims = output_type.Layout().Dimensions();
   size_t output_size = 1;
   for (int32_t dim : output_dims) output_size *= dim;
-  std::vector<float> scores(output_size);
 
   int top1_correct = 0;
   int top5_correct = 0;
@@ -467,11 +595,13 @@ litert::Expected<void> Run(const Config& cfg) {
         DecodePreprocess(image_path, cfg.resize, crop_h, crop_w, mean, stddev,
                          nchw, cfg.antialias != 0);
     LITERT_RETURN_IF_ERROR(
-        input_buffers[0].Write<float>(absl::MakeSpan(input)));
+        WriteInputTensor(input_buffers[0], input, input_type, input_tensor));
     LITERT_RETURN_IF_ERROR(
         model.Run(static_cast<size_t>(0), input_buffers, output_buffers));
-    LITERT_RETURN_IF_ERROR(
-        output_buffers[0].Read<float>(absl::MakeSpan(scores)));
+    LITERT_ASSIGN_OR_RETURN(
+        std::vector<float> scores,
+        ReadOutputTensor(output_buffers[0], output_type, output_tensor,
+                         output_size));
     std::vector<int> top5 = TopK(scores, 5);
     int pred = top5.empty() ? -1 : top5[0];
     top1_correct += pred == row.label;
