@@ -37,6 +37,7 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@flatbuffers",
+        "@org_tensorflow//third_party/protobuf/io",
     ] + select({
         "@org_tensorflow//tensorflow:android": [
             "@org_tensorflow//tensorflow/core:portable_tensorflow_lib_lite",
@@ -71,8 +72,12 @@ tf_cc_test(
         "//tflite/kernels:test_main",
         "//tflite/kernels:test_util",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/log:check",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
+        "@org_tensorflow//tensorflow/core/example:example_protos_cc",
+        "@org_tensorflow//third_party/protobuf",
+        "@org_tensorflow//third_party/protobuf/io",
     ] + select({
         "@org_tensorflow//tensorflow:android": [
             "@org_tensorflow//tensorflow/core:portable_tensorflow_lib_lite",
@@ -122,6 +127,7 @@ cc_library(
         "@org_tensorflow//tensorflow/core:lib",
         "@org_tensorflow//tensorflow/core:lib_internal",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@org_tensorflow//third_party/protobuf/io",
     ],
 )
 
@@ -140,11 +146,15 @@ tf_cc_test(
         "//tflite/kernels:test_main",
         "//tflite/kernels:test_util",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/log:check",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@org_tensorflow//tensorflow/core/example:example_protos_cc",
         "@org_tensorflow//tensorflow/core/example:feature_util",
         "@org_tensorflow//tensorflow/core/platform:protobuf",
         "@org_tensorflow//tensorflow/core/platform:tstring",
+        "@org_tensorflow//third_party/protobuf",
+        "@org_tensorflow//third_party/protobuf/io",
     ],
 )
