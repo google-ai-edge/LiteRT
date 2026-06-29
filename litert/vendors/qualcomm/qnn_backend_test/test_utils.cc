@@ -53,7 +53,12 @@ void QnnModelTest::SetUpQnnModel(const ::qnn::Options& options,
   // TODO (chunhsue-qti) get rid of QnnManager and move to core/
   auto qnn_manager = QnnManager::Create(options, std::nullopt,
                                         ::qnn::FindSocModel(soc_model_name));
-  ASSERT_TRUE(qnn_manager) << qnn_manager.Error();
+  if (!qnn_manager) {
+    GTEST_SKIP() << "Skipping test because QNN manager could not be created "
+                    "(QNN libraries may be missing): "
+                 << qnn_manager.Error();
+    return;
+  }
   auto context_configs = QnnManager::DefaultContextConfigs();
   auto context_handle =
       (**qnn_manager)
