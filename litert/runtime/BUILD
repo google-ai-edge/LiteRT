@@ -712,6 +712,7 @@ cc_library(
         # copybara:uncomment "//third_party/odml/litert/weight_loader:external_weight_loader",
         "//weight_loader:external_weight_loader",  # copybara:comment
         "//tflite/converter:allocation",
+        "//tflite/c:c_api",
         "//tflite:builtin_ops",
         "//tflite:framework",
         "//tflite:model_builder",
