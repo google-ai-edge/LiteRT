@@ -54,10 +54,6 @@ std::optional<std::int32_t> GetQuantizedPadConstValue(
       return ReadPadConstValueAsInt32<std::int8_t>(const_tensor);
     case QNN_DATATYPE_UFIXED_POINT_8:
       return ReadPadConstValueAsInt32<std::uint8_t>(const_tensor);
-    case QNN_DATATYPE_SFIXED_POINT_16:
-      return ReadPadConstValueAsInt32<std::int16_t>(const_tensor);
-    case QNN_DATATYPE_UFIXED_POINT_16:
-      return ReadPadConstValueAsInt32<std::uint16_t>(const_tensor);
     default:
       QNN_LOG_ERROR("Unsupported quantized pad tensor data type %d.",
                     input_tensor.GetDataType());

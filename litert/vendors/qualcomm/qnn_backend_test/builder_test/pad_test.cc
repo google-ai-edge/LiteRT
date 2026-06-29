@@ -201,10 +201,6 @@ TEST(PadOpBuilderTest, QuantizedPadV2ReadsPadConstTensorDataType) {
                                                 -7);
   ExpectQuantizedPadV2ConstantValue<std::uint8_t>(QNN_DATATYPE_UFIXED_POINT_8,
                                                  13);
-  ExpectQuantizedPadV2ConstantValue<std::int16_t>(QNN_DATATYPE_SFIXED_POINT_16,
-                                                 -257);
-  ExpectQuantizedPadV2ConstantValue<std::uint16_t>(
-      QNN_DATATYPE_UFIXED_POINT_16, 513);
 }
 
 TEST(PadOpBuilderTest, QuantizedPadUsesDefaultZeroPointConstValue) {
