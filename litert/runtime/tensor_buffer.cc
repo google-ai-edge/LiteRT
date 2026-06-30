@@ -1016,6 +1016,7 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
                          Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                     "Tensor buffer is already locked."));
   is_locked_ = true;
+  lock_mode_ = mode;
   if (event_ != nullptr) {
     // Only AHWB supports waiting on an input sync fence when locking the
     // buffer. For all other buffer types we wait here.
@@ -1036,7 +1037,7 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
           ahwb_buffer, event_ != nullptr ? event_.get() : nullptr);
 #else
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "AHardwareBuffer is not supported");
+                         "AHardwareBuffer is not supported");
 #endif
     }
     case kLiteRtTensorBufferTypeIon: {
@@ -1045,6 +1046,10 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
     }
     case kLiteRtTensorBufferTypeDmaBuf: {
       LITERT_ASSIGN_OR_ABORT(auto dma_buffer, GetDmaBufBuffer());
+#if LITERT_HAS_DMABUF_SUPPORT
+      LITERT_RETURN_IF_ERROR(
+          ::litert::internal::DmaBufBuffer::Lock(dma_buffer.second, mode));
+#endif
       return dma_buffer.first;
     }
     case kLiteRtTensorBufferTypeFastRpc: {
@@ -1160,9 +1165,17 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
       LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
       return custom_buffer->Unlock();
     }
+    case kLiteRtTensorBufferTypeDmaBuf: {
+#if LITERT_HAS_DMABUF_SUPPORT
+      LITERT_ASSIGN_OR_ABORT(auto dma_buffer, GetDmaBufBuffer());
+      return ::litert::internal::DmaBufBuffer::Unlock(dma_buffer.second,
+                                                      lock_mode_);
+#else
+      return {};
+#endif
+    }
     case kLiteRtTensorBufferTypeHostMemory:
     case kLiteRtTensorBufferTypeIon:
-    case kLiteRtTensorBufferTypeDmaBuf:
     case kLiteRtTensorBufferTypeFastRpc:
     case kLiteRtTensorBufferTypeGlTexture:
     case kLiteRtTensorBufferTypeUnknown:
