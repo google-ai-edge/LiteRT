@@ -71,6 +71,8 @@ cc_library(
         "//tflite/delegates/gpu/common/transformations:merge_padding_with",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
+        "@org_tensorflow//third_party/gloop/util/status:status_macros",
     ],
 )
 
@@ -103,6 +105,8 @@ cc_library(
         "//tflite/delegates/gpu/common/tasks:prelu",
         "//tflite/delegates/gpu/common/tasks:reshape",
         "//tflite/delegates/gpu/common/tasks:strided_slice",
+        "@com_google_absl//absl/status",
+        "@org_tensorflow//third_party/gloop/util/status:status_macros",
     ],
 )
 
@@ -217,6 +221,7 @@ cc_library(
         "//tflite/kernels/internal:tensor_utils",
         "//tflite/kernels/internal:types",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:any",
     ],
