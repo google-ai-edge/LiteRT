@@ -155,6 +155,18 @@ class GoogleTensorOptions {
                        Get(), enable_dynamic_range_quantization);
   }
 
+  std::vector<std::vector<std::string>> GetTestingFlags() const {
+    LrtGoogleTensorOptions options_data = Get();
+    std::vector<std::vector<std::string>> testing_flags;
+    LrtGoogleTensorOptionsGetTestingFlags(options_data, &testing_flags);
+    return testing_flags;
+  }
+
+  void SetTestingFlags(const std::string& testing_flags) {
+    internal::AssertOk(LrtGoogleTensorOptionsSetTestingFlags, Get(),
+                       testing_flags);
+  }
+
   enum class PerformanceMode {
     kExtremePowerSaver =
         kLiteRtGoogleTensorOptionsPerformanceModeExtremePowerSaver,
