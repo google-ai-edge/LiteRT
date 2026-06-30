@@ -535,6 +535,28 @@ OpMixin<CustomOperation, TfLiteMixinTag>::ToTfLite(
 }
 
 absl::StatusOr<TfLiteOpBuildInfo>
+OpMixin<StableHLOCompositeOperation, TfLiteMixinTag>::ToTfLite(
+    const graph::Operation& op) const {
+  LRT_TENSOR_ASSIGN_OR_RETURN(const StableHLOCompositeOperation& data,
+                              op.As<StableHLOCompositeOperation>());
+  if (data.decomposition_subgraph_index < 0) {
+    return absl::FailedPreconditionError(
+        "StableHLO composite decomposition subgraph was not serialized.");
+  }
+
+  TfLiteOpBuildInfo info(::tflite::BuiltinOperator_STABLEHLO_COMPOSITE);
+  info.builtin_options_2 = ::tflite::BuiltinOptions2Union();
+  info.builtin_options_2->Set(::tflite::StableHLOCompositeOptionsT{
+      .name = data.name,
+      .decomposition_subgraph_index = data.decomposition_subgraph_index,
+      .composite_attributes = data.composite_attributes,
+      .composite_attributes_format = ::tflite::CustomOptionsFormat_FLEXBUFFERS,
+      .version = data.version,
+  });
+  return info;
+}
+
+absl::StatusOr<TfLiteOpBuildInfo>
 OpMixin<AveragePool2DOperation, TfLiteMixinTag>::ToTfLite(
     const graph::Operation& op) const {
   LRT_TENSOR_ASSIGN_OR_RETURN(const AveragePool2DOperation& data,
