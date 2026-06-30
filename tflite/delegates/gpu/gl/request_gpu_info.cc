@@ -16,10 +16,10 @@ limitations under the License.
 #include "tflite/delegates/gpu/gl/request_gpu_info.h"
 
 #include <algorithm>
-#include <cctype>
 #include <string>
 
-#include "absl/strings/ascii.h"
+#include "absl/status/status.h"
+#include "third_party/gloop/util/status/status_macros.h"
 #include "tflite/delegates/gpu/common/gpu_info.h"
 #include "tflite/delegates/gpu/gl/gl_errors.h"
 #include "tflite/delegates/gpu/gl/portable_gl31.h"
