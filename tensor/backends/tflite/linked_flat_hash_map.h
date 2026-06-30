@@ -91,6 +91,11 @@ class LinkedFlatHashMap {
     list_.clear();
   }
 
+  void swap(LinkedFlatHashMap& other) {
+    map_.swap(other.map_);
+    list_.swap(other.list_);
+  }
+
   std::pair<iterator, bool> insert(std::pair<K, V> key_value) {
     auto [it, inserted] = map_.emplace(key_value.first, list_.end());
     if (inserted) {

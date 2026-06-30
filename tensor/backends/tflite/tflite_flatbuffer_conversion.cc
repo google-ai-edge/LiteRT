@@ -37,7 +37,9 @@ limitations under the License.
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
+#include "tensor/arithmetic_graph.h"
 #include "tensor/backends/tflite/arithmetic_tflite.h"
+#include "tensor/backends/tflite/linked_flat_hash_map.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
@@ -394,6 +396,24 @@ absl::Status ModelFactory::Build() {
                        " does not implement TfLiteOperation."));
     }
 
+    if (auto composite_or = const_cast<graph::Operation*>(operation)
+                                ->As<graph::StableHLOCompositeOperation>();
+        composite_or.ok()) {
+      graph::StableHLOCompositeOperation& composite = composite_or.value();
+      if (composite.decomposition_outputs.empty()) {
+        return absl::FailedPreconditionError(
+            "StableHLO composite has no decomposition outputs.");
+      }
+      std::vector<TensorHandle> decomposition_outputs;
+      decomposition_outputs.reserve(composite.decomposition_outputs.size());
+      for (const graph::Tensor& output : composite.decomposition_outputs) {
+        decomposition_outputs.emplace_back(output);
+      }
+      LRT_TENSOR_ASSIGN_OR_RETURN(
+          composite.decomposition_subgraph_index,
+          AddSubgraphAndReturnIndex(std::move(decomposition_outputs)));
+    }
+
     LRT_TENSOR_ASSIGN_OR_RETURN(graph::TfLiteOpBuildInfo build_info,
                                 tflite_op->ToTfLite(*operation));
 
@@ -414,6 +434,9 @@ absl::Status ModelFactory::Build() {
     op.opcode_index = it->second;
     if (build_info.builtin_options.has_value()) {
       op.builtin_options = *build_info.builtin_options;
+    }
+    if (build_info.builtin_options_2.has_value()) {
+      op.builtin_options_2 = std::move(*build_info.builtin_options_2);
     }
     if (build_info.builtin_code == tflite::BuiltinOperator_CUSTOM) {
       if (build_info.custom_options != nullptr) {
@@ -525,9 +548,40 @@ absl::Status ModelFactory::WriteBufferData(std::ofstream& output_file) {
 }
 
 absl::Status ModelFactory::AddSubgraph(std::vector<TensorHandle> outputs) {
-  LRT_TENSOR_RETURN_IF_ERROR(Explore(std::move(outputs)));
-  LRT_TENSOR_RETURN_IF_ERROR(Build());
+  LRT_TENSOR_ASSIGN_OR_RETURN(int subgraph_index,
+                              AddSubgraphAndReturnIndex(std::move(outputs)));
+  (void)subgraph_index;
   return absl::OkStatus();
+}
+
+absl::StatusOr<int> ModelFactory::AddSubgraphAndReturnIndex(
+    std::vector<TensorHandle> outputs) {
+  LinkedFlatHashMap<graph::Tensor, TensorSerializationInfo> parent_tensors;
+  LinkedFlatHashMap<std::shared_ptr<graph::Operation>, OpSerializationInfo>
+      parent_operations;
+  std::vector<const graph::Operation*> parent_execution_plan;
+  tensors_.swap(parent_tensors);
+  operations_.swap(parent_operations);
+  execution_plan_.swap(parent_execution_plan);
+
+  const auto restore_parent_state = [&]() {
+    tensors_.swap(parent_tensors);
+    operations_.swap(parent_operations);
+    execution_plan_.swap(parent_execution_plan);
+  };
+
+  absl::Status status = Explore(std::move(outputs));
+  if (!status.ok()) {
+    restore_parent_state();
+    return status;
+  }
+  const int subgraph_index = model_.subgraphs.size();
+  status = Build();
+  restore_parent_state();
+  if (!status.ok()) {
+    return status;
+  }
+  return subgraph_index;
 }
 
 absl::Status ModelFactory::AddSignature(std::vector<TensorHandle> outputs,

@@ -53,6 +53,7 @@ cc_library(
         ":arithmetic_tflite",
         ":linked_flat_hash_map",
         "//tensor",
+        "//tensor:arithmetic_graph",
         "//tensor:buffer",
         "//tensor:datatypes",
         "//tensor/internal:graph",

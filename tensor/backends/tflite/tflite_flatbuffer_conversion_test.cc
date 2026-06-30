@@ -432,6 +432,94 @@ TEST(SerializationTest, CreateFlatbufferWorks) {
               Eq(tflite::BuiltinOperator_MUL));
 }
 
+TEST(SerializationTest, CanSerializeStableHLOComposite) {
+  const std::vector<int32_t> constant_data = {1, 2, 3, 4};
+  std::vector<char> model_data;
+  {
+    TensorTf constant({.name = "constant",
+                       .type = Type::kI32,
+                       .shape = {2, 2},
+                       .buffer = constant_data});
+    TensorTf input({.name = "input", .type = Type::kI32, .shape = {2, 2}});
+    TensorTf output = StableHLOComposite(
+                          StableHLOCompositeOptions{
+                              .name = "stablehlo.add",
+                              .composite_attributes = {1, 2, 3},
+                              .version = 7,
+                          },
+                          [](TensorTf x, TensorTf y) {
+                            return Add(x, y).SetName("decomposition_sum");
+                          },
+                          constant, input)
+                          .SetName("composite_sum");
+
+    ModelFactory model_builder;
+    ASSERT_THAT(model_builder.AddSubgraph({output}), IsOk());
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(model_data,
+                                    model_builder.CreateFlatbuffer());
+  }
+
+  auto model = tflite::FlatBufferModel::BuildFromBuffer(model_data.data(),
+                                                        model_data.size());
+  ASSERT_NE(model, nullptr);
+  const tflite::Model* model_fb = model->GetModel();
+  ASSERT_THAT(model_fb->subgraphs(), Pointee(SizeIs(2)));
+  const tflite::SubGraph* parent = model_fb->subgraphs()->Get(0);
+  const tflite::SubGraph* decomposition = model_fb->subgraphs()->Get(1);
+
+  ASSERT_THAT(parent->operators(), Pointee(SizeIs(1)));
+  const tflite::Operator* composite_op = parent->operators()->Get(0);
+  ASSERT_THAT(model_fb->operator_codes(), Pointee(SizeIs(2)));
+  EXPECT_EQ(model_fb->operator_codes()
+                ->Get(composite_op->opcode_index())
+                ->builtin_code(),
+            tflite::BuiltinOperator_STABLEHLO_COMPOSITE);
+
+  const tflite::StableHLOCompositeOptions* composite_options =
+      composite_op->builtin_options_2_as_StableHLOCompositeOptions();
+  ASSERT_NE(composite_options, nullptr);
+  ASSERT_NE(composite_options->name(), nullptr);
+  EXPECT_EQ(composite_options->name()->str(), "stablehlo.add");
+  EXPECT_EQ(composite_options->decomposition_subgraph_index(), 1);
+  EXPECT_EQ(composite_options->version(), 7);
+  ASSERT_NE(composite_options->composite_attributes(), nullptr);
+  ASSERT_EQ(composite_options->composite_attributes()->size(), 3);
+  EXPECT_EQ(composite_options->composite_attributes()->Get(0), 1);
+  EXPECT_EQ(composite_options->composite_attributes()->Get(1), 2);
+  EXPECT_EQ(composite_options->composite_attributes()->Get(2), 3);
+  EXPECT_EQ(composite_options->composite_attributes_format(),
+            tflite::CustomOptionsFormat_FLEXBUFFERS);
+
+  ASSERT_THAT(parent->inputs(), Pointee(SizeIs(1)));
+  ASSERT_THAT(parent->outputs(), Pointee(SizeIs(1)));
+  ASSERT_THAT(composite_op->inputs(), Pointee(SizeIs(2)));
+  ASSERT_THAT(composite_op->outputs(), Pointee(SizeIs(1)));
+  const tflite::Tensor* parent_constant =
+      parent->tensors()->Get(composite_op->inputs()->Get(0));
+  const tflite::Tensor* parent_output =
+      parent->tensors()->Get(parent->outputs()->Get(0));
+  EXPECT_NE(parent_constant->buffer(), 0);
+  ASSERT_NE(parent_output->name(), nullptr);
+  EXPECT_EQ(parent_output->name()->str(), "composite_sum");
+
+  ASSERT_THAT(decomposition->inputs(), Pointee(SizeIs(2)));
+  ASSERT_THAT(decomposition->outputs(), Pointee(SizeIs(1)));
+  ASSERT_THAT(decomposition->operators(), Pointee(SizeIs(1)));
+  EXPECT_EQ(model_fb->operator_codes()
+                ->Get(decomposition->operators()->Get(0)->opcode_index())
+                ->builtin_code(),
+            tflite::BuiltinOperator_ADD);
+  for (int i = 0; i < decomposition->inputs()->size(); ++i) {
+    const tflite::Tensor* decomposition_input =
+        decomposition->tensors()->Get(decomposition->inputs()->Get(i));
+    EXPECT_EQ(decomposition_input->buffer(), 0);
+  }
+  const tflite::Tensor* decomposition_output =
+      decomposition->tensors()->Get(decomposition->outputs()->Get(0));
+  ASSERT_NE(decomposition_output->name(), nullptr);
+  EXPECT_EQ(decomposition_output->name()->str(), "decomposition_sum");
+}
+
 TEST(SerializationTest, UnnamedInputsAndOutputsAreGivenAName) {
   std::vector<char> model_data;
   {

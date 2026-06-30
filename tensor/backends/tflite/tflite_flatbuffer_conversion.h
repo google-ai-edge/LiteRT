@@ -81,6 +81,10 @@ class ModelFactory {
   // representation.
   absl::Status Build();
 
+  // Adds a subgraph while preserving any currently explored parent subgraph.
+  absl::StatusOr<int> AddSubgraphAndReturnIndex(
+      std::vector<TensorHandle> outputs);
+
   // Updates the FINISHED flatbuffer builder TFLite buffer data with the
   // corresponding sizes and offsets.
   absl::Status UpdateBufferData(flatbuffers::FlatBufferBuilder& fbb);
