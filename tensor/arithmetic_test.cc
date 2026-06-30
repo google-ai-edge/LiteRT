@@ -81,6 +81,49 @@ TEST(ArithmeticTest, ChainingOpsKeepsTrackOfProducersAndConsumers) {
   EXPECT_THAT(GetConsumers(d), IsOkAndHolds(Contains(LockedPtr(add_op))));
 }
 
+TEST(ArithmeticTest,
+     StableHLOCompositeTracesDecompositionOnIndependentTensors) {
+  Tensor a({.name = "a", .type = Type::kFP32, .shape = {3, 3}});
+  Tensor b({.name = "b", .type = Type::kFP32, .shape = {3, 3}});
+
+  Tensor output = StableHLOComposite(
+      "stablehlo.add",
+      [](auto x, auto y) { return Add(x, y).SetName("decomposition_sum"); }, a,
+      b);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::shared_ptr composite_op,
+                                  GetProducer(output));
+  ASSERT_NE(composite_op, nullptr);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      graph::StableHLOCompositeOperation & composite,
+      composite_op->As<graph::StableHLOCompositeOperation>());
+  ASSERT_EQ(composite.decomposition_outputs.size(), 1);
+
+  const graph::Tensor& decomposition_output =
+      composite.decomposition_outputs.front();
+  EXPECT_FALSE(decomposition_output == output.GetRaw());
+  EXPECT_NE(decomposition_output.group, output.GetRaw().group);
+
+  TensorHandle decomposition_output_handle(decomposition_output);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::shared_ptr decomposition_op,
+                                  GetProducer(decomposition_output_handle));
+  ASSERT_NE(decomposition_op, nullptr);
+  EXPECT_EQ(decomposition_op->GetName(), "Add");
+  ASSERT_EQ(decomposition_op->inputs.size(), 2);
+  EXPECT_FALSE(decomposition_op->inputs[0] == a.GetRaw());
+  EXPECT_FALSE(decomposition_op->inputs[1] == b.GetRaw());
+  EXPECT_EQ(decomposition_op->inputs[0].group->producer, nullptr);
+  EXPECT_EQ(decomposition_op->inputs[1].group->producer, nullptr);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const graph::TensorInformation& output_info,
+                                  GetInfo(output));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      const graph::TensorInformation& decomposition_output_info,
+      GetInfo(decomposition_output_handle));
+  EXPECT_EQ(output_info.type, decomposition_output_info.type);
+  EXPECT_EQ(output_info.shape, decomposition_output_info.shape);
+}
+
 void IsAUnaryElementwiseOp(absl::string_view op_name, TensorHandle in,
                            TensorHandle out) {
   ASSERT_THAT(in, IsValidTensor());
