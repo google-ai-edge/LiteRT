@@ -466,6 +466,12 @@ class LiteRtCompiledModelT {
   // is destroyed must be listed before field interp_.
 
   std::vector<Delegate> delegates_;
+  // The loader that manages external weight metadata and bindings.
+  std::unique_ptr<weight_loader::WeightLoader> weight_loader_owned_;
+  // It may point to weight_loader_owned_ or the weight loader owned by the
+  // client. If there are no external weights to use, this will be nullptr.
+  weight_loader::WeightLoader* weight_loader_ = nullptr;
+
   std::vector<std::unique_ptr<litert::internal::CustomOpDispatcher>>
       custom_op_dispatchers_;
 
@@ -534,12 +540,6 @@ class LiteRtCompiledModelT {
   // Fabric runtime path state (non-null when CompiledModel runs Fabric).
   std::unique_ptr<litert::internal::FabricRuntimeState> fabric_runtime_;
 #endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-
-  // The loader that manages external weight metadata and bindings.
-  std::unique_ptr<weight_loader::WeightLoader> weight_loader_;
-
-  // Indicates whether this model actually uses external weights.
-  bool has_external_weights_ = false;
 
   // File system hints about the originating model location.
   std::optional<std::string> model_directory_;

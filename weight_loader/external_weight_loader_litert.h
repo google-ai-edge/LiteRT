@@ -15,11 +15,13 @@
 #ifndef THIRD_PARTY_ODML_LITERT_EXTERNAL_WEIGHT_EXTERNAL_WEIGHT_LOADER_LITERT_H_
 #define THIRD_PARTY_ODML_LITERT_EXTERNAL_WEIGHT_EXTERNAL_WEIGHT_LOADER_LITERT_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -174,15 +176,24 @@ struct WeightAccess {
   LiteRtTensorBufferPtr device_tensor_buffer;
 };
 
+// Map from group ID (string) to weight data in host memory.
+using WeightInMemoryMap =
+    absl::flat_hash_map<std::string, absl::Span<const std::byte>>;
+
 // Creates a `WeightLoader` instance from a TFLite model flatbuffer.
-// The `flatbuffer` parameter is the TFLite model flatbuffer. The
-// `model_directory` parameter is the directory where the external weight files
-// are located. If `model_directory` is not specified, treat the group path
-// as the absolute path.
+// - flatbuffer: the TFLite model flatbuffer.
+// - model_directory: the directory where the external weight files are located.
+//     If not specified, treat the group path as the absolute path.
+// - scoped_weight_source: a `ScopedWeightSource` instance that owns the
+//     external weight files.
+// - weight_in_memory_map: a map from group ID to weight data in host memory.
+//     If specified, the `WeightLoader` will use the weight data in the map
+//     in addition to the external weight files.
 std::unique_ptr<WeightLoader> CreateLiteRtWeightLoader(
     LiteRtRuntimeContext* runtime_context, const tflite::Model* flatbuffer,
     std::optional<std::string> model_directory = std::nullopt,
-    std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source = nullptr);
+    std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source = nullptr,
+    WeightInMemoryMap weight_in_memory_map = {});
 
 }  // namespace weight_loader
 

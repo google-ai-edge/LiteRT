@@ -30,8 +30,8 @@
 #include <utility>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "litert/c/options/litert_cpu_options.h"
-#include "litert/cc/internal/scoped_weight_source.h"
 #include "tflite/mutable_op_resolver.h"
 
 #if !defined(LITERT_WINDOWS_OS)
@@ -475,65 +475,69 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   interp_->SetExternalContext(kTfLiteLiteRtBufferContext,
                               buffer_context_.get());
 
-  std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source;
-  auto* options_impl =
-      reinterpret_cast<LiteRtOptionsT*>(jit_compilation_options);
-  if (options_impl != nullptr) {
-    options_impl->weight_loader = nullptr;
-    scoped_weight_source = std::move(options_impl->scoped_weight_source);
+  // Check if the external weights is provided by the client.
+  if (jit_compilation_options == nullptr) {
+    weight_loader_owned_ = weight_loader::CreateLiteRtWeightLoader(
+        LrtGetRuntimeContext(), fb_model_->GetModel(), model_directory_);
+    weight_loader_ = weight_loader_owned_.get();
+  } else if (jit_compilation_options->weight_loader == nullptr) {
+    weight_loader_owned_ = weight_loader::CreateLiteRtWeightLoader(
+        LrtGetRuntimeContext(), fb_model_->GetModel(), model_directory_,
+        std::move(jit_compilation_options->scoped_weight_source),
+        std::move(jit_compilation_options->weight_in_memory_map));
+    weight_loader_ = weight_loader_owned_.get();
+  } else {
+    weight_loader_ = jit_compilation_options->weight_loader;
   }
-  weight_loader_ = weight_loader::CreateLiteRtWeightLoader(
-      LrtGetRuntimeContext(), fb_model_->GetModel(), model_directory_,
-      std::move(scoped_weight_source));
-  has_external_weights_ = false;
-  if (weight_loader_) {
-    auto weight_infos = weight_loader_->GetWeightInfo();
-    has_external_weights_ = !weight_infos.empty();
-    if (!has_external_weights_) {
-      LITERT_LOG(LITERT_DEBUG,
-                 "External weight loader: no external weight tensors found");
-      return {};
-    }
-    if (hardware_accelerators & kLiteRtHwAcceleratorCpu) {
-      weight_loader::WeightAccessRequest request;
-      request.cpu = true;
-      // TODO(b/456318365): Handle weight access request to support multiple
-      // backends.
-      request.opencl = false;
-      absl::Status prepare_status = weight_loader_->PrepareAccess(request, env);
-      if (!prepare_status.ok()) {
-        return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                  std::string(prepare_status.message()));
-      }
-    }
-
-    if (options_impl != nullptr) {
-      options_impl->weight_loader = weight_loader_.get();
-    }
-
-    // Inspect the weight infos to log the available weights for GPU delegates.
+  auto weight_infos = weight_loader_->GetWeightInfo();
+  if (weight_infos.empty()) {
+    weight_loader_ = nullptr;
     LITERT_LOG(LITERT_DEBUG,
-               "External weight loader: %zu weight tensors available for GPU "
-               "delegates",
-               weight_infos.size());
-    for (const auto& info : weight_infos) {
-      if (info.packing.empty()) {
-        LITERT_LOG(LITERT_DEBUG,
-                   "  Weight tensor: external_buffer_id=%u, packing=<none>",
-                   info.external_buffer_id);
-      } else {
-        LITERT_LOG(LITERT_DEBUG,
-                   "  Weight tensor: external_buffer_id=%u, packing=%.*s",
-                   info.external_buffer_id,
-                   static_cast<int>(info.packing.size()), info.packing.data());
-      }
+               "External weight loader: no external weight tensors found");
+    return {};
+  }
+
+  if (hardware_accelerators & kLiteRtHwAcceleratorCpu) {
+    weight_loader::WeightAccessRequest request;
+    request.cpu = true;
+    // TODO(b/456318365): Handle weight access request to support multiple
+    // backends.
+    request.opencl = false;
+    absl::Status prepare_status = weight_loader_->PrepareAccess(request, env);
+    if (!prepare_status.ok()) {
+      weight_loader_ = nullptr;
+      return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                std::string(prepare_status.message()));
+    }
+  }
+
+  // Inform delegates and the other components about the weight loader.
+  if (jit_compilation_options != nullptr) {
+    jit_compilation_options->weight_loader = weight_loader_;
+  }
+
+  // Inspect the weight infos to log the available weights for GPU delegates.
+  LITERT_LOG(LITERT_DEBUG,
+             "External weight loader: %zu weight tensors available for GPU "
+             "delegates",
+             weight_infos.size());
+  for (const auto& info : weight_infos) {
+    if (info.packing.empty()) {
+      LITERT_LOG(LITERT_DEBUG,
+                 "  Weight tensor: external_buffer_id=%u, packing=<none>",
+                 info.external_buffer_id);
+    } else {
+      LITERT_LOG(LITERT_DEBUG,
+                 "  Weight tensor: external_buffer_id=%u, packing=%.*s",
+                 info.external_buffer_id, static_cast<int>(info.packing.size()),
+                 info.packing.data());
     }
   }
   return {};
 }
 
 Expected<void> LiteRtCompiledModelT::RestoreExternalWeightsForCpu() {
-  if (!weight_loader_ || !has_external_weights_) {
+  if (!weight_loader_) {
     return {};
   }
 
@@ -665,7 +669,6 @@ void SetModelSourceInfoFromAllocation(const tflite::Allocation* allocation,
 }
 
 #if !defined(LITERT_DISABLE_NPU)
-
 Expected<std::vector<litert::internal::CompilerPlugin>> TryGetCompilerPlugins(
     LiteRtOptionsT& options, LiteRtEnvironmentT& env,
     LiteRtHwAcceleratorSet hw_accelerators) {
@@ -721,31 +724,6 @@ std::optional<litert::internal::CompilationCache> MaybeCreateCompilationCache(
   }
   return std::nullopt;
 }
-
-void TryApplyPluginsImpl(
-    LiteRtModel model, LiteRtHwAcceleratorSet selected_hw_accelerators,
-    std::vector<litert::internal::CompilerPlugin>& compiler_plugins,
-    bool* mutated) {
-  LITERT_LOG(LITERT_INFO, "Applying compiler plugins...");
-  // TODO: b/409819691 - Pass user provided `LiteRtOptions` down to the
-  // vendor code (nullptr are safe for now).
-  auto jit_result = litert::internal::ApplyPlugins(
-      model, selected_hw_accelerators, compiler_plugins, mutated);
-  if (!jit_result) {
-    LITERT_LOG(GetLogSeverityForJitCompilationFailure(selected_hw_accelerators),
-               "Failed to apply compiler plugins: %s",
-               jit_result.Error().Message().c_str());
-  } else {
-    LITERT_LOG(LITERT_INFO, "%d compiler plugins were applied successfully: %s",
-               jit_result->num_applied_plugins,
-               jit_result->success_message.c_str());
-    if (!jit_result->error_message.empty()) {
-      LITERT_LOG(LITERT_ERROR, "Plugin errs: %s",
-                 jit_result->error_message.c_str());
-    }
-  }
-}
-
 #endif  // !defined(LITERT_DISABLE_NPU)
 
 }  // namespace

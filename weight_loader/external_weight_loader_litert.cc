@@ -170,19 +170,18 @@ std::string JoinPath(absl::string_view base, absl::string_view relative) {
 }
 
 struct CpuMapping {
-  void* base = nullptr;
-  size_t length = 0;
-  size_t page_offset = 0;
-  uint8_t* data = nullptr;
-  size_t data_length = 0;
+  absl::Span<const std::byte> base;
+  absl::Span<const std::byte> data;
+  bool mmapped = false;
 };
 
 absl::Status DiscardCpuMappingPages(const CpuMapping& mapping) {
-  if (mapping.base == nullptr || mapping.length == 0) {
+  if (mapping.base.empty() || !mapping.mmapped) {
     return absl::OkStatus();
   }
 #if !defined(_WIN32)
-  if (madvise(mapping.base, mapping.length, MADV_DONTNEED) != 0) {
+  if (madvise(const_cast<std::byte*>(mapping.base.data()), mapping.base.size(),
+              MADV_DONTNEED) != 0) {
     return absl::InternalError(
         absl::StrFormat("madvise failed: %s", strerror(errno)));
   }
@@ -218,23 +217,24 @@ struct ExternalWeightSliceKey {
 };
 
 struct WeightSource {
-  enum class Kind { kFilePath, kScopedFile };
+  enum class Kind { kFilePath, kScopedFile, kHostMemory };
   Kind kind = Kind::kFilePath;
   std::string path;
   const litert::ScopedWeightSection* section = nullptr;
   litert::ScopedWeightSource* scoped_source = nullptr;
+  absl::Span<const std::byte> host_memory;
 };
 
 #if defined(_WIN32)
 absl::Status ReadScopedRangeWin32(HANDLE handle, uint64_t absolute_offset,
-                                  size_t length, uint8_t* destination) {
+                                  size_t length, void* destination) {
   LARGE_INTEGER li;
   li.QuadPart = absolute_offset;
   if (!SetFilePointerEx(handle, li, nullptr, FILE_BEGIN)) {
     return absl::UnknownError("Failed to seek scoped weight file");
   }
   size_t remaining = length;
-  uint8_t* cursor = destination;
+  uint8_t* cursor = static_cast<uint8_t*>(destination);
   while (remaining > 0) {
     DWORD chunk = static_cast<DWORD>(
         std::min<uint64_t>(remaining, std::numeric_limits<DWORD>::max()));
@@ -255,11 +255,15 @@ absl::Status ReadScopedRangeWin32(HANDLE handle, uint64_t absolute_offset,
 
 void ReleaseEntry(Entry& entry) {
   entry.access.reset();
-  if (entry.cpu_mapping && entry.cpu_mapping->base) {
+  if (!entry.cpu_mapping) {
+    return;
+  }
+  if (!entry.cpu_mapping->base.empty() && entry.cpu_mapping->mmapped) {
 #if !defined(_WIN32)
-    munmap(entry.cpu_mapping->base, entry.cpu_mapping->length);
+    munmap(const_cast<std::byte*>(entry.cpu_mapping->base.data()),
+           entry.cpu_mapping->base.size());
 #else
-    UnmapViewOfFile(entry.cpu_mapping->base);
+    UnmapViewOfFile(const_cast<std::byte*>(entry.cpu_mapping->base.data()));
 #endif
   }
   entry.cpu_mapping.reset();
@@ -346,16 +350,6 @@ absl::StatusOr<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
     return absl::InternalError(absl::StrFormat(
         "mmap failed for %s: %s", path.c_str(), strerror(saved_errno)));
   }
-
-  uint8_t* data_ptr = static_cast<uint8_t*>(base) + params.page_offset;
-
-  CpuMapping mapping;
-  mapping.base = base;
-  mapping.length = params.map_length;
-  mapping.page_offset = params.page_offset;
-  mapping.data = data_ptr;
-  mapping.data_length = static_cast<size_t>(info.length);
-  return mapping;
 #else
   HANDLE file_handle =
       CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
@@ -392,19 +386,17 @@ absl::StatusOr<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
   if (!base) {
     return absl::InternalError("MapViewOfFile failed on Windows");
   }
-
-  CpuMapping mapping;
-  mapping.base = base;
-  mapping.length = params.map_length;
-  mapping.page_offset = params.page_offset;
-  mapping.data = static_cast<uint8_t*>(base) + params.page_offset;
-  mapping.data_length = static_cast<size_t>(info.length);
-  return mapping;
 #endif
+  return CpuMapping{
+      .base =
+          absl::MakeConstSpan(static_cast<std::byte*>(base), params.map_length),
+      .data = absl::MakeConstSpan(
+          static_cast<std::byte*>(base) + params.page_offset, info.length),
+      .mmapped = true};
 }
 
-absl::StatusOr<std::vector<uint8_t>> ReadFileSliceFromPath(
-    const LiteRtWeightInfo& info, const std::string& path) {
+absl::Status ReadFileSliceFromPath(const LiteRtWeightInfo& info,
+                                   const std::string& path, void* output) {
   std::ifstream file(path, std::ios::binary);
   if (!file) {
     return absl::InternalError(absl::StrFormat("Failed to open %s", path));
@@ -421,13 +413,12 @@ absl::StatusOr<std::vector<uint8_t>> ReadFileSliceFromPath(
   }
   file.seekg(static_cast<std::streamoff>(info.offset), std::ios::beg);
 
-  std::vector<uint8_t> data(info.length);
-  file.read(reinterpret_cast<char*>(data.data()), info.length);
+  file.read(reinterpret_cast<char*>(output), info.length);
   if (!file) {
     return absl::InternalError(
         absl::StrFormat("Failed to read %lu bytes from %s", info.length, path));
   }
-  return data;
+  return absl::OkStatus();
 }
 
 absl::Status ValidateScopedSlice(const LiteRtWeightInfo& info,
@@ -469,13 +460,6 @@ absl::StatusOr<CpuMapping> MapScopedFileSlice(
     return absl::InternalError(
         absl::StrFormat("mmap failed: %s", strerror(saved_errno)));
   }
-  CpuMapping mapping;
-  mapping.base = base;
-  mapping.length = params.map_length;
-  mapping.page_offset = params.page_offset;
-  mapping.data = static_cast<uint8_t*>(base) + params.page_offset;
-  mapping.data_length = static_cast<size_t>(info.length);
-  return mapping;
 #else
   HANDLE handle = source->file.file();
   MmapParams params = GetMmapParams(absolute_offset, info.length);
@@ -499,31 +483,29 @@ absl::StatusOr<CpuMapping> MapScopedFileSlice(
   if (!base) {
     return absl::InternalError("MapViewOfFile failed on Windows");
   }
-
-  CpuMapping mapping;
-  mapping.base = base;
-  mapping.length = params.map_length;
-  mapping.page_offset = params.page_offset;
-  mapping.data = static_cast<uint8_t*>(base) + params.page_offset;
-  mapping.data_length = static_cast<size_t>(info.length);
-  return mapping;
 #endif
+  return CpuMapping{
+      .base =
+          absl::MakeConstSpan(static_cast<std::byte*>(base), params.map_length),
+      .data = absl::MakeConstSpan(
+          static_cast<std::byte*>(base) + params.page_offset, info.length),
+      .mmapped = true};
 }
 
-absl::StatusOr<std::vector<uint8_t>> ReadScopedFileSlice(
-    const LiteRtWeightInfo& info, const litert::ScopedWeightSection& section,
-    litert::ScopedWeightSource* source) {
+absl::Status ReadScopedFileSlice(const LiteRtWeightInfo& info,
+                                 const litert::ScopedWeightSection& section,
+                                 litert::ScopedWeightSource* source,
+                                 void* output) {
   if (!source || !source->file.IsValid()) {
     return absl::FailedPreconditionError(
         "Scoped weight source is not available");
   }
   uint64_t absolute_offset = 0;
   LITERT_RETURN_IF_ERROR(ValidateScopedSlice(info, section, &absolute_offset));
-  std::vector<uint8_t> data(info.length);
 #if !defined(_WIN32)
   int fd = source->file.file();
   size_t remaining = static_cast<size_t>(info.length);
-  uint8_t* cursor = data.data();
+  uint8_t* cursor = static_cast<uint8_t*>(output);
   off_t offset = static_cast<off_t>(absolute_offset);
   while (remaining > 0) {
     ssize_t read_bytes = pread(fd, cursor, remaining, offset);
@@ -541,29 +523,47 @@ absl::StatusOr<std::vector<uint8_t>> ReadScopedFileSlice(
     remaining -= read_bytes;
     offset += read_bytes;
   }
-  return data;
 #else
   HANDLE handle = source->file.file();
   LITERT_RETURN_IF_ERROR(ReadScopedRangeWin32(
-      handle, absolute_offset, static_cast<size_t>(info.length), data.data()));
-  return data;
+      handle, absolute_offset, static_cast<size_t>(info.length), output));
 #endif
+  return absl::OkStatus();
 }
 
 absl::StatusOr<CpuMapping> MapWeightSlice(const LiteRtWeightInfo& info,
                                           const WeightSource& source) {
+  if (source.kind == WeightSource::Kind::kHostMemory) {
+    if (info.offset + info.length > source.host_memory.size()) {
+      return absl::OutOfRangeError(
+          "Weight slice out of range for host memory group");
+    }
+    return CpuMapping{.base = source.host_memory,
+                      .data = absl::MakeConstSpan(
+                          source.host_memory.data() + info.offset, info.length),
+                      .mmapped = false};
+  }
   if (source.kind == WeightSource::Kind::kScopedFile) {
     return MapScopedFileSlice(info, *source.section, source.scoped_source);
   }
   return MapFileSliceFromPath(info, source.path);
 }
 
-absl::StatusOr<std::vector<uint8_t>> ReadWeightSlice(
-    const LiteRtWeightInfo& info, const WeightSource& source) {
-  if (source.kind == WeightSource::Kind::kScopedFile) {
-    return ReadScopedFileSlice(info, *source.section, source.scoped_source);
+absl::Status ReadWeightSlice(const LiteRtWeightInfo& info,
+                             const WeightSource& source, void* output) {
+  if (source.kind == WeightSource::Kind::kHostMemory) {
+    if (info.offset + info.length > source.host_memory.size()) {
+      return absl::OutOfRangeError(
+          "Weight slice out of range for host memory group");
+    }
+    std::memcpy(output, source.host_memory.data() + info.offset, info.length);
+    return absl::OkStatus();
   }
-  return ReadFileSliceFromPath(info, source.path);
+  if (source.kind == WeightSource::Kind::kScopedFile) {
+    return ReadScopedFileSlice(info, *source.section, source.scoped_source,
+                               output);
+  }
+  return ReadFileSliceFromPath(info, source.path, output);
 }
 
 absl::Status EnsureCpuTensorBuffer(LiteRtRuntimeContext* runtime_context,
@@ -582,17 +582,13 @@ absl::Status EnsureCpuTensorBuffer(LiteRtRuntimeContext* runtime_context,
   }
 
   if (!entry.cpu_mapping) {
-    absl::StatusOr<CpuMapping> mapping = MapWeightSlice(info, source);
-    if (!mapping.ok()) {
-      return mapping.status();
-    }
-    entry.cpu_mapping = std::move(*mapping);
+    LITERT_ASSIGN_OR_RETURN(entry.cpu_mapping, MapWeightSlice(info, source));
   }
 
   LiteRtTensorBuffer host_buffer;
   LITERT_RETURN_IF_ERROR(runtime_context->create_tensor_buffer_from_host_memory(
-      &info.tensor_type, static_cast<void*>(entry.cpu_mapping->data),
-      entry.cpu_mapping->data_length, /*deallocator=*/nullptr, &host_buffer));
+      &info.tensor_type, const_cast<std::byte*>(entry.cpu_mapping->data.data()),
+      entry.cpu_mapping->data.size(), /*deallocator=*/nullptr, &host_buffer));
   entry.access->SetHostBuffer(LiteRtTensorBufferPtr(
       host_buffer, LiteRtTensorBufferDeleter{runtime_context}));
   return absl::OkStatus();
@@ -613,9 +609,6 @@ absl::Status EnsureDeviceTensorBuffer(LiteRtRuntimeContext* runtime_context,
         "LiteRtEnvironment must not be null for %s access", backend_name));
   }
 
-  LITERT_ASSIGN_OR_RETURN(std::vector<uint8_t> data,
-                          ReadWeightSlice(info, source));
-
   LiteRtTensorBuffer device_buffer;
   LITERT_RETURN_IF_ERROR(runtime_context->create_managed_tensor_buffer(
       env, buffer_type, &info.tensor_type, info.length, &device_buffer));
@@ -626,7 +619,7 @@ absl::Status EnsureDeviceTensorBuffer(LiteRtRuntimeContext* runtime_context,
   LITERT_RETURN_IF_ERROR(runtime_context->lock_tensor_buffer(
       device_buffer_ptr.get(), &host_ptr, kLiteRtTensorBufferLockModeWrite));
 
-  std::memcpy(host_ptr, data.data(), data.size());
+  LITERT_RETURN_IF_ERROR(ReadWeightSlice(info, source, host_ptr));
 
   LITERT_RETURN_IF_ERROR(
       runtime_context->unlock_tensor_buffer(device_buffer_ptr.get()));
@@ -777,10 +770,12 @@ class LiteRtWeightLoader : public WeightLoader {
   LiteRtWeightLoader(
       LiteRtRuntimeContext* runtime_context, const tflite::Model* model,
       std::optional<std::string> model_directory,
-      std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source)
+      std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source,
+      WeightInMemoryMap weight_in_memory_map = {})
       : runtime_context_(runtime_context),
         model_directory_(std::move(model_directory)),
-        scoped_weight_source_(std::move(scoped_weight_source)) {
+        scoped_weight_source_(std::move(scoped_weight_source)),
+        weight_in_memory_map_(std::move(weight_in_memory_map)) {
     ParseFlatBuffer(*model, infos_, entries_, canonical_external_buffer_ids_,
                     group_paths_);
     if (scoped_weight_source_) {
@@ -903,15 +898,23 @@ class LiteRtWeightLoader : public WeightLoader {
  private:
   absl::StatusOr<WeightSource> ResolveWeightSource(
       const LiteRtWeightInfo& info) {
-    WeightSource source;
+    // Check weight in memory map first.
+    auto path_it = group_paths_.find(info.group_id);
+    if (path_it != group_paths_.end()) {
+      auto mem_it = weight_in_memory_map_.find(path_it->second);
+      if (mem_it != weight_in_memory_map_.end()) {
+        return WeightSource{.kind = WeightSource::Kind::kHostMemory,
+                            .host_memory = mem_it->second};
+      }
+    }
+
     auto section_it = scoped_weight_source_
                           ? group_sections_.find(info.group_id)
                           : group_sections_.end();
     if (section_it != group_sections_.end()) {
-      source.kind = WeightSource::Kind::kScopedFile;
-      source.section = &section_it->second;
-      source.scoped_source = scoped_weight_source_.get();
-      return source;
+      return WeightSource{.kind = WeightSource::Kind::kScopedFile,
+                          .section = &section_it->second,
+                          .scoped_source = scoped_weight_source_.get()};
     }
 
     absl::StatusOr<std::string> path =
@@ -919,9 +922,8 @@ class LiteRtWeightLoader : public WeightLoader {
     if (!path.ok()) {
       return path.status();
     }
-    source.kind = WeightSource::Kind::kFilePath;
-    source.path = std::move(*path);
-    return source;
+    return WeightSource{.kind = WeightSource::Kind::kFilePath,
+                        .path = std::move(*path)};
   }
 
   LiteRtRuntimeContext* runtime_context_;
@@ -932,6 +934,7 @@ class LiteRtWeightLoader : public WeightLoader {
   absl::flat_hash_map<uint32_t, std::string> group_paths_;
   std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source_;
   absl::flat_hash_map<uint32_t, litert::ScopedWeightSection> group_sections_;
+  WeightInMemoryMap weight_in_memory_map_;
   mutable std::vector<WeightInfo> weight_info_cache_;
 };
 
@@ -940,10 +943,11 @@ class LiteRtWeightLoader : public WeightLoader {
 std::unique_ptr<WeightLoader> CreateLiteRtWeightLoader(
     LiteRtRuntimeContext* runtime_context, const tflite::Model* flatbuffer,
     std::optional<std::string> model_directory,
-    std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source) {
-  return std::make_unique<LiteRtWeightLoader>(runtime_context, flatbuffer,
-                                              std::move(model_directory),
-                                              std::move(scoped_weight_source));
+    std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source,
+    WeightInMemoryMap weight_in_memory_map) {
+  return std::make_unique<LiteRtWeightLoader>(
+      runtime_context, flatbuffer, std::move(model_directory),
+      std::move(scoped_weight_source), std::move(weight_in_memory_map));
 }
 
 }  // namespace weight_loader
