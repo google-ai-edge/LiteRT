@@ -174,6 +174,16 @@ PyObject* PyArrayFromFloat16Vector(const uint16_t* data, npy_intp size) {
   return obj;
 }
 
+PyObject* PyArrayFromFloat16Vector(const uint16_t* data, npy_intp size) {
+  void* pydata = malloc(size * sizeof(uint16_t));
+  if (data != nullptr) {
+    memcpy(pydata, data, size * sizeof(uint16_t));
+  }
+  PyObject* obj = PyArray_SimpleNewFromData(1, &size, NPY_FLOAT16, pydata);
+  PyArray_ENABLEFLAGS(reinterpret_cast<PyArrayObject*>(obj), NPY_ARRAY_OWNDATA);
+  return obj;
+}
+
 PyObject* PyArrayFromIntVector(const int* data, npy_intp size) {
   if (size == 0) {
     return PyArray_SimpleNew(1, &size,
