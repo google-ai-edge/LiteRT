@@ -59,10 +59,9 @@ namespace tensor {
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 class CompiledModelRunner {
  public:
-  explicit CompiledModelRunner(Environment& env, Options& options,
-                               ModelFunctor model_func,
-                               bool build_model_now = true,
-                               bool use_tmp_file = false);
+  CompiledModelRunner(Environment& env, Options& options,
+                      ModelFunctor model_func, bool build_model_now = true,
+                      bool use_tmp_file = false);
   ~CompiledModelRunner() {
     if (!model_path_.empty()) {
       RemoveFile(model_path_).IgnoreError();
@@ -70,7 +69,8 @@ class CompiledModelRunner {
   }
 
   absl::Status BuildModel(
-      const std::vector<Tensor<TfLiteMixinTag>>& output_tensors = {});
+      const std::vector<Tensor<TfLiteMixinTag>>& output_tensors = {},
+      std::optional<ModelFactory> model_factory = std::nullopt);
 
   absl::Status SetInput(const std::string& name,
                         const std::vector<float>& data);
@@ -205,18 +205,19 @@ CompiledModelRunner<ModelFunctor, Inputs, Outputs>::CompiledModelRunner(
 
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::BuildModel(
-    const std::vector<TensorTf>& output_tensors) {
+    const std::vector<TensorTf>& output_tensors,
+    std::optional<ModelFactory> model_factory) {
   if (use_tmp_file_) {
     if (!model_path_.empty()) {
       LITERT_RETURN_IF_ERROR(RemoveFile(model_path_));
       model_path_.clear();
     }
     LITERT_ASSIGN_OR_RETURN(model_path_, CreateTempFile(kTmpPathPrefix));
-    LITERT_RETURN_IF_ERROR(Save(output_tensors, model_path_));
+    LITERT_RETURN_IF_ERROR(Save(output_tensors, model_path_, model_factory));
     LITERT_ASSIGN_OR_RETURN(compiled_model_,
                             CompiledModel::Create(env_, model_path_, options_));
   } else {
-    LITERT_RETURN_IF_ERROR(Save(output_tensors, model_buffer_));
+    LITERT_RETURN_IF_ERROR(Save(output_tensors, model_buffer_, model_factory));
     BufferRef<> model_buffer(model_buffer_.data(), model_buffer_.size());
     LITERT_ASSIGN_OR_RETURN(
         compiled_model_, CompiledModel::Create(env_, model_buffer, options_));

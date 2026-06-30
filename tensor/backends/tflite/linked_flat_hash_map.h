@@ -35,6 +35,10 @@ class LinkedFlatHashMap {
 
   template <bool Const>
   class Iterator {
+    using MapType = std::conditional_t<Const, const Map, Map>;
+    using ListIteratorType =
+        std::conditional_t<Const, typename List::const_iterator,
+                           typename List::iterator>;
     using ValueType = std::conditional_t<Const, const value_type, value_type>;
 
    public:
@@ -72,11 +76,11 @@ class LinkedFlatHashMap {
    private:
     friend class LinkedFlatHashMap;
 
-    Iterator(Map* map, typename List::iterator list_it)
+    Iterator(MapType* map, ListIteratorType list_it)
         : map_(map), list_it_(list_it) {}
 
-    Map* map_;
-    typename List::iterator list_it_;
+    MapType* map_;
+    ListIteratorType list_it_;
   };
 
   using iterator = Iterator<false>;
@@ -94,6 +98,8 @@ class LinkedFlatHashMap {
     }
     return {{&map_, it->second}, inserted};
   }
+
+  bool contains(const K& key) const { return map_.contains(key); }
 
   V& operator[](const K& key) {
     auto map_it = map_.find(key);

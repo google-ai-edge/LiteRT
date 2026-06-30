@@ -16,12 +16,14 @@ limitations under the License.
 #include "tensor/backends/tflite/tflite_flatbuffer_conversion.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <fstream>
 #include <ios>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -50,7 +52,6 @@ limitations under the License.
 #include "tflite/schema/mutable/schema_generated.h"
 
 namespace litert::tensor {
-
 namespace {
 
 static constexpr int kTfLiteSchemaVersion = 3;
@@ -307,9 +308,12 @@ absl::Status ModelFactory::Build() {
           buffers_.insert({tensor_info.buffer, BufferSerializationInfo{}});
       if (inserted) {
         it->second.index = buffer_list_.size() + 1;
+        it->second.external_buffer_id = GetExternalBufferId(tensor);
         buffer_list_.push_back(tensor_info.buffer);
       }
       t.buffer = it->second.index;
+      t.external_buffer =
+          it->second.external_buffer_id ? *it->second.external_buffer_id : 0;
     } else {
       t.buffer = 0;  // 0 means no buffer associated.
     }
@@ -443,10 +447,16 @@ absl::Status ModelFactory::Build() {
   model_.buffers.reserve(buffer_list_.size() + 1);
   for (size_t i = model_.buffers.size(); i < buffer_list_.size() + 1; ++i) {
     model_.buffers.push_back(std::make_unique<tflite::BufferT>());
-    // If you leave these to 0, the builder won't include them in the final
-    // buffer and we won't be able to update them.
-    model_.buffers.back()->offset = kFlatbufferPlaceholderValue;
-    model_.buffers.back()->size = kFlatbufferPlaceholderValue;
+    auto& buffer_serialization_info = buffers_[buffer_list_[i - 1]];
+    // If buffer is external, set offset/size to 0 and let the builder not
+    // include them in the final buffer.
+    if (buffer_serialization_info.external_buffer_id.has_value()) {
+      model_.buffers.back()->offset = 0;
+      model_.buffers.back()->size = 0;
+    } else {
+      model_.buffers.back()->offset = kFlatbufferPlaceholderValue;
+      model_.buffers.back()->size = kFlatbufferPlaceholderValue;
+    }
   }
 
   return absl::OkStatus();
@@ -478,6 +488,9 @@ absl::Status ModelFactory::UpdateBufferData(
   auto current_buffer = buffer_list_.begin();
   for (size_t i = 1; i < buffers->size(); ++i, ++current_buffer) {
     BufferSerializationInfo& buffer_build_info = buffers_[*current_buffer];
+    if (buffer_build_info.external_buffer_id.has_value()) {
+      continue;  // Skip external buffers.
+    }
     const size_t buffer_size = current_buffer->get()->Lock().size();
     tflite::Buffer* fbb_buffer = buffers->GetMutableObject(i);
     allocation_size_ =
@@ -496,6 +509,9 @@ absl::Status ModelFactory::WriteBufferData(std::ofstream& output_file) {
         "Can't write buffer data to an invalid output file handle.");
   }
   for (const auto& [buffer, build_info] : buffers_) {
+    if (build_info.external_buffer_id.has_value()) {
+      continue;  // Skip external buffers.
+    }
     LockedBufferSpan<const char> data = buffer.get()->Lock().As<const char>();
     output_file.seekp(build_info.serialization_offset);
     output_file.write(data.data(), data.size());
@@ -540,6 +556,35 @@ absl::Status ModelFactory::AddSignature(std::vector<TensorHandle> outputs,
   return absl::OkStatus();
 }
 
+absl::Status ModelFactory::AddExternalBufferMap(
+    const ExternalBufferMap& external_buffer_map) {
+  for (const auto& [group_name, buffer_infos] : external_buffer_map) {
+    auto group = std::make_unique<tflite::ExternalBufferGroupT>();
+    group->name = group_name;
+    uint32_t group_id = model_.external_buffer_groups.size();
+    model_.external_buffer_groups.push_back(std::move(group));
+    for (const auto& info : buffer_infos) {
+      auto buffer = std::make_unique<tflite::ExternalBufferT>();
+      buffer->id = model_.external_buffers.size() + 1;  // ID 0 means no buffer.
+      buffer->group = group_id;
+      buffer->offset = info.offset;
+      buffer->length = info.length;
+      tensor_to_external_buffer_id_[info.tensor.GetRaw()] = buffer->id;
+      model_.external_buffers.push_back(std::move(buffer));
+    }
+  }
+  return absl::OkStatus();
+}
+
+std::optional<uint32_t> ModelFactory::GetExternalBufferId(
+    const graph::Tensor& tensor) const {
+  auto it = tensor_to_external_buffer_id_.find(tensor);
+  if (it == tensor_to_external_buffer_id_.end()) {
+    return std::nullopt;
+  }
+  return it->second;
+}
+
 absl::Status ModelFactory::Save(absl::string_view path) {
   flatbuffers::FlatBufferBuilder fbb;
   fbb.Finish(tflite::Model::Pack(fbb, &model_), tflite::ModelIdentifier());
@@ -564,6 +609,9 @@ absl::StatusOr<std::vector<char>> ModelFactory::CreateFlatbuffer() {
   fb.resize(allocation_size_ + XNN_EXTRA_BYTES);
   std::memcpy(fb.data(), fbb.GetBufferPointer(), fbb.GetSize());
   for (const auto& [buffer, build_info] : buffers_) {
+    if (build_info.external_buffer_id.has_value()) {
+      continue;
+    }
     LockedBufferSpan<const char> data = buffer.get()->Lock().As<const char>();
     std::memcpy(fb.data() + build_info.serialization_offset, data.data(),
                 data.size());
@@ -571,23 +619,32 @@ absl::StatusOr<std::vector<char>> ModelFactory::CreateFlatbuffer() {
   return fb;
 }
 
-absl::Status Save(std::vector<TensorHandle> outputs, absl::string_view path) {
-  ModelFactory serialization;
+absl::Status Save(std::vector<TensorHandle> outputs, absl::string_view path,
+                  std::optional<ModelFactory> model_factory) {
+  ModelFactory local_model_factory;
+  ModelFactory& serialization =
+      model_factory.has_value() ? *model_factory : local_model_factory;
   LRT_TENSOR_RETURN_IF_ERROR(serialization.AddSubgraph(std::move(outputs)));
   LRT_TENSOR_RETURN_IF_ERROR(serialization.Save(path));
   return absl::OkStatus();
 }
 
-absl::Status Save(std::vector<TensorHandle> outputs, std::vector<char>& fb) {
-  ModelFactory serialization;
+absl::Status Save(std::vector<TensorHandle> outputs, std::vector<char>& fb,
+                  std::optional<ModelFactory> model_factory) {
+  ModelFactory local_model_factory;
+  ModelFactory& serialization =
+      model_factory.has_value() ? *model_factory : local_model_factory;
   LRT_TENSOR_RETURN_IF_ERROR(serialization.AddSubgraph(std::move(outputs)));
   LRT_TENSOR_ASSIGN_OR_RETURN(auto fb_temp, serialization.CreateFlatbuffer());
   fb.insert(fb.end(), fb_temp.begin(), fb_temp.end());
   return absl::OkStatus();
 }
 
-absl::Status Run(std::vector<TensorHandle> outputs) {
-  ModelFactory serialization;
+absl::Status Run(std::vector<TensorHandle> outputs,
+                 std::optional<ModelFactory> model_factory) {
+  ModelFactory local_model_factory;
+  ModelFactory& serialization =
+      model_factory.has_value() ? *model_factory : local_model_factory;
   LRT_TENSOR_RETURN_IF_ERROR(serialization.AddSubgraph(outputs));
   LRT_TENSOR_ASSIGN_OR_RETURN(std::vector<char> fb,
                               serialization.CreateFlatbuffer());

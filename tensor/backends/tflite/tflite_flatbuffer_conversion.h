@@ -17,14 +17,16 @@ limitations under the License.
 #define THIRD_PARTY_ODML_LITERT_TENSOR_BACKENDS_TFLITE_TFLITE_FLATBUFFER_CONVERSION_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "absl/container/btree_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -38,39 +40,17 @@ limitations under the License.
 
 namespace litert::tensor {
 
-#define MISSING_MIXIN_MSG                                                      \
-  "The tensors given to this function do not have a TFLite backend mixin.\n\n" \
-  "Ensure that the input tensors that you define are tagged with "             \
-  "`TfLiteMixinTag`."
-
-absl::Status Save(std::vector<TensorHandle> outputs, absl::string_view path);
-absl::Status Save(std::vector<TensorHandle> outputs, std::vector<char>& fb);
-
-template <class... Mixins>
-absl::Status Save(std::vector<Tensor<Mixins...>> outputs,
-                  absl::string_view path) {
-  std::vector<TensorHandle> erased_outputs(outputs.begin(), outputs.end());
-  return Save(std::move(erased_outputs), path);
-}
-
-template <class... Mixins>
-absl::Status Save(std::vector<Tensor<Mixins...>> outputs,
-                  std::vector<char>& fb) {
-  std::vector<TensorHandle> erased_outputs(outputs.begin(), outputs.end());
-  return Save(std::move(erased_outputs), fb);
-}
-
-absl::Status Run(std::vector<TensorHandle> outputs);
-
-template <class... Mixins>
-absl::Status Run(std::vector<Tensor<Mixins...>> outputs) {
-  static_assert((... || std::is_same_v<Mixins, TfLiteMixinTag>),
-                MISSING_MIXIN_MSG);
-  return Run(std::vector<TensorHandle>(outputs.begin(), outputs.end()));
-}
-
 class ModelFactory {
  public:
+  // Information about an external buffer in a group.
+  struct ExternalBufferInfo {
+    uint64_t offset;
+    uint64_t length;
+    const TensorHandle& tensor;
+  };
+  using ExternalBufferMap =
+      LinkedFlatHashMap<std::string, std::vector<ExternalBufferInfo>>;
+
   ModelFactory();
 
   // Saves the model to `path`.
@@ -87,6 +67,11 @@ class ModelFactory {
   // The signature inputs and outputs are named using the tensor names.
   absl::Status AddSignature(std::vector<TensorHandle> outputs,
                             std::string name);
+
+  // Registers a set of external buffers. It must be called before
+  // AddSubgraph().
+  absl::Status AddExternalBufferMap(
+      const ExternalBufferMap& external_buffer_map);
 
  protected:
   // Explores a new subgraph that is reachable from the given output tensors.
@@ -106,6 +91,7 @@ class ModelFactory {
   struct TensorSerializationInfo {
     int index = -1;
     bool is_output = false;
+    std::optional<uint32_t> external_buffer_id;
   };
 
   struct OpSerializationInfo {};
@@ -113,7 +99,11 @@ class ModelFactory {
   struct BufferSerializationInfo {
     int index = -1;
     size_t serialization_offset = 0;
+    std::optional<uint32_t> external_buffer_id;
   };
+
+  std::optional<uint32_t> GetExternalBufferId(
+      const graph::Tensor& tensor) const;
 
   LinkedFlatHashMap<graph::Tensor, TensorSerializationInfo> tensors_;
   LinkedFlatHashMap<std::shared_ptr<graph::Operation>, OpSerializationInfo>
@@ -123,7 +113,45 @@ class ModelFactory {
   std::deque<std::shared_ptr<Buffer>> buffer_list_;
   tflite::ModelT model_;
   size_t allocation_size_;
+  absl::flat_hash_map<graph::Tensor, uint32_t> tensor_to_external_buffer_id_;
 };
+
+absl::Status Save(std::vector<TensorHandle> outputs, absl::string_view path,
+                  std::optional<ModelFactory> model_factory = std::nullopt);
+absl::Status Save(std::vector<TensorHandle> outputs, std::vector<char>& fb,
+                  std::optional<ModelFactory> model_factory = std::nullopt);
+
+template <class... Mixins>
+absl::Status Save(std::vector<Tensor<Mixins...>> outputs,
+                  absl::string_view path,
+                  std::optional<ModelFactory> model_factory = std::nullopt) {
+  std::vector<TensorHandle> erased_outputs(outputs.begin(), outputs.end());
+  return Save(std::move(erased_outputs), path, std::move(model_factory));
+}
+
+template <class... Mixins>
+absl::Status Save(std::vector<Tensor<Mixins...>> outputs, std::vector<char>& fb,
+                  std::optional<ModelFactory> model_factory = std::nullopt) {
+  std::vector<TensorHandle> erased_outputs(outputs.begin(), outputs.end());
+  return Save(std::move(erased_outputs), fb, std::move(model_factory));
+}
+
+#define MISSING_MIXIN_MSG                                                      \
+  "The tensors given to this function do not have a TFLite backend mixin.\n\n" \
+  "Ensure that the input tensors that you define are tagged with "             \
+  "`TfLiteMixinTag`."
+
+absl::Status Run(std::vector<TensorHandle> outputs,
+                 std::optional<ModelFactory> model_factory = std::nullopt);
+
+template <class... Mixins>
+absl::Status Run(std::vector<Tensor<Mixins...>> outputs,
+                 std::optional<ModelFactory> model_factory = std::nullopt) {
+  static_assert((... || std::is_same_v<Mixins, TfLiteMixinTag>),
+                MISSING_MIXIN_MSG);
+  return Run(std::vector<TensorHandle>(outputs.begin(), outputs.end()),
+             std::move(model_factory));
+}
 
 }  // namespace litert::tensor
 
