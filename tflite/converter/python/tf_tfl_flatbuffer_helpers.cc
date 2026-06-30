@@ -30,6 +30,7 @@ limitations under the License.
 #include "mlir/IR/Visitors.h"  // from @llvm-project
 #include "mlir/Support/FileUtilities.h"  // from @llvm-project
 #include "mlir/Support/LLVM.h"  // from @llvm-project
+#include "google/protobuf/text_format.h"
 #include "tflite/converter/common/tfl_pass_config.h"
 #include "tflite/converter/converter_flags.pb.h"
 #include "tflite/converter/model_flags.pb.h"
