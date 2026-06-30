@@ -94,6 +94,36 @@ fn check_tool_installed(tool: &str) -> Result<(), String> {
     }
 }
 
+// Resolve a program name against PATH, returning its absolute path. If `program`
+// already contains a path separator it is returned as-is when it exists.
+fn resolve_in_path(program: &str) -> Option<PathBuf> {
+    let direct = Path::new(program);
+    if direct.components().count() > 1 {
+        return if direct.is_file() { Some(direct.to_path_buf()) } else { None };
+    }
+    let path_var = env::var_os("PATH")?;
+    env::split_paths(&path_var).map(|dir| dir.join(program)).find(|candidate| candidate.is_file())
+}
+
+// Find an archiver and ranlib that belong to the same toolchain as the given C
+// compiler. CMake would otherwise select each independently from PATH, which can
+// mix incompatible toolchains (for example GNU binutils `ar` with LLVM
+// `llvm-ranlib`) and corrupt static archives. Resolving both from the
+// compiler's own directory keeps them mutually consistent on any platform.
+fn matched_archiver_tools(c_compiler: &str) -> Option<(PathBuf, PathBuf)> {
+    let compiler_dir = resolve_in_path(c_compiler)?.parent()?.to_path_buf();
+    // A clang install ships `llvm-ar`/`llvm-ranlib`; a gcc install ships the
+    // binutils `ar`/`ranlib` siblings. Prefer the LLVM pair, then plain names.
+    for (ar_name, ranlib_name) in [("llvm-ar", "llvm-ranlib"), ("ar", "ranlib")] {
+        let ar = compiler_dir.join(ar_name);
+        let ranlib = compiler_dir.join(ranlib_name);
+        if ar.is_file() && ranlib.is_file() {
+            return Some((ar, ranlib));
+        }
+    }
+    None
+}
+
 // Helper function to download a file
 fn download_file(url: &str, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let client = reqwest::blocking::Client::builder()
@@ -191,20 +221,52 @@ fn download_and_build_cpp_sdk(
     let build_dir = out_dir.join("litert_cc_sdk_build");
     info!("Building C++ SDK with CMake in {}", build_dir.display());
 
-    let status = Command::new("cmake")
+    let mut cmake_configure = Command::new("cmake");
+    cmake_configure
         .arg("-S")
         .arg(&sdk_root)
         .arg("-B")
         .arg(&build_dir)
         .arg("-DCMAKE_C_COMPILER=clang")
-        .arg("-DCMAKE_CXX_COMPILER=clang++")
-        .status()?;
+        .arg("-DCMAKE_CXX_COMPILER=clang++");
+
+    // CMake otherwise selects `ar` and `ranlib` independently via PATH search.
+    // On setups where PATH mixes toolchains (for example a Homebrew install that
+    // puts GNU binutils `ar`/`ranlib` ahead of everything while LLVM provides
+    // `llvm-ranlib`), it creates static archives with one toolchain and indexes
+    // them with another. The archive formats are incompatible, and indexing the
+    // empty `libabsl_crc_cpu_detect.a` then fails with:
+    //   llvm-ranlib: error: ...: '__.SYMDEF': The end of the file was unexpectedly encountered
+    // Pin both tools to the matched pair that ships alongside the chosen
+    // compiler so the build is consistent regardless of PATH ordering. This is
+    // platform agnostic: it uses whichever `clang` the developer has rather than
+    // dictating a specific toolchain.
+    if let Some((ar, ranlib)) = matched_archiver_tools("clang") {
+        info!("Using archiver {} and ranlib {}", ar.display(), ranlib.display());
+        cmake_configure
+            .arg(format!("-DCMAKE_AR={}", ar.display()))
+            .arg(format!("-DCMAKE_RANLIB={}", ranlib.display()));
+    }
+
+    let status = cmake_configure.status()?;
 
     if !status.success() {
         return Err(format!("CMake configure failed with status: {}", status).into());
     }
 
-    let status = Command::new("cmake").arg("--build").arg(&build_dir).arg("-j").status()?;
+    // Only build the static C++ API library that the Rust binding links against.
+    // Building the full project also compiles the SDK's demo executables
+    // (run_model_simple, dump_model_simple), which transitively require the
+    // imported runtime via a path hardcoded to "libLiteRt.so". On macOS the
+    // runtime is "libLiteRt.dylib", so those demo targets fail to build even
+    // though the binding itself never needs them.
+    let status = Command::new("cmake")
+        .arg("--build")
+        .arg(&build_dir)
+        .arg("--target")
+        .arg("litert_cc_api")
+        .arg("-j")
+        .status()?;
 
     if !status.success() {
         return Err(format!("CMake build failed with status: {}", status).into());
@@ -232,7 +294,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     println!("cargo::rerun-if-changed=build/build.rs");
-    println!("cargo::rerun-if-changed=wrapper.h");
 
     if let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") {
         info!("Manifest dir {}", manifest_dir);
@@ -243,7 +304,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     check_tool_installed("cmake")?;
     check_tool_installed("clang")?;
 
-    let out_dir = PathBuf::from(env::var("OUT_DIR")?);
+    let out_dir = PathBuf::from(env::var(OUT_DIR_ENV_VAR)?);
     let litert_sdk = download_and_build_cpp_sdk(&target_platform, &out_dir)?;
     info!("Runtime dir {}", litert_sdk.sdk_root_dir.display());
     info!("Build dir {}", litert_sdk.sdk_build_dir.display());
@@ -253,8 +314,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo::rustc-link-search=native={}", litert_sdk.sdk_build_dir.display());
     println!("cargo::rustc-link-lib=static=litert_cc_api");
 
+    // Generate bindings from the downloaded SDK's own headers rather than the
+    // in-tree headers reached via wrapper.h's "../c/..." relative includes.
+    // The prebuilt runtime (libLiteRt) is built from the published SDK, so its
+    // headers match the runtime ABI exactly. The in-tree headers can be ahead
+    // of the published runtime (for example they add an LiteRtEnvironment
+    // parameter to model creation, or declare APIs whose types the released
+    // SDK has not shipped yet), which would produce bindings that do not match
+    // the linked library. Mirror wrapper.h's include set against the SDK copies.
+    let sdk_wrapper_path = out_dir.join("sdk_wrapper.h");
+    let sdk_wrapper_contents = "\
+#include \"litert/c/internal/litert_logging.h\"
+#include \"litert/c/litert_common.h\"
+#include \"litert/c/litert_compiled_model.h\"
+#include \"litert/c/litert_environment.h\"
+#include \"litert/c/litert_environment_options.h\"
+#include \"litert/c/litert_event.h\"
+#include \"litert/c/litert_metrics.h\"
+#include \"litert/c/litert_model.h\"
+#include \"litert/c/litert_op_options.h\"
+#include \"litert/c/litert_opaque_options.h\"
+#include \"litert/c/litert_options.h\"
+#include \"litert/c/litert_tensor_buffer.h\"
+#include \"litert/c/litert_tensor_buffer_requirements.h\"
+";
+    fs::write(&sdk_wrapper_path, sdk_wrapper_contents)?;
+
     let bindings = bindgen::Builder::default()
-        .header("wrapper.h")
+        .header(sdk_wrapper_path.to_str().expect("OUT_DIR path is not valid UTF-8"))
         // Add the include path so clang can find dependent headers
         .clang_arg(format!("-I{}", litert_sdk.sdk_root_dir.display()))
         .clang_arg(format!("-I{}", litert_sdk.sdk_root_dir.join("litert").join("c").display()))
@@ -266,8 +353,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("Unable to generate bindings");
 
     // Write the bindings to the $OUT_DIR/bindings.rs file.
-    // Get the output directory where cargo wants us to build things
-    let out_dir = PathBuf::from(env::var(OUT_DIR_ENV_VAR)?);
     let bindings_out_path = out_dir.join("bindings.rs");
     info!("Writing binding.rs to {}", bindings_out_path.display());
     bindings.write_to_file(bindings_out_path).expect("Couldn't write bindings!");
