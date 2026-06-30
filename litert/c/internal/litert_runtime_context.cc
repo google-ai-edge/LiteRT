@@ -28,6 +28,7 @@
 
 LiteRtRuntimeContext* LrtGetRuntimeContext() {
   static LiteRtRuntimeContext context = {
+      .struct_size = sizeof(LiteRtRuntimeContext),
       .create_tensor_buffer_requirements = LiteRtCreateTensorBufferRequirements,
       .get_external_litert_buffer_context_tensor_buffer =
           LiteRtGetExternalLiteRtBufferContextTensorBuffer,

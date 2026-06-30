@@ -42,6 +42,8 @@ typedef struct AHardwareBuffer AHardwareBuffer;
 /// @note This concrete type is shared with LiteRT runtime and Accelerators and
 /// Dispatch APIs. So it must be ABI stable.
 typedef struct LiteRtRuntimeContext {
+  size_t struct_size;
+
   LiteRtStatus (*create_tensor_buffer_requirements)(
       int num_supported_tensor_buffer_types,
       const LiteRtTensorBufferType* supported_tensor_buffer_types,
@@ -176,143 +178,145 @@ typedef struct LiteRtRuntimeContext {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtRuntimeContext) == 384,
+static_assert(sizeof(LiteRtRuntimeContext) == 392,
               "LiteRtRuntimeContext size mismatch");
+static_assert(offsetof(LiteRtRuntimeContext, struct_size) == 0,
+              "LiteRtRuntimeContext struct_size offset mismatch");
 static_assert(
-    offsetof(LiteRtRuntimeContext, create_tensor_buffer_requirements) == 0,
+    offsetof(LiteRtRuntimeContext, create_tensor_buffer_requirements) == 8,
     "LiteRtRuntimeContext create_tensor_buffer_requirements offset mismatch");
 static_assert(
     offsetof(LiteRtRuntimeContext,
-             get_external_litert_buffer_context_tensor_buffer) == 8,
+             get_external_litert_buffer_context_tensor_buffer) == 16,
     "LiteRtRuntimeContext get_external_litert_buffer_context_tensor_buffer "
     "offset mismatch");
 static_assert(
     offsetof(LiteRtRuntimeContext,
-             external_litert_buffer_context_create_tensor_buffer) == 16,
+             external_litert_buffer_context_create_tensor_buffer) == 24,
     "LiteRtRuntimeContext external_litert_buffer_context_create_tensor_buffer "
     "offset mismatch");
 static_assert(
     offsetof(LiteRtRuntimeContext,
-             external_litert_buffer_context_register_tensor_buffer) == 24,
+             external_litert_buffer_context_register_tensor_buffer) == 32,
     "LiteRtRuntimeContext "
     "external_litert_buffer_context_register_tensor_buffer offset mismatch");
 static_assert(
     offsetof(LiteRtRuntimeContext,
-             external_litert_buffer_context_unregister_tensor_buffer) == 32,
+             external_litert_buffer_context_unregister_tensor_buffer) == 40,
     "LiteRtRuntimeContext "
     "external_litert_buffer_context_unregister_tensor_buffer offset mismatch");
 static_assert(
     offsetof(LiteRtRuntimeContext,
-             external_litert_buffer_context_register_buffer_requirements) == 40,
+             external_litert_buffer_context_register_buffer_requirements) == 48,
     "LiteRtRuntimeContext "
     "external_litert_buffer_context_register_buffer_requirements offset "
     "mismatch");
 static_assert(offsetof(LiteRtRuntimeContext,
-                       external_litert_buffer_context_get_environment) == 48,
+                       external_litert_buffer_context_get_environment) == 56,
               "LiteRtRuntimeContext "
               "external_litert_buffer_context_get_environment offset mismatch");
 static_assert(
     offsetof(LiteRtRuntimeContext,
-             external_litert_buffer_context_is_async_execution_mode) == 56,
+             external_litert_buffer_context_is_async_execution_mode) == 64,
     "LiteRtRuntimeContext "
     "external_litert_buffer_context_is_async_execution_mode offset mismatch");
 static_assert(offsetof(LiteRtRuntimeContext,
-                       external_litert_buffer_context_destroy) == 64,
+                       external_litert_buffer_context_destroy) == 72,
               "LiteRtRuntimeContext external_litert_buffer_context_destroy "
               "offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, get_opaque_options) == 72,
+static_assert(offsetof(LiteRtRuntimeContext, get_opaque_options) == 80,
               "LiteRtRuntimeContext get_opaque_options offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, find_opaque_options_data) == 80,
+static_assert(offsetof(LiteRtRuntimeContext, find_opaque_options_data) == 88,
               "LiteRtRuntimeContext find_opaque_options_data offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, destroy_options) == 88,
+static_assert(offsetof(LiteRtRuntimeContext, destroy_options) == 96,
               "LiteRtRuntimeContext destroy_options offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, get_environment_options) == 96,
+static_assert(offsetof(LiteRtRuntimeContext, get_environment_options) == 104,
               "LiteRtRuntimeContext get_environment_options offset mismatch");
 static_assert(
-    offsetof(LiteRtRuntimeContext, get_environment_options_value) == 104,
+    offsetof(LiteRtRuntimeContext, get_environment_options_value) == 112,
     "LiteRtRuntimeContext get_environment_options_value offset mismatch");
 static_assert(
-    offsetof(LiteRtRuntimeContext, environment_has_gpu_environment) == 112,
+    offsetof(LiteRtRuntimeContext, environment_has_gpu_environment) == 120,
     "LiteRtRuntimeContext environment_has_gpu_environment offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, add_environment_options) == 120,
+static_assert(offsetof(LiteRtRuntimeContext, add_environment_options) == 128,
               "LiteRtRuntimeContext add_environment_options offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, gpu_environment_create) == 128,
+static_assert(offsetof(LiteRtRuntimeContext, gpu_environment_create) == 136,
               "LiteRtRuntimeContext gpu_environment_create offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, wrap_delegate) == 136,
+static_assert(offsetof(LiteRtRuntimeContext, wrap_delegate) == 144,
               "LiteRtRuntimeContext wrap_delegate offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, unwrap_delegate) == 144,
+static_assert(offsetof(LiteRtRuntimeContext, unwrap_delegate) == 152,
               "LiteRtRuntimeContext unwrap_delegate offset mismatch");
 static_assert(offsetof(LiteRtRuntimeContext,
-                       create_tensor_buffer_from_host_memory) == 152,
+                       create_tensor_buffer_from_host_memory) == 160,
               "LiteRtRuntimeContext create_tensor_buffer_from_host_memory "
               "offset mismatch");
 static_assert(
-    offsetof(LiteRtRuntimeContext, create_managed_tensor_buffer) == 160,
+    offsetof(LiteRtRuntimeContext, create_managed_tensor_buffer) == 168,
     "LiteRtRuntimeContext create_managed_tensor_buffer offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, destroy_tensor_buffer) == 168,
+static_assert(offsetof(LiteRtRuntimeContext, destroy_tensor_buffer) == 176,
               "LiteRtRuntimeContext destroy_tensor_buffer offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, get_tensor_buffer_type) == 176,
+static_assert(offsetof(LiteRtRuntimeContext, get_tensor_buffer_type) == 184,
               "LiteRtRuntimeContext get_tensor_buffer_type offset mismatch");
 static_assert(
-    offsetof(LiteRtRuntimeContext, get_tensor_buffer_tensor_type) == 184,
+    offsetof(LiteRtRuntimeContext, get_tensor_buffer_tensor_type) == 192,
     "LiteRtRuntimeContext get_tensor_buffer_tensor_type offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, get_tensor_buffer_size) == 192,
+static_assert(offsetof(LiteRtRuntimeContext, get_tensor_buffer_size) == 200,
               "LiteRtRuntimeContext get_tensor_buffer_size offset mismatch");
 static_assert(
-    offsetof(LiteRtRuntimeContext, get_tensor_buffer_packed_size) == 200,
+    offsetof(LiteRtRuntimeContext, get_tensor_buffer_packed_size) == 208,
     "LiteRtRuntimeContext get_tensor_buffer_packed_size offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, get_tensor_buffer_offset) == 208,
+static_assert(offsetof(LiteRtRuntimeContext, get_tensor_buffer_offset) == 216,
               "LiteRtRuntimeContext get_tensor_buffer_offset offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, lock_tensor_buffer) == 216,
+static_assert(offsetof(LiteRtRuntimeContext, lock_tensor_buffer) == 224,
               "LiteRtRuntimeContext lock_tensor_buffer offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, unlock_tensor_buffer) == 224,
+static_assert(offsetof(LiteRtRuntimeContext, unlock_tensor_buffer) == 232,
               "LiteRtRuntimeContext unlock_tensor_buffer offset mismatch");
 static_assert(
-    offsetof(LiteRtRuntimeContext, get_tensor_buffer_host_memory) == 232,
+    offsetof(LiteRtRuntimeContext, get_tensor_buffer_host_memory) == 240,
     "LiteRtRuntimeContext get_tensor_buffer_host_memory offset mismatch");
 static_assert(
-    offsetof(LiteRtRuntimeContext, get_tensor_buffer_opencl_memory) == 240,
+    offsetof(LiteRtRuntimeContext, get_tensor_buffer_opencl_memory) == 248,
     "LiteRtRuntimeContext get_tensor_buffer_opencl_memory offset mismatch");
 static_assert(
-    offsetof(LiteRtRuntimeContext, get_tensor_buffer_gl_buffer) == 248,
+    offsetof(LiteRtRuntimeContext, get_tensor_buffer_gl_buffer) == 256,
     "LiteRtRuntimeContext get_tensor_buffer_gl_buffer offset mismatch");
 static_assert(offsetof(LiteRtRuntimeContext,
-                       get_tensor_buffer_custom_tensor_buffer_handle) == 256,
+                       get_tensor_buffer_custom_tensor_buffer_handle) == 264,
               "LiteRtRuntimeContext "
               "get_tensor_buffer_custom_tensor_buffer_handle offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, get_tensor_buffer_ahwb) == 264,
+static_assert(offsetof(LiteRtRuntimeContext, get_tensor_buffer_ahwb) == 272,
               "LiteRtRuntimeContext get_tensor_buffer_ahwb offset mismatch");
 static_assert(
-    offsetof(LiteRtRuntimeContext, get_tensor_buffer_dma_buf_buffer) == 272,
+    offsetof(LiteRtRuntimeContext, get_tensor_buffer_dma_buf_buffer) == 280,
     "LiteRtRuntimeContext get_tensor_buffer_dma_buf_buffer offset mismatch");
 static_assert(
-    offsetof(LiteRtRuntimeContext, get_tensor_buffer_fast_rpc_buffer) == 280,
+    offsetof(LiteRtRuntimeContext, get_tensor_buffer_fast_rpc_buffer) == 288,
     "LiteRtRuntimeContext get_tensor_buffer_fast_rpc_buffer offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, has_tensor_buffer_event) == 288,
+static_assert(offsetof(LiteRtRuntimeContext, has_tensor_buffer_event) == 296,
               "LiteRtRuntimeContext has_tensor_buffer_event offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, get_tensor_buffer_event) == 296,
+static_assert(offsetof(LiteRtRuntimeContext, get_tensor_buffer_event) == 304,
               "LiteRtRuntimeContext get_tensor_buffer_event offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, set_tensor_buffer_event) == 304,
+static_assert(offsetof(LiteRtRuntimeContext, set_tensor_buffer_event) == 312,
               "LiteRtRuntimeContext set_tensor_buffer_event offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, create_managed_event) == 312,
+static_assert(offsetof(LiteRtRuntimeContext, create_managed_event) == 320,
               "LiteRtRuntimeContext create_managed_event offset mismatch");
 static_assert(
-    offsetof(LiteRtRuntimeContext, create_event_from_sync_fence_fd) == 320,
+    offsetof(LiteRtRuntimeContext, create_event_from_sync_fence_fd) == 328,
     "LiteRtRuntimeContext create_event_from_sync_fence_fd offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, get_event_event_type) == 328,
+static_assert(offsetof(LiteRtRuntimeContext, get_event_event_type) == 336,
               "LiteRtRuntimeContext get_event_event_type offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, get_event_sync_fence_fd) == 336,
+static_assert(offsetof(LiteRtRuntimeContext, get_event_sync_fence_fd) == 344,
               "LiteRtRuntimeContext get_event_sync_fence_fd offset mismatch");
 static_assert(
-    offsetof(LiteRtRuntimeContext, create_event_from_opencl_event) == 344,
+    offsetof(LiteRtRuntimeContext, create_event_from_opencl_event) == 352,
     "LiteRtRuntimeContext create_event_from_opencl_event offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, get_event_opencl_event) == 352,
+static_assert(offsetof(LiteRtRuntimeContext, get_event_opencl_event) == 360,
               "LiteRtRuntimeContext get_event_opencl_event offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, set_custom_event) == 360,
+static_assert(offsetof(LiteRtRuntimeContext, set_custom_event) == 368,
               "LiteRtRuntimeContext set_custom_event offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, get_custom_event) == 368,
+static_assert(offsetof(LiteRtRuntimeContext, get_custom_event) == 376,
               "LiteRtRuntimeContext get_custom_event offset mismatch");
-static_assert(offsetof(LiteRtRuntimeContext, wait_event) == 376,
+static_assert(offsetof(LiteRtRuntimeContext, wait_event) == 384,
               "LiteRtRuntimeContext wait_event offset mismatch");
 #endif  // __cplusplus
 
