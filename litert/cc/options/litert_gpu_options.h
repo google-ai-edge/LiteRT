@@ -132,6 +132,7 @@ class GpuOptions {
     kDefault = kLiteRtDelegatePrecisionDefault,
     kFp16 = kLiteRtDelegatePrecisionFp16,
     kFp32 = kLiteRtDelegatePrecisionFp32,
+    kFp32_16 = kLiteRtDelegatePrecisionFp32_16,
   };
 
   /// @brief Sets the calculation precision of the GPU Accelerator.
