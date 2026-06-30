@@ -27,6 +27,8 @@ class SocModel(StrEnum):
 
   ALL = "ALL"
 
+  QCM6490 = "QCM6490"
+  QCS6490 = "QCS6490"
   SA8255 = "SA8255"
   SA8295 = "SA8295"
   SM8350 = "SM8350"
