@@ -557,7 +557,7 @@ TEST(CompilationCacheTest, Case2_ConfigLimit_RemovesOldestConfig) {
   LITERT_ABORT_IF_ERROR(compilation_cache.SaveModel(*model, key_1, model_name));
   // We sleep to ensure that the next SaveModel call results in a strictly later
   // filesystem modification time. Some filesystems have 1s granularity.
-  absl::SleepFor(absl::Milliseconds(100));
+  absl::SleepFor(absl::Seconds(1));
 
   // 2. Save Config 2
   auto options_2 = GetTestOptions();
@@ -566,7 +566,7 @@ TEST(CompilationCacheTest, Case2_ConfigLimit_RemovesOldestConfig) {
                          CompilationCache::GetModelHash(
                              *model, options_2, GetTestCompilerPluginInfo()));
   LITERT_ABORT_IF_ERROR(compilation_cache.SaveModel(*model, key_2, model_name));
-  absl::SleepFor(absl::Milliseconds(100));
+  absl::SleepFor(absl::Seconds(1));
 
   std::string path_1 = litert::internal::Join(
       {cache_root_path, model_name, absl::StrCat(key_1.content_hash),
@@ -629,7 +629,7 @@ TEST(CompilationCacheTest, Case3_GlobalLRU_RemovesOldestFiles) {
       CompilationCache::GetModelHash(*model, GetTestOptions(),
                                      GetTestCompilerPluginInfo()));
   LITERT_ABORT_IF_ERROR(compilation_cache.SaveModel(*model, key_1, "model_a"));
-  absl::SleepFor(absl::Milliseconds(100));
+  absl::SleepFor(absl::Seconds(1));
 
   // 2. Save File 2 (Model B)
   LITERT_ASSIGN_OR_ABORT(
@@ -637,7 +637,7 @@ TEST(CompilationCacheTest, Case3_GlobalLRU_RemovesOldestFiles) {
       CompilationCache::GetModelHash(*model, GetTestOptions(),
                                      GetTestCompilerPluginInfo()));
   LITERT_ABORT_IF_ERROR(compilation_cache.SaveModel(*model, key_2, "model_b"));
-  absl::SleepFor(absl::Milliseconds(100));
+  absl::SleepFor(absl::Seconds(1));
 
   std::string path_1 = litert::internal::Join(
       {cache_root_path, "model_a", absl::StrCat(key_1.content_hash),
@@ -699,7 +699,7 @@ TEST(CompilationCacheTest, Case3_GlobalLRU_TouchUpdatesTimestamp) {
       CompilationCache::GetModelHash(*model, GetTestOptions(),
                                      GetTestCompilerPluginInfo()));
   LITERT_ABORT_IF_ERROR(compilation_cache.SaveModel(*model, key_1, "model_a"));
-  absl::SleepFor(absl::Milliseconds(100));
+  absl::SleepFor(absl::Seconds(1));
 
   // 2. Save File 2 (Model B)
   LITERT_ASSIGN_OR_ABORT(
@@ -707,7 +707,7 @@ TEST(CompilationCacheTest, Case3_GlobalLRU_TouchUpdatesTimestamp) {
       CompilationCache::GetModelHash(*model, GetTestOptions(),
                                      GetTestCompilerPluginInfo()));
   LITERT_ABORT_IF_ERROR(compilation_cache.SaveModel(*model, key_2, "model_b"));
-  absl::SleepFor(absl::Milliseconds(100));
+  absl::SleepFor(absl::Seconds(1));
 
   std::string path_1 = litert::internal::Join(
       {cache_root_path, "model_a", absl::StrCat(key_1.content_hash),
@@ -722,7 +722,7 @@ TEST(CompilationCacheTest, Case3_GlobalLRU_TouchUpdatesTimestamp) {
   LITERT_ASSIGN_OR_ABORT(std::optional<LiteRtModelT::Ptr> cache_hit,
                          compilation_cache.TryLoadModel(key_1, "model_a"));
   EXPECT_TRUE(cache_hit.has_value());
-  absl::SleepFor(absl::Milliseconds(100));
+  absl::SleepFor(absl::Seconds(1));
 
   // 4. Save File 3 (Model C) - Exceeds total size limit!
   LITERT_ASSIGN_OR_ABORT(
