@@ -41,6 +41,24 @@ cc_library(
 )
 
 cc_library(
+    name = "transformer_block",
+    hdrs = ["transformer_block.h"],
+    deps = [
+        ":transformer_ops",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:datatypes",
+        "//tensor/internal:arithmetic_helpers",
+        "//tensor/internal:graph",
+        "//tensor/utils:macros",
+        "@com_google_absl//absl/meta:type_traits",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_library(
     name = "transformer_ops_graph",
     hdrs = ["transformer_ops_graph.h"],
     deps = [
@@ -196,16 +214,23 @@ cc_library(
 #     name = "transformer_ops_test",
 #     srcs = ["transformer_ops_test.cc"],
 #     deps = [
+#         ":transformer_block",
 #         ":transformer_ops",
 #         ":transformer_ops_graph",
 #         ":transformer_ops_xnnpack",
 #         "@com_google_googletest//:gtest_main",
 #         "@com_google_absl//absl/status",
 #         "@com_google_absl//absl/status:status_matchers",
+#         "@com_google_absl//absl/types:span",
 #         "//tensor",
+#         "//tensor:arithmetic",
+#         "//tensor:buffer",
 #         "//tensor:datatypes",
+#         "//tensor/backends/common_nnpack:conversion",
 #         "//tensor/backends/xnnpack:arithmetic",
+#         "//tensor/backends/xnnpack:conversion",
 #         "//tensor/internal:graph",
+#         "//tensor/internal:mixin",
 #         "//tensor/runners/xnnpack:runner",
 #         "//tensor/utils:macros",
 #         "//tensor/utils:matchers",
