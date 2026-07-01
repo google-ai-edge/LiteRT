@@ -29,16 +29,19 @@ cc_library(
     deps = replace_with_portable_tf_lib_when_required([
         "@org_tensorflow//tensorflow/core:lib_proto_parsing",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@org_tensorflow//tensorflow/core/platform:errors",
+        "@org_tensorflow//tensorflow/core/platform:status",
     ]) + [
+        "//tflite:framework",
+        "//tflite/core:framework",
+        "//tflite/core/c:common",
         "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/algorithm:container",
-        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:string_view",
         "@com_google_protobuf//:protobuf",
         "@flatbuffers",
         "@org_tensorflow//tensorflow/core:protos_all_cc_impl",
+        "@tsl//tsl/platform:status",
     ],
 )
 
@@ -56,14 +59,18 @@ cc_test(
     deps = [
         ":signature_def_util",
         "//tflite:framework",
+        "//tflite:string",
+        "//tflite/c:c_api",
         "//tflite/core:framework",
+        "//tflite/core/c:common",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/status",
-        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers//:runtime_cc",
         "@org_tensorflow//tensorflow/cc/saved_model:signature_constants",
+        "@org_tensorflow//tensorflow/core/platform:errors",
         "@org_tensorflow//tensorflow/core/protobuf:for_core_protos_cc",
+        "@tsl//tsl/platform:status",
     ],
 )
 
