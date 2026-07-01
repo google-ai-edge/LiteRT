@@ -27,6 +27,7 @@
 #include <variant>
 #include <vector>
 
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
@@ -81,6 +82,10 @@ class LlmLiteRtCompiledModelExecutorDynamic;
 class LlmLiteRtCompiledModelExecutorStatic;
 class LlmLiteRtCompiledModelExecutorBase;
 class LlmLiteRtMtpDrafter;
+namespace saturn {
+class SaturnCompiledModelExecutor;
+class SelfConditioningHandler;
+}  // namespace saturn
 }  // namespace lm
 
 namespace internal::compiled_model_detail {
@@ -174,45 +179,45 @@ FetchTensorType(const internal::EnvironmentHolder& env, LiteRtTensor tensor,
   }
 }
 
-inline LiteRtQuantizationTypeId FetchTensorQuantizationTypeId(
+inline QuantizationTypeId FetchTensorQuantizationTypeId(
     const internal::EnvironmentHolder& env, LiteRtTensor tensor) {
   LiteRtQuantizationTypeId quantization_type_id;
   LITERT_ABORT_IF_ERROR(
       env.runtime->GetQuantizationTypeId(tensor, &quantization_type_id));
-  return quantization_type_id;
+  return static_cast<QuantizationTypeId>(quantization_type_id);
 }
 
-inline LiteRtQuantizationPerTensor FetchTensorQuantizationPerTensor(
+inline QuantizationPerTensor FetchTensorQuantizationPerTensor(
     const internal::EnvironmentHolder& env, LiteRtTensor tensor) {
   if (FetchTensorQuantizationTypeId(env, tensor) !=
-      kLiteRtQuantizationPerTensor) {
+      QuantizationTypeId::PerTensor) {
     return {};
   }
-  LiteRtQuantizationPerTensor per_tensor_quantization;
+  QuantizationPerTensor per_tensor_quantization;
   LITERT_ABORT_IF_ERROR(
       env.runtime->GetPerTensorQuantization(tensor, &per_tensor_quantization));
   return per_tensor_quantization;
 }
 
-inline LiteRtQuantizationPerChannel FetchTensorQuantizationPerChannel(
+inline QuantizationPerChannel FetchTensorQuantizationPerChannel(
     const internal::EnvironmentHolder& env, LiteRtTensor tensor) {
   if (FetchTensorQuantizationTypeId(env, tensor) !=
-      kLiteRtQuantizationPerChannel) {
+      QuantizationTypeId::PerChannel) {
     return {};
   }
-  LiteRtQuantizationPerChannel per_channel_quantization;
+  QuantizationPerChannel per_channel_quantization;
   LITERT_ABORT_IF_ERROR(env.runtime->GetPerChannelQuantization(
       tensor, &per_channel_quantization));
   return per_channel_quantization;
 }
 
-inline LiteRtQuantizationBlockWise FetchTensorQuantizationBlockWise(
+inline QuantizationBlockWise FetchTensorQuantizationBlockWise(
     const internal::EnvironmentHolder& env, LiteRtTensor tensor) {
   if (FetchTensorQuantizationTypeId(env, tensor) !=
-      kLiteRtQuantizationBlockWise) {
+      QuantizationTypeId::BlockWise) {
     return {};
   }
-  LiteRtQuantizationBlockWise block_wise_quantization;
+  QuantizationBlockWise block_wise_quantization;
   LITERT_ABORT_IF_ERROR(
       env.runtime->GetBlockWiseQuantization(tensor, &block_wise_quantization));
   return block_wise_quantization;
@@ -334,6 +339,8 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   friend class lm::LlmLiteRtNpuCompiledModelExecutor;
   friend class lm::VisionLiteRtCompiledModelExecutor;
   friend class lm::LlmLiteRtMtpDrafter;
+  friend class lm::saturn::SaturnCompiledModelExecutor;
+  friend class lm::saturn::SelfConditioningHandler;
 
   CompiledModel() = default;
 
@@ -1460,6 +1467,340 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return signature.OutputTensorType(output_name);
   }
 
+  //----------------------------------------------------------------------------
+  // Quantization parameter accessors (Legacy Approach)
+  //----------------------------------------------------------------------------
+
+  /// @brief Returns the quantization type ID for the n-th input tensor.
+  Expected<QuantizationTypeId> GetInputTensorQTypeId(size_t signature_index,
+                                                     size_t input_index) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(signature_index));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.InputTensor(input_index));
+    return tensor.QTypeId();
+  }
+
+  /// @brief Returns the quantization type ID for a given input tensor name.
+  Expected<QuantizationTypeId> GetInputTensorQTypeId(
+      size_t signature_index, StringView input_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(signature_index));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.InputTensor(input_name));
+    return tensor.QTypeId();
+  }
+
+  /// @brief Returns the quantization type ID for a given input tensor name.
+  Expected<QuantizationTypeId> GetInputTensorQTypeId(
+      StringView signature_key, StringView input_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            FindSignature(signature_key));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.InputTensor(input_name));
+    return tensor.QTypeId();
+  }
+
+  /// @brief Gets the input tensor quantization type ID of the default signature
+  /// for a given input name.
+  Expected<QuantizationTypeId> GetInputTensorQTypeId(
+      StringView input_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(/*signature_index=*/0));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.InputTensor(input_name));
+    return tensor.QTypeId();
+  }
+
+  /// @brief Returns the per-tensor quantization for the n-th input tensor.
+  Expected<QuantizationPerTensor> GetInputTensorPerTensorQuantization(
+      size_t signature_index, size_t input_index) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(signature_index));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.InputTensor(input_index));
+    return tensor.PerTensorQuantization();
+  }
+
+  /// @brief Returns the per-tensor quantization for a given input tensor name.
+  Expected<QuantizationPerTensor> GetInputTensorPerTensorQuantization(
+      size_t signature_index, StringView input_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(signature_index));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.InputTensor(input_name));
+    return tensor.PerTensorQuantization();
+  }
+
+  /// @brief Returns the per-tensor quantization for a given input tensor name.
+  Expected<QuantizationPerTensor> GetInputTensorPerTensorQuantization(
+      StringView signature_key, StringView input_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            FindSignature(signature_key));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.InputTensor(input_name));
+    return tensor.PerTensorQuantization();
+  }
+
+  /// @brief Gets the input tensor per-tensor quantization of the default
+  /// signature for a given input name.
+  Expected<QuantizationPerTensor> GetInputTensorPerTensorQuantization(
+      StringView input_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(/*signature_index=*/0));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.InputTensor(input_name));
+    return tensor.PerTensorQuantization();
+  }
+
+  /// @brief Returns the per-channel quantization for the n-th input tensor.
+  Expected<QuantizationPerChannel> GetInputTensorPerChannelQuantization(
+      size_t signature_index, size_t input_index) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(signature_index));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.InputTensor(input_index));
+    return tensor.PerChannelQuantization();
+  }
+
+  /// @brief Returns the per-channel quantization for a given input tensor name.
+  Expected<QuantizationPerChannel> GetInputTensorPerChannelQuantization(
+      size_t signature_index, StringView input_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(signature_index));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.InputTensor(input_name));
+    return tensor.PerChannelQuantization();
+  }
+
+  /// @brief Returns the per-channel quantization for a given input tensor name.
+  Expected<QuantizationPerChannel> GetInputTensorPerChannelQuantization(
+      StringView signature_key, StringView input_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            FindSignature(signature_key));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.InputTensor(input_name));
+    return tensor.PerChannelQuantization();
+  }
+
+  /// @brief Gets the input tensor per-channel quantization of the default
+  /// signature for a given input name.
+  Expected<QuantizationPerChannel> GetInputTensorPerChannelQuantization(
+      StringView input_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(/*signature_index=*/0));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.InputTensor(input_name));
+    return tensor.PerChannelQuantization();
+  }
+
+  /// @brief Returns the block-wise quantization for the n-th input tensor.
+  Expected<QuantizationBlockWise> GetInputTensorBlockWiseQuantization(
+      size_t signature_index, size_t input_index) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(signature_index));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.InputTensor(input_index));
+    return tensor.BlockWiseQuantization();
+  }
+
+  /// @brief Returns the block-wise quantization for a given input tensor name.
+  Expected<QuantizationBlockWise> GetInputTensorBlockWiseQuantization(
+      size_t signature_index, StringView input_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(signature_index));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.InputTensor(input_name));
+    return tensor.BlockWiseQuantization();
+  }
+
+  /// @brief Returns the block-wise quantization for a given input tensor name.
+  Expected<QuantizationBlockWise> GetInputTensorBlockWiseQuantization(
+      StringView signature_key, StringView input_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            FindSignature(signature_key));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.InputTensor(input_name));
+    return tensor.BlockWiseQuantization();
+  }
+
+  /// @brief Gets the input tensor block-wise quantization of the default
+  /// signature for a given input name.
+  Expected<QuantizationBlockWise> GetInputTensorBlockWiseQuantization(
+      StringView input_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(/*signature_index=*/0));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.InputTensor(input_name));
+    return tensor.BlockWiseQuantization();
+  }
+
+  /// @brief Returns the quantization type ID for the n-th output tensor.
+  Expected<QuantizationTypeId> GetOutputTensorQTypeId(
+      size_t signature_index, size_t output_index) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(signature_index));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.OutputTensor(output_index));
+    return tensor.QTypeId();
+  }
+
+  /// @brief Returns the quantization type ID for a given output tensor name.
+  Expected<QuantizationTypeId> GetOutputTensorQTypeId(
+      size_t signature_index, StringView output_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(signature_index));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.OutputTensor(output_name));
+    return tensor.QTypeId();
+  }
+
+  /// @brief Returns the quantization type ID for a given output tensor name.
+  Expected<QuantizationTypeId> GetOutputTensorQTypeId(
+      StringView signature_key, StringView output_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            FindSignature(signature_key));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.OutputTensor(output_name));
+    return tensor.QTypeId();
+  }
+
+  /// @brief Gets the output tensor quantization type ID of the default
+  /// signature for a given output name.
+  Expected<QuantizationTypeId> GetOutputTensorQTypeId(
+      StringView output_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(/*signature_index=*/0));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.OutputTensor(output_name));
+    return tensor.QTypeId();
+  }
+
+  /// @brief Returns the per-tensor quantization for the n-th output tensor.
+  Expected<QuantizationPerTensor> GetOutputTensorPerTensorQuantization(
+      size_t signature_index, size_t output_index) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(signature_index));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.OutputTensor(output_index));
+    return tensor.PerTensorQuantization();
+  }
+
+  /// @brief Returns the per-tensor quantization for a given output tensor name.
+  Expected<QuantizationPerTensor> GetOutputTensorPerTensorQuantization(
+      size_t signature_index, StringView output_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(signature_index));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.OutputTensor(output_name));
+    return tensor.PerTensorQuantization();
+  }
+
+  /// @brief Returns the per-tensor quantization for a given output tensor name.
+  Expected<QuantizationPerTensor> GetOutputTensorPerTensorQuantization(
+      StringView signature_key, StringView output_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            FindSignature(signature_key));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.OutputTensor(output_name));
+    return tensor.PerTensorQuantization();
+  }
+
+  /// @brief Gets the output tensor per-tensor quantization of the default
+  /// signature for a given output name.
+  Expected<QuantizationPerTensor> GetOutputTensorPerTensorQuantization(
+      StringView output_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(/*signature_index=*/0));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.OutputTensor(output_name));
+    return tensor.PerTensorQuantization();
+  }
+
+  /// @brief Returns the per-channel quantization for the n-th output tensor.
+  Expected<QuantizationPerChannel> GetOutputTensorPerChannelQuantization(
+      size_t signature_index, size_t output_index) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(signature_index));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.OutputTensor(output_index));
+    return tensor.PerChannelQuantization();
+  }
+
+  /// @brief Returns the per-channel quantization for a given output tensor
+  /// name.
+  Expected<QuantizationPerChannel> GetOutputTensorPerChannelQuantization(
+      size_t signature_index, StringView output_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(signature_index));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.OutputTensor(output_name));
+    return tensor.PerChannelQuantization();
+  }
+
+  /// @brief Returns the per-channel quantization for a given output tensor
+  /// name.
+  Expected<QuantizationPerChannel> GetOutputTensorPerChannelQuantization(
+      StringView signature_key, StringView output_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            FindSignature(signature_key));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.OutputTensor(output_name));
+    return tensor.PerChannelQuantization();
+  }
+
+  /// @brief Gets the output tensor per-channel quantization of the default
+  /// signature for a given output name.
+  Expected<QuantizationPerChannel> GetOutputTensorPerChannelQuantization(
+      StringView output_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(/*signature_index=*/0));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.OutputTensor(output_name));
+    return tensor.PerChannelQuantization();
+  }
+
+  /// @brief Returns the block-wise quantization for the n-th output tensor.
+  Expected<QuantizationBlockWise> GetOutputTensorBlockWiseQuantization(
+      size_t signature_index, size_t output_index) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(signature_index));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.OutputTensor(output_index));
+    return tensor.BlockWiseQuantization();
+  }
+
+  /// @brief Returns the block-wise quantization for a given output tensor name.
+  Expected<QuantizationBlockWise> GetOutputTensorBlockWiseQuantization(
+      size_t signature_index, StringView output_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(signature_index));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.OutputTensor(output_name));
+    return tensor.BlockWiseQuantization();
+  }
+
+  /// @brief Returns the block-wise quantization for a given output tensor name.
+  Expected<QuantizationBlockWise> GetOutputTensorBlockWiseQuantization(
+      StringView signature_key, StringView output_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            FindSignature(signature_key));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.OutputTensor(output_name));
+    return tensor.BlockWiseQuantization();
+  }
+
+  /// @brief Gets the output tensor block-wise quantization of the default
+  /// signature for a given output name.
+  Expected<QuantizationBlockWise> GetOutputTensorBlockWiseQuantization(
+      StringView output_name) const {
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(/*signature_index=*/0));
+    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
+                            signature.OutputTensor(output_name));
+    return tensor.BlockWiseQuantization();
+  }
+
  protected:
   /// @internal
   /// @brief Creates a `CompiledModel` from a provided `LiteRtModel`.
@@ -1558,7 +1899,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                                   StringView input_name) const {
     LITERT_ASSIGN_OR_RETURN(const auto input_names,
                             GetSignatureInputNames(signature_index));
-    auto it = std::find(input_names.begin(), input_names.end(), input_name);
+    auto it = absl::c_find(input_names, input_name);
     if (it != input_names.end()) {
       return std::distance(input_names.begin(), it);
     }
@@ -1571,7 +1912,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                                    StringView output_name) const {
     LITERT_ASSIGN_OR_RETURN(const auto output_names,
                             GetSignatureOutputNames(signature_index));
-    auto it = std::find(output_names.begin(), output_names.end(), output_name);
+    auto it = absl::c_find(output_names, output_name);
     if (it != output_names.end()) {
       return std::distance(output_names.begin(), it);
     }
