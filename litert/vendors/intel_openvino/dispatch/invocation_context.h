@@ -84,14 +84,23 @@ class LiteRtDispatchInvocationContextT {
  private:
   LiteRtDispatchInvocationContextT(ov::InferRequest& infer_request,
                                    LiteRtDispatchDeviceContextT& device_context,
-                                   int num_inputs, int num_outputs)
-      : device_context_(device_context), infer_request_(infer_request) {}
+                                   int num_inputs, int num_outputs,
+                                   bool perf_count_enabled)
+      : device_context_(device_context),
+        infer_request_(infer_request),
+        perf_count_enabled_(perf_count_enabled) {}
   LiteRtDispatchDeviceContextT& device_context_;
   ov::InferRequest infer_request_;
   // Timeout is in milliseconds
   static constexpr int kInferRequestTimeoutMs = 10000;
 
   std::optional<LiteRtSchedulingInfo> scheduling_info_;
+  // When the user passes PERF_COUNT=YES via IntelOpenVinoOptions::ConfigsMap
+  // we must call infer_request_.get_profiling_info() after each Invoke().
+  // The call itself is what causes the OpenVINO NPU plugin to flush the
+  // per-op trace to NPU_PROFILING_OUTPUT_FILE — without pulling the data
+  // back to host the plugin never writes the file.
+  bool perf_count_enabled_ = false;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
