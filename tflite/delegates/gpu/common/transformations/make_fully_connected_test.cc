@@ -22,7 +22,6 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "absl/status/status.h"
 #include "tflite/delegates/gpu/common/model.h"
 #include "tflite/delegates/gpu/common/model_transformer.h"
 #include "tflite/delegates/gpu/common/operations.h"
