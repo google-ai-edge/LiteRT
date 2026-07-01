@@ -157,6 +157,28 @@ TEST(SkiaImagePreprocessorTest, PreprocessSuccess) {
       << "B at (223,223)";
 }
 
+TEST(SkiaImagePreprocessorTest, PreprocessSuccessPng) {
+  SkiaImagePreprocessor preprocessor;
+
+  // Load the image file.
+  const std::string image_path =
+      (std::filesystem::path(::testing::SrcDir()) / kTestdataDir / "apple.png")
+          .string();
+  std::ifstream file_stream(image_path, std::ios::binary);
+  ASSERT_TRUE(file_stream.is_open())
+      << "Failed to open image file: " << image_path;
+  std::stringstream buffer;
+  buffer << file_stream.rdbuf();
+  std::string image_bytes = buffer.str();
+  // Target dimensions: Batch=1, Height=224, Width=224, Channels=3 (RGB)
+  ImagePreprocessParameter parameter;
+  parameter.SetTargetDimensions({1, 224, 224, 3});
+
+  auto input_image = InputImage(image_bytes);
+  auto res = preprocessor.Preprocess(input_image, parameter);
+  ASSERT_OK(res.status());
+}
+
 TEST(SkiaImagePreprocessorTest, PreprocessFailedWithInvalidDimensions) {
   SkiaImagePreprocessor preprocessor;
   std::string dummy_bytes = "dummy";

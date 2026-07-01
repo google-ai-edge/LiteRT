@@ -804,6 +804,7 @@ LITERT_C_API_COMMON_DEPS = [
     "//litert/c/internal:litert_dispatch_delegate",
     "//litert/c/internal:litert_external_litert_buffer_context",
     "//litert/c/internal:litert_logging",
+    "//litert/c/internal:litert_runtime_api_export",
     "//litert/c/internal:litert_tensor_buffer_registry",
     "//litert/c/options:litert_cpu_options",
     # copybara:uncomment "//litert/c/options/google:litert_darwinn_runtime_options",
@@ -846,7 +847,10 @@ cc_library(
     linkopts = select({
         "//litert:macos": [],
         "//litert:ios": [],
-        "//conditions:default": ["-Wl,--undefined-glob=LiteRt*"],
+        "//conditions:default": [
+            "-Wl,--undefined-glob=LiteRt*",
+            "-Wl,--undefined=kLiteRtRuntimeBuiltin",
+        ],
     }),
     deps = LITERT_C_API_COMMON_DEPS,
 )
@@ -1072,6 +1076,7 @@ cc_library(
         ":litert_webgpu_types",
         # only depend on headers
         "@com_google_absl//absl/types:span",
+        "//litert/c/internal:litert_runtime_c_api",
         "//litert/c/internal:litert_scheduling_info",
         "@opencl_headers",
         "//litert/vendors/c:litert_dispatch_c_api",

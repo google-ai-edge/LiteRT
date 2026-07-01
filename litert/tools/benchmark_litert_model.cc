@@ -88,6 +88,8 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   auto num_threads = params.Get<int>("num_threads");
   auto enable_weight_sharing = params.Get<bool>("enable_weight_sharing");
   auto convert_weights_on_gpu = params.Get<bool>("convert_weights_on_gpu");
+  auto xnnpack_weight_cache_file_path =
+      params.Get<std::string>("xnnpack_weight_cache_file_path");
   auto mediatek_nerun_pilot_version =
       params.Get<std::string>("mediatek_nerun_pilot_version");
   LITERT_ASSIGN_OR_ABORT(Options compilation_options,
@@ -181,10 +183,26 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   }
 
   if (hardware_accelerators & HwAccelerators::kCpu) {
-    if (num_threads > 0) {
+    const bool has_xnnpack_weight_cache_file_path =
+        !xnnpack_weight_cache_file_path.empty();
+    if (num_threads > 0 || has_xnnpack_weight_cache_file_path) {
+      auto abort_on_error = [](Expected<void> result, const char* option_name) {
+        if (!result.HasValue()) {
+          LITERT_LOG(LITERT_ERROR, "Failed to set %s: %s", option_name,
+                     result.Error().Message().c_str());
+          std::abort();
+        }
+      };
       LITERT_ASSIGN_OR_ABORT(auto& cpu_options,
                              compilation_options.GetCpuOptions());
-      cpu_options.SetNumThreads(num_threads);
+      if (num_threads > 0) {
+        abort_on_error(cpu_options.SetNumThreads(num_threads), "num_threads");
+      }
+      if (has_xnnpack_weight_cache_file_path) {
+        abort_on_error(cpu_options.SetXNNPackWeightCachePath(
+                           xnnpack_weight_cache_file_path.c_str()),
+                       "xnnpack_weight_cache_file_path");
+      }
     }
   }
 
