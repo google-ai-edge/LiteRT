@@ -35,7 +35,7 @@ std::vector<OpWrapper> BuildSpatialTransformOp(
   const std::vector<std::uint32_t> block_dims{2};
   auto& block_tensor = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_UINT_32, QuantizeParamsWrapperVariant{}, block_dims,
-      sizeof(decltype(block_dims)::value_type) * block_dims.size(),
+      sizeof(decltype(block_data)::value_type) * block_data.size(),
       block_data.data());
   spatial_transform_op.AddTensorParam(block_param, block_tensor);
 
