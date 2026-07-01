@@ -13,6 +13,16 @@
 
 namespace qnn {
 
+/**
+ * @brief Creates a Cast operation wrapper.
+ *
+ * This function creates an OpWrapper representing a Cast operation
+ * with the given input and output tensors.
+ *
+ * @param input The input tensor for the cast operation.
+ * @param output The output tensor for the cast operation.
+ * @return An OpWrapper object for the Cast operation.
+ */
 OpWrapper CreateCastOp(const TensorWrapper& input,
                        const TensorWrapper& output) {
   OpWrapper op(GetUniqueOpName(QNN_OP_CAST), QNN_OP_CAST, QnnOpCode::kCast);
