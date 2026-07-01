@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LiteRT WASM Mandelbrot Demo</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    canvas { border: 1px solid black; }
+    #info { margin-top: 10px; font-weight: bold; }
+    #perf { font-family: monospace; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>LiteRT WASM Mandelbrot Demo</h1>
+  <canvas id="outputCanvas" width="256" height="256"></canvas>
+  <div id="info">Initializing...</div>
+  <div id="perf"></div>
+  <div style="margin-top: 10px; margin-bottom: 10px;">
+    <button id="restartBtn">Restart</button>
+  </div>
+ 
+  <!-- Load Emscripten WebAssembly sandbox -->
+  <script src="../tensor_wasm_internal.js"></script>
+  <script type="module">
+    async function runDemo() {
+      const infoDiv = document.getElementById('info');
+      const perfDiv = document.getElementById('perf');
+      const canvas = document.getElementById('outputCanvas');
+      const ctx = canvas.getContext('2d');
+ 
+      // Request WebGPU adapter and device
+      if (!navigator.gpu) {
+        infoDiv.textContent = "Error: WebGPU is not supported by this browser.";
+        return;
+      }
+      const adapter = await navigator.gpu.requestAdapter();
+      const device = await adapter.requestDevice();
+
+      infoDiv.textContent = "Initializing LiteRT WASM module...";
+      // Load the LiteRT WebAssembly sandbox module
+      const litert = await createTensorModule({
+        preinitializedWebGPUDevice: device
+      });
+ 
+      const H = 256;
+      const W = 256;
+ 
+      // 1. Create Tensors for Graph
+      function createShapeVector(dims) {
+        const shape = new litert.ShapeVector();
+        for (const dim of dims) {
+          shape.push_back(dim);
+        }
+        return shape;
+      }
+ 
+      const cReal = new litert.Tensor();
+      cReal.setName("cReal");
+      cReal.setType(litert.TensorType.kFP32);
+      cReal.setShape(createShapeVector([1, H, W, 1]));
+ 
+      const cImag = new litert.Tensor();
+      cImag.setName("cImag");
+      cImag.setType(litert.TensorType.kFP32);
+      cImag.setShape(createShapeVector([1, H, W, 1]));
+ 
+      const zRealIn = new litert.Tensor();
+      zRealIn.setName("zRealIn");
+      zRealIn.setType(litert.TensorType.kFP32);
+      zRealIn.setShape(createShapeVector([1, H, W, 1]));
+ 
+      const zImagIn = new litert.Tensor();
+      zImagIn.setName("zImagIn");
+      zImagIn.setType(litert.TensorType.kFP32);
+      zImagIn.setShape(createShapeVector([1, H, W, 1]));
+ 
+      const upperBound = new litert.Tensor();
+      upperBound.setName("upperBound");
+      upperBound.setType(litert.TensorType.kFP32);
+      upperBound.setShape(createShapeVector([1, 1, 1]));
+ 
+      const lowerBound = new litert.Tensor();
+      lowerBound.setName("lowerBound");
+      lowerBound.setType(litert.TensorType.kFP32);
+      lowerBound.setShape(createShapeVector([1, 1, 1]));
+ 
+      const dummyKernel = new litert.Tensor();
+      dummyKernel.setName("dummyKernel");
+      dummyKernel.setType(litert.TensorType.kFP32);
+      dummyKernel.setShape(createShapeVector([1, 1, 1, 1]));
+ 
+      // Build Graph (10 steps)
+      let zReal = zRealIn;
+      let zImag = zImagIn;
+        const zRealSq = zReal.mul(zReal);
+        const zImagSq = zImag.mul(zImag);
+        const newZReal = zRealSq.sub(zImagSq).add(cReal);
+        const newZImag = zReal.mul(zImag).add(zReal.mul(zImag)).add(cImag);
+        
+        zReal = newZReal.minimum(upperBound).maximum(lowerBound);
+        zImag = newZImag.minimum(upperBound).maximum(lowerBound);
+ 
+      const magnitudeSq = zReal.mul(zReal).add(zImag.mul(zImag));
+      magnitudeSq.setName("magnitudeSq");
+      zReal.setName("zRealOut");
+      zImag.setName("zImagOut");
+ 
+      infoDiv.textContent = "Building graph...";
+      let runner = null;
+      function initRunner(acc) {
+        if (runner) {
+          runner.delete();
+        }
+        runner = litert.createStaticLambdaRunner(
+          {
+            "cReal": cReal,
+            "cImag": cImag,
+            "zRealIn": zRealIn,
+            "zImagIn": zImagIn,
+            "upperBound": upperBound,
+            "lowerBound": lowerBound
+          },
+          {
+            "zRealOut": zReal,
+            "zImagOut": zImag,
+            "magnitudeSq": magnitudeSq
+          },
+          1
+        );
+      }
+      
+      initRunner(1);
+      
+      document.getElementById('restartBtn').addEventListener('click', async () => {
+        await compute();
+      });
+ 
+      // Initialize C_real and C_imag for Mandelbrot
+      let xMin = -2.5, xMax = 1.0;
+      let yMin = -1.5, yMax = 1.5;
+  
+      const cRealData = new Float32Array(H * W);
+      const cImagData = new Float32Array(H * W);
+ 
+      async function compute() {
+        for (let y = 0; y < H; y++) {
+          for (let x = 0; x < W; x++) {
+            const idx = y * W + x;
+            cRealData[idx] = xMin + (xMax - xMin) * x / W;
+            cImagData[idx] = yMin + (yMax - yMin) * y / H;
+          }
+        }
+        
+        runner.setInputBinary("cReal", new Uint8Array(cRealData.buffer));
+        runner.setInputBinary("cImag", new Uint8Array(cImagData.buffer));
+        
+        const zeros = new Float32Array(H * W).fill(0);
+        runner.setInputBinary("zRealIn", new Uint8Array(zeros.buffer));
+        runner.setInputBinary("zImagIn", new Uint8Array(zeros.buffer));
+        
+        runner.setInputBinary("upperBound", new Uint8Array(new Float32Array([100.0]).buffer));
+        runner.setInputBinary("lowerBound", new Uint8Array(new Float32Array([-100.0]).buffer));
+ 
+        let currentZReal = new Float32Array(H * W).fill(0);
+        let currentZImag = new Float32Array(H * W).fill(0);
+        const escapeTimes = new Int32Array(H * W).fill(0);
+ 
+        let step = 0;
+        const maxSteps = 100;
+ 
+        async function animLoop() {
+          if (step >= maxSteps) {
+            infoDiv.textContent = "Done! Click on canvas to zoom in!";
+            return;
+          }
+ 
+          runner.setInputBinary("zRealIn", new Uint8Array(currentZReal.buffer));
+          runner.setInputBinary("zImagIn", new Uint8Array(currentZImag.buffer));
+ 
+          await runner.run();
+ 
+          const zRealOut = runner.getOutput("zRealOut");
+          const zImagOut = runner.getOutput("zImagOut");
+          const magnitudeSqOut = runner.getOutput("magnitudeSq");
+          
+          const viewReal = await zRealOut.getData();
+          const viewImag = await zImagOut.getData();
+          const magnitudeSqData = await magnitudeSqOut.getData();
+          
+          currentZReal = new Float32Array(viewReal);
+          currentZImag = new Float32Array(viewImag);
+          
+          // Update escape times
+          for (let i = 0; i < H * W; i++) {
+            if (escapeTimes[i] === 0 && magnitudeSqData[i] >= 4.0) {
+              escapeTimes[i] = step;
+            }
+          }
+          
+          zRealOut.delete();
+          zImagOut.delete();
+ 
+          // Render result with color mapping based on escape time!
+          const imgData = ctx.createImageData(W, H);
+          for (let i = 0; i < H * W; i++) {
+            const idx = i * 4;
+            const et = escapeTimes[i];
+            if (et === 0 && magnitudeSqData[i] < 4.0) {
+              // Belongs to set (black)
+              imgData.data[idx] = 0;
+              imgData.data[idx + 1] = 0;
+              imgData.data[idx + 2] = 0;
+              imgData.data[idx + 3] = 255;
+            } else {
+              // Escaped (colored based on escape time!)
+              const val = et || step; // Use current step if just escaped!
+              imgData.data[idx] = (val * 5) % 256;
+              imgData.data[idx + 1] = (val * 13) % 256;
+              imgData.data[idx + 2] = (val * 23) % 256;
+              imgData.data[idx + 3] = 255;
+            }
+          }
+          ctx.putImageData(imgData, 0, 0);
+          
+          step++;
+          perfDiv.textContent = `Iterations: ${step}`;
+          
+          requestAnimationFrame(animLoop);
+        }
+ 
+        infoDiv.textContent = "Computing Mandelbrot (Animated)...";
+        await animLoop();
+      }
+ 
+      // Add click listener for zoom
+      canvas.addEventListener('click', async (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        
+        // Map mouse coords to complex plane
+        const clickX = xMin + (xMax - xMin) * mouseX / W;
+        const clickY = yMin + (yMax - yMin) * mouseY / H;
+        
+        // Zoom in by factor of 2
+        const newRangeX = (xMax - xMin) / 2;
+        const newRangeY = (yMax - yMin) / 2;
+        
+        xMin = clickX - newRangeX / 2;
+        xMax = clickX + newRangeX / 2;
+        yMin = clickY - newRangeY / 2;
+        yMax = clickY + newRangeY / 2;
+        
+        await compute();
+      });
+ 
+      await compute(); // Initial compute
+    }
+ 
+    runDemo().catch(err => {
+      console.error(err);
+      document.getElementById('info').textContent = `Error: ${err.message}`;
+    });
+  </script>
+</body>
+</html>
