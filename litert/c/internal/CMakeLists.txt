@@ -28,6 +28,7 @@ set(LITERT_C_INTERNAL_HEADERS
     internal/litert_logging_helper_with_compiler_context.h
     internal/litert_logging_helper_with_runtime_context.h
     internal/litert_options_helper.h
+    internal/litert_runtime_api_export.h
     internal/litert_runtime_c_api.h
     internal/litert_runtime_context.h
     internal/litert_scheduling_info.h
@@ -40,6 +41,7 @@ set(LITERT_C_INTERNAL_SOURCES
     internal/litert_compiler_context.cc
     internal/litert_delegate_wrapper.cc
     internal/litert_external_litert_buffer_context.cc
+    internal/litert_runtime_api_export.cc
     internal/litert_runtime_context.cc
     internal/litert_tensor_buffer_registry.cc
 )
