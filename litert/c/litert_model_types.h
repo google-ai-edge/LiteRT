@@ -182,6 +182,7 @@ static_assert(offsetof(LiteRtQuantizationBlockWise, block_size) == 16,
 // The identifier for quantization scheme type union.
 ///
 /// @note This concrete type is part of the public API and is ABI stable.
+// LINT.IfChange(quantization_type_id)
 typedef enum {
   // Tag for tensors without quantization.
   kLiteRtQuantizationNone = 0,
@@ -195,6 +196,7 @@ typedef enum {
   // [NOT IMPLEMENTED YET] Q-params across blocks of fixed size (e.g. 2048).
   kLiteRtQuantizationBlockWise = 3,
 } LiteRtQuantizationTypeId;
+// LINT.ThenChange(../cc/litert_model_types.h:quantization_type_id)
 // Get the identifier for the type of quantization for a given tensor.
 LiteRtStatus LiteRtGetQuantizationTypeId(LiteRtTensor tensor,
                                          LiteRtQuantizationTypeId* q_type_id);
