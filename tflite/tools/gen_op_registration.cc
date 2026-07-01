@@ -15,8 +15,8 @@ limitations under the License.
 #include "tflite/tools/gen_op_registration.h"
 
 #include <algorithm>
-#include <string>
-#include <vector>
+#include <cctype>
+#include <utility>
 
 #include "re2/re2.h"
 #include "tflite/core/model.h"
