@@ -249,6 +249,7 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
 
   // Gemma 4 Optimization
   const std::vector<QnnOpCode> gemma_4_mha_prefill = {
+      QnnOpCode::kTranspose, // 120 perm=[0,2,1,3]: [B,S,H,D]->[B,H,S,D]
       QnnOpCode::kReshape, // 121
       QnnOpCode::kConvert, // 122 Far away
       QnnOpCode::kMatMul, // 123
@@ -263,12 +264,14 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
       QnnOpCode::kElementWiseBinary, // 281
       QnnOpCode::kConvert, // 282
       QnnOpCode::kReshape, // 283
+      QnnOpCode::kTranspose, // 284 perm=[0,2,1,3]: [B,H,S,D]->[B,S,H,D]
     };
   Transform(validate_op_config, ops, tensor_pool, gemma_4_mha_prefill,
             OptimizeMHAGemma4BPrefill);
 
   // Gemma 4 Attention with local/global mask
   const std::vector<QnnOpCode> gemma_4_mha_prefill_with_local_or_global_mask = {
+      QnnOpCode::kTranspose, // 45 perm=[0,2,1,3]: [B,S,H,D]->[B,H,S,D]
       QnnOpCode::kReshape, // 46
       QnnOpCode::kConvert, // 47 Far away
       QnnOpCode::kMatMul, // 48
@@ -285,6 +288,7 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
       QnnOpCode::kElementWiseBinary, // 59
       QnnOpCode::kConvert, // 60
       QnnOpCode::kReshape, // 61
+      QnnOpCode::kTranspose, // 62 perm=[0,2,1,3]: [B,H,S,D]->[B,S,H,D]
     };
   Transform(validate_op_config, ops, tensor_pool, gemma_4_mha_prefill_with_local_or_global_mask,
             OptimizeMHAGemma4BPrefill);
