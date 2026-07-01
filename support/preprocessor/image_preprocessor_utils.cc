@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstdint>
 #include <string>
+#include <optional>
 #include <utility>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
@@ -137,6 +138,9 @@ absl::StatusOr<InputImage> PatchifyImage(
   }
 
   const int patch_dim = patch_width * patch_height * channels;
+  // Transformer (ViT) encoders consume a per-patch "positions_xy" tensor, while
+  // single input encoders (e.g. LFM2 VL) only consume the "images" tensor.
+  const bool emit_positions = patchify_config->emit_positions;
 
   LITERT_ASSIGN_OR_RETURN(
       auto patches_buffer,
@@ -145,22 +149,27 @@ absl::StatusOr<InputImage> PatchifyImage(
           batch_size * num_patches * patch_dim * sizeof(float)));
 
   LITERT_ASSIGN_OR_RETURN(
-      auto positions_buffer,
-      ::litert::TensorBuffer::CreateManagedHostMemory(
-          MakeRankedTensorType<int32_t>({batch_size, num_patches, 2}),
-          batch_size * num_patches * 2 * sizeof(int32_t)));
-
-  LITERT_ASSIGN_OR_RETURN(
       auto patches_lock,
       ::litert::TensorBufferScopedLock::Create(
           patches_buffer, ::litert::TensorBuffer::LockMode::kWrite));
   float* patches_ptr = reinterpret_cast<float*>(patches_lock.second);
 
-  LITERT_ASSIGN_OR_RETURN(
-      auto positions_lock,
-      ::litert::TensorBufferScopedLock::Create(
-          positions_buffer, ::litert::TensorBuffer::LockMode::kWrite));
-  int32_t* positions_ptr = reinterpret_cast<int32_t*>(positions_lock.second);
+  std::optional<::litert::TensorBuffer> positions_buffer;
+  std::optional<::litert::TensorBufferScopedLock> positions_lock;
+  int32_t* positions_ptr = nullptr;
+  if (emit_positions) {
+    LITERT_ASSIGN_OR_RETURN(
+        positions_buffer,
+        ::litert::TensorBuffer::CreateManagedHostMemory(
+            MakeRankedTensorType<int32_t>({batch_size, num_patches, 2}),
+            batch_size * num_patches * 2 * sizeof(int32_t)));
+    LITERT_ASSIGN_OR_RETURN(
+        auto positions_lock_and_addr,
+        ::litert::TensorBufferScopedLock::Create(
+            *positions_buffer, ::litert::TensorBuffer::LockMode::kWrite));
+    positions_lock = std::move(positions_lock_and_addr.first);
+    positions_ptr = reinterpret_cast<int32_t*>(positions_lock_and_addr.second);
+  }
 
   for (int b = 0; b < batch_size; ++b) {
     for (int h = 0; h < num_patches_h; ++h) {
@@ -168,8 +177,10 @@ absl::StatusOr<InputImage> PatchifyImage(
         int patch_idx = h * num_patches_w + w;
         int global_patch_idx = b * num_patches + patch_idx;
 
-        positions_ptr[global_patch_idx * 2] = w;
-        positions_ptr[global_patch_idx * 2 + 1] = h;
+        if (positions_ptr != nullptr) {
+          positions_ptr[global_patch_idx * 2] = w;
+          positions_ptr[global_patch_idx * 2 + 1] = h;
+        }
 
         for (int ph = 0; ph < patch_height; ++ph) {
           for (int pw = 0; pw < patch_width; ++pw) {
@@ -190,8 +201,11 @@ absl::StatusOr<InputImage> PatchifyImage(
 
   absl::flat_hash_map<std::string, TensorBuffer> tensor_map;
   tensor_map["images"] = std::move(patches_buffer);
-  tensor_map["positions_xy"] = std::move(positions_buffer);
-
+  if (emit_positions) {
+    // Release the write lock before handing the buffer off.
+    positions_lock.reset();
+    tensor_map["positions_xy"] = std::move(*positions_buffer);
+  }
   return InputImage(std::move(tensor_map));
 }
 
