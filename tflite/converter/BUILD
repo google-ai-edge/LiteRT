@@ -1815,7 +1815,9 @@ cc_library(
     deps = [
         ":tensorflow_lite_ops",
         "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
