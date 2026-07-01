@@ -66,6 +66,8 @@ static constexpr size_t kFlatbufferPlaceholderValue = 0xfafafafafafafafa;
 
 static constexpr size_t kFlatbufferAppendedDataAlignment = 64;
 
+}  // namespace
+
 // Converts an operation type to its TFLite equivalent.
 absl::StatusOr<::tflite::TensorType> ToTfLite(const Type type) {
   switch (type) {
@@ -129,7 +131,7 @@ absl::StatusOr<Type> FromTfLite(const TfLiteType type) {
     case kTfLiteString:
       return absl::FailedPreconditionError("String type is not supported.");
     case kTfLiteBool:
-      return absl::FailedPreconditionError("Bool type is not supported.");
+      return Type::kBOOL;
     case kTfLiteInt16:
       return Type::kI16;
     case kTfLiteComplex64:
@@ -164,12 +166,13 @@ absl::StatusOr<Type> FromTfLite(const TfLiteType type) {
       return absl::FailedPreconditionError(
           "Float8E4M3FN type is not supported.");
     case kTfLiteFloat8E5M2:
-      return absl::FailedPreconditionError(
-          "Float8E5M2 type is not supported.");
+      return absl::FailedPreconditionError("Float8E5M2 type is not supported.");
   }
   return absl::UnimplementedError(
       "Type was not handled in the conversion from TFLite value.");
 }
+
+namespace {
 
 std::string DebugInfo(const graph::Tensor& tensor) {
   std::string dbg_str = "tensor {";
@@ -411,7 +414,7 @@ absl::Status ModelFactory::Build() {
       }
       LRT_TENSOR_ASSIGN_OR_RETURN(
           composite.decomposition_subgraph_index,
-          AddSubgraphAndReturnIndex(std::move(decomposition_outputs)));
+          AddSubgraph(std::move(decomposition_outputs)));
     }
 
     LRT_TENSOR_ASSIGN_OR_RETURN(graph::TfLiteOpBuildInfo build_info,
@@ -547,14 +550,7 @@ absl::Status ModelFactory::WriteBufferData(std::ofstream& output_file) {
   return absl::OkStatus();
 }
 
-absl::Status ModelFactory::AddSubgraph(std::vector<TensorHandle> outputs) {
-  LRT_TENSOR_ASSIGN_OR_RETURN(int subgraph_index,
-                              AddSubgraphAndReturnIndex(std::move(outputs)));
-  (void)subgraph_index;
-  return absl::OkStatus();
-}
-
-absl::StatusOr<int> ModelFactory::AddSubgraphAndReturnIndex(
+absl::StatusOr<int> ModelFactory::AddSubgraph(
     std::vector<TensorHandle> outputs) {
   LinkedFlatHashMap<graph::Tensor, TensorSerializationInfo> parent_tensors;
   LinkedFlatHashMap<std::shared_ptr<graph::Operation>, OpSerializationInfo>
@@ -673,32 +669,23 @@ absl::StatusOr<std::vector<char>> ModelFactory::CreateFlatbuffer() {
   return fb;
 }
 
-absl::Status Save(std::vector<TensorHandle> outputs, absl::string_view path,
-                  std::optional<ModelFactory> model_factory) {
-  ModelFactory local_model_factory;
-  ModelFactory& serialization =
-      model_factory.has_value() ? *model_factory : local_model_factory;
+absl::Status Save(std::vector<TensorHandle> outputs, absl::string_view path) {
+  ModelFactory serialization;
   LRT_TENSOR_RETURN_IF_ERROR(serialization.AddSubgraph(std::move(outputs)));
   LRT_TENSOR_RETURN_IF_ERROR(serialization.Save(path));
   return absl::OkStatus();
 }
 
-absl::Status Save(std::vector<TensorHandle> outputs, std::vector<char>& fb,
-                  std::optional<ModelFactory> model_factory) {
-  ModelFactory local_model_factory;
-  ModelFactory& serialization =
-      model_factory.has_value() ? *model_factory : local_model_factory;
+absl::Status Save(std::vector<TensorHandle> outputs, std::vector<char>& fb) {
+  ModelFactory serialization;
   LRT_TENSOR_RETURN_IF_ERROR(serialization.AddSubgraph(std::move(outputs)));
   LRT_TENSOR_ASSIGN_OR_RETURN(auto fb_temp, serialization.CreateFlatbuffer());
   fb.insert(fb.end(), fb_temp.begin(), fb_temp.end());
   return absl::OkStatus();
 }
 
-absl::Status Run(std::vector<TensorHandle> outputs,
-                 std::optional<ModelFactory> model_factory) {
-  ModelFactory local_model_factory;
-  ModelFactory& serialization =
-      model_factory.has_value() ? *model_factory : local_model_factory;
+absl::Status Run(std::vector<TensorHandle> outputs) {
+  ModelFactory serialization;
   LRT_TENSOR_RETURN_IF_ERROR(serialization.AddSubgraph(outputs));
   LRT_TENSOR_ASSIGN_OR_RETURN(std::vector<char> fb,
                               serialization.CreateFlatbuffer());
