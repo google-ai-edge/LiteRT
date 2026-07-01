@@ -12,6 +12,10 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
+/*
+ * SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tflite/kernels/internal/reference/reduce.h"
 
 #include <stddef.h>
@@ -487,10 +491,10 @@ TfLiteStatus QuantizedMeanOrSum(TfLiteContext* context,
     TF_LITE_ENSURE(
         context,
         reference_ops::QuantizedMeanOrSum(
-            GetTensorData<uint8_t>(op_context.input),
+            GetTensorData<T>(op_context.input),
             op_context.input->params.zero_point, op_context.input->dims->data,
             op_context.input->dims->size,
-            GetTensorData<uint8_t>(op_context.output), op_data->multiplier,
+            GetTensorData<T>(op_context.output), op_data->multiplier,
             op_data->shift, op_context.output->params.zero_point,
             op_context.output->dims->data, op_context.output->dims->size,
             GetTensorData<int>(op_context.axis), num_axis,
