@@ -83,6 +83,7 @@ const auto kSupportedOps =
                     "simple_exp_op.tflite",
                     "simple_floor_op.tflite",
                     "simple_floor_div.tflite",
+                    "simple_floor_mod.tflite",
                     "simple_fully_connected_fused_relu6_op.tflite",
                     "simple_fully_connected_op.tflite",
                     "simple_gather_nd.tflite",
