@@ -344,20 +344,20 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
     // Transform(validate_op_config, ops, tensor_pool, swiglu_hadamard_with_fc,
     //           ParallelizeSwiGLUHadamardTransform);
     // SwiGLU + Hadamard Transform: parallel Proj blocks.
-    const std::vector<QnnOpCode> swiglu_hadamard = {
-        QnnOpCode::kFullyConnected,     // gate FC
-        QnnOpCode::kReshape,            // reshape after gate FC (keep_num_dims)
-        QnnOpCode::kElementWiseNeuron,  // logistic (sigmoid)
-        QnnOpCode::kElementWiseBinary,  // mul: gate × sigmoid = SiLU
-        QnnOpCode::kFullyConnected,     // up FC
-        QnnOpCode::kReshape,            // reshape after up FC (keep_num_dims)
-        QnnOpCode::kElementWiseBinary,  // mul: SiLU × up
-        QnnOpCode::kReshape,
-        QnnOpCode::kHadamardTransform,
-        QnnOpCode::kReshape,
-    };
-    Transform(validate_op_config, ops, tensor_pool, swiglu_hadamard,
-              ParallelizeSwiGLUHadamardTransform);
+    // const std::vector<QnnOpCode> swiglu_hadamard = {
+    //     QnnOpCode::kFullyConnected,     // gate FC
+    //     QnnOpCode::kReshape,            // reshape after gate FC (keep_num_dims)
+    //     QnnOpCode::kElementWiseNeuron,  // logistic (sigmoid)
+    //     QnnOpCode::kElementWiseBinary,  // mul: gate × sigmoid = SiLU
+    //     QnnOpCode::kFullyConnected,     // up FC
+    //     QnnOpCode::kReshape,            // reshape after up FC (keep_num_dims)
+    //     QnnOpCode::kElementWiseBinary,  // mul: SiLU × up
+    //     QnnOpCode::kReshape,
+    //     QnnOpCode::kHadamardTransform,
+    //     QnnOpCode::kReshape,
+    // };
+    // Transform(validate_op_config, ops, tensor_pool, swiglu_hadamard,
+    //           ParallelizeSwiGLUHadamardTransform);
     // // Non-power-of-two Hadamard Transform w/ FC
     // const std::vector<QnnOpCode> hadamard_transform_with_fc = {
     //     QnnOpCode::kReshape,
