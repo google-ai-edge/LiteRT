@@ -85,9 +85,9 @@ bool IsWeightSharingSupported(::qnn::DspArch dsp_arch) {
 #endif
 }
 
-void MoveSchematic(absl::string_view graph_name,
-                   absl::string_view dest_dir_str) {
-  if (dest_dir_str.empty()) return;
+LiteRtStatus MoveSchematic(absl::string_view graph_name,
+                           absl::string_view dest_dir_str) {
+  if (dest_dir_str.empty()) return kLiteRtStatusOk;
   std::error_code ec;
   std::filesystem::path dest_dir = std::string(dest_dir_str);
   std::filesystem::path schematic_file_name(
@@ -95,32 +95,52 @@ void MoveSchematic(absl::string_view graph_name,
   std::filesystem::path src_path =
       std::filesystem::current_path(ec) / schematic_file_name;
   if (ec) {
-    LITERT_LOG(LITERT_WARNING,
+    LITERT_LOG(LITERT_ERROR,
                "Failed to get current CWD for schematic move: %s",
                ec.message().c_str());
-    return;
+    return kLiteRtStatusErrorRuntimeFailure;
   }
-  if (std::filesystem::exists(src_path, ec) && !ec) {
-    std::filesystem::create_directories(dest_dir, ec);
-    if (ec) {
-      LITERT_LOG(LITERT_WARNING, "Failed to create directory %s: %s",
-                 dest_dir.c_str(), ec.message().c_str());
-      return;
-    }
-    std::filesystem::path dest_path = dest_dir / schematic_file_name;
+  if (!std::filesystem::exists(src_path, ec) || ec) {
+    LITERT_LOG(LITERT_ERROR, "QNN schematic file does not exist at %s: %s",
+               src_path.c_str(), ec ? ec.message().c_str() : "Not found");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  std::filesystem::create_directories(dest_dir, ec);
+  if (ec) {
+    LITERT_LOG(LITERT_ERROR, "Failed to create directory %s: %s",
+               dest_dir.c_str(), ec.message().c_str());
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  std::filesystem::path dest_path = dest_dir / schematic_file_name;
+  if (std::filesystem::exists(dest_path, ec) && !ec) {
     if (std::filesystem::equivalent(src_path, dest_path, ec)) {
-      return;
+      // Source and destination are the same file, no need to copy.
+      return kLiteRtStatusOk;
     }
-    ec.clear();
-    std::filesystem::rename(src_path, dest_path, ec);
     if (ec) {
-      LITERT_LOG(LITERT_WARNING,
-                 "Failed to move schematic file from %s to %s: %s",
-                 src_path.c_str(), dest_path.c_str(), ec.message().c_str());
-    } else {
-      LITERT_LOG(LITERT_INFO, "Moved schematic file to %s", dest_path.c_str());
+      // Ignore error from equivalent if it's just because file doesn't exist,
+      // but here we already checked exists(dest_path), so it shouldn't fail
+      // unless there is a permissions issue.
+      LITERT_LOG(LITERT_ERROR, "Failed to check if paths are equivalent: %s",
+                 ec.message().c_str());
+      return kLiteRtStatusErrorRuntimeFailure;
     }
   }
+  std::filesystem::copy_file(src_path, dest_path,
+                             std::filesystem::copy_options::overwrite_existing,
+                             ec);
+  if (ec) {
+    LITERT_LOG(LITERT_ERROR, "Failed to copy schematic file from %s to %s: %s",
+               src_path.c_str(), dest_path.c_str(), ec.message().c_str());
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  std::filesystem::remove(src_path, ec);
+  if (ec) {
+    LITERT_LOG(LITERT_ERROR, "Failed to remove source schematic file %s: %s",
+               src_path.c_str(), ec.message().c_str());
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  return kLiteRtStatusOk;
 }
 
 // Compile-time custom-op packages always target the CPU backend; this is
@@ -682,7 +702,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LITERT_LOG(LITERT_INFO, "%s", "Graph composed");
 
     if (!options.GetSchematicDir().empty()) {
-      MoveSchematic(entry_point_name, options.GetSchematicDir());
+      LITERT_RETURN_IF_ERROR(
+          MoveSchematic(entry_point_name, options.GetSchematicDir()));
     }
 
     if (options.GetEnableJustInTime()) {

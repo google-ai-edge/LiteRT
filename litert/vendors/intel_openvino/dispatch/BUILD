@@ -200,10 +200,7 @@ cc_test(
     srcs = [
         "dispatch_api_openvino_test.cc",
     ],
-    copts = ["-fexceptions"] + select({
-        "//litert:windows": ["/DLITERT_COMPILE_LIBRARY"],
-        "//conditions:default": [],
-    }),
+    copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     #TODO:Uncomment this when NPU bin test data file is added in follow-up PR
     #data = [
