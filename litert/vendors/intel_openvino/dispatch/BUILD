@@ -130,21 +130,23 @@ litert_bin(
     deps = [
         ":litert_dispatch_api",
         "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_environment_options_header",
         "//litert/c:litert_layout",
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_model_header",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer_header",
+        "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_custom_tensor_buffer_handlers_def",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper_with_runtime_context",
+        "//litert/c/internal:litert_runtime_context_header",
         "//litert/c/internal:litert_scheduling_info",
         "//litert/c/options:litert_intel_openvino_options",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
-        "//litert/cc/dynamic_runtime:litert_opaque_options",
-        "//litert/cc/dynamic_runtime:litert_options",
         "//litert/cc/internal:litert_context_wrapper",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_opaque_options_wrapper",
@@ -200,10 +202,7 @@ cc_test(
     srcs = [
         "dispatch_api_openvino_test.cc",
     ],
-    copts = ["-fexceptions"] + select({
-        "//litert:windows": ["/DLITERT_COMPILE_LIBRARY"],
-        "//conditions:default": [],
-    }),
+    copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     #TODO:Uncomment this when NPU bin test data file is added in follow-up PR
     #data = [
