@@ -57,7 +57,7 @@ TEST(EnvironmentTest, CreateWithSystemRuntime) {
       litert::EnvironmentOptions::Option{
           litert::EnvironmentOptions::Tag::kSystemRuntimeHandle,
           litert::LiteRtVariant(
-              reinterpret_cast<int64_t>(kLiteRtRuntimeBuiltin)),
+              reinterpret_cast<int64_t>(GetLiteRtRuntimeBuiltin())),
       },
   };
   auto env = litert::Environment::Create(
