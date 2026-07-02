@@ -58,6 +58,11 @@ class HtpBackend : public QnnBackend {
 
   bool Init(const Options& options, std::optional<SocInfo> soc_info) override;
 
+  // Update the HTP performance mode at runtime (e.g. before each inference).
+  // Downvotes the current config, rebuilds power configs for the new mode,
+  // and upvotes. Passing options with kDefault resets to low-power state.
+  bool SetPerformanceMode(const Options& options) override;
+
   SocInfo GetSocInfo() { return soc_info_; }
 
  private:

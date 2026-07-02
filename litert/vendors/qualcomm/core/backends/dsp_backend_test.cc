@@ -3,10 +3,13 @@
 
 #include "litert/vendors/qualcomm/core/backends/dsp_backend.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <memory>
 #include <optional>
+#include <thread>
 #include <vector>
 
 #include "DSP/QnnDspDevice.h"  // from @qairt
@@ -26,6 +29,7 @@ namespace {
 QnnDevice_GetInfrastructureFn_t real_device_get_infrastructure = nullptr;
 absl::NoDestructor<std::vector<QnnDspPerfInfrastructure_PowerConfig_t>>
     captured_configs;
+std::atomic<int> set_power_config_call_count{0};
 
 // Mock Functions
 Qnn_ErrorHandle_t MockSetPowerConfig(
@@ -37,6 +41,7 @@ Qnn_ErrorHandle_t MockSetPowerConfig(
       captured_configs->emplace_back(*power_configs[i]);
     }
   }
+  set_power_config_call_count.fetch_add(1);
   return QNN_SUCCESS;
 }
 
@@ -67,6 +72,8 @@ struct DspPerfParams {
 class DspBackendPerfParamTest : public testing::TestWithParam<DspPerfParams> {
  public:
   void SetUp() override {
+    captured_configs->clear();
+    set_power_config_call_count.store(0);
     handle_ = CreateDLHandle(DspBackend::GetLibraryName());
     if (!handle_) GTEST_SKIP();
 
@@ -195,6 +202,39 @@ TEST_F(DspBackendTest, DISABLED_InitializeWithLogLevelVerboseTest) {
 
   ASSERT_TRUE(backend_->GetBackendHandle());
   ASSERT_TRUE(backend_->GetLogHandle());
+}
+
+// SETPERFORMANCEMODE /////////////////////////////////////////////////////////
+TEST_P(DspBackendPerfParamTest, ManualSameModeSkipsRevote) {
+  const auto& params = GetParam();
+  Options options;
+  options.SetDspPerformanceMode(params.mode);
+  options.SetDspPerfCtrlMode(DspPerfCtrlMode::kManual);
+  DspBackend backend(&qnn_api_copy_);
+
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+  const int calls_after_init = set_power_config_call_count.load();
+
+  // Manual + same mode: init already upvoted, no extra setPowerConfig.
+  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(set_power_config_call_count.load(), calls_after_init);
+}
+
+TEST_P(DspBackendPerfParamTest, AutoSameModeRevotes) {
+  const auto& params = GetParam();
+  Options options;
+  options.SetDspPerformanceMode(params.mode);
+  options.SetDspPerfCtrlMode(DspPerfCtrlMode::kAuto);
+  DspBackend backend(&qnn_api_copy_);
+
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+  const int calls_after_init = set_power_config_call_count.load();
+
+  // Auto + same mode: re-votes (async upvote) since Execute downvoted before.
+  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(set_power_config_call_count.load(), calls_after_init + 1);
 }
 
 }  // namespace

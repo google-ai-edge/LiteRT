@@ -69,6 +69,16 @@ enum class DspPerformanceMode {
   kBalanced = 8,
 };
 
+enum class HtpPerfCtrlMode {
+  kManual = 0,  // default: upvote at init, downvote at destroy
+  kAuto = 1,    // per-inference upvote + 300ms debounced downvote
+};
+
+enum class DspPerfCtrlMode {
+  kManual = 0,
+  kAuto = 1,
+};
+
 enum class OptimizationLevel {
   kHtpOptimizeForInference = 0,
   kHtpOptimizeForPrepare = 1,
@@ -149,6 +159,12 @@ class Options {
   void SetDspPerformanceMode(DspPerformanceMode dsp_performance_mode);
   DspPerformanceMode GetDspPerformanceMode() const;
 
+  void SetHtpPerfCtrlMode(HtpPerfCtrlMode htp_perf_ctrl_mode);
+  HtpPerfCtrlMode GetHtpPerfCtrlMode() const;
+
+  void SetDspPerfCtrlMode(DspPerfCtrlMode dsp_perf_ctrl_mode);
+  DspPerfCtrlMode GetDspPerfCtrlMode() const;
+
   // for per-layer dump
   void SetDumpTensorIds(const std::vector<std::int32_t>& ids);
   std::vector<std::int32_t> GetDumpTensorIds() const;
@@ -209,6 +225,8 @@ class Options {
   bool htp_dlbc_weights_ = false;
   HtpPerformanceMode htp_performance_mode_ = HtpPerformanceMode::kDefault;
   DspPerformanceMode dsp_performance_mode_ = DspPerformanceMode::kDefault;
+  HtpPerfCtrlMode htp_perf_ctrl_mode_ = HtpPerfCtrlMode::kManual;
+  DspPerfCtrlMode dsp_perf_ctrl_mode_ = DspPerfCtrlMode::kManual;
   std::vector<std::int32_t> dump_tensor_ids_;
   std::string ir_json_dir_;
   std::string dlc_dir_;

@@ -61,6 +61,7 @@ class DspBackend::DspPerfControl {
     // 2. DownVote config: for resetting/cleanup.
     InitUpVotePowerConfigs(performance_mode);
     InitDownVotePowerConfigs();
+    current_mode_ = performance_mode;
 
     return true;
   }
@@ -79,7 +80,42 @@ class DspBackend::DspPerfControl {
     }
   }
 
+  void ScheduleUpVote() {
+    EnsureVotingThread();
+    voting_thread_->Enqueue(VotingThread::VoteType::kUpVote);
+  }
+
+  // Debounce only for burst/sustained_high_performance (Option 3, aligns with SNPE).
+  void ScheduleDownVote() {
+    EnsureVotingThread();
+    const bool debounce =
+        current_mode_ == DspPerformanceMode::kBurst ||
+        current_mode_ == DspPerformanceMode::kSustainedHighPerformance;
+    voting_thread_->Enqueue(VotingThread::VoteType::kDownVote, debounce);
+  }
+
+  bool ReinitIfNeeded(DspPerformanceMode new_mode) {
+    if (dsp_perf_infra_ != nullptr && new_mode == current_mode_) {
+      ScheduleUpVote();
+      return true;
+    }
+    if (!Init(new_mode)) return false;
+    ScheduleUpVote();
+    return true;
+  }
+
+  DspPerformanceMode CurrentMode() const { return current_mode_; }
+
  private:
+  void EnsureVotingThread() {
+    if (!voting_thread_) {
+      voting_thread_ = std::make_unique<VotingThread>(
+          [this](VotingThread::VoteType v) {
+            v == VotingThread::VoteType::kUpVote ? UpVote() : DownVote();
+          });
+    }
+  }
+
   static constexpr size_t kNumPowerConfigs = 6;
   void SetPowerConfigs(std::array<QnnDspPerfInfrastructure_PowerConfig_t,
                                   kNumPowerConfigs>& power_configs,
@@ -195,6 +231,8 @@ class DspBackend::DspPerfControl {
   const QNN_INTERFACE_VER_TYPE* api_{nullptr};
   std::uint32_t power_config_id_{0};
   QnnDevice_Infrastructure_t dsp_perf_infra_{nullptr};
+  DspPerformanceMode current_mode_{DspPerformanceMode::kDefault};
+  std::unique_ptr<VotingThread> voting_thread_;
   std::array<QnnDspPerfInfrastructure_PowerConfig_t, kNumPowerConfigs>
       up_vote_power_configs_;
   std::array<QnnDspPerfInfrastructure_PowerConfig_t, kNumPowerConfigs>
@@ -239,12 +277,45 @@ bool DspBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
       QNN_LOG_ERROR("Failed to initialize DSP performance Control.");
       return false;
     }
-    dsp_perf_control_->UpVote();
+    // Manual mode upvotes at init; auto mode defers the upvote to Execute().
+    if (options.GetDspPerfCtrlMode() == DspPerfCtrlMode::kManual) {
+      dsp_perf_control_->UpVote();
+    }
   }
 
   // Follow RAII pattern to manage handles.
   log_handle_ = std::move(local_log_handle);
   backend_handle_ = std::move(local_backend_handle);
+
+  return true;
+}
+
+bool DspBackend::SetPerformanceMode(const Options& options) {
+  DspPerformanceMode performance_mode = options.GetDspPerformanceMode();
+
+  if (performance_mode == DspPerformanceMode::kDefault) {
+    if (dsp_perf_control_) dsp_perf_control_->ScheduleDownVote();
+    return true;
+  }
+
+  if (!dsp_perf_control_) {
+    dsp_perf_control_ = std::make_unique<DspPerfControl>(QnnApi());
+  }
+
+  const bool mode_changed =
+      dsp_perf_control_->CurrentMode() != performance_mode;
+
+  // Manual mode already upvoted at init; skip redundant re-vote on same mode.
+  // Auto mode must re-vote every call (previous Execute downvoted).
+  if (!mode_changed &&
+      options.GetDspPerfCtrlMode() == DspPerfCtrlMode::kManual) {
+    return true;
+  }
+
+  if (!dsp_perf_control_->ReinitIfNeeded(performance_mode)) {
+    QNN_LOG_ERROR("Failed to set DSP performance mode in SetPerformanceMode");
+    return false;
+  }
 
   return true;
 }
