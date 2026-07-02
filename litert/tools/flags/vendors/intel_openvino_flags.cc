@@ -145,9 +145,13 @@ Expected<void> UpdateIntelOpenVinoOptionsFromFlags(
     std::vector<std::string> config_pairs =
         absl::StrSplit(configs_map_str, ',');
     for (const auto& pair : config_pairs) {
-      std::vector<std::string> key_value = absl::StrSplit(pair, '=');
-      if (key_value.size() == 2) {
-        options.SetConfigsMapOption(key_value[0].c_str(), key_value[1].c_str());
+      // Split on the first '=' only so values may themselves contain '='
+      // (e.g. NPU_COMPILATION_MODE_PARAMS=enable-flash-sdpa-conversion=true).
+      const std::pair<std::string, std::string> key_value =
+          absl::StrSplit(pair, absl::MaxSplits('=', 1));
+      if (!key_value.first.empty() && pair.find('=') != std::string::npos) {
+        options.SetConfigsMapOption(key_value.first.c_str(),
+                                    key_value.second.c_str());
       } else {
         LITERT_LOG(
             LITERT_WARNING,
