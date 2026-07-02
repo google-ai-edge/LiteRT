@@ -64,6 +64,44 @@ litert_test(
 )
 
 litert_lib(
+    name = "weight_bank",
+    srcs = ["weight_bank.cc"],
+    hdrs = ["weight_bank.h"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    deps = [
+        "//litert/compiler/cc:litert_model",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+litert_test(
+    name = "weight_bank_test",
+    srcs = ["weight_bank_test.cc"],
+    copts = ["-fexceptions"],
+    data = [
+        "//litert/test:mlir_test_data",
+        "//litert/test:tflite_test_data",
+    ],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":weight_bank",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
+        "//litert/test:common",
+        "//litert/test:load_test_model",
+        "//litert/test:test_models",
+    ],
+)
+
+litert_lib(
     name = "openvino_compile_context",
     srcs = ["openvino_compile_context.cc"],
     hdrs = ["openvino_compile_context.h"],
