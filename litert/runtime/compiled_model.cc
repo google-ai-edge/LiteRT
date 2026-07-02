@@ -2065,8 +2065,11 @@ Expected<LiteRtMetricsT> LiteRtCompiledModelT::StopMetricsCollection() const {
 // needed.
 // 2. The input tensor has dynamic dimensions and the new shape is compatible,
 // then resize is needed.
-// 3. The input tensor has static dimensions or the new shape is not compatible,
-// then return error.
+// 3. The input tensor has no dims_signature but shapes differ: allow resize
+// (treat all dims as dynamic). This supports KV cache and other tensors in
+// LLMs that may lack explicit dynamic shape annotations.
+// 4. The input tensor has static dimensions and the new shape is not
+// compatible, then return error.
 Expected<bool> LiteRtCompiledModelT::InputTensorNeedsResize(
     const TfLiteTensor* tensor, absl::Span<const int> new_shape) {
   const TfLiteIntArray* shape_array = tensor->dims;
@@ -2084,10 +2087,32 @@ Expected<bool> LiteRtCompiledModelT::InputTensorNeedsResize(
   }
 
   if (!tensor->dims_signature || tensor->dims_signature->size == 0) {
-    return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                      absl::StrCat("Cannot auto-resize tensor ",
-                                   tensor->name ? tensor->name : "<unnamed>",
-                                   ": no dims_signature exists"));
+    // No dims_signature: allow resize if the rank matches and all new
+    // dimensions are positive.  This is the common case for KV-cache tensors
+    // in LLM models that were exported without explicit dynamic-shape
+    // annotations.
+    LITERT_RETURN_IF_ERROR(
+        current_shape.size() == new_shape.size(),
+        Unexpected(
+            kLiteRtStatusErrorInvalidArgument,
+            absl::StrCat("Cannot auto-resize tensor ",
+                         tensor->name ? tensor->name : "<unnamed>",
+                         ": rank mismatch (current: ", current_shape.size(),
+                         ", new: ", new_shape.size(), ")")));
+    for (size_t i = 0; i < new_shape.size(); ++i) {
+      LITERT_RETURN_IF_ERROR(
+          new_shape[i] > 0,
+          Unexpected(kLiteRtStatusErrorInvalidArgument,
+                     absl::StrCat("Cannot auto-resize tensor ",
+                                  tensor->name ? tensor->name : "<unnamed>",
+                                  ": invalid dimension size ", new_shape[i],
+                                  " at index ", i)));
+    }
+    LITERT_LOG(LITERT_INFO,
+               "Detected shape change for tensor %s (no dims_signature) "
+               "- allowing resize",
+               tensor->name ? tensor->name : "<unnamed>");
+    return true;
   }
   // Validate that the tensor has dynamic dimensions (contains -1).
   absl::Span<const int> signature_shape = absl::MakeConstSpan(
