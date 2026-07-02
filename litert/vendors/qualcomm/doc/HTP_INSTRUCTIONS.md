@@ -47,7 +47,6 @@ These variables are only needed by specific sections:
 
 Variable                    | Used by
 --------------------------- | -------
-`${EXTRACTED_BYTECODE_DIR}` | [(Optional) Extract bytecode from compiled model for QNN Runtime](#optional-extract-bytecode-from-compiled-model-for-qnn-runtime)
 `${ANDROID_NDK_HOME}`       | [Build with CMake](#build-with-cmake)
 `${IOT_DIR}`                | [Build with CMake](#build-with-cmake) > [Run on device (IoT device with oe-linux)](#run-on-device-iot-device-with-oe-linux)
 `${CACHE_DIR}`              | [On-device AOT (cached JIT)](#on-device-aot-cached-jit). A writable directory on the device for the cached context binary.
@@ -274,46 +273,6 @@ example, we execute a model on IoT device with burst mode via HTP Backend:
 ```bash
 adb shell "export LD_LIBRARY_PATH=/tmp/test_folder/ && export ADSP_LIBRARY_PATH=/tmp/test_folder/ && cd /tmp/test_folder/ && ./run_model --graph=./model_compiled.tflite --dispatch_library_dir=/tmp/test_folder/ --iterations 50 --qualcomm_htp_performance_mode burst --qualcomm_log_level off"
 ```
-
-### (Optional) Extract bytecode from compiled model for QNN Runtime
-
-`extract_bytecode` is a tool that extracts the QNN context binary from a LiteRT
-compiled `.tflite` model. The extracted context binary can then be run with the
-QNN runtime (`qnn-net-run`). If you intend to run the model with the LiteRT
-runtime, you can skip this section.
-
-Build the tool and run it with either Bazel or CMake.
-
-#### Build with Bazel
-
-```bash
-cd ${LITERT}
-
-bazel build -c opt --cxxopt=--std=c++17 --nocheck_visibility //litert/tools:extract_bytecode
-
-bazel-bin/litert/tools/extract_bytecode --model_path ${SOURCE_MODEL_DIR}/${COMPILED_MODEL_PATH} --output_dir ${EXTRACTED_BYTECODE_DIR}
-```
-
-#### Build with CMake
-
-```bash
-cd ${LITERT}/litert
-
-cmake --build cmake_build --target extract_bytecode -j8
-```
-
-The built file is located at
-`${LITERT}/litert/cmake_build/tools/extract_bytecode`.
-
-```bash
-cd cmake_build
-
-tools/extract_bytecode --model_path ${SOURCE_MODEL_DIR}/${COMPILED_MODEL_PATH} --output_dir ${EXTRACTED_BYTECODE_DIR}
-```
-
-Follow the QAIRT official document to execute the extracted context binary with
-the QNN Runtime (qnn-net-run):
-https://docs.qualcomm.com/doc/80-63442-10/topic/general_tools.html.
 
 --------------------------------------------------------------------------------
 
