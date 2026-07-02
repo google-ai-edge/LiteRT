@@ -35,6 +35,8 @@
 #include "include/codec/SkBmpDecoder.h"  // from @skia
 #include "include/codec/SkCodec.h"  // from @skia
 #include "include/codec/SkEncodedOrigin.h"  // from @skia
+#include "include/codec/SkJpegDecoder.h"  // from @skia
+#include "include/codec/SkPngDecoder.h"  // from @skia
 #include "include/codec/SkPixmapUtils.h"  // from @skia
 #include "include/core/SkAlphaType.h"  // from @skia
 #include "include/core/SkBitmap.h"  // from @skia
@@ -62,6 +64,10 @@ absl::StatusOr<sk_sp<SkImage>> DecodeDataAsImage(sk_sp<SkData> data) {
   std::unique_ptr<SkCodec> codec;
   if (SkBmpDecoder::IsBmp(data->bytes(), data->size())) {
     codec = SkBmpDecoder::Decode(data, nullptr);
+  } else if (SkPngDecoder::IsPng(data->bytes(), data->size())) {
+    codec = SkPngDecoder::Decode(data, nullptr);
+  } else if (SkJpegDecoder::IsJpeg(data->bytes(), data->size())) {
+    codec = SkJpegDecoder::Decode(data, nullptr);
   }
 
   if (!codec) {
