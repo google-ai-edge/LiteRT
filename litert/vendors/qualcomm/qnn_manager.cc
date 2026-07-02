@@ -405,6 +405,7 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::OpWrapper& op) {
   // TODO(jiunkaiy): Remove version check and break backward compatibility when
   // acceptable.
   const auto sdk_version = GetSdkVersion();
+  using ::qnn::SdkVersion;
   // Bypass RmsNorm OP validation.
   if (SdkVersion{2, 35, 0} <= sdk_version &&
       sdk_version < SdkVersion{2, 37, 0} &&
@@ -442,6 +443,19 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::OpWrapper& op) {
         "SDK version is in [2.35.0, 2.37.0); Split OP validation is bypassed.");
     return kLiteRtStatusOk;
   }
+
+  if (op.IsOpCode(::qnn::QnnOpCode::kFullyConnected) &&
+      op.GetInputTensor(0).IsQuantI8() && op.GetInputTensor(1).IsQuantI8() &&
+      op.GetInputTensor(1).IsQuantBitwidth(::qnn::kQuantBitWidth2) &&
+      op.GetOutputTensor(0).IsQuantI8() &&
+      SdkVersion{2, 47, 0} <= sdk_version &&
+      sdk_version < SdkVersion{2, 48, 0}) {
+    LITERT_LOG(LITERT_WARNING,
+               "SDK version is in [2.47.0, 2.48.0); A8W2 FC OP validation is "
+               "bypassed.");
+    return kLiteRtStatusOk;
+  }
+
   const auto op_config = op.GetOpConfig();
   if (Qnn_ErrorHandle_t error =
           Api()->backendValidateOpConfig(BackendHandle(), op_config);
@@ -589,7 +603,12 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
   // Get SDK version from build ID.
   const char* build_id;
   Api()->backendGetBuildId(&build_id);
-  LITERT_ASSIGN_OR_RETURN(sdk_version_, ParseSdkVersion(build_id));
+  auto parsed_version = ::qnn::ParseSdkVersion(build_id);
+  if (!parsed_version) {
+    LITERT_LOG(LITERT_ERROR, "Failed to parse build ID", "");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  sdk_version_ = *parsed_version;
   return kLiteRtStatusOk;
 }
 
@@ -706,45 +725,6 @@ QnnManager::WeightSharingContextConfigs() {
   contextConfig.customConfig = &customConfig;
   static const QnnContext_Config_t* configs[2] = {&contextConfig, nullptr};
   return absl::MakeSpan(configs);
-}
-
-Expected<SdkVersion> QnnManager::ParseSdkVersion(const char* build_id) {
-  // A generic error to be returned on any parsing failure.
-  const auto parsing_error =
-      Unexpected(kLiteRtStatusErrorRuntimeFailure, "Failed to parse build ID");
-
-  std::string_view version_str = build_id;
-  if (!build_id) return parsing_error;
-
-  // Check for and remove the 'v' prefix.
-  if (version_str.empty() || version_str.front() != 'v') {
-    return parsing_error;
-  }
-  version_str.remove_prefix(1);
-
-  SdkVersion version{};
-  const char* current = version_str.data();
-  const char* const end = version_str.data() + version_str.size();
-
-  auto parse_component = [&current, &end](int& component) {
-    auto [ptr, ec] = std::from_chars(current, end, component);
-    if (ec != std::errc()) {
-      return false;
-    }
-    current = ptr;
-    return true;
-  };
-
-  // Parse major, minor, and patch versions, checking for dots in between.
-  if (!parse_component(version.major)) return parsing_error;
-
-  if (current == end || *current++ != '.') return parsing_error;
-  if (!parse_component(version.minor)) return parsing_error;
-
-  if (current == end || *current++ != '.') return parsing_error;
-  if (!parse_component(version.patch)) return parsing_error;
-
-  return version;
 }
 
 absl::Span<const QnnContext_Config_t*> QnnManager::GpuPerformanceContextConfigs(

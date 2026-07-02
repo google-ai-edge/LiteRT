@@ -27,7 +27,7 @@
 namespace {
 
 using ::litert::qnn::QnnManager;
-using ::litert::qnn::SdkVersion;
+using ::qnn::SdkVersion;
 using ::litert::qnn::internal::Dump;
 using ::testing::HasSubstr;
 
@@ -118,61 +118,6 @@ TEST(QnnManagerTest, GetSdkVersion) {
   const auto sdk_version = qnn.Value().get()->GetSdkVersion();
   static constexpr SdkVersion kInitSdkVersion{0, 0, 0};
   EXPECT_NE(sdk_version, kInitSdkVersion);
-}
-
-struct SdkVersionTest : public ::testing::Test {
-  const SdkVersion v1_0_0{1, 0, 0};
-  const SdkVersion v1_0_1{1, 0, 1};
-  const SdkVersion v1_1_0{1, 1, 0};
-  const SdkVersion v2_0_0{2, 0, 0};
-};
-
-TEST_F(SdkVersionTest, HandlesEquality) {
-  SdkVersion v1_0_0_copy = v1_0_0;
-  EXPECT_EQ(v1_0_0, v1_0_0_copy);
-  EXPECT_NE(v1_0_0, v1_0_1);
-  EXPECT_NE(v1_0_0, v1_1_0);
-  EXPECT_NE(v1_0_0, v2_0_0);
-
-  EXPECT_TRUE(v1_0_0 == v1_0_0_copy);
-  EXPECT_FALSE(v1_0_0 == v1_0_1);
-
-  EXPECT_TRUE(v1_0_0 != v1_0_1);
-  EXPECT_FALSE(v1_0_0 != v1_0_0_copy);
-}
-
-TEST_F(SdkVersionTest, HandlesLessThan) {
-  EXPECT_LT(v1_0_0, v1_0_1);
-  EXPECT_LT(v1_0_1, v1_1_0);
-  EXPECT_LT(v1_1_0, v2_0_0);
-  EXPECT_FALSE(v1_0_0 < v1_0_0);
-  EXPECT_FALSE(v1_0_1 < v1_0_0);
-}
-
-TEST_F(SdkVersionTest, HandlesGreaterThan) {
-  EXPECT_GT(v1_0_1, v1_0_0);
-  EXPECT_GT(v1_1_0, v1_0_1);
-  EXPECT_GT(v2_0_0, v1_1_0);
-  EXPECT_FALSE(v1_0_0 > v1_0_0);
-  EXPECT_FALSE(v1_0_0 > v1_0_1);
-}
-
-TEST_F(SdkVersionTest, HandlesLessThanOrEqual) {
-  SdkVersion v1_0_0_copy = v1_0_0;
-  EXPECT_LE(v1_0_0, v1_0_0_copy);
-  EXPECT_LE(v1_0_0, v1_0_1);
-  EXPECT_LE(v1_0_1, v1_1_0);
-  EXPECT_LE(v1_1_0, v2_0_0);
-  EXPECT_FALSE(v1_0_1 <= v1_0_0);
-}
-
-TEST_F(SdkVersionTest, HandlesGreaterThanOrEqual) {
-  SdkVersion v1_0_0_copy = v1_0_0;
-  EXPECT_GE(v1_0_0, v1_0_0_copy);
-  EXPECT_GE(v1_0_1, v1_0_0);
-  EXPECT_GE(v1_1_0, v1_0_1);
-  EXPECT_GE(v2_0_0, v1_1_0);
-  EXPECT_FALSE(v1_0_0 >= v1_0_1);
 }
 
 TEST(QnnManagerTest, AdspLibraryPathNoDuplicate) {

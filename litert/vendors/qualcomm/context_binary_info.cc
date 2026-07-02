@@ -22,6 +22,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "QnnCommon.h"  // from @qairt
@@ -201,10 +202,13 @@ Expected<ContextBinaryInfo> ContextBinaryInfo::Create(
   }
 
   // Compare the context binary's version against the current SDK version.
-  SdkVersion binary_version;
-  LITERT_ASSIGN_OR_RETURN(
-      binary_version,
-      QnnManager::ParseSdkVersion(binary_info->contextBinaryInfoV1.buildId));
+  auto parsed_binary_version =
+      ::qnn::ParseSdkVersion(binary_info->contextBinaryInfoV1.buildId);
+  if (!parsed_binary_version) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Failed to parse build ID");
+  }
+  const ::qnn::SdkVersion binary_version = *parsed_binary_version;
   const auto sdk_version = qnn.GetSdkVersion();
   if (binary_version > sdk_version) {
     LITERT_LOG(LITERT_ERROR,
