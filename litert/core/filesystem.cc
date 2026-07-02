@@ -23,6 +23,13 @@
 #include <system_error>  // NOLINT
 #include <vector>
 
+#if defined(__ANDROID__)
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
+#endif
+
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/time/clock.h"  // from @com_google_absl
@@ -43,11 +50,24 @@ StdPath MakeStdPath(absl::string_view path) {
 }
 
 bool StdExists(const StdPath& std_path) {
+#if defined(__ANDROID__)
+  struct stat buffer;
+  return (::stat(std_path.c_str(), &buffer) == 0);
+#else
   return std::filesystem::exists(std_path);
+#endif
 }
 
 size_t StdSize(const StdPath& std_path) {
+#if defined(__ANDROID__)
+  struct stat buffer;
+  if (::stat(std_path.c_str(), &buffer) == 0) {
+    return buffer.st_size;
+  }
+  return 0;
+#else
   return std::filesystem::file_size(std_path);
+#endif
 }
 
 LiteRtStatus StdIFRead(const StdPath& std_path, char* data, size_t size) {
@@ -94,6 +114,14 @@ Expected<size_t> Size(absl::string_view path) {
 
 Expected<absl::Time> GetLastWriteTime(absl::string_view path) {
   auto std_path = MakeStdPath(path);
+#if defined(__ANDROID__)
+  struct stat buffer;
+  if (::stat(std_path.c_str(), &buffer) != 0) {
+    return Error(kLiteRtStatusErrorFileIO,
+                 absl::StrFormat("Failed to stat file: %s", path));
+  }
+  return absl::FromTimeT(buffer.st_mtime);
+#else
   std::error_code ec;
   auto ftime = std::filesystem::last_write_time(std_path, ec);
   if (ec) {
@@ -104,10 +132,18 @@ Expected<absl::Time> GetLastWriteTime(absl::string_view path) {
   return absl::Now() +
          absl::FromChrono(ftime -
                           std::filesystem::file_time_type::clock::now());
+#endif
 }
 
 Expected<void> TouchFile(absl::string_view path) {
   auto std_path = MakeStdPath(path);
+#if defined(__ANDROID__)
+  if (::utimes(std_path.c_str(), nullptr) != 0) {
+    return Error(kLiteRtStatusErrorFileIO,
+                 absl::StrFormat("Failed to touch file: %s", path));
+  }
+  return {};
+#else
   std::error_code ec;
   std::filesystem::last_write_time(
       std_path, std::filesystem::file_time_type::clock::now(), ec);
@@ -117,6 +153,7 @@ Expected<void> TouchFile(absl::string_view path) {
                                  path, ec.message().c_str()));
   }
   return {};
+#endif
 }
 
 Expected<OwningBufferRef<uint8_t>> LoadBinaryFile(absl::string_view path) {
@@ -185,7 +222,15 @@ Expected<std::string> Filename(absl::string_view path) {
 
 bool IsDir(absl::string_view path) {
   auto std_path = MakeStdPath(path);
+#if defined(__ANDROID__)
+  struct stat buffer;
+  if (::stat(std_path.c_str(), &buffer) != 0) {
+    return false;
+  }
+  return S_ISDIR(buffer.st_mode);
+#else
   return std::filesystem::is_directory(std_path);
+#endif
 }
 
 Expected<void> MkDir(absl::string_view path) {

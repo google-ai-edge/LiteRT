@@ -380,7 +380,6 @@ LiteRtRunCompiledModelAsyncWithOptions
 LiteRtRunCompiledModelAsyncWithSchedulingInfo
 LiteRtRunCompiledModelWithOptions
 LiteRtRunCompiledModelWithSchedulingInfo
-
 LiteRtSerializeModel
 LiteRtSerializeModelWithSignatures
 LiteRtSetAcceleratorGetHardwareSupport
@@ -403,3 +402,4 @@ LiteRtUnlockTensorBuffer
 LiteRtUnwrapDelegate
 LiteRtWaitEvent
 LiteRtWrapDelegate
+kLiteRtRuntimeBuiltin
