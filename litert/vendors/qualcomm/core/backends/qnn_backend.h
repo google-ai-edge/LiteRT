@@ -9,15 +9,27 @@
 #include <optional>
 #include <type_traits>
 
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnDevice.h"  // from @qairt
+#include "QnnGraph.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 
 namespace qnn {
+
+// Context passed to the post-create / post-retrieve graph config hooks. Bundled
+// in a struct so the hook signature does not need to widen when a future
+// backend needs more context (graph name, profile handle, etc.).
+struct GraphConfigContext {
+  Qnn_GraphHandle_t graph;
+  absl::string_view graph_name;
+  Qnn_ProfileHandle_t profile = nullptr;
+};
 
 class QnnBackend {
  public:
@@ -35,8 +47,33 @@ class QnnBackend {
 
   virtual ~QnnBackend() = default;
 
+  // Wraps a non-owned QNN API pointer plus owned config lists; copying or
+  // moving is never meaningful. Non-copyable and non-movable.
+  QnnBackend(const QnnBackend&) = delete;
+  QnnBackend& operator=(const QnnBackend&) = delete;
+  QnnBackend(QnnBackend&&) = delete;
+  QnnBackend& operator=(QnnBackend&&) = delete;
+
   virtual bool Init(const Options& options,
                     std::optional<::qnn::SocInfo> soc_info) = 0;
+
+  // Builds the backend-specific graph configs to pass to QnnGraph_create,
+  // returning a GraphConfigBuilder that owns their storage. The caller keeps
+  // the returned builder alive for the duration of the graphCreate call and
+  // passes `builder.Configs().data()` to the API. Default: an empty builder (no
+  // custom configs at create time). `qnn_graph_name` is the name passed to
+  // graphCreate.
+  virtual GraphConfigBuilder BuildGraphConfigs(
+      const Options& /*options*/, absl::string_view /*qnn_graph_name*/) {
+    return {};
+  }
+
+  // Pushes backend-specific configs into a graph that was rehydrated from a
+  // serialised context binary. Default no-op. Returns false on failure.
+  virtual bool ConfigureGraphAfterRetrieve(const GraphConfigContext& /*ctx*/,
+                                           const Options& /*options*/) {
+    return true;
+  }
 
   Qnn_BackendHandle_t GetBackendHandle();
 

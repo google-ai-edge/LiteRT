@@ -325,6 +325,7 @@ typedef enum LrtQualcommOptionsBackend {
   kLiteRtQualcommBackendHtp,
   kLiteRtQualcommBackendDsp,
   kLiteRtQualcommBackendIr,
+  kLiteRtQualcommBackendLpai,
 } LrtQualcommOptionsBackend;
 
 LiteRtStatus LrtQualcommOptionsSetBackend(
@@ -345,7 +346,6 @@ LiteRtStatus LrtQualcommOptionsSetSchematicDir(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetSchematicDir(LrtQualcommOptions options,
                                                const char** schematic_dir);
 
-
 LiteRtStatus LrtQualcommOptionsSetCustomOpPackage(
     LrtQualcommOptions options, const char* name,
     const char* interface_provider, const char* compile_package_path,
@@ -356,6 +356,96 @@ LiteRtStatus LrtQualcommOptionsGetCustomOpPackage(
     const char** interface_provider, const char** compile_package_path,
     const char** dispatch_package_path, const char** target);
 
+// LPAI OPTIONS ////////////////////////////////////////////////////////////////
+
+// lpai_target_env
+
+// Selects which LPAI host environment the QNN runtime targets. Read at LPAI
+// backend creation. AOT compile on x86 should use kX86; on-device dispatch
+// should use whichever the SoC ships (kAdsp for SoCs with LPAI on the audio
+// DSP). Defaults to kUnknown (let QNN pick).
+typedef enum LrtQualcommOptionsLpaiTarget {
+  kLiteRtQualcommLpaiTargetUnknown = 0,
+  kLiteRtQualcommLpaiTargetX86 = 1,
+  kLiteRtQualcommLpaiTargetArm = 2,
+  kLiteRtQualcommLpaiTargetAdsp = 3,
+  kLiteRtQualcommLpaiTargetTensilica = 4,
+} LrtQualcommOptionsLpaiTarget;
+
+LiteRtStatus LrtQualcommOptionsSetLpaiTarget(
+    LrtQualcommOptions options, LrtQualcommOptionsLpaiTarget lpai_target_env);
+
+LiteRtStatus LrtQualcommOptionsGetLpaiTarget(
+    LrtQualcommOptions options, LrtQualcommOptionsLpaiTarget* lpai_target_env);
+
+// lpai_fps
+
+// Target inference rate (invocations per second) the application plans to
+// drive. LPAI uses this with lpai_ftrt_ratio to size the compute budget per
+// invocation. Defaults to 1, matching QNN_LPAI_GRAPH_DEFAULT_FPS.
+LiteRtStatus LrtQualcommOptionsSetLpaiFps(LrtQualcommOptions options,
+                                          uint32_t lpai_fps);
+
+LiteRtStatus LrtQualcommOptionsGetLpaiFps(LrtQualcommOptions options,
+                                          uint32_t* lpai_fps);
+
+// lpai_ftrt_ratio
+
+// "Faster than real-time" ratio: how much faster than real-time each
+// inference should complete. Defaults to 10, matching
+// QNN_LPAI_GRAPH_DEFAULT_FTRT_RATIO.
+LiteRtStatus LrtQualcommOptionsSetLpaiFtrtRatio(LrtQualcommOptions options,
+                                                uint32_t lpai_ftrt_ratio);
+
+LiteRtStatus LrtQualcommOptionsGetLpaiFtrtRatio(LrtQualcommOptions options,
+                                                uint32_t* lpai_ftrt_ratio);
+
+// lpai_client_perf_type
+
+// Marks the workload as latency-sensitive (kRealTime) or best-effort
+// (kNonRealTime). Defaults to kDefault (let QNN pick).
+typedef enum LrtQualcommOptionsLpaiClientPerfType {
+  kLiteRtQualcommLpaiClientPerfTypeDefault = 0,
+  kLiteRtQualcommLpaiClientPerfTypeRealTime = 1,
+  kLiteRtQualcommLpaiClientPerfTypeNonRealTime = 2,
+} LrtQualcommOptionsLpaiClientPerfType;
+
+LiteRtStatus LrtQualcommOptionsSetLpaiClientPerfType(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsLpaiClientPerfType lpai_client_perf_type);
+
+LiteRtStatus LrtQualcommOptionsGetLpaiClientPerfType(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsLpaiClientPerfType* lpai_client_perf_type);
+
+// lpai_core_affinity
+
+// Whether lpai_core_selection is a hint (kSoft) or strict pinning (kHard).
+// Defaults to kDefault (let QNN pick).
+typedef enum LrtQualcommOptionsLpaiCoreAffinityType {
+  kLiteRtQualcommLpaiCoreAffinityTypeDefault = 0,
+  kLiteRtQualcommLpaiCoreAffinityTypeSoft = 1,
+  kLiteRtQualcommLpaiCoreAffinityTypeHard = 2,
+} LrtQualcommOptionsLpaiCoreAffinityType;
+
+LiteRtStatus LrtQualcommOptionsSetLpaiCoreAffinityType(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsLpaiCoreAffinityType lpai_core_affinity);
+
+LiteRtStatus LrtQualcommOptionsGetLpaiCoreAffinityType(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsLpaiCoreAffinityType* lpai_core_affinity);
+
+// lpai_core_selection
+
+// Bitmask selecting which LPAI core(s) to run on: 0x01 = core 0, 0x02 = core
+// 1, 0x00 = no preference. Multi-core selection is not yet supported by the
+// SDK. Defaults to 0 (no preference).
+LiteRtStatus LrtQualcommOptionsSetLpaiCoreSelection(
+    LrtQualcommOptions options, uint32_t lpai_core_selection);
+
+LiteRtStatus LrtQualcommOptionsGetLpaiCoreSelection(
+    LrtQualcommOptions options, uint32_t* lpai_core_selection);
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

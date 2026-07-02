@@ -26,9 +26,21 @@ cc_library(
     hdrs = ["qnn_backend.h"],
     features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
+        ":graph_config_builder",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/utils:log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
+    name = "graph_config_builder",
+    hdrs = ["graph_config_builder.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
+    deps = [
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],
@@ -40,10 +52,13 @@ cc_library(
     hdrs = ["ir_backend.h"],
     features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
+        ":graph_config_builder",
         ":qnn_backend",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/utils:log",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],
@@ -55,10 +70,12 @@ cc_library(
     hdrs = ["gpu_backend.h"],
     deps = [
         ":backend_utils",
+        ":graph_config_builder",
         ":qnn_backend",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/utils:log",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],
@@ -71,10 +88,12 @@ cc_library(
     features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
         ":backend_utils",
+        ":graph_config_builder",
         ":qnn_backend",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/utils:log",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],
@@ -91,6 +110,24 @@ cc_library(
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/utils:log",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
+    name = "lpai_backend",
+    srcs = ["lpai_backend.cc"],
+    hdrs = ["lpai_backend.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
+    deps = [
+        ":backend_utils",
+        ":graph_config_builder",
+        ":qnn_backend",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],
@@ -121,6 +158,7 @@ cc_test(
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/utils:miscs",
         "@com_google_googletest//:gtest_main",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -134,6 +172,19 @@ cc_test(
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "graph_config_builder_test",
+    srcs = [
+        "graph_config_builder_test.cc",
+    ],
+    deps = [
+        ":graph_config_builder",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -181,4 +232,21 @@ cc_test(
         ],
         "//conditions:default": [],
     }) + gtest_main_no_heapcheck_deps(),
+)
+
+cc_test(
+    name = "lpai_backend_test",
+    srcs = [
+        "lpai_backend_test.cc",
+    ],
+    deps = [
+        ":lpai_backend",
+        ":qnn_backend",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/utils:miscs",
+        "@com_google_absl//absl/base:no_destructor",
+        "@com_google_googletest//:gtest_main",
+        "@qairt//:qnn_lib_headers",
+    ],
 )

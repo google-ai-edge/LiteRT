@@ -40,7 +40,6 @@
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -159,6 +158,13 @@ LiteRtDispatchInvocationContextT::Create(
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name) {
   if (exec_type == kLiteRtDispatchExecutableTypeJitHandle) {
+    // LPAI is not supported in JIT mode.
+    if (qnn.GetOptions().GetBackendType() == ::qnn::BackendType::kLpaiBackend) {
+      return Unexpected(kLiteRtStatusErrorUnsupported,
+                        "LPAI backend is not supported in JIT mode; please use "
+                        "AOT compilation.");
+    }
+
     // JIT Handle is stored in exec_bytecode_buffer as the QnnJitGraph to
     // maintain generic Create method for both normal and JIT executables.
     auto jit_graph = reinterpret_cast<const litert::qnn::QnnJitGraph*>(
@@ -244,6 +250,16 @@ LiteRtDispatchInvocationContextT::Create(
       status != QNN_SUCCESS) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to retrieve graph");
+  }
+
+  // Push backend-specific post-retrieve graph configs (no-op for all backends
+  // except LPAI).
+  if (auto* backend = qnn.GetBackend(); backend != nullptr) {
+    if (!backend->ConfigureGraphAfterRetrieve(
+            {graph_handle, function_name, profile_handle}, qnn.GetOptions())) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Failed to configure graph after retrieve");
+    }
   }
 
   return Ptr(new LiteRtDispatchInvocationContextT(
@@ -391,9 +407,8 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Host tensor buffer is too large for QNN");
     }
-    void* data =
-        static_cast<void*>(static_cast<uint8_t*>(host_memory_addr) +
-                           tensor_buffer_offset);
+    void* data = static_cast<void*>(static_cast<uint8_t*>(host_memory_addr) +
+                                    tensor_buffer_offset);
     if (tensor.version == QNN_TENSOR_VERSION_1) {
       tensor.v1.memType = QNN_TENSORMEMTYPE_RAW;
       tensor.v1.clientBuf.data = data;

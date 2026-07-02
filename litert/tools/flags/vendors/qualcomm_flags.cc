@@ -512,6 +512,10 @@ bool AbslParseFlag(absl::string_view text, QualcommOptions::Backend* options,
     *options = QualcommOptions::Backend::kIr;
     return true;
   }
+  if (text == "lpai") {
+    *options = QualcommOptions::Backend::kLpai;
+    return true;
+  }
   *error = "Unknown QNN backend";
   return false;
 }
@@ -528,6 +532,144 @@ std::string AbslUnparseFlag(QualcommOptions::Backend options) {
       return "dsp";
     case QualcommOptions::Backend::kIr:
       return "ir";
+    case QualcommOptions::Backend::kLpai:
+      return "lpai";
+  }
+}
+
+}  // namespace litert::qualcomm
+// NOLINTEND(*alien-types*)
+
+// LPAI OPTIONS ////////////////////////////////////////////////////////////////
+
+// NOLINTBEGIN(*alien-types*)
+ABSL_FLAG(litert::qualcomm::QualcommOptions::LpaiTarget, qualcomm_lpai_target,
+          litert::qualcomm::QualcommOptions::LpaiTarget::kUnknown,
+          "LPAI target environment. Valid settings: \"unknown\", \"x86\", "
+          "\"arm\", \"adsp\", \"tensilica\".");
+
+ABSL_FLAG(uint32_t, qualcomm_lpai_fps, 1,
+          "LPAI target inference rate (invocations per second).");
+
+ABSL_FLAG(uint32_t, qualcomm_lpai_ftrt_ratio, 10,
+          "LPAI faster-than-real-time ratio.");
+
+ABSL_FLAG(litert::qualcomm::QualcommOptions::LpaiClientPerfType,
+          qualcomm_lpai_client_perf_type,
+          litert::qualcomm::QualcommOptions::LpaiClientPerfType::kDefault,
+          "LPAI client perf type. Valid settings: \"default\", \"real_time\", "
+          "\"non_real_time\".");
+
+ABSL_FLAG(litert::qualcomm::QualcommOptions::LpaiCoreAffinityType,
+          qualcomm_lpai_core_affinity,
+          litert::qualcomm::QualcommOptions::LpaiCoreAffinityType::kDefault,
+          "LPAI core affinity. Valid settings: \"default\", \"soft\", "
+          "\"hard\".");
+
+ABSL_FLAG(uint32_t, qualcomm_lpai_core_selection, 0,
+          "LPAI core selection bitmask: 0x01 = core 0, 0x02 = core 1, 0 = no "
+          "preference.");
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text, QualcommOptions::LpaiTarget* options,
+                   std::string* error) {
+  if (text == "unknown") {
+    *options = QualcommOptions::LpaiTarget::kUnknown;
+    return true;
+  }
+  if (text == "x86") {
+    *options = QualcommOptions::LpaiTarget::kX86;
+    return true;
+  }
+  if (text == "arm") {
+    *options = QualcommOptions::LpaiTarget::kArm;
+    return true;
+  }
+  if (text == "adsp") {
+    *options = QualcommOptions::LpaiTarget::kAdsp;
+    return true;
+  }
+  if (text == "tensilica") {
+    *options = QualcommOptions::LpaiTarget::kTensilica;
+    return true;
+  }
+  *error = "Unknown LPAI target environment";
+  return false;
+}
+
+std::string AbslUnparseFlag(QualcommOptions::LpaiTarget options) {
+  switch (options) {
+    case QualcommOptions::LpaiTarget::kUnknown:
+      return "unknown";
+    case QualcommOptions::LpaiTarget::kX86:
+      return "x86";
+    case QualcommOptions::LpaiTarget::kArm:
+      return "arm";
+    case QualcommOptions::LpaiTarget::kAdsp:
+      return "adsp";
+    case QualcommOptions::LpaiTarget::kTensilica:
+      return "tensilica";
+  }
+}
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::LpaiClientPerfType* options,
+                   std::string* error) {
+  if (text == "default") {
+    *options = QualcommOptions::LpaiClientPerfType::kDefault;
+    return true;
+  }
+  if (text == "real_time") {
+    *options = QualcommOptions::LpaiClientPerfType::kRealTime;
+    return true;
+  }
+  if (text == "non_real_time") {
+    *options = QualcommOptions::LpaiClientPerfType::kNonRealTime;
+    return true;
+  }
+  *error = "Unknown LPAI client perf type";
+  return false;
+}
+
+std::string AbslUnparseFlag(QualcommOptions::LpaiClientPerfType options) {
+  switch (options) {
+    case QualcommOptions::LpaiClientPerfType::kDefault:
+      return "default";
+    case QualcommOptions::LpaiClientPerfType::kRealTime:
+      return "real_time";
+    case QualcommOptions::LpaiClientPerfType::kNonRealTime:
+      return "non_real_time";
+  }
+}
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::LpaiCoreAffinityType* options,
+                   std::string* error) {
+  if (text == "default") {
+    *options = QualcommOptions::LpaiCoreAffinityType::kDefault;
+    return true;
+  }
+  if (text == "soft") {
+    *options = QualcommOptions::LpaiCoreAffinityType::kSoft;
+    return true;
+  }
+  if (text == "hard") {
+    *options = QualcommOptions::LpaiCoreAffinityType::kHard;
+    return true;
+  }
+  *error = "Unknown LPAI core affinity";
+  return false;
+}
+
+std::string AbslUnparseFlag(QualcommOptions::LpaiCoreAffinityType options) {
+  switch (options) {
+    case QualcommOptions::LpaiCoreAffinityType::kDefault:
+      return "default";
+    case QualcommOptions::LpaiCoreAffinityType::kSoft:
+      return "soft";
+    case QualcommOptions::LpaiCoreAffinityType::kHard:
+      return "hard";
   }
 }
 
@@ -688,6 +830,27 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto custom_op_package =
       absl::GetFlag(FLAGS_qualcomm_custom_op_package);
   LITERT_RETURN_IF_ERROR(opts.SetCustomOpPackage(custom_op_package));
+
+  const auto lpai_target = absl::GetFlag(FLAGS_qualcomm_lpai_target);
+  opts.SetLpaiTarget(lpai_target);
+
+  const auto lpai_fps = absl::GetFlag(FLAGS_qualcomm_lpai_fps);
+  opts.SetLpaiFps(lpai_fps);
+
+  const auto lpai_ftrt_ratio = absl::GetFlag(FLAGS_qualcomm_lpai_ftrt_ratio);
+  opts.SetLpaiFtrtRatio(lpai_ftrt_ratio);
+
+  const auto lpai_client_perf_type =
+      absl::GetFlag(FLAGS_qualcomm_lpai_client_perf_type);
+  opts.SetLpaiClientPerfType(lpai_client_perf_type);
+
+  const auto lpai_core_affinity =
+      absl::GetFlag(FLAGS_qualcomm_lpai_core_affinity);
+  opts.SetLpaiCoreAffinityType(lpai_core_affinity);
+
+  const auto lpai_core_selection =
+      absl::GetFlag(FLAGS_qualcomm_lpai_core_selection);
+  opts.SetLpaiCoreSelection(lpai_core_selection);
 
   return {};
 }

@@ -6,10 +6,14 @@
 
 #include <optional>
 
-#include "IR/QnnIrCommon.h"
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
+#include "IR/QnnIrCommon.h"  // from @qairt
+#include "IR/QnnIrGraph.h"  // from @qairt
+#include "QnnGraph.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 
@@ -35,12 +39,11 @@ class IrBackend : public QnnBackend {
 
   explicit IrBackend(const QNN_INTERFACE_VER_TYPE* qnn_api);
 
-  ~IrBackend() = default;
-
   bool Init(const Options& options,
             std::optional<::qnn::SocInfo> soc_info) override;
 
- private:
+  GraphConfigBuilder BuildGraphConfigs(
+      const Options& options, absl::string_view qnn_graph_name) override;
 };
 
 }  // namespace qnn

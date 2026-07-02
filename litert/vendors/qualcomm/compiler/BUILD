@@ -350,11 +350,12 @@ litert_lib(
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/backends:graph_config_builder",
+        "//litert/vendors/qualcomm/core/backends:qnn_backend",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],
 )

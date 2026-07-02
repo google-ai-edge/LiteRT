@@ -4,12 +4,17 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BACKENDS_GPU_BACKEND_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BACKENDS_GPU_BACKEND_H_
 
+#include <array>
 #include <memory>
 #include <optional>
 
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "GPU/QnnGpuCommon.h"  // from @qairt
+#include "GPU/QnnGpuGraph.h"  // from @qairt
+#include "QnnGraph.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt      // from @qairt
 #include "QnnTypes.h"  // from @qairt          // from @qairt
+#include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
@@ -30,14 +35,10 @@ class GpuBackend : public QnnBackend {
 
   explicit GpuBackend(const QNN_INTERFACE_VER_TYPE* qnn_api);
 
-  ~GpuBackend() = default;
-
-  GpuBackend(const GpuBackend&) = delete;
-  GpuBackend& operator=(const GpuBackend&) = delete;
-  GpuBackend(GpuBackend&&) = delete;
-  GpuBackend& operator=(GpuBackend&&) = delete;
-
   bool Init(const Options& options, std::optional<SocInfo> soc_info) override;
+
+  GraphConfigBuilder BuildGraphConfigs(
+      const Options& options, absl::string_view qnn_graph_name) override;
 };
 
 }  // namespace qnn
