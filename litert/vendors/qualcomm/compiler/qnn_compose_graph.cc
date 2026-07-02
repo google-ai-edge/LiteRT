@@ -1560,6 +1560,31 @@ LiteRtStatus BuildCustomOp(const litert::compiler::Op& litert_op,
   return kLiteRtStatusOk;
 }
 
+std::string DescribeUnsupportedOp(size_t op_index,
+                                  const litert::compiler::Op& litert_op) {
+  const auto op_code = litert_op.Code();
+  std::ostringstream dump;
+  // Leading newline so this multi-line block starts on its own line and is not
+  // glued onto preceding QNN SDK stdout.
+  dump << "\nLiteRT Op #" << op_index << " ";
+  dump << "'" << GetTfliteOpName(op_code) << "' (code="
+       << static_cast<int>(op_code)
+       << ") is not supported in Qualcomm Compiler.";
+  dump << "\n  Inputs:";
+  const auto inputs = litert_op.Inputs();
+  for (size_t i = 0; i < inputs.size(); ++i) {
+    dump << "\n    [" << i << "] name=\"" << inputs[i].Name()
+         << "\"  tensor_idx=" << inputs[i].TensorIndex();
+  }
+  dump << "\n  Outputs:";
+  const auto outputs = litert_op.Outputs();
+  for (size_t i = 0; i < outputs.size(); ++i) {
+    dump << "\n    [" << i << "] name=\"" << outputs[i].Name()
+         << "\"  tensor_idx=" << outputs[i].TensorIndex();
+  }
+  return dump.str();
+}
+
 }  // namespace
 
 LiteRtStatus ConvertOp(const bool use_int64_bias_as_int32,
@@ -1568,7 +1593,8 @@ LiteRtStatus ConvertOp(const bool use_int64_bias_as_int32,
                        ::qnn::TensorPool& tensor_pool,
                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
                        std::vector<::qnn::TensorWrapperRef>& output_tensors,
-                       std::vector<::qnn::OpWrapper>& op_wrappers) {
+                       std::vector<::qnn::OpWrapper>& op_wrappers,
+                       size_t op_index) {
   const auto& builders = GetOpBuilders();
   const auto op_code = litert_op.Code();
   if (op_code < builders.size() && builders[op_code]) {
@@ -1580,9 +1606,8 @@ LiteRtStatus ConvertOp(const bool use_int64_bias_as_int32,
     return BuildCustomOp(litert_op, tensor_pool, input_tensors, output_tensors,
                          op_wrappers, custom_op_package);
   }
-  LITERT_LOG(LITERT_ERROR,
-             "LiteRT Op Code: %d is not supported in Qualcomm Compiler.",
-             litert_op.Code());
+  LITERT_LOG(LITERT_ERROR, "%s",
+             DescribeUnsupportedOp(op_index, litert_op).c_str());
   return kLiteRtStatusOk;
 }
 
@@ -1699,7 +1724,7 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
     std::vector<::qnn::OpWrapper> op_wrappers;
     LITERT_RETURN_IF_ERROR(ConvertOp(
         options.GetUseInt64BiasAsInt32(), options.GetCustomOpPackage(), op,
-        tensor_pool, input_tensors, output_tensors, op_wrappers));
+        tensor_pool, input_tensors, output_tensors, op_wrappers, id));
     for (auto& op_wrapper : op_wrappers) {
       // Add litert op id to qnn op name to preserve op mapping
       op_wrapper.AddSuffixToName(
