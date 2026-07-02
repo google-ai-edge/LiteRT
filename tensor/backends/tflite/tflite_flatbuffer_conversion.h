@@ -34,11 +34,15 @@ limitations under the License.
 #include "tensor/backends/tflite/arithmetic_tflite.h"
 #include "tensor/backends/tflite/linked_flat_hash_map.h"
 #include "tensor/buffer.h"
+#include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
 #include "tensor/tensor.h"
+#include "tflite/c/c_api_types.h"
 #include "tflite/schema/mutable/schema_generated.h"
 
 namespace litert::tensor {
+
+absl::StatusOr<Type> FromTfLite(TfLiteType type);
 
 class ModelFactory {
  public:
@@ -61,6 +65,12 @@ class ModelFactory {
 
   // Adds a subgraph to the model.
   absl::Status AddSubgraph(std::vector<TensorHandle> outputs);
+
+  template <class... Mixins>
+  absl::Status AddSubgraph(std::vector<Tensor<Mixins...>> outputs) {
+    return AddSubgraph(
+        std::vector<TensorHandle>(outputs.begin(), outputs.end()));
+  }
 
   // Adds a new signature to the model.
   //
@@ -120,41 +130,69 @@ class ModelFactory {
   absl::flat_hash_map<graph::Tensor, uint32_t> tensor_to_external_buffer_id_;
 };
 
-absl::Status Save(std::vector<TensorHandle> outputs, absl::string_view path,
-                  std::optional<ModelFactory> model_factory = std::nullopt);
-absl::Status Save(std::vector<TensorHandle> outputs, std::vector<char>& fb,
-                  std::optional<ModelFactory> model_factory = std::nullopt);
+// Creates a flatbuffer from the given outputs and saves it to the given path.
+//
+// This function is a shorthand to create a graph with a unique subgraph and
+// save it.
+//
+// Note: For more complex graphs, use the `ModelFactory` class.
+absl::Status Save(std::vector<TensorHandle> outputs, absl::string_view path);
 
+// Creates a flatbuffer from the given outputs and saves it to the given path.
+//
+// This function is a shorthand to create a graph with a unique subgraph and
+// save it.
+//
+// Note: For more complex graphs, use the `ModelFactory` class.
 template <class... Mixins>
 absl::Status Save(std::vector<Tensor<Mixins...>> outputs,
-                  absl::string_view path,
-                  std::optional<ModelFactory> model_factory = std::nullopt) {
+                  absl::string_view path) {
   std::vector<TensorHandle> erased_outputs(outputs.begin(), outputs.end());
-  return Save(std::move(erased_outputs), path, std::move(model_factory));
+  return Save(std::move(erased_outputs), path);
 }
 
+// Creates a flatbuffer from the given outputs.
+//
+// This function is a shorthand to create a graph with a unique subgraph.
+//
+// Note: For more complex graphs, use the `ModelFactory` class.
+absl::Status Save(std::vector<TensorHandle> outputs, std::vector<char>& fb);
+
+// Creates a flatbuffer from the given outputs.
+//
+// This function is a shorthand to create a graph with a unique subgraph.
+//
+// Note: For more complex graphs, use the `ModelFactory` class.
 template <class... Mixins>
-absl::Status Save(std::vector<Tensor<Mixins...>> outputs, std::vector<char>& fb,
-                  std::optional<ModelFactory> model_factory = std::nullopt) {
+absl::Status Save(std::vector<Tensor<Mixins...>> outputs,
+                  std::vector<char>& fb) {
   std::vector<TensorHandle> erased_outputs(outputs.begin(), outputs.end());
-  return Save(std::move(erased_outputs), fb, std::move(model_factory));
+  return Save(std::move(erased_outputs), fb);
 }
 
-#define MISSING_MIXIN_MSG                                                      \
-  "The tensors given to this function do not have a TFLite backend mixin.\n\n" \
-  "Ensure that the input tensors that you define are tagged with "             \
-  "`TfLiteMixinTag`."
+// Runs this primary graph that is stored in the given model factory.
+absl::Status Run(ModelFactory& model_factory);
 
-absl::Status Run(std::vector<TensorHandle> outputs,
-                 std::optional<ModelFactory> model_factory = std::nullopt);
+// Runs a constant model from the given outputs.
+//
+// This function is a shorthand to create a model with a unique subgraph, save
+// it to a flatbuffer and run it.
+//
+// Note: Because the function doesn't let you specify the inputs tensors other
+// than through the graph definition, all the tensor data must be specified when
+// building the graph.
+//
+// If you need a more complex setup, you need to setup the TFLite interpreter
+// yourself.
+absl::Status Run(std::vector<TensorHandle> outputs);
 
+// Runs a constant model from the given outputs.
+//
+// This function is a shorthand to save a model to a flatbuffer and run its
+// primary subgraph.
 template <class... Mixins>
-absl::Status Run(std::vector<Tensor<Mixins...>> outputs,
-                 std::optional<ModelFactory> model_factory = std::nullopt) {
-  static_assert((... || std::is_same_v<Mixins, TfLiteMixinTag>),
-                MISSING_MIXIN_MSG);
-  return Run(std::vector<TensorHandle>(outputs.begin(), outputs.end()),
-             std::move(model_factory));
+absl::Status Run(std::vector<Tensor<Mixins...>> outputs) {
+  return Run(std::vector<TensorHandle>(outputs.begin(), outputs.end()));
 }
 
 }  // namespace litert::tensor
