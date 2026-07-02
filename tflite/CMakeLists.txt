@@ -127,13 +127,11 @@ set(_TFLITE_ENABLE_NNAPI "${TFLITE_ENABLE_NNAPI}")
 if(NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "Android")
   set(_TFLITE_ENABLE_NNAPI OFF)
 endif()
+
+# mmap_allocation.cc now provides a Win32 (CreateFileMapping/MapViewOfFile)
+# implementation in addition to the POSIX mmap path, so memory mapping is
+# supported on Windows and no longer needs to be force-disabled here.
 set(_TFLITE_ENABLE_MMAP "${TFLITE_ENABLE_MMAP}")
-if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
-  # See https://github.com/tensorflow/tensorflow/blob/\
-  # 2b96f3662bd776e277f86997659e61046b56c315/tensorflow/lite/tools/make/\
-  # Makefile#L157
-  set(_TFLITE_ENABLE_MMAP OFF)
-endif()
 # Simplifies inclusion of non-test sources and headers from a directory.
 # SOURCE_DIR: Directory to search for files.
 # SOURCES_VAR: Variable to append with all matching *.cc and *.h files.
