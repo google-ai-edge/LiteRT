@@ -169,6 +169,22 @@ class TensorWrapper final {
     SetTensorType(QNN_TENSOR_TYPE_APP_READ);
   }
 
+  void HackFromInt16ToUInt16() {
+    // Shift zero_point by +32768: UINT16_val = INT16_val + 32768, so
+    // new_zero_point = old_zero_point + 32768 (new_offset = old_offset -
+    // 32768).
+    if (auto* p =
+            std::get_if<ScaleOffsetQuantizeParamsWrapper>(&quantize_params_)) {
+      quantize_params_ = ScaleOffsetQuantizeParamsWrapper(
+          p->GetScale(), p->GetZeroPoint() + 32768);
+      qnn_tensor_.v2.dataType = QNN_DATATYPE_UFIXED_POINT_16;
+      UpdateQnnQuantParams();
+      QNN_LOG_INFO("Hack successfully :)");
+    } else {
+      QNN_LOG_ERROR("Something wrong QQ");
+    }
+  }
+
   void SetQuantBitwidth(std::uint32_t bitwidth);
 
   void SetMemHandle(Qnn_MemHandle_t memory_handle) {

@@ -72,7 +72,7 @@ constexpr std::array<std::pair<size_t, size_t>, 4> kSupportedGqaPrefillShapes =
 constexpr std::array<std::pair<size_t, size_t>, 3> kSupportedGqaDecodeShapes = {
     {
         {14, 2},  // FastVLM
-        {16, 8},  // Kanana
+        // {16, 8},  // Kanana
         {4, 2},   // TinyTiny
     }};
 
@@ -964,6 +964,8 @@ size_t OptimizeGqaPrefill(std::function<bool(OpWrapper&)> validate_op_config,
   const bool is_valid =
       std::all_of(new_ops.begin(), new_ops.end(),
                   [validate_op_config](OpWrapper& op_wrapper) -> bool {
+                    if (op_wrapper.IsOpCode(::qnn::QnnOpCode::kMatMul))
+                      return true;
                     return validate_op_config(op_wrapper);
                   });
   if (is_valid) {
@@ -1379,6 +1381,8 @@ size_t OptimizeGqaDecode(
   const bool is_valid =
       std::all_of(new_ops.begin(), new_ops.end(),
                   [validate_op_config](::qnn::OpWrapper& op_wrapper) -> bool {
+                    if (op_wrapper.IsOpCode(::qnn::QnnOpCode::kMatMul))
+                      return true;
                     return validate_op_config(op_wrapper);
                   });
   if (is_valid) {

@@ -1641,6 +1641,15 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
       tensor_wrapper->SetMemHandle(nullptr);
     }
     litert_tensor_to_wrapper.emplace(subgraph_input.Get(), tensor_wrapper);
+    // TODO(jiunkaiy): Remove hacky optimization...
+    if (tensor_wrapper->IsSubgraphInput()) {
+      LITERT_LOG(LITERT_INFO, "Input Name: %s",
+                 tensor_wrapper->GetName().c_str());
+      if (tensor_wrapper->GetName().find("kv") != std::string::npos) {
+        // "kv" exists in the string
+        tensor_wrapper->HackFromInt16ToUInt16();
+      }
+    }
     LITERT_RETURN_IF_ERROR(AddTensorToQnn(qnn.Api(), graph_mapper.QnnGraph(),
                                           *tensor_wrapper, created_tensors));
     if (inputs != nullptr) {
@@ -1737,6 +1746,16 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
   // Create ops and their corresponding tensors.
   for (auto& op_wrapper : graph_op_wrappers) {
     for (const auto& tensor_wrapper_ref : op_wrapper.GetAllTensors()) {
+      // TODO(jiunkaiy): Remove hacky optimization...
+      if (tensor_wrapper_ref.get().IsSubgraphOutput()) {
+        LITERT_LOG(LITERT_INFO, "Output Name: %s",
+                   tensor_wrapper_ref.get().GetName().c_str());
+        if (tensor_wrapper_ref.get().GetName().find("kv") !=
+            std::string::npos) {
+          // "kv" exists in the string
+          tensor_wrapper_ref.get().HackFromInt16ToUInt16();
+        }
+      }
       LITERT_RETURN_IF_ERROR(AddTensorToQnn(qnn.Api(), graph_mapper.QnnGraph(),
                                             tensor_wrapper_ref.get(),
                                             created_tensors));
