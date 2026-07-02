@@ -102,6 +102,18 @@ litert_test(
 )
 
 litert_lib(
+    name = "weights_to_parameters",
+    srcs = ["weights_to_parameters.cc"],
+    hdrs = ["weights_to_parameters.h"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    deps = [
+        ":weight_bank",
+        "@intel_openvino//:openvino",
+    ],
+)
+
+litert_lib(
     name = "openvino_compile_context",
     srcs = ["openvino_compile_context.cc"],
     hdrs = ["openvino_compile_context.h"],
