@@ -94,9 +94,11 @@ tf_cc_test(
         "//tflite:util",
         "//tflite/core/c:c_api_types",
         "//tflite/testing:util",
+        "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/status",
         "@com_google_googletest//:gtest_main",
         "@org_tensorflow//tensorflow/core:framework",
+        "@org_tensorflow//tensorflow/core:protos_all_cc",
     ],
 )
 
@@ -232,6 +234,7 @@ cc_library(
         "//tflite/core/c:common",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@flatbuffers",
     ] + if_mobile([
@@ -258,13 +261,17 @@ tf_cc_test(
         "//tflite/kernels:subgraph_test_util",
         "//tflite/testing:util",
         "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
+        "@org_tensorflow//tensorflow/core:lib",
+        "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core:test",
         "@org_tensorflow//tensorflow/core/common_runtime/eager:context",
-        "@org_tensorflow//tensorflow/core/platform:mutex",
         "@org_tensorflow//tensorflow/core/platform:protobuf",
         "@org_tensorflow//tensorflow/core/platform:status",
+        "@org_tensorflow//third_party/protobuf",
+        "@org_tensorflow//third_party/protobuf/util:differencer",
     ],
 )
 
@@ -302,7 +309,11 @@ tf_cc_test(
         "//tflite/core/c:common",
         "//tflite/delegates/utils:simple_delegate",
         "//tflite/kernels:kernel_util",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
+        "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core/platform:status",
         "@org_tensorflow//tensorflow/core/tfrt/fallback:op_kernel_runner",
     ],
@@ -315,11 +326,16 @@ cc_library(
     hdrs = ["test_util.h"],
     visibility = internal_visibility_allowlist(),
     deps = [
+        "//testing/base/public:gunit_for_library_testonly",
         "//tflite:string",
         "//tflite/kernels:test_util",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/memory",
         "@flatbuffers",
         "@org_tensorflow//tensorflow/c:c_api_internal",
+        "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@org_tensorflow//third_party/protobuf",
     ],
 )
 
@@ -388,6 +404,7 @@ tf_cc_test(
         ":delegate",
         "//tflite/converter/delegates/flex:allowlisted_flex_ops_lib",
         "@com_google_googletest//:gtest_main",
+        "@org_tensorflow//tensorflow/core:protos_all_cc",
     ] + if_mobile([
         "@org_tensorflow//tensorflow/core:portable_tensorflow_lib_lite",
     ]) + if_not_mobile([
@@ -425,8 +442,11 @@ cc_library(
         "//tflite/kernels:builtin_ops",
         "//tflite/kernels:kernel_util",
         "//tflite/kernels/internal:tensor",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@org_tensorflow//tensorflow/core:protos_all_cc",
     ] + if_mobile([
         "@org_tensorflow//tensorflow/core:portable_tensorflow_lib_lite",
     ]) + if_not_mobile([
