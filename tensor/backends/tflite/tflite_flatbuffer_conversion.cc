@@ -66,6 +66,8 @@ static constexpr size_t kFlatbufferPlaceholderValue = 0xfafafafafafafafa;
 
 static constexpr size_t kFlatbufferAppendedDataAlignment = 64;
 
+}  // namespace
+
 // Converts an operation type to its TFLite equivalent.
 absl::StatusOr<::tflite::TensorType> ToTfLite(const Type type) {
   switch (type) {
@@ -129,7 +131,7 @@ absl::StatusOr<Type> FromTfLite(const TfLiteType type) {
     case kTfLiteString:
       return absl::FailedPreconditionError("String type is not supported.");
     case kTfLiteBool:
-      return absl::FailedPreconditionError("Bool type is not supported.");
+      return Type::kBOOL;
     case kTfLiteInt16:
       return Type::kI16;
     case kTfLiteComplex64:
@@ -170,6 +172,8 @@ absl::StatusOr<Type> FromTfLite(const TfLiteType type) {
   return absl::UnimplementedError(
       "Type was not handled in the conversion from TFLite value.");
 }
+
+namespace {
 
 std::string DebugInfo(const graph::Tensor& tensor) {
   std::string dbg_str = "tensor {";
