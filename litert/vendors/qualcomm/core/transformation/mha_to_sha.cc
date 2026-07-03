@@ -825,10 +825,21 @@ size_t OptimizeMHAGemma4BPrefill(
     }
   }
 
-  // Pack per-head outputs along axis 2 -> [B,S,H,D], directly into
-  // Transpose1's output tensor.  Reshape1 and both Transposes are erased.
+  // Concat per-head outputs along axis=2 (D axis) into [B, S, H*D], then
+  // Reshape directly into transpose1's output [B, S, H, D].
+  // No Transpose1 needed: for each (b,s) the concat produces head 0's D values
+  // contiguously followed by head 1's, ..., head H-1's — exactly the row-major
+  // layout of [B, S, H, D].  This avoids both Pack and Transpose: Concat(axis=2)
+  // is a block-copy (no strided scatter), so it doesn't have the HTP accuracy
+  // issue that Pack(axis=2) exhibits.
+  // sha_outputs: num_attn_heads tensors of [B, S_per_head, D].
+  auto concat_dims = sha_outputs[0].get().GetDimensions();  // [B, S, D]
+  concat_dims[2] *= static_cast<std::uint32_t>(num_attn_heads);  // [B, S, H*D]
+  auto& concat_output =
+      tensor_pool.CloneNativeTensorFrom(reshape1.GetOutputTensor(0), concat_dims);
+  new_ops.emplace_back(CreateConcatenationOp(sha_outputs, concat_output, 2));
   new_ops.emplace_back(
-      CreatePackOp(sha_outputs, transpose1.GetOutputTensor(0), kQueryUnpackAxis));
+      CreateReshapeOp(concat_output, transpose1.GetOutputTensor(0)));
 
   // Validate new graph.
   const bool is_valid =
