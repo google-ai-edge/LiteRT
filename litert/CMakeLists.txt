@@ -203,6 +203,9 @@ endif()
 if(EXISTS "${CMAKE_BINARY_DIR}/FP16-source/include")
     include_directories(${CMAKE_BINARY_DIR}/FP16-source/include)
 endif()
+if(FP16_SOURCE_DIR AND EXISTS "${FP16_SOURCE_DIR}/include")
+    include_directories(${FP16_SOURCE_DIR}/include)
+endif()
 
 # Find FlatBuffers
 #
