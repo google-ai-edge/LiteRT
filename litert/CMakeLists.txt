@@ -219,7 +219,6 @@ find_package(flatbuffers QUIET
       ${LITERT_FLATBUFFERS_BUILD_DIR}
       ${LITERT_FLATBUFFERS_DIR}/CMake
       ${CMAKE_BINARY_DIR}/flatbuffers-flatc/lib/cmake/flatbuffers
-    NO_DEFAULT_PATH
 )
 
 if(NOT TARGET flatbuffers::flatbuffers)
