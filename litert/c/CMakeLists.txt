@@ -15,6 +15,11 @@
 # LiteRT C API
 cmake_minimum_required(VERSION 3.20)
 
+set(LITERT_MAJOR_VERSION "" CACHE STRING "LiteRt major version")
+set(LITERT_MINOR_VERSION "" CACHE STRING "LiteRt minor version")
+set(LITERT_PATCH_VERSION "" CACHE STRING "LiteRt patch version")
+set(LITERT_VERSION "${LITERT_MAJOR_VERSION}.${LITERT_MINOR_VERSION}.${LITERT_PATCH_VERSION}")
+
 add_subdirectory(internal)
 
 set(LITERT_C_PUBLIC_HEADERS
@@ -246,6 +251,40 @@ set_target_properties(litert_runtime_c_api_shared_lib PROPERTIES
     POSITION_INDEPENDENT_CODE ON
 )
 set_target_properties(litert_runtime_c_api_shared_lib PROPERTIES INTERFACE_LINK_LIBRARIES "")
+if(LITERT_MAJOR_VERSION)
+    set_target_properties(litert_runtime_c_api_shared_lib PROPERTIES
+        VERSION   "${LITERT_VERSION}"
+        SOVERSION "${LITERT_MAJOR_VERSION}"
+    )
+endif()
+
+install(TARGETS litert_runtime_c_api_shared_lib
+    LIBRARY
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        COMPONENT   Runtime
+    NAMELINK_COMPONENT Development
+)
+
+install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/litert/c/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/litert/c
+    COMPONENT   Development
+    FILES_MATCHING PATTERN "*.h"
+)
+
+install(FILES ${LITERT_BUILD_COMMON_GENERATED_DIR}/build_config.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/litert/build_common
+    COMPONENT   Development
+)
+
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/litert.pc.in
+    ${CMAKE_CURRENT_BINARY_DIR}/litert.pc
+    @ONLY
+)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/litert.pc
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+    COMPONENT   Development
+)
 target_compile_options(litert_runtime_c_api_shared_lib PRIVATE
     -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables
     -ffunction-sections -fdata-sections
