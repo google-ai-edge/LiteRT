@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tflite/delegates/gpu/common/lstm_parser.h"
 
+#include <cstring>
 #include <optional>
 #include <string>
 #include <utility>
