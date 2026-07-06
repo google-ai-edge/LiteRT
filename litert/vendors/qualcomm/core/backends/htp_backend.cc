@@ -511,7 +511,8 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   // return the default SoC info (SM8350). If user specifies a SoC, we will
   // override the default.
   if (soc_info.has_value()) {
-    QNN_LOG_INFO("Using provided SoC info. SoC name: %s.", soc_info->soc_name);
+    QNN_LOG_INFO("Using provided SoC info. SoC name: %s.",
+                 soc_info->soc_name.data());
     soc_info_ = *soc_info;
   } else {
 #if defined(__x86_64__) || defined(_M_X64)
@@ -519,96 +520,45 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
 #else
     if (auto device_platform_info = CreateDevicePlatformInfo();
         device_platform_info) {
-      auto soc_model = device_platform_info->v1.hwDevices->v1
-                           .deviceInfoExtension->onChipDevice.socModel;
-      auto soc_info_online =
-          FindSocInfo(static_cast<SnapdragonModel>(soc_model));
-      soc_info_ = soc_info_online.value_or(kSocInfos[0]);
+      const auto device_info = device_platform_info->v1.hwDevices->v1
+                                   .deviceInfoExtension->onChipDevice;
+      soc_info_ = SocInfo("Online SoC", device_info.socModel);
     }
+#endif
 #if defined(_WIN32) && defined(_M_ARM64)
-    if (soc_info_.dsp_arch == DspArch::NONE) {
+    if (soc_info_.soc_model == 0) {
       QNN_LOG_WARNING(
           "Unable to map Windows ARM64 QNN platform info; using SC8380XP "
           "fallback for Snapdragon X Elite.");
-      soc_info_ = FindSocInfo(SnapdragonModel::SC8380XP).value_or(kSocInfos[0]);
+      static constexpr auto kSC8380XP = FindSocInfo("SC8380XP");
+      static_assert(kSC8380XP.has_value(), "SC8380XP missing from soc_table");
+      soc_info_ = *kSC8380XP;
     }
 #endif
-#endif
   }
-  if (soc_info_.dsp_arch == DspArch::NONE) {
+  if (soc_info_.soc_model == 0) {
     QNN_LOG_ERROR("SoC info was not configured successfully.")
     return false;
   }
-  QNN_LOG_INFO("Initializing QNN backend for SoC model: %s",
-               soc_info_.soc_name);
+  QNN_LOG_INFO("Initializing QNN backend for SoC model: %d",
+               soc_info_.soc_model);
 
   // Device Handle
   std::vector<QnnDevice_CustomConfig_t> device_custom_configs;
   QnnHtpDevice_CustomConfig_t* htp_device_custom_config =
       &AllocateHtpDeviceConfig();
   htp_device_custom_config->option = QNN_HTP_DEVICE_CONFIG_OPTION_SOC;
-  htp_device_custom_config->socModel =
-      static_cast<uint32_t>(soc_info_.soc_model);
+  htp_device_custom_config->socModel = soc_info_.soc_model;
   device_custom_configs.emplace_back(
       static_cast<QnnDevice_CustomConfig_t>(htp_device_custom_config));
 
-#if defined(__x86_64__) || defined(_M_X64)
-  std::vector<QnnDevice_PlatformInfo_t*> device_platform_infos;
-
-  QnnDevice_PlatformInfo_t* device_platform_info =
-      &AllocateDevicePlatformInfo();
-  device_platform_info->version = QNN_DEVICE_PLATFORM_INFO_VERSION_1;
-  device_platform_info->v1.numHwDevices = 1;
-
-  QnnDevice_HardwareDeviceInfo_t* hardware_device_info =
-      &AllocateDeviceHardwareInfo();
-  hardware_device_info->version = QNN_DEVICE_HARDWARE_DEVICE_INFO_VERSION_1;
-  hardware_device_info->v1.deviceId = 0;
-  hardware_device_info->v1.deviceType = 0;
-  hardware_device_info->v1.numCores = 1;
-
-  QnnHtpDevice_DeviceInfoExtension_t* htp_device_info_extension =
-      &AllocHtpDeviceInfoExtension();
-  htp_device_info_extension->devType = QNN_HTP_DEVICE_TYPE_ON_CHIP;
-  htp_device_info_extension->onChipDevice.vtcmSize = soc_info_.vtcm_size_in_mb;
-  // TODO(jiunkaiy): Given by user, default value is unsigned pd
-  htp_device_info_extension->onChipDevice.signedPdSupport = false;
-  htp_device_info_extension->onChipDevice.socModel =
-      static_cast<uint32_t>(soc_info_.soc_model);
-  htp_device_info_extension->onChipDevice.arch =
-      static_cast<QnnHtpDevice_Arch_t>(soc_info_.dsp_arch);
-  // TODO(jiunkaiy): For Htp, dlbcSupport is true
-  htp_device_info_extension->onChipDevice.dlbcSupport = true;
-  hardware_device_info->v1.deviceInfoExtension = htp_device_info_extension;
-
-  QnnDevice_CoreInfo_t* device_core_info = &AllocateDeviceCoreInfo();
-  device_core_info->version = QNN_DEVICE_CORE_INFO_VERSION_1;
-  device_core_info->v1.coreId = 0;
-  device_core_info->v1.coreType = 0;
-  device_core_info->v1.coreInfoExtension = nullptr;
-  hardware_device_info->v1.cores = device_core_info;
-
-  device_platform_info->v1.hwDevices = hardware_device_info;
-  device_platform_infos.emplace_back(device_platform_info);
-#else
-  std::vector<QnnDevice_PlatformInfo_t*> device_platform_infos = {};
-#endif
-
   std::vector<const QnnDevice_Config_t*> device_configs;
-  uint32_t num_custom_configs =
-      device_platform_infos.size() + device_custom_configs.size();
   // +1 for null terminated
-  device_configs.reserve(num_custom_configs + 1);
+  device_configs.reserve(device_custom_configs.size() + 1);
   for (std::size_t i = 0; i < device_custom_configs.size(); ++i) {
     QnnDevice_Config_t* device_custom_config = &AllocateDeviceConfig();
     device_custom_config->option = QNN_DEVICE_CONFIG_OPTION_CUSTOM;
     device_custom_config->customConfig = device_custom_configs[i];
-    device_configs.emplace_back(device_custom_config);
-  }
-  for (std::size_t i = 0; i < device_platform_infos.size(); ++i) {
-    QnnDevice_Config_t* device_custom_config = &AllocateDeviceConfig();
-    device_custom_config->option = QNN_DEVICE_CONFIG_OPTION_PLATFORM_INFO;
-    device_custom_config->hardwareInfo = device_platform_infos[i];
     device_configs.emplace_back(device_custom_config);
   }
   // null terminated
@@ -633,13 +583,13 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
           "performance mode.");
       return false;
     } else {
-      if (soc_info_.dsp_arch >= DspArch::V69) {
-        if (!htp_perf_control_->SetRpcPolling(performance_mode)) {
-          QNN_LOG_ERROR("Failed to initialize HTP RPC polling.");
-          return false;
-        }
+      // TODO(jiunkaiy): Enable RPC polling only on SoCs v69 and later.
+      // For now, rely on the QAIRT SDK to disable it on unsupported
+      // platforms.
+      if (!htp_perf_control_->SetRpcPolling(performance_mode)) {
+        QNN_LOG_ERROR("Failed to initialize HTP RPC polling.");
+        return false;
       }
-
       // Manual mode upvotes at init. Auto defers the upvote to Execute().
       if (options.GetHtpPerfCtrlMode() == HtpPerfCtrlMode::kManual) {
         htp_perf_control_->UpVote();
@@ -671,10 +621,10 @@ bool HtpBackend::SetPerformanceMode(const Options& options) {
     return false;
   }
 
-  const bool supports_rpc_polling = soc_info_.dsp_arch >= DspArch::V69;
+  // TODO(jiunkaiy): Enable RPC polling only on SoCs v69 and later. For now,
+  // rely on the QAIRT SDK to disable it on unsupported platforms.
   if (!htp_perf_control_->ApplyPerfMode(performance_mode,
-                                        options.GetHtpPerfCtrlMode(),
-                                        supports_rpc_polling)) {
+                                        options.GetHtpPerfCtrlMode(), true)) {
     QNN_LOG_ERROR("Failed to set HTP performance mode in SetPerformanceMode");
     return false;
   }
@@ -684,17 +634,7 @@ bool HtpBackend::SetPerformanceMode(const Options& options) {
 
 GraphConfigBuilder HtpBackend::BuildGraphConfigs(
     const Options& options, absl::string_view /*qnn_graph_name*/) {
-  const bool fp16_supported = IsFp16Supported(soc_info_);
-
   GraphConfigBuilder config_builder;
-
-  if (fp16_supported) {
-    // QNN suggest always enable relax precision.
-    QnnHtpGraph_CustomConfig_t precision = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
-    precision.option = QNN_HTP_GRAPH_CONFIG_OPTION_PRECISION;
-    precision.precision = QNN_PRECISION_FLOAT16;
-    config_builder.AddCustomConfig(precision);
-  }
 
   // Default use O3 for now.
   QnnHtpGraph_CustomConfig_t optimization = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
@@ -724,22 +664,19 @@ GraphConfigBuilder HtpBackend::BuildGraphConfigs(
   conv_hmx.shortDepthConvOnHmxOff = !options.GetUseConvHMX();
   config_builder.AddCustomConfig(conv_hmx);
 
-  if (fp16_supported) {
-    // TODO: Need to verify if legacy SoCs support P point as well.
-    const std::int32_t htp_p_point = options.GetHtpPPoint();
-    if (htp_p_point > 0) {
-      QnnHtpGraph_CustomConfig_t p_point = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
-      p_point.option = QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG;
-      p_point.finalizeConfig.key = "P";
-      p_point.finalizeConfig.value = {QNN_DATATYPE_INT_32,
-                                      {.int32Value = htp_p_point}};
-      config_builder.AddCustomConfig(p_point);
-    } else if (htp_p_point < 0) {
-      QNN_LOG_WARNING(
-          "Invalid P point (%d): negative values not supported, skipping "
-          "P point config.",
-          htp_p_point);
-    }
+  const std::int32_t htp_p_point = options.GetHtpPPoint();
+  if (htp_p_point > 0) {
+    QnnHtpGraph_CustomConfig_t p_point = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    p_point.option = QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG;
+    p_point.finalizeConfig.key = "P";
+    p_point.finalizeConfig.value = {QNN_DATATYPE_INT_32,
+                                    {.int32Value = htp_p_point}};
+    config_builder.AddCustomConfig(p_point);
+  } else if (htp_p_point < 0) {
+    QNN_LOG_WARNING(
+        "Invalid P point (%d): negative values not supported, skipping "
+        "P point config.",
+        htp_p_point);
   }
 
   // Hvx Thread

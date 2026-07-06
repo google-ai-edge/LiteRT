@@ -79,9 +79,11 @@ constexpr LiteRtParamIndex kDefaultPartitionNum = 1;
 
 static constexpr absl::string_view kEntryPointNameFmt = "qnn_partition_%d";
 
-bool IsWeightSharingSupported(::qnn::DspArch dsp_arch) {
+bool IsWeightSharingSupported() {
 #if defined(__x86_64__) || defined(_M_X64)
-  return dsp_arch >= ::qnn::DspArch::V73;
+  // TODO(jiunkaiy): Enable weight sharing only on SoCs v73 and later.
+  // For now, rely on the QAIRT SDK to disable it on unsupported platforms.
+  return true;
 #else
   return false;
 #endif
@@ -176,7 +178,7 @@ LiteRtStatus LiteRtGetNumCompilerPluginSupportedSocModels(
   if (!compiler_plugin || !num_supported_soc_models) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *num_supported_soc_models = ::qnn::kNumSocInfos;
+  *num_supported_soc_models = ::qnn::kSocInfos.size();
   return kLiteRtStatusOk;
 }
 
@@ -185,10 +187,10 @@ LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
     const char** soc_model_name) {
   if (!compiler_plugin || !soc_model_name) {
     return kLiteRtStatusErrorInvalidArgument;
-  } else if (soc_model_idx < 0 || soc_model_idx >= ::qnn::kNumSocInfos) {
+  } else if (soc_model_idx < 0 || soc_model_idx >= ::qnn::kSocInfos.size()) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *soc_model_name = ::qnn::kSocInfos[soc_model_idx].soc_name;
+  *soc_model_name = ::qnn::kSocInfos[soc_model_idx].soc_name.data();
   return kLiteRtStatusOk;
 }
 
@@ -357,7 +359,8 @@ class LiteRtCompilerPluginT {
           qnn_backend_->GetSocInfo().soc_model != soc_info->soc_model) {
         LITERT_LOG(LITERT_ERROR,
                    "QNN backend SoC mismatch: current %s, target %s",
-                   qnn_backend_->GetSocInfo().soc_name, soc_info->soc_name);
+                   qnn_backend_->GetSocInfo().soc_name.data(),
+                   soc_info->soc_name.data());
         return nullptr;
       }
       return qnn_backend_.get();
@@ -448,7 +451,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            LiteRtSubgraph subgraph,
                                            LiteRtOpList selected_ops) {
   ::litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
-  auto opt_soc_model = soc_model ? qnn::FindSocModel(soc_model) : std::nullopt;
+  const auto opt_soc_model = ::qnn::FindOrCreateSocInfo(soc_model);
   if (soc_model && !opt_soc_model) {
     LITERT_LOG(LITERT_ERROR, "Unexpected SoC model: %s", soc_model);
     return kLiteRtStatusErrorInvalidArgument;
@@ -523,7 +526,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
              "Starting QNN Compilation for %d subgraphs, soc_model=%s",
              num_partitions, soc_model);
 
-  auto opt_soc_model = soc_model ? qnn::FindSocModel(soc_model) : std::nullopt;
+  const auto opt_soc_model = ::qnn::FindOrCreateSocInfo(soc_model);
   if (opt_soc_model) {
     LITERT_LOG(LITERT_INFO, "Compiling QNN SoC model: %s", soc_model);
   } else if (soc_model) {
@@ -618,32 +621,21 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     if (context_handle_idx == next_context_handle_idx) {
       // Initialize context.
       LITERT_LOG(LITERT_INFO, "%s", "Creating context handle");
-      // We enable weight sharing by default, this could lead to issue when
-      // support legacy SoC.
       auto context_configs = QnnManager::DefaultContextConfigs();
       if (options.GetEnableWeightSharing()) {
-        switch (options.GetBackendType()) {
-          case ::qnn::BackendType::kHtpBackend: {
-            // Only enable weight sharing if we have multiple partitions and
-            // the current SoC support weight sharing feature.
-            bool enable_weight_sharing =
-                num_partitions != kDefaultPartitionNum &&
-                IsWeightSharingSupported(qnn_backend->GetSocInfo().dsp_arch);
-            if (enable_weight_sharing) {
-              context_configs = QnnManager::WeightSharingContextConfigs();
-              LITERT_LOG(LITERT_INFO, "Enable weight sharing feature");
-            } else {
-              LITERT_LOG(LITERT_WARNING,
-                         "Disable weight sharing feature. Only support with "
-                         "multiple partitions and dsp_arch >= v73");
-            }
-            break;
-          }
-          default: {
-            LITERT_LOG(LITERT_ERROR,
-                       "Weight sharing is only supported in HTP backend.");
-            return kLiteRtStatusErrorInvalidArgument;
-          }
+        if (options.GetBackendType() != ::qnn::BackendType::kHtpBackend) {
+          LITERT_LOG(LITERT_ERROR,
+                     "Weight sharing is only supported in HTP backend.");
+          return kLiteRtStatusErrorInvalidArgument;
+        }
+        if (num_partitions != kDefaultPartitionNum &&
+            IsWeightSharingSupported()) {
+          context_configs = QnnManager::WeightSharingContextConfigs();
+          LITERT_LOG(LITERT_INFO, "Enable weight sharing feature");
+        } else {
+          LITERT_LOG(LITERT_WARNING,
+                     "Disable weight sharing feature. Only support with "
+                     "multiple partitions and on x86-64 host");
         }
       } else if (options.GetBackendType() == ::qnn::BackendType::kGpuBackend) {
         if (options.GetGpuPerformanceMode() !=
@@ -753,9 +745,6 @@ LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
     LiteRtApiVersion api_version, LiteRtCompilerPlugin compiler_plugin,
     LiteRtEnvironmentOptions env, LiteRtOptions options,
     const char* soc_model_name) {
-  // TODO(jiunkaiy): Check if the QAIRT SDK version meets the minimum required
-  // version.
-
   // Check LiteRt API version for backward compatibility.
   static constexpr LiteRtApiVersion kApiVersion{LITERT_API_VERSION_MAJOR,
                                                 LITERT_API_VERSION_MINOR,
@@ -777,12 +766,30 @@ LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
   }
 
   // Check if the SoC model is supported.
-  if (!soc_model_name) {
-    LITERT_LOG(LITERT_WARNING, "SoC model name is not specified.");
-  } else if (!::qnn::FindSocModel(soc_model_name).has_value()) {
-    LITERT_LOG(LITERT_ERROR, "Unsupported SoC model: %s", soc_model_name);
-    return kLiteRtStatusErrorUnsupportedCompilerVersion;
+  // TODO(jiunkaiy): Validate SoC support through the global config API.
+  if (::qnn::FindOrCreateSocInfo(soc_model_name)) {
+    LITERT_LOG(LITERT_INFO, "Compiling QNN SoC model: %s", soc_model_name);
+  } else if (soc_model_name) {
+    LITERT_LOG(LITERT_ERROR, "Unexpected SoC model: %s", soc_model_name);
+    return kLiteRtStatusErrorInvalidArgument;
   }
 
+  // Check if the QAIRT SDK version meets the minimum required version.
+  QnnManager* qnn_manager =
+      compiler_plugin->GetOrCreateQnnManager(compiler_plugin->Options());
+  if (!qnn_manager) {
+    LITERT_LOG(LITERT_ERROR, "Failed to obtain QNN manager");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  // The QNN fix for QNN_HTP_GRAPH_CONFIG_OPTION_PRECISION was introduced in
+  // v2.35.0.
+  const auto sdk_version = qnn_manager->GetSdkVersion();
+  if (sdk_version < ::qnn::SdkVersion{2, 35, 0}) {
+    LITERT_LOG(LITERT_ERROR,
+               "QAIRT SDK v%d.%d.%d is not supported; please upgrade to "
+               "v2.35.0 or later",
+               sdk_version.major, sdk_version.minor, sdk_version.patch);
+    return kLiteRtStatusErrorUnsupportedCompilerVersion;
+  }
   return kLiteRtStatusOk;
 }

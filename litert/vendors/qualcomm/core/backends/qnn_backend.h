@@ -92,7 +92,7 @@ class QnnBackend {
       Qnn_LogHandle_t log_handle,
       absl::Span<const QnnDevice_Config_t*> configs);
 
-  SocInfo soc_info_ = kSocInfos[0];
+  SocInfo soc_info_{"UNKNOWN_SOC", 0};
   QnnLogHandle log_handle_;
   QnnBackendHandle backend_handle_;
   QnnDeviceHandle device_handle_;
