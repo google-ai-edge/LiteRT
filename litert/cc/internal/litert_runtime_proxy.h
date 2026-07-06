@@ -63,9 +63,9 @@ class RuntimeProxy {
   /// If the system runtime handle is not provided, the builtin runtime will be
   /// used.
   explicit RuntimeProxy(const LiteRtRuntimeCApiStruct* runtime_c_api)
-      : runtime_c_api_(LITERT_INTERNAL_DIE_IF_NULL(runtime_c_api == nullptr
-                                                       ? kLiteRtRuntimeBuiltin
-                                                       : runtime_c_api)) {};
+      : runtime_c_api_(LITERT_INTERNAL_DIE_IF_NULL(
+            runtime_c_api == nullptr ? GetLiteRtRuntimeBuiltin()
+                                     : runtime_c_api)) {};
 
   ~RuntimeProxy() = default;
 
@@ -1203,6 +1203,12 @@ class RuntimeProxy {
                                         int size_bytes) {
     LITERT_PROXY_METHOD_STATUS(litert_add_external_tensor_binding, options,
                                signature_name, tensor_name, data, size_bytes);
+  }
+
+  LiteRtStatus AddWeightInMemory(LiteRtOptions options, const char* group_name,
+                                 const void* data, int size_bytes) {
+    LITERT_PROXY_METHOD_STATUS(litert_add_weight_in_memory, options, group_name,
+                               data, size_bytes);
   }
 
   LiteRtStatus EnvironmentSupportsFP16(LiteRtEnvironment environment,

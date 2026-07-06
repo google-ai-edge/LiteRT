@@ -69,6 +69,11 @@ LiteRtStatus LiteRtAddExternalTensorBinding(LiteRtOptions options,
                                             const char* tensor_name, void* data,
                                             int size_bytes);
 
+// Adds an in-memory weight buffer to the given options.
+LiteRtStatus LiteRtAddWeightInMemory(LiteRtOptions options,
+                                     const char* group_name, const void* data,
+                                     int size_bytes);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

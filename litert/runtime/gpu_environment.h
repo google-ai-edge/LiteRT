@@ -186,15 +186,17 @@ class GpuEnvironment {
   Expected<void> Initialize(
       const LiteRtEnvironmentOptionsT& environment_options);
 
+  // EGL must be declared before OpenCL so it initializes first and is destroyed
+  // last (reverse declaration order), preventing driver crashes during cleanup.
+#if LITERT_HAS_OPENGL_SUPPORT
+  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env_;
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+
 #if LITERT_HAS_OPENCL_SUPPORT
   tflite::gpu::cl::CLDevice device_;
   tflite::gpu::cl::CLContext context_;
   tflite::gpu::cl::CLCommandQueue command_queue_;
 #endif  // LITERT_HAS_OPENCL_SUPPORT
-
-#if LITERT_HAS_OPENGL_SUPPORT
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env_;
-#endif  // LITERT_HAS_OPENGL_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT
   MetalInfoPtr metal_info_;

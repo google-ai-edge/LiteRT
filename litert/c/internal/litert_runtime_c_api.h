@@ -711,6 +711,11 @@ typedef struct LiteRtRuntimeCApiStruct {
                                                      const char* tensor_name,
                                                      void* data,
                                                      int size_bytes);
+  // litert_options.h: LiteRtAddWeightInMemory
+  LiteRtStatus (*litert_add_weight_in_memory)(LiteRtOptions options,
+                                              const char* group_name,
+                                              const void* data,
+                                              int size_bytes);
 
   //
   // Scheduling info APIs (litert_compiled_model.h)

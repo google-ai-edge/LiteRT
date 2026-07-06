@@ -263,12 +263,14 @@ class Options {
       absl::flat_hash_map<std::string, absl::Span<const std::byte>> map) {
     build_actions_.push_back(
         [map = std::move(map)](internal::RuntimeProxy* runtime,
-                               LiteRtOptions options) mutable {
-          auto* options_impl = reinterpret_cast<LiteRtOptionsT*>(options);
-          if (!options_impl) {
-            return kLiteRtStatusErrorRuntimeFailure;
+                               LiteRtOptions options) {
+          for (const auto& [name, span] : map) {
+            if (auto status = runtime->AddWeightInMemory(
+                    options, name.c_str(), span.data(), span.size());
+                status != kLiteRtStatusOk) {
+              return status;
+            }
           }
-          options_impl->weight_in_memory_map = std::move(map);
           return kLiteRtStatusOk;
         });
     return {};
