@@ -123,7 +123,8 @@ class CompiledModelWrapper {
       const CompilationOptions& compilation_options, std::string* out_error);
 
   CompiledModelWrapper(litert::ExtendedModel model,
-                       litert::CompiledModel compiled);
+                       litert::CompiledModel compiled,
+                       PyObject* environment_capsule);
 
   ~CompiledModelWrapper();
 
@@ -208,6 +209,8 @@ class CompiledModelWrapper {
 
   // Python buffer object to keep it alive for models created from buffer
   PyObject* model_buffer_ = nullptr;
+  // Python environment capsule to keep it alive
+  PyObject* environment_ = nullptr;
 };
 
 }  // namespace compiled_model_wrapper

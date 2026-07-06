@@ -364,16 +364,31 @@ size_t CompiledModelWrapper::ByteWidthOfDType(const std::string& dtype) {
 
 // Constructor for CompiledModelWrapper.
 CompiledModelWrapper::CompiledModelWrapper(ExtendedModel model,
-                                           CompiledModel compiled)
-    : model_(std::move(model)), compiled_model_(std::move(compiled)) {}
+                                           CompiledModel compiled,
+                                           PyObject* environment)
+    : model_(std::move(model)),
+      compiled_model_(std::move(compiled)),
+      environment_(environment) {
+  if (environment_ && Py_IsInitialized()) {
+    Py_INCREF(environment_);
+  }
+}
 
 // Destructor for CompiledModelWrapper.
 CompiledModelWrapper::~CompiledModelWrapper() {
+  // Force destruction of C++ handles before releasing the environment.
+  compiled_model_ = litert::CompiledModel();
+  model_ = litert::ExtendedModel();
+
   // Release Python buffer reference if we're holding one
   // Check Py_IsInitialized to handle destruction during Python shutdown
   if (model_buffer_ && Py_IsInitialized()) {
     Py_DECREF(model_buffer_);
     model_buffer_ = nullptr;
+  }
+  if (environment_ && Py_IsInitialized()) {
+    Py_DECREF(environment_);
+    environment_ = nullptr;
   }
 }
 
@@ -427,7 +442,8 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
     return nullptr;
   }
 
-  return new CompiledModelWrapper(std::move(model), std::move(*compiled_or));
+  return new CompiledModelWrapper(std::move(model), std::move(*compiled_or),
+                                  environment_capsule);
 }
 
 // Converts a Python string or bytes object to a C string.
@@ -486,8 +502,8 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
     return nullptr;
   }
 
-  auto* wrapper =
-      new CompiledModelWrapper(std::move(model), std::move(*compiled_or));
+  auto* wrapper = new CompiledModelWrapper(
+      std::move(model), std::move(*compiled_or), environment_capsule);
   // Keep the Python buffer alive for the lifetime of the wrapper
   Py_INCREF(model_data);
   wrapper->model_buffer_ = model_data;

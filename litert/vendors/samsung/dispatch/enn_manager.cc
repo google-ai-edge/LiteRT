@@ -57,7 +57,12 @@ Expected<EnnManager::UniquePtr> EnnManager::Create() {
 
 const EnnManager::PublicApi& EnnManager::Api() const { return *api_.get(); }
 
-EnnManager::~EnnManager() { Api().EnnDeinitialize(); }
+EnnManager::~EnnManager() {
+  if (!_enn_deinitialized_) {
+    _enn_deinitialized_ = true;
+    Api().EnnDeinitialize();
+  }
+}
 
 LiteRtStatus EnnManager::LoadEnnRuntimeLibrary(absl::string_view path) {
   auto loading_lib = SharedLibrary::Load(path, RtldFlags::Default());
@@ -86,9 +91,47 @@ LiteRtStatus EnnManager::LoadEnnRuntimeLibrary(absl::string_view path) {
   ENN_LOAD_API(enn_runtime_lib_, EnnCloseModel);
   ENN_LOAD_API(enn_runtime_lib_, EnnDeinitialize);
   ENN_LOAD_API(enn_runtime_lib_, EnnAllocateAllBuffers);
+  ENN_LOAD_API(enn_runtime_lib_, EnnSetPreferencePerfMode);
+  ENN_LOAD_API(enn_runtime_lib_, EnnSetPreferencePerfConfigId);
 
   if (api_->EnnInitialize() != ENN_RET_SUCCESS) {
     return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus SetGenAiPerfConfigFromSoc(const EnnManager::PublicApi& api) {
+  std::string soc_name = GetSocName();
+  if (soc_name.empty()) {
+    return kLiteRtStatusOk;
+  }
+
+  PerfConfig perfConfig = GetPerfConfigFromSoc(soc_name);
+  LITERT_LOG(LITERT_INFO,
+             "SetGenAiPerfConfigFromSoc: SOC=%s, mode=%u, configId=%u",
+             soc_name.c_str(), static_cast<unsigned>(perfConfig.mode),
+             perfConfig.configId);
+
+  EnnReturn ret_mode =
+      api.EnnSetPreferencePerfMode(static_cast<uint32_t>(perfConfig.mode));
+  if (ret_mode != ENN_RET_SUCCESS) {
+    LITERT_LOG(
+        LITERT_ERROR,
+        "SetGenAiPerfConfigFromSoc: EnnSetPreferencePerfMode failed ret=%d",
+        ret_mode);
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  if (perfConfig.configId != PERF_CONFIG_ID_DEFAULT) {
+    EnnReturn ret_config =
+        api.EnnSetPreferencePerfConfigId(perfConfig.configId);
+    if (ret_config != ENN_RET_SUCCESS) {
+      LITERT_LOG(LITERT_ERROR,
+                 "SetGenAiPerfConfigFromSoc: EnnSetPreferencePerfConfigId "
+                 "failed ret=%d",
+                 ret_config);
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
   }
 
   return kLiteRtStatusOk;

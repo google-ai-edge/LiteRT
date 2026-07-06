@@ -15,10 +15,11 @@ limitations under the License.
 
 #include "tflite/delegates/gpu/gl/object_manager.h"
 
+#include <cstdint>
 #include <memory>
 #include <utility>
+#include <vector>
 
-#include "absl/memory/memory.h"
 #include "absl/types/span.h"
 #include "tflite/delegates/gpu/common/convert.h"
 #include "tflite/delegates/gpu/common/status.h"

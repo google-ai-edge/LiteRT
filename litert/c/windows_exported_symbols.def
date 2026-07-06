@@ -15,7 +15,7 @@
 ; Exports symbols from C API DLL or executables when C API is statically linked.
 ; The list of symbols here doesn't cover all symbols of C API, but added as
 ; needed when linker fails to find symbols. Currently, they are used by
-; litert_lm_main.exe when --define=litert_link_capi_so=true and by
+; litert_lm_main.exe when --define=litert_runtime_link_mode=dynamic and by
 ; libLiteRtWebGpuAccelerator.dll when --define=resolve_symbols_from_exec=true.
 
 EXPORTS

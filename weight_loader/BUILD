@@ -64,6 +64,7 @@ cc_test(
         "//litert/cc/internal:scoped_file",
         "//litert/cc/internal:scoped_weight_source",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings:string_view",

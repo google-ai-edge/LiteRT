@@ -23,16 +23,21 @@
 
 namespace litert::samsung {
 
-WeightBinaryManager& WeightBinaryManager::GetInstance(
-    const EnnManager* enn_manager) {
+WeightBinaryManager& WeightBinaryManager::GetInstance(EnnManager* enn_manager) {
   static WeightBinaryManager instance(enn_manager);
   return instance;
 }
 
-WeightBinaryManager::WeightBinaryManager(const EnnManager* enn_manager)
+WeightBinaryManager::WeightBinaryManager(EnnManager* enn_manager)
     : enn_manager_(enn_manager) {}
 
-WeightBinaryManager::~WeightBinaryManager() { ClearAll(); }
+WeightBinaryManager::~WeightBinaryManager() {
+  ClearAll();
+  if (!enn_manager_->_enn_deinitialized_) {
+    enn_manager_->_enn_deinitialized_ = true;
+    enn_manager_->Api().EnnDeinitialize();
+  }
+}
 
 // Returns cached buffer if exists, otherwise creates new (from file-opened fd)
 litert::Expected<EnnBufferPtr> litert::samsung::WeightBinaryManager::Acquire(
@@ -102,6 +107,11 @@ litert::Expected<void> WeightBinaryManager::Release(
 // Clears all cached weights
 void WeightBinaryManager::ClearAll() {
   std::lock_guard<std::mutex> lock(mutex_);
+
+  // enn_manager_ may be dangling if EnnManager was destroyed first
+  // (static destruction order across TUs is unspecified).
+  // In that case, ENN runtime is already shutting down -- no-op is safe.
+  if (!enn_manager_) return;
 
   for (auto& e : entries_) {
     if (e.buffer) {

@@ -31,7 +31,7 @@ limitations under the License.
 #include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "tensor/examples/gemma3/gemma3_graph.h"
+#include "tensor/examples/gemma3/gemma3_config.h"
 #include "tensor/examples/gemma3/safetensor_loader.h"
 #include "tensor/examples/gemma3/tflite_loader.h"
 

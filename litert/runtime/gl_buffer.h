@@ -53,7 +53,7 @@ class GlBuffer {
                                                 AhwbBuffer& ahwb_buffer);
 
   template <typename T>
-  Expected<T*> Lock();
+  Expected<T*> Lock(LiteRtTensorBufferLockMode mode);
 
   template <typename T>
   Expected<void> Unlock();
@@ -94,6 +94,8 @@ class GlBuffer {
   void* data_ = nullptr;
   // The size of the buffer in bytes.
   size_t size_bytes_ = 0;
+  // The lock mode used in the current lock cycle.
+  LiteRtTensorBufferLockMode lock_mode_ = kLiteRtTensorBufferLockModeReadWrite;
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 #if LITERT_HAS_AHWB_SUPPORT
   AHardwareBuffer* ahwb_ = nullptr;

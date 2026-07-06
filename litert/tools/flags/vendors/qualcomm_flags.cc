@@ -387,6 +387,10 @@ ABSL_FLAG(std::string, qualcomm_saver_output_dir, "",
           "can be replayed on any QNN backend. See Qualcomm "
           "AI Runtime (QAIRT) SDK document for more details.");
 
+ABSL_FLAG(std::string, qualcomm_schematic_dir, "",
+          "Qualcomm schematic directory. If provided, you can obtain "
+          "schematic.bin for optrace.");
+
 namespace litert::qualcomm {
 
 bool AbslParseFlag(absl::string_view text,
@@ -677,6 +681,9 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto graph_io_tensor_mem_type =
       absl::GetFlag(FLAGS_qualcomm_graph_io_tensor_mem_type);
   opts.SetGraphIOTensorMemType(graph_io_tensor_mem_type);
+
+  const std::string schematic_dir = absl::GetFlag(FLAGS_qualcomm_schematic_dir);
+  opts.SetSchematicDir(schematic_dir);
 
   const auto custom_op_package =
       absl::GetFlag(FLAGS_qualcomm_custom_op_package);

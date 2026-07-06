@@ -15,7 +15,9 @@
 #include "weight_loader/external_weight_loader_litert.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <ios>
@@ -27,6 +29,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -41,7 +44,6 @@
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/internal/scoped_weight_source.h"
 #include "tflite/schema/schema_generated.h"
@@ -594,6 +596,53 @@ TEST(ExternalWeightLoaderTest, NoExternalWeightsIsNoOp) {
   request.opencl = false;
   request.metal = true;
   EXPECT_TRUE(loader->PrepareAccess(request, /*env=*/nullptr).ok());
+}
+
+TEST(ExternalWeightLoaderTest, LoadsWeightsFromMemory) {
+  constexpr size_t kAlignment = 64;
+  constexpr absl::string_view kGroupName = "memory_group";
+  const std::string payload = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ4545454545";
+  auto model = BuildModel(kGroupName);
+
+  size_t aligned_size = (payload.size() + kAlignment - 1) & ~(kAlignment - 1);
+#if defined(_WIN32)
+  void* aligned_payload = _aligned_malloc(aligned_size, kAlignment);
+  absl::Cleanup cleanup = [aligned_payload] { _aligned_free(aligned_payload); };
+#else
+  void* aligned_payload = std::aligned_alloc(kAlignment, aligned_size);
+  absl::Cleanup cleanup = [aligned_payload] { std::free(aligned_payload); };
+#endif
+  memcpy(aligned_payload, payload.data(), payload.size());
+  absl::Span<const std::byte> buffer(
+      reinterpret_cast<const std::byte*>(aligned_payload), payload.size());
+
+  WeightInMemoryMap group_map;
+  group_map[std::string(kGroupName)] = buffer;
+
+  auto loader = CreateLiteRtWeightLoader(
+      LrtGetRuntimeContext(), model.model(), /*model_directory=*/std::nullopt,
+      /*scoped_weight_source=*/nullptr, std::move(group_map));
+  ASSERT_NE(loader, nullptr);
+
+  const auto& weight_info = GetSingleWeightInfo(*loader);
+  ExpectWeightInfo(weight_info);
+
+  WeightAccessRequest request;
+  request.cpu = true;
+  absl::Status status = loader->PrepareAccess(request, /*env=*/nullptr);
+  ASSERT_TRUE(status.ok()) << status.message();
+
+  const auto* access =
+      loader->GetExternalWeightByBuffer(weight_info.external_buffer_id);
+  ExpectHostBufferMetadata(access);
+  auto expected = ExpectedSlice(payload);
+  ExpectHostBufferEquals(access, expected);
+
+  // Releasing should succeed and NOT crash (proves the loader doesn't try to
+  // munmap the heap memory).
+  ASSERT_TRUE(
+      loader->ReleaseExternalWeightByBuffer(weight_info.external_buffer_id)
+          .ok());
 }
 
 }  // namespace

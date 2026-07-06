@@ -32,6 +32,7 @@ set(LITERT_RUNTIME_SOURCES
     custom_op_dispatcher.cc
     dispatch/dispatch_delegate.cc
     dispatch/dispatch_delegate_kernel.cc
+    dispatch/dispatch_kernel_facade.cc
     dispatch/dispatch_opaque_options.cc
     dispatch/litert_dispatch.cc
     dmabuf_buffer.cc

@@ -41,6 +41,10 @@ absl::StatusOr<std::pair<int, int>> GetAspectRatioPreservingSize(
     return absl::InvalidArgumentError(
         "Patch width must be equal to patch height.");
   }
+  if (width == 0 || height == 0) {
+    return absl::InvalidArgumentError("Input image has zero width or height.");
+  }
+
   float total_px = width * height;
   float target_px =
       patchify_config.max_num_patches *

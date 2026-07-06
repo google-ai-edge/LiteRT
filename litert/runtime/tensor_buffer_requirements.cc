@@ -26,13 +26,20 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/internal/litert_tensor_buffer_utils.h"
 #include "litert/core/util/to_string.h"
 
 std::string LiteRtTensorBufferRequirementsT::ToString() const {
+  std::vector<std::string> type_strings;
+  type_strings.reserve(supported_buffer_types_.size());
+  for (auto type : supported_buffer_types_) {
+    type_strings.push_back(litert::BufferTypeToString(type));
+  }
+
   std::ostringstream os;
   os << "LiteRtTensorBufferRequirementsT["
      << "supported_types: "
-     << litert::internal::ToString(supported_buffer_types_)
+     << litert::internal::ToString(type_strings)
      << ", buffer_size: " << buffer_size_
      << ", strides: " << litert::internal::ToString(strides_)
      << ", alignment: " << alignment_ << "]";

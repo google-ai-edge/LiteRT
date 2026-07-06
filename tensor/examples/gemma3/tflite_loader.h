@@ -61,7 +61,10 @@ class TfliteLoader {
   };
 
   // Loads a TFLite file.
-  static absl::StatusOr<TfliteLoader> Load(const std::string& path);
+  static absl::StatusOr<TfliteLoader> Load(absl::string_view path);
+
+  // Loads a TFLite model from buffer.
+  static absl::StatusOr<TfliteLoader> LoadFromBuffer(absl::string_view buffer);
 
   // Gets list of all tensor names.
   std::vector<std::string> GetTensorNames() const;
@@ -89,6 +92,8 @@ class TfliteLoader {
 
  private:
   TfliteLoader() = default;
+
+  absl::Status InitFromModel();
 
   std::shared_ptr<tflite::FlatBufferModel> model_;
   absl::flat_hash_map<std::string, TfliteTensorInfo> tensor_infos_;

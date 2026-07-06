@@ -88,9 +88,18 @@ apply_plugin_main \
     --intel_openvino_configs_map="optimize_fq_after_matmul=true,INFERENCE_PRECISION_HINT=f16"
 ```
 
-The plugin recognizes `optimize_fq_after_matmul` as an internal key and consumes
-it directly; the remaining entries are forwarded to the OpenVINO Core as
-configuration properties.
+The plugin recognizes a few internal keys and consumes them directly; the
+remaining entries are forwarded to the OpenVINO Core as configuration
+properties. Internal keys (all default `false`):
+
+-   `optimize_fq_after_matmul` — eliminate FakeQuantize nodes after MatMul.
+-   `fuse_split_attention_to_sdpa` — fuse the Gemma-style split-cache attention
+    pattern (separate QK against the persistent KV cache and the new step's KV,
+    merged via Concat) into a single `ov::op::v13::ScaledDotProductAttention`.
+-   `sdpa_pad_kv_to_alignment` — only meaningful with
+    `fuse_split_attention_to_sdpa=true`. When the merged KV sequence length is
+    not a multiple of 16, pad K/V (and the mask) up to the next multiple so the
+    block still fuses.
 
 ## Usage Example
 

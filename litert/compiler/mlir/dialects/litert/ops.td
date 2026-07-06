@@ -292,6 +292,12 @@ def LITERT_SubOp : LITERT_ElementwiseBinaryOp<"sub", [
 
 def LITERT_TanhOp : LITERT_ElementwiseUnaryOp<"tanh">;
 
+def LITERT_TileOp : LITERT_Op<"tile", [Pure]>,
+    Arguments<(ins LITERT_Tensor:$operand,
+                   LITERT_I64Tensor:$multiples)>,
+    Results<(outs LITERT_Tensor:$output)> {
+}
+
 def LITERT_TransposeOp : LITERT_Op<"transpose", [
     Pure,
     DeclareOpInterfaceMethods<InferTypeOpInterface>

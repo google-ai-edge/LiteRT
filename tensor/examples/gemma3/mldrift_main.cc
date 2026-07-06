@@ -38,6 +38,7 @@ limitations under the License.
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "third_party/gloop/base/init_google.h"
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
@@ -1223,7 +1224,7 @@ absl::Status Run(absl::string_view weights_path,
 }  // namespace litert::tensor::examples
 
 int main(int argc, char** argv) {
-  absl::ParseCommandLine(argc, argv);
+  InitGoogle(argv[0], &argc, &argv, /*remove_flags=*/true);
 
   std::string weights_path = absl::GetFlag(FLAGS_weights_path);
   std::string tokenizer_path = absl::GetFlag(FLAGS_tokenizer_path);

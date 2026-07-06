@@ -33,7 +33,7 @@
 #include "litert/vendors/c/litert_dispatch.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
-#include "tflite/delegates/utils/simple_opaque_delegate.h"
+#include "litert/runtime/dispatch/dispatch_kernel_interface.h"
 
 class LiteRtExternalLiteRtBufferContextT;
 
@@ -48,8 +48,7 @@ Expected<LiteRtMemBuffer> BuildExecutableBytecodeBuffer(
 
 // A TFL kernel that the interpreter calls to dispatch execution through the
 // Dispatch API.
-class DispatchDelegateKernel
-    : public tflite::SimpleOpaqueDelegateKernelInterface {
+class DispatchDelegateKernel : public DispatchKernelInterface {
  public:
   ~DispatchDelegateKernel() override;
 
@@ -66,9 +65,9 @@ class DispatchDelegateKernel
   TfLiteStatus Eval(TfLiteOpaqueContext* context,
                     TfLiteOpaqueNode* node) override;
 
-  Expected<void> StartMetricsCollection(int detail_level);
+  Expected<void> StartMetricsCollection(int detail_level) override;
 
-  Expected<LiteRtMetricsT> StopMetricsCollection();
+  Expected<LiteRtMetricsT> StopMetricsCollection() override;
 
  private:
   DispatchDelegateKernel(LiteRtEnvironmentOptions environment_options,

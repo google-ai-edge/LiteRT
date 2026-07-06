@@ -26,6 +26,7 @@
 extern "C" {
 #endif  // __cplusplus
 
+// LINT.IfChange(LiteRtEnvOptionTag)
 typedef enum {
   kLiteRtEnvOptionTagCompilerPluginLibraryDir = 0,
   kLiteRtEnvOptionTagDispatchLibraryDir = 1,
@@ -68,6 +69,7 @@ typedef enum {
   // Internal use only. Virtual null tag for option that is not defined.
   kLiteRtEnvOptionTagNull = 255,
 } LiteRtEnvOptionTag;
+// LINT.ThenChange(../kotlin/src/main/kotlin/com/google/ai/edge/litert/Environment.kt)
 
 /// An object that holds option data for the LiteRtEnvironment.
 ///

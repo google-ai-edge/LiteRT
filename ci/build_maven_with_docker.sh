@@ -24,7 +24,10 @@ if [ ! -d /root_dir ]; then
   cd ${SCRIPT_DIR}
   rm -fr ${GEN_DIR}
 
-  docker build . -t tflite-builder -f tflite-android.Dockerfile
+  docker build . -t tflite-builder -f tflite-android.Dockerfile \
+    ${http_proxy:+--build-arg http_proxy="$http_proxy"} \
+    ${https_proxy:+--build-arg https_proxy="$https_proxy"} \
+    ${no_proxy:+--build-arg no_proxy="$no_proxy"}
 
   docker run -v ${SCRIPT_DIR}/../third_party/tensorflow:/third_party_tensorflow \
     -v ${ROOT_DIR}:/root_dir \

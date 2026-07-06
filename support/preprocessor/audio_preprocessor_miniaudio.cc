@@ -311,6 +311,9 @@ absl::Status AudioPreprocessorMiniAudio::ToLogMelSpectrogram(
 
 absl::StatusOr<std::unique_ptr<AudioPreprocessorMiniAudio>>
 AudioPreprocessorMiniAudio::Create(const AudioPreprocessorConfig& config) {
+  if (config.GetFrameLength() <= 0) {
+    return absl::InvalidArgumentError("Frame length must be positive.");
+  }
   auto mel_filterbank = std::make_unique<MelFilterbank>();
   RETURN_IF_ERROR(mel_filterbank->Initialize(
       config.GetFftBins(), config.GetSampleRateHz(), config.GetNumMelBins(),

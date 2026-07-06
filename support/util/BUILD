@@ -28,25 +28,19 @@ cc_library(
     name = "convert_tensor_buffer",
     hdrs = ["convert_tensor_buffer.h"],
     deps = [
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc:litert_tensor_buffer_types",
         "//tflite/types:half",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
-    ] + select({
-        "//litert:litert_link_capi_so": [
-            "//litert/cc:litert_api_with_dynamic_runtime",
-        ],
-        "//conditions:default": [
-            "//litert/cc:litert_common",
-            "//litert/cc:litert_element_type",
-            "//litert/cc:litert_environment",
-            "//litert/cc:litert_expected",
-            "//litert/cc:litert_layout",
-            "//litert/cc:litert_macros",
-            "//litert/cc:litert_ranked_tensor_type",
-            "//litert/cc:litert_tensor_buffer",
-            "//litert/cc:litert_tensor_buffer_types",
-        ],
-    }),
+    ],
 )
 
 cc_test(

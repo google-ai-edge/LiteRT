@@ -439,6 +439,18 @@ class QualcommOptions {
     return val;
   }
 
+  void SetSchematicDir(const std::string& schematic_dir) {
+    LrtQualcommOptionsSetSchematicDir(options_, schematic_dir.c_str());
+  }
+  StringView GetSchematicDir() {
+    const char* val;
+    auto status = LrtQualcommOptionsGetSchematicDir(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return "";
+    }
+    return val;
+  }
+
   enum class GraphIOTensorMemType : int {
     kRaw = kLiteRtQualcommGraphIOTensorMemTypeRaw,
     kMemHandle = kLiteRtQualcommGraphIOTensorMemTypeMemHandle,

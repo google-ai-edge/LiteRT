@@ -21,26 +21,21 @@ final class IntegrationTests: XCTestCase {
     let env = try Environment()
     XCTAssertNotNil(env)
 
-    // 2. Load simple_model.tflite
+    // 2. Create CompiledModel with simple_model.tflite, environment, and options
     let modelPath = "litert/test/testdata/simple_model.tflite"
-    let model = try Model(filePath: modelPath)
-    XCTAssertNotNil(model)
-
-    // 3. Compile Model options
     let options = try Options()
     try options.setHardwareAccelerators([.cpu])
 
-    // 4. Create Compiled Model
-    let compiledModel = try CompiledModel(environment: env, model: model, options: options)
+    let compiledModel = try CompiledModel(filePath: modelPath, environment: env, options: options)
     XCTAssertNotNil(compiledModel)
 
-    // 5. Check input and output count
+    // 3. Check input and output count
     let inputCount = try compiledModel.inputCount()
     let outputCount = try compiledModel.outputCount()
     XCTAssertEqual(inputCount, 2)
     XCTAssertEqual(outputCount, 1)
 
-    // 5b. Verify input and output names
+    // 4. Verify input and output names
     let name0 = try compiledModel.inputName(inputIndex: 0)
     let name1 = try compiledModel.inputName(inputIndex: 1)
     let outName = try compiledModel.outputName(outputIndex: 0)
@@ -48,7 +43,7 @@ final class IntegrationTests: XCTestCase {
     XCTAssertFalse(name1.isEmpty)
     XCTAssertFalse(outName.isEmpty)
 
-    // 6. Check tensor types
+    // 5. Check tensor types
     let inputType0 = try compiledModel.getInputTensorType(inputIndex: 0)
     let inputType1 = try compiledModel.getInputTensorType(inputIndex: 1)
     let outputType = try compiledModel.getOutputTensorType(outputIndex: 0)
@@ -61,29 +56,29 @@ final class IntegrationTests: XCTestCase {
     XCTAssertEqual(inputType1.layout.dimensions, [2])
     XCTAssertEqual(outputType.layout.dimensions, [2])
 
-    // 7. Create input and output buffers
+    // 6. Create input and output buffers
     let inputBuffers = try compiledModel.createInputBuffers()
     let outputBuffers = try compiledModel.createOutputBuffers()
 
     XCTAssertEqual(inputBuffers.count, 2)
     XCTAssertEqual(outputBuffers.count, 1)
 
-    // 8. Write input data
+    // 7. Write input data
     let input0Data: [Float] = [1.0, 2.0]
     let input1Data: [Float] = [10.0, 20.0]
     try inputBuffers[0].write(input0Data)
     try inputBuffers[1].write(input1Data)
 
-    // 9. Run inference
+    // 8. Run inference
     try compiledModel.run(inputs: inputBuffers, outputs: outputBuffers)
 
-    // 10. Read and verify outputs
+    // 9. Read and verify outputs
     let outputData: [Float] = try outputBuffers[0].read()
     XCTAssertEqual(outputData.count, 2)
     XCTAssertEqual(outputData[0], 11.0, accuracy: 0.0001)
     XCTAssertEqual(outputData[1], 22.0, accuracy: 0.0001)
 
-    // 11. Hard-preserve ARC lifetimes of all C-bound wrapper instances until the test finishes.
-    print("Test complete. Preserved instances: \(env), \(model), \(options), \(compiledModel), \(inputBuffers), \(outputBuffers)")
+    // 10. Hard-preserve ARC lifetimes of all C-bound wrapper instances until the test finishes.
+    print("Test complete. Preserved instances: \(env), \(compiledModel), \(options), \(inputBuffers), \(outputBuffers)")
   }
 }

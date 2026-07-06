@@ -361,6 +361,11 @@ typedef struct LiteRtCompilerContext {
   LiteRtStatus (*get_custom_options)(LiteRtOp op,
                                      const uint8_t** custom_options,
                                      int32_t* custom_options_size);
+
+  LiteRtStatus (*serialize_model_with_signatures)(
+      LiteRtModel model, uint8_t** buf, size_t* size, size_t* offset,
+      bool share_weights, char** signature_keys, size_t num_signatures,
+      LiteRtModelSerializationOptions options);
 } LiteRtCompilerContext;
 
 // ABI compatibility check for LiteRtCompilerContext.
@@ -369,7 +374,7 @@ typedef struct LiteRtCompilerContext {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtCompilerContext) == 1032,
+static_assert(sizeof(LiteRtCompilerContext) == 1040,
               "LiteRtCompilerContext size mismatch");
 static_assert(offsetof(LiteRtCompilerContext, get_num_model_subgraphs) == 0,
               "LiteRtCompilerContext get_num_model_subgraphs offset mismatch");
@@ -873,6 +878,9 @@ static_assert(offsetof(LiteRtCompilerContext, get_squeeze_dims_option) == 1016,
               "LiteRtCompilerContext get_squeeze_dims_option offset mismatch");
 static_assert(offsetof(LiteRtCompilerContext, get_custom_options) == 1024,
               "LiteRtCompilerContext get_custom_options offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, serialize_model_with_signatures) == 1032,
+    "LiteRtCompilerContext serialize_model_with_signatures offset mismatch");
 #endif  // __cplusplus
 
 LiteRtCompilerContext* LrtGetCompilerContext();

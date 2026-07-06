@@ -15,7 +15,7 @@
 #include "litert/core/util/tensor_type_util.h"
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
 
 namespace litert {

@@ -746,6 +746,14 @@ TEST(AudioPreprocessorMiniAudioTest,
   }
 }
 
+TEST(AudioPreprocessorMiniAudioTest, InvalidFrameLength) {
+  AudioPreprocessorConfig config =
+      AudioPreprocessorConfig::CreateDefaultUsmConfig();
+  config.SetFrameLength(0);
+  EXPECT_THAT(AudioPreprocessorMiniAudio::Create(config),
+              testing::status::StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
 #endif  // !defined(WIN32) && !defined(_WIN32) && !defined(__WIN32__) &&
         // !defined(__NT__) && !defined(_WIN64)
 

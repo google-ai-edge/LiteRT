@@ -5,6 +5,7 @@ tf_staging/tflite/acceleration/configuration/c/stable_delegate.h:
 tf_staging/tflite/acceleration/configuration/c/xnnpack_plugin.h:
 tf_staging/tflite/acceleration/configuration/configuration_generated.h:
 tf_staging/tflite/acceleration/configuration/delegate_registry.h:
+tf_staging/tflite/api_visibility.bzl:
 tf_staging/tflite/async/c/BUILD:
 tf_staging/tflite/async/c/async_kernel.h:
 tf_staging/tflite/async/c/async_signature_runner.h:

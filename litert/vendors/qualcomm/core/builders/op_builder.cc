@@ -155,6 +155,7 @@ OpWrapper& CreateOpWrapper(std::vector<OpWrapper>& ops, const char* op_type) {
           {QNN_OP_GRID_SAMPLE, QnnOpCode::kGridSample},
           {QNN_OP_GROUP_NORM, QnnOpCode::kGroupNorm},
           {QNN_OP_GRU, QnnOpCode::kGru},
+          {QNN_OP_HADAMARD_TRANSFORM, QnnOpCode::kHadamardTransform},
           {QNN_OP_HARD_SWISH, QnnOpCode::kHardSwish},
           {QNN_OP_HEAT_MAP_MAX_KEY_POINT, QnnOpCode::kHeatMapMaxKeyPoint},
           {QNN_OP_IM2_COL, QnnOpCode::kIm2Col},

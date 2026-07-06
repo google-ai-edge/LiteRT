@@ -15,6 +15,7 @@
 """Python wrapper for LiteRT tensor buffer."""
 
 import os
+import ml_dtypes
 import numpy as np
 
 # pylint: disable=g-import-not-at-top
@@ -42,6 +43,12 @@ class TensorBuffer:
   """
 
   _DTYPE_STRINGS = {
+      ml_dtypes.bfloat16: "bfloat16",
+      np.dtype(ml_dtypes.bfloat16): "bfloat16",
+      ml_dtypes.float8_e4m3fn: "float8_e4m3fn",
+      np.dtype(ml_dtypes.float8_e4m3fn): "float8_e4m3fn",
+      ml_dtypes.float8_e5m2: "float8_e5m2",
+      np.dtype(ml_dtypes.float8_e5m2): "float8_e5m2",
       np.float32: "float32",
       np.dtype(np.float32): "float32",
       np.float16: "float16",

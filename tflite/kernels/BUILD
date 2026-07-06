@@ -200,6 +200,7 @@ cc_library(
         "//tflite/tools/delegates:hexagon_delegate_provider",
         "//tflite/tools/delegates:nnapi_delegate_provider",
         "//tflite/tools/delegates:xnnpack_delegate_provider",
+        "//tflite/tools/delegates:ynnpack_delegate_provider",
         "//tflite/tools/delegates/experimental/stable_delegate:delegate_provider",
     ] + select({
         # Metal GPU delegate for iOS has its own setups for kernel tests, so
@@ -1348,6 +1349,7 @@ cc_test(
         "@com_google_absl//absl/random",
         "@com_google_absl//absl/random:bit_gen_ref",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
@@ -3231,13 +3233,14 @@ cc_test(
     srcs = ["stablehlo_add_test.cc"],
     deps = [
         ":subgraph_test_util",
+        ":test_main",
         ":test_util",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/core:subgraph",
         "//tflite/core/c:common",
         "//tflite/schema:schema_fbs",
-        "@com_google_googletest//:gtest_main",
+        "@com_google_googletest//:gtest",
     ],
 )
 
@@ -3247,13 +3250,14 @@ cc_test(
     srcs = ["stablehlo_multiply_test.cc"],
     deps = [
         ":subgraph_test_util",
+        ":test_main",
         ":test_util",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/core:subgraph",
         "//tflite/core/c:common",
         "//tflite/schema:schema_fbs",
-        "@com_google_googletest//:gtest_main",
+        "@com_google_googletest//:gtest",
     ],
 )
 
@@ -3277,6 +3281,7 @@ cc_test(
     size = "small",
     srcs = ["stablehlo_min_max_test.cc"],
     deps = [
+        ":test_main",
         ":test_util",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
@@ -3284,7 +3289,7 @@ cc_test(
         "//tflite/core/c:common",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/log:absl_log",
-        "@com_google_googletest//:gtest_main",
+        "@com_google_googletest//:gtest",
     ],
 )
 
@@ -3492,6 +3497,18 @@ tflite_combine_cc_tests(
     args = ["--use_xnnpack=true"],
     deps_conditions = [":test_main"],
     shard_count = 50,
+)
+
+# Test the YNNPACK delegate
+tflite_combine_cc_tests(
+    name = "combined_all_kernel_with_ynnpack_tests",
+    args = ["--use_ynnpack=true"],
+    deps_conditions = [":test_main"],
+    shard_count = 50,
+    tags = ["nochromiumos_arm"],  # b/436979680
+    deps = [
+        "//tflite/delegates/ynnpack:ynnpack_delegate",
+    ],
 )
 
 tflite_self_contained_libs_test_suite(name = "self_contained_libs_tests")

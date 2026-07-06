@@ -30,6 +30,8 @@ cc_test(
         "//litert/vendors/qualcomm/core/builders:cast_op_builder",
         "//litert/vendors/qualcomm/core/builders:concatenation_op_builder",
         "//litert/vendors/qualcomm/core/builders:elementwise_op_builder",
+        "//litert/vendors/qualcomm/core/builders:fully_connected_op_builder",
+        "//litert/vendors/qualcomm/core/builders:hadamard_transform_op_builder",
         "//litert/vendors/qualcomm/core/builders:matmul_op_builder",
         "//litert/vendors/qualcomm/core/builders:op_builder",
         "//litert/vendors/qualcomm/core/builders:quantize_op_builder",
@@ -41,6 +43,7 @@ cc_test(
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@com_google_absl//absl/numeric:bits",
         "@qairt//:qnn_lib_headers",
     ] + select({
         "@org_tensorflow//tensorflow:linux_x86_64": [
@@ -62,6 +65,7 @@ cc_library(
         ":mask",
         ":matmul_convert",
         ":mha_to_sha",
+        ":rotation_quant",
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
@@ -232,4 +236,23 @@ cc_test(
         ],
         "//conditions:default": [],
     }) + gtest_main_no_heapcheck_deps(),
+)
+
+cc_library(
+    name = "rotation_quant",
+    srcs = ["rotation_quant.cc"],
+    hdrs = ["rotation_quant.h"],
+    tags = [
+        # Don't build/test in OS until qnn is available.
+        "nobuilder",
+    ],
+    deps = [
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/builders:concatenation_op_builder",
+        "//litert/vendors/qualcomm/core/builders:hadamard_transform_op_builder",
+        "//litert/vendors/qualcomm/core/builders:split_op_builder",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "@com_google_absl//absl/strings",
+    ],
 )

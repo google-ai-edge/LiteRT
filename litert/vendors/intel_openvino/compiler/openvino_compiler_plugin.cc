@@ -20,6 +20,7 @@
 #include <ostream>
 #include <streambuf>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -34,9 +35,11 @@
 #include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_op_options.h"
 #include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/internal/litert_opaque_options_wrapper.h"
 #include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
@@ -90,6 +93,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflOneHot,
     kLiteRtOpCodeTflUnpack,
     kLiteRtOpCodeTflReduceAll,
+    kLiteRtOpCodeShloComposite,
     // These ops donot call get_attribute
     kLiteRtOpCodeTflDequantize,
     kLiteRtOpCodeTflLogistic,
@@ -135,6 +139,9 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflFloorMod,
     kLiteRtOpCodeTflSign,
     kLiteRtOpCodeTflTile,
+    // TOPK_V2 only calls get_attribute for index_type/sorted, both defaulted.
+    // Support is gated on a constant K (see IsOpSupported).
+    kLiteRtOpCodeTflTopkV2,
 };
 // clang format on
 
@@ -405,10 +412,39 @@ void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin) {
 }
 
 bool IsOpSupported(const litert::compiler::Op& op) {
+  // TOPK_V2 is only NPU-safe when K (input 1) is a compile-time constant.
+  // A runtime K leaves the sorted-axis dimension dynamic (OpenVINO TopK shape
+  // inference yields [0, dim]), which NPU compilation rejects.  Fall back to
+  // CPU in that case by reporting the op as unsupported.
+  if (op.Code() == kLiteRtOpCodeTflTopkV2) {
+    const auto inputs = op.Inputs();
+    if (inputs.size() < 2 || !inputs[1].HasWeights()) {
+      LITERT_LOG(LITERT_INFO,
+                 "TOPK_V2 with non-constant K is not supported on NPU; "
+                 "leaving op on CPU.");
+      return false;
+    }
+    return true;
+  }
   for (const auto& supportedOp : kSupportedOps) {
     if (op.Code() == supportedOp) return true;
   }
   return false;
+}
+
+bool IsCompositeOpSupported(const litert::compiler::Op& op) {
+  if (op.Code() != kLiteRtOpCodeShloComposite) {
+    return true;
+  }
+
+  const char* composite_op_name = nullptr;
+  if (LiteRtGetSHLOCompositeOpName(op.Get(), &composite_op_name) !=
+      kLiteRtStatusOk) {
+    return false;
+  }
+
+  return std::string_view(composite_op_name) ==
+         litert::CompositeOptions::kRmsNorm;
 }
 
 #ifdef __cplusplus
@@ -438,7 +474,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
   // TODO(rjasuja): Enhance implementation for Partition() call
   for (const auto& op : graph.Ops()) {
-    if (!IsOpSupported(op)) {
+    if (!IsOpSupported(op) || !IsCompositeOpSupported(op)) {
       LITERT_LOG(LITERT_INFO, "op type %d is not supported", op.Code());
       continue;
     }

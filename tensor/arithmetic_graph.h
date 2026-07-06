@@ -584,6 +584,20 @@ struct CustomOperation : CustomOperationData, Operation {
   LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
+struct StableHLOCompositeOperationData {
+  std::string name;
+  std::vector<uint8_t> composite_attributes;
+  int32_t version = 1;
+  std::vector<Tensor> decomposition_outputs;
+  int32_t decomposition_subgraph_index = -1;
+};
+
+struct StableHLOCompositeOperation : StableHLOCompositeOperationData,
+                                     Operation {
+  absl::string_view GetName() const override { return "StableHLOComposite"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
+};
+
 struct TopKOperation : Operation {
   absl::string_view GetName() const override { return "TopK"; }
   LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION

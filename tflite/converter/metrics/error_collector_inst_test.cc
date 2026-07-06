@@ -21,6 +21,7 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "llvm/Support/SMLoc.h"
 #include "llvm/Support/SourceMgr.h"

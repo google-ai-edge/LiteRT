@@ -30,13 +30,21 @@ limitations under the License.
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
+#ifndef GEMMA3_XNNPACK_ONLY
 #include "tensor/backends/ml_drift/arithmetic_ml_drift.h"  // IWYU pragma: keep
+#endif
+#ifndef GEMMA3_ML_DRIFT_ONLY
 #include "tensor/backends/xnnpack/arithmetic.h"  // IWYU pragma: keep
+#endif
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/ops/transformer/transformer_ops.h"
+#ifndef GEMMA3_XNNPACK_ONLY
 #include "tensor/examples/ops/transformer/transformer_ops_ml_drift.h"  // IWYU pragma: keep
+#endif
+#ifndef GEMMA3_ML_DRIFT_ONLY
 #include "tensor/examples/ops/transformer/transformer_ops_xnnpack.h"  // IWYU pragma: keep
+#endif
 #include "tensor/internal/graph.h"
 #include "tensor/tensor.h"
 
@@ -394,20 +402,43 @@ SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
   const auto& q_shape = q.GetShape();
   bool is_decode = (q_shape.size() == 4 && q_shape[2] == 1);
 
+  Tensor<Mixins...> k_local_out;
+  Tensor<Mixins...> v_local_out;
+
   if (used_mld_cache_update && is_decode) {
     Tensor<Mixins...> tiled_k = updated_key_cache;
     Tensor<Mixins...> tiled_v = updated_value_cache;
-    scores = MatMulWithCache(q, tiled_k, *cache_params, /*is_v=*/false,
-                             /*is_local=*/is_sliding_attention,
-                             /*sliding_window_size=*/config.sliding_window);
+
+    const auto& key_cache_shape = key_cache.GetShape();
+    int cache_size = key_cache_shape[2];
+    int local_cache_size =
+        is_sliding_attention ? config.sliding_window : cache_size;
+
+    auto local_caches = ExtractLocalCache(
+        tiled_k, tiled_v, *cache_params, local_cache_size, kv_heads_for_attn,
+        config.head_dim, local_cache_size, cache_size);
+
+    k_local_out = local_caches.first;
+    v_local_out = local_caches.second;
+
+    Tensor<Mixins...> tiled_k_local = local_caches.first;
+    Tensor<Mixins...> tiled_v_local = local_caches.second;
+    if (kv_heads_for_attn > 0 && config.n_heads % kv_heads_for_attn == 0) {
+      int num_groups = config.n_heads / kv_heads_for_attn;
+      if (num_groups > 1) {
+        tiled_k_local = Tile(tiled_k_local, {1, num_groups, 1, 1});
+        tiled_v_local = Tile(tiled_v_local, {1, num_groups, 1, 1});
+      }
+    }
+
+    scores = BatchMatMul(q, tiled_k_local, /*adj_x=*/false,
+                         /*adj_y=*/true);
     scores = Mul(scores, scale_tensor);
     scores = Add(scores, attention_mask);
     attn_weights = SoftmaxWithRuntimeCheck(scores, *cache_params, std::nullopt,
                                            std::nullopt);
-    attn_output =
-        MatMulWithCache(attn_weights, tiled_v, *cache_params, /*is_v=*/true,
-                        /*is_local=*/is_sliding_attention,
-                        /*sliding_window_size=*/config.sliding_window);
+    attn_output = BatchMatMul(attn_weights, tiled_v_local,
+                              /*adj_x=*/false, /*adj_y=*/true);
   } else {
     if (kv_heads_for_attn > 0 && config.n_heads % kv_heads_for_attn == 0) {
       int num_groups = config.n_heads / kv_heads_for_attn;
@@ -416,6 +447,9 @@ SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
         v_for_attn = Tile(v_for_attn, {1, num_groups, 1, 1});
       }
     }
+
+    k_local_out = k_for_attn;
+    v_local_out = v_for_attn;
 
     scores = BatchMatMul(q, k_for_attn, /*adj_x=*/false, /*adj_y=*/true);
     scores = Mul(scores, scale_tensor);
@@ -436,20 +470,9 @@ SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
   Tensor output = FullyConnected(attn_output, o_proj);
   output.SetName(absl::StrCat(name, ".output"));
 
-  return {output,
-          updated_key_cache,
-          updated_value_cache,
-          q,
-          k,
-          v_for_attn,
-          attn_weights,
-          attn_output,
-          q_raw,
-          k_raw,
-          v_raw,
-          k,
-          v,
-          scores};
+  return {output,     updated_key_cache, updated_value_cache, q,     k,
+          v_for_attn, attn_weights,      attn_output,         q_raw, k_raw,
+          v_raw,      k_local_out,       v_local_out,         scores};
 }
 
 }  // namespace
@@ -688,20 +711,24 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings(
 }
 
 // Explicit template instantiation for XnnpackMixinTag.
+#ifndef GEMMA3_ML_DRIFT_ONLY
 template Gemma3_Outputs<XnnpackMixinTag> BuildGemma3_FromEmbeddings(
     const Gemma3Config& config, Tensor<XnnpackMixinTag> embedded_input,
     Tensor<XnnpackMixinTag> position_ids, Tensor<XnnpackMixinTag> slice_index,
     const std::vector<Tensor<XnnpackMixinTag>>& key_caches,
     const std::vector<Tensor<XnnpackMixinTag>>& value_caches,
     const absl::flat_hash_map<std::string, Tensor<XnnpackMixinTag>>& weights);
+#endif
 
 // Explicit template instantiation for MlDriftMixinTag.
+#ifndef GEMMA3_XNNPACK_ONLY
 template Gemma3_Outputs<MlDriftMixinTag> BuildGemma3_FromEmbeddings(
     const Gemma3Config& config, Tensor<MlDriftMixinTag> embedded_input,
     Tensor<MlDriftMixinTag> position_ids, Tensor<MlDriftMixinTag> slice_index,
     const std::vector<Tensor<MlDriftMixinTag>>& key_caches,
     const std::vector<Tensor<MlDriftMixinTag>>& value_caches,
     const absl::flat_hash_map<std::string, Tensor<MlDriftMixinTag>>& weights);
+#endif
 
 template <class... Mixins>
 Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings_Decode(
@@ -763,11 +790,13 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings_Decode(
   }
   if (cache_params != nullptr && key_len > 0) {
     mldrift_sliding_mask =
-        FillAttentionMask(*cache_params, {1, 1, seq_len, key_len},
-                          /*is_local=*/true, config.sliding_window);
+        FillAttentionMask(*cache_params, {1, 1, seq_len, config.sliding_window},
+                          /*is_local=*/true, config.sliding_window,
+                          /*is_decode=*/true);
     mldrift_global_mask =
         FillAttentionMask(*cache_params, {1, 1, seq_len, key_len},
-                          /*is_local=*/false, config.sliding_window);
+                          /*is_local=*/false, config.sliding_window,
+                          /*is_decode=*/true);
     sliding_mask = &mldrift_sliding_mask;
     global_mask = &mldrift_global_mask;
   }
@@ -912,6 +941,7 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings_Decode(
   }
 }
 
+#ifndef GEMMA3_ML_DRIFT_ONLY
 template Gemma3_Outputs<XnnpackMixinTag> BuildGemma3_FromEmbeddings_Decode(
     const Gemma3Config& config, Tensor<XnnpackMixinTag> embedded_input,
     const Tensor<XnnpackMixinTag>& rope_global_cos,
@@ -924,7 +954,9 @@ template Gemma3_Outputs<XnnpackMixinTag> BuildGemma3_FromEmbeddings_Decode(
     const absl::flat_hash_map<std::string, Tensor<XnnpackMixinTag>>& weights,
     const Tensor<XnnpackMixinTag>* global_attention_mask,
     const Tensor<XnnpackMixinTag>* cache_params);
+#endif
 
+#ifndef GEMMA3_XNNPACK_ONLY
 template Gemma3_Outputs<MlDriftMixinTag> BuildGemma3_FromEmbeddings_Decode(
     const Gemma3Config& config, Tensor<MlDriftMixinTag> embedded_input,
     const Tensor<MlDriftMixinTag>& rope_global_cos,
@@ -937,7 +969,9 @@ template Gemma3_Outputs<MlDriftMixinTag> BuildGemma3_FromEmbeddings_Decode(
     const absl::flat_hash_map<std::string, Tensor<MlDriftMixinTag>>& weights,
     const Tensor<MlDriftMixinTag>* global_attention_mask,
     const Tensor<MlDriftMixinTag>* cache_params);
+#endif
 
+#ifndef GEMMA3_ML_DRIFT_ONLY
 template <>
 Gemma3_Xnnpack_Outputs Gemma3_Xnnpack_Model::operator()(
     Gemma3_Xnnpack_Inputs& inputs) {
@@ -947,7 +981,9 @@ Gemma3_Xnnpack_Outputs Gemma3_Xnnpack_Model::operator()(
   return {model_outputs.output, model_outputs.key_caches,
           model_outputs.value_caches};
 }
+#endif
 
+#ifndef GEMMA3_XNNPACK_ONLY
 template <>
 Gemma3_MlDrift_Outputs Gemma3_MlDrift_Model::operator()(
     Gemma3_MlDrift_Inputs& inputs) {
@@ -971,7 +1007,9 @@ Gemma3_MlDrift_Outputs Gemma3_MlDrift_Model::operator()(
           model_outputs.value_caches, embedded_input,
           model_outputs.intermediate_tensors};
 }
+#endif
 
+#ifndef GEMMA3_ML_DRIFT_ONLY
 template <>
 Gemma3_Xnnpack_Decode_Outputs Gemma3_Xnnpack_Decode_Model::operator()(
     Gemma3_Xnnpack_Decode_Inputs& inputs) {
@@ -983,7 +1021,9 @@ Gemma3_Xnnpack_Decode_Outputs Gemma3_Xnnpack_Decode_Model::operator()(
   return {model_outputs.output, model_outputs.key_caches,
           model_outputs.value_caches};
 }
+#endif
 
+#ifndef GEMMA3_XNNPACK_ONLY
 template <>
 Gemma3_MlDrift_Decode_Outputs Gemma3_MlDrift_Decode_Model::operator()(
     Gemma3_MlDrift_Decode_Inputs& inputs) {
@@ -1009,5 +1049,6 @@ Gemma3_MlDrift_Decode_Outputs Gemma3_MlDrift_Decode_Model::operator()(
   return {model_outputs.output, model_outputs.key_caches,
           model_outputs.value_caches, model_outputs.intermediate_tensors};
 }
+#endif
 
 }  // namespace litert::tensor::examples

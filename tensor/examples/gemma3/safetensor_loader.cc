@@ -34,9 +34,6 @@ limitations under the License.
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-// copybara:uncomment_begin(google_only)
-// #include "tensor/backends/xnnpack/arithmetic.h"
-// copybara:uncomment_end
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/gemma3/safetensors.h"

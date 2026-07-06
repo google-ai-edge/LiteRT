@@ -23,6 +23,7 @@ namespace litert::samsung {
 
 constexpr SocModel kSocModels[] = {
     {"E9965", 9965},
+    {"E9955", 9955},
 };
 
 constexpr LiteRtParamIndex kNumOfSocModels =

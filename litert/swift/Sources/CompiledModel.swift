@@ -17,54 +17,150 @@ import CLiteRT
 
 /// A compiled LiteRT model ready for execution.
 public final class CompiledModel {
+  internal let cModel: LiteRtModel
   internal let cCompiledModel: LiteRtCompiledModel
   public let environment: Environment
-  public let model: Model
   public let options: Options?
+  private let data: Data?
 
-  /// Creates a compiled model from an environment and a model, with optional configuration options.
-  ///
-  /// - Parameters:
-  ///   - environment: The runtime environment to use for execution.
-  ///   - model: The model to compile.
-  ///   - options: Optional configuration options for the compiled model.
-  /// - Throws: `LiteRtError` if the compilation fails.
-  public init(environment: Environment, model: Model, options: Options? = nil) throws {
+  private static func makeDefaultOptions() throws -> Options {
+    let options = try Options()
+    try options.setHardwareAccelerators([.cpu])
+    return options
+  }
+
+  private static func compile(
+    model: LiteRtModel,
+    environment: Environment,
+    options: Options
+  ) throws -> LiteRtCompiledModel {
     var compiledModel: LiteRtCompiledModel?
-    let status: LiteRtStatus
-
-    if let options {
-      status = withExtendedLifetime((environment, model, options)) {
-        LiteRtCreateCompiledModel(
-          environment.cEnvironment,
-          model.cModel,
-          options.cOptions,
-          &compiledModel
-        )
-      }
-    } else {
-      status = withExtendedLifetime((environment, model)) {
-        LiteRtCreateCompiledModel(
-          environment.cEnvironment,
-          model.cModel,
-          nil,
-          &compiledModel
-        )
-      }
+    let status = withExtendedLifetime((environment, options)) {
+      LiteRtCreateCompiledModel(
+        environment.cEnvironment,
+        model,
+        options.cOptions,
+        &compiledModel
+      )
     }
-
     try checkStatus(status)
     guard let compiledModel else {
       throw LiteRtError.runtimeFailure
     }
-    self.cCompiledModel = compiledModel
+    return compiledModel
+  }
+
+  public init(filePath: String, environment: Environment, options: Options? = nil) throws {
+    let resolvedOptions = try options ?? Self.makeDefaultOptions()
+    var model: LiteRtModel?
+    let status = LiteRtCreateModelFromFile(environment.cEnvironment, filePath, &model)
+    try checkStatus(status)
+    guard let model else {
+      throw LiteRtError.runtimeFailure
+    }
+    self.cModel = model
+    self.data = nil
     self.environment = environment
-    self.model = model
-    self.options = options
+    self.options = resolvedOptions
+    do {
+      self.cCompiledModel = try Self.compile(model: model, environment: environment, options: resolvedOptions)
+    } catch {
+      LiteRtDestroyModel(model)
+      throw error
+    }
+  }
+
+  public init(data: Data, environment: Environment, options: Options? = nil) throws {
+    let resolvedOptions = try options ?? Self.makeDefaultOptions()
+    var model: LiteRtModel?
+    let status = data.withUnsafeBytes { rawBuffer -> LiteRtStatus in
+      guard let baseAddr = rawBuffer.baseAddress else {
+        return kLiteRtStatusErrorInvalidArgument
+      }
+      return LiteRtCreateModelFromBuffer(environment.cEnvironment, baseAddr, rawBuffer.count, &model)
+    }
+    try checkStatus(status)
+    guard let model else {
+      throw LiteRtError.runtimeFailure
+    }
+    self.cModel = model
+    self.data = data
+    self.environment = environment
+    self.options = resolvedOptions
+    do {
+      self.cCompiledModel = try Self.compile(model: model, environment: environment, options: resolvedOptions)
+    } catch {
+      LiteRtDestroyModel(model)
+      throw error
+    }
+  }
+
+  public init(fd: Int32, offset: Int, size: Int, environment: Environment, options: Options? = nil) throws {
+    let resolvedOptions = try options ?? Self.makeDefaultOptions()
+    var model: LiteRtModel?
+    let status = LiteRtCreateModelFromFd(environment.cEnvironment, fd, size_t(offset), size_t(size), &model)
+    try checkStatus(status)
+    guard let model else {
+      throw LiteRtError.runtimeFailure
+    }
+    self.cModel = model
+    self.data = nil
+    self.environment = environment
+    self.options = resolvedOptions
+    do {
+      self.cCompiledModel = try Self.compile(model: model, environment: environment, options: resolvedOptions)
+    } catch {
+      LiteRtDestroyModel(model)
+      throw error
+    }
+  }
+
+  public func metadata(key: String) throws -> Data {
+    var metadataBuffer: UnsafeRawPointer?
+    var metadataBufferSize: size_t = 0
+    let status = key.withCString { cKey in
+      LiteRtGetModelMetadata(cModel, cKey, &metadataBuffer, &metadataBufferSize)
+    }
+    try checkStatus(status)
+    guard let metadataBuffer else {
+      throw LiteRtError.notFound
+    }
+    return Data(bytes: metadataBuffer, count: Int(metadataBufferSize))
+  }
+
+  public func addMetadata(key: String, data: Data) throws {
+    let status = key.withCString { cKey in
+      data.withUnsafeBytes { rawBuffer in
+        LiteRtAddModelMetadata(cModel, cKey, rawBuffer.baseAddress, rawBuffer.count)
+      }
+    }
+    try checkStatus(status)
+  }
+
+  public func signatureKeys() throws -> [String] {
+    var numSignatures: LiteRtParamIndex = 0
+    var status = LiteRtGetNumModelSignatures(cModel, &numSignatures)
+    try checkStatus(status)
+    var keys: [String] = []
+    for i in 0..<numSignatures {
+      var signature: LiteRtSignature?
+      status = LiteRtGetModelSignature(cModel, i, &signature)
+      try checkStatus(status)
+      if let signature {
+        var cKey: UnsafePointer<CChar>?
+        status = LiteRtGetSignatureKey(signature, &cKey)
+        try checkStatus(status)
+        if let cKey {
+          keys.append(String(cString: cKey))
+        }
+      }
+    }
+    return keys
   }
 
   deinit {
     LiteRtDestroyCompiledModel(cCompiledModel)
+    LiteRtDestroyModel(cModel)
   }
 
   /// Runs model inference with specified inputs and outputs and optional per-invocation options.
@@ -262,7 +358,7 @@ public final class CompiledModel {
   /// - Throws: `LiteRtError` if the query fails.
   public func inputCount(signatureIndex: Int = 0) throws -> Int {
     var signature: LiteRtSignature?
-    var status = LiteRtGetModelSignature(model.cModel, size_t(signatureIndex), &signature)
+    var status = LiteRtGetModelSignature(cModel, size_t(signatureIndex), &signature)
     try checkStatus(status)
     guard let signature else { throw LiteRtError.runtimeFailure }
 
@@ -279,7 +375,7 @@ public final class CompiledModel {
   /// - Throws: `LiteRtError` if the query fails.
   public func outputCount(signatureIndex: Int = 0) throws -> Int {
     var signature: LiteRtSignature?
-    var status = LiteRtGetModelSignature(model.cModel, size_t(signatureIndex), &signature)
+    var status = LiteRtGetModelSignature(cModel, size_t(signatureIndex), &signature)
     try checkStatus(status)
     guard let signature else { throw LiteRtError.runtimeFailure }
 
@@ -301,7 +397,7 @@ public final class CompiledModel {
     signatureIndex: Int = 0
   ) throws -> String {
     var signature: LiteRtSignature?
-    var status = LiteRtGetModelSignature(model.cModel, size_t(signatureIndex), &signature)
+    var status = LiteRtGetModelSignature(cModel, size_t(signatureIndex), &signature)
     try checkStatus(status)
     guard let signature else { throw LiteRtError.runtimeFailure }
 
@@ -324,7 +420,7 @@ public final class CompiledModel {
     signatureIndex: Int = 0
   ) throws -> String {
     var signature: LiteRtSignature?
-    var status = LiteRtGetModelSignature(model.cModel, size_t(signatureIndex), &signature)
+    var status = LiteRtGetModelSignature(cModel, size_t(signatureIndex), &signature)
     try checkStatus(status)
     guard let signature else { throw LiteRtError.runtimeFailure }
 
@@ -393,7 +489,7 @@ public final class CompiledModel {
     signatureIndex: Int = 0
   ) throws -> TensorType {
     var signature: LiteRtSignature?
-    var status = LiteRtGetModelSignature(model.cModel, size_t(signatureIndex), &signature)
+    var status = LiteRtGetModelSignature(cModel, size_t(signatureIndex), &signature)
     try checkStatus(status)
     guard let signature else { throw LiteRtError.runtimeFailure }
 
@@ -421,7 +517,7 @@ public final class CompiledModel {
     signatureIndex: Int = 0
   ) throws -> TensorType {
     var signature: LiteRtSignature?
-    var status = LiteRtGetModelSignature(model.cModel, size_t(signatureIndex), &signature)
+    var status = LiteRtGetModelSignature(cModel, size_t(signatureIndex), &signature)
     try checkStatus(status)
     guard let signature else { throw LiteRtError.runtimeFailure }
 

@@ -14,6 +14,7 @@
 
 #include "litert/c/options/litert_gpu_options.h"
 
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <optional>
@@ -164,6 +165,10 @@ struct LrtGpuOptions {
   // If > 0, specifies the kernel (op) batch size, for a flush.
   // Only for OpenCL backend.
   std::optional<int> kernel_batch_size;
+
+  // Added in version 2.1.7.
+  // Pointer to SharedTensorMaps to share pre-loaded weights between models.
+  std::optional<void*> shared_tensor_maps;
 };
 
 LiteRtStatus LrtCreateGpuOptions(LrtGpuOptions** options) {
@@ -212,6 +217,11 @@ LiteRtStatus LrtGetOpaqueGpuOptionsData(const LrtGpuOptions* options,
   }
   if (options->kernel_batch_size.has_value()) {
     ss << "kernel_batch_size = " << options->kernel_batch_size.value() << "\n";
+  }
+  if (options->shared_tensor_maps.has_value() &&
+      *(options->shared_tensor_maps) != nullptr) {
+    ss << "shared_tensor_maps = "
+       << reinterpret_cast<int64_t>(*(options->shared_tensor_maps)) << "\n";
   }
   if (options->precision.has_value()) {
     ss << "precision = " << static_cast<int>(options->precision.value())
@@ -374,6 +384,10 @@ LiteRtStatus LrtCreateGpuOptionsFromToml(const char* toml_string,
           auto res = ParseTomlInt(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
           (*options)->kernel_batch_size = *res;
+        } else if (key == "shared_tensor_maps") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->shared_tensor_maps = reinterpret_cast<void*>(*res);
         } else if (key == "precision") {
           auto res = ParseTomlInt(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
@@ -676,6 +690,14 @@ LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
   if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
 
   gpu_options->disable_shader_optimization = disable_shader_optimization;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsSharedTensorMaps(
+    LrtGpuOptions* gpu_options, void* shared_tensor_maps) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->shared_tensor_maps = shared_tensor_maps;
   return kLiteRtStatusOk;
 }
 
@@ -1043,6 +1065,17 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
       << "`options` cannot be null.";
   *disable_shader_optimization =
       options->disable_shader_optimization.value_or(0);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSharedTensorMaps(
+    void** shared_tensor_maps, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(shared_tensor_maps,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`shared_tensor_maps` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *shared_tensor_maps = options->shared_tensor_maps.value_or(nullptr);
   return kLiteRtStatusOk;
 }
 

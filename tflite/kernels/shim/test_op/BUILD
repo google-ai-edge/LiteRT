@@ -19,6 +19,7 @@ cc_library(
         "//tflite/kernels/shim:status_macros",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@org_tensorflow//tensorflow/core/platform:tstring",
     ],
 )
 

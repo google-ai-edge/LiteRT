@@ -30,7 +30,9 @@
 #include <utility>
 #include <vector>
 
+#include "QnnCommon.h"  // from @qairt
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -38,9 +40,6 @@
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_opaque_options.h"
-#include "litert/c/litert_options.h"
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -59,7 +58,6 @@
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "QnnCommon.h"  // from @qairt
 
 using ::litert::qnn::QnnManager;
 using LiteRtBufferId = uint32_t;
@@ -85,6 +83,44 @@ bool IsWeightSharingSupported(::qnn::DspArch dsp_arch) {
 #else
   return false;
 #endif
+}
+
+void MoveSchematic(absl::string_view graph_name,
+                   absl::string_view dest_dir_str) {
+  if (dest_dir_str.empty()) return;
+  std::error_code ec;
+  std::filesystem::path dest_dir = std::string(dest_dir_str);
+  std::filesystem::path schematic_file_name(
+      absl::StrCat(graph_name, "_schematic.bin"));
+  std::filesystem::path src_path =
+      std::filesystem::current_path(ec) / schematic_file_name;
+  if (ec) {
+    LITERT_LOG(LITERT_WARNING,
+               "Failed to get current CWD for schematic move: %s",
+               ec.message().c_str());
+    return;
+  }
+  if (std::filesystem::exists(src_path, ec) && !ec) {
+    std::filesystem::create_directories(dest_dir, ec);
+    if (ec) {
+      LITERT_LOG(LITERT_WARNING, "Failed to create directory %s: %s",
+                 dest_dir.c_str(), ec.message().c_str());
+      return;
+    }
+    std::filesystem::path dest_path = dest_dir / schematic_file_name;
+    if (std::filesystem::equivalent(src_path, dest_path, ec)) {
+      return;
+    }
+    ec.clear();
+    std::filesystem::rename(src_path, dest_path, ec);
+    if (ec) {
+      LITERT_LOG(LITERT_WARNING,
+                 "Failed to move schematic file from %s to %s: %s",
+                 src_path.c_str(), dest_path.c_str(), ec.message().c_str());
+    } else {
+      LITERT_LOG(LITERT_INFO, "Moved schematic file to %s", dest_path.c_str());
+    }
+  }
 }
 
 // Compile-time custom-op packages always target the CPU backend; this is
@@ -474,6 +510,13 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   result->byte_code_index.resize(num_partitions);
   QnnManager* qnn_manager = compiler_plugin->QNN();
   auto options = compiler_plugin->Options();
+  if (!options.GetSchematicDir().empty()) {
+    LITERT_LOG(LITERT_INFO,
+               "Schematic directory is set. Enabling optrace profiling. "
+               "(Original profiling level: %d)",
+               static_cast<int>(options.GetProfiling()));
+    options.SetProfiling(::qnn::Profiling::kOptrace);
+  }
   if (!options.GetSaverOutputDir().empty()) {
     LITERT_LOG(
         LITERT_WARNING,
@@ -637,6 +680,10 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         context_handles[context_handle_idx].get_profile_handle(),
         partition.Get(), entry_point_name, options, &inputs, &outputs));
     LITERT_LOG(LITERT_INFO, "%s", "Graph composed");
+
+    if (!options.GetSchematicDir().empty()) {
+      MoveSchematic(entry_point_name, options.GetSchematicDir());
+    }
 
     if (options.GetEnableJustInTime()) {
       auto jit_graph = std::make_unique<litert::qnn::QnnJitGraph>();

@@ -627,6 +627,84 @@ TEST(CompiledModelGpuTest, SyncWithGlClInterop) {
   }
 }
 
+TEST(CompiledModelGpuTest, SyncWithGlClInteropMultiIteration) {
+  if (!IsGlClInteropSupported()) {
+    GTEST_SKIP() << "GPU tests are not supported in this configuration";
+  }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(litert::Options options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& gpu_options, options.GetGpuOptions());
+  LITERT_ASSERT_OK(gpu_options.SetPrecision(GpuOptions::Precision::kFp32));
+  LITERT_ASSERT_OK(
+      gpu_options.SetBufferStorageType(GpuOptions::BufferStorageType::kBuffer));
+  LITERT_ASSERT_OK(gpu_options.EnableExternalTensorsMode(false));
+
+  options.SetHardwareAccelerators(HwAccelerators::kGpu);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            options));
+
+  EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
+  size_t signature_index = 0;
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_names, compiled_model.GetSignatureInputNames(signature_index));
+  // Create GL input buffers.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_buffers,
+      CreateInputBuffersInGivenType(env, compiled_model, signature_index,
+                                    input_names, TensorBufferType::kGlBuffer));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto output_names,
+      compiled_model.GetSignatureOutputNames(signature_index));
+  // Create GL output buffers.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto output_buffers,
+      CreateGlOutputBuffers(env, compiled_model, signature_index,
+                            output_names));
+
+  // Run multiple iterations, modifying inputs at each step to verify that
+  // synchronization prevents stale reads and corruption.
+  for (int iter = 0; iter < 5; ++iter) {
+    float input_factor = static_cast<float>(iter + 1);
+
+    std::vector<float> input0(kTestInput0Size);
+    std::vector<float> input1(kTestInput1Size);
+    std::vector<float> expected_output(kTestOutputSize);
+
+    for (size_t i = 0; i < kTestInput0Size; ++i) {
+      input0[i] = kTestInput0Tensor[i] * input_factor;
+    }
+    for (size_t i = 0; i < kTestInput1Size; ++i) {
+      input1[i] = kTestInput1Tensor[i] * input_factor;
+    }
+    for (size_t i = 0; i < kTestOutputSize; ++i) {
+      expected_output[i] = kTestOutputTensor[i] * input_factor;
+    }
+
+    // Write new input values to GL buffers.
+    ASSERT_TRUE(input_buffers[0].Write<float>(absl::MakeConstSpan(input0)));
+    ASSERT_TRUE(input_buffers[1].Write<float>(absl::MakeConstSpan(input1)));
+
+    // Execute model.
+    compiled_model.Run(signature_index, input_buffers, output_buffers);
+
+    // Verify model output is correct for this iteration.
+    {
+      auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+          output_buffers[0], TensorBuffer::LockMode::kRead);
+      ASSERT_TRUE(lock_and_addr);
+      auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
+      EXPECT_THAT(output, Pointwise(FloatNear(1e-5), expected_output));
+    }
+  }
+}
+
 // TODO(b/403337563): Async execution mode is not currently supported for GL-CL
 // interop.
 // Runs model asynchronously on OpenCL with GL input/output buffers.

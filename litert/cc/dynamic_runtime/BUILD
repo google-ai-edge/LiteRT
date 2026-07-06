@@ -708,6 +708,7 @@ cc_library(
         "//litert/cc/options:litert_samsung_options",
         "//litert/core:options",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/types:span",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [

@@ -1157,6 +1157,7 @@ cc_library_with_testonly_vis(
         "//litert/cc/options:litert_samsung_options",
         "//litert/core:options",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/types:span",
     ],
 )
 

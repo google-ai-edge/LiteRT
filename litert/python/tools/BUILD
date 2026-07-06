@@ -72,6 +72,7 @@ pytype_strict_library(
     imports = ["."],
     deps = [
         # Dependency placeholder: gfile,
+        "@ml_dtypes_py//ml_dtypes",
         # copybara:uncomment "@org_tensorflow//third_party/py/numpy:headers",
         "@org_tensorflow//third_party/py/numpy",  # copybara:comment
     ],
@@ -83,6 +84,7 @@ py_test(
     deps = [
         ":benchmark_litert_model",
         "//litert/python/litert_wrapper/compiled_model_wrapper:options",
+        "@ml_dtypes_py//ml_dtypes",
         # copybara:uncomment "@org_tensorflow//third_party/py/numpy:headers",
         "@org_tensorflow//third_party/py/numpy",  # copybara:comment
     ],

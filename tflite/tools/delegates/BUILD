@@ -57,6 +57,7 @@ cc_library_with_tflite(
         ":gpu_delegate_provider",
         ":hexagon_delegate_provider",
         ":nnapi_delegate_provider",
+        ":ynnpack_delegate_provider",
         "//tflite/tools/delegates/experimental/stable_delegate:delegate_provider",
     ],
     alwayslink = 1,
@@ -182,6 +183,24 @@ cc_library_with_tflite(
     visibility = ["//visibility:public"],
     deps = [
         "//tflite/delegates/xnnpack:xnnpack_delegate",
+        "//tflite/tools:tool_params",
+    ],
+    alwayslink = 1,
+)
+
+cc_library_with_tflite(
+    name = "ynnpack_delegate_provider",
+    srcs = ["ynnpack_delegate_provider.cc"],
+    copts = tflite_copts(),
+    linkstatic = True,
+    tflite_deps = [
+        ":delegate_provider_hdr",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//tflite/c:c_api_types",
+        "//tflite/delegates/ynnpack:ynnpack_delegate",
+        "//tflite/tools:command_line_flags",
         "//tflite/tools:tool_params",
     ],
     alwayslink = 1,

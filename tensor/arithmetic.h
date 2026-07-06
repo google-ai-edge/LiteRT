@@ -23,6 +23,8 @@ limitations under the License.
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -44,6 +46,90 @@ limitations under the License.
 #include "tensor/utils/source_location.h"
 
 namespace litert::tensor {
+
+struct StableHLOCompositeOptions {
+  std::string name;
+  std::vector<uint8_t> composite_attributes;
+  int32_t version = 1;
+};
+
+namespace internal {
+
+template <typename T>
+struct IsTuple : std::false_type {};
+
+template <typename... Ts>
+struct IsTuple<std::tuple<Ts...>> : std::true_type {};
+
+template <class... Mixins>
+Tensor<Mixins...> CloneStableHLOCompositeInput(Tensor<Mixins...> input) {
+  Tensor<Mixins...> clone({.name = std::string(input.GetName()),
+                           .type = input.GetType(),
+                           .shape = input.GetShape()});
+  clone.SetQuantization(input.GetQuantization());
+  return clone;
+}
+
+template <typename TensorLike>
+void FlattenStableHLOCompositeTensors(const TensorLike& tensor,
+                                      std::vector<TensorHandle>& flat_outputs) {
+  flat_outputs.push_back(TensorHandle(tensor));
+}
+
+template <typename... Ts>
+void FlattenStableHLOCompositeTensors(const std::tuple<Ts...>& tensors,
+                                      std::vector<TensorHandle>& flat_outputs) {
+  std::apply(
+      [&flat_outputs](const auto&... tensor) {
+        (FlattenStableHLOCompositeTensors(tensor, flat_outputs), ...);
+      },
+      tensors);
+}
+
+template <class... Mixins, typename TensorLike>
+Tensor<Mixins...> CreateStableHLOCompositeOutputLike(
+    const TensorLike& traced_output,
+    std::shared_ptr<graph::StableHLOCompositeOperation>& op,
+    source_location loc) {
+  TensorHandle traced_handle(traced_output);
+  Tensor<Mixins...> output = AddOutput(op, loc);
+  graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
+  output_info.name = std::string(traced_handle.GetName());
+  output_info.type = traced_handle.GetType();
+  output_info.shape = traced_handle.GetShape();
+  output_info.quantization = traced_handle.GetQuantization();
+  return output;
+}
+
+template <class... Mixins, typename Tuple, size_t... Is>
+auto CreateStableHLOCompositeOutputTupleLike(
+    const Tuple& traced_outputs,
+    std::shared_ptr<graph::StableHLOCompositeOperation>& op,
+    source_location loc, std::index_sequence<Is...>) {
+  std::vector<Tensor<Mixins...>> outputs;
+  outputs.reserve(sizeof...(Is));
+  (outputs.push_back(CreateStableHLOCompositeOutputLike<Mixins...>(
+       std::get<Is>(traced_outputs), op, loc)),
+   ...);
+  return std::make_tuple(std::move(outputs[Is])...);
+}
+
+template <class... Mixins, typename Outputs>
+auto CreateStableHLOCompositeOutputsLike(
+    const Outputs& traced_outputs,
+    std::shared_ptr<graph::StableHLOCompositeOperation>& op,
+    source_location loc) {
+  if constexpr (IsTuple<std::decay_t<Outputs>>::value) {
+    return CreateStableHLOCompositeOutputTupleLike<Mixins...>(
+        traced_outputs, op, loc,
+        std::make_index_sequence<std::tuple_size_v<std::decay_t<Outputs>>>());
+  } else {
+    return CreateStableHLOCompositeOutputLike<Mixins...>(traced_outputs, op,
+                                                         loc);
+  }
+}
+
+}  // namespace internal
 
 template <class... Mixins>
 absl::Status CheckUnaryElementwiseOp(const graph::Tensor& a) {
@@ -1809,6 +1895,46 @@ std::vector<Tensor<Mixins...>> Custom(
   std::vector input_storage(inputs);
   return Custom(absl::MakeSpan(input_storage), std::move(custom_code),
                 std::move(custom_options), output_shapes, output_types, loc);
+}
+
+template <class... Mixins, typename Lambda, typename... Inputs>
+auto StableHLOComposite(StableHLOCompositeOptions options,
+                        Lambda&& decomposition, Tensor<Mixins...> first_input,
+                        Inputs... remaining_inputs) {
+  auto op = std::make_shared<graph::StableHLOCompositeOperation>();
+  RegisterMixins<Mixins...>(op);
+  op->name = std::move(options.name);
+  op->composite_attributes = std::move(options.composite_attributes);
+  op->version = options.version;
+
+  auto decomposition_inputs = std::make_tuple(
+      internal::CloneStableHLOCompositeInput(first_input),
+      internal::CloneStableHLOCompositeInput(remaining_inputs)...);
+  auto decomposition_outputs =
+      std::apply(std::forward<Lambda>(decomposition), decomposition_inputs);
+
+  std::vector<TensorHandle> flat_decomposition_outputs;
+  internal::FlattenStableHLOCompositeTensors(decomposition_outputs,
+                                             flat_decomposition_outputs);
+  op->decomposition_outputs.reserve(flat_decomposition_outputs.size());
+  for (const TensorHandle& output : flat_decomposition_outputs) {
+    op->decomposition_outputs.push_back(output.GetRaw());
+  }
+
+  AddInputs(op, first_input, remaining_inputs...);
+  auto outputs = internal::CreateStableHLOCompositeOutputsLike<Mixins...>(
+      decomposition_outputs, op, source_location::current());
+  graph::OpDebugger::DebugOp(*op);
+  return outputs;
+}
+
+template <class... Mixins, typename Lambda, typename... Inputs>
+auto StableHLOComposite(std::string name, Lambda&& decomposition,
+                        Tensor<Mixins...> first_input,
+                        Inputs... remaining_inputs) {
+  return StableHLOComposite(StableHLOCompositeOptions{.name = std::move(name)},
+                            std::forward<Lambda>(decomposition), first_input,
+                            remaining_inputs...);
 }
 
 template <class... Mixins>

@@ -445,6 +445,7 @@ exports_files(
         "testdata/model_with_external_weights.tflite",
         "testdata/qwen_fc_blockwise_quantized.tflite",
         "testdata/shared_input_cpu_npu_google_tensor_precompiled.tflite",
+        "testdata/simple_add_op.mlir",
         "testdata/simple_add_op_google_tensor_p25_precompiled.tflite",
         "testdata/simple_add_op_qc_v75_precompiled.tflite",
         "testdata/simple_add_uint16_qualcomm.bin",

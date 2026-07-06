@@ -302,6 +302,7 @@ cc_library(
         ":tooling_util",
         "//tflite/kernels/internal:quantization_util",
         "//tflite/kernels/internal:strided_slice_logic",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_check",

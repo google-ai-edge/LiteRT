@@ -200,6 +200,12 @@ class GpuOptions {
     return LrtAddGpuOptionsBufferStorageTensorPattern(options_, pattern);
   }
 
+  /// @brief Sets the pointer to the shared tensor maps.
+  LiteRtStatus SetSharedTensorMaps(void* shared_tensor_maps) {
+    return LrtSetGpuAcceleratorCompilationOptionsSharedTensorMaps(
+        options_, shared_tensor_maps);
+  }
+
   enum class Backend : int {
     kAutomatic = kLiteRtGpuBackendAutomatic,
     kOpenCl = kLiteRtGpuBackendOpenCl,

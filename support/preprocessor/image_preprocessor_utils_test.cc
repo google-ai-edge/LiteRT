@@ -122,6 +122,27 @@ TEST(GetAspectRatioPreservingSizeTest, ZeroByZeroImageError) {
               HasSubstr("Attempting to resize to a 0 x 0 image."));
 }
 
+TEST(GetAspectRatioPreservingSizeTest, ZeroHeightOrWidthError) {
+  ImagePreprocessParameter::PatchifyConfig config;
+  config.patch_width = 16;
+  config.patch_height = 16;
+  config.max_num_patches = 1;
+  config.pooling_kernel_size = 1;
+
+  absl::StatusOr<std::pair<int, int>> result =
+      GetAspectRatioPreservingSize(1, 0, config);
+  EXPECT_FALSE(result.ok());
+  EXPECT_EQ(result.status().code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_THAT(result.status().message(),
+              HasSubstr("Input image has zero width or height."));
+
+  result = GetAspectRatioPreservingSize(0, 1, config);
+  EXPECT_FALSE(result.ok());
+  EXPECT_EQ(result.status().code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_THAT(result.status().message(),
+              HasSubstr("Input image has zero width or height."));
+}
+
 TEST(ImagePreprocessorUtilsTest, PatchifyImageSuccess) {
   // Input image: 2x2 patches of 2x2 pixels, 3 channels (RGB)
   // Total height = 4, width = 4, channels = 3.
@@ -289,6 +310,25 @@ TEST(ImagePreprocessorUtilsTest, PatchifyImageExceedsMaxPatches) {
   EXPECT_THAT(PatchifyImage(image_data, parameter),
               StatusIs(absl::StatusCode::kInvalidArgument,
                        HasSubstr("exceeds max_num_patches")));
+}
+
+TEST(ImagePreprocessorUtilsTest, PatchifyImageZeroWidthOrHeight) {
+  std::vector<float> image_data(48);
+  ImagePreprocessParameter parameter;
+  parameter.SetTargetDimensions({1, 0, 4, 3});
+  parameter.SetPatchifyConfig({.patch_width = 1,
+                               .patch_height = 1,
+                               .max_num_patches = 1,
+                               .pooling_kernel_size = 1});
+
+  EXPECT_THAT(PatchifyImage(image_data, parameter),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       "Image data size does not match target dimensions."));
+
+  parameter.SetTargetDimensions({1, 4, 0, 3});
+  EXPECT_THAT(PatchifyImage(image_data, parameter),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       "Image data size does not match target dimensions."));
 }
 
 }  // namespace
