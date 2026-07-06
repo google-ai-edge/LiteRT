@@ -14,6 +14,7 @@
 
 #include <cstddef>
 
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
@@ -120,6 +121,17 @@ LiteRtStatus LiteRtAddExternalTensorBinding(LiteRtOptions options,
        /*.tensor_name =*/tensor_name,
        /*.data =*/data,
        /*.size_bytes =*/size_bytes});
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtAddWeightInMemory(LiteRtOptions options,
+                                     const char* group_name, const void* data,
+                                     int size_bytes) {
+  LRT_CHECK_NON_NULL(options);
+  LRT_CHECK_NON_NULL(group_name);
+  LRT_CHECK_NON_NULL(data);
+  options->weight_in_memory_map[group_name] =
+      absl::MakeSpan(static_cast<const std::byte*>(data), size_bytes);
   return kLiteRtStatusOk;
 }
 

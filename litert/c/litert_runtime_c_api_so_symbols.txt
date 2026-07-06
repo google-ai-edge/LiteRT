@@ -3,6 +3,7 @@
 LiteRtAddCustomOpKernelOption
 LiteRtAddEnvironmentOptions
 LiteRtAddExternalTensorBinding
+LiteRtAddWeightInMemory
 LiteRtAddModelMetadata
 LiteRtAddOpaqueOptions
 LiteRtAppendOpaqueOptions
@@ -183,6 +184,7 @@ LiteRtGetBatchMatmulAdjXOption
 LiteRtGetBatchMatmulAdjYOption
 LiteRtGetBatchMatmulAsymmetricQuantizeInputOption
 LiteRtGetBlockWiseQuantization
+LiteRtGetCompiledModelEnvironment
 LiteRtGetCompiledModelInputBufferRequirements
 LiteRtGetCompiledModelInputTensorLayout
 LiteRtGetCompiledModelOutputBufferRequirements
@@ -380,7 +382,6 @@ LiteRtRunCompiledModelAsyncWithOptions
 LiteRtRunCompiledModelAsyncWithSchedulingInfo
 LiteRtRunCompiledModelWithOptions
 LiteRtRunCompiledModelWithSchedulingInfo
-
 LiteRtSerializeModel
 LiteRtSerializeModelWithSignatures
 LiteRtSetAcceleratorGetHardwareSupport
@@ -403,3 +404,4 @@ LiteRtUnlockTensorBuffer
 LiteRtUnwrapDelegate
 LiteRtWaitEvent
 LiteRtWrapDelegate
+kLiteRtRuntimeBuiltin
