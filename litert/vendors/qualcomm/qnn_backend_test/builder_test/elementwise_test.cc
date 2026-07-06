@@ -169,5 +169,63 @@ TEST_P(QnnModelTest, SingleElementWiseBinaryMulAsymmetricQuant) {
   ASSERT_EQ(output_data->size(), 4);
   ASSERT_THAT(output_data.value(), ElementsAre(-66, -88, -74, -22));
 }
+
+// FloorMod follows the sign of the divisor.
+TEST_P(QnnModelTest, FloorModNegativeValue) {
+  const std::vector<std::uint32_t> kDims{1, 2, 2, 1};
+
+  auto& input_0 = tensor_pool_.CreateInputTensorWithName(
+      "in_0", QNN_DATATYPE_INT_32, {}, kDims);
+  auto& input_1 = tensor_pool_.CreateInputTensorWithName(
+      "in_1", QNN_DATATYPE_INT_32, {}, kDims);
+  auto& output_0 = tensor_pool_.CreateOutputTensorWithName(
+      "out_0", QNN_DATATYPE_INT_32, {}, kDims);
+  auto ops = ::qnn::BuildElementwiseFloorModOp(tensor_pool_, {input_0, input_1},
+                                               {output_0});
+  ASSERT_FALSE(ops.empty());
+
+  qnn_model_.MoveOpsToGraph(std::move(ops));
+  ASSERT_TRUE(qnn_model_.Finalize());
+
+#if !defined(__ANDROID__)
+  GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
+                  "Qualcomm HTP";
+#endif
+
+  auto input_idx_0 = qnn_model_.AddInputTensor(input_0);
+  auto input_idx_1 = qnn_model_.AddInputTensor(input_1);
+  auto output_idx = qnn_model_.AddOutputTensor(output_0);
+
+  qnn_model_.SetInputData<int32_t>(input_idx_0, {10, -9, -11, 7});
+  qnn_model_.SetInputData<int32_t>(input_idx_1, {2, 2, -3, -4});
+  
+  ASSERT_TRUE(qnn_model_.ValidateOpConfig());
+  ASSERT_TRUE(qnn_model_.Execute());
+
+  auto output_data = qnn_model_.GetOutputData<int32_t>(output_idx);
+  ASSERT_TRUE(output_data);
+  ASSERT_EQ(output_data->size(), 4);
+  ASSERT_THAT(output_data.value(), ElementsAre(0, 1, -2, -1));
+}
+
+// HTP only supports QNN_OP_ELEMENT_WISE_MOD on INT32
+TEST_P(QnnModelTest, FloorModRejectsNonInt32) {
+  const std::vector<std::uint32_t> kDims{1, 2, 2, 1};
+
+  auto& input_0 = tensor_pool_.CreateInputTensorWithName(
+      "in_0", QNN_DATATYPE_FLOAT_32, {}, kDims);
+  auto& input_1 = tensor_pool_.CreateInputTensorWithName(
+      "in_1", QNN_DATATYPE_FLOAT_32, {}, kDims);
+  auto& output_0 = tensor_pool_.CreateOutputTensorWithName(
+      "out_0", QNN_DATATYPE_FLOAT_32, {}, kDims);
+
+  auto ops = ::qnn::BuildElementwiseFloorModOp(tensor_pool_, {input_0, input_1},
+                                               {output_0});
+  ASSERT_FALSE(ops.empty());
+
+  qnn_model_.MoveOpsToGraph(std::move(ops));
+
+  ASSERT_FALSE(qnn_model_.ValidateOpConfig());
+}
 }  // namespace
 }  // namespace litert::qnn
