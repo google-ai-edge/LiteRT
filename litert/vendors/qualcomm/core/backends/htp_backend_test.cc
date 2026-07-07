@@ -13,14 +13,12 @@
 #include <vector>
 
 #include "HTP/QnnHtpDevice.h"  // from @qairt
-#include "HTP/QnnHtpDeviceConfigShared.h"  // from @qairt
 #include "HTP/QnnHtpGraph.h"  // from @qairt
 #include "HTP/QnnHtpPerfInfrastructure.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnDevice.h"  // from @qairt
 #include "QnnGraph.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 #include <gtest/gtest.h>
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/backends/backend_utils.h"
@@ -317,6 +315,9 @@ TEST_F(HtpBackendTest, DISABLED_InitializeWithLogLevelOffTest) {
 
   ASSERT_TRUE(backend_->GetBackendHandle());
   ASSERT_FALSE(backend_->GetLogHandle());
+#if defined(__x86_64__) || defined(_M_X64)
+  EXPECT_EQ(backend_->GetSocInfo().soc_model, kFp16SocInfo.soc_model);
+#endif
 }
 
 TEST_F(HtpBackendTest, DISABLED_InitializeWithLogLevelVerboseTest) {
@@ -329,6 +330,7 @@ TEST_F(HtpBackendTest, DISABLED_InitializeWithLogLevelVerboseTest) {
 
   ASSERT_TRUE(backend_->GetBackendHandle());
   ASSERT_TRUE(backend_->GetLogHandle());
+  EXPECT_EQ(backend_->GetSocInfo().soc_model, kFp16SocInfo.soc_model);
 }
 
 // SETPERFORMANCEMODE /////////////////////////////////////////////////////////
@@ -443,8 +445,7 @@ TEST_F(HtpBackendPerfBaseTest, AutoModeChangesAcrossExecutes) {
 struct ExtractedConfigs {
   // - N × {QNN_GRAPH_CONFIG_OPTION_CUSTOM → QnnGraph_Config_t*}
   // - 1 × {QNN_GRAPH_CONFIG_OPTION_PRIORITY → QnnGraph_Config_t*}
-  std::multimap<QnnGraph_ConfigOption_t, const QnnGraph_Config_t*>
-      graph_configs;
+  std::multimap<QnnGraph_ConfigOption_t, const QnnGraph_Config_t*> graph_configs;
 
   std::multimap<QnnHtpGraph_ConfigOption_t, const QnnHtpGraph_CustomConfig_t*>
       custom_configs;
@@ -527,8 +528,7 @@ TEST_F(HtpBackendDefaultGraphConfigTest, DefaultOptionsProduceExpectedKinds) {
   auto ext = ExtractConfigs(configs);
   ASSERT_EQ(ext.size(), 6u);
   EXPECT_TRUE(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_PRECISION));
-  EXPECT_TRUE(
-      ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION));
+  EXPECT_TRUE(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION));
   EXPECT_TRUE(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_VTCM_SIZE));
   EXPECT_TRUE(ext.custom_configs.count(
       QNN_HTP_GRAPH_CONFIG_OPTION_FOLD_RELU_ACTIVATION_INTO_CONV_OFF));
@@ -548,10 +548,8 @@ TEST_F(HtpBackendDefaultGraphConfigTest, PPointAndHvxInsertedWhenSet) {
 
   auto ext = ExtractConfigs(configs);
   ASSERT_EQ(ext.size(), 8u);
-  EXPECT_TRUE(
-      ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG));
-  EXPECT_TRUE(
-      ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_NUM_HVX_THREADS));
+  EXPECT_TRUE(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG));
+  EXPECT_TRUE(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_NUM_HVX_THREADS));
   EXPECT_TRUE(ext.graph_configs.count(QNN_GRAPH_CONFIG_OPTION_PRIORITY));
 
   // P-point value and key.
@@ -580,8 +578,7 @@ TEST_F(HtpBackendDefaultGraphConfigTest, DlbcOptionsAppendOptimizationConfigs) {
 
   auto ext = ExtractConfigs(configs);
   ASSERT_EQ(ext.size(), 8u);
-  EXPECT_EQ(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION),
-            3u);
+  EXPECT_EQ(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION), 3u);
   EXPECT_TRUE(ext.graph_configs.count(QNN_GRAPH_CONFIG_OPTION_PRIORITY));
 
   const auto* dlbc_cc =
@@ -602,8 +599,7 @@ TEST_F(HtpBackendDefaultGraphConfigTest, NegativePPointSkipped) {
   auto configs = config_builder.GetNullTerminatedConfigs();
 
   auto ext = ExtractConfigs(configs);
-  EXPECT_FALSE(
-      ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG))
+  EXPECT_FALSE(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG))
       << "P-point config should be absent for negative HtpPPoint";
 }
 
@@ -686,8 +682,7 @@ TEST_F(HtpBackendLegacyGraphConfigTest,
 
   auto ext = ExtractConfigs(configs);
   ASSERT_EQ(ext.size(), 5u);
-  EXPECT_TRUE(
-      ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION));
+  EXPECT_TRUE(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION));
   EXPECT_TRUE(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_VTCM_SIZE));
   EXPECT_TRUE(ext.custom_configs.count(
       QNN_HTP_GRAPH_CONFIG_OPTION_FOLD_RELU_ACTIVATION_INTO_CONV_OFF));
@@ -697,8 +692,7 @@ TEST_F(HtpBackendLegacyGraphConfigTest,
 
   EXPECT_FALSE(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_PRECISION))
       << "Precision config must be absent on legacy path";
-  EXPECT_FALSE(
-      ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG))
+  EXPECT_FALSE(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG))
       << "P-point config must be absent on legacy path";
 }
 
@@ -712,14 +706,12 @@ TEST_F(HtpBackendLegacyGraphConfigTest, DISABLED_HvxAppearsWhenSet) {
 
   auto ext = ExtractConfigs(configs);
   ASSERT_EQ(ext.size(), 6u);
-  EXPECT_TRUE(
-      ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_NUM_HVX_THREADS));
+  EXPECT_TRUE(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_NUM_HVX_THREADS));
   EXPECT_TRUE(ext.graph_configs.count(QNN_GRAPH_CONFIG_OPTION_PRIORITY));
 
   // Still no precision or P-point.
   EXPECT_FALSE(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_PRECISION));
-  EXPECT_FALSE(
-      ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG));
+  EXPECT_FALSE(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG));
 }
 
 }  // namespace

@@ -17,11 +17,10 @@
 
 #include "litert/vendors/qualcomm/compiler/graph_mapper.h"
 
-#include "QnnCommon.h"  // from @qairt
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
+#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 
@@ -32,13 +31,14 @@ QnnManager& GraphMapper::Qnn() { return qnn_; }
 Qnn_GraphHandle_t& GraphMapper::QnnGraph() { return qnn_graph_; }
 
 LiteRtStatus GraphMapper::InitQnnGraph(absl::string_view qnn_graph_name,
+                                       ::qnn::QnnBackend& qnn_backend,
                                        const ::qnn::Options& options) {
   ::qnn::GraphConfigBuilder graph_configs =
-      qnn_.BuildGraphConfigs(options, qnn_graph_name);
+      qnn_backend.BuildGraphConfigs(options, qnn_graph_name);
 
-  LITERT_RETURN_STATUS_IF_QNN_NOT_OK(qnn_.Api()->graphCreate(
-      context_handle_, qnn_graph_name.data(),
-      graph_configs.GetNullTerminatedConfigs().data(), &QnnGraph()));
+  LITERT_RETURN_STATUS_IF_QNN_NOT_OK(
+      qnn_.Api()->graphCreate(context_handle_, qnn_graph_name.data(),
+                              graph_configs.GetNullTerminatedConfigs().data(), &QnnGraph()));
 
   return kLiteRtStatusOk;
 }

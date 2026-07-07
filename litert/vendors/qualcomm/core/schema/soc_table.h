@@ -59,9 +59,7 @@ struct SocInfo {
 extern const SocInfo kSocInfos[];
 extern const uint64_t kNumSocInfos;
 
-// Returns whether the given SoC supports fp16.
-// TODO(jiunkaiy): Remove this function after upgrading to stricter SDK
-// restrictions.
 bool IsFp16Supported(const SocInfo& soc_info);
+
 }  // namespace qnn
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_SCHEMA_SOC_TABLE_H_

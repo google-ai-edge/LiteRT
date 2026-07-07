@@ -12,4 +12,7 @@ cc_library(
     name = "soc_table",
     srcs = ["soc_table.cc"],
     hdrs = ["soc_table.h"],
+    deps = [
+        "//litert/vendors/qualcomm/core/utils:log",
+    ],
 )

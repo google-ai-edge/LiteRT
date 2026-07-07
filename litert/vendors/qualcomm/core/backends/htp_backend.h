@@ -8,17 +8,16 @@
 #include <memory>
 #include <optional>
 
-#include "HTP/QnnHtpCommon.h"  // from @qairt
-#include "HTP/QnnHtpDevice.h"  // from @qairt
-#include "HTP/QnnHtpDeviceConfigShared.h"  // from @qairt
-#include "QnnDevice.h"  // from @qairt
-#include "QnnInterface.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
+#include "HTP/QnnHtpCommon.h"  // from @qairt
+#include "HTP/QnnHtpDevice.h"  // from @qairt
+#include "QnnDevice.h"  // from @qairt
+#include "QnnInterface.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
 
@@ -85,7 +84,6 @@ class HtpBackend : public QnnBackend {
 
   QnnDevicePlatformInfo CreateDevicePlatformInfo();
 
-  SocInfo soc_info_ = kSocInfos[0];
   // The qnn_device_platform_info_ is referenced by device configurations
   // managed in the lists below. It must be destructed after the configs to
   // ensure valid references during destruction.

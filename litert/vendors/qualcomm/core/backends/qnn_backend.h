@@ -9,15 +9,15 @@
 #include <optional>
 #include <type_traits>
 
-#include "QnnBackend.h"  // from @qairt
-#include "QnnCommon.h"  // from @qairt
-#include "QnnDevice.h"  // from @qairt
-#include "QnnInterface.h"  // from @qairt
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
+#include "QnnBackend.h"  // from @qairt
+#include "QnnCommon.h"  // from @qairt
+#include "QnnDevice.h"  // from @qairt
+#include "QnnInterface.h"  // from @qairt
 
 namespace qnn {
 
@@ -49,6 +49,8 @@ class QnnBackend {
   // config. Passing options with kDefault resets to the default (low-power)
   // state.
   virtual bool SetPerformanceMode(const Options& options) { return true; }
+
+  const SocInfo& GetSocInfo() const { return soc_info_; }
 
   virtual GraphConfigBuilder BuildGraphConfigs(
       const Options& options, absl::string_view qnn_graph_name) = 0;
@@ -90,6 +92,7 @@ class QnnBackend {
       Qnn_LogHandle_t log_handle,
       absl::Span<const QnnDevice_Config_t*> configs);
 
+  SocInfo soc_info_ = kSocInfos[0];
   QnnLogHandle log_handle_;
   QnnBackendHandle backend_handle_;
   QnnDeviceHandle device_handle_;

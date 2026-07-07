@@ -31,6 +31,7 @@ target_link_libraries(qnn_compiler_plugin
         qnn_wrappers
         qnn_builders
         qnn_manager
+        qnn_backends
         qnn_transformation
         qnn_dump_graph
         qnn_context_binary_info

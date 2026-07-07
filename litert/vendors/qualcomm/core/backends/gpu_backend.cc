@@ -60,6 +60,10 @@ bool GpuBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
     return false;
   }
 
+  if (soc_info) {
+    soc_info_ = *soc_info;
+  }
+
   // Follow RAII pattern to manage handles.
   log_handle_ = std::move(local_log_handle);
   backend_handle_ = std::move(local_backend_handle);
