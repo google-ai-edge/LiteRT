@@ -128,6 +128,11 @@ TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetXNNPackWeightCachePath) {
   ASSERT_EQ(path, expected_path);
 }
 
+TEST_F(LiteRtCpuOptionsFieldsTest, SetXNNPackWeightCachePathFailsWithNullPath) {
+  EXPECT_THAT(LrtSetCpuOptionsXnnPackWeightCachePath(cpu_options_, nullptr),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+}
+
 TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetXNNPackWeightCacheDescriptor) {
   const int expected_fd = 1234;
   int fd;

@@ -19,242 +19,61 @@
 
 // Header-selected builtin runtime implementation.
 #if defined(LITERT_CC_RUNTIME_BUILTIN_NONE)
-inline const LiteRtRuntimeCApiStruct* const kLiteRtRuntimeBuiltin = nullptr;
+#if defined(__ANDROID__)
+#include <string>
+#include <utility>
+
+#include "litert/c/internal/litert_logging.h"
+#include "litert/cc/internal/litert_shared_library.h"
+#include "litert/cc/litert_expected.h"
+#endif  // defined(__ANDROID__)
 #else
-#include "litert/c/litert_compiled_model.h"
-#include "litert/c/litert_environment.h"
-#include "litert/c/litert_environment_options.h"
-#include "litert/c/litert_event.h"
-#include "litert/c/litert_layout.h"
-#include "litert/c/litert_metrics.h"
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_opaque_options.h"
-#include "litert/c/litert_options.h"
-#include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
-
-inline const LiteRtRuntimeCApiStruct kBuiltinStruct = {
-    .litert_create_environment = LiteRtCreateEnvironment,
-    .litert_destroy_environment = LiteRtDestroyEnvironment,
-    .litert_get_environment_options = LiteRtGetEnvironmentOptions,
-    .litert_add_environment_options = LiteRtAddEnvironmentOptions,
-    .litert_gpu_environment_create = LiteRtGpuEnvironmentCreate,
-    .litert_environment_supports_cl_gl_interop =
-        LiteRtEnvironmentSupportsClGlInterop,
-    .litert_environment_supports_ahwb_cl_interop =
-        LiteRtEnvironmentSupportsAhwbClInterop,
-    .litert_environment_supports_ahwb_gl_interop =
-        LiteRtEnvironmentSupportsAhwbGlInterop,
-    .litert_environment_has_gpu_environment =
-        LiteRtEnvironmentHasGpuEnvironment,
-    .litert_get_environment_options_value = LiteRtGetEnvironmentOptionsValue,
-    .litert_get_tensor_name = LiteRtGetTensorName,
-    .litert_get_tensor_index = LiteRtGetTensorIndex,
-    .litert_get_tensor_type_id = LiteRtGetTensorTypeId,
-    .litert_get_unranked_tensor_type = LiteRtGetUnrankedTensorType,
-    .litert_get_ranked_tensor_type = LiteRtGetRankedTensorType,
-    .litert_get_quantization_type_id = LiteRtGetQuantizationTypeId,
-    .litert_get_per_tensor_quantization = LiteRtGetPerTensorQuantization,
-    .litert_get_per_channel_quantization = LiteRtGetPerChannelQuantization,
-    .litert_get_num_tensor_uses = LiteRtGetNumTensorUses,
-    .litert_get_tensor_use = LiteRtGetTensorUse,
-    .litert_get_tensor_defining_op = LiteRtGetTensorDefiningOp,
-    .litert_get_tensor_weights = LiteRtGetTensorWeights,
-    .litert_get_num_subgraph_inputs = LiteRtGetNumSubgraphInputs,
-    .litert_get_subgraph_input = LiteRtGetSubgraphInput,
-    .litert_get_num_subgraph_outputs = LiteRtGetNumSubgraphOutputs,
-    .litert_get_subgraph_output = LiteRtGetSubgraphOutput,
-    .litert_get_num_subgraph_ops = LiteRtGetNumSubgraphOps,
-    .litert_get_subgraph_op = LiteRtGetSubgraphOp,
-    .litert_get_signature_key = LiteRtGetSignatureKey,
-    .litert_get_signature_subgraph = LiteRtGetSignatureSubgraph,
-    .litert_get_num_signature_inputs = LiteRtGetNumSignatureInputs,
-    .litert_get_signature_input_name = LiteRtGetSignatureInputName,
-    .litert_get_signature_input_tensor_by_index =
-        LiteRtGetSignatureInputTensorByIndex,
-    .litert_get_num_signature_outputs = LiteRtGetNumSignatureOutputs,
-    .litert_get_signature_output_name = LiteRtGetSignatureOutputName,
-    .litert_get_signature_output_tensor_by_index =
-        LiteRtGetSignatureOutputTensorByIndex,
-    .litert_create_model_from_file = LiteRtCreateModelFromFile,
-    .litert_create_model_from_buffer = LiteRtCreateModelFromBuffer,
-    .litert_get_model_metadata = LiteRtGetModelMetadata,
-    .litert_add_model_metadata = LiteRtAddModelMetadata,
-    .litert_get_main_model_subgraph_index = LiteRtGetMainModelSubgraphIndex,
-    .litert_get_num_model_subgraphs = LiteRtGetNumModelSubgraphs,
-    .litert_get_model_subgraph = LiteRtGetModelSubgraph,
-    .litert_get_num_model_signatures = LiteRtGetNumModelSignatures,
-    .litert_get_model_signature = LiteRtGetModelSignature,
-    .litert_destroy_model = LiteRtDestroyModel,
-    .litert_push_op = LiteRtPushOp,
-    .litert_serialize_model_with_signatures =
-        LiteRtSerializeModelWithSignatures,
-    .litert_serialize_model = LiteRtSerializeModel,
-    .litert_create_compiled_model = LiteRtCreateCompiledModel,
-    .litert_get_compiled_model_input_buffer_requirements =
-        LiteRtGetCompiledModelInputBufferRequirements,
-    .litert_get_compiled_model_output_buffer_requirements =
-        LiteRtGetCompiledModelOutputBufferRequirements,
-    .litert_get_compiled_model_input_tensor_layout =
-        LiteRtGetCompiledModelInputTensorLayout,
-    .litert_get_compiled_model_output_tensor_layouts =
-        LiteRtGetCompiledModelOutputTensorLayouts,
-    .litert_run_compiled_model = LiteRtRunCompiledModel,
-    .litert_run_compiled_model_with_options = LiteRtRunCompiledModelWithOptions,
-    .litert_run_compiled_model_async = LiteRtRunCompiledModelAsync,
-    .litert_run_compiled_model_async_with_options =
-        LiteRtRunCompiledModelAsyncWithOptions,
-    .litert_set_compiled_model_cancellation_function =
-        LiteRtSetCompiledModelCancellationFunction,
-    .litert_destroy_compiled_model = LiteRtDestroyCompiledModel,
-    .litert_compiled_model_start_metrics_collection =
-        LiteRtCompiledModelStartMetricsCollection,
-    .litert_compiled_model_stop_metrics_collection =
-        LiteRtCompiledModelStopMetricsCollection,
-    .litert_compiled_model_is_fully_accelerated =
-        LiteRtCompiledModelIsFullyAccelerated,
-    .litert_compiled_model_get_profiler = LiteRtCompiledModelGetProfiler,
-    .litert_compiled_model_resize_input_tensor =
-        LiteRtCompiledModelResizeInputTensor,
-    .litert_compiled_model_resize_input_tensor_non_strict =
-        LiteRtCompiledModelResizeInputTensorNonStrict,
-    .litert_compiled_model_set_dispatch_annotation =
-        LiteRtCompiledModelSetDispatchAnnotation,
-    .litert_compiled_model_get_dispatch_annotation =
-        LiteRtCompiledModelGetDispatchAnnotation,
-    .litert_compiled_model_remove_dispatch_annotation =
-        LiteRtCompiledModelRemoveDispatchAnnotation,
-    .litert_compiled_model_report_error = LiteRtCompiledModelReportError,
-    .litert_compiled_model_clear_errors = LiteRtCompiledModelClearErrors,
-    .litert_compiled_model_get_error_messages =
-        LiteRtCompiledModelGetErrorMessages,
-    .litert_create_tensor_buffer_requirements =
-        LiteRtCreateTensorBufferRequirements,
-    .litert_create_tensor_buffer_requirements_with_alignment =
-        LiteRtCreateTensorBufferRequirementsWithAlignment,
-    .litert_get_num_tensor_buffer_requirements_supported_buffer_types =
-        LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes,
-    .litert_get_tensor_buffer_requirements_supported_tensor_buffer_type =
-        LiteRtGetTensorBufferRequirementsSupportedTensorBufferType,
-    .litert_get_tensor_buffer_requirements_buffer_size =
-        LiteRtGetTensorBufferRequirementsBufferSize,
-    .litert_get_tensor_buffer_requirements_strides =
-        LiteRtGetTensorBufferRequirementsStrides,
-    .litert_get_tensor_buffer_requirements_alignment =
-        LiteRtGetTensorBufferRequirementsAlignment,
-    .litert_join_tensor_buffer_requirements =
-        LiteRtJoinTensorBufferRequirements,
-    .litert_destroy_tensor_buffer_requirements =
-        LiteRtDestroyTensorBufferRequirements,
-    .litert_create_tensor_buffer_from_host_memory =
-        LiteRtCreateTensorBufferFromHostMemory,
-    .litert_get_tensor_buffer_host_memory = LiteRtGetTensorBufferHostMemory,
-    .litert_create_tensor_buffer_from_ahwb = LiteRtCreateTensorBufferFromAhwb,
-    .litert_get_tensor_buffer_ahwb = LiteRtGetTensorBufferAhwb,
-    .litert_create_tensor_buffer_from_ion_buffer =
-        LiteRtCreateTensorBufferFromIonBuffer,
-    .litert_get_tensor_buffer_ion_buffer = LiteRtGetTensorBufferIonBuffer,
-    .litert_create_tensor_buffer_from_dma_buf_buffer =
-        LiteRtCreateTensorBufferFromDmaBufBuffer,
-    .litert_get_tensor_buffer_dma_buf_buffer =
-        LiteRtGetTensorBufferDmaBufBuffer,
-    .litert_create_tensor_buffer_from_fast_rpc_buffer =
-        LiteRtCreateTensorBufferFromFastRpcBuffer,
-    .litert_get_tensor_buffer_fast_rpc_buffer =
-        LiteRtGetTensorBufferFastRpcBuffer,
-    .litert_create_tensor_buffer_from_opencl_memory =
-        LiteRtCreateTensorBufferFromOpenClMemory,
-    .litert_get_tensor_buffer_opencl_memory = LiteRtGetTensorBufferOpenClMemory,
-    .litert_get_tensor_buffer_custom_tensor_buffer_handle =
-        LiteRtGetTensorBufferCustomTensorBufferHandle,
-    .litert_create_tensor_buffer_from_gl_buffer =
-        LiteRtCreateTensorBufferFromGlBuffer,
-    .litert_get_tensor_buffer_gl_buffer = LiteRtGetTensorBufferGlBuffer,
-    .litert_create_tensor_buffer_from_gl_texture =
-        LiteRtCreateTensorBufferFromGlTexture,
-    .litert_get_tensor_buffer_gl_texture = LiteRtGetTensorBufferGlTexture,
-    .litert_create_tensor_buffer_from_web_gpu_buffer =
-        LiteRtCreateTensorBufferFromWebGpuBuffer,
-    .litert_get_tensor_buffer_web_gpu_buffer =
-        LiteRtGetTensorBufferWebGpuBuffer,
-    .litert_create_tensor_buffer_from_web_gpu_texture =
-        LiteRtCreateTensorBufferFromWebGpuTexture,
-    .litert_create_tensor_buffer_from_metal_memory =
-        LiteRtCreateTensorBufferFromMetalMemory,
-    .litert_get_tensor_buffer_metal_memory = LiteRtGetTensorBufferMetalMemory,
-    .litert_get_tensor_buffer_vulkan_memory = LiteRtGetTensorBufferVulkanMemory,
-    .litert_create_managed_tensor_buffer = LiteRtCreateManagedTensorBuffer,
-    .litert_create_managed_tensor_buffer_from_requirements =
-        LiteRtCreateManagedTensorBufferFromRequirements,
-    .litert_duplicate_tensor_buffer = LiteRtDuplicateTensorBuffer,
-    .litert_get_tensor_buffer_type = LiteRtGetTensorBufferType,
-    .litert_get_tensor_buffer_tensor_type = LiteRtGetTensorBufferTensorType,
-    .litert_get_tensor_buffer_size = LiteRtGetTensorBufferSize,
-    .litert_get_tensor_buffer_packed_size = LiteRtGetTensorBufferPackedSize,
-    .litert_get_tensor_buffer_offset = LiteRtGetTensorBufferOffset,
-    .litert_has_tensor_buffer_event = LiteRtHasTensorBufferEvent,
-    .litert_get_tensor_buffer_event = LiteRtGetTensorBufferEvent,
-    .litert_set_tensor_buffer_event = LiteRtSetTensorBufferEvent,
-    .litert_clear_tensor_buffer_event = LiteRtClearTensorBufferEvent,
-    .litert_lock_tensor_buffer = LiteRtLockTensorBuffer,
-    .litert_unlock_tensor_buffer = LiteRtUnlockTensorBuffer,
-    .litert_clear_tensor_buffer = LiteRtClearTensorBuffer,
-    .litert_destroy_tensor_buffer = LiteRtDestroyTensorBuffer,
-    .litert_create_event_from_sync_fence_fd = LiteRtCreateEventFromSyncFenceFd,
-    .litert_create_event_from_opencl_event = LiteRtCreateEventFromOpenClEvent,
-    .litert_create_event_from_egl_sync_fence =
-        LiteRtCreateEventFromEglSyncFence,
-    .litert_create_managed_event = LiteRtCreateManagedEvent,
-    .litert_set_custom_event = LiteRtSetCustomEvent,
-    .litert_get_event_event_type = LiteRtGetEventEventType,
-    .litert_get_event_sync_fence_fd = LiteRtGetEventSyncFenceFd,
-    .litert_get_event_opencl_event = LiteRtGetEventOpenClEvent,
-    .litert_get_event_egl_sync = LiteRtGetEventEglSync,
-    .litert_get_event_custom_native_event = LiteRtGetEventCustomNativeEvent,
-    .litert_wait_event = LiteRtWaitEvent,
-    .litert_signal_event = LiteRtSignalEvent,
-    .litert_is_event_signaled = LiteRtIsEventSignaled,
-    .litert_dup_fd_event = LiteRtDupFdEvent,
-    .litert_destroy_event = LiteRtDestroyEvent,
-    .litert_get_num_layout_elements = LiteRtGetNumLayoutElements,
-    .litert_is_same_layout = LiteRtIsSameLayout,
-    .litert_create_metrics = LiteRtCreateMetrics,
-    .litert_get_num_metrics = LiteRtGetNumMetrics,
-    .litert_get_metric = LiteRtGetMetric,
-    .litert_destroy_metrics = LiteRtDestroyMetrics,
-    .litert_create_opaque_options = LiteRtCreateOpaqueOptions,
-    .litert_destroy_opaque_options = LiteRtDestroyOpaqueOptions,
-    .litert_get_opaque_options_identifier = LiteRtGetOpaqueOptionsIdentifier,
-    .litert_get_opaque_options_data = LiteRtGetOpaqueOptionsData,
-    .litert_find_opaque_options_data = LiteRtFindOpaqueOptionsData,
-    .litert_get_next_opaque_options = LiteRtGetNextOpaqueOptions,
-    .litert_append_opaque_options = LiteRtAppendOpaqueOptions,
-    .litert_pop_opaque_options = LiteRtPopOpaqueOptions,
-    .litert_set_opaque_options_hash = LiteRtSetOpaqueOptionsHash,
-    .litert_get_opaque_options_hash = LiteRtGetOpaqueOptionsHash,
-    .litert_create_options = LiteRtCreateOptions,
-    .litert_destroy_options = LiteRtDestroyOptions,
-    .litert_set_options_hardware_accelerators =
-        LiteRtSetOptionsHardwareAccelerators,
-    .litert_get_options_hardware_accelerators =
-        LiteRtGetOptionsHardwareAccelerators,
-    .litert_add_opaque_options = LiteRtAddOpaqueOptions,
-    .litert_get_opaque_options = LiteRtGetOpaqueOptions,
-    .litert_add_custom_op_kernel_option = LiteRtAddCustomOpKernelOption,
-    .litert_add_external_tensor_binding = LiteRtAddExternalTensorBinding,
-    .litert_compiled_model_set_scheduling_info =
-        LiteRtCompiledModelSetSchedulingInfo,
-    .litert_run_compiled_model_with_scheduling_info =
-        LiteRtRunCompiledModelWithSchedulingInfo,
-    .litert_run_compiled_model_async_with_scheduling_info =
-        LiteRtRunCompiledModelAsyncWithSchedulingInfo,
-    .litert_environment_supports_fp16 = LiteRtEnvironmentSupportsFP16,
-    .litert_create_model_from_fd = LiteRtCreateModelFromFd,
-    .litert_get_block_wise_quantization = LiteRtGetBlockWiseQuantization,
-};
-
-inline const LiteRtRuntimeCApiStruct* const kLiteRtRuntimeBuiltin =
-    &kBuiltinStruct;
+#include "litert/c/internal/litert_runtime_api_export.h"
 #endif
+
+/// Gets the builtin LiteRT runtime implementation.
+///
+/// If `LITERT_CC_RUNTIME_BUILTIN_NONE` is defined:
+/// - On Android, dynamically loads the LiteRT shared library ("libLiteRt.so")
+/// and retrieves the builtin runtime API structure.
+/// - On other platforms, returns `nullptr`.
+///
+/// If `LITERT_CC_RUNTIME_BUILTIN_NONE` is not defined:
+/// - Returns the linked `kLiteRtRuntimeBuiltin` instance.
+inline const LiteRtRuntimeCApiStruct* GetLiteRtRuntimeBuiltin() {
+#if defined(LITERT_CC_RUNTIME_BUILTIN_NONE)
+#if defined(__ANDROID__)
+  static const LiteRtRuntimeCApiStruct* dynamic_runtime =
+      []() -> const LiteRtRuntimeCApiStruct* {
+    auto dynamic_lib = litert::SharedLibrary::Load(
+        "libLiteRt.so", litert::RtldFlags::Default());
+    if (!dynamic_lib) {
+      LITERT_LOG(LITERT_ERROR, "Failed to load LiteRT runtime library: %s",
+                 std::string(dynamic_lib.Error().Message()).c_str());
+      return nullptr;
+    }
+    litert::Expected<const LiteRtRuntimeCApiStruct*> runtime_api_ptr =
+        dynamic_lib->LookupSymbol<const LiteRtRuntimeCApiStruct*>(
+            "kLiteRtRuntimeBuiltin");
+    if (!runtime_api_ptr) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Loaded runtime library but kLiteRtRuntimeBuiltin not found.");
+      return nullptr;
+    }
+    LITERT_LOG(LITERT_INFO,
+               "Loaded runtime library and found kLiteRtRuntimeBuiltin.");
+    // Leak the library handle to keep it loaded.
+    [[maybe_unused]] static auto* leaked_lib =
+        new litert::SharedLibrary(std::move(*dynamic_lib));
+    return *runtime_api_ptr;
+  }();
+  return dynamic_runtime;
+#else   // !defined(__ANDROID__)
+  return nullptr;
+#endif  // defined(__ANDROID__)
+#else   // !defined(LITERT_CC_RUNTIME_BUILTIN_NONE)
+  return &kLiteRtRuntimeBuiltin;
+#endif  // defined(LITERT_CC_RUNTIME_BUILTIN_NONE)
+}
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_RUNTIME_BUILTIN_H_
