@@ -89,6 +89,8 @@ pub use error::Error;
 pub use error::ErrorCause;
 pub use model::Model;
 pub use tensor_buffer::ElementType;
+#[cfg(async_support)]
+pub use tensor_buffer::ReadAsync;
 pub use tensor_buffer::TensorBuffer;
 pub use tensor_buffer::TensorBufferRequirements;
 pub use tensor_buffer::TensorBufferType;
