@@ -36,6 +36,7 @@ cc_library(
         "//tflite/kernels/internal:tensor",
         "//tflite/kernels/internal:tensor_ctypes",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
