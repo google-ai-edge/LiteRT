@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -16,6 +17,7 @@
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "QnnOpDef.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
 
@@ -26,6 +28,39 @@ constexpr size_t kPadAmountIndex = 1;
 constexpr size_t kPadConstValueIndex = 2;
 constexpr size_t kOutputIndex = 0;
 
+template <typename T>
+std::optional<std::int32_t> ReadPadConstValueAsInt32(
+    const TensorWrapper& tensor) {
+  const auto pad_const_data = tensor.GetTensorData<T>();
+  if (!pad_const_data.has_value()) {
+    QNN_LOG_ERROR("Failed to get pad const value data.");
+    return std::nullopt;
+  }
+  return static_cast<std::int32_t>(pad_const_data.value()[0]);
+}
+
+std::optional<std::int32_t> GetQuantizedPadConstValue(
+    const TensorWrapper& input_tensor, const TensorWrapper& const_tensor) {
+  if (input_tensor.GetDataType() != const_tensor.GetDataType()) {
+    QNN_LOG_ERROR(
+        "Pad const value tensor data type %d does not match input tensor data "
+        "type %d.",
+        const_tensor.GetDataType(), input_tensor.GetDataType());
+    return std::nullopt;
+  }
+
+  switch (input_tensor.GetDataType()) {
+    case QNN_DATATYPE_SFIXED_POINT_8:
+      return ReadPadConstValueAsInt32<std::int8_t>(const_tensor);
+    case QNN_DATATYPE_UFIXED_POINT_8:
+      return ReadPadConstValueAsInt32<std::uint8_t>(const_tensor);
+    default:
+      QNN_LOG_ERROR("Unsupported quantized pad tensor data type %d.",
+                    input_tensor.GetDataType());
+      return std::nullopt;
+  }
+}
+
 }  // namespace
 
 std::vector<OpWrapper> BuildPadOp(TensorPool& tensor_pool,
@@ -33,6 +68,13 @@ std::vector<OpWrapper> BuildPadOp(TensorPool& tensor_pool,
                                   const std::vector<TensorWrapperRef>& outputs,
                                   const std::uint32_t scheme_value) {
   std::vector<OpWrapper> res;
+  // TFLite Pad has input and padding tensors; PadV2 adds a third scalar
+  // constant-value tensor.
+  if (inputs.size() < kPadAmountIndex + 1 || outputs.empty()) {
+    QNN_LOG_ERROR("Invalid number of inputs or outputs for Pad op.");
+    return res;
+  }
+
   TensorWrapper& pad_tensor = inputs[kPadAmountIndex];
   if (!pad_tensor.IsTensorStatic()) {
     QNN_LOG_ERROR("QNN only support static pad amount tensor.")
@@ -58,19 +100,17 @@ std::vector<OpWrapper> BuildPadOp(TensorPool& tensor_pool,
     std::int32_t pad_const_value = 0;
     if (inputs.size() >= kPadConstValueIndex + 1) {
       const auto pad_const_data =
-          inputs[kPadConstValueIndex].get().GetTensorData<std::int32_t>();
+          GetQuantizedPadConstValue(input_tensor, inputs[kPadConstValueIndex]);
       if (!pad_const_data.has_value()) {
-        QNN_LOG_ERROR("Failed to get pad const value data.");
         return {};
       }
-      pad_const_value = pad_const_data.value()[0];
+      pad_const_value = pad_const_data.value();
     } else {
       if (std::holds_alternative<ScaleOffsetQuantizeParamsWrapper>(
               input_tensor.GetQuantParams())) {
         const auto& quant_param = std::get<ScaleOffsetQuantizeParamsWrapper>(
             input_tensor.GetQuantParams());
-        pad_const_value = (pad_const_value / quant_param.GetScale()) -
-                          quant_param.GetOffset();
+        pad_const_value = quant_param.GetZeroPoint();
       } else {
         QNN_LOG_ERROR(
             "Unsupported quantization type type for pad const value tensor.");
