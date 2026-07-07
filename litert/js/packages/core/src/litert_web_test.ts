@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {CompiledModel, Environment, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, supportsFeature, Tensor, TensorBufferType, type TypedArray, unloadLiteRt} from '@litertjs/core';
+import {add, CompiledModel, div, Environment, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, mul, relu, sub, supportsFeature, Tensor, TensorBufferType, type TypedArray, unloadLiteRt} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 
 describe('LiteRt', () => {
@@ -278,6 +278,166 @@ describe('LiteRt', () => {
         input.delete();
         outputTensor.delete();
       });
+    });
+
+    describe('complex models with external weights', () => {
+      beforeEach(async () => {
+        if (!(await supportsFeature('jspi'))) {
+          pending('This browser does not support JSPI');
+          return;
+        }
+        await resetLiteRt(/* loadFromDirectory= */ true, {jspi: true});
+      });
+
+      afterEach(async () => {
+        await resetLiteRt();
+      });
+
+      // TODO(b/535068067) re-enable once external weights support is re-added.
+      it('loads and runs a complex model with external weights', async () => {
+        pending(
+            'TODO: b/535068067 - re-enable once external weights support is re-added.');
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) throw new Error('No GPU adapter found.');
+        const device = await adapter.requestDevice();
+        liteRt.setWebGpuDevice(device);
+
+        const writeBufferSpy =
+            spyOn(device.queue, 'writeBuffer').and.callThrough();
+
+        const modelResponse =
+            await fetch('/testdata/complexExtWeight/model.tflite');
+        const modelData = new Uint8Array(await modelResponse.arrayBuffer());
+
+        const weightsResponse =
+            await fetch('/testdata/complexExtWeight/weights.bin');
+        const weightsStream = weightsResponse.body!;
+
+        const model = await loadModelAndWeights(modelData, weightsStream, {
+          environment: new Environment({webGpuDevice: device}),
+          accelerator: 'webgpu'
+        });
+
+        expect(writeBufferSpy).toHaveBeenCalled();
+
+        const inputDetails = model.getInputDetails();
+        const outputDetails = model.getOutputDetails();
+
+        expect(inputDetails.length).toBe(2);
+        expect(outputDetails.length).toBe(1);
+
+        const input0Data = new Float32Array(32).fill(0.5);
+        const input0 =
+            await (new Tensor(input0Data, Array.from(inputDetails[0].shape)))
+                .moveTo('webgpu');
+
+        const input1Data = new Float32Array(32).fill(0.5);
+        const input1 =
+            await (new Tensor(input1Data, Array.from(inputDetails[1].shape)))
+                .moveTo('webgpu');
+
+        const inputs: {[key: string]: Tensor} = {};
+        inputs[inputDetails[0].name] = input0;
+        inputs[inputDetails[1].name] = input1;
+
+        const result = await model.run(inputs);
+        const output0 = await result[outputDetails[0].name].data();
+        console.log('complex model output0 values: ', Array.from(output0));
+        expect(output0.length).toBe(64);
+
+        let allZeros = true;
+        for (let i = 0; i < output0.length; i++) {
+          if (output0[i] !== 0) {
+            allZeros = false;
+            break;
+          }
+        }
+        expect(allZeros).toBe(true);
+
+        model.delete();
+        input0.delete();
+        input1.delete();
+        for (const name of Object.keys(result)) {
+          result[name].delete();
+        }
+      });
+
+      // TODO(b/535068067) re-enable once external weights support is re-added.
+      it('loads and runs a complex model with external weights (per-channel quantized)',
+         async () => {
+           pending(
+               'TODO: b/535068067 - re-enable once external weights support is re-added.');
+           const adapter = await navigator.gpu.requestAdapter();
+           if (!adapter) throw new Error('No GPU adapter found.');
+           const device = await adapter.requestDevice();
+           liteRt.setWebGpuDevice(device);
+
+           const writeBufferSpy =
+               spyOn(device.queue, 'writeBuffer').and.callThrough();
+
+           const modelResponse = await fetch(
+               '/testdata/complexExtWeight/per_channel/model.tflite');
+           const modelData = new Uint8Array(await modelResponse.arrayBuffer());
+
+           const weightsResponse = await fetch(
+               '/testdata/complexExtWeight/per_channel/weights.bin');
+           const weightsStream = weightsResponse.body!;
+
+           const model = await loadModelAndWeights(modelData, weightsStream, {
+             environment: new Environment({webGpuDevice: device}),
+             accelerator: 'webgpu'
+           });
+
+           expect(writeBufferSpy).toHaveBeenCalled();
+
+           const inputDetails = model.getInputDetails();
+           const outputDetails = model.getOutputDetails();
+
+           expect(inputDetails.length).toBe(2);
+           expect(outputDetails.length).toBe(1);
+
+           const input0Data = new Float32Array(32).fill(0.5);
+           const input0 =
+               await (new Tensor(input0Data, Array.from(inputDetails[0].shape)))
+                   .moveTo('webgpu');
+
+           const input1Data = new Float32Array(32).fill(0.5);
+           const input1 =
+               await (new Tensor(input1Data, Array.from(inputDetails[1].shape)))
+                   .moveTo('webgpu');
+
+           const inputs: {[key: string]: Tensor} = {};
+           inputs[inputDetails[0].name] = input0;
+           inputs[inputDetails[1].name] = input1;
+
+           console.log('[Test2] Input Details:', JSON.stringify(inputDetails));
+           console.log(
+               '[Test2] Output Details:', JSON.stringify(outputDetails));
+           console.log('[Test2] Starting inference...');
+
+           const result = await model.run(inputs);
+           const output0 = await result[outputDetails[0].name].data();
+           console.log(
+               'complex model per-channel output0 values: ',
+               Array.from(output0));
+           expect(output0.length).toBe(64);
+
+           let allZeros = true;
+           for (let i = 0; i < output0.length; i++) {
+             if (output0[i] !== 0) {
+               allZeros = false;
+               break;
+             }
+           }
+           expect(allZeros).toBe(false);
+
+           model.delete();
+           input0.delete();
+           input1.delete();
+           for (const name of Object.keys(result)) {
+             result[name].delete();
+           }
+         });
     });
 
     describe('complex models with external weights', () => {
@@ -928,6 +1088,52 @@ describe('LiteRt', () => {
       cpuTensor3.delete();
     });
 
+    it('creates symbolic tensor arithmetic graph nodes using member methods and free functions on CPU',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+         const dataA = new Float32Array([1.0, 2.0, 3.0]);
+         const dataB = new Float32Array([4.0, 5.0, 6.0]);
+         const tensorA = new Tensor(dataA);
+         const tensorB = new Tensor(dataB);
+
+         // Test member method syntax
+         const addedMember = tensorA.add(tensorB);
+         expect(addedMember).toBeDefined();
+         expect(addedMember.type.dtype).toEqual('float32');
+         expect(addedMember.type.layout.dimensions).toEqual([3]);
+
+         // Test free function syntax
+         const addedFree = add(tensorA, tensorB);
+         expect(addedFree).toBeDefined();
+         expect(addedFree.type.dtype).toEqual('float32');
+         expect(addedFree.type.layout.dimensions).toEqual([3]);
+
+         const mulFree = mul(tensorA, tensorB);
+         expect(mulFree).toBeDefined();
+         expect(mulFree.type.dtype).toEqual('float32');
+
+         const subFree = sub(tensorA, tensorB);
+         expect(subFree).toBeDefined();
+         expect(subFree.type.dtype).toEqual('float32');
+
+         const divFree = div(tensorA, tensorB);
+         expect(divFree).toBeDefined();
+         expect(divFree.type.dtype).toEqual('float32');
+
+         const reluFree = relu(tensorA);
+         expect(reluFree).toBeDefined();
+         expect(reluFree.type.dtype).toEqual('float32');
+
+         tensorA.delete();
+         tensorB.delete();
+         addedMember.delete();
+         addedFree.delete();
+         mulFree.delete();
+         subFree.delete();
+         divFree.delete();
+         reluFree.delete();
+       });
+
     it('can copy to a different environment', async () => {
       await resetLiteRt(true, {threads: false});
       const data = new Float32Array([1.234, 2.345, 3.456]);
@@ -1087,7 +1293,7 @@ describe('LiteRt', () => {
          const data = new Float32Array([1.234, 2.345, 3.456]);
          const tensor = new Tensor(data);
          const gpuTensor = await tensor.moveTo('webgpu');
-         const bufferPtr = gpuTensor.liteRtTensorBuffer.getWebGpuBuffer();
+         const bufferPtr = gpuTensor.liteRtTensorHandle.getWebGpuBuffer();
 
          // This is a private property of the WebGPU module, but we need to
          // access it to test that the buffer is removed from the map when the
