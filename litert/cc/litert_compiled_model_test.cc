@@ -14,6 +14,7 @@
 
 #include "litert/cc/litert_compiled_model.h"
 
+#include <cstdint>
 #include <cstring>
 #include <string>
 #include <utility>
@@ -34,8 +35,10 @@
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
+#include "litert/cc/litert_model_types.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
+#include "litert/cc/litert_string_util.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
@@ -52,6 +55,7 @@
 // copybara:uncomment_end
 
 using ::testing::ElementsAre;
+using ::testing::ElementsAreArray;
 using ::testing::FloatNear;
 using ::testing::Pointwise;
 using ::testing::SizeIs;
@@ -1362,6 +1366,131 @@ TEST(CompiledModelTest, GetBufferRequirementsDetailed) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto output_strides,
                               output_requirements.Strides());
   EXPECT_EQ(output_strides.size(), 0);
+}
+
+TEST(CompiledModelTest, StringInput) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  // Load the gather_string model.
+  std::string model_path = testing::GetTestFilePath("gather_string.tflite");
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, model_path, HwAccelerators::kCpu));
+
+  // Check signatures.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
+                              compiled_model.GetSignatureInputNames());
+  EXPECT_THAT(input_names, ElementsAre("input", "indices"));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              compiled_model.GetSignatureOutputNames());
+  EXPECT_THAT(output_names, ElementsAre("output"));
+
+  // Prepare inputs.
+  // 1. indices: [1, 2, 3] (int64)
+  std::vector<int64_t> indices_data = {3, 9, 5};
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer indices_buffer,
+      TensorBuffer::CreateManaged(
+          env,
+          // We're using CPU Accelerator and the model only supports CPU.
+          TensorBufferType::kHostMemory,
+          RankedTensorType(ElementType::Int64, Layout(Dimensions({3}))),
+          indices_data.size() * sizeof(int64_t)));
+  LITERT_ASSERT_OK(
+      indices_buffer.Write<int64_t>(absl::MakeConstSpan(indices_data)));
+
+  // 2. input: 10 words (string)
+  std::vector<std::string> input_strings = {
+      "clean",  "efficient", "fast",   "Hello",  "intelligence",
+      "LiteRT", "on-device", "robust", "simple", "world",
+  };
+
+  // Use the new utility to create and populate the input TensorBuffer
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer input_buffer,
+      litert::util::CreateTensorBufferFromStrings(env, input_strings));
+
+  // Prepare output buffer.
+  // We expect 3 strings.
+  std::vector<std::string> expected_outputs = {"Hello", "world", "LiteRT"};
+
+  // Allocate a larger buffer to be safe, e.g. 200 bytes.
+  size_t kOutputBufferSize = 200;
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer output_buffer,
+      TensorBuffer::CreateManaged(
+          env, TensorBufferType::kHostMemory,
+          RankedTensorType(ElementType::TfString,
+                           Layout(Dimensions({static_cast<int32_t>(
+                               expected_outputs.size())}))),
+          kOutputBufferSize));
+
+  // Run the model.
+  absl::flat_hash_map<absl::string_view, TensorBuffer> input_map;
+  input_map["indices"] = std::move(indices_buffer);
+  input_map["input"] = std::move(input_buffer);
+
+  absl::flat_hash_map<absl::string_view, TensorBuffer> output_map;
+  output_map["output"] = std::move(output_buffer);
+
+  LITERT_ASSERT_OK(compiled_model.Run(input_map, output_map));
+
+  // Verify output using the new utility
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<std::string> actual_outputs,
+      litert::util::GetStringsFromTensorBuffer(output_map["output"]));
+
+  EXPECT_THAT(actual_outputs, ElementsAreArray(expected_outputs));
+}
+
+TEST(CompiledModelTest, QuantizationAccessors) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(
+          env, testing::GetTestFilePath("simple_quantized_ops.tflite"),
+          HwAccelerators::kCpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(QuantizationTypeId input_q_type,
+                              compiled_model.GetInputTensorQTypeId(
+                                  /*signature_index=*/0, /*input_index=*/0));
+  EXPECT_EQ(input_q_type, QuantizationTypeId::PerTensor);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      QuantizationPerTensor input_per_tensor_q,
+      compiled_model.GetInputTensorPerTensorQuantization(/*signature_index=*/0,
+                                                         /*input_index=*/0));
+  EXPECT_GT(input_per_tensor_q.scale, 0.0f);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
+                              compiled_model.GetSignatureInputNames());
+  ASSERT_FALSE(input_names.empty());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      QuantizationTypeId input_q_type_by_name,
+      compiled_model.GetInputTensorQTypeId(input_names[0]));
+  EXPECT_EQ(input_q_type_by_name, QuantizationTypeId::PerTensor);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(QuantizationTypeId output_q_type,
+                              compiled_model.GetOutputTensorQTypeId(
+                                  /*signature_index=*/0, /*output_index=*/0));
+  EXPECT_EQ(output_q_type, QuantizationTypeId::PerTensor);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      QuantizationPerTensor output_per_tensor_q,
+      compiled_model.GetOutputTensorPerTensorQuantization(/*signature_index=*/0,
+                                                          /*output_index=*/0));
+  EXPECT_GT(output_per_tensor_q.scale, 0.0f);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              compiled_model.GetSignatureOutputNames());
+  ASSERT_FALSE(output_names.empty());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      QuantizationTypeId output_q_type_by_name,
+      compiled_model.GetOutputTensorQTypeId(output_names[0]));
+  EXPECT_EQ(output_q_type_by_name, QuantizationTypeId::PerTensor);
 }
 
 }  // namespace
