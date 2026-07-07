@@ -94,5 +94,13 @@ TEST(LrtSamsungOptionsTest, CreateFromToml) {
   LrtDestroySamsungOptions(options);
 }
 
+TEST(LrtSamsungOptionsTest, CreateFromTomlReturnsParseError) {
+  LrtSamsungOptions options = nullptr;
+  EXPECT_EQ(LrtCreateSamsungOptionsFromToml(
+                "enable_large_model_support = definitely\n", &options),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(options, nullptr);
+}
+
 }  // namespace
 }  // namespace litert::samsung
