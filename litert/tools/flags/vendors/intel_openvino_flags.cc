@@ -18,6 +18,7 @@
 #include "litert/tools/flags/vendors/intel_openvino_flags.h"
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/flags/flag.h"  // from @com_google_absl
@@ -145,9 +146,13 @@ Expected<void> UpdateIntelOpenVinoOptionsFromFlags(
     std::vector<std::string> config_pairs =
         absl::StrSplit(configs_map_str, ',');
     for (const auto& pair : config_pairs) {
-      std::vector<std::string> key_value = absl::StrSplit(pair, '=');
-      if (key_value.size() == 2) {
-        options.SetConfigsMapOption(key_value[0].c_str(), key_value[1].c_str());
+      // Split on the first '=' only so values may themselves contain '='
+      // (e.g. NPU_COMPILATION_MODE_PARAMS=enable-flash-sdpa-conversion=true).
+      const std::pair<std::string, std::string> key_value =
+          absl::StrSplit(pair, absl::MaxSplits('=', 1));
+      if (!key_value.first.empty() && absl::StrContains(pair, '=')) {
+        options.SetConfigsMapOption(key_value.first.c_str(),
+                                    key_value.second.c_str());
       } else {
         LITERT_LOG(
             LITERT_WARNING,
