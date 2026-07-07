@@ -51,7 +51,6 @@ limitations under the License.
 #include "tensor/internal/graph_traversal.h"
 #include "tensor/runners/litert/litert_buffer.h"
 #include "tensor/tensor.h"
-#include "tensor/utils/file_utils.h"
 
 namespace litert {
 namespace tensor {
@@ -60,13 +59,7 @@ template <typename ModelFunctor, typename Inputs, typename Outputs>
 class CompiledModelRunner {
  public:
   CompiledModelRunner(Environment& env, Options& options,
-                      ModelFunctor model_func, bool build_model_now = true,
-                      bool use_tmp_file = false);
-  ~CompiledModelRunner() {
-    if (!model_path_.empty()) {
-      RemoveFile(model_path_).IgnoreError();
-    }
-  }
+                      ModelFunctor model_func, bool build_model_now = true);
 
   absl::Status BuildModel(
       const std::vector<Tensor<TfLiteMixinTag>>& output_tensors = {},
@@ -137,8 +130,6 @@ class CompiledModelRunner {
                                 GraphProbe::StableTensorIdHash>& probe_tensors);
 
  private:
-  static constexpr absl::string_view kTmpPathPrefix = "lrt";
-
   static Environment CreateEnvironmentOrDie() {
     LITERT_ASSIGN_OR_ABORT(auto env, Environment::Create({}));
     return env;
@@ -182,15 +173,13 @@ class CompiledModelRunner {
   };
   std::vector<ReplacedBuffer> replaced_buffers_;
   std::vector<char> model_buffer_;
-  std::string model_path_;
-  bool use_tmp_file_;
 };
 
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 CompiledModelRunner<ModelFunctor, Inputs, Outputs>::CompiledModelRunner(
     Environment& env, Options& options, ModelFunctor model_func,
-    bool build_model_now, bool use_tmp_file)
-    : env_(env), options_(options), use_tmp_file_(use_tmp_file) {
+    bool build_model_now)
+    : env_(env), options_(options) {
   Inputs inputs;
   outputs_ = model_func(inputs);
   if (build_model_now) {
@@ -207,21 +196,14 @@ template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::BuildModel(
     const std::vector<TensorTf>& output_tensors,
     std::optional<ModelFactory> model_factory) {
-  if (use_tmp_file_) {
-    if (!model_path_.empty()) {
-      LITERT_RETURN_IF_ERROR(RemoveFile(model_path_));
-      model_path_.clear();
-    }
-    LITERT_ASSIGN_OR_RETURN(model_path_, CreateTempFile(kTmpPathPrefix));
-    LITERT_RETURN_IF_ERROR(Save(output_tensors, model_path_, model_factory));
-    LITERT_ASSIGN_OR_RETURN(compiled_model_,
-                            CompiledModel::Create(env_, model_path_, options_));
-  } else {
-    LITERT_RETURN_IF_ERROR(Save(output_tensors, model_buffer_, model_factory));
-    BufferRef<> model_buffer(model_buffer_.data(), model_buffer_.size());
-    LITERT_ASSIGN_OR_RETURN(
-        compiled_model_, CompiledModel::Create(env_, model_buffer, options_));
+  if (!model_factory.has_value()) {
+    model_factory = ModelFactory();
   }
+  LITERT_RETURN_IF_ERROR(model_factory->AddSubgraph(output_tensors));
+  LITERT_ASSIGN_OR_RETURN(model_buffer_, model_factory->CreateFlatbuffer());
+  BufferRef<> model_buffer(model_buffer_.data(), model_buffer_.size());
+  LITERT_ASSIGN_OR_RETURN(compiled_model_,
+                          CompiledModel::Create(env_, model_buffer, options_));
 
   LITERT_ASSIGN_OR_RETURN(input_buffers_, compiled_model_.CreateInputBuffers());
   LITERT_ASSIGN_OR_RETURN(output_buffers_,
