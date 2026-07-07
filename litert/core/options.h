@@ -65,6 +65,9 @@ struct LiteRtOptionsT {
   LiteRtOpaqueOptions options = nullptr;
   std::vector<CustomOpOption> custom_op_options;
   std::vector<LiteRtExternalTensorBinding> external_tensor_bindings;
+
+  // Options for WeightLoader
+  //
   // Non-owning pointer used to expose the runtime's WeightLoader to delegates.
   // It may be set by compiled model when scoped_weight_source is set, or by the
   // client if they want to load weights from their own sources.
@@ -75,6 +78,8 @@ struct LiteRtOptionsT {
   // Optional in-memory weight map for heap weight loading.
   absl::flat_hash_map<std::string, absl::Span<const std::byte>>
       weight_in_memory_map;
+  // Note: If you need 3rd option for WeightLoader, consider migrate to
+  // OpaqueOptions.
 };
 
 #endif  // ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_
