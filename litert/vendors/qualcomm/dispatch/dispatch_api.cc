@@ -18,7 +18,6 @@
 #include <string>
 #include <utility>
 
-#include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
@@ -51,8 +50,8 @@ namespace {
 using ::litert::qnn::QnnManager;
 
 static std::unique_ptr<QnnManager>& QnnManagerStorage() {
-  static absl::NoDestructor<std::unique_ptr<QnnManager>> storage;
-  return *storage;
+  static std::unique_ptr<QnnManager> storage;
+  return storage;
 }
 
 QnnManager& Qnn() { return *QnnManagerStorage(); }
