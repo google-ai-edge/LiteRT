@@ -17,7 +17,7 @@
 import {Environment} from './environment';
 import {getGlobalLiteRt} from './global_litert';
 import {Tensor} from './tensor';
-import {LiteRtTensorBuffer, TensorBufferType} from './wasm_binding_types';
+import {LiteRtTensorHandle, TensorBufferType} from './wasm_binding_types';
 
 /**
  * Copies a tensor from host memory to host memory.
@@ -36,43 +36,43 @@ export async function copyHostMemoryToHostMemory(
     ): Promise<Tensor> {
   const environment = options.environment ?? cpuTensor.environment;
   const liteRtWasm = getGlobalLiteRt().liteRtWasm;
-  const srcTensorBuffer = cpuTensor.liteRtTensorBuffer;
-  const bufferType = srcTensorBuffer.bufferType();
+  const srcTensorHandle = cpuTensor.liteRtTensorHandle;
+  const bufferType = srcTensorHandle.bufferType();
   if (bufferType.value !== TensorBufferType.HOST_MEMORY) {
     throw new Error(
         'Source tensor is not in host memory. Cannot copy to host memory.');
   }
 
-  const srcTensorMemoryPtr = srcTensorBuffer.lock(
+  const srcTensorMemoryPtr = srcTensorHandle.lock(
       liteRtWasm.LiteRtTensorBufferLockMode.READ,
   );
-  let destTensorBuffer: LiteRtTensorBuffer|undefined;
+  let destTensorHandle: LiteRtTensorHandle|undefined;
   try {
-    destTensorBuffer = liteRtWasm.LiteRtTensorBuffer.createManaged(
+    destTensorHandle = liteRtWasm.LiteRtTensorHandle.createManaged(
         environment.liteRtEnvironment,
         liteRtWasm.LiteRtTensorBufferType.HOST_MEMORY,
-        srcTensorBuffer.tensorType(),
-        srcTensorBuffer.size(),
+        srcTensorHandle.tensorType(),
+        srcTensorHandle.size(),
     );
 
-    const destMemoryPointer = destTensorBuffer.lock(
+    const destMemoryPointer = destTensorHandle.lock(
         liteRtWasm.LiteRtTensorBufferLockMode.WRITE,
     );
     try {
       const srcTensorMemoryView = new Uint8Array(
           liteRtWasm.HEAPU8.buffer,
           srcTensorMemoryPtr,
-          srcTensorBuffer.size(),
+          srcTensorHandle.size(),
       );
       liteRtWasm.HEAPU8.set(srcTensorMemoryView, destMemoryPointer);
     } finally {
-      destTensorBuffer.unlock();
+      destTensorHandle.unlock();
     }
   } finally {
-    srcTensorBuffer.unlock();
+    srcTensorHandle.unlock();
   }
-  if (!destTensorBuffer) {
-    throw new Error('Failed to create destination tensor buffer.');
+  if (!destTensorHandle) {
+    throw new Error('Failed to create destination tensor handle.');
   }
-  return new Tensor(destTensorBuffer, environment);
+  return new Tensor(destTensorHandle, environment);
 }
