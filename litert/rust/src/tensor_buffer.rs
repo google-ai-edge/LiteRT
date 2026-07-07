@@ -16,8 +16,14 @@
 
 use std::any::TypeId;
 use std::ffi::c_void;
+#[cfg(async_support)]
+use std::future::Future;
 use std::marker::PhantomData;
 use std::mem;
+#[cfg(async_support)]
+use std::pin::Pin;
+#[cfg(async_support)]
+use std::task::{Context, Poll};
 
 use crate::bindings::*;
 use crate::call_check_status;
@@ -428,6 +434,126 @@ impl<'a> TensorBuffer<'a> {
         }
         Ok(to_copy)
     }
+
+    /// Returns true if the tensor buffer has an event attached.
+    #[cfg(async_support)]
+    fn has_event(&self) -> Result<bool, Error> {
+        let mut has_event = false;
+        call_check_status!(
+            // SAFETY: self.raw_tensor_buffer is always valid.
+            unsafe { LiteRtHasTensorBufferEvent(self.raw_tensor_buffer, &mut has_event) },
+            ErrorCause::HasTensorBufferEvent
+        );
+        Ok(has_event)
+    }
+
+    /// Returns the event attached to the tensor buffer, if any.
+    #[cfg(async_support)]
+    fn event(&self) -> Result<Option<Event<'_>>, Error> {
+        if !self.has_event()? {
+            return Ok(None);
+        }
+        let mut raw_event: LiteRtEvent = std::ptr::null_mut();
+        call_check_status!(
+            // SAFETY: self.raw_tensor_buffer is always valid.
+            unsafe { LiteRtGetTensorBufferEvent(self.raw_tensor_buffer, &mut raw_event) },
+            ErrorCause::GetTensorBufferEvent
+        );
+        if raw_event.is_null() {
+            Ok(None)
+        } else {
+            Ok(Some(Event { raw_event, owned: false, _phantom: PhantomData }))
+        }
+    }
+
+    #[cfg(all(test, async_support))]
+    fn set_event(&self, mut event: Event<'_>) -> Result<(), Error> {
+        call_check_status!(
+            // SAFETY: self.raw_tensor_buffer and event.raw_event are valid.
+            unsafe { LiteRtSetTensorBufferEvent(self.raw_tensor_buffer, event.raw_event) },
+            ErrorCause::SetTensorBufferEvent
+        );
+        event.owned = false;
+        Ok(())
+    }
+
+
+    /// Reads data from the tensor buffer asynchronously.
+    ///
+    /// If the buffer has an event attached, it waits for the event to be signaled
+    /// before reading.
+    #[cfg(async_support)]
+    pub fn read_async<'b, T: 'static>(&self, data: &'b mut [T]) -> ReadAsync<'_, 'b, T> {
+        ReadAsync { buffer: self, data: Some(data) }
+    }
+}
+
+/// A synchronization event.
+#[cfg(async_support)]
+pub struct Event<'a> {
+    pub(crate) raw_event: LiteRtEvent,
+    owned: bool,
+    _phantom: PhantomData<&'a LiteRtEvent>,
+}
+
+#[cfg(async_support)]
+impl Drop for Event<'_> {
+    fn drop(&mut self) {
+        if self.owned {
+            // SAFETY: self.raw_event is valid and owned.
+            unsafe {
+                LiteRtDestroyEvent(self.raw_event);
+            }
+        }
+    }
+}
+
+#[cfg(async_support)]
+impl<'a> Event<'a> {
+    /// Returns true if the event is signaled.
+    fn is_signaled(&self) -> Result<bool, Error> {
+        let mut is_signaled = false;
+        call_check_status!(
+            // SAFETY: self.raw_event is always valid.
+            unsafe { LiteRtIsEventSignaled(self.raw_event, &mut is_signaled) },
+            ErrorCause::IsEventSignaled
+        );
+        Ok(is_signaled)
+    }
+}
+
+#[cfg(async_support)]
+pub struct ReadAsync<'a, 'b, T> {
+    buffer: &'a TensorBuffer<'a>,
+    data: Option<&'b mut [T]>,
+}
+
+#[cfg(async_support)]
+impl<'a, 'b, T: 'static> Future for ReadAsync<'a, 'b, T> {
+    type Output = Result<usize, Error>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let event = match self.buffer.event() {
+            Ok(Some(e)) => e,
+            Ok(None) => {
+                let data = self.data.take().expect("Future polled after completion");
+                return Poll::Ready(self.buffer.read(data));
+            }
+            Err(e) => return Poll::Ready(Err(e)),
+        };
+
+        match event.is_signaled() {
+            Ok(true) => {
+                let data = self.data.take().expect("Future polled after completion");
+                Poll::Ready(self.buffer.read(data))
+            }
+            Ok(false) => {
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            }
+            Err(e) => Poll::Ready(Err(e)),
+        }
+    }
 }
 
 impl Drop for TensorBuffer<'_> {
@@ -443,10 +569,171 @@ impl Drop for TensorBuffer<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(async_support)]
+    use std::future::Future;
+    #[cfg(async_support)]
+    use std::pin::Pin;
+    #[cfg(async_support)]
+    use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+
+    #[cfg(async_support)]
+    fn block_on<F: Future>(mut f: F) -> F::Output {
+        let raw_waker = RawWaker::new(std::ptr::null(), &VTABLE);
+        // SAFETY: raw_waker is a valid RawWaker.
+        let waker = unsafe { Waker::from_raw(raw_waker) };
+        let mut cx = Context::from_waker(&waker);
+        // SAFETY: f is a valid Future.
+        let mut f = unsafe { Pin::new_unchecked(&mut f) };
+        loop {
+            match f.as_mut().poll(&mut cx) {
+                Poll::Ready(res) => return res,
+                Poll::Pending => {
+                    std::thread::yield_now();
+                }
+            }
+        }
+        const VTABLE: RawWakerVTable = RawWakerVTable::new(
+            |_| RawWaker::new(std::ptr::null(), &VTABLE), // clone
+            |_| {}, // wake
+            |_| {}, // wake_by_ref
+            |_| {}, // drop
+        );
+    }
+
     #[test]
     fn test_element_type_compatibility() {
         assert!(ElementType::Bool.is_compatible::<bool>());
         assert!(!ElementType::Bool.is_compatible::<u32>());
         assert!(!ElementType::Float32.is_compatible::<u32>());
+    }
+
+    #[test]
+    #[cfg(async_support)]
+    fn test_read_async_no_event() {
+        let env = crate::EnvironmentBuilder::build_default().unwrap();
+
+        // SAFETY: layout is a C struct with pod fields.
+        let mut layout: LiteRtLayout = unsafe { std::mem::zeroed() };
+        // Try to set rank. If it fails to compile, we will see the error.
+        layout.set_rank(1);
+        layout.dimensions[0] = 4;
+
+        let tensor_type = LiteRtRankedTensorType {
+            element_type: LiteRtElementType_kLiteRtElementTypeFloat32,
+            layout,
+        };
+
+        let buffer = TensorBuffer::new(
+            &env,
+            &tensor_type,
+            &TensorBufferType::HostMemory,
+            16, // 4 * 4 bytes
+            ElementType::Float32,
+        )
+        .unwrap();
+
+        let input_data = vec![1.0f32, 2.0, 3.0, 4.0];
+        buffer.write(&input_data).unwrap();
+
+        let mut output_data = vec![0.0f32; 4];
+
+        block_on(buffer.read_async(&mut output_data)).unwrap();
+
+        assert_eq!(input_data, output_data);
+    }
+
+    #[test]
+    #[cfg(async_support)]
+    fn test_read_async_with_event() {
+        // This test requires Linux to run as it uses Linux-specific sync fence FDs.
+        
+        extern "C" {
+            fn pipe(fds: *mut i32) -> i32;
+            fn write(fd: i32, buf: *const std::ffi::c_void, count: usize) -> isize;
+            fn close(fd: i32) -> i32;
+        }
+
+        let env = crate::EnvironmentBuilder::build_default().unwrap();
+
+        let mut fds = [0i32; 2];
+        // SAFETY: fds is a valid pointer to a 2-element array. The pipe function
+        // writes the file descriptors to the array.
+        unsafe {
+            if pipe(fds.as_mut_ptr()) != 0 {
+                panic!("Failed to create pipe");
+            }
+        }
+        let (rx, tx) = (fds[0], fds[1]);
+
+        let mut raw_event: LiteRtEvent = std::ptr::null_mut();
+        // SAFETY: env.raw_environment is valid as it's owned by env.
+        // rx is a valid file descriptor as it's owned by this test and was created by pipe.
+        // owns_fd is true as we want the event to own the file descriptor.
+        let status = unsafe {
+            LiteRtCreateEventFromSyncFenceFd(
+                env.raw_environment,
+                rx,
+                true, // owns_fd
+                &mut raw_event,
+            )
+        };
+
+        if status != LiteRtStatus_kLiteRtStatusOk {
+            if status == LiteRtStatus_kLiteRtStatusErrorUnsupported {
+                println!("Sync fence event is not supported on this platform, skipping test.");
+                // SAFETY: rx and tx are valid file descriptors and are owned by this test.
+                unsafe {
+                    close(rx);
+                    close(tx);
+                }
+                return;
+            }
+            panic!("Failed to create event from sync fence fd: {}", status);
+        }
+
+        let event = Event { raw_event, owned: true, _phantom: PhantomData };
+
+        // SAFETY: layout is a C struct with pod fields.
+        let mut layout: LiteRtLayout = unsafe { std::mem::zeroed() };
+        layout.set_rank(1);
+        layout.dimensions[0] = 4;
+
+        let tensor_type = LiteRtRankedTensorType {
+            element_type: LiteRtElementType_kLiteRtElementTypeFloat32,
+            layout,
+        };
+
+        let buffer = TensorBuffer::new(
+            &env,
+            &tensor_type,
+            &TensorBufferType::HostMemory,
+            16,
+            ElementType::Float32,
+        )
+        .unwrap();
+
+        let input_data = vec![1.0f32, 2.0, 3.0, 4.0];
+        buffer.write(&input_data).unwrap();
+
+        buffer.set_event(event).unwrap();
+
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let val = 1u64;
+            // Writing to the pipe to trigger the event to complete.
+            // SAFETY: tx is valid as it's owned by this thread and was created by pipe.
+            // data in write is a pointer to a valid u64, and 8 is the correct size.
+            // close is safe as tx is owned by this thread.
+            unsafe {
+                write(tx, &val as *const u64 as *const std::ffi::c_void, 8);
+                close(tx);
+            }
+        });
+
+        let mut output_data = vec![0.0f32; 4];
+
+        block_on(buffer.read_async(&mut output_data)).unwrap();
+
+        assert_eq!(input_data, output_data);
     }
 }

@@ -14,10 +14,6 @@
 
 #include "litert/c/options/litert_google_tensor_options.h"
 
-#include <cstdint>
-#include <string>
-#include <vector>
-
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
@@ -61,7 +57,7 @@ TEST(LrtGoogleTensorOptionsTest, CreateAndGet) {
   LrtDestroyGoogleTensorOptions(options);
 }
 
-TEST(LrtGoogleTensorOptionsTest, FloatTruncationType) {
+TEST(LrtGoogleTensorOptionsTest, Int64ToInt32Truncation) {
   LrtGoogleTensorOptions options;
   LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
 
@@ -87,7 +83,7 @@ TEST(LrtGoogleTensorOptionsTest, FloatTruncationType) {
   LrtDestroyGoogleTensorOptions(options);
 }
 
-TEST(LrtGoogleTensorOptionsTest, Int64ToInt32Truncation) {
+TEST(LrtGoogleTensorOptionsTest, OutputDir) {
   LrtGoogleTensorOptions options;
   LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
 
@@ -111,7 +107,22 @@ TEST(LrtGoogleTensorOptionsTest, Int64ToInt32Truncation) {
   LrtDestroyGoogleTensorOptions(options);
 }
 
-TEST(LrtGoogleTensorOptionsTest, OutputDir) {
+TEST(LrtGoogleTensorOptionsTest, NullOutputDirClearsValue) {
+  LrtGoogleTensorOptions options;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
+
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsSetOutputDir(options, "/tmp/test_dir"));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetOutputDir(options, nullptr));
+
+  const char* output_dir;
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetOutputDir(options, &output_dir));
+  EXPECT_STREQ(output_dir, "");
+
+  LrtDestroyGoogleTensorOptions(options);
+}
+
+TEST(LrtGoogleTensorOptionsTest, DumpOpTimings) {
   LrtGoogleTensorOptions options;
   LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
 
@@ -136,7 +147,7 @@ TEST(LrtGoogleTensorOptionsTest, OutputDir) {
   LrtDestroyGoogleTensorOptions(options);
 }
 
-TEST(LrtGoogleTensorOptionsTest, DumpOpTimings) {
+TEST(LrtGoogleTensorOptionsTest, FloatTruncationType) {
   LrtGoogleTensorOptions options;
   LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
 
