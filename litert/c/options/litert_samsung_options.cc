@@ -79,7 +79,7 @@ LiteRtStatus LrtCreateSamsungOptionsFromToml(const char* toml_payload,
     *options = nullptr;
   }
 
-  return kLiteRtStatusOk;
+  return status;
 }
 
 LiteRtStatus LrtGetOpaqueSamsungOptionsData(LrtSamsungOptions options,
