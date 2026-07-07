@@ -61,7 +61,7 @@ TEST(LrtGoogleTensorOptionsTest, CreateAndGet) {
   LrtDestroyGoogleTensorOptions(options);
 }
 
-TEST(LrtGoogleTensorOptionsTest, FloatTruncationType) {
+TEST(LrtGoogleTensorOptionsTest, Int64ToInt32Truncation) {
   LrtGoogleTensorOptions options;
   LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
 
@@ -87,7 +87,7 @@ TEST(LrtGoogleTensorOptionsTest, FloatTruncationType) {
   LrtDestroyGoogleTensorOptions(options);
 }
 
-TEST(LrtGoogleTensorOptionsTest, Int64ToInt32Truncation) {
+TEST(LrtGoogleTensorOptionsTest, OutputDir) {
   LrtGoogleTensorOptions options;
   LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
 
@@ -111,7 +111,7 @@ TEST(LrtGoogleTensorOptionsTest, Int64ToInt32Truncation) {
   LrtDestroyGoogleTensorOptions(options);
 }
 
-TEST(LrtGoogleTensorOptionsTest, OutputDir) {
+TEST(LrtGoogleTensorOptionsTest, DumpOpTimings) {
   LrtGoogleTensorOptions options;
   LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
 
@@ -136,7 +136,7 @@ TEST(LrtGoogleTensorOptionsTest, OutputDir) {
   LrtDestroyGoogleTensorOptions(options);
 }
 
-TEST(LrtGoogleTensorOptionsTest, DumpOpTimings) {
+TEST(LrtGoogleTensorOptionsTest, FloatTruncationType) {
   LrtGoogleTensorOptions options;
   LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
 
