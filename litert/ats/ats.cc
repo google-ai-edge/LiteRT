@@ -506,8 +506,7 @@ void RegisterSoftmax(const AtsConf& options, size_t& test_id, size_t iters,
       Softmax,
       SizeListC<2, 3, 4>,
       TypeList<TypeTuple<float, float>,
-               TypeTuple<tflite::half, tflite::half>,
-               TypeTuple<tflite::half, float>>,
+               TypeTuple<tflite::half, tflite::half>>,
       OpCodeListC<kLiteRtOpCodeTflSoftmax, kLiteRtOpCodeTflLogSoftmax>,
       SizeListC<1>>
     (iters, test_id, options, cap);

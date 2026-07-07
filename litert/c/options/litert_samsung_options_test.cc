@@ -81,6 +81,16 @@ TEST(LrtSamsungOptionsTest, EnableLargeModelSupport) {
   LrtDestroySamsungOptions(options);
 }
 
+TEST(LrtSamsungOptionsTest, GetEnableLargeModelSupportReturnsErrorForNullOut) {
+  LrtSamsungOptions options;
+  LITERT_ASSERT_OK(LrtCreateSamsungOptions(&options));
+
+  EXPECT_EQ(LrtSamsungOptionsGetEnableLargeModelSupport(options, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LrtDestroySamsungOptions(options);
+}
+
 TEST(LrtSamsungOptionsTest, CreateFromToml) {
   const char* toml_payload = "enable_large_model_support = true\n";
   LrtSamsungOptions options;
@@ -92,6 +102,14 @@ TEST(LrtSamsungOptionsTest, CreateFromToml) {
   EXPECT_TRUE(enable_large_model_support);
 
   LrtDestroySamsungOptions(options);
+}
+
+TEST(LrtSamsungOptionsTest, CreateFromTomlReturnsParseError) {
+  LrtSamsungOptions options = nullptr;
+  EXPECT_EQ(LrtCreateSamsungOptionsFromToml(
+                "enable_large_model_support = definitely\n", &options),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(options, nullptr);
 }
 
 }  // namespace
