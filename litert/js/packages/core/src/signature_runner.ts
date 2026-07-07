@@ -252,17 +252,17 @@ export class CompiledModelSignatureRunner implements SignatureRunner {
           this.liteRtCompiledModel.getInputBufferRequirements(
               this.signatureIndex, i);
       getGlobalLiteRt().liteRtWasm.checkTensorBufferCompatible(
-          inputTensor.liteRtTensorBuffer, expectedRankedTensorType,
+          inputTensor.liteRtTensorHandle, expectedRankedTensorType,
           inputRequirements);
 
       expectedRankedTensorType.delete();
       inputRequirements.delete();
     }
 
-    const outputTensorBuffers = await this.liteRtCompiledModel.run(
-        this.signatureIndex, input.map((tensor) => tensor.liteRtTensorBuffer));
-    return outputTensorBuffers.map(
-        (tensorBuffer) => new Tensor(tensorBuffer, this.options.environment));
+    const outputTensorHandles = await this.liteRtCompiledModel.run(
+        this.signatureIndex, input.map((tensor) => tensor.liteRtTensorHandle));
+    return outputTensorHandles.map(
+        (tensorHandle) => new Tensor(tensorHandle, this.options.environment));
   }
 
   get deleted(): boolean {
