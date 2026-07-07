@@ -40,10 +40,11 @@ symbols=$(nm -D ${SO_FILE})
 
 # Filter for LiteRt symbols (type T means text/code symbol, exported)
 # Remove @@VERS_1.0 to match the file content
-litert_symbols=$(echo "$symbols" | grep " T LiteRt" | awk '{print $3}' | sed 's/@@VERS_1.0//' | LC_ALL=C sort)
+litert_symbols=$(echo "$symbols" | grep -E " (T LiteRt|D kLiteRtRuntimeBuiltin)" | awk '{print $3}' | sed 's/@@VERS_1.0//' | LC_ALL=C sort)
 
 # Filter out comments and empty lines from expected symbols
-expected_filtered=$(grep -v "^#" "${EXPECTED_SYMBOLS}" | grep -v "^$")
+# Sorting in shell is needed to ensure sort stability.
+expected_filtered=$(grep -v "^#" "${EXPECTED_SYMBOLS}" | grep -v "^$" | LC_ALL=C sort)
 
 # Compare with expected symbols
 diff_output=$(diff -u <(echo "$expected_filtered") <(echo "$litert_symbols"))
