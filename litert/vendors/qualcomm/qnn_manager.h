@@ -22,6 +22,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -35,7 +36,6 @@
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
-#include "litert/vendors/qualcomm/qnn_api_loader.h"
 #include "QnnCommon.h"  // from @qairt
 #include "QnnContext.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
@@ -57,6 +57,39 @@
 //===----------------------------------------------------------------------===//
 
 namespace litert::qnn {
+
+class QnnApiLoader;
+
+struct SdkVersion {
+  int major, minor, patch;
+
+  friend constexpr bool operator==(const SdkVersion& lhs,
+                                   const SdkVersion& rhs) noexcept {
+    return std::tie(lhs.major, lhs.minor, lhs.patch) ==
+           std::tie(rhs.major, rhs.minor, rhs.patch);
+  }
+  friend constexpr bool operator!=(const SdkVersion& lhs,
+                                   const SdkVersion& rhs) noexcept {
+    return !(lhs == rhs);
+  }
+  friend constexpr bool operator<(const SdkVersion& lhs,
+                                  const SdkVersion& rhs) noexcept {
+    return std::tie(lhs.major, lhs.minor, lhs.patch) <
+           std::tie(rhs.major, rhs.minor, rhs.patch);
+  }
+  friend constexpr bool operator>(const SdkVersion& lhs,
+                                  const SdkVersion& rhs) noexcept {
+    return rhs < lhs;
+  }
+  friend constexpr bool operator<=(const SdkVersion& lhs,
+                                   const SdkVersion& rhs) noexcept {
+    return !(rhs < lhs);
+  }
+  friend constexpr bool operator>=(const SdkVersion& lhs,
+                                   const SdkVersion& rhs) noexcept {
+    return !(lhs < rhs);
+  }
+};
 
 class QnnManager {
  public:
@@ -182,6 +215,9 @@ class QnnManager {
   const ::qnn::Options& GetOptions() const { return *options_; }
   SdkVersion GetSdkVersion() const { return sdk_version_; }
   Mode GetMode() const { return mode_; }
+
+  // Parses a QNN SDK build ID string (e.g. "v2.37.0") into an SdkVersion.
+  static Expected<SdkVersion> ParseSdkVersion(const char* build_id);
 
   Expected<SystemContextHandle> CreateSystemContextHandle();
 

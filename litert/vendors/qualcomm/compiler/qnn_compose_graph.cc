@@ -1799,7 +1799,8 @@ LiteRtStatus ComposeGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
                           std::vector<::qnn::TensorWrapper>* inputs,
                           std::vector<::qnn::TensorWrapper>* outputs) {
   LITERT_RETURN_IF_ERROR(MapGraph(ctx, qnn, context_handle, profile_handle,
-                                  subgraph, qnn_graph_name, options, inputs, outputs));
+                                  subgraph, qnn_graph_name, options, inputs,
+                                  outputs));
   return kLiteRtStatusOk;
 }
 

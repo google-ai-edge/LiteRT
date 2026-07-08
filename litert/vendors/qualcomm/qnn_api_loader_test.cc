@@ -107,7 +107,7 @@ TEST(QnnApiLoaderTest, GetOptions) {
   EXPECT_EQ(options->GetDlcDir(), options_ref.GetDlcDir());
 }
 
-TEST(QnnApiLoaderTest, GetSdkVersion) {
+TEST(QnnApiLoaderTest, ParsesBuildId) {
   auto options = GetOptionsForTarget();
   if (!options) {
     GTEST_SKIP() << "Skipping test because targeted backend is not supported";
@@ -115,9 +115,11 @@ TEST(QnnApiLoaderTest, GetSdkVersion) {
 
   auto qnn = CreateLoader(*options);
   ASSERT_TRUE(qnn);
-  const auto sdk_version = qnn.Value().get()->GetSdkVersion();
+  auto sdk_version =
+      QnnManager::ParseSdkVersion(qnn.Value().get()->GetBuildId().c_str());
+  ASSERT_TRUE(sdk_version);
   static constexpr SdkVersion kInitSdkVersion{0, 0, 0};
-  EXPECT_NE(sdk_version, kInitSdkVersion);
+  EXPECT_NE(*sdk_version, kInitSdkVersion);
 }
 
 // QnnManager::Create() returns a ready QnnManager, and binding a second,

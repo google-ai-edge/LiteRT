@@ -204,7 +204,7 @@ Expected<ContextBinaryInfo> ContextBinaryInfo::Create(
   SdkVersion binary_version;
   LITERT_ASSIGN_OR_RETURN(
       binary_version,
-      ::litert::qnn::ParseSdkVersion(binary_info->contextBinaryInfoV1.buildId));
+      QnnManager::ParseSdkVersion(binary_info->contextBinaryInfoV1.buildId));
   const auto sdk_version = qnn.GetSdkVersion();
   if (binary_version > sdk_version) {
     LITERT_LOG(LITERT_ERROR,

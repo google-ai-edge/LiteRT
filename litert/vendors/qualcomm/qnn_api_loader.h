@@ -7,7 +7,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <tuple>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -24,48 +23,14 @@
 //                                                                QnnApiLoader
 //
 // The QNN library layer: locates and loads the QNN SDK .so files, resolves
-// the backend + system API function tables, and parses the SoC-independent
-// build ID into an SdkVersion. Owns the loaded libraries and releases them on
-// destruction. Holds no SoC or backend handles -- construct a
-// litert::qnn::QnnManager (see qnn_manager.h) to bind a SoC.
+// the backend + system API function tables, and reads the SoC-independent
+// build ID. Owns the loaded libraries and releases them on destruction. Holds
+// no SoC or backend handles -- construct a litert::qnn::QnnManager (see
+// qnn_manager.h) to bind a SoC.
 //
 //===----------------------------------------------------------------------===//
 
 namespace litert::qnn {
-
-struct SdkVersion {
-  int major, minor, patch;
-
-  friend constexpr bool operator==(const SdkVersion& lhs,
-                                   const SdkVersion& rhs) noexcept {
-    return std::tie(lhs.major, lhs.minor, lhs.patch) ==
-           std::tie(rhs.major, rhs.minor, rhs.patch);
-  }
-  friend constexpr bool operator!=(const SdkVersion& lhs,
-                                   const SdkVersion& rhs) noexcept {
-    return !(lhs == rhs);
-  }
-  friend constexpr bool operator<(const SdkVersion& lhs,
-                                  const SdkVersion& rhs) noexcept {
-    return std::tie(lhs.major, lhs.minor, lhs.patch) <
-           std::tie(rhs.major, rhs.minor, rhs.patch);
-  }
-  friend constexpr bool operator>(const SdkVersion& lhs,
-                                  const SdkVersion& rhs) noexcept {
-    return rhs < lhs;
-  }
-  friend constexpr bool operator<=(const SdkVersion& lhs,
-                                   const SdkVersion& rhs) noexcept {
-    return !(rhs < lhs);
-  }
-  friend constexpr bool operator>=(const SdkVersion& lhs,
-                                   const SdkVersion& rhs) noexcept {
-    return !(lhs < rhs);
-  }
-};
-
-// Parses a QNN SDK build ID string (e.g. "v2.37.0") into an SdkVersion.
-Expected<SdkVersion> ParseSdkVersion(const char* build_id);
 
 class QnnApiLoader;
 
@@ -97,8 +62,9 @@ class QnnApiLoader {
 
   const ::qnn::Options& GetOptions() const { return options_; }
 
-  // SDK version parsed from the backend build ID.
-  SdkVersion GetSdkVersion() const { return sdk_version_; }
+  // SoC-independent backend build ID. Non-empty after a successful Create().
+  // Parse with QnnManager::ParseSdkVersion.
+  const std::string& GetBuildId() const { return build_id_; }
 
  private:
   QnnApiLoader() = default;
@@ -142,7 +108,7 @@ class QnnApiLoader {
 
   ::qnn::Options options_;
   std::optional<std::string> shared_library_dir_;
-  SdkVersion sdk_version_{};
+  std::string build_id_;
 };
 
 }  // namespace litert::qnn
