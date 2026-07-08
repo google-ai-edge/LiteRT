@@ -14,10 +14,7 @@
 
 #include "litert/c/options/litert_samsung_options.h"
 
-#include <string>
-
 #include <gtest/gtest.h>
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/test/matchers.h"
 
 namespace litert::samsung {
@@ -81,6 +78,31 @@ TEST(LrtSamsungOptionsTest, EnableLargeModelSupport) {
   LrtDestroySamsungOptions(options);
 }
 
+TEST(LrtSamsungOptionsTest, GetEnableLargeModelSupportReturnsErrorForNullOut) {
+  LrtSamsungOptions options;
+  LITERT_ASSERT_OK(LrtCreateSamsungOptions(&options));
+
+  EXPECT_EQ(LrtSamsungOptionsGetEnableLargeModelSupport(options, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LrtDestroySamsungOptions(options);
+}
+
+TEST(LrtSamsungOptionsTest, SocModelRoundTripsThroughOpaqueData) {
+  LrtSamsungOptions options;
+  LITERT_ASSERT_OK(LrtCreateSamsungOptions(&options));
+  LITERT_ASSERT_OK(LrtSamsungOptionsSetSocModel(options, "s5e9955"));
+
+  LrtSamsungOptions parsed;
+  SerializeAndParse(options, &parsed);
+  const char* soc_model = nullptr;
+  LITERT_ASSERT_OK(LrtSamsungOptionsGetSocModel(parsed, &soc_model));
+  EXPECT_STREQ(soc_model, "s5e9955");
+
+  LrtDestroySamsungOptions(parsed);
+  LrtDestroySamsungOptions(options);
+}
+
 TEST(LrtSamsungOptionsTest, CreateFromToml) {
   const char* toml_payload = "enable_large_model_support = true\n";
   LrtSamsungOptions options;
@@ -92,6 +114,14 @@ TEST(LrtSamsungOptionsTest, CreateFromToml) {
   EXPECT_TRUE(enable_large_model_support);
 
   LrtDestroySamsungOptions(options);
+}
+
+TEST(LrtSamsungOptionsTest, CreateFromTomlReturnsParseError) {
+  LrtSamsungOptions options = nullptr;
+  EXPECT_EQ(LrtCreateSamsungOptionsFromToml(
+                "enable_large_model_support = definitely\n", &options),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(options, nullptr);
 }
 
 }  // namespace
