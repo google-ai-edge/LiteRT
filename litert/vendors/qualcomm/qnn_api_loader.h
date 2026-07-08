@@ -48,8 +48,8 @@ class QnnApiLoader {
 
   ~QnnApiLoader();
 
-  // Loads and resolves the QNN libraries. Does not bind a SoC -- call
-  // QnnManager::Create() for that. The SDK version is populated on success.
+  // Loads and resolves the QNN libraries. Does not bind a SoC -- use
+  // QnnManager::Create() for that.
   static Expected<Ptr> Create(
       const ::qnn::Options& options,
       std::optional<std::string> shared_library_dir = std::nullopt);

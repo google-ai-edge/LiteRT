@@ -71,10 +71,9 @@ constexpr char kLibQnnGetProvidersSymbol[] = "QnnInterface_getProviders";
 constexpr char kLibQnnSystemGetProvidersSymbol[] =
     "QnnSystemInterface_getProviders";
 
-// The per-backend facts LoadLibraries() needs before any backend instance
-// exists: which .so to load, which API version to resolve against, and
-// whether the .so must be pushed onto the loader path when a custom
-// shared-library dir is set (true for HTP/IR/DSP; GPU does not need it).
+// Per-backend info for loading: .so name, expected API version, and whether
+// the .so must be added to the loader path for a custom shared-library dir
+// (true for HTP/IR/DSP; not GPU).
 struct BackendLibraryInfo {
   const char* library_name;
   Qnn_Version_t expected_version;

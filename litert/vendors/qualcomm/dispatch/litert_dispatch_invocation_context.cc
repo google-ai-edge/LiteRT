@@ -181,7 +181,7 @@ LiteRtDispatchInvocationContextT::Create(
 
     // Pass an empty context handle since the compiler plugin manages its
     // lifecycle.
-    static absl::NoDestructor<litert::qnn::QnnManager::ContextHandle> empty_context_handle;
+    static absl::NoDestructor<QnnManager::ContextHandle> empty_context_handle;
     return Ptr(new LiteRtDispatchInvocationContextT(
         qnn, &device_context, empty_context_handle.get(),
         jit_graph->context_handle, nullptr, 0, graph_handle, jit_graph->inputs,

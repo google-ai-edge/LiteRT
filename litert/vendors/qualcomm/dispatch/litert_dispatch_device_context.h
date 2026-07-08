@@ -113,7 +113,8 @@ class LiteRtDispatchDeviceContextT {
       return H::combine(std::move(h), k.ptr, k.size);
     }
   };
-  using UniqueContextHandle = std::unique_ptr<litert::qnn::QnnManager::ContextHandle>;
+  using UniqueContextHandle =
+      std::unique_ptr<litert::qnn::QnnManager::ContextHandle>;
   // Lifetime of the context cache is the same as the device context.
   absl::flat_hash_map<ContextCacheKey, UniqueContextHandle> context_cache_;
 };

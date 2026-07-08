@@ -48,11 +48,9 @@
 //
 //                                                                  QnnManager
 //
-// The SoC layer: a QNN backend + device bound to one SoC, produced by
-// QnnManager::Create() against an already-loaded QnnApiLoader. All accessors
-// are non-null after a successful Create(). Api / SystemApi / Options alias
-// storage owned by the parent QnnApiLoader, so a QnnManager must not outlive
-// the loader that created it. Move-only.
+// The SoC layer: a QNN backend + device bound to one SoC, created from an
+// already-loaded QnnApiLoader. Api/SystemApi/Options alias the loader's
+// storage, so a QnnManager must not outlive its loader. Move-only.
 //
 //===----------------------------------------------------------------------===//
 
@@ -98,9 +96,9 @@ class QnnManager {
       std::unique_ptr<std::remove_pointer<QnnSystemContext_Handle_t>::type,
                       QnnSystemContext_FreeFn_t>;
 
-  // RAII wrapper for a QNN context handle plus its optional profile handle.
-  // Not a std::unique_ptr because QnnContext_FreeFn_t takes the profile handle
-  // as a second argument, and the profile must be freed before the context.
+  // RAII wrapper for a QNN context handle plus its optional profile. Not a
+  // std::unique_ptr because the free fn takes the profile as a second arg and
+  // the profile must be freed before the context.
   class ContextHandle {
    public:
     ContextHandle() = default;
@@ -156,26 +154,20 @@ class QnnManager {
     QnnProfile_FreeFn_t profile_free_fn_ = nullptr;
   };
 
-  // Which side of the compile/dispatch flow this QnnManager is bound to.
-  // Determines which fields of the custom-op-package option are consumed by
-  // Create().
+  // Selects which custom-op-package fields Create() consumes.
   enum class Mode {
     kCompile,
     kDispatch,
   };
 
-  // Binds `soc_info` to a ready-to-use QnnManager using the libraries owned
-  // by `loader`. Callable repeatedly with different SoCs -- libraries are not
-  // reloaded. `mode` selects which fields of the custom-op-package option
-  // are consumed.
+  // Binds `soc_info` to a ready-to-use QnnManager using `loader`'s libraries.
+  // Callable repeatedly with different SoCs without reloading libraries.
   static Expected<QnnManager> Create(const QnnApiLoader& loader,
                                      std::optional<::qnn::SocInfo> soc_info,
                                      Mode mode);
 
-  // Context config builders. `Default` is an empty (null-terminated) list; QNN
-  // treats it as the default. `WeightSharing` enables HTP weight sharing across
-  // contexts. `GpuPerformance` sets the GPU perf hint (falls back to Default
-  // for kDefault).
+  // Context config builders: empty/default, HTP weight-sharing, and GPU
+  // performance-hint (falls back to default for kDefault).
   static absl::Span<const QnnContext_Config_t*> DefaultContextConfigs();
   static absl::Span<const QnnContext_Config_t*> WeightSharingContextConfigs();
   static absl::Span<const QnnContext_Config_t*> GpuPerformanceContextConfigs(

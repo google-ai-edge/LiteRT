@@ -56,13 +56,12 @@ namespace litert::qnn {
 
 namespace {
 
-// Compile always registers the custom op package against the "CPU" target;
-// dispatch uses the caller-specified target instead.
+// Compile registers the custom op package against the "CPU" target; dispatch
+// uses the caller-specified target.
 constexpr char kCustomOpPackageCompileTarget[] = "CPU";
 
-// Registers the configured custom op package against `qnn_manager`, keyed by
-// `mode`. No-op when no package is configured or the backend is IR. Called
-// once at the tail of QnnManager::Create.
+// Registers the configured custom op package (if any) against `qnn_manager`.
+// No-op for the IR backend. Called at the tail of QnnManager::Create.
 LiteRtStatus RegisterCustomOpPackage(QnnManager& qnn_manager,
                                      QnnManager::Mode mode) {
   const auto& custom_op_package = qnn_manager.GetOptions().GetCustomOpPackage();
@@ -152,15 +151,14 @@ Expected<QnnManager> QnnManager::Create(const QnnApiLoader& loader,
 }
 
 Expected<SdkVersion> QnnManager::ParseSdkVersion(const char* build_id) {
-  // Generic parse-failure result.
+  // A generic error to be returned on any parsing failure.
   const auto parsing_error =
       Unexpected(kLiteRtStatusErrorRuntimeFailure, "Failed to parse build ID");
 
+  std::string_view version_str = build_id;
   if (!build_id) return parsing_error;
 
-  std::string_view version_str = build_id;
-
-  // Require the 'v' prefix, then strip it.
+  // Check for and remove the 'v' prefix.
   if (version_str.empty() || version_str.front() != 'v') {
     return parsing_error;
   }
@@ -179,7 +177,7 @@ Expected<SdkVersion> QnnManager::ParseSdkVersion(const char* build_id) {
     return true;
   };
 
-  // Expect "major.minor.patch".
+  // Parse major, minor, and patch versions, checking for dots in between.
   if (!parse_component(version.major)) return parsing_error;
 
   if (current == end || *current++ != '.') return parsing_error;

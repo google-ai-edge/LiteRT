@@ -58,8 +58,8 @@ static std::unique_ptr<QnnApiLoader>& LoaderStorage() {
   return *storage;
 }
 
-// The SoC-bound backend for dispatch. Bound once at Initialize(), off the same
-// manager, and reused for every device/invocation context.
+// The SoC-bound QnnManager for dispatch. Bound once at Initialize() and
+// reused for every device/invocation context.
 static std::optional<QnnManager>& QnnManagerStorage() {
   static absl::NoDestructor<std::optional<QnnManager>> storage;
   return *storage;

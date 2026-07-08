@@ -272,19 +272,15 @@ class LiteRtCompilerPluginT {
       }
     }
 
-    // DlcDir/BackendType are fixed once options are parsed above, so the
-    // override is a one-time decision rather than something recomputed on
-    // every Compile() call. It only ever applies to Compile's DLC dump;
-    // Partition always validates against the real backend type below.
+    // Decided once here (options are fixed after parsing). Applies only to
+    // Compile's DLC dump; Partition always uses the real backend type.
     ir_backend_override_ =
         !qnn_options_.GetDlcDir().empty() &&
         qnn_options_.GetBackendType() != ::qnn::BackendType::kIrBackend;
 
-    // Eagerly create the QNN manager once for the plugin's lifetime, using
-    // the real (non-overridden) backend type. If this fails (e.g. QNN
-    // libraries not present yet), leave loader_ null -- GetSDKVersion/
-    // Partition/Compile each retry lazily via their own "if (!loader)"
-    // fallback.
+    // Create the QNN loader once for the plugin's lifetime. If it fails (e.g.
+    // QNN libraries absent), leave loader_ null; GetSDKVersion/Partition/
+    // Compile retry lazily on first use.
     auto loader_or = QnnApiLoader::Create(qnn_options_, shared_library_dir_);
     if (loader_or) {
       loader_ = std::move(*loader_or);
@@ -298,14 +294,13 @@ class LiteRtCompilerPluginT {
 
   const ::qnn::Options& Options() const { return qnn_options_; }
 
-  // Whether Compile should override the backend type to IR for the DLC dump.
-  // Fixed at construction; Partition never applies this.
+  // Whether Compile overrides the backend type to IR for the DLC dump. Fixed
+  // at construction; Partition never applies this.
   bool IrBackendOverride() const { return ir_backend_override_; }
 
   LiteRtStatus InitLoader(std::unique_ptr<QnnApiLoader> loader) {
-    // Reset qnn_manager_ first: it aliases the old manager's .so, so swapping
-    // the manager (and dlclosing that .so) before the reset is a
-    // use-after-free.
+    // Reset qnn_manager_ before swapping loader_: it aliases the old loader's
+    // .so, so dlclosing that .so before the reset is a use-after-free.
     qnn_manager_.reset();
     loader_ = std::move(loader);
     return kLiteRtStatusOk;
@@ -389,7 +384,7 @@ LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
   QnnApiLoader* loader = compiler_plugin->Loader();
   if (!loader) {
     // No SoC known yet; load the libraries without binding one. Partition/
-    // Compile bind the SoC later via CreateBackend, reusing these libraries.
+    // Compile bind the SoC later, reusing these libraries.
     auto loader_or = QnnApiLoader::Create(
         compiler_plugin->Options(), compiler_plugin->shared_library_dir());
     if (!loader_or) {
