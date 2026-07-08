@@ -179,7 +179,7 @@ class TensorWrapper final {
           p->GetScale(), p->GetZeroPoint() + 32768);
       qnn_tensor_.v2.dataType = QNN_DATATYPE_UFIXED_POINT_16;
       UpdateQnnQuantParams();
-      QNN_LOG_INFO("Hack successfully :)");
+      QNN_LOG_INFO("[Hack] INT16 -> UINT16: %s", GetName().data());
     } else {
       QNN_LOG_ERROR("Something wrong QQ");
     }
