@@ -265,6 +265,12 @@ DspBackend::DspBackend(const QNN_INTERFACE_VER_TYPE* qnn_api)
 
 DspBackend::~DspBackend() = default;
 
+// TODO: DSP does not build any graph configs yet; returns an empty builder.
+GraphConfigBuilder DspBackend::BuildGraphConfigs(
+    const Options& /*options*/, absl::string_view /*qnn_graph_name*/) {
+  return {};
+}
+
 bool DspBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   // Log Handle
   auto local_log_handle = CreateLogHandle(options.GetLogLevel());

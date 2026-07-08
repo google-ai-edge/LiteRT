@@ -15,16 +15,13 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMPILER_GRAPH_MAPPER_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMPILER_GRAPH_MAPPER_H_
 
-
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "QnnCommon.h"  // from @qairt
-#include "QnnGraph.h"  // from @qairt
 
 namespace litert::qnn {
 
@@ -47,10 +44,6 @@ class GraphMapper {
   // CC Convenience Accessors
   const litert::compiler::Subgraph& Graph() const { return subgraph_; }
 
-  // Can implementation handle given LiteRtSubgraph topology (see comment at
-  // bottom of file).
-  LiteRtStatus IsLiteRtSubgraphSupported();
-
   // Initialize QNN Graph with given name. Call this after parsing
   // LiteRtSubgraph.
   LiteRtStatus InitQnnGraph(absl::string_view qnn_graph_name,
@@ -62,10 +55,6 @@ class GraphMapper {
   inline void RegisterOutput(LiteRtTensor litert_tensor) {
     graph_outpus_.insert(litert_tensor);
   }
-
-  // Pick graph config based on subgraph.
-  absl::Span<const QnnGraph_Config_t*> PickGraphConfigHeuristic(
-      const ::qnn::Options& options);
 
   inline bool IsTensorOutput(LiteRtTensor litert_tensor) {
     return graph_outpus_.contains(litert_tensor);

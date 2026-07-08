@@ -83,4 +83,9 @@ constexpr SocInfo kSocInfos[] = {
              )},
 };
 constexpr uint64_t kNumSocInfos = sizeof(kSocInfos) / sizeof(kSocInfos[0]);
+
+bool IsFp16Supported(const SocInfo& soc_info) {
+  return soc_info.dsp_arch != DspArch::V68 &&
+         soc_info.soc_model != SnapdragonModel::SAR2230P;
+}
 }  // namespace qnn

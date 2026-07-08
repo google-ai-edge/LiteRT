@@ -135,13 +135,6 @@ class QnnManager {
                                  const std::string& interface_provider,
                                  const std::string& target);
 
-  bool IsFp16Supported() {
-    // TODO(jiunkaiy): Remove this function after upgrading to stricter SDK
-    // restrictions.
-    return soc_info_.dsp_arch != ::qnn::DspArch::V68 &&
-           soc_info_.soc_model != ::qnn::SnapdragonModel::SAR2230P;
-  }
-
   // Get qnn backend handle. Nullptr if backendCreate has not been successfully
   // called.
   Qnn_BackendHandle_t BackendHandle() { return backend_->GetBackendHandle(); }
@@ -151,6 +144,12 @@ class QnnManager {
     if (!backend_) return kLiteRtStatusOk;
     if (backend_->SetPerformanceMode(options)) return kLiteRtStatusOk;
     return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  // Builds the backend-specific graph configs for graph creation.
+  ::qnn::GraphConfigBuilder BuildGraphConfigs(
+      const ::qnn::Options& options, absl::string_view qnn_graph_name) {
+    return backend_->BuildGraphConfigs(options, qnn_graph_name);
   }
 
   const ::qnn::Options& GetOptions() const { return options_; }

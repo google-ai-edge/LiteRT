@@ -280,6 +280,20 @@ target_link_libraries(dsp_backend_test
         GTest::gtest_main
 )
 
+# Graph config builder test
+add_executable(graph_config_builder_test)
+
+target_sources(graph_config_builder_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../core/backends/graph_config_builder_test.cc
+)
+
+target_link_libraries(graph_config_builder_test
+    PRIVATE
+        qnn_backends
+        GTest::gtest_main
+)
+
 # Backend utils test
 add_executable(backend_utils_test)
 

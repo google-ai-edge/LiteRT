@@ -8,6 +8,8 @@
 #include <memory>
 #include <optional>
 
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
@@ -49,6 +51,8 @@ class HtpBackend : public QnnBackend {
 
   explicit HtpBackend(const QNN_INTERFACE_VER_TYPE* qnn_api);
 
+  // Declared here, defined in .cc so the unique_ptr to the incomplete
+  // HtpPerfControl (pimpl) is destroyed where its type is complete.
   ~HtpBackend();
 
   HtpBackend(const HtpBackend&) = delete;
@@ -59,6 +63,9 @@ class HtpBackend : public QnnBackend {
   bool Init(const Options& options, std::optional<SocInfo> soc_info) override;
 
   bool SetPerformanceMode(const Options& options) override;
+
+  GraphConfigBuilder BuildGraphConfigs(
+      const Options& options, absl::string_view qnn_graph_name) override;
 
   SocInfo GetSocInfo() { return soc_info_; }
 
