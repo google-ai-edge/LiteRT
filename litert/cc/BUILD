@@ -706,9 +706,9 @@ cc_test(
         ":litert_environment",
         ":litert_expected",
         ":litert_layout",
-        ":litert_macros",
         ":litert_options",
         ":litert_ranked_tensor_type",
+        ":litert_string_util",
         ":litert_tensor_buffer",
         ":litert_tensor_buffer_requirements",
         ":litert_tensor_buffer_types",
@@ -731,6 +731,36 @@ cc_test(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "litert_string_util",
+    hdrs = ["litert_string_util.h"],
+    deps = [
+        ":litert_element_type",
+        ":litert_environment",
+        ":litert_expected",
+        ":litert_layout",
+        ":litert_macros",
+        ":litert_ranked_tensor_type",
+        ":litert_tensor_buffer",
+        ":litert_tensor_buffer_types",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "litert_string_util_test",
+    srcs = ["litert_string_util_test.cc"],
+    deps = [
+        ":litert_element_type",
+        ":litert_environment",
+        ":litert_string_util",
+        ":litert_tensor_buffer",
+        "//litert/test:common",
+        "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )
