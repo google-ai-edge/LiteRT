@@ -26,6 +26,7 @@
 #include "openvino/op/add.hpp"
 #include "openvino/op/concat.hpp"
 #include "openvino/op/constant.hpp"
+#include "openvino/op/convert.hpp"
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/parameter.hpp"
 #include "openvino/op/result.hpp"
@@ -119,6 +120,58 @@ std::shared_ptr<ov::Model> BuildSplitCacheAttention(int64_t s_past = 8,
       ov::ResultVector{result},
       ov::ParameterVector{q, k_cache, k_slice, v_cache, v_slice, mask},
       "split_cache_attention");
+}
+
+// Builds the "standard" single-branch attention that results after an offline
+// DynamicUpdateSlice merges the split KV cache into one tensor (see
+// inplace_kv_conversion/convert_inplace_kv.py). No Concat/Slice pair, one QK and
+// one PV MatMul:
+//   K: [B,H,S_kv,D]   V: [B,H,D,S_kv]  (V transposed, adj_y=true)
+//   scores = MatMul(Q, K, transpose_b=true)
+//   probs  = Softmax(scores + mask)
+//   out    = MatMul(probs, V, transpose_b=true)
+// When |with_mask| is false the mask Add is omitted (no-mask path).
+std::shared_ptr<ov::Model> BuildStandardAttention(int64_t s_kv = 16,
+                                                  int64_t lq = 1,
+                                                  bool with_mask = true) {
+  using ov::op::v0::Constant;
+  using ov::op::v0::MatMul;
+  using ov::op::v0::Parameter;
+  using ov::op::v1::Add;
+  using ov::op::v8::Softmax;
+
+  constexpr int64_t kBatch = 1;
+  constexpr int64_t kHeads = 8;
+  constexpr int64_t kDim = 256;
+  const auto f = ov::element::f32;
+
+  auto q = std::make_shared<Parameter>(
+      f, ov::Shape{static_cast<size_t>(kBatch), static_cast<size_t>(kHeads),
+                   static_cast<size_t>(lq), static_cast<size_t>(kDim)});
+  auto k = std::make_shared<Parameter>(
+      f, ov::Shape{static_cast<size_t>(kBatch), static_cast<size_t>(kHeads),
+                   static_cast<size_t>(s_kv), static_cast<size_t>(kDim)});
+  auto v = std::make_shared<Parameter>(
+      f, ov::Shape{static_cast<size_t>(kBatch), static_cast<size_t>(kHeads),
+                   static_cast<size_t>(kDim), static_cast<size_t>(s_kv)});
+
+  auto qk = std::make_shared<MatMul>(q, k, /*transpose_a=*/false,
+                                     /*transpose_b=*/true);
+  std::shared_ptr<ov::Node> scores = qk;
+  ov::ParameterVector params{q, k, v};
+  if (with_mask) {
+    auto mask = std::make_shared<Parameter>(
+        f, ov::Shape{static_cast<size_t>(kBatch), 1, static_cast<size_t>(lq),
+                     static_cast<size_t>(s_kv)});
+    scores = std::make_shared<Add>(qk, mask);
+    params.push_back(mask);
+  }
+  auto probs = std::make_shared<Softmax>(scores, /*axis=*/-1);
+  auto out = std::make_shared<MatMul>(probs, v, false, true);
+
+  auto result = std::make_shared<ov::op::v0::Result>(out);
+  return std::make_shared<ov::Model>(ov::ResultVector{result}, params,
+                                     "standard_attention");
 }
 
 template <typename T>
@@ -248,6 +301,125 @@ TEST(FuseSplitAttentionToSDPATest, NumericallyMatchesSplitCache) {
   }
   EXPECT_LT(max_abs_diff, 1e-4f)
       << "fused output diverges from split-cache reference";
+}
+
+TEST(FuseStandardAttentionToSDPATest, FusesStandardPattern) {
+  auto model = BuildStandardAttention(/*s_kv=*/16, /*lq=*/8);
+
+  EXPECT_EQ(CountOps<ov::op::v0::MatMul>(model), 2u);
+  EXPECT_EQ(CountOps<ov::op::v8::Softmax>(model), 1u);
+  EXPECT_EQ(CountOps<ov::op::v13::ScaledDotProductAttention>(model), 0u);
+
+  NpuOptimizer()
+      .SetCastIntegerSignToFloat(false)
+      .SetFuseStandardAttentionToSDPA(true)
+      .Run(model);
+
+  EXPECT_EQ(CountOps<ov::op::v13::ScaledDotProductAttention>(model), 1u);
+  EXPECT_EQ(CountOps<ov::op::v8::Softmax>(model), 0u);
+  EXPECT_EQ(CountOps<ov::op::v0::MatMul>(model), 0u);
+}
+
+// The fp16-DUS in-place model feeds K/V to the matmuls via a Convert (the OV
+// equivalent of the tflite CAST(fp16->f32) that follows the DynamicUpdateSlice).
+// The matcher takes whatever feeds the matmul as the SDPA K/V operand, so an
+// intervening Convert must not block the fusion.
+TEST(FuseStandardAttentionToSDPATest, FusesWithConvertedKv) {
+  using ov::op::v0::Constant;
+  using ov::op::v0::Convert;
+  using ov::op::v0::MatMul;
+  using ov::op::v0::Parameter;
+  using ov::op::v1::Add;
+  using ov::op::v8::Softmax;
+  const auto f16 = ov::element::f16;
+
+  // K/V provided as fp16 (like the persisted cache), Converted to f32 before the
+  // matmuls, exactly as in Section2_fp16kv_pruned_dusfp16.tflite.
+  auto q = std::make_shared<Parameter>(ov::element::f32, ov::Shape{1, 8, 1, 256});
+  auto k16 = std::make_shared<Parameter>(f16, ov::Shape{1, 8, 16, 256});
+  auto v16 = std::make_shared<Parameter>(f16, ov::Shape{1, 8, 256, 16});
+  auto mask =
+      std::make_shared<Parameter>(ov::element::f32, ov::Shape{1, 1, 1, 16});
+  auto k = std::make_shared<Convert>(k16, ov::element::f32);
+  auto v = std::make_shared<Convert>(v16, ov::element::f32);
+
+  auto qk = std::make_shared<MatMul>(q, k, false, true);
+  auto scores = std::make_shared<Add>(qk, mask);
+  auto probs = std::make_shared<Softmax>(scores, -1);
+  auto out = std::make_shared<MatMul>(probs, v, false, true);
+  auto model = std::make_shared<ov::Model>(
+      ov::ResultVector{std::make_shared<ov::op::v0::Result>(out)},
+      ov::ParameterVector{q, k16, v16, mask}, "converted_kv_attention");
+
+  NpuOptimizer()
+      .SetCastIntegerSignToFloat(false)
+      .SetFuseStandardAttentionToSDPA(true)
+      .Run(model);
+
+  EXPECT_EQ(CountOps<ov::op::v13::ScaledDotProductAttention>(model), 1u);
+  EXPECT_EQ(CountOps<ov::op::v8::Softmax>(model), 0u);
+  EXPECT_EQ(CountOps<ov::op::v0::MatMul>(model), 0u);
+  // The Convert nodes feeding K/V are preserved (SDPA consumes their f32 output).
+  EXPECT_EQ(CountOps<ov::op::v0::Convert>(model), 2u);
+}
+
+// The split-attention pass must not fire on the standard (single-branch)
+// pattern; the two matchers are mutually exclusive.
+TEST(FuseStandardAttentionToSDPATest, SplitPassDoesNotFireOnStandard) {
+  auto model = BuildStandardAttention(/*s_kv=*/16, /*lq=*/8);
+
+  NpuOptimizer()
+      .SetCastIntegerSignToFloat(false)
+      .SetFuseSplitAttentionToSDPA(true)
+      .Run(model);
+
+  EXPECT_EQ(CountOps<ov::op::v13::ScaledDotProductAttention>(model), 0u);
+  EXPECT_EQ(CountOps<ov::op::v0::MatMul>(model), 2u);
+}
+
+// End-to-end numerical check: the fused SDPA must match the original standard
+// attention. Decode shape (lq=1) exercises the transposed-V path.
+TEST(FuseStandardAttentionToSDPATest, NumericallyMatchesStandard) {
+  auto reference = BuildStandardAttention(/*s_kv=*/16, /*lq=*/1);
+  auto fused = reference->clone();
+
+  NpuOptimizer()
+      .SetCastIntegerSignToFloat(false)
+      .SetFuseStandardAttentionToSDPA(true)
+      .Run(fused);
+  ASSERT_NE(FindSdpa(fused), nullptr) << "fusion did not fire";
+
+  ov::Core core;
+  auto ref_compiled = core.compile_model(reference, "CPU");
+  auto fused_compiled = core.compile_model(fused, "CPU");
+  auto ref_req = ref_compiled.create_infer_request();
+  auto fused_req = fused_compiled.create_infer_request();
+
+  const size_t num_inputs = reference->inputs().size();
+  ASSERT_EQ(num_inputs, fused->inputs().size());
+  for (size_t i = 0; i < num_inputs; ++i) {
+    const auto& port = reference->input(i);
+    ov::Tensor t(port.get_element_type(), port.get_shape());
+    FillRandom(t, static_cast<uint32_t>(i + 1));
+    ref_req.set_input_tensor(i, t);
+    fused_req.set_input_tensor(i, t);
+  }
+
+  ref_req.infer();
+  fused_req.infer();
+
+  auto ref_out = ref_req.get_output_tensor(0);
+  auto fused_out = fused_req.get_output_tensor(0);
+  ASSERT_EQ(ref_out.get_size(), fused_out.get_size());
+  const auto* a = ref_out.data<float>();
+  const auto* b = fused_out.data<float>();
+  float max_abs_diff = 0.0f;
+  for (size_t i = 0; i < ref_out.get_size(); ++i) {
+    max_abs_diff = std::max(max_abs_diff, std::abs(a[i] - b[i]));
+    ASSERT_FALSE(std::isnan(b[i])) << "fused output has NaN at " << i;
+  }
+  EXPECT_LT(max_abs_diff, 1e-4f)
+      << "fused output diverges from standard-attention reference";
 }
 
 }  // namespace

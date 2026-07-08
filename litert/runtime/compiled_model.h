@@ -394,6 +394,13 @@ class LiteRtCompiledModelT {
   // Checks the CPU Tensors and stores them in the `cpu_tensors_` set.
   void CheckCpuTensors();
 
+  // Scans every subgraph for in-place DYNAMIC_UPDATE_SLICE ops (single-consumer
+  // operand) and records their operand/output identifier pairs on
+  // `buffer_context_`, so the delegate kernel and the boundary-buffer drain can
+  // co-alias both partition boundaries onto one host buffer. Must run before
+  // ModifyGraphWithDelegate (delegation reindexes/outlines ops).
+  void BuildDusInplaceMap();
+
   litert::Expected<void> ResizeInputTensorImpl(size_t signature_index,
                                                size_t input_index,
                                                absl::Span<const int> dims,
@@ -561,8 +568,22 @@ class LiteRtCompiledModelT {
   bool (*check_cancelled_func_)(void*) = nullptr;
   absl::AnyInvocable<bool()> check_cancelled_func_cpp_;
 
+  // One-time setup (called from Create, after the delegate is applied): runs an
+  // initial AllocateTensors so the dispatch delegate's Prepare pre-allocates
+  // host buffers for internal NPU<->CPU boundary tensors, attaches them as
+  // TFLite CustomAllocations, and re-allocates once so they take effect. Doing
+  // this at Create (not in Run) keeps the graph stable before any per-run I/O
+  // buffer registration. No-op when there are no such boundaries.
+  litert::Expected<void> AttachHostBoundaryBuffers();
+
   // Indicates whether the model is fully delegated on GPU or NPU.
   bool non_cpu_fully_delegated_ = false;
+
+  // Set once the internal NPU<->CPU boundary host buffers have been attached as
+  // TFLite CustomAllocations (zero-copy). One-shot: after the first successful
+  // attach + re-AllocateTensors, subsequent Run() calls skip the drain so they
+  // don't re-allocate and invalidate per-run I/O buffer registrations.
+  bool host_boundary_buffers_attached_ = false;
 };
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_

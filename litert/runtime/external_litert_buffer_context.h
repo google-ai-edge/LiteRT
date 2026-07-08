@@ -20,6 +20,8 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
 #include <utility>
 
 #include "litert/c/internal/litert_scheduling_info.h"
@@ -156,6 +158,70 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
         reinterpret_cast<const TfLiteOpaqueTensor*>(tensor));
   }
 
+  // Resolves the stable {subgraph_idx, tensor_idx} identifier for an opaque
+  // tensor (via the interpreter callback the CompiledModel installed). Used by
+  // delegate kernels to record WHICH subgraph a boundary tensor lives in, since
+  // the context-local tensor index alone is ambiguous across subgraphs.
+  inline litert::internal::TfLiteTensorIdentifier GetTensorIdentifier(
+      const TfLiteOpaqueTensor* tensor) const {
+    return get_tensor_identifier_fn_(tensor);
+  }
+
+  // A request from a delegate kernel (during Prepare) to back an internal
+  // partition-boundary TFLite tensor with a host buffer the backend already
+  // allocated, so an un-offloaded CPU consumer reads/writes it in place (no
+  // sync memcpy). CompiledModel drains these and calls
+  // SetCustomAllocationForTensor before AllocateTensors. `subgraph_index` and
+  // `tensor_index` are the subgraph-scoped identifier (Interpreter's
+  // SetCustomAllocationForTensor targets only the primary subgraph, so
+  // CompiledModel must route to the right subgraph explicitly).
+  struct HostCustomAllocationRequest {
+    int subgraph_index;
+    int tensor_index;
+    void* host_addr;
+    size_t size;
+  };
+  inline void AddHostCustomAllocationRequest(int subgraph_index,
+                                             int tensor_index, void* host_addr,
+                                             size_t size) {
+    host_custom_allocation_requests_.push_back(
+        {subgraph_index, tensor_index, host_addr, size});
+  }
+  inline const std::vector<HostCustomAllocationRequest>&
+  HostCustomAllocationRequests() const {
+    return host_custom_allocation_requests_;
+  }
+  inline void ClearHostCustomAllocationRequests() {
+    host_custom_allocation_requests_.clear();
+  }
+
+  // Records that a DYNAMIC_UPDATE_SLICE writes `output` in place from `operand`
+  // (operand has a single consumer, so the reference DUS kernel may share one
+  // buffer for both). CompiledModel populates this before delegation; the
+  // delegate kernel reads it during Prepare to co-alias the two partition
+  // boundaries onto ONE OpenVINO host buffer (island A writes it as the DUS
+  // operand, the CPU DUS updates it in place, island B reads it as the DUS
+  // output). Both keys are subgraph-scoped identifiers.
+  inline void AddDusInplacePair(
+      const litert::internal::TfLiteTensorIdentifier& output,
+      const litert::internal::TfLiteTensorIdentifier& operand) {
+    dus_inplace_operand_[output] = operand;
+    dus_inplace_operands_.insert(operand);
+  }
+  // If `output` is the output of an in-place DUS, returns its operand
+  // identifier; otherwise returns nullptr.
+  inline const litert::internal::TfLiteTensorIdentifier* DusInplaceOperandFor(
+      const litert::internal::TfLiteTensorIdentifier& output) const {
+    auto it = dus_inplace_operand_.find(output);
+    return it == dus_inplace_operand_.end() ? nullptr : &it->second;
+  }
+  // True if `operand` is the operand of some in-place DUS (i.e. it is consumed
+  // by a CPU DUS whose output is co-aliased back onto it).
+  inline bool IsDusInplaceOperand(
+      const litert::internal::TfLiteTensorIdentifier& operand) const {
+    return dus_inplace_operands_.find(operand) != dus_inplace_operands_.end();
+  }
+
   // Sets the async execution mode. It's set by CompiledModel and used by
   // DelegateKernel to decide whether to use async execution mode.
   inline void SetAsyncExecutionMode(bool async_execution_mode) {
@@ -282,6 +348,22 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
       const LiteRtExternalLiteRtBufferContextT&) = delete;
   LiteRtExternalLiteRtBufferContextT& operator=(
       const LiteRtExternalLiteRtBufferContextT&) = delete;
+
+  std::vector<HostCustomAllocationRequest> host_custom_allocation_requests_;
+
+  // In-place DYNAMIC_UPDATE_SLICE pairing (see AddDusInplacePair). Maps a DUS
+  // output identifier to its operand identifier, plus the reverse set of
+  // operands, so the kernel and the drain can co-alias both boundaries onto one
+  // host buffer and trigger the reference DUS kernel's in-place fast path.
+  std::unordered_map<litert::internal::TfLiteTensorIdentifier,
+                     litert::internal::TfLiteTensorIdentifier,
+                     litert::internal::TensorIdentifierHash,
+                     litert::internal::TensorIdentifierEqual>
+      dus_inplace_operand_;
+  std::unordered_set<litert::internal::TfLiteTensorIdentifier,
+                     litert::internal::TensorIdentifierHash,
+                     litert::internal::TensorIdentifierEqual>
+      dus_inplace_operands_;
 
   bool async_execution_mode_ = false;
   LiteRtOptions run_options_ = nullptr;

@@ -106,6 +106,24 @@ class DispatchDelegateKernel : public DispatchKernelInterface {
   Expected<void> ComputeRequirements(TfLiteOpaqueContext* context);
   Expected<void> ComputeTensorPortConnections(TfLiteOpaqueContext* context);
 
+  // Pre-allocates host-addressable OpenVINO buffers for internal NPU<->CPU
+  // partition-boundary tensors at Prepare time and records custom-allocation
+  // requests on buffer_context_ so the runtime can alias them onto the TFLite
+  // CPU tensors before AllocateTensors. Handles BOTH boundary directions of an
+  // un-offloaded CPU op (e.g. an in-graph DynamicUpdateSlice):
+  //   * dispatch OUTPUT feeding a CPU op (NPU -> CPU), and
+  //   * dispatch INPUT produced by a CPU op (CPU -> NPU).
+  // Only fires for tensors whose backend buffer requirements advertise a
+  // host-addressable type. Skips model I/O (handled by the normal binding path)
+  // and NPU<->NPU boundaries (already zero-copy via buffer_context_).
+  Expected<void> PreallocateHostBoundaryBuffers(TfLiteOpaqueContext* context);
+
+  // Shared implementation for one boundary tensor. `is_input` selects the
+  // direction (dispatch input vs output) purely for logging/semantics; the
+  // allocation + registration + custom-allocation-request are identical.
+  Expected<bool> PreallocateOneHostBoundary(TfLiteOpaqueContext* context,
+                                            int tensor_id, bool is_input);
+
   Expected<void> AllocateTensorBuffersIfNeeded(TfLiteOpaqueContext* context);
   Expected<LiteRtTensorBufferPtr> AllocateTensorBuffer(
       TfLiteOpaqueTensor* tfl_tensor);
@@ -199,6 +217,21 @@ class DispatchDelegateKernel : public DispatchKernelInterface {
 
   // Hold stale TensorInfo records for non-blocking out-fence unregistration.
   std::vector<std::pair<int, TensorInfo>> deferred_unregistrations_;
+
+  // Per-graph handover instrumentation (enabled by LITERT_PROFILE_BOUNDARY=1).
+  // Accumulated across all Eval calls and logged once at teardown, to separate
+  // the three costs in the DUS-rewritten NPU graph: input sync (CPU->OV
+  // memcpy), NPU dispatch invoke, and output sync (OV->CPU memcpy). With the
+  // in-place DUS co-alias working, the sync bytes for the KV boundaries should
+  // be ~0 (maybe_sync_with_cpu is false), so a nonzero sync total flags a
+  // fallback-to-copy.
+  bool profile_boundary_ = false;
+  uint64_t eval_count_ = 0;
+  double input_sync_us_ = 0.0;
+  double dispatch_invoke_us_ = 0.0;
+  double output_sync_us_ = 0.0;
+  uint64_t input_sync_bytes_ = 0;
+  uint64_t output_sync_bytes_ = 0;
 };
 
 }  // namespace litert::internal
