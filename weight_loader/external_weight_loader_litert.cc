@@ -771,11 +771,11 @@ class LiteRtWeightLoader : public WeightLoader {
       LiteRtRuntimeContext* runtime_context, const tflite::Model* model,
       std::optional<std::string> model_directory,
       std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source,
-      WeightInMemoryMap weight_in_memory_map = {})
+      const WeightInMemoryMap* weight_in_memory_map = nullptr)
       : runtime_context_(runtime_context),
         model_directory_(std::move(model_directory)),
         scoped_weight_source_(std::move(scoped_weight_source)),
-        weight_in_memory_map_(std::move(weight_in_memory_map)) {
+        weight_in_memory_map_(weight_in_memory_map) {
     ParseFlatBuffer(*model, infos_, entries_, canonical_external_buffer_ids_,
                     group_paths_);
     if (scoped_weight_source_) {
@@ -900,9 +900,9 @@ class LiteRtWeightLoader : public WeightLoader {
       const LiteRtWeightInfo& info) {
     // Check weight in memory map first.
     auto path_it = group_paths_.find(info.group_id);
-    if (path_it != group_paths_.end()) {
-      auto mem_it = weight_in_memory_map_.find(path_it->second);
-      if (mem_it != weight_in_memory_map_.end()) {
+    if (path_it != group_paths_.end() && weight_in_memory_map_ != nullptr) {
+      auto mem_it = weight_in_memory_map_->find(path_it->second);
+      if (mem_it != weight_in_memory_map_->end()) {
         return WeightSource{.kind = WeightSource::Kind::kHostMemory,
                             .host_memory = mem_it->second};
       }
@@ -934,7 +934,8 @@ class LiteRtWeightLoader : public WeightLoader {
   absl::flat_hash_map<uint32_t, std::string> group_paths_;
   std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source_;
   absl::flat_hash_map<uint32_t, litert::ScopedWeightSection> group_sections_;
-  WeightInMemoryMap weight_in_memory_map_;
+  const WeightInMemoryMap* weight_in_memory_map_;  // Client provided, not owned
+
   mutable std::vector<WeightInfo> weight_info_cache_;
 };
 
@@ -944,7 +945,7 @@ std::unique_ptr<WeightLoader> CreateLiteRtWeightLoader(
     LiteRtRuntimeContext* runtime_context, const tflite::Model* flatbuffer,
     std::optional<std::string> model_directory,
     std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source,
-    WeightInMemoryMap weight_in_memory_map) {
+    const WeightInMemoryMap* weight_in_memory_map) {
   return std::make_unique<LiteRtWeightLoader>(
       runtime_context, flatbuffer, std::move(model_directory),
       std::move(scoped_weight_source), std::move(weight_in_memory_map));

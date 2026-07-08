@@ -193,7 +193,7 @@ std::unique_ptr<WeightLoader> CreateLiteRtWeightLoader(
     LiteRtRuntimeContext* runtime_context, const tflite::Model* flatbuffer,
     std::optional<std::string> model_directory = std::nullopt,
     std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source = nullptr,
-    WeightInMemoryMap weight_in_memory_map = {});
+    const WeightInMemoryMap* weight_in_memory_map = nullptr);
 
 }  // namespace weight_loader
 
