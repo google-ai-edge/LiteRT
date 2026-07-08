@@ -35,7 +35,6 @@
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
-#include "litert/vendors/qualcomm/qnn_api_loader.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "HTP/QnnHtpMem.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
@@ -44,7 +43,6 @@
 
 using litert::Expected;
 using litert::Unexpected;
-using litert::qnn::QnnApiLoader;
 using litert::qnn::QnnManager;
 
 Expected<LiteRtDispatchDeviceContextT::Ptr>

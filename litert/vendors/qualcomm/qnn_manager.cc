@@ -28,6 +28,14 @@
 #include <utility>
 #include <vector>
 
+#include "GPU/QnnGpuContext.h"  // from @qairt
+#include "HTP/QnnHtpContext.h"  // from @qairt
+#include "HTP/QnnHtpProfile.h"  // from @qairt
+#include "QnnCommon.h"  // from @qairt
+#include "QnnContext.h"  // from @qairt
+#include "QnnProfile.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
+#include "System/QnnSystemContext.h"  // from @qairt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -43,14 +51,6 @@
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_api_loader.h"
-#include "GPU/QnnGpuContext.h"  // from @qairt
-#include "HTP/QnnHtpContext.h"  // from @qairt
-#include "HTP/QnnHtpProfile.h"  // from @qairt
-#include "QnnCommon.h"  // from @qairt
-#include "QnnContext.h"  // from @qairt
-#include "QnnProfile.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
-#include "System/QnnSystemContext.h"  // from @qairt
 
 namespace litert::qnn {
 
@@ -264,9 +264,8 @@ LiteRtStatus QnnManager::GenerateContextBinary(
 Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     absl::Span<const QnnContext_Config_t*> configs,
     ::qnn::Profiling profiling_level) {
-  const QnnApi* api = Api();
   Qnn_ContextHandle_t context_handle;
-  if (auto status = api->contextCreate(
+  if (auto status = Api()->contextCreate(
           BackendHandle(), DeviceHandle(),
           // `configs` should be null-terminated. For empty `configs`, most
           // backend libraries accept nullptr so we use nullptr directly instead
@@ -277,7 +276,7 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to create QNN context");
   }
-  auto context_deleter = api->contextFree;
+  auto context_deleter = Api()->contextFree;
 
   // Return empty profile handle if profiling is off.
   if (profiling_level == ::qnn::Profiling::kOff) {
@@ -293,7 +292,7 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     profiling = QNN_PROFILE_LEVEL_DETAILED;
   }
   if (auto status =
-          api->profileCreate(BackendHandle(), profiling, &profile_handle);
+          Api()->profileCreate(BackendHandle(), profiling, &profile_handle);
       status != QNN_SUCCESS) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to create profile handle");
@@ -305,7 +304,7 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
         .option = QNN_PROFILE_CONFIG_OPTION_ENABLE_OPTRACE, .enableOptrace = 1};
     static std::array<const QnnProfile_Config_t*, 2> results = {&profile_config,
                                                                 nullptr};
-    if (auto status = api->profileSetConfig(profile_handle, results.data());
+    if (auto status = Api()->profileSetConfig(profile_handle, results.data());
         status != QNN_SUCCESS) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Failed to set profile configs");
@@ -313,15 +312,14 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
   }
 
   return ContextHandle{context_handle, profile_handle, context_deleter,
-                       api->profileFree};
+                       Api()->profileFree};
 }
 
 Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     absl::Span<const QnnContext_Config_t*> configs,
     absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle) {
-  const QnnApi* api = Api();
   Qnn_ContextHandle_t context_handle;
-  if (auto status = api->contextCreateFromBinary(
+  if (auto status = Api()->contextCreateFromBinary(
           BackendHandle(), DeviceHandle(), configs.data(), bytecode.data(),
           bytecode.size(), &context_handle, profile_handle);
       status != QNN_SUCCESS) {
@@ -329,8 +327,8 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to create QNN context");
   }
-  auto context_deleter = api->contextFree;
-  auto profile_deleter = api->profileFree;
+  auto context_deleter = Api()->contextFree;
+  auto profile_deleter = Api()->profileFree;
   return ContextHandle{context_handle, profile_handle, context_deleter,
                        profile_deleter};
 }

@@ -53,7 +53,6 @@
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
-#include "litert/vendors/qualcomm/qnn_api_loader.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "HTP/QnnHtpProfile.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
@@ -62,7 +61,6 @@
 
 using litert::Expected;
 using litert::Unexpected;
-using litert::qnn::QnnApiLoader;
 using litert::qnn::QnnManager;
 
 std::string_view inline GetEventUnit(QnnProfile_EventUnit_t unit) {
