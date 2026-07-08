@@ -20,7 +20,6 @@
 #include <utility>
 #include <vector>
 
-#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
@@ -161,11 +160,12 @@ template <typename T>
                                 "Tensor buffer must have 2 dimensions.");
   }
 
-  auto lock_and_addr = ::litert::TensorBufferScopedLock::Create(
-      *const_cast<::litert::TensorBuffer*>(&tensor_buffer),
-      TensorBuffer::LockMode::kRead);
-  ABSL_DCHECK(lock_and_addr.HasValue());
-  auto data_from = absl::MakeConstSpan(static_cast<T*>(lock_and_addr->second),
+  LITERT_ASSIGN_OR_RETURN(
+      auto lock_and_addr,
+      ::litert::TensorBufferScopedLock::Create(
+          *const_cast<::litert::TensorBuffer*>(&tensor_buffer),
+          TensorBuffer::LockMode::kRead));
+  auto data_from = absl::MakeConstSpan(static_cast<T*>(lock_and_addr.second),
                                        dimensions[0] * dimensions[1]);
   std::vector<std::vector<T>> data_to(dimensions[0]);
   for (int i = 0; i < dimensions[0]; ++i) {
@@ -240,10 +240,11 @@ template <typename TargetType, typename SourceType>
     return tensor_buffer.Error();
   }
 
-  auto lock_and_addr = ::litert::TensorBufferScopedLock::Create(
-      *tensor_buffer, TensorBuffer::LockMode::kWrite);
-  ABSL_DCHECK(lock_and_addr.HasValue());
-  auto* target = static_cast<TargetType*>(lock_and_addr->second);
+  LITERT_ASSIGN_OR_RETURN(
+      auto lock_and_addr,
+      ::litert::TensorBufferScopedLock::Create(
+          *tensor_buffer, TensorBuffer::LockMode::kWrite));
+  auto* target = static_cast<TargetType*>(lock_and_addr.second);
   for (int i = 0; i < source.size(); ++i) {
     target[i] = static_cast<TargetType>(source[i]);
   }
@@ -270,12 +271,13 @@ template <typename T>
         "Element type is not compatible to the target type.");
   }
 
-  auto lock_and_addr = ::litert::TensorBufferScopedLock::Create(
-      *const_cast<::litert::TensorBuffer*>(&tensor_buffer),
-      TensorBuffer::LockMode::kRead);
-  ABSL_DCHECK(lock_and_addr.HasValue());
+  LITERT_ASSIGN_OR_RETURN(
+      auto lock_and_addr,
+      ::litert::TensorBufferScopedLock::Create(
+          *const_cast<::litert::TensorBuffer*>(&tensor_buffer),
+          TensorBuffer::LockMode::kRead));
   LITERT_ASSIGN_OR_RETURN(auto num_elements, type->Layout().NumElements());
-  return absl::MakeSpan(static_cast<T*>(lock_and_addr->second), num_elements);
+  return absl::MakeSpan(static_cast<T*>(lock_and_addr.second), num_elements);
 }
 
 // TODO: b/431234598 - This copies data between GPU and CPU backends which
