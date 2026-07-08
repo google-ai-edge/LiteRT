@@ -79,7 +79,7 @@ LiteRtStatus LrtCreateSamsungOptionsFromToml(const char* toml_payload,
     *options = nullptr;
   }
 
-  return kLiteRtStatusOk;
+  return status;
 }
 
 LiteRtStatus LrtGetOpaqueSamsungOptionsData(LrtSamsungOptions options,
@@ -100,7 +100,7 @@ LiteRtStatus LrtGetOpaqueSamsungOptionsData(LrtSamsungOptions options,
   }
 
   if (options->soc_model.has_value()) {
-    toml << "samsung_soc_model = " << *options->soc_model << "\n";
+    toml << "samsung_soc_model = \"" << *options->soc_model << "\"\n";
   }
 
   std::string toml_str = toml.str();
@@ -122,7 +122,7 @@ LiteRtStatus LrtSamsungOptionsSetEnableLargeModelSupport(
 
 LiteRtStatus LrtSamsungOptionsGetEnableLargeModelSupport(
     LrtSamsungOptions options, bool* enable_large_model_support) {
-  if (options == nullptr) {
+  if (options == nullptr || enable_large_model_support == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   *enable_large_model_support =
