@@ -48,6 +48,8 @@ struct TfLiteOpBuildInfo {
   const std::string* custom_code = nullptr;
   const std::vector<uint8_t>* custom_options = nullptr;
 
+  std::vector<graph::Tensor> inputs;
+
   template <typename OpCodeT>
   explicit TfLiteOpBuildInfo(OpCodeT code)
       : builtin_code(static_cast<tflite::BuiltinOperator>(code)) {}

@@ -646,6 +646,11 @@ Tensor<Mixins...> ExpandDims(Tensor<Mixins...> input, Tensor<Mixins...> axis,
     if (real_axis < 0) {
       real_axis += input_info.shape.size() + 1;
     }
+    if (real_axis < 0 ||
+        real_axis > static_cast<int>(input_info.shape.size())) {
+      return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
+          "The ExpandDims axis is out of range.")));
+    }
     output_info.shape.insert(output_info.shape.begin() + real_axis, 1);
   }
 
@@ -1378,11 +1383,19 @@ Tensor<Mixins...> Pack(absl::Span<Tensor<Mixins...>> inputs, int axis,
   op->axis = axis;
   AddInputs(op, inputs);
   Tensor<Mixins...> output = AddOutput(op, loc);
+  if (inputs.empty()) {
+    return Tensor<Mixins...>(graph::ErrorTensor(
+        absl::InvalidArgumentError("Pack requires at least one input.")));
+  }
   const graph::TensorInformation& first_input_info =
       *GetInfo(inputs[0].GetRaw());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.type = first_input_info.type;
   output_info.shape = first_input_info.shape;
+  if (axis < 0 || axis > static_cast<int>(first_input_info.shape.size())) {
+    return Tensor<Mixins...>(graph::ErrorTensor(
+        absl::InvalidArgumentError("The Pack axis is out of range.")));
+  }
   output_info.shape.insert(output_info.shape.begin() + axis, inputs.size());
 
   graph::OpDebugger::DebugOp(*op);
@@ -2088,6 +2101,11 @@ Tensor<Mixins...> OneHot(Tensor<Mixins...> indices, Tensor<Mixins...> depth,
   if (depth_info.buffer) {
     depth_val =
         depth_info.buffer->Lock().template As<const int32_t>().data()[0];
+  }
+  if (resolved_axis < 0 ||
+      resolved_axis > static_cast<int>(indices_info.shape.size())) {
+    return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
+        "The OneHot axis is out of range.")));
   }
   output_info.shape.insert(output_info.shape.begin() + resolved_axis,
                            depth_val);

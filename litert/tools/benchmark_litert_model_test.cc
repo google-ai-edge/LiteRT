@@ -88,6 +88,13 @@ TEST_F(BenchmarkLiteRtModelTest, GetModelSizeFromPathSucceeded) {
   EXPECT_GE(listener.results_.model_size_mb(), 0);
 }
 
+TEST_F(BenchmarkLiteRtModelTest, DefaultParamsExposeXnnpackWeightCacheOptions) {
+  BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
+
+  EXPECT_TRUE(params.HasParam("xnnpack_weight_cache_file_path"));
+  EXPECT_EQ(params.Get<std::string>("xnnpack_weight_cache_file_path"), "");
+}
+
 TEST_F(BenchmarkLiteRtModelTest, CpuOnlyInitDoesNotProbeGpuAccelerator) {
 #if defined(LITERT_DISABLE_GPU)
   GTEST_SKIP() << "GPU accelerator auto-registration is disabled.";
@@ -106,7 +113,28 @@ TEST_F(BenchmarkLiteRtModelTest, CpuOnlyInitDoesNotProbeGpuAccelerator) {
   EXPECT_EQ(benchmark.Init(), kTfLiteOk);
   const std::string logs = testing::internal::GetCapturedStderr();
 
-  EXPECT_EQ(logs.find("Attempting to load GPU accelerator("), std::string::npos) << logs;
+  EXPECT_EQ(logs.find("Attempting to load GPU accelerator("), std::string::npos)
+      << logs;
+}
+
+TEST_F(BenchmarkLiteRtModelTest, BenchmarkWithXnnpackWeightCacheFilePath) {
+  BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
+  params.Set<std::string>("graph", kModelPath);
+  params.Set<std::string>("signature_to_run_for", kSignatureToRunFor);
+  params.Set<bool>("use_cpu", true);
+  params.Set<bool>("use_gpu", false);
+  params.Set<bool>("require_full_delegation", false);
+
+  std::string cache_file_path = ::testing::TempDir();
+  if (!cache_file_path.empty() && cache_file_path.back() != '/') {
+    cache_file_path.push_back('/');
+  }
+  cache_file_path += "litert_xnnpack_weight_cache_test.bin";
+  params.Set<std::string>("xnnpack_weight_cache_file_path", cache_file_path);
+
+  BenchmarkLiteRtModel benchmark = BenchmarkLiteRtModel(std::move(params));
+
+  EXPECT_EQ(benchmark.Init(), kTfLiteOk);
 }
 
 TEST_F(BenchmarkLiteRtModelTest, BenchmarkWithResultFilePath) {
@@ -156,9 +184,8 @@ TEST_F(BenchmarkLiteRtModelTest, BenchmarkWithResultFilePath) {
   EXPECT_FLOAT_EQ(
       result.latency_metrics().p95_ms(),
       listener.results_.inference_time_us().percentile(95) / 1000.0);
-  EXPECT_FLOAT_EQ(
-      result.latency_metrics().p5_ms(),
-      listener.results_.inference_time_us().percentile(5) / 1000.0);
+  EXPECT_FLOAT_EQ(result.latency_metrics().p5_ms(),
+                  listener.results_.inference_time_us().percentile(5) / 1000.0);
 
   // Verify memory metrics.
   EXPECT_EQ(result.memory_metrics().init_footprint_kb(),
