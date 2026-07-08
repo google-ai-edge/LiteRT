@@ -5,7 +5,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <utility>
 #include <vector>
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"

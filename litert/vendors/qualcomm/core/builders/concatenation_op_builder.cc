@@ -4,7 +4,6 @@
 #include "litert/vendors/qualcomm/core/builders/concatenation_op_builder.h"
 
 #include <cstdint>
-#include <utility>
 #include <vector>
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
