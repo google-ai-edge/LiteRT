@@ -119,6 +119,9 @@ LiteRtStatus LiteRtGetCompiledModelOutputTensorLayouts(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
     size_t num_layouts, LiteRtLayout* layouts, bool update_allocation);
 
+// Returns the associated environment of the given compiled model.
+LiteRtStatus LiteRtGetCompiledModelEnvironment(
+    LiteRtCompiledModel compiled_model, LiteRtEnvironment* environment);
 
 // Runs the model of the given signature synchronously, with the provided
 // input/output LiteRtTensorBuffer.
