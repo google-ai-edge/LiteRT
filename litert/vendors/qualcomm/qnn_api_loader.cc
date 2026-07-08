@@ -277,7 +277,7 @@ LiteRtStatus QnnApiLoader::ResolveApi(Qnn_Version_t expected_qnn_version) {
   }
 
   auto qnn_version = providers[0]->apiVersion;
-  // Core API version check.
+  // Check api version
   if (qnn_version.coreApiVersion.major != QNN_API_VERSION_MAJOR) {
     LITERT_LOG(LITERT_ERROR,
                "Qnn library version %u.%u.%u is not supported. "
@@ -317,7 +317,7 @@ LiteRtStatus QnnApiLoader::ResolveApi(Qnn_Version_t expected_qnn_version) {
   if (!options_.GetSaverOutputDir().empty()) {
     expected_qnn_version = GetExpectedSaverVersion();
   }
-  // Backend API version check.
+  // Check backend version
   if (qnn_version.backendApiVersion.major != expected_qnn_version.major) {
     LITERT_LOG(LITERT_ERROR,
                "Qnn backend library version %u.%u.%u is not supported. "
@@ -442,13 +442,15 @@ LiteRtStatus QnnApiLoader::LoadLibraries(
     return kLiteRtStatusErrorRuntimeFailure;
   }
 
-  // If shared_library_dir is provided, prepend it to the loader search paths.
-  // TODO: This should probably be done upstream in litert_dispatch.
+  // If shared_library_dir is provided, add it to the path as it may contain
+  // libs to be loaded.
+  // TOOD: This should probably be done upstream in litert_dispatch.
   if (shared_library_dir) {
     LITERT_LOG(LITERT_INFO, "Adding shared library dir to path: %s",
                shared_library_dir->c_str());
 
-    // Always overwrite to enforce that only the provided paths are used.
+    // Always overwrite the environment variable as we want to use the
+    // provided library paths only.
     static constexpr char kAdsp[] = "ADSP_LIBRARY_PATH";
     const char* adsp_library_path = getenv(kAdsp);
     if (adsp_library_path == nullptr) {
@@ -482,7 +484,7 @@ LiteRtStatus QnnApiLoader::LoadLibraries(
   LITERT_RETURN_IF_ERROR(LoadLib(lib_info->library_name));
   LITERT_RETURN_IF_ERROR(ResolveApi(lib_info->expected_version));
 
-  // Build id is SoC-independent, so parse it here rather than in QnnManager.
+  // Build id is SoC-independent and readable before backend creation.
   const char* build_id;
   if (Api()->backendGetBuildId(&build_id) != QNN_SUCCESS) {
     LITERT_LOG(LITERT_ERROR, "%s", "Failed to get QNN backend build ID");

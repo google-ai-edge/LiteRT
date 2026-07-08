@@ -205,7 +205,7 @@ Expected<ContextBinaryInfo> ContextBinaryInfo::Create(
   LITERT_ASSIGN_OR_RETURN(
       binary_version,
       ::litert::qnn::ParseSdkVersion(binary_info->contextBinaryInfoV1.buildId));
-  const auto& sdk_version = qnn.GetSdkVersion();
+  const auto sdk_version = qnn.GetSdkVersion();
   if (binary_version > sdk_version) {
     LITERT_LOG(LITERT_ERROR,
                "Context binary (%d.%d.%d) is newer than the current SDK "

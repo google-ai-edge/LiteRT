@@ -148,9 +148,9 @@ Expected<QnnManager> QnnManager::Create(const QnnApiLoader& loader,
 }
 
 LiteRtStatus QnnManager::ValidateOp(::qnn::OpWrapper& op) {
-  // TODO(jiunkaiy): Drop these version-gated bypasses once the minimum SDK
-  // version has moved past them.
-  // RmsNorm bypass.
+  // TODO(jiunkaiy): Remove version check and break backward compatibility when
+  // acceptable.
+  // Bypass RmsNorm OP validation.
   if (SdkVersion{2, 35, 0} <= sdk_version_ &&
       sdk_version_ < SdkVersion{2, 37, 0} &&
       op.IsOpCode(::qnn::QnnOpCode::kRmsNorm)) {
@@ -159,7 +159,7 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::OpWrapper& op) {
                "bypassed.");
     return kLiteRtStatusOk;
   }
-  // L2Norm bypass.
+  // Bypass L2Norm OP validation.
   if (SdkVersion{2, 39, 0} <= sdk_version_ &&
       sdk_version_ < SdkVersion{2, 43, 0} &&
       op.IsOpCode(::qnn::QnnOpCode::kL2Norm)) {
@@ -168,7 +168,7 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::OpWrapper& op) {
                "bypassed.");
     return kLiteRtStatusOk;
   }
-  // Quantize F32->QuantI16 bypass.
+  // Bypass Quantize OP validation.
   if (SdkVersion{2, 35, 0} <= sdk_version_ &&
       sdk_version_ < SdkVersion{2, 38, 0} &&
       op.IsOpCode(::qnn::QnnOpCode::kQuantize) &&
@@ -178,7 +178,7 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::OpWrapper& op) {
                "bypassed.");
     return kLiteRtStatusOk;
   }
-  // Split bypass.
+  // Bypass Split OP validation.
   if (SdkVersion{2, 35, 0} <= sdk_version_ &&
       sdk_version_ < SdkVersion{2, 37, 0} &&
       op.IsOpCode(::qnn::QnnOpCode::kSplit)) {
@@ -219,16 +219,16 @@ LiteRtStatus QnnManager::GenerateContextBinary(
   return kLiteRtStatusOk;
 }
 
-Expected<ContextHandle> QnnManager::CreateContextHandle(
+Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     absl::Span<const QnnContext_Config_t*> configs,
     ::qnn::Profiling profiling_level) {
   const QnnApi* api = Api();
   Qnn_ContextHandle_t context_handle;
   if (auto status = api->contextCreate(
           BackendHandle(), DeviceHandle(),
-          // `configs` must be null-terminated. Most backend libraries accept
-          // nullptr for an empty list, so we pass nullptr directly instead of
-          // a single-element array containing only nullptr.
+          // `configs` should be null-terminated. For empty `configs`, most
+          // backend libraries accept nullptr so we use nullptr directly instead
+          // of a array which contains only one nullptr.
           configs.size() <= 1 ? nullptr : configs.data(), &context_handle);
       status != QNN_SUCCESS) {
     LITERT_LOG(LITERT_ERROR, "Failed to create QNN context: %d", status);
@@ -274,7 +274,7 @@ Expected<ContextHandle> QnnManager::CreateContextHandle(
                        api->profileFree};
 }
 
-Expected<ContextHandle> QnnManager::CreateContextHandle(
+Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     absl::Span<const QnnContext_Config_t*> configs,
     absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle) {
   const QnnApi* api = Api();
@@ -293,7 +293,8 @@ Expected<ContextHandle> QnnManager::CreateContextHandle(
                        profile_deleter};
 }
 
-Expected<SystemContextHandle> QnnManager::CreateSystemContextHandle() {
+Expected<QnnManager::SystemContextHandle>
+QnnManager::CreateSystemContextHandle() {
   QnnSystemContext_Handle_t system_context_handle;
   if (auto status = SystemApi()->systemContextCreate(&system_context_handle);
       status != QNN_SUCCESS) {
@@ -305,12 +306,13 @@ Expected<SystemContextHandle> QnnManager::CreateSystemContextHandle() {
   return SystemContextHandle{system_context_handle, deleter};
 }
 
-absl::Span<const QnnContext_Config_t*> DefaultContextConfigs() {
+absl::Span<const QnnContext_Config_t*> QnnManager::DefaultContextConfigs() {
   static const QnnContext_Config_t* configs[] = {nullptr};
   return absl::MakeSpan(configs);
 }
 
-absl::Span<const QnnContext_Config_t*> WeightSharingContextConfigs() {
+absl::Span<const QnnContext_Config_t*>
+QnnManager::WeightSharingContextConfigs() {
   static QnnHtpContext_CustomConfig_t customConfig =
       QNN_HTP_CONTEXT_CUSTOM_CONFIG_INIT;
   customConfig.option = QNN_HTP_CONTEXT_CONFIG_OPTION_WEIGHT_SHARING_ENABLED;
@@ -322,7 +324,7 @@ absl::Span<const QnnContext_Config_t*> WeightSharingContextConfigs() {
   return absl::MakeSpan(configs);
 }
 
-absl::Span<const QnnContext_Config_t*> GpuPerformanceContextConfigs(
+absl::Span<const QnnContext_Config_t*> QnnManager::GpuPerformanceContextConfigs(
     ::qnn::GpuPerformanceMode performance_mode) {
   static QnnGpuContext_CustomConfig_t customConfig =
       QNN_GPU_CONTEXT_CUSTOM_CONFIG_INIT;

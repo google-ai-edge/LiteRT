@@ -29,7 +29,7 @@ class QnnModelTest : public testing::TestWithParam<
  protected:
   QnnApiLoader::Ptr loader_{};
   std::optional<QnnManager> qnn_manager_{};
-  ContextHandle context_handle_{};
+  QnnManager::ContextHandle context_handle_{};
   ::qnn::QnnModel qnn_model_{};
   ::qnn::TensorPool tensor_pool_{};
   bool is_fp16_supported_{false};

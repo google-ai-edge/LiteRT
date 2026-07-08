@@ -17,6 +17,11 @@
 
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 
+#if defined(_WIN32)
+#include <malloc.h>
+#else
+#include <alloca.h>
+#endif
 #include <stdbool.h>
 #include <stdio.h>
 
@@ -1601,8 +1606,7 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
                       const ::qnn::Options& options,
                       std::vector<::qnn::TensorWrapper>* inputs = nullptr,
                       std::vector<::qnn::TensorWrapper>* outputs = nullptr) {
-  GraphMapper graph_mapper(ctx, subgraph, qnn, context_handle,
-                           profile_handle);
+  GraphMapper graph_mapper(ctx, subgraph, qnn, context_handle, profile_handle);
   LITERT_RETURN_IF_ERROR(graph_mapper.IsLiteRtSubgraphSupported());
   LITERT_RETURN_IF_ERROR(graph_mapper.InitQnnGraph(qnn_graph_name, options));
 
@@ -1627,8 +1631,7 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
       tensor_wrapper->SetMemHandle(nullptr);
     }
     litert_tensor_to_wrapper.emplace(subgraph_input.Get(), tensor_wrapper);
-    LITERT_RETURN_IF_ERROR(AddTensorToQnn(qnn.Api(),
-                                          graph_mapper.QnnGraph(),
+    LITERT_RETURN_IF_ERROR(AddTensorToQnn(qnn.Api(), graph_mapper.QnnGraph(),
                                           *tensor_wrapper, created_tensors));
     if (inputs != nullptr) {
       inputs->push_back(*tensor_wrapper);
@@ -1715,19 +1718,18 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
   // Create ops and their corresponding tensors.
   for (auto& op_wrapper : graph_op_wrappers) {
     for (const auto& tensor_wrapper_ref : op_wrapper.GetAllTensors()) {
-      LITERT_RETURN_IF_ERROR(
-          AddTensorToQnn(qnn.Api(), graph_mapper.QnnGraph(),
-                         tensor_wrapper_ref.get(), created_tensors));
+      LITERT_RETURN_IF_ERROR(AddTensorToQnn(qnn.Api(), graph_mapper.QnnGraph(),
+                                            tensor_wrapper_ref.get(),
+                                            created_tensors));
     }
     auto error = qnn.Api()->graphAddNode(graph_mapper.QnnGraph(),
-                                                 op_wrapper.GetOpConfig());
+                                         op_wrapper.GetOpConfig());
     if (QNN_SUCCESS == error) {
       continue;
     }
 
     const char* message = nullptr;
-    auto get_message_error =
-        qnn.Api()->errorGetMessage(error, &message);
+    auto get_message_error = qnn.Api()->errorGetMessage(error, &message);
     if (QNN_SUCCESS == get_message_error) {
       LITERT_LOG(LITERT_ERROR,
                  "Failed to add node into graph, error: %d, message: %s", error,
@@ -1788,15 +1790,16 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
 //
 //===----------------------------------------------------------------------===//
 
-LiteRtStatus ComposeGraph(
-    const LiteRtCompilerContext* ctx, QnnManager& qnn,
-    Qnn_ContextHandle_t context_handle, Qnn_ProfileHandle_t profile_handle,
-    LiteRtSubgraph subgraph, absl::string_view qnn_graph_name,
-    const ::qnn::Options& options, std::vector<::qnn::TensorWrapper>* inputs,
-    std::vector<::qnn::TensorWrapper>* outputs) {
-  LITERT_RETURN_IF_ERROR(MapGraph(ctx, qnn, context_handle,
-                                  profile_handle, subgraph, qnn_graph_name,
-                                  options, inputs, outputs));
+LiteRtStatus ComposeGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
+                          Qnn_ContextHandle_t context_handle,
+                          Qnn_ProfileHandle_t profile_handle,
+                          LiteRtSubgraph subgraph,
+                          absl::string_view qnn_graph_name,
+                          const ::qnn::Options& options,
+                          std::vector<::qnn::TensorWrapper>* inputs,
+                          std::vector<::qnn::TensorWrapper>* outputs) {
+  LITERT_RETURN_IF_ERROR(MapGraph(ctx, qnn, context_handle, profile_handle,
+                                  subgraph, qnn_graph_name, options, inputs, outputs));
   return kLiteRtStatusOk;
 }
 

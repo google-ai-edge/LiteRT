@@ -62,7 +62,7 @@ void QnnModelTest::SetUpQnnModel(const ::qnn::Options& options,
   ASSERT_TRUE(backend) << backend.Error();
   qnn_manager_.emplace(std::move(*backend));
 
-  auto context_configs = ::litert::qnn::DefaultContextConfigs();
+  auto context_configs = QnnManager::DefaultContextConfigs();
   auto context_handle = qnn_manager_->CreateContextHandle(
       context_configs, options.GetProfiling());
   ASSERT_TRUE(context_handle) << context_handle.Error();

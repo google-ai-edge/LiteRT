@@ -26,6 +26,7 @@
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
@@ -43,7 +44,6 @@
 
 using litert::Expected;
 using litert::Unexpected;
-using litert::qnn::ContextHandle;
 using litert::qnn::QnnApiLoader;
 using litert::qnn::QnnManager;
 
@@ -173,7 +173,7 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       mem_descriptor.dmaBufInfo =
           Qnn_MemDmaBufInfo_t{buffer_fd, buffer_host_addr};
       break;
-    // DSP backend only supports QNN_MEM_TYPE_ION.
+    // DSP Backend only supports QNN_MEM_TYPE_ION.
     case ::qnn::BackendType::kDspBackend:
       mem_descriptor.memType = QNN_MEM_TYPE_ION;
       mem_descriptor.ionInfo.fd = buffer_fd;
@@ -231,7 +231,7 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   return mem_handle;
 }
 
-Expected<const litert::qnn::ContextHandle&>
+Expected<const litert::qnn::QnnManager::ContextHandle&>
 LiteRtDispatchDeviceContextT::GetOrCreateContext(
     const void* bytecode_ptr, size_t bytecode_size,
     Qnn_ProfileHandle_t profile_handle) {
@@ -247,7 +247,7 @@ LiteRtDispatchDeviceContextT::GetOrCreateContext(
   LITERT_LOG(LITERT_INFO, "Creating new QNN context for bytecode %p (size %zu)",
              bytecode_ptr, bytecode_size);
   auto context_handle_expected = qnn_manager_.CreateContextHandle(
-      ::litert::qnn::DefaultContextConfigs(),
+      QnnManager::DefaultContextConfigs(),
       absl::MakeSpan(static_cast<const uint8_t*>(bytecode_ptr), bytecode_size),
       profile_handle);
 
@@ -255,8 +255,8 @@ LiteRtDispatchDeviceContextT::GetOrCreateContext(
     return Unexpected(context_handle_expected.Error());
   }
 
-  context_cache_[key] =
-      std::make_unique<ContextHandle>(std::move(*context_handle_expected));
+  context_cache_[key] = std::make_unique<QnnManager::ContextHandle>(
+      std::move(*context_handle_expected));
   return *(context_cache_[key]);
 }
 

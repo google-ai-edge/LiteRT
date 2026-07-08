@@ -39,6 +39,9 @@
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_model.h"
+#include "litert/c/litert_opaque_options.h"
+#include "litert/c/litert_options.h"
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -60,7 +63,6 @@
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "QnnCommon.h"  // from @qairt
 
-using ::litert::qnn::ContextHandle;
 using ::litert::qnn::QnnApiLoader;
 using ::litert::qnn::QnnManager;
 
@@ -148,7 +150,7 @@ struct LiteRtCompiledResultT {
   // corresponds to the i-th call.
   std::vector<size_t> byte_code_index;
   // Hold the context handles for Just-In-Time if enabled.
-  std::vector<ContextHandle> context_handles;
+  std::vector<QnnManager::ContextHandle> context_handles;
   // Hold the QnnJitGraph for each subgraph for Just-In-Time.
   std::vector<std::unique_ptr<litert::qnn::QnnJitGraph>> jit_graphs;
 };
@@ -312,9 +314,9 @@ class LiteRtCompilerPluginT {
   QnnApiLoader* Loader() { return loader_.get(); }
 
   // Valid only after EnsureQnnManagerCreated() has succeeded.
-  QnnManager& GetQnnManager() {
+  QnnManager& QNN() {
     ABSL_CHECK(qnn_manager_.has_value())
-        << "GetQnnManager() called before EnsureQnnManagerCreated() succeeded";
+        << "QNN() called before EnsureQnnManagerCreated() succeeded";
     return *qnn_manager_;
   }
 
@@ -434,7 +436,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
   LITERT_RETURN_IF_ERROR(compiler_plugin->EnsureQnnManagerCreated(
       opt_soc_model, QnnManager::Mode::kCompile));
-  QnnManager& qnn_manager = compiler_plugin->GetQnnManager();
+  QnnManager& qnn_manager = compiler_plugin->QNN();
 
   for (const auto& op : graph.Ops()) {
     // default constructed, won't add tensor to QNN
@@ -551,7 +553,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   // Bind the SoC, reusing the manager's loaded libraries.
   LITERT_RETURN_IF_ERROR(compiler_plugin->EnsureQnnManagerCreated(
       opt_soc_model, QnnManager::Mode::kCompile));
-  QnnManager& qnn_manager = compiler_plugin->GetQnnManager();
+  QnnManager& qnn_manager = compiler_plugin->QNN();
 
   // Map of LiteRt buffer id to context handle index.
   // This map memerizes the last context handle index of a weight was registered
@@ -559,7 +561,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   WeightSharingMap weight_sharing_map;
   LiteRtContextHandleIdx next_context_handle_idx = 0;
 
-  std::vector<ContextHandle> context_handles;
+  std::vector<QnnManager::ContextHandle> context_handles;
 
   // Compile each partition (subgraph) individually.
   for (int partition_idx = 0; partition_idx < num_partitions; ++partition_idx) {
@@ -590,7 +592,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       LITERT_LOG(LITERT_INFO, "%s", "Creating context handle");
       // We enable weight sharing by default, this could lead to issue when
       // support legacy SoC.
-      auto context_configs = ::litert::qnn::DefaultContextConfigs();
+      auto context_configs = QnnManager::DefaultContextConfigs();
       if (options.GetEnableWeightSharing()) {
         switch (options.GetBackendType()) {
           case ::qnn::BackendType::kHtpBackend: {
@@ -600,7 +602,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                 num_partitions != kDefaultPartitionNum &&
                 IsWeightSharingSupported(opt_soc_model.value().dsp_arch);
             if (enable_weight_sharing) {
-              context_configs = ::litert::qnn::WeightSharingContextConfigs();
+              context_configs = QnnManager::WeightSharingContextConfigs();
               LITERT_LOG(LITERT_INFO, "Enable weight sharing feature");
             } else {
               LITERT_LOG(LITERT_WARNING,
@@ -618,7 +620,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       } else if (options.GetBackendType() == ::qnn::BackendType::kGpuBackend) {
         if (options.GetGpuPerformanceMode() !=
             ::qnn::GpuPerformanceMode::kDefault) {
-          context_configs = ::litert::qnn::GpuPerformanceContextConfigs(
+          context_configs = QnnManager::GpuPerformanceContextConfigs(
               options.GetGpuPerformanceMode());
           LITERT_LOG(LITERT_INFO, "Enable GPU performance mode: %d",
                      static_cast<int>(options.GetGpuPerformanceMode()));

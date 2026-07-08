@@ -40,6 +40,7 @@
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -83,7 +84,7 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
     litert::qnn::QnnManager& qnn_manager,
     const litert::qnn::ContextBinaryInfo& context_binary_info,
     LiteRtDispatchDeviceContext device_context,
-    const litert::qnn::ContextHandle* context_handle,
+    const litert::qnn::QnnManager::ContextHandle* context_handle,
     Qnn_ProfileHandle_t profile_handle, int graph_index,
     Qnn_GraphHandle_t graph_handle)
     : qnn_manager_(qnn_manager),
@@ -119,7 +120,7 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
 LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
     litert::qnn::QnnManager& qnn_manager,
     LiteRtDispatchDeviceContext device_context,
-    const litert::qnn::ContextHandle* context_handle,
+    const litert::qnn::QnnManager::ContextHandle* context_handle,
     Qnn_ContextHandle_t raw_context_handle, Qnn_ProfileHandle_t profile_handle,
     int graph_index, Qnn_GraphHandle_t graph_handle,
     std::vector<::qnn::TensorWrapper> inputs,
@@ -180,7 +181,7 @@ LiteRtDispatchInvocationContextT::Create(
 
     // Pass an empty context handle since the compiler plugin manages its
     // lifecycle.
-    static absl::NoDestructor<litert::qnn::ContextHandle> empty_context_handle;
+    static absl::NoDestructor<litert::qnn::QnnManager::ContextHandle> empty_context_handle;
     return Ptr(new LiteRtDispatchInvocationContextT(
         qnn, &device_context, empty_context_handle.get(),
         jit_graph->context_handle, nullptr, 0, graph_handle, jit_graph->inputs,
@@ -392,8 +393,9 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Host tensor buffer is too large for QNN");
     }
-    void* data = static_cast<void*>(static_cast<uint8_t*>(host_memory_addr) +
-                                    tensor_buffer_offset);
+    void* data =
+        static_cast<void*>(static_cast<uint8_t*>(host_memory_addr) +
+                           tensor_buffer_offset);
     if (tensor.version == QNN_TENSOR_VERSION_1) {
       tensor.v1.memType = QNN_TENSORMEMTYPE_RAW;
       tensor.v1.clientBuf.data = data;

@@ -86,8 +86,10 @@ std::string Dump(const QnnSystemInterface_t* interface) {
 
 }  // namespace
 
-// Dumps the underlying loader interfaces.
+// Changed signature: Returns std::string
 std::string Dump(const QnnApiLoader& loader) {
+  // Call the internal Dump functions, get their strings, and concatenate them.
+  // absl::StrCat is generally preferred over repeated string operator+=
   return absl::StrCat(Dump(loader.interface_), Dump(loader.system_interface_));
 }
 }  // namespace litert::qnn::internal
