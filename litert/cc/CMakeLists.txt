@@ -35,6 +35,7 @@ set(LITERT_CC_PUBLIC_HEADERS
     litert_options.h
     litert_profiler.h
     litert_ranked_tensor_type.h
+    litert_string_util.h
     litert_tensor_buffer_requirements.h
     litert_tensor_buffer_types.h
     litert_tensor_buffer.h
@@ -68,6 +69,7 @@ set(LITERT_CC_REQUIRED_INTERNAL_HEADERS
     internal/litert_shared_library.h
     internal/litert_source_location.h
     internal/litert_tensor_buffer_utils.h
+    internal/litert_tfl_types.h
     internal/litert_tflite_error_status_builder.h
     internal/scoped_file.h
     internal/scoped_weight_source.h
