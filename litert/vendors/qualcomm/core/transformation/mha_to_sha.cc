@@ -72,7 +72,7 @@ constexpr std::array<std::pair<size_t, size_t>, 4> kSupportedGqaPrefillShapes =
 constexpr std::array<std::pair<size_t, size_t>, 3> kSupportedGqaDecodeShapes = {
     {
         {14, 2},  // FastVLM
-        // {16, 8},  // Kanana
+        {16, 8},  // Kanana
         {4, 2},   // TinyTiny
     }};
 
