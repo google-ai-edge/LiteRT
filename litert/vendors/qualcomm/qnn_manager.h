@@ -22,9 +22,12 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/qualcomm/common.h"
@@ -33,12 +36,12 @@
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_api_loader.h"
-#include "litert/vendors/qualcomm/qnn_handles.h"
-#include "litert/vendors/qualcomm/qnn_sdk_version.h"
 #include "QnnCommon.h"  // from @qairt
 #include "QnnContext.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
+#include "QnnProfile.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
+#include "System/QnnSystemContext.h"  // from @qairt
 #include "System/QnnSystemInterface.h"  // from @qairt
 
 //===----------------------------------------------------------------------===//
@@ -55,23 +58,93 @@
 
 namespace litert::qnn {
 
-// Which side of the compile/dispatch flow this QnnManager is bound to.
-// Determines which fields of the custom-op-package option are consumed by
-// Create().
-enum class QnnManagerMode {
-  kCompile,
-  kDispatch,
+// RAII wrapper for a QNN system-context handle.
+using SystemContextHandle =
+    std::unique_ptr<std::remove_pointer<QnnSystemContext_Handle_t>::type,
+                    QnnSystemContext_FreeFn_t>;
+
+// RAII wrapper for a QNN context handle plus its optional profile handle. Not
+// a std::unique_ptr because QnnContext_FreeFn_t takes the profile handle as a
+// second argument, and the profile must be freed before the context.
+class ContextHandle {
+ public:
+  ContextHandle() = default;
+
+  ContextHandle(Qnn_ContextHandle_t context_handle, Qnn_ProfileHandle_t profile,
+                QnnContext_FreeFn_t free_fn,
+                QnnProfile_FreeFn_t profile_free_fn)
+      : context_handle_(context_handle),
+        profile_(profile),
+        free_fn_(free_fn),
+        profile_free_fn_(profile_free_fn) {}
+
+  ~ContextHandle() {
+    if (profile_ && profile_free_fn_) {
+      if (auto status = profile_free_fn_(profile_); status != QNN_SUCCESS) {
+        LITERT_LOG(LITERT_ERROR, "%s", "Failed to free profile handle\n");
+      }
+      profile_ = nullptr;
+    }
+    if (context_handle_ && free_fn_) {
+      if (auto status = free_fn_(context_handle_, profile_);
+          status != QNN_SUCCESS) {
+        LITERT_LOG(LITERT_ERROR, "%s", "Failed to free context handle\n");
+      }
+      context_handle_ = nullptr;
+    }
+  }
+
+  ContextHandle(ContextHandle&& other) { *this = std::move(other); }
+
+  ContextHandle(const ContextHandle& other) = delete;
+
+  ContextHandle& operator=(ContextHandle&& other) {
+    std::swap(context_handle_, other.context_handle_);
+    std::swap(profile_, other.profile_);
+    std::swap(free_fn_, other.free_fn_);
+    std::swap(profile_free_fn_, other.profile_free_fn_);
+    return *this;
+  }
+
+  ContextHandle& operator=(const ContextHandle& other) = delete;
+
+  Qnn_ContextHandle_t Get() const noexcept { return context_handle_; }
+  Qnn_ProfileHandle_t get_profile_handle() const noexcept { return profile_; }
+  explicit operator bool() const noexcept { return context_handle_ != nullptr; }
+
+ private:
+  Qnn_ContextHandle_t context_handle_ = nullptr;
+  Qnn_ProfileHandle_t profile_ = nullptr;
+  QnnContext_FreeFn_t free_fn_ = nullptr;
+  QnnProfile_FreeFn_t profile_free_fn_ = nullptr;
 };
+
+// Context config builders. `Default` is an empty (null-terminated) list; QNN
+// treats it as the default. `WeightSharing` enables HTP weight sharing across
+// contexts. `GpuPerformance` sets the GPU perf hint (falls back to Default for
+// kDefault).
+absl::Span<const QnnContext_Config_t*> DefaultContextConfigs();
+absl::Span<const QnnContext_Config_t*> WeightSharingContextConfigs();
+absl::Span<const QnnContext_Config_t*> GpuPerformanceContextConfigs(
+    ::qnn::GpuPerformanceMode performance_mode);
 
 class QnnManager {
  public:
+  // Which side of the compile/dispatch flow this QnnManager is bound to.
+  // Determines which fields of the custom-op-package option are consumed by
+  // Create().
+  enum class Mode {
+    kCompile,
+    kDispatch,
+  };
+
   // Binds `soc_info` to a ready-to-use QnnManager using the libraries owned
   // by `loader`. Callable repeatedly with different SoCs -- libraries are not
   // reloaded. `mode` selects which fields of the custom-op-package option
   // are consumed.
   static Expected<QnnManager> Create(const QnnApiLoader& loader,
                                      std::optional<::qnn::SocInfo> soc_info,
-                                     QnnManagerMode mode);
+                                     Mode mode);
 
   // Move-only: backend_ uniquely owns the QNN backend + device handles.
   QnnManager(QnnManager&&) = default;
@@ -106,7 +179,7 @@ class QnnManager {
   const QnnSystemApi* SystemApi() const { return system_api_; }
   const ::qnn::Options& GetOptions() const { return *options_; }
   SdkVersion GetSdkVersion() const { return sdk_version_; }
-  QnnManagerMode GetMode() const { return mode_; }
+  Mode GetMode() const { return mode_; }
 
   Expected<SystemContextHandle> CreateSystemContextHandle();
 
@@ -114,7 +187,7 @@ class QnnManager {
   QnnManager(const QnnApi* api, const QnnSystemApi* system_api,
              const ::qnn::Options* options, SdkVersion sdk_version,
              std::unique_ptr<::qnn::QnnBackend> backend,
-             ::qnn::SocInfo soc_info, QnnManagerMode mode)
+             ::qnn::SocInfo soc_info, Mode mode)
       : api_(api),
         system_api_(system_api),
         options_(options),
@@ -133,7 +206,7 @@ class QnnManager {
   // Owns the underlying QNN backend + device handles.
   std::unique_ptr<::qnn::QnnBackend> backend_;
   ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[0];
-  QnnManagerMode mode_ = QnnManagerMode::kCompile;
+  Mode mode_ = Mode::kCompile;
 };
 
 }  // namespace litert::qnn

@@ -24,14 +24,13 @@
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/utils/test_utils.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "litert/vendors/qualcomm/qnn_sdk_version.h"
 #include "litert/vendors/qualcomm/tools/dump.h"
 
 namespace {
 
 using ::litert::qnn::QnnApiLoader;
 using ::litert::qnn::QnnManager;
-using ::litert::qnn::QnnManagerMode;
+
 using ::litert::qnn::SdkVersion;
 using ::litert::qnn::internal::Dump;
 using ::testing::HasSubstr;
@@ -140,13 +139,13 @@ TEST(QnnApiLoaderTest, QnnManagerRebindsAcrossSocs) {
   ASSERT_TRUE(soc_b.has_value());
 
   auto qnn_manager_a =
-      QnnManager::Create(**qnn, soc_a, QnnManagerMode::kCompile);
+      QnnManager::Create(**qnn, soc_a, QnnManager::Mode::kCompile);
   ASSERT_TRUE(qnn_manager_a);
   EXPECT_NE(qnn_manager_a->BackendHandle(), nullptr);
   EXPECT_EQ(qnn_manager_a->GetSocInfo().soc_model, soc_a->soc_model);
 
   auto qnn_manager_b =
-      QnnManager::Create(**qnn, soc_b, QnnManagerMode::kCompile);
+      QnnManager::Create(**qnn, soc_b, QnnManager::Mode::kCompile);
   ASSERT_TRUE(qnn_manager_b);
   EXPECT_NE(qnn_manager_b->BackendHandle(), nullptr);
   EXPECT_EQ(qnn_manager_b->GetSocInfo().soc_model, soc_b->soc_model);
@@ -175,7 +174,7 @@ TEST(QnnApiLoaderTest, QnnManagerAutoDetectsSocOnDevice) {
 
   // No SoC passed -- the QnnManager is expected to resolve it from the device.
   auto qnn_manager =
-      QnnManager::Create(**qnn, std::nullopt, QnnManagerMode::kCompile);
+      QnnManager::Create(**qnn, std::nullopt, QnnManager::Mode::kCompile);
   ASSERT_TRUE(qnn_manager);
   EXPECT_NE(qnn_manager->BackendHandle(), nullptr);
   // A successfully-created HTP QnnManager always has a resolved DSP

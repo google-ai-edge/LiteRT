@@ -47,38 +47,7 @@ set(BENCHMARK_ENABLE_WERROR OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googlebenchmark)
 
 # Root-level libraries (used by core and other components)
-# QNN SDK version parsing
-add_library(qnn_sdk_version STATIC
-    qnn_sdk_version.cc
-)
-
-target_include_directories(qnn_sdk_version
-    PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-)
-
-target_link_libraries(qnn_sdk_version
-    PUBLIC
-        litert_cc_api
-)
-
-# QNN context config builders
-add_library(qnn_context_configs STATIC
-    qnn_context_configs.cc
-)
-
-target_include_directories(qnn_context_configs
-    PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-        $<$<BOOL:${QAIRT_HEADERS_DIR}>:${QAIRT_HEADERS_DIR}>
-)
-
-target_link_libraries(qnn_context_configs
-    PUBLIC
-        absl::span
-)
-
-# QNN API Loader library (library layer of the former QnnManager)
+# QNN API Loader library (library layer split out of QnnManager)
 add_library(qnn_api_loader STATIC
     qnn_api_loader.cc
 )
@@ -95,13 +64,12 @@ target_link_libraries(qnn_api_loader
         absl::statusor
         absl::strings
         absl::str_format
-        qnn_sdk_version
     PRIVATE
         qnn_saver_utils
         qnn_backends
 )
 
-# QnnManager library (SoC layer of the former QnnManager)
+# QnnManager library (SoC layer)
 add_library(qnn_manager STATIC
     qnn_manager.cc
 )
@@ -119,7 +87,6 @@ target_link_libraries(qnn_manager
         absl::strings
         absl::str_format
         qnn_api_loader
-        qnn_sdk_version
     PRIVATE
         qnn_backends
         qnn_wrappers

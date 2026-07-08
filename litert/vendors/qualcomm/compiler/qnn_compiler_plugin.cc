@@ -58,14 +58,12 @@
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_api_loader.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "litert/vendors/qualcomm/qnn_context_configs.h"
-#include "litert/vendors/qualcomm/qnn_handles.h"
 #include "QnnCommon.h"  // from @qairt
 
 using ::litert::qnn::ContextHandle;
 using ::litert::qnn::QnnApiLoader;
 using ::litert::qnn::QnnManager;
-using ::litert::qnn::QnnManagerMode;
+
 using LiteRtBufferId = uint32_t;
 using LiteRtContextHandleIdx = uint32_t;
 using WeightSharingMap =
@@ -321,7 +319,7 @@ class LiteRtCompilerPluginT {
   }
 
   LiteRtStatus EnsureQnnManagerCreated(std::optional<::qnn::SocInfo> soc_info,
-                                       QnnManagerMode mode) {
+                                       QnnManager::Mode mode) {
     if (qnn_manager_ &&
         (!soc_info.has_value() ||
          qnn_manager_->GetSocInfo().soc_model == soc_info->soc_model)) {
@@ -435,7 +433,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   }
 
   LITERT_RETURN_IF_ERROR(compiler_plugin->EnsureQnnManagerCreated(
-      opt_soc_model, QnnManagerMode::kCompile));
+      opt_soc_model, QnnManager::Mode::kCompile));
   QnnManager& qnn_manager = compiler_plugin->GetQnnManager();
 
   for (const auto& op : graph.Ops()) {
@@ -552,7 +550,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   }
   // Bind the SoC, reusing the manager's loaded libraries.
   LITERT_RETURN_IF_ERROR(compiler_plugin->EnsureQnnManagerCreated(
-      opt_soc_model, QnnManagerMode::kCompile));
+      opt_soc_model, QnnManager::Mode::kCompile));
   QnnManager& qnn_manager = compiler_plugin->GetQnnManager();
 
   // Map of LiteRt buffer id to context handle index.

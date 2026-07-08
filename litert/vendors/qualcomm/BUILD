@@ -44,39 +44,6 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "qnn_sdk_version",
-    srcs = ["qnn_sdk_version.cc"],
-    hdrs = ["qnn_sdk_version.h"],
-    features = ["-layering_check"],  # buildifier: disable=no-layering-check
-    deps = [
-        "//litert/c:litert_common",
-        "//litert/cc:litert_expected",
-    ],
-)
-
-cc_library(
-    name = "qnn_handles",
-    hdrs = ["qnn_handles.h"],
-    features = ["-layering_check"],  # buildifier: disable=no-layering-check
-    deps = [
-        "//litert/c/internal:litert_logging",
-        "@qairt//:qnn_lib_headers",
-    ],
-)
-
-cc_library(
-    name = "qnn_context_configs",
-    srcs = ["qnn_context_configs.cc"],
-    hdrs = ["qnn_context_configs.h"],
-    features = ["-layering_check"],  # buildifier: disable=no-layering-check
-    deps = [
-        "//litert/vendors/qualcomm/core:common",
-        "@com_google_absl//absl/types:span",
-        "@qairt//:qnn_lib_headers",
-    ],
-)
-
 litert_cc_lib_with_qnn(
     name = "qnn_api_loader",
     srcs = ["qnn_api_loader.cc"],
@@ -87,7 +54,6 @@ litert_cc_lib_with_qnn(
     deps = [
         ":common",
         ":qnn_saver_utils",
-        ":qnn_sdk_version",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
@@ -117,8 +83,6 @@ litert_cc_lib_with_qnn(
     deps = [
         ":common",
         ":qnn_api_loader",
-        ":qnn_handles",
-        ":qnn_sdk_version",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
@@ -170,7 +134,6 @@ litert_test(
     deps = [
         ":qnn_api_loader",
         ":qnn_manager",
-        ":qnn_sdk_version",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/vendors/qualcomm/core:common",
@@ -201,7 +164,6 @@ cc_library(
     hdrs = ["context_binary_info.h"],
     deps = [
         ":qnn_manager",
-        ":qnn_sdk_version",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",

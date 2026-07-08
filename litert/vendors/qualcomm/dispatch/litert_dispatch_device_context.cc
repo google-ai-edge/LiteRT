@@ -36,8 +36,6 @@
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/qualcomm/qnn_api_loader.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "litert/vendors/qualcomm/qnn_context_configs.h"
-#include "litert/vendors/qualcomm/qnn_handles.h"
 #include "HTP/QnnHtpMem.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnMem.h"  // from @qairt

@@ -57,7 +57,6 @@ target_link_libraries(qnn_api_loader_test
         absl::log_internal_message
         qnn_api_loader
         qnn_manager
-        qnn_sdk_version
         litert_test_common
         GTest::gtest
 )

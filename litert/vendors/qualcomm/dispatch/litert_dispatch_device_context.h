@@ -25,13 +25,9 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/dispatch/registry.h"
-#include "litert/vendors/qualcomm/qnn_handles.h"
+#include "litert/vendors/qualcomm/qnn_manager.h"
 #include "QnnCommon.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
-
-namespace litert::qnn {
-class QnnManager;
-}  // namespace litert::qnn
 
 class LiteRtDispatchDeviceContextT {
  public:

@@ -40,8 +40,8 @@
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_api_loader.h"
-#include "litert/vendors/qualcomm/qnn_handles.h"
-#include "litert/vendors/qualcomm/qnn_sdk_version.h"
+#include "GPU/QnnGpuContext.h"  // from @qairt
+#include "HTP/QnnHtpContext.h"  // from @qairt
 #include "HTP/QnnHtpProfile.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnContext.h"  // from @qairt
@@ -61,7 +61,7 @@ constexpr char kCustomOpPackageCompileTarget[] = "CPU";
 // `mode`. No-op when no package is configured or the backend is IR. Called
 // once at the tail of QnnManager::Create.
 LiteRtStatus RegisterCustomOpPackage(QnnManager& qnn_manager,
-                                     QnnManagerMode mode) {
+                                     QnnManager::Mode mode) {
   const auto& custom_op_package = qnn_manager.GetOptions().GetCustomOpPackage();
   if (custom_op_package.name.empty()) {
     return kLiteRtStatusOk;
@@ -73,7 +73,7 @@ LiteRtStatus RegisterCustomOpPackage(QnnManager& qnn_manager,
     return kLiteRtStatusOk;
   }
   // Compile and dispatch consume different fields of the same option.
-  const bool is_compile = mode == QnnManagerMode::kCompile;
+  const bool is_compile = mode == QnnManager::Mode::kCompile;
   const std::string& package_path =
       is_compile ? custom_op_package.compile_package_path
                  : custom_op_package.dispatch_package_path;
@@ -95,7 +95,7 @@ LiteRtStatus RegisterCustomOpPackage(QnnManager& qnn_manager,
 
 Expected<QnnManager> QnnManager::Create(const QnnApiLoader& loader,
                                         std::optional<::qnn::SocInfo> soc_info,
-                                        QnnManagerMode mode) {
+                                        QnnManager::Mode mode) {
   const ::qnn::Options& options = loader.GetOptions();
   std::unique_ptr<::qnn::QnnBackend> backend;
   ::qnn::SocInfo bound_soc = ::qnn::kSocInfos[0];
@@ -303,6 +303,50 @@ Expected<SystemContextHandle> QnnManager::CreateSystemContextHandle() {
   }
   auto deleter = SystemApi()->systemContextFree;
   return SystemContextHandle{system_context_handle, deleter};
+}
+
+absl::Span<const QnnContext_Config_t*> DefaultContextConfigs() {
+  static const QnnContext_Config_t* configs[] = {nullptr};
+  return absl::MakeSpan(configs);
+}
+
+absl::Span<const QnnContext_Config_t*> WeightSharingContextConfigs() {
+  static QnnHtpContext_CustomConfig_t customConfig =
+      QNN_HTP_CONTEXT_CUSTOM_CONFIG_INIT;
+  customConfig.option = QNN_HTP_CONTEXT_CONFIG_OPTION_WEIGHT_SHARING_ENABLED;
+  customConfig.weightSharingEnabled = true;
+  static QnnContext_Config_t contextConfig = QNN_CONTEXT_CONFIG_INIT;
+  contextConfig.option = QNN_CONTEXT_CONFIG_OPTION_CUSTOM;
+  contextConfig.customConfig = &customConfig;
+  static const QnnContext_Config_t* configs[2] = {&contextConfig, nullptr};
+  return absl::MakeSpan(configs);
+}
+
+absl::Span<const QnnContext_Config_t*> GpuPerformanceContextConfigs(
+    ::qnn::GpuPerformanceMode performance_mode) {
+  static QnnGpuContext_CustomConfig_t customConfig =
+      QNN_GPU_CONTEXT_CUSTOM_CONFIG_INIT;
+  customConfig.option = QNN_GPU_CONTEXT_CONFIG_OPTION_PERF_HINT;
+  switch (performance_mode) {
+    case ::qnn::GpuPerformanceMode::kHigh:
+      customConfig.perfHint = QNN_GPU_CONTEXT_PERF_HINT_HIGH;
+      break;
+    case ::qnn::GpuPerformanceMode::kNormal:
+      customConfig.perfHint = QNN_GPU_CONTEXT_PERF_HINT_NORMAL;
+      break;
+    case ::qnn::GpuPerformanceMode::kLow:
+      customConfig.perfHint = QNN_GPU_CONTEXT_PERF_HINT_LOW;
+      break;
+    case ::qnn::GpuPerformanceMode::kDefault:
+    default:
+      return DefaultContextConfigs();
+  }
+
+  static QnnContext_Config_t contextConfig = QNN_CONTEXT_CONFIG_INIT;
+  contextConfig.option = QNN_CONTEXT_CONFIG_OPTION_CUSTOM;
+  contextConfig.customConfig = &customConfig;
+  static const QnnContext_Config_t* configs[2] = {&contextConfig, nullptr};
+  return absl::MakeSpan(configs);
 }
 
 }  // namespace litert::qnn

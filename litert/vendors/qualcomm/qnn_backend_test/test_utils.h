@@ -16,7 +16,6 @@
 #include "litert/vendors/qualcomm/core/utils/test_utils.h"
 #include "litert/vendors/qualcomm/qnn_api_loader.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "litert/vendors/qualcomm/qnn_handles.h"
 
 namespace litert::qnn {
 const ::qnn::Options kTestingDefaultQnnOptions{};

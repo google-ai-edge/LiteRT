@@ -49,7 +49,6 @@ namespace {
 
 using ::litert::qnn::QnnApiLoader;
 using ::litert::qnn::QnnManager;
-using ::litert::qnn::QnnManagerMode;
 
 static std::unique_ptr<QnnApiLoader>& LoaderStorage() {
   static absl::NoDestructor<std::unique_ptr<QnnApiLoader>> storage;
@@ -152,7 +151,7 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
   }
   // Dispatch runs on the local device; bind with no explicit SoC.
   if (auto backend = QnnManager::Create(Loader(), /*soc_info=*/std::nullopt,
-                                        QnnManagerMode::kDispatch);
+                                        QnnManager::Mode::kDispatch);
       !backend) {
     LITERT_LOG(LITERT_ERROR, "%s", backend.Error().Message().c_str());
     return backend.Error().Status();

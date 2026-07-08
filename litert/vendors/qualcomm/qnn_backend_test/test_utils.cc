@@ -16,7 +16,6 @@
 #include "litert/vendors/qualcomm/core/utils/qnn_model.h"
 #include "litert/vendors/qualcomm/qnn_api_loader.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "litert/vendors/qualcomm/qnn_context_configs.h"
 namespace litert::qnn {
 
 std::string QnnTestPrinter(
@@ -57,8 +56,9 @@ void QnnModelTest::SetUpQnnModel(const ::qnn::Options& options,
   ASSERT_TRUE(loader) << loader.Error();
   std::swap(loader_, *loader);
 
-  auto backend = QnnManager::Create(
-      *loader_, ::qnn::FindSocModel(soc_model_name), QnnManagerMode::kCompile);
+  auto backend =
+      QnnManager::Create(*loader_, ::qnn::FindSocModel(soc_model_name),
+                         QnnManager::Mode::kCompile);
   ASSERT_TRUE(backend) << backend.Error();
   qnn_manager_.emplace(std::move(*backend));
 

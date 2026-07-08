@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -14,7 +15,6 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/common.h"
-#include "litert/vendors/qualcomm/qnn_sdk_version.h"
 #include "QnnCommon.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 #include "System/QnnSystemInterface.h"  // from @qairt
@@ -32,6 +32,40 @@
 //===----------------------------------------------------------------------===//
 
 namespace litert::qnn {
+
+struct SdkVersion {
+  int major, minor, patch;
+
+  friend constexpr bool operator==(const SdkVersion& lhs,
+                                   const SdkVersion& rhs) noexcept {
+    return std::tie(lhs.major, lhs.minor, lhs.patch) ==
+           std::tie(rhs.major, rhs.minor, rhs.patch);
+  }
+  friend constexpr bool operator!=(const SdkVersion& lhs,
+                                   const SdkVersion& rhs) noexcept {
+    return !(lhs == rhs);
+  }
+  friend constexpr bool operator<(const SdkVersion& lhs,
+                                  const SdkVersion& rhs) noexcept {
+    return std::tie(lhs.major, lhs.minor, lhs.patch) <
+           std::tie(rhs.major, rhs.minor, rhs.patch);
+  }
+  friend constexpr bool operator>(const SdkVersion& lhs,
+                                  const SdkVersion& rhs) noexcept {
+    return rhs < lhs;
+  }
+  friend constexpr bool operator<=(const SdkVersion& lhs,
+                                   const SdkVersion& rhs) noexcept {
+    return !(rhs < lhs);
+  }
+  friend constexpr bool operator>=(const SdkVersion& lhs,
+                                   const SdkVersion& rhs) noexcept {
+    return !(lhs < rhs);
+  }
+};
+
+// Parses a QNN SDK build ID string (e.g. "v2.37.0") into an SdkVersion.
+Expected<SdkVersion> ParseSdkVersion(const char* build_id);
 
 class QnnApiLoader;
 

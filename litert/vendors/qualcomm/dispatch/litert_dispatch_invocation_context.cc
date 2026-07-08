@@ -53,7 +53,6 @@
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/qualcomm/qnn_api_loader.h"
-#include "litert/vendors/qualcomm/qnn_handles.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "HTP/QnnHtpProfile.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
@@ -171,9 +170,9 @@ LiteRtDispatchInvocationContextT::Create(
     }
 
     Qnn_GraphHandle_t graph_handle;
-    if (auto status = qnn.Api()->graphRetrieve(
-            jit_graph->context_handle, jit_graph->graph_name.c_str(),
-            &graph_handle);
+    if (auto status = qnn.Api()->graphRetrieve(jit_graph->context_handle,
+                                               jit_graph->graph_name.c_str(),
+                                               &graph_handle);
         status != QNN_SUCCESS) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Failed to retrieve graph from JIT handle");
@@ -241,16 +240,16 @@ LiteRtDispatchInvocationContextT::Create(
           exec_bytecode_ptr, exec_bytecode_buffer->size, profile_handle));
 
   Qnn_GraphHandle_t graph_handle;
-  if (auto status = qnn.Api()->graphRetrieve(
-          context_handle.Get(), function_name, &graph_handle);
+  if (auto status = qnn.Api()->graphRetrieve(context_handle.Get(),
+                                             function_name, &graph_handle);
       status != QNN_SUCCESS) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to retrieve graph");
   }
 
   return Ptr(new LiteRtDispatchInvocationContextT(
-      qnn, std::move(*context_binary_info), &device_context,
-      &context_handle, profile_handle, graph_index, graph_handle));
+      qnn, std::move(*context_binary_info), &device_context, &context_handle,
+      profile_handle, graph_index, graph_handle));
 }
 
 Expected<LiteRtTensorBufferRequirements>

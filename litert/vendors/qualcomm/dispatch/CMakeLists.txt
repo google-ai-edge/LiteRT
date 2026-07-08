@@ -25,7 +25,6 @@ target_link_libraries(dispatch_api_qualcomm_so
         qnn_miscs
         qnn_api_loader
         qnn_manager
-        qnn_context_configs
         qnn_context_binary_info
         litert_runtime_c_api_static
 )
