@@ -737,17 +737,7 @@ cc_library(
     # The visibility is for testing only, otherwise it would be private.
     visibility = ["//litert/cc/dynamic_runtime:__pkg__"],
     deps = [
-        "//litert/c:litert_compiled_model_header",
-        "//litert/c:litert_environment_header",
-        "//litert/c:litert_environment_options_header",
-        "//litert/c:litert_event_header",
-        "//litert/c:litert_layout",
-        "//litert/c:litert_metrics_header",
-        "//litert/c:litert_model_header",
-        "//litert/c:litert_opaque_options_header",
-        "//litert/c:litert_options_header",
         "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
-        "//litert/c:litert_tensor_buffer_header",
         "//litert/c/internal:litert_runtime_c_api",
     ],
 )
@@ -761,16 +751,7 @@ cc_library(
         "//litert/kotlin/src/tests/google:__pkg__",
     ],
     deps = [
-        "//litert/c:litert_compiled_model_impl",
-        "//litert/c:litert_environment_impl",
-        "//litert/c:litert_environment_options_impl",
-        "//litert/c:litert_event_impl",
-        "//litert/c:litert_layout",
-        "//litert/c:litert_metrics_impl",
-        "//litert/c:litert_model_impl",
-        "//litert/c:litert_opaque_options_impl",
-        "//litert/c:litert_options_impl",
-        "//litert/c:litert_tensor_buffer_impl",
+        "//litert/c/internal:litert_runtime_api_export",
         "//litert/c/internal:litert_runtime_c_api",
     ],
 )
@@ -781,7 +762,10 @@ cc_library(
     defines = ["LITERT_CC_RUNTIME_BUILTIN_NONE"],
     visibility = ["//visibility:private"],
     deps = [
+        ":litert_shared_library",
+        "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_runtime_c_api",
+        "//litert/cc:litert_expected",
     ],
 )
 
