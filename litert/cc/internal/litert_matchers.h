@@ -29,6 +29,7 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_op_options.h"
+#include "litert/cc/litert_model_types.h"
 
 namespace litert {
 
@@ -1058,12 +1059,10 @@ inline auto m_IsQuantized(absl::string_view label = "IsQuantizedMatcher") {
   return IsQuantizedMatcher(label);
 }
 
-// Quantization Type Matcher.
 struct QuantizationTypeMatcher {
   absl::string_view label;
-  LiteRtQuantizationTypeId type;
-  explicit QuantizationTypeMatcher(absl::string_view l,
-                                   LiteRtQuantizationTypeId t)
+  QuantizationTypeId type;
+  explicit QuantizationTypeMatcher(absl::string_view l, QuantizationTypeId t)
       : label(l), type(t) {}
   bool Match(const Tensor& tensor, MatchTracer* tracer = nullptr) const {
     if (tracer) tracer->PushScope(label);
@@ -1079,9 +1078,14 @@ struct QuantizationTypeMatcher {
   }
 };
 
-inline auto m_QType(LiteRtQuantizationTypeId type,
+inline auto m_QType(QuantizationTypeId type,
                     absl::string_view label = "QuantizationTypeMatcher") {
   return QuantizationTypeMatcher(label, type);
+}
+
+inline auto m_QType(LiteRtQuantizationTypeId type,
+                    absl::string_view label = "QuantizationTypeMatcher") {
+  return QuantizationTypeMatcher(label, static_cast<QuantizationTypeId>(type));
 }
 
 // User Count matcher.
