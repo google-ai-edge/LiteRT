@@ -14,15 +14,11 @@
 
 #include "litert/c/options/litert_google_tensor_options.h"
 
-#include <cstddef>
 #include <optional>
-#include <sstream>
 #include <string>
-#include <vector>
 
 #include "absl/strings/escaping.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
-#include "absl/strings/str_replace.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
@@ -32,7 +28,7 @@
 struct LrtGoogleTensorOptionsT {
   LrtGoogleTensorOptionsTruncationType float_truncation_type =
       kLiteRtGoogleTensorFloatTruncationTypeAuto;
-  bool int64_to_int32_truncation = false;
+  std::optional<bool> int64_to_int32_truncation = std::nullopt;
   std::string output_dir = "";
   bool dump_op_timings = false;
   bool enable_large_model_support = false;
@@ -74,8 +70,10 @@ LiteRtStatus LrtGetOpaqueGoogleTensorOptionsData(
     absl::StrAppendFormat(&toml_str, "float_truncation_type = %d\n",
                           static_cast<int>(options->float_truncation_type));
   }
-  if (options->int64_to_int32_truncation) {
-    absl::StrAppendFormat(&toml_str, "int64_to_int32_truncation = true\n");
+  if (options->int64_to_int32_truncation.has_value()) {
+    absl::StrAppendFormat(
+        &toml_str, "int64_to_int32_truncation = %s\n",
+        *options->int64_to_int32_truncation ? "true" : "false");
   }
   if (!options->output_dir.empty()) {
     absl::StrAppendFormat(&toml_str, "output_dir = \"%s\"\n",
@@ -225,7 +223,8 @@ LiteRtStatus LrtGoogleTensorOptionsGetInt64ToInt32Truncation(
   if (options == nullptr || int64_to_int32_truncation == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *int64_to_int32_truncation = options->int64_to_int32_truncation;
+  *int64_to_int32_truncation =
+      options->int64_to_int32_truncation.value_or(true);
   return kLiteRtStatusOk;
 }
 
@@ -236,7 +235,11 @@ LiteRtStatus LrtGoogleTensorOptionsSetOutputDir(LrtGoogleTensorOptions options,
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  options->output_dir = output_dir;
+  if (output_dir == nullptr) {
+    options->output_dir = "";
+  } else {
+    options->output_dir = output_dir;
+  }
   return kLiteRtStatusOk;
 }
 

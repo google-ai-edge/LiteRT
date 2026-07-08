@@ -67,6 +67,7 @@ class LiteRtEnvironmentT {
     return tensor_buffer_registry_;
   }
 
+#ifndef LITERT_DISABLE_GPU
   // Sets the GPU environment. The owner of the GPU environment is transferred
   // to the environment.
   // Also updated the environment options with the generated options from the
@@ -76,6 +77,7 @@ class LiteRtEnvironmentT {
 
   // Returns the GPU environment object.
   litert::Expected<litert::internal::GpuEnvironment*> GetGpuEnvironment();
+#endif
 
   // Returns true if the GPU environment is set.
   bool HasGpuEnvironment();
@@ -92,7 +94,9 @@ class LiteRtEnvironmentT {
   litert::internal::AcceleratorRegistry accelerators_;
   litert::internal::TensorBufferRegistry tensor_buffer_registry_;
   LiteRtEnvironmentOptionsT options_;
+#ifndef LITERT_DISABLE_GPU
   std::unique_ptr<litert::internal::GpuEnvironment> gpu_env_;
+#endif
 };
 
 #endif  // ODML_LITERT_LITERT_CORE_ENVIRONMENT_H_

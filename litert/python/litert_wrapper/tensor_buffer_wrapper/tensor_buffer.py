@@ -59,6 +59,8 @@ class TensorBuffer:
       np.dtype(np.int8): "int8",
       np.uint8: "uint8",
       np.dtype(np.uint8): "uint8",
+      np.bool_: "bool",
+      np.dtype(np.bool_): "bool",
   }
 
   def __init__(self, capsule, environment=None):
