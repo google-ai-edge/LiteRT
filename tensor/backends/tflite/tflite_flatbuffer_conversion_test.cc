@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensor/backends/tflite/tflite_flatbuffer_conversion.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -29,16 +30,22 @@ limitations under the License.
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
+#include "tensor/backends/testing/numerical_test_bridge.h"
+#include "tensor/backends/testing/numerical_test_suite.h"
 #include "tensor/backends/tflite/arithmetic_tflite.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
+#include "tensor/internal/graph_traversal.h"
 #include "tensor/internal/matchers.h"
+#include "tensor/internal/type_id.h"
 #include "tensor/tensor.h"
+#include "tensor/utils/macros.h"
 #include "tensor/utils/matchers.h"
 #include "tflite/c/builtin_op_data.h"
 #include "tflite/core/interpreter_builder.h"
 #include "tflite/core/kernels/register.h"
+#include "tflite/core/subgraph.h"
 #include "tflite/interpreter.h"
 #include "tflite/model_builder.h"
 #include "tflite/schema/mutable/schema_generated.h"
@@ -94,6 +101,102 @@ absl::StatusOr<TfLiteTensor&> GetOutputTensor(
     const absl::string_view name, tflite::Interpreter& interpreter) {
   return GetTensor(name, interpreter, interpreter.outputs());
 }
+
+class TfLiteTestBackendBridge : public TestBackendBridge {
+ public:
+  ~TfLiteTestBackendBridge() override = default;
+
+  absl::Status Initialize() override { return absl::OkStatus(); }
+
+  absl::Status BuildGraph(absl::Span<const TensorHandle> inputs,
+                          absl::Span<const TensorHandle> outputs) override {
+    LRT_TENSOR_ASSIGN_OR_RETURN(auto execution_plan, GetExecutionPlan(outputs));
+    for (const auto* op : execution_plan) {
+      if (op->GetTypeId() ==
+          internal::TypeId::Get<graph::FullyConnectedOperation>()) {
+        const auto& weights_tensor = op->inputs[1];
+        LRT_TENSOR_ASSIGN_OR_RETURN(auto info, graph::GetInfo(weights_tensor));
+        if (info.type == Type::kI4 || info.type == Type::kI2) {
+          return absl::UnimplementedError(
+              "TfLite built-in interpreter does not support INT4/INT2 "
+              "execution natively.");
+        }
+      }
+    }
+
+    std::vector<TensorHandle> output_handles(outputs.begin(), outputs.end());
+    LRT_TENSOR_RETURN_IF_ERROR(model_builder_.AddSubgraph(output_handles));
+    LRT_TENSOR_ASSIGN_OR_RETURN(model_data_, model_builder_.CreateFlatbuffer());
+    model_ = tflite::FlatBufferModel::BuildFromBuffer(model_data_.data(),
+                                                      model_data_.size());
+    if (model_ == nullptr) {
+      return absl::InternalError("Failed to build TfLite model from buffer");
+    }
+    tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates resolver;
+    auto builder_status =
+        tflite::InterpreterBuilder(*model_, resolver)(&interpreter_);
+    if (builder_status == kTfLiteUnresolvedOps) {
+      return absl::UnimplementedError(
+          "Failed to build TfLite interpreter due to unresolved ops");
+    } else if (builder_status != kTfLiteOk) {
+      return absl::InternalError("Failed to build TfLite interpreter");
+    }
+    auto allocate_status = interpreter_->AllocateTensors();
+    if (allocate_status == kTfLiteUnresolvedOps) {
+      return absl::UnimplementedError(
+          "Failed to allocate TfLite interpreter tensors due to unresolved "
+          "ops");
+    } else if (allocate_status != kTfLiteOk) {
+      return absl::InternalError(
+          "Failed to allocate TfLite interpreter tensors");
+    }
+    return absl::OkStatus();
+  }
+
+  absl::Status SetInput(const TensorHandle& tensor,
+                        absl::Span<const std::byte> data) override {
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        TfLiteTensor & t, GetInputTensor(tensor.GetName(), *interpreter_));
+    if (t.bytes != data.size()) {
+      return absl::InvalidArgumentError("Input size mismatch");
+    }
+    std::memcpy(t.data.data, data.data(), data.size());
+    return absl::OkStatus();
+  }
+
+  absl::Status Execute() override {
+    if (interpreter_->Invoke() != kTfLiteOk) {
+      return absl::InternalError("Failed to execute TfLite interpreter");
+    }
+    return absl::OkStatus();
+  }
+
+  absl::Status GetOutput(const TensorHandle& tensor,
+                         absl::Span<std::byte> data) override {
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        TfLiteTensor & t, GetOutputTensor(tensor.GetName(), *interpreter_));
+    if (t.bytes != data.size()) {
+      return absl::InvalidArgumentError("Output size mismatch");
+    }
+    std::memcpy(data.data(), t.data.data, data.size());
+    return absl::OkStatus();
+  }
+
+ private:
+  ModelFactory model_builder_;
+  std::vector<char> model_data_;
+  std::unique_ptr<tflite::FlatBufferModel> model_;
+  std::unique_ptr<tflite::Interpreter> interpreter_;
+};
+
+struct TfLiteTraits {
+  using Tag = TfLiteMixinTag;
+  static std::unique_ptr<TestBackendBridge> CreateBridge() {
+    return std::make_unique<TfLiteTestBackendBridge>();
+  }
+};
+
+INSTANTIATE_TYPED_TEST_SUITE_P(TfLite, NumericalTestSuite, TfLiteTraits);
 
 TEST(SerializationTest, BuildOneSubgraphAndRunIt) {
   {
