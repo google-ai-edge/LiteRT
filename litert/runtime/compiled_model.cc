@@ -2022,6 +2022,33 @@ Expected<void> LiteRtCompiledModelT::Run(
     std::memcpy(host_mem_addr, pending_copy.tensor->data.raw, tensor_bytes);
   }
 
+  // If TFLite operators (e.g. TopKV2) reset an output tensor to dynamic during
+  // preparation, copy the dynamically allocated data back into the output
+  // buffer.
+  for (int i = 0; i < expected_outputs; ++i) {
+    const TfLiteTensor* output_tensor = nullptr;
+    if (use_interpreter_directly) {
+      output_tensor = interp_->tensor(interp_->outputs()[i]);
+    } else {
+      output_tensor = runner->output_tensor(runner->subgraph_output_names()[i]);
+    }
+    if (output_tensor && output_tensor->allocation_type == kTfLiteDynamic &&
+        output_tensor->data.raw != nullptr &&
+        output_tensor->type != kTfLiteString) {
+      LiteRtUnlockTensorBuffer(output_buffers[i]);
+      void* host_mem_addr;
+      if (auto status =
+              LiteRtLockTensorBuffer(output_buffers[i], &host_mem_addr,
+                                     kLiteRtTensorBufferLockModeWrite);
+          status == kLiteRtStatusOk) {
+        size_t copy_bytes =
+            std::min(output_tensor->bytes, output_buffers[i]->buffer_size());
+        std::memcpy(host_mem_addr, output_tensor->data.raw, copy_bytes);
+        LiteRtUnlockTensorBuffer(output_buffers[i]);
+      }
+    }
+  }
+
   // Copy constant data to constant output tensors after invoke
   // This only iterates through constant outputs that were identified during
   // RegisterBuffer
