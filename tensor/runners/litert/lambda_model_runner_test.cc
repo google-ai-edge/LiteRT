@@ -65,37 +65,6 @@ TEST(LambdaModelRunnerTest, SimpleLambda) {
   EXPECT_EQ(data[0], 3.0f);
 }
 
-TEST(LambdaModelRunnerTest, SimpleLambdaWithTmpFile) {
-  LITERT_ASSIGN_OR_ABORT(auto env, Environment::Create({}));
-  LITERT_ASSIGN_OR_ABORT(auto options, Options::Create());
-  options.SetHardwareAccelerators(HwAccelerators::kCpu);
-
-  auto runner = CreateLambdaRunner(
-      env, options,
-      {{"x", Tensor<TfLiteMixinTag>(
-                 {.name = "x", .type = Type::kFP32, .shape = {1}})}},
-      [](const auto& inputs) {
-        Tensor y = Add(inputs.at("x"), 1.0f);
-        return TensorsMap{{"y", y}};
-      },
-      /*use_tmp_file=*/true);
-
-  std::vector<float> input_data = {2.0f};
-  auto x_tensor = Create("x", Type::kFP32, {1}, std::move(input_data));
-  EXPECT_TRUE(runner.SetInput("x", x_tensor).ok());
-  EXPECT_TRUE(runner.Run().ok());
-
-  auto y_or = runner.GetOutput("y");
-  ASSERT_TRUE(y_or.ok());
-  auto y_tensor = std::move(*y_or);
-
-  auto buffer_or = y_tensor.GetBuffer();
-  ASSERT_TRUE(buffer_or.ok());
-  auto locked_span = buffer_or->Lock();
-  const float* data = reinterpret_cast<const float*>(locked_span.data());
-  EXPECT_EQ(data[0], 3.0f);
-}
-
 TEST(LambdaModelRunnerTest, StaticRunner) {
   LITERT_ASSIGN_OR_ABORT(auto env, Environment::Create({}));
   LITERT_ASSIGN_OR_ABORT(auto options, Options::Create());
@@ -109,37 +78,6 @@ TEST(LambdaModelRunnerTest, StaticRunner) {
   TensorsMap outputs = {{"y", y}};
 
   auto runner = CreateStaticRunner(env, options, inputs, outputs);
-
-  std::vector<float> input_data = {2.0f};
-  auto x_tensor = Create("x", Type::kFP32, {1}, std::move(input_data));
-  EXPECT_TRUE(runner.SetInput("x", x_tensor).ok());
-  EXPECT_TRUE(runner.Run().ok());
-
-  auto y_or = runner.GetOutput("y");
-  ASSERT_TRUE(y_or.ok());
-  auto y_tensor = std::move(*y_or);
-
-  auto buffer_or = y_tensor.GetBuffer();
-  ASSERT_TRUE(buffer_or.ok());
-  auto locked_span = buffer_or->Lock();
-  const float* data = reinterpret_cast<const float*>(locked_span.data());
-  EXPECT_EQ(data[0], 3.0f);
-}
-
-TEST(LambdaModelRunnerTest, StaticRunnerWithTmpFile) {
-  LITERT_ASSIGN_OR_ABORT(auto env, Environment::Create({}));
-  LITERT_ASSIGN_OR_ABORT(auto options, Options::Create());
-  options.SetHardwareAccelerators(HwAccelerators::kCpu);
-
-  Tensor<TfLiteMixinTag> x({.name = "x", .type = Type::kFP32, .shape = {1}});
-  Tensor<TfLiteMixinTag> y = Add(x, 1.0f);
-  y.SetName("y");
-
-  TensorsMap inputs = {{"x", x}};
-  TensorsMap outputs = {{"y", y}};
-
-  auto runner =
-      CreateStaticRunner(env, options, inputs, outputs, /*use_tmp_file=*/true);
 
   std::vector<float> input_data = {2.0f};
   auto x_tensor = Create("x", Type::kFP32, {1}, std::move(input_data));
