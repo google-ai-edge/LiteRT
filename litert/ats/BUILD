@@ -36,30 +36,30 @@ litert_define_ats(
     backend = "cpu",
     compile_only_suffix = None,
     dont_register = [
-        ".*i32.*",  # XNNPACK does not support int32
-        ".*OneHot.*",  # XNNPACK does not support OneHot
-        ".*Transformer.*",  # XNNPACK does not support TransformerLayer flex/custom ops
-        ".*tfl\\.floor_div.*",  # XNNPACK does not support FloorDiv
-        ".*tfl\\.pow.*",  # XNNPACK does not support Pow
-        ".*tfl\\.prelu.*",  # XNNPACK requires PRelu alpha to be statically allocated
-        ".*tfl\\.zeros_like.*",  # XNNPACK does not support ZerosLike
-        ".*tfl\\.sign.*",  # XNNPACK does not support Sign
-        ".*tfl\\.relu_0_to_1.*",  # XNNPACK does not support Relu0To1
-        ".*tfl\\.elu.*",  # XNNPACK does not support Elu
-        ".*tfl\\.reduce_max.*",  # XNNPACK does not support ReduceMax
-        ".*tfl\\.reduce_min.*",  # XNNPACK does not support ReduceMin
-        ".*tfl\\.reduce_prod.*",  # XNNPACK does not support ReduceProd
-        ".*LogSoftmax.*",  # XNNPACK does not support LogSoftmax
-        ".*Pooling.*",  # XNNPACK rejects pooling when stride > filter size
-        ".*Conv2d.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 Conv2d
-        ".*BatchMatmul.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 BatchMatmul
-        ".*FullyConnected.*(f16|i8|u8|SHUFFLED).*",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
-        ".*FullyConnected.*,2d_f32.*,1d_f32.*",
-        ".*FullyConnected.*,2d_f32[^c].*",
-        ".*FullyConnected.*_cst.*,1d_f32[^c].*",
-        ".*Transpose.*(f16|i4|bool|u16|u32|u64|i64).*",  # XNNPACK delegate at ToT does not yet support these Transpose presets
+        "i32",  # XNNPACK does not support int32
+        "OneHot",  # XNNPACK does not support OneHot
+        "Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
+        "tfl\\.floor_div",  # XNNPACK does not support FloorDiv
+        "tfl\\.pow",  # XNNPACK does not support Pow
+        "tfl\\.prelu",  # XNNPACK requires PRelu alpha to be statically allocated
+        "tfl\\.zeros_like",  # XNNPACK does not support ZerosLike
+        "tfl\\.sign",  # XNNPACK does not support Sign
+        "tfl\\.relu_0_to_1",  # XNNPACK does not support Relu0To1
+        "tfl\\.elu",  # XNNPACK does not support Elu
+        "tfl\\.reduce_max",  # XNNPACK does not support ReduceMax
+        "tfl\\.reduce_min",  # XNNPACK does not support ReduceMin
+        "tfl\\.reduce_prod",  # XNNPACK does not support ReduceProd
+        "LogSoftmax",  # XNNPACK does not support LogSoftmax
+        "Pooling",  # XNNPACK rejects pooling when stride > filter size
+        "Conv2d.*f16",  # XNNPACK delegate at ToT does not yet support f16 Conv2d
+        "BatchMatmul.*f16",  # XNNPACK delegate at ToT does not yet support f16 BatchMatmul
+        "FullyConnected.*(f16|i8|u8|SHUFFLED)",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
+        "FullyConnected.*,2d_f32.*,1d_f32",
+        "FullyConnected.*,2d_f32[^c]",
+        "FullyConnected.*_cst.*,1d_f32[^c]",
+        "Transpose.*(f16|i4|bool|u16|u32|u64|i64)",  # XNNPACK delegate at ToT does not yet support these Transpose presets
         # Explicit ExtraModel exclusions (unsupported by XNNPACK):
-        ".*simple_add_dynamic_shape.*",
+        "simple_add_dynamic_shape",
         "hf_all_minilm_l6_v2",
         "u2net_lite",
         "whisper_tiny_decoder",
@@ -103,8 +103,8 @@ litert_define_ats(
     dont_register = [
         "hf_all_minilm_l6_v2",
         "whisper_tiny_decoder",
-        ".*5d.*",
-        ".*6d.*",
+        "5d",
+        "6d",
     ],
     extra_flags = [
         "--data_seed=42",
@@ -139,8 +139,8 @@ litert_define_ats(
 #     dont_register = [
 #         "hf_all_minilm_l6_v2",
 #         "whisper_tiny_decoder",
-#         ".*5d.*",
-#         ".*6d.*",
+#         "5d",
+#         "6d",
 #     ],
 #     extra_flags = ["--soc_model=Tensor_G5"],
 #     jit_suffix = "",
@@ -163,8 +163,8 @@ litert_define_ats(
         "yolo11n",
     ],
     dont_register = [
-        ".*5d.*",
-        ".*6d.*",
+        "5d",
+        "6d",
         "whisper_tiny_decoder",
         "whisper_tiny_encoder",
         "hf_all_minilm_l6_v2",
@@ -219,7 +219,7 @@ litert_define_ats(
         "yolo11n",
     ],
     dont_register = [
-        ".*6d.*",
+        "6d",
         "hf_all_minilm_l6_v2",
         "whisper_tiny_decoder",
         "qai_hub_real_esrgan_x4plus",
@@ -237,14 +237,14 @@ litert_define_ats(
         "whisper_tiny_decoder",
         "hf_all_minilm_l6_v2",
         "hf_mobilevit_small",
-        ".*5d.*",
-        ".*6d.*",
-        ".*tfl.elu.*",
-        ".*tfl.neg.*",
-        ".*tfl.square.*",
-        ".*tfl.zeros_like.*",
-        ".*tfl.round.*",
-        ".*tfl.sign.*",
+        "5d",
+        "6d",
+        "tfl.elu",
+        "tfl.neg",
+        "tfl.square",
+        "tfl.zeros_like",
+        "tfl.round",
+        "tfl.sign",
     ],
     extra_flags = [
     ],
@@ -260,34 +260,34 @@ litert_test(
     name = "ats",
     srcs = ["ats.cc"],
     args = [
-        "--dont_register=.*i32.*",  # XNNPACK does not support int32
-        "--dont_register=.*OneHot.*",  # XNNPACK does not support OneHot
-        "--dont_register=.*Transformer.*",  # XNNPACK does not support TransformerLayer flex/custom ops
-        "--dont_register=.*tfl\\.floor_div.*",  # XNNPACK does not support FloorDiv
-        "--dont_register=.*tfl\\.pow.*",  # XNNPACK does not support Pow
-        "--dont_register=.*tfl\\.prelu.*",  # XNNPACK requires PRelu alpha to be statically allocated
-        "--dont_register=.*tfl\\.zeros_like.*",  # XNNPACK does not support ZerosLike
-        "--dont_register=.*tfl\\.sign.*",  # XNNPACK does not support Sign
-        "--dont_register=.*tfl\\.relu_0_to_1.*",  # XNNPACK does not support Relu0To1
-        "--dont_register=.*tfl\\.elu.*",  # XNNPACK does not support Elu
-        "--dont_register=.*tfl\\.reduce_max.*",  # XNNPACK does not support ReduceMax
-        "--dont_register=.*tfl\\.reduce_min.*",  # XNNPACK does not support ReduceMin
-        "--dont_register=.*tfl\\.reduce_prod.*",  # XNNPACK does not support ReduceProd
-        "--dont_register=.*LogSoftmax.*",  # XNNPACK does not support LogSoftmax
-        "--dont_register=.*Pooling.*",  # XNNPACK rejects pooling when stride > filter size
-        "--dont_register=.*Conv2d.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 Conv2d
-        "--dont_register=.*BatchMatmul.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 BatchMatmul
-        "--dont_register=.*FullyConnected.*(f16|i8|u8|SHUFFLED).*",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
-        "--dont_register=.*FullyConnected.*,2d_f32.*,1d_f32.*",
-        "--dont_register=.*FullyConnected.*,2d_f32[^c].*",
-        "--dont_register=.*FullyConnected.*_cst.*,1d_f32[^c].*",
-        "--dont_register=.*Transpose.*(f16|i4|bool|u16|u32|u64|i64).*",  # XNNPACK delegate at ToT does not yet support these Transpose presets
+        "--dont_register=i32",  # XNNPACK does not support int32
+        "--dont_register=OneHot",  # XNNPACK does not support OneHot
+        "--dont_register=Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
+        "--dont_register=tfl\\.floor_div",  # XNNPACK does not support FloorDiv
+        "--dont_register=tfl\\.pow",  # XNNPACK does not support Pow
+        "--dont_register=tfl\\.prelu",  # XNNPACK requires PRelu alpha to be statically allocated
+        "--dont_register=tfl\\.zeros_like",  # XNNPACK does not support ZerosLike
+        "--dont_register=tfl\\.sign",  # XNNPACK does not support Sign
+        "--dont_register=tfl\\.relu_0_to_1",  # XNNPACK does not support Relu0To1
+        "--dont_register=tfl\\.elu",  # XNNPACK does not support Elu
+        "--dont_register=tfl\\.reduce_max",  # XNNPACK does not support ReduceMax
+        "--dont_register=tfl\\.reduce_min",  # XNNPACK does not support ReduceMin
+        "--dont_register=tfl\\.reduce_prod",  # XNNPACK does not support ReduceProd
+        "--dont_register=LogSoftmax",  # XNNPACK does not support LogSoftmax
+        "--dont_register=Pooling",  # XNNPACK rejects pooling when stride > filter size
+        "--dont_register=Conv2d.*f16",  # XNNPACK delegate at ToT does not yet support f16 Conv2d
+        "--dont_register=BatchMatmul.*f16",  # XNNPACK delegate at ToT does not yet support f16 BatchMatmul
+        "--dont_register=FullyConnected.*(f16|i8|u8|SHUFFLED)",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
+        "--dont_register=FullyConnected.*,2d_f32.*,1d_f32",
+        "--dont_register=FullyConnected.*,2d_f32[^c]",
+        "--dont_register=FullyConnected.*_cst.*,1d_f32[^c]",
+        "--dont_register=Transpose.*(f16|i4|bool|u16|u32|u64|i64)",  # XNNPACK delegate at ToT does not yet support these Transpose presets
         # Explicit ExtraModel exclusions (unsupported by XNNPACK):
-        "--dont_register=.*simple_add_dynamic_shape.*",
-        "--dont_register=.*hf_all_minilm_l6_v2.*",
-        "--dont_register=.*u2net_lite.*",
-        "--dont_register=.*whisper_tiny_decoder.*",
-        "--dont_register=.*yolo11n.*",
+        "--dont_register=simple_add_dynamic_shape",
+        "--dont_register=hf_all_minilm_l6_v2",
+        "--dont_register=u2net_lite",
+        "--dont_register=whisper_tiny_decoder",
+        "--dont_register=yolo11n",
     ],
     copts = commandline_flag_copts(),
     linkstatic = True,
@@ -497,7 +497,7 @@ cc_test(
     name = "check_ats",
     srcs = ["check_ats.cc"],
     args = [
-        "--dont_register=.*add.*i32.*",  # XNNPACK does not support int32 add
+        "--dont_register=add.*i32",  # XNNPACK does not support int32 add
     ],
     copts = commandline_flag_copts(),
     data = [

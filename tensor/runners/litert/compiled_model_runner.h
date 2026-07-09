@@ -129,6 +129,8 @@ class CompiledModelRunner {
       const absl::flat_hash_map<GraphProbe::StableTensorId, std::string,
                                 GraphProbe::StableTensorIdHash>& probe_tensors);
 
+  CompiledModel& compiled_model() { return compiled_model_; }
+
  private:
   static Environment CreateEnvironmentOrDie() {
     LITERT_ASSIGN_OR_ABORT(auto env, Environment::Create({}));
