@@ -67,7 +67,8 @@ class Conv3dOpModel : public SingleOpModel {
                 int32_t stride_height = 1,
                 ActivationFunctionType activation = ActivationFunctionType_NONE,
                 int32_t dilation_depth = 1, int32_t dilation_width = 1,
-                int32_t dilation_height = 1) {
+                int32_t dilation_height = 1,
+                TfLiteRegistration* registration = nullptr) {
     input_ = AddInput(input);
     filter_ = AddInput(filter);
     output_ = AddOutput(output);
@@ -77,6 +78,10 @@ class Conv3dOpModel : public SingleOpModel {
                             stride_height, activation, dilation_depth,
                             dilation_width, dilation_height)
             .Union());
+    if (registration != nullptr) {
+      resolver_ = std::make_unique<SingleOpResolver>(BuiltinOperator_CONV_3D,
+                                                     registration);
+    }
     BuildInterpreter({GetShape(input_), GetShape(filter_)});
   }
 
@@ -187,6 +192,25 @@ TEST(Conv3dPrepareSecurityTest, RejectsIm2ColDepthOverflow) {
   } else {
     EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
   }
+}
+
+TEST(Conv3dOpModel, GenericOptimizedDilatedIm2ColUsesInputChannels) {
+  Conv3dOpModel m(
+      {TensorType_FLOAT32, {1, 3, 2, 2, 1}},
+      {TensorType_FLOAT32, {1, 1, 2, 1, 1}}, {TensorType_FLOAT32, {}},
+      Padding_SAME, /*stride_depth=*/1, /*stride_width=*/1,
+      /*stride_height=*/1, ActivationFunctionType_NONE,
+      /*dilation_depth=*/1, /*dilation_width=*/2, /*dilation_height=*/1,
+      ops::builtin::Register_CONV_3D_GENERIC_OPT());
+
+  m.SetInput({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+  m.SetFilter({10, 1});
+
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+
+  EXPECT_THAT(m.GetOutputShape(), ElementsAre(1, 3, 2, 2, 1));
+  EXPECT_THAT(m.GetOutput(), ElementsAreArray({2, 10, 4, 30, 6, 50, 8, 70,
+                                               10, 90, 12, 110}));
 }
 
 TEST(Conv3dOpModel, SimpleFloat32Test) {

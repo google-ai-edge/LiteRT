@@ -832,6 +832,7 @@ cc_library(
     }),
     visibility = [
         "//tflite/core/kernels:__subpackages__",
+        "//tflite/kernels/fuzzing:__pkg__",
     ],
     deps = BUILTIN_KERNEL_DEPS + [
         ":variable_op_kernels",

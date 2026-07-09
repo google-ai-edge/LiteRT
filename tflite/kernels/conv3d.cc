@@ -126,6 +126,15 @@ TfLiteStatus Prepare(KernelType kernel_type, TfLiteContext* context,
   TF_LITE_ENSURE_EQ(context, filter->dims->size, 5);
 
   // Check input channels matching filter.
+  TF_LITE_ENSURE(context, input->dims->data[1] > 0);
+  TF_LITE_ENSURE(context, input->dims->data[2] > 0);
+  TF_LITE_ENSURE(context, input->dims->data[3] > 0);
+  TF_LITE_ENSURE(context, input->dims->data[4] > 0);
+  TF_LITE_ENSURE(context, filter->dims->data[0] > 0);
+  TF_LITE_ENSURE(context, filter->dims->data[1] > 0);
+  TF_LITE_ENSURE(context, filter->dims->data[2] > 0);
+  TF_LITE_ENSURE(context, filter->dims->data[3] > 0);
+  TF_LITE_ENSURE(context, filter->dims->data[4] > 0);
   TF_LITE_ENSURE_EQ(context, input->dims->data[4], filter->dims->data[3]);
 
   // Check types.
@@ -155,12 +164,15 @@ TfLiteStatus Prepare(KernelType kernel_type, TfLiteContext* context,
 
   // Matching GetWindowedOutputSize in TensorFlow.
   int out_width, out_height, out_depth;
-  opdata->padding = ComputePadding3DValues(
-      params->stride_height, params->stride_width, params->stride_depth,
-      params->dilation_height_factor, params->dilation_width_factor,
-      params->dilation_depth_factor, height, width, depth, filter_height,
-      filter_width, filter_depth, params->padding, &out_height, &out_width,
-      &out_depth);
+  TF_LITE_ENSURE_OK(context, ComputePadding3DValuesChecked(
+                                 params->stride_height, params->stride_width,
+                                 params->stride_depth,
+                                 params->dilation_height_factor,
+                                 params->dilation_width_factor,
+                                 params->dilation_depth_factor, height, width,
+                                 depth, filter_height, filter_width,
+                                 filter_depth, params->padding, &out_height,
+                                 &out_width, &out_depth, &opdata->padding));
 
   std::unique_ptr<TfLiteIntArray, void (*)(TfLiteIntArray*)> output_size(
       TfLiteIntArrayCreate(5), TfLiteIntArrayFree);

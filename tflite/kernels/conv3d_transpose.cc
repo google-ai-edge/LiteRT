@@ -94,10 +94,9 @@ TfLiteStatus ResizeOutputAndTemporaryTensors(
   }
   // Output and input tensor must have the same batch size.
   TF_LITE_ENSURE_EQ(context, shape_data[0], SizeOfDimension(input, 0));
-  // The number of channels of output must be divisible by that of filter.
+  // Output and filter must have the same number of output channels.
   const int filter_output_channels = SizeOfDimension(filter, 3);
-  TF_LITE_ENSURE(context, filter_output_channels != 0);
-  TF_LITE_ENSURE_EQ(context, shape_data[4] % filter_output_channels, 0);
+  TF_LITE_ENSURE_EQ(context, shape_data[4], filter_output_channels);
 
   // Compute padding.
   const RuntimeShape& filter_shape = GetTensorShape(filter);
@@ -108,12 +107,16 @@ TfLiteStatus ResizeOutputAndTemporaryTensors(
   const int filter_height = filter_shape.Dims(1);
   const int filter_width = filter_shape.Dims(2);
   int unused_out_width, unused_out_height, unused_out_depth;
-  opdata->padding = ComputePadding3DValues(
-      params->stride_height, params->stride_width, params->stride_depth,
-      params->dilation_height_factor, params->dilation_width_factor,
-      params->dilation_depth_factor, height, width, depth, filter_height,
-      filter_width, filter_depth, params->padding, &unused_out_height,
-      &unused_out_width, &unused_out_depth);
+  TF_LITE_ENSURE_OK(context, ComputePadding3DValuesChecked(
+                                 params->stride_height, params->stride_width,
+                                 params->stride_depth,
+                                 params->dilation_height_factor,
+                                 params->dilation_width_factor,
+                                 params->dilation_depth_factor, height, width,
+                                 depth, filter_height, filter_width,
+                                 filter_depth, params->padding,
+                                 &unused_out_height, &unused_out_width,
+                                 &unused_out_depth, &opdata->padding));
   // Computed shape must match the shape of the input tensor.
   TF_LITE_ENSURE_EQ(context, unused_out_depth, SizeOfDimension(input, 1));
   TF_LITE_ENSURE_EQ(context, unused_out_height, SizeOfDimension(input, 2));
@@ -179,6 +182,14 @@ TfLiteStatus Prepare(KernelType kernel_type, TfLiteContext* context,
   TF_LITE_ENSURE_EQ(context, filter->dims->size, 5);
 
   // Input and filter must have the same number of channels.
+  TF_LITE_ENSURE(context, SizeOfDimension(input, 1) > 0);
+  TF_LITE_ENSURE(context, SizeOfDimension(input, 2) > 0);
+  TF_LITE_ENSURE(context, SizeOfDimension(input, 3) > 0);
+  TF_LITE_ENSURE(context, SizeOfDimension(input, 4) > 0);
+  TF_LITE_ENSURE(context, SizeOfDimension(filter, 0) > 0);
+  TF_LITE_ENSURE(context, SizeOfDimension(filter, 1) > 0);
+  TF_LITE_ENSURE(context, SizeOfDimension(filter, 2) > 0);
+  TF_LITE_ENSURE(context, SizeOfDimension(filter, 3) > 0);
   TF_LITE_ENSURE_EQ(context, SizeOfDimension(input, 4),
                     SizeOfDimension(filter, 4));
 

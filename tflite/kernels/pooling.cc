@@ -91,10 +91,11 @@ TfLiteStatus GenericPrepare(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE(context, params->stride_height > 0);
   TF_LITE_ENSURE(context, params->stride_width > 0);
 
-  data->padding = ComputePaddingHeightWidth(
-      params->stride_height, params->stride_width, 1, 1, height, width,
-      params->filter_height, params->filter_width, padding, &out_height,
-      &out_width);
+  TF_LITE_ENSURE_OK(context, ComputePaddingHeightWidthChecked(
+                                 params->stride_height, params->stride_width,
+                                 1, 1, height, width, params->filter_height,
+                                 params->filter_width, padding, &out_height,
+                                 &out_width, &data->padding));
 
   if (input->type == kTfLiteUInt8 || input->type == kTfLiteInt8) {
     if (pool_type == kAverage || pool_type == kMax) {
