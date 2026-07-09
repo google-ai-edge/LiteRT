@@ -135,6 +135,38 @@ selects.config_setting_group(
     ],
 )
 
+selects.config_setting_group(
+    name = "linux_gpu_enabled",
+    match_all = [
+        "//litert:linux",
+        ":build_include_gpu_enabled",
+    ],
+)
+
+selects.config_setting_group(
+    name = "macos_gpu_enabled",
+    match_all = [
+        "//litert:macos",
+        ":build_include_gpu_enabled",
+    ],
+)
+
+selects.config_setting_group(
+    name = "ios_gpu_enabled",
+    match_all = [
+        "//litert:ios",
+        ":build_include_gpu_enabled",
+    ],
+)
+
+selects.config_setting_group(
+    name = "windows_gpu_enabled",
+    match_all = [
+        "//litert:windows",
+        ":build_include_gpu_enabled",
+    ],
+)
+
 exports_files(srcs = [
     "export_litert_gpu_accelerator_darwin.lds",
     "export_litert_gpu_accelerator_linux.lds",
