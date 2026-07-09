@@ -27,8 +27,8 @@ is done by setting the appropriate runtime options.
 ### Code Snippet: Enabling Profiling
 
 ```cpp
-#include "third_party/odml/litert/litert/cc/litert_options.h"
-#include "third_party/odml/litert/litert/cc/options/litert_runtime_options.h"
+#include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_runtime_options.h"
 
 // Create compilation options.
 LITERT_ASSIGN_OR_ABORT(litert::Options compilation_options,
@@ -65,7 +65,7 @@ profiling session.
 ### Code Snippet: Profiling an Inference Run
 
 ```cpp
-#include "third_party/odml/litert/litert/cc/litert_profiler.h"
+#include "litert/cc/litert_profiler.h"
 
 // 1. Get the Profiler from the CompiledModel.
 LITERT_ASSERT_OK_AND_ASSIGN(auto profiler, compiled_model.GetProfiler());
@@ -102,7 +102,7 @@ EXPECT_EQ(events.size(), 0);
 
 The `GetEvents()` method returns a vector of `ProfiledEventData` objects. Each
 `ProfiledEventData` has the following structure (from
-`third_party/odml/litert/litert/c/litert_profiler_event.h`):
+`litert/c/litert_profiler_event.h`):
 
 ```cpp
 struct ProfiledEventData {
