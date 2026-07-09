@@ -373,6 +373,11 @@ class LiteRtCompiledModelT {
     size_t data_size;
   };
 
+  struct PendingCopy {
+    LiteRtTensorBuffer buffer;
+    TfLiteTensor* tensor;
+  };
+
   // Registers the TensorBuffer for the given tensor with the SignatureRunner.
   // The `tensor_index` is the index of the tensor in the interpreter. It is
   // used when the `runner` is not available.
@@ -385,7 +390,8 @@ class LiteRtCompiledModelT {
       tflite::SignatureRunner* runner, TfLiteTensor* tensor, int tensor_index,
       const char* tensor_name, LiteRtTensorBufferT* buffer, bool is_input,
       std::vector<LiteRtTensorBuffer>& locked_buffers,
-      std::vector<ConstantOutputInfo>& constant_outputs);
+      std::vector<ConstantOutputInfo>& constant_outputs,
+      std::vector<PendingCopy>& pending_string_output_copies);
 
   void RegisterDelegate(Delegate&& delegate) {
     delegates_.push_back(std::move(delegate));
