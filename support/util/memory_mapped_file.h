@@ -32,6 +32,12 @@ namespace litert::support {
 // object exists and will be cleaned up when it is destroyed.
 class MemoryMappedFile {
  public:
+  enum class Access {
+    kRead = 0,
+    kCopy = 1,
+    kWrite = 2,
+  };
+
   // Move constructor and move assignment operator
   MemoryMappedFile(MemoryMappedFile&&) = default;
   MemoryMappedFile& operator=(MemoryMappedFile&&) = default;
@@ -45,13 +51,13 @@ class MemoryMappedFile {
 
   // Creates a read-only MemoryMappedFile object.
   static absl::StatusOr<std::unique_ptr<MemoryMappedFile>> Create(
-      absl::string_view path);
+      absl::string_view path, Access access = Access::kCopy);
   // Creates a MemoryMappedFile object from the platform file handle. This does
   // not take ownership of the passed handle. The `key` passed here is an
   // optimization when mapping the same file with different offsets.
   static absl::StatusOr<std::unique_ptr<MemoryMappedFile>> Create(
       ScopedFile::PlatformFile file, uint64_t offset = 0u, uint64_t length = 0u,
-      absl::string_view key = "");
+      absl::string_view key = "", Access access = Access::kCopy);
 
   // Creates a mutable MemoryMappedFile object, any modification through data()
   // pointer will be carried over to the underlying path.
