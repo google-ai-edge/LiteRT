@@ -26,11 +26,11 @@ Set the error reporter mode during compilation by attaching a
 ### Code Snippet: Configure Buffer Mode
 
 ```cpp
-#include "third_party/odml/litert/litert/cc/litert_compiled_model.h"
-#include "third_party/odml/litert/litert/cc/litert_environment.h"
-#include "third_party/odml/litert/litert/cc/litert_model.h"
-#include "third_party/odml/litert/litert/cc/options/litert_options.h"
-#include "third_party/odml/litert/litert/cc/options/litert_runtime_options.h"
+#include "litert/cc/litert_compiled_model.h"
+#include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_model.h"
+#include "litert/cc/options/litert_options.h"
+#include "litert/cc/options/litert_runtime_options.h"
 
 LITERT_ASSIGN_OR_ABORT(litert::Options compilation_options,
                        litert::Options::Create());

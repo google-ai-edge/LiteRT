@@ -15,8 +15,6 @@
 #ifndef ODML_LITERT_LITERT_C_OPTIONS_LITERT_SAMSUNG_OPTIONS_H_
 #define ODML_LITERT_LITERT_C_OPTIONS_LITERT_SAMSUNG_OPTIONS_H_
 
-#include <stdint.h>
-
 #include "litert/c/litert_common.h"
 
 // C-API for an opaque options type relevant to Samsung (both dspatch and
