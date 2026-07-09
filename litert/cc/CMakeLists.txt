@@ -35,6 +35,7 @@ set(LITERT_CC_PUBLIC_HEADERS
     litert_options.h
     litert_profiler.h
     litert_ranked_tensor_type.h
+    litert_string_util.h
     litert_tensor_buffer_requirements.h
     litert_tensor_buffer_types.h
     litert_tensor_buffer.h
