@@ -42,7 +42,6 @@ cc_library(
         "//tensor/internal:graph",
         "//tensor/internal:graph_probe",
         "//tensor/internal:graph_traversal",
-        "//tensor/utils:file_utils",
         "//tflite:framework",
         "//tflite/kernels:builtin_ops",
         "@com_google_absl//absl/container:flat_hash_map",
