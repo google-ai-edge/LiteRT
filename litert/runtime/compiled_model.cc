@@ -484,7 +484,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     weight_loader_owned_ = weight_loader::CreateLiteRtWeightLoader(
         LrtGetRuntimeContext(), fb_model_->GetModel(), model_directory_,
         std::move(jit_compilation_options->scoped_weight_source),
-        std::move(jit_compilation_options->weight_in_memory_map));
+        jit_compilation_options->weight_in_memory_map);
     weight_loader_ = weight_loader_owned_.get();
   } else {
     weight_loader_ = jit_compilation_options->weight_loader;
@@ -504,11 +504,21 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     // backends.
     request.opencl = false;
     absl::Status prepare_status = weight_loader_->PrepareAccess(request, env);
+#ifdef __EMSCRIPTEN__
+      if (!prepare_status.ok()) {
+        LITERT_LOG(LITERT_WARNING,
+                  "External weight loader: failed to prepare CPU access: %s. "
+                  "Continuing as weights may be provided via other means (e.g. "
+                  "streaming).",
+                  std::string(prepare_status.message()).c_str());
+      }
+#else
     if (!prepare_status.ok()) {
       weight_loader_ = nullptr;
-      return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                std::string(prepare_status.message()));
-    }
+        return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                  std::string(prepare_status.message()));
+      }
+#endif
   }
 
   // Inform delegates and the other components about the weight loader.
@@ -904,7 +914,19 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
   // Load and restore external weights for CPU execution before delegates are
   // applied. This ensures that XNNPack and other CPU delegates can see the
   // weight data.
-  if (hardware_accelerators & kLiteRtHwAcceleratorCpu) {
+  bool should_restore_cpu = false;
+#if defined(__EMSCRIPTEN__)
+  // On Web, only restore if CPU is the only requested accelerator,
+  // as we want to avoid loading weights to CPU when streaming to GPU.
+  should_restore_cpu = (hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
+                       !(hardware_accelerators &
+                         (kLiteRtHwAcceleratorGpu | kLiteRtHwAcceleratorNpu));
+#else
+  // On non-Web, always restore to support fallback and constant sharing.
+  should_restore_cpu = (hardware_accelerators & kLiteRtHwAcceleratorCpu);
+#endif
+
+  if (should_restore_cpu) {
     LITERT_RETURN_IF_ERROR(compiled_model->RestoreExternalWeightsForCpu());
   }
 
@@ -1469,7 +1491,8 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     tflite::SignatureRunner* runner, TfLiteTensor* tensor, int tensor_index,
     const char* tensor_name, LiteRtTensorBufferT* buffer, bool is_input,
     std::vector<LiteRtTensorBuffer>& locked_buffers,
-    std::vector<ConstantOutputInfo>& constant_outputs) {
+    std::vector<ConstantOutputInfo>& constant_outputs,
+    std::vector<PendingCopy>& pending_string_output_copies) {
   LITERT_PERFETTO_TRACE_EVENT("CompiledModel Buffer Registration");
   LITERT_DEBUG_CODE({
     absl::string_view io = is_input ? "input" : "output";
@@ -1592,6 +1615,11 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     }
 #endif
     if (buffer_is_cpu_compatible) {
+      if (tensor->type == kTfLiteString && !is_input) {
+        pending_string_output_copies.push_back({buffer, tensor});
+        return {};
+      }
+
       void* host_mem_addr;
       LiteRtTensorBufferLockMode lock_mode =
           is_input ? kLiteRtTensorBufferLockModeRead
@@ -1603,6 +1631,13 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
             status, absl::StrFormat("Failed to lock the tensor buffer: %s",
                                     tensor->name ? tensor->name : "<unnamed>"));
       }
+
+      // For string inputs, we must fake kTfLiteCustom to bypass the guard check
+      // in SetCustomAllocation.
+      if (tensor->type == kTfLiteString && is_input) {
+        tensor->allocation_type = kTfLiteCustom;
+      }
+
       // For the following tflite custom allocation call, we explicitly use
       // buffer_size instead of tensor->bytes. This is because tensor->bytes
       // might be updated to the latest value if resize didn't trigger tensor
@@ -1618,15 +1653,33 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
                    "Tracked constant output tensor %s with locked address",
                    tensor_name);
       }
+      TfLiteStatus status = kTfLiteOk;
       if (is_input) {
         if (runner) {
-          runner->SetCustomAllocationForInputTensor(tensor_name,
-                                                    custom_allocation,
-                                                    /*flags=*/0);
+          status = runner->SetCustomAllocationForInputTensor(tensor_name,
+                                                             custom_allocation,
+                                                             /*flags=*/0);
         } else {
-          interp_->SetCustomAllocationForTensor(tensor_index, custom_allocation,
-                                                /*flags=*/0);
+          status = interp_->SetCustomAllocationForTensor(tensor_index,
+                                                         custom_allocation,
+                                                         /*flags=*/0);
         }
+        if (status != kTfLiteOk) {
+          LITERT_LOG(LITERT_ERROR,
+                     "Failed to set custom allocation for input tensor %s "
+                     "(index %d): %d",
+                     tensor_name ? tensor_name : "", tensor_index, status);
+          LiteRtUnlockTensorBuffer(buffer);
+          return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                            "Failed to set custom allocation for input");
+        }
+
+        // For string inputs, we must manually set tensor->bytes because TFLite
+        // cannot calculate it.
+        if (tensor->type == kTfLiteString) {
+          tensor->bytes = buffer->buffer_size();
+        }
+
         // TODO: b/419350199 - Ad-hoc solution to unlock input buffers.
         LITERT_RETURN_IF_ERROR(LiteRtUnlockTensorBuffer(buffer));
       } else {
@@ -1637,13 +1690,21 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
         // tensors
         if (!is_constant_output) {
           if (runner) {
-            runner->SetCustomAllocationForOutputTensor(tensor_name,
-                                                       custom_allocation,
-                                                       /*flags=*/0);
+            status = runner->SetCustomAllocationForOutputTensor(
+                tensor_name, custom_allocation,
+                /*flags=*/0);
           } else {
-            interp_->SetCustomAllocationForTensor(tensor_index,
-                                                  custom_allocation,
-                                                  /*flags=*/0);
+            status = interp_->SetCustomAllocationForTensor(tensor_index,
+                                                           custom_allocation,
+                                                           /*flags=*/0);
+          }
+          if (status != kTfLiteOk) {
+            LITERT_LOG(LITERT_ERROR,
+                       "Failed to set custom allocation for output tensor %s "
+                       "(index %d): %d",
+                       tensor_name ? tensor_name : "", tensor_index, status);
+            return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Failed to set custom allocation for output");
           }
         }
       }
@@ -1792,6 +1853,10 @@ Expected<void> LiteRtCompiledModelT::Run(
   locked_buffers.reserve(num_inputs + num_outputs);
   // Vector to track only constant output tensors.
   std::vector<ConstantOutputInfo> constant_outputs;
+  // Tracks output string tensors that need to be copied back from TFLite
+  // to LiteRT TensorBuffers after execution, since TFLite does not support
+  // custom allocations (zero-copy) for dynamic string tensors.
+  std::vector<PendingCopy> pending_string_output_copies;
   auto unlock_buffers = absl::MakeCleanup([&locked_buffers]() {
     for (auto locked_buffer : locked_buffers) {
       if (LiteRtUnlockTensorBuffer(locked_buffer) != kLiteRtStatusOk) {
@@ -1819,9 +1884,10 @@ Expected<void> LiteRtCompiledModelT::Run(
       input_tensor = runner->input_tensor(tensor_name);
     }
 
-    auto res = RegisterBuffer(runner, input_tensor, tensor_index, tensor_name,
-                              input_buffers[i], /*is_input=*/true,
-                              locked_buffers, constant_outputs);
+    auto res =
+        RegisterBuffer(runner, input_tensor, tensor_index, tensor_name,
+                       input_buffers[i], /*is_input=*/true, locked_buffers,
+                       constant_outputs, pending_string_output_copies);
 
     if (!res) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -1844,10 +1910,10 @@ Expected<void> LiteRtCompiledModelT::Run(
       output_tensor = runner->output_tensor(tensor_name);
     }
 
-    auto res =
-        RegisterBuffer(runner, const_cast<TfLiteTensor*>(output_tensor),
-                       tensor_index, tensor_name, output_buffers[i],
-                       /*is_input=*/false, locked_buffers, constant_outputs);
+    auto res = RegisterBuffer(runner, const_cast<TfLiteTensor*>(output_tensor),
+                              tensor_index, tensor_name, output_buffers[i],
+                              /*is_input=*/false, locked_buffers,
+                              constant_outputs, pending_string_output_copies);
 
     if (!res) {
       return Unexpected(
@@ -1924,6 +1990,37 @@ Expected<void> LiteRtCompiledModelT::Run(
     }
     return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Failed to invoke");
   }
+  // Copy data from TfLiteTensor to LiteRtTensorBuffer for pending outputs (e.g.
+  // strings)
+  LITERT_LOG(LITERT_DEBUG, "Run: pending_string_output_copies size=%d",
+             pending_string_output_copies.size());
+  for (const auto& pending_copy : pending_string_output_copies) {
+    void* host_mem_addr;
+    if (auto status =
+            LiteRtLockTensorBuffer(pending_copy.buffer, &host_mem_addr,
+                                   kLiteRtTensorBufferLockModeWrite);
+        status != kLiteRtStatusOk) {
+      return Unexpected(status, "Failed to lock output buffer for copying");
+    }
+    auto unlock = absl::MakeCleanup(
+        [pending_copy]() { LiteRtUnlockTensorBuffer(pending_copy.buffer); });
+
+    size_t tensor_bytes = pending_copy.tensor->bytes;
+    size_t buffer_size = pending_copy.buffer->buffer_size();
+    LITERT_LOG(LITERT_DEBUG,
+               "Copying output string: tensor_bytes=%d, buffer_size=%d, "
+               "raw=%p, allocation_type=%d",
+               tensor_bytes, buffer_size, pending_copy.tensor->data.raw,
+               pending_copy.tensor->allocation_type);
+    if (buffer_size < tensor_bytes) {
+      return Unexpected(
+          kLiteRtStatusErrorRuntimeFailure,
+          absl::StrFormat("Output buffer too small: allocated %d, required %d",
+                          buffer_size, tensor_bytes));
+    }
+    std::memcpy(host_mem_addr, pending_copy.tensor->data.raw, tensor_bytes);
+  }
+
   // Copy constant data to constant output tensors after invoke
   // This only iterates through constant outputs that were identified during
   // RegisterBuffer
