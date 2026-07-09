@@ -15,9 +15,7 @@
 #include "litert/c/options/litert_cpu_options.h"
 
 #include <stdint.h>
-#include <string.h>  // NOLINT: To use strdup in some environments.
 
-#include <cstdlib>
 #include <optional>
 #include <string>
 
@@ -203,6 +201,8 @@ LiteRtStatus LrtSetCpuOptionsXnnPackWeightCachePath(LrtCpuOptions* options,
                                                     const char* path) {
   LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
                 "options is null.");
+  LITERT_ENSURE(path != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "path is null.");
   if (options->weight_cache_file_descriptor.has_value()) {
     return kLiteRtStatusErrorInvalidArgument;
   }
