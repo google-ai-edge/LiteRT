@@ -133,7 +133,6 @@ litert_test(
     deps = [
         ":qnn_manager",
         "//litert/test:common",
-        "//litert/test:matchers",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/utils:test_main_no_heapcheck",
