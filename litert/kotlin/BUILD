@@ -21,6 +21,11 @@ load(
     "litert_android_linkopts",
     "litert_jni_friends",
 )
+
+# copybara:uncomment_begin(google-only)
+# load("//litert/kotlin:google/dackka.bzl", "dackka")
+#
+# copybara:uncomment_end
 load(
     "//tflite:build_def.bzl",
     "tflite_jni_binary",
@@ -419,3 +424,13 @@ exports_files(
         "src/main/AndroidManifest.xml",
     ] + glob(["src/main/kotlin/**/*.kt"]),
 )
+
+# copybara:uncomment_begin(google-only)
+# dackka(
+#     name = "litert_kotlin_docs",
+#     doc_root_path = "edge/api/litert/kotlin",
+#     java_docs_path = "java",
+#     runtime_dep = ":litert_api",
+#     src_jar = ":liblitert_api-src.jar",
+# )
+# copybara:uncomment_end
