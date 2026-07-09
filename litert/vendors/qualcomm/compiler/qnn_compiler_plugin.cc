@@ -95,8 +95,7 @@ LiteRtStatus MoveSchematic(absl::string_view graph_name,
   std::filesystem::path src_path =
       std::filesystem::current_path(ec) / schematic_file_name;
   if (ec) {
-    LITERT_LOG(LITERT_ERROR,
-               "Failed to get current CWD for schematic move: %s",
+    LITERT_LOG(LITERT_ERROR, "Failed to get current CWD for schematic move: %s",
                ec.message().c_str());
     return kLiteRtStatusErrorRuntimeFailure;
   }
@@ -457,7 +456,9 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     qnn_manager = compiler_plugin->QNN();
   }
 
-  for (const auto& op : graph.Ops()) {
+  const auto ops = graph.Ops();
+  for (size_t op_index = 0; op_index < ops.size(); ++op_index) {
+    const auto& op = ops[op_index];
     // default constructed, won't add tensor to QNN
     ::qnn::TensorPool tensor_pool;
     std::vector<::qnn::TensorWrapperRef> input_tensors;
@@ -480,7 +481,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     LITERT_RETURN_IF_ERROR(litert::qnn::ConvertOp(
         compiler_plugin->Options().GetUseInt64BiasAsInt32(),
         compiler_plugin->Options().GetCustomOpPackage(), op, tensor_pool,
-        input_tensors, output_tensors, op_wrappers));
+        input_tensors, output_tensors, op_wrappers, op_index));
 
     // Empty op_wrappers means the op is not supported by QNN.
     if (op_wrappers.empty()) {

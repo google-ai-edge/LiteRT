@@ -10,10 +10,13 @@
 #include <cstring>
 #include <functional>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "QnnOpDef.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/op_code.h"
@@ -21,8 +24,6 @@
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/param_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
-#include "QnnOpDef.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
 
@@ -168,6 +169,21 @@ void OpWrapper::AddPrefixToName(absl::string_view prefix) {
 
 void OpWrapper::AddSuffixToName(absl::string_view suffix) {
   name_ = absl::StrCat(name_, suffix);
+}
+
+std::string OpWrapper::ToString() const {
+  std::ostringstream out;
+  out << "'" << GetName()
+      << "' (type=" << (GetTypeName() ? GetTypeName() : "<null>") << ")";
+  out << "\n  Inputs:";
+  for (size_t i = 0; i < input_tensors_.size(); ++i) {
+    out << "\n    [" << i << "] " << input_tensors_[i].get().ToString();
+  }
+  out << "\n  Outputs:";
+  for (size_t i = 0; i < output_tensors_.size(); ++i) {
+    out << "\n    [" << i << "] " << output_tensors_[i].get().ToString();
+  }
+  return out.str();
 }
 
 namespace {
