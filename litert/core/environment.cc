@@ -23,7 +23,9 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#ifndef LITERT_DISABLE_GPU
 #include "litert/runtime/gpu_environment.h"
+#endif
 
 litert::Expected<LiteRtEnvironmentT::Ptr> LiteRtEnvironmentT::CreateWithOptions(
     absl::Span<const LiteRtEnvOption> options) {
@@ -49,18 +51,23 @@ litert::Expected<void> LiteRtEnvironmentT::AddOptions(
 // This function is only used in tensor_buffer.cc.
 extern "C" litert::internal::GpuEnvironment* LiteRtGetGpuEnvironment(
     LiteRtEnvironment env) {
+#ifndef LITERT_DISABLE_GPU
   if (env == nullptr) {
     return nullptr;
   }
   LITERT_ASSIGN_OR_RETURN(auto gpu_env, env->GetGpuEnvironment(), nullptr);
 
   return gpu_env;
+#else
+  return nullptr;
+#endif
 }
 
 LiteRtEnvironmentT::LiteRtEnvironmentT() = default;
 
 LiteRtEnvironmentT::~LiteRtEnvironmentT() = default;
 
+#ifndef LITERT_DISABLE_GPU
 litert::Expected<void> LiteRtEnvironmentT::SetGpuEnvironment(
     std::unique_ptr<litert::internal::GpuEnvironment> gpu_env) {
   if (gpu_env_) {
@@ -99,3 +106,14 @@ bool LiteRtEnvironmentT::SupportsAhwbGlInterop() {
 bool LiteRtEnvironmentT::SupportsFP16() {
   return gpu_env_ != nullptr && gpu_env_->SupportsFP16();
 }
+#else
+bool LiteRtEnvironmentT::HasGpuEnvironment() { return false; }
+
+bool LiteRtEnvironmentT::SupportsClGlInterop() { return false; }
+
+bool LiteRtEnvironmentT::SupportsAhwbClInterop() { return false; }
+
+bool LiteRtEnvironmentT::SupportsAhwbGlInterop() { return false; }
+
+bool LiteRtEnvironmentT::SupportsFP16() { return false; }
+#endif
