@@ -71,6 +71,13 @@ pub enum ErrorCause {
     TensorBufferTooSmall,
     IncompatibleReadType,
     ReadBufferTooSmall,
+    HasTensorBufferEvent,
+    GetTensorBufferEvent,
+    IsEventSignaled,
+    WaitEvent,
+    CreateManagedEvent,
+    SetTensorBufferEvent,
+    SignalEvent,
     // util
     InvalidStringEncoding,
 }

@@ -1,7 +1,7 @@
 # LiteRT Swift API
 
 The LiteRT Swift API provides a clean, type-safe Swifty wrapper layer over the
-core LiteRT C API (`third_party/odml/litert/litert/c`).
+core LiteRT C API (`litert/c`).
 
 It allows iOS, macOS, and cross-platform Swift applications to load, compile,
 and execute TensorFlow Lite models with hardware acceleration (CPU, GPU, NPU)
@@ -111,7 +111,7 @@ swift_library(
     name = "my_target",
     srcs = ["MyFile.swift"],
     deps = [
-        "//third_party/odml/litert/litert/swift:litert_swift",
+        "//litert/swift:litert_swift",
     ],
 )
 ```
