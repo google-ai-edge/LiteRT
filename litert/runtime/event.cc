@@ -27,7 +27,9 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
+#ifndef LITERT_DISABLE_GPU
 #include "litert/runtime/gpu_environment.h"
+#endif
 
 #if LITERT_HAS_SYNC_FENCE_SUPPORT
 #include <poll.h>
