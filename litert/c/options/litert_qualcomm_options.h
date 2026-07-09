@@ -77,6 +77,26 @@ LiteRtStatus LrtQualcommOptionsSetLogLevel(
 LiteRtStatus LrtQualcommOptionsGetLogLevel(
     LrtQualcommOptions options, LrtQualcommOptionsLogLevel* log_level);
 
+// profiling
+
+// This option controls the profiling level. A higher level results in a more
+// detailed report after execution. Defaults to off. Read at both compile time
+// (context creation) and dispatch time (graph execution).
+
+typedef enum LrtQualcommOptionsProfiling {
+  kLiteRtQualcommProfilingOff = 0,
+  kLiteRtQualcommProfilingBasic,
+  kLiteRtQualcommProfilingDetailed,
+  kLiteRtQualcommProfilingLinting,
+  kLiteRtQualcommProfilingOptrace,
+} LrtQualcommOptionsProfiling;
+
+LiteRtStatus LrtQualcommOptionsSetProfiling(
+    LrtQualcommOptions options, LrtQualcommOptionsProfiling profiling);
+
+LiteRtStatus LrtQualcommOptionsGetProfiling(
+    LrtQualcommOptions options, LrtQualcommOptionsProfiling* profiling);
+
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
 // use_htp_preference
@@ -246,25 +266,6 @@ LiteRtStatus LrtQualcommOptionsSetDspPerformanceMode(
 LiteRtStatus LrtQualcommOptionsGetDspPerformanceMode(
     LrtQualcommOptions options,
     LrtQualcommOptionsDspPerformanceMode* dsp_performance_mode);
-
-// profiling
-
-// This option controls the profiling level. A higher level results in a more
-// detailed report after execution. Defaults to off.
-
-typedef enum LrtQualcommOptionsProfiling {
-  kLiteRtQualcommProfilingOff = 0,
-  kLiteRtQualcommProfilingBasic,
-  kLiteRtQualcommProfilingDetailed,
-  kLiteRtQualcommProfilingLinting,
-  kLiteRtQualcommProfilingOptrace,
-} LrtQualcommOptionsProfiling;
-
-LiteRtStatus LrtQualcommOptionsSetProfiling(
-    LrtQualcommOptions options, LrtQualcommOptionsProfiling profiling);
-
-LiteRtStatus LrtQualcommOptionsGetProfiling(
-    LrtQualcommOptions options, LrtQualcommOptionsProfiling* profiling);
 
 LiteRtStatus LrtQualcommOptionsSetIrJsonDir(LrtQualcommOptions options,
                                             const char* ir_json_dir);
