@@ -743,6 +743,7 @@ cc_library(
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
+        "@FP16",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
     ],
