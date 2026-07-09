@@ -365,6 +365,8 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@skia//:bmp_decode_codec",
         "@skia//:core",
+        "@skia//:jpeg_decode_codec",
+        "@skia//:png_decode_codec",
     ],
 )
 
