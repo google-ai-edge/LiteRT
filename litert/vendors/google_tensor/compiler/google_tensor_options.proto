@@ -92,7 +92,7 @@ message GoogleTensorOptions {
   // Specifies the type of float truncation to be applied.
   GoogleTensorOptionsTruncationType float_truncation_type = 1;
   // Whether to truncate int64 types to int32.
-  bool int64_to_int32_truncation = 2;
+  optional bool int64_to_int32_truncation = 2;
   // Specifies the output directory for compiler artifacts.
   string output_dir = 3;
   // Whether to dump per-operator timing information.
