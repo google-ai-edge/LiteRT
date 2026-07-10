@@ -268,18 +268,11 @@ TfLiteStatus ResizeOutputTensor(TfLiteContext* context,
                                                op_params.right_padding[idx],
                                                &output_size->data[idx]));
   }
-  size_t output_num_elements = 0;
+  int output_num_elements = 0;
   TF_LITE_ENSURE_MSG(
       context,
       CheckedNumElements(output_size.get(), output_num_elements) == kTfLiteOk,
       "Pad output size overflowed.");
-  if (op_context.resizing_category == ResizingCategory::kImageStyle) {
-    int output_num_elements_int = 0;
-    TF_LITE_ENSURE_MSG(context,
-                       CheckedNumElements(output_size.get(),
-                                          output_num_elements_int) == kTfLiteOk,
-                       "Pad image-style output size overflowed.");
-  }
   return context->ResizeTensor(context, op_context.output,
                                output_size.release());
 }
@@ -293,9 +286,11 @@ TfLiteStatus ValidateOutputShape(TfLiteContext* context,
   const RuntimeShape input_shape = GetTensorShape(op_context.input);
   const RuntimeShape output_shape = GetTensorShape(op_context.output);
   TF_LITE_ENSURE_EQ(context, output_shape.DimensionsCount(), op_context.dims);
-  size_t output_num_elements = 0;
-  TF_LITE_ENSURE_MSG(context, output_shape.CheckedFlatSize(output_num_elements),
-                     "Pad output size overflowed.");
+  int output_num_elements = 0;
+  TF_LITE_ENSURE_MSG(
+      context,
+      CheckedNumElements(op_context.output, output_num_elements) == kTfLiteOk,
+      "Pad output size overflowed.");
   for (int idx = 0; idx < op_context.dims; ++idx) {
     int expected_output_dim = 0;
     TF_LITE_ENSURE_OK(context,

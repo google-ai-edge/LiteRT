@@ -244,6 +244,15 @@ TEST_F(PadOpTest, RejectsOutputDimensionOverflow) {
   EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
 }
 
+TEST_F(PadOpTest, RejectsGenericOutputSizeOverflow) {
+  constexpr std::array<int, 2> kPaddingsShape = {2, 2};
+  constexpr std::array<int32_t, 4> kPaddings = {49999, 0, 49999, 0};
+  PrepareOnlyPadOpConstModel<int32_t> m(
+      {TensorType_FLOAT32, {1, 1}}, absl::MakeConstSpan(kPaddingsShape),
+      absl::MakeConstSpan(kPaddings), {TensorType_FLOAT32});
+  EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
+}
+
 TEST_F(PadOpTest, RejectsImageStyleOutputSizeOverflow) {
   constexpr std::array<int, 2> kPaddingsShape = {4, 2};
   constexpr std::array<int32_t, 8> kPaddings = {0, 0, 46340, 0, 46340, 0, 0, 0};
@@ -792,6 +801,24 @@ TEST_F(PadV2OpTest, ZeroElementInputDoesNotPassNullData) {
   ASSERT_EQ(m.Invoke(), kTfLiteOk);
   EXPECT_TRUE(m.GetOutput().empty());
   EXPECT_THAT(m.GetOutputShape(), ElementsAreArray({0}));
+}
+
+TEST_F(PadV2OpTest, ZeroElementInputCanProduceNonEmptyOutput) {
+  PadV2OpConstModel<float, int16_t> m(
+      {TensorType_FLOAT32, {0}}, {1, 2}, {1, 1}, 3.0f,
+      {TensorType_FLOAT32});
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+  EXPECT_THAT(m.GetOutput(), ElementsAreArray({3.0f, 3.0f}));
+  EXPECT_THAT(m.GetOutputShape(), ElementsAreArray({2}));
+}
+
+TEST_F(PadV2OpTest, ImageStyleEmptyWidthProducesPadding) {
+  PadV2OpConstModel<float, int32_t> m(
+      {TensorType_FLOAT32, {1, 1, 0, 1}}, {4, 2},
+      {0, 0, 0, 0, 1, 1, 0, 0}, 0.0f, {TensorType_FLOAT32});
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+  EXPECT_THAT(m.GetOutput(), ElementsAreArray({0.0f, 0.0f}));
+  EXPECT_THAT(m.GetOutputShape(), ElementsAreArray({1, 1, 2, 1}));
 }
 
 TEST_F(PadV2OpTest, RejectsOutputDimensionOverflow) {

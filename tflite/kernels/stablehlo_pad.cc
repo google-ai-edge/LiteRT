@@ -67,6 +67,16 @@ void StridedCopy(const char* input, absl::Span<const int64_t> input_shape,
   TFLITE_DCHECK_EQ(input_strides.size(), input_shape.size());
   TFLITE_DCHECK_EQ(output_strides.size(), input_shape.size());
   if (depth + 1 == rank) {
+    if (output_strides[depth] == element_size &&
+        input_strides[depth] == element_size) {
+      const CheckedInt<int64_t> copy_bytes =
+          CheckedInt<int64_t>(input_shape[depth]) * element_size;
+      TFLITE_DCHECK_EQ(copy_bytes.Status(), kTfLiteOk);
+      if (copy_bytes.Status() == kTfLiteOk) {
+        std::memcpy(output, input, static_cast<size_t>(copy_bytes.Value()));
+        return;
+      }
+    }
     for (int64_t i = 0; i < input_shape[depth]; ++i) {
       std::memcpy(output, input, element_size);
       input += input_strides[depth];
