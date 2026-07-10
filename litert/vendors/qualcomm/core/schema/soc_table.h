@@ -28,6 +28,7 @@ enum class SnapdragonModel {
   SAR2230P = 95,
   SW6100 = 96,
   SM8845 = 97,
+  CQ2390M = 116,
 };
 
 enum class DspArch {

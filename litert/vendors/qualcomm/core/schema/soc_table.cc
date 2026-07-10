@@ -81,6 +81,15 @@ constexpr SocInfo kSocInfos[] = {
     {SocInfo("SM8845P", SnapdragonModel::SM8845, DspArch::V81,
              8  // vtcm_size_in_mb
              )},
+    {SocInfo("CQ2390M", SnapdragonModel::CQ2390M, DspArch::V66,
+             0  // vtcm_size_in_mb
+             )},
+    {SocInfo("CQ2390S", SnapdragonModel::CQ2390M, DspArch::V66,
+             0  // vtcm_size_in_mb
+             )},
+    {SocInfo("IQ2390S", SnapdragonModel::CQ2390M, DspArch::V66,
+             0  // vtcm_size_in_mb
+             )},
 };
 constexpr uint64_t kNumSocInfos = sizeof(kSocInfos) / sizeof(kSocInfos[0]);
 }  // namespace qnn
