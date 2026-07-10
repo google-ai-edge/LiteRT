@@ -872,6 +872,9 @@ void Subgraph::SetCancellationFunction(void* data,
 }
 
 TfLiteStatus Subgraph::EnsureTensorDataIsReadable(int tensor_index) {
+  // Guard the tensors_ index for every caller (e.g. Interpreter::Invoke).
+  TF_LITE_ENSURE(&context_, tensor_index >= 0 &&
+                                tensor_index < static_cast<int>(tensors_.size()));
   TfLiteTensor* t = &tensors_[tensor_index];
   TF_LITE_ENSURE(&context_, t != nullptr);
   TfLiteStatus status = kTfLiteOk;
@@ -1722,6 +1725,8 @@ TfLiteStatus Subgraph::InvokeImpl() {
       if (tensor_index == kTfLiteOptionalTensor) {
         continue;
       }
+      TF_LITE_ENSURE(&context_, tensor_index >= 0 &&
+                                    tensor_index < static_cast<int>(tensors_.size()));
       TfLiteTensor* tensor = &tensors_[tensor_index];
       if (tensor->delegate && tensor->delegate != node.delegate &&
           tensor->data_is_stale) {
