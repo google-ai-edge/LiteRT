@@ -72,7 +72,7 @@ class CompiledResult {
   // to the number of subgraphs passed to the compilation step.
   Expected<LiteRtParamIndex> NumCalls() const;
 
-  explicit CompiledResult(const LiteRtCompilerPluginApi& parent)
+  explicit CompiledResult(const LiteRtCompilerPluginInterface_V0_1& parent)
       : parent_(parent) {}
 
   CompiledResult(CompiledResult&& other) noexcept;
@@ -83,7 +83,7 @@ class CompiledResult {
   ~CompiledResult();
 
  private:
-  LiteRtCompilerPluginApi parent_;
+  LiteRtCompilerPluginInterface_V0_1 parent_;
   LiteRtCompiledResult compiled_result_handle_ = nullptr;
 };
 
@@ -184,7 +184,7 @@ class CompilerPlugin {
   SharedLibrary lib_;
   LiteRtOptions options_ = nullptr;
   LiteRtEnvironmentOptions env_ = nullptr;
-  LiteRtCompilerPluginApi plugin_api_ = {};
+  LiteRtCompilerPluginInterface_V0_1 plugin_api_ = {};
   LiteRtCompilerPlugin plugin_handle_ = nullptr;
   std::vector<LiteRtTransformation> transformations_;
   size_t max_transformation_iterations_ = 100;

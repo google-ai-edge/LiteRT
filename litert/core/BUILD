@@ -267,9 +267,16 @@ cc_test(
 cc_library(
     name = "version",
     hdrs = ["version.h"],
+    deps = ["//litert/c:litert_common"],
+)
+
+cc_test(
+    name = "version_test",
+    srcs = ["version_test.cc"],
     deps = [
+        ":version",
         "//litert/c:litert_common",
-        "//litert/c/internal:litert_logging",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 

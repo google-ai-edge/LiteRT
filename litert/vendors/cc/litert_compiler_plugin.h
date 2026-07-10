@@ -15,36 +15,72 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_CC_LITERT_COMPILER_PLUGIN_H_
 #define ODML_LITERT_LITERT_VENDORS_CC_LITERT_COMPILER_PLUGIN_H_
 
-#include <memory>
-
 #include "litert/c/litert_common.h"
-#include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/c/litert_compiler_plugin_api.h"
 
 namespace litert {
 
-// Deleter for incomplete compiler plugin type.
-struct LiteRtCompilerPluginDeleter {
-  void operator()(LiteRtCompilerPlugin plugin) {
-    if (plugin != nullptr) {
-      LiteRtDestroyCompilerPlugin(plugin);
+class StaticallyLinkedPlugin {
+ public:
+  static Expected<StaticallyLinkedPlugin> Create(
+      const LiteRtCompilerContext* compiler_context = nullptr,
+      LiteRtEnvironmentOptions env = nullptr, LiteRtOptions options = nullptr) {
+    LiteRtCompilerPluginInterface_V0_1* api = nullptr;
+    LiteRtApiVersion try_version = {0, 1, 0};
+    LiteRtStatus status = LiteRtCompilerPluginQueryInterface(
+        kLiteRtCompilerPluginInterfaceBasic, try_version,
+        reinterpret_cast<void**>(&api));
+    if (status != kLiteRtStatusOk || api == nullptr) {
+      return Unexpected(status != kLiteRtStatusOk
+                            ? status
+                            : kLiteRtStatusErrorRuntimeFailure);
+    }
+
+    LiteRtCompilerPlugin plugin = nullptr;
+    status =
+        api->create_compiler_plugin(compiler_context, &plugin, env, options);
+    if (status != kLiteRtStatusOk) {
+      return Unexpected(status);
+    }
+
+    return StaticallyLinkedPlugin(api, plugin);
+  }
+
+  ~StaticallyLinkedPlugin() {
+    if (plugin_ != nullptr) {
+      api_->destroy_compiler_plugin(plugin_);
     }
   }
+
+  StaticallyLinkedPlugin(StaticallyLinkedPlugin&& other) {
+    api_ = other.api_;
+    plugin_ = other.plugin_;
+    other.plugin_ = nullptr;
+  }
+
+  StaticallyLinkedPlugin& operator=(StaticallyLinkedPlugin&& other) {
+    if (plugin_ != nullptr) {
+      api_->destroy_compiler_plugin(plugin_);
+    }
+    api_ = other.api_;
+    plugin_ = other.plugin_;
+    other.plugin_ = nullptr;
+    return *this;
+  }
+
+  LiteRtCompilerPlugin Get() const { return plugin_; }
+  const LiteRtCompilerPluginInterface_V0_1* Api() const { return api_; }
+
+ private:
+  StaticallyLinkedPlugin(LiteRtCompilerPluginInterface_V0_1* api,
+                         LiteRtCompilerPlugin plugin)
+      : api_(api), plugin_(plugin) {}
+
+  LiteRtCompilerPluginInterface_V0_1* api_;
+  LiteRtCompilerPlugin plugin_;
 };
-
-// Smart pointer wrapper for incomplete plugin type.
-using PluginPtr =
-    std::unique_ptr<LiteRtCompilerPluginT, LiteRtCompilerPluginDeleter>;
-
-// Initialize a plugin via c-api and wrap result in smart pointer.
-inline PluginPtr CreatePlugin(
-    const LiteRtCompilerContext* compiler_context = nullptr,
-    LiteRtEnvironmentOptions env = nullptr, LiteRtOptions options = nullptr) {
-  LiteRtCompilerPlugin plugin;
-  LITERT_CHECK_STATUS_OK(
-      LiteRtCreateCompilerPlugin(compiler_context, &plugin, env, options));
-  return PluginPtr(plugin);
-}
 
 }  // namespace litert
 

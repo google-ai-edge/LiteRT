@@ -22,22 +22,7 @@ SUCCESS=1
 
 # TODO: b/502742681 - Use lds file and remove this check.
 EXPECTED_SYMBOLS=(
-  "LiteRtGetCompilerPluginVersion"
-  "LiteRtGetCompilerPluginSocManufacturer"
-  "LiteRtCreateCompilerPlugin"
-  "LiteRtDestroyCompilerPlugin"
-  "LiteRtGetCompilerPluginSupportedHardware"
-  "LiteRtGetNumCompilerPluginSupportedSocModels"
-  "LiteRtGetCompilerPluginSupportedSocModel"
-  "LiteRtCompilerPluginPartition"
-  "LiteRtCompilerPluginCompile"
-  "LiteRtDestroyCompiledResult"
-  "LiteRtGetCompiledResultByteCode"
-  "LiteRtCompiledResultNumByteCodeModules"
-  "LiteRtGetCompiledResultCallInfo"
-  "LiteRtGetNumCompiledResultCalls"
-  "LiteRtCompilerPluginRegisterAllTransformations"
-  "LiteRtCompilerPluginCheckCompilerCompatibility"
+  "LiteRtCompilerPluginQueryInterface"
 )
 
 for SO_FILE in "$@"; do
