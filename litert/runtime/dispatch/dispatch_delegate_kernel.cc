@@ -770,7 +770,10 @@ DispatchDelegateKernel::GetBufferRequirements(int node_idx,
     size_t expected_buffer_size = expected_elements * 4;  // Float32 is 4 bytes
     size_t reported_buffer_size = tensor_buffer_requirements->BufferSize();
 
-    if (reported_buffer_size != expected_buffer_size) {
+    // Half the size is a float32 tensor the accelerator keeps as FP16 (the
+    // NVIDIA dispatch's KV caches), not a contradiction.
+    if (reported_buffer_size != expected_buffer_size &&
+        reported_buffer_size * 2 != expected_buffer_size) {
       LITERT_LOG(
           LITERT_WARNING,
           "MediaTek dispatch API returned contradictory buffer requirements "

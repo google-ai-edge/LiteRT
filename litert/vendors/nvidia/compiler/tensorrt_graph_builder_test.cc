@@ -389,6 +389,116 @@ TEST(TensorRtGraphBuilderTest, CudaSubbyteGemvGroupSharesOneLaunch) {
   }
 }
 
+TEST(TensorRtGraphBuilderTest, Int8PerChannelProjectionRunsOnTheGemv) {
+  // Gemma 4 E2B/E4B's per-layer embedding gate and projection: M=1 fully
+  // connected ops with INT8 per-channel weights. They take the CUDA GEMV
+  // plugin like the sub-byte projections (TensorRT would dequantize the
+  // weights every step) and match the FP32 reference.
+  constexpr int32_t kK = 256;
+  constexpr int32_t kN = 24;
+  setenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS", "cuda_gemv", 1);
+  LiteRtModelT model;
+  auto& graph = model.EmplaceSubgraph();
+  auto& input = graph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 1, kK}));
+  input.SetName("input");
+  graph.Inputs().push_back(&input);
+  std::vector<int8_t> values(static_cast<size_t>(kN) * kK);
+  for (size_t i = 0; i < values.size(); ++i) {
+    values[i] = static_cast<int8_t>((i * 37 + i / 7) % 256) - 128;
+  }
+  auto& weights = graph.EmplaceTensor();
+  weights.SetType(MakeRankedTensorType(kLiteRtElementTypeInt8, {kN, kK}));
+  weights.SetName("weights");
+  SetWeightsFromUnownedBuffer(
+      weights.Weights(),
+      litert::BufferRef<uint8_t>(reinterpret_cast<uint8_t*>(values.data()),
+                                 values.size()));
+  std::vector<float> scales(kN);
+  for (int32_t n = 0; n < kN; ++n) {
+    scales[n] = 0.001f * (n + 1);
+  }
+  const std::vector<int64_t> zero_points(kN, 0);
+  weights.SetQarams(MakePerChannelQuantization(scales, zero_points,
+                                               /*quantized_dim=*/0, weights));
+  auto& output = graph.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 1, kN}));
+  output.SetName("output");
+  graph.Outputs().push_back(&output);
+  auto& fc = graph.EmplaceOp();
+  fc.SetOpCode(kLiteRtOpCodeTflFullyConnected);
+  tflite::FullyConnectedOptionsT fc_options;
+  fc_options.keep_num_dims = true;
+  tflite::BuiltinOptionsUnion options;
+  options.Set(std::move(fc_options));
+  litert::internal::SetTflOptions(fc, std::move(options));
+  litert::internal::AttachInput(&input, fc);
+  litert::internal::AttachInput(&weights, fc);
+  litert::internal::AttachOutput(&output, fc);
+
+  const auto* compiler_context = LrtGetCompilerContext();
+  auto built = litert::nvidia::BuildTensorRtEngine(
+      litert::compiler::Subgraph(compiler_context, &graph));
+  unsetenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS");
+  ASSERT_TRUE(built.HasValue()) << built.Error().Message();
+  ASSERT_EQ(built->output_names.size(), 1u);
+
+  litert::nvidia::TensorRtLogger logger;
+  std::unique_ptr<nvinfer1::IRuntime> runtime(
+      nvinfer1::createInferRuntime(logger));
+  ASSERT_NE(runtime, nullptr);
+  std::unique_ptr<nvinfer1::ICudaEngine> engine(runtime->deserializeCudaEngine(
+      built->engine.data(), built->engine.size()));
+  ASSERT_NE(engine, nullptr);
+  std::unique_ptr<nvinfer1::IEngineInspector> inspector(
+      engine->createEngineInspector());
+  ASSERT_NE(inspector, nullptr);
+  const std::string layers = inspector->getEngineInformation(
+      nvinfer1::LayerInformationFormat::kONELINE);
+  EXPECT_NE(layers.find("cuda_subbyte_gemv_"), std::string::npos) << layers;
+
+  std::unique_ptr<nvinfer1::IExecutionContext> context(
+      engine->createExecutionContext());
+  ASSERT_NE(context, nullptr);
+  std::vector<float> activations(kK);
+  for (int32_t i = 0; i < kK; ++i) {
+    activations[i] = 0.125f * ((i % 11) - 5);
+  }
+  void* device_input = nullptr;
+  ASSERT_EQ(cudaMalloc(&device_input, activations.size() * sizeof(float)),
+            cudaSuccess);
+  ASSERT_EQ(
+      cudaMemcpy(device_input, activations.data(),
+                 activations.size() * sizeof(float), cudaMemcpyHostToDevice),
+      cudaSuccess);
+  ASSERT_TRUE(
+      context->setTensorAddress(built->input_names[0].c_str(), device_input));
+  void* device_output = nullptr;
+  ASSERT_EQ(cudaMalloc(&device_output, kN * sizeof(float)), cudaSuccess);
+  ASSERT_TRUE(
+      context->setTensorAddress(built->output_names[0].c_str(), device_output));
+  cudaStream_t stream = nullptr;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+  ASSERT_TRUE(context->enqueueV3(stream));
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+  std::vector<float> actual(kN);
+  ASSERT_EQ(cudaMemcpy(actual.data(), device_output,
+                       actual.size() * sizeof(float), cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  for (int32_t n = 0; n < kN; ++n) {
+    float expected = 0.0f;
+    for (int32_t i = 0; i < kK; ++i) {
+      expected += activations[i] * values[n * kK + i];
+    }
+    expected *= scales[n];
+    EXPECT_NEAR(actual[n], expected, 0.02f * std::fabs(expected) + 1e-3f)
+        << "n=" << n;
+  }
+  EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+  EXPECT_EQ(cudaFree(device_output), cudaSuccess);
+  EXPECT_EQ(cudaFree(device_input), cudaSuccess);
+}
+
 TEST(TensorRtGraphBuilderTest, FewRowsRunOnTheBatchedGemv) {
   // A verify step: four activation rows through an INT4 group (two
   // projections of one activation) and an INT2 projection run on the batched
