@@ -345,6 +345,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
         "Convolution2DTransposeBias",
         "MaxPoolingWithArgmax2D",
         "MaxUnpooling2D",
+        "moe",
         "Resampler",
         "custom_call.GroupNorm",
         "custom_call.LayerNorm",
@@ -356,7 +357,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   } else if (hardware_accelerators & kLiteRtHwAcceleratorCpu) {
     const char* accelerator_supported_custom_ops[] = {
         "Convolution2DTransposeBias", "MaxPoolingWithArgmax2D",
-        "MaxUnpooling2D"};
+        "MaxUnpooling2D", "moe"};
     for (const auto& op_name : accelerator_supported_custom_ops) {
       resolver->AddCustom(op_name, &sStubRegistration);
     }
