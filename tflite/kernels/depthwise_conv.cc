@@ -119,13 +119,21 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_EQ(context, NumDimensions(input), 4);
   TF_LITE_ENSURE_EQ(context, NumDimensions(filter), 4);
   TF_LITE_ENSURE(context, params->dilation_height_factor > 0);
+  TF_LITE_ENSURE(context, params->dilation_height_factor <= INT16_MAX);
   TF_LITE_ENSURE(context, params->dilation_width_factor > 0);
+  TF_LITE_ENSURE(context, params->dilation_width_factor <= INT16_MAX);
 
   // Validate the stride values
-  TF_LITE_ENSURE(context, params->stride_width <= 0xFFFF);
+  TF_LITE_ENSURE(context, params->stride_width <= INT16_MAX);
   TF_LITE_ENSURE(context, params->stride_width > 0);
-  TF_LITE_ENSURE(context, params->stride_height <= 0xFFFF);
+  TF_LITE_ENSURE(context, params->stride_height <= INT16_MAX);
   TF_LITE_ENSURE(context, params->stride_height > 0);
+  TF_LITE_ENSURE(context, SizeOfDimension(input, 1) > 0);
+  TF_LITE_ENSURE(context, SizeOfDimension(input, 2) > 0);
+  TF_LITE_ENSURE(context, SizeOfDimension(input, 3) > 0);
+  TF_LITE_ENSURE(context, SizeOfDimension(filter, 1) > 0);
+  TF_LITE_ENSURE(context, SizeOfDimension(filter, 2) > 0);
+  TF_LITE_ENSURE(context, SizeOfDimension(filter, 3) > 0);
 
   const TfLiteType data_type = input->type;
 
@@ -155,6 +163,9 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   // Filter in DepthwiseConv is expected to be [1, H, W, O].
   TF_LITE_ENSURE_EQ(context, SizeOfDimension(filter, 0), 1);
+  const int input_channels = SizeOfDimension(input, 3);
+  const int channels_out = SizeOfDimension(filter, 3);
+  TF_LITE_ENSURE_EQ(context, channels_out % input_channels, 0);
 
   if (has_bias) {
     TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, kBiasTensor, &bias));
@@ -172,7 +183,6 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
                       SizeOfDimension(bias, 0));
   }
 
-  int channels_out = SizeOfDimension(filter, 3);
   int width = SizeOfDimension(input, 2);
   int height = SizeOfDimension(input, 1);
   int filter_width = SizeOfDimension(filter, 2);
@@ -183,10 +193,12 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   auto padding = params->padding;
   int out_width, out_height;
 
-  data->padding = ComputePaddingHeightWidth(
-      params->stride_height, params->stride_width,
-      params->dilation_height_factor, params->dilation_width_factor, height,
-      width, filter_height, filter_width, padding, &out_height, &out_width);
+  TF_LITE_ENSURE_OK(context, ComputePaddingHeightWidthChecked(
+                                 params->stride_height, params->stride_width,
+                                 params->dilation_height_factor,
+                                 params->dilation_width_factor, height, width,
+                                 filter_height, filter_width, padding,
+                                 &out_height, &out_width, &data->padding));
 
   // Note that quantized inference requires that all tensors have their
   // parameters set. This is usually done during quantized training or
