@@ -16,11 +16,15 @@ limitations under the License.
 #include "tflite/delegates/gpu/common/task/util.h"
 
 #include <cfloat>
+#include <cstddef>
 #include <map>
 #include <string>
 #include <vector>
 
-#include "absl/strings/substitute.h"
+#include "absl/status/status.h"
+#include "absl/strings/ascii.h"
+#include "absl/strings/str_split.h"
+#include "absl/strings/string_view.h"
 #include "tflite/delegates/gpu/common/data_type.h"
 #include "tflite/delegates/gpu/common/util.h"
 
