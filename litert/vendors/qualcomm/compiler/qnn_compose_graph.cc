@@ -371,20 +371,30 @@ using OpBuilder = LiteRtStatus (*)(
     const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
-    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_int64_bias_as_int32);
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_int64_bias_as_int32,
+    ::qnn::SdkVersion sdk_version);
 
 // Wrapper to call the op builder with or without the bias parameter.
 template <auto F>
 LiteRtStatus Adapt(const litert::compiler::Op& op, ::qnn::TensorPool& tp,
                    std::vector<::qnn::TensorWrapperRef>& in,
                    std::vector<::qnn::TensorWrapperRef>& out,
-                   std::vector<::qnn::OpWrapper>& ow, bool bias) {
+                   std::vector<::qnn::OpWrapper>& ow, bool bias,
+                   ::qnn::SdkVersion sdk_version) {
   if constexpr (std::is_invocable_v<decltype(F), const litert::compiler::Op&,
                                     ::qnn::TensorPool&,
                                     std::vector<::qnn::TensorWrapperRef>&,
                                     std::vector<::qnn::TensorWrapperRef>&,
                                     std::vector<::qnn::OpWrapper>&, bool>) {
     return F(op, tp, in, out, ow, bias);
+  } else if constexpr (std::is_invocable_v<
+                           decltype(F), const litert::compiler::Op&,
+                           ::qnn::TensorPool&,
+                           std::vector<::qnn::TensorWrapperRef>&,
+                           std::vector<::qnn::TensorWrapperRef>&,
+                           std::vector<::qnn::OpWrapper>&, bool,
+                           ::qnn::SdkVersion>) {
+    return F(op, tp, in, out, ow, bias, sdk_version);
   } else {
     return F(op, tp, in, out, ow);
   }
@@ -645,7 +655,8 @@ LiteRtStatus BuildFullyConnectedOp(
     const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
-    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_int64_bias_as_int32) {
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_int64_bias_as_int32,
+    ::qnn::SdkVersion sdk_version) {
   auto options =
       litert::compiler::GetOptionsAs<litert::compiler::FullyConnectedOptions>(
           litert_op.ctx(), litert_op.Get());
@@ -658,9 +669,9 @@ LiteRtStatus BuildFullyConnectedOp(
 
   auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
       tensor_pool, fused_activation, output_tensors);
-  op_wrappers = ::qnn::BuildFullyConnectedOp(tensor_pool, input_tensors,
-                                             {activation_input}, keep_num_dims,
-                                             use_int64_bias_as_int32);
+  op_wrappers = ::qnn::BuildFullyConnectedOp(
+      tensor_pool, input_tensors, {activation_input}, keep_num_dims,
+      use_int64_bias_as_int32, sdk_version);
   ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
                                 output_tensors[0]);
   return kLiteRtStatusOk;
@@ -1641,24 +1652,23 @@ std::string DescribeUnsupportedOp(size_t op_index,
 
 }  // namespace
 
-LiteRtStatus ConvertOp(const bool use_int64_bias_as_int32,
-                       const ::qnn::CustomOpPackage& custom_op_package,
+LiteRtStatus ConvertOp(const ::qnn::Options& options,
                        const litert::compiler::Op& litert_op,
                        ::qnn::TensorPool& tensor_pool,
                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
                        std::vector<::qnn::TensorWrapperRef>& output_tensors,
                        std::vector<::qnn::OpWrapper>& op_wrappers,
-                       size_t op_index) {
+                       size_t op_index, ::qnn::SdkVersion sdk_version) {
   const auto& builders = GetOpBuilders();
   const auto op_code = litert_op.Code();
   if (op_code < builders.size() && builders[op_code]) {
     return builders[op_code](litert_op, tensor_pool, input_tensors,
                              output_tensors, op_wrappers,
-                             use_int64_bias_as_int32);
+                             options.GetUseInt64BiasAsInt32(), sdk_version);
   }
   if (op_code == kLiteRtOpCodeTflCustom) {
     return BuildCustomOp(litert_op, tensor_pool, input_tensors, output_tensors,
-                         op_wrappers, custom_op_package);
+                         op_wrappers, options.GetCustomOpPackage());
   }
   LITERT_LOG(LITERT_ERROR, "%s",
              DescribeUnsupportedOp(op_index, litert_op).c_str());
@@ -1776,9 +1786,9 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
     }
 
     std::vector<::qnn::OpWrapper> op_wrappers;
-    LITERT_RETURN_IF_ERROR(ConvertOp(
-        options.GetUseInt64BiasAsInt32(), options.GetCustomOpPackage(), op,
-        tensor_pool, input_tensors, output_tensors, op_wrappers, id));
+    LITERT_RETURN_IF_ERROR(ConvertOp(options, op, tensor_pool, input_tensors,
+                                     output_tensors, op_wrappers, id,
+                                     qnn.GetSdkVersion()));
     for (auto& op_wrapper : op_wrappers) {
       // Add litert op id to qnn op name to preserve op mapping
       op_wrapper.AddSuffixToName(

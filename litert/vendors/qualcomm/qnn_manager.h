@@ -22,11 +22,16 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
+#include "QnnCommon.h"  // from @qairt
+#include "QnnContext.h"  // from @qairt
+#include "QnnInterface.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
+#include "System/QnnSystemContext.h"  // from @qairt
+#include "System/QnnSystemInterface.h"  // from @qairt
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -39,12 +44,6 @@
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
-#include "QnnCommon.h"  // from @qairt
-#include "QnnContext.h"  // from @qairt
-#include "QnnInterface.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
-#include "System/QnnSystemContext.h"  // from @qairt
-#include "System/QnnSystemInterface.h"  // from @qairt
 
 //===----------------------------------------------------------------------===//
 //
@@ -74,37 +73,6 @@ namespace internal {
 std::string Dump(const QnnManager& qnn);
 
 }  // namespace internal
-
-struct SdkVersion {
-  int major, minor, patch;
-
-  friend constexpr bool operator==(const SdkVersion& lhs,
-                                   const SdkVersion& rhs) noexcept {
-    return std::tie(lhs.major, lhs.minor, lhs.patch) ==
-           std::tie(rhs.major, rhs.minor, rhs.patch);
-  }
-  friend constexpr bool operator!=(const SdkVersion& lhs,
-                                   const SdkVersion& rhs) noexcept {
-    return !(lhs == rhs);
-  }
-  friend constexpr bool operator<(const SdkVersion& lhs,
-                                  const SdkVersion& rhs) noexcept {
-    return std::tie(lhs.major, lhs.minor, lhs.patch) <
-           std::tie(rhs.major, rhs.minor, rhs.patch);
-  }
-  friend constexpr bool operator>(const SdkVersion& lhs,
-                                  const SdkVersion& rhs) noexcept {
-    return rhs < lhs;
-  }
-  friend constexpr bool operator<=(const SdkVersion& lhs,
-                                   const SdkVersion& rhs) noexcept {
-    return !(rhs < lhs);
-  }
-  friend constexpr bool operator>=(const SdkVersion& lhs,
-                                   const SdkVersion& rhs) noexcept {
-    return !(lhs < rhs);
-  }
-};
 
 class QnnManager {
   friend std::string internal::Dump(const QnnManager& qnn);
@@ -180,10 +148,7 @@ class QnnManager {
 
   const ::qnn::Options& GetOptions() const { return options_; }
 
-  // Gets SDK version from build ID.
-  static Expected<SdkVersion> ParseSdkVersion(const char* build_id);
-
-  SdkVersion GetSdkVersion() const { return sdk_version_; }
+  ::qnn::SdkVersion GetSdkVersion() const { return sdk_version_; }
 
   const ::qnn::SocInfo& GetSocInfo() const { return soc_info_; }
 
@@ -237,7 +202,7 @@ class QnnManager {
   ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[0];
   ::qnn::Options options_;
   std::optional<std::string> shared_library_dir_;
-  SdkVersion sdk_version_{};
+  ::qnn::SdkVersion sdk_version_{};
 };
 
 // Unfortunately we can't use std::unique_ptr with a deleter because

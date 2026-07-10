@@ -47,14 +47,13 @@ LiteRtStatus ConvertTensor(
 // included in the "unsupported op" error message so a specific op can be
 // located (and cross-referenced with the "_LiteRt_OpId_<n>" suffix added to
 // the QNN op name).
-LiteRtStatus ConvertOp(bool use_int64_bias_as_int32,
-                       const ::qnn::CustomOpPackage& custom_op_package,
+LiteRtStatus ConvertOp(const ::qnn::Options& options,
                        const litert::compiler::Op& litert_op,
                        ::qnn::TensorPool& tensor_pool,
                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
                        std::vector<::qnn::TensorWrapperRef>& output_tensors,
                        std::vector<::qnn::OpWrapper>& op_wrappers,
-                       size_t op_index);
+                       size_t op_index, ::qnn::SdkVersion sdk_version);
 
 // Composes a new QNN Graph from given LiteRt Graph. Qnn Graph is written to
 // context behind "qnn". Uses given graph_name to name entry point.

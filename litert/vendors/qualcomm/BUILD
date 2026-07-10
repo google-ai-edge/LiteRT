@@ -164,6 +164,7 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@qairt//:qnn_lib_headers",
     ],

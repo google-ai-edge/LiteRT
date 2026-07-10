@@ -1540,7 +1540,8 @@ TEST(RotQuant, ConvertFcToHadamardTransform_Sylvester) {
 
   std::vector<OpWrapper> op_wrappers = ::qnn::BuildFullyConnectedOp(
       tensor_pool, {input, weight}, {output},
-      /*keep_num_dims=*/false, /*use_int64_bias_as_int32=*/false);
+      /*keep_num_dims=*/false, /*use_int64_bias_as_int32=*/false,
+      /*sdk_version=*/{2, 47, 0});
   ASSERT_EQ(op_wrappers.size(), 1u);
   ASSERT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kFullyConnected));
 
@@ -1578,7 +1579,8 @@ TEST(RotQuant, ConvertFcToHadamardTransform_NonHadamardWeight_NoOp) {
 
   std::vector<OpWrapper> op_wrappers = ::qnn::BuildFullyConnectedOp(
       tensor_pool, {input, weight}, {output},
-      /*keep_num_dims=*/false, /*use_int64_bias_as_int32=*/false);
+      /*keep_num_dims=*/false, /*use_int64_bias_as_int32=*/false,
+      /*sdk_version=*/{2, 47, 0});
   ASSERT_EQ(op_wrappers.size(), 1u);
 
   GraphToGraphTransform(::qnn::G2GConfig::kMHAOpt, op_wrappers, tensor_pool,
@@ -1618,7 +1620,8 @@ TEST(RotQuant, ConvertFcToHadamardTransform_WithBias_NoOp) {
 
   std::vector<OpWrapper> op_wrappers = ::qnn::BuildFullyConnectedOp(
       tensor_pool, {input, weight, bias}, {output},
-      /*keep_num_dims=*/false, /*use_int64_bias_as_int32=*/false);
+      /*keep_num_dims=*/false, /*use_int64_bias_as_int32=*/false,
+      /*sdk_version=*/{2, 47, 0});
   ASSERT_EQ(op_wrappers.size(), 1u);
 
   GraphToGraphTransform(::qnn::G2GConfig::kMHAOpt, op_wrappers, tensor_pool,

@@ -5,13 +5,13 @@
 #include <utility>
 #include <vector>
 
+#include "QnnTypes.h"  // from @qairt
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "litert/vendors/qualcomm/core/builders/fully_connected_op_builder.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_backend_test/test_utils.h"
-#include "QnnTypes.h"  // from @qairt
 
 using testing::Pointwise;
 namespace litert::qnn {
@@ -43,8 +43,9 @@ TEST_P(QnnModelTest, FullyConnectedA16W2Sanity) {
       QNN_DATATYPE_SFIXED_POINT_8, weight_quant_param, kFilterDims,
       int2_weight_data.size(), int2_weight_data.data());
 
-  auto ops = ::qnn::BuildFullyConnectedOp(
-      tensor_pool_, {input_0, weight_tensor}, {output_0}, true, false);
+  auto ops =
+      ::qnn::BuildFullyConnectedOp(tensor_pool_, {input_0, weight_tensor},
+                                   {output_0}, true, false, {2, 46, 0});
   ASSERT_FALSE(ops.empty());
 
   qnn_model_.MoveOpsToGraph(std::move(ops));
@@ -55,8 +56,7 @@ TEST_P(QnnModelTest, FullyConnectedA16W2Sanity) {
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
                   "Qualcomm HTP";
-#endif
-
+#else
   auto input_idx = qnn_model_.AddInputTensor(input_0);
   auto output_idx = qnn_model_.AddOutputTensor(output_0);
 
@@ -72,9 +72,10 @@ TEST_P(QnnModelTest, FullyConnectedA16W2Sanity) {
       output_data.value(),
       Pointwise(testing::Eq(), {::qnn::Quantize<int16_t>(0.001, kScale, 0),
                                 ::qnn::Quantize<int16_t>(-0.001, kScale, 0)}));
+#endif
 }
 
-TEST_P(QnnModelTest, FullyConnectedA8W2Sanity) {
+TEST_P(QnnModelTest, FullyConnectedA8W2AsA8W4Sanity) {
   constexpr float kScale = 0.01;
 
   auto input_quant = ::qnn::ScaleOffsetQuantizeParamsWrapper(kScale, 0);
@@ -98,8 +99,9 @@ TEST_P(QnnModelTest, FullyConnectedA8W2Sanity) {
       QNN_DATATYPE_SFIXED_POINT_8, weight_quant_param, kFilterDims,
       int2_weight_data.size(), int2_weight_data.data());
 
-  auto ops = ::qnn::BuildFullyConnectedOp(
-      tensor_pool_, {input_0, weight_tensor}, {output_0}, true, false);
+  auto ops =
+      ::qnn::BuildFullyConnectedOp(tensor_pool_, {input_0, weight_tensor},
+                                   {output_0}, true, false, {2, 46, 0});
   ASSERT_FALSE(ops.empty());
 
   qnn_model_.MoveOpsToGraph(std::move(ops));
@@ -110,8 +112,7 @@ TEST_P(QnnModelTest, FullyConnectedA8W2Sanity) {
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
                   "Qualcomm HTP";
-#endif
-
+#else
   auto input_idx = qnn_model_.AddInputTensor(input_0);
   auto output_idx = qnn_model_.AddOutputTensor(output_0);
 
@@ -127,9 +128,10 @@ TEST_P(QnnModelTest, FullyConnectedA8W2Sanity) {
       output_data.value(),
       Pointwise(testing::Eq(), {::qnn::Quantize<int8_t>(0.01, kScale, 0),
                                 ::qnn::Quantize<int8_t>(-0.01, kScale, 0)}));
+#endif
 }
 
-TEST_P(QnnModelTest, FullyConnectedA8W2BwAxisScaleOffsetSanity) {
+TEST_P(QnnModelTest, FullyConnectedA8W2AsA8W4BwAxisScaleOffsetSanity) {
   constexpr float kScale = 0.01;
 
   auto input_quant = ::qnn::ScaleOffsetQuantizeParamsWrapper(kScale, 0);
@@ -155,8 +157,9 @@ TEST_P(QnnModelTest, FullyConnectedA8W2BwAxisScaleOffsetSanity) {
       QNN_DATATYPE_SFIXED_POINT_8, weight_quant_param, kFilterDims,
       int2_weight_data.size(), int2_weight_data.data());
 
-  auto ops = ::qnn::BuildFullyConnectedOp(
-      tensor_pool_, {input_0, weight_tensor}, {output_0}, true, false);
+  auto ops =
+      ::qnn::BuildFullyConnectedOp(tensor_pool_, {input_0, weight_tensor},
+                                   {output_0}, true, false, {2, 46, 0});
   ASSERT_FALSE(ops.empty());
 
   qnn_model_.MoveOpsToGraph(std::move(ops));
@@ -167,8 +170,7 @@ TEST_P(QnnModelTest, FullyConnectedA8W2BwAxisScaleOffsetSanity) {
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
                   "Qualcomm HTP";
-#endif
-
+#else
   auto input_idx = qnn_model_.AddInputTensor(input_0);
   auto output_idx = qnn_model_.AddOutputTensor(output_0);
 
@@ -184,6 +186,97 @@ TEST_P(QnnModelTest, FullyConnectedA8W2BwAxisScaleOffsetSanity) {
       output_data.value(),
       Pointwise(testing::Eq(), {::qnn::Quantize<int8_t>(0.01, kScale, 0),
                                 ::qnn::Quantize<int8_t>(-0.02, kScale, 0)}));
+#endif
+}
+
+TEST_P(QnnModelTest, FullyConnectedA8W2Sanity) {
+  static constexpr float kScale{0.01};
+
+  const ::qnn::ScaleOffsetQuantizeParamsWrapper kQuant{kScale, 0};
+  const std::vector<std::uint32_t> kInOutDims{1, 2};
+
+  auto& input_0 = tensor_pool_.CreateInputTensorWithName(
+      "in_0", QNN_DATATYPE_SFIXED_POINT_8, kQuant, kInOutDims);
+  auto& output_0 = tensor_pool_.CreateOutputTensorWithName(
+      "out_0", QNN_DATATYPE_SFIXED_POINT_8, kQuant, kInOutDims);
+
+  const std::vector<std::uint32_t> kFilterDims{2, 2};
+  const auto kWeightQuantParam =
+      ::qnn::BwScaleOffsetQuantizeParamsWrapper{2, kScale, 0};
+
+  const std::vector<int8_t> kWeightData{1, -1, -1, 1};
+  std::vector<int8_t> int2_weight_data;
+  ::qnn::ConvertDataFromInt8ToInt2(kWeightData, int2_weight_data);
+  auto& weight_tensor = tensor_pool_.CreateStaticTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, kWeightQuantParam, kFilterDims,
+      int2_weight_data.size(), int2_weight_data.data());
+
+  auto ops =
+      ::qnn::BuildFullyConnectedOp(tensor_pool_, {input_0, weight_tensor},
+                                   {output_0}, true, false, {2, 47, 0});
+  ASSERT_FALSE(ops.empty());
+  ASSERT_TRUE(weight_tensor.IsQuantBitwidth(::qnn::kQuantBitWidth2));
+  qnn_model_.MoveOpsToGraph(std::move(ops));
+  // TODO(jiunkaiy): QAIRT 2.47 does not officially support A8W2 yet,
+  // but execution and verification work. Add ValidateOpConfig() once support is
+  // enabled.
+  ASSERT_TRUE(qnn_model_.Finalize());
+
+#if !defined(__ANDROID__)
+  GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
+                  "Qualcomm HTP";
+#else
+  auto input_idx = qnn_model_.AddInputTensor(input_0);
+  auto output_idx = qnn_model_.AddOutputTensor(output_0);
+
+  const static std::array<int8_t, 2> in_data{100, 0};
+  qnn_model_.SetInputData<int8_t>(input_idx, in_data);
+
+  ASSERT_TRUE(qnn_model_.Execute());
+
+  auto output_data = qnn_model_.GetOutputData<int8_t>(output_idx);
+  ASSERT_TRUE(output_data);
+  ASSERT_EQ(output_data->size(), 2);
+  ASSERT_THAT(
+      output_data.value(),
+      Pointwise(testing::Eq(), {::qnn::Quantize<int8_t>(0.01, kScale, 0),
+                                ::qnn::Quantize<int8_t>(-0.01, kScale, 0)}));
+#endif
+}
+
+TEST_P(QnnModelTest, FullyConnectedA8W2BwAxisScaleOffsetSanity) {
+  constexpr float kScale = 0.01;
+
+  const ::qnn::ScaleOffsetQuantizeParamsWrapper kQuant{kScale, 0};
+  const std::vector<std::uint32_t> kInDims{1, 2};
+  const std::vector<std::uint32_t> kOutDims{1, 2};
+
+  auto& input_0 = tensor_pool_.CreateInputTensorWithName(
+      "in_0", QNN_DATATYPE_SFIXED_POINT_8, kQuant, kInDims);
+  auto& output_0 = tensor_pool_.CreateOutputTensorWithName(
+      "out_0", QNN_DATATYPE_SFIXED_POINT_8, kQuant, kOutDims);
+
+  const std::vector<float> kWeightScales{kScale, 2 * kScale};
+  const std::vector<int32_t> kWeightOffsets{0, 0};
+  const ::qnn::BwAxisScaleOffsetQuantizeParamsWrapper weight_quant_param{
+      2, 0, kWeightScales, kWeightOffsets};
+
+  const std::vector<int8_t> kWeightData{1, -1, -1, 1};
+  std::vector<int8_t> int2_weight_data;
+  ::qnn::ConvertDataFromInt8ToInt2(kWeightData, int2_weight_data);
+  const std::vector<std::uint32_t> kFilterDims{2, 2};
+  auto& weight_tensor = tensor_pool_.CreateStaticTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, weight_quant_param, kFilterDims,
+      int2_weight_data.size(), int2_weight_data.data());
+
+  const auto ops =
+      ::qnn::BuildFullyConnectedOp(tensor_pool_, {input_0, weight_tensor},
+                                   {output_0}, true, false, {2, 47, 0});
+  ASSERT_FALSE(ops.empty());
+  ASSERT_TRUE(weight_tensor.IsQuantBitwidth(::qnn::kQuantBitWidth2));
+  // TODO(jiunkaiy): Although this op passes in Gemma4, a single FC test cannot
+  // pass both validation and Finalize. Re-enable the remaining checks once this
+  // issue is fixed.
 }
 }  // namespace
 }  // namespace litert::qnn

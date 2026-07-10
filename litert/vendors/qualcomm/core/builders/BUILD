@@ -88,6 +88,7 @@ cc_library(
     hdrs = ["fully_connected_op_builder.h"],
     deps = [
         ":op_builder",
+        "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/utils:log",
         "//litert/vendors/qualcomm/core/utils:miscs",

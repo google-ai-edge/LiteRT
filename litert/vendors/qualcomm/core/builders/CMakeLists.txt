@@ -77,6 +77,7 @@ target_include_directories(qnn_builders
 
 target_link_libraries(qnn_builders
     PRIVATE
+        qnn_common
         qnn_log
         qnn_miscs
         qnn_tensor_pool
