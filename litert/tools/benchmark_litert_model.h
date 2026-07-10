@@ -32,6 +32,7 @@ limitations under the License.
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/cc/internal/litert_compiled_model_next.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
@@ -60,11 +61,16 @@ class BenchmarkLoggingListener : public ::tflite::benchmark::BenchmarkListener {
  private:
   std::string result_file_path_ = "";
   std::function<std::string()> summary_provider_;
+  std::string benchmark_subgraph_ = "";
 
  public:
   explicit BenchmarkLoggingListener(
       std::function<std::string()> summary_provider)
       : summary_provider_(summary_provider) {}
+
+  void SetBenchmarkSubgraph(std::string name) {
+    benchmark_subgraph_ = std::move(name);
+  }
 
   void OnBenchmarkStart(
       const ::tflite::benchmark::BenchmarkParams& params) override {
@@ -81,6 +87,10 @@ class BenchmarkLoggingListener : public ::tflite::benchmark::BenchmarkListener {
     auto warmup_us = results.warmup_time_us();
 
     LITERT_LOG(LITERT_INFO, "\n========== BENCHMARK RESULTS ==========");
+    if (!benchmark_subgraph_.empty()) {
+      LITERT_LOG(LITERT_INFO, "Signature name:       %s",
+                 benchmark_subgraph_.c_str());
+    }
     LITERT_LOG(LITERT_INFO, "Model initialization: %.2f ms", init_us / 1000.0);
     LITERT_LOG(LITERT_INFO, "Warmup (first):       %.2f ms",
                warmup_us.first() / 1000.0);
@@ -325,6 +335,23 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
       total_bytes += buffer_bytes;
     }
     return total_bytes;
+  }
+
+  Expected<std::string> GetCurrentSignatureKey() const {
+    std::string signature = params_.Get<std::string>("signature_to_run_for");
+    if (!compiled_model_) {
+      return Unexpected(Status::kErrorNotFound, "Compiled model is null");
+    }
+    // Performs a roundtrip key -> idx -> key lookup because `signature`
+    // defaults to an empty string. CompiledModel::GetSignatureIndex actually
+    // falls back to returning the first signature key in that case.
+    LITERT_ASSIGN_OR_RETURN(auto sigkeys, compiled_model_->GetSignatureKeys());
+    LITERT_ASSIGN_OR_RETURN(size_t index,
+                            compiled_model_->GetSignatureIndex(signature));
+    if (index >= sigkeys.size()) {
+      return Unexpected(Status::kErrorNotFound, "Signature not found");
+    }
+    return std::string(sigkeys[index]);
   }
 
   InputTensorData CreateRandomTensorData(const litert::TensorBuffer& t,

@@ -355,6 +355,10 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
     LITERT_ASSIGN_OR_ABORT(profiler_, compiled_model_->GetProfiler());
     profiler_.StartProfiling();
   }
+  LITERT_ASSIGN_OR_RETURN(
+      std::string signature, GetCurrentSignatureKey(),
+      AsTfLiteStatus(_ << "Failed to get current signature key."));
+
   log_output_ = std::make_unique<BenchmarkLoggingListener>([this]() {
     if (profiler_) {
       auto res = profiler_.GetProfileSummary(compiled_model_->Get());
@@ -364,9 +368,8 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
     }
     return std::string("");
   });
+  log_output_->SetBenchmarkSubgraph(signature);
   AddListener(log_output_.get());
-
-  auto signature = params_.Get<std::string>("signature_to_run_for");
   LITERT_ASSIGN_OR_RETURN(
       auto input_buffers_result, compiled_model_->CreateInputBuffers(signature),
       AsTfLiteStatus(_ << "Failed to create input buffer."));
