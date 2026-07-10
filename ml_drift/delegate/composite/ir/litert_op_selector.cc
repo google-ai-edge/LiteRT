@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
@@ -25,6 +26,7 @@
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/selectors/operation_selector.h"  // from @ml_drift
+#include "ml_drift/common/selectors/special_selector.h"  // from @ml_drift
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "third_party/odml/litert/ml_drift/delegate/composite/add_values_to_cache_kernel.h"
@@ -68,6 +70,16 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
 
   return ::ml_drift::GPUOperationFromNode(gpu_info_, op_def, create_info_,
                                           inputs, outputs, op, model_builder);
+}
+
+absl::Status LiteRtOpSelector::GPUSubgraphFromIrModel(
+    const ::ml_drift::ir::IrModel& ir_model, ::ml_drift::ir::IrOpId first_op_id,
+    const absl::flat_hash_set<::ml_drift::ir::IrOpId>& consumed_ops,
+    absl::flat_hash_set<::ml_drift::ir::IrOpId>* new_consumed_ops,
+    ::ml_drift::GpuModelBuilder* model_builder) {
+  return ::ml_drift::GPUSubgraphFromIrModel(create_info_.hints, gpu_info_,
+                                            ir_model, first_op_id, consumed_ops,
+                                            new_consumed_ops, model_builder);
 }
 
 }  // namespace litert::ml_drift::ir

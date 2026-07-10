@@ -111,6 +111,7 @@ cc_library(
         "//third_party/odml/litert/ml_drift/delegate/composite:add_values_to_cache_kernel",
         "//third_party/odml/litert/ml_drift/delegate/composite:moe_experts_kernel",
         "//third_party/odml/litert/ml_drift/delegate/composite:runtime_batched_matmul_kernel",
+        "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
         "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:gpu_model",
@@ -120,6 +121,7 @@ cc_library(
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/common/selectors:operation_selector",
+        "@ml_drift//ml_drift/common/selectors:special_selector",
         "@ml_drift//ml_drift/common/task:gpu_operation",
     ],
 )

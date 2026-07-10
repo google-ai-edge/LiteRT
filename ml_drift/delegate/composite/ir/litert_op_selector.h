@@ -41,6 +41,13 @@ class LiteRtOpSelector : public ::ml_drift::ir::IrModelOpSelector {
       const ::ml_drift::ir::IrOp& op,
       ::ml_drift::GpuModelBuilder* model_builder) override;
 
+  absl::Status GPUSubgraphFromIrModel(
+      const ::ml_drift::ir::IrModel& ir_model,
+      ::ml_drift::ir::IrOpId first_op_id,
+      const absl::flat_hash_set<::ml_drift::ir::IrOpId>& consumed_ops,
+      absl::flat_hash_set<::ml_drift::ir::IrOpId>* new_consumed_ops,
+      ::ml_drift::GpuModelBuilder* model_builder) override;
+
  private:
   ::ml_drift::CreateGpuModelInfo create_info_;
   ::ml_drift::GpuInfo gpu_info_;
