@@ -3,7 +3,6 @@
 
 #include "litert/vendors/qualcomm/core/builders/fully_connected_op_builder.h"
 
-#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <numeric>

@@ -13,15 +13,6 @@
 // limitations under the License.
 #include "litert/vendors/qualcomm/compiler/qnn_compose_graph.h"
 
-#include <numeric>
-
-#include "flatbuffers/flexbuffers.h"  // from @flatbuffers
-
-#if defined(_WIN32)
-#include <malloc.h>
-#else
-#include <alloca.h>
-#endif
 #include <stdbool.h>
 #include <stdio.h>
 
@@ -31,8 +22,10 @@
 #include <cstdint>
 #include <functional>
 #include <iterator>
+#include <numeric>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "QnnCommon.h"  // from @qairt
@@ -45,12 +38,12 @@
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/compiler/cc/litert_model.h"

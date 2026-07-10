@@ -20,13 +20,16 @@
 #include <memory>
 #include <utility>
 
+#include "HTP/QnnHtpMem.h"  // from @qairt
+#include "QnnCommon.h"  // from @qairt
+#include "QnnMem.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
@@ -36,10 +39,6 @@
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "HTP/QnnHtpMem.h"  // from @qairt
-#include "QnnCommon.h"  // from @qairt
-#include "QnnMem.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 using litert::Expected;
 using litert::Unexpected;
