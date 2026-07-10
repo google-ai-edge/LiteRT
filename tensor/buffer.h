@@ -414,7 +414,9 @@ class OwningCpuBuffer : public Buffer {
     using NativeType = typename NativeStorage<type>::type;
     constexpr Type seq_type =
         ApiType<std::decay_t<decltype(*std::begin(seq))>>::value;
-    std::shared_ptr<OwningCpuBuffer> copied_data = Allocate<type>(size(seq));
+    const size_t num_elements =
+        size(seq) * NativeStorage<seq_type>::kNumElements;
+    std::shared_ptr<OwningCpuBuffer> copied_data = Allocate<type>(num_elements);
     if constexpr (type == seq_type) {
       std::copy(begin(seq), end(seq), copied_data->Span<NativeType>().data());
     } else {
@@ -456,7 +458,11 @@ class OwningCpuBuffer : public Buffer {
     using std::begin;
     using std::end;
     using std::size;
-    std::shared_ptr<OwningCpuBuffer> copied_data = Allocate<type>(size(seq));
+    constexpr Type seq_type =
+        ApiType<std::decay_t<decltype(*std::begin(seq))>>::value;
+    const size_t num_elements =
+        size(seq) * NativeStorage<seq_type>::kNumElements;
+    std::shared_ptr<OwningCpuBuffer> copied_data = Allocate<type>(num_elements);
     std::transform(begin(seq), end(seq), copied_data->Span<NativeType>().data(),
                    std::forward<F>(transform));
     return copied_data;
