@@ -89,12 +89,13 @@ typedef struct {
   LiteRtAny value;
 } LiteRtEnvOption;
 
-#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
-    __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtEnvOption) == 24, "LiteRtEnvOption size mismatch");
-static_assert(offsetof(LiteRtEnvOption, value) == 8,
-              "LiteRtEnvOption value offset mismatch");
-#endif  // __cplusplus
+#if (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8) || \
+    defined(__LP64__) || defined(_WIN64)
+LITERT_ABI_STATIC_ASSERT(sizeof(LiteRtEnvOption) == 24,
+                         "LiteRtEnvOption size mismatch");
+LITERT_ABI_STATIC_ASSERT(offsetof(LiteRtEnvOption, value) == 8,
+                         "LiteRtEnvOption value offset mismatch");
+#endif
 
 // Arbitrary size of array following the pattern in TfLiteIntArray.
 #if defined(_MSC_VER) && !defined(__clang__)
