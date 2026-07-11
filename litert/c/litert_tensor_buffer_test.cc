@@ -111,6 +111,8 @@ TEST(TensorBuffer, HostMemory) {
   LiteRtDestroyEnvironment(env);
 }
 
+TEST(TensorBuffer, DestroyNullIsNoOp) { LiteRtDestroyTensorBuffer(nullptr); }
+
 TEST(TensorBuffer, Ahwb) {
   if (!LiteRtHasAhwbSupport()) {
     GTEST_SKIP() << "AHardwareBuffers are not supported on this platform; "

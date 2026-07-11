@@ -637,6 +637,9 @@ LiteRtStatus LiteRtClearTensorBuffer(LiteRtTensorBuffer tensor_buffer) {
 
 void LiteRtDestroyTensorBuffer(LiteRtTensorBuffer tensor_buffer) {
   LITERT_PERFETTO_TRACE_EVENT("LiteRT TensorBuffer Destruction");
+  if (!tensor_buffer) {
+    return;
+  }
   if (tensor_buffer->Unref()) {
     delete tensor_buffer;
   }
