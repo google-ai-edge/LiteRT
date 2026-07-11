@@ -38,8 +38,8 @@ absl::string_view StripQuotes(absl::string_view value) {
 LiteRtStatus ParseCpuKernelMode(absl::string_view value,
                                 LiteRtCpuKernelMode* kernel_mode) {
   value = StripQuotes(value);
-  if (value == "xnnpack") {
-    *kernel_mode = kLiteRtCpuKernelModeXnnpack;
+  if (value == "delegate" || value == "xnnpack") {
+    *kernel_mode = kLiteRtCpuKernelModeDelegate;
     return kLiteRtStatusOk;
   }
   if (value == "builtin") {
@@ -50,11 +50,10 @@ LiteRtStatus ParseCpuKernelMode(absl::string_view value,
     *kernel_mode = kLiteRtCpuKernelModeReference;
     return kLiteRtStatusOk;
   }
-
   LITERT_ASSIGN_OR_RETURN(auto parsed, litert::internal::ParseTomlInt(value));
   switch (parsed) {
-    case kLiteRtCpuKernelModeXnnpack:
-      *kernel_mode = kLiteRtCpuKernelModeXnnpack;
+    case kLiteRtCpuKernelModeDelegate:
+      *kernel_mode = kLiteRtCpuKernelModeDelegate;
       return kLiteRtStatusOk;
     case kLiteRtCpuKernelModeBuiltin:
       *kernel_mode = kLiteRtCpuKernelModeBuiltin;
@@ -83,9 +82,14 @@ LiteRtStatus ParseLiteRtCpuOptions(const void* data, size_t size,
         if (key == "kernel_mode") {
           LITERT_RETURN_IF_ERROR(
               ParseCpuKernelMode(value, &options->kernel_mode));
+        } else if (key == "enable_ynnpack") {
+          LITERT_ASSIGN_OR_RETURN(options->enable_ynnpack,
+                                  litert::internal::ParseTomlBool(value));
         } else if (key == "num_threads") {
-          LITERT_ASSIGN_OR_RETURN(options->xnn.num_threads,
+          LITERT_ASSIGN_OR_RETURN(auto num_threads,
                                   litert::internal::ParseTomlInt(value));
+          options->xnn.num_threads = num_threads;
+          options->ynn.num_threads = num_threads;
         } else if (key == "flags") {
           LITERT_ASSIGN_OR_RETURN(auto val,
                                   litert::internal::ParseTomlInt(value));
@@ -106,6 +110,18 @@ LiteRtStatus ParseLiteRtCpuOptions(const void* data, size_t size,
           LITERT_ASSIGN_OR_RETURN(auto val,
                                   litert::internal::ParseTomlBool(value));
           options->hint_fully_delegated_to_single_delegate = val;
+        } else if (key == "ynnpack_static_shape") {
+          LITERT_ASSIGN_OR_RETURN(options->ynn.static_shape,
+                                  litert::internal::ParseTomlBool(value));
+        } else if (key == "ynnpack_fast_math") {
+          LITERT_ASSIGN_OR_RETURN(options->ynn.fast_math,
+                                  litert::internal::ParseTomlBool(value));
+        } else if (key == "ynnpack_consistent_arithmetic") {
+          LITERT_ASSIGN_OR_RETURN(options->ynn.consistent_arithmetic,
+                                  litert::internal::ParseTomlBool(value));
+        } else if (key == "ynnpack_no_excess_precision") {
+          LITERT_ASSIGN_OR_RETURN(options->ynn.no_excess_precision,
+                                  litert::internal::ParseTomlBool(value));
         }
         return kLiteRtStatusOk;
       });

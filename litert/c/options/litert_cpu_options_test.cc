@@ -95,7 +95,8 @@ TEST_F(LiteRtCpuOptionsFieldsTest, GetOpaqueCpuOptionsDataFailsWithNullArgs) {
 
 TEST_F(LiteRtCpuOptionsFieldsTest, GetOpaqueCpuOptionsDataSerializesSetFields) {
   LITERT_EXPECT_OK(
-      LrtSetCpuOptionsKernelMode(cpu_options_, kLiteRtCpuKernelModeReference));
+      LrtSetCpuOptionsKernelMode(cpu_options_, kLiteRtCpuKernelModeDelegate));
+  LITERT_EXPECT_OK(LrtSetCpuOptionsEnableYNNPack(cpu_options_, true));
   LITERT_EXPECT_OK(LrtSetCpuOptionsNumThread(cpu_options_, 4));
   LITERT_EXPECT_OK(LrtSetCpuOptionsXNNPackFlags(cpu_options_, 7));
   LITERT_EXPECT_OK(
@@ -111,7 +112,8 @@ TEST_F(LiteRtCpuOptionsFieldsTest, GetOpaqueCpuOptionsDataSerializesSetFields) {
 
   EXPECT_STREQ(identifier, LrtGetCpuOptionsIdentifier());
   EXPECT_STREQ(static_cast<const char*>(payload),
-               "kernel_mode = \"reference\"\n"
+               "kernel_mode = \"delegate\"\n"
+               "enable_ynnpack = true\n"
                "num_threads = 4\n"
                "flags = 7\n"
                "hint_fully_delegated_to_single_delegate = true\n"
@@ -137,8 +139,12 @@ TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetNumThreads) {
   ASSERT_EQ(num_threads, expected_num_threads);
 }
 
+TEST_F(LiteRtCpuOptionsFieldsTest, XnnpackModeIsDelegateModeAlias) {
+  EXPECT_EQ(kLiteRtCpuKernelModeXnnpack, kLiteRtCpuKernelModeDelegate);
+}
+
 TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetKernelMode) {
-  LiteRtCpuKernelMode kernel_mode = kLiteRtCpuKernelModeXnnpack;
+  LiteRtCpuKernelMode kernel_mode = kLiteRtCpuKernelModeDelegate;
 
   EXPECT_THAT(LrtGetCpuOptionsKernelMode(cpu_options_, &kernel_mode),
               IsError(kLiteRtStatusErrorNotFound));
@@ -147,6 +153,18 @@ TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetKernelMode) {
       LrtSetCpuOptionsKernelMode(cpu_options_, kLiteRtCpuKernelModeBuiltin));
   LITERT_EXPECT_OK(LrtGetCpuOptionsKernelMode(cpu_options_, &kernel_mode));
   ASSERT_EQ(kernel_mode, kLiteRtCpuKernelModeBuiltin);
+}
+
+TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetEnableYNNPack) {
+  bool enable_ynnpack = false;
+
+  EXPECT_THAT(LrtGetCpuOptionsEnableYNNPack(cpu_options_, &enable_ynnpack),
+              IsError(kLiteRtStatusErrorNotFound));
+
+  LITERT_EXPECT_OK(LrtSetCpuOptionsEnableYNNPack(cpu_options_, true));
+  LITERT_EXPECT_OK(
+      LrtGetCpuOptionsEnableYNNPack(cpu_options_, &enable_ynnpack));
+  EXPECT_TRUE(enable_ynnpack);
 }
 
 TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetXNNPackFlags) {

@@ -70,6 +70,12 @@ config_setting(
 )
 
 config_setting(
+    name = "litert_enable_ynnpack",
+    define_values = {"litert_enable_ynnpack": "true"},
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
     name = "build_include_gpu",
     flag_values = {":build_include": "gpu"},
 )
