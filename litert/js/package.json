@@ -32,5 +32,8 @@
     "prettier": "^3.3.3",
     "turbo": "^2.0.10",
     "typedoc": "^0.28.7"
+  },
+  "overrides": {
+    "typescript": "5.9.3"
   }
 }
