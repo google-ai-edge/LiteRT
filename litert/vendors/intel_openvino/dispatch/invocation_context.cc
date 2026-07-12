@@ -199,6 +199,25 @@ LiteRtDispatchInvocationContextT::Create(
   }
   LITERT_LOG(LITERT_INFO, "Using Intel OpenVINO device: %s", device.c_str());
 
+  // Forward configs_map entries to OV Core. Runtime-only properties such
+  // as PERF_COUNT must be set here (at import_model time) — they are not
+  // baked into the exported NPU blob by the AOT compile path.
+  ov::AnyMap import_configs;
+  bool perf_count_enabled = false;
+  const int num_options = intel_openvino_opts != nullptr ?
+                          intel_openvino_opts->GetNumConfigsMapOptions() : 0;
+  for (int i = 0; i < num_options; ++i) {
+    auto [key, value] = intel_openvino_opts->GetConfigsMapOption(i);
+    if (key.empty()) continue;
+    if (key == "PERF_COUNT" && (value == "YES" || value == "true")) {
+      perf_count_enabled = true;
+    }
+
+    import_configs[key] = value;
+    LITERT_LOG(LITERT_INFO, "Dispatch: OpenVINO config '%s'='%s'", key.c_str(),
+               value.c_str());
+  }
+
   OpenVINOSharedCore::GetInstance()->SetDevice(device);
 
   if (!exec_bytecode_ptr || exec_bytecode_size == 0) {
@@ -214,7 +233,7 @@ LiteRtDispatchInvocationContextT::Create(
   }
   ov::CompiledModel compiled_model;
   try {
-    compiled_model = core->import_model(model_stream, device);
+    compiled_model = core->import_model(model_stream, device, import_configs);
   } catch (const std::exception& e) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure, e.what());
   }
@@ -223,7 +242,8 @@ LiteRtDispatchInvocationContextT::Create(
   LITERT_LOG(LITERT_INFO, "Openvino InvocationContext Initialize SUCCESS");
   // TODO: add support for loading cached model
   return Ptr(new LiteRtDispatchInvocationContextT(infer_request, device_context,
-                                                  num_inputs, num_outputs));
+                                                  num_inputs, num_outputs,
+                                                  perf_count_enabled));
 }
 
 litert::Expected<LiteRtTensorBufferRequirements>
@@ -296,5 +316,14 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
     return litert::Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
         "Failed to execute inference request due to timeout");
+
+  if (perf_count_enabled_) {
+    try {
+      (void)infer_request_.get_profiling_info();
+    } catch (const std::exception& e) {
+      LITERT_LOG(LITERT_WARNING, "Failed to read OpenVINO profiling info: %s",
+                 e.what());
+    }
+  }
   return {};
 }
