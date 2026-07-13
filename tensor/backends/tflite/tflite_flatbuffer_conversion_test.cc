@@ -377,6 +377,34 @@ TEST(SerializationTest, BuildTwoSignatures) {
               Not(nullptr));
 }
 
+TEST(SerializationTest, SignatureRetainsDisconnectedExplicitInput) {
+  const std::string model_path =
+      testing::TempDir() + "/" +
+      testing::UnitTest::GetInstance()->current_test_info()->name() + ".tflite";
+  ModelFactory model_builder;
+  TensorTf x({.name = "x", .type = Type::kFP32, .shape = {1}});
+  TensorTf control({.name = "control", .type = Type::kI32, .shape = {1}});
+  TensorTf y = Add(x, 1.0f).SetName("y");
+  ASSERT_THAT(model_builder.AddSignature({x, control}, {y}, "main"), IsOk());
+  ASSERT_THAT(model_builder.Save(model_path), IsOk());
+
+  auto model = tflite::FlatBufferModel::BuildFromFile(model_path.c_str());
+  ASSERT_NE(model, nullptr);
+  std::unique_ptr<tflite::Interpreter> interpreter;
+  tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates resolver;
+  ASSERT_EQ(tflite::InterpreterBuilder(*model, resolver)(&interpreter),
+            kTfLiteOk);
+  ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
+  EXPECT_THAT(interpreter->signature_inputs("main"), SizeIs(2));
+  EXPECT_THAT(interpreter->signature_outputs("main"), SizeIs(1));
+  EXPECT_THAT(interpreter->input_tensor_by_signature("control", "main"),
+              Not(nullptr));
+  EXPECT_THAT(interpreter->input_tensor_by_signature("x", "main"),
+              Not(nullptr));
+  EXPECT_THAT(interpreter->output_tensor_by_signature("y", "main"),
+              Not(nullptr));
+}
+
 TEST(SerializationTest, AddingAnEmptySubgraphFails) {
   ModelFactory model_builder;
   EXPECT_THAT(model_builder.AddSubgraph({}), Not(IsOk()));
@@ -621,6 +649,42 @@ TEST(SerializationTest, CanSerializeStableHLOComposite) {
       decomposition->tensors()->Get(decomposition->outputs()->Get(0));
   ASSERT_NE(decomposition_output->name(), nullptr);
   EXPECT_EQ(decomposition_output->name()->str(), "decomposition_sum");
+}
+
+TEST(SerializationTest, StableHLOCompositeRetainsDisconnectedInput) {
+  std::vector<char> model_data;
+  {
+    TensorTf input({.name = "input", .type = Type::kFP32, .shape = {1}});
+    TensorTf runtime_params(
+        {.name = "runtime_params", .type = Type::kI32, .shape = {7}});
+    TensorTf output = StableHLOComposite(
+        "test.disconnected_input",
+        [](TensorTf value, TensorTf) { return Add(value, value); }, input,
+        runtime_params);
+
+    ModelFactory model_builder;
+    ASSERT_THAT(model_builder.AddSubgraph({output}), IsOk());
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(model_data,
+                                    model_builder.CreateFlatbuffer());
+  }
+
+  auto model = tflite::FlatBufferModel::BuildFromBuffer(model_data.data(),
+                                                        model_data.size());
+  ASSERT_NE(model, nullptr);
+  const tflite::Model* model_fb = model->GetModel();
+  ASSERT_THAT(model_fb->subgraphs(), Pointee(SizeIs(2)));
+  const tflite::SubGraph* decomposition = model_fb->subgraphs()->Get(1);
+  ASSERT_THAT(decomposition->inputs(), Pointee(SizeIs(2)));
+  EXPECT_EQ(decomposition->tensors()
+                ->Get(decomposition->inputs()->Get(0))
+                ->name()
+                ->str(),
+            "test.disconnected_input/decomposition_input_0");
+  EXPECT_EQ(decomposition->tensors()
+                ->Get(decomposition->inputs()->Get(1))
+                ->name()
+                ->str(),
+            "test.disconnected_input/decomposition_input_1");
 }
 
 TEST(SerializationTest, UnnamedInputsAndOutputsAreGivenAName) {
@@ -1670,6 +1734,22 @@ TEST(SerializationTest, CanSerializeReshape) {
   EXPECT_THAT(
       absl::MakeSpan(reshape_options->shape, reshape_options->num_dimensions),
       ElementsAre(5));
+
+  const tflite::Model* flatbuffer_model = model->GetModel();
+  ASSERT_NE(flatbuffer_model, nullptr);
+  const tflite::Operator* reshape_op =
+      flatbuffer_model->subgraphs()->Get(0)->operators()->Get(0);
+  ASSERT_EQ(reshape_op->inputs()->size(), 2);
+  const tflite::Tensor* shape_tensor =
+      flatbuffer_model->subgraphs()->Get(0)->tensors()->Get(
+          reshape_op->inputs()->Get(1));
+  const tflite::Buffer* shape_buffer =
+      flatbuffer_model->buffers()->Get(shape_tensor->buffer());
+  ASSERT_NE(shape_buffer->data(), nullptr);
+  ASSERT_EQ(shape_buffer->data()->size(), sizeof(int32_t));
+  int32_t serialized_shape = 0;
+  std::memcpy(&serialized_shape, shape_buffer->data()->data(), sizeof(int32_t));
+  EXPECT_EQ(serialized_shape, 5);
 }
 
 TEST(SerializationTest, CanSerializeExpandDims) {
