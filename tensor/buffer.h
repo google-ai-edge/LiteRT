@@ -372,7 +372,8 @@ class OwningCpuBuffer : public Buffer {
     LITERT_TENSOR_BUFFER_OP_AS_CASE(OP, BF16, __VA_ARGS__); \
     case Type::kUnknown:                                    \
       return nullptr;                                       \
-  }
+  }                                                         \
+  return nullptr;  // Some compilers complain even if we handle all cases.
 
   // Allocates a buffer that can hold `count` elements.
   template <Type type>
