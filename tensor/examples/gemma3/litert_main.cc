@@ -81,6 +81,12 @@ ABSL_FLAG(std::string, runtime_library_dir, "",
           "libLiteRtWebGpuAccelerator.so.");
 ABSL_FLAG(std::string, compiler_cache_dir, "",
           "Directory used by LiteRT to cache JIT-compiled models.");
+ABSL_FLAG(std::string, gpu_backend, "automatic",
+          "GPU backend to use: automatic or webgpu.");
+ABSL_FLAG(std::string, gpu_buffer_storage, "buffer",
+          "GPU buffer storage type to use: default, buffer, or texture2d.");
+ABSL_FLAG(bool, gpu_external_tensors, true,
+          "Enable GPU external tensors mode for cache tensors.");
 ABSL_FLAG(bool, allow_cpu_fallback, false,
           "When using --accelerator=gpu, also allow CPU execution for ops "
           "that the hardware delegate did not claim.");
@@ -711,11 +717,33 @@ absl::Status RunGemma3Inference(
     auto gpu_options_or = options.GetGpuOptions();
     if (gpu_options_or.HasValue()) {
       gpu_options_or->SetPrecision(::litert::GpuOptions::Precision::kFp32);
-      gpu_options_or->SetBufferStorageType(
-          ::litert::GpuOptions::BufferStorageType::kBuffer);
-      gpu_options_or->EnableExternalTensorsMode(true);
-      gpu_options_or->AddExternalTensorPattern("key_cache_.*");
-      gpu_options_or->AddExternalTensorPattern("value_cache_.*");
+      const std::string gpu_backend = absl::GetFlag(FLAGS_gpu_backend);
+      if (gpu_backend == "webgpu") {
+        gpu_options_or->SetBackend(::litert::GpuOptions::Backend::kWebGpu);
+      } else if (gpu_backend != "automatic") {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Unsupported --gpu_backend value: ", gpu_backend));
+      }
+      const std::string gpu_buffer_storage =
+          absl::GetFlag(FLAGS_gpu_buffer_storage);
+      if (gpu_buffer_storage == "default") {
+        gpu_options_or->SetBufferStorageType(
+            ::litert::GpuOptions::BufferStorageType::kDefault);
+      } else if (gpu_buffer_storage == "buffer") {
+        gpu_options_or->SetBufferStorageType(
+            ::litert::GpuOptions::BufferStorageType::kBuffer);
+      } else if (gpu_buffer_storage == "texture2d") {
+        gpu_options_or->SetBufferStorageType(
+            ::litert::GpuOptions::BufferStorageType::kTexture2D);
+      } else {
+        return absl::InvalidArgumentError(absl::StrCat(
+            "Unsupported --gpu_buffer_storage value: ", gpu_buffer_storage));
+      }
+      if (absl::GetFlag(FLAGS_gpu_external_tensors)) {
+        gpu_options_or->EnableExternalTensorsMode(true);
+        gpu_options_or->AddExternalTensorPattern("key_cache_.*");
+        gpu_options_or->AddExternalTensorPattern("value_cache_.*");
+      }
     }
   }
 
