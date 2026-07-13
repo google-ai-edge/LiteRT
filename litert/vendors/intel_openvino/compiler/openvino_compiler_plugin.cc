@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <ios>
 #include <limits>
@@ -51,6 +52,9 @@
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
 #include "litert/vendors/intel_openvino/compiler/openvino_compile_context.h"
 #include "litert/vendors/intel_openvino/compiler/openvino_soc_config.h"
+#include "litert/vendors/intel_openvino/compiler/global_graph.h"
+#include "litert/vendors/intel_openvino/compiler/weight_bank.h"
+#include "litert/vendors/intel_openvino/compiler/weights_to_parameters.h"
 
 namespace {
 
@@ -321,7 +325,14 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(
   auto& graph_name = compiled_result->graph_names[call_idx];
   *call_info = graph_name.data();
   *call_info_size = graph_name.size();
-  *byte_code_idx = call_idx;
+  // Weight-sharing (GlobalGraph) aggregates all partitions into a single
+  // container stored once in byte_code[0]; every call reads that same blob and
+  // selects its own subgraph inside the dispatcher (by graph_name). Non-shared
+  // builds keep one bytecode module per partition (idx == call_idx).
+  *byte_code_idx = (compiled_result->byte_code.size() == 1 &&
+                    compiled_result->graph_names.size() > 1)
+                       ? 0
+                       : call_idx;
 
   return kLiteRtStatusOk;
 }
@@ -503,6 +514,32 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     auto tflite_fe =
         std::make_shared<ov::frontend::tensorflow_lite::FrontEnd>();
 
+    // Cross-partition weight sharing (opt-in via LITERT_OV_EMBED_WEIGHTS=1):
+    // all partitions' distinct weights are deduplicated by LiteRt BufferId into
+    // one OpenVinoGlobalGraph container (shared buffer pool + per-subgraph
+    // {payload, const_map, device}). The same serialized blob is returned for
+    // every partition; the dispatcher selects its subgraph and resolves the
+    // subgraph's weights against the shared pool.
+    litert::openvino::WeightBank weight_bank;
+    litert::openvino::OpenVinoGlobalGraph global_graph;
+    const char* embed_env = std::getenv("LITERT_OV_EMBED_WEIGHTS");
+    const bool share_weights = embed_env != nullptr && embed_env[0] == '1';
+    if (share_weights) {
+      for (int p = 0; p < num_partitions; ++p) {
+        auto subgraph = model.Subgraph(p);
+        if (subgraph.HasValue()) weight_bank.AddSubgraph(subgraph.Value());
+      }
+      LITERT_LOG(LITERT_INFO, "Weight sharing: %zu buffers, %zu bytes",
+                 weight_bank.NumBuffers(), weight_bank.TotalBytes());
+      // Populate the GlobalGraph shared buffer pool (BufferId -> bytes).
+      for (const auto& [buffer_id, bytes] : weight_bank.Buffers()) {
+        global_graph.buffers.emplace(
+            static_cast<uint32_t>(buffer_id),
+            std::string(reinterpret_cast<const char*>(bytes.data()),
+                        bytes.size()));
+      }
+    }
+
     ov::Core core;
     for (int partition_idx = 0; partition_idx < num_partitions;
          ++partition_idx) {
@@ -529,11 +566,33 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         // Run NPU-specific optimization passes.
         context.OptimizeModel(ov_model);
 
+        ov::AnyMap configs = context.ConfigsMap();
+        std::map<uint32_t, uint32_t> const_map;
+        if (share_weights) {
+          // Weight sharing is currently GPU-only. Other devices (NPU/CPU) are a
+          // later patchset; fail loudly rather than emit an unshared model.
+          if (context.Device() != "GPU") {
+            LITERT_LOG(LITERT_ERROR,
+                       "Weight sharing is only supported on GPU (partition %d "
+                       "targets '%s')",
+                       partition_idx, context.Device().c_str());
+            return kLiteRtStatusErrorUnsupported;
+          }
+          // Convert weights to Parameters bound to the shared bank at dispatch;
+          // const_map records input_index -> BufferId.
+          const size_t converted = litert::openvino::ConvertWeightsToParameters(
+              ov_model, weight_bank, &const_map);
+          LITERT_LOG(LITERT_INFO,
+                     "Weight sharing: converted %zu weights to parameters "
+                     "in partition %d",
+                     converted, partition_idx);
+        }
+
         // Compile using the per-partition device and properties.
         LITERT_LOG(LITERT_INFO, "Compiling partition %d for device %s",
                    partition_idx, context.Device().c_str());
-        auto compiled_model = core.compile_model(ov_model, context.Device(),
-                                                 context.ConfigsMap());
+        auto compiled_model =
+            core.compile_model(ov_model, context.Device(), configs);
 
         CustomOStreamBuf obuf;
         std::ostream oss(&obuf);
@@ -551,17 +610,46 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         else if (dev == "GPU")
           graph_backend_enum = kLiteRtIntelOpenVinoGraphBackendGPU;
 
-        // Prepend a self-describing header so the dispatcher knows which
-        // device the bytecode was compiled for.
-        result->byte_code[partition_idx] =
-            litert::openvino::MakeBytecodeHeader(graph_backend_enum) +
-            obuf.drain_str();
+        if (share_weights) {
+          // Aggregate this partition into the GlobalGraph container instead of
+          // emitting standalone per-partition bytecode. The device-headered
+          // payload becomes this subgraph's payload; the whole container is
+          // serialized once after the loop and returned for every partition
+          // index.
+          litert::openvino::OpenVinoGlobalGraph::Subgraph subgraph;
+          subgraph.name = graph_name;
+          subgraph.device = static_cast<uint8_t>(graph_backend_enum);
+          subgraph.const_map = std::move(const_map);
+          subgraph.payload =
+              litert::openvino::MakeBytecodeHeader(graph_backend_enum) +
+              obuf.drain_str();
+          global_graph.subgraphs.emplace(graph_name, std::move(subgraph));
+        } else {
+          // Non-shared path: standalone per-partition bytecode (device header +
+          // baked-weights payload).
+          result->byte_code[partition_idx] =
+              litert::openvino::MakeBytecodeHeader(graph_backend_enum) +
+              obuf.drain_str();
+        }
 
-        result->graph_names.emplace_back(graph_name);
+        result->graph_names[partition_idx] = graph_name;
       } else {
         LITERT_LOG(LITERT_INFO, "Failed to retrieve Subgraph");
         return kLiteRtStatusErrorCompilation;
       }
+    }
+    if (share_weights) {
+      // Serialize the whole GlobalGraph ONCE into byte_code[0] and point every
+      // partition's call at byte_code_idx 0 (see LiteRtGetCompiledResultCallInfo).
+      // This matches the upstream reference (one shared blob) and, critically,
+      // stores the ~multi-GB buffer pool exactly once in the .tflite -- copying
+      // it into N per-partition slots would N-x the file and defeat sharing.
+      result->byte_code.assign(1, global_graph.Serialize());
+      LITERT_LOG(LITERT_INFO,
+                 "Weight sharing: GlobalGraph container %zu bytes "
+                 "(%zu buffers, %zu subgraphs)",
+                 result->byte_code[0].size(), global_graph.buffers.size(),
+                 global_graph.subgraphs.size());
     }
     *compiled_result = result.release();
     // TODO: Add support for caching
