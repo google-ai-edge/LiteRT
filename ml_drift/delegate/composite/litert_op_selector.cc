@@ -14,10 +14,12 @@
 
 #include "third_party/odml/litert/ml_drift/delegate/composite/litert_op_selector.h"
 
+#include <memory>
 #include <set>
 #include <utility>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
@@ -26,6 +28,7 @@
 #include "ml_drift/common/selectors/special_selector.h"  // from @ml_drift
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
+#include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "third_party/odml/litert/ml_drift/delegate/composite/add_values_to_cache_kernel.h"
 #include "third_party/odml/litert/ml_drift/delegate/composite/add_values_to_cache_parser.h"
 #include "third_party/odml/litert/ml_drift/delegate/composite/moe_experts_kernel.h"
@@ -40,6 +43,34 @@ LiteRtOpSelector::LiteRtOpSelector(
     const ::ml_drift::GpuInfo* gpu_info)
     : create_info_(*create_info), gpu_info_(*gpu_info) {}
 
+void LiteRtOpSelector::ParamTensorToBuffer(
+    int param_index, const std::vector<::ml_drift::Value*>& inputs,
+    ::ml_drift::GpuModelBuilder* model_builder) {
+  auto param_id = inputs[param_index]->id;
+  if (replaced_tensors_.contains(param_id)) {
+    return;
+  }
+  auto param_tensor_handle_or = model_builder->GetTensor(param_id);
+  if (!param_tensor_handle_or.ok()) {
+    return;
+  }
+  auto param_tensor = param_tensor_handle_or.value();
+  if (param_tensor.tensor_desc.GetStorageType() ==
+      ::ml_drift::TensorStorageType::BUFFER) {
+    return;
+  }
+  ::ml_drift::TensorDescriptor new_desc = param_tensor.tensor_desc;
+  new_desc.SetStorageType(::ml_drift::TensorStorageType::BUFFER);
+  auto new_param_tensor = model_builder->AddTensor(new_desc);
+  if (!model_builder->UpdateOutputTensor(param_tensor, new_param_tensor.id)
+           .ok()) {
+    return;
+  }
+  replaced_tensors_[param_id] = std::make_unique<::ml_drift::Value>(
+      ::ml_drift::Value{new_param_tensor.id, inputs[param_index]->tensor,
+                        inputs[param_index]->quant_params});
+}
+
 absl::Status LiteRtOpSelector::GPUOperationFromNode(
     const ::ml_drift::OperationDef& op_def,
     const std::vector<::ml_drift::Value*>& inputs,
@@ -51,6 +82,12 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     for (int i = 0; i < inputs.size(); ++i) {
       src_ids[i] = inputs[i]->id;
     }
+    int param_index = 2;
+    // Ensure param tensor is a buffer tensor as kernel programs expect so.
+    ParamTensorToBuffer(param_index, inputs, model_builder);
+    if (replaced_tensors_.contains(inputs[param_index]->id)) {
+      src_ids[param_index] = replaced_tensors_[inputs[param_index]->id]->id;
+    }
     std::vector<::ml_drift::ValueId> dst_ids(outputs.size());
     for (int i = 0; i < outputs.size(); ++i) {
       dst_ids[i] = outputs[i]->id;
@@ -60,7 +97,17 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     return absl::OkStatus();
   }
   if (node.operation.type == kRuntimeBatchedMatMulType) {
-    return CreateRuntimeBatchedMatMulFromNode(inputs, outputs, node,
+    std::vector<::ml_drift::Value*> bmm_inputs = inputs;
+    if (inputs.size() > 2) {
+      int param_index = inputs.size() - 1;
+      // Ensure param tensor is a buffer tensor as kernel programs expect so.
+      ParamTensorToBuffer(param_index, inputs, model_builder);
+      if (replaced_tensors_.contains(inputs[param_index]->id)) {
+        bmm_inputs[param_index] =
+            replaced_tensors_[inputs[param_index]->id].get();
+      }
+    }
+    return CreateRuntimeBatchedMatMulFromNode(bmm_inputs, outputs, node,
                                               model_builder);
   }
   if (node.operation.type == kMoeExpertsType) {

@@ -15,10 +15,12 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_LITERT_OP_SELECTOR_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_LITERT_OP_SELECTOR_H_
 
+#include <memory>
 #include <set>
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
@@ -48,8 +50,18 @@ class LiteRtOpSelector : public ::ml_drift::OpSelector {
       ::ml_drift::GpuModelBuilder* model_builder) override;
 
  private:
+  // If the tensor is not BUFFER storage type, create a new tensor with
+  // BUFFER storage type and replace the original tensor.
+  void ParamTensorToBuffer(int param_index,
+                           const std::vector<::ml_drift::Value*>& inputs,
+                           ::ml_drift::GpuModelBuilder* model_builder);
+
   const ::ml_drift::CreateGpuModelInfo& create_info_;
   const ::ml_drift::GpuInfo& gpu_info_;
+  // Stores replaced tensors if require different tensor descriptors than the
+  // original tensors.
+  absl::flat_hash_map<::ml_drift::ValueId, std::unique_ptr<::ml_drift::Value>>
+      replaced_tensors_;
 };
 
 }  // namespace litert::ml_drift
