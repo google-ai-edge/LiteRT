@@ -1570,6 +1570,21 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
                             "Failed to register tensor buffer");
         }
 
+        // If CPU kernels also consume this tensor, it must additionally get
+        // a host-visible custom allocation; marking it non-CPU would leave
+        // those kernels reading a null data pointer. Fall through to the
+        // CPU-sync binding below in that case.
+        LITERT_ASSIGN_OR_RETURN(const auto shared_tensor_id,
+                                GetTensorIdentifier(*interp_, tensor));
+        if (cpu_tensors_.find(shared_tensor_id) != cpu_tensors_.end()) {
+          LITERT_LOG(LITERT_INFO,
+                     "Tensor `%s` is used by both the backend and CPU; "
+                     "binding a host view for CPU access.",
+                     tensor->name ? tensor->name : "<unnamed>");
+          buffer_requires_cpu_sync = true;
+          break;
+        }
+
         // Mark the tensor as non-CPU to avoid TFLite from allocating it.
         tensor->allocation_type = kTfLiteNonCpu;
         tensor->data.data = nullptr;

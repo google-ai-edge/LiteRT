@@ -454,9 +454,11 @@ Expected<void> DispatchDelegateKernel::EvalHelper(TfLiteOpaqueContext* context,
       // tensor buffer. No memcpy is necessary in that case.
       if (tensor_data) {
         size_t buffer_size = tensor_buffer_info.tensor_buffer_used_size;
+        // Write mode: the host fills the buffer, and Unlock uploads it to the
+        // device for device-backed buffers.
         LITERT_ASSIGN_OR_RETURN(void* host_buffer,
                                 tensor_buffer_info.tensor_buffer->Lock(
-                                    kLiteRtTensorBufferLockModeRead));
+                                    kLiteRtTensorBufferLockModeWrite));
         std::memcpy(host_buffer, tensor_data, buffer_size);
         LITERT_RETURN_IF_ERROR(tensor_buffer_info.tensor_buffer->Unlock());
       }
@@ -502,9 +504,11 @@ Expected<void> DispatchDelegateKernel::EvalHelper(TfLiteOpaqueContext* context,
       // tensor buffer. No memcpy is necessary in that case.
       if (tensor_data) {
         size_t buffer_size = tensor_buffer_info.tensor_buffer_used_size;
+        // Read mode: Lock downloads the device result for device-backed
+        // buffers, and Unlock must not write back over it.
         LITERT_ASSIGN_OR_RETURN(void* host_buffer,
                                 tensor_buffer_info.tensor_buffer->Lock(
-                                    kLiteRtTensorBufferLockModeWrite));
+                                    kLiteRtTensorBufferLockModeRead));
         std::memcpy(tensor_data, host_buffer, buffer_size);
         LITERT_RETURN_IF_ERROR(tensor_buffer_info.tensor_buffer->Unlock());
       }
@@ -866,6 +870,12 @@ void DispatchDelegateKernel::ProcessDeferredUnregistrations() {
                                              info.buffer_handle);
           }
         }
+      }
+      if (auto active_it = tensor_buffer_infos_.find(t_id);
+          active_it != tensor_buffer_infos_.end()) {
+        // Some dispatch runtimes clear an invocation port during detach. Force
+        // the active buffer for this tensor to be reattached before invoking.
+        active_it->second.attached = false;
       }
 
       (void)LiteRtDispatchUnregisterTensorBuffer(device_context_,
