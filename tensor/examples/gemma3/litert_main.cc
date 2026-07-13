@@ -66,6 +66,24 @@ ABSL_FLAG(std::string, prompt, "Hello, world!",
 ABSL_FLAG(size_t, max_tokens, 50, "Maximum number of tokens to generate");
 ABSL_FLAG(std::string, accelerator, "gpu",
           "Hardware accelerator to use: cpu or gpu");
+ABSL_FLAG(bool, tensor_rt_compatible, false,
+          "Emit a TensorRT-friendlier graph: static prefill slice, host-side "
+          "argmax from logits, and no GQA gather/tile for single-KV-group "
+          "Gemma variants.");
+ABSL_FLAG(std::string, compiler_plugin_library_dir, "",
+          "Directory containing LiteRT compiler plugins, such as "
+          "libLiteRtCompilerPlugin_Nvidia.so.");
+ABSL_FLAG(std::string, dispatch_library_dir, "",
+          "Directory containing LiteRT dispatch libraries, such as "
+          "libLiteRtDispatch_Nvidia.so.");
+ABSL_FLAG(std::string, runtime_library_dir, "",
+          "Directory containing LiteRT runtime accelerator libraries, such as "
+          "libLiteRtWebGpuAccelerator.so.");
+ABSL_FLAG(std::string, compiler_cache_dir, "",
+          "Directory used by LiteRT to cache JIT-compiled models.");
+ABSL_FLAG(bool, allow_cpu_fallback, false,
+          "When using --accelerator=gpu, also allow CPU execution for ops "
+          "that the hardware delegate did not claim.");
 ABSL_FLAG(::litert::tensor::examples::SafetensorLoader::QuantizedLoadMode,
           weight_mode,
           ::litert::tensor::examples::SafetensorLoader::QuantizedLoadMode::
@@ -88,7 +106,8 @@ GpuAttnOutput MakeGpuSelfAttentionLayer(
     const Tensor<TfLiteMixinTag>& key_cache,
     const Tensor<TfLiteMixinTag>& value_cache,
     const absl::flat_hash_map<std::string, Tensor<TfLiteMixinTag>>& weights,
-    const std::optional<Tensor<TfLiteMixinTag>> cache_params) {
+    const std::optional<Tensor<TfLiteMixinTag>> cache_params,
+    bool tensor_rt_compatible) {
   int qkv_out_dim = config.n_heads * config.head_dim;
   int kv_out_dim = config.n_kv_groups * config.head_dim;
 
@@ -188,29 +207,38 @@ GpuAttnOutput MakeGpuSelfAttentionLayer(
 
   int num_groups = config.n_heads / config.n_kv_groups;
   if (num_groups > 1) {
-    std::vector<Tensor<TfLiteMixinTag>> tiled_k_heads;
-    for (int g = 0; g < config.n_kv_groups; ++g) {
-      Tensor head_idx = Tensor<TfLiteMixinTag>(
-          {.type = Type::kI32,
-           .shape = {1},
-           .buffer = OwningCpuBuffer::Copy<Type::kI32>({g})});
-      Tensor head = Gather(k_for_attn, head_idx, /*axis=*/1);
-      Tensor tiled_head = Tile(head, {1, num_groups, 1, 1});
-      tiled_k_heads.push_back(tiled_head);
-    }
-    k_for_attn = Concatenation(absl::MakeSpan(tiled_k_heads), /*axis=*/1);
+    if (tensor_rt_compatible && config.n_kv_groups == 1) {
+      std::vector<Tensor<TfLiteMixinTag>> repeated_k_heads(num_groups,
+                                                           k_for_attn);
+      std::vector<Tensor<TfLiteMixinTag>> repeated_v_heads(num_groups,
+                                                           v_for_attn);
+      k_for_attn = Concatenation(absl::MakeSpan(repeated_k_heads), /*axis=*/1);
+      v_for_attn = Concatenation(absl::MakeSpan(repeated_v_heads), /*axis=*/1);
+    } else {
+      std::vector<Tensor<TfLiteMixinTag>> tiled_k_heads;
+      for (int g = 0; g < config.n_kv_groups; ++g) {
+        Tensor head_idx = Tensor<TfLiteMixinTag>(
+            {.type = Type::kI32,
+             .shape = {1},
+             .buffer = OwningCpuBuffer::Copy<Type::kI32>({g})});
+        Tensor head = Gather(k_for_attn, head_idx, /*axis=*/1);
+        Tensor tiled_head = Tile(head, {1, num_groups, 1, 1});
+        tiled_k_heads.push_back(tiled_head);
+      }
+      k_for_attn = Concatenation(absl::MakeSpan(tiled_k_heads), /*axis=*/1);
 
-    std::vector<Tensor<TfLiteMixinTag>> tiled_v_heads;
-    for (int g = 0; g < config.n_kv_groups; ++g) {
-      Tensor head_idx = Tensor<TfLiteMixinTag>(
-          {.type = Type::kI32,
-           .shape = {1},
-           .buffer = OwningCpuBuffer::Copy<Type::kI32>({g})});
-      Tensor head = Gather(v_for_attn, head_idx, /*axis=*/1);
-      Tensor tiled_head = Tile(head, {1, num_groups, 1, 1});
-      tiled_v_heads.push_back(tiled_head);
+      std::vector<Tensor<TfLiteMixinTag>> tiled_v_heads;
+      for (int g = 0; g < config.n_kv_groups; ++g) {
+        Tensor head_idx = Tensor<TfLiteMixinTag>(
+            {.type = Type::kI32,
+             .shape = {1},
+             .buffer = OwningCpuBuffer::Copy<Type::kI32>({g})});
+        Tensor head = Gather(v_for_attn, head_idx, /*axis=*/1);
+        Tensor tiled_head = Tile(head, {1, num_groups, 1, 1});
+        tiled_v_heads.push_back(tiled_head);
+      }
+      v_for_attn = Concatenation(absl::MakeSpan(tiled_v_heads), /*axis=*/1);
     }
-    v_for_attn = Concatenation(absl::MakeSpan(tiled_v_heads), /*axis=*/1);
   }
 
   Tensor scores = BatchMatMul(q, k_for_attn, /*adj_x=*/false, /*adj_y=*/true);
@@ -281,7 +309,8 @@ struct GpuOutputs {
 };
 
 GpuOutputs BuildGpuGraph(Inputs<TfLiteMixinTag>& inputs, const Config& config,
-                         bool is_decode) {
+                         bool is_decode, bool tensor_rt_compatible,
+                         int static_prefill_output_index) {
   float emb_scale = std::sqrt(static_cast<float>(config.emb_dim));
   Tensor emb_scale_tensor = Tensor<TfLiteMixinTag>(
       {.name = "emb_scale_tensor",
@@ -320,7 +349,7 @@ GpuOutputs BuildGpuGraph(Inputs<TfLiteMixinTag>& inputs, const Config& config,
                                              : Tensor<TfLiteMixinTag>(),
         layer_idx < inputs.value_caches.size() ? inputs.value_caches[layer_idx]
                                                : Tensor<TfLiteMixinTag>(),
-        inputs.weights, inputs.cache_params);
+        inputs.weights, inputs.cache_params, tensor_rt_compatible);
 
     updated_key_caches.push_back(attn_output.key_cache);
     updated_value_caches.push_back(attn_output.value_cache);
@@ -363,24 +392,45 @@ GpuOutputs BuildGpuGraph(Inputs<TfLiteMixinTag>& inputs, const Config& config,
       GetWeight(inputs.weights, "model.embed_tokens.weight", Type::kFP32,
                 {config.vocab_size, config.emb_dim});
 
-  if (!is_decode) {
+  if (!is_decode && tensor_rt_compatible) {
+    final_output = Slice(final_output, {0, static_prefill_output_index, 0},
+                         {1, 1, static_cast<int>(config.emb_dim)});
+  } else if (!is_decode) {
     final_output = Gather(final_output, inputs.slice_index, /*axis=*/1);
   }
-  Tensor final_output_4d =
-      Reshape(final_output, {1, 1, 1, static_cast<int>(config.emb_dim)});
 
-  Tensor logits_4d = FullyConnected(final_output_4d, embedding_table, kActNone,
-                                    /*keep_num_dims=*/true);
-  Tensor logits =
-      Reshape(logits_4d, {1, 1, static_cast<int>(config.vocab_size)});
-  Tensor output_token_id = ArgMax(logits, /*axis=*/-1, Type::kI32);
-  output_token_id.SetName("output");
-  gpu_outputs.output = output_token_id;
+  Tensor logits = FullyConnected(final_output, embedding_table);
+  if (tensor_rt_compatible) {
+    logits.SetName("output");
+    gpu_outputs.output = logits;
+  } else {
+    Tensor output_token_id = ArgMax(logits, /*axis=*/-1, Type::kI32);
+    output_token_id.SetName("output");
+    gpu_outputs.output = output_token_id;
+  }
 
   gpu_outputs.key_caches = updated_key_caches;
   gpu_outputs.value_caches = updated_value_caches;
 
   return gpu_outputs;
+}
+
+absl::StatusOr<int32_t> ReadNextTokenId(::litert::tensor::TensorHandle output,
+                                        bool tensor_rt_compatible) {
+  LRT_TENSOR_ASSIGN_OR_RETURN(::litert::tensor::Buffer & output_buf,
+                              output.GetBuffer());
+  if (!tensor_rt_compatible) {
+    auto locked_id = output_buf.Lock().As<const int32_t>();
+    return locked_id.data()[0];
+  }
+
+  auto locked_logits = output_buf.Lock().As<const float>();
+  if (locked_logits.size() == 0) {
+    return absl::InternalError("Gemma3 logits output is empty");
+  }
+  const float* begin = locked_logits.data();
+  const float* end = begin + locked_logits.size();
+  return static_cast<int32_t>(std::max_element(begin, end) - begin);
 }
 
 }  // namespace litert::tensor::examples::gemma3
@@ -443,6 +493,7 @@ absl::Status RunGemma3Inference(
 
   if (seq_len >= kMaxSeqLen)
     return absl::InvalidArgumentError("Prompt exceeds max tokens bounds!");
+  const bool tensor_rt_compatible = absl::GetFlag(FLAGS_tensor_rt_compatible);
 
   std::vector<float> prefill_embeddings(seq_len * config.emb_dim, 0.0f);
   for (size_t i = 0; i < input_tokens.size(); ++i) {
@@ -483,7 +534,9 @@ absl::Status RunGemma3Inference(
     ::litert::tensor::examples::gemma3::Inputs<::litert::tensor::TfLiteMixinTag>
         inputs;
 
-    int seq = is_decode ? 1 : static_cast<int>(kMaxSeqLen);
+    int seq = is_decode ? 1
+                        : (tensor_rt_compatible ? seq_len
+                                                : static_cast<int>(kMaxSeqLen));
 
     inputs.embedded_input =
         ::litert::tensor::Tensor<::litert::tensor::TfLiteMixinTag>(
@@ -571,7 +624,8 @@ absl::Status RunGemma3Inference(
   // [SIGNATURE 1]: Staging the Prefill Subgraph
   auto prefill_inputs = SetupGraphInputs(/*is_decode=*/false);
   auto prefill_outputs =
-      BuildGpuGraph(prefill_inputs, config, /*is_decode=*/false);
+      BuildGpuGraph(prefill_inputs, config, /*is_decode=*/false,
+                    tensor_rt_compatible, raw_seq_len - 1);
 
   std::vector<::litert::tensor::TensorHandle> prefill_sig_outputs = {
       prefill_outputs.output};
@@ -585,7 +639,8 @@ absl::Status RunGemma3Inference(
   // [SIGNATURE 2]: Staging the Autoregressive Decode Subgraph
   auto decode_inputs = SetupGraphInputs(/*is_decode=*/true);
   auto decode_outputs =
-      BuildGpuGraph(decode_inputs, config, /*is_decode=*/true);
+      BuildGpuGraph(decode_inputs, config, /*is_decode=*/true,
+                    tensor_rt_compatible, /*static_prefill_output_index=*/0);
 
   std::vector<::litert::tensor::TensorHandle> decode_sig_outputs = {
       decode_outputs.output};
@@ -603,7 +658,37 @@ absl::Status RunGemma3Inference(
   LRT_TENSOR_RETURN_IF_ERROR(model_factory.Save(gpu_tflite_file));
 
   // 6. Initializing the pristine hardware accelerated environment options!
-  auto env_or = ::litert::Environment::Create({});
+  std::vector<::litert::EnvironmentOptions::Option> env_options;
+  const std::string compiler_plugin_library_dir =
+      absl::GetFlag(FLAGS_compiler_plugin_library_dir);
+  if (!compiler_plugin_library_dir.empty()) {
+    env_options.push_back(::litert::EnvironmentOptions::Option{
+        ::litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
+        absl::string_view(compiler_plugin_library_dir)});
+  }
+  const std::string compiler_cache_dir =
+      absl::GetFlag(FLAGS_compiler_cache_dir);
+  if (!compiler_cache_dir.empty()) {
+    env_options.push_back(::litert::EnvironmentOptions::Option{
+        ::litert::EnvironmentOptions::Tag::kCompilerCacheDir,
+        absl::string_view(compiler_cache_dir)});
+  }
+  const std::string dispatch_library_dir =
+      absl::GetFlag(FLAGS_dispatch_library_dir);
+  if (!dispatch_library_dir.empty()) {
+    env_options.push_back(::litert::EnvironmentOptions::Option{
+        ::litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
+        absl::string_view(dispatch_library_dir)});
+  }
+  const std::string runtime_library_dir =
+      absl::GetFlag(FLAGS_runtime_library_dir);
+  if (!runtime_library_dir.empty()) {
+    env_options.push_back(::litert::EnvironmentOptions::Option{
+        ::litert::EnvironmentOptions::Tag::kRuntimeLibraryDir,
+        absl::string_view(runtime_library_dir)});
+  }
+  auto env_or =
+      ::litert::Environment::Create(::litert::EnvironmentOptions(env_options));
   if (!env_or.HasValue())
     return absl::InternalError(
         "Failed to instantiate LiteRT Environment context!");
@@ -617,7 +702,12 @@ absl::Status RunGemma3Inference(
   if (acc_flag == "cpu") {
     options.SetHardwareAccelerators(::litert::HwAccelerators::kCpu);
   } else {
-    options.SetHardwareAccelerators(::litert::HwAccelerators::kGpu);
+    if (absl::GetFlag(FLAGS_allow_cpu_fallback)) {
+      options.SetHardwareAccelerators(::litert::HwAccelerators::kGpu |
+                                      ::litert::HwAccelerators::kCpu);
+    } else {
+      options.SetHardwareAccelerators(::litert::HwAccelerators::kGpu);
+    }
     auto gpu_options_or = options.GetGpuOptions();
     if (gpu_options_or.HasValue()) {
       gpu_options_or->SetPrecision(::litert::GpuOptions::Precision::kFp32);
@@ -633,7 +723,8 @@ absl::Status RunGemma3Inference(
       env, gpu_tflite_file, options);
   if (!runner_res.ok())
     return absl::InternalError(
-        "Failed to initialize dynamic hardware execution engine!");
+        absl::StrCat("Failed to initialize dynamic hardware execution engine: ",
+                     runner_res.status().ToString()));
   auto runner = std::move(*runner_res);
 
   auto StageRuntimeInputs =
@@ -697,10 +788,9 @@ absl::Status RunGemma3Inference(
   {
     LRT_TENSOR_ASSIGN_OR_RETURN(
         auto prefill_out, runner.GetOutput(std::string(kPrefill), "output"));
-    LRT_TENSOR_ASSIGN_OR_RETURN(::litert::tensor::Buffer & prefill_buf,
-                                prefill_out.GetBuffer());
-    auto locked_prefill_id = prefill_buf.Lock().As<const int32_t>();
-    current_token = locked_prefill_id.data()[0];
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        current_token, ::litert::tensor::examples::gemma3::ReadNextTokenId(
+                           prefill_out, tensor_rt_compatible));
   }
   ::litert::tensor::examples::Timer::Get("run_prefill").StopLap();
 
@@ -845,13 +935,12 @@ absl::Status RunGemma3Inference(
 
     LRT_TENSOR_ASSIGN_OR_RETURN(
         auto decode_out, runner.GetOutput(std::string(kDecode), "output"));
-    LRT_TENSOR_ASSIGN_OR_RETURN(::litert::tensor::Buffer & decode_buf,
-                                decode_out.GetBuffer());
-    auto locked_decode_id = decode_buf.Lock().As<const int32_t>();
     decode_timing.run.StopLap();
 
     decode_timing.argmax.StartLap();
-    current_token = locked_decode_id.data()[0];
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        current_token, ::litert::tensor::examples::gemma3::ReadNextTokenId(
+                           decode_out, tensor_rt_compatible));
     decode_timing.argmax.StopLap();
 
     decode_timing.cache_readback.StartLap();
