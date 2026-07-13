@@ -275,7 +275,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     LiteRtOptions jit_compilation_options) {
   LITERT_PERFETTO_TRACE_EVENT("CompiledModel Runtime Initialization");
   int num_threads = 1;
-  [[maybe_unused]] bool use_non_xnnpack_cpu_backend = false;
+  [[maybe_unused]] bool use_builtin_or_reference_cpu_backend = false;
   bool use_reference_cpu_kernels = false;
 #if !defined(LITERT_DISABLE_CPU)
   LiteRtCpuOptionsT cpu_options;
@@ -293,8 +293,9 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
         LITERT_LOG(LITERT_WARNING, "Failed to parse CPU options");
       } else {
         num_threads = cpu_options.xnn.num_threads;
-        use_non_xnnpack_cpu_backend =
-            cpu_options.kernel_mode != kLiteRtCpuKernelModeXnnpack;
+        use_builtin_or_reference_cpu_backend =
+            cpu_options.kernel_mode == kLiteRtCpuKernelModeBuiltin ||
+            cpu_options.kernel_mode == kLiteRtCpuKernelModeReference;
         use_reference_cpu_kernels =
             cpu_options.kernel_mode == kLiteRtCpuKernelModeReference;
       }
@@ -304,7 +305,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
 
 #ifdef LITERT_NO_BUILTIN_OPS
   if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
-      use_non_xnnpack_cpu_backend) {
+      use_builtin_or_reference_cpu_backend) {
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
                       "Builtin and reference CPU kernel modes require builtin "
                       "kernels.");
@@ -1058,11 +1059,13 @@ void LiteRtCompiledModelT::CheckCpuTensors() {
       const TfLiteNode& node = nodes_and_registration[node_index].first;
       const TfLiteRegistration& registration =
           nodes_and_registration[node_index].second;
-      // Don't mark delegate nodes as CPU nodes except for XNNPack ones.
+      // Don't mark delegate nodes as CPU nodes except for CPU delegates.
       if (registration.builtin_code == kTfLiteBuiltinDelegate &&
           !(registration.custom_name &&
-            registration.custom_name ==
-                absl::string_view("TfLiteXNNPackDelegate"))) {
+            (registration.custom_name ==
+                 absl::string_view("TfLiteXNNPackDelegate") ||
+             registration.custom_name ==
+                 absl::string_view("YNNPackDelegate")))) {
         continue;
       }
       // Don't mark AOT compiled NPU custom ops as CPU nodes.

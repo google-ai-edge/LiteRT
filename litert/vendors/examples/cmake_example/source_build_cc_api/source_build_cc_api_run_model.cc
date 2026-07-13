@@ -75,7 +75,7 @@ struct Config {
   std::string compiler_plugin_library_dir;
   std::string compiler_cache_dir;
   std::string accelerator = "cpu";
-  std::string cpu_kernel_mode = "xnnpack";
+  std::string cpu_kernel_mode = "delegate";
   int cpu_threads = 0;
   std::string gpu_precision = "default";
   std::string gpu_buffer_storage = "default";
@@ -675,9 +675,10 @@ litert::Expected<void> ConfigureCpuOptions(const Config& config,
     LITERT_RETURN_IF_ERROR(cpu_options.SetNumThreads(config.cpu_threads));
   }
 
-  if (config.cpu_kernel_mode == "xnnpack") {
+  if (config.cpu_kernel_mode == "delegate" ||
+      config.cpu_kernel_mode == "xnnpack") {
     LITERT_RETURN_IF_ERROR(
-        cpu_options.SetKernelMode(kLiteRtCpuKernelModeXnnpack));
+        cpu_options.SetKernelMode(kLiteRtCpuKernelModeDelegate));
   } else if (config.cpu_kernel_mode == "builtin") {
     LITERT_RETURN_IF_ERROR(
         cpu_options.SetKernelMode(kLiteRtCpuKernelModeBuiltin));
