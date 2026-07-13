@@ -86,6 +86,8 @@ struct ThrFunctions {
   decltype(&thrRegisterBuffer) thr_register_buffer = nullptr;
   decltype(&thrRegisterBufferWithOffset) thr_register_buffer_with_offset =
       nullptr;
+  decltype(&thrRegisterBufferWithOffsetAndCoherency)
+      thr_register_buffer_with_offset_and_coherency = nullptr;
   decltype(&thrUnregisterBuffer) thr_unregister_buffer = nullptr;
 
   decltype(&thrRegisterFence) thr_register_fence = nullptr;
@@ -285,6 +287,8 @@ ThrStatus LoadSouthBoundSyms() {
   THR_RESOLVE_SYM(gSouthBoundFns->thr_register_buffer, thrRegisterBuffer);
   THR_RESOLVE_SYM(gSouthBoundFns->thr_register_buffer_with_offset,
                   thrRegisterBufferWithOffset);
+  THR_RESOLVE_SYM(gSouthBoundFns->thr_register_buffer_with_offset_and_coherency,
+                  thrRegisterBufferWithOffsetAndCoherency);
   THR_RESOLVE_SYM(gSouthBoundFns->thr_unregister_buffer, thrUnregisterBuffer);
 
   THR_RESOLVE_SYM(gSouthBoundFns->thr_register_fence, thrRegisterFence);
@@ -523,6 +527,13 @@ ThrStatus thrRegisterBufferWithOffset(ThrContext* context, ThrBufferType type,
                                       ThrBufferHandle* handle) {
   return THR_CALL_DYN_FN(thr_register_buffer_with_offset, context, type, buffer,
                          offset, size, handle);
+}
+
+ThrStatus thrRegisterBufferWithOffsetAndCoherency(
+    ThrContext* context, ThrBufferType type, void* buffer, size_t offset,
+    size_t size, bool prefer_coherent, ThrBufferHandle* handle) {
+  return THR_CALL_DYN_FN(thr_register_buffer_with_offset_and_coherency, context,
+                         type, buffer, offset, size, prefer_coherent, handle);
 }
 
 ThrStatus thrUnregisterBuffer(ThrContext* context, ThrBufferHandle handle) {
