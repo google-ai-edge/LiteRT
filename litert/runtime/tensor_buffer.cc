@@ -126,12 +126,16 @@ LiteRtTensorBufferT::LiteRtTensorBufferT(
   if (tensor_type_.layout.has_strides) {
     Copy(tensor_type_.layout.rank, tensor_type_.layout.strides, strides_);
   }
-  auto packed_size = litert::internal::GetNumPackedBytes(tensor_type_);
-  if (!packed_size) {
-    packed_buffer_size_ = 0;
-    LITERT_LOG(LITERT_ERROR, "Failed to get num packed bytes");
+  if (tensor_type_.element_type == kLiteRtElementTypeTfString) {
+    packed_buffer_size_ = buffer_size;
   } else {
-    packed_buffer_size_ = *packed_size;
+    auto packed_size = litert::internal::GetNumPackedBytes(tensor_type_);
+    if (!packed_size) {
+      packed_buffer_size_ = 0;
+      LITERT_LOG(LITERT_ERROR, "Failed to get num packed bytes");
+    } else {
+      packed_buffer_size_ = *packed_size;
+    }
   }
 // Our Emscripten builds process this as an error rather than a debug log, so
 // disabling for web platform temporarily to avoid breakages.
@@ -790,14 +794,30 @@ Expected<void> LiteRtTensorBufferT::IsValid() {
   }
 
   // Check for sufficient size.
-  if (auto num_bytes = litert::internal::GetNumPackedBytes(tensor_type_);
-      !num_bytes) {
-    return Unexpected(num_bytes.Error());
-  } else if (*num_bytes > buffer_size() - buffer_offset()) {
-    const std::string error_message = absl::StrFormat(
-        "Insufficient buffer size: Required %d bytes, actual size %d bytes",
-        *num_bytes, buffer_size() - buffer_offset());
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure, error_message);
+  if (tensor_type_.element_type == kLiteRtElementTypeTfString) {
+    auto num_elements = litert::internal::GetNumElements(tensor_type_);
+    if (!num_elements) {
+      return Unexpected(num_elements.Error());
+    }
+    size_t min_required_bytes =
+        sizeof(int32_t) + sizeof(int32_t) * (*num_elements + 1);
+    if (min_required_bytes > buffer_size() - buffer_offset()) {
+      const std::string error_message = absl::StrFormat(
+          "Insufficient buffer size for TfString: Required at least %d bytes, "
+          "actual size %d bytes",
+          min_required_bytes, buffer_size() - buffer_offset());
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure, error_message);
+    }
+  } else {
+    if (auto num_bytes = litert::internal::GetNumPackedBytes(tensor_type_);
+        !num_bytes) {
+      return Unexpected(num_bytes.Error());
+    } else if (*num_bytes > buffer_size() - buffer_offset()) {
+      const std::string error_message = absl::StrFormat(
+          "Insufficient buffer size: Required %d bytes, actual size %d bytes",
+          *num_bytes, buffer_size() - buffer_offset());
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure, error_message);
+    }
   }
 
   // Check for proper alignment.

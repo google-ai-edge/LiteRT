@@ -31,11 +31,11 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_op_options.h"
-#include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/compiler/cc/litert_model.h"
+#include "litert/compiler/cc/litert_op_options.h"
 #include "litert/vendors/intel_openvino/utils.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -874,11 +874,13 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       if (name == "composite_name") {
         const char* composite_op_name = nullptr;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetSHLOCompositeOpName(litert_op_, &composite_op_name),
+            ctx_->get_shlo_composite_op_name(litert_op_, &composite_op_name),
             ERROR_LOG_STR("composite_op_name", op_name_.c_str()));
         return ov::Any(std::string(composite_op_name));
       } else if (name == "epsilon") {
-        auto info = GetOptionsAs<CompositeOptions>(litert_op_);
+        auto info =
+            litert::compiler::GetOptionsAs<litert::compiler::CompositeOptions>(
+                ctx_, litert_op_);
         if (!info) {
           return litert::Unexpected(
               kLiteRtStatusErrorRuntimeFailure,

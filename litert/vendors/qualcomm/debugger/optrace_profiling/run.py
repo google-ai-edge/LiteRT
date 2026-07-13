@@ -35,6 +35,9 @@ _SERIAL = flags.DEFINE_string("serial", None, "serial for adb", short_name="s")
 _SOC_MODEL = flags.DEFINE_string("soc_model", None, "SoC Model (e.g. SM8650)")
 _HTP_ARCH = flags.DEFINE_string("htp_arch", None, "HTP Arch (e.g. V75)")
 _QAIRT_SDK = flags.DEFINE_string("qairt_sdk", None, "Path to qairt sdk folder")
+_WEIGHT_SHARING = flags.DEFINE_bool(
+    "weight_sharing", False, "Enable weight sharing in compilation"
+)
 
 flags.mark_flag_as_required(_OUTPUT_DIR.name)
 flags.mark_flag_as_required(_SERIAL.name)
@@ -452,6 +455,7 @@ def _generate_ctx_bin(
       "--qualcomm_profiling=optrace",
       f"--qualcomm_ir_json_dir={_OUTPUT_DIR.value}",
       f"--qualcomm_schematic_dir={_OUTPUT_DIR.value}",
+      f"--qualcomm_enable_weight_sharing={_WEIGHT_SHARING.value}",
   ]
 
   env = os.environ.copy()

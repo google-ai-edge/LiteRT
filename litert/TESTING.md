@@ -198,9 +198,9 @@ def _ExampleSpec():
             id = "example",
             libs = [
                 # Dispatch Library and how to find it on device
-                ("//third_party/odml/litert/litert/vendors/examples:libLiteRtDispatch_Example.so", "LD_LIBRARY_PATH"),
+                ("//litert/vendors/examples:libLiteRtDispatch_Example.so", "LD_LIBRARY_PATH"),
                 # Compiler Plugin Library
-                ("//third_party/odml/litert/litert/vendors/examples:libLiteRtCompilerPlugin_Example.so", "LD_LIBRARY_PATH"),
+                ("//litert/vendors/examples:libLiteRtCompilerPlugin_Example.so", "LD_LIBRARY_PATH"),
             ],
             plugin = "libLiteRtCompilerPlugin_Example.so",
             dispatch = "libLiteRtDispatch_Example.so",
@@ -230,7 +230,7 @@ litert_device_exec(
     name = "example_bin_device",
     backend_id = "example",  # Uses the libraries registered under "example"
     data = [
-        "//third_party/odml/litert/litert/test:testdata/constant_output_tensor.tflite",
+        "//litert/test:testdata/constant_output_tensor.tflite",
     ],
     target = ":example_bin",
 )

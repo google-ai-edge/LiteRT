@@ -14,12 +14,10 @@
 
 cmake_minimum_required(VERSION 3.20)
 
-add_library(litert_tensor_api_utils STATIC
-    utils/file_utils.cc
-)
+add_library(litert_tensor_api_utils INTERFACE)
 
 target_include_directories(litert_tensor_api_utils
-    PUBLIC
+    INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
         $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/core/model/generated/include>
@@ -28,14 +26,11 @@ target_include_directories(litert_tensor_api_utils
 )
 
 target_link_libraries(litert_tensor_api_utils
-    PUBLIC
+    INTERFACE
         litert_cc_internal
         absl::log
-        absl::random_random
         absl::status
         absl::statusor
-        absl::strings
-        absl::str_format
 )
 
 add_library(litert_tensor_api_internal STATIC

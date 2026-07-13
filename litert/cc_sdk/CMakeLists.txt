@@ -72,6 +72,17 @@ set_target_properties(litert_c_api PROPERTIES
   IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/${LITERT_C_API_LIB_NAME}"
 )
 
+# GPU Accelerator library
+if (APPLE)
+  set(LITERT_METAL_ACCELERATOR_LIB_NAME "libLiteRtMetalAccelerator.dylib")
+  if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${LITERT_METAL_ACCELERATOR_LIB_NAME}")
+    add_library(litert_metal_accelerator SHARED IMPORTED)
+    set_target_properties(litert_metal_accelerator PROPERTIES
+      IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/${LITERT_METAL_ACCELERATOR_LIB_NAME}"
+    )
+  endif()
+endif()
+
 file(READ ${CMAKE_CURRENT_SOURCE_DIR}/litert_cc_sdk_hdrs.txt FILE_CONTENTS)
 string(REGEX REPLACE "[ \t\r\n]+" ";" LITERT_CC_HEADERS "${FILE_CONTENTS}")
 list(REMOVE_ITEM LITERT_CC_HEADERS "")

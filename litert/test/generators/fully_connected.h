@@ -77,20 +77,24 @@ class FullyConnected : public TestGraph {
   static constexpr TensorNames<3> kInputNames = {"input", "weights", "bias"};
   static constexpr TensorNames<1> kOutputNames = {"output"};
 
+  using BiasT = std::conditional_t<std::is_integral_v<T_out>, int32_t, T_out>;
+
   struct Params {
     std::array<Layout::Dim, kRank> input_shape;
     std::array<Layout::Dim, 2> weights_shape;
     std::array<Layout::Dim, 1> bias_shape;
     std::vector<Layout::Dim> output_shape;
     std::vector<T_in> weights_data;
-    std::vector<T_out> bias_data;
+    std::vector<BiasT> bias_data;
   };
 
  public:
   using InputTypesT = std::conditional_t<
-      DynamicFilter::value && DynamicBias::value, TypeList<T_in, T_in, T_out>,
-      std::conditional_t<DynamicFilter::value, TypeList<T_in, T_in>,
-                         TypeList<T_in>>>;
+      DynamicFilter::value && DynamicBias::value, TypeList<T_in, T_in, BiasT>,
+      std::conditional_t<
+          DynamicFilter::value, TypeList<T_in, T_in>,
+          std::conditional_t<DynamicBias::value, TypeList<T_in, BiasT>,
+                             TypeList<T_in>>>>;
   using Traits = TestLogicTraits<InputTypesT, TypeList<T_out>, Params>;
   using Ptr = std::unique_ptr<FullyConnected>;
 
@@ -113,7 +117,7 @@ class FullyConnected : public TestGraph {
     params.bias_shape = {output_dim};
 
     params.weights_data.assign(output_dim * input_dim, static_cast<T_in>(1.0f));
-    params.bias_data.assign(output_dim, static_cast<T_out>(0.0f));
+    params.bias_data.assign(output_dim, static_cast<BiasT>(0.0f));
 
     LiteRtOpT op;
     op.SetOpCode(kLiteRtOpCodeTflFullyConnected);
@@ -200,9 +204,9 @@ class FullyConnected : public TestGraph {
 
     if constexpr (DynamicBias::value) {
       LITERT_ASSIGN_OR_RETURN(auto bias,
-                              SimpleBuffer::Create<T_out>(params_.bias_shape));
+                              SimpleBuffer::Create<BiasT>(params_.bias_shape));
       LITERT_RETURN_IF_ERROR(
-          (bias.template WriteRandom<T_out>(modified_data_builder, device)));
+          (bias.template WriteRandom<BiasT>(modified_data_builder, device)));
       inputs.push_back(std::move(bias));
     }
 
@@ -249,6 +253,15 @@ class FullyConnected : public TestGraph {
             in_f32.data(), wt_f32.data(), nullptr, out_f32.data(), batch_size,
             input_dim, output_dim, kFa);
       }
+    } else if constexpr (DynamicBias::value) {
+      auto [input, bias] = ref_inputs;
+      std::vector<float> in_f32 = UnpackToFloat(input.data);
+      std::vector<float> bs_f32 = UnpackToFloat(bias.data);
+      std::vector<float> wt_f32 =
+          UnpackToFloat(absl::MakeConstSpan(params_.weights_data));
+      litert::internal::ReferenceFullyConnected(
+          in_f32.data(), wt_f32.data(), bs_f32.data(), out_f32.data(),
+          batch_size, input_dim, output_dim, kFa);
     } else {
       auto [input] = ref_inputs;
       std::vector<float> in_f32 = UnpackToFloat(input.data);
@@ -264,6 +277,19 @@ class FullyConnected : public TestGraph {
         litert::internal::ReferenceFullyConnected(
             in_f32.data(), wt_f32.data(), nullptr, out_f32.data(), batch_size,
             input_dim, output_dim, kFa);
+      }
+    }
+
+    if constexpr (std::is_integral_v<T_out>) {
+      // For integer-quantized FullyConnected, input_scale = 0.01, weight_scale
+      // = 0.01, bias_scale = input_scale * weight_scale = 0.0001, and
+      // output_scale = 0.01. The quantized integer output is:
+      //   y_int = y_float / output_scale = (x_int * w_int + b_int) *
+      //   (input_scale * weight_scale / output_scale)
+      //         = (x_int * w_int + b_int) * (0.01 * 0.01 / 0.01) = (x_int *
+      //         w_int + b_int) * 0.01.
+      for (float& v : out_f32) {
+        v *= 0.01f;
       }
     }
 
@@ -320,13 +346,13 @@ class FullyConnected : public TestGraph {
       if constexpr (!DynamicBias::value) {
         auto bias_buf = std::make_shared<litert::tensor::SpanCpuBuffer>(
             reinterpret_cast<const std::byte*>(params.bias_data.data()),
-            params.bias_data.size() * sizeof(T_out));
+            params.bias_data.size() * sizeof(BiasT));
         bias = litert::tensor::Create(std::string(kInputNames[2]),
-                                      litert::tensor::ApiType<T_out>::value,
+                                      litert::tensor::ApiType<BiasT>::value,
                                       dims_bs, std::move(bias_buf));
       } else {
         bias = litert::tensor::Create(std::string(kInputNames[2]),
-                                      litert::tensor::ApiType<T_out>::value,
+                                      litert::tensor::ApiType<BiasT>::value,
                                       dims_bs);
       }
       if constexpr (PerChannel::value && !DynamicBias::value) {
@@ -335,7 +361,7 @@ class FullyConnected : public TestGraph {
         bias.SetQuantization(
             std::make_shared<litert::tensor::PerChannelAffineQuantization>(
                 scales, zero_points, 0));
-      } else if constexpr (std::is_integral_v<T_out> && !DynamicBias::value) {
+      } else if constexpr (std::is_integral_v<BiasT> && !DynamicBias::value) {
         bias.SetQuantization(
             std::make_shared<litert::tensor::PerChannelAffineQuantization>(
                 std::vector<float>{0.0001f}, std::vector<int64_t>{0}, 0));

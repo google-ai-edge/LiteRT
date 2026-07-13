@@ -17,7 +17,7 @@
 authors = ["Max Gubin <mgubin@google.com>"]
 build = "build/build.rs"
 name = "google-ai-edge-litert"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 repository = "https://github.com/google-ai-edge/LiteRT/"
 description = "LiteRT Rust language binding"
@@ -26,7 +26,14 @@ license = "Apache-2.0"
 # If enabled, the runtime will be build using Docker, otherwise
 # a prebuild binary for the target platform will be downloaded.
 [features]
-build_runtime_with_docker = []
+# Enable Metal accelerator (macOS)
+metal = []
+# Enable OpenGL accelerator (Android/Linux)
+opengl = []
+# Enable WebGPU accelerator
+webgpu = []
+# Enable async support
+async_support = []
 
 [lib]
 name = "litert"

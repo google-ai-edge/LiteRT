@@ -11,6 +11,7 @@ VERS_1.0 {
 
     /* All LiteRt C APIs */
     LiteRt*;
+    kLiteRtRuntimeBuiltin;
 
   local:
 

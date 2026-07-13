@@ -9,6 +9,22 @@ package(
     features = ["-layering_check"],  # buildifier: disable=no-layering-check
 )
 
+_COMPATIBLE_OS = select({
+    "//litert:android": [],
+    "//litert:linux": [],
+    "//litert:windows": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+_QNN_DEPS = select({
+    "@org_tensorflow//tensorflow:linux_x86_64": [
+        # copybara:uncomment_begin(google-only)
+        # "@qairt//:linux_deps",
+        # copybara:uncomment_end
+    ],
+    "//conditions:default": [],
+})
+
 litert_test(
     name = "relu_test",
     srcs = [
@@ -23,18 +39,14 @@ litert_test(
         ],
     }),
     linkstatic = True,
+    no_main = True,
     tags = [
-        # Don't build/test in OS until qnn is available.
-        "no-remote-exec",
-        "nobuilder",
-        "notap",
-        "manual",
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
     ],
-    target_compatible_with = select({
-        "@platforms//os:android": [],
-        "@platforms//os:linux": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
+    target_compatible_with = _COMPATIBLE_OS,
     ungrte = True,
     use_sys_malloc = True,
     deps = [
@@ -43,7 +55,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
         "@qairt//:qnn_lib_headers",
-    ],
+    ] + _QNN_DEPS,
 )
 
 litert_test(
@@ -60,18 +72,14 @@ litert_test(
         ],
     }),
     linkstatic = True,
+    no_main = True,
     tags = [
-        # Don't build/test in OS until qnn is available.
-        "no-remote-exec",
-        "nobuilder",
-        "notap",
-        "manual",
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
     ],
-    target_compatible_with = select({
-        "@platforms//os:android": [],
-        "@platforms//os:linux": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
+    target_compatible_with = _COMPATIBLE_OS,
     ungrte = True,
     use_sys_malloc = True,
     deps = [
@@ -80,7 +88,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
         "@qairt//:qnn_lib_headers",
-    ],
+    ] + _QNN_DEPS,
 )
 
 litert_test(
@@ -97,18 +105,14 @@ litert_test(
         ],
     }),
     linkstatic = True,
+    no_main = True,
     tags = [
-        # Don't build/test in OS until qnn is available.
-        "no-remote-exec",
-        "nobuilder",
-        "notap",
-        "manual",
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
     ],
-    target_compatible_with = select({
-        "@platforms//os:android": [],
-        "@platforms//os:linux": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
+    target_compatible_with = _COMPATIBLE_OS,
     ungrte = True,
     use_sys_malloc = True,
     deps = [
@@ -119,7 +123,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
         "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
         "@qairt//:qnn_lib_headers",
-    ],
+    ] + _QNN_DEPS,
 )
 
 litert_test(
@@ -136,13 +140,14 @@ litert_test(
         ],
     }),
     linkstatic = True,
+    no_main = True,
     tags = [
-        # Don't build/test in OS until qnn is available.
-        "no-remote-exec",
-        "nobuilder",
-        "notap",
-        "manual",
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
     ],
+    target_compatible_with = _COMPATIBLE_OS,
     ungrte = True,
     use_sys_malloc = True,
     deps = [
@@ -155,7 +160,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
         "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
         "@qairt//:qnn_lib_headers",
-    ],
+    ] + _QNN_DEPS,
 )
 
 litert_test(
@@ -172,13 +177,14 @@ litert_test(
         ],
     }),
     linkstatic = True,
+    no_main = True,
     tags = [
-        # Don't build/test in OS until qnn is available.
-        "no-remote-exec",
-        "nobuilder",
-        "notap",
-        "manual",
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
     ],
+    target_compatible_with = _COMPATIBLE_OS,
     ungrte = True,
     use_sys_malloc = True,
     deps = [
@@ -186,13 +192,46 @@ litert_test(
         "//litert/vendors/qualcomm/core/utils:test_main",
         "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
         "@qairt//:qnn_lib_headers",
-    ],
+    ] + _QNN_DEPS,
 )
 
 litert_test(
     name = "pack_test",
     srcs = [
         "pack_test.cc",
+    ],
+    linkopts = select({
+        "//litert:android": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:litert_runtime_c_api_so",
+            ]),
+        ],
+    }),
+    linkstatic = True,
+    no_main = True,
+    tags = [
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
+    ],
+    target_compatible_with = _COMPATIBLE_OS,
+    ungrte = True,
+    use_sys_malloc = True,
+    deps = [
+        "//litert/vendors/qualcomm/core/builders:pack_op_builder",
+        "//litert/vendors/qualcomm/core/utils:test_main",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "@qairt//:qnn_lib_headers",
+    ] + _QNN_DEPS,
+)
+
+litert_test(
+    name = "pad_test",
+    srcs = [
+        "pad_test.cc",
     ],
     linkopts = select({
         "//litert:android": [],
@@ -210,12 +249,18 @@ litert_test(
         "notap",
         "manual",
     ],
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     ungrte = True,
     use_sys_malloc = True,
     deps = [
-        "//litert/vendors/qualcomm/core/builders:pack_op_builder",
-        "//litert/vendors/qualcomm/core/utils:test_main",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/builders:pad_op_builder",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
         "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
         "@qairt//:qnn_lib_headers",
     ],
@@ -235,13 +280,14 @@ litert_test(
         ],
     }),
     linkstatic = True,
+    no_main = True,
     tags = [
-        # Don't build/test in OS until qnn is available.
-        "no-remote-exec",
-        "nobuilder",
-        "notap",
-        "manual",
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
     ],
+    target_compatible_with = _COMPATIBLE_OS,
     ungrte = True,
     use_sys_malloc = True,
     deps = [
@@ -250,7 +296,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/utils:test_main",
         "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
         "@qairt//:qnn_lib_headers",
-    ],
+    ] + _QNN_DEPS,
 )
 
 litert_test(
@@ -267,18 +313,14 @@ litert_test(
         ],
     }),
     linkstatic = True,
+    no_main = True,
     tags = [
-        # Don't build/test in OS until qnn is available.
-        "no-remote-exec",
-        "nobuilder",
-        "notap",
-        "manual",
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
     ],
-    target_compatible_with = select({
-        "@platforms//os:android": [],
-        "@platforms//os:linux": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
+    target_compatible_with = _COMPATIBLE_OS,
     ungrte = True,
     use_sys_malloc = True,
     deps = [
@@ -289,7 +331,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
         "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
         "@qairt//:qnn_lib_headers",
-    ],
+    ] + _QNN_DEPS,
 )
 
 litert_test(
@@ -307,17 +349,12 @@ litert_test(
     }),
     linkstatic = True,
     tags = [
-        # Don't build/test in OS until qnn is available.
-        "no-remote-exec",
-        "nobuilder",
-        "notap",
-        "manual",
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
     ],
-    target_compatible_with = select({
-        "@platforms//os:android": [],
-        "@platforms//os:linux": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
+    target_compatible_with = _COMPATIBLE_OS,
     ungrte = True,
     use_sys_malloc = True,
     deps = [
@@ -329,5 +366,5 @@ litert_test(
         "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
         "@com_google_absl//absl/numeric:bits",
         "@qairt//:qnn_lib_headers",
-    ],
+    ] + _QNN_DEPS,
 )

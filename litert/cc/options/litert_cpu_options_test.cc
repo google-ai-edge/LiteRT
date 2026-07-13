@@ -53,7 +53,7 @@ TEST(CpuOptions, CheckNumThreadsDefaultValue) {
 TEST(CpuOptions, CheckKernelModeDefaultValue) {
   LITERT_ASSERT_OK_AND_ASSIGN(CpuOptions options, CpuOptions::Create());
   EXPECT_THAT(options.GetKernelMode(),
-              IsOkAndHolds(kLiteRtCpuKernelModeXnnpack));
+              IsOkAndHolds(kLiteRtCpuKernelModeDelegate));
 }
 
 TEST(CpuOptions, SetAndGetKernelModeWorks) {
@@ -70,6 +70,19 @@ TEST(CpuOptions, SetAndGetReferenceKernelModeWorks) {
   LITERT_EXPECT_OK(options.SetKernelMode(kLiteRtCpuKernelModeReference));
   EXPECT_THAT(options.GetKernelMode(),
               IsOkAndHolds(kLiteRtCpuKernelModeReference));
+}
+
+TEST(CpuOptions, CheckEnableYNNPackDefaultValue) {
+  LITERT_ASSERT_OK_AND_ASSIGN(CpuOptions options, CpuOptions::Create());
+
+  EXPECT_THAT(options.GetEnableYNNPack(), IsOkAndHolds(false));
+}
+
+TEST(CpuOptions, SetAndGetEnableYNNPackWorks) {
+  LITERT_ASSERT_OK_AND_ASSIGN(CpuOptions options, CpuOptions::Create());
+
+  LITERT_EXPECT_OK(options.SetEnableYNNPack(true));
+  EXPECT_THAT(options.GetEnableYNNPack(), IsOkAndHolds(true));
 }
 
 TEST(CpuOptions, SetAndGetNumThreadsWorks) {
@@ -95,8 +108,7 @@ TEST(CpuOptions, SetAndGetXNNPackWeighCachePathWorks) {
 
 TEST(CpuOptions, CheckXNNPackWeightCacheFileDescriptorDefaultValue) {
   LITERT_ASSERT_OK_AND_ASSIGN(CpuOptions options, CpuOptions::Create());
-  EXPECT_THAT(options.GetXNNPackWeightCacheFileDescriptor(),
-              IsOkAndHolds(-1));
+  EXPECT_THAT(options.GetXNNPackWeightCacheFileDescriptor(), IsOkAndHolds(-1));
 }
 
 TEST(CpuOptions, SetAndGetXNNPackWeighCacheFileDescriptorWorks) {

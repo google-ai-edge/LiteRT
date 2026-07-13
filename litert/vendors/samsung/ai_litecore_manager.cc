@@ -120,7 +120,8 @@ LiteRtStatus AiLiteCoreManager::LoadBackendLibrary(absl::string_view path) {
   auto loading_lib = SharedLibrary::Load(path, RtldFlags::Default());
   LITERT_LOG(LITERT_INFO, "Loading from: %s", path.data());
   if (!loading_lib.HasValue() || !loading_lib->Loaded()) {
-    LITERT_LOG(LITERT_INFO, "Failed to load ");
+    LITERT_LOG(LITERT_INFO, "Failed to load: %s",
+               loading_lib.Error().Message().c_str());
     return kLiteRtStatusErrorDynamicLoading;
   }
   backend_lib_ = std::move(loading_lib.Value());

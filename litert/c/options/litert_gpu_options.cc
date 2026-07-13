@@ -96,6 +96,9 @@ struct LrtGpuOptions {
   // Set to true to use Metal argument buffers.
   std::optional<bool> use_metal_argument_buffers;
 
+  // Set to true to use Metal residency sets to prevent memory swapping.
+  std::optional<bool> enable_metal_residency_set;
+
   // Added in version 2.0.2a1.
   std::optional<LiteRtGpuWaitType> wait_type;
 
@@ -285,6 +288,11 @@ LiteRtStatus LrtGetOpaqueGpuOptionsData(const LrtGpuOptions* options,
        << (options->use_metal_argument_buffers.value() ? "true" : "false")
        << "\n";
   }
+  if (options->enable_metal_residency_set.has_value()) {
+    ss << "enable_metal_residency_set = "
+       << (options->enable_metal_residency_set.value() ? "true" : "false")
+       << "\n";
+  }
   if (options->wait_type.has_value()) {
     ss << "wait_type = " << static_cast<int>(options->wait_type.value())
        << "\n";
@@ -441,6 +449,10 @@ LiteRtStatus LrtCreateGpuOptionsFromToml(const char* toml_string,
           auto res = ParseTomlBool(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
           (*options)->use_metal_argument_buffers = *res;
+        } else if (key == "enable_metal_residency_set") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->enable_metal_residency_set = *res;
         } else if (key == "wait_type") {
           auto res = ParseTomlInt(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
@@ -716,6 +728,14 @@ LiteRtStatus LrtSetGpuOptionsUseMetalArgumentBuffers(
   if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
 
   gpu_options->use_metal_argument_buffers = use_metal_argument_buffers;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetGpuOptionsMetalResidencySet(LrtGpuOptions* gpu_options,
+                                               bool enable) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->enable_metal_residency_set = enable;
   return kLiteRtStatusOk;
 }
 
@@ -1102,6 +1122,16 @@ LiteRtStatus LrtGetGpuOptionsUseMetalArgumentBuffers(
       << "`options` cannot be null.";
   *use_metal_argument_buffers =
       options->use_metal_argument_buffers.value_or(false);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetGpuOptionsMetalResidencySet(const LrtGpuOptions* options,
+                                               bool* enabled) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *enabled = options->enable_metal_residency_set.value_or(false);
   return kLiteRtStatusOk;
 }
 

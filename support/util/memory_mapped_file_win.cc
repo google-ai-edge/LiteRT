@@ -87,11 +87,9 @@ class MemoryMappedFileWin : public MemoryMappedFile {
   void* data_;
 };
 
-absl::StatusOr<std::unique_ptr<MemoryMappedFile>> CreateImpl(HANDLE hfile,
-                                                             uint64_t offset,
-                                                             uint64_t length,
-                                                             const char* key,
-                                                             bool writable) {
+absl::StatusOr<std::unique_ptr<MemoryMappedFile>> CreateImpl(
+    HANDLE hfile, uint64_t offset, uint64_t length, const char* key,
+    MemoryMappedFile::Access access) {
   RET_CHECK_EQ(offset % MemoryMappedFile::GetOffsetAlignment(), 0)
       << "Offset must be a multiple of allocation granularity: " << offset
       << ", " << MemoryMappedFile::GetOffsetAlignment();
@@ -102,14 +100,24 @@ absl::StatusOr<std::unique_ptr<MemoryMappedFile>> CreateImpl(HANDLE hfile,
     length = file_size - offset;
   }
 
-  DWORD access = FILE_MAP_COPY;
-  DWORD protect = PAGE_WRITECOPY;
-  if (writable) {
-    access = FILE_MAP_ALL_ACCESS;
-    protect = PAGE_READWRITE;
+  DWORD win_access;
+  DWORD protect;
+  switch (access) {
+    case MemoryMappedFile::Access::kRead:
+      win_access = FILE_MAP_READ;
+      protect = PAGE_READONLY;
+      break;
+    case MemoryMappedFile::Access::kCopy:
+      win_access = FILE_MAP_COPY;
+      protect = PAGE_WRITECOPY;
+      break;
+    case MemoryMappedFile::Access::kWrite:
+      win_access = FILE_MAP_ALL_ACCESS;
+      protect = PAGE_READWRITE;
+      break;
   }
 
-  HANDLE hmap = ::OpenFileMappingA(access, false, key);
+  HANDLE hmap = ::OpenFileMappingA(win_access, false, key);
   if (hmap == NULL) {
     hmap = ::CreateFileMappingA(hfile, nullptr, protect, 0, 0, key);
   }
@@ -119,7 +127,7 @@ absl::StatusOr<std::unique_ptr<MemoryMappedFile>> CreateImpl(HANDLE hfile,
 
   ULARGE_INTEGER map_start = {};
   map_start.QuadPart = offset;
-  void* mapped_region = ::MapViewOfFile(hmap, access, map_start.HighPart,
+  void* mapped_region = ::MapViewOfFile(hmap, win_access, map_start.HighPart,
                                         map_start.LowPart, length);
   RET_CHECK(mapped_region) << "Failed to map.";
 
@@ -139,30 +147,32 @@ size_t MemoryMappedFile::GetOffsetAlignment() {
 
 // static
 absl::StatusOr<std::unique_ptr<MemoryMappedFile>> MemoryMappedFile::Create(
-    absl::string_view path) {
+    absl::string_view path, Access access) {
   ASSIGN_OR_RETURN(auto scoped_file, ScopedFile::Open(path));
-  return CreateImpl(scoped_file.file(), 0, 0, nullptr, /*writable=*/false);
+  return CreateImpl(scoped_file.file(), 0, 0, nullptr, access);
 }
 
 // static
 absl::StatusOr<std::unique_ptr<MemoryMappedFile>> MemoryMappedFile::Create(
-    HANDLE file, uint64_t offset, uint64_t length, absl::string_view key) {
+    HANDLE file, uint64_t offset, uint64_t length, absl::string_view key,
+    Access access) {
   return CreateImpl(file, offset, length, key.empty() ? nullptr : key.data(),
-                    /*writable=*/false);
+                    access);
 }
 
 // static
 absl::StatusOr<std::unique_ptr<MemoryMappedFile>>
 MemoryMappedFile::CreateMutable(absl::string_view path) {
   ASSIGN_OR_RETURN(auto scoped_file, ScopedFile::OpenWritable(path));
-  return CreateImpl(scoped_file.file(), 0, 0, nullptr, /*writable=*/true);
+  return CreateImpl(scoped_file.file(), 0, 0, nullptr,
+                    MemoryMappedFile::Access::kWrite);
 }
 
 absl::StatusOr<std::unique_ptr<MemoryMappedFile>>
 MemoryMappedFile::CreateMutable(HANDLE file, uint64_t offset, uint64_t length,
                                 absl::string_view key) {
   return CreateImpl(file, offset, length, key.empty() ? nullptr : key.data(),
-                    /*writable=*/true);
+                    MemoryMappedFile::Access::kWrite);
 }
 
 }  // namespace litert::support

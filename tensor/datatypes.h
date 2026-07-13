@@ -145,8 +145,11 @@ namespace internal {
 template <Type t, class T, uint64_t Bits = 8 * sizeof(T)>
 struct StorageImpl {
   static_assert((Bits & (Bits - 1)) == 0, "Bits must be a power of 2.");
+  static_assert(Bits != 0, "Bits must be non-zero.");
+  static_assert(!std::is_same_v<T, void>, "Storage type cannot be void.");
   using type = T;
   static constexpr Type value = t;
+  static constexpr uint64_t kNumElements = 8 * sizeof(T) / Bits;
   static constexpr uint64_t BufferSize(size_t count) {
     return (Bits * count + 7) / 8;
   }
@@ -157,8 +160,12 @@ struct StorageImpl {
 // We're defining this for consistency. Actually using it for anything else is
 // an error.
 template <>
-struct NativeStorage<Type::kUnknown>
-    : internal::StorageImpl<Type::kUnknown, void, /*Bits=*/0> {};
+struct NativeStorage<Type::kUnknown> {
+  using type = void;
+  static constexpr Type value = Type::kUnknown;
+  static constexpr uint64_t kNumElements = 0;
+  static constexpr uint64_t BufferSize(size_t count) { return 0; }
+};
 
 template <>
 struct NativeStorage<Type::kI2>

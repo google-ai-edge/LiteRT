@@ -248,7 +248,3 @@ void ConfigureOpenVinoFromOptions(ov::Core& core, const IntelOpenVinoOptions& op
 -   Graph Backend (per partition, when no override is set): NPU
 -   Performance Mode: Latency
 
-## Artificial Intelligence
-
-These contents may have been developed with support from one or more
-Intel-operated generative artificial intelligence solutions.

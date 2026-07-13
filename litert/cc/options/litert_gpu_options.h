@@ -253,6 +253,12 @@ class GpuOptions {
     return LrtSetGpuOptionsUseMetalArgumentBuffers(options_,
                                                    use_metal_argument_buffers);
   }
+
+  /// @brief Sets whether to use MTLResidencySet to prevent memory swapping.
+  /// @warning This is only applicable to the Metal backend.
+  LiteRtStatus EnableMetalResidencySet(bool enabled) {
+    return LrtSetGpuOptionsMetalResidencySet(options_, enabled);
+  }
 #endif  // __APPLE__
 
   /// @brief Sets the wait type for synchronous execution mode.

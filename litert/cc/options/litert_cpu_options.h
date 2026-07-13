@@ -67,10 +67,30 @@ class CpuOptions {
     LiteRtCpuKernelMode mode;
     auto s = LrtGetCpuOptionsKernelMode(options_.get(), &mode);
     if (s == kLiteRtStatusErrorNotFound) {
-      return kLiteRtCpuKernelModeXnnpack;
+      return kLiteRtCpuKernelModeDelegate;
     }
     LITERT_RETURN_IF_ERROR(s);
     return mode;
+  }
+
+  /// @brief Enables YNNPACK to delegate supported ops before XNNPACK.
+  /// Requires a build with `--define litert_enable_ynnpack=true`; otherwise
+  /// XNNPACK is used.
+  Expected<void> SetEnableYNNPack(bool enabled) {
+    LITERT_RETURN_IF_ERROR(
+        LrtSetCpuOptionsEnableYNNPack(options_.get(), enabled));
+    return {};
+  }
+
+  /// @brief Gets whether YNNPACK delegation is enabled.
+  Expected<bool> GetEnableYNNPack() const {
+    bool enabled;
+    auto s = LrtGetCpuOptionsEnableYNNPack(options_.get(), &enabled);
+    if (s == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    LITERT_RETURN_IF_ERROR(s);
+    return enabled;
   }
 
   /// @brief Sets the XNNPack flags.

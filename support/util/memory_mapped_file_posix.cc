@@ -92,14 +92,15 @@ size_t MemoryMappedFile::GetOffsetAlignment() { return getpagesize(); }
 
 // static
 absl::StatusOr<std::unique_ptr<MemoryMappedFile>> MemoryMappedFile::Create(
-    absl::string_view path) {
+    absl::string_view path, Access access) {
   ASSIGN_OR_RETURN(auto scoped_file, ScopedFile::Open(path));
-  return Create(scoped_file.file());
+  return Create(scoped_file.file(), 0, 0, "", access);
 }
 
 // static
 absl::StatusOr<std::unique_ptr<MemoryMappedFile>> MemoryMappedFile::Create(
-    int file, uint64_t offset, uint64_t length, absl::string_view key) {
+    int file, uint64_t offset, uint64_t length, absl::string_view key,
+    Access access) {
   RET_CHECK_EQ(offset % GetOffsetAlignment(), 0)
       << "Offset must be a multiple of page size : " << offset << ", "
       << GetOffsetAlignment();

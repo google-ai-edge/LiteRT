@@ -4,11 +4,11 @@
 #include <algorithm>
 #include <cstddef>
 #include <functional>
+#include <iterator>
 #include <vector>
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/builders/concatenation_op_builder.h"
-#include "litert/vendors/qualcomm/core/builders/unpack_op_builder.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/transformation/mha_to_sha.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"

@@ -14,10 +14,6 @@
 
 #include "litert/c/options/litert_google_tensor_options.h"
 
-#include <cstdint>
-#include <string>
-#include <vector>
-
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
@@ -61,7 +57,115 @@ TEST(LrtGoogleTensorOptionsTest, CreateAndGet) {
   LrtDestroyGoogleTensorOptions(options);
 }
 
-TEST(LrtGoogleTensorOptionsTest, FloatTruncationType) {
+TEST(LrtGoogleTensorOptionsTest, OpaqueDataSerializesAndParsesSetFields) {
+  LrtGoogleTensorOptions options;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
+
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetFloatTruncationType(
+      options, kLiteRtGoogleTensorFloatTruncationTypeHalf));
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsSetInt64ToInt32Truncation(options, true));
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsSetOutputDir(options, "/tmp/test_dir"));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetDumpOpTimings(options, true));
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsSetEnableLargeModelSupport(options, true));
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsSetEnable4BitCompilation(options, true));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetShardingIntensity(
+      options, kLiteRtGoogleTensorShardingIntensityExtensive));
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsSetEnableDynamicRangeQuantization(options, true));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetPerformanceMode(
+      options, kLiteRtGoogleTensorOptionsPerformanceModeBurst));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetOpFiltersProto(options, "proto"));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetExtraOptionsPath(
+      options, "/tmp/extra_options.bin"));
+
+  const char* identifier;
+  void* payload;
+  void (*payload_deleter)(void*);
+  LITERT_ASSERT_OK(LrtGetOpaqueGoogleTensorOptionsData(
+      options, &identifier, &payload, &payload_deleter));
+
+  ASSERT_STREQ(identifier, "google_tensor");
+  EXPECT_STREQ(static_cast<const char*>(payload),
+               "float_truncation_type = 3\n"
+               "int64_to_int32_truncation = true\n"
+               "output_dir = \"/tmp/test_dir\"\n"
+               "dump_op_timings = true\n"
+               "enable_large_model_support = true\n"
+               "enable_four_bit_compilation = true\n"
+               "sharding_intensity = 2\n"
+               "enable_dynamic_range_quantization = true\n"
+               "performance_mode = 5\n"
+               "op_filters_proto = \"cHJvdG8=\"\n"
+               "extra_options_path = \"/tmp/extra_options.bin\"\n");
+
+  LrtGoogleTensorOptions parsed;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptionsFromToml(
+      static_cast<const char*>(payload), &parsed));
+
+  LrtGoogleTensorOptionsTruncationType truncation_type;
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetFloatTruncationType(parsed, &truncation_type));
+  EXPECT_EQ(truncation_type, kLiteRtGoogleTensorFloatTruncationTypeHalf);
+
+  bool int64_to_int32_truncation;
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetInt64ToInt32Truncation(
+      parsed, &int64_to_int32_truncation));
+  EXPECT_TRUE(int64_to_int32_truncation);
+
+  const char* output_dir;
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetOutputDir(parsed, &output_dir));
+  EXPECT_STREQ(output_dir, "/tmp/test_dir");
+
+  bool dump_op_timings;
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetDumpOpTimings(parsed, &dump_op_timings));
+  EXPECT_TRUE(dump_op_timings);
+
+  bool enable_large_model_support;
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetEnableLargeModelSupport(
+      parsed, &enable_large_model_support));
+  EXPECT_TRUE(enable_large_model_support);
+
+  bool enable_4bit_compilation;
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetEnable4BitCompilation(
+      parsed, &enable_4bit_compilation));
+  EXPECT_TRUE(enable_4bit_compilation);
+
+  LrtGoogleTensorOptionsShardingIntensity sharding_intensity;
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetShardingIntensity(parsed, &sharding_intensity));
+  EXPECT_EQ(sharding_intensity, kLiteRtGoogleTensorShardingIntensityExtensive);
+
+  bool enable_dynamic_range_quantization;
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetEnableDynamicRangeQuantization(
+      parsed, &enable_dynamic_range_quantization));
+  EXPECT_TRUE(enable_dynamic_range_quantization);
+
+  LiteRtGoogleTensorOptionsPerformanceMode performance_mode;
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetPerformanceMode(parsed, &performance_mode));
+  EXPECT_EQ(performance_mode, kLiteRtGoogleTensorOptionsPerformanceModeBurst);
+
+  const char* op_filters_proto;
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetOpFiltersProto(parsed, &op_filters_proto));
+  EXPECT_STREQ(op_filters_proto, "proto");
+
+  const char* extra_options_path;
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetExtraOptionsPath(parsed, &extra_options_path));
+  EXPECT_STREQ(extra_options_path, "/tmp/extra_options.bin");
+
+  payload_deleter(payload);
+  LrtDestroyGoogleTensorOptions(parsed);
+  LrtDestroyGoogleTensorOptions(options);
+}
+
+TEST(LrtGoogleTensorOptionsTest, Int64ToInt32Truncation) {
   LrtGoogleTensorOptions options;
   LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
 
@@ -87,7 +191,7 @@ TEST(LrtGoogleTensorOptionsTest, FloatTruncationType) {
   LrtDestroyGoogleTensorOptions(options);
 }
 
-TEST(LrtGoogleTensorOptionsTest, Int64ToInt32Truncation) {
+TEST(LrtGoogleTensorOptionsTest, OutputDir) {
   LrtGoogleTensorOptions options;
   LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
 
@@ -111,7 +215,22 @@ TEST(LrtGoogleTensorOptionsTest, Int64ToInt32Truncation) {
   LrtDestroyGoogleTensorOptions(options);
 }
 
-TEST(LrtGoogleTensorOptionsTest, OutputDir) {
+TEST(LrtGoogleTensorOptionsTest, NullOutputDirClearsValue) {
+  LrtGoogleTensorOptions options;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
+
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsSetOutputDir(options, "/tmp/test_dir"));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetOutputDir(options, nullptr));
+
+  const char* output_dir;
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetOutputDir(options, &output_dir));
+  EXPECT_STREQ(output_dir, "");
+
+  LrtDestroyGoogleTensorOptions(options);
+}
+
+TEST(LrtGoogleTensorOptionsTest, DumpOpTimings) {
   LrtGoogleTensorOptions options;
   LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
 
@@ -136,7 +255,7 @@ TEST(LrtGoogleTensorOptionsTest, OutputDir) {
   LrtDestroyGoogleTensorOptions(options);
 }
 
-TEST(LrtGoogleTensorOptionsTest, DumpOpTimings) {
+TEST(LrtGoogleTensorOptionsTest, FloatTruncationType) {
   LrtGoogleTensorOptions options;
   LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
 

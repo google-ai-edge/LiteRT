@@ -5,11 +5,13 @@
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_COMMON_H_
 
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <tuple>
 #include <vector>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "QnnLog.h"  // from @qairt
+#include "absl/strings/string_view.h"  // from @com_google_absl
 
 // c++ enum and wrapper without dependency.
 namespace qnn {
@@ -230,6 +232,43 @@ class Options {
 // Gets a default logger implementation to stdout.
 // This is used when initializing qnn logging.
 QnnLog_Callback_t GetDefaultStdOutLogger();
+
+struct SdkVersion {
+  int major = 0;
+  int minor = 0;
+  int patch = 0;
+
+  friend constexpr bool operator==(const SdkVersion& lhs,
+                                   const SdkVersion& rhs) noexcept {
+    return std::tie(lhs.major, lhs.minor, lhs.patch) ==
+           std::tie(rhs.major, rhs.minor, rhs.patch);
+  }
+  friend constexpr bool operator!=(const SdkVersion& lhs,
+                                   const SdkVersion& rhs) noexcept {
+    return !(lhs == rhs);
+  }
+  friend constexpr bool operator<(const SdkVersion& lhs,
+                                  const SdkVersion& rhs) noexcept {
+    return std::tie(lhs.major, lhs.minor, lhs.patch) <
+           std::tie(rhs.major, rhs.minor, rhs.patch);
+  }
+  friend constexpr bool operator>(const SdkVersion& lhs,
+                                  const SdkVersion& rhs) noexcept {
+    return rhs < lhs;
+  }
+  friend constexpr bool operator<=(const SdkVersion& lhs,
+                                   const SdkVersion& rhs) noexcept {
+    return !(rhs < lhs);
+  }
+  friend constexpr bool operator>=(const SdkVersion& lhs,
+                                   const SdkVersion& rhs) noexcept {
+    return !(lhs < rhs);
+  }
+};
+
+// Parses a QNN build ID string of the form "vMAJOR.MINOR.PATCH" into an
+// SdkVersion. Returns std::nullopt on parsing failure.
+std::optional<SdkVersion> ParseSdkVersion(const char* build_id);
 
 }  // namespace qnn
 

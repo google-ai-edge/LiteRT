@@ -12,16 +12,17 @@
 #include <iterator>
 #include <limits>
 #include <numeric>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include "QnnTypes.h"  // from @qairt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
-#include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
 std::size_t GetDataTypeSize(const Qnn_DataType_t data_type) {
@@ -362,5 +363,27 @@ void TensorWrapper::SetQuantBitwidth(std::uint32_t bitwidth) {
   }
 
   UpdateQnnQuantParams();
+}
+
+std::string TensorWrapper::ToString() const {
+  std::ostringstream out;
+  out << "name=\"" << GetName()
+      << "\" dtype=" << QnnDataTypeName(GetDataType());
+  out << " dims=[";
+  for (size_t i = 0; i < dimensions_.size(); ++i) {
+    out << (i == 0 ? "" : ",") << dimensions_[i];
+  }
+  out << "]";
+  // Quantization kind, stated factually without diagnosing any failure.
+  if (IsPerChannelQuant()) {
+    out << " per-channel-quant";
+  } else if (IsPerTensorQuant()) {
+    out << " per-tensor-quant";
+  } else if (IsQuant()) {
+    out << " quant";
+  } else {
+    out << " (no quantization)";
+  }
+  return out.str();
 }
 }  // namespace qnn

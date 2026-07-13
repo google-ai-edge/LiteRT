@@ -14,9 +14,6 @@
 
 #include "litert/c/options/litert_webnn_options.h"
 
-#include <string.h>  // NOLINT: To use strdup in some environments.
-
-#include <cstdlib>
 #include <sstream>
 #include <string>
 
@@ -26,7 +23,6 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/litert_toml_parser.h"
 
-using ::litert::ErrorStatusBuilder;
 using ::litert::internal::ParseToml;
 using ::litert::internal::ParseTomlInt;
 struct LrtWebNnOptions {

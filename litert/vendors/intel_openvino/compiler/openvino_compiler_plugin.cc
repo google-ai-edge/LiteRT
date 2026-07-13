@@ -39,13 +39,13 @@
 #include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_handle.h"
-#include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/internal/litert_opaque_options_wrapper.h"
 #include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/compiler/cc/litert_model.h"
+#include "litert/compiler/cc/litert_op_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/intel_openvino/bytecode_header.h"
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
@@ -438,13 +438,16 @@ bool IsCompositeOpSupported(const litert::compiler::Op& op) {
   }
 
   const char* composite_op_name = nullptr;
-  if (LiteRtGetSHLOCompositeOpName(op.Get(), &composite_op_name) !=
+  if (op.ctx() == nullptr || op.ctx()->get_shlo_composite_op_name == nullptr) {
+    return false;
+  }
+  if (op.ctx()->get_shlo_composite_op_name(op.Get(), &composite_op_name) !=
       kLiteRtStatusOk) {
     return false;
   }
 
   return std::string_view(composite_op_name) ==
-         litert::CompositeOptions::kRmsNorm;
+         litert::compiler::CompositeOptions::kRmsNorm;
 }
 
 #ifdef __cplusplus

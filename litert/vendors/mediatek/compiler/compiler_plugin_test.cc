@@ -27,6 +27,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
+#include "litert/test/load_test_model.h"
 #include "litert/test/test_models.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/litert_compiler_plugin.h"
@@ -60,6 +61,9 @@ const auto kSupportedOps = Values(
     "simple_max_pool_2d.tflite",
     "simple_hard_swish_op.tflite"
     // "simple_average_pool_2d_op.tflite"
+    // Don't include the less op test as the support is not available in the
+    // latest MTK SDK.
+    // "simple_less_op.tflite"
     );
 // clang-format on
 

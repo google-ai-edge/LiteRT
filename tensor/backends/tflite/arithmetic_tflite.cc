@@ -518,9 +518,17 @@ OpMixin<SplitOperation, TfLiteMixinTag>::ToTfLite(
   LRT_TENSOR_ASSIGN_OR_RETURN(const SplitOperation& data,
                               op.As<SplitOperation>());
 
-  return TfLiteOpBuildInfo(
-      ::tflite::BuiltinOperator_SPLIT,
-      tflite::SplitOptionsT{.num_splits = data.num_splits});
+  if (op.inputs.size() < 2) {
+    return absl::FailedPreconditionError(
+        "Split operation must have at least 2 inputs (input and axis).");
+  }
+
+  TfLiteOpBuildInfo info(::tflite::BuiltinOperator_SPLIT,
+                         tflite::SplitOptionsT{.num_splits = data.num_splits});
+  // TFLite Split inputs: axis, input.
+  // LiteRT Split inputs: input, axis.
+  info.inputs = {op.inputs[1], op.inputs[0]};
+  return info;
 }
 
 absl::StatusOr<TfLiteOpBuildInfo>

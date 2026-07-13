@@ -249,148 +249,195 @@ pub const LiteRtEnvOptionTag_kLiteRtEnvOptionTagWebGpuProcs: LiteRtEnvOptionTag 
 
 pub const LiteRtEnvOptionTag_kLiteRtEnvOptionTagRuntimeLibraryDir: LiteRtEnvOptionTag = 22;
 
-pub struct LiteRtLayout {
-}
+pub struct LiteRtLayout {}
 
 pub fn LiteRtGetNumLayoutElements(
-        layout: *const LiteRtLayout,
-        num_elements: *mut usize,
-    ) -> LiteRtStatus { unimplemented!() }
+    layout: *const LiteRtLayout,
+    num_elements: *mut usize,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
 pub fn LiteRtIsSameLayout(
-        layout1: *const LiteRtLayout,
-        layout2: *const LiteRtLayout,
-        result: *mut bool,
-    ) -> LiteRtStatus { unimplemented!() }
+    layout1: *const LiteRtLayout,
+    layout2: *const LiteRtLayout,
+    result: *mut bool,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
 pub fn LiteRtCreateCompiledModel(
-        environment: LiteRtEnvironment,
-        model: LiteRtModel,
-        compilation_options: LiteRtOptions,
-        compiled_model: *mut LiteRtCompiledModel,
-    ) -> LiteRtStatus { unimplemented!() }
+    environment: LiteRtEnvironment,
+    model: LiteRtModel,
+    compilation_options: LiteRtOptions,
+    compiled_model: *mut LiteRtCompiledModel,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
 pub fn LiteRtGetCompiledModelInputBufferRequirements(
-        compiled_model: LiteRtCompiledModel,
-        signature_index: LiteRtParamIndex,
-        input_index: LiteRtParamIndex,
-        buffer_requirements: *mut LiteRtTensorBufferRequirements,
-    ) -> LiteRtStatus { unimplemented!() }
+    compiled_model: LiteRtCompiledModel,
+    signature_index: LiteRtParamIndex,
+    input_index: LiteRtParamIndex,
+    buffer_requirements: *mut LiteRtTensorBufferRequirements,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
 pub fn LiteRtGetCompiledModelOutputBufferRequirements(
-        compiled_model: LiteRtCompiledModel,
-        signature_index: LiteRtParamIndex,
-        output_index: LiteRtParamIndex,
-        buffer_requirements: *mut LiteRtTensorBufferRequirements,
-    ) -> LiteRtStatus { unimplemented!() }
+    compiled_model: LiteRtCompiledModel,
+    signature_index: LiteRtParamIndex,
+    output_index: LiteRtParamIndex,
+    buffer_requirements: *mut LiteRtTensorBufferRequirements,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
 pub fn LiteRtGetCompiledModelInputTensorLayout(
-        compiled_model: LiteRtCompiledModel,
-        signature_index: LiteRtParamIndex,
-        input_index: LiteRtParamIndex,
-        layout: *mut LiteRtLayout,
-    ) -> LiteRtStatus { unimplemented!() }
+    compiled_model: LiteRtCompiledModel,
+    signature_index: LiteRtParamIndex,
+    input_index: LiteRtParamIndex,
+    layout: *mut LiteRtLayout,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
 pub fn LiteRtGetCompiledModelOutputTensorLayouts(
-        compiled_model: LiteRtCompiledModel,
-        signature_index: LiteRtParamIndex,
-        num_layouts: usize,
-        layouts: *mut LiteRtLayout,
-        update_allocation: bool,
-    ) -> LiteRtStatus { unimplemented!() }
+    compiled_model: LiteRtCompiledModel,
+    signature_index: LiteRtParamIndex,
+    num_layouts: usize,
+    layouts: *mut LiteRtLayout,
+    update_allocation: bool,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
+pub fn LiteRtGetCompiledModelEnvironment(
+    compiled_model: LiteRtCompiledModel,
+    environment: *mut LiteRtEnvironment,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
 pub fn LiteRtRunCompiledModel(
-        compiled_model: LiteRtCompiledModel,
-        signature_index: LiteRtParamIndex,
-        num_input_buffers: usize,
-        input_buffers: *mut LiteRtTensorBuffer,
-        num_output_buffers: usize,
-        output_buffers: *mut LiteRtTensorBuffer,
-    ) -> LiteRtStatus { unimplemented!() }
+    compiled_model: LiteRtCompiledModel,
+    signature_index: LiteRtParamIndex,
+    num_input_buffers: usize,
+    input_buffers: *mut LiteRtTensorBuffer,
+    num_output_buffers: usize,
+    output_buffers: *mut LiteRtTensorBuffer,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
 pub fn LiteRtRunCompiledModelAsync(
-        compiled_model: LiteRtCompiledModel,
-        signature_index: LiteRtParamIndex,
-        num_input_buffers: usize,
-        input_buffers: *mut LiteRtTensorBuffer,
-        num_output_buffers: usize,
-        output_buffers: *mut LiteRtTensorBuffer,
-        async_: *mut bool,
-    ) -> LiteRtStatus { unimplemented!() }
+    compiled_model: LiteRtCompiledModel,
+    signature_index: LiteRtParamIndex,
+    num_input_buffers: usize,
+    input_buffers: *mut LiteRtTensorBuffer,
+    num_output_buffers: usize,
+    output_buffers: *mut LiteRtTensorBuffer,
+    async_: *mut bool,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
 pub fn LiteRtSetCompiledModelCancellationFunction(
-        compiled_model: LiteRtCompiledModel,
-        data: *mut ::std::os::raw::c_void,
-        check_cancelled_func: ::std::option::Option<
-            fn(arg1: *mut ::std::os::raw::c_void) -> bool,
-        >,
-    ) -> LiteRtStatus { unimplemented!() }
+    compiled_model: LiteRtCompiledModel,
+    data: *mut ::std::os::raw::c_void,
+    check_cancelled_func: ::std::option::Option<fn(arg1: *mut ::std::os::raw::c_void) -> bool>,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtDestroyCompiledModel(compiled_model: LiteRtCompiledModel) { unimplemented!() }
+pub fn LiteRtDestroyCompiledModel(compiled_model: LiteRtCompiledModel) {
+    unimplemented!()
+}
 
 pub fn LiteRtCompiledModelStartMetricsCollection(
-        compiled_model: LiteRtCompiledModel,
-        detail_level: ::std::os::raw::c_int,
-    ) -> LiteRtStatus { unimplemented!() }
+    compiled_model: LiteRtCompiledModel,
+    detail_level: ::std::os::raw::c_int,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
 pub fn LiteRtCompiledModelStopMetricsCollection(
-        compiled_model: LiteRtCompiledModel,
-        metrics: LiteRtMetrics,
-    ) -> LiteRtStatus { unimplemented!() }
+    compiled_model: LiteRtCompiledModel,
+    metrics: LiteRtMetrics,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
 pub fn LiteRtCompiledModelIsFullyAccelerated(
-        compiled_model: LiteRtCompiledModel,
-        fully_accelerated: *mut bool,
-    ) -> LiteRtStatus { unimplemented!() }
+    compiled_model: LiteRtCompiledModel,
+    fully_accelerated: *mut bool,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
 pub fn LiteRtCompiledModelGetProfiler(
-        compiled_model: LiteRtCompiledModel,
-        profiler: *mut LiteRtProfiler,
-    ) -> LiteRtStatus { unimplemented!() }
+    compiled_model: LiteRtCompiledModel,
+    profiler: *mut LiteRtProfiler,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
 pub fn LiteRtCompiledModelResizeInputTensor(
-        compiled_model: LiteRtCompiledModel,
-        signature_index: LiteRtParamIndex,
-        input_index: LiteRtParamIndex,
-        dims: *const ::std::os::raw::c_int,
-        dims_size: usize,
-    ) -> LiteRtStatus { unimplemented!() }
+    compiled_model: LiteRtCompiledModel,
+    signature_index: LiteRtParamIndex,
+    input_index: LiteRtParamIndex,
+    dims: *const ::std::os::raw::c_int,
+    dims_size: usize,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
 pub fn LiteRtCompiledModelResizeInputTensorNonStrict(
-        compiled_model: LiteRtCompiledModel,
-        signature_index: LiteRtParamIndex,
-        input_index: LiteRtParamIndex,
-        dims: *const ::std::os::raw::c_int,
-        dims_size: usize,
-    ) -> LiteRtStatus { unimplemented!() }
+    compiled_model: LiteRtCompiledModel,
+    signature_index: LiteRtParamIndex,
+    input_index: LiteRtParamIndex,
+    dims: *const ::std::os::raw::c_int,
+    dims_size: usize,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
 pub fn LiteRtCompiledModelSetDispatchAnnotation(
-        compiled_model: LiteRtCompiledModel,
-        signature_index: LiteRtParamIndex,
-        key: *const ::std::os::raw::c_char,
-        value: *const ::std::os::raw::c_char,
-    ) -> LiteRtStatus { unimplemented!() }
+    compiled_model: LiteRtCompiledModel,
+    signature_index: LiteRtParamIndex,
+    key: *const ::std::os::raw::c_char,
+    value: *const ::std::os::raw::c_char,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
 pub fn LiteRtCompiledModelGetDispatchAnnotation(
-        compiled_model: LiteRtCompiledModel,
-        signature_index: LiteRtParamIndex,
-        key: *const ::std::os::raw::c_char,
-        value: *mut *const ::std::os::raw::c_char,
-    ) -> LiteRtStatus { unimplemented!() }
+    compiled_model: LiteRtCompiledModel,
+    signature_index: LiteRtParamIndex,
+    key: *const ::std::os::raw::c_char,
+    value: *mut *const ::std::os::raw::c_char,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
 pub fn LiteRtCompiledModelRemoveDispatchAnnotation(
-        compiled_model: LiteRtCompiledModel,
-        signature_index: LiteRtParamIndex,
-        key: *const ::std::os::raw::c_char,
-    ) -> LiteRtStatus { unimplemented!() }
+    compiled_model: LiteRtCompiledModel,
+    signature_index: LiteRtParamIndex,
+    key: *const ::std::os::raw::c_char,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtCompiledModelClearErrors(compiled_model: LiteRtCompiledModel) -> LiteRtStatus { unimplemented!() }
+pub fn LiteRtCompiledModelClearErrors(compiled_model: LiteRtCompiledModel) -> LiteRtStatus {
+    unimplemented!()
+}
 
 pub fn LiteRtCompiledModelGetErrorMessages(
-        compiled_model: LiteRtCompiledModel,
-        error_messages: *mut *mut ::std::os::raw::c_char,
-    ) -> LiteRtStatus { unimplemented!() }
+    compiled_model: LiteRtCompiledModel,
+    error_messages: *mut *mut ::std::os::raw::c_char,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
 pub const LiteRtAnyType_kLiteRtAnyTypeNone: LiteRtAnyType = 0;
 
@@ -404,73 +451,233 @@ pub const LiteRtAnyType_kLiteRtAnyTypeString: LiteRtAnyType = 8;
 
 pub const LiteRtAnyType_kLiteRtAnyTypeVoidPtr: LiteRtAnyType = 9;
 
-pub struct LiteRtAny {
+pub struct LiteRtAny {}
+
+pub fn LiteRtGetStatusString(status: LiteRtStatus) -> *const ::std::os::raw::c_char {
+    unimplemented!()
 }
 
-pub fn LiteRtGetStatusString(status: LiteRtStatus)-> *const ::std::os::raw::c_char{ unimplemented!() }
+pub fn LiteRtGetTensorName(
+    tensor: LiteRtTensor,
+    name: *mut *const ::std::os::raw::c_char,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtGetTensorName(tensor: LiteRtTensor, name: *mut *const ::std::os::raw::c_char,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtCreateEnvironment(
+    num_options: ::std::os::raw::c_int,
+    options: *const LiteRtEnvOption,
+    environment: *mut LiteRtEnvironment,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtCreateEnvironment(num_options: ::std::os::raw::c_int, options: *const LiteRtEnvOption, environment: *mut LiteRtEnvironment,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtDestroyEnvironment(environment: LiteRtEnvironment) {
+    unimplemented!()
+}
 
-pub fn LiteRtDestroyEnvironment(environment: LiteRtEnvironment){ unimplemented!() }
+pub fn LiteRtGetTensorTypeId(
+    tensor: LiteRtTensor,
+    type_id: *mut LiteRtTensorTypeId,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtGetTensorTypeId(tensor: LiteRtTensor, type_id: *mut LiteRtTensorTypeId,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtGetUnrankedTensorType(
+    tensor: LiteRtTensor,
+    unranked_tensor_type: *mut LiteRtUnrankedTensorType,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtGetUnrankedTensorType(tensor: LiteRtTensor, unranked_tensor_type: *mut LiteRtUnrankedTensorType,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtGetRankedTensorType(
+    tensor: LiteRtTensor,
+    ranked_tensor_type: *mut LiteRtRankedTensorType,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtGetRankedTensorType(tensor: LiteRtTensor, ranked_tensor_type: *mut LiteRtRankedTensorType,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtGetNumSubgraphInputs(
+    subgraph: LiteRtSubgraph,
+    num_inputs: *mut LiteRtParamIndex,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtGetNumSubgraphInputs(subgraph: LiteRtSubgraph, num_inputs: *mut LiteRtParamIndex,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtGetSubgraphInput(
+    subgraph: LiteRtSubgraph,
+    input_index: LiteRtParamIndex,
+    input: *mut LiteRtTensor,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtGetSubgraphInput(subgraph: LiteRtSubgraph, input_index: LiteRtParamIndex, input: *mut LiteRtTensor,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtGetNumSubgraphOutputs(
+    subgraph: LiteRtSubgraph,
+    num_outputs: *mut LiteRtParamIndex,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtGetNumSubgraphOutputs(subgraph: LiteRtSubgraph, num_outputs: *mut LiteRtParamIndex,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtGetSubgraphOutput(
+    subgraph: LiteRtSubgraph,
+    output_index: LiteRtParamIndex,
+    output: *mut LiteRtTensor,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtGetSubgraphOutput(subgraph: LiteRtSubgraph, output_index: LiteRtParamIndex, output: *mut LiteRtTensor,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtGetSignatureKey(
+    signature: LiteRtSignature,
+    signature_key: *mut *const ::std::os::raw::c_char,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtGetSignatureKey(signature: LiteRtSignature, signature_key: *mut *const ::std::os::raw::c_char,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtGetSignatureSubgraph(
+    signature: LiteRtSignature,
+    subgraph: *mut LiteRtSubgraph,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtGetSignatureSubgraph(signature: LiteRtSignature, subgraph: *mut LiteRtSubgraph,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtGetNumSignatureInputs(
+    signature: LiteRtSignature,
+    num_inputs: *mut LiteRtParamIndex,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtGetNumSignatureInputs(signature: LiteRtSignature, num_inputs: *mut LiteRtParamIndex,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtGetSignatureInputName(
+    signature: LiteRtSignature,
+    input_idx: LiteRtParamIndex,
+    input_name: *mut *const ::std::os::raw::c_char,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtGetSignatureInputName(signature: LiteRtSignature, input_idx: LiteRtParamIndex, input_name: *mut *const ::std::os::raw::c_char,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtGetNumSignatureOutputs(
+    signature: LiteRtSignature,
+    num_outputs: *mut LiteRtParamIndex,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtGetNumSignatureOutputs(signature: LiteRtSignature, num_outputs: *mut LiteRtParamIndex,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtGetSignatureOutputName(
+    signature: LiteRtSignature,
+    output_idx: LiteRtParamIndex,
+    output_name: *mut *const ::std::os::raw::c_char,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtGetSignatureOutputName(signature: LiteRtSignature, output_idx: LiteRtParamIndex, output_name: *mut *const ::std::os::raw::c_char,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtCreateModelFromFile(
+    filename: *const ::std::os::raw::c_char,
+    model: *mut LiteRtModel,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtCreateModelFromFile(filename: *const ::std::os::raw::c_char, model: *mut LiteRtModel,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtCreateModelFromBuffer(
+    buffer_addr: *const ::std::os::raw::c_void,
+    buffer_size: usize,
+    model: *mut LiteRtModel,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtCreateModelFromBuffer(buffer_addr: *const ::std::os::raw::c_void, buffer_size: usize, model: *mut LiteRtModel,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtGetNumModelSubgraphs(
+    model: LiteRtModel,
+    num_subgraphs: *mut LiteRtParamIndex,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtGetNumModelSubgraphs(model: LiteRtModel, num_subgraphs: *mut LiteRtParamIndex,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtGetNumModelSignatures(
+    model: LiteRtModel,
+    num_signatures: *mut LiteRtParamIndex,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtGetNumModelSignatures(model: LiteRtModel, num_signatures: *mut LiteRtParamIndex,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtGetModelSignature(
+    model: LiteRtModel,
+    signature_index: LiteRtParamIndex,
+    signature: *mut LiteRtSignature,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtGetModelSignature(model: LiteRtModel, signature_index: LiteRtParamIndex, signature: *mut LiteRtSignature,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtDestroyModel(model: LiteRtModel) {
+    unimplemented!()
+}
 
-pub fn LiteRtDestroyModel(model: LiteRtModel){ unimplemented!() }
+pub fn LiteRtCreateOptions(options: *mut LiteRtOptions) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtCreateOptions(options: *mut LiteRtOptions)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtDestroyOptions(options: LiteRtOptions) {
+    unimplemented!()
+}
 
-pub fn LiteRtDestroyOptions(options: LiteRtOptions){ unimplemented!() }
+pub fn LiteRtSetOptionsHardwareAccelerators(
+    options: LiteRtOptions,
+    hardware_accelerators: LiteRtHwAcceleratorSet,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtSetOptionsHardwareAccelerators(options: LiteRtOptions, hardware_accelerators: LiteRtHwAcceleratorSet,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtCreateManagedTensorBuffer(
+    env: LiteRtEnvironment,
+    buffer_type: LiteRtTensorBufferType,
+    tensor_type: *const LiteRtRankedTensorType,
+    buffer_size: usize,
+    buffer: *mut LiteRtTensorBuffer,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtCreateManagedTensorBuffer(env: LiteRtEnvironment, buffer_type: LiteRtTensorBufferType, tensor_type: *const LiteRtRankedTensorType, buffer_size: usize, buffer: *mut LiteRtTensorBuffer,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtGetTensorBufferPackedSize(
+    tensor_buffer: LiteRtTensorBuffer,
+    size: *mut usize,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtGetTensorBufferPackedSize(tensor_buffer: LiteRtTensorBuffer, size: *mut usize,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtLockTensorBuffer(
+    tensor_buffer: LiteRtTensorBuffer,
+    host_mem_addr: *mut *mut ::std::os::raw::c_void,
+    lock_mode: LiteRtTensorBufferLockMode,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtLockTensorBuffer(tensor_buffer: LiteRtTensorBuffer, host_mem_addr: *mut *mut ::std::os::raw::c_void, lock_mode: LiteRtTensorBufferLockMode,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtUnlockTensorBuffer(buffer: LiteRtTensorBuffer) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtUnlockTensorBuffer(buffer: LiteRtTensorBuffer)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtDestroyTensorBuffer(buffer: LiteRtTensorBuffer) {
+    unimplemented!()
+}
 
-pub fn LiteRtDestroyTensorBuffer(buffer: LiteRtTensorBuffer){ unimplemented!() }
+pub fn LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes(
+    requirements: LiteRtTensorBufferRequirements,
+    num_types: *mut ::std::os::raw::c_int,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes(requirements: LiteRtTensorBufferRequirements, num_types: *mut ::std::os::raw::c_int,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
+    requirements: LiteRtTensorBufferRequirements,
+    type_index: ::std::os::raw::c_int,
+    type_: *mut LiteRtTensorBufferType,
+) -> LiteRtStatus {
+    unimplemented!()
+}
 
-pub fn LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(requirements: LiteRtTensorBufferRequirements, type_index: ::std::os::raw::c_int, type_: *mut LiteRtTensorBufferType,)-> LiteRtStatus{ unimplemented!() }
-
-pub fn LiteRtGetTensorBufferRequirementsBufferSize(requirements: LiteRtTensorBufferRequirements, buffer_size: *mut usize,)-> LiteRtStatus{ unimplemented!() }
+pub fn LiteRtGetTensorBufferRequirementsBufferSize(
+    requirements: LiteRtTensorBufferRequirements,
+    buffer_size: *mut usize,
+) -> LiteRtStatus {
+    unimplemented!()
+}

@@ -67,28 +67,25 @@ template <typename Lambda>
 class LambdaModelRunner {
  public:
   explicit LambdaModelRunner(Environment& env, Options& options,
-                             TensorsMap input_prototypes, Lambda f,
-                             bool use_tmp_file = false)
-      : runner_(env, options,
-                [input_prototypes, f](MapInputs& inputs) {
-                  inputs.map = input_prototypes;
-                  TensorsMap output_map = f(inputs.map);
-                  MapOutputs outputs;
-                  outputs.map = output_map;
-                  return outputs;
-                }, /*build_model_now=*/true, use_tmp_file) {}
+                             TensorsMap input_prototypes, Lambda f)
+      : runner_(env, options, [input_prototypes, f](MapInputs& inputs) {
+          inputs.map = input_prototypes;
+          TensorsMap output_map = f(inputs.map);
+          MapOutputs outputs;
+          outputs.map = output_map;
+          return outputs;
+        }) {}
 
   explicit LambdaModelRunner(Environment& env, Options& options,
                              TensorsMap input_prototypes,
-                             TensorsMap output_prototypes,
-                             bool use_tmp_file = false)
+                             TensorsMap output_prototypes)
       : runner_(env, options,
                 [input_prototypes, output_prototypes](MapInputs& inputs) {
                   inputs.map = input_prototypes;
                   MapOutputs outputs;
                   outputs.map = output_prototypes;
                   return outputs;
-                }, /*build_model_now=*/true, use_tmp_file) {}
+                }) {}
 
   absl::Status SetInput(const std::string& name, const TensorHandle& tensor) {
     return runner_.SetInput(name, tensor);
@@ -133,19 +130,16 @@ class LambdaModelRunner {
 
 template <typename Lambda>
 auto CreateLambdaRunner(Environment& env, Options& options,
-                        TensorsMap input_prototypes, Lambda f,
-                        bool use_tmp_file = false) {
-  return LambdaModelRunner<Lambda>(env, options, input_prototypes, f,
-                                   use_tmp_file);
+                        TensorsMap input_prototypes, Lambda f) {
+  return LambdaModelRunner<Lambda>(env, options, input_prototypes, f);
 }
 
 inline auto CreateStaticRunner(Environment& env, Options& options,
                                TensorsMap input_prototypes,
-                               TensorsMap output_prototypes,
-                               bool use_tmp_file = false) {
+                               TensorsMap output_prototypes) {
   auto dummy_f = [](const TensorsMap&) { return TensorsMap(); };
   return LambdaModelRunner<decltype(dummy_f)>(env, options, input_prototypes,
-                                              output_prototypes, use_tmp_file);
+                                              output_prototypes);
 }
 
 }  // namespace tensor

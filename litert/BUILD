@@ -352,7 +352,7 @@ package_group(
     packages = [
         "//litert/python/...",
         "//ci/tools/...",
-        # copybara:uncomment "//third_party/py/litert_torch/aot/...",
+        # copybara:uncomment "//third_party/py/litert_torch/...",
     ],
 )
 

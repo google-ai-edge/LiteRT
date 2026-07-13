@@ -40,6 +40,7 @@ set(LITERT_CC_INTERNAL_HEADERS
     litert_shared_library_windows.h
     litert_source_location.h
     litert_tensor_buffer_utils.h
+    litert_tfl_types.h
     litert_tflite_error_status_builder.h
     scoped_file.h
     scoped_file_posix.h

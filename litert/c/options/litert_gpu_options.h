@@ -210,6 +210,11 @@ LrtSetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
 LiteRtStatus LrtSetGpuOptionsUseMetalArgumentBuffers(
     LrtGpuOptions* gpu_options, bool use_metal_argument_buffers);
 
+// Sets whether to use MTLResidencySet to prevent memory swapping on Metal
+// backend. Requires macOS 15.0+ or iOS 18.0+.
+LiteRtStatus LrtSetGpuOptionsMetalResidencySet(LrtGpuOptions* gpu_options,
+                                               bool enable);
+
 // Sets the wait type.
 LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsWaitType(
     LrtGpuOptions* gpu_options, LiteRtGpuWaitType wait_type);
@@ -341,6 +346,9 @@ LrtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
 
 LiteRtStatus LrtGetGpuOptionsUseMetalArgumentBuffers(
     const LrtGpuOptions* options, bool* use_metal_argument_buffers);
+
+LiteRtStatus LrtGetGpuOptionsMetalResidencySet(const LrtGpuOptions* options,
+                                               bool* enabled);
 
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsWaitType(
     LiteRtGpuWaitType* wait_type, const LrtGpuOptions* options);

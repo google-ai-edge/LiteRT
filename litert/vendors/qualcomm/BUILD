@@ -133,7 +133,6 @@ litert_test(
     deps = [
         ":qnn_manager",
         "//litert/test:common",
-        "//litert/test:matchers",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/utils:test_main_no_heapcheck",
@@ -165,6 +164,7 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@qairt//:qnn_lib_headers",
     ],

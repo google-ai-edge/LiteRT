@@ -35,6 +35,10 @@ inline bool IsStrEq(const char* input, const char* golden) {
 
 }  // namespace miscs
 
+// Returns the enum name for a Qnn_DataType_t (e.g. "QNN_DATATYPE_FLOAT_32"),
+// or "QNN_DATATYPE_UNKNOWN" for unrecognized values. For logging.
+const char* QnnDataTypeName(Qnn_DataType_t data_type);
+
 constexpr uint32_t kQuantBitWidth4 = 4;
 constexpr uint32_t kQuantBitWidth2 = 2;
 

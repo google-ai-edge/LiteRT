@@ -222,4 +222,43 @@ std::vector<std::int8_t> UnpackInt4Data(const void* src, size_t src_bytes) {
   }
   return dst;
 }
+
+#define QNN_DATATYPE_LIST         \
+  X(QNN_DATATYPE_INT_8)           \
+  X(QNN_DATATYPE_INT_16)          \
+  X(QNN_DATATYPE_INT_32)          \
+  X(QNN_DATATYPE_INT_64)          \
+  X(QNN_DATATYPE_UINT_8)          \
+  X(QNN_DATATYPE_UINT_16)         \
+  X(QNN_DATATYPE_UINT_32)         \
+  X(QNN_DATATYPE_UINT_64)         \
+  X(QNN_DATATYPE_FLOAT_16)        \
+  X(QNN_DATATYPE_BFLOAT_16)       \
+  X(QNN_DATATYPE_FLOAT_32)        \
+  X(QNN_DATATYPE_FLOAT_64)        \
+  X(QNN_DATATYPE_SFIXED_POINT_4)  \
+  X(QNN_DATATYPE_SFIXED_POINT_8)  \
+  X(QNN_DATATYPE_SFIXED_POINT_16) \
+  X(QNN_DATATYPE_SFIXED_POINT_32) \
+  X(QNN_DATATYPE_UFIXED_POINT_4)  \
+  X(QNN_DATATYPE_UFIXED_POINT_8)  \
+  X(QNN_DATATYPE_UFIXED_POINT_16) \
+  X(QNN_DATATYPE_UFIXED_POINT_32) \
+  X(QNN_DATATYPE_BOOL_8)          \
+  X(QNN_DATATYPE_STRING)
+
+const char* QnnDataTypeName(Qnn_DataType_t data_type) {
+  switch (data_type) {
+#define X(name) \
+  case name:    \
+    return #name;
+    QNN_DATATYPE_LIST
+#undef X
+    default:
+      return "QNN_DATATYPE_UNKNOWN";
+  }
+}
+
+#undef QNN_DATATYPE_LIST
+
 }  // namespace qnn

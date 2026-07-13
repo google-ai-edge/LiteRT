@@ -621,7 +621,7 @@ TEST(ExternalWeightLoaderTest, LoadsWeightsFromMemory) {
 
   auto loader = CreateLiteRtWeightLoader(
       LrtGetRuntimeContext(), model.model(), /*model_directory=*/std::nullopt,
-      /*scoped_weight_source=*/nullptr, std::move(group_map));
+      /*scoped_weight_source=*/nullptr, &group_map);
   ASSERT_NE(loader, nullptr);
 
   const auto& weight_info = GetSingleWeightInfo(*loader);

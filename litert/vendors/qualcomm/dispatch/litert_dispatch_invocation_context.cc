@@ -30,17 +30,21 @@
 #include <ostream>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include "HTP/QnnHtpProfile.h"  // from @qairt
+#include "QnnCommon.h"  // from @qairt
+#include "QnnProfile.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -54,10 +58,6 @@
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "HTP/QnnHtpProfile.h"  // from @qairt
-#include "QnnCommon.h"  // from @qairt
-#include "QnnProfile.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 using litert::Expected;
 using litert::Unexpected;
@@ -391,9 +391,8 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Host tensor buffer is too large for QNN");
     }
-    void* data =
-        static_cast<void*>(static_cast<uint8_t*>(host_memory_addr) +
-                           tensor_buffer_offset);
+    void* data = static_cast<void*>(static_cast<uint8_t*>(host_memory_addr) +
+                                    tensor_buffer_offset);
     if (tensor.version == QNN_TENSOR_VERSION_1) {
       tensor.v1.memType = QNN_TENSORMEMTYPE_RAW;
       tensor.v1.clientBuf.data = data;

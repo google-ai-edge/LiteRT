@@ -56,6 +56,9 @@ class TensorWrapper final {
 
   void CloneTo(Qnn_Tensor_t& dst) const;
 
+  // Single-line description (name / dtype / dims / quant kind), for logging.
+  std::string ToString() const;
+
   // Accessors /////////////////////////////////////////////////////////
 
   template <typename T>

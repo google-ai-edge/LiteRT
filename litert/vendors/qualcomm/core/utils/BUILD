@@ -60,14 +60,9 @@ cc_library(
     srcs = ["test_main.cc"],
     deps = [
         ":test_utils",
-        # copybara:uncomment_begin(google-only)
-        # "//testing/base/public:gunit_for_library_testonly",
-        # copybara:uncomment_end
-        # copybara:comment_begin(oss-only)
-        "@com_google_googletest//:gtest",
-        # copybara:comment_end
-        "@com_google_absl//absl/strings",
         "//litert/vendors/qualcomm/core:common",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest",
     ],
     alwayslink = 1,
 )
@@ -78,14 +73,9 @@ cc_library(
     srcs = ["test_main.cc"],
     deps = [
         ":test_utils",
-        # copybara:uncomment_begin(google-only)
-        # "//testing/base/public:gunit_for_library_testonly",
-        # copybara:uncomment_end
-        # copybara:comment_begin(oss-only)
-        "@com_google_googletest//:gtest",
-        # copybara:comment_end
-        "@com_google_absl//absl/strings",
         "//litert/vendors/qualcomm/core:common",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest",
     ],
     alwayslink = 1,
 )

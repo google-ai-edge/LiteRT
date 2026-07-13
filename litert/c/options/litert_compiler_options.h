@@ -16,7 +16,6 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_COMPILER_OPTIONS_H_
 
 #include <stddef.h>
-#include <stdint.h>
 
 #include "litert/c/litert_common.h"
 

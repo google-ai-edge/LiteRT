@@ -84,15 +84,14 @@ typedef struct {
   LiteRtLayout layout;
 } LiteRtRankedTensorType;
 
+// `LiteRtRankedTensorType` embeds `LiteRtLayout`, whose layout is now identical
+// across MSVC and GCC/Clang (see litert/c/litert_layout.h), so this size no
+// longer diverges by compiler. The assert intentionally has no `_MSC_VER`
+// branch.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-#if !defined(_MSC_VER)
 static_assert(sizeof(LiteRtRankedTensorType) == 72,
               "LiteRtRankedTensorType size mismatch");
-#else   // !defined(_MSC_VER)
-static_assert(sizeof(LiteRtRankedTensorType) == 76,
-              "LiteRtRankedTensorType size mismatch");
-#endif  // !defined(_MSC_VER)
 static_assert(offsetof(LiteRtRankedTensorType, layout) == 4,
               "LiteRtRankedTensorType layout offset mismatch");
 #endif  // __cplusplus
@@ -182,6 +181,7 @@ static_assert(offsetof(LiteRtQuantizationBlockWise, block_size) == 16,
 // The identifier for quantization scheme type union.
 ///
 /// @note This concrete type is part of the public API and is ABI stable.
+// LINT.IfChange(quantization_type_id)
 typedef enum {
   // Tag for tensors without quantization.
   kLiteRtQuantizationNone = 0,
@@ -195,6 +195,7 @@ typedef enum {
   // [NOT IMPLEMENTED YET] Q-params across blocks of fixed size (e.g. 2048).
   kLiteRtQuantizationBlockWise = 3,
 } LiteRtQuantizationTypeId;
+// LINT.ThenChange(../cc/litert_model_types.h:quantization_type_id)
 // Get the identifier for the type of quantization for a given tensor.
 LiteRtStatus LiteRtGetQuantizationTypeId(LiteRtTensor tensor,
                                          LiteRtQuantizationTypeId* q_type_id);

@@ -254,4 +254,53 @@ impl CompiledModel {
         );
         Ok(())
     }
+
+    /// Runs inference in parallel thread (if supported by the model and hardware).
+    /// Returns true if the model was run in parallel thread, false otherwise.
+    /// If the model starts in parallel execution, use read_sync to get results from tensors.
+    #[cfg(async_support)]
+    pub fn run_async(
+        &self,
+        signature_index: LiteRtParamIndex,
+        input: &[TensorBuffer<'_>],
+        output: &[TensorBuffer<'_>],
+    ) -> Result<bool, Error> {
+        let mut input_ptrs: Vec<_> = input
+            .iter()
+            .map(|tensor| tensor.raw_tensor_buffer)
+            .collect();
+        let mut output_ptrs: Vec<_> = output
+            .iter()
+            .map(|tensor| tensor.raw_tensor_buffer)
+            .collect();
+        let mut ran_in_parallel_thread: bool = false;
+        call_check_status!(
+            // SAFETY: self.raw_compiled_model is valid because it's created by calling the create() function.
+            // input_ptrs, output_ptrs, and ran_in_parallel_thread are valid because they are created in the function.
+            unsafe {
+                LiteRtRunCompiledModelAsync(
+                    self.raw_compiled_model,
+                    signature_index,
+                    input_ptrs.len(),
+                    input_ptrs.as_mut_ptr(),
+                    output_ptrs.len(),
+                    output_ptrs.as_mut_ptr(),
+                    &mut ran_in_parallel_thread,
+                )
+            },
+            ErrorCause::RunCompiledModel
+        );
+        Ok(ran_in_parallel_thread)
+    }
+
+}
+
+impl Drop for CompiledModel {
+    fn drop(&mut self) {
+        // SAFETY: self.raw_compiled_model is always valid, it's guaranteed to be initialized by
+        // create function.
+        unsafe {
+            LiteRtDestroyCompiledModel(self.raw_compiled_model);
+        }
+    }
 }

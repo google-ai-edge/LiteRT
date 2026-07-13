@@ -406,6 +406,47 @@ TEST(TensorWrapperTest, SameTensorWrapperTest) {
   EXPECT_EQ(tensor_wrapper_1, tensor_wrapper_ref);
 }
 
+TEST(TensorWrapperTest, ToStringNoQuant) {
+  TensorWrapper tensor_wrapper{"my_tensor",
+                               QNN_TENSOR_TYPE_NATIVE,
+                               QNN_DATATYPE_FLOAT_32,
+                               QuantizeParamsWrapperVariant(),
+                               {1, 2, 3}};
+  const std::string str = tensor_wrapper.ToString();
+  EXPECT_EQ(str,
+            "name=\"my_tensor\" dtype=QNN_DATATYPE_FLOAT_32 dims=[1,2,3] "
+            "(no quantization)");
+}
+
+TEST(TensorWrapperTest, ToStringPerTensorQuant) {
+  ScaleOffsetQuantizeParamsWrapper q_param(1, 0);
+  TensorWrapper tensor_wrapper{"q_tensor",
+                               QNN_TENSOR_TYPE_STATIC,
+                               QNN_DATATYPE_UFIXED_POINT_8,
+                               q_param,
+                               {1, 1, 3}};
+  const std::string str = tensor_wrapper.ToString();
+  EXPECT_EQ(str,
+            "name=\"q_tensor\" dtype=QNN_DATATYPE_UFIXED_POINT_8 dims=[1,1,3] "
+            "per-tensor-quant");
+}
+
+TEST(TensorWrapperTest, ToStringPerChannelQuant) {
+  std::vector<float> scales = {1.0, 1.0};
+  std::vector<std::int32_t> zero_points = {0, 0};
+  AxisScaleOffsetQuantizeParamsWrapper q_param(
+      0, absl::Span<float>(scales.data(), scales.size()),
+      absl::Span<std::int32_t>(zero_points.data(), zero_points.size()));
+  TensorWrapper tensor_wrapper{"pc_tensor",
+                               QNN_TENSOR_TYPE_STATIC,
+                               QNN_DATATYPE_UFIXED_POINT_8,
+                               q_param,
+                               {1, 1, 3}};
+  EXPECT_EQ(tensor_wrapper.ToString(),
+            "name=\"pc_tensor\" dtype=QNN_DATATYPE_UFIXED_POINT_8 dims=[1,1,3] "
+            "per-channel-quant");
+}
+
 TEST(TensorWrapperTest, QnnTensorIdAndName) {
   ScaleOffsetQuantizeParamsWrapper q_param(1, 0);
   TensorWrapper tensor_wrapper{"tensor_name",

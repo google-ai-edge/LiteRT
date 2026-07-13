@@ -18,6 +18,8 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # Don't remove this visibility, otherwise OSS build will fail because bazel requires at least
+    # one argument in package function.
     default_visibility = ["//litert:litert_internal_users"],
 )
 

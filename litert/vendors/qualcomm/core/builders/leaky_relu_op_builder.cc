@@ -4,9 +4,7 @@
 #include "litert/vendors/qualcomm/core/builders/leaky_relu_op_builder.h"
 
 #include <algorithm>
-#include <array>
 #include <cstddef>
-#include <cstdint>
 #include <variant>
 #include <vector>
 

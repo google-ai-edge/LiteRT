@@ -129,7 +129,7 @@ litert_bin(
     deps = [
         ":qnn_compose_graph",
         "//litert/c:litert_any",
-        "//litert/c:litert_builder",
+        "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_model_header",
@@ -255,8 +255,8 @@ litert_lib(
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/internal:litert_op_options",
         "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_op_options",
         "//litert/vendors/cc:namespace_heuristics",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
@@ -330,7 +330,7 @@ litert_lib(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-        "@flatbuffers//:runtime_cc",
+        "@flatbuffers",
         "@qairt//:qnn_lib_headers",
     ],
 )

@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 import org.tensorflow.lite.InterpreterApi.Options.TfLiteRuntime;
 
-/** Static utility methods for loading the TensorFlowLite runtime and native code. */
+/** Static utility methods for loading the TensorFlowLite runtime. */
 public final class TensorFlowLite {
   // We use Java logging here (java.util.logging), rather than Android logging (android.util.Log),
   // to avoid unnecessary platform dependencies. This also makes unit testing simpler and faster,
@@ -65,7 +65,7 @@ public final class TensorFlowLite {
   /**
    * Returns the version of the underlying TensorFlowLite model schema.
    *
-   * @deprecated Prefer using {@link #runtimeVersion() or #schemaVersion()}.
+   * @deprecated Prefer using {@link #runtimeVersion()} or {@link #schemaVersion()}.
    */
   @Deprecated
   public static String version() {

@@ -359,6 +359,7 @@ size_t CompiledModelWrapper::ByteWidthOfDType(const std::string& dtype) {
   if (dtype == "float32") return 4;
   if (dtype == "int8") return 1;
   if (dtype == "int32") return 4;
+  if (dtype == "bool") return 1;
   return 0;  // Unknown type
 }
 

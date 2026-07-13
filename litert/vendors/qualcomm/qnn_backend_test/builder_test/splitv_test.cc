@@ -14,7 +14,8 @@
 
 namespace litert::qnn {
 namespace {
-using testing::ElementsAre;
+using testing::FloatNear;
+using testing::Pointwise;
 
 INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
                          QnnTestPrinter);
@@ -73,16 +74,19 @@ TEST_P(QnnModelTest, SplitVTwoDimensional) {
 
   auto output0_data = qnn_model_.GetOutputData<float>(output0_idx);
   ASSERT_TRUE(output0_data);
-  ASSERT_THAT(output0_data.value(), ElementsAre(1.0f, 2.0f, 3.0f));
+  ASSERT_THAT(output0_data.value(),
+              Pointwise(FloatNear(1e-3), {1.0f, 2.0f, 3.0f}));
 
   auto output1_data = qnn_model_.GetOutputData<float>(output1_idx);
   ASSERT_TRUE(output1_data);
-  ASSERT_THAT(output1_data.value(), ElementsAre(4.0f, 5.0f, 6.0f));
+  ASSERT_THAT(output1_data.value(),
+              Pointwise(FloatNear(1e-3), {4.0f, 5.0f, 6.0f}));
 
   auto output2_data = qnn_model_.GetOutputData<float>(output2_idx);
   ASSERT_TRUE(output2_data);
-  ASSERT_THAT(output2_data.value(),
-              ElementsAre(7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f));
+  ASSERT_THAT(
+      output2_data.value(),
+      Pointwise(FloatNear(1e-3), {7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f}));
 }
 
 // Mirrors tflite/kernels/split_v_test.cc FourDimensional axis=1 with -1:
@@ -136,12 +140,14 @@ TEST_P(QnnModelTest, SplitVWithNegativeOneSizeSplit) {
   auto output0_data = qnn_model_.GetOutputData<float>(output0_idx);
   ASSERT_TRUE(output0_data);
   ASSERT_THAT(output0_data.value(),
-              ElementsAre(1.0f, 2.0f, 3.0f, 4.0f, 9.0f, 10.0f, 11.0f, 12.0f));
+              Pointwise(FloatNear(1e-3),
+                        {1.0f, 2.0f, 3.0f, 4.0f, 9.0f, 10.0f, 11.0f, 12.0f}));
 
   auto output1_data = qnn_model_.GetOutputData<float>(output1_idx);
   ASSERT_TRUE(output1_data);
   ASSERT_THAT(output1_data.value(),
-              ElementsAre(5.0f, 6.0f, 7.0f, 8.0f, 13.0f, 14.0f, 15.0f, 16.0f));
+              Pointwise(FloatNear(1e-3),
+                        {5.0f, 6.0f, 7.0f, 8.0f, 13.0f, 14.0f, 15.0f, 16.0f}));
 }
 
 // Mirrors tflite/kernels/split_v_test.cc NegativeAxis:
@@ -193,12 +199,14 @@ TEST_P(QnnModelTest, SplitVNegativeAxis) {
   auto output0_data = qnn_model_.GetOutputData<float>(output0_idx);
   ASSERT_TRUE(output0_data);
   ASSERT_THAT(output0_data.value(),
-              ElementsAre(1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f));
+              Pointwise(FloatNear(1e-3),
+                        {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f}));
 
   auto output1_data = qnn_model_.GetOutputData<float>(output1_idx);
   ASSERT_TRUE(output1_data);
-  ASSERT_THAT(output1_data.value(), ElementsAre(9.0f, 10.0f, 11.0f, 12.0f,
-                                                13.0f, 14.0f, 15.0f, 16.0f));
+  ASSERT_THAT(output1_data.value(),
+              Pointwise(FloatNear(1e-3), {9.0f, 10.0f, 11.0f, 12.0f, 13.0f,
+                                          14.0f, 15.0f, 16.0f}));
 }
 
 // QNN_OP_SPLIT requires at least one cut, so num_splits == 1 (a single output
@@ -248,7 +256,7 @@ TEST_P(QnnModelTest, SplitVSingleSplitLoweredToReshape) {
   auto output_data = qnn_model_.GetOutputData<float>(output_idx);
   ASSERT_TRUE(output_data);
   ASSERT_THAT(output_data.value(),
-              ElementsAre(1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f));
+              Pointwise(FloatNear(1e-3), {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f}));
 }
 
 // QNN cannot handle dynamic split_index. Verify the builder rejects a

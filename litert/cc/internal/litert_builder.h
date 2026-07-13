@@ -22,9 +22,9 @@
 #include <utility>
 #include <vector>
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_builder.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_detail.h"
@@ -36,6 +36,7 @@
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
+#include "litert/cc/litert_model_types.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 
 /// @file
@@ -182,18 +183,20 @@ class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
 
     if (src.HasQuantization()) {
       auto q_type = src.QTypeId();
-      if (q_type == kLiteRtQuantizationPerTensor) {
+      if (q_type == QuantizationTypeId::PerTensor) {
         spec_builder =
             std::move(spec_builder)
                 .WithPerTensorQuantization(src.PerTensorQuantization());
-      } else if (q_type == kLiteRtQuantizationPerChannel) {
+      } else if (q_type == QuantizationTypeId::PerChannel) {
         spec_builder =
             std::move(spec_builder)
                 .WithPerChannelQuantization(src.PerChannelQuantization());
-      } else if (q_type == kLiteRtQuantizationBlockWise) {
+      } else if (q_type == QuantizationTypeId::BlockWise) {
         spec_builder =
             std::move(spec_builder)
                 .WithBlockWiseQuantization(src.BlockWiseQuantization());
+      } else {
+        LITERT_LOG(LITERT_ERROR, "Unsupported QuantizationType: %d", q_type);
       }
     }
 

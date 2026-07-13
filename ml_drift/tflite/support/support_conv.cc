@@ -1,0 +1,276 @@
+// Copyright 2025 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "third_party/odml/litert/ml_drift/tflite/support/support_conv.h"
+
+#include <algorithm>
+#include <string>
+
+#include "absl/base/nullability.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift/common/status.h"  // from @ml_drift
+#include "third_party/odml/litert/ml_drift/tflite/support/support_aux.h"
+#include "tflite/c/common.h"
+#include "tflite/core/c/builtin_op_data.h"
+#include "tflite/kernels/kernel_util.h"
+
+using ::tflite::GetShapeDebugString;
+using ::tflite::IsConstantTensor;
+
+namespace litert::ml_drift::ir {
+namespace {
+
+int GetPadding(const TfLitePadding padding, const int input,
+               const int dilated_kernel, const int stride) {
+  if (padding == kTfLitePaddingValid) return 0;
+  const int output = (input + stride - 1) / stride;  // = ceil(input / stride)
+  return std::max(0, (output - 1) * stride + dilated_kernel - input);
+}
+
+int GetOutputDim(const TfLitePadding padding, const int input, const int kernel,
+                 const int dilation, const int stride) {
+  const int dilated_kernel = (kernel - 1) * dilation + 1;
+  const int total_padding = GetPadding(padding, input, dilated_kernel, stride);
+  return (input + total_padding - dilated_kernel) / stride + 1;
+}
+
+}  // namespace
+
+bool IsConv2dSupported(const TfLiteContext* absl_nonnull context,
+                       const TfLiteNode* absl_nonnull node,
+                       const TfLiteRegistration* absl_nonnull registration,
+                       std::string* absl_nonnull error) {
+  // Check version.
+  if (registration->version < 1 || registration->version > 6) {
+    *error = absl::StrCat("Unsupported version: ", registration->version);
+    return false;
+  }
+  // Check number of inputs and outputs.
+  const TfLiteIntArray* inputs = node->inputs;
+  if (inputs->size < 2 || inputs->size > 3) {
+    absl::StrAppend(error, "Invalid number of inputs: ", inputs->size,
+                    ", must be 2 or 3");
+    return false;
+  }
+  // Check number of outputs.
+  if (node->outputs->size != 1) {
+    *error = absl::StrCat("Invalid number of outputs: ", node->outputs->size,
+                          ", must be 1");
+    return false;
+  }
+  // Validate tensor IDs.
+  for (int i = 0; i < 2; ++i) {
+    if (!ValidateTensorId(*context, inputs->data[i],
+                          absl::StrCat("inputs[", i, "]"), *error)) {
+      return false;
+    }
+  }
+  if (inputs->size == 3 && inputs->data[2] != kTfLiteOptionalTensor) {
+    if (!ValidateTensorId(*context, inputs->data[2], "inputs[2]", *error)) {
+      return false;
+    }
+  }
+  if (!ValidateTensorIds(*context, *node->outputs, "outputs", *error)) {
+    return false;
+  }
+
+  const int input0_id = inputs->data[0];
+  const int input1_id = inputs->data[1];
+  const int output_id = node->outputs->data[0];
+
+  // Check dtype.
+  const absl::flat_hash_set<TfLiteType> supported_dtypes = {
+      // clang-format off
+      // go/keep-sorted start numeric=yes
+      kTfLiteBFloat16,
+      kTfLiteFloat16,
+      kTfLiteFloat32,
+      kTfLiteInt8,
+      kTfLiteUInt8,
+      // go/keep-sorted end
+      // clang-format on
+  };
+  const TfLiteTensor& input = context->tensors[input0_id];
+  if (!CheckTensorDtype(input, supported_dtypes, "inputs[0]", *error)) {
+    return false;
+  }
+  const TfLiteTensor& weights = context->tensors[input1_id];
+  const absl::flat_hash_set<TfLiteType> supported_weights_dtypes = {
+      // clang-format off
+      // go/keep-sorted start numeric=yes
+      kTfLiteFloat16,
+      kTfLiteFloat32,
+      kTfLiteInt4,
+      kTfLiteInt8,
+      kTfLiteUInt8,
+      // go/keep-sorted end
+      // clang-format on
+  };
+  if (!CheckTensorDtype(weights, supported_weights_dtypes, "inputs[1]",
+                        *error)) {
+    return false;
+  }
+  if (IsConstantTensor(&weights)) {
+    absl::Status status;
+    if (weights.type == kTfLiteInt8 || weights.type == kTfLiteUInt8) {
+      status =
+          CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>(
+              &weights, /*enable_spanned_weights=*/false);
+    } else if (weights.type == kTfLiteInt4) {
+      status =
+          CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::INT4>(
+              &weights, /*enable_spanned_weights=*/false);
+    } else {
+      status =
+          CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>(
+              &weights);
+    }
+    if (!status.ok()) {
+      *error = status.message();
+      return false;
+    }
+  }
+  const TfLiteTensor* bias = tflite::GetInput(context, node, 2);
+  const absl::flat_hash_set<TfLiteType> supported_bias_dtypes = {
+      // clang-format off
+      // go/keep-sorted start numeric=yes
+      kTfLiteFloat16,
+      kTfLiteFloat32,
+      // go/keep-sorted end
+      // clang-format on
+  };
+  if (bias &&
+      !CheckTensorDtype(*bias, supported_bias_dtypes, "inputs[2]", *error)) {
+    return false;
+  }
+  if (bias && IsConstantTensor(bias)) {
+    const absl::Status status =
+        CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>(
+            bias);
+    if (!status.ok()) {
+      *error = status.message();
+      return false;
+    }
+  }
+  const TfLiteTensor& output = context->tensors[output_id];
+  if (!CheckTensorDtype(output, supported_dtypes, "outputs[0]", *error)) {
+    return false;
+  }
+  // Check dims.
+  if (!CheckTensorDims(input, /*min_dims=*/4, /*max_dims=*/4, "inputs[0]",
+                       *error)) {
+    return false;
+  }
+  if (!CheckTensorDims(weights, /*min_dims=*/4, /*max_dims=*/4, "inputs[1]",
+                       *error)) {
+    return false;
+  }
+  if (bias && !CheckTensorDims(*bias, /*min_dims=*/1, /*max_dims=*/1,
+                               "inputs[2]", *error)) {
+    return false;
+  }
+  if (!CheckTensorDims(output, /*min_dims=*/4, /*max_dims=*/4, "outputs[0]",
+                       *error)) {
+    return false;
+  }
+  const int ib = input.dims->data[0];
+  const int ih = input.dims->data[1];
+  const int iw = input.dims->data[2];
+  const int ic = input.dims->data[3];
+  const int wo = weights.dims->data[0];
+  const int wh = weights.dims->data[1];
+  const int ww = weights.dims->data[2];
+  const int wi = weights.dims->data[3];
+  if (ic % wi != 0) {
+    absl::StrAppend(error, "Weights channel not divisible by input channel: ",
+                    GetShapeDebugString(input.dims), ", ",
+                    GetShapeDebugString(weights.dims));
+    return false;
+  }
+  const int bl = bias ? bias->dims->data[0] : 0;
+  if (bias && wo != bl) {
+    absl::StrAppend(error, "Weights channel and bias mismatch: ",
+                    GetShapeDebugString(weights.dims), ", ",
+                    GetShapeDebugString(bias->dims));
+    return false;
+  }
+  const int ob = output.dims->data[0];
+  const int oh = output.dims->data[1];
+  const int ow = output.dims->data[2];
+  const int oc = output.dims->data[3];
+  if (ib != ob) {
+    absl::StrAppend(error, "Input and output batch mismatch: ",
+                    GetShapeDebugString(input.dims), ", ",
+                    GetShapeDebugString(output.dims));
+    return false;
+  }
+  if (oc != wo) {
+    absl::StrAppend(error, "Output and weights channel mismatch: ",
+                    GetShapeDebugString(output.dims), ", ",
+                    GetShapeDebugString(weights.dims));
+    return false;
+  }
+  const auto* params = reinterpret_cast<TfLiteConvParams*>(node->builtin_data);
+  if (!params) {
+    absl::StrAppend(error, "Incompatible node->builtin_data");
+    return false;
+  }
+  const int dh = params->dilation_height_factor;
+  const int dw = params->dilation_width_factor;
+  const int sh = params->stride_height;
+  const int sw = params->stride_width;
+  if (params->padding != kTfLitePaddingSame &&
+      params->padding != kTfLitePaddingValid) {
+    absl::StrAppend(error, "Incompatible padding: ", params->padding);
+    return false;
+  }
+  if (oh != GetOutputDim(params->padding, ih, wh, dh, sh)) {
+    absl::StrAppend(error, "Input, weights, output height mismatch: ",
+                    GetShapeDebugString(input.dims), ", ",
+                    GetShapeDebugString(weights.dims), ", ",
+                    GetShapeDebugString(output.dims), ", padding: ",
+                    params->padding == kTfLitePaddingSame ? "same" : "valid",
+                    ", dilation: ", dh, ", stride: ", sh);
+    return false;
+  }
+  if (ow != GetOutputDim(params->padding, iw, ww, dw, sw)) {
+    absl::StrAppend(error, "Input, weights, output width mismatch: ",
+                    GetShapeDebugString(input.dims), ", ",
+                    GetShapeDebugString(weights.dims), ", ",
+                    GetShapeDebugString(output.dims), ", padding: ",
+                    params->padding == kTfLitePaddingSame ? "same" : "valid",
+                    ", dilation: ", dw, ", stride: ", sw);
+    return false;
+  }
+  // Check const inputs.
+  if (IsConstantTensor(&input) && IsConstantTensor(&weights) &&
+      ((bias && IsConstantTensor(bias)) || !bias)) {
+    absl::StrAppend(error, "Invalid constant inputs: ", node->inputs->data[0],
+                    ", ", node->inputs->data[1]);
+    if (bias) absl::StrAppend(error, ", ", node->inputs->data[2]);
+    return false;
+  }
+  // Check fused activation.
+  if (!CheckFusedActivation(node, params->activation)
+           .ok()) {
+    *error = absl::StrCat("Unsupported fused activation: ", params->activation);
+    return false;
+  }
+  return true;
+}
+
+}  // namespace litert::ml_drift::ir

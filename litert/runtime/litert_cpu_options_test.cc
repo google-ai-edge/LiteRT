@@ -30,6 +30,7 @@ TEST(LiteRtCpuOptionsTest, ParseNumThreads) {
   EXPECT_EQ(ParseLiteRtCpuOptions(toml.data(), toml.size(), &options),
             kLiteRtStatusOk);
   EXPECT_EQ(options.xnn.num_threads, 4);
+  EXPECT_EQ(options.ynn.num_threads, 4);
 }
 
 TEST(LiteRtCpuOptionsTest, ParseKernelMode) {
@@ -38,6 +39,22 @@ TEST(LiteRtCpuOptionsTest, ParseKernelMode) {
   EXPECT_EQ(ParseLiteRtCpuOptions(toml.data(), toml.size(), &options),
             kLiteRtStatusOk);
   EXPECT_EQ(options.kernel_mode, kLiteRtCpuKernelModeReference);
+}
+
+TEST(LiteRtCpuOptionsTest, ParseDelegateKernelMode) {
+  LiteRtCpuOptionsT options = {};
+  std::string toml = "kernel_mode = \"delegate\"\n";
+  EXPECT_EQ(ParseLiteRtCpuOptions(toml.data(), toml.size(), &options),
+            kLiteRtStatusOk);
+  EXPECT_EQ(options.kernel_mode, kLiteRtCpuKernelModeDelegate);
+}
+
+TEST(LiteRtCpuOptionsTest, ParseLegacyXnnpackKernelMode) {
+  LiteRtCpuOptionsT options = {};
+  std::string toml = "kernel_mode = \"xnnpack\"\n";
+  EXPECT_EQ(ParseLiteRtCpuOptions(toml.data(), toml.size(), &options),
+            kLiteRtStatusOk);
+  EXPECT_EQ(options.kernel_mode, kLiteRtCpuKernelModeDelegate);
 }
 
 TEST(LiteRtCpuOptionsTest, ParseFlags) {
@@ -64,12 +81,35 @@ TEST(LiteRtCpuOptionsTest, ParseReferenceKernelMode) {
   EXPECT_EQ(options.kernel_mode, kLiteRtCpuKernelModeReference);
 }
 
+TEST(LiteRtCpuOptionsTest, ParseEnableYnnpack) {
+  LiteRtCpuOptionsT options = {};
+  std::string toml = "enable_ynnpack = true\n";
+  EXPECT_EQ(ParseLiteRtCpuOptions(toml.data(), toml.size(), &options),
+            kLiteRtStatusOk);
+  EXPECT_TRUE(options.enable_ynnpack);
+}
+
 TEST(LiteRtCpuOptionsTest, ParseLegacyReferenceKernelMode) {
   LiteRtCpuOptionsT options = {};
   std::string toml = "kernel_mode = 1\n";
   EXPECT_EQ(ParseLiteRtCpuOptions(toml.data(), toml.size(), &options),
             kLiteRtStatusOk);
   EXPECT_EQ(options.kernel_mode, kLiteRtCpuKernelModeReference);
+}
+
+TEST(LiteRtCpuOptionsTest, ParseYnnpackOptions) {
+  LiteRtCpuOptionsT options = {};
+  std::string toml =
+      "ynnpack_static_shape = true\n"
+      "ynnpack_fast_math = true\n"
+      "ynnpack_consistent_arithmetic = false\n"
+      "ynnpack_no_excess_precision = true\n";
+  EXPECT_EQ(ParseLiteRtCpuOptions(toml.data(), toml.size(), &options),
+            kLiteRtStatusOk);
+  EXPECT_TRUE(options.ynn.static_shape);
+  EXPECT_TRUE(options.ynn.fast_math);
+  EXPECT_FALSE(options.ynn.consistent_arithmetic);
+  EXPECT_TRUE(options.ynn.no_excess_precision);
 }
 
 TEST(LiteRtCpuOptionsTest, ParseWeightCacheFilePath) {
