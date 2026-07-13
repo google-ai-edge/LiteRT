@@ -61,12 +61,18 @@ template <class... Mixins>
 Tensor<Mixins...> Gemma3RmsNorm(const Tensor<Mixins...>& input,
                                 const Tensor<Mixins...>& scale,
                                 float eps = 1e-6f) {
-  // Compute: sqrt(mean(x^2) + eps).
+  // Compute: sqrt(mean(x^2) + eps). Express the mean as sum / dim so the
+  // exported graph can use TFLite SUM, which is supported by the TensorRT path.
   Tensor x_squared = Mul(input, input);
 
-  // Mean over last dimension (emb_dim).
   int last_axis = static_cast<int>(input.GetShape().size()) - 1;
-  Tensor mean_squared = Mean(x_squared, {last_axis}, /*keep_dims=*/true);
+  Tensor sum_squared = Sum(x_squared, {last_axis}, /*keep_dims=*/true);
+  const float inv_dim = 1.0f / static_cast<float>(input.GetShape().back());
+  Tensor inv_dim_tensor = Tensor<Mixins...>(
+      {.type = Type::kFP32,
+       .shape = {1},
+       .buffer = OwningCpuBuffer::Copy<Type::kFP32>({inv_dim})});
+  Tensor mean_squared = Mul(sum_squared, inv_dim_tensor);
 
   // Add epsilon and compute rsqrt.
   Tensor eps_tensor =
