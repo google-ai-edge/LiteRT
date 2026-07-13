@@ -33,10 +33,13 @@ namespace {
 using ::litert::tensor::IsOk;
 using ::litert::tensor::IsOkAndHolds;
 using ::testing::Address;
+using ::testing::AllOf;
+using ::testing::Each;
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
 using ::testing::Eq;
 using ::testing::Not;
+using ::testing::SizeIs;
 using ::testing::StrEq;
 
 MATCHER(IsValidTensor, "") {
@@ -100,6 +103,36 @@ TEST(TensorTest, SetBufferOnRValueWorks) {
   Tensor a = TensorHandle().SetBuffer(expected_buffer);
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, a.GetBuffer());
   EXPECT_THAT(buffer.Lock(), ElementsAreArray(expected_buffer->Lock()));
+}
+
+TEST(TensorTest, BuildWithIntegerScalarWorks) {
+  Tensor a =
+      TensorHandle(TensorInit{.type = Type::kI32, .shape = {1}, .buffer = 3});
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, a.GetBuffer());
+  EXPECT_THAT(buffer.Lock().As<const int>(), ElementsAre(3));
+}
+
+TEST(TensorTest, BuildWithFloatingScalarWorks) {
+  Tensor a = TensorHandle(
+      TensorInit{.type = Type::kFP32, .shape = {1}, .buffer = 3.14});
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, a.GetBuffer());
+  EXPECT_THAT(buffer.Lock().As<const float>(), ElementsAre(3.14));
+}
+
+TEST(TensorTest, BuildWithScalarInfersTypeAndShape) {
+  Tensor a = TensorHandle(TensorInit{.buffer = 3.14});
+  EXPECT_THAT(a.GetType(), Type::kFP64);
+  EXPECT_THAT(a.GetShape(), ElementsAre(1));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, a.GetBuffer());
+  EXPECT_THAT(buffer.Lock().As<const double>(), ElementsAre(3.14));
+}
+
+TEST(TensorTest, BuildWithScalarBroadcastsShape) {
+  Tensor a = TensorHandle(TensorInit{.shape = {2, 3}, .buffer = 3.14f});
+  EXPECT_THAT(a.GetType(), Type::kFP32);
+  EXPECT_THAT(a.GetShape(), ElementsAre(2, 3));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, a.GetBuffer());
+  EXPECT_THAT(buffer.Lock().As<const float>(), AllOf(SizeIs(6), Each(3.14)));
 }
 
 TEST(TensorTest, DefaultConstructedTensorDontHaveAProducer) {
