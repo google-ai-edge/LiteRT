@@ -867,6 +867,12 @@ void DispatchDelegateKernel::ProcessDeferredUnregistrations() {
           }
         }
       }
+      if (auto active_it = tensor_buffer_infos_.find(t_id);
+          active_it != tensor_buffer_infos_.end()) {
+        // Some dispatch runtimes clear an invocation port during detach. Force
+        // the active buffer for this tensor to be reattached before invoking.
+        active_it->second.attached = false;
+      }
 
       (void)LiteRtDispatchUnregisterTensorBuffer(device_context_,
                                                  info.buffer_handle);
