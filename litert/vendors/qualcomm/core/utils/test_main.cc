@@ -17,6 +17,7 @@ namespace {
 // Simple argument parser for --backend flag.
 bool ParseArgs(int argc, char** argv) {
   constexpr absl::string_view kBackendFlag = "--backend=";
+  constexpr absl::string_view kDispatchLibraryDirFlag = "--dispatch_library_dir=";
   constexpr absl::string_view kHelpFlag = "--help";
   constexpr absl::string_view kShortHelpFlag = "-h";
 
@@ -35,12 +36,18 @@ bool ParseArgs(int argc, char** argv) {
         std::cerr << "Unknown backend: " << backend_str << std::endl;
         return false;
       }
+    } else if (absl::StartsWith(arg, kDispatchLibraryDirFlag)) {
+      qnn::SetTestDispatchLibraryDir(
+          std::string(arg.substr(kDispatchLibraryDirFlag.size())));
     } else if (arg == kHelpFlag || arg == kShortHelpFlag) {
       std::cout << "Test specific options:\n"
                 << "  " << kBackendFlag << "[BACKEND_NAME]\n"
                 << "      Specify the backend to run tests against. Supported "
                    "backends: htp, dsp.\n"
                 << "      Default is htp.\n"
+                << "  " << kDispatchLibraryDirFlag << "[PATH]\n"
+                << "      Specify the dispatch library directory.\n"
+                << "      Default is /data/local/tmp.\n"
                 << std::endl;
       exit(0);
     }

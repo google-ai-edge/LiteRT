@@ -25,4 +25,19 @@ void SetTestBackend(BackendType backend_type) {
   GetTestBackend() = backend_type;
 }
 
+namespace {
+std::string& GetTestDispatchLibraryDirMutable() {
+  static std::string dir = "/data/local/tmp";
+  return dir;
+}
+}  // namespace
+
+const std::string& GetTestDispatchLibraryDir() {
+  return GetTestDispatchLibraryDirMutable();
+}
+
+void SetTestDispatchLibraryDir(const std::string& dir) {
+  GetTestDispatchLibraryDirMutable() = dir;
+}
+
 }  // namespace qnn
