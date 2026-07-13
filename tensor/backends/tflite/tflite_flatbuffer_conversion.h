@@ -70,6 +70,11 @@ class ModelFactory {
   // when exiting the function.
   absl::StatusOr<int> AddSubgraph(std::vector<TensorHandle> outputs);
 
+  // Adds a subgraph while retaining and ordering explicitly declared inputs,
+  // including inputs that are disconnected from its output dataflow.
+  absl::StatusOr<int> AddSubgraph(std::vector<TensorHandle> inputs,
+                                  std::vector<TensorHandle> outputs);
+
   template <class... Mixins>
   absl::StatusOr<int> AddSubgraph(std::vector<Tensor<Mixins...>> outputs) {
     return AddSubgraph(
@@ -80,6 +85,12 @@ class ModelFactory {
   //
   // The signature inputs and outputs are named using the tensor names.
   absl::Status AddSignature(std::vector<TensorHandle> outputs,
+                            std::string name);
+
+  // Adds a signature while retaining explicitly declared graph inputs, even
+  // when an input is not connected to an output dataflow path.
+  absl::Status AddSignature(std::vector<TensorHandle> inputs,
+                            std::vector<TensorHandle> outputs,
                             std::string name);
 
   // Registers a set of external buffers. It must be called before
@@ -99,9 +110,15 @@ class ModelFactory {
   // corresponding sizes and offsets.
   absl::Status UpdateBufferData(flatbuffers::FlatBufferBuilder& fbb);
 
+  // Materializes small mutable op parameters inside the FlatBuffer before it
+  // is packed. Other constants remain in appended storage.
+  void PrepareBufferData();
+
   absl::Status WriteBufferData(std::ofstream& output_file);
 
  private:
+  absl::Status AddSignatureDef(std::string name, int subgraph_index);
+
   struct TensorSerializationInfo {
     int index = -1;
     bool is_output = false;
@@ -113,6 +130,7 @@ class ModelFactory {
   struct BufferSerializationInfo {
     int index = -1;
     size_t serialization_offset = 0;
+    bool inline_data = false;
     std::optional<uint32_t> external_buffer_id;
   };
 
