@@ -420,9 +420,7 @@ class OwningCpuBuffer : public Buffer {
     if constexpr (type == seq_type) {
       std::copy(begin(seq), end(seq), copied_data->Span<NativeType>().data());
     } else {
-      std::transform(begin(seq), end(seq),
-                     copied_data->Span<NativeType>().data(),
-                     Conversion<type, seq_type>::Call);
+      Convert(seq, copied_data->Span<NativeType>()).IgnoreError();
     }
     return copied_data;
   }
