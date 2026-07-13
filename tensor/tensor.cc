@@ -75,14 +75,14 @@ TensorHandle& TensorHandle::Set(TensorInit init, source_location loc) & {
         using T = std::decay_t<decltype(arg)>;
         if constexpr (std::is_same_v<T, std::shared_ptr<Buffer>>) {
           info.buffer = std::forward<decltype(arg)>(arg);
-        } else if constexpr (std::is_same_v<T, std::vector<float>>) {
-          info.buffer = OwningCpuBuffer::Copy<Type::kFP32>(arg);
-        } else if constexpr (std::is_same_v<T, std::vector<int32_t>>) {
-          info.buffer = OwningCpuBuffer::Copy<Type::kI32>(arg);
-        } else if constexpr (std::is_same_v<T, std::vector<int8_t>>) {
-          info.buffer = OwningCpuBuffer::Copy<Type::kI8>(arg);
-        } else if constexpr (std::is_same_v<T, std::vector<int4_t>>) {
-          info.buffer = OwningCpuBuffer::Copy<Type::kI4>(arg);
+        } else if constexpr (std::is_same_v<T, std::vector<float>> ||
+                             std::is_same_v<T, std::vector<int32_t>> ||
+                             std::is_same_v<T, std::vector<int8_t>> ||
+                             std::is_same_v<T, std::vector<int4_t>>) {
+          info.type = info.type == Type::kUnknown
+                          ? ApiType<typename T::value_type>::value
+                          : info.type;
+          info.buffer = OwningCpuBuffer::CopyAs(info.type, arg);
         } else if constexpr (std::is_arithmetic_v<T>) {
           if (info.type == Type::kUnknown) {
             info.type = ApiType<T>::value;
