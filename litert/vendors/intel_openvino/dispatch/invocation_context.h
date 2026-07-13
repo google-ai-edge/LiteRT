@@ -17,8 +17,11 @@
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
 
 #include <optional>
+#include <utility>
+#include <vector>
 
 #include "openvino/runtime/infer_request.hpp"
+#include "openvino/runtime/tensor.hpp"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
@@ -84,10 +87,17 @@ class LiteRtDispatchInvocationContextT {
  private:
   LiteRtDispatchInvocationContextT(ov::InferRequest& infer_request,
                                    LiteRtDispatchDeviceContextT& device_context,
-                                   int num_inputs, int num_outputs)
-      : device_context_(device_context), infer_request_(infer_request) {}
+                                   int num_inputs, int num_outputs,
+                                   std::vector<ov::Tensor> bound_weights = {})
+      : device_context_(device_context),
+        infer_request_(infer_request),
+        bound_weights_(std::move(bound_weights)) {}
   LiteRtDispatchDeviceContextT& device_context_;
   ov::InferRequest infer_request_;
+  // Views into the shared usm-host weight buffer bound to weight-Parameter
+  // inputs; held for the infer request's lifetime (set_input_tensor does not
+  // take ownership).
+  std::vector<ov::Tensor> bound_weights_;
   // Timeout is in milliseconds
   static constexpr int kInferRequestTimeoutMs = 10000;
 
