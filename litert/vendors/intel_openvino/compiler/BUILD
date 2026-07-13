@@ -277,6 +277,32 @@ litert_test(
 )
 
 litert_test(
+    name = "graph_iterator_test",
+    srcs = ["graph_iterator_test.cc"],
+    copts = select({
+        "//litert:windows": [],
+        "//conditions:default": ["-fexceptions"],
+    }),
+    data = ["//litert/test:tflite_test_data"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":graph_iterator",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/cc:litert_element_type",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
+        "//litert/test:load_test_model",
+        "@intel_openvino//:openvino",
+    ],
+)
+
+litert_test(
     name = "openvino_compiler_plugin_test",
     srcs = [
         "openvino_compiler_plugin_test.cc",

@@ -521,7 +521,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         std::shared_ptr<ov::frontend::tensorflow_lite::GraphIterator>
             graph_delegate =
                 std::make_shared<litert::openvino::GraphIteratorDelegate>(
-                    compiler_plugin->ctx(), &expected_subgraph.Value());
+                    compiler_plugin->ctx(), &expected_subgraph.Value(),
+                    context.Device());
         auto input_model = tflite_fe->load(graph_delegate);
         LITERT_LOG(LITERT_INFO, "Model loaded");
         auto ov_model = tflite_fe->convert(input_model);
