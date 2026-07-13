@@ -49,6 +49,14 @@ struct int2_t {
   int8_t b : 2;
   int8_t c : 2;
   int8_t d : 2;
+
+  friend bool operator==(const int2_t lhs, const int2_t rhs) {
+    return lhs.a == rhs.a && lhs.b == rhs.b && lhs.c == rhs.c && lhs.d == rhs.d;
+  }
+
+  friend bool operator!=(const int2_t lhs, const int2_t rhs) {
+    return !(lhs == rhs);
+  }
 };
 
 static_assert(sizeof(int2_t) == sizeof(int8_t));
@@ -57,6 +65,14 @@ static_assert(alignof(int2_t) == alignof(int8_t));
 struct int4_t {
   int8_t a : 4;
   int8_t b : 4;
+
+  friend bool operator==(const int4_t lhs, const int4_t rhs) {
+    return lhs.a == rhs.a && lhs.b == rhs.b;
+  }
+
+  friend bool operator!=(const int4_t lhs, const int4_t rhs) {
+    return !(lhs == rhs);
+  }
 };
 
 static_assert(sizeof(int4_t) == sizeof(int8_t));
@@ -65,6 +81,14 @@ static_assert(alignof(int4_t) == alignof(int8_t));
 struct uint4_t {
   uint8_t a : 4;
   uint8_t b : 4;
+
+  friend bool operator==(const uint4_t lhs, const uint4_t rhs) {
+    return lhs.a == rhs.a && lhs.b == rhs.b;
+  }
+
+  friend bool operator!=(const uint4_t lhs, const uint4_t rhs) {
+    return !(lhs == rhs);
+  }
 };
 
 static_assert(sizeof(uint4_t) == sizeof(uint8_t));
