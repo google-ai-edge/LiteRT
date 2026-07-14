@@ -103,10 +103,6 @@ class GpuBackend {
   // [REQUIRED]
   virtual absl::string_view GetBackendName() = 0;
 
-  // Sets whether the backend should dynamically request/release the memory
-  // residency set at runtime for upcoming inferences. Default is a no-op.
-  virtual void SetResidencyRuntimeEnabled(bool enabled) {}
-
   // Returns the prefix of the serialized data.
   // [REQUIRED]
   virtual absl::string_view GetSerializedDataPrefix() = 0;
