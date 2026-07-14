@@ -75,6 +75,8 @@
 #include "tflite/converter/quantization/common/quantization_lib/quantization_config.h"
 #include "tflite/converter/stablehlo/transforms/stablehlo_passes.h"
 #include "tflite/converter/transforms/optimize_pass.h"
+#include "tflite/converter/transforms/optimize_pass_options.h"
+#include "tflite/converter/transforms/pass_registry_utils.h"
 #include "tflite/converter/transforms/passes.h"
 #include "tflite/converter/types.pb.h"
 #include "tensorflow/compiler/mlir/quantization/stablehlo/quantization_config.pb.h"
@@ -242,6 +244,9 @@ GetTFLConverterFlagsAndPassConfig(mlir::ModuleOp module_op,
         converter_flags.unsafe_fuse_dynamic_shaped_broadcast();
     pass_config.unsafe_single_batch_rank_reduction =
         converter_flags.unsafe_single_batch_rank_reduction();
+    pass_config.skip_optimize_pass = config.skip_optimize_pass;
+    pass_config.optimize_disabled_patterns = config.optimize_disabled_patterns;
+    pass_config.optimize_enabled_patterns = config.optimize_enabled_patterns;
 
     pass_config.enable_hlo_to_tf_conversion = true;
 
@@ -298,8 +303,9 @@ void RegisterPasses() {
   mlir::stablehlo::registerOptimizationPasses();
 
   mlir::odml::registerLegalizeStablehloToVhloPass();
-  mlir::PassRegistration<mlir::TFL::OptimizePass>(
-      []() { return mlir::TFL::CreateOptimizePass(); });
+  // Register tfl-optimize with its options so textual pipelines can configure
+  // it, e.g. `tfl-optimize{enabled-patterns=FuseFullyConnectedAndAdd}`.
+  mlir::TFL::Register<mlir::TFL::OptimizePass, mlir::TFL::OptimizePassOptions>();
   mlir::PassRegistration<mlir::OperationPass<mlir::func::FuncOp>>(
       []() { return mlir::TFL::CreatePrepareQuantizePass(); });
   mlir::PassRegistration<mlir::OperationPass<mlir::ModuleOp>>(
