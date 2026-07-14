@@ -31,6 +31,7 @@ limitations under the License.
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
+#include "tensor/utils/macros.h"
 #include "tensor/utils/source_location.h"
 
 namespace litert::tensor {
@@ -52,14 +53,19 @@ TensorHandle TensorHandle::ShallowClone() const {
 }
 
 void TensorHandle::ShallowCloneTo(TensorHandle& other) const {
-  *GetInfo(other.impl_) = *GetInfo(impl_);
+  LRT_TENSOR_ASSIGN_OR_ABORT(graph::TensorInformation & other_info,
+                             GetInfo(other.impl_));
+  LRT_TENSOR_ASSIGN_OR_ABORT(other_info, GetInfo(impl_));
 }
 
 TensorHandle& TensorHandle::Set(TensorInit init, source_location loc) & {
   if (!graph::GetStatus(impl_).ok()) {
     impl_ = graph::NewTensor(loc);
   }
-  graph::TensorInformation& info = *GetInfo(impl_);
+  // We just checked that the tensor exists so we access it directly to avoid
+  // triggering the absl::StatusOr linter that would force us to do a redundant
+  // check.
+  graph::TensorInformation& info = impl_.group->tensor_infos[impl_.index];
   info.name = std::move(init.name);
   info.type = init.type;
   info.shape = std::move(init.shape);
