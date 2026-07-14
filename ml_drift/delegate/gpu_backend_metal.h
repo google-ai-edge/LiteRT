@@ -202,6 +202,17 @@ class GpuInferenceContextMetal : public GpuInferenceContext {
       ::ml_drift::ValueId id) override;
   absl::Status BindSpatialTensor(::ml_drift::ValueId id,
                                  ::ml_drift::GpuSpatialTensor* tensor) override;
+  absl::Status UploadWeightsOnWeb(
+      weight_loader::WeightLoader* weight_loader,
+      const ::ml_drift::GpuModel& gpu_model,
+      const absl::flat_hash_map<::ml_drift::ValueId, ::ml_drift::ValueId>&
+          io_mapping,
+      const absl::flat_hash_map<::ml_drift::ValueId, uint32_t>&
+          weight_id_to_external_buffer_id,
+      std::vector<::ml_drift::WeightsManager::UploadWeightsInfo>& upload_infos)
+      override {
+    return absl::UnimplementedError("Not implemented for this backend.");
+  }
   absl::Status WriteDataToWeightTensor(::ml_drift::ValueId id,
                                        absl::Span<const uint8_t> data) override;
   absl::Status ReadWeightTensorToDescriptor(

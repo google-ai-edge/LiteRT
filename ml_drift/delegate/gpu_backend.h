@@ -301,6 +301,16 @@ class GpuInferenceContext {
   virtual absl::Status BindSpatialTensor(
       ::ml_drift::ValueId id, ::ml_drift::GpuSpatialTensor* tensor) = 0;
 
+  virtual absl::Status UploadWeightsOnWeb(
+      weight_loader::WeightLoader* weight_loader,
+      const ::ml_drift::GpuModel& gpu_model,
+      const absl::flat_hash_map<::ml_drift::ValueId, ::ml_drift::ValueId>&
+          io_mapping,
+      const absl::flat_hash_map<::ml_drift::ValueId, uint32_t>&
+          weight_id_to_external_buffer_id,
+      std::vector<::ml_drift::WeightsManager::UploadWeightsInfo>&
+          upload_infos) = 0;
+
   // Writes weight data to a spatial tensor bound to the given id synchronously.
   // [OPTIONAL] Only used by Gpu-weights-preparation enabled when
   // `convert_weights_on_gpu` is true.

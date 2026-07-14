@@ -25,6 +25,18 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#ifdef __EMSCRIPTEN__
+// copybara:comment_begin
+#include <webgpu/webgpu_cpp.h>
+// copybara:comment_end
+// copybara:uncomment_begin
+// #include "ml_drift/webgpu/webgpu_headers.h"  // from @ml_drift
+// copybara:uncomment_end
+#else
+namespace wgpu {
+class Buffer;
+}  // namespace wgpu
+#endif  // __EMSCRIPTEN__
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/scoped_weight_source.h"
@@ -134,6 +146,12 @@ class WeightLoader {
   // buffer ID. Returns `nullptr` if no such tensor exists.
   virtual const WeightAccess* GetExternalWeightByBuffer(
       uint32_t external_buffer_id) const = 0;
+
+  virtual absl::Status UploadWeightsOnWeb(
+      const absl::flat_hash_map<int, wgpu::Buffer>& tfl_id_to_wgpu_buffer) {
+    return absl::UnimplementedError(
+        "UploadWeightsOnWeb is not implemented by default.");
+  }
 
   // Marks the host mapping for the external weight tensor as discardable.
   virtual absl::Status DiscardExternalWeightByBuffer(

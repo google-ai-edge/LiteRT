@@ -45,7 +45,14 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-    ],
+    ] + select({
+        "//conditions:default": [],
+        # copybara:uncomment_begin(google-only)
+        # "//tools/cc_target_os:emscripten": [
+        # "@ml_drift//ml_drift/webgpu:webgpu_headers",
+        # ],
+        # copybara:uncomment_end
+    }),
 )
 
 cc_test(
