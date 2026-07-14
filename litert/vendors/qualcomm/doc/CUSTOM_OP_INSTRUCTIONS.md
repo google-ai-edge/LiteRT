@@ -173,8 +173,8 @@ pkg.target = "HTP";
 options.SetCustomOpPackage(pkg);
 ```
 
--   When the package `name` is left empty, the plugin falls back to the built-in
-    `qti.aisw` package.
+-   When the package `name` is left empty, no custom op package is registered,
+    and TFLite custom ops are not offloaded to QNN.
 
 -   The runtime registers the package by calling `backendRegisterOpPackage` with
     the `dispatch_package_path`, `interface_provider`, and `target`.

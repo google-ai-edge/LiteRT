@@ -1495,6 +1495,13 @@ LiteRtStatus BuildCustomOp(const litert::compiler::Op& litert_op,
                            std::vector<::qnn::TensorWrapperRef>& output_tensors,
                            std::vector<::qnn::OpWrapper>& op_wrappers,
                            const ::qnn::CustomOpPackage& custom_op_package) {
+  if (custom_op_package.name.empty()) {
+    LITERT_LOG(LITERT_WARNING,
+               "No custom package registered for custom op, won't create QNN "
+               "custom op.");
+    return kLiteRtStatusOk;
+  }
+
   // Use tflite custom code as op type in QNN custom op package.
   auto custom_code = litert_op.CustomCode();
   if (!custom_code.HasValue() || custom_code->empty()) {
@@ -1508,9 +1515,7 @@ LiteRtStatus BuildCustomOp(const litert::compiler::Op& litert_op,
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  const char* package_name = custom_op_package.name.empty()
-                                 ? QNN_OP_PACKAGE_NAME_QTI_AISW
-                                 : custom_op_package.name.c_str();
+  const char* package_name = custom_op_package.name.c_str();
   auto& custom_op = op_wrappers.emplace_back(
       ::qnn::CreateCustomOp(package_name, custom_code->data(),
                             std::vector<::qnn::ConstTensorWrapperRef>(
