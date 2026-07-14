@@ -855,6 +855,7 @@ cc_library(
         "//tflite/c:common",
         "//tflite/kernels:kernel_util",
         "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
     ],
 )

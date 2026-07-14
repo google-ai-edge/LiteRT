@@ -15,8 +15,10 @@
 #include "third_party/odml/litert/ml_drift/tflite/support/support_transpose.h"
 
 #include <string>
+#include <vector>
 
 #include "absl/base/nullability.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "third_party/odml/litert/ml_drift/tflite/support/support_aux.h"
 #include "tflite/c/common.h"
@@ -47,6 +49,18 @@ bool IsTransposeSupported(const TfLiteContext* absl_nonnull context,
   // Validate tensor IDs.
   if (!ValidateTensorIds(*context, *inputs, "inputs", *error)) return false;
   if (!ValidateTensorIds(*context, *outputs, "outputs", *error)) return false;
+
+  const int input_id = inputs->data[0];
+  const TfLiteTensor& input_tensor = context->tensors[input_id];
+
+  const std::vector<TfLiteType> supported_dtypes_vec = {
+      kTfLiteFloat32, kTfLiteFloat16, kTfLiteInt32, kTfLiteUInt32, kTfLiteInt16,
+      kTfLiteUInt16,  kTfLiteInt8,    kTfLiteUInt8, kTfLiteBool};
+  absl::flat_hash_set<TfLiteType> supported_dtypes(supported_dtypes_vec.begin(),
+                                                   supported_dtypes_vec.end());
+  if (!CheckTensorDtype(input_tensor, supported_dtypes, "inputs[0]", *error)) {
+    return false;
+  }
 
   const int perm_id = inputs->data[1];
   const TfLiteTensor& perm_tensor = context->tensors[perm_id];

@@ -561,7 +561,9 @@ class IrModelBuilder {
       case kTfLiteBool:
         return ::ml_drift::DataType::BOOL;
       default:
-        ABSL_LOG(FATAL) << "Unsupported TfLiteType: " << tflite_type;
+        // Returning UNKNOWN allows the framework to fail gracefully downstream
+        // when it attempts to select a GPU kernel.
+        return ::ml_drift::DataType::UNKNOWN;
     }
   }
 
