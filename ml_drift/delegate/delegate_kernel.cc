@@ -14,8 +14,6 @@
 
 #include "third_party/odml/litert/ml_drift/delegate/delegate_kernel.h"
 
-#include "litert/c/litert_common.h"
-
 #if defined(_WIN32)
 #include <io.h>
 #else
