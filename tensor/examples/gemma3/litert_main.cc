@@ -38,10 +38,10 @@ limitations under the License.
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "tensor/arithmetic.h"
-#include "tensor/arithmetic_graph.h"
 #include "tensor/backends/tflite/arithmetic_tflite.h"
 #include "tensor/backends/tflite/tflite_flatbuffer_conversion.h"
 #include "tensor/buffer.h"
@@ -67,7 +67,7 @@ ABSL_FLAG(std::string, prompt, "Hello, world!",
           "Input prompt for text generation");
 ABSL_FLAG(size_t, max_tokens, 50, "Maximum number of tokens to generate");
 ABSL_FLAG(std::string, accelerator, "gpu",
-          "Hardware accelerator to use: cpu or gpu");
+          "Hardware accelerator to use: cpu, gpu, or npu");
 ABSL_FLAG(bool, tensor_rt_compatible, false,
           "Emit a TensorRT-friendlier graph: static prefill slice, host-side "
           "argmax from logits, and no GQA gather/tile for single-KV-group "
@@ -90,8 +90,8 @@ ABSL_FLAG(std::string, gpu_buffer_storage, "buffer",
 ABSL_FLAG(bool, gpu_external_tensors, true,
           "Enable GPU external tensors mode for cache tensors.");
 ABSL_FLAG(bool, allow_cpu_fallback, false,
-          "When using --accelerator=gpu, also allow CPU execution for ops "
-          "that the hardware delegate did not claim.");
+          "When using --accelerator=gpu or --accelerator=npu, also allow CPU "
+          "execution for ops that the hardware delegate did not claim.");
 ABSL_FLAG(::litert::tensor::examples::SafetensorLoader::QuantizedLoadMode,
           weight_mode,
           ::litert::tensor::examples::SafetensorLoader::QuantizedLoadMode::
@@ -136,7 +136,7 @@ bool ParseLayerIndex(absl::string_view tensor_name, int* layer_index) {
   }
   std::string layer(suffix.substr(0, pos));
   char* end = nullptr;
-  const long parsed = std::strtol(layer.c_str(), &end, 10);
+  const int64_t parsed = std::strtol(layer.c_str(), &end, 10);
   if (end == nullptr || *end != '\0' || parsed < 0 ||
       parsed > std::numeric_limits<int>::max()) {
     return false;
@@ -851,7 +851,14 @@ absl::Status RunGemma3Inference(
   std::string acc_flag = absl::GetFlag(FLAGS_accelerator);
   if (acc_flag == "cpu") {
     options.SetHardwareAccelerators(::litert::HwAccelerators::kCpu);
-  } else {
+  } else if (acc_flag == "npu") {
+    if (absl::GetFlag(FLAGS_allow_cpu_fallback)) {
+      options.SetHardwareAccelerators(::litert::HwAccelerators::kNpu |
+                                      ::litert::HwAccelerators::kCpu);
+    } else {
+      options.SetHardwareAccelerators(::litert::HwAccelerators::kNpu);
+    }
+  } else if (acc_flag == "gpu") {
     if (absl::GetFlag(FLAGS_allow_cpu_fallback)) {
       options.SetHardwareAccelerators(::litert::HwAccelerators::kGpu |
                                       ::litert::HwAccelerators::kCpu);
@@ -889,6 +896,9 @@ absl::Status RunGemma3Inference(
         gpu_options_or->AddExternalTensorPattern("value_cache_.*");
       }
     }
+  } else {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Unsupported --accelerator value: ", acc_flag));
   }
 
   auto runner_res = ::litert::tensor::LitertDynamicRunner::Create(
