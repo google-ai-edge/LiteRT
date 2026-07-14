@@ -19,6 +19,7 @@
 #include <memory>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 
 #include "ml_drift/common/convert.h"  // from @ml_drift
 #include "ml_drift/common/data_type.h"  // from @ml_drift
@@ -61,9 +62,12 @@ GpuBackendMetal::GpuBackendMetal(::ml_drift::metal::MetalDevice* device,
                                  GpuDelegateWaitType wait_type, id<MTLCommandQueue> command_queue,
                                  bool enable_residency_set)
     : device_(device), wait_type_(wait_type), command_queue_(command_queue) {
-  if (enable_residency_set) {
-    if (@available(macOS 15.0, iOS 18.0, *)) {
-      InitResidencySet();
+  if (@available(macOS 15.0, iOS 18.0, *)) {
+    InitResidencySet();
+    absl::MutexLock lock(residency_mutex_);
+    residency_runtime_enabled_ = enable_residency_set;
+    if (!enable_residency_set) {
+      ReleaseResidencyLocked();
     }
   }
 }
@@ -89,6 +93,10 @@ void GpuBackendMetal::InitResidencySet() {
       if (residency_set_ != nil) {
         [command_queue_ addResidencySet:residency_set_];
         ABSL_LOG(INFO) << "Metal Residency Set successfully enabled and added to Command Queue.";
+        {
+          absl::MutexLock lock(residency_mutex_);
+          residency_active_ = true;
+        }
         StartHeartbeat();
       } else {
         ABSL_LOG(ERROR) << "Failed to create Metal Residency Set: "
@@ -99,6 +107,25 @@ void GpuBackendMetal::InitResidencySet() {
 }
 
 absl::string_view GpuBackendMetal::GetBackendName() { return kBackendName; }
+
+void GpuBackendMetal::SetResidencyRuntimeEnabled(bool enabled) {
+  if (residency_set_ == nil) return;
+  absl::MutexLock lock(residency_mutex_);
+  if (residency_runtime_enabled_ == enabled) return;
+  residency_runtime_enabled_ = enabled;
+  if (enabled) {
+    if (!residency_active_) {
+      if (@available(macOS 15.0, iOS 18.0, *)) {
+        [residency_set_ requestResidency];
+        residency_active_ = true;
+        ABSL_LOG(INFO) << "Metal residency set dynamically enabled.";
+      }
+    }
+  } else {
+    ReleaseResidencyLocked();
+    ABSL_LOG(INFO) << "Metal residency set dynamically disabled.";
+  }
+}
 
 absl::string_view GpuBackendMetal::GetSerializedDataPrefix() { return kSerializedDataPrefix; }
 
@@ -565,7 +592,10 @@ void GpuBackendMetal::StartHeartbeat() {
     while (!stop_heartbeat_.WaitForNotificationWithTimeout(absl::Milliseconds(100))) {
       @autoreleasepool {
         if (@available(macOS 15.0, iOS 18.0, *)) {
-          [residency_set_ requestResidency];
+          absl::MutexLock lock(residency_mutex_);
+          if (residency_active_ && residency_set_ != nil && residency_runtime_enabled_) {
+            [residency_set_ requestResidency];
+          }
         }
       }
     }
@@ -576,6 +606,14 @@ void GpuBackendMetal::StopHeartbeat() {
   stop_heartbeat_.Notify();
   if (heartbeat_thread_.joinable()) {
     heartbeat_thread_.join();
+  }
+}
+void GpuBackendMetal::ReleaseResidencyLocked() {
+  if (residency_active_) {
+    if (@available(macOS 15.0, iOS 18.0, *)) {
+      [residency_set_ endResidency];
+      residency_active_ = false;
+    }
   }
 }
 

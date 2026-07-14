@@ -43,8 +43,10 @@
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/options/litert_gpu_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/runtime/external_litert_buffer_context.h"
 #include "third_party/odml/litert/ml_drift/delegate/delegate_options.h"
 #include "third_party/odml/litert/ml_drift/delegate/gpu_backend.h"
 #include "third_party/odml/litert/ml_drift/tflite/model_builder_helper.h"
@@ -689,6 +691,36 @@ absl::Status DelegateKernelLiteRt::InitTensorConverters(
   }
 
   return absl::OkStatus();
+}
+
+absl::Status DelegateKernelLiteRt::Dispatch(TfLiteContext* context) {
+  auto* buffer_context = reinterpret_cast<LiteRtExternalLiteRtBufferContext>(
+      context->GetExternalContext(context, kTfLiteLiteRtBufferContext));
+  if (buffer_context != nullptr) {
+    auto* buffer_context_impl =
+        reinterpret_cast<LiteRtExternalLiteRtBufferContextT*>(buffer_context);
+    LiteRtOptions run_options = buffer_context_impl->GetRunOptions();
+    if (run_options != nullptr) {
+      LiteRtOpaqueOptions opaque_gpu_options;
+      if (runtime_context_->get_opaque_options(
+              run_options, &opaque_gpu_options) == kLiteRtStatusOk) {
+        void* gpu_payload_data = nullptr;
+        const char* identifier = LrtGetGpuOptionsIdentifier();
+        if (runtime_context_->find_opaque_options_data(
+                opaque_gpu_options, identifier, &gpu_payload_data) ==
+            kLiteRtStatusOk) {
+          const LrtGpuOptions* gpu_opts =
+              reinterpret_cast<const LrtGpuOptions*>(gpu_payload_data);
+          bool enable_residency = true;
+          if (LrtGetGpuOptionsMetalResidencySet(gpu_opts, &enable_residency) ==
+              kLiteRtStatusOk) {
+            backend_->SetResidencyRuntimeEnabled(enable_residency);
+          }
+        }
+      }
+    }
+  }
+  return DelegateKernel::Dispatch(context);
 }
 
 }  // namespace litert::ml_drift
