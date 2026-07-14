@@ -21,7 +21,7 @@ import {Environment} from './environment';
 import {getGlobalLiteRt} from './global_litert';
 import {readableStreamDefaultReaderToUint8Array, urlToUint8Array} from './load_utils';
 import {Model} from './model';
-import {CompileOptions} from './model_types';
+import {CompileOptions, fillCompileOptions} from './model_types';
 import {Deletable, LiteRtWasm} from './wasm_binding_types';
 import {isJspiSupported} from './wasm_feature_detect';
 
@@ -168,16 +168,8 @@ export class LiteRt {
           'environment.');
     }
 
-    const cpuOptions = compileOptions.cpuOptions ??
-        {numThreads: this.liteRtWasm.getThreadCount()};
-
-    const filledCompileOptions: Required<CompileOptions> = {
-      environment,
-      accelerator,
-      cpuOptions,
-      gpuOptions: compileOptions.gpuOptions ?? {},
-      webNNOptions: compileOptions.webNNOptions ?? {},
-    };
+    const filledCompileOptions = fillCompileOptions(
+        compileOptions, environment, this.liteRtWasm.getThreadCount());
 
     const ptr = this.liteRtWasm._malloc(modelData.byteLength);
     this.liteRtWasm.HEAPU8.set(modelData, ptr);
