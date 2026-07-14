@@ -26,6 +26,10 @@
 #include <string>
 #include <vector>
 
+#include <dlfcn.h>
+#include <unistd.h>
+#include <cstdint>
+
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/tensor.hpp"
@@ -289,12 +293,92 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
   return {};
 }
 
+namespace {
+
+// NPU HAL work-phase notifications. Emitting work_requested/started/ended
+// around each inference lets the NPU HAL scheduler (and NpuManager's
+// WorkStatusListener) observe the work driven through the LiteRT dispatch
+// path. The hook library is resolved by soname (exposed to the app via
+// <uses-native-library> + the vendor public library list); where it is
+// absent the notifications are a graceful no-op, so no non-Intel behaviour
+// changes. Keeping this inside the dispatcher (rather than the shared CTS
+// harness) is what makes the harness vendor-agnostic.
+using WorkRequestedFn = int32_t (*)(int32_t, int32_t, int32_t);
+using WorkStartedFn = int (*)(int32_t, int32_t, int32_t);
+using WorkEndedFn = int (*)(int32_t, int32_t, int32_t);
+
+struct NpuHalHooks {
+  WorkRequestedFn requested = nullptr;
+  WorkStartedFn started = nullptr;
+  WorkEndedFn ended = nullptr;
+};
+
+const NpuHalHooks& GetNpuHalHooks() {
+  static const NpuHalHooks hooks = [] {
+    NpuHalHooks h;
+    void* lib = dlopen("libnpu_hal_hook.so", RTLD_NOW);
+    if (lib != nullptr) {
+      h.requested = reinterpret_cast<WorkRequestedFn>(
+          dlsym(lib, "npu_hal_work_requested"));
+      h.started = reinterpret_cast<WorkStartedFn>(
+          dlsym(lib, "npu_hal_work_started"));
+      h.ended = reinterpret_cast<WorkEndedFn>(
+          dlsym(lib, "npu_hal_work_ended"));
+    }
+    return h;
+  }();
+  return hooks;
+}
+
+// Any valid 0-1000 priority; the work-status contract does not check it.
+constexpr int32_t kNpuHalJobPriority = 100;
+
+// npu_hal_work_requested() return code for an explicit HAL access denial
+// (matches NPU_HAL_WORK_DENIED in npu_hal_hook.h). Any other non-positive
+// value means the HAL was unreachable, so the caller should fail-open.
+constexpr int32_t kNpuHalWorkDenied = -1;
+
+}  // namespace
+
 litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
+  const NpuHalHooks& hooks = GetNpuHalHooks();
+  const int32_t uid = static_cast<int32_t>(getuid());
+  int32_t work_id = 0;
+  if (hooks.requested != nullptr) {
+    work_id = hooks.requested(uid, kNpuHalJobPriority, /*original_uid=*/-1);
+    // Distinguish an explicit access denial from the HAL being unreachable.
+    // kNpuHalWorkDenied (-1) means the app is not allowed NPU access (e.g. it
+    // lacks the android.hardware.npu feature): fail the inference so the
+    // caller observes an error, not a silent success. Any other non-positive
+    // value means the hook could not reach the HAL/proxy (service restarting,
+    // transport error): fail-open and run the inference without work-status
+    // emission rather than punishing a legitimate app for a transient outage.
+    // Only enforced when the hook is present (Intel devices).
+    if (work_id == kNpuHalWorkDenied) {
+      return litert::Unexpected(
+          kLiteRtStatusErrorRuntimeFailure,
+          "NPU HAL denied NPU access for this app");
+    }
+    if (work_id <= 0) {
+      work_id = 0;  // HAL unavailable: proceed without work-status emission
+    }
+  }
+  if (hooks.started != nullptr && work_id > 0) {
+    hooks.started(uid, work_id, kNpuHalJobPriority);
+  }
+
   infer_request_.start_async();
-  if (!infer_request_.wait_for(
-          std::chrono::milliseconds(kInferRequestTimeoutMs)))
+  const bool inference_ok = infer_request_.wait_for(
+      std::chrono::milliseconds(kInferRequestTimeoutMs));
+
+  if (hooks.ended != nullptr && work_id > 0) {
+    hooks.ended(uid, work_id, kNpuHalJobPriority);
+  }
+
+  if (!inference_ok) {
     return litert::Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
         "Failed to execute inference request due to timeout");
+  }
   return {};
 }
