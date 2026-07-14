@@ -663,7 +663,7 @@ def litert_accelerator_library(
         name,
         srcs = [],
         hdrs = [],
-        visibility = [],
+        visibility = None,
         deps = [],
         tags = [],
         shared_lib_name = "",

@@ -124,6 +124,7 @@ jobs:
             "-//litert/python/tools/model_utils/test/..."
             "-//litert/runtime:compiled_model_test"
             "-//litert/runtime:profiler_summarizer_test"
+            "-//litert/runtime/accelerators/gpu/..."
             "-//litert/tools:benchmark_litert_model_test"
             "-//litert/tools/culprit_finder/..."
             "-//litert/vendors/examples:end_to_end_test"
