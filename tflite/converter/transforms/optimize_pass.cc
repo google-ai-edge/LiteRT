@@ -28,6 +28,7 @@ limitations under the License.
 #include <memory>
 #include <numeric>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -39,6 +40,7 @@ limitations under the License.
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/raw_ostream.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"  // from @llvm-project
 #include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
 #include "mlir/Dialect/Quant/IR/QuantTypes.h"  // from @llvm-project
@@ -3292,12 +3294,67 @@ void AddCanonicalizationPatterns(MLIRContext* context,
   for (auto op : context->getRegisteredOperations())
     op.getCanonicalizationPatterns(*patterns, context);
 }
+
+// Returns true if `name` contains any of the substrings in `filters`. Empty
+// filter entries are ignored.
+bool MatchesAnyPatternFilter(llvm::StringRef name,
+                             llvm::ArrayRef<std::string> filters) {
+  for (const std::string& filter : filters) {
+    if (!filter.empty() && name.contains(filter)) return true;
+  }
+  return false;
+}
+
+// Removes rewrite patterns filtered out by `enabled_patterns` (allowlist;
+// no-op when empty) and `disabled_patterns` (blocklist) from `patterns`.
+// Patterns are matched by substring against their debug name (the C++ class
+// name for natively added patterns, the TableGen def name for generated
+// ones). Optionally prints every pattern with its filter verdict.
+void FilterPatterns(RewritePatternSet& patterns,
+                    llvm::ArrayRef<std::string> enabled_patterns,
+                    llvm::ArrayRef<std::string> disabled_patterns,
+                    bool list_patterns, llvm::StringRef phase_name) {
+  auto is_kept = [&](const RewritePattern& pattern) {
+    llvm::StringRef name = pattern.getDebugName();
+    if (!enabled_patterns.empty() &&
+        !MatchesAnyPatternFilter(name, enabled_patterns))
+      return false;
+    return !MatchesAnyPatternFilter(name, disabled_patterns);
+  };
+
+  if (list_patterns) {
+    for (const std::unique_ptr<RewritePattern>& pattern :
+         patterns.getNativePatterns()) {
+      llvm::errs() << "[tfl-optimize] " << phase_name << " "
+                   << (is_kept(*pattern) ? "keep" : "skip") << ": "
+                   << pattern->getDebugName() << "\n";
+    }
+  }
+
+  if (enabled_patterns.empty() && disabled_patterns.empty()) return;
+  llvm::erase_if(patterns.getNativePatterns(),
+                 [&](const std::unique_ptr<RewritePattern>& pattern) {
+                   return !is_kept(*pattern);
+                 });
+}
 }  // namespace
 
 void OptimizePass::runOnOperation() {
   RewritePatternSet patterns(&getContext());
   auto* ctx = &getContext();
   auto func = getOperation();
+
+  const llvm::ArrayRef<std::string> enabled_patterns =
+      *GetOptions().enabled_patterns;
+  const llvm::ArrayRef<std::string> disabled_patterns =
+      *GetOptions().disabled_patterns;
+  const bool list_patterns = GetOptions().list_patterns;
+  auto filter_and_apply = [&](RewritePatternSet&& pattern_set,
+                              llvm::StringRef phase_name) {
+    FilterPatterns(pattern_set, enabled_patterns, disabled_patterns,
+                   list_patterns, phase_name);
+    (void)applyPatternsGreedily(func, std::move(pattern_set));
+  };
 
   // Merge reshapes into fully connected ops before we start moving them past
   // binary ops.
@@ -3310,7 +3367,7 @@ void OptimizePass::runOnOperation() {
            FuseReshapesAroundBatchMatMulLHS, FuseReshapesAroundBatchMatMulLHS1,
            FuseInputReshape_BatchMatMulWithFlattenedRhsDims,
            PushTransposeThroughSqueeze>(ctx);
-  (void)applyPatternsGreedily(func, std::move(phase_0_patterns));
+  filter_and_apply(std::move(phase_0_patterns), "phase 0");
 
   // Potentially the binary ops might be fused together, like hard_swish, thus
   // we explore these potentially first and then fuse the binary ops with the
@@ -3329,7 +3386,7 @@ void OptimizePass::runOnOperation() {
   if (GetOptions().enable_canonicalization) {
     AddCanonicalizationPatterns(ctx, &patterns);
   }
-  (void)applyPatternsGreedily(func, std::move(patterns));
+  filter_and_apply(std::move(patterns), "phase 1");
 
   // Fuse the binary ops with the following ops.
   RewritePatternSet phase_2_patterns(&getContext());
@@ -3358,7 +3415,7 @@ void OptimizePass::runOnOperation() {
   if (!GetOptions().enable_strict_qdq_mode) {
     phase_2_patterns.add<EliminateQDQPairs>(ctx);
   }
-  (void)applyPatternsGreedily(func, std::move(phase_2_patterns));
+  filter_and_apply(std::move(phase_2_patterns), "phase 2");
 }
 
 }  // namespace TFL
