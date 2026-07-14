@@ -91,6 +91,7 @@ cc_library(
         "//tflite/converter:types_proto_cc",
         "//tflite/converter/quantization/common/quantization_lib:quantization_config",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:FuncDialect",
