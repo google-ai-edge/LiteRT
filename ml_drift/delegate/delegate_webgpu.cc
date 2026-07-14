@@ -13,6 +13,9 @@
 // limitations under the License.
 
 #include "third_party/odml/litert/ml_drift/delegate/delegate_webgpu.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 #include <array>
 #include <cstddef>
@@ -201,6 +204,8 @@ std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
     success_message = "Created a WebGPU environment with provided device.";
   } else {
 #ifdef __EMSCRIPTEN__
+    // Trigger instance creation so it is registered in Module.
+    ::ml_drift::webgpu::Instance::Get();
     WGPUDevice ems_device = emscripten_webgpu_get_device();
     auto device = wgpu::Device::Acquire(ems_device);
     wgpu::AdapterInfo adapter_info;

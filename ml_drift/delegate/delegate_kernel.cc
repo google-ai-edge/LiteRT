@@ -291,7 +291,6 @@ absl::Status DelegateKernel::Initialize(
   if (!delegate_data_->options->allow_src_quantized_fc_conv_ops) {
     create_info.hints.Add(::ml_drift::ModelHints::kDisallow8bitConvs);
   }
-
   if (delegate_data_->options->enable_constant_tensors_sharing) {
     RETURN_IF_ERROR(InitializeExternalSharedConstantTensors(
         context, delegate_params, shared_tensors, graph, create_info));
@@ -356,7 +355,11 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
 #endif
 
   ::ml_drift::SerializationWeightCache* shared_memory_serialization_cache;
+#ifdef __EMSCRIPTEN__
+  bool prepare_weights_in_batches = false;
+#else
   bool prepare_weights_in_batches = true;
+#endif
   ASSIGN_OR_RETURN(shared_memory_serialization_cache,
                    TryInitializingExternalTensorsSerialization(
                        context, delegate_params, prepare_weights_in_batches));
@@ -369,6 +372,7 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
                    backend_->CreateSharedMemoryManager(
                        create_info, graph, context, *delegate_data_,
                        shared_memory_serialization_cache));
+
   if (delegate_data_->options->convert_weights_on_gpu &&
       delegate_data_->options->enable_constant_tensors_sharing) {
     ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
@@ -561,6 +565,12 @@ if (delegate_data_->options->convert_weights_on_gpu &&
                 std::make_unique<IncrementableBlockingCounter>(1);
           }
         }
+#ifdef __EMSCRIPTEN__
+        RETURN_IF_ERROR(conversion_context_->UploadWeightsOnWeb(
+            delegate_data_->weight_loader, gpu_weights_conversion_model,
+            io_mapping, shared_mem_manager->GetWeightIdToExternalBufferIdMap(),
+            upload_weights_infos));
+#else
         for (const auto& upload_info : upload_weights_infos) {
           auto upload_fn = [this, upload_info]() -> absl::Status {
             RETURN_IF_ERROR(conversion_context_->WriteDataToWeightTensor(
@@ -586,6 +596,7 @@ if (delegate_data_->options->convert_weights_on_gpu &&
             RETURN_IF_ERROR(upload_fn());
           }
         }
+#endif  // _EMSCRIPTEN_
         if (delegate_data_->upload_executor) {
           delegate_data_->upload_executor->Schedule([this]() {
             weights_converting_->Wait();

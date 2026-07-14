@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+
+# copybara:uncomment load("//litert/python:pytype.bzl", "pytype_strict_library")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
@@ -40,6 +43,17 @@ exports_files([
 ])
 
 # copybara:uncomment_begin(google-only)
+# pytype_strict_library(
+#     name = "externalize_tflite_flatbuffer_lib",
+#     srcs = ["externalize_tflite_flatbuffer.py"],
+#     visibility = ["//visibility:public"],
+#     deps = [
+#         "//third_party/py/flatbuffers",
+#         "@org_tensorflow//third_party/py/numpy:headers",
+#         "//tflite/python:schema_py",
+#     ],
+# )
+#
 # py_binary(
 #     name = "externalize_tflite_flatbuffer",
 #     srcs = ["externalize_tflite_flatbuffer.py"],
@@ -528,7 +542,6 @@ cc_library(
         "//tflite/tools/benchmark/proto:benchmark_result_cc",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -820,7 +833,6 @@ cc_binary(
         "//litert/core/model:shape_inference",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
-        "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
@@ -962,7 +974,6 @@ cc_binary(
         "//litert/core/model:model_serialize",
         "//litert/core/model:shape_inference",
         "//litert/core/model:shape_inference_types",
-        "//litert/core/util:flatbuffer_tools",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_log",
@@ -1034,4 +1045,12 @@ cc_binary(
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
     ],
+)
+
+bzl_library(
+    name = "tool_test_bzl",
+    srcs = ["tool_test.bzl"],
+    parse_tests = False,
+    visibility = ["//visibility:private"],
+    deps = ["@rules_shell//shell:rules_bzl"],
 )
