@@ -14,9 +14,14 @@ limitations under the License.
 ==============================================================================*/
 #include "tensor/datatypes.h"
 
+#include <array>
+#include <cstdint>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "tensor/utils/matchers.h"
 
+using ::testing::ElementsAre;
 using ::testing::Eq;
 using ::testing::StrEq;
 
@@ -85,6 +90,52 @@ TEST(ConvertTest, FP16ToFP16Compiles) {
 TEST(ConvertTest, BF16ToBF16Compiles) {
   const bf16_t bf16_val = 23.;
   EXPECT_THAT(ConvertTo<Type::kBF16>(bf16_val).val, Eq(bf16_val.val));
+}
+
+TEST(RangeConvertTest, FP32ToBF16) {
+  const std::array<float, 3> src = {1.0f, 2.5f, -3.0f};
+  std::array<bf16_t, 3> dest;
+  EXPECT_THAT(Convert(src, dest), IsOk());
+  EXPECT_THAT(dest, ElementsAre(bf16_t(1.0f), bf16_t(2.5f), bf16_t(-3.0f)));
+}
+
+TEST(RangeConvertTest, I4ToFP32) {
+  std::array<int4_t, 2> src{int4_t{-5, 3}, {7, -2}};
+  std::array<float, 4> dest;
+  EXPECT_THAT(Convert(src, dest), IsOk());
+  EXPECT_THAT(dest, ElementsAre(-5.0f, 3.0f, 7.0f, -2.0f));
+}
+
+TEST(RangeConvertTest, I32ToI4) {
+  std::array<int32_t, 4> src = {-5, 3, 7, -2};
+  std::array<int4_t, 2> dest;
+  EXPECT_THAT(Convert(src, dest), IsOk());
+  EXPECT_THAT(dest, ElementsAre(int4_t{-5, 3}, int4_t{7, -2}));
+}
+
+TEST(RangeConvertTest, I2ToBF16) {
+  std::array<int2_t, 1> src{{{-1, 0, 1, -2}}};
+  std::array<bf16_t, 4> dest;
+  EXPECT_THAT(Convert(src, dest), IsOk());
+  EXPECT_THAT(dest, ElementsAre(bf16_t(-1), bf16_t(0), bf16_t(1), bf16_t(-2)));
+}
+
+TEST(RangeConvertTest, I4ToI2) {
+  std::array<int4_t, 3> src{int4_t{-1, 0}, {1, -2}, {1}};
+  // We zero-initialize the dest because we aren't converting an element count
+  // that is divisible by the packed datatypes element count. If we don't the
+  // test will randomly fail due to uninitialized memory.
+  std::array<int2_t, 2> dest{};
+  EXPECT_THAT(Convert(src, dest), IsOk());
+  EXPECT_THAT(dest, ElementsAre(int2_t{-1, 0, 1, -2}, int2_t{1, 0, 0, 0}));
+}
+
+TEST(RangeConvertTest, I2ToI4) {
+  std::array<int2_t, 2> src{int2_t{-1, 0, 1, -2}, {0, -2, 1, -1}};
+  std::array<int4_t, 4> dest;
+  EXPECT_THAT(Convert(src, dest), IsOk());
+  EXPECT_THAT(dest, ElementsAre(int4_t{-1, 0}, int4_t{1, -2}, int4_t{0, -2},
+                                int4_t{1, -1}));
 }
 
 }  // namespace

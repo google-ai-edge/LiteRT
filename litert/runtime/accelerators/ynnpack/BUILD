@@ -26,6 +26,7 @@ cc_library(
     hdrs = ["ynnpack_accelerator.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
         "//litert/c/internal:litert_accelerator_def",
         "//litert/c/internal:litert_runtime_context_header",
         "//litert/c/options:litert_cpu_options",

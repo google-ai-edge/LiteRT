@@ -1237,6 +1237,10 @@ Expected<void> LiteRtTensorBufferT::Clear() {
     case kLiteRtTensorBufferTypeGlTexture:
     case kLiteRtTensorBufferTypeUnknown:
     default: {
+      if (IsUserCustomBuffer(buffer_type())) {
+        LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
+        return custom_buffer->Clear();
+      }
       return Unexpected(kLiteRtStatusErrorUnsupported,
                         "Buffer type does not support clearing");
     }

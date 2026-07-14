@@ -209,6 +209,7 @@ cc_library(
         ":moe_experts_parser",
         ":runtime_batched_matmul_kernel",
         ":runtime_batched_matmul_parser",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:gpu_model",
@@ -220,5 +221,6 @@ cc_library(
         "@ml_drift//ml_drift/common/selectors:operation_selector",
         "@ml_drift//ml_drift/common/selectors:special_selector",
         "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
     ],
 )

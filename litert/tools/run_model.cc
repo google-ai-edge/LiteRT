@@ -76,9 +76,12 @@ ABSL_FLAG(bool, language_model, false,
           "Whether the model is a language model,"
           " so that the input tensors will be reasonable.");
 
-ABSL_FLAG(std::string, cpu_kernel_mode, "xnnpack",
-          "Selects which CPU kernel mode LiteRT should use. Options: xnnpack, "
-          "builtin, reference");
+ABSL_FLAG(std::string, cpu_kernel_mode, "delegate",
+          "Selects which CPU kernel mode LiteRT should use. Options: "
+          "delegate, builtin, reference (xnnpack is a legacy alias)");
+ABSL_FLAG(bool, enable_ynnpack, false,
+          "Delegate supported CPU ops to YNNPACK before XNNPACK. Requires a "
+          "build with --define litert_enable_ynnpack=true.");
 
 ABSL_FLAG(std::string, input_dir, "",
           "An input folder containing .raw files with model input signatures "
@@ -98,7 +101,6 @@ ABSL_FLAG(int32_t, kernel_batch_size, -1, "Kernel batch size for the model.");
 
 namespace litert {
 namespace {
-
 
 litert::HwAcceleratorSet GetAccelerator() {
   const std::string accelerator_str = absl::GetFlag(FLAGS_accelerator);
@@ -255,9 +257,9 @@ Expected<Options> GetOptions() {
   const std::string kernel_mode_str = absl::GetFlag(FLAGS_cpu_kernel_mode);
   if (!kernel_mode_str.empty()) {
     LITERT_ASSIGN_OR_RETURN(auto& cpu_opts, options.GetCpuOptions());
-    if (kernel_mode_str == "xnnpack") {
+    if (kernel_mode_str == "delegate" || kernel_mode_str == "xnnpack") {
       LITERT_RETURN_IF_ERROR(
-          cpu_opts.SetKernelMode(kLiteRtCpuKernelModeXnnpack));
+          cpu_opts.SetKernelMode(kLiteRtCpuKernelModeDelegate));
     } else if (kernel_mode_str == "builtin") {
       LITERT_RETURN_IF_ERROR(
           cpu_opts.SetKernelMode(kLiteRtCpuKernelModeBuiltin));
@@ -268,6 +270,11 @@ Expected<Options> GetOptions() {
       return Error(kLiteRtStatusErrorInvalidArgument,
                    "Invalid cpu_kernel_mode flag value.");
     }
+  }
+
+  if (absl::GetFlag(FLAGS_enable_ynnpack)) {
+    LITERT_ASSIGN_OR_RETURN(auto& cpu_opts, options.GetCpuOptions());
+    LITERT_RETURN_IF_ERROR(cpu_opts.SetEnableYNNPack(true));
   }
 
   LITERT_RETURN_IF_ERROR(

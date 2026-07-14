@@ -76,6 +76,7 @@ cc_library(
     hdrs = ["datatypes.h"],
     deps = [
         "//tensor/internal:fp16",
+        "@com_google_absl//absl/status",
     ],
 )
 
@@ -84,6 +85,7 @@ cc_test(
     srcs = ["datatypes_test.cc"],
     deps = [
         ":datatypes",
+        "//tensor/utils:matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )

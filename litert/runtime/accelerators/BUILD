@@ -74,6 +74,10 @@ cc_library(
     hdrs = ["cpu_registry.h"],
     copts = select({
         "//litert/build_common:litert_disable_cpu": [],
+        "//litert/build_common:litert_enable_ynnpack": [
+            "-DLITERT_USE_XNNPACK",
+            "-DLITERT_HAS_YNNPACK",
+        ],
         "//conditions:default": [
             "-DLITERT_USE_XNNPACK",
         ],
@@ -83,6 +87,12 @@ cc_library(
         "//litert/c/internal:litert_logging",
     ] + select({
         "//litert/build_common:litert_disable_cpu": [],
+        "//litert/build_common:litert_enable_ynnpack": [
+            ":registration_helper",
+            "//litert/c/internal:litert_accelerator_def",
+            "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",
+            "//litert/runtime/accelerators/ynnpack:ynnpack_accelerator",
+        ],
         "//conditions:default": [
             ":registration_helper",
             "//litert/c/internal:litert_accelerator_def",
