@@ -304,6 +304,22 @@ inline std::vector<std::unique_ptr<SimpleTensor>> FetchSignatureOutputTensors(
   return output_tensors;
 }
 
+inline std::unique_ptr<SimpleTensor> FetchSignatureOutputTensorByIndex(
+    const internal::EnvironmentHolder& env, LiteRtSignature signature,
+    LiteRtParamIndex output_index) {
+  LiteRtTensor tensor;
+  LITERT_ABORT_IF_ERROR(env.runtime->GetSignatureOutputTensorByIndex(
+      signature, output_index, &tensor));
+  return std::make_unique<SimpleTensor>(
+      FetchTensorIndex(env, tensor), FetchTensorName(env, tensor),
+      FetchTensorTypeId(env, tensor),
+      FetchTensorType(env, tensor, FetchTensorTypeId(env, tensor)),
+      FetchTensorQuantizationTypeId(env, tensor),
+      FetchTensorQuantizationPerTensor(env, tensor),
+      FetchTensorQuantizationPerChannel(env, tensor),
+      FetchTensorQuantizationBlockWise(env, tensor));
+}
+
 }  // namespace internal::compiled_model_detail
 
 /// @brief A high-level inference API for LiteRT.
@@ -1400,65 +1416,99 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// @brief Returns the tensor type for the n-th input tensor.
   Expected<RankedTensorType> GetInputTensorType(size_t signature_index,
                                                 size_t input_index) const {
-    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
-                            GetSignature(signature_index));
-    return signature.InputTensorType(input_index);
+    LiteRtSignature lite_rt_signature;
+    LITERT_RETURN_IF_ERROR(env_.runtime->GetModelSignature(
+        model_.Get(), signature_index, &lite_rt_signature));
+    auto input_tensors =
+        internal::compiled_model_detail::FetchSignatureInputTensors(
+            env_, lite_rt_signature);
+    if (input_index >= input_tensors.size()) {
+      return Error(Status::kErrorInvalidArgument, "Input index out of bounds");
+    }
+    return input_tensors[input_index]->RankedTensorType();
   }
 
   /// @brief Returns the tensor type for a given input tensor name.
   Expected<RankedTensorType> GetInputTensorType(size_t signature_index,
                                                 StringView input_name) const {
-    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
-                            GetSignature(signature_index));
-    return signature.InputTensorType(input_name);
+    LiteRtSignature lite_rt_signature;
+    LITERT_RETURN_IF_ERROR(env_.runtime->GetModelSignature(
+        model_.Get(), signature_index, &lite_rt_signature));
+    auto input_tensors =
+        internal::compiled_model_detail::FetchSignatureInputTensors(
+            env_, lite_rt_signature);
+    for (const auto& input_tensor : input_tensors) {
+      if (input_tensor->Name() == input_name) {
+        return input_tensor->RankedTensorType();
+      }
+    }
+    return Error(Status::kErrorNotFound, "Input tensor not found");
   }
 
   /// @brief Returns the tensor type for a given input tensor name.
   Expected<RankedTensorType> GetInputTensorType(StringView signature_key,
                                                 StringView input_name) const {
-    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
-                            FindSignature(signature_key));
-    return signature.InputTensorType(input_name);
+    LITERT_ASSIGN_OR_RETURN(auto index, GetSignatureIndex(signature_key));
+    return GetInputTensorType(index, input_name);
   }
 
   /// @brief Gets the input tensor type of the default signature for a given
   /// input name.
   Expected<RankedTensorType> GetInputTensorType(StringView input_name) const {
-    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
-                            GetSignature(/*signature_index=*/0));
-    return signature.InputTensorType(input_name);
+    return GetInputTensorType(/*signature_index=*/0, input_name);
   }
 
   /// @brief Returns the tensor type for the n-th output tensor.
   Expected<RankedTensorType> GetOutputTensorType(size_t signature_index,
                                                  size_t output_index) const {
-    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
-                            GetSignature(signature_index));
-    return signature.OutputTensorType(output_index);
+    LiteRtSignature lite_rt_signature;
+    LITERT_RETURN_IF_ERROR(env_.runtime->GetModelSignature(
+        model_.Get(), signature_index, &lite_rt_signature));
+    LiteRtParamIndex num_outputs;
+    LITERT_RETURN_IF_ERROR(
+        env_.runtime->GetNumSignatureOutputs(lite_rt_signature, &num_outputs));
+    if (output_index >= static_cast<size_t>(num_outputs)) {
+      return Error(Status::kErrorInvalidArgument, "Output index out of bounds");
+    }
+    return internal::compiled_model_detail::FetchSignatureOutputTensorByIndex(
+               env_, lite_rt_signature,
+               static_cast<LiteRtParamIndex>(output_index))
+        ->RankedTensorType();
   }
 
   /// @brief Returns the tensor type for a given output tensor name.
   Expected<RankedTensorType> GetOutputTensorType(size_t signature_index,
                                                  StringView output_name) const {
-    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
-                            GetSignature(signature_index));
-    return signature.OutputTensorType(output_name);
+    LiteRtSignature lite_rt_signature;
+    LITERT_RETURN_IF_ERROR(env_.runtime->GetModelSignature(
+        model_.Get(), signature_index, &lite_rt_signature));
+    LiteRtParamIndex num_outputs;
+    LITERT_RETURN_IF_ERROR(
+        env_.runtime->GetNumSignatureOutputs(lite_rt_signature, &num_outputs));
+    for (int i = 0; i < num_outputs; ++i) {
+      const char* name;
+      LITERT_RETURN_IF_ERROR(
+          env_.runtime->GetSignatureOutputName(lite_rt_signature, i, &name));
+      if (StringView(name) == output_name) {
+        return internal::compiled_model_detail::
+            FetchSignatureOutputTensorByIndex(env_, lite_rt_signature, i)
+                ->RankedTensorType();
+      }
+    }
+    return Error(Status::kErrorNotFound, "Output tensor not found");
   }
 
   /// @brief Returns the tensor type for a given output tensor name.
   Expected<RankedTensorType> GetOutputTensorType(StringView signature_key,
                                                  StringView output_name) const {
-    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
-                            FindSignature(signature_key));
-    return signature.OutputTensorType(output_name);
+    LITERT_ASSIGN_OR_RETURN(auto index, GetSignatureIndex(signature_key));
+    return GetOutputTensorType(index, output_name);
   }
 
   /// @brief Gets the output tensor type of the default signature for a given
   /// output name.
   Expected<RankedTensorType> GetOutputTensorType(StringView output_name) const {
-    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
-                            GetSignature(/*signature_index=*/0));
-    return signature.OutputTensorType(output_name);
+    return GetOutputTensorType(/*signature_index=*/0, output_name);
   }
 
   //----------------------------------------------------------------------------
