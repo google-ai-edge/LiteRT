@@ -67,6 +67,40 @@
 //!
 //! println!("Inference successful. Output data: {:?}", output_data);
 //! ```
+//!
+//! ## Async Usage Example
+//!
+//! When the `async_support` feature is enabled, you can run models asynchronously
+//! and await the results.
+//!
+//! ```rust,no_run
+//! # #[cfg(async_support)]
+//! # async fn run_async_example() -> Result<(), litert::Error> {
+//! # use litert::{CompiledModel, EnvironmentBuilder, LiteRtHwAccelerator, Model, Options};
+//! # let environment = EnvironmentBuilder::build_default().unwrap();
+//! # let model = Model::create_model_from_file("/path/to/model.tflite").unwrap();
+//! # // Note: async is not available on all platforms.
+//! # let options = Options::create_with_accelerator(LiteRtHwAccelerator::Gpu).unwrap();
+//! # let compiled_model = CompiledModel::create(&environment, &model, &options).unwrap();
+//! let signature_index = 0;
+//! # let input_buffers = compiled_model.create_input_tensor_buffers(&environment, &model, signature_index).unwrap();
+//! # let output_buffers = compiled_model.create_output_tensor_buffers(&environment, &model, signature_index).unwrap();
+//! // 1. Run inference asynchronously.
+//! // This starts execution in a parallel thread if supported.
+//! let running_parallel = compiled_model.run_async(signature_index, &input_buffers, &output_buffers)?;
+//!
+//! if running_parallel {
+//!   // ... do other stuff ...
+//! }
+//! // 2. Read results asynchronously.
+//! // `read_async` returns a Future that resolves when the output buffer is ready.
+//! let mut output_data: Vec<f32> = vec![0.0; 10];
+//! output_buffers[0].read_async(&mut output_data).await?;
+//!
+//! println!("Async inference successful. Output data: {:?}", output_data);
+//! # Ok(())
+//! # }
+//! ```
 
 mod bindings;
 pub mod compiled_model;
