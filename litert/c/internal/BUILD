@@ -31,7 +31,7 @@ package(
         # "//litert/runtime/dispatch:__subpackages__",
         # "//litert/vendors:__subpackages__",
         # "//litert/kotlin:__subpackages__",
-        # "//third_party/odml/litert/ml_drift/delegate:__subpackages__",
+        # "//ml_drift_delegate/delegate:__subpackages__",
         # "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
         # "//third_party/odml/litert/weight_loader:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
@@ -442,7 +442,7 @@ cc_library(
         # copybara:uncomment_begin(oss litert_lm)
         # "@mediapipe//mediapipe/tasks/web/genai:__subpackages__",
         # "//litert:__subpackages__",
-        # "//third_party/odml/litert/ml_drift:__subpackages__",
+        # "//ml_drift_delegate:__subpackages__",
         # "//third_party/odml/litert_lm/c:__pkg__",
         # "//third_party/odml/infra/ml_drift_delegate:__pkg__",
         # "//third_party/odml/infra/fabric:__subpackages__",

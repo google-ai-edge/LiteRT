@@ -20,8 +20,8 @@
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_gpu_options.h"
-#include "third_party/odml/litert/ml_drift/delegate/delegate_options.h"
-#include "third_party/odml/litert/ml_drift/delegate/delegate_types.h"
+#include "ml_drift_delegate/delegate/delegate_options.h"
+#include "ml_drift_delegate/delegate/delegate_types.h"
 
 namespace litert::ml_drift {
 

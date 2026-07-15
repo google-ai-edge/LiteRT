@@ -31,12 +31,12 @@
 #include "litert/core/environment.h"
 #include "litert/core/options.h"
 #include "litert/runtime/accelerators/gpu/ml_drift_delegate_create.h"
-#include "third_party/odml/litert/ml_drift/delegate/buffer_handler_opencl.h"
+#include "ml_drift_delegate/delegate/buffer_handler_opencl.h"
 #if defined(LITERT_USE_STATIC_LINKED_GPU_ACCELERATOR)
 #include "litert/runtime/accelerators/gpu_static_registry.h"
 #endif  // defined(LITERT_USE_STATIC_LINKED_GPU_ACCELERATOR)
-#include "third_party/odml/litert/ml_drift/delegate/buffer_handler_webgpu.h"
-#include "third_party/odml/litert/ml_drift/delegate/delegate_opencl.h"
+#include "ml_drift_delegate/delegate/buffer_handler_webgpu.h"
+#include "ml_drift_delegate/delegate/delegate_opencl.h"
 
 namespace {
 
@@ -69,8 +69,8 @@ LiteRtStatus FinalizeHybridMemoryInfo(std::unique_ptr<HybridMemoryInfo> wrapper,
 }
 
 }  // namespace
-#include "third_party/odml/litert/ml_drift/delegate/delegate_types.h"
-#include "third_party/odml/litert/ml_drift/delegate/delegate_webgpu.h"
+#include "ml_drift_delegate/delegate/delegate_types.h"
+#include "ml_drift_delegate/delegate/delegate_webgpu.h"
 #include "tflite/core/c/c_api_types.h"
 
 // Accelerator implementation for the LiteRT GPU Accelerator.

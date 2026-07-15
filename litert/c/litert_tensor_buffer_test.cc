@@ -36,14 +36,14 @@
 
 #if LITERT_HAS_WEBGPU_SUPPORT
 #include "ml_drift/webgpu/environment.h"  // from @ml_drift
-#include "third_party/odml/litert/ml_drift/delegate/buffer_handler_webgpu.h"
+#include "ml_drift_delegate/delegate/buffer_handler_webgpu.h"
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 #if LITERT_HAS_VULKAN_SUPPORT
 #include "ml_drift/syrtis/environment.h"  // from @ml_drift
 #include "ml_drift/syrtis/vulkan_wrapper.h"  // from @ml_drift
-#include "third_party/odml/litert/ml_drift/delegate/buffer_handler_vulkan.h"
-#include "third_party/odml/litert/ml_drift/delegate/shared_vulkan_env.h"
+#include "ml_drift_delegate/delegate/buffer_handler_vulkan.h"
+#include "ml_drift_delegate/delegate/shared_vulkan_env.h"
 #endif  // LITERT_HAS_VULKAN_SUPPORT
 #endif  // LITERT_CUSTOM_TENSOR_BUFFER_TEST
 

@@ -35,7 +35,7 @@
 #include "ml_drift/cl/cl_context.h"  // from @ml_drift
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
-#include "third_party/odml/litert/ml_drift/delegate/buffer_handler_opencl.h"
+#include "ml_drift_delegate/delegate/buffer_handler_opencl.h"
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #include "litert/c/internal/litert_tensor_buffer_registry.h"
