@@ -25,14 +25,28 @@ else()
   endif()
 endif()
 
+set(LITERT_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+set(LITERT_REPO_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
+
 add_library(bstorm_core_shared SHARED IMPORTED GLOBAL)
 set_target_properties(bstorm_core_shared PROPERTIES
   IMPORTED_LOCATION "${_bstorm_so}")
 target_include_directories(bstorm_core_shared INTERFACE
   ${CMAKE_CURRENT_SOURCE_DIR}
+  ${LITERT_REPO_ROOT_DIR}
+  ${CMAKE_BINARY_DIR}/include
   ${_bstorm_inc}
   ${_bstorm_inc}/core
   ${_bstorm_inc}/src
+)
+
+add_subdirectory("${LITERT_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/litert_build" EXCLUDE_FROM_ALL)
+
+add_compile_options(
+  -Wno-deprecated-declarations
+  -Wno-nullability-completeness
+  -Wno-return-type
+  -fpermissive
 )
 
 add_subdirectory(common)
