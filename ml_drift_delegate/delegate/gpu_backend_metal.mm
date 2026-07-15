@@ -657,6 +657,7 @@ void GpuBackendMetal::StopHeartbeat() {
     stop_heartbeat_.reset();
   }
 }
+
 void GpuBackendMetal::ReleaseResidencyLocked() {
   if (residency_active_) {
     if (@available(macOS 15.0, iOS 18.0, *)) {

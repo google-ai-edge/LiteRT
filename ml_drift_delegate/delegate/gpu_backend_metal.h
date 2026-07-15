@@ -71,7 +71,6 @@ class GpuBackendMetal : public GpuBackend {
 
   // Implementation of GpuBackend.
   absl::string_view GetBackendName() override;
-  void SetResidencyRuntimeEnabled(bool enabled);
   absl::string_view GetSerializedDataPrefix() override;
   absl::StatusOr<::ml_drift::GpuInfo> GetInfo() override;
   absl::StatusOr<::ml_drift::TensorStorageType> GetFastestStorageType()
@@ -140,6 +139,8 @@ class GpuBackendMetal : public GpuBackend {
   CreateBuffer2TensorConverter(
       const ::ml_drift::BufferDescriptor& src_desc,
       const ::ml_drift::TensorDescriptor& dst_desc) override;
+
+  void SetResidencyRuntimeEnabled(bool enabled);
 
   // Metal Delegate wait type options.
   GpuDelegateWaitType wait_type() const { return wait_type_; }
