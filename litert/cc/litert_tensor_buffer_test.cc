@@ -320,6 +320,18 @@ TEST(TensorBuffer, HostMemory) {
         std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)),
         0);
   }
+
+  LITERT_ASSERT_OK(tensor_buffer->Clear());
+
+  {
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        *tensor_buffer, TensorBuffer::LockMode::kRead);
+    ASSERT_TRUE(lock_and_addr);
+    std::vector<uint8_t> zero_data(sizeof(kTensorData), 0);
+    ASSERT_EQ(
+        std::memcmp(lock_and_addr->second, zero_data.data(), zero_data.size()),
+        0);
+  }
 }
 
 TEST(TensorBuffer, CreateManagedFromRequirements) {

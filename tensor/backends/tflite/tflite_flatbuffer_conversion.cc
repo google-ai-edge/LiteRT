@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensor/backends/tflite/tflite_flatbuffer_conversion.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -277,6 +278,28 @@ absl::Status ModelFactory::Build() {
   model_.subgraphs.push_back(std::make_unique<tflite::SubGraphT>());
   tflite::SubGraphT& subgraph = *model_.subgraphs.back();
 
+  std::vector<std::shared_ptr<Buffer>> inline_parameter_buffers;
+  for (const graph::Operation* operation : execution_plan_) {
+    int parameter_input = -1;
+    if (operation->GetName() == "Fill") {
+      parameter_input = 0;
+    } else if (operation->GetName() == "Reshape" ||
+               operation->GetName() == "BroadcastTo" ||
+               operation->GetName() == "Range") {
+      parameter_input = 1;
+    } else if (operation->GetName() == "Slice") {
+      parameter_input = 2;
+    }
+    if (parameter_input < 0 || parameter_input >= operation->inputs.size()) {
+      continue;
+    }
+    LRT_TENSOR_ASSIGN_OR_RETURN(const graph::TensorInformation& parameter_info,
+                                GetInfo(operation->inputs[parameter_input]));
+    if (parameter_info.buffer) {
+      inline_parameter_buffers.push_back(parameter_info.buffer);
+    }
+  }
+
   size_t unnamed_input_idx = 0;
   size_t unnamed_output_idx = 0;
 
@@ -311,6 +334,11 @@ absl::Status ModelFactory::Build() {
     if (tensor_info.buffer && producer == nullptr) {
       auto [it, inserted] =
           buffers_.insert({tensor_info.buffer, BufferSerializationInfo{}});
+      if (std::find(inline_parameter_buffers.begin(),
+                    inline_parameter_buffers.end(),
+                    tensor_info.buffer) != inline_parameter_buffers.end()) {
+        it->second.inline_data = true;
+      }
       if (inserted) {
         it->second.index = buffer_list_.size() + 1;
         it->second.external_buffer_id = GetExternalBufferId(tensor);
@@ -412,9 +440,15 @@ absl::Status ModelFactory::Build() {
       for (const graph::Tensor& output : composite.decomposition_outputs) {
         decomposition_outputs.emplace_back(output);
       }
+      std::vector<TensorHandle> decomposition_inputs;
+      decomposition_inputs.reserve(composite.decomposition_inputs.size());
+      for (const graph::Tensor& input : composite.decomposition_inputs) {
+        decomposition_inputs.emplace_back(input);
+      }
       LRT_TENSOR_ASSIGN_OR_RETURN(
           composite.decomposition_subgraph_index,
-          AddSubgraph(std::move(decomposition_outputs)));
+          AddSubgraph(std::move(decomposition_inputs),
+                      std::move(decomposition_outputs)));
     }
 
     LRT_TENSOR_ASSIGN_OR_RETURN(graph::TfLiteOpBuildInfo build_info,
@@ -516,8 +550,9 @@ absl::Status ModelFactory::UpdateBufferData(
   auto current_buffer = buffer_list_.begin();
   for (size_t i = 1; i < buffers->size(); ++i, ++current_buffer) {
     BufferSerializationInfo& buffer_build_info = buffers_[*current_buffer];
-    if (buffer_build_info.external_buffer_id.has_value()) {
-      continue;  // Skip external buffers.
+    if (buffer_build_info.external_buffer_id.has_value() ||
+        buffer_build_info.inline_data) {
+      continue;  // Stored outside the appended buffer region.
     }
     const size_t buffer_size = current_buffer->get()->Lock().size();
     tflite::Buffer* fbb_buffer = buffers->GetMutableObject(i);
@@ -531,14 +566,35 @@ absl::Status ModelFactory::UpdateBufferData(
   return absl::OkStatus();
 }
 
+void ModelFactory::PrepareBufferData() {
+  for (const auto& [buffer, build_info] : buffers_) {
+    tflite::BufferT& flatbuffer = *model_.buffers[build_info.index];
+    if (build_info.external_buffer_id.has_value()) {
+      flatbuffer.data.clear();
+      flatbuffer.offset = 0;
+      flatbuffer.size = 0;
+    } else if (build_info.inline_data) {
+      LockedBufferSpan<const uint8_t> data =
+          buffer.get()->Lock().As<const uint8_t>();
+      flatbuffer.data.assign(data.begin(), data.end());
+      flatbuffer.offset = 0;
+      flatbuffer.size = 0;
+    } else {
+      flatbuffer.data.clear();
+      flatbuffer.offset = kFlatbufferPlaceholderValue;
+      flatbuffer.size = kFlatbufferPlaceholderValue;
+    }
+  }
+}
+
 absl::Status ModelFactory::WriteBufferData(std::ofstream& output_file) {
   if (!output_file) {
     return absl::InternalError(
         "Can't write buffer data to an invalid output file handle.");
   }
   for (const auto& [buffer, build_info] : buffers_) {
-    if (build_info.external_buffer_id.has_value()) {
-      continue;  // Skip external buffers.
+    if (build_info.external_buffer_id.has_value() || build_info.inline_data) {
+      continue;  // Stored outside the appended buffer region.
     }
     LockedBufferSpan<const char> data = buffer.get()->Lock().As<const char>();
     output_file.seekp(build_info.serialization_offset);
@@ -582,23 +638,75 @@ absl::StatusOr<int> ModelFactory::AddSubgraph(
   return subgraph_index;
 }
 
+absl::StatusOr<int> ModelFactory::AddSubgraph(
+    std::vector<TensorHandle> inputs, std::vector<TensorHandle> outputs) {
+  std::vector<std::string> input_names;
+  input_names.reserve(inputs.size());
+  for (const TensorHandle& input : inputs) {
+    if (input.GetName().empty()) {
+      return absl::InvalidArgumentError(
+          "Explicit subgraph inputs must have names.");
+    }
+    input_names.emplace_back(input.GetName());
+  }
+
+  outputs.insert(outputs.end(), inputs.begin(), inputs.end());
+  LRT_TENSOR_ASSIGN_OR_RETURN(const int subgraph_index,
+                              AddSubgraph(std::move(outputs)));
+
+  tflite::SubGraphT& subgraph = *model_.subgraphs[subgraph_index];
+  std::vector<int32_t> ordered_inputs;
+  ordered_inputs.reserve(input_names.size());
+  for (const std::string& input_name : input_names) {
+    auto input_it = std::find_if(
+        subgraph.inputs.begin(), subgraph.inputs.end(), [&](int32_t index) {
+          return subgraph.tensors[index]->name == input_name;
+        });
+    if (input_it == subgraph.inputs.end()) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Explicit subgraph input is not a graph input: ", input_name));
+    }
+    ordered_inputs.push_back(*input_it);
+    subgraph.outputs.erase(std::remove(subgraph.outputs.begin(),
+                                       subgraph.outputs.end(), *input_it),
+                           subgraph.outputs.end());
+  }
+  subgraph.inputs = std::move(ordered_inputs);
+  return subgraph_index;
+}
+
 absl::Status ModelFactory::AddSignature(std::vector<TensorHandle> outputs,
                                         std::string name) {
-  LRT_TENSOR_RETURN_IF_ERROR(AddSubgraph(std::move(outputs)));
+  LRT_TENSOR_ASSIGN_OR_RETURN(const int subgraph_index,
+                              AddSubgraph(std::move(outputs)));
+  return AddSignatureDef(std::move(name), subgraph_index);
+}
+
+absl::Status ModelFactory::AddSignature(std::vector<TensorHandle> inputs,
+                                        std::vector<TensorHandle> outputs,
+                                        std::string name) {
+  LRT_TENSOR_ASSIGN_OR_RETURN(
+      const int subgraph_index,
+      AddSubgraph(std::move(inputs), std::move(outputs)));
+  return AddSignatureDef(std::move(name), subgraph_index);
+}
+
+absl::Status ModelFactory::AddSignatureDef(std::string name,
+                                           int subgraph_index) {
   auto signature_def = std::make_unique<tflite::SignatureDefT>();
   signature_def->signature_key = std::move(name);
-  signature_def->subgraph_index = model_.subgraphs.size() - 1;
-  for (const int& input_idx : model_.subgraphs.back()->inputs) {
+  signature_def->subgraph_index = subgraph_index;
+  for (const int& input_idx : model_.subgraphs[subgraph_index]->inputs) {
     const std::unique_ptr<tflite::TensorT>& tensor =
-        model_.subgraphs.back()->tensors[input_idx];
+        model_.subgraphs[subgraph_index]->tensors[input_idx];
     auto tensor_map = std::make_unique<tflite::TensorMapT>();
     tensor_map->name = tensor->name;
     tensor_map->tensor_index = input_idx;
     signature_def->inputs.emplace_back(std::move(tensor_map));
   }
-  for (const int& output_idx : model_.subgraphs.back()->outputs) {
+  for (const int& output_idx : model_.subgraphs[subgraph_index]->outputs) {
     const std::unique_ptr<tflite::TensorT>& tensor =
-        model_.subgraphs.back()->tensors[output_idx];
+        model_.subgraphs[subgraph_index]->tensors[output_idx];
     auto tensor_map = std::make_unique<tflite::TensorMapT>();
     tensor_map->name = tensor->name;
     tensor_map->tensor_index = output_idx;
@@ -638,6 +746,7 @@ std::optional<uint32_t> ModelFactory::GetExternalBufferId(
 }
 
 absl::Status ModelFactory::Save(absl::string_view path) {
+  PrepareBufferData();
   flatbuffers::FlatBufferBuilder fbb;
   fbb.Finish(tflite::Model::Pack(fbb, &model_), tflite::ModelIdentifier());
   LRT_TENSOR_RETURN_IF_ERROR(UpdateBufferData(fbb));
@@ -653,6 +762,7 @@ absl::Status ModelFactory::Save(absl::string_view path) {
 }
 
 absl::StatusOr<std::vector<char>> ModelFactory::CreateFlatbuffer() {
+  PrepareBufferData();
   flatbuffers::FlatBufferBuilder fbb;
   fbb.Finish(tflite::Model::Pack(fbb, &model_), tflite::ModelIdentifier());
   LRT_TENSOR_RETURN_IF_ERROR(UpdateBufferData(fbb));
@@ -661,7 +771,7 @@ absl::StatusOr<std::vector<char>> ModelFactory::CreateFlatbuffer() {
   fb.resize(allocation_size_ + XNN_EXTRA_BYTES);
   std::memcpy(fb.data(), fbb.GetBufferPointer(), fbb.GetSize());
   for (const auto& [buffer, build_info] : buffers_) {
-    if (build_info.external_buffer_id.has_value()) {
+    if (build_info.external_buffer_id.has_value() || build_info.inline_data) {
       continue;
     }
     LockedBufferSpan<const char> data = buffer.get()->Lock().As<const char>();

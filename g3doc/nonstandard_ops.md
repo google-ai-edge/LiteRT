@@ -66,6 +66,22 @@ Important caveat:
   - the serialized decomposition is real
   - backend-native handling may or may not exist
 
+### MLDrift GPU Delegate Coverage
+
+The MLDrift GPU delegate implementation under
+`ml_drift/delegate/composite/` is the source of truth for MLDrift-specific
+support. It currently registers native parsers and GPU implementations for:
+
+- `odml.cache_update` (`STABLEHLO_COMPOSITE`)
+- `odml.runtime_bmm` (`STABLEHLO_COMPOSITE`)
+- `moe` (plain TFLite `CUSTOM` op)
+
+The other operators in this document may be implemented by other TFLite
+kernels or delegates, but they are not implemented by that MLDrift composite
+directory. In particular, the MLDrift support for `odml.runtime_bmm` and
+`odml.cache_update` is native code, not merely a conclusion inferred from a
+published model's decomposition.
+
 ## If You Are Coming From `litert-torch`
 
 This document is easier to read if you map it to the concepts used in
@@ -163,8 +179,9 @@ the effective contract.
 | `odml.causal_conv_with_state_1d` | `STABLEHLO_COMPOSITE` | Native CPU-specialized composite implementation exists | Stateful causal depthwise 1-D convolution | No standard 1:1 Aten op |
 | `odml.recurrent_linear_attention` | `STABLEHLO_COMPOSITE` | Native CPU-specialized composite implementation exists | Recurrent linear attention | No standard 1:1 Aten op |
 | `odml.selective_state_space` | `STABLEHLO_COMPOSITE` | Native CPU-specialized composite implementation exists | Mamba-style selective state-space update | No standard 1:1 Aten op |
-| `odml.runtime_bmm` | `STABLEHLO_COMPOSITE` | Observed in published Gemma4, but not in the current surveyed non-NPU `litert-community` bundles | Quantized-cache readback matmul | No standard 1:1 Aten op |
-| `odml.cache_update` | `STABLEHLO_COMPOSITE` | Observed in published Gemma4, but not in the current surveyed non-NPU `litert-community` bundles | Quantized KV cache writeback/update | No standard 1:1 Aten op |
+| `odml.runtime_bmm` | `STABLEHLO_COMPOSITE` | Native MLDrift GPU parser and implementation; supports ordinary BMM and cache-backed external-weight paths | Runtime-bounded BMM / KV-cache readback matmul | No standard 1:1 Aten op |
+| `odml.cache_update` | `STABLEHLO_COMPOSITE` | Native MLDrift GPU parser and implementation | Float or quantized KV cache writeback/update | No standard 1:1 Aten op |
+| `moe` | `CUSTOM` | Native MLDrift GPU parser and implementation; also recognized by the opt-in XNNPACK MoE path | Routed GELU-gated mixture-of-experts block | No standard 1:1 Aten op |
 | `odml.update_kv_cache` | legalized from source composite to `CUSTOM` | Deprecated GenAI-style KV update path | Resource-backed KV update | No standard 1:1 Aten op |
 | `odml.update_external_kv_cache` | legalized from source composite to `CUSTOM` | Deprecated external KV update path | Explicit-tensor KV update | No standard 1:1 Aten op |
 | `odml.quantize_and_dequantize` | legalized from source composite to `CUSTOM` | Converter-recognized custom-legalized composite | Quantize/dequantize helper | No standard 1:1 Aten op |
@@ -640,85 +657,83 @@ Shape constraints:
 
 #### Status
 
+- Implemented natively by the MLDrift GPU delegate
+- Parsed by both the legacy `GraphFloat32` and newer `IrModel` paths
 - Observed in published Gemma4 bundles
-- Not currently documented here as a public XNNPACK-recognized nonstandard op
-- Not seen in the current surveyed non-NPU `litert-community` `.litertlm`
-  bundles
-- Treat this as an inferred compatibility note, not a public API guarantee
 
 #### Accepted Form
 
-Observed in the published Gemma4 decode section as:
+For MLDrift delegation, the accepted form is:
 
 - `STABLEHLO_COMPOSITE` with
   `StableHLOCompositeOptions.name == "odml.runtime_bmm"`
+- exactly three **runtime** inputs in slots 0, 1, and 2; constant operands do
+  not satisfy this count
+- exactly one output
 
 #### Signature
 
-This signature is inferred from published Gemma4-style decompositions; this tree
-does not currently expose a native public kernel contract for the op.
-
-Core minimal form:
+The canonical MLDrift form is rank 4. `B0` is an optional model batch and `B1`
+is the batch dimension of the batched matmul:
 
 | Slot | Tensor | Type | Shape | Description |
 | --- | --- | --- | --- | --- |
-| input 0 | `lhs` | `FLOAT32` | batch-matmul-compatible shape, usually `[..., M, K]` | Runtime left-hand operand, for example query states or attention probabilities. |
-| input 1 | `rhs_quantized` | quantized, observed as cache-side integer storage | batch-matmul-compatible quantized RHS, usually `[..., N, K]` when transposed by the matmul or `[..., K, N]` otherwise | Quantized right-hand operand read from cache or a cache-derived slice. The decomposition starts by dequantizing it. |
-| optional inputs | `shape_or_length_helpers` | usually integer tensors | scalar or small 1-D tensors | Published helper forms may carry live-length, slice, padding, or shape values around the core matmul. |
-| output 0 | `output` | `FLOAT32` | batch-matmul result, usually `[..., M, N]` | Result of multiplying `lhs` by the dequantized RHS. |
+| input 0 | `lhs` | `FLOAT32` in current tests | `[B0, B1, M, K]` | Left operand. |
+| input 1 | `rhs` | `FLOAT32` or `INT8` | `[B0, B1, N, K]` | Right operand in already-transposed storage. The last dimension must equal the last dimension of `lhs`. |
+| input 2 | `runtime_params` | `INT32` | **exactly `[1, 1, 1, 7]`** | Runtime bounds. MLDrift uses element 2 as `active_tokens_aligned`; the other elements are not read by this op. |
+| output 0 | `output` | normally `FLOAT32` | `[B0, B1, M, N]` | Result of `lhs * transpose(rhs)` with a runtime channel bound. |
 
-Attention-oriented interpretation:
+The third input is part of the MLDrift delegation ABI, not an optional
+decomposition helper. A rank-1 `[7]` tensor is not equivalent for MLDrift: its
+parser compares the internal BHWC shape with `[1, 1, 1, 7]`, so the FlatBuffer
+tensor must have the literal rank-4 shape to be delegated to MLDrift.
 
-- key readback form: `lhs` is query-like, `rhs_quantized` is key-cache-like,
-  and `output` is logits-like `[B, Nq, T, S_live]`.
-- value readback form: `lhs` is probability/logit-like,
-  `rhs_quantized` is value-cache-like, and `output` is activation-like
-  `[B, Nq, T, H]`.
+MLDrift's BMM kernel supports one internal batch dimension. When `B0 != 1`,
+the MLDrift parser inserts reshapes around the operation:
 
-Do not rely on the optional helper inputs as a stable ABI. The published
-decompositions show multiple helper families around the same core
-`DEQUANTIZE + BATCH_MATMUL` meaning.
+```text
+[B0, B1, M, K] -> [1, B0*B1, M, K]
+[B0, B1, N, K] -> [1, B0*B1, N, K]
+[1, B0*B1, M, N] -> [B0, B1, M, N]
+```
+
+`rhs` is always interpreted with `transpose_right = true` on the ordinary BMM
+path. There is no attribute for selecting a non-transposed RHS.
+
+#### Composite Attributes
+
+The attributes are a flexbuffers map in
+`StableHLOCompositeOptions.composite_attributes`:
+
+| Attribute | Required | Meaning in MLDrift |
+| --- | --- | --- |
+| `is_global` | yes | Required by MLDrift validation, but its value is not otherwise consumed by the current MLDrift parser or GPU implementation. |
+| `is_src` | yes | If true, `runtime_params[2]` bounds the source channels; if false, it bounds the destination channels. It also selects the V-cache versus K-cache quantization metadata when `rhs` comes from `odml.cache_update`. |
+| `rhs_cache_update` | no | If true, force the cache/external-weights implementation path. Missing reads as false. |
+| `scale` | required for a standalone `INT8` RHS | Its presence selects the external-weights path. For an `INT8` RHS not produced by `odml.cache_update`, it is the uniform dequantization scale. |
 
 #### Semantic Summary
 
-This is best understood as a quantized-RHS runtime batch matmul:
+MLDrift chooses between two native implementations:
 
-- `output = batch_matmul(lhs_fp32, dequantize(rhs_q))`
+- Ordinary BMM path when `rhs_cache_update` is false, `scale` is absent, and
+  `rhs` is not produced by `odml.cache_update`:
+  - `output = batched_matmul(lhs, rhs, transpose_rhs=true)`
+- External-weights fully-connected path when any of those conditions is not
+  met:
+  - treats the RHS as cache/external weights
+  - supports float cache storage
+  - supports `INT8` TFLite cache storage through MLDrift's `UINT8` packed
+    representation plus a scale tensor
 
-Observed decomposition families in published Gemma4 decode:
+For an `INT8` RHS produced by `odml.cache_update`, the scale and scale-vector
+length come from that producer:
 
-- minimal form:
-  - `DEQUANTIZE`
-  - `BATCH_MATMUL`
-- prefix/live-length helper form:
-  - `SLICE`
-  - `ADD`
-  - `SUB`
-  - `MAXIMUM`
-  - `RESHAPE`
-  - `CONCATENATION`
-  - `DEQUANTIZE`
-  - `BATCH_MATMUL`
-- padded/fixed-width helper form:
-  - `SLICE`
-  - `ADD`
-  - `SUB`
-  - `MAXIMUM`
-  - `RESHAPE`
-  - `CONCATENATION`
-  - `DEQUANTIZE`
-  - `BATCH_MATMUL`
-  - `PACK`
-  - `FILL`
-  - `DYNAMIC_UPDATE_SLICE`
+- `is_src == true`: use `scale_v`, with `head_size` scale entries
+- `is_src == false`: use `scale_k`, with `cache_size` scale entries
 
-So there are really two layers of meaning:
-
-- core meaning:
-  - float lhs times quantized rhs
-- optional decode-shape management:
-  - slice live prefix
-  - pad or write back into a fixed-width output shape
+Consequently, a quantized `odml.cache_update` producer used this way must carry
+the corresponding scale attribute. The MLDrift parser calls `.value()` on it.
 
 #### PyTorch / Aten Mapping
 
@@ -726,13 +741,9 @@ No standard 1:1 Aten op is known.
 
 Closest decomposed Aten/math interpretation:
 
-- prefix/layout helpers:
-  - `aten.slice`
-  - `aten.reshape`
-  - `aten.cat`
-  - `aten.maximum`
-- then dequantization
-- then `aten.bmm` / `aten.matmul`
+- optional RHS dequantization
+- `aten.bmm` / `aten.matmul` with the RHS transposed
+- masking or slicing based on the runtime active-token bound
 
 How a `litert-torch` user should think about it:
 
@@ -745,112 +756,97 @@ How a `litert-torch` user should think about it:
   - "read quantized cache, dequantize, then do the decode-time matmul"
   than to a single familiar public PyTorch op
 
-#### Notes For Converter Authors
+#### Notes For Converter Authors Targeting MLDrift
 
-- Do not model this as "just batch matmul". The published decomposition shows
-  that live-length and fixed-width decode shape handling are often part of the
-  contract.
-- The published decomposition explicitly contains `DEQUANTIZE`.
+- Emit three runtime operands, even though only the first two are mathematical
+  matmul operands.
+- Store the RHS as `[..., N, K]`; MLDrift always transposes it logically.
+- Emit the parameter tensor as rank 4 `[1, 1, 1, 7]`, and place the aligned
+  active-token count at index 2.
+- Always emit both `is_global` and `is_src`. `is_global` currently has no
+  behavioral effect in MLDrift, but omitting it rejects MLDrift delegation.
+- For standalone `INT8` RHS input, emit `scale`. Do not rely on an affine
+  quantization scale being extracted automatically by the MLDrift parser.
+- Use `rhs_cache_update=true` when the RHS has cache/external-weight storage
+  semantics but its producer is not visible as a delegated
+  `odml.cache_update` node.
 
 ### `odml.cache_update`
 
 #### Status
 
+- Implemented natively by the MLDrift GPU delegate
+- Parsed by both the legacy `GraphFloat32` and newer `IrModel` paths
 - Observed in published Gemma4 bundles
-- Name also appears in LiteRT runtime magic-number handling
-- Not seen in the current surveyed non-NPU `litert-community` `.litertlm`
-  bundles
-- Treat this section as an inferred compatibility note unless a public runtime
-  contract is documented elsewhere
 
 #### Accepted Form
 
-Observed in published Gemma4 decode as:
+For MLDrift delegation, the accepted form is:
 
 - `STABLEHLO_COMPOSITE` with
   `StableHLOCompositeOptions.name == "odml.cache_update"`
-- observed paired-KV contract in the published Gemma4 decode section:
-  - `7` inputs
-  - `2` outputs
-- observed runtime-side compatibility expectations for the preserved quantized
-  form:
-  - `kv_cache_batch_size` (`INT32`) composite attr
-  - `cache_size` (`INT32`) composite attr
-  - `head_size` (`INT32`) composite attr
-  - optional `scale_k` / `scale_v` (`FLOAT32`) composite attrs may also be
-    present
-- practical compatibility note:
-  - a single-cache helper shaped like
-    `QUANTIZE + DYNAMIC_UPDATE_SLICE -> 1 output`
-    should not reuse the public name `odml.cache_update`
-  - current delegate checks for the quantized public form assume the paired-KV
-    contract above
+- exactly `3` or `7` runtime inputs
+- exactly `2` outputs
+- required composite attributes:
+  - `kv_cache_batch_size` (`INT32`)
+  - `cache_size` (`INT32`)
+  - `head_size` (`INT32`)
+- optional attributes:
+  - `scale_k` (`FLOAT32`)
+  - `scale_v` (`FLOAT32`)
 
 #### Signature
 
-This signature is inferred from the published Gemma4 paired-KV form; this tree
-does not currently provide a standalone native kernel implementation for the
-name.
-
 | Slot | Tensor | Type | Shape | Description |
 | --- | --- | --- | --- | --- |
-| input 0 | `k_slice` / fresh K fragment | `FLOAT32` | update-window tensor; commonly rank-4 with token/update length `T` and head size `H` | New key values for the current decode/prefill step before quantized cache storage. |
-| input 1 | `v_slice` / fresh V fragment | `FLOAT32` | update-window tensor matching the K update's logical extent | New value values for the current decode/prefill step before quantized cache storage. |
-| input 2 | `params` | `INT32` | scalar or small 1-D tensor | Auxiliary integer parameters used by the published decomposition. Treat this as decomposition-specific, not semantic model data. |
-| input 3 | `k_cache` | `INT8` | fixed-capacity key cache; capacity dimension is `S == cache_size` | Existing quantized key cache to update. |
-| input 4 | `v_cache` | `INT8` | fixed-capacity value cache; capacity dimension is `S == cache_size` | Existing quantized value cache to update. |
-| input 5 | `k_start_indices` | `INT32` | 1-D index vector with length equal to the rank of `k_cache` | Start indices for the key-cache `DYNAMIC_UPDATE_SLICE` in the decomposition. |
-| input 6 | `v_start_indices` | `INT32` | 1-D index vector with length equal to the rank of `v_cache` | Start indices for the value-cache `DYNAMIC_UPDATE_SLICE` in the decomposition. |
-| output 0 | `updated_k_cache` | `INT8` | same shape as `k_cache` | Key cache after writing the quantized K fragment. |
-| output 1 | `updated_v_cache` | `INT8` | same shape as `v_cache` | Value cache after writing the quantized V fragment. |
+| input 0 | `src_k` | `FLOAT32` or `FLOAT16` for a quantized cache | typically `[1, Bkv, T, H]` | Fresh K values. The width dimension is the number of update tokens. |
+| input 1 | `src_v` | same as `src_k` | same logical shape as `src_k` | Fresh V values. |
+| input 2 | `runtime_params` | `INT32` | at least two elements; current tests use `[2]` | Element 0 is `token_index_offset`; element 1 is `active_tokens`. |
+| inputs 3..6 | decomposition-only inputs | decomposition-defined | decomposition-defined | Allowed only in the seven-input carrier. MLDrift intentionally ignores these slots; they exist so the CPU decomposition can express in-place dynamic slice updates. |
+| output 0 | `updated_k_cache` | floating-point or `INT8` | backend-packed cache storage | K-cache destination. |
+| output 1 | `updated_v_cache` | same storage class as K | backend-packed cache storage | V-cache destination. |
 
-The public cache layout is model/backend-specific. The important portable facts
-from the observed form are the paired K/V update, float source fragments,
-quantized public cache tensors, and output shapes matching the corresponding
-cache inputs.
+Unlike the MLDrift parser for `odml.runtime_bmm`, the MLDrift
+`odml.cache_update` parser does not impose an exact shape on the runtime
+parameter tensor. The MLDrift GPU kernel reads its first two `INT32` values.
+MLDrift delegation requires the two-output paired-cache form.
 
 #### Semantic Summary
 
-This is best understood as a typed KV cache write/update op:
+For every update token `x`, MLDrift computes:
 
-- take fresh float K/V fragments
-- quantize them
-- adapt layout as needed
-- write into an existing fixed-capacity quantized cache tensor
+```text
+token_index = runtime_params[0] + x
+```
 
-Observed decomposition families in published Gemma4 decode:
+It writes the K/V values only when both
+`token_index < cache_size` and `token_index < runtime_params[1]`. Source height
+is broadcast across `kv_cache_batch_size` with modulo indexing.
 
-- K-like layout variant:
-  - `QUANTIZE` x2
-  - `DYNAMIC_UPDATE_SLICE` x2
-  - `TRANSPOSE`
-- V-like layout variant:
-  - `QUANTIZE` x2
-  - `DYNAMIC_UPDATE_SLICE` x2
-  - `RESHAPE`
+K and V use different packed external-weight layouts because the two following
+attention matmuls consume them in opposite orientations:
 
-#### Known Current Restriction
+- K cache: output dimension is `cache_size`, input dimension is `head_size`
+- V cache: output dimension is `head_size`, input dimension is `cache_size`
 
-This is not a formal public ABI guarantee, but current nonstandard-op bring-up
-results indicate an important portability restriction for the native GPU path:
+When the public outputs are `INT8`, MLDrift preserves their original TFLite
+tensor references but represents their bytes internally as `UINT8`. The GPU
+shader quantizes float source values using `scale_k` and `scale_v`; each scale
+defaults to `1.0` when absent. These scales are also consumed by a downstream
+quantized `odml.runtime_bmm` when the cache-update node remains its visible RHS
+producer.
 
-- the observed working published path is Gemma-like
-  - paired K/V update
-  - `FLOAT32` source fragments
-  - `INT8` public cache tensors
-  - a compact/head-packed public cache layout where the delegate-facing cache
-    update source effectively has `H = 1`
-- converter experiments with Qwen3-style explicit multi-head public KV layouts
-  have not been reliable on the native GPU `odml.cache_update` path
-  - K cache exposed as `[B, H, T, D]`
-  - V cache exposed as `[B, H, D, T]`
-  - with `H > 1`
-- until the backend contract is documented more explicitly, frontends should
-  not assume `odml.cache_update` is portable across arbitrary explicit-head KV
-  layouts just because the published Gemma path works
-- if a model family needs explicit multi-head public KV tensors, prefer a
-  builtin/fallback cache-update path unless the target backend is known to
-  support that layout correctly
+#### Current Implementation Limits
+
+- The MLDrift `odml.cache_update` parser validates the operand count and
+  attributes, but does not validate detailed K/V shape compatibility. The
+  MLDrift GPU shader assumes matching source tensors and the packed K/V cache
+  layouts described above.
+- In the seven-input form, inputs 3 through 6 are not available to the native
+  GPU operation. A frontend must not expect them to change GPU semantics.
+- Quantized mode is selected from output 0 being `INT8`; the implementation
+  assumes output 1 is the matching cache type.
+- `scale_k` and `scale_v` must be nonzero when used for quantization.
 
 #### PyTorch / Aten Mapping
 
@@ -874,7 +870,7 @@ How a `litert-torch` user should think about it:
   - "write the new K/V slice into an existing fixed-capacity cache"
   than to a single standard Aten op
 
-#### Notes For Converter Authors
+#### Notes For Converter Authors Targeting MLDrift
 
 - K and V may require different layout adaptation.
 - Do not force a single K/V physical layout unless the target runtime contract
@@ -1017,6 +1013,73 @@ Names currently added as accelerator-supported custom ops in
 - `custom_call.LayerNorm`
 - `custom_call.RmsNorm`
 - `custom_call.PixelShuffle`
+- `moe`
+
+### `moe`
+
+`moe` is a plain TFLite `CUSTOM` op, not an `odml.*` preserved composite. The
+MLDrift GPU delegate implements a complete routed, GELU-gated expert block. It
+requires one output and has separate floating-point and symmetric-int8 weight
+forms.
+
+Use these dimensions:
+
+- `T`: token/sequence count
+- `D`: model dimension
+- `F`: expert hidden dimension
+- `E`: total number of experts
+- `A`: active experts per token, with `0 < A <= E`
+
+Common runtime inputs and output:
+
+| Slot | Tensor | Type | Shape | Description |
+| --- | --- | --- | --- | --- |
+| input 0 | `src` | floating-point | `[1, T, D]` or `[1, 1, T, D]` | Input token states. Batch must be 1. |
+| input 1 | `top_weights` | floating-point | `[1, 1, T, A]` | Renormalized routing weights. |
+| input 2 | `top_indices` | `INT32` | `[1, 1, T, A]` | Selected expert IDs. |
+| output 0 | `output` | floating-point | same logical shape as `src` | Weighted sum of the selected expert outputs. |
+
+The `weight_type == "fp32"` form has seven inputs total:
+
+| Slot | Tensor | Type | Shape | Description |
+| --- | --- | --- | --- | --- |
+| input 3 | `ff_gate_weight` | floating-point constant | `[F, E, 1, D]` | Per-expert gate projection. |
+| input 4 | `ff1_weight` | floating-point constant | `[F, E, 1, D]` | Per-expert up projection. |
+| input 5 | `linear_weight` | floating-point constant | `[D, E, 1, F]` | Per-expert down projection. |
+| input 6 | `per_expert_scale` | `FLOAT32` or `FLOAT16` constant | `[1, 1, 1, E]` | Additional output scale selected by expert ID. |
+
+The `weight_type == "int8"` form has ten inputs total. Each weight is a
+constant, affine-quantized `INT8` tensor whose zero points must all be zero:
+
+| Slot | Tensor | Type | Shape |
+| --- | --- | --- | --- |
+| input 3 | `ff_gate_weight` | symmetric `INT8` constant | `[F, E, 1, D]` |
+| input 4 | `ff_gate_scale` | `FLOAT32` or `FLOAT16` constant | `[F, E, 1, 1]` |
+| input 5 | `ff1_weight` | symmetric `INT8` constant | `[F, E, 1, D]` |
+| input 6 | `ff1_scale` | `FLOAT32` or `FLOAT16` constant | `[F, E, 1, 1]` |
+| input 7 | `linear_weight` | symmetric `INT8` constant | `[D, E, 1, F]` |
+| input 8 | `linear_scale` | `FLOAT32` or `FLOAT16` constant | `[D, E, 1, 1]` |
+| input 9 | `per_expert_scale` | `FLOAT32` or `FLOAT16` constant | `[1, 1, 1, E]` |
+
+Custom options are a flexbuffers map with required keys `num_experts`,
+`num_active_experts`, `model_dim`, `hidden_dim`, and `weight_type`. Optional
+`activation`, when present, must be `"gelu"`; optional
+`renormalized_top_weights`, when present, must be true. If the custom-options
+buffer is completely absent, MLDrift can infer all five required properties
+from the input count and tensor shapes. It does not use inference to repair a
+present but incomplete or invalid map.
+
+For token `t` and selected expert `e`, the implemented computation is:
+
+```text
+hidden = gelu(ff_gate_weight[e] * src[t])
+         * (ff1_weight[e] * src[t])
+expert_output = per_expert_scale[e] * linear_weight[e] * hidden
+output[t] = sum(top_weights[t, route] * expert_output[route])
+```
+
+There are no expert biases in this ABI. Routing (`top_indices` and
+`top_weights`) is computed outside the op.
 
 Do not document or emit these as `odml.*` StableHLO composites unless a
 converter pass explicitly creates such a composite and preserves it. For these
@@ -1036,6 +1099,9 @@ rg -n --pcre2 'stablehlo\\.composite\\s+\"([^\"]+)\"' litert tflite
 
 # Composite names recognized by XNNPACK.
 rg -n 'kTfLiteBuiltinStablehloComposite' tflite/delegates/xnnpack/xnnpack_delegate.cc
+
+# Nonstandard names recognized by MLDrift and their parser entry points.
+rg -n 'odml\.cache_update|odml\.runtime_bmm|"moe"' ml_drift/delegate/composite
 
 # StableHLO composite names legalized into tfl.custom.
 rg -n 'IsSupportedComposite\\(' tflite/converter/stablehlo/transforms/legalize_stablehlo_composite_to_tfl_custom.cc

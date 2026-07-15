@@ -588,6 +588,7 @@ struct StableHLOCompositeOperationData {
   std::string name;
   std::vector<uint8_t> composite_attributes;
   int32_t version = 1;
+  std::vector<Tensor> decomposition_inputs;
   std::vector<Tensor> decomposition_outputs;
   int32_t decomposition_subgraph_index = -1;
 };

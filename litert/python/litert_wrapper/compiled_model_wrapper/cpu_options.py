@@ -40,6 +40,8 @@ class CpuOptions:
     num_threads: The number of threads to use for CPU inference. If 0, the
       LiteRT runtime will decide.
     kernel_mode: The CPU kernel mode to use. See `CpuKernelMode` for details.
+    enable_ynnpack: Whether YNNPACK should delegate supported operations before
+      XNNPACK. Builds without YNNPACK support fall back to XNNPACK.
     xnnpack_flags: Flags to pass to XNNPACK. Consult XNNPACK documentation for
       available flags.
     xnnpack_weight_cache_path: Path to a directory for caching XNNPACK weights.
@@ -47,6 +49,7 @@ class CpuOptions:
 
   num_threads: int = 0
   kernel_mode: Optional[CpuKernelMode] = None
+  enable_ynnpack: bool = False
   xnnpack_flags: Optional[int] = None
   xnnpack_weight_cache_path: str = ""
 
@@ -57,6 +60,7 @@ class CpuOptions:
         "cpu_kernel_mode": (
             -1 if self.kernel_mode is None else int(self.kernel_mode)
         ),
+        "cpu_enable_ynnpack": self.enable_ynnpack,
         "xnnpack_flags": (
             -1 if self.xnnpack_flags is None else self.xnnpack_flags
         ),

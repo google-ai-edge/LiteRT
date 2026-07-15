@@ -142,6 +142,7 @@ cc_library(
         "//third_party/odml/infra/ml_drift_delegate:shared_memory_manager_webgpu",
         "//third_party/odml/infra/ml_drift_delegate:util",
         "//third_party/odml/infra/ml_drift_delegate/serialization_weight_cache",
+        "//third_party/odml/litert/weight_loader:external_weight_loader",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:absl_log",

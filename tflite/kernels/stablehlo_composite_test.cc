@@ -43,6 +43,11 @@ using testing::FloatNear;
 using testing::Pointwise;
 
 namespace tflite {
+namespace ops::custom {
+TfLiteRegistration* Register_ODML_CAUSAL_CONV_WITH_STATE_1D();
+TfLiteRegistration* Register_ODML_RECURRENT_LINEAR_ATTENTION();
+}  // namespace ops::custom
+
 namespace {
 
 void AddStablehloCompositeNode(Subgraph* subgraph, const char* name,
@@ -64,6 +69,21 @@ void AddStablehloCompositeNode(Subgraph* subgraph, const char* name,
   int node_index;
   ASSERT_EQ(subgraph->AddNodeWithParameters(inputs, outputs, {}, nullptr, 0,
                                             params, composite_reg, &node_index),
+            kTfLiteOk);
+}
+
+void AddOdmlCustomNode(Subgraph* subgraph, TfLiteRegistration* registration,
+                       const std::vector<int>& inputs,
+                       const std::vector<int>& outputs,
+                       const std::vector<uint8_t>& attributes = {}) {
+  registration->builtin_code = kTfLiteBuiltinCustom;
+  int node_index;
+  ASSERT_EQ(subgraph->AddNodeWithParameters(
+                inputs, outputs, {},
+                attributes.empty()
+                    ? nullptr
+                    : reinterpret_cast<const char*>(attributes.data()),
+                attributes.size(), nullptr, registration, &node_index),
             kTfLiteOk);
 }
 
@@ -116,7 +136,8 @@ class CompositeTest : public subgraph_test_util::ControlFlowOpTest {
 
   void RunRecurrentLinearAttentionChunkedPrefill(int chunk_size,
                                                  std::vector<float>* output,
-                                                 std::vector<float>* state) {
+                                                 std::vector<float>* state,
+                                                 bool use_custom_op = false) {
     constexpr int kQuery = 0;
     constexpr int kKey = 1;
     constexpr int kValue = 2;
@@ -149,9 +170,18 @@ class CompositeTest : public subgraph_test_util::ControlFlowOpTest {
     for (int i = 0; i < 8; ++i) {
       subgraph_test_util::SetupTensor(&subgraph, i, kTfLiteFloat32);
     }
-    AddStablehloCompositeNode(&subgraph, "odml.recurrent_linear_attention",
-                              {kQuery, kKey, kValue, kPastState, kDecay, kBeta},
-                              {kOutput, kPresentState}, fbb.GetBuffer());
+    if (use_custom_op) {
+      AddOdmlCustomNode(
+          &subgraph,
+          ops::custom::Register_ODML_RECURRENT_LINEAR_ATTENTION(),
+          {kQuery, kKey, kValue, kPastState, kDecay, kBeta},
+          {kOutput, kPresentState}, fbb.GetBuffer());
+    } else {
+      AddStablehloCompositeNode(
+          &subgraph, "odml.recurrent_linear_attention",
+          {kQuery, kKey, kValue, kPastState, kDecay, kBeta},
+          {kOutput, kPresentState}, fbb.GetBuffer());
+    }
 
     ASSERT_EQ(interpreter_->ResizeInputTensor(kQuery, {1, 3, 2, 1}), kTfLiteOk);
     ASSERT_EQ(interpreter_->ResizeInputTensor(kKey, {1, 3, 1, 1}), kTfLiteOk);
@@ -200,7 +230,7 @@ TEST_F(CompositeTest, TestInvokeWorks) {
   EXPECT_THAT(GetOutputData<int>(0), ElementsAreArray({8, 10, 12, 14, 16, 18}));
 }
 
-TEST_F(CompositeTest, OdmlCausalConvWithState1dNativeCpu) {
+TEST_F(CompositeTest, OdmlCausalConvWithState1dCustomOpNativeCpu) {
   constexpr int kInput = 0;
   constexpr int kWeight = 1;
   constexpr int kBias = 2;
@@ -218,9 +248,9 @@ TEST_F(CompositeTest, OdmlCausalConvWithState1dNativeCpu) {
   for (int i = 0; i < 6; ++i) {
     subgraph_test_util::SetupTensor(&subgraph, i, kTfLiteFloat32);
   }
-  AddStablehloCompositeNode(&subgraph, "odml.causal_conv_with_state_1d",
-                            {kInput, kWeight, kBias, kPastState},
-                            {kOutput, kPresentState});
+  AddOdmlCustomNode(
+      &subgraph, ops::custom::Register_ODML_CAUSAL_CONV_WITH_STATE_1D(),
+      {kInput, kWeight, kBias, kPastState}, {kOutput, kPresentState});
 
   ASSERT_EQ(interpreter_->ResizeInputTensor(kInput, {1, 3, 2}), kTfLiteOk);
   ASSERT_EQ(interpreter_->ResizeInputTensor(kWeight, {3, 2}), kTfLiteOk);
@@ -720,6 +750,19 @@ TEST_F(CompositeTest, OdmlRecurrentLinearAttentionChunkedPrefillLongChunk) {
 
   EXPECT_THAT(output,
               Pointwise(FloatEq(), {10.0f, 20.0f, 30.0f, 40.0f, 50.0f, 60.0f}));
+  EXPECT_THAT(state, Pointwise(FloatEq(), {10.0f}));
+}
+
+TEST_F(CompositeTest,
+       OdmlRecurrentLinearAttentionChunkedPrefillCustomOp) {
+  std::vector<float> output;
+  std::vector<float> state;
+  RunRecurrentLinearAttentionChunkedPrefill(
+      /*chunk_size=*/2, &output, &state, /*use_custom_op=*/true);
+
+  EXPECT_THAT(output,
+              Pointwise(FloatEq(),
+                        {10.0f, 20.0f, 30.0f, 40.0f, 50.0f, 60.0f}));
   EXPECT_THAT(state, Pointwise(FloatEq(), {10.0f}));
 }
 

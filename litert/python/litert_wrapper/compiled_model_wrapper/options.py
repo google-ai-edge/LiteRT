@@ -129,6 +129,7 @@ class Options:
         "hardware_accel": int(self.hardware_accelerators),
         "cpu_num_threads": 0,
         "cpu_kernel_mode": -1,
+        "cpu_enable_ynnpack": False,
         "xnnpack_flags": -1,
         "xnnpack_weight_cache_path": "",
         "gpu_enforce_f32": False,

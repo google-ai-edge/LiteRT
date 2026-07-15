@@ -17,11 +17,16 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#ifdef __EMSCRIPTEN__
+#include <algorithm>
+#include <optional>
+#endif  // __EMSCRIPTEN__
 #include <thread>  // NOLINT (Open source code)
 #include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
@@ -62,6 +67,10 @@
 #include "tflite/c/common.h"
 
 #ifdef __EMSCRIPTEN__
+#include "weight_loader/external_weight_loader_litert.h"
+#endif  // __EMSCRIPTEN__
+
+#ifdef __EMSCRIPTEN__
 #include <webgpu/webgpu.h>  // IWYU pragma: export
 #else
 #include "webgpu/webgpu.h"  // from @dawn
@@ -82,6 +91,40 @@ constexpr int kNumNodesPerCommandEncoder = 64;
 #else
 constexpr int kNumNodesPerCommandEncoder = 256;
 #endif
+
+#ifdef __EMSCRIPTEN__
+// Traverses the weights conversion graph forward from a raw weight input tensor
+// to find its corresponding processed output tensor mapped to the main model.
+// Used to map WebGPU buffers with external weight buffer IDs for streaming.
+std::optional<::ml_drift::ValueId> FindMappedOutput(
+    const ::ml_drift::GpuModel& model, ::ml_drift::ValueId input_id,
+    const absl::flat_hash_map<::ml_drift::ValueId, ::ml_drift::ValueId>&
+        io_mapping) {
+  absl::flat_hash_set<::ml_drift::ValueId> visited;
+  std::vector<::ml_drift::ValueId> stack = {input_id};
+  while (!stack.empty()) {
+    auto current = stack.back();
+    stack.pop_back();
+    if (!visited.insert(current).second) {
+      continue;
+    }
+
+    if (io_mapping.contains(current)) {
+      return current;
+    }
+
+    for (const auto& node : model.nodes) {
+      if (std::find(node.inputs.begin(), node.inputs.end(), current) !=
+          node.inputs.end()) {
+        for (auto output : node.outputs) {
+          stack.push_back(output);
+        }
+      }
+    }
+  }
+  return std::nullopt;
+}
+#endif  // __EMSCRIPTEN__
 
 std::vector<std::shared_ptr<absl::Notification>> GetAsyncUploadNotifications(
     const ::ml_drift::CreateGpuModelInfo& create_info) {
@@ -388,6 +431,44 @@ absl::Status GpuInferenceContextWebGpu::ReadWeightTensorToDescriptor(
     ::ml_drift::ValueId id, ::ml_drift::TensorDescriptor& desc) {
   auto* wgpu_tensor = ctx_->GetTensor(id);
   return wgpu_tensor->ToDescriptor(backend_->wgpu_env().device(), &desc);
+}
+
+absl::Status GpuInferenceContextWebGpu::UploadWeightsOnWeb(
+    weight_loader::WeightLoader* weight_loader,
+    const ::ml_drift::GpuModel& gpu_model,
+    const absl::flat_hash_map<::ml_drift::ValueId, ::ml_drift::ValueId>&
+        io_mapping,
+    const absl::flat_hash_map<::ml_drift::ValueId, uint32_t>&
+        weight_id_to_external_buffer_id,
+    std::vector<::ml_drift::WeightsManager::UploadWeightsInfo>& upload_infos) {
+#ifdef __EMSCRIPTEN__
+  absl::flat_hash_map<int, wgpu::Buffer> tfl_id_to_wgpu_buffer;
+  for (const auto& upload_info : upload_infos) {
+    ASSIGN_OR_RETURN(auto* tensor, GetSpatialTensor(upload_info.input_id));
+    auto* wgpu_tensor = static_cast<::ml_drift::webgpu::SpatialTensor*>(tensor);
+
+    auto mapped_output_opt =
+        FindMappedOutput(gpu_model, upload_info.input_id, io_mapping);
+    if (!mapped_output_opt.has_value()) {
+      return absl::InternalError(
+          "Could not find mapped output for raw weight.");
+    }
+    auto main_model_weight_id = io_mapping.at(*mapped_output_opt);
+
+    auto it = weight_id_to_external_buffer_id.find(main_model_weight_id);
+    if (it == weight_id_to_external_buffer_id.end()) {
+      return absl::InternalError("Could not find external buffer ID.");
+    }
+
+    tfl_id_to_wgpu_buffer[it->second] = wgpu_tensor->GetBufferHandle();
+  }
+
+  RETURN_IF_ERROR(weight_loader->UploadWeightsOnWeb(tfl_id_to_wgpu_buffer));
+
+  return absl::OkStatus();
+#else
+  return absl::UnimplementedError("UploadWeightsOnWeb is only supported on Emscripten.");
+#endif  // __EMSCRIPTEN__
 }
 
 absl::Status GpuInferenceContextWebGpu::PrepareCommandBuffers(

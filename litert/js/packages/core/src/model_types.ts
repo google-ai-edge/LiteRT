@@ -39,3 +39,21 @@ export interface CompileOptions extends LiteRtCompileOptions {
  * The possible tensor inputs to the run() method.
  */
 export type TensorInputs = Tensor|Tensor[]|Record<string, Tensor>;
+
+/**
+ * Normalizes and fills in default compile options for LiteRt model loading.
+ */
+export function fillCompileOptions(
+    compileOptions: CompileOptions = {},
+    environment: Environment,
+    defaultThreadCount: number,
+    ): Required<CompileOptions> {
+  return {
+    environment,
+    accelerator: compileOptions.accelerator ??
+        (environment.webGpuDevice ? 'webgpu' : 'wasm'),
+    cpuOptions: compileOptions.cpuOptions ?? {numThreads: defaultThreadCount},
+    gpuOptions: compileOptions.gpuOptions ?? {},
+    webNNOptions: compileOptions.webNNOptions ?? {},
+  };
+}

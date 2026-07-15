@@ -2438,6 +2438,7 @@ TfLiteStatus Subgraph::ReplaceNodeWithSubgraph(
   execution_plan_.insert(
       execution_plan_.erase(std::next(begin(execution_plan_), execution_index)),
       begin(execution_plan_to_insert), end(execution_plan_to_insert));
+
   // Update the execution index with the number of inserted nodes.
   //
   // -1 because we replace the node at `execution_index` with the first node of

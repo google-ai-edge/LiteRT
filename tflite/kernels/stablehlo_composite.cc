@@ -680,6 +680,27 @@ void* Init(TfLiteContext* context, const char* options, size_t options_len) {
   return data.release();
 }
 
+void* InitCustom(const char* name, const char* options, size_t options_len) {
+  auto data = std::make_unique<State>();
+  data->subgraph_index = -1;
+  data->name = name;
+  ParseOdmlCompositeAttributes(
+      data.get(), reinterpret_cast<const uint8_t*>(options), options_len);
+  return data.release();
+}
+
+void* InitCausalConvWithState1dCustom(TfLiteContext* context,
+                                      const char* options,
+                                      size_t options_len) {
+  return InitCustom(kCausalConvWithState1d, options, options_len);
+}
+
+void* InitRecurrentLinearAttentionCustom(TfLiteContext* context,
+                                         const char* options,
+                                         size_t options_len) {
+  return InitCustom(kRecurrentLinearAttention, options, options_len);
+}
+
 void Free(TfLiteContext* context, void* node_data) {
   delete static_cast<State*>(node_data);
 }
@@ -2129,5 +2150,29 @@ TfLiteRegistration* Register_STABLEHLO_COMPOSITE() {
 }
 
 }  // namespace builtin
+
+namespace custom {
+
+TfLiteRegistration* Register_ODML_CAUSAL_CONV_WITH_STATE_1D() {
+  static TfLiteRegistration r = {
+      /*.init=*/
+      builtin::stablehlo_composite::InitCausalConvWithState1dCustom,
+      /*.free=*/builtin::stablehlo_composite::Free,
+      /*.prepare=*/builtin::stablehlo_composite::Prepare,
+      /*.invoke=*/builtin::stablehlo_composite::Eval};
+  return &r;
+}
+
+TfLiteRegistration* Register_ODML_RECURRENT_LINEAR_ATTENTION() {
+  static TfLiteRegistration r = {
+      /*.init=*/
+      builtin::stablehlo_composite::InitRecurrentLinearAttentionCustom,
+      /*.free=*/builtin::stablehlo_composite::Free,
+      /*.prepare=*/builtin::stablehlo_composite::Prepare,
+      /*.invoke=*/builtin::stablehlo_composite::Eval};
+  return &r;
+}
+
+}  // namespace custom
 }  // namespace ops
 }  // namespace tflite

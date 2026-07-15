@@ -24,6 +24,8 @@ class CpuKernelMode(enum.IntEnum):
   litert/c/options/litert_cpu_options.h.
   """
 
+  DELEGATE = 0
+  # Legacy alias for DELEGATE.
   XNNPACK = 0
   REFERENCE = 1
   BUILTIN = 2
