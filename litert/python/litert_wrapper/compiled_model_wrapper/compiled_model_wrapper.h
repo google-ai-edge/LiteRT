@@ -34,6 +34,7 @@ struct CompilationOptions {
   bool gpu_enforce_f32 = false;
   bool gpu_share_constant_tensors = false;
   int cpu_kernel_mode = -1;
+  bool cpu_enable_ynnpack = false;
   int xnnpack_flags = -1;
   std::string xnnpack_weight_cache_path;
   bool enable_constant_tensor_sharing = false;

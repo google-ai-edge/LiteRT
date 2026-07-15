@@ -32,7 +32,8 @@ namespace {
 
 CompilationOptions BuildCompilationOptions(
     int hardware_accel, int cpu_num_threads, bool gpu_enforce_f32,
-    bool gpu_share_constant_tensors, int cpu_kernel_mode, int xnnpack_flags,
+    bool gpu_share_constant_tensors, int cpu_kernel_mode,
+    bool cpu_enable_ynnpack, int xnnpack_flags,
     const std::string& xnnpack_weight_cache_path,
     bool enable_constant_tensor_sharing, bool enable_infinite_float_capping,
     bool enable_benchmark_mode, bool enable_allow_src_quantized_fc_conv_ops,
@@ -56,6 +57,7 @@ CompilationOptions BuildCompilationOptions(
   options.gpu_enforce_f32 = gpu_enforce_f32;
   options.gpu_share_constant_tensors = gpu_share_constant_tensors;
   options.cpu_kernel_mode = cpu_kernel_mode;
+  options.cpu_enable_ynnpack = cpu_enable_ynnpack;
   options.xnnpack_flags = xnnpack_flags;
   options.xnnpack_weight_cache_path = xnnpack_weight_cache_path;
   options.enable_constant_tensor_sharing = enable_constant_tensor_sharing;
@@ -104,7 +106,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       [](py::object environment_capsule, const std::string& model_path,
          int hardware_accel, int cpu_num_threads, bool gpu_enforce_f32,
          bool gpu_share_constant_tensors, int cpu_kernel_mode,
-         int xnnpack_flags, const std::string& xnnpack_weight_cache_path,
+         bool cpu_enable_ynnpack, int xnnpack_flags,
+         const std::string& xnnpack_weight_cache_path,
          bool enable_constant_tensor_sharing,
          bool enable_infinite_float_capping, bool enable_benchmark_mode,
          bool enable_allow_src_quantized_fc_conv_ops,
@@ -126,10 +129,10 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
         std::string error;
         CompilationOptions compilation_options = BuildCompilationOptions(
             hardware_accel, cpu_num_threads, gpu_enforce_f32,
-            gpu_share_constant_tensors, cpu_kernel_mode, xnnpack_flags,
-            xnnpack_weight_cache_path, enable_constant_tensor_sharing,
-            enable_infinite_float_capping, enable_benchmark_mode,
-            enable_allow_src_quantized_fc_conv_ops,
+            gpu_share_constant_tensors, cpu_kernel_mode, cpu_enable_ynnpack,
+            xnnpack_flags, xnnpack_weight_cache_path,
+            enable_constant_tensor_sharing, enable_infinite_float_capping,
+            enable_benchmark_mode, enable_allow_src_quantized_fc_conv_ops,
             enable_hint_waiting_for_completion, qualcomm_log_level,
             qualcomm_htp_performance_mode, qualcomm_dsp_performance_mode,
             qualcomm_use_int64_bias_as_int32, qualcomm_enable_weight_sharing,
@@ -154,8 +157,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       py::arg("hardware_accel") = 0, py::arg("cpu_num_threads") = 0,
       py::arg("gpu_enforce_f32") = false,
       py::arg("gpu_share_constant_tensors") = false,
-      py::arg("cpu_kernel_mode") = -1, py::arg("xnnpack_flags") = -1,
-      py::arg("xnnpack_weight_cache_path") = "",
+      py::arg("cpu_kernel_mode") = -1, py::arg("cpu_enable_ynnpack") = false,
+      py::arg("xnnpack_flags") = -1, py::arg("xnnpack_weight_cache_path") = "",
       py::arg("enable_constant_tensor_sharing") = false,
       py::arg("enable_infinite_float_capping") = false,
       py::arg("enable_benchmark_mode") = false,
@@ -189,7 +192,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       [](py::object environment_capsule, py::bytes model_data,
          int hardware_accel, int cpu_num_threads, bool gpu_enforce_f32,
          bool gpu_share_constant_tensors, int cpu_kernel_mode,
-         int xnnpack_flags, const std::string& xnnpack_weight_cache_path,
+         bool cpu_enable_ynnpack, int xnnpack_flags,
+         const std::string& xnnpack_weight_cache_path,
          bool enable_constant_tensor_sharing,
          bool enable_infinite_float_capping, bool enable_benchmark_mode,
          bool enable_allow_src_quantized_fc_conv_ops,
@@ -212,10 +216,10 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
         PyObject* data_obj = model_data.ptr();
         CompilationOptions compilation_options = BuildCompilationOptions(
             hardware_accel, cpu_num_threads, gpu_enforce_f32,
-            gpu_share_constant_tensors, cpu_kernel_mode, xnnpack_flags,
-            xnnpack_weight_cache_path, enable_constant_tensor_sharing,
-            enable_infinite_float_capping, enable_benchmark_mode,
-            enable_allow_src_quantized_fc_conv_ops,
+            gpu_share_constant_tensors, cpu_kernel_mode, cpu_enable_ynnpack,
+            xnnpack_flags, xnnpack_weight_cache_path,
+            enable_constant_tensor_sharing, enable_infinite_float_capping,
+            enable_benchmark_mode, enable_allow_src_quantized_fc_conv_ops,
             enable_hint_waiting_for_completion, qualcomm_log_level,
             qualcomm_htp_performance_mode, qualcomm_dsp_performance_mode,
             qualcomm_use_int64_bias_as_int32, qualcomm_enable_weight_sharing,
@@ -240,8 +244,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       py::arg("hardware_accel") = 0, py::arg("cpu_num_threads") = 0,
       py::arg("gpu_enforce_f32") = false,
       py::arg("gpu_share_constant_tensors") = false,
-      py::arg("cpu_kernel_mode") = -1, py::arg("xnnpack_flags") = -1,
-      py::arg("xnnpack_weight_cache_path") = "",
+      py::arg("cpu_kernel_mode") = -1, py::arg("cpu_enable_ynnpack") = false,
+      py::arg("xnnpack_flags") = -1, py::arg("xnnpack_weight_cache_path") = "",
       py::arg("enable_constant_tensor_sharing") = false,
       py::arg("enable_infinite_float_capping") = false,
       py::arg("enable_benchmark_mode") = false,

@@ -214,6 +214,7 @@ bool PopulateCompilationOptions(litert::Options& options,
 
   if (compilation_options.cpu_num_threads > 0 ||
       compilation_options.cpu_kernel_mode >= 0 ||
+      compilation_options.cpu_enable_ynnpack ||
       compilation_options.xnnpack_flags >= 0 ||
       !compilation_options.xnnpack_weight_cache_path.empty()) {
     auto cpu_options_or = options.GetCpuOptions();
@@ -227,6 +228,9 @@ bool PopulateCompilationOptions(litert::Options& options,
     if (compilation_options.cpu_kernel_mode >= 0) {
       cpu_options_or->SetKernelMode(static_cast<LiteRtCpuKernelMode>(
           compilation_options.cpu_kernel_mode));
+    }
+    if (compilation_options.cpu_enable_ynnpack) {
+      cpu_options_or->SetEnableYNNPack(true);
     }
     if (compilation_options.xnnpack_flags >= 0) {
       cpu_options_or->SetXNNPackFlags(
