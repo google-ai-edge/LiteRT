@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensor/tensor.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -82,6 +83,19 @@ TensorHandle& TensorHandle::Set(TensorInit init, source_location loc) & {
           info.buffer = OwningCpuBuffer::Copy<Type::kI8>(arg);
         } else if constexpr (std::is_same_v<T, std::vector<int4_t>>) {
           info.buffer = OwningCpuBuffer::Copy<Type::kI4>(arg);
+        } else if constexpr (std::is_arithmetic_v<T>) {
+          if (info.type == Type::kUnknown) {
+            info.type = ApiType<T>::value;
+          }
+          if (const size_t size = info.GetSize(); size != 1) {
+            info.buffer =
+                OwningCpuBuffer::CopyAs(info.type, std::vector<T>(size, arg));
+          } else {
+            info.buffer = OwningCpuBuffer::CopyAs(info.type, {arg});
+            if (info.shape.empty()) {
+              info.shape = {1};
+            }
+          }
         } else {
           ABSL_LOG(ERROR) << "Failed to create buffer from typed vector: "
                              "unsupported datatype.";
