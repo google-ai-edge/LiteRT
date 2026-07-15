@@ -83,6 +83,35 @@ class FuseSplitAttentionToSDPA : public ov::pass::MatcherPass {
   explicit FuseSplitAttentionToSDPA(bool pad_kv_to_alignment);
 };
 
+// Fuses the "standard" single-branch attention sub-graph into a single
+// `ov::op::v13::ScaledDotProductAttention`. This is the shape produced after an
+// offline transform merges a Gemma-style split KV cache into one tensor with a
+// DynamicUpdateSlice (see inplace_kv_conversion/convert_inplace_kv.py), so there
+// is no Concat/Slice pair and only one QK / one PV MatMul remain:
+//
+//   scores = MatMul(Q, K)                    // K may be [B,H,S,D] or [B,H,D,S]
+//   masked = Add(scores, mask)               // optional
+//   probs  = Softmax(masked, axis=-1)
+//   output = MatMul(probs, V)                // V may be [B,H,S,D] or [B,H,D,S]
+//                                            //   <-- match root
+//
+// The K/V operands typically arrive via CAST(DynamicUpdateSlice(...)); that is
+// transparent to this matcher, which anchors on the PV MatMul and reads the
+// MatMul transpose flags as a layout hint (inserting a Transpose(0,1,3,2) when
+// K or V is stored [B,H,D,S], as Gemma stores V). Restricted to static 4-D
+// ranks; scale is set to 1.0 (any scaling assumed pre-applied to Q). The merged
+// KV length is expected to already be a multiple of the NPU SDPA kernel's
+// alignment, so no KV/mask padding is performed here.
+//
+// The stock ov::pass::SDPAFusion does not cover this case because it requires
+// the PV MatMul to consume V in [S_kv, Ev] layout (transpose_b=false), whereas
+// Gemma stores V transposed as [B,H,D,S] and consumes it with transpose_b=true.
+class FuseStandardAttentionToSDPA : public ov::pass::MatcherPass {
+ public:
+  OPENVINO_MATCHER_PASS_RTTI("FuseStandardAttentionToSDPA");
+  FuseStandardAttentionToSDPA();
+};
+
 // Configurable runner for NPU-specific optimization passes.
 // Use the setter APIs to toggle individual optimizations, then call Run() to
 // apply the enabled passes to a model.
@@ -116,14 +145,23 @@ class NpuOptimizer {
     return *this;
   }
 
+  // Toggles the FuseStandardAttentionToSDPA pass. Disabled by default; enable
+  // via config key "fuse_standard_attention_to_sdpa" = "true" to collapse the
+  // single-branch (DUS-merged) attention pattern into a single SDPA op.
+  NpuOptimizer& SetFuseStandardAttentionToSDPA(bool enable) {
+    fuse_standard_attention_to_sdpa_ = enable;
+    return *this;
+  }
+
   // Runs all currently-enabled passes on |model|.
   void Run(const std::shared_ptr<ov::Model>& model) const;
 
  private:
   bool eliminate_matmul_fq_ = false;
   bool cast_integer_sign_to_float_ = true;
-  bool fuse_split_attention_to_sdpa_ = false;
+  bool fuse_split_attention_to_sdpa_ = true;
   bool sdpa_pad_kv_to_alignment_ = true;
+  bool fuse_standard_attention_to_sdpa_ = true;
 };
 
 }  // namespace openvino

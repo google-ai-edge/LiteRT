@@ -15,8 +15,10 @@
 #include "litert/runtime/dispatch/dispatch_delegate_kernel.h"
 
 #include <algorithm>
+#include <chrono>  // NOLINT(build/c++11)
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <iterator>
 #include <memory>
@@ -92,6 +94,21 @@ Expected<LiteRtMemBuffer> BuildExecutableBytecodeBuffer(
 }
 
 DispatchDelegateKernel::~DispatchDelegateKernel() {
+  if (profile_boundary_ && eval_count_ > 0) {
+    const double n = static_cast<double>(eval_count_);
+    LITERT_LOG(
+        LITERT_INFO,
+        "BOUNDARY-PROFILE graph '%s' over %llu run(s): "
+        "input_sync=%.1f us/run (%llu B/run), "
+        "npu_dispatch=%.1f us/run, "
+        "output_sync=%.1f us/run (%llu B/run) "
+        "[sync bytes ~0 => in-place/zero-copy engaged]",
+        graph_name_.c_str(), static_cast<unsigned long long>(eval_count_),
+        input_sync_us_ / n,
+        static_cast<unsigned long long>(input_sync_bytes_ / eval_count_),
+        dispatch_invoke_us_ / n, output_sync_us_ / n,
+        static_cast<unsigned long long>(output_sync_bytes_ / eval_count_));
+  }
   // Detach all buffer handles from invocation contexts.
   {
     for (const auto& [tensor_id, tensor_info] : tensor_buffer_infos_) {
@@ -322,6 +339,10 @@ Expected<LiteRtMetricsT> DispatchDelegateKernel::StopMetricsCollection() {
 
 Expected<void> DispatchDelegateKernel::InitHelper(
     TfLiteOpaqueContext* context, const TfLiteOpaqueDelegateParams& params) {
+  if (const char* env = std::getenv("LITERT_PROFILE_BOUNDARY");
+      env != nullptr && env[0] == '1') {
+    profile_boundary_ = true;
+  }
   LITERT_ASSIGN_OR_RETURN(
       auto buffer_context,
       LiteRtExternalLiteRtBufferContextT::GetInstance(context));
@@ -431,13 +452,271 @@ Expected<void> DispatchDelegateKernel::InitHelper(
 
 Expected<void> DispatchDelegateKernel::PrepareHelper(
     TfLiteOpaqueContext* context, TfLiteOpaqueNode* node) {
+  LITERT_RETURN_IF_ERROR(PreallocateHostBoundaryBuffers(context));
   return {};
+}
+
+Expected<void> DispatchDelegateKernel::PreallocateHostBoundaryBuffers(
+    TfLiteOpaqueContext* context) {
+  if (const char* env = std::getenv("LITERT_DISABLE_ZEROCOPY_BOUNDARY");
+      env != nullptr && env[0] == '1') {
+    // A/B kill-switch: skip pre-allocation entirely so boundaries fall back to
+    // the normal sync-copy path.
+    return {};
+  }
+  LITERT_LOG(LITERT_INFO,
+             "PreallocateHostBoundaryBuffers[v3]: %zu inputs, %zu outputs",
+             input_tensor_ids_.size(), output_tensor_ids_.size());
+
+  // Collect model I/O ids: those are custom-allocated by the normal binding
+  // path, so we must NOT touch them here. Only INTERNAL partition boundaries
+  // that touch an un-offloaded CPU op are handled.
+  absl::flat_hash_set<int> model_output_ids;
+  {
+    const int* ids = nullptr;
+    int n = 0;
+    if (TfLiteOpaqueContextGetOutputs(context, &ids, &n) == kTfLiteOk && ids) {
+      for (int i = 0; i < n; ++i) model_output_ids.insert(ids[i]);
+    }
+  }
+  absl::flat_hash_set<int> model_input_ids;
+  {
+    const int* ids = nullptr;
+    int n = 0;
+    if (TfLiteOpaqueContextGetInputs(context, &ids, &n) == kTfLiteOk && ids) {
+      for (int i = 0; i < n; ++i) model_input_ids.insert(ids[i]);
+    }
+  }
+
+  // A tensor that is ANY model I/O (input or output) is bound by the runtime's
+  // per-run RegisterBuffer path, which flips its allocation_type to
+  // kTfLiteNonCpu -- incompatible with a kTfLiteCustom custom allocation. Skip
+  // all model I/O in BOTH directions (e.g. the fp16 KV cache is simultaneously
+  // an internal boundary AND an exported model output).
+  auto is_model_io = [&](int id) {
+    return model_output_ids.contains(id) || model_input_ids.contains(id);
+  };
+
+  // OUTPUT side: an NPU-produced tensor consumed by a CPU op (e.g. the K/V
+  // "new slice" feeding the CPU DynamicUpdateSlice). NPU -> CPU.
+  for (int tensor_id : output_tensor_ids_) {
+    if (is_model_io(tensor_id)) {
+      LITERT_LOG(LITERT_INFO, "  out boundary skip tensor %d: model I/O",
+                 tensor_id);
+      continue;
+    }
+    LITERT_ASSIGN_OR_RETURN(
+        bool done, PreallocateOneHostBoundary(context, tensor_id,
+                                              /*is_input=*/false));
+    (void)done;
+  }
+
+  // INPUT side: a tensor produced by a CPU op and consumed by THIS NPU
+  // partition (e.g. the DynamicUpdateSlice's merged full-cache output feeding
+  // the next transformer layer's attention). CPU -> NPU. A tensor that another
+  // NPU partition produced is already registered in buffer_context_ and stays
+  // zero-copy via that path -- skip it here (it is not CPU-touched). A model
+  // input is bound by the normal I/O path -- skip. What remains is exactly the
+  // CPU-op-produced inputs.
+  for (int tensor_id : input_tensor_ids_) {
+    if (is_model_io(tensor_id)) {
+      LITERT_LOG(LITERT_INFO, "  in boundary skip tensor %d: model I/O",
+                 tensor_id);
+      continue;
+    }
+    auto* tfl_tensor = TfLiteOpaqueContextGetOpaqueTensor(context, tensor_id);
+    if (tfl_tensor) {
+      if (auto existing = buffer_context_->GetTensorBuffer(tfl_tensor);
+          existing) {
+        LITERT_LOG(LITERT_INFO,
+                   "  in boundary skip tensor %d: already backed by an "
+                   "upstream NPU partition (NPU<->NPU, zero-copy)",
+                   tensor_id);
+        continue;
+      }
+    }
+    LITERT_ASSIGN_OR_RETURN(
+        bool done, PreallocateOneHostBoundary(context, tensor_id,
+                                              /*is_input=*/true));
+    (void)done;
+  }
+  return {};
+}
+
+Expected<bool> DispatchDelegateKernel::PreallocateOneHostBoundary(
+    TfLiteOpaqueContext* context, int tensor_id, bool is_input) {
+  const char* dir = is_input ? "in" : "out";
+  // Prepare can run more than once (the runtime re-runs AllocateTensors after
+  // attaching custom allocations). If we already pre-allocated a buffer for
+  // this tensor, keep it -- re-allocating would orphan the host pointer the
+  // runtime already attached as a CustomAllocation.
+  if (tensor_buffer_infos_.find(tensor_id) != tensor_buffer_infos_.end()) {
+    LITERT_LOG(LITERT_INFO,
+               "  %s boundary tensor %d: already pre-allocated; keeping", dir,
+               tensor_id);
+    return false;
+  }
+  auto* tfl_tensor = TfLiteOpaqueContextGetOpaqueTensor(context, tensor_id);
+  if (!tfl_tensor) {
+    LITERT_LOG(LITERT_INFO, "  %s boundary skip tensor %d: null tfl_tensor",
+               dir, tensor_id);
+    return false;
+  }
+
+  // Only pre-allocate when the backend can produce a host-addressable buffer
+  // for this tensor (its requirements were registered in ComputeRequirements
+  // during Init). If not, leave it to the normal Eval path (which will sync).
+  auto requirements = buffer_context_->GetBufferRequirements(tfl_tensor);
+  if (!requirements) {
+    LITERT_LOG(LITERT_INFO,
+               "  %s boundary skip tensor %d: no buffer requirements", dir,
+               tensor_id);
+    return false;
+  }
+  const auto& supported = (*requirements)->SupportedBufferTypes();
+  bool host_addressable = false;
+  for (auto t : supported) {
+    // OpenVINOTensorBuffer is backed by an OpenVINO host tensor
+    // (create_host_tensor); HostMemory is trivially host-addressable.
+    if (t == kLiteRtTensorBufferTypeOpenVINOTensorBuffer ||
+        t == kLiteRtTensorBufferTypeHostMemory) {
+      host_addressable = true;
+      break;
+    }
+  }
+  if (!host_addressable) {
+    LITERT_LOG(LITERT_INFO,
+               "  %s boundary skip tensor %d: not host-addressable (%zu "
+               "supported types, first=%d)",
+               dir, tensor_id, supported.size(),
+               supported.empty() ? -1 : static_cast<int>(supported[0]));
+    return false;
+  }
+
+  // CO-ALIAS: if this is the OUTPUT of an in-place DynamicUpdateSlice (i.e. THIS
+  // dispatch input is a DUS output whose operand is another partition's output
+  // feeding the same CPU DUS), reuse the OPERAND's already-allocated host buffer
+  // instead of a fresh one. Then island A writes buffer X (as the DUS operand),
+  // the CPU DUS updates X in place, and this island reads X (as the DUS output)
+  // -- and, because both the operand and output TFLite tensors are custom-
+  // allocated onto X by the drain, the reference DUS kernel takes its in-place
+  // fast path (skips the whole-tensor copy). Only on the input side; the operand
+  // buffer must already be registered (island A's Prepare ran first in exec
+  // order). If it is not yet there, fall through to a fresh allocation -- still
+  // correct (the DUS does a full copy), just not in-place.
+  if (is_input) {
+    auto out_tid = buffer_context_->GetTensorIdentifier(tfl_tensor);
+    if (const auto* operand_tid =
+            buffer_context_->DusInplaceOperandFor(out_tid)) {
+      auto* operand_tensor = TfLiteOpaqueContextGetOpaqueTensor(
+          context, operand_tid->tensor_idx);
+      if (operand_tensor) {
+        if (auto operand_buffer =
+                buffer_context_->GetTensorBuffer(operand_tensor)) {
+          void* operand_host_addr = nullptr;
+          if (LiteRtLockTensorBuffer(operand_buffer->get(), &operand_host_addr,
+                                     kLiteRtTensorBufferLockModeWrite) ==
+                  kLiteRtStatusOk &&
+              operand_host_addr != nullptr) {
+            (void)LiteRtUnlockTensorBuffer(operand_buffer->get());
+            size_t coalias_size = TfLiteOpaqueTensorByteSize(tfl_tensor);
+            tensor_buffer_infos_[tensor_id] = TensorInfo();
+            // Register the SAME buffer as this island's dispatch storage for the
+            // DUS output, so the NPU reads exactly the memory the CPU DUS wrote.
+            (*operand_buffer)->Duplicate();
+            LiteRtTensorBufferPtr context_buffer(operand_buffer->get());
+            LITERT_RETURN_IF_ERROR(buffer_context_->RegisterTensorBuffer(
+                tfl_tensor, std::move(context_buffer)));
+            LITERT_RETURN_IF_ERROR(RegisterBufferWithDispatchApi(
+                tensor_id, std::move(*operand_buffer)));
+            buffer_context_->AddHostCustomAllocationRequest(
+                out_tid.subgraph_idx, out_tid.tensor_idx, operand_host_addr,
+                coalias_size);
+            LITERT_LOG(LITERT_INFO,
+                       "  in boundary tensor %d (sg %d, idx %d): CO-ALIASED to "
+                       "DUS operand (sg %d, idx %d) host buffer %p size %zu "
+                       "(in-place DUS, zero-copy NPU<->CPU<->NPU)",
+                       tensor_id, out_tid.subgraph_idx, out_tid.tensor_idx,
+                       operand_tid->subgraph_idx, operand_tid->tensor_idx,
+                       operand_host_addr, coalias_size);
+            return true;
+          }
+          (void)LiteRtUnlockTensorBuffer(operand_buffer->get());
+        }
+      }
+      LITERT_LOG(LITERT_INFO,
+                 "  in boundary tensor %d: DUS output but operand buffer not "
+                 "available yet; allocating fresh (DUS will full-copy)",
+                 tensor_id);
+    }
+  }
+
+  // Allocate the backend buffer now (Prepare), register it in the buffer
+  // context so Eval's AllocateAndRegisterBuffer reuses it (and therefore does
+  // NOT mark it maybe_sync_with_cpu), and lock it to obtain the host pointer.
+  LITERT_ASSIGN_OR_RETURN(LiteRtTensorBufferPtr tensor_buffer,
+                          AllocateTensorBuffer(tfl_tensor));
+  void* host_addr = nullptr;
+  if (LiteRtLockTensorBuffer(tensor_buffer.get(), &host_addr,
+                             kLiteRtTensorBufferLockModeWrite) !=
+          kLiteRtStatusOk ||
+      host_addr == nullptr) {
+    // Not lockable to host after all; skip (fall back to sync path).
+    LITERT_LOG(LITERT_INFO, "  %s boundary skip tensor %d: not lockable",
+               dir, tensor_id);
+    return false;
+  }
+  // The OpenVINO host tensor's data pointer is STABLE regardless of lock state
+  // (create_host_tensor()), so unlock immediately: keeping the buffer locked
+  // would make the LiteRtTensorBufferT reject the Lock() the dispatch runtime /
+  // sync path issues later ("already locked"), aborting the first inference.
+  // The TFLite CPU tensor aliases host_addr via CustomAllocation.
+  (void)LiteRtUnlockTensorBuffer(tensor_buffer.get());
+  size_t used_size = TfLiteOpaqueTensorByteSize(tfl_tensor);
+
+  // Create the TensorInfo slot before registering
+  // (RegisterBufferWithDispatchApi requires it to exist). Do NOT set
+  // maybe_sync_with_cpu: this buffer is the TFLite tensor's own storage (via
+  // CustomAllocation), so Eval must not copy.
+  tensor_buffer_infos_[tensor_id] = TensorInfo();
+
+  tensor_buffer->Duplicate();
+  LiteRtTensorBufferPtr context_buffer(tensor_buffer.get());
+  LITERT_RETURN_IF_ERROR(buffer_context_->RegisterTensorBuffer(
+      tfl_tensor, std::move(context_buffer)));
+  LITERT_RETURN_IF_ERROR(
+      RegisterBufferWithDispatchApi(tensor_id, std::move(tensor_buffer)));
+
+  // Publish to the shared buffer context so CompiledModel can custom-allocate
+  // this host memory onto the TFLite CPU tensor before AllocateTensors. Record
+  // the OWNING subgraph: Interpreter::SetCustomAllocationForTensor only targets
+  // the primary subgraph, so a decode-subgraph boundary must be routed to
+  // interp_->subgraph(subgraph_idx) explicitly by the drain.
+  auto tid = buffer_context_->GetTensorIdentifier(tfl_tensor);
+  buffer_context_->AddHostCustomAllocationRequest(
+      tid.subgraph_idx, tid.tensor_idx, host_addr, used_size);
+  LITERT_LOG(LITERT_INFO,
+             "  %s boundary tensor %d (sg %d, idx %d): pre-allocated host "
+             "buffer %p size %zu (zero-copy candidate)",
+             dir, tensor_id, tid.subgraph_idx, tid.tensor_idx, host_addr,
+             used_size);
+  return true;
 }
 
 Expected<void> DispatchDelegateKernel::EvalHelper(TfLiteOpaqueContext* context,
                                                   TfLiteOpaqueNode* node) {
+  LITERT_LOG(LITERT_INFO,
+             "EvalHelper[zc]: ENTER graph '%s' (%zu in, %zu out)",
+             graph_name_.c_str(), input_tensor_ids_.size(),
+             output_tensor_ids_.size());
   LITERT_RETURN_IF_ERROR(AllocateTensorBuffersIfNeeded(context));
   LITERT_RETURN_IF_ERROR(AttachBuffersToInvocationContextsIfNeeded(context));
+
+  using Clock = std::chrono::steady_clock;
+  auto now_us = [](Clock::time_point a, Clock::time_point b) {
+    return std::chrono::duration<double, std::micro>(b - a).count();
+  };
+  auto t_in0 = Clock::now();
 
   // Copy input buffers from CPU, if needed.
   for (int tensor_id : input_tensor_ids_) {
@@ -459,9 +738,11 @@ Expected<void> DispatchDelegateKernel::EvalHelper(TfLiteOpaqueContext* context,
                                     kLiteRtTensorBufferLockModeRead));
         std::memcpy(host_buffer, tensor_data, buffer_size);
         LITERT_RETURN_IF_ERROR(tensor_buffer_info.tensor_buffer->Unlock());
+        if (profile_boundary_) input_sync_bytes_ += buffer_size;
       }
     }
   }
+  auto t_in1 = Clock::now();
 
   // Apply per-request scheduling info (if provided) to each invocation context.
   //
@@ -482,11 +763,16 @@ Expected<void> DispatchDelegateKernel::EvalHelper(TfLiteOpaqueContext* context,
     }
   }
 
+  LITERT_LOG(LITERT_INFO, "EvalHelper[zc]: dispatch invoke START (%zu nodes)",
+             node_invocation_contexts_.size());
+  auto t_disp0 = Clock::now();
   if (async_dispatch_ && buffer_context_->IsAsyncExecutionMode()) {
     LITERT_RETURN_IF_ERROR(ScheduleAsyncExecution(context));
   } else {
     LITERT_RETURN_IF_ERROR(ScheduleSyncExecution(context));
   }
+  auto t_disp1 = Clock::now();
+  LITERT_LOG(LITERT_INFO, "EvalHelper[zc]: dispatch invoke DONE");
 
   for (int tensor_id : output_tensor_ids_) {
     auto* tfl_tensor = TfLiteOpaqueContextGetOpaqueTensor(context, tensor_id);
@@ -507,8 +793,17 @@ Expected<void> DispatchDelegateKernel::EvalHelper(TfLiteOpaqueContext* context,
                                     kLiteRtTensorBufferLockModeWrite));
         std::memcpy(tensor_data, host_buffer, buffer_size);
         LITERT_RETURN_IF_ERROR(tensor_buffer_info.tensor_buffer->Unlock());
+        if (profile_boundary_) output_sync_bytes_ += buffer_size;
       }
     }
+  }
+  auto t_out1 = Clock::now();
+
+  if (profile_boundary_) {
+    ++eval_count_;
+    input_sync_us_ += now_us(t_in0, t_in1);
+    dispatch_invoke_us_ += now_us(t_disp0, t_disp1);
+    output_sync_us_ += now_us(t_disp1, t_out1);
   }
 
   return {};

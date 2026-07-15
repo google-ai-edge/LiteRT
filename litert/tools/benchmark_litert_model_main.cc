@@ -15,7 +15,9 @@ limitations under the License.
 
 #include <cstdlib>
 #include <iostream>
+#include <vector>
 
+#include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/flags/reflection.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -34,6 +36,21 @@ int Main(int argc, char** argv) {
       break;
     }
   }
+
+  // Populate the LiteRT vendor (absl) flags -- e.g. --intel_openvino_configs_map
+  // -- from the command line. Without this they keep their defaults and the
+  // options parser registry (run during compile) never sees user-provided NPU
+  // options.
+  //
+  // ParseAbseilFlagsOnly (not ParseCommandLine) is used so the TFLite benchmark
+  // flags (--graph, --use_npu, ...) are NOT treated as errors: they come back as
+  // `unrecognized_flags` and are ignored here. The ORIGINAL argc/argv is then
+  // still forwarded to benchmark.Run() below, which runs TFLite's own parser
+  // over them. (TFLite only warns about the vendor flags it does not know, which
+  // is harmless.)
+  std::vector<char*> positional_args;
+  std::vector<absl::UnrecognizedFlag> unrecognized_flags;
+  absl::ParseAbseilFlagsOnly(argc, argv, positional_args, unrecognized_flags);
 
   if (has_help) {
     std::cout << "\n  NPU Vendor Flags from LiteRT:\n";

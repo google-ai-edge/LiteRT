@@ -91,6 +91,24 @@ ov::Output<ov::Node> PadEndOfAxis(const ov::Output<ov::Node>& input,
       ->output(0);
 }
 
+// If |transposed| is true, |input| is stored as [B,H,D,S] (K already
+// transposed, or V transposed); insert a Transpose(0,1,3,2) to restore the
+// [B,H,S,D] layout that v13::SDPA expects and append the created nodes to
+// |new_nodes|. Returns |input| unchanged when |transposed| is false.
+ov::Output<ov::Node> RestoreBhsdLayout(const ov::Output<ov::Node>& input,
+                                       bool transposed,
+                                       ov::NodeVector& new_nodes) {
+  if (!transposed) {
+    return input;
+  }
+  auto perm = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{4},
+                                           {0, 1, 3, 2});
+  auto transpose = std::make_shared<ov::op::v1::Transpose>(input, perm);
+  new_nodes.push_back(perm);
+  new_nodes.push_back(transpose);
+  return transpose->output(0);
+}
+
 }  // namespace
 
 EliminateMatMulFakeQuantize::EliminateMatMulFakeQuantize() {
@@ -455,7 +473,224 @@ FuseSplitAttentionToSDPA::FuseSplitAttentionToSDPA(bool pad_kv_to_alignment) {
   register_matcher(m, callback);
 }
 
+FuseStandardAttentionToSDPA::FuseStandardAttentionToSDPA() {
+  namespace pattern = ov::pass::pattern;
+
+  // Anchor on the Softmax -- a rare, distinctive op, unlike MatMul which occurs
+  // all over the graph (FFN, projections, ...). From the Softmax we walk UP to
+  // the QK MatMul (through an optional mask Add) and DOWN to the PV MatMul. This
+  // matches the "standard" single-branch attention produced after an offline
+  // DynamicUpdateSlice merges the split KV cache into one tensor (see
+  // convert_inplace_kv.py); K/V reach the matmuls via CAST(DUS(...)), which is
+  // transparent here.
+  auto softmax_pattern = pattern::wrap_type<ov::op::v8::Softmax>();
+
+  ov::matcher_pass_callback callback = [=](pattern::Matcher& m) {
+    auto softmax_node =
+        std::dynamic_pointer_cast<ov::op::v8::Softmax>(m.get_match_root());
+    if (!softmax_node) {
+      return false;
+    }
+    const std::string root_name = softmax_node->get_friendly_name();
+    LITERT_LOG(LITERT_INFO,
+               "FuseStandardAttentionToSDPA[%s]: anchored on Softmax; "
+               "evaluating...",
+               root_name.c_str());
+
+    // Softmax must be on the last axis.
+    auto sm_rank = softmax_node->get_output_partial_shape(0).rank();
+    if (sm_rank.is_dynamic()) {
+      LITERT_LOG(LITERT_INFO,
+                 "FuseStandardAttentionToSDPA[%s]: reject: Softmax has dynamic "
+                 "rank",
+                 root_name.c_str());
+      return false;
+    }
+    int64_t sm_axis = static_cast<int64_t>(softmax_node->get_axis());
+    if (sm_axis < 0) sm_axis += sm_rank.get_length();
+    if (sm_axis != sm_rank.get_length() - 1) {
+      LITERT_LOG(LITERT_INFO,
+                 "FuseStandardAttentionToSDPA[%s]: reject: Softmax axis %lld is "
+                 "not the last axis (rank %lld)",
+                 root_name.c_str(), static_cast<long long>(sm_axis),
+                 static_cast<long long>(sm_rank.get_length()));
+      return false;
+    }
+
+    // Walk DOWN: the Softmax must feed exactly one consumer, the PV MatMul
+    // (probs is its input 0).
+    if (!HasSingleConsumer(softmax_node->output(0))) {
+      LITERT_LOG(LITERT_INFO,
+                 "FuseStandardAttentionToSDPA[%s]: reject: Softmax has %zu "
+                 "consumers (need 1 = the PV MatMul)",
+                 root_name.c_str(),
+                 softmax_node->output(0).get_target_inputs().size());
+      return false;
+    }
+    auto pv_consumer =
+        softmax_node->output(0).get_target_inputs().begin()->get_node();
+    auto pv = std::dynamic_pointer_cast<ov::op::v0::MatMul>(
+        pv_consumer->shared_from_this());
+    if (!pv) {
+      LITERT_LOG(LITERT_INFO,
+                 "FuseStandardAttentionToSDPA[%s]: reject: Softmax consumer is "
+                 "'%s', expected a PV MatMul",
+                 root_name.c_str(), pv_consumer->get_type_name());
+      return false;
+    }
+    if (pv->input_value(0).get_node_shared_ptr() != softmax_node) {
+      LITERT_LOG(LITERT_INFO,
+                 "FuseStandardAttentionToSDPA[%s]: reject: Softmax feeds PV "
+                 "MatMul input 1 (probs must be input 0)",
+                 root_name.c_str());
+      return false;
+    }
+
+    // Walk UP: Softmax input is either scores+mask (v1::Add) or the QK MatMul.
+    ov::Output<ov::Node> mask_value;
+    bool has_mask = false;
+    std::shared_ptr<ov::op::v0::MatMul> qk;
+    auto sm_src = softmax_node->input_value(0).get_node_shared_ptr();
+    if (auto mask_add = std::dynamic_pointer_cast<ov::op::v1::Add>(sm_src)) {
+      qk = std::dynamic_pointer_cast<ov::op::v0::MatMul>(
+          mask_add->input_value(0).get_node_shared_ptr());
+      if (!qk) {
+        LITERT_LOG(LITERT_INFO,
+                   "FuseStandardAttentionToSDPA[%s]: reject: Softmax<-Add but "
+                   "Add.input0 is '%s', not a MatMul",
+                   root_name.c_str(),
+                   mask_add->input_value(0).get_node()->get_type_name());
+        return false;
+      }
+      mask_value = mask_add->input_value(1);
+      has_mask = true;
+    } else {
+      qk = std::dynamic_pointer_cast<ov::op::v0::MatMul>(sm_src);
+      if (!qk) {
+        LITERT_LOG(LITERT_INFO,
+                   "FuseStandardAttentionToSDPA[%s]: reject: Softmax input is "
+                   "'%s', expected a mask Add or a QK MatMul",
+                   root_name.c_str(), sm_src->get_type_name());
+        return false;
+      }
+    }
+    LITERT_LOG(LITERT_INFO,
+               "FuseStandardAttentionToSDPA[%s]: QK MatMul '%s', PV MatMul '%s', "
+               "has_mask=%d",
+               root_name.c_str(), qk->get_friendly_name().c_str(),
+               pv->get_friendly_name().c_str(), static_cast<int>(has_mask));
+
+    if (!HasSingleConsumer(qk->output(0))) {
+      LITERT_LOG(LITERT_INFO,
+                 "FuseStandardAttentionToSDPA[%s]: reject: QK MatMul has %zu "
+                 "consumers (need 1)",
+                 root_name.c_str(),
+                 qk->output(0).get_target_inputs().size());
+      return false;
+    }
+    if (qk->get_transpose_a() || pv->get_transpose_a()) {
+      LITERT_LOG(LITERT_INFO,
+                 "FuseStandardAttentionToSDPA[%s]: reject: transpose_a set "
+                 "(qk.transpose_a=%d, pv.transpose_a=%d); expected false",
+                 root_name.c_str(), qk->get_transpose_a(),
+                 pv->get_transpose_a());
+      return false;
+    }
+
+    auto q = qk->input_value(0);
+    auto k = qk->input_value(1);
+    auto v = pv->input_value(1);
+
+    // Require static 4-D ranks for predictable layout reasoning.
+    const char* const in_names[] = {"Q", "K", "V"};
+    const ov::Output<ov::Node> ins[] = {q, k, v};
+    for (size_t i = 0; i < 3; ++i) {
+      const auto& ps = ins[i].get_partial_shape();
+      if (ps.rank().is_dynamic() || ps.rank().get_length() != 4) {
+        LITERT_LOG(LITERT_INFO,
+                   "FuseStandardAttentionToSDPA[%s]: reject: %s does not have "
+                   "static 4-D rank (rank=%s, from '%s')",
+                   root_name.c_str(), in_names[i],
+                   ps.rank().is_dynamic()
+                       ? "dynamic"
+                       : std::to_string(ps.rank().get_length()).c_str(),
+                   ins[i].get_node()->get_type_name());
+        return false;
+      }
+    }
+
+    // Interpret MatMul transpose flags as a physical-layout hint (identical to
+    // FuseSplitAttentionToSDPA):
+    //   qk transpose_b == true  -> K stored [B,H,S,D] (standard).
+    //   qk transpose_b == false -> K stored [B,H,D,S] (already K^T).
+    //   pv transpose_b == true  -> V stored [B,H,D,S].
+    //   pv transpose_b == false -> V stored [B,H,S,D] (standard).
+    const bool k_is_transposed = !qk->get_transpose_b();
+    const bool v_is_transposed = pv->get_transpose_b();
+    LITERT_LOG(LITERT_INFO,
+               "FuseStandardAttentionToSDPA[%s]: matched all gates "
+               "(k_pre_transposed=%d, v_pre_transposed=%d, has_mask=%d); "
+               "building SDPA",
+               root_name.c_str(), static_cast<int>(k_is_transposed),
+               static_cast<int>(v_is_transposed), static_cast<int>(has_mask));
+
+    ov::NodeVector new_nodes;
+    ov::Output<ov::Node> key_out =
+        RestoreBhsdLayout(k, k_is_transposed, new_nodes);
+    ov::Output<ov::Node> val_out =
+        RestoreBhsdLayout(v, v_is_transposed, new_nodes);
+
+    // Mask (if present) forwarded as the additive attn_mask; else a 0 scalar.
+    ov::Output<ov::Node> attn_mask;
+    if (has_mask) {
+      attn_mask = mask_value;
+    } else {
+      auto zero = ov::op::v0::Constant::create(q.get_element_type(),
+                                               ov::Shape{}, {0.0f});
+      new_nodes.push_back(zero);
+      attn_mask = zero;
+    }
+
+    // Scale = 1.0: any required scaling is assumed pre-applied to Q.
+    auto scale_const = ov::op::v0::Constant::create(
+        q.get_element_type(), ov::Shape{}, std::vector<float>{1.0f});
+    new_nodes.push_back(scale_const);
+
+    auto sdpa = std::make_shared<ov::op::v13::ScaledDotProductAttention>(
+        q, key_out, val_out, attn_mask, scale_const, /*is_causal=*/false);
+    new_nodes.push_back(sdpa);
+
+    sdpa->set_friendly_name(pv->get_friendly_name());
+    ov::copy_runtime_info(m.get_matched_nodes(), new_nodes);
+    ov::replace_node(pv, sdpa);
+    LITERT_LOG(LITERT_INFO,
+               "FuseStandardAttentionToSDPA: FUSED standard attention into "
+               "v13::ScaledDotProductAttention '%s' (k_pre_transposed=%d, "
+               "v_pre_transposed=%d, has_mask=%d)",
+               sdpa->get_friendly_name().c_str(),
+               static_cast<int>(k_is_transposed),
+               static_cast<int>(v_is_transposed), static_cast<int>(has_mask));
+    return true;
+  };
+
+  auto m = std::make_shared<pattern::Matcher>(softmax_pattern,
+                                              "FuseStandardAttentionToSDPA");
+  register_matcher(m, callback);
+}
+
 void NpuOptimizer::Run(const std::shared_ptr<ov::Model>& model) const {
+  // Log which optimizations are enabled so a "nothing happened" run can be
+  // told apart from a run where the pass fired but rejected every candidate.
+  LITERT_LOG(LITERT_INFO,
+             "NpuOptimizer::Run: cast_integer_sign_to_float=%d, "
+             "fuse_split_attention_to_sdpa=%d, "
+             "fuse_standard_attention_to_sdpa=%d, "
+             "eliminate_matmul_fq=%d, sdpa_pad_kv_to_alignment=%d",
+             static_cast<int>(cast_integer_sign_to_float_),
+             static_cast<int>(fuse_split_attention_to_sdpa_),
+             static_cast<int>(fuse_standard_attention_to_sdpa_),
+             static_cast<int>(eliminate_matmul_fq_),
+             static_cast<int>(sdpa_pad_kv_to_alignment_));
   ov::pass::Manager pass_manager;
   if (cast_integer_sign_to_float_) {
     pass_manager.register_pass<CastIntegerSignToFloat>();
@@ -463,6 +698,9 @@ void NpuOptimizer::Run(const std::shared_ptr<ov::Model>& model) const {
   if (fuse_split_attention_to_sdpa_) {
     pass_manager.register_pass<FuseSplitAttentionToSDPA>(
         sdpa_pad_kv_to_alignment_);
+  }
+  if (fuse_standard_attention_to_sdpa_) {
+    pass_manager.register_pass<FuseStandardAttentionToSDPA>();
   }
   if (eliminate_matmul_fq_) {
     pass_manager.register_pass<EliminateMatMulFakeQuantize>();

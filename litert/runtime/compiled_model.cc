@@ -24,6 +24,7 @@
 #include <functional>
 #include <iterator>
 #include <limits>
+#include <set>
 #include <memory>
 #include <optional>
 #include <string>
@@ -476,6 +477,13 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
       std::make_unique<LiteRtExternalLiteRtBufferContextT>(env, get_tensor_id);
   interp_->SetExternalContext(kTfLiteLiteRtBufferContext,
                               buffer_context_.get());
+
+  // Record in-place DUS operand/output pairs now, while ops still carry their
+  // original subgraph indices (delegation below outlines partitions and would
+  // obscure the pairing). Consumed by the delegate kernel (Prepare) and the
+  // boundary-buffer drain to co-alias NPU<->CPU<->NPU boundaries onto one host
+  // buffer.
+  BuildDusInplaceMap();
 
   // Check if the external weights is provided by the client.
   if (jit_compilation_options == nullptr) {
@@ -1017,6 +1025,14 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
       !(hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
       !has_non_delegated_ops;
   compiled_model->CheckCpuTensors();
+  // Attach OpenVINO host buffers to internal NPU<->CPU boundary tensors now
+  // (once), while the graph is otherwise untouched -- before any per-run I/O
+  // buffer registration in Run(). Custom allocations persist across the
+  // AllocateTensors calls Run() makes later, so the boundary stays zero-copy.
+  if (auto attached = compiled_model->AttachHostBoundaryBuffers(); !attached) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      attached.Error().Message());
+  }
   return compiled_model;
 }
 
@@ -1083,6 +1099,174 @@ void LiteRtCompiledModelT::CheckCpuTensors() {
       }
     }
   }
+}
+
+void LiteRtCompiledModelT::BuildDusInplaceMap() {
+  if (buffer_context_ == nullptr) {
+    return;
+  }
+  // A DYNAMIC_UPDATE_SLICE writes its operand (input 0) in place. The reference
+  // TFLite kernel declares kTfLiteInplaceOpInput0Shared and skips the whole-
+  // tensor copy when operand and output share one buffer -- but only when the
+  // operand is not read by any other op (a second reader of the pre-update
+  // buffer would see corrupted data). Record only single-consumer operands so
+  // the kernel + drain can safely co-alias the DUS operand and output onto one
+  // OpenVINO host buffer (killing both the NPU<->CPU boundary memcpy AND the
+  // in-kernel 33MB copy). Runs before delegation, so operand/output tensor
+  // indices are still the original subgraph indices the kernel will report.
+  int pairs = 0;
+  for (int subgraph_no = 0; subgraph_no < interp_->subgraphs_size();
+       ++subgraph_no) {
+    auto* subgraph = interp_->subgraph(subgraph_no);
+    auto& execution_plan = subgraph->execution_plan();
+    auto& nodes_and_registration = subgraph->nodes_and_registration();
+    // Count how many nodes consume each tensor in this subgraph.
+    absl::flat_hash_map<int, int> consumer_count;
+    for (int node_index : execution_plan) {
+      const TfLiteNode& node = nodes_and_registration[node_index].first;
+      for (int i = 0; i < node.inputs->size; ++i) {
+        int t = node.inputs->data[i];
+        if (t != kTfLiteOptionalTensor) ++consumer_count[t];
+      }
+    }
+    for (int node_index : execution_plan) {
+      const TfLiteNode& node = nodes_and_registration[node_index].first;
+      const TfLiteRegistration& registration =
+          nodes_and_registration[node_index].second;
+      if (registration.builtin_code != kTfLiteBuiltinDynamicUpdateSlice) {
+        continue;
+      }
+      if (node.inputs->size < 1 || node.outputs->size < 1) continue;
+      int operand_index = node.inputs->data[0];
+      int output_index = node.outputs->data[0];
+      if (operand_index == kTfLiteOptionalTensor ||
+          output_index == kTfLiteOptionalTensor) {
+        continue;
+      }
+      // Operand must be consumed only by this DUS for in-place to be safe.
+      auto it = consumer_count.find(operand_index);
+      if (it == consumer_count.end() || it->second != 1) {
+        continue;
+      }
+      buffer_context_->AddDusInplacePair({subgraph_no, output_index},
+                                         {subgraph_no, operand_index});
+      ++pairs;
+    }
+  }
+  LITERT_LOG(LITERT_INFO,
+             "BuildDusInplaceMap: recorded %d in-place DUS operand/output "
+             "pair(s) for zero-copy boundary co-aliasing",
+             pairs);
+}
+
+litert::Expected<void> LiteRtCompiledModelT::AttachHostBoundaryBuffers() {
+  if (host_boundary_buffers_attached_ || buffer_context_ == nullptr) {
+    return {};
+  }
+  // Kill-switch for A/B testing: LITERT_DISABLE_ZEROCOPY_BOUNDARY=1 skips the
+  // whole host-boundary attach so the runtime falls back to the sync-copy path.
+  if (const char* env = std::getenv("LITERT_DISABLE_ZEROCOPY_BOUNDARY");
+      env != nullptr && env[0] == '1') {
+    LITERT_LOG(LITERT_INFO,
+               "Zero-copy boundary attach DISABLED via "
+               "LITERT_DISABLE_ZEROCOPY_BOUNDARY=1 (sync-copy fallback)");
+    host_boundary_buffers_attached_ = true;
+    return {};
+  }
+  // Run an initial allocation so the dispatch delegate's Prepare
+  // (PreallocateHostBoundaryBuffers) pre-allocates OpenVINO host buffers for
+  // internal NPU<->CPU boundary tensors and records them as custom-allocation
+  // requests on buffer_context_. Requests only exist AFTER this first
+  // AllocateTensors runs the delegate Prepare.
+  if (interp_->AllocateTensors() != kTfLiteOk) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "AttachHostBoundaryBuffers: initial AllocateTensors "
+                      "failed");
+  }
+  if (buffer_context_->HostCustomAllocationRequests().empty()) {
+    // No internal boundaries need host buffers (e.g. fully delegated model);
+    // leave the graph as-is. Mark done so we don't retry the probe each Run.
+    host_boundary_buffers_attached_ = true;
+    return {};
+  }
+  // Point each boundary tensor's TFLite storage at the OpenVINO host buffer the
+  // kernel pre-allocated, so the un-offloaded CPU consumer (e.g. an in-graph
+  // DynamicUpdateSlice) reads/writes that memory in place -- no per-inference
+  // sync memcpy at the boundary. Custom allocations persist across subsequent
+  // AllocateTensors calls, so doing this once here is enough for all Runs.
+  int applied = 0;
+  std::set<int> affected_subgraphs;
+  for (const auto& req : buffer_context_->HostCustomAllocationRequests()) {
+    // Only tensors a CPU op ACTUALLY reads need a host CustomAllocation. A
+    // dispatch output that feeds another NPU partition (NPU<->NPU boundary) is
+    // already zero-copy via buffer_context_ registration; forcing a CPU custom
+    // allocation onto it corrupts the memory plan and crashes Invoke. cpu_tensors_
+    // (from CheckCpuTensors) is exactly the set of tensors consumed by a
+    // non-delegated CPU op (e.g. the in-graph DynamicUpdateSlice / Cast).
+    TfLiteTensorIdentifier tid{req.subgraph_index, req.tensor_index};
+    // Allow the custom allocation if a CPU op reads this tensor directly (the
+    // DUS operand), OR if it is the OUTPUT of an in-place DUS whose operand a
+    // CPU op reads. The DUS output feeds an NPU BMM (so it is NOT in
+    // cpu_tensors_), but it must still be custom-allocated onto the SAME host
+    // buffer as its operand so the reference DUS kernel sees operand.data ==
+    // output.data and takes its in-place fast path (skips the 33MB copy). All
+    // other non-CPU tensors stay untouched (NPU<->NPU boundaries are already
+    // zero-copy via buffer_context_; forcing a custom allocation there corrupts
+    // the memory plan).
+    const bool is_cpu_read = cpu_tensors_.find(tid) != cpu_tensors_.end();
+    bool is_inplace_dus_output = false;
+    if (!is_cpu_read) {
+      if (const auto* operand_tid =
+              buffer_context_->DusInplaceOperandFor(tid)) {
+        is_inplace_dus_output =
+            cpu_tensors_.find(*operand_tid) != cpu_tensors_.end();
+      }
+    }
+    if (!is_cpu_read && !is_inplace_dus_output) {
+      LITERT_LOG(LITERT_INFO,
+                 "Skipping host custom allocation for boundary tensor (sg %d, "
+                 "idx %d): not consumed by a CPU op (NPU<->NPU, stays zero-copy)",
+                 req.subgraph_index, req.tensor_index);
+      continue;
+    }
+    TfLiteCustomAllocation custom_allocation{req.host_addr, req.size};
+    // Route to the owning subgraph: interp_->SetCustomAllocationForTensor()
+    // only touches the primary subgraph, so decode-subgraph boundary tensors
+    // must go through interp_->subgraph(idx) directly.
+    auto* subgraph = interp_->subgraph(req.subgraph_index);
+    if (subgraph == nullptr ||
+        subgraph->SetCustomAllocationForTensor(
+            req.tensor_index, custom_allocation,
+            kTfLiteCustomAllocationFlagsSkipAlignCheck) != kTfLiteOk) {
+      LITERT_LOG(LITERT_WARNING,
+                 "Failed to set host custom allocation for boundary tensor "
+                 "(sg %d, idx %d); falling back to sync copy",
+                 req.subgraph_index, req.tensor_index);
+      continue;
+    }
+    ++applied;
+    affected_subgraphs.insert(req.subgraph_index);
+    LITERT_LOG(LITERT_INFO,
+               "Attached OpenVINO host buffer to boundary tensor (sg %d, "
+               "idx %d) (zero-copy NPU<->CPU)",
+               req.subgraph_index, req.tensor_index);
+  }
+  buffer_context_->ClearHostCustomAllocationRequests();
+  // Re-allocate EACH subgraph we touched (SetCustomAllocationForTensor requires
+  // a following AllocateTensors on that subgraph to take effect).
+  for (int sg_idx : affected_subgraphs) {
+    if (interp_->subgraph(sg_idx)->AllocateTensors() != kTfLiteOk) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "AttachHostBoundaryBuffers: re-allocation after "
+                        "attaching host boundary buffers failed");
+    }
+  }
+  LITERT_LOG(LITERT_INFO,
+             "Re-allocated %zu subgraph(s) after attaching %d host boundary "
+             "buffer(s) (zero-copy)",
+             affected_subgraphs.size(), applied);
+  host_boundary_buffers_attached_ = true;
+  return {};
 }
 
 #if !defined(LITERT_DISABLE_NPU)
