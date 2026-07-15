@@ -107,6 +107,14 @@ TEST(TensorBuffer, HostMemory) {
   ASSERT_EQ(std::memcmp(host_mem_addr, kTensorData, sizeof(kTensorData)), 0);
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
+  ASSERT_EQ(LiteRtClearTensorBuffer(tensor_buffer), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr,
+                                   kLiteRtTensorBufferLockModeRead),
+            kLiteRtStatusOk);
+  std::vector<uint8_t> zero_data(sizeof(kTensorData), 0);
+  ASSERT_EQ(std::memcmp(host_mem_addr, zero_data.data(), zero_data.size()), 0);
+  ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
+
   LiteRtDestroyTensorBuffer(tensor_buffer);
   LiteRtDestroyEnvironment(env);
 }

@@ -1228,7 +1228,12 @@ Expected<void> LiteRtTensorBufferT::Clear() {
       LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
       return custom_buffer->Clear();
     }
-    case kLiteRtTensorBufferTypeHostMemory:
+    case kLiteRtTensorBufferTypeHostMemory: {
+      LITERT_ASSIGN_OR_RETURN(void* host_mem_addr,
+                              Lock(kLiteRtTensorBufferLockModeWrite));
+      std::memset(host_mem_addr, 0, packed_buffer_size());
+      return Unlock();
+    }
     case kLiteRtTensorBufferTypeAhwb:
     case kLiteRtTensorBufferTypeIon:
     case kLiteRtTensorBufferTypeDmaBuf:
