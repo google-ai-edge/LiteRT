@@ -715,7 +715,11 @@ Tensor<Mixins...> Reshape(Tensor<Mixins...> input, std::vector<int> new_shape,
   auto op = std::make_shared<graph::ReshapeOperation>();
   RegisterMixins<Mixins...>(op);
   op->new_shape = new_shape;
-  AddInputs(op, input);
+  Tensor<Mixins...> shape_tensor(
+      {.type = Type::kI32,
+       .shape = {static_cast<int>(new_shape.size())},
+       .buffer = OwningCpuBuffer::Copy<Type::kI32>(new_shape)});
+  AddInputs(op, input, shape_tensor);
   Tensor<Mixins...> output = AddOutput(op, loc);
   const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
@@ -1574,6 +1578,41 @@ Tensor<Mixins...> Transpose(Tensor<Mixins...> input, Tensor<Mixins...> perm,
     output_info.shape = input_info.shape;
   }
   output_info.type = input_info.type;
+  if (input_info.quantization) {
+    if (auto quantization =
+            input_info.quantization->As<const PerChannelAffineQuantization>();
+        quantization.ok()) {
+      auto output_quantization =
+          std::make_shared<PerChannelAffineQuantization>(*quantization);
+      if (perm_info.buffer) {
+        const auto perm_data = perm_info.buffer->Lock().As<const int32_t>();
+        for (size_t i = 0; i < perm_data.size(); ++i) {
+          if (perm_data.data()[i] == quantization->quantized_dimension) {
+            output_quantization->quantized_dimension = i;
+            break;
+          }
+        }
+      }
+      output_info.quantization = std::move(output_quantization);
+    } else if (auto quantization =
+                   input_info.quantization->As<const BlockwiseQuantization>();
+               quantization.ok()) {
+      auto output_quantization =
+          std::make_shared<BlockwiseQuantization>(*quantization);
+      if (perm_info.buffer) {
+        const auto perm_data = perm_info.buffer->Lock().As<const int32_t>();
+        for (size_t i = 0; i < perm_data.size(); ++i) {
+          if (perm_data.data()[i] == quantization->quantized_dimension) {
+            output_quantization->quantized_dimension = i;
+            break;
+          }
+        }
+      }
+      output_info.quantization = std::move(output_quantization);
+    } else {
+      output_info.quantization = input_info.quantization;
+    }
+  }
 
   graph::OpDebugger::DebugOp(*op);
   return output;
@@ -1853,6 +1892,7 @@ Tensor<Mixins...> DynamicUpdateSlice(
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = operand_info.shape;
   output_info.type = operand_info.type;
+  output_info.quantization = operand_info.quantization;
 
   graph::OpDebugger::DebugOp(*op);
   return output;
@@ -1923,6 +1963,16 @@ auto StableHLOComposite(StableHLOCompositeOptions options,
   auto decomposition_inputs = std::make_tuple(
       internal::CloneStableHLOCompositeInput(first_input),
       internal::CloneStableHLOCompositeInput(remaining_inputs)...);
+  std::vector<TensorHandle> flat_decomposition_inputs;
+  internal::FlattenStableHLOCompositeTensors(decomposition_inputs,
+                                             flat_decomposition_inputs);
+  op->decomposition_inputs.reserve(flat_decomposition_inputs.size());
+  for (size_t i = 0; i < flat_decomposition_inputs.size(); ++i) {
+    TensorHandle& input = flat_decomposition_inputs[i];
+    GetInfo(input.GetRaw())->name =
+        absl::StrCat(op->name, "/decomposition_input_", i);
+    op->decomposition_inputs.push_back(input.GetRaw());
+  }
   auto decomposition_outputs =
       std::apply(std::forward<Lambda>(decomposition), decomposition_inputs);
 
