@@ -44,6 +44,7 @@
 #include "third_party/odml/litert/ml_drift/delegate/delegate_kernel_litert.h"
 #include "third_party/odml/litert/ml_drift/delegate/delegate_utils.h"
 #include "third_party/odml/litert/ml_drift/delegate/gpu_backend_metal_litert.h"
+#include "litert/c/options/litert_gpu_options.h"
 #include "third_party/odml/litert/ml_drift/tflite/model_builder.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/c/common.h"
@@ -168,6 +169,39 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
       if (absl::Status s = delegate_kernel->BindTensorBuffers(context); !s.ok()) {
         ABSL_LOG(ERROR) << s;
         return kTfLiteError;
+      }
+    }
+
+    auto* buffer_context = reinterpret_cast<LiteRtExternalLiteRtBufferContext>(
+        context->GetExternalContext(context, kTfLiteLiteRtBufferContext));
+    if (buffer_context != nullptr) {
+      LiteRtOptions run_options = nullptr;
+      delegate_kernel->runtime_context()->external_litert_buffer_context_get_run_options(
+          buffer_context, &run_options);
+      if (run_options != nullptr) {
+        LiteRtOpaqueOptions opaque_gpu_options;
+        if (delegate_kernel->runtime_context()->get_opaque_options(
+                run_options, &opaque_gpu_options) == kLiteRtStatusOk) {
+          void* gpu_payload_data = nullptr;
+          const char* identifier = LrtGetGpuOptionsIdentifier();
+          if (delegate_kernel->runtime_context()->find_opaque_options_data(
+                  opaque_gpu_options, identifier, &gpu_payload_data) ==
+              kLiteRtStatusOk) {
+            LrtGpuOptions* gpu_opts = nullptr;
+            if (LrtCreateGpuOptionsFromToml(
+                    reinterpret_cast<const char*>(gpu_payload_data),
+                    &gpu_opts) == kLiteRtStatusOk) {
+              bool enable_residency = true;
+              if (LrtGetGpuOptionsMetalResidencySet(
+                      gpu_opts, &enable_residency) == kLiteRtStatusOk) {
+                auto* metal_backend = static_cast<litert::ml_drift::GpuBackendMetal*>(
+                    delegate_kernel->backend());
+                metal_backend->SetResidencyRuntimeEnabled(enable_residency);
+              }
+              LrtDestroyGpuOptions(gpu_opts);
+            }
+          }
+        }
       }
     }
 

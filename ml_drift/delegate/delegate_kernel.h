@@ -43,7 +43,7 @@ class DelegateKernel {
  public:
   virtual ~DelegateKernel();
 
-  absl::Status Dispatch(TfLiteContext* context);
+  virtual absl::Status Dispatch(TfLiteContext* context);
 
   const std::vector<int64_t>& GetInputIndices() const { return input_indices_; }
 

@@ -43,8 +43,10 @@
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/options/litert_gpu_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "third_party/odml/litert/ml_drift/delegate/delegate_kernel.h"
 #include "third_party/odml/litert/ml_drift/delegate/delegate_options.h"
 #include "third_party/odml/litert/ml_drift/delegate/gpu_backend.h"
 #include "third_party/odml/litert/ml_drift/tflite/model_builder_helper.h"
@@ -689,6 +691,10 @@ absl::Status DelegateKernelLiteRt::InitTensorConverters(
   }
 
   return absl::OkStatus();
+}
+
+absl::Status DelegateKernelLiteRt::Dispatch(TfLiteContext* context) {
+  return DelegateKernel::Dispatch(context);
 }
 
 }  // namespace litert::ml_drift

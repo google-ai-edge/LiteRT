@@ -45,6 +45,8 @@ class DelegateKernelLiteRt : public DelegateKernel {
 
   ~DelegateKernelLiteRt() override = default;
 
+  absl::Status Dispatch(TfLiteContext* context) override;
+
   // Creates a new DelegateKernel which will be stored in TfLiteNode::user_data.
   static absl::StatusOr<DelegateKernelLiteRt*> Create(
       TfLiteContext* context, const TfLiteDelegateParams* delegate_params);

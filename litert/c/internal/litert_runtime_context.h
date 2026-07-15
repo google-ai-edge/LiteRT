@@ -168,6 +168,12 @@ typedef struct LiteRtRuntimeContext {
   LiteRtStatus (*get_custom_event)(LiteRtEvent event,
                                    LiteRtCustomEvent* custom_event);
   LiteRtStatus (*wait_event)(LiteRtEvent event, int64_t timeout_in_ms);
+  // Returns the per-run options handle for the current invocation. The
+  // returned options handle is borrowed and owned by the runtime. The caller
+  // must NOT destroy it. The handle is only valid during the current
+  // execution (inference run) and must not be stored.
+  LiteRtStatus (*external_litert_buffer_context_get_run_options)(
+      LiteRtExternalLiteRtBufferContext context, LiteRtOptions* run_options);
 } LiteRtRuntimeContext;
 
 // ABI compatibility check for LiteRtRuntimeContext.
@@ -176,7 +182,7 @@ typedef struct LiteRtRuntimeContext {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtRuntimeContext) == 384,
+static_assert(sizeof(LiteRtRuntimeContext) == 392,
               "LiteRtRuntimeContext size mismatch");
 static_assert(
     offsetof(LiteRtRuntimeContext, create_tensor_buffer_requirements) == 0,
@@ -314,6 +320,10 @@ static_assert(offsetof(LiteRtRuntimeContext, get_custom_event) == 368,
               "LiteRtRuntimeContext get_custom_event offset mismatch");
 static_assert(offsetof(LiteRtRuntimeContext, wait_event) == 376,
               "LiteRtRuntimeContext wait_event offset mismatch");
+static_assert(offsetof(LiteRtRuntimeContext,
+                       external_litert_buffer_context_get_run_options) == 384,
+              "LiteRtRuntimeContext "
+              "external_litert_buffer_context_get_run_options offset mismatch");
 #endif  // __cplusplus
 
 LiteRtRuntimeContext* LrtGetRuntimeContext();

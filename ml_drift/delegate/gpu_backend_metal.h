@@ -24,11 +24,14 @@
 #include <thread>
 #include <vector>
 
+#include "absl/base/thread_annotations.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/synchronization/notification.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
@@ -68,6 +71,7 @@ class GpuBackendMetal : public GpuBackend {
 
   // Implementation of GpuBackend.
   absl::string_view GetBackendName() override;
+  void SetResidencyRuntimeEnabled(bool enabled);
   absl::string_view GetSerializedDataPrefix() override;
   absl::StatusOr<::ml_drift::GpuInfo> GetInfo() override;
   absl::StatusOr<::ml_drift::TensorStorageType> GetFastestStorageType()
@@ -170,9 +174,12 @@ class GpuBackendMetal : public GpuBackend {
                             ::ml_drift::metal::InferenceContext& metal_ctx);
 
  private:
+  absl::Mutex residency_mutex_;
+
   void InitResidencySet();
   void StartHeartbeat();
   void StopHeartbeat();
+  void ReleaseResidencyLocked() ABSL_EXCLUSIVE_LOCKS_REQUIRED(residency_mutex_);
 
   std::unique_ptr<::ml_drift::metal::MetalDevice> device_owned_;
   ::ml_drift::metal::MetalDevice* const device_;
@@ -186,8 +193,12 @@ class GpuBackendMetal : public GpuBackend {
   id<MTLComputeCommandEncoder> compute_command_encoder_ = nullptr;
   ::ml_drift::metal::MemoryManager memory_manager_;
   id<MTLResidencySet> residency_set_ = nil;
-  std::thread heartbeat_thread_;
-  absl::Notification stop_heartbeat_;
+  std::thread heartbeat_thread_ ABSL_GUARDED_BY(residency_mutex_);
+  std::unique_ptr<absl::Notification> stop_heartbeat_
+      ABSL_GUARDED_BY(residency_mutex_);
+
+  bool residency_active_ ABSL_GUARDED_BY(residency_mutex_) = false;
+  bool residency_runtime_enabled_ ABSL_GUARDED_BY(residency_mutex_) = true;
 };
 
 class GpuInferenceContextMetal : public GpuInferenceContext {
