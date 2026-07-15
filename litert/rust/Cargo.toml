@@ -17,7 +17,7 @@
 authors = ["Max Gubin <mgubin@google.com>"]
 build = "build/build.rs"
 name = "google-ai-edge-litert"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 repository = "https://github.com/google-ai-edge/LiteRT/"
 description = "LiteRT Rust language binding"
@@ -28,7 +28,7 @@ license = "Apache-2.0"
 [features]
 # Enable Metal accelerator (macOS)
 metal = []
-# Enable OpenGL accelerator (Android/Linux)
+# Enable OpenGL accelerator
 opengl = []
 # Enable WebGPU accelerator
 webgpu = []
