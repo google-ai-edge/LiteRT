@@ -114,7 +114,6 @@ constexpr LiteRtOpCode kUnSupportedOps[] = {
     kLiteRtOpCodeTflBucketize,
     kLiteRtOpCodeTflCallOnce,
     kLiteRtOpCodeTflComplexAbs,
-    kLiteRtOpCodeTflConv3d,
     kLiteRtOpCodeTflConv3dTranspose,
     kLiteRtOpCodeTflDensify,
     kLiteRtOpCodeTflFakeQuant,
