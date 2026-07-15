@@ -32,11 +32,13 @@ extern "C" {
 // Define LITERT_CAPI_EXPORT macro to export a function properly with a shared
 // library.
 #if defined(LITERT_WINDOWS_OS)
-#ifdef LITERT_COMPILE_LIBRARY
+#if defined(LITERT_STATIC)
+#define LITERT_CAPI_EXPORT
+#elif defined(LITERT_COMPILE_LIBRARY)
 #define LITERT_CAPI_EXPORT __declspec(dllexport)
 #else
 #define LITERT_CAPI_EXPORT __declspec(dllimport)
-#endif  // LITERT_COMPILE_LIBRARY
+#endif  // LITERT_STATIC
 #else
 #define LITERT_CAPI_EXPORT __attribute__((visibility("default")))
 #endif  // LITERT_WINDOWS_OS
