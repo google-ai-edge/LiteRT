@@ -1348,7 +1348,6 @@ cc_test(
         "@com_google_absl//absl/random",
         "@com_google_absl//absl/random:bit_gen_ref",
         "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
@@ -1985,11 +1984,13 @@ cc_test(
         ":test_main",
         ":test_util",
         "//tflite:framework_stable",
+        "//tflite/c:c_api_types",
         "//tflite/core:framework_stable",
         "//tflite/schema:schema_fbs",
         "//tflite/types:half",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest",
-        "@flatbuffers",
+        "@eigen_archive//:eigen3",
     ],
 )
 
@@ -2983,6 +2984,7 @@ cc_test(
     deps = [
         ":test_main",
         ":test_util",
+        "//tflite/c:c_api_types",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
     ],
