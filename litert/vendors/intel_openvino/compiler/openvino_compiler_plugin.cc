@@ -447,7 +447,8 @@ bool IsCompositeOpSupported(const litert::compiler::Op& op) {
   }
 
   return std::string_view(composite_op_name) ==
-         litert::compiler::CompositeOptions::kRmsNorm;
+         std::string_view(litert::compiler::CompositeOptions::kRmsNorm.data(),
+                          litert::compiler::CompositeOptions::kRmsNorm.size());
 }
 
 #ifdef __cplusplus
