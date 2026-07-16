@@ -67,3 +67,44 @@ ios_unit_test(
         ":litert_objc_environment_test_library",
     ],
 )
+
+objc_library(
+    name = "litert_objc_options",
+    srcs = [
+        "sources/LRTOptions.mm",
+    ],
+    hdrs = [
+        "apis/LRTOptions.h",
+    ],
+    deps = [
+        "//litert/cc:litert_options",
+        "//third_party/apple_frameworks:Foundation",
+    ],
+)
+
+objc_library(
+    name = "litert_objc_options_test_library",
+    testonly = True,
+    srcs = [
+        "tests/LRTOptionsTests.mm",
+    ],
+    deps = [
+        ":litert_objc_options",
+        "@com_google_googletest//:gtest",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+ios_unit_test(
+    name = "litert_objc_options_test_ios",
+    minimum_os_version = LITERT_MIN_IOS_VERSION,
+    runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":litert_objc_options_test_library",
+    ],
+)
