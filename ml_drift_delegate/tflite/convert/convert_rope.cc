@@ -14,9 +14,15 @@
 
 #include "ml_drift_delegate/tflite/convert/convert_rope.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
+#include "tflite/c/builtin_op_data.h"
 #include "tflite/c/common.h"
 
 namespace litert::ml_drift::ir {
@@ -37,6 +43,42 @@ void ConvertRoPE(
   for (int i = 0; i < node.outputs->size; ++i) {
     ir_model.SetProducer(tensor_map[node.outputs->data[i]], op->id);
   }
+
+  ::ml_drift::RoPEAttributes attr;
+  const uint8_t* buffer_t = nullptr;
+  size_t length = 0;
+  if (node.custom_initial_data && node.custom_initial_data_size > 0) {
+    buffer_t = reinterpret_cast<const uint8_t*>(node.custom_initial_data);
+    length = node.custom_initial_data_size;
+  } else if (node.builtin_data) {
+    const auto* composite_params =
+        static_cast<const TfLiteStablehloCompositeParams*>(node.builtin_data);
+    if (composite_params && composite_params->attributes &&
+        composite_params->attributes_size > 0) {
+      buffer_t = reinterpret_cast<const uint8_t*>(composite_params->attributes);
+      length = composite_params->attributes_size;
+    }
+  }
+  if (buffer_t && length > 0) {
+    const flexbuffers::Map flexbuffer_map =
+        flexbuffers::GetRoot(buffer_t, length).AsMap();
+    if (!flexbuffer_map["min_timescale"].IsNull()) {
+      attr.min_timescale = flexbuffer_map["min_timescale"].AsFloat();
+    }
+    if (!flexbuffer_map["max_timescale"].IsNull()) {
+      attr.max_timescale = flexbuffer_map["max_timescale"].AsFloat();
+    }
+    if (!flexbuffer_map["proportion"].IsNull()) {
+      attr.proportion = flexbuffer_map["proportion"].AsFloat();
+    }
+    if (!flexbuffer_map["interleaved"].IsNull()) {
+      attr.interleaved = flexbuffer_map["interleaved"].AsBool();
+    }
+    if (!flexbuffer_map["axial_dims"].IsNull()) {
+      attr.axial_dims = flexbuffer_map["axial_dims"].AsInt32();
+    }
+  }
+  op->attr = std::move(attr);
 }
 
 }  // namespace litert::ml_drift::ir

@@ -6052,6 +6052,45 @@ class RoPEParser : public TFLiteOperationParser {
       }
     }
     reader->AddOutputs(node);
+
+    ::ml_drift::RoPEAttributes attr;
+    const uint8_t* buffer_t = nullptr;
+    size_t length = 0;
+    if (tflite_node->custom_initial_data &&
+        tflite_node->custom_initial_data_size > 0) {
+      buffer_t =
+          reinterpret_cast<const uint8_t*>(tflite_node->custom_initial_data);
+      length = tflite_node->custom_initial_data_size;
+    } else if (tflite_node->builtin_data) {
+      const auto* composite_params =
+          static_cast<const TfLiteStablehloCompositeParams*>(
+              tflite_node->builtin_data);
+      if (composite_params->attributes &&
+          composite_params->attributes_size > 0) {
+        buffer_t = composite_params->attributes;
+        length = composite_params->attributes_size;
+      }
+    }
+    if (buffer_t && length > 0) {
+      const flexbuffers::Map& m =
+          flexbuffers::GetRoot(buffer_t, length).AsMap();
+      if (!m["min_timescale"].IsNull()) {
+        attr.min_timescale = m["min_timescale"].AsFloat();
+      }
+      if (!m["max_timescale"].IsNull()) {
+        attr.max_timescale = m["max_timescale"].AsFloat();
+      }
+      if (!m["proportion"].IsNull()) {
+        attr.proportion = m["proportion"].AsFloat();
+      }
+      if (!m["interleaved"].IsNull()) {
+        attr.interleaved = m["interleaved"].AsBool();
+      }
+      if (!m["axial_dims"].IsNull()) {
+        attr.axial_dims = m["axial_dims"].AsInt32();
+      }
+    }
+    node->operation.attributes = std::move(attr);
   }
 };
 
@@ -6856,6 +6895,10 @@ std::unique_ptr<TFLiteOperationParser> NewOperationParser(
       }
       if (!std::strcmp(params->name, "odml.rms_norm")) {
         return std::make_unique<CompositeRmsNormParser>();
+      }
+      if (!std::strcmp(params->name,
+                       "custom_call.rotary_positional_embedding")) {
+        return std::make_unique<RoPEParser>();
       }
       if (!std::strcmp(params->name, "odml.scaled_dot_product_attention")) {
         return std::make_unique<CompositeSdpaParser>();
