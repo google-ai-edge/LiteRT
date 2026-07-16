@@ -687,12 +687,19 @@ cc_library(
         "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/syrtis:environment",
         "@ml_drift//ml_drift/webgpu:environment",
+        "@ml_drift//ml_drift/webgpu:webgpu_api_util",
         "@ml_drift//ml_drift/webgpu:webgpu_headers",
         "@opencl_headers",
     ] + select({
         "@platforms//os:ios": [":gpu_environment_util_metal"],
         "@platforms//os:macos": [":gpu_environment_util_metal"],
         "//conditions:default": [],
+    }) + select({
+        "//tools/cc_target_os:emscripten": [],
+        "//conditions:default": [
+            "@dawn//dawn:dawn_headers",
+            "@dawn//dawn:libdawn_proc",
+        ],
     }),
 )
 
@@ -736,11 +743,14 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
+        "@dawn//dawn:libdawn_proc",
+        "@dawn//dawn:webgpu_headers",
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/webgpu:environment",
         "@ml_drift//ml_drift/webgpu:execution_environment",
         "@ml_drift//ml_drift/webgpu:instance",
+        "@ml_drift//ml_drift/webgpu:webgpu_api_util",
         "@ml_drift//ml_drift/webgpu:webgpu_headers",
         "//litert/c:litert_any",
         "//litert/c:litert_common",

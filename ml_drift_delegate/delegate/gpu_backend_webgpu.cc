@@ -479,6 +479,9 @@ absl::Status GpuInferenceContextWebGpu::PrepareCommandBuffers(
                                               num_nodes_per_command_encoder_,
                                               /*command_buffer_infos=*/nullptr,
                                               submit_command_buffers));
+  if (submit_command_buffers) {
+    ::ml_drift::webgpu::FlushIfCallbackSet();
+  }
   return absl::OkStatus();
 }
 
@@ -552,6 +555,7 @@ absl::Status GpuInferenceContextWebGpu::Dispatch() {
   for (int i = 0; i < command_buffers.size(); ++i) {
     // Submit every buffer separately to avoid hangs
     backend_->wgpu_env().queue().Submit(1, &command_buffers[i]);
+    ::ml_drift::webgpu::FlushIfCallbackSet();
   }
   return absl::OkStatus();
 }
@@ -592,6 +596,7 @@ absl::Status GpuInferenceContextWebGpu::PostConvert(bool input) {
 
   auto cb = backend_->command_encoder()->Finish();
   backend_->wgpu_env().queue().Submit(1, &cb);
+  ::ml_drift::webgpu::FlushIfCallbackSet();
   backend_->set_command_encoder(nullptr);
   return absl::OkStatus();
 }

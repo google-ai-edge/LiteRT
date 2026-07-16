@@ -37,11 +37,17 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#if !defined(__EMSCRIPTEN__)
+#include "dawn/dawn_proc.h"  // from @dawn
+#include "dawn/dawn_proc_table.h"  // from @dawn
+#include "webgpu/webgpu.h"  // from @dawn
+#endif  // !defined(__EMSCRIPTEN__)
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/webgpu/environment.h"  // from @ml_drift
 #include "ml_drift/webgpu/execution_environment.h"  // from @ml_drift
 #include "ml_drift/webgpu/instance.h"  // from @ml_drift
+#include "ml_drift/webgpu/webgpu_api_util.h"  // from @ml_drift
 #include "ml_drift/webgpu/webgpu_headers.h"  // from @ml_drift
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_any.h"
@@ -79,98 +85,64 @@ constexpr size_t kMaxNumEntriesInWebGpuPipelineCache = 1024;
 // A heuristic to destroy the WebGPU pipeline cache after a few invokes.
 constexpr int kInvokeCountToDestroyWebGpuPipelineCache = 5;
 
-absl::Mutex g_webgpu_env_mutex(absl::kConstInit);
-ml_drift::webgpu::ExecutionEnvironment* g_webgpu_env
-    ABSL_GUARDED_BY(g_webgpu_env_mutex) = nullptr;
-int g_webgpu_env_ref_count ABSL_GUARDED_BY(g_webgpu_env_mutex) = 0;
+struct DelegateEnvironment {
+  std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> webgpu_env;
+  std::unique_ptr<litert::ml_drift::WebGpuPipelineCache> pipeline_cache;
+};
 
 // Shell environment variables to debug tflite on GPU with WebGPU delegate.
 constexpr char kEnvDebugEndNode[] = "LITERT_GPU_DEBUG_END_NODE";
 constexpr char kEnvDebugExcludeNodes[] = "LITERT_GPU_DEBUG_EXCLUDE_NODES";
 
-// Singleton webgpu pipeline cache.
-//
-// This cache is associated with g_webgpu_env. It is created when g_webgpu_env
-// is created, and destroyed when g_webgpu_env is destroyed though it can be
-// destroyed earlier to reduce the memory usage assuming it is not used accessed
-// any more after the model is fully loaded, i.e. heuristically after a few
-// inferences by calling CacheDetach().
-absl::Mutex g_webgpu_pipeline_cache_mutex(absl::kConstInit);
-litert::ml_drift::WebGpuPipelineCache* g_webgpu_pipeline_cache
-    ABSL_GUARDED_BY(g_webgpu_pipeline_cache_mutex) = nullptr;
-int g_webgpu_pipeline_cache_ref_count
-    ABSL_GUARDED_BY(g_webgpu_pipeline_cache_mutex) = 0;
+void DestroyDelegateEnvironment(void* user_data) {
+  delete reinterpret_cast<DelegateEnvironment*>(user_data);
+  ABSL_VLOG(1) << "Destroyed delegate environment.";
+}
 
-// Callback called by Dawn native to load cached data if any. The cached data is
-// most likely backend compiled or parsed binaries from WGSL. See
-// https://github.com/search?q=repo%3Agoogle%2Fdawn%20%20DAWN_MAKE_CACHE_REQUEST
-size_t CacheLoad(std::span<const std::byte> key, std::span<std::byte> value) {
-  absl::MutexLock lock(g_webgpu_pipeline_cache_mutex);
-  if (g_webgpu_pipeline_cache == nullptr) {
+// Callback called by Dawn native to load cached data if any.
+size_t CacheLoad(std::span<const std::byte> key,
+                 std::span<std::byte> value,
+                 void* userdata) {
+  auto* delegate_env = reinterpret_cast<DelegateEnvironment*>(userdata);
+  if (delegate_env == nullptr || delegate_env->pipeline_cache == nullptr) {
     return 0;
   }
 
-  // Reset the ref count to destroy the cache after a few invokes.
-  g_webgpu_pipeline_cache_ref_count = kInvokeCountToDestroyWebGpuPipelineCache;
-
   uint64_t key_hash = farmhash::Fingerprint64(
       reinterpret_cast<const char*>(key.data()), key.size());
-  return g_webgpu_pipeline_cache->Load(
+  return delegate_env->pipeline_cache->Load(
       key_hash,
       absl::MakeSpan(reinterpret_cast<uint8_t*>(value.data()), value.size()));
 }
 
-// Callback called by Dawn native to store cached data. The cached data is
-// most likely backend compiled or parsed binaries from WGSL. See
-// https://github.com/search?q=repo%3Agoogle%2Fdawn%20%20DAWN_MAKE_CACHE_REQUEST
+// Callback called by Dawn native to store cached data.
 void CacheStore(std::span<const std::byte> key,
-                std::span<const std::byte> data) {
-  absl::MutexLock lock(g_webgpu_pipeline_cache_mutex);
-  if (g_webgpu_pipeline_cache == nullptr) {
+                std::span<const std::byte> data,
+                void* userdata) {
+  auto* delegate_env = reinterpret_cast<DelegateEnvironment*>(userdata);
+  if (delegate_env == nullptr || delegate_env->pipeline_cache == nullptr) {
     return;
   }
 
-  // Reset the ref count to destroy the cache after a few invokes.
-  g_webgpu_pipeline_cache_ref_count = kInvokeCountToDestroyWebGpuPipelineCache;
-
   uint64_t key_hash = farmhash::Fingerprint64(
       reinterpret_cast<const char*>(key.data()), key.size());
-  g_webgpu_pipeline_cache->Store(
+  delegate_env->pipeline_cache->Store(
       key_hash,
       absl::MakeConstSpan(reinterpret_cast<const uint8_t*>(data.data()),
                           data.size()));
 }
 
-// Called by Invoke() to destroy the cache heuristically if it is not used any
-// more to reduce the memory usage.
 void CacheDetach() ABSL_NO_THREAD_SAFETY_ANALYSIS {
-  // Fast return without mutex lock.
-  if (g_webgpu_pipeline_cache == nullptr) {
-    return;
-  }
-
-  absl::MutexLock lock(g_webgpu_pipeline_cache_mutex);
-  if (g_webgpu_pipeline_cache == nullptr) {
-    return;
-  }
-
-  --g_webgpu_pipeline_cache_ref_count;
-  if (g_webgpu_pipeline_cache_ref_count > 0) {
-    return;
-  }
-
-  delete g_webgpu_pipeline_cache;
-  g_webgpu_pipeline_cache = nullptr;
-  ABSL_LOG(INFO) << "Destroyed the WebGPU pipeline cache.";
+  // No-op: pipeline_cache is owned by DelegateEnvironment and destroyed on env
+  // close.
 }
 
-// Creates a WebGPU environment. If a WebGPU device id is provided via
-// LiteRtEnvironment, the WebGPU environment will be initialized with the
-// provided device id and set `is_webgpu_device_provided` to true.
 std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
-    LiteRtEnvironment litert_env, GpuPriority gpu_priority,
+    LiteRtEnvironment litert_env,
+    GpuPriority gpu_priority,
     litert::ml_drift::SimpleCache&& pipeline_cache,
-    const LiteRtRuntimeContext* runtime_context) {
+    const LiteRtRuntimeContext* runtime_context,
+    DelegateEnvironment* delegate_env) {
   auto webgpu_env = std::make_unique<ml_drift::webgpu::ExecutionEnvironment>(
 #if defined(__APPLE__)
       wgpu::BackendType::Metal
@@ -187,6 +159,36 @@ std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
   LiteRtAny wegpu_device_id;
   auto wgpu_device_id_status = runtime_context->get_environment_options_value(
       env_options, kLiteRtEnvOptionTagWebGpuDevice, &wegpu_device_id);
+
+#if !defined(__EMSCRIPTEN__)
+  LiteRtAny wegpu_procs;
+  if (runtime_context->get_environment_options_value(
+          env_options, kLiteRtEnvOptionTagWebGpuProcs, &wegpu_procs) ==
+          kLiteRtStatusOk &&
+      wegpu_procs.int_value != 0) {
+    dawnProcSetProcs(
+        reinterpret_cast<const DawnProcTable*>(wegpu_procs.int_value));
+  }
+#endif  // !defined(__EMSCRIPTEN__)
+  LiteRtAny wegpu_instance;
+  if (runtime_context->get_environment_options_value(
+          env_options, kLiteRtEnvOptionTagWebGpuInstance, &wegpu_instance) ==
+          kLiteRtStatusOk &&
+      wegpu_instance.int_value != 0) {
+    WGPUInstance wgpu_inst =
+        reinterpret_cast<WGPUInstance>(wegpu_instance.int_value);
+    wgpu::Instance inst = wgpu_inst;
+    (void)::ml_drift::webgpu::Instance::Set(inst);
+  }
+  LiteRtAny wegpu_flush;
+  if (runtime_context->get_environment_options_value(
+          env_options, kLiteRtEnvOptionTagWebGpuFlushCallback, &wegpu_flush) ==
+          kLiteRtStatusOk &&
+      wegpu_flush.int_value != 0) {
+    ::ml_drift::webgpu::SetFlushCallback(
+        reinterpret_cast<::ml_drift::webgpu::WebGpuFlushCallback>(
+            wegpu_flush.int_value));
+  }
 
   absl::Status webgpu_init_status;
   std::string success_message;
@@ -219,14 +221,12 @@ std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
         .use_low_power = use_low_power,
         .enable_host_mapped_pointer = enable_host_mapped_pointer};
     wgpu::DawnCacheDeviceDescriptor cache_desc;
-    cache_desc.SetDawnLoadCacheDataCallback(&CacheLoad);
-    cache_desc.SetDawnStoreCacheDataCallback(&CacheStore);
-    if (pipeline_cache.IsValid()) {
-      absl::MutexLock lock(g_webgpu_pipeline_cache_mutex);
-      g_webgpu_pipeline_cache = new litert::ml_drift::WebGpuPipelineCache(
-          std::move(pipeline_cache), kMaxNumEntriesInWebGpuPipelineCache);
-      g_webgpu_pipeline_cache_ref_count =
-          kInvokeCountToDestroyWebGpuPipelineCache;
+    cache_desc.SetDawnLoadCacheDataCallback(&CacheLoad, delegate_env);
+    cache_desc.SetDawnStoreCacheDataCallback(&CacheStore, delegate_env);
+    if (pipeline_cache.IsValid() && delegate_env != nullptr) {
+      delegate_env->pipeline_cache =
+          std::make_unique<litert::ml_drift::WebGpuPipelineCache>(
+              std::move(pipeline_cache), kMaxNumEntriesInWebGpuPipelineCache);
       init_params.cache_descriptor = &cache_desc;
     }
     webgpu_init_status = webgpu_env->Initialize(init_params);
@@ -240,90 +240,51 @@ std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
     return nullptr;
   }
 
-  ABSL_LOG(INFO) << success_message;
+  ABSL_VLOG(1) << success_message;
   return webgpu_env;
 };
-
-void DestroyWebGpuEnvironment(void* webgpu_env) {
-  absl::MutexLock lock(g_webgpu_env_mutex);
-  if (webgpu_env != g_webgpu_env) {
-    ABSL_LOG(ERROR) << "WebGPU environment is not the same as the singleton.";
-    ABSL_DCHECK(false);
-    return;
-  }
-
-  // Delete the pipeline cache early. This function is an enough signal that the
-  // pipeline cache is not needed anymore.
-  {
-    absl::MutexLock lock(g_webgpu_pipeline_cache_mutex);
-    if (g_webgpu_pipeline_cache != nullptr) {
-      delete g_webgpu_pipeline_cache;
-      g_webgpu_pipeline_cache = nullptr;
-      ABSL_LOG(INFO) << "Destroyed the WebGPU pipeline cache.";
-    }
-  }
-
-  --g_webgpu_env_ref_count;
-  if (g_webgpu_env_ref_count > 0) {
-    return;
-  }
-
-  delete g_webgpu_env;
-  g_webgpu_env = nullptr;
-  ABSL_LOG(INFO) << "Destroyed the WebGPU environment.";
-}
 
 litert::Expected<ml_drift::webgpu::ExecutionEnvironment*>
 GetSingletonWebGpuEnvironment(LiteRtEnvironment litert_env,
                               GpuPriority gpu_priority,
                               litert::ml_drift::SimpleCache&& pipeline_cache,
                               const LiteRtRuntimeContext* runtime_context) {
-  absl::MutexLock lock(g_webgpu_env_mutex);
-  if (g_webgpu_env == nullptr) {
-    g_webgpu_env =
-        CreateWebGpuEnvironment(litert_env, gpu_priority,
-                                std::move(pipeline_cache), runtime_context)
-            .release();
-    if (!g_webgpu_env) {
-      return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                "Failed to create WebGPU environment");
-    }
-  }
+  auto resources = std::make_unique<DelegateEnvironment>();
 
-  // If litert_env already has a gpu environment, it means either
-  // 1. GPU environment is created with g_webgpu_env managed here, or
-  // 2. GPU environment is created by other means, not managed here.
-  //
-  // In case of 1, we would not increase the ref count as overwriting the gpu
-  // environment is not allowed and ref-counting without overwriting is hard.
-  // In case of 2, we should add options to destroy g_webgpu_env when the gpu
-  // environment is destroyed.
   bool has_gpu_environment = false;
   runtime_context->environment_has_gpu_environment(litert_env,
                                                    &has_gpu_environment);
-  if (!has_gpu_environment) {
-    ++g_webgpu_env_ref_count;
+  if (has_gpu_environment) {
+    LiteRtEnvironmentOptions env_options;
+    LITERT_RETURN_IF_ERROR(
+        runtime_context->get_environment_options(litert_env, &env_options));
+    LiteRtAny user_data;
+    auto status = runtime_context->get_environment_options_value(
+        env_options, kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy,
+        &user_data);
+    if (status == kLiteRtStatusOk && user_data.ptr_value != nullptr) {
+      return reinterpret_cast<DelegateEnvironment*>(
+                 const_cast<void*>(user_data.ptr_value))
+          ->webgpu_env.get();
+    }
+  }
+
+  resources->webgpu_env = CreateWebGpuEnvironment(
+      litert_env, gpu_priority, std::move(pipeline_cache), runtime_context,
+      resources.get());
+  if (!resources->webgpu_env) {
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Failed to create WebGPU environment");
   }
 
   LITERT_ASSIGN_OR_RETURN(LiteRtAny callback,
                           litert::ToLiteRtAny(reinterpret_cast<const void*>(
-                              &DestroyWebGpuEnvironment)));
+                              &DestroyDelegateEnvironment)));
   LITERT_ASSIGN_OR_RETURN(
       LiteRtAny user_data,
-      litert::ToLiteRtAny(reinterpret_cast<const void*>(g_webgpu_env)));
+      litert::ToLiteRtAny(reinterpret_cast<const void*>(resources.get())));
 
   if (has_gpu_environment) {
-#if !defined(__EMSCRIPTEN__)
-    LiteRtEnvironmentOptions env_options;
-    LITERT_RETURN_IF_ERROR(
-        runtime_context->get_environment_options(litert_env, &env_options));
-    LiteRtAny wegpu_device_id;
-    LITERT_RETURN_IF_ERROR(runtime_context->get_environment_options_value(
-        env_options, kLiteRtEnvOptionTagWebGpuDevice, &wegpu_device_id));
-    LITERT_RETURN_IF_ERROR(
-        wegpu_device_id.int_value ==
-        reinterpret_cast<int64_t>(g_webgpu_env->device().Get()));
-#endif  // !defined(__EMSCRIPTEN__)
     std::array<LiteRtEnvOption, 2> options = {
         LiteRtEnvOption{.tag = kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy,
                         .value = callback},
@@ -333,17 +294,15 @@ GetSingletonWebGpuEnvironment(LiteRtEnvironment litert_env,
     };
     LITERT_RETURN_IF_ERROR(runtime_context->add_environment_options(
         litert_env, options.size(), options.data(), /*overwrite=*/true));
-    return g_webgpu_env;
+    return resources.release()->webgpu_env.get();
   }
 
-  // Update the LiteRtEnvironment with the WebGpu environment.
-  // So LiteRT runtime can use the WebGpu environment.
   LITERT_ASSIGN_OR_RETURN(LiteRtAny device_id,
                           litert::ToLiteRtAny(reinterpret_cast<int64_t>(
-                              g_webgpu_env->device().Get())));
+                              resources->webgpu_env->device().Get())));
   LITERT_ASSIGN_OR_RETURN(LiteRtAny command_queue,
                           litert::ToLiteRtAny(reinterpret_cast<int64_t>(
-                              g_webgpu_env->queue().Get())));
+                              resources->webgpu_env->queue().Get())));
   LITERT_ASSIGN_OR_RETURN(LiteRtAny wgpu_instance,
                           litert::ToLiteRtAny(reinterpret_cast<int64_t>(
                               &ml_drift::webgpu::Instance::Get())));
@@ -363,7 +322,7 @@ GetSingletonWebGpuEnvironment(LiteRtEnvironment litert_env,
   LITERT_RETURN_IF_ERROR(runtime_context->gpu_environment_create(
       litert_env, options.size(), options.data()));
 
-  return g_webgpu_env;
+  return resources.release()->webgpu_env.get();
 }
 
 void* Init(TfLiteContext* context, const char* buffer, size_t) {
