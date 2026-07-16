@@ -84,14 +84,22 @@ class LockedBufferSpan {
     return LockedBufferSpan<U>(std::move(data_), bytes_);
   }
 
-  T* data() const { return reinterpret_cast<T*>(data_.get()); }
+  T* data() const& { return reinterpret_cast<T*>(data_.get()); }
   size_t size() const { return bytes_ / sizeof(T); }
-  T* begin() { return data(); }
-  T* end() { return data() + size(); }
-  const T* begin() const { return data(); }
-  const T* end() const { return data() + size(); }
-  const T* cbegin() const { return data(); }
-  const T* cend() const { return data() + size(); }
+  T* begin() & { return data(); }
+  T* end() & { return data() + size(); }
+  const T* begin() const& { return data(); }
+  const T* end() const& { return data() + size(); }
+  const T* cbegin() const& { return data(); }
+  const T* cend() const& { return data() + size(); }
+
+  // We delete these overloads to prevent users from keeping dangling references
+  // to data by using one-liners that lock a buffer and get the data at once.
+  T* data() const&& = delete;
+  const T* begin() const&& = delete;
+  const T* end() const&& = delete;
+  const T* cbegin() const&& = delete;
+  const T* cend() const&& = delete;
 
  private:
   std::unique_ptr<MaybeConstByte, std::function<void(MaybeConstByte*)>> data_;

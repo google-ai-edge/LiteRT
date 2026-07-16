@@ -587,7 +587,9 @@ Tensor<Mixins...> Pad(Tensor<Mixins...> a, Tensor<Mixins...> b,
   o_info.type = a_info.type;
   o_info.shape = a_info.shape;
   if (b_info.buffer) {
-    const auto b_data = b_info.buffer->Lock().As<const int32_t>().data();
+    const LockedBufferSpan<const int32_t> b_lock =
+        b_info.buffer->Lock().As<const int32_t>();
+    const int32_t* b_data = b_lock.data();
     for (int i = 0; i < o_info.shape.size(); ++i) {
       o_info.shape[i] += b_data[i * 2] + b_data[i * 2 + 1];
     }
@@ -613,7 +615,9 @@ Tensor<Mixins...> PadV2(Tensor<Mixins...> a, Tensor<Mixins...> b,
   o_info.type = a_info.type;
   o_info.shape = a_info.shape;
   if (b_info.buffer) {
-    const auto b_data = b_info.buffer->Lock().As<const int32_t>().data();
+    const LockedBufferSpan<const int32_t> b_lock =
+        b_info.buffer->Lock().As<const int32_t>();
+    const int32_t* b_data = b_lock.data();
     for (int i = 0; i < o_info.shape.size(); ++i) {
       o_info.shape[i] += b_data[i * 2] + b_data[i * 2 + 1];
     }
@@ -641,8 +645,9 @@ Tensor<Mixins...> ExpandDims(Tensor<Mixins...> input, Tensor<Mixins...> axis,
   output_info.type = input_info.type;
 
   if (axis_info.buffer) {
-    int real_axis =
-        axis_info.buffer->Lock().template As<const int32_t>().data()[0];
+    LockedBufferSpan<const int32_t> axis_lock =
+        axis_info.buffer->Lock().template As<const int32_t>();
+    int real_axis = axis_lock.data()[0];
     if (real_axis < 0) {
       real_axis += input_info.shape.size() + 1;
     }
@@ -789,7 +794,9 @@ Tensor<Mixins...> Sum(Tensor<Mixins...> a, Tensor<Mixins...> b, bool keep_dims,
     return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
         "The reduction tensor must have a buffer.")));
   }
-  const auto b_data = b_info.buffer->Lock().As<const int32_t>().data();
+  const LockedBufferSpan<const int32_t> b_lock =
+      b_info.buffer->Lock().As<const int32_t>();
+  const int32_t* b_data = b_lock.data();
   if (op->keep_dims) {
     o_info.shape = a_info.shape;
     if (b_info.shape.empty()) {
@@ -847,7 +854,9 @@ Tensor<Mixins...> ReduceMax(Tensor<Mixins...> a, Tensor<Mixins...> b,
     return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
         "The reduction tensor must have a buffer.")));
   }
-  const auto b_data = b_info.buffer->Lock().As<const int32_t>().data();
+  const LockedBufferSpan<const int32_t> b_lock =
+      b_info.buffer->Lock().As<const int32_t>();
+  const int32_t* b_data = b_lock.data();
   if (op->keep_dims) {
     o_info.shape = a_info.shape;
     if (b_info.shape.empty()) {
@@ -904,7 +913,9 @@ Tensor<Mixins...> Mean(Tensor<Mixins...> a, Tensor<Mixins...> b, bool keep_dims,
     return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
         "The reduction tensor must have a buffer.")));
   }
-  const auto b_data = b_info.buffer->Lock().As<const int32_t>().data();
+  const LockedBufferSpan<const int32_t> b_lock =
+      b_info.buffer->Lock().As<const int32_t>();
+  const int32_t* b_data = b_lock.data();
   if (op->keep_dims) {
     o_info.shape = a_info.shape;
     if (b_info.shape.empty()) {
@@ -962,7 +973,9 @@ Tensor<Mixins...> ArgMax(Tensor<Mixins...> a, Tensor<Mixins...> b,
     return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
         "The reduction tensor must have a buffer.")));
   }
-  const auto b_data = b_info.buffer->Lock().As<const int32_t>().data();
+  const LockedBufferSpan<const int32_t> b_lock =
+      b_info.buffer->Lock().As<const int32_t>();
+  const int32_t* b_data = b_lock.data();
   int axis = b_data[0];
   if (axis < 0) {
     axis += a_info.shape.size();
@@ -1460,7 +1473,9 @@ std::vector<Tensor<Mixins...>> Split(
   const graph::TensorInformation& axis_info = GetInfo(axis.GetRaw()).value();
   int axis_val = 0;
   if (axis_info.buffer) {
-    axis_val = axis_info.buffer->Lock().As<const int32_t>().data()[0];
+    LockedBufferSpan<const int32_t> axis_lock =
+        axis_info.buffer->Lock().As<const int32_t>();
+    axis_val = axis_lock.data()[0];
   } else {
     // TODO(b/269489748): Support dynamic axis for shape inference.
     return {Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
@@ -2016,20 +2031,17 @@ std::vector<Tensor<Mixins...>> TopK(
   graph::TensorInformation& values_info = *GetInfo(values.GetRaw());
   values_info.type = input_info.type;
   values_info.shape = input_info.shape;
-  values_info.shape.back() = GetInfo(k.GetRaw())
-                                 ->buffer->Lock()
-                                 .template As<const int32_t>()
-                                 .data()[0];
+  LockedBufferSpan<const int32_t> k_lock =
+      GetInfo(k.GetRaw())->buffer->Lock().template As<const int32_t>();
+  const int k_val = k_lock.data()[0];
+  values_info.shape.back() = k_val;
   outputs.push_back(values);
 
   Tensor<Mixins...> indices = AddOutput(op, loc);
   graph::TensorInformation& indices_info = *GetInfo(indices.GetRaw());
   indices_info.type = Type::kI32;
   indices_info.shape = input_info.shape;
-  indices_info.shape.back() = GetInfo(k.GetRaw())
-                                  ->buffer->Lock()
-                                  .template As<const int32_t>()
-                                  .data()[0];
+  indices_info.shape.back() = k_val;
   outputs.push_back(indices);
 
   graph::OpDebugger::DebugOp(*op);
@@ -2149,8 +2161,9 @@ Tensor<Mixins...> OneHot(Tensor<Mixins...> indices, Tensor<Mixins...> depth,
   output_info.shape = indices_info.shape;
   int depth_val = -1;
   if (depth_info.buffer) {
-    depth_val =
-        depth_info.buffer->Lock().template As<const int32_t>().data()[0];
+    LockedBufferSpan<const int32_t> depth_lock =
+        depth_info.buffer->Lock().template As<const int32_t>();
+    depth_val = depth_lock.data()[0];
   }
   if (resolved_axis < 0 ||
       resolved_axis > static_cast<int>(indices_info.shape.size())) {
@@ -2383,8 +2396,9 @@ std::vector<Tensor<Mixins...>> NonMaxSuppressionV5(
   // Infer shape from max_output_size.
   if (auto* max_output_size_buffer =
           graph::GetInfo(max_output_size.GetRaw())->buffer.get()) {
-    const int max_output_size_val =
-        *max_output_size_buffer->Lock().template As<const int32_t>().data();
+    LockedBufferSpan<const int32_t> max_output_size_lock =
+        max_output_size_buffer->Lock().template As<const int32_t>();
+    const int max_output_size_val = *max_output_size_lock.data();
     indices_info.shape = {max_output_size_val};
     scores_info.shape = {max_output_size_val};
   }
