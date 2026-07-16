@@ -409,6 +409,8 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
       auto soc_model =
           device_platform_info->v1.hwDevices->v1.deviceInfoExtension
               ->onChipDevice.socModel;
+      QNN_LOG_INFO("Device reported on-chip SoC model id: %u",
+                   static_cast<uint32_t>(soc_model));
       auto soc_info_online =
           FindSocInfo(static_cast<SnapdragonModel>(soc_model));
       soc_info_ = soc_info_online.value_or(kSocInfos[0]);
