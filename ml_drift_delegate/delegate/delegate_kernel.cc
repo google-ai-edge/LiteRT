@@ -53,7 +53,7 @@
 #include "ml_drift_delegate/delegate/precision.h"
 // clang-format off
 #include "ml_drift_delegate/delegate/quantization_util.h"
-#include "third_party/odml/infra/ml_drift_delegate/serialization_program_cache/serialization_program_cache.h"
+#include "ml_drift_delegate/delegate/serialization_program_cache/serialization_program_cache.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 // clang-format on
 #include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager.h"

@@ -502,7 +502,7 @@ cc_library(
         ":quantization_util",
         "//third_party/odml/infra/ml_drift_delegate:shared_memory_manager",
         "//third_party/odml/infra/ml_drift_delegate:tflite_profile",
-        "//third_party/odml/infra/ml_drift_delegate/serialization_program_cache",
+        "//ml_drift_delegate/delegate/serialization_program_cache",
         "//ml_drift_delegate/delegate/serialization_weight_cache",
         "//ml_drift_delegate/delegate/composite:custom_parsers",
         "//ml_drift_delegate/delegate/composite:litert_op_selector",
