@@ -23,8 +23,8 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
-#include "third_party/odml/litert/ml_drift/delegate/delegate_options.h"
-#include "third_party/odml/litert/ml_drift/delegate/delegate_types.h"
+#include "ml_drift_delegate/delegate/delegate_options.h"
+#include "ml_drift_delegate/delegate/delegate_types.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 

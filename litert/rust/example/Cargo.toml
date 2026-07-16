@@ -23,6 +23,9 @@ clap = { version = "4.5", features = ["derive"] }
 image = "0.25.9"
 tokio = { version = "1", features = ["full"] }
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(async_support)'] }
+
 [[bin]]
 name = "segmentation"
 path = "segmentation_main.rs"
@@ -30,3 +33,4 @@ path = "segmentation_main.rs"
 [[bin]]
 name = "segmentation_async"
 path = "segmentation_async_main.rs"
+rustflags = ["--cfg", "async_support"]

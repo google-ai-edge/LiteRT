@@ -36,7 +36,7 @@ litert_define_ats(
     backend = "cpu",
     compile_only_suffix = None,
     dont_register = [
-        "i32",  # XNNPACK does not support int32
+        "^(?!.*Pad).*i32",  # XNNPACK does not support int32 (except Pad weights)
         "OneHot",  # XNNPACK does not support OneHot
         "Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
         "tfl\\.floor_div",  # XNNPACK does not support FloorDiv
@@ -260,7 +260,7 @@ litert_test(
     name = "ats",
     srcs = ["ats.cc"],
     args = [
-        "--dont_register=i32",  # XNNPACK does not support int32
+        "--dont_register=^(?!.*Pad).*i32",  # XNNPACK does not support int32 (except Pad weights)
         "--dont_register=OneHot",  # XNNPACK does not support OneHot
         "--dont_register=Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
         "--dont_register=tfl\\.floor_div",  # XNNPACK does not support FloorDiv

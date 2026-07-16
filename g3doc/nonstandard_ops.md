@@ -69,7 +69,8 @@ Important caveat:
 ### MLDrift GPU Delegate Coverage
 
 The MLDrift GPU delegate implementation under
-`ml_drift/delegate/composite/` is the source of truth for MLDrift-specific
+`ml_drift_delegate/delegate/composite/` is the source of truth for
+MLDrift-specific
 support. It currently registers native parsers and GPU implementations for:
 
 - `odml.cache_update` (`STABLEHLO_COMPOSITE`)
@@ -676,17 +677,40 @@ For MLDrift delegation, the accepted form is:
 The canonical MLDrift form is rank 4. `B0` is an optional model batch and `B1`
 is the batch dimension of the batched matmul:
 
+```text
+odml.runtime_bmm(lhs, rhs, param_tensor) -> output
+  attributes: is_global, is_src, optional scale
+```
+
+`is_global`, `is_src`, and `scale` are composite attributes, not tensor
+operands, so they do not change the three-input/one-output tensor arity.
+
 | Slot | Tensor | Type | Shape | Description |
 | --- | --- | --- | --- | --- |
 | input 0 | `lhs` | `FLOAT32` in current tests | `[B0, B1, M, K]` | Left operand. |
 | input 1 | `rhs` | `FLOAT32` or `INT8` | `[B0, B1, N, K]` | Right operand in already-transposed storage. The last dimension must equal the last dimension of `lhs`. |
-| input 2 | `runtime_params` | `INT32` | **exactly `[1, 1, 1, 7]`** | Runtime bounds. MLDrift uses element 2 as `active_tokens_aligned`; the other elements are not read by this op. |
+| input 2 | `param_tensor` | `INT32` | **exactly `[1, 1, 1, 7]`** | Runtime parameters. MLDrift uses element 2 as the end-channel index; the other elements are not read by MLDrift's `runtime_bmm` implementation. |
 | output 0 | `output` | normally `FLOAT32` | `[B0, B1, M, N]` | Result of `lhs * transpose(rhs)` with a runtime channel bound. |
 
 The third input is part of the MLDrift delegation ABI, not an optional
 decomposition helper. A rank-1 `[7]` tensor is not equivalent for MLDrift: its
 parser compares the internal BHWC shape with `[1, 1, 1, 7]`, so the FlatBuffer
 tensor must have the literal rank-4 shape to be delegated to MLDrift.
+
+The tensor is shared with `odml.cache_update`. LiteRT-LM populates it at
+execution time as follows:
+
+| Index | Runtime value | Consumer |
+| --- | --- | --- |
+| 0 | `start_index` | MLDrift `odml.cache_update` write offset. |
+| 1 | `end_index = start_index + update_length` | MLDrift `odml.cache_update` update bound and the converter-generated CPU fallback decomposition's exact `runtime_bmm` valid length. |
+| 2 | `end_index` | MLDrift `odml.runtime_bmm` source- or destination-channel bound. It need not be pre-aligned; the GPU kernel handles alignment. |
+| 3..6 | zero / reserved | Not consumed by the implementations described here. |
+
+`litert-converter` creates zero-filled example tensors during export, but those
+values are not serialized as constants: `param_tensor` remains a public model
+input. The LiteRT-LM executor supplies the live values before each prefill or
+decode invocation.
 
 MLDrift's BMM kernel supports one internal batch dimension. When `B0 != 1`,
 the MLDrift parser inserts reshapes around the operation:
@@ -708,9 +732,15 @@ The attributes are a flexbuffers map in
 | Attribute | Required | Meaning in MLDrift |
 | --- | --- | --- |
 | `is_global` | yes | Required by MLDrift validation, but its value is not otherwise consumed by the current MLDrift parser or GPU implementation. |
-| `is_src` | yes | If true, `runtime_params[2]` bounds the source channels; if false, it bounds the destination channels. It also selects the V-cache versus K-cache quantization metadata when `rhs` comes from `odml.cache_update`. |
+| `is_src` | yes | If true, `param_tensor[2]` bounds the source channels; if false, it bounds the destination channels. It also selects the V-cache versus K-cache quantization metadata when `rhs` comes from `odml.cache_update`. |
 | `rhs_cache_update` | no | If true, force the cache/external-weights implementation path. Missing reads as false. |
 | `scale` | required for a standalone `INT8` RHS | Its presence selects the external-weights path. For an `INT8` RHS not produced by `odml.cache_update`, it is the uniform dequantization scale. |
+
+The current `litert-converter` emitter serializes `is_global`, `is_src`, and,
+for a quantized RHS, `scale`. It does not emit `rhs_cache_update`; that
+attribute is nevertheless recognized by the MLDrift parser. With current
+converter output, a visible `odml.cache_update` RHS producer or the presence of
+`scale` selects MLDrift's external-weights path.
 
 #### Semantic Summary
 
@@ -761,8 +791,9 @@ How a `litert-torch` user should think about it:
 - Emit three runtime operands, even though only the first two are mathematical
   matmul operands.
 - Store the RHS as `[..., N, K]`; MLDrift always transposes it logically.
-- Emit the parameter tensor as rank 4 `[1, 1, 1, 7]`, and place the aligned
-  active-token count at index 2.
+- Emit the parameter tensor as a public rank-4 `[1, 1, 1, 7]` input. The
+  LiteRT-LM executor places the update start at index 0 and the update end at
+  indices 1 and 2.
 - Always emit both `is_global` and `is_src`. `is_global` currently has no
   behavioral effect in MLDrift, but omitting it rejects MLDrift delegation.
 - For standalone `INT8` RHS input, emit `scale`. Do not rely on an affine
@@ -795,13 +826,18 @@ For MLDrift delegation, the accepted form is:
   - `scale_k` (`FLOAT32`)
   - `scale_v` (`FLOAT32`)
 
+The current `litert-converter` declares and verifies the public
+`odml.cache_update` ABI as seven inputs and two outputs. The three-input form is
+an additional form accepted by MLDrift; it is not the form currently emitted by
+that converter.
+
 #### Signature
 
 | Slot | Tensor | Type | Shape | Description |
 | --- | --- | --- | --- | --- |
 | input 0 | `src_k` | `FLOAT32` or `FLOAT16` for a quantized cache | typically `[1, Bkv, T, H]` | Fresh K values. The width dimension is the number of update tokens. |
 | input 1 | `src_v` | same as `src_k` | same logical shape as `src_k` | Fresh V values. |
-| input 2 | `runtime_params` | `INT32` | at least two elements; current tests use `[2]` | Element 0 is `token_index_offset`; element 1 is `active_tokens`. |
+| input 2 | `param_tensor` | `INT32` | current converter ABI: `[1, 1, 1, 7]` | Element 0 is `start_index`; element 1 is `end_index` (named `active_tokens` in the MLDrift shader). The MLDrift parser itself only requires the first two values to be readable. |
 | inputs 3..6 | decomposition-only inputs | decomposition-defined | decomposition-defined | Allowed only in the seven-input carrier. MLDrift intentionally ignores these slots; they exist so the CPU decomposition can express in-place dynamic slice updates. |
 | output 0 | `updated_k_cache` | floating-point or `INT8` | backend-packed cache storage | K-cache destination. |
 | output 1 | `updated_v_cache` | same storage class as K | backend-packed cache storage | V-cache destination. |
@@ -816,11 +852,11 @@ MLDrift delegation requires the two-output paired-cache form.
 For every update token `x`, MLDrift computes:
 
 ```text
-token_index = runtime_params[0] + x
+token_index = param_tensor[0] + x
 ```
 
 It writes the K/V values only when both
-`token_index < cache_size` and `token_index < runtime_params[1]`. Source height
+`token_index < cache_size` and `token_index < param_tensor[1]`. Source height
 is broadcast across `kv_cache_batch_size` with modulo indexing.
 
 K and V use different packed external-weight layouts because the two following
@@ -1101,7 +1137,7 @@ rg -n --pcre2 'stablehlo\\.composite\\s+\"([^\"]+)\"' litert tflite
 rg -n 'kTfLiteBuiltinStablehloComposite' tflite/delegates/xnnpack/xnnpack_delegate.cc
 
 # Nonstandard names recognized by MLDrift and their parser entry points.
-rg -n 'odml\.cache_update|odml\.runtime_bmm|"moe"' ml_drift/delegate/composite
+rg -n 'odml\.cache_update|odml\.runtime_bmm|"moe"' ml_drift_delegate/delegate/composite
 
 # StableHLO composite names legalized into tfl.custom.
 rg -n 'IsSupportedComposite\\(' tflite/converter/stablehlo/transforms/legalize_stablehlo_composite_to_tfl_custom.cc

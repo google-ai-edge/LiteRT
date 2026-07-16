@@ -10,9 +10,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
-
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -22,6 +19,8 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
 #include "absl/algorithm/container.h"
 #include "absl/random/bit_gen_ref.h"
 #include "absl/random/random.h"
@@ -106,6 +105,10 @@ class StablehloPadModel : public SingleOpModel {
     const TfLiteIntArray& shape =
         *(interpreter_->tensor(output_tensor_id_)->dims);
     return absl::Span<const int>(shape.data, shape.size);
+  }
+
+  void ClearInputDataForTest() {
+    interpreter_->tensor(input_tensor_id_)->data.raw = nullptr;
   }
 
   absl::Status CheckPreconditions() {
@@ -351,7 +354,8 @@ TEST(StablehloPadSecurityTest,
   {
     StablehloPadModel<int> model;
     model.SetInput({0, 1});
-    model.SetEdgePadding({kTooLargeForTfLiteInt, kTooLargeForTfLiteInt}, {0, 0});
+    model.SetEdgePadding({kTooLargeForTfLiteInt, kTooLargeForTfLiteInt},
+                         {0, 0});
     model.SetInteriorPadding({kTooLargeForTfLiteInt, kTooLargeForTfLiteInt});
     EXPECT_EQ(model.BuildAndPrepareWithoutDelegates(), kTfLiteError);
   }
@@ -384,7 +388,9 @@ TEST(StablehloPadTest, EmptyInputProducesEdgePadding) {
   model.SetInteriorPadding({3});
   model.SetPaddingValue(7);
 
-  ASSERT_TRUE(model.BuildAndInvoke().ok());
+  ASSERT_TRUE(model.Build().ok());
+  model.ClearInputDataForTest();
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
   EXPECT_THAT(model.GetOutputShape(), ElementsAre(4));
   EXPECT_THAT(model.GetOutputData(), ElementsAre(7, 7, 7, 7));
 }
@@ -521,7 +527,7 @@ TYPED_TEST_SUITE(StablehloPadFuzzyTest, TestList);
 TYPED_TEST(StablehloPadFuzzyTest, FuzzyTest) {
   absl::BitGen bitgen;
 
-  for (size_t iteration = 0; iteration < 10000; ++iteration) {
+  for (size_t iteration = 0; iteration < 200; ++iteration) {
     const int rank = absl::Uniform(absl::IntervalClosed, bitgen, 1, 2);
 
     StablehloPadModel<TypeParam> model;

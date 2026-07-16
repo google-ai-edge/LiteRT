@@ -36,7 +36,6 @@
 #include "litert/test/generators/generators.h"
 #include "litert/test/generators/one_hot.h"
 #include "tensor/arithmetic_graph.h"
-#include "tensor/datatypes.h"
 #include "tflite/schema/schema_generated.h"
 #include "tflite/types/half.h"
 
@@ -510,6 +509,19 @@ void RegisterSoftmax(const AtsConf& options, size_t& test_id, size_t iters,
 }
 
 template <typename Fixture>
+void RegisterPad(const AtsConf& options, size_t& test_id, size_t iters,
+                 typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Pad,
+      SizeListC<1, 2, 3, 4>,
+      TypeList<float, tflite::half>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
 void RegisterAll(const AtsConf& options, size_t& test_id,
                  typename Fixture::Capture& cap) {
   RegisterExtraModels<Fixture>(test_id, options, cap);
@@ -529,6 +541,7 @@ void RegisterAll(const AtsConf& options, size_t& test_id,
   RegisterFullyConnected<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterConcatenation<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterSoftmax<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterPad<Fixture>(options, test_id, /*iters=*/10, cap);
 }
 
 int Ats() {

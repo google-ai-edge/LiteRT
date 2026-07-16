@@ -55,9 +55,7 @@ impl Options {
             unsafe { LiteRtCreateOptions(&mut raw_options_ptr) },
             ErrorCause::CreateOptions
         );
-        Ok(Self {
-            raw_options: raw_options_ptr,
-        })
+        Ok(Self { raw_options: raw_options_ptr })
     }
 
     /// Creates a new set of options with the specified hardware accelerator.
@@ -110,9 +108,7 @@ impl CompiledModel {
             },
             ErrorCause::CreateCompiledModel
         );
-        Ok(CompiledModel {
-            raw_compiled_model: raw_compiled_model_ptr,
-        })
+        Ok(CompiledModel { raw_compiled_model: raw_compiled_model_ptr })
     }
 
     fn input_buffer_requirements(
@@ -213,13 +209,7 @@ impl CompiledModel {
         let tensor_type = tensor.ranked_tensor_type()?;
         let element_type = tensor.element_type()?;
         let buffer_size = requirements.buffer_size()?;
-        TensorBuffer::new(
-            environment,
-            &tensor_type,
-            buffer_type,
-            buffer_size,
-            element_type,
-        )
+        TensorBuffer::new(environment, &tensor_type, buffer_type, buffer_size, element_type)
     }
 
     /// Runs inference on the compiled model.
@@ -229,14 +219,9 @@ impl CompiledModel {
         input: &[TensorBuffer<'_>],
         output: &[TensorBuffer<'_>],
     ) -> Result<(), Error> {
-        let mut input_ptrs: Vec<_> = input
-            .iter()
-            .map(|tensor| tensor.raw_tensor_buffer)
-            .collect();
-        let mut output_ptrs: Vec<_> = output
-            .iter()
-            .map(|tensor| tensor.raw_tensor_buffer)
-            .collect();
+        let mut input_ptrs: Vec<_> = input.iter().map(|tensor| tensor.raw_tensor_buffer).collect();
+        let mut output_ptrs: Vec<_> =
+            output.iter().map(|tensor| tensor.raw_tensor_buffer).collect();
         call_check_status!(
             // SAFETY: self.raw_compiled_model is valid because it's created by calling the create() function.
             // input_ptrs and output_ptrs are valid because they are created in the function.
@@ -265,14 +250,9 @@ impl CompiledModel {
         input: &[TensorBuffer<'_>],
         output: &[TensorBuffer<'_>],
     ) -> Result<bool, Error> {
-        let mut input_ptrs: Vec<_> = input
-            .iter()
-            .map(|tensor| tensor.raw_tensor_buffer)
-            .collect();
-        let mut output_ptrs: Vec<_> = output
-            .iter()
-            .map(|tensor| tensor.raw_tensor_buffer)
-            .collect();
+        let mut input_ptrs: Vec<_> = input.iter().map(|tensor| tensor.raw_tensor_buffer).collect();
+        let mut output_ptrs: Vec<_> =
+            output.iter().map(|tensor| tensor.raw_tensor_buffer).collect();
         let mut ran_in_parallel_thread: bool = false;
         call_check_status!(
             // SAFETY: self.raw_compiled_model is valid because it's created by calling the create() function.
@@ -292,7 +272,6 @@ impl CompiledModel {
         );
         Ok(ran_in_parallel_thread)
     }
-
 }
 
 impl Drop for CompiledModel {

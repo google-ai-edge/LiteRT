@@ -39,6 +39,8 @@ pub type LiteRtTensorBuffer = *mut ::std::ffi::c_void;
 
 pub type LiteRtTensorBufferRequirements = *mut ::std::ffi::c_void;
 
+pub type LiteRtEvent = *mut ::std::ffi::c_void;
+
 pub type LiteRtStatus = ::std::os::raw::c_uint;
 
 pub type LiteRtHwAccelerators = ::std::os::raw::c_int;
@@ -678,6 +680,44 @@ pub fn LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
 pub fn LiteRtGetTensorBufferRequirementsBufferSize(
     requirements: LiteRtTensorBufferRequirements,
     buffer_size: *mut usize,
+) -> LiteRtStatus {
+    unimplemented!()
+}
+
+pub fn LiteRtHasTensorBufferEvent(
+    tensor_buffer: LiteRtTensorBuffer,
+    has_event: *mut bool,
+) -> LiteRtStatus {
+    unimplemented!()
+}
+
+pub fn LiteRtGetTensorBufferEvent(
+    tensor_buffer: LiteRtTensorBuffer,
+    event: *mut LiteRtEvent,
+) -> LiteRtStatus {
+    unimplemented!()
+}
+
+pub fn LiteRtSetTensorBufferEvent(
+    tensor_buffer: LiteRtTensorBuffer,
+    event: LiteRtEvent,
+) -> LiteRtStatus {
+    unimplemented!()
+}
+
+pub fn LiteRtIsEventSignaled(event: LiteRtEvent, is_signaled: *mut bool) -> LiteRtStatus {
+    unimplemented!()
+}
+
+pub fn LiteRtDestroyEvent(event: LiteRtEvent) {
+    unimplemented!()
+}
+
+pub fn LiteRtCreateEventFromSyncFenceFd(
+    env: LiteRtEnvironment,
+    fd: ::std::os::raw::c_int,
+    owns_fd: bool,
+    event: *mut LiteRtEvent,
 ) -> LiteRtStatus {
     unimplemented!()
 }

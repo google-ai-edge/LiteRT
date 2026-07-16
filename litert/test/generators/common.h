@@ -266,7 +266,11 @@ using FbOpTypes =
                        tflite::BuiltinOperator_SOFTMAX,
                        tflite::BuiltinOptions_SoftmaxOptions>,
         std::bool_constant<OpCode == kLiteRtOpCodeTflLogSoftmax>,
-            FbOpTraitsNoOptions<tflite::BuiltinOperator_LOG_SOFTMAX>
+            FbOpTraitsNoOptions<tflite::BuiltinOperator_LOG_SOFTMAX>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflPad>,
+            FbOpTraits<tflite::PadOptionsT,
+                       tflite::BuiltinOperator_PAD,
+                       tflite::BuiltinOptions_PadOptions>
     >;
 // clang-format on
 static_assert(FbOpTypes<kLiteRtOpCodeTflAdd>::kHasOptions);

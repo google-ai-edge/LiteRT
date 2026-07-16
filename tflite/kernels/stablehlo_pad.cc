@@ -14,7 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 #include <algorithm>
-#include <cassert>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -24,6 +24,7 @@ limitations under the License.
 #include "tflite/c/c_api_types.h"
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/common.h"
+#include "tflite/kernels/internal/compatibility.h"
 #include "tflite/kernels/kernel_util.h"
 #include "tflite/util.h"
 
@@ -33,49 +34,50 @@ namespace builtin {
 namespace stablehlo_pad {
 namespace {
 
-static constexpr int kMaxDims = TFLITE_STABLEHLO_PAD_PARAMS_MAX_DIMENSION_COUNT;
+constexpr int kMaxDims = TFLITE_STABLEHLO_PAD_PARAMS_MAX_DIMENSION_COUNT;
 
-/// Fills a buffer by repeatedly copying the given pattern.
-///
-/// WARNING: This expects `buffer.size()` to be a multiple of `data.size()`.
-void FillBuffer(absl::Span<char> buffer, absl::Span<const char> data) {
-  if (buffer.empty()) {
+// Fills a buffer with the given data.
+//
+// WARNING: This expects buffer_bytes to be a multiple of data_bytes.
+void FillBuffer(char* buffer, int64_t buffer_bytes, const char* data,
+                int64_t data_bytes) {
+  if (buffer_bytes == 0) {
     return;
   }
-  assert(!data.empty());
-  assert(buffer.size() >= data.size());
-  if (data.empty() || buffer.size() < data.size()) {
-    return;
-  }
-  assert(buffer.size() % data.size() == 0);
-  std::memcpy(buffer.data(), data.data(), data.size());
-  size_t bytes_filled = data.size();
-  while (bytes_filled < buffer.size()) {
-    const size_t bytes = std::min(buffer.size() - bytes_filled, bytes_filled);
-    std::memcpy(buffer.data() + bytes_filled, buffer.data(), bytes);
-    bytes_filled += bytes;
+  TFLITE_DCHECK(buffer_bytes % data_bytes == 0);
+  std::memcpy(buffer, data, data_bytes);
+  buffer_bytes -= data_bytes;
+  while (buffer_bytes) {
+    const int64_t bytes = std::min(buffer_bytes, data_bytes);
+    std::memcpy(buffer + data_bytes, buffer, bytes);
+    buffer_bytes -= bytes;
+    data_bytes += bytes;
   }
 }
 
-/// Recursively copies a tensor region with independent input and output
-/// strides.
-void StridedCopy(const char* input, absl::Span<const int64_t> input_shape,
-                 absl::Span<const int64_t> input_strides, char* output,
-                 absl::Span<const int64_t> output_strides, int64_t element_size,
-                 int depth) {
-  const int rank = static_cast<int>(input_shape.size());
-  assert(input_strides.size() == input_shape.size());
-  assert(output_strides.size() == input_shape.size());
+// Recursive implementation of a strided copy of a tensor.
+void StridedCopy(const int rank, const char* input, const int64_t* input_shape,
+                 const int64_t* input_strides, char* output,
+                 const int64_t* output_strides, const int64_t element_size,
+                 const int depth) {
+  if (input_shape[depth] <= 0) {
+    return;
+  }
   if (depth + 1 == rank) {
-    for (int64_t i = 0; i < input_shape[depth]; ++i) {
-      std::memcpy(output, input, element_size);
-      input += input_strides[depth];
-      output += output_strides[depth];
+    if (output_strides[depth] == element_size &&
+        input_strides[depth] == element_size) {
+      std::memcpy(output, input, element_size * input_shape[depth]);
+    } else {
+      for (int64_t i = 0; i < input_shape[depth]; ++i) {
+        std::memcpy(output, input, element_size);
+        input += input_strides[depth];
+        output += output_strides[depth];
+      }
     }
   } else {
     for (int64_t i = 0; i < input_shape[depth]; ++i) {
-      StridedCopy(input, input_shape, input_strides, output, output_strides,
-                  element_size, depth + 1);
+      StridedCopy(rank, input, input_shape, input_strides, output,
+                  output_strides, element_size, depth + 1);
       input += input_strides[depth];
       output += output_strides[depth];
     }
@@ -103,19 +105,21 @@ class PadData {
   enum { kOutput, kOutputTensorCount };
 
   explicit PadData(const TfLiteStablehloPadParams& params) {
-    std::memcpy(
-        edge_pad_low_, params.edge_padding_low,
-        TFLITE_STABLEHLO_PAD_PARAMS_MAX_DIMENSION_COUNT * sizeof(int64_t));
-    std::memcpy(
-        edge_pad_high_, params.edge_padding_high,
-        TFLITE_STABLEHLO_PAD_PARAMS_MAX_DIMENSION_COUNT * sizeof(int64_t));
-    std::memcpy(
-        interior_pad_, params.interior_padding,
-        TFLITE_STABLEHLO_PAD_PARAMS_MAX_DIMENSION_COUNT * sizeof(int64_t));
+    std::memcpy(edge_pad_low_, params.edge_padding_low, sizeof(edge_pad_low_));
+    std::memcpy(edge_pad_high_, params.edge_padding_high,
+                sizeof(edge_pad_high_));
+    std::memcpy(interior_pad_, params.interior_padding, sizeof(interior_pad_));
   }
 
-  /// Computes the shapes and strides that are needed for the final strided
-  /// copy.
+  /**
+   * Computes the shapes and strides that are needed for the final strided
+   * copy.
+   * @param context The TFLite context used for error reporting and validation.
+   * @param dims The dimensions of the input tensor.
+   * @param element_size The size in bytes of each element in the input tensor.
+   *        Must be equal or less than the max value of int.
+   * @return kTfLiteOk on success, or kTfLiteError if validation fails.
+   */
   TfLiteStatus Setup(TfLiteContext* context, absl::Span<const int> dims,
                      int64_t element_size) {
     TF_LITE_ENSURE_MSG(
@@ -134,8 +138,8 @@ class PadData {
     has_input_copy_ = false;
 
     // Compute the output shape.
-    int input_dims[kMaxDims];
-    int output_dims[kMaxDims];
+    std::array<int, kMaxDims> input_dims;
+    std::array<int, kMaxDims> output_dims;
     for (int i = 0; i < rank; ++i) {
       TF_LITE_ENSURE_MSG(context, dims[i] >= 0,
                          "StableHLO Pad input dimensions must be "
@@ -179,9 +183,9 @@ class PadData {
     }
     size_t input_elements = 0;
     TF_LITE_ENSURE_OK(
-        context, CheckedShapeProduct(
-                     context, input_dims, rank,
-                     "StableHLO Pad input size overflowed.", input_elements));
+        context, CheckedShapeProduct(context, input_dims.data(), rank,
+                                     "StableHLO Pad input size overflowed.",
+                                     input_elements));
     size_t input_bytes = 0;
     TF_LITE_ENSURE_MSG(context,
                        MultiplyAndCheckOverflow(
@@ -190,9 +194,9 @@ class PadData {
                        "StableHLO Pad input byte size overflowed.");
     size_t output_elements = 0;
     TF_LITE_ENSURE_OK(
-        context, CheckedShapeProduct(
-                     context, output_dims, rank,
-                     "StableHLO Pad output size overflowed.", output_elements));
+        context, CheckedShapeProduct(context, output_dims.data(), rank,
+                                     "StableHLO Pad output size overflowed.",
+                                     output_elements));
     size_t output_bytes = 0;
     TF_LITE_ENSURE_MSG(context,
                        MultiplyAndCheckOverflow(
@@ -354,17 +358,12 @@ class PadData {
 
   void Apply(const char* input, const char* padding_value, char* output) const {
     // Fill the output tensor with the padding value.
-    FillBuffer(
-        absl::MakeSpan(output, output_size_),
-        absl::MakeConstSpan(padding_value, static_cast<size_t>(element_size_)));
-    if (output_size_ == 0 || !has_input_copy_) {
+    FillBuffer(output, output_size_, padding_value, element_size_);
+    if (!has_input_copy_) {
       return;
     }
-    const int rank = static_cast<int>(rank_);
-    StridedCopy(input + input_offset_, absl::MakeConstSpan(input_shape_, rank),
-                absl::MakeConstSpan(input_strides_, rank),
-                output + output_offset_,
-                absl::MakeConstSpan(output_strides_, rank), element_size_,
+    StridedCopy(rank_, input + input_offset_, input_shape_, input_strides_,
+                output + output_offset_, output_strides_, element_size_,
                 /*depth=*/0);
   }
 

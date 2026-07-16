@@ -44,7 +44,8 @@ struct TensorInit {
   Type type = Type::kUnknown;
   Shape shape;
   std::variant<std::shared_ptr<Buffer>, std::vector<float>,
-               std::vector<int32_t>, std::vector<int8_t>, std::vector<int4_t>>
+               std::vector<int32_t>, std::vector<int8_t>, std::vector<int4_t>,
+               float, double, int8_t, int32_t, int64_t>
       buffer;
   std::shared_ptr<Quantization> quantization;
 };

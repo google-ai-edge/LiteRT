@@ -93,26 +93,26 @@ inline void GetPadding(const PaddingMatrixData& padding_matrix,
 
 /// Builds a typed span view over the padding matrix tensor data.
 TfLiteStatus GetPaddingMatrixData(TfLiteContext* context,
-                                  const TfLiteTensor* padding_matrix,
-                                  PaddingMatrixData* padding_data) {
+                                  const TfLiteTensor& padding_matrix,
+                                  PaddingMatrixData& padding_data) {
   size_t padding_count = 0;
   TF_LITE_ENSURE_MSG(
-      context, CheckedNumElements(padding_matrix, padding_count) == kTfLiteOk,
+      context, CheckedNumElements(&padding_matrix, padding_count) == kTfLiteOk,
       "MirrorPad paddings size overflowed.");
   TF_LITE_ENSURE(context, padding_count % 2 == 0);
-  padding_data->type = padding_matrix->type;
-  padding_data->num_dims = padding_count / 2;
-  switch (padding_matrix->type) {
+  padding_data.type = padding_matrix.type;
+  padding_data.num_dims = padding_count / 2;
+  switch (padding_matrix.type) {
     case kTfLiteInt32: {
-      const int32_t* data = GetTensorData<int32_t>(padding_matrix);
+      const int32_t* data = GetTensorData<int32_t>(&padding_matrix);
       TF_LITE_ENSURE(context, data != nullptr || padding_count == 0);
-      padding_data->i32 = absl::MakeConstSpan(data, padding_count);
+      padding_data.i32 = absl::MakeConstSpan(data, padding_count);
       return kTfLiteOk;
     }
     case kTfLiteInt64: {
-      const int64_t* data = GetTensorData<int64_t>(padding_matrix);
+      const int64_t* data = GetTensorData<int64_t>(&padding_matrix);
       TF_LITE_ENSURE(context, data != nullptr || padding_count == 0);
-      padding_data->i64 = absl::MakeConstSpan(data, padding_count);
+      padding_data.i64 = absl::MakeConstSpan(data, padding_count);
       return kTfLiteOk;
     }
     default:
@@ -264,7 +264,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
       context, ValidatePaddingMatrix(context, input_tensor, padding_matrix));
   PaddingMatrixData padding_data;
   TF_LITE_ENSURE_OK(
-      context, GetPaddingMatrixData(context, padding_matrix, &padding_data));
+      context, GetPaddingMatrixData(context, *padding_matrix, padding_data));
   const int input_dims = NumDimensions(input_tensor);
 
   TfLiteTensor* output_tensor;
@@ -397,7 +397,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   // We have constant padding, so we can infer output size.
   PaddingMatrixData padding_data;
   TF_LITE_ENSURE_OK(
-      context, GetPaddingMatrixData(context, padding_matrix, &padding_data));
+      context, GetPaddingMatrixData(context, *padding_matrix, padding_data));
   std::unique_ptr<TfLiteIntArray, void (*)(TfLiteIntArray*)> output_size(
       nullptr, TfLiteIntArrayFree);
   TF_LITE_ENSURE_OK(context, GetPaddedOutputShape(context, input_tensor, offset,

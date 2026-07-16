@@ -12,17 +12,16 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
-
 #include <array>
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
 #include <vector>
 
-#include "Eigen/Core"  // from @eigen_archive
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
 #include "absl/types/span.h"
+#include "Eigen/Core"  // from @eigen_archive
 #include "tflite/c/c_api_types.h"
 #include "tflite/core/interpreter.h"
 #include "tflite/kernels/test_util.h"
@@ -240,6 +239,15 @@ TEST_F(PadOpTest, RejectsOutputDimensionOverflow) {
       std::numeric_limits<int32_t>::max(), 1};
   PrepareOnlyPadOpConstModel<int32_t> m(
       {TensorType_FLOAT32, {1}}, absl::MakeConstSpan(kPaddingsShape),
+      absl::MakeConstSpan(kPaddings), {TensorType_FLOAT32});
+  EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
+}
+
+TEST_F(PadOpTest, RejectsGenericOutputSizeOverflow) {
+  constexpr std::array<int, 2> kPaddingsShape = {2, 2};
+  constexpr std::array<int32_t, 4> kPaddings = {49999, 0, 49999, 0};
+  PrepareOnlyPadOpConstModel<int32_t> m(
+      {TensorType_FLOAT32, {1, 1}}, absl::MakeConstSpan(kPaddingsShape),
       absl::MakeConstSpan(kPaddings), {TensorType_FLOAT32});
   EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
 }
@@ -786,12 +794,28 @@ class PadV2OpTest : public ::testing::Test {};
 // A zero-element input has no data buffer. PADV2 must handle this case without
 // passing a null pointer to the optimized copy implementation.
 TEST_F(PadV2OpTest, ZeroElementInputDoesNotPassNullData) {
-  PadV2OpConstModel<float, int16_t> m(
-      {TensorType_FLOAT32, {0}}, {1, 2}, {0, 0}, 0.0f,
-      {TensorType_FLOAT32});
+  PadV2OpConstModel<float, int16_t> m({TensorType_FLOAT32, {0}}, {1, 2}, {0, 0},
+                                      0.0f, {TensorType_FLOAT32});
   ASSERT_EQ(m.Invoke(), kTfLiteOk);
   EXPECT_TRUE(m.GetOutput().empty());
   EXPECT_THAT(m.GetOutputShape(), ElementsAreArray({0}));
+}
+
+TEST_F(PadV2OpTest, ZeroElementInputCanProduceNonEmptyOutput) {
+  PadV2OpConstModel<float, int16_t> m({TensorType_FLOAT32, {0}}, {1, 2}, {1, 1},
+                                      3.0f, {TensorType_FLOAT32});
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+  EXPECT_THAT(m.GetOutput(), ElementsAreArray({3.0f, 3.0f}));
+  EXPECT_THAT(m.GetOutputShape(), ElementsAreArray({2}));
+}
+
+TEST_F(PadV2OpTest, ImageStyleEmptyWidthProducesPadding) {
+  PadV2OpConstModel<float, int32_t> m({TensorType_FLOAT32, {1, 1, 0, 1}},
+                                      {4, 2}, {0, 0, 0, 0, 1, 1, 0, 0}, 0.0f,
+                                      {TensorType_FLOAT32});
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+  EXPECT_THAT(m.GetOutput(), ElementsAreArray({0.0f, 0.0f}));
+  EXPECT_THAT(m.GetOutputShape(), ElementsAreArray({1, 1, 2, 1}));
 }
 
 TEST_F(PadV2OpTest, RejectsOutputDimensionOverflow) {

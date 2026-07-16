@@ -29,7 +29,6 @@ const CARGO_CFG_TARGET_ARCH_ENV_VAR: &str = "CARGO_CFG_TARGET_ARCH";
 // If we are generating docuemntation in hermetic environment for docs.rs
 const CARGO_DOCS_RS: &str = "DOCS_RS";
 
-
 // The version of LiteRT SDK to be used.
 // It's defined as a macro, so it can be used inside concat! macros below.
 macro_rules! litert_sdk_version {
@@ -38,11 +37,8 @@ macro_rules! litert_sdk_version {
     };
 }
 
-const LITERT_RUNTIME_DOWNLOAD_URL: &str = concat!(
-    "https://storage.googleapis.com/litert/binaries/",
-    litert_sdk_version!(),
-    "/"
-);
+const LITERT_RUNTIME_DOWNLOAD_URL: &str =
+    concat!("https://storage.googleapis.com/litert/binaries/", litert_sdk_version!(), "/");
 const LITERT_CC_SDK_DOWNLOAD_URL: &str = concat!(
     "https://github.com/google-ai-edge/LiteRT/releases/download/v",
     litert_sdk_version!(),
@@ -61,19 +57,19 @@ enum Platform {
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 enum LiteRtAccelerator {
-    None,
+    Metal,
     OpenGL,
     WebGPU,
-    Metal,
+    None,
 }
 
 impl LiteRtAccelerator {
     fn as_str(&self) -> &str {
         match self {
-            Self::None => "none",
+            Self::Metal => "metal",
             Self::OpenGL => "opengl",
             Self::WebGPU => "webgpu",
-            Self::Metal => "metal",
+            Self::None => "none",
         }
     }
 }
@@ -95,55 +91,111 @@ impl TargetPlatform {
         // Detect accelerator based on the features in Cargo.toml.
         let accelerator = if env::var("CARGO_FEATURE_METAL").is_ok() {
             LiteRtAccelerator::Metal
-        } else if env::var("CARGO_FEATURE_OPENGL").is_ok() {
-            LiteRtAccelerator::OpenGL
         } else if env::var("CARGO_FEATURE_WEBGPU").is_ok() {
             LiteRtAccelerator::WebGPU
+        } else if env::var("CARGO_FEATURE_OPENGL").is_ok() {
+            LiteRtAccelerator::OpenGL
         } else {
             LiteRtAccelerator::None
         };
         info!("Target accelerator {}", accelerator.as_str());
 
         match (os.as_str(), arch.as_str(), accelerator.as_str()) {
-            ("android", "aarch64", "none") => Ok(TargetPlatform{platform:Platform::AndroidArm64, accelerator:LiteRtAccelerator::None}),
-            ("android", "x86_64", "none") => Ok(TargetPlatform{platform:Platform::AndroidX86, accelerator:LiteRtAccelerator::None}),
-            ("linux", "aarch64", "none") => Ok(TargetPlatform{platform:Platform::LinuxArm64, accelerator:LiteRtAccelerator::None}),
-            ("linux", "x86_64", "none") => Ok(TargetPlatform{platform:Platform::LinuxX86, accelerator:LiteRtAccelerator::None}),
-            ("macos", "aarch64", "none") => Ok(TargetPlatform{platform:Platform::MacosArm64, accelerator:LiteRtAccelerator::None}),
-            ("macos", "aarch64", "metal") => Ok(TargetPlatform{platform:Platform::MacosArm64, accelerator:LiteRtAccelerator::Metal}),
-            ("windows", "x86_64", "none") => Ok(TargetPlatform{platform:Platform::WindowsX86, accelerator:LiteRtAccelerator::None}),
-            _ => Err(format!("Unknown target platform os:{} aarch:{} accelerator:{}", os, arch, accelerator.as_str())),
+            ("android", "aarch64", "none") => Ok(TargetPlatform {
+                platform: Platform::AndroidArm64,
+                accelerator: LiteRtAccelerator::None,
+            }),
+            ("android", "aarch64", "opengl") => Ok(TargetPlatform {
+                platform: Platform::AndroidArm64,
+                accelerator: LiteRtAccelerator::OpenGL,
+            }),
+            ("android", "x86_64", "none") => Ok(TargetPlatform {
+                platform: Platform::AndroidX86,
+                accelerator: LiteRtAccelerator::None,
+            }),
+            ("android", "x86_64", "opengl") => Ok(TargetPlatform {
+                platform: Platform::AndroidX86,
+                accelerator: LiteRtAccelerator::OpenGL,
+            }),
+            ("linux", "aarch64", "none") => Ok(TargetPlatform {
+                platform: Platform::LinuxArm64,
+                accelerator: LiteRtAccelerator::None,
+            }),
+            ("linux", "aarch64", "webgpu") => Ok(TargetPlatform {
+                platform: Platform::LinuxArm64,
+                accelerator: LiteRtAccelerator::WebGPU,
+            }),
+            ("linux", "x86_64", "none") => Ok(TargetPlatform {
+                platform: Platform::LinuxX86,
+                accelerator: LiteRtAccelerator::None,
+            }),
+            ("linux", "x86_64", "webgpu") => Ok(TargetPlatform {
+                platform: Platform::LinuxX86,
+                accelerator: LiteRtAccelerator::WebGPU,
+            }),
+            ("macos", "aarch64", "none") => Ok(TargetPlatform {
+                platform: Platform::MacosArm64,
+                accelerator: LiteRtAccelerator::None,
+            }),
+            ("macos", "aarch64", "metal") => Ok(TargetPlatform {
+                platform: Platform::MacosArm64,
+                accelerator: LiteRtAccelerator::Metal,
+            }),
+            ("windows", "x86_64", "none") => Ok(TargetPlatform {
+                platform: Platform::WindowsX86,
+                accelerator: LiteRtAccelerator::None,
+            }),
+            ("windows", "x86_64", "webgpu") => Ok(TargetPlatform {
+                platform: Platform::WindowsX86,
+                accelerator: LiteRtAccelerator::WebGPU,
+            }),
+            _ => Err(format!(
+                "Unknown target platform os:{} aarch:{} accelerator:{}",
+                os,
+                arch,
+                accelerator.as_str()
+            )),
         }
     }
 
     // See https://ai.google.dev/edge/litert/next/cpp_sdk
     fn runtime_name(&self) -> String {
-        match (self.platform, self.accelerator) {
-            (Platform::AndroidArm64, LiteRtAccelerator::None)
-            | (Platform::AndroidX86, LiteRtAccelerator::None)
-            | (Platform::LinuxArm64, LiteRtAccelerator::None)
-            | (Platform::LinuxX86, LiteRtAccelerator::None) => "libLiteRt.so".to_string(),
-            (Platform::MacosArm64, LiteRtAccelerator::None)
-            | (Platform::MacosArm64, LiteRtAccelerator::Metal)
-                => "libLiteRt.dylib".to_string(),
-            (Platform::WindowsX86, LiteRtAccelerator::None) => "libLiteRt.dll".to_string(),
-            _ => "libLiteRt.dll".to_string(),
+        match self.platform {
+            Platform::AndroidArm64
+            | Platform::AndroidX86
+            | Platform::LinuxArm64
+            | Platform::LinuxX86 => "libLiteRt.so".to_string(),
+            Platform::MacosArm64 => "libLiteRt.dylib".to_string(),
+            Platform::WindowsX86 => "libLiteRt.dll".to_string(),
         }
     }
 
     fn accelerator_runtime_name(&self) -> Option<String> {
-        match self.accelerator {
-            LiteRtAccelerator::Metal => Some("libLiteRtMetalAccelerator.dylib".to_string()),
+        match (self.platform, self.accelerator) {
+            (Platform::AndroidArm64, LiteRtAccelerator::OpenGL) => {
+                Some("libLiteRtClGlAccelerator.so".to_string())
+            }
+            (Platform::AndroidX86, LiteRtAccelerator::OpenGL) => {
+                Some("libLiteRtClGlAccelerator.so".to_string())
+            }
+            (Platform::LinuxArm64, LiteRtAccelerator::WebGPU) => {
+                Some("libLiteRtWebGpuAccelerator.so".to_string())
+            }
+            (Platform::LinuxX86, LiteRtAccelerator::WebGPU) => {
+                Some("libLiteRtWebGpuAccelerator.so".to_string())
+            }
+            (Platform::MacosArm64, LiteRtAccelerator::Metal) => {
+                Some("libLiteRtMetalAccelerator.dylib".to_string())
+            }
+            (Platform::WindowsX86, LiteRtAccelerator::WebGPU) => {
+                Some("libLiteRtWebGpuAccelerator.dll".to_string())
+            }
             _ => None,
         }
     }
 
     fn runtime_link_name(&self) -> String {
-        match (self.platform, self.accelerator) {
-            (Platform::MacosArm64, LiteRtAccelerator::Metal)
-                => "LiteRtMetalAccelerator".to_string(),
-            _ => "LiteRt".to_string(),
-        }
+        "LiteRt".to_string()
     }
 
     fn runtime_directory(&self) -> String {
@@ -329,8 +381,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if is_doc_gen {
         info!("Skipping heavy lifting because we are just building docs!");
-        println!("cargo::rustc-check-cfg=cfg(docsrs)");
         println!("cargo::rustc-cfg=docsrs");
+        // Force async support for docs.rs
+        println!("cargo::rustc-cfg=async_support");
         return Ok(());
     }
     println!("cargo::rerun-if-changed=build/build.rs");

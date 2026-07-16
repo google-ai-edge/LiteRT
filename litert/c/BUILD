@@ -490,7 +490,7 @@ cc_test(
 #         "//litert/cc:litert_any",
 #         "//litert/cc:litert_layout",
 #         "//litert/test:matchers",
-#         "//third_party/odml/litert/ml_drift/delegate:buffer_handler_opencl",
+#         "//ml_drift_delegate/delegate:buffer_handler_opencl",
 #     ],
 # )
 #
@@ -520,10 +520,10 @@ cc_test(
 #         "//litert/cc:litert_layout",
 #         "//litert/runtime:event",
 #         "//litert/test:matchers",
-#         "//third_party/odml/litert/ml_drift/delegate:buffer_handler_opencl",
-#         "//third_party/odml/litert/ml_drift/delegate:buffer_handler_vulkan",
-#         "//third_party/odml/litert/ml_drift/delegate:buffer_handler_webgpu",
-#         "//third_party/odml/litert/ml_drift/delegate:shared_vulkan_env",
+#         "//ml_drift_delegate/delegate:buffer_handler_opencl",
+#         "//ml_drift_delegate/delegate:buffer_handler_vulkan",
+#         "//ml_drift_delegate/delegate:buffer_handler_webgpu",
+#         "//ml_drift_delegate/delegate:shared_vulkan_env",
 #         "//third_party/vulkan_loader",
 #     ],
 # )

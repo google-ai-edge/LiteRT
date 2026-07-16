@@ -1,0 +1,57 @@
+// Copyright 2026 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+include "third_party/ml_drift/common/task/serialization_base.fbs";
+
+namespace ml_drift.cache.schema;
+
+table Buffer {
+  // global_tensor_id for the tensor_descriptor.
+  global_tensor_id:uint32;
+
+  // Quantization parameter tensors exist in a different global tensor id space.
+  // This field and global_tensor_id must be used together to identify an entry.
+  is_quantization_param_tensor:bool;
+
+  // TensorDescriptor for the tensor. Its data field is empty and its original
+  // buffer data is stored at the offset.
+  tensor_descriptor:ml_drift.data.TensorDescriptor;
+
+  // The buffer data is appended after the flatbuffer to bypass 2GB file size
+  // limitation. The offset is calculated relative to the base offset.
+  // (i.e. beginning of the file + base_offset).
+  offset:uint64;
+
+  // Size of the buffer in bytes.
+  size:uint64;
+}
+
+table SubgraphBufferList {
+  // Unique identifier for the subgraph.
+  unique_model_identifier:uint64;
+
+  // A list of buffers for this subgraph.
+  buffers:[Buffer];
+
+  // Defines the base offset for the data in the file. That offset
+  // may be needed to guarantee data alignment.
+  base_offset:uint64;
+}
+
+table ModelCache {
+  // A list of buffer lists for each subgraph.
+  subgraphs:[SubgraphBufferList];
+}
+
+root_type ModelCache;

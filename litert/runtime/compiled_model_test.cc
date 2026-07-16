@@ -70,7 +70,7 @@
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
-#include "third_party/odml/litert/ml_drift/delegate/buffer_handler_opencl.h"
+#include "ml_drift_delegate/delegate/buffer_handler_opencl.h"
 #include "tflite/interpreter.h"
 
 namespace litert {
