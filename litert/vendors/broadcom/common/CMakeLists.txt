@@ -5,6 +5,10 @@ add_library(bstorm_util_litert STATIC
   bstorm_util_litert.cc
 )
 
+set_target_properties(bstorm_util_litert PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+)
+
 target_include_directories(bstorm_util_litert PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}
 )
