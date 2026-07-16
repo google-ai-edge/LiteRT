@@ -42,7 +42,7 @@
 #include "ml_drift/pelong/gl_inference_context.h"  // from @ml_drift
 #include "ml_drift/pelong/gl_spatial_tensor.h"  // from @ml_drift
 // clang-format off
-#include "third_party/odml/infra/ml_drift_delegate/serialization_weight_cache/serialization_weight_cache.h"
+#include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 // clang-format on
 #include "third_party/odml/infra/ml_drift_delegate/util.h"
 #include "litert/c/internal/litert_runtime_context.h"

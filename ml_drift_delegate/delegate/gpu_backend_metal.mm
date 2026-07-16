@@ -33,10 +33,10 @@
 #include "ml_drift/metal/metal_weights_manager.h"  // from @ml_drift
 #include "third_party/odml/infra/ml_drift_delegate/delegate_data_util.h"
 #include "third_party/odml/infra/ml_drift_delegate/ml_drift_metal_benchmark_util.h"
-#include "third_party/odml/infra/ml_drift_delegate/serialization_weight_cache/serialization_weight_cache.h"
 #include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager_metal.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
+#include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 
 namespace litert::ml_drift {
 namespace {

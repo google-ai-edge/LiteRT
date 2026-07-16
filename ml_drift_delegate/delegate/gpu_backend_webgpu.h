@@ -46,7 +46,7 @@
 #include "ml_drift/webgpu/spatial_tensor.h"  // from @ml_drift
 #include "ml_drift/webgpu/webgpu_headers.h"  // from @ml_drift
 // clang-format off
-#include "third_party/odml/infra/ml_drift_delegate/serialization_weight_cache/serialization_weight_cache.h"
+#include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 // clang-format on
 #include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager.h"
 #include "third_party/odml/infra/ml_drift_delegate/util.h"

@@ -35,7 +35,6 @@
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/serialization_weight_cache/mmap_handle.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
@@ -47,6 +46,7 @@
 #include "ml_drift_delegate/delegate/cache/simple_cache.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
 #include "ml_drift_delegate/delegate/gpu_backend_opencl.h"
+#include "ml_drift_delegate/delegate/serialization_weight_cache/mmap_handle.h"
 #include <CL/cl_platform.h>
 
 #if LITERT_HAS_OPENGL_SUPPORT

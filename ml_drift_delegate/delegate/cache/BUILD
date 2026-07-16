@@ -12,8 +12,8 @@ cc_library(
     srcs = ["simple_cache.cc"],
     hdrs = ["simple_cache.h"],
     deps = [
-        "//third_party/odml/infra/ml_drift_delegate/serialization_weight_cache:file_util",
-        "//third_party/odml/infra/ml_drift_delegate/serialization_weight_cache:mmap_handle",
+        "//ml_drift_delegate/delegate/serialization_weight_cache:file_util",
+        "//ml_drift_delegate/delegate/serialization_weight_cache:mmap_handle",
         "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
@@ -27,8 +27,8 @@ cc_test(
     srcs = ["simple_cache_test.cc"],
     deps = [
         ":simple_cache",
-        "//third_party/odml/infra/ml_drift_delegate/serialization_weight_cache:file_util",
-        "//third_party/odml/infra/ml_drift_delegate/serialization_weight_cache:mmap_handle",
+        "//ml_drift_delegate/delegate/serialization_weight_cache:file_util",
+        "//ml_drift_delegate/delegate/serialization_weight_cache:mmap_handle",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/types:span",
@@ -43,7 +43,7 @@ cc_library(
     deps = [
         ":simple_cache",
         ":webgpu_pipeline_cache_cc_fbs",
-        "//third_party/odml/infra/ml_drift_delegate/serialization_weight_cache:mmap_handle",
+        "//ml_drift_delegate/delegate/serialization_weight_cache:mmap_handle",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",

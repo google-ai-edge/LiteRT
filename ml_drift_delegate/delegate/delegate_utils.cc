@@ -15,7 +15,6 @@
 #include "ml_drift_delegate/delegate/delegate_utils.h"
 
 #include "litert/c/internal/litert_runtime_context.h"
-#include "litert/c/litert_common.h"
 #include "tflite/core/c/common.h"
 
 namespace litert::ml_drift {

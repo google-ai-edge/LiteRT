@@ -21,8 +21,8 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "third_party/odml/infra/ml_drift_delegate/serialization_weight_cache/mmap_handle.h"
 #include "ml_drift_delegate/delegate/cache/simple_cache.h"
+#include "ml_drift_delegate/delegate/serialization_weight_cache/mmap_handle.h"
 
 namespace litert::ml_drift {
 

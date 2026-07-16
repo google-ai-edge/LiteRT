@@ -27,8 +27,8 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/status.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/serialization_weight_cache/file_util.h"
-#include "third_party/odml/infra/ml_drift_delegate/serialization_weight_cache/mmap_handle.h"
+#include "ml_drift_delegate/delegate/serialization_weight_cache/file_util.h"
+#include "ml_drift_delegate/delegate/serialization_weight_cache/mmap_handle.h"
 
 namespace litert::ml_drift {
 namespace {

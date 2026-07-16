@@ -22,10 +22,10 @@
 #include "ml_drift/common/executor.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/serialization_weight_cache/serialization_weight_cache.h"
 #include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/delegate_options.h"
 #include "ml_drift_delegate/delegate/incrementable_blocking_counter.h"
+#include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
 
 namespace weight_loader {

@@ -19,7 +19,7 @@
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "third_party/odml/infra/ml_drift_delegate/delegate_data_util.h"
 // clang-format off
-#include "third_party/odml/infra/ml_drift_delegate/serialization_weight_cache/serialization_weight_cache.h"
+#include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 // clang-format on
 #include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager.h"
 #include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager_webgpu_litert.h"
