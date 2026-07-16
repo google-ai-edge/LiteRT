@@ -82,6 +82,10 @@ class LlmLiteRtCompiledModelExecutorDynamic;
 class LlmLiteRtCompiledModelExecutorStatic;
 class LlmLiteRtCompiledModelExecutorBase;
 class LlmLiteRtMtpDrafter;
+// copybara:uncomment_begin(internal)
+// class DiffusionLlmLiteRtCompiledModelExecutor;
+// class SelfConditioningHandler;
+// copybara:uncomment_end
 }  // namespace lm
 
 namespace internal::compiled_model_detail {
@@ -335,6 +339,10 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   friend class lm::LlmLiteRtNpuCompiledModelExecutor;
   friend class lm::VisionLiteRtCompiledModelExecutor;
   friend class lm::LlmLiteRtMtpDrafter;
+  // copybara:uncomment_begin(internal)
+  // friend class lm::DiffusionLlmLiteRtCompiledModelExecutor;
+  // friend class lm::SelfConditioningHandler;
+  // copybara:uncomment_end
 
   CompiledModel() = default;
 
