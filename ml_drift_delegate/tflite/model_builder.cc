@@ -157,55 +157,40 @@ inline std::string GetTensorDebugString(const TfLiteTensor* tensor) {
   if (weights_tensor->quantization.type == kTfLiteAffineQuantization) {
     const auto* qparams = reinterpret_cast<TfLiteAffineQuantization*>(
         weights_tensor->quantization.params);
-    if (qparams && qparams->scale) {
-      if (copy_weights) {
-        attr.scale.data = std::vector<float>(
-            qparams->scale->data, qparams->scale->data + qparams->scale->size);
-      } else {
-        attr.scale.spanned_data =
-            absl::MakeSpan(qparams->scale->data, qparams->scale->size);
-      }
-      attr.scale.shape = ::ml_drift::OHWI(qparams->scale->size, 1, 1, 1);
-      if (qparams->zero_point) {
-        if (copy_weights) {
-          attr.zero_point.data = std::vector<int32_t>(
-              qparams->zero_point->data,
-              qparams->zero_point->data + qparams->zero_point->size);
-          if (!attr.zero_point.data.empty()) {
-            attr.zero_point.data.resize(qparams->scale->size,
-                                        attr.zero_point.data[0]);
-          } else {
-            attr.zero_point.data.resize(qparams->scale->size, 0);
-          }
-        } else {
-          // If the zero points have been de-duplicated, we need to broadcast
-          // them.
-          if (qparams->zero_point->size != qparams->scale->size) {
-            if (qparams->zero_point->size > 0) {
-              attr.zero_point.data.assign(qparams->scale->size,
-                                          qparams->zero_point->data[0]);
-            } else {
-              attr.zero_point.data.assign(qparams->scale->size, 0);
-            }
-          } else {
-            attr.zero_point.spanned_data = absl::MakeSpan(
-                qparams->zero_point->data, qparams->zero_point->size);
-          }
-        }
-      } else {
-        attr.zero_point.data.assign(qparams->scale->size, 0);
-      }
-      // TFLite assumes that scale and zero_point have the same logical shape.
-      // Since TFLite de-duplicates zero_point and its physical storage shape
-      // might  be shrinked from its logical shape, we should set zero_point's
-      // logical shape by scale's shape.
-      attr.zero_point.shape = ::ml_drift::OHWI(qparams->scale->size, 1, 1, 1);
-      if (reader->IsNodeInputTensorPresent(bias_node_input_index)) {
-        reader->ReadTensor(bias_node_input_index, &attr.bias,
-                           ReadTensorFlags::kNoExtraBytes);
-      }
-      return attr;
+    if (copy_weights) {
+      attr.scale.data = std::vector<float>(
+          qparams->scale->data, qparams->scale->data + qparams->scale->size);
+    } else {
+      attr.scale.spanned_data =
+          absl::MakeSpan(qparams->scale->data, qparams->scale->size);
     }
+    attr.scale.shape = ::ml_drift::OHWI(qparams->scale->size, 1, 1, 1);
+    if (copy_weights) {
+      attr.zero_point.data = std::vector<int32_t>(
+          qparams->zero_point->data,
+          qparams->zero_point->data + qparams->zero_point->size);
+      attr.zero_point.data.resize(qparams->scale->size,
+                                  attr.zero_point.data[0]);
+    } else {
+      // If the zero points have been de-duplicated, we need to broadcast them.
+      if (qparams->zero_point->size != qparams->scale->size) {
+        attr.zero_point.data.assign(qparams->scale->size,
+                                    qparams->zero_point->data[0]);
+      } else {
+        attr.zero_point.spanned_data = absl::MakeSpan(
+            qparams->zero_point->data, qparams->zero_point->size);
+      }
+    }
+    // TFLite assumes that scale and zero_point have the same logical shape.
+    // Since TFLite de-duplicates zero_point and its physical storage shape
+    // might  be shrinked from its logical shape, we should set zero_point's
+    // logical shape by scale's shape.
+    attr.zero_point.shape = ::ml_drift::OHWI(qparams->scale->size, 1, 1, 1);
+    if (reader->IsNodeInputTensorPresent(bias_node_input_index)) {
+      reader->ReadTensor(bias_node_input_index, &attr.bias,
+                         ReadTensorFlags::kNoExtraBytes);
+    }
+    return attr;
   }
 
   if (weights_tensor->quantization.type == kTfLiteBlockwiseQuantization) {
@@ -218,9 +203,7 @@ inline std::string GetTensorDebugString(const TfLiteTensor* tensor) {
             scale->data.f, scale->data.f + scale->bytes / sizeof(float));
       } else if (scale->type == kTfLiteFloat16) {
         const auto* scale2 = reinterpret_cast<TfLiteFloat16*>(scale->data.f16);
-        const int num_elements = scale->bytes / sizeof(TfLiteFloat16);
-        attr.scale.data.reserve(num_elements);
-        for (int i = 0; i < num_elements; ++i) {
+        for (int i = 0; i < scale->bytes / sizeof(TfLiteFloat16); ++i) {
           attr.scale.data.push_back(fp16_ieee_to_fp32_value(scale2[i].data));
         }
       } else {
@@ -333,8 +316,6 @@ void ConfigSharedWeightFullyConnectedNode(
     const int tflite_weights_tensor_index,
     const TfLiteTensor* const weights_tensor, ObjectReader* reader,
     ::ml_drift::GraphFloat32* graph, ::ml_drift::Node* node) {
-  const ObjectReader::ConstantInputSharingInfo weights_share =
-      reader->GetSharingInfoByTensorIndex(tflite_weights_tensor_index);
   ::ml_drift::Value* input;
   reader->ReadQuantizedValueByTensorIdx(tflite_weights_tensor_index, &input);
   const auto shape =
@@ -348,47 +329,12 @@ void ConfigSharedWeightFullyConnectedNode(
     scale_shape.i = shape.i / qparams->blocksize;
   }
 
-  const bool has_quant =
-      weights_tensor->quantization.type == kTfLiteAffineQuantization;
-  const auto* qparams = has_quant ? reinterpret_cast<TfLiteAffineQuantization*>(
-                                        weights_tensor->quantization.params)
-                                  : nullptr;
-
-  auto populate_quant_attrs = [&](auto& attr) {
-    if (qparams && qparams->scale) {
-      attr.scale.data = std::vector<float>(
-          qparams->scale->data, qparams->scale->data + qparams->scale->size);
-      attr.scale.shape = ::ml_drift::OHWI(qparams->scale->size, 1, 1, 1);
-
-      if (qparams->zero_point) {
-        attr.zero_point.data = std::vector<int32_t>(
-            qparams->zero_point->data,
-            qparams->zero_point->data + qparams->zero_point->size);
-        if (!attr.zero_point.data.empty()) {
-          attr.zero_point.data.resize(qparams->scale->size,
-                                      attr.zero_point.data[0]);
-        } else {
-          attr.zero_point.data.resize(qparams->scale->size, 0);
-        }
-      } else {
-        attr.zero_point.data.resize(qparams->scale->size, 0);
-      }
-      attr.zero_point.shape = ::ml_drift::OHWI(qparams->scale->size, 1, 1, 1);
-    }
-  };
-
   if (weights_tensor->type == kTfLiteInt8) {
     node->operation.type =
         ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT8);
     ::ml_drift::FullyConnectedInt8Attributes attr;
     attr.weights.shape = shape;
-    if (weights_tensor->data.raw_const != nullptr &&
-        !weights_share.HasExternalBufferId()) {
-      attr.weights.spanned_data =
-          absl::MakeSpan(weights_tensor->data.int8, weights_tensor->bytes);
-    }
     attr.scale.shape = scale_shape;
-    populate_quant_attrs(attr);
     node->operation.attributes = std::move(attr);
   } else if (weights_tensor->type == kTfLiteInt4) {
     node->operation.type =
@@ -397,14 +343,8 @@ void ConfigSharedWeightFullyConnectedNode(
     ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT4>
         int4_weights;
     int4_weights.shape = shape;
-    if (weights_tensor->data.raw_const != nullptr &&
-        !weights_share.HasExternalBufferId()) {
-      int4_weights.spanned_data =
-          absl::MakeSpan(weights_tensor->data.int8, weights_tensor->bytes);
-    }
     attr.weights = int4_weights;
     attr.scale.shape = scale_shape;
-    populate_quant_attrs(attr);
     node->operation.attributes = std::move(attr);
   } else if (weights_tensor->type == kTfLiteInt2) {
     node->operation.type =
@@ -413,14 +353,8 @@ void ConfigSharedWeightFullyConnectedNode(
     ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT2>
         int2_weights;
     int2_weights.shape = shape;
-    if (weights_tensor->data.raw_const != nullptr &&
-        !weights_share.HasExternalBufferId()) {
-      int2_weights.spanned_data =
-          absl::MakeSpan(weights_tensor->data.int8, weights_tensor->bytes);
-    }
     attr.weights = int2_weights;
     attr.scale.shape = scale_shape;
-    populate_quant_attrs(attr);
     node->operation.attributes = std::move(attr);
   }
   graph->AddConsumer(node->id, input->id);
@@ -1325,20 +1259,6 @@ class Conv2DOperationParser : public TFLiteOperationParser {
           PreCheckReadQuantizedValueByTensorIdx(context, weights_tensor_idx));
     }
 
-    const int runtime_inputs =
-        GetNumberOfRuntimeInputsForNode(context, tflite_node);
-    if (runtime_inputs == 2) {
-      auto status = PreCheckReadValue(context, tflite_node, kInputWeightsId);
-      if (!status.ok()) {
-        ABSL_LOG(INFO)
-            << "Conv2D: Weights tensor has unsupported properties for WebGPU "
-               "delegate (e.g. per-channel quantization). Gracefully falling "
-               "back to CPU. Details: "
-            << status.message();
-        return status;
-      }
-    }
-
     if (tflite::GetVariableInput(const_cast<TfLiteContext*>(context),
                                  tflite_node, kInputBiasId)) {
       RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, kInputBiasId));
@@ -1526,12 +1446,7 @@ class Conv2DOperationParser : public TFLiteOperationParser {
     node->operation.type = ToString(::ml_drift::OperationType::CONVOLUTION_2D);
     node->operation.attributes = std::move(attr);
     reader->AddInput(node, 0);
-    const int runtime_inputs = reader->GetNumberOfRuntimeInputs();
-    const bool shared_weights = weights_share.IsShared();
-    int node_input_index_for_weights = -1;
-    if (runtime_inputs == 2 || shared_weights) {
-      node_input_index_for_weights = 1;
-    }
+    // If the weights are shared, they will be passed as a runtime input.
     reader->AddInput(node, 1);
     if (shared_bias) {
       ::ml_drift::Value* bias_input =
@@ -1613,11 +1528,7 @@ class Conv2DOperationParser : public TFLiteOperationParser {
           src_shape.c /
           std::visit([](const auto& w) { return w.shape; }, attr.weights).i;
     }
-    const ObjectReader::ConstantInputSharingInfo bias_share =
-        reader->GetSharingInfoByNodeInputIndex(kInputBiasId);
-    const TfLiteTensor* bias_tensor = reader->GetInputTensor(kInputBiasId);
-    if (bias_tensor && bias_tensor->data.raw != nullptr &&
-        !bias_share.HasExternalBufferId()) {
+    if (reader->IsNodeInputTensorPresent(kInputBiasId)) {
       reader->ReadTensor(kInputBiasId, &attr.bias,
                          ReadTensorFlags::kNoExtraBytes,
                          options_.enable_spanned_weights);
@@ -1779,10 +1690,7 @@ class DepthwiseConvolutionOperationParser : public TFLiteOperationParser {
     const int runtime_inputs =
         GetNumberOfRuntimeInputsForNode(context, tflite_node);
     if (runtime_inputs == 2) {
-      auto status = PreCheckReadValue(context, tflite_node, 1);
-      if (!status.ok()) {
-        return status;
-      }
+      RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
     } else if (runtime_inputs == 1) {
       ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>
           dummy_weights;
@@ -1811,68 +1719,32 @@ class DepthwiseConvolutionOperationParser : public TFLiteOperationParser {
     node->operation.type =
         ToString(::ml_drift::OperationType::DEPTHWISE_CONVOLUTION);
     reader->AddInput(node, 0);
-
-    reader->AllowSharingInput(1);
-    reader->AllowSharingInput(2);
-    const ObjectReader::ConstantInputSharingInfo weights_share =
-        reader->GetSharingInfoByNodeInputIndex(1);
-
-    const auto* params = static_cast<const TfLiteDepthwiseConvParams*>(
-        tflite_node->builtin_data);
-    const int depth_multiplier = params ? params->depth_multiplier : 1;
-    // We cannot share weights if they need transposition (depth_multiplier !=
-    // 1) because we cannot perform transposition on shared/external buffers
-    // during parsing.
-    const bool can_share_weights = (depth_multiplier == 1);
-
-    const int runtime_inputs = reader->GetNumberOfRuntimeInputs();
-    const int weights_tensor_id = tflite_node->inputs->data[1];
-    const bool has_external_weights =
-        reader->GetSharingInfoByTensorIndex(weights_tensor_id)
-            .HasExternalBufferId();
-
-    int node_input_index_for_weights = -1;
-
-    const bool shared_weights =
-        (weights_share.IsShared() || has_external_weights) && can_share_weights;
-    if (runtime_inputs == 2 || shared_weights) {
-      node_input_index_for_weights = 1;
-    }
     reader->AddOutputs(node);
 
     ::ml_drift::DepthwiseConvolution2DAttributes attr;
     auto& weights = attr.weights.emplace<
         ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>();
-    if (runtime_inputs == 2 || shared_weights) {
+    const int runtime_inputs = reader->GetNumberOfRuntimeInputs();
+    if (runtime_inputs == 2) {
       reader->AddInput(node, 1);
       auto weights_shape = graph->FindInputs(node->id)[1]->tensor.shape;
       weights.shape = ::ml_drift::OHWI(weights_shape.b, weights_shape.h,
                                        weights_shape.w, weights_shape.c);
-      if (shared_weights) {
-        const auto node_inputs = graph->FindInputs(node->id);
-        const TfLiteTensor* weights_tensor = reader->GetInputTensor(1);
-        bool dequant_forced = weights_tensor->quantization.type ==
-                              TfLiteQuantizationType::kTfLiteAffineQuantization;
-        reader->SetSharedTensor(node_inputs[1]->id, weights_share.PreferredId(),
-                                tflite_node->inputs->data[1], dequant_forced,
-                                /*layout=*/std::nullopt);
-      }
     } else {  // runtime_inputs == 1;
       reader->ReadTensor(1, &weights, ReadTensorFlags::kExtraBytes);
     }
-    const ObjectReader::ConstantInputSharingInfo bias_share =
-        reader->GetSharingInfoByNodeInputIndex(2);
-    const TfLiteTensor* bias_tensor = reader->GetInputTensor(2);
-    if (bias_tensor && bias_tensor->data.raw != nullptr &&
-        !bias_share.HasExternalBufferId()) {
+    if (reader->IsNodeInputTensorPresent(2)) {
       reader->ReadTensor(2, &attr.bias, ReadTensorFlags::kNoExtraBytes);
     }
+    const auto* params = static_cast<const TfLiteDepthwiseConvParams*>(
+        tflite_node->builtin_data);
     attr.strides = ToHW(params->stride_height, params->stride_width);
     attr.dilations = ::ml_drift::HW(std::max(1, params->dilation_height_factor),
                                     std::max(1, params->dilation_width_factor));
     UpdatePadding(params->padding, graph->FindInputs(node->id)[0]->tensor.shape,
                   &attr);
     HandleFusedActivation(params->activation, graph, node);
+    const int depth_multiplier = params->depth_multiplier;
     if (depth_multiplier != 1) {
       const TfLiteTensor* input = reader->GetInputTensor(0);
       const TfLiteTensor* filter = reader->GetInputTensor(1);

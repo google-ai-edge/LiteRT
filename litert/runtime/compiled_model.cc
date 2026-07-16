@@ -506,21 +506,11 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     // backends.
     request.opencl = false;
     absl::Status prepare_status = weight_loader_->PrepareAccess(request, env);
-#ifdef __EMSCRIPTEN__
-      if (!prepare_status.ok()) {
-        LITERT_LOG(LITERT_WARNING,
-                  "External weight loader: failed to prepare CPU access: %s. "
-                  "Continuing as weights may be provided via other means (e.g. "
-                  "streaming).",
-                  std::string(prepare_status.message()).c_str());
-      }
-#else
     if (!prepare_status.ok()) {
       weight_loader_ = nullptr;
-        return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                  std::string(prepare_status.message()));
-      }
-#endif
+      return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                std::string(prepare_status.message()));
+    }
   }
 
   // Inform delegates and the other components about the weight loader.
@@ -916,19 +906,7 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
   // Load and restore external weights for CPU execution before delegates are
   // applied. This ensures that XNNPack and other CPU delegates can see the
   // weight data.
-  bool should_restore_cpu = false;
-#if defined(__EMSCRIPTEN__)
-  // On Web, only restore if CPU is the only requested accelerator,
-  // as we want to avoid loading weights to CPU when streaming to GPU.
-  should_restore_cpu = (hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
-                       !(hardware_accelerators &
-                         (kLiteRtHwAcceleratorGpu | kLiteRtHwAcceleratorNpu));
-#else
-  // On non-Web, always restore to support fallback and constant sharing.
-  should_restore_cpu = (hardware_accelerators & kLiteRtHwAcceleratorCpu);
-#endif
-
-  if (should_restore_cpu) {
+  if (hardware_accelerators & kLiteRtHwAcceleratorCpu) {
     LITERT_RETURN_IF_ERROR(compiled_model->RestoreExternalWeightsForCpu());
   }
 
