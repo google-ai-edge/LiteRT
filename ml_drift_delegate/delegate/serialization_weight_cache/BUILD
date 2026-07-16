@@ -57,8 +57,8 @@ cc_library(
     deps = [
         ":file_util",
         ":windows_util",
+        "//ml_drift_delegate/delegate:unowned_tensor_desc",
         "//tflite/c:common",
-        "//third_party/odml/infra/ml_drift_delegate:util",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
     ],
@@ -213,8 +213,8 @@ cc_library(
         "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/common/task:serialization_base",
         "@ml_drift//ml_drift/common/task:tensor_desc",
-        "//third_party/odml/infra/ml_drift_delegate",
-        "//third_party/odml/infra/ml_drift_delegate:util",
+        "//ml_drift_delegate/delegate:precision",
+        "//ml_drift_delegate/delegate:unowned_tensor_desc",
         "//tflite/c:common",
         "//tflite/delegates:serialization",
         # placeholder for farmhash_fingerprint

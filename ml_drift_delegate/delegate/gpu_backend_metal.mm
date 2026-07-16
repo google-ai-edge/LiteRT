@@ -31,10 +31,10 @@
 #include "ml_drift/metal/metal_device.h"  // from @ml_drift
 #include "ml_drift/metal/metal_spatial_tensor.h"  // from @ml_drift
 #include "ml_drift/metal/metal_weights_manager.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/delegate_data_util.h"
 #include "third_party/odml/infra/ml_drift_delegate/ml_drift_metal_benchmark_util.h"
 #include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager_metal.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
+#include "ml_drift_delegate/delegate/delegate_utils.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 
@@ -307,9 +307,10 @@ absl::Status GpuBackendMetal::ReadSpatialTensorToDescriptor(::ml_drift::GpuSpati
   return metal_tensor->ToDescriptor(&desc, device_->device());
 }
 
-absl::Status GpuBackendMetal::UpdateSpatialTensor(
-    ::ml_drift::GpuSpatialTensor* tensor, const ::ml_drift::TensorDescriptor& desc,
-    size_t page_adjusted_offset, ::ml_drift_delegate::ReleaseDataCallback release_data_callback) {
+absl::Status GpuBackendMetal::UpdateSpatialTensor(::ml_drift::GpuSpatialTensor* tensor,
+                                                  const ::ml_drift::TensorDescriptor& desc,
+                                                  size_t page_adjusted_offset,
+                                                  ReleaseDataCallback release_data_callback) {
   RETURN_IF_ERROR(ReleaseSpatialTensorMemory(tensor));
 
   auto* metal_tensor = static_cast<::ml_drift::metal::MetalSpatialTensor*>(tensor);
@@ -323,8 +324,7 @@ absl::Status GpuBackendMetal::UpdateSpatialTensor(
     const uint8_t* raw_data = data - page_adjusted_offset;
     size_t raw_size = size + page_adjusted_offset;
 
-    auto* release_cb_ptr =
-        new ::ml_drift_delegate::ReleaseDataCallback(std::move(release_data_callback));
+    auto* release_cb_ptr = new ReleaseDataCallback(std::move(release_data_callback));
     id<MTLBuffer> buffer =
         [device_->device() newBufferWithBytesNoCopy:const_cast<uint8_t*>(raw_data)
                                              length:raw_size

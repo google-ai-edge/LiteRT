@@ -19,7 +19,7 @@
 #include <memory>
 
 #include "absl/types/span.h"  // from @com_google_absl
-#include "third_party/odml/infra/ml_drift_delegate/ml_drift_delegate.h"
+#include "ml_drift_delegate/delegate/precision.h"
 #include "tflite/c/common.h"
 #include "util/hash/farmhash_fingerprint.h"
 
@@ -50,7 +50,6 @@
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/serialization_base.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/util.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/build_identifier.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/cache_builder.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/file_util.h"
@@ -289,9 +288,8 @@ absl::Status SerializationWeightCache::Load(int fd,
 
 absl::Status SerializationWeightCache::LookUp(
     uint32_t global_tensor_id, bool is_quantization_param_tensor,
-    ml_drift_delegate::UnownedDataTensorDescriptor& unowned_data_tensor_desc,
-    size_t& page_adjusted_offset,
-    ml_drift_delegate::ReleaseDataCallback& release_data_callback) {
+    UnownedDataTensorDescriptor& unowned_data_tensor_desc,
+    size_t& page_adjusted_offset, ReleaseDataCallback& release_data_callback) {
   if (IsBuilding()) {
     return absl::InvalidArgumentError(
         "Cannot look up a buffer in a cache that is building.");
@@ -324,7 +322,7 @@ absl::Status SerializationWeightCache::LookUp(
                                    file_path_.c_str()));
   page_adjusted_offset = mmap_handle->offset_page_adjustment();
 
-  unowned_data_tensor_desc = ::litert::ml_drift::UnownedDataTensorDescriptor(
+  unowned_data_tensor_desc = UnownedDataTensorDescriptor(
       tensor_desc_no_data,
       absl::MakeSpan(mmap_handle->data(), cache_entry.location.size));
 

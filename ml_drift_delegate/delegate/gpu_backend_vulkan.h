@@ -114,7 +114,7 @@ class GpuBackendVulkan : public GpuBackend {
   absl::Status UpdateSpatialTensor(
       ::ml_drift::GpuSpatialTensor* tensor,
       const ::ml_drift::TensorDescriptor& desc, size_t page_adjusted_offset,
-      ::ml_drift_delegate::ReleaseDataCallback release_data_callback) override;
+      ReleaseDataCallback release_data_callback) override;
   absl::Status ReleaseSpatialTensorMemory(
       ::ml_drift::GpuSpatialTensor* tensor) override;
   absl::StatusOr<std::unique_ptr<GpuIOBuffer>> CreateIOBuffer(

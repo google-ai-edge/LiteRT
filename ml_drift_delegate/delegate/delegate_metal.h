@@ -19,7 +19,6 @@
 #include <set>
 #include <string>
 
-#include "third_party/odml/infra/ml_drift_delegate/ml_drift_delegate.h"
 #include "litert/c/litert_common.h"
 #include "ml_drift_delegate/delegate/delegate_options.h"
 #include "ml_drift_delegate/delegate/delegate_types.h"

@@ -49,11 +49,10 @@
 #include "ml_drift/common/task/profiling_info.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/delegate_data_util.h"
-#include "third_party/odml/infra/ml_drift_delegate/ml_drift_delegate.h"
-#include "third_party/odml/infra/ml_drift_delegate/util.h"
+#include "ml_drift_delegate/delegate/delegate_utils.h"
+#include "ml_drift_delegate/delegate/precision.h"
 // clang-format off
-#include "third_party/odml/infra/ml_drift_delegate/quantization_util.h"
+#include "ml_drift_delegate/delegate/quantization_util.h"
 #include "third_party/odml/infra/ml_drift_delegate/serialization_program_cache/serialization_program_cache.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 // clang-format on
@@ -63,6 +62,7 @@
 #include "ml_drift_delegate/delegate/composite/litert_op_selector.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
 #include "ml_drift_delegate/delegate/incrementable_blocking_counter.h"
+#include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "ml_drift_delegate/tflite/model_builder.h"
 #include "ml_drift_delegate/tflite/object_reader.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
@@ -507,10 +507,9 @@ if (delegate_data_->options->convert_weights_on_gpu &&
 
           // Read the descriptor from the cache.
           ::ml_drift::TensorDescriptor descriptor;
-          ml_drift_delegate::UnownedDataTensorDescriptor
-              unowned_data_tensor_desc;
+          UnownedDataTensorDescriptor unowned_data_tensor_desc;
           size_t page_adjusted_offset;
-          ml_drift_delegate::ReleaseDataCallback release_data_callback;
+          ReleaseDataCallback release_data_callback;
           RETURN_IF_ERROR(shared_memory_serialization_cache->LookUp(
               global_id.value, global_id.IsParamId(), unowned_data_tensor_desc,
               page_adjusted_offset, release_data_callback));

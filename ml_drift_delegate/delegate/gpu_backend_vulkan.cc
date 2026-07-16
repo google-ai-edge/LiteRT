@@ -45,10 +45,8 @@
 #include "ml_drift/syrtis/environment.h"  // from @ml_drift
 #include "ml_drift/syrtis/vulkan_inference_context.h"  // from @ml_drift
 #include "ml_drift/syrtis/vulkan_spatial_tensor.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/delegate_data_util.h"
 #include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager.h"
 #include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager_vulkan.h"
-#include "third_party/odml/infra/ml_drift_delegate/util.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
@@ -56,9 +54,11 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
+#include "ml_drift_delegate/delegate/delegate_utils.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 #include "ml_drift_delegate/delegate/shared_vulkan_env.h"
+#include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "tflite/c/common.h"
 
 using ::ml_drift::syrtis::VulkanSpatialTensor;
@@ -282,7 +282,7 @@ absl::Status GpuBackendVulkan::ReadSpatialTensorToDescriptor(
 absl::Status GpuBackendVulkan::UpdateSpatialTensor(
     ::ml_drift::GpuSpatialTensor* tensor,
     const ::ml_drift::TensorDescriptor& desc, size_t page_adjusted_offset,
-    ::ml_drift_delegate::ReleaseDataCallback release_data_callback) {
+    ReleaseDataCallback release_data_callback) {
   return absl::UnimplementedError("UpdateSpatialTensor is not implemented.");
 }
 

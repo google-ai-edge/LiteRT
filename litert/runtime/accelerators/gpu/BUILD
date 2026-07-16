@@ -118,7 +118,7 @@ cc_library(
         "//litert/c/options:litert_gpu_options",
         "//ml_drift_delegate/delegate:delegate_options",
         "//ml_drift_delegate/delegate:delegate_types",
-        "//third_party/odml/infra/ml_drift_delegate",
+        "//ml_drift_delegate/delegate:precision",
     ],
 )
 

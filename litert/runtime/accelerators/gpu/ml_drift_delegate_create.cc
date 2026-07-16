@@ -17,7 +17,6 @@
 #include <memory>
 #include <utility>
 
-#include "third_party/odml/infra/ml_drift_delegate/ml_drift_delegate.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
 #include "litert/c/internal/litert_runtime_context.h"
@@ -25,6 +24,7 @@
 #include "litert/c/options/litert_gpu_options.h"
 #include "ml_drift_delegate/delegate/delegate_options.h"
 #include "ml_drift_delegate/delegate/delegate_types.h"
+#include "ml_drift_delegate/delegate/precision.h"
 
 namespace litert::ml_drift {
 namespace {

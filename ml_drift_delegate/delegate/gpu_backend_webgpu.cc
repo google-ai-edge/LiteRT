@@ -54,16 +54,16 @@
 #include "ml_drift/webgpu/webgpu_api_util.h"  // from @ml_drift
 #include "ml_drift/webgpu/webgpu_headers.h"  // from @ml_drift
 #include "ml_drift/webgpu/webgpu_weights_manager.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/delegate_data_util.h"
 #include "third_party/odml/infra/ml_drift_delegate/ml_drift_webgpu_benchmark_util.h"  // IWYU pragma: keep
+#include "ml_drift_delegate/delegate/delegate_utils.h"
 // clang-format off
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 // clang-format on
 #include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager.h"
 #include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager_webgpu.h"
-#include "third_party/odml/infra/ml_drift_delegate/util.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
+#include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "tflite/c/common.h"
 
 #ifdef __EMSCRIPTEN__
@@ -303,7 +303,7 @@ absl::Status GpuBackendWebGpu::ReadSpatialTensorToDescriptor(
 absl::Status GpuBackendWebGpu::UpdateSpatialTensor(
     ::ml_drift::GpuSpatialTensor* tensor,
     const ::ml_drift::TensorDescriptor& desc, size_t page_adjusted_offset,
-    ::ml_drift_delegate::ReleaseDataCallback release_data_callback) {
+    ReleaseDataCallback release_data_callback) {
   // If there is any tensor memory, release it before we update the tensor.
   RETURN_IF_ERROR(ReleaseSpatialTensorMemory(tensor));
 

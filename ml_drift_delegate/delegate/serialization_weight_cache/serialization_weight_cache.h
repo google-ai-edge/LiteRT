@@ -27,14 +27,17 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/ml_drift_delegate.h"
-#include "third_party/odml/infra/ml_drift_delegate/util.h"
+#include "ml_drift_delegate/delegate/precision.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/cache_builder.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/file_util.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/mmap_handle.h"
+#include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "tflite/c/common.h"
 
 namespace ml_drift {
+
+using ::litert::ml_drift::ReleaseDataCallback;
+using ::litert::ml_drift::UnownedDataTensorDescriptor;
 
 // The key to identify a cache entry. It is not enough to use the global tensor
 // id to identify a cache entry because quantization tensors have a different
@@ -128,11 +131,11 @@ class SerializationWeightCache {
   //   - release_data_callback: A callback to release the data when it is no
   //       longer needed. The user is responsible for calling this callback
   //       when they are done using the data.
-  absl::Status LookUp(
-      uint32_t global_tensor_id, bool is_quantization_param_tensor,
-      ml_drift_delegate::UnownedDataTensorDescriptor& unowned_data_tensor_desc,
-      size_t& page_adjusted_offset,
-      ml_drift_delegate::ReleaseDataCallback& release_data_callback);
+  absl::Status LookUp(uint32_t global_tensor_id,
+                      bool is_quantization_param_tensor,
+                      UnownedDataTensorDescriptor& unowned_data_tensor_desc,
+                      size_t& page_adjusted_offset,
+                      ReleaseDataCallback& release_data_callback);
 
   // Returns true if the cache is ready for Insert() to be called.
   bool IsReadyForInsert() const { return IsBuilding(); }

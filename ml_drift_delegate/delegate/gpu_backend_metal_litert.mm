@@ -31,7 +31,6 @@
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/metal/metal_spatial_tensor.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/delegate_data_util.h"
 #include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager_metal.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
@@ -40,6 +39,7 @@
 #include "litert/c/litert_event_type.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
+#include "ml_drift_delegate/delegate/delegate_utils.h"
 #include "ml_drift_delegate/delegate/gpu_backend_metal.h"
 #include "tflite/core/subgraph.h"
 

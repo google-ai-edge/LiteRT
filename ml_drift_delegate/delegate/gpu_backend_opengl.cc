@@ -44,13 +44,13 @@
 // clang-format off
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 // clang-format on
-#include "third_party/odml/infra/ml_drift_delegate/util.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
+#include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "tflite/c/common.h"
 
 namespace litert::ml_drift {
@@ -222,7 +222,7 @@ absl::Status GpuBackendOpenGl::ReadSpatialTensorToDescriptor(
 absl::Status GpuBackendOpenGl::UpdateSpatialTensor(
     ::ml_drift::GpuSpatialTensor* tensor,
     const ::ml_drift::TensorDescriptor& desc, size_t page_adjusted_offset,
-    ::ml_drift_delegate::ReleaseDataCallback release_data_callback) {
+    ReleaseDataCallback release_data_callback) {
   return absl::UnimplementedError("UpdateSpatialTensor is not implemented.");
 }
 

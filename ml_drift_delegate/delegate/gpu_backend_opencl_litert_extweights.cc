@@ -17,10 +17,10 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/delegate_data_util.h"
 #include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager.h"
 #include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager_cl_litert.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
+#include "ml_drift_delegate/delegate/delegate_utils.h"
 #include "ml_drift_delegate/delegate/gpu_backend_opencl_litert.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 #include "tflite/c/common.h"

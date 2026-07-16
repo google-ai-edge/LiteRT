@@ -43,7 +43,6 @@
 #include "ml_drift/webgpu/execution_environment.h"  // from @ml_drift
 #include "ml_drift/webgpu/instance.h"  // from @ml_drift
 #include "ml_drift/webgpu/webgpu_headers.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/ml_drift_delegate.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
@@ -60,6 +59,7 @@
 #include "ml_drift_delegate/delegate/delegate_types.h"
 #include "ml_drift_delegate/delegate/delegate_utils.h"
 #include "ml_drift_delegate/delegate/gpu_backend_webgpu_litert.h"
+#include "ml_drift_delegate/delegate/precision.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/file_util.h"
 #include "ml_drift_delegate/delegate/task_executor.h"
 #include "ml_drift_delegate/tflite/model_builder.h"

@@ -38,9 +38,9 @@
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 // clang-format on
 #include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager.h"
-#include "third_party/odml/infra/ml_drift_delegate/util.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
+#include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "tflite/c/common.h"
 
 // Forward declaration to depend on LiteRT only when needed.
@@ -244,7 +244,7 @@ class GpuBackend {
   virtual absl::Status UpdateSpatialTensor(
       ::ml_drift::GpuSpatialTensor* tensor,
       const ::ml_drift::TensorDescriptor& desc, size_t page_adjusted_offset,
-      ::ml_drift_delegate::ReleaseDataCallback release_data_callback) = 0;
+      ReleaseDataCallback release_data_callback) = 0;
 
   // Releases the memory of the given spatial tensor without destroying the
   // tensor.
