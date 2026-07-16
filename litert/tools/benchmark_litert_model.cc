@@ -27,7 +27,6 @@ limitations under the License.
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/internal/litert_compiled_model_next.h"
 #include "litert/cc/internal/litert_tflite_error_status_builder.h"
 #include "litert/cc/litert_common.h"

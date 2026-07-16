@@ -19,6 +19,7 @@ limitations under the License.
 #include <sys/stat.h>
 
 #include <cstddef>
+#include <cstdlib>
 #include <fstream>
 #include <ios>
 #include <string>
@@ -26,8 +27,13 @@ limitations under the License.
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/options/litert_mediatek_options.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
+#include "litert/tools/flags/vendors/mediatek_flags.h"
+#include "litert/tools/flags/vendors/qualcomm_flags.h"
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/tools/benchmark/benchmark_model.h"
 #include "tflite/tools/benchmark/benchmark_params.h"
@@ -266,6 +272,45 @@ TEST_F(BenchmarkLiteRtModelTest, BenchmarkWithInputLayerValueRange) {
     EXPECT_GE(data[i], 10.0f);
     EXPECT_LE(data[i], 20.0f);
   }
+}
+
+}  // namespace
+
+int Main(int argc, char** argv);
+
+namespace {
+
+TEST(BenchmarkLiteRtModelMainTest, MainFunctionParseFlags) {
+  using litert::mediatek::MediatekOptions;
+  using litert::qualcomm::QualcommOptions;
+  std::string graph_flag = std::string("--graph=") + kModelPath;
+  const char* argv[] = {
+      "benchmark_model",
+      graph_flag.c_str(),
+      "--use_cpu=true",
+      "--use_gpu=false",
+      "--require_full_delegation=false",
+      "--num_runs=1",
+      "--warmup_runs=0",
+      "--mediatek_enable_l1_cache_optimizations=true",
+      "--mediatek_performance_mode_type=turbo_boost",
+      "--qualcomm_htp_performance_mode=burst",
+  };
+  int argc = sizeof(argv) / sizeof(argv[0]);
+
+  absl::SetFlag(&FLAGS_mediatek_enable_l1_cache_optimizations, false);
+  absl::SetFlag(&FLAGS_mediatek_performance_mode_type,
+                MediatekOptions::PerformanceMode::kSustainedSpeed);
+  absl::SetFlag(&FLAGS_qualcomm_htp_performance_mode,
+                QualcommOptions::HtpPerformanceMode::kDefault);
+
+  EXPECT_EQ(Main(argc, const_cast<char**>(argv)), EXIT_SUCCESS);
+
+  EXPECT_TRUE(absl::GetFlag(FLAGS_mediatek_enable_l1_cache_optimizations));
+  EXPECT_EQ(absl::GetFlag(FLAGS_mediatek_performance_mode_type),
+            MediatekOptions::PerformanceMode::kTurboBoost);
+  EXPECT_EQ(absl::GetFlag(FLAGS_qualcomm_htp_performance_mode),
+            QualcommOptions::HtpPerformanceMode::kBurst);
 }
 
 }  // namespace
