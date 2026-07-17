@@ -217,6 +217,31 @@ TEST(LrtMediatekOptionsTest, DisableDlaDirRemoval) {
   LrtDestroyMediatekOptions(options);
 }
 
+TEST(LrtMediatekOptionsTest, UseGetSupportedOperations) {
+  LrtMediatekOptions* options;
+  LITERT_ASSERT_OK(LrtCreateMediatekOptions(&options));
+
+  bool use_get_supported_operations;
+  LITERT_ASSERT_OK(LrtGetMediatekOptionsUseGetSupportedOperations(
+      options, &use_get_supported_operations));
+  EXPECT_TRUE(use_get_supported_operations);
+
+  LITERT_ASSERT_OK(
+      LrtSetMediatekOptionsUseGetSupportedOperations(options, false));
+  LITERT_ASSERT_OK(LrtGetMediatekOptionsUseGetSupportedOperations(
+      options, &use_get_supported_operations));
+  EXPECT_FALSE(use_get_supported_operations);
+
+  LrtMediatekOptions* parsed;
+  SerializeAndParse(options, &parsed);
+  bool parsed_use;
+  LrtGetMediatekOptionsUseGetSupportedOperations(parsed, &parsed_use);
+  EXPECT_FALSE(parsed_use);
+
+  LrtDestroyMediatekOptions(parsed);
+  LrtDestroyMediatekOptions(options);
+}
+
 TEST(LrtMediatekOptionsTest, MediatekDlaDir) {
   LrtMediatekOptions* options;
   LITERT_ASSERT_OK(LrtCreateMediatekOptions(&options));

@@ -149,6 +149,18 @@ class MediatekOptions {
     return disable_dla_dir_removal;
   }
 
+  void SetUseGetSupportedOperations(bool use_get_supported_operations) {
+    internal::AssertOk(LrtSetMediatekOptionsUseGetSupportedOperations, Get(),
+                       use_get_supported_operations);
+  }
+
+  bool GetUseGetSupportedOperations() {
+    bool use_get_supported_operations;
+    internal::AssertOk(LrtGetMediatekOptionsUseGetSupportedOperations, Get(),
+                       &use_get_supported_operations);
+    return use_get_supported_operations;
+  }
+
   void SetMediatekDlaDir(const std::string& mediatek_dla_dir) {
     internal::AssertOk(LrtSetMediatekOptionsMediatekDlaDir, Get(),
                        mediatek_dla_dir.c_str());
