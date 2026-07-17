@@ -1442,6 +1442,10 @@ std::vector<Tensor<Mixins...>> Unpack(
   std::vector<Tensor<Mixins...>> outputs;
   outputs.reserve(num);
   const graph::TensorInformation& input_info = GetInfo(input.GetRaw()).value();
+  if (axis < 0 || axis >= static_cast<int>(input_info.shape.size())) {
+    return {Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
+        "The Unpack axis is out of range.")))};
+  }
   std::vector<int> output_shape = input_info.shape;
   output_shape.erase(output_shape.begin() + axis);
   for (int i = 0; i < num; ++i) {
