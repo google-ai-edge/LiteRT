@@ -17,6 +17,7 @@
 #import <Metal/Metal.h>
 #import <XCTest/XCTest.h>  // IWYU pragma: keep
 
+#include <memory>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
@@ -28,6 +29,8 @@
 #include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/metal/metal_device.h"  // from @ml_drift
+#include "ml_drift_delegate/delegate/shared_memory_manager/gf32_graph_adapter.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
 #include "tflite/c/common.h"
@@ -48,7 +51,8 @@
   ml_drift::metal::MetalDevice metal_device(device);
   // Create the SharedMemoryManagerMetal
   auto metal_shared_memory_manager = ml_drift::MakeSharedMemoryManagerMetal(
-      &metal_device, create_info, graph, &context, buffer_id_to_spatial_tensor, quant_param_tensors,
+      &metal_device, create_info, std::make_unique<ml_drift::GraphFloat32Adapter>(graph), &context,
+      buffer_id_to_spatial_tensor, quant_param_tensors,
       /*has_prepacked_external_tensors*/ false,
       /*serialized_external_tensors=*/nullptr, /*madvise_original_tensors*/ false);
 
@@ -81,7 +85,8 @@
   id<MTLDevice> device = MTLCreateSystemDefaultDevice();
   ml_drift::metal::MetalDevice metal_device(device);
   auto manager = ml_drift::MakeSharedMemoryManagerMetal(
-      &metal_device, create_info, graph, &context, buffer_id_to_spatial_tensor, quant_param_tensors,
+      &metal_device, create_info, std::make_unique<ml_drift::GraphFloat32Adapter>(graph), &context,
+      buffer_id_to_spatial_tensor, quant_param_tensors,
       /*has_prepacked_tflite_tensors=*/false,
       /*serialized_external_tensors=*/nullptr,
       /*madvise_original_tensors=*/false);
@@ -142,7 +147,8 @@
   id<MTLDevice> device = MTLCreateSystemDefaultDevice();
   ml_drift::metal::MetalDevice metal_device(device);
   auto manager = ml_drift::MakeSharedMemoryManagerMetal(
-      &metal_device, create_info, graph, &context, buffer_id_to_spatial_tensor, quant_param_tensors,
+      &metal_device, create_info, std::make_unique<ml_drift::GraphFloat32Adapter>(graph), &context,
+      buffer_id_to_spatial_tensor, quant_param_tensors,
       /*has_prepacked_tflite_tensors=*/false,
       /*serialized_external_tensors=*/nullptr,
       /*madvise_original_tensors=*/false);
@@ -204,7 +210,8 @@
   id<MTLDevice> device = MTLCreateSystemDefaultDevice();
   ml_drift::metal::MetalDevice metal_device(device);
   auto manager = ml_drift::MakeSharedMemoryManagerMetal(
-      &metal_device, create_info, graph, &context, buffer_id_to_spatial_tensor, quant_param_tensors,
+      &metal_device, create_info, std::make_unique<ml_drift::GraphFloat32Adapter>(graph), &context,
+      buffer_id_to_spatial_tensor, quant_param_tensors,
       /*has_prepacked_tflite_tensors=*/false,
       /*serialized_external_tensors=*/nullptr,
       /*madvise_original_tensors=*/false);
@@ -266,7 +273,8 @@
   id<MTLDevice> device = MTLCreateSystemDefaultDevice();
   ml_drift::metal::MetalDevice metal_device(device);
   auto manager = ml_drift::MakeSharedMemoryManagerMetal(
-      &metal_device, create_info, graph, &context, buffer_id_to_spatial_tensor, quant_param_tensors,
+      &metal_device, create_info, std::make_unique<ml_drift::GraphFloat32Adapter>(graph), &context,
+      buffer_id_to_spatial_tensor, quant_param_tensors,
       /*has_prepacked_tflite_tensors=*/false,
       /*serialized_external_tensors=*/nullptr,
       /*madvise_original_tensors=*/false);
@@ -328,8 +336,8 @@
   id<MTLDevice> device = MTLCreateSystemDefaultDevice();
   ml_drift::metal::MetalDevice metal_device(device);
   auto manager = ml_drift::MakeSharedMemoryManagerMetal(
-      &metal_device, create_info, graph, &context, buffer_id_to_spatial_tensor,
-      quant_param_tensors,
+      &metal_device, create_info, std::make_unique<ml_drift::GraphFloat32Adapter>(graph), &context,
+      buffer_id_to_spatial_tensor, quant_param_tensors,
       /*has_prepacked_tflite_tensors=*/false,
       /*serialized_external_tensors=*/nullptr,
       /*madvise_original_tensors=*/false);
@@ -361,8 +369,7 @@
       local_to_global_id_map;
   XCTAssertTrue(
       manager
-          ->RegisterExternalConstantTensors(input->id, shared_tflite_tensor,
-                                            local_to_global_id_map)
+          ->RegisterExternalConstantTensors(input->id, shared_tflite_tensor, local_to_global_id_map)
           .ok());
   XCTAssertEqual(buffer_id_to_spatial_tensor.size(), 1);
   XCTAssertEqual(quant_param_tensors.size(), 2);
@@ -375,8 +382,7 @@
       XCTAssertTrue(status_or_tensor.ok());
       ml_drift::GpuSpatialTensor* external_tensor = *status_or_tensor;
       XCTAssertNotEqual(external_tensor, nullptr);
-      XCTAssertEqual(external_tensor->GetDescriptor().GetDataType(),
-                     ml_drift::DataType::FLOAT16);
+      XCTAssertEqual(external_tensor->GetDescriptor().GetDataType(), ml_drift::DataType::FLOAT16);
     }
   }
   XCTAssertTrue(scale_zp_found);
@@ -480,7 +486,8 @@
   id<MTLDevice> device = MTLCreateSystemDefaultDevice();
   ml_drift::metal::MetalDevice metal_device(device);
   auto manager = ml_drift::MakeSharedMemoryManagerMetal(
-      &metal_device, create_info, graph, &context, buffer_id_to_spatial_tensor, quant_param_tensors,
+      &metal_device, create_info, std::make_unique<ml_drift::GraphFloat32Adapter>(graph), &context,
+      buffer_id_to_spatial_tensor, quant_param_tensors,
       /*has_prepacked_external_tensors=*/false,
       /*serialized_external_tensors=*/nullptr,
       /*madvise_original_tensors=*/false);

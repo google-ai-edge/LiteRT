@@ -40,6 +40,7 @@
 #include "litert/cc/litert_macros.h"
 #include "ml_drift_delegate/delegate/delegate_utils.h"
 #include "ml_drift_delegate/delegate/gpu_backend_metal.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/gf32_graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_metal.h"
 #include "tflite/core/subgraph.h"
 
@@ -166,7 +167,8 @@ GpuBackendMetalLitert::CreateSharedMemoryManager(
       &(reinterpret_cast<const tflite::Subgraph*>(context->impl_)
             ->GetExternalTensorBufferIdentifiers());
   return ::ml_drift::MakeSharedMemoryManagerMetal(
-      metal_device(), create_info, graph, context, GetBufferIdToSpatialTensorMap(delegate_data),
+      metal_device(), create_info, std::make_unique<::ml_drift::GraphFloat32Adapter>(graph),
+      context, GetBufferIdToSpatialTensorMap(delegate_data),
       GetQuantParamIdToSpatialTensorMap(delegate_data),
       delegate_data.options->has_prepacked_external_tflite_tensors, serialization_cache,
       delegate_data.options->madvise_original_shared_tensors, runtime_context_,

@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "testing/base/public/gmock.h"
@@ -31,6 +32,7 @@
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/webgpu/execution_environment.h"  // from @ml_drift
 #include "ml_drift/webgpu/testing/webgpu_test.h"  // from @ml_drift
+#include "ml_drift_delegate/delegate/shared_memory_manager/gf32_graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
 #include "tflite/c/common.h"
@@ -49,7 +51,8 @@ TEST_F(SharedMemoryManagerTest, GetNonExistingExternalTensor) {
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerWebgpu(
-      exec_env_.GetEnv(), create_info, graph, &context,
+      exec_env_.GetEnv(), create_info,
+      std::make_unique<GraphFloat32Adapter>(graph), &context,
       buffer_id_to_spatial_tensor, quant_param_tensors,
       /*has_prepacked_tflite_tensors=*/false, /*serialization_cache=*/nullptr,
       /*upload_executor=*/nullptr, /*madvise_original_tensors=*/false);
@@ -77,7 +80,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF16FromF32) {
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerWebgpu(
-      exec_env_.GetEnv(), create_info, graph, &context,
+      exec_env_.GetEnv(), create_info,
+      std::make_unique<GraphFloat32Adapter>(graph), &context,
       buffer_id_to_spatial_tensor, param_tensors,
       /*has_prepacked_tflite_tensors=*/false, /*serialization_cache=*/nullptr,
       /*upload_executor=*/nullptr, /*madvise_original_tensors=*/false);
@@ -148,7 +152,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF16FromF16) {
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerWebgpu(
-      exec_env_.GetEnv(), create_info, graph, &context,
+      exec_env_.GetEnv(), create_info,
+      std::make_unique<GraphFloat32Adapter>(graph), &context,
       buffer_id_to_spatial_tensor, param_tensors,
       /*has_prepacked_tflite_tensors=*/false, /*serialization_cache=*/nullptr,
       /*upload_executor=*/nullptr, /*madvise_original_tensors=*/false);
@@ -207,7 +212,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF32FromF16) {
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerWebgpu(
-      exec_env_.GetEnv(), create_info, graph, &context,
+      exec_env_.GetEnv(), create_info,
+      std::make_unique<GraphFloat32Adapter>(graph), &context,
       buffer_id_to_spatial_tensor, param_tensors,
       /*has_prepacked_tflite_tensors=*/false, /*serialization_cache=*/nullptr,
       /*upload_executor=*/nullptr, /*madvise_original_tensors=*/false);
@@ -266,7 +272,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF32FromF32) {
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerWebgpu(
-      exec_env_.GetEnv(), create_info, graph, &context,
+      exec_env_.GetEnv(), create_info,
+      std::make_unique<GraphFloat32Adapter>(graph), &context,
       buffer_id_to_spatial_tensor, param_tensors,
       /*has_prepacked_tflite_tensors=*/false, /*serialization_cache=*/nullptr,
       /*upload_executor=*/nullptr, /*madvise_original_tensors=*/false);
@@ -324,7 +331,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalQuantizedTensor) {
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerWebgpu(
-      exec_env_.GetEnv(), create_info, graph, &context,
+      exec_env_.GetEnv(), create_info,
+      std::make_unique<GraphFloat32Adapter>(graph), &context,
       buffer_id_to_spatial_tensor, quant_param_tensors,
       /*has_prepacked_tflite_tensors=*/false, /*serialization_cache=*/nullptr,
       /*upload_executor=*/nullptr, /*madvise_original_tensors=*/false);
@@ -409,7 +417,8 @@ TEST_F(SharedMemoryManagerTest, CreateQuantizedTensorMixedPrecision) {
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerWebgpu(
-      exec_env_.GetEnv(), create_info, graph, &context,
+      exec_env_.GetEnv(), create_info,
+      std::make_unique<GraphFloat32Adapter>(graph), &context,
       buffer_id_to_spatial_tensor, quant_param_tensors,
       /*has_prepacked_tflite_tensors=*/false, /*serialization_cache=*/nullptr,
       /*upload_executor=*/nullptr, /*madvise_original_tensors=*/false);
@@ -554,8 +563,8 @@ void RunBlockwiseQuantizationTest(const webgpu::ExecutionEnvironment& env,
   }
 
   auto manager = MakeSharedMemoryManagerWebgpu(
-      env, create_info, graph, &context, buffer_id_to_spatial_tensor,
-      quant_param_tensors,
+      env, create_info, std::make_unique<GraphFloat32Adapter>(graph), &context,
+      buffer_id_to_spatial_tensor, quant_param_tensors,
       /*has_prepacked_tflite_tensors=*/false,
       /*serialization_cache=*/nullptr,
       /*upload_executor=*/nullptr,

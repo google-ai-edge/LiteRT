@@ -33,6 +33,7 @@
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
@@ -47,7 +48,8 @@ MakeSharedMemoryManagerClLitert(
     const ::ml_drift::cl::Environment& env,
     const ::LiteRtRuntimeContext* runtime_context,
     const ::ml_drift::CreateGpuModelInfo& create_info,
-    ::ml_drift::GraphFloat32& graph, TfLiteContext* context,
+    std::unique_ptr<::ml_drift::GraphAdapter> graph_adapter,
+    TfLiteContext* context,
     ::ml_drift::ValueIdToSharedTensorMap& value_to_tensor_map,
     ::ml_drift::ValueIdToSharedTensorMap& quant_param_tensors,
     bool has_prepacked_external_tensors,
@@ -190,13 +192,12 @@ MakeSharedMemoryManagerClLitert(
   };
 
   return std::make_unique<::ml_drift::SharedMemoryManager>(
-      env.GetDevicePtr()->GetInfo(), create_info, graph, create_tensor_func,
-      context, value_to_tensor_map, quant_param_tensors,
+      env.GetDevicePtr()->GetInfo(), create_info, std::move(graph_adapter),
+      create_tensor_func, context, value_to_tensor_map, quant_param_tensors,
       has_prepacked_external_tensors, serialization_cache,
       madvise_original_tensors, /*experimental_int4_unpacking=*/true,
-      /*experimental_int2_unpacking=*/false,
-      std::move(device_buffer_import), std::move(maybe_bind_data),
-      std::move(packing_lookup));
+      /*experimental_int2_unpacking=*/false, std::move(device_buffer_import),
+      std::move(maybe_bind_data), std::move(packing_lookup));
 }
 
 }  // namespace ml_drift

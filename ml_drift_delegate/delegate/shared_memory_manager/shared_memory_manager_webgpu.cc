@@ -31,6 +31,7 @@
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/webgpu/execution_environment.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_webgpu_common.h"
 #include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
@@ -40,14 +41,15 @@ namespace ml_drift {
 
 std::unique_ptr<ml_drift::SharedMemoryManager> MakeSharedMemoryManagerWebgpu(
     const webgpu::ExecutionEnvironment& env,
-    const CreateGpuModelInfo& create_info, GraphFloat32& graph,
-    TfLiteContext* context, ValueIdToSharedTensorMap& value_to_tensor_map,
+    const CreateGpuModelInfo& create_info,
+    std::unique_ptr<GraphAdapter> graph_adapter, TfLiteContext* context,
+    ValueIdToSharedTensorMap& value_to_tensor_map,
     ValueIdToSharedTensorMap& quant_param_tensors,
     bool has_prepacked_tflite_tensors,
     SerializationWeightCache* serialization_cache,
     std::shared_ptr<Executor> upload_executor, bool madvise_original_tensors) {
   return std::make_unique<ml_drift::SharedMemoryManager>(
-      env.GetInfo(), create_info, graph,
+      env.GetInfo(), create_info, std::move(graph_adapter),
       [&env, has_prepacked_tflite_tensors, upload_executor](
           ml_drift::TensorDescriptor& tensor_desc, size_t page_adjusted_offset,
           ::litert::ml_drift::ReleaseDataCallback release_data_callback,

@@ -63,6 +63,7 @@
 // clang-format on
 #include "ml_drift_delegate/delegate/delegate_data.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/gf32_graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_webgpu.h"
 #include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
@@ -246,7 +247,8 @@ GpuBackendWebGpu::CreateSharedMemoryManager(
     MlDriftDelegateData& delegate_data,
     ::ml_drift::SerializationWeightCache* serialization_cache) {
   return ::ml_drift::MakeSharedMemoryManagerWebgpu(
-      *env_, create_info, graph, context,
+      *env_, create_info,
+      std::make_unique<::ml_drift::GraphFloat32Adapter>(graph), context,
       GetBufferIdToSpatialTensorMap(delegate_data),
       GetQuantParamIdToSpatialTensorMap(delegate_data),
       delegate_data.options->has_prepacked_external_tflite_tensors,

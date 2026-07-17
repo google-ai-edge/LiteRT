@@ -17,15 +17,16 @@
 
 #include <cstddef>
 #include <memory>
+#include <utility>
 
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/tensor.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
-#include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "tflite/core/c/common.h"
@@ -34,14 +35,14 @@ namespace ml_drift {
 
 inline std::unique_ptr<ml_drift::SharedMemoryManager> MakeSharedMemoryManagerCl(
     const cl::Environment& env, const CreateGpuModelInfo& create_info,
-    GraphFloat32& graph, TfLiteContext* context,
+    std::unique_ptr<GraphAdapter> graph_adapter, TfLiteContext* context,
     ValueIdToSharedTensorMap& value_to_tensor_map,
     ValueIdToSharedTensorMap& quant_param_tensors,
     bool has_prepacked_external_tensors,
     SerializationWeightCache* serialization_cache,
     bool madvise_original_tensors) {
   return std::make_unique<ml_drift::SharedMemoryManager>(
-      env.GetDevicePtr()->GetInfo(), create_info, graph,
+      env.GetDevicePtr()->GetInfo(), create_info, std::move(graph_adapter),
       [&env](ml_drift::TensorDescriptor& tensor_desc,
              size_t page_adjusted_offset,
              ::litert::ml_drift::ReleaseDataCallback release_data_callback,

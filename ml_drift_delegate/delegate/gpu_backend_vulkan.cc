@@ -55,6 +55,7 @@
 #include "ml_drift_delegate/delegate/delegate_utils.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/gf32_graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_vulkan.h"
 #include "ml_drift_delegate/delegate/shared_vulkan_env.h"
@@ -228,7 +229,8 @@ GpuBackendVulkan::CreateSharedMemoryManager(
     MlDriftDelegateData& delegate_data,
     ::ml_drift::SerializationWeightCache* serialization_cache) {
   return ::ml_drift::MakeSharedMemoryManagerVulkan(
-      env_, create_info, graph, context,
+      env_, create_info,
+      std::make_unique<::ml_drift::GraphFloat32Adapter>(graph), context,
       GetBufferIdToSpatialTensorMap(delegate_data),
       GetQuantParamIdToSpatialTensorMap(delegate_data),
       delegate_data.options->has_prepacked_external_tflite_tensors,
