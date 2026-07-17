@@ -31,7 +31,6 @@ limitations under the License.
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
-#include "tensor/backends/tflite/arithmetic_tflite.h"
 #include "tensor/backends/tflite/linked_flat_hash_map.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"

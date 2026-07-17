@@ -34,7 +34,6 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
@@ -68,54 +67,6 @@ static constexpr size_t kFlatbufferPlaceholderValue = 0xfafafafafafafafa;
 static constexpr size_t kFlatbufferAppendedDataAlignment = 64;
 
 }  // namespace
-
-// Converts an operation type to its TFLite equivalent.
-absl::StatusOr<::tflite::TensorType> ToTfLite(const Type type) {
-  switch (type) {
-    case Type::kUnknown:
-      return absl::FailedPreconditionError(absl::StrFormat(
-          "Serialisation of a tensor with '%s' type is not supported",
-          ToString(type)));
-    case Type::kBOOL:
-      return ::tflite::TensorType_BOOL;
-    case Type::kI2:
-      return ::tflite::TensorType_INT2;
-    case Type::kI4:
-      return ::tflite::TensorType_INT4;
-    case Type::kI8:
-      return ::tflite::TensorType_INT8;
-    case Type::kI16:
-      return ::tflite::TensorType_INT16;
-    case Type::kI32:
-      return ::tflite::TensorType_INT32;
-    case Type::kI64:
-      return ::tflite::TensorType_INT64;
-    case Type::kU4:
-      return absl::FailedPreconditionError(absl::StrFormat(
-          "Serialisation of a tensor with '%s' type is not supported",
-          ToString(type)));
-    case Type::kU8:
-      return ::tflite::TensorType_UINT8;
-    case Type::kU16:
-      return ::tflite::TensorType_UINT16;
-    case Type::kU32:
-      return ::tflite::TensorType_UINT32;
-    case Type::kU64:
-      return ::tflite::TensorType_UINT64;
-    case Type::kFP16:
-      return ::tflite::TensorType_FLOAT16;
-    case Type::kFP32:
-      return ::tflite::TensorType_FLOAT32;
-    case Type::kFP64:
-      return ::tflite::TensorType_FLOAT64;
-    case Type::kBF16:
-      return absl::FailedPreconditionError(absl::StrFormat(
-          "Serialisation of a tensor with '%s' type is not supported",
-          ToString(type)));
-  }
-  return absl::UnimplementedError(
-      "Type was not handled in the conversion to TFLite flatbuffer value.");
-}
 
 absl::StatusOr<Type> FromTfLite(const TfLiteType type) {
   switch (type) {
