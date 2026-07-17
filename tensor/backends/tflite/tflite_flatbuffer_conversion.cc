@@ -26,15 +26,16 @@ limitations under the License.
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "xnnpack.h"  // from @XNNPACK
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
@@ -45,6 +46,7 @@ limitations under the License.
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
 #include "tensor/internal/graph_traversal.h"
+#include "tensor/internal/mixin.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
 #include "tflite/c/c_api_types.h"
@@ -68,54 +70,6 @@ static constexpr size_t kFlatbufferPlaceholderValue = 0xfafafafafafafafa;
 static constexpr size_t kFlatbufferAppendedDataAlignment = 64;
 
 }  // namespace
-
-// Converts an operation type to its TFLite equivalent.
-absl::StatusOr<::tflite::TensorType> ToTfLite(const Type type) {
-  switch (type) {
-    case Type::kUnknown:
-      return absl::FailedPreconditionError(absl::StrFormat(
-          "Serialisation of a tensor with '%s' type is not supported",
-          ToString(type)));
-    case Type::kBOOL:
-      return ::tflite::TensorType_BOOL;
-    case Type::kI2:
-      return ::tflite::TensorType_INT2;
-    case Type::kI4:
-      return ::tflite::TensorType_INT4;
-    case Type::kI8:
-      return ::tflite::TensorType_INT8;
-    case Type::kI16:
-      return ::tflite::TensorType_INT16;
-    case Type::kI32:
-      return ::tflite::TensorType_INT32;
-    case Type::kI64:
-      return ::tflite::TensorType_INT64;
-    case Type::kU4:
-      return absl::FailedPreconditionError(absl::StrFormat(
-          "Serialisation of a tensor with '%s' type is not supported",
-          ToString(type)));
-    case Type::kU8:
-      return ::tflite::TensorType_UINT8;
-    case Type::kU16:
-      return ::tflite::TensorType_UINT16;
-    case Type::kU32:
-      return ::tflite::TensorType_UINT32;
-    case Type::kU64:
-      return ::tflite::TensorType_UINT64;
-    case Type::kFP16:
-      return ::tflite::TensorType_FLOAT16;
-    case Type::kFP32:
-      return ::tflite::TensorType_FLOAT32;
-    case Type::kFP64:
-      return ::tflite::TensorType_FLOAT64;
-    case Type::kBF16:
-      return absl::FailedPreconditionError(absl::StrFormat(
-          "Serialisation of a tensor with '%s' type is not supported",
-          ToString(type)));
-  }
-  return absl::UnimplementedError(
-      "Type was not handled in the conversion to TFLite flatbuffer value.");
-}
 
 absl::StatusOr<Type> FromTfLite(const TfLiteType type) {
   switch (type) {
@@ -846,6 +800,49 @@ absl::Status Run(std::vector<TensorHandle> outputs) {
   }
 
   return absl::OkStatus();
+}
+
+using TfLiteOps = std::tuple<
+    graph::AddOperation, graph::SubOperation, graph::MulOperation,
+    graph::DivOperation, graph::AbsOperation, graph::ReluOperation,
+    graph::Relu6Operation, graph::ReluN1To1Operation, graph::ZerosLikeOperation,
+    graph::Relu0To1Operation, graph::LeakyReluOperation, graph::EluOperation,
+    graph::HardSwishOperation, graph::PReluOperation,
+    graph::L2NormalizationOperation, graph::SquareOperation,
+    graph::RsqrtOperation, graph::PowOperation, graph::NegOperation,
+    graph::PadOperation, graph::PadV2Operation, graph::SqrtOperation,
+    graph::ExpOperation, graph::LogOperation, graph::CeilOperation,
+    graph::FloorOperation, graph::FloorDivOperation, graph::FloorModOperation,
+    graph::SignOperation, graph::RoundOperation, graph::SoftmaxOperation,
+    graph::LogSoftmaxOperation, graph::SumOperation,
+    graph::BatchMatMulOperation, graph::FullyConnectedOperation,
+    graph::ConcatenationOperation, graph::PackOperation, graph::UnpackOperation,
+    graph::SplitOperation, graph::TransposeOperation, graph::TileOperation,
+    graph::GeluOperation, graph::CastOperation, graph::SelectOperation,
+    graph::SelectV2Operation, graph::SliceOperation,
+    graph::EmbeddingLookupOperation, graph::CustomOperation,
+    graph::StableHLOCompositeOperation, graph::TopKOperation,
+    graph::CumsumOperation, graph::ReverseOperation, graph::DequantizeOperation,
+    graph::SpaceToDepthOperation, graph::DepthToSpaceOperation,
+    graph::GatherOperation, graph::GatherNdOperation, graph::OneHotOperation,
+    graph::AveragePool2DOperation, graph::MaxPool2DOperation,
+    graph::Conv2DOperation, graph::DepthwiseConv2DOperation,
+    graph::TransposeConvOperation, graph::TransposeConv2DOperation,
+    graph::LstmOperation, graph::ArgMaxOperation, graph::LogisticOperation,
+    graph::DynamicUpdateSliceOperation, graph::TanhOperation,
+    graph::LessOperation, graph::GreaterOperation, graph::GreaterEqualOperation,
+    graph::NotEqualOperation, graph::EqualOperation, graph::MinimumOperation,
+    graph::MaximumOperation, graph::LogicalAndOperation,
+    graph::LogicalOrOperation, graph::LogicalNotOperation,
+    graph::BitwiseXorOperation, graph::RightShiftOperation, graph::CosOperation,
+    graph::SinOperation, graph::ReshapeOperation, graph::SqueezeOperation,
+    graph::ExpandDimsOperation, graph::QuantizeOperation,
+    graph::ReduceMaxOperation, graph::MeanOperation, graph::ProbeOperation,
+    graph::ResizeBilinearOperation, graph::ResizeNearestNeighborOperation,
+    graph::NonMaxSuppressionV5Operation>;
+
+void TfLiteMixinRegistrar::Register(std::shared_ptr<graph::Operation> op) {
+  graph::RegisterMixin<TfLiteMixinTag, TfLiteOps>(op);
 }
 
 }  // namespace litert::tensor
