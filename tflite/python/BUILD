@@ -534,6 +534,9 @@ py_library(
 pytype_strict_contrib_test(
     name = "convert_test",
     srcs = ["convert_test.py"],
+    data = [
+        "//tflite/converter:flatbuffer_translate",
+    ],
     deps = [
         ":convert",
         ":interpreter",
@@ -550,6 +553,7 @@ pytype_strict_contrib_test(
         "@org_tensorflow//tensorflow/python/ops:array_ops_stack",
         "@org_tensorflow//tensorflow/python/ops:math_ops",
         "@org_tensorflow//tensorflow/python/platform:client_testlib",
+        "@org_tensorflow//tensorflow/python/platform:resource_loader",
         "@org_tensorflow//third_party/py/numpy",
     ] + if_pywrap(
         if_true = [":pywrap_tflite"],
