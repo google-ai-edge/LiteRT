@@ -25,9 +25,9 @@
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/util.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
+#include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "tflite/core/c/common.h"
 
 namespace ml_drift {
@@ -44,7 +44,7 @@ inline std::unique_ptr<ml_drift::SharedMemoryManager> MakeSharedMemoryManagerCl(
       env.GetDevicePtr()->GetInfo(), create_info, graph,
       [&env](ml_drift::TensorDescriptor& tensor_desc,
              size_t page_adjusted_offset,
-             ml_drift_delegate::ReleaseDataCallback release_data_callback,
+             ::litert::ml_drift::ReleaseDataCallback release_data_callback,
              std::unique_ptr<GpuSpatialTensor>& tensor) {
         if (tensor) {
           return absl::InternalError("Tensor is already initialized.");

@@ -54,7 +54,9 @@
 #include "ml_drift/webgpu/webgpu_api_util.h"  // from @ml_drift
 #include "ml_drift/webgpu/webgpu_headers.h"  // from @ml_drift
 #include "ml_drift/webgpu/webgpu_weights_manager.h"  // from @ml_drift
+#ifdef ML_DRIFT_MEM_STATS
 #include "third_party/odml/infra/ml_drift_delegate/ml_drift_webgpu_benchmark_util.h"  // IWYU pragma: keep
+#endif
 #include "ml_drift_delegate/delegate/delegate_utils.h"
 // clang-format off
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"

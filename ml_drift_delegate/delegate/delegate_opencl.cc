@@ -38,7 +38,6 @@
 #include "ml_drift/cl/util_types.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/status.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/tflite_profile.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_any.h"
@@ -57,6 +56,7 @@
 #include "ml_drift_delegate/delegate/gpu_backend_opencl_litert.h"
 #include "ml_drift_delegate/delegate/precision.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/file_util.h"
+#include "ml_drift_delegate/delegate/tflite_profile.h"
 #include "ml_drift_delegate/tflite/model_builder.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/c/c_api_types.h"

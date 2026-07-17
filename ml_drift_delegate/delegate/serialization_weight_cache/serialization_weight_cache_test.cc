@@ -42,7 +42,6 @@
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/serialization_base_generated.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/ml_drift_delegate.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/build_identifier.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/cache_builder.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_schema_generated.h"

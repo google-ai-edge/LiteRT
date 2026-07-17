@@ -42,7 +42,9 @@
 #include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
 #include "ml_drift/common/task/profiling_info.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#ifdef ML_DRIFT_MEM_STATS
 #include "third_party/odml/infra/ml_drift_delegate/ml_drift_cl_benchmark_util.h"  // IWYU pragma: keep
+#endif
 #include "ml_drift_delegate/delegate/delegate_data.h"
 #include "ml_drift_delegate/delegate/delegate_utils.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"

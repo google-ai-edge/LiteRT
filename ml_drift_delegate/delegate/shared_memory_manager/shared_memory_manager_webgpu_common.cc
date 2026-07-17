@@ -43,8 +43,8 @@
 #include "ml_drift/common/types.h"  // from @ml_drift
 #include "ml_drift/common/util.h"  // from @ml_drift
 #include "ml_drift/webgpu/webgpu_headers.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/util.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
+#include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 
 namespace ml_drift {
 namespace webgpu_internal {
@@ -214,7 +214,7 @@ absl::Status UploadPrepackedTensor(const webgpu::ExecutionEnvironment& env,
 absl::Status CopyBufferToBuffer(
     const webgpu::ExecutionEnvironment* env, const TensorDescriptor& desc,
     size_t page_adjusted_offset,
-    ml_drift_delegate::ReleaseDataCallback release_data_callback,
+    ::litert::ml_drift::ReleaseDataCallback release_data_callback,
     webgpu::SpatialTensor* tensor) {
   // data points to the start of the buffer data.
   const uint8_t* data = desc.GetData().data();
@@ -283,7 +283,7 @@ absl::Status CopyBufferToBuffer(
 absl::Status CreateSharedWebGpuTensor(
     const webgpu::ExecutionEnvironment& env, TensorDescriptor& tensor_desc,
     size_t page_adjusted_offset,
-    ml_drift_delegate::ReleaseDataCallback release_data_callback,
+    ::litert::ml_drift::ReleaseDataCallback release_data_callback,
     bool has_prepacked_tflite_tensors, Executor* upload_executor,
     UploadScheduling upload_scheduling,
     std::unique_ptr<GpuSpatialTensor>& tensor) {

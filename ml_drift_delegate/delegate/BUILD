@@ -49,11 +49,6 @@ cc_library(
         ":delegate_utils",
         ":gpu_backend",
         ":unowned_tensor_desc",
-        "//ml_drift_delegate/delegate/serialization_weight_cache",
-        "//ml_drift_delegate/delegate/shared_memory_manager",
-        "//ml_drift_delegate/delegate/shared_memory_manager:shared_memory_manager_cl",
-        "//tflite/c:common",
-        "//third_party/odml/infra/ml_drift_delegate:ml_drift_cl_benchmark_util",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
@@ -76,7 +71,12 @@ cc_library(
         "@ml_drift//ml_drift/common/task:gpu_tensor",
         "@ml_drift//ml_drift/common/task:profiling_info",
         "@ml_drift//ml_drift/common/task:tensor_desc",
+        # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate:ml_drift_cl_benchmark_util",
+        "//ml_drift_delegate/delegate/serialization_weight_cache",
+        "//ml_drift_delegate/delegate/shared_memory_manager",
+        "//ml_drift_delegate/delegate/shared_memory_manager:shared_memory_manager_cl",
         "@opencl_headers",
+        "//tflite/c:common",
     ],
 )
 
@@ -137,12 +137,6 @@ cc_library(
         ":delegate_utils",
         ":gpu_backend",
         ":unowned_tensor_desc",
-        "//ml_drift_delegate/delegate/serialization_weight_cache",
-        "//ml_drift_delegate/delegate/shared_memory_manager",
-        "//ml_drift_delegate/delegate/shared_memory_manager:shared_memory_manager_webgpu",
-        "//tflite/c:common",
-        "//third_party/odml/infra/ml_drift_delegate:ml_drift_webgpu_benchmark_util",
-        "//third_party/odml/litert/weight_loader:external_weight_loader",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:absl_log",
@@ -172,6 +166,12 @@ cc_library(
         "@ml_drift//ml_drift/webgpu:webgpu_api_util",
         "@ml_drift//ml_drift/webgpu:webgpu_headers",
         "@ml_drift//ml_drift/webgpu:webgpu_weights_manager",
+        # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate:ml_drift_webgpu_benchmark_util",
+        "//ml_drift_delegate/delegate/serialization_weight_cache",
+        "//ml_drift_delegate/delegate/shared_memory_manager",
+        "//ml_drift_delegate/delegate/shared_memory_manager:shared_memory_manager_webgpu",
+        "//third_party/odml/litert/weight_loader:external_weight_loader",
+        "//tflite/c:common",
     ] + select({
         "//tools/cc_target_os:emscripten": [],
         "//conditions:default": [
@@ -297,7 +297,7 @@ objc_library(
         "@ml_drift//ml_drift/metal:metal_device",
         "@ml_drift//ml_drift/metal:metal_spatial_tensor",
         "@ml_drift//ml_drift/metal:metal_weights_manager",
-        "//third_party/odml/infra/ml_drift_delegate:ml_drift_metal_benchmark_util",
+        # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate:ml_drift_metal_benchmark_util",
         "//ml_drift_delegate/delegate/serialization_weight_cache",
         "//ml_drift_delegate/delegate/shared_memory_manager",
         "//ml_drift_delegate/delegate/shared_memory_manager:shared_memory_manager_metal",
@@ -336,7 +336,6 @@ objc_library(
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_runtime_context_header",
         "//litert/cc:litert_macros",
-        "//ml_drift_delegate/delegate/serialization_weight_cache",
         "//ml_drift_delegate/delegate/shared_memory_manager:shared_memory_manager_metal",
         "//tflite:framework",
     ],
@@ -425,7 +424,6 @@ cc_library(
         "//ml_drift_delegate/delegate/serialization_weight_cache",
         "//ml_drift_delegate/delegate/shared_memory_manager",
         "//ml_drift_delegate/tflite:shared_const_tensor_map",
-        "@com_google_absl//absl/synchronization",
         "@ml_drift//ml_drift/common:executor",
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common/task:gpu_tensor",
@@ -436,10 +434,7 @@ cc_library(
     name = "shared_tensor_maps",
     hdrs = ["shared_tensor_maps.h"],
     visibility = ["//visibility:public"],
-    deps = [
-        "//ml_drift_delegate/delegate/shared_memory_manager",
-        "@com_google_absl//absl/synchronization",
-    ],
+    deps = ["//ml_drift_delegate/delegate/shared_memory_manager"],
 )
 
 cc_library(
@@ -469,13 +464,16 @@ cc_library(
     srcs = ["delegate_kernel.cc"],
     hdrs = ["delegate_kernel.h"],
     deps = [
-        "//litert/c:litert_common",
         # copybara:uncomment "//third_party/odml/litert/weight_loader:external_weight_loader",
         "//weight_loader:external_weight_loader",  # copybara:comment
         ":delegate_data",
         ":delegate_options",
+        ":delegate_utils",
         ":gpu_backend",
         ":incrementable_blocking_counter",
+        ":precision",
+        ":quantization_util",
+        ":tflite_profile",
         ":unowned_tensor_desc",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -497,11 +495,7 @@ cc_library(
         "@ml_drift//ml_drift/common/task:gpu_tensor",
         "@ml_drift//ml_drift/common/task:profiling_info",
         "@ml_drift//ml_drift/common/task:tensor_desc",
-        ":delegate_utils",
-        ":precision",
-        ":quantization_util",
         "//ml_drift_delegate/delegate/shared_memory_manager",
-        "//third_party/odml/infra/ml_drift_delegate:tflite_profile",
         "//ml_drift_delegate/delegate/serialization_program_cache",
         "//ml_drift_delegate/delegate/serialization_weight_cache",
         "//ml_drift_delegate/delegate/composite:custom_parsers",
@@ -515,6 +509,24 @@ cc_library(
         "//tflite/delegates:serialization",
         "//tflite/kernels:kernel_util",
         "//tflite/profiling:memory_latency_logger",
+    ],
+)
+
+cc_library(
+    name = "tflite_profile",
+    srcs = ["tflite_profile.cc"],
+    hdrs = ["tflite_profile.h"],
+    visibility = [
+        "//ml_drift_delegate:__subpackages__",
+        "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
+    ],
+    deps = [
+        "//tflite:framework_stable",
+        "//tflite/c:common",
+        "//tflite/core:framework",
+        "//tflite/core/api",
+        "@com_google_absl//absl/time",
+        "@ml_drift//ml_drift/common/task:profiling_info",
     ],
 )
 
@@ -626,6 +638,7 @@ cc_library(
         ":delegate_utils",
         ":gpu_backend_opencl_litert",
         ":precision",
+        ":tflite_profile",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_header",
@@ -642,7 +655,6 @@ cc_library(
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/profiling:time",
-        "//third_party/odml/infra/ml_drift_delegate:tflite_profile",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:absl_log",
@@ -785,6 +797,7 @@ cc_library(
         ":delegate_types",
         ":gpu_backend_opengl",
         ":precision",
+        ":tflite_profile",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_header",
@@ -800,7 +813,6 @@ cc_library(
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/profiling:time",
-        "//third_party/odml/infra/ml_drift_delegate:tflite_profile",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:absl_check",
@@ -1103,28 +1115,30 @@ cc_test(
     ],
 )
 
-cc_test(
-    name = "delegate_opencl_test",
-    srcs = ["delegate_opencl_test.cc"],
-    tags = [
-        "requires-gpu-nvidia",
-    ],
-    deps = [
-        ":delegate_opencl",
-        "//litert/c:litert_common",
-        "//litert/c:litert_environment",
-        "//litert/c/internal:litert_runtime_context_header",
-        "//litert/runtime:external_litert_buffer_context",
-        "//litert/runtime:tensor_identifier",
-        "//litert/runtime:tfl_utils",
-        "//tflite:framework",
-        "//tflite/c:common",
-        "//tflite/kernels:builtin_ops",
-        "//third_party/odml/infra/ml_drift_delegate/testdata:simple_add",
-        "@com_google_absl//absl/cleanup",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
+# copybara:uncomment_begin(google-only)
+# cc_test(
+#     name = "delegate_opencl_test",
+#     srcs = ["delegate_opencl_test.cc"],
+#     tags = [
+#         "requires-gpu-nvidia",
+#     ],
+#     deps = [
+#         ":delegate_opencl",
+#         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/cleanup",
+#         "//third_party/odml/infra/ml_drift_delegate/testdata:simple_add",
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_environment",
+#         "//litert/c/internal:litert_runtime_context_header",
+#         "//litert/runtime:external_litert_buffer_context",
+#         "//litert/runtime:tensor_identifier",
+#         "//litert/runtime:tfl_utils",
+#         "//tflite:framework",
+#         "//tflite/c:common",
+#         "//tflite/kernels:builtin_ops",
+#     ],
+# )
+# copybara:uncomment_end(google-only)
 
 cc_test(
     name = "task_executor_test",

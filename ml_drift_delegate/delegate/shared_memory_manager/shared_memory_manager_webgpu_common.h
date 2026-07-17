@@ -60,13 +60,13 @@ enum class UploadScheduling {
 absl::Status CopyBufferToBuffer(
     const webgpu::ExecutionEnvironment* env, const TensorDescriptor& desc,
     size_t page_adjusted_offset,
-    ml_drift_delegate::ReleaseDataCallback release_data_callback,
+    ::litert::ml_drift::ReleaseDataCallback release_data_callback,
     webgpu::SpatialTensor* tensor);
 
 absl::Status CreateSharedWebGpuTensor(
     const webgpu::ExecutionEnvironment& env, TensorDescriptor& tensor_desc,
     size_t page_adjusted_offset,
-    ml_drift_delegate::ReleaseDataCallback release_data_callback,
+    ::litert::ml_drift::ReleaseDataCallback release_data_callback,
     bool has_prepacked_tflite_tensors, Executor* upload_executor,
     UploadScheduling upload_scheduling,
     std::unique_ptr<GpuSpatialTensor>& tensor);

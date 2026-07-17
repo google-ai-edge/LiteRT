@@ -231,7 +231,6 @@ cc_test(
         ":serialization_schema",
         ":serialization_weight_cache",
         ":testing_util",
-        "//third_party/odml/infra/ml_drift_delegate",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",

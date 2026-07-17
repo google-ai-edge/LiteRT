@@ -26,10 +26,10 @@
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/syrtis/environment.h"  // from @ml_drift
 #include "ml_drift/syrtis/vulkan_spatial_tensor.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/util.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/shared_vulkan_env.h"
+#include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "tflite/core/c/common.h"
 
 namespace ml_drift {
@@ -48,7 +48,7 @@ MakeSharedMemoryManagerVulkan(::litert::ml_drift::SharedVulkanEnv* env,
   return std::make_unique<SharedMemoryManager>(
       env->vulkan_env().GetInfo(), create_info, graph,
       [env](const TensorDescriptor& desc, size_t page_adjusted_offset,
-            ml_drift_delegate::ReleaseDataCallback release_data_callback,
+            ::litert::ml_drift::ReleaseDataCallback release_data_callback,
             std::unique_ptr<GpuSpatialTensor>& tensor) -> absl::Status {
         if (tensor) {
           return absl::InternalError("Tensor is already initialized.");

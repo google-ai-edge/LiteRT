@@ -31,7 +31,9 @@
 #include "ml_drift/metal/metal_device.h"  // from @ml_drift
 #include "ml_drift/metal/metal_spatial_tensor.h"  // from @ml_drift
 #include "ml_drift/metal/metal_weights_manager.h"  // from @ml_drift
+#ifdef ML_DRIFT_MEM_STATS
 #include "third_party/odml/infra/ml_drift_delegate/ml_drift_metal_benchmark_util.h"
+#endif
 #include "ml_drift_delegate/delegate/delegate_data.h"
 #include "ml_drift_delegate/delegate/delegate_utils.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"

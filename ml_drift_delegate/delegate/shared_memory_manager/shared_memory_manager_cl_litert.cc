@@ -30,11 +30,11 @@
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/util.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
+#include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
 #include "weight_loader/external_weight_loader_litert.h"
 #include <CL/cl.h>
@@ -99,7 +99,7 @@ MakeSharedMemoryManagerClLitert(
   ::ml_drift::SharedMemoryManager::CreateTensorFunc create_tensor_func =
       [&env](ml_drift::TensorDescriptor& tensor_desc,
              size_t page_adjusted_offset,
-             ml_drift_delegate::ReleaseDataCallback release_data_callback,
+             ::litert::ml_drift::ReleaseDataCallback release_data_callback,
              std::unique_ptr<GpuSpatialTensor>& tensor) {
         if (tensor) {
           return absl::InternalError("Tensor is already initialized.");

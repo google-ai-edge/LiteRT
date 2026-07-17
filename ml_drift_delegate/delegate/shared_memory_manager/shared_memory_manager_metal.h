@@ -32,10 +32,10 @@
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/metal/metal_device.h"  // from @ml_drift
 #include "ml_drift/metal/metal_spatial_tensor.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/util.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
+#include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "weight_loader/external_weight_loader_litert.h"
 #include "tflite/c/common.h"
 
@@ -222,7 +222,7 @@ inline std::unique_ptr<ml_drift::SharedMemoryManager> MakeSharedMemoryManagerMet
   return std::make_unique<SharedMemoryManager>(
       device->GetInfo(), create_info, graph,
       [device](ml_drift::TensorDescriptor& tensor_desc, size_t page_adjusted_offset,
-               ml_drift_delegate::ReleaseDataCallback release_data_callback,
+               ::litert::ml_drift::ReleaseDataCallback release_data_callback,
                std::unique_ptr<GpuSpatialTensor>& tensor) {
         if (tensor) {
           return absl::InternalError("Tensor is already initialized.");
@@ -241,7 +241,7 @@ inline std::unique_ptr<ml_drift::SharedMemoryManager> MakeSharedMemoryManagerMet
           const size_t bytes_count = tensor_desc.GetData().size();
           void* data_ptr = const_cast<uint8_t*>(tensor_desc.GetData().data());
           auto* release_cb_ptr =
-              new ml_drift_delegate::ReleaseDataCallback(std::move(release_data_callback));
+              new ::litert::ml_drift::ReleaseDataCallback(std::move(release_data_callback));
           id<MTLBuffer> buffer =
               [mtl_device newBufferWithBytesNoCopy:data_ptr
                                             length:bytes_count
@@ -280,8 +280,7 @@ inline std::unique_ptr<ml_drift::SharedMemoryManager> MakeSharedMemoryManagerMet
       serialization_cache, madvise_original_tensors, /*experimental_int4_unpacking=*/true,
       /*experimental_int2_unpacking=*/false, std::move(device_buffer_import),
       std::move(maybe_bind_data), std::move(packing_lookup),
-      /*maybe_get_external_buffer_id_func=*/nullptr,
-      std::move(discard_tensor_data));
+      /*maybe_get_external_buffer_id_func=*/nullptr, std::move(discard_tensor_data));
 }
 
 }  // namespace ml_drift

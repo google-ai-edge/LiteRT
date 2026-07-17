@@ -41,7 +41,7 @@
 // clang-format off
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 // clang-format on
-#include "third_party/odml/infra/ml_drift_delegate/util.h"
+#include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "tflite/core/c/common.h"
 
 namespace ml_drift {
@@ -144,7 +144,7 @@ class SharedMemoryManager {
 
   using CreateTensorFunc = std::function<absl::Status(
       TensorDescriptor&, size_t /*page_adjusted_offset*/,
-      ml_drift_delegate::ReleaseDataCallback,
+      ::litert::ml_drift::ReleaseDataCallback,
       std::unique_ptr<GpuSpatialTensor>& tensor)> const;
   using CreateTensorFromDeviceBufferFunc = std::function<absl::Status(
       const ::litert::ml_drift::SharedTfliteTensor&, const TensorDescriptor&,
