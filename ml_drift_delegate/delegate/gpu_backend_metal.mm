@@ -32,11 +32,11 @@
 #include "ml_drift/metal/metal_spatial_tensor.h"  // from @ml_drift
 #include "ml_drift/metal/metal_weights_manager.h"  // from @ml_drift
 #include "third_party/odml/infra/ml_drift_delegate/ml_drift_metal_benchmark_util.h"
-#include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager_metal.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
 #include "ml_drift_delegate/delegate/delegate_utils.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_metal.h"
 
 namespace litert::ml_drift {
 namespace {
