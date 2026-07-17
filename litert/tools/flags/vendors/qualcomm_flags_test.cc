@@ -541,6 +541,132 @@ TEST(GraphIOTensorMemTypeTest, Parse) {
   }
 }
 
+TEST(LpaiTargetTest, Malformed) {
+  std::string error;
+  QualcommOptions::LpaiTarget value;
+
+  EXPECT_FALSE(AbslParseFlag("boogabooga", &value, &error));
+}
+
+TEST(LpaiTargetTest, Parse) {
+  std::string error;
+  QualcommOptions::LpaiTarget value;
+
+  {
+    static constexpr absl::string_view kEnv = "x86";
+    static constexpr QualcommOptions::LpaiTarget kEnvEnum =
+        QualcommOptions::LpaiTarget::kX86;
+    EXPECT_TRUE(AbslParseFlag(kEnv, &value, &error));
+    EXPECT_EQ(value, kEnvEnum);
+    EXPECT_EQ(kEnv, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kEnv = "arm";
+    static constexpr QualcommOptions::LpaiTarget kEnvEnum =
+        QualcommOptions::LpaiTarget::kArm;
+    EXPECT_TRUE(AbslParseFlag(kEnv, &value, &error));
+    EXPECT_EQ(value, kEnvEnum);
+    EXPECT_EQ(kEnv, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kEnv = "adsp";
+    static constexpr QualcommOptions::LpaiTarget kEnvEnum =
+        QualcommOptions::LpaiTarget::kAdsp;
+    EXPECT_TRUE(AbslParseFlag(kEnv, &value, &error));
+    EXPECT_EQ(value, kEnvEnum);
+    EXPECT_EQ(kEnv, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kEnv = "tensilica";
+    static constexpr QualcommOptions::LpaiTarget kEnvEnum =
+        QualcommOptions::LpaiTarget::kTensilica;
+    EXPECT_TRUE(AbslParseFlag(kEnv, &value, &error));
+    EXPECT_EQ(value, kEnvEnum);
+    EXPECT_EQ(kEnv, AbslUnparseFlag(value));
+  }
+}
+
+TEST(LpaiClientPerfTypeTest, Malformed) {
+  std::string error;
+  QualcommOptions::LpaiClientPerfType value;
+
+  EXPECT_FALSE(AbslParseFlag("boogabooga", &value, &error));
+}
+
+TEST(LpaiClientPerfTypeTest, Parse) {
+  std::string error;
+  QualcommOptions::LpaiClientPerfType value;
+
+  {
+    static constexpr absl::string_view kType = "default";
+    static constexpr QualcommOptions::LpaiClientPerfType kTypeEnum =
+        QualcommOptions::LpaiClientPerfType::kDefault;
+    EXPECT_TRUE(AbslParseFlag(kType, &value, &error));
+    EXPECT_EQ(value, kTypeEnum);
+    EXPECT_EQ(kType, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kType = "real_time";
+    static constexpr QualcommOptions::LpaiClientPerfType kTypeEnum =
+        QualcommOptions::LpaiClientPerfType::kRealTime;
+    EXPECT_TRUE(AbslParseFlag(kType, &value, &error));
+    EXPECT_EQ(value, kTypeEnum);
+    EXPECT_EQ(kType, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kType = "non_real_time";
+    static constexpr QualcommOptions::LpaiClientPerfType kTypeEnum =
+        QualcommOptions::LpaiClientPerfType::kNonRealTime;
+    EXPECT_TRUE(AbslParseFlag(kType, &value, &error));
+    EXPECT_EQ(value, kTypeEnum);
+    EXPECT_EQ(kType, AbslUnparseFlag(value));
+  }
+}
+
+TEST(LpaiCoreAffinityTypeTest, Malformed) {
+  std::string error;
+  QualcommOptions::LpaiCoreAffinityType value;
+
+  EXPECT_FALSE(AbslParseFlag("boogabooga", &value, &error));
+}
+
+TEST(LpaiCoreAffinityTypeTest, Parse) {
+  std::string error;
+  QualcommOptions::LpaiCoreAffinityType value;
+
+  {
+    static constexpr absl::string_view kAffinity = "default";
+    static constexpr QualcommOptions::LpaiCoreAffinityType kAffinityEnum =
+        QualcommOptions::LpaiCoreAffinityType::kDefault;
+    EXPECT_TRUE(AbslParseFlag(kAffinity, &value, &error));
+    EXPECT_EQ(value, kAffinityEnum);
+    EXPECT_EQ(kAffinity, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kAffinity = "soft";
+    static constexpr QualcommOptions::LpaiCoreAffinityType kAffinityEnum =
+        QualcommOptions::LpaiCoreAffinityType::kSoft;
+    EXPECT_TRUE(AbslParseFlag(kAffinity, &value, &error));
+    EXPECT_EQ(value, kAffinityEnum);
+    EXPECT_EQ(kAffinity, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kAffinity = "hard";
+    static constexpr QualcommOptions::LpaiCoreAffinityType kAffinityEnum =
+        QualcommOptions::LpaiCoreAffinityType::kHard;
+    EXPECT_TRUE(AbslParseFlag(kAffinity, &value, &error));
+    EXPECT_EQ(value, kAffinityEnum);
+    EXPECT_EQ(kAffinity, AbslUnparseFlag(value));
+  }
+}
+
 TEST(CustomOpPackageFlagTest, ParseUnparse) {
   std::string error;
   QualcommOptions::CustomOpPackage value;
@@ -584,6 +710,15 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_EQ(options.Value().GetBackend(), QualcommOptions::Backend::kHtp);
   EXPECT_EQ(options.Value().GetGraphIOTensorMemType(),
             QualcommOptions::GraphIOTensorMemType::kMemHandle);
+  EXPECT_EQ(options.Value().GetLpaiTarget(),
+            QualcommOptions::LpaiTarget::kAdsp);
+  EXPECT_EQ(options.Value().GetLpaiFps(), 1);
+  EXPECT_EQ(options.Value().GetLpaiFtrtRatio(), 10);
+  EXPECT_EQ(options.Value().GetLpaiClientPerfType(),
+            QualcommOptions::LpaiClientPerfType::kDefault);
+  EXPECT_EQ(options.Value().GetLpaiCoreAffinityType(),
+            QualcommOptions::LpaiCoreAffinityType::kDefault);
+  EXPECT_EQ(options.Value().GetLpaiCoreSelection(), 0);
 }
 
 }  // namespace

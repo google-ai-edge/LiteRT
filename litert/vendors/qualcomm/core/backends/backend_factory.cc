@@ -12,6 +12,7 @@
 #include "litert/vendors/qualcomm/core/backends/gpu_backend.h"
 #include "litert/vendors/qualcomm/core/backends/htp_backend.h"
 #include "litert/vendors/qualcomm/core/backends/ir_backend.h"
+#include "litert/vendors/qualcomm/core/backends/lpai_backend.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
@@ -45,6 +46,10 @@ std::unique_ptr<QnnBackend> CreateBackend(const QnnApi* api,
     }
     case BackendType::kDspBackend: {
       backend = std::make_unique<DspBackend>(api);
+      break;
+    }
+    case BackendType::kLpaiBackend: {
+      backend = std::make_unique<LpaiBackend>(api);
       break;
     }
     default:

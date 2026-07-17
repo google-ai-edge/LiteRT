@@ -195,6 +195,13 @@ LiteRtDispatchInvocationContextT::Create(
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name) {
   if (exec_type == kLiteRtDispatchExecutableTypeJitHandle) {
+    // LPAI is not supported in JIT mode.
+    if (qnn.GetOptions().GetBackendType() == ::qnn::BackendType::kLpaiBackend) {
+      return Unexpected(kLiteRtStatusErrorUnsupported,
+                        "LPAI backend is not supported in JIT mode; please use "
+                        "AOT compilation.");
+    }
+
     // JIT Handle is stored in exec_bytecode_buffer as the QnnJitGraph to
     // maintain generic Create method for both normal and JIT executables.
     auto jit_graph = reinterpret_cast<const litert::qnn::QnnJitGraph*>(
@@ -280,6 +287,12 @@ LiteRtDispatchInvocationContextT::Create(
       status != QNN_SUCCESS) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to retrieve graph");
+  }
+
+  if (!qnn_backend.ConfigureGraphAfterRetrieve(
+          {graph_handle, function_name, profile_handle}, qnn.GetOptions())) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Failed to configure graph after retrieve");
   }
 
   return Ptr(new LiteRtDispatchInvocationContextT(

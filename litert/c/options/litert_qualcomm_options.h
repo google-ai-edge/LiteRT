@@ -357,6 +357,7 @@ typedef enum LrtQualcommOptionsBackend {
   kLiteRtQualcommBackendHtp,
   kLiteRtQualcommBackendDsp,
   kLiteRtQualcommBackendIr,
+  kLiteRtQualcommBackendLpai,
 } LrtQualcommOptionsBackend;
 
 LiteRtStatus LrtQualcommOptionsSetBackend(
@@ -377,7 +378,6 @@ LiteRtStatus LrtQualcommOptionsSetSchematicDir(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetSchematicDir(LrtQualcommOptions options,
                                                const char** schematic_dir);
 
-
 LiteRtStatus LrtQualcommOptionsSetCustomOpPackage(
     LrtQualcommOptions options, const char* name,
     const char* interface_provider, const char* compile_package_path,
@@ -388,6 +388,65 @@ LiteRtStatus LrtQualcommOptionsGetCustomOpPackage(
     const char** interface_provider, const char** compile_package_path,
     const char** dispatch_package_path, const char** target);
 
+// LPAI OPTIONS ////////////////////////////////////////////////////////////////
+
+typedef enum LrtQualcommOptionsLpaiTarget {
+  kLiteRtQualcommLpaiTargetX86 = 0,
+  kLiteRtQualcommLpaiTargetArm = 1,
+  kLiteRtQualcommLpaiTargetAdsp = 2,
+  kLiteRtQualcommLpaiTargetTensilica = 3,
+} LrtQualcommOptionsLpaiTarget;
+
+LiteRtStatus LrtQualcommOptionsSetLpaiTarget(
+    LrtQualcommOptions options, LrtQualcommOptionsLpaiTarget lpai_target);
+
+LiteRtStatus LrtQualcommOptionsGetLpaiTarget(
+    LrtQualcommOptions options, LrtQualcommOptionsLpaiTarget* lpai_target);
+
+LiteRtStatus LrtQualcommOptionsSetLpaiFps(LrtQualcommOptions options,
+                                          uint32_t lpai_fps);
+
+LiteRtStatus LrtQualcommOptionsGetLpaiFps(LrtQualcommOptions options,
+                                          uint32_t* lpai_fps);
+
+LiteRtStatus LrtQualcommOptionsSetLpaiFtrtRatio(LrtQualcommOptions options,
+                                                uint32_t lpai_ftrt_ratio);
+
+LiteRtStatus LrtQualcommOptionsGetLpaiFtrtRatio(LrtQualcommOptions options,
+                                                uint32_t* lpai_ftrt_ratio);
+typedef enum LrtQualcommOptionsLpaiClientPerfType {
+  kLiteRtQualcommLpaiClientPerfTypeDefault = 0,
+  kLiteRtQualcommLpaiClientPerfTypeRealTime = 1,
+  kLiteRtQualcommLpaiClientPerfTypeNonRealTime = 2,
+} LrtQualcommOptionsLpaiClientPerfType;
+
+LiteRtStatus LrtQualcommOptionsSetLpaiClientPerfType(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsLpaiClientPerfType lpai_client_perf_type);
+
+LiteRtStatus LrtQualcommOptionsGetLpaiClientPerfType(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsLpaiClientPerfType* lpai_client_perf_type);
+
+typedef enum LrtQualcommOptionsLpaiCoreAffinityType {
+  kLiteRtQualcommLpaiCoreAffinityTypeDefault = 0,
+  kLiteRtQualcommLpaiCoreAffinityTypeSoft = 1,
+  kLiteRtQualcommLpaiCoreAffinityTypeHard = 2,
+} LrtQualcommOptionsLpaiCoreAffinityType;
+
+LiteRtStatus LrtQualcommOptionsSetLpaiCoreAffinityType(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsLpaiCoreAffinityType lpai_core_affinity_type);
+
+LiteRtStatus LrtQualcommOptionsGetLpaiCoreAffinityType(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsLpaiCoreAffinityType* lpai_core_affinity_type);
+
+LiteRtStatus LrtQualcommOptionsSetLpaiCoreSelection(
+    LrtQualcommOptions options, uint32_t lpai_core_selection);
+
+LiteRtStatus LrtQualcommOptionsGetLpaiCoreSelection(
+    LrtQualcommOptions options, uint32_t* lpai_core_selection);
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

@@ -42,18 +42,28 @@ enum class DspArch {
   V81 = 81,  // HTP supported device
 };
 
+enum class LpaiHardwareVersion {
+  kUnknown = 0,
+  kV5 = 5,
+  kV6 = 6,
+};
+
 struct SocInfo {
   const char* soc_name;
   SnapdragonModel soc_model;
   DspArch dsp_arch;
   std::uint32_t vtcm_size_in_mb;
+  LpaiHardwareVersion lpai_hw_version;
 
-  constexpr SocInfo(const char* soc_name, const SnapdragonModel soc_model,
-                    const DspArch dsp_arch, const std::size_t vtcm_size_in_mb)
+  constexpr SocInfo(
+      const char* soc_name, SnapdragonModel soc_model, DspArch dsp_arch,
+      std::size_t vtcm_size_in_mb,
+      LpaiHardwareVersion lpai_hw_version = LpaiHardwareVersion::kUnknown)
       : soc_name(soc_name),
         soc_model(soc_model),
         dsp_arch(dsp_arch),
-        vtcm_size_in_mb(vtcm_size_in_mb) {}
+        vtcm_size_in_mb(vtcm_size_in_mb),
+        lpai_hw_version(lpai_hw_version) {}
 };
 
 extern const SocInfo kSocInfos[];
