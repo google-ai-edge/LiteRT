@@ -14,11 +14,24 @@
 
 namespace qnn {
 
+// TODO(chunhsue): Remove this backend specific info once lpai supports
+// device property APIs.
+enum class LpaiHardwareVersion {
+  kUnknown = 0,
+  kV5 = 5,
+  kV6 = 6,
+};
+
 struct SocInfo {
   std::string_view soc_name;
   uint32_t soc_model;
-  constexpr SocInfo(std::string_view soc_name, uint32_t soc_model)
-      : soc_name(soc_name), soc_model(soc_model) {}
+  LpaiHardwareVersion lpai_hw_version;
+  constexpr SocInfo(
+      std::string_view soc_name, uint32_t soc_model,
+      LpaiHardwareVersion lpai_hw_version = LpaiHardwareVersion::kUnknown)
+      : soc_name(soc_name),
+        soc_model(soc_model),
+        lpai_hw_version(lpai_hw_version) {}
 };
 
 // kSocInfos is derived from the QAIRT 2.47 documentation and sorted by soc_name
@@ -39,7 +52,8 @@ inline constexpr std::array<SocInfo, 111> kSocInfos{{
     SocInfo{"SA8620P", 67},  SocInfo{"SA8630", 52},   SocInfo{"SA8650", 52},
     SocInfo{"SA8775", 52},   SocInfo{"SA8797", 72},   SocInfo{"SAR1130P", 58},
     SocInfo{"SAR2130P", 46}, SocInfo{"SAR2230P", 95}, SocInfo{"SC7280X", 44},
-    SocInfo{"SC8280X", 37},  SocInfo{"SC8380XP", 60}, SocInfo{"SC8480XP", 88},
+    SocInfo{"SC8280X", 37},  SocInfo{"SC8380XP", 60},
+    SocInfo{"SC8480XP", 88, LpaiHardwareVersion::kV5},
     SocInfo{"SDM625", 11},   SocInfo{"SDM630", 10},   SocInfo{"SDM632", 15},
     SocInfo{"SDM636", 9},    SocInfo{"SDM652", 8},    SocInfo{"SDM660", 7},
     SocInfo{"SDM670", 6},    SocInfo{"SDM710", 13},   SocInfo{"SDM820", 4},
@@ -57,8 +71,12 @@ inline constexpr std::array<SocInfo, 111> kSocInfos{{
     SocInfo{"SM7750", 86},   SocInfo{"SM8325", 34},   SocInfo{"SM8350", 30},
     SocInfo{"SM8350P", 30},  SocInfo{"SM8450", 36},   SocInfo{"SM8475", 42},
     SocInfo{"SM8550", 43},   SocInfo{"SM8635", 68},   SocInfo{"SM8650", 57},
-    SocInfo{"SM8735", 85},   SocInfo{"SM8750", 69},   SocInfo{"SM8845", 97},
-    SocInfo{"SM8845P", 97},  SocInfo{"SM8850", 87},   SocInfo{"SSG2115P", 46},
+    SocInfo{"SM8735", 85},
+    SocInfo{"SM8750", 69, LpaiHardwareVersion::kV5},
+    SocInfo{"SM8845", 97},
+    SocInfo{"SM8845P", 97},
+    SocInfo{"SM8850", 87, LpaiHardwareVersion::kV6},
+    SocInfo{"SSG2115P", 46},
     SocInfo{"SSG2125P", 58}, SocInfo{"STP6225P", 47}, SocInfo{"SW6100", 96},
     SocInfo{"SXR1230P", 45}, SocInfo{"SXR2230P", 53}, SocInfo{"SXR2330P", 75},
 }};
@@ -94,7 +112,8 @@ constexpr std::optional<SocInfo> FindSocInfo(const char* soc_name) {
 
 // Resolves a SocInfo from either a SoC name (e.g. "SM8750") or a numeric
 // SoC model (e.g. "43"). Returns nullopt if the input is null or matches
-// neither format.
+// neither format. The LPAI hardware version, when known, is carried on the
+// resolved SocInfo.
 inline std::optional<SocInfo> FindOrCreateSocInfo(
     const char* soc_name_or_model) {
   if (soc_name_or_model == nullptr) return std::nullopt;
@@ -109,6 +128,7 @@ inline std::optional<SocInfo> FindOrCreateSocInfo(
   if (ec == std::errc{} && ptr == sv.data() + sv.size()) {
     return SocInfo{"CUSTOM_SOC", soc_model};
   }
+
   return std::nullopt;
 }
 }  // namespace qnn

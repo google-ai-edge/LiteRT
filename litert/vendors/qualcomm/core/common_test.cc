@@ -4,6 +4,7 @@
 #include "litert/vendors/qualcomm/core/common.h"
 
 #include <gtest/gtest.h>
+#include "LPAI/QnnLpaiGraph.h"  // from @qairt
 
 namespace qnn {
 namespace {
@@ -56,6 +57,10 @@ TEST(QnnOptionTest, BackendType) {
   static constexpr BackendType kGpu = BackendType::kGpuBackend;
   options.SetBackendType(kGpu);
   EXPECT_EQ(options.GetBackendType(), kGpu);
+
+  static constexpr BackendType kLpai = BackendType::kLpaiBackend;
+  options.SetBackendType(kLpai);
+  EXPECT_EQ(options.GetBackendType(), kLpai);
 }
 
 TEST(QnnOptionTest, HtpPerformanceMode) {
@@ -372,6 +377,34 @@ TEST(QnnOptionTest, Default) {
   EXPECT_TRUE(custom_op_package.target.empty());
   EXPECT_EQ(options.GetGpuPrecision(), GpuPrecision::kFp16);
   EXPECT_EQ(options.GetGpuPerformanceMode(), GpuPerformanceMode::kHigh);
+  EXPECT_EQ(options.GetLpaiTarget(), LpaiTarget::kAdsp);
+  EXPECT_EQ(options.GetLpaiFps(), QNN_LPAI_GRAPH_DEFAULT_FPS);
+  EXPECT_EQ(options.GetLpaiFtrtRatio(), QNN_LPAI_GRAPH_DEFAULT_FTRT_RATIO);
+  EXPECT_EQ(options.GetLpaiClientPerfType(), LpaiClientPerfType::kDefault);
+  EXPECT_EQ(options.GetLpaiCoreAffinityType(), LpaiCoreAffinityType::kDefault);
+  EXPECT_EQ(options.GetLpaiCoreSelection(), 0);
+}
+
+TEST(QnnOptionTest, LpaiOptions) {
+  Options options;
+
+  options.SetLpaiTarget(LpaiTarget::kX86);
+  EXPECT_EQ(options.GetLpaiTarget(), LpaiTarget::kX86);
+
+  options.SetLpaiFps(30);
+  EXPECT_EQ(options.GetLpaiFps(), 30);
+
+  options.SetLpaiFtrtRatio(10);
+  EXPECT_EQ(options.GetLpaiFtrtRatio(), 10);
+
+  options.SetLpaiClientPerfType(LpaiClientPerfType::kRealTime);
+  EXPECT_EQ(options.GetLpaiClientPerfType(), LpaiClientPerfType::kRealTime);
+
+  options.SetLpaiCoreAffinityType(LpaiCoreAffinityType::kHard);
+  EXPECT_EQ(options.GetLpaiCoreAffinityType(), LpaiCoreAffinityType::kHard);
+
+  options.SetLpaiCoreSelection(0x01);
+  EXPECT_EQ(options.GetLpaiCoreSelection(), 0x01u);
 }
 
 struct SdkVersionTest : public ::testing::Test {
