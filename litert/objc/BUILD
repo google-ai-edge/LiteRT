@@ -31,6 +31,7 @@ objc_library(
     hdrs = [
         "apis/LRTEnvironment.h",
         "apis/LRTError.h",
+        "sources/LRTEnvironment+Internal.h",
     ],
     deps = [
         "//third_party/apple_frameworks:Foundation",
@@ -106,5 +107,55 @@ ios_unit_test(
     ],
     deps = [
         ":litert_objc_options_test_library",
+    ],
+)
+
+objc_library(
+    name = "litert_objc_tensor_buffer",
+    srcs = [
+        "sources/LRTTensorBuffer.mm",
+    ],
+    hdrs = [
+        "apis/LRTTensorBuffer.h",
+    ],
+    deps = [
+        ":litert_objc_environment",
+        "//third_party/apple_frameworks:Foundation",
+        # Dependency placeholder: apple_frameworks Metal,
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc:litert_tensor_buffer_types",
+    ],
+)
+
+objc_library(
+    name = "litert_objc_tensor_buffer_test_library",
+    testonly = True,
+    srcs = [
+        "tests/LRTTensorBufferTests.mm",
+    ],
+    deps = [
+        ":litert_objc_environment",
+        ":litert_objc_tensor_buffer",
+        "@com_google_googletest//:gtest",
+        "@com_google_googletest//:gtest_main",
+        # Dependency placeholder: apple_frameworks Metal,
+    ],
+)
+
+ios_unit_test(
+    name = "litert_objc_tensor_buffer_test_ios",
+    minimum_os_version = LITERT_MIN_IOS_VERSION,
+    runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":litert_objc_tensor_buffer_test_library",
     ],
 )
