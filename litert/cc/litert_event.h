@@ -93,6 +93,12 @@ class Event : public internal::BaseHandle<LiteRtEvent> {
     return Event(env_holder, event, OwnHandle::kYes);
   }
 
+  Expected<void> SetCustomEvent(void* custom_event) {
+    LITERT_RETURN_IF_ERROR(env_.runtime->SetCustomEvent(
+        Get(), reinterpret_cast<LiteRtCustomEvent>(custom_event)));
+    return {};
+  }
+
   Expected<int> GetSyncFenceFd() {
     int fd;
     LITERT_RETURN_IF_ERROR(env_.runtime->GetEventSyncFenceFd(Get(), &fd));
