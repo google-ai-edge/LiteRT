@@ -19,12 +19,62 @@ limitations under the License.
 
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "tensor/arithmetic_graph.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
 #include "tensor/utils/macros.h"
 #include "tflite/schema/mutable/schema_generated.h"
+
+namespace litert::tensor {
+absl::StatusOr<::tflite::TensorType> ToTfLite(const Type type) {
+  switch (type) {
+    case Type::kUnknown:
+      return absl::FailedPreconditionError(absl::StrFormat(
+          "Serialisation of a tensor with '%s' type is not supported",
+          ToString(type)));
+    case Type::kBOOL:
+      return ::tflite::TensorType_BOOL;
+    case Type::kI2:
+      return ::tflite::TensorType_INT2;
+    case Type::kI4:
+      return ::tflite::TensorType_INT4;
+    case Type::kI8:
+      return ::tflite::TensorType_INT8;
+    case Type::kI16:
+      return ::tflite::TensorType_INT16;
+    case Type::kI32:
+      return ::tflite::TensorType_INT32;
+    case Type::kI64:
+      return ::tflite::TensorType_INT64;
+    case Type::kU4:
+      return absl::FailedPreconditionError(absl::StrFormat(
+          "Serialisation of a tensor with '%s' type is not supported",
+          ToString(type)));
+    case Type::kU8:
+      return ::tflite::TensorType_UINT8;
+    case Type::kU16:
+      return ::tflite::TensorType_UINT16;
+    case Type::kU32:
+      return ::tflite::TensorType_UINT32;
+    case Type::kU64:
+      return ::tflite::TensorType_UINT64;
+    case Type::kFP16:
+      return ::tflite::TensorType_FLOAT16;
+    case Type::kFP32:
+      return ::tflite::TensorType_FLOAT32;
+    case Type::kFP64:
+      return ::tflite::TensorType_FLOAT64;
+    case Type::kBF16:
+      return absl::FailedPreconditionError(absl::StrFormat(
+          "Serialisation of a tensor with '%s' type is not supported",
+          ToString(type)));
+  }
+  return absl::UnimplementedError(
+      "Type was not handled in the conversion to TFLite flatbuffer value.");
+}
+}  // namespace litert::tensor
 
 namespace litert::tensor::graph {
 
@@ -301,7 +351,19 @@ absl::StatusOr<TfLiteOpBuildInfo> OpMixin<
 
 absl::StatusOr<TfLiteOpBuildInfo> OpMixin<
     CastOperation, TfLiteMixinTag>::ToTfLite(const graph::Operation& op) const {
-  return TfLiteOpBuildInfo(::tflite::BuiltinOperator_CAST);
+  LRT_TENSOR_ASSIGN_OR_RETURN(const CastOperation& data,
+                              op.As<CastOperation>());
+  LRT_TENSOR_ASSIGN_OR_RETURN(auto to_type, litert::tensor::ToTfLite(data.to));
+  if (op.inputs.empty()) {
+    return absl::InvalidArgumentError("Cast operation has no input.");
+  }
+  LRT_TENSOR_ASSIGN_OR_RETURN(const auto& input_info, GetInfo(op.inputs[0]));
+  LRT_TENSOR_ASSIGN_OR_RETURN(auto from_type,
+                              litert::tensor::ToTfLite(input_info.type));
+
+  return TfLiteOpBuildInfo(::tflite::BuiltinOperator_CAST,
+                           tflite::CastOptionsT{.in_data_type = from_type,
+                                                .out_data_type = to_type});
 }
 
 absl::StatusOr<TfLiteOpBuildInfo>
