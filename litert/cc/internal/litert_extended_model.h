@@ -119,48 +119,48 @@ FetchExtendedTensorType(LiteRtTensor tensor, LiteRtTensorTypeId type_id) {
   }
 }
 
-inline LiteRtQuantizationTypeId FetchExtendedTensorQuantizationTypeId(
+inline QuantizationTypeId FetchExtendedTensorQuantizationTypeId(
     LiteRtTensor tensor) {
   if (tensor == nullptr) {
-    return kLiteRtQuantizationNone;
+    return QuantizationTypeId::None;
   }
   LiteRtQuantizationTypeId quantization_type_id;
   internal::AssertOk(LiteRtGetQuantizationTypeId, tensor,
                      &quantization_type_id);
-  return quantization_type_id;
+  return static_cast<QuantizationTypeId>(quantization_type_id);
 }
 
-inline LiteRtQuantizationPerTensor FetchExtendedTensorQuantizationPerTensor(
+inline QuantizationPerTensor FetchExtendedTensorQuantizationPerTensor(
     LiteRtTensor tensor) {
   if (FetchExtendedTensorQuantizationTypeId(tensor) !=
-      kLiteRtQuantizationPerTensor) {
+      QuantizationTypeId::PerTensor) {
     return {};
   }
-  LiteRtQuantizationPerTensor per_tensor_quantization;
+  QuantizationPerTensor per_tensor_quantization;
   internal::AssertOk(LiteRtGetPerTensorQuantization, tensor,
                      &per_tensor_quantization);
   return per_tensor_quantization;
 }
 
-inline LiteRtQuantizationPerChannel FetchExtendedTensorQuantizationPerChannel(
+inline QuantizationPerChannel FetchExtendedTensorQuantizationPerChannel(
     LiteRtTensor tensor) {
   if (FetchExtendedTensorQuantizationTypeId(tensor) !=
-      kLiteRtQuantizationPerChannel) {
+      QuantizationTypeId::PerChannel) {
     return {};
   }
-  LiteRtQuantizationPerChannel per_channel_quantization;
+  QuantizationPerChannel per_channel_quantization;
   internal::AssertOk(LiteRtGetPerChannelQuantization, tensor,
                      &per_channel_quantization);
   return per_channel_quantization;
 }
 
-inline LiteRtQuantizationBlockWise FetchExtendedTensorQuantizationBlockWise(
+inline QuantizationBlockWise FetchExtendedTensorQuantizationBlockWise(
     LiteRtTensor tensor) {
   if (FetchExtendedTensorQuantizationTypeId(tensor) !=
-      kLiteRtQuantizationBlockWise) {
+      QuantizationTypeId::BlockWise) {
     return {};
   }
-  LiteRtQuantizationBlockWise block_wise_quantization;
+  QuantizationBlockWise block_wise_quantization;
   internal::AssertOk(LiteRtGetBlockWiseQuantization, tensor,
                      &block_wise_quantization);
   return block_wise_quantization;
@@ -207,30 +207,30 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor>,
   // We need to keep these functions in sync with the SimpleTensor class. These
   // function are used when Tensor is used as a live handle, reflects the most
   // up-to-date state of the underlying LiteRtTensor.
-  LiteRtQuantizationTypeId QTypeId() const {
+  QuantizationTypeId QTypeId() const {
     LiteRtQuantizationTypeId q_type_id;
     internal::AssertOk(LiteRtGetQuantizationTypeId, Get(), &q_type_id);
-    return q_type_id;
+    return static_cast<QuantizationTypeId>(q_type_id);
   }
 
-  bool HasQuantization() const { return QTypeId() != kLiteRtQuantizationNone; }
+  bool HasQuantization() const { return QTypeId() != QuantizationTypeId::None; }
 
-  LiteRtQuantizationPerTensor PerTensorQuantization() const {
-    LiteRtQuantizationPerTensor per_tensor_quantization;
+  QuantizationPerTensor PerTensorQuantization() const {
+    QuantizationPerTensor per_tensor_quantization;
     internal::AssertOk(LiteRtGetPerTensorQuantization, Get(),
                        &per_tensor_quantization);
     return per_tensor_quantization;
   }
 
-  LiteRtQuantizationPerChannel PerChannelQuantization() const {
-    LiteRtQuantizationPerChannel per_channel_quantization;
+  QuantizationPerChannel PerChannelQuantization() const {
+    QuantizationPerChannel per_channel_quantization;
     internal::AssertOk(LiteRtGetPerChannelQuantization, Get(),
                        &per_channel_quantization);
     return per_channel_quantization;
   }
 
-  LiteRtQuantizationBlockWise BlockWiseQuantization() const {
-    LiteRtQuantizationBlockWise block_wise_quantization;
+  QuantizationBlockWise BlockWiseQuantization() const {
+    QuantizationBlockWise block_wise_quantization;
     internal::AssertOk(LiteRtGetBlockWiseQuantization, Get(),
                        &block_wise_quantization);
     return block_wise_quantization;
@@ -419,6 +419,18 @@ class Op : public internal::NonOwnedHandle<LiteRtOp> {
       return Error(stat, "Failed to get custom code");
     }
     return absl::string_view(custom_code);
+  }
+
+  /// @brief Gets the custom options.
+  /// @return The custom options if present, otherwise an error.
+  Expected<absl::Span<const uint8_t>> CustomOptions() const {
+    const uint8_t* options = nullptr;
+    int32_t options_bytes = 0;
+    auto stat = LiteRtGetCustomOptions(Get(), &options, &options_bytes);
+    if (stat != kLiteRtStatusOk) {
+      return Error(stat, "Failed to get custom options");
+    }
+    return absl::MakeConstSpan(options, options_bytes);
   }
 
   OpInputs Inputs() const {

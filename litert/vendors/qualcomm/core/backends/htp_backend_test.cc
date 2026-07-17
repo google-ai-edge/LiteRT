@@ -3,15 +3,18 @@
 
 #include "litert/vendors/qualcomm/core/backends/htp_backend.h"
 
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <thread>
 #include <utility>
 #include <vector>
 
 #include "HTP/QnnHtpDevice.h"  // from @qairt
 #include "HTP/QnnHtpPerfInfrastructure.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
+#include "QnnDevice.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 #include <gtest/gtest.h>
 #include "absl/base/no_destructor.h"  // from @com_google_absl
@@ -19,7 +22,6 @@
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
-#include "QnnDevice.h"  // from @qairt
 
 namespace qnn {
 namespace {
@@ -319,6 +321,113 @@ TEST_F(HtpBackendTest, DISABLED_InitializeWithLogLevelVerboseTest) {
 
   ASSERT_TRUE(backend_->GetBackendHandle());
   ASSERT_TRUE(backend_->GetLogHandle());
+}
+
+// SETPERFORMANCEMODE /////////////////////////////////////////////////////////
+TEST_P(HtpBackendRPCPollingPerfParamTest, ManualSameModeSkipsRevote) {
+  const auto& params = GetParam();
+  Options options;
+  options.SetHtpPerformanceMode(params.mode);
+  options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kManual);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kSocInfos[8]));
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+#endif
+
+  const size_t configs_after_init = captured_configs->size();
+
+  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(captured_configs->size(), configs_after_init);
+}
+
+TEST_P(HtpBackendRPCPollingPerfParamTest, AutoSameModeRevotes) {
+  const auto& params = GetParam();
+  Options options;
+  options.SetHtpPerformanceMode(params.mode);
+  options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kAuto);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kSocInfos[8]));
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+#endif
+
+  const size_t configs_after_init = captured_configs->size();
+  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(captured_configs->size(), configs_after_init + 1);
+}
+
+TEST_F(HtpBackendPerfBaseTest, ManualModeChangeRevotes) {
+  Options options;
+  options.SetHtpPerformanceMode(HtpPerformanceMode::kPowerSaver);
+  options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kManual);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kSocInfos[8]));
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+#endif
+  const size_t configs_after_init = captured_configs->size();
+
+  options.SetHtpPerformanceMode(HtpPerformanceMode::kBurst);
+  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_GT(captured_configs->size(), configs_after_init);
+}
+
+TEST_F(HtpBackendPerfBaseTest, DefaultModeSchedulesDownvote) {
+  Options options;
+  options.SetHtpPerformanceMode(HtpPerformanceMode::kBurst);
+  options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kManual);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kSocInfos[8]));
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+#endif
+  const size_t configs_after_init = captured_configs->size();
+
+  Options default_options;  // kDefault
+  EXPECT_TRUE(backend.SetPerformanceMode(default_options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(400));
+  EXPECT_GT(captured_configs->size(), configs_after_init);
+}
+
+TEST_F(HtpBackendPerfBaseTest, AutoModeChangesAcrossExecutes) {
+  Options options;
+  options.SetHtpPerformanceMode(HtpPerformanceMode::kPowerSaver);
+  options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kAuto);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kSocInfos[8]));
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+#endif
+  const size_t configs_after_init = captured_configs->size();
+
+  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  const size_t configs_after_same = captured_configs->size();
+  EXPECT_GT(configs_after_same, configs_after_init);
+
+  Options default_options;
+  EXPECT_TRUE(backend.SetPerformanceMode(default_options));
+
+  Options burst_options;
+  burst_options.SetHtpPerformanceMode(HtpPerformanceMode::kBurst);
+  burst_options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kAuto);
+  EXPECT_TRUE(backend.SetPerformanceMode(burst_options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_GT(captured_configs->size(), configs_after_same);
 }
 
 }  // namespace

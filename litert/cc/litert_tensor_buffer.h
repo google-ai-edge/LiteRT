@@ -204,6 +204,85 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
 #endif
   }
 
+  /// @brief Creates a `TensorBuffer` that wraps an ION buffer.
+  ///
+  /// The provided ION buffer is not owned by the `TensorBuffer` and must
+  /// outlive it.
+  /// @param ion_buffer_offset The offset in bytes from the start of the
+  /// ION buffer where the tensor data begins.
+  static Expected<TensorBuffer> CreateFromIonBuffer(
+      const Environment& env, const RankedTensorType& tensor_type,
+      void* ion_buffer_addr, int ion_buffer_fd, size_t ion_buffer_size,
+      size_t ion_buffer_offset) {
+#if LITERT_HAS_ION_SUPPORT
+    LiteRtTensorBuffer tensor_buffer;
+    auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
+    auto env_holder = env.GetHolder();
+
+    LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateTensorBufferFromIonBuffer(
+        &litert_tensor_type, ion_buffer_addr, ion_buffer_fd, ion_buffer_size,
+        ion_buffer_offset, /*deallocator=*/nullptr, &tensor_buffer));
+    return TensorBuffer(env_holder, tensor_buffer, OwnHandle::kYes);
+#else
+    return litert::Unexpected(Status::kErrorRuntimeFailure,
+                              "ION is not supported on this platform");
+#endif
+  }
+
+  /// @brief Creates a `TensorBuffer` that wraps a DMA-BUF buffer.
+  ///
+  /// The provided DMA-BUF buffer is not owned by the `TensorBuffer` and must
+  /// outlive it.
+  /// @param dmabuf_buffer_offset The offset in bytes from the start of the
+  /// DMA-BUF buffer where the tensor data begins.
+  static Expected<TensorBuffer> CreateFromDmaBufBuffer(
+      const Environment& env, const RankedTensorType& tensor_type,
+      void* dmabuf_buffer_addr, int dmabuf_buffer_fd, size_t dmabuf_buffer_size,
+      size_t dmabuf_buffer_offset) {
+#if LITERT_HAS_DMABUF_SUPPORT
+    LiteRtTensorBuffer tensor_buffer;
+    auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
+    auto env_holder = env.GetHolder();
+
+    LITERT_RETURN_IF_ERROR(
+        env_holder.runtime->CreateTensorBufferFromDmaBufBuffer(
+            &litert_tensor_type, dmabuf_buffer_addr, dmabuf_buffer_fd,
+            dmabuf_buffer_size, dmabuf_buffer_offset, /*deallocator=*/nullptr,
+            &tensor_buffer));
+    return TensorBuffer(env_holder, tensor_buffer, OwnHandle::kYes);
+#else
+    return litert::Unexpected(Status::kErrorRuntimeFailure,
+                              "DMA-BUF is not supported on this platform");
+#endif
+  }
+
+  /// @brief Creates a `TensorBuffer` that wraps a FastRPC buffer.
+  ///
+  /// The provided FastRPC buffer is not owned by the `TensorBuffer` and must
+  /// outlive it.
+  /// @param fastrpc_buffer_offset The offset in bytes from the start of the
+  /// FastRPC buffer where the tensor data begins.
+  static Expected<TensorBuffer> CreateFromFastRpcBuffer(
+      const Environment& env, const RankedTensorType& tensor_type,
+      void* fastrpc_buffer_addr, int fastrpc_buffer_fd,
+      size_t fastrpc_buffer_size, size_t fastrpc_buffer_offset) {
+#if LITERT_HAS_FASTRPC_SUPPORT
+    LiteRtTensorBuffer tensor_buffer;
+    auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
+    auto env_holder = env.GetHolder();
+
+    LITERT_RETURN_IF_ERROR(
+        env_holder.runtime->CreateTensorBufferFromFastRpcBuffer(
+            &litert_tensor_type, fastrpc_buffer_addr, fastrpc_buffer_fd,
+            fastrpc_buffer_size, fastrpc_buffer_offset, /*deallocator=*/nullptr,
+            &tensor_buffer));
+    return TensorBuffer(env_holder, tensor_buffer, OwnHandle::kYes);
+#else
+    return litert::Unexpected(Status::kErrorRuntimeFailure,
+                              "FastRPC is not supported on this platform");
+#endif
+  }
+
   static Expected<TensorBuffer> CreateFromClBuffer(
       const Environment& env, const RankedTensorType& tensor_type,
       TensorBufferType buffer_type, LiteRtClMem cl_memory, size_t size_bytes) {
@@ -336,6 +415,40 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
 #else
     return litert::Unexpected(Status::kErrorRuntimeFailure,
                               "DMA-BUF is not supported on this platform");
+#endif
+  }
+
+  struct IonBuf {
+    void* addr;
+    int fd;
+  };
+
+  litert::Expected<IonBuf> GetIonBuf() const {
+#if LITERT_HAS_ION_SUPPORT
+    IonBuf ion_buf;
+    LITERT_RETURN_IF_ERROR(env_.runtime->GetTensorBufferIonBuffer(
+        Get(), &ion_buf.addr, &ion_buf.fd));
+    return ion_buf;
+#else
+    return litert::Unexpected(Status::kErrorRuntimeFailure,
+                              "ION is not supported on this platform");
+#endif
+  }
+
+  struct FastRpcBuf {
+    void* addr;
+    int fd;
+  };
+
+  litert::Expected<FastRpcBuf> GetFastRpcBuf() const {
+#if LITERT_HAS_FASTRPC_SUPPORT
+    FastRpcBuf fastrpc_buf;
+    LITERT_RETURN_IF_ERROR(env_.runtime->GetTensorBufferFastRpcBuffer(
+        Get(), &fastrpc_buf.addr, &fastrpc_buf.fd));
+    return fastrpc_buf;
+#else
+    return litert::Unexpected(Status::kErrorRuntimeFailure,
+                              "FastRPC is not supported on this platform");
 #endif
   }
 

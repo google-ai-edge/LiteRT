@@ -20,15 +20,24 @@
 #include <stdlib.h>
 
 #include <array>
-#include <charconv>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
-#include <system_error>
 #include <utility>
 #include <vector>
 
+#include "GPU/QnnGpuContext.h"  // from @qairt
+#include "HTP/QnnHtpContext.h"  // from @qairt
+#include "HTP/QnnHtpProfile.h"  // from @qairt
+#include "QnnCommon.h"  // from @qairt
+#include "QnnContext.h"  // from @qairt
+#include "QnnInterface.h"  // from @qairt
+#include "QnnProfile.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
+#include "System/QnnSystemCommon.h"  // from @qairt
+#include "System/QnnSystemContext.h"  // from @qairt
+#include "System/QnnSystemInterface.h"  // from @qairt
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -42,23 +51,15 @@
 #include "litert/core/filesystem.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/backends/dsp_backend.h"
+#include "litert/vendors/qualcomm/core/backends/gpu_backend.h"
 #include "litert/vendors/qualcomm/core/backends/htp_backend.h"
 #include "litert/vendors/qualcomm/core/backends/ir_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
+#include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_saver_utils.h"
-#include "HTP/QnnHtpContext.h"  // from @qairt
-#include "HTP/QnnHtpProfile.h"  // from @qairt
-#include "QnnCommon.h"  // from @qairt
-#include "QnnContext.h"  // from @qairt
-#include "QnnInterface.h"  // from @qairt
-#include "QnnProfile.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
-#include "System/QnnSystemCommon.h"  // from @qairt
-#include "System/QnnSystemContext.h"  // from @qairt
-#include "System/QnnSystemInterface.h"  // from @qairt
 
 namespace {
 static constexpr int kRequiredNumProviders{1};
@@ -80,12 +81,13 @@ LiteRtStatus SetEnvVar(const char* name, const char* value) {
   return kLiteRtStatusOk;
 }
 
-RtldFlags GetRtldFlags() {
+RtldFlags GetRtldFlags(bool needs_global_symbols) {
 #if defined(__ANDROID__)
   // Race condition segfault without NoDelete on android.
   return RtldFlags::Lazy().Local().NoDelete();
 #else
-  return RtldFlags::Default();
+  return needs_global_symbols ? RtldFlags::Lazy().Global()
+                              : RtldFlags::Default();
 #endif
 }
 
@@ -134,10 +136,11 @@ QnnManager::~QnnManager() = default;
 
 LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
   auto saver_output_dir = options_.GetSaverOutputDir();
+  const bool needs_global_symbols = !options_.GetCustomOpPackage().name.empty();
   if (saver_output_dir.empty()) {
     LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
                path.data());
-    auto lib_or = SharedLibrary::Load(path, GetRtldFlags());
+    auto lib_or = SharedLibrary::Load(path, GetRtldFlags(needs_global_symbols));
     if (!lib_or) {
       LITERT_LOG(LITERT_ERROR,
                  "Failed to load qnn shared library from \"%s\": %s",
@@ -149,7 +152,7 @@ LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
     path = kSaverLibraryName;
     LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
                path.data());
-    auto lib_or = SharedLibrary::Load(path, GetRtldFlags());
+    auto lib_or = SharedLibrary::Load(path, GetRtldFlags(needs_global_symbols));
     if (!lib_or) {
       LITERT_LOG(LITERT_ERROR,
                  "Failed to load qnn shared library from \"%s\": %s",
@@ -164,15 +167,27 @@ LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
 }
 
 LiteRtStatus QnnManager::LoadSystemLib(absl::string_view path) {
-  std::string resolved_path;
+  const bool needs_global_symbols = !options_.GetCustomOpPackage().name.empty();
   if (shared_library_dir_) {
-    resolved_path = litert::internal::Join({*shared_library_dir_, path});
-  } else {
-    resolved_path = std::string(path);
+    std::string resolved_path =
+        litert::internal::Join({*shared_library_dir_, path});
+    LITERT_LOG(LITERT_INFO, "Loading qnn system shared library from \"%s\"",
+               resolved_path.c_str());
+    auto lib_system_or =
+        SharedLibrary::Load(resolved_path, GetRtldFlags(needs_global_symbols));
+    if (lib_system_or) {
+      lib_system_ = std::move(lib_system_or.Value());
+      return kLiteRtStatusOk;
+    }
+    LITERT_LOG(LITERT_INFO,
+               "Falling back to loading qnn system shared library from \"%s\"",
+               path.data());
   }
   LITERT_LOG(LITERT_INFO, "Loading qnn system shared library from \"%s\"",
-             resolved_path.c_str());
-  auto lib_system_or = SharedLibrary::Load(resolved_path, GetRtldFlags());
+             path.data());
+
+  auto lib_system_or =
+      SharedLibrary::Load(path, GetRtldFlags(needs_global_symbols));
   if (!lib_system_or) {
     LITERT_LOG(LITERT_ERROR, "%s", lib_system_or.Error().Message().data());
     return lib_system_or.Error().Status();
@@ -389,6 +404,7 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::OpWrapper& op) {
   // TODO(jiunkaiy): Remove version check and break backward compatibility when
   // acceptable.
   const auto sdk_version = GetSdkVersion();
+  using ::qnn::SdkVersion;
   // Bypass RmsNorm OP validation.
   if (SdkVersion{2, 35, 0} <= sdk_version &&
       sdk_version < SdkVersion{2, 37, 0} &&
@@ -426,15 +442,56 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::OpWrapper& op) {
         "SDK version is in [2.35.0, 2.37.0); Split OP validation is bypassed.");
     return kLiteRtStatusOk;
   }
+
+  if (op.IsOpCode(::qnn::QnnOpCode::kFullyConnected) &&
+      op.GetInputTensor(0).IsQuantI8() && op.GetInputTensor(1).IsQuantI8() &&
+      op.GetInputTensor(1).IsQuantBitwidth(::qnn::kQuantBitWidth2) &&
+      op.GetOutputTensor(0).IsQuantI8() &&
+      SdkVersion{2, 47, 0} <= sdk_version &&
+      sdk_version < SdkVersion{2, 48, 0}) {
+    LITERT_LOG(LITERT_WARNING,
+               "SDK version is in [2.47.0, 2.48.0); A8W2 FC OP validation is "
+               "bypassed.");
+    return kLiteRtStatusOk;
+  }
+
   const auto op_config = op.GetOpConfig();
   if (Qnn_ErrorHandle_t error =
           Api()->backendValidateOpConfig(BackendHandle(), op_config);
       QNN_SUCCESS != error) {
-    LITERT_LOG(LITERT_ERROR, "Failed to validate op %s\n, error: %lld",
-               op_config.v1.name, static_cast<long long>(error));
+    // Detailed message on the failure path only: which op failed, the QNN
+    // error code, and every operand's dtype / dims / quantization kind.
+    LITERT_LOG(
+        LITERT_ERROR,
+        "\nQNN op validation failed: %s\n"
+        "  QNN error=%lld. See the QNN validator log lines above for the "
+        "specific reason.",
+        op.ToString().c_str(), static_cast<long long>(error));
     return kLiteRtStatusErrorInvalidLegalization;
   }
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus QnnManager::RegisterOpPackage(
+    const std::string& package_path, const std::string& interface_provider,
+    const std::string& target) {
+  if (options_.GetBackendType() == ::qnn::BackendType::kIrBackend) {
+    LITERT_LOG(LITERT_INFO,
+               "Custom op package is not supported in IrBackend. Ignore.");
+    return kLiteRtStatusOk;
+  }
+
+  if (auto status = Api()->backendRegisterOpPackage(
+          backend_->GetBackendHandle(), package_path.c_str(),
+          interface_provider.c_str(), target.c_str());
+      status != QNN_SUCCESS) {
+    LITERT_LOG(LITERT_ERROR, "Failed to register op package. Error code: %d",
+               status);
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  LITERT_LOG(LITERT_INFO, "Op package loaded successfully.");
   return kLiteRtStatusOk;
 }
 
@@ -469,8 +526,7 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
       if (!found) {
         auto new_adsp_library_path =
             absl::StrCat(shared_library_dir.value(), ";", adsp_library_path);
-        LITERT_RETURN_IF_ERROR(
-            SetEnvVar(kAdsp, new_adsp_library_path.c_str()));
+        LITERT_RETURN_IF_ERROR(SetEnvVar(kAdsp, new_adsp_library_path.c_str()));
       }
     }
     LITERT_LOG(LITERT_DEBUG, "ADSP_LIBRARY_PATH: %s", getenv(kAdsp));
@@ -500,6 +556,16 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
   LITERT_RETURN_IF_ERROR(ResolveSystemApi());
 
   switch (backend_type) {
+    case ::qnn::BackendType::kGpuBackend: {
+      LITERT_RETURN_IF_ERROR(LoadLib(::qnn::GpuBackend::GetLibraryName()));
+      LITERT_RETURN_IF_ERROR(
+          ResolveApi(::qnn::GpuBackend::GetExpectedBackendVersion()));
+
+      backend_ = std::make_unique<::qnn::GpuBackend>(Api());
+      LITERT_RETURN_IF_ERROR(backend_->Init(options_, std::nullopt));
+
+      break;
+    }
     case ::qnn::BackendType::kHtpBackend: {
       LITERT_RETURN_IF_ERROR(LoadLib(::qnn::HtpBackend::GetLibraryName()));
       LITERT_RETURN_IF_ERROR(
@@ -542,7 +608,12 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
   // Get SDK version from build ID.
   const char* build_id;
   Api()->backendGetBuildId(&build_id);
-  LITERT_ASSIGN_OR_RETURN(sdk_version_, ParseSdkVersion(build_id));
+  auto parsed_version = ::qnn::ParseSdkVersion(build_id);
+  if (!parsed_version) {
+    LITERT_LOG(LITERT_ERROR, "Failed to parse build ID", "");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  sdk_version_ = *parsed_version;
   return kLiteRtStatusOk;
 }
 
@@ -661,43 +732,31 @@ QnnManager::WeightSharingContextConfigs() {
   return absl::MakeSpan(configs);
 }
 
-Expected<SdkVersion> QnnManager::ParseSdkVersion(const char* build_id) {
-  // A generic error to be returned on any parsing failure.
-  const auto parsing_error =
-      Unexpected(kLiteRtStatusErrorRuntimeFailure, "Failed to parse build ID");
-
-  std::string_view version_str = build_id;
-  if (!build_id) return parsing_error;
-
-  // Check for and remove the 'v' prefix.
-  if (version_str.empty() || version_str.front() != 'v') {
-    return parsing_error;
+absl::Span<const QnnContext_Config_t*> QnnManager::GpuPerformanceContextConfigs(
+    ::qnn::GpuPerformanceMode performance_mode) {
+  static QnnGpuContext_CustomConfig_t customConfig =
+      QNN_GPU_CONTEXT_CUSTOM_CONFIG_INIT;
+  customConfig.option = QNN_GPU_CONTEXT_CONFIG_OPTION_PERF_HINT;
+  switch (performance_mode) {
+    case ::qnn::GpuPerformanceMode::kHigh:
+      customConfig.perfHint = QNN_GPU_CONTEXT_PERF_HINT_HIGH;
+      break;
+    case ::qnn::GpuPerformanceMode::kNormal:
+      customConfig.perfHint = QNN_GPU_CONTEXT_PERF_HINT_NORMAL;
+      break;
+    case ::qnn::GpuPerformanceMode::kLow:
+      customConfig.perfHint = QNN_GPU_CONTEXT_PERF_HINT_LOW;
+      break;
+    case ::qnn::GpuPerformanceMode::kDefault:
+    default:
+      return DefaultContextConfigs();
   }
-  version_str.remove_prefix(1);
 
-  SdkVersion version{};
-  const char* current = version_str.data();
-  const char* const end = version_str.data() + version_str.size();
-
-  auto parse_component = [&current, &end](int& component) {
-    auto [ptr, ec] = std::from_chars(current, end, component);
-    if (ec != std::errc()) {
-      return false;
-    }
-    current = ptr;
-    return true;
-  };
-
-  // Parse major, minor, and patch versions, checking for dots in between.
-  if (!parse_component(version.major)) return parsing_error;
-
-  if (current == end || *current++ != '.') return parsing_error;
-  if (!parse_component(version.minor)) return parsing_error;
-
-  if (current == end || *current++ != '.') return parsing_error;
-  if (!parse_component(version.patch)) return parsing_error;
-
-  return version;
+  static QnnContext_Config_t contextConfig = QNN_CONTEXT_CONFIG_INIT;
+  contextConfig.option = QNN_CONTEXT_CONFIG_OPTION_CUSTOM;
+  contextConfig.customConfig = &customConfig;
+  static const QnnContext_Config_t* configs[2] = {&contextConfig, nullptr};
+  return absl::MakeSpan(configs);
 }
 
 };  // namespace litert::qnn

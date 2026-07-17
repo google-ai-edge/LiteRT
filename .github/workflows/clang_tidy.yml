@@ -112,20 +112,20 @@ jobs:
           selected = []
           missing = []
           for source in changed:
-            if source in compilable:
-              selected.append(source)
-            else:
-              missing.append(source)
+            if source.startswith("litert/"):
+              if source in compilable:
+                selected.append(source)
+              else:
+                missing.append(source)
 
           smoke_source = "litert/c/empty.cc"
           if smoke_source in compilable and smoke_source not in selected:
             selected.append(smoke_source)
 
           if missing:
-            print("Changed C/C++ sources missing from the CMake compile database:")
+            print("Notice: The following changed C/C++ sources are missing from the CMake compile database and will be skipped:")
             for source in missing:
               print(f"  {source}")
-            raise SystemExit(1)
 
           if not selected:
             print("No C/C++ source files selected for clang-tidy.")

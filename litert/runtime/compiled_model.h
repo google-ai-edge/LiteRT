@@ -373,6 +373,11 @@ class LiteRtCompiledModelT {
     size_t data_size;
   };
 
+  struct PendingCopy {
+    LiteRtTensorBuffer buffer;
+    TfLiteTensor* tensor;
+  };
+
   // Registers the TensorBuffer for the given tensor with the SignatureRunner.
   // The `tensor_index` is the index of the tensor in the interpreter. It is
   // used when the `runner` is not available.
@@ -385,7 +390,8 @@ class LiteRtCompiledModelT {
       tflite::SignatureRunner* runner, TfLiteTensor* tensor, int tensor_index,
       const char* tensor_name, LiteRtTensorBufferT* buffer, bool is_input,
       std::vector<LiteRtTensorBuffer>& locked_buffers,
-      std::vector<ConstantOutputInfo>& constant_outputs);
+      std::vector<ConstantOutputInfo>& constant_outputs,
+      std::vector<PendingCopy>& pending_string_output_copies);
 
   void RegisterDelegate(Delegate&& delegate) {
     delegates_.push_back(std::move(delegate));
@@ -466,6 +472,12 @@ class LiteRtCompiledModelT {
   // is destroyed must be listed before field interp_.
 
   std::vector<Delegate> delegates_;
+  // The loader that manages external weight metadata and bindings.
+  std::unique_ptr<weight_loader::WeightLoader> weight_loader_owned_;
+  // It may point to weight_loader_owned_ or the weight loader owned by the
+  // client. If there are no external weights to use, this will be nullptr.
+  weight_loader::WeightLoader* weight_loader_ = nullptr;
+
   std::vector<std::unique_ptr<litert::internal::CustomOpDispatcher>>
       custom_op_dispatchers_;
 
@@ -535,12 +547,6 @@ class LiteRtCompiledModelT {
   std::unique_ptr<litert::internal::FabricRuntimeState> fabric_runtime_;
 #endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 
-  // The loader that manages external weight metadata and bindings.
-  std::unique_ptr<weight_loader::WeightLoader> weight_loader_;
-
-  // Indicates whether this model actually uses external weights.
-  bool has_external_weights_ = false;
-
   // File system hints about the originating model location.
   std::optional<std::string> model_directory_;
 
@@ -563,6 +569,9 @@ class LiteRtCompiledModelT {
 
   // Indicates whether the model is fully delegated on GPU or NPU.
   bool non_cpu_fully_delegated_ = false;
+
+  // Owns dynamically created TfLiteRegistration objects for TfLiteOperator.
+  std::vector<std::unique_ptr<TfLiteRegistration>> owned_tflite_registrations_;
 };
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_

@@ -1984,6 +1984,7 @@ tf_cc_binary(
         ":tf_tfl_translate_cl_options",
         ":tf_to_tfl_flatbuffer",
         "//tflite/converter/quantization/common/quantization_lib:quantization_config",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
@@ -2194,7 +2195,10 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts_warnings(),
     visibility = ["//visibility:public"],
-    deps = ["//tflite/converter/core/api:error_reporter"],
+    deps = [
+        "//tflite:util",
+        "//tflite/converter/core/api:error_reporter",
+    ],
 )
 
 exports_files(srcs = ["utils/control_edges.h"])

@@ -116,6 +116,41 @@ TEST_F(LiteRtEnvironmentOptionsTest, AddInvalidEnvironmentOption) {
   EXPECT_THAT(LiteRtAddEnvironmentOptions(environment, 0, /*options=*/nullptr,
                                           /*overwrite=*/true),
               IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtAddEnvironmentOptions(environment, -1, options,
+                                          /*overwrite=*/true),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtAddEnvironmentOptions(environment, 1, /*options=*/nullptr,
+                                          /*overwrite=*/true),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+
+  LiteRtDestroyEnvironment(environment);
+}
+
+TEST_F(LiteRtEnvironmentOptionsTest, CreateInvalidEnvironmentOptions) {
+  LiteRtEnvironment environment;
+  const LiteRtEnvOption options[] = {DispatchOption()};
+
+  EXPECT_THAT(LiteRtCreateEnvironment(-1, options, &environment),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtCreateEnvironment(1, /*options=*/nullptr, &environment),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+}
+
+TEST_F(LiteRtEnvironmentOptionsTest, EnvironmentSupportRejectsNullOutput) {
+  LiteRtEnvironment environment;
+  LITERT_EXPECT_OK(LiteRtCreateEnvironment(/*num_options=*/0,
+                                           /*options=*/nullptr, &environment));
+
+  EXPECT_THAT(LiteRtEnvironmentSupportsClGlInterop(environment, nullptr),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtEnvironmentSupportsAhwbClInterop(environment, nullptr),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtEnvironmentSupportsAhwbGlInterop(environment, nullptr),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LiteRtEnvironmentSupportsFP16(environment, nullptr),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+
+  LiteRtEnvironmentHasGpuEnvironment(environment, nullptr);
 
   LiteRtDestroyEnvironment(environment);
 }

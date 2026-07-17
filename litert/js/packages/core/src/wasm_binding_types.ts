@@ -104,7 +104,7 @@ export declare interface LiteRtWebNNOptions {
  * Options for loading and compiling a LiteRt model.
  */
 export declare interface LiteRtCompileOptions {
-  accelerator?: 'wasm'|'webgpu'|'webnn'|Array<'wasm'|'webgpu'|'webnn'>;
+  accelerator?: 'wasm'|'webgpu'|'webnn';
   gpuOptions?: LiteRtGpuOptions;
   webNNOptions?: LiteRtWebNNOptions;
 }
@@ -408,6 +408,8 @@ export declare interface LiteRtWasm extends WasmModule {
       expectedRankedTensorType: LiteRtRankedTensorType,
       requirements: LiteRtTensorBufferRequirements,
       ): void;
+  registerStreamWeightsCallback(callback: Function|undefined): void;
+  getStreamWeightsCallback(): Function|undefined;
   getThreadCount(): number;
 }
 

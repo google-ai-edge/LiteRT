@@ -157,6 +157,44 @@ class QualcommOptions {
     return static_cast<DspPerformanceMode>(val);
   }
 
+  enum class HtpPerfCtrlMode : int {
+    kManual = kLiteRtQualcommHtpPerfCtrlModeManual,
+    kAuto = kLiteRtQualcommHtpPerfCtrlModeAuto,
+  };
+
+  void SetHtpPerfCtrlMode(HtpPerfCtrlMode htp_perf_ctrl_mode) {
+    LrtQualcommOptionsSetHtpPerfCtrlMode(
+        options_,
+        static_cast<LrtQualcommOptionsHtpPerfCtrlMode>(htp_perf_ctrl_mode));
+  }
+  HtpPerfCtrlMode GetHtpPerfCtrlMode() {
+    LrtQualcommOptionsHtpPerfCtrlMode val;
+    auto status = LrtQualcommOptionsGetHtpPerfCtrlMode(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return HtpPerfCtrlMode::kManual;
+    }
+    return static_cast<HtpPerfCtrlMode>(val);
+  }
+
+  enum class DspPerfCtrlMode : int {
+    kManual = kLiteRtQualcommDspPerfCtrlModeManual,
+    kAuto = kLiteRtQualcommDspPerfCtrlModeAuto,
+  };
+
+  void SetDspPerfCtrlMode(DspPerfCtrlMode dsp_perf_ctrl_mode) {
+    LrtQualcommOptionsSetDspPerfCtrlMode(
+        options_,
+        static_cast<LrtQualcommOptionsDspPerfCtrlMode>(dsp_perf_ctrl_mode));
+  }
+  DspPerfCtrlMode GetDspPerfCtrlMode() {
+    LrtQualcommOptionsDspPerfCtrlMode val;
+    auto status = LrtQualcommOptionsGetDspPerfCtrlMode(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return DspPerfCtrlMode::kManual;
+    }
+    return static_cast<DspPerfCtrlMode>(val);
+  }
+
   [[deprecated("This option is deprecated and will be no-op.")]]
   void SetUseHtpPreference(bool use_htp_preference) {
     LrtQualcommOptionsSetUseHtpPreference(options_, use_htp_preference);
@@ -439,6 +477,18 @@ class QualcommOptions {
     return val;
   }
 
+  void SetSchematicDir(const std::string& schematic_dir) {
+    LrtQualcommOptionsSetSchematicDir(options_, schematic_dir.c_str());
+  }
+  StringView GetSchematicDir() {
+    const char* val;
+    auto status = LrtQualcommOptionsGetSchematicDir(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return "";
+    }
+    return val;
+  }
+
   enum class GraphIOTensorMemType : int {
     kRaw = kLiteRtQualcommGraphIOTensorMemTypeRaw,
     kMemHandle = kLiteRtQualcommGraphIOTensorMemTypeMemHandle,
@@ -457,6 +507,44 @@ class QualcommOptions {
       return GraphIOTensorMemType::kMemHandle;
     }
     return static_cast<GraphIOTensorMemType>(val);
+  }
+
+  struct CustomOpPackage {
+    std::string name;
+    std::string interface_provider;
+    std::string compile_package_path;
+    std::string dispatch_package_path;
+    std::string target;
+  };
+
+  LiteRtStatus SetCustomOpPackage(const CustomOpPackage& custom_op_package) {
+    return LrtQualcommOptionsSetCustomOpPackage(
+        options_, custom_op_package.name.c_str(),
+        custom_op_package.interface_provider.c_str(),
+        custom_op_package.compile_package_path.c_str(),
+        custom_op_package.dispatch_package_path.c_str(),
+        custom_op_package.target.c_str());
+  }
+
+  CustomOpPackage GetCustomOpPackage() const {
+    const char* name = "";
+    const char* interface_provider = "";
+    const char* compile_package_path = "";
+    const char* dispatch_package_path = "";
+    const char* target = "";
+    auto status = LrtQualcommOptionsGetCustomOpPackage(
+        options_, &name, &interface_provider, &compile_package_path,
+        &dispatch_package_path, &target);
+    if (status != kLiteRtStatusOk) {
+      return {};
+    }
+    CustomOpPackage custom_op_package;
+    custom_op_package.name = name;
+    custom_op_package.interface_provider = interface_provider;
+    custom_op_package.compile_package_path = compile_package_path;
+    custom_op_package.dispatch_package_path = dispatch_package_path;
+    custom_op_package.target = target;
+    return custom_op_package;
   }
 
  private:

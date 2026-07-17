@@ -54,27 +54,29 @@ TEST(IntelOpenVinoOptions, CreationWorks) {
   LrtDestroyIntelOpenVinoOptions(payload);
 }
 
-TEST(IntelOpenVinoOptions, SetAndGetDeviceType) {
+TEST(IntelOpenVinoOptions, SetAndGetGraphBackend) {
   LrtIntelOpenVinoOptions payload = nullptr;
   LITERT_ASSERT_OK(LrtIntelOpenVinoOptionsCreate(&payload));
 
-  LiteRtIntelOpenVinoDeviceType device_type;
-  // Check the default value.
-  LITERT_EXPECT_OK(LrtIntelOpenVinoOptionsGetDeviceType(payload, &device_type));
-  EXPECT_THAT(device_type, Eq(kLiteRtIntelOpenVinoDeviceTypeNPU));
+  LiteRtIntelOpenVinoGraphBackend graph_backend;
+  // Initially no override is set for any graph.
+  EXPECT_THAT(LrtIntelOpenVinoOptionsGetGraphBackend(payload, /*graph_index=*/0,
+                                                     &graph_backend),
+              IsError(kLiteRtStatusErrorNotFound));
 
-  LITERT_EXPECT_OK(LrtIntelOpenVinoOptionsSetDeviceType(
-      payload, kLiteRtIntelOpenVinoDeviceTypeCPU));
-  LITERT_EXPECT_OK(LrtIntelOpenVinoOptionsGetDeviceType(payload, &device_type));
-  EXPECT_EQ(device_type, kLiteRtIntelOpenVinoDeviceTypeCPU);
+  LITERT_EXPECT_OK(LrtIntelOpenVinoOptionsSetGraphBackend(
+      payload, /*graph_index=*/0, kLiteRtIntelOpenVinoGraphBackendCPU));
+  LITERT_EXPECT_OK(LrtIntelOpenVinoOptionsGetGraphBackend(
+      payload, /*graph_index=*/0, &graph_backend));
+  EXPECT_EQ(graph_backend, kLiteRtIntelOpenVinoGraphBackendCPU);
 
   LrtIntelOpenVinoOptions payload_from_toml = nullptr;
   SerializeAndParse(payload, &payload_from_toml);
 
-  LiteRtIntelOpenVinoDeviceType device_type_from_toml;
-  LITERT_EXPECT_OK(LrtIntelOpenVinoOptionsGetDeviceType(
-      payload_from_toml, &device_type_from_toml));
-  EXPECT_THAT(device_type_from_toml, Eq(kLiteRtIntelOpenVinoDeviceTypeCPU));
+  LiteRtIntelOpenVinoGraphBackend graph_backend_from_toml;
+  LITERT_EXPECT_OK(LrtIntelOpenVinoOptionsGetGraphBackend(
+      payload_from_toml, /*graph_index=*/0, &graph_backend_from_toml));
+  EXPECT_THAT(graph_backend_from_toml, Eq(kLiteRtIntelOpenVinoGraphBackendCPU));
 
   LrtDestroyIntelOpenVinoOptions(payload_from_toml);
   LrtDestroyIntelOpenVinoOptions(payload);

@@ -78,6 +78,7 @@ The final Neuron type depends on the element type and its quantization scheme.
 | `kLiteRtQuantizationNone` | **Yes** | |
 
 <!-- LINT.IfChange(supported_ops) -->
+
 ## Supported Operations
 
 The following `LiteRtOpCode` operations are supported. For an operation to be
@@ -100,6 +101,7 @@ the `VerifyCommonOp` function.
 | `kLiteRtOpCodeTflGelu` | Legalized to `NEURON_GELU_V2` with `approximate` set to true. |
 | `kLiteRtOpCodeTflGreater` | Legalized to `NEURON_GREATER`. |
 | `kLiteRtOpCodeTflHardSwish` | Legalized to `NEURON_HARD_SWISH`. |
+| `kLiteRtOpCodeTflLess` | Legalized to `NEURON_LESS`. |
 | `kLiteRtOpCodeTflLogistic` | Legalized to `NEURON_LOGISTIC`. |
 | `kLiteRtOpCodeTflMaximum` | Legalized to `NEURON_MAXIMUM`. |
 | `kLiteRtOpCodeTflMaxPool2d` | Legalized to `NEURON_MAX_POOL_2D`. Supports padding, stride, filter size, and fused activation. |

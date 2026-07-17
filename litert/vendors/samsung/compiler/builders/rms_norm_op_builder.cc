@@ -14,6 +14,7 @@
 // limitations under the License.
 #include "litert/vendors/samsung/compiler/builders/rms_norm_op_builder.h"
 
+#include <cstddef>
 #include <cstdint>
 
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
@@ -53,9 +54,19 @@ Expected<OpWrapper> BuildRmsNormOp(const LiteRtCompilerContext* ctx,
     return Error(kLiteRtStatusErrorInvalidArgument,
                  "Missing attributes for RMSNorm");
   }
+  if (impl_attributes == nullptr ||
+      !flexbuffers::VerifyBuffer(impl_attributes,
+                                 static_cast<size_t>(impl_attributes_size))) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Invalid attributes for RMSNorm");
+  }
 
-  auto attributes_map =
-      flexbuffers::GetRoot(impl_attributes, impl_attributes_size).AsMap();
+  auto root = flexbuffers::GetRoot(impl_attributes, impl_attributes_size);
+  if (!root.IsMap()) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Invalid attributes for RMSNorm");
+  }
+  auto attributes_map = root.AsMap();
   constexpr char kEpsilonKey[] = "epsilon";
   flexbuffers::Reference raw_epsilon = attributes_map[kEpsilonKey];
   if (raw_epsilon.IsNull()) {

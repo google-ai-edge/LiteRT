@@ -510,7 +510,8 @@ LiteRtStatus PartitionSubgraph(
     std::vector<LiteRtOpWithPartitionIndex> selected_ops,
     LiteRtSubgraphT& subgraph, std::vector<LiteRtOp>& res_ops,
     LiteRtModelT& model,
-    const LiteRtCompilerOptionsPartitionStrategy& partition_strategy_option) {
+    const LiteRtCompilerOptionsPartitionStrategy& partition_strategy_option,
+    size_t max_partitions = 0) {
   // Pick partition strategy based on compiler options.
   std::vector<std::vector<LiteRtOp>> (*partition_strategy_func)(
       const std::vector<LiteRtOpWithPartitionIndex>&, LiteRtSubgraph) =
@@ -525,6 +526,14 @@ LiteRtStatus PartitionSubgraph(
   auto islands = partition_strategy_func(selected_ops, &subgraph);
   if (islands.empty()) {
     return kLiteRtStatusOk;
+  }
+
+  if (max_partitions > 0 && islands.size() > max_partitions) {
+    LITERT_LOG(LITERT_ERROR,
+               "Partitioning yielded %lu NPU islands, which exceeds the "
+               "maximum allowed (%lu).",
+               islands.size(), max_partitions);
+    return kLiteRtStatusErrorRuntimeFailure;
   }
 
   // For each connected island, slice into new subgraph and replace use with
@@ -715,11 +724,15 @@ Expected<PartitionResult> PartitionModel(
     auto compiler_options = compiler_plugin.CompilerOptions();
     LiteRtCompilerOptionsPartitionStrategy strategy =
         kLiteRtCompilerOptionsPartitionStrategyDefault;
+    size_t max_partitions = 0;
     if (compiler_options.HasValue()) {
       strategy = compiler_options->partition_strategy;
+      max_partitions = compiler_options->max_partitions;
     }
+
     LITERT_RETURN_IF_ERROR(PartitionSubgraph(
-        std::move(*selected_ops), *subgraph, dispatch_ops, model, strategy));
+        std::move(*selected_ops), *subgraph, dispatch_ops, model, strategy,
+        max_partitions));
     num_partitions = dispatch_ops.size() - num_partitions;
     LITERT_LOG(LITERT_INFO,
                "Partitioned subgraph<%d>, selected %lu "
@@ -920,6 +933,23 @@ Expected<void> ApplyPlugin(
     absl::string_view soc_model,
     const absl::flat_hash_set<uint32_t>& subgraphs_to_partition,
     ApplyPluginsResult& result) {
+  if (auto sdk_version = compiler_plugin.SdkVersion(); sdk_version.HasValue()) {
+    if (!sdk_version->empty()) {
+      LITERT_LOG(LITERT_INFO, "Applying plugin with SDK version: %s",
+                 sdk_version->c_str());
+    } else {
+      LITERT_LOG(
+          LITERT_WARNING,
+          "Applying plugin with unknown SDK version, because the "
+          "targeted SoC Manufacturer does not report its SDK version. If you "
+          "are seeing this message, please be aware that on-device compilation "
+          "caching won't be updated if using a different version of the SDK.");
+    }
+  } else {
+    LITERT_LOG(LITERT_WARNING, "Failed to get plugin SDK version: %s",
+               sdk_version.Error().Message().c_str());
+  }
+
   // Check compiler compatibility.
   const auto compatibility =
       compiler_plugin.CheckCompilerCompatibility(soc_model);
@@ -965,9 +995,9 @@ Expected<ApplyPluginsResult> ApplyPlugins(
   if (!compiler_plugins) {
     return compiler_plugins.Error();
   }
-  LITERT_ASSIGN_OR_RETURN(
-      auto result, ApplyPlugins(model, selected_hw_accelerators,
-                                compiler_plugins.Value(), mutated));
+  LITERT_ASSIGN_OR_RETURN(auto result,
+                          ApplyPlugins(model, selected_hw_accelerators,
+                                       compiler_plugins.Value(), mutated));
   result.compiler_plugins = std::move(*compiler_plugins);
   return result;
 }

@@ -79,6 +79,12 @@ void LiteRtDestroyExternalLiteRtBufferContext(
   delete context;
 }
 
+LiteRtStatus LiteRtExternalLiteRtBufferContextGetRunOptions(
+    LiteRtExternalLiteRtBufferContext context, LiteRtOptions* run_options) {
+  *run_options = context->GetRunOptions();
+  return kLiteRtStatusOk;
+}
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

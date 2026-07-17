@@ -50,9 +50,13 @@ bool SetDictItemStringSteal(PyObject* dict, const char* key, PyObject* value) {
 size_t ByteWidthOfDTypeImpl(const std::string& dtype) {
   if (dtype == "float32") return 4;
   if (dtype == "float16") return 2;
+  if (dtype == "bfloat16") return 2;
+  if (dtype == "float8_e4m3fn") return 1;
+  if (dtype == "float8_e5m2") return 1;
   if (dtype == "int32") return 4;
   if (dtype == "int8") return 1;
   if (dtype == "uint8") return 1;
+  if (dtype == "bool") return 1;
   return 0;
 }
 // A deallocator that performs no operation, used when the memory is managed
@@ -161,6 +165,28 @@ bool ConvertPyListToInt8Vector(PyObject* py_list, std::vector<int8_t>* out,
   return true;
 }
 
+// Converts a Python list of booleans to a std::vector<uint8_t>.
+// Returns true on success, false on failure with error message populated.
+bool ConvertPyListToBoolVector(PyObject* py_list, std::vector<uint8_t>* out,
+                               std::string* error) {
+  if (!PyList_Check(py_list)) {
+    *error = "Expected a Python list for bool data";
+    return false;
+  }
+  Py_ssize_t length = PyList_Size(py_list);
+  out->reserve(length);
+  for (Py_ssize_t i = 0; i < length; ++i) {
+    PyObject* item = PyList_GetItem(py_list, i);
+    int val = PyObject_IsTrue(item);
+    if (val < 0) {
+      *error = "Error converting python object to bool.";
+      return false;
+    }
+    out->push_back(val != 0 ? 1 : 0);
+  }
+  return true;
+}
+
 // Creates a Python list from a span of float values.
 PyObject* BuildPyListFromFloat(absl::Span<const float> data) {
   PyObject* py_list = PyList_New(data.size());
@@ -195,6 +221,15 @@ PyObject* BuildPyListFromInt8(absl::Span<const int8_t> data) {
   PyObject* py_list = PyList_New(data.size());
   for (size_t i = 0; i < data.size(); i++) {
     PyList_SetItem(py_list, i, PyLong_FromLong(data[i]));
+  }
+  return py_list;
+}
+
+// Creates a Python list of booleans from a span of uint8_t values.
+PyObject* BuildPyListFromBool(absl::Span<const uint8_t> data) {
+  PyObject* py_list = PyList_New(data.size());
+  for (size_t i = 0; i < data.size(); i++) {
+    PyList_SetItem(py_list, i, PyBool_FromLong(data[i] != 0 ? 1 : 0));
   }
   return py_list;
 }
@@ -366,10 +401,20 @@ PyObject* TensorBufferWrapper::CreateFromHostMemory(PyObject* py_data,
     dummy_type.element_type = kLiteRtElementTypeFloat32;
   } else if (dtype == "float16") {
     dummy_type.element_type = kLiteRtElementTypeFloat16;
+  } else if (dtype == "bfloat16") {
+    dummy_type.element_type = kLiteRtElementTypeBFloat16;
+  } else if (dtype == "float8_e4m3fn") {
+    dummy_type.element_type = kLiteRtElementTypeFloat8E4M3FN;
+  } else if (dtype == "float8_e5m2") {
+    dummy_type.element_type = kLiteRtElementTypeFloat8E5M2;
   } else if (dtype == "int8") {
     dummy_type.element_type = kLiteRtElementTypeInt8;
+  } else if (dtype == "uint8") {
+    dummy_type.element_type = kLiteRtElementTypeUInt8;
   } else if (dtype == "int32") {
     dummy_type.element_type = kLiteRtElementTypeInt32;
+  } else if (dtype == "bool") {
+    dummy_type.element_type = kLiteRtElementTypeBool;
   } else {
     dummy_type.element_type = kLiteRtElementTypeNone;
   }
@@ -481,6 +526,16 @@ PyObject* TensorBufferWrapper::WriteTensor(PyObject* buffer_capsule,
       return ConvertErrorToPyExc(status.Error());
     Py_RETURN_NONE;
   }
+  if (dtype == "bool") {
+    std::vector<uint8_t> host_data;
+    if (!ConvertPyListToBoolVector(data_list, &host_data, &error)) {
+      if (!error.empty()) return ReportError(error);
+    }
+    if (auto status = tb.Write<uint8_t>(absl::MakeConstSpan(host_data));
+        !status)
+      return ConvertErrorToPyExc(status.Error());
+    Py_RETURN_NONE;
+  }
   return ReportError("WriteTensor: unsupported dtype '" + dtype + "'");
 }
 
@@ -518,6 +573,13 @@ PyObject* TensorBufferWrapper::ReadTensor(PyObject* buffer_capsule,
     if (auto status = tb.Read<int8_t>(absl::MakeSpan(data)); !status)
       return ConvertErrorToPyExc(status.Error());
     return BuildPyListFromInt8(data);
+  }
+  if (dtype == "bool") {
+    // Read as uint8_t and return as Python booleans.
+    std::vector<uint8_t> data(num_elements, 0);
+    if (auto status = tb.Read<uint8_t>(absl::MakeSpan(data)); !status)
+      return ConvertErrorToPyExc(status.Error());
+    return BuildPyListFromBool(data);
   }
   return ReportError("ReadTensor: unsupported dtype '" + dtype + "'");
 }

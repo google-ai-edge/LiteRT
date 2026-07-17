@@ -60,6 +60,7 @@ set(LITERT_C_PUBLIC_HEADERS
 
 set(LITERT_C_REQUIRED_INTERNAL_HEADERS
     internal/litert_logging.h
+    internal/litert_runtime_api_export.h
     internal/litert_runtime_c_api.h
     internal/litert_dispatch_delegate.h
     internal/litert_scheduling_info.h
@@ -207,6 +208,8 @@ target_link_libraries(litert_c_api
         Threads::Threads
 )
 
+target_compile_definitions(litert_c_api PRIVATE LITERT_COMPILE_LIBRARY)
+
 # Platform-specific dependencies
 if(LITERT_PLATFORM_ANDROID)
     target_link_libraries(litert_c_api PRIVATE ${LOG_LIB})
@@ -335,6 +338,7 @@ if(LITERT_PLATFORM_ANDROID)
       absl::span
       absl::flat_hash_map
       flatbuffers::flatbuffers)
+  target_compile_definitions(litert_tflite_gpu_gl_core PRIVATE CL_DELEGATE_NO_GL EGL_NO_X11)
   list(APPEND _litert_runtime_c_api_private_archives litert_tflite_gpu_gl_core)
 endif()
 

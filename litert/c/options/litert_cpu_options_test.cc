@@ -74,6 +74,54 @@ class LiteRtCpuOptionsFieldsTest : public testing::Test {
   LrtCpuOptions* cpu_options_;
 };
 
+TEST_F(LiteRtCpuOptionsFieldsTest, GetOpaqueCpuOptionsDataFailsWithNullArgs) {
+  const char* identifier = nullptr;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+
+  EXPECT_THAT(LrtGetOpaqueCpuOptionsData(nullptr, &identifier, &payload,
+                                         &payload_deleter),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LrtGetOpaqueCpuOptionsData(cpu_options_, nullptr, &payload,
+                                         &payload_deleter),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LrtGetOpaqueCpuOptionsData(cpu_options_, &identifier, nullptr,
+                                         &payload_deleter),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(
+      LrtGetOpaqueCpuOptionsData(cpu_options_, &identifier, &payload, nullptr),
+      IsError(kLiteRtStatusErrorInvalidArgument));
+}
+
+TEST_F(LiteRtCpuOptionsFieldsTest, GetOpaqueCpuOptionsDataSerializesSetFields) {
+  LITERT_EXPECT_OK(
+      LrtSetCpuOptionsKernelMode(cpu_options_, kLiteRtCpuKernelModeDelegate));
+  LITERT_EXPECT_OK(LrtSetCpuOptionsEnableYNNPack(cpu_options_, true));
+  LITERT_EXPECT_OK(LrtSetCpuOptionsNumThread(cpu_options_, 4));
+  LITERT_EXPECT_OK(LrtSetCpuOptionsXNNPackFlags(cpu_options_, 7));
+  LITERT_EXPECT_OK(
+      LrtSetCpuOptionsHintFullyDelegatedToSingleDelegate(cpu_options_, true));
+  LITERT_EXPECT_OK(LrtSetCpuOptionsXnnPackWeightCachePath(
+      cpu_options_, "a/path/to/the/cache"));
+
+  const char* identifier = nullptr;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  LITERT_ASSERT_OK(LrtGetOpaqueCpuOptionsData(cpu_options_, &identifier,
+                                              &payload, &payload_deleter));
+
+  EXPECT_STREQ(identifier, LrtGetCpuOptionsIdentifier());
+  EXPECT_STREQ(static_cast<const char*>(payload),
+               "kernel_mode = \"delegate\"\n"
+               "enable_ynnpack = true\n"
+               "num_threads = 4\n"
+               "flags = 7\n"
+               "hint_fully_delegated_to_single_delegate = true\n"
+               "weight_cache_file_path = \"a/path/to/the/cache\"\n");
+
+  payload_deleter(payload);
+}
+
 TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetNumThreads) {
   const int expected_num_threads = 4;
   int num_threads = -1;
@@ -91,8 +139,12 @@ TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetNumThreads) {
   ASSERT_EQ(num_threads, expected_num_threads);
 }
 
+TEST_F(LiteRtCpuOptionsFieldsTest, XnnpackModeIsDelegateModeAlias) {
+  EXPECT_EQ(kLiteRtCpuKernelModeXnnpack, kLiteRtCpuKernelModeDelegate);
+}
+
 TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetKernelMode) {
-  LiteRtCpuKernelMode kernel_mode = kLiteRtCpuKernelModeXnnpack;
+  LiteRtCpuKernelMode kernel_mode = kLiteRtCpuKernelModeDelegate;
 
   EXPECT_THAT(LrtGetCpuOptionsKernelMode(cpu_options_, &kernel_mode),
               IsError(kLiteRtStatusErrorNotFound));
@@ -101,6 +153,18 @@ TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetKernelMode) {
       LrtSetCpuOptionsKernelMode(cpu_options_, kLiteRtCpuKernelModeBuiltin));
   LITERT_EXPECT_OK(LrtGetCpuOptionsKernelMode(cpu_options_, &kernel_mode));
   ASSERT_EQ(kernel_mode, kLiteRtCpuKernelModeBuiltin);
+}
+
+TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetEnableYNNPack) {
+  bool enable_ynnpack = false;
+
+  EXPECT_THAT(LrtGetCpuOptionsEnableYNNPack(cpu_options_, &enable_ynnpack),
+              IsError(kLiteRtStatusErrorNotFound));
+
+  LITERT_EXPECT_OK(LrtSetCpuOptionsEnableYNNPack(cpu_options_, true));
+  LITERT_EXPECT_OK(
+      LrtGetCpuOptionsEnableYNNPack(cpu_options_, &enable_ynnpack));
+  EXPECT_TRUE(enable_ynnpack);
 }
 
 TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetXNNPackFlags) {
@@ -126,6 +190,11 @@ TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetXNNPackWeightCachePath) {
       cpu_options_, expected_path.data()));
   LITERT_EXPECT_OK(LrtGetCpuOptionsXnnPackWeightCachePath(cpu_options_, &path));
   ASSERT_EQ(path, expected_path);
+}
+
+TEST_F(LiteRtCpuOptionsFieldsTest, SetXNNPackWeightCachePathFailsWithNullPath) {
+  EXPECT_THAT(LrtSetCpuOptionsXnnPackWeightCachePath(cpu_options_, nullptr),
+              IsError(kLiteRtStatusErrorInvalidArgument));
 }
 
 TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetXNNPackWeightCacheDescriptor) {

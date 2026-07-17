@@ -66,6 +66,9 @@ typedef struct LiteRtMemBuffer {
   const void* base_addr;  // Base address of the buffer.
   size_t offset;          // Offset of the buffer from the base address.
   size_t size;            // Buffer size.
+  // Offset of base_addr in fd. Use alloc_base_file_offset + offset for the
+  // absolute fd offset when fd-backed loading is used.
+  size_t alloc_base_file_offset;
 } LiteRtMemBuffer;
 
 // Initialize the Dispatch API runtime.

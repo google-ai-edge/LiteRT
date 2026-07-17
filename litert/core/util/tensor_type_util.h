@@ -15,7 +15,10 @@
 #ifndef ODML_LITERT_LITERT_CORE_UTIL_TENSOR_TYPE_UTIL_H_
 #define ODML_LITERT_LITERT_CORE_UTIL_TENSOR_TYPE_UTIL_H_
 
+#include <cstddef>
+#include <limits>
 #include <string>
+#include <type_traits>
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -33,20 +36,49 @@ struct Ratio {
 
 Expected<Ratio> GetElementSize(LiteRtElementType element_type);
 
+template <typename T>
+bool IsNegative(T value) {
+  if constexpr (std::numeric_limits<std::remove_cv_t<T>>::is_signed) {
+    return value < 0;
+  }
+  return false;
+}
+
+inline Expected<size_t> GetNumBytesFromElements(size_t num_elements,
+                                                Ratio element_size) {
+  if (element_size.num <= 0 || element_size.denom <= 0) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Unexpected element size");
+  }
+  const auto numerator = static_cast<size_t>(element_size.num);
+  const auto denominator = static_cast<size_t>(element_size.denom);
+  if (num_elements >
+      (std::numeric_limits<size_t>::max() - (denominator - 1)) / numerator) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Tensor byte size overflows size_t");
+  }
+  return ((num_elements * numerator) + (denominator - 1)) / denominator;
+}
+
 // Get the number of elements in a tensor with given dimensions.
 template <typename T>
 Expected<size_t> GetNumElements(absl::Span<T> dimensions) {
   size_t num_elements = 1;
   for (auto i = 0; i < dimensions.size(); ++i) {
     auto dim = dimensions[i];
-    if (dim < 0) {
+    if (IsNegative(dim)) {
       return Unexpected(kLiteRtStatusErrorInvalidArgument,
                         "Unexpected negative dimension");
     } else if (dim == 0) {
       return Unexpected(kLiteRtStatusErrorInvalidArgument,
                         "Unexpected 0 dimension");
     }
-    num_elements *= dim;
+    const size_t dimension = static_cast<size_t>(dim);
+    if (dimension > std::numeric_limits<size_t>::max() / num_elements) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Tensor element count overflows size_t");
+    }
+    num_elements *= dimension;
   }
   return num_elements;
 }
@@ -70,8 +102,7 @@ Expected<size_t> GetNumPackedBytes(LiteRtElementType element_type,
   if (!num_elements) {
     return num_elements.Error();
   }
-  return ((*num_elements * element_size->num) + (element_size->denom - 1)) /
-         element_size->denom;
+  return GetNumBytesFromElements(*num_elements, *element_size);
 }
 
 // Get the number of bytes necessary to represent a packed tensor type, ignoring
@@ -100,10 +131,34 @@ Expected<size_t> GetNumBytes(LiteRtElementType element_type,
   auto rank = dimensions.size();
   size_t num_elements = 1;
   for (auto i = 0; i < rank; ++i) {
-    num_elements += (dimensions[i] - 1) * strides[i];
+    const auto dimension = dimensions[i];
+    const auto stride = strides[i];
+    if (IsNegative(dimension)) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Unexpected negative dimension");
+    } else if (dimension == 0) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Unexpected 0 dimension");
+    }
+    if (IsNegative(stride)) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Unexpected negative stride");
+    }
+    const size_t dim_less_one = static_cast<size_t>(dimension) - 1;
+    const size_t stride_size = static_cast<size_t>(stride);
+    if (dim_less_one != 0 &&
+        stride_size > std::numeric_limits<size_t>::max() / dim_less_one) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Tensor stride span overflows size_t");
+    }
+    const size_t span = dim_less_one * stride_size;
+    if (span > std::numeric_limits<size_t>::max() - num_elements) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Tensor element count overflows size_t");
+    }
+    num_elements += span;
   }
-  return ((num_elements * element_size->num) + (element_size->denom - 1)) /
-         element_size->denom;
+  return GetNumBytesFromElements(num_elements, *element_size);
 }
 
 }  // namespace litert::internal

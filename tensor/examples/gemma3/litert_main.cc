@@ -14,9 +14,11 @@ limitations under the License.
 ==============================================================================*/
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <optional>
@@ -34,19 +36,19 @@ limitations under the License.
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/cc/options/litert_gpu_options.h"
-#include "tensor/arithmetic.h"
-#include "tensor/arithmetic_graph.h"
-#include "tensor/examples/gemma3/graph_helpers.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_gpu_options.h"
+#include "tensor/arithmetic.h"
 #include "tensor/backends/tflite/arithmetic_tflite.h"
 #include "tensor/backends/tflite/tflite_flatbuffer_conversion.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/gemma3/config.h"
 #include "tensor/examples/gemma3/gemma3.h"
+#include "tensor/examples/gemma3/graph_helpers.h"
 #include "tensor/examples/gemma3/safetensor_loader.h"
 #include "tensor/examples/gemma3/tokenizer.h"
 #include "tensor/examples/gemma3/util.h"
@@ -56,7 +58,7 @@ limitations under the License.
 
 constexpr absl::string_view kPrefill = "prefill";
 constexpr absl::string_view kDecode = "decode";
-constexpr size_t kMaxSeqLen = 512;
+constexpr size_t kMaxSeqLen = 1024;
 
 ABSL_FLAG(std::string, weights_path, "",
           "Path to the safetensors weights file");
@@ -65,7 +67,31 @@ ABSL_FLAG(std::string, prompt, "Hello, world!",
           "Input prompt for text generation");
 ABSL_FLAG(size_t, max_tokens, 50, "Maximum number of tokens to generate");
 ABSL_FLAG(std::string, accelerator, "gpu",
-          "Hardware accelerator to use: cpu or gpu");
+          "Hardware accelerator to use: cpu, gpu, or npu");
+ABSL_FLAG(bool, tensor_rt_compatible, false,
+          "Emit a TensorRT-friendlier graph: static prefill slice, host-side "
+          "argmax from logits, and no GQA gather/tile for single-KV-group "
+          "Gemma variants.");
+ABSL_FLAG(std::string, compiler_plugin_library_dir, "",
+          "Directory containing LiteRT compiler plugins, such as "
+          "libLiteRtCompilerPlugin_Nvidia.so.");
+ABSL_FLAG(std::string, dispatch_library_dir, "",
+          "Directory containing LiteRT dispatch libraries, such as "
+          "libLiteRtDispatch_Nvidia.so.");
+ABSL_FLAG(std::string, runtime_library_dir, "",
+          "Directory containing LiteRT runtime accelerator libraries, such as "
+          "libLiteRtWebGpuAccelerator.so.");
+ABSL_FLAG(std::string, compiler_cache_dir, "",
+          "Directory used by LiteRT to cache JIT-compiled models.");
+ABSL_FLAG(std::string, gpu_backend, "automatic",
+          "GPU backend to use: automatic or webgpu.");
+ABSL_FLAG(std::string, gpu_buffer_storage, "buffer",
+          "GPU buffer storage type to use: default, buffer, or texture2d.");
+ABSL_FLAG(bool, gpu_external_tensors, true,
+          "Enable GPU external tensors mode for cache tensors.");
+ABSL_FLAG(bool, allow_cpu_fallback, false,
+          "When using --accelerator=gpu or --accelerator=npu, also allow CPU "
+          "execution for ops that the hardware delegate did not claim.");
 ABSL_FLAG(::litert::tensor::examples::SafetensorLoader::QuantizedLoadMode,
           weight_mode,
           ::litert::tensor::examples::SafetensorLoader::QuantizedLoadMode::
@@ -73,6 +99,129 @@ ABSL_FLAG(::litert::tensor::examples::SafetensorLoader::QuantizedLoadMode,
           "Weight mode (quantized or float)");
 
 namespace litert::tensor::examples::gemma3 {
+
+namespace {
+
+absl::StatusOr<std::vector<int64_t>> TensorShape(
+    const ::litert::tensor::examples::SafetensorLoader& loader,
+    absl::string_view name) {
+  LRT_TENSOR_ASSIGN_OR_RETURN(auto info,
+                              loader.GetTensorInfo(std::string(name)));
+  return info.shape;
+}
+
+absl::Status ExpectRank(absl::string_view name,
+                        const std::vector<int64_t>& shape, size_t rank) {
+  if (shape.size() != rank) {
+    return absl::InvalidArgumentError(
+        absl::StrCat(name, " must be rank-", rank));
+  }
+  return absl::OkStatus();
+}
+
+bool ParseLayerIndex(absl::string_view tensor_name, int* layer_index) {
+  constexpr absl::string_view kLayerPrefix = "model.layers.";
+  if (tensor_name.size() <= kLayerPrefix.size() ||
+      tensor_name.substr(0, kLayerPrefix.size()) != kLayerPrefix) {
+    return false;
+  }
+  absl::string_view suffix = tensor_name.substr(kLayerPrefix.size());
+  size_t pos = 0;
+  while (pos < suffix.size() &&
+         std::isdigit(static_cast<unsigned char>(suffix[pos])) != 0) {
+    ++pos;
+  }
+  if (pos == 0 || pos >= suffix.size() || suffix[pos] != '.') {
+    return false;
+  }
+  std::string layer(suffix.substr(0, pos));
+  char* end = nullptr;
+  const int64_t parsed = std::strtol(layer.c_str(), &end, 10);
+  if (end == nullptr || *end != '\0' || parsed < 0 ||
+      parsed > std::numeric_limits<int>::max()) {
+    return false;
+  }
+  *layer_index = static_cast<int>(parsed);
+  return true;
+}
+
+absl::Status InferConfigFromWeights(
+    const ::litert::tensor::examples::SafetensorLoader& loader,
+    Config* config) {
+  int max_layer_index = -1;
+  for (const auto& name : loader.GetTensorNames()) {
+    int layer_index = -1;
+    if (ParseLayerIndex(name, &layer_index)) {
+      max_layer_index = std::max(max_layer_index, layer_index);
+    }
+  }
+  if (max_layer_index >= 0) {
+    config->n_layers = max_layer_index + 1;
+  }
+
+  LRT_TENSOR_ASSIGN_OR_RETURN(const auto embed_shape,
+                              TensorShape(loader, "model.embed_tokens.weight"));
+  LRT_TENSOR_RETURN_IF_ERROR(
+      ExpectRank("model.embed_tokens.weight", embed_shape, 2));
+  config->vocab_size = static_cast<int>(embed_shape[0]);
+  config->emb_dim = static_cast<int>(embed_shape[1]);
+
+  LRT_TENSOR_ASSIGN_OR_RETURN(
+      const auto gate_shape,
+      TensorShape(loader, "model.layers.0.mlp.gate_proj.weight"));
+  LRT_TENSOR_RETURN_IF_ERROR(
+      ExpectRank("model.layers.0.mlp.gate_proj.weight", gate_shape, 2));
+  if (gate_shape[1] != config->emb_dim) {
+    return absl::InvalidArgumentError(
+        "MLP gate input dim does not match embedding dim");
+  }
+  config->hidden_dim = static_cast<int>(gate_shape[0]);
+
+  LRT_TENSOR_ASSIGN_OR_RETURN(
+      const auto q_norm_shape,
+      TensorShape(loader, "model.layers.0.self_attn.q_norm.weight"));
+  LRT_TENSOR_RETURN_IF_ERROR(
+      ExpectRank("model.layers.0.self_attn.q_norm.weight", q_norm_shape, 1));
+  config->head_dim = static_cast<int>(q_norm_shape[0]);
+  if (config->head_dim <= 0) {
+    return absl::InvalidArgumentError("Invalid head_dim inferred from weights");
+  }
+
+  LRT_TENSOR_ASSIGN_OR_RETURN(
+      const auto q_proj_shape,
+      TensorShape(loader, "model.layers.0.self_attn.q_proj.weight"));
+  LRT_TENSOR_RETURN_IF_ERROR(
+      ExpectRank("model.layers.0.self_attn.q_proj.weight", q_proj_shape, 2));
+  LRT_TENSOR_ASSIGN_OR_RETURN(
+      const auto k_proj_shape,
+      TensorShape(loader, "model.layers.0.self_attn.k_proj.weight"));
+  LRT_TENSOR_RETURN_IF_ERROR(
+      ExpectRank("model.layers.0.self_attn.k_proj.weight", k_proj_shape, 2));
+  if (q_proj_shape[1] != config->emb_dim ||
+      k_proj_shape[1] != config->emb_dim) {
+    return absl::InvalidArgumentError(
+        "Attention projection input dim does not match embedding dim");
+  }
+  if (q_proj_shape[0] % config->head_dim != 0 ||
+      k_proj_shape[0] % config->head_dim != 0) {
+    return absl::InvalidArgumentError(
+        "Attention projection output dim is not divisible by head_dim");
+  }
+  config->n_heads = static_cast<int>(q_proj_shape[0] / config->head_dim);
+  config->n_kv_groups = static_cast<int>(k_proj_shape[0] / config->head_dim);
+  config->query_pre_attn_scalar = static_cast<float>(config->head_dim);
+
+  std::cerr << "Resolved Gemma3 config from weights: layers="
+            << config->n_layers << " vocab=" << config->vocab_size
+            << " emb_dim=" << config->emb_dim
+            << " hidden_dim=" << config->hidden_dim
+            << " head_dim=" << config->head_dim
+            << " n_heads=" << config->n_heads
+            << " n_kv_groups=" << config->n_kv_groups << std::endl;
+  return absl::OkStatus();
+}
+
+}  // namespace
 
 struct GpuAttnOutput {
   Tensor<TfLiteMixinTag> output;
@@ -88,7 +237,8 @@ GpuAttnOutput MakeGpuSelfAttentionLayer(
     const Tensor<TfLiteMixinTag>& key_cache,
     const Tensor<TfLiteMixinTag>& value_cache,
     const absl::flat_hash_map<std::string, Tensor<TfLiteMixinTag>>& weights,
-    const std::optional<Tensor<TfLiteMixinTag>> cache_params) {
+    const std::optional<Tensor<TfLiteMixinTag>> cache_params,
+    bool tensor_rt_compatible) {
   int qkv_out_dim = config.n_heads * config.head_dim;
   int kv_out_dim = config.n_kv_groups * config.head_dim;
 
@@ -188,29 +338,38 @@ GpuAttnOutput MakeGpuSelfAttentionLayer(
 
   int num_groups = config.n_heads / config.n_kv_groups;
   if (num_groups > 1) {
-    std::vector<Tensor<TfLiteMixinTag>> tiled_k_heads;
-    for (int g = 0; g < config.n_kv_groups; ++g) {
-      Tensor head_idx = Tensor<TfLiteMixinTag>(
-          {.type = Type::kI32,
-           .shape = {1},
-           .buffer = OwningCpuBuffer::Copy<Type::kI32>({g})});
-      Tensor head = Gather(k_for_attn, head_idx, /*axis=*/1);
-      Tensor tiled_head = Tile(head, {1, num_groups, 1, 1});
-      tiled_k_heads.push_back(tiled_head);
-    }
-    k_for_attn = Concatenation(absl::MakeSpan(tiled_k_heads), /*axis=*/1);
+    if (tensor_rt_compatible && config.n_kv_groups == 1) {
+      std::vector<Tensor<TfLiteMixinTag>> repeated_k_heads(num_groups,
+                                                           k_for_attn);
+      std::vector<Tensor<TfLiteMixinTag>> repeated_v_heads(num_groups,
+                                                           v_for_attn);
+      k_for_attn = Concatenation(absl::MakeSpan(repeated_k_heads), /*axis=*/1);
+      v_for_attn = Concatenation(absl::MakeSpan(repeated_v_heads), /*axis=*/1);
+    } else {
+      std::vector<Tensor<TfLiteMixinTag>> tiled_k_heads;
+      for (int g = 0; g < config.n_kv_groups; ++g) {
+        Tensor head_idx = Tensor<TfLiteMixinTag>(
+            {.type = Type::kI32,
+             .shape = {1},
+             .buffer = OwningCpuBuffer::Copy<Type::kI32>({g})});
+        Tensor head = Gather(k_for_attn, head_idx, /*axis=*/1);
+        Tensor tiled_head = Tile(head, {1, num_groups, 1, 1});
+        tiled_k_heads.push_back(tiled_head);
+      }
+      k_for_attn = Concatenation(absl::MakeSpan(tiled_k_heads), /*axis=*/1);
 
-    std::vector<Tensor<TfLiteMixinTag>> tiled_v_heads;
-    for (int g = 0; g < config.n_kv_groups; ++g) {
-      Tensor head_idx = Tensor<TfLiteMixinTag>(
-          {.type = Type::kI32,
-           .shape = {1},
-           .buffer = OwningCpuBuffer::Copy<Type::kI32>({g})});
-      Tensor head = Gather(v_for_attn, head_idx, /*axis=*/1);
-      Tensor tiled_head = Tile(head, {1, num_groups, 1, 1});
-      tiled_v_heads.push_back(tiled_head);
+      std::vector<Tensor<TfLiteMixinTag>> tiled_v_heads;
+      for (int g = 0; g < config.n_kv_groups; ++g) {
+        Tensor head_idx = Tensor<TfLiteMixinTag>(
+            {.type = Type::kI32,
+             .shape = {1},
+             .buffer = OwningCpuBuffer::Copy<Type::kI32>({g})});
+        Tensor head = Gather(v_for_attn, head_idx, /*axis=*/1);
+        Tensor tiled_head = Tile(head, {1, num_groups, 1, 1});
+        tiled_v_heads.push_back(tiled_head);
+      }
+      v_for_attn = Concatenation(absl::MakeSpan(tiled_v_heads), /*axis=*/1);
     }
-    v_for_attn = Concatenation(absl::MakeSpan(tiled_v_heads), /*axis=*/1);
   }
 
   Tensor scores = BatchMatMul(q, k_for_attn, /*adj_x=*/false, /*adj_y=*/true);
@@ -227,7 +386,8 @@ GpuAttnOutput MakeGpuSelfAttentionLayer(
     auto mask_cpu_buffer =
         ::litert::tensor::OwningCpuBuffer::Allocate<Type::kFP32>(mask_elements);
     auto mask_lock = mask_cpu_buffer->LockMutable();
-    float* mask_raw_ptr = std::move(mask_lock).As<float>().data();
+    LockedBufferSpan<float> mask_span = std::move(mask_lock).As<float>();
+    float* mask_raw_ptr = mask_span.data();
 
     for (int h = 0; h < config.n_heads; ++h) {
       for (int i = 0; i < seq_len; ++i) {
@@ -281,7 +441,8 @@ struct GpuOutputs {
 };
 
 GpuOutputs BuildGpuGraph(Inputs<TfLiteMixinTag>& inputs, const Config& config,
-                         bool is_decode) {
+                         bool is_decode, bool tensor_rt_compatible,
+                         int static_prefill_output_index) {
   float emb_scale = std::sqrt(static_cast<float>(config.emb_dim));
   Tensor emb_scale_tensor = Tensor<TfLiteMixinTag>(
       {.name = "emb_scale_tensor",
@@ -320,7 +481,7 @@ GpuOutputs BuildGpuGraph(Inputs<TfLiteMixinTag>& inputs, const Config& config,
                                              : Tensor<TfLiteMixinTag>(),
         layer_idx < inputs.value_caches.size() ? inputs.value_caches[layer_idx]
                                                : Tensor<TfLiteMixinTag>(),
-        inputs.weights, inputs.cache_params);
+        inputs.weights, inputs.cache_params, tensor_rt_compatible);
 
     updated_key_caches.push_back(attn_output.key_cache);
     updated_value_caches.push_back(attn_output.value_cache);
@@ -363,24 +524,45 @@ GpuOutputs BuildGpuGraph(Inputs<TfLiteMixinTag>& inputs, const Config& config,
       GetWeight(inputs.weights, "model.embed_tokens.weight", Type::kFP32,
                 {config.vocab_size, config.emb_dim});
 
-  if (!is_decode) {
+  if (!is_decode && tensor_rt_compatible) {
+    final_output = Slice(final_output, {0, static_prefill_output_index, 0},
+                         {1, 1, static_cast<int>(config.emb_dim)});
+  } else if (!is_decode) {
     final_output = Gather(final_output, inputs.slice_index, /*axis=*/1);
   }
-  Tensor final_output_4d =
-      Reshape(final_output, {1, 1, 1, static_cast<int>(config.emb_dim)});
 
-  Tensor logits_4d = FullyConnected(final_output_4d, embedding_table, kActNone,
-                                    /*keep_num_dims=*/true);
-  Tensor logits =
-      Reshape(logits_4d, {1, 1, static_cast<int>(config.vocab_size)});
-  Tensor output_token_id = ArgMax(logits, /*axis=*/-1, Type::kI32);
-  output_token_id.SetName("output");
-  gpu_outputs.output = output_token_id;
+  Tensor logits = FullyConnected(final_output, embedding_table);
+  if (tensor_rt_compatible) {
+    logits.SetName("output");
+    gpu_outputs.output = logits;
+  } else {
+    Tensor output_token_id = ArgMax(logits, /*axis=*/-1, Type::kI32);
+    output_token_id.SetName("output");
+    gpu_outputs.output = output_token_id;
+  }
 
   gpu_outputs.key_caches = updated_key_caches;
   gpu_outputs.value_caches = updated_value_caches;
 
   return gpu_outputs;
+}
+
+absl::StatusOr<int32_t> ReadNextTokenId(::litert::tensor::TensorHandle output,
+                                        bool tensor_rt_compatible) {
+  LRT_TENSOR_ASSIGN_OR_RETURN(::litert::tensor::Buffer & output_buf,
+                              output.GetBuffer());
+  if (!tensor_rt_compatible) {
+    auto locked_id = output_buf.Lock().As<const int32_t>();
+    return locked_id.data()[0];
+  }
+
+  auto locked_logits = output_buf.Lock().As<const float>();
+  if (locked_logits.size() == 0) {
+    return absl::InternalError("Gemma3 logits output is empty");
+  }
+  const float* begin = locked_logits.data();
+  const float* end = begin + locked_logits.size();
+  return static_cast<int32_t>(std::max_element(begin, end) - begin);
 }
 
 }  // namespace litert::tensor::examples::gemma3
@@ -420,6 +602,9 @@ absl::Status RunGemma3Inference(
     return absl::InternalError("Failed to load safetensors file!");
   }
   auto loader = std::move(*loader_res);
+  LRT_TENSOR_RETURN_IF_ERROR(
+      ::litert::tensor::examples::gemma3::InferConfigFromWeights(loader,
+                                                                 &config));
   auto weights_res = loader.LoadAllTensors(weight_mode);
   if (!weights_res.ok()) {
     return absl::InternalError("Failed to load tensors from safetensors!");
@@ -433,16 +618,33 @@ absl::Status RunGemma3Inference(
                               .Lock()
                               .As<const float>();
 
-  int raw_seq_len = static_cast<int>(input_tokens.size());
-  int padded_seq_len = 1;
+  const size_t raw_seq_len = input_tokens.size();
+  if (raw_seq_len > kMaxSeqLen) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "Prompt exceeds max tokens bounds: prompt tokens=", raw_seq_len,
+        ", max_seq_len=", kMaxSeqLen));
+  }
+  size_t padded_seq_len = 1;
   while (padded_seq_len < raw_seq_len) padded_seq_len *= 2;
   while (input_tokens.size() < padded_seq_len) {
     input_tokens.push_back(0);
   }
-  const int seq_len = padded_seq_len;
+  const int seq_len = static_cast<int>(padded_seq_len);
 
-  if (seq_len >= kMaxSeqLen)
-    return absl::InvalidArgumentError("Prompt exceeds max tokens bounds!");
+  if (padded_seq_len > kMaxSeqLen) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "Prompt exceeds max tokens bounds after padding: prompt tokens=",
+        raw_seq_len, ", padded tokens=", padded_seq_len,
+        ", max_seq_len=", kMaxSeqLen));
+  }
+  if (max_tokens > kMaxSeqLen || raw_seq_len + max_tokens > kMaxSeqLen) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "Prompt plus requested decode exceeds max tokens bounds: prompt "
+        "tokens=",
+        raw_seq_len, ", max_tokens=", max_tokens,
+        ", max_seq_len=", kMaxSeqLen));
+  }
+  const bool tensor_rt_compatible = absl::GetFlag(FLAGS_tensor_rt_compatible);
 
   std::vector<float> prefill_embeddings(seq_len * config.emb_dim, 0.0f);
   for (size_t i = 0; i < input_tokens.size(); ++i) {
@@ -483,7 +685,9 @@ absl::Status RunGemma3Inference(
     ::litert::tensor::examples::gemma3::Inputs<::litert::tensor::TfLiteMixinTag>
         inputs;
 
-    int seq = is_decode ? 1 : static_cast<int>(kMaxSeqLen);
+    int seq = is_decode ? 1
+                        : (tensor_rt_compatible ? seq_len
+                                                : static_cast<int>(kMaxSeqLen));
 
     inputs.embedded_input =
         ::litert::tensor::Tensor<::litert::tensor::TfLiteMixinTag>(
@@ -571,7 +775,8 @@ absl::Status RunGemma3Inference(
   // [SIGNATURE 1]: Staging the Prefill Subgraph
   auto prefill_inputs = SetupGraphInputs(/*is_decode=*/false);
   auto prefill_outputs =
-      BuildGpuGraph(prefill_inputs, config, /*is_decode=*/false);
+      BuildGpuGraph(prefill_inputs, config, /*is_decode=*/false,
+                    tensor_rt_compatible, static_cast<int>(raw_seq_len) - 1);
 
   std::vector<::litert::tensor::TensorHandle> prefill_sig_outputs = {
       prefill_outputs.output};
@@ -585,7 +790,8 @@ absl::Status RunGemma3Inference(
   // [SIGNATURE 2]: Staging the Autoregressive Decode Subgraph
   auto decode_inputs = SetupGraphInputs(/*is_decode=*/true);
   auto decode_outputs =
-      BuildGpuGraph(decode_inputs, config, /*is_decode=*/true);
+      BuildGpuGraph(decode_inputs, config, /*is_decode=*/true,
+                    tensor_rt_compatible, /*static_prefill_output_index=*/0);
 
   std::vector<::litert::tensor::TensorHandle> decode_sig_outputs = {
       decode_outputs.output};
@@ -603,7 +809,37 @@ absl::Status RunGemma3Inference(
   LRT_TENSOR_RETURN_IF_ERROR(model_factory.Save(gpu_tflite_file));
 
   // 6. Initializing the pristine hardware accelerated environment options!
-  auto env_or = ::litert::Environment::Create({});
+  std::vector<::litert::EnvironmentOptions::Option> env_options;
+  const std::string compiler_plugin_library_dir =
+      absl::GetFlag(FLAGS_compiler_plugin_library_dir);
+  if (!compiler_plugin_library_dir.empty()) {
+    env_options.push_back(::litert::EnvironmentOptions::Option{
+        ::litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
+        absl::string_view(compiler_plugin_library_dir)});
+  }
+  const std::string compiler_cache_dir =
+      absl::GetFlag(FLAGS_compiler_cache_dir);
+  if (!compiler_cache_dir.empty()) {
+    env_options.push_back(::litert::EnvironmentOptions::Option{
+        ::litert::EnvironmentOptions::Tag::kCompilerCacheDir,
+        absl::string_view(compiler_cache_dir)});
+  }
+  const std::string dispatch_library_dir =
+      absl::GetFlag(FLAGS_dispatch_library_dir);
+  if (!dispatch_library_dir.empty()) {
+    env_options.push_back(::litert::EnvironmentOptions::Option{
+        ::litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
+        absl::string_view(dispatch_library_dir)});
+  }
+  const std::string runtime_library_dir =
+      absl::GetFlag(FLAGS_runtime_library_dir);
+  if (!runtime_library_dir.empty()) {
+    env_options.push_back(::litert::EnvironmentOptions::Option{
+        ::litert::EnvironmentOptions::Tag::kRuntimeLibraryDir,
+        absl::string_view(runtime_library_dir)});
+  }
+  auto env_or =
+      ::litert::Environment::Create(::litert::EnvironmentOptions(env_options));
   if (!env_or.HasValue())
     return absl::InternalError(
         "Failed to instantiate LiteRT Environment context!");
@@ -616,24 +852,62 @@ absl::Status RunGemma3Inference(
   std::string acc_flag = absl::GetFlag(FLAGS_accelerator);
   if (acc_flag == "cpu") {
     options.SetHardwareAccelerators(::litert::HwAccelerators::kCpu);
-  } else {
-    options.SetHardwareAccelerators(::litert::HwAccelerators::kGpu);
+  } else if (acc_flag == "npu") {
+    if (absl::GetFlag(FLAGS_allow_cpu_fallback)) {
+      options.SetHardwareAccelerators(::litert::HwAccelerators::kNpu |
+                                      ::litert::HwAccelerators::kCpu);
+    } else {
+      options.SetHardwareAccelerators(::litert::HwAccelerators::kNpu);
+    }
+  } else if (acc_flag == "gpu") {
+    if (absl::GetFlag(FLAGS_allow_cpu_fallback)) {
+      options.SetHardwareAccelerators(::litert::HwAccelerators::kGpu |
+                                      ::litert::HwAccelerators::kCpu);
+    } else {
+      options.SetHardwareAccelerators(::litert::HwAccelerators::kGpu);
+    }
     auto gpu_options_or = options.GetGpuOptions();
     if (gpu_options_or.HasValue()) {
       gpu_options_or->SetPrecision(::litert::GpuOptions::Precision::kFp32);
-      gpu_options_or->SetBufferStorageType(
-          ::litert::GpuOptions::BufferStorageType::kBuffer);
-      gpu_options_or->EnableExternalTensorsMode(true);
-      gpu_options_or->AddExternalTensorPattern("key_cache_.*");
-      gpu_options_or->AddExternalTensorPattern("value_cache_.*");
+      const std::string gpu_backend = absl::GetFlag(FLAGS_gpu_backend);
+      if (gpu_backend == "webgpu") {
+        gpu_options_or->SetBackend(::litert::GpuOptions::Backend::kWebGpu);
+      } else if (gpu_backend != "automatic") {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Unsupported --gpu_backend value: ", gpu_backend));
+      }
+      const std::string gpu_buffer_storage =
+          absl::GetFlag(FLAGS_gpu_buffer_storage);
+      if (gpu_buffer_storage == "default") {
+        gpu_options_or->SetBufferStorageType(
+            ::litert::GpuOptions::BufferStorageType::kDefault);
+      } else if (gpu_buffer_storage == "buffer") {
+        gpu_options_or->SetBufferStorageType(
+            ::litert::GpuOptions::BufferStorageType::kBuffer);
+      } else if (gpu_buffer_storage == "texture2d") {
+        gpu_options_or->SetBufferStorageType(
+            ::litert::GpuOptions::BufferStorageType::kTexture2D);
+      } else {
+        return absl::InvalidArgumentError(absl::StrCat(
+            "Unsupported --gpu_buffer_storage value: ", gpu_buffer_storage));
+      }
+      if (absl::GetFlag(FLAGS_gpu_external_tensors)) {
+        gpu_options_or->EnableExternalTensorsMode(true);
+        gpu_options_or->AddExternalTensorPattern("key_cache_.*");
+        gpu_options_or->AddExternalTensorPattern("value_cache_.*");
+      }
     }
+  } else {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Unsupported --accelerator value: ", acc_flag));
   }
 
   auto runner_res = ::litert::tensor::LitertDynamicRunner::Create(
       env, gpu_tflite_file, options);
   if (!runner_res.ok())
     return absl::InternalError(
-        "Failed to initialize dynamic hardware execution engine!");
+        absl::StrCat("Failed to initialize dynamic hardware execution engine: ",
+                     runner_res.status().ToString()));
   auto runner = std::move(*runner_res);
 
   auto StageRuntimeInputs =
@@ -689,7 +963,8 @@ absl::Status RunGemma3Inference(
   // 7. Running the Prefill Parallel Phase pass
   LRT_TENSOR_RETURN_IF_ERROR(StageRuntimeInputs(
       std::string(kPrefill), prefill_embeddings, prefill_mask, rope_global_cos,
-      rope_global_sin, rope_local_cos, rope_local_sin, raw_seq_len - 1));
+      rope_global_sin, rope_local_cos, rope_local_sin,
+      static_cast<int>(raw_seq_len) - 1));
   ::litert::tensor::examples::Timer::Get("run_prefill").StartLap();
   LRT_TENSOR_RETURN_IF_ERROR(runner.Run(std::string(kPrefill)));
 
@@ -697,10 +972,9 @@ absl::Status RunGemma3Inference(
   {
     LRT_TENSOR_ASSIGN_OR_RETURN(
         auto prefill_out, runner.GetOutput(std::string(kPrefill), "output"));
-    LRT_TENSOR_ASSIGN_OR_RETURN(::litert::tensor::Buffer & prefill_buf,
-                                prefill_out.GetBuffer());
-    auto locked_prefill_id = prefill_buf.Lock().As<const int32_t>();
-    current_token = locked_prefill_id.data()[0];
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        current_token, ::litert::tensor::examples::gemma3::ReadNextTokenId(
+                           prefill_out, tensor_rt_compatible));
   }
   ::litert::tensor::examples::Timer::Get("run_prefill").StopLap();
 
@@ -775,7 +1049,7 @@ absl::Status RunGemma3Inference(
 
   // Pre-allocate reusable static host buffers outside the generative hot loop!
   std::vector<float> decode_mask(kMaxSeqLen, -10000.0f);
-  for (int j = 0; j < raw_seq_len; ++j) {
+  for (size_t j = 0; j < raw_seq_len; ++j) {
     decode_mask[j] = 0.0f;
   }
   std::vector<float> dec_rope_global_cos(config.head_dim);
@@ -815,7 +1089,7 @@ absl::Status RunGemma3Inference(
                            (current_token % config.vocab_size) * config.emb_dim;
     std::copy(src_row, src_row + config.emb_dim, token_embedding.data());
 
-    int cache_len = raw_seq_len + step;
+    int cache_len = static_cast<int>(raw_seq_len + step);
     decode_mask[cache_len] = 0.0f;  // Unmasks exactly the newly added column!
 
     ::litert::tensor::examples::gemma3::RopeCosSin(
@@ -845,13 +1119,12 @@ absl::Status RunGemma3Inference(
 
     LRT_TENSOR_ASSIGN_OR_RETURN(
         auto decode_out, runner.GetOutput(std::string(kDecode), "output"));
-    LRT_TENSOR_ASSIGN_OR_RETURN(::litert::tensor::Buffer & decode_buf,
-                                decode_out.GetBuffer());
-    auto locked_decode_id = decode_buf.Lock().As<const int32_t>();
     decode_timing.run.StopLap();
 
     decode_timing.argmax.StartLap();
-    current_token = locked_decode_id.data()[0];
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        current_token, ::litert::tensor::examples::gemma3::ReadNextTokenId(
+                           decode_out, tensor_rt_compatible));
     decode_timing.argmax.StopLap();
 
     decode_timing.cache_readback.StartLap();

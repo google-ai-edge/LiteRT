@@ -37,6 +37,16 @@ static const char kEnnApiLibName[] = "libenn_public_api_cpp.so";
     return kLiteRtStatusErrorDynamicLoading;                                \
   }
 
+#define ENN_LOAD_API_OPTIONAL(LIB, SYM)                                     \
+  if (auto symbol = LIB.LookupSymbol<void*>(#SYM); symbol.HasValue()) {     \
+    api_->SYM =                                                             \
+        reinterpret_cast<decltype(api_->SYM)>(std::move(symbol.Value())); \
+  } else {                                                                  \
+    LITERT_LOG(LITERT_INFO, "Optional symbol %s not found: %s", #SYM,       \
+               LIB.DlError());                                              \
+    api_->SYM = nullptr;                                                    \
+  }
+
 namespace litert::samsung {
 EnnManager::EnnManager() : api_(std::make_unique<EnnManager::PublicApi>()) {}
 
@@ -57,7 +67,12 @@ Expected<EnnManager::UniquePtr> EnnManager::Create() {
 
 const EnnManager::PublicApi& EnnManager::Api() const { return *api_.get(); }
 
-EnnManager::~EnnManager() { Api().EnnDeinitialize(); }
+EnnManager::~EnnManager() {
+  if (!_enn_deinitialized_ && api_->EnnDeinitialize != nullptr) {
+    _enn_deinitialized_ = true;
+    Api().EnnDeinitialize();
+  }
+}
 
 LiteRtStatus EnnManager::LoadEnnRuntimeLibrary(absl::string_view path) {
   auto loading_lib = SharedLibrary::Load(path, RtldFlags::Default());
@@ -69,13 +84,13 @@ LiteRtStatus EnnManager::LoadEnnRuntimeLibrary(absl::string_view path) {
   enn_runtime_lib_ = std::move(loading_lib.Value());
 
   ENN_LOAD_API(enn_runtime_lib_, EnnInitialize);
-  ENN_LOAD_API(enn_runtime_lib_, EnnOpenModelFromMemory);
-  ENN_LOAD_API(enn_runtime_lib_, EnnOpenModelFromMemoryWithWeight);
+  ENN_LOAD_API_OPTIONAL(enn_runtime_lib_, EnnOpenModelFromMemory);
+  ENN_LOAD_API_OPTIONAL(enn_runtime_lib_, EnnOpenModelFromMemoryWithWeight);
   ENN_LOAD_API(enn_runtime_lib_, EnnCreateBufferFromFdWithOffset);
   ENN_LOAD_API(enn_runtime_lib_, EnnCreateBufferCache);
-  ENN_LOAD_API(enn_runtime_lib_, EnnOpenModelFromFdWithWeight);
-  ENN_LOAD_API(enn_runtime_lib_, EnnOpenModelWithFileOpenFdWeight);
-  ENN_LOAD_API(enn_runtime_lib_, EnnOpenModelWithFileOpenFd);
+  ENN_LOAD_API_OPTIONAL(enn_runtime_lib_, EnnOpenModelFromFdWithWeight);
+  ENN_LOAD_API_OPTIONAL(enn_runtime_lib_, EnnOpenModelWithFileOpenFdWeight);
+  ENN_LOAD_API_OPTIONAL(enn_runtime_lib_, EnnOpenModelWithFileOpenFd);
   ENN_LOAD_API(enn_runtime_lib_, EnnBufferCommit);
   ENN_LOAD_API(enn_runtime_lib_, EnnGetBuffersInfo);
   ENN_LOAD_API(enn_runtime_lib_, EnnSetBufferByIndex);
@@ -86,9 +101,47 @@ LiteRtStatus EnnManager::LoadEnnRuntimeLibrary(absl::string_view path) {
   ENN_LOAD_API(enn_runtime_lib_, EnnCloseModel);
   ENN_LOAD_API(enn_runtime_lib_, EnnDeinitialize);
   ENN_LOAD_API(enn_runtime_lib_, EnnAllocateAllBuffers);
+  ENN_LOAD_API(enn_runtime_lib_, EnnSetPreferencePerfMode);
+  ENN_LOAD_API(enn_runtime_lib_, EnnSetPreferencePerfConfigId);
 
   if (api_->EnnInitialize() != ENN_RET_SUCCESS) {
     return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus SetGenAiPerfConfigFromSoc(const EnnManager::PublicApi& api) {
+  std::string soc_name = GetSocName();
+  if (soc_name.empty()) {
+    return kLiteRtStatusOk;
+  }
+
+  PerfConfig perfConfig = GetPerfConfigFromSoc(soc_name);
+  LITERT_LOG(LITERT_INFO,
+             "SetGenAiPerfConfigFromSoc: SOC=%s, mode=%u, configId=%u",
+             soc_name.c_str(), static_cast<unsigned>(perfConfig.mode),
+             perfConfig.configId);
+
+  EnnReturn ret_mode =
+      api.EnnSetPreferencePerfMode(static_cast<uint32_t>(perfConfig.mode));
+  if (ret_mode != ENN_RET_SUCCESS) {
+    LITERT_LOG(
+        LITERT_ERROR,
+        "SetGenAiPerfConfigFromSoc: EnnSetPreferencePerfMode failed ret=%d",
+        ret_mode);
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  if (perfConfig.configId != PERF_CONFIG_ID_DEFAULT) {
+    EnnReturn ret_config =
+        api.EnnSetPreferencePerfConfigId(perfConfig.configId);
+    if (ret_config != ENN_RET_SUCCESS) {
+      LITERT_LOG(LITERT_ERROR,
+                 "SetGenAiPerfConfigFromSoc: EnnSetPreferencePerfConfigId "
+                 "failed ret=%d",
+                 ret_config);
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
   }
 
   return kLiteRtStatusOk;

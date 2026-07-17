@@ -23,7 +23,13 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#if !defined(LITERT_DISABLE_GPU)
 #include "litert/runtime/gpu_environment.h"
+#else
+namespace litert::internal {
+class GpuEnvironment {};
+}  // namespace litert::internal
+#endif  // !defined(LITERT_DISABLE_GPU)
 
 litert::Expected<LiteRtEnvironmentT::Ptr> LiteRtEnvironmentT::CreateWithOptions(
     absl::Span<const LiteRtEnvOption> options) {
@@ -45,6 +51,11 @@ litert::Expected<void> LiteRtEnvironmentT::AddOptions(
   return {};
 }
 
+LiteRtEnvironmentT::LiteRtEnvironmentT() = default;
+
+LiteRtEnvironmentT::~LiteRtEnvironmentT() = default;
+
+#if !defined(LITERT_DISABLE_GPU)
 // C API to workaround Windows build issue.
 // This function is only used in tensor_buffer.cc.
 extern "C" litert::internal::GpuEnvironment* LiteRtGetGpuEnvironment(
@@ -52,14 +63,13 @@ extern "C" litert::internal::GpuEnvironment* LiteRtGetGpuEnvironment(
   if (env == nullptr) {
     return nullptr;
   }
-  LITERT_ASSIGN_OR_RETURN(auto gpu_env, env->GetGpuEnvironment(), nullptr);
-
-  return gpu_env;
+  decltype(env->GetGpuEnvironment()) gpu_env_expected =
+      env->GetGpuEnvironment();
+  if (!gpu_env_expected.HasValue()) {
+    return nullptr;
+  }
+  return gpu_env_expected.Value();
 }
-
-LiteRtEnvironmentT::LiteRtEnvironmentT() = default;
-
-LiteRtEnvironmentT::~LiteRtEnvironmentT() = default;
 
 litert::Expected<void> LiteRtEnvironmentT::SetGpuEnvironment(
     std::unique_ptr<litert::internal::GpuEnvironment> gpu_env) {
@@ -99,3 +109,19 @@ bool LiteRtEnvironmentT::SupportsAhwbGlInterop() {
 bool LiteRtEnvironmentT::SupportsFP16() {
   return gpu_env_ != nullptr && gpu_env_->SupportsFP16();
 }
+#else
+extern "C" litert::internal::GpuEnvironment* LiteRtGetGpuEnvironment(
+    LiteRtEnvironment env) {
+  return nullptr;
+}
+
+bool LiteRtEnvironmentT::HasGpuEnvironment() { return false; }
+
+bool LiteRtEnvironmentT::SupportsClGlInterop() { return false; }
+
+bool LiteRtEnvironmentT::SupportsAhwbClInterop() { return false; }
+
+bool LiteRtEnvironmentT::SupportsAhwbGlInterop() { return false; }
+
+bool LiteRtEnvironmentT::SupportsFP16() { return false; }
+#endif  // !defined(LITERT_DISABLE_GPU)

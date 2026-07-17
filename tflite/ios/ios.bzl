@@ -11,7 +11,7 @@ load("//tflite:build_def.bzl", "clean_dep")
 # copybara:comment_end
 
 # LINT.IfChange
-TFL_MINIMUM_OS_VERSION = "12.0"
+TFL_MINIMUM_OS_VERSION = "15.0"
 # LINT.ThenChange(
 #   TensorFlowLiteC.podspec.template,
 #   TensorFlowLiteSelectTfOps.podspec.template,

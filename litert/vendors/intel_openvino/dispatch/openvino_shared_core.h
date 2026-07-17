@@ -16,9 +16,15 @@
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_OPENVINO_SHARED_CORE_H_
 
 #include <memory>
+#include <mutex>  // NOLINT
+#include <optional>
 #include <string>
+#include <vector>
 
 #include "openvino/runtime/core.hpp"
+#include "openvino/runtime/remote_context.hpp"
+#include "absl/base/thread_annotations.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 
 class OpenVINOSharedCore {
  public:
@@ -32,15 +38,43 @@ class OpenVINOSharedCore {
   // Return the core shared_pointer.
   std::shared_ptr<ov::Core> getCore() const { return core_; }
 
-  void SetDevice(const std::string device) { device_ = device; }
-  std::string GetDevice() { return device_; }
+  void SetDevice(const std::string device) {
+    absl::MutexLock lock(&state_mutex_);
+    device_ = device;
+    remote_context_.reset();
+  }
+  std::string GetDevice() {
+    absl::MutexLock lock(&state_mutex_);
+    return device_;
+  }
+
+  ov::RemoteContext GetRemoteContext() {
+    absl::MutexLock lock(&state_mutex_);
+    if (!remote_context_.has_value()) {
+      remote_context_ = core_->get_default_context(device_);
+    }
+    return *remote_context_;
+  }
+
+  // Returns the list of OpenVINO devices reported by `core_->
+  // get_available_devices()`.  Queried lazily on first call and cached for
+  // the lifetime of the process (the set of installed devices does not
+  // change at runtime).  Thread-safe.  Returns an empty vector if the
+  // underlying query throws.
+  const std::vector<std::string>& GetAvailableDevices();
 
  private:
   OpenVINOSharedCore();
   ~OpenVINOSharedCore();
 
   std::shared_ptr<ov::Core> core_;
-  std::string device_ = "NPU";  // Default device
+  // Guards device_ and remote_context_.
+  absl::Mutex state_mutex_;
+  std::string device_ ABSL_GUARDED_BY(state_mutex_) = "NPU";  // Default device
+  std::optional<ov::RemoteContext> remote_context_
+      ABSL_GUARDED_BY(state_mutex_);
+  std::once_flag available_devices_once_;
+  std::vector<std::string> available_devices_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_OPENVINO_SHARED_CORE_H_

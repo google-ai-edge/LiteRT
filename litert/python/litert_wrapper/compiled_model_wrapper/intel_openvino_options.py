@@ -29,13 +29,12 @@ else:
 # pylint: enable=g-import-not-at-top
 
 
-class IntelOpenVinoDeviceType(enum.IntEnum):
-  """Intel OpenVINO device types."""
+class IntelOpenVinoGraphBackend(enum.IntEnum):
+  """Intel OpenVINO graph types (target devices for a partition)."""
 
   CPU = 0
   GPU = 1
   NPU = 2
-  AUTO = 3
 
 
 class IntelOpenVinoPerformanceMode(enum.IntEnum):
@@ -50,18 +49,18 @@ class IntelOpenVinoPerformanceMode(enum.IntEnum):
 class IntelOpenVinoOptions:
   """Intel OpenVINO-specific options for a LiteRT compiled model."""
 
-  DEVICE_TYPE = IntelOpenVinoDeviceType
+  GRAPH_BACKEND = IntelOpenVinoGraphBackend
   PERFORMANCE_MODE = IntelOpenVinoPerformanceMode
 
-  device_type: Optional[IntelOpenVinoDeviceType] = None
+  graph_backend: Optional[IntelOpenVinoGraphBackend] = None
   performance_mode: Optional[IntelOpenVinoPerformanceMode] = None
   configs_map: dict[str, str] = dataclasses.field(default_factory=dict)
 
   def _as_flat_kwargs(self) -> dict[str, Any]:
     """Returns kwargs for the internal pybind wrapper."""
     return {
-        "intel_openvino_device_type": option_utils.optional_enum_to_int(
-            self.device_type
+        "intel_openvino_graph_backend": option_utils.optional_enum_to_int(
+            self.graph_backend
         ),
         "intel_openvino_performance_mode": option_utils.optional_enum_to_int(
             self.performance_mode

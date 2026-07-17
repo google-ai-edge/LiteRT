@@ -296,6 +296,17 @@ class Op {
     return absl::string_view(custom_code);
   }
 
+  Expected<absl::Span<const uint8_t>> CustomOptions() const {
+    const uint8_t* custom_options_data = nullptr;
+    int32_t custom_options_size = 0;
+    auto status = ctx_->get_custom_options(Get(), &custom_options_data,
+                                           &custom_options_size);
+    if (status != kLiteRtStatusOk) {
+      return Error(status, "Failed to get custom options");
+    }
+    return absl::MakeConstSpan(custom_options_data, custom_options_size);
+  }
+
   bool Is(LiteRtOpCode code) const { return Code() == code; }
 
  private:

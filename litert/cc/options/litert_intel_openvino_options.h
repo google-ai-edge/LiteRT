@@ -48,18 +48,6 @@ class IntelOpenVinoOptions {
     return IntelOpenVinoOptions(options);
   }
 
-  void SetDeviceType(LiteRtIntelOpenVinoDeviceType device_type) {
-    LITERT_ABORT_IF_ERROR(
-        LrtIntelOpenVinoOptionsSetDeviceType(Get(), device_type));
-  }
-
-  LiteRtIntelOpenVinoDeviceType GetDeviceType() const {
-    LiteRtIntelOpenVinoDeviceType device_type;
-    LITERT_ABORT_IF_ERROR(
-        LrtIntelOpenVinoOptionsGetDeviceType(Get(), &device_type));
-    return device_type;
-  }
-
   void SetPerformanceMode(LiteRtIntelOpenVinoPerformanceMode performance_mode) {
     LITERT_ABORT_IF_ERROR(
         LrtIntelOpenVinoOptionsSetPerformanceMode(Get(), performance_mode));
@@ -94,6 +82,70 @@ class IntelOpenVinoOptions {
       return std::make_pair(std::string(), std::string());
     }
 
+    return std::make_pair(std::string(key), std::string(value));
+  }
+
+  // Per-graph (partition) backend overrides ----------------------------------
+
+  // Set the OpenVINO graph type (target device) for a specific graph
+  // (partition) index.  Each partition in the compiled model targets the
+  // device configured here.
+  void SetGraphBackend(int graph_index,
+                       LiteRtIntelOpenVinoGraphBackend graph_backend) {
+    LITERT_ABORT_IF_ERROR(LrtIntelOpenVinoOptionsSetGraphBackend(
+        Get(), graph_index, graph_backend));
+  }
+
+  // Returns the graph type configured for `graph_index` if one is set,
+  // otherwise an error with `kLiteRtStatusErrorNotFound`.
+  Expected<LiteRtIntelOpenVinoGraphBackend> GetGraphBackend(
+      int graph_index) const {
+    LiteRtIntelOpenVinoGraphBackend graph_backend;
+    LITERT_RETURN_IF_ERROR(LrtIntelOpenVinoOptionsGetGraphBackend(
+        Get(), graph_index, &graph_backend));
+    return graph_backend;
+  }
+
+  // Set a per-graph OpenVINO config map override.  Merged on top of the
+  // model-wide configs_map at compile time.
+  void SetGraphConfigsMapOption(int graph_index, const char* key,
+                                const char* value) {
+    LITERT_ABORT_IF_ERROR(LrtIntelOpenVinoOptionsSetGraphConfigsMapOption(
+        Get(), graph_index, key, value));
+  }
+
+  // Total number of graphs that have at least one override set.
+  int GetNumGraphOverrides() const {
+    int num_overrides = 0;
+    LITERT_ABORT_IF_ERROR(
+        LrtIntelOpenVinoOptionsGetNumGraphOverrides(Get(), &num_overrides));
+    return num_overrides;
+  }
+
+  // Returns the graph index at the given enumeration slot.
+  int GetGraphOverrideIndex(int slot_index) const {
+    int graph_index = 0;
+    LITERT_ABORT_IF_ERROR(LrtIntelOpenVinoOptionsGetGraphOverrideIndex(
+        Get(), slot_index, &graph_index));
+    return graph_index;
+  }
+
+  int GetNumGraphConfigsMapOptions(int graph_index) const {
+    int num_options = 0;
+    LITERT_ABORT_IF_ERROR(LrtIntelOpenVinoOptionsGetNumGraphConfigsMapOptions(
+        Get(), graph_index, &num_options));
+    return num_options;
+  }
+
+  std::pair<std::string, std::string> GetGraphConfigsMapOption(
+      int graph_index, int index) const {
+    const char* key = nullptr;
+    const char* value = nullptr;
+    auto status = LrtIntelOpenVinoOptionsGetGraphConfigsMapOption(
+        Get(), graph_index, index, &key, &value);
+    if (status != kLiteRtStatusOk) {
+      return std::make_pair(std::string(), std::string());
+    }
     return std::make_pair(std::string(key), std::string(value));
   }
 

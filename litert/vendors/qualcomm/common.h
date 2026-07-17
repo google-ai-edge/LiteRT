@@ -135,6 +135,10 @@ inline LiteRtStatus InitQnnOptions(
       qualcomm_options.GetHtpPerformanceMode()));
   qnn_options.SetDspPerformanceMode(static_cast<::qnn::DspPerformanceMode>(
       qualcomm_options.GetDspPerformanceMode()));
+  qnn_options.SetHtpPerfCtrlMode(static_cast<::qnn::HtpPerfCtrlMode>(
+      qualcomm_options.GetHtpPerfCtrlMode()));
+  qnn_options.SetDspPerfCtrlMode(static_cast<::qnn::DspPerfCtrlMode>(
+      qualcomm_options.GetDspPerfCtrlMode()));
   qnn_options.SetIrJsonDir(qualcomm_options.GetIrJsonDir());
   qnn_options.SetDlcDir(qualcomm_options.GetDlcDir());
   qnn_options.SetVtcmSize(qualcomm_options.GetVtcmSize());
@@ -147,7 +151,12 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetSaverOutputDir(qualcomm_options.GetSaverOutputDir());
   qnn_options.SetGraphIOTensorMemType(static_cast<::qnn::GraphIOTensorMemType>(
       qualcomm_options.GetGraphIOTensorMemType()));
-
+  qnn_options.SetSchematicDir(qualcomm_options.GetSchematicDir());
+  const auto custom_op_package = qualcomm_options.GetCustomOpPackage();
+  qnn_options.SetCustomOpPackage(
+      custom_op_package.name, custom_op_package.interface_provider,
+      custom_op_package.compile_package_path,
+      custom_op_package.dispatch_package_path, custom_op_package.target);
   LITERT_LOG(LITERT_INFO, "\n%s", qnn_options.Dump().data());
   return kLiteRtStatusOk;
 }

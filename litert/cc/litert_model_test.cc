@@ -16,10 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
-#include <optional>
 #include <string>
-#include <utility>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -29,7 +26,6 @@
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/litert_element_type.h"
@@ -41,7 +37,6 @@
 #include "litert/test/load_test_model.h"
 #include "litert/test/matchers.h"
 #include "tflite/converter/allocation.h"
-#include "tflite/stderr_reporter.h"
 
 // Tests for CC Wrapper classes around public C api.
 
@@ -185,8 +180,14 @@ TEST(CcSignatureTest, Basic) {
   auto input_names = signature.InputNames();
   EXPECT_THAT(input_names[0], "arg0");
   EXPECT_THAT(input_names[1], "arg1");
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto& input0, signature.InputTensor(0));
+  EXPECT_THAT(input0.Name(), "arg0");
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto& input1, signature.InputTensor(1));
+  EXPECT_THAT(input1.Name(), "arg1");
   auto output_names = signature.OutputNames();
   EXPECT_THAT(output_names[0], "tfl.mul");
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto& output0, signature.OutputTensor(0));
+  EXPECT_THAT(output0.Name(), "tfl.mul");
 }
 
 TEST(CcSignatureTest, Lookup) {
@@ -307,12 +308,12 @@ TEST(CcSimpleTensorTest, QuantizationNone) {
   SimpleTensor tensor(/*index=*/0, /*name=*/"foo",
                       /*type_id=*/kLiteRtUnrankedTensorType,
                       /*type=*/LiteRtUnrankedTensorType{},
-                      /*quantization_type_id=*/kLiteRtQuantizationNone,
+                      /*quantization_type_id=*/QuantizationTypeId::None,
                       /*per_tensor_quantization=*/{},
                       /*per_channel_quantization=*/{},
                       /*block_wise_quantization=*/{});
-  LiteRtQuantizationTypeId quantization_type_id = tensor.QTypeId();
-  EXPECT_EQ(quantization_type_id, kLiteRtQuantizationNone);
+  QuantizationTypeId quantization_type_id = tensor.QTypeId();
+  EXPECT_EQ(quantization_type_id, QuantizationTypeId::None);
 }
 
 TEST(CcSimpleTensorTest, QuantizationPerTensor) {
@@ -325,11 +326,11 @@ TEST(CcSimpleTensorTest, QuantizationPerTensor) {
   SimpleTensor tensor(/*index=*/0, /*name=*/"foo",
                       /*type_id=*/kLiteRtRankedTensorType,
                       /*type=*/RankedTensorType(kTensorType),
-                      /*quantization_type_id=*/kLiteRtQuantizationPerTensor,
+                      /*quantization_type_id=*/QuantizationTypeId::PerTensor,
                       /*per_tensor_quantization=*/{kScale, kZeroPoint},
                       /*per_channel_quantization=*/{},
                       /*block_wise_quantization=*/{});
-  ASSERT_EQ(tensor.QTypeId(), kLiteRtQuantizationPerTensor);
+  ASSERT_EQ(tensor.QTypeId(), QuantizationTypeId::PerTensor);
   ASSERT_TRUE(tensor.HasQuantization());
 
   auto per_tensor_quantization = tensor.PerTensorQuantization();
@@ -352,13 +353,13 @@ TEST(CcSimpleTensorTest, QuantizationPerChannel) {
       /*index=*/0, /*name=*/"foo",
       /*type_id=*/kLiteRtRankedTensorType,
       /*type=*/RankedTensorType(kTensorType),
-      /*quantization_type_id=*/kLiteRtQuantizationPerChannel,
+      /*quantization_type_id=*/QuantizationTypeId::PerChannel,
       /*per_tensor_quantization=*/{},
       /*per_channel_quantization=*/
       {kQuantizedDimension, kNumChannels, const_cast<float*>(kScales),
        const_cast<int64_t*>(kZeroPoints)},
       /*block_wise_quantization=*/{});
-  ASSERT_EQ(tensor.QTypeId(), kLiteRtQuantizationPerChannel);
+  ASSERT_EQ(tensor.QTypeId(), QuantizationTypeId::PerChannel);
   ASSERT_TRUE(tensor.HasQuantization());
 
   auto per_channel_quantization = tensor.PerChannelQuantization();
@@ -381,12 +382,12 @@ TEST(CcSimpleTensorTest, QuantizationBlockWise) {
       /*index=*/0, /*name=*/"foo",
       /*type_id=*/kLiteRtRankedTensorType,
       /*type=*/RankedTensorType(kTensorType),
-      /*quantization_type_id=*/kLiteRtQuantizationBlockWise,
+      /*quantization_type_id=*/QuantizationTypeId::BlockWise,
       /*per_tensor_quantization=*/{},
       /*per_channel_quantization=*/{},
       /*block_wise_quantization=*/
       {&scales_tensor, &zero_points_tensor, kBlockSize});
-  ASSERT_EQ(tensor.QTypeId(), kLiteRtQuantizationBlockWise);
+  ASSERT_EQ(tensor.QTypeId(), QuantizationTypeId::BlockWise);
   ASSERT_TRUE(tensor.HasQuantization());
 
   auto block_wise_quantization = tensor.BlockWiseQuantization();

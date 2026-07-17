@@ -20,6 +20,8 @@
 #include <string>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
 #include "litert/cc/internal/scoped_weight_source.h"
@@ -43,6 +45,9 @@ struct LiteRtExternalTensorBinding {
   size_t size_bytes;
 };
 
+struct TfLiteRegistration;
+struct TfLiteOperator;
+
 struct LiteRtOptionsT {
   struct CustomOpOption {
     std::string op_name;
@@ -62,12 +67,19 @@ struct LiteRtOptionsT {
   LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
   LiteRtOpaqueOptions options = nullptr;
   std::vector<CustomOpOption> custom_op_options;
+  std::vector<const TfLiteRegistration*> custom_tflite_op_registrations;
+  std::vector<const TfLiteOperator*> custom_tflite_op_operators;
   std::vector<LiteRtExternalTensorBinding> external_tensor_bindings;
   // Non-owning pointer used to expose the runtime's WeightLoader to delegates.
+  // It may be set by compiled model when scoped_weight_source is set, or by the
+  // client if they want to load weights from their own sources.
   weight_loader::WeightLoader* weight_loader = nullptr;
   // Optional scoped weight source when external weights are packed into a
   // single file with group sections.
   std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source;
+  // Optional in-memory weight map for heap weight loading.
+  const absl::flat_hash_map<std::string, absl::Span<const std::byte>>*
+      weight_in_memory_map = nullptr;
 };
 
 #endif  // ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_

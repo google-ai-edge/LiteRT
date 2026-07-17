@@ -26,16 +26,13 @@ PyTorch](https://github.com/google-ai-edge/litert-torch).
 
 -   Large models may fail to load, since WebAssembly CPU memory for the runtime
 is limited to 2GB.
--   Not all models are supported on WebGPU. You may need to replace some
-operations or change some data types to get them working. The
-[Model Tester](#model-tester) can help check if a model will run on GPU and if
-the outputs match CPU.
--   Model Partitioning between WebGPU / WASM requires JSPI: In non-JSPI
-(JavaScript Promise Integration) browser environments, a model targeting WebGPU
-acceleration must be fully supported by WebGPU. If it contains any unsupported
-operations, mixed WebGPU + WASM execution cannot be run due to synchronous
-boundary limitations; consequently, the entire model compilation will completely
-fall back to CPU-based WASM execution.
+-   Not all operations are supported on WebGPU. In JSPI (Javascript Promise
+Integration) browser environments, a model with unsupported ops targeting
+WebGPU acceleration will delegate those ops to run on WASM. In non-JSPI
+environments, due to synchronous boundary limitations, the entire model will
+fall back to CPU-based WASM execution. The [Model Tester](#model-tester) can
+help check how much of the model is delegated to GPU and the numerical
+difference between CPU execution.
 -   LiteRT.js is just one piece of an ML pipeline -- it runs ML models but
     doesn't implement pre- and post-processing; those are left to the user to
     either implement themselves or obtain from libraries like TensorFlow.js. If

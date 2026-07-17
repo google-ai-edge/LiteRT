@@ -55,6 +55,7 @@ struct FillSegmentPosOperation : public FillSegmentPosOperationData, Operation {
 struct FillAttentionMaskOperationData {
   bool is_local;
   int sliding_window_size;
+  bool is_decode;
 };
 
 struct FillRopeCosSinOperationData {
@@ -129,11 +130,27 @@ struct WriteCurrentTokensOperation : Operation {
 
 struct MatMulWithCacheOperationData {
   bool is_v = false;
+  bool is_local = false;
+  int sliding_window_size = 0;
 };
 
 struct MatMulWithCacheOperation : public MatMulWithCacheOperationData,
                                   Operation {
   absl::string_view GetName() const override { return "MatMulWithCache"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
+};
+
+struct ExtractLocalCacheOperationData {
+  int local_cache_size = 1;
+  int kv_heads_count = 1;
+  int head_size = 1;
+  int window_size = 1;
+  int global_cache_size = 1;
+};
+
+struct ExtractLocalCacheOperation : public ExtractLocalCacheOperationData,
+                                    Operation {
+  absl::string_view GetName() const override { return "ExtractLocalCache"; }
   LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 

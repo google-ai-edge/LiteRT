@@ -16,7 +16,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_bin", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
+load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps", "litert_bin", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
@@ -129,7 +129,7 @@ litert_bin(
     deps = [
         ":qnn_compose_graph",
         "//litert/c:litert_any",
-        "//litert/c:litert_builder",
+        "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_model_header",
@@ -178,12 +178,12 @@ litert_test(
         ],
     }),
     linkstatic = True,
+    no_main = True,
     tags = [
-        # Tests with ungrte deps do not currently work on forge.
-        "manual",
-        "no-remote-exec",
-        "notap",
+        "noasan",
+        "nomsan",
         "nosan",
+        "notsan",
     ],
     # This test can be run only on Android and Linux.
     target_compatible_with = select({
@@ -214,7 +214,7 @@ litert_test(
         "//litert/core/model:model_testonly",
         "//litert/test:common",
         "//litert/test:load_test_model_runtimecapi",
-        "//litert/test:matchers_oss",
+        "//litert/test:matchers",
         "//litert/test:test_models",
         "//litert/vendors/cc:litert_compiler_plugin",
         "//litert/vendors/qualcomm/core/schema:soc_table",
@@ -222,7 +222,14 @@ litert_test(
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
         "@qairt//:qnn_lib_headers",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:linux_x86_64": [
+            # copybara:uncomment_begin(google-only)
+            # "@qairt//:linux_deps",
+            # copybara:uncomment_end
+        ],
+        "//conditions:default": [],
+    }) + gtest_main_no_heapcheck_deps(),
 )
 
 litert_device_exec(
@@ -248,8 +255,8 @@ litert_lib(
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/internal:litert_op_options",
         "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_op_options",
         "//litert/vendors/cc:namespace_heuristics",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
@@ -263,6 +270,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:conv2d_op_builder",
         "//litert/vendors/qualcomm/core/builders:conv3d_op_builder",
         "//litert/vendors/qualcomm/core/builders:cumsum_op_builder",
+        "//litert/vendors/qualcomm/core/builders:custom_op_builder",
         "//litert/vendors/qualcomm/core/builders:depthwise_conv2d_op_builder",
         "//litert/vendors/qualcomm/core/builders:dynamic_update_slice_op_builder",
         "//litert/vendors/qualcomm/core/builders:elementwise_op_builder",
@@ -300,6 +308,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:softmax_op_builder",
         "//litert/vendors/qualcomm/core/builders:spatial_transform_op_builder",
         "//litert/vendors/qualcomm/core/builders:split_op_builder",
+        "//litert/vendors/qualcomm/core/builders:splitv_op_builder",
         "//litert/vendors/qualcomm/core/builders:strided_slice_op_builder",
         "//litert/vendors/qualcomm/core/builders:tanh_op_builder",
         "//litert/vendors/qualcomm/core/builders:tile_op_builder",
@@ -309,6 +318,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:unpack_op_builder",
         "//litert/vendors/qualcomm/core/dump:dump_graph",
         "//litert/vendors/qualcomm/core/transformation:graph_to_graph",
+        "//litert/vendors/qualcomm/core/utils:flexbuffer_helpers",
         "//litert/vendors/qualcomm/core/utils:log",
         "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
@@ -320,6 +330,7 @@ litert_lib(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+        "@flatbuffers",
         "@qairt//:qnn_lib_headers",
     ],
 )

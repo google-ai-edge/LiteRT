@@ -26,6 +26,7 @@
 extern "C" {
 #endif  // __cplusplus
 
+// LINT.IfChange(LiteRtEnvOptionTag)
 typedef enum {
   kLiteRtEnvOptionTagCompilerPluginLibraryDir = 0,
   kLiteRtEnvOptionTagDispatchLibraryDir = 1,
@@ -52,7 +53,7 @@ typedef enum {
   kLiteRtEnvOptionTagWebGpuInstance = 19,
   // Dawn procedure table pointer for shared libraries to populate their tables
   // with the shared procedures instead of their own procedures.
-  kLiteRtEnvOptionTagWebGpuProcs = 20,
+  kLiteRtEnvOptionTagWebGpuProcs = 20,                            // Deprecated.
   kLiteRtEnvOptionTagCustomTensorBufferHandlers_deprecated = 21,  // Deprecated.
   kLiteRtEnvOptionTagRuntimeLibraryDir = 22,
   /// \internal This is for internal use only, for a custom runtime.
@@ -65,9 +66,13 @@ typedef enum {
   // Maximum number of configurations to store per model in the compiler cache.
   kLiteRtEnvOptionTagCompilerCacheMaxConfigsPerModel = 26,
   kLiteRtEnvOptionTagCompilerCacheMaxTotalSize = 27,
+  /// \internal This is for internal use only. Reserved for use by LiteRT in
+  /// Play services.
+  kLiteRtEnvOptionTagContext = 28,
   // Internal use only. Virtual null tag for option that is not defined.
   kLiteRtEnvOptionTagNull = 255,
 } LiteRtEnvOptionTag;
+// LINT.ThenChange(../kotlin/src/main/kotlin/com/google/ai/edge/litert/Environment.kt)
 
 /// An object that holds option data for the LiteRtEnvironment.
 ///
@@ -144,8 +149,6 @@ LiteRtStatus LiteRtGetEnvironmentOptionsValue(LiteRtEnvironmentOptions options,
                                               LiteRtEnvOptionTag tag,
                                               LiteRtAny* value);
 
-LiteRtStatus LiteRtSetEnvironmentOptionsValue(LiteRtEnvironmentOptions options,
-                                              LiteRtEnvOption env_option);
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

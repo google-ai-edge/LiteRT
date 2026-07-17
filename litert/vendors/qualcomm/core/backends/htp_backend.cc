@@ -11,18 +11,19 @@
 #include <utility>
 #include <vector>
 
+#include "HTP/QnnHtpDevice.h"  // from @qairt
+#include "HTP/QnnHtpDeviceConfigShared.h"  // from @qairt
+#include "HTP/QnnHtpPerfInfrastructure.h"  // from @qairt
+#include "QnnBackend.h"  // from @qairt
+#include "QnnCommon.h"  // from @qairt
+#include "QnnDevice.h"  // from @qairt
+#include "QnnInterface.h"  // from @qairt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/backends/backend_utils.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
-#include "HTP/QnnHtpDevice.h"  // from @qairt
-#include "HTP/QnnHtpPerfInfrastructure.h"  // from @qairt
-#include "QnnBackend.h"  // from @qairt
-#include "QnnCommon.h"  // from @qairt
-#include "QnnDevice.h"  // from @qairt
-#include "QnnInterface.h"  // from @qairt
 
 namespace qnn {
 
@@ -41,34 +42,47 @@ class HtpBackend::HtpPerfControl {
   bool Init(HtpPerformanceMode performance_mode) {
     Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
-    if (error = api_->deviceGetInfrastructure(&htp_perf_infra_);
-        error != QNN_SUCCESS) {
-      QNN_LOG_ERROR(
-          "DSP backend unable to create device infrastructure. Error %d",
-          QNN_GET_ERROR_CODE(error));
-      return false;
+    // Acquire infra & power-config id once, then reuse across mode changes.
+    if (htp_perf_infra_ == nullptr) {
+      if (error = api_->deviceGetInfrastructure(&htp_perf_infra_);
+          error != QNN_SUCCESS) {
+        QNN_LOG_ERROR(
+            "HTP backend unable to create device infrastructure. Error %d",
+            QNN_GET_ERROR_CODE(error));
+        return false;
+      }
+
+      if (htp_perf_infra_ == nullptr) {
+        QNN_LOG_ERROR(
+            "HTP backend failed to create device infrastructure but reported "
+            "no error.");
+        return false;
+      }
+
+      if (htp_perf_infra_->infraType !=
+          QNN_HTP_DEVICE_INFRASTRUCTURE_TYPE_PERF) {
+        QNN_LOG_ERROR("HTP infra type = %d, which is not perf infra type.",
+                      htp_perf_infra_->infraType);
+        return false;
+      }
     }
 
-    if (htp_perf_infra_->infraType != QNN_HTP_DEVICE_INFRASTRUCTURE_TYPE_PERF) {
-      QNN_LOG_ERROR("HTP infra type = %d, which is not perf infra type.",
-                    htp_perf_infra_->infraType);
-      return false;
+    if (power_config_id_ == 0) {
+      if (error = htp_perf_infra_->perfInfra.createPowerConfigId(
+              /*device_id=*/0, /*core_id=*/0, &power_config_id_);
+          error != QNN_SUCCESS) {
+        QNN_LOG_ERROR("HTP backend unable to create power config. Error %d",
+                      QNN_GET_ERROR_CODE(error));
+        return false;
+      }
     }
 
-    if (error = htp_perf_infra_->perfInfra.createPowerConfigId(
-            /*device_id=*/0, /*core_id=*/0, &power_config_id_);
-        error != QNN_SUCCESS) {
-      QNN_LOG_ERROR("HTP backend unable to create power config. Error %d",
-                    QNN_GET_ERROR_CODE(error));
-      return false;
-    }
-
-    // Initialize power configurations.
-    // We need to prepare both:
+    // Rebuild the power configurations for the requested mode. Both are needed:
     // 1. UpVote config: for entering performance mode.
     // 2. DownVote config: for resetting/cleanup.
     InitUpVotePowerConfigs(performance_mode);
     InitDownVotePowerConfigs(performance_mode);
+    current_mode_ = performance_mode;
 
     return true;
   }
@@ -101,7 +115,61 @@ class HtpBackend::HtpPerfControl {
     }
   }
 
+  void ScheduleUpVote() {
+    EnsureVotingThread();
+    voting_thread_->Enqueue(VotingThread::VoteType::kUpVote);
+  }
+
+  // Debounce the downvote only for burst/sustained modes to avoid thrashing
+  // the high-perf vote between back-to-back inferences.
+  void ScheduleDownVote() {
+    EnsureVotingThread();
+    const bool debounce =
+        current_mode_ == HtpPerformanceMode::kBurst ||
+        current_mode_ == HtpPerformanceMode::kSustainedHighPerformance;
+    voting_thread_->Enqueue(VotingThread::VoteType::kDownVote, debounce);
+  }
+
+  bool ReinitIfNeeded(HtpPerformanceMode new_mode) {
+    const bool needs_init =
+        htp_perf_infra_ == nullptr || new_mode != current_mode_;
+    if (needs_init && !Init(new_mode)) {
+      QNN_LOG_ERROR("HTP backend failed to re-init for performance mode %d.",
+                    new_mode);
+      return false;
+    }
+    ScheduleUpVote();
+    return true;
+  }
+
+  // Applies new_mode for one inference. Manual skips a same-mode re-vote
+  // when init already upvoted, auto always re-votes.
+  bool ApplyPerfMode(HtpPerformanceMode new_mode, HtpPerfCtrlMode ctrl_mode,
+                     bool supports_rpc_polling) {
+    const bool mode_changed = new_mode != current_mode_;
+    if (!mode_changed && ctrl_mode == HtpPerfCtrlMode::kManual) {
+      return true;
+    }
+    if (!ReinitIfNeeded(new_mode)) {
+      return false;
+    }
+    if (mode_changed && supports_rpc_polling && !SetRpcPolling(new_mode)) {
+      QNN_LOG_ERROR("Failed to set RPC Polling in ApplyPerfMode.");
+      return false;
+    }
+    return true;
+  }
+
  private:
+  void EnsureVotingThread() {
+    if (!voting_thread_) {
+      voting_thread_ =
+          std::make_unique<VotingThread>([this](VotingThread::VoteType v) {
+            v == VotingThread::VoteType::kUpVote ? UpVote() : DownVote();
+          });
+    }
+  }
+
   static constexpr size_t kNumPowerConfigs = 1;
   static constexpr size_t kNumRpcPollingPowerConfigs = 2;
 
@@ -340,6 +408,8 @@ class HtpBackend::HtpPerfControl {
   const QNN_INTERFACE_VER_TYPE* api_{nullptr};
   std::uint32_t power_config_id_{0};
   QnnDevice_Infrastructure_t htp_perf_infra_{nullptr};
+  // Last successfully-applied mode, used to skip a redundant re-vote.
+  HtpPerformanceMode current_mode_{HtpPerformanceMode::kDefault};
   std::array<QnnHtpPerfInfrastructure_PowerConfig_t, kNumPowerConfigs>
       up_vote_power_configs_;
   std::array<QnnHtpPerfInfrastructure_PowerConfig_t, kNumPowerConfigs>
@@ -355,6 +425,8 @@ class HtpBackend::HtpPerfControl {
   std::array<const QnnHtpPerfInfrastructure_PowerConfig_t*,
              kNumPowerConfigs + 1>
       down_vote_power_configs_ptr_;
+  // Declared last — destroyed first, before power-config arrays are freed.
+  std::unique_ptr<VotingThread> voting_thread_;
 };
 
 // HTP BACKEND /////////////////////////////////////////////////////////
@@ -384,8 +456,7 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   }
 
   // Backend Handle
-  std::vector<const QnnBackend_Config_t*> backend_configs;
-  backend_configs.emplace_back(nullptr);
+  std::array<const QnnBackend_Config_t*, 1> backend_configs = {nullptr};
 
   auto local_backend_handle = CreateBackendHandle(
       local_log_handle.get(), absl::MakeSpan(backend_configs));
@@ -407,9 +478,8 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
 #else
     if (auto device_platform_info = CreateDevicePlatformInfo();
         device_platform_info) {
-      auto soc_model =
-          device_platform_info->v1.hwDevices->v1.deviceInfoExtension
-              ->onChipDevice.socModel;
+      auto soc_model = device_platform_info->v1.hwDevices->v1
+                           .deviceInfoExtension->onChipDevice.socModel;
       auto soc_info_online =
           FindSocInfo(static_cast<SnapdragonModel>(soc_model));
       soc_info_ = soc_info_online.value_or(kSocInfos[0]);
@@ -529,7 +599,10 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
         }
       }
 
-      htp_perf_control_->UpVote();
+      // Manual mode upvotes at init. Auto defers the upvote to Execute().
+      if (options.GetHtpPerfCtrlMode() == HtpPerfCtrlMode::kManual) {
+        htp_perf_control_->UpVote();
+      }
     }
   }
 
@@ -537,6 +610,33 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   log_handle_ = std::move(local_log_handle);
   backend_handle_ = std::move(local_backend_handle);
   device_handle_ = std::move(local_device_handle);
+
+  return true;
+}
+
+bool HtpBackend::SetPerformanceMode(const Options& options) {
+  HtpPerformanceMode performance_mode = options.GetHtpPerformanceMode();
+
+  if (performance_mode == HtpPerformanceMode::kDefault) {
+    if (htp_perf_control_) {
+      htp_perf_control_->ScheduleDownVote();
+    }
+    return true;
+  }
+
+  if (!htp_perf_control_) {
+    QNN_LOG_ERROR(
+        "HTP performance control is not initialized in SetPerformanceMode.");
+    return false;
+  }
+
+  const bool supports_rpc_polling = soc_info_.dsp_arch >= DspArch::V69;
+  if (!htp_perf_control_->ApplyPerfMode(performance_mode,
+                                        options.GetHtpPerfCtrlMode(),
+                                        supports_rpc_polling)) {
+    QNN_LOG_ERROR("Failed to set HTP performance mode in SetPerformanceMode");
+    return false;
+  }
 
   return true;
 }

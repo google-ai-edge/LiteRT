@@ -10,6 +10,7 @@ cc_library(
         [
             "include/QNN/*.h",
             "include/QNN/CPU/*.h",
+            "include/QNN/GPU/*.h",
             "include/QNN/HTP/*.h",
             "include/QNN/System/*.h",
             "include/QNN/IR/*.h",

@@ -5,11 +5,13 @@
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_COMMON_H_
 
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <tuple>
 #include <vector>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "QnnLog.h"  // from @qairt
+#include "absl/strings/string_view.h"  // from @com_google_absl
 
 // c++ enum and wrapper without dependency.
 namespace qnn {
@@ -69,6 +71,16 @@ enum class DspPerformanceMode {
   kBalanced = 8,
 };
 
+enum class HtpPerfCtrlMode {
+  kManual = 0,  // default: upvote at init, downvote at destroy
+  kAuto = 1,    // per-inference upvote + 300ms debounced downvote
+};
+
+enum class DspPerfCtrlMode {
+  kManual = 0,
+  kAuto = 1,
+};
+
 enum class OptimizationLevel {
   kHtpOptimizeForInference = 0,
   kHtpOptimizeForPrepare = 1,
@@ -81,6 +93,29 @@ enum class GraphPriority {
   kNormal = 2,
   kNormalHigh = 3,
   kHigh = 4,
+};
+
+struct CustomOpPackage {
+  std::string name;
+  std::string interface_provider;
+  std::string compile_package_path;
+  std::string dispatch_package_path;
+  // QNN backend target at dispatch time (e.g., "HTP", "GPU").
+  std::string target;
+};
+
+enum class GpuPrecision {
+  kUserProvided = 0,
+  kFp32 = 1,
+  kFp16 = 2,
+  kHybrid = 3,
+};
+
+enum class GpuPerformanceMode {
+  kDefault = 0,
+  kHigh = 1,
+  kNormal = 2,
+  kLow = 3,
 };
 
 class Options {
@@ -114,11 +149,23 @@ class Options {
   void SetHtpPPoint(std::int32_t htp_p_point);
   std::int32_t GetHtpPPoint() const;
 
+  void SetHtpDlbc(bool htp_dlbc);
+  bool GetHtpDlbc() const;
+
+  void SetHtpDlbcWeights(bool htp_dlbc_weights);
+  bool GetHtpDlbcWeights() const;
+
   void SetHtpPerformanceMode(HtpPerformanceMode htp_performance_mode);
   HtpPerformanceMode GetHtpPerformanceMode() const;
 
   void SetDspPerformanceMode(DspPerformanceMode dsp_performance_mode);
   DspPerformanceMode GetDspPerformanceMode() const;
+
+  void SetHtpPerfCtrlMode(HtpPerfCtrlMode htp_perf_ctrl_mode);
+  HtpPerfCtrlMode GetHtpPerfCtrlMode() const;
+
+  void SetDspPerfCtrlMode(DspPerfCtrlMode dsp_perf_ctrl_mode);
+  DspPerfCtrlMode GetDspPerfCtrlMode() const;
 
   // for per-layer dump
   void SetDumpTensorIds(const std::vector<std::int32_t>& ids);
@@ -142,6 +189,12 @@ class Options {
   void SetGraphPriority(GraphPriority graph_priority);
   GraphPriority GetGraphPriority() const;
 
+  void SetGpuPrecision(GpuPrecision gpu_precision);
+  GpuPrecision GetGpuPrecision() const;
+
+  void SetGpuPerformanceMode(GpuPerformanceMode gpu_performance_mode);
+  GpuPerformanceMode GetGpuPerformanceMode() const;
+
   std::string Dump() const;
 
   absl::string_view GetSaverOutputDir() const;
@@ -149,6 +202,16 @@ class Options {
 
   void SetGraphIOTensorMemType(GraphIOTensorMemType mem_type);
   GraphIOTensorMemType GetGraphIOTensorMemType() const;
+
+  absl::string_view GetSchematicDir() const;
+  void SetSchematicDir(absl::string_view schematic_dir);
+
+  void SetCustomOpPackage(absl::string_view name,
+                          absl::string_view interface_provider,
+                          absl::string_view compile_package_path,
+                          absl::string_view dispatch_package_path,
+                          absl::string_view target);
+  const CustomOpPackage& GetCustomOpPackage() const;
 
  private:
   LogLevel log_level_ = LogLevel::kInfo;
@@ -160,8 +223,12 @@ class Options {
   bool use_conv_hmx_ = true;
   bool use_fold_relu_ = true;
   std::int32_t htp_p_point_ = 0;
+  bool htp_dlbc_ = false;
+  bool htp_dlbc_weights_ = false;
   HtpPerformanceMode htp_performance_mode_ = HtpPerformanceMode::kDefault;
   DspPerformanceMode dsp_performance_mode_ = DspPerformanceMode::kDefault;
+  HtpPerfCtrlMode htp_perf_ctrl_mode_ = HtpPerfCtrlMode::kManual;
+  DspPerfCtrlMode dsp_perf_ctrl_mode_ = DspPerfCtrlMode::kManual;
   std::vector<std::int32_t> dump_tensor_ids_;
   std::string ir_json_dir_;
   std::string dlc_dir_;
@@ -170,14 +237,56 @@ class Options {
   OptimizationLevel optimization_level_ =
       OptimizationLevel::kHtpOptimizeForInferenceO3;
   GraphPriority graph_priority_ = GraphPriority::kDefault;
+  GpuPrecision gpu_precision_ = GpuPrecision::kFp16;
+  GpuPerformanceMode gpu_performance_mode_ = GpuPerformanceMode::kHigh;
   std::string saver_output_dir_;
   GraphIOTensorMemType graph_io_tensor_mem_type_ =
       GraphIOTensorMemType::kMemHandle;
+  std::string schematic_dir_;
+  // Currently we only support one custom op package.
+  CustomOpPackage custom_op_package_;
 };
 
 // Gets a default logger implementation to stdout.
 // This is used when initializing qnn logging.
 QnnLog_Callback_t GetDefaultStdOutLogger();
+
+struct SdkVersion {
+  int major = 0;
+  int minor = 0;
+  int patch = 0;
+
+  friend constexpr bool operator==(const SdkVersion& lhs,
+                                   const SdkVersion& rhs) noexcept {
+    return std::tie(lhs.major, lhs.minor, lhs.patch) ==
+           std::tie(rhs.major, rhs.minor, rhs.patch);
+  }
+  friend constexpr bool operator!=(const SdkVersion& lhs,
+                                   const SdkVersion& rhs) noexcept {
+    return !(lhs == rhs);
+  }
+  friend constexpr bool operator<(const SdkVersion& lhs,
+                                  const SdkVersion& rhs) noexcept {
+    return std::tie(lhs.major, lhs.minor, lhs.patch) <
+           std::tie(rhs.major, rhs.minor, rhs.patch);
+  }
+  friend constexpr bool operator>(const SdkVersion& lhs,
+                                  const SdkVersion& rhs) noexcept {
+    return rhs < lhs;
+  }
+  friend constexpr bool operator<=(const SdkVersion& lhs,
+                                   const SdkVersion& rhs) noexcept {
+    return !(rhs < lhs);
+  }
+  friend constexpr bool operator>=(const SdkVersion& lhs,
+                                   const SdkVersion& rhs) noexcept {
+    return !(lhs < rhs);
+  }
+};
+
+// Parses a QNN build ID string of the form "vMAJOR.MINOR.PATCH" into an
+// SdkVersion. Returns std::nullopt on parsing failure.
+std::optional<SdkVersion> ParseSdkVersion(const char* build_id);
 
 }  // namespace qnn
 

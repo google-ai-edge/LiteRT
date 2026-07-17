@@ -16,9 +16,11 @@ cc_library(
     hdrs = ["simple_op.h"],
     deps = [
         "//tflite/kernels/shim:op_kernel",
+        "//tflite/kernels/shim:shape",
         "//tflite/kernels/shim:status_macros",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@org_tensorflow//tensorflow/core/platform:tstring",
     ],
 )
 
@@ -77,7 +79,6 @@ cc_test(
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/core/platform:tstring",
     ],
 )
 
@@ -154,10 +155,6 @@ tf_cc_test(
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/core:framework",
-        "@org_tensorflow//tensorflow/core:protos_all_cc",
-        "@org_tensorflow//tensorflow/core:testlib",
-        "@org_tensorflow//tensorflow/core/kernels:ops_testutil",
     ],
 )
 

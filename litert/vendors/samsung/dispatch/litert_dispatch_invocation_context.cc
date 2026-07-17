@@ -19,6 +19,7 @@
 
 #include <unistd.h>
 
+#include <cstdint>
 #include <fstream>
 #include <memory>
 
@@ -38,8 +39,10 @@
 
 namespace litert::samsung {
 
-#define TO_FILE_OFFSET(header_offset, buffer_offset) \
+#define TO_MEM_OFFSET(header_offset, buffer_offset) \
   ((header_offset) + (buffer_offset))
+#define TO_FILE_OFFSET(header_offset, buffer_offset, alloc_base_file_offset) \
+  ((header_offset) + (buffer_offset) + (alloc_base_file_offset))
 
 struct EnnModelHandle {
   EnnModelId id;
@@ -70,8 +73,10 @@ static EnnModelPtr MakeEnnModelPtr(const ::litert::samsung::EnnManager* manager,
 // Structure to hold separated weight information
 struct SeparatedWeightInfo {
   std::string signature;
-  int64_t start_offset;
-  int64_t end_offset;
+  int64_t start_memory_offset;
+  int64_t end_memory_offset;
+  int64_t start_file_offset;
+  int64_t end_file_offset;
 };
 
 // Structure to hold model loading information
@@ -81,7 +86,8 @@ struct ModelLoadInfo {
   const void* model_addr = nullptr;
   size_t model_size = 0;
   int fd = -1;
-  uint32_t model_offset = 0;
+  uint32_t model_memory_offset = 0;
+  uint32_t model_file_offset = 0;
   std::vector<SeparatedWeightInfo> separated_weights;
   std::vector<std::string> signatures;
 };
@@ -107,7 +113,11 @@ static Expected<ModelLoadInfo> AnalyzeModelLoadStrategy(
       litert::samsung::schema::GetLiteRTSamsungHeader(exec_bytecode_ptr);
   if (!header_buf) {
     LITERT_LOG(LITERT_INFO, "No valid Samsung header found - using old format");
-    info.model_offset = static_cast<uint32_t>(exec_bytecode_buffer->offset);
+    info.model_memory_offset =
+        static_cast<uint32_t>(exec_bytecode_buffer->offset);
+    info.model_file_offset =
+        static_cast<uint32_t>(exec_bytecode_buffer->alloc_base_file_offset +
+                              exec_bytecode_buffer->offset);
     info.model_size = exec_bytecode_size;
     return info;
   }
@@ -120,7 +130,11 @@ static Expected<ModelLoadInfo> AnalyzeModelLoadStrategy(
 
   if (!fb_generated) {
     LITERT_LOG(LITERT_INFO, "Header verification failed - using old format");
-    info.model_offset = static_cast<uint32_t>(exec_bytecode_buffer->offset);
+    info.model_memory_offset =
+        static_cast<uint32_t>(exec_bytecode_buffer->offset);
+    info.model_file_offset =
+        static_cast<uint32_t>(exec_bytecode_buffer->alloc_base_file_offset +
+                              exec_bytecode_buffer->offset);
     info.model_size = exec_bytecode_size;
     return info;
   }
@@ -144,15 +158,21 @@ static Expected<ModelLoadInfo> AnalyzeModelLoadStrategy(
       const auto* weight = separated_weights->Get(i);
       SeparatedWeightInfo weight_info;
       weight_info.signature = weight->signature()->str();
-      weight_info.start_offset = TO_FILE_OFFSET(weight->buf()->start_offset(),
-                                                exec_bytecode_buffer->offset);
-      weight_info.end_offset = TO_FILE_OFFSET(weight->buf()->end_offset(),
-                                              exec_bytecode_buffer->offset);
+      weight_info.start_memory_offset = TO_MEM_OFFSET(
+          weight->buf()->start_offset(), exec_bytecode_buffer->offset);
+      weight_info.end_memory_offset = TO_MEM_OFFSET(
+          weight->buf()->end_offset(), exec_bytecode_buffer->offset);
+      weight_info.start_file_offset = TO_FILE_OFFSET(
+          weight->buf()->start_offset(), exec_bytecode_buffer->offset,
+          exec_bytecode_buffer->alloc_base_file_offset);
+      weight_info.end_file_offset = TO_FILE_OFFSET(
+          weight->buf()->end_offset(), exec_bytecode_buffer->offset,
+          exec_bytecode_buffer->alloc_base_file_offset);
       info.separated_weights.push_back(weight_info);
       LITERT_LOG(LITERT_SILENT,
                  "Separated Weight[%d]: signature=%s, offset=%ld-%ld", i,
-                 weight_info.signature.c_str(), weight_info.start_offset,
-                 weight_info.end_offset);
+                 weight_info.signature.c_str(), weight_info.start_file_offset,
+                 weight_info.end_file_offset);
     }
     LITERT_LOG(LITERT_SILENT, "Total separated weights: %zu",
                info.separated_weights.size());
@@ -160,21 +180,27 @@ static Expected<ModelLoadInfo> AnalyzeModelLoadStrategy(
 
   if (info.use_external_weights) {
     LITERT_LOG(LITERT_VERBOSE, "Valid header with external weights");
-    info.model_offset = static_cast<uint32_t>(TO_FILE_OFFSET(
+    info.model_memory_offset = static_cast<uint32_t>(TO_MEM_OFFSET(
         buf_section->start_offset(), exec_bytecode_buffer->offset));
+    info.model_file_offset = static_cast<uint32_t>(TO_FILE_OFFSET(
+        buf_section->start_offset(), exec_bytecode_buffer->offset,
+        exec_bytecode_buffer->alloc_base_file_offset));
     info.model_size = buf_section->end_offset() - buf_section->start_offset();
     LITERT_LOG(LITERT_SILENT, "Model offset: %u, Model size: %zu",
-               info.model_offset, info.model_size);
+               info.model_file_offset, info.model_size);
     for (int32_t i = 0; i < external_weights->size(); i++) {
       info.signatures.emplace_back(external_weights->Get(i)->str());
     }
   } else {
     LITERT_LOG(LITERT_VERBOSE, "Valid header without external weights");
-    info.model_offset = static_cast<uint32_t>(TO_FILE_OFFSET(
+    info.model_memory_offset = static_cast<uint32_t>(TO_MEM_OFFSET(
         buf_section->start_offset(), exec_bytecode_buffer->offset));
+    info.model_file_offset = static_cast<uint32_t>(TO_FILE_OFFSET(
+        buf_section->start_offset(), exec_bytecode_buffer->offset,
+        exec_bytecode_buffer->alloc_base_file_offset));
     info.model_size = buf_section->end_offset() - buf_section->start_offset();
     LITERT_LOG(LITERT_SILENT, "Model offset: %u, Model size: %zu",
-               info.model_offset, info.model_size);
+               info.model_file_offset, info.model_size);
   }
   return info;
 }
@@ -207,7 +233,7 @@ Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
 }  // namespace litert::samsung
 
 LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
-    const ::litert::samsung::EnnManager* enn_manager,
+    ::litert::samsung::EnnManager* enn_manager,
     LiteRtDispatchDeviceContext device_context, const EnnModelId& model_id,
     int num_inputs, int num_outputs)
     : enn_manager_(enn_manager),
@@ -218,7 +244,7 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
 
 litert::Expected<LiteRtDispatchInvocationContextT::UniquePtr>
 LiteRtDispatchInvocationContextT::Create(
-    const ::litert::samsung::EnnManager* enn_manager,
+    ::litert::samsung::EnnManager* enn_manager,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
@@ -251,9 +277,15 @@ LiteRtDispatchInvocationContextT::Create(
       // If separated_weights has the corresponding entry, use its offset/size
       if (!load_info.separated_weights.empty() &&
           i < load_info.separated_weights.size()) {
-        offset = load_info.separated_weights[i].start_offset;
-        size = load_info.separated_weights[i].end_offset -
-               load_info.separated_weights[i].start_offset;
+        if (load_info.fd >= 0) {
+          offset = load_info.separated_weights[i].start_file_offset;
+          size = load_info.separated_weights[i].end_file_offset -
+                 load_info.separated_weights[i].start_file_offset;
+        } else {
+          offset = load_info.separated_weights[i].start_memory_offset;
+          size = load_info.separated_weights[i].end_memory_offset -
+                 load_info.separated_weights[i].start_memory_offset;
+        }
       }
       litert::Expected<EnnBufferPtr> buffer;
       if (load_info.fd >= 0) {
@@ -273,7 +305,7 @@ LiteRtDispatchInvocationContextT::Create(
     }
     if (load_info.fd >= 0) {
       if (enn_manager->Api().EnnOpenModelWithFileOpenFdWeight(
-              load_info.fd, load_info.model_size, load_info.model_offset,
+              load_info.fd, load_info.model_size, load_info.model_file_offset,
               &weight_buffers[0], weight_buffers.size(),
               &model_id) != ENN_RET_SUCCESS)
         return litert::Error(kLiteRtStatusErrorRuntimeFailure,
@@ -281,7 +313,7 @@ LiteRtDispatchInvocationContextT::Create(
     } else {
       const void* model_addr =
           static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr) +
-          load_info.model_offset;
+          load_info.model_memory_offset;
       if (enn_manager->Api().EnnOpenModelFromMemoryWithWeight(
               reinterpret_cast<const char*>(model_addr), load_info.model_size,
               &weight_buffers[0], weight_buffers.size(),
@@ -292,13 +324,13 @@ LiteRtDispatchInvocationContextT::Create(
   } else {
     if (exec_bytecode_buffer->fd >= 0) {
       LITERT_LOG(LITERT_SILENT, "fd: %d, Model offset: %u, Model size: %zu",
-                 exec_bytecode_buffer->fd, load_info.model_offset,
+                 exec_bytecode_buffer->fd, load_info.model_file_offset,
                  load_info.model_size);
 
       if (enn_manager->Api().EnnOpenModelWithFileOpenFd(
               exec_bytecode_buffer->fd,
               static_cast<uint32_t>(load_info.model_size),
-              load_info.model_offset, &model_id) != ENN_RET_SUCCESS)
+              load_info.model_file_offset, &model_id) != ENN_RET_SUCCESS)
         return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                              "Fail to load model from fd.");
     } else {
@@ -307,7 +339,7 @@ LiteRtDispatchInvocationContextT::Create(
 
       const void* model_addr =
           static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr) +
-          load_info.model_offset;
+          load_info.model_memory_offset;
       size_t model_size = load_info.model_size;
 
       LITERT_LOG(LITERT_SILENT, "Model addr: %p, Model size: %zu", model_addr,
@@ -338,25 +370,17 @@ LiteRtDispatchInvocationContextT::Create(
                          "Number of inputs/outputs is invalid");
   }
 
-  // Allocate buffers
-  EnnBufferPtr* tmp_buf_ptr;
-  if (enn_manager->Api().EnnAllocateAllBuffers(
-          model_id, &tmp_buf_ptr, &buffer_info) != ENN_RET_SUCCESS) {
-    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                         "EnnAllocateAllBuffers Failed");
-  }
-  LITERT_LOG(LITERT_INFO, "Buffers allocated successfully");
-
-  LITERT_LOG(LITERT_INFO, "=== Model Loading Complete ===");
-
+  // Release ownership since we're successfully creating the context
   model_guard.release();
 
   auto context = LiteRtDispatchInvocationContextT::UniquePtr(
       new LiteRtDispatchInvocationContextT(enn_manager, device_context,
                                            model_id, num_inputs, num_outputs));
 
-  // Set committed buffer for this model
-  context->SetEnnCommittedBuffer(tmp_buf_ptr);
+  // Initialize commit caching state
+  context->commit_state_ = CommitState::kUncommitted;
+  context->attached_input_count_ = 0;
+  context->attached_output_count_ = 0;
 
   // Set weight signatures for later release
   context->SetWeightSignatures(std::move(signatures));
@@ -365,6 +389,13 @@ LiteRtDispatchInvocationContextT::Create(
 }
 
 LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
+  // If committed, uncommit and unset buffers
+  if (commit_state_ == CommitState::kCommitted) {
+    enn_manager_->Api().EnnBufferUncommit(model_id_);
+    enn_manager_->Api().EnnUnsetBuffers(model_id_);
+  }
+
+  // Release weight buffers from global weight manager
   auto& weight_mgr =
       litert::samsung::WeightBinaryManager::GetInstance(enn_manager_);
   for (const auto& sig : weight_signatures_) {
@@ -372,6 +403,45 @@ LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
   }
 
   enn_manager_->Api().EnnCloseModel(model_id_);
+}
+
+litert::Expected<void>
+LiteRtDispatchInvocationContextT::TransitionToCommitted() {
+  if (enn_manager_->Api().EnnBufferCommit(model_id_) != ENN_RET_SUCCESS) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Fail to commit buffer");
+  }
+  commit_state_ = CommitState::kCommitted;
+  return {};
+}
+
+litert::Expected<void>
+LiteRtDispatchInvocationContextT::TransitionToUncommitted() {
+  if (enn_manager_->Api().EnnBufferUncommit(model_id_) != ENN_RET_SUCCESS) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Fail to uncommit buffer");
+  }
+  commit_state_ = CommitState::kUncommitted;
+  return {};
+}
+
+litert::Expected<void>
+LiteRtDispatchInvocationContextT::UpdateStateAfterAttach() {
+  if (AreAllBuffersAttached()) {
+    // Perform actual commit
+    if (enn_manager_->Api().EnnBufferCommit(model_id_) != ENN_RET_SUCCESS) {
+      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                           "Fail to commit buffer");
+    }
+    commit_state_ = CommitState::kCommitted;
+  } else {
+    commit_state_ = CommitState::kPartialAttach;
+  }
+  return {};
+}
+
+void LiteRtDispatchInvocationContextT::UpdateStateAfterDetach() {
+  commit_state_ = CommitState::kPartialAttach;
 }
 
 litert::Expected<LiteRtTensorBufferRequirements>
@@ -393,11 +463,33 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
                          "Invalid input index");
   }
 
+  // Check if already attached
+  if (inputs_buf_[graph_input_index] != nullptr) {
+    return litert::Error(kLiteRtStatusErrorInvalidArgument,
+                         "Input already attached");
+  }
+
+  // If committed, uncommit first before modifying buffers
+  if (commit_state_ == CommitState::kCommitted) {
+    LITERT_RETURN_IF_ERROR(TransitionToUncommitted());
+  }
+
   auto enn_buffer = device_context_->GetEnnBuffer(tensor_buffer_handle);
   if (!enn_buffer) {
     return enn_buffer.Error();
   }
   inputs_buf_[graph_input_index] = enn_buffer.Value();
+
+  // Register buffer with ENN
+  if (enn_manager_->Api().EnnSetBufferByIndex(
+          model_id_, ENN_DIR_IN, graph_input_index, enn_buffer.Value()) !=
+      ENN_RET_SUCCESS) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Fail to set input buffer");
+  }
+
+  attached_input_count_.fetch_add(1, std::memory_order_relaxed);
+  LITERT_RETURN_IF_ERROR(UpdateStateAfterAttach());
 
   return {};
 }
@@ -406,7 +498,18 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
   if (graph_output_index < 0 || graph_output_index >= outputs_buf_.size()) {
     return litert::Error(kLiteRtStatusErrorInvalidArgument,
-                         "Invalid input index");
+                         "Invalid output index");
+  }
+
+  // Check if already attached
+  if (outputs_buf_[graph_output_index] != nullptr) {
+    return litert::Error(kLiteRtStatusErrorInvalidArgument,
+                         "Output already attached");
+  }
+
+  // If committed, uncommit first before modifying buffers
+  if (commit_state_ == CommitState::kCommitted) {
+    LITERT_RETURN_IF_ERROR(TransitionToUncommitted());
   }
 
   auto enn_buffer = device_context_->GetEnnBuffer(tensor_buffer_handle);
@@ -414,6 +517,17 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
     return enn_buffer.Error();
   }
   outputs_buf_[graph_output_index] = enn_buffer.Value();
+
+  // Register buffer with ENN
+  if (enn_manager_->Api().EnnSetBufferByIndex(
+          model_id_, ENN_DIR_OUT, graph_output_index, enn_buffer.Value()) !=
+      ENN_RET_SUCCESS) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Fail to set output buffer");
+  }
+
+  attached_output_count_.fetch_add(1, std::memory_order_relaxed);
+  LITERT_RETURN_IF_ERROR(UpdateStateAfterAttach());
 
   return {};
 }
@@ -424,7 +538,15 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::DetachInput(
     return litert::Error(kLiteRtStatusErrorInvalidArgument,
                          "Invalid input index");
   }
+
+  // If committed, uncommit first
+  if (commit_state_ == CommitState::kCommitted) {
+    LITERT_RETURN_IF_ERROR(TransitionToUncommitted());
+  }
+
   inputs_buf_[graph_input_index] = nullptr;
+  attached_input_count_.fetch_sub(1, std::memory_order_relaxed);
+  UpdateStateAfterDetach();
 
   return {};
 }
@@ -433,61 +555,44 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::DetachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
   if (graph_output_index < 0 || graph_output_index >= outputs_buf_.size()) {
     return litert::Error(kLiteRtStatusErrorInvalidArgument,
-                         "Invalid input index");
+                         "Invalid output index");
   }
+
+  // If committed, uncommit first
+  if (commit_state_ == CommitState::kCommitted) {
+    LITERT_RETURN_IF_ERROR(TransitionToUncommitted());
+  }
+
   outputs_buf_[graph_output_index] = nullptr;
+  attached_output_count_.fetch_sub(1, std::memory_order_relaxed);
+  UpdateStateAfterDetach();
 
   return {};
 }
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
-  if (auto status = SetInputBuffers(); !status) {
-    return status.Error();
+  // Check if buffers are committed
+  if (commit_state_ != CommitState::kCommitted) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Buffers not committed. Attach all buffers first.");
   }
 
+  // Execute model (no memcpy needed)
   if (enn_manager_->Api().EnnExecuteModel(model_id_) != ENN_RET_SUCCESS) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure, "Fail to execute");
   }
 
-  if (auto status = SetOutputBuffers(); !status) {
-    return status.Error();
-  }
-
   return {};
 }
 
-litert::Expected<void> LiteRtDispatchInvocationContextT::SetInputBuffers()
-    const {
-  bool input_prepared =
-      std::all_of(inputs_buf_.begin(), inputs_buf_.end(),
-                  [](const EnnBufferPtr& val) { return val != nullptr; });
-  bool output_prepared =
-      std::all_of(outputs_buf_.begin(), outputs_buf_.end(),
-                  [](const EnnBufferPtr& val) { return val != nullptr; });
-  if (!input_prepared || !output_prepared) {
-    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                         "Inputs/outputs not prepared.");
+void LiteRtDispatchInvocationContextT::SetSchedulingInfo(
+    const LiteRtSchedulingInfo* scheduling_info) {
+  if (scheduling_info != nullptr) {
+    scheduling_info_ = *scheduling_info;
+  } else {
+    scheduling_info_.reset();
   }
-  LITERT_ASSIGN_OR_RETURN(auto committed_buf, GetEnnCommittedBuffer());
-
-  for (int idx = 0; idx < inputs_buf_.size(); idx++) {
-    auto usr_buf = inputs_buf_.at(idx);
-    auto target_buf = committed_buf[idx];
-    memcpy(target_buf->va, usr_buf->va, usr_buf->size);
-  }
-
-  return {};
 }
 
-litert::Expected<void> LiteRtDispatchInvocationContextT::SetOutputBuffers()
-    const {
-  LITERT_ASSIGN_OR_RETURN(auto committed_buf, GetEnnCommittedBuffer());
-
-  int _input_buf_size = inputs_buf_.size();
-  for (int idx = 0; idx < outputs_buf_.size(); idx++) {
-    auto usr_buf = outputs_buf_.at(idx);
-    auto target_buf = committed_buf[idx + _input_buf_size];
-    memcpy(usr_buf->va, target_buf->va, usr_buf->size);
-  }
-  return {};
-}
+// SetInputBuffers and SetOutputBuffers removed - no longer needed with commit
+// caching

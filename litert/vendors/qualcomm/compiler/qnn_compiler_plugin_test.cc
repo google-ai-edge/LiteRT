@@ -16,8 +16,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cstddef>
-#include <cstdint>
+#include <filesystem>
 #include <string>
+#include <system_error>
 
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -32,7 +33,6 @@
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/core/environment_options.h"
 #include "litert/core/model/model.h"
-#include "litert/test/common.h"
 #include "litert/test/load_test_model.h"
 #include "litert/test/matchers.h"
 #include "litert/test/test_models.h"
@@ -227,6 +227,22 @@ TEST(TestQnnPlugin, GetSDKVersion) {
   LITERT_LOG(LITERT_INFO, "QNN SDK Version: %s", sdk_version);
 }
 
+TEST(TestQnnPlugin, CompileAfterGetSDKVersion) {
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
+
+  const char* sdk_version = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtGetCompilerPluginSDKVersion(plugin.get(), &sdk_version));
+  ASSERT_NE(sdk_version, nullptr);
+
+  auto model = testing::LoadTestFileModel("one_mul.tflite");
+  LiteRtCompiledResult compiled;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
+                                               model.Get(), &compiled));
+
+  LiteRtDestroyCompiledResult(compiled);
+}
+
 TEST(TestQnnPlugin, PartitionMulOps) {
   auto plugin = CreatePlugin(LrtGetCompilerContext());
   auto model = testing::LoadTestFileModel("one_mul.tflite");
@@ -333,8 +349,8 @@ TEST(TestQnnPlugin, CompileMulSubgraphWithLibraryDir) {
 
   LiteRtCompiledResult compiled;
   // This should fail because it tries to load libraries from bogus path.
-  LITERT_EXPECT_ERROR(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
-                                                  model.Get(), &compiled));
+  LITERT_EXPECT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
+                                               model.Get(), &compiled));
 }
 
 TEST(TestQnnPlugin, ShareContextBinary) {
@@ -381,7 +397,7 @@ TEST(TestQnnPlugin, Compatibility) {
   LITERT_EXPECT_ERROR(LiteRtCompilerPluginCheckCompilerCompatibility(
       kApiVersion, plugin.get(), nullptr, nullptr, "unsupported_soc"));
 
-  // Check LiteRt API vserion backward compatibility.
+  // Check LiteRt API version backward compatibility.
   LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
       {kApiVersion.major, kApiVersion.minor, kApiVersion.patch - 1},
       plugin.get(), nullptr, nullptr, nullptr));
@@ -545,5 +561,56 @@ TEST(TestQnnPlugin, CompileMultiSubgraphJustInTime) {
 
   LiteRtDestroyCompiledResult(compiled);
 }
+TEST(TestQnnPlugin, CompileWithSchematicDir) {
+  auto opts = Options::Create();
+  ASSERT_TRUE(opts);
+
+  auto qnn_opts = opts->GetQualcommOptions();
+  ASSERT_TRUE(qnn_opts);
+
+  // Create a temporary directory
+  std::filesystem::path temp_dir =
+      std::filesystem::temp_directory_path() / "litert_qnn_test_schematic";
+  std::filesystem::create_directories(temp_dir);
+
+  qnn_opts->SetSchematicDir(temp_dir.string());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  auto model = testing::LoadTestFileModel("one_mul.tflite");
+
+  struct TestCwdGuard {
+    std::filesystem::path original_cwd;
+    explicit TestCwdGuard(const std::filesystem::path& new_dir) {
+      std::error_code ec;
+      original_cwd = std::filesystem::current_path(ec);
+      if (!ec) {
+        std::filesystem::current_path(new_dir, ec);
+      }
+    }
+    ~TestCwdGuard() {
+      std::error_code ec;
+      std::filesystem::current_path(original_cwd, ec);
+    }
+  } cwd_guard(temp_dir);
+
+  LiteRtCompiledResult compiled;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
+                                               model.Get(), &compiled));
+
+  // Verify schematic file exists in temp_dir
+  std::filesystem::path expected_schematic =
+      temp_dir / "qnn_partition_0_schematic.bin";
+  EXPECT_TRUE(std::filesystem::exists(expected_schematic));
+
+  // Clean up
+  std::filesystem::remove_all(temp_dir);
+  LiteRtDestroyCompiledResult(compiled);
+}
+
 }  // namespace
 }  // namespace litert

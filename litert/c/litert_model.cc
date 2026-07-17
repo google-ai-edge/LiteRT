@@ -33,6 +33,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_load.h"
+#include "litert/core/util/perfetto_profiling.h"
 #include "tflite/converter/allocation.h"
 #include "tflite/stderr_reporter.h"
 #if !defined(LITERT_DISABLE_NPU)
@@ -50,6 +51,7 @@ extern "C" {
 LiteRtStatus LiteRtCreateModelFromFile(LiteRtEnvironment environment,
                                        const char* filename,
                                        LiteRtModel* model) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT Graph Loading From File");
   if (!filename || !model) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -64,6 +66,7 @@ LiteRtStatus LiteRtCreateModelFromBuffer(LiteRtEnvironment environment,
                                          const void* buffer_addr,
                                          size_t buffer_size,
                                          LiteRtModel* model) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT Graph Loading From Buffer");
   if (!buffer_addr || !buffer_size || !model) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -79,6 +82,7 @@ LiteRtStatus LiteRtCreateModelFromBuffer(LiteRtEnvironment environment,
 LiteRtStatus LiteRtCreateModelFromFd(LiteRtEnvironment environment, int fd,
                                      size_t offset, size_t size,
                                      LiteRtModel* model) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT Graph Loading From Fd");
   if (fd < 0 || size == 0 || !model) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -101,7 +105,7 @@ LiteRtStatus LiteRtCreateModelFromFd(LiteRtEnvironment environment, int fd,
 
 LiteRtStatus LiteRtGetNumModelSubgraphs(LiteRtModel model,
                                         LiteRtParamIndex* num_subgraphs) {
-  if (model == nullptr) {
+  if (model == nullptr || num_subgraphs == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   *num_subgraphs = model->Subgraphs().size();
@@ -111,7 +115,7 @@ LiteRtStatus LiteRtGetNumModelSubgraphs(LiteRtModel model,
 LiteRtStatus LiteRtGetModelSubgraph(LiteRtModel model,
                                     LiteRtParamIndex subgraph_index,
                                     LiteRtSubgraph* subgraph) {
-  if (model == nullptr) {
+  if (model == nullptr || subgraph == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (subgraph_index >= model->Subgraphs().size()) {
@@ -194,12 +198,19 @@ LiteRtStatus LiteRtGetModelSignature(LiteRtModel model,
   return kLiteRtStatusOk;
 }
 
-void LiteRtDestroyModel(LiteRtModel model) { delete model; }
+void LiteRtDestroyModel(LiteRtModel model) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT Model Destruction");
+  delete model;
+}
 
 LiteRtStatus LiteRtSerializeModelWithSignatures(
     LiteRtModel model, uint8_t** buf, size_t* size, size_t* offset,
     bool destroy_model, char** signatures, LiteRtParamIndex num_signatures,
     LiteRtModelSerializationOptions options) {
+  if (!model || !buf || !size || !offset ||
+      (num_signatures > 0 && signatures == nullptr)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   size_t num_subgraphs = model->NumSubgraphs();
   if (num_subgraphs != num_signatures) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -217,12 +228,16 @@ LiteRtStatus LiteRtSerializeModelWithSignatures(
 
     std::vector<std::string> input_names;
     std::vector<LiteRtTensor> input_tensors;
+    input_names.reserve(subgraph.NumInputs());
+    input_tensors.reserve(subgraph.NumInputs());
     for (auto& tensor : subgraph.Inputs()) {
       input_names.push_back(std::string(tensor->Name()));
       input_tensors.push_back(tensor);
     }
     std::vector<std::string> output_names;
     std::vector<LiteRtTensor> output_tensors;
+    output_names.reserve(subgraph.NumOutputs());
+    output_tensors.reserve(subgraph.NumOutputs());
     for (auto& tensor : subgraph.Outputs()) {
       output_names.push_back(std::string(tensor->Name()));
       output_tensors.push_back(tensor);
@@ -241,10 +256,10 @@ LiteRtStatus LiteRtSerializeModel(LiteRtModel model, uint8_t** buf,
                                   size_t* size, size_t* offset,
                                   bool destroy_model,
                                   LiteRtModelSerializationOptions options) {
-#if defined(LITERT_DISABLE_NPU)
   if (!model || !buf || !size || !offset) {
     return kLiteRtStatusErrorInvalidArgument;
   }
+#if defined(LITERT_DISABLE_NPU)
   if (destroy_model) {
     delete model;
   }
@@ -292,7 +307,7 @@ LiteRtStatus LiteRtGetSignatureKey(LiteRtSignature signature,
 
 LiteRtStatus LiteRtGetSignatureSubgraph(LiteRtSignature signature,
                                         LiteRtSubgraph* subgraph) {
-  if (signature == nullptr) {
+  if (signature == nullptr || subgraph == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   *subgraph = &signature->GetSubgraph();

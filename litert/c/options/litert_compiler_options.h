@@ -15,6 +15,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_COMPILER_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_COMPILER_OPTIONS_H_
 
+#include <stddef.h>
+
 #include "litert/c/litert_common.h"
 
 #ifdef __cplusplus
@@ -76,6 +78,15 @@ LiteRtStatus LrtSetCompilerOptionsDummyOption(LrtCompilerOptions* options,
 // Gets the dummy option from compiler options.
 LiteRtStatus LrtGetCompilerOptionsDummyOption(const LrtCompilerOptions* options,
                                               bool* dummy_option);
+
+// Sets the maximum number of partitions allowed.
+// A value of 0 means unlimited.
+LiteRtStatus LrtSetCompilerOptionsMaxPartitions(
+    LrtCompilerOptions* options, size_t max_partitions);
+
+// Gets the maximum number of partitions allowed.
+LiteRtStatus LrtGetCompilerOptionsMaxPartitions(
+    const LrtCompilerOptions* options, size_t* max_partitions);
 
 #ifdef __cplusplus
 }  // extern "C"

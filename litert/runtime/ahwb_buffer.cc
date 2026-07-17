@@ -70,8 +70,26 @@ Expected<size_t> AhwbBuffer::GetSize(AHardwareBuffer* ahwb) {
 
   AHardwareBuffer_Desc ahwb_desc;
   AhwbWrapper().Describe(ahwb, &ahwb_desc);
+
+  size_t bytes_per_pixel = 1;
+  switch (ahwb_desc.format) {
+    case 1:  // AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM
+    case 2:  // AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM
+      bytes_per_pixel = 4;
+      break;
+    case 3:  // AHARDWAREBUFFER_FORMAT_R8G8B8_UNORM
+      bytes_per_pixel = 3;
+      break;
+    case 4:  // AHARDWAREBUFFER_FORMAT_R5G6B5_UNORM
+      bytes_per_pixel = 2;
+      break;
+    default:
+      bytes_per_pixel = 1;
+      break;
+  }
+
   return static_cast<size_t>(ahwb_desc.width) * ahwb_desc.height *
-         ahwb_desc.layers;
+         ahwb_desc.layers * bytes_per_pixel;
 }
 
 Expected<void*> AhwbBuffer::Lock(AHardwareBuffer* ahwb, LiteRtEventT* event) {

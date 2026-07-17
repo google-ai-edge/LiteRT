@@ -35,6 +35,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/compiler/cc/litert_model.h"
+#include "litert/compiler/cc/litert_op_options.h"
 #include "litert/vendors/intel_openvino/utils.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -206,7 +207,8 @@ constexpr std::array<std::pair<LiteRtOpCode, const char*>, 161> kLitertOvMap{
      {kLiteRtOpCodeTflAtan2, "ATAN2"},
      {kLiteRtOpCodeTflUnsortedSegmentMin, "UNSORTED_SEGMENT_MIN"},
      {kLiteRtOpCodeTflSign, "SIGN"},
-     {kLiteRtOpCodeTflUnpack, "UNPACK"}}};
+     {kLiteRtOpCodeTflUnpack, "UNPACK"},
+     {kLiteRtOpCodeShloComposite, "STABLEHLO_COMPOSITE"}}};
 
 constexpr const char* GetOvOpType(const LiteRtOpCode op_code) {
   for (const auto& entry : kLitertOvMap) {
@@ -867,6 +869,43 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
       break;
     case LiteRtOpCode::kLiteRtOpCodeTflTile:
       // No attribute to be handled for Tile op.
+      break;
+    case LiteRtOpCode::kLiteRtOpCodeShloComposite:
+      if (name == "composite_name") {
+        const char* composite_op_name = nullptr;
+        LITERT_RETURN_IF_ERROR(
+            ctx_->get_shlo_composite_op_name(litert_op_, &composite_op_name),
+            ERROR_LOG_STR("composite_op_name", op_name_.c_str()));
+        return ov::Any(std::string(composite_op_name));
+      } else if (name == "epsilon") {
+        auto info =
+            litert::compiler::GetOptionsAs<litert::compiler::CompositeOptions>(
+                ctx_, litert_op_);
+        if (!info) {
+          return litert::Unexpected(
+              kLiteRtStatusErrorRuntimeFailure,
+              "Failed to get composite options for " + op_name_);
+        }
+        double epsilon = 1e-6;  // Default value as per OV spec.
+        if (info->attributes_map.has_value()) {
+          auto epsilon_ref = info->attributes_map.value()["epsilon"];
+          if (!epsilon_ref.IsNull()) {
+            epsilon = epsilon_ref.AsDouble();
+          }
+        }
+        return ov::Any(epsilon);
+      }
+      break;
+    case LiteRtOpCode::kLiteRtOpCodeTflTopkV2:
+      // TFLite TOPK_V2 carries no options table; K is input 1. The OpenVINO
+      // translator only queries these two attributes, both with defaults that
+      // match TFLite semantics (i32 indices, sorted values). Return them
+      // explicitly so the translator never reaches the default nullptr branch.
+      if (name == "index_type") {
+        return ov::Any(ov::element::i32);
+      } else if (name == "sorted") {
+        return ov::Any(true);
+      }
       break;
     default:
       LITERT_LOG(LITERT_ERROR, "Unsupported op type %s", op_type_.c_str());

@@ -39,6 +39,34 @@
 
 namespace litert {
 
+/// @brief The type of quantization scheme. This is the C++ equivalent of
+/// `LiteRtQuantizationTypeId`.
+// LINT.IfChange(quantization_type_id)
+enum class QuantizationTypeId {
+  None = kLiteRtQuantizationNone,
+  PerTensor = kLiteRtQuantizationPerTensor,
+  PerChannel = kLiteRtQuantizationPerChannel,
+  BlockWise = kLiteRtQuantizationBlockWise,
+};
+// LINT.ThenChange(../c/litert_model_types.h:quantization_type_id)
+
+using QuantizationPerTensor = LiteRtQuantizationPerTensor;
+using QuantizationPerChannel = LiteRtQuantizationPerChannel;
+using QuantizationBlockWise = LiteRtQuantizationBlockWise;
+
+inline bool operator==(QuantizationTypeId lhs, LiteRtQuantizationTypeId rhs) {
+  return static_cast<LiteRtQuantizationTypeId>(lhs) == rhs;
+}
+inline bool operator==(LiteRtQuantizationTypeId lhs, QuantizationTypeId rhs) {
+  return lhs == static_cast<LiteRtQuantizationTypeId>(rhs);
+}
+inline bool operator!=(QuantizationTypeId lhs, LiteRtQuantizationTypeId rhs) {
+  return !(lhs == rhs);
+}
+inline bool operator!=(LiteRtQuantizationTypeId lhs, QuantizationTypeId rhs) {
+  return !(lhs == rhs);
+}
+
 /// @brief A C++ wrapper for `LiteRtTensor` with limited functionality.
 class SimpleTensor {
  public:
@@ -57,10 +85,10 @@ class SimpleTensor {
   explicit SimpleTensor(
       LiteRtParamIndex index, StringView name, LiteRtTensorTypeId type_id,
       std::variant<LiteRtUnrankedTensorType, litert::RankedTensorType>&& type,
-      LiteRtQuantizationTypeId quantization_type_id,
-      LiteRtQuantizationPerTensor per_tensor_quantization,
-      LiteRtQuantizationPerChannel per_channel_quantization,
-      LiteRtQuantizationBlockWise block_wise_quantization)
+      QuantizationTypeId quantization_type_id,
+      QuantizationPerTensor per_tensor_quantization,
+      QuantizationPerChannel per_channel_quantization,
+      QuantizationBlockWise block_wise_quantization)
       : index_(index),
         name_(name),
         type_id_(type_id),
@@ -131,25 +159,25 @@ class SimpleTensor {
   std::uint32_t TensorIndex() const { return index_; }
 
   /// @brief Returns the quantization type ID of the tensor.
-  LiteRtQuantizationTypeId QTypeId() const { return quantization_type_id_; }
+  QuantizationTypeId QTypeId() const { return quantization_type_id_; }
 
   /// @brief Returns whether the tensor has quantization.
   bool HasQuantization() const {
-    return quantization_type_id_ != kLiteRtQuantizationNone;
+    return quantization_type_id_ != QuantizationTypeId::None;
   }
 
   /// @brief Returns the per-tensor quantization of the tensor.
-  LiteRtQuantizationPerTensor PerTensorQuantization() const {
+  QuantizationPerTensor PerTensorQuantization() const {
     return per_tensor_quantization_;
   }
 
   /// @brief Returns the per-channel quantization of the tensor.
-  LiteRtQuantizationPerChannel PerChannelQuantization() const {
+  QuantizationPerChannel PerChannelQuantization() const {
     return per_channel_quantization_;
   }
 
   /// @brief Returns the block-wise quantization of the tensor.
-  LiteRtQuantizationBlockWise BlockWiseQuantization() const {
+  QuantizationBlockWise BlockWiseQuantization() const {
     return block_wise_quantization_;
   }
 
@@ -158,10 +186,10 @@ class SimpleTensor {
   std::string_view name_;
   LiteRtTensorTypeId type_id_;
   std::variant<LiteRtUnrankedTensorType, litert::RankedTensorType> type_;
-  LiteRtQuantizationTypeId quantization_type_id_;
-  LiteRtQuantizationPerTensor per_tensor_quantization_;
-  LiteRtQuantizationPerChannel per_channel_quantization_;
-  LiteRtQuantizationBlockWise block_wise_quantization_;
+  QuantizationTypeId quantization_type_id_;
+  QuantizationPerTensor per_tensor_quantization_;
+  QuantizationPerChannel per_channel_quantization_;
+  QuantizationBlockWise block_wise_quantization_;
 };
 
 /// @brief A simplified C++ wrapper for `LiteRtSignature`, representing a model
@@ -269,7 +297,7 @@ class SimpleSignature {
     if (index >= input_names_.size()) {
       return Error(Status::kErrorInvalidArgument, "Input index out of bounds");
     }
-    return InputTensor(input_names_[index]);
+    return *input_tensors_[index];
   }
 
   /// @brief Returns the output tensor for the given output signature name.
@@ -291,7 +319,7 @@ class SimpleSignature {
     if (index >= output_names_.size()) {
       return Error(Status::kErrorInvalidArgument, "Output index out of bounds");
     }
-    return OutputTensor(output_names_[index]);
+    return *output_tensors_[index];
   }
 
  private:

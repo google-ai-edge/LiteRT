@@ -35,6 +35,7 @@
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/generators.h"
 #include "litert/test/generators/one_hot.h"
+#include "tensor/arithmetic_graph.h"
 #include "tflite/schema/schema_generated.h"
 #include "tflite/types/half.h"
 
@@ -125,7 +126,8 @@ void RegisterConv2d(const AtsConf& options, size_t& test_id, size_t iters,
       Fixture,
       Conv2d,
       SizeListC<4>,
-      TypeList<float>,
+      TypeList<TypeTuple<float, float>,
+               TypeTuple<tflite::half, tflite::half>>,
       OpCodeListC<kLiteRtOpCodeTflConv2d>,
       TypeList<std::integral_constant<tflite::Padding, tflite::Padding_VALID>,
                std::integral_constant<tflite::Padding, tflite::Padding_SAME>>,
@@ -147,7 +149,8 @@ void RegisterDepthwiseConv2d(const AtsConf& options, size_t& test_id,
       Fixture,
       DepthwiseConv2d,
       SizeListC<4>,
-      TypeList<float>,
+      TypeList<TypeTuple<float, float>,
+               TypeTuple<tflite::half, tflite::half>>,
       OpCodeListC<kLiteRtOpCodeTflDepthwiseConv2d>,
       TypeList<std::integral_constant<tflite::Padding, tflite::Padding_VALID>,
                std::integral_constant<tflite::Padding, tflite::Padding_SAME>>,
@@ -339,6 +342,186 @@ void RegisterTransformerLayer(const AtsConf& options, size_t& test_id,
 }
 
 template <typename Fixture>
+void RegisterTranspose(const AtsConf& options, size_t& test_id, size_t iters,
+                       typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Transpose,
+      SizeListC<1, 2, 3, 4, 5, 6, 7, 8>,
+      TypeList<
+          bool,
+          int8_t,
+          uint8_t,
+          int16_t,
+          uint16_t,
+          int32_t,
+          uint32_t,
+          int64_t,
+          uint64_t,
+          float,
+          tflite::half>>
+    (iters, test_id, options, cap);
+  RegisterCombinations<
+      Fixture,
+      TransposeInt4,
+      SizeListC<1, 2, 3, 4, 5, 6, 7, 8>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
+void RegisterBatchMatmul(const AtsConf& options, size_t& test_id, size_t iters,
+                         typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      BatchMatmul,
+      SizeListC<2, 3, 4>,
+      SizeListC<2, 3, 4>,
+      TypeList<TypeTuple<float, float>,
+               TypeTuple<tflite::half, tflite::half>>,
+      TypeList<std::true_type, std::false_type>,
+      TypeList<std::true_type, std::false_type>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
+void RegisterFullyConnected(const AtsConf& options, size_t& test_id,
+                            size_t iters, typename Fixture::Capture& cap) {
+  // clang-format off
+  // Floating-Point Static
+  RegisterCombinations<
+      Fixture,
+      FullyConnected,
+      SizeListC<2, 3, 4>,
+      TypeList<TypeTuple<float, float>,              // Uniform FP32
+               TypeTuple<tflite::half, tflite::half>>,  // Uniform FP16
+      OpCodeListC<kLiteRtOpCodeTflFullyConnected>,
+      TypeList<std::true_type, std::false_type>,     // KeepNumDims
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>,
+               FaC<tflite::ActivationFunctionType_RELU>>,  // FusedActivation
+      TypeList<std::true_type, std::false_type>,     // HasBias
+      TypeList<std::false_type>,                     // AsymmetricQuantizeInputs
+      TypeList<std::integral_constant<
+          litert::tensor::FullyConnectedWeightsFormat,
+                                      litert::tensor::kWeightsFormatDefault>>,
+      TypeList<std::false_type>,                     // PerChannel
+      TypeList<std::false_type>,                     // DynamicFilter
+      TypeList<std::false_type>>                     // DynamicBias
+    (iters, test_id, options, cap);
+
+  // Floating-Point Dynamic Filter & Bias
+  RegisterCombinations<
+      Fixture,
+      FullyConnected,
+      SizeListC<2, 3>,
+      TypeList<TypeTuple<float, float>>,             // Uniform FP32
+      OpCodeListC<kLiteRtOpCodeTflFullyConnected>,
+      TypeList<std::false_type>,                     // KeepNumDims
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>>,  // FusedActivation
+      TypeList<std::true_type>,                      // HasBias
+      TypeList<std::false_type>,                     // AsymmetricQuantizeInputs
+      TypeList<std::integral_constant<
+          litert::tensor::FullyConnectedWeightsFormat,
+                             litert::tensor::kWeightsFormatDefault>>,
+      TypeList<std::false_type>,                     // PerChannel
+      TypeList<std::true_type, std::false_type>,     // DynamicFilter
+      TypeList<std::true_type, std::false_type>>     // DynamicBias
+    (iters, test_id, options, cap);
+
+  // Hybrid Quantization (FP32 activations x INT8 weights)
+  RegisterCombinations<
+      Fixture,
+      FullyConnected,
+      SizeListC<2, 3>,
+      TypeList<TypeTuple<float, float>>,             // T_in=float, T_out=float
+      OpCodeListC<kLiteRtOpCodeTflFullyConnected>,
+      TypeList<std::false_type>,                     // KeepNumDims
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>>,  // FusedActivation
+      TypeList<std::true_type>,                      // HasBias
+      TypeList<std::true_type, std::false_type>,     // AsymmetricQuantizeInputs
+      TypeList<std::integral_constant<
+          litert::tensor::FullyConnectedWeightsFormat,
+          litert::tensor::kWeightsFormatDefault>>,
+      TypeList<std::true_type, std::false_type>,     // PerChannel
+      TypeList<std::false_type>,                     // DynamicFilter
+      TypeList<std::false_type>>                     // DynamicBias
+    (iters, test_id, options, cap);
+
+  // Full Integer Quantization (INT8/UINT8 activations & weights)
+  RegisterCombinations<
+      Fixture,
+      FullyConnected,
+      SizeListC<2, 3>,
+      TypeList<TypeTuple<int8_t, int8_t>,            // INT8 in/wt, INT8 out
+               TypeTuple<uint8_t, uint8_t>>,         // UINT8 in/wt, UINT8 out
+      OpCodeListC<kLiteRtOpCodeTflFullyConnected>,
+      TypeList<std::true_type, std::false_type>,     // KeepNumDims
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>,
+               FaC<tflite::ActivationFunctionType_RELU>>,  // FusedActivation
+      TypeList<std::true_type, std::false_type>,     // HasBias
+      TypeList<std::false_type>,                     // AsymmetricQuantizeInputs
+      TypeList<std::integral_constant<
+          litert::tensor::FullyConnectedWeightsFormat,
+                                      litert::tensor::kWeightsFormatDefault>,
+               std::integral_constant<
+                   litert::tensor::FullyConnectedWeightsFormat,
+                   litert::tensor::kWeightsFormatShuffled4x16Int8>>,
+      TypeList<std::true_type, std::false_type>,     // PerChannel
+      TypeList<std::false_type>,                     // DynamicFilter
+      TypeList<std::false_type>>                     // DynamicBias
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
+void RegisterConcatenation(const AtsConf& options, size_t& test_id,
+                           size_t iters, typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Concatenation,
+      SizeListC<2, 3, 4>,
+      TypeList<float>,
+      OpCodeListC<kLiteRtOpCodeTflConcatenation>,
+      SizeListC<0, 1>,
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
+void RegisterSoftmax(const AtsConf& options, size_t& test_id, size_t iters,
+                     typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Softmax,
+      SizeListC<2, 3, 4>,
+      TypeList<TypeTuple<float, float>,
+               TypeTuple<tflite::half, tflite::half>>,
+      OpCodeListC<kLiteRtOpCodeTflSoftmax, kLiteRtOpCodeTflLogSoftmax>,
+      SizeListC<1>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
+void RegisterPad(const AtsConf& options, size_t& test_id, size_t iters,
+                 typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Pad,
+      SizeListC<1, 2, 3, 4>,
+      TypeList<float, tflite::half>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
 void RegisterAll(const AtsConf& options, size_t& test_id,
                  typename Fixture::Capture& cap) {
   RegisterExtraModels<Fixture>(test_id, options, cap);
@@ -353,6 +536,12 @@ void RegisterAll(const AtsConf& options, size_t& test_id,
   RegisterOneHot<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterReshape<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterTransformerLayer<Fixture>(options, test_id, /*iters=*/2, cap);
+  RegisterTranspose<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterBatchMatmul<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterFullyConnected<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterConcatenation<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterSoftmax<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterPad<Fixture>(options, test_id, /*iters=*/10, cap);
 }
 
 int Ats() {

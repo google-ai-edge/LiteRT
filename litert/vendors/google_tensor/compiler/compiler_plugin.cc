@@ -76,10 +76,10 @@ namespace google_tensor {
 constexpr char kPluginManufacturer[] = "Google";
 
 constexpr const char* kPluginSocModels[] = {
-    "Tensor_G3",
-    "Tensor_G4",
-    "Tensor_G5",
-    "Tensor_G6",
+    "Tensor_G3", "Tensor_G4", "Tensor_G5", "Tensor_G6",
+#ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
+    "Tensor_G7",
+#endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
 };  // get the name for plugin soc model
 
 LiteRtStatus GetDeviceType(absl::string_view soc_model,
@@ -96,6 +96,11 @@ LiteRtStatus GetDeviceType(absl::string_view soc_model,
   } else if (soc_model == "Tensor_G6") {
     *device_type = ::third_party::odml::litert::litert::vendors::google_tensor::
         compiler::DEVICE_TYPE_TENSOR_G6;
+#ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
+  } else if (soc_model == "Tensor_G7") {
+    *device_type = ::third_party::odml::litert::litert::vendors::google_tensor::
+        compiler::DEVICE_TYPE_TENSOR_G7;
+#endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
   } else {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -614,7 +619,7 @@ FilterOutcome GetFilterOutcome(const litert::compiler::Op& op,
 bool IsShloCompositeOpSupported(const litert::compiler::Op& op) {
   if (op.Code() == kLiteRtOpCodeShloComposite) {
     const char* custom_op_name = nullptr;
-    if (LiteRtGetSHLOCompositeOpName(op.Get(), &custom_op_name) !=
+    if (op.ctx()->get_shlo_composite_op_name(op.Get(), &custom_op_name) !=
             kLiteRtStatusOk ||
         custom_op_name == nullptr) {
       return false;
@@ -692,7 +697,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
       continue;
     }
 
-    LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
+    LITERT_RETURN_IF_ERROR(
+        compiler_plugin->ctx()->push_op(selected_ops, op.Get(), 0));
   }
 
   return kLiteRtStatusOk;
@@ -772,9 +778,10 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   };
 
   MakeUniqueSignatureKeysPerSubgraph(model.Get(), num_partitions, signatures);
-  LITERT_RETURN_IF_ERROR(LiteRtSerializeModelWithSignatures(
-      partitions, &data, &size, &offset, false, signatures, num_partitions,
-      opts));
+  LITERT_RETURN_IF_ERROR(
+      compiler_plugin->ctx()->serialize_model_with_signatures(
+          partitions, &data, &size, &offset, false, signatures, num_partitions,
+          opts));
 
   absl::string_view buffer_str(reinterpret_cast<const char*>(buf.Data()),
                                buf.Size());

@@ -22,28 +22,38 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <filesystem>
+#include <filesystem>  // NOLINT
 #include <fstream>
 #include <ios>
 #include <iterator>
 #include <limits>
+#include <optional>
 #include <ostream>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include "HTP/QnnHtpProfile.h"  // from @qairt
+#include "QnnCommon.h"  // from @qairt
+#include "QnnProfile.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 #include "absl/base/no_destructor.h"  // from @com_google_absl
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/options/litert_qualcomm_options.h"
+#include "litert/cc/internal/litert_context_wrapper.h"
+#include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/core/util/tensor_type_util.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/common.h"
@@ -54,10 +64,6 @@
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "HTP/QnnHtpProfile.h"  // from @qairt
-#include "QnnCommon.h"  // from @qairt
-#include "QnnProfile.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 using litert::Expected;
 using litert::Unexpected;
@@ -78,6 +84,22 @@ std::string_view inline GetEventUnit(QnnProfile_EventUnit_t unit) {
       return "";
   }
 }
+
+namespace {
+bool IsAutoPerfCtrlMode(const std::optional<::qnn::Options>& run_options,
+                        ::qnn::BackendType backend_type) {
+  if (!run_options.has_value()) return false;
+  switch (backend_type) {
+    case ::qnn::BackendType::kHtpBackend:
+      return run_options->GetHtpPerfCtrlMode() == ::qnn::HtpPerfCtrlMode::kAuto;
+    case ::qnn::BackendType::kDspBackend:
+      return run_options->GetDspPerfCtrlMode() == ::qnn::DspPerfCtrlMode::kAuto;
+    default:
+      return false;
+  }
+}
+}  // namespace
+
 LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
     litert::qnn::QnnManager& qnn_manager,
     const litert::qnn::ContextBinaryInfo& context_binary_info,
@@ -151,6 +173,16 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
             std::back_inserter(outputs_));
   std::move(dumped_outputs.begin(), dumped_outputs.end(),
             std::back_inserter(outputs_));
+}
+
+LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
+  // Manual: sync downvote handled by backend dtor.
+  // Auto: schedule a final downvote here.
+  if (IsAutoPerfCtrlMode(run_options_,
+                         qnn_manager_.GetOptions().GetBackendType())) {
+    ::qnn::Options default_options;
+    (void)qnn_manager_.SetPerformanceMode(default_options);
+  }
 }
 
 Expected<LiteRtDispatchInvocationContextT::Ptr>
@@ -266,11 +298,23 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
           kLiteRtTensorBufferTypeFastRpc,
           kLiteRtTensorBufferTypeDmaBuf,
       };
+  // QnnGpu imports the DMA-BUF fd as OpenCL memory and rejects
+  // QNN_MEM_TYPE_ION (i.e. FastRPC-backed buffers), so advertise only
+  // DMA-BUF for the GPU backend.
+  static constexpr std::array<const LiteRtTensorBufferType, 1>
+      kGpuSupportedTensorBufferTypes = {
+          kLiteRtTensorBufferTypeDmaBuf,
+      };
+
   const LiteRtTensorBufferType* supported_tensor_buffer_types =
       kMemHandleTensorBufferTypes.data();
   size_t num_supported_tensor_buffer_types = kMemHandleTensorBufferTypes.size();
-  if (qnn_manager_.GetOptions().GetGraphIOTensorMemType() ==
-      ::qnn::GraphIOTensorMemType::kRaw) {
+  if (qnn_manager_.GetOptions().GetBackendType() ==
+      ::qnn::BackendType::kGpuBackend) {
+    supported_tensor_buffer_types = kGpuSupportedTensorBufferTypes.data();
+    num_supported_tensor_buffer_types = kGpuSupportedTensorBufferTypes.size();
+  } else if (qnn_manager_.GetOptions().GetGraphIOTensorMemType() ==
+             ::qnn::GraphIOTensorMemType::kRaw) {
     supported_tensor_buffer_types = kRawTensorBufferTypes.data();
     num_supported_tensor_buffer_types = kRawTensorBufferTypes.size();
   }
@@ -379,9 +423,8 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Host tensor buffer is too large for QNN");
     }
-    void* data =
-        static_cast<void*>(static_cast<uint8_t*>(host_memory_addr) +
-                           tensor_buffer_offset);
+    void* data = static_cast<void*>(static_cast<uint8_t*>(host_memory_addr) +
+                                    tensor_buffer_offset);
     if (tensor.version == QNN_TENSOR_VERSION_1) {
       tensor.v1.memType = QNN_TENSORMEMTYPE_RAW;
       tensor.v1.clientBuf.data = data;
@@ -439,6 +482,20 @@ Expected<void> LiteRtDispatchInvocationContextT::DetachBuffer(
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::Execute() {
+  // Auto mode does per-inference upvote + debounced downvote.
+  // Manual mode is unchanged (upvote at init).
+  const bool auto_mode = IsAutoPerfCtrlMode(
+      run_options_, qnn_manager_.GetOptions().GetBackendType());
+  if (auto_mode) {
+    LITERT_RETURN_IF_ERROR(qnn_manager_.SetPerformanceMode(*run_options_));
+  }
+
+  absl::Cleanup downvote = [this, auto_mode] {
+    if (!auto_mode) return;
+    ::qnn::Options default_options;
+    qnn_manager_.SetPerformanceMode(default_options);
+  };
+
   const size_t num_ins = inputs_.size();
   LITERT_STACK_ARRAY(Qnn_Tensor_t, inputs, num_ins, QNN_TENSOR_INIT);
   for (size_t i = 0; i < num_ins; ++i) {
@@ -574,5 +631,70 @@ Expected<void> LiteRtDispatchInvocationContextT::WriteTensorTo(
   quant_ss << scale << "," << zero_point << "\n";
   quant_file << quant_ss.str();
   quant_file.close();
+  return {};
+}
+
+Expected<void> LiteRtDispatchInvocationContextT::SetOptions(
+    LiteRtOptions options) {
+  if (options == nullptr) {
+    run_options_ = std::nullopt;
+    return {};
+  }
+
+  // Parse LiteRtOptions into qnn::Options (same path as dispatch_api.cc).
+  auto* runtime_context = device_context_->runtime_context();
+  litert::internal::OptionsWrapper internal_options(
+      litert::internal::ContextWrapper(runtime_context), options);
+
+  auto opaque_options = internal_options.GetOpaqueOptions();
+  if (!opaque_options) {
+    return Unexpected(opaque_options.Error().Status(),
+                      "Failed to get opaque options");
+  }
+
+  auto payload =
+      opaque_options->FindOpaqueOptions(LrtQualcommOptionsGetIdentifier());
+  if (!payload || payload.Value() == nullptr) {
+    return Unexpected(kLiteRtStatusErrorNotFound,
+                      "Failed to find Qualcomm options in LiteRtOptions");
+  }
+
+  LrtQualcommOptions options_handle = nullptr;
+  if (LrtCreateQualcommOptionsFromToml(
+          reinterpret_cast<const char*>(payload.Value()), &options_handle) !=
+      kLiteRtStatusOk) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Failed to parse Qualcomm options from TOML payload");
+  }
+
+  ::qnn::Options qnn_options;
+  litert::qualcomm::QualcommOptions qualcomm_options(options_handle);
+  LITERT_RETURN_IF_ERROR(InitQnnOptions(qnn_options, qualcomm_options));
+
+  run_options_ = qnn_options;
+
+  // Manual mode: forward to the backend so a runtime mode change re-votes
+  // (same-mode is skipped there). Auto defers voting to Execute().
+  bool manual = false;
+  switch (qnn_manager_.GetOptions().GetBackendType()) {
+    case ::qnn::BackendType::kHtpBackend:
+      manual =
+          qnn_options.GetHtpPerformanceMode() !=
+              ::qnn::HtpPerformanceMode::kDefault &&
+          qnn_options.GetHtpPerfCtrlMode() == ::qnn::HtpPerfCtrlMode::kManual;
+      break;
+    case ::qnn::BackendType::kDspBackend:
+      manual =
+          qnn_options.GetDspPerformanceMode() !=
+              ::qnn::DspPerformanceMode::kDefault &&
+          qnn_options.GetDspPerfCtrlMode() == ::qnn::DspPerfCtrlMode::kManual;
+      break;
+    default:
+      break;
+  }
+  if (manual) {
+    (void)qnn_manager_.SetPerformanceMode(qnn_options);
+  }
+
   return {};
 }

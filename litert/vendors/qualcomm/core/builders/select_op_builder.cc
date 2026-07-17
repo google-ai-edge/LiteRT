@@ -3,8 +3,6 @@
 
 #include "litert/vendors/qualcomm/core/builders/select_op_builder.h"
 
-#include <vector>
-
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"

@@ -58,6 +58,8 @@ class HtpBackend : public QnnBackend {
 
   bool Init(const Options& options, std::optional<SocInfo> soc_info) override;
 
+  bool SetPerformanceMode(const Options& options) override;
+
   SocInfo GetSocInfo() { return soc_info_; }
 
  private:

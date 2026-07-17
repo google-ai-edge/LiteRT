@@ -1,0 +1,10 @@
+All files within the Broadcom directory are released under the following licensing terms.
+
+====================================================================
+Copyright: (c) 2026 Broadcom.  All Rights Reserved.
+The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
+This software is owned by Broadcom and licensed under Apache-2.0.
+
+SPDX-License-Identifier: Apache-2.0
+====================================================================
+

@@ -31,27 +31,30 @@ extern "C" {
 // Primitive types for elements in a tensor.
 // Matched to tensorflow/compiler/mlir/lite/core/c/tflite_types.h
 typedef enum {
-  kLiteRtElementTypeNone = 0,         // kTfLiteNoType,
-  kLiteRtElementTypeBool = 6,         // kTfLiteBool,
-  kLiteRtElementTypeInt2 = 20,        // kTfLiteInt2,
-  kLiteRtElementTypeInt4 = 18,        // kTfLiteInt4,
-  kLiteRtElementTypeInt8 = 9,         // kTfLiteInt8,
-  kLiteRtElementTypeInt16 = 7,        // kTfLiteInt16,
-  kLiteRtElementTypeInt32 = 2,        // kTfLiteInt32,
-  kLiteRtElementTypeInt64 = 4,        // kTfLiteInt64,
-  kLiteRtElementTypeUInt8 = 3,        // kTfLiteUInt8,
-  kLiteRtElementTypeUInt16 = 17,      // kTfLiteUInt16,
-  kLiteRtElementTypeUInt32 = 16,      // kTfLiteUInt32,
-  kLiteRtElementTypeUInt64 = 13,      // kTfLiteUInt64,
-  kLiteRtElementTypeFloat16 = 10,     // kTfLiteFloat16,
-  kLiteRtElementTypeBFloat16 = 19,    // kTfLiteBFloat16,
-  kLiteRtElementTypeFloat32 = 1,      // kTfLiteFloat32,
-  kLiteRtElementTypeFloat64 = 11,     // kTfLiteFloat64,
-  kLiteRtElementTypeComplex64 = 8,    // kTfLiteComplex64,
-  kLiteRtElementTypeComplex128 = 12,  // kTfLiteComplex128,
-  kLiteRtElementTypeTfResource = 14,  // kTfLiteResource,
-  kLiteRtElementTypeTfString = 5,     // kTfLiteString,
-  kLiteRtElementTypeTfVariant = 15,   // kTfLiteVariant,
+  kLiteRtElementTypeNone = 0,           // kTfLiteNoType,
+  kLiteRtElementTypeBool = 6,           // kTfLiteBool,
+  kLiteRtElementTypeInt2 = 20,          // kTfLiteInt2,
+  kLiteRtElementTypeInt4 = 18,          // kTfLiteInt4,
+  kLiteRtElementTypeInt8 = 9,           // kTfLiteInt8,
+  kLiteRtElementTypeInt16 = 7,          // kTfLiteInt16,
+  kLiteRtElementTypeInt32 = 2,          // kTfLiteInt32,
+  kLiteRtElementTypeInt64 = 4,          // kTfLiteInt64,
+  kLiteRtElementTypeUInt4 = 21,         // kTfLiteUInt4,
+  kLiteRtElementTypeUInt8 = 3,          // kTfLiteUInt8,
+  kLiteRtElementTypeUInt16 = 17,        // kTfLiteUInt16,
+  kLiteRtElementTypeUInt32 = 16,        // kTfLiteUInt32,
+  kLiteRtElementTypeUInt64 = 13,        // kTfLiteUInt64,
+  kLiteRtElementTypeFloat8E4M3FN = 22,  // kTfLiteFloat8E4M3FN,
+  kLiteRtElementTypeFloat8E5M2 = 23,    // kTfLiteFloat8E5M2,
+  kLiteRtElementTypeFloat16 = 10,       // kTfLiteFloat16,
+  kLiteRtElementTypeBFloat16 = 19,      // kTfLiteBFloat16,
+  kLiteRtElementTypeFloat32 = 1,        // kTfLiteFloat32,
+  kLiteRtElementTypeFloat64 = 11,       // kTfLiteFloat64,
+  kLiteRtElementTypeComplex64 = 8,      // kTfLiteComplex64,
+  kLiteRtElementTypeComplex128 = 12,    // kTfLiteComplex128,
+  kLiteRtElementTypeTfResource = 14,    // kTfLiteResource,
+  kLiteRtElementTypeTfString = 5,       // kTfLiteString,
+  kLiteRtElementTypeTfVariant = 15,     // kTfLiteVariant,
 } LiteRtElementType;
 
 /// Tensor type when its rank is dynamic.
@@ -81,15 +84,14 @@ typedef struct {
   LiteRtLayout layout;
 } LiteRtRankedTensorType;
 
+// `LiteRtRankedTensorType` embeds `LiteRtLayout`, whose layout is now identical
+// across MSVC and GCC/Clang (see litert/c/litert_layout.h), so this size no
+// longer diverges by compiler. The assert intentionally has no `_MSC_VER`
+// branch.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-#if !defined(_MSC_VER)
 static_assert(sizeof(LiteRtRankedTensorType) == 72,
               "LiteRtRankedTensorType size mismatch");
-#else   // !defined(_MSC_VER)
-static_assert(sizeof(LiteRtRankedTensorType) == 76,
-              "LiteRtRankedTensorType size mismatch");
-#endif  // !defined(_MSC_VER)
 static_assert(offsetof(LiteRtRankedTensorType, layout) == 4,
               "LiteRtRankedTensorType layout offset mismatch");
 #endif  // __cplusplus
@@ -179,6 +181,7 @@ static_assert(offsetof(LiteRtQuantizationBlockWise, block_size) == 16,
 // The identifier for quantization scheme type union.
 ///
 /// @note This concrete type is part of the public API and is ABI stable.
+// LINT.IfChange(quantization_type_id)
 typedef enum {
   // Tag for tensors without quantization.
   kLiteRtQuantizationNone = 0,
@@ -192,6 +195,7 @@ typedef enum {
   // [NOT IMPLEMENTED YET] Q-params across blocks of fixed size (e.g. 2048).
   kLiteRtQuantizationBlockWise = 3,
 } LiteRtQuantizationTypeId;
+// LINT.ThenChange(../cc/litert_model_types.h:quantization_type_id)
 // Get the identifier for the type of quantization for a given tensor.
 LiteRtStatus LiteRtGetQuantizationTypeId(LiteRtTensor tensor,
                                          LiteRtQuantizationTypeId* q_type_id);

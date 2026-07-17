@@ -264,6 +264,33 @@ TEST(LiteRtBuilderTest, CanBuildOpTest) {
   EXPECT_THAT(op->Outputs(), ElementsAre(&output_tensor_0));
 }
 
+TEST(LiteRtBuilderTest, BuildOpRejectsInvalidPointerArrays) {
+  LiteRtBuilderT builder;
+  LiteRtOp op;
+  EXPECT_EQ(LiteRtBuilderBuildOp(nullptr, kLiteRtOpCodeTflAdd,
+                                 /*num_inputs=*/0, nullptr,
+                                 /*num_outputs=*/0, nullptr, &op),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtBuilderBuildOp(&builder, kLiteRtOpCodeTflAdd,
+                                 /*num_inputs=*/0, nullptr,
+                                 /*num_outputs=*/0, nullptr, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtBuilderBuildOp(&builder, kLiteRtOpCodeTflAdd,
+                                 /*num_inputs=*/1, nullptr,
+                                 /*num_outputs=*/0, nullptr, &op),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtBuilderBuildOp(&builder, kLiteRtOpCodeTflAdd,
+                                 /*num_inputs=*/0, nullptr,
+                                 /*num_outputs=*/1, nullptr, &op),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LiteRtTensor null_tensor = nullptr;
+  EXPECT_EQ(LiteRtBuilderBuildOp(&builder, kLiteRtOpCodeTflAdd,
+                                 /*num_inputs=*/1, &null_tensor,
+                                 /*num_outputs=*/0, nullptr, &op),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
 TEST(LiteRtBuilderTest, BuildWeights) {
   static constexpr absl::string_view kData = "Nurburgring";
   const uint8_t* data = reinterpret_cast<const uint8_t*>(kData.data());
@@ -285,6 +312,31 @@ TEST(LiteRtBuilderTest, BuildWeights) {
                                              tensor, &weights));
   EXPECT_EQ(weights->Buffer().Size(), kData.size());
   EXPECT_EQ(weights->Buffer().StrView(), kData);
+}
+
+TEST(LiteRtBuilderTest, BuildWeightsRejectsInvalidPointers) {
+  LiteRtBuilderT builder;
+  LiteRtTensor tensor;
+  LiteRtRankedTensorType ranked_tensor_type = {
+      .element_type = kLiteRtElementTypeFloat32,
+      .layout = {.rank = 1, .dimensions = {1}}};
+  LITERT_ASSERT_OK(LiteRtBuilderBuildTensor(
+      &builder, kLiteRtRankedTensorType, ranked_tensor_type,
+      LiteRtUnrankedTensorType(), nullptr, kLiteRtQuantizationNone,
+      LiteRtQuantizationPerTensor(), LiteRtQuantizationPerChannel(),
+      LiteRtQuantizationBlockWise(), "", &tensor));
+
+  static constexpr uint8_t kData[] = {1};
+  LiteRtWeights weights;
+  EXPECT_EQ(LiteRtBuilderBuildWeights(nullptr, kData, sizeof(kData), tensor,
+                                      &weights),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtBuilderBuildWeights(&builder, nullptr, sizeof(kData), tensor,
+                                      &weights),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtBuilderBuildWeights(&builder, kData, sizeof(kData), tensor,
+                                      nullptr),
+            kLiteRtStatusErrorInvalidArgument);
 }
 
 TEST(LiteRtBuilderTest, BuildAddOpOption) {
@@ -337,6 +389,33 @@ TEST(LiteRtBuilderTest, BuildSubOpOption) {
                 .AsSubOptions()
                 ->fused_activation_function,
             0);
+}
+
+TEST(LiteRtBuilderTest, BuildScalarOpOptionsRejectNullPointers) {
+  LiteRtBuilderT builder;
+
+  auto& add = builder.BuildOp(kLiteRtOpCodeTflAdd, {}, {});
+  EXPECT_EQ(LiteRtBuilderBuildAddOpOption(&builder, &add, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+
+  auto& batch_matmul = builder.BuildOp(kLiteRtOpCodeTflBatchMatmul, {}, {});
+  bool adj_y = false;
+  bool asymmetric_quantize_input = true;
+  EXPECT_EQ(
+      LiteRtBuilderBuildBatchMatmulOpOption(&builder, &batch_matmul, nullptr,
+                                            &adj_y, &asymmetric_quantize_input),
+      kLiteRtStatusErrorInvalidArgument);
+
+  auto& conv = builder.BuildOp(kLiteRtOpCodeTflConv2d, {}, {});
+  uint32_t padding = 1;
+  int32_t stride_w = 1;
+  int32_t stride_h = 1;
+  int32_t dilation_w_factor = 1;
+  int32_t dilation_h_factor = 1;
+  EXPECT_EQ(LiteRtBuilderBuildConv2dOpOption(
+                &builder, &conv, &padding, &stride_w, &stride_h,
+                &dilation_w_factor, &dilation_h_factor, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
 }
 
 TEST(LiteRtBuilderTest, BuildBatchMatmulOpOption) {
@@ -428,6 +507,25 @@ TEST(LiteRtBuilderTest, BuildReshapeOpOption) {
       &builder, &op, new_shape.data(), new_shape.size()));
   auto* opts = litert::internal::GetTflOptions(op).AsReshapeOptions();
   EXPECT_THAT(opts->new_shape, ElementsAreArray(new_shape));
+}
+
+TEST(LiteRtBuilderTest, BuildReshapeOpOptionRejectsInvalidShapeArray) {
+  LiteRtBuilderT builder;
+
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflReshape, {}, {});
+  EXPECT_EQ(LiteRtBuilderBuildReshapeOpOption(
+                &builder, &op, /*new_shape=*/nullptr, /*new_shape_size=*/1),
+            kLiteRtStatusErrorInvalidArgument);
+
+  std::vector<int32_t> new_shape = {1, 2};
+  EXPECT_EQ(LiteRtBuilderBuildReshapeOpOption(&builder, &op, new_shape.data(),
+                                              /*new_shape_size=*/-1),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LITERT_ASSERT_OK(LiteRtBuilderBuildReshapeOpOption(
+      &builder, &op, /*new_shape=*/nullptr, /*new_shape_size=*/0));
+  auto* opts = litert::internal::GetTflOptions(op).AsReshapeOptions();
+  EXPECT_TRUE(opts->new_shape.empty());
 }
 
 TEST(LiteRtBuilderTest, BuildSumOpOption) {
@@ -808,6 +906,27 @@ TEST(LiteRtBuilderTest, BuildSqueezeOpOption) {
       &builder, &op, squeeze_dims.data(), squeeze_dims.size()));
   auto* opts = litert::internal::GetTflOptions(op).AsSqueezeOptions();
   EXPECT_THAT(opts->squeeze_dims, ElementsAreArray(squeeze_dims));
+}
+
+TEST(LiteRtBuilderTest, BuildSqueezeOpOptionRejectsInvalidDimsArray) {
+  LiteRtBuilderT builder;
+
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflSqueeze, {}, {});
+  EXPECT_EQ(
+      LiteRtBuilderBuildSqueezeOpOption(&builder, &op, /*squeeze_dims=*/nullptr,
+                                        /*num_squeeze_dims=*/1),
+      kLiteRtStatusErrorInvalidArgument);
+
+  std::vector<int32_t> squeeze_dims = {1, 2};
+  EXPECT_EQ(
+      LiteRtBuilderBuildSqueezeOpOption(&builder, &op, squeeze_dims.data(),
+                                        /*num_squeeze_dims=*/-1),
+      kLiteRtStatusErrorInvalidArgument);
+
+  LITERT_ASSERT_OK(LiteRtBuilderBuildSqueezeOpOption(
+      &builder, &op, /*squeeze_dims=*/nullptr, /*num_squeeze_dims=*/0));
+  auto* opts = litert::internal::GetTflOptions(op).AsSqueezeOptions();
+  EXPECT_TRUE(opts->squeeze_dims.empty());
 }
 
 }  // namespace

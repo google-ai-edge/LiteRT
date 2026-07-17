@@ -29,7 +29,7 @@ using litert::intel_openvino::IntelOpenVinoOptionsFromFlags;
 
 // Example command line usage:
 // ./your_binary \
-//   --intel_openvino_device_type=npu \
+//   --intel_openvino_graph_backends=0:npu \
 //   --intel_openvino_performance_mode=latency \
 //   --intel_openvino_configs_map="INFERENCE_PRECISION_HINT=f16,CACHE_DIR=/tmp/cache"
 
@@ -49,20 +49,25 @@ void ExampleIntelOpenVinoFlagsUsage(int argc, char** argv) {
 
   // Display the configured options
   std::cout << "Intel OpenVINO Configuration:\n";
-  std::cout << "  Device Type: ";
-  switch (options.GetDeviceType()) {
-    case kLiteRtIntelOpenVinoDeviceTypeCPU:
-      std::cout << "CPU";
-      break;
-    case kLiteRtIntelOpenVinoDeviceTypeGPU:
-      std::cout << "GPU";
-      break;
-    case kLiteRtIntelOpenVinoDeviceTypeNPU:
-      std::cout << "NPU";
-      break;
-    case kLiteRtIntelOpenVinoDeviceTypeAUTO:
-      std::cout << "AUTO";
-      break;
+  std::cout << "  Graph Type (partition 0): ";
+  auto graph_backend = options.GetGraphBackend(/*graph_index=*/0);
+  if (!graph_backend.HasValue()) {
+    std::cout << "(not set, defaults to NPU)";
+  } else {
+    switch (*graph_backend) {
+      case kLiteRtIntelOpenVinoGraphBackendCPU:
+        std::cout << "CPU";
+        break;
+      case kLiteRtIntelOpenVinoGraphBackendGPU:
+        std::cout << "GPU";
+        break;
+      case kLiteRtIntelOpenVinoGraphBackendNPU:
+        std::cout << "NPU";
+        break;
+      case kLiteRtIntelOpenVinoGraphBackendMax:
+        std::cout << "(invalid)";
+        break;
+    }
   }
   std::cout << "\n";
 

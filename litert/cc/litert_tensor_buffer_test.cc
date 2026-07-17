@@ -320,6 +320,18 @@ TEST(TensorBuffer, HostMemory) {
         std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)),
         0);
   }
+
+  LITERT_ASSERT_OK(tensor_buffer->Clear());
+
+  {
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        *tensor_buffer, TensorBuffer::LockMode::kRead);
+    ASSERT_TRUE(lock_and_addr);
+    std::vector<uint8_t> zero_data(sizeof(kTensorData), 0);
+    ASSERT_EQ(
+        std::memcmp(lock_and_addr->second, zero_data.data(), zero_data.size()),
+        0);
+  }
 }
 
 TEST(TensorBuffer, CreateManagedFromRequirements) {
@@ -576,6 +588,16 @@ TEST(TensorBuffer, Ion) {
         std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)),
         0);
   }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto ion_buf, tensor_buffer.GetIonBuf());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto tensor_buffer_from_ion,
+      TensorBuffer::CreateFromIonBuffer(env, kTensorType, ion_buf.addr,
+                                        ion_buf.fd, sizeof(kTensorData),
+                                        /*ion_buffer_offset=*/0));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto type_from_ion,
+                              tensor_buffer_from_ion.BufferType());
+  ASSERT_EQ(type_from_ion, kTensorBufferType);
 }
 
 TEST(TensorBuffer, DmaBuf) {
@@ -627,6 +649,16 @@ TEST(TensorBuffer, DmaBuf) {
         std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)),
         0);
   }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto dma_buf, tensor_buffer.GetDmaBuf());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto tensor_buffer_from_dmabuf,
+      TensorBuffer::CreateFromDmaBufBuffer(env, kTensorType, dma_buf.addr,
+                                           dma_buf.fd, sizeof(kTensorData),
+                                           /*dmabuf_buffer_offset=*/0));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto type_from_dmabuf,
+                              tensor_buffer_from_dmabuf.BufferType());
+  ASSERT_EQ(type_from_dmabuf, kTensorBufferType);
 }
 
 TEST(TensorBuffer, FastRpc) {
@@ -679,6 +711,16 @@ TEST(TensorBuffer, FastRpc) {
         std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)),
         0);
   }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto fastrpc_buf, tensor_buffer.GetFastRpcBuf());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto tensor_buffer_from_fastrpc,
+      TensorBuffer::CreateFromFastRpcBuffer(env, kTensorType, fastrpc_buf.addr,
+                                            fastrpc_buf.fd, sizeof(kTensorData),
+                                            /*fastrpc_buffer_offset=*/0));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto type_from_fastrpc,
+                              tensor_buffer_from_fastrpc.BufferType());
+  ASSERT_EQ(type_from_fastrpc, kTensorBufferType);
 }
 
 TEST(TensorBuffer, NotOwned) {

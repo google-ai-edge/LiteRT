@@ -164,7 +164,7 @@ bool HasQualcommOptions(const CompilationOptions& compilation_options) {
 }
 
 bool HasIntelOpenVinoOptions(const CompilationOptions& compilation_options) {
-  return compilation_options.intel_openvino_device_type >= 0 ||
+  return compilation_options.intel_openvino_graph_backend >= 0 ||
          compilation_options.intel_openvino_performance_mode >= 0 ||
          !compilation_options.intel_openvino_configs_map.empty();
 }
@@ -214,6 +214,7 @@ bool PopulateCompilationOptions(litert::Options& options,
 
   if (compilation_options.cpu_num_threads > 0 ||
       compilation_options.cpu_kernel_mode >= 0 ||
+      compilation_options.cpu_enable_ynnpack ||
       compilation_options.xnnpack_flags >= 0 ||
       !compilation_options.xnnpack_weight_cache_path.empty()) {
     auto cpu_options_or = options.GetCpuOptions();
@@ -227,6 +228,9 @@ bool PopulateCompilationOptions(litert::Options& options,
     if (compilation_options.cpu_kernel_mode >= 0) {
       cpu_options_or->SetKernelMode(static_cast<LiteRtCpuKernelMode>(
           compilation_options.cpu_kernel_mode));
+    }
+    if (compilation_options.cpu_enable_ynnpack) {
+      cpu_options_or->SetEnableYNNPack(true);
     }
     if (compilation_options.xnnpack_flags >= 0) {
       cpu_options_or->SetXNNPackFlags(
@@ -333,10 +337,11 @@ bool PopulateCompilationOptions(litert::Options& options,
       return false;
     }
     auto& intel_openvino_options = *intel_openvino_options_or;
-    if (compilation_options.intel_openvino_device_type >= 0) {
-      intel_openvino_options.SetDeviceType(
-          static_cast<LiteRtIntelOpenVinoDeviceType>(
-              compilation_options.intel_openvino_device_type));
+    if (compilation_options.intel_openvino_graph_backend >= 0) {
+      intel_openvino_options.SetGraphBackend(
+          /*graph_index=*/0,
+          static_cast<LiteRtIntelOpenVinoGraphBackend>(
+              compilation_options.intel_openvino_graph_backend));
     }
     if (compilation_options.intel_openvino_performance_mode >= 0) {
       intel_openvino_options.SetPerformanceMode(
@@ -358,21 +363,37 @@ size_t CompiledModelWrapper::ByteWidthOfDType(const std::string& dtype) {
   if (dtype == "float32") return 4;
   if (dtype == "int8") return 1;
   if (dtype == "int32") return 4;
+  if (dtype == "bool") return 1;
   return 0;  // Unknown type
 }
 
 // Constructor for CompiledModelWrapper.
 CompiledModelWrapper::CompiledModelWrapper(ExtendedModel model,
-                                           CompiledModel compiled)
-    : model_(std::move(model)), compiled_model_(std::move(compiled)) {}
+                                           CompiledModel compiled,
+                                           PyObject* environment)
+    : model_(std::move(model)),
+      compiled_model_(std::move(compiled)),
+      environment_(environment) {
+  if (environment_ && Py_IsInitialized()) {
+    Py_INCREF(environment_);
+  }
+}
 
 // Destructor for CompiledModelWrapper.
 CompiledModelWrapper::~CompiledModelWrapper() {
+  // Force destruction of C++ handles before releasing the environment.
+  compiled_model_ = litert::CompiledModel();
+  model_ = litert::ExtendedModel();
+
   // Release Python buffer reference if we're holding one
   // Check Py_IsInitialized to handle destruction during Python shutdown
   if (model_buffer_ && Py_IsInitialized()) {
     Py_DECREF(model_buffer_);
     model_buffer_ = nullptr;
+  }
+  if (environment_ && Py_IsInitialized()) {
+    Py_DECREF(environment_);
+    environment_ = nullptr;
   }
 }
 
@@ -426,7 +447,8 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
     return nullptr;
   }
 
-  return new CompiledModelWrapper(std::move(model), std::move(*compiled_or));
+  return new CompiledModelWrapper(std::move(model), std::move(*compiled_or),
+                                  environment_capsule);
 }
 
 // Converts a Python string or bytes object to a C string.
@@ -485,8 +507,8 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
     return nullptr;
   }
 
-  auto* wrapper =
-      new CompiledModelWrapper(std::move(model), std::move(*compiled_or));
+  auto* wrapper = new CompiledModelWrapper(
+      std::move(model), std::move(*compiled_or), environment_capsule);
   // Keep the Python buffer alive for the lifetime of the wrapper
   Py_INCREF(model_data);
   wrapper->model_buffer_ = model_data;

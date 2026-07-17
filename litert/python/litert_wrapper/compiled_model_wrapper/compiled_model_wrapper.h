@@ -34,6 +34,7 @@ struct CompilationOptions {
   bool gpu_enforce_f32 = false;
   bool gpu_share_constant_tensors = false;
   int cpu_kernel_mode = -1;
+  bool cpu_enable_ynnpack = false;
   int xnnpack_flags = -1;
   std::string xnnpack_weight_cache_path;
   bool enable_constant_tensor_sharing = false;
@@ -62,7 +63,7 @@ struct CompilationOptions {
   std::string qualcomm_saver_output_dir;
   int qualcomm_graph_io_tensor_mem_type = -1;
 
-  int intel_openvino_device_type = -1;
+  int intel_openvino_graph_backend = -1;
   int intel_openvino_performance_mode = -1;
   std::map<std::string, std::string> intel_openvino_configs_map;
 };
@@ -123,7 +124,8 @@ class CompiledModelWrapper {
       const CompilationOptions& compilation_options, std::string* out_error);
 
   CompiledModelWrapper(litert::ExtendedModel model,
-                       litert::CompiledModel compiled);
+                       litert::CompiledModel compiled,
+                       PyObject* environment_capsule);
 
   ~CompiledModelWrapper();
 
@@ -208,6 +210,8 @@ class CompiledModelWrapper {
 
   // Python buffer object to keep it alive for models created from buffer
   PyObject* model_buffer_ = nullptr;
+  // Python environment capsule to keep it alive
+  PyObject* environment_ = nullptr;
 };
 
 }  // namespace compiled_model_wrapper

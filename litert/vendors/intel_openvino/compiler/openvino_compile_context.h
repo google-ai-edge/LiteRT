@@ -36,9 +36,14 @@ class OpenVinoCompileContext {
   // no value the returned context holds the default configuration (NPU
   // device, LATENCY mode); otherwise it is populated from the contained
   // IntelOpenVinoOptions.
+  //
+  // If |graph_index| is non-negative and the options contain a per-graph
+  // override for that index, the device and any per-graph configs map
+  // entries override the model-wide values.
   static ::litert::Expected<OpenVinoCompileContext> Create(
       const ::litert::Expected< ::litert::intel_openvino::IntelOpenVinoOptions>&
-          opts);
+          opts,
+      int graph_index = -1);
 
   // If the target device is NPU, applies SoC-model-specific compilation
   // parameters (e.g. NPU_PLATFORM).  |soc_model| may be nullptr.
@@ -58,6 +63,12 @@ class OpenVinoCompileContext {
   std::string device_ = "NPU";
   ov::AnyMap configs_map_;
   bool eliminate_fq_after_matmul_ = false;
+  bool fuse_split_attention_to_sdpa_ = false;
+  // `sdpa_pad_kv_to_alignment_` is only meaningful when
+  // `fuse_split_attention_to_sdpa_` is true and enabled by default. It controls
+  // whether the `FuseSplitAttentionToSDPA` pass pads KV sequences up to the NPU
+  // SDPA kernel's required alignment when fusing.
+  bool sdpa_pad_kv_to_alignment_ = true;
 };
 
 }  // namespace openvino

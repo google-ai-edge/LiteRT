@@ -50,6 +50,7 @@ import statistics
 import sys
 import time
 
+import ml_dtypes
 import numpy as np
 
 import os # import gfile
@@ -244,6 +245,9 @@ def create_model_options(args, options, cpu_options, hardware_accel):
 def get_numpy_dtype(dtype_str):
   """Map LiteRT dtype string to numpy dtype."""
   mapping = {
+      'bfloat16': ml_dtypes.bfloat16,
+      'float8_e4m3fn': ml_dtypes.float8_e4m3fn,
+      'float8_e5m2': ml_dtypes.float8_e5m2,
       'float32': np.float32,
       'float16': np.float16,
       'int32': np.int32,

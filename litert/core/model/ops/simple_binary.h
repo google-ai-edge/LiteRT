@@ -155,15 +155,22 @@ inline void ReferenceBinaryGeneric(const T* input1_data,
               o_stride, o_shape, rank, op);
 }
 
-inline void ApplyActivation(float* output_data, size_t num_elements,
+template <typename T>
+inline void ApplyActivation(T* output_data, size_t num_elements,
                             tflite::ActivationFunctionType faf) {
   if (faf == tflite::ActivationFunctionType_RELU) {
     for (size_t i = 0; i < num_elements; ++i) {
-      output_data[i] = std::max(0.0f, output_data[i]);
+      if (output_data[i] < static_cast<T>(0.0f)) {
+        output_data[i] = static_cast<T>(0.0f);
+      }
     }
   } else if (faf == tflite::ActivationFunctionType_RELU6) {
     for (size_t i = 0; i < num_elements; ++i) {
-      output_data[i] = std::min(6.0f, std::max(0.0f, output_data[i]));
+      if (output_data[i] < static_cast<T>(0.0f)) {
+        output_data[i] = static_cast<T>(0.0f);
+      } else if (output_data[i] > static_cast<T>(6.0f)) {
+        output_data[i] = static_cast<T>(6.0f);
+      }
     }
   }
 }

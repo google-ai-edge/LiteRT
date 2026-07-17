@@ -19,13 +19,6 @@ litert/tools/flags/vendors/
 
 ## Available Flags
 
-### Device Configuration
-
-| Flag                           | Type | Default | Description           |
-| ------------------------------ | ---- | ------- | --------------------- |
-| `--intel_openvino_device_type` | enum | `npu`   | Target device (`cpu`, |
-:                                :      :         : `gpu`, `npu`, `auto`) :
-
 ### Performance Configuration
 
 Flag                                | Type | Default   | Description
@@ -38,28 +31,58 @@ Flag                           | Type   | Default | Description
 ------------------------------ | ------ | ------- | -----------
 `--intel_openvino_configs_map` | string | `""`    | Comma-separated key=value pairs for OpenVINO configuration properties (e.g., `INFERENCE_PRECISION_HINT=f16,CACHE_DIR=/tmp/cache`)
 
+### Per-Graph (Per-Partition) Overrides
+
+For multi-subgraph models (e.g. distinct `prefill` / `decode` signatures), each
+partition can be compiled for a different OpenVINO device and given partition-
+specific OpenVINO properties. The compiler plugin records the chosen device in a
+self-describing header on each partition's bytecode, so the dispatcher imports
+every partition on the device it was compiled for automatically.
+
+Flag                                 | Type   | Default | Description
+------------------------------------ | ------ | ------- | -----------
+`--intel_openvino_graph_backends`    | string | `""`    | Either a bare backend name (`cpu`, `gpu`, `npu`) applied to all partitions, or semicolon-separated `GRAPH_INDEX:BACKEND` entries (e.g. `0:npu;1:cpu`) for per-partition selection. Partitions without an entry default to NPU.
+`--intel_openvino_graph_configs_map` | string | `""`    | Semicolon-separated `GRAPH_INDEX:KEY=VALUE` entries (e.g. `1:INFERENCE_PRECISION_HINT=f32`). Merged on top of `--intel_openvino_configs_map` for the indicated graph.
+
+`GRAPH_INDEX` is the partition index produced by the LiteRT partitioner. To map
+a TFLite signature key to a partition index, resolve it via
+`LiteRtGetSignatureSubgraph` (or the equivalent C++/Python API) before passing
+the integer to these flags.
+
 ## Usage Examples
 
 ### Command Line Usage
 
 ```bash
-# Basic NPU inference
-./your_binary --intel_openvino_device_type=npu
+# Basic NPU inference (apply NPU to every partition)
+./your_binary --intel_openvino_graph_backends=npu
 
-# High throughput NPU inference
+# High throughput NPU inference (all partitions on NPU)
 ./your_binary \
-  --intel_openvino_device_type=npu \
+  --intel_openvino_graph_backends=npu \
   --intel_openvino_performance_mode=throughput
 
 # Advanced configuration with custom OpenVINO properties
 ./your_binary \
-  --intel_openvino_device_type=npu \
+  --intel_openvino_graph_backends=npu \
   --intel_openvino_configs_map="NPU_COMPILATION_MODE_PARAMS=compute-layers-with-higher-precision=Sigmoid,CACHE_DIR=/tmp/ov_cache"
 
-# GPU with low precision inference
+# GPU with low precision inference (all partitions on GPU)
 ./your_binary \
-  --intel_openvino_device_type=gpu \
+  --intel_openvino_graph_backends=gpu \
   --intel_openvino_configs_map="INFERENCE_PRECISION_HINT=f16"
+
+# AOT-compile a 2-signature model: partition 0 on NPU, partition 1 on CPU
+# with a per-partition precision hint
+apply_plugin_main \
+  --cmd=apply \
+  --model=/path/to/model.tflite \
+  --soc_manufacturer=IntelOpenVINO \
+  --soc_model=PTL \
+  --libs=/path/to/plugin/dir \
+  --o=/path/to/output.tflite \
+  --intel_openvino_graph_backends="0:npu;1:cpu" \
+  --intel_openvino_graph_configs_map="1:INFERENCE_PRECISION_HINT=f32"
 ```
 
 ### Programmatic Usage
@@ -78,7 +101,8 @@ int main(int argc, char** argv) {
     auto options = std::move(options_result.Value());
 
     // Use options to configure Intel OpenVINO
-    if (options.GetDeviceType() == kLiteRtIntelOpenVinoDeviceTypeNPU) {
+    auto backend = options.GetGraphBackend(/*graph_index=*/0);
+    if (backend && *backend == kLiteRtIntelOpenVinoGraphBackendNPU) {
       // Configure NPU-specific settings
     }
   }
@@ -89,7 +113,7 @@ int main(int argc, char** argv) {
 
 ## Flag Value Details
 
-### Device Types
+### Graph Backends
 
 -   **`cpu`**: Execute on Intel CPU (best compatibility)
 -   **`gpu`**: Execute on Intel GPU (good for parallel workloads)
@@ -123,8 +147,8 @@ performance_mode flag) - `NUM_STREAMS=4`: Number of parallel inference streams -
 The flags support automatic parsing and validation:
 
 ```cpp
-// Valid device type strings
-"cpu", "gpu", "npu", "auto"
+// Valid graph backend strings
+"cpu", "gpu", "npu"
 
 // Valid performance mode strings
 "latency", "throughput", "cumulative_throughput"

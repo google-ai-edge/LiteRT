@@ -19,6 +19,7 @@ limitations under the License.
 #include <sys/stat.h>
 
 #include <cstddef>
+#include <cstdlib>
 #include <fstream>
 #include <ios>
 #include <string>
@@ -26,8 +27,13 @@ limitations under the License.
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/options/litert_mediatek_options.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
+#include "litert/tools/flags/vendors/mediatek_flags.h"
+#include "litert/tools/flags/vendors/qualcomm_flags.h"
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/tools/benchmark/benchmark_model.h"
 #include "tflite/tools/benchmark/benchmark_params.h"
@@ -88,6 +94,13 @@ TEST_F(BenchmarkLiteRtModelTest, GetModelSizeFromPathSucceeded) {
   EXPECT_GE(listener.results_.model_size_mb(), 0);
 }
 
+TEST_F(BenchmarkLiteRtModelTest, DefaultParamsExposeXnnpackWeightCacheOptions) {
+  BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
+
+  EXPECT_TRUE(params.HasParam("xnnpack_weight_cache_file_path"));
+  EXPECT_EQ(params.Get<std::string>("xnnpack_weight_cache_file_path"), "");
+}
+
 TEST_F(BenchmarkLiteRtModelTest, CpuOnlyInitDoesNotProbeGpuAccelerator) {
 #if defined(LITERT_DISABLE_GPU)
   GTEST_SKIP() << "GPU accelerator auto-registration is disabled.";
@@ -106,7 +119,28 @@ TEST_F(BenchmarkLiteRtModelTest, CpuOnlyInitDoesNotProbeGpuAccelerator) {
   EXPECT_EQ(benchmark.Init(), kTfLiteOk);
   const std::string logs = testing::internal::GetCapturedStderr();
 
-  EXPECT_EQ(logs.find("Attempting to load GPU accelerator("), std::string::npos) << logs;
+  EXPECT_EQ(logs.find("Attempting to load GPU accelerator("), std::string::npos)
+      << logs;
+}
+
+TEST_F(BenchmarkLiteRtModelTest, BenchmarkWithXnnpackWeightCacheFilePath) {
+  BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
+  params.Set<std::string>("graph", kModelPath);
+  params.Set<std::string>("signature_to_run_for", kSignatureToRunFor);
+  params.Set<bool>("use_cpu", true);
+  params.Set<bool>("use_gpu", false);
+  params.Set<bool>("require_full_delegation", false);
+
+  std::string cache_file_path = ::testing::TempDir();
+  if (!cache_file_path.empty() && cache_file_path.back() != '/') {
+    cache_file_path.push_back('/');
+  }
+  cache_file_path += "litert_xnnpack_weight_cache_test.bin";
+  params.Set<std::string>("xnnpack_weight_cache_file_path", cache_file_path);
+
+  BenchmarkLiteRtModel benchmark = BenchmarkLiteRtModel(std::move(params));
+
+  EXPECT_EQ(benchmark.Init(), kTfLiteOk);
 }
 
 TEST_F(BenchmarkLiteRtModelTest, BenchmarkWithResultFilePath) {
@@ -156,9 +190,8 @@ TEST_F(BenchmarkLiteRtModelTest, BenchmarkWithResultFilePath) {
   EXPECT_FLOAT_EQ(
       result.latency_metrics().p95_ms(),
       listener.results_.inference_time_us().percentile(95) / 1000.0);
-  EXPECT_FLOAT_EQ(
-      result.latency_metrics().p5_ms(),
-      listener.results_.inference_time_us().percentile(5) / 1000.0);
+  EXPECT_FLOAT_EQ(result.latency_metrics().p5_ms(),
+                  listener.results_.inference_time_us().percentile(5) / 1000.0);
 
   // Verify memory metrics.
   EXPECT_EQ(result.memory_metrics().init_footprint_kb(),
@@ -239,6 +272,45 @@ TEST_F(BenchmarkLiteRtModelTest, BenchmarkWithInputLayerValueRange) {
     EXPECT_GE(data[i], 10.0f);
     EXPECT_LE(data[i], 20.0f);
   }
+}
+
+}  // namespace
+
+int Main(int argc, char** argv);
+
+namespace {
+
+TEST(BenchmarkLiteRtModelMainTest, MainFunctionParseFlags) {
+  using litert::mediatek::MediatekOptions;
+  using litert::qualcomm::QualcommOptions;
+  std::string graph_flag = std::string("--graph=") + kModelPath;
+  const char* argv[] = {
+      "benchmark_model",
+      graph_flag.c_str(),
+      "--use_cpu=true",
+      "--use_gpu=false",
+      "--require_full_delegation=false",
+      "--num_runs=1",
+      "--warmup_runs=0",
+      "--mediatek_enable_l1_cache_optimizations=true",
+      "--mediatek_performance_mode_type=turbo_boost",
+      "--qualcomm_htp_performance_mode=burst",
+  };
+  int argc = sizeof(argv) / sizeof(argv[0]);
+
+  absl::SetFlag(&FLAGS_mediatek_enable_l1_cache_optimizations, false);
+  absl::SetFlag(&FLAGS_mediatek_performance_mode_type,
+                MediatekOptions::PerformanceMode::kSustainedSpeed);
+  absl::SetFlag(&FLAGS_qualcomm_htp_performance_mode,
+                QualcommOptions::HtpPerformanceMode::kDefault);
+
+  EXPECT_EQ(Main(argc, const_cast<char**>(argv)), EXIT_SUCCESS);
+
+  EXPECT_TRUE(absl::GetFlag(FLAGS_mediatek_enable_l1_cache_optimizations));
+  EXPECT_EQ(absl::GetFlag(FLAGS_mediatek_performance_mode_type),
+            MediatekOptions::PerformanceMode::kTurboBoost);
+  EXPECT_EQ(absl::GetFlag(FLAGS_qualcomm_htp_performance_mode),
+            QualcommOptions::HtpPerformanceMode::kBurst);
 }
 
 }  // namespace

@@ -15,13 +15,16 @@ limitations under the License.
 
 #include "tensor/backends/tflite/tflite_flatbuffer_conversion.h"
 
+#include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <fstream>
 #include <ios>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -35,7 +38,9 @@ limitations under the License.
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
+#include "tensor/arithmetic_graph.h"
 #include "tensor/backends/tflite/arithmetic_tflite.h"
+#include "tensor/backends/tflite/linked_flat_hash_map.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
@@ -50,7 +55,6 @@ limitations under the License.
 #include "tflite/schema/mutable/schema_generated.h"
 
 namespace litert::tensor {
-
 namespace {
 
 static constexpr int kTfLiteSchemaVersion = 3;
@@ -62,6 +66,8 @@ static constexpr int kTfLiteSchemaVersion = 3;
 static constexpr size_t kFlatbufferPlaceholderValue = 0xfafafafafafafafa;
 
 static constexpr size_t kFlatbufferAppendedDataAlignment = 64;
+
+}  // namespace
 
 // Converts an operation type to its TFLite equivalent.
 absl::StatusOr<::tflite::TensorType> ToTfLite(const Type type) {
@@ -126,7 +132,7 @@ absl::StatusOr<Type> FromTfLite(const TfLiteType type) {
     case kTfLiteString:
       return absl::FailedPreconditionError("String type is not supported.");
     case kTfLiteBool:
-      return absl::FailedPreconditionError("Bool type is not supported.");
+      return Type::kBOOL;
     case kTfLiteInt16:
       return Type::kI16;
     case kTfLiteComplex64:
@@ -157,10 +163,17 @@ absl::StatusOr<Type> FromTfLite(const TfLiteType type) {
       return Type::kBF16;
     case kTfLiteInt2:
       return Type::kI2;
+    case kTfLiteFloat8E4M3FN:
+      return absl::FailedPreconditionError(
+          "Float8E4M3FN type is not supported.");
+    case kTfLiteFloat8E5M2:
+      return absl::FailedPreconditionError("Float8E5M2 type is not supported.");
   }
   return absl::UnimplementedError(
       "Type was not handled in the conversion from TFLite value.");
 }
+
+namespace {
 
 std::string DebugInfo(const graph::Tensor& tensor) {
   std::string dbg_str = "tensor {";
@@ -168,42 +181,43 @@ std::string DebugInfo(const graph::Tensor& tensor) {
 
   if (const auto& info = GetInfo(tensor); info.ok()) {
     if (!info->name.empty()) {
-      dbg_str += "name: ";
-      dbg_str += info->name;
+      absl::StrAppend(&dbg_str, "name: ", info->name);
       sep = ", ";
     }
     {
-      dbg_str += sep;
-      dbg_str += "type: ";
-      dbg_str += ToString(info->type);
+      absl::StrAppend(&dbg_str, sep, "type: ", ToString(info->type));
+      sep = ", ";
     }
     if (!info->shape.empty()) {
-      dbg_str += sep;
-      dbg_str += "shape: [";
+      absl::StrAppend(&dbg_str, sep, "shape: [");
       sep = "";
       for (int dim : info->shape) {
-        dbg_str += sep;
-        dbg_str += dim;
+        absl::StrAppend(&dbg_str, sep, dim);
         sep = ", ";
       }
-      dbg_str += ']';
+      absl::StrAppend(&dbg_str, "]");
       sep = ", ";
     }
   }
   {
-    dbg_str += sep;
-    dbg_str += "idx: ";
-    dbg_str += tensor.index;
+    absl::StrAppend(&dbg_str, sep, "idx: ", tensor.index);
+    sep = ", ";
   }
-  if (const auto& maybe_producer = GetProducer(tensor);
-      maybe_producer.ok() && *maybe_producer) {
-    dbg_str += sep;
-    dbg_str += "prod: ";
-    dbg_str += (*maybe_producer)->GetName();
+  if (tensor.group) {
+    absl::StrAppend(&dbg_str, sep,
+                    "created_at: ", tensor.group->loc.file_name(), ":",
+                    tensor.group->loc.line());
     sep = ", ";
   }
 
-  dbg_str += '}';
+  if (const auto& maybe_producer = GetProducer(tensor);
+
+      maybe_producer.ok() && *maybe_producer) {
+    absl::StrAppend(&dbg_str, sep, "prod: ", (*maybe_producer)->GetName());
+    sep = ", ";
+  }
+
+  absl::StrAppend(&dbg_str, "}");
   return dbg_str;
 }
 
@@ -264,6 +278,28 @@ absl::Status ModelFactory::Build() {
   model_.subgraphs.push_back(std::make_unique<tflite::SubGraphT>());
   tflite::SubGraphT& subgraph = *model_.subgraphs.back();
 
+  std::vector<std::shared_ptr<Buffer>> inline_parameter_buffers;
+  for (const graph::Operation* operation : execution_plan_) {
+    int parameter_input = -1;
+    if (operation->GetName() == "Fill") {
+      parameter_input = 0;
+    } else if (operation->GetName() == "Reshape" ||
+               operation->GetName() == "BroadcastTo" ||
+               operation->GetName() == "Range") {
+      parameter_input = 1;
+    } else if (operation->GetName() == "Slice") {
+      parameter_input = 2;
+    }
+    if (parameter_input < 0 || parameter_input >= operation->inputs.size()) {
+      continue;
+    }
+    LRT_TENSOR_ASSIGN_OR_RETURN(const graph::TensorInformation& parameter_info,
+                                GetInfo(operation->inputs[parameter_input]));
+    if (parameter_info.buffer) {
+      inline_parameter_buffers.push_back(parameter_info.buffer);
+    }
+  }
+
   size_t unnamed_input_idx = 0;
   size_t unnamed_output_idx = 0;
 
@@ -298,11 +334,19 @@ absl::Status ModelFactory::Build() {
     if (tensor_info.buffer && producer == nullptr) {
       auto [it, inserted] =
           buffers_.insert({tensor_info.buffer, BufferSerializationInfo{}});
+      if (std::find(inline_parameter_buffers.begin(),
+                    inline_parameter_buffers.end(),
+                    tensor_info.buffer) != inline_parameter_buffers.end()) {
+        it->second.inline_data = true;
+      }
       if (inserted) {
         it->second.index = buffer_list_.size() + 1;
+        it->second.external_buffer_id = GetExternalBufferId(tensor);
         buffer_list_.push_back(tensor_info.buffer);
       }
       t.buffer = it->second.index;
+      t.external_buffer =
+          it->second.external_buffer_id ? *it->second.external_buffer_id : 0;
     } else {
       t.buffer = 0;  // 0 means no buffer associated.
     }
@@ -310,14 +354,63 @@ absl::Status ModelFactory::Build() {
     LRT_TENSOR_ASSIGN_OR_RETURN(t.type, ToTfLite(tensor_info.type),
                                 _ << DebugInfo(tensor));
     if (tensor_info.quantization) {
-      LRT_TENSOR_ASSIGN_OR_RETURN(
-          const PerChannelAffineQuantization& tensor_quantization,
-          tensor_info.quantization->As<const PerChannelAffineQuantization>());
-      t.quantization = std::make_unique<tflite::QuantizationParametersT>();
-      t.quantization->scale = tensor_quantization.scales;
-      t.quantization->zero_point = tensor_quantization.zero_points;
-      t.quantization->quantized_dimension =
-          tensor_quantization.quantized_dimension;
+      if (auto pcq = tensor_info.quantization
+                         ->As<const PerChannelAffineQuantization>();
+          pcq.ok()) {
+        t.quantization = std::make_unique<tflite::QuantizationParametersT>();
+        t.quantization->scale = pcq->scales;
+        t.quantization->zero_point = pcq->zero_points;
+        t.quantization->quantized_dimension = pcq->quantized_dimension;
+      } else if (auto bwq = tensor_info.quantization
+                                ->As<const BlockwiseQuantization>();
+                 bwq.ok()) {
+        t.quantization = std::make_unique<tflite::QuantizationParametersT>();
+        t.quantization->quantized_dimension = bwq->quantized_dimension;
+
+        // Block quantization scales and zero points are passed as tensors.
+        std::vector<fp16_t> scales_f16(bwq->scales.begin(), bwq->scales.end());
+        auto scale_buffer = OwningCpuBuffer::Copy<Type::kFP16>(scales_f16);
+        auto [it, inserted] =
+            buffers_.insert({scale_buffer, BufferSerializationInfo{}});
+        if (inserted) {
+          it->second.index = buffer_list_.size() + 1;
+          buffer_list_.push_back(scale_buffer);
+        }
+        auto scale_tensor = std::make_unique<tflite::TensorT>();
+        scale_tensor->shape = {static_cast<int>(bwq->scales.size())};
+        scale_tensor->type = tflite::TensorType_FLOAT16;
+        scale_tensor->name = absl::StrCat(tensor_info.name, "_scales");
+        scale_tensor->buffer = it->second.index;
+        subgraph.tensors.push_back(std::move(scale_tensor));
+        int scale_tensor_idx = subgraph.tensors.size() - 1;
+
+        int zero_point_tensor_idx = -1;  // Default to 0 zero point.
+        if (!bwq->zero_points.empty()) {
+          auto zp_buffer = OwningCpuBuffer::Copy<Type::kI64>(bwq->zero_points);
+          auto [it, inserted] =
+              buffers_.insert({zp_buffer, BufferSerializationInfo{}});
+          if (inserted) {
+            it->second.index = buffer_list_.size() + 1;
+            buffer_list_.push_back(zp_buffer);
+          }
+          auto zp_tensor = std::make_unique<tflite::TensorT>();
+          zp_tensor->shape = {static_cast<int>(bwq->zero_points.size())};
+          zp_tensor->type = tflite::TensorType_INT64;
+          zp_tensor->name = absl::StrCat(tensor_info.name, "_zero_points");
+          zp_tensor->buffer = it->second.index;
+          subgraph.tensors.push_back(std::move(zp_tensor));
+          zero_point_tensor_idx = subgraph.tensors.size() - 1;
+        }
+
+        tflite::BlockwiseQuantizationT q_details;
+        q_details.scales = scale_tensor_idx;
+        q_details.zero_points = zero_point_tensor_idx;
+        q_details.block_size = bwq->block_size;
+        t.quantization->details.Set(std::move(q_details));
+      } else {
+        return absl::InvalidArgumentError(
+            "Unsupported quantization type for TFLite serialization.");
+      }
     }
   }
 
@@ -327,11 +420,35 @@ absl::Status ModelFactory::Build() {
     // [[maybe_unused]] OpSerializationInfo& build_info =
     // operations_[operation];
 
-    auto tflite_op = operation->GetExtension<graph::TfLiteOperation>();
+    const auto* tflite_op = operation->GetExtension<graph::TfLiteOperation>();
     if (tflite_op == nullptr) {
       return absl::InvalidArgumentError(
           absl::StrCat("Operation ", operation->GetName(),
                        " does not implement TfLiteOperation."));
+    }
+
+    if (auto composite_or = const_cast<graph::Operation*>(operation)
+                                ->As<graph::StableHLOCompositeOperation>();
+        composite_or.ok()) {
+      graph::StableHLOCompositeOperation& composite = composite_or.value();
+      if (composite.decomposition_outputs.empty()) {
+        return absl::FailedPreconditionError(
+            "StableHLO composite has no decomposition outputs.");
+      }
+      std::vector<TensorHandle> decomposition_outputs;
+      decomposition_outputs.reserve(composite.decomposition_outputs.size());
+      for (const graph::Tensor& output : composite.decomposition_outputs) {
+        decomposition_outputs.emplace_back(output);
+      }
+      std::vector<TensorHandle> decomposition_inputs;
+      decomposition_inputs.reserve(composite.decomposition_inputs.size());
+      for (const graph::Tensor& input : composite.decomposition_inputs) {
+        decomposition_inputs.emplace_back(input);
+      }
+      LRT_TENSOR_ASSIGN_OR_RETURN(
+          composite.decomposition_subgraph_index,
+          AddSubgraph(std::move(decomposition_inputs),
+                      std::move(decomposition_outputs)));
     }
 
     LRT_TENSOR_ASSIGN_OR_RETURN(graph::TfLiteOpBuildInfo build_info,
@@ -355,12 +472,17 @@ absl::Status ModelFactory::Build() {
     if (build_info.builtin_options.has_value()) {
       op.builtin_options = *build_info.builtin_options;
     }
+    if (build_info.builtin_options_2.has_value()) {
+      op.builtin_options_2 = std::move(*build_info.builtin_options_2);
+    }
     if (build_info.builtin_code == tflite::BuiltinOperator_CUSTOM) {
       if (build_info.custom_options != nullptr) {
         op.custom_options = *build_info.custom_options;
       }
     }
-    for (auto& input : operation->inputs) {
+    const auto& inputs =
+        build_info.inputs.empty() ? operation->inputs : build_info.inputs;
+    for (const auto& input : inputs) {
       const TensorSerializationInfo& info = tensors_[input];
       op.inputs.push_back(info.index);
     }
@@ -387,10 +509,16 @@ absl::Status ModelFactory::Build() {
   model_.buffers.reserve(buffer_list_.size() + 1);
   for (size_t i = model_.buffers.size(); i < buffer_list_.size() + 1; ++i) {
     model_.buffers.push_back(std::make_unique<tflite::BufferT>());
-    // If you leave these to 0, the builder won't include them in the final
-    // buffer and we won't be able to update them.
-    model_.buffers.back()->offset = kFlatbufferPlaceholderValue;
-    model_.buffers.back()->size = kFlatbufferPlaceholderValue;
+    auto& buffer_serialization_info = buffers_[buffer_list_[i - 1]];
+    // If buffer is external, set offset/size to 0 and let the builder not
+    // include them in the final buffer.
+    if (buffer_serialization_info.external_buffer_id.has_value()) {
+      model_.buffers.back()->offset = 0;
+      model_.buffers.back()->size = 0;
+    } else {
+      model_.buffers.back()->offset = kFlatbufferPlaceholderValue;
+      model_.buffers.back()->size = kFlatbufferPlaceholderValue;
+    }
   }
 
   return absl::OkStatus();
@@ -422,6 +550,10 @@ absl::Status ModelFactory::UpdateBufferData(
   auto current_buffer = buffer_list_.begin();
   for (size_t i = 1; i < buffers->size(); ++i, ++current_buffer) {
     BufferSerializationInfo& buffer_build_info = buffers_[*current_buffer];
+    if (buffer_build_info.external_buffer_id.has_value() ||
+        buffer_build_info.inline_data) {
+      continue;  // Stored outside the appended buffer region.
+    }
     const size_t buffer_size = current_buffer->get()->Lock().size();
     tflite::Buffer* fbb_buffer = buffers->GetMutableObject(i);
     allocation_size_ =
@@ -434,12 +566,36 @@ absl::Status ModelFactory::UpdateBufferData(
   return absl::OkStatus();
 }
 
+void ModelFactory::PrepareBufferData() {
+  for (const auto& [buffer, build_info] : buffers_) {
+    tflite::BufferT& flatbuffer = *model_.buffers[build_info.index];
+    if (build_info.external_buffer_id.has_value()) {
+      flatbuffer.data.clear();
+      flatbuffer.offset = 0;
+      flatbuffer.size = 0;
+    } else if (build_info.inline_data) {
+      LockedBufferSpan<const uint8_t> data =
+          buffer.get()->Lock().As<const uint8_t>();
+      flatbuffer.data.assign(data.begin(), data.end());
+      flatbuffer.offset = 0;
+      flatbuffer.size = 0;
+    } else {
+      flatbuffer.data.clear();
+      flatbuffer.offset = kFlatbufferPlaceholderValue;
+      flatbuffer.size = kFlatbufferPlaceholderValue;
+    }
+  }
+}
+
 absl::Status ModelFactory::WriteBufferData(std::ofstream& output_file) {
   if (!output_file) {
     return absl::InternalError(
         "Can't write buffer data to an invalid output file handle.");
   }
   for (const auto& [buffer, build_info] : buffers_) {
+    if (build_info.external_buffer_id.has_value() || build_info.inline_data) {
+      continue;  // Stored outside the appended buffer region.
+    }
     LockedBufferSpan<const char> data = buffer.get()->Lock().As<const char>();
     output_file.seekp(build_info.serialization_offset);
     output_file.write(data.data(), data.size());
@@ -452,29 +608,105 @@ absl::Status ModelFactory::WriteBufferData(std::ofstream& output_file) {
   return absl::OkStatus();
 }
 
-absl::Status ModelFactory::AddSubgraph(std::vector<TensorHandle> outputs) {
-  LRT_TENSOR_RETURN_IF_ERROR(Explore(std::move(outputs)));
-  LRT_TENSOR_RETURN_IF_ERROR(Build());
-  return absl::OkStatus();
+absl::StatusOr<int> ModelFactory::AddSubgraph(
+    std::vector<TensorHandle> outputs) {
+  LinkedFlatHashMap<graph::Tensor, TensorSerializationInfo> parent_tensors;
+  LinkedFlatHashMap<std::shared_ptr<graph::Operation>, OpSerializationInfo>
+      parent_operations;
+  std::vector<const graph::Operation*> parent_execution_plan;
+  tensors_.swap(parent_tensors);
+  operations_.swap(parent_operations);
+  execution_plan_.swap(parent_execution_plan);
+
+  const auto restore_parent_state = [&]() {
+    tensors_.swap(parent_tensors);
+    operations_.swap(parent_operations);
+    execution_plan_.swap(parent_execution_plan);
+  };
+
+  absl::Status status = Explore(std::move(outputs));
+  if (!status.ok()) {
+    restore_parent_state();
+    return status;
+  }
+  const int subgraph_index = model_.subgraphs.size();
+  status = Build();
+  restore_parent_state();
+  if (!status.ok()) {
+    return status;
+  }
+  return subgraph_index;
+}
+
+absl::StatusOr<int> ModelFactory::AddSubgraph(
+    std::vector<TensorHandle> inputs, std::vector<TensorHandle> outputs) {
+  std::vector<std::string> input_names;
+  input_names.reserve(inputs.size());
+  for (const TensorHandle& input : inputs) {
+    if (input.GetName().empty()) {
+      return absl::InvalidArgumentError(
+          "Explicit subgraph inputs must have names.");
+    }
+    input_names.emplace_back(input.GetName());
+  }
+
+  outputs.insert(outputs.end(), inputs.begin(), inputs.end());
+  LRT_TENSOR_ASSIGN_OR_RETURN(const int subgraph_index,
+                              AddSubgraph(std::move(outputs)));
+
+  tflite::SubGraphT& subgraph = *model_.subgraphs[subgraph_index];
+  std::vector<int32_t> ordered_inputs;
+  ordered_inputs.reserve(input_names.size());
+  for (const std::string& input_name : input_names) {
+    auto input_it = std::find_if(
+        subgraph.inputs.begin(), subgraph.inputs.end(), [&](int32_t index) {
+          return subgraph.tensors[index]->name == input_name;
+        });
+    if (input_it == subgraph.inputs.end()) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Explicit subgraph input is not a graph input: ", input_name));
+    }
+    ordered_inputs.push_back(*input_it);
+    subgraph.outputs.erase(std::remove(subgraph.outputs.begin(),
+                                       subgraph.outputs.end(), *input_it),
+                           subgraph.outputs.end());
+  }
+  subgraph.inputs = std::move(ordered_inputs);
+  return subgraph_index;
 }
 
 absl::Status ModelFactory::AddSignature(std::vector<TensorHandle> outputs,
                                         std::string name) {
-  LRT_TENSOR_RETURN_IF_ERROR(AddSubgraph(std::move(outputs)));
+  LRT_TENSOR_ASSIGN_OR_RETURN(const int subgraph_index,
+                              AddSubgraph(std::move(outputs)));
+  return AddSignatureDef(std::move(name), subgraph_index);
+}
+
+absl::Status ModelFactory::AddSignature(std::vector<TensorHandle> inputs,
+                                        std::vector<TensorHandle> outputs,
+                                        std::string name) {
+  LRT_TENSOR_ASSIGN_OR_RETURN(
+      const int subgraph_index,
+      AddSubgraph(std::move(inputs), std::move(outputs)));
+  return AddSignatureDef(std::move(name), subgraph_index);
+}
+
+absl::Status ModelFactory::AddSignatureDef(std::string name,
+                                           int subgraph_index) {
   auto signature_def = std::make_unique<tflite::SignatureDefT>();
   signature_def->signature_key = std::move(name);
-  signature_def->subgraph_index = model_.subgraphs.size() - 1;
-  for (const int& input_idx : model_.subgraphs.back()->inputs) {
+  signature_def->subgraph_index = subgraph_index;
+  for (const int& input_idx : model_.subgraphs[subgraph_index]->inputs) {
     const std::unique_ptr<tflite::TensorT>& tensor =
-        model_.subgraphs.back()->tensors[input_idx];
+        model_.subgraphs[subgraph_index]->tensors[input_idx];
     auto tensor_map = std::make_unique<tflite::TensorMapT>();
     tensor_map->name = tensor->name;
     tensor_map->tensor_index = input_idx;
     signature_def->inputs.emplace_back(std::move(tensor_map));
   }
-  for (const int& output_idx : model_.subgraphs.back()->outputs) {
+  for (const int& output_idx : model_.subgraphs[subgraph_index]->outputs) {
     const std::unique_ptr<tflite::TensorT>& tensor =
-        model_.subgraphs.back()->tensors[output_idx];
+        model_.subgraphs[subgraph_index]->tensors[output_idx];
     auto tensor_map = std::make_unique<tflite::TensorMapT>();
     tensor_map->name = tensor->name;
     tensor_map->tensor_index = output_idx;
@@ -484,7 +716,37 @@ absl::Status ModelFactory::AddSignature(std::vector<TensorHandle> outputs,
   return absl::OkStatus();
 }
 
+absl::Status ModelFactory::AddExternalBufferMap(
+    const ExternalBufferMap& external_buffer_map) {
+  for (const auto& [group_name, buffer_infos] : external_buffer_map) {
+    auto group = std::make_unique<tflite::ExternalBufferGroupT>();
+    group->name = group_name;
+    uint32_t group_id = model_.external_buffer_groups.size();
+    model_.external_buffer_groups.push_back(std::move(group));
+    for (const auto& info : buffer_infos) {
+      auto buffer = std::make_unique<tflite::ExternalBufferT>();
+      buffer->id = model_.external_buffers.size() + 1;  // ID 0 means no buffer.
+      buffer->group = group_id;
+      buffer->offset = info.offset;
+      buffer->length = info.length;
+      tensor_to_external_buffer_id_[info.tensor.GetRaw()] = buffer->id;
+      model_.external_buffers.push_back(std::move(buffer));
+    }
+  }
+  return absl::OkStatus();
+}
+
+std::optional<uint32_t> ModelFactory::GetExternalBufferId(
+    const graph::Tensor& tensor) const {
+  auto it = tensor_to_external_buffer_id_.find(tensor);
+  if (it == tensor_to_external_buffer_id_.end()) {
+    return std::nullopt;
+  }
+  return it->second;
+}
+
 absl::Status ModelFactory::Save(absl::string_view path) {
+  PrepareBufferData();
   flatbuffers::FlatBufferBuilder fbb;
   fbb.Finish(tflite::Model::Pack(fbb, &model_), tflite::ModelIdentifier());
   LRT_TENSOR_RETURN_IF_ERROR(UpdateBufferData(fbb));
@@ -500,6 +762,7 @@ absl::Status ModelFactory::Save(absl::string_view path) {
 }
 
 absl::StatusOr<std::vector<char>> ModelFactory::CreateFlatbuffer() {
+  PrepareBufferData();
   flatbuffers::FlatBufferBuilder fbb;
   fbb.Finish(tflite::Model::Pack(fbb, &model_), tflite::ModelIdentifier());
   LRT_TENSOR_RETURN_IF_ERROR(UpdateBufferData(fbb));
@@ -508,6 +771,9 @@ absl::StatusOr<std::vector<char>> ModelFactory::CreateFlatbuffer() {
   fb.resize(allocation_size_ + XNN_EXTRA_BYTES);
   std::memcpy(fb.data(), fbb.GetBufferPointer(), fbb.GetSize());
   for (const auto& [buffer, build_info] : buffers_) {
+    if (build_info.external_buffer_id.has_value() || build_info.inline_data) {
+      continue;
+    }
     LockedBufferSpan<const char> data = buffer.get()->Lock().As<const char>();
     std::memcpy(fb.data() + build_info.serialization_offset, data.data(),
                 data.size());

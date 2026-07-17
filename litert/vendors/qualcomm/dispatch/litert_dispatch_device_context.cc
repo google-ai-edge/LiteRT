@@ -20,13 +20,16 @@
 #include <memory>
 #include <utility>
 
+#include "HTP/QnnHtpMem.h"  // from @qairt
+#include "QnnCommon.h"  // from @qairt
+#include "QnnMem.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
@@ -36,10 +39,6 @@
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "HTP/QnnHtpMem.h"  // from @qairt
-#include "QnnCommon.h"  // from @qairt
-#include "QnnMem.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 using litert::Expected;
 using litert::Unexpected;
@@ -115,7 +114,6 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 
   void* buffer_host_addr;
   int buffer_fd;
-  (void)buffer_host_addr;
 
   switch (tensor_buffer_type) {
     case kLiteRtTensorBufferTypeFastRpc:
@@ -161,6 +159,17 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 
   QnnMemHtp_Descriptor_t mem_htp_descriptor = {};
   switch (qnn_manager_.GetOptions().GetBackendType()) {
+    case ::qnn::BackendType::kGpuBackend:
+      // QnnGpu imports the DMA-BUF fd as OpenCL memory; it does not accept
+      // QNN_MEM_TYPE_ION (returns QNN_MEM_ERROR_UNSUPPORTED_MEMTYPE, 8005).
+      if (tensor_buffer_type != kLiteRtTensorBufferTypeDmaBuf) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "GPU backend only supports DMA-BUF tensor buffers");
+      }
+      mem_descriptor.memType = QNN_MEM_TYPE_DMA_BUF;
+      mem_descriptor.dmaBufInfo =
+          Qnn_MemDmaBufInfo_t{buffer_fd, buffer_host_addr};
+      break;
     // DSP Backend only supports QNN_MEM_TYPE_ION.
     case ::qnn::BackendType::kDspBackend:
       mem_descriptor.memType = QNN_MEM_TYPE_ION;

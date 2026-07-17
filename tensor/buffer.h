@@ -84,14 +84,22 @@ class LockedBufferSpan {
     return LockedBufferSpan<U>(std::move(data_), bytes_);
   }
 
-  T* data() const { return reinterpret_cast<T*>(data_.get()); }
+  T* data() const& { return reinterpret_cast<T*>(data_.get()); }
   size_t size() const { return bytes_ / sizeof(T); }
-  T* begin() { return data(); }
-  T* end() { return data() + size(); }
-  const T* begin() const { return data(); }
-  const T* end() const { return data() + size(); }
-  const T* cbegin() const { return data(); }
-  const T* cend() const { return data() + size(); }
+  T* begin() & { return data(); }
+  T* end() & { return data() + size(); }
+  const T* begin() const& { return data(); }
+  const T* end() const& { return data() + size(); }
+  const T* cbegin() const& { return data(); }
+  const T* cend() const& { return data() + size(); }
+
+  // We delete these overloads to prevent users from keeping dangling references
+  // to data by using one-liners that lock a buffer and get the data at once.
+  T* data() const&& = delete;
+  const T* begin() const&& = delete;
+  const T* end() const&& = delete;
+  const T* cbegin() const&& = delete;
+  const T* cend() const&& = delete;
 
  private:
   std::unique_ptr<MaybeConstByte, std::function<void(MaybeConstByte*)>> data_;
@@ -372,7 +380,8 @@ class OwningCpuBuffer : public Buffer {
     LITERT_TENSOR_BUFFER_OP_AS_CASE(OP, BF16, __VA_ARGS__); \
     case Type::kUnknown:                                    \
       return nullptr;                                       \
-  }
+  }                                                         \
+  return nullptr;  // Some compilers complain even if we handle all cases.
 
   // Allocates a buffer that can hold `count` elements.
   template <Type type>
@@ -414,13 +423,13 @@ class OwningCpuBuffer : public Buffer {
     using NativeType = typename NativeStorage<type>::type;
     constexpr Type seq_type =
         ApiType<std::decay_t<decltype(*std::begin(seq))>>::value;
-    std::shared_ptr<OwningCpuBuffer> copied_data = Allocate<type>(size(seq));
+    const size_t num_elements =
+        size(seq) * NativeStorage<seq_type>::kNumElements;
+    std::shared_ptr<OwningCpuBuffer> copied_data = Allocate<type>(num_elements);
     if constexpr (type == seq_type) {
       std::copy(begin(seq), end(seq), copied_data->Span<NativeType>().data());
     } else {
-      std::transform(begin(seq), end(seq),
-                     copied_data->Span<NativeType>().data(),
-                     Conversion<type, seq_type>::Call);
+      Convert(seq, copied_data->Span<NativeType>()).IgnoreError();
     }
     return copied_data;
   }
@@ -456,7 +465,11 @@ class OwningCpuBuffer : public Buffer {
     using std::begin;
     using std::end;
     using std::size;
-    std::shared_ptr<OwningCpuBuffer> copied_data = Allocate<type>(size(seq));
+    constexpr Type seq_type =
+        ApiType<std::decay_t<decltype(*std::begin(seq))>>::value;
+    const size_t num_elements =
+        size(seq) * NativeStorage<seq_type>::kNumElements;
+    std::shared_ptr<OwningCpuBuffer> copied_data = Allocate<type>(num_elements);
     std::transform(begin(seq), end(seq), copied_data->Span<NativeType>().data(),
                    std::forward<F>(transform));
     return copied_data;

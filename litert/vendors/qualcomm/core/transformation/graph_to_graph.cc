@@ -14,13 +14,16 @@
 #include "litert/vendors/qualcomm/core/transformation/mask.h"
 #include "litert/vendors/qualcomm/core/transformation/matmul_convert.h"
 #include "litert/vendors/qualcomm/core/transformation/mha_to_sha.h"
+#include "litert/vendors/qualcomm/core/transformation/rotation_quant.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 
 namespace qnn {
 
 namespace {
 
-constexpr size_t kQnnOpCodeSize = static_cast<size_t>(QnnOpCode::kUnknown);
+// We add 1 to include `kUnknown` in the table size, as custom ops are mapped to
+// `kUnknown` and will look up the table during pattern matching.
+constexpr size_t kQnnOpCodeSize = static_cast<size_t>(QnnOpCode::kUnknown) + 1;
 
 std::vector<size_t> CreateBadMatchTable(
     const std::vector<QnnOpCode>& pattern_ops) {
@@ -319,5 +322,21 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
       QnnOpCode::kTranspose,
   };
   Transform(validate_op_config, ops, tensor_pool, attn, OptimizeMHAAttn);
+
+  // FC -> Hadamard Transform
+  const std::vector<QnnOpCode> fc = {
+      QnnOpCode::kFullyConnected,
+  };
+  Transform(validate_op_config, ops, tensor_pool, fc,
+            ConvertFcToHadamardTransform);
+
+  // Non-power-of-two Hadamard Transform
+  const std::vector<QnnOpCode> hadamard_transform = {
+      QnnOpCode::kReshape,
+      QnnOpCode::kHadamardTransform,
+      QnnOpCode::kReshape,
+  };
+  Transform(validate_op_config, ops, tensor_pool, hadamard_transform,
+            ParallelizeHadamardTransform);
 }
 }  // namespace qnn

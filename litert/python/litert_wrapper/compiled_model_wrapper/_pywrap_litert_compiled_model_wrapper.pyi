@@ -177,6 +177,7 @@ def CreateCompiledModelFromFile(
         gpu_enforce_f32: bool = ...,
         gpu_share_constant_tensors: bool = ...,
         cpu_kernel_mode: int = ...,
+        cpu_enable_ynnpack: bool = ...,
         xnnpack_flags: int = ...,
         xnnpack_weight_cache_path: str = ...,
         enable_constant_tensor_sharing: bool = ...,
@@ -203,7 +204,7 @@ def CreateCompiledModelFromFile(
         qualcomm_backend: int = ...,
         qualcomm_saver_output_dir: str = ...,
         qualcomm_graph_io_tensor_mem_type: int = ...,
-        intel_openvino_device_type: int = ...,
+        intel_openvino_graph_backend: int = ...,
         intel_openvino_performance_mode: int = ...,
         intel_openvino_configs_map: Dict[str, str] = ...,
 ) -> CompiledModelWrapper:
@@ -228,6 +229,7 @@ def CreateCompiledModelFromBuffer(
         gpu_enforce_f32: bool = ...,
         gpu_share_constant_tensors: bool = ...,
         cpu_kernel_mode: int = ...,
+        cpu_enable_ynnpack: bool = ...,
         xnnpack_flags: int = ...,
         xnnpack_weight_cache_path: str = ...,
         enable_constant_tensor_sharing: bool = ...,
@@ -254,7 +256,7 @@ def CreateCompiledModelFromBuffer(
         qualcomm_backend: int = ...,
         qualcomm_saver_output_dir: str = ...,
         qualcomm_graph_io_tensor_mem_type: int = ...,
-        intel_openvino_device_type: int = ...,
+        intel_openvino_graph_backend: int = ...,
         intel_openvino_performance_mode: int = ...,
         intel_openvino_configs_map: Dict[str, str] = ...,
 ) -> CompiledModelWrapper:

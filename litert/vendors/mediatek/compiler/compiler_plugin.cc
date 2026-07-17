@@ -133,6 +133,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflMinimum,
     kLiteRtOpCodeTflTile,
     kLiteRtOpCodeTflUnpack,
+    kLiteRtOpCodeTflLess,
     kLiteRtOpCodeShloComposite,
     kLiteRtOpCodeTflL2Normalization,
 };

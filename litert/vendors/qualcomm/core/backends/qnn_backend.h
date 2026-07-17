@@ -38,6 +38,11 @@ class QnnBackend {
   virtual bool Init(const Options& options,
                     std::optional<::qnn::SocInfo> soc_info) = 0;
 
+  // Update the HTP/DSP performance mode and re-apply upvote with the new
+  // config. Passing options with kDefault resets to the default (low-power)
+  // state.
+  virtual bool SetPerformanceMode(const Options& options) { return true; }
+
   Qnn_BackendHandle_t GetBackendHandle();
 
   Qnn_DeviceHandle_t GetDeviceHandle();

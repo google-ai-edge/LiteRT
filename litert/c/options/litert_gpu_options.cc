@@ -14,6 +14,7 @@
 
 #include "litert/c/options/litert_gpu_options.h"
 
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <optional>
@@ -95,6 +96,9 @@ struct LrtGpuOptions {
   // Set to true to use Metal argument buffers.
   std::optional<bool> use_metal_argument_buffers;
 
+  // Set to true to use Metal residency sets to prevent memory swapping.
+  std::optional<bool> enable_metal_residency_set;
+
   // Added in version 2.0.2a1.
   std::optional<LiteRtGpuWaitType> wait_type;
 
@@ -164,6 +168,10 @@ struct LrtGpuOptions {
   // If > 0, specifies the kernel (op) batch size, for a flush.
   // Only for OpenCL backend.
   std::optional<int> kernel_batch_size;
+
+  // Added in version 2.1.7.
+  // Pointer to SharedTensorMaps to share pre-loaded weights between models.
+  std::optional<void*> shared_tensor_maps;
 };
 
 LiteRtStatus LrtCreateGpuOptions(LrtGpuOptions** options) {
@@ -212,6 +220,11 @@ LiteRtStatus LrtGetOpaqueGpuOptionsData(const LrtGpuOptions* options,
   }
   if (options->kernel_batch_size.has_value()) {
     ss << "kernel_batch_size = " << options->kernel_batch_size.value() << "\n";
+  }
+  if (options->shared_tensor_maps.has_value() &&
+      *(options->shared_tensor_maps) != nullptr) {
+    ss << "shared_tensor_maps = "
+       << reinterpret_cast<int64_t>(*(options->shared_tensor_maps)) << "\n";
   }
   if (options->precision.has_value()) {
     ss << "precision = " << static_cast<int>(options->precision.value())
@@ -273,6 +286,11 @@ LiteRtStatus LrtGetOpaqueGpuOptionsData(const LrtGpuOptions* options,
   if (options->use_metal_argument_buffers.has_value()) {
     ss << "use_metal_argument_buffers = "
        << (options->use_metal_argument_buffers.value() ? "true" : "false")
+       << "\n";
+  }
+  if (options->enable_metal_residency_set.has_value()) {
+    ss << "enable_metal_residency_set = "
+       << (options->enable_metal_residency_set.value() ? "true" : "false")
        << "\n";
   }
   if (options->wait_type.has_value()) {
@@ -374,6 +392,10 @@ LiteRtStatus LrtCreateGpuOptionsFromToml(const char* toml_string,
           auto res = ParseTomlInt(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
           (*options)->kernel_batch_size = *res;
+        } else if (key == "shared_tensor_maps") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->shared_tensor_maps = reinterpret_cast<void*>(*res);
         } else if (key == "precision") {
           auto res = ParseTomlInt(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
@@ -427,6 +449,10 @@ LiteRtStatus LrtCreateGpuOptionsFromToml(const char* toml_string,
           auto res = ParseTomlBool(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
           (*options)->use_metal_argument_buffers = *res;
+        } else if (key == "enable_metal_residency_set") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->enable_metal_residency_set = *res;
         } else if (key == "wait_type") {
           auto res = ParseTomlInt(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
@@ -679,6 +705,14 @@ LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsSharedTensorMaps(
+    LrtGpuOptions* gpu_options, void* shared_tensor_maps) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->shared_tensor_maps = shared_tensor_maps;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus
 LrtSetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
     LrtGpuOptions* gpu_options, int num_steps_of_command_buffer_preparations) {
@@ -694,6 +728,14 @@ LiteRtStatus LrtSetGpuOptionsUseMetalArgumentBuffers(
   if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
 
   gpu_options->use_metal_argument_buffers = use_metal_argument_buffers;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetGpuOptionsMetalResidencySet(LrtGpuOptions* gpu_options,
+                                               bool enable) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->enable_metal_residency_set = enable;
   return kLiteRtStatusOk;
 }
 
@@ -1046,6 +1088,17 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSharedTensorMaps(
+    void** shared_tensor_maps, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(shared_tensor_maps,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`shared_tensor_maps` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *shared_tensor_maps = options->shared_tensor_maps.value_or(nullptr);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus
 LrtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
     int* num_steps_of_command_buffer_preparations,
@@ -1069,6 +1122,16 @@ LiteRtStatus LrtGetGpuOptionsUseMetalArgumentBuffers(
       << "`options` cannot be null.";
   *use_metal_argument_buffers =
       options->use_metal_argument_buffers.value_or(false);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetGpuOptionsMetalResidencySet(const LrtGpuOptions* options,
+                                               bool* enabled) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *enabled = options->enable_metal_residency_set.value_or(false);
   return kLiteRtStatusOk;
 }
 

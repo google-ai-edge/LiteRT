@@ -58,7 +58,7 @@ ABSL_FLAG(bool, quiet, false, "Minimize logging.");
 ABSL_FLAG(std::string, backend, "cpu",
           "Which backend to use as the \"actual\".");
 
-ABSL_FLAG(bool, cpu_hint_fully_delegated, false,
+ABSL_FLAG(bool, cpu_hint_fully_delegated, true,
           "Whether to hint at fully delegating to a single delegate for CPU.");
 
 ABSL_FLAG(std::string, dispatch_dir, "",
@@ -320,19 +320,23 @@ int AtsConf::GetSeedForParams(absl::string_view name) const {
 }
 
 bool AtsConf::ShouldRegister(const std::string& name) const {
-  const bool include =
-      pos_re_.empty() ||
-      std::any_of(pos_re_.begin(), pos_re_.end(), [&name](const auto& re) {
-        return std::regex_search(name, re);
-      });
-  const bool exclude = std::any_of(
-      neg_re_.begin(), neg_re_.end(),
-      [&name](const auto& re) { return std::regex_search(name, re); });
-  return include && !exclude;
+  return ShouldRegister(absl::string_view(name));
 };
 
 bool AtsConf::ShouldRegister(absl::string_view name) const {
-  return ShouldRegister(std::string(name));
+  const bool include =
+      pos_re_.empty() ||
+      std::any_of(pos_re_.begin(), pos_re_.end(), [&name](const auto& re) {
+        return std::regex_search(name.data(), name.data() + name.size(), re);
+      });
+  if (!include) {
+    return false;
+  }
+  const bool exclude =
+      std::any_of(neg_re_.begin(), neg_re_.end(), [&name](const auto& re) {
+        return std::regex_search(name.data(), name.data() + name.size(), re);
+      });
+  return !exclude;
 }
 
 }  // namespace litert::testing

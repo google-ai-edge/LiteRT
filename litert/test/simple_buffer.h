@@ -36,7 +36,9 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_rng.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
@@ -44,6 +46,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/test/tflite_half_traits.h"
 #include "tflite/types/half.h"
@@ -95,12 +98,12 @@ class SimpleBuffer {
   using CView = View<const T>;
 
   // Create a buffer with the given tensor type.
-  static Expected<SimpleBuffer> Create(RankedTensorType tensor_type) {
+  static Expected<SimpleBuffer> Create(RankedTensorType tensor_type,
+                                       const Environment* env = nullptr) {
     LITERT_ASSIGN_OR_RETURN(const size_t bytes, tensor_type.Bytes());
     auto data_ptr = MakeAlloc(bytes);
-    LITERT_ASSIGN_OR_RETURN(auto env, Environment::Create({}));
-    return SimpleBuffer(std::move(data_ptr), std::move(env),
-                        std::move(tensor_type), bytes);
+    return SimpleBuffer(std::move(data_ptr), env, std::move(tensor_type),
+                        bytes);
   }
 
   // Create buffer with the given shape and type.
@@ -188,6 +191,14 @@ class SimpleBuffer {
                              std::optional<size_t> num_elements = {}) {
     if constexpr (std::is_same_v<T, tflite::half>) {
       return CallHalf<RandomTensorFunctor>(b, rng, start, num_elements, *this);
+    } else if constexpr (std::is_same_v<T, litert::tensor::bf16_t>) {
+      return CallBfloat16<RandomTensorFunctor>(b, rng, start, num_elements,
+                                               *this);
+    } else if constexpr (sizeof(T) == 1 && !std::is_same_v<T, int8_t> &&
+                         !std::is_same_v<T, uint8_t> &&
+                         !std::is_same_v<T, bool>) {
+      return b.Call<int8_t, RandomTensorFunctor>(rng, start, num_elements,
+                                                 *this);
     } else {
       return b.Call<T, RandomTensorFunctor>(rng, start, num_elements, *this);
     }
@@ -208,6 +219,9 @@ class SimpleBuffer {
                                                   *this);
     } else if (Type().ElementType() == ElementType::Float16) {
       return CallHalf<RandomTensorFunctor>(b, rng, start, num_elements, *this);
+    } else if (Type().ElementType() == ElementType::BFloat16) {
+      return CallBfloat16<RandomTensorFunctor>(b, rng, start, num_elements,
+                                               *this);
     }
     // TODO: Add support for other types.
     return Error(kLiteRtStatusErrorInvalidArgument, "Unsupported element type");
@@ -266,8 +280,11 @@ class SimpleBuffer {
   // Create a new native tensor buffer from this buffer which points to the
   // underlying host memory.
   Expected<TensorBuffer> SpawnTensorBuffer() const {
-    return TensorBuffer::CreateFromHostMemory(env_, tensor_type_, buffer_.get(),
-                                              size_in_bytes_);
+    if (!env_.has_value()) {
+      LITERT_ASSIGN_OR_RETURN(env_, Environment::Create({}));
+    }
+    return TensorBuffer::CreateFromHostMemory(*env_, tensor_type_,
+                                              buffer_.get(), size_in_bytes_);
   }
 
   // Size in bytes of the underlying buffer.
@@ -310,12 +327,15 @@ class SimpleBuffer {
   SimpleBuffer& operator=(const SimpleBuffer&) = delete;
 
  private:
-  SimpleBuffer(LiteRtAlignedMem buffer, Environment env,
+  SimpleBuffer(LiteRtAlignedMem buffer, const Environment* env,
                RankedTensorType tensor_type, size_t size_in_bytes)
       : buffer_(std::move(buffer)),
-        env_(std::move(env)),
         tensor_type_(std::move(tensor_type)),
-        size_in_bytes_(size_in_bytes) {}
+        size_in_bytes_(size_in_bytes) {
+    if (env != nullptr) {
+      env_ = Environment::WrapCObject(env->GetHolder(), OwnHandle::kNo);
+    }
+  }
 
   struct RandomTensorFunctor {
     template <typename Gen, typename Rng>
@@ -332,7 +352,7 @@ class SimpleBuffer {
   };
 
   LiteRtAlignedMem buffer_;
-  Environment env_;
+  mutable std::optional<Environment> env_;
   RankedTensorType tensor_type_;
   size_t size_in_bytes_;
 };

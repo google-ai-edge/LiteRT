@@ -38,6 +38,8 @@ namespace gt = litert::google_tensor;
 
 namespace {
 
+constexpr char kPerformanceModeKey[] = "edgetpu_performance_mode";
+
 LiteRtStatus ToThrNodeType(LiteRtDispatchNodeType node_type,
                            ThrNodeType& thr_node_type) {
   switch (node_type) {
@@ -78,15 +80,27 @@ LiteRtStatus LiteRtDispatchGraphT::Create(
 #endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
 
   // Apply Google Tensor specific options.
-  constexpr char kEdgetpuPerformanceMode[] = "edgetpu_performance_mode";
   if (const auto& options = device_context->google_tensor_options();
       options.has_value() && options->performance_mode.has_value()) {
-    // Ignore the return value as this is unsupported on older runtime.
-    if (graph->AnnotateGraph(
-            kEdgetpuPerformanceMode,
-            std::to_string(static_cast<int>(*options->performance_mode))
-                .c_str()) != kLiteRtStatusOk) {
-      LITERT_LOG(LITERT_WARNING, "Failed to apply edgetpu_performance_mode.");
+    if (GoogleTensorSouthBoundFeatureSupported(
+            GoogleTensorSouthBoundFeature::kPerformanceModeAnnotation)) {
+      // TODO: b/520090381 - Use warning status/log macro on failure when
+      // available.
+      if (graph->AnnotateGraph(
+              kPerformanceModeKey,
+              std::to_string(static_cast<int>(*options->performance_mode))
+                  .c_str()) != kLiteRtStatusOk) {
+        LITERT_LOG(LITERT_WARNING, "Failed to apply edgetpu_performance_mode.");
+      }
+    } else {
+      LITERT_LOG(
+          LITERT_WARNING,
+          "Skipped applying edgetpu_performance_mode (%s) - unsupported "
+          "feature on older southbound runtime version (got: %d.%d, "
+          "requires: >=0.18).",
+          std::to_string(static_cast<int>(*options->performance_mode)).c_str(),
+          GoogleTensorSouthBoundMajorVersion(),
+          GoogleTensorSouthBoundMinorVersion());
     }
   }
 

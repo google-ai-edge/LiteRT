@@ -184,6 +184,34 @@ TEST(LiteRtQualcommOptionsTest, DspPerformanceMode) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, HtpPerfCtrlMode) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetHtpPerfCtrlMode(
+      qualcomm_options, kLiteRtQualcommHtpPerfCtrlModeAuto));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetHtpPerfCtrlMode(),
+            QualcommOptions::HtpPerfCtrlMode::kAuto);
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, DspPerfCtrlMode) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetDspPerfCtrlMode(
+      qualcomm_options, kLiteRtQualcommDspPerfCtrlModeAuto));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetDspPerfCtrlMode(),
+            QualcommOptions::DspPerfCtrlMode::kAuto);
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, IrJsonDir) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -273,6 +301,20 @@ TEST(LiteRtQualcommOptionsTest, SaverOutputDir) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, SchematicDir) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsSetSchematicDir(qualcomm_options, "test_dir"));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetSchematicDir(), "test_dir");
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+
 TEST(LiteRtQualcommOptionsTest, GraphIOTensorMemType) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -312,6 +354,49 @@ TEST(LiteRtQualcommOptionsTest, DumpTensorIds) {
   for (size_t i = 0; i < 3; i++) {
     EXPECT_EQ(parsed.GetDumpTensorIds()[i], test_ids[i]);
   }
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, CustomOpPackageSetGet) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetCustomOpPackage(
+      qualcomm_options, "pkg", "provider", "compile.so", "dispatch.so", "HTP"));
+
+  const char* name = nullptr;
+  const char* interface_provider = nullptr;
+  const char* compile_package_path = nullptr;
+  const char* dispatch_package_path = nullptr;
+  const char* target = nullptr;
+  LITERT_ASSERT_OK(LrtQualcommOptionsGetCustomOpPackage(
+      qualcomm_options, &name, &interface_provider, &compile_package_path,
+      &dispatch_package_path, &target));
+
+  EXPECT_STREQ(name, "pkg");
+  EXPECT_STREQ(interface_provider, "provider");
+  EXPECT_STREQ(compile_package_path, "compile.so");
+  EXPECT_STREQ(dispatch_package_path, "dispatch.so");
+  EXPECT_STREQ(target, "HTP");
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, CustomOpPackageRoundTrip) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetCustomOpPackage(
+      qualcomm_options, "pkg", "provider", "compile.so", "dispatch.so", "HTP"));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  const auto custom_op_package = parsed.GetCustomOpPackage();
+  EXPECT_EQ(custom_op_package.name, "pkg");
+  EXPECT_EQ(custom_op_package.interface_provider, "provider");
+  EXPECT_EQ(custom_op_package.compile_package_path, "compile.so");
+  EXPECT_EQ(custom_op_package.dispatch_package_path, "dispatch.so");
+  EXPECT_EQ(custom_op_package.target, "HTP");
 
   LrtDestroyQualcommOptions(qualcomm_options);
 }
@@ -403,6 +488,11 @@ TEST(QualcommOptionsTest, CppWrapper) {
   options->SetSaverOutputDir("tmp");
   EXPECT_EQ(options->GetSaverOutputDir(), "tmp");
 
+  EXPECT_EQ(options->GetSchematicDir(), "");
+  options->SetSchematicDir("tmp");
+  EXPECT_EQ(options->GetSchematicDir(), "tmp");
+
+
   EXPECT_EQ(options->GetGraphIOTensorMemType(),
             QualcommOptions::GraphIOTensorMemType::kMemHandle);
   options->SetGraphIOTensorMemType(QualcommOptions::GraphIOTensorMemType::kRaw);
@@ -412,6 +502,20 @@ TEST(QualcommOptionsTest, CppWrapper) {
       QualcommOptions::GraphIOTensorMemType::kMemHandle);
   EXPECT_EQ(options->GetGraphIOTensorMemType(),
             QualcommOptions::GraphIOTensorMemType::kMemHandle);
+
+  QualcommOptions::CustomOpPackage pkg;
+  pkg.name = "pkg";
+  pkg.interface_provider = "provider";
+  pkg.compile_package_path = "compile.so";
+  pkg.dispatch_package_path = "dispatch.so";
+  pkg.target = "HTP";
+  EXPECT_EQ(options->SetCustomOpPackage(pkg), kLiteRtStatusOk);
+  const auto custom_op_package = options->GetCustomOpPackage();
+  EXPECT_EQ(custom_op_package.name, "pkg");
+  EXPECT_EQ(custom_op_package.interface_provider, "provider");
+  EXPECT_EQ(custom_op_package.compile_package_path, "compile.so");
+  EXPECT_EQ(custom_op_package.dispatch_package_path, "dispatch.so");
+  EXPECT_EQ(custom_op_package.target, "HTP");
 }
 
 }  // namespace

@@ -79,11 +79,42 @@ struct TypeList {
   static constexpr size_t kSize = sizeof...(Ts);
 };
 
+template <typename... Ts>
+struct TypeTuple {};
+
+template <template <typename...> typename C, typename... Lists, typename... Ts,
+          typename... SoFar, typename Functor>
+void ExpandProductHelper(Functor& f, TypeList<Ts...>,
+                         TypeList<SoFar...> sofar);
+
+template <template <typename...> typename C, typename Item, typename NextLists,
+          typename SoFar, typename Functor>
+struct ExpandProductItem;
+
+template <template <typename...> typename C, typename T, typename... Lists,
+          typename... SoFar, typename Functor>
+struct ExpandProductItem<C, T, TypeList<Lists...>, TypeList<SoFar...>,
+                         Functor> {
+  static void Run(Functor& f) {
+    ExpandProductHelper<C, Lists...>(f, TypeList<SoFar..., T>());
+  }
+};
+
+template <template <typename...> typename C, typename... Ts, typename... Lists,
+          typename... SoFar, typename Functor>
+struct ExpandProductItem<C, TypeTuple<Ts...>, TypeList<Lists...>,
+                         TypeList<SoFar...>, Functor> {
+  static void Run(Functor& f) {
+    ExpandProductHelper<C, Lists...>(f, TypeList<SoFar..., Ts...>());
+  }
+};
+
 template <template <typename...> typename C, typename... Lists, typename... Ts,
           typename... SoFar, typename Functor>
 void ExpandProductHelper(Functor& f, TypeList<Ts...>,
                          TypeList<SoFar...> sofar) {
-  ((ExpandProductHelper<C, Lists...>(f, TypeList<SoFar..., Ts>())), ...);
+  (ExpandProductItem<C, Ts, TypeList<Lists...>, TypeList<SoFar...>,
+                     Functor>::Run(f), ...);
 }
 
 template <template <typename...> typename C, typename HeadList,

@@ -34,6 +34,7 @@ limitations under the License.
 #include "tflite/core/interpreter_builder.h"
 #include "tflite/core/kernels/register.h"
 #include "tflite/delegates/delegate_test_util.h"
+#include "tflite/delegates/external/external_delegate.h"
 #include "tflite/interpreter.h"
 #include "tflite/interpreter_options.h"
 #include "tflite/kernels/kernel_util.h"
@@ -1546,6 +1547,12 @@ TEST_P(TestFP16Delegation, DelegatePrepareFails) {
   // Delegation failed, but runtime should go back to correct previous state.
   ASSERT_EQ(interpreter_->execution_plan().size(), 8);
   VerifyInvoke();
+}
+
+TEST(ExternalDelegateTest, CreateFailureWithInvalidLibrary) {
+  TfLiteExternalDelegateOptions options =
+      TfLiteExternalDelegateOptionsDefault("invalid_path.so");
+  EXPECT_EQ(TfLiteExternalDelegateCreate(&options), nullptr);
 }
 
 INSTANTIATE_TEST_SUITE_P(TestFP16Delegation, TestFP16Delegation,

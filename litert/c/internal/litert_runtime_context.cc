@@ -90,6 +90,8 @@ LiteRtRuntimeContext* LrtGetRuntimeContext() {
       .set_custom_event = LiteRtSetCustomEvent,
       .get_custom_event = LiteRtGetCustomEvent,
       .wait_event = LiteRtWaitEvent,
+      .external_litert_buffer_context_get_run_options =
+          LiteRtExternalLiteRtBufferContextGetRunOptions,
   };
   return &context;
 }

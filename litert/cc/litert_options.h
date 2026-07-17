@@ -23,6 +23,8 @@
 #include <utility>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
 #include "litert/c/options/litert_compiler_options.h"
@@ -34,7 +36,6 @@
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/c/options/litert_runtime_options.h"
 #include "litert/c/options/litert_samsung_options.h"
-#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_runtime_proxy.h"
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/internal/scoped_weight_source.h"
@@ -211,6 +212,15 @@ class Options {
                              static_cast<void*>(&custom_op_kernel));
   }
 
+  /// Adds a custom build action.
+  /// @internal This is experimental and primarily for internal use.
+  Expected<void> AddBuildAction(
+      std::function<LiteRtStatus(internal::RuntimeProxy*, LiteRtOptions)>
+          action) {
+    build_actions_.push_back(std::move(action));
+    return {};
+  }
+
   /// Binds an external memory buffer to a specific tensor in the model.
   ///
   /// This function sets the tensor's allocation type to `kTfLiteCustom`,
@@ -234,6 +244,42 @@ class Options {
                                                tensor_name.c_str(), data,
                                                size_bytes);
     });
+    return {};
+  }
+
+  /// Sets the weight loader owned by the client and used for the model.
+  /// @param weight_loader The weight loader to be used for the model.
+  /// @return An `Expected` object that is empty on success, or contains an
+  /// error.
+  Expected<void> SetWeightLoader(weight_loader::WeightLoader* weight_loader) {
+    build_actions_.push_back([weight_loader](internal::RuntimeProxy* runtime,
+                                             LiteRtOptions options) {
+      auto* options_impl = reinterpret_cast<LiteRtOptionsT*>(options);
+      if (!options_impl) {
+        return kLiteRtStatusErrorRuntimeFailure;
+      }
+      options_impl->weight_loader = weight_loader;
+      return kLiteRtStatusOk;
+    });
+    return {};
+  }
+
+  /// Sets the in-memory weights map owned by the client and used for the model.
+  /// @param map The weight map mapping group names to contiguous buffers.
+  /// @return An `Expected` object that is empty on success, or contains an
+  /// error.
+  Expected<void> SetWeightInMemoryMap(
+      const absl::flat_hash_map<std::string, absl::Span<const std::byte>>*
+          map) {
+    build_actions_.push_back(
+        [map](internal::RuntimeProxy* runtime, LiteRtOptions options) {
+          auto* options_impl = reinterpret_cast<LiteRtOptionsT*>(options);
+          if (!options_impl) {
+            return kLiteRtStatusErrorRuntimeFailure;
+          }
+          options_impl->weight_in_memory_map = map;
+          return kLiteRtStatusOk;
+        });
     return {};
   }
 

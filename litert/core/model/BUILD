@@ -516,8 +516,10 @@ cc_library(
     hdrs = ["ops/concatenation.h"],
     deps = [
         ":model",
+        ":ops_simple_binary",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//tflite/converter/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -563,8 +565,10 @@ cc_library(
     hdrs = ["ops/matmul.h"],
     deps = [
         ":model",
+        ":ops_simple_binary",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//tflite/converter/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -681,6 +685,7 @@ cc_library(
         ":model",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
     ],
 )

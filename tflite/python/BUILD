@@ -14,7 +14,7 @@ package(
         "@org_tensorflow//tensorflow:__subpackages__",
         "@org_tensorflow//tensorflow:internal",
         "@org_tensorflow//third_party/odml/infra/genai/conversion:__subpackages__",
-        "@org_tensorflow//third_party/odml/litert/litert/python:__subpackages__",
+        "@org_tensorflow//third_party/odml/litert:__subpackages__",
         "@org_tensorflow//third_party/odml/model_customization/quantization:__subpackages__",
         "@org_tensorflow//third_party/py/ai_edge_torch:__subpackages__",
         "@org_tensorflow//third_party/py/litert_torch:__subpackages__",
@@ -534,6 +534,9 @@ py_library(
 pytype_strict_contrib_test(
     name = "convert_test",
     srcs = ["convert_test.py"],
+    data = [
+        "//tflite/converter:flatbuffer_translate",
+    ],
     deps = [
         ":convert",
         ":interpreter",
@@ -550,6 +553,7 @@ pytype_strict_contrib_test(
         "@org_tensorflow//tensorflow/python/ops:array_ops_stack",
         "@org_tensorflow//tensorflow/python/ops:math_ops",
         "@org_tensorflow//tensorflow/python/platform:client_testlib",
+        "@org_tensorflow//tensorflow/python/platform:resource_loader",
         "@org_tensorflow//third_party/py/numpy",
     ] + if_pywrap(
         if_true = [":pywrap_tflite"],

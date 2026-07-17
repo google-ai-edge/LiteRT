@@ -189,12 +189,16 @@ def _QualcommSpec(version = "V75"):
                 # (stub_lib, "LD_LIBRARY_PATH"),
                 # ("//litert/integration_test:libQnnSystem.so", "LD_LIBRARY_PATH"),
                 # ("//litert/integration_test:libQnnHtpPrepare.so", "LD_LIBRARY_PATH"),
+                # ("//litert/integration_test:libQnnIr.so", "LD_LIBRARY_PATH"),
+                # ("//litert/integration_test:libQnnSaver.so", "LD_LIBRARY_PATH"),
                 # (skel_lib, "ADSP_LIBRARY_PATH"),
                 # copybara:uncomment_end_and_comment_begin
                 ("@qairt//:libQnnHtp.so", "LD_LIBRARY_PATH"),
                 (stub_lib, "LD_LIBRARY_PATH"),
                 ("@qairt//:libQnnSystem.so", "LD_LIBRARY_PATH"),
                 ("@qairt//:libQnnHtpPrepare.so", "LD_LIBRARY_PATH"),
+                ("@qairt//:libQnnIr.so", "LD_LIBRARY_PATH"),
+                ("@qairt//:libQnnSaver.so", "LD_LIBRARY_PATH"),
                 (skel_lib, "ADSP_LIBRARY_PATH"),
                 # copybara:comment_end
                 ("//litert/vendors/qualcomm/dispatch:libLiteRtDispatch_Qualcomm.so", "LD_LIBRARY_PATH"),
@@ -207,9 +211,13 @@ def _QualcommSpec(version = "V75"):
                 # copybara:uncomment_begin(google-only)
                 # "//litert/integration_test:libQnnHtp.so",
                 # "//litert/integration_test:libQnnSystem.so",
+                # "//litert/integration_test:libQnnIr.so",
+                # "//litert/integration_test:libQnnSaver.so",
                 # copybara:uncomment_end_and_comment_begin
                 "@qairt//:libQnnHtp.so",
                 "@qairt//:libQnnSystem.so",
+                "@qairt//:libQnnIr.so",
+                "@qairt//:libQnnSaver.so",
                 # copybara:comment_end
             ],
             version_target_suffix = version_suffix,
@@ -487,7 +495,19 @@ def _cc_import_files_impl(ctx):
                 libs.append(library.dynamic_library)
             elif library.interface_library:
                 libs.append(library.interface_library)
-    return [DefaultInfo(files = depset(libs))]
+
+    out_files = []
+    for f in libs:
+        out = ctx.actions.declare_file(f.basename)
+        ctx.actions.run_shell(
+            outputs = [out],
+            inputs = [f],
+            command = "cp -f '{}' '{}'".format(f.path, out.path),
+            mnemonic = "CopyCcImportFile",
+        )
+        out_files.append(out)
+
+    return [DefaultInfo(files = depset(out_files))]
 
 cc_import_files = rule(
     implementation = _cc_import_files_impl,

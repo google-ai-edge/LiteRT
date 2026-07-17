@@ -23,6 +23,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -32,6 +33,58 @@
 #include "litert/core/litert_toml_parser.h"
 
 using litert::internal::ParseToml;
+
+namespace {
+
+struct CustomOpPackage {
+  std::string name = "";
+  std::string interface_provider = "";
+  std::string compile_package_path = "";
+  std::string dispatch_package_path = "";
+  std::string target = "";
+};
+
+LiteRtStatus ParseCustomOpPackageValue(absl::string_view value,
+                                       CustomOpPackage& package) {
+  size_t start = 0;
+  while (start <= value.size()) {
+    const size_t end = value.find(';', start);
+    const size_t token_end =
+        (end == absl::string_view::npos) ? value.size() : end;
+    absl::string_view token = value.substr(start, token_end - start);
+    start = token_end + 1;
+
+    if (token.empty()) {
+      continue;
+    }
+
+    const size_t colon_pos = token.find(':');
+    if (colon_pos == absl::string_view::npos) {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+
+    const absl::string_view key = token.substr(0, colon_pos);
+    const absl::string_view val = token.substr(colon_pos + 1);
+
+    if (key == "name") {
+      package.name = val;
+    } else if (key == "interface_provider") {
+      package.interface_provider = val;
+    } else if (key == "compile_package_path") {
+      package.compile_package_path = val;
+    } else if (key == "dispatch_package_path") {
+      package.dispatch_package_path = val;
+    } else if (key == "target") {
+      package.target = val;
+    } else {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+  }
+
+  return kLiteRtStatusOk;
+}
+
+}  // namespace
 
 struct LrtQualcommOptionsT {
   std::optional<LrtQualcommOptionsLogLevel> log_level;
@@ -47,6 +100,8 @@ struct LrtQualcommOptionsT {
   std::optional<std::int32_t> htp_p_point;
   std::optional<LrtQualcommOptionsHtpPerformanceMode> htp_performance_mode;
   std::optional<LrtQualcommOptionsDspPerformanceMode> dsp_performance_mode;
+  std::optional<LrtQualcommOptionsHtpPerfCtrlMode> htp_perf_ctrl_mode;
+  std::optional<LrtQualcommOptionsDspPerfCtrlMode> dsp_perf_ctrl_mode;
   std::optional<std::vector<std::int32_t>> dump_tensor_ids;
   std::optional<std::string> ir_json_dir;
   std::optional<std::string> dlc_dir;
@@ -57,6 +112,8 @@ struct LrtQualcommOptionsT {
   std::optional<std::string> saver_output_dir;
   std::optional<LrtQualcommOptionsGraphIOTensorMemType>
       graph_io_tensor_mem_type;
+  std::optional<std::string> schematic_dir;
+  std::optional<CustomOpPackage> custom_op_package;
 };
 
 LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
@@ -133,6 +190,18 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           status = LrtQualcommOptionsSetDspPerformanceMode(
               parsed_options,
               static_cast<LrtQualcommOptionsDspPerformanceMode>(*v));
+        } else if (key == "htp_perf_ctrl_mode") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetHtpPerfCtrlMode(
+              parsed_options,
+              static_cast<LrtQualcommOptionsHtpPerfCtrlMode>(*v));
+        } else if (key == "dsp_perf_ctrl_mode") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetDspPerfCtrlMode(
+              parsed_options,
+              static_cast<LrtQualcommOptionsDspPerfCtrlMode>(*v));
         } else if (key == "dump_tensor_ids") {
           auto parts = litert::internal::ParseTomlStringArray(value);
           if (!parts) return litert::ToLiteRtStatus(parts.Error().StatusCC());
@@ -174,12 +243,21 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
         } else if (key == "saver_output_dir") {
           status = LrtQualcommOptionsSetSaverOutputDir(
               parsed_options, std::string(value).c_str());
+        } else if (key == "schematic_dir") {
+          status = LrtQualcommOptionsSetSchematicDir(
+              parsed_options, std::string(value).c_str());
         } else if (key == "graph_io_tensor_mem_type") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           status = LrtQualcommOptionsSetGraphIOTensorMemType(
               parsed_options,
               static_cast<LrtQualcommOptionsGraphIOTensorMemType>(*v));
+        } else if (key == "custom_op_package") {
+          CustomOpPackage package;
+          status = ParseCustomOpPackageValue(value, package);
+          if (status == kLiteRtStatusOk) {
+            parsed_options->custom_op_package = package;
+          }
         }
 
         return status;
@@ -262,6 +340,14 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
     toml << "dsp_performance_mode = "
          << static_cast<int>(*options->dsp_performance_mode) << "\n";
   }
+  if (options->htp_perf_ctrl_mode.has_value()) {
+    toml << "htp_perf_ctrl_mode = "
+         << static_cast<int>(*options->htp_perf_ctrl_mode) << "\n";
+  }
+  if (options->dsp_perf_ctrl_mode.has_value()) {
+    toml << "dsp_perf_ctrl_mode = "
+         << static_cast<int>(*options->dsp_perf_ctrl_mode) << "\n";
+  }
   if (options->dump_tensor_ids.has_value()) {
     toml << "dump_tensor_ids = [";
     for (size_t i = 0; i < options->dump_tensor_ids->size(); ++i) {
@@ -293,10 +379,24 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->saver_output_dir.has_value()) {
     toml << "saver_output_dir = \"" << *options->saver_output_dir << "\"\n";
   }
+  if (options->schematic_dir.has_value()) {
+    toml << "schematic_dir = \"" << *options->schematic_dir << "\"\n";
+  }
   if (options->graph_io_tensor_mem_type.has_value()) {
     toml << "graph_io_tensor_mem_type = "
          << static_cast<int>(*options->graph_io_tensor_mem_type) << "\n";
   }
+  if (options->custom_op_package.has_value()) {
+    const auto& package = *options->custom_op_package;
+    toml << "custom_op_package = \""
+         << "name:" << package.name << ";"
+         << "interface_provider:" << package.interface_provider << ";"
+         << "compile_package_path:" << package.compile_package_path << ";"
+         << "dispatch_package_path:" << package.dispatch_package_path << ";"
+         << "target:" << package.target << ";"
+         << "\"\n";
+  }
+
   *identifier = LrtQualcommOptionsGetIdentifier();
   std::string toml_str = toml.str();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
@@ -378,6 +478,77 @@ LiteRtStatus LrtQualcommOptionsGetSaverOutputDir(
                           ? options->saver_output_dir->c_str()
                           : "";
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetSchematicDir(LrtQualcommOptions options,
+                                               const char* schematic_dir) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->schematic_dir = schematic_dir;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetSchematicDir(LrtQualcommOptions options,
+                                               const char** schematic_dir) {
+  if (options == nullptr || schematic_dir == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *schematic_dir =
+      options->schematic_dir.has_value() ? options->schematic_dir->c_str() : "";
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetCustomOpPackage(
+    LrtQualcommOptions options, const char* name,
+    const char* interface_provider, const char* compile_package_path,
+    const char* dispatch_package_path, const char* target) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  CustomOpPackage package;
+  package.name = name;
+  package.interface_provider = interface_provider;
+  package.compile_package_path = compile_package_path;
+  package.dispatch_package_path = dispatch_package_path;
+  package.target = target;
+
+  options->custom_op_package = std::move(package);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetCustomOpPackage(
+    LrtQualcommOptions options, const char** name,
+    const char** interface_provider, const char** compile_package_path,
+    const char** dispatch_package_path, const char** target) {
+  if (options == nullptr || name == nullptr || interface_provider == nullptr ||
+      compile_package_path == nullptr || dispatch_package_path == nullptr ||
+      target == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  if (!options->custom_op_package.has_value()) {
+    *name = "";
+    *interface_provider = "";
+    *compile_package_path = "";
+    *dispatch_package_path = "";
+    *target = "";
+    return kLiteRtStatusOk;
+  }
+
+  const auto& package = *options->custom_op_package;
+  *name = package.name.c_str();
+  *interface_provider = package.interface_provider.c_str();
+  *compile_package_path = package.compile_package_path.c_str();
+  *dispatch_package_path = package.dispatch_package_path.c_str();
+  *target = package.target.c_str();
   return kLiteRtStatusOk;
 }
 
@@ -660,6 +831,56 @@ LiteRtStatus LrtQualcommOptionsGetDspPerformanceMode(
 
   *dsp_performance_mode = options->dsp_performance_mode.value_or(
       kLiteRtQualcommDspPerformanceModeDefault);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetHtpPerfCtrlMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsHtpPerfCtrlMode htp_perf_ctrl_mode) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->htp_perf_ctrl_mode = htp_perf_ctrl_mode;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetHtpPerfCtrlMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsHtpPerfCtrlMode* htp_perf_ctrl_mode) {
+  if (options == nullptr || htp_perf_ctrl_mode == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *htp_perf_ctrl_mode = options->htp_perf_ctrl_mode.value_or(
+      kLiteRtQualcommHtpPerfCtrlModeManual);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetDspPerfCtrlMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsDspPerfCtrlMode dsp_perf_ctrl_mode) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->dsp_perf_ctrl_mode = dsp_perf_ctrl_mode;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetDspPerfCtrlMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsDspPerfCtrlMode* dsp_perf_ctrl_mode) {
+  if (options == nullptr || dsp_perf_ctrl_mode == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *dsp_perf_ctrl_mode = options->dsp_perf_ctrl_mode.value_or(
+      kLiteRtQualcommDspPerfCtrlModeManual);
 
   return kLiteRtStatusOk;
 }

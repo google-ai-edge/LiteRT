@@ -200,6 +200,12 @@ class GpuOptions {
     return LrtAddGpuOptionsBufferStorageTensorPattern(options_, pattern);
   }
 
+  /// @brief Sets the pointer to the shared tensor maps.
+  LiteRtStatus SetSharedTensorMaps(void* shared_tensor_maps) {
+    return LrtSetGpuAcceleratorCompilationOptionsSharedTensorMaps(
+        options_, shared_tensor_maps);
+  }
+
   enum class Backend : int {
     kAutomatic = kLiteRtGpuBackendAutomatic,
     kOpenCl = kLiteRtGpuBackendOpenCl,
@@ -246,6 +252,12 @@ class GpuOptions {
   LiteRtStatus SetUseMetalArgumentBuffers(bool use_metal_argument_buffers) {
     return LrtSetGpuOptionsUseMetalArgumentBuffers(options_,
                                                    use_metal_argument_buffers);
+  }
+
+  /// @brief Sets whether to use MTLResidencySet to prevent memory swapping.
+  /// @warning This is only applicable to the Metal backend.
+  LiteRtStatus EnableMetalResidencySet(bool enabled) {
+    return LrtSetGpuOptionsMetalResidencySet(options_, enabled);
   }
 #endif  // __APPLE__
 

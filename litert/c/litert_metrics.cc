@@ -22,6 +22,9 @@ extern "C" {
 #endif
 
 LiteRtStatus LiteRtCreateMetrics(LiteRtMetrics* metrics) {
+  if (metrics == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   *metrics = new LiteRtMetricsT();
   return kLiteRtStatusOk;
 }

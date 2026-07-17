@@ -16,12 +16,10 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <vector>
 
 #include "openvino/core/shape.hpp"
 #include "openvino/core/type/element_type.hpp"
-#include "openvino/runtime/core.hpp"
 #include "openvino/runtime/intel_npu/level_zero/level_zero.hpp"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
@@ -37,16 +35,24 @@ litert::Expected<void> OpenVinoTensorBuffer::Alloc(
   }
 
   // TODO:: Release the shared OpenVINO Core.
-  std::shared_ptr<ov::Core> core = OpenVINOSharedCore::GetInstance()->getCore();
   std::string device = OpenVINOSharedCore::GetInstance()->GetDevice();
-  auto context = core->get_default_context(device);
   ov::element::Type ov_element_type =
       litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
+
   std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
   for (size_t i = 0; i < ov_shape_vec.size(); i++)
     ov_shape_vec[i] = tensor_type.layout.dimensions[i];
-  host_tensor_ = context.create_host_tensor(
-      ov_element_type, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()});
+  ov::Shape ov_shape{ov_shape_vec.begin(), ov_shape_vec.end()};
+
+  if (device == "NPU" || device == "GPU") {
+    auto context = OpenVINOSharedCore::GetInstance()->GetRemoteContext();
+    ov_tensor_ = context.create_host_tensor(ov_element_type, ov_shape);
+  } else if (device == "CPU") {
+    ov_tensor_ = ov::Tensor(ov_element_type, ov_shape);
+  } else {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Unsupported OpenVINO device: " + device);
+  }
   allocated_ = true;
 
   return {};
@@ -55,15 +61,15 @@ litert::Expected<void> OpenVinoTensorBuffer::Alloc(
 litert::Expected<void*> OpenVinoTensorBuffer::GetTensorData() {
   if (!allocated_) {
     return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
-                              "The remote tensor didn't allocate.");
+                              "The tensor didn't allocate.");
   }
-  return host_tensor_.data();
+  return ov_tensor_.data();
 }
 
 litert::Expected<ov::Tensor> OpenVinoTensorBuffer::GetOVTensor() {
   if (!allocated_) {
     return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
-                              "Failed to get zero buffer remote tensor.");
+                              "Failed to get tensor.");
   }
-  return host_tensor_;
+  return ov_tensor_;
 }

@@ -16,9 +16,11 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_RUNNERS_LITERT_COMPILED_MODEL_RUNNER_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_RUNNERS_LITERT_COMPILED_MODEL_RUNNER_H_
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -29,6 +31,7 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_compiled_model.h"
@@ -37,6 +40,7 @@ limitations under the License.
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "tensor/arithmetic.h"
 #include "tensor/backends/tflite/arithmetic_tflite.h"
 #include "tensor/backends/tflite/tflite_flatbuffer_conversion.h"
@@ -54,12 +58,12 @@ namespace tensor {
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 class CompiledModelRunner {
  public:
-  explicit CompiledModelRunner(Environment& env, Options& options,
-                               ModelFunctor model_func,
-                               bool build_model_now = true);
+  CompiledModelRunner(Environment& env, Options& options,
+                      ModelFunctor model_func, bool build_model_now = true);
 
   absl::Status BuildModel(
-      const std::vector<Tensor<TfLiteMixinTag>>& output_tensors = {});
+      const std::vector<Tensor<TfLiteMixinTag>>& output_tensors = {},
+      std::optional<ModelFactory> model_factory = std::nullopt);
 
   absl::Status SetInput(const std::string& name,
                         const std::vector<float>& data);
@@ -72,7 +76,7 @@ class CompiledModelRunner {
                         const std::vector<uint8_t>& data);
   absl::Status SetInput(const std::string& name, const TensorHandle& tensor);
   absl::Status SetInput(const std::string& name,
-                        absl::Span<const uint8_t> data);
+                        absl::Span<const std::byte> data);
 
   absl::Status Run();
 
@@ -82,6 +86,7 @@ class CompiledModelRunner {
 
   absl::StatusOr<TensorHandle> GetOutput(const std::string& name);
   absl::Status SetOutput(const std::string& name, const TensorHandle& tensor);
+  absl::Status SetOutput(const std::string& name, absl::Span<std::byte> data);
 
   absl::StatusOr<std::vector<std::string>> GetInputNames() const;
 
@@ -112,11 +117,8 @@ class CompiledModelRunner {
         init.shape =
             std::vector<int32_t>(shape_vector.begin(), shape_vector.end());
 
-        auto dup_or = input_buffers_[i].Duplicate();
-        if (!dup_or.HasValue())
-          return absl::InternalError("Failed to duplicate buffer");
-
-        init.buffer = std::make_shared<LitertBuffer>(std::move(*dup_or));
+        LITERT_ASSIGN_OR_RETURN(auto dup, input_buffers_[i].Duplicate());
+        init.buffer = std::make_shared<LitertBuffer>(std::move(dup));
         return TensorHandle(init);
       }
     }
@@ -127,6 +129,8 @@ class CompiledModelRunner {
       const absl::flat_hash_map<GraphProbe::StableTensorId, std::string,
                                 GraphProbe::StableTensorIdHash>& probe_tensors);
 
+  CompiledModel& compiled_model() { return compiled_model_; }
+
  private:
   static Environment CreateEnvironmentOrDie() {
     LITERT_ASSIGN_OR_ABORT(auto env, Environment::Create({}));
@@ -135,31 +139,54 @@ class CompiledModelRunner {
 
   using TensorTf = Tensor<TfLiteMixinTag>;
 
-  ModelFunctor model_func_;
-  Inputs inputs_;
-  Outputs outputs_;
+  bool IsHostMemorySupported(const std::string& name) {
+    auto req = compiled_model_.GetInputBufferRequirements(name);
+    if (!req.HasValue()) return false;
+    auto types = req->SupportedTypes();
+    if (!types.HasValue()) return false;
+    return std::find(types->begin(), types->end(),
+                     TensorBufferType::kHostMemory) != types->end();
+  }
+
+  // The same value of LITERT_HOST_MEMORY_BUFFER_ALIGNMENT in
+  // litert_tensor_buffer.h to avoid unnecessary dependencies.
+  constexpr static int kBufferAlignment = 64;
+  bool IsAligned(const std::byte* ptr) {
+    return (reinterpret_cast<uintptr_t>(ptr) % kBufferAlignment) == 0;
+  }
+
+  std::optional<Outputs> outputs_;
 
   absl::flat_hash_map<GraphProbe::StableTensorId, std::string,
                       GraphProbe::StableTensorIdHash>
       probed_tensors_;
-  std::vector<char> model_buffer_;
   Environment& env_;
   Options& options_;
   CompiledModel compiled_model_;
 
   std::vector<TensorBuffer> input_buffers_;
   std::vector<TensorBuffer> output_buffers_;
+
+  struct ReplacedBuffer {
+    TensorBuffer buffer;
+    absl::Span<std::byte> external_output;
+    enum { kOriginalInput, kOriginalOutput, kExternalOutput } type;
+    int index;
+  };
+  std::vector<ReplacedBuffer> replaced_buffers_;
+  std::vector<char> model_buffer_;
 };
 
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 CompiledModelRunner<ModelFunctor, Inputs, Outputs>::CompiledModelRunner(
     Environment& env, Options& options, ModelFunctor model_func,
     bool build_model_now)
-    : model_func_(model_func), env_(env), options_(options) {
-  outputs_ = model_func_(inputs_);
+    : env_(env), options_(options) {
+  Inputs inputs;
+  outputs_ = model_func(inputs);
   if (build_model_now) {
     std::vector<TensorTf> output_tensors;
-    for (auto const& [name, tensor_ptr] : outputs_.tensors()) {
+    for (auto const& [name, tensor_ptr] : outputs_->tensors()) {
       tensor_ptr->SetName(name);
       output_tensors.push_back(*tensor_ptr);
     }
@@ -169,10 +196,13 @@ CompiledModelRunner<ModelFunctor, Inputs, Outputs>::CompiledModelRunner(
 
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::BuildModel(
-    const std::vector<TensorTf>& output_tensors) {
-  absl::Status status = Save(output_tensors, model_buffer_);
-  ABSL_CHECK_OK(status) << "Failed to serialize model to flatbuffer.";
-
+    const std::vector<TensorTf>& output_tensors,
+    std::optional<ModelFactory> model_factory) {
+  if (!model_factory.has_value()) {
+    model_factory = ModelFactory();
+  }
+  LITERT_RETURN_IF_ERROR(model_factory->AddSubgraph(output_tensors));
+  LITERT_ASSIGN_OR_RETURN(model_buffer_, model_factory->CreateFlatbuffer());
   BufferRef<> model_buffer(model_buffer_.data(), model_buffer_.size());
   LITERT_ASSIGN_OR_RETURN(compiled_model_,
                           CompiledModel::Create(env_, model_buffer, options_));
@@ -180,6 +210,8 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::BuildModel(
   LITERT_ASSIGN_OR_RETURN(input_buffers_, compiled_model_.CreateInputBuffers());
   LITERT_ASSIGN_OR_RETURN(output_buffers_,
                           compiled_model_.CreateOutputBuffers());
+  // Okay to release the output tensors now as output buffers are created.
+  outputs_.reset();
   return absl::OkStatus();
 }
 
@@ -191,7 +223,7 @@ CompiledModelRunner<ModelFunctor, Inputs, Outputs>::AddTensorsAsOutputs(
   probed_tensors_ = probe_tensors;
 
   std::vector<TensorTf> original_output_tensors;
-  for (auto const& [name, tensor_ptr] : outputs_.tensors()) {
+  for (auto const& [name, tensor_ptr] : outputs_->tensors()) {
     tensor_ptr->SetName(name);
     original_output_tensors.push_back(*tensor_ptr);
   }
@@ -304,20 +336,14 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
       LITERT_ASSIGN_OR_RETURN(Buffer & buffer, tensor.GetBuffer());
       if (auto litert_buffer_or = buffer.As<LitertBuffer>();
           litert_buffer_or.ok()) {
-        auto dup_or = litert_buffer_or->tensor_buffer().Duplicate();
-        if (!dup_or.HasValue()) {
-          return absl::InternalError("Failed to duplicate TensorBuffer");
-        }
-        input_buffers_[i] = std::move(*dup_or);
+        LITERT_ASSIGN_OR_RETURN(input_buffers_[i],
+                                litert_buffer_or->tensor_buffer().Duplicate());
       } else {
         auto locked_span = buffer.Lock();
         auto span = absl::MakeConstSpan(
             reinterpret_cast<const uint8_t*>(locked_span.data()),
             locked_span.size());
-        auto res = input_buffers_[i].Write(span);
-        if (!res.HasValue()) {
-          return absl::InternalError("Failed to write input buffer");
-        }
+        LITERT_RETURN_IF_ERROR(input_buffers_[i].Write(span));
       }
       return absl::OkStatus();
     }
@@ -327,15 +353,24 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
 
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
-    const std::string& name, absl::Span<const uint8_t> data) {
+    const std::string& name, absl::Span<const std::byte> data) {
   LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
 
   for (int i = 0; i < signature.InputNames().size(); ++i) {
     if (signature.InputNames()[i] == name) {
-      auto res = input_buffers_[i].Write(data);
-      if (!res.HasValue()) {
-        return absl::InternalError("Failed to write input buffer");
+      if (IsHostMemorySupported(name) && IsAligned(data.data())) {
+        replaced_buffers_.emplace_back(
+            ReplacedBuffer{.type = ReplacedBuffer::kOriginalInput, .index = i});
+        LITERT_ASSIGN_OR_RETURN(auto tensor_type, signature.InputTensorType(i));
+        LITERT_ASSIGN_OR_RETURN(
+            replaced_buffers_.back().buffer,
+            TensorBuffer::CreateFromHostMemory(
+                env_, tensor_type, const_cast<std::byte*>(data.data()),
+                data.size()));
+        std::swap(input_buffers_[i], replaced_buffers_.back().buffer);
+        return absl::OkStatus();
       }
+      LITERT_RETURN_IF_ERROR(input_buffers_[i].Write(data));
       return absl::OkStatus();
     }
   }
@@ -348,21 +383,37 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetOutput(
   LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
   for (int i = 0; i < signature.OutputNames().size(); ++i) {
     if (signature.OutputNames()[i] == name) {
-      auto buffer_or = tensor.GetBuffer();
-      if (!buffer_or.ok()) {
-        return absl::InvalidArgumentError("Tensor has no buffer");
-      }
-      Buffer& buffer = *buffer_or;
-      auto litert_buffer_or = buffer.As<LitertBuffer>();
-      if (litert_buffer_or.ok()) {
-        auto dup_or = litert_buffer_or->tensor_buffer().Duplicate();
-        if (!dup_or.HasValue()) {
-          return absl::InternalError("Failed to duplicate TensorBuffer");
-        }
-        output_buffers_[i] = std::move(*dup_or);
+      LITERT_ASSIGN_OR_RETURN(auto& buffer, tensor.GetBuffer());
+      LITERT_ASSIGN_OR_RETURN(auto& litert_buffer, buffer.As<LitertBuffer>());
+      LITERT_ASSIGN_OR_RETURN(output_buffers_[i],
+                              litert_buffer.tensor_buffer().Duplicate());
+      return absl::OkStatus();
+    }
+  }
+  return absl::NotFoundError(absl::StrCat("Output tensor not found: ", name));
+}
+
+template <typename ModelFunctor, typename Inputs, typename Outputs>
+absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetOutput(
+    const std::string& name, absl::Span<std::byte> data) {
+  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
+  for (int i = 0; i < signature.OutputNames().size(); ++i) {
+    if (signature.OutputNames()[i] == name) {
+      if (IsHostMemorySupported(name) && IsAligned(data.data())) {
+        replaced_buffers_.emplace_back(ReplacedBuffer{
+            .type = ReplacedBuffer::kOriginalOutput, .index = i});
+        LITERT_ASSIGN_OR_RETURN(auto tensor_type,
+                                signature.OutputTensorType(i));
+        LITERT_ASSIGN_OR_RETURN(
+            replaced_buffers_.back().buffer,
+            TensorBuffer::CreateFromHostMemory(env_, tensor_type, data.data(),
+                                               data.size()));
+        std::swap(output_buffers_[i], replaced_buffers_.back().buffer);
       } else {
-        return absl::UnimplementedError(
-            "SetOutput only supported for LitertBuffer");
+        replaced_buffers_.emplace_back(
+            ReplacedBuffer{.external_output = data,
+                           .type = ReplacedBuffer::kExternalOutput,
+                           .index = i});
       }
       return absl::OkStatus();
     }
@@ -402,6 +453,24 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::Run() {
   LITERT_RETURN_IF_ERROR(compiled_model_.Run(input_buffers_, output_buffers_));
+
+  // Revert the replaced buffers to their original state, or copy the data from
+  // the original output buffers to the external output buffers.
+  for (auto& buffer : replaced_buffers_) {
+    switch (buffer.type) {
+      case ReplacedBuffer::kOriginalInput:
+        std::swap(input_buffers_[buffer.index], buffer.buffer);
+        break;
+      case ReplacedBuffer::kOriginalOutput:
+        std::swap(output_buffers_[buffer.index], buffer.buffer);
+        break;
+      case ReplacedBuffer::kExternalOutput:
+        LITERT_RETURN_IF_ERROR(
+            output_buffers_[buffer.index].Read(buffer.external_output));
+        break;
+    }
+  }
+  replaced_buffers_.clear();
   return absl::OkStatus();
 }
 
@@ -481,13 +550,8 @@ CompiledModelRunner<ModelFunctor, Inputs, Outputs>::GetOutput(
     if (signature.OutputNames()[i] == name) {
       LITERT_ASSIGN_OR_RETURN(auto ranked_tensor_type,
                               compiled_model_.GetOutputTensorType(0, i));
-
-      auto dup_or = output_buffers_[i].Duplicate();
-      if (!dup_or.HasValue()) {
-        return absl::InternalError("Failed to duplicate TensorBuffer");
-      }
-
-      auto litert_buffer = std::make_shared<LitertBuffer>(std::move(*dup_or));
+      LITERT_ASSIGN_OR_RETURN(auto dup, output_buffers_[i].Duplicate());
+      auto litert_buffer = std::make_shared<LitertBuffer>(std::move(dup));
 
       Type type = Type::kUnknown;
       switch (ranked_tensor_type.ElementType()) {
@@ -499,6 +563,9 @@ CompiledModelRunner<ModelFunctor, Inputs, Outputs>::GetOutput(
           break;
         case ElementType::Int8:
           type = Type::kI8;
+          break;
+        case ElementType::Bool:
+          type = Type::kBOOL;
           break;
         default:
           break;

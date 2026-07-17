@@ -273,21 +273,23 @@ LiteRtStatus LiteRtDispatchDeviceContextT::LoadExecutable(
   }
 
   if (bytecode_buffer.fd >= 0) {
+    const size_t fd_offset =
+        bytecode_buffer.alloc_base_file_offset + bytecode_buffer.offset;
     if (GoogleTensorSouthBoundFeatureSupported(
             GoogleTensorSouthBoundFeature::kSqContainerFdWithOffset)) {
       GT_LOG_RETURN_IF_SB_ERROR(
           thrLoadSqContainerFdWithOffset(
               thr_context_, thr_type, bytecode_buffer.fd, bytecode_buffer.size,
-              bytecode_buffer.offset, /*lazy_loading=*/false, &exec_handle),
+              fd_offset, /*lazy_loading=*/false, &exec_handle),
           "Failed to load SQ container from FD with offset");
-      if (IsTflite(bytecode_buffer.fd, bytecode_buffer.offset)) {
+      if (IsTflite(bytecode_buffer.fd, fd_offset)) {
         tflite_executables_.insert(exec_handle);
       }
       return kLiteRtStatusOk;
     }
 
     // Old SouthBound, offset == 0: legacy FD entry point handles it directly.
-    if (bytecode_buffer.offset == 0) {
+    if (fd_offset == 0) {
       GT_LOG_RETURN_IF_SB_ERROR(
           thrLoadSqContainerFd(thr_context_, thr_type, bytecode_buffer.fd,
                                bytecode_buffer.size, /*lazy_loading=*/false,
@@ -302,16 +304,15 @@ LiteRtStatus LiteRtDispatchDeviceContextT::LoadExecutable(
     // Old SouthBound, offset > 0 (e.g. AOT .tflite with embedded DISPATCH_OP):
     // mmap a page-aligned region and load via the pointer-based API.
     const size_t page_size = static_cast<size_t>(sysconf(_SC_PAGESIZE));
-    const size_t aligned_offset = bytecode_buffer.offset & ~(page_size - 1);
-    const size_t offset_delta = bytecode_buffer.offset - aligned_offset;
+    const size_t aligned_offset = fd_offset & ~(page_size - 1);
+    const size_t offset_delta = fd_offset - aligned_offset;
     const size_t map_length = bytecode_buffer.size + offset_delta;
     void* mapped = mmap(nullptr, map_length, PROT_READ, MAP_PRIVATE,
                         bytecode_buffer.fd, static_cast<off_t>(aligned_offset));
     if (mapped == MAP_FAILED) {
       LITERT_LOG(LITERT_ERROR,
                  "Failed to mmap SQ bytecode (fd=%d, size=%zu, offset=%zu)",
-                 bytecode_buffer.fd, bytecode_buffer.size,
-                 bytecode_buffer.offset);
+                 bytecode_buffer.fd, bytecode_buffer.size, fd_offset);
       return kLiteRtStatusErrorRuntimeFailure;
     }
     absl::Cleanup mmap_cleanup = [mapped, map_length] {

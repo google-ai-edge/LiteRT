@@ -65,6 +65,8 @@ enum class GoogleTensorSouthBoundFeature {
   kTachyonNamedSqFunctions = 9,
   // thrLoadSqContainerFdWithOffset
   kSqContainerFdWithOffset = 10,
+  // thrGraphAnnotateGraph with `key == kEdgetpuPerformanceMode`
+  kPerformanceModeAnnotation = 11,
 };
 
 // Returns `true` if `feature` is supported by the available Google Tensor
@@ -100,6 +102,9 @@ inline bool GoogleTensorSouthBoundFeatureSupported(
              GoogleTensorSouthBoundMinorVersion() >= 17;
     case GoogleTensorSouthBoundFeature::kSqContainerFdWithOffset:
       // TODO(google-tensor): confirm minor version.
+      return GoogleTensorSouthBoundMajorVersion() > 0 ||
+             GoogleTensorSouthBoundMinorVersion() >= 18;
+    case GoogleTensorSouthBoundFeature::kPerformanceModeAnnotation:
       return GoogleTensorSouthBoundMajorVersion() > 0 ||
              GoogleTensorSouthBoundMinorVersion() >= 18;
   }

@@ -3,22 +3,25 @@
 
 #include "litert/vendors/qualcomm/core/backends/dsp_backend.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <memory>
 #include <optional>
+#include <thread>
 #include <vector>
 
 #include "DSP/QnnDspDevice.h"  // from @qairt
 #include "DSP/QnnDspPerfInfrastructure.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
+#include "QnnDevice.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 #include <gtest/gtest.h>
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/backends/backend_utils.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
-#include "QnnDevice.h"  // from @qairt
 
 namespace qnn {
 namespace {
@@ -26,6 +29,7 @@ namespace {
 QnnDevice_GetInfrastructureFn_t real_device_get_infrastructure = nullptr;
 absl::NoDestructor<std::vector<QnnDspPerfInfrastructure_PowerConfig_t>>
     captured_configs;
+std::atomic<int> set_power_config_call_count{0};
 
 // Mock Functions
 Qnn_ErrorHandle_t MockSetPowerConfig(
@@ -37,6 +41,7 @@ Qnn_ErrorHandle_t MockSetPowerConfig(
       captured_configs->emplace_back(*power_configs[i]);
     }
   }
+  set_power_config_call_count.fetch_add(1);
   return QNN_SUCCESS;
 }
 
@@ -67,6 +72,8 @@ struct DspPerfParams {
 class DspBackendPerfParamTest : public testing::TestWithParam<DspPerfParams> {
  public:
   void SetUp() override {
+    captured_configs->clear();
+    set_power_config_call_count.store(0);
     handle_ = CreateDLHandle(DspBackend::GetLibraryName());
     if (!handle_) GTEST_SKIP();
 
@@ -195,6 +202,116 @@ TEST_F(DspBackendTest, DISABLED_InitializeWithLogLevelVerboseTest) {
 
   ASSERT_TRUE(backend_->GetBackendHandle());
   ASSERT_TRUE(backend_->GetLogHandle());
+}
+
+// SETPERFORMANCEMODE /////////////////////////////////////////////////////////
+TEST_P(DspBackendPerfParamTest, ManualSameModeSkipsRevote) {
+  const auto& params = GetParam();
+  Options options;
+  options.SetDspPerformanceMode(params.mode);
+  options.SetDspPerfCtrlMode(DspPerfCtrlMode::kManual);
+  DspBackend backend(&qnn_api_copy_);
+
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+  const int calls_after_init = set_power_config_call_count.load();
+
+  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(set_power_config_call_count.load(), calls_after_init);
+}
+
+TEST_P(DspBackendPerfParamTest, AutoSameModeRevotes) {
+  const auto& params = GetParam();
+  Options options;
+  options.SetDspPerformanceMode(params.mode);
+  options.SetDspPerfCtrlMode(DspPerfCtrlMode::kAuto);
+  DspBackend backend(&qnn_api_copy_);
+
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+  const int calls_after_init = set_power_config_call_count.load();
+
+  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(set_power_config_call_count.load(), calls_after_init + 1);
+}
+
+class DspBackendPerfTest : public testing::Test {
+ public:
+  void SetUp() override {
+    captured_configs->clear();
+    set_power_config_call_count.store(0);
+    handle_ = CreateDLHandle(DspBackend::GetLibraryName());
+    if (!handle_) GTEST_SKIP();
+
+    auto* qnn_api =
+        ResolveQnnApi(handle_.get(), DspBackend::GetExpectedBackendVersion());
+    ASSERT_TRUE(qnn_api);
+
+    qnn_api_copy_ = *qnn_api;
+    real_device_get_infrastructure = qnn_api_copy_.deviceGetInfrastructure;
+    qnn_api_copy_.deviceGetInfrastructure = MockDeviceGetInfrastructure;
+  }
+
+  void TearDown() override { real_device_get_infrastructure = nullptr; }
+
+ protected:
+  DLHandle handle_;
+  QNN_INTERFACE_VER_TYPE qnn_api_copy_{};
+};
+
+TEST_F(DspBackendPerfTest, ManualModeChangeRevotes) {
+  Options options;
+  options.SetDspPerformanceMode(DspPerformanceMode::kPowerSaver);
+  options.SetDspPerfCtrlMode(DspPerfCtrlMode::kManual);
+  DspBackend backend(&qnn_api_copy_);
+
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+  const int calls_after_init = set_power_config_call_count.load();
+
+  options.SetDspPerformanceMode(DspPerformanceMode::kBurst);
+  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_GT(set_power_config_call_count.load(), calls_after_init);
+}
+
+TEST_F(DspBackendPerfTest, DefaultModeSchedulesDownvote) {
+  Options options;
+  options.SetDspPerformanceMode(DspPerformanceMode::kBurst);
+  options.SetDspPerfCtrlMode(DspPerfCtrlMode::kManual);
+  DspBackend backend(&qnn_api_copy_);
+
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+  const int calls_after_init = set_power_config_call_count.load();
+
+  Options default_options;  // kDefault
+  EXPECT_TRUE(backend.SetPerformanceMode(default_options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(400));
+  EXPECT_GT(set_power_config_call_count.load(), calls_after_init);
+}
+
+TEST_F(DspBackendPerfTest, AutoModeChangesAcrossExecutes) {
+  Options options;
+  options.SetDspPerformanceMode(DspPerformanceMode::kPowerSaver);
+  options.SetDspPerfCtrlMode(DspPerfCtrlMode::kAuto);
+  DspBackend backend(&qnn_api_copy_);
+
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+  const int calls_after_init = set_power_config_call_count.load();
+
+  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  const int calls_after_same = set_power_config_call_count.load();
+  EXPECT_GT(calls_after_same, calls_after_init);
+
+  Options default_options;
+  EXPECT_TRUE(backend.SetPerformanceMode(default_options));
+
+  Options burst_options;
+  burst_options.SetDspPerformanceMode(DspPerformanceMode::kBurst);
+  burst_options.SetDspPerfCtrlMode(DspPerfCtrlMode::kAuto);
+  EXPECT_TRUE(backend.SetPerformanceMode(burst_options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_GT(set_power_config_call_count.load(), calls_after_same);
 }
 
 }  // namespace

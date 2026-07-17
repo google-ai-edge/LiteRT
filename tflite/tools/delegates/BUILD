@@ -57,6 +57,7 @@ cc_library_with_tflite(
         ":gpu_delegate_provider",
         ":hexagon_delegate_provider",
         ":nnapi_delegate_provider",
+        ":ynnpack_delegate_provider",
         "//tflite/tools/delegates/experimental/stable_delegate:delegate_provider",
     ],
     alwayslink = 1,
@@ -108,16 +109,22 @@ cc_library(
 
 cc_library(
     name = "nnapi_delegate_provider",
-    srcs = ["nnapi_delegate_provider.cc"],
+    srcs = select({
+        "@org_tensorflow//tensorflow:windows": [],
+        "//conditions:default": ["nnapi_delegate_provider.cc"],
+    }),
     copts = common_copts,
-    deps = [
-        ":delegate_provider_hdr",
-        "//tflite/delegates/nnapi:nnapi_delegate",
-        "//tflite/nnapi:nnapi_implementation",
-        "//tflite/nnapi:nnapi_util",
-        "//tflite/nnapi/sl:nnapi_support_library",
-        "//tflite/nnapi/sl:nnapi_support_library_headers",
-    ],
+    deps = select({
+        "@org_tensorflow//tensorflow:windows": [],
+        "//conditions:default": [
+            ":delegate_provider_hdr",
+            "//tflite/delegates/nnapi:nnapi_delegate",
+            "//tflite/nnapi:nnapi_implementation",
+            "//tflite/nnapi:nnapi_util",
+            "//tflite/nnapi/sl:nnapi_support_library",
+            "//tflite/nnapi/sl:nnapi_support_library_headers",
+        ],
+    }),
     alwayslink = 1,
 )
 
@@ -181,6 +188,24 @@ cc_library_with_tflite(
     alwayslink = 1,
 )
 
+cc_library_with_tflite(
+    name = "ynnpack_delegate_provider",
+    srcs = ["ynnpack_delegate_provider.cc"],
+    copts = tflite_copts(),
+    linkstatic = True,
+    tflite_deps = [
+        ":delegate_provider_hdr",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//tflite/c:c_api_types",
+        "//tflite/delegates/ynnpack:ynnpack_delegate",
+        "//tflite/tools:command_line_flags",
+        "//tflite/tools:tool_params",
+    ],
+    alwayslink = 1,
+)
+
 cc_test(
     name = "xnnpack_delegate_provider_test",
     srcs = ["xnnpack_delegate_provider_test.cc"],
@@ -237,3 +262,22 @@ cc_test_with_tflite(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+# copybara:uncomment_begin(google-only)
+# cc_library(
+#     name = "hexagon_ynn_delegate_provider",
+#     srcs = ["hexagon_ynn_delegate_provider.cc"],
+#     copts = common_copts,
+#     deps = [
+#         ":delegate_provider_hdr",
+#         "//tflite/tools:command_line_flags",
+#         "//tflite/tools:tool_params",
+#     ] + select({
+#         "@org_tensorflow//tensorflow:arm_any": [
+#             "//tflite/delegates/hexagon_ynn:hexagon_ynn_delegate",
+#         ],
+#         "//conditions:default": [],
+#     }),
+#     alwayslink = 1,
+# )
+# copybara:uncomment_end

@@ -14,7 +14,7 @@
 
 #include "litert/c/options/litert_compiler_options.h"
 
-#include <cstring>
+#include <cstddef>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -25,6 +25,7 @@
 struct LrtCompilerOptions {
   std::optional<LiteRtCompilerOptionsPartitionStrategy> partition_strategy;
   std::optional<bool> dummy_option;
+  std::optional<size_t> max_partitions;
 };
 
 LiteRtStatus LrtCreateCompilerOptions(LrtCompilerOptions** options) {
@@ -60,6 +61,9 @@ LiteRtStatus LrtGetOpaqueCompilerOptionsData(const LrtCompilerOptions* options,
   if (options->dummy_option.has_value()) {
     ss << "dummy_option = "
        << (options->dummy_option.value() ? "true" : "false") << "\n";
+  }
+  if (options->max_partitions.has_value()) {
+    ss << "max_partitions = " << options->max_partitions.value() << "\n";
   }
 
   *identifier = LrtGetCompilerOptionsIdentifier();
@@ -106,5 +110,24 @@ LiteRtStatus LrtGetCompilerOptionsDummyOption(const LrtCompilerOptions* options,
     return kLiteRtStatusErrorNotFound;
   }
   *dummy_option = options->dummy_option.value();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetCompilerOptionsMaxPartitions(LrtCompilerOptions* options,
+                                                size_t max_partitions) {
+  if (!options) return kLiteRtStatusErrorInvalidArgument;
+  options->max_partitions = max_partitions;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetCompilerOptionsMaxPartitions(
+    const LrtCompilerOptions* options, size_t* max_partitions) {
+  if (!options || !max_partitions) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!options->max_partitions.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *max_partitions = options->max_partitions.value();
   return kLiteRtStatusOk;
 }

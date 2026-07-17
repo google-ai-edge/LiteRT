@@ -36,14 +36,14 @@
 
 #if LITERT_HAS_WEBGPU_SUPPORT
 #include "ml_drift/webgpu/environment.h"  // from @ml_drift
-#include "third_party/odml/litert/ml_drift/delegate/buffer_handler_webgpu.h"
+#include "ml_drift_delegate/delegate/buffer_handler_webgpu.h"
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 #if LITERT_HAS_VULKAN_SUPPORT
 #include "ml_drift/syrtis/environment.h"  // from @ml_drift
 #include "ml_drift/syrtis/vulkan_wrapper.h"  // from @ml_drift
-#include "third_party/odml/litert/ml_drift/delegate/buffer_handler_vulkan.h"
-#include "third_party/odml/litert/ml_drift/delegate/shared_vulkan_env.h"
+#include "ml_drift_delegate/delegate/buffer_handler_vulkan.h"
+#include "ml_drift_delegate/delegate/shared_vulkan_env.h"
 #endif  // LITERT_HAS_VULKAN_SUPPORT
 #endif  // LITERT_CUSTOM_TENSOR_BUFFER_TEST
 
@@ -107,9 +107,19 @@ TEST(TensorBuffer, HostMemory) {
   ASSERT_EQ(std::memcmp(host_mem_addr, kTensorData, sizeof(kTensorData)), 0);
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
+  ASSERT_EQ(LiteRtClearTensorBuffer(tensor_buffer), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr,
+                                   kLiteRtTensorBufferLockModeRead),
+            kLiteRtStatusOk);
+  std::vector<uint8_t> zero_data(sizeof(kTensorData), 0);
+  ASSERT_EQ(std::memcmp(host_mem_addr, zero_data.data(), zero_data.size()), 0);
+  ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
+
   LiteRtDestroyTensorBuffer(tensor_buffer);
   LiteRtDestroyEnvironment(env);
 }
+
+TEST(TensorBuffer, DestroyNullIsNoOp) { LiteRtDestroyTensorBuffer(nullptr); }
 
 TEST(TensorBuffer, Ahwb) {
   if (!LiteRtHasAhwbSupport()) {

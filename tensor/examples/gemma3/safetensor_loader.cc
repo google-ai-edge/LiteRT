@@ -18,11 +18,11 @@ limitations under the License.
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
+#include <filesystem>  // NOLINT
 #include <limits>
 #include <memory>
 #include <string>
-#include <system_error>
+#include <system_error>  // NOLINT
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -34,9 +34,6 @@ limitations under the License.
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-// copybara:uncomment_begin(google_only)
-// #include "tensor/backends/xnnpack/arithmetic.h"
-// copybara:uncomment_end
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/gemma3/safetensors.h"
@@ -505,6 +502,9 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
         tensor_info_it->second, tensor_info_it->second.storage->data_base);
   };
 
+  const bool is_layernorm = absl::StrContains(name, "layernorm") ||
+                            absl::EndsWith(name, "norm.weight");
+
   const std::byte* data_ptr = storage.data_base + info.data_start;
   size_t data_size = info.data_end - info.data_start;
   std::shared_ptr<Buffer> buffer;
@@ -517,6 +517,14 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
           ConvertTensorTo<TypedOwningBuffer<Type::kFP32>>(info,
                                                           storage.data_base));
       buffer = std::move(values.buffer);
+      if (is_layernorm) {
+        auto lock = buffer->LockMutable();
+        float* p = reinterpret_cast<float*>(lock.data());
+        size_t count = lock.size() / sizeof(float);
+        for (size_t i = 0; i < count; ++i) {
+          p[i] += 1.0f;
+        }
+      }
       type = Type::kFP32;
       break;
     }
@@ -602,7 +610,24 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
       type = Type::kFP32;
       break;
     }
-    case Type::kFP32:
+    case Type::kFP32: {
+      if (is_layernorm) {
+        LRT_TENSOR_ASSIGN_OR_RETURN(
+            TypedOwningBuffer<Type::kFP32> values,
+            ConvertTensorTo<TypedOwningBuffer<Type::kFP32>>(info,
+                                                            storage.data_base));
+        buffer = std::move(values.buffer);
+        auto lock = buffer->LockMutable();
+        float* p = reinterpret_cast<float*>(lock.data());
+        size_t count = lock.size() / sizeof(float);
+        for (size_t i = 0; i < count; ++i) {
+          p[i] += 1.0f;
+        }
+      } else {
+        buffer = MakeMappedBuffer(storage.file_data, data_ptr, data_size);
+      }
+      break;
+    }
     case Type::kFP64:
     case Type::kI32:
     case Type::kI64:

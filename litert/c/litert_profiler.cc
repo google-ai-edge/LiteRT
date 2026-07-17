@@ -27,6 +27,9 @@ LiteRtStatus LiteRtCreateProfiler(int size, LiteRtProfiler* profiler) {
   LITERT_RETURN_IF_ERROR(profiler,
                          litert::ErrorStatusBuilder::InvalidArgument())
       << "profiler is null.";
+  LITERT_RETURN_IF_ERROR(size > 0,
+                         litert::ErrorStatusBuilder::InvalidArgument())
+      << "profiler size must be positive.";
   *profiler = new LiteRtProfilerT(size);
   return kLiteRtStatusOk;
 }

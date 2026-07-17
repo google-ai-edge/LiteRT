@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensor/backends/tflite/tflite_flatbuffer_conversion.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -29,16 +30,22 @@ limitations under the License.
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
+#include "tensor/backends/testing/numerical_test_bridge.h"
+#include "tensor/backends/testing/numerical_test_suite.h"
 #include "tensor/backends/tflite/arithmetic_tflite.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
+#include "tensor/internal/graph_traversal.h"
 #include "tensor/internal/matchers.h"
+#include "tensor/internal/type_id.h"
 #include "tensor/tensor.h"
+#include "tensor/utils/macros.h"
 #include "tensor/utils/matchers.h"
 #include "tflite/c/builtin_op_data.h"
 #include "tflite/core/interpreter_builder.h"
 #include "tflite/core/kernels/register.h"
+#include "tflite/core/subgraph.h"
 #include "tflite/interpreter.h"
 #include "tflite/model_builder.h"
 #include "tflite/schema/mutable/schema_generated.h"
@@ -94,6 +101,102 @@ absl::StatusOr<TfLiteTensor&> GetOutputTensor(
     const absl::string_view name, tflite::Interpreter& interpreter) {
   return GetTensor(name, interpreter, interpreter.outputs());
 }
+
+class TfLiteTestBackendBridge : public TestBackendBridge {
+ public:
+  ~TfLiteTestBackendBridge() override = default;
+
+  absl::Status Initialize() override { return absl::OkStatus(); }
+
+  absl::Status BuildGraph(absl::Span<const TensorHandle> inputs,
+                          absl::Span<const TensorHandle> outputs) override {
+    LRT_TENSOR_ASSIGN_OR_RETURN(auto execution_plan, GetExecutionPlan(outputs));
+    for (const auto* op : execution_plan) {
+      if (op->GetTypeId() ==
+          internal::TypeId::Get<graph::FullyConnectedOperation>()) {
+        const auto& weights_tensor = op->inputs[1];
+        LRT_TENSOR_ASSIGN_OR_RETURN(auto info, graph::GetInfo(weights_tensor));
+        if (info.type == Type::kI4 || info.type == Type::kI2) {
+          return absl::UnimplementedError(
+              "TfLite built-in interpreter does not support INT4/INT2 "
+              "execution natively.");
+        }
+      }
+    }
+
+    std::vector<TensorHandle> output_handles(outputs.begin(), outputs.end());
+    LRT_TENSOR_RETURN_IF_ERROR(model_builder_.AddSubgraph(output_handles));
+    LRT_TENSOR_ASSIGN_OR_RETURN(model_data_, model_builder_.CreateFlatbuffer());
+    model_ = tflite::FlatBufferModel::BuildFromBuffer(model_data_.data(),
+                                                      model_data_.size());
+    if (model_ == nullptr) {
+      return absl::InternalError("Failed to build TfLite model from buffer");
+    }
+    tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates resolver;
+    auto builder_status =
+        tflite::InterpreterBuilder(*model_, resolver)(&interpreter_);
+    if (builder_status == kTfLiteUnresolvedOps) {
+      return absl::UnimplementedError(
+          "Failed to build TfLite interpreter due to unresolved ops");
+    } else if (builder_status != kTfLiteOk) {
+      return absl::InternalError("Failed to build TfLite interpreter");
+    }
+    auto allocate_status = interpreter_->AllocateTensors();
+    if (allocate_status == kTfLiteUnresolvedOps) {
+      return absl::UnimplementedError(
+          "Failed to allocate TfLite interpreter tensors due to unresolved "
+          "ops");
+    } else if (allocate_status != kTfLiteOk) {
+      return absl::InternalError(
+          "Failed to allocate TfLite interpreter tensors");
+    }
+    return absl::OkStatus();
+  }
+
+  absl::Status SetInput(const TensorHandle& tensor,
+                        absl::Span<const std::byte> data) override {
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        TfLiteTensor & t, GetInputTensor(tensor.GetName(), *interpreter_));
+    if (t.bytes != data.size()) {
+      return absl::InvalidArgumentError("Input size mismatch");
+    }
+    std::memcpy(t.data.data, data.data(), data.size());
+    return absl::OkStatus();
+  }
+
+  absl::Status Execute() override {
+    if (interpreter_->Invoke() != kTfLiteOk) {
+      return absl::InternalError("Failed to execute TfLite interpreter");
+    }
+    return absl::OkStatus();
+  }
+
+  absl::Status GetOutput(const TensorHandle& tensor,
+                         absl::Span<std::byte> data) override {
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        TfLiteTensor & t, GetOutputTensor(tensor.GetName(), *interpreter_));
+    if (t.bytes != data.size()) {
+      return absl::InvalidArgumentError("Output size mismatch");
+    }
+    std::memcpy(data.data(), t.data.data, data.size());
+    return absl::OkStatus();
+  }
+
+ private:
+  ModelFactory model_builder_;
+  std::vector<char> model_data_;
+  std::unique_ptr<tflite::FlatBufferModel> model_;
+  std::unique_ptr<tflite::Interpreter> interpreter_;
+};
+
+struct TfLiteTraits {
+  using Tag = TfLiteMixinTag;
+  static std::unique_ptr<TestBackendBridge> CreateBridge() {
+    return std::make_unique<TfLiteTestBackendBridge>();
+  }
+};
+
+INSTANTIATE_TYPED_TEST_SUITE_P(TfLite, NumericalTestSuite, TfLiteTraits);
 
 TEST(SerializationTest, BuildOneSubgraphAndRunIt) {
   {
@@ -274,6 +377,34 @@ TEST(SerializationTest, BuildTwoSignatures) {
               Not(nullptr));
 }
 
+TEST(SerializationTest, SignatureRetainsDisconnectedExplicitInput) {
+  const std::string model_path =
+      testing::TempDir() + "/" +
+      testing::UnitTest::GetInstance()->current_test_info()->name() + ".tflite";
+  ModelFactory model_builder;
+  TensorTf x({.name = "x", .type = Type::kFP32, .shape = {1}});
+  TensorTf control({.name = "control", .type = Type::kI32, .shape = {1}});
+  TensorTf y = Add(x, 1.0f).SetName("y");
+  ASSERT_THAT(model_builder.AddSignature({x, control}, {y}, "main"), IsOk());
+  ASSERT_THAT(model_builder.Save(model_path), IsOk());
+
+  auto model = tflite::FlatBufferModel::BuildFromFile(model_path.c_str());
+  ASSERT_NE(model, nullptr);
+  std::unique_ptr<tflite::Interpreter> interpreter;
+  tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates resolver;
+  ASSERT_EQ(tflite::InterpreterBuilder(*model, resolver)(&interpreter),
+            kTfLiteOk);
+  ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
+  EXPECT_THAT(interpreter->signature_inputs("main"), SizeIs(2));
+  EXPECT_THAT(interpreter->signature_outputs("main"), SizeIs(1));
+  EXPECT_THAT(interpreter->input_tensor_by_signature("control", "main"),
+              Not(nullptr));
+  EXPECT_THAT(interpreter->input_tensor_by_signature("x", "main"),
+              Not(nullptr));
+  EXPECT_THAT(interpreter->output_tensor_by_signature("y", "main"),
+              Not(nullptr));
+}
+
 TEST(SerializationTest, AddingAnEmptySubgraphFails) {
   ModelFactory model_builder;
   EXPECT_THAT(model_builder.AddSubgraph({}), Not(IsOk()));
@@ -430,6 +561,130 @@ TEST(SerializationTest, CreateFlatbufferWorks) {
   ASSERT_THAT(model->GetModel()->operator_codes(), Pointee(SizeIs(1)));
   EXPECT_THAT(model->GetModel()->operator_codes()->Get(0)->builtin_code(),
               Eq(tflite::BuiltinOperator_MUL));
+}
+
+TEST(SerializationTest, CanSerializeStableHLOComposite) {
+  const std::vector<int32_t> constant_data = {1, 2, 3, 4};
+  std::vector<char> model_data;
+  {
+    TensorTf constant({.name = "constant",
+                       .type = Type::kI32,
+                       .shape = {2, 2},
+                       .buffer = constant_data});
+    TensorTf input({.name = "input", .type = Type::kI32, .shape = {2, 2}});
+    TensorTf output = StableHLOComposite(
+                          StableHLOCompositeOptions{
+                              .name = "stablehlo.add",
+                              .composite_attributes = {1, 2, 3},
+                              .version = 7,
+                          },
+                          [](TensorTf x, TensorTf y) {
+                            return Add(x, y).SetName("decomposition_sum");
+                          },
+                          constant, input)
+                          .SetName("composite_sum");
+
+    ModelFactory model_builder;
+    ASSERT_THAT(model_builder.AddSubgraph({output}), IsOk());
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(model_data,
+                                    model_builder.CreateFlatbuffer());
+  }
+
+  auto model = tflite::FlatBufferModel::BuildFromBuffer(model_data.data(),
+                                                        model_data.size());
+  ASSERT_NE(model, nullptr);
+  const tflite::Model* model_fb = model->GetModel();
+  ASSERT_THAT(model_fb->subgraphs(), Pointee(SizeIs(2)));
+  const tflite::SubGraph* parent = model_fb->subgraphs()->Get(0);
+  const tflite::SubGraph* decomposition = model_fb->subgraphs()->Get(1);
+
+  ASSERT_THAT(parent->operators(), Pointee(SizeIs(1)));
+  const tflite::Operator* composite_op = parent->operators()->Get(0);
+  ASSERT_THAT(model_fb->operator_codes(), Pointee(SizeIs(2)));
+  EXPECT_EQ(model_fb->operator_codes()
+                ->Get(composite_op->opcode_index())
+                ->builtin_code(),
+            tflite::BuiltinOperator_STABLEHLO_COMPOSITE);
+
+  const tflite::StableHLOCompositeOptions* composite_options =
+      composite_op->builtin_options_2_as_StableHLOCompositeOptions();
+  ASSERT_NE(composite_options, nullptr);
+  ASSERT_NE(composite_options->name(), nullptr);
+  EXPECT_EQ(composite_options->name()->str(), "stablehlo.add");
+  EXPECT_EQ(composite_options->decomposition_subgraph_index(), 1);
+  EXPECT_EQ(composite_options->version(), 7);
+  ASSERT_NE(composite_options->composite_attributes(), nullptr);
+  ASSERT_EQ(composite_options->composite_attributes()->size(), 3);
+  EXPECT_EQ(composite_options->composite_attributes()->Get(0), 1);
+  EXPECT_EQ(composite_options->composite_attributes()->Get(1), 2);
+  EXPECT_EQ(composite_options->composite_attributes()->Get(2), 3);
+  EXPECT_EQ(composite_options->composite_attributes_format(),
+            tflite::CustomOptionsFormat_FLEXBUFFERS);
+
+  ASSERT_THAT(parent->inputs(), Pointee(SizeIs(1)));
+  ASSERT_THAT(parent->outputs(), Pointee(SizeIs(1)));
+  ASSERT_THAT(composite_op->inputs(), Pointee(SizeIs(2)));
+  ASSERT_THAT(composite_op->outputs(), Pointee(SizeIs(1)));
+  const tflite::Tensor* parent_constant =
+      parent->tensors()->Get(composite_op->inputs()->Get(0));
+  const tflite::Tensor* parent_output =
+      parent->tensors()->Get(parent->outputs()->Get(0));
+  EXPECT_NE(parent_constant->buffer(), 0);
+  ASSERT_NE(parent_output->name(), nullptr);
+  EXPECT_EQ(parent_output->name()->str(), "composite_sum");
+
+  ASSERT_THAT(decomposition->inputs(), Pointee(SizeIs(2)));
+  ASSERT_THAT(decomposition->outputs(), Pointee(SizeIs(1)));
+  ASSERT_THAT(decomposition->operators(), Pointee(SizeIs(1)));
+  EXPECT_EQ(model_fb->operator_codes()
+                ->Get(decomposition->operators()->Get(0)->opcode_index())
+                ->builtin_code(),
+            tflite::BuiltinOperator_ADD);
+  for (int i = 0; i < decomposition->inputs()->size(); ++i) {
+    const tflite::Tensor* decomposition_input =
+        decomposition->tensors()->Get(decomposition->inputs()->Get(i));
+    EXPECT_EQ(decomposition_input->buffer(), 0);
+  }
+  const tflite::Tensor* decomposition_output =
+      decomposition->tensors()->Get(decomposition->outputs()->Get(0));
+  ASSERT_NE(decomposition_output->name(), nullptr);
+  EXPECT_EQ(decomposition_output->name()->str(), "decomposition_sum");
+}
+
+TEST(SerializationTest, StableHLOCompositeRetainsDisconnectedInput) {
+  std::vector<char> model_data;
+  {
+    TensorTf input({.name = "input", .type = Type::kFP32, .shape = {1}});
+    TensorTf runtime_params(
+        {.name = "runtime_params", .type = Type::kI32, .shape = {7}});
+    TensorTf output = StableHLOComposite(
+        "test.disconnected_input",
+        [](TensorTf value, TensorTf) { return Add(value, value); }, input,
+        runtime_params);
+
+    ModelFactory model_builder;
+    ASSERT_THAT(model_builder.AddSubgraph({output}), IsOk());
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(model_data,
+                                    model_builder.CreateFlatbuffer());
+  }
+
+  auto model = tflite::FlatBufferModel::BuildFromBuffer(model_data.data(),
+                                                        model_data.size());
+  ASSERT_NE(model, nullptr);
+  const tflite::Model* model_fb = model->GetModel();
+  ASSERT_THAT(model_fb->subgraphs(), Pointee(SizeIs(2)));
+  const tflite::SubGraph* decomposition = model_fb->subgraphs()->Get(1);
+  ASSERT_THAT(decomposition->inputs(), Pointee(SizeIs(2)));
+  EXPECT_EQ(decomposition->tensors()
+                ->Get(decomposition->inputs()->Get(0))
+                ->name()
+                ->str(),
+            "test.disconnected_input/decomposition_input_0");
+  EXPECT_EQ(decomposition->tensors()
+                ->Get(decomposition->inputs()->Get(1))
+                ->name()
+                ->str(),
+            "test.disconnected_input/decomposition_input_1");
 }
 
 TEST(SerializationTest, UnnamedInputsAndOutputsAreGivenAName) {
@@ -1479,6 +1734,22 @@ TEST(SerializationTest, CanSerializeReshape) {
   EXPECT_THAT(
       absl::MakeSpan(reshape_options->shape, reshape_options->num_dimensions),
       ElementsAre(5));
+
+  const tflite::Model* flatbuffer_model = model->GetModel();
+  ASSERT_NE(flatbuffer_model, nullptr);
+  const tflite::Operator* reshape_op =
+      flatbuffer_model->subgraphs()->Get(0)->operators()->Get(0);
+  ASSERT_EQ(reshape_op->inputs()->size(), 2);
+  const tflite::Tensor* shape_tensor =
+      flatbuffer_model->subgraphs()->Get(0)->tensors()->Get(
+          reshape_op->inputs()->Get(1));
+  const tflite::Buffer* shape_buffer =
+      flatbuffer_model->buffers()->Get(shape_tensor->buffer());
+  ASSERT_NE(shape_buffer->data(), nullptr);
+  ASSERT_EQ(shape_buffer->data()->size(), sizeof(int32_t));
+  int32_t serialized_shape = 0;
+  std::memcpy(&serialized_shape, shape_buffer->data()->data(), sizeof(int32_t));
+  EXPECT_EQ(serialized_shape, 5);
 }
 
 TEST(SerializationTest, CanSerializeExpandDims) {
@@ -1896,6 +2167,96 @@ TEST(SerializationTest, CanSerializeDequantize) {
   ASSERT_NE(node_and_reg, nullptr);
   EXPECT_EQ(node_and_reg->second.builtin_code,
             tflite::BuiltinOperator_DEQUANTIZE);
+}
+
+TEST(SerializationTest, CanSerializeBlockwiseQuantization) {
+  const std::string model_path = testing::TempDir() + "/blockwise_quant.tflite";
+  std::vector<float> scales = {0.5f, 1.5f};
+  std::vector<int64_t> zero_points = {12, 34};
+  int block_size = 16;
+  int quantized_dimension = 0;
+  auto quantization = std::make_shared<BlockwiseQuantization>(
+      scales, zero_points, block_size, quantized_dimension);
+
+  std::vector<int8_t> buffer_data = {1, 2, 3, 4};
+  TensorTf a({.name = "quantized_weights",
+              .type = Type::kI8,
+              .shape = {2, 2},
+              .buffer = buffer_data,
+              .quantization = quantization});
+
+  TensorTf c = Dequantize(a);
+  c.SetName("dequantized_output");
+
+  ASSERT_THAT(Save({c}, model_path), IsOk());
+
+  auto model = tflite::FlatBufferModel::BuildFromFile(model_path.c_str());
+  ASSERT_NE(model, nullptr);
+  const tflite::Model* model_fb = model->GetModel();
+  ASSERT_NE(model_fb, nullptr);
+  ASSERT_EQ(model_fb->subgraphs()->size(), 1);
+  const tflite::SubGraph* subgraph = model_fb->subgraphs()->Get(0);
+
+  const tflite::Tensor* weight_tensor = nullptr;
+  for (int i = 0; i < subgraph->tensors()->size(); ++i) {
+    auto t = subgraph->tensors()->Get(i);
+    if (t->name() && t->name()->str() == "quantized_weights") {
+      weight_tensor = t;
+      break;
+    }
+  }
+  ASSERT_NE(weight_tensor, nullptr);
+
+  const tflite::QuantizationParameters* q_params =
+      weight_tensor->quantization();
+  ASSERT_NE(q_params, nullptr);
+  ASSERT_EQ(q_params->details_type(),
+            tflite::QuantizationDetails_BlockwiseQuantization);
+  const tflite::BlockwiseQuantization* bwq_fb =
+      q_params->details_as_BlockwiseQuantization();
+  ASSERT_NE(bwq_fb, nullptr);
+
+  EXPECT_EQ(bwq_fb->block_size(), block_size);
+
+  int scale_tensor_idx = bwq_fb->scales();
+  int zero_point_tensor_idx = bwq_fb->zero_points();
+
+  ASSERT_GE(scale_tensor_idx, 0);
+  ASSERT_LT(scale_tensor_idx, subgraph->tensors()->size());
+  const tflite::Tensor* scale_tensor =
+      subgraph->tensors()->Get(scale_tensor_idx);
+  EXPECT_EQ(scale_tensor->type(), tflite::TensorType_FLOAT16);
+
+  ASSERT_GE(zero_point_tensor_idx, 0);
+  ASSERT_LT(zero_point_tensor_idx, subgraph->tensors()->size());
+  const tflite::Tensor* zp_tensor =
+      subgraph->tensors()->Get(zero_point_tensor_idx);
+  EXPECT_EQ(zp_tensor->type(), tflite::TensorType_INT64);
+
+  // Now load interpreter to verify data.
+  std::unique_ptr<tflite::Interpreter> interpreter;
+  tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates resolver;
+  ASSERT_EQ(tflite::InterpreterBuilder(*model, resolver)(&interpreter),
+            kTfLiteOk);
+  ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
+
+  const TfLiteTensor* scale_tensor_tflite =
+      interpreter->tensor(scale_tensor_idx);
+  ASSERT_NE(scale_tensor_tflite, nullptr);
+  EXPECT_EQ(scale_tensor_tflite->type, kTfLiteFloat16);
+  const fp16_t* scale_data =
+      reinterpret_cast<const fp16_t*>(scale_tensor_tflite->data.raw);
+  EXPECT_FLOAT_EQ(static_cast<float>(scale_data[0]), 0.5f);
+  EXPECT_FLOAT_EQ(static_cast<float>(scale_data[1]), 1.5f);
+
+  const TfLiteTensor* zp_tensor_tflite =
+      interpreter->tensor(zero_point_tensor_idx);
+  ASSERT_NE(zp_tensor_tflite, nullptr);
+  EXPECT_EQ(zp_tensor_tflite->type, kTfLiteInt64);
+  const int64_t* zp_data =
+      reinterpret_cast<const int64_t*>(zp_tensor_tflite->data.raw);
+  EXPECT_EQ(zp_data[0], 12);
+  EXPECT_EQ(zp_data[1], 34);
 }
 
 TEST(SerializationTest, CanSerializeCumsum) {

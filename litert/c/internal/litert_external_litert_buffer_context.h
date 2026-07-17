@@ -60,6 +60,13 @@ LiteRtStatus LiteRtExternalLiteRtBufferContextGetEnvironment(
 LiteRtStatus LiteRtExternalLiteRtBufferContextIsAsyncExecutionMode(
     LiteRtExternalLiteRtBufferContext context, bool* is_async_execution_mode);
 
+// Returns the per-run options handle for the current invocation. The
+// returned options handle is borrowed and owned by the runtime. The caller
+// must NOT destroy it. The handle is only valid during the current
+// execution (inference run) and must not be stored.
+LiteRtStatus LiteRtExternalLiteRtBufferContextGetRunOptions(
+    LiteRtExternalLiteRtBufferContext context, LiteRtOptions* run_options);
+
 // Destroys the buffer context.
 void LiteRtDestroyExternalLiteRtBufferContext(
     LiteRtExternalLiteRtBufferContext context);

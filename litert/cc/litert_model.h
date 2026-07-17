@@ -84,42 +84,41 @@ FetchTensorType(LiteRtTensor tensor, LiteRtTensorTypeId type_id) {
   }
 }
 
-inline LiteRtQuantizationTypeId FetchTensorQuantizationTypeId(
-    LiteRtTensor tensor) {
+inline QuantizationTypeId FetchTensorQuantizationTypeId(LiteRtTensor tensor) {
   LiteRtQuantizationTypeId quantization_type_id;
   internal::AssertOk(LiteRtGetQuantizationTypeId, tensor,
                      &quantization_type_id);
-  return quantization_type_id;
+  return static_cast<QuantizationTypeId>(quantization_type_id);
 }
 
-inline LiteRtQuantizationPerTensor FetchTensorQuantizationPerTensor(
+inline QuantizationPerTensor FetchTensorQuantizationPerTensor(
     LiteRtTensor tensor) {
-  if (FetchTensorQuantizationTypeId(tensor) != kLiteRtQuantizationPerTensor) {
+  if (FetchTensorQuantizationTypeId(tensor) != QuantizationTypeId::PerTensor) {
     return {};
   }
-  LiteRtQuantizationPerTensor per_tensor_quantization;
+  QuantizationPerTensor per_tensor_quantization;
   internal::AssertOk(LiteRtGetPerTensorQuantization, tensor,
                      &per_tensor_quantization);
   return per_tensor_quantization;
 }
 
-inline LiteRtQuantizationPerChannel FetchTensorQuantizationPerChannel(
+inline QuantizationPerChannel FetchTensorQuantizationPerChannel(
     LiteRtTensor tensor) {
-  if (FetchTensorQuantizationTypeId(tensor) != kLiteRtQuantizationPerChannel) {
+  if (FetchTensorQuantizationTypeId(tensor) != QuantizationTypeId::PerChannel) {
     return {};
   }
-  LiteRtQuantizationPerChannel per_channel_quantization;
+  QuantizationPerChannel per_channel_quantization;
   internal::AssertOk(LiteRtGetPerChannelQuantization, tensor,
                      &per_channel_quantization);
   return per_channel_quantization;
 }
 
-inline LiteRtQuantizationBlockWise FetchTensorQuantizationBlockWise(
+inline QuantizationBlockWise FetchTensorQuantizationBlockWise(
     LiteRtTensor tensor) {
-  if (FetchTensorQuantizationTypeId(tensor) != kLiteRtQuantizationBlockWise) {
+  if (FetchTensorQuantizationTypeId(tensor) != QuantizationTypeId::BlockWise) {
     return {};
   }
-  LiteRtQuantizationBlockWise block_wise_quantization;
+  QuantizationBlockWise block_wise_quantization;
   internal::AssertOk(LiteRtGetBlockWiseQuantization, tensor,
                      &block_wise_quantization);
   return block_wise_quantization;
@@ -311,7 +310,7 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   // /// @internal
   // /// @brief Creates a model from an owned TFLite allocation.
   // ///
-  // /// @note This is an internal experimetal API which is not available through
+  // /// @note This is an internal experimental API which is not available through
   // /// libLiteRt.so. It's not part of the official LiteRT public C++ API.
   // static Expected<Model> CreateFromAllocation(
       // Environment& env, std::unique_ptr<tflite::Allocation> allocation) {
@@ -329,7 +328,7 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   // /// @internal
   // /// @brief Creates a model from an owned TFLite allocation.
   // ///
-  // /// @note This is an internal experimetal API which is not available through
+  // /// @note This is an internal experimental API which is not available through
   // /// libLiteRt.so. It's not part of the official LiteRT public C++ API.
   // static Expected<Model> CreateFromAllocation(
       // std::unique_ptr<tflite::Allocation> allocation) {

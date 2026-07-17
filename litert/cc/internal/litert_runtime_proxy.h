@@ -63,9 +63,9 @@ class RuntimeProxy {
   /// If the system runtime handle is not provided, the builtin runtime will be
   /// used.
   explicit RuntimeProxy(const LiteRtRuntimeCApiStruct* runtime_c_api)
-      : runtime_c_api_(LITERT_INTERNAL_DIE_IF_NULL(runtime_c_api == nullptr
-                                                       ? kLiteRtRuntimeBuiltin
-                                                       : runtime_c_api)) {};
+      : runtime_c_api_(LITERT_INTERNAL_DIE_IF_NULL(
+            runtime_c_api == nullptr ? GetLiteRtRuntimeBuiltin()
+                                     : runtime_c_api)) {};
 
   ~RuntimeProxy() = default;
 
@@ -138,12 +138,6 @@ class RuntimeProxy {
                                           LiteRtAny* value) {
     LITERT_PROXY_METHOD_STATUS(litert_get_environment_options_value, options,
                                tag, value);
-  }
-
-  LiteRtStatus SetEnvironmentOptionsValue(LiteRtEnvironmentOptions options,
-                                          LiteRtEnvOption env_option) {
-    LITERT_PROXY_METHOD_STATUS(litert_set_environment_options_value, options,
-                               env_option);
   }
 
   //
@@ -284,12 +278,7 @@ class RuntimeProxy {
                                input_idx, input_name);
   }
 
-  LiteRtStatus GetSignatureInputTensor(LiteRtSignature signature,
-                                       const char* input_name,
-                                       LiteRtTensor* tensor) {
-    LITERT_PROXY_METHOD_STATUS(litert_get_signature_input_tensor, signature,
-                               input_name, tensor);
-  }
+
 
   LiteRtStatus GetSignatureInputTensorByIndex(LiteRtSignature signature,
                                               LiteRtParamIndex input_idx,
@@ -311,12 +300,7 @@ class RuntimeProxy {
                                output_idx, output_name);
   }
 
-  LiteRtStatus GetSignatureOutputTensor(LiteRtSignature signature,
-                                        const char* output_name,
-                                        LiteRtTensor* tensor) {
-    LITERT_PROXY_METHOD_STATUS(litert_get_signature_output_tensor, signature,
-                               output_name, tensor);
-  }
+
 
   LiteRtStatus GetSignatureOutputTensorByIndex(LiteRtSignature signature,
                                                LiteRtParamIndex output_idx,
@@ -464,12 +448,6 @@ class RuntimeProxy {
     LITERT_PROXY_METHOD_STATUS(litert_get_compiled_model_output_tensor_layouts,
                                compiled_model, signature_index, num_layouts,
                                layouts, update_allocation);
-  }
-
-  LiteRtStatus GetCompiledModelEnvironment(LiteRtCompiledModel compiled_model,
-                                           LiteRtEnvironment* environment) {
-    LITERT_PROXY_METHOD_STATUS(litert_get_compiled_model_environment,
-                               compiled_model, environment);
   }
 
   LiteRtStatus RunCompiledModel(LiteRtCompiledModel compiled_model,

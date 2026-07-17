@@ -15,9 +15,7 @@
 #include "litert/c/options/litert_cpu_options.h"
 
 #include <stdint.h>
-#include <string.h>  // NOLINT: To use strdup in some environments.
 
-#include <cstdlib>
 #include <optional>
 #include <string>
 
@@ -29,6 +27,7 @@
 
 struct LrtCpuOptions {
   std::optional<LiteRtCpuKernelMode> kernel_mode;
+  std::optional<bool> enable_ynnpack;
   std::optional<int32_t> num_threads;
   std::optional<uint32_t> flags;
   std::optional<std::string> weight_cache_file_path;
@@ -40,7 +39,7 @@ namespace {
 
 bool IsValidCpuKernelMode(LiteRtCpuKernelMode mode) {
   switch (mode) {
-    case kLiteRtCpuKernelModeXnnpack:
+    case kLiteRtCpuKernelModeDelegate:
     case kLiteRtCpuKernelModeBuiltin:
     case kLiteRtCpuKernelModeReference:
       return true;
@@ -50,8 +49,8 @@ bool IsValidCpuKernelMode(LiteRtCpuKernelMode mode) {
 
 const char* CpuKernelModeToString(LiteRtCpuKernelMode mode) {
   switch (mode) {
-    case kLiteRtCpuKernelModeXnnpack:
-      return "xnnpack";
+    case kLiteRtCpuKernelModeDelegate:
+      return "delegate";
     case kLiteRtCpuKernelModeBuiltin:
       return "builtin";
     case kLiteRtCpuKernelModeReference:
@@ -89,6 +88,12 @@ LiteRtStatus LrtGetOpaqueCpuOptionsData(const LrtCpuOptions* options,
         &toml_data,
         absl::StrFormat("kernel_mode = \"%s\"\n",
                         CpuKernelModeToString(*options->kernel_mode)));
+  }
+  if (options->enable_ynnpack.has_value()) {
+    absl::StrAppend(
+        &toml_data,
+        absl::StrFormat("enable_ynnpack = %s\n",
+                        *options->enable_ynnpack ? "true" : "false"));
   }
   if (options->num_threads.has_value()) {
     absl::StrAppend(&toml_data, absl::StrFormat("num_threads = %d\n",
@@ -148,6 +153,27 @@ LiteRtStatus LrtGetCpuOptionsKernelMode(const LrtCpuOptions* options,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LrtSetCpuOptionsEnableYNNPack(LrtCpuOptions* options,
+                                           bool enable_ynnpack) {
+  LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "options is null.");
+  options->enable_ynnpack = enable_ynnpack;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetCpuOptionsEnableYNNPack(const LrtCpuOptions* options,
+                                           bool* const enable_ynnpack) {
+  LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "options is null.");
+  LITERT_ENSURE(enable_ynnpack != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "enable_ynnpack is null.");
+  if (!options->enable_ynnpack.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enable_ynnpack = *options->enable_ynnpack;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LrtSetCpuOptionsNumThread(LrtCpuOptions* options,
                                        int num_threads) {
   LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
@@ -203,6 +229,8 @@ LiteRtStatus LrtSetCpuOptionsXnnPackWeightCachePath(LrtCpuOptions* options,
                                                     const char* path) {
   LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
                 "options is null.");
+  LITERT_ENSURE(path != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "path is null.");
   if (options->weight_cache_file_descriptor.has_value()) {
     return kLiteRtStatusErrorInvalidArgument;
   }

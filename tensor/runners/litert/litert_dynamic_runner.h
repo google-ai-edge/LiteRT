@@ -84,6 +84,32 @@ class LitertDynamicRunner {
     return absl::OkStatus();
   }
 
+  // Query input buffer index by name in a signature once at startup
+  absl::StatusOr<size_t> GetInputIndex(const std::string& signature_name,
+                                       const std::string& name) const {
+    LITERT_ASSIGN_OR_RETURN(auto signature,
+                            compiled_model_.FindSignature(signature_name));
+    for (size_t i = 0; i < signature.InputNames().size(); ++i) {
+      if (signature.InputNames()[i] == name) {
+        return i;
+      }
+    }
+    return absl::NotFoundError("Input tensor name not found in signature");
+  }
+
+  // Query output buffer index by name in a signature once at startup
+  absl::StatusOr<size_t> GetOutputIndex(const std::string& signature_name,
+                                        const std::string& name) const {
+    LITERT_ASSIGN_OR_RETURN(auto signature,
+                            compiled_model_.FindSignature(signature_name));
+    for (size_t i = 0; i < signature.OutputNames().size(); ++i) {
+      if (signature.OutputNames()[i] == name) {
+        return i;
+      }
+    }
+    return absl::NotFoundError("Output tensor name not found in signature");
+  }
+
   // Non-signature overloads (default to first signature)
   absl::Status SetInput(const std::string& name, const TensorHandle& tensor) {
     return SetInput(default_signature_name_, name, tensor);
@@ -276,6 +302,9 @@ class LitertDynamicRunner {
       case ElementType::Int8:
         type = Type::kI8;
         break;
+      case ElementType::Bool:
+        type = Type::kBOOL;
+        break;
       default:
         break;
     }
@@ -349,6 +378,9 @@ class LitertDynamicRunner {
         break;
       case ElementType::Int8:
         type = Type::kI8;
+        break;
+      case ElementType::Bool:
+        type = Type::kBOOL;
         break;
       default:
         break;

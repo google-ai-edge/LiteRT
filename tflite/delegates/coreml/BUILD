@@ -90,6 +90,7 @@ objc_library(
         "//tflite/kernels:kernel_util",
         "//tflite/kernels/internal:optimized_base",
         "//tflite/kernels/internal:types",
+        "//tflite/types:half",
         "@FP16",
     ],
 )

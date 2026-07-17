@@ -10,19 +10,20 @@
 #include <cstring>
 #include <functional>
 #include <optional>
+#include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
+#include "QnnOpDef.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/op_code.h"
-#include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/param_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
-#include "QnnOpDef.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
 
@@ -69,7 +70,7 @@ void OpWrapper::AddTensorParam(const char* name, const TensorWrapper& tensor) {
 
 Qnn_OpConfig_t OpWrapper::GetOpConfig() {
   Qnn_OpConfig_t qnn_op = QNN_OPCONFIG_INIT;
-  qnn_op.v1.packageName = QNN_OP_PACKAGE_NAME_QTI_AISW;
+  qnn_op.v1.packageName = package_name_;
   qnn_op.v1.typeName = type_name_;
   qnn_op.v1.name = name_.data();
   // input tensors
@@ -123,6 +124,8 @@ const TensorWrapper& OpWrapper::GetInputTensor(size_t i) const {
   return input_tensors_[i].get();
 }
 
+size_t OpWrapper::GetInputCount() const { return input_tensors_.size(); }
+
 const TensorWrapper& OpWrapper::GetOutputTensor(size_t i) const {
   assert(i < output_tensors_.size());
   return output_tensors_[i].get();
@@ -166,6 +169,21 @@ void OpWrapper::AddPrefixToName(absl::string_view prefix) {
 
 void OpWrapper::AddSuffixToName(absl::string_view suffix) {
   name_ = absl::StrCat(name_, suffix);
+}
+
+std::string OpWrapper::ToString() const {
+  std::ostringstream out;
+  out << "'" << GetName()
+      << "' (type=" << (GetTypeName() ? GetTypeName() : "<null>") << ")";
+  out << "\n  Inputs:";
+  for (size_t i = 0; i < input_tensors_.size(); ++i) {
+    out << "\n    [" << i << "] " << input_tensors_[i].get().ToString();
+  }
+  out << "\n  Outputs:";
+  for (size_t i = 0; i < output_tensors_.size(); ++i) {
+    out << "\n    [" << i << "] " << output_tensors_[i].get().ToString();
+  }
+  return out.str();
 }
 
 namespace {

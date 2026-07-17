@@ -37,13 +37,15 @@ namespace litert::tensor {
 using Shape = graph::Shape;
 using Quantization = graph::Quantization;
 using PerChannelAffineQuantization = graph::PerChannelAffineQuantization;
+using BlockwiseQuantization = graph::BlockwiseQuantization;
 
 struct TensorInit {
   std::string name;
   Type type = Type::kUnknown;
   Shape shape;
   std::variant<std::shared_ptr<Buffer>, std::vector<float>,
-               std::vector<int32_t>, std::vector<int8_t>>
+               std::vector<int32_t>, std::vector<int8_t>, std::vector<int4_t>,
+               float, double, int8_t, int32_t, int64_t>
       buffer;
   std::shared_ptr<Quantization> quantization;
 };
@@ -55,9 +57,12 @@ class TensorHandle {
                         source_location loc = source_location::current());
   explicit TensorHandle(graph::Tensor impl);
 
+  // NOLINTBEGIN(google-explicit-constructor): we want to be able to return
+  // errors directly from functions that return tensors.
   TensorHandle(absl::Status status,
                source_location loc = source_location::current())
       : TensorHandle(graph::ErrorTensor(std::move(status), loc)) {}
+  // NOLINTEND(google-explicit-constructor)
 
   // Creates an invalid tensor handle.
   //

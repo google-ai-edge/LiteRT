@@ -20,10 +20,18 @@ namespace qnn {
 
 class OpWrapper final {
  public:
-  explicit OpWrapper() = default;
+  OpWrapper() = default;
 
-  explicit OpWrapper(std::string name, const char* op_type, QnnOpCode op_code)
-      : type_name_{op_type}, name_{std::move(name)}, op_code_{op_code} {}
+  OpWrapper(std::string name, const char* op_type, QnnOpCode op_code)
+      : OpWrapper(std::move(name), QNN_OP_PACKAGE_NAME_QTI_AISW, op_type,
+                  op_code) {}
+
+  OpWrapper(std::string name, const char* package_name, const char* op_type,
+            QnnOpCode op_code)
+      : package_name_{package_name},
+        type_name_{op_type},
+        name_{std::move(name)},
+        op_code_{op_code} {}
 
   bool operator==(const OpWrapper& other) const;
 
@@ -55,6 +63,8 @@ class OpWrapper final {
 
   const TensorWrapper& GetInputTensor(size_t i) const;
 
+  size_t GetInputCount() const;
+
   const TensorWrapper& GetOutputTensor(size_t i) const;
 
   const TensorParamWrapper& GetTensorParam(size_t i) const;
@@ -69,7 +79,15 @@ class OpWrapper final {
 
   void AddSuffixToName(absl::string_view suffix);
 
+  // Multi-line description (name, type, and every input/output tensor), for
+  // logging.
+  std::string ToString() const;
+
  private:
+  // Borrowed pointer. Must point to a string that outlives this OpWrapper --
+  // in practice, the QualcommOptions instance held by LiteRtCompilerPluginT.
+  // Do not pass a stack-local or temporary string.
+  const char* package_name_{QNN_OP_PACKAGE_NAME_QTI_AISW};
   const char* type_name_{nullptr};
   std::string name_{};  // human readable name
   std::vector<std::reference_wrapper<const TensorWrapper>> input_tensors_{};

@@ -23,6 +23,8 @@ limitations under the License.
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -44,6 +46,90 @@ limitations under the License.
 #include "tensor/utils/source_location.h"
 
 namespace litert::tensor {
+
+struct StableHLOCompositeOptions {
+  std::string name;
+  std::vector<uint8_t> composite_attributes;
+  int32_t version = 1;
+};
+
+namespace internal {
+
+template <typename T>
+struct IsTuple : std::false_type {};
+
+template <typename... Ts>
+struct IsTuple<std::tuple<Ts...>> : std::true_type {};
+
+template <class... Mixins>
+Tensor<Mixins...> CloneStableHLOCompositeInput(Tensor<Mixins...> input) {
+  Tensor<Mixins...> clone({.name = std::string(input.GetName()),
+                           .type = input.GetType(),
+                           .shape = input.GetShape()});
+  clone.SetQuantization(input.GetQuantization());
+  return clone;
+}
+
+template <typename TensorLike>
+void FlattenStableHLOCompositeTensors(const TensorLike& tensor,
+                                      std::vector<TensorHandle>& flat_outputs) {
+  flat_outputs.push_back(TensorHandle(tensor));
+}
+
+template <typename... Ts>
+void FlattenStableHLOCompositeTensors(const std::tuple<Ts...>& tensors,
+                                      std::vector<TensorHandle>& flat_outputs) {
+  std::apply(
+      [&flat_outputs](const auto&... tensor) {
+        (FlattenStableHLOCompositeTensors(tensor, flat_outputs), ...);
+      },
+      tensors);
+}
+
+template <class... Mixins, typename TensorLike>
+Tensor<Mixins...> CreateStableHLOCompositeOutputLike(
+    const TensorLike& traced_output,
+    std::shared_ptr<graph::StableHLOCompositeOperation>& op,
+    source_location loc) {
+  TensorHandle traced_handle(traced_output);
+  Tensor<Mixins...> output = AddOutput(op, loc);
+  graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
+  output_info.name = std::string(traced_handle.GetName());
+  output_info.type = traced_handle.GetType();
+  output_info.shape = traced_handle.GetShape();
+  output_info.quantization = traced_handle.GetQuantization();
+  return output;
+}
+
+template <class... Mixins, typename Tuple, size_t... Is>
+auto CreateStableHLOCompositeOutputTupleLike(
+    const Tuple& traced_outputs,
+    std::shared_ptr<graph::StableHLOCompositeOperation>& op,
+    source_location loc, std::index_sequence<Is...>) {
+  std::vector<Tensor<Mixins...>> outputs;
+  outputs.reserve(sizeof...(Is));
+  (outputs.push_back(CreateStableHLOCompositeOutputLike<Mixins...>(
+       std::get<Is>(traced_outputs), op, loc)),
+   ...);
+  return std::make_tuple(std::move(outputs[Is])...);
+}
+
+template <class... Mixins, typename Outputs>
+auto CreateStableHLOCompositeOutputsLike(
+    const Outputs& traced_outputs,
+    std::shared_ptr<graph::StableHLOCompositeOperation>& op,
+    source_location loc) {
+  if constexpr (IsTuple<std::decay_t<Outputs>>::value) {
+    return CreateStableHLOCompositeOutputTupleLike<Mixins...>(
+        traced_outputs, op, loc,
+        std::make_index_sequence<std::tuple_size_v<std::decay_t<Outputs>>>());
+  } else {
+    return CreateStableHLOCompositeOutputLike<Mixins...>(traced_outputs, op,
+                                                         loc);
+  }
+}
+
+}  // namespace internal
 
 template <class... Mixins>
 absl::Status CheckUnaryElementwiseOp(const graph::Tensor& a) {
@@ -501,7 +587,9 @@ Tensor<Mixins...> Pad(Tensor<Mixins...> a, Tensor<Mixins...> b,
   o_info.type = a_info.type;
   o_info.shape = a_info.shape;
   if (b_info.buffer) {
-    const auto b_data = b_info.buffer->Lock().As<const int32_t>().data();
+    const LockedBufferSpan<const int32_t> b_lock =
+        b_info.buffer->Lock().As<const int32_t>();
+    const int32_t* b_data = b_lock.data();
     for (int i = 0; i < o_info.shape.size(); ++i) {
       o_info.shape[i] += b_data[i * 2] + b_data[i * 2 + 1];
     }
@@ -527,7 +615,9 @@ Tensor<Mixins...> PadV2(Tensor<Mixins...> a, Tensor<Mixins...> b,
   o_info.type = a_info.type;
   o_info.shape = a_info.shape;
   if (b_info.buffer) {
-    const auto b_data = b_info.buffer->Lock().As<const int32_t>().data();
+    const LockedBufferSpan<const int32_t> b_lock =
+        b_info.buffer->Lock().As<const int32_t>();
+    const int32_t* b_data = b_lock.data();
     for (int i = 0; i < o_info.shape.size(); ++i) {
       o_info.shape[i] += b_data[i * 2] + b_data[i * 2 + 1];
     }
@@ -555,10 +645,16 @@ Tensor<Mixins...> ExpandDims(Tensor<Mixins...> input, Tensor<Mixins...> axis,
   output_info.type = input_info.type;
 
   if (axis_info.buffer) {
-    int real_axis =
-        axis_info.buffer->Lock().template As<const int32_t>().data()[0];
+    LockedBufferSpan<const int32_t> axis_lock =
+        axis_info.buffer->Lock().template As<const int32_t>();
+    int real_axis = axis_lock.data()[0];
     if (real_axis < 0) {
       real_axis += input_info.shape.size() + 1;
+    }
+    if (real_axis < 0 ||
+        real_axis > static_cast<int>(input_info.shape.size())) {
+      return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
+          "The ExpandDims axis is out of range.")));
     }
     output_info.shape.insert(output_info.shape.begin() + real_axis, 1);
   }
@@ -624,7 +720,11 @@ Tensor<Mixins...> Reshape(Tensor<Mixins...> input, std::vector<int> new_shape,
   auto op = std::make_shared<graph::ReshapeOperation>();
   RegisterMixins<Mixins...>(op);
   op->new_shape = new_shape;
-  AddInputs(op, input);
+  Tensor<Mixins...> shape_tensor(
+      {.type = Type::kI32,
+       .shape = {static_cast<int>(new_shape.size())},
+       .buffer = OwningCpuBuffer::Copy<Type::kI32>(new_shape)});
+  AddInputs(op, input, shape_tensor);
   Tensor<Mixins...> output = AddOutput(op, loc);
   const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
@@ -694,7 +794,9 @@ Tensor<Mixins...> Sum(Tensor<Mixins...> a, Tensor<Mixins...> b, bool keep_dims,
     return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
         "The reduction tensor must have a buffer.")));
   }
-  const auto b_data = b_info.buffer->Lock().As<const int32_t>().data();
+  const LockedBufferSpan<const int32_t> b_lock =
+      b_info.buffer->Lock().As<const int32_t>();
+  const int32_t* b_data = b_lock.data();
   if (op->keep_dims) {
     o_info.shape = a_info.shape;
     if (b_info.shape.empty()) {
@@ -752,7 +854,9 @@ Tensor<Mixins...> ReduceMax(Tensor<Mixins...> a, Tensor<Mixins...> b,
     return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
         "The reduction tensor must have a buffer.")));
   }
-  const auto b_data = b_info.buffer->Lock().As<const int32_t>().data();
+  const LockedBufferSpan<const int32_t> b_lock =
+      b_info.buffer->Lock().As<const int32_t>();
+  const int32_t* b_data = b_lock.data();
   if (op->keep_dims) {
     o_info.shape = a_info.shape;
     if (b_info.shape.empty()) {
@@ -809,7 +913,9 @@ Tensor<Mixins...> Mean(Tensor<Mixins...> a, Tensor<Mixins...> b, bool keep_dims,
     return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
         "The reduction tensor must have a buffer.")));
   }
-  const auto b_data = b_info.buffer->Lock().As<const int32_t>().data();
+  const LockedBufferSpan<const int32_t> b_lock =
+      b_info.buffer->Lock().As<const int32_t>();
+  const int32_t* b_data = b_lock.data();
   if (op->keep_dims) {
     o_info.shape = a_info.shape;
     if (b_info.shape.empty()) {
@@ -867,7 +973,9 @@ Tensor<Mixins...> ArgMax(Tensor<Mixins...> a, Tensor<Mixins...> b,
     return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
         "The reduction tensor must have a buffer.")));
   }
-  const auto b_data = b_info.buffer->Lock().As<const int32_t>().data();
+  const LockedBufferSpan<const int32_t> b_lock =
+      b_info.buffer->Lock().As<const int32_t>();
+  const int32_t* b_data = b_lock.data();
   int axis = b_data[0];
   if (axis < 0) {
     axis += a_info.shape.size();
@@ -899,6 +1007,15 @@ Tensor<Mixins...> BatchMatMul(
 
   std::vector<int> x_shape = x_info.shape;
   std::vector<int> y_shape = y_info.shape;
+  if (x_shape.size() < 2 || y_shape.size() < 2) {
+    std::string x_shape_str = absl::StrJoin(x_shape, ",");
+    std::string y_shape_str = absl::StrJoin(y_shape, ",");
+    return Tensor<Mixins...>(
+        graph::ErrorTensor(absl::InvalidArgumentError(absl::StrCat(
+            "Input tensors for BatchMatMul must have rank >= 2. x_name: ",
+            x.GetName(), " y_name: ", y.GetName(), " x_shape: ", x_shape_str,
+            " y_shape: ", y_shape_str))));
+  }
   if (adj_x) {
     std::swap(x_shape[x_shape.size() - 2], x_shape[x_shape.size() - 1]);
   }
@@ -916,15 +1033,24 @@ Tensor<Mixins...> BatchMatMul(
             " y_shape: ", y_shape_str, " adj_x: ", adj_x, " adj_y: ", adj_y))));
   }
 
-  // Batch dimensions should be broadcastable.
-  if (x_shape.size() != y_shape.size()) {
-    // For now, we only support same rank BatchMatMul.
-    // TODO(piyu): Support different ranks.
-  }
-  output_info.shape.reserve(x_shape.size());
-  for (size_t i = 0; i < x_shape.size() - 2; ++i) {
-    const auto x_dim = x_shape[i];
-    const auto y_dim = y_shape[i];
+  // Compute multi-rank batch broadcasting for the outer dimensions, aligning
+  // dimensions right-to-left and treating missing outer dims as 1.
+  size_t x_rank = x_shape.size();
+  size_t y_rank = y_shape.size();
+  size_t max_rank = std::max(x_rank, y_rank);
+
+  output_info.shape.resize(max_rank);
+  output_info.shape[max_rank - 2] = x_shape[x_rank - 2];
+  output_info.shape[max_rank - 1] = y_shape[y_rank - 1];
+
+  for (size_t i = 1; i <= max_rank - 2; ++i) {
+    int out_idx = max_rank - 2 - i;
+    int x_idx = static_cast<int>(x_rank - 2) - static_cast<int>(i);
+    int y_idx = static_cast<int>(y_rank - 2) - static_cast<int>(i);
+
+    int x_dim = (x_idx >= 0) ? x_shape[x_idx] : 1;
+    int y_dim = (y_idx >= 0) ? y_shape[y_idx] : 1;
+
     if (x_dim != y_dim && x_dim != 1 && y_dim != 1) {
       return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
           absl::StrCat("The batch dimensions of the input tensors must be "
@@ -932,10 +1058,8 @@ Tensor<Mixins...> BatchMatMul(
                        absl::StrJoin(x_info.shape, ","),
                        " y_shape: ", absl::StrJoin(y_info.shape, ",")))));
     }
-    output_info.shape.push_back(std::max(x_dim, y_dim));
+    output_info.shape[out_idx] = std::max(x_dim, y_dim);
   }
-  output_info.shape.push_back(x_shape[x_shape.size() - 2]);
-  output_info.shape.push_back(y_shape[y_shape.size() - 1]);
 
   output_info.type = x_info.type;
 
@@ -948,11 +1072,15 @@ Tensor<Mixins...> FullyConnected(
     Tensor<Mixins...> input, Tensor<Mixins...> weights,
     std::optional<Tensor<Mixins...>> bias,
     FusedActivation activation = kActNone, bool keep_num_dims = true,
+    bool asymmetric_quantize_inputs = false,
+    FullyConnectedWeightsFormat weights_format = kWeightsFormatDefault,
     source_location loc = source_location::current()) {
   auto op = std::make_shared<graph::FullyConnectedOperation>();
   RegisterMixins<Mixins...>(op);
   op->activation = activation;
   op->keep_num_dims = keep_num_dims;
+  op->asymmetric_quantize_inputs = asymmetric_quantize_inputs;
+  op->weights_format = weights_format;
   AddInputs(op, input, weights);
   if (bias.has_value()) {
     AddInputs(op, bias.value());
@@ -965,7 +1093,11 @@ Tensor<Mixins...> FullyConnected(
     output_info.shape = input_info.shape;
     output_info.shape.back() = weights_info.shape[0];
   } else {
-    output_info.shape = {input_info.shape[0], weights_info.shape[0]};
+    int batch = 1;
+    for (size_t i = 0; i < input_info.shape.size() - 1; ++i) {
+      batch *= input_info.shape[i];
+    }
+    output_info.shape = {batch, weights_info.shape[0]};
   }
   output_info.type = input_info.type;
 
@@ -977,19 +1109,25 @@ template <class... Mixins>
 Tensor<Mixins...> FullyConnected(
     Tensor<Mixins...> input, Tensor<Mixins...> weights, Tensor<Mixins...> bias,
     FusedActivation activation = kActNone, bool keep_num_dims = true,
+    bool asymmetric_quantize_inputs = false,
+    FullyConnectedWeightsFormat weights_format = kWeightsFormatDefault,
     source_location loc = source_location::current()) {
   return FullyConnected(input, weights, std::optional(std::move(bias)),
-                        activation, keep_num_dims, loc);
+                        activation, keep_num_dims, asymmetric_quantize_inputs,
+                        weights_format, loc);
 }
 
 template <class... Mixins>
 Tensor<Mixins...> FullyConnected(
     Tensor<Mixins...> input, Tensor<Mixins...> weights,
     FusedActivation activation = kActNone, bool keep_num_dims = true,
+    bool asymmetric_quantize_inputs = false,
+    FullyConnectedWeightsFormat weights_format = kWeightsFormatDefault,
     source_location loc = source_location::current()) {
   return FullyConnected(input, weights,
                         /*bias=*/std::optional<Tensor<Mixins...>>(std::nullopt),
-                        activation, keep_num_dims, loc);
+                        activation, keep_num_dims, asymmetric_quantize_inputs,
+                        weights_format, loc);
 }
 
 template <class... Mixins>
@@ -1139,8 +1277,9 @@ Tensor<Mixins...> Conv2D(Tensor<Mixins...> input, Tensor<Mixins...> filter,
                          int dilation_h_factor = 1, int dilation_w_factor = 1,
                          FusedActivation activation = kActNone,
                          source_location loc = source_location::current()) {
-  return Conv2DImpl(input, filter, absl::nullopt, stride_h, stride_w, padding,
-                    dilation_h_factor, dilation_w_factor, activation, loc);
+  return Conv2DImpl(input, filter, absl::optional<Tensor<Mixins...>>(),
+                    stride_h, stride_w, padding, dilation_h_factor,
+                    dilation_w_factor, activation, loc);
 }
 
 template <class... Mixins>
@@ -1213,9 +1352,10 @@ Tensor<Mixins...> DepthwiseConv2D(
     int dilation_w_factor = 1, int depth_multiplier = 1,
     FusedActivation activation = kActNone,
     source_location loc = source_location::current()) {
-  return DepthwiseConv2DImpl(input, filter, absl::nullopt, stride_h, stride_w,
-                             padding, dilation_h_factor, dilation_w_factor,
-                             depth_multiplier, activation, loc);
+  return DepthwiseConv2DImpl(input, filter, absl::optional<Tensor<Mixins...>>(),
+                             stride_h, stride_w, padding, dilation_h_factor,
+                             dilation_w_factor, depth_multiplier, activation,
+                             loc);
 }
 
 template <class... Mixins>
@@ -1260,11 +1400,19 @@ Tensor<Mixins...> Pack(absl::Span<Tensor<Mixins...>> inputs, int axis,
   op->axis = axis;
   AddInputs(op, inputs);
   Tensor<Mixins...> output = AddOutput(op, loc);
+  if (inputs.empty()) {
+    return Tensor<Mixins...>(graph::ErrorTensor(
+        absl::InvalidArgumentError("Pack requires at least one input.")));
+  }
   const graph::TensorInformation& first_input_info =
       *GetInfo(inputs[0].GetRaw());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.type = first_input_info.type;
   output_info.shape = first_input_info.shape;
+  if (axis < 0 || axis > static_cast<int>(first_input_info.shape.size())) {
+    return Tensor<Mixins...>(graph::ErrorTensor(
+        absl::InvalidArgumentError("The Pack axis is out of range.")));
+  }
   output_info.shape.insert(output_info.shape.begin() + axis, inputs.size());
 
   graph::OpDebugger::DebugOp(*op);
@@ -1325,7 +1473,9 @@ std::vector<Tensor<Mixins...>> Split(
   const graph::TensorInformation& axis_info = GetInfo(axis.GetRaw()).value();
   int axis_val = 0;
   if (axis_info.buffer) {
-    axis_val = axis_info.buffer->Lock().As<const int32_t>().data()[0];
+    LockedBufferSpan<const int32_t> axis_lock =
+        axis_info.buffer->Lock().As<const int32_t>();
+    axis_val = axis_lock.data()[0];
   } else {
     // TODO(b/269489748): Support dynamic axis for shape inference.
     return {Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
@@ -1443,6 +1593,41 @@ Tensor<Mixins...> Transpose(Tensor<Mixins...> input, Tensor<Mixins...> perm,
     output_info.shape = input_info.shape;
   }
   output_info.type = input_info.type;
+  if (input_info.quantization) {
+    if (auto quantization =
+            input_info.quantization->As<const PerChannelAffineQuantization>();
+        quantization.ok()) {
+      auto output_quantization =
+          std::make_shared<PerChannelAffineQuantization>(*quantization);
+      if (perm_info.buffer) {
+        const auto perm_data = perm_info.buffer->Lock().As<const int32_t>();
+        for (size_t i = 0; i < perm_data.size(); ++i) {
+          if (perm_data.data()[i] == quantization->quantized_dimension) {
+            output_quantization->quantized_dimension = i;
+            break;
+          }
+        }
+      }
+      output_info.quantization = std::move(output_quantization);
+    } else if (auto quantization =
+                   input_info.quantization->As<const BlockwiseQuantization>();
+               quantization.ok()) {
+      auto output_quantization =
+          std::make_shared<BlockwiseQuantization>(*quantization);
+      if (perm_info.buffer) {
+        const auto perm_data = perm_info.buffer->Lock().As<const int32_t>();
+        for (size_t i = 0; i < perm_data.size(); ++i) {
+          if (perm_data.data()[i] == quantization->quantized_dimension) {
+            output_quantization->quantized_dimension = i;
+            break;
+          }
+        }
+      }
+      output_info.quantization = std::move(output_quantization);
+    } else {
+      output_info.quantization = input_info.quantization;
+    }
+  }
 
   graph::OpDebugger::DebugOp(*op);
   return output;
@@ -1722,6 +1907,7 @@ Tensor<Mixins...> DynamicUpdateSlice(
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = operand_info.shape;
   output_info.type = operand_info.type;
+  output_info.quantization = operand_info.quantization;
 
   graph::OpDebugger::DebugOp(*op);
   return output;
@@ -1779,6 +1965,56 @@ std::vector<Tensor<Mixins...>> Custom(
                 std::move(custom_options), output_shapes, output_types, loc);
 }
 
+template <class... Mixins, typename Lambda, typename... Inputs>
+auto StableHLOComposite(StableHLOCompositeOptions options,
+                        Lambda&& decomposition, Tensor<Mixins...> first_input,
+                        Inputs... remaining_inputs) {
+  auto op = std::make_shared<graph::StableHLOCompositeOperation>();
+  RegisterMixins<Mixins...>(op);
+  op->name = std::move(options.name);
+  op->composite_attributes = std::move(options.composite_attributes);
+  op->version = options.version;
+
+  auto decomposition_inputs = std::make_tuple(
+      internal::CloneStableHLOCompositeInput(first_input),
+      internal::CloneStableHLOCompositeInput(remaining_inputs)...);
+  std::vector<TensorHandle> flat_decomposition_inputs;
+  internal::FlattenStableHLOCompositeTensors(decomposition_inputs,
+                                             flat_decomposition_inputs);
+  op->decomposition_inputs.reserve(flat_decomposition_inputs.size());
+  for (size_t i = 0; i < flat_decomposition_inputs.size(); ++i) {
+    TensorHandle& input = flat_decomposition_inputs[i];
+    GetInfo(input.GetRaw())->name =
+        absl::StrCat(op->name, "/decomposition_input_", i);
+    op->decomposition_inputs.push_back(input.GetRaw());
+  }
+  auto decomposition_outputs =
+      std::apply(std::forward<Lambda>(decomposition), decomposition_inputs);
+
+  std::vector<TensorHandle> flat_decomposition_outputs;
+  internal::FlattenStableHLOCompositeTensors(decomposition_outputs,
+                                             flat_decomposition_outputs);
+  op->decomposition_outputs.reserve(flat_decomposition_outputs.size());
+  for (const TensorHandle& output : flat_decomposition_outputs) {
+    op->decomposition_outputs.push_back(output.GetRaw());
+  }
+
+  AddInputs(op, first_input, remaining_inputs...);
+  auto outputs = internal::CreateStableHLOCompositeOutputsLike<Mixins...>(
+      decomposition_outputs, op, source_location::current());
+  graph::OpDebugger::DebugOp(*op);
+  return outputs;
+}
+
+template <class... Mixins, typename Lambda, typename... Inputs>
+auto StableHLOComposite(std::string name, Lambda&& decomposition,
+                        Tensor<Mixins...> first_input,
+                        Inputs... remaining_inputs) {
+  return StableHLOComposite(StableHLOCompositeOptions{.name = std::move(name)},
+                            std::forward<Lambda>(decomposition), first_input,
+                            remaining_inputs...);
+}
+
 template <class... Mixins>
 std::vector<Tensor<Mixins...>> TopK(
     Tensor<Mixins...> input, Tensor<Mixins...> k,
@@ -1795,20 +2031,17 @@ std::vector<Tensor<Mixins...>> TopK(
   graph::TensorInformation& values_info = *GetInfo(values.GetRaw());
   values_info.type = input_info.type;
   values_info.shape = input_info.shape;
-  values_info.shape.back() = GetInfo(k.GetRaw())
-                                 ->buffer->Lock()
-                                 .template As<const int32_t>()
-                                 .data()[0];
+  LockedBufferSpan<const int32_t> k_lock =
+      GetInfo(k.GetRaw())->buffer->Lock().template As<const int32_t>();
+  const int k_val = k_lock.data()[0];
+  values_info.shape.back() = k_val;
   outputs.push_back(values);
 
   Tensor<Mixins...> indices = AddOutput(op, loc);
   graph::TensorInformation& indices_info = *GetInfo(indices.GetRaw());
   indices_info.type = Type::kI32;
   indices_info.shape = input_info.shape;
-  indices_info.shape.back() = GetInfo(k.GetRaw())
-                                  ->buffer->Lock()
-                                  .template As<const int32_t>()
-                                  .data()[0];
+  indices_info.shape.back() = k_val;
   outputs.push_back(indices);
 
   graph::OpDebugger::DebugOp(*op);
@@ -1928,8 +2161,14 @@ Tensor<Mixins...> OneHot(Tensor<Mixins...> indices, Tensor<Mixins...> depth,
   output_info.shape = indices_info.shape;
   int depth_val = -1;
   if (depth_info.buffer) {
-    depth_val =
-        depth_info.buffer->Lock().template As<const int32_t>().data()[0];
+    LockedBufferSpan<const int32_t> depth_lock =
+        depth_info.buffer->Lock().template As<const int32_t>();
+    depth_val = depth_lock.data()[0];
+  }
+  if (resolved_axis < 0 ||
+      resolved_axis > static_cast<int>(indices_info.shape.size())) {
+    return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
+        "The OneHot axis is out of range.")));
   }
   output_info.shape.insert(output_info.shape.begin() + resolved_axis,
                            depth_val);
@@ -2157,8 +2396,9 @@ std::vector<Tensor<Mixins...>> NonMaxSuppressionV5(
   // Infer shape from max_output_size.
   if (auto* max_output_size_buffer =
           graph::GetInfo(max_output_size.GetRaw())->buffer.get()) {
-    const int max_output_size_val =
-        *max_output_size_buffer->Lock().template As<const int32_t>().data();
+    LockedBufferSpan<const int32_t> max_output_size_lock =
+        max_output_size_buffer->Lock().template As<const int32_t>();
+    const int max_output_size_val = *max_output_size_lock.data();
     indices_info.shape = {max_output_size_val};
     scores_info.shape = {max_output_size_val};
   }
@@ -2287,6 +2527,21 @@ Tensor<Mixins...> TransposeConv2D(
   // Handle Bias (Add)
   output = Add(output, bias, activation, loc);
 
+  return output;
+}
+
+template <class... Mixins>
+Tensor<Mixins...> Rope(Tensor<Mixins...> input, Tensor<Mixins...> weights,
+                       source_location loc = source_location::current()) {
+  auto op = std::make_shared<graph::RopeOperation>();
+  RegisterMixins<Mixins...>(op);
+  AddInputs(op, input, weights);
+  Tensor<Mixins...> output = AddOutput(op, loc);
+  const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
+  graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
+  output_info.type = input_info.type;
+  output_info.shape = input_info.shape;
+  graph::OpDebugger::DebugOp(*op);
   return output;
 }
 

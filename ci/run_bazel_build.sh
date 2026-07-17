@@ -211,25 +211,6 @@ UBUNTU_EXCLUDED_TARGETS=(
 )
 
 UBUNTU_EXCLUDED_EXPERIMENTAL_TARGETS=(
-  # TODO(b/384562428): tflite/experimental/litert/core/util:flatbuffer_tools failing need c++20
-  # Each failures in subdirectory below are failing due to b/384562428
-  "-//tflite/experimental/shlo/ops:abs_test"
-  "-//tflite/experimental/shlo/ops:binary_elementwise_test"
-  "-//tflite/experimental/shlo/ops:cbrt_test"
-  "-//tflite/experimental/shlo/ops:ceil_test"
-  "-//tflite/experimental/shlo/ops:cosine_test"
-  "-//tflite/experimental/shlo/ops:exponential_minus_one_test"
-  "-//tflite/experimental/shlo/ops:exponential_test"
-  "-//tflite/experimental/shlo/ops:floor_test"
-  "-//tflite/experimental/shlo/ops:log_plus_one_test"
-  "-//tflite/experimental/shlo/ops:log_test"
-  "-//tflite/experimental/shlo/ops:logistic_test"
-  "-//tflite/experimental/shlo/ops:negate_test"
-  "-//tflite/experimental/shlo/ops:sign_test"
-  "-//tflite/experimental/shlo/ops:sine_test"
-  "-//tflite/experimental/shlo/ops:sqrt_test"
-  "-//tflite/experimental/shlo/ops:tanh_test"
-  "-//tflite/experimental/shlo/ops:unary_elementwise_test"
   # The following below are android exclusive targets
   "-//tflite/acceleration/..."
   "-//tflite/experimental/acceleration/..."

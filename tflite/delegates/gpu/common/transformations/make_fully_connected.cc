@@ -20,7 +20,6 @@ limitations under the License.
 #include <string>
 #include <vector>
 
-#include "absl/types/any.h"
 #include "tflite/delegates/gpu/common/model.h"
 #include "tflite/delegates/gpu/common/model_transformer.h"
 #include "tflite/delegates/gpu/common/operations.h"
@@ -32,7 +31,8 @@ namespace gpu {
 namespace {
 
 bool IsConvEquivalentToFullyConnected(const Convolution2DAttributes& attr) {
-  return attr.weights.shape.w == 1 &&           //
+  return attr.groups == 1 &&                    //
+         attr.weights.shape.w == 1 &&           //
          attr.weights.shape.h == 1 &&           //
          attr.strides == HW(1, 1) &&            //
          attr.dilations == HW(1, 1) &&          //
@@ -46,12 +46,12 @@ class MakeFullyConnectedFromConvolution : public NodeTransformation {
     if (node->operation.type != ToString(OperationType::CONVOLUTION_2D)) {
       return {TransformStatus::SKIPPED, ""};
     }
-    auto inputs = graph->FindInputs(node->id);
+    std::vector<Value*> inputs = graph->FindInputs(node->id);
     if (inputs.size() != 1) {
       return {TransformStatus::SKIPPED, ""};
     }
 
-    const auto& input_shape = inputs[0]->tensor.shape;
+    const BHWC& input_shape = inputs[0]->tensor.shape;
     if (input_shape.w != 1 || input_shape.h != 1) {
       return {TransformStatus::SKIPPED, ""};
     }

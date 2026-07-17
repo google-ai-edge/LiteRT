@@ -202,7 +202,10 @@ fi
 if [[ "$BUILD_LITERT_KOTLIN_API" == "true" ]]; then
   echo "Building Litert Kotlin API."
   bazel build "${BUILD_FLAGS[@]}" --action_env ANDROID_NDK_API_LEVEL=23 \
-      //litert/kotlin:litert
+      --define=litert_runtime_link_mode=dynamic \
+      //litert/kotlin:litert-api-aar
+  bazel build "${BUILD_FLAGS[@]}" --action_env ANDROID_NDK_API_LEVEL=23 \
+      //litert/kotlin:litert-aar
 else
   echo "Skipping building Litert Kotlin API."
 fi

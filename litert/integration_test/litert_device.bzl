@@ -134,7 +134,8 @@ def litert_device_exec(
         remote_suffix = "",
         local_suffix = "_adb",
         model_providers = [],
-        testonly = True):
+        testonly = True,
+        tags = []):
     """
     Macro to execute a binary target on a device through adb.
 
@@ -147,10 +148,11 @@ def litert_device_exec(
         target: The binary target to execute on device.
         data: List of data files to push to the device.
         exec_args: List of arguments to pass to the executable.
-        exec_env_vars: List of environment variables to set before executing the target.
         remote_suffix: Suffix for the target runnin on device cloud if enabled.
         local_suffix: Suffix for the target that runs locally on physical device through adb.
+        model_providers: A list of tools dependencies that return tflite models when called.
         testonly: Whether the target is testonly.
+        tags: List of tags to apply to the generated targets.
     """
     backend = get_spec(backend_id)
 
@@ -163,6 +165,7 @@ def litert_device_exec(
         model_providers = model_providers,
         testonly = testonly,
         backend_id = backend_id,
+        tags = hidden_test_tags() + tags,
     )
 
     if remote_suffix != None:
@@ -229,6 +232,7 @@ def litert_device_test(
         backend_id = backend_id,
         data = data,
         exec_args = exec_args,
+        tags = tags,
     )
 
 # copybara:uncomment_begin(google-only)
@@ -244,7 +248,8 @@ def litert_integration_test(
         name,
         models,
         backend_id = "cpu",
-        skips = []):
+        skips = [],
+        tags = []):
     """
     Higher level macro that configures run_on_device or a mobile test to run with gen_device_test.
 
@@ -253,6 +258,7 @@ def litert_integration_test(
         models: A single target that may contain model or many models in the same directory.
         backend_id: The backend to test against (see gen_device_test).
         skips: List of substrings of models to skip.
+        tags: List of tags to apply to the generated targets.
     """
 
     backend = get_spec(backend_id)
@@ -284,4 +290,5 @@ def litert_integration_test(
         backend_id = backend_id,
         data = data,
         exec_args = cli_args,
+        tags = tags,
     )

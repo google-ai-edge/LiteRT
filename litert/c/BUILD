@@ -45,7 +45,7 @@ load(
     "litert_metal_opts",
 )
 
-LITERT_MIN_IOS_VERSION = "14.0"
+LITERT_MIN_IOS_VERSION = "15.0"
 
 LITERT_MIN_MACOS_VERSION = "14.0"
 
@@ -134,6 +134,16 @@ litert_c_api_library(
     ],
 )
 
+cc_test(
+    name = "litert_metrics_test",
+    srcs = ["litert_metrics_test.cc"],
+    deps = [
+        ":litert_common",
+        ":litert_metrics",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 litert_c_api_library(
     name = "litert_environment",
     srcs = ["litert_environment.cc"],
@@ -200,6 +210,16 @@ cc_library(
     deps = [":litert_common"],
 )
 
+cc_test(
+    name = "litert_layout_test",
+    srcs = ["litert_layout_test.cc"],
+    deps = [
+        ":litert_common",
+        ":litert_layout",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "litert_model_types",
     hdrs = ["litert_model_types.h"],
@@ -226,6 +246,7 @@ litert_c_api_library(
         "//litert/cc:litert_common",
         "//litert/core/model",
         "//litert/core/model:model_load",
+        "//litert/core/util:perfetto_profiling",
         "//tflite:stderr_reporter",
         "//tflite/converter:allocation",
         "//tflite/core/c:private_c_api_types",
@@ -340,6 +361,17 @@ litert_c_api_library(
     ],
 )
 
+cc_test(
+    name = "litert_event_test",
+    srcs = ["litert_event_test.cc"],
+    deps = [
+        ":litert_common",
+        ":litert_event",
+        ":litert_event_type",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "litert_tensor_buffer_types",
     hdrs = ["litert_tensor_buffer_types.h"],
@@ -381,6 +413,7 @@ litert_c_api_library(
         "//litert/c/internal:litert_tensor_buffer_registry",  # buildcleaner: keep
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/core/util:perfetto_profiling",
         "//litert/runtime:tensor_buffer",
         "//litert/runtime:tensor_buffer_requirements",
         "@opencl_headers",
@@ -457,7 +490,7 @@ cc_test(
 #         "//litert/cc:litert_any",
 #         "//litert/cc:litert_layout",
 #         "//litert/test:matchers",
-#         "//third_party/odml/litert/ml_drift/delegate:buffer_handler_opencl",
+#         "//ml_drift_delegate/delegate:buffer_handler_opencl",
 #     ],
 # )
 #
@@ -487,10 +520,10 @@ cc_test(
 #         "//litert/cc:litert_layout",
 #         "//litert/runtime:event",
 #         "//litert/test:matchers",
-#         "//third_party/odml/litert/ml_drift/delegate:buffer_handler_opencl",
-#         "//third_party/odml/litert/ml_drift/delegate:buffer_handler_vulkan",
-#         "//third_party/odml/litert/ml_drift/delegate:buffer_handler_webgpu",
-#         "//third_party/odml/litert/ml_drift/delegate:shared_vulkan_env",
+#         "//ml_drift_delegate/delegate:buffer_handler_opencl",
+#         "//ml_drift_delegate/delegate:buffer_handler_vulkan",
+#         "//ml_drift_delegate/delegate:buffer_handler_webgpu",
+#         "//ml_drift_delegate/delegate:shared_vulkan_env",
 #         "//third_party/vulkan_loader",
 #     ],
 # )
@@ -564,6 +597,7 @@ litert_c_api_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_common",
+        "//litert/core/util:perfetto_profiling",
         "//litert/runtime:compiled_model",
     ],
     deps = [
@@ -763,13 +797,14 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_op_options",
     ":litert_opaque_options_impl",
     ":litert_profiler_impl",
-    ":litert_builder",
+    ":litert_builder_impl",
     ":litert_tensor_buffer_impl",
     "//litert/c/internal:litert_accelerator_registration",
     "//litert/c/internal:litert_accelerator",
     "//litert/c/internal:litert_dispatch_delegate",
     "//litert/c/internal:litert_external_litert_buffer_context",
     "//litert/c/internal:litert_logging",
+    "//litert/c/internal:litert_runtime_api_export",
     "//litert/c/internal:litert_tensor_buffer_registry",
     "//litert/c/options:litert_cpu_options",
     # copybara:uncomment "//litert/c/options/google:litert_darwinn_runtime_options",
@@ -812,7 +847,10 @@ cc_library(
     linkopts = select({
         "//litert:macos": [],
         "//litert:ios": [],
-        "//conditions:default": ["-Wl,--undefined-glob=LiteRt*"],
+        "//conditions:default": [
+            "-Wl,--undefined-glob=LiteRt*",
+            "-Wl,--undefined=kLiteRtRuntimeBuiltin",
+        ],
     }),
     deps = LITERT_C_API_COMMON_DEPS,
 )
@@ -967,12 +1005,27 @@ cc_shared_library(
     deps = [":litert_tflite_runtime_c_api_so_shim"],
 )
 
+filegroup(
+    name = "litert_runtime_c_api_dylib_conditional",
+    srcs = select({
+        ":resolve_symbols_in_exec": [],
+        "//conditions:default": [":litert_runtime_c_api_dylib"],
+    }),
+)
+
+filegroup(
+    name = "litert_runtime_c_api_so_conditional",
+    srcs = select({
+        ":resolve_symbols_in_exec": [],
+        "//conditions:default": [":litert_runtime_c_api_so"],
+    }),
+)
+
 SELECT_LITERT_RUNTIME_C_API_SHARED_LIB = select({
-    ":resolve_symbols_in_exec": [],
-    "//litert:ios": [":litert_runtime_c_api_dylib"],
-    "//litert:macos": [":litert_runtime_c_api_dylib"],
+    "//litert:ios": [":litert_runtime_c_api_dylib_conditional"],
+    "//litert:macos": [":litert_runtime_c_api_dylib_conditional"],
     "//litert:windows": [],
-    "//conditions:default": [":litert_runtime_c_api_so"],
+    "//conditions:default": [":litert_runtime_c_api_so_conditional"],
 })
 
 # Allows referring to the above as a target with the name :libLiteRt.so.
@@ -1038,6 +1091,7 @@ cc_library(
         ":litert_webgpu_types",
         # only depend on headers
         "@com_google_absl//absl/types:span",
+        "//litert/c/internal:litert_runtime_c_api",
         "//litert/c/internal:litert_scheduling_info",
         "@opencl_headers",
         "//litert/vendors/c:litert_dispatch_c_api",
@@ -1074,11 +1128,11 @@ objc_library(
         ":litert_model",
         ":litert_tensor_buffer",
         ":litert_tensor_buffer_types",
+        # Dependency placeholder: apple_frameworks Metal,
+        # Dependency placeholder: apple_frameworks XCTest,
         "//litert/cc:litert_any",
         "//litert/cc:litert_layout",
         "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
-        "//third_party/apple_frameworks:Metal",
-        "//third_party/apple_frameworks:XCTest",
     ],
 )
 

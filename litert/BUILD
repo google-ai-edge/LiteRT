@@ -270,11 +270,12 @@ package_group(
         "//litert/python/...",
         "//litert/runtime/accelerators/gpu/...",
         "//litert/runtime/dispatch/...",
-        "//third_party/odml/litert/ml_drift/delegate/...",
+        "//ml_drift_delegate/delegate/...",
         "//litert/rust/...",
         "//litert/samples/...",
         "//litert/sdk_util/...",
         "//litert/test/...",
+        "//litert/tflite_support/custom_op/...",
         "//litert/tools/...",
         "//litert/vendors/...",
         # When litert_link_capi_so=false
@@ -309,12 +310,15 @@ package_group(
         "//litert/runtime/...",
         "//litert/sdk_util/...",
         "//litert/test/...",
+        "//litert/tflite_support/custom_op/...",
         "//litert/tools/...",
         "//litert/vendors/...",
+        "//ml_drift_delegate/...",
+        "//support/...",
         "//third_party/odml/generative/fabric/adapters/litert/...",
         "//third_party/odml/infra/fabric/...",
-        "//third_party/odml/litert/ml_drift/...",
         "//third_party/odml/litert/weight_loader/...",
+        "//third_party/odml/litert_lm/...",
     ] + litert_friends(),
 )
 
@@ -334,6 +338,7 @@ package_group(
     packages = [
         "//litert/kotlin/...",
         "//litert/rust/...",
+        "//litert/swift/...",
         "//litert/vendors/...",
     ],
 )
@@ -349,7 +354,7 @@ package_group(
     packages = [
         "//litert/python/...",
         "//ci/tools/...",
-        # copybara:uncomment "//third_party/py/litert_torch/aot/...",
+        # copybara:uncomment "//third_party/py/litert_torch/...",
     ],
 )
 

@@ -126,12 +126,16 @@ LiteRtTensorBufferT::LiteRtTensorBufferT(
   if (tensor_type_.layout.has_strides) {
     Copy(tensor_type_.layout.rank, tensor_type_.layout.strides, strides_);
   }
-  auto packed_size = litert::internal::GetNumPackedBytes(tensor_type_);
-  if (!packed_size) {
-    packed_buffer_size_ = 0;
-    LITERT_LOG(LITERT_ERROR, "Failed to get num packed bytes");
+  if (tensor_type_.element_type == kLiteRtElementTypeTfString) {
+    packed_buffer_size_ = buffer_size;
   } else {
-    packed_buffer_size_ = *packed_size;
+    auto packed_size = litert::internal::GetNumPackedBytes(tensor_type_);
+    if (!packed_size) {
+      packed_buffer_size_ = 0;
+      LITERT_LOG(LITERT_ERROR, "Failed to get num packed bytes");
+    } else {
+      packed_buffer_size_ = *packed_size;
+    }
   }
 // Our Emscripten builds process this as an error rather than a debug log, so
 // disabling for web platform temporarily to avoid breakages.
@@ -790,14 +794,30 @@ Expected<void> LiteRtTensorBufferT::IsValid() {
   }
 
   // Check for sufficient size.
-  if (auto num_bytes = litert::internal::GetNumPackedBytes(tensor_type_);
-      !num_bytes) {
-    return Unexpected(num_bytes.Error());
-  } else if (*num_bytes > buffer_size() - buffer_offset()) {
-    const std::string error_message = absl::StrFormat(
-        "Insufficient buffer size: Required %d bytes, actual size %d bytes",
-        *num_bytes, buffer_size() - buffer_offset());
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure, error_message);
+  if (tensor_type_.element_type == kLiteRtElementTypeTfString) {
+    auto num_elements = litert::internal::GetNumElements(tensor_type_);
+    if (!num_elements) {
+      return Unexpected(num_elements.Error());
+    }
+    size_t min_required_bytes =
+        sizeof(int32_t) + sizeof(int32_t) * (*num_elements + 1);
+    if (min_required_bytes > buffer_size() - buffer_offset()) {
+      const std::string error_message = absl::StrFormat(
+          "Insufficient buffer size for TfString: Required at least %d bytes, "
+          "actual size %d bytes",
+          min_required_bytes, buffer_size() - buffer_offset());
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure, error_message);
+    }
+  } else {
+    if (auto num_bytes = litert::internal::GetNumPackedBytes(tensor_type_);
+        !num_bytes) {
+      return Unexpected(num_bytes.Error());
+    } else if (*num_bytes > buffer_size() - buffer_offset()) {
+      const std::string error_message = absl::StrFormat(
+          "Insufficient buffer size: Required %d bytes, actual size %d bytes",
+          *num_bytes, buffer_size() - buffer_offset());
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure, error_message);
+    }
   }
 
   // Check for proper alignment.
@@ -1016,6 +1036,7 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
                          Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                     "Tensor buffer is already locked."));
   is_locked_ = true;
+  lock_mode_ = mode;
   if (event_ != nullptr) {
     // Only AHWB supports waiting on an input sync fence when locking the
     // buffer. For all other buffer types we wait here.
@@ -1036,7 +1057,7 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
           ahwb_buffer, event_ != nullptr ? event_.get() : nullptr);
 #else
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "AHardwareBuffer is not supported");
+                         "AHardwareBuffer is not supported");
 #endif
     }
     case kLiteRtTensorBufferTypeIon: {
@@ -1045,6 +1066,10 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
     }
     case kLiteRtTensorBufferTypeDmaBuf: {
       LITERT_ASSIGN_OR_ABORT(auto dma_buffer, GetDmaBufBuffer());
+#if LITERT_HAS_DMABUF_SUPPORT
+      LITERT_RETURN_IF_ERROR(
+          ::litert::internal::DmaBufBuffer::Lock(dma_buffer.second, mode));
+#endif
       return dma_buffer.first;
     }
     case kLiteRtTensorBufferTypeFastRpc: {
@@ -1055,7 +1080,7 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
 #if LITERT_HAS_OPENGL_SUPPORT
       LITERT_ASSIGN_OR_RETURN(auto gl_buffer, GetGlBuffer());
       LITERT_ASSIGN_OR_RETURN(float* const host_memory_ptr,
-                              gl_buffer->Lock<float>());
+                              gl_buffer->Lock<float>(mode));
       return host_memory_ptr;
 #else
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -1160,9 +1185,17 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
       LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
       return custom_buffer->Unlock();
     }
+    case kLiteRtTensorBufferTypeDmaBuf: {
+#if LITERT_HAS_DMABUF_SUPPORT
+      LITERT_ASSIGN_OR_ABORT(auto dma_buffer, GetDmaBufBuffer());
+      return ::litert::internal::DmaBufBuffer::Unlock(dma_buffer.second,
+                                                      lock_mode_);
+#else
+      return {};
+#endif
+    }
     case kLiteRtTensorBufferTypeHostMemory:
     case kLiteRtTensorBufferTypeIon:
-    case kLiteRtTensorBufferTypeDmaBuf:
     case kLiteRtTensorBufferTypeFastRpc:
     case kLiteRtTensorBufferTypeGlTexture:
     case kLiteRtTensorBufferTypeUnknown:
@@ -1208,7 +1241,12 @@ Expected<void> LiteRtTensorBufferT::Clear() {
       LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
       return custom_buffer->Clear();
     }
-    case kLiteRtTensorBufferTypeHostMemory:
+    case kLiteRtTensorBufferTypeHostMemory: {
+      LITERT_ASSIGN_OR_RETURN(void* host_mem_addr,
+                              Lock(kLiteRtTensorBufferLockModeWrite));
+      std::memset(host_mem_addr, 0, packed_buffer_size());
+      return Unlock();
+    }
     case kLiteRtTensorBufferTypeAhwb:
     case kLiteRtTensorBufferTypeIon:
     case kLiteRtTensorBufferTypeDmaBuf:
@@ -1217,6 +1255,10 @@ Expected<void> LiteRtTensorBufferT::Clear() {
     case kLiteRtTensorBufferTypeGlTexture:
     case kLiteRtTensorBufferTypeUnknown:
     default: {
+      if (IsUserCustomBuffer(buffer_type())) {
+        LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
+        return custom_buffer->Clear();
+      }
       return Unexpected(kLiteRtStatusErrorUnsupported,
                         "Buffer type does not support clearing");
     }

@@ -15,14 +15,28 @@
 #ifndef THIRD_PARTY_ODML_LITERT_EXTERNAL_WEIGHT_EXTERNAL_WEIGHT_LOADER_LITERT_H_
 #define THIRD_PARTY_ODML_LITERT_EXTERNAL_WEIGHT_EXTERNAL_WEIGHT_LOADER_LITERT_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#ifdef __EMSCRIPTEN__
+// copybara:comment_begin
+#include <webgpu/webgpu_cpp.h>
+// copybara:comment_end
+// copybara:uncomment_begin
+// #include "ml_drift/webgpu/webgpu_headers.h"  // from @ml_drift
+// copybara:uncomment_end
+#else
+namespace wgpu {
+class Buffer;
+}  // namespace wgpu
+#endif  // __EMSCRIPTEN__
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/scoped_weight_source.h"
@@ -85,6 +99,8 @@ struct WeightAccessRequest {
   bool cpu = true;
   // Whether to access the data on an OpenCL device.
   bool opencl = false;
+  // Whether to access the data on a Metal device.
+  bool metal = false;
 };
 
 struct WeightAccess;
@@ -105,9 +121,20 @@ class WeightLoader {
   virtual absl::Status PrepareAccess(const WeightAccessRequest& request,
                                      LiteRtEnvironmentT* env) = 0;
 
+  // Prepares access to one external weight tensor. This is used by delegates
+  // that only need a CPU mapping while a specific tensor is being uploaded.
+  virtual absl::Status PrepareAccessForBuffer(
+      uint32_t external_buffer_id, const WeightAccessRequest& request,
+      LiteRtEnvironmentT* env) = 0;
+
   // Finds the `WeightInfo` for the external weight tensor with the given
   // buffer ID. Returns `nullptr` if no such tensor exists.
   virtual const WeightInfo* FindWeightInfoByBuffer(
+      uint32_t external_buffer_id) const = 0;
+
+  // Returns the first external buffer ID that references the same backing
+  // weight slice. Unknown IDs are returned unchanged.
+  virtual uint32_t GetCanonicalExternalBufferId(
       uint32_t external_buffer_id) const = 0;
 
   // Sets the external weight tensor with the given buffer ID. The `access`
@@ -119,6 +146,22 @@ class WeightLoader {
   // buffer ID. Returns `nullptr` if no such tensor exists.
   virtual const WeightAccess* GetExternalWeightByBuffer(
       uint32_t external_buffer_id) const = 0;
+
+  virtual absl::Status UploadWeightsOnWeb(
+      const absl::flat_hash_map<int, wgpu::Buffer>& tfl_id_to_wgpu_buffer) {
+    return absl::UnimplementedError(
+        "UploadWeightsOnWeb is not implemented by default.");
+  }
+
+  // Marks the host mapping for the external weight tensor as discardable.
+  virtual absl::Status DiscardExternalWeightByBuffer(
+      uint32_t external_buffer_id) = 0;
+
+  // Releases the prepared host/device access for one external weight tensor.
+  // Callers must only use this after all consumers have finished reading the
+  // data returned by GetExternalWeightByBuffer().
+  virtual absl::Status ReleaseExternalWeightByBuffer(
+      uint32_t external_buffer_id) = 0;
 };
 
 // Provides access to the data of an external weight tensor.
@@ -151,15 +194,24 @@ struct WeightAccess {
   LiteRtTensorBufferPtr device_tensor_buffer;
 };
 
+// Map from group ID (string) to weight data in host memory.
+using WeightInMemoryMap =
+    absl::flat_hash_map<std::string, absl::Span<const std::byte>>;
+
 // Creates a `WeightLoader` instance from a TFLite model flatbuffer.
-// The `flatbuffer` parameter is the TFLite model flatbuffer. The
-// `model_directory` parameter is the directory where the external weight files
-// are located. If `model_directory` is not specified, treat the group path
-// as the absolute path.
+// - flatbuffer: the TFLite model flatbuffer.
+// - model_directory: the directory where the external weight files are located.
+//     If not specified, treat the group path as the absolute path.
+// - scoped_weight_source: a `ScopedWeightSource` instance that owns the
+//     external weight files.
+// - weight_in_memory_map: a map from group ID to weight data in host memory.
+//     If specified, the `WeightLoader` will use the weight data in the map
+//     in addition to the external weight files.
 std::unique_ptr<WeightLoader> CreateLiteRtWeightLoader(
     LiteRtRuntimeContext* runtime_context, const tflite::Model* flatbuffer,
     std::optional<std::string> model_directory = std::nullopt,
-    std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source = nullptr);
+    std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source = nullptr,
+    const WeightInMemoryMap* weight_in_memory_map = nullptr);
 
 }  // namespace weight_loader
 

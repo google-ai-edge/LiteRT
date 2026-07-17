@@ -227,6 +227,14 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
                 compiled_model, /*signature_index=*/0, /*input_index=*/0,
                 new_dims, 0),
             kLiteRtStatusOk);
+  EXPECT_EQ(LiteRtCompiledModelResizeInputTensor(
+                compiled_model, /*signature_index=*/0, /*input_index=*/0,
+                /*dims=*/nullptr, /*dims_size=*/3),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtCompiledModelResizeInputTensorNonStrict(
+                compiled_model, /*signature_index=*/0, /*input_index=*/0,
+                /*dims=*/nullptr, /*dims_size=*/3),
+            kLiteRtStatusErrorInvalidArgument);
 
   // Cleanup
   LiteRtDestroyCompiledModel(compiled_model);

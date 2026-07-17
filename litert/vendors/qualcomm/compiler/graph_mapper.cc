@@ -24,7 +24,12 @@
 #include <filesystem>
 #include <string>
 
+#include "GPU/QnnGpuGraph.h"  // from @qairt
+#include "HTP/QnnHtpGraph.h"  // from @qairt
 #include "IR/QnnIrGraph.h"
+#include "QnnCommon.h"  // from @qairt
+#include "QnnGraph.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -33,10 +38,6 @@
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "HTP/QnnHtpGraph.h"  // from @qairt
-#include "QnnCommon.h"  // from @qairt
-#include "QnnGraph.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 namespace litert::qnn {
 
@@ -72,11 +73,26 @@ Qnn_Priority_t GetGraphPriorityValue(::qnn::GraphPriority graph_priority) {
   }
 }
 
+QnnGpu_Precision_t GetGpuPrecisionValue(::qnn::GpuPrecision precision) {
+  switch (precision) {
+    case ::qnn::GpuPrecision::kUserProvided:
+      return QNN_GPU_PRECISION_USER_PROVIDED;
+    case ::qnn::GpuPrecision::kFp32:
+      return QNN_GPU_PRECISION_FP32;
+    case ::qnn::GpuPrecision::kFp16:
+      return QNN_GPU_PRECISION_FP16;
+    case ::qnn::GpuPrecision::kHybrid:
+      return QNN_GPU_PRECISION_HYBRID;
+    default:
+      return QNN_GPU_PRECISION_FP16;
+  }
+}
+
 inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs(
     const ::qnn::Options& options) {
-  static std::array<QnnHtpGraph_CustomConfig_t, 7> graph_custom_configs;
-  static std::array<QnnGraph_Config_t, 8> graph_configs;
-  static std::array<const QnnGraph_Config_t*, 9> result;
+  static std::array<QnnHtpGraph_CustomConfig_t, 9> graph_custom_configs;
+  static std::array<QnnGraph_Config_t, 10> graph_configs;
+  static std::array<const QnnGraph_Config_t*, 11> result;
   size_t num_config = 5;
 
   // QNN suggest always enable relax precision.
@@ -135,6 +151,27 @@ inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs(
     num_config++;
   }
 
+  // DLBC
+  if (options.GetHtpDlbc()) {
+    graph_custom_configs[num_config] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    graph_custom_configs[num_config].option =
+        QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
+    graph_custom_configs[num_config].optimizationOption.type =
+        QNN_HTP_GRAPH_OPTIMIZATION_TYPE_ENABLE_DLBC;
+    graph_custom_configs[num_config].optimizationOption.floatValue = 1.0f;
+    num_config++;
+  }
+  // DLBC weights
+  if (options.GetHtpDlbcWeights()) {
+    graph_custom_configs[num_config] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    graph_custom_configs[num_config].option =
+        QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
+    graph_custom_configs[num_config].optimizationOption.type =
+        QNN_HTP_GRAPH_OPTIMIZATION_TYPE_ENABLE_DLBC_WEIGHTS;
+    graph_custom_configs[num_config].optimizationOption.floatValue = 1.0f;
+    num_config++;
+  }
+
   for (size_t i = 0; i < num_config; ++i) {
     graph_configs[i] = QNN_GRAPH_CONFIG_INIT;
     graph_configs[i].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
@@ -156,9 +193,9 @@ inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs(
 
 inline absl::Span<const QnnGraph_Config_t*> GetLegacyGraphConfigs(
     const ::qnn::Options& options) {
-  static std::array<QnnHtpGraph_CustomConfig_t, 5> graph_custom_configs;
-  static std::array<QnnGraph_Config_t, 6> graph_configs;
-  static std::array<const QnnGraph_Config_t*, 7> result;
+  static std::array<QnnHtpGraph_CustomConfig_t, 7> graph_custom_configs;
+  static std::array<QnnGraph_Config_t, 8> graph_configs;
+  static std::array<const QnnGraph_Config_t*, 9> result;
   // Default use O3 for now.
   graph_custom_configs[0] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
   graph_custom_configs[0].option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
@@ -187,14 +224,36 @@ inline absl::Span<const QnnGraph_Config_t*> GetLegacyGraphConfigs(
 
   // Hvx Thread
   bool has_hvx = options.GetNumHvxThreads() != 0;
+  size_t num_config = 4;
   if (has_hvx) {
-    graph_custom_configs[4] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
-    graph_custom_configs[4].option =
+    graph_custom_configs[num_config] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    graph_custom_configs[num_config].option =
         QNN_HTP_GRAPH_CONFIG_OPTION_NUM_HVX_THREADS;
-    graph_custom_configs[4].numHvxThreads = options.GetNumHvxThreads();
+    graph_custom_configs[num_config].numHvxThreads = options.GetNumHvxThreads();
+    ++num_config;
   }
 
-  size_t num_config = has_hvx ? 5 : 4;
+  // DLBC (activations / inputs). Offline-prep only.
+  if (options.GetHtpDlbc()) {
+    graph_custom_configs[num_config] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    graph_custom_configs[num_config].option =
+        QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
+    graph_custom_configs[num_config].optimizationOption.type =
+        QNN_HTP_GRAPH_OPTIMIZATION_TYPE_ENABLE_DLBC;
+    graph_custom_configs[num_config].optimizationOption.floatValue = 1.0f;
+    ++num_config;
+  }
+  // DLBC weights. Offline-prep only.
+  if (options.GetHtpDlbcWeights()) {
+    graph_custom_configs[num_config] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    graph_custom_configs[num_config].option =
+        QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
+    graph_custom_configs[num_config].optimizationOption.type =
+        QNN_HTP_GRAPH_OPTIMIZATION_TYPE_ENABLE_DLBC_WEIGHTS;
+    graph_custom_configs[num_config].optimizationOption.floatValue = 1.0f;
+    ++num_config;
+  }
+
   for (size_t i = 0; i < num_config; ++i) {
     graph_configs[i] = QNN_GRAPH_CONFIG_INIT;
     graph_configs[i].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
@@ -212,6 +271,26 @@ inline absl::Span<const QnnGraph_Config_t*> GetLegacyGraphConfigs(
 
   result[num_config] = nullptr;
   return absl::MakeSpan(result.data(), num_config + 1);
+}
+
+inline absl::Span<const QnnGraph_Config_t*> GetGpuGraphConfigs(
+    const ::qnn::Options& options) {
+  static std::array<QnnGpuGraph_CustomConfig_t, 1> graph_custom_configs;
+  static std::array<QnnGraph_Config_t, 1> graph_configs;
+  static std::array<const QnnGraph_Config_t*, 2> result;
+
+  // Precision
+  graph_custom_configs[0] = QNN_GPU_GRAPH_CUSTOM_CONFIG_INIT;
+  graph_custom_configs[0].precision =
+      GetGpuPrecisionValue(options.GetGpuPrecision());
+
+  graph_configs[0] = QNN_GRAPH_CONFIG_INIT;
+  graph_configs[0].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
+  graph_configs[0].customConfig = &graph_custom_configs[0];
+  result[0] = &graph_configs[0];
+
+  result[1] = nullptr;
+  return absl::MakeSpan(result.data(), 2);
 }
 
 absl::Span<const QnnGraph_Config_t*> GetDefaultIrGraphConfigs(
@@ -262,6 +341,9 @@ LiteRtStatus GraphMapper::InitQnnGraph(absl::string_view qnn_graph_name,
   switch (options.GetBackendType()) {
     case ::qnn::BackendType::kHtpBackend:
       graph_configs = PickGraphConfigHeuristic(options);
+      break;
+    case ::qnn::BackendType::kGpuBackend:
+      graph_configs = GetGpuGraphConfigs(options);
       break;
     case ::qnn::BackendType::kIrBackend:
       graph_configs = GetDefaultIrGraphConfigs(options, qnn_graph_name);

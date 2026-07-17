@@ -77,6 +77,26 @@ LiteRtStatus LrtQualcommOptionsSetLogLevel(
 LiteRtStatus LrtQualcommOptionsGetLogLevel(
     LrtQualcommOptions options, LrtQualcommOptionsLogLevel* log_level);
 
+// profiling
+
+// This option controls the profiling level. A higher level results in a more
+// detailed report after execution. Defaults to off. Read at both compile time
+// (context creation) and dispatch time (graph execution).
+
+typedef enum LrtQualcommOptionsProfiling {
+  kLiteRtQualcommProfilingOff = 0,
+  kLiteRtQualcommProfilingBasic,
+  kLiteRtQualcommProfilingDetailed,
+  kLiteRtQualcommProfilingLinting,
+  kLiteRtQualcommProfilingOptrace,
+} LrtQualcommOptionsProfiling;
+
+LiteRtStatus LrtQualcommOptionsSetProfiling(
+    LrtQualcommOptions options, LrtQualcommOptionsProfiling profiling);
+
+LiteRtStatus LrtQualcommOptionsGetProfiling(
+    LrtQualcommOptions options, LrtQualcommOptionsProfiling* profiling);
+
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
 // use_htp_preference
@@ -118,6 +138,10 @@ LiteRtStatus LrtQualcommOptionsGetUseInt64BiasAsInt32(
 
 // Weight sharing indicates whether different subgraphs may share weight
 // tensors. This is only supported on x86 AOT. Defaults to false.
+//
+// Note: weight sharing is mutually exclusive with HTP DLBC weights (QAIRT
+// 2.36+). When both are requested, weight sharing wins and DLBC weights is
+// forced off.
 
 LiteRtStatus LrtQualcommOptionsSetEnableWeightSharing(
     LrtQualcommOptions options, bool enable_weight_sharing);
@@ -243,24 +267,36 @@ LiteRtStatus LrtQualcommOptionsGetDspPerformanceMode(
     LrtQualcommOptions options,
     LrtQualcommOptionsDspPerformanceMode* dsp_performance_mode);
 
-// profiling
+// perf_ctrl_mode
 
-// This option controls the profiling level. A higher level results in a more
-// detailed report after execution. Defaults to off.
+// Controls whether per-inference performance voting with a 300ms debounce
+// timer is enabled (auto) or whether the caller manages voting manually
+// (manual, the default).
+typedef enum LrtQualcommOptionsHtpPerfCtrlMode {
+  kLiteRtQualcommHtpPerfCtrlModeManual = 0,
+  kLiteRtQualcommHtpPerfCtrlModeAuto = 1,
+} LrtQualcommOptionsHtpPerfCtrlMode;
 
-typedef enum LrtQualcommOptionsProfiling {
-  kLiteRtQualcommProfilingOff = 0,
-  kLiteRtQualcommProfilingBasic,
-  kLiteRtQualcommProfilingDetailed,
-  kLiteRtQualcommProfilingLinting,
-  kLiteRtQualcommProfilingOptrace,
-} LrtQualcommOptionsProfiling;
+LiteRtStatus LrtQualcommOptionsSetHtpPerfCtrlMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsHtpPerfCtrlMode htp_perf_ctrl_mode);
 
-LiteRtStatus LrtQualcommOptionsSetProfiling(
-    LrtQualcommOptions options, LrtQualcommOptionsProfiling profiling);
+LiteRtStatus LrtQualcommOptionsGetHtpPerfCtrlMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsHtpPerfCtrlMode* htp_perf_ctrl_mode);
 
-LiteRtStatus LrtQualcommOptionsGetProfiling(
-    LrtQualcommOptions options, LrtQualcommOptionsProfiling* profiling);
+typedef enum LrtQualcommOptionsDspPerfCtrlMode {
+  kLiteRtQualcommDspPerfCtrlModeManual = 0,
+  kLiteRtQualcommDspPerfCtrlModeAuto = 1,
+} LrtQualcommOptionsDspPerfCtrlMode;
+
+LiteRtStatus LrtQualcommOptionsSetDspPerfCtrlMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsDspPerfCtrlMode dsp_perf_ctrl_mode);
+
+LiteRtStatus LrtQualcommOptionsGetDspPerfCtrlMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsDspPerfCtrlMode* dsp_perf_ctrl_mode);
 
 LiteRtStatus LrtQualcommOptionsSetIrJsonDir(LrtQualcommOptions options,
                                             const char* ir_json_dir);
@@ -334,6 +370,24 @@ LiteRtStatus LrtQualcommOptionsSetSaverOutputDir(LrtQualcommOptions options,
 
 LiteRtStatus LrtQualcommOptionsGetSaverOutputDir(LrtQualcommOptions options,
                                                  const char** saver_output_dir);
+
+LiteRtStatus LrtQualcommOptionsSetSchematicDir(LrtQualcommOptions options,
+                                               const char* schematic_dir);
+
+LiteRtStatus LrtQualcommOptionsGetSchematicDir(LrtQualcommOptions options,
+                                               const char** schematic_dir);
+
+
+LiteRtStatus LrtQualcommOptionsSetCustomOpPackage(
+    LrtQualcommOptions options, const char* name,
+    const char* interface_provider, const char* compile_package_path,
+    const char* dispatch_package_path, const char* target);
+
+LiteRtStatus LrtQualcommOptionsGetCustomOpPackage(
+    LrtQualcommOptions options, const char** name,
+    const char** interface_provider, const char** compile_package_path,
+    const char** dispatch_package_path, const char** target);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

@@ -26,6 +26,19 @@ target_link_libraries(litert_test_common PUBLIC
     flatbuffers::flatbuffers
 )
 
+add_library(litert_test_load_test_model STATIC)
+
+target_sources(litert_test_load_test_model
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../test/load_test_model.cc
+)
+
+target_link_libraries(litert_test_load_test_model PUBLIC
+    litert_test_common
+    litert_cc_internal
+    absl::string_view
+)
+
 # Compiler plugin test
 add_executable(qnn_compiler_plugin_test)
 
@@ -38,6 +51,7 @@ target_link_libraries(qnn_compiler_plugin_test
     PRIVATE
         qnn_compiler_plugin
         litert_test_common
+        litert_test_load_test_model
         litert_runtime_c_api_shared_lib 
         GTest::gtest_main
 )
@@ -82,7 +96,10 @@ target_sources(builder_test
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/elementwise_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/fully_connected_int2_test.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/pack_test.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/pad_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/relu_test.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/splitv_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/topk_test.cc
 )
 

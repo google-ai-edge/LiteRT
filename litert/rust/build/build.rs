@@ -29,18 +29,55 @@ const CARGO_CFG_TARGET_ARCH_ENV_VAR: &str = "CARGO_CFG_TARGET_ARCH";
 // If we are generating docuemntation in hermetic environment for docs.rs
 const CARGO_DOCS_RS: &str = "DOCS_RS";
 
-const LITERT_RUNTIME_DOWNLOAD_URL: &str = "https://storage.googleapis.com/litert/binaries/latest/";
-const LITERT_CC_SDK_DOWNLOAD_URL: &str =
-    "https://github.com/google-ai-edge/LiteRT/releases/latest/download/litert_cc_sdk.zip";
+// The version of LiteRT SDK to be used.
+// It's defined as a macro, so it can be used inside concat! macros below.
+macro_rules! litert_sdk_version {
+    () => {
+        "2.1.6"
+    };
+}
 
-#[derive(Debug, PartialEq)]
-enum TargetPlatform {
+const LITERT_RUNTIME_DOWNLOAD_URL: &str =
+    concat!("https://storage.googleapis.com/litert/binaries/", litert_sdk_version!(), "/");
+const LITERT_CC_SDK_DOWNLOAD_URL: &str = concat!(
+    "https://github.com/google-ai-edge/LiteRT/releases/download/v",
+    litert_sdk_version!(),
+    "/litert_cc_sdk.zip"
+);
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum Platform {
     AndroidArm64,
     AndroidX86,
     LinuxArm64,
     LinuxX86,
     MacosArm64,
     WindowsX86,
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum LiteRtAccelerator {
+    Metal,
+    OpenGL,
+    WebGPU,
+    None,
+}
+
+impl LiteRtAccelerator {
+    fn as_str(&self) -> &str {
+        match self {
+            Self::Metal => "metal",
+            Self::OpenGL => "opengl",
+            Self::WebGPU => "webgpu",
+            Self::None => "none",
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+struct TargetPlatform {
+    platform: Platform,
+    accelerator: LiteRtAccelerator,
 }
 
 impl TargetPlatform {
@@ -51,37 +88,124 @@ impl TargetPlatform {
             env::var(CARGO_CFG_TARGET_ARCH_ENV_VAR).unwrap_or_else(|_| "unknown".to_string());
         info!("Target os {} platform {}", os.as_str(), arch.as_str());
 
-        match (os.as_str(), arch.as_str()) {
-            ("android", "aarch64") => Ok(TargetPlatform::AndroidArm64),
-            ("android", "x86_64") => Ok(TargetPlatform::AndroidX86),
-            ("linux", "aarch64") => Ok(TargetPlatform::LinuxArm64),
-            ("linux", "x86_64") => Ok(TargetPlatform::LinuxX86),
-            ("macos", "aarch64") => Ok(TargetPlatform::MacosArm64),
-            ("windows", "x86_64") => Ok(TargetPlatform::WindowsX86),
-            _ => Err(format!("Unknown target platform os:{} aarch:{}", os, arch)),
+        // Detect accelerator based on the features in Cargo.toml.
+        let accelerator = if env::var("CARGO_FEATURE_METAL").is_ok() {
+            LiteRtAccelerator::Metal
+        } else if env::var("CARGO_FEATURE_WEBGPU").is_ok() {
+            LiteRtAccelerator::WebGPU
+        } else if env::var("CARGO_FEATURE_OPENGL").is_ok() {
+            LiteRtAccelerator::OpenGL
+        } else {
+            LiteRtAccelerator::None
+        };
+        info!("Target accelerator {}", accelerator.as_str());
+
+        match (os.as_str(), arch.as_str(), accelerator.as_str()) {
+            ("android", "aarch64", "none") => Ok(TargetPlatform {
+                platform: Platform::AndroidArm64,
+                accelerator: LiteRtAccelerator::None,
+            }),
+            ("android", "aarch64", "opengl") => Ok(TargetPlatform {
+                platform: Platform::AndroidArm64,
+                accelerator: LiteRtAccelerator::OpenGL,
+            }),
+            ("android", "x86_64", "none") => Ok(TargetPlatform {
+                platform: Platform::AndroidX86,
+                accelerator: LiteRtAccelerator::None,
+            }),
+            ("android", "x86_64", "opengl") => Ok(TargetPlatform {
+                platform: Platform::AndroidX86,
+                accelerator: LiteRtAccelerator::OpenGL,
+            }),
+            ("linux", "aarch64", "none") => Ok(TargetPlatform {
+                platform: Platform::LinuxArm64,
+                accelerator: LiteRtAccelerator::None,
+            }),
+            ("linux", "aarch64", "webgpu") => Ok(TargetPlatform {
+                platform: Platform::LinuxArm64,
+                accelerator: LiteRtAccelerator::WebGPU,
+            }),
+            ("linux", "x86_64", "none") => Ok(TargetPlatform {
+                platform: Platform::LinuxX86,
+                accelerator: LiteRtAccelerator::None,
+            }),
+            ("linux", "x86_64", "webgpu") => Ok(TargetPlatform {
+                platform: Platform::LinuxX86,
+                accelerator: LiteRtAccelerator::WebGPU,
+            }),
+            ("macos", "aarch64", "none") => Ok(TargetPlatform {
+                platform: Platform::MacosArm64,
+                accelerator: LiteRtAccelerator::None,
+            }),
+            ("macos", "aarch64", "metal") => Ok(TargetPlatform {
+                platform: Platform::MacosArm64,
+                accelerator: LiteRtAccelerator::Metal,
+            }),
+            ("windows", "x86_64", "none") => Ok(TargetPlatform {
+                platform: Platform::WindowsX86,
+                accelerator: LiteRtAccelerator::None,
+            }),
+            ("windows", "x86_64", "webgpu") => Ok(TargetPlatform {
+                platform: Platform::WindowsX86,
+                accelerator: LiteRtAccelerator::WebGPU,
+            }),
+            _ => Err(format!(
+                "Unknown target platform os:{} aarch:{} accelerator:{}",
+                os,
+                arch,
+                accelerator.as_str()
+            )),
         }
     }
 
     // See https://ai.google.dev/edge/litert/next/cpp_sdk
     fn runtime_name(&self) -> String {
-        match self {
-            TargetPlatform::AndroidArm64
-            | TargetPlatform::AndroidX86
-            | TargetPlatform::LinuxArm64
-            | TargetPlatform::LinuxX86 => "libLiteRt.so".to_string(),
-            TargetPlatform::MacosArm64 => "libLiteRt.dylib".to_string(),
-            TargetPlatform::WindowsX86 => "libLiteRt.dll".to_string(),
+        match self.platform {
+            Platform::AndroidArm64
+            | Platform::AndroidX86
+            | Platform::LinuxArm64
+            | Platform::LinuxX86 => "libLiteRt.so".to_string(),
+            Platform::MacosArm64 => "libLiteRt.dylib".to_string(),
+            Platform::WindowsX86 => "libLiteRt.dll".to_string(),
         }
     }
 
+    fn accelerator_runtime_name(&self) -> Option<String> {
+        match (self.platform, self.accelerator) {
+            (Platform::AndroidArm64, LiteRtAccelerator::OpenGL) => {
+                Some("libLiteRtClGlAccelerator.so".to_string())
+            }
+            (Platform::AndroidX86, LiteRtAccelerator::OpenGL) => {
+                Some("libLiteRtClGlAccelerator.so".to_string())
+            }
+            (Platform::LinuxArm64, LiteRtAccelerator::WebGPU) => {
+                Some("libLiteRtWebGpuAccelerator.so".to_string())
+            }
+            (Platform::LinuxX86, LiteRtAccelerator::WebGPU) => {
+                Some("libLiteRtWebGpuAccelerator.so".to_string())
+            }
+            (Platform::MacosArm64, LiteRtAccelerator::Metal) => {
+                Some("libLiteRtMetalAccelerator.dylib".to_string())
+            }
+            (Platform::WindowsX86, LiteRtAccelerator::WebGPU) => {
+                Some("libLiteRtWebGpuAccelerator.dll".to_string())
+            }
+            _ => None,
+        }
+    }
+
+    fn runtime_link_name(&self) -> String {
+        "LiteRt".to_string()
+    }
+
     fn runtime_directory(&self) -> String {
-        match self {
-            TargetPlatform::AndroidArm64 => "android_arm64".to_string(),
-            TargetPlatform::AndroidX86 => "android_x86_64".to_string(),
-            TargetPlatform::LinuxArm64 => "linux_arm64".to_string(),
-            TargetPlatform::LinuxX86 => "linux_x86_64".to_string(),
-            TargetPlatform::MacosArm64 => "macos_arm64".to_string(),
-            TargetPlatform::WindowsX86 => "windows_x86_64".to_string(),
+        match self.platform {
+            Platform::AndroidArm64 => "android_arm64".to_string(),
+            Platform::AndroidX86 => "android_x86_64".to_string(),
+            Platform::LinuxArm64 => "linux_arm64".to_string(),
+            Platform::LinuxX86 => "linux_x86_64".to_string(),
+            Platform::MacosArm64 => "macos_arm64".to_string(),
+            Platform::WindowsX86 => "windows_x86_64".to_string(),
         }
     }
 }
@@ -156,6 +280,21 @@ fn download_runtime(
     return Ok(());
 }
 
+fn download_accelerator_runtime(
+    target_plarform: &TargetPlatform,
+    out_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let runtime_accelerator_name = target_plarform.accelerator_runtime_name().unwrap();
+    let runtime_dir = target_plarform.runtime_directory();
+    let runtime_download_url = String::from(LITERT_RUNTIME_DOWNLOAD_URL)
+        + runtime_dir.as_str()
+        + "/"
+        + runtime_accelerator_name.as_str();
+    let runtime_local_name = out_dir.join(runtime_accelerator_name);
+    download_file(&runtime_download_url, &runtime_local_name)?;
+    return Ok(());
+}
+
 struct LiteRTSdk {
     sdk_root_dir: PathBuf,
     sdk_build_dir: PathBuf,
@@ -187,6 +326,10 @@ fn download_and_build_cpp_sdk(
 
     info!("Downloading prebuilt runtime for SDK to {}", sdk_root.display());
     download_runtime(target_platform, &sdk_root)?;
+    if let Some(accel_runtime_name) = target_platform.accelerator_runtime_name() {
+        info!("Downloading accelerator runtime: {}", accel_runtime_name);
+        download_accelerator_runtime(target_platform, &sdk_root)?;
+    }
 
     let build_dir = out_dir.join("litert_cc_sdk_build");
     info!("Building C++ SDK with CMake in {}", build_dir.display());
@@ -213,6 +356,17 @@ fn download_and_build_cpp_sdk(
     Ok(LiteRTSdk::new(sdk_root, build_dir))
 }
 
+// The wrapper.h is moved to output directory, to avoid include of local files when
+// cargo is called from the source tree.
+fn copy_wrapper_h(out_dir: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let wrapper_h = "wrapper.h";
+    let wrapper_h_path = out_dir.join(wrapper_h);
+    let mut outfile = File::create(&wrapper_h_path)?;
+    let mut infile = File::open(wrapper_h)?;
+    copy(&mut infile, &mut outfile)?;
+    Ok(wrapper_h_path)
+}
+
 fn dump_all_env_vars() {
     for (key, value) in env::vars() {
         info!("Environment: {}: {}", key, value);
@@ -221,18 +375,22 @@ fn dump_all_env_vars() {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     dump_all_env_vars();
-    println!("cargo::rustc-check-cfg=cfg(bazel_bindgen, cargo_bindgen, docsrs)");
+    println!("cargo::rustc-check-cfg=cfg(bazel_bindgen, cargo_bindgen, docsrs, async_support)");
     // Check if we are currently generating documentation
     let is_doc_gen = env::var(CARGO_DOCS_RS).is_ok();
 
     if is_doc_gen {
         info!("Skipping heavy lifting because we are just building docs!");
-        println!("cargo::rustc-check-cfg=cfg(docsrs)");
         println!("cargo::rustc-cfg=docsrs");
+        // Force async support for docs.rs
+        println!("cargo::rustc-cfg=async_support");
         return Ok(());
     }
     println!("cargo::rerun-if-changed=build/build.rs");
     println!("cargo::rerun-if-changed=wrapper.h");
+    if env::var("CARGO_FEATURE_ASYNC_SUPPORT").is_ok() {
+        println!("cargo::rustc-cfg=async_support");
+    }
 
     if let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") {
         info!("Manifest dir {}", manifest_dir);
@@ -249,12 +407,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Build dir {}", litert_sdk.sdk_build_dir.display());
 
     println!("cargo::rustc-link-search=native={}", litert_sdk.sdk_root_dir.display());
-    println!("cargo::rustc-link-lib=dylib=LiteRt");
+    println!("cargo::rustc-link-lib=dylib={}", target_platform.runtime_link_name());
     println!("cargo::rustc-link-search=native={}", litert_sdk.sdk_build_dir.display());
     println!("cargo::rustc-link-lib=static=litert_cc_api");
 
+    if let Some(accel_runtime_name) = target_platform.accelerator_runtime_name() {
+        println!("cargo::rustc-link-lib=dylib={}", accel_runtime_name);
+    }
+
+    let wrapper_h_path = copy_wrapper_h(&out_dir)?;
     let bindings = bindgen::Builder::default()
-        .header("wrapper.h")
+        .header(wrapper_h_path.to_str().unwrap())
         // Add the include path so clang can find dependent headers
         .clang_arg(format!("-I{}", litert_sdk.sdk_root_dir.display()))
         .clang_arg(format!("-I{}", litert_sdk.sdk_root_dir.join("litert").join("c").display()))

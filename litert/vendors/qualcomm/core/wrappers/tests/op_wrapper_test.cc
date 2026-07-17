@@ -9,15 +9,16 @@
 #include <functional>
 #include <numeric>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include "QnnOpDef.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 #include <gtest/gtest.h>
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
-#include "QnnOpDef.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
 namespace {
@@ -76,6 +77,21 @@ TEST(OpWrapperTest, SanityTest) {
   EXPECT_EQ(op_config_v1.params, nullptr);
   EXPECT_EQ(op_config_v1.inputTensors, nullptr);
   EXPECT_EQ(op_config_v1.outputTensors, nullptr);
+}
+
+TEST(OpWrapperTest, PackageNameConstructor) {
+  OpWrapper op_wrapper{"name", "custom_pkg", "OP_TYPE", QnnOpCode::kUnknown};
+  const Qnn_OpConfig_t op_config = op_wrapper.GetOpConfig();
+  EXPECT_EQ(op_config.version, QNN_OPCONFIG_VERSION_1);
+  EXPECT_STREQ(op_config.v1.packageName, "custom_pkg");
+  EXPECT_STREQ(op_config.v1.typeName, "OP_TYPE");
+  EXPECT_STREQ(op_config.v1.name, "name");
+  EXPECT_EQ(op_config.v1.numOfParams, 0);
+  EXPECT_EQ(op_config.v1.params, nullptr);
+  EXPECT_EQ(op_config.v1.numOfInputs, 0);
+  EXPECT_EQ(op_config.v1.inputTensors, nullptr);
+  EXPECT_EQ(op_config.v1.numOfOutputs, 0);
+  EXPECT_EQ(op_config.v1.outputTensors, nullptr);
 }
 
 TEST(OpWrapperTest, MoveCtorSanityTest) {
@@ -483,6 +499,26 @@ TEST(OpWrapperTest, IsElementWiseTest) {
       QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
       QNN_OP_ELEMENT_WISE_UNARY_OPERATION_NOT);
   EXPECT_TRUE(IsElementWiseNot(not_op));
+}
+
+TEST(OpWrapperTest, ToString) {
+  std::vector<uint32_t> dims = {1, 1, 3};
+  auto input = CreateTensor(dims, QNN_TENSOR_TYPE_NATIVE);
+  auto output = CreateTensor(dims, QNN_TENSOR_TYPE_APP_READ);
+  OpWrapper op{"my_op", "OP_TYPE", QnnOpCode::kUnknown};
+  op.AddInputTensor(input);
+  op.AddOutputTensor(output);
+
+  const std::string str = op.ToString();
+  EXPECT_EQ(
+      str,
+      "'my_op' (type=OP_TYPE)"
+      "\n  Inputs:"
+      "\n    [0] name=\"\" dtype=QNN_DATATYPE_UFIXED_POINT_8 dims=[1,1,3] "
+      "(no quantization)"
+      "\n  Outputs:"
+      "\n    [0] name=\"\" dtype=QNN_DATATYPE_UFIXED_POINT_8 dims=[1,1,3] "
+      "(no quantization)");
 }
 
 }  // namespace

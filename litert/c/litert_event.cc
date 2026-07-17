@@ -37,6 +37,9 @@ extern "C" {
 LiteRtStatus LiteRtCreateEventFromSyncFenceFd(LiteRtEnvironment env,
                                               int sync_fence_fd, bool owns_fd,
                                               LiteRtEvent* event) {
+  if (!event) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
 #if LITERT_HAS_SYNC_FENCE_SUPPORT
   *event = new LiteRtEventT{.env = env,
                             .type = LiteRtEventTypeSyncFenceFd,
@@ -51,17 +54,20 @@ LiteRtStatus LiteRtCreateEventFromSyncFenceFd(LiteRtEnvironment env,
 LiteRtStatus LiteRtCreateEventFromOpenClEvent(LiteRtEnvironment env,
                                               LiteRtClEvent cl_event,
                                               LiteRtEvent* event) {
+  if (!event) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
 #if LITERT_HAS_OPENCL_SUPPORT
-  *event = new LiteRtEventT{
-      .env = env,
-      .type = LiteRtEventTypeOpenCl,
-      .opencl_event = cl_event,
-  };
   LiteRtClInt res = tflite::gpu::cl::clRetainEvent(cl_event);
   if (res != LITE_RT_CL_SUCCESS) {
     LITERT_LOG(LITERT_ERROR, "Failed to retain OpenCL event: %d", res);
     return kLiteRtStatusErrorRuntimeFailure;
   }
+  *event = new LiteRtEventT{
+      .env = env,
+      .type = LiteRtEventTypeOpenCl,
+      .opencl_event = cl_event,
+  };
   return kLiteRtStatusOk;
 #else
   return kLiteRtStatusErrorUnsupported;
@@ -69,11 +75,17 @@ LiteRtStatus LiteRtCreateEventFromOpenClEvent(LiteRtEnvironment env,
 }
 
 LiteRtStatus LiteRtGetEventEventType(LiteRtEvent event, LiteRtEventType* type) {
+  if (!event || !type) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   *type = event->type;
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtGetEventSyncFenceFd(LiteRtEvent event, int* sync_fence_fd) {
+  if (!event || !sync_fence_fd) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
 #if LITERT_HAS_SYNC_FENCE_SUPPORT
   if (event->type == LiteRtEventTypeSyncFenceFd) {
     *sync_fence_fd = event->fd;
@@ -85,6 +97,9 @@ LiteRtStatus LiteRtGetEventSyncFenceFd(LiteRtEvent event, int* sync_fence_fd) {
 
 LiteRtStatus LiteRtGetEventOpenClEvent(LiteRtEvent event,
                                        LiteRtClEvent* cl_event) {
+  if (!event || !cl_event) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
 #if LITERT_HAS_OPENCL_SUPPORT
   if (event->type == LiteRtEventTypeOpenCl) {
     *cl_event = event->opencl_event;
@@ -96,6 +111,9 @@ LiteRtStatus LiteRtGetEventOpenClEvent(LiteRtEvent event,
 
 LiteRtStatus LiteRtGetEventEglSync(LiteRtEvent event,
                                    LiteRtEglSyncKhr* egl_sync) {
+  if (!event || !egl_sync) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
 #if LITERT_HAS_OPENGL_SUPPORT
   if (event->type == LiteRtEventTypeEglSyncFence ||
       event->type == LiteRtEventTypeEglNativeSyncFence) {
@@ -109,6 +127,9 @@ LiteRtStatus LiteRtGetEventEglSync(LiteRtEvent event,
 LiteRtStatus LiteRtCreateEventFromEglSyncFence(LiteRtEnvironment env,
                                                LiteRtEglSyncKhr egl_sync,
                                                LiteRtEvent* event) {
+  if (!event) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
 #if LITERT_HAS_OPENGL_SUPPORT
   LITERT_ASSIGN_OR_RETURN(LiteRtEventType type,
                           GetEventTypeFromEglSync(env, egl_sync));
@@ -126,6 +147,9 @@ LiteRtStatus LiteRtCreateEventFromEglSyncFence(LiteRtEnvironment env,
 LiteRtStatus LiteRtCreateManagedEvent(LiteRtEnvironment env,
                                       LiteRtEventType type,
                                       LiteRtEvent* event) {
+  if (!event) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   LITERT_ASSIGN_OR_RETURN(LiteRtEventT * event_res,
                           LiteRtEventT::CreateManaged(env, type));
   *event = event_res;
@@ -134,6 +158,9 @@ LiteRtStatus LiteRtCreateManagedEvent(LiteRtEnvironment env,
 
 LiteRtStatus LiteRtSetCustomEvent(LiteRtEvent event,
                                   LiteRtCustomEvent custom_event) {
+  if (!event) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
 #if LITERT_HAS_CUSTOM_EVENT_SUPPORT
   if (event->type == LiteRtEventTypeCustom) {
     if (event->custom_event != nullptr &&
@@ -152,6 +179,9 @@ LiteRtStatus LiteRtSetCustomEvent(LiteRtEvent event,
 
 LiteRtStatus LiteRtGetCustomEvent(LiteRtEvent event,
                                   LiteRtCustomEvent* custom_event) {
+  if (!event || !custom_event) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
 #if LITERT_HAS_CUSTOM_EVENT_SUPPORT
   if (event->type == LiteRtEventTypeCustom && event->custom_event != nullptr) {
     *custom_event = event->custom_event;
@@ -162,6 +192,9 @@ LiteRtStatus LiteRtGetCustomEvent(LiteRtEvent event,
 }
 
 LiteRtStatus LiteRtGetEventCustomNativeEvent(LiteRtEvent event, void** native) {
+  if (!event || !native) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
 #if LITERT_HAS_CUSTOM_EVENT_SUPPORT
   if (event->type == LiteRtEventTypeCustom && event->custom_event != nullptr &&
       event->custom_event->GetNative != nullptr) {
@@ -173,22 +206,34 @@ LiteRtStatus LiteRtGetEventCustomNativeEvent(LiteRtEvent event, void** native) {
 }
 
 LiteRtStatus LiteRtWaitEvent(LiteRtEvent event, int64_t timeout_in_ms) {
+  if (!event) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   LITERT_RETURN_IF_ERROR(event->Wait(timeout_in_ms));
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtSignalEvent(LiteRtEvent event) {
+  if (!event) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   LITERT_RETURN_IF_ERROR(event->Signal());
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtIsEventSignaled(LiteRtEvent event, bool* is_signaled) {
+  if (!event || !is_signaled) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   LITERT_ASSIGN_OR_RETURN(auto is_signaled_res, event->IsSignaled());
   *is_signaled = is_signaled_res;
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtDupFdEvent(LiteRtEvent event, int* dup_fd) {
+  if (!event || !dup_fd) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   LITERT_ASSIGN_OR_RETURN(auto dup_fd_res, event->DupFd());
   *dup_fd = dup_fd_res;
   return kLiteRtStatusOk;

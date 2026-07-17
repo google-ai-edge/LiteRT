@@ -87,6 +87,7 @@ litert_cc_lib_with_qnn(
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core/backends:dsp_backend",
+        "//litert/vendors/qualcomm/core/backends:gpu_backend",
         "//litert/vendors/qualcomm/core/backends:htp_backend",
         "//litert/vendors/qualcomm/core/backends:ir_backend",
         "//litert/vendors/qualcomm/core/backends:qnn_backend",
@@ -113,10 +114,13 @@ litert_test(
     linkstatic = True,
     no_main = True,
     tags = [
-        "manual",
-        "no-remote-exec",
+        "noasan",
+        "nomsan",
         "nosan",
-        "notap",
+        "notsan",
+        # copybara:comment_begin(oss-only)
+        "manual",
+        # copybara:comment_end
     ],
     # This test can be run only on Android and Linux.
     target_compatible_with = select({
@@ -129,14 +133,19 @@ litert_test(
     deps = [
         ":qnn_manager",
         "//litert/test:common",
-        "//litert/test:matchers_oss",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
-        "//litert/vendors/qualcomm/core/utils:test_main",
+        "//litert/vendors/qualcomm/core/utils:test_main_no_heapcheck",
         "//litert/vendors/qualcomm/core/utils:test_utils",
         "//litert/vendors/qualcomm/tools:dump",
-        "@com_google_googletest//:gtest",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:linux_x86_64": [
+            # copybara:uncomment_begin(google-only)
+            # "@qairt//:linux_deps",
+            # copybara:uncomment_end
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 litert_device_exec(
@@ -155,6 +164,7 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@qairt//:qnn_lib_headers",
     ],

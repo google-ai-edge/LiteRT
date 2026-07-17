@@ -41,10 +41,14 @@ namespace graph {
 struct TfLiteOpBuildInfo {
   ::tflite::BuiltinOperator builtin_code;
   std::optional<::tflite::BuiltinOptionsUnion> builtin_options = std::nullopt;
+  std::optional<::tflite::BuiltinOptions2Union> builtin_options_2 =
+      std::nullopt;
 
   // Present only when builtin_code is BuiltinOperator_CUSTOM.
   const std::string* custom_code = nullptr;
   const std::vector<uint8_t>* custom_options = nullptr;
+
+  std::vector<graph::Tensor> inputs;
 
   template <typename OpCodeT>
   explicit TfLiteOpBuildInfo(OpCodeT code)
@@ -521,6 +525,14 @@ class OpMixin<SplitOperation, TfLiteMixinTag> : public TfLiteOperation {
 
 template <>
 class OpMixin<CustomOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
+class OpMixin<StableHLOCompositeOperation, TfLiteMixinTag>
+    : public TfLiteOperation {
  public:
   absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
       const graph::Operation& op) const override;

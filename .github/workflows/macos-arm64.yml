@@ -100,6 +100,7 @@ jobs:
             "--config=bulk_test_cpu"
             "--config=macos_arm64"
             "--test_lang_filters=${TEST_LANG_FILTERS}"
+            "--test_output=errors"
             "--keep_going"
             "--repo_env=USE_PYWRAP_RULES=True"
           )
@@ -111,6 +112,7 @@ jobs:
             "-//litert/cc:litert_environment_test"
             "-//litert/python/tools/model_utils/test/..."
             "-//litert/runtime:compiled_model_test"
+            "-//litert/runtime/accelerators/gpu/..."
             "-//litert/tools:tool_display_test"
             "-//litert/tools:dump_test"
             "-//litert/tools:apply_plugin_test"

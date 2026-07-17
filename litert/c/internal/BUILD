@@ -31,7 +31,7 @@ package(
         # "//litert/runtime/dispatch:__subpackages__",
         # "//litert/vendors:__subpackages__",
         # "//litert/kotlin:__subpackages__",
-        # "//third_party/odml/litert/ml_drift/delegate:__subpackages__",
+        # "//ml_drift_delegate/delegate:__subpackages__",
         # "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
         # "//third_party/odml/litert/weight_loader:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
@@ -183,6 +183,7 @@ cc_library(
     srcs = ["litert_runtime_context.cc"],
     hdrs = ["litert_runtime_context.h"],
     visibility = [
+        # copybara:uncomment(oss litert_lm) "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
         "//litert/runtime:__pkg__",
         "//litert/vendors:__subpackages__",
         "//third_party/odml/litert/weight_loader:__subpackages__",
@@ -287,11 +288,12 @@ cc_library(
     hdrs = ["litert_tensor_buffer_registry.h"],
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
+        # "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
         # "//litert/c:__subpackages__",
         # "//litert/cc:__subpackages__",
         # "//litert/runtime:__subpackages__",
-        # "//third_party/odml/litert/ml_drift:__subpackages__",
         # "//litert/kotlin:__subpackages__",
+        # "//third_party/odml/litert/weight_loader:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
@@ -317,7 +319,6 @@ cc_library(
         # "//litert/c:__subpackages__",
         # "//litert/cc:__subpackages__",
         # "//litert/runtime:__subpackages__",
-        # "//third_party/odml/litert/ml_drift:__subpackages__",
         # "//litert/kotlin:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
@@ -394,7 +395,6 @@ cc_library(
     # copybara:uncomment_begin(oss litert_lm)
     # visibility = [
     # "//litert:__subpackages__",
-    # "//third_party/odml/litert/ml_drift:__subpackages__",
     # "//third_party/odml/litert_lm/runtime/executor:__pkg__",
     # ],
     # copybara:uncomment_end
@@ -442,7 +442,7 @@ cc_library(
         # copybara:uncomment_begin(oss litert_lm)
         # "@mediapipe//mediapipe/tasks/web/genai:__subpackages__",
         # "//litert:__subpackages__",
-        # "//third_party/odml/litert/ml_drift:__subpackages__",
+        # "//ml_drift_delegate:__subpackages__",
         # "//third_party/odml/litert_lm/c:__pkg__",
         # "//third_party/odml/infra/ml_drift_delegate:__pkg__",
         # "//third_party/odml/infra/fabric:__subpackages__",
@@ -534,6 +534,8 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     visibility = [
         "//litert:litert_friends",
+        "//litert/c:__pkg__",
+        "//litert/cc:__pkg__",
         "//litert/cc/internal:__pkg__",
     ],
     deps = [
@@ -555,6 +557,33 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "litert_runtime_api_export",
+    srcs = ["litert_runtime_api_export.cc"],
+    hdrs = ["litert_runtime_api_export.h"],
+    local_defines = ["LITERT_COMPILE_LIBRARY"],
+    visibility = [
+        "//litert:litert_friends",
+        "//litert/c:__pkg__",
+        "//litert/cc/internal:__pkg__",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_compiled_model_impl",
+        "//litert/c:litert_environment_impl",
+        "//litert/c:litert_environment_options_impl",
+        "//litert/c:litert_event_impl",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_metrics_impl",
+        "//litert/c:litert_model_impl",
+        "//litert/c:litert_opaque_options_impl",
+        "//litert/c:litert_options_impl",
+        "//litert/c:litert_tensor_buffer_impl",
+        "//litert/c/internal:litert_runtime_c_api",
+    ],
+    alwayslink = 1,
+)
+
 # Header files that should be part of the shared library: litert/c:litert_runtime_c_api_shared_lib.
 _HEADER_FILES_FOR_SHARED_LIB = [
     "litert_accelerator.h",
@@ -565,10 +594,11 @@ _HEADER_FILES_FOR_SHARED_LIB = [
     "litert_delegate_wrapper.h",
     "litert_dispatch_delegate.h",
     "litert_external_litert_buffer_context.h",
+    "litert_runtime_api_export.h",
     "litert_tensor_buffer_registry.h",
 ]
 
-exports_files(srcs = _HEADER_FILES_FOR_SHARED_LIB)
+exports_files(srcs = _HEADER_FILES_FOR_SHARED_LIB + ["litert_scheduling_info.h"])
 
 filegroup(
     name = "internal_headers",

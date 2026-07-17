@@ -191,7 +191,9 @@ cc_library(
         "//tflite:string_util",
         "//tflite/core/c:common",
         "//tflite/kernels:kernel_util",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@flatbuffers",
     ],
@@ -219,7 +221,6 @@ cc_test(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
-        "@flatbuffers",
         "@org_tensorflow//tensorflow/core/platform:tstring",
     ],
 )

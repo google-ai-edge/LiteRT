@@ -463,11 +463,19 @@ OpMixin<FullyConnectedOperation, TfLiteMixinTag>::ToTfLite(
                               op.As<FullyConnectedOperation>());
   LRT_TENSOR_ASSIGN_OR_RETURN(auto tflite_activation,
                               ToTflite(data.activation));
-  return TfLiteOpBuildInfo(::tflite::BuiltinOperator_FULLY_CONNECTED,
-                           tflite::FullyConnectedOptionsT{
-                               .fused_activation_function = tflite_activation,
-                               .keep_num_dims = data.keep_num_dims,
-                           });
+  auto weights_format = tflite::FullyConnectedOptionsWeightsFormat_DEFAULT;
+  if (data.weights_format == litert::tensor::kWeightsFormatShuffled4x16Int8) {
+    weights_format =
+        tflite::FullyConnectedOptionsWeightsFormat_SHUFFLED4x16INT8;
+  }
+  return TfLiteOpBuildInfo(
+      ::tflite::BuiltinOperator_FULLY_CONNECTED,
+      tflite::FullyConnectedOptionsT{
+          .fused_activation_function = tflite_activation,
+          .weights_format = weights_format,
+          .keep_num_dims = data.keep_num_dims,
+          .asymmetric_quantize_inputs = data.asymmetric_quantize_inputs,
+      });
 }
 
 absl::StatusOr<TfLiteOpBuildInfo>
@@ -510,9 +518,17 @@ OpMixin<SplitOperation, TfLiteMixinTag>::ToTfLite(
   LRT_TENSOR_ASSIGN_OR_RETURN(const SplitOperation& data,
                               op.As<SplitOperation>());
 
-  return TfLiteOpBuildInfo(
-      ::tflite::BuiltinOperator_SPLIT,
-      tflite::SplitOptionsT{.num_splits = data.num_splits});
+  if (op.inputs.size() < 2) {
+    return absl::FailedPreconditionError(
+        "Split operation must have at least 2 inputs (input and axis).");
+  }
+
+  TfLiteOpBuildInfo info(::tflite::BuiltinOperator_SPLIT,
+                         tflite::SplitOptionsT{.num_splits = data.num_splits});
+  // TFLite Split inputs: axis, input.
+  // LiteRT Split inputs: input, axis.
+  info.inputs = {op.inputs[1], op.inputs[0]};
+  return info;
 }
 
 absl::StatusOr<TfLiteOpBuildInfo>
@@ -523,6 +539,28 @@ OpMixin<CustomOperation, TfLiteMixinTag>::ToTfLite(
   TfLiteOpBuildInfo info(::tflite::BuiltinOperator_CUSTOM);
   info.custom_code = &data.custom_code;
   info.custom_options = &data.custom_options;
+  return info;
+}
+
+absl::StatusOr<TfLiteOpBuildInfo>
+OpMixin<StableHLOCompositeOperation, TfLiteMixinTag>::ToTfLite(
+    const graph::Operation& op) const {
+  LRT_TENSOR_ASSIGN_OR_RETURN(const StableHLOCompositeOperation& data,
+                              op.As<StableHLOCompositeOperation>());
+  if (data.decomposition_subgraph_index < 0) {
+    return absl::FailedPreconditionError(
+        "StableHLO composite decomposition subgraph was not serialized.");
+  }
+
+  TfLiteOpBuildInfo info(::tflite::BuiltinOperator_STABLEHLO_COMPOSITE);
+  info.builtin_options_2 = ::tflite::BuiltinOptions2Union();
+  info.builtin_options_2->Set(::tflite::StableHLOCompositeOptionsT{
+      .name = data.name,
+      .decomposition_subgraph_index = data.decomposition_subgraph_index,
+      .composite_attributes = data.composite_attributes,
+      .composite_attributes_format = ::tflite::CustomOptionsFormat_FLEXBUFFERS,
+      .version = data.version,
+  });
   return info;
 }
 

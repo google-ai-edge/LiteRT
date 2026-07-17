@@ -70,6 +70,12 @@ config_setting(
 )
 
 config_setting(
+    name = "litert_enable_ynnpack",
+    define_values = {"litert_enable_ynnpack": "true"},
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
     name = "build_include_gpu",
     flag_values = {":build_include": "gpu"},
 )
@@ -131,6 +137,38 @@ selects.config_setting_group(
     name = "android_gpu_enabled",
     match_all = [
         "//litert:android",
+        ":build_include_gpu_enabled",
+    ],
+)
+
+selects.config_setting_group(
+    name = "linux_gpu_enabled",
+    match_all = [
+        "//litert:linux",
+        ":build_include_gpu_enabled",
+    ],
+)
+
+selects.config_setting_group(
+    name = "macos_gpu_enabled",
+    match_all = [
+        "//litert:macos",
+        ":build_include_gpu_enabled",
+    ],
+)
+
+selects.config_setting_group(
+    name = "ios_gpu_enabled",
+    match_all = [
+        "//litert:ios",
+        ":build_include_gpu_enabled",
+    ],
+)
+
+selects.config_setting_group(
+    name = "windows_gpu_enabled",
+    match_all = [
+        "//litert:windows",
         ":build_include_gpu_enabled",
     ],
 )

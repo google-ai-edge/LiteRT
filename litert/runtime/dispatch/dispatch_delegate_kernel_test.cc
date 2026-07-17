@@ -37,6 +37,7 @@ TEST(DispatchDelegateKernelTest, BuildExecutableBytecodeBufferWithoutFd) {
   EXPECT_EQ(bytecode_buffer->fd, -1);
   EXPECT_EQ(bytecode_buffer->offset, dispatch_options.bytecode_offset);
   EXPECT_EQ(bytecode_buffer->size, dispatch_options.bytecode_size);
+  EXPECT_EQ(bytecode_buffer->alloc_base_file_offset, 0);
 }
 
 TEST(DispatchDelegateKernelTest, BuildExecutableBytecodeBufferWithFd) {
@@ -54,7 +55,10 @@ TEST(DispatchDelegateKernelTest, BuildExecutableBytecodeBufferWithFd) {
                                     /*has_alloc_base_file_region=*/true);
   ASSERT_TRUE(bytecode_buffer);
   EXPECT_EQ(bytecode_buffer->fd, 17);
-  EXPECT_EQ(bytecode_buffer->offset, 4096u + dispatch_options.bytecode_offset);
+  EXPECT_EQ(bytecode_buffer->offset, dispatch_options.bytecode_offset);
+  EXPECT_EQ(bytecode_buffer->alloc_base_file_offset, 4096u);
+  EXPECT_EQ(bytecode_buffer->alloc_base_file_offset + bytecode_buffer->offset,
+            4096u + dispatch_options.bytecode_offset);
   EXPECT_EQ(bytecode_buffer->size, dispatch_options.bytecode_size);
 }
 

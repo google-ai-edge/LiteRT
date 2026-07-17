@@ -32,6 +32,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
+        "//litert/cc:litert_tensor_buffer_types",
         "//tensor",
         "//tensor:arithmetic",
         "//tensor:buffer",

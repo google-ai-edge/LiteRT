@@ -1,3 +1,4 @@
+
 // Copyright 2024 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,5 +28,11 @@
 #include "litert/test/generators/binary_broadcast.h"  // IWYU pragma: export
 #include "litert/test/generators/reshape.h"  // IWYU pragma: export
 #include "litert/test/generators/transformer_layer.h"  // IWYU pragma: export
+#include "litert/test/generators/transpose.h"  // IWYU pragma: export
+#include "litert/test/generators/batch_matmul.h"  // IWYU pragma: export
+#include "litert/test/generators/fully_connected.h"  // IWYU pragma: export
+#include "litert/test/generators/concatenation.h"  // IWYU pragma: export
+#include "litert/test/generators/softmax.h"  // IWYU pragma: export
+#include "litert/test/generators/pad.h"  // IWYU pragma: export
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_

@@ -636,7 +636,8 @@ ThrStatus thrInvocationContextAttachBuffer(ThrInvocationContext* icontext,
 
 // Detaches the previously attached buffer `ThrBufferHandle` from the
 // ThrInvocationContext. The provided `ThrEdgeId` and `ThrBufferHandle` must be
-// valid.
+// valid. If the `ThrBufferHandle` does not match the attached buffer, the
+// function will still detach the attached buffer but also log a warning.
 ThrStatus thrInvocationContextDetachBuffer(ThrInvocationContext* icontext,
                                            ThrContext* context,
                                            ThrEdgeId edge_id,

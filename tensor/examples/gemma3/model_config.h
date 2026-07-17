@@ -18,10 +18,12 @@ limitations under the License.
 
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "tensor/examples/gemma3/gemma3_graph.h"
+#include "tensor/examples/gemma3/gemma3_config.h"
 #include "tensor/examples/gemma3/safetensor_loader.h"
 
 namespace litert::tensor::examples {
+
+class TfliteLoader;
 
 enum class Gemma3ModelVariant {
   kAuto,
@@ -40,6 +42,9 @@ absl::StatusOr<Gemma3Config> InferGemma3ConfigFromLoader(
     const SafetensorLoader& loader, const Gemma3Config& fallback);
 
 absl::StatusOr<Gemma3Config> ResolveGemma3Config(const SafetensorLoader& loader,
+                                                 Gemma3ModelVariant variant);
+
+absl::StatusOr<Gemma3Config> ResolveGemma3Config(const TfliteLoader& loader,
                                                  Gemma3ModelVariant variant);
 
 }  // namespace litert::tensor::examples

@@ -225,6 +225,9 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
       .get_mirror_pad_mode_option = LiteRtGetMirrorPadModeOption,
 
       .get_squeeze_dims_option = LiteRtGetSqueezeDimsOption,
+
+      .get_custom_options = LiteRtGetCustomOptions,
+      .serialize_model_with_signatures = LiteRtSerializeModelWithSignatures,
   };
   return &ctx;
 }

@@ -189,17 +189,11 @@ struct Relu0To1Reference {
 template <typename T>
 struct SignReference {
   T operator()(T value) const {
-    if (value == 0) return T{0};
-
-    if constexpr (std::is_floating_point_v<T>) {
-      // preserves correct sign handling for floats (incl. sign-bit semantics)
-      return std::signbit(value) ? T{-1} : T{1};
-    } else if constexpr (std::is_signed_v<T>) {
-      return value < 0 ? T{-1} : T{1};
-    } else {
-      // unsigned: never negative
-      return T{1};
-    }
+    float f = static_cast<float>(value);
+    if (std::isnan(f)) return value;
+    if (f < 0.0f) return static_cast<T>(-1);
+    if (f > 0.0f) return static_cast<T>(1);
+    return static_cast<T>(0);
   }
 };
 

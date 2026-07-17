@@ -134,6 +134,18 @@ litert::Expected<std::vector<LiteRtOpT*>> IdentifyAndValidateSubgraphOps(
 
 }  // namespace
 
+litert::Expected<std::vector<LiteRtOpT*>> IdentifyIdentifiedOps(
+    LiteRtSubgraphT& subgraph,
+    const std::vector<std::string>& start_tensor_names,
+    const std::vector<std::string>& end_tensor_names) {
+  auto starts = FindTensors(subgraph, start_tensor_names);
+  auto ends = FindTensors(subgraph, end_tensor_names);
+  if (starts.empty() || ends.empty()) {
+    return litert::Unexpected(kLiteRtStatusErrorNotFound, "Tensors not found");
+  }
+  return IdentifyAndValidateSubgraphOps(subgraph, starts, ends);
+}
+
 litert::Expected<void> OutlineSubgraph(LiteRtModelT& model,
                                        size_t subgraph_index,
                                        const OutlinerOptions& options) {

@@ -1,4 +1,4 @@
-// Copyright 22026 Google LLC.
+// Copyright 2026 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,11 +13,14 @@
 // limitations under the License.
 
 #include <cstddef>
+#include <cstring>
 #include <ios>
+#include <limits>
 #include <memory>
 #include <ostream>
 #include <streambuf>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -32,6 +35,7 @@
 #include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_op_options.h"
 #include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -41,7 +45,9 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/compiler/cc/litert_model.h"
+#include "litert/compiler/cc/litert_op_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/intel_openvino/bytecode_header.h"
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
 #include "litert/vendors/intel_openvino/compiler/openvino_compile_context.h"
 #include "litert/vendors/intel_openvino/compiler/openvino_soc_config.h"
@@ -87,6 +93,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflOneHot,
     kLiteRtOpCodeTflUnpack,
     kLiteRtOpCodeTflReduceAll,
+    kLiteRtOpCodeShloComposite,
     // These ops donot call get_attribute
     kLiteRtOpCodeTflDequantize,
     kLiteRtOpCodeTflLogistic,
@@ -132,33 +139,101 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflFloorMod,
     kLiteRtOpCodeTflSign,
     kLiteRtOpCodeTflTile,
+    // TOPK_V2 only calls get_attribute for index_type/sorted, both defaulted.
+    // Support is gated on a constant K (see IsOpSupported).
+    kLiteRtOpCodeTflTopkV2,
 };
 // clang format on
 
-// When exporting a model via the OpenVINO NPU plugin, standard string streams
-// might encounter a 32-bit std::streamsize limitation on specific platforms,
-// which restricts model export capacity. This custom output stream buffer
-// bypasses that limitation, enabling support for larger models.
+// When exporting a model via the OpenVINO, standard string streams might
+// encounter a 32-bit std::streamsize limitation on specific platforms, which
+// restricts model export capacity. This custom output stream buffer bypasses
+// that limitation, enabling support for larger models.
 class CustomOStreamBuf : public std::streambuf {
  public:
-  CustomOStreamBuf() = default;
+  CustomOStreamBuf() : pos_(0) {}
   std::string drain_str() { return std::move(target_); }
 
  protected:
   std::streamsize xsputn(const char* s, std::streamsize n) override {
-    target_.append(s, n);
+    if (n <= 0) {
+      return 0;
+    }
+    const size_t write_size = static_cast<size_t>(n);
+    if (write_size > target_.size() - pos_) {
+      target_.resize(pos_ + write_size);
+    }
+    std::memcpy(&target_[pos_], s, write_size);
+    pos_ += write_size;
     return n;
   }
   int_type overflow(int_type ch) override {
     if (ch != traits_type::eof()) {
-      target_.push_back(static_cast<char>(ch));
+      char c = static_cast<char>(ch);
+      if (pos_ >= target_.size()) {
+        target_.push_back(c);
+      } else {
+        target_[pos_] = c;
+      }
+      ++pos_;
       return ch;
     }
     return traits_type::eof();
   }
 
+  pos_type seekoff(off_type off, std::ios_base::seekdir dir,
+                   std::ios_base::openmode which) override {
+    // This buffer is output-only; reject seeks for other directions.
+    if (!(which & std::ios_base::out)) {
+      return pos_type(off_type(-1));
+    }
+
+    if (target_.size() >
+        static_cast<size_t>(std::numeric_limits<off_type>::max())) {
+      return pos_type(off_type(-1));
+    }
+
+    off_type base_pos = 0;
+    switch (dir) {
+      case std::ios_base::beg:
+        base_pos = 0;
+        break;
+      case std::ios_base::cur:
+        if (pos_ > static_cast<size_t>(std::numeric_limits<off_type>::max())) {
+          return pos_type(off_type(-1));
+        }
+        base_pos = static_cast<off_type>(pos_);
+        break;
+      case std::ios_base::end:
+        base_pos = static_cast<off_type>(target_.size());
+        break;
+      default:
+        return pos_type(off_type(-1));
+    }
+
+    // Guard against signed overflow when computing base_pos + off.
+    if ((off > 0 && base_pos > std::numeric_limits<off_type>::max() - off) ||
+        (off < 0 && base_pos < std::numeric_limits<off_type>::min() - off)) {
+      return pos_type(off_type(-1));
+    }
+
+    const off_type new_pos = base_pos + off;
+    // Keep position within [0, target_.size()] for valid write seeks.
+    if (new_pos < 0 || static_cast<size_t>(new_pos) > target_.size()) {
+      return pos_type(off_type(-1));
+    }
+
+    pos_ = static_cast<size_t>(new_pos);
+    return pos_type(pos_);
+  }
+
+  pos_type seekpos(pos_type pos, std::ios_base::openmode which) override {
+    return seekoff(off_type(pos), std::ios_base::beg, which);
+  }
+
  private:
   std::string target_;
+  size_t pos_;
 };
 }  // namespace
 
@@ -337,10 +412,43 @@ void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin) {
 }
 
 bool IsOpSupported(const litert::compiler::Op& op) {
+  // TOPK_V2 is only NPU-safe when K (input 1) is a compile-time constant.
+  // A runtime K leaves the sorted-axis dimension dynamic (OpenVINO TopK shape
+  // inference yields [0, dim]), which NPU compilation rejects.  Fall back to
+  // CPU in that case by reporting the op as unsupported.
+  if (op.Code() == kLiteRtOpCodeTflTopkV2) {
+    const auto inputs = op.Inputs();
+    if (inputs.size() < 2 || !inputs[1].HasWeights()) {
+      LITERT_LOG(LITERT_INFO,
+                 "TOPK_V2 with non-constant K is not supported on NPU; "
+                 "leaving op on CPU.");
+      return false;
+    }
+    return true;
+  }
   for (const auto& supportedOp : kSupportedOps) {
     if (op.Code() == supportedOp) return true;
   }
   return false;
+}
+
+bool IsCompositeOpSupported(const litert::compiler::Op& op) {
+  if (op.Code() != kLiteRtOpCodeShloComposite) {
+    return true;
+  }
+
+  const char* composite_op_name = nullptr;
+  if (op.ctx() == nullptr || op.ctx()->get_shlo_composite_op_name == nullptr) {
+    return false;
+  }
+  if (op.ctx()->get_shlo_composite_op_name(op.Get(), &composite_op_name) !=
+      kLiteRtStatusOk) {
+    return false;
+  }
+
+  return std::string_view(composite_op_name) ==
+         std::string_view(litert::compiler::CompositeOptions::kRmsNorm.data(),
+                          litert::compiler::CompositeOptions::kRmsNorm.size());
 }
 
 #ifdef __cplusplus
@@ -370,7 +478,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
   // TODO(rjasuja): Enhance implementation for Partition() call
   for (const auto& op : graph.Ops()) {
-    if (!IsOpSupported(op)) {
+    if (!IsOpSupported(op) || !IsCompositeOpSupported(op)) {
       LITERT_LOG(LITERT_INFO, "op type %d is not supported", op.Code());
       continue;
     }
@@ -390,12 +498,6 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     litert::compiler::Model model(compiler_plugin->ctx(), partitions);
     const auto num_partitions = model.NumSubgraphs();
 
-    // Build the OpenVINO compile context from options.
-    LITERT_ASSIGN_OR_RETURN(litert::openvino::OpenVinoCompileContext context,
-                            litert::openvino::OpenVinoCompileContext::Create(
-                                compiler_plugin->GetIntelOpenVinoOptions()));
-    LITERT_RETURN_IF_ERROR(context.ConfigureForSoc(soc_model));
-
     auto result = std::make_unique<LiteRtCompiledResultT>();
     result->byte_code.resize(num_partitions);
     result->graph_names.resize(num_partitions);
@@ -405,6 +507,14 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     ov::Core core;
     for (int partition_idx = 0; partition_idx < num_partitions;
          ++partition_idx) {
+      // Build a per-partition compile context.  This honours any per-graph
+      // backend / configs overrides specified on the options.
+      LITERT_ASSIGN_OR_RETURN(
+          litert::openvino::OpenVinoCompileContext context,
+          litert::openvino::OpenVinoCompileContext::Create(
+              compiler_plugin->GetIntelOpenVinoOptions(), partition_idx));
+      LITERT_RETURN_IF_ERROR(context.ConfigureForSoc(soc_model));
+
       auto graph_name = absl::StrFormat("Partition_%d", partition_idx);
       litert::Expected<litert::compiler::Subgraph> expected_subgraph =
           model.Subgraph(partition_idx);
@@ -420,7 +530,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         // Run NPU-specific optimization passes.
         context.OptimizeModel(ov_model);
 
-        // Compile using the configured device and properties.
+        // Compile using the per-partition device and properties.
+        LITERT_LOG(LITERT_INFO, "Compiling partition %d for device %s",
+                   partition_idx, context.Device().c_str());
         auto compiled_model = core.compile_model(ov_model, context.Device(),
                                                  context.ConfigsMap());
 
@@ -428,7 +540,23 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         std::ostream oss(&obuf);
         compiled_model.export_model(oss);
         LITERT_LOG(LITERT_INFO, "Model export done");
-        result->byte_code[partition_idx] = obuf.drain_str();
+
+        // Resolve the graph type enum corresponding to context.Device() so
+        // the dispatcher can import on the same device.  We translate the
+        // string back to the enum to avoid duplicating the resolution logic.
+        LiteRtIntelOpenVinoGraphBackend graph_backend_enum =
+            kLiteRtIntelOpenVinoGraphBackendNPU;
+        const std::string& dev = context.Device();
+        if (dev == "CPU")
+          graph_backend_enum = kLiteRtIntelOpenVinoGraphBackendCPU;
+        else if (dev == "GPU")
+          graph_backend_enum = kLiteRtIntelOpenVinoGraphBackendGPU;
+
+        // Prepend a self-describing header so the dispatcher knows which
+        // device the bytecode was compiled for.
+        result->byte_code[partition_idx] =
+            litert::openvino::MakeBytecodeHeader(graph_backend_enum) +
+            obuf.drain_str();
 
         result->graph_names.emplace_back(graph_name);
       } else {

@@ -51,6 +51,15 @@ next_library_visibility = [
     # copybara:comment_end
 ]
 
+cc_library(
+    name = "litert_tfl_types",
+    hdrs = ["litert_tfl_types.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+    ],
+)
+
 # -----------------------------------------------------------------------------
 # Runtime only internal C++ libraries.
 # -----------------------------------------------------------------------------
@@ -442,6 +451,7 @@ cc_library(
     hdrs = ["litert_op_options.h"],
     visibility = internal_static_library_visibility,
     deps = [
+        ":litert_tfl_types",
         "//litert/c:litert_builder",
         "//litert/c:litert_common",
         "//litert/c:litert_model",
@@ -492,16 +502,16 @@ cc_library(
         ":litert_op_options",
         "//litert/c:litert_builder",
         "//litert/c:litert_common",
-        "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_api_types",
         "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
+        "//litert/cc:litert_model_types",
         "//litert/cc:litert_ranked_tensor_type",
-        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -574,6 +584,7 @@ cc_test(
         "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_model_types",
         "//litert/core/model",
         "//litert/core/util:flatbuffer_tools_testonly",
         "//litert/test:common",
@@ -737,17 +748,7 @@ cc_library(
     # The visibility is for testing only, otherwise it would be private.
     visibility = ["//litert/cc/dynamic_runtime:__pkg__"],
     deps = [
-        "//litert/c:litert_compiled_model_header",
-        "//litert/c:litert_environment_header",
-        "//litert/c:litert_environment_options_header",
-        "//litert/c:litert_event_header",
-        "//litert/c:litert_layout",
-        "//litert/c:litert_metrics_header",
-        "//litert/c:litert_model_header",
-        "//litert/c:litert_opaque_options_header",
-        "//litert/c:litert_options_header",
         "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
-        "//litert/c:litert_tensor_buffer_header",
         "//litert/c/internal:litert_runtime_c_api",
     ],
 )
@@ -761,16 +762,7 @@ cc_library(
         "//litert/kotlin/src/tests/google:__pkg__",
     ],
     deps = [
-        "//litert/c:litert_compiled_model_impl",
-        "//litert/c:litert_environment_impl",
-        "//litert/c:litert_environment_options_impl",
-        "//litert/c:litert_event_impl",
-        "//litert/c:litert_layout",
-        "//litert/c:litert_metrics_impl",
-        "//litert/c:litert_model_impl",
-        "//litert/c:litert_opaque_options_impl",
-        "//litert/c:litert_options_impl",
-        "//litert/c:litert_tensor_buffer_impl",
+        "//litert/c/internal:litert_runtime_api_export",
         "//litert/c/internal:litert_runtime_c_api",
     ],
 )
@@ -781,7 +773,10 @@ cc_library(
     defines = ["LITERT_CC_RUNTIME_BUILTIN_NONE"],
     visibility = ["//visibility:private"],
     deps = [
+        ":litert_shared_library",
+        "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_runtime_c_api",
+        "//litert/cc:litert_expected",
     ],
 )
 
@@ -795,6 +790,7 @@ cc_library(
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_model_types",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -816,6 +812,17 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+# copybara:uncomment_begin(google-only)
+# config_setting(
+#     name = "play_services_system_android",
+#     constraint_values = ["@platforms//os:android"],
+#     flag_values = {
+#         "//third_party/java/android:sdk_channel": "play_services",
+#         "//third_party/java/android:system_api": "True",
+#     },
+# )
+# copybara:uncomment_end
 
 cc_library(
     name = "litert_runtime_proxy",
@@ -847,6 +854,11 @@ cc_library(
         "//litert:litert_runtime_link_mode_none": [
             ":litert_runtime_builtin_none",
         ],
+        # copybara:uncomment_begin(google-only)
+        # ":play_services_system_android": [
+        # ":litert_runtime_builtin_none",
+        # ],
+        # copybara:uncomment_end
         "//conditions:default": [":litert_runtime_builtin_static"],
     }),
 )

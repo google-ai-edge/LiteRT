@@ -31,6 +31,7 @@
 #include "litert/core/model/model_load.h"
 #include "litert/core/model/model_serialize.h"
 #include "litert/tools/dump.h"
+#include "litert/tools/outliner/outliner_gui.h"
 #include "litert/tools/outliner/outliner_util.h"
 
 ABSL_FLAG(std::string, model_path, "", "(Required) Path to the tflite model");
@@ -172,9 +173,25 @@ void SanityCheck(const LiteRtModelT& model) {
 }
 
 int RunInteractive(LiteRtModelT& model) {
-  PrintGraph(model);
-  ABSL_LOG(INFO) << "Interactive mode placeholder.";
-  return 0;
+  OutlinerGui gui(model);
+  auto status = gui.Run();
+  if (!status) {
+    ABSL_LOG(ERROR) << "Interactive mode failed: " << status.Error().Message();
+    return 1;
+  }
+
+  if (gui.WasConfirmed()) {
+    auto status = litert::tools::OutlineSubgraph(
+        model, gui.GetFinalSubgraphIndex(), gui.GetFinalOptions());
+    if (!status) {
+      ABSL_LOG(ERROR) << "Outlining failed: " << status.Error().Message();
+      return 1;
+    }
+    ABSL_LOG(INFO) << "Successfully outlined subgraph in interactive mode.";
+    return 0;  // Signal that we should serialize
+  }
+
+  return 2;  // Signal that we should just quit without serializing
 }
 
 }  // namespace litert::tools
@@ -194,37 +211,39 @@ int main(int argc, char** argv) {
     return 1;
   }
   auto& model = **model_res;
-
   if (absl::GetFlag(FLAGS_interactive)) {
-    return litert::tools::RunInteractive(model);
-  }
+    int res = litert::tools::RunInteractive(model);
+    if (res == 1) return 1;
+    if (res == 2) return 0;
+    // res == 0, continue to serialize
+  } else {
+    litert::tools::OutlinerOptions options;
+    options.start_tensors = absl::StrSplit(absl::GetFlag(FLAGS_start_tensors),
+                                           ',', absl::SkipEmpty());
+    options.end_tensors = absl::StrSplit(absl::GetFlag(FLAGS_end_tensors), ',',
+                                         absl::SkipEmpty());
+    options.composite_name = absl::GetFlag(FLAGS_composite_name);
 
-  litert::tools::OutlinerOptions options;
-  options.start_tensors = absl::StrSplit(absl::GetFlag(FLAGS_start_tensors),
-                                         ',', absl::SkipEmpty());
-  options.end_tensors =
-      absl::StrSplit(absl::GetFlag(FLAGS_end_tensors), ',', absl::SkipEmpty());
-  options.composite_name = absl::GetFlag(FLAGS_composite_name);
-
-  std::string attrs_str = absl::GetFlag(FLAGS_composite_attributes);
-  if (!attrs_str.empty()) {
-    for (absl::string_view pair :
-         absl::StrSplit(attrs_str, absl::ByAnyChar(", "), absl::SkipEmpty())) {
-      // Use colon separator to split the key and value.
-      std::vector<std::string> kv = absl::StrSplit(pair, ':');
-      if (kv.size() == 2) {
-        options.attributes[kv[0]] = kv[1];
-      } else {
-        options.attributes[pair] = "";
+    std::string attrs_str = absl::GetFlag(FLAGS_composite_attributes);
+    if (!attrs_str.empty()) {
+      for (absl::string_view pair : absl::StrSplit(
+               attrs_str, absl::ByAnyChar(", "), absl::SkipEmpty())) {
+        // Use colon separator to split the key and value.
+        std::vector<std::string> kv = absl::StrSplit(pair, ':');
+        if (kv.size() == 2) {
+          options.attributes[kv[0]] = kv[1];
+        } else {
+          options.attributes[pair] = "";
+        }
       }
     }
-  }
 
-  auto status = litert::tools::OutlineSubgraph(
-      model, absl::GetFlag(FLAGS_subgraph_index), options);
-  if (!status) {
-    ABSL_LOG(ERROR) << "Outlining failed: " << status.Error().Message();
-    return 1;
+    auto status = litert::tools::OutlineSubgraph(
+        model, absl::GetFlag(FLAGS_subgraph_index), options);
+    if (!status) {
+      ABSL_LOG(ERROR) << "Outlining failed: " << status.Error().Message();
+      return 1;
+    }
   }
 
   litert::tools::SanityCheck(model);

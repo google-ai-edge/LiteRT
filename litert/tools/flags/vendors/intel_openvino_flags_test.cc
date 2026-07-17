@@ -31,52 +31,43 @@
 namespace litert::intel_openvino {
 namespace {
 
-TEST(DeviceTypeFlagTest, Malformed) {
+TEST(GraphBackendFlagTest, Malformed) {
   std::string error;
-  LiteRtIntelOpenVinoDeviceType value;
+  LiteRtIntelOpenVinoGraphBackend value;
 
   EXPECT_FALSE(absl::ParseFlag("invalid", &value, &error));
   EXPECT_FALSE(absl::ParseFlag("+", &value, &error));
   EXPECT_FALSE(absl::ParseFlag("unknown", &value, &error));
 }
 
-TEST(DeviceTypeFlagTest, Parse) {
+TEST(GraphBackendFlagTest, Parse) {
   std::string error;
-  LiteRtIntelOpenVinoDeviceType value;
+  LiteRtIntelOpenVinoGraphBackend value;
 
   {
     static constexpr absl::string_view kDevice = "cpu";
-    static constexpr LiteRtIntelOpenVinoDeviceType kDeviceEnum =
-        kLiteRtIntelOpenVinoDeviceTypeCPU;
+    static constexpr LiteRtIntelOpenVinoGraphBackend kGraphBackendEnum =
+        kLiteRtIntelOpenVinoGraphBackendCPU;
     EXPECT_TRUE(absl::ParseFlag(kDevice, &value, &error));
-    EXPECT_EQ(value, kDeviceEnum);
+    EXPECT_EQ(value, kGraphBackendEnum);
     EXPECT_EQ(kDevice, absl::UnparseFlag(value));
   }
 
   {
     static constexpr absl::string_view kDevice = "gpu";
-    static constexpr LiteRtIntelOpenVinoDeviceType kDeviceEnum =
-        kLiteRtIntelOpenVinoDeviceTypeGPU;
+    static constexpr LiteRtIntelOpenVinoGraphBackend kGraphBackendEnum =
+        kLiteRtIntelOpenVinoGraphBackendGPU;
     EXPECT_TRUE(absl::ParseFlag(kDevice, &value, &error));
-    EXPECT_EQ(value, kDeviceEnum);
+    EXPECT_EQ(value, kGraphBackendEnum);
     EXPECT_EQ(kDevice, absl::UnparseFlag(value));
   }
 
   {
     static constexpr absl::string_view kDevice = "npu";
-    static constexpr LiteRtIntelOpenVinoDeviceType kDeviceEnum =
-        kLiteRtIntelOpenVinoDeviceTypeNPU;
+    static constexpr LiteRtIntelOpenVinoGraphBackend kGraphBackendEnum =
+        kLiteRtIntelOpenVinoGraphBackendNPU;
     EXPECT_TRUE(absl::ParseFlag(kDevice, &value, &error));
-    EXPECT_EQ(value, kDeviceEnum);
-    EXPECT_EQ(kDevice, absl::UnparseFlag(value));
-  }
-
-  {
-    static constexpr absl::string_view kDevice = "auto";
-    static constexpr LiteRtIntelOpenVinoDeviceType kDeviceEnum =
-        kLiteRtIntelOpenVinoDeviceTypeAUTO;
-    EXPECT_TRUE(absl::ParseFlag(kDevice, &value, &error));
-    EXPECT_EQ(value, kDeviceEnum);
+    EXPECT_EQ(value, kGraphBackendEnum);
     EXPECT_EQ(kDevice, absl::UnparseFlag(value));
   }
 }
@@ -115,32 +106,34 @@ TEST(PerformanceModeFlagTest, Parse) {
 
 TEST(UpdateIntelOpenVinoOptionsFromFlagsTest, DefaultValues) {
   LITERT_ASSERT_OK_AND_ASSIGN(IntelOpenVinoOptions options,
-                             IntelOpenVinoOptions::Create());
+                              IntelOpenVinoOptions::Create());
   ASSERT_TRUE(UpdateIntelOpenVinoOptionsFromFlags(options).HasValue());
-  EXPECT_EQ(options.GetDeviceType(), kLiteRtIntelOpenVinoDeviceTypeNPU);
+  // With no flags set, no per-graph overrides are configured.
+  EXPECT_EQ(options.GetNumGraphOverrides(), 0);
   EXPECT_EQ(options.GetPerformanceMode(),
             kLiteRtIntelOpenVinoPerformanceModeLatency);
 }
 
-TEST(UpdateIntelOpenVinoOptionsFromFlagsTest, SetDeviceTypeToCPU) {
-  absl::SetFlag(&FLAGS_intel_openvino_device_type,
-                kLiteRtIntelOpenVinoDeviceTypeCPU);
+TEST(UpdateIntelOpenVinoOptionsFromFlagsTest,
+     SetGraphBackendForPartition0ToCPU) {
+  absl::SetFlag(&FLAGS_intel_openvino_graph_backends, "0:cpu");
   LITERT_ASSERT_OK_AND_ASSIGN(IntelOpenVinoOptions options,
-                             IntelOpenVinoOptions::Create());
+                              IntelOpenVinoOptions::Create());
 
   ASSERT_TRUE(UpdateIntelOpenVinoOptionsFromFlags(options).HasValue());
-  EXPECT_EQ(options.GetDeviceType(), kLiteRtIntelOpenVinoDeviceTypeCPU);
+  auto graph_backend = options.GetGraphBackend(/*graph_index=*/0);
+  ASSERT_TRUE(graph_backend.HasValue());
+  EXPECT_EQ(*graph_backend, kLiteRtIntelOpenVinoGraphBackendCPU);
 
   // Reset flag to default to avoid affecting other tests
-  absl::SetFlag(&FLAGS_intel_openvino_device_type,
-                kLiteRtIntelOpenVinoDeviceTypeNPU);
+  absl::SetFlag(&FLAGS_intel_openvino_graph_backends, "");
 }
 
 TEST(UpdateIntelOpenVinoOptionsFromFlagsTest, SetPerformanceModeToThroughput) {
   absl::SetFlag(&FLAGS_intel_openvino_performance_mode,
                 kLiteRtIntelOpenVinoPerformanceModeThroughput);
   LITERT_ASSERT_OK_AND_ASSIGN(IntelOpenVinoOptions options,
-                             IntelOpenVinoOptions::Create());
+                              IntelOpenVinoOptions::Create());
 
   ASSERT_TRUE(UpdateIntelOpenVinoOptionsFromFlags(options).HasValue());
   EXPECT_EQ(options.GetPerformanceMode(),
@@ -155,7 +148,7 @@ TEST(UpdateIntelOpenVinoOptionsFromFlagsTest, ConfigsMapSingleOption) {
   absl::SetFlag(&FLAGS_intel_openvino_configs_map,
                 "INFERENCE_PRECISION_HINT=f16");
   LITERT_ASSERT_OK_AND_ASSIGN(IntelOpenVinoOptions options,
-                             IntelOpenVinoOptions::Create());
+                              IntelOpenVinoOptions::Create());
 
   ASSERT_TRUE(UpdateIntelOpenVinoOptionsFromFlags(options).HasValue());
   // The options should be created successfully with the config map set
@@ -169,7 +162,7 @@ TEST(UpdateIntelOpenVinoOptionsFromFlagsTest, ConfigsMapMultipleOptions) {
                 "INFERENCE_PRECISION_HINT=f16,NPU_COMPILATION_MODE_PARAMS=test,"
                 "CACHE_DIR=/tmp/cache");
   LITERT_ASSERT_OK_AND_ASSIGN(IntelOpenVinoOptions options,
-                             IntelOpenVinoOptions::Create());
+                              IntelOpenVinoOptions::Create());
 
   ASSERT_TRUE(UpdateIntelOpenVinoOptionsFromFlags(options).HasValue());
   // The options should be created successfully with multiple config map entries
@@ -181,7 +174,7 @@ TEST(UpdateIntelOpenVinoOptionsFromFlagsTest, ConfigsMapMultipleOptions) {
 TEST(UpdateIntelOpenVinoOptionsFromFlagsTest, ConfigsMapEmptyValue) {
   absl::SetFlag(&FLAGS_intel_openvino_configs_map, "");
   LITERT_ASSERT_OK_AND_ASSIGN(IntelOpenVinoOptions options,
-                             IntelOpenVinoOptions::Create());
+                              IntelOpenVinoOptions::Create());
 
   ASSERT_TRUE(UpdateIntelOpenVinoOptionsFromFlags(options).HasValue());
   // Empty configs_map should work fine
@@ -191,7 +184,7 @@ TEST(UpdateIntelOpenVinoOptionsFromFlagsTest, ConfigsMapWithSpaces) {
   // Test handling of values with spaces (though typically avoided)
   absl::SetFlag(&FLAGS_intel_openvino_configs_map, "KEY1=VALUE1,KEY2=VALUE2");
   LITERT_ASSERT_OK_AND_ASSIGN(IntelOpenVinoOptions options,
-                             IntelOpenVinoOptions::Create());
+                              IntelOpenVinoOptions::Create());
 
   ASSERT_TRUE(UpdateIntelOpenVinoOptionsFromFlags(options).HasValue());
 
@@ -200,19 +193,38 @@ TEST(UpdateIntelOpenVinoOptionsFromFlagsTest, ConfigsMapWithSpaces) {
 }
 
 TEST(UpdateIntelOpenVinoOptionsFromFlagsTest, ConfigsMapMalformedPairs) {
-  // Test handling of malformed config strings (missing '=' or extra '=')
-  // Should still create options successfully, but malformed pairs are ignored
-  // with warning
+  // Test handling of malformed config strings (missing '=' or extra '=').
+  // BAD_KEY_NO_EQUALS is ignored with a warning. KEY_WITH=MULTIPLE=EQUALS is
+  // split on the first '=' only, so it parses as KEY_WITH ->
+  // MULTIPLE=EQUALS (the value retains the remaining '=').
   absl::SetFlag(
       &FLAGS_intel_openvino_configs_map,
       "GOOD_KEY=GOOD_VALUE,BAD_KEY_NO_EQUALS,KEY_WITH=MULTIPLE=EQUALS");
   LITERT_ASSERT_OK_AND_ASSIGN(IntelOpenVinoOptions options,
-                             IntelOpenVinoOptions::Create());
+                              IntelOpenVinoOptions::Create());
 
   ASSERT_TRUE(UpdateIntelOpenVinoOptionsFromFlags(options).HasValue());
-  // Only the well-formed pair should be set (BAD_KEY_NO_EQUALS will be ignored)
-  // KEY_WITH=MULTIPLE=EQUALS will be split as KEY_WITH = MULTIPLE=EQUALS (3
-  // parts, ignored)
+
+  // Reset flag to default
+  absl::SetFlag(&FLAGS_intel_openvino_configs_map, "");
+}
+
+TEST(UpdateIntelOpenVinoOptionsFromFlagsTest,
+     ConfigsMapNpuCompilationModeParams) {
+  // NPU_COMPILATION_MODE_PARAMS values are space-separated key=value pairs and
+  // therefore contain '=' inside the value. Verify the entry survives parsing.
+  absl::SetFlag(&FLAGS_intel_openvino_configs_map,
+                "NPU_COMPILATION_MODE_PARAMS=enable-decompose-sdpa=false "
+                "enable-flash-sdpa-conversion=true");
+  LITERT_ASSERT_OK_AND_ASSIGN(IntelOpenVinoOptions options,
+                              IntelOpenVinoOptions::Create());
+
+  ASSERT_TRUE(UpdateIntelOpenVinoOptionsFromFlags(options).HasValue());
+  ASSERT_EQ(options.GetNumConfigsMapOptions(), 1);
+  auto [key, value] = options.GetConfigsMapOption(0);
+  EXPECT_EQ(key, "NPU_COMPILATION_MODE_PARAMS");
+  EXPECT_EQ(value,
+            "enable-decompose-sdpa=false enable-flash-sdpa-conversion=true");
 
   // Reset flag to default
   absl::SetFlag(&FLAGS_intel_openvino_configs_map, "");

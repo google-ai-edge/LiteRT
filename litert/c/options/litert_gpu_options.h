@@ -194,6 +194,13 @@ LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
 LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
     LrtGpuOptions* gpu_options, bool disable_shader_optimization);
 
+// Sets the pointer to the shared tensor maps.
+// The pointer must point to a litert::ml_drift::SharedTensorMaps struct.
+// The caller is responsible for maintaining the lifetime of the struct
+// until the model is destroyed.
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsSharedTensorMaps(
+    LrtGpuOptions* gpu_options, void* shared_tensor_maps);
+
 // Sets the number of steps of command buffer preparations.
 LiteRtStatus
 LrtSetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
@@ -202,6 +209,11 @@ LrtSetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
 // Sets whether to use Metal argument buffers.
 LiteRtStatus LrtSetGpuOptionsUseMetalArgumentBuffers(
     LrtGpuOptions* gpu_options, bool use_metal_argument_buffers);
+
+// Sets whether to use MTLResidencySet to prevent memory swapping on Metal
+// backend. Requires macOS 15.0+ or iOS 18.0+.
+LiteRtStatus LrtSetGpuOptionsMetalResidencySet(LrtGpuOptions* gpu_options,
+                                               bool enable);
 
 // Sets the wait type.
 LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsWaitType(
@@ -324,6 +336,9 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
     bool* disable_shader_optimization, const LrtGpuOptions* options);
 
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSharedTensorMaps(
+    void** shared_tensor_maps, const LrtGpuOptions* gpu_options);
+
 LiteRtStatus
 LrtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
     int* num_steps_of_command_buffer_preparations,
@@ -331,6 +346,9 @@ LrtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
 
 LiteRtStatus LrtGetGpuOptionsUseMetalArgumentBuffers(
     const LrtGpuOptions* options, bool* use_metal_argument_buffers);
+
+LiteRtStatus LrtGetGpuOptionsMetalResidencySet(const LrtGpuOptions* options,
+                                               bool* enabled);
 
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsWaitType(
     LiteRtGpuWaitType* wait_type, const LrtGpuOptions* options);

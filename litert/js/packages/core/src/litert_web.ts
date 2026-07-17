@@ -21,7 +21,7 @@ import {Environment} from './environment';
 import {getGlobalLiteRt} from './global_litert';
 import {readableStreamDefaultReaderToUint8Array, urlToUint8Array} from './load_utils';
 import {Model} from './model';
-import {CompileOptions} from './model_types';
+import {CompileOptions, fillCompileOptions} from './model_types';
 import {Deletable, LiteRtWasm} from './wasm_binding_types';
 import {isJspiSupported} from './wasm_feature_detect';
 
@@ -114,6 +114,22 @@ export class LiteRt {
   }
 
   /**
+   * Registers an object to be deleted when this LiteRt instance is deleted.
+   * Internal use only.
+   */
+  _registerObjectForDeletion(object: Deletable) {
+    this.objectsToDelete.add(object);
+  }
+
+  /**
+   * Unregisters an object from being deleted when this LiteRt instance is
+   * deleted. Internal use only.
+   */
+  _unregisterObjectForDeletion(object: Deletable) {
+    this.objectsToDelete.delete(object);
+  }
+
+  /**
    * Loads and compiles a LiteRt model.
    *
    * @param model The model data. This can be a string (the model url), a URL
@@ -144,26 +160,16 @@ export class LiteRt {
     const accelerator = compileOptions.accelerator ??
         (environment.webGpuDevice ? 'webgpu' : 'wasm');
 
-    const acceleratorIncludesWebGpu = Array.isArray(accelerator) ?
-        accelerator.includes('webgpu') :
-        accelerator === 'webgpu';
+    const isWebGpu = accelerator === 'webgpu';
 
-    if (acceleratorIncludesWebGpu && !environment.webGpuDevice) {
+    if (isWebGpu && !environment.webGpuDevice) {
       throw new Error(
           'WebGPU was requested but no WebGPU device is set in the ' +
           'environment.');
     }
 
-    const cpuOptions = compileOptions.cpuOptions ??
-        {numThreads: this.liteRtWasm.getThreadCount()};
-
-    const filledCompileOptions: Required<CompileOptions> = {
-      environment,
-      accelerator,
-      cpuOptions,
-      gpuOptions: compileOptions.gpuOptions ?? {},
-      webNNOptions: compileOptions.webNNOptions ?? {},
-    };
+    const filledCompileOptions = fillCompileOptions(
+        compileOptions, environment, this.liteRtWasm.getThreadCount());
 
     const ptr = this.liteRtWasm._malloc(modelData.byteLength);
     this.liteRtWasm.HEAPU8.set(modelData, ptr);
@@ -186,11 +192,24 @@ export class LiteRt {
     // Currently, compiledModel will delete the loadedModel when it is deleted.
     this.objectsToDelete.add(compiledModel);
 
-    if (!isJspiSupported() && acceleratorIncludesWebGpu) {
-      if (!compiledModel.isFullyAccelerated) {
+    const isWebNn = accelerator === 'webnn';
+    const acceleratorRequested = isWebGpu || isWebNn;
+
+    if (acceleratorRequested && !compiledModel.isFullyAccelerated) {
+      if (isJspiSupported()) {
         console.warn(
-            'Model not fully delegated to WebGPU on non-JSPI browser. ' +
-            'Falling back to WASM.');
+            `%c[LiteRT]%c Model not fully compiled for ${accelerator}. ` +
+            'Partially delegating to WASM execution.',
+            'background: #FFA000; color: black; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+            'font-weight: bold;'
+        );
+      } else {
+        console.warn(
+            `%c[LiteRT]%c Model not fully compiled for ${accelerator} on non-JSPI browser. ` +
+            'Falling back to WASM execution.',
+            'background: #D32F2F; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+            'color: #D32F2F; font-weight: bold;'
+        );
         compiledModel.delete();
         const fallbackCompileOptions = {
           ...compileOptions,

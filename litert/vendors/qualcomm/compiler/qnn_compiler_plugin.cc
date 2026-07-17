@@ -30,7 +30,9 @@
 #include <utility>
 #include <vector>
 
+#include "QnnCommon.h"  // from @qairt
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -38,9 +40,6 @@
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_opaque_options.h"
-#include "litert/c/litert_options.h"
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -59,7 +58,6 @@
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "QnnCommon.h"  // from @qairt
 
 using ::litert::qnn::QnnManager;
 using LiteRtBufferId = uint32_t;
@@ -86,6 +84,67 @@ bool IsWeightSharingSupported(::qnn::DspArch dsp_arch) {
   return false;
 #endif
 }
+
+LiteRtStatus MoveSchematic(absl::string_view graph_name,
+                           absl::string_view dest_dir_str) {
+  if (dest_dir_str.empty()) return kLiteRtStatusOk;
+  std::error_code ec;
+  std::filesystem::path dest_dir = std::string(dest_dir_str);
+  std::filesystem::path schematic_file_name(
+      absl::StrCat(graph_name, "_schematic.bin"));
+  std::filesystem::path src_path =
+      std::filesystem::current_path(ec) / schematic_file_name;
+  if (ec) {
+    LITERT_LOG(LITERT_ERROR, "Failed to get current CWD for schematic move: %s",
+               ec.message().c_str());
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  if (!std::filesystem::exists(src_path, ec) || ec) {
+    LITERT_LOG(LITERT_ERROR, "QNN schematic file does not exist at %s: %s",
+               src_path.c_str(), ec ? ec.message().c_str() : "Not found");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  std::filesystem::create_directories(dest_dir, ec);
+  if (ec) {
+    LITERT_LOG(LITERT_ERROR, "Failed to create directory %s: %s",
+               dest_dir.c_str(), ec.message().c_str());
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  std::filesystem::path dest_path = dest_dir / schematic_file_name;
+  if (std::filesystem::exists(dest_path, ec) && !ec) {
+    if (std::filesystem::equivalent(src_path, dest_path, ec)) {
+      // Source and destination are the same file, no need to copy.
+      return kLiteRtStatusOk;
+    }
+    if (ec) {
+      // Ignore error from equivalent if it's just because file doesn't exist,
+      // but here we already checked exists(dest_path), so it shouldn't fail
+      // unless there is a permissions issue.
+      LITERT_LOG(LITERT_ERROR, "Failed to check if paths are equivalent: %s",
+                 ec.message().c_str());
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
+  }
+  std::filesystem::copy_file(src_path, dest_path,
+                             std::filesystem::copy_options::overwrite_existing,
+                             ec);
+  if (ec) {
+    LITERT_LOG(LITERT_ERROR, "Failed to copy schematic file from %s to %s: %s",
+               src_path.c_str(), dest_path.c_str(), ec.message().c_str());
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  std::filesystem::remove(src_path, ec);
+  if (ec) {
+    LITERT_LOG(LITERT_ERROR, "Failed to remove source schematic file %s: %s",
+               src_path.c_str(), ec.message().c_str());
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  return kLiteRtStatusOk;
+}
+
+// Compile-time custom-op packages always target the CPU backend; this is
+// the value passed to QNN's RegisterOpPackage for compilation.
+constexpr char kCustomOpPackageCompileTarget[] = "CPU";
 
 }  // namespace
 
@@ -213,6 +272,9 @@ void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) {
 
 LiteRtStatus LiteRtCompiledResultNumByteCodeModules(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex* num_byte_code) {
+  if (!compiled_result || !num_byte_code) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   *num_byte_code = !compiled_result->jit_graphs.empty()
                        ? compiled_result->jit_graphs.size()
                        : compiled_result->context_bin.size();
@@ -268,8 +330,15 @@ class LiteRtCompilerPluginT {
 
   const ::qnn::Options& Options() const { return qnn_options_; }
 
-  void initQnnManager(std::unique_ptr<QnnManager> qnn_manager) {
+  LiteRtStatus initQnnManager(std::unique_ptr<QnnManager> qnn_manager) {
+    if (const auto& custom_op_package = qnn_options_.GetCustomOpPackage();
+        !custom_op_package.name.empty()) {
+      LITERT_RETURN_IF_ERROR(qnn_manager->RegisterOpPackage(
+          custom_op_package.compile_package_path,
+          custom_op_package.interface_provider, kCustomOpPackageCompileTarget));
+    }
     qnn_manager_ = std::move(qnn_manager);
+    return kLiteRtStatusOk;
   }
 
   QnnManager* QNN() { return qnn_manager_.get(); }
@@ -336,7 +405,8 @@ LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
                  qnn_manager_or.Error().Message().data());
       return qnn_manager_or.Error().Status();
     }
-    compiler_plugin->initQnnManager(std::move(*qnn_manager_or));
+    LITERT_RETURN_IF_ERROR(
+        compiler_plugin->initQnnManager(std::move(*qnn_manager_or)));
     qnn_manager = compiler_plugin->QNN();
   }
 
@@ -360,20 +430,35 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            LiteRtOpList selected_ops) {
   ::litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
   QnnManager* qnn_manager = compiler_plugin->QNN();
-  if (!qnn_manager) {
+  auto opt_soc_model = soc_model ? qnn::FindSocModel(soc_model) : std::nullopt;
+  bool soc_model_mismatch = false;
+  if (qnn_manager && opt_soc_model.has_value()) {
+    soc_model_mismatch =
+        (qnn_manager->GetSocInfo().soc_model != opt_soc_model->soc_model);
+  }
+  if (!qnn_manager || soc_model_mismatch) {
+    if (soc_model_mismatch) {
+      LITERT_LOG(LITERT_INFO,
+                 "Recreating QNN manager due to SoC mismatch: current %s, "
+                 "target %s",
+                 qnn_manager->GetSocInfo().soc_name, opt_soc_model->soc_name);
+    }
     auto qnn_manager_or = QnnManager::Create(
         compiler_plugin->Options(), compiler_plugin->shared_library_dir(),
-        soc_model ? qnn::FindSocModel(soc_model) : std::nullopt);
+        opt_soc_model);
     if (!qnn_manager_or) {
       LITERT_LOG(LITERT_ERROR, "%s", qnn_manager_or.Error().Message().data());
       return qnn_manager_or.Error().Status();
     }
     LITERT_LOG(LITERT_INFO, "%s", "QNN manager created");
-    compiler_plugin->initQnnManager(std::move(*qnn_manager_or));
+    LITERT_RETURN_IF_ERROR(
+        compiler_plugin->initQnnManager(std::move(*qnn_manager_or)));
     qnn_manager = compiler_plugin->QNN();
   }
 
-  for (const auto& op : graph.Ops()) {
+  const auto ops = graph.Ops();
+  for (size_t op_index = 0; op_index < ops.size(); ++op_index) {
+    const auto& op = ops[op_index];
     // default constructed, won't add tensor to QNN
     ::qnn::TensorPool tensor_pool;
     std::vector<::qnn::TensorWrapperRef> input_tensors;
@@ -394,8 +479,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
     std::vector<::qnn::OpWrapper> op_wrappers;
     LITERT_RETURN_IF_ERROR(litert::qnn::ConvertOp(
-        compiler_plugin->Options().GetUseInt64BiasAsInt32(), op, tensor_pool,
-        input_tensors, output_tensors, op_wrappers));
+        compiler_plugin->Options(), op, tensor_pool, input_tensors,
+        output_tensors, op_wrappers, op_index, qnn_manager->GetSdkVersion()));
 
     // Empty op_wrappers means the op is not supported by QNN.
     if (op_wrappers.empty()) {
@@ -445,6 +530,13 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   result->byte_code_index.resize(num_partitions);
   QnnManager* qnn_manager = compiler_plugin->QNN();
   auto options = compiler_plugin->Options();
+  if (!options.GetSchematicDir().empty()) {
+    LITERT_LOG(LITERT_INFO,
+               "Schematic directory is set. Enabling optrace profiling. "
+               "(Original profiling level: %d)",
+               static_cast<int>(options.GetProfiling()));
+    options.SetProfiling(::qnn::Profiling::kOptrace);
+  }
   if (!options.GetSaverOutputDir().empty()) {
     LITERT_LOG(
         LITERT_WARNING,
@@ -473,7 +565,19 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     }
   }
 
-  if (!qnn_manager || ir_backend_override) {
+  bool soc_model_mismatch = false;
+  if (qnn_manager && opt_soc_model.has_value()) {
+    soc_model_mismatch =
+        (qnn_manager->GetSocInfo().soc_model != opt_soc_model->soc_model);
+  }
+
+  if (!qnn_manager || ir_backend_override || soc_model_mismatch) {
+    if (soc_model_mismatch) {
+      LITERT_LOG(LITERT_INFO,
+                 "Recreating QNN manager due to SoC mismatch: current %s, "
+                 "target %s",
+                 qnn_manager->GetSocInfo().soc_name, opt_soc_model->soc_name);
+    }
     // Initialize SDK and load qnn shared libraries.
     LITERT_LOG(LITERT_INFO, "%s", "Creating QNN manager");
     auto qnn_manager_or = QnnManager::Create(
@@ -483,7 +587,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       return qnn_manager_or.Error().Status();
     }
     LITERT_LOG(LITERT_INFO, "%s", "QNN manager created");
-    compiler_plugin->initQnnManager(std::move(*qnn_manager_or));
+    LITERT_RETURN_IF_ERROR(
+        compiler_plugin->initQnnManager(std::move(*qnn_manager_or)));
     qnn_manager = compiler_plugin->QNN();
   }
 
@@ -544,11 +649,18 @@ LiteRtStatus LiteRtCompilerPluginCompile(
             break;
           }
           default: {
-            LITERT_LOG(LITERT_WARNING,
-                       "Only support weight sharing feature in Htp Backend, "
-                       "disable weight sharing feature");
-            break;
+            LITERT_LOG(LITERT_ERROR,
+                       "Weight sharing is only supported in HTP backend.");
+            return kLiteRtStatusErrorInvalidArgument;
           }
+        }
+      } else if (options.GetBackendType() == ::qnn::BackendType::kGpuBackend) {
+        if (options.GetGpuPerformanceMode() !=
+            ::qnn::GpuPerformanceMode::kDefault) {
+          context_configs = QnnManager::GpuPerformanceContextConfigs(
+              options.GetGpuPerformanceMode());
+          LITERT_LOG(LITERT_INFO, "Enable GPU performance mode: %d",
+                     static_cast<int>(options.GetGpuPerformanceMode()));
         }
       }
       auto context_handle = qnn_manager->CreateContextHandle(
@@ -588,6 +700,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         context_handles[context_handle_idx].get_profile_handle(),
         partition.Get(), entry_point_name, options, &inputs, &outputs));
     LITERT_LOG(LITERT_INFO, "%s", "Graph composed");
+
+    if (!options.GetSchematicDir().empty()) {
+      LITERT_RETURN_IF_ERROR(
+          MoveSchematic(entry_point_name, options.GetSchematicDir()));
+    }
 
     if (options.GetEnableJustInTime()) {
       auto jit_graph = std::make_unique<litert::qnn::QnnJitGraph>();

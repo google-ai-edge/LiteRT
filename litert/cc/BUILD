@@ -20,7 +20,7 @@ load("//litert/build_common:litert_build_defs.bzl", "cc_library_with_testonly_vi
 load("//litert/build_common:special_rule.bzl", "get_compatible_with_portable", "gles_headers", "gles_linkopts", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
 
-LITERT_MIN_IOS_VERSION = "14.0"
+LITERT_MIN_IOS_VERSION = "15.0"
 
 # TODO(b/502961597): Re-enable litert_tensor_buffer_test_cc_macos test once the test is fixed.
 # LITERT_MIN_MACOS_VERSION = "14.0"
@@ -305,12 +305,10 @@ cc_library(
         ":litert_macros",
         ":litert_model_types",
         ":litert_options",
-        ":litert_profiler",
         ":litert_ranked_tensor_type",
         ":litert_tensor_buffer",
         ":litert_tensor_buffer_requirements",
         ":litert_tensor_buffer_types",
-        "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
         "//litert/c:litert_metrics",
@@ -320,11 +318,6 @@ cc_library(
         "//litert/cc/internal:litert_consts",
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/algorithm:container",
-        "@com_google_absl//absl/cleanup",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/functional:any_invocable",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -555,8 +548,8 @@ litert_device_test(
 #         "@com_google_absl//absl/log:absl_log",
 #         "@com_google_absl//absl/strings",
 #         "@com_google_absl//absl/types:span",
-#         "//third_party/apple_frameworks:Metal",
-#         "//third_party/apple_frameworks:XCTest",
+#         # Dependency placeholder: apple_frameworks Metal,
+#         # Dependency placeholder: apple_frameworks XCTest,
 #         "//litert/c:litert_common",
 #         "//litert/c:litert_environment_options",
 #         "//litert/cc/options:litert_gpu_options",
@@ -706,9 +699,10 @@ cc_test(
         ":litert_environment",
         ":litert_expected",
         ":litert_layout",
-        ":litert_macros",
+        ":litert_model_types",
         ":litert_options",
         ":litert_ranked_tensor_type",
+        ":litert_string_util",
         ":litert_tensor_buffer",
         ":litert_tensor_buffer_requirements",
         ":litert_tensor_buffer_types",
@@ -731,6 +725,36 @@ cc_test(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "litert_string_util",
+    hdrs = ["litert_string_util.h"],
+    deps = [
+        ":litert_element_type",
+        ":litert_environment",
+        ":litert_expected",
+        ":litert_layout",
+        ":litert_macros",
+        ":litert_ranked_tensor_type",
+        ":litert_tensor_buffer",
+        ":litert_tensor_buffer_types",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "litert_string_util_test",
+    srcs = ["litert_string_util_test.cc"],
+    deps = [
+        ":litert_element_type",
+        ":litert_environment",
+        ":litert_string_util",
+        ":litert_tensor_buffer",
+        "//litert/test:common",
+        "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -946,14 +970,12 @@ cc_test(
         ":litert_ranked_tensor_type",
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
-        "//litert/c:litert_op_code",
         "//litert/cc/internal:litert_extended_model",
         "//litert/cc/internal:scoped_file",
         "//litert/core/model",
         "//litert/test:common",
         "//litert/test:load_test_model",
         "//litert/test:matchers",
-        "//tflite:stderr_reporter",
         "//tflite/converter:allocation",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
@@ -1157,6 +1179,7 @@ cc_library_with_testonly_vis(
         "//litert/cc/options:litert_samsung_options",
         "//litert/core:options",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -1222,8 +1245,8 @@ objc_library(
         "//litert/test:metal_test_helper",
         "//litert/test:simple_model",
         "//tflite/delegates/gpu/metal:metal_device",
-        "//third_party/apple_frameworks:Metal",
-        "//third_party/apple_frameworks:XCTest",
+        # Dependency placeholder: apple_frameworks Metal,
+        # Dependency placeholder: apple_frameworks XCTest,
     ],
 )
 
@@ -1369,6 +1392,7 @@ cc_library(
         "//litert/build_common:build_config",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_runtime_c_api",
         "//litert/cc/internal:litert_c_types_printing",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_logging",

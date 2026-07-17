@@ -17,6 +17,7 @@
 #include <cstring>
 
 #include "litert/c/internal/litert_accelerator_def.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
@@ -39,7 +40,8 @@ struct CpuAcceleratorVersion {
   static constexpr int kMajor = 1;
   static constexpr int kMinor = 0;
   static constexpr int kPatch = 0;
-  static constexpr LiteRtApiVersion version = {kMajor, kMinor, kPatch};  // NOLINT
+  static constexpr LiteRtApiVersion version = {kMajor, kMinor,
+                                               kPatch};  // NOLINT
 };
 
 class CpuAccelerator final
@@ -92,7 +94,15 @@ class CpuAccelerator final
         return options_data_status;
     }
 
-    if (parsed_options.kernel_mode != kLiteRtCpuKernelModeXnnpack) {
+#if !defined(LITERT_HAS_YNNPACK)
+    if (parsed_options.enable_ynnpack) {
+      LITERT_LOG(LITERT_WARNING,
+                 "enable_ynnpack was ignored because YNNPACK support was not "
+                 "compiled into this build.");
+    }
+#endif
+
+    if (parsed_options.kernel_mode != kLiteRtCpuKernelModeDelegate) {
       *delegate_wrapper = nullptr;
       return kLiteRtStatusOk;
     }
@@ -104,7 +114,12 @@ class CpuAccelerator final
                            ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure))
         << "XNNPack delegate failed to be created.";
 
-    if (parsed_options.hint_fully_delegated_to_single_delegate) {
+    bool use_single_delegate_hint =
+        parsed_options.hint_fully_delegated_to_single_delegate;
+#if defined(LITERT_HAS_YNNPACK)
+    use_single_delegate_hint &= !parsed_options.enable_ynnpack;
+#endif
+    if (use_single_delegate_hint) {
       reinterpret_cast<TfLiteDelegate*>(xnnpack_delegate)->flags |=
           kTfLiteDelegateFlagsHintFullyDelegatedToSingleDelegate;
     }
@@ -114,8 +129,6 @@ class CpuAccelerator final
 
     return kLiteRtStatusOk;
   }
-
-
 
   // Returns true to indicate the XNNPack delegate is responsible for JIT
   // compilation.
@@ -139,7 +152,7 @@ class CpuAccelerator final
 
 extern "C" {
 
-// Discovery C object for the CPU (Xnnpack) accelerator by LiteRT.
+// Discovery C object for the CPU (XNNPack) accelerator by LiteRT.
 // This object is used by the LiteRT environment constructor.
 static LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
     .version = 1,  // LiteRtAcceleratorDefV1

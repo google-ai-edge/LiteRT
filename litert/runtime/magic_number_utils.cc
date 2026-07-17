@@ -15,9 +15,12 @@
 #include "litert/runtime/magic_number_utils.h"
 
 #include <cinttypes>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/strings/match.h"  // from @com_google_absl
@@ -31,6 +34,7 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
@@ -136,6 +140,99 @@ int64_t GetMagicNumberFactor(int64_t value, int64_t magic_number) {
   return factor * magic_number == value ? factor : 0;
 }
 
+Expected<size_t> ElementByteSize(LiteRtElementType element_type) {
+  switch (element_type) {
+    case kLiteRtElementTypeBool:
+    case kLiteRtElementTypeInt8:
+    case kLiteRtElementTypeUInt8:
+    case kLiteRtElementTypeFloat8E4M3FN:
+    case kLiteRtElementTypeFloat8E5M2:
+      return 1;
+    case kLiteRtElementTypeInt16:
+    case kLiteRtElementTypeUInt16:
+    case kLiteRtElementTypeFloat16:
+    case kLiteRtElementTypeBFloat16:
+      return 2;
+    case kLiteRtElementTypeInt32:
+    case kLiteRtElementTypeUInt32:
+    case kLiteRtElementTypeFloat32:
+      return 4;
+    case kLiteRtElementTypeInt64:
+    case kLiteRtElementTypeUInt64:
+    case kLiteRtElementTypeFloat64:
+    case kLiteRtElementTypeComplex64:
+      return 8;
+    case kLiteRtElementTypeComplex128:
+      return 16;
+    default:
+      return Unexpected(kLiteRtStatusErrorUnsupported,
+                        "Unsupported element type for magic-number constant "
+                        "buffer resize");
+  }
+}
+
+Expected<size_t> TensorByteSize(const LiteRtRankedTensorType& tensor_type) {
+  const auto& layout = tensor_type.layout;
+  size_t num_elements = 1;
+  for (int i = 0; i < layout.rank; ++i) {
+    if (layout.dimensions[i] < 0) {
+      return Unexpected(kLiteRtStatusErrorUnsupported,
+                        "Dynamic dimension in magic-number constant buffer");
+    }
+    const size_t dim = static_cast<size_t>(layout.dimensions[i]);
+    if (dim != 0 && num_elements > std::numeric_limits<size_t>::max() / dim) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Constant tensor byte size overflow");
+    }
+    num_elements *= dim;
+  }
+
+  switch (tensor_type.element_type) {
+    case kLiteRtElementTypeInt2:
+      return (num_elements + 3) / 4;
+    case kLiteRtElementTypeInt4:
+    case kLiteRtElementTypeUInt4:
+      return (num_elements + 1) / 2;
+    default: {
+      LITERT_ASSIGN_OR_RETURN(size_t element_size,
+                              ElementByteSize(tensor_type.element_type));
+      if (element_size != 0 &&
+          num_elements > std::numeric_limits<size_t>::max() / element_size) {
+        return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                          "Constant tensor byte size overflow");
+      }
+      return num_elements * element_size;
+    }
+  }
+}
+
+Expected<void> ResizeConstantBufferToTensorShape(LiteRtTensorT& tensor) {
+  const auto weights = tensor.Weights().Buffer();
+  if (weights.Size() == 0) {
+    return {};
+  }
+
+  LITERT_ASSIGN_OR_RETURN(
+      size_t expected_size,
+      TensorByteSize(tensor.Type().second.ranked_tensor_type));
+  if (weights.Size() == expected_size) {
+    return {};
+  }
+  if (weights.Size() < expected_size) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Magic-number constant buffer is smaller than updated "
+                      "tensor shape");
+  }
+
+  LITERT_LOG(LITERT_DEBUG,
+             "Resize constant buffer of tensor=%d from %zu to %zu bytes after "
+             "magic-number shape update",
+             tensor.TensorIndex(), weights.Size(), expected_size);
+  litert::OwningBufferRef<uint8_t> resized(weights.Data(), expected_size);
+  SetWeightsFromOwnedBuffer(tensor.Weights(), std::move(resized));
+  return {};
+}
+
 // Updates the dimensions of a given tensor whose number is a magic number.
 // Returns the number of dimensions updated.
 Expected<int> UpdateMagicNumberInDimensions(
@@ -167,6 +264,10 @@ Expected<int> UpdateMagicNumberInDimensions(
     // Update the flatbuffer accordingly.
     const_cast<::flatbuffers::Vector<int32_t>*>(tflite_tensor->shape())
         ->Mutate(i, layout.dimensions[i]);
+  }
+
+  if (num_updated > 0) {
+    LITERT_RETURN_IF_ERROR(ResizeConstantBufferToTensorShape(tensor));
   }
 
   return num_updated;
@@ -265,8 +366,18 @@ Expected<int> UpdateMagicNumberInCompositeAttributes(
     int64_t magic_number, int64_t target_number, const LiteRtOpT& op,
     const tflite::Operator& tflite_op) {
   LITERT_ASSIGN_OR_RETURN(const auto* opts, GetStableHLOCompositeOptions(op));
-  flexbuffers::Map flexbuffer_map =
-      flexbuffers::GetRoot(opts->composite_attributes).AsMap();
+  if (opts->composite_attributes.empty() ||
+      !flexbuffers::VerifyBuffer(opts->composite_attributes.data(),
+                                 opts->composite_attributes.size())) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Invalid composite attributes");
+  }
+  auto root = flexbuffers::GetRoot(opts->composite_attributes);
+  if (!root.IsMap()) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Invalid composite attributes");
+  }
+  flexbuffers::Map flexbuffer_map = root.AsMap();
   auto keys = flexbuffer_map.Keys();
   int num_updated = 0;
   for (int k = 0; k < keys.size(); ++k) {

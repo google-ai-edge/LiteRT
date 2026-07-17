@@ -29,6 +29,7 @@ target_sources(qnn_builders
         gather_op_builder.cc
         gathernd_op_builder.cc
         gelu_op_builder.cc
+        hadamard_transform_op_builder.cc
         layer_norm_op_builder.cc
         l2_norm_op_builder.cc
         leaky_relu_op_builder.cc
@@ -55,6 +56,7 @@ target_sources(qnn_builders
         softmax_op_builder.cc
         spatial_transform_op_builder.cc
         split_op_builder.cc
+        splitv_op_builder.cc
         strided_slice_op_builder.cc
         tanh_op_builder.cc
         tile_op_builder.cc
@@ -65,6 +67,7 @@ target_sources(qnn_builders
         scatter_nd_op_builder.cc
         topk_op_builder.cc
         group_norm_op_builder.cc
+        custom_op_builder.cc
 )
 
 target_include_directories(qnn_builders
@@ -74,6 +77,7 @@ target_include_directories(qnn_builders
 
 target_link_libraries(qnn_builders
     PRIVATE
+        qnn_common
         qnn_log
         qnn_miscs
         qnn_tensor_pool

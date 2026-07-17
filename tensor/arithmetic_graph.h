@@ -36,6 +36,12 @@ enum FusedActivation {
   kActSigmoid,
 };
 
+// Possible weights formats for FullyConnected.
+enum FullyConnectedWeightsFormat {
+  kWeightsFormatDefault = 0,
+  kWeightsFormatShuffled4x16Int8 = 1,
+};
+
 // Possible padding types.
 enum Padding {
   kPaddingSame = 0,
@@ -276,6 +282,9 @@ struct BatchMatMulOperation : BatchMatMulOperationData, Operation {
 struct FullyConnectedOperationData {
   litert::tensor::FusedActivation activation;
   bool keep_num_dims;
+  bool asymmetric_quantize_inputs = false;
+  litert::tensor::FullyConnectedWeightsFormat weights_format =
+      litert::tensor::kWeightsFormatDefault;
 };
 
 struct FullyConnectedOperation : FullyConnectedOperationData, Operation {
@@ -575,6 +584,21 @@ struct CustomOperation : CustomOperationData, Operation {
   LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
+struct StableHLOCompositeOperationData {
+  std::string name;
+  std::vector<uint8_t> composite_attributes;
+  int32_t version = 1;
+  std::vector<Tensor> decomposition_inputs;
+  std::vector<Tensor> decomposition_outputs;
+  int32_t decomposition_subgraph_index = -1;
+};
+
+struct StableHLOCompositeOperation : StableHLOCompositeOperationData,
+                                     Operation {
+  absl::string_view GetName() const override { return "StableHLOComposite"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
+};
+
 struct TopKOperation : Operation {
   absl::string_view GetName() const override { return "TopK"; }
   LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
@@ -694,6 +718,11 @@ struct TransposeConv2DOperationData {
 
 struct TransposeConv2DOperation : TransposeConv2DOperationData, Operation {
   absl::string_view GetName() const override { return "TransposeConv2D"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
+};
+
+struct RopeOperation : Operation {
+  absl::string_view GetName() const override { return "Rope"; }
   LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 

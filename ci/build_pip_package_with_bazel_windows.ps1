@@ -197,6 +197,15 @@ if (Test-Path $ExternalDir) {
 $LocalXlaTsl = Join-Path $OutputBase 'external\local_xla\xla\tsl\tsl.bzl'
 Replace-InFile $LocalXlaTsl 'clean_dep("//xla/tsl:windows"): get_win_copts(is_external, is_msvc = False),' 'clean_dep("//xla/tsl:windows"): get_win_copts(is_external, is_msvc = True),' | Out-Null
 
+$AbslOptions = Join-Path $OutputBase 'external\com_google_absl\absl\base\options.h'
+if (-not (Test-Path $AbslOptions)) {
+  $AbslOptions = Join-Path $OutputBase 'external\abseil-cpp\absl\base\options.h'
+}
+if (Test-Path $AbslOptions) {
+  Write-Host 'Patching Abseil options.h to disable std::source_location...'
+  Replace-InFile $AbslOptions '#define ABSL_OPTION_USE_STD_SOURCE_LOCATION 2' '#define ABSL_OPTION_USE_STD_SOURCE_LOCATION 0' | Out-Null
+}
+
 $ProtoContext = Join-Path $OutputBase 'external\com_google_protobuf\src\google\protobuf\compiler\java\context.h'
 if (Test-Path $ProtoContext) {
   $ProtoLines = Get-Content $ProtoContext

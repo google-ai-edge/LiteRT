@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 #include "litert/c/litert_common.h"
@@ -45,13 +46,17 @@ LiteRtStatus LiteRtCreateTensorBufferRequirementsWithAlignment(
     size_t buffer_size, int num_strides, const uint32_t* strides,
     size_t alignment, LiteRtTensorBufferRequirements* requirements) {
   if (num_supported_tensor_buffer_types < 1 || !supported_tensor_buffer_types ||
-      !requirements || alignment == 0 || (alignment & (alignment - 1)) != 0) {
+      !requirements || num_strides < 0 || (num_strides > 0 && !strides) ||
+      alignment == 0 || (alignment & (alignment - 1)) != 0) {
     return kLiteRtStatusErrorInvalidArgument;
+  }
+  std::vector<uint32_t> strides_vec;
+  if (num_strides > 0) {
+    strides_vec.assign(strides, strides + num_strides);
   }
   *requirements = new LiteRtTensorBufferRequirementsT(
       num_supported_tensor_buffer_types, supported_tensor_buffer_types,
-      buffer_size, std::vector<uint32_t>(strides, strides + num_strides),
-      alignment);
+      buffer_size, std::move(strides_vec), alignment);
   return kLiteRtStatusOk;
 }
 
@@ -67,7 +72,7 @@ LiteRtStatus LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes(
 LiteRtStatus LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
     LiteRtTensorBufferRequirements requirements, int type_index,
     LiteRtTensorBufferType* type) {
-  if (!requirements || type_index < 0 ||
+  if (!requirements || !type || type_index < 0 ||
       type_index >= requirements->SupportedBufferTypes().size()) {
     return kLiteRtStatusErrorInvalidArgument;
   }

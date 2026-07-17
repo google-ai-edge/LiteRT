@@ -173,6 +173,8 @@ void ShapeInferenceEngine::RegisterStandardOps() {
   RegisterInferrer(kLiteRtOpCodeTflSin, AdaptToStatelessOpInferrer(InferSin));
   RegisterInferrer(kLiteRtOpCodeTflSoftmax,
                    AdaptToStatelessOpInferrer(InferSoftmax));
+  RegisterInferrer(kLiteRtOpCodeTflLogSoftmax,
+                   AdaptToStatelessOpInferrer(InferLogSoftmax));
   RegisterInferrer(kLiteRtOpCodeTflSqrt, AdaptToStatelessOpInferrer(InferSqrt));
   RegisterInferrer(kLiteRtOpCodeTflSquare,
                    AdaptToStatelessOpInferrer(InferSquare));

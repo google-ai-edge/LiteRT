@@ -86,6 +86,11 @@ TEST(LiteRtProfilerErrorTest, CreateWithNullProfiler) {
   EXPECT_NE(LiteRtCreateProfiler(10, nullptr), kLiteRtStatusOk);
 }
 
+TEST(LiteRtProfilerErrorTest, CreateWithNonPositiveSize) {
+  EXPECT_NE(LiteRtCreateProfiler(0, &profiler), kLiteRtStatusOk);
+  EXPECT_NE(LiteRtCreateProfiler(-1, &profiler), kLiteRtStatusOk);
+}
+
 TEST(LiteRtProfilerErrorTest, PassNullToFunctions) {
   EXPECT_EQ(LiteRtCreateProfiler(10, &profiler), kLiteRtStatusOk);
   // Test that all functions handle a null profiler handle gracefully.

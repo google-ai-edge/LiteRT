@@ -95,15 +95,15 @@ http_archive(
 )
 
 # Load the custom repository rule to select either a local TensorFlow source or a remote http_archive.
-load("//litert:tensorflow_source_rules.bzl", "tensorflow_source_repo")
+load("//:tensorflow_source_rules.bzl", "tensorflow_source_repo")
 
 tensorflow_source_repo(
     name = "org_tensorflow",
     patches = ["//:PATCH.flatbuffers_windows_no_bash"],
     protobuf_patches = ["//:PATCH.protobuf_port_msvc_compat"],
-    sha256 = "c29ef319c524eee22d2ee177d7e17087f1c66e46e021a237a7031c288198a128",
-    strip_prefix = "tensorflow-97f383ddc524f5cb60c8387ec55e81402dbfcb3f",
-    urls = ["https://github.com/tensorflow/tensorflow/archive/97f383ddc524f5cb60c8387ec55e81402dbfcb3f.tar.gz"],
+    sha256 = "e7eb1346be0b76875adb9c7a3cd0b5b5e88adba7b2415641115668e2dd459517",
+    strip_prefix = "tensorflow-3e14ca7c1b0cd85e0e5e4728f05d6c3e2bc9e82c",
+    urls = ["https://github.com/tensorflow/tensorflow/archive/3e14ca7c1b0cd85e0e5e4728f05d6c3e2bc9e82c.tar.gz"],
 )
 
 # Initialize the TensorFlow repository and all dependencies.
@@ -254,6 +254,7 @@ maven_install(
         "androidx.lifecycle:lifecycle-common:2.8.7",
         "com.google.android.play:ai-delivery:0.1.1-alpha01",
         "com.google.guava:guava:33.4.6-android",
+        "org.jetbrains.kotlin:kotlin-stdlib:2.0.21",
         "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0",
         "org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.8.0",
         "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.0",
@@ -270,8 +271,8 @@ maven_install(
 # Kotlin rules
 http_archive(
     name = "rules_kotlin",
-    sha256 = "e1448a56b2462407b2688dea86df5c375b36a0991bd478c2ddd94c97168125e2",
-    url = "https://github.com/bazelbuild/rules_kotlin/releases/download/v2.1.3/rules_kotlin-v2.1.3.tar.gz",
+    sha256 = "13d5b767d697473ced9b55547a18a6ab65ab3fae5440555deee8a44c886b50aa",
+    url = "https://github.com/bazelbuild/rules_kotlin/releases/download/v2.3.20/rules_kotlin-v2.3.20.tar.gz",
 )
 
 # Sentencepiece
@@ -374,3 +375,24 @@ openvino_configure()
 load("//third_party/exynos_ai_litecore:workspace.bzl", "exynos_ai_litecore")
 
 exynos_ai_litecore()
+
+# Android rules. Need latest rules_android_ndk to use NDK 26+.
+load("@rules_android_ndk//:rules.bzl", "android_ndk_repository")
+
+android_ndk_repository(name = "androidndk")
+
+load("//:android_ndk_env.bzl", "check_android_ndk_env")
+
+check_android_ndk_env(name = "android_ndk_env")
+
+load("@android_ndk_env//:current_android_ndk_env.bzl", "ANDROID_NDK_HOME_IS_SET")
+
+register_toolchains("@androidndk//:all" if ANDROID_NDK_HOME_IS_SET else "@android_ndk_env//:all")
+
+# Conditionally declare Android SDK repository at the bottom using built-in maybe.
+load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
+
+maybe(
+    android_sdk_repository,
+    name = "androidsdk",
+)

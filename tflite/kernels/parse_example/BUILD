@@ -71,6 +71,7 @@ tf_cc_test(
         "//tflite/kernels:test_main",
         "//tflite/kernels:test_util",
         "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest",
         "@flatbuffers",
     ] + select({
         "@org_tensorflow//tensorflow:android": [
@@ -115,7 +116,6 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/core:core_cpu",
         "@org_tensorflow//tensorflow/core:feature_util",
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core:framework_internal",
@@ -140,6 +140,7 @@ tf_cc_test(
         "//tflite/kernels:test_main",
         "//tflite/kernels:test_util",
         "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest",
         "@flatbuffers",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core/example:feature_util",

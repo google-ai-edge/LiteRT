@@ -42,6 +42,23 @@ litert_lib(
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
+        "//litert/c/internal:litert_logging",
+        "@intel_openvino//:openvino",
+    ],
+)
+
+litert_test(
+    name = "npu_optimizer_test",
+    srcs = ["npu_optimizer_test.cc"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":npu_optimizer",
         "@intel_openvino//:openvino",
     ],
 )
@@ -97,6 +114,7 @@ litert_dynamic_lib(
         "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
+        "//litert/c:litert_op_options_header",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper_with_compiler_context",
         "//litert/c/options:litert_intel_openvino_options",
@@ -108,7 +126,10 @@ litert_dynamic_lib(
         "//litert/cc/internal:litert_options_wrapper",
         "//litert/cc/options:litert_intel_openvino_options",
         "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_op_options",
+        "//litert/vendors/intel_openvino:bytecode_header",
         "@com_google_absl//absl/strings:str_format",
+        "@flatbuffers",
         "@intel_openvino//:openvino",
     ],
 )
@@ -137,6 +158,7 @@ litert_bin(
         ":openvino_soc_config",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
+        "//litert/c:litert_op_options_header",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper_with_compiler_context",
         "//litert/c/options:litert_compiler_options",
@@ -149,7 +171,10 @@ litert_bin(
         "//litert/cc/internal:litert_options_wrapper",
         "//litert/cc/options:litert_intel_openvino_options",
         "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_op_options",
+        "//litert/vendors/intel_openvino:bytecode_header",
         "@com_google_absl//absl/strings:str_format",
+        "@flatbuffers",
         "@intel_openvino//:openvino",
     ],
 )
@@ -211,6 +236,7 @@ litert_lib(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_op_options",
         "//litert/vendors/intel_openvino:ov_utils",
         "//tflite/schema:schema_fbs",
         "@intel_openvino//:openvino",
@@ -255,12 +281,16 @@ litert_test(
     srcs = [
         "openvino_compiler_plugin_test.cc",
     ],
-    copts = ["-fexceptions"],
+    copts = ["-fexceptions"] + select({
+        "//litert:windows": ["/DLITERT_COMPILE_LIBRARY"],
+        "//conditions:default": [],
+    }),
     data = [
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
     ],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    linkstatic = 1,
     tags = [
         # Tests with ungrte deps do not currently work on forge.
         "no-remote-exec",
@@ -282,12 +312,14 @@ litert_test(
         ":openvino_soc_config",
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_compiler_context",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime:litert_model_predicates",
         "//litert/test:common",
+        "//litert/test:load_test_model_runtimecapi",
         "//litert/test:matchers_oss",
         "//litert/test:test_models",
         "//litert/vendors/cc:litert_compiler_plugin",

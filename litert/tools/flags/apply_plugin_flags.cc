@@ -14,6 +14,7 @@
 
 #include "litert/tools/flags/apply_plugin_flags.h"
 
+#include <cstddef>
 #include <string>
 
 #include "absl/flags/flag.h"  // from @com_google_absl
@@ -34,6 +35,9 @@ ABSL_FLAG(::litert::tools::IntList, subgraphs, ::litert::tools::IntList{},
 ABSL_FLAG(LiteRtCompilerOptionsPartitionStrategy, partition_strategy,
           kLiteRtCompilerOptionsPartitionStrategyDefault,
           "Partition strategy for the compiler.");
+
+ABSL_FLAG(size_t, compiler_options_max_partitions, 0,
+          "Maximum number of partitions allowed. 0 means unlimited.");
 
 // NOLINTBEGIN(*alien-types*)
 // TODO: Move absl parse/unparse function to same file as enum types if
@@ -71,6 +75,8 @@ namespace litert {
 Expected<void> UpdateCompilerOptionsFromFlags(CompilerOptions& options) {
   LITERT_RETURN_IF_ERROR(
       options.SetPartitionStrategy(absl::GetFlag(FLAGS_partition_strategy)));
+  LITERT_RETURN_IF_ERROR(options.SetMaxPartitions(static_cast<size_t>(
+      absl::GetFlag(FLAGS_compiler_options_max_partitions))));
 
   return {};
 }
