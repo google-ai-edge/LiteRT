@@ -286,6 +286,58 @@ TEST(DspPerformanceModeTest, Parse) {
   }
 }
 
+TEST(HtpPerfCtrlModeTest, Malformed) {
+  std::string error;
+  QualcommOptions::HtpPerfCtrlMode value;
+
+  EXPECT_FALSE(AbslParseFlag("boogabooga", &value, &error));
+}
+
+TEST(HtpPerfCtrlModeTest, Parse) {
+  std::string error;
+  QualcommOptions::HtpPerfCtrlMode value;
+
+  {
+    static constexpr absl::string_view kMode = "manual";
+    EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, QualcommOptions::HtpPerfCtrlMode::kManual);
+    EXPECT_EQ(kMode, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kMode = "auto";
+    EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, QualcommOptions::HtpPerfCtrlMode::kAuto);
+    EXPECT_EQ(kMode, AbslUnparseFlag(value));
+  }
+}
+
+TEST(DspPerfCtrlModeTest, Malformed) {
+  std::string error;
+  QualcommOptions::DspPerfCtrlMode value;
+
+  EXPECT_FALSE(AbslParseFlag("boogabooga", &value, &error));
+}
+
+TEST(DspPerfCtrlModeTest, Parse) {
+  std::string error;
+  QualcommOptions::DspPerfCtrlMode value;
+
+  {
+    static constexpr absl::string_view kMode = "manual";
+    EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, QualcommOptions::DspPerfCtrlMode::kManual);
+    EXPECT_EQ(kMode, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kMode = "auto";
+    EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, QualcommOptions::DspPerfCtrlMode::kAuto);
+    EXPECT_EQ(kMode, AbslUnparseFlag(value));
+  }
+}
+
 TEST(ProfilingTest, Malformed) {
   std::string error;
   QualcommOptions::Profiling value;
@@ -518,6 +570,10 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
             QualcommOptions::HtpPerformanceMode::kDefault);
   EXPECT_EQ(options.Value().GetDspPerformanceMode(),
             QualcommOptions::DspPerformanceMode::kDefault);
+  EXPECT_EQ(options.Value().GetHtpPerfCtrlMode(),
+            QualcommOptions::HtpPerfCtrlMode::kManual);
+  EXPECT_EQ(options.Value().GetDspPerfCtrlMode(),
+            QualcommOptions::DspPerfCtrlMode::kManual);
   EXPECT_TRUE(options.Value().GetDumpTensorIds().empty());
   EXPECT_EQ(options.Value().GetVtcmSize(), 0);
   EXPECT_EQ(options.Value().GetNumHvxThreads(), 0);

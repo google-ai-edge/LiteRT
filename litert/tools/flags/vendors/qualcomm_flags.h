@@ -154,6 +154,32 @@ std::string AbslUnparseFlag(QualcommOptions::DspPerformanceMode options);
 
 }  // namespace litert::qualcomm
 
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::HtpPerfCtrlMode,
+                  qualcomm_htp_perf_ctrl_mode);
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::HtpPerfCtrlMode* options,
+                   std::string* error);
+
+std::string AbslUnparseFlag(QualcommOptions::HtpPerfCtrlMode options);
+
+}  // namespace litert::qualcomm
+
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::DspPerfCtrlMode,
+                  qualcomm_dsp_perf_ctrl_mode);
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::DspPerfCtrlMode* options,
+                   std::string* error);
+
+std::string AbslUnparseFlag(QualcommOptions::DspPerfCtrlMode options);
+
+}  // namespace litert::qualcomm
+
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::Profiling,
                   qualcomm_profiling);
 

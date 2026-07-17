@@ -122,6 +122,26 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::DspPerformanceMode,
           litert::qualcomm::QualcommOptions::DspPerformanceMode::kDefault,
           "DSP performance mode.");
 
+ABSL_FLAG(litert::qualcomm::QualcommOptions::HtpPerfCtrlMode,
+          qualcomm_htp_perf_ctrl_mode,
+          litert::qualcomm::QualcommOptions::HtpPerfCtrlMode::kManual,
+          "HTP performance control mode. 'manual' (default): upvote once when "
+          "the context is ready and hold it for the context's lifetime. "
+          "'auto': per-inference upvote with a 300ms debounced downvote. "
+          "Only single-threaded (serialized) execution is supported: "
+          "concurrent inferences share one device power vote and would "
+          "interfere with each other.");
+
+ABSL_FLAG(litert::qualcomm::QualcommOptions::DspPerfCtrlMode,
+          qualcomm_dsp_perf_ctrl_mode,
+          litert::qualcomm::QualcommOptions::DspPerfCtrlMode::kManual,
+          "DSP performance control mode. 'manual' (default): upvote once when "
+          "the context is ready and hold it for the context's lifetime. "
+          "'auto': per-inference upvote with a 300ms debounced downvote. "
+          "Only single-threaded (serialized) execution is supported: "
+          "concurrent inferences share one device power vote and would "
+          "interfere with each other.");
+
 ABSL_FLAG(::litert::tools::IntList, qualcomm_dump_tensor_ids, {},
           "Debug Feature. Ids to dump as outputs. Comma-separated list of "
           "string. Use -1 to dump all op outputs.");
@@ -262,6 +282,58 @@ std::string AbslUnparseFlag(QualcommOptions::DspPerformanceMode options) {
       return "low_balanced";
     case QualcommOptions::DspPerformanceMode::kBalanced:
       return "balanced";
+  }
+}
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::HtpPerfCtrlMode* options,
+                   std::string* error) {
+  if (text == "manual") {
+    *options = QualcommOptions::HtpPerfCtrlMode::kManual;
+    return true;
+  }
+  if (text == "auto") {
+    *options = QualcommOptions::HtpPerfCtrlMode::kAuto;
+    return true;
+  }
+  *error = "Unknown htp_perf_ctrl_mode; valid values: manual, auto";
+  return false;
+}
+
+std::string AbslUnparseFlag(QualcommOptions::HtpPerfCtrlMode options) {
+  switch (options) {
+    case QualcommOptions::HtpPerfCtrlMode::kManual:
+      return "manual";
+    case QualcommOptions::HtpPerfCtrlMode::kAuto:
+      return "auto";
+    default:
+      return "manual";
+  }
+}
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::DspPerfCtrlMode* options,
+                   std::string* error) {
+  if (text == "manual") {
+    *options = QualcommOptions::DspPerfCtrlMode::kManual;
+    return true;
+  }
+  if (text == "auto") {
+    *options = QualcommOptions::DspPerfCtrlMode::kAuto;
+    return true;
+  }
+  *error = "Unknown dsp_perf_ctrl_mode; valid values: manual, auto";
+  return false;
+}
+
+std::string AbslUnparseFlag(QualcommOptions::DspPerfCtrlMode options) {
+  switch (options) {
+    case QualcommOptions::DspPerfCtrlMode::kManual:
+      return "manual";
+    case QualcommOptions::DspPerfCtrlMode::kAuto:
+      return "auto";
+    default:
+      return "manual";
   }
 }
 
@@ -635,6 +707,14 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto dsp_performance_mode =
       absl::GetFlag(FLAGS_qualcomm_dsp_performance_mode);
   opts.SetDspPerformanceMode(dsp_performance_mode);
+
+  const auto htp_perf_ctrl_mode =
+      absl::GetFlag(FLAGS_qualcomm_htp_perf_ctrl_mode);
+  opts.SetHtpPerfCtrlMode(htp_perf_ctrl_mode);
+
+  const auto dsp_perf_ctrl_mode =
+      absl::GetFlag(FLAGS_qualcomm_dsp_perf_ctrl_mode);
+  opts.SetDspPerfCtrlMode(dsp_perf_ctrl_mode);
 
   const auto profiling = absl::GetFlag(FLAGS_qualcomm_profiling);
   opts.SetProfiling(profiling);

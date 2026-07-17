@@ -241,6 +241,34 @@ void AbslStringify(Sink& sink, DspPerformanceMode v) {
 }
 
 template <typename Sink>
+void AbslStringify(Sink& sink, HtpPerfCtrlMode v) {
+  absl::string_view name = "Unknown";
+  switch (v) {
+    case HtpPerfCtrlMode::kManual:
+      name = "Manual";
+      break;
+    case HtpPerfCtrlMode::kAuto:
+      name = "Auto";
+      break;
+  }
+  absl::Format(&sink, "%s(%d)", name, static_cast<int>(v));
+}
+
+template <typename Sink>
+void AbslStringify(Sink& sink, DspPerfCtrlMode v) {
+  absl::string_view name = "Unknown";
+  switch (v) {
+    case DspPerfCtrlMode::kManual:
+      name = "Manual";
+      break;
+    case DspPerfCtrlMode::kAuto:
+      name = "Auto";
+      break;
+  }
+  absl::Format(&sink, "%s(%d)", name, static_cast<int>(v));
+}
+
+template <typename Sink>
 void AbslStringify(Sink& sink, OptimizationLevel v) {
   absl::string_view name = "Unknown";
   switch (v) {
@@ -416,6 +444,22 @@ DspPerformanceMode Options::GetDspPerformanceMode() const {
   return dsp_performance_mode_;
 }
 
+void Options::SetHtpPerfCtrlMode(HtpPerfCtrlMode htp_perf_ctrl_mode) {
+  htp_perf_ctrl_mode_ = htp_perf_ctrl_mode;
+}
+
+HtpPerfCtrlMode Options::GetHtpPerfCtrlMode() const {
+  return htp_perf_ctrl_mode_;
+}
+
+void Options::SetDspPerfCtrlMode(DspPerfCtrlMode dsp_perf_ctrl_mode) {
+  dsp_perf_ctrl_mode_ = dsp_perf_ctrl_mode;
+}
+
+DspPerfCtrlMode Options::GetDspPerfCtrlMode() const {
+  return dsp_perf_ctrl_mode_;
+}
+
 void Options::SetDumpTensorIds(const std::vector<std::int32_t>& ids) {
   dump_tensor_ids_ = ids;
 }
@@ -553,6 +597,7 @@ std::string Options::Dump() const {
   field(2, "HtpDlbcWeights", htp_dlbc_weights_);
   field(2, "HtpPPoint", htp_p_point_);
   field(2, "HtpPerformanceMode", htp_performance_mode_);
+  field(2, "HtpPerfCtrlMode", htp_perf_ctrl_mode_);
   field(2, "VtcmSize", vtcm_size_);
   field(2, "NumHvxThreads", num_hvx_threads_);
   field(2, "OptimizationLevel", optimization_level_);
@@ -569,6 +614,7 @@ std::string Options::Dump() const {
   // --- DSP ---
   absl::StrAppend(&out, "[DSP]\n");
   field(2, "DspPerformanceMode", dsp_performance_mode_);
+  field(2, "DspPerfCtrlMode", dsp_perf_ctrl_mode_);
 
   // --- GPU ---
   absl::StrAppend(&out, "[GPU]\n");

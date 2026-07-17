@@ -157,6 +157,44 @@ class QualcommOptions {
     return static_cast<DspPerformanceMode>(val);
   }
 
+  enum class HtpPerfCtrlMode : int {
+    kManual = kLiteRtQualcommHtpPerfCtrlModeManual,
+    kAuto = kLiteRtQualcommHtpPerfCtrlModeAuto,
+  };
+
+  void SetHtpPerfCtrlMode(HtpPerfCtrlMode htp_perf_ctrl_mode) {
+    LrtQualcommOptionsSetHtpPerfCtrlMode(
+        options_,
+        static_cast<LrtQualcommOptionsHtpPerfCtrlMode>(htp_perf_ctrl_mode));
+  }
+  HtpPerfCtrlMode GetHtpPerfCtrlMode() {
+    LrtQualcommOptionsHtpPerfCtrlMode val;
+    auto status = LrtQualcommOptionsGetHtpPerfCtrlMode(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return HtpPerfCtrlMode::kManual;
+    }
+    return static_cast<HtpPerfCtrlMode>(val);
+  }
+
+  enum class DspPerfCtrlMode : int {
+    kManual = kLiteRtQualcommDspPerfCtrlModeManual,
+    kAuto = kLiteRtQualcommDspPerfCtrlModeAuto,
+  };
+
+  void SetDspPerfCtrlMode(DspPerfCtrlMode dsp_perf_ctrl_mode) {
+    LrtQualcommOptionsSetDspPerfCtrlMode(
+        options_,
+        static_cast<LrtQualcommOptionsDspPerfCtrlMode>(dsp_perf_ctrl_mode));
+  }
+  DspPerfCtrlMode GetDspPerfCtrlMode() {
+    LrtQualcommOptionsDspPerfCtrlMode val;
+    auto status = LrtQualcommOptionsGetDspPerfCtrlMode(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return DspPerfCtrlMode::kManual;
+    }
+    return static_cast<DspPerfCtrlMode>(val);
+  }
+
   [[deprecated("This option is deprecated and will be no-op.")]]
   void SetUseHtpPreference(bool use_htp_preference) {
     LrtQualcommOptionsSetUseHtpPreference(options_, use_htp_preference);

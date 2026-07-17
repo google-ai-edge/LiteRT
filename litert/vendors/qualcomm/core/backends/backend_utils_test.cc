@@ -4,7 +4,10 @@
 #include "litert/vendors/qualcomm/core/backends/backend_utils.h"
 
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <optional>
+#include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -61,6 +64,48 @@ TEST(BackendUtilsTest, FindSocInfoTest) {
   // Test finding an invalid SoC
   auto res_invalid = FindSocInfo(static_cast<SnapdragonModel>(99999));
   EXPECT_FALSE(res_invalid.has_value());
+}
+
+// VOTING THREAD /////////////////////////////////////////////////////////
+TEST(VotingThreadTest, UpvoteCancelsPendingDownvote) {
+  std::atomic<int> up_count{0}, down_count{0};
+  VotingThread vt([&](VotingThread::VoteType v) {
+    if (v == VotingThread::VoteType::kUpVote)
+      up_count.fetch_add(1);
+    else
+      down_count.fetch_add(1);
+  });
+
+  vt.Enqueue(VotingThread::VoteType::kUpVote);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+  vt.Enqueue(VotingThread::VoteType::kDownVote, /*debounce=*/true);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  vt.Enqueue(VotingThread::VoteType::kUpVote);
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+  EXPECT_EQ(up_count.load(), 2);
+  EXPECT_EQ(down_count.load(), 0);
+}
+
+TEST(VotingThreadTest, DebounceDownvoteFiresAfterTimeout) {
+  std::atomic<int> down_count{0};
+  VotingThread vt([&](VotingThread::VoteType v) {
+    if (v == VotingThread::VoteType::kDownVote) down_count.fetch_add(1);
+  });
+
+  vt.Enqueue(VotingThread::VoteType::kDownVote, /*debounce=*/true);
+  std::this_thread::sleep_for(std::chrono::milliseconds(400));
+
+  EXPECT_EQ(down_count.load(), 1);
+}
+
+TEST(VotingThreadTest, DestructWithPendingVoteJoinsCleanly) {
+  {
+    VotingThread vt([&](VotingThread::VoteType) {});
+    vt.Enqueue(VotingThread::VoteType::kDownVote, /*debounce=*/true);
+  }
+  SUCCEED();
 }
 
 }  // namespace
