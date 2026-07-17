@@ -12,22 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#import <XCTest/XCTest.h>
+
 #import "third_party/odml/litert/litert/objc/apis/LRTEnvironment.h"
 #import "third_party/odml/litert/litert/objc/apis/LRTError.h"
 
-#include "testing/base/public/gunit.h"
+@interface LRTEnvironmentTests : XCTestCase
+@end
 
-TEST(LRTEnvironmentTest, CreateWithDefaultOptionsSuccess) {
+@implementation LRTEnvironmentTests
+
+- (void)testCreateWithDefaultOptionsSuccess {
   NSError *error = nil;
   LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  EXPECT_NE(env, nil);
-  EXPECT_EQ(error, nil);
+  XCTAssertNotNil(env);
+  XCTAssertNil(error);
 }
 
-TEST(LRTEnvironmentTest, CreateWithCustomOptionsSuccess) {
+- (void)testCreateWithCustomOptionsSuccess {
   LRTEnvironmentOptions *options = [[LRTEnvironmentOptions alloc] init];
   NSError *error = nil;
   LRTEnvironment *env = [LRTEnvironment environmentWithOptions:options error:&error];
-  EXPECT_NE(env, nil);
-  EXPECT_EQ(error, nil);
+  XCTAssertNotNil(env);
+  XCTAssertNil(error);
 }
+
+@end
