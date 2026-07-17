@@ -93,6 +93,11 @@ flatbuffer_cc_library(
     includes = [
         "@ml_drift//ml_drift/common/task:serialization_base_cc_fbs_includes",
     ],
+    visibility = [
+        "//ml_drift_delegate/delegate:__pkg__",
+        "//ml_drift_delegate/delegate/shared_memory_manager:__pkg__",
+        "//third_party/odml/infra/ml_drift_delegate:__pkg__",
+    ],
 )
 
 # This is used to generate a file called "srcs/build_identifier.cc". This generated file contains a
@@ -207,12 +212,15 @@ cc_library(
         ":mmap_handle",
         ":serialization_schema",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
         "@flatbuffers//:runtime_cc",
+        "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/common/task:serialization_base",
         "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:weights_layout",
         "//ml_drift_delegate/delegate:precision",
         "//ml_drift_delegate/delegate:unowned_tensor_desc",
         "//tflite/c:common",

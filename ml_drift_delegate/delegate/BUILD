@@ -464,6 +464,7 @@ cc_library(
     srcs = ["delegate_kernel.cc"],
     hdrs = ["delegate_kernel.h"],
     deps = [
+        "//ml_drift_delegate/delegate/serialization_weight_cache:serialization_schema",
         # copybara:uncomment "//third_party/odml/litert/weight_loader:external_weight_loader",
         "//weight_loader:external_weight_loader",  # copybara:comment
         ":delegate_data",

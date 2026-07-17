@@ -47,9 +47,11 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "flatbuffers/verifier.h"  // from @flatbuffers
+#include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/serialization_base.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/serialization_weight_cache/build_identifier.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/cache_builder.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/file_util.h"
@@ -58,6 +60,87 @@
 #include "tflite/delegates/serialization.h"
 
 namespace ml_drift {
+
+absl::StatusOr<ml_drift::cache::schema::PackingAlgorithm> ToPackingAlgorithm(
+    Layout layout) {
+  switch (layout) {
+    case Layout::UNKNOWN:
+      return ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN;
+    case Layout::SCALAR:
+      return ml_drift::cache::schema::PackingAlgorithm_LAYOUT_SCALAR;
+    case Layout::LINEAR:
+      return ml_drift::cache::schema::PackingAlgorithm_LAYOUT_LINEAR;
+    case Layout::HW:
+      return ml_drift::cache::schema::PackingAlgorithm_LAYOUT_HW;
+    case Layout::CHW:
+      return ml_drift::cache::schema::PackingAlgorithm_LAYOUT_CHW;
+    case Layout::HWC:
+      return ml_drift::cache::schema::PackingAlgorithm_LAYOUT_HWC;
+    case Layout::OIHW:
+      return ml_drift::cache::schema::PackingAlgorithm_LAYOUT_OIHW;
+    case Layout::OHWI:
+      return ml_drift::cache::schema::PackingAlgorithm_LAYOUT_OHWI;
+    case Layout::IHWO:
+      return ml_drift::cache::schema::PackingAlgorithm_LAYOUT_IHWO;
+    case Layout::IOHW:
+      return ml_drift::cache::schema::PackingAlgorithm_LAYOUT_IOHW;
+    case Layout::BHWC:
+      return ml_drift::cache::schema::PackingAlgorithm_LAYOUT_BHWC;
+    case Layout::HWDC:
+      return ml_drift::cache::schema::PackingAlgorithm_LAYOUT_HWDC;
+    case Layout::BHWDC:
+      return ml_drift::cache::schema::PackingAlgorithm_LAYOUT_BHWDC;
+    case Layout::HWD:
+      return ml_drift::cache::schema::PackingAlgorithm_LAYOUT_HWD;
+    default:
+      return absl::NotFoundError(
+          absl::StrCat("Unknown Layout: ", static_cast<int>(layout)));
+  }
+}
+
+absl::StatusOr<ml_drift::cache::schema::PackingAlgorithm> ToPackingAlgorithm(
+    WeightsLayout layout) {
+  switch (layout) {
+    case WeightsLayout::kUnknown:
+      return ml_drift::cache::schema::PackingAlgorithm_WEIGHTS_LAYOUT_UNKNOWN;
+    case WeightsLayout::kOSpatialIOGroupI4O4:
+      return ml_drift::cache::schema::
+          PackingAlgorithm_WEIGHTS_LAYOUT_O_SPATIAL_I_O_GROUP_I4O4;
+    case WeightsLayout::kOSpatialIOGroupO4I4:
+      return ml_drift::cache::schema::
+          PackingAlgorithm_WEIGHTS_LAYOUT_O_SPATIAL_I_O_GROUP_O4I4;
+    case WeightsLayout::kOISpatialOGroupI4O4:
+      return ml_drift::cache::schema::
+          PackingAlgorithm_WEIGHTS_LAYOUT_O_I_SPATIAL_O_GROUP_I4O4;
+    case WeightsLayout::kOISpatialOGroupO4I4:
+      return ml_drift::cache::schema::
+          PackingAlgorithm_WEIGHTS_LAYOUT_O_I_SPATIAL_O_GROUP_O4I4;
+    case WeightsLayout::kOICustomSpatialI4O4:
+      return ml_drift::cache::schema::
+          PackingAlgorithm_WEIGHTS_LAYOUT_O_I_CUSTOM_SPATIAL_I4O4;
+    case WeightsLayout::kOICustomSpatialO4I4:
+      return ml_drift::cache::schema::
+          PackingAlgorithm_WEIGHTS_LAYOUT_O_I_CUSTOM_SPATIAL_O4I4;
+    case WeightsLayout::kISpatialOI4O4UnalignedIO:
+      return ml_drift::cache::schema::
+          PackingAlgorithm_WEIGHTS_LAYOUT_I_SPATIAL_O_I4O4_UNALIGNED_I_O;
+    case WeightsLayout::k2DX4I4YIsSpatialIAndXIsOOGroupO4:
+      return ml_drift::cache::schema::
+          PackingAlgorithm_WEIGHTS_LAYOUT_2D_X4I4_Y_IS_SPATIAL_I_AND_X_IS_O_GROUP_O4;  // NOLINT
+    case WeightsLayout::k2DX4O4YIsSpatialIAndXIsOOGroupI4:
+      return ml_drift::cache::schema::
+          PackingAlgorithm_WEIGHTS_LAYOUT_2D_X4O4_Y_IS_SPATIAL_I_AND_X_IS_O_GROUP_I4;  // NOLINT
+    case WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4:
+      return ml_drift::cache::schema::
+          PackingAlgorithm_WEIGHTS_LAYOUT_2D_Y_IS_SPATIAL_I_O_AND_X_IS_O_GROUP_I4O4;  // NOLINT
+    case WeightsLayout::kCustomGroups:
+      return ml_drift::cache::schema::
+          PackingAlgorithm_WEIGHTS_LAYOUT_CUSTOM_GROUPS;
+    default:
+      return absl::NotFoundError(
+          absl::StrCat("Unknown WeightsLayout: ", static_cast<int>(layout)));
+  }
+}
 
 namespace {
 
@@ -88,7 +171,7 @@ absl::Status SerializationWeightCache::StartBuild(
     return absl::InvalidArgumentError(
         "Cannot start building when the cache is already building.");
   }
-  RETURN_IF_ERROR(SetFilePath(directory, model_token));
+  ABSL_RETURN_IF_ERROR(SetFilePath(directory, model_token));
   temporary_file_descriptor_.Close();
   return StartBuildInternal(unique_model_identifier);
 }
@@ -111,7 +194,7 @@ absl::Status SerializationWeightCache::StartBuildInternal(
     }
   }
   is_first_build_ = false;
-  RETURN_IF_ERROR(builder_.StartBuildStep(unique_model_identifier_));
+  ABSL_RETURN_IF_ERROR(builder_.StartBuildStep(unique_model_identifier_));
   // Duplicate the file descriptor to avoid losing the temporary file when
   // the builder is reset. The file descriptor is a RAII object. It will be
   // cleaned up when the builder_ is destroyed.
@@ -141,7 +224,7 @@ absl::Status SerializationWeightCache::StopBuild() {
   if (!IsBuilding()) {
     return absl::OkStatus();
   }
-  RETURN_IF_ERROR(builder_.StopBuildStep());
+  ABSL_RETURN_IF_ERROR(builder_.StopBuildStep());
   is_building_ = false;
   return absl::OkStatus();
 }
@@ -149,7 +232,7 @@ absl::Status SerializationWeightCache::StopBuild() {
 absl::Status SerializationWeightCache::Load(absl::string_view directory,
                                             absl::string_view model_token,
                                             uint64_t unique_model_identifier) {
-  RETURN_IF_ERROR(SetFilePath(directory, model_token));
+  ABSL_RETURN_IF_ERROR(SetFilePath(directory, model_token));
 
   bool opened_internally = false;
   if (!temporary_file_descriptor_.IsValid()) {
@@ -180,9 +263,9 @@ absl::Status SerializationWeightCache::LoadInternal(
 
   // Mmap just the header for now.
   MMapHandle& header_handle = mmap_handles_.at(0);
-  RETURN_IF_ERROR(header_handle.Map(fd,
-                                    /*offset=*/0, sizeof(MLDriftCacheHeader),
-                                    file_path_.c_str()));
+  ABSL_RETURN_IF_ERROR(header_handle.Map(
+      fd,
+      /*offset=*/0, sizeof(MLDriftCacheHeader), file_path_.c_str()));
 
   if (header_handle.size() < sizeof(MLDriftCacheHeader)) {
     return absl::InternalError("Invalid cache file size");
@@ -211,9 +294,9 @@ absl::Status SerializationWeightCache::LoadInternal(
 
   // Mmap just the model cache.
   MMapHandle& buffer_list_handle = mmap_handles_.at(1);
-  RETURN_IF_ERROR(buffer_list_handle.Map(fd, header.buffer_list_offset,
-                                         header.buffer_list_size,
-                                         file_path_.c_str()));
+  ABSL_RETURN_IF_ERROR(buffer_list_handle.Map(fd, header.buffer_list_offset,
+                                              header.buffer_list_size,
+                                              file_path_.c_str()));
 
   if (buffer_list_handle.size() < header.buffer_list_size) {
     return absl::InternalError("Invalid buffer list size");
@@ -262,7 +345,7 @@ absl::Status SerializationWeightCache::LoadInternal(
       // Tensor will be decoded without its data. Its data will be read
       // separately on demand.
       TensorDescriptor tensor_desc;
-      RETURN_IF_ERROR(Decode(buffer->tensor_descriptor(), &tensor_desc));
+      ABSL_RETURN_IF_ERROR(Decode(buffer->tensor_descriptor(), &tensor_desc));
 
       global_tensor_id_to_cache_entry_.emplace(
           std::piecewise_construct,
@@ -270,7 +353,8 @@ absl::Status SerializationWeightCache::LoadInternal(
                                 buffer->is_quantization_param_tensor()),
           std::forward_as_tuple(BufferLocation{.offset = buffer->offset(),
                                                .size = buffer->size()},
-                                std::move(tensor_desc)));
+                                std::move(tensor_desc),
+                                buffer->packing_algorithm()));
     }
   }
 
@@ -288,6 +372,7 @@ absl::Status SerializationWeightCache::Load(int fd,
 
 absl::Status SerializationWeightCache::LookUp(
     uint32_t global_tensor_id, bool is_quantization_param_tensor,
+    ml_drift::cache::schema::PackingAlgorithm packing_algorithm,
     UnownedDataTensorDescriptor& unowned_data_tensor_desc,
     size_t& page_adjusted_offset, ReleaseDataCallback& release_data_callback) {
   if (IsBuilding()) {
@@ -305,6 +390,11 @@ absl::Status SerializationWeightCache::LookUp(
         absl::StrCat("Failed to look up ", global_tensor_id, " from cache."));
   }
   const auto& cache_entry = offset_it->second;
+  if (cache_entry.packing_algorithm != packing_algorithm) {
+    return absl::NotFoundError(absl::StrCat(
+        "Packing algorithm mismatch for ", global_tensor_id, ". Expected ",
+        packing_algorithm, ", got ", cache_entry.packing_algorithm));
+  }
   TensorDescriptor tensor_desc_no_data = cache_entry.tensor_desc;
 
   if (cache_entry.location.offset >
@@ -317,9 +407,9 @@ absl::Status SerializationWeightCache::LookUp(
   size_t offset = mmap_buffer_base_offset_ + cache_entry.location.offset;
 
   auto mmap_handle = std::make_unique<MMapHandle>();
-  RETURN_IF_ERROR(mmap_handle->Map(temporary_file_descriptor_, offset,
-                                   cache_entry.location.size,
-                                   file_path_.c_str()));
+  ABSL_RETURN_IF_ERROR(mmap_handle->Map(temporary_file_descriptor_, offset,
+                                        cache_entry.location.size,
+                                        file_path_.c_str()));
   page_adjusted_offset = mmap_handle->offset_page_adjustment();
 
   unowned_data_tensor_desc = UnownedDataTensorDescriptor(
@@ -333,9 +423,10 @@ absl::Status SerializationWeightCache::LookUp(
   return absl::OkStatus();
 }
 
-absl::Status SerializationWeightCache::LookUp(uint32_t global_tensor_id,
-                                              bool is_quantization_param_tensor,
-                                              TensorDescriptor& tensor_desc) {
+absl::Status SerializationWeightCache::LookUp(
+    uint32_t global_tensor_id, bool is_quantization_param_tensor,
+    ml_drift::cache::schema::PackingAlgorithm packing_algorithm,
+    TensorDescriptor& tensor_desc) {
   if (IsBuilding()) {
     return absl::InvalidArgumentError(
         "Cannot look up a buffer in a cache that is building.");
@@ -351,6 +442,11 @@ absl::Status SerializationWeightCache::LookUp(uint32_t global_tensor_id,
         absl::StrCat("Failed to look up ", global_tensor_id, " from cache."));
   }
   const auto& cache_entry = offset_it->second;
+  if (cache_entry.packing_algorithm != packing_algorithm) {
+    return absl::NotFoundError(absl::StrCat(
+        "Packing algorithm mismatch for ", global_tensor_id, ". Expected ",
+        packing_algorithm, ", got ", cache_entry.packing_algorithm));
+  }
   tensor_desc = cache_entry.tensor_desc;
 
   auto file_size = temporary_file_descriptor_.SetPosFromEnd(0);
@@ -389,6 +485,7 @@ absl::Status SerializationWeightCache::LookUp(uint32_t global_tensor_id,
 
 absl::Status SerializationWeightCache::Insert(
     uint32_t global_tensor_id, bool is_quantization_param_tensor,
+    ml_drift::cache::schema::PackingAlgorithm packing_algorithm,
     const TensorDescriptor& tensor_desc) {
   if (!IsBuilding()) {
     return absl::InvalidArgumentError(
@@ -415,15 +512,16 @@ absl::Status SerializationWeightCache::Insert(
   tensor_desc.CopyWithoutData(&tensor_desc_without_data);
 
   BufferLocation location;
-  RETURN_IF_ERROR(
-      builder_.Append(global_tensor_id, is_quantization_param_tensor,
-                      tensor_desc_without_data, ptr, size, location));
+  ABSL_RETURN_IF_ERROR(builder_.Append(
+      global_tensor_id, is_quantization_param_tensor, packing_algorithm,
+      tensor_desc_without_data, ptr, size, location));
 
   global_tensor_id_to_cache_entry_.emplace(
       std::piecewise_construct,
       std::forward_as_tuple(global_tensor_id, is_quantization_param_tensor),
       std::forward_as_tuple(std::move(location),
-                            std::move(tensor_desc_without_data)));
+                            std::move(tensor_desc_without_data),
+                            packing_algorithm));
   return absl::OkStatus();
 }
 

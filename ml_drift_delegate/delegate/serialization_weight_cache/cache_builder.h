@@ -63,7 +63,7 @@ inline constexpr size_t kMaxSupportedSubgraphs = 100;
 // When reading a cache file, the cache should be rejected if `version`
 // doesn't match `kVersion`.
 struct MLDriftCacheHeader {
-  enum : uint64_t { kInvalidHeader = 0, kVersion = 2 };
+  enum : uint64_t { kInvalidHeader = 0, kVersion = 3 };
   // The version of the cache file header. If this doesn't match
   // `kVersion` then the cache file needs to be rebuilt.
   uint64_t version;
@@ -129,10 +129,11 @@ class CacheBuilder {
   //
   // The buffer space must have been reserved before using `Reserve`. If not, a
   // new call to `Reserve` will be done and the data will be copied over.
-  absl::Status Append(uint32_t global_tensor_id,
-                      bool is_quantization_param_tensor,
-                      const TensorDescriptor& tensor_desc, const void* data,
-                      uint64_t size, BufferLocation& loc);
+  absl::Status Append(
+      uint32_t global_tensor_id, bool is_quantization_param_tensor,
+      ml_drift::cache::schema::PackingAlgorithm packing_algorithm,
+      const TensorDescriptor& tensor_desc, const void* data, uint64_t size,
+      BufferLocation& loc);
 
   // Writes the flatbuffer to disk.
   absl::Status StopBuildStep();
@@ -152,6 +153,7 @@ class CacheBuilder {
   // Encode the TensorDescriptor and BufferLocation into a flatbuffer.
   flatbuffers::Offset<ml_drift::cache::schema::Buffer> EncodeBuffer(
       uint32_t global_tensor_id, bool is_quantization_param_tensor,
+      ml_drift::cache::schema::PackingAlgorithm packing_algorithm,
       const TensorDescriptor& tensor_desc, const BufferLocation& loc,
       flatbuffers::FlatBufferBuilder* builder);
 

@@ -160,9 +160,12 @@ TEST(CacheBuilderTest, ReserveAppendWriteWorks) {
       ml_drift::DataType::FLOAT32, ml_drift::TensorStorageType::IMAGE_BUFFER,
       ml_drift::Layout::LINEAR);
   ml_drift::BufferLocation loc;
-  ASSERT_OK(builder.Append(global_tensor_id,
-                           /*is_quantization_param_tensor=*/false, tensor_desc,
-                           buffer, payload_size, loc));
+  ASSERT_OK(
+      builder.Append(global_tensor_id,
+                     /*is_quantization_param_tensor=*/false,
+                     /*packing_algorithm=*/
+                     ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                     tensor_desc, buffer, payload_size, loc));
 
   EXPECT_EQ(loc.size, payload_size);
   EXPECT_GE(builder.capacity(), payload_size);
@@ -235,9 +238,12 @@ TEST(CacheBuilderTest, AppendWithoutReserveWriteWorks) {
       ml_drift::Layout::LINEAR);
   const size_t payload_size = size(payload);
   ml_drift::BufferLocation loc;
-  ASSERT_OK(builder.Append(global_tensor_id,
-                           /*is_quantization_param_tensor=*/false, tensor_desc,
-                           payload.data(), payload_size, loc));
+  ASSERT_OK(
+      builder.Append(global_tensor_id,
+                     /*is_quantization_param_tensor=*/false,
+                     /*packing_algorithm=*/
+                     ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                     tensor_desc, payload.data(), payload_size, loc));
 
   EXPECT_EQ(loc.size, payload_size);
 
@@ -311,12 +317,18 @@ TEST(CacheBuilderTest, AppendWorksWithGlobalIdCollision) {
   ml_drift::BufferLocation loc;
   // Add both the quantization and non-quantization tensor with the same global
   // tensor id.
-  ASSERT_OK(builder.Append(global_tensor_id,
-                           /*is_quantization_param_tensor=*/false, tensor_desc,
-                           buffer, payload_size, loc));
-  ASSERT_OK(builder.Append(global_tensor_id,
-                           /*is_quantization_param_tensor=*/true, tensor_desc,
-                           buffer, payload_size, loc));
+  ASSERT_OK(
+      builder.Append(global_tensor_id,
+                     /*is_quantization_param_tensor=*/false,
+                     /*packing_algorithm=*/
+                     ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                     tensor_desc, buffer, payload_size, loc));
+  ASSERT_OK(
+      builder.Append(global_tensor_id,
+                     /*is_quantization_param_tensor=*/true,
+                     /*packing_algorithm=*/
+                     ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                     tensor_desc, buffer, payload_size, loc));
 
   EXPECT_EQ(loc.size, payload_size);
   EXPECT_GE(builder.capacity(), payload_size);
@@ -443,8 +455,10 @@ TEST(CacheBuilderTest, MultipleStepBuild) {
         ml_drift::DataType::FLOAT32, ml_drift::TensorStorageType::IMAGE_BUFFER,
         ml_drift::Layout::LINEAR);
     ml_drift::BufferLocation loc;
-    ASSERT_OK(builder.Append(dummy_id1, false, tensor_desc, buffer,
-                             payload_size, loc));
+    ASSERT_OK(
+        builder.Append(dummy_id1, false, /*packing_algorithm=*/
+                       ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                       tensor_desc, buffer, payload_size, loc));
     EXPECT_EQ(loc.size, payload_size);
     EXPECT_GE(builder.capacity(), payload_size);
   }
@@ -456,8 +470,10 @@ TEST(CacheBuilderTest, MultipleStepBuild) {
         ml_drift::DataType::FLOAT32, ml_drift::TensorStorageType::IMAGE_BUFFER,
         ml_drift::Layout::LINEAR);
     ml_drift::BufferLocation loc;
-    ASSERT_OK(builder.Append(dummy_id3, false, tensor_desc, buffer,
-                             payload_size, loc));
+    ASSERT_OK(
+        builder.Append(dummy_id3, false, /*packing_algorithm=*/
+                       ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                       tensor_desc, buffer, payload_size, loc));
   }
 
   ASSERT_OK(builder.StopBuildStep());
@@ -474,8 +490,10 @@ TEST(CacheBuilderTest, MultipleStepBuild) {
         ml_drift::DataType::FLOAT32, ml_drift::TensorStorageType::IMAGE_BUFFER,
         ml_drift::Layout::LINEAR);
     ml_drift::BufferLocation loc;
-    ASSERT_OK(builder.Append(dummy_id2, false, tensor_desc, buffer,
-                             payload_size, loc));
+    ASSERT_OK(
+        builder.Append(dummy_id2, false, /*packing_algorithm=*/
+                       ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                       tensor_desc, buffer, payload_size, loc));
     EXPECT_EQ(loc.size, payload_size);
     EXPECT_GE(builder.capacity(), payload_size);
   }
@@ -582,7 +600,10 @@ TEST(CacheBuilderTest, FlatBufferDoesNotGrowUnnecessarilyAcrossSteps) {
         ml_drift::DataType::FLOAT32, ml_drift::TensorStorageType::IMAGE_BUFFER,
         ml_drift::Layout::LINEAR);
     ml_drift::BufferLocation loc;
-    ASSERT_OK(builder.Append(i, false, tensor_desc, buffer, payload_size, loc));
+    ASSERT_OK(
+        builder.Append(i, false, /*packing_algorithm=*/
+                       ml_drift::cache::schema::PackingAlgorithm_LAYOUT_UNKNOWN,
+                       tensor_desc, buffer, payload_size, loc));
     ASSERT_OK(builder.StopBuildStep());
 
     MMapHandle handle;

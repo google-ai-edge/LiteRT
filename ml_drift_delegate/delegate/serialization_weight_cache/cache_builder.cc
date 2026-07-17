@@ -228,10 +228,10 @@ absl::Status CacheBuilder::StartBuildStep(uint64_t unique_model_identifier) {
                   Decode(buffer->tensor_descriptor(), &tensor_desc));
               BufferLocation loc = {static_cast<size_t>(buffer->offset()),
                                     static_cast<size_t>(buffer->size())};
-              auto buffer_fb =
-                  EncodeBuffer(buffer->global_tensor_id(),
-                               buffer->is_quantization_param_tensor(),
-                               tensor_desc, loc, &builder_);
+              auto buffer_fb = EncodeBuffer(
+                  buffer->global_tensor_id(),
+                  buffer->is_quantization_param_tensor(),
+                  buffer->packing_algorithm(), tensor_desc, loc, &builder_);
               existing_buffers.push_back(buffer_fb);
             }
           }
@@ -258,9 +258,9 @@ absl::Status CacheBuilder::StartBuildStep(uint64_t unique_model_identifier) {
         RETURN_IF_ERROR(Decode(buffer->tensor_descriptor(), &tensor_desc));
         BufferLocation loc = {static_cast<size_t>(buffer->offset()),
                               static_cast<size_t>(buffer->size())};
-        auto buffer_fb = EncodeBuffer(buffer->global_tensor_id(),
-                                      buffer->is_quantization_param_tensor(),
-                                      tensor_desc, loc, &builder_);
+        auto buffer_fb = EncodeBuffer(
+            buffer->global_tensor_id(), buffer->is_quantization_param_tensor(),
+            buffer->packing_algorithm(), tensor_desc, loc, &builder_);
         buffer_fb_list_.push_back(buffer_fb);
       }
     }
@@ -292,11 +292,11 @@ void* CacheBuilder::Reserve(size_t size) {
       Align(reinterpret_cast<size_t>(data_.get()), kMinAlignment));
 }
 
-absl::Status CacheBuilder::Append(uint32_t global_tensor_id,
-                                  bool is_quantization_param_tensor,
-                                  const TensorDescriptor& tensor_desc,
-                                  const void* data, uint64_t size,
-                                  BufferLocation& loc) {
+absl::Status CacheBuilder::Append(
+    uint32_t global_tensor_id, bool is_quantization_param_tensor,
+    ml_drift::cache::schema::PackingAlgorithm packing_algorithm,
+    const TensorDescriptor& tensor_desc, const void* data, uint64_t size,
+    BufferLocation& loc) {
   if (!IsStarted()) {
     return absl::InvalidArgumentError(
         "Cannot append data to an unstarted builder.");
@@ -319,7 +319,7 @@ absl::Status CacheBuilder::Append(uint32_t global_tensor_id,
   loc.size = size;
 
   auto buffer_fb = EncodeBuffer(global_tensor_id, is_quantization_param_tensor,
-                                tensor_desc, loc, &builder_);
+                                packing_algorithm, tensor_desc, loc, &builder_);
 
   if (!fd_.Write(data, size)) {
     loc = BufferLocation::Invalid();
@@ -421,6 +421,7 @@ absl::Status CacheBuilder::StopBuildStep() {
 
 flatbuffers::Offset<ml_drift::cache::schema::Buffer> CacheBuilder::EncodeBuffer(
     uint32_t global_tensor_id, bool is_quantization_param_tensor,
+    ml_drift::cache::schema::PackingAlgorithm packing_algorithm,
     const TensorDescriptor& tensor_desc, const BufferLocation& loc,
     flatbuffers::FlatBufferBuilder* builder) {
   auto tensor_desc_fb = Encode(tensor_desc, builder);
@@ -430,6 +431,7 @@ flatbuffers::Offset<ml_drift::cache::schema::Buffer> CacheBuilder::EncodeBuffer(
   buffer_builder.add_is_quantization_param_tensor(is_quantization_param_tensor);
   buffer_builder.add_offset(loc.offset);
   buffer_builder.add_size(loc.size);
+  buffer_builder.add_packing_algorithm(packing_algorithm);
   return buffer_builder.Finish();
 }
 

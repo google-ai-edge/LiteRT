@@ -54,6 +54,7 @@
 // clang-format off
 #include "ml_drift_delegate/delegate/quantization_util.h"
 #include "ml_drift_delegate/delegate/serialization_program_cache/serialization_program_cache.h"
+#include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_schema_generated.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 // clang-format on
 #include "ml_drift_delegate/delegate/composite/custom_parsers.h"
@@ -467,8 +468,12 @@ if (delegate_data_->options->convert_weights_on_gpu &&
             RETURN_IF_ERROR(
                 backend_->ReadSpatialTensorToDescriptor(*tensor, descriptor));
             // Insert the descriptor to the cache.
+            ABSL_ASSIGN_OR_RETURN(
+                ::ml_drift::cache::schema::PackingAlgorithm packing_algorithm,
+                shared_mem_manager->GetPackingAlgorithm(global_id.value));
             RETURN_IF_ERROR(shared_memory_serialization_cache->Insert(
-                global_id.value, !global_id.IsSourceId(), descriptor));
+                global_id.value, !global_id.IsSourceId(), packing_algorithm,
+                descriptor));
             // Release the tensor memory.
             if (require_serialization_cache_on_first_load) {
               RETURN_IF_ERROR(
@@ -510,9 +515,13 @@ if (delegate_data_->options->convert_weights_on_gpu &&
           UnownedDataTensorDescriptor unowned_data_tensor_desc;
           size_t page_adjusted_offset;
           ReleaseDataCallback release_data_callback;
+          ABSL_ASSIGN_OR_RETURN(
+              ::ml_drift::cache::schema::PackingAlgorithm packing_algorithm,
+              shared_mem_manager->GetPackingAlgorithm(global_id.value));
           RETURN_IF_ERROR(shared_memory_serialization_cache->LookUp(
-              global_id.value, global_id.IsParamId(), unowned_data_tensor_desc,
-              page_adjusted_offset, release_data_callback));
+              global_id.value, global_id.IsParamId(), packing_algorithm,
+              unowned_data_tensor_desc, page_adjusted_offset,
+              release_data_callback));
           ::ml_drift::GpuSpatialTensor* spatial_tensor = nullptr;
           if (global_id.IsSourceId()) {
             spatial_tensor = buffer_map[global_id.value].GetWeights();

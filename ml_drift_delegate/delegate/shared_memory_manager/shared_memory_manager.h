@@ -41,6 +41,7 @@
 // clang-format off
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 // clang-format on
+#include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_schema_generated.h"
 #include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "tflite/core/c/common.h"
 
@@ -237,7 +238,12 @@ class SharedMemoryManager {
     return weight_id_to_external_buffer_id_;
   }
 
+  absl::StatusOr<ml_drift::cache::schema::PackingAlgorithm> GetPackingAlgorithm(
+      uint32_t global_tensor_id) const;
+
  private:
+  absl::flat_hash_map<uint32_t, ml_drift::cache::schema::PackingAlgorithm>
+      global_tensor_id_to_packing_algorithm_;
   absl::Status CreateSharedTensor(
       const ValueId& shared_tensor_id,
       const ::litert::ml_drift::SharedTfliteTensor& shared_tflite_tensor,
@@ -280,12 +286,16 @@ class SharedMemoryManager {
 
   // If the tensor was prepacked and serialized previously in the
   // serialization_cache_, restore it from the serialized data.
-  absl::Status TryRestoringSerializedTensor(uint32_t global_tensor_id,
-                                            SharedConstTensor& shared_tensor);
+  absl::Status TryRestoringSerializedTensor(
+      uint32_t global_tensor_id,
+      ml_drift::cache::schema::PackingAlgorithm packing_algorithm,
+      SharedConstTensor& shared_tensor);
 
   // If serialization is enabled, store the serialized tensor descriptor.
-  absl::Status TryStoringSerializedTensor(uint32_t global_tensor_id,
-                                          const TensorDescriptor& tensor_desc);
+  absl::Status TryStoringSerializedTensor(
+      uint32_t global_tensor_id,
+      ml_drift::cache::schema::PackingAlgorithm packing_algorithm,
+      const TensorDescriptor& tensor_desc);
 
   // Creates quantized int8 weights tensor, applying weights rearrangement
   // required by inference.

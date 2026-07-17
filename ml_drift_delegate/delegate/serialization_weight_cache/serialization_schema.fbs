@@ -16,6 +16,38 @@ include "third_party/ml_drift/common/task/serialization_base.fbs";
 
 namespace ml_drift.cache.schema;
 
+enum PackingAlgorithm:uint32 {
+  // From ml_drift::Layout
+  LAYOUT_UNKNOWN = 0,
+  LAYOUT_SCALAR = 1,
+  LAYOUT_LINEAR = 2,
+  LAYOUT_HW = 3,
+  LAYOUT_CHW = 4,
+  LAYOUT_HWC = 5,
+  LAYOUT_OIHW = 6,
+  LAYOUT_OHWI = 7,
+  LAYOUT_IHWO = 8,
+  LAYOUT_IOHW = 9,
+  LAYOUT_BHWC = 10,
+  LAYOUT_HWDC = 11,
+  LAYOUT_BHWDC = 12,
+  LAYOUT_HWD = 13,
+
+  // From ml_drift::WeightsLayout
+  WEIGHTS_LAYOUT_UNKNOWN = 100,
+  WEIGHTS_LAYOUT_O_SPATIAL_I_O_GROUP_I4O4 = 101,
+  WEIGHTS_LAYOUT_O_SPATIAL_I_O_GROUP_O4I4 = 102,
+  WEIGHTS_LAYOUT_O_I_SPATIAL_O_GROUP_I4O4 = 103,
+  WEIGHTS_LAYOUT_O_I_SPATIAL_O_GROUP_O4I4 = 104,
+  WEIGHTS_LAYOUT_O_I_CUSTOM_SPATIAL_I4O4 = 105,
+  WEIGHTS_LAYOUT_O_I_CUSTOM_SPATIAL_O4I4 = 106,
+  WEIGHTS_LAYOUT_I_SPATIAL_O_I4O4_UNALIGNED_I_O = 107,
+  WEIGHTS_LAYOUT_2D_X4I4_Y_IS_SPATIAL_I_AND_X_IS_O_GROUP_O4 = 108,
+  WEIGHTS_LAYOUT_2D_X4O4_Y_IS_SPATIAL_I_AND_X_IS_O_GROUP_I4 = 109,
+  WEIGHTS_LAYOUT_2D_Y_IS_SPATIAL_I_O_AND_X_IS_O_GROUP_I4O4 = 110,
+  WEIGHTS_LAYOUT_CUSTOM_GROUPS = 111,
+}
+
 table Buffer {
   // global_tensor_id for the tensor_descriptor.
   global_tensor_id:uint32;
@@ -35,6 +67,9 @@ table Buffer {
 
   // Size of the buffer in bytes.
   size:uint64;
+
+  // The algorithm used to pack the buffer.
+  packing_algorithm:PackingAlgorithm;
 }
 
 table SubgraphBufferList {
