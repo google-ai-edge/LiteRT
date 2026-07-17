@@ -23,6 +23,10 @@ package(
 cc_library(
     name = "mixin",
     hdrs = ["mixin.h"],
+    deps = [
+        ":graph",
+        ":type_id",
+    ],
 )
 
 cc_library(
