@@ -23,6 +23,7 @@ cc_library(
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@com_github_nlohmann_json//:json",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",

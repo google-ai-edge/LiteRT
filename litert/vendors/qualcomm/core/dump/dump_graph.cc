@@ -4,11 +4,13 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "nlohmann/json.hpp"  // from @com_github_nlohmann_json
 #include "litert/vendors/qualcomm/core/utils/log.h"
@@ -20,6 +22,68 @@
 namespace qnn {
 
 namespace {
+
+std::optional<uint32_t> GetBitwidthFromDataType(Qnn_DataType_t data_type) {
+  switch (data_type) {
+    case QNN_DATATYPE_SFIXED_POINT_8:
+    case QNN_DATATYPE_UFIXED_POINT_8:
+      return 8;
+    case QNN_DATATYPE_SFIXED_POINT_16:
+    case QNN_DATATYPE_UFIXED_POINT_16:
+      return 16;
+    case QNN_DATATYPE_SFIXED_POINT_32:
+    case QNN_DATATYPE_UFIXED_POINT_32:
+      return 32;
+    default:
+      return {};
+  }
+}
+
+bool IsFixedPointType(Qnn_DataType_t dt) {
+  switch (dt) {
+    case QNN_DATATYPE_SFIXED_POINT_8:
+    case QNN_DATATYPE_SFIXED_POINT_16:
+    case QNN_DATATYPE_SFIXED_POINT_32:
+    case QNN_DATATYPE_UFIXED_POINT_8:
+    case QNN_DATATYPE_UFIXED_POINT_16:
+    case QNN_DATATYPE_UFIXED_POINT_32:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool IsSignedFixedPointType(Qnn_DataType_t dt) {
+  switch (dt) {
+    case QNN_DATATYPE_SFIXED_POINT_8:
+    case QNN_DATATYPE_SFIXED_POINT_16:
+    case QNN_DATATYPE_SFIXED_POINT_32:
+      return true;
+    default:
+      return false;
+  }
+}
+
+nlohmann::json MakeScaleOffsetJson(float scale, int32_t offset, uint32_t bw,
+                                   Qnn_DataType_t data_type) {
+  if (bw == 0) {
+    QNN_LOG_WARNING("Quantization bitwidth is 0 in Qnn Json dump");
+    return {};
+  }
+  const bool signed_fp = IsSignedFixedPointType(data_type);
+  const int64_t half = int64_t(1) << (bw - 1);
+  const int64_t min_q = signed_fp ? -half : 0;
+  const int64_t max_q = signed_fp ? half - 1 : (half << 1) - 1;
+
+  return nlohmann::json{{"bitwidth", bw},
+                        {"minimum", scale * (min_q + offset)},
+                        {"maximum", scale * (max_q + offset)},
+                        {"scale", scale},
+                        {"offset", offset},
+                        {"is_symmetric", signed_fp && (offset == 0)},
+                        {"is_fixed_point", IsFixedPointType(data_type)}};
+}
+
 template <typename T>
 nlohmann::json ReshapeDataRecursive(uint32_t& cur_index, T* data,
                                     uint32_t num_elements,
@@ -57,56 +121,67 @@ nlohmann::json ReshapeData(void* buffer_data, uint32_t buffer_size,
   uint32_t ind = 0;
   return ReshapeDataRecursive<T>(ind, data, buffer_size / sizeof(T), dims);
 }
+
+// Formats the "params_count" field.
+std::string FormatParamsCount(uint64_t count, uint64_t total_params) {
+  const double percentage =
+      total_params == 0 ? 0.0 : 100.0 * count / total_params;
+  return absl::StrFormat("%u (%.3g%%)", count, percentage);
+}
 }  // namespace
 
 nlohmann::json SerializeQuantParamToJson(
-    const Qnn_QuantizeParams_t& quant_params) {
+    const Qnn_QuantizeParams_t& quant_params, Qnn_DataType_t data_type) {
   nlohmann::json qnn_quant_params = {
       {"definition", quant_params.encodingDefinition},
       {"encoding", quant_params.quantizationEncoding}};
+  const auto bw = GetBitwidthFromDataType(data_type);
+  if (!bw) {
+    QNN_LOG_WARNING(
+        "Quantization data type: %u is not supported in Qnn Json dump",
+        data_type);
+    return qnn_quant_params;
+  }
   // TODO (jiunkaiy): Support more quant encoding.
   if (quant_params.quantizationEncoding ==
       QNN_QUANTIZATION_ENCODING_SCALE_OFFSET) {
-    qnn_quant_params["scale_offset"] = {
-        {"scale", quant_params.scaleOffsetEncoding.scale},
-        {"offset", quant_params.scaleOffsetEncoding.offset}};
+    qnn_quant_params["scale_offset"] = MakeScaleOffsetJson(
+        quant_params.scaleOffsetEncoding.scale,
+        quant_params.scaleOffsetEncoding.offset, bw.value(), data_type);
   } else if (quant_params.quantizationEncoding ==
              QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET) {
-    qnn_quant_params["scale_offset"] = {
-        {"bitwidth", quant_params.bwScaleOffsetEncoding.bitwidth},
-        {"scale", quant_params.bwScaleOffsetEncoding.scale},
-        {"offset", quant_params.bwScaleOffsetEncoding.offset}};
+    qnn_quant_params["scale_offset"] = MakeScaleOffsetJson(
+        quant_params.bwScaleOffsetEncoding.scale,
+        quant_params.bwScaleOffsetEncoding.offset,
+        quant_params.bwScaleOffsetEncoding.bitwidth, data_type);
   } else if (quant_params.quantizationEncoding ==
              QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET) {
+    const auto& encoding = quant_params.axisScaleOffsetEncoding;
     std::vector<nlohmann::json> scale_offsets;
-    uint32_t num_scale_offsets =
-        quant_params.axisScaleOffsetEncoding.numScaleOffsets;
-    scale_offsets.reserve(num_scale_offsets);
-    for (int i = 0; i < num_scale_offsets; ++i) {
-      scale_offsets.emplace_back(nlohmann::json{
-          {"scale", quant_params.axisScaleOffsetEncoding.scaleOffset[i].scale},
-          {"offset",
-           quant_params.axisScaleOffsetEncoding.scaleOffset[i].offset}});
+    scale_offsets.reserve(encoding.numScaleOffsets);
+    for (uint32_t i = 0; i < encoding.numScaleOffsets; ++i) {
+      scale_offsets.emplace_back(MakeScaleOffsetJson(
+          encoding.scaleOffset[i].scale, encoding.scaleOffset[i].offset,
+          bw.value(), data_type));
     }
     qnn_quant_params["axis_scale_offset"] = {
-        {"axis", quant_params.axisScaleOffsetEncoding.axis},
-        {"num_scale_offsets", num_scale_offsets},
+        {"axis", encoding.axis},
+        {"num_scale_offsets", encoding.numScaleOffsets},
         {"scale_offsets", scale_offsets},
     };
   } else if (quant_params.quantizationEncoding ==
              QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET) {
+    const auto& encoding = quant_params.bwAxisScaleOffsetEncoding;
     std::vector<nlohmann::json> scale_offsets;
-    uint32_t num_elements = quant_params.bwAxisScaleOffsetEncoding.numElements;
-    scale_offsets.reserve(num_elements);
-    for (int i = 0; i < num_elements; ++i) {
-      scale_offsets.emplace_back(nlohmann::json{
-          {"bitwidth", quant_params.bwAxisScaleOffsetEncoding.bitwidth},
-          {"scale", quant_params.bwAxisScaleOffsetEncoding.scales[i]},
-          {"offset", quant_params.bwAxisScaleOffsetEncoding.offsets[i]}});
+    scale_offsets.reserve(encoding.numElements);
+    for (uint32_t i = 0; i < encoding.numElements; ++i) {
+      scale_offsets.emplace_back(
+          MakeScaleOffsetJson(encoding.scales[i], encoding.offsets[i],
+                              encoding.bitwidth, data_type));
     }
     qnn_quant_params["axis_scale_offset"] = {
-        {"axis", quant_params.bwAxisScaleOffsetEncoding.axis},
-        {"num_scale_offsets", num_elements},
+        {"axis", encoding.axis},
+        {"num_scale_offsets", encoding.numElements},
         {"scale_offsets", scale_offsets},
     };
   } else {
@@ -115,6 +190,7 @@ nlohmann::json SerializeQuantParamToJson(
         "Json dump",
         quant_params.quantizationEncoding);
   }
+  qnn_quant_params["is_overridden"] = true;
   return qnn_quant_params;
 }
 
@@ -124,15 +200,32 @@ nlohmann::json SerializeTensorToJson(const Qnn_TensorV1_t& qnn_tensor) {
   qnn_tensor_json["type"] = qnn_tensor.type;
   qnn_tensor_json["dataFormat"] = qnn_tensor.dataFormat;
   qnn_tensor_json["data_type"] = qnn_tensor.dataType;
-  qnn_tensor_json["dims"] =
-      absl::Span<uint32_t>(qnn_tensor.dimensions, qnn_tensor.rank);
+  // Unquantized data type: fixed-point types originated from float32 in TFLite;
+  // all other types map to themselves.
+  qnn_tensor_json["unquantized_data_type"] = static_cast<uint32_t>(
+      IsFixedPointType(qnn_tensor.dataType) ? QNN_DATATYPE_FLOAT_32
+                                            : qnn_tensor.dataType);
+  // LiteRT uses the same layout as TFLite, so no axis reordering is needed.
+  nlohmann::json permute = nlohmann::json::array();
+  for (uint32_t i = 0; i < qnn_tensor.rank; ++i) {
+    permute.push_back(i);
+  }
+  qnn_tensor_json["permute_order_to_src"] = permute;
 
   const Qnn_QuantizeParams_t& quant_params = qnn_tensor.quantizeParams;
-  if (quant_params.encodingDefinition != QNN_DEFINITION_DEFINED) {
-    return qnn_tensor_json;
+  if (quant_params.encodingDefinition == QNN_DEFINITION_DEFINED) {
+    qnn_tensor_json["quant_params"] =
+        SerializeQuantParamToJson(quant_params, qnn_tensor.dataType);
   }
-  // Add basic key-value pairs for quant_params.
-  qnn_tensor_json["quant_params"] = SerializeQuantParamToJson(quant_params);
+
+  qnn_tensor_json["dims"] =
+      absl::Span<uint32_t>(qnn_tensor.dimensions, qnn_tensor.rank);
+  qnn_tensor_json["is_quantizable"] =
+      (qnn_tensor.dataType == QNN_DATATYPE_FLOAT_32);
+  // TODO(jiunkaiy): Revisit the hard-coded key-value if LiteRT is updated to
+  // use tensor v2 feature.
+  qnn_tensor_json["is_dynamic_dims"] = nlohmann::json::array();
+  qnn_tensor_json["is_updateable"] = false;
   return qnn_tensor_json;
 }
 
@@ -231,9 +324,11 @@ nlohmann::json SerializeOpToJson(const Qnn_OpConfig_t& op_config) {
     qnn_node_json["output_names"].emplace_back(
         op_config.v1.outputTensors[i].v1.name);
   }
-  // Create macs_per_inferences and op type.
-  qnn_node_json["macs_per_inference"] = "";
+  // LiteRT compile flow does not retrieve "macs_per_inference".
+  qnn_node_json["macs_per_inference"] = "0";
+  // Create type and package.
   qnn_node_json["type"] = op_config.v1.typeName;
+  qnn_node_json["package"] = op_config.v1.packageName;
   // Create scalar_params and tensor_params.
   qnn_node_json["scalar_params"] = nlohmann::json::object();
   qnn_node_json["tensor_params"] = nlohmann::json::object();
@@ -249,6 +344,20 @@ nlohmann::json SerializeOpToJson(const Qnn_OpConfig_t& op_config) {
                    [qnn_tensor.name] = qnn_tensor_json;
     }
   }
+  // Every node reports its op package as a scalar param.
+  qnn_node_json["scalar_params"]["packageName"] = SerializeScalarParamToJson(
+      Qnn_Scalar_t{.dataType = QNN_DATATYPE_STRING,
+                   .stringValue = op_config.v1.packageName});
+  // Build param_map from the populated scalar_params and tensor_params:
+  // scalar params map to 2 and tensor params map to 1.
+  nlohmann::json param_map = nlohmann::json::object();
+  for (const auto& [name, value] : qnn_node_json["scalar_params"].items()) {
+    param_map[name] = 2;
+  }
+  for (const auto& [name, value] : qnn_node_json["tensor_params"].items()) {
+    param_map[name] = 1;
+  }
+  qnn_node_json["param_map"] = param_map;
   return qnn_node_json;
 }
 
@@ -269,8 +378,6 @@ void DumpIrJson(
       {"copyright_str",
        "Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved."},
       {"op_types", nlohmann::json::array()},
-      {"Total parameters", ""},
-      {"Total MACs per inference", ""},
       {"graph",
        {{"tensors", nlohmann::json::object()},
         {"nodes", nlohmann::json::object()}}}};
@@ -292,6 +399,18 @@ void DumpIrJson(
     }
   }
   // Dump Qnn Tensors.
+  // First pass: accumulate the total element count over all static (weight and
+  // bias) tensors, so each static tensor can report its share of the model
+  // parameters in "params_count".
+  uint64_t total_params = 0;
+  for (const TensorWrapper* tensor : tensor_wrappers) {
+    if (param_tensor_ids.count(tensor->GetId()) > 0) {
+      continue;
+    }
+    if (tensor->GetQnnTensor().v1.type == QNN_TENSOR_TYPE_STATIC) {
+      total_params += tensor->GetTensorNumElements();
+    }
+  }
   for (const TensorWrapper* tensor : tensor_wrappers) {
     // Skip tensor params.
     if (param_tensor_ids.count(tensor->GetId()) > 0) {
@@ -300,6 +419,10 @@ void DumpIrJson(
     // Create tensors.
     nlohmann::json qnn_tensor_json =
         SerializeTensorToJson(tensor->GetQnnTensor().v1);
+    if (tensor->GetQnnTensor().v1.type == QNN_TENSOR_TYPE_STATIC) {
+      qnn_tensor_json["params_count"] =
+          FormatParamsCount(tensor->GetTensorNumElements(), total_params);
+    }
     ir_json["graph"]["tensors"][tensor->GetName()] = qnn_tensor_json;
   }
   // Dumpe Qnn op types.
