@@ -137,4 +137,4 @@ def litert_jni_friends():
     Return the package group declaration for internal code locations that use
     "litert/kotlin:litert_api_no_jni" and "litert/kotlin:litert_api_jni" libraries directly."""
 
-    return ["//visibility:private"]
+    return []

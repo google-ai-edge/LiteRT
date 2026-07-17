@@ -77,6 +77,7 @@ cc_test(
     deps = [
         ":qualcomm_flags",
         "//litert/c/options:litert_qualcomm_options",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_qualcomm_options",
         "@com_google_absl//absl/strings:string_view",
@@ -137,6 +138,7 @@ cc_test(
         ":google_tensor_flags",
         "//litert/c/options:litert_google_tensor_options",
         "//litert/c/options:litert_google_tensor_options_type",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_google_tensor_options",
         "@com_google_absl//absl/flags:flag",
@@ -197,6 +199,7 @@ cc_test(
     deps = [
         ":mediatek_flags",
         "//litert/c/options:litert_mediatek_options",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_mediatek_options",
         "@com_google_absl//absl/flags:flag",
@@ -263,6 +266,7 @@ cc_test(
     deps = [
         ":intel_openvino_flags",
         "//litert/c/options:litert_intel_openvino_options",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_intel_openvino_options",
         "//litert/test:matchers",

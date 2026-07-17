@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <utility>
 
+#include "litert/c/internal/litert_runtime_builtin.h"
 #include "litert/c/internal/litert_runtime_c_api.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
@@ -35,7 +36,6 @@
 #include "litert/c/litert_opencl_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/litert_webgpu_types.h"
-#include "litert/cc/internal/litert_runtime_builtin.h"
 #include "litert/cc/litert_api_types.h"
 
 namespace litert {
