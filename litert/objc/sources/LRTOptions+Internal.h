@@ -12,28 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#import <XCTest/XCTest.h>
-
 #import "third_party/odml/litert/litert/objc/apis/LRTOptions.h"
 
-@interface LRTOptionsTests : XCTestCase
-@end
+#include "litert/cc/litert_options.h"
 
-@implementation LRTOptionsTests
+NS_ASSUME_NONNULL_BEGIN
 
-- (void)testDefaultHardwareAcceleratorsIsNone {
-  LRTOptions *options = [[LRTOptions alloc] init];
-  XCTAssertNotNil(options);
-  XCTAssertEqual(options.hardwareAccelerators, LRTHardwareAcceleratorNone);
-}
+@interface LRTOptions (Internal)
 
-- (void)testInitWithHardwareAccelerators {
-  LRTHardwareAccelerators expectedFlags =
-      LRTHardwareAcceleratorCPU | LRTHardwareAcceleratorNPU;
-  LRTOptions *options =
-      [[LRTOptions alloc] initWithHardwareAccelerators:expectedFlags];
-  XCTAssertNotNil(options);
-  XCTAssertEqual(options.hardwareAccelerators, expectedFlags);
-}
+/** Pointer to the underlying C++ @c litert::Options object. */
+- (litert::Options *)cppOptions;
 
 @end
+
+NS_ASSUME_NONNULL_END

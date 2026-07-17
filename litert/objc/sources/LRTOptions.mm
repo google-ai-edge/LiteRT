@@ -17,6 +17,7 @@
 #include <cstdint>
 
 #include "litert/cc/litert_options.h"
+#import "third_party/odml/litert/litert/objc/sources/LRTOptions+Internal.h"
 
 namespace {
 
