@@ -54,6 +54,18 @@ TEST(IrJsonDump, SerializeOpToJson) {
   ASSERT_TRUE(qnn_op.contains("tensor_params"));
   ASSERT_TRUE(qnn_op.contains("type"));
   EXPECT_EQ(qnn_op["type"], "MatMul");
+  // package: op package name from op_config.v1.packageName.
+  ASSERT_TRUE(qnn_op.contains("package"));
+  EXPECT_EQ(qnn_op["package"], QNN_OP_PACKAGE_NAME_QTI_AISW);
+  // param_map: all LiteRT params are IR_ATTR_USAGE_CORE (1).
+  ASSERT_TRUE(qnn_op.contains("param_map"));
+  ASSERT_TRUE(qnn_op["param_map"].contains("transpose_in0"));
+  EXPECT_EQ(qnn_op["param_map"]["transpose_in0"], 1);
+  ASSERT_TRUE(qnn_op["param_map"].contains("transpose_in1"));
+  EXPECT_EQ(qnn_op["param_map"]["transpose_in1"], 1);
+  // macs_per_inference: hardcoded "0" placeholder.
+  ASSERT_TRUE(qnn_op.contains("macs_per_inference"));
+  EXPECT_EQ(qnn_op["macs_per_inference"], "0");
 }
 
 TEST(IrJsonDump, SerializeQuantParamToJson) {
@@ -64,14 +76,45 @@ TEST(IrJsonDump, SerializeQuantParamToJson) {
           0.003f, /*scale*/
           0       /*offset*/
       }}};
-  nlohmann::json quant_info = SerializeQuantParamToJson(quant_params);
+  // UFIXED_POINT_8: unsigned 8-bit, min=0, max=255*scale, is_symmetric=false.
+  nlohmann::json quant_info =
+      SerializeQuantParamToJson(quant_params, QNN_DATATYPE_UFIXED_POINT_8);
   ASSERT_TRUE(quant_info.contains("definition"));
   ASSERT_TRUE(quant_info.contains("encoding"));
   ASSERT_TRUE(quant_info.contains("scale_offset"));
-  ASSERT_TRUE(quant_info["scale_offset"].contains("scale"));
-  ASSERT_TRUE(quant_info["scale_offset"].contains("offset"));
-  EXPECT_EQ(quant_info["scale_offset"]["scale"], 0.003f);
-  EXPECT_EQ(quant_info["scale_offset"]["offset"], 0);
+  const auto& so = quant_info["scale_offset"];
+  ASSERT_TRUE(so.contains("scale"));
+  EXPECT_EQ(so["scale"], 0.003f);
+  ASSERT_TRUE(so.contains("offset"));
+  EXPECT_EQ(so["offset"], 0);
+  ASSERT_TRUE(so.contains("bitwidth"));
+  EXPECT_EQ(so["bitwidth"], 8u);
+  ASSERT_TRUE(so.contains("minimum"));
+  EXPECT_FLOAT_EQ(so["minimum"].get<float>(), 0.0f);  // 0.003 * (0 + 0)
+  ASSERT_TRUE(so.contains("maximum"));
+  EXPECT_FLOAT_EQ(so["maximum"].get<float>(),
+                  0.003f * 255);  // 0.003 * (255 + 0)
+  ASSERT_TRUE(so.contains("is_symmetric"));
+  EXPECT_FALSE(so["is_symmetric"].get<bool>());  // unsigned → never symmetric
+  ASSERT_TRUE(so.contains("is_fixed_point"));
+  EXPECT_TRUE(so["is_fixed_point"].get<bool>());
+  // is_overridden: always true since quant params come from TFLite (external).
+  ASSERT_TRUE(quant_info.contains("is_overridden"));
+  EXPECT_TRUE(quant_info["is_overridden"].get<bool>());
+
+  // SFIXED_POINT_8 with offset=0: signed symmetric, min=-128*scale,
+  // max=127*scale.
+  const Qnn_QuantizeParams_t signed_quant_params = {
+      QNN_DEFINITION_DEFINED,
+      QNN_QUANTIZATION_ENCODING_SCALE_OFFSET,
+      {{0.003f, 0}}};
+  nlohmann::json signed_info = SerializeQuantParamToJson(
+      signed_quant_params, QNN_DATATYPE_SFIXED_POINT_8);
+  EXPECT_TRUE(signed_info["scale_offset"]["is_symmetric"].get<bool>());
+  EXPECT_FLOAT_EQ(signed_info["scale_offset"]["minimum"].get<float>(),
+                  0.003f * (-128));
+  EXPECT_FLOAT_EQ(signed_info["scale_offset"]["maximum"].get<float>(),
+                  0.003f * 127);
 }
 
 TEST(IrJsonDump, SerializeScalarParamToJson) {
@@ -108,6 +151,23 @@ TEST(IrJsonDump, SerializeTensorAndParamToJson) {
   EXPECT_EQ(tensor_info["type"], qnn_tensor.type);
   ASSERT_EQ(tensor_info["dims"].size(), dims.size());
   EXPECT_EQ(tensor_info["dims"][0], dims[0]);
+
+  ASSERT_TRUE(tensor_info.contains("unquantized_data_type"));
+  EXPECT_EQ(tensor_info["unquantized_data_type"],
+            static_cast<uint32_t>(QNN_DATATYPE_UINT_32));
+
+  ASSERT_TRUE(tensor_info.contains("permute_order_to_src"));
+  ASSERT_EQ(tensor_info["permute_order_to_src"].size(), 1u);
+  EXPECT_EQ(tensor_info["permute_order_to_src"][0], 0u);
+
+  ASSERT_TRUE(tensor_info.contains("is_dynamic_dims"));
+  EXPECT_TRUE(tensor_info["is_dynamic_dims"].empty());
+
+  ASSERT_TRUE(tensor_info.contains("is_quantizable"));
+  EXPECT_FALSE(tensor_info["is_quantizable"].get<bool>());
+
+  ASSERT_TRUE(tensor_info.contains("is_updateable"));
+  EXPECT_FALSE(tensor_info["is_updateable"].get<bool>());
 
   nlohmann::json data = SerializeTensorParamToJson(qnn_tensor);
   ASSERT_EQ(data.size(), axes.size());
@@ -193,6 +253,29 @@ TEST(IrJsonDump, MatMul) {
     double scale = quant_params["scale_offset"]["scale"].get<double>();
     EXPECT_EQ(std::abs(scale - 1e-3) < 1e-4, true);
     EXPECT_EQ(quant_params["scale_offset"]["offset"], 0);
+    ASSERT_TRUE(quant_params["scale_offset"].contains("bitwidth"));
+    EXPECT_EQ(quant_params["scale_offset"]["bitwidth"], 16u);
+    ASSERT_TRUE(quant_params["scale_offset"].contains("is_symmetric"));
+    EXPECT_TRUE(quant_params["scale_offset"]["is_symmetric"].get<bool>());
+    ASSERT_TRUE(quant_params["scale_offset"].contains("is_fixed_point"));
+    EXPECT_TRUE(quant_params["scale_offset"]["is_fixed_point"].get<bool>());
+    ASSERT_TRUE(quant_params.contains("is_overridden"));
+    EXPECT_TRUE(quant_params["is_overridden"].get<bool>());
+    // Check tensor.
+    ASSERT_TRUE(tensor[op_name].contains("unquantized_data_type"));
+    EXPECT_EQ(tensor[op_name]["unquantized_data_type"],
+              static_cast<uint32_t>(QNN_DATATYPE_FLOAT_32));
+    ASSERT_TRUE(tensor[op_name].contains("permute_order_to_src"));
+    ASSERT_EQ(tensor[op_name]["permute_order_to_src"].size(), 4u);
+    for (uint32_t i = 0; i < 4; ++i) {
+      EXPECT_EQ(tensor[op_name]["permute_order_to_src"][i], i);
+    }
+    ASSERT_TRUE(tensor[op_name].contains("is_dynamic_dims"));
+    EXPECT_TRUE(tensor[op_name]["is_dynamic_dims"].empty());
+    ASSERT_TRUE(tensor[op_name].contains("is_quantizable"));
+    EXPECT_TRUE(tensor[op_name]["is_quantizable"].get<bool>());
+    ASSERT_TRUE(tensor[op_name].contains("is_updateable"));
+    EXPECT_FALSE(tensor[op_name]["is_updateable"].get<bool>());
     // Check type.
     ASSERT_TRUE(tensor[op_name].contains("type"));
     EXPECT_EQ(tensor[op_name]["type"], 3);
@@ -211,6 +294,14 @@ TEST(IrJsonDump, MatMul) {
   EXPECT_EQ(node["output_names"][0], "2_qnn");
   // Check macs_per_inference.
   ASSERT_TRUE(node.contains("macs_per_inference"));
+  EXPECT_EQ(node["macs_per_inference"], "0");
+  // Check package.
+  ASSERT_TRUE(node.contains("package"));
+  EXPECT_EQ(node["package"], QNN_OP_PACKAGE_NAME_QTI_AISW);
+  // Check param_map.
+  ASSERT_TRUE(node.contains("param_map"));
+  EXPECT_EQ(node["param_map"]["transpose_in0"], 1);
+  EXPECT_EQ(node["param_map"]["transpose_in1"], 1);
   // Check scalar_params.
   ASSERT_TRUE(node.contains("scalar_params"));
   ASSERT_TRUE(node["scalar_params"].contains("transpose_in0"));
