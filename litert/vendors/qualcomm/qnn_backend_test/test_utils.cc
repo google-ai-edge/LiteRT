@@ -12,6 +12,7 @@
 
 #include <gtest/gtest.h>
 #include "litert/vendors/qualcomm/core/common.h"
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/utils/qnn_model.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
@@ -73,6 +74,6 @@ void QnnModelTest::SetUpQnnModel(const ::qnn::Options& options,
                       qnn_manager_ptr_->Api(), context_handle_.Get());
 
   std::swap(qnn_model_, qnn_model);
-  is_fp16_supported_ = qnn_manager_ptr_->IsFp16Supported();
+  is_fp16_supported_ = ::qnn::IsFp16Supported(qnn_manager_ptr_->GetSocInfo());
 }
 }  // namespace litert::qnn

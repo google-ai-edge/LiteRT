@@ -1705,7 +1705,6 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
                       std::vector<::qnn::TensorWrapper>* inputs = nullptr,
                       std::vector<::qnn::TensorWrapper>* outputs = nullptr) {
   GraphMapper graph_mapper(ctx, subgraph, qnn, context_handle, profile_handle);
-  LITERT_RETURN_IF_ERROR(graph_mapper.IsLiteRtSubgraphSupported());
   LITERT_RETURN_IF_ERROR(graph_mapper.InitQnnGraph(qnn_graph_name, options));
 
   //

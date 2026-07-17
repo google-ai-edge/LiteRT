@@ -40,6 +40,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"  // IWYU pragma: keep
 #include "litert/vendors/qualcomm/common.h"
+#include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
@@ -135,13 +136,6 @@ class QnnManager {
                                  const std::string& interface_provider,
                                  const std::string& target);
 
-  bool IsFp16Supported() {
-    // TODO(jiunkaiy): Remove this function after upgrading to stricter SDK
-    // restrictions.
-    return soc_info_.dsp_arch != ::qnn::DspArch::V68 &&
-           soc_info_.soc_model != ::qnn::SnapdragonModel::SAR2230P;
-  }
-
   // Get qnn backend handle. Nullptr if backendCreate has not been successfully
   // called.
   Qnn_BackendHandle_t BackendHandle() { return backend_->GetBackendHandle(); }
@@ -151,6 +145,12 @@ class QnnManager {
     if (!backend_) return kLiteRtStatusOk;
     if (backend_->SetPerformanceMode(options)) return kLiteRtStatusOk;
     return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  // Builds the backend-specific graph configs for graph creation.
+  ::qnn::GraphConfigBuilder BuildGraphConfigs(
+      const ::qnn::Options& options, absl::string_view qnn_graph_name) {
+    return backend_->BuildGraphConfigs(options, qnn_graph_name);
   }
 
   const ::qnn::Options& GetOptions() const { return options_; }

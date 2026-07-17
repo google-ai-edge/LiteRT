@@ -4,12 +4,18 @@
 #include "litert/vendors/qualcomm/core/backends/ir_backend.h"
 
 #include <array>
+#include <filesystem>
 #include <optional>
+#include <string>
 #include <utility>
 
+#include "IR/QnnIrGraph.h"  // from @qairt
 #include "QnnBackend.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
@@ -42,5 +48,23 @@ bool IrBackend::Init(const Options& options,
   log_handle_ = std::move(local_log_handle);
   backend_handle_ = std::move(local_backend_handle);
   return true;
+}
+
+GraphConfigBuilder IrBackend::BuildGraphConfigs(
+    const Options& options, absl::string_view qnn_graph_name) {
+  GraphConfigBuilder config_builder;
+
+  std::filesystem::path dlc_dir = std::string(options.GetDlcDir());
+  auto& dlc_path = config_builder.Store<std::string>(
+      (dlc_dir / absl::StrCat(qnn_graph_name, ".dlc")).string());
+
+  QnnIrGraph_CustomConfig_t custom_config = QNN_IR_GRAPH_CUSTOM_CONFIG_INIT;
+  custom_config.option = QNN_IR_GRAPH_CONFIG_OPTION_SERIALIZATION;
+  custom_config.serializationOption.serializationType =
+      QNN_IR_GRAPH_SERIALIZATION_TYPE_FLAT_BUFFER;
+  custom_config.serializationOption.outputPath = dlc_path.c_str();
+  config_builder.AddCustomConfig(custom_config);
+
+  return config_builder;
 }
 }  // namespace qnn

@@ -8,15 +8,36 @@
 #include <optional>
 #include <utility>
 
+#include "GPU/QnnGpuGraph.h"  // from @qairt
 #include "QnnBackend.h"  // from @qairt    // from @qairt
 #include "QnnInterface.h"  // from @qairt  // from @qairt
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 
 namespace qnn {
+namespace {
+
+QnnGpu_Precision_t GetGpuPrecisionValue(GpuPrecision precision) {
+  switch (precision) {
+    case GpuPrecision::kUserProvided:
+      return QNN_GPU_PRECISION_USER_PROVIDED;
+    case GpuPrecision::kFp32:
+      return QNN_GPU_PRECISION_FP32;
+    case GpuPrecision::kFp16:
+      return QNN_GPU_PRECISION_FP16;
+    case GpuPrecision::kHybrid:
+      return QNN_GPU_PRECISION_HYBRID;
+    default:
+      return QNN_GPU_PRECISION_FP16;
+  }
+}
+
+}  // namespace
 
 GpuBackend::GpuBackend(const QNN_INTERFACE_VER_TYPE* qnn_api)
     : QnnBackend(qnn_api) {}
@@ -44,6 +65,18 @@ bool GpuBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   backend_handle_ = std::move(local_backend_handle);
 
   return true;
+}
+
+GraphConfigBuilder GpuBackend::BuildGraphConfigs(
+    const Options& options, absl::string_view /*qnn_graph_name*/) {
+  GraphConfigBuilder config_builder;
+
+  // Precision
+  QnnGpuGraph_CustomConfig_t custom_config = QNN_GPU_GRAPH_CUSTOM_CONFIG_INIT;
+  custom_config.precision = GetGpuPrecisionValue(options.GetGpuPrecision());
+  config_builder.AddCustomConfig(custom_config);
+
+  return config_builder;
 }
 
 }  // namespace qnn

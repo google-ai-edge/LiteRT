@@ -9,13 +9,15 @@
 #include <optional>
 #include <type_traits>
 
-#include "absl/types/span.h"  // from @com_google_absl
-#include "litert/vendors/qualcomm/core/common.h"
-#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnDevice.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
+#include "litert/vendors/qualcomm/core/common.h"
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 
 namespace qnn {
 
@@ -35,6 +37,11 @@ class QnnBackend {
 
   virtual ~QnnBackend() = default;
 
+  QnnBackend(const QnnBackend&) = delete;
+  QnnBackend& operator=(const QnnBackend&) = delete;
+  QnnBackend(QnnBackend&&) = delete;
+  QnnBackend& operator=(QnnBackend&&) = delete;
+
   virtual bool Init(const Options& options,
                     std::optional<::qnn::SocInfo> soc_info) = 0;
 
@@ -42,6 +49,9 @@ class QnnBackend {
   // config. Passing options with kDefault resets to the default (low-power)
   // state.
   virtual bool SetPerformanceMode(const Options& options) { return true; }
+
+  virtual GraphConfigBuilder BuildGraphConfigs(
+      const Options& options, absl::string_view qnn_graph_name) = 0;
 
   Qnn_BackendHandle_t GetBackendHandle();
 

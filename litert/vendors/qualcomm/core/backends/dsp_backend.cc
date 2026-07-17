@@ -10,18 +10,20 @@
 #include <optional>
 #include <utility>
 
-#include "absl/types/span.h"  // from @com_google_absl
-#include "litert/vendors/qualcomm/core/backends/backend_utils.h"
-#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
-#include "litert/vendors/qualcomm/core/common.h"
-#include "litert/vendors/qualcomm/core/schema/soc_table.h"
-#include "litert/vendors/qualcomm/core/utils/log.h"
 #include "DSP/QnnDspDevice.h"  // from @qairt
 #include "DSP/QnnDspPerfInfrastructure.h"  // from @qairt
 #include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnDevice.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/vendors/qualcomm/core/backends/backend_utils.h"
+#include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
+#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
+#include "litert/vendors/qualcomm/core/common.h"
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
+#include "litert/vendors/qualcomm/core/utils/log.h"
 
 namespace qnn {
 
@@ -264,6 +266,12 @@ DspBackend::DspBackend(const QNN_INTERFACE_VER_TYPE* qnn_api)
     : QnnBackend(qnn_api) {}
 
 DspBackend::~DspBackend() = default;
+
+// TODO: DSP does not build any graph configs yet; returns an empty builder.
+GraphConfigBuilder DspBackend::BuildGraphConfigs(
+    const Options& /*options*/, absl::string_view /*qnn_graph_name*/) {
+  return {};
+}
 
 bool DspBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   // Log Handle

@@ -13,19 +13,60 @@
 
 #include "HTP/QnnHtpDevice.h"  // from @qairt
 #include "HTP/QnnHtpDeviceConfigShared.h"  // from @qairt
+#include "HTP/QnnHtpGraph.h"  // from @qairt
 #include "HTP/QnnHtpPerfInfrastructure.h"  // from @qairt
 #include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnDevice.h"  // from @qairt
+#include "QnnGraph.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/backends/backend_utils.h"
+#include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 
 namespace qnn {
+
+namespace {
+
+float GetOptimizationValue(OptimizationLevel level) {
+  // Default optimization level value is 2
+  switch (level) {
+    case OptimizationLevel::kHtpOptimizeForInference:
+      return 2.0f;
+    case OptimizationLevel::kHtpOptimizeForPrepare:
+      return 1.0f;
+    case OptimizationLevel::kHtpOptimizeForInferenceO3:
+      return 3.0f;
+    default:
+      return 2.0f;
+  }
+}
+
+Qnn_Priority_t GetGraphPriorityValue(GraphPriority graph_priority) {
+  // Default priority is NORMAL
+  switch (graph_priority) {
+    case GraphPriority::kDefault:
+      return QNN_PRIORITY_DEFAULT;
+    case GraphPriority::kLow:
+      return QNN_PRIORITY_LOW;
+    case GraphPriority::kNormal:
+      return QNN_PRIORITY_NORMAL;
+    case GraphPriority::kNormalHigh:
+      return QNN_PRIORITY_NORMAL_HIGH;
+    case GraphPriority::kHigh:
+      return QNN_PRIORITY_HIGH;
+    default:
+      return QNN_PRIORITY_UNDEFINED;
+  }
+}
+
+}  // namespace
 
 // HTP PERF CONTROL /////////////////////////////////////////////////////////
 class HtpBackend::HtpPerfControl {
@@ -639,6 +680,103 @@ bool HtpBackend::SetPerformanceMode(const Options& options) {
   }
 
   return true;
+}
+
+GraphConfigBuilder HtpBackend::BuildGraphConfigs(
+    const Options& options, absl::string_view /*qnn_graph_name*/) {
+  const bool fp16_supported = IsFp16Supported(soc_info_);
+
+  GraphConfigBuilder config_builder;
+
+  if (fp16_supported) {
+    // QNN suggest always enable relax precision.
+    QnnHtpGraph_CustomConfig_t precision = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    precision.option = QNN_HTP_GRAPH_CONFIG_OPTION_PRECISION;
+    precision.precision = QNN_PRECISION_FLOAT16;
+    config_builder.AddCustomConfig(precision);
+  }
+
+  // Default use O3 for now.
+  QnnHtpGraph_CustomConfig_t optimization = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+  optimization.option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
+  optimization.optimizationOption.type =
+      QNN_HTP_GRAPH_OPTIMIZATION_TYPE_FINALIZE_OPTIMIZATION_FLAG;
+  optimization.optimizationOption.floatValue =
+      GetOptimizationValue(options.GetOptimizationLevel());
+  config_builder.AddCustomConfig(optimization);
+
+  // VTCM — default value is 0 which means the MAX value.
+  QnnHtpGraph_CustomConfig_t vtcm = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+  vtcm.option = QNN_HTP_GRAPH_CONFIG_OPTION_VTCM_SIZE;
+  vtcm.vtcmSizeInMB = options.GetVtcmSize();
+  config_builder.AddCustomConfig(vtcm);
+
+  // FoldRelu Off
+  QnnHtpGraph_CustomConfig_t fold_relu = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+  fold_relu.option =
+      QNN_HTP_GRAPH_CONFIG_OPTION_FOLD_RELU_ACTIVATION_INTO_CONV_OFF;
+  fold_relu.foldReluActivationIntoConvOff = !options.GetUseFoldReLU();
+  config_builder.AddCustomConfig(fold_relu);
+
+  // ConvHMX Off
+  QnnHtpGraph_CustomConfig_t conv_hmx = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+  conv_hmx.option = QNN_HTP_GRAPH_CONFIG_OPTION_SHORT_DEPTH_CONV_ON_HMX_OFF;
+  conv_hmx.shortDepthConvOnHmxOff = !options.GetUseConvHMX();
+  config_builder.AddCustomConfig(conv_hmx);
+
+  if (fp16_supported) {
+    // TODO: Need to verify if legacy SoCs support P point as well.
+    const std::int32_t htp_p_point = options.GetHtpPPoint();
+    if (htp_p_point > 0) {
+      QnnHtpGraph_CustomConfig_t p_point = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+      p_point.option = QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG;
+      p_point.finalizeConfig.key = "P";
+      p_point.finalizeConfig.value = {QNN_DATATYPE_INT_32,
+                                      {.int32Value = htp_p_point}};
+      config_builder.AddCustomConfig(p_point);
+    } else if (htp_p_point < 0) {
+      QNN_LOG_WARNING(
+          "Invalid P point (%d): negative values not supported, skipping "
+          "P point config.",
+          htp_p_point);
+    }
+  }
+
+  // Hvx Thread
+  if (const std::uint32_t num_hvx_threads = options.GetNumHvxThreads();
+      num_hvx_threads > 0) {
+    QnnHtpGraph_CustomConfig_t hvx_threads = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    hvx_threads.option = QNN_HTP_GRAPH_CONFIG_OPTION_NUM_HVX_THREADS;
+    hvx_threads.numHvxThreads = num_hvx_threads;
+    config_builder.AddCustomConfig(hvx_threads);
+  }
+
+  // DLBC (activations / inputs). Offline-prep only.
+  if (options.GetHtpDlbc()) {
+    QnnHtpGraph_CustomConfig_t dlbc = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    dlbc.option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
+    dlbc.optimizationOption.type = QNN_HTP_GRAPH_OPTIMIZATION_TYPE_ENABLE_DLBC;
+    dlbc.optimizationOption.floatValue = 1.0f;
+    config_builder.AddCustomConfig(dlbc);
+  }
+
+  // DLBC weights. Offline-prep only.
+  if (options.GetHtpDlbcWeights()) {
+    QnnHtpGraph_CustomConfig_t dlbc_weights = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    dlbc_weights.option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
+    dlbc_weights.optimizationOption.type =
+        QNN_HTP_GRAPH_OPTIMIZATION_TYPE_ENABLE_DLBC_WEIGHTS;
+    dlbc_weights.optimizationOption.floatValue = 1.0f;
+    config_builder.AddCustomConfig(dlbc_weights);
+  }
+
+  // Graph Priority
+  QnnGraph_Config_t priority = QNN_GRAPH_CONFIG_INIT;
+  priority.option = QNN_GRAPH_CONFIG_OPTION_PRIORITY;
+  priority.priority = GetGraphPriorityValue(options.GetGraphPriority());
+  config_builder.AddGraphConfig(priority);
+
+  return config_builder;
 }
 
 }  // namespace qnn
