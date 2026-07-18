@@ -27,7 +27,13 @@
 #include "ml_drift_delegate/delegate/shared_vulkan_env.h"
 #endif  // LITERT_HAS_VULKAN_SUPPORT
 #if LITERT_HAS_WEBGPU_SUPPORT
+#if !defined(__EMSCRIPTEN__)
+#include "dawn/dawn_proc.h"  // from @dawn
+#include "dawn/dawn_proc_table.h"  // from @dawn
+#include "webgpu/webgpu.h"  // from @dawn
+#endif  // !defined(__EMSCRIPTEN__)
 #include "ml_drift/webgpu/environment.h"  // from @ml_drift
+#include "ml_drift/webgpu/webgpu_api_util.h"  // from @ml_drift
 #include "ml_drift/webgpu/webgpu_headers.h"  // from @ml_drift
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 #include "litert/c/litert_environment_options.h"
@@ -78,14 +84,63 @@ absl::Status UpdateGpuEnvironmentWebGpu(LiteRtEnvironment environment) {
   WGPUDevice wgpu_device = reinterpret_cast<WGPUDevice>(
       std::get<int64_t>(::litert::ToStdAny(wgpu_device_res.Value())));
 
+#if !defined(__EMSCRIPTEN__)
+  auto wgpu_procs_res = env_options.GetOption(kLiteRtEnvOptionTagWebGpuProcs);
+  if (wgpu_procs_res.HasValue()) {
+    auto procs_int =
+        std::get<int64_t>(::litert::ToStdAny(wgpu_procs_res.Value()));
+    if (procs_int != 0) {
+      dawnProcSetProcs(reinterpret_cast<const DawnProcTable*>(procs_int));
+    }
+  }
+#endif  // !defined(__EMSCRIPTEN__)
+
+  auto wgpu_flush_res =
+      env_options.GetOption(kLiteRtEnvOptionTagWebGpuFlushCallback);
+  if (wgpu_flush_res.HasValue()) {
+    auto flush_cb_int =
+        std::get<int64_t>(::litert::ToStdAny(wgpu_flush_res.Value()));
+    if (flush_cb_int != 0) {
+      ::ml_drift::webgpu::SetFlushCallback(
+          reinterpret_cast<::ml_drift::webgpu::WebGpuFlushCallback>(
+              flush_cb_int));
+    }
+  }
+
   if (wgpu_device == nullptr) return absl::OkStatus();
+
+  auto wgpu_instance_res =
+      env_options.GetOption(kLiteRtEnvOptionTagWebGpuInstance);
+  WGPUInstance wgpu_instance = nullptr;
+  if (wgpu_instance_res.HasValue()) {
+    wgpu_instance = reinterpret_cast<WGPUInstance>(
+        std::get<int64_t>(::litert::ToStdAny(wgpu_instance_res.Value())));
+  }
+#if !defined(__EMSCRIPTEN__)
+  if (wgpu_instance == nullptr && wgpu_device != nullptr) {
+    wgpu::Device device_tmp(wgpu_device);
+    wgpu::Adapter adapter_tmp = device_tmp.GetAdapter();
+    if (adapter_tmp) {
+      wgpu::Instance instance_tmp = adapter_tmp.GetInstance();
+      if (instance_tmp) {
+        wgpu_instance = instance_tmp.Get();
+      }
+    }
+  }
+#endif  // !defined(__EMSCRIPTEN__)
+  wgpu::Instance instance;
+  if (wgpu_instance != nullptr) {
+    instance = wgpu::Instance(wgpu_instance);
+  }
 
   ::ml_drift::webgpu::Environment wgpu_env;
   wgpu::Device device(wgpu_device);
   wgpu::AdapterInfo adapter_info;
+#if !defined(__EMSCRIPTEN__)
   device.GetAdapter().GetInfo(&adapter_info);
+#endif  // !defined(__EMSCRIPTEN__)
 
-  auto status = wgpu_env.Initialize(device, adapter_info);
+  auto status = wgpu_env.Initialize(device, adapter_info, instance);
   if (!status.ok()) return status;
 
   auto gpu_env_res = environment->GetGpuEnvironment();

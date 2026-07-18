@@ -260,8 +260,6 @@ cc_library(
         ":litert_common",
         ":litert_expected",
         "//litert/c:litert_environment_options_header",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
     ],
 )
 

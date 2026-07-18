@@ -260,6 +260,7 @@ LiteRtStatus LiteRtClearWebGpuMemory(HwMemoryInfoPtr hw_memory_info) {
   }
   auto command_buffer = command_encoder.Finish();
   queue.Submit(1, &command_buffer);
+  ::ml_drift::webgpu::FlushIfCallbackSet();
 
   return kLiteRtStatusOk;
 }

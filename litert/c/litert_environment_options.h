@@ -66,6 +66,7 @@ typedef enum {
   // Maximum number of configurations to store per model in the compiler cache.
   kLiteRtEnvOptionTagCompilerCacheMaxConfigsPerModel = 26,
   kLiteRtEnvOptionTagCompilerCacheMaxTotalSize = 27,
+  kLiteRtEnvOptionTagWebGpuFlushCallback = 28,
   /// \internal This is for internal use only. Reserved for use by LiteRT in
   /// Play services.
   kLiteRtEnvOptionTagContext = 28,
