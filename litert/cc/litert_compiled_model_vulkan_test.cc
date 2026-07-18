@@ -64,6 +64,8 @@ absl::string_view ToString(GpuOptions::Precision precision) {
       return "Fp16";
     case GpuOptions::Precision::kFp32:
       return "Fp32";
+    case GpuOptions::Precision::kFp16WithFp32Accum:
+      return "Fp16WithFp32Accum";
   }
 }
 

@@ -183,6 +183,9 @@ INSTANTIATE_TEST_SUITE_P(
         case GpuOptions::Precision::kFp32:
           precision = "Fp32";
           break;
+        case GpuOptions::Precision::kFp16WithFp32Accum:
+          precision = "Fp16WithFp32Accum";
+          break;
       }
       std::string buffer_storage_type;
       switch (info.param.buffer_storage_type) {
