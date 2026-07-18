@@ -52,11 +52,12 @@ litert_dynamic_lib(
     }),
     ungrte = True,
     visibility = [
-        "//ci/tools/python/wheel:__subpackages__",
+        # copybara:uncomment "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
+        # copybara:uncomment "//research/drishti/benchmarking:__subpackages__",
+        # copybara:uncomment "//third_party/darwinn/litert:__subpackages__",
+        # copybara:uncomment "@mediapipe//mediapipe:__subpackages__",
         "//litert:__subpackages__",
-        "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
-        "//research/drishti/benchmarking:__subpackages__",
-        "//third_party/darwinn/litert:__subpackages__",
+        # copybara:uncomment "//ci/tools/python/wheel:__subpackages__",
     ],
     deps = [
         ":google_tensor_options_cc_proto",
