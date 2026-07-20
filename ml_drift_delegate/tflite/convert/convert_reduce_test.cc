@@ -47,8 +47,11 @@ struct ReduceTestParam {
 class ConvertReduceTest : public ::testing::TestWithParam<ReduceTestParam> {
  protected:
   void SetUp() override {
+    // Verify the raw per-op conversion; model-level transforms would tombstone
+    // the trailing no-op reshape (leaving op(1) null), which these tests deref.
     delegate_ = std::unique_ptr<TfLiteDelegate, void (*)(TfLiteDelegate*)>(
-        CreateStubDelegate(), DeleteStubDelegate);
+        CreateStubDelegate({.apply_model_transformations = false}),
+        DeleteStubDelegate);
   }
 
   const ::ml_drift::ir::IrModel* GetIrModelFromBuilder(

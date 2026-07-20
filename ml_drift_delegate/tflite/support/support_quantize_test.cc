@@ -158,5 +158,37 @@ TEST(SupportQuantizeTest, MissingQuantParams) {
   EXPECT_EQ(error, "Encountered Quantize output with no quant params");
 }
 
+TEST(SupportQuantizeTest, UnsupportedPerAxisScale) {
+  TfLiteContext context = {};
+  context.tensors_size = 2;
+  TfLiteNode node = {};
+  TfLiteRegistration registration = {};
+  registration.version = 1;
+
+  int inputs[] = {1, 0};
+  int outputs[] = {1, 1};
+  node.inputs = reinterpret_cast<TfLiteIntArray*>(inputs);
+  node.outputs = reinterpret_cast<TfLiteIntArray*>(outputs);
+
+  TfLiteTensor tensors[2] = {};
+  tensors[0].type = kTfLiteFloat32;
+  tensors[1].type = kTfLiteInt8;
+  context.tensors = tensors;
+
+  // Per-axis (per-channel) scale with size > 1.
+  struct {
+    int size;
+    float data[2];
+  } scale = {2, {0.1f, 0.2f}};
+  TfLiteAffineQuantization quant_params = {};
+  quant_params.scale = reinterpret_cast<TfLiteFloatArray*>(&scale);
+  tensors[1].quantization.params = &quant_params;
+  tensors[1].quantization.type = kTfLiteAffineQuantization;
+
+  std::string error;
+  EXPECT_FALSE(IsQuantizeSupported(&context, &node, &registration, &error));
+  EXPECT_EQ(error, "Unsupported quantization scale size");
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir

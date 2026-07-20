@@ -63,6 +63,18 @@ bool IsQuantizeSupported(const TfLiteContext* absl_nonnull context,
     return false;
   }
 
+  // Per-axis (per-channel) quantized activations are not supported: downstream
+  // PopulateQuantParams QCHECK-fails on scale->size > 1. Reject here so the op
+  // gracefully falls back to CPU instead of crashing the process.
+  const TfLiteAffineQuantization* quantization_data =
+      reinterpret_cast<const TfLiteAffineQuantization*>(
+          output->quantization.params);
+  if (quantization_data->scale != nullptr &&
+      quantization_data->scale->size > 1) {
+    *error = "Unsupported quantization scale size";
+    return false;
+  }
+
   return true;
 }
 

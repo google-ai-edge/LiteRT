@@ -58,7 +58,9 @@ struct IrModelBuilderOptions {
   // TODO - b/483403743: Remove this once OpenGL supports boolean tensors.
   bool allow_bool_tensors = true;
   bool allow_quant_ops = true;
-  bool apply_model_transformations = false;
+  // Runs TransformIrModel (noop removal, pad/gemm fusion, and the interior
+  // AddQuantAdjustments fake-quant pass).
+  bool apply_model_transformations = true;
 };
 
 inline ::ml_drift::HW ToHW(int h, int w) {
