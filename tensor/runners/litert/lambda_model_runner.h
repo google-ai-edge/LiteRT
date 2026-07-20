@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
@@ -30,6 +31,7 @@
 #include "litert/cc/litert_options.h"
 #include "tensor/backends/tflite/arithmetic_tflite.h"
 #include "tensor/runners/litert/compiled_model_runner.h"
+#include "tensor/runners/litert/feedback_loop_config.h"
 #include "tensor/tensor.h"
 
 namespace litert {
@@ -66,26 +68,33 @@ using TensorsMap = absl::flat_hash_map<std::string, Tensor<TfLiteMixinTag>>;
 template <typename Lambda>
 class LambdaModelRunner {
  public:
-  explicit LambdaModelRunner(Environment& env, Options& options,
-                             TensorsMap input_prototypes, Lambda f)
-      : runner_(env, options, [input_prototypes, f](MapInputs& inputs) {
-          inputs.map = input_prototypes;
-          TensorsMap output_map = f(inputs.map);
-          MapOutputs outputs;
-          outputs.map = output_map;
-          return outputs;
-        }) {}
+  explicit LambdaModelRunner(
+      Environment& env, Options& options, TensorsMap input_prototypes, Lambda f,
+      const std::vector<FeedbackLoopConfig>& feedback_loops = {})
+      : runner_(
+            env, options,
+            [input_prototypes, f](MapInputs& inputs) {
+              inputs.map = input_prototypes;
+              TensorsMap output_map = f(inputs.map);
+              MapOutputs outputs;
+              outputs.map = output_map;
+              return outputs;
+            },
+            feedback_loops) {}
 
-  explicit LambdaModelRunner(Environment& env, Options& options,
-                             TensorsMap input_prototypes,
-                             TensorsMap output_prototypes)
-      : runner_(env, options,
-                [input_prototypes, output_prototypes](MapInputs& inputs) {
-                  inputs.map = input_prototypes;
-                  MapOutputs outputs;
-                  outputs.map = output_prototypes;
-                  return outputs;
-                }) {}
+  explicit LambdaModelRunner(
+      Environment& env, Options& options, TensorsMap input_prototypes,
+      TensorsMap output_prototypes,
+      const std::vector<FeedbackLoopConfig>& feedback_loops = {})
+      : runner_(
+            env, options,
+            [input_prototypes, output_prototypes](MapInputs& inputs) {
+              inputs.map = input_prototypes;
+              MapOutputs outputs;
+              outputs.map = output_prototypes;
+              return outputs;
+            },
+            feedback_loops) {}
 
   absl::Status SetInput(const std::string& name, const TensorHandle& tensor) {
     return runner_.SetInput(name, tensor);
@@ -122,6 +131,8 @@ class LambdaModelRunner {
     return runner_.SetOutput(name, data);
   }
 
+  absl::Status Reset() { return runner_.Reset(); }
+
  private:
   CompiledModelRunner<std::function<MapOutputs(MapInputs&)>, MapInputs,
                       MapOutputs>
@@ -129,17 +140,20 @@ class LambdaModelRunner {
 };
 
 template <typename Lambda>
-auto CreateLambdaRunner(Environment& env, Options& options,
-                        TensorsMap input_prototypes, Lambda f) {
-  return LambdaModelRunner<Lambda>(env, options, input_prototypes, f);
+auto CreateLambdaRunner(
+    Environment& env, Options& options, TensorsMap input_prototypes, Lambda f,
+    const std::vector<FeedbackLoopConfig>& feedback_loops = {}) {
+  return LambdaModelRunner<Lambda>(env, options, input_prototypes, f,
+                                   feedback_loops);
 }
 
-inline auto CreateStaticRunner(Environment& env, Options& options,
-                               TensorsMap input_prototypes,
-                               TensorsMap output_prototypes) {
+inline auto CreateStaticRunner(
+    Environment& env, Options& options, TensorsMap input_prototypes,
+    TensorsMap output_prototypes,
+    const std::vector<FeedbackLoopConfig>& feedback_loops = {}) {
   auto dummy_f = [](const TensorsMap&) { return TensorsMap(); };
-  return LambdaModelRunner<decltype(dummy_f)>(env, options, input_prototypes,
-                                              output_prototypes);
+  return LambdaModelRunner<decltype(dummy_f)>(
+      env, options, input_prototypes, output_prototypes, feedback_loops);
 }
 
 }  // namespace tensor
