@@ -72,6 +72,14 @@ struct NumpyArrayMeta {
   uint8_t bits;
 };
 
+struct NumpyArrayMeta {
+  enum DType { kFloat, kInt, kBool };
+  const char* data;
+  std::vector<size_t> shape;
+  DType dtype;
+  uint8_t bits;
+};
+
 // Register passes to be used via MLIR pybindings pass manager.
 void RegisterPasses();
 
