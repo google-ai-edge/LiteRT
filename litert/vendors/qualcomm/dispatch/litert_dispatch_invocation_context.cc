@@ -58,6 +58,7 @@
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/context_binary_info.h"
+#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
@@ -101,13 +102,14 @@ bool IsAutoPerfCtrlMode(const std::optional<::qnn::Options>& run_options,
 }  // namespace
 
 LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
-    litert::qnn::QnnManager& qnn_manager,
+    litert::qnn::QnnManager& qnn_manager, ::qnn::QnnBackend& qnn_backend,
     const litert::qnn::ContextBinaryInfo& context_binary_info,
     LiteRtDispatchDeviceContext device_context,
     const litert::qnn::QnnManager::ContextHandle* context_handle,
     Qnn_ProfileHandle_t profile_handle, int graph_index,
     Qnn_GraphHandle_t graph_handle)
     : qnn_manager_(qnn_manager),
+      qnn_backend_(qnn_backend),
       device_context_(device_context),
       context_handle_(*context_handle),
       raw_context_handle_(context_handle_.Get()),
@@ -138,7 +140,7 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
 }
 
 LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
-    litert::qnn::QnnManager& qnn_manager,
+    litert::qnn::QnnManager& qnn_manager, ::qnn::QnnBackend& qnn_backend,
     LiteRtDispatchDeviceContext device_context,
     const litert::qnn::QnnManager::ContextHandle* context_handle,
     Qnn_ContextHandle_t raw_context_handle, Qnn_ProfileHandle_t profile_handle,
@@ -146,6 +148,7 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
     std::vector<::qnn::TensorWrapper> inputs,
     std::vector<::qnn::TensorWrapper> outputs)
     : qnn_manager_(qnn_manager),
+      qnn_backend_(qnn_backend),
       device_context_(device_context),
       context_handle_(*context_handle),
       raw_context_handle_(raw_context_handle),
@@ -181,13 +184,14 @@ LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
   if (IsAutoPerfCtrlMode(run_options_,
                          qnn_manager_.GetOptions().GetBackendType())) {
     ::qnn::Options default_options;
-    (void)qnn_manager_.SetPerformanceMode(default_options);
+    (void)qnn_backend_.SetPerformanceMode(default_options);
   }
 }
 
 Expected<LiteRtDispatchInvocationContextT::Ptr>
 LiteRtDispatchInvocationContextT::Create(
-    QnnManager& qnn, LiteRtDispatchDeviceContextT& device_context,
+    QnnManager& qnn, ::qnn::QnnBackend& qnn_backend,
+    LiteRtDispatchDeviceContextT& device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name) {
   if (exec_type == kLiteRtDispatchExecutableTypeJitHandle) {
@@ -213,7 +217,7 @@ LiteRtDispatchInvocationContextT::Create(
     // lifecycle.
     static absl::NoDestructor<QnnManager::ContextHandle> empty_context_handle;
     return Ptr(new LiteRtDispatchInvocationContextT(
-        qnn, &device_context, empty_context_handle.get(),
+        qnn, qnn_backend, &device_context, empty_context_handle.get(),
         jit_graph->context_handle, nullptr, 0, graph_handle, jit_graph->inputs,
         jit_graph->outputs));
   }
@@ -257,7 +261,7 @@ LiteRtDispatchInvocationContextT::Create(
   Qnn_ProfileHandle_t profile_handle = nullptr;
   if (profiling_level != ::qnn::Profiling::kOff) {
     if (auto status = qnn.Api()->profileCreate(
-            qnn.BackendHandle(),
+            qnn_backend.GetBackendHandle(),
             static_cast<QnnProfile_Level_t>(profiling_level), &profile_handle);
         status != QNN_SUCCESS) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -279,8 +283,8 @@ LiteRtDispatchInvocationContextT::Create(
   }
 
   return Ptr(new LiteRtDispatchInvocationContextT(
-      qnn, std::move(*context_binary_info), &device_context, &context_handle,
-      profile_handle, graph_index, graph_handle));
+      qnn, qnn_backend, std::move(*context_binary_info), &device_context,
+      &context_handle, profile_handle, graph_index, graph_handle));
 }
 
 Expected<LiteRtTensorBufferRequirements>
@@ -487,13 +491,16 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
   const bool auto_mode = IsAutoPerfCtrlMode(
       run_options_, qnn_manager_.GetOptions().GetBackendType());
   if (auto_mode) {
-    LITERT_RETURN_IF_ERROR(qnn_manager_.SetPerformanceMode(*run_options_));
+    if (!qnn_backend_.SetPerformanceMode(*run_options_)) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Failed to set performance mode");
+    }
   }
 
   absl::Cleanup downvote = [this, auto_mode] {
     if (!auto_mode) return;
     ::qnn::Options default_options;
-    qnn_manager_.SetPerformanceMode(default_options);
+    qnn_backend_.SetPerformanceMode(default_options);
   };
 
   const size_t num_ins = inputs_.size();
@@ -693,7 +700,7 @@ Expected<void> LiteRtDispatchInvocationContextT::SetOptions(
       break;
   }
   if (manual) {
-    (void)qnn_manager_.SetPerformanceMode(qnn_options);
+    (void)qnn_backend_.SetPerformanceMode(qnn_options);
   }
 
   return {};

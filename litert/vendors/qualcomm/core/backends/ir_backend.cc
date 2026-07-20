@@ -45,6 +45,10 @@ bool IrBackend::Init(const Options& options,
     return false;
   }
 
+  if (soc_info) {
+    soc_info_ = *soc_info;
+  }
+
   log_handle_ = std::move(local_log_handle);
   backend_handle_ = std::move(local_backend_handle);
   return true;

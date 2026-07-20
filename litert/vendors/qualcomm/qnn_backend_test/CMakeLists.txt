@@ -23,6 +23,7 @@ target_link_libraries(qnn_test_utils
         qnn_miscs
         qnn_model
         qnn_manager
+        qnn_backends
     PRIVATE
         GTest::gtest
 )

@@ -4,19 +4,27 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_QNN_BACKEND_TEST_TEST_UTILS_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_QNN_BACKEND_TEST_TEST_UTILS_H_
 
+#include <memory>
+#include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "absl/base/no_destructor.h"  // from @com_google_absl
+#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
-#include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/utils/qnn_model.h"
 #include "litert/vendors/qualcomm/core/utils/test_utils.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 
 namespace litert::qnn {
-const ::qnn::Options kTestingDefaultQnnOptions{};
+
+inline const ::qnn::Options& GetTestingDefaultQnnOptions() {
+  static const absl::NoDestructor<::qnn::Options> options;
+  return *options;
+}
 
 std::string QnnTestPrinter(
     const ::testing::TestParamInfo<
@@ -26,6 +34,7 @@ class QnnModelTest : public testing::TestWithParam<
                          std::tuple<::qnn::Options, std::string_view>> {
  protected:
   QnnManager::Ptr qnn_manager_ptr_{};
+  std::unique_ptr<::qnn::QnnBackend> qnn_backend_ptr_{};
   QnnManager::ContextHandle context_handle_{};
   ::qnn::QnnModel qnn_model_{};
   ::qnn::TensorPool tensor_pool_{};
@@ -51,7 +60,7 @@ inline auto GetDefaultQnnModelParams() {
   // On device, qnn manager will use online soc for compilation.
   std::vector<std::string_view> socs = {"SOC_UNKNOWN"};
 #endif
-  return ::testing::Combine(::testing::Values(kTestingDefaultQnnOptions),
+  return ::testing::Combine(::testing::Values(GetTestingDefaultQnnOptions()),
                             ::testing::ValuesIn(socs));
 }
 }  // namespace litert::qnn

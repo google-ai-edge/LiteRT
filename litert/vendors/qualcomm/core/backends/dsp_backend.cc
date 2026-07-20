@@ -291,6 +291,10 @@ bool DspBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
     return false;
   }
 
+  if (soc_info) {
+    soc_info_ = *soc_info;
+  }
+
   // DSP Performance Settings
   DspPerformanceMode performance_mode = options.GetDspPerformanceMode();
   if (performance_mode != DspPerformanceMode::kDefault) {

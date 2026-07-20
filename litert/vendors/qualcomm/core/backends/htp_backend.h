@@ -85,7 +85,6 @@ class HtpBackend : public QnnBackend {
 
   QnnDevicePlatformInfo CreateDevicePlatformInfo();
 
-  SocInfo soc_info_ = kSocInfos[0];
   // The qnn_device_platform_info_ is referenced by device configurations
   // managed in the lists below. It must be destructed after the configs to
   // ensure valid references during destruction.

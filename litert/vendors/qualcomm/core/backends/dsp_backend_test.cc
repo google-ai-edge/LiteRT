@@ -21,10 +21,14 @@
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/backends/backend_utils.h"
 #include "litert/vendors/qualcomm/core/common.h"
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 
 namespace qnn {
 namespace {
+
+const SocInfo kDefaultSocInfo = FindSocModel("SM8750").value_or(kSocInfos[0]);
+
 // DSP PERF CONTROL /////////////////////////////////////////////////////////
 QnnDevice_GetInfrastructureFn_t real_device_get_infrastructure = nullptr;
 absl::NoDestructor<std::vector<QnnDspPerfInfrastructure_PowerConfig_t>>
@@ -186,22 +190,24 @@ TEST_F(DspBackendTest, DISABLED_InitializeWithLogLevelOffTest) {
   Options options;
   options.SetLogLevel(LogLevel::kOff);
 
-  ASSERT_TRUE(backend_->Init(options, std::nullopt));
+  ASSERT_TRUE(backend_->Init(options, kDefaultSocInfo));
   ASSERT_FALSE(backend_->GetDeviceHandle());
 
   ASSERT_TRUE(backend_->GetBackendHandle());
   ASSERT_FALSE(backend_->GetLogHandle());
+  EXPECT_EQ(backend_->GetSocInfo().soc_model, kDefaultSocInfo.soc_model);
 }
 
 TEST_F(DspBackendTest, DISABLED_InitializeWithLogLevelVerboseTest) {
   Options options;
   options.SetLogLevel(LogLevel::kVerbose);
 
-  ASSERT_TRUE(backend_->Init(options, std::nullopt));
+  ASSERT_TRUE(backend_->Init(options, kDefaultSocInfo));
   ASSERT_FALSE(backend_->GetDeviceHandle());
 
   ASSERT_TRUE(backend_->GetBackendHandle());
   ASSERT_TRUE(backend_->GetLogHandle());
+  EXPECT_EQ(backend_->GetSocInfo().soc_model, kDefaultSocInfo.soc_model);
 }
 
 // SETPERFORMANCEMODE /////////////////////////////////////////////////////////

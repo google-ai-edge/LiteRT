@@ -19,15 +19,16 @@
 #include <memory>
 #include <utility>
 
+#include "QnnCommon.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/dispatch/registry.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "QnnCommon.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 class LiteRtDispatchDeviceContextT {
  public:
@@ -37,7 +38,7 @@ class LiteRtDispatchDeviceContextT {
 
   static litert::Expected<Ptr> Create(
       const LiteRtRuntimeContext* runtime_context,
-      litert::qnn::QnnManager& qnn_manager);
+      litert::qnn::QnnManager& qnn_manager, ::qnn::QnnBackend& qnn_backend);
 
   litert::Expected<LiteRtTensorBufferHandle> RegisterTensorBuffer(
       LiteRtTensorBuffer tensor_buffer) {
@@ -90,14 +91,17 @@ class LiteRtDispatchDeviceContextT {
 
   explicit LiteRtDispatchDeviceContextT(
       const LiteRtRuntimeContext* runtime_context,
-      litert::qnn::QnnManager& qnn_manager)
-      : runtime_context_(runtime_context), qnn_manager_(qnn_manager) {}
+      litert::qnn::QnnManager& qnn_manager, ::qnn::QnnBackend& qnn_backend)
+      : runtime_context_(runtime_context),
+        qnn_manager_(qnn_manager),
+        qnn_backend_(qnn_backend) {}
 
   litert::Expected<Qnn_MemHandle_t> RegisterTensorBuffer(
       LiteRtTensorBuffer tensor_buffer, const Qnn_Tensor_t& tensor);
 
   const LiteRtRuntimeContext* runtime_context_;
   litert::qnn::QnnManager& qnn_manager_;
+  ::qnn::QnnBackend& qnn_backend_;
   TensorBufferRegistry tensor_buffer_registry_;
   LiteRtDispatchInvocationContextT* invocation_context_ = nullptr;
 

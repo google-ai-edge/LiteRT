@@ -12,3 +12,8 @@ target_include_directories(qnn_soc_table
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
+
+target_link_libraries(qnn_soc_table
+    PRIVATE
+        qnn_log
+)

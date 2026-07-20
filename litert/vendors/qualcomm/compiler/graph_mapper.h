@@ -21,6 +21,7 @@
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 
@@ -48,6 +49,7 @@ class GraphMapper {
   // Initialize QNN Graph with given name. Call this after parsing
   // LiteRtSubgraph.
   LiteRtStatus InitQnnGraph(absl::string_view qnn_graph_name,
+                            ::qnn::QnnBackend& qnn_backend,
                             const ::qnn::Options& options);
 
   // Finalize QNN Graph. Call this after all ops have been mapped.

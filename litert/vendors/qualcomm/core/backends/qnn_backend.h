@@ -50,6 +50,8 @@ class QnnBackend {
   // state.
   virtual bool SetPerformanceMode(const Options& options) { return true; }
 
+  const SocInfo& GetSocInfo() const { return soc_info_; }
+
   virtual GraphConfigBuilder BuildGraphConfigs(
       const Options& options, absl::string_view qnn_graph_name) = 0;
 
@@ -90,6 +92,7 @@ class QnnBackend {
       Qnn_LogHandle_t log_handle,
       absl::Span<const QnnDevice_Config_t*> configs);
 
+  SocInfo soc_info_ = kSocInfos[0];
   QnnLogHandle log_handle_;
   QnnBackendHandle backend_handle_;
   QnnDeviceHandle device_handle_;

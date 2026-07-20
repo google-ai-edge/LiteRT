@@ -37,6 +37,8 @@
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/qualcomm/common.h"
+#include "litert/vendors/qualcomm/core/backends/backend_factory.h"
+#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
@@ -52,6 +54,13 @@ static std::unique_ptr<QnnManager>& QnnManagerStorage() {
 }
 
 QnnManager& Qnn() { return *QnnManagerStorage(); }
+
+static std::unique_ptr<::qnn::QnnBackend>& QnnBackendStorage() {
+  static absl::NoDestructor<std::unique_ptr<::qnn::QnnBackend>> storage;
+  return *storage;
+}
+
+::qnn::QnnBackend& QnnBackend() { return *QnnBackendStorage(); }
 
 LiteRtEnvironmentOptions TheEnvironmentOptions = nullptr;
 
@@ -125,22 +134,20 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
   }
   if (auto qnn_manager = QnnManager::Create(
           /*options=*/qnn_options,
-          /*shared_library_dir=*/shared_library_dir_opt,
-          /*soc_model*/ std::nullopt);
+          /*shared_library_dir=*/shared_library_dir_opt);
       !qnn_manager) {
     LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().c_str());
     return qnn_manager.Error().Status();
   } else {
-    if (const auto& custom_op_package = qnn_options.GetCustomOpPackage();
-        !custom_op_package.name.empty()) {
-      LITERT_RETURN_IF_ERROR(
-          (*qnn_manager)
-              ->RegisterOpPackage(custom_op_package.dispatch_package_path,
-                                  custom_op_package.interface_provider,
-                                  custom_op_package.target));
+    auto qnn_backend = ::qnn::CreateBackend((*qnn_manager)->Api(), qnn_options,
+                                            std::nullopt, false);
+    if (!qnn_backend) {
+      LITERT_LOG(LITERT_ERROR, "Failed to initialize QNN backend");
+      return kLiteRtStatusErrorRuntimeFailure;
     }
 
     std::swap(QnnManagerStorage(), *qnn_manager);
+    std::swap(QnnBackendStorage(), qnn_backend);
   }
 
   Qnn_ApiVersion_t qnn_api_version;
@@ -187,8 +194,8 @@ LiteRtStatus GetCapabilities(int* capabilities) {
 LiteRtStatus DeviceContextCreate(const LiteRtRuntimeContext* runtime_context,
                                  LiteRtOptions options,
                                  LiteRtDispatchDeviceContext* device_context) {
-  if (auto context =
-          LiteRtDispatchDeviceContextT::Create(runtime_context, Qnn());
+  if (auto context = LiteRtDispatchDeviceContextT::Create(runtime_context,
+                                                          Qnn(), QnnBackend());
       context) {
     *device_context = context->release();
     return kLiteRtStatusOk;
@@ -268,7 +275,8 @@ LiteRtStatus InvocationContextCreate(
     int num_inputs, int num_outputs,
     LiteRtDispatchInvocationContext* invocation_context) {
   auto context = LiteRtDispatchInvocationContextT::Create(
-      Qnn(), *device_context, exec_type, exec_bytecode_buffer, function_name);
+      Qnn(), QnnBackend(), *device_context, exec_type, exec_bytecode_buffer,
+      function_name);
   if (!context) {
     LITERT_LOG(LITERT_ERROR,
                "Failed to create context from context binary: %s for function "

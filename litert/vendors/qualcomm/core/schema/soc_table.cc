@@ -4,6 +4,9 @@
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 
 #include <cstdint>
+
+#include "litert/vendors/qualcomm/core/utils/log.h"
+
 namespace qnn {
 constexpr SocInfo kSocInfos[] = {
     {SocInfo("UNKNOWN_SDM", SnapdragonModel::UNKNOWN_SDM, DspArch::NONE,
@@ -85,7 +88,15 @@ constexpr SocInfo kSocInfos[] = {
 constexpr uint64_t kNumSocInfos = sizeof(kSocInfos) / sizeof(kSocInfos[0]);
 
 bool IsFp16Supported(const SocInfo& soc_info) {
+  // TODO(jiunkaiy): Remove this function after upgrading to stricter SDK
+  // restrictions.
+  if (soc_info.soc_model == SnapdragonModel::UNKNOWN_SDM) {
+    QNN_LOG_WARNING(
+        "IsFp16Supported called with UNKNOWN_SDM soc_info; result may be "
+        "inaccurate.");
+  }
   return soc_info.dsp_arch != DspArch::V68 &&
          soc_info.soc_model != SnapdragonModel::SAR2230P;
 }
+
 }  // namespace qnn
