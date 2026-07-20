@@ -51,7 +51,7 @@
 #include "ml_drift_delegate/delegate/gpu_backend.h"
 #include "ml_drift_delegate/tflite/model_builder_helper.h"
 #include "tflite/core/c/common.h"
-#include "util/task/status_macros.h"
+// copybara:uncomment #include "util/task/status_macros.h"
 
 namespace litert::ml_drift {
 namespace {

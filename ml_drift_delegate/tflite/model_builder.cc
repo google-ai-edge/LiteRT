@@ -30,7 +30,7 @@
 #include <variant>
 #include <vector>
 
-#include "third_party/FP16/include/fp16.h"
+#include "fp16.h"  // from @FP16
 #include "xnnpack.h"  // from @XNNPACK
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl

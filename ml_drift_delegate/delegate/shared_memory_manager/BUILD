@@ -17,7 +17,7 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
 
 package(
-    default_applicable_licenses = ["//devtools/compliance/licenses:no_external_contributions"],
+    # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
     default_visibility = ["//ml_drift_delegate:__subpackages__"],
 )
 
@@ -38,10 +38,11 @@ cc_library(
         "//tflite/core/c:private_common",
         "//tflite/kernels:kernel_util",
         "//tflite/kernels/internal:tensor_utils_no_eigen",
-        "//third_party/FP16",
+        "@FP16",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:node_hash_map",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
         "@ml_drift//ml_drift/common:data_type",
@@ -102,14 +103,6 @@ cc_library(
     ],
     deps = [
         ":shared_memory_manager",
-        "//litert/c:litert_common",
-        "//litert/c/internal:litert_runtime_context_header",
-        "//ml_drift_delegate/delegate:unowned_tensor_desc",
-        "//ml_drift_delegate/delegate/serialization_weight_cache",
-        "//ml_drift_delegate/tflite:shared_const_tensor_map",
-        "//tflite/c:common",
-        "//tflite/core/c:private_common",
-        "//third_party/odml/litert/weight_loader:external_weight_loader",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@ml_drift//ml_drift/cl:environment",
@@ -119,7 +112,16 @@ cc_library(
         "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/common/task:gpu_tensor",
         "@ml_drift//ml_drift/common/task:tensor_desc",
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_runtime_context_header",
+        "//ml_drift_delegate/delegate:unowned_tensor_desc",
+        "//ml_drift_delegate/delegate/serialization_weight_cache",
+        "//ml_drift_delegate/tflite:shared_const_tensor_map",
+        # copybara:uncomment "//third_party/odml/litert/weight_loader:external_weight_loader",
+        "//weight_loader:external_weight_loader",  # copybara:comment
         "@opencl_headers",
+        "//tflite/c:common",
+        "//tflite/core/c:private_common",
     ],
 )
 
