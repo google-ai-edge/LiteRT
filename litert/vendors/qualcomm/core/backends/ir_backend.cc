@@ -56,7 +56,7 @@ GraphConfigBuilder IrBackend::BuildGraphConfigs(
 
   std::filesystem::path dlc_dir = std::string(options.GetDlcDir());
   auto& dlc_path = config_builder.Store<std::string>(
-      (dlc_dir / absl::StrCat(qnn_graph_name, ".dlc")).string());
+      (dlc_dir / absl::StrCat(qnn_graph_name, ".dlc")).generic_string());
 
   QnnIrGraph_CustomConfig_t custom_config = QNN_IR_GRAPH_CUSTOM_CONFIG_INIT;
   custom_config.option = QNN_IR_GRAPH_CONFIG_OPTION_SERIALIZATION;
