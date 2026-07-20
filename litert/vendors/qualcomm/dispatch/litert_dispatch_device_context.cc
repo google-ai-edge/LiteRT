@@ -53,6 +53,31 @@ LiteRtDispatchDeviceContextT::Create(
       new LiteRtDispatchDeviceContextT(runtime_context, qnn, qnn_backend));
 }
 
+Expected<LiteRtTensorBufferHandle>
+LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
+    LiteRtTensorBuffer tensor_buffer) {
+  return tensor_buffer_registry_.Register(
+      TensorBufferRegistryEntry(tensor_buffer));
+}
+
+Expected<void> LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(
+    LiteRtTensorBufferHandle tensor_buffer_handle) {
+  auto registry_entry = tensor_buffer_registry_.Get(tensor_buffer_handle);
+  if (!registry_entry) {
+    return Unexpected(registry_entry.Error());
+  }
+
+  if (!(*registry_entry)->qnn_mem_handles.empty()) {
+    LITERT_LOG(LITERT_WARNING,
+               "Postponing tensor buffer unregister: %zu active QNN mem "
+               "handles remain.",
+               (*registry_entry)->qnn_mem_handles.size());
+    return {};
+  }
+
+  return tensor_buffer_registry_.Unregister(tensor_buffer_handle);
+}
+
 Expected<LiteRtTensorBuffer> LiteRtDispatchDeviceContextT::GetTensorBuffer(
     LiteRtTensorBufferHandle tensor_buffer_handle) {
   auto registry_entry = tensor_buffer_registry_.Get(tensor_buffer_handle);
@@ -63,28 +88,22 @@ Expected<LiteRtTensorBuffer> LiteRtDispatchDeviceContextT::GetTensorBuffer(
   return (*registry_entry)->tensor_buffer;
 }
 
-Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::GetMemHandle(
-    LiteRtTensorBufferHandle tensor_buffer_handle, const Qnn_Tensor_t& tensor) {
+Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterMemHandle(
+    LiteRtTensorBufferHandle tensor_buffer_handle,
+    Qnn_ContextHandle_t context_handle) {
   auto registry_entry = tensor_buffer_registry_.Get(tensor_buffer_handle);
   if (!registry_entry) {
     return Unexpected(registry_entry.Error());
   }
 
-  if (!(*registry_entry)->qnn_mem_handle) {
-    auto qnn_mem_handle =
-        RegisterTensorBuffer((*registry_entry)->tensor_buffer, tensor);
-    if (!qnn_mem_handle) {
-      return Unexpected(qnn_mem_handle.Error());
-    }
-    (*registry_entry)->qnn_mem_handle = *qnn_mem_handle;
+  auto mem_handle_iter =
+      (*registry_entry)->qnn_mem_handles.find(context_handle);
+  if (mem_handle_iter != (*registry_entry)->qnn_mem_handles.end()) {
+    ++mem_handle_iter->second.ref_count;
+    return mem_handle_iter->second.mem_handle;
   }
 
-  return (*registry_entry)->qnn_mem_handle;
-}
-
-Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
-    LiteRtTensorBuffer tensor_buffer, const Qnn_Tensor_t& tensor) {
-  LITERT_LOG(LITERT_DEBUG, "Registering tensor buffer %p", tensor_buffer);
+  auto tensor_buffer = (*registry_entry)->tensor_buffer;
   LiteRtTensorBufferType tensor_buffer_type;
   if (auto status = runtime_context_->get_tensor_buffer_type(
           tensor_buffer, &tensor_buffer_type);
@@ -177,7 +196,6 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
     case ::qnn::BackendType::kDspBackend:
       mem_descriptor.memType = QNN_MEM_TYPE_ION;
       mem_descriptor.ionInfo.fd = buffer_fd;
-
       break;
     case ::qnn::BackendType::kHtpBackend:
       [[fallthrough]];
@@ -202,16 +220,8 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
           QnnHtpMem_SharedBufferConfig_t{buffer_fd, tensor_buffer_offset};
       mem_descriptor.memType = QNN_MEM_TYPE_CUSTOM;
       mem_descriptor.customInfo = &mem_htp_descriptor;
-
       break;
   }
-
-  if (invocation_context_ == nullptr) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Missing invocation context");
-  }
-
-  Qnn_ContextHandle_t context_handle = invocation_context_->GetContextHandle();
 
   Qnn_MemHandle_t mem_handle = nullptr;
   if (auto status = qnn_manager_.Api()->memRegister(
@@ -219,15 +229,19 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       status != QNN_SUCCESS) {
     return Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
-        absl::StrFormat("Failed to register tensor buffer, QNN error code: %d",
+        absl::StrFormat("Failed to register mem_handle, QNN error code: %d",
                         status));
   }
 
   if (!mem_handle) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Failed to register buffer: null mem_handle");
+                      "Failed to register mem_handle: null mem_handle");
   }
 
+  (*registry_entry)
+      ->qnn_mem_handles.emplace(
+          context_handle,
+          TensorBufferRegistryEntry::QnnMemHandleInfo{mem_handle, 1});
   return mem_handle;
 }
 
@@ -260,21 +274,35 @@ LiteRtDispatchDeviceContextT::GetOrCreateContext(
   return *(context_cache_[key]);
 }
 
-litert::Expected<void> LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(
-    LiteRtTensorBufferHandle tensor_buffer_handle, const Qnn_Tensor_t& tensor) {
-  LITERT_ASSIGN_OR_RETURN(auto tensor_buffer,
-                          GetTensorBuffer(tensor_buffer_handle));
-  LITERT_LOG(LITERT_DEBUG, "Unregistering tensor buffer %p", tensor_buffer);
-  LITERT_RETURN_IF_ERROR(
-      tensor_buffer_registry_.Unregister(tensor_buffer_handle));
-  LITERT_ASSIGN_OR_RETURN(auto mem_handle,
-                          GetMemHandle(tensor_buffer_handle, tensor));
-  if (auto status = qnn_manager_.Api()->memDeRegister(&mem_handle, 1UL);
+litert::Expected<void> LiteRtDispatchDeviceContextT::UnregisterMemHandle(
+    LiteRtTensorBufferHandle tensor_buffer_handle,
+    Qnn_ContextHandle_t context_handle) {
+  auto registry_entry = tensor_buffer_registry_.Get(tensor_buffer_handle);
+  if (!registry_entry) {
+    return Unexpected(registry_entry.Error());
+  }
+
+  auto mem_handle_iter =
+      (*registry_entry)->qnn_mem_handles.find(context_handle);
+  if (mem_handle_iter == (*registry_entry)->qnn_mem_handles.end() ||
+      mem_handle_iter->second.mem_handle == nullptr) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "mem_handle is not initialized in registry.");
+  }
+
+  if (--mem_handle_iter->second.ref_count > 0) {
+    return {};
+  }
+
+  if (auto status = qnn_manager_.Api()->memDeRegister(
+          &mem_handle_iter->second.mem_handle, 1UL);
       status != QNN_SUCCESS) {
     return Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
         absl::StrFormat(
             "Failed to unregister tensor buffer, QNN error code: %d", status));
   }
+
+  (*registry_entry)->qnn_mem_handles.erase(mem_handle_iter);
   return {};
 }
