@@ -31,11 +31,11 @@ limitations under the License.
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
-#include "tensor/backends/tflite/arithmetic_tflite.h"
 #include "tensor/backends/tflite/linked_flat_hash_map.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
+#include "tensor/internal/mixin.h"
 #include "tensor/tensor.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/schema/mutable/schema_generated.h"
@@ -65,8 +65,8 @@ class ModelFactory {
 
   // Adds a subgraph to the model and return its index.
   //
-  // Note: This is reccursion safe and can be called when already adding a
-  // subgraph: the state of the explaration is saved upon entry and restored
+  // Note: This is recursion safe and can be called when already adding a
+  // subgraph: the state of the exploration is saved upon entry and restored
   // when exiting the function.
   absl::StatusOr<int> AddSubgraph(std::vector<TensorHandle> outputs);
 
@@ -146,6 +146,11 @@ class ModelFactory {
   tflite::ModelT model_;
   size_t allocation_size_;
   absl::flat_hash_map<graph::Tensor, uint32_t> tensor_to_external_buffer_id_;
+};
+
+class TfLiteMixinRegistrar : public graph::MixinRegistrar {
+ public:
+  void Register(std::shared_ptr<graph::Operation> op) override;
 };
 
 // Creates a flatbuffer from the given outputs and saves it to the given path.
