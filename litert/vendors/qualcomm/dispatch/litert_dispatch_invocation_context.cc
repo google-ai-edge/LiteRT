@@ -395,17 +395,19 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::DetachInput(
-    int graph_input_index, LiteRtTensorBufferHandle /*tensor_buffer_handle*/) {
+    int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
   auto& tensor = inputs_[graph_input_index];
-  LITERT_RETURN_IF_ERROR(DetachBuffer(tensor.GetQnnTensor()));
+  LITERT_RETURN_IF_ERROR(
+      DetachBuffer(tensor.GetQnnTensor(), tensor_buffer_handle));
   input_buffer_handles_[graph_input_index] = -1;
   return {};
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::DetachOutput(
-    int graph_output_index, LiteRtTensorBufferHandle /*tensor_buffer_handle*/) {
+    int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
   auto& tensor = outputs_[graph_output_index];
-  LITERT_RETURN_IF_ERROR(DetachBuffer(tensor.GetQnnTensor()));
+  LITERT_RETURN_IF_ERROR(
+      DetachBuffer(tensor.GetQnnTensor(), tensor_buffer_handle));
   output_buffer_handles_[graph_output_index] = -1;
   return {};
 }
@@ -462,7 +464,8 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
     return {};
   }
 
-  auto mem_handle = device_context_->GetMemHandle(tensor_buffer_handle, tensor);
+  auto mem_handle = device_context_->RegisterMemHandle(tensor_buffer_handle,
+                                                       GetContextHandle());
   if (!mem_handle) {
     return Unexpected(mem_handle.Error());
   }
@@ -487,19 +490,15 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::DetachBuffer(
-    Qnn_Tensor_t& tensor) {
-  // The buffer stays registered, since it may still be attached to other
-  // tensors: its QNN memory handle is released when it is unregistered.
-  if (tensor.version == QNN_TENSOR_VERSION_1) {
-    tensor.v1.memType = QNN_TENSORMEMTYPE_UNDEFINED;
-    tensor.v1.clientBuf = QNN_CLIENT_BUFFER_INIT;
-  } else if (tensor.version == QNN_TENSOR_VERSION_2) {
-    tensor.v2.memType = QNN_TENSORMEMTYPE_UNDEFINED;
-    tensor.v2.clientBuf = QNN_CLIENT_BUFFER_INIT;
-  } else {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Unsupported QNN tensor version");
+    Qnn_Tensor_t& tensor, LiteRtTensorBufferHandle tensor_buffer_handle) {
+  const auto mem_type = tensor.version == QNN_TENSOR_VERSION_1
+                            ? tensor.v1.memType
+                            : tensor.v2.memType;
+  if (mem_type == QNN_TENSORMEMTYPE_RAW) {
+    return {};
   }
+  LITERT_RETURN_IF_ERROR(device_context_->UnregisterMemHandle(
+      tensor_buffer_handle, GetContextHandle()));
   return {};
 }
 
@@ -530,13 +529,23 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
   if (auto_mode) {
     qnn_backend_.ScheduleUpVote();
   }
-  const auto status = qnn_manager_.Api()->graphExecute(
+  const auto* qnn_api = qnn_manager_.Api();
+  const auto status = qnn_api->graphExecute(
       graph_handle_, inputs, num_ins, outputs, num_outs, profile_handle_,
       /*signalHandle=*/nullptr);
   if (auto_mode) {
     qnn_backend_.ScheduleDownVote();
   }
   if (status != QNN_SUCCESS) {
+    const char* error_message = nullptr;
+    if (qnn_api->errorGetMessage(status, &error_message) == QNN_SUCCESS &&
+        error_message != nullptr) {
+      LITERT_LOG(LITERT_ERROR, "QNN graphExecute failed with status: %llu, %s",
+                 static_cast<unsigned long long>(status), error_message);
+    } else {
+      LITERT_LOG(LITERT_ERROR, "QNN graphExecute failed with status: %llu",
+                 static_cast<unsigned long long>(status));
+    }
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to execute graph");
   }

@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <utility>
 
@@ -41,10 +42,7 @@ class LiteRtDispatchDeviceContextT {
       litert::qnn::QnnManager& qnn_manager, ::qnn::QnnBackend& qnn_backend);
 
   litert::Expected<LiteRtTensorBufferHandle> RegisterTensorBuffer(
-      LiteRtTensorBuffer tensor_buffer) {
-    return tensor_buffer_registry_.Register(
-        TensorBufferRegistryEntry(tensor_buffer));
-  }
+      LiteRtTensorBuffer tensor_buffer);
 
   // Unregisters the tensor buffer and releases its QNN memory handle, if any.
   litert::Expected<void> UnregisterTensorBuffer(
@@ -52,15 +50,6 @@ class LiteRtDispatchDeviceContextT {
 
   litert::Expected<LiteRtTensorBuffer> GetTensorBuffer(
       LiteRtTensorBufferHandle tensor_buffer_handle);
-
-  litert::Expected<Qnn_MemHandle_t> GetMemHandle(
-      LiteRtTensorBufferHandle tensor_buffer_handle,
-      const Qnn_Tensor_t& tensor);
-
-  void SetInvocationContext(
-      LiteRtDispatchInvocationContextT* invocation_context) {
-    invocation_context_ = invocation_context;
-  }
 
   litert::Expected<const litert::qnn::QnnManager::ContextHandle&>
   GetOrCreateContext(const void* bytecode_ptr, size_t bytecode_size,
@@ -70,12 +59,27 @@ class LiteRtDispatchDeviceContextT {
     return runtime_context_;
   }
 
+  litert::Expected<Qnn_MemHandle_t> RegisterMemHandle(
+      LiteRtTensorBufferHandle tensor_buffer_handle,
+      Qnn_ContextHandle_t context_handle);
+
+  litert::Expected<void> UnregisterMemHandle(
+      LiteRtTensorBufferHandle tensor_buffer_handle,
+      Qnn_ContextHandle_t context_handle);
+
  private:
   struct TensorBufferRegistryEntry {
-    LiteRtTensorBuffer tensor_buffer;
-    Qnn_MemHandle_t qnn_mem_handle = nullptr;
+    struct QnnMemHandleInfo {
+      Qnn_MemHandle_t mem_handle = nullptr;
+      uint32_t ref_count = 0;
+    };
+
+    LiteRtTensorBuffer tensor_buffer = nullptr;
+    absl::flat_hash_map<Qnn_ContextHandle_t, QnnMemHandleInfo> qnn_mem_handles;
+
     explicit TensorBufferRegistryEntry(LiteRtTensorBuffer tensor_buffer_)
         : tensor_buffer(tensor_buffer_) {}
+
     bool operator==(const TensorBufferRegistryEntry& other) const {
       return tensor_buffer == other.tensor_buffer;
     }
@@ -91,14 +95,10 @@ class LiteRtDispatchDeviceContextT {
         qnn_manager_(qnn_manager),
         qnn_backend_(qnn_backend) {}
 
-  litert::Expected<Qnn_MemHandle_t> RegisterTensorBuffer(
-      LiteRtTensorBuffer tensor_buffer, const Qnn_Tensor_t& tensor);
-
   const LiteRtRuntimeContext* runtime_context_;
   litert::qnn::QnnManager& qnn_manager_;
   ::qnn::QnnBackend& qnn_backend_;
   TensorBufferRegistry tensor_buffer_registry_;
-  LiteRtDispatchInvocationContextT* invocation_context_ = nullptr;
 
   struct ContextCacheKey {
     const void* ptr;
