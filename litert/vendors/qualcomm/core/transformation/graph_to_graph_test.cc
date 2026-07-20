@@ -323,21 +323,21 @@ TEST(MHAOptimization, Gemma3Prefill) {
   op_wrappers.emplace_back(
       CreateSoftmaxOp(reshape2_output, softmax_output, 1.0f));
   // Slice0
-  const std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 1,    1,
+  static constexpr std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 1,    1,
                                                    0, 512, 1, 0, 1280, 1};
   auto& slice0_rangs = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice0_ranges_data.size(), slice0_ranges_data.data());
+      sizeof(slice0_ranges_data[0]) * slice0_ranges_data.size(), slice0_ranges_data.data());
   auto& slice0_output =
       tensor_pool.CloneNativeTensorFrom(reshape2_output, {1, 1, 512, 1280});
   op_wrappers.emplace_back(
       CreateSliceOp(softmax_output, slice0_output, slice0_rangs));
   // Slice1
-  const std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    1,    1,
+  static constexpr std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    1,    1,
                                                    0, 512, 1, 1280, 1408, 1};
   auto& slice1_rangs = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice1_ranges_data.size(), slice1_ranges_data.data());
+      sizeof(slice1_ranges_data[0]) * slice1_ranges_data.size(), slice1_ranges_data.data());
   auto& slice1_output =
       tensor_pool.CloneNativeTensorFrom(reshape2_output, {1, 1, 512, 128});
   op_wrappers.emplace_back(
@@ -539,21 +539,21 @@ TEST(MHAOptimization, Gemma3Decode) {
   op_wrappers.emplace_back(
       CreateSoftmaxOp(reshape1_output, softmax_output, 1.0f));
   // Slice0
-  const std::array<int32_t, 12> slice0_ranges_data{0, 1, 1, 0, 1,    1,
+  static constexpr std::array<int32_t, 12> slice0_ranges_data{0, 1, 1, 0, 1,    1,
                                                    0, 4, 1, 0, 1280, 1};
   auto& slice0_ranges = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice0_ranges_data.size(), slice0_ranges_data.data());
+      sizeof(slice0_ranges_data[0]) * slice0_ranges_data.size(), slice0_ranges_data.data());
   auto& slice0_output =
       tensor_pool.CloneNativeTensorFrom(reshape1_output, {1, 1, 4, 1280});
   op_wrappers.emplace_back(
       CreateSliceOp(softmax_output, slice0_output, slice0_ranges));
   // Slice1
-  const std::array<int32_t, 12> slice1_ranges_data{0, 1, 1, 0,    1,    1,
+  static constexpr std::array<int32_t, 12> slice1_ranges_data{0, 1, 1, 0,    1,    1,
                                                    0, 4, 1, 1280, 1281, 1};
   auto& slice1_ranges = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice1_ranges_data.size(), slice1_ranges_data.data());
+      sizeof(slice1_ranges_data[0]) * slice1_ranges_data.size(), slice1_ranges_data.data());
   auto& slice1_output =
       tensor_pool.CloneNativeTensorFrom(reshape1_output, {1, 1, 4, 256});
   op_wrappers.emplace_back(
@@ -762,6 +762,285 @@ TEST(MaskTransformTest, Gemma4Mask) {
             op_wrappers[0].GetInputTensor(2).GetQuantParams());
 }
 
+struct GQAGemma4BPrefillParams {
+  bool has_k_slice_attn_update_convert;
+  bool has_v_slice_attn_update_convert;
+  bool has_global_mask;
+};
+
+class GQAGemma4BPrefillTest
+    : public ::testing::TestWithParam<GQAGemma4BPrefillParams> {};
+
+TEST_P(GQAGemma4BPrefillTest, GQAGemma4BPrefill) {
+  const auto& params = GetParam();
+  TensorPool tensor_pool;
+  QuantizeParamsWrapperVariant quant_param(
+      std::in_place_type<ScaleOffsetQuantizeParamsWrapper>, 1e-4f, 0);
+  std::vector<OpWrapper> op_wrappers;
+
+  // In0: [B,S,H,D] input to Transpose0
+  auto& in0 = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                             quant_param, {1, 128, 8, 256});
+
+  // Transpose0: [B,S,H,D] -> [B,H,S,D]
+  static constexpr std::array<std::uint32_t, 4> kPerm0213{0, 2, 1, 3};
+  auto& perm0213 = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_UINT_32, {}, {kPerm0213.size()},
+      sizeof(std::uint32_t) * kPerm0213.size(), kPerm0213.data());
+  auto& transpose0_output =
+      tensor_pool.CloneNativeTensorFrom(in0, {1, 8, 128, 256});
+  op_wrappers.emplace_back(
+      CreateTransposeOp(in0, transpose0_output, perm0213));
+
+  // Reshape0
+  auto& reshape0_output =
+      tensor_pool.CloneNativeTensorFrom(transpose0_output, {1, 8, 128, 256});
+  op_wrappers.emplace_back(CreateReshapeOp(transpose0_output, reshape0_output));
+
+  // Far-away Convert (K_slice quantize, not connected to main chain)
+  auto& k_slice_raw = tensor_pool.CreateNativeTensor(QNN_DATATYPE_FLOAT_16,
+                                                     quant_param, {1, 2, 128, 256});
+  auto& k_slice_fp8 = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 128, 256});
+  op_wrappers.emplace_back(CreateConvertOp(k_slice_raw, k_slice_fp8));
+
+  // MatMul0 (Q x K_cache)
+  auto& q_in = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                              quant_param, {1, 2, 2560, 256});
+  auto& matmul0_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 512, 2560});
+  op_wrappers.emplace_back(
+      CreateMatmulOp(reshape0_output, q_in, matmul0_output, false, true));
+
+  // Optional KSliceAttnUpdateConvert between far-away Convert output and MatMul1
+  TensorWrapper* k_slice_for_matmul1 = &k_slice_fp8;
+  if (params.has_k_slice_attn_update_convert) {
+    auto& k_slice_int8 = tensor_pool.CreateNativeTensor(
+        QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 128, 256});
+    op_wrappers.emplace_back(CreateConvertOp(k_slice_fp8, k_slice_int8));
+    k_slice_for_matmul1 = &k_slice_int8;
+  }
+
+  // MatMul1 (Q x K_slice)
+  auto& matmul1_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 512, 128});
+  op_wrappers.emplace_back(CreateMatmulOp(reshape0_output, *k_slice_for_matmul1,
+                                          matmul1_output, false, true));
+
+  // Concat
+  auto& concat_output =
+      tensor_pool.CloneNativeTensorFrom(matmul0_output, {1, 2, 512, 2688});
+  op_wrappers.emplace_back(CreateConcatenationOp(
+      {matmul0_output, matmul1_output}, concat_output, 3));
+
+  // Optional global mask: Concat local+global masks then Reshape before MaskAdd.
+  // When absent, a single mask tensor is used directly.
+  TensorWrapper* mask_for_add = nullptr;
+  if (params.has_global_mask) {
+    auto& local_mask = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                                      quant_param, {1, 1, 512, 2688});
+    auto& global_mask = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                                       quant_param, {1, 1, 512, 2688});
+    auto& mask_concat_output =
+        tensor_pool.CloneNativeTensorFrom(local_mask, {1, 2, 512, 2688});
+    op_wrappers.emplace_back(CreateConcatenationOp(
+        {local_mask, global_mask}, mask_concat_output, 1));
+    auto& mask_reshape_output =
+        tensor_pool.CloneNativeTensorFrom(mask_concat_output, {1, 2, 512, 2688});
+    op_wrappers.emplace_back(
+        CreateReshapeOp(mask_concat_output, mask_reshape_output));
+    mask_for_add = &mask_reshape_output;
+  } else {
+    auto& mask = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                                quant_param, {1, 1, 512, 2688});
+    mask_for_add = &mask;
+  }
+
+  // Add1
+  auto& add1_output = tensor_pool.CloneNativeTensorFrom(concat_output);
+  op_wrappers.emplace_back(
+      CreateElementWiseAddOp(concat_output, *mask_for_add, add1_output));
+
+  // Softmax
+  auto& softmax_output = tensor_pool.CloneNativeTensorFrom(add1_output);
+  op_wrappers.emplace_back(
+      CreateSoftmaxOp(add1_output, softmax_output, 1.0f));
+
+  // Slice0
+  static constexpr std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 2,    1,
+                                                               0, 512, 1, 0, 2560, 1};
+  auto& slice0_ranges = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_INT_32, {}, {4, 3},
+      sizeof(slice0_ranges_data[0]) * slice0_ranges_data.size(), slice0_ranges_data.data());
+  auto& slice0_output =
+      tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 512, 2560});
+  op_wrappers.emplace_back(
+      CreateSliceOp(softmax_output, slice0_output, slice0_ranges));
+
+  // Slice1
+  static constexpr std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    2,    1,
+                                                               0, 512, 1, 2560, 2688, 1};
+  auto& slice1_ranges = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_INT_32, {}, {4, 3},
+      sizeof(slice1_ranges_data[0]) * slice1_ranges_data.size(), slice1_ranges_data.data());
+  auto& slice1_output =
+      tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 512, 128});
+  op_wrappers.emplace_back(
+      CreateSliceOp(softmax_output, slice1_output, slice1_ranges));
+
+  // MatMul2 (QK x V_cache)
+  auto& v_in = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                              quant_param, {1, 2, 256, 2560});
+  auto& matmul2_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 512, 256});
+  op_wrappers.emplace_back(
+      CreateMatmulOp(slice0_output, v_in, matmul2_output, false, true));
+
+  // Optional VSliceAttnUpdateConvert between V_slice and MatMul3
+  auto& in2_base = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                                  quant_param, {1, 2, 256, 128});
+  TensorWrapper* v_slice_for_matmul3 = &in2_base;
+  if (params.has_v_slice_attn_update_convert) {
+    auto& v_slice_raw_tensor = tensor_pool.CreateNativeTensor(
+        QNN_DATATYPE_FLOAT_16, quant_param, {1, 2, 256, 128});
+    auto& v_slice_int8 = tensor_pool.CreateNativeTensor(
+        QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 256, 128});
+    op_wrappers.emplace_back(CreateConvertOp(v_slice_raw_tensor, v_slice_int8));
+    v_slice_for_matmul3 = &v_slice_int8;
+  }
+
+  // MatMul3 (QK x V_slice)
+  auto& matmul3_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 512, 256});
+  op_wrappers.emplace_back(CreateMatmulOp(slice1_output, *v_slice_for_matmul3,
+                                          matmul3_output, false, true));
+
+  // Add2
+  auto& add2_output = tensor_pool.CloneNativeTensorFrom(matmul3_output);
+  op_wrappers.emplace_back(
+      CreateElementWiseAddOp(matmul2_output, matmul3_output, add2_output));
+
+  // Output Convert
+  QuantizeParamsWrapperVariant quant_param_out(
+      std::in_place_type<ScaleOffsetQuantizeParamsWrapper>, 3.66805e-02f, 0);
+  auto& quant_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param_out, {1, 2, 512, 256});
+  op_wrappers.emplace_back(CreateConvertOp(add2_output, quant_output));
+
+  // Reshape1
+  auto& reshape1_output =
+      tensor_pool.CloneNativeTensorFrom(quant_output, {1, 8, 128, 256});
+  op_wrappers.emplace_back(CreateReshapeOp(quant_output, reshape1_output));
+
+  // Transpose1: [B,H,S,D] -> [B,S,H,D]
+  auto& perm0213_t1 = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_UINT_32, {}, {kPerm0213.size()},
+      sizeof(std::uint32_t) * kPerm0213.size(), kPerm0213.data());
+  auto& transpose1_output =
+      tensor_pool.CloneNativeTensorFrom(reshape1_output, {1, 128, 8, 256});
+  op_wrappers.emplace_back(
+      CreateTransposeOp(reshape1_output, transpose1_output, perm0213_t1));
+
+  const size_t expected_input_ops =
+      16 + (params.has_k_slice_attn_update_convert ? 1 : 0) +
+      (params.has_v_slice_attn_update_convert ? 1 : 0) +
+      (params.has_global_mask ? 2 : 0);
+  ASSERT_EQ(op_wrappers.size(), expected_input_ops);
+
+  GraphToGraphTransform(::qnn::G2GConfig::kMHAOptPrefill, op_wrappers,
+                        tensor_pool, [](OpWrapper& op) { return true; });
+
+  static constexpr size_t kNumHead = 8;
+  // Base: 11 ops per head. Each optional attn-update-convert adds 1.
+  const size_t kNumOpInSha =
+      11 + (params.has_k_slice_attn_update_convert ? 1 : 0) +
+      (params.has_v_slice_attn_update_convert ? 1 : 0);
+  // With has_global_mask the kept mask Concat+Reshape sit at indices 0 and 1,
+  // pushing new_ops up by 2, so per-head SHA block starts at 10 instead of 8.
+  const size_t kShaInitIdx = params.has_global_mask ? 10 : 8;
+
+  // --- Ops before SHA ---
+  // The far-away Convert is always at index 0.
+  // When has_global_mask, the preserved mask Concat+Reshape sit at [1] and [2],
+  // followed by new_ops starting at [3]. Otherwise new_ops start at [1].
+  // new_ops layout (at kPreShaBase = kShaInitIdx - 7):
+  //   [kPreShaBase+0] UnpackQ       (axis=2, 8 heads)
+  //   [kPreShaBase+1] UnpackK_cache (axis=1, 2 kv-heads)
+  //   [kPreShaBase+2] UnpackK_slice (axis=1, 2 kv-heads)
+  //   [kPreShaBase+3] UnpackV_cache (axis=1, 2 kv-heads)
+  //   [kPreShaBase+4] UnpackV_slice (axis=1, 2 kv-heads)
+  //   [kPreShaBase+5] Reshape(mask)
+  //   [kPreShaBase+6] UnpackMask    (axis=1, 4 per-kv heads)
+  ASSERT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kConvert));  // far-away Convert
+  if (params.has_global_mask) {
+    ASSERT_TRUE(op_wrappers[1].IsOpCode(QnnOpCode::kConcat));
+    ASSERT_TRUE(op_wrappers[2].IsOpCode(QnnOpCode::kReshape));
+  }
+  const size_t kPreShaBase = kShaInitIdx - 7;
+  ASSERT_TRUE(op_wrappers[kPreShaBase + 0].IsOpCode(QnnOpCode::kUnPack));   // UnpackQ
+  ASSERT_TRUE(op_wrappers[kPreShaBase + 1].IsOpCode(QnnOpCode::kUnPack));   // UnpackK_cache
+  ASSERT_TRUE(op_wrappers[kPreShaBase + 2].IsOpCode(QnnOpCode::kUnPack));   // UnpackK_slice
+  ASSERT_TRUE(op_wrappers[kPreShaBase + 3].IsOpCode(QnnOpCode::kUnPack));   // UnpackV_cache
+  ASSERT_TRUE(op_wrappers[kPreShaBase + 4].IsOpCode(QnnOpCode::kUnPack));   // UnpackV_slice
+  ASSERT_TRUE(op_wrappers[kPreShaBase + 5].IsOpCode(QnnOpCode::kReshape));  // Reshape(mask)
+  ASSERT_TRUE(op_wrappers[kPreShaBase + 6].IsOpCode(QnnOpCode::kUnPack));   // UnpackMask
+
+  // --- Per-head SHA ops ---
+  for (size_t i = 0; i < kNumHead; ++i) {
+    // Q·KC is always first
+    ASSERT_TRUE(op_wrappers[kShaInitIdx + kNumOpInSha * i].IsOpCode(
+        QnnOpCode::kMatMul));
+
+    if (params.has_k_slice_attn_update_convert) {
+      // KSliceAttnUpdateConvert immediately after Q·KC
+      ASSERT_TRUE(op_wrappers[(kShaInitIdx + 1) + kNumOpInSha * i].IsOpCode(
+          QnnOpCode::kConvert));
+      // Q·KS follows
+      ASSERT_TRUE(op_wrappers[(kShaInitIdx + 2) + kNumOpInSha * i].IsOpCode(
+          QnnOpCode::kMatMul));
+    }
+
+    // KSlice Convert at position 1 shifts all subsequent ops by 1.
+    const size_t kShift = params.has_k_slice_attn_update_convert ? 1 : 0;
+
+    if (params.has_v_slice_attn_update_convert) {
+      // VSliceAttnUpdateConvert is between QK·VC and QK·VS (position 8 + shift)
+      ASSERT_TRUE(op_wrappers[(kShaInitIdx + 8 + kShift) + kNumOpInSha * i].IsOpCode(
+          QnnOpCode::kConvert));
+    }
+
+    // Softmax is at position 4 + shift within each SHA head
+    ASSERT_TRUE(op_wrappers[(kShaInitIdx + 4 + kShift) + kNumOpInSha * i].IsOpCode(
+        QnnOpCode::kSoftmax));
+
+    // Output Convert is always last in each SHA head
+    ASSERT_TRUE(
+        op_wrappers[(kShaInitIdx + kNumOpInSha - 1) + kNumOpInSha * i].IsOpCode(
+            QnnOpCode::kConvert));
+  }
+
+  // --- Ops after all SHA heads ---
+  // Final Concat (all head outputs along axis=2) and Reshape into output shape.
+  const size_t kPostShaBase = kShaInitIdx + kNumOpInSha * kNumHead;
+  ASSERT_TRUE(op_wrappers[kPostShaBase + 0].IsOpCode(QnnOpCode::kConcat));
+  ASSERT_TRUE(op_wrappers[kPostShaBase + 1].IsOpCode(QnnOpCode::kReshape));
+  ASSERT_EQ(op_wrappers.size(), kPostShaBase + 2);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    MHASHATest, GQAGemma4BPrefillTest,
+    ::testing::Values(
+        GQAGemma4BPrefillParams{false, false, false},
+        GQAGemma4BPrefillParams{true, false, false},
+        GQAGemma4BPrefillParams{false, true, false},
+        GQAGemma4BPrefillParams{false, false, true}),
+    [](const ::testing::TestParamInfo<GQAGemma4BPrefillParams>& info) {
+      if (info.param.has_k_slice_attn_update_convert) return "KSliceAttnUpdateConvert";
+      if (info.param.has_v_slice_attn_update_convert) return "VSliceAttnUpdateConvert";
+      if (info.param.has_global_mask) return "GlobalMask";
+      return "Base";
+    });
+
 TEST(MHASHATest, FastVlm) {
   // G2G Test case: MHA -> SHA
   // ------------------- Before ---------------------
@@ -924,22 +1203,22 @@ TEST(MHASHATest, FastVlm) {
       CreateSoftmaxOp(reshape2_output, softmax_output, 1.0f));
 
   // Slice0
-  const std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 2,    1,
+  static constexpr std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 2,    1,
                                                    0, 896, 1, 0, 1280, 1};
   auto& slice0_ranges = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice0_ranges_data.size(), slice0_ranges_data.data());
+      sizeof(slice0_ranges_data[0]) * slice0_ranges_data.size(), slice0_ranges_data.data());
   auto& slice0_output =
       tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 896, 1280});
   op_wrappers.emplace_back(
       CreateSliceOp(softmax_output, slice0_output, slice0_ranges));
 
   // Slice1
-  const std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    2,    1,
+  static constexpr std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    2,    1,
                                                    0, 896, 1, 1280, 1408, 1};
   auto& slice1_ranges = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice1_ranges_data.size(), slice1_ranges_data.data());
+      sizeof(slice1_ranges_data[0]) * slice1_ranges_data.size(), slice1_ranges_data.data());
   auto& slice1_output =
       tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 896, 128});
   op_wrappers.emplace_back(
@@ -1168,21 +1447,21 @@ TEST(MHAOptimization, TinyGemma3Prefill) {
   auto& softmax_output = tensor_pool.CloneNativeTensorFrom(add0_output);
   op_wrappers.emplace_back(CreateSoftmaxOp(add0_output, softmax_output, 1.0f));
   // Slice0
-  const std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 1,    1,
+  static constexpr std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 1,    1,
                                                    0, 512, 1, 0, 1280, 1};
   auto& slice0_ranges = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice0_ranges_data.size(), slice0_ranges_data.data());
+      sizeof(slice0_ranges_data[0]) * slice0_ranges_data.size(), slice0_ranges_data.data());
   auto& slice0_output =
       tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 1, 512, 1280});
   op_wrappers.emplace_back(
       CreateSliceOp(softmax_output, slice0_output, slice0_ranges));
   // Slice1
-  const std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    1,    1,
+  static constexpr std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    1,    1,
                                                    0, 512, 1, 1280, 1408, 1};
   auto& slice1_ranges = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice1_ranges_data.size(), slice1_ranges_data.data());
+      sizeof(slice1_ranges_data[0]) * slice1_ranges_data.size(), slice1_ranges_data.data());
   auto& slice1_output =
       tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 1, 512, 128});
   op_wrappers.emplace_back(
