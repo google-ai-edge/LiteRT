@@ -91,6 +91,10 @@ class DummyShapeInferenceContext
     return {};
   }
 
+  size_t GetNumInputs() const override { return op_.Inputs().size(); }
+
+  size_t GetNumOutputs() const override { return op_.Outputs().size(); }
+
   absl::Span<const uint8_t> GetInputData(size_t index) const override {
     if (index >= op_.Inputs().size() || op_.Inputs()[index] == nullptr) {
       return {};

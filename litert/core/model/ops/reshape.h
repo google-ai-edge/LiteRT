@@ -22,6 +22,7 @@
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/core/model/shape_inference_types.h"
 
 namespace litert::internal {
@@ -44,13 +45,30 @@ inline LiteRtStatus InferReshape(const ShapeInferenceContext& ctx,
 
   auto buf = ctx.GetInputData(kShapeTensorArgIndex);
   if (!buf.empty()) {
-    if (buf.size() % sizeof(int32_t) != 0) {
-      return kLiteRtStatusErrorInvalidArgument;
-    }
-    const int32_t* dims = reinterpret_cast<const int32_t*>(buf.data());
-    size_t rank = buf.size() / sizeof(int32_t);
-    for (size_t i = 0; i < rank; ++i) {
-      new_shape.push_back(dims[i]);
+    LiteRtElementType elem_type = ctx.GetInputElementType(kShapeTensorArgIndex);
+    Dims shape_tensor_dims = ctx.GetInputShape(kShapeTensorArgIndex);
+    bool is_int64 = (elem_type == kLiteRtElementTypeInt64) ||
+                    (!shape_tensor_dims.empty() && shape_tensor_dims[0] > 0 &&
+                     buf.size() == shape_tensor_dims[0] * sizeof(int64_t));
+
+    if (is_int64) {
+      if (buf.size() % sizeof(int64_t) != 0) {
+        return kLiteRtStatusErrorInvalidArgument;
+      }
+      const int64_t* dims = reinterpret_cast<const int64_t*>(buf.data());
+      size_t rank = buf.size() / sizeof(int64_t);
+      for (size_t i = 0; i < rank; ++i) {
+        new_shape.push_back(static_cast<int32_t>(dims[i]));
+      }
+    } else {
+      if (buf.size() % sizeof(int32_t) != 0) {
+        return kLiteRtStatusErrorInvalidArgument;
+      }
+      const int32_t* dims = reinterpret_cast<const int32_t*>(buf.data());
+      size_t rank = buf.size() / sizeof(int32_t);
+      for (size_t i = 0; i < rank; ++i) {
+        new_shape.push_back(dims[i]);
+      }
     }
   } else if (reshape_opts && !reshape_opts->new_shape.empty()) {
     for (auto d : reshape_opts->new_shape) {
@@ -73,27 +91,35 @@ inline LiteRtStatus InferReshape(const ShapeInferenceContext& ctx,
     }
   }
 
-  if (minus_one_idx != -1) {
-    int64_t input_product = 1;
-    bool input_dynamic = false;
-    for (auto d : input_shape) {
-      if (d == -1) {
-        input_dynamic = true;
-        break;
-      }
-      input_product *= d;
+  int64_t input_product = 1;
+  bool input_dynamic = false;
+  for (auto d : input_shape) {
+    if (d == -1) {
+      input_dynamic = true;
+      break;
     }
+    input_product *= d;
+  }
 
+  if (minus_one_idx != -1) {
     if (input_dynamic) {
       // Cannot resolve -1 if the total volume of input is unknown.
       new_shape[minus_one_idx] = -1;
     } else {
-      if (input_product % new_product != 0) {
-        return kLiteRtStatusErrorShapeInferenceFailed;
+      if (new_product == 0) {
+        if (input_product != 0) {
+          return kLiteRtStatusErrorShapeInferenceFailed;
+        }
+        new_shape[minus_one_idx] = 0;
+      } else {
+        if (input_product % new_product != 0) {
+          return kLiteRtStatusErrorShapeInferenceFailed;
+        }
+        new_shape[minus_one_idx] = input_product / new_product;
       }
-      new_shape[minus_one_idx] =
-          (new_product == 0) ? 0 : input_product / new_product;
     }
+  } else if (!input_dynamic && input_product != new_product) {
+    return kLiteRtStatusErrorShapeInferenceFailed;
   }
 
   result.output_shapes[0] = std::move(new_shape);
