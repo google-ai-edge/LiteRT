@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <fcntl.h>
+#include <unistd.h>
+
 #include <cstddef>
 #include <cstring>
 #include <memory>
@@ -384,6 +387,44 @@ TEST_P(SimpleModelEndToEndTest, Succeeds) {
     LITERT_ASSERT_OK(LiteRtDispatchUnloadExecutable(
         device_context(), graph_interface_state->exec_handle));
   }
+}
+
+TEST_F(SimpleModelTest, ExecutableCachingByFd) {
+  int fd = open(model_file_path().c_str(),
+                O_RDONLY);  // NOLINT(misc-include-cleaner)
+  ASSERT_GE(fd, 0) << "Failed to open model file: " << model_file_path();
+  struct FdCloser {
+    int fd;
+    ~FdCloser() {
+      if (fd >= 0) close(fd);
+    }
+  } fd_closer{fd};
+
+  LiteRtMemBuffer bytecode_buffer = {
+      /*.fd=*/fd,
+      /*.base_addr=*/nullptr,
+      /*.offset=*/0,
+      /*.size=*/model_bytecode().size,
+  };
+
+  LiteRtDispatchExecutableHandle handle1;
+  LITERT_ASSERT_OK(LiteRtDispatchLoadExecutable(
+      device_context(), kLiteRtDispatchExecutableTypeMlModel, &bytecode_buffer,
+      &handle1));
+
+  LiteRtDispatchExecutableHandle handle2;
+  LITERT_ASSERT_OK(LiteRtDispatchLoadExecutable(
+      device_context(), kLiteRtDispatchExecutableTypeMlModel, &bytecode_buffer,
+      &handle2));
+
+  // Verify caching returns identical executable handle.
+  EXPECT_EQ(handle1, handle2);
+
+  // Unloading once should decrement refcount and return kLiteRtStatusOk.
+  LITERT_ASSERT_OK(LiteRtDispatchUnloadExecutable(device_context(), handle1));
+
+  // Unloading second time drops refcount to 0 and unloads the container.
+  LITERT_ASSERT_OK(LiteRtDispatchUnloadExecutable(device_context(), handle2));
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInterfaces, SimpleModelEndToEndTest,

@@ -88,7 +88,7 @@ void DispatchApiTest::TearDown() {
 void SimpleModelTest::SetUp() {
   DispatchApiTest::SetUp();
 
-  std::string model_file_path =
+  model_file_path_ =
 #if defined(__ANDROID__)
       litert::testing::GetTestFilePath(kGoogleTensorModelFileName);
 #else
@@ -97,10 +97,10 @@ void SimpleModelTest::SetUp() {
           "simple_model_reference_google_tensor.bin");
 #endif
   LITERT_ASSERT_OK_AND_ASSIGN(
-      model_, litert::internal::LoadBinaryFile(model_file_path));
+      model_, litert::internal::LoadBinaryFile(model_file_path_));
 
   LITERT_LOG(LITERT_INFO, "Loaded model '%s': %zu bytes",
-             model_file_path.c_str(), model_.Size());
+             model_file_path_.c_str(), model_.Size());
 
   model_bytecode_ = {/*.fd=*/-1,
                      /*.base_addr=*/model_.Data(),
