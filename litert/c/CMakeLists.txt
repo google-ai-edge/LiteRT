@@ -62,6 +62,7 @@ set(LITERT_C_REQUIRED_INTERNAL_HEADERS
     internal/litert_logging.h
     internal/litert_runtime_api_export.h
     internal/litert_runtime_c_api.h
+    internal/litert_runtime_builtin.h
     internal/litert_dispatch_delegate.h
     internal/litert_scheduling_info.h
 )

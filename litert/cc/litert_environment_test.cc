@@ -21,7 +21,7 @@
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/cc/internal/litert_runtime_builtin.h"
+#include "litert/c/internal/litert_runtime_builtin.h"
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"

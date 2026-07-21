@@ -146,6 +146,7 @@ cc_library(
     hdrs = ["load_test_model.h"],
     deps = [
         ":common",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_extended_model",
         "@com_google_absl//absl/strings:string_view",
