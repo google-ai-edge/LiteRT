@@ -81,6 +81,13 @@ py_test(
         "//tflite/python/testdata:interpreter_test_data",
         "//tflite/python/testdata:test_delegate.so",
     ],
+    exec_properties = if_oss(
+        None,
+        select({
+            "//tools/cpp:asan_build": {"cpp_link.mem": "20g"},
+            "//conditions:default": None,
+        }),
+    ),
     # Static linking is required because this loads a cc_binary as a shared
     # library, which would otherwise create ODR violations.
     # copybara:uncomment linking_mode = "static",
@@ -691,6 +698,13 @@ py_test(
         "//tflite:testdata/conv_huge_im2col.bin",
         "//tflite:testdata/multi_add_flex.bin",
     ],
+    exec_properties = if_oss(
+        None,
+        select({
+            "//tools/cpp:asan_build": {"cpp_link.mem": "20g"},
+            "//conditions:default": None,
+        }),
+    ),
     strict_deps = True,
     deps = [
         ":analyzer",
