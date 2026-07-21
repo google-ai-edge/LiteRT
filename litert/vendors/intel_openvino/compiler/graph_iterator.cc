@@ -114,6 +114,70 @@ bool fill_tensor_meta(
   return true;
 }
 
+void GraphIteratorDelegate::ConvertI2WeightsToU2(
+    const litert::compiler::Tensor& tensor,
+    ov::frontend::tensorflow_lite::TensorMetaInfo& tensor_meta_info) const {
+  // XOR flips each sub-byte element's MSB, which is equivalent to adding
+  // 2^(bits-1) mod 2^bits. The zero points are adjusted by the same offset
+  // to keep dequantized values unchanged. u2 packs 4 elements per byte, so
+  // the byte layout is preserved and only the bit pattern changes.
+  constexpr uint8_t xor_mask = 0xAA;  // flip MSB of each 2-bit pair
+  constexpr int64_t zp_offset = 2;    // [-2..1] -> [0..3]
+
+  auto weight_bytes = tensor.Weights().Bytes();
+  auto& buf = converted_weight_buffers_.emplace_back(
+      weight_bytes.data(), weight_bytes.data() + weight_bytes.size());
+  for (auto& byte : buf) {
+    byte ^= xor_mask;
+  }
+  tensor_meta_info.m_tensor_data = buf.data();
+  tensor_meta_info.m_element_type = ov::element::u2;
+
+  auto adjusted_qi =
+      std::make_shared<ov::frontend::tensorflow_lite::QuantizationInfo>(
+          *tensor_meta_info.m_quantization_info);
+  auto zps = adjusted_qi->get_zero_point();
+  for (auto& zp : zps) {
+    zp += zp_offset;
+  }
+  adjusted_qi->set_zero_point(zps);
+  tensor_meta_info.m_quantization_info = adjusted_qi;
+  LITERT_LOG(LITERT_INFO, "Converted i2 weights to u2 for tensor: %s",
+             tensor_meta_info.m_tensor_name.c_str());
+}
+
+void GraphIteratorDelegate::ConvertI2WeightsToI4(
+    const litert::compiler::Tensor& tensor,
+    ov::frontend::tensorflow_lite::TensorMetaInfo& tensor_meta_info) const {
+  // i2 packs 4 signed 2-bit elements per byte (least-significant element
+  // first); i4 packs 2 signed 4-bit elements per byte (low nibble first).
+  // Each 2-bit two's-complement value in [-2, 1] is sign-extended to a 4-bit
+  // two's-complement nibble, so the converted buffer is twice as large. The
+  // zero points are unchanged because i4 represents the same signed values.
+  auto weight_bytes = tensor.Weights().Bytes();
+  auto& buf = converted_weight_buffers_.emplace_back();
+  buf.reserve(weight_bytes.size() * 2);
+
+  // Sign-extends a 2-bit two's-complement value to a 4-bit nibble.
+  auto i2_to_i4_nibble = [](uint8_t v2) -> uint8_t {
+    return (v2 & 0x2) ? static_cast<uint8_t>(0xC | v2) : v2;
+  };
+
+  for (uint8_t packed : weight_bytes) {
+    // Elements 0..3 occupy bit pairs [1:0], [3:2], [5:4], [7:6].
+    for (int e = 0; e < 4; e += 2) {
+      const uint8_t lo2 = (packed >> (2 * e)) & 0x3;
+      const uint8_t hi2 = (packed >> (2 * (e + 1))) & 0x3;
+      buf.push_back(static_cast<uint8_t>(i2_to_i4_nibble(lo2) |
+                                         (i2_to_i4_nibble(hi2) << 4)));
+    }
+  }
+  tensor_meta_info.m_tensor_data = buf.data();
+  tensor_meta_info.m_element_type = ov::element::i4;
+  LITERT_LOG(LITERT_INFO, "Converted i2 weights to i4 for tensor: %s",
+             tensor_meta_info.m_tensor_name.c_str());
+}
+
 std::shared_ptr<ov::frontend::tensorflow_lite::DecoderBase>
 GraphIteratorDelegate::get_decoder() const {
   converted_weight_buffers_.clear();
@@ -158,39 +222,18 @@ GraphIteratorDelegate::get_decoder() const {
                    op.Code());
         tensor_meta_info.m_tensor_data = input.Weights().Bytes().data();
 
-        // Convert signed i2 weights to unsigned u2 for NPU friendliness.
-        // XOR flips each sub-byte element's MSB, which is equivalent to
-        // adding 2^(bits-1) mod 2^bits. The zero points are adjusted by the
-        // same offset to keep dequantized values unchanged.
-        // i2 → u2: for all ops, since MapLiteTypeToOV maps i2 to u2
-        //   globally and OpenVINO never sees ov::element::i2.
+        // Signed i2 weights are rewritten before reaching OpenVINO, which
+        // never sees ov::element::i2. The target device selects the
+        // encoding: NPU/CPU use unsigned u2, GPU uses signed i4.
         if (tensor_meta_info.m_quantization_info) {
           const auto litert_type =
               static_cast<LiteRtElementType>(input.ElementType());
           if (litert_type == kLiteRtElementTypeInt2) {
-            constexpr uint8_t xor_mask = 0xAA;  // flip MSB of each 2-bit pair
-            constexpr int64_t zp_offset = 2;    // [-2..1] -> [0..3]
-
-            auto weight_bytes = input.Weights().Bytes();
-            auto& buf = converted_weight_buffers_.emplace_back(
-                weight_bytes.data(), weight_bytes.data() + weight_bytes.size());
-            for (auto& byte : buf) {
-              byte ^= xor_mask;
+            if (device_ == "GPU") {
+              ConvertI2WeightsToI4(input, tensor_meta_info);
+            } else {
+              ConvertI2WeightsToU2(input, tensor_meta_info);
             }
-            tensor_meta_info.m_tensor_data = buf.data();
-            tensor_meta_info.m_element_type = ov::element::u2;
-
-            auto adjusted_qi = std::make_shared<
-                ov::frontend::tensorflow_lite::QuantizationInfo>(
-                *tensor_meta_info.m_quantization_info);
-            auto zps = adjusted_qi->get_zero_point();
-            for (auto& zp : zps) {
-              zp += zp_offset;
-            }
-            adjusted_qi->set_zero_point(zps);
-            tensor_meta_info.m_quantization_info = adjusted_qi;
-            LITERT_LOG(LITERT_INFO, "Converted i2 weights to u2 for tensor: %s",
-                       tensor_meta_info.m_tensor_name.c_str());
           }
         }
       }
