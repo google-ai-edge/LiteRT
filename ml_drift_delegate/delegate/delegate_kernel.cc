@@ -454,9 +454,14 @@ if (delegate_data_->options->convert_weights_on_gpu &&
     bool require_serialization_cache_on_first_load =
         use_serialization_cache && gpu_info.IsApple();
     absl::flat_hash_set<::ml_drift::ValueId> prepared_tensor_ids;
-    ABSL_ASSIGN_OR_RETURN(auto batches,
-                          backend_->GetBatchesForWeightsPreparation(
-                              shared_mem_manager->GetWeightsManager()));
+    size_t total_shared_tensor_size = 0;
+    for (const auto& shared_tensor_id : shared_tensor_ids_ordered_by_size) {
+      total_shared_tensor_size += get_tensor(shared_tensor_id).bytes;
+    }
+    ABSL_ASSIGN_OR_RETURN(
+        auto batches,
+        backend_->GetBatchesForWeightsPreparation(
+            shared_mem_manager->GetWeightsManager(), total_shared_tensor_size));
     for (auto& batch : batches) {
       ABSL_ASSIGN_OR_RETURN(
           auto tensor_map_for_batch,

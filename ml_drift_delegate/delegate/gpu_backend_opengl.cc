@@ -179,7 +179,8 @@ GpuBackendOpenGl::CreateWeightsManager() {
 absl::StatusOr<std::vector<
     std::vector<::ml_drift::WeightsManager::WeightsPrepOperationInfo>>>
 GpuBackendOpenGl::GetBatchesForWeightsPreparation(
-    ::ml_drift::WeightsManager* weights_manager) {
+    ::ml_drift::WeightsManager* weights_manager,
+    size_t total_shared_tensor_size) {
   return absl::UnimplementedError(
       "GetBatchesForWeightsPreparation is not implemented.");
 }
@@ -194,11 +195,11 @@ GpuBackendOpenGl::PrepareWeightsInBatch(
   return absl::UnimplementedError("PrepareWeightsInBatch is not implemented.");
 }
 
-absl::StatusOr<
-    absl::flat_hash_map<::ml_drift::ValueId,
-                        std::unique_ptr<::ml_drift::GpuSpatialTensor>>>
+absl::StatusOr<absl::flat_hash_map<
+    ::ml_drift::ValueId, std::unique_ptr<::ml_drift::GpuSpatialTensor>>>
 GpuBackendOpenGl::PrepareWeightsInBatches(
-    ::ml_drift::WeightsManager* weights_manager) {
+    ::ml_drift::WeightsManager* weights_manager,
+    size_t total_shared_tensor_size) {
   return absl::UnimplementedError(
       "PrepareWeightsInBatches is not implemented.");
 }
