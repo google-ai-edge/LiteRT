@@ -212,6 +212,10 @@ class GraphSlicer {
 
   void RerouteTensorsThroughCustomOp(const LiteRtSubgraphT& root);
 
+  // Clones blockwise-quantization scales/zero_points tensors into the slice and
+  // remaps the Qparams pointers, so they survive DCE of the root subgraph.
+  void CloneBlockwiseScales();
+
   LiteRtSubgraph slice_;
   // Maps tensor in old subgraph to tensor in new subgraph.
   InsertOrderMap<LiteRtTensor, LiteRtTensor> tensor_map_;
@@ -257,6 +261,11 @@ LiteRtOp GraphSlicer::SlicePartitionFromGraph(
   ABSL_DCHECK(slicer.dispatch_op_->Outputs().empty());
   MakeDispatchOp(*slicer.dispatch_op_);
   slicer.RerouteTensorsThroughCustomOp(root);
+
+  // Blockwise scales/zero_points are referenced only via Qparams (not op I/O),
+  // so the op clone above leaves them in `root`; clone+remap them into the slice
+  // before DCE frees them.
+  slicer.CloneBlockwiseScales();
 
   DCE(root);
 
@@ -316,6 +325,34 @@ void GraphSlicer::CloneInto(const LiteRtOpT& old_op) {
 
     // Update the values defined in scope of the new subgraph.
     tensor_map_.InsertOrAssign(old_output, new_output);
+  }
+}
+
+void GraphSlicer::CloneBlockwiseScales() {
+  // Blockwise-quantized weights reference their `scales` (and optional
+  // `zero_points`) tensors via Qparams rather than as op inputs/outputs, so the
+  // op clone does not bring them into the slice. Clone them in and remap the
+  // Qparams pointers to the clones; otherwise they dangle when `root` is DCE'd,
+  // which crashes serialization of the outlined partition.
+  std::vector<LiteRtTensor> cloned_tensors(slice_->Tensors().cbegin(),
+                                           slice_->Tensors().cend());
+  for (auto* tensor : cloned_tensors) {
+    if (tensor->Qparams().first != kLiteRtQuantizationBlockWise) {
+      continue;
+    }
+    auto& block_wise = tensor->Qparams().second.block_wise;
+    for (LiteRtTensor* field : {&block_wise.scales, &block_wise.zero_points}) {
+      if (*field == nullptr) {
+        continue;
+      }
+      if (tensor_map_.Contains(*field)) {
+        *field = tensor_map_.Find(*field)->get().second;
+      } else {
+        auto* cloned = &MakeClone(*slice_, **field);
+        tensor_map_.InsertOrAssign(*field, cloned);
+        *field = cloned;
+      }
+    }
   }
 }
 
