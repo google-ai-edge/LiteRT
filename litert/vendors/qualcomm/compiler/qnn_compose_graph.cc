@@ -359,6 +359,107 @@ LiteRtStatus ConvertTensor(const litert::compiler::Tensor& litert_tensor,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus AddCustomOpOptionsAsParams(
+    absl::Span<const uint8_t> custom_options, ::qnn::TensorPool& tensor_pool,
+    ::qnn::OpWrapper& custom_op) {
+  // Avoid calling GetRoot on an empty or too-small buffer; custom ops may
+  // legitimately omit custom options.
+  if (custom_options.size() < 2) {
+    LITERT_LOG(
+        LITERT_WARNING,
+        "Custom op custom options are too small to be a flexbuffer map, maybe "
+        "there is no custom options in custom op.");
+    return kLiteRtStatusOk;
+  }
+
+  if (!flexbuffers::VerifyBuffer(custom_options.data(),
+                                 custom_options.size())) {
+    LITERT_LOG(LITERT_ERROR,
+               "Custom op custom options are not a valid flexbuffer.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  const auto root =
+      flexbuffers::GetRoot(custom_options.data(), custom_options.size());
+  if (!root.IsMap()) {
+    LITERT_LOG(LITERT_ERROR,
+               "Custom op custom options are not a flexbuffer "
+               "map.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  const auto map = root.AsMap();
+  const auto keys = map.Keys();
+  const auto values = map.Values();
+  for (size_t i = 0; i < map.size(); ++i) {
+    const char* key = keys[i].AsKey();
+    const auto& value = values[i];
+
+    if (value.IsUntypedVector() || value.IsTypedVector() ||
+        value.IsFixedTypedVector()) {
+      const auto dimensions = ::qnn::InferShape(value);
+      if (!dimensions.has_value()) {
+        LITERT_LOG(LITERT_ERROR,
+                   "BuildCustomOp: custom options key '%s' has ragged vector "
+                   "dimensions.",
+                   key);
+        return kLiteRtStatusErrorUnsupported;
+      }
+
+      const uint32_t num_elements =
+          std::accumulate(dimensions->begin(), dimensions->end(), uint32_t{1},
+                          std::multiplies<uint32_t>());
+
+      // Resolve the uniform scalar type once, then fill with the matching T.
+      auto fill_vector = [&](auto type_tag, Qnn_DataType_t qnn_dtype) {
+        using T = decltype(type_tag);
+        std::vector<T> data;
+        data.reserve(num_elements);
+        ::qnn::FillBuffer<T>(value, data);
+        auto& tensor = tensor_pool.CreateStaticTensor(
+            qnn_dtype, {}, dimensions.value(),
+            static_cast<uint32_t>(num_elements * sizeof(T)), data.data());
+        custom_op.AddTensorParam(key, tensor);
+      };
+
+      switch (::qnn::GetUniformScalarType(value)) {
+        case ::qnn::FlexbufferScalarType::kBool:
+          fill_vector(uint8_t{}, QNN_DATATYPE_BOOL_8);
+          break;
+        case ::qnn::FlexbufferScalarType::kInt:
+          fill_vector(int32_t{}, QNN_DATATYPE_INT_32);
+          break;
+        case ::qnn::FlexbufferScalarType::kUint:
+          fill_vector(uint32_t{}, QNN_DATATYPE_UINT_32);
+          break;
+        case ::qnn::FlexbufferScalarType::kFloat:
+          fill_vector(float{}, QNN_DATATYPE_FLOAT_32);
+          break;
+        default:
+          LITERT_LOG(LITERT_ERROR,
+                     "BuildCustomOp: unsupported scalar type for vector "
+                     "param key '%s'.",
+                     key);
+          return kLiteRtStatusErrorUnsupported;
+      }
+    } else if (value.IsBool()) {
+      custom_op.AddScalarParam<bool>(key, value.AsBool());
+    } else if (value.IsInt()) {
+      custom_op.AddScalarParam<std::int32_t>(key, value.AsInt32());
+    } else if (value.IsUInt()) {
+      custom_op.AddScalarParam<std::uint32_t>(key, value.AsUInt32());
+    } else if (value.IsFloat()) {
+      custom_op.AddScalarParam<float>(key, value.AsFloat());
+    } else {
+      LITERT_LOG(LITERT_ERROR,
+                 "BuildCustomOp: unsupported scalar type for param key '%s'.",
+                 key);
+      return kLiteRtStatusErrorUnsupported;
+    }
+  }
+  return kLiteRtStatusOk;
+}
+
 namespace {
 
 using OpBuilder = LiteRtStatus (*)(
@@ -1519,104 +1620,7 @@ LiteRtStatus BuildCustomOp(const litert::compiler::Op& litert_op,
                             std::vector<::qnn::ConstTensorWrapperRef>(
                                 output_tensors.begin(), output_tensors.end())));
 
-  // TODO(weilhuan): Will cause seg fault if checked by
-  // flexbuffers::GetRoot().IsNull for some reason, use < 2 here to avoid this.
-  if (custom_options->size() < 2) {
-    LITERT_LOG(
-        LITERT_WARNING,
-        "Custom op custom options are too small to be a flexbuffer map, maybe "
-        "there is no custom options in custom op.");
-    return kLiteRtStatusOk;
-  }
-
-  // GetRoot trusts the buffer's internal offsets; validate first since custom
-  // options come from the .tflite (external input).
-  if (!flexbuffers::VerifyBuffer(custom_options->data(),
-                                 custom_options->size())) {
-    LITERT_LOG(LITERT_ERROR,
-               "Custom op custom options are not a valid flexbuffer.");
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
-  const auto root =
-      flexbuffers::GetRoot(custom_options->data(), custom_options->size());
-  if (!root.IsMap()) {
-    LITERT_LOG(LITERT_ERROR,
-               "Custom op custom options are not a flexbuffer "
-               "map.");
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
-  const auto map = root.AsMap();
-  const auto keys = map.Keys();
-  const auto values = map.Values();
-  for (size_t i = 0; i < map.size(); ++i) {
-    const char* key = keys[i].AsKey();
-    const auto& value = values[i];
-
-    if (value.IsUntypedVector() || value.IsTypedVector() ||
-        value.IsFixedTypedVector()) {
-      const auto dimensions = ::qnn::InferShape(value);
-      if (!dimensions.has_value()) {
-        LITERT_LOG(LITERT_ERROR,
-                   "BuildCustomOp: custom options key '%s' has ragged vector "
-                   "dimensions.",
-                   key);
-        return kLiteRtStatusErrorUnsupported;
-      }
-
-      const uint32_t num_elements =
-          std::accumulate(dimensions->begin(), dimensions->end(), uint32_t{1},
-                          std::multiplies<uint32_t>());
-
-      // Resolve the uniform scalar type once, then fill with the matching T.
-      auto fill_vector = [&](auto type_tag, Qnn_DataType_t qnn_dtype) {
-        using T = decltype(type_tag);
-        std::vector<T> data;
-        data.reserve(num_elements);
-        ::qnn::FillBuffer<T>(value, data);
-        auto& tensor = tensor_pool.CreateStaticTensor(
-            qnn_dtype, {}, dimensions.value(),
-            static_cast<uint32_t>(num_elements * sizeof(T)), data.data());
-        custom_op.AddTensorParam(key, tensor);
-      };
-
-      switch (::qnn::GetUniformScalarType(value)) {
-        case ::qnn::FlexbufferScalarType::kBool:
-          fill_vector(uint8_t{}, QNN_DATATYPE_BOOL_8);
-          break;
-        case ::qnn::FlexbufferScalarType::kInt:
-          fill_vector(int32_t{}, QNN_DATATYPE_INT_32);
-          break;
-        case ::qnn::FlexbufferScalarType::kUint:
-          fill_vector(uint32_t{}, QNN_DATATYPE_UINT_32);
-          break;
-        case ::qnn::FlexbufferScalarType::kFloat:
-          fill_vector(float{}, QNN_DATATYPE_FLOAT_32);
-          break;
-        default:
-          LITERT_LOG(LITERT_ERROR,
-                     "BuildCustomOp: unsupported scalar type for vector "
-                     "param key '%s'.",
-                     key);
-          return kLiteRtStatusErrorUnsupported;
-      }
-    } else if (value.IsBool()) {
-      custom_op.AddScalarParam<bool>(key, value.AsBool());
-    } else if (value.IsInt()) {
-      custom_op.AddScalarParam<std::int32_t>(key, value.AsInt32());
-    } else if (value.IsUInt()) {
-      custom_op.AddScalarParam<std::uint32_t>(key, value.AsUInt32());
-    } else if (value.IsFloat()) {
-      custom_op.AddScalarParam<float>(key, value.AsFloat());
-    } else {
-      LITERT_LOG(LITERT_ERROR,
-                 "BuildCustomOp: unsupported scalar type for param key '%s'.",
-                 key);
-      return kLiteRtStatusErrorUnsupported;
-    }
-  }
-  return kLiteRtStatusOk;
+  return AddCustomOpOptionsAsParams(*custom_options, tensor_pool, custom_op);
 }
 
 std::string DescribeUnsupportedOp(size_t op_index,
