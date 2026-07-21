@@ -29,6 +29,13 @@ def friends_of_litert_runtime_builtin_static():
     visibility into the internal `litert_runtime_builtin_static` target."""
     return []
 
+def friends_of_google_tensor_compiler_plugin():
+    """Targets with access to the google_tensor compiler_plugin target.
+
+    Return the targets outside of the LiteRT code location that nevertheless have
+    visibility into the internal `compiler_plugin` target."""
+    return ["//ci/tools/python/wheel:__subpackages__"]
+
 def gl_native_deps():
     """This is a no-op outside of Google."""
     return []
