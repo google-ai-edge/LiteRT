@@ -498,6 +498,9 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
           // partitions.
           compiler_plugin->ctx()->push_op(selected_ops, op.Get(),
                                           kDefaultPartitionIndex));
+    } else {
+      LITERT_LOG(LITERT_ERROR, "%s",
+                 litert::qnn::DescribeUnsupportedOp(op_index, op).c_str());
     }
   }
 

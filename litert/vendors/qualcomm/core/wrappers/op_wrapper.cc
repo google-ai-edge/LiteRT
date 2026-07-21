@@ -27,6 +27,101 @@
 
 namespace qnn {
 
+namespace {
+const char* ElementWiseOperationName(const OpWrapper& op) {
+  const QnnOpCode code = op.GetOpCode();
+  if (code != QnnOpCode::kElementWiseUnary &&
+      code != QnnOpCode::kElementWiseBinary &&
+      code != QnnOpCode::kElementWiseNeuron) {
+    return nullptr;
+  }
+
+  // The operation is stored as scalar param 0 for all three op types.
+  auto scalar = op.GetScalarParam(0);
+  if (!scalar.has_value()) {
+    return nullptr;
+  }
+  Qnn_Param_t p;
+  scalar->CloneTo(p);
+  if (p.paramType != QNN_PARAMTYPE_SCALAR ||
+      p.scalarParam.dataType != QNN_DATATYPE_UINT_32) {
+    return nullptr;
+  }
+  const std::uint32_t v = p.scalarParam.uint32Value;
+  switch (code) {
+    case QnnOpCode::kElementWiseUnary:
+      switch (v) {
+        case QNN_OP_ELEMENT_WISE_UNARY_OPERATION_ABS: return "Abs";
+        case QNN_OP_ELEMENT_WISE_UNARY_OPERATION_ASIN: return "Asin";
+        case QNN_OP_ELEMENT_WISE_UNARY_OPERATION_ATAN: return "Atan";
+        case QNN_OP_ELEMENT_WISE_UNARY_OPERATION_CEIL: return "Ceil";
+        case QNN_OP_ELEMENT_WISE_UNARY_OPERATION_COS: return "Cos";
+        case QNN_OP_ELEMENT_WISE_UNARY_OPERATION_EXP: return "Exp";
+        case QNN_OP_ELEMENT_WISE_UNARY_OPERATION_FLOOR: return "Floor";
+        case QNN_OP_ELEMENT_WISE_UNARY_OPERATION_LOG: return "Log";
+        case QNN_OP_ELEMENT_WISE_UNARY_OPERATION_NEG: return "Neg";
+        case QNN_OP_ELEMENT_WISE_UNARY_OPERATION_NOT: return "Not";
+        case QNN_OP_ELEMENT_WISE_UNARY_OPERATION_RECIPROCAL:
+          return "Reciprocal";
+        case QNN_OP_ELEMENT_WISE_UNARY_OPERATION_ROUND: return "Round";
+        case QNN_OP_ELEMENT_WISE_UNARY_OPERATION_RSQRT: return "Rsqrt";
+        case QNN_OP_ELEMENT_WISE_UNARY_OPERATION_SIGN: return "Sign";
+        case QNN_OP_ELEMENT_WISE_UNARY_OPERATION_SIN: return "Sin";
+        case QNN_OP_ELEMENT_WISE_UNARY_OPERATION_SQRT: return "Sqrt";
+        default: return nullptr;
+      }
+    case QnnOpCode::kElementWiseBinary:
+      switch (v) {
+        case QNN_OP_ELEMENT_WISE_BINARY_OPERATION_ADD: return "Add";
+        case QNN_OP_ELEMENT_WISE_BINARY_OPERATION_AND: return "And";
+        case QNN_OP_ELEMENT_WISE_BINARY_OPERATION_DIVIDE: return "Divide";
+        case QNN_OP_ELEMENT_WISE_BINARY_OPERATION_EQUAL: return "Equal";
+        case QNN_OP_ELEMENT_WISE_BINARY_OPERATION_FLOOR_DIV:
+          return "FloorDiv";
+        case QNN_OP_ELEMENT_WISE_BINARY_OPERATION_FMOD: return "Fmod";
+        case QNN_OP_ELEMENT_WISE_BINARY_OPERATION_GREATER: return "Greater";
+        case QNN_OP_ELEMENT_WISE_BINARY_OPERATION_GREATER_EQUAL:
+          return "GreaterEqual";
+        case QNN_OP_ELEMENT_WISE_BINARY_OPERATION_LESS: return "Less";
+        case QNN_OP_ELEMENT_WISE_BINARY_OPERATION_LESS_EQUAL:
+          return "LessEqual";
+        case QNN_OP_ELEMENT_WISE_BINARY_OPERATION_MAXIMUM: return "Maximum";
+        case QNN_OP_ELEMENT_WISE_BINARY_OPERATION_MINIMUM: return "Minimum";
+        case QNN_OP_ELEMENT_WISE_BINARY_OPERATION_MOD: return "Mod";
+        case QNN_OP_ELEMENT_WISE_BINARY_OPERATION_MULTIPLY: return "Multiply";
+        case QNN_OP_ELEMENT_WISE_BINARY_OPERATION_NOT_EQUAL:
+          return "NotEqual";
+        case QNN_OP_ELEMENT_WISE_BINARY_OPERATION_OR: return "Or";
+        case QNN_OP_ELEMENT_WISE_BINARY_OPERATION_POWER: return "Power";
+        case QNN_OP_ELEMENT_WISE_BINARY_OPERATION_SQUARED_DIFFERENCE:
+          return "SquaredDifference";
+        case QNN_OP_ELEMENT_WISE_BINARY_OPERATION_SUBTRACT: return "Subtract";
+        case QNN_OP_ELEMENT_WISE_BINARY_OPERATION_XOR: return "Xor";
+        default: return nullptr;
+      }
+    case QnnOpCode::kElementWiseNeuron:
+      switch (v) {
+        case QNN_OP_ELEMENT_WISE_NEURON_OPERATION_ELU: return "Elu";
+        case QNN_OP_ELEMENT_WISE_NEURON_OPERATION_GELU: return "Gelu";
+        case QNN_OP_ELEMENT_WISE_NEURON_OPERATION_HARD_SIGMOID:
+          return "HardSigmoid";
+        case QNN_OP_ELEMENT_WISE_NEURON_OPERATION_HARD_SWISH:
+          return "HardSwish";
+        case QNN_OP_ELEMENT_WISE_NEURON_OPERATION_RELU: return "Relu";
+        case QNN_OP_ELEMENT_WISE_NEURON_OPERATION_RELU_MIN_MAX:
+          return "ReluMinMax";
+        case QNN_OP_ELEMENT_WISE_NEURON_OPERATION_SIGMOID: return "Sigmoid";
+        case QNN_OP_ELEMENT_WISE_NEURON_OPERATION_SOFTPLUS:
+          return "Softplus";
+        case QNN_OP_ELEMENT_WISE_NEURON_OPERATION_TANH: return "Tanh";
+        default: return nullptr;
+      }
+    default:
+      return nullptr;
+  }
+}
+}  // namespace
+
 bool OpWrapper::operator==(const OpWrapper& other) const {
   if (op_code_ != other.op_code_) return false;
   if (!miscs::IsStrEq(type_name_, other.type_name_)) return false;
@@ -174,7 +269,11 @@ void OpWrapper::AddSuffixToName(absl::string_view suffix) {
 std::string OpWrapper::ToString() const {
   std::ostringstream out;
   out << "'" << GetName()
-      << "' (type=" << (GetTypeName() ? GetTypeName() : "<null>") << ")";
+      << "' (type=" << (GetTypeName() ? GetTypeName() : "<null>");
+  if (const char* operation_name = ElementWiseOperationName(*this)) {
+    out << ", operation=" << operation_name;
+  }
+  out << ")";
   out << "\n  Inputs:";
   for (size_t i = 0; i < input_tensors_.size(); ++i) {
     out << "\n    [" << i << "] " << input_tensors_[i].get().ToString();
