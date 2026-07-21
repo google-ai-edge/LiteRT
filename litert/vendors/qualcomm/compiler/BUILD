@@ -247,8 +247,12 @@ litert_lib(
     hdrs = ["qnn_frontend_transformation.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_builder",
+        "//litert/cc/internal:litert_extended_model",
+        "//litert/cc/internal:litert_matchers",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
