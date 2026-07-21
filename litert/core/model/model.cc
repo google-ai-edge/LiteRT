@@ -340,6 +340,10 @@ void LiteRtBuilderT::ApplyChanges(LiteRtSubgraphT* subgraph_to_apply) {
           std::move(src_buffer.Value()));
       tensor->Weights().SetBufferId(new_buf_id);
       tensor->Weights().SetBufferManager(dst_buffer_manager);
+    } else {
+      // For tensors with no weight data, still update the buffer_manager_
+      // pointer so it doesn't dangle after the builder is destroyed.
+      tensor->Weights().SetBufferManager(dst_buffer_manager);
     }
   }
   // Transfer ownership of tensors to the root subgraph.
