@@ -34,6 +34,9 @@ LiteRtStatus FuseMatMulRequantTransformation(
     const LiteRtCompilerContext* context, LiteRtBuilder builder_ptr,
     LiteRtOp op);
 
+LiteRtStatus DecomposeAtan2toAtanDiv(const LiteRtCompilerContext* context,
+                                     LiteRtBuilder builder_ptr, LiteRtOp op);
+
 LiteRtStatus DummyTransformation(const LiteRtCompilerContext* context,
                                  LiteRtBuilder builder_ptr, LiteRtOp op);
 

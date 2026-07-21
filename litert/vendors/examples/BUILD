@@ -435,6 +435,7 @@ litert_test(
         "//litert/c/internal:litert_compiler_context",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_ranked_tensor_type",
+        "//litert/core/model:buffer_manager",
         "//litert/core/model:model_load",
         "//litert/core/model:model_serialize",
         "//litert/core/model:model_testonly",

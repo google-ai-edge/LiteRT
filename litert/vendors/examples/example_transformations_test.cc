@@ -18,6 +18,7 @@
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/model.h"
 
 namespace litert {
@@ -97,6 +98,78 @@ TEST(ExampleTransformationTest, SqrtMeanSquareTransformation) {
   EXPECT_EQ(abs_count, 1);
   EXPECT_EQ(sqrt_count, 1);
   EXPECT_EQ(subgraph.Ops().size(), 2);
+}
+
+TEST(ExampleTransformationTest, DecomposeAtan2toAtanDiv) {
+  // Build a subgraph with a single Atan2(y, x) op.
+  LiteRtSubgraphT subgraph;
+  LiteRtBuilderT builder;
+
+  auto& y = subgraph.EmplaceTensor();
+  auto& x = subgraph.EmplaceTensor();
+  auto& atan2_out = subgraph.EmplaceTensor();
+
+  auto& atan2_op = subgraph.EmplaceOp();
+  atan2_op.SetOpCode(kLiteRtOpCodeTflAtan2);
+  internal::AttachInput(&y, atan2_op);
+  internal::AttachInput(&x, atan2_op);
+  internal::AttachOutput(&atan2_out, atan2_op);
+
+  // Call the transformation.
+  DecomposeAtan2toAtanDiv(LrtGetCompilerContext(), &builder, &atan2_op);
+
+  // Apply the changes.
+  builder.ApplyChanges(&subgraph);
+
+  // Verify: original Atan2 is replaced by Div + Atan2, giving 2 ops total.
+  int div_count = 0;
+  int atan2_count = 0;
+  for (const auto& op : subgraph.Ops()) {
+    if (op->OpCode() == kLiteRtOpCodeTflDiv) div_count++;
+    if (op->OpCode() == kLiteRtOpCodeTflAtan2) atan2_count++;
+  }
+
+  EXPECT_EQ(div_count, 1);
+  EXPECT_EQ(atan2_count, 1);
+  EXPECT_EQ(subgraph.Ops().size(), 2);
+}
+
+// Verify that after ApplyChanges, no-weight tensors introduced by the builder
+// (e.g. the intermediate div_out cloned by DecomposeAtan2toAtanDiv) have their
+// buffer_manager_ updated to point at the destination subgraph's manager and
+// not the builder's now-destroyed internal manager.
+TEST(ExampleTransformationTest,
+     DecomposeAtan2toAtanDivNoWeightTensorsBufferManagerUpdated) {
+  // Give the root subgraph an explicit shared BufferManager so
+  // GetBufferManager() returns a non-null, verifiable pointer.
+  internal::BufferManager shared_manager;
+  LiteRtSubgraphT subgraph(&shared_manager);
+
+  auto& y = subgraph.EmplaceTensor();
+  auto& x = subgraph.EmplaceTensor();
+  auto& atan2_out = subgraph.EmplaceTensor();
+
+  auto& atan2_op = subgraph.EmplaceOp();
+  atan2_op.SetOpCode(kLiteRtOpCodeTflAtan2);
+  internal::AttachInput(&y, atan2_op);
+  internal::AttachInput(&x, atan2_op);
+  internal::AttachOutput(&atan2_out, atan2_op);
+
+  {
+    // Builder is scoped so it is destroyed before we access the tensors below.
+    LiteRtBuilderT builder;
+    DecomposeAtan2toAtanDiv(LrtGetCompilerContext(), &builder, &atan2_op);
+    builder.ApplyChanges(&subgraph);
+    // builder destroyed here -- its internal BufferManager goes away.
+  }
+
+  // Every tensor now owned by subgraph must have its buffer_manager_ pointing
+  // at &shared_manager (not the destroyed builder's manager).
+  for (const auto& tensor : subgraph.Tensors()) {
+    EXPECT_EQ(tensor->Weights().GetBufferManager(), &shared_manager)
+        << "Tensor '" << tensor->Name()
+        << "' has a stale buffer_manager_ pointer after builder destruction";
+  }
 }
 
 }  // namespace
