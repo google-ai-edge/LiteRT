@@ -66,6 +66,10 @@ class GraphShapeInferenceContext : public ShapeInferenceContext {
                              const TensorDataMap& transient_data)
       : op_(op), transient_data_(transient_data) {}
 
+  size_t GetNumInputs() const override { return op_.Inputs().size(); }
+
+  size_t GetNumOutputs() const override { return op_.Outputs().size(); }
+
   Dims GetInputShape(size_t index) const override {
     if (index >= op_.Inputs().size() || op_.Inputs()[index] == nullptr) {
       return {};
@@ -99,7 +103,20 @@ class GraphShapeInferenceContext : public ShapeInferenceContext {
 
   LiteRtOpCode GetOpCode() const override { return op_.OpCode(); }
 
-  const LiteRtOpT& GetOp() const { return op_; }
+  LiteRtElementType GetInputElementType(size_t index) const override {
+    if (index >= op_.Inputs().size() || op_.Inputs()[index] == nullptr) {
+      return kLiteRtElementTypeNone;
+    }
+    const auto& tensor = *op_.Inputs()[index];
+    if (tensor.Type().first == kLiteRtRankedTensorType) {
+      return tensor.Type().second.ranked_tensor_type.element_type;
+    } else if (tensor.Type().first == kLiteRtUnrankedTensorType) {
+      return tensor.Type().second.unranked_tensor_type.element_type;
+    }
+    return kLiteRtElementTypeNone;
+  }
+
+  const LiteRtOpT* GetOp() const override { return &op_; }
 
  private:
   const LiteRtOpT& op_;
@@ -119,21 +136,20 @@ void ShapeInferenceEngine::RegisterStandardOps() {
   // Helper to bridge legacy inferrers into the new stateless system.
   auto AdaptToStatelessOpInferrer =
       [](OpShapeInferrer legacy_f) -> StatelessOpInferrer {
-    return
-        [legacy_f](const ShapeInferenceContext& ctx, InferenceResult& result) {
-          const auto& graph_ctx =
-              static_cast<const GraphShapeInferenceContext&>(ctx);
-          std::vector<Dims> input_shapes;
-          input_shapes.reserve(graph_ctx.GetOp().NumInputs());
-          for (size_t i = 0; i < graph_ctx.GetOp().NumInputs(); ++i) {
-            input_shapes.push_back(graph_ctx.GetInputShape(i));
-          }
-          if (result.output_shapes.size() < graph_ctx.GetOp().NumOutputs()) {
-            result.output_shapes.resize(graph_ctx.GetOp().NumOutputs());
-          }
-          return legacy_f(graph_ctx.GetOp(), absl::MakeSpan(input_shapes),
-                          result.output_shapes);
-        };
+    return [legacy_f](const ShapeInferenceContext& ctx,
+                      InferenceResult& result) {
+      const auto* op = ctx.GetOp();
+      if (!op) return kLiteRtStatusErrorShapeInferenceFailed;
+      std::vector<Dims> input_shapes;
+      input_shapes.reserve(ctx.GetNumInputs());
+      for (size_t i = 0; i < ctx.GetNumInputs(); ++i) {
+        input_shapes.push_back(ctx.GetInputShape(i));
+      }
+      if (result.output_shapes.size() < ctx.GetNumOutputs()) {
+        result.output_shapes.resize(ctx.GetNumOutputs());
+      }
+      return legacy_f(*op, absl::MakeSpan(input_shapes), result.output_shapes);
+    };
   };
 
   RegisterInferrer(kLiteRtOpCodeTflAbs, AdaptToStatelessOpInferrer(InferAbs));
@@ -251,7 +267,6 @@ void ShapeInferenceEngine::RegisterStandardOps() {
   RegisterInferrer(kLiteRtOpCodeTflMul, AdaptToStatelessOpInferrer(InferMul));
   RegisterInferrer(kLiteRtOpCodeTflOneHot,
                    AdaptToStatelessOpInferrer(InferOneHot));
-  RegisterInferrer(kLiteRtOpCodeTflPack, AdaptToStatelessOpInferrer(InferPack));
   RegisterInferrer(kLiteRtOpCodeTflPad, AdaptToStatelessOpInferrer(InferPad));
   RegisterInferrer(kLiteRtOpCodeTflPadv2,
                    AdaptToStatelessOpInferrer(InferPadv2));
@@ -294,6 +309,8 @@ void ShapeInferenceEngine::RegisterStandardOps() {
                    AdaptToStatelessOpInferrer(InferTopKV2));
 
   // Native stateless inferrers.
+  using StatelessFuncPtr =
+      LiteRtStatus (*)(const ShapeInferenceContext&, InferenceResult&);
   RegisterInferrer(kLiteRtOpCodeTflShape, InferShape);
   RegisterInferrer(kLiteRtOpCodeTflRank, InferRank);
   RegisterInferrer(kLiteRtOpCodeTflReshape, InferReshape);
@@ -301,6 +318,10 @@ void ShapeInferenceEngine::RegisterStandardOps() {
   RegisterInferrer(kLiteRtOpCodeTflSqueeze, InferSqueeze);
   RegisterInferrer(kLiteRtOpCodeTflRange, InferRange);
   RegisterInferrer(kLiteRtOpCodeTflBroadcastArgs, InferBroadcastArgs);
+  RegisterInferrer(kLiteRtOpCodeTflPack,
+                   static_cast<StatelessFuncPtr>(InferPack));
+  RegisterInferrer(kLiteRtOpCodeTflStridedSlice,
+                   static_cast<StatelessFuncPtr>(InferStridedSlice));
 }
 
 void ShapeInferenceEngine::RegisterInferrer(LiteRtOpCode op_code,
