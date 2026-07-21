@@ -39,6 +39,8 @@ ABSL_DECLARE_FLAG(litert::mediatek::MediatekOptions::OptimizationHint,
 
 ABSL_DECLARE_FLAG(bool, mediatek_disable_dla_dir_removal);
 
+ABSL_DECLARE_FLAG(bool, mediatek_use_get_supported_operations);
+
 ABSL_DECLARE_FLAG(std::string, mediatek_dla_dir);
 
 ABSL_DECLARE_FLAG(std::string, mediatek_aot_compilation_options);

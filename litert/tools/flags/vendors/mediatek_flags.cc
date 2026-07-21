@@ -52,6 +52,11 @@ ABSL_FLAG(litert::mediatek::MediatekOptions::OptimizationHint,
 ABSL_FLAG(bool, mediatek_disable_dla_dir_removal, false,
           "Disable DLA directory removal for Mediatek Compilation.");
 
+ABSL_FLAG(bool, mediatek_use_get_supported_operations, true,
+          "Whether partitioning queries the Neuron compiler via "
+          "get_supported_operations. When false, fall back to the plugin's "
+          "static IsOpSupported list.");
+
 ABSL_FLAG(
     std::string, mediatek_dla_dir, "",
     "Meidatek DLA provided directory. If provided, all compiled DLA's will be "
@@ -189,6 +194,8 @@ Expected<void> UpdateMediatekOptionsFromFlags(MediatekOptions& options) {
   options.SetOptimizationHint(absl::GetFlag(FLAGS_mediatek_optimization_hint));
   options.SetDisableDlaDirRemoval(
       absl::GetFlag(FLAGS_mediatek_disable_dla_dir_removal));
+  options.SetUseGetSupportedOperations(
+      absl::GetFlag(FLAGS_mediatek_use_get_supported_operations));
   options.SetMediatekDlaDir(absl::GetFlag(FLAGS_mediatek_dla_dir));
   options.SetAotCompilationOptions(
       absl::GetFlag(FLAGS_mediatek_aot_compilation_options));

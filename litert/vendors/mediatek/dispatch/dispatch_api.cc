@@ -274,7 +274,12 @@ LiteRtStatus LiteRtInvocationContextSetSchedulingInfo(
   if (invocation_context == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  invocation_context->SetSchedulingInfo(scheduling_info);
+  if (auto status = invocation_context->SetSchedulingInfo(scheduling_info);
+      !status) {
+    LITERT_LOG(LITERT_ERROR, "Failed to set Scheduling Info: %s",
+               status.Error().Message().c_str());
+    return status.Error().Status();
+  }
   return kLiteRtStatusOk;
 }
 
