@@ -18,7 +18,7 @@
 #include <cmath>
 #include <cstdlib>
 
-#include "third_party/FP16/include/fp16/fp16.h"
+#include "fp16/fp16.h"  // from @FP16
 #include "ml_drift/common/kernels/conv_apple_mpp.h"  // from @ml_drift
 #include "ml_drift/common/kernels/conv_generic.h"  // from @ml_drift
 #include "ml_drift/common/kernels/conv_wave_matrix.h"  // from @ml_drift
@@ -49,6 +49,7 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift

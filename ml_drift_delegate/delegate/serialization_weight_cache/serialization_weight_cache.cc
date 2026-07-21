@@ -21,7 +21,27 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift_delegate/delegate/precision.h"
 #include "tflite/c/common.h"
+#if __has_include("util/hash/farmhash_fingerprint.h")
 #include "util/hash/farmhash_fingerprint.h"
+namespace ml_drift {
+namespace {
+inline uint64_t Fingerprint64(const char* s, size_t len) {
+  return farmhash::Fingerprint64(s, len);
+}
+}  // namespace
+}  // namespace ml_drift
+#elif __has_include("farmhash.h")
+#include "farmhash.h"
+namespace ml_drift {
+namespace {
+inline uint64_t Fingerprint64(const char* s, size_t len) {
+  return util::Fingerprint64(s, len);
+}
+}  // namespace
+}  // namespace ml_drift
+#else
+#error "Farmhash not found"
+#endif
 
 #if defined(_WIN32)
 #include <io.h>
@@ -77,6 +97,20 @@ std::string JoinPath(absl::string_view path1, absl::string_view path2) {
   return (path1.empty() || path1.back() == slash)
              ? absl::StrCat(path1, path2)
              : absl::StrCat(path1, std::string(1, slash), path2);
+}
+
+// Combines two 64-bit fingerprints using the FarmHash / CityHash mixing
+// algorithm (util/hash/farmhash.cc).
+uint64_t CombineFingerprints(uint64_t l, uint64_t h) {
+  const uint64_t kMul = 0x9ddfea08eb382d69ULL;
+  uint64_t a = (l ^ h) * kMul;
+  a ^= (a >> 47);
+  uint64_t b = (h ^ a) * kMul;
+  b ^= (b >> 44);
+  b *= kMul;
+  b ^= (b >> 41);
+  b *= kMul;
+  return b;
 }
 
 }  // namespace
@@ -465,57 +499,38 @@ uint64_t SerializationWeightCache::GenerateUniqueModelIdentifier(
     bool allow_src_quantized_fc_conv_ops, bool prepare_weights_in_batches,
     bool serialize_external_tensors, bool ordered_by_size) {
   // Generate fingerprints for the relevant delegate data options.
-  uint64_t precision_fingerprint = farmhash::Fingerprint64(
+  uint64_t precision_fingerprint = Fingerprint64(
       reinterpret_cast<const char*>(&precision), sizeof(precision));
-  uint64_t prefer_texture_weights_fingerprint = farmhash::Fingerprint64(
-      reinterpret_cast<const char*>(&prefer_texture_weights),
-      sizeof(prefer_texture_weights));
-  uint64_t allow_src_quantized_fc_conv_ops_fingerprint =
-      farmhash::Fingerprint64(
-          reinterpret_cast<const char*>(&allow_src_quantized_fc_conv_ops),
-          sizeof(allow_src_quantized_fc_conv_ops));
-  uint64_t ordered_by_size_fingerprint = farmhash::Fingerprint64(
+  uint64_t prefer_texture_weights_fingerprint =
+      Fingerprint64(reinterpret_cast<const char*>(&prefer_texture_weights),
+                    sizeof(prefer_texture_weights));
+  uint64_t allow_src_quantized_fc_conv_ops_fingerprint = Fingerprint64(
+      reinterpret_cast<const char*>(&allow_src_quantized_fc_conv_ops),
+      sizeof(allow_src_quantized_fc_conv_ops));
+  uint64_t ordered_by_size_fingerprint = Fingerprint64(
       reinterpret_cast<const char*>(&ordered_by_size), sizeof(ordered_by_size));
-  uint64_t alignment_fingerprint = farmhash::Fingerprint64(
+  uint64_t alignment_fingerprint = Fingerprint64(
       reinterpret_cast<const char*>(&kMinAlignment), sizeof(kMinAlignment));
-  uint64_t prepare_weights_in_batches_fingerprint = farmhash::Fingerprint64(
-      reinterpret_cast<const char*>(&prepare_weights_in_batches),
-      sizeof(prepare_weights_in_batches));
-  uint64_t serialize_external_tensors_fingerprint = farmhash::Fingerprint64(
-      reinterpret_cast<const char*>(&serialize_external_tensors),
-      sizeof(serialize_external_tensors));
+  uint64_t prepare_weights_in_batches_fingerprint =
+      Fingerprint64(reinterpret_cast<const char*>(&prepare_weights_in_batches),
+                    sizeof(prepare_weights_in_batches));
+  uint64_t serialize_external_tensors_fingerprint =
+      Fingerprint64(reinterpret_cast<const char*>(&serialize_external_tensors),
+                    sizeof(serialize_external_tensors));
   // Combine the fingerprints of the relevant delegate data options into a
   // single fingerprint.
-  // copybara:uncomment_begin(google-only)
-  // uint64_t options_fingerprint = farmhash::Fingerprint(
-      // precision_fingerprint, prefer_texture_weights_fingerprint);
-  // options_fingerprint = farmhash::Fingerprint(
-      // options_fingerprint, allow_src_quantized_fc_conv_ops_fingerprint);
-  // options_fingerprint =
-      // farmhash::Fingerprint(options_fingerprint, ordered_by_size_fingerprint);
-  // options_fingerprint =
-      // farmhash::Fingerprint(options_fingerprint, alignment_fingerprint);
-  // options_fingerprint = farmhash::Fingerprint(
-      // options_fingerprint, prepare_weights_in_batches_fingerprint);
-  // options_fingerprint = farmhash::Fingerprint(
-      // options_fingerprint, serialize_external_tensors_fingerprint);
-  // copybara:uncomment_end_and_comment_begin
-  uint64_t options_fingerprint = util::Fingerprint(
-  std::make_pair(precision_fingerprint, prefer_texture_weights_fingerprint));
-  options_fingerprint = util::Fingerprint(
-  std::make_pair(options_fingerprint,
-  allow_src_quantized_fc_conv_ops_fingerprint));
-  options_fingerprint = util::Fingerprint(
-  std::make_pair(options_fingerprint, ordered_by_size_fingerprint));
-  options_fingerprint = util::Fingerprint(
-  std::make_pair(options_fingerprint, alignment_fingerprint));
-  options_fingerprint = util::Fingerprint(
-  std::make_pair(options_fingerprint,
-  prepare_weights_in_batches_fingerprint));
-  options_fingerprint = util::Fingerprint(
-  std::make_pair(options_fingerprint,
-  serialize_external_tensors_fingerprint));
-  // copybara:comment_end
+  uint64_t options_fingerprint = CombineFingerprints(
+      precision_fingerprint, prefer_texture_weights_fingerprint);
+  options_fingerprint = CombineFingerprints(
+      options_fingerprint, allow_src_quantized_fc_conv_ops_fingerprint);
+  options_fingerprint =
+      CombineFingerprints(options_fingerprint, ordered_by_size_fingerprint);
+  options_fingerprint =
+      CombineFingerprints(options_fingerprint, alignment_fingerprint);
+  options_fingerprint = CombineFingerprints(
+      options_fingerprint, prepare_weights_in_batches_fingerprint);
+  options_fingerprint = CombineFingerprints(
+      options_fingerprint, serialize_external_tensors_fingerprint);
 
   // Add "_external_tensors" to prevent collision with the non-external
   // tensors serialization.
