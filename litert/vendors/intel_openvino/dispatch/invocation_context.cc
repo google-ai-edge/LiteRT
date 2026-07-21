@@ -153,7 +153,7 @@ LiteRtDispatchInvocationContextT::Create(
   // sole/first subgraph). The subgraph's weights are resolved against the pool at
   // import below. Non-shared models skip this and use the raw bytecode directly.
   std::optional<litert::openvino::OpenVinoGlobalGraph> global_graph;
-  std::map<uint32_t, uint32_t> selected_const_map;
+  std::map<std::string, uint32_t> selected_const_map;
   std::optional<LiteRtIntelOpenVinoGraphBackend> selected_device;
   std::vector<uint8_t> selected_payload;
   if (litert::openvino::OpenVinoGlobalGraph::HasMagic(
@@ -163,13 +163,28 @@ LiteRtDispatchInvocationContextT::Create(
                           static_cast<const uint8_t*>(exec_bytecode_ptr),
                           exec_bytecode_size));
 
+
     const litert::openvino::OpenVinoGlobalGraph::Subgraph* selected = nullptr;
     if (function_name != nullptr && function_name[0] != '\0') {
       auto it = global_graph->subgraphs.find(function_name);
       if (it != global_graph->subgraphs.end()) selected = &it->second;
     }
     if (selected == nullptr && !global_graph->subgraphs.empty()) {
-      selected = &global_graph->subgraphs.begin()->second;  // fall back to first
+      // Only fall back to the sole subgraph; with multiple partitions a
+      // missing/mismatched function_name is ambiguous, so fail rather than
+      // silently load the wrong partition's payload.
+      if (global_graph->subgraphs.size() == 1) {
+        LITERT_LOG(LITERT_WARNING,
+                   "GlobalGraph: function_name '%s' not found, falling back "
+                   "to sole subgraph '%s'",
+                   function_name ? function_name : "(null)",
+                   global_graph->subgraphs.begin()->first.c_str());
+        selected = &global_graph->subgraphs.begin()->second;
+      } else {
+        return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                             "GlobalGraph: function_name not found and "
+                             "multiple subgraphs exist");
+      }
     }
     if (selected == nullptr) {
       return litert::Error(kLiteRtStatusErrorRuntimeFailure,
@@ -290,9 +305,8 @@ LiteRtDispatchInvocationContextT::Create(
   if (gpu_shared) {
     LITERT_ASSIGN_OR_RETURN(
         std::vector<litert::openvino::BoundWeight> bound,
-        litert::openvino::BindSharedWeightsGpu(*core, *global_graph,
-                                               compiled_model,
-                                               selected_const_map));
+        device_context.GpuBank().Bind(*core, *global_graph, compiled_model,
+                                      selected_const_map));
     bound_weights.reserve(bound.size());
     for (auto& b : bound) {
       infer_request.set_input_tensor(b.input_index, b.view);

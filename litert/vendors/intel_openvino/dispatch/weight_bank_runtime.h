@@ -22,6 +22,8 @@
 #include <string>
 #include <vector>
 
+#include "absl/base/thread_annotations.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/runtime/tensor.hpp"
@@ -36,14 +38,39 @@ struct BoundWeight {
   ov::Tensor view;     // view into the shared usm-host buffer (zero-copy)
 };
 
-// Allocates one shared usm-host buffer holding the pool (once per process) and
-// returns a view into it for each of |compiled_model|'s weight-Parameters named
-// in |const_map| (input_index -> BufferId). The caller sets each view on the
-// infer request and keeps the views alive for its lifetime.
-litert::Expected<std::vector<BoundWeight>> BindSharedWeightsGpu(
-    ov::Core& core, const OpenVinoGlobalGraph& global_graph,
-    const ov::CompiledModel& compiled_model,
-    const std::map<uint32_t, uint32_t>& const_map);
+// One shared usm-host buffer holding a model's deduplicated weight pool, owned
+// by the model's device context (so the pool is allocated once and shared by
+// the prefill and decode partitions, but distinct across models). The first
+// partition to Bind() allocates and fills the buffer; later partitions bind
+// views into it. Thread-safe: Bind() serializes concurrent partitions.
+class GpuSharedBank {
+ public:
+  GpuSharedBank() = default;
+  ~GpuSharedBank() = default;
+  GpuSharedBank(const GpuSharedBank&) = delete;
+  GpuSharedBank& operator=(const GpuSharedBank&) = delete;
+  GpuSharedBank(GpuSharedBank&&) = delete;
+  GpuSharedBank& operator=(GpuSharedBank&&) = delete;
+
+  // Allocates the pool once (on first call) from |global_graph|.buffers, then
+  // returns a zero-copy view into it for each of |compiled_model|'s
+  // weight-Parameters named in |const_map| (friendly_name -> BufferId). Weights
+  // are matched by the Parameter's friendly_name, so binding is robust to input
+  // reordering across import_model. The caller sets each view on the infer
+  // request and keeps the views alive for its lifetime.
+  litert::Expected<std::vector<BoundWeight>> Bind(
+      ov::Core& core, const OpenVinoGlobalGraph& global_graph,
+      const ov::CompiledModel& compiled_model,
+      const std::map<std::string, uint32_t>& const_map);
+
+ private:
+  absl::Mutex gpu_bank_mutex_;
+  ov::RemoteTensor gpu_usm_ ABSL_GUARDED_BY(gpu_bank_mutex_);  // usm-host buffer for the pool
+  void* base_ ABSL_GUARDED_BY(gpu_bank_mutex_) = nullptr;  // usm host pointer into usm_
+  // buffer_id -> byte offset in the pool.
+  std::map<uint32_t, size_t> weight_offset_ ABSL_GUARDED_BY(gpu_bank_mutex_);
+  bool bank_ready_ ABSL_GUARDED_BY(gpu_bank_mutex_) = false;
+};
 
 }  // namespace litert::openvino
 

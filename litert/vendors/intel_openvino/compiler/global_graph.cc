@@ -25,6 +25,9 @@ namespace {
 
 constexpr char kMagic[8] = {'O', 'V', 'G', 'L', 'O', 'B', 'A', 'L'};
 
+void PutU16(std::string& s, uint16_t v) {
+  s.append(reinterpret_cast<const char*>(&v), sizeof(v));
+}
 void PutU32(std::string& s, uint32_t v) {
   s.append(reinterpret_cast<const char*>(&v), sizeof(v));
 }
@@ -45,6 +48,11 @@ struct Reader {
     std::memcpy(out, p, n);
     p += n;
     return true;
+  }
+  uint16_t U16() {
+    uint16_t v = 0;
+    Bytes(&v, sizeof(v));
+    return v;
   }
   uint32_t U32() {
     uint32_t v = 0;
@@ -83,6 +91,7 @@ size_t OpenVinoGlobalGraph::BankBytes() const {
 std::string OpenVinoGlobalGraph::Serialize() const {
   std::string out;
   out.append(kMagic, sizeof(kMagic));
+  PutU16(out, kVersion);
   // shared buffer pool
   PutU32(out, static_cast<uint32_t>(buffers.size()));
   for (const auto& [id, bytes] : buffers) {
@@ -97,8 +106,9 @@ std::string OpenVinoGlobalGraph::Serialize() const {
     out.append(subgraph.name);
     out.push_back(static_cast<char>(subgraph.device));
     PutU32(out, static_cast<uint32_t>(subgraph.const_map.size()));
-    for (const auto& [input_index, buffer_id] : subgraph.const_map) {
-      PutU32(out, input_index);
+    for (const auto& [const_name, buffer_id] : subgraph.const_map) {
+      PutU32(out, static_cast<uint32_t>(const_name.size()));
+	  out.append(const_name);
       PutU32(out, buffer_id);
     }
     PutU64(out, subgraph.payload.size());
@@ -115,6 +125,13 @@ litert::Expected<OpenVinoGlobalGraph> OpenVinoGlobalGraph::Parse(
   }
   Reader reader{data + sizeof(kMagic), data + size};
   OpenVinoGlobalGraph graph;
+
+  const uint16_t version = reader.U16();
+  if (!reader.ok || version != kVersion) {
+    return litert::Error(
+        kLiteRtStatusErrorRuntimeFailure,
+        "OpenVinoGlobalGraph: unsupported container version");
+  }
 
   const uint32_t num_buffers = reader.U32();
   for (uint32_t i = 0; i < num_buffers && reader.ok; ++i) {
@@ -135,9 +152,11 @@ litert::Expected<OpenVinoGlobalGraph> OpenVinoGlobalGraph::Parse(
     subgraph.device = dev;
     const uint32_t cm_len = reader.U32();
     for (uint32_t j = 0; j < cm_len && reader.ok; ++j) {
-      const uint32_t idx = reader.U32();
+      const uint32_t const_name_len = reader.U32();
+      std::string const_name;
+      reader.Str(const_name, const_name_len);
       const uint32_t bid = reader.U32();
-      subgraph.const_map.emplace(idx, bid);
+      subgraph.const_map.emplace(const_name, bid);
     }
     const uint64_t payload_len = reader.U64();
     reader.Str(subgraph.payload, static_cast<size_t>(payload_len));

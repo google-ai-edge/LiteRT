@@ -81,7 +81,7 @@ TEST(WeightsToParametersTest, ConvertsWeightConstantsToParameters) {
   }
 
   const size_t params_before = ov_model->inputs().size();
-  std::map<uint32_t, uint32_t> const_map;
+  std::map<std::string, uint32_t> const_map;
   const size_t converted =
       ConvertWeightsToParameters(ov_model, bank, &const_map);
 
@@ -102,17 +102,24 @@ TEST(WeightsToParametersTest, ConvertsWeightConstantsToParameters) {
     }
   }
 
-  // Every const_map entry: the input at that index is a Parameter whose
-  // friendly_name resolves to the recorded BufferId.
+  // Every const_map entry is keyed by a friendly_name that (a) resolves in the
+  // bank to the recorded BufferId, and (b) names a Parameter input on the model.
   const auto& inputs = ov_model->inputs();
-  for (const auto& [idx, buffer_id] : const_map) {
-    ASSERT_LT(idx, inputs.size());
-    auto parameter = ov::as_type_ptr<ov::op::v0::Parameter>(
-        inputs[idx].get_node_shared_ptr());
-    ASSERT_NE(parameter, nullptr) << "input " << idx << " is not a Parameter";
-    auto resolved_id = bank.BufferIdOfName(parameter->get_friendly_name());
-    ASSERT_TRUE(resolved_id.has_value());
+  for (const auto& [name, buffer_id] : const_map) {
+    auto resolved_id = bank.BufferIdOfName(name);
+    ASSERT_TRUE(resolved_id.has_value()) << name;
     EXPECT_EQ(static_cast<uint32_t>(*resolved_id), buffer_id);
+
+    bool found_param = false;
+    for (const auto& input : inputs) {
+      auto parameter = ov::as_type_ptr<ov::op::v0::Parameter>(
+          input.get_node_shared_ptr());
+      if (parameter && parameter->get_friendly_name() == name) {
+        found_param = true;
+        break;
+      }
+    }
+    EXPECT_TRUE(found_param) << "no Parameter input named " << name;
   }
 }
 
@@ -131,7 +138,7 @@ TEST(WeightsToParametersTest, EmptyBankConvertsNothing) {
   const size_t inputs_before = ov_model->inputs().size();
 
   WeightBank empty_bank;
-  std::map<uint32_t, uint32_t> const_map;
+  std::map<std::string, uint32_t> const_map;
   EXPECT_EQ(ConvertWeightsToParameters(ov_model, empty_bank, &const_map), 0u);
   EXPECT_TRUE(const_map.empty());
   EXPECT_EQ(ov_model->inputs().size(), inputs_before);
