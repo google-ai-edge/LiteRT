@@ -11,7 +11,7 @@ INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
                          QnnTestPrinter);
 
 TEST_P(QnnModelTest, Sanity) {
-  ASSERT_TRUE(qnn_manager_ptr_->BackendHandle());
+  ASSERT_TRUE(qnn_backend_ptr_->GetBackendHandle());
   ASSERT_TRUE(context_handle_.Get());
   ASSERT_TRUE(qnn_manager_ptr_->Api());
   ASSERT_TRUE(qnn_model_.ValidateOpConfig());

@@ -70,7 +70,7 @@ cc_library(
         "//litert/c/internal:litert_accelerator",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_any",
-        "//litert/cc:litert_environment",
+        "//litert/cc:litert_environment_api",
         "//litert/cc:litert_environment_options",
         "//tflite/java/jni",
         "@com_google_absl//absl/log:absl_check",
@@ -101,7 +101,7 @@ cc_library(
         "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",
-        "//litert/cc:litert_environment",
+        "//litert/cc:litert_environment_api",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
@@ -151,6 +151,7 @@ cc_library(
 #         ":litert_compiled_model_jni",
 #         ":litert_environment_jni",
 #         ":litert_tensor_buffer_jni",
+#         "//litert/c/internal:litert_runtime_builtin_none",
 #     ],
 # )
 #
@@ -181,6 +182,7 @@ tflite_jni_binary(
         ":litert_compiled_model_jni",
         ":litert_environment_jni",
         ":litert_tensor_buffer_jni",
+        "//litert/c/internal:litert_runtime_builtin_none",
     ],
 )
 
@@ -391,6 +393,9 @@ kt_android_library(
     manifest = "src/main/AndroidManifest.xml",
     proguard_specs = ["//tflite/java:proguard.flags"],
     visibility = ["//visibility:public"],
+    exports = [
+        ":litert_api",
+    ],
     deps = [
         ":litert_api",
         ":litert_impl_jni",  # native implementation needed for the target

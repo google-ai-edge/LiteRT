@@ -15,7 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_DELEGATE_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_DELEGATE_OPTIONS_H_
 
-#include "third_party/odml/infra/ml_drift_delegate/ml_drift_delegate.h"
+#include "ml_drift_delegate/delegate/precision.h"
 
 #ifdef __EMSCRIPTEN__
 #include <webgpu/webgpu_cpp.h>

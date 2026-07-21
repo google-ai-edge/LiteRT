@@ -57,6 +57,18 @@ function data_files() {
   fi
 }
 
+function _realpath() {
+  if command -v realpath &>/dev/null; then
+    realpath "$1"
+  elif command -v readlink &>/dev/null; then
+    readlink -f "$1"
+  else
+    local dir
+    dir="$(cd "$(dirname "$1")" &>/dev/null && pwd)"
+    echo "${dir}/$(basename "$1")"
+  fi
+}
+
 # Paths to all shared libraries built for host that are packed with this library.
 function host_libs() {
   local host_libs=@@host_libs@@
@@ -66,7 +78,7 @@ function host_libs() {
   else
     for file in $host_libs; do
       if [[ "$file" == *"for_host"* ]]; then
-        the_host_libs+=($(realpath $file))
+        the_host_libs+=($(_realpath "$file"))
       else
         the_host_libs+=(${file})
       fi
@@ -113,8 +125,9 @@ function device_path() {
 # Locate the compiler plugin directory for host if one has been packaged with this library.
 function find_host_plugin() {
   for file in $(host_libs); do
-    if [[ "$file" == *"libLiteRtCompilerPlugin"*."so" ]]; then
+    if [[ "$file" == *"libLiteRtCompilerPlugin"* ]]; then
       echo "$file"
+      return 0
     fi
   done
 }
@@ -122,8 +135,9 @@ function find_host_plugin() {
 # Locate the compiler plugin directory for device if one has been packaged with this library.
 function find_device_plugin() {
   for file in $(device_libs); do
-    if [[ "$file" == *"libLiteRtCompilerPlugin"*."so" ]]; then
+    if [[ "$file" == *"libLiteRtCompilerPlugin"* ]]; then
       echo "$file"
+      return 0
     fi
   done
 }
@@ -131,8 +145,9 @@ function find_device_plugin() {
 # Locate the dispatch directory for host if one has been packaged with this library.
 function find_host_dispatch() {
   for file in $(host_libs); do
-    if [[ "$file" == *"libLiteRtDispatch"*."so" ]]; then
+    if [[ "$file" == *"libLiteRtDispatch"* ]]; then
       echo "$file"
+      return 0
     fi
   done
 }
@@ -140,8 +155,9 @@ function find_host_dispatch() {
 # Locate the dispatch directory for device if one has been packaged with this library.
 function find_device_dispatch() {
   for file in $(device_libs); do
-    if [[ "$file" == *"libLiteRtDispatch"*."so" ]]; then
+    if [[ "$file" == *"libLiteRtDispatch"* ]]; then
       echo "$file"
+      return 0
     fi
   done
 }
@@ -149,8 +165,9 @@ function find_device_dispatch() {
 # Locate the runtime so directory for host if one has been packaged with this library.
 function find_host_runtime_lib() {
   for file in $(host_libs); do
-    if [[ "$file" == *"libLiteRt.so" ]]; then
+    if [[ "$file" == *"libLiteRt.so"* && "$file" != *"CompilerPlugin"* && "$file" != *"Dispatch"* ]]; then
       echo "$file"
+      return 0
     fi
   done
 }
@@ -158,8 +175,9 @@ function find_host_runtime_lib() {
 # Locate the runtime so directory for device if one has been packaged with this library.
 function find_device_runtime_lib() {
   for file in $(device_libs); do
-    if [[ "$file" == *"libLiteRt.so" ]]; then
+    if [[ "$file" == *"libLiteRt.so"* && "$file" != *"CompilerPlugin"* && "$file" != *"Dispatch"* ]]; then
       echo "$file"
+      return 0
     fi
   done
 }

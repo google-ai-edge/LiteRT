@@ -9,6 +9,7 @@ add_library(qnn_backends STATIC)
 
 target_sources(qnn_backends
     PRIVATE
+        backend_factory.cc
         gpu_backend.cc
         dsp_backend.cc
         htp_backend.cc
@@ -31,8 +32,8 @@ target_link_libraries(qnn_backends
         absl::str_format
         absl::span
         absl::string_view
-    PRIVATE
         qnn_soc_table
-        qnn_log
         qnn_common
+    PRIVATE
+        qnn_log
 )

@@ -312,6 +312,7 @@ class LiteRtTensorBufferT {
   absl::flat_hash_map<LiteRtTensorBufferType, BufferVariant>
       memory_backed_buffers_;
   bool is_locked_ = false;
+  LiteRtTensorBufferLockMode lock_mode_;
 };
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_TENSOR_BUFFER_H_

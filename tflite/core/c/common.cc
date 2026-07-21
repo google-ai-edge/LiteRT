@@ -570,6 +570,9 @@ TfLiteStatus TfLiteTensorResizeMaybeCopy(size_t num_bytes, TfLiteTensor* tensor,
 TfLiteStatus TfLiteTensorResizeMaybeCopyWithAllocator(
     size_t num_bytes, TfLiteTensor* tensor, bool preserve_data,
     TfLiteAllocator* allocator) {
+  if (tensor == nullptr) {
+    return kTfLiteError;
+  }
   if (tensor->allocation_type != kTfLiteDynamic &&
       tensor->allocation_type != kTfLitePersistentRo) {
     return kTfLiteOk;

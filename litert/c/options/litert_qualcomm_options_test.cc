@@ -184,6 +184,34 @@ TEST(LiteRtQualcommOptionsTest, DspPerformanceMode) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, HtpPerfCtrlMode) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetHtpPerfCtrlMode(
+      qualcomm_options, kLiteRtQualcommHtpPerfCtrlModeAuto));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetHtpPerfCtrlMode(),
+            QualcommOptions::HtpPerfCtrlMode::kAuto);
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, DspPerfCtrlMode) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetDspPerfCtrlMode(
+      qualcomm_options, kLiteRtQualcommDspPerfCtrlModeAuto));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetDspPerfCtrlMode(),
+            QualcommOptions::DspPerfCtrlMode::kAuto);
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, IrJsonDir) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));

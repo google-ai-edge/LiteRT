@@ -30,7 +30,6 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
-#include "litert/c/litert_model.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"

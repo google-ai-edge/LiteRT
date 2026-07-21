@@ -15,7 +15,10 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/build_common:special_rule.bzl", "friends_of_litert_runtime_builtin_static", "get_compatible_with_portable")
+load(
+    "//litert/build_common:special_rule.bzl",
+    "get_compatible_with_portable",
+)
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -93,13 +96,13 @@ cc_library(
         "//litert/c:litert_gl_types",
         "//litert/c:litert_model_types",
         "//litert/c:litert_opencl_types",
-        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_header",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c:litert_webgpu_types",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_api_types",
         "//litert/cc:litert_common",
-        "//litert/cc:litert_environment",
+        "//litert/cc:litert_environment_api",
         "//litert/cc:litert_event",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -741,45 +744,6 @@ cc_test(
     ],
 )
 
-# Do not use this target directly. It should only be used by Environment.
-cc_library(
-    name = "litert_runtime_builtin_dynamic",
-    hdrs = ["litert_runtime_builtin.h"],
-    # The visibility is for testing only, otherwise it would be private.
-    visibility = ["//litert/cc/dynamic_runtime:__pkg__"],
-    deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
-        "//litert/c/internal:litert_runtime_c_api",
-    ],
-)
-
-cc_library(
-    name = "litert_runtime_builtin_static",
-    hdrs = ["litert_runtime_builtin.h"],
-    visibility = friends_of_litert_runtime_builtin_static() + [
-        # This extra visibility is for testing only.
-        "//litert/cc:__pkg__",
-        "//litert/kotlin/src/tests/google:__pkg__",
-    ],
-    deps = [
-        "//litert/c/internal:litert_runtime_api_export",
-        "//litert/c/internal:litert_runtime_c_api",
-    ],
-)
-
-cc_library(
-    name = "litert_runtime_builtin_none",
-    hdrs = ["litert_runtime_builtin.h"],
-    defines = ["LITERT_CC_RUNTIME_BUILTIN_NONE"],
-    visibility = ["//visibility:private"],
-    deps = [
-        ":litert_shared_library",
-        "//litert/c/internal:litert_logging",
-        "//litert/c/internal:litert_runtime_c_api",
-        "//litert/cc:litert_expected",
-    ],
-)
-
 cc_library(
     name = "litert_matchers",
     hdrs = ["litert_matchers.h"],
@@ -825,8 +789,11 @@ cc_test(
 # copybara:uncomment_end
 
 cc_library(
-    name = "litert_runtime_proxy",
+    name = "litert_runtime_proxy_api",
     hdrs = ["litert_runtime_proxy.h"],
+    visibility = [
+        "//litert/cc:__pkg__",
+    ],
     deps = [
         "//litert/c:litert_any",
         "//litert/c:litert_common",
@@ -842,24 +809,37 @@ cc_library(
         "//litert/c:litert_opencl_types",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c:litert_webgpu_types",
+        "//litert/c/internal:litert_runtime_builtin_header",
         "//litert/c/internal:litert_runtime_c_api",
         "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_api_types",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:die_if_null",
+    ],
+)
+
+cc_library(
+    name = "litert_runtime_proxy",
+    visibility = [
+        "//litert/cc:__pkg__",
+    ],
+    deps = [
+        ":litert_runtime_proxy_api",
     ] + select({
         "//litert:litert_runtime_link_mode_dynamic": [
-            ":litert_runtime_builtin_dynamic",
+            "//litert/c/internal:litert_runtime_builtin_dynamic",
         ],
         "//litert:litert_runtime_link_mode_none": [
-            ":litert_runtime_builtin_none",
+            "//litert/c/internal:litert_runtime_builtin_none",
         ],
         # copybara:uncomment_begin(google-only)
         # ":play_services_system_android": [
-        # ":litert_runtime_builtin_none",
+        # "//litert/c/internal:litert_runtime_builtin_none",
         # ],
         # copybara:uncomment_end
-        "//conditions:default": [":litert_runtime_builtin_static"],
+        "//conditions:default": [
+            "//litert/c/internal:litert_runtime_builtin_static",
+        ],
     }),
 )
 
@@ -872,7 +852,6 @@ cc_library(
         "//litert/cc/dynamic_runtime:__pkg__",
     ],
     deps = [
-        ":litert_runtime_builtin_dynamic",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_op_kernel",
@@ -887,6 +866,8 @@ cc_library(
         "//litert/c:litert_opencl_types",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c:litert_webgpu_types",
+        "//litert/c/internal:litert_runtime_builtin_dynamic",
+        "//litert/c/internal:litert_runtime_builtin_header",
         "//litert/c/internal:litert_runtime_c_api",
         "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_api_types",

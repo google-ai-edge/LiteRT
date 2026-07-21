@@ -24,16 +24,18 @@
 #include <optional>
 #include <vector>
 
+#include "QnnCommon.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/context_binary_info.h"
+#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
+#include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "QnnCommon.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 class LiteRtDispatchDeviceContextT;
 
@@ -41,10 +43,11 @@ class LiteRtDispatchInvocationContextT {
  public:
   using Ptr = std::unique_ptr<LiteRtDispatchInvocationContextT>;
 
-  ~LiteRtDispatchInvocationContextT() = default;
+  // Downvotes the current performance mode on destruction.
+  ~LiteRtDispatchInvocationContextT();
 
   static litert::Expected<Ptr> Create(
-      litert::qnn::QnnManager& qnn_manager,
+      litert::qnn::QnnManager& qnn_manager, ::qnn::QnnBackend& qnn_backend,
       LiteRtDispatchDeviceContextT& device_context,
       LiteRtDispatchExecutableType exec_type,
       const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name);
@@ -68,6 +71,11 @@ class LiteRtDispatchInvocationContextT {
 
   litert::Expected<void> Profile();
 
+  // Set per-invocation options (e.g. a different HTP performance mode for this
+  // run). Passing nullptr clears the override and falls back to the context
+  // options set during device-context creation.
+  litert::Expected<void> SetOptions(LiteRtOptions options);
+
   void SetSchedulingInfo(const LiteRtSchedulingInfo* scheduling_info) {
     if (scheduling_info == nullptr) {
       scheduling_info_ = std::nullopt;
@@ -85,7 +93,7 @@ class LiteRtDispatchInvocationContextT {
 
  private:
   LiteRtDispatchInvocationContextT(
-      litert::qnn::QnnManager& qnn_manager,
+      litert::qnn::QnnManager& qnn_manager, ::qnn::QnnBackend& qnn_backend,
       const litert::qnn::ContextBinaryInfo& context_binary_info,
       LiteRtDispatchDeviceContext device_context,
       const litert::qnn::QnnManager::ContextHandle* context_handle,
@@ -93,7 +101,7 @@ class LiteRtDispatchInvocationContextT {
       Qnn_GraphHandle_t graph_handle);
 
   LiteRtDispatchInvocationContextT(
-      litert::qnn::QnnManager& qnn_manager,
+      litert::qnn::QnnManager& qnn_manager, ::qnn::QnnBackend& qnn_backend,
       LiteRtDispatchDeviceContext device_context,
       const litert::qnn::QnnManager::ContextHandle* context_handle,
       Qnn_ContextHandle_t raw_context_handle,
@@ -114,6 +122,7 @@ class LiteRtDispatchInvocationContextT {
       const LiteRtRankedTensorType& tensor_type);
 
   litert::qnn::QnnManager& qnn_manager_;
+  ::qnn::QnnBackend& qnn_backend_;
   LiteRtDispatchDeviceContext device_context_;
   const litert::qnn::QnnManager::ContextHandle& context_handle_;
   Qnn_ContextHandle_t raw_context_handle_;
@@ -125,6 +134,9 @@ class LiteRtDispatchInvocationContextT {
   std::vector<LiteRtTensorBufferHandle> input_buffer_handles_;
   std::vector<LiteRtTensorBufferHandle> output_buffer_handles_;
   std::optional<LiteRtSchedulingInfo> scheduling_info_;
+  // Per-invocation performance-mode override (set via SetOptions).
+  // nullopt means "use the context-level options from qnn_manager_".
+  std::optional<::qnn::Options> run_options_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_

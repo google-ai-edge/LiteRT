@@ -15,6 +15,7 @@
 #include "litert/runtime/dmabuf_buffer.h"
 
 #include <cstddef>
+#include <cstring>
 #include <memory>
 #include <utility>
 
@@ -35,6 +36,8 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #endif  // LITERT_HAS_DMABUF_SUPPORT
 
 namespace litert::internal {
@@ -129,6 +132,28 @@ Expected<void> InitLibraryIfNeededUnlocked() {
   return {};
 }
 
+uint64_t ToDmaBufSyncFlags(LiteRtTensorBufferLockMode mode,
+                           uint64_t sync_type) {
+  uint64_t flags = sync_type;
+  switch (mode) {
+    case kLiteRtTensorBufferLockModeRead:
+      flags |= DMA_BUF_SYNC_READ;
+      break;
+    case kLiteRtTensorBufferLockModeWrite:
+      flags |= DMA_BUF_SYNC_WRITE;
+      break;
+    case kLiteRtTensorBufferLockModeReadWrite:
+      flags |= DMA_BUF_SYNC_RW;
+      break;
+    default:
+      // RW is enabled by default to ensure compatibility with all operations
+      // should any new modes be introduced later.
+      flags |= DMA_BUF_SYNC_RW;
+      break;
+  }
+  return flags;
+}
+
 }  // namespace
 #endif  // LITERT_HAS_DMABUF_SUPPORT
 
@@ -162,6 +187,42 @@ void DmaBufBuffer::Free(void* addr) {
     TheDmaBufLibrary->Free(addr);
   }
 #endif  // LITERT_HAS_DMABUF_SUPPORT
+}
+
+Expected<void> DmaBufBuffer::Lock(int fd, LiteRtTensorBufferLockMode mode) {
+#if LITERT_HAS_DMABUF_SUPPORT
+  struct dma_buf_sync sync = {
+      .flags = ToDmaBufSyncFlags(mode, DMA_BUF_SYNC_START),
+  };
+  int ret = TEMP_FAILURE_RETRY(ioctl(fd, DMA_BUF_IOCTL_SYNC, &sync));
+  if (ret != 0) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      absl::StrCat("Failed to DMA_BUF_IOCTL_SYNC START: ",
+                                   std::strerror(errno)));
+  }
+  return {};
+#else
+  return Unexpected(kLiteRtStatusErrorUnsupported,
+                    "DmaBufBuffer::Lock not implemented for this platform");
+#endif
+}
+
+Expected<void> DmaBufBuffer::Unlock(int fd, LiteRtTensorBufferLockMode mode) {
+#if LITERT_HAS_DMABUF_SUPPORT
+  struct dma_buf_sync sync = {
+      .flags = ToDmaBufSyncFlags(mode, DMA_BUF_SYNC_END),
+  };
+  int ret = TEMP_FAILURE_RETRY(ioctl(fd, DMA_BUF_IOCTL_SYNC, &sync));
+  if (ret != 0) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      absl::StrCat("Failed to DMA_BUF_IOCTL_SYNC END: ",
+                                   std::strerror(errno)));
+  }
+  return {};
+#else
+  return Unexpected(kLiteRtStatusErrorUnsupported,
+                    "DmaBufBuffer::Unlock not implemented for this platform");
+#endif
 }
 
 }  // namespace litert::internal

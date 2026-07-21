@@ -42,7 +42,6 @@
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
-#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 
 //===----------------------------------------------------------------------===//
@@ -88,8 +87,7 @@ class QnnManager {
 
   static Expected<Ptr> Create(
       const ::qnn::Options& options,
-      std::optional<std::string> shared_library_dir = std::nullopt,
-      std::optional<::qnn::SocInfo> soc_info = std::nullopt);
+      std::optional<std::string> shared_library_dir = std::nullopt);
 
   static absl::Span<const QnnContext_Config_t*> DefaultContextConfigs();
   static absl::Span<const QnnContext_Config_t*> WeightSharingContextConfigs();
@@ -112,11 +110,13 @@ class QnnManager {
 
   // Create a context handle for compilation.
   Expected<ContextHandle> CreateContextHandle(
+      ::qnn::QnnBackend& qnn_backend,
       absl::Span<const QnnContext_Config_t*> configs,
       ::qnn::Profiling profiling_level);
 
   // Create a context handle for inference, from a given bytecode.
   Expected<ContextHandle> CreateContextHandle(
+      ::qnn::QnnBackend& qnn_backend,
       absl::Span<const QnnContext_Config_t*> configs,
       absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle);
 
@@ -129,34 +129,16 @@ class QnnManager {
   LiteRtStatus GenerateContextBinary(Qnn_ContextHandle_t context_handle,
                                      std::vector<char>& buffer);
 
-  LiteRtStatus ValidateOp(::qnn::OpWrapper& op);
-
-  LiteRtStatus RegisterOpPackage(const std::string& package_path,
-                                 const std::string& interface_provider,
-                                 const std::string& target);
-
-  bool IsFp16Supported() {
-    // TODO(jiunkaiy): Remove this function after upgrading to stricter SDK
-    // restrictions.
-    return soc_info_.dsp_arch != ::qnn::DspArch::V68 &&
-           soc_info_.soc_model != ::qnn::SnapdragonModel::SAR2230P;
-  }
-
-  // Get qnn backend handle. Nullptr if backendCreate has not been successfully
-  // called.
-  Qnn_BackendHandle_t BackendHandle() { return backend_->GetBackendHandle(); }
+  LiteRtStatus ValidateOp(::qnn::QnnBackend& qnn_backend, ::qnn::OpWrapper& op);
 
   const ::qnn::Options& GetOptions() const { return options_; }
 
   ::qnn::SdkVersion GetSdkVersion() const { return sdk_version_; }
 
-  const ::qnn::SocInfo& GetSocInfo() const { return soc_info_; }
-
  private:
   QnnManager() = default;
 
   LiteRtStatus Init(std::optional<std::string> shared_library_dir,
-                    std::optional<::qnn::SocInfo> soc_info,
                     const ::qnn::Options& options);
 
   //
@@ -183,10 +165,6 @@ class QnnManager {
   // version. Fails if none can be found.
   LiteRtStatus ResolveSystemApi();
 
-  // Get qnn device handle. Nullptr if deviceCreate has not been successfully
-  // called.
-  Qnn_DeviceHandle_t DeviceHandle() { return backend_->GetDeviceHandle(); }
-
   // Handle to the shared library that implements the API. The library is
   // released when the manager is destroyed.
   SharedLibrary lib_;
@@ -198,8 +176,6 @@ class QnnManager {
   const QnnInterface_t* interface_ = nullptr;
   const QnnSystemInterface_t* system_interface_ = nullptr;
 
-  std::unique_ptr<::qnn::QnnBackend> backend_ = nullptr;
-  ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[0];
   ::qnn::Options options_;
   std::optional<std::string> shared_library_dir_;
   ::qnn::SdkVersion sdk_version_{};

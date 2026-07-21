@@ -415,6 +415,7 @@ cc_test(
     deps = [
         ":image_preprocessor",
         ":image_preprocessor_utils",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_tensor_buffer",
         "//support/util:test_utils",
         "@com_google_absl//absl/status",

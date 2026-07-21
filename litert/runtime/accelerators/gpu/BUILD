@@ -26,7 +26,7 @@ load("//litert/build_common:litert_build_defs.bzl", "copy_file", "litert_acceler
 
 # Experimental libraries & runtimes -- DO NOT use or depend on these.
 package(
-    default_applicable_licenses = ["//devtools/compliance/licenses:no_external_contributions"],
+    # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
     default_visibility = [
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert:litert_public",
@@ -118,7 +118,7 @@ cc_library(
         "//litert/c/options:litert_gpu_options",
         "//ml_drift_delegate/delegate:delegate_options",
         "//ml_drift_delegate/delegate:delegate_types",
-        "//third_party/odml/infra/ml_drift_delegate",
+        "//ml_drift_delegate/delegate:precision",
     ],
 )
 

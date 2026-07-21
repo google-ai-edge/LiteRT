@@ -267,6 +267,37 @@ LiteRtStatus LrtQualcommOptionsGetDspPerformanceMode(
     LrtQualcommOptions options,
     LrtQualcommOptionsDspPerformanceMode* dsp_performance_mode);
 
+// perf_ctrl_mode
+
+// Controls whether per-inference performance voting with a 300ms debounce
+// timer is enabled (auto) or whether the caller manages voting manually
+// (manual, the default).
+typedef enum LrtQualcommOptionsHtpPerfCtrlMode {
+  kLiteRtQualcommHtpPerfCtrlModeManual = 0,
+  kLiteRtQualcommHtpPerfCtrlModeAuto = 1,
+} LrtQualcommOptionsHtpPerfCtrlMode;
+
+LiteRtStatus LrtQualcommOptionsSetHtpPerfCtrlMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsHtpPerfCtrlMode htp_perf_ctrl_mode);
+
+LiteRtStatus LrtQualcommOptionsGetHtpPerfCtrlMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsHtpPerfCtrlMode* htp_perf_ctrl_mode);
+
+typedef enum LrtQualcommOptionsDspPerfCtrlMode {
+  kLiteRtQualcommDspPerfCtrlModeManual = 0,
+  kLiteRtQualcommDspPerfCtrlModeAuto = 1,
+} LrtQualcommOptionsDspPerfCtrlMode;
+
+LiteRtStatus LrtQualcommOptionsSetDspPerfCtrlMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsDspPerfCtrlMode dsp_perf_ctrl_mode);
+
+LiteRtStatus LrtQualcommOptionsGetDspPerfCtrlMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsDspPerfCtrlMode* dsp_perf_ctrl_mode);
+
 LiteRtStatus LrtQualcommOptionsSetIrJsonDir(LrtQualcommOptions options,
                                             const char* ir_json_dir);
 

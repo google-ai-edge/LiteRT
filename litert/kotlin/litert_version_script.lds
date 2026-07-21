@@ -4,6 +4,7 @@ VERS_1.0 {
     Java_*;
     TfLite*;
     LiteRt*;
+    kLiteRtRuntimeBuiltin;
 
   # Hide everything else.
   local:

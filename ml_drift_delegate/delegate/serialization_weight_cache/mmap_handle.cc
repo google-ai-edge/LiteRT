@@ -41,7 +41,6 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "third_party/odml/infra/ml_drift_delegate/util.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/file_util.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/windows_util.h"
 
@@ -217,7 +216,7 @@ void MMapHandle::ResetWithoutUnmapping() {
 }
 
 #if defined(_WIN32)
-ml_drift_delegate::ReleaseDataCallback MMapHandle::TakeOwnership() {
+ReleaseDataCallback MMapHandle::TakeOwnership() {
   uint8_t* data = data_;
   size_t size = size_;
   size_t offset_page_adjustment = offset_page_adjustment_;
@@ -231,7 +230,7 @@ ml_drift_delegate::ReleaseDataCallback MMapHandle::TakeOwnership() {
   return release_data_callback;
 }
 #else   // defined(_WIN32)
-ml_drift_delegate::ReleaseDataCallback MMapHandle::TakeOwnership() {
+ReleaseDataCallback MMapHandle::TakeOwnership() {
   uint8_t* data = data_;
   size_t size = size_;
   size_t offset_page_adjustment = offset_page_adjustment_;

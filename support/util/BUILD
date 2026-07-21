@@ -146,6 +146,7 @@ cc_library(
     hdrs = ["io_types.h"],
     deps = [
         ":litert_status_util",
+        "//litert/cc:litert_environment",  # litert runtime dependency
         "//litert/cc:litert_macros",
         "//litert/cc:litert_tensor_buffer",
         "@com_google_absl//absl/base:nullability",

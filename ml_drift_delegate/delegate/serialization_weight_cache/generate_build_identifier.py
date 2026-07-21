@@ -58,12 +58,12 @@ FILE_TEMPLATE = """// Copyright 2026 Google LLC.
 // Auto-generated file. Do not edit!
 //   Generator: third_party/odml/litert/ml_drift/delegate/serialization_weight_cache/generate_build_identifier.py
 
-#include "third_party/odml/litert/ml_drift/delegate/serialization_weight_cache/build_identifier.h"
+#include "ml_drift_delegate/delegate/serialization_weight_cache/build_identifier.h"
 
 #include <cstdint>
 #include <cstring>
 
-#include "third_party/absl/types/span.h"
+#include "absl/types/span.h"
 
 namespace ml_drift {{
 

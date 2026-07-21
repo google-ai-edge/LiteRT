@@ -275,6 +275,7 @@ package_group(
         "//litert/samples/...",
         "//litert/sdk_util/...",
         "//litert/test/...",
+        "//litert/tflite_support/custom_op/...",
         "//litert/tools/...",
         "//litert/vendors/...",
         # When litert_link_capi_so=false
@@ -309,6 +310,7 @@ package_group(
         "//litert/runtime/...",
         "//litert/sdk_util/...",
         "//litert/test/...",
+        "//litert/tflite_support/custom_op/...",
         "//litert/tools/...",
         "//litert/vendors/...",
         "//ml_drift_delegate/...",

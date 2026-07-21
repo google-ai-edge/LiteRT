@@ -17,6 +17,7 @@ load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "make_rpaths")
+load("//litert/build_common:special_rule.bzl", "friends_of_google_tensor_compiler_plugin")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -52,12 +53,8 @@ litert_dynamic_lib(
     }),
     ungrte = True,
     visibility = [
-        "//ci/tools/python/wheel:__subpackages__",
         "//litert:__subpackages__",
-        "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
-        "//research/drishti/benchmarking:__subpackages__",
-        "//third_party/darwinn/litert:__subpackages__",
-    ],
+    ] + friends_of_google_tensor_compiler_plugin(),
     deps = [
         ":google_tensor_options_cc_proto",
         "//litert/c:litert_builder_header",

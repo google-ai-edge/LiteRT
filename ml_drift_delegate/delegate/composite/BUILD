@@ -33,8 +33,6 @@ cc_library(
         "//ml_drift_delegate/tflite:operation_parser",
         "//tflite/c:common",
         "@com_google_absl//absl/status",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:any",
         "@flatbuffers",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:model",
@@ -169,8 +167,6 @@ cc_library(
         "//ml_drift_delegate/tflite:operation_parser",
         "//ml_drift_delegate/tflite:unimplemented_operation_parser",
         "@com_google_absl//absl/strings",
-        "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
     ],
 )
 
@@ -216,7 +212,6 @@ cc_library(
         "@ml_drift//ml_drift/common:gpu_model_builder",
         "@ml_drift//ml_drift/common:gpu_model_util",
         "@ml_drift//ml_drift/common:model",
-        "@ml_drift//ml_drift/common:model_hints",
         "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/common/selectors:operation_selector",
         "@ml_drift//ml_drift/common/selectors:special_selector",

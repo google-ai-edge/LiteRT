@@ -19,11 +19,11 @@
 #include <optional>
 #include <string>
 
-#include "neuron/api/NeuronAdapter.h"
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
+#include "neuron/api/NeuronAdapter.h"
 
 #if LITERT_HAS_AHWB_SUPPORT
 #include <android/hardware_buffer.h>
@@ -191,6 +191,8 @@ struct NeuronAdapterApi::Api {
   decltype(&NeuronModel_setOperandValue) model_set_operand_value = nullptr;
   decltype(&NeuronModel_setOperandSymmPerChannelQuantParams)
       model_set_symm_per_channel_quant_params = nullptr;
+  decltype(&NeuronModel_setOperandPerChannelQuantParams)
+      model_set_per_channel_quant_params = nullptr;
   decltype(&Neuron_getVersion) get_version = nullptr;
   decltype(&NeuronModel_relaxComputationFloat32toFloat16) relax_fp32_to_fp16 =
       nullptr;

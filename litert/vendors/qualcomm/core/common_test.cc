@@ -155,6 +155,24 @@ TEST(QnnOptionTest, DspPerformanceMode) {
   EXPECT_EQ(options.GetDspPerformanceMode(), kBalanced);
 }
 
+TEST(QnnOptionTest, HtpPerfCtrlMode) {
+  Options options;
+
+  EXPECT_EQ(options.GetHtpPerfCtrlMode(), HtpPerfCtrlMode::kManual);
+
+  options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kAuto);
+  EXPECT_EQ(options.GetHtpPerfCtrlMode(), HtpPerfCtrlMode::kAuto);
+}
+
+TEST(QnnOptionTest, DspPerfCtrlMode) {
+  Options options;
+
+  EXPECT_EQ(options.GetDspPerfCtrlMode(), DspPerfCtrlMode::kManual);
+
+  options.SetDspPerfCtrlMode(DspPerfCtrlMode::kAuto);
+  EXPECT_EQ(options.GetDspPerfCtrlMode(), DspPerfCtrlMode::kAuto);
+}
+
 TEST(QnnOptionTest, UseInt64BiasAsInt32) {
   Options options;
   options.SetUseInt64BiasAsInt32(true);
@@ -335,6 +353,8 @@ TEST(QnnOptionTest, Default) {
   EXPECT_FALSE(options.GetHtpDlbcWeights());
   EXPECT_EQ(options.GetHtpPerformanceMode(), HtpPerformanceMode::kDefault);
   EXPECT_EQ(options.GetDspPerformanceMode(), DspPerformanceMode::kDefault);
+  EXPECT_EQ(options.GetHtpPerfCtrlMode(), HtpPerfCtrlMode::kManual);
+  EXPECT_EQ(options.GetDspPerfCtrlMode(), DspPerfCtrlMode::kManual);
   EXPECT_TRUE(options.GetIrJsonDir().empty());
   EXPECT_TRUE(options.GetDlcDir().empty());
   EXPECT_EQ(options.GetVtcmSize(), 0);

@@ -58,5 +58,8 @@ struct SocInfo {
 
 extern const SocInfo kSocInfos[];
 extern const uint64_t kNumSocInfos;
+
+bool IsFp16Supported(const SocInfo& soc_info);
+
 }  // namespace qnn
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_SCHEMA_SOC_TABLE_H_

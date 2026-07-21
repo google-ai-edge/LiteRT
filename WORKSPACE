@@ -17,6 +17,14 @@ http_archive(
 )
 
 http_archive(
+    name = "FP16",
+    build_file = "@//third_party/FP16:FP16.BUILD",
+    sha256 = "d973501a40c55126b31accc2d9f08d931ec3cc190c0430309a5e341d3c0ce32a",
+    strip_prefix = "FP16-4dfe081cf6bcd15db339cf2680b9281b8451eeb3",
+    url = "https://github.com/Maratyszcza/FP16/archive/4dfe081cf6bcd15db339cf2680b9281b8451eeb3.zip",
+)
+
+http_archive(
     name = "rules_shell",
     sha256 = "bc61ef94facc78e20a645726f64756e5e285a045037c7a61f65af2941f4c25e1",
     strip_prefix = "rules_shell-0.4.1",
@@ -355,6 +363,15 @@ neuro_pilot()
 load("//third_party/google_tensor:workspace.bzl", "google_tensor")
 
 google_tensor()
+
+# ML Drift ----------------------------------------------------------------------------------
+http_archive(
+    name = "ml_drift",
+    repo_mapping = {
+        "@fp16": "@FP16",
+    },
+    strip_prefix = "ml-drift-main",
+)
 
 # LiteRT GPU ----------------------------------------------------------------------------------
 load("//third_party/litert_gpu:workspace.bzl", "litert_gpu")

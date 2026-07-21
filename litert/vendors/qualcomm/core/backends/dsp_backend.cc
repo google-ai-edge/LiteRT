@@ -10,18 +10,20 @@
 #include <optional>
 #include <utility>
 
-#include "absl/types/span.h"  // from @com_google_absl
-#include "litert/vendors/qualcomm/core/backends/backend_utils.h"
-#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
-#include "litert/vendors/qualcomm/core/common.h"
-#include "litert/vendors/qualcomm/core/schema/soc_table.h"
-#include "litert/vendors/qualcomm/core/utils/log.h"
 #include "DSP/QnnDspDevice.h"  // from @qairt
 #include "DSP/QnnDspPerfInfrastructure.h"  // from @qairt
 #include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnDevice.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/vendors/qualcomm/core/backends/backend_utils.h"
+#include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
+#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
+#include "litert/vendors/qualcomm/core/common.h"
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
+#include "litert/vendors/qualcomm/core/utils/log.h"
 
 namespace qnn {
 
@@ -40,27 +42,32 @@ class DspBackend::DspPerfControl {
   bool Init(DspPerformanceMode performance_mode) {
     Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
-    if (error = api_->deviceGetInfrastructure(&dsp_perf_infra_);
-        error != QNN_SUCCESS) {
-      QNN_LOG_ERROR(
-          "DSP backend unable to create device infrastructure. Error %d",
-          QNN_GET_ERROR_CODE(error));
-      return false;
+    // Acquire infra & power-config id once, then reuse across mode changes.
+    if (dsp_perf_infra_ == nullptr) {
+      if (error = api_->deviceGetInfrastructure(&dsp_perf_infra_);
+          error != QNN_SUCCESS) {
+        QNN_LOG_ERROR(
+            "DSP backend unable to create device infrastructure. Error %d",
+            QNN_GET_ERROR_CODE(error));
+        return false;
+      }
     }
 
-    if (error = dsp_perf_infra_->createPowerConfigId(&power_config_id_);
-        error != QNN_SUCCESS) {
-      QNN_LOG_ERROR("DSP backend unable to create power config. Error %d",
-                    QNN_GET_ERROR_CODE(error));
-      return false;
+    if (power_config_id_ == 0) {
+      if (error = dsp_perf_infra_->createPowerConfigId(&power_config_id_);
+          error != QNN_SUCCESS) {
+        QNN_LOG_ERROR("DSP backend unable to create power config. Error %d",
+                      QNN_GET_ERROR_CODE(error));
+        return false;
+      }
     }
 
-    // Initialize power configurations.
-    // We need to prepare both:
+    // Rebuild the power configurations for the requested mode. Both are needed:
     // 1. UpVote config: for entering performance mode.
     // 2. DownVote config: for resetting/cleanup.
     InitUpVotePowerConfigs(performance_mode);
     InitDownVotePowerConfigs();
+    current_mode_ = performance_mode;
 
     return true;
   }
@@ -79,7 +86,52 @@ class DspBackend::DspPerfControl {
     }
   }
 
+  void ScheduleUpVote() {
+    EnsureVotingThread();
+    voting_thread_->Enqueue(VotingThread::VoteType::kUpVote);
+  }
+
+  // Debounce the downvote only for burst/sustained modes to avoid thrashing
+  // the high-perf vote between back-to-back inferences.
+  void ScheduleDownVote() {
+    EnsureVotingThread();
+    const bool debounce =
+        current_mode_ == DspPerformanceMode::kBurst ||
+        current_mode_ == DspPerformanceMode::kSustainedHighPerformance;
+    voting_thread_->Enqueue(VotingThread::VoteType::kDownVote, debounce);
+  }
+
+  bool ReinitIfNeeded(DspPerformanceMode new_mode) {
+    const bool needs_init =
+        dsp_perf_infra_ == nullptr || new_mode != current_mode_;
+    if (needs_init && !Init(new_mode)) {
+      QNN_LOG_ERROR("DSP backend failed to re-init for performance mode %d.",
+                    new_mode);
+      return false;
+    }
+    ScheduleUpVote();
+    return true;
+  }
+
+  // Applies new_mode for one inference. Manual skips a same-mode re-vote
+  // when init already upvoted, auto always re-votes.
+  bool ApplyPerfMode(DspPerformanceMode new_mode, DspPerfCtrlMode ctrl_mode) {
+    if (new_mode == current_mode_ && ctrl_mode == DspPerfCtrlMode::kManual) {
+      return true;
+    }
+    return ReinitIfNeeded(new_mode);
+  }
+
  private:
+  void EnsureVotingThread() {
+    if (!voting_thread_) {
+      voting_thread_ =
+          std::make_unique<VotingThread>([this](VotingThread::VoteType v) {
+            v == VotingThread::VoteType::kUpVote ? UpVote() : DownVote();
+          });
+    }
+  }
+
   static constexpr size_t kNumPowerConfigs = 6;
   void SetPowerConfigs(std::array<QnnDspPerfInfrastructure_PowerConfig_t,
                                   kNumPowerConfigs>& power_configs,
@@ -195,6 +247,8 @@ class DspBackend::DspPerfControl {
   const QNN_INTERFACE_VER_TYPE* api_{nullptr};
   std::uint32_t power_config_id_{0};
   QnnDevice_Infrastructure_t dsp_perf_infra_{nullptr};
+  DspPerformanceMode current_mode_{DspPerformanceMode::kDefault};
+  std::unique_ptr<VotingThread> voting_thread_;
   std::array<QnnDspPerfInfrastructure_PowerConfig_t, kNumPowerConfigs>
       up_vote_power_configs_;
   std::array<QnnDspPerfInfrastructure_PowerConfig_t, kNumPowerConfigs>
@@ -212,6 +266,12 @@ DspBackend::DspBackend(const QNN_INTERFACE_VER_TYPE* qnn_api)
     : QnnBackend(qnn_api) {}
 
 DspBackend::~DspBackend() = default;
+
+// TODO: DSP does not build any graph configs yet; returns an empty builder.
+GraphConfigBuilder DspBackend::BuildGraphConfigs(
+    const Options& /*options*/, absl::string_view /*qnn_graph_name*/) {
+  return {};
+}
 
 bool DspBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   // Log Handle
@@ -231,6 +291,10 @@ bool DspBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
     return false;
   }
 
+  if (soc_info) {
+    soc_info_ = *soc_info;
+  }
+
   // DSP Performance Settings
   DspPerformanceMode performance_mode = options.GetDspPerformanceMode();
   if (performance_mode != DspPerformanceMode::kDefault) {
@@ -239,12 +303,40 @@ bool DspBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
       QNN_LOG_ERROR("Failed to initialize DSP performance Control.");
       return false;
     }
-    dsp_perf_control_->UpVote();
+    // Manual mode upvotes at init. Auto defers the upvote to Execute().
+    if (options.GetDspPerfCtrlMode() == DspPerfCtrlMode::kManual) {
+      dsp_perf_control_->UpVote();
+    }
   }
 
   // Follow RAII pattern to manage handles.
   log_handle_ = std::move(local_log_handle);
   backend_handle_ = std::move(local_backend_handle);
+
+  return true;
+}
+
+bool DspBackend::SetPerformanceMode(const Options& options) {
+  DspPerformanceMode performance_mode = options.GetDspPerformanceMode();
+
+  if (performance_mode == DspPerformanceMode::kDefault) {
+    if (dsp_perf_control_) {
+      dsp_perf_control_->ScheduleDownVote();
+    }
+    return true;
+  }
+
+  if (!dsp_perf_control_) {
+    QNN_LOG_ERROR(
+        "DSP performance control is not initialized in SetPerformanceMode.");
+    return false;
+  }
+
+  if (!dsp_perf_control_->ApplyPerfMode(performance_mode,
+                                        options.GetDspPerfCtrlMode())) {
+    QNN_LOG_ERROR("Failed to set DSP performance mode in SetPerformanceMode");
+    return false;
+  }
 
   return true;
 }

@@ -445,6 +445,7 @@ exports_files(
         "litert_c_api_dependency_test.sh",
         "litert_compiler_plugin_symbol_test.sh",
         "testdata/blockwise_quantized.tflite",
+        "testdata/custom_sinh.bin",
         "testdata/mobilenet_v2_1.0_224.tflite",
         "testdata/model_magic_test.tflite",
         "testdata/model_with_external_weights.tflite",

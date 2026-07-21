@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_RUNTIME_BUILTIN_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_RUNTIME_BUILTIN_H_
+#include "litert/c/internal/litert_runtime_builtin.h"
 
 #include "litert/c/internal/litert_runtime_c_api.h"
 
@@ -40,7 +39,7 @@
 ///
 /// If `LITERT_CC_RUNTIME_BUILTIN_NONE` is not defined:
 /// - Returns the linked `kLiteRtRuntimeBuiltin` instance.
-inline const LiteRtRuntimeCApiStruct* GetLiteRtRuntimeBuiltin() {
+const LiteRtRuntimeCApiStruct* GetLiteRtRuntimeBuiltin() {
 #if defined(LITERT_CC_RUNTIME_BUILTIN_NONE)
 #if defined(__ANDROID__)
   static const LiteRtRuntimeCApiStruct* dynamic_runtime =
@@ -75,5 +74,3 @@ inline const LiteRtRuntimeCApiStruct* GetLiteRtRuntimeBuiltin() {
   return &kLiteRtRuntimeBuiltin;
 #endif  // defined(LITERT_CC_RUNTIME_BUILTIN_NONE)
 }
-
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_RUNTIME_BUILTIN_H_

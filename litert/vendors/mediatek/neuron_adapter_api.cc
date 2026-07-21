@@ -23,7 +23,6 @@
 #include <utility>
 #include <vector>
 
-#include "neuron/api/NeuronAdapter.h"
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -31,6 +30,7 @@
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "neuron/api/NeuronAdapter.h"
 
 #define LOAD_SYMB(S, H)                                                   \
   if (auto maybe_H = dlib_.LookupSymbol<void*>(#S); maybe_H.HasValue()) { \
@@ -201,6 +201,8 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
   LOAD_SYMB(NeuronModel_setOperandValue, api_->model_set_operand_value);
   LOAD_SYMB(NeuronModel_setOperandSymmPerChannelQuantParams,
             api_->model_set_symm_per_channel_quant_params);
+  LOAD_SYMB(NeuronModel_setOperandPerChannelQuantParams,
+            api_->model_set_per_channel_quant_params);
   LOAD_SYMB(Neuron_getVersion, api_->get_version);
   LOAD_SYMB(NeuronModel_relaxComputationFloat32toFloat16,
             api_->relax_fp32_to_fp16);

@@ -21,6 +21,7 @@ limitations under the License.
 #include <iterator>
 #include <list>
 #include <memory>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -269,6 +270,37 @@ TEST(BufferTest, As) {
   EXPECT_EQ(&mutable_span_buffer_as, &mutable_span_buffer);
   EXPECT_THAT(mutable_buffer_ref.As<SpanCpuBuffer>(), IsOk());
   EXPECT_THAT(mutable_buffer_ref.As<OwningCpuBuffer>(), Not(IsOk()));
+}
+
+TEST(LockedBufferSpanTest, GettersCannotBeCalledFromTemporaryValues) {
+  auto call_data =
+      [](auto&& obj) -> decltype(std::forward<decltype(obj)>(obj).data()) {};
+  static_assert(
+      std::is_invocable_v<decltype(call_data), LockedBufferSpan<std::byte>&>);
+  static_assert(
+      !std::is_invocable_v<decltype(call_data), LockedBufferSpan<std::byte>&&>);
+  static_assert(!std::is_invocable_v<decltype(call_data),
+                                     const LockedBufferSpan<std::byte>&&>);
+
+  auto call_begin =
+      [](auto&& obj) -> decltype(std::forward<decltype(obj)>(obj).begin()) {};
+  static_assert(
+      std::is_invocable_v<decltype(call_begin), LockedBufferSpan<std::byte>&>);
+  static_assert(!std::is_invocable_v<decltype(call_begin),
+                                     LockedBufferSpan<std::byte>&&>);
+  static_assert(!std::is_invocable_v<decltype(call_begin),
+                                     const LockedBufferSpan<std::byte>&&>);
+
+  auto call_end =
+      [](auto&& obj) -> decltype(std::forward<decltype(obj)>(obj).end()) {};
+  static_assert(
+      std::is_invocable_v<decltype(call_end), LockedBufferSpan<std::byte>&>);
+  static_assert(
+      !std::is_invocable_v<decltype(call_end), LockedBufferSpan<std::byte>&&>);
+  static_assert(!std::is_invocable_v<decltype(call_end),
+                                     const LockedBufferSpan<std::byte>&&>);
+
+  SUCCEED();
 }
 
 }  // namespace

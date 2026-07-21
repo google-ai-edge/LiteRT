@@ -126,6 +126,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:node_hash_map",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",
     ],
 )
@@ -713,6 +714,7 @@ cc_library(
         # copybara:uncomment "//third_party/odml/litert/weight_loader:external_weight_loader",
         "//weight_loader:external_weight_loader",  # copybara:comment
         "//tflite/converter:allocation",
+        "//tflite/c:c_api",
         "//tflite:builtin_ops",
         "//tflite:framework",
         "//tflite:model_builder",

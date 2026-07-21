@@ -21,10 +21,10 @@ target_include_directories(qnn_log
         $<$<BOOL:${QAIRT_HEADERS_DIR}>:${QAIRT_HEADERS_DIR}>
 )
 
-target_link_libraries(qnn_log 
-    PRIVATE
+target_link_libraries(qnn_log
+    PUBLIC
         qnn_common
-) 
+)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
     target_link_libraries(qnn_log PUBLIC android log)

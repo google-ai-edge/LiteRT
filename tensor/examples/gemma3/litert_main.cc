@@ -386,7 +386,8 @@ GpuAttnOutput MakeGpuSelfAttentionLayer(
     auto mask_cpu_buffer =
         ::litert::tensor::OwningCpuBuffer::Allocate<Type::kFP32>(mask_elements);
     auto mask_lock = mask_cpu_buffer->LockMutable();
-    float* mask_raw_ptr = std::move(mask_lock).As<float>().data();
+    LockedBufferSpan<float> mask_span = std::move(mask_lock).As<float>();
+    float* mask_raw_ptr = mask_span.data();
 
     for (int h = 0; h < config.n_heads; ++h) {
       for (int i = 0; i < seq_len; ++i) {

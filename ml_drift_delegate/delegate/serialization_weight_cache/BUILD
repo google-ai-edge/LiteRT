@@ -12,19 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
 
-# copybara:uncomment_begin
-# # TODO: b/378108578 - Add support for open sourcing. The serialization_schema.fbs currently causes
-# # issues for copybara.
-# load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
-# load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library")
-#
-# # Experimental libraries & runtimes -- DO NOT use or depend on these.
-# package(default_applicable_licenses = ["//devtools/compliance/licenses:no_external_contributions"])
-#
-# copybara:uncomment_end
+# copybara:uncomment package(default_applicable_licenses = ["//third_party/odml:license"])
 
 cc_library(
     name = "file_util",
@@ -57,8 +50,8 @@ cc_library(
     deps = [
         ":file_util",
         ":windows_util",
+        "//ml_drift_delegate/delegate:unowned_tensor_desc",
         "//tflite/c:common",
-        "//third_party/odml/infra/ml_drift_delegate:util",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
     ],
@@ -90,6 +83,9 @@ flatbuffer_cc_library(
     flatc_args = [
         "--gen-mutable",
     ],
+    # copybara:comment_begin(oss-only)
+    include_paths = ["external/ml_drift"],
+    # copybara:comment_end
     includes = [
         "@ml_drift//ml_drift/common/task:serialization_base_cc_fbs_includes",
     ],
@@ -122,7 +118,7 @@ genrule(
         "@ml_drift//ml_drift/common/kernels:fully_connected.cc",
     ],
     outs = ["srcs/build_identifier.cc"],
-    cmd = "$(location //third_party/odml/litert/ml_drift/delegate/serialization_weight_cache:generate_build_identifier_py) --output $@ $(SRCS)",
+    cmd = "$(location :generate_build_identifier_py) --output $@ $(SRCS)",
     tools = [":generate_build_identifier_py"],
 )
 
@@ -206,18 +202,18 @@ cc_library(
         ":file_util",
         ":mmap_handle",
         ":serialization_schema",
+        "//ml_drift_delegate/delegate:precision",
+        "//ml_drift_delegate/delegate:unowned_tensor_desc",
+        "//tflite/c:common",
+        "//tflite/delegates:serialization",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
+        "@farmhash_archive//:farmhash",
         "@flatbuffers//:runtime_cc",
         "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/common/task:serialization_base",
         "@ml_drift//ml_drift/common/task:tensor_desc",
-        "//third_party/odml/infra/ml_drift_delegate",
-        "//third_party/odml/infra/ml_drift_delegate:util",
-        "//tflite/c:common",
-        "//tflite/delegates:serialization",
-        # placeholder for farmhash_fingerprint
     ],
 )
 
@@ -231,7 +227,6 @@ cc_test(
         ":serialization_schema",
         ":serialization_weight_cache",
         ":testing_util",
-        "//third_party/odml/infra/ml_drift_delegate",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",

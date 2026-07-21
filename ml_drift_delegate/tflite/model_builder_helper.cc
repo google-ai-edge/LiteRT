@@ -22,7 +22,7 @@
 #include <string>
 #include <vector>
 
-#include "third_party/FP16/include/fp16.h"
+#include "fp16.h"  // from @FP16
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl

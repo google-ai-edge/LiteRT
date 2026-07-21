@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #import "third_party/odml/litert/litert/objc/apis/LRTEnvironment.h"
-#import "third_party/odml/litert/litert/objc/apis/LRTError.h"
 
 #include <cstdint>
 #include <memory>
@@ -24,6 +23,8 @@
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
+#import "third_party/odml/litert/litert/objc/apis/LRTError.h"
+#import "third_party/odml/litert/litert/objc/sources/LRTEnvironment+Internal.h"
 
 namespace {
 
@@ -47,13 +48,6 @@ id _Nullable GetBridgedObjectForOption(const litert::Environment &env,
 }  // namespace
 
 @implementation LRTEnvironmentOptions
-@end
-
-@interface LRTEnvironment ()
-
-- (instancetype)initInternalWithEnvironment:(std::unique_ptr<litert::Environment>)cppEnvironment
-    NS_DESIGNATED_INITIALIZER;
-
 @end
 
 @implementation LRTEnvironment {
@@ -87,10 +81,8 @@ id _Nullable GetBridgedObjectForOption(const litert::Environment &env,
   auto envResult = litert::Environment::Create(litert::EnvironmentOptions(cppOptions));
   if (!envResult.HasValue()) {
     if (error) {
-      NSDictionary *userInfo = @{
-        NSLocalizedDescriptionKey :
-            [NSString stringWithUTF8String:envResult.Error().Message().c_str()]
-      };
+      NSDictionary *userInfo =
+          @{NSLocalizedDescriptionKey : @(envResult.Error().Message().c_str())};
       *error = [NSError errorWithDomain:LRTErrorDomain
                                    code:static_cast<NSInteger>(envResult.Error().Status())
                                userInfo:userInfo];
@@ -100,6 +92,10 @@ id _Nullable GetBridgedObjectForOption(const litert::Environment &env,
 
   auto cppEnv = std::make_unique<litert::Environment>(std::move(envResult.Value()));
   return [[LRTEnvironment alloc] initInternalWithEnvironment:std::move(cppEnv)];
+}
+
+- (nullable litert::Environment *)cppEnvironment {
+  return _cppEnvironment.get();
 }
 
 - (nullable id<MTLDevice>)metalDevice {

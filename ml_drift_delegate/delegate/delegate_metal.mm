@@ -32,10 +32,10 @@
 #include "ml_drift/metal/inference_context.h"  // from @ml_drift
 #include "ml_drift/metal/metal_device.h"  // from @ml_drift
 #include "ml_drift/metal/metal_spatial_tensor.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/ml_drift_delegate.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
+#include "litert/c/options/litert_gpu_options.h"
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -44,7 +44,7 @@
 #include "ml_drift_delegate/delegate/delegate_kernel_litert.h"
 #include "ml_drift_delegate/delegate/delegate_utils.h"
 #include "ml_drift_delegate/delegate/gpu_backend_metal_litert.h"
-#include "litert/c/options/litert_gpu_options.h"
+#include "ml_drift_delegate/delegate/precision.h"
 #include "ml_drift_delegate/tflite/model_builder.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/c/common.h"

@@ -24,10 +24,12 @@
 #include <utility>
 
 #include "absl/status/status.h"  // from @com_google_absl
-#include "third_party/odml/infra/ml_drift_delegate/util.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/file_util.h"
+#include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 
 namespace ml_drift {
+
+using ::litert::ml_drift::ReleaseDataCallback;
 
 // Calls the provided callback at then end of the scope this was created into.
 template <class F>
@@ -101,7 +103,7 @@ class MMapHandle {
   // This function will reset the internal state of the MMapHandle to its
   // default state and return a callback that will release the memory when
   // called.
-  ml_drift_delegate::ReleaseDataCallback TakeOwnership();
+  ReleaseDataCallback TakeOwnership();
 
   // Returns the mapping buffer.
   uint8_t* data() { return data_ + offset_page_adjustment_; }
