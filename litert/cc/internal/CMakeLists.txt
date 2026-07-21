@@ -34,7 +34,6 @@ set(LITERT_CC_INTERNAL_HEADERS
     litert_options_wrapper.h
     litert_platform_support.h
     litert_rng.h
-    litert_runtime_builtin.h
     litert_runtime_proxy.h
     litert_shared_library.h
     litert_shared_library_windows.h

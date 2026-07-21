@@ -17,7 +17,12 @@
 # load("@rules_cc//cc:cc_test.bzl", "cc_test")
 #
 # copybara:uncomment_end
-load("//litert/build_common:special_rule.bzl", "get_compatible_with_portable")
+load(
+    "//litert/build_common:special_rule.bzl",
+    "friends_of_litert_runtime_builtin_static",
+    "get_compatible_with_portable",
+    "litert_jni_friends",
+)
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
@@ -607,4 +612,71 @@ filegroup(
         "//litert/c:__pkg__",
         "//litert/cc:__pkg__",
     ],
+)
+
+cc_library(
+    name = "litert_runtime_builtin_header",
+    hdrs = ["litert_runtime_builtin.h"],
+    visibility = [
+        "//litert/c:__pkg__",
+        "//litert/cc:__pkg__",
+        "//litert/cc/dynamic_runtime:__pkg__",
+        "//litert/cc/internal:__pkg__",
+        "//litert/kotlin/src/tests/google:__pkg__",
+    ],
+    deps = [
+        ":litert_runtime_c_api",
+    ],
+)
+
+# Do not use this target directly. It should only be used by Environment.
+cc_library(
+    name = "litert_runtime_builtin_dynamic",
+    srcs = ["litert_runtime_builtin.cc"],
+    # The visibility is for testing only, otherwise it would be private.
+    visibility = [
+        "//litert/cc/dynamic_runtime:__pkg__",
+        "//litert/cc/internal:__pkg__",
+    ],
+    deps = [
+        ":litert_runtime_builtin_header",
+        ":litert_runtime_c_api",
+        "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
+    ],
+    alwayslink = True,
+)
+
+cc_library(
+    name = "litert_runtime_builtin_static",
+    srcs = ["litert_runtime_builtin.cc"],
+    visibility = friends_of_litert_runtime_builtin_static() + [
+        # This extra visibility is for testing only.
+        "//litert/cc:__pkg__",
+        "//litert/cc/internal:__pkg__",
+        "//litert/kotlin/src/tests/google:__pkg__",
+    ],
+    deps = [
+        ":litert_runtime_api_export",
+        ":litert_runtime_builtin_header",
+        ":litert_runtime_c_api",
+    ],
+    alwayslink = True,
+)
+
+cc_library(
+    name = "litert_runtime_builtin_none",
+    srcs = ["litert_runtime_builtin.cc"],
+    local_defines = ["LITERT_CC_RUNTIME_BUILTIN_NONE"],
+    visibility = litert_jni_friends() + [
+        "//litert/cc/internal:__pkg__",
+        "//litert/kotlin:__pkg__",
+    ],
+    deps = [
+        ":litert_logging",
+        ":litert_runtime_builtin_header",
+        ":litert_runtime_c_api",
+        "//litert/cc:litert_expected",
+        "//litert/cc/internal:litert_shared_library",
+    ],
+    alwayslink = True,
 )

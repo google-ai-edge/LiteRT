@@ -255,7 +255,7 @@ cc_test(
         "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/core/model:model_testonly",
         "//litert/test:common",
-        "//litert/test:load_test_model",
+        "//litert/test:load_test_model_runtimecapi",
         "//litert/test:matchers",
         "//litert/vendors/cc:litert_compiler_plugin",
         "@com_google_absl//absl/strings:string_view",
