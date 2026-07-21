@@ -55,6 +55,7 @@ litert_dynamic_lib(
     ],
     deps = [
         ":qnn_compose_graph",
+        ":qnn_frontend_transformation",
         "//litert/c:litert_any",
         "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
@@ -128,6 +129,7 @@ litert_bin(
     visibility = ["//litert:litert_public"],
     deps = [
         ":qnn_compose_graph",
+        ":qnn_frontend_transformation",
         "//litert/c:litert_any",
         "//litert/c:litert_builder",
         "//litert/c:litert_common",
@@ -237,6 +239,17 @@ litert_device_exec(
     backend_id = "qualcomm",
     data = ["//litert/test:testdata"],
     target = ":qnn_compiler_plugin_test",
+)
+
+litert_lib(
+    name = "qnn_frontend_transformation",
+    srcs = ["qnn_frontend_transformation.cc"],
+    hdrs = ["qnn_frontend_transformation.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc/internal:litert_builder",
+    ],
 )
 
 litert_lib(

@@ -52,6 +52,7 @@
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/compiler/qnn_compose_graph.h"
+#include "litert/vendors/qualcomm/compiler/qnn_frontend_transformation.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
@@ -293,6 +294,8 @@ class LiteRtCompilerPluginT {
   const std::optional<std::string>& shared_library_dir() const {
     return shared_library_dir_;
   }
+
+  std::vector<LiteRtTransformation> transformations;
 
  private:
   const LiteRtCompilerContext* ctx_;
@@ -686,7 +689,10 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
     LiteRtCompilerPlugin compiler_plugin,
     LiteRtTransformation** transformations, LiteRtParamIndex* num_patterns) {
-  *num_patterns = 0;
+  compiler_plugin->transformations.push_back(
+      {&QnnTransformation, "My_QnnTransformation", 100});
+  *num_patterns = compiler_plugin->transformations.size();
+  *transformations = compiler_plugin->transformations.data();
   return kLiteRtStatusOk;
 }
 
