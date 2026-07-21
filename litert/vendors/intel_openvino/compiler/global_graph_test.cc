@@ -34,13 +34,13 @@ OpenVinoGlobalGraph MakeSample() {
   OpenVinoGlobalGraph::Subgraph prefill;
   prefill.name = "Partition_0";
   prefill.device = 2;  // e.g. GPU enum
-  prefill.const_map = {{0u, 0u}, {3u, 7u}};
+  prefill.const_map = {{"weight_a", 0u}, {"weight_b", 7u}};
   prefill.payload = "prefill-blob-bytes";
 
   OpenVinoGlobalGraph::Subgraph decode;
   decode.name = "Partition_1";
   decode.device = 2;
-  decode.const_map = {{0u, 7u}};
+  decode.const_map = {{"weight_a", 7u}};
   decode.payload = std::string("\x00\x00\xFF", 3);  // embedded NULs must survive
 
   graph.subgraphs[prefill.name] = prefill;
@@ -115,6 +115,18 @@ TEST(GlobalGraphTest, ParseRejectsBadMagic) {
   const std::string junk = "not-an-ovglobal-container-blob";
   auto parsed = OpenVinoGlobalGraph::Parse(
       reinterpret_cast<const uint8_t*>(junk.data()), junk.size());
+  EXPECT_FALSE(parsed.HasValue());
+}
+
+// Parse errors on a blob whose version byte does not match kVersion, rather
+// than misparsing a future/unknown layout.
+TEST(GlobalGraphTest, ParseRejectsUnknownVersion) {
+  std::string blob = MakeSample().Serialize();
+  // The version is a little-endian uint16 immediately after the 8-byte magic.
+  ASSERT_GT(blob.size(), 9u);
+  blob[8] = static_cast<char>(OpenVinoGlobalGraph::kVersion + 1);
+  auto parsed = OpenVinoGlobalGraph::Parse(
+      reinterpret_cast<const uint8_t*>(blob.data()), blob.size());
   EXPECT_FALSE(parsed.HasValue());
 }
 

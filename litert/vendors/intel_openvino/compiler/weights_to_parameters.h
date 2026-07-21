@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <string>
 
 #include "openvino/core/model.hpp"
 #include "litert/vendors/intel_openvino/compiler/weight_bank.h"
@@ -30,12 +31,13 @@ namespace litert::openvino {
 // element type and shape, rewiring all consumers. Constants at or below
 // kMinConvertBytes are left unchanged.
 //
-// |const_map| (must be non-null) is populated with input_index -> BufferId for
-// every converted weight, where input_index is the Parameter's position in
-// model->inputs(). Returns the number of weights converted.
+// |const_map| (must be non-null) is populated with friendly_name -> BufferId for
+// every converted weight. The dispatcher resolves each weight-Parameter to its
+// pool buffer by friendly_name (robust to input reordering across import).
+// Returns the number of weights converted.
 size_t ConvertWeightsToParameters(const std::shared_ptr<ov::Model>& model,
                                   const WeightBank& bank,
-                                  std::map<uint32_t, uint32_t>* const_map);
+                                  std::map<std::string, uint32_t>* const_map);
 
 }  // namespace litert::openvino
 

@@ -35,6 +35,12 @@ void WeightBank::AddSubgraph(const litert::compiler::Subgraph& subgraph) {
       // recorded once. The bytes are identical for a given id, so re-assignment
       // is harmless.
       const int32_t buffer_id = weights.BufferId();
+      // Defensive: BufferId() returns -1 only when the id lookup fails (missing
+      // callback / bad handle). A real weight always has a valid id, so skip
+      // rather than pollute the pool with a sentinel key.
+      if (buffer_id < 0) {
+        continue;
+      }
       buffer_bytes_[buffer_id] = weights.Bytes();
       // Record this tensor's name so the matching OpenVINO weight (which takes
       // the tensor name as its friendly_name) can be resolved back to its

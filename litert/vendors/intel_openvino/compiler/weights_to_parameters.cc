@@ -38,7 +38,7 @@ constexpr size_t kMinConvertBytes = 256;
 
 size_t ConvertWeightsToParameters(const std::shared_ptr<ov::Model>& model,
                                   const WeightBank& bank,
-                                  std::map<uint32_t, uint32_t>* const_map) {
+                                  std::map<std::string, uint32_t>* const_map) {
   // Collect before mutating: replacing nodes while iterating get_ops() is unsafe.
   std::vector<std::shared_ptr<ov::op::v0::Constant>> to_promote;
   for (const auto& node : model->get_ops()) {
@@ -58,28 +58,21 @@ size_t ConvertWeightsToParameters(const std::shared_ptr<ov::Model>& model,
   size_t promoted = 0;
   for (const auto& constant : to_promote) {
     const std::string name = constant->get_friendly_name();
+    // Every to_promote constant was already confirmed bank-known above.
+    const std::optional<int32_t> buffer_id = bank.BufferIdOfName(name);
+    if (!buffer_id.has_value()) {
+      continue;
+    }
     auto parameter = std::make_shared<ov::op::v0::Parameter>(
         constant->get_element_type(), constant->get_output_partial_shape(0));
     parameter->set_friendly_name(name);
     parameter->get_output_tensor(0).set_names({name});
     ov::replace_node(constant, parameter);
     model->add_parameters({parameter});
+    // Key by friendly_name so dispatch can resolve the Parameter to its pool
+    // buffer regardless of input ordering after import_model.
+    (*const_map)[name] = static_cast<uint32_t>(*buffer_id);
     ++promoted;
-  }
-
-  // Map each promoted weight-Parameter to its BufferId by final input index.
-  const auto& inputs = model->inputs();
-  for (size_t i = 0; i < inputs.size(); ++i) {
-    auto parameter = ov::as_type_ptr<ov::op::v0::Parameter>(
-        inputs[i].get_node_shared_ptr());
-    if (!parameter) {
-      continue;
-    }
-    const std::optional<int32_t> buffer_id =
-        bank.BufferIdOfName(parameter->get_friendly_name());
-    if (buffer_id.has_value()) {
-      (*const_map)[static_cast<uint32_t>(i)] = static_cast<uint32_t>(*buffer_id);
-    }
   }
   return promoted;
 }

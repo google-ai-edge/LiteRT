@@ -30,25 +30,32 @@ namespace litert::openvino {
 // weights against the shared pool.
 //
 // Each subgraph's const_map records how its OV payload references the pool: it
-// maps a weight-Parameter's input_index to the pool buffer_id it is bound to at
-// dispatch.
+// maps a weight-Parameter's friendly_name to the pool buffer_id it is bound to
+// at dispatch (matched by name so binding is robust to input reordering across
+// import_model).
 //
 // Serialized layout (single blob, little-endian):
 //   magic  "OVGLOBAL"                       (8 bytes)
+//   uint16 version                          (format version, see kVersion)
 //   uint32 num_buffers
 //     repeat: uint32 buffer_id, uint64 size, [size bytes]     (shared pool)
 //   uint32 num_subgraphs
 //     repeat: uint32 name_len, [name], uint8 device_enum,
 //             uint32 const_map_len,
-//               repeat: uint32 index, uint32 buffer_id        (const_map)
+//               repeat: uint32 name_len, [name], uint32 buffer_id  (const_map)
 //             uint64 payload_len, [payload bytes]             (OV exported blob)
 class OpenVinoGlobalGraph {
  public:
+  // Container format version, written right after the magic. Bump on any
+  // layout change so Parse() can reject blobs it does not understand rather
+  // than misparsing. v1 = the current name-keyed const_map layout.
+  static constexpr uint16_t kVersion = 1;
+
   // One compiled partition entry in the container.
   struct Subgraph {
     std::string name;                        // e.g. "Partition_0"
     uint8_t device = 0;                      // LiteRtIntelOpenVinoGraphBackend
-    std::map<uint32_t, uint32_t> const_map;  // index -> buffer_id
+    std::map<std::string, uint32_t> const_map;  // friendly_name -> buffer_id
     std::string payload;                     // OV exported blob
   };
 
