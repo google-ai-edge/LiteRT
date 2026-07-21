@@ -37,6 +37,7 @@
 #include "litert/cc/litert_tensor_buffer.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
+#include "tensor/runners/litert/feedback_loop_config.h"
 #include "tensor/runners/litert/litert_buffer.h"
 #include "tensor/tensor.h"
 
@@ -65,6 +66,61 @@ class LitertDynamicRunner {
     return runner;
   }
 
+  static absl::StatusOr<LitertDynamicRunner> Create(
+      Environment& env, const std::string& model_path, Options& options,
+      const std::vector<FeedbackLoopConfig>& feedback_loops) {
+    auto gpu_options_or = options.GetGpuOptions();
+    if (gpu_options_or.HasValue()) {
+      LITERT_RETURN_IF_ERROR(gpu_options_or->EnableExternalTensorsMode(true));
+      for (const auto& loop : feedback_loops) {
+        LITERT_RETURN_IF_ERROR(
+            gpu_options_or->AddExternalTensorPattern(loop.input_name.c_str()));
+        LITERT_RETURN_IF_ERROR(
+            gpu_options_or->AddExternalTensorPattern(loop.output_name.c_str()));
+      }
+    }
+
+    LitertDynamicRunner runner;
+    LITERT_ASSIGN_OR_RETURN(runner.compiled_model_,
+                            CompiledModel::Create(env, model_path, options));
+    LITERT_RETURN_IF_ERROR(runner.InitializeBuffers());
+
+    for (const auto& loop : feedback_loops) {
+      LITERT_RETURN_IF_ERROR(
+          runner.RegisterFeedbackLoop(loop.input_name, loop.output_name));
+    }
+
+    return runner;
+  }
+
+  static absl::StatusOr<LitertDynamicRunner> Create(
+      Environment& env, absl::Span<const uint8_t> model_buffer,
+      Options& options, const std::vector<FeedbackLoopConfig>& feedback_loops) {
+    auto gpu_options_or = options.GetGpuOptions();
+    if (gpu_options_or.HasValue()) {
+      LITERT_RETURN_IF_ERROR(gpu_options_or->EnableExternalTensorsMode(true));
+      for (const auto& loop : feedback_loops) {
+        LITERT_RETURN_IF_ERROR(
+            gpu_options_or->AddExternalTensorPattern(loop.input_name.c_str()));
+        LITERT_RETURN_IF_ERROR(
+            gpu_options_or->AddExternalTensorPattern(loop.output_name.c_str()));
+      }
+    }
+
+    LitertDynamicRunner runner;
+    BufferRef<uint8_t> buf_ref(model_buffer.data(), model_buffer.size());
+    LITERT_ASSIGN_OR_RETURN(runner.compiled_model_,
+                            CompiledModel::Create(env, buf_ref, options));
+    LITERT_RETURN_IF_ERROR(runner.InitializeBuffers());
+
+    for (const auto& loop : feedback_loops) {
+      LITERT_RETURN_IF_ERROR(
+          runner.RegisterFeedbackLoop(loop.input_name, loop.output_name));
+    }
+
+    return runner;
+  }
+
   // Helper to initialize buffers for all signatures
   absl::Status InitializeBuffers() {
     LITERT_ASSIGN_OR_RETURN(auto keys, compiled_model_.GetSignatureKeys());
@@ -80,6 +136,52 @@ class LitertDynamicRunner {
       LITERT_ASSIGN_OR_RETURN(auto out_buffers,
                               compiled_model_.CreateOutputBuffers(key_str));
       signature_output_buffers_[key_str] = std::move(out_buffers);
+    }
+    return absl::OkStatus();
+  }
+
+  absl::Status RegisterFeedbackLoop(const std::string& input_name,
+                                    const std::string& output_name) {
+    return RegisterFeedbackLoop(default_signature_name_, input_name,
+                                output_name);
+  }
+
+  absl::Status RegisterFeedbackLoop(const std::string& signature_name,
+                                    const std::string& input_name,
+                                    const std::string& output_name) {
+    LITERT_ASSIGN_OR_RETURN(size_t input_idx,
+                            GetInputIndex(signature_name, input_name));
+    LITERT_ASSIGN_OR_RETURN(size_t output_idx,
+                            GetOutputIndex(signature_name, output_name));
+
+    FeedbackLoop loop;
+    loop.input_index = input_idx;
+    loop.output_index = output_idx;
+    feedback_loops_[signature_name].push_back(loop);
+    first_run_[signature_name] = true;
+    swapped_[signature_name] = false;
+    return absl::OkStatus();
+  }
+
+  absl::Status Reset() { return Reset(default_signature_name_); }
+
+  absl::Status Reset(const std::string& signature_name) {
+    auto first_run_it = first_run_.find(signature_name);
+    if (first_run_it != first_run_.end()) {
+      first_run_it->second = true;
+    }
+    auto& signature_swapped = swapped_[signature_name];
+    if (signature_swapped) {
+      auto& input_buffers = signature_input_buffers_[signature_name];
+      auto& output_buffers = signature_output_buffers_[signature_name];
+      auto loops_it = feedback_loops_.find(signature_name);
+      if (loops_it != feedback_loops_.end()) {
+        for (const auto& loop : loops_it->second) {
+          std::swap(input_buffers[loop.input_index],
+                    output_buffers[loop.output_index]);
+        }
+      }
+      signature_swapped = false;
     }
     return absl::OkStatus();
   }
@@ -236,8 +338,29 @@ class LitertDynamicRunner {
       return absl::NotFoundError("Signature index not found in model");
     }
 
-    auto status = compiled_model_.Run(sig_index_or.Value(), in_it->second,
-                                      out_it->second);
+    auto& input_buffers = in_it->second;
+    auto& output_buffers = out_it->second;
+
+    auto first_run_it = first_run_.find(signature_name);
+    bool is_first_run =
+        first_run_it == first_run_.end() ? true : first_run_it->second;
+
+    if (!is_first_run) {
+      auto loops_it = feedback_loops_.find(signature_name);
+      if (loops_it != feedback_loops_.end()) {
+        for (const auto& loop : loops_it->second) {
+          std::swap(input_buffers[loop.input_index],
+                    output_buffers[loop.output_index]);
+        }
+      }
+      swapped_[signature_name] = !swapped_[signature_name];
+    }
+    if (first_run_it != first_run_.end()) {
+      first_run_it->second = false;
+    }
+
+    auto status = compiled_model_.Run(sig_index_or.Value(), input_buffers,
+                                      output_buffers);
     if (!status.HasValue()) {
       return absl::InternalError(status.Error().Message());
     }
@@ -445,6 +568,11 @@ class LitertDynamicRunner {
   }
 
  private:
+  struct FeedbackLoop {
+    size_t input_index;
+    size_t output_index;
+  };
+
   LitertDynamicRunner() = default;
   CompiledModel compiled_model_;
   std::string default_signature_name_;
@@ -452,6 +580,9 @@ class LitertDynamicRunner {
       signature_input_buffers_;
   absl::flat_hash_map<std::string, std::vector<TensorBuffer>>
       signature_output_buffers_;
+  absl::flat_hash_map<std::string, std::vector<FeedbackLoop>> feedback_loops_;
+  absl::flat_hash_map<std::string, bool> first_run_;
+  absl::flat_hash_map<std::string, bool> swapped_;
 };
 
 }  // namespace tensor

@@ -21,9 +21,15 @@ package(
 )
 
 cc_library(
+    name = "feedback_loop_config",
+    hdrs = ["feedback_loop_config.h"],
+)
+
+cc_library(
     name = "compiled_model_runner",
     hdrs = ["compiled_model_runner.h"],
     deps = [
+        ":feedback_loop_config",
         ":litert_buffer",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_compiled_model",
@@ -58,6 +64,7 @@ cc_library(
     name = "litert_dynamic_runner",
     hdrs = ["litert_dynamic_runner.h"],
     deps = [
+        ":feedback_loop_config",
         ":litert_buffer",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_compiled_model",
@@ -82,6 +89,7 @@ cc_library(
     hdrs = ["lambda_model_runner.h"],
     deps = [
         ":compiled_model_runner",
+        ":feedback_loop_config",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_options",
         "//tensor",
@@ -125,6 +133,7 @@ cc_test(
     name = "lambda_model_runner_test",
     srcs = ["lambda_model_runner_test.cc"],
     deps = [
+        ":feedback_loop_config",
         ":lambda_model_runner",
         ":litert_dynamic_runner",
         "//litert/cc:litert_common",
