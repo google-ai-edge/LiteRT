@@ -225,9 +225,10 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       OpenVinoTensorBuffer* custom_tensor_buffer =
           reinterpret_cast<OpenVinoTensorBuffer*>(hw_memory_handle);
 
-      LITERT_ASSIGN_OR_RETURN(auto openvino_tensor,
-                              custom_tensor_buffer->GetOVTensor());
-      return InsertTensor(RegisteredTensor{.tensor = openvino_tensor});
+      // Store the buffer itself; the concrete ov::Tensor to bind is resolved
+      // per-device at attach time (see getOVTensor(handle, device)), which is
+      // what lets one shared allocation be imported into both NPU and GPU.
+      return InsertTensor(RegisteredTensor{.ov_buffer = custom_tensor_buffer});
     }
     case kLiteRtTensorBufferTypeDmaBuf: {
 #if LITERT_HAS_DMABUF_SUPPORT
@@ -310,6 +311,28 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                 "Unsupported tensor buffer type");
   }
+}
+
+litert::Expected<ov::Tensor> LiteRtDispatchDeviceContextT::getOVTensor(
+    const LiteRtTensorBufferHandle& handle, const std::string& device) const {
+  // Resolve the registration under the lock, then release it before calling
+  // into OpenVINO (import can be heavy and take its own locks).
+  OpenVinoTensorBuffer* ov_buffer = nullptr;
+  ov::Tensor direct_tensor;
+  {
+    absl::MutexLock lock(&tensor_handle_mutex_);
+    auto it = tensor_handle_map_.find(handle);
+    if (it == tensor_handle_map_.end()) {
+      return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                "Failed to get Remote Tensor");
+    }
+    ov_buffer = it->second.ov_buffer;
+    direct_tensor = it->second.tensor;
+  }
+  if (ov_buffer != nullptr) {
+    return ov_buffer->GetOVTensor(device);
+  }
+  return direct_tensor;
 }
 
 litert::Expected<void> LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(

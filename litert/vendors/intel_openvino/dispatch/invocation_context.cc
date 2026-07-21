@@ -200,6 +200,9 @@ LiteRtDispatchInvocationContextT::Create(
   LITERT_LOG(LITERT_INFO, "Using Intel OpenVINO device: %s", device.c_str());
 
   OpenVINOSharedCore::GetInstance()->SetDevice(device);
+  // Record the device so the tensor-buffer allocator can detect models whose
+  // partitions span both NPU and GPU (which need the shared-allocation path).
+  OpenVINOSharedCore::GetInstance()->NoteDeviceRequested(device);
 
   if (!exec_bytecode_ptr || exec_bytecode_size == 0) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
@@ -222,8 +225,8 @@ LiteRtDispatchInvocationContextT::Create(
   auto infer_request = compiled_model.create_infer_request();
   LITERT_LOG(LITERT_INFO, "Openvino InvocationContext Initialize SUCCESS");
   // TODO: add support for loading cached model
-  return Ptr(new LiteRtDispatchInvocationContextT(infer_request, device_context,
-                                                  num_inputs, num_outputs));
+  return Ptr(new LiteRtDispatchInvocationContextT(
+      infer_request, device_context, num_inputs, num_outputs, device));
 }
 
 litert::Expected<LiteRtTensorBufferRequirements>
@@ -271,8 +274,9 @@ LiteRtDispatchInvocationContextT::GetOutputRequirements(
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
-  LITERT_ASSIGN_OR_RETURN(ov::Tensor ov_tensor,
-                          device_context_.getOVTensor(tensor_buffer_handle));
+  LITERT_ASSIGN_OR_RETURN(
+      ov::Tensor ov_tensor,
+      device_context_.getOVTensor(tensor_buffer_handle, device_));
   // TODO: visit this if need to maintain graph indices for inputs and outputs
   // in dispatch_api
   infer_request_.set_input_tensor(graph_input_index, ov_tensor);
@@ -281,8 +285,9 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
-  LITERT_ASSIGN_OR_RETURN(ov::Tensor ov_tensor,
-                          device_context_.getOVTensor(tensor_buffer_handle));
+  LITERT_ASSIGN_OR_RETURN(
+      ov::Tensor ov_tensor,
+      device_context_.getOVTensor(tensor_buffer_handle, device_));
   // TODO: visit this if need to maintain graph indices for inputs and outputs
   // in dispatch_api
   infer_request_.set_output_tensor(graph_output_index, ov_tensor);

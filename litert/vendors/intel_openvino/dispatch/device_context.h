@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <utility>
 
@@ -39,6 +40,10 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/intel_openvino/dispatch/openvino_shared_core.h"
+
+// Forward declaration: the OpenVINO custom tensor buffer is stored by pointer
+// so that per-device remote tensors can be produced on demand.
+class OpenVinoTensorBuffer;
 
 class LiteRtDispatchDeviceContextT {
  public:
@@ -64,6 +69,13 @@ class LiteRtDispatchDeviceContextT {
                                 "Failed to get Remote Tensor");
     }
   }
+
+  // Device-aware variant. For OpenVINO custom buffers the tensor bound to a
+  // given device is produced from the registered OpenVinoTensorBuffer (which
+  // may import a shared allocation into that device's remote context). For
+  // directly-registered tensors (DMA-BUF/AHWB) the device is ignored.
+  litert::Expected<ov::Tensor> getOVTensor(
+      const LiteRtTensorBufferHandle& handle, const std::string& device) const;
 
   // Return the core shared_pointer.
   std::shared_ptr<ov::Core> getCore() const {
@@ -108,6 +120,10 @@ class LiteRtDispatchDeviceContextT {
   struct RegisteredTensor {
     ov::Tensor tensor;
     CleanupAction cleanup;
+    // Set for OpenVINO custom buffers: the tensor is produced per-device from
+    // this buffer instead of being stored directly in `tensor`. Not owned;
+    // the buffer outlives the registration (unregister precedes destroy).
+    OpenVinoTensorBuffer* ov_buffer = nullptr;
   };
 
   // Inserts `tensor` under a freshly allocated handle while holding

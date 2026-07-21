@@ -80,6 +80,13 @@ LiteRtStatus DestroyOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
 }
 
 LiteRtStatus UnlockOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+  OpenVinoTensorBuffer* custom_tensor_buffer =
+      reinterpret_cast<OpenVinoTensorBuffer*>(hw_memory_info->memory_handle);
+  if (auto result = custom_tensor_buffer->Unlock(); !result) {
+    LITERT_LOG(LITERT_ERROR, "Failed to unlock tensor buffer: %s",
+               result.Error().Message().c_str());
+    return result.Error().Status();
+  }
   return kLiteRtStatusOk;
 }
 
@@ -88,7 +95,7 @@ LiteRtStatus LockOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info,
                                       void** host_memory_ptr) {
   OpenVinoTensorBuffer* custom_tensor_buffer =
       reinterpret_cast<OpenVinoTensorBuffer*>(hw_memory_info->memory_handle);
-  auto result = custom_tensor_buffer->GetTensorData();
+  auto result = custom_tensor_buffer->Lock(mode);
   if (!result) {
     LITERT_LOG(LITERT_ERROR, "Failed to lock tensor buffer: %s",
                result.Error().Message().c_str());
