@@ -21,10 +21,31 @@ package(
 )
 
 cc_library(
+    name = "feedback_loop_config",
+    hdrs = ["feedback_loop_config.h"],
+)
+
+cc_library(
+    name = "runner_options",
+    hdrs = ["runner_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_options",
+        "//litert/cc/internal:scoped_file",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_library(
     name = "compiled_model_runner",
     hdrs = ["compiled_model_runner.h"],
     deps = [
+        ":feedback_loop_config",
         ":litert_buffer",
+        ":runner_options",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",
@@ -58,7 +79,9 @@ cc_library(
     name = "litert_dynamic_runner",
     hdrs = ["litert_dynamic_runner.h"],
     deps = [
+        ":feedback_loop_config",
         ":litert_buffer",
+        ":runner_options",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",
@@ -82,6 +105,7 @@ cc_library(
     hdrs = ["lambda_model_runner.h"],
     deps = [
         ":compiled_model_runner",
+        ":feedback_loop_config",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_options",
         "//tensor",
@@ -125,6 +149,7 @@ cc_test(
     name = "lambda_model_runner_test",
     srcs = ["lambda_model_runner_test.cc"],
     deps = [
+        ":feedback_loop_config",
         ":lambda_model_runner",
         ":litert_dynamic_runner",
         "//litert/cc:litert_common",
@@ -137,6 +162,19 @@ cc_test(
         "//tensor/backends/tflite:arithmetic_tflite",
         "//tensor/backends/tflite:tflite_flatbuffer_conversion",
         "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "runner_options_test",
+    srcs = ["runner_options_test.cc"],
+    deps = [
+        ":runner_options",
+        "//litert/c:litert_common",
+        "//litert/c/options:litert_gpu_options",
+        "//litert/cc:litert_options",
+        "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )

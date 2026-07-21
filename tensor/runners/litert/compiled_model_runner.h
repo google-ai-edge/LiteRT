@@ -4,7 +4,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+  http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -49,7 +49,9 @@ limitations under the License.
 #include "tensor/internal/graph.h"
 #include "tensor/internal/graph_probe.h"
 #include "tensor/internal/graph_traversal.h"
+#include "tensor/runners/litert/feedback_loop_config.h"
 #include "tensor/runners/litert/litert_buffer.h"
+#include "tensor/runners/litert/runner_options.h"
 #include "tensor/tensor.h"
 
 namespace litert {
@@ -60,6 +62,20 @@ class CompiledModelRunner {
  public:
   CompiledModelRunner(Environment& env, Options& options,
                       ModelFunctor model_func, bool build_model_now = true);
+  CompiledModelRunner(Environment& env, RunnerOptions& options,
+                      ModelFunctor model_func, bool build_model_now = true)
+      : CompiledModelRunner(env, options.litert_options(), model_func,
+                            build_model_now) {}
+  CompiledModelRunner(Environment& env, Options& options,
+                      ModelFunctor model_func,
+                      const std::vector<FeedbackLoopConfig>& feedback_loops,
+                      bool build_model_now = true);
+  CompiledModelRunner(Environment& env, RunnerOptions& options,
+                      ModelFunctor model_func,
+                      const std::vector<FeedbackLoopConfig>& feedback_loops,
+                      bool build_model_now = true)
+      : CompiledModelRunner(env, options.litert_options(), model_func,
+                            feedback_loops, build_model_now) {}
 
   absl::Status BuildModel(
       const std::vector<Tensor<TfLiteMixinTag>>& output_tensors = {},
@@ -89,6 +105,13 @@ class CompiledModelRunner {
   absl::Status SetOutput(const std::string& name, absl::Span<std::byte> data);
 
   absl::StatusOr<std::vector<std::string>> GetInputNames() const;
+
+  absl::Status RegisterFeedbackLoop(const std::string& input_name,
+                                    const std::string& output_name);
+  absl::Status Reset();
+
+  absl::StatusOr<size_t> GetInputIndex(const std::string& name) const;
+  absl::StatusOr<size_t> GetOutputIndex(const std::string& name) const;
 
   static Type ConvertType(ElementType et) {
     switch (et) {
@@ -175,6 +198,15 @@ class CompiledModelRunner {
   };
   std::vector<ReplacedBuffer> replaced_buffers_;
   std::vector<char> model_buffer_;
+
+  struct FeedbackLoop {
+    size_t input_index;
+    size_t output_index;
+  };
+  std::vector<FeedbackLoopConfig> feedback_loop_configs_;
+  std::vector<FeedbackLoop> feedback_loops_;
+  bool first_run_ = true;
+  bool swapped_ = false;
 };
 
 template <typename ModelFunctor, typename Inputs, typename Outputs>
@@ -186,6 +218,7 @@ CompiledModelRunner<ModelFunctor, Inputs, Outputs>::CompiledModelRunner(
   outputs_ = model_func(inputs);
   if (build_model_now) {
     std::vector<TensorTf> output_tensors;
+    output_tensors.reserve(outputs_->tensors().size());
     for (auto const& [name, tensor_ptr] : outputs_->tensors()) {
       tensor_ptr->SetName(name);
       output_tensors.push_back(*tensor_ptr);
@@ -212,6 +245,12 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::BuildModel(
                           compiled_model_.CreateOutputBuffers());
   // Okay to release the output tensors now as output buffers are created.
   outputs_.reset();
+
+  for (const auto& loop : feedback_loop_configs_) {
+    LITERT_RETURN_IF_ERROR(
+        RegisterFeedbackLoop(loop.input_name, loop.output_name));
+  }
+
   return absl::OkStatus();
 }
 
@@ -223,6 +262,7 @@ CompiledModelRunner<ModelFunctor, Inputs, Outputs>::AddTensorsAsOutputs(
   probed_tensors_ = probe_tensors;
 
   std::vector<TensorTf> original_output_tensors;
+  original_output_tensors.reserve(outputs_->tensors().size());
   for (auto const& [name, tensor_ptr] : outputs_->tensors()) {
     tensor_ptr->SetName(name);
     original_output_tensors.push_back(*tensor_ptr);
@@ -452,6 +492,15 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
 
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::Run() {
+  if (!first_run_) {
+    for (const auto& loop : feedback_loops_) {
+      std::swap(input_buffers_[loop.input_index],
+                output_buffers_[loop.output_index]);
+    }
+    swapped_ = !swapped_;
+  }
+  first_run_ = false;
+
   LITERT_RETURN_IF_ERROR(compiled_model_.Run(input_buffers_, output_buffers_));
 
   // Revert the replaced buffers to their original state, or copy the data from
@@ -597,6 +646,91 @@ CompiledModelRunner<ModelFunctor, Inputs, Outputs>::GetInputNames() const {
     input_names.emplace_back(name);
   }
   return input_names;
+}
+
+template <typename ModelFunctor, typename Inputs, typename Outputs>
+CompiledModelRunner<ModelFunctor, Inputs, Outputs>::CompiledModelRunner(
+    Environment& env, Options& options, ModelFunctor model_func,
+    const std::vector<FeedbackLoopConfig>& feedback_loops, bool build_model_now)
+    : env_(env), options_(options) {
+  auto gpu_options_or = options.GetGpuOptions();
+  if (gpu_options_or.HasValue() && !feedback_loops.empty()) {
+    LITERT_ABORT_IF_ERROR(gpu_options_or->EnableExternalTensorsMode(true));
+    for (const auto& loop : feedback_loops) {
+      LITERT_ABORT_IF_ERROR(
+          gpu_options_or->AddExternalTensorPattern(loop.input_name.c_str()));
+      LITERT_ABORT_IF_ERROR(
+          gpu_options_or->AddExternalTensorPattern(loop.output_name.c_str()));
+    }
+  }
+
+  Inputs inputs;
+  outputs_ = model_func(inputs);
+  feedback_loop_configs_ = feedback_loops;
+
+  if (build_model_now) {
+    std::vector<TensorTf> output_tensors;
+    output_tensors.reserve(outputs_->tensors().size());
+    for (auto const& [name, tensor_ptr] : outputs_->tensors()) {
+      tensor_ptr->SetName(name);
+      output_tensors.push_back(*tensor_ptr);
+    }
+    ABSL_CHECK_OK(BuildModel(output_tensors));
+  }
+}
+
+template <typename ModelFunctor, typename Inputs, typename Outputs>
+absl::StatusOr<size_t>
+CompiledModelRunner<ModelFunctor, Inputs, Outputs>::GetInputIndex(
+    const std::string& name) const {
+  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
+  for (size_t i = 0; i < signature.InputNames().size(); ++i) {
+    if (signature.InputNames()[i] == name) {
+      return i;
+    }
+  }
+  return absl::NotFoundError(absl::StrCat("Input tensor not found: ", name));
+}
+
+template <typename ModelFunctor, typename Inputs, typename Outputs>
+absl::StatusOr<size_t>
+CompiledModelRunner<ModelFunctor, Inputs, Outputs>::GetOutputIndex(
+    const std::string& name) const {
+  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
+  for (size_t i = 0; i < signature.OutputNames().size(); ++i) {
+    if (signature.OutputNames()[i] == name) {
+      return i;
+    }
+  }
+  return absl::NotFoundError(absl::StrCat("Output tensor not found: ", name));
+}
+
+template <typename ModelFunctor, typename Inputs, typename Outputs>
+absl::Status
+CompiledModelRunner<ModelFunctor, Inputs, Outputs>::RegisterFeedbackLoop(
+    const std::string& input_name, const std::string& output_name) {
+  LITERT_ASSIGN_OR_RETURN(size_t input_idx, GetInputIndex(input_name));
+  LITERT_ASSIGN_OR_RETURN(size_t output_idx, GetOutputIndex(output_name));
+
+  FeedbackLoop loop;
+  loop.input_index = input_idx;
+  loop.output_index = output_idx;
+  feedback_loops_.push_back(loop);
+  return absl::OkStatus();
+}
+
+template <typename ModelFunctor, typename Inputs, typename Outputs>
+absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::Reset() {
+  first_run_ = true;
+  if (swapped_) {
+    auto loops = feedback_loops_;
+    for (const auto& loop : loops) {
+      std::swap(input_buffers_[loop.input_index],
+                output_buffers_[loop.output_index]);
+    }
+    swapped_ = false;
+  }
+  return absl::OkStatus();
 }
 
 }  // namespace tensor
