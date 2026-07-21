@@ -369,6 +369,7 @@ INSTANTIATE_TEST_SUITE_P(
                 // go/keep-sorted start numeric=yes
                 kTfLiteFloat16,
                 kTfLiteFloat32,
+                kTfLiteInt32,
                 // go/keep-sorted end
                 // clang-format on
             }),
@@ -576,6 +577,37 @@ INSTANTIATE_TEST_SUITE_P(
     }),
     [](const TestParamInfo<NumInputOutputTest::ParamType>& info) {
       return ::tflite::EnumNamesBuiltinOperator()[info.param];
+    });
+
+// Fully-quantized FC (int8 activations, quantized int8/int4/int2 weights, an
+// int32 bias, and int8 output) must be supported. The int32 bias is the TFLite
+// standard for quantized FC; it is dequantized to float during conversion.
+using QuantizedInt32BiasTest = TestWithParam<TfLiteType>;
+
+TEST_P(QuantizedInt32BiasTest, SupportsQuantizedWeightsWithInt32Bias) {
+  const TfLiteType weights_dtype = GetParam();
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddQuantizedTensor(kTfLiteInt8, {4, 1, 1, 4});
+  const int b = context_builder.AddQuantizedTensor(weights_dtype, {4, 1, 1, 4});
+  const int c = context_builder.AddQuantizedTensor(kTfLiteInt32, {4});
+  const int d = context_builder.AddQuantizedTensor(kTfLiteInt8, {4, 1, 1, 4});
+  context_builder.SetOp(kTfLiteBuiltinFullyConnected, /*version=*/1,
+                        &kDefaultFullyConnectedParams,
+                        /*inputs=*/{a, b, c}, /*outputs=*/{d});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    FCOps, QuantizedInt32BiasTest,
+    ValuesIn<TfLiteType>({
+        kTfLiteInt8,
+        kTfLiteInt4,
+        kTfLiteInt2,
+    }),
+    [](const TestParamInfo<QuantizedInt32BiasTest::ParamType>& info) {
+      return TfLiteTypeGetName(info.param);
     });
 
 // Test that we can parse params correctly.

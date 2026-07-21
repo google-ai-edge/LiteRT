@@ -150,6 +150,36 @@ inline void DequantizeConstantTensor(const TfLiteTensor& tensor,
 
 bool IsLinearConvertible(const TfLiteIntArray* dims);
 
+// Returns true if `tensor` is an 8-bit affine-quantized tensor (int8/uint8).
+bool IsAffineQuantized8Bit(const TfLiteTensor& tensor);
+
+// Fills the valid quantized value range for an 8-bit type.
+void GetQuant8Bounds(TfLiteType type, float* qmin, float* qmax);
+
+// Appends an in-graph dequantize adapter computing
+//   dst_float = (src_int8 - zero_point) * scale
+// composed from existing CAST/SUB/MUL ops. `dst_float` must already exist; it
+// is the float activation consumed by the rest of the graph. This lets a
+// consumer (e.g. FullyConnected) run in float while the producer/boundary
+// tensor stays int8/uint8 (matching the TFLite model). Eventually this will
+// be deprecated in favor of native int8 activation support.
+void InsertDequantizeChain(::ml_drift::ir::IrModel& ir_model,
+                           ::ml_drift::ir::IrTensorId src_int8,
+                           ::ml_drift::ir::IrTensorId dst_float,
+                           const ::ml_drift::BHWDC& shape, float scale,
+                           float zero_point);
+
+// Appends an in-graph quantize adapter computing
+//   dst_int8 = cast<int8>(clamp(round(src_float / scale) + zero_point,
+//                                qmin, qmax))
+// composed from existing DIV/ROUND/ADD/MAXIMUM/MINIMUM/CAST ops. This mirrors
+// tflite's AffineQuantize.
+void InsertQuantizeChain(::ml_drift::ir::IrModel& ir_model,
+                         ::ml_drift::ir::IrTensorId src_float,
+                         ::ml_drift::ir::IrTensorId dst_int8,
+                         const ::ml_drift::BHWDC& shape, float scale,
+                         float zero_point, float qmin, float qmax);
+
 }  // namespace litert::ml_drift::ir
 
 #endif  // THIRD_PARTY_ODML_LITERT_ML_DRIFT_TFLITE_IR_MODEL_BUILDER_HELPER_H_

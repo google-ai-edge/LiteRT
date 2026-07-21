@@ -102,13 +102,13 @@ TEST_P(ConvertFullyConnectedTest, Parameterized) {
   const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
   ASSERT_TRUE(ir_model);
 
+  // Const int8 weights and const int4/int2 weights with affine (per-tensor or
+  // per-channel) quantization are all emitted as a FULLY_CONNECTED_INT8 op
   std::string expected_op_name;
-  if (dtype_ == kTfLiteInt8 && const_weights_) {
+  if (const_weights_ &&
+      (dtype_ == kTfLiteInt8 || dtype_ == kTfLiteInt4 ||
+       dtype_ == kTfLiteInt2)) {
     expected_op_name = "fully_connected_int8";
-  } else if (dtype_ == kTfLiteInt4 && const_weights_) {
-    expected_op_name = "fully_connected_int4";
-  } else if (dtype_ == kTfLiteInt2 && const_weights_) {
-    expected_op_name = "fully_connected_int2";
   } else {
     expected_op_name = "fully_connected";
   }
@@ -122,17 +122,9 @@ TEST_P(ConvertFullyConnectedTest, Parameterized) {
   ASSERT_NE(fc_op, nullptr)
       << "Expected op " << expected_op_name << " not found in IR model";
 
-  if (dtype_ == kTfLiteInt4 && const_weights_) {
-    EXPECT_TRUE(fc_op->attr.has_value());
-    EXPECT_NO_THROW(
-        (void)std::any_cast<::ml_drift::FullyConnectedInt4Attributes>(
-            fc_op->attr));
-  } else if (dtype_ == kTfLiteInt2 && const_weights_) {
-    EXPECT_TRUE(fc_op->attr.has_value());
-    EXPECT_NO_THROW(
-        (void)std::any_cast<::ml_drift::FullyConnectedInt2Attributes>(
-            fc_op->attr));
-  } else if (dtype_ == kTfLiteInt8 && const_weights_) {
+  if (const_weights_ &&
+      (dtype_ == kTfLiteInt8 || dtype_ == kTfLiteInt4 ||
+       dtype_ == kTfLiteInt2)) {
     EXPECT_TRUE(fc_op->attr.has_value());
     EXPECT_NO_THROW(
         (void)std::any_cast<::ml_drift::FullyConnectedInt8Attributes>(

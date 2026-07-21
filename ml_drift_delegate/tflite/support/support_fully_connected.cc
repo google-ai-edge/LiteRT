@@ -128,6 +128,7 @@ bool IsFullyConnectedSupported(
       // go/keep-sorted start numeric=yes
       kTfLiteFloat16,
       kTfLiteFloat32,
+      kTfLiteInt32,
       // go/keep-sorted end
       // clang-format on
   };
