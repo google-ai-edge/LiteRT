@@ -56,6 +56,23 @@ target_link_libraries(qnn_compiler_plugin_test
         GTest::gtest_main
 )
 
+# QNN compose graph test
+add_executable(qnn_compose_graph_test)
+
+target_sources(qnn_compose_graph_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../compiler/qnn_compose_graph_test.cc
+)
+
+target_link_libraries(qnn_compose_graph_test
+    PRIVATE
+        qnn_compiler_plugin
+        qnn_tensor_pool
+        qnn_wrappers
+        flatbuffers::flatbuffers
+        GTest::gtest_main
+)
+
 # QNN manager test
 add_executable(qnn_manager_test)
 
@@ -210,6 +227,21 @@ target_sources(quantize_params_wrapper_test
 target_link_libraries(quantize_params_wrapper_test
     PRIVATE
         qnn_wrappers
+        GTest::gtest_main
+)
+
+# Flexbuffer helpers test
+add_executable(flexbuffer_helpers_test)
+
+target_sources(flexbuffer_helpers_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../core/utils/flexbuffer_helpers_test.cc
+)
+
+target_link_libraries(flexbuffer_helpers_test
+    PRIVATE
+        qnn_flexbuffer_helpers
+        flatbuffers::flatbuffers
         GTest::gtest_main
 )
 
