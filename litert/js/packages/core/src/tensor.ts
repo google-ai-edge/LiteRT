@@ -199,6 +199,12 @@ export class Tensor implements Deletable, WithEnvironment {
     return this.liteRtTensorHandle;
   }
   readonly type: TensorType;
+  get shape(): Dimensions {
+    return this.type.layout.dimensions;
+  }
+  get dtype(): DType {
+    return this.type.dtype;
+  }
   readonly environment: Environment;
   private deletedInternal = false;
   private onDelete: (() => void) | undefined;
@@ -309,6 +315,43 @@ export class Tensor implements Deletable, WithEnvironment {
     environment?: Environment,
   ): Tensor {
     return new Tensor(data, shape, environment);
+  }
+
+  static placeholderCounter = 0;
+
+  /**
+   * Creates a symbolic placeholder Tensor for JIT graph compilation.
+   */
+  static createPlaceholder(options: {
+    shape?: Dimensions;
+    dataType?: DType;
+    environment?: Environment;
+    name?: string;
+  } = {}): Tensor {
+    const globalLiteRt = getGlobalLiteRt();
+    const liteRtWasm = globalLiteRt.liteRtWasm;
+    const shape = options.shape ?? [1];
+    const dtype = options.dataType ?? 'float32';
+    const name = options.name || `placeholder_${Tensor.placeholderCounter++}`;
+
+    const dimensionsVector = new liteRtWasm.VectorInt32();
+    fillEmscriptenVector(shape, dimensionsVector);
+    const layout = liteRtWasm.LiteRtLayout.create(dimensionsVector);
+    dimensionsVector.delete();
+
+    const rankedTensorType = liteRtWasm.LiteRtRankedTensorType.create(
+      {value: getDataType(dtype).elementType},
+      layout,
+    );
+    layout.delete();
+
+    const handle = liteRtWasm.LiteRtTensorHandle.createPlaceholder(
+      rankedTensorType,
+      name,
+    );
+    rankedTensorType.delete();
+
+    return new Tensor(handle, options.environment);
   }
 
   ensureNotDeleted() {
