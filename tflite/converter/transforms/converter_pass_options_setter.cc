@@ -27,6 +27,8 @@ void ConverterPassOptionsSetter::SetOptions(
     OptimizePassOptions& options) const {
   options.enable_canonicalization = true;
   options.disable_fuse_mul_and_fc = converter_flags_.disable_fuse_mul_and_fc();
+  options.disabled_patterns = pass_config_.optimize_disabled_patterns;
+  options.enabled_patterns = pass_config_.optimize_enabled_patterns;
 }
 
 void ConverterPassOptionsSetter::SetOptions(
