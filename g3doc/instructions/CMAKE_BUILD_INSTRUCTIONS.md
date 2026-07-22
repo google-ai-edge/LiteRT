@@ -31,6 +31,11 @@ LiteRT supports both **Release** and **Debug** build flavors:
 **Release** builds use `-O3 -DNDEBUG` for optimized production binaries.
 **Debug** builds use `-O0 -g` for debugging with full symbol information.
 
+Host presets are intentionally configured to use `clang`/`clang++` with
+`libc++`. This is the repository policy for host CMake builds so the generated
+artifacts remain ABI-compatible with prebuilt LiteRT binaries that also use
+`libc++`.
+
 ## Android (arm64) Cross-Compilation
 
 1. Install the Android NDK and export the path so CMake can find it:
@@ -73,6 +78,14 @@ build directory (`cmake_build_android_arm64` or `cmake_build_android_arm64_debug
 
 ## Host Build from Mac OS and Linux
 
+1. Install `clang` and the `libc++` development packages on Linux before using
+   the host presets:
+
+   ```bash
+   sudo apt-get update
+   sudo apt-get install -y clang libc++-dev libc++abi-dev
+   ```
+
 1. Configure the default host preset:
 
    ```bash
@@ -114,6 +127,8 @@ cmake --build build-release --target dispatch_api_Qualcomm_so -j8
 
 - `LITERT_HOST_C_COMPILER` / `LITERT_HOST_CXX_COMPILER` let you point the helper
   host tools at any Clang/GCC installation without editing `CMakeLists.txt`.
+- The default host presets already select `clang + libc++`; only override those
+  toolchains if you intentionally need a different local setup.
 - `LITERT_DISABLE_KLEIDIAI` keeps x86 host builds reproducible by skipping
   KleidiAI; set it to `OFF` whenever you want to bundle the delegate.
 - Always pass `-DCMAKE_BUILD_TYPE=Release` (or the equivalent preset) when you
