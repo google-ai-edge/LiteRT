@@ -1624,6 +1624,8 @@ LiteRtStatus BuildCustomOp(const litert::compiler::Op& litert_op,
   return kLiteRtStatusOk;
 }
 
+}  // namespace
+
 std::string DescribeUnsupportedOp(size_t op_index,
                                   const litert::compiler::Op& litert_op) {
   const auto op_code = litert_op.Code();
@@ -1648,8 +1650,6 @@ std::string DescribeUnsupportedOp(size_t op_index,
   }
   return dump.str();
 }
-
-}  // namespace
 
 LiteRtStatus ConvertOp(const ::qnn::Options& options,
                        const litert::compiler::Op& litert_op,
