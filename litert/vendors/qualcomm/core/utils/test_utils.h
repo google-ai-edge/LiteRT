@@ -4,6 +4,8 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_TEST_UTILS_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_TEST_UTILS_H_
 
+#include <string>
+
 #include "litert/vendors/qualcomm/core/common.h"
 
 namespace qnn {
@@ -20,6 +22,10 @@ bool IsTestGpuBackend();
 // Sets the target backend for testing.
 // This should be called by the test main.
 void SetTestBackend(BackendType backend_type);
+
+// Gets/sets the dispatch library directory for testing.
+const std::string& GetTestDispatchLibraryDir();
+void SetTestDispatchLibraryDir(const std::string& dir);
 
 }  // namespace qnn
 
