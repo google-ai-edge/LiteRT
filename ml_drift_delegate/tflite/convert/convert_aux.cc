@@ -185,6 +185,25 @@ void HandleFusedActivation(
   }
 }
 
+bool MarkSharedBias(::ml_drift::ir::IrTensorId bias_id,
+                    ::ml_drift::ir::IrModel& ir_model) {
+  ::ml_drift::ir::IrTensor* bias = ir_model.GetMutableTensor(bias_id);
+  if (bias == nullptr || !bias->buffer_source.is_shared) {
+    return false;
+  }
+  // Shared bias tensors are passed as runtime inputs and must be materialized
+  // with LINEAR layout (parity with GraphFloat32).
+  bias->buffer_source.force_linear_layout = true;
+  // ExtractTensorShape() places a 1-D bias's length in the batch dim; move it
+  // to channels so the shared-memory manager's LINEAR reshape to (1,1,1,c)
+  // preserves the channels (parity with GraphFloat32).
+  const ::ml_drift::BHWC shape = bias->desc.GetBHWCShape();
+  if (shape.b != 1 && shape.c == 1) {
+    bias->desc.SetBHWCShape(::ml_drift::BHWC(1, 1, 1, shape.b));
+  }
+  return true;
+}
+
 ::ml_drift::ir::IrTensor* AddConstInput(const TfLiteContext& context,
                                         int tensor_id,
                                         ::ml_drift::ir::IrModel& ir_model,

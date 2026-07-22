@@ -59,8 +59,10 @@ void ConvertEmbeddingLookup(
   ::ml_drift::EmbeddingLookupAttributes attr;
   const int weights_id = node.inputs->data[1];
   const TfLiteTensor* weights_tensor = context.tensors + weights_id;
+  const ::ml_drift::ir::IrTensorId ir_weights_id = tensor_map[weights_id];
 
-  if (tflite::IsConstantTensor(weights_tensor)) {
+  if (tflite::IsConstantTensor(weights_tensor) &&
+      !ir_model.tensor(ir_weights_id)->buffer_source.is_shared) {
     ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT32> tmp_zp;
     if (weights_tensor->type == kTfLiteInt2) {
       ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::UINT8>

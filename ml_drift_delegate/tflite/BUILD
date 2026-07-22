@@ -29,6 +29,8 @@ cc_library(
     hdrs = ["ir_model_builder.h"],
     deps = [
         ":ir_model_builder_helper",
+        ":operation_parser",
+        ":shared_const_tensor_map",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/functional:bind_front",
         "@com_google_absl//absl/log:absl_log",
@@ -107,6 +109,26 @@ cc_library(
         "//tflite/core/api:op_resolver",
         "//tflite/core/c:private_common",
         "//tflite/kernels:kernel_util",
+    ],
+)
+
+cc_test(
+    name = "ir_model_builder_test",
+    srcs = ["ir_model_builder_test.cc"],
+    deps = [
+        ":ir_model_builder",
+        ":ir_model_builder_helper",
+        ":shared_const_tensor_map",
+        "//ml_drift_delegate/tflite/convert:convert_testing_utils",
+        "//tflite:builtin_ops",
+        "//tflite:framework",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "@com_google_absl//absl/status",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
     ],
 )
 

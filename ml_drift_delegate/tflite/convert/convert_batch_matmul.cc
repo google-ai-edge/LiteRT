@@ -45,7 +45,8 @@ void ConvertBatchMatMul(
 
   // Case 1: 1 runtime input + 2D constant weights -> FULLY_CONNECTED
   if (tflite::IsConstantTensor(&input1_tensor) &&
-      input1_tensor.dims->size == 2) {
+      input1_tensor.dims->size == 2 &&
+      !ir_model.tensor(tensor_map[input1_id])->buffer_source.is_shared) {
     ::ml_drift::ir::IrOp* fc_op = ir_model.add_op();
     fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED);
 

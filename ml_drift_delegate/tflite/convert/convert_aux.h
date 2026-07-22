@@ -255,6 +255,14 @@ void HandleFusedActivation(
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
     int output_id);
 
+// If the tensor referenced by `bias_id` is a shared constant, flags it for
+// LINEAR materialization by the shared-memory manager and moves its 1-D length
+// from the batch dimension to the channel dimension (parity with GraphFloat32).
+// Returns true if the bias is a shared constant, in which case callers must
+// pass it as a runtime input rather than embedding it into op attributes.
+bool MarkSharedBias(::ml_drift::ir::IrTensorId bias_id,
+                    ::ml_drift::ir::IrModel& ir_model);
+
 // Adds a constant input to the IR model from a TfLite tensor.
 ::ml_drift::ir::IrTensor* AddConstInput(const TfLiteContext& context,
                                         int tensor_id,

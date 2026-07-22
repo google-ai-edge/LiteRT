@@ -88,6 +88,7 @@
 // #include "ml_drift_delegate/tflite/convert/google/convert_transform_tensor_bilinear.h"
 // copybara:uncomment_end
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
+#include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
 #include "ml_drift_delegate/tflite/support/support.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/c/common.h"
@@ -223,14 +224,21 @@ void ConvertComposite(
 class IrModelBuilder {
  public:
   // Constructs the IrModelBuilder.
-  IrModelBuilder(const TfLiteContext& context,
-                 const TfLiteDelegateParams& delegate_params,
-                 const IrModelBuilderOptions& options,
-                 const CustomIrOpMap* custom_parsers = nullptr)
+  IrModelBuilder(
+      const TfLiteContext& context, const TfLiteDelegateParams& delegate_params,
+      const IrModelBuilderOptions& options,
+      const CustomIrOpMap* custom_parsers = nullptr,
+      SharedConstTensorsMap* shared_tensors = nullptr,
+      const TensorIndexToBufferIdMap* tensor_to_shared_buffer_id_map = nullptr,
+      const TensorIndexToExternalBufferIdMap* tensor_to_external_buffer_id_map =
+          nullptr)
       : context_(context),
         delegate_params_(delegate_params),
         options_(options),
-        custom_parsers_(custom_parsers) {}
+        custom_parsers_(custom_parsers),
+        shared_tensors_(shared_tensors),
+        tensor_to_shared_buffer_id_map_(tensor_to_shared_buffer_id_map),
+        tensor_to_external_buffer_id_map_(tensor_to_external_buffer_id_map) {}
 
   // Executes the conversion from TFLite model to ML Drift IrModel.
   ::ml_drift::ir::IrModel* Build() {
@@ -270,15 +278,34 @@ class IrModelBuilder {
       }
       AddNode(*node, *registration, tensor_map, *ir_model);
     }
+    // Derive the shared-constants map from per-tensor BufferSource state
+    // populated during graph construction and enriched by op converters (e.g.
+    // dequant_forced). Done after conversion so op-provided fields are
+    // included. The tflite tensor id comes from the tensor map key.
+    if (shared_tensors_) {
+      for (const auto& [tfl_tensor_id, ir_tensor_id] : tensor_map) {
+        const auto* tensor = ir_model->tensor(ir_tensor_id);
+        if (tensor == nullptr || !tensor->buffer_source.is_shared) {
+          continue;
+        }
+        SharedTfliteTensor shared_info;
+        shared_info.tflite_tensor_id = tfl_tensor_id;
+        shared_info.global_id = tensor->buffer_source.global_id;
+        shared_info.dequant_forced = tensor->buffer_source.dequant_forced;
+        if (tensor->buffer_source.force_linear_layout) {
+          shared_info.layout = ::ml_drift::Layout::LINEAR;
+        }
+        shared_tensors_->try_emplace(ir_tensor_id, shared_info);
+      }
+    }
     return ir_model.release();
   }
 
  private:
   // Converts a single TFLite node and appends it to the `ir_model`.
-  void AddNode(
-      const TfLiteNode& node, const TfLiteRegistration& registration,
-      absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
-      ::ml_drift::ir::IrModel& ir_model) const {
+  void AddNode(const TfLiteNode& node, const TfLiteRegistration& registration,
+               absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
+               ::ml_drift::ir::IrModel& ir_model) const {
     auto argmax = absl::bind_front(ConvertArgMax, context_, node, registration,
                                    std::ref(tensor_map), std::ref(ir_model));
     auto batch_matmul =
@@ -363,8 +390,8 @@ class IrModelBuilder {
     auto slice = absl::bind_front(ConvertSlice, context_, node, registration,
                                   std::ref(tensor_map), std::ref(ir_model));
     auto softmax =
-        absl::bind_front(ConvertSoftmax, context_, node, registration,
-                         options_, std::ref(tensor_map), std::ref(ir_model));
+        absl::bind_front(ConvertSoftmax, context_, node, registration, options_,
+                         std::ref(tensor_map), std::ref(ir_model));
     auto space_to_depth =
         absl::bind_front(ConvertSpaceToDepth, context_, node, registration,
                          std::ref(tensor_map), std::ref(ir_model));
@@ -498,7 +525,8 @@ class IrModelBuilder {
   }
 
   ::ml_drift::ir::IrTensorId AddTensor(
-      int tensor_id, ::ml_drift::ir::IrModel& ir_model) const {
+      int tensor_id, ::ml_drift::ir::IrModel& ir_model,
+      ::ml_drift::ir::BufferSource buffer_source = {}) const {
     if (tensor_id == kTfLiteOptionalTensor) {
       return ::ml_drift::ir::IrTensorId{
           static_cast<::ml_drift::ir::IrTensorId>(-1)};
@@ -506,27 +534,66 @@ class IrModelBuilder {
     const TfLiteTensor& tflite_tensor = context_.tensors[tensor_id];
     const ::ml_drift::DataType dtype = GetDtype(tflite_tensor.type);
     const ::ml_drift::BHWDC shape = ExtractTensorShape(tflite_tensor.dims);
-    return ir_model.add_tensor(dtype, shape)->id;
+    auto* tensor = ir_model.add_tensor(dtype, shape);
+    tensor->buffer_source = buffer_source;
+    return tensor->id;
+  }
+
+  // Helper function to create an IR tensor from a TFLite tensor. If the tensor
+  // is a constant and its ID is found in the external buffer maps, it is marked
+  // as a shared constant and added to the `shared_tensors_` map.
+  void ProcessTensor(
+      int tfl_tensor_id, ::ml_drift::ir::IrModel& ir_model,
+      absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map) const {
+    // Skip optional tensors and tensors that have already been processed.
+    if (tfl_tensor_id == kTfLiteOptionalTensor ||
+        tensor_map.contains(tfl_tensor_id)) {
+      return;
+    }
+
+    bool is_shared = false;
+    int global_id = -1;
+
+    // Check if the tensor is a constant and if its ID is found externally
+    if (::tflite::IsConstantTensor(&context_.tensors[tfl_tensor_id])) {
+      if (tensor_to_external_buffer_id_map_) {
+        if (auto it = tensor_to_external_buffer_id_map_->find(tfl_tensor_id);
+            it != tensor_to_external_buffer_id_map_->end()) {
+          is_shared = true;
+          global_id = it->second;
+        }
+      }
+      if (!is_shared && tensor_to_shared_buffer_id_map_) {
+        if (auto it = tensor_to_shared_buffer_id_map_->find(tfl_tensor_id);
+            it != tensor_to_shared_buffer_id_map_->end()) {
+          is_shared = true;
+          global_id = it->second;
+        }
+      }
+    }
+
+    // Add the tensor to the IR model and update the tensor map.
+    // Record the shared-buffer metadata on the tensor itself. The shared
+    // constants map is derived from this in Build() after op conversion.
+    const auto ir_tensor_id = AddTensor(
+        tfl_tensor_id, ir_model,
+        ::ml_drift::ir::BufferSource{is_shared, global_id});
+    tensor_map[tfl_tensor_id] = ir_tensor_id;
   }
 
   // Creates IR tensors for all unique TFLite tensors in the subgraph.
   absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId> CreateTensorMap(
       ::ml_drift::ir::IrModel& ir_model) const {
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId> tensor_map;
+
     const TfLiteIntArray* nodes = delegate_params_.nodes_to_replace;
     for (int i = 0; i < nodes->size; ++i) {
       const auto& [node, registration] = GetNodeInfo(i);
       for (int j = 0; j < node->inputs->size; ++j) {
-        const int tfl_tensor_id = node->inputs->data[j];
-        if (tensor_map.contains(tfl_tensor_id)) continue;
-        const auto ir_tensor_id = AddTensor(tfl_tensor_id, ir_model);
-        tensor_map[tfl_tensor_id] = ir_tensor_id;
+        ProcessTensor(node->inputs->data[j], ir_model, tensor_map);
       }
       for (int j = 0; j < node->outputs->size; ++j) {
-        const int tfl_tensor_id = node->outputs->data[j];
-        if (tensor_map.contains(tfl_tensor_id)) continue;
-        const auto ir_tensor_id = AddTensor(tfl_tensor_id, ir_model);
-        tensor_map[tfl_tensor_id] = ir_tensor_id;
+        ProcessTensor(node->outputs->data[j], ir_model, tensor_map);
       }
     }
     return tensor_map;
@@ -582,6 +649,9 @@ class IrModelBuilder {
   const TfLiteDelegateParams& delegate_params_;
   const IrModelBuilderOptions& options_;
   const CustomIrOpMap* custom_parsers_;
+  SharedConstTensorsMap* shared_tensors_;
+  const TensorIndexToBufferIdMap* tensor_to_shared_buffer_id_map_;
+  const TensorIndexToExternalBufferIdMap* tensor_to_external_buffer_id_map_;
 };
 
 struct DelegateData {
@@ -644,8 +714,13 @@ TfLiteStatus DelegatePrepare(TfLiteContext* context, TfLiteDelegate* delegate) {
 
 ::ml_drift::ir::IrModel* BuildIrModel(
     const TfLiteContext& context, const TfLiteDelegateParams& delegate_params,
-    const IrModelBuilderOptions& options, const CustomIrOpMap* custom_parsers) {
-  IrModelBuilder builder(context, delegate_params, options, custom_parsers);
+    const IrModelBuilderOptions& options, const CustomIrOpMap* custom_parsers,
+    SharedConstTensorsMap* shared_tensors,
+    const TensorIndexToBufferIdMap* tensor_to_shared_buffer_id_map,
+    const TensorIndexToExternalBufferIdMap* tensor_to_external_buffer_id_map) {
+  IrModelBuilder builder(context, delegate_params, options, custom_parsers,
+                         shared_tensors, tensor_to_shared_buffer_id_map,
+                         tensor_to_external_buffer_id_map);
   std::unique_ptr<::ml_drift::ir::IrModel> ir_model(builder.Build());
   if (!ir_model) {
     return nullptr;
@@ -661,11 +736,10 @@ TfLiteStatus DelegatePrepare(TfLiteContext* context, TfLiteDelegate* delegate) {
   return ir_model.release();
 }
 
-absl::Status BuildFromFlatBuffer(
-    const ::tflite::FlatBufferModel& flatbuffer,
-    const ::tflite::OpResolver& op_resolver,
-    const IrModelBuilderOptions& options,
-    ::ml_drift::ir::IrModel* ir_model) {
+absl::Status BuildFromFlatBuffer(const ::tflite::FlatBufferModel& flatbuffer,
+                                 const ::tflite::OpResolver& op_resolver,
+                                 const IrModelBuilderOptions& options,
+                                 ::ml_drift::ir::IrModel* ir_model) {
   std::unique_ptr<::tflite::Interpreter> interpreter;
   ::tflite::InterpreterBuilder interpreter_builder(flatbuffer, op_resolver);
   if (interpreter_builder(&interpreter) != kTfLiteOk || !interpreter) {

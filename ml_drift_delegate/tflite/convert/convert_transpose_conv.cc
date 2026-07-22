@@ -55,12 +55,13 @@ void ConvertTransposeConv(const TfLiteContext& context, const TfLiteNode& node,
 
   ::ml_drift::ConvolutionTransposedAttributes attr;
 
-  if (::tflite::IsConstantTensor(&context.tensors[weights_id])) {
+  if (::tflite::IsConstantTensor(&context.tensors[weights_id]) &&
+      !ir_model.tensor(tensor_map[weights_id])->buffer_source.is_shared) {
     PopulateTensor(&context.tensors[weights_id], weights_id, &attr.weights,
                    PopulateTensorFlags::kExtraBytes,
                    options.enable_spanned_weights);
   } else {
-    // Create dummy weights to bypass checks if dynamic
+    // Create dummy weights to bypass checks if dynamic or shared
     ir_model.AddConsumer(tensor_map[weights_id], ir_op->id);
     const auto* dims = context.tensors[weights_id].dims;
     std::vector<int32_t> dims_vec(dims->data, dims->data + dims->size);
@@ -69,11 +70,16 @@ void ConvertTransposeConv(const TfLiteContext& context, const TfLiteNode& node,
                                           weights_shape.w, weights_shape.c);
   }
 
-  if (bias_id.has_value() &&
-      ::tflite::IsConstantTensor(&context.tensors[bias_id.value()])) {
-    PopulateTensor(&context.tensors[bias_id.value()], bias_id.value(),
-                   &attr.bias, PopulateTensorFlags::kNoExtraBytes,
-                   options.enable_spanned_weights);
+  if (bias_id.has_value()) {
+    const auto bias_tensor_id = tensor_map[bias_id.value()];
+    if (::tflite::IsConstantTensor(&context.tensors[bias_id.value()]) &&
+        !ir_model.tensor(bias_tensor_id)->buffer_source.is_shared) {
+      PopulateTensor(&context.tensors[bias_id.value()], bias_id.value(),
+                     &attr.bias, PopulateTensorFlags::kNoExtraBytes,
+                     options.enable_spanned_weights);
+    } else {
+      ir_model.AddConsumer(bias_tensor_id, ir_op->id);
+    }
   }
 
   TfLitePadding padding = kTfLitePaddingUnknown;

@@ -19,6 +19,7 @@
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/custom_ir_operation_parser.h"
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
+#include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
 #include "tflite/c/common.h"
 #include "tflite/core/api/op_resolver.h"
 #include "tflite/model_builder.h"
@@ -28,7 +29,11 @@ namespace litert::ml_drift::ir {
 ::ml_drift::ir::IrModel* BuildIrModel(
     const TfLiteContext& context, const TfLiteDelegateParams& delegate_params,
     const IrModelBuilderOptions& options,
-    const CustomIrOpMap* custom_parsers = nullptr);
+    const CustomIrOpMap* custom_parsers = nullptr,
+    SharedConstTensorsMap* shared_tensors = nullptr,
+    const TensorIndexToBufferIdMap* tensor_to_shared_buffer_id_map = nullptr,
+    const TensorIndexToExternalBufferIdMap* tensor_to_external_buffer_id_map =
+        nullptr);
 
 absl::Status BuildFromFlatBuffer(
     const ::tflite::FlatBufferModel& flatbuffer,

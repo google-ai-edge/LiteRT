@@ -37,7 +37,7 @@ namespace {
   attr.new_shape = new_shape;
   reshape_op->attr = attr;
 
-  auto* in_tensor = ir_model.tensor(input_id);
+  const auto* in_tensor = ir_model.tensor(input_id);
   auto* out_tensor =
       ir_model.add_tensor(in_tensor->desc.GetDataType(), new_shape);
 
