@@ -146,7 +146,7 @@ build --config=windows
 
 # Build
 bazel build //litert/cc:litert_compiled_model
-bazel build --define=protobuf_allow_msvc=true //litert/tools:benchmark_model
+bazel build //litert/tools:benchmark_model
 ```
 
 ## Android Build Instructions
