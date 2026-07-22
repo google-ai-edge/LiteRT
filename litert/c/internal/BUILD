@@ -653,6 +653,7 @@ cc_library(
         # This extra visibility is for testing only.
         "//litert/cc:__pkg__",
         "//litert/cc/internal:__pkg__",
+        "//litert/kotlin:__pkg__",
         "//litert/kotlin/src/tests/google:__pkg__",
     ],
     deps = [

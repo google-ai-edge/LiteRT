@@ -151,8 +151,16 @@ cc_library(
 #         ":litert_compiled_model_jni",
 #         ":litert_environment_jni",
 #         ":litert_tensor_buffer_jni",
-#         "//litert/c/internal:litert_runtime_builtin_none",
-#     ],
+#     ] + select({
+#         # "litert_runtime_builtin_none" doens't work well with Roboelectric tests, so use the
+#         # static runtime instead.
+#         "//litert:linux": [
+#             "//litert/c/internal:litert_runtime_builtin_static",
+#         ],
+#         "//conditions:default": [
+#             "//litert/c/internal:litert_runtime_builtin_none",
+#         ],
+#     }),
 # )
 #
 # # The native library that will be part of the "litert" package. It includes:
