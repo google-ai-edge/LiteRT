@@ -16,7 +16,7 @@ load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "make_rpaths")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
 load("//litert/build_common:special_rule.bzl", "friends_of_google_tensor_compiler_plugin")
 
 package(
@@ -94,14 +94,6 @@ cc_test(
         "//litert/test:mlir_test_data_stablehlo",
         "//litert/test:tflite_test_data",
     ],
-    linkopts = select({
-        "//litert:android": [],
-        "//conditions:default": [
-            make_rpaths([
-                "//litert/c:litert_runtime_c_api_so",
-            ]),
-        ],
-    }),
     linkstatic = True,
     tags = [
         # Tests with ungrte deps do not currently work on forge.
@@ -124,10 +116,19 @@ cc_test(
         ":compiler_plugin",  # buildcleaner: keep
         ":google_tensor_options_cc_proto",
         "//litert/c:litert_common",
+        "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
         "//litert/c/internal:litert_compiler_context_testonly",
         "//litert/c/options:litert_google_tensor_options",
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_options",
+        "//litert/cc/internal:litert_extended_model",
+        "//litert/cc/internal:litert_options_wrapper",
+        "//litert/cc/options:litert_google_tensor_options",
         "//litert/test:common",
+        "//litert/test:load_test_model",
         "//litert/test:matchers",
         "//litert/vendors/cc:litert_compiler_plugin",
         "@com_google_absl//absl/cleanup",
