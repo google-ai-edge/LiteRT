@@ -317,6 +317,13 @@ absl::Status DelegateKernelLiteRt::UploadOrBindTensorBuffer(
     }
   }
 
+  // Handle input events for Metal backend before conversion.
+  // TODO: b/537754749 - Refactor delegate kernel to order operations correctly
+  // for all backends.
+  if (is_metal_backend_) {
+    RETURN_IF_ERROR(HandleInputEvents(context));
+  }
+
   // PreConvert after all inputs and outputs are registered.
   RETURN_IF_ERROR(ctx_->PreConvert(/*input=*/true));
 

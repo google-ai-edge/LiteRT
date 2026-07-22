@@ -170,6 +170,10 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
         ABSL_LOG(ERROR) << s;
         return kTfLiteError;
       }
+      if (absl::Status s = delegate_kernel->HandleInputEvents(context); !s.ok()) {
+        ABSL_LOG(ERROR) << s;
+        return kTfLiteError;
+      }
     }
 
     auto* buffer_context = reinterpret_cast<LiteRtExternalLiteRtBufferContext>(
@@ -205,20 +209,7 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
       }
     }
 
-    if (absl::Status s = delegate_kernel->HandleInputEvents(context); !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-
     if (absl::Status s = delegate_kernel->Dispatch(context); !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-
-    if (absl::Status s = delegate_kernel->HandleOutputEvents(
-            context,
-            litert::ml_drift::IsAsyncExecutionMode(context, delegate_kernel->runtime_context()));
-        !s.ok()) {
       ABSL_LOG(ERROR) << s;
       return kTfLiteError;
     }
@@ -230,6 +221,14 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
         ABSL_LOG(ERROR) << s;
         return kTfLiteError;
       }
+    }
+
+    if (absl::Status s = delegate_kernel->HandleOutputEvents(
+            context,
+            litert::ml_drift::IsAsyncExecutionMode(context, delegate_kernel->runtime_context()));
+        !s.ok()) {
+      ABSL_LOG(ERROR) << s;
+      return kTfLiteError;
     }
 
     if (delegate_kernel->IsBenchmarkMode()) {

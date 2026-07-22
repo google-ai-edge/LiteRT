@@ -313,6 +313,7 @@ objc_library(
     # deps of a Swift target.
     aspect_hints = ["//tools/build_defs/swift:no_module"],
     deps = [
+        ":custom_event_metal",
         ":delegate_options",
         ":delegate_utils",
         ":gpu_backend",
@@ -330,7 +331,6 @@ objc_library(
         "@ml_drift//ml_drift/metal:metal_device",
         "@ml_drift//ml_drift/metal:metal_spatial_tensor",
         "//litert/c:litert_common",
-        "//litert/c:litert_event_header",
         "//litert/c:litert_event_type",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_logging",
@@ -897,8 +897,7 @@ cc_library(
 objc_library(
     name = "buffer_handler_metal",
     srcs = ["buffer_handler_metal.mm"],
-    # Required to prevent build errors when this target is reachable from the
-    # deps of a Swift target.
+    # Required to prevent build errors when this target is reachable from the deps of Swift targets.
     aspect_hints = ["//tools/build_defs/swift:no_module"],
     deps = [
         ":buffer_handler_metal_headers",
@@ -1112,6 +1111,19 @@ cc_test(
         "@ml_drift//ml_drift/cl:cl_context",
         "@ml_drift//ml_drift/cl:environment",
         "@ml_drift//ml_drift/cl:opencl_wrapper",
+    ],
+)
+
+objc_library(
+    name = "custom_event_metal",
+    srcs = ["custom_event_metal.mm"],
+    hdrs = ["custom_event_metal.h"],
+    # Required to prevent build errors when this target is reachable from the deps of Swift targets.
+    aspect_hints = ["//tools/build_defs/swift:no_module"],
+    copts = ["-ObjC++"],
+    deps = [
+        # Dependency placeholder: apple_frameworks Metal,
+        "//litert/c:litert_event_header",
     ],
 )
 

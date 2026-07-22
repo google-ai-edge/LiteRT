@@ -202,9 +202,8 @@ absl::Status DelegateKernel::Initialize(
   } else {
     backend_ = delegate_data_->backend.get();
   }
-  if (backend_->GetBackendName() == "OpenCL") {
-    is_opencl_backend_ = true;
-  }
+  is_opencl_backend_ = backend_->GetBackendName() == "OpenCL";
+  is_metal_backend_ = backend_->GetBackendName() == "Metal";
 
   SharedConstTensorsMap shared_tensors;
   SharedConstTensorsMap* shared_tensors_ptr = nullptr;

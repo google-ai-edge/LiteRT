@@ -23,11 +23,11 @@
 #include "litert/c/litert_opencl_types.h"
 #include "litert/cc/litert_expected.h"
 
-#if LITERT_HAS_WEBGPU_SUPPORT
+#if LITERT_HAS_WEBGPU_SUPPORT || LITERT_HAS_METAL_SUPPORT
 #define LITERT_HAS_CUSTOM_EVENT_SUPPORT 1
 #else
 #define LITERT_HAS_CUSTOM_EVENT_SUPPORT 0
-#endif  // LITERT_HAS_WEBGPU_SUPPORT
+#endif  // LITERT_HAS_WEBGPU_SUPPORT || LITERT_HAS_METAL_SUPPORT
 
 struct LiteRtEventT {
   LiteRtEnvironment env;
