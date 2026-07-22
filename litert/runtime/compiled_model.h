@@ -481,31 +481,15 @@ class LiteRtCompiledModelT {
   // NOTE: Any fields that must be destroyed after the TFL interpreter
   // is destroyed must be listed before field interp_.
 
-  std::vector<Delegate> delegates_;
-  // The loader that manages external weight metadata and bindings.
-  std::unique_ptr<weight_loader::WeightLoader> weight_loader_owned_;
-  // It may point to weight_loader_owned_ or the weight loader owned by the
-  // client. If there are no external weights to use, this will be nullptr.
-  weight_loader::WeightLoader* weight_loader_ = nullptr;
+  // File system hints about the originating model location.
+  std::optional<std::string> model_directory_;
 
-  std::vector<std::unique_ptr<litert::internal::CustomOpDispatcher>>
-      custom_op_dispatchers_;
-
-  // The TFL interpreter.
-  std::unique_ptr<::tflite::Interpreter> interp_;
-
-  // NOTE: List below TFL interpreter related objects used to run the
-  // model. Note that these fields will be destroyed before the TFL interpreter
-  // is destroyed.
-
-  std::unique_ptr<::tflite::FlatBufferModel> fb_model_;
   litert::OwningBufferRef<uint8_t> model_buf_;
-  std::vector<const std::string*> signature_keys_;
-  // All subgraphs when no signature selection is configured; otherwise the
-  // deduplicated signature root set. Transitive expansion is a follow-up.
-  std::vector<int> active_subgraph_indices_;
-  // Empty means every signature is active.
-  absl::flat_hash_set<std::string> selected_signature_keys_;
+#if !defined(LITERT_DISABLE_NPU)
+  std::optional<LiteRtModelT::Ptr> cached_model_;
+#endif  // !defined(LITERT_DISABLE_NPU)
+  std::unique_ptr<::tflite::FlatBufferModel> fb_model_;
+
   // If JIT compilation hasn't happened, the flatbuffer fd belongs to the
   // incoming literal model. If JIT compilation has happened, the fd belongs to
   // a newly serialized flatbuffer owned by the compiled model. If the model is
@@ -521,10 +505,39 @@ class LiteRtCompiledModelT {
   // found in the cache, the compiled model will be loaded from the cache.
   // Otherwise, the compiled model will be compiled and saved to the cache.
   std::optional<litert::internal::CompilationCache> compilation_cache_;
-  std::optional<LiteRtModelT::Ptr> cached_model_;
   std::vector<litert::internal::CompilerPlugin> maybe_compiled_plugins_;
   std::optional<litert::internal::ApplyPluginsResult> apply_plugins_result_;
 #endif  // !defined(LITERT_DISABLE_NPU)
+
+  std::vector<Delegate> delegates_;
+  // The loader that manages external weight metadata and bindings.
+  std::unique_ptr<weight_loader::WeightLoader> weight_loader_owned_;
+  // It may point to weight_loader_owned_ or the weight loader owned by the
+  // client. If there are no external weights to use, this will be nullptr.
+  weight_loader::WeightLoader* weight_loader_ = nullptr;
+
+  std::vector<std::unique_ptr<litert::internal::CustomOpDispatcher>>
+      custom_op_dispatchers_;
+
+  // The ExternalLiteRtBufferContext used to register tensor buffers with
+  // Delegates.
+  // Note: The ExternalLiteRtBufferContext must be destroyed after the
+  // Interpreter.
+  std::unique_ptr<LiteRtExternalLiteRtBufferContextT> buffer_context_;
+
+  // The TFL interpreter.
+  std::unique_ptr<::tflite::Interpreter> interp_;
+
+  // NOTE: List below TFL interpreter related objects used to run the
+  // model. Note that these fields will be destroyed before the TFL interpreter
+  // is destroyed.
+
+  std::vector<const std::string*> signature_keys_;
+  // All subgraphs when no signature selection is configured; otherwise the
+  // deduplicated signature root set. Transitive expansion is a follow-up.
+  std::vector<int> active_subgraph_indices_;
+  // Empty means every signature is active.
+  absl::flat_hash_set<std::string> selected_signature_keys_;
 
   // The buffer requirement maps for CPU buffers. For delegates with CPU
   // buffers, they don't register TensorBufferRequirements. Instead, the
@@ -543,12 +556,6 @@ class LiteRtCompiledModelT {
   absl::flat_hash_map<const tflite::SignatureRunner*, bool>
       signature_needs_allocation_;
 
-  // The ExternalLiteRtBufferContext used to register tensor buffers with
-  // Delegates.
-  // Note: The ExternalLiteRtBufferContext must be destroyed after the
-  // Interpreter.
-  std::unique_ptr<LiteRtExternalLiteRtBufferContextT> buffer_context_;
-
   // Model-level scheduling info overrides (bitmask in `fields_mask` indicates
   // which fields are set).
   LiteRtSchedulingInfo model_scheduling_info_{};
@@ -558,9 +565,6 @@ class LiteRtCompiledModelT {
   std::string model_debug_feature_id_;
 
 
-
-  // File system hints about the originating model location.
-  std::optional<std::string> model_directory_;
 
   // The set of CPU Tensors. This is used to manage TensorBufferRequirements
   // for shared CPU Tensors.
