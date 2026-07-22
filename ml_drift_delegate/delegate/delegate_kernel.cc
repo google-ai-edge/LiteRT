@@ -238,8 +238,8 @@ absl::Status DelegateKernel::Initialize(
   litert::ml_drift::ModelBuilderOptions options;
   options.enable_infinite_float_capping =
       delegate_data_->options->enable_infinite_float_capping;
-  options.enable_reduced_precision = delegate_data_->calculation_precision ==
-                                     ::ml_drift::CalculationsPrecision::F16;
+  options.enable_reduced_precision = delegate_data_->calculation_precision !=
+                                     ::ml_drift::CalculationsPrecision::F32;
   // Build GraphFloat32.
   ::ml_drift::GraphFloat32 graph;
   CustomOperationParserFactory custom_parser_factory;
@@ -696,10 +696,13 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
   struct {
     MlDriftDelegatePrecision precision;
     bool convert_weights_on_gpu;
+    bool use_f32_accum_for_fp16;
   } options_to_fingerprint = {};
   options_to_fingerprint.precision = delegate_data_->options->precision;
   options_to_fingerprint.convert_weights_on_gpu =
       delegate_data_->options->convert_weights_on_gpu;
+  options_to_fingerprint.use_f32_accum_for_fp16 =
+      delegate_data_->options->use_f32_accum_for_fp16;
   std::string options_fingerprint = tflite::delegates::StrFingerprint(
       reinterpret_cast<const char*>(&options_to_fingerprint),
       sizeof(options_to_fingerprint));

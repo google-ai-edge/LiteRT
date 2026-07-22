@@ -696,6 +696,10 @@ TfLiteDelegatePtr CreateMlDriftWebGpuDelegate(MlDriftDelegateOptionsPtr options,
           ::ml_drift::CalculationsPrecision::F32;
       break;
   }
+  if (delegate_data->options->use_f32_accum_for_fp16) {
+    delegate_data->calculation_precision =
+        ::ml_drift::CalculationsPrecision::F32_F16;
+  }
   bool hint_fully_delegated_to_single_delegate =
       delegate_data->options->hint_fully_delegated_to_single_delegate;
 
