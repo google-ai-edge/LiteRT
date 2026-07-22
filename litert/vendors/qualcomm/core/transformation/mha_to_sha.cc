@@ -1238,8 +1238,8 @@ size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
 
   // Connection check: Reshape -> NotEqual -> Select
   size_t start_index = attn_start_index;
-  if (!(IS_CONNECTED(kAttnReshape, 0, kAttnNotEqual, 0)) &&
-      (IS_CONNECTED(kAttnNotEqual, 0, kAttnSelect, 0))) {
+  if (!(IS_CONNECTED(kAttnReshape, 0, kAttnNotEqual, 0) &&
+        IS_CONNECTED(kAttnNotEqual, 0, kAttnSelect, 0))) {
     return 1;
   }
   // attn_not_equal_op is copied from ops since ops will be modified.
