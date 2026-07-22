@@ -34,6 +34,14 @@ cc_library(
         "//litert/c:litert_custom_op_kernel.h",
         "//litert/c:litert_options.h",
     ],
+    visibility = [
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//android/aicore/backend/litert:__pkg__",
+        # "//litert:litert_internal_users",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
+    ],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
@@ -52,9 +60,6 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -68,8 +73,6 @@ cc_test(
     deps = [
         ":build_stamp",
         "//litert/c:litert_common",
-        "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_expected",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
@@ -87,7 +90,7 @@ cc_library(
         "//litert:windows": [],
         "//conditions:default": ["-ldl"],
     }),
-    # TODO: factor out the logic here that is used by vendors and move to cc/shared_lib utilities.
+    # TODO(b/492256294): factor out the logic here that is used by vendors and move to cc/shared_lib utilities.
     # Then, we can remove this visibility.
     visibility = ["//litert:litert_public"],
     deps = [
@@ -161,9 +164,7 @@ cc_library(
     deps = [
         "//litert/c:litert_any",
         "//litert/c:litert_common",
-        "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_environment_options_header",
-        "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_expected",
         "@com_google_absl//absl/strings",
     ],
@@ -189,7 +190,6 @@ cc_test(
         ":environment",
         "//litert/c:litert_any",
         "//litert/cc:litert_any",
-        "//litert/runtime:gpu_environment",
         "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
@@ -267,10 +267,7 @@ cc_test(
 cc_library(
     name = "version",
     hdrs = ["version.h"],
-    deps = [
-        "//litert/c:litert_common",
-        "//litert/c/internal:litert_logging",
-    ],
+    deps = ["//litert/c:litert_common"],
 )
 
 cc_library(
@@ -278,7 +275,6 @@ cc_library(
     srcs = ["error_reporter.cc"],
     hdrs = ["error_reporter.h"],
     deps = [
-        ":buffer_error_reporter",
         "//litert/c/internal:litert_logging",
         "//tflite/core/api:error_reporter",
     ],
