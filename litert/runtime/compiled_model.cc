@@ -538,6 +538,24 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
       return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                 std::string(prepare_status.message()));
     }
+    // Inspect the weight infos to log the available weights for GPU delegates.
+    auto weight_infos = weight_loader_->GetWeightInfo();
+    LITERT_LOG(LITERT_DEBUG,
+               "External weight loader: %zu weight tensors available for GPU "
+               "delegates",
+               weight_infos.size());
+    for (const auto& info : weight_infos) {
+      if (info.packing.empty()) {
+        LITERT_LOG(LITERT_DEBUG,
+                   "  Weight tensor: external_buffer_id=%u, packing=<none>",
+                   info.external_buffer_id);
+      } else {
+        LITERT_LOG(LITERT_DEBUG,
+                   "  Weight tensor: external_buffer_id=%u, packing=%.*s",
+                   info.external_buffer_id,
+                   static_cast<int>(info.packing.size()), info.packing.data());
+      }
+    }
   }
 
   // Inform delegates and the other components about the weight loader.
