@@ -33,7 +33,6 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
-#include "mlir/Conversion/Passes.h"
 #include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/Extensions/AllExtensions.h"
@@ -49,15 +48,12 @@
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/InitAllDialects.h"
-#include "mlir/InitAllExtensions.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Support/FileUtilities.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
-#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Transforms/Passes.h"
 #include "litert/compiler/mlir/flatbuffer_export.h"
 #include "litert/compiler/mlir/status_scoped_diagnostic_handler.h"
@@ -291,7 +287,8 @@ absl::StatusOr<mlir::ModuleOp> GetModuleOp(mlir::Operation* op) {
 
 void RegisterPasses() {
   mlir::registerTransformsPasses();
-  mlir::registerReconcileUnrealizedCastsPass();
+  mlir::PassRegistration<mlir::Pass>(
+      []() { return mlir::createReconcileUnrealizedCastsPass(); });
   mlir::func::registerFuncPasses();
   mlir::stablehlo::registerPassPipelines();
   mlir::stablehlo::registerPasses();
@@ -315,12 +312,10 @@ void PrepareMlirContext(mlir::MLIRContext* context) {
   context->disableMultithreading();
   context->allowUnregisteredDialects();
 
-  // Register all available dialects.
+  // Register required dialects.
   mlir::DialectRegistry registry;
   mlir::stablehlo::registerAllDialects(registry);
   mlir::func::registerAllExtensions(registry);
-  mlir::registerAllDialects(registry);
-  mlir::registerAllExtensions(registry);
   registry.insert<mlir::arith::ArithDialect, mlir::func::FuncDialect,
                   mlir::quant::QuantDialect,
                   mlir::quantfork::QuantizationForkDialect,
