@@ -928,6 +928,7 @@ cc_test(
         ":ops_spatial",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/core/util:flatbuffer_tools_testonly",
         "//tflite/schema:schema_fbs",

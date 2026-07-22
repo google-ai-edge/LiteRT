@@ -301,6 +301,8 @@ void ShapeInferenceEngine::RegisterStandardOps() {
   RegisterInferrer(kLiteRtOpCodeTflSqueeze, InferSqueeze);
   RegisterInferrer(kLiteRtOpCodeTflRange, InferRange);
   RegisterInferrer(kLiteRtOpCodeTflBroadcastArgs, InferBroadcastArgs);
+  RegisterInferrer(kLiteRtOpCodeTflSpaceToBatchNd, InferSpaceToBatchNd);
+  RegisterInferrer(kLiteRtOpCodeTflBatchToSpaceNd, InferBatchToSpaceNd);
 }
 
 void ShapeInferenceEngine::RegisterInferrer(LiteRtOpCode op_code,
