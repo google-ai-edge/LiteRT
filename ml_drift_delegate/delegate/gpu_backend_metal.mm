@@ -259,11 +259,13 @@ GpuBackendMetal::CreateWeightsManager() {
 }
 
 absl::StatusOr<std::vector<std::vector<::ml_drift::WeightsManager::WeightsPrepOperationInfo>>>
-GpuBackendMetal::GetBatchesForWeightsPreparation(::ml_drift::WeightsManager* weights_manager) {
+GpuBackendMetal::GetBatchesForWeightsPreparation(::ml_drift::WeightsManager* weights_manager,
+                                                 size_t total_shared_tensor_size) {
   auto* metal_weights_manager =
       static_cast<::ml_drift::metal::MetalWeightsManager*>(weights_manager);
   return metal_weights_manager->GetBatchesForWeightsPreparation(
-      *device_, ::ml_drift::WeightsManager::ScheduleStrategy::kBatchByMaxWeightSize);
+      *device_, ::ml_drift::WeightsManager::ScheduleStrategy::kBatchByMaxWeightSize,
+      total_shared_tensor_size);
 }
 
 absl::StatusOr<
@@ -278,11 +280,13 @@ GpuBackendMetal::PrepareWeightsInBatch(
 
 absl::StatusOr<
     absl::flat_hash_map<::ml_drift::ValueId, std::unique_ptr<::ml_drift::GpuSpatialTensor>>>
-GpuBackendMetal::PrepareWeightsInBatches(::ml_drift::WeightsManager* weights_manager) {
+GpuBackendMetal::PrepareWeightsInBatches(::ml_drift::WeightsManager* weights_manager,
+                                         size_t total_shared_tensor_size) {
   auto* metal_weights_manager =
       static_cast<::ml_drift::metal::MetalWeightsManager*>(weights_manager);
   return metal_weights_manager->PrepareWeightsInBatches(
-      *device_, ::ml_drift::WeightsManager::ScheduleStrategy::kBatchByMaxWeightSize);
+      *device_, ::ml_drift::WeightsManager::ScheduleStrategy::kBatchByMaxWeightSize,
+      total_shared_tensor_size);
 }
 
 absl::StatusOr<std::unique_ptr<GpuTensorWrapper>> GpuBackendMetal::CreateTensorWrapper(

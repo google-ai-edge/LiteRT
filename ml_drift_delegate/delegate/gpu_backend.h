@@ -196,8 +196,8 @@ class GpuBackend {
   // [OPTIONAL]
   virtual absl::StatusOr<std::vector<
       std::vector<::ml_drift::WeightsManager::WeightsPrepOperationInfo>>>
-  GetBatchesForWeightsPreparation(
-      ::ml_drift::WeightsManager* weights_manager) = 0;
+  GetBatchesForWeightsPreparation(::ml_drift::WeightsManager* weights_manager,
+                                  size_t total_shared_tensor_size) = 0;
 
   // Prepares the weights in one batch gotten from
   // GetBatchesForWeightsPreparation.
@@ -214,7 +214,8 @@ class GpuBackend {
   // [OPTIONAL]
   virtual absl::StatusOr<absl::flat_hash_map<
       ::ml_drift::ValueId, std::unique_ptr<::ml_drift::GpuSpatialTensor>>>
-  PrepareWeightsInBatches(::ml_drift::WeightsManager* weights_manager) = 0;
+  PrepareWeightsInBatches(::ml_drift::WeightsManager* weights_manager,
+                          size_t total_shared_tensor_size) = 0;
 
   // Creates a `GpuTensorWrapper` with the given descriptor and GPU memory.
   // Note that the GPU memory is not owned by the tensor. The caller should

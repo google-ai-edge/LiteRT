@@ -262,12 +262,14 @@ GpuBackendWebGpu::CreateWeightsManager() {
 absl::StatusOr<std::vector<
     std::vector<::ml_drift::WeightsManager::WeightsPrepOperationInfo>>>
 GpuBackendWebGpu::GetBatchesForWeightsPreparation(
-    ::ml_drift::WeightsManager* weights_manager) {
+    ::ml_drift::WeightsManager* weights_manager,
+    size_t total_shared_tensor_size) {
   auto* webgpu_weights_manager =
       static_cast<::ml_drift::webgpu::WebGpuWeightsManager*>(weights_manager);
   return webgpu_weights_manager->GetBatchesForWeightsPreparation(
       *env_,
-      ::ml_drift::WeightsManager::ScheduleStrategy::kBatchByMaxWeightSize);
+      ::ml_drift::WeightsManager::ScheduleStrategy::kBatchByMaxWeightSize,
+      total_shared_tensor_size);
 }
 
 absl::StatusOr<absl::flat_hash_map<
@@ -284,7 +286,8 @@ GpuBackendWebGpu::PrepareWeightsInBatch(
 absl::StatusOr<absl::flat_hash_map<
     ::ml_drift::ValueId, std::unique_ptr<::ml_drift::GpuSpatialTensor>>>
 GpuBackendWebGpu::PrepareWeightsInBatches(
-    ::ml_drift::WeightsManager* weights_manager) {
+    ::ml_drift::WeightsManager* weights_manager,
+    size_t total_shared_tensor_size) {
   return absl::UnimplementedError(
       "PrepareWeightsInBatches is not implemented.");
 }
