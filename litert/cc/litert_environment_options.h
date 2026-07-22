@@ -93,6 +93,9 @@ class EnvironmentOptions {
     kAutoRegisterAccelerators = kLiteRtEnvOptionTagAutoRegisterAccelerators,
     /// Minimum logger severity for the environment.
     kMinLoggerSeverity = kLiteRtEnvOptionTagMinLoggerSeverity,
+    /// \internal This is for internal use only. Reserved for use by LiteRT in
+    /// Play services.
+    kContext = kLiteRtEnvOptionTagContext,
   };
 
   struct Option {
