@@ -39,8 +39,13 @@ def _prepare_repo_files(ctx):
                 fail("Local path must be absolute.")
 
             if ctx.path(sdk_path_from_env).is_dir:
-                for child in ctx.path(sdk_path_from_env + ctx.attr.strip_prefix).readdir():
-                    ctx.symlink(child, child.basename)
+                sdk_path_with_prefix = sdk_path_from_env + ctx.attr.strip_prefix
+                if ctx.attr.strip_prefix and ctx.path(sdk_path_with_prefix).is_dir:
+                    for child in ctx.path(sdk_path_with_prefix).readdir():
+                        ctx.symlink(child, child.basename)
+                else:
+                    for child in ctx.path(sdk_path_from_env).readdir():
+                        ctx.symlink(child, child.basename)
 
             elif not sdk_path_from_env.endswith(".gz"):  # MTK gives us .gz instead of .tar.gz
                 fail("Local path is not a dir or a tarball")
