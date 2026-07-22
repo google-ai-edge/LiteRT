@@ -20,7 +20,7 @@ set(NEUROPILOT_HEADERS_DIR "" CACHE PATH "Path to pre-downloaded NeuroPilot head
 set(QAIRT_HEADERS_DIR "" CACHE PATH "Path to pre-downloaded QAIRT/QNN headers (root containing Qnn*.h)")
 set(LITECORE_HEADERS_DIR "" CACHE PATH "Path to Samsung AI LiteCore headers (root containing graph_wrapper_api.h)")
 
-if(NOT NEUROPILOT_HEADERS_DIR)
+if(LITERT_ENABLE_MEDIATEK AND NOT NEUROPILOT_HEADERS_DIR)
   if(NOT NEUROPILOT_HEADERS_URL AND NOT NEUROPILOT_GIT_REPO)
     set(NEUROPILOT_HEADERS_URL "https://s3.ap-southeast-1.amazonaws.com/mediatek.neuropilot.com/66f2c33a-2005-4f0b-afef-2053c8654e4f.gz")
   endif()
@@ -102,7 +102,7 @@ endif()
 # )
 
 # LINT.IfChange(litecore_headers_dir)
-if(NOT LITECORE_HEADERS_DIR)
+if(LITERT_ENABLE_SAMSUNG AND NOT LITECORE_HEADERS_DIR)
   if(NOT LITECORE_HEADERS_URL AND NOT LITECORE_GIT_REPO)
     set(LITECORE_HEADERS_URL "https://soc-developer.semiconductor.samsung.com/api/v1/resource/download-file/1.1.0/ai-litecore-ubuntu2404-v1.1.0.tar.gz")
   endif()
