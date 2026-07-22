@@ -175,6 +175,12 @@ jobs:
             //litert/vendors/intel_openvino/compiler:openvino_compiler_plugin_test `
             //litert/vendors/intel_openvino/dispatch:dispatch_api_openvino_test
 
+      - name: Run bazel build on OpenVino Windows LiteRT plugin
+        run: |
+          bazel build --disk_cache=~/.cache/bazel-windows --config=windows -- `
+            //litert/vendors/intel_openvino/compiler:LiteRtCompilerPlugin `
+            //litert/vendors/intel_openvino/dispatch:LiteRtDispatch `
+
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
         continue-on-error: true  # Ignore errors when cache is not found.
