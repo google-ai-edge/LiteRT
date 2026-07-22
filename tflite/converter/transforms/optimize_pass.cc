@@ -1784,7 +1784,7 @@ struct FuseFullyConnectedAndReluX : public OpRewritePattern<ReluXOp> {
 // .. with ..
 // FC(lhs, Mul(filter, rhs), bias)
 // .. if rhs, filter, and bias are all constants.
-// The generated Mul will be constant folded to a single matrix using TFL::Mul.
+// The generated Mul will be constant folded to a single matrix using TF::Mul.
 // TODO(b/136285429): Move to tablegen when variadic is supported
 struct FuseFullyConnectedAndMul : public OpRewritePattern<TFL::MulOp> {
   using OpRewritePattern<TFL::MulOp>::OpRewritePattern;
@@ -1841,7 +1841,9 @@ struct FuseFullyConnectedAndMul : public OpRewritePattern<TFL::MulOp> {
         arith::ConstantOp::create(rewriter, mul_op.getLoc(), new_type, new_cst);
     Value new_const_val = new_op.getResult();
 
-    // Rewrite.
+    // Rewrite. Since the folder of TFL::MulOp couldn't broadcast the operands,
+    // TF::MulOp is used to fold the constant.
+    // TODO(b/139192933): switch to the TFL constant folding
     auto filter_type = mlir::cast<ShapedType>(filter.getType());
     if (filter_type.hasStaticShape()) {
       auto size =
@@ -1851,16 +1853,12 @@ struct FuseFullyConnectedAndMul : public OpRewritePattern<TFL::MulOp> {
       if (size > (1 << 30)) return failure();
     }
     auto new_filter =
-        TFL::MulOp::create(rewriter, mul_op.getLoc(), filter, new_const_val,
-                           /*fusedActivationFunction=*/
-                           rewriter.getStringAttr("NONE"))
-            .getOutput();
+        TF::MulOp::create(rewriter, mul_op.getLoc(), filter, new_const_val)
+            .getZ();
     // If bias isn't None, it needs to be multiplied as well.
     if (!mlir::isa<NoneType>(bias.getType())) {
-      bias = TFL::MulOp::create(rewriter, mul_op.getLoc(), bias, constant_val,
-                                /*fusedActivationFunction=*/
-                                rewriter.getStringAttr("NONE"))
-                 .getOutput();
+      bias = TF::MulOp::create(rewriter, mul_op.getLoc(), bias, constant_val)
+                 .getZ();
     }
 
     auto fc = TFL::FullyConnectedOp::create(
