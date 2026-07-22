@@ -36,7 +36,7 @@
 #include "litert/test/load_test_model.h"
 #include "litert/test/matchers.h"
 #include "litert/test/test_models.h"
-#include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/cc/litert_compiler_plugin.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 
@@ -195,63 +195,77 @@ const char* kSoCModel = nullptr;
 #endif
 
 TEST(TestQnnPlugin, GetConfigInfo) {
-  EXPECT_STREQ(LiteRtGetCompilerPluginSocManufacturer(), "Qualcomm");
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
 
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  EXPECT_STREQ(plugin.Api()->get_compiler_plugin_soc_manufacturer(),
+               "Qualcomm");
 
   LiteRtParamIndex num_supported_soc_models;
-  LITERT_ASSERT_OK(LiteRtGetNumCompilerPluginSupportedSocModels(
-      plugin.get(), &num_supported_soc_models));
+  LITERT_ASSERT_OK(plugin.Api()->get_num_compiler_plugin_supported_models(
+      plugin.Get(), &num_supported_soc_models));
   ASSERT_EQ(num_supported_soc_models, ::qnn::kNumSocInfos);
 
   const char* config_id;
-  LITERT_ASSERT_OK(
-      LiteRtGetCompilerPluginSupportedSocModel(plugin.get(), 0, &config_id));
+  LITERT_ASSERT_OK(plugin.Api()->get_compiler_plugin_supported_soc_model(
+      plugin.Get(), 0, &config_id));
   EXPECT_STREQ(config_id, "UNKNOWN_SDM");
 }
 
 TEST(TestQnnPlugin, CreateWithNullContextFails) {
+  LiteRtCompilerPluginInterface_V0_1* api = nullptr;
+  LiteRtApiVersion try_version = {0, 1, 0};
+  LITERT_ASSERT_OK(LiteRtCompilerPluginQueryInterface(
+      kLiteRtCompilerPluginInterfaceBasic, try_version,
+      reinterpret_cast<void**>(&api)));
   LiteRtCompilerPlugin plugin;
   EXPECT_EQ(kLiteRtStatusErrorInvalidArgument,
-            LiteRtCreateCompilerPlugin(nullptr, &plugin, nullptr, nullptr));
+            api->create_compiler_plugin(nullptr, &plugin, nullptr, nullptr));
 }
 
 TEST(TestQnnPlugin, GetSDKVersion) {
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
 
   const char* sdk_version = nullptr;
-  LITERT_ASSERT_OK(
-      LiteRtGetCompilerPluginSDKVersion(plugin.get(), &sdk_version));
+  LITERT_ASSERT_OK(plugin.Api()->get_compiler_plugin_sdk_version(plugin.Get(),
+                                                                 &sdk_version));
   ASSERT_NE(sdk_version, nullptr);
   EXPECT_FALSE(absl::string_view(sdk_version).empty());
   LITERT_LOG(LITERT_INFO, "QNN SDK Version: %s", sdk_version);
 }
 
 TEST(TestQnnPlugin, CompileAfterGetSDKVersion) {
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
 
   const char* sdk_version = nullptr;
-  LITERT_ASSERT_OK(
-      LiteRtGetCompilerPluginSDKVersion(plugin.get(), &sdk_version));
+  LITERT_ASSERT_OK(plugin.Api()->get_compiler_plugin_sdk_version(plugin.Get(),
+                                                                 &sdk_version));
   ASSERT_NE(sdk_version, nullptr);
 
   auto model = testing::LoadTestFileModel("one_mul.tflite");
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
-                                               model.Get(), &compiled));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), "SM8650", model.Get(), &compiled));
 
-  LiteRtDestroyCompiledResult(compiled);
+  plugin.Api()->destroy_compiled_result(compiled);
 }
 
 TEST(TestQnnPlugin, PartitionMulOps) {
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   auto model = testing::LoadTestFileModel("one_mul.tflite");
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
 
   LiteRtOpListT selected_op_list;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), kSoCModel, subgraph.Get(), &selected_op_list));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), kSoCModel, subgraph.Get(), &selected_op_list));
   const auto selected_ops = selected_op_list.Values();
 
   ASSERT_EQ(selected_ops.size(), 1);
@@ -259,17 +273,19 @@ TEST(TestQnnPlugin, PartitionMulOps) {
 }
 
 TEST(TestQnnPlugin, CompileMulSubgraph) {
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   auto model = testing::LoadTestFileModel("one_mul.tflite");
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
-                                               model.Get(), &compiled));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), "SM8650", model.Get(), &compiled));
 
   const void* byte_code;
   size_t byte_code_size;
 
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultByteCode(
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_byte_code(
       compiled, /*byte_code_idx=*/0, &byte_code, &byte_code_size));
 
   absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
@@ -280,14 +296,14 @@ TEST(TestQnnPlugin, CompileMulSubgraph) {
   size_t op_data_size;
   LiteRtParamIndex byte_code_idx;
 
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultCallInfo(
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_call_info(
       compiled, /*call_idx=*/0, &op_data, &op_data_size, &byte_code_idx));
 
   absl::string_view op_data_string(reinterpret_cast<const char*>(op_data),
                                    op_data_size);
   ASSERT_EQ("qnn_partition_0", op_data_string);
 
-  LiteRtDestroyCompiledResult(compiled);
+  plugin.Api()->destroy_compiled_result(compiled);
 }
 
 TEST(TestQnnPlugin, CompileMulSubgraphWithOptions) {
@@ -303,18 +319,20 @@ TEST(TestQnnPlugin, CompileMulSubgraphWithOptions) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto litert_opts,
       internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
-  auto plugin =
-      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  auto plugin_or = StaticallyLinkedPlugin::Create(
+      LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   auto model = testing::LoadTestFileModel("one_mul.tflite");
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
-                                               model.Get(), &compiled));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), "SM8650", model.Get(), &compiled));
 
   const void* byte_code;
   size_t byte_code_size;
 
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultByteCode(
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_byte_code(
       compiled, /*byte_code_idx=*/0, &byte_code, &byte_code_size));
 
   absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
@@ -325,14 +343,14 @@ TEST(TestQnnPlugin, CompileMulSubgraphWithOptions) {
   size_t op_data_size;
   LiteRtParamIndex byte_code_idx;
 
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultCallInfo(
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_call_info(
       compiled, /*call_idx=*/0, &op_data, &op_data_size, &byte_code_idx));
 
   absl::string_view op_data_string(reinterpret_cast<const char*>(op_data),
                                    op_data_size);
   ASSERT_EQ("qnn_partition_0", op_data_string);
 
-  LiteRtDestroyCompiledResult(compiled);
+  plugin.Api()->destroy_compiled_result(compiled);
 }
 
 TEST(TestQnnPlugin, CompileMulSubgraphWithLibraryDir) {
@@ -343,104 +361,110 @@ TEST(TestQnnPlugin, CompileMulSubgraphWithLibraryDir) {
   compiler_plugin_option.value.str_value = "/tmp/bogus_qnn_path";
   env_options.SetOption(compiler_plugin_option);
 
-  auto plugin = CreatePlugin(LrtGetCompilerContext(), /*env=*/&env_options,
-                             /*options=*/nullptr);
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext(),
+                                                  /*env=*/&env_options,
+                                                  /*options=*/nullptr);
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   auto model = testing::LoadTestFileModel("one_mul.tflite");
 
   LiteRtCompiledResult compiled;
-  // This should fail because it tries to load libraries from bogus path.
-  LITERT_EXPECT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
-                                               model.Get(), &compiled));
+  LITERT_EXPECT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), "SM8650", model.Get(), &compiled));
 }
 
 TEST(TestQnnPlugin, ShareContextBinary) {
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   auto model = testing::LoadTestFileModel("cst_multi_subgraph.tflite");
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
-                                               model.Get(), &compiled));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), "SM8650", model.Get(), &compiled));
   LiteRtParamIndex num_byte_code;
-  LITERT_ASSERT_OK(
-      LiteRtCompiledResultNumByteCodeModules(compiled, &num_byte_code));
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_num_byte_code(
+      compiled, &num_byte_code));
   ASSERT_EQ(num_byte_code, 1);
 
-  LiteRtDestroyCompiledResult(compiled);
+  plugin.Api()->destroy_compiled_result(compiled);
 }
 
 TEST(TestQnnPlugin, NotShareContextBinary) {
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   auto model = testing::LoadTestFileModel("multi_subgraph.tflite");
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
-                                               model.Get(), &compiled));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), "SM8650", model.Get(), &compiled));
   LiteRtParamIndex num_byte_code;
-  LITERT_ASSERT_OK(
-      LiteRtCompiledResultNumByteCodeModules(compiled, &num_byte_code));
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_num_byte_code(
+      compiled, &num_byte_code));
   ASSERT_EQ(num_byte_code, 3);
 
-  LiteRtDestroyCompiledResult(compiled);
+  plugin.Api()->destroy_compiled_result(compiled);
 }
 
 TEST(TestQnnPlugin, Compatibility) {
   static constexpr LiteRtApiVersion kApiVersion{LITERT_API_VERSION_MAJOR,
                                                 LITERT_API_VERSION_MINOR,
                                                 LITERT_API_VERSION_PATCH};
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
-  LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
-      kApiVersion, plugin.get(), nullptr, nullptr, nullptr));
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
+  LITERT_EXPECT_OK(plugin.Api()->check_compiler_compatibility(
+      kApiVersion, plugin.Get(), nullptr, nullptr, nullptr));
 
-  // Check SoC model.
-  LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
-      kApiVersion, plugin.get(), nullptr, nullptr, "SM8750"));
-  LITERT_EXPECT_ERROR(LiteRtCompilerPluginCheckCompilerCompatibility(
-      kApiVersion, plugin.get(), nullptr, nullptr, "unsupported_soc"));
+  LITERT_EXPECT_OK(plugin.Api()->check_compiler_compatibility(
+      kApiVersion, plugin.Get(), nullptr, nullptr, "SM8750"));
+  LITERT_EXPECT_ERROR(plugin.Api()->check_compiler_compatibility(
+      kApiVersion, plugin.Get(), nullptr, nullptr, "unsupported_soc"));
 
-  // Check LiteRt API version backward compatibility.
-  LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+  LITERT_EXPECT_OK(plugin.Api()->check_compiler_compatibility(
       {kApiVersion.major, kApiVersion.minor, kApiVersion.patch - 1},
-      plugin.get(), nullptr, nullptr, nullptr));
-  LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      plugin.Get(), nullptr, nullptr, nullptr));
+  LITERT_EXPECT_OK(plugin.Api()->check_compiler_compatibility(
       {kApiVersion.major, kApiVersion.minor - 1, kApiVersion.patch},
-      plugin.get(), nullptr, nullptr, nullptr));
-  LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      plugin.Get(), nullptr, nullptr, nullptr));
+  LITERT_EXPECT_OK(plugin.Api()->check_compiler_compatibility(
       {kApiVersion.major - 1, kApiVersion.minor, kApiVersion.patch},
-      plugin.get(), nullptr, nullptr, nullptr));
+      plugin.Get(), nullptr, nullptr, nullptr));
 
-  // Compiler plugin doesn't support forward compatibility.
-  LITERT_EXPECT_ERROR(LiteRtCompilerPluginCheckCompilerCompatibility(
+  LITERT_EXPECT_ERROR(plugin.Api()->check_compiler_compatibility(
       {kApiVersion.major, kApiVersion.minor, kApiVersion.patch + 1},
-      plugin.get(), nullptr, nullptr, nullptr));
-  LITERT_EXPECT_ERROR(LiteRtCompilerPluginCheckCompilerCompatibility(
+      plugin.Get(), nullptr, nullptr, nullptr));
+  LITERT_EXPECT_ERROR(plugin.Api()->check_compiler_compatibility(
       {kApiVersion.major, kApiVersion.minor + 1, kApiVersion.patch},
-      plugin.get(), nullptr, nullptr, nullptr));
-  LITERT_EXPECT_ERROR(LiteRtCompilerPluginCheckCompilerCompatibility(
+      plugin.Get(), nullptr, nullptr, nullptr));
+  LITERT_EXPECT_ERROR(plugin.Api()->check_compiler_compatibility(
       {kApiVersion.major + 1, kApiVersion.minor, kApiVersion.patch},
-      plugin.get(), nullptr, nullptr, nullptr));
+      plugin.Get(), nullptr, nullptr, nullptr));
 }
 
 class QnnPlyginSupportedSocCompilationTest
     : public ::testing::TestWithParam<std::string> {};
 
 TEST_P(QnnPlyginSupportedSocCompilationTest, CompileMulSubgraph) {
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   auto model = testing::LoadTestFileModel("one_mul.tflite");
   auto soc_model = GetParam();
 #if defined(__x86_64__) || defined(_M_X64)
 #else
-  // TODO(jiunkaiy): Support on-device test.
   GTEST_SKIP() << "On-device tests are not supported";
 #endif
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), soc_model.c_str(),
-                                               model.Get(), &compiled));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), soc_model.c_str(), model.Get(), &compiled));
 
   const void* byte_code;
   size_t byte_code_size;
 
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultByteCode(
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_byte_code(
       compiled, /*byte_code_idx=*/0, &byte_code, &byte_code_size));
 
   absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
@@ -451,14 +475,14 @@ TEST_P(QnnPlyginSupportedSocCompilationTest, CompileMulSubgraph) {
   size_t op_data_size;
   LiteRtParamIndex byte_code_idx;
 
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultCallInfo(
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_call_info(
       compiled, /*call_idx=*/0, &op_data, &op_data_size, &byte_code_idx));
 
   absl::string_view op_data_string(reinterpret_cast<const char*>(op_data),
                                    op_data_size);
   ASSERT_EQ("qnn_partition_0", op_data_string);
 
-  LiteRtDestroyCompiledResult(compiled);
+  plugin.Api()->destroy_compiled_result(compiled);
 }
 
 INSTANTIATE_TEST_SUITE_P(SupportedOpsTest, QnnPlyginSupportedSocCompilationTest,
@@ -469,7 +493,9 @@ class QnnPluginOpValidationTest : public ::testing::TestWithParam<std::string> {
 
 TEST_P(QnnPluginOpValidationTest, SupportedOpsTest) {
   LITERT_LOG(LITERT_INFO, "Validating TFLite model: %s", GetParam().c_str());
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   auto model = testing::LoadTestFileModel(GetParam());
 
   const auto subgraph = model.MainSubgraph();
@@ -477,8 +503,8 @@ TEST_P(QnnPluginOpValidationTest, SupportedOpsTest) {
 
   LiteRtOpListT selected_ops;
 
-  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), kSoCModel, litert_subgraph, &selected_ops));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), kSoCModel, litert_subgraph, &selected_ops));
 
   EXPECT_EQ(selected_ops.Values().size(), litert_subgraph->Ops().size());
 }
@@ -491,17 +517,19 @@ class QnnPluginOpCompatibilityTest
 
 TEST_P(QnnPluginOpCompatibilityTest, SupportedOpsTest) {
   LITERT_LOG(LITERT_INFO, "Testing TFLite model: %s", GetParam().c_str());
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   auto model = testing::LoadTestFileModel(GetParam());
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
-                                               model.Get(), &compiled));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), "SM8650", model.Get(), &compiled));
 
   const void* byte_code;
   size_t byte_code_size;
 
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultByteCode(
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_byte_code(
       compiled, /*byte_code_idx=*/0, &byte_code, &byte_code_size));
 
   absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
@@ -512,14 +540,14 @@ TEST_P(QnnPluginOpCompatibilityTest, SupportedOpsTest) {
   size_t op_data_size;
   LiteRtParamIndex byte_code_idx;
 
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultCallInfo(
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_call_info(
       compiled, /*call_idx=*/0, &op_data, &op_data_size, &byte_code_idx));
 
   absl::string_view op_data_string(reinterpret_cast<const char*>(op_data),
                                    op_data_size);
   ASSERT_EQ("qnn_partition_0", op_data_string);
 
-  LiteRtDestroyCompiledResult(compiled);
+  plugin.Api()->destroy_compiled_result(compiled);
 }
 
 INSTANTIATE_TEST_SUITE_P(SupportedOpsTest, QnnPluginOpCompatibilityTest,
@@ -539,28 +567,33 @@ TEST(TestQnnPlugin, CompileMultiSubgraphJustInTime) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto litert_opts,
       internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
-  auto plugin =
-      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  auto plugin_or = StaticallyLinkedPlugin::Create(
+      LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
-                                               model.Get(), &compiled));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), "SM8650", model.Get(), &compiled));
 
   LiteRtParamIndex num_byte_code;
-  LITERT_ASSERT_OK(
-      LiteRtCompiledResultNumByteCodeModules(compiled, &num_byte_code));
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_num_byte_code(
+      compiled, &num_byte_code));
   EXPECT_EQ(num_byte_code, 2);
 
   LiteRtJitExecutable handle_0 = nullptr;
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultHandle(compiled, 0, &handle_0));
+  LITERT_ASSERT_OK(
+      plugin.Api()->get_compiled_result_handle(compiled, 0, &handle_0));
   EXPECT_NE(handle_0, nullptr);
 
   LiteRtJitExecutable handle_1 = nullptr;
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultHandle(compiled, 1, &handle_1));
+  LITERT_ASSERT_OK(
+      plugin.Api()->get_compiled_result_handle(compiled, 1, &handle_1));
   EXPECT_NE(handle_1, nullptr);
 
-  LiteRtDestroyCompiledResult(compiled);
+  plugin.Api()->destroy_compiled_result(compiled);
 }
+
 TEST(TestQnnPlugin, CompileWithSchematicDir) {
   auto opts = Options::Create();
   ASSERT_TRUE(opts);
@@ -568,7 +601,6 @@ TEST(TestQnnPlugin, CompileWithSchematicDir) {
   auto qnn_opts = opts->GetQualcommOptions();
   ASSERT_TRUE(qnn_opts);
 
-  // Create a temporary directory
   std::filesystem::path temp_dir =
       std::filesystem::temp_directory_path() / "litert_qnn_test_schematic";
   std::filesystem::create_directories(temp_dir);
@@ -579,8 +611,10 @@ TEST(TestQnnPlugin, CompileWithSchematicDir) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto litert_opts,
       internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
-  auto plugin =
-      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  auto plugin_or = StaticallyLinkedPlugin::Create(
+      LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   auto model = testing::LoadTestFileModel("one_mul.tflite");
 
   struct TestCwdGuard {
@@ -599,17 +633,15 @@ TEST(TestQnnPlugin, CompileWithSchematicDir) {
   } cwd_guard(temp_dir);
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
-                                               model.Get(), &compiled));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), "SM8650", model.Get(), &compiled));
 
-  // Verify schematic file exists in temp_dir
   std::filesystem::path expected_schematic =
       temp_dir / "qnn_partition_0_schematic.bin";
   EXPECT_TRUE(std::filesystem::exists(expected_schematic));
 
-  // Clean up
   std::filesystem::remove_all(temp_dir);
-  LiteRtDestroyCompiledResult(compiled);
+  plugin.Api()->destroy_compiled_result(compiled);
 }
 
 }  // namespace

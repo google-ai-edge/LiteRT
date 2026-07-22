@@ -84,7 +84,7 @@ Expected<LiteRtParamIndex> CompiledResult::NumByteCodeModules() const {
 
 Expected<LiteRtParamIndex> CompiledResult::NumCalls() const {
   LiteRtParamIndex num_calls;
-  LITERT_RETURN_IF_ERROR(parent_.get_compiled_result_num_calls(
+  LITERT_RETURN_IF_ERROR(parent_.get_num_compiled_result_calls(
       compiled_result_handle_, &num_calls));
   return num_calls;
 }
@@ -146,61 +146,32 @@ CompiledResult& CompiledResult::operator=(CompiledResult&& other) noexcept {
 
 namespace {
 
-#define RESOLVE_API_FUNC(name, dest) \
-  LITERT_ASSIGN_OR_RETURN(dest, lib.LookupSymbol<decltype(dest)>(name.data()));
-
 LiteRtStatus ResolvePluginApi(SharedLibrary& lib,
-                              LiteRtCompilerPluginApi& result) {
-  RESOLVE_API_FUNC(kLiteRtGetCompilerPluginVersion,
-                   result.get_compiler_plugin_version);
-  RESOLVE_API_FUNC(kLiteRtGetCompilerPluginSupportedHardware,
-                   result.get_compiler_plugin_supported_hardware);
-  RESOLVE_API_FUNC(kLiteRtGetCompilerPluginSocManufacturer,
-                   result.get_compiler_plugin_soc_manufacturer);
-  RESOLVE_API_FUNC(kLiteRtGetNumCompilerPluginSupportedSocModels,
-                   result.get_num_compiler_plugin_supported_models);
-  RESOLVE_API_FUNC(kLiteRtGetCompilerPluginSupportedSocModel,
-                   result.get_compiler_plugin_supported_soc_model);
+                              LiteRtCompilerPluginInterface_V0_1& result) {
+  LITERT_ASSIGN_OR_RETURN(auto query_interface,
+                          lib.LookupSymbol<LiteRtCompilerPluginQueryInterfaceT>(
+                              kLiteRtCompilerPluginQueryInterface.data()));
 
-  RESOLVE_API_FUNC(kLiteRtCreateCompilerPlugin, result.create_compiler_plugin);
-  RESOLVE_API_FUNC(kLiteRtDestroyCompilerPlugin,
-                   result.destroy_compiler_plugin);
+  LiteRtCompilerPluginInterface_V0_1* basic_interface = nullptr;
+  LiteRtApiVersion try_version = {0, 1, 0};
 
-  RESOLVE_API_FUNC(kLiteRtCompilerPluginPartition,
-                   result.compiler_plugin_partition);
-  RESOLVE_API_FUNC(kLiteRtCompilerPluginCompile,
-                   result.compiler_plugin_compile);
-
-  RESOLVE_API_FUNC(kLiteRtDestroyCompiledResult,
-                   result.destroy_compiled_result);
-  RESOLVE_API_FUNC(kLiteRtCompiledResultNumByteCodeModules,
-                   result.get_compiled_result_num_byte_code);
-  RESOLVE_API_FUNC(kLiteRtGetCompiledResultByteCode,
-                   result.get_compiled_result_byte_code);
-  // Optional JIT Handle API
-  if (auto resolved = lib.LookupSymbol<LiteRtGetCompiledResultHandleT>(
-          kLiteRtGetCompiledResultHandle.data());
-      resolved.HasValue()) {
-    result.get_compiled_result_handle = resolved.Value();
-  } else {
-    result.get_compiled_result_handle = nullptr;
+  if (query_interface(kLiteRtCompilerPluginInterfaceBasic, try_version,
+                      reinterpret_cast<void**>(&basic_interface)) !=
+          kLiteRtStatusOk ||
+      basic_interface == nullptr) {
+    LITERT_LOG(LITERT_ERROR,
+               "Failed to negotiate compiler plugin interface version 0.1.0");
+    return kLiteRtStatusErrorWrongVersion;
   }
-  RESOLVE_API_FUNC(kLiteRtGetCompiledResultCallInfo,
-                   result.get_compiled_result_call_info);
-  RESOLVE_API_FUNC(kLiteRtGetNumCompiledResultCalls,
-                   result.get_compiled_result_num_calls);
-  RESOLVE_API_FUNC(kLiteRtCompilerPluginRegisterAllTransformations,
-                   result.register_all_transformations);
-  RESOLVE_API_FUNC(kLiteRtCompilerPluginCheckCompilerCompatibility,
-                   result.check_compiler_compatibility);
-  RESOLVE_API_FUNC(kLiteRtGetCompilerPluginSDKVersion,
-                   result.get_compiler_plugin_sdk_version);
 
+  // Copy the negotiated interface struct
+  result = *basic_interface;
   return kLiteRtStatusOk;
 }
 
 Expected<std::vector<std::string>> GetSocModels(
-    const LiteRtCompilerPluginApi& api, LiteRtCompilerPlugin plugin_handle) {
+    const LiteRtCompilerPluginInterface_V0_1& api,
+    LiteRtCompilerPlugin plugin_handle) {
   std::vector<std::string> soc_models;
 
   LiteRtParamIndex num_models;
@@ -272,9 +243,10 @@ Expected<CompilerPlugin> CompilerPlugin::LoadPlugin(
     return api_version.Error();
   }
 
-  LITERT_RETURN_IF_ERROR(litert::internal::IsSameVersionAsRuntime(*api_version),
-                         Unexpected(kLiteRtStatusErrorWrongVersion,
-                                    "Unsupported compiler plugin version"));
+  LITERT_RETURN_IF_ERROR(
+      litert::internal::IsCompatibleVersionAsRuntime(*api_version),
+      Unexpected(kLiteRtStatusErrorWrongVersion,
+                 "Unsupported compiler plugin version"));
 
   // This should never change throughout the lifetime of the compiler
   // plugin so save to avoid recalling.

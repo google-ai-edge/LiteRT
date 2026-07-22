@@ -397,7 +397,7 @@ LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
 
 // /////////////////////////////////////////////////////////////////////////////
 
-LiteRtDispatchInterface TheInterface = {
+LiteRtDispatchInterface_V0_1 TheInterface = {
     /*.initialize=*/Initialize,
     /*.get_vendor_id=*/GetVendorId,
     /*.get_build_id=*/GetBuildId,
@@ -426,18 +426,16 @@ LiteRtDispatchInterface TheInterface = {
     /*.invocation_context_set_options=*/InvocationContextSetOptions,
 };
 
-LiteRtDispatchApi TheApi = {
-    /*.version=*/{/*.major=*/LITERT_API_VERSION_MAJOR,
-                  /*.minor=*/LITERT_API_VERSION_MINOR,
-                  /*.patch=*/LITERT_API_VERSION_PATCH},
-    /*.interface=*/&TheInterface,
-    /*.async_interface=*/nullptr,
-    /*.graph_interface=*/nullptr,
-};
-
 }  // namespace
 
-LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
-  *api = TheApi;
-  return kLiteRtStatusOk;
+extern "C" LiteRtStatus LiteRtDispatchQueryInterface(
+    LiteRtDispatchInterfaceId interface_id, LiteRtApiVersion requested_version,
+    void** out_interface) {
+  if (requested_version.major == 0 && requested_version.minor == 1) {
+    if (interface_id == kLiteRtInterfaceBasic) {
+      *out_interface = &TheInterface;
+      return kLiteRtStatusOk;
+    }
+  }
+  return kLiteRtStatusErrorUnsupported;
 }

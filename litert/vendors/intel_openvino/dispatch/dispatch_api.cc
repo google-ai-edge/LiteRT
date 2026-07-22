@@ -419,7 +419,7 @@ LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
 
 namespace {
 
-LiteRtDispatchInterface TheInterface = {
+LiteRtDispatchInterface_V0_1 TheInterface = {
     .initialize = litert::openvino::DispatchInitialize,
     .get_vendor_id = litert::openvino::DispatchGetVendorId,
     .get_build_id = litert::openvino::DispatchGetBuildId,
@@ -450,7 +450,7 @@ LiteRtDispatchInterface TheInterface = {
     .check_runtime_compatibility = litert::openvino::CheckRuntimeCompatibility,
 };
 
-LiteRtCustomTensorBufferHandlersDef TheTensorBufferHandlers = {
+LiteRtCustomTensorBufferHandlersDef_V0_1 TheTensorBufferHandlers = {
     .create_func = litert::openvino::CreateOpenVinoTensorBuffer,
     .destroy_func = litert::openvino::DestroyOpenVinoTensorBuffer,
     .lock_func = litert::openvino::LockOpenVinoTensorBuffer,
@@ -463,19 +463,19 @@ LiteRtCustomTensorBufferHandlersDef TheTensorBufferHandlers = {
     .supported_buffer_types = {kLiteRtTensorBufferTypeOpenVINOTensorBuffer},
 };
 
-LiteRtDispatchApi TheApi = {
-    .version = {.major = LITERT_API_VERSION_MAJOR,
-                .minor = LITERT_API_VERSION_MINOR,
-                .patch = LITERT_API_VERSION_PATCH},
-    .interface = &TheInterface,
-    .async_interface = nullptr,
-    .graph_interface = nullptr,
-    .tensor_buffer_handlers_def = &TheTensorBufferHandlers,
-};
-
 }  // namespace
 
-LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
-  *api = TheApi;
-  return kLiteRtStatusOk;
+extern "C" LiteRtStatus LiteRtDispatchQueryInterface(
+    LiteRtDispatchInterfaceId interface_id, LiteRtApiVersion requested_version,
+    void** out_interface) {
+  if (requested_version.major == 0 && requested_version.minor == 1) {
+    if (interface_id == kLiteRtInterfaceBasic) {
+      *out_interface = &TheInterface;
+      return kLiteRtStatusOk;
+    } else if (interface_id == kLiteRtInterfaceCustomTensorBufferHandlers) {
+      *out_interface = &TheTensorBufferHandlers;
+      return kLiteRtStatusOk;
+    }
+  }
+  return kLiteRtStatusErrorUnsupported;
 }

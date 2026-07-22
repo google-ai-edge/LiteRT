@@ -451,7 +451,7 @@ LiteRtStatus InvocationContextGetGraph(
 
 namespace {
 
-LiteRtDispatchInterface TheInterface = {
+LiteRtDispatchInterface_V0_1 TheInterface = {
     .initialize = litert::google_tensor::Initialize,
     .get_vendor_id = litert::google_tensor::GetVendorId,
     .get_build_id = litert::google_tensor::GetBuildId,
@@ -483,12 +483,12 @@ LiteRtDispatchInterface TheInterface = {
         litert::google_tensor::InvocationContextSetOptions,
 };
 
-LiteRtDispatchAsyncInterface TheAsyncInterface = {
+LiteRtDispatchAsyncInterface_V0_1 TheAsyncInterface = {
     .attach_input_event = litert::google_tensor::AttachInputEvent,
     .invoke_async = litert::google_tensor::InvokeAsync,
 };
 
-LiteRtDispatchGraphInterface TheGraphInterface = {
+LiteRtDispatchGraphInterface_V0_1 TheGraphInterface = {
     .graph_create = litert::google_tensor::GraphCreate,
     .graph_destroy = litert::google_tensor::GraphDestroy,
     .add_node = litert::google_tensor::AddNode,
@@ -509,20 +509,22 @@ LiteRtDispatchGraphInterface TheGraphInterface = {
         litert::google_tensor::InvocationContextGetGraph,
 };
 
-LiteRtDispatchApi TheApi = {
-    .version = {.major = LITERT_API_VERSION_MAJOR,
-                .minor = LITERT_API_VERSION_MINOR,
-                .patch = LITERT_API_VERSION_PATCH},
-    .interface = &TheInterface,
-    .async_interface = &TheAsyncInterface,
-    .graph_interface = &TheGraphInterface,
-};
-
 }  // namespace
 
-LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
-  GT_LOG_RETURN_IF_NULL(api);
-
-  *api = TheApi;
-  return kLiteRtStatusOk;
+extern "C" LiteRtStatus LiteRtDispatchQueryInterface(
+    LiteRtDispatchInterfaceId interface_id, LiteRtApiVersion requested_version,
+    void** out_interface) {
+  if (requested_version.major == 0 && requested_version.minor == 1) {
+    if (interface_id == kLiteRtInterfaceBasic) {
+      *out_interface = &TheInterface;
+      return kLiteRtStatusOk;
+    } else if (interface_id == kLiteRtInterfaceAsync) {
+      *out_interface = &TheAsyncInterface;
+      return kLiteRtStatusOk;
+    } else if (interface_id == kLiteRtInterfaceGraph) {
+      *out_interface = &TheGraphInterface;
+      return kLiteRtStatusOk;
+    }
+  }
+  return kLiteRtStatusErrorUnsupported;
 }

@@ -25,10 +25,10 @@
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/model.h"
-#include "litert/test/common.h"
 #include "litert/test/load_test_model.h"
 #include "litert/test/matchers.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/cc/litert_compiler_plugin.h"
 #include "litert/vendors/examples/example_common.h"
 
@@ -36,31 +36,35 @@ namespace litert {
 namespace {
 
 TEST(TestDummyPlugin, GetConfigInfo) {
-  ASSERT_STREQ(LiteRtGetCompilerPluginSocManufacturer(),
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
+
+  ASSERT_STREQ(plugin.Api()->get_compiler_plugin_soc_manufacturer(),
                "ExampleSocManufacturer");
 
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
-
   LiteRtParamIndex num_supported_soc_models;
-  LITERT_ASSERT_OK(LiteRtGetNumCompilerPluginSupportedSocModels(
-      plugin.get(), &num_supported_soc_models));
+  LITERT_ASSERT_OK(plugin.Api()->get_num_compiler_plugin_supported_models(
+      plugin.Get(), &num_supported_soc_models));
   ASSERT_EQ(num_supported_soc_models, 1);
 
   const char* soc_model_name;
-  LITERT_ASSERT_OK(LiteRtGetCompilerPluginSupportedSocModel(plugin.get(), 0,
-                                                            &soc_model_name));
+  LITERT_ASSERT_OK(plugin.Api()->get_compiler_plugin_supported_soc_model(
+      plugin.Get(), 0, &soc_model_name));
   ASSERT_STREQ(soc_model_name, "ExampleSocModel");
 }
 
 TEST(TestCallDummyPlugin, PartitionSimpleMultiAdd) {
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   auto model = testing::LoadTestFileModel("simple_multi_op.tflite");
 
   LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
 
   LiteRtOpListT selected_op_list;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
   const auto selected_ops = selected_op_list.Values();
 
   ASSERT_EQ(selected_ops.size(), 2);
@@ -69,17 +73,19 @@ TEST(TestCallDummyPlugin, PartitionSimpleMultiAdd) {
 }
 
 TEST(TestCallDummyPlugin, CompileMulSubgraph) {
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   auto model = testing::LoadTestFileModel("mul_simple.tflite");
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(
-      plugin.get(), /*soc_model=*/nullptr, model.Get(), &compiled));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), /*soc_model=*/nullptr, model.Get(), &compiled));
 
   const void* byte_code;
   size_t byte_code_size;
 
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultByteCode(
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_byte_code(
       compiled, /*byte_code_idx=*/0, &byte_code, &byte_code_size));
 
   absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
@@ -93,52 +99,58 @@ TEST(TestCallDummyPlugin, CompileMulSubgraph) {
   const void* op_data;
   size_t op_data_size;
 
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultCallInfo(
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_call_info(
       compiled, /*call_idx=*/0, &op_data, &op_data_size, &byte_code_idx));
 
   absl::string_view op_data_string(reinterpret_cast<const char*>(op_data),
                                    op_data_size);
   ASSERT_EQ(op_data_string, "partition_0");
 
-  LiteRtDestroyCompiledResult(compiled);
+  plugin.Api()->destroy_compiled_result(compiled);
 }
 
 TEST(TestCallDummyPlugin, RegisterAllTransformations) {
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   LiteRtTransformation* transformations;
   LiteRtParamIndex num_transformations;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
-      plugin.get(), &transformations, &num_transformations));
+  LITERT_ASSERT_OK(plugin.Api()->register_all_transformations(
+      plugin.Get(), &transformations, &num_transformations));
   ASSERT_EQ(num_transformations, 2);
   ASSERT_STREQ(transformations[0].name, "MyTransformation0");
   ASSERT_EQ(transformations[0].benefit, 100);
 }
 
 TEST(TestCallDummyPlugin, CheckCompilerCompatibility) {
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   LiteRtApiVersion api_version = {.major = 1, .minor = 0, .patch = 0};
   LiteRtEnvironmentOptions env = nullptr;
   LiteRtOptions options = nullptr;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
-      api_version, plugin.get(), env, options, "ExampleSocModel"));
+  LITERT_ASSERT_OK(plugin.Api()->check_compiler_compatibility(
+      api_version, plugin.Get(), env, options, "ExampleSocModel"));
 
   EXPECT_EQ(
       kLiteRtStatusErrorUnsupportedCompilerVersion,
-      LiteRtCompilerPluginCheckCompilerCompatibility(
-          api_version, plugin.get(), env, options, "UnsupportedSocModel"));
+      plugin.Api()->check_compiler_compatibility(
+          api_version, plugin.Get(), env, options, "UnsupportedSocModel"));
 }
 
 TEST(TestCallDummyPlugin, CompileMultiSubgraphWithSharedWeights) {
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   auto model = testing::LoadTestFileModel("cst_multi_subgraph.tflite");
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(
-      plugin.get(), /*soc_model=*/nullptr, model.Get(), &compiled));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), /*soc_model=*/nullptr, model.Get(), &compiled));
 
   const void* byte_code;
   size_t byte_code_size;
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultByteCode(
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_byte_code(
       compiled, /*byte_code_idx=*/0, &byte_code, &byte_code_size));
 
   absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
@@ -149,25 +161,28 @@ TEST(TestCallDummyPlugin, CompileMultiSubgraphWithSharedWeights) {
   EXPECT_THAT(byte_code_string, ::testing::HasSubstr("SUBGRAPH partition_1"));
   EXPECT_THAT(byte_code_string, ::testing::HasSubstr("const_map:"));
 
-  LiteRtDestroyCompiledResult(compiled);
+  plugin.Api()->destroy_compiled_result(compiled);
 }
 
 TEST(TestCallDummyPlugin, CompileAoT) {
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   auto model = testing::LoadTestFileModel("mul_simple.tflite");
 
   LiteRtCompiledResult result;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "AoT_Only",
-                                               model.Get(), &result));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), "AoT_Only", model.Get(), &result));
 
   LiteRtJitExecutable handle = nullptr;
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultHandle(result, 0, &handle));
+  LITERT_ASSERT_OK(
+      plugin.Api()->get_compiled_result_handle(result, 0, &handle));
   EXPECT_EQ(handle, nullptr);
 
   const void* byte_code;
   size_t byte_code_size;
-  LITERT_ASSERT_OK(
-      LiteRtGetCompiledResultByteCode(result, 0, &byte_code, &byte_code_size));
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_byte_code(
+      result, 0, &byte_code, &byte_code_size));
 
   auto byte_code_buf = litert::BufferRef<uint8_t>(
       reinterpret_cast<const uint8_t*>(byte_code), byte_code_size);
@@ -179,19 +194,22 @@ TEST(TestCallDummyPlugin, CompileAoT) {
   EXPECT_EQ(example_global_graph.subgraphs_.size(), 1);
   EXPECT_EQ(example_global_graph.subgraphs_.count("partition_0"), 1u);
 
-  LiteRtDestroyCompiledResult(result);
+  plugin.Api()->destroy_compiled_result(result);
 }
 
 TEST(TestCallDummyPlugin, CompileJitHandle) {
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   auto model = testing::LoadTestFileModel("mul_simple.tflite");
 
   LiteRtCompiledResult result;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "JustInTime",
-                                               model.Get(), &result));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), "JustInTime", model.Get(), &result));
 
   LiteRtJitExecutable handle = nullptr;
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultHandle(result, 0, &handle));
+  LITERT_ASSERT_OK(
+      plugin.Api()->get_compiled_result_handle(result, 0, &handle));
   ASSERT_NE(handle, nullptr);
 
   auto* example_global_graph_ptr =
@@ -200,7 +218,27 @@ TEST(TestCallDummyPlugin, CompileJitHandle) {
   EXPECT_EQ(example_global_graph_ptr->subgraphs_.size(), 1);
   EXPECT_EQ(example_global_graph_ptr->subgraphs_.count("partition_0"), 1u);
 
-  LiteRtDestroyCompiledResult(result);
+  plugin.Api()->destroy_compiled_result(result);
+}
+
+TEST(TestCallDummyPlugin, VersionNegotiationV0_2) {
+  LiteRtCompilerPluginInterface_V0_2* api_v0_2 = nullptr;
+  LiteRtApiVersion requested_version = {0, 2, 0};
+  LiteRtStatus status = LiteRtCompilerPluginQueryInterface(
+      kLiteRtCompilerPluginInterfaceBasic, requested_version,
+      reinterpret_cast<void**>(&api_v0_2));
+
+  ASSERT_EQ(status, kLiteRtStatusOk);
+  ASSERT_NE(api_v0_2, nullptr);
+
+  LiteRtCompilerPlugin plugin = nullptr;
+  LITERT_ASSERT_OK(api_v0_2->base.create_compiler_plugin(
+      LrtGetCompilerContext(), &plugin, /*env=*/nullptr, /*options=*/nullptr));
+  ASSERT_NE(plugin, nullptr);
+
+  LITERT_ASSERT_OK(api_v0_2->dummy(plugin));
+
+  api_v0_2->base.destroy_compiler_plugin(plugin);
 }
 
 }  // namespace

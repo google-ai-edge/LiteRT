@@ -134,7 +134,7 @@ LiteRtStatus LiteRtRegisterNpuAccelerator(LiteRtEnvironment environment) {
                          litert::ErrorStatusBuilder::InvalidArgument())
       << "environment handle is null";
 
-  if (LiteRtStaticLinkedDispatchGetApi == nullptr) {
+  if (LiteRtStaticLinkedDispatchQueryInterface == nullptr) {
     LITERT_LOG(LITERT_DEBUG, "Dispatch API is not statically linked.");
     LITERT_RETURN_IF_ERROR(
         environment->GetOption(kLiteRtEnvOptionTagDispatchLibraryDir)
