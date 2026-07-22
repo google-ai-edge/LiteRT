@@ -166,7 +166,7 @@ litert_test(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/internal:litert_model_predicates",
+        "//litert/cc/dynamic_runtime:litert_model_predicates",
         "//litert/core/model:model_testonly",
         "//litert/test:common",
         "//litert/test:load_test_model",
