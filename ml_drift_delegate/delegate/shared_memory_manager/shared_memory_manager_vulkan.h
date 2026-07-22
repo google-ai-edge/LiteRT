@@ -27,6 +27,7 @@
 #include "ml_drift/syrtis/environment.h"  // from @ml_drift
 #include "ml_drift/syrtis/vulkan_spatial_tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/shared_vulkan_env.h"
 #include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
@@ -36,17 +37,22 @@ namespace ml_drift {
 
 using ::ml_drift::syrtis::VulkanSpatialTensor;
 
+// Primary, graph-agnostic factory: builds the unified SharedMemoryManager over
+// any graph via a GraphAdapter. Callers backed by an ir::IrModel construct an
+// IrModelAdapter themselves and pass it here, keeping this backend layer free
+// of any ir_model dependency.
 inline std::unique_ptr<ml_drift::SharedMemoryManager>
 MakeSharedMemoryManagerVulkan(::litert::ml_drift::SharedVulkanEnv* env,
                               const CreateGpuModelInfo& create_info,
-                              GraphFloat32& graph, TfLiteContext* context,
+                              std::unique_ptr<GraphAdapter> graph_adapter,
+                              TfLiteContext* context,
                               ValueIdToSharedTensorMap& value_to_tensor_map,
                               ValueIdToSharedTensorMap& quant_param_tensors,
                               bool has_prepacked_external_tensors,
                               SerializationWeightCache* serialization_cache,
                               bool madvise_original_tensors) {
   return std::make_unique<SharedMemoryManager>(
-      env->vulkan_env().GetInfo(), create_info, graph,
+      env->vulkan_env().GetInfo(), create_info, std::move(graph_adapter),
       [env](const TensorDescriptor& desc, size_t page_adjusted_offset,
             ::litert::ml_drift::ReleaseDataCallback release_data_callback,
             std::unique_ptr<GpuSpatialTensor>& tensor) -> absl::Status {

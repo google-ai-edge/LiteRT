@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -31,6 +32,7 @@
 #include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/syrtis/testing/vulkan_test.h"  // from @ml_drift
+#include "ml_drift_delegate/delegate/shared_memory_manager/gf32_graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/shared_vulkan_env.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
@@ -58,7 +60,8 @@ TEST_F(SharedMemoryManagerTest, GetNonExistingExternalTensor) {
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerVulkan(
-      &shared_vulkan_env_, create_info, graph, &context,
+      &shared_vulkan_env_, create_info,
+      std::make_unique<GraphFloat32Adapter>(graph), &context,
       buffer_id_to_spatial_tensor, quant_param_tensors,
       /*has_prepacked_external_tensors=*/false, /*serialization_cache=*/nullptr,
       /*madvise_original_tensors=*/false);
@@ -86,7 +89,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF16FromF32) {
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerVulkan(
-      &shared_vulkan_env_, create_info, graph, &context,
+      &shared_vulkan_env_, create_info,
+      std::make_unique<GraphFloat32Adapter>(graph), &context,
       buffer_id_to_spatial_tensor, param_tensors,
       /*has_prepacked_external_tensors=*/false, /*serialization_cache=*/nullptr,
       /*madvise_original_tensors=*/false);
@@ -157,7 +161,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF16FromF16) {
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerVulkan(
-      &shared_vulkan_env_, create_info, graph, &context,
+      &shared_vulkan_env_, create_info,
+      std::make_unique<GraphFloat32Adapter>(graph), &context,
       buffer_id_to_spatial_tensor, param_tensors,
       /*has_prepacked_external_tensors=*/false, /*serialization_cache=*/nullptr,
       /*madvise_original_tensors=*/false);
@@ -215,7 +220,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF32FromF16) {
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerVulkan(
-      &shared_vulkan_env_, create_info, graph, &context,
+      &shared_vulkan_env_, create_info,
+      std::make_unique<GraphFloat32Adapter>(graph), &context,
       buffer_id_to_spatial_tensor, param_tensors,
       /*has_prepacked_external_tensors=*/false, /*serialization_cache=*/nullptr,
       /*madvise_original_tensors=*/false);
@@ -274,7 +280,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF32FromF32) {
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerVulkan(
-      &shared_vulkan_env_, create_info, graph, &context,
+      &shared_vulkan_env_, create_info,
+      std::make_unique<GraphFloat32Adapter>(graph), &context,
       buffer_id_to_spatial_tensor, param_tensors,
       /*has_prepacked_external_tensors=*/false, /*serialization_cache=*/nullptr,
       /*madvise_original_tensors=*/false);
@@ -332,7 +339,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalQuantizedTensor) {
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerVulkan(
-      &shared_vulkan_env_, create_info, graph, &context,
+      &shared_vulkan_env_, create_info,
+      std::make_unique<GraphFloat32Adapter>(graph), &context,
       buffer_id_to_spatial_tensor, quant_param_tensors,
       /*has_prepacked_external_tensors=*/false, /*serialization_cache=*/nullptr,
       /*madvise_original_tensors=*/false);
@@ -489,8 +497,8 @@ void RunBlockwiseQuantizationTest(::litert::ml_drift::SharedVulkanEnv* env,
   }
 
   auto manager = MakeSharedMemoryManagerVulkan(
-      env, create_info, graph, &context, buffer_id_to_spatial_tensor,
-      quant_param_tensors,
+      env, create_info, std::make_unique<GraphFloat32Adapter>(graph), &context,
+      buffer_id_to_spatial_tensor, quant_param_tensors,
       /*has_prepacked_external_tensors=*/false,
       /*serialization_cache=*/nullptr,
       /*madvise_original_tensors=*/false);

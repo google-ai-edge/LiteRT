@@ -21,6 +21,7 @@
 #include "ml_drift_delegate/delegate/delegate_utils.h"
 #include "ml_drift_delegate/delegate/gpu_backend_opencl_litert.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/gf32_graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_cl_litert.h"
 #include "tflite/c/common.h"
@@ -38,8 +39,9 @@ GpuBackendOpenClLitert::CreateSharedMemoryManager(
       &(reinterpret_cast<const tflite::Subgraph*>(context->impl_)
             ->GetExternalTensorBufferIdentifiers());
   return ::ml_drift::MakeSharedMemoryManagerClLitert(
-      *cl_env(), delegate_data.options->runtime_context, create_info, graph,
-      context, GetBufferIdToSpatialTensorMap(delegate_data),
+      *cl_env(), delegate_data.options->runtime_context, create_info,
+      std::make_unique<::ml_drift::GraphFloat32Adapter>(graph), context,
+      GetBufferIdToSpatialTensorMap(delegate_data),
       GetQuantParamIdToSpatialTensorMap(delegate_data),
       delegate_data.options->has_prepacked_external_tflite_tensors,
       serialization_cache,

@@ -28,6 +28,7 @@
 #include "ml_drift/webgpu/execution_environment.h"  // from @ml_drift
 #include "ml_drift/webgpu/spatial_tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_webgpu_common.h"
 #include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
@@ -59,13 +60,16 @@ struct LiteRtRuntimeContext;
 namespace ml_drift {
 
 // Creates a SharedMemoryManager for the WebGPU backend with LiteRT weight
-// loader support.
+// loader support. Primary, graph-agnostic overload: IR-backed callers construct
+// an IrModelAdapter and pass it here, keeping this backend layer free of any
+// ir_model dependency.
 std::unique_ptr<::ml_drift::SharedMemoryManager>
 MakeSharedMemoryManagerWebgpuLitert(
     const webgpu::ExecutionEnvironment& env,
     ::LiteRtRuntimeContext* runtime_context,
-    const CreateGpuModelInfo& create_info, GraphFloat32& graph,
-    TfLiteContext* context, ValueIdToSharedTensorMap& value_to_tensor_map,
+    const CreateGpuModelInfo& create_info,
+    std::unique_ptr<GraphAdapter> graph_adapter, TfLiteContext* context,
+    ValueIdToSharedTensorMap& value_to_tensor_map,
     ValueIdToSharedTensorMap& quant_param_tensors,
     bool has_prepacked_tflite_tensors,
     SerializationWeightCache* serialization_cache,
