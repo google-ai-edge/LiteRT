@@ -83,8 +83,6 @@ class QnnManager {
                       QnnSystemContext_FreeFn_t>;
   class ContextHandle;
 
-  ~QnnManager();
-
   static Expected<Ptr> Create(
       const ::qnn::Options& options,
       std::optional<std::string> shared_library_dir = std::nullopt);
