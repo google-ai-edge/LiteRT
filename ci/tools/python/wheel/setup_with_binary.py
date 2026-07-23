@@ -191,6 +191,7 @@ setuptools.setup(
     install_requires=[
         'backports.strenum',
         'flatbuffers',
+        'ml_dtypes',
         'numpy >= 1.23.2',  # Better to keep sync with both TF ci_build
         # and OpenCV-Python requirement.
         'tqdm',
@@ -213,7 +214,6 @@ setuptools.setup(
         ],
         'model-utils': [
             'lark',
-            'ml_dtypes',
             'xdsl==0.28.0',
         ],
     },
