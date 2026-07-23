@@ -724,11 +724,22 @@ cc_library(
 cc_test(
     name = "litert_profiler_test",
     srcs = ["litert_profiler_test.cc"],
+    data = [
+        "//litert/test:testdata/simple_model.tflite",
+    ],
     deps = [
         ":litert_common",
+        ":litert_compiled_model",
         ":litert_environment",
+        ":litert_environment_options",
+        ":litert_model",
+        ":litert_opaque_options",
+        ":litert_options",
         ":litert_profiler",
         ":litert_profiler_event",
+        "//litert/c/options:litert_runtime_options",
+        "//litert/test:common",
+        "//litert/test:simple_model",
         "@com_google_googletest//:gtest_main",
     ],
 )

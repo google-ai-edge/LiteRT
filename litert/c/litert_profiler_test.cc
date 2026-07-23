@@ -14,9 +14,21 @@
 
 #include "litert/c/litert_profiler.h"
 
+#include <cstdlib>
+#include <cstring>
+
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_compiled_model.h"
+#include "litert/c/litert_environment.h"
+#include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_model.h"
+#include "litert/c/litert_opaque_options.h"
+#include "litert/c/litert_options.h"
 #include "litert/c/litert_profiler_event.h"
+#include "litert/c/options/litert_runtime_options.h"
+#include "litert/test/common.h"
+#include "litert/test/testdata/simple_model_test_vectors.h"
 
 namespace {
 LiteRtProfiler profiler;
@@ -78,6 +90,76 @@ TEST(LiteRtProfilerTest, GetEventsWhenEmpty) {
   EXPECT_EQ(LiteRtGetProfilerEvents(profiler, num_events, events),
             kLiteRtStatusOk);
   LiteRtDestroyProfiler(profiler);
+}
+
+TEST(LiteRtProfilerTest, GetProfileSummary) {
+  auto path = litert::testing::GetTestFilePath(kModelFileName);
+
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
+            kLiteRtStatusOk);
+
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(environment, path.c_str(), &model),
+            kLiteRtStatusOk);
+
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LrtRuntimeOptions* runtime_options = nullptr;
+  ASSERT_EQ(LrtCreateRuntimeOptions(&runtime_options), kLiteRtStatusOk);
+  ASSERT_EQ(LrtSetRuntimeOptionsEnableProfiling(runtime_options, true),
+            kLiteRtStatusOk);
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  ASSERT_EQ(LrtGetOpaqueRuntimeOptionsData(runtime_options, &identifier,
+                                           &payload, &payload_deleter),
+            kLiteRtStatusOk);
+  LiteRtOpaqueOptions opaque_runtime_options = nullptr;
+  ASSERT_EQ(LiteRtCreateOpaqueOptions(identifier, payload, payload_deleter,
+                                      &opaque_runtime_options),
+            kLiteRtStatusOk);
+  ASSERT_EQ(
+      LiteRtAddOpaqueOptions(jit_compilation_options, opaque_runtime_options),
+      kLiteRtStatusOk);
+  LrtDestroyRuntimeOptions(runtime_options);
+
+  LiteRtCompiledModel compiled_model;
+  ASSERT_EQ(LiteRtCreateCompiledModel(environment, model,
+                                      jit_compilation_options, &compiled_model),
+            kLiteRtStatusOk);
+
+  EXPECT_EQ(LiteRtCreateProfiler(10, &profiler), kLiteRtStatusOk);
+  EXPECT_EQ(LiteRtStartProfiler(profiler), kLiteRtStatusOk);
+  EXPECT_EQ(LiteRtStopProfiler(profiler), kLiteRtStatusOk);
+
+  const char* summary = nullptr;
+  EXPECT_EQ(LiteRtGetProfileSummary(profiler, compiled_model, &summary),
+            kLiteRtStatusOk);
+  ASSERT_NE(summary, nullptr);
+  EXPECT_GT(std::strlen(summary), 0);
+
+  // Verify deallocation runs safely without crashing or memory corruption.
+  std::free(const_cast<char*>(summary));
+
+  // Verify null arguments error handling.
+  const char* dummy_summary = nullptr;
+  EXPECT_NE(LiteRtGetProfileSummary(nullptr, compiled_model, &dummy_summary),
+            kLiteRtStatusOk);
+  EXPECT_NE(LiteRtGetProfileSummary(profiler, nullptr, &dummy_summary),
+            kLiteRtStatusOk);
+  EXPECT_NE(LiteRtGetProfileSummary(profiler, compiled_model, nullptr),
+            kLiteRtStatusOk);
+
+  LiteRtDestroyProfiler(profiler);
+  LiteRtDestroyCompiledModel(compiled_model);
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
 }
 
 // --- Error Handling Tests ---
