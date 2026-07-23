@@ -88,6 +88,10 @@ http_archive(
     url = "https://github.com/bazel-contrib/bazel_features/releases/download/v1.43.0/bazel_features-v1.43.0.tar.gz",
 )
 
+load("@bazel_features//:deps.bzl", "bazel_features_deps")
+
+bazel_features_deps()
+
 # Download coremltools of the same version of tensorflow, but with a custom patchcmd until
 # tensorflow is updated to do the same patchcmd.
 http_archive(
@@ -114,6 +118,36 @@ tensorflow_source_repo(
     urls = ["https://github.com/tensorflow/tensorflow/archive/bcdab1a62e138c8f8784a7477c0be8af6dd0bd0a.tar.gz"],
 )
 
+http_archive(
+    name = "rules_java",
+    sha256 = "5449ed36d61269579dd9f4b0e532cd131840f285b389b3795ae8b4d717387dd8",
+    url = "https://github.com/bazelbuild/rules_java/releases/download/8.7.0/rules_java-8.7.0.tar.gz",
+)
+
+load("@rules_java//java:rules_java_deps.bzl", "compatibility_proxy_repo", "rules_java_dependencies")
+
+compatibility_proxy_repo()
+
+RULES_JVM_EXTERNAL_TAG = "6.8"
+
+RULES_JVM_EXTERNAL_SHA = "704a0197e4e966f96993260418f2542568198490456c21814f647ae7091f56f2"
+
+http_archive(
+    name = "rules_license",
+    sha256 = "26d4021f6898e23b82ef953078389dd49ac2b5618ac564ade4ef87cced147b38",
+    urls = [
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_license/releases/download/1.0.0/rules_license-1.0.0.tar.gz",
+        "https://github.com/bazelbuild/rules_license/releases/download/1.0.0/rules_license-1.0.0.tar.gz",
+    ],
+)
+
+http_archive(
+    name = "rules_jvm_external",
+    sha256 = RULES_JVM_EXTERNAL_SHA,
+    strip_prefix = "rules_jvm_external-%s" % RULES_JVM_EXTERNAL_TAG,
+    url = "https://github.com/bazelbuild/rules_jvm_external/releases/download/%s/rules_jvm_external-%s.tar.gz" % (RULES_JVM_EXTERNAL_TAG, RULES_JVM_EXTERNAL_TAG),
+)
+
 # Initialize the TensorFlow repository and all dependencies.
 #
 # The cascade of load() statements and tf_workspace?() calls works around the
@@ -123,6 +157,26 @@ tensorflow_source_repo(
 load("@org_tensorflow//tensorflow:workspace3.bzl", "tf_workspace3")
 
 tf_workspace3()
+
+http_archive(
+    name = "com_google_protobuf",
+    patch_args = ["-p1"],
+    patches = [
+        "@xla//third_party/protobuf:protobuf.patch",
+        "@xla//third_party/protobuf:protobuf_arena.patch",
+    ],
+    repo_mapping = {
+        "@abseil-cpp": "@com_google_absl",
+        "@protobuf_pip_deps": "@pypi",
+    },
+    sha256 = "6e09bbc950ba60c3a7b30280210cd285af8d7d8ed5e0a6ed101c72aff22e8d88",
+    strip_prefix = "protobuf-6.31.1",
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/refs/tags/v6.31.1.zip"],
+)
+
+load("@com_google_protobuf//bazel/private:proto_bazel_features.bzl", "proto_bazel_features")  # buildifier: disable=bzl-visibility
+
+proto_bazel_features(name = "proto_bazel_features")
 
 # Initialize hermetic Python
 load("@xla//third_party/py:python_init_rules.bzl", "python_init_rules")
@@ -161,6 +215,23 @@ load("@pypi//:requirements.bzl", "install_deps")
 install_deps()
 # End hermetic Python initialization
 
+load("@rules_jvm_external//:defs.bzl", "maven_install")
+
+maven_install(
+    name = "maven",
+    artifacts = [
+        "androidx.annotation:annotation:1.1.0",
+    ],
+    fetch_sources = True,
+    repositories = [
+        "https://jcenter.bintray.com",
+        "https://maven.google.com",
+        "https://dl.google.com/dl/android/maven2",
+        "https://repo1.maven.org/maven2",
+    ],
+    version_conflict_policy = "pinned",
+)
+
 load("@org_tensorflow//tensorflow:workspace2.bzl", "tf_workspace2")
 
 tf_workspace2()
@@ -172,6 +243,12 @@ tf_workspace1()
 load("@org_tensorflow//tensorflow:workspace0.bzl", "tf_workspace0")
 
 tf_workspace0()
+
+rules_java_dependencies()
+
+load("@rules_java//java:repositories.bzl", "rules_java_toolchains")
+
+rules_java_toolchains()
 
 load(
     "@xla//third_party/py:python_wheel.bzl",
@@ -261,8 +338,6 @@ lark()
 load("//third_party/xdsl:workspace.bzl", xdsl = "repo")
 
 xdsl()
-
-load("@rules_jvm_external//:defs.bzl", "maven_install")
 
 maven_install(
     name = "litert_maven",
