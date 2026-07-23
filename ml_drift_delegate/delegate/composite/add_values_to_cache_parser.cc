@@ -17,6 +17,7 @@
 #include <utility>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
@@ -36,10 +37,10 @@ absl::Status AddValuesToCacheOperationParser::IsSupported(
       GetNumberOfRuntimeInputsForNode(context, tflite_node) != 7) {
     return absl::UnavailableError("odml.cache_update expects 3 or 7 inputs.");
   }
-  RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-  RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
-  RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 2));
-  RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+  ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+  ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
+  ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 2));
+  ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
 
   if (tflite_node->outputs->size != 2) {
     return absl::InvalidArgumentError("odml.cache_update expects 2 outputs.");

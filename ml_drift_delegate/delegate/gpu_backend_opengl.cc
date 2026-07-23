@@ -23,6 +23,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/log/die_if_null.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -145,8 +146,8 @@ GpuBackendOpenGl::CreateInferenceContext(
     ::ml_drift::GpuModel& gpu_model, std::vector<uint8_t>* serialized_model,
     bool may_share_memory_manager) {
   auto ctx = std::make_unique<GpuInferenceContextOpenGl>(env_);
-  RETURN_IF_ERROR(ctx->gl_ctx().InitFromGpuModel(create_info, &gpu_model,
-                                                 serialized_model));
+  ABSL_RETURN_IF_ERROR(ctx->gl_ctx().InitFromGpuModel(create_info, &gpu_model,
+                                                      serialized_model));
   return std::move(ctx);
 }
 
@@ -155,7 +156,7 @@ GpuBackendOpenGl::RestoreInferenceContext(
     const ::ml_drift::CreateGpuModelInfo& create_info,
     const absl::Span<const uint8_t> serialized_model) {
   auto ctx = std::make_unique<GpuInferenceContextOpenGl>(env_);
-  RETURN_IF_ERROR(ctx->gl_ctx().RestoreDeserialized(
+  ABSL_RETURN_IF_ERROR(ctx->gl_ctx().RestoreDeserialized(
       serialized_model,
       const_cast<::ml_drift::CreateGpuModelInfo*>(&create_info)));
   return std::move(ctx);
@@ -208,7 +209,7 @@ absl::StatusOr<std::unique_ptr<GpuTensorWrapper>>
 GpuBackendOpenGl::CreateTensorWrapper(const ::ml_drift::TensorDescriptor& desc,
                                       GpuMemoryHandle gpu_memory) {
   auto gl_tensor = std::make_unique<GpuTensorWrapperOpenGl>();
-  RETURN_IF_ERROR(::ml_drift::pelong::CreateTensorShared(
+  ABSL_RETURN_IF_ERROR(::ml_drift::pelong::CreateTensorShared(
       static_cast<GLuint>(reinterpret_cast<uintptr_t>(gpu_memory)), desc,
       &gl_tensor->gl_tensor()));
   return std::move(gl_tensor);
@@ -245,7 +246,8 @@ absl::StatusOr<std::unique_ptr<GpuIOBuffer>>
 GpuBackendOpenGl::CreateIOBufferWithSize(::ml_drift::DataType data_type,
                                          size_t size, bool input) {
   ::ml_drift::pelong::GlBuffer gl_buffer;
-  RETURN_IF_ERROR(::ml_drift::pelong::CreateReadWriteBuffer(size, &gl_buffer));
+  ABSL_RETURN_IF_ERROR(
+      ::ml_drift::pelong::CreateReadWriteBuffer(size, &gl_buffer));
   return std::make_unique<GpuIOBufferOpenGl>(env_, std::move(gl_buffer));
 }
 
@@ -255,7 +257,7 @@ GpuBackendOpenGl::CreateTensor2BufferConverter(
     const ::ml_drift::BufferDescriptor& dst_desc) {
   auto converter =
       std::make_unique<::ml_drift::pelong::TensorToBHWCBufferConverter>();
-  RETURN_IF_ERROR(converter->Init(env_->gpu_info(), src_desc, dst_desc));
+  ABSL_RETURN_IF_ERROR(converter->Init(env_->gpu_info(), src_desc, dst_desc));
   return std::make_unique<Tensor2BufferConverterOpenGl>(env_,
                                                         std::move(converter));
 }
@@ -266,7 +268,7 @@ GpuBackendOpenGl::CreateBuffer2TensorConverter(
     const ::ml_drift::TensorDescriptor& dst_desc) {
   auto converter =
       std::make_unique<::ml_drift::pelong::BHWCBufferToTensorConverter>();
-  RETURN_IF_ERROR(converter->Init(env_->gpu_info(), src_desc, dst_desc));
+  ABSL_RETURN_IF_ERROR(converter->Init(env_->gpu_info(), src_desc, dst_desc));
   return std::make_unique<Buffer2TensorConverterOpenGl>(env_,
                                                         std::move(converter));
 }

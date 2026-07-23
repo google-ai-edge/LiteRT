@@ -125,6 +125,7 @@ cc_library(
         "//tflite/kernels:kernel_util",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:status",

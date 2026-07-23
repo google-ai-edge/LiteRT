@@ -16,16 +16,16 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <memory>
-#include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -43,7 +43,6 @@
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-#include "litert/c/options/litert_gpu_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "ml_drift_delegate/delegate/delegate_kernel.h"
@@ -51,7 +50,6 @@
 #include "ml_drift_delegate/delegate/gpu_backend.h"
 #include "ml_drift_delegate/tflite/model_builder_helper.h"
 #include "tflite/core/c/common.h"
-// copybara:uncomment #include "util/task/status_macros.h"
 
 namespace litert::ml_drift {
 namespace {
@@ -79,7 +77,7 @@ absl::StatusOr<::ml_drift::TensorDescriptor> CreateTensorDescriptor(
           : ::ml_drift::CreateBhwcTensorDescriptor(
                 data_type, storage_type,
                 ::ml_drift::BHWC(shape.b, shape.h, shape.w, shape.c));
-  RETURN_IF_ERROR(tensor_desc.UpdateToSupportedStorageType(
+  ABSL_RETURN_IF_ERROR(tensor_desc.UpdateToSupportedStorageType(
       gpu_info, tensor_desc.GetBHWCShape()));
   return tensor_desc;
 }
@@ -166,9 +164,9 @@ absl::StatusOr<DelegateKernelLiteRt*> DelegateKernelLiteRt::Create(
   auto delegate_kernel = std::make_unique<DelegateKernelLiteRt>(
       delegate_data->options->runtime_context);
 
-  RETURN_IF_ERROR(delegate_kernel->Initialize(context, delegate_params));
+  ABSL_RETURN_IF_ERROR(delegate_kernel->Initialize(context, delegate_params));
   if (delegate_kernel->NoExternalTensorsMode()) {
-    RETURN_IF_ERROR(delegate_kernel->InitTensorConverters(context));
+    ABSL_RETURN_IF_ERROR(delegate_kernel->InitTensorConverters(context));
   }
 
   delegate_kernel->buffer_context_ =
@@ -186,11 +184,13 @@ absl::Status DelegateKernelLiteRt::BindGpuMemoryToInferenceContext(
   auto it = tensors.find(gpu_memory);
   if (it != tensors.end()) {
     auto* gpu_tensor = it->second.get();
-    RETURN_IF_ERROR(ctx_->BindSpatialTensor(tensor_id, &gpu_tensor->Get()));
+    ABSL_RETURN_IF_ERROR(
+        ctx_->BindSpatialTensor(tensor_id, &gpu_tensor->Get()));
   } else {
-    ASSIGN_OR_RETURN(auto gpu_tensor, backend_->CreateTensorWrapper(
-                                          tensor_desc, gpu_memory));
-    RETURN_IF_ERROR(ctx_->BindSpatialTensor(tensor_id, &gpu_tensor->Get()));
+    ABSL_ASSIGN_OR_RETURN(auto gpu_tensor, backend_->CreateTensorWrapper(
+                                               tensor_desc, gpu_memory));
+    ABSL_RETURN_IF_ERROR(
+        ctx_->BindSpatialTensor(tensor_id, &gpu_tensor->Get()));
     tensors[gpu_memory] = std::move(gpu_tensor);
   }
   return absl::OkStatus();
@@ -220,7 +220,7 @@ absl::Status DelegateKernelLiteRt::BindTensorBuffers(TfLiteContext* context) {
     LITERT_ASSIGN_OR_RETURN(
         auto gpu_memory, backend_->GetGpuMemoryAllocated(*tensor_buffer),
         _ << absl::StrCat("Input#", i, " tensor does not have a GPU Memory."));
-    RETURN_IF_ERROR(BindGpuMemoryToInferenceContext(
+    ABSL_RETURN_IF_ERROR(BindGpuMemoryToInferenceContext(
         input_ids_[i], input_tensor_descriptors_[i], gpu_memory,
         input_tensors_));
   }
@@ -237,7 +237,7 @@ absl::Status DelegateKernelLiteRt::BindTensorBuffers(TfLiteContext* context) {
     LITERT_ASSIGN_OR_RETURN(
         auto gpu_memory, backend_->GetGpuMemoryAllocated(*tensor_buffer),
         _ << absl::StrCat("Output#", i, " tensor does not have a GPU Memory."));
-    RETURN_IF_ERROR(BindGpuMemoryToInferenceContext(
+    ABSL_RETURN_IF_ERROR(BindGpuMemoryToInferenceContext(
         output_ids_[i], output_tensor_descriptors_[i], gpu_memory,
         output_tensors_));
   }
@@ -311,7 +311,7 @@ absl::Status DelegateKernelLiteRt::UploadOrBindTensorBuffer(
     if (external_tensor_ids_.contains(output_ids_[i])) {
       // Use direct Tensor binding for external tensors even with no external
       // tensors mode.
-      RETURN_IF_ERROR(BindGpuMemoryToInferenceContext(
+      ABSL_RETURN_IF_ERROR(BindGpuMemoryToInferenceContext(
           output_ids_[i], output_tensor_descriptors_[i], gpu_memory,
           output_tensors_));
     }
@@ -325,25 +325,28 @@ absl::Status DelegateKernelLiteRt::UploadOrBindTensorBuffer(
   }
 
   // PreConvert after all inputs and outputs are registered.
-  RETURN_IF_ERROR(ctx_->PreConvert(/*input=*/true));
+  ABSL_RETURN_IF_ERROR(ctx_->PreConvert(/*input=*/true));
 
   // Enqueue conversion kernels for inputs.
   for (const auto& [i, gpu_memory] : prep_infos) {
     if (external_tensor_ids_.contains(input_ids_[i])) {
       // Use direct Tensor binding for external tensors even with no external
       // tensors mode.
-      RETURN_IF_ERROR(BindGpuMemoryToInferenceContext(
+      ABSL_RETURN_IF_ERROR(BindGpuMemoryToInferenceContext(
           input_ids_[i], input_tensor_descriptors_[i], gpu_memory,
           input_tensors_));
     } else {
       // Normal GPU to GPU copy for no external tensors mode.
-      ASSIGN_OR_RETURN(auto src_buffer, backend_->CreateIOBuffer(gpu_memory));
-      ASSIGN_OR_RETURN(auto dst_tensor, ctx_->GetSpatialTensor(input_ids_[i]));
-      RETURN_IF_ERROR(input_converters_[i]->Convert(*src_buffer, *dst_tensor));
+      ABSL_ASSIGN_OR_RETURN(auto src_buffer,
+                            backend_->CreateIOBuffer(gpu_memory));
+      ABSL_ASSIGN_OR_RETURN(auto dst_tensor,
+                            ctx_->GetSpatialTensor(input_ids_[i]));
+      ABSL_RETURN_IF_ERROR(
+          input_converters_[i]->Convert(*src_buffer, *dst_tensor));
     }
   }
 
-  RETURN_IF_ERROR(ctx_->PostConvert(/*input=*/true));
+  ABSL_RETURN_IF_ERROR(ctx_->PostConvert(/*input=*/true));
   return absl::OkStatus();
 }
 
@@ -375,15 +378,18 @@ absl::Status DelegateKernelLiteRt::DownloadGpuMemoryToTensorBufferGpuMemory(
     prep_infos.push_back({i, gpu_memory});
   }
 
-  RETURN_IF_ERROR(ctx_->PreConvert(/*input=*/false));
+  ABSL_RETURN_IF_ERROR(ctx_->PreConvert(/*input=*/false));
 
   // Enqueue conversion kernels for outputs.
   for (const auto& [i, gpu_memory] : prep_infos) {
-    ASSIGN_OR_RETURN(auto dst_buffer, backend_->CreateIOBuffer(gpu_memory));
-    ASSIGN_OR_RETURN(auto src_tensor, ctx_->GetSpatialTensor(output_ids_[i]));
-    RETURN_IF_ERROR(output_converters_[i]->Convert(*src_tensor, *dst_buffer));
+    ABSL_ASSIGN_OR_RETURN(auto dst_buffer,
+                          backend_->CreateIOBuffer(gpu_memory));
+    ABSL_ASSIGN_OR_RETURN(auto src_tensor,
+                          ctx_->GetSpatialTensor(output_ids_[i]));
+    ABSL_RETURN_IF_ERROR(
+        output_converters_[i]->Convert(*src_tensor, *dst_buffer));
   }
-  RETURN_IF_ERROR(ctx_->PostConvert(/*input=*/false));
+  ABSL_RETURN_IF_ERROR(ctx_->PostConvert(/*input=*/false));
 
   return absl::OkStatus();
 }
@@ -402,9 +408,9 @@ absl::Status DelegateKernelLiteRt::RegisterLiteRtBufferRequirements(
       storage_dims[0] * tensor_desc.GetElementSize() * SizeOf(data_type);
 
   LiteRtTensorBufferRequirements gpu_buffer_requirements;
-  ASSIGN_OR_RETURN(auto requirements,
-                   backend_->GetGpuBufferRequirements(
-                       used_storage_type, tensor_desc.GetDataType()));
+  ABSL_ASSIGN_OR_RETURN(auto requirements,
+                        backend_->GetGpuBufferRequirements(
+                            used_storage_type, tensor_desc.GetDataType()));
   LITERT_RETURN_IF_ERROR(runtime_context_->create_tensor_buffer_requirements(
       requirements.buffer_types.size(), requirements.buffer_types.data(),
       required_data_size, requirements.strides.size(),
@@ -423,8 +429,9 @@ absl::Status DelegateKernelLiteRt::
         TfLiteTensor* tflite_tensor) {
   size_t required_data_size = tflite_tensor->bytes;
   LiteRtTensorBufferRequirements gpu_buffer_requirements;
-  ASSIGN_OR_RETURN(auto requirements,
-                   backend_->GetGpuBufferRequirementsForNonExternalTensors());
+  ABSL_ASSIGN_OR_RETURN(
+      auto requirements,
+      backend_->GetGpuBufferRequirementsForNonExternalTensors());
   LITERT_RETURN_IF_ERROR(runtime_context_->create_tensor_buffer_requirements(
       requirements.buffer_types.size(), requirements.buffer_types.data(),
       required_data_size, requirements.strides.size(),
@@ -449,7 +456,7 @@ absl::Status DelegateKernelLiteRt::UpdateCreateInfoWithExternalTensors(
   output_tensor_descriptors_.resize(outputs.size());
 
   // Create processing context to pass common data to helper methods
-  ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
+  ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
   TensorProcessingContext proc_context{.buffer_context = buffer_context,
                                        .gpu_info = gpu_info,
                                        .create_info = create_info};
@@ -463,16 +470,17 @@ absl::Status DelegateKernelLiteRt::UpdateCreateInfoWithExternalTensors(
     if (IsExternalSharedConstantTensor(input->id)) {
       continue;
     }
-    RETURN_IF_ERROR(ProcessTensor(context, input, i, proc_context,
-                                  no_external_mode, input_tensor_descriptors_));
+    ABSL_RETURN_IF_ERROR(ProcessTensor(context, input, i, proc_context,
+                                       no_external_mode,
+                                       input_tensor_descriptors_));
   }
 
   // Process output tensors
   for (int i = 0; i < outputs.size(); ++i) {
     auto& output = outputs[i];
-    RETURN_IF_ERROR(ProcessTensor(context, output, i, proc_context,
-                                  no_external_mode,
-                                  output_tensor_descriptors_));
+    ABSL_RETURN_IF_ERROR(ProcessTensor(context, output, i, proc_context,
+                                       no_external_mode,
+                                       output_tensor_descriptors_));
   }
 
   return absl::OkStatus();
@@ -487,7 +495,7 @@ absl::Status DelegateKernelLiteRt::ProcessTensor(
 
   // Special handling for NoExternalTensorsMode with non-external tensors
   if (no_external_tensor_mode && !IsExternalTensorName(tflite_tensor->name)) {
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         RegisterLiteRtBufferRequirementsNonImmutableExternalTensorsMode(
             proc_context.buffer_context, tflite_tensor));
   } else {
@@ -495,7 +503,7 @@ absl::Status DelegateKernelLiteRt::ProcessTensor(
     if (no_external_tensor_mode) {
       external_tensor_ids_.insert(value->id);
     }
-    ASSIGN_OR_RETURN(
+    ABSL_ASSIGN_OR_RETURN(
         ::ml_drift::TensorDescriptor tensor_desc,
         CreateTensorDescriptor(proc_context.gpu_info, value->tensor,
                                delegate_data_->calculation_precision,
@@ -507,7 +515,7 @@ absl::Status DelegateKernelLiteRt::ProcessTensor(
 
     proc_context.create_info.external_mutable_tensors.try_emplace(value->id,
                                                                   tensor_desc);
-    RETURN_IF_ERROR(RegisterLiteRtBufferRequirements(
+    ABSL_RETURN_IF_ERROR(RegisterLiteRtBufferRequirements(
         proc_context.buffer_context, tflite_tensor, tensor_desc,
         tensor_storage_type));
   }
@@ -597,7 +605,7 @@ absl::Status DelegateKernelLiteRt::HandleOutputEvents(
         GetTensorBuffer(runtime_context_, buffer_context_, tflite_tensor),
         _ << "TensorBuffer is not registered for output#" << i << " tensor T#"
           << output_indices_[i] << ".");
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         backend_->AssociateGpuEvent(*post_dispatch_event, env, tensor_buffer));
   }
   return absl::OkStatus();
@@ -626,7 +634,8 @@ absl::Status DelegateKernelLiteRt::DownloadGpuMemoryToCpuMemory(
       if (tflite_tensor->bytes != buffer_size) {
         ABSL_LOG_FIRST_N(WARNING, 10)
             << "TFLite tensor size (" << tflite_tensor->bytes
-            << ") is different from LiteRT buffer size (" << buffer_size << ").";
+            << ") is different from LiteRT buffer size (" << buffer_size
+            << ").";
       }
       std::memcpy(tflite_tensor->data.raw, host_memory, bytes_to_copy);
       LITERT_RETURN_IF_ERROR(
@@ -664,7 +673,8 @@ absl::Status DelegateKernelLiteRt::InitTensorConverters(
         external_tensor_ids_.contains(input_ids_[i])) {
       continue;
     }
-    ASSIGN_OR_RETURN(auto gpu_tensor, ctx_->GetSpatialTensor(input_ids_[i]));
+    ABSL_ASSIGN_OR_RETURN(auto gpu_tensor,
+                          ctx_->GetSpatialTensor(input_ids_[i]));
     TfLiteTensor* tflite_tensor = &context->tensors[input_indices_[i]];
     ::ml_drift::BufferDescriptor src_desc;
     src_desc.element_type = ToDataType(tflite_tensor->type);
@@ -673,9 +683,9 @@ absl::Status DelegateKernelLiteRt::InitTensorConverters(
     }
     src_desc.element_size = 1;
     src_desc.memory_type = ::ml_drift::MemoryType::GLOBAL;
-    ASSIGN_OR_RETURN(input_converters_[i],
-                     backend_->CreateBuffer2TensorConverter(
-                         src_desc, gpu_tensor->GetDescriptor()));
+    ABSL_ASSIGN_OR_RETURN(input_converters_[i],
+                          backend_->CreateBuffer2TensorConverter(
+                              src_desc, gpu_tensor->GetDescriptor()));
   }
 
   output_converters_.resize(output_indices_.size());
@@ -683,7 +693,8 @@ absl::Status DelegateKernelLiteRt::InitTensorConverters(
     if (external_tensor_ids_.contains(output_ids_[i])) {
       continue;
     }
-    ASSIGN_OR_RETURN(auto gpu_tensor, ctx_->GetSpatialTensor(output_ids_[i]));
+    ABSL_ASSIGN_OR_RETURN(auto gpu_tensor,
+                          ctx_->GetSpatialTensor(output_ids_[i]));
     TfLiteTensor* tflite_tensor = &context->tensors[output_indices_[i]];
     ::ml_drift::BufferDescriptor dst_desc;
     dst_desc.element_type = ToDataType(tflite_tensor->type);
@@ -692,9 +703,9 @@ absl::Status DelegateKernelLiteRt::InitTensorConverters(
     }
     dst_desc.element_size = 1;
     dst_desc.memory_type = ::ml_drift::MemoryType::GLOBAL;
-    ASSIGN_OR_RETURN(output_converters_[i],
-                     backend_->CreateTensor2BufferConverter(
-                         gpu_tensor->GetDescriptor(), dst_desc));
+    ABSL_ASSIGN_OR_RETURN(output_converters_[i],
+                          backend_->CreateTensor2BufferConverter(
+                              gpu_tensor->GetDescriptor(), dst_desc));
   }
 
   return absl::OkStatus();

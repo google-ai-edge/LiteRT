@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
@@ -77,7 +78,8 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     const std::vector<::ml_drift::Value*>& outputs,
     const ::ml_drift::Node& node, ::ml_drift::GpuModelBuilder* model_builder) {
   if (node.operation.type == kAddValuesToCacheType) {
-    ASSIGN_OR_RETURN(auto op, CreateAddValuesToCacheFromNode(op_def, node));
+    ABSL_ASSIGN_OR_RETURN(auto op,
+                          CreateAddValuesToCacheFromNode(op_def, node));
     std::vector<::ml_drift::ValueId> src_ids(inputs.size());
     for (int i = 0; i < inputs.size(); ++i) {
       src_ids[i] = inputs[i]->id;

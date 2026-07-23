@@ -27,6 +27,7 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
@@ -103,15 +104,16 @@ absl::Status CreateClContext(const ml_drift::cl::CLDevice& device,
                              ml_drift::cl::CLContext* context) {
 #if LITERT_HAS_OPENGL_SUPPORT
   if (IsGlSharingSupported(device)) {
-    RETURN_IF_ERROR(ml_drift::cl::CreateCLGLContext(
+    ABSL_RETURN_IF_ERROR(ml_drift::cl::CreateCLGLContext(
         device, reinterpret_cast<cl_context_properties>(egl_context),
         reinterpret_cast<cl_context_properties>(egl_display), context,
         options));
   } else {
-    RETURN_IF_ERROR(ml_drift::cl::CreateCLContext(device, context, options));
+    ABSL_RETURN_IF_ERROR(
+        ml_drift::cl::CreateCLContext(device, context, options));
   }
 #else
-  RETURN_IF_ERROR(ml_drift::cl::CreateCLContext(device, context, options));
+  ABSL_RETURN_IF_ERROR(ml_drift::cl::CreateCLContext(device, context, options));
 #endif  // LITERT_HAS_OPENGL_SUPPORT
   return absl::OkStatus();
 }
@@ -131,8 +133,8 @@ absl::StatusOr<std::unique_ptr<ml_drift::cl::Environment>> CreateClEnvironment(
     ml_drift::cl::CLCommandQueue queue,
     const ml_drift::cl::CLCommandQueueOptions& queue_options) {
   ml_drift::cl::ProfilingCommandQueue profiling_queue;
-  RETURN_IF_ERROR(CreateProfilingCommandQueue(device, context, &profiling_queue,
-                                              queue_options));
+  ABSL_RETURN_IF_ERROR(CreateProfilingCommandQueue(
+      device, context, &profiling_queue, queue_options));
 
   return std::make_unique<ml_drift::cl::Environment>(
       std::move(device), std::move(context), std::move(queue),
@@ -245,7 +247,7 @@ absl::StatusOr<DelegateEnvironment*> GetOrCreateDelegateEnvironment(
   // Handle EGL environment.
   {
 #if LITERT_HAS_OPENGL_SUPPORT
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         ml_drift::gl::EglEnvironment::NewEglEnvironment(&resources->egl_env));
     resources->egl_context = resources->egl_env->context().context();
     resources->egl_display = resources->egl_env->display();
@@ -255,15 +257,15 @@ absl::StatusOr<DelegateEnvironment*> GetOrCreateDelegateEnvironment(
   // Handle CL environment.
   {
     ml_drift::cl::CLDevice device;
-    RETURN_IF_ERROR(ml_drift::cl::CreateDefaultGPUDevice(&device));
+    ABSL_RETURN_IF_ERROR(ml_drift::cl::CreateDefaultGPUDevice(&device));
 
     ml_drift::cl::CLContext context;
-    RETURN_IF_ERROR(CreateClContext(device, context_options,
-                                    resources->egl_context,
-                                    resources->egl_display, &context));
+    ABSL_RETURN_IF_ERROR(CreateClContext(device, context_options,
+                                         resources->egl_context,
+                                         resources->egl_display, &context));
 
     ml_drift::cl::CLCommandQueue queue;
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         CreateCLCommandQueue(device, context, &queue, queue_options));
 
     LITERT_ASSIGN_OR_RETURN(

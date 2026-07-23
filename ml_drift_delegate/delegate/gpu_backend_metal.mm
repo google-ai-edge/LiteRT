@@ -221,8 +221,8 @@ absl::StatusOr<std::unique_ptr<GpuInferenceContext>> GpuBackendMetal::CreateInfe
     std::vector<uint8_t>* serialized_model, bool may_share_memory_manager) {
   auto ctx = std::make_unique<GpuInferenceContextMetal>(
       this, may_share_memory_manager ? &memory_manager_ : nullptr);
-  RETURN_IF_ERROR(ctx->metal_ctx().InitFromGpuModel(create_info, &gpu_model, device_->device(),
-                                                    serialized_model));
+  ABSL_RETURN_IF_ERROR(ctx->metal_ctx().InitFromGpuModel(create_info, &gpu_model, device_->device(),
+                                                         serialized_model));
   if (@available(macOS 15.0, iOS 18.0, *)) {
     PopulateResidencySet(create_info, ctx->metal_ctx());
   }
@@ -233,7 +233,7 @@ absl::StatusOr<std::unique_ptr<GpuInferenceContext>> GpuBackendMetal::RestoreInf
     const ::ml_drift::CreateGpuModelInfo& create_info,
     const absl::Span<const uint8_t> serialized_model) {
   auto ctx = std::make_unique<GpuInferenceContextMetal>(this, &memory_manager_);
-  RETURN_IF_ERROR(
+  ABSL_RETURN_IF_ERROR(
       ctx->metal_ctx().RestoreDeserialized(serialized_model, device_->device(), &create_info));
   if (@available(macOS 15.0, iOS 18.0, *)) {
     PopulateResidencySet(create_info, ctx->metal_ctx());
@@ -295,10 +295,10 @@ absl::StatusOr<std::unique_ptr<GpuTensorWrapper>> GpuBackendMetal::CreateTensorW
   const ::ml_drift::metal::MetalSpatialTensor* metal_spatial_tensor =
       reinterpret_cast<::ml_drift::metal::MetalSpatialTensor*>(gpu_memory);
   if (metal_spatial_tensor->GetBufferHandle() != nullptr) {
-    RETURN_IF_ERROR(::ml_drift::metal::CreateTensorSharedBuffer(
+    ABSL_RETURN_IF_ERROR(::ml_drift::metal::CreateTensorSharedBuffer(
         metal_spatial_tensor->GetBufferHandle(), desc, &metal_tensor->metal_tensor()));
   } else if (metal_spatial_tensor->GetTextureHandle() != nullptr) {
-    RETURN_IF_ERROR(::ml_drift::metal::CreateTensorSharedTexture(
+    ABSL_RETURN_IF_ERROR(::ml_drift::metal::CreateTensorSharedTexture(
         metal_spatial_tensor->GetTextureHandle(), desc, &metal_tensor->metal_tensor()));
   } else {
     return absl::InvalidArgumentError("MetalSpatialTensor has no buffer and texture handle.");
@@ -317,7 +317,7 @@ absl::Status GpuBackendMetal::UpdateSpatialTensor(::ml_drift::GpuSpatialTensor* 
                                                   const ::ml_drift::TensorDescriptor& desc,
                                                   size_t page_adjusted_offset,
                                                   ReleaseDataCallback release_data_callback) {
-  RETURN_IF_ERROR(ReleaseSpatialTensorMemory(tensor));
+  ABSL_RETURN_IF_ERROR(ReleaseSpatialTensorMemory(tensor));
 
   auto* metal_tensor = static_cast<::ml_drift::metal::MetalSpatialTensor*>(tensor);
 
@@ -371,7 +371,7 @@ absl::StatusOr<std::unique_ptr<GpuIOBuffer>> GpuBackendMetal::CreateIOBuffer(
 absl::StatusOr<std::unique_ptr<GpuIOBuffer>> GpuBackendMetal::CreateIOBufferWithSize(
     ::ml_drift::DataType data_type, size_t size, bool input) {
   ::ml_drift::metal::Buffer buffer;
-  RETURN_IF_ERROR(
+  ABSL_RETURN_IF_ERROR(
       ::ml_drift::metal::CreateBuffer(size, /*data=*/nullptr, device_->device(), &buffer));
   return std::make_unique<GpuIOBufferMetal>(this, std::move(buffer));
 }
@@ -380,7 +380,7 @@ absl::StatusOr<std::unique_ptr<Tensor2BufferConverter>>
 GpuBackendMetal::CreateTensor2BufferConverter(const ::ml_drift::TensorDescriptor& src_desc,
                                               const ::ml_drift::BufferDescriptor& dst_desc) {
   auto converter = std::make_unique<::ml_drift::metal::TensorToBHWCBufferConverter>();
-  RETURN_IF_ERROR(converter->Init(device_, src_desc, dst_desc.element_type));
+  ABSL_RETURN_IF_ERROR(converter->Init(device_, src_desc, dst_desc.element_type));
   return std::make_unique<Tensor2BufferConverterMetal>(this, std::move(converter));
 }
 
@@ -388,7 +388,7 @@ absl::StatusOr<std::unique_ptr<Buffer2TensorConverter>>
 GpuBackendMetal::CreateBuffer2TensorConverter(const ::ml_drift::BufferDescriptor& src_desc,
                                               const ::ml_drift::TensorDescriptor& dst_desc) {
   auto converter = std::make_unique<::ml_drift::metal::BHWCBufferToTensorConverter>();
-  RETURN_IF_ERROR(converter->Init(device_, src_desc.element_type, dst_desc));
+  ABSL_RETURN_IF_ERROR(converter->Init(device_, src_desc.element_type, dst_desc));
   return std::make_unique<Buffer2TensorConverterMetal>(this, std::move(converter));
 }
 
@@ -406,7 +406,7 @@ absl::StatusOr<::ml_drift::GpuSpatialTensor*> GpuInferenceContextMetal::GetSpati
 
 absl::Status GpuInferenceContextMetal::BindSpatialTensor(::ml_drift::ValueId tensor_id,
                                                          ::ml_drift::GpuSpatialTensor* tensor) {
-  RETURN_IF_ERROR(
+  ABSL_RETURN_IF_ERROR(
       ctx_->SetTensor(tensor_id, static_cast<::ml_drift::metal::MetalSpatialTensor*>(tensor)));
   if (@available(macOS 15.0, iOS 18.0, *)) {
     id<MTLResidencySet> res_set = backend_->residency_set();
@@ -503,7 +503,7 @@ absl::Status GpuInferenceContextMetal::PostConvert(bool input) {
 
   // If output conversion is done, waits for conversion to finish.
   if (!input) {
-    RETURN_IF_ERROR(backend_->WaitForCompletion());
+    ABSL_RETURN_IF_ERROR(backend_->WaitForCompletion());
   }
 
   return absl::OkStatus();

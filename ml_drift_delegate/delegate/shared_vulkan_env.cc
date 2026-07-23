@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/syrtis/command_buffer.h"  // from @ml_drift
@@ -42,7 +43,7 @@ SharedVulkanEnv::~SharedVulkanEnv() {
 absl::StatusOr<::ml_drift::syrtis::CommandBuffer*>
 SharedVulkanEnv::GetCommandBuffer(bool new_command_pool) {
   if (!current_command_buffer_) {
-    ASSIGN_OR_RETURN(
+    ABSL_ASSIGN_OR_RETURN(
         current_command_buffer_,
         ::ml_drift::syrtis::CreateOneUseCommandBuffer(
             vulkan_env_.GetDevice(), vulkan_env_.GetQueue().QueueFamilyIndex(),
@@ -54,12 +55,12 @@ SharedVulkanEnv::GetCommandBuffer(bool new_command_pool) {
 absl::Status SharedVulkanEnv::SubmitCommandBuffer(bool wait_for_completion) {
   if (current_command_buffer_) {
     pending_command_buffers_.push_back(std::move(current_command_buffer_));
-    RETURN_IF_ERROR(vulkan_env_.GetQueue().WithQueue([&](VkQueue queue) {
+    ABSL_RETURN_IF_ERROR(vulkan_env_.GetQueue().WithQueue([&](VkQueue queue) {
       return pending_command_buffers_.back().AddToQueue(queue,
                                                         wait_for_completion);
     }));
   } else if (wait_for_completion && !pending_command_buffers_.empty()) {
-    RETURN_IF_ERROR(vulkan_env_.GetQueue().WithQueue([](VkQueue queue) {
+    ABSL_RETURN_IF_ERROR(vulkan_env_.GetQueue().WithQueue([](VkQueue queue) {
       return VkResultToStatus(vkQueueWaitIdle(queue));
     }));
   }

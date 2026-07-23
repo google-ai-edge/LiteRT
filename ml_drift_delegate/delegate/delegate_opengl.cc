@@ -29,6 +29,7 @@
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/status.h"  // from @ml_drift
@@ -115,7 +116,7 @@ absl::StatusOr<DelegateEnvironment*> GetOrCreateDelegateEnvironment(
 
     // Initialize egl_env using NewEglEnvironment. If there is a current EGL
     // context on this thread, NewEglEnvironment will adopt it.
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         ml_drift::gl::EglEnvironment::NewEglEnvironment(&resources->egl_env));
 
     // Verify that the acquired EGL context and display match the ones requested
@@ -168,7 +169,7 @@ absl::StatusOr<DelegateEnvironment*> GetOrCreateDelegateEnvironment(
 
   // Handle EGL environment.
   {
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         ml_drift::gl::EglEnvironment::NewEglEnvironment(&resources->egl_env));
     resources->egl_context = reinterpret_cast<LiteRtEglContext>(
         resources->egl_env->context().context());

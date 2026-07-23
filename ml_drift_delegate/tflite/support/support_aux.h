@@ -22,6 +22,7 @@
 
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/status.h"  // from @ml_drift
@@ -111,7 +112,7 @@ inline absl::Status CheckPopulateTensor(
           "quant_params->zero_point must not be null for quantized tensors.");
     }
   } else if constexpr (Type != ::ml_drift::DataType::FLOAT32) {
-    RETURN_IF_ERROR(CheckAllDimensions<ShapeT>(tflite_tensor->dims));
+    ABSL_RETURN_IF_ERROR(CheckAllDimensions<ShapeT>(tflite_tensor->dims));
     if (enable_spanned_weights) {
       return absl::InvalidArgumentError(
           absl::StrCat("Unsupported type for zero-copy: ", ToString(Type)));

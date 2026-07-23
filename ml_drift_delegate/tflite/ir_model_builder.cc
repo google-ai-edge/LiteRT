@@ -762,7 +762,7 @@ absl::Status BuildFromFlatBuffer(const ::tflite::FlatBufferModel& flatbuffer,
   // Transform and optimize the IR graph.
   // This could include op fusion, dead code elimination, layout changes, etc.
   if (options.apply_model_transformations) {
-    RETURN_IF_ERROR(::ml_drift::ir::TransformIrModel(ir_model));
+    ABSL_RETURN_IF_ERROR(::ml_drift::ir::TransformIrModel(ir_model));
   }
   return absl::OkStatus();
 }
