@@ -32,6 +32,7 @@ package_group(
     name = "friends",
     packages = [
         "//litert/...",
+        "//platforms/mtpu/tpug2/hippa/...",
         "//tflite/python/...",
         "//tflite/python/converter/...",
         "//tflite/toco/...",
