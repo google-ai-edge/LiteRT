@@ -38,6 +38,8 @@ MlDriftDelegatePrecision GetMlDriftPrecision(
       return kFp16;
     case kLiteRtDelegatePrecisionFp32:
       return kFp32;
+    case kLiteRtDelegatePrecisionFp16WithFp32Accum:
+      return kFp16;
   }
 }
 
@@ -125,6 +127,9 @@ LiteRtStatus CreateDelegate(
 
     gpu_delegate_options->precision =
         ::litert::ml_drift::GetMlDriftPrecision(litert_delegate_precision);
+    gpu_delegate_options->use_f32_accum_for_fp16 =
+        litert_delegate_precision ==
+        kLiteRtDelegatePrecisionFp16WithFp32Accum;
 
     LiteRtDelegateBufferStorageType litert_delegate_buffer_storage_type =
         kLiteRtDelegateBufferStorageTypeDefault;

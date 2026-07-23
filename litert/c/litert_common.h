@@ -332,6 +332,11 @@ typedef enum {
   kLiteRtDelegatePrecisionDefault = 0,
   kLiteRtDelegatePrecisionFp16 = 1,
   kLiteRtDelegatePrecisionFp32 = 2,
+  // FP16 storage and arithmetic with FP32 accumulation where supported.
+  // Currently the option is only for the GPU backend and only impacts the
+  // CONV_2D, DEPTHWISE_CONV_2D, FULLY_CONNECTED, TRANSPOSE_CONV and
+  // BATCH_MAT_MUL operators and any stablehlo composite op that uses them.
+  kLiteRtDelegatePrecisionFp16WithFp32Accum = 3,
 } LiteRtDelegatePrecision;
 
 typedef enum {
