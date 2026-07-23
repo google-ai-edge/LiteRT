@@ -22,6 +22,7 @@ limitations under the License.
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "third_party/gloop/util/status/status_macros.h"
 #include "mlir/IR/MLIRContext.h"  // from @llvm-project
 #include "tflite/converter/common/tfl_pass_config.h"
 #include "tflite/converter/converter_flags.pb.h"
@@ -59,23 +60,23 @@ absl::Status ConvertGraphDefToTFLiteFlatBuffer(
   std::vector<std::optional<double>> node_maxs;
 
   // Populate quantization specs.
-  TF_RETURN_IF_ERROR(internal::PopulateQuantizationSpecs(
+  RETURN_IF_ERROR(internal::PopulateQuantizationSpecs(
       model_flags, converter_flags, &quant_specs, &node_names, &node_dtypes,
       &node_shapes, &node_mins, &node_maxs));
 
-  TF_RETURN_IF_ERROR(
+  RETURN_IF_ERROR(
       ParseInputArrayInfo(node_names, node_dtypes, node_shapes, &specs.inputs));
 
   // Parse output arrays.
   std::vector<std::string> output_arrays(model_flags.output_arrays().begin(),
                                          model_flags.output_arrays().end());
-  TF_RETURN_IF_ERROR(ParseOutputArrayInfo(output_arrays, &specs.outputs));
+  RETURN_IF_ERROR(ParseOutputArrayInfo(output_arrays, &specs.outputs));
 
   // Parse control output arrays.
   std::vector<std::string> control_output_arrays(
       model_flags.control_output_arrays().begin(),
       model_flags.control_output_arrays().end());
-  TF_RETURN_IF_ERROR(
+  RETURN_IF_ERROR(
       ParseOutputArrayInfo(control_output_arrays, &specs.control_outputs));
 
   specs.prune_unused_nodes = true;
@@ -86,13 +87,13 @@ absl::Status ConvertGraphDefToTFLiteFlatBuffer(
   internal::WarningUnusedFlags(model_flags, converter_flags);
 
   // Register all custom ops, including user-specified custom ops.
-  TF_RETURN_IF_ERROR(internal::RegisterAllCustomOps(converter_flags));
+  RETURN_IF_ERROR(internal::RegisterAllCustomOps(converter_flags));
   GraphConstructorOptions options;
   options.allow_internal_ops = true;
   options.upgrade_legacy = specs.upgrade_legacy;
   Graph graph(OpRegistry::Global());
-  TF_RETURN_IF_ERROR(ConvertGraphDefToGraph(options, input, &graph));
-  TF_ASSIGN_OR_RETURN(
+  RETURN_IF_ERROR(ConvertGraphDefToGraph(options, input, &graph));
+  ASSIGN_OR_RETURN(
       auto module,
       tensorflow::tf2xla::v2::ConvertGraphToTfExecutor(
           graph, debug_info, graph.flib_def(), specs, context.get()));
