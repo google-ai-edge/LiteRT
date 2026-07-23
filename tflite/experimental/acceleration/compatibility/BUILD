@@ -14,7 +14,6 @@
 # ==============================================================================
 
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_android_library", "flatbuffer_cc_library", "flatbuffer_java_library")
-load("@org_tensorflow//tensorflow/core/platform:build_config_root.bzl", "tf_gpu_tests_tags")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
@@ -235,8 +234,11 @@ cc_library(
 cc_test(
     name = "gpu_compatibility_test",
     srcs = ["gpu_compatibility_test.cc"],
-    tags = tf_gpu_tests_tags() + [
+    tags = [
+        "gpu",
         "no_cuda_asan",  # TODO(b/181032551).
+        "notsan",
+        "requires-gpu-sm70",
     ],
     deps = [
         ":devicedb_sample",
