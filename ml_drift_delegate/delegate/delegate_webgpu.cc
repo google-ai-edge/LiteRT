@@ -21,7 +21,9 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#if __has_include(<span>)
 #include <span>
+#endif
 #include <string>
 #include <utility>
 
@@ -66,7 +68,7 @@
 #include "tflite/builtin_ops.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/core/c/common.h"
-#include "util/hash/farmhash_fingerprint.h"
+#include "farmhash.h"
 
 using ::litert::ml_drift::DelegateKernelLiteRt;
 using ::litert::ml_drift::MlDriftDelegateData;
@@ -104,7 +106,8 @@ int g_webgpu_pipeline_cache_ref_count
 // Callback called by Dawn native to load cached data if any. The cached data is
 // most likely backend compiled or parsed binaries from WGSL. See
 // https://github.com/search?q=repo%3Agoogle%2Fdawn%20%20DAWN_MAKE_CACHE_REQUEST
-size_t CacheLoad(std::span<const std::byte> key, std::span<std::byte> value) {
+size_t DoCacheLoad(const void* key, size_t key_size, void* value,
+                   size_t value_size) {
   absl::MutexLock lock(g_webgpu_pipeline_cache_mutex);
   if (g_webgpu_pipeline_cache == nullptr) {
     return 0;
@@ -113,18 +116,17 @@ size_t CacheLoad(std::span<const std::byte> key, std::span<std::byte> value) {
   // Reset the ref count to destroy the cache after a few invokes.
   g_webgpu_pipeline_cache_ref_count = kInvokeCountToDestroyWebGpuPipelineCache;
 
-  uint64_t key_hash = farmhash::Fingerprint64(
-      reinterpret_cast<const char*>(key.data()), key.size());
+  uint64_t key_hash =
+      util::Fingerprint64(reinterpret_cast<const char*>(key), key_size);
   return g_webgpu_pipeline_cache->Load(
-      key_hash,
-      absl::MakeSpan(reinterpret_cast<uint8_t*>(value.data()), value.size()));
+      key_hash, absl::MakeSpan(reinterpret_cast<uint8_t*>(value), value_size));
 }
 
 // Callback called by Dawn native to store cached data. The cached data is
 // most likely backend compiled or parsed binaries from WGSL. See
 // https://github.com/search?q=repo%3Agoogle%2Fdawn%20%20DAWN_MAKE_CACHE_REQUEST
-void CacheStore(std::span<const std::byte> key,
-                std::span<const std::byte> data) {
+void DoCacheStore(const void* key, size_t key_size, const void* data,
+                  size_t data_size) {
   absl::MutexLock lock(g_webgpu_pipeline_cache_mutex);
   if (g_webgpu_pipeline_cache == nullptr) {
     return;
@@ -133,13 +135,46 @@ void CacheStore(std::span<const std::byte> key,
   // Reset the ref count to destroy the cache after a few invokes.
   g_webgpu_pipeline_cache_ref_count = kInvokeCountToDestroyWebGpuPipelineCache;
 
-  uint64_t key_hash = farmhash::Fingerprint64(
-      reinterpret_cast<const char*>(key.data()), key.size());
+  uint64_t key_hash =
+      util::Fingerprint64(reinterpret_cast<const char*>(key), key_size);
   g_webgpu_pipeline_cache->Store(
       key_hash,
-      absl::MakeConstSpan(reinterpret_cast<const uint8_t*>(data.data()),
-                          data.size()));
+      absl::MakeConstSpan(reinterpret_cast<const uint8_t*>(data), data_size));
 }
+
+#ifndef __EMSCRIPTEN__
+// Callback adapters for Dawn C API vs C++ std::span API.
+#if __has_include("farmhash.h")
+size_t CacheLoad(const void* key, size_t key_size, void* value,
+                 size_t value_size, void* userdata) {
+  return DoCacheLoad(key, key_size, value, value_size);
+}
+
+void CacheStore(const void* key, size_t key_size, const void* data,
+                size_t data_size, void* userdata) {
+  DoCacheStore(key, key_size, data, data_size);
+}
+
+void AttachCacheCallbacks(wgpu::DawnCacheDeviceDescriptor& desc) {
+  desc.loadDataFunction = &CacheLoad;
+  desc.storeDataFunction = &CacheStore;
+}
+#else   // __has_include("farmhash.h")
+size_t CacheLoad(std::span<const std::byte> key, std::span<std::byte> value) {
+  return DoCacheLoad(key.data(), key.size(), value.data(), value.size());
+}
+
+void CacheStore(std::span<const std::byte> key,
+                std::span<const std::byte> data) {
+  DoCacheStore(key.data(), key.size(), data.data(), data.size());
+}
+
+void AttachCacheCallbacks(wgpu::DawnCacheDeviceDescriptor& desc) {
+  desc.SetDawnLoadCacheDataCallback(&CacheLoad);
+  desc.SetDawnStoreCacheDataCallback(&CacheStore);
+}
+#endif  // __has_include("farmhash.h")
+#endif  // !__EMSCRIPTEN__
 
 // Called by Invoke() to destroy the cache heuristically if it is not used any
 // more to reduce the memory usage.
@@ -219,8 +254,7 @@ std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
         .use_low_power = use_low_power,
         .enable_host_mapped_pointer = enable_host_mapped_pointer};
     wgpu::DawnCacheDeviceDescriptor cache_desc;
-    cache_desc.SetDawnLoadCacheDataCallback(&CacheLoad);
-    cache_desc.SetDawnStoreCacheDataCallback(&CacheStore);
+    AttachCacheCallbacks(cache_desc);
     if (pipeline_cache.IsValid()) {
       absl::MutexLock lock(g_webgpu_pipeline_cache_mutex);
       g_webgpu_pipeline_cache = new litert::ml_drift::WebGpuPipelineCache(

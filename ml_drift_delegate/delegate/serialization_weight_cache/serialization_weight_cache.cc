@@ -21,16 +21,6 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift_delegate/delegate/precision.h"
 #include "tflite/c/common.h"
-#if __has_include("util/hash/farmhash_fingerprint.h")
-#include "util/hash/farmhash_fingerprint.h"
-namespace ml_drift {
-namespace {
-inline uint64_t Fingerprint64(const char* s, size_t len) {
-  return farmhash::Fingerprint64(s, len);
-}
-}  // namespace
-}  // namespace ml_drift
-#elif __has_include("farmhash.h")
 #include "farmhash.h"
 namespace ml_drift {
 namespace {
@@ -39,9 +29,6 @@ inline uint64_t Fingerprint64(const char* s, size_t len) {
 }
 }  // namespace
 }  // namespace ml_drift
-#else
-#error "Farmhash not found"
-#endif
 
 #if defined(_WIN32)
 #include <io.h>

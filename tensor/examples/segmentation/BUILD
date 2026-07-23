@@ -83,7 +83,7 @@ cc_binary(
 #         "@com_google_absl//absl/log:absl_check",
 #         "@com_google_absl//absl/log:absl_log",
 #         "@com_google_absl//absl/types:span",
-#         "@dawn//dawn:dawn_headers",
+#         "@dawn//:dawn_headers",
 #         "@ml_drift//ml_drift/webgpu:execution_environment",
 #         "@ml_drift//ml_drift/webgpu:webgpu_headers",
 #         "//litert/cc:litert_common",
