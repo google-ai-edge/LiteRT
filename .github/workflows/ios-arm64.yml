@@ -99,6 +99,7 @@ jobs:
             "--show_timestamps"
             "--keep_going"
             "--repo_env=USE_PYWRAP_RULES=True"
+            "--config=public_cache"
           )
 
           LITERT_TARGETS=(
