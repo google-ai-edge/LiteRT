@@ -38,6 +38,7 @@ class LitertBuffer : public Buffer {
   ~LitertBuffer() override = default;
 
   const litert::TensorBuffer& tensor_buffer() const { return tensor_buffer_; }
+  litert::TensorBuffer& tensor_buffer() { return tensor_buffer_; }
 
   internal::TypeId GetTypeId() const override {
     return internal::TypeId::Get<LitertBuffer>();

@@ -184,7 +184,7 @@ function litertToTfjsWebGpu(tensor: Tensor): tf.Tensor {
   }
 
   const litertBuffer = tensor.toGpuBuffer();
-  const requiredSizeInBytes = tensor.liteRtTensorBuffer.size();
+  const requiredSizeInBytes = tensor.liteRtTensorHandle.size();
 
   let buffer: GPUBuffer;
   if (litertBuffer.size === requiredSizeInBytes) {

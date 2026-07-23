@@ -32,6 +32,7 @@ import {
   Deletable,
   ElementTypeName,
   LiteRtTensorBuffer,
+  LiteRtTensorHandle,
   TensorBufferType,
   TensorBufferTypeName,
 } from './wasm_binding_types';
@@ -94,6 +95,7 @@ export interface TensorType {
 interface TensorConstructorArgs {
   typedArray?: TypedArray;
   gpuBuffer?: GPUBuffer;
+  liteRtTensorHandle?: LiteRtTensorHandle;
   liteRtTensorBuffer?: LiteRtTensorBuffer;
   shape?: Dimensions;
   dataType?: DType;
@@ -106,12 +108,12 @@ type Arg = TensorConstructorArgs[keyof TensorConstructorArgs];
 function parseData(remainingArgs: Arg[]): {
   typedArray?: TypedArray;
   gpuBuffer?: GPUBuffer;
-  liteRtTensorBuffer?: LiteRtTensorBuffer;
+  liteRtTensorHandle?: LiteRtTensorHandle;
 } {
   const data = remainingArgs.shift();
   const liteRtWasm = getGlobalLiteRt().liteRtWasm;
-  if (data instanceof liteRtWasm.LiteRtTensorBuffer) {
-    return {liteRtTensorBuffer: data};
+  if (data instanceof liteRtWasm.LiteRtTensorHandle) {
+    return {liteRtTensorHandle: data};
   } else if (ArrayBuffer.isView(data)) {
     return {typedArray: data};
   } else if (data instanceof GPUBuffer) {
@@ -187,7 +189,11 @@ function parseArgs(args: Arg[]): TensorConstructorArgs {
  * A tensor that is passed to or from a model.
  */
 export class Tensor implements Deletable, WithEnvironment {
-  readonly liteRtTensorBuffer!: LiteRtTensorBuffer;
+  readonly liteRtTensorHandle!: LiteRtTensorHandle;
+  /** @deprecated Use liteRtTensorHandle instead. */
+  get liteRtTensorBuffer(): LiteRtTensorHandle {
+    return this.liteRtTensorHandle;
+  }
   readonly type: TensorType;
   readonly environment: Environment;
   private deletedInternal = false;
@@ -202,7 +208,7 @@ export class Tensor implements Deletable, WithEnvironment {
     onDelete?: () => void,
   );
   constructor(
-    liteRtTensorBuffer: LiteRtTensorBuffer,
+    liteRtTensorHandle: LiteRtTensorHandle,
     environment?: Environment,
     onDelete?: () => void,
   );
@@ -214,7 +220,7 @@ export class Tensor implements Deletable, WithEnvironment {
     onDelete?: () => void,
   );
   constructor(
-    a: TypedArray | LiteRtTensorBuffer | GPUBuffer,
+    a: TypedArray | LiteRtTensorHandle | LiteRtTensorBuffer | GPUBuffer,
     b?: Dimensions | Environment,
     c?: DType | Environment | (() => void),
     d?: Environment | (() => void),
@@ -223,6 +229,7 @@ export class Tensor implements Deletable, WithEnvironment {
     const {
       typedArray,
       gpuBuffer,
+      liteRtTensorHandle,
       liteRtTensorBuffer,
       shape,
       dataType,
@@ -236,18 +243,19 @@ export class Tensor implements Deletable, WithEnvironment {
     // share the same device. There's no `.device` property on the GPUBuffer.
     this.environment = environment ?? getGlobalLiteRt().getDefaultEnvironment();
 
-    if (liteRtTensorBuffer) {
+    const handle = liteRtTensorHandle ?? liteRtTensorBuffer;
+    if (handle) {
       if (shape) {
         throw new Error(
-          'A LiteRtTensorBuffer cannot be provided with a shape.',
+          'A LiteRtTensorHandle cannot be provided with a shape.',
         );
       }
       if (dataType) {
         throw new Error(
-          'A LiteRtTensorBuffer cannot be provided with a data type.',
+          'A LiteRtTensorHandle cannot be provided with a data type.',
         );
       }
-      this.liteRtTensorBuffer = liteRtTensorBuffer;
+      this.liteRtTensorHandle = handle;
     } else if (gpuBuffer) {
       if (!shape) {
         throw new Error('A GPUBuffer must be provided with a shape.');
@@ -255,14 +263,14 @@ export class Tensor implements Deletable, WithEnvironment {
       if (!dataType) {
         throw new Error('A GPUBuffer must be provided with a data type.');
       }
-      const [liteRtTensorBuffer, webGpuBufferPtr] =
-        webGpuBufferToLiteRtTensorBuffer(
+      const [liteRtTensorHandle, webGpuBufferPtr] =
+        webGpuBufferToLiteRtTensorHandle(
           gpuBuffer,
           shape,
           dataType,
           this.environment,
         );
-      this.liteRtTensorBuffer = liteRtTensorBuffer;
+      this.liteRtTensorHandle = liteRtTensorHandle;
 
       const onDelete = this.onDelete;
       this.onDelete = () => {
@@ -271,7 +279,7 @@ export class Tensor implements Deletable, WithEnvironment {
         onDelete?.();
       };
     } else if (typedArray) {
-      this.liteRtTensorBuffer = typedArrayToLiteRtTensorBuffer(
+      this.liteRtTensorHandle = typedArrayToLiteRtTensorHandle(
         typedArray,
         shape,
         environment,
@@ -280,7 +288,7 @@ export class Tensor implements Deletable, WithEnvironment {
       throw new Error('No data provided to create a Tensor.');
     }
 
-    this.type = liteRtTensorBufferToTensorType(this.liteRtTensorBuffer);
+    this.type = liteRtTensorHandleToTensorType(this.liteRtTensorHandle);
   }
 
   static fromTypedArray(
@@ -297,10 +305,58 @@ export class Tensor implements Deletable, WithEnvironment {
     }
   }
 
+  add(other: Tensor): Tensor {
+    this.ensureNotDeleted();
+    other.ensureNotDeleted();
+    const resultHandle = getGlobalLiteRt().liteRtWasm.add(
+        this.liteRtTensorHandle,
+        other.liteRtTensorHandle,
+    );
+    return new Tensor(resultHandle, this.environment);
+  }
+
+  mul(other: Tensor): Tensor {
+    this.ensureNotDeleted();
+    other.ensureNotDeleted();
+    const resultHandle = getGlobalLiteRt().liteRtWasm.mul(
+        this.liteRtTensorHandle,
+        other.liteRtTensorHandle,
+    );
+    return new Tensor(resultHandle, this.environment);
+  }
+
+  sub(other: Tensor): Tensor {
+    this.ensureNotDeleted();
+    other.ensureNotDeleted();
+    const resultHandle = getGlobalLiteRt().liteRtWasm.sub(
+        this.liteRtTensorHandle,
+        other.liteRtTensorHandle,
+    );
+    return new Tensor(resultHandle, this.environment);
+  }
+
+  div(other: Tensor): Tensor {
+    this.ensureNotDeleted();
+    other.ensureNotDeleted();
+    const resultHandle = getGlobalLiteRt().liteRtWasm.div(
+        this.liteRtTensorHandle,
+        other.liteRtTensorHandle,
+    );
+    return new Tensor(resultHandle, this.environment);
+  }
+
+  relu(): Tensor {
+    this.ensureNotDeleted();
+    const resultHandle = getGlobalLiteRt().liteRtWasm.relu(
+        this.liteRtTensorHandle,
+    );
+    return new Tensor(resultHandle, this.environment);
+  }
+
   async data(): Promise<TypedArray> {
     this.ensureNotDeleted();
     if (
-      this.liteRtTensorBuffer.bufferType().value ===
+      this.liteRtTensorHandle.bufferType().value ===
       TensorBufferType.HOST_MEMORY
     ) {
       return this.toTypedArray();
@@ -314,13 +370,13 @@ export class Tensor implements Deletable, WithEnvironment {
   toTypedArray(): TypedArray {
     this.ensureNotDeleted();
     const liteRtWasm = getGlobalLiteRt().liteRtWasm;
-    if (this.liteRtTensorBuffer.isWebGpuMemory()) {
+    if (this.liteRtTensorHandle.isWebGpuMemory()) {
       throw new Error(
         'Cannot convert a Tensor with WebGPU memory to a TypedArray.',
       );
     }
     if (
-      this.liteRtTensorBuffer.bufferType().value !==
+      this.liteRtTensorHandle.bufferType().value !==
       liteRtWasm.LiteRtTensorBufferType.HOST_MEMORY.value
     ) {
       throw new Error(
@@ -328,13 +384,13 @@ export class Tensor implements Deletable, WithEnvironment {
       );
     }
     if (
-      this.liteRtTensorBuffer.size() !== this.liteRtTensorBuffer.packedSize() ||
-      this.liteRtTensorBuffer.offset() !== 0
+      this.liteRtTensorHandle.size() !== this.liteRtTensorHandle.packedSize() ||
+      this.liteRtTensorHandle.offset() !== 0
     ) {
       throw new Error('Tensors with strides or padding are not yet supported.');
     }
 
-    const rankedTensorType = this.liteRtTensorBuffer.tensorType();
+    const rankedTensorType = this.liteRtTensorHandle.tensorType();
     const elementType = rankedTensorType.elementType();
     const byteWidth = liteRtWasm.liteRtGetByteWidth(elementType);
     rankedTensorType.delete();
@@ -351,13 +407,13 @@ export class Tensor implements Deletable, WithEnvironment {
       );
     }
 
-    const dataPtr = this.liteRtTensorBuffer.lock(
+    const dataPtr = this.liteRtTensorHandle.lock(
       getGlobalLiteRt().liteRtWasm.LiteRtTensorBufferLockMode.READ,
     );
     try {
       const uint8Array = liteRtWasm.HEAPU8.slice(
         dataPtr,
-        dataPtr + this.liteRtTensorBuffer.packedSize(),
+        dataPtr + this.liteRtTensorHandle.packedSize(),
       );
 
       const typedArray = new typedArrayConstructor(
@@ -368,13 +424,13 @@ export class Tensor implements Deletable, WithEnvironment {
 
       return typedArray;
     } finally {
-      this.liteRtTensorBuffer.unlock();
+      this.liteRtTensorHandle.unlock();
     }
   }
 
   getBufferType(): TensorBufferType {
     this.ensureNotDeleted();
-    return this.liteRtTensorBuffer.bufferType().value;
+    return this.liteRtTensorHandle.bufferType().value;
   }
 
   /**
@@ -393,12 +449,12 @@ export class Tensor implements Deletable, WithEnvironment {
   toGpuBuffer(): GPUBuffer {
     this.ensureNotDeleted();
     const liteRtWasm = getGlobalLiteRt().liteRtWasm;
-    if (!this.liteRtTensorBuffer.isWebGpuMemory()) {
+    if (!this.liteRtTensorHandle.isWebGpuMemory()) {
       throw new Error(
         'Cannot convert a Tensor with non-WebGPU memory to a GPUBuffer.',
       );
     }
-    const bufferTypeValue = this.liteRtTensorBuffer.bufferType().value;
+    const bufferTypeValue = this.liteRtTensorHandle.bufferType().value;
     if (
       bufferTypeValue !==
         liteRtWasm.LiteRtTensorBufferType.WEB_GPU_BUFFER.value &&
@@ -413,13 +469,13 @@ export class Tensor implements Deletable, WithEnvironment {
     }
     // TODO: markoristic - Support tensors with strides or padding.
     if (
-      this.liteRtTensorBuffer.size() !== this.liteRtTensorBuffer.packedSize() ||
-      this.liteRtTensorBuffer.offset() !== 0
+      this.liteRtTensorHandle.size() !== this.liteRtTensorHandle.packedSize() ||
+      this.liteRtTensorHandle.offset() !== 0
     ) {
       throw new Error('Tensors with strides or padding are not yet supported.');
     }
 
-    const gpuBufferId = this.liteRtTensorBuffer.getWebGpuBuffer();
+    const gpuBufferId = this.liteRtTensorHandle.getWebGpuBuffer();
     return liteRtWasm.WebGPU.getJsObject(gpuBufferId);
   }
 
@@ -509,7 +565,7 @@ export class Tensor implements Deletable, WithEnvironment {
   }
 
   get bufferType(): TensorBufferType {
-    return this.liteRtTensorBuffer.bufferType().value;
+    return this.liteRtTensorHandle.bufferType().value;
   }
 
   get accelerator(): Accelerator {
@@ -533,18 +589,18 @@ export class Tensor implements Deletable, WithEnvironment {
       return;
     }
     this.deletedInternal = true;
-    this.liteRtTensorBuffer.delete();
+    this.liteRtTensorHandle.delete();
     this.onDelete?.();
   }
 }
 
 /**
- * Get the TensorType of a LiteRtTensorBuffer.
+ * Get the TensorType of a LiteRtTensorHandle.
  */
-function liteRtTensorBufferToTensorType(
-  liteRtTensorBuffer: LiteRtTensorBuffer,
+function liteRtTensorHandleToTensorType(
+  liteRtTensorHandle: LiteRtTensorHandle,
 ): TensorType {
-  const liteRtRankedTensorType = liteRtTensorBuffer.tensorType();
+  const liteRtRankedTensorType = liteRtTensorHandle.tensorType();
   const elementType = liteRtRankedTensorType.elementType();
   const liteRtLayout = liteRtRankedTensorType.layout();
   const dimensions = liteRtLayout.dimensions();
@@ -562,19 +618,19 @@ function liteRtTensorBufferToTensorType(
 }
 
 /**
- * Creates a LiteRtTensorBuffer from a GPUBuffer.
+ * Creates a LiteRtTensorHandle from a GPUBuffer.
  *
- * Returns the LiteRtTensorBuffer and the WebGPU buffer Wasm heap pointer. In
+ * Returns the LiteRtTensorHandle and the WebGPU buffer Wasm heap pointer. In
  * the emscripten implementation, the pointer actually refers to the index of
  * the buffer in the WebGPU module's Internals.jsObjects array, and must be
  * released with `wgpuBufferRelease`.
  */
-function webGpuBufferToLiteRtTensorBuffer(
+function webGpuBufferToLiteRtTensorHandle(
   gpuBuffer: GPUBuffer,
   shape: Dimensions,
   dtype: DType,
   environment: Environment,
-): [LiteRtTensorBuffer, number] {
+): [LiteRtTensorHandle, number] {
   const globalLiteRt = getGlobalLiteRt();
   const liteRtWasm = globalLiteRt.liteRtWasm;
 
@@ -592,8 +648,8 @@ function webGpuBufferToLiteRtTensorBuffer(
 
   const importedGpuBufferPtr = liteRtWasm.WebGPU.importJsBuffer(gpuBuffer);
 
-  const liteRtTensorBuffer =
-    liteRtWasm.LiteRtTensorBuffer.createFromWebGpuBuffer(
+  const liteRtTensorHandle =
+    liteRtWasm.LiteRtTensorHandle.createFromWebGpuBuffer(
       environment.liteRtEnvironment,
       rankedTensorType,
       liteRtWasm.LiteRtTensorBufferType.WEB_GPU_BUFFER_PACKED,
@@ -602,17 +658,17 @@ function webGpuBufferToLiteRtTensorBuffer(
     );
   rankedTensorType.delete();
 
-  return [liteRtTensorBuffer, importedGpuBufferPtr];
+  return [liteRtTensorHandle, importedGpuBufferPtr];
 }
 
 /**
- * Creates a LiteRtTensorBuffer from a TypedArray and optional shape.
+ * Creates a LiteRtTensorHandle from a TypedArray and optional shape.
  */
-function typedArrayToLiteRtTensorBuffer(
+function typedArrayToLiteRtTensorHandle(
   data: TypedArray,
   shape?: Dimensions,
   environment?: Environment,
-): LiteRtTensorBuffer {
+): LiteRtTensorHandle {
   const globalLiteRt = getGlobalLiteRt();
   const liteRtWasm = globalLiteRt.liteRtWasm;
   environment = environment ?? globalLiteRt.getDefaultEnvironment();
@@ -656,8 +712,8 @@ function typedArrayToLiteRtTensorBuffer(
     );
   }
 
-  // Create the LiteRtTensorBuffer.
-  const liteRtTensorBuffer = liteRtWasm.LiteRtTensorBuffer.createManaged(
+  // Create the LiteRtTensorHandle.
+  const liteRtTensorHandle = liteRtWasm.LiteRtTensorHandle.createManaged(
     environment.liteRtEnvironment,
     liteRtWasm.LiteRtTensorBufferType.HOST_MEMORY,
     rankedTensorType,
@@ -665,8 +721,8 @@ function typedArrayToLiteRtTensorBuffer(
   );
   rankedTensorType.delete(); // Delete our copy.
 
-  // Write the data to the LiteRtTensorBuffer.
-  const dataPtr = liteRtTensorBuffer.lock(
+  // Write the data to the LiteRtTensorHandle.
+  const dataPtr = liteRtTensorHandle.lock(
     liteRtWasm.LiteRtTensorBufferLockMode.WRITE,
   );
   try {
@@ -677,8 +733,43 @@ function typedArrayToLiteRtTensorBuffer(
     );
     liteRtWasm.HEAPU8.set(uint8Data, dataPtr);
   } finally {
-    liteRtTensorBuffer.unlock();
+    liteRtTensorHandle.unlock();
   }
 
-  return liteRtTensorBuffer;
+  return liteRtTensorHandle;
+}
+
+/**
+ * Adds two tensors element-wise.
+ */
+export function add(a: Tensor, b: Tensor): Tensor {
+  return a.add(b);
+}
+
+/**
+ * Multiplies two tensors element-wise.
+ */
+export function mul(a: Tensor, b: Tensor): Tensor {
+  return a.mul(b);
+}
+
+/**
+ * Subtracts tensor b from tensor a element-wise.
+ */
+export function sub(a: Tensor, b: Tensor): Tensor {
+  return a.sub(b);
+}
+
+/**
+ * Divides tensor a by tensor b element-wise.
+ */
+export function div(a: Tensor, b: Tensor): Tensor {
+  return a.div(b);
+}
+
+/**
+ * Computes rectified linear unit element-wise.
+ */
+export function relu(a: Tensor): Tensor {
+  return a.relu();
 }

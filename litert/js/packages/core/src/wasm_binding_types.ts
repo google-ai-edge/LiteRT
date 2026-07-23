@@ -188,8 +188,8 @@ export declare interface LiteRtCompiledModel extends Deletable {
       LiteRtTensorBufferRequirements;
   getOutputBufferRequirements(signatureIndex: number, outputIndex: number):
       LiteRtTensorBufferRequirements;
-  run(signatureIndex: number, inputTensors: LiteRtTensorBuffer[]):
-      LiteRtTensorBuffer[]|Promise<LiteRtTensorBuffer[]>;
+  run(signatureIndex: number, inputTensors: LiteRtTensorHandle[]):
+      LiteRtTensorHandle[]|Promise<LiteRtTensorHandle[]>;
   isFullyAccelerated(): boolean;
 }
 
@@ -338,21 +338,21 @@ export type LiteRtTensorBufferLockMode =
     LiteRtTensorBufferLockModeEnum[keyof LiteRtTensorBufferLockModeEnum];
 
 /**
- * The constructor for the C++ litert::TensorBuffer class in Wasm.
+ * The constructor for the C++ litert::tensor::TensorHandle class in Wasm.
  */
-export declare interface LiteRtTensorBufferConstructor {
+export declare interface LiteRtTensorHandleConstructor {
   /**
    * Do not use this constructor. It is only here to allow checking
-   * `instanceof LiteRtTensorBuffer` in TS. Use `createManaged` instead.
+   * `instanceof LiteRtTensorHandle` in TS. Use `createManaged` instead.
    */
-  new(...args: never[]): LiteRtTensorBuffer;
+  new(...args: never[]): LiteRtTensorHandle;
 
   createManaged(
       environment: LiteRtEnvironment,
       bufferType: LiteRtTensorBufferType,
       tensorType: LiteRtRankedTensorType,
       bufferSize: number,
-      ): LiteRtTensorBuffer;
+      ): LiteRtTensorHandle;
 
   createFromWebGpuBuffer(
       environment: LiteRtEnvironment,
@@ -360,13 +360,13 @@ export declare interface LiteRtTensorBufferConstructor {
       tensorBufferType: LiteRtTensorBufferType,
       webGpuBufferPtr: number, /* use wasm.WebGPU.importJsBuffer() */
       size: number,
-      ): LiteRtTensorBuffer;
+      ): LiteRtTensorHandle;
 }
 
 /**
- * An instance of the C++ litert::TensorBuffer class in Wasm.
+ * An instance of the C++ litert::tensor::TensorHandle class in Wasm.
  */
-export declare interface LiteRtTensorBuffer extends Deletable {
+export declare interface LiteRtTensorHandle extends Deletable {
   lock(mode: LiteRtTensorBufferLockMode): number;  // Returns the pointer to the locked buffer.
   unlock(): void;
   bufferType(): LiteRtTensorBufferType;
@@ -377,6 +377,11 @@ export declare interface LiteRtTensorBuffer extends Deletable {
   packedSize(): number;
   offset(): number;
 }
+
+/** @deprecated Use LiteRtTensorHandle instead. */
+export type LiteRtTensorBuffer = LiteRtTensorHandle;
+/** @deprecated Use LiteRtTensorHandleConstructor instead. */
+export type LiteRtTensorBufferConstructor = LiteRtTensorHandleConstructor;
 
 /**
  * Interface for the C++ LiteRt bindings.
@@ -395,7 +400,7 @@ export declare interface LiteRtWasm extends WasmModule {
       options?: LiteRtCompileOptions,
       ): LiteRtCompiledModel|Promise<LiteRtCompiledModel>;
   wgpuBufferRelease(bufferPtr: number): void;
-  LiteRtTensorBuffer: LiteRtTensorBufferConstructor;
+  LiteRtTensorHandle: LiteRtTensorHandleConstructor;
   LiteRtTensorBufferType: LiteRtTensorBufferTypeEnum;
   LiteRtTensorBufferLockMode: LiteRtTensorBufferLockModeEnum;
   LiteRtLayout: LiteRtLayoutConstructor;
@@ -404,13 +409,18 @@ export declare interface LiteRtWasm extends WasmModule {
   liteRtGetByteWidth(elementType: EmscriptenEnumElement<ElementType>): number;
   WebGPU: WasmWebGpuObjectInterface;
   checkTensorBufferCompatible(
-      tensorBuffer: LiteRtTensorBuffer,
+      tensorHandle: LiteRtTensorHandle,
       expectedRankedTensorType: LiteRtRankedTensorType,
       requirements: LiteRtTensorBufferRequirements,
       ): void;
   registerStreamWeightsCallback(callback: Function|undefined): void;
   getStreamWeightsCallback(): Function|undefined;
   getThreadCount(): number;
+  add(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  mul(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  sub(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  div(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  relu(a: LiteRtTensorHandle): LiteRtTensorHandle;
 }
 
 /**
