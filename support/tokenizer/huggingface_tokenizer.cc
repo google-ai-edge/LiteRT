@@ -14,6 +14,8 @@
 
 #include "support/tokenizer/huggingface_tokenizer.h"
 
+#if defined(ENABLE_HUGGINGFACE_TOKENIZER)
+
 #include <cstring>
 #include <memory>
 #include <string>
@@ -107,3 +109,5 @@ int HuggingFaceTokenizer::GetVocabSize() const {
 }
 
 }  // namespace litert::support
+
+#endif  // defined(ENABLE_HUGGINGFACE_TOKENIZER)
