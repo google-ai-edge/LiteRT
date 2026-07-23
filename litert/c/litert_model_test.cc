@@ -22,6 +22,11 @@
 #include <memory>
 #include <string>
 #include <utility>
+#if defined(_WIN32)
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -73,7 +78,6 @@ TEST(LiteRtModelTest, CreateFromAllocation) {
   LiteRtDestroyEnvironment(environment);
 }
 
-#if !defined(LITERT_WINDOWS_OS)
 TEST(LiteRtModelTest, CreateFromFd) {
   if (!tflite::MMAPAllocation::IsSupported()) {
     GTEST_SKIP() << "MMAPAllocation is not supported";
@@ -90,8 +94,17 @@ TEST(LiteRtModelTest, CreateFromFd) {
   LITERT_ASSERT_OK_AND_ASSIGN(size_t model_size, model_file.GetSize());
 
   LiteRtModel model = nullptr;
+#if defined(_WIN32)
+  LITERT_ASSERT_OK_AND_ASSIGN(int fd, model_file.Release());
+  LITERT_ASSERT_OK(
+      LiteRtCreateModelFromFd(environment, fd, 0, model_size, &model));
+  // LiteRtCreateModelFromFd (via MMAPAllocation) duplicates the fd, and
+  // model_file.Release() released ownership, so we must close it.
+  _close(fd);
+#else
   LITERT_ASSERT_OK(LiteRtCreateModelFromFd(environment, model_file.file(), 0,
                                            model_size, &model));
+#endif
   ASSERT_NE(model, nullptr);
 
   LiteRtParamIndex num_subgraphs;
@@ -101,7 +114,6 @@ TEST(LiteRtModelTest, CreateFromFd) {
   LiteRtDestroyModel(model);
   LiteRtDestroyEnvironment(environment);
 }
-#endif  // !defined(LITERT_WINDOWS_OS)
 
 TEST(LiteRtWeightsTest, GetNullWeights) {
   LiteRtWeightsT weights = {};
