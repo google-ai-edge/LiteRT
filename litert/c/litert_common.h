@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_C_LITERT_COMMON_H_
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include "litert/build_common/build_config.h"  // IWYU pragma: keep
 

@@ -22,6 +22,13 @@
 
 LiteRtCompilerContext* LrtGetCompilerContext() {
   static LiteRtCompilerContext ctx = {
+      .abi_header =
+          {
+              .struct_size = sizeof(LiteRtCompilerContext),
+              .major_version = 1,
+              .minor_version = 0,
+              .reserved = 0,
+          },
       .get_num_model_subgraphs = LiteRtGetNumModelSubgraphs,
       .get_model_subgraph = LiteRtGetModelSubgraph,
       .get_num_subgraph_ops = LiteRtGetNumSubgraphOps,
