@@ -18,14 +18,14 @@ flowchart LR
     B -->|"3.1 qnn-net-run --retrieve_context<br/>(QAIRT)"| R
 ```
 
-Step | Tool                                   | Owner  | Input                              | Output                                   | Notes
----- | -------------------------------------- | ------ | ---------------------------------- | ---------------------------------------- | -----
-1.1  | `apply_plugin_main --qualcomm_dlc_dir` | LiteRT | `.tflite`                          | `qnn_partition_<N>.dlc`                  | Compiles the graph into a `.dlc`.
-1.2  | `apply_plugin_main`                    | LiteRT | `.tflite`                          | compiled `.tflite`                       | Compiles the graph into a LiteRT `.tflite` with the QNN context binary embedded. Feeds step 2.2.
-2.1  | `qnn-context-binary-generator`         | QAIRT  | `.dlc` (from step 1.1)             | `qnn_partition_<N>.bin` (context binary) | Offline prepare from a `.dlc`.
-2.2  | `extract_bytecode`                     | LiteRT | compiled `.tflite` (from step 1.2) | `qnn_partition_<N>.bin` (context binary) | Extracts the embedded context binary. Skips step 1.1/2.1 if you already have a LiteRT-compiled `.tflite`.
-3.1  | `qnn-net-run --retrieve_context`       | QAIRT  | context binary (from step 2)       | `Result_*/` (output tensors)             | Run the pre-built context binary (solid path).
-3.2  | `qnn-net-run --dlc_path`               | QAIRT  | `.dlc` (from step 1.1)             | `Result_*/` (output tensors)             | Prepare the `.dlc` online (dotted path).
+| Step | Tool | Owner | Input | Output | Notes |
+| ---- | ---- | ----- | ----- | ------ | ----- |
+| 1.1 | `apply_plugin_main --qualcomm_dlc_dir` | LiteRT | `.tflite` | `qnn_partition_<N>.dlc` | Compiles the graph into a `.dlc`. |
+| 1.2 | `apply_plugin_main` | LiteRT | `.tflite` | compiled `.tflite` | Compiles the graph into a LiteRT `.tflite` with the QNN context binary embedded. Feeds step 2.2. |
+| 2.1 | `qnn-context-binary-generator` | QAIRT | `.dlc` (from step 1.1) | `qnn_partition_<N>.bin` (context binary) | Offline prepare from a `.dlc`. |
+| 2.2 | `extract_bytecode` | LiteRT | compiled `.tflite` (from step 1.2) | `qnn_partition_<N>.bin` (context binary) | Extracts the embedded context binary. Skips step 1.1/2.1 if you already have a LiteRT-compiled `.tflite`. |
+| 3.1 | `qnn-net-run --retrieve_context` | QAIRT | context binary (from step 2) | `Result_*/` (output tensors) | Run the pre-built context binary (solid path). |
+| 3.2 | `qnn-net-run --dlc_path` | QAIRT | `.dlc` (from step 1.1) | `Result_*/` (output tensors) | Prepare the `.dlc` online (dotted path). |
 
 > 💡 Once LiteRT has compiled the `.dlc`, the whole QNN/QAIRT toolchain is open
 > to you: the `.dlc` is a standard Qualcomm artifact, so in principle every QNN
@@ -46,50 +46,28 @@ libraries in [QAIRT_SDK.md](./QAIRT_SDK.md) are understood.
 The commands below refer to the following `${}` variables. Configure them for
 your environment before running any step.
 
-| Variable                      | Description                             |
-| ----------------------------- | --------------------------------------- |
-| `${LITERT}`                   | The path of the LiteRT source code.     |
-| `${QAIRT}`                    | The root of the unzipped QAIRT SDK      |
-:                               : (holds `bin/`, `lib/`). For example     :
-:                               : `${LITERT}/third_party/qairt/<version>` :
-:                               : (the SDK folder is named after its      :
-:                               : version, e.g. `2.47.0.xxxxxx`. Symlink  :
-:                               : it to a stable name yourself if you     :
-:                               : prefer).                                :
-| `${SOURCE_MODEL_PATH}`        | The input `.tflite` model to compile.   |
-| `${X86_HOST_ARTIFACT_FOLDER}` | Host working directory that holds       |
-:                               : everything produced on x86\: the `.dlc` :
-:                               : files (step 1.1), the LiteRT-compiled   :
-:                               : `.tflite` (step 1.2), the extracted /   :
-:                               : generated context binaries, and the raw :
-:                               : input tensors and input list.           :
-| `${SOC_MODEL}`                | Target SoC, e.g. `SM8850`.              |
-| `${HTP_ARCH}`                 | HTP architecture of `${SOC_MODEL}`.     |
-:                               : Used in two casings\: uppercase in QNN  :
-:                               : library names (`${HTP_ARCH}` = `V81`)   :
-:                               : and lowercase in the `hexagon-vXX`      :
-:                               : directory name (`${HEXAGON_ARCH}` =     :
-:                               : `v81`). See [QAIRT_SDK.md → Hexagon     :
-:                               : Arch](./QAIRT_SDK.md#hexagon-arch) for  :
-:                               : how to look this up.                    :
-| `${ANDROID_TEST_FOLDER}`      | Working directory on the device, e.g.   |
-:                               : `/data/local/tmp/qnn_native`. Only      :
-:                               : needed for the [Android device          :
-:                               : run](#android-device-aarch64).          :
+Variable                | Description
+----------------------- | -----------
+`${LITERT}`             | The path of the LiteRT source code.
+`${QAIRT}`              | The root of the unzipped QAIRT SDK (holds `bin/`, `lib/`). For example `${LITERT}/third_party/qairt/<version>` (the SDK folder is named after its version, e.g. `2.47.0.xxxxxx`. Symlink it to a stable name yourself if you prefer).
+`${SOURCE_MODEL_PATH}`  | The input `.tflite` model to compile.
+`${X86_HOST_ARTIFACT_FOLDER}` | Host working directory that holds everything produced on x86: the `.dlc` files (step 1.1), the LiteRT-compiled `.tflite` (step 1.2), the extracted / generated context binaries, and the raw input tensors and input list.
+`${SOC_MODEL}`          | Target SoC, e.g. `SM8850`.
+`${HTP_ARCH}`           | HTP architecture of `${SOC_MODEL}`. Used in two casings: uppercase in QNN library names (`${HTP_ARCH}` = `V81`) and lowercase in the `hexagon-vXX` directory name (`${HEXAGON_ARCH}` = `v81`). See [QAIRT_SDK.md → Hexagon Arch](./QAIRT_SDK.md#hexagon-arch) for how to look this up.
+`${ANDROID_TEST_FOLDER}` | Working directory on the device, e.g. `/data/local/tmp/qnn_native`. Only needed for the [Android device run](#android-device-aarch64).
 
-> 💡 LiteRT names each compiled partition `qnn_partition_0`, `qnn_partition_1`, …
-> The examples below use `qnn_partition_0` (a single-partition model).
+> 💡 LiteRT names each compiled partition `qnn_partition_0`, `qnn_partition_1`,
+> … The examples below use `qnn_partition_0` (a single-partition model).
 > Substitute the relevant partition name if your model splits into several.
 
 --------------------------------------------------------------------------------
 
 ## 1. Compile the .tflite with LiteRT
 
-LiteRT compiles the `.tflite` in one of two ways, matching the two
-context-binary sources in [§2](#2-build-a-context-binary-on-the-x86-host). Both
-invoke the same `apply_plugin_main`. The only difference is whether
-`--qualcomm_dlc_dir` is set. You only need the one that feeds the §2 path you
-plan to use.
+LiteRT compiles the `.tflite` in one of two ways, matching the two context-binary
+sources in [§2](#2-build-a-context-binary-on-the-x86-host). Both invoke the same
+`apply_plugin_main`. The only difference is whether `--qualcomm_dlc_dir` is set.
+You only need the one that feeds the §2 path you plan to use.
 
 Build the tool and the plugin once (used by both):
 
@@ -102,18 +80,17 @@ bazel build -c opt --cxxopt=--std=c++17 --nocheck_visibility //litert/vendors/qu
 export LD_LIBRARY_PATH=${QAIRT}/lib/x86_64-linux-clang
 ```
 
-> **`--libs` must point at `bazel-bin/`, not the source tree** — the plugin
-> `.so` lives under `bazel-bin/litert/vendors/qualcomm/compiler/` after the
-> build above. The commands below use the explicit `${LITERT}/bazel-bin/...`
-> path for that reason.
+> **`--libs` must point at `bazel-bin/`, not the source tree** — the plugin `.so`
+> lives under `bazel-bin/litert/vendors/qualcomm/compiler/` after the build
+> above. The commands below use the explicit `${LITERT}/bazel-bin/...` path for
+> that reason.
 
 ### 1.1 Compile to a .dlc (`--qualcomm_dlc_dir`)
 
 `--qualcomm_dlc_dir=<dir>` makes LiteRT switch to the QNN **IR Backend** at
 compile time and serialize each composed graph to a `.dlc` in that directory.
 The flag takes a **directory**. If empty (the default), the feature is off. Use
-this to feed the `qnn-context-binary-generator` path
-([§2.1](#21-from-a-dlc-with-qnn-context-binary-generator)).
+this to feed the `qnn-context-binary-generator` path ([§2.1](#21-from-a-dlc-with-qnn-context-binary-generator)).
 
 ```bash
 bazel-bin/litert/tools/apply_plugin_main \
@@ -131,8 +108,8 @@ partitions yields multiple `.dlc` files (one per QNN graph). A single-partition
 model yields just `qnn_partition_0.dlc`. Run / inspect each `.dlc` separately in
 the steps below.
 
-> ⚠️ **Backend override side effect.** When `--qualcomm_dlc_dir` is non-empty,
-> the compiler forces the backend to the IR Backend (a warning is logged). The
+> ⚠️ **Backend override side effect.** When `--qualcomm_dlc_dir` is non-empty, the
+> compiler forces the backend to the IR Backend (a warning is logged). The
 > resulting `-o` `.tflite` reflects IR-Backend semantics, **not** HTP/CPU/GPU
 > execution. This flag is for artifact extraction, not for producing a
 > deployable model.
@@ -155,8 +132,7 @@ bazel-bin/litert/tools/apply_plugin_main \
 
 This is the standard HTP compile flow. See
 [HTP_INSTRUCTIONS.md](./HTP_INSTRUCTIONS.md) for the full walkthrough (including
-the CMake build and on-device options). The `-o` `compiled.tflite` is what §2.2
-reads.
+the CMake build and on-device options). The `-o` `compiled.tflite` is what §2.2 reads.
 
 --------------------------------------------------------------------------------
 
@@ -167,10 +143,10 @@ run it on device. This moves the (slow) graph-prepare step off the device's
 critical path. There are two ways to produce the same `.bin`, both run on the
 x86 host:
 
-Source you have                                                 | Tool                           | Owner  | When to use
---------------------------------------------------------------- | ------------------------------ | ------ | -----------
-`.dlc` from step 1.1                                            | `qnn-context-binary-generator` | QAIRT  | You went through step 1.1 specifically to emit a `.dlc`.
-A LiteRT-compiled `.tflite` (step 1.2, no `--qualcomm_dlc_dir`) | `extract_bytecode`             | LiteRT | You already have a LiteRT-compiled model and want the embedded context binary, no need to recompile.
+| Source you have | Tool | Owner | When to use |
+| --------------- | ---- | ----- | ----------- |
+| `.dlc` from step 1.1 | `qnn-context-binary-generator` | QAIRT | You went through step 1.1 specifically to emit a `.dlc`. |
+| A LiteRT-compiled `.tflite` (step 1.2, no `--qualcomm_dlc_dir`) | `extract_bytecode` | LiteRT | You already have a LiteRT-compiled model and want the embedded context binary, no need to recompile. |
 
 ### 2.1 From a .dlc with qnn-context-binary-generator
 
@@ -196,11 +172,12 @@ binary is the common path.
 ### 2.2 From a LiteRT-compiled .tflite with extract_bytecode
 
 Use this when you already have a `.tflite` **compiled by LiteRT**
-([step 1.2](#12-compile-to-a-litert-tflite), `apply_plugin_main` output, no
-`--qualcomm_dlc_dir`). Such a `.tflite` already embeds the QNN context binary
-inside its dispatch op, so steps 1.1 / 2.1 are not needed. The tool writes one
-`<name>_<index>.bin` per dispatch op into `${X86_HOST_ARTIFACT_FOLDER}`. Feed
-each `.bin` to `qnn-net-run --retrieve_context` exactly as in §3.
+([step 1.2](#12-compile-to-a-litert-tflite),
+`apply_plugin_main` output, no `--qualcomm_dlc_dir`). Such a `.tflite` already
+embeds the QNN context binary inside its dispatch op, so steps 1.1 / 2.1 are not
+needed. The tool writes one `<name>_<index>.bin` per dispatch op into
+`${X86_HOST_ARTIFACT_FOLDER}`. Feed each `.bin` to `qnn-net-run
+--retrieve_context` exactly as in §3.
 
 Build and run with Bazel:
 
@@ -237,22 +214,19 @@ Android.** The choice is about *when* the graph is prepared, not *where* it
 runs. The x86 and device sections below are example environments, not a
 restriction.
 
-| Input flag          | Prepare           | Typical use                     |
-| ------------------- | ----------------- | ------------------------------- |
-| `--dlc_path <dlc>`  | Online, at load   | Convenient on the host          |
-: (with `--model      :                   :                                 :
-: libQnnModelDlc.so`) :                   :                                 :
-| `--retrieve_context | Offline (step 2), | On-device HTP, to skip the slow |
-: <bin>`              : pre-built         : prepare at run                  :
+| Input flag | Prepare | Typical use |
+| ---------- | ------- | ----------- |
+| `--dlc_path <dlc>` (with `--model libQnnModelDlc.so`) | Online, at load | Convenient on the host |
+| `--retrieve_context <bin>` | Offline (step 2), pre-built | On-device HTP, to skip the slow prepare at run |
 
 Also pass these so raw tensors keep the graph's **native** dtype. Without them
 `qnn-net-run` reads inputs as float32 and writes float32 outputs, silently
 misreading a quantized (`uint8` / `int8`) graph.
 
-Flag                        | Effect
---------------------------- | -----------------------------------------------
-`--use_native_input_files`  | Read input `.raw` in the graph's native dtype
-`--use_native_output_files` | Write output `.raw` in the graph's native dtype
+| Flag | Effect |
+| ---- | ------ |
+| `--use_native_input_files` | Read input `.raw` in the graph's native dtype |
+| `--use_native_output_files` | Write output `.raw` in the graph's native dtype |
 
 ### x86 host
 
@@ -280,8 +254,8 @@ input / output file formats.
 The example uses **`${HTP_ARCH}` = `V81`** (SM8850). Substitute the values for
 your SoC from the Prerequisites table. It runs the pre-built context binary from
 step 2. To prepare the `.dlc` online on device instead, push the `.dlc` and swap
-`--retrieve_context ./qnn_partition_0.bin` for `--model ./libQnnModelDlc.so
---dlc_path ./qnn_partition_0.dlc`.
+`--retrieve_context ./qnn_partition_0.bin` for
+`--model ./libQnnModelDlc.so --dlc_path ./qnn_partition_0.dlc`.
 
 ```bash
 adb shell "mkdir -p ${ANDROID_TEST_FOLDER}"
@@ -338,9 +312,9 @@ Each `.raw` is the raw little-endian bytes of one input tensor in the graph's
 expected dtype and layout (e.g. quantized `uint8` / `int8`, or `float32`). This
 is the format the native-dtype flags in [§3](#3-run-natively-with-qnn-net-run)
 expect. Inspect the expected I/O with `qairt-dlc-info`
-([§5](#5-inspecting-a-dlc-and-further-reading)) to get each tensor's exact shape
-and dtype, then write a matching `.raw`. For example, for a `float32 [1,64,128]`
-input:
+([§5](#5-inspecting-a-dlc-and-further-reading)) to get each tensor's exact
+shape and dtype, then write a matching `.raw`. For example, for a
+`float32 [1,64,128]` input:
 
 ```bash
 python3 -c "import numpy as np; \
