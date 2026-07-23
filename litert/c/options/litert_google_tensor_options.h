@@ -140,6 +140,13 @@ LiteRtStatus LrtGoogleTensorOptionsGetExtraOptionsPath(
     LrtGoogleTensorOptions options, const char** extra_options_path);
 
 #ifdef __cplusplus
+// testing flags ---------------------------------------------------------------
+LiteRtStatus LrtGoogleTensorOptionsSetTestingFlags(
+    LrtGoogleTensorOptions options, const std::string& testing_flags);
+
+LiteRtStatus LrtGoogleTensorOptionsGetTestingFlags(
+    LrtGoogleTensorOptions options,
+    std::vector<std::vector<std::string>>* testing_flags);
 }  // extern "C"
 #endif  // __cplusplus
 
