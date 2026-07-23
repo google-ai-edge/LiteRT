@@ -168,7 +168,7 @@ class TensorView {
 
   // Shape
   absl::Span<int> Shape() { return shape_; }
-  /*[[nodiscard]]*/ const absl::Span<int> Shape() const { return shape_; }
+  /*[[nodiscard]]*/ absl::Span<int> Shape() const { return shape_; }
 
   // Data
   template <typename DType>

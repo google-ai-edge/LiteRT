@@ -53,10 +53,10 @@ class TfLiteInvokeContext : public InvokeContext<TfLiteInvokeContext> {
  public:
   TfLiteInvokeContext(TfLiteContext* context_, TfLiteNode* node_);
   // Read an input tensor
-  ConstTensorViewOr GetInput(const int idx) const;
+  ConstTensorViewOr GetInput(int idx) const;
   // Get a mutable output tensor. For output string tensors, this should only
   // be called once.
-  TensorViewOr GetOutput(const int idx, const Shape& shape) const;
+  TensorViewOr GetOutput(int idx, const Shape& shape) const;
   // Number of input tensors
   int NumInputs() const;
   // Number of output tensors
@@ -81,11 +81,11 @@ class TfLiteShapeInferenceContext
                               const flexbuffers::Map* attr_map,
                               std::vector<Shape>* inferred_shapes);
   // Read an input tensor shape
-  ShapeOr GetInputShape(const int idx) const;
+  ShapeOr GetInputShape(int idx) const;
   // Set an output tensor shape
-  absl::Status SetOutputShape(const int idx, const Shape& shape);
+  absl::Status SetOutputShape(int idx, const Shape& shape);
   // Read an input tensor during shape inference
-  ConstTensorViewOr GetInputTensor(const int idx) const;
+  ConstTensorViewOr GetInputTensor(int idx) const;
   // Read a given attribute
   absl::StatusOr<AttrValue> GetAttr(const std::string& attr_name) const;
   // Number of input tensors
