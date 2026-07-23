@@ -448,7 +448,8 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
     return {};
   }
 
-  auto mem_handle = device_context_->GetMemHandle(tensor_buffer_handle, tensor);
+  auto mem_handle = device_context_->RegisterMemHandle(tensor_buffer_handle,
+                                                       GetContextHandle());
   if (!mem_handle) {
     return Unexpected(mem_handle.Error());
   }
@@ -478,10 +479,10 @@ Expected<void> LiteRtDispatchInvocationContextT::DetachBuffer(
                             ? tensor.v1.memType
                             : tensor.v2.memType;
   if (mem_type == QNN_TENSORMEMTYPE_RAW) {
-    return device_context_->UnregisterTensorBuffer(tensor_buffer_handle);
+    return {};
   }
-  LITERT_RETURN_IF_ERROR(
-      device_context_->UnregisterTensorBuffer(tensor_buffer_handle, tensor));
+  LITERT_RETURN_IF_ERROR(device_context_->UnregisterMemHandle(
+      tensor_buffer_handle, GetContextHandle()));
   return {};
 }
 
@@ -520,10 +521,20 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
     *(outputs + i) = outputs_.at(i).GetQnnTensor();
   }
 
-  if (auto status = qnn_manager_.Api()->graphExecute(
-          graph_handle_, inputs, num_ins, outputs, num_outs, profile_handle_,
-          /*signalHandle=*/nullptr);
+  const auto* qnn_api = qnn_manager_.Api();
+  if (auto status = qnn_api->graphExecute(graph_handle_, inputs, num_ins,
+                                          outputs, num_outs, profile_handle_,
+                                          /*signalHandle=*/nullptr);
       status != QNN_SUCCESS) {
+    const char* error_message = nullptr;
+    if (qnn_api->errorGetMessage(status, &error_message) == QNN_SUCCESS &&
+        error_message != nullptr) {
+      LITERT_LOG(LITERT_ERROR, "QNN graphExecute failed with status: %llu, %s",
+                 static_cast<unsigned long long>(status), error_message);
+    } else {
+      LITERT_LOG(LITERT_ERROR, "QNN graphExecute failed with status: %llu",
+                 static_cast<unsigned long long>(status));
+    }
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to execute graph");
   }
