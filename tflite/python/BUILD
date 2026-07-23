@@ -26,6 +26,7 @@ load("//tflite:special_rules.bzl", "internal_visibility_allowlist")
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
+        "//android/aicore/backend/litert:__subpackages__",
         "@org_tensorflow//tensorflow:__subpackages__",
         "@org_tensorflow//tensorflow:internal",
         "@org_tensorflow//third_party/odml/infra/genai/conversion:__subpackages__",
