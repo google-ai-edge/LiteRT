@@ -24,6 +24,7 @@
 #include "QnnTypes.h"  // from @qairt
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_element_type.h"
@@ -48,6 +49,10 @@ LiteRtStatus ConvertTensor(
     ::qnn::TensorPool& tensor_pool, ::qnn::TensorWrapper*& tensor_wrapper,
     const absl::flat_hash_set<std::int32_t>& ids_to_dump = {},
     bool is_tensor_output = false);
+
+LiteRtStatus AddCustomOpOptionsAsParams(
+    absl::Span<const uint8_t> custom_options, ::qnn::TensorPool& tensor_pool,
+    ::qnn::OpWrapper& custom_op);
 
 // `op_index` is the topological index of the op within its subgraph; it is
 // included in the "unsupported op" error message so a specific op can be

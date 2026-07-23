@@ -15,6 +15,7 @@
 # Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load(
     "//litert/build_common:litert_build_defs.bzl",
@@ -334,6 +335,19 @@ litert_lib(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@flatbuffers",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_test(
+    name = "qnn_compose_graph_test",
+    srcs = ["qnn_compose_graph_test.cc"],
+    deps = [
+        ":qnn_compose_graph",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "@flatbuffers",
+        "@com_google_googletest//:gtest_main",
         "@qairt//:qnn_lib_headers",
     ],
 )
