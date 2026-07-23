@@ -171,6 +171,8 @@ const auto kSupportedOps =
                     );
 
 const auto kSupportedSocModels = Values(
+    "QCM6490",
+    "QCS6490",
     "SA8295",
     "SA8255",
     "SM8350",
