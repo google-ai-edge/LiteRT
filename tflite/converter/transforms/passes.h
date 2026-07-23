@@ -24,8 +24,10 @@ limitations under the License.
 #include "mlir/Pass/PassRegistry.h"  // from @llvm-project  // IWYU pragma: keep
 #include "tflite/converter/quantization/common/quantization_lib/quantization_config.h"
 #include "tflite/converter/transforms/canonicalize_boundary_value_pass.h"
+#include "tflite/converter/transforms/cast_bf16_ops_to_f32_pass.h"
 #include "tflite/converter/transforms/cleanup_optimization_barrier_pass.h"
 #include "tflite/converter/transforms/downcast_x64_pass.h"
+#include "tflite/converter/transforms/large_constant_fold_pass.h"
 #include "tflite/converter/transforms/optimize_batch_matmul_pass.h"
 #include "tflite/converter/transforms/optimize_broadcast_like_pass.h"
 #include "tflite/converter/transforms/optimize_broadcast_like_pass_options.h"
@@ -373,6 +375,8 @@ inline void registerTensorFlowLitePasses() {
   Register<SplitMergedOperandsPass>();
   Register<CleanupOptimizationBarrierPass>();
   Register<DowncastX64Pass>();
+  Register<CastBf16OpsToF32Pass>();
+  Register<LargeConstantFoldPass, LargeConstantFoldPassOptions>();
 
   // Utility Passes
   Register<DenseToDenseResourceElementsPass>();
