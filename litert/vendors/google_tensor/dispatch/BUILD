@@ -77,9 +77,9 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_runtime_context_header",
         "//litert/c/options:litert_google_tensor_options_type",
+        # copybara:uncomment "//litert/c/options/google:litert_darwinn_runtime_options_type",
         "//litert/cc:litert_environment_options",
         "//litert/vendors/c:litert_dispatch_c_api",
-        # copybara:uncomment "//litert/vendors/google_tensor/dispatch/google:litert_darwinn_runtime_options",
     ],
 )
 
@@ -133,7 +133,7 @@ litert_dispatch_api(
         "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
     ],
     deps = [
-        # copybara:uncomment "//litert/vendors/google_tensor/dispatch/google:litert_darwinn_runtime_options",
+        # copybara:uncomment "//litert/c/options/google:litert_darwinn_runtime_options_type",
         # copybara:uncomment "//litert/vendors/google_tensor/dispatch/google:darwinn_options_utils",
         "@com_google_absl//absl/algorithm:container",
         "//litert/c/internal:litert_scheduling_info",

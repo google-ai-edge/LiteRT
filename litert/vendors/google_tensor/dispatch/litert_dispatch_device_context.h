@@ -26,7 +26,7 @@
 #include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
-#include "litert/vendors/google_tensor/dispatch/google/litert_darwinn_runtime_options.h"
+#include "litert/c/options/google/litert_darwinn_runtime_options_type.h"
 #endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
@@ -74,7 +74,7 @@ class LiteRtDispatchDeviceContextT {
   ThrContext* absl_nonnull thr_context() { return thr_context_; }
 
 #if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
-  std::optional<litert::LiteRtDarwinnRuntimeOptionsT>& darwinn_options() {
+  std::optional<LrtDarwinnRuntimeOptionsT>& darwinn_options() {
     return darwinn_options_;
   }
 #endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
@@ -108,7 +108,7 @@ class LiteRtDispatchDeviceContextT {
   const LiteRtRuntimeContext* runtime_context_;
   ThrContext* absl_nonnull thr_context_;
 #if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
-  std::optional<litert::LiteRtDarwinnRuntimeOptionsT> darwinn_options_;
+  std::optional<LrtDarwinnRuntimeOptionsT> darwinn_options_;
 #endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
   std::optional<GoogleTensorOptionsData> google_tensor_options_;
   // A device context cannot be destroyed with any registered graphs.
