@@ -2197,7 +2197,12 @@ cc_library(
     srcs = [
         "allocation.cc",
     ] + select({
-        ":tflite_mmap_disabled": [
+        # Note: this uses ":mmap_allocation_disabled" (NOT ":tflite_mmap_disabled")
+        # so that Windows compiles the real mmap_allocation.cc -- it has a Win32
+        # (CreateFileMapping/MapViewOfFile) path. The -DTFLITE_MMAP_DISABLED copt
+        # is still defined on Windows for other code (e.g. the 4bit kernel's
+        # anonymous-mmap prepack cache), but file mapping itself is supported.
+        ":mmap_allocation_disabled": [
             "mmap_allocation_disabled.cc",
         ],
         "//conditions:default": [
@@ -2292,6 +2297,17 @@ selects.config_setting_group(
         ":fuchsia_mmap_disabled",
         ":tflite_mmap_disabled_true",
         "@org_tensorflow//tensorflow:windows",
+    ],
+)
+
+# Selects whether the no-op mmap_allocation_disabled.cc is compiled instead of
+# the real mmap_allocation.cc. Unlike ":tflite_mmap_disabled", this does NOT
+# include Windows, because mmap_allocation.cc has a Win32 file-mapping path.
+selects.config_setting_group(
+    name = "mmap_allocation_disabled",
+    match_any = [
+        ":fuchsia_mmap_disabled",
+        ":tflite_mmap_disabled_true",
     ],
 )
 # LINT.ThenChange(//tflite/BUILD)
