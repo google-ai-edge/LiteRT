@@ -83,14 +83,22 @@ class Event : public internal::BaseHandle<LiteRtEvent> {
   }
 
   /// @brief Creates a managed event of a given type.
-  ///
-  /// Currently, only `LiteRtEventTypeOpenCl` is supported.
   static Expected<Event> CreateManaged(const Environment& env, Type type) {
     LiteRtEvent event;
     auto env_holder = env.GetHolder();
     LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateManagedEvent(
         env_holder.handle, static_cast<LiteRtEventType>(type), &event));
     return Event(env_holder, event, OwnHandle::kYes);
+  }
+
+  /// @internal
+  /// @brief Sets the custom event for the event.
+  /// @note This is only supported for custom events defined by LiteRT
+  /// internally.
+  Expected<void> SetCustomEvent(void* custom_event) {
+    LITERT_RETURN_IF_ERROR(env_.runtime->SetCustomEvent(
+        Get(), reinterpret_cast<LiteRtCustomEvent>(custom_event)));
+    return {};
   }
 
   Expected<int> GetSyncFenceFd() {
