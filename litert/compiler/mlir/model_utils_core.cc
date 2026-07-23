@@ -30,7 +30,6 @@
 #include "mlir/IR/OwningOpRef.h"
 #include "litert/compiler/mlir/converter_api_core.h"
 #include "tflite/converter/flatbuffer_import.h"
-#include "tflite/converter/transforms/passes.h"
 
 namespace litert::model_utils {
 

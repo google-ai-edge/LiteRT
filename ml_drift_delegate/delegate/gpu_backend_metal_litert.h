@@ -27,6 +27,7 @@
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/metal/metal_device.h"  // from @ml_drift
 #include "litert/c/litert_event_type.h"
+#include "ml_drift_delegate/delegate/custom_event_metal.h"
 #include "ml_drift_delegate/delegate/delegate_options.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
 #include "ml_drift_delegate/delegate/gpu_backend_metal.h"
@@ -77,30 +78,6 @@ class GpuBackendMetalLitert : public GpuBackendMetal {
   const LiteRtRuntimeContext* const runtime_context_;
 };
 
-// Custom event for Metal wrapping a MTLSharedEvent for asynchronous execution.
-class MetalCustomEvent : public LiteRtCustomEventT {
- public:
-  explicit MetalCustomEvent(GpuBackendMetal* backend);
-  ~MetalCustomEvent() = default;
-
-  // Encodes the signal command in the command buffer.
-  void EncodeSignal(id<MTLCommandBuffer> command_buffer);
-  // Encodes the wait command in the command buffer.
-  void EncodeWait(id<MTLCommandBuffer> command_buffer);
-
- private:
-  // Callbacks of litert_custom_event_t.
-  static void RetainStatic(LiteRtCustomEvent event);
-  static void ReleaseStatic(LiteRtCustomEvent event);
-  static void WaitStatic(LiteRtCustomEvent event, int64_t timeout_in_ms);
-  static int IsSignaledStatic(LiteRtCustomEvent event);
-  static void* GetNativeStatic(LiteRtCustomEvent event);
-
-  int ref_count_;
-  id<MTLSharedEvent> shared_event_;
-  uint64_t value_to_wait_ = 0;
-};
-
 class GpuInferenceContextMetalLitert : public GpuInferenceContextMetal {
  public:
   explicit GpuInferenceContextMetalLitert(
@@ -117,7 +94,7 @@ class GpuInferenceContextMetalLitert : public GpuInferenceContextMetal {
 
  private:
   // Cache the last post dispatch event for correct ref counting.
-  MetalCustomEvent* post_dispatch_event_ = nullptr;
+  CustomEventMetal* post_dispatch_event_ = nullptr;
 };
 
 }  // namespace litert::ml_drift

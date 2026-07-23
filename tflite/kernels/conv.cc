@@ -492,13 +492,13 @@ TfLiteStatus Prepare(KernelType kernel_type, TfLiteContext* context,
   // Matching GetWindowedOutputSize in TensorFlow.
   auto padding = params->padding;
   int out_width, out_height;
-  TF_LITE_ENSURE_OK(context, ComputePaddingHeightWidthChecked(
-                                 params->stride_height, params->stride_width,
-                                 params->dilation_height_factor,
-                                 params->dilation_width_factor, input_height,
-                                 input_width, filter_height, filter_width,
-                                 padding, &out_height, &out_width,
-                                 &data->padding));
+  TF_LITE_ENSURE_OK(
+      context,
+      ComputePaddingHeightWidthChecked(
+          params->stride_height, params->stride_width,
+          params->dilation_height_factor, params->dilation_width_factor,
+          input_height, input_width, filter_height, filter_width, padding,
+          &out_height, &out_width, &data->padding));
 
   size_t im2col_type_size;
   TF_LITE_ENSURE_STATUS(GetSizeOfType(context, input->type, &im2col_type_size));

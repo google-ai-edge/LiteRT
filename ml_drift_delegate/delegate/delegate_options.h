@@ -315,6 +315,10 @@ struct MlDriftDelegateOptions {
   // Pointer to SharedTensorMaps provided by the client to sharing GPU tensors,
   // weights across delegates.
   void* shared_tensor_maps_from_client = nullptr;
+
+  // Use FP16 storage and arithmetic with FP32 accumulation for convolution-like
+  // operations.
+  bool use_f32_accum_for_fp16 = false;
 };
 
 namespace litert::ml_drift {

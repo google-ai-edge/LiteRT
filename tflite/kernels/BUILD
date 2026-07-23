@@ -793,6 +793,7 @@ BUILTIN_KERNEL_DEPS = [
     "//tflite/kernels/internal:common",
     "//tflite/kernels/internal:compatibility",
     "//tflite/kernels/internal:cpu_check",
+    "//tflite/kernels/internal:float8",
     "//tflite/kernels/internal:kernel_utils",
     "//tflite/kernels/internal:optimized_base",
     "//tflite/kernels/internal:portable_tensor_utils",
@@ -1467,6 +1468,7 @@ cc_test(
         "//tflite:framework_stable",
         "//tflite/core:framework_stable",
         "//tflite/core/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -1511,13 +1513,13 @@ cc_test(
         ":test_util",
         "//tflite/c:common",
         "//tflite/core/c:c_api_types",
+        "//tflite/kernels/internal:float8",
         "//tflite/kernels/internal:tensor_utils_no_eigen",
         "//tflite/schema:schema_fbs",
         "//tflite/types:half",
         "@com_google_absl//absl/random",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest",
-        "@eigen_archive//:eigen3",
     ],
 )
 
@@ -1654,6 +1656,7 @@ cc_test(
         "//tflite:framework_stable",
         "//tflite/core:framework_stable",
         "//tflite/core/api",
+        "//tflite/kernels/internal:float8",
         "//tflite/kernels/internal:types",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/memory",
@@ -2120,6 +2123,7 @@ cc_test(
         ":test_main",
         ":test_util",
         "//tflite:string",
+        "//tflite/core/c:c_api_types",
         "//tflite/core/c:common",
         "//tflite/schema:schema_fbs",
         "//tflite/types:half",
@@ -2152,6 +2156,7 @@ cc_test(
         ":test_main",
         ":test_util",
         "//tflite/core/c:common",
+        "//tflite/kernels/internal:float8",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
     ],
@@ -2710,6 +2715,7 @@ cc_test(
         ":test_main",
         ":test_util",
         "//tflite/core/c:common",
+        "//tflite/kernels/internal:float8",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
     ],
@@ -2932,6 +2938,7 @@ cc_test(
     deps = [
         ":test_main",
         ":test_util",
+        "//tflite/core/c:c_api_types",
         "//tflite/schema:schema_fbs",
         "//tflite/types:half",
         "@com_google_googletest//:gtest",
@@ -3456,7 +3463,10 @@ cc_test(
 )
 
 tflite_portable_test_suite_combined(
-    combine_conditions = {"deps": [":test_main"]},
+    combine_conditions = {"deps": [
+        ":test_main",
+        "//tflite/kernels/internal:float8",
+    ]},
     # TODO(b/229985981) : Remove `nnapi_args` after adding Relu0To1 is completed.
     nnapi_args = ["--gunit_filter=*Reshape*"],
     #nnapi_args = ["--gunit_filter=-*QuantizedActivationsOpTest.Relu0To1*"],

@@ -66,6 +66,7 @@ provides the corresponding QNN operation it is legalized to.
 | `kLiteRtOpCodeTflExp` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (EXP). |
 | `kLiteRtOpCodeTflFloor` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (FLOOR). |
 | `kLiteRtOpCodeTflFloorDiv` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (FLOOR_DIV). |
+| `kLiteRtOpCodeTflFloorMod` | Legalized to `QNN_OP_ELEMENT_WISE_MOD`. Supports INT32 only. |
 | `kLiteRtOpCodeTflFullyConnected` | Legalized to `QNN_OP_FULLY_CONNECTED` and `QNN_OP_RESHAPE` if keep_num_dims = true. Supports fused activation. |
 | `kLiteRtOpCodeTflGather` | Legalized to `QNN_OP_GATHER`. |
 | `kLiteRtOpCodeTflGatherNd` | Legalized to `QNN_OP_GATHER_ND`. |

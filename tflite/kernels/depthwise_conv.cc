@@ -164,8 +164,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   // Filter in DepthwiseConv is expected to be [1, H, W, O].
   TF_LITE_ENSURE_EQ(context, SizeOfDimension(filter, 0), 1);
   const int input_channels = SizeOfDimension(input, 3);
-  const int channels_out = SizeOfDimension(filter, 3);
-  TF_LITE_ENSURE_EQ(context, channels_out % input_channels, 0);
+  const int output_channels = SizeOfDimension(filter, 3);
+  TF_LITE_ENSURE_EQ(context, output_channels % input_channels, 0);
 
   if (has_bias) {
     TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, kBiasTensor, &bias));
@@ -212,17 +212,18 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
             filter->quantization.params);
     TF_LITE_ENSURE(context, affine_quantization);
     TF_LITE_ENSURE(context, affine_quantization->scale);
-    TF_LITE_ENSURE(context, (affine_quantization->scale->size == 1 ||
-                             affine_quantization->scale->size == channels_out));
+    TF_LITE_ENSURE(context,
+                   (affine_quantization->scale->size == 1 ||
+                    affine_quantization->scale->size == output_channels));
 
-    data->per_channel_output_multiplier.resize(channels_out);
-    data->per_channel_output_shift.resize(channels_out);
+    data->per_channel_output_multiplier.resize(output_channels);
+    data->per_channel_output_shift.resize(output_channels);
     TF_LITE_ENSURE_STATUS(tflite::PopulateConvolutionQuantizationParams(
         context, input, filter, bias, output, params->activation,
         &data->output_multiplier, &data->output_shift,
         &data->output_activation_min, &data->output_activation_max,
         data->per_channel_output_multiplier.data(),
-        data->per_channel_output_shift.data(), channels_out));
+        data->per_channel_output_shift.data(), output_channels));
   }
 
   if (is_hybrid) {
@@ -318,7 +319,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   outputSize->data[0] = batches;
   outputSize->data[1] = out_height;
   outputSize->data[2] = out_width;
-  outputSize->data[3] = channels_out;
+  outputSize->data[3] = output_channels;
   return context->ResizeTensor(context, output, outputSize.release());
 }
 

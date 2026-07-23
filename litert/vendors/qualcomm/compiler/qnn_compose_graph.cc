@@ -422,6 +422,7 @@ REGISTER_SIMPLE_OP_BUILDER(BuildMaximumOp, BuildElementwiseMaximumOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildEluOp, BuildElementwiseEluOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildFloorOp, BuildElementwiseFloorOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildFloorDivOp, BuildElementwiseFloorDivOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildFloorModOp, BuildElementwiseFloorModOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildLogicalOrOp, BuildElementwiseOrOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildEmbeddingLookupOp, BuildEmbeddingLookupOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildGeluOp, BuildGeluOp)
@@ -1454,6 +1455,7 @@ GetOpBuilders() {
   builders[kLiteRtOpCodeTflUnpack] = Adapt<BuildUnpackOp>;
   builders[kLiteRtOpCodeTflReduceMin] = Adapt<BuildReduceMinOp>;
   builders[kLiteRtOpCodeTflFloorDiv] = Adapt<BuildFloorDivOp>;
+  builders[kLiteRtOpCodeTflFloorMod] = Adapt<BuildFloorModOp>;
   builders[kLiteRtOpCodeTflReduceAny] = Adapt<BuildReduceAnyOp>;
   builders[kLiteRtOpCodeTflSquare] = Adapt<BuildSquareOp>;
   builders[kLiteRtOpCodeTflResizeNearestNeighbor] =
@@ -1496,6 +1498,13 @@ LiteRtStatus BuildCustomOp(const litert::compiler::Op& litert_op,
                            std::vector<::qnn::TensorWrapperRef>& output_tensors,
                            std::vector<::qnn::OpWrapper>& op_wrappers,
                            const ::qnn::CustomOpPackage& custom_op_package) {
+  if (custom_op_package.name.empty()) {
+    LITERT_LOG(LITERT_WARNING,
+               "No custom package registered for custom op, won't create QNN "
+               "custom op.");
+    return kLiteRtStatusOk;
+  }
+
   // Use tflite custom code as op type in QNN custom op package.
   auto custom_code = litert_op.CustomCode();
   if (!custom_code.HasValue() || custom_code->empty()) {
@@ -1509,9 +1518,7 @@ LiteRtStatus BuildCustomOp(const litert::compiler::Op& litert_op,
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  const char* package_name = custom_op_package.name.empty()
-                                 ? QNN_OP_PACKAGE_NAME_QTI_AISW
-                                 : custom_op_package.name.c_str();
+  const char* package_name = custom_op_package.name.c_str();
   auto& custom_op = op_wrappers.emplace_back(
       ::qnn::CreateCustomOp(package_name, custom_code->data(),
                             std::vector<::qnn::ConstTensorWrapperRef>(
@@ -1619,6 +1626,8 @@ LiteRtStatus BuildCustomOp(const litert::compiler::Op& litert_op,
   return kLiteRtStatusOk;
 }
 
+}  // namespace
+
 std::string DescribeUnsupportedOp(size_t op_index,
                                   const litert::compiler::Op& litert_op) {
   const auto op_code = litert_op.Code();
@@ -1643,8 +1652,6 @@ std::string DescribeUnsupportedOp(size_t op_index,
   }
   return dump.str();
 }
-
-}  // namespace
 
 LiteRtStatus ConvertOp(const ::qnn::Options& options,
                        const litert::compiler::Op& litert_op,

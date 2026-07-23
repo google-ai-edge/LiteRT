@@ -888,11 +888,10 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
   int computed_input_height, computed_input_width;
   TF_LITE_ENSURE_OK(context, ComputePaddingHeightWidthChecked(
-                                 params->stride_height, params->stride_width,
-                                 1, 1, height, width, filter_height,
-                                 filter_width, params->padding,
-                                 &computed_input_height, &computed_input_width,
-                                 &data->padding));
+                                 params->stride_height, params->stride_width, 1,
+                                 1, height, width, filter_height, filter_width,
+                                 params->padding, &computed_input_height,
+                                 &computed_input_width, &data->padding));
   TF_LITE_ENSURE_EQ(context, computed_input_height, SizeOfDimension(input, 1));
   TF_LITE_ENSURE_EQ(context, computed_input_width, SizeOfDimension(input, 2));
 

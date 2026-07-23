@@ -345,6 +345,26 @@ std::vector<OpWrapper> BuildElementwiseFloorDivOp(
   return res;
 }
 
+std::vector<OpWrapper> BuildElementwiseFloorModOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs) {
+  std::vector<OpWrapper> res;
+
+  const TensorWrapper& input_0 = inputs[0];
+  const TensorWrapper& input_1 = inputs[1];
+  const TensorWrapper& output_0 = outputs[0];
+
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
+  elementwise_op.AddInputTensor(input_0);
+  elementwise_op.AddInputTensor(input_1);
+  elementwise_op.AddOutputTensor(output_0);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_MOD);
+
+  return res;
+}
+
 OpWrapper CreateElementWiseNotEqualOp(const TensorWrapper& input_0,
                                       const TensorWrapper& input_1,
                                       const TensorWrapper& output_0) {

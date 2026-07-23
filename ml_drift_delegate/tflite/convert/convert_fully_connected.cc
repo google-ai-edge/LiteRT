@@ -119,11 +119,17 @@ void ConvertFullyConnected(
       node.inputs->size > 2 && node.inputs->data[2] != kTfLiteOptionalTensor;
   const TfLiteTensor* bias_tensor =
       has_bias ? (context.tensors + node.inputs->data[2]) : nullptr;
-  const bool bias_is_const = has_bias && tflite::IsConstantTensor(bias_tensor);
   int bias_id = -1;
   if (has_bias) {
     bias_id = node.inputs->data[2];
   }
+  // A shared bias is passed as a runtime input (flagged for LINEAR layout);
+  // treat it as non-const so the population guards below skip it and the
+  // consumer logic adds it as a runtime input (parity with GraphFloat32).
+  const bool bias_is_shared =
+      has_bias && MarkSharedBias(tensor_map[bias_id], ir_model);
+  const bool bias_is_const =
+      has_bias && tflite::IsConstantTensor(bias_tensor) && !bias_is_shared;
 
   // A local "float island" wraps the FullyConnected op when the weights are
   // quantized (int8/int4/int2, emitted as a float-activation FC kernel) AND the
@@ -176,7 +182,8 @@ void ConvertFullyConnected(
   const ::ml_drift::BHWC output_shape =
       ir_model.tensor(tensor_map[output_id])->desc.GetBHWCShape();
 
-  if (weights_are_const) {
+  if (weights_are_const &&
+      !ir_model.tensor(tensor_map[weights_id])->buffer_source.is_shared) {
     if (weights_tensor->type == kTfLiteInt8 ||
         weights_tensor->type == kTfLiteInt4 ||
         weights_tensor->type == kTfLiteInt2) {
@@ -250,7 +257,7 @@ void ConvertFullyConnected(
   } else {
     fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED);
 
-    auto* weights_ir_tensor = ir_model.tensor(tensor_map[weights_id]);
+    const auto* weights_ir_tensor = ir_model.tensor(tensor_map[weights_id]);
     const auto& current_shape = weights_ir_tensor->desc.GetBHWCShape();
 
     // While we check if const weights are (o, 1, 1, i) sh, we don't for

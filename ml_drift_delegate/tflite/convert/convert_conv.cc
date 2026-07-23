@@ -184,7 +184,16 @@ void ConvertConv(
   const int input_id = node.inputs->data[0];
 
   const TfLiteTensor* weights_tensor = context.tensors + node.inputs->data[1];
-  if (tflite::IsConstantTensor(weights_tensor)) {
+  const ::ml_drift::ir::IrTensorId weights_id =
+      tensor_map[node.inputs->data[1]];
+  // Convolution2D cannot consume quantized shared weights, so force
+  // dequantization before sharing (parity with GraphFloat32).
+  if (ir_model.tensor(weights_id)->buffer_source.is_shared) {
+    ir_model.GetMutableTensor(weights_id)->buffer_source.dequant_forced =
+        weights_tensor->quantization.type == kTfLiteAffineQuantization;
+  }
+  if (tflite::IsConstantTensor(weights_tensor) &&
+      !ir_model.tensor(weights_id)->buffer_source.is_shared) {
     if (weights_tensor->type == kTfLiteInt4) {
       auto& weights = attr.weights.emplace<
           ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT4>>();
@@ -214,8 +223,6 @@ void ConvertConv(
   } else {
     auto& weights = attr.weights.emplace<
         ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>();
-    const ::ml_drift::ir::IrTensorId weights_id =
-        tensor_map[node.inputs->data[1]];
     const ::ml_drift::BHWC weights_shape =
         ir_model.tensor(weights_id)->desc.GetBHWCShape();
     // For runtime weights, TFLite conv2d weights are OHWI.
@@ -228,9 +235,15 @@ void ConvertConv(
       node.inputs->size > 2 && node.inputs->data[2] != kTfLiteOptionalTensor;
   if (has_bias &&
       tflite::IsConstantTensor(context.tensors + node.inputs->data[2])) {
-    PopulateTensor(context.tensors + node.inputs->data[2], node.inputs->data[2],
-                   &attr.bias, PopulateTensorFlags::kNoExtraBytes,
-                   options.enable_spanned_weights);
+    const ::ml_drift::ir::IrTensorId bias_id = tensor_map[node.inputs->data[2]];
+    // A shared bias is passed as a runtime input (flagged for LINEAR layout);
+    // otherwise embed it into the op attributes.
+    if (!MarkSharedBias(bias_id, ir_model)) {
+      PopulateTensor(context.tensors + node.inputs->data[2],
+                     node.inputs->data[2], &attr.bias,
+                     PopulateTensorFlags::kNoExtraBytes,
+                     options.enable_spanned_weights);
+    }
   }
 
   const auto* params = static_cast<const TfLiteConvParams*>(node.builtin_data);
@@ -262,11 +275,14 @@ void ConvertConv(
     ::ml_drift::ir::IrOp* conv_op = ir_model.add_op();
     conv_op->name = ToString(::ml_drift::OperationType::CONVOLUTION_2D);
     ir_model.AddConsumer(tensor_map[input_id], conv_op->id);
-    if (!tflite::IsConstantTensor(context.tensors + node.inputs->data[1])) {
-      ir_model.AddConsumer(tensor_map[node.inputs->data[1]], conv_op->id);
+    if (!tflite::IsConstantTensor(weights_tensor) ||
+        ir_model.tensor(weights_id)->buffer_source.is_shared) {
+      ir_model.AddConsumer(weights_id, conv_op->id);
     }
     if (has_bias &&
-        !tflite::IsConstantTensor(context.tensors + node.inputs->data[2])) {
+        (!tflite::IsConstantTensor(context.tensors + node.inputs->data[2]) ||
+         ir_model.tensor(tensor_map[node.inputs->data[2]])
+             ->buffer_source.is_shared)) {
       ir_model.AddConsumer(tensor_map[node.inputs->data[2]], conv_op->id);
     }
 

@@ -170,6 +170,10 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
         ABSL_LOG(ERROR) << s;
         return kTfLiteError;
       }
+      if (absl::Status s = delegate_kernel->HandleInputEvents(context); !s.ok()) {
+        ABSL_LOG(ERROR) << s;
+        return kTfLiteError;
+      }
     }
 
     auto* buffer_context = reinterpret_cast<LiteRtExternalLiteRtBufferContext>(
@@ -205,20 +209,7 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
       }
     }
 
-    if (absl::Status s = delegate_kernel->HandleInputEvents(context); !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-
     if (absl::Status s = delegate_kernel->Dispatch(context); !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-
-    if (absl::Status s = delegate_kernel->HandleOutputEvents(
-            context,
-            litert::ml_drift::IsAsyncExecutionMode(context, delegate_kernel->runtime_context()));
-        !s.ok()) {
       ABSL_LOG(ERROR) << s;
       return kTfLiteError;
     }
@@ -230,6 +221,14 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
         ABSL_LOG(ERROR) << s;
         return kTfLiteError;
       }
+    }
+
+    if (absl::Status s = delegate_kernel->HandleOutputEvents(
+            context,
+            litert::ml_drift::IsAsyncExecutionMode(context, delegate_kernel->runtime_context()));
+        !s.ok()) {
+      ABSL_LOG(ERROR) << s;
+      return kTfLiteError;
     }
 
     if (delegate_kernel->IsBenchmarkMode()) {
@@ -405,6 +404,9 @@ TfLiteDelegatePtr CreateMlDriftMetalDelegate(MlDriftDelegateOptionsPtr options,
     case kFp32:
       delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::F32;
       break;
+  }
+  if (delegate_data->options->use_f32_accum_for_fp16) {
+    delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::F32_F16;
   }
   const bool hint_fully_delegated_to_single_delegate =
       delegate_data->options->hint_fully_delegated_to_single_delegate;

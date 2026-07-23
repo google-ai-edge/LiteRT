@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <unordered_map>
 #include <vector>
 
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
@@ -35,6 +36,9 @@
 #include "tflite/kernels/internal/types.h"
 
 namespace litert::ml_drift::ir {
+
+using TensorIndexToBufferIdMap = std::unordered_map<size_t, size_t>;
+using TensorIndexToExternalBufferIdMap = std::unordered_map<size_t, size_t>;
 
 // Options for parsing tflite model with model builder.
 struct IrModelBuilderOptions {

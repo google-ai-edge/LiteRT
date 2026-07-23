@@ -170,12 +170,12 @@ cc_library(
         "//ml_drift_delegate/delegate/serialization_weight_cache",
         "//ml_drift_delegate/delegate/shared_memory_manager",
         "//ml_drift_delegate/delegate/shared_memory_manager:shared_memory_manager_webgpu",
-        "//third_party/odml/litert/weight_loader:external_weight_loader",
+        "//weight_loader:external_weight_loader",
         "//tflite/c:common",
     ] + select({
         "//tools/cc_target_os:emscripten": [],
         "//conditions:default": [
-            "@dawn//dawn:dawn_headers",
+            "@dawn//:dawn_headers",
         ],
     }),
 )
@@ -313,6 +313,7 @@ objc_library(
     # deps of a Swift target.
     aspect_hints = ["//tools/build_defs/swift:no_module"],
     deps = [
+        ":custom_event_metal",
         ":delegate_options",
         ":delegate_utils",
         ":gpu_backend",
@@ -330,7 +331,6 @@ objc_library(
         "@ml_drift//ml_drift/metal:metal_device",
         "@ml_drift//ml_drift/metal:metal_spatial_tensor",
         "//litert/c:litert_common",
-        "//litert/c:litert_event_header",
         "//litert/c:litert_event_type",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_logging",
@@ -464,8 +464,6 @@ cc_library(
     srcs = ["delegate_kernel.cc"],
     hdrs = ["delegate_kernel.h"],
     deps = [
-        # copybara:uncomment "//third_party/odml/litert/weight_loader:external_weight_loader",
-        "//weight_loader:external_weight_loader",  # copybara:comment
         ":delegate_data",
         ":delegate_options",
         ":delegate_utils",
@@ -495,14 +493,15 @@ cc_library(
         "@ml_drift//ml_drift/common/task:gpu_tensor",
         "@ml_drift//ml_drift/common/task:profiling_info",
         "@ml_drift//ml_drift/common/task:tensor_desc",
-        "//ml_drift_delegate/delegate/shared_memory_manager",
-        "//ml_drift_delegate/delegate/serialization_program_cache",
-        "//ml_drift_delegate/delegate/serialization_weight_cache",
         "//ml_drift_delegate/delegate/composite:custom_parsers",
         "//ml_drift_delegate/delegate/composite:litert_op_selector",
+        "//ml_drift_delegate/delegate/serialization_program_cache",
+        "//ml_drift_delegate/delegate/serialization_weight_cache",
+        "//ml_drift_delegate/delegate/shared_memory_manager",
         "//ml_drift_delegate/tflite:model_builder",
         "//ml_drift_delegate/tflite:object_reader",
         "//ml_drift_delegate/tflite:shared_const_tensor_map",
+        "//weight_loader:external_weight_loader",
         "//tflite/c:c_api_types",
         "//tflite/core:framework",
         "//tflite/core/c:private_common",
@@ -775,11 +774,11 @@ cc_library(
     ] + select({
         "//tools/cc_target_os:emscripten": [],
         "//litert:litert_runtime_link_mode_dynamic": [
-            "@dawn//dawn:dawn_headers",
+            "@dawn//:dawn_headers",
         ],
         "//conditions:default": [
-            "@dawn//dawn:dawn_headers",
-            "@dawn//dawn:webgpu_dawn",
+            "@dawn//:dawn_headers",
+            "@dawn//:webgpu_dawn",
         ],
     }),
 )
@@ -897,8 +896,7 @@ cc_library(
 objc_library(
     name = "buffer_handler_metal",
     srcs = ["buffer_handler_metal.mm"],
-    # Required to prevent build errors when this target is reachable from the
-    # deps of a Swift target.
+    # Required to prevent build errors when this target is reachable from the deps of Swift targets.
     aspect_hints = ["//tools/build_defs/swift:no_module"],
     deps = [
         ":buffer_handler_metal_headers",
@@ -999,7 +997,7 @@ cc_library(
         "//litert/runtime:tensor_buffer_lockstate",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/log:absl_log",
-        "@dawn//dawn:dawn_headers",
+        "@dawn//:dawn_headers",
         "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/common:util",
         "@ml_drift//ml_drift/webgpu:buffer",
@@ -1112,6 +1110,19 @@ cc_test(
         "@ml_drift//ml_drift/cl:cl_context",
         "@ml_drift//ml_drift/cl:environment",
         "@ml_drift//ml_drift/cl:opencl_wrapper",
+    ],
+)
+
+objc_library(
+    name = "custom_event_metal",
+    srcs = ["custom_event_metal.mm"],
+    hdrs = ["custom_event_metal.h"],
+    # Required to prevent build errors when this target is reachable from the deps of Swift targets.
+    aspect_hints = ["//tools/build_defs/swift:no_module"],
+    copts = ["-ObjC++"],
+    deps = [
+        # Dependency placeholder: apple_frameworks Metal,
+        "//litert/c:litert_event_header",
     ],
 )
 

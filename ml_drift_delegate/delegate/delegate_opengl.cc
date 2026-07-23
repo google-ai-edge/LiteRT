@@ -465,6 +465,10 @@ TfLiteDelegatePtr CreateMlDriftOpenGlDelegate(MlDriftDelegateOptionsPtr options,
           ::ml_drift::CalculationsPrecision::F32;
       break;
   }
+  if (delegate_data->options->use_f32_accum_for_fp16) {
+    delegate_data->calculation_precision =
+        ::ml_drift::CalculationsPrecision::F32_F16;
+  }
 
   // Initialize the ml_drift gl delegate.
   TfLiteDelegatePtr delegate(new TfLiteDelegate(TfLiteDelegateCreate()),

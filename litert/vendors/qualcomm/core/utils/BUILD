@@ -50,7 +50,7 @@ cc_library(
     hdrs = ["test_utils.h"],
     deps = [
         "//litert/vendors/qualcomm/core:common",
-        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/base:no_destructor",
     ],
 )
 

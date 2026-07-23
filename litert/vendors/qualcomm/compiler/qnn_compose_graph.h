@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "QnnCommon.h"  // from @qairt
@@ -35,6 +36,9 @@
 #include "litert/vendors/qualcomm/qnn_manager.h"
 
 namespace litert::qnn {
+
+std::string DescribeUnsupportedOp(size_t op_index,
+                                  const litert::compiler::Op& litert_op);
 
 LiteRtStatus ConvertDataType(const litert::ElementType litert_type,
                              const bool is_quantized, Qnn_DataType_t& qnn_type);

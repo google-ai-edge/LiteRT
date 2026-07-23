@@ -242,6 +242,14 @@ load("//third_party/tqdm:workspace.bzl", tqdm = "repo")
 
 tqdm()
 
+load("//third_party/markupsafe:workspace.bzl", markupsafe = "repo")
+
+markupsafe()
+
+load("//third_party/jinja2:workspace.bzl", jinja2 = "repo")
+
+jinja2()
+
 load("//third_party/dawn:workspace.bzl", dawn = "repo")
 
 dawn()
