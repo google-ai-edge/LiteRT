@@ -83,6 +83,7 @@ cc_library(
 #     hdrs = ["transformer_ops_xnnpack.h"],
 #     deps = [
 #         ":transformer_ops_graph",
+#         "@XNNPACK",
 #         "@com_google_absl//absl/status",
 #         "@com_google_absl//absl/strings",
 #         "@com_google_absl//absl/strings:str_format",
@@ -90,7 +91,7 @@ cc_library(
 #         "//tensor:buffer",
 #         "//tensor:datatypes",
 #         "//tensor/backends/xnnpack:arithmetic",
-#         "//tensor/backends/xnnpack:conversion",
+#         "//tensor/backends/xnnpack:utils",
 #         "//tensor/internal:graph",
 #         "//tensor/internal:mixin",
 #         "//tensor/utils:macros",
