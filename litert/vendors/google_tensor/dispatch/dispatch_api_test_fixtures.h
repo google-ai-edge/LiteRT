@@ -16,6 +16,7 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_DISPATCH_API_TEST_FIXTURES_H_
 
 #include <cstdint>
+#include <string>
 
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
@@ -48,10 +49,12 @@ class SimpleModelTest : public DispatchApiTest {
   void SetUp() override;
 
   const LiteRtMemBuffer& model_bytecode() const { return model_bytecode_; }
+  const std::string& model_file_path() const { return model_file_path_; }
 
  private:
   litert::OwningBufferRef<uint8_t> model_;
   LiteRtMemBuffer model_bytecode_;
+  std::string model_file_path_;
 };
 
 }  // namespace litert::google_tensor::testing
