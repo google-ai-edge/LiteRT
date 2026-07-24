@@ -762,6 +762,703 @@ TEST(MaskTransformTest, Gemma4Mask) {
             op_wrappers[0].GetInputTensor(2).GetQuantParams());
 }
 
+TEST(MHASHATest, GQAGemma4BPrefill) {
+  // ------------------- Before ---------------------
+  //                       In0
+  //                        |
+  //                    Transpose0
+  //                        |
+  //                     Reshape0
+  //                      /   \
+  //             KIn     /     \     In1
+  //               \    /       \     /
+  //                Matmul0     Matmul1
+  //                    \       /
+  //                     Concat
+  //                        |
+  //                   Mask |
+  //                      \ |
+  //                       Add1
+  //                        |
+  //                     Softmax
+  //                    /       \
+  //                  Slice0  Slice1
+  //                    |       |
+  //              VIn   |       |    In2
+  //                \   |       |    /
+  //                 Matmul2  Matmul3
+  //                     \     /
+  //                       Add2
+  //                        |
+  //                     Convert
+  //                        |
+  //                     Reshape1
+  //                        |
+  //                    Transpose1
+  //                        |
+  //                       Out
+  //
+  // -------------------- After ---------------------
+  //
+  //                       In0
+  //                        |
+  //        KIn          Unpack          In1
+  //         |            /  \            |
+  //       Unpack        /    \         Unpack
+  //       //|          /      \          |\\
+  //      // └------Matmul0    Matmul1---┘ \\
+  //     ..             \        /         ..
+  //                     \      /
+  //                     Concat
+  //                        |
+  //                   Mask |
+  //                      \ |
+  //                       Add1
+  //                        |
+  //                     Softmax
+  //                    /       \     In2
+  //        VIn       Slice0  Slice1   |
+  //         |          |       |    Unpack
+  //       Unpack       |       |     /\\
+  //       //|          |       |    /  \\
+  //      // └------Matmul2  Matmul3     ..
+  //     ..              \     /
+  //                       Add2
+  //                        |
+  //                     Convert  ..
+  //                        |   //
+  //                        |  //
+  //                      Concat
+  //                        |
+  //                       Out
+  TensorPool tensor_pool;
+  QuantizeParamsWrapperVariant quant_param;
+  quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(1e-4f, 0);
+  std::vector<OpWrapper> op_wrappers;
+
+  // In0: [B,S,H,D] input to Transpose0
+  auto& in0 = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                        quant_param, {1, 128, 8, 256});
+
+  // Transpose0: [B,S,H,D] -> [B,H,S,D]
+  static const std::uint32_t kPerm0213[] = {0, 2, 1, 3};
+  auto& perm0213 = tensor_pool.CreateStaticTensor(
+    QNN_DATATYPE_UINT_32, {}, {4}, sizeof(kPerm0213), kPerm0213);
+  auto& transpose0_output =
+    tensor_pool.CloneNativeTensorFrom(in0, {1, 8, 128, 256});
+  op_wrappers.emplace_back(
+    CreateTransposeOp(in0, transpose0_output, perm0213));
+
+  // Reshape0
+  auto& reshape0_output =
+    tensor_pool.CloneNativeTensorFrom(transpose0_output, {1, 8, 128, 256});
+  op_wrappers.emplace_back(CreateReshapeOp(transpose0_output, reshape0_output));
+
+  // Far-away Convert (K_slice quantize, not connected to main chain)
+  auto& k_slice_raw = tensor_pool.CreateNativeTensor(QNN_DATATYPE_FLOAT_16,
+                            quant_param, {1, 2, 128, 256});
+  auto& k_slice_converted = tensor_pool.CreateNativeTensor(
+    QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 128, 256});
+  op_wrappers.emplace_back(CreateConvertOp(k_slice_raw, k_slice_converted));
+
+  // MatMul0 (Q x K_cache)
+  auto& q_in = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                        quant_param, {1, 2, 2560, 256});
+  auto& matmul0_output = tensor_pool.CreateNativeTensor(
+    QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 512, 2560});
+  op_wrappers.emplace_back(
+    CreateMatmulOp(reshape0_output, q_in, matmul0_output, false, true));
+
+  // MatMul1 (Q x K_slice), using the far-away Convert output
+  auto& matmul1_output = tensor_pool.CreateNativeTensor(
+    QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 512, 128});
+  op_wrappers.emplace_back(CreateMatmulOp(reshape0_output, k_slice_converted,
+                      matmul1_output, false, true));
+
+  // Concat
+  auto& concat_output =
+    tensor_pool.CloneNativeTensorFrom(matmul0_output, {1, 2, 512, 2688});
+  op_wrappers.emplace_back(CreateConcatenationOp(
+    {matmul0_output, matmul1_output}, concat_output, 3));
+
+  // Add1: concat_output must be input[0] for connectivity check
+  auto& mask = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                        quant_param, {1, 1, 512, 2688});
+  auto& add1_output = tensor_pool.CloneNativeTensorFrom(concat_output);
+  op_wrappers.emplace_back(
+    CreateElementWiseAddOp(concat_output, mask, add1_output));
+
+  // Softmax
+  auto& softmax_output = tensor_pool.CloneNativeTensorFrom(add1_output);
+  op_wrappers.emplace_back(
+    CreateSoftmaxOp(add1_output, softmax_output, 1.0f));
+
+  // Slice0
+  const std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 2,    1,
+                          0, 512, 1, 0, 2560, 1};
+  auto& slice0_ranges = tensor_pool.CreateStaticTensor(
+    QNN_DATATYPE_INT_32, {}, {4, 3},
+    sizeof(int32_t) * slice0_ranges_data.size(), slice0_ranges_data.data());
+  auto& slice0_output =
+    tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 512, 2560});
+  op_wrappers.emplace_back(
+    CreateSliceOp(softmax_output, slice0_output, slice0_ranges));
+
+  // Slice1
+  const std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    2,    1,
+                          0, 512, 1, 2560, 2688, 1};
+  auto& slice1_ranges = tensor_pool.CreateStaticTensor(
+    QNN_DATATYPE_INT_32, {}, {4, 3},
+    sizeof(int32_t) * slice1_ranges_data.size(), slice1_ranges_data.data());
+  auto& slice1_output =
+    tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 512, 128});
+  op_wrappers.emplace_back(
+    CreateSliceOp(softmax_output, slice1_output, slice1_ranges));
+
+  // MatMul2
+  auto& v_in = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                        quant_param, {1, 2, 256, 2560});
+  auto& matmul2_output = tensor_pool.CreateNativeTensor(
+    QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 512, 256});
+  op_wrappers.emplace_back(
+    CreateMatmulOp(slice0_output, v_in, matmul2_output, false, true));
+
+  // MatMul3
+  auto& in2 = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                        quant_param, {1, 2, 256, 128});
+  auto& matmul3_output = tensor_pool.CreateNativeTensor(
+    QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 512, 256});
+  op_wrappers.emplace_back(CreateMatmulOp(slice1_output, in2,
+                      matmul3_output, false, true));
+
+  // Add2
+  auto& add2_output = tensor_pool.CloneNativeTensorFrom(matmul3_output);
+  op_wrappers.emplace_back(
+    CreateElementWiseAddOp(matmul2_output, matmul3_output, add2_output));
+
+  QuantizeParamsWrapperVariant quant_param_out;
+  quant_param_out.emplace<ScaleOffsetQuantizeParamsWrapper>(3.66805e-02f, 0);
+  auto& quant_output = tensor_pool.CreateNativeTensor(
+    QNN_DATATYPE_SFIXED_POINT_8, quant_param_out, {1, 2, 512, 256});
+  op_wrappers.emplace_back(CreateConvertOp(add2_output, quant_output));
+
+  // Reshape1
+  auto& reshape1_output =
+    tensor_pool.CloneNativeTensorFrom(quant_output, {1, 8, 128, 256});
+  op_wrappers.emplace_back(CreateReshapeOp(quant_output, reshape1_output));
+
+  // Transpose1: [B,H,S,D] -> [B,S,H,D]
+  auto& perm0213_t1 = tensor_pool.CreateStaticTensor(
+    QNN_DATATYPE_UINT_32, {}, {4}, sizeof(kPerm0213), kPerm0213);
+  auto& transpose1_output =
+    tensor_pool.CloneNativeTensorFrom(reshape1_output, {1, 128, 8, 256});
+  op_wrappers.emplace_back(
+    CreateTransposeOp(reshape1_output, transpose1_output, perm0213_t1));
+
+  ASSERT_EQ(op_wrappers.size(), 16);
+
+  const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOptPrefill;
+  GraphToGraphTransform(g2g_option, op_wrappers, tensor_pool,
+              [](OpWrapper& op) { return true; });
+
+  // Check OpCode after G2G
+  const size_t num_head = 8; // 2 groups in KV Cache serving 8 queries
+  // Q·KC, Q·KS, Concat, MaskAdd, Softmax, Slice(VC), Slice(VS), QK·VC, QK·VS, Add, Convert
+  const size_t num_op_in_sha = 11;
+
+  // new_ops layout before per-head SHA:
+  //   op_wrappers[0]: far-away Convert (kept from original pattern)
+  //   op_wrappers[1]  Unpack Q (axis=2) -> 8 heads
+  //   op_wrappers[2]  Unpack K_cache (axis=1) -> 2 kv heads
+  //   op_wrappers[3]  Unpack K_slice (axis=1)
+  //   op_wrappers[4]  Unpack V_cache (axis=1)
+  //   op_wrappers[5]  Unpack V_slice (axis=1)
+  //   op_wrappers[6]  Reshape(mask -> mask_reshaped)
+  //   op_wrappers[7]  Unpack(mask_reshaped, axis=1)
+  //   op_wrappers[8 .. 8+11*8-1] per-head SHA ops
+  //   op_wrappers[8+88] Concat, op_wrappers[8+89] Reshape
+  const size_t sha_init_idx = 8;
+
+  for (size_t i = 0; i < num_head; ++i) {
+    ASSERT_TRUE(op_wrappers[sha_init_idx + num_op_in_sha * i].IsOpCode(QnnOpCode::kMatMul));
+    ASSERT_TRUE(op_wrappers[(sha_init_idx+1) + num_op_in_sha * i].IsOpCode(QnnOpCode::kMatMul));
+    ASSERT_TRUE(op_wrappers[(sha_init_idx+2) + num_op_in_sha * i].IsOpCode(QnnOpCode::kConcat));
+    ASSERT_TRUE(
+      op_wrappers[(sha_init_idx+3) + num_op_in_sha * i].IsOpCode(QnnOpCode::kElementWiseBinary));
+    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[(sha_init_idx+3) + num_op_in_sha * i]));
+    ASSERT_TRUE(op_wrappers[(sha_init_idx+4) + num_op_in_sha * i].IsOpCode(QnnOpCode::kSoftmax));
+    ASSERT_TRUE(
+      op_wrappers[(sha_init_idx+5) + num_op_in_sha * i].IsOpCode(QnnOpCode::kStridedSlice));
+    ASSERT_TRUE(
+      op_wrappers[(sha_init_idx+6) + num_op_in_sha * i].IsOpCode(QnnOpCode::kStridedSlice));
+    ASSERT_TRUE(op_wrappers[(sha_init_idx+7) + num_op_in_sha * i].IsOpCode(QnnOpCode::kMatMul));
+    ASSERT_TRUE(op_wrappers[(sha_init_idx+8) + num_op_in_sha * i].IsOpCode(QnnOpCode::kMatMul));
+    ASSERT_TRUE(
+      op_wrappers[(sha_init_idx+9) + num_op_in_sha * i].IsOpCode(QnnOpCode::kElementWiseBinary));
+    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[(sha_init_idx+9) + num_op_in_sha * i]));
+    // The output Convert (kConvert) is emitted per-head from convert_out.
+    ASSERT_TRUE(
+      op_wrappers[(sha_init_idx+10) + num_op_in_sha * i].IsOpCode(QnnOpCode::kConvert));
+  }
+}
+
+// Variant: has_k_slice_attn_update_convert=true — a Convert between K_slice and Q·KS matmul.
+// Verifies that BuildSingleSHAGemma4B emits a per-head KSliceAttnUpdateConvert (17-op pattern).
+TEST(MHASHATest, GQAGemma4BPrefill_KSliceAttnUpdateConvert) {
+  TensorPool tensor_pool;
+  QuantizeParamsWrapperVariant quant_param;
+  quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(1e-4f, 0);
+  std::vector<OpWrapper> op_wrappers;
+
+  // In0: [B,S,H,D]
+  auto& in0 = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                              quant_param, {1, 128, 8, 256});
+  static const std::uint32_t kPerm0213[] = {0, 2, 1, 3};
+  auto& perm0213 = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_UINT_32, {}, {4}, sizeof(kPerm0213), kPerm0213);
+  auto& transpose0_output =
+      tensor_pool.CloneNativeTensorFrom(in0, {1, 8, 128, 256});
+  op_wrappers.emplace_back(CreateTransposeOp(in0, transpose0_output, perm0213));
+
+  auto& reshape0_output =
+      tensor_pool.CloneNativeTensorFrom(transpose0_output, {1, 8, 128, 256});
+  op_wrappers.emplace_back(CreateReshapeOp(transpose0_output, reshape0_output));
+
+  // Far-away Convert (index 2, not locally connected)
+  auto& k_slice_raw = tensor_pool.CreateNativeTensor(QNN_DATATYPE_FLOAT_16,
+                                                      quant_param, {1, 2, 128, 256});
+  auto& k_slice_fp8 = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                                      quant_param, {1, 2, 128, 256});
+  op_wrappers.emplace_back(CreateConvertOp(k_slice_raw, k_slice_fp8));
+
+  // MatMul0 (Q x K_cache)
+  auto& q_in = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                              quant_param, {1, 2, 2560, 256});
+  auto& matmul0_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 512, 2560});
+  op_wrappers.emplace_back(
+      CreateMatmulOp(reshape0_output, q_in, matmul0_output, false, true));
+
+  // KSliceAttnUpdateConvert (index 4): k_slice_fp8 -> k_slice_int8
+  auto& k_slice_int8 = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 128, 256});
+  op_wrappers.emplace_back(CreateConvertOp(k_slice_fp8, k_slice_int8));
+
+  // MatMul1 (Q x K_slice converted)
+  auto& matmul1_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 512, 128});
+  op_wrappers.emplace_back(CreateMatmulOp(reshape0_output, k_slice_int8,
+                                          matmul1_output, false, true));
+
+  // Concat
+  auto& concat_output =
+      tensor_pool.CloneNativeTensorFrom(matmul0_output, {1, 2, 512, 2688});
+  op_wrappers.emplace_back(CreateConcatenationOp(
+      {matmul0_output, matmul1_output}, concat_output, 3));
+
+  // MaskAdd
+  auto& mask = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                              quant_param, {1, 1, 512, 2688});
+  auto& add1_output = tensor_pool.CloneNativeTensorFrom(concat_output);
+  op_wrappers.emplace_back(
+      CreateElementWiseAddOp(concat_output, mask, add1_output));
+
+  // Softmax
+  auto& softmax_output = tensor_pool.CloneNativeTensorFrom(add1_output);
+  op_wrappers.emplace_back(CreateSoftmaxOp(add1_output, softmax_output, 1.0f));
+
+  // Slice0
+  const std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 2,    1,
+                                                   0, 512, 1, 0, 2560, 1};
+  auto& slice0_ranges = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_INT_32, {}, {4, 3},
+      sizeof(int32_t) * slice0_ranges_data.size(), slice0_ranges_data.data());
+  auto& slice0_output =
+      tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 512, 2560});
+  op_wrappers.emplace_back(
+      CreateSliceOp(softmax_output, slice0_output, slice0_ranges));
+
+  // Slice1
+  const std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    2,    1,
+                                                   0, 512, 1, 2560, 2688, 1};
+  auto& slice1_ranges = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_INT_32, {}, {4, 3},
+      sizeof(int32_t) * slice1_ranges_data.size(), slice1_ranges_data.data());
+  auto& slice1_output =
+      tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 512, 128});
+  op_wrappers.emplace_back(
+      CreateSliceOp(softmax_output, slice1_output, slice1_ranges));
+
+  // MatMul2 (QK x V_cache)
+  auto& v_in = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                              quant_param, {1, 2, 256, 2560});
+  auto& matmul2_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 512, 256});
+  op_wrappers.emplace_back(
+      CreateMatmulOp(slice0_output, v_in, matmul2_output, false, true));
+
+  // MatMul3 (QK x V_slice)
+  auto& in2 = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                              quant_param, {1, 2, 256, 128});
+  auto& matmul3_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 512, 256});
+  op_wrappers.emplace_back(CreateMatmulOp(slice1_output, in2,
+                                          matmul3_output, false, true));
+
+  // Add2
+  auto& add2_output = tensor_pool.CloneNativeTensorFrom(matmul3_output);
+  op_wrappers.emplace_back(
+      CreateElementWiseAddOp(matmul2_output, matmul3_output, add2_output));
+
+  // Output Convert
+  QuantizeParamsWrapperVariant quant_param_out;
+  quant_param_out.emplace<ScaleOffsetQuantizeParamsWrapper>(3.66805e-02f, 0);
+  auto& quant_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param_out, {1, 2, 512, 256});
+  op_wrappers.emplace_back(CreateConvertOp(add2_output, quant_output));
+
+  // Reshape1
+  auto& reshape1_output =
+      tensor_pool.CloneNativeTensorFrom(quant_output, {1, 8, 128, 256});
+  op_wrappers.emplace_back(CreateReshapeOp(quant_output, reshape1_output));
+
+  // Transpose1
+  auto& perm0213_t1 = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_UINT_32, {}, {4}, sizeof(kPerm0213), kPerm0213);
+  auto& transpose1_output =
+      tensor_pool.CloneNativeTensorFrom(reshape1_output, {1, 128, 8, 256});
+  op_wrappers.emplace_back(
+      CreateTransposeOp(reshape1_output, transpose1_output, perm0213_t1));
+
+  ASSERT_EQ(op_wrappers.size(), 17);
+
+  GraphToGraphTransform(::qnn::G2GConfig::kMHAOptPrefill, op_wrappers,
+                        tensor_pool, [](OpWrapper& op) { return true; });
+
+  // Each SHA head has 12 ops: the base 11 + 1 KSliceAttnUpdateConvert.
+  const size_t num_head = 8;
+  const size_t num_op_in_sha = 12;  // Q·KC, KSliceAttnUpdateConvert, Q·KS, Concat, MaskAdd, Softmax,
+                                    // Slice(VC), Slice(VS), QK·VC, QK·VS, Add, Convert
+  const size_t sha_init_idx = 8;
+  for (size_t i = 0; i < num_head; ++i) {
+    ASSERT_TRUE(op_wrappers[sha_init_idx + num_op_in_sha * i].IsOpCode(
+        QnnOpCode::kMatMul));
+    ASSERT_TRUE(op_wrappers[(sha_init_idx + 1) + num_op_in_sha * i].IsOpCode(
+        QnnOpCode::kConvert));  // KSliceAttnUpdateConvert per head
+    ASSERT_TRUE(op_wrappers[(sha_init_idx + 2) + num_op_in_sha * i].IsOpCode(
+        QnnOpCode::kMatMul));
+    ASSERT_TRUE(op_wrappers[(sha_init_idx + 11) + num_op_in_sha * i].IsOpCode(
+        QnnOpCode::kConvert));  // output Convert per head
+  }
+}
+
+// Variant: has_v_slice_attn_update_convert=true — a Convert between V_slice and QK·VS matmul.
+// Verifies that BuildSingleSHAGemma4B emits a per-head VSliceAttnUpdateConvert (17-op pattern).
+TEST(MHASHATest, GQAGemma4BPrefill_VSliceAttnUpdateConvert) {
+  TensorPool tensor_pool;
+  QuantizeParamsWrapperVariant quant_param;
+  quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(1e-4f, 0);
+  std::vector<OpWrapper> op_wrappers;
+
+  auto& in0 = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                              quant_param, {1, 128, 8, 256});
+  static const std::uint32_t kPerm0213[] = {0, 2, 1, 3};
+  auto& perm0213 = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_UINT_32, {}, {4}, sizeof(kPerm0213), kPerm0213);
+  auto& transpose0_output =
+      tensor_pool.CloneNativeTensorFrom(in0, {1, 8, 128, 256});
+  op_wrappers.emplace_back(CreateTransposeOp(in0, transpose0_output, perm0213));
+
+  auto& reshape0_output =
+      tensor_pool.CloneNativeTensorFrom(transpose0_output, {1, 8, 128, 256});
+  op_wrappers.emplace_back(CreateReshapeOp(transpose0_output, reshape0_output));
+
+  // Far-away Convert (index 2)
+  auto& k_slice_raw = tensor_pool.CreateNativeTensor(QNN_DATATYPE_FLOAT_16,
+                                                      quant_param, {1, 2, 128, 256});
+  auto& k_slice_converted = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 128, 256});
+  op_wrappers.emplace_back(CreateConvertOp(k_slice_raw, k_slice_converted));
+
+  // MatMul0 (Q x K_cache)
+  auto& q_in = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                              quant_param, {1, 2, 2560, 256});
+  auto& matmul0_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 512, 2560});
+  op_wrappers.emplace_back(
+      CreateMatmulOp(reshape0_output, q_in, matmul0_output, false, true));
+
+  // MatMul1 (Q x K_slice, no KSliceAttnUpdateConvert)
+  auto& matmul1_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 512, 128});
+  op_wrappers.emplace_back(CreateMatmulOp(reshape0_output, k_slice_converted,
+                                          matmul1_output, false, true));
+
+  // Concat
+  auto& concat_output =
+      tensor_pool.CloneNativeTensorFrom(matmul0_output, {1, 2, 512, 2688});
+  op_wrappers.emplace_back(CreateConcatenationOp(
+      {matmul0_output, matmul1_output}, concat_output, 3));
+
+  // MaskAdd
+  auto& mask = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                              quant_param, {1, 1, 512, 2688});
+  auto& add1_output = tensor_pool.CloneNativeTensorFrom(concat_output);
+  op_wrappers.emplace_back(
+      CreateElementWiseAddOp(concat_output, mask, add1_output));
+
+  // Softmax
+  auto& softmax_output = tensor_pool.CloneNativeTensorFrom(add1_output);
+  op_wrappers.emplace_back(CreateSoftmaxOp(add1_output, softmax_output, 1.0f));
+
+  // Slice0
+  const std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 2,    1,
+                                                   0, 512, 1, 0, 2560, 1};
+  auto& slice0_ranges = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_INT_32, {}, {4, 3},
+      sizeof(int32_t) * slice0_ranges_data.size(), slice0_ranges_data.data());
+  auto& slice0_output =
+      tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 512, 2560});
+  op_wrappers.emplace_back(
+      CreateSliceOp(softmax_output, slice0_output, slice0_ranges));
+
+  // Slice1
+  const std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    2,    1,
+                                                   0, 512, 1, 2560, 2688, 1};
+  auto& slice1_ranges = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_INT_32, {}, {4, 3},
+      sizeof(int32_t) * slice1_ranges_data.size(), slice1_ranges_data.data());
+  auto& slice1_output =
+      tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 512, 128});
+  op_wrappers.emplace_back(
+      CreateSliceOp(softmax_output, slice1_output, slice1_ranges));
+
+  // MatMul2 (QK x V_cache)
+  auto& v_in = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                              quant_param, {1, 2, 256, 2560});
+  auto& matmul2_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 512, 256});
+  op_wrappers.emplace_back(
+      CreateMatmulOp(slice0_output, v_in, matmul2_output, false, true));
+
+  // VSliceAttnUpdateConvert (between V_slice and QK·VS)
+  auto& v_slice_raw = tensor_pool.CreateNativeTensor(QNN_DATATYPE_FLOAT_16,
+                                                      quant_param, {1, 2, 256, 128});
+  auto& v_slice_int8 = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 256, 128});
+  op_wrappers.emplace_back(CreateConvertOp(v_slice_raw, v_slice_int8));
+
+  // MatMul3 (QK x V_slice converted)
+  auto& matmul3_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 512, 256});
+  op_wrappers.emplace_back(CreateMatmulOp(slice1_output, v_slice_int8,
+                                          matmul3_output, false, true));
+
+  // Add2
+  auto& add2_output = tensor_pool.CloneNativeTensorFrom(matmul3_output);
+  op_wrappers.emplace_back(
+      CreateElementWiseAddOp(matmul2_output, matmul3_output, add2_output));
+
+  // Output Convert
+  QuantizeParamsWrapperVariant quant_param_out;
+  quant_param_out.emplace<ScaleOffsetQuantizeParamsWrapper>(3.66805e-02f, 0);
+  auto& quant_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param_out, {1, 2, 512, 256});
+  op_wrappers.emplace_back(CreateConvertOp(add2_output, quant_output));
+
+  // Reshape1
+  auto& reshape1_output =
+      tensor_pool.CloneNativeTensorFrom(quant_output, {1, 8, 128, 256});
+  op_wrappers.emplace_back(CreateReshapeOp(quant_output, reshape1_output));
+
+  // Transpose1
+  auto& perm0213_t1 = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_UINT_32, {}, {4}, sizeof(kPerm0213), kPerm0213);
+  auto& transpose1_output =
+      tensor_pool.CloneNativeTensorFrom(reshape1_output, {1, 128, 8, 256});
+  op_wrappers.emplace_back(
+      CreateTransposeOp(reshape1_output, transpose1_output, perm0213_t1));
+
+  ASSERT_EQ(op_wrappers.size(), 17);
+
+  GraphToGraphTransform(::qnn::G2GConfig::kMHAOptPrefill, op_wrappers,
+                        tensor_pool, [](OpWrapper& op) { return true; });
+
+  // Each SHA head has 12 ops: the base 11 + 1 VSliceAttnUpdateConvert.
+  const size_t num_head = 8;
+  const size_t num_op_in_sha = 12;  // Q·KC, Q·KS, Concat, MaskAdd, Softmax,
+                                    // Slice(VC), Slice(VS), QK·VC, VSliceAttnUpdateConvert, QK·VS, Add, Convert
+  const size_t sha_init_idx = 8;
+  for (size_t i = 0; i < num_head; ++i) {
+    ASSERT_TRUE(op_wrappers[sha_init_idx + num_op_in_sha * i].IsOpCode(
+        QnnOpCode::kMatMul));
+    // VSliceAttnUpdateConvert is at position 8 within each SHA (between QK·VC and QK·VS)
+    ASSERT_TRUE(op_wrappers[(sha_init_idx + 8) + num_op_in_sha * i].IsOpCode(
+        QnnOpCode::kConvert));
+    ASSERT_TRUE(op_wrappers[(sha_init_idx + 11) + num_op_in_sha * i].IsOpCode(
+        QnnOpCode::kConvert));  // output Convert per head
+  }
+}
+
+// Variant: has_global_mask=true — Concat+Reshape inserted after QK Concat (18-op pattern).
+// Verifies that the shifted index calculation still produces the correct SHA layout.
+TEST(MHASHATest, GQAGemma4BPrefill_GlobalMask) {
+  TensorPool tensor_pool;
+  QuantizeParamsWrapperVariant quant_param;
+  quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(1e-4f, 0);
+  std::vector<OpWrapper> op_wrappers;
+
+  auto& in0 = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                              quant_param, {1, 128, 8, 256});
+  static const std::uint32_t kPerm0213[] = {0, 2, 1, 3};
+  auto& perm0213 = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_UINT_32, {}, {4}, sizeof(kPerm0213), kPerm0213);
+  auto& transpose0_output =
+      tensor_pool.CloneNativeTensorFrom(in0, {1, 8, 128, 256});
+  op_wrappers.emplace_back(CreateTransposeOp(in0, transpose0_output, perm0213));
+
+  auto& reshape0_output =
+      tensor_pool.CloneNativeTensorFrom(transpose0_output, {1, 8, 128, 256});
+  op_wrappers.emplace_back(CreateReshapeOp(transpose0_output, reshape0_output));
+
+  // Far-away Convert (index 2)
+  auto& k_slice_raw = tensor_pool.CreateNativeTensor(QNN_DATATYPE_FLOAT_16,
+                                                      quant_param, {1, 2, 128, 256});
+  auto& k_slice_converted = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 128, 256});
+  op_wrappers.emplace_back(CreateConvertOp(k_slice_raw, k_slice_converted));
+
+  // MatMul0 (Q x K_cache)
+  auto& q_in = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                              quant_param, {1, 2, 2560, 256});
+  auto& matmul0_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 512, 2560});
+  op_wrappers.emplace_back(
+      CreateMatmulOp(reshape0_output, q_in, matmul0_output, false, true));
+
+  // MatMul1 (Q x K_slice)
+  auto& matmul1_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 512, 128});
+  op_wrappers.emplace_back(CreateMatmulOp(reshape0_output, k_slice_converted,
+                                          matmul1_output, false, true));
+
+  // QK Concat
+  auto& qk_concat_output =
+      tensor_pool.CloneNativeTensorFrom(matmul0_output, {1, 2, 512, 2688});
+  op_wrappers.emplace_back(CreateConcatenationOp(
+      {matmul0_output, matmul1_output}, qk_concat_output, 3));
+
+  // Global mask: Concat local+global masks, then Reshape — these two ops
+  // signal has_global_mask=true to OptimizeGQAGemma4BPrefill.
+  auto& local_mask = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                                    quant_param, {1, 1, 512, 2688});
+  auto& global_mask = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                                     quant_param, {1, 1, 512, 2688});
+  auto& mask_concat_output =
+      tensor_pool.CloneNativeTensorFrom(local_mask, {1, 2, 512, 2688});
+  op_wrappers.emplace_back(CreateConcatenationOp(
+      {local_mask, global_mask}, mask_concat_output, 1));
+  auto& mask_reshape_output =
+      tensor_pool.CloneNativeTensorFrom(mask_concat_output, {1, 2, 512, 2688});
+  op_wrappers.emplace_back(
+      CreateReshapeOp(mask_concat_output, mask_reshape_output));
+
+  // MaskAdd: qk_concat_output + mask_reshape_output
+  auto& add1_output = tensor_pool.CloneNativeTensorFrom(qk_concat_output);
+  op_wrappers.emplace_back(
+      CreateElementWiseAddOp(qk_concat_output, mask_reshape_output, add1_output));
+
+  // Softmax
+  auto& softmax_output = tensor_pool.CloneNativeTensorFrom(add1_output);
+  op_wrappers.emplace_back(CreateSoftmaxOp(add1_output, softmax_output, 1.0f));
+
+  // Slice0
+  const std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 2,    1,
+                                                   0, 512, 1, 0, 2560, 1};
+  auto& slice0_ranges = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_INT_32, {}, {4, 3},
+      sizeof(int32_t) * slice0_ranges_data.size(), slice0_ranges_data.data());
+  auto& slice0_output =
+      tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 512, 2560});
+  op_wrappers.emplace_back(
+      CreateSliceOp(softmax_output, slice0_output, slice0_ranges));
+
+  // Slice1
+  const std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    2,    1,
+                                                   0, 512, 1, 2560, 2688, 1};
+  auto& slice1_ranges = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_INT_32, {}, {4, 3},
+      sizeof(int32_t) * slice1_ranges_data.size(), slice1_ranges_data.data());
+  auto& slice1_output =
+      tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 512, 128});
+  op_wrappers.emplace_back(
+      CreateSliceOp(softmax_output, slice1_output, slice1_ranges));
+
+  // MatMul2
+  auto& v_in = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                              quant_param, {1, 2, 256, 2560});
+  auto& matmul2_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 512, 256});
+  op_wrappers.emplace_back(
+      CreateMatmulOp(slice0_output, v_in, matmul2_output, false, true));
+
+  // MatMul3
+  auto& in2 = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                              quant_param, {1, 2, 256, 128});
+  auto& matmul3_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param, {1, 2, 512, 256});
+  op_wrappers.emplace_back(CreateMatmulOp(slice1_output, in2,
+                                          matmul3_output, false, true));
+
+  // Add2
+  auto& add2_output = tensor_pool.CloneNativeTensorFrom(matmul3_output);
+  op_wrappers.emplace_back(
+      CreateElementWiseAddOp(matmul2_output, matmul3_output, add2_output));
+
+  // Output Convert
+  QuantizeParamsWrapperVariant quant_param_out;
+  quant_param_out.emplace<ScaleOffsetQuantizeParamsWrapper>(3.66805e-02f, 0);
+  auto& quant_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, quant_param_out, {1, 2, 512, 256});
+  op_wrappers.emplace_back(CreateConvertOp(add2_output, quant_output));
+
+  // Reshape1
+  auto& reshape1_output =
+      tensor_pool.CloneNativeTensorFrom(quant_output, {1, 8, 128, 256});
+  op_wrappers.emplace_back(CreateReshapeOp(quant_output, reshape1_output));
+
+  // Transpose1
+  auto& perm0213_t1 = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_UINT_32, {}, {4}, sizeof(kPerm0213), kPerm0213);
+  auto& transpose1_output =
+      tensor_pool.CloneNativeTensorFrom(reshape1_output, {1, 128, 8, 256});
+  op_wrappers.emplace_back(
+      CreateTransposeOp(reshape1_output, transpose1_output, perm0213_t1));
+
+  ASSERT_EQ(op_wrappers.size(), 18);
+
+  GraphToGraphTransform(::qnn::G2GConfig::kMHAOptPrefill, op_wrappers,
+                        tensor_pool, [](OpWrapper& op) { return true; });
+
+  // Same SHA layout as the base case — has_global_mask only shifts internal
+  // index arithmetic, the output structure is identical.
+  const size_t num_head = 8;
+  // Q·KC, Q·KS, Concat, MaskAdd, Softmax, Slice(VC), Slice(VS), QK·VC, QK·VS, Add, Convert
+  const size_t num_op_in_sha = 11;
+  // With has_global_mask the kept mask Concat+Reshape sit at indices 0 and 1,
+  // pushing new_ops (far-away Convert, unpacks, SHAs, final Concat+Reshape) up
+  // by 2, so the per-head SHA block starts at index 10 instead of 8.
+  const size_t sha_init_idx = 10;
+  for (size_t i = 0; i < num_head; ++i) {
+    ASSERT_TRUE(op_wrappers[sha_init_idx + num_op_in_sha * i].IsOpCode(
+        QnnOpCode::kMatMul));
+    ASSERT_TRUE(op_wrappers[(sha_init_idx + 4) + num_op_in_sha * i].IsOpCode(
+        QnnOpCode::kSoftmax));
+    ASSERT_TRUE(op_wrappers[(sha_init_idx + 10) + num_op_in_sha * i].IsOpCode(
+        QnnOpCode::kConvert));
+  }
+}
+
 TEST(MHASHATest, FastVlm) {
   // G2G Test case: MHA -> SHA
   // ------------------- Before ---------------------
