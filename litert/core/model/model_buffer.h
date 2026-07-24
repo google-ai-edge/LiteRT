@@ -15,8 +15,13 @@
 #ifndef ODML_LITERT_LITERT_CORE_MODEL_MODEL_BUFFER_H_
 #define ODML_LITERT_LITERT_CORE_MODEL_MODEL_BUFFER_H_
 
+#include <cstddef>
+#include <cstdint>
+#include <string>
+
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
@@ -31,7 +36,7 @@ namespace litert::internal {
 // NOTE: this is intended to be used for testing and tools and may be removed in
 // the future.
 Expected<OwningBufferRef<uint8_t>> GetModelBufWithByteCode(
-    absl::string_view tfl_file,
+    LiteRtEnvironment environment, absl::string_view tfl_file,
     const absl::flat_hash_map<std::string, std::string>&
         custom_code_to_npu_file,
     size_t bytecode_alignment = 1);
@@ -45,8 +50,8 @@ Expected<OwningBufferRef<uint8_t>> GetModelBufWithByteCode(
 
 // Same as above, but only a single NPU byte code file is specified.
 Expected<OwningBufferRef<uint8_t>> GetModelBufWithByteCode(
-    absl::string_view tfl_file, absl::string_view npu_file,
-    size_t bytecode_alignment = 1);
+    LiteRtEnvironment environment, absl::string_view tfl_file,
+    absl::string_view npu_file, size_t bytecode_alignment = 1);
 
 // Same as above, but only a single NPU byte code buffer is specified.
 Expected<OwningBufferRef<uint8_t>> GetModelBufWithByteCode(

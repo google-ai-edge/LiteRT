@@ -15,9 +15,12 @@
 #ifndef ODML_LITERT_LITERT_TEST_COMMON_H_
 #define ODML_LITERT_LITERT_TEST_COMMON_H_
 
+#include <memory>
 #include <string>
+#include <utility>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/model/model_buffer.h"
 #include "litert/core/util/flatbuffer_tools.h"
@@ -86,9 +89,10 @@ inline Expected<TflRuntime::Ptr> MakeRuntimeFromTestFile(
 }
 
 inline Expected<TflRuntime::Ptr> MakeRuntimeFromTestFileWithNpuModel(
-    absl::string_view filename, absl::string_view npu_filename) {
-  auto buf = internal::GetModelBufWithByteCode(GetTestFilePath(filename),
-                                               GetTestFilePath(npu_filename));
+    LiteRtEnvironment environment, absl::string_view filename,
+    absl::string_view npu_filename) {
+  auto buf = internal::GetModelBufWithByteCode(
+      environment, GetTestFilePath(filename), GetTestFilePath(npu_filename));
   if (!buf) {
     return buf.Error();
   }

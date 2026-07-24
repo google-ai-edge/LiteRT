@@ -1190,7 +1190,7 @@ bool LiteRtCompiledModelT::TryLoadingFromCache(
   }
   // Check if we compiled this model before.
   Expected<std::optional<LiteRtModelT::Ptr>> maybe_cached_model =
-      compilation_cache_.value().TryLoadModel(cache_key, model_name);
+      compilation_cache_.value().TryLoadModel(env_, cache_key, model_name);
   if (!maybe_cached_model) {
     // The model was found in the cache, but failed to load.
     LITERT_LOG(LITERT_WARNING, "Failed to load model from cache: %s",

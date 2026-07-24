@@ -1089,6 +1089,8 @@ class LiteRtModelT {
 
   const std::optional<std::string>& SourcePath() const { return source_path_; }
 
+  LiteRtEnvironment GetEnvironment() const { return env_; }
+
   // Attach an asset to the given op. An asset is a non-tensor buffer
   // that is used by the op. Assets may be referenced by multiple ops.
   // Each edge from an op to an asset is identified by a name. All buffers
@@ -1145,6 +1147,16 @@ class LiteRtModelT {
   explicit LiteRtModelT(TflFlatbuffer&& tfl_flatbuffer)
       : tfl_flatbuffer_(std::move(tfl_flatbuffer)) {}
 
+  explicit LiteRtModelT(LiteRtEnvironment environment) : env_(environment) {
+    ABSL_CHECK(env_ != nullptr);
+  }
+
+  explicit LiteRtModelT(LiteRtEnvironment environment,
+                        TflFlatbuffer&& tfl_flatbuffer)
+      : tfl_flatbuffer_(std::move(tfl_flatbuffer)), env_(environment) {
+    ABSL_CHECK(env_ != nullptr);
+  }
+
  private:
   LiteRtSubgraphT::Alloc subgraphs_;
   LiteRtSignatureT::Alloc signatures_;
@@ -1159,6 +1171,7 @@ class LiteRtModelT {
   TflOpCodes tfl_operator_codes_;
   TflFlatbuffer tfl_flatbuffer_;
   std::optional<std::string> source_path_;
+  LiteRtEnvironment env_ = nullptr;
 };
 
 // Get the build stamp from the model if it exists.

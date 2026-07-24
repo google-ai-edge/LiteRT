@@ -398,6 +398,8 @@ cc_test(
         ":model",
         ":model_buffer",
         ":model_load",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment",
         "//litert/c:litert_op_code",
         "//litert/core:dispatch_op_schema",
         "//litert/test:common",

@@ -332,10 +332,11 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   // /// libLiteRt.so. It's not part of the official LiteRT public C++ API.
   // static Expected<Model> CreateFromAllocation(
       // std::unique_ptr<tflite::Allocation> allocation) {
+    // const auto& env = GetDefaultEnvironment();
     // LiteRtModel model;
     // LiteRtAllocation c_allocation = allocation.release();
     // if (auto status = LiteRtCreateModelFromAllocation(
-            // /*environment=*/nullptr, c_allocation, &model);
+            // env->GetHolder().handle, c_allocation, &model);
         // status != kLiteRtStatusOk) {
       // return Unexpected(ToStatus(status),
                         // "Failed to load model from allocation");

@@ -297,7 +297,10 @@ Expected<void> CompilationCache::SaveModel(
 }
 
 Expected<std::optional<LiteRtModelT::Ptr>> CompilationCache::TryLoadModel(
-    CacheKey cache_key, absl::string_view model_name) {
+    LiteRtEnvironment environment, CacheKey cache_key,
+    absl::string_view model_name) {
+  // TODO(b/525716722): - Use LiteRtEnvironmentConst once the existing code is
+  // updated to use it consistently.
   std::string expected_model_file_path =
       GetCachedModelFilePath(cache_root_path_, cache_key, model_name);
   if (!Exists(expected_model_file_path)) {
@@ -316,8 +319,8 @@ Expected<std::optional<LiteRtModelT::Ptr>> CompilationCache::TryLoadModel(
 
   LITERT_RETURN_IF_ERROR(TouchFile(expected_model_file_path));
 
-  auto cached_model_expected =
-      litert::internal::LoadModelFromFile(expected_model_file_path);
+  auto cached_model_expected = litert::internal::LoadModelFromFile(
+      environment, expected_model_file_path);
   if (!cached_model_expected.HasValue()) {
     LITERT_LOG(LITERT_WARNING,
                "Failed to load model from cache, removing corrupted file: %s",
