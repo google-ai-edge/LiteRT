@@ -15,7 +15,7 @@
 namespace qnn {
 nlohmann::json SerializeTensorToJson(const Qnn_TensorV1_t& qnn_tensor);
 nlohmann::json SerializeQuantParamToJson(
-    const Qnn_QuantizeParams_t& quant_params);
+    const Qnn_QuantizeParams_t& quant_params, Qnn_DataType_t data_type);
 nlohmann::json SerializeScalarParamToJson(const Qnn_Scalar_t& scalar);
 nlohmann::json SerializeTensorParamToJson(const Qnn_TensorV1_t& qnn_tensor);
 nlohmann::json SerializeOpToJson(const Qnn_OpConfig_t& op_config);
