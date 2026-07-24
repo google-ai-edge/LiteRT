@@ -78,6 +78,10 @@ class EnvironmentOptions {
     /// Singleton ML Drift WebGPU/Dawn instance. Required for shared libraries
     /// to prevent them from creating their own instances.
     kWebGpuInstance = kLiteRtEnvOptionTagWebGpuInstance,
+    /// An optional custom callback (`void (*)()`) invoked during synchronous
+    /// WebGPU buffer readback (e.g., with Dawn Wire handler) to flush outbound
+    /// wire commands and pump inbound events on the thread message loop.
+    kWebGpuFlushCallback = kLiteRtEnvOptionTagWebGpuFlushCallback,
     /// Directory for the runtime library.
     kRuntimeLibraryDir = kLiteRtEnvOptionTagRuntimeLibraryDir,
     /// \internal This is for internal use only.
