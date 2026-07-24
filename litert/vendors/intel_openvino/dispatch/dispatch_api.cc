@@ -14,6 +14,7 @@
 // limitations under the License.
 
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -55,8 +56,8 @@ LiteRtStatus CreateOpenVinoTensorBuffer(
     const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, size_t bytes, size_t packed_bytes,
     HwMemoryInfoPtr* hw_memory_info) {
-  auto memory_info = new HwMemoryInfo();
-  OpenVinoTensorBuffer* custom_tensor_buffer = new OpenVinoTensorBuffer();
+  auto memory_info = std::make_unique<HwMemoryInfo>();
+  auto custom_tensor_buffer = std::make_unique<OpenVinoTensorBuffer>();
   litert::Expected<void> result =
       custom_tensor_buffer->Alloc(*tensor_type, bytes);
   if (!result) {
@@ -64,8 +65,8 @@ LiteRtStatus CreateOpenVinoTensorBuffer(
                bytes);
     return kLiteRtStatusErrorMemoryAllocationFailure;
   }
-  memory_info->memory_handle = custom_tensor_buffer;
-  *hw_memory_info = memory_info;
+  memory_info->memory_handle = custom_tensor_buffer.release();
+  *hw_memory_info = memory_info.release();
   return kLiteRtStatusOk;
 }
 
