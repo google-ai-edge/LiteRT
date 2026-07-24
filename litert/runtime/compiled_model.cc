@@ -265,6 +265,7 @@ LiteRtCompiledModelT::LiteRtCompiledModelT(LiteRtEnvironmentT* env)
     : env_(env) {}
 
 LiteRtCompiledModelT::~LiteRtCompiledModelT() {
+  ClearRegisteredBuffersCache();
   if (profiler_ != nullptr) {
     delete profiler_;
     profiler_ = nullptr;
@@ -1090,6 +1091,15 @@ void LiteRtCompiledModelT::CheckCpuTensors() {
   }
 }
 
+void LiteRtCompiledModelT::ClearRegisteredBuffersCache() {
+  for (auto& [_, buffer] : registered_buffers_cache_) {
+    if (buffer != nullptr && buffer->Unref()) {
+      delete buffer;
+    }
+  }
+  registered_buffers_cache_.clear();
+}
+
 #if !defined(LITERT_DISABLE_NPU)
 Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
     LiteRtModelT& model, LiteRtHwAcceleratorSet hw_accelerators,
@@ -1530,6 +1540,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
       // also be resized. This can invalidate previously cached buffer
       // requirements, so we clear the cache.
       cpu_buffer_requirements_.clear();
+      ClearRegisteredBuffersCache();
       // Shape change detected - perform automatic resize.
       TfLiteStatus resize_status = kTfLiteOk;
       if (runner) {
@@ -1893,15 +1904,51 @@ Expected<void> LiteRtCompiledModelT::Run(
       input_tensor = runner->input_tensor(tensor_name);
     }
 
-    auto res =
-        RegisterBuffer(runner, input_tensor, tensor_index, tensor_name,
-                       input_buffers[i], /*is_input=*/true, locked_buffers,
-                       constant_outputs, pending_string_output_copies);
-
-    if (!res) {
+    if (input_tensor == nullptr) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        absl::StrCat("Failed to register input tensor buffer: ",
-                                     res.Error().Message()));
+                        "Input tensor is null");
+    }
+
+    LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
+                            GetTensorIdentifier(*interp_, input_tensor));
+
+    bool skip_register = false;
+    if (input_buffers[i]->buffer_type() == kLiteRtTensorBufferTypeHostMemory &&
+        input_tensor->type != kTfLiteString) {
+      auto it = registered_buffers_cache_.find(tensor_id);
+      if (it != registered_buffers_cache_.end() &&
+          it->second == input_buffers[i]) {
+        skip_register = true;
+      }
+    }
+
+    if (!skip_register) {
+      auto res =
+          RegisterBuffer(runner, input_tensor, tensor_index, tensor_name,
+                         input_buffers[i], /*is_input=*/true, locked_buffers,
+                         constant_outputs, pending_string_output_copies);
+
+      if (!res) {
+        return Unexpected(
+            kLiteRtStatusErrorRuntimeFailure,
+            absl::StrCat("Failed to register input tensor buffer: ",
+                         res.Error().Message()));
+      }
+
+      if (input_buffers[i]->buffer_type() ==
+              kLiteRtTensorBufferTypeHostMemory &&
+          input_tensor->type != kTfLiteString) {
+        auto& cached_buffer = registered_buffers_cache_[tensor_id];
+        if (cached_buffer != input_buffers[i]) {
+          if (cached_buffer != nullptr) {
+            if (cached_buffer->Unref()) {
+              delete cached_buffer;
+            }
+          }
+          cached_buffer = input_buffers[i];
+          cached_buffer->Ref();
+        }
+      }
     }
   }
 
@@ -1919,18 +1966,61 @@ Expected<void> LiteRtCompiledModelT::Run(
       output_tensor = runner->output_tensor(tensor_name);
     }
 
-    auto res = RegisterBuffer(runner, const_cast<TfLiteTensor*>(output_tensor),
-                              tensor_index, tensor_name, output_buffers[i],
-                              /*is_input=*/false, locked_buffers,
-                              constant_outputs, pending_string_output_copies);
+    if (output_tensor == nullptr) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Output tensor is null");
+    }
 
-    if (!res) {
-      return Unexpected(
-          kLiteRtStatusErrorRuntimeFailure,
-          absl::StrCat("Failed to register output tensor buffer: ",
-                       res.Error().Message()));
+    LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
+                            GetTensorIdentifier(*interp_, output_tensor));
+
+    bool skip_register = false;
+    if (output_buffers[i]->buffer_type() == kLiteRtTensorBufferTypeHostMemory &&
+        output_tensor->type != kTfLiteString) {
+      bool is_constant_output =
+          (output_tensor->allocation_type == kTfLiteMmapRo ||
+           output_tensor->allocation_type == kTfLitePersistentRo) &&
+          output_tensor->data.raw != nullptr;
+      if (!is_constant_output) {
+        auto it = registered_buffers_cache_.find(tensor_id);
+        if (it != registered_buffers_cache_.end() &&
+            it->second == output_buffers[i]) {
+          skip_register = true;
+        }
+      }
+    }
+
+    if (!skip_register) {
+      auto res =
+          RegisterBuffer(runner, const_cast<TfLiteTensor*>(output_tensor),
+                         tensor_index, tensor_name, output_buffers[i],
+                         /*is_input=*/false, locked_buffers, constant_outputs,
+                         pending_string_output_copies);
+
+      if (!res) {
+        return Unexpected(
+            kLiteRtStatusErrorRuntimeFailure,
+            absl::StrCat("Failed to register output tensor buffer: ",
+                         res.Error().Message()));
+      }
+
+      if (output_buffers[i]->buffer_type() ==
+              kLiteRtTensorBufferTypeHostMemory &&
+          output_tensor->type != kTfLiteString) {
+        auto& cached_buffer = registered_buffers_cache_[tensor_id];
+        if (cached_buffer != output_buffers[i]) {
+          if (cached_buffer != nullptr) {
+            if (cached_buffer->Unref()) {
+              delete cached_buffer;
+            }
+          }
+          cached_buffer = output_buffers[i];
+          cached_buffer->Ref();
+        }
+      }
     }
   }
+
   if (profiler_ && profiler_->IsProfiling() &&
       event_handle != std::numeric_limits<uint64_t>::max()) {
     profiler_->SetCurrentEventSource(LITERT);
@@ -2367,6 +2457,7 @@ Expected<void> LiteRtCompiledModelT::ResizeInputTensorImpl(
   }
 
   cpu_buffer_requirements_.clear();
+  ClearRegisteredBuffersCache();
   return MarkSignatureNeedsAllocation(runner);
 }
 
