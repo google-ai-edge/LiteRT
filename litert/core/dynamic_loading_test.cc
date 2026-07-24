@@ -38,6 +38,18 @@ constexpr absl::string_view kLiteRtSo1 = "libLiteRtCompilerPlugin_1.so";
 constexpr absl::string_view kLiteRtSo2 = "libLiteRtCompilerPlugin_2.so";
 constexpr absl::string_view kLiteRtSo3 = "libLiteRtDispatch_1.so";
 constexpr absl::string_view kLiteRtSo4 = "libLiteRtDispatch_2.so";
+// SONAME-versioned forms, as produced by CMake's VERSION/SOVERSION target
+// properties on Linux (e.g. "libFoo.so.<major>"). Only the SONAME symlink
+// (this form) and the bare unversioned ".so" (development package) are
+// valid dlopen() targets under Debian/Yocto-style shared library packaging
+// policy; the fully-versioned real file ("libFoo.so.<major>.<minor>.<patch>")
+// is intentionally excluded from directory-scan discovery below.
+constexpr absl::string_view kLiteRtSonameSo1 = "libLiteRtCompilerPlugin_Qualcomm.so.2";
+constexpr absl::string_view kLiteRtFullyVersionedSo1 =
+    "libLiteRtCompilerPlugin_Qualcomm.so.2.1.0";
+constexpr absl::string_view kLiteRtSonameSo2 = "libLiteRtDispatch_Qualcomm.so.2";
+constexpr absl::string_view kLiteRtFullyVersionedSo2 =
+    "libLiteRtDispatch_Qualcomm.so.2.1.0";
 constexpr absl::string_view kLdLibraryPath = "LD_LIBRARY_PATH";
 
 TEST(TestDynamicLoading, GlobNoMatch) {
@@ -97,6 +109,62 @@ TEST(TestDynamicLoading, GlobMultiMatch) {
   ASSERT_EQ(results2.size(), 2);
   EXPECT_THAT(results2, Contains(HasSubstr(kLiteRtSo3)));
   EXPECT_THAT(results2, Contains(HasSubstr(kLiteRtSo4)));
+}
+
+// Regression test: a vendor plugin packaged with a SONAME (e.g. produced by
+// CMake VERSION/SOVERSION target properties, as used for the Qualcomm
+// dispatch/compiler plugins) must still be discoverable via its SONAME
+// symlink, even though the symlink's filename does not end in a bare
+// ".so" extension.
+TEST(TestDynamicLoading, GlobMatchesSonameVersionedLib) {
+  const auto dir = UniqueTestDirectory::Create();
+  ASSERT_TRUE(dir);
+  Touch(Join({dir->Str(), kLiteRtSonameSo1}));
+  Touch(Join({dir->Str(), kLiteRtSonameSo2}));
+  Touch(Join({dir->Str(), kNotLiteRtSo}));
+
+  std::vector<std::string> results;
+  LITERT_ASSERT_OK(litert::internal::FindLiteRtCompilerPluginSharedLibs(
+      dir->Str(), results));
+  ASSERT_EQ(results.size(), 1);
+  EXPECT_TRUE(
+      absl::string_view(results.front()).ends_with(kLiteRtSonameSo1));
+
+  std::vector<std::string> results2;
+  LITERT_ASSERT_OK(
+      litert::internal::FindLiteRtDispatchSharedLibs(dir->Str(), results2));
+  ASSERT_EQ(results2.size(), 1);
+  EXPECT_TRUE(
+      absl::string_view(results2.front()).ends_with(kLiteRtSonameSo2));
+}
+
+// Regression test: when both the SONAME symlink and the fully-versioned
+// real file are present in the same directory (as required by Debian/
+// Yocto-style shared library packaging policy), the plugin must only be
+// discovered once, via the SONAME symlink. The fully-versioned real file
+// must NOT be independently matched, or the same plugin would be loaded
+// twice.
+TEST(TestDynamicLoading, GlobIgnoresFullyVersionedRealFileAlongsideSoname) {
+  const auto dir = UniqueTestDirectory::Create();
+  ASSERT_TRUE(dir);
+  Touch(Join({dir->Str(), kLiteRtSonameSo1}));
+  Touch(Join({dir->Str(), kLiteRtFullyVersionedSo1}));
+  Touch(Join({dir->Str(), kLiteRtSonameSo2}));
+  Touch(Join({dir->Str(), kLiteRtFullyVersionedSo2}));
+
+  std::vector<std::string> results;
+  LITERT_ASSERT_OK(litert::internal::FindLiteRtCompilerPluginSharedLibs(
+      dir->Str(), results));
+  ASSERT_EQ(results.size(), 1);
+  EXPECT_TRUE(
+      absl::string_view(results.front()).ends_with(kLiteRtSonameSo1));
+
+  std::vector<std::string> results2;
+  LITERT_ASSERT_OK(
+      litert::internal::FindLiteRtDispatchSharedLibs(dir->Str(), results2));
+  ASSERT_EQ(results2.size(), 1);
+  EXPECT_TRUE(
+      absl::string_view(results2.front()).ends_with(kLiteRtSonameSo2));
 }
 
 TEST(TestDynamicLoadingHelper, HelperWithFullMatch) {
