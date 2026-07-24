@@ -30,12 +30,14 @@ litert_dynamic_lib(
         "invocation_context.cc",
         "openvino_shared_core.cc",
         "openvino_tensor_buffer.cc",
+        "weight_bank_runtime.cc",
     ],
     hdrs = [
         "device_context.h",
         "invocation_context.h",
         "openvino_shared_core.h",
         "openvino_tensor_buffer.h",
+        "weight_bank_runtime.h",
     ],
     copts = [
         "-Os",
@@ -95,6 +97,7 @@ litert_dynamic_lib(
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/intel_openvino:bytecode_header",
+        "//litert/vendors/intel_openvino/compiler:global_graph",
         "//litert/vendors/intel_openvino:ov_utils",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/cleanup",
@@ -111,6 +114,7 @@ litert_bin(
         "invocation_context.cc",
         "openvino_shared_core.cc",
         "openvino_tensor_buffer.cc",
+        "weight_bank_runtime.cc",
     ],
     copts = ["-fexceptions"] + select({
         "//litert/runtime/dispatch:windows_msvc": [
@@ -155,6 +159,7 @@ litert_bin(
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/intel_openvino:bytecode_header",
+        "//litert/vendors/intel_openvino/compiler:global_graph",
         "//litert/vendors/intel_openvino:ov_utils",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/cleanup",
@@ -170,6 +175,7 @@ litert_lib(
         "invocation_context.h",
         "openvino_shared_core.h",
         "openvino_tensor_buffer.h",
+        "weight_bank_runtime.h",
     ],
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
@@ -188,6 +194,7 @@ litert_lib(
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/intel_openvino:bytecode_header",
+        "//litert/vendors/intel_openvino/compiler:global_graph",
         "//litert/vendors/intel_openvino:ov_utils",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/cleanup",

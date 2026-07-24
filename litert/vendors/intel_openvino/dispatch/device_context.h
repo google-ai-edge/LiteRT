@@ -39,6 +39,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/intel_openvino/dispatch/openvino_shared_core.h"
+#include "litert/vendors/intel_openvino/dispatch/weight_bank_runtime.h"
 
 class LiteRtDispatchDeviceContextT {
  public:
@@ -131,6 +132,19 @@ class LiteRtDispatchDeviceContextT {
   std::unordered_map<LiteRtTensorBufferHandle, RegisteredTensor>
       tensor_handle_map_ ABSL_GUARDED_BY(tensor_handle_mutex_);
   uint64_t next_handle_ ABSL_GUARDED_BY(tensor_handle_mutex_);
+  // Per-model shared GPU weight pool: allocated once and shared by this model's
+  // prefill and decode partitions, distinct across models. Guards its own state
+  // internally, so no external locking is needed here.
+  std::unique_ptr<litert::openvino::GpuSharedBank> gpu_shared_bank_ = nullptr;
+
+ public:
+  // The per-model shared GPU weight pool, bound at dispatch by the invocation
+  // context (see GpuSharedBank::Bind).
+  litert::openvino::GpuSharedBank& GpuBank() { 
+      if (!gpu_shared_bank_) gpu_shared_bank_ = std::make_unique<litert::openvino::GpuSharedBank>();
+      return *gpu_shared_bank_; 
+  }
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
+
