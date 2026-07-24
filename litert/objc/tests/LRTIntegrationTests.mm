@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#import <Metal/Metal.h>
 #import <XCTest/XCTest.h>
 
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -25,13 +27,13 @@
 #include "litert/test/common.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 
-@interface LRTCompiledModelTests : XCTestCase
+@interface LRTIntegrationTests : XCTestCase
 @end
 
 static constexpr float kTestAccuracy = 1e-5f;
 
 static NSString *GetTestModelPath() {
-  NSBundle *bundle = [NSBundle bundleForClass:[LRTCompiledModelTests class]];
+  NSBundle *bundle = [NSBundle bundleForClass:[LRTIntegrationTests class]];
   NSString *path = [bundle pathForResource:@"simple_model" ofType:@"tflite"];
   if (path) {
     return path;
@@ -40,9 +42,9 @@ static NSString *GetTestModelPath() {
   return @(modelPath.c_str());
 }
 
-@implementation LRTCompiledModelTests
+@implementation LRTIntegrationTests
 
-- (void)testCreateAndRunFromFilePath {
+- (void)testEndToEndInferenceFromFilePath {
   NSError *error = nil;
   LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
   XCTAssertNotNil(env);
@@ -50,23 +52,20 @@ static NSString *GetTestModelPath() {
 
   LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
 
-  NSString *filePath = GetTestModelPath();
-
-  LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelFilePath:filePath
-                                                                 environment:env
-                                                                     options:options
-                                                                       error:&error];
-  XCTAssertNotNil(model);
+  NSString *modelPath = GetTestModelPath();
+  LRTCompiledModel *compiledModel = [LRTCompiledModel compiledModelWithModelFilePath:modelPath
+                                                                         environment:env
+                                                                             options:options
+                                                                               error:&error];
+  XCTAssertNotNil(compiledModel);
   XCTAssertNil(error);
-  XCTAssertEqual(model.environment, env);
-  XCTAssertEqual(model.options, options);
 
-  NSArray<LRTTensorBuffer *> *inputs = [model createInputTensorBuffersWithError:&error];
+  NSArray<LRTTensorBuffer *> *inputs = [compiledModel createInputTensorBuffersWithError:&error];
   XCTAssertNotNil(inputs);
   XCTAssertNil(error);
   XCTAssertEqual(inputs.count, 2);
 
-  NSArray<LRTTensorBuffer *> *outputs = [model createOutputTensorBuffersWithError:&error];
+  NSArray<LRTTensorBuffer *> *outputs = [compiledModel createOutputTensorBuffersWithError:&error];
   XCTAssertNotNil(outputs);
   XCTAssertNil(error);
   XCTAssertEqual(outputs.count, 1);
@@ -77,7 +76,7 @@ static NSString *GetTestModelPath() {
   XCTAssertTrue([inputs[0] writeData:input0Data error:&error]);
   XCTAssertTrue([inputs[1] writeData:input1Data error:&error]);
 
-  BOOL runSuccess = [model runWithInputs:inputs outputs:outputs error:&error];
+  BOOL runSuccess = [compiledModel runWithInputs:inputs outputs:outputs error:&error];
   XCTAssertTrue(runSuccess);
   XCTAssertNil(error);
 
@@ -91,31 +90,38 @@ static NSString *GetTestModelPath() {
   }
 }
 
-- (void)testCreateAndRunFromModelData {
+- (void)testEndToEndMetalBufferInference {
+  id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+  XCTSkipIf(device == nil, @"Metal is not supported on this device/simulator.");
+
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
+  LRTEnvironmentOptions *envOptions = [[LRTEnvironmentOptions alloc] init];
+  envOptions.metalDevice = device;
+  envOptions.metalCommandQueue = [device newCommandQueue];
+
+  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:envOptions error:&error];
   XCTAssertNotNil(env);
-
-  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
-
-  NSString *filePath = GetTestModelPath();
-  NSData *modelData = [NSData dataWithContentsOfFile:filePath];
-  XCTAssertNotNil(modelData);
-
-  LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelData:modelData
-                                                             environment:env
-                                                                 options:options
-                                                                   error:&error];
-  XCTAssertNotNil(model);
   XCTAssertNil(error);
 
-  NSArray<LRTTensorBuffer *> *inputs = [model createInputTensorBuffersWithError:&error];
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorGPU];
+
+  NSString *modelPath = GetTestModelPath();
+  LRTCompiledModel *compiledModel = [LRTCompiledModel compiledModelWithModelFilePath:modelPath
+                                                                         environment:env
+                                                                             options:options
+                                                                               error:&error];
+  XCTAssertNotNil(compiledModel);
+  XCTAssertNil(error);
+
+  NSArray<LRTTensorBuffer *> *inputs = [compiledModel createInputTensorBuffersWithError:&error];
   XCTAssertNotNil(inputs);
   XCTAssertNil(error);
+  XCTAssertEqual(inputs.count, 2);
 
-  NSArray<LRTTensorBuffer *> *outputs = [model createOutputTensorBuffersWithError:&error];
+  NSArray<LRTTensorBuffer *> *outputs = [compiledModel createOutputTensorBuffersWithError:&error];
   XCTAssertNotNil(outputs);
   XCTAssertNil(error);
+  XCTAssertEqual(outputs.count, 1);
 
   NSData *input0Data = [NSData dataWithBytes:kTestInput0Tensor length:sizeof(kTestInput0Tensor)];
   NSData *input1Data = [NSData dataWithBytes:kTestInput1Tensor length:sizeof(kTestInput1Tensor)];
@@ -123,7 +129,7 @@ static NSString *GetTestModelPath() {
   XCTAssertTrue([inputs[0] writeData:input0Data error:&error]);
   XCTAssertTrue([inputs[1] writeData:input1Data error:&error]);
 
-  BOOL runSuccess = [model runWithInputs:inputs outputs:outputs error:&error];
+  BOOL runSuccess = [compiledModel runWithInputs:inputs outputs:outputs error:&error];
   XCTAssertTrue(runSuccess);
   XCTAssertNil(error);
 
@@ -133,7 +139,7 @@ static NSString *GetTestModelPath() {
 
   const float *outputFloat = static_cast<const float *>(outputData.bytes);
   for (size_t i = 0; i < kTestOutputSize; ++i) {
-    XCTAssertEqualWithAccuracy(outputFloat[i], kTestOutputTensor[i], 1e-5f);
+    XCTAssertEqualWithAccuracy(outputFloat[i], kTestOutputTensor[i], kTestAccuracy);
   }
 }
 

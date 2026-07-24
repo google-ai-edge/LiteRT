@@ -46,6 +46,20 @@ NS_ASSUME_NONNULL_BEGIN
                                                 options:(nullable LRTOptions *)options
                                                   error:(NSError **)error;
 
+/**
+ * Creates and compiles a LiteRT model from in-memory model data.
+ *
+ * @param modelData In-memory model byte data.
+ * @param environment LiteRT environment instance.
+ * @param options Optional compilation options.
+ * @param error Out-parameter populated on failure.
+ * @return A compiled model instance, or @c nil on failure.
+ */
++ (nullable instancetype)compiledModelWithModelData:(NSData *)modelData
+                                        environment:(LRTEnvironment *)environment
+                                            options:(nullable LRTOptions *)options
+                                              error:(NSError **)error;
+
 /** Environment used to build this compiled model. */
 @property(nonatomic, readonly) LRTEnvironment *environment;
 
