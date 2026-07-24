@@ -347,6 +347,53 @@ performance and reduce on-device compilation time.
 apply_plugin --model=<input_model_path> --soc_manufacturer=<manufacturer> --soc_model=<soc_model> --libs=<path_to_plugin> --o=<output_model_path>
 ```
 
+## `build_custom_npu_model_main`
+
+Construct a LiteRT model containing a custom NPU Dispatch operator and compiled
+NPU bytecode binary payload (e.g., Qualcomm context binary, MediaTek binary).
+
+### Basic Usage
+
+```bash
+blaze run //litert/tools/build_custom_npu_model:build_custom_npu_model_main -- \
+  --model=/path/to/qnn_partition_0_0.bin \
+  -o /path/to/output_model.tflite \
+  --input_shapes="1x256x256x3" \
+  --output_shapes="1x256x256x6" \
+  --input_dtypes="f32" \
+  --output_dtypes="f32" \
+  --soc_manufacturer=Qualcomm \
+  --soc_model=SM8750 \
+  --entry_point=qnn_partition_0
+```
+
+### Parameter Reference
+
+-   **`--model`** (string, required): Path to compiled NPU bytecode binary file
+    (e.g., Qualcomm context binary).
+-   **`-o` / `--output_model`** (string, required): Output `.tflite` model path.
+-   **`--input_shapes`** (string, required): Input tensor dimensions in
+    `AxBxCxD` format (e.g. `'1x256x256x3'` or `'1x256x256x3,1x128'` for multiple
+    inputs).
+-   **`--output_shapes`** (string, required): Output tensor dimensions in
+    `AxBxCxD` format (e.g. `'1x256x256x6'` or `'1x1000,1x128'`).
+-   **`--input_dtypes`** (string, default: `"f32"`): Input element types
+    (`f32`, `i32`, `u8`, `i8`, `i16`, `f16`, `bool`).
+-   **`--output_dtypes`** (string, default: `"f32"`): Output element types
+    (`f32`, `i32`, `u8`, `i8`, `i16`, `f16`, `bool`).
+-   **`--input_names`** (string, optional): Custom input tensor names (e.g.
+    `'image,mask'`, default: `'input_0,input_1'`).
+-   **`--output_names`** (string, optional): Custom output tensor names (e.g.
+    `'logits,scores'`, default: `'output_0,output_1'`).
+-   **`--soc_manufacturer`** (string, optional): Target SoC manufacturer (e.g.,
+    `Qualcomm`, `MediaTek`).
+-   **`--soc_model`** (string, optional): Target SoC model (e.g., `SM8750`,
+    `PTL`).
+-   **`--entry_point`** (string, default: `"main"`): Entry point graph/function
+    name within NPU bytecode (e.g., `qnn_partition_0`).
+-   **`--signature_key`** (string, default: `"serving_default"`): TFLite
+    signature key name.
+
 ## `npu_numerics_check`
 
 Compare the output of a model running on an NPU with the output from a CPU to
