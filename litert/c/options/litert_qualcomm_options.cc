@@ -114,6 +114,12 @@ struct LrtQualcommOptionsT {
       graph_io_tensor_mem_type;
   std::optional<std::string> schematic_dir;
   std::optional<CustomOpPackage> custom_op_package;
+  std::optional<LrtQualcommOptionsLpaiTarget> lpai_target;
+  std::optional<std::uint32_t> lpai_fps;
+  std::optional<std::uint32_t> lpai_ftrt_ratio;
+  std::optional<LrtQualcommOptionsLpaiClientPerfType> lpai_client_perf_type;
+  std::optional<LrtQualcommOptionsLpaiCoreAffinityType> lpai_core_affinity_type;
+  std::optional<std::uint32_t> lpai_core_selection;
 };
 
 LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
@@ -258,6 +264,38 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           if (status == kLiteRtStatusOk) {
             parsed_options->custom_op_package = package;
           }
+        } else if (key == "lpai_target") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetLpaiTarget(
+              parsed_options, static_cast<LrtQualcommOptionsLpaiTarget>(*v));
+        } else if (key == "lpai_fps") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetLpaiFps(parsed_options,
+                                                static_cast<uint32_t>(*v));
+        } else if (key == "lpai_ftrt_ratio") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetLpaiFtrtRatio(
+              parsed_options, static_cast<uint32_t>(*v));
+        } else if (key == "lpai_client_perf_type") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetLpaiClientPerfType(
+              parsed_options,
+              static_cast<LrtQualcommOptionsLpaiClientPerfType>(*v));
+        } else if (key == "lpai_core_affinity_type") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetLpaiCoreAffinityType(
+              parsed_options,
+              static_cast<LrtQualcommOptionsLpaiCoreAffinityType>(*v));
+        } else if (key == "lpai_core_selection") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetLpaiCoreSelection(
+              parsed_options, static_cast<uint32_t>(*v));
         }
 
         return status;
@@ -396,7 +434,27 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
          << "target:" << package.target << ";"
          << "\"\n";
   }
-
+  if (options->lpai_target.has_value()) {
+    toml << "lpai_target = " << static_cast<int>(*options->lpai_target)
+         << "\n";
+  }
+  if (options->lpai_fps.has_value()) {
+    toml << "lpai_fps = " << *options->lpai_fps << "\n";
+  }
+  if (options->lpai_ftrt_ratio.has_value()) {
+    toml << "lpai_ftrt_ratio = " << *options->lpai_ftrt_ratio << "\n";
+  }
+  if (options->lpai_client_perf_type.has_value()) {
+    toml << "lpai_client_perf_type = "
+         << static_cast<int>(*options->lpai_client_perf_type) << "\n";
+  }
+  if (options->lpai_core_affinity_type.has_value()) {
+    toml << "lpai_core_affinity_type = "
+         << static_cast<int>(*options->lpai_core_affinity_type) << "\n";
+  }
+  if (options->lpai_core_selection.has_value()) {
+    toml << "lpai_core_selection = " << *options->lpai_core_selection << "\n";
+  }
   *identifier = LrtQualcommOptionsGetIdentifier();
   std::string toml_str = toml.str();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
@@ -1042,6 +1100,147 @@ LiteRtStatus LrtQualcommOptionsGetBackend(
   }
 
   *qnn_backend = options->qnn_backend.value_or(kLiteRtQualcommBackendHtp);
+
+  return kLiteRtStatusOk;
+}
+
+// LPAI OPTIONS ////////////////////////////////////////////////////////////////
+
+LiteRtStatus LrtQualcommOptionsSetLpaiTarget(
+    LrtQualcommOptions options, LrtQualcommOptionsLpaiTarget lpai_target) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->lpai_target = lpai_target;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetLpaiTarget(
+    LrtQualcommOptions options, LrtQualcommOptionsLpaiTarget* lpai_target) {
+  if (options == nullptr || lpai_target == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *lpai_target =
+      options->lpai_target.value_or(kLiteRtQualcommLpaiTargetAdsp);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetLpaiFps(LrtQualcommOptions options,
+                                          std::uint32_t lpai_fps) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->lpai_fps = lpai_fps;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetLpaiFps(LrtQualcommOptions options,
+                                          std::uint32_t* lpai_fps) {
+  if (options == nullptr || lpai_fps == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *lpai_fps = options->lpai_fps.value_or(1);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetLpaiFtrtRatio(LrtQualcommOptions options,
+                                                std::uint32_t lpai_ftrt_ratio) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->lpai_ftrt_ratio = lpai_ftrt_ratio;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetLpaiFtrtRatio(
+    LrtQualcommOptions options, std::uint32_t* lpai_ftrt_ratio) {
+  if (options == nullptr || lpai_ftrt_ratio == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *lpai_ftrt_ratio = options->lpai_ftrt_ratio.value_or(10);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetLpaiClientPerfType(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsLpaiClientPerfType lpai_client_perf_type) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->lpai_client_perf_type = lpai_client_perf_type;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetLpaiClientPerfType(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsLpaiClientPerfType* lpai_client_perf_type) {
+  if (options == nullptr || lpai_client_perf_type == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *lpai_client_perf_type = options->lpai_client_perf_type.value_or(
+      kLiteRtQualcommLpaiClientPerfTypeDefault);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetLpaiCoreAffinityType(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsLpaiCoreAffinityType lpai_core_affinity_type) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->lpai_core_affinity_type = lpai_core_affinity_type;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetLpaiCoreAffinityType(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsLpaiCoreAffinityType* lpai_core_affinity_type) {
+  if (options == nullptr || lpai_core_affinity_type == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *lpai_core_affinity_type = options->lpai_core_affinity_type.value_or(
+      kLiteRtQualcommLpaiCoreAffinityTypeDefault);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetLpaiCoreSelection(
+    LrtQualcommOptions options, std::uint32_t lpai_core_selection) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->lpai_core_selection = lpai_core_selection;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetLpaiCoreSelection(
+    LrtQualcommOptions options, std::uint32_t* lpai_core_selection) {
+  if (options == nullptr || lpai_core_selection == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *lpai_core_selection = options->lpai_core_selection.value_or(0);
 
   return kLiteRtStatusOk;
 }

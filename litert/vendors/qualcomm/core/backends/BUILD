@@ -20,6 +20,7 @@ cc_library(
         ":gpu_backend",
         ":htp_backend",
         ":ir_backend",
+        ":lpai_backend",
         ":qnn_backend",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm/core:common",
@@ -119,6 +120,24 @@ cc_library(
     name = "dsp_backend",
     srcs = ["dsp_backend.cc"],
     hdrs = ["dsp_backend.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
+    deps = [
+        ":backend_utils",
+        ":graph_config_builder",
+        ":qnn_backend",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
+    name = "lpai_backend",
+    srcs = ["lpai_backend.cc"],
+    hdrs = ["lpai_backend.h"],
     features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
         ":backend_utils",
@@ -252,4 +271,21 @@ cc_test(
         ],
         "//conditions:default": [],
     }) + gtest_main_no_heapcheck_deps(),
+)
+
+cc_test(
+    name = "lpai_backend_test",
+    srcs = [
+        "lpai_backend_test.cc",
+    ],
+    deps = [
+        ":lpai_backend",
+        ":qnn_backend",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/utils:miscs",
+        "@com_google_absl//absl/base:no_destructor",
+        "@com_google_googletest//:gtest_main",
+        "@qairt//:qnn_lib_headers",
+    ],
 )

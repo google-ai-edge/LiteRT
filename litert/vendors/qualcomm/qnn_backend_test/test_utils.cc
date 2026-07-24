@@ -43,6 +43,9 @@ std::string QnnTestPrinter(
     case ::qnn::BackendType::kDspBackend:
       ss << "Dsp";
       break;
+    case ::qnn::BackendType::kLpaiBackend:
+      ss << "Lpai";
+      break;
     default:
       ss << "UndefinedBackend";
       break;
