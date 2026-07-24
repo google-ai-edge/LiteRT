@@ -65,6 +65,17 @@
         "CMAKE_BUILD_TYPE": "Release",
         "LITERT_AUTO_BUILD_TFLITE": "ON"
       }
+    },
+    {
+      "name": "custom-toolchain",
+      "displayName": "Custom toolchain file",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/cmake_build_custom_toolchain",
+      "toolchainFile": "$env{LITERT_TOOLCHAIN_FILE}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "LITERT_AUTO_BUILD_TFLITE": "ON"
+      }
     }
   ]
 }
