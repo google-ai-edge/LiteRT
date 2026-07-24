@@ -20,7 +20,6 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
-#include "absl/memory/memory.h"
 #include "absl/types/any.h"
 #include "tflite/delegates/gpu/common/data_type.h"
 #include "tflite/delegates/gpu/common/model.h"
