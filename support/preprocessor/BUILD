@@ -168,6 +168,57 @@ cc_test(
 )
 
 cc_library(
+    name = "audio_preprocessor_pffft",
+    srcs = ["audio_preprocessor_pffft.cc"],
+    hdrs = ["audio_preprocessor_pffft.h"],
+    deps = [
+        ":audio_preprocessor",
+        ":audio_preprocessor_utils",
+        ":mel_filterbank",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/cc:litert_tensor_buffer",
+        "//support/util:io_types",
+        "//third_party/pffft",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "audio_preprocessor_pffft_test",
+    srcs = ["audio_preprocessor_pffft_test.cc"],
+    data = [
+        "//support/preprocessor/testdata",
+    ],
+    tags = ["requires-mac-inputs:hard"],  # Required for running on Forge on Mac.
+    deps = [
+        ":audio_preprocessor",
+        ":audio_preprocessor_pffft",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_options",
+        "//litert/cc:litert_tensor_buffer",
+        "//support/util:io_types",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "mel_filterbank",
     srcs = [
         "mel_filterbank.cc",
