@@ -492,9 +492,7 @@ cc_library(
     srcs = ["litert_logging_helper.cc"],
     hdrs = ["litert_logging_helper.h"],
     visibility = [
-        # copybara:uncomment_begin(oss litert_lm)
-        # "//litert/runtime/accelerators/gpu:__pkg__",
-        # "//litert/vendors:__subpackages__",
+        "//litert/vendors:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
