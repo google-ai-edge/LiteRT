@@ -1715,6 +1715,10 @@ Tensor<Mixins...> Tile(Tensor<Mixins...> input, Tensor<Mixins...> multiples,
     const auto multiples_data =
         multiples_info.buffer->Lock().As<const int32_t>();
     const auto& input_shape = input_info.shape;
+    if (multiples_data.size() != input_shape.size()) {
+      return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
+          "Tile multiples length must equal input rank.")));
+    }
     output_info.shape.resize(input_shape.size());
     for (size_t i = 0; i < multiples_data.size(); ++i) {
       output_info.shape[i] = input_shape[i] * multiples_data.data()[i];
