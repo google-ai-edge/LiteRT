@@ -212,6 +212,9 @@ void ConvertComposite(
   } else if (composite_name == "odml.rms_norm") {
     ConvertRmsNorm(context, node, registration, tensor_map, ir_model);
     return;
+  } else if (composite_name == "custom_call.rotary_positional_embedding") {
+    ConvertRoPE(context, node, registration, tensor_map, ir_model);
+    return;
   } else if (composite_name == "odml.scaled_dot_product_attention") {
     ConvertSdpa(context, node, registration, tensor_map, ir_model);
     return;
