@@ -108,7 +108,7 @@ absl::StatusOr<GpuMemoryHandle> GpuBackendOpenGl::GetGpuMemoryAllocated(
 
 absl::StatusOr<GpuEventHandle> GpuBackendOpenGl::GetGpuEventAssociated(
     const GpuTensorBufferPtr& tensor_buffer) {
-  return absl::UnimplementedError("GetGpuEventAssociated is not implemented.");
+  return absl::NotFoundError("Tensor buffer does not have an event.");
 }
 
 absl::Status GpuBackendOpenGl::AssociateGpuEvent(
@@ -303,12 +303,12 @@ absl::Status GpuInferenceContextOpenGl::Dispatch() { return ctx_.AddToQueue(); }
 
 absl::StatusOr<GpuEventHandle>
 GpuInferenceContextOpenGl::GetPreDispatchEvent() {
-  return absl::UnimplementedError("GetPreDispatchEvent is not implemented.");
+  return absl::NotFoundError("No pre-dispatch event.");
 }
 
 absl::StatusOr<GpuEventHandle> GpuInferenceContextOpenGl::GetPostDispatchEvent(
     bool is_async_execution_mode) {
-  return absl::UnimplementedError("GetPostDispatchEvent is not implemented.");
+  return absl::NotFoundError("No post-dispatch event.");
 }
 
 absl::Status GpuInferenceContextOpenGl::WaitForEventsCompleted(
