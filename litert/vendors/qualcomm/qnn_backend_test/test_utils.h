@@ -4,11 +4,11 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_QNN_BACKEND_TEST_TEST_UTILS_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_QNN_BACKEND_TEST_TEST_UTILS_H_
 
+#include <array>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <tuple>
-#include <vector>
 
 #include <gtest/gtest.h>
 #include "absl/base/no_destructor.h"  // from @com_google_absl
@@ -27,11 +27,11 @@ inline const ::qnn::Options& GetTestingDefaultQnnOptions() {
 }
 
 std::string QnnTestPrinter(
-    const ::testing::TestParamInfo<
-        std::tuple<::qnn::Options, std::string_view>>& param_info);
+    const ::testing::TestParamInfo<std::tuple<::qnn::Options, const char*>>&
+        param_info);
 
-class QnnModelTest : public testing::TestWithParam<
-                         std::tuple<::qnn::Options, std::string_view>> {
+class QnnModelTest
+    : public testing::TestWithParam<std::tuple<::qnn::Options, const char*>> {
  protected:
   QnnManager::Ptr qnn_manager_ptr_{};
   std::unique_ptr<::qnn::QnnBackend> qnn_backend_ptr_{};
@@ -49,19 +49,19 @@ class QnnModelTest : public testing::TestWithParam<
   }
 
  private:
-  void SetUpQnnModel(const ::qnn::Options& options,
-                     std::string_view soc_model_name);
+  void SetUpQnnModel(const ::qnn::Options& options, const char* soc_model_name);
 };
 
 inline auto GetDefaultQnnModelParams() {
 #if defined(__x86_64__) || defined(_M_X64)
-  std::vector<std::string_view> socs = {"SM8650", "SM8750", "SM8850"};
+  static constexpr std::array<const char*, 3> kSocs = {"SM8650", "SM8750",
+                                                       "SM8850"};
 #else
   // On device, qnn manager will use online soc for compilation.
-  std::vector<std::string_view> socs = {"SOC_UNKNOWN"};
+  static constexpr std::array<const char*, 1> kSocs = {nullptr};
 #endif
   return ::testing::Combine(::testing::Values(GetTestingDefaultQnnOptions()),
-                            ::testing::ValuesIn(socs));
+                            ::testing::ValuesIn(kSocs));
 }
 }  // namespace litert::qnn
 

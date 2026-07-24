@@ -6,7 +6,6 @@
 #include <memory>
 #include <sstream>
 #include <string>
-#include <string_view>
 #include <tuple>
 #include <utility>
 
@@ -22,12 +21,12 @@ namespace litert::qnn {
 
 std::string QnnTestPrinter(
     const ::testing::TestParamInfo<
-        std::tuple<::qnn::Options, std::string_view>>& param_info) {
+        std::tuple<::qnn::Options, const char*>>& param_info) {
   std::stringstream ss;
   ss << param_info.index << "_";
 
   const auto& [options, soc_model_name] = param_info.param;
-  ss << soc_model_name << "_";
+  ss << (soc_model_name ? soc_model_name : "UNKNOWN_SOC") << "_";
 
   // TODO (chunhsue-qti): Add more backend once it expands.
   switch (options.GetBackendType()) {
@@ -52,9 +51,9 @@ std::string QnnTestPrinter(
 }
 
 void QnnModelTest::SetUpQnnModel(const ::qnn::Options& options,
-                                 std::string_view soc_model_name) {
+                                 const char* soc_model_name) {
   // TODO (chunhsue-qti) get rid of QnnManager and move to core/
-  auto soc_info = ::qnn::FindSocModel(soc_model_name);
+  auto soc_info = ::qnn::FindOrCreateSocInfo(soc_model_name);
   auto qnn_manager = QnnManager::Create(options);
   if (!qnn_manager) {
     GTEST_SKIP() << "Skipping test because QNN manager could not be created "
@@ -81,6 +80,5 @@ void QnnModelTest::SetUpQnnModel(const ::qnn::Options& options,
                       qnn_manager_ptr_->Api(), context_handle_.Get());
 
   std::swap(qnn_model_, qnn_model);
-  is_fp16_supported_ = ::qnn::IsFp16Supported(qnn_backend_ptr_->GetSocInfo());
 }
 }  // namespace litert::qnn

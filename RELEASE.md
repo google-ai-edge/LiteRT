@@ -32,6 +32,10 @@ INSERT SMALL BLURB ABOUT RELEASE FOCUS AREA AND POTENTIAL TOOLCHAIN CHANGES
   (only Android 15 previously) by supporting bundling MediaTek libraries in
   application binary.
 
+* Support specifying Qualcomm SoC via SoC name or numeric SoC model
+  (for example, "SM8850" and "87" are equivalent).
+  * Updated SoC table to cover all SoCs supported in QAIRT SDK 2.47.
+
 ### Bug Fixes and Other Changes
 
 <!---
@@ -41,6 +45,8 @@ INSERT SMALL BLURB ABOUT RELEASE FOCUS AREA AND POTENTIAL TOOLCHAIN CHANGES
 -->
 
 * Move the experimental API `GetProfiler()` out of `litert::CompiledModel`.
+
+* Qualcomm now requires QAIRT SDK v2.35.0 or later for compilation to avoid fp16 precision configuration issues.
 
 * Fixed a bug that given CPU Buffers are not always synced with GPU Accelerator
   from the second inference.

@@ -203,12 +203,12 @@ TEST(TestQnnPlugin, GetConfigInfo) {
   LiteRtParamIndex num_supported_soc_models;
   LITERT_ASSERT_OK(LiteRtGetNumCompilerPluginSupportedSocModels(
       plugin.get(), &num_supported_soc_models));
-  ASSERT_EQ(num_supported_soc_models, ::qnn::kNumSocInfos);
+  ASSERT_EQ(num_supported_soc_models, ::qnn::kSocInfos.size());
 
   const char* config_id;
-  LITERT_ASSERT_OK(
-      LiteRtGetCompilerPluginSupportedSocModel(plugin.get(), 0, &config_id));
-  EXPECT_STREQ(config_id, "UNKNOWN_SDM");
+  LITERT_ASSERT_OK(LiteRtGetCompilerPluginSupportedSocModel(
+      plugin.get(), ::qnn::kSocInfos.size() - 1, &config_id));
+  EXPECT_STREQ(config_id, ::qnn::kSocInfos.back().soc_name.data());
 }
 
 TEST(TestQnnPlugin, CreateWithNullContextFails) {

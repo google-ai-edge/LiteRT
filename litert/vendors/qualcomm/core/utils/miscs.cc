@@ -156,17 +156,6 @@ const QNN_INTERFACE_VER_TYPE* ResolveQnnApi(
 }
 #endif  // !defined(_WIN32)
 
-std::optional<::qnn::SocInfo> FindSocModel(std::string_view soc_model_name) {
-  std::optional<::qnn::SocInfo> soc_model;
-  for (auto i = 0; i < ::qnn::kNumSocInfos; ++i) {
-    if (soc_model_name == ::qnn::kSocInfos[i].soc_name) {
-      soc_model = ::qnn::kSocInfos[i];
-      break;
-    }
-  }
-  return soc_model;
-}
-
 namespace {
 
 constexpr std::array<int8_t, 256 * 4> MakeInt2LUT() {
