@@ -728,8 +728,10 @@ cc_library(
     srcs = ["convert_rope.cc"],
     hdrs = ["convert_rope.h"],
     deps = [
+        "//tflite/c:c_api_types",
         "//tflite/c:common",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@flatbuffers",
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:operations",
     ],
@@ -1534,7 +1536,9 @@ cc_test(
         "//tflite:framework_stable",
         "//tflite/c:common",
         "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
         "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:operations",
     ],
 )
 
