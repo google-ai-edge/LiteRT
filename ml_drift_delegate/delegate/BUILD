@@ -801,6 +801,7 @@ cc_library(
         ":delegate_kernel_litert",
         ":delegate_options",
         ":delegate_types",
+        ":delegate_utils",
         ":gpu_backend_opengl",
         ":precision",
         ":tflite_profile",

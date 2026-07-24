@@ -367,6 +367,12 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   return kTfLiteOk;
 }
 
+#define CALL_DELEGATE_KERNEL(function, ...)                               \
+  if (absl::Status s = delegate_kernel->function(__VA_ARGS__); !s.ok()) { \
+    ABSL_LOG(ERROR) << s;                                                 \
+    return kTfLiteError;                                                  \
+  }
+
 TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
   bool is_profiling = ml_drift::IsTfLiteProfilerActive(context);
 
@@ -379,23 +385,10 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
     upload_start = tflite::profiling::time::NowMicros();
   }
 
-  if (delegate_kernel->NoExternalTensorsMode()) {
-    if (absl::Status s = delegate_kernel->UploadOrBindTensorBuffer(context);
-        !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-  } else {
-    if (absl::Status s = delegate_kernel->BindTensorBuffers(context); !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-  }
-
-  if (absl::Status s = delegate_kernel->HandleInputEvents(context); !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
-  }
+  CALL_DELEGATE_KERNEL(BindExternalTensorBuffers, context);
+  CALL_DELEGATE_KERNEL(UploadIntermediateCpuTensorsToGpuMemory, context);
+  CALL_DELEGATE_KERNEL(HandleInputEvents, context);
+  CALL_DELEGATE_KERNEL(ConvertNonExternalInputTensorsToGpuMemory, context);
 
   if (is_profiling) {
     auto status = delegate_kernel->backend()->WaitForCompletion();
@@ -408,18 +401,7 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
                                      dispatch_start - upload_start);
   }
 
-  if (absl::Status s = delegate_kernel->Dispatch(context); !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
-  }
-
-  if (absl::Status s = delegate_kernel->HandleOutputEvents(
-          context, litert::ml_drift::IsAsyncExecutionMode(
-                       context, delegate_kernel->runtime_context()));
-      !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
-  }
+  CALL_DELEGATE_KERNEL(Dispatch, context);
 
   uint64_t download_start;
   if (is_profiling) {
@@ -431,15 +413,10 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
     download_start = tflite::profiling::time::NowMicros();
   }
 
-  if (delegate_kernel->NoExternalTensorsMode()) {
-    // Download internal output GPU memory to output TensorBufferGPU memory.
-    if (absl::Status s =
-            delegate_kernel->DownloadGpuMemoryToTensorBufferGpuMemory(context);
-        !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-  }
+  CALL_DELEGATE_KERNEL(ConvertGpuMemoryToNonExternalOutputTensors, context);
+  bool is_async_execution_mode = litert::ml_drift::IsAsyncExecutionMode(
+      context, delegate_kernel->runtime_context());
+  CALL_DELEGATE_KERNEL(HandleOutputEvents, context, is_async_execution_mode);
 
   // Wait for GPU completion on specific GPUs when IsHintWaitingForCompletion()
   // is enabled.
@@ -462,23 +439,14 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
     }
   }
 
-  if (absl::Status s = delegate_kernel->DownloadGpuMemoryToCpuMemory(context);
-      !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
-  }
+  CALL_DELEGATE_KERNEL(DownloadGpuMemoryToIntermediateCpuTensors, context);
+  CALL_DELEGATE_KERNEL(FlushBufferCacheIfNeeded, context);
 
   if (is_profiling) {
     uint64_t download_end = tflite::profiling::time::NowMicros();
     ml_drift::AddTfLiteProfilerEvent(context,
                                      "DownloadGpuMemoryToTensorBufferGpuMemory",
                                      download_end - download_start);
-  }
-
-  if (absl::Status s = delegate_kernel->FlushBufferCacheIfNeeded(context);
-      !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
   }
 
   return kTfLiteOk;

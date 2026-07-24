@@ -176,7 +176,6 @@ class DelegateKernel {
 
   GpuBackend* backend_ = nullptr;
   bool is_opencl_backend_ = false;
-  bool is_metal_backend_ = false;
   std::unique_ptr<GpuInferenceContext> ctx_;
 
   // Set of external tensor ids. It's updated by
