@@ -246,11 +246,13 @@ cc_library(
         ":transpose_utils",
         ":types",
         "//tflite:macros",
+        "//tflite:util",
+        "//tflite/core/c:c_api_types",
         "//tflite/core/c:common",
         "//tflite/kernels:cpu_backend_context",
         "//tflite/kernels:cpu_backend_gemm",
         "//tflite/kernels:cpu_backend_threadpool",
-        "//tflite/kernels:kernel_util",
+        "@com_google_absl//absl/types:span",
         "@eigen_archive//:eigen3",
         "@gemmlowp//:fixedpoint",
         "@ruy//ruy/profiler:instrumentation",
@@ -637,11 +639,13 @@ cc_library(
         ":types",
         "//tflite:macros",
         "//tflite:string_util",
+        "//tflite:util",
         "//tflite/core/c:c_api_types",
         "//tflite/core/c:common",
         "//tflite/kernels:kernel_util",
         "//tflite/kernels:op_macros",
         "//tflite/kernels/internal/utils:sparsity_format_converter",
+        "@com_google_absl//absl/types:span",
         "@eigen_archive//:eigen3",
         "@gemmlowp//:fixedpoint",
         "@ruy//ruy/profiler:instrumentation",
@@ -917,6 +921,9 @@ cc_library(
     ],
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts(),
+    deps = [
+        "//tflite:util",
+    ],
 )
 
 # Audio support classes imported directly from TensorFlow.
@@ -1358,7 +1365,6 @@ cc_test(
     name = "reduce_utils_test",
     srcs = ["optimized/reduce_utils_test.cc"],
     deps = [
-        ":common",
         ":reduce_utils",
         "@com_google_googletest//:gtest_main",
     ],
