@@ -3545,7 +3545,8 @@ class Subgraph {
 
     // Check whether input_a will be quantized dynamically.
     const bool dynamically_quantized =
-        (input_a.type == kTfLiteFloat32 && input_b.type == kTfLiteInt8);
+        ((input_a.type == kTfLiteFloat32 || input_a.type == kTfLiteFloat16) &&
+         input_b.type == kTfLiteInt8);
 
     if (input_b.type == kTfLiteInt8 && !dynamically_quantized) {
       // We don't support non-zero zero points for the RHS of statically
@@ -4901,7 +4902,8 @@ class Subgraph {
 
     bool dynamically_quantized =
         (!delegate.disable_dynamically_quantized_ops() &&
-         (input_tensor.type == kTfLiteFloat32 &&
+         ((input_tensor.type == kTfLiteFloat32 ||
+           input_tensor.type == kTfLiteFloat16) &&
           (filter_tensor.type == kTfLiteInt2 ||
            filter_tensor.type == kTfLiteInt4 ||
            filter_tensor.type == kTfLiteInt8)));
