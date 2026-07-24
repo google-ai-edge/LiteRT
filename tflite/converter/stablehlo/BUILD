@@ -726,6 +726,7 @@ cc_library(
     hdrs = ["transforms/composite_utils.h"],
     deps = [
         "//tflite/converter:tensorflow_lite",
+        "@com_google_absl//absl/algorithm:container",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
