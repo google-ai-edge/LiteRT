@@ -114,6 +114,7 @@ private constructor(
       DEFAULT(0),
       FP16(1),
       FP32(2),
+      FP32_16(3),
     }
 
     /** Buffer storage type for GPU options. */
