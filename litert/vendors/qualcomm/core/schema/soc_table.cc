@@ -27,6 +27,9 @@ constexpr SocInfo kSocInfos[] = {
     {SocInfo("SM8350", SnapdragonModel::SM8350, DspArch::V68,
              4  // vtcm_size_in_mb
              )},
+    {SocInfo("QCM6490", SnapdragonModel::QCM6490, DspArch::V68,
+             8  // vtcm_size_in_mb
+             )},
     {SocInfo("SM8450", SnapdragonModel::SM8450, DspArch::V69,
              8  // vtcm_size_in_mb
              )},
@@ -61,6 +64,9 @@ constexpr SocInfo kSocInfos[] = {
              8  // vtcm_size_in_mb
              )},
     {SocInfo("SM8850", SnapdragonModel::SM8850, DspArch::V81,
+             8  // vtcm_size_in_mb
+             )},
+    {SocInfo("QCS6490", SnapdragonModel::QCS6490, DspArch::V68,
              8  // vtcm_size_in_mb
              )},
     {SocInfo("SAR2230P", SnapdragonModel::SAR2230P, DspArch::V81,
