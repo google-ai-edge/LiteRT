@@ -155,6 +155,14 @@ LiteRtStatus LiteRtDispatchDeviceContextT::Destroy() {
     return kLiteRtStatusErrorRuntimeFailure;
   }
 
+  if (!exec_handle_refcounts_.empty()) {
+    LITERT_LOG(LITERT_ERROR,
+               "Cannot destroy device context with %zu executable(s) still "
+               "loaded",
+               exec_handle_refcounts_.size());
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
   if (!mmap_regions_.empty()) {
     LITERT_LOG(LITERT_ERROR,
                "Cannot destroy device context with %zu mmap'd executable(s) "
@@ -275,6 +283,15 @@ LiteRtStatus LiteRtDispatchDeviceContextT::LoadExecutable(
   if (bytecode_buffer.fd >= 0) {
     const size_t fd_offset =
         bytecode_buffer.alloc_base_file_offset + bytecode_buffer.offset;
+    ExecutableFdCacheKey cache_key{bytecode_buffer.fd, bytecode_buffer.size,
+                                   fd_offset};
+    if (auto it = loaded_executables_by_fd_.find(cache_key);
+        it != loaded_executables_by_fd_.end()) {
+      exec_handle = it->second;
+      exec_handle_refcounts_[exec_handle]++;
+      return kLiteRtStatusOk;
+    }
+
     if (GoogleTensorSouthBoundFeatureSupported(
             GoogleTensorSouthBoundFeature::kSqContainerFdWithOffset)) {
       GT_LOG_RETURN_IF_SB_ERROR(
@@ -285,6 +302,8 @@ LiteRtStatus LiteRtDispatchDeviceContextT::LoadExecutable(
       if (IsTflite(bytecode_buffer.fd, fd_offset)) {
         tflite_executables_.insert(exec_handle);
       }
+      loaded_executables_by_fd_[cache_key] = exec_handle;
+      exec_handle_refcounts_[exec_handle] = 1;
       return kLiteRtStatusOk;
     }
 
@@ -298,6 +317,8 @@ LiteRtStatus LiteRtDispatchDeviceContextT::LoadExecutable(
       if (IsTflite(bytecode_buffer.fd, 0)) {
         tflite_executables_.insert(exec_handle);
       }
+      loaded_executables_by_fd_[cache_key] = exec_handle;
+      exec_handle_refcounts_[exec_handle] = 1;
       return kLiteRtStatusOk;
     }
 
@@ -332,6 +353,8 @@ LiteRtStatus LiteRtDispatchDeviceContextT::LoadExecutable(
 
     mmap_regions_.push_back({exec_handle, mapped, map_length});
     std::move(mmap_cleanup).Cancel();
+    loaded_executables_by_fd_[cache_key] = exec_handle;
+    exec_handle_refcounts_[exec_handle] = 1;
     return kLiteRtStatusOk;
   } else {
     const auto* sq_bytecode =
@@ -347,6 +370,7 @@ LiteRtStatus LiteRtDispatchDeviceContextT::LoadExecutable(
     if (IsTflite(sq_bytecode, bytecode_buffer.size)) {
       tflite_executables_.insert(exec_handle);
     }
+    exec_handle_refcounts_[exec_handle] = 1;
   }
 
   return kLiteRtStatusOk;
@@ -359,6 +383,23 @@ bool LiteRtDispatchDeviceContextT::IsTfliteExecutable(
 
 LiteRtStatus LiteRtDispatchDeviceContextT::UnloadExecutable(
     LiteRtDispatchExecutableHandle exec_handle) {
+  auto ref_it = exec_handle_refcounts_.find(exec_handle);
+  if (ref_it != exec_handle_refcounts_.end()) {
+    if (ref_it->second > 1) {
+      --ref_it->second;
+      return kLiteRtStatusOk;
+    }
+    exec_handle_refcounts_.erase(ref_it);
+  }
+
+  for (auto it = loaded_executables_by_fd_.begin();
+       it != loaded_executables_by_fd_.end(); ++it) {
+    if (it->second == exec_handle) {
+      loaded_executables_by_fd_.erase(it);
+      break;
+    }
+  }
+
   tflite_executables_.erase(exec_handle);
   GT_LOG_RETURN_IF_SB_ERROR(thrUnloadSqContainer(thr_context_, exec_handle),
                             "Failed to unload SQ container %" PRIu64,
