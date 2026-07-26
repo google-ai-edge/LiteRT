@@ -197,6 +197,7 @@ setuptools.setup(
         'typing-extensions',
         # TODO(b/445163709): remove this once litert_lm has a pypi package.
         'protobuf',
+        'ml_dtypes',
     ],
     extras_require={
         'npu-intel': [
@@ -213,7 +214,6 @@ setuptools.setup(
         ],
         'model-utils': [
             'lark',
-            'ml_dtypes',
             'xdsl==0.28.0',
         ],
     },
