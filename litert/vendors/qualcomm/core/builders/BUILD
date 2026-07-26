@@ -348,6 +348,18 @@ cc_library(
 )
 
 cc_library(
+    name = "squeeze_op_builder",
+    srcs = ["squeeze_op_builder.cc"],
+    hdrs = ["squeeze_op_builder.h"],
+    deps = [
+        ":op_builder",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
     name = "tanh_op_builder",
     srcs = ["tanh_op_builder.cc"],
     hdrs = ["tanh_op_builder.h"],
