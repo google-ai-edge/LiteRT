@@ -100,6 +100,7 @@
 #include "litert/vendors/qualcomm/core/builders/spatial_transform_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/split_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/splitv_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/squeeze_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/strided_slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/tanh_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/tile_op_builder.h"
@@ -957,6 +958,23 @@ LiteRtStatus BuildSplitVOp(const litert::compiler::Op& litert_op,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus BuildSqueezeOp(
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers) {
+  auto options =
+      litert::compiler::GetOptionsAs<litert::compiler::SqueezeOptions>(
+          litert_op.ctx(), litert_op.Get());
+  if (!options) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  op_wrappers = ::qnn::BuildSqueezeOp(tensor_pool, input_tensors,
+                                      output_tensors, options->squeeze_dims);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus BuildTopkV2Op(const litert::compiler::Op& litert_op,
                            ::qnn::TensorPool& tensor_pool,
                            std::vector<::qnn::TensorWrapperRef>& input_tensors,
@@ -1511,6 +1529,7 @@ GetOpBuilders() {
   builders[kLiteRtOpCodeTflSpaceToDepth] = Adapt<BuildSpaceToDepthOp>;
   builders[kLiteRtOpCodeTflBatchToSpaceNd] = Adapt<BuildBatchToSpaceNdOp>;
   builders[kLiteRtOpCodeTflSpaceToBatchNd] = Adapt<BuildSpaceToBatchNdOp>;
+  builders[kLiteRtOpCodeTflSqueeze] = Adapt<BuildSqueezeOp>;
   builders[kLiteRtOpCodeTflTanh] = Adapt<BuildTanhOp>;
   builders[kLiteRtOpCodeTflPad] = Adapt<BuildConstantPadOp>;
   builders[kLiteRtOpCodeTflGather] = Adapt<BuildGatherOp>;
