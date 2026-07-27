@@ -1516,21 +1516,32 @@ TEST(BatchMatMulOperationParserTest, TestIsSupported) {
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());
 
-  // adj_x is not lowered by the GPU parser.
   TfLiteBatchMatMulParams* tf_options =
       static_cast<TfLiteBatchMatMulParams*>(context->node()->builtin_data);
   tf_options->adj_x = true;
+  tf_options->adj_y = true;
+  ASSERT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Rank-1 adjoints cannot be represented as matrix transposes.
+  TfLiteTensor* lhs = context->tensor(context->node()->inputs->data[0]);
+  TfLiteIntArrayFree(lhs->dims);
+  lhs->dims = TfLiteIntArrayCreate(1);
+  lhs->dims->data[0] = 1;
   ASSERT_FALSE(
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());
 
-  // Rank-1 matrix inputs are not supported.
+  // The same validation applies independently to adj_y.
   tf_options->adj_x = false;
-  TfLiteTensor* lhs = context->tensor(context->node()->inputs->data[0]);
-  TfLiteIntArrayFree(lhs->dims);
-  lhs->dims = TfLiteIntArrayCreate(1);
-  lhs->dims->data[0] = 1;
+  tf_options->adj_y = true;
+  TfLiteTensor* rhs = context->tensor(context->node()->inputs->data[1]);
+  TfLiteIntArrayFree(rhs->dims);
+  rhs->dims = TfLiteIntArrayCreate(1);
+  rhs->dims->data[0] = 1;
   ASSERT_FALSE(
       parser
           ->IsSupported(context.get(), context->node(), context->registration())

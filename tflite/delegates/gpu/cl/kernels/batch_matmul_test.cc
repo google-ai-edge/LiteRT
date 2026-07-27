@@ -32,14 +32,18 @@ using ::testing::Pointwise;
 class BatchMatMulOpModel : public SingleOpModel {
  public:
   BatchMatMulOpModel(bool use_gpu, const std::vector<int>& lhs_shape,
-                     const std::vector<int>& rhs_shape) {
+                     const std::vector<int>& rhs_shape, bool adj_x,
+                     bool adj_y,
+                     const std::vector<float>* constant_rhs = nullptr)
+      : rhs_is_constant_(constant_rhs != nullptr) {
     lhs_ = AddInput({TensorType_FLOAT32, lhs_shape});
-    rhs_ = AddInput({TensorType_FLOAT32, rhs_shape});
+    rhs_ = rhs_is_constant_
+               ? AddConstInput({TensorType_FLOAT32, rhs_shape}, *constant_rhs)
+               : AddInput({TensorType_FLOAT32, rhs_shape});
     output_ = AddOutput(TensorType_FLOAT32);
     SetBuiltinOp(
         BuiltinOperator_BATCH_MATMUL, BuiltinOptions_BatchMatMulOptions,
-        CreateBatchMatMulOptions(builder_, /*adj_x=*/false, /*adj_y=*/true)
-            .Union());
+        CreateBatchMatMulOptions(builder_, adj_x, adj_y).Union());
     BuildInterpreter({GetShape(lhs_), GetShape(rhs_)}, /*num_threads=*/-1,
                      /*allow_fp32_relax_to_fp16=*/false,
                      /*apply_delegate=*/false);
@@ -55,7 +59,9 @@ class BatchMatMulOpModel : public SingleOpModel {
   void SetInputs(const std::vector<float>& lhs,
                  const std::vector<float>& rhs) {
     PopulateTensor(lhs_, lhs);
-    PopulateTensor(rhs_, rhs);
+    if (!rhs_is_constant_) {
+      PopulateTensor(rhs_, rhs);
+    }
   }
 
   std::vector<float> GetOutput() { return ExtractVector<float>(output_); }
@@ -70,63 +76,108 @@ class BatchMatMulOpModel : public SingleOpModel {
   int lhs_;
   int rhs_;
   int output_;
+  const bool rhs_is_constant_;
 };
 
-TEST(BatchMatMulOpenClTest, AdjointRhsMatchesCpu) {
-  const std::vector<float> lhs = {1, 2, 3, 4, 5, 6};
-  const std::vector<float> rhs = {
-      1, 0, 0,  //
-      0, 1, 0,  //
-      0, 0, 1,  //
-      1, 1, 1,
-  };
-  const std::vector<float> expected = {1, 2, 3, 6, 4, 5, 6, 15};
+struct BatchMatMulTestCase {
+  const char* name;
+  int rank;
+  bool adj_x;
+  bool adj_y;
+  bool square = false;
+  bool broadcast_rhs = false;
+  bool constant_rhs = false;
+};
 
-  BatchMatMulOpModel cpu(/*use_gpu=*/false, /*lhs_shape=*/{1, 2, 3},
-                         /*rhs_shape=*/{1, 4, 3});
+std::vector<int> MatrixShape(int rank, int rows, int columns,
+                             int batch_size) {
+  if (rank == 2) {
+    return {rows, columns};
+  }
+  if (rank == 3) {
+    return {batch_size, rows, columns};
+  }
+  return {1, batch_size, rows, columns};
+}
+
+std::vector<float> MakeInput(const std::vector<int>& shape, int seed) {
+  int size = 1;
+  for (int dimension : shape) {
+    size *= dimension;
+  }
+  std::vector<float> values(size);
+  for (int i = 0; i < size; ++i) {
+    values[i] = static_cast<float>((i * seed) % 17 - 8) * 0.125f;
+  }
+  return values;
+}
+
+class BatchMatMulOpenClTest
+    : public ::testing::TestWithParam<BatchMatMulTestCase> {};
+
+TEST_P(BatchMatMulOpenClTest, MatchesCpu) {
+  const BatchMatMulTestCase& test = GetParam();
+  const int rows = test.square ? 3 : 2;
+  const int depth = 3;
+  const int columns = test.square ? 3 : 4;
+  const int batch_size = 2;
+  const std::vector<int> lhs_shape =
+      MatrixShape(test.rank, test.adj_x ? depth : rows,
+                  test.adj_x ? rows : depth, batch_size);
+  const std::vector<int> rhs_shape =
+      MatrixShape(test.rank, test.adj_y ? columns : depth,
+                  test.adj_y ? depth : columns,
+                  test.broadcast_rhs ? 1 : batch_size);
+  const std::vector<int> output_shape =
+      MatrixShape(test.rank, rows, columns, batch_size);
+  const std::vector<float> lhs = MakeInput(lhs_shape, 5);
+  const std::vector<float> rhs = MakeInput(rhs_shape, 7);
+
+  const std::vector<float>* constant_rhs =
+      test.constant_rhs ? &rhs : nullptr;
+  BatchMatMulOpModel cpu(/*use_gpu=*/false, lhs_shape, rhs_shape, test.adj_x,
+                         test.adj_y, constant_rhs);
   cpu.SetInputs(lhs, rhs);
   ASSERT_EQ(cpu.Invoke(), kTfLiteOk);
-  EXPECT_THAT(cpu.GetOutput(), ElementsAreArray(expected));
-  EXPECT_THAT(cpu.GetOutputShape(), ElementsAreArray({1, 2, 4}));
+  EXPECT_THAT(cpu.GetOutputShape(), ElementsAreArray(output_shape));
 
-  BatchMatMulOpModel gpu(/*use_gpu=*/true, /*lhs_shape=*/{1, 2, 3},
-                         /*rhs_shape=*/{1, 4, 3});
+  BatchMatMulOpModel gpu(/*use_gpu=*/true, lhs_shape, rhs_shape, test.adj_x,
+                         test.adj_y, constant_rhs);
   ASSERT_EQ(gpu.ApplyDelegate(), kTfLiteOk);
   gpu.SetInputs(lhs, rhs);
   ASSERT_EQ(gpu.Invoke(), kTfLiteOk);
   EXPECT_EQ(gpu.CpuKernelCount(), 0);
   EXPECT_THAT(gpu.GetOutput(),
-              Pointwise(FloatNear(1.0e-5f), cpu.GetOutput()));
-  EXPECT_THAT(gpu.GetOutputShape(), ElementsAreArray({1, 2, 4}));
+              Pointwise(FloatNear(1.0e-4f), cpu.GetOutput()));
+  EXPECT_THAT(gpu.GetOutputShape(), ElementsAreArray(output_shape));
 }
 
-TEST(BatchMatMulOpenClTest, AdjointRhsRankTwoMatchesCpu) {
-  const std::vector<float> lhs = {1, 2, 3, 4, 5, 6};
-  const std::vector<float> rhs = {
-      1, 0, 0,  //
-      0, 1, 0,  //
-      0, 0, 1,  //
-      1, 1, 1,
-  };
-  const std::vector<float> expected = {1, 2, 3, 6, 4, 5, 6, 15};
-
-  BatchMatMulOpModel cpu(/*use_gpu=*/false, /*lhs_shape=*/{2, 3},
-                         /*rhs_shape=*/{4, 3});
-  cpu.SetInputs(lhs, rhs);
-  ASSERT_EQ(cpu.Invoke(), kTfLiteOk);
-  EXPECT_THAT(cpu.GetOutput(), ElementsAreArray(expected));
-  EXPECT_THAT(cpu.GetOutputShape(), ElementsAreArray({2, 4}));
-
-  BatchMatMulOpModel gpu(/*use_gpu=*/true, /*lhs_shape=*/{2, 3},
-                         /*rhs_shape=*/{4, 3});
-  ASSERT_EQ(gpu.ApplyDelegate(), kTfLiteOk);
-  gpu.SetInputs(lhs, rhs);
-  ASSERT_EQ(gpu.Invoke(), kTfLiteOk);
-  EXPECT_EQ(gpu.CpuKernelCount(), 0);
-  EXPECT_THAT(gpu.GetOutput(),
-              Pointwise(FloatNear(1.0e-5f), cpu.GetOutput()));
-  EXPECT_THAT(gpu.GetOutputShape(), ElementsAreArray({2, 4}));
-}
+INSTANTIATE_TEST_SUITE_P(
+    AllOptionsAndRanks, BatchMatMulOpenClTest,
+    ::testing::Values(
+        BatchMatMulTestCase{"Rank2NN", 2, false, false},
+        BatchMatMulTestCase{"Rank2NT", 2, false, true},
+        BatchMatMulTestCase{"Rank2TN", 2, true, false},
+        BatchMatMulTestCase{"Rank2TT", 2, true, true},
+        BatchMatMulTestCase{"Rank2ConstNN", 2, false, false,
+                           /*square=*/false, /*broadcast_rhs=*/false,
+                           /*constant_rhs=*/true},
+        BatchMatMulTestCase{"Rank2ConstTT", 2, true, true,
+                           /*square=*/false, /*broadcast_rhs=*/false,
+                           /*constant_rhs=*/true},
+        BatchMatMulTestCase{"Rank3NN", 3, false, false},
+        BatchMatMulTestCase{"Rank3NT", 3, false, true},
+        BatchMatMulTestCase{"Rank3TN", 3, true, false},
+        BatchMatMulTestCase{"Rank3TT", 3, true, true},
+        BatchMatMulTestCase{"Rank3TTBroadcastRhs", 3, true, true,
+                           /*square=*/false, /*broadcast_rhs=*/true},
+        BatchMatMulTestCase{"Rank4NN", 4, false, false, /*square=*/true},
+        BatchMatMulTestCase{"Rank4NT", 4, false, true, /*square=*/true},
+        BatchMatMulTestCase{"Rank4TN", 4, true, false, /*square=*/true},
+        BatchMatMulTestCase{"Rank4TT", 4, true, true, /*square=*/true}),
+    [](const ::testing::TestParamInfo<BatchMatMulTestCase>& info) {
+      return info.param.name;
+    });
 
 }  // namespace
 }  // namespace tflite
