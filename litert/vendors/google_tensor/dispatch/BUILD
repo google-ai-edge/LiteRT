@@ -189,6 +189,7 @@ cc_library(
         "//litert/vendors/c:litert_dispatch_c_api",
         "//testing/base/public:gunit_for_library_testonly",
         "@com_google_absl//absl/base:no_destructor",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -213,6 +214,7 @@ cc_library(
 #         ":dispatch_api_test_fixtures",
 #         "//platforms/darwinn/tachyon/core/fence",
 #         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/cleanup",
 #         "@com_google_absl//absl/strings:str_format",
 #         "@com_google_absl//absl/time",
 #         "@com_google_absl//absl/types:span",
@@ -243,6 +245,7 @@ cc_library(
 #         ":dispatch_api_test_fixtures",
 #         "//platforms/darwinn/tachyon/core/fence",
 #         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/cleanup",
 #         "@com_google_absl//absl/strings:str_format",
 #         "@com_google_absl//absl/time",
 #         "@com_google_absl//absl/types:span",

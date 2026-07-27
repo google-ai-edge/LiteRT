@@ -16,8 +16,10 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_DISPATCH_API_TEST_FIXTURES_H_
 
 #include <cstdint>
+#include <string>
 
 #include <gtest/gtest.h>
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -32,6 +34,7 @@ namespace litert::google_tensor::testing {
 class DispatchApiTest : public ::testing::Test {
  protected:
   void SetUp() override;
+
   void TearDown() override;
 
   LiteRtEnvironment env() { return env_; }
@@ -47,9 +50,12 @@ class SimpleModelTest : public DispatchApiTest {
  protected:
   void SetUp() override;
 
+  absl::string_view model_file_path() const { return model_file_path_; }
+
   const LiteRtMemBuffer& model_bytecode() const { return model_bytecode_; }
 
  private:
+  std::string model_file_path_;
   litert::OwningBufferRef<uint8_t> model_;
   LiteRtMemBuffer model_bytecode_;
 };

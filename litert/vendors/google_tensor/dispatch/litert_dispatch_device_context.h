@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "absl/base/nullability.h"  // from @com_google_absl
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
@@ -91,6 +92,36 @@ class LiteRtDispatchDeviceContextT {
                                        const char* absl_nonnull value);
 
  private:
+  // Cache key for loaded executable files.
+  struct ExecutableFileCacheKey {
+    ExecutableFileCacheKey(int fd, size_t size, size_t offset)
+        : fd(fd), size(size), offset(offset) {}
+
+    template <typename H>
+    friend H AbslHashValue(H h, const ExecutableFileCacheKey& other) {
+      return H::combine(std::move(h), other.fd, other.size, other.offset);
+    }
+
+    friend bool operator==(const ExecutableFileCacheKey& lhs,
+                           const ExecutableFileCacheKey& rhs) {
+      return lhs.fd == rhs.fd && lhs.size == rhs.size &&
+             lhs.offset == rhs.offset;
+    }
+
+    int fd;
+    size_t size;
+    size_t offset;
+  };
+
+  // Aggregates data associated with an executable.
+  struct ExecutableData {
+    explicit ExecutableData(LiteRtDispatchExecutableHandle handle)
+        : handle(handle), ref_count(1) {}
+
+    LiteRtDispatchExecutableHandle handle;
+    int ref_count;
+  };
+
   struct MmapRegion {
     LiteRtDispatchExecutableHandle exec_handle;
     void* addr;
@@ -122,6 +153,9 @@ class LiteRtDispatchDeviceContextT {
   // other executable types like custom-compiled binaries. TFLite
   // flatbuffers can contain multiple signatures.
   absl::flat_hash_set<LiteRtDispatchExecutableHandle> tflite_executables_;
+  // Associates an executable file's cache key with its handle.
+  absl::flat_hash_map<ExecutableFileCacheKey, ExecutableData>
+      cache_key_to_exec_data_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
