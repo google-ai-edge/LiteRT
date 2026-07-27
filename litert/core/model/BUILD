@@ -285,6 +285,7 @@ cc_test(
     deps = [
         ":ir_allocator",
         ":model",
+        "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "@com_google_googletest//:gtest_main",
     ],

@@ -25,6 +25,7 @@
 #include <utility>
 #include <vector>
 
+#include <unordered_map>
 #include "absl/types/span.h"  // from @com_google_absl
 
 namespace litert::internal {
@@ -171,6 +172,24 @@ class IrAllocator {
   void TransferTo(IrAllocator& other,
                   std::optional<std::vector<size_t>> indices = std::nullopt) {
     other.TransferFrom(*this, std::move(indices));
+  }
+
+  // Reorders elements in storage to match the order of pointers in `new_order`.
+  // `new_order` must contain exactly the same elements as current storage.
+  void Reorder(absl::Span<Ir* const> new_order) {
+    Storage new_storage;
+    std::unordered_map<Ir*, typename Storage::iterator> ptr_to_it;
+    for (auto it = storage_.begin(); it != storage_.end(); ++it) {
+      ptr_to_it[&*it] = it;
+    }
+    for (Ir* ptr : new_order) {
+      auto it = ptr_to_it.find(ptr);
+      if (it != ptr_to_it.end()) {
+        new_storage.splice(new_storage.end(), storage_, it->second);
+      }
+    }
+    storage_ = std::move(new_storage);
+    ResetRefs();
   }
 
   // Number of elements stored by this allocator.

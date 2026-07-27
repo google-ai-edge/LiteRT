@@ -284,5 +284,17 @@ TEST(IrAllocatorTest, TransferFromSelfWithIndices) {
   EXPECT_EQ(ops.Elements().at(2), op3);
 }
 
+TEST(IrAllocatorTest, Reorder) {
+  IrAllocator<LiteRtOpT> ops;
+  auto& op1 = ops.EmplaceBack();
+  auto& op2 = ops.EmplaceBack();
+  auto& op3 = ops.EmplaceBack();
+
+  std::vector<LiteRtOp> new_order = {&op3, &op1, &op2};
+  ops.Reorder(new_order);
+
+  EXPECT_THAT(ops.Elements(), ElementsAreArray({&op3, &op1, &op2}));
+}
+
 }  // namespace
 }  // namespace litert::internal
