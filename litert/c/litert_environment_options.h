@@ -69,6 +69,10 @@ typedef enum {
   /// \internal This is for internal use only. Reserved for use by LiteRT in
   /// Play services.
   kLiteRtEnvOptionTagContext = 28,
+  // An optional custom callback (`void (*)()`) invoked during synchronous
+  // WebGPU buffer readback (e.g., with Dawn Wire handler) to flush outbound
+  // wire commands and pump inbound events on the thread message loop.
+  kLiteRtEnvOptionTagWebGpuFlushCallback = 29,
   // Internal use only. Virtual null tag for option that is not defined.
   kLiteRtEnvOptionTagNull = 255,
 } LiteRtEnvOptionTag;
