@@ -106,7 +106,25 @@ absl::StatusOr<std::unique_ptr<MemoryMappedFile>> MemoryMappedFile::Create(
       << GetOffsetAlignment();
 
   ASSIGN_OR_RETURN(size_t file_size, ScopedFile::GetSize(file));
-  RET_CHECK_GE(file_size, length + offset) << "Length and offset too large.";
+  RET_CHECK_LE(offset, file_size)
+      << "Offset (" << offset << ") is greater than file size (" << file_size
+      << ").";
+
+  if (length + offset > file_size) {
+    if (file_size % GetOffsetAlignment() != 0) {
+      RET_CHECK(false) << "Length (" << length << ") and offset (" << offset
+                       << ") are too large for file size (" << file_size
+                       << ") and the file size is not a multiple of the OS "
+                          "alignment requirement ("
+                       << GetOffsetAlignment()
+                       << "). The file might not have enough padding.";
+    } else {
+      RET_CHECK(false) << "Length (" << length << ") and offset (" << offset
+                       << ") are too large for file size (" << file_size
+                       << ").";
+    }
+  }
+
   if (length == 0) {
     length = file_size - offset;
   }
@@ -143,7 +161,25 @@ MemoryMappedFile::CreateMutable(int file, uint64_t offset, uint64_t length,
       << GetOffsetAlignment();
 
   ASSIGN_OR_RETURN(size_t file_size, ScopedFile::GetSize(file));
-  RET_CHECK_GE(file_size, length + offset) << "Length and offset too large.";
+  RET_CHECK_LE(offset, file_size)
+      << "Offset (" << offset << ") is greater than file size (" << file_size
+      << ").";
+
+  if (length + offset > file_size) {
+    if (file_size % GetOffsetAlignment() != 0) {
+      RET_CHECK(false) << "Length (" << length << ") and offset (" << offset
+                       << ") are too large for file size (" << file_size
+                       << ") and the file size is not a multiple of the OS "
+                          "alignment requirement ("
+                       << GetOffsetAlignment()
+                       << "). The file might not have enough padding.";
+    } else {
+      RET_CHECK(false) << "Length (" << length << ") and offset (" << offset
+                       << ") are too large for file size (" << file_size
+                       << ").";
+    }
+  }
+
   if (length == 0) {
     length = file_size - offset;
   }
