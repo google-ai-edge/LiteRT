@@ -136,7 +136,7 @@ typedef LiteRtStatus (*LiteRtDispatchCheckRuntimeCompatibilityT)(
     LiteRtApiVersion api_version, LiteRtEnvironmentOptions env,
     LiteRtOptions options);
 
-typedef struct LiteRtDispatchInterface {
+typedef struct LiteRtDispatchInterface_V0_1 {
   LiteRtDispatchInitializeT initialize;
   LiteRtDispatchGetVendorIdT get_vendor_id;
   LiteRtDispatchGetBuildIdT get_build_id;
@@ -169,7 +169,7 @@ typedef struct LiteRtDispatchInterface {
   LiteRtDispatchAttachEdgeBufferT attach_edge_buffer;
   LiteRtDispatchDetachEdgeBufferT detach_edge_buffer;
 #endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-} LiteRtDispatchInterface;
+} LiteRtDispatchInterface_V0_1;
 
 // /////////////////////////////////////////////////////////////////////////////
 
@@ -181,10 +181,10 @@ typedef LiteRtStatus (*LiteRtDispatchInvokeAsyncT)(
     LiteRtDispatchInvocationContext invocation_context, int num_output_events,
     LiteRtEvent* output_events);
 
-typedef struct LiteRtDispatchAsyncInterface {
+typedef struct LiteRtDispatchAsyncInterface_V0_1 {
   LiteRtDispatchAttachInputEventT attach_input_event;
   LiteRtDispatchInvokeAsyncT invoke_async;
-} LiteRtDispatchAsyncInterface;
+} LiteRtDispatchAsyncInterface_V0_1;
 
 // /////////////////////////////////////////////////////////////////////////////
 
@@ -259,7 +259,7 @@ typedef LiteRtStatus (*LiteRtDispatchAnnotateEdgeT)(
     LiteRtDispatchGraph graph, LiteRtDispatchEdgeId edge_id, const char* key,
     const char* value);
 
-typedef struct LiteRtDispatchGraphInterface {
+typedef struct LiteRtDispatchGraphInterface_V0_1 {
   LiteRtDispatchGraphCreateT graph_create;
   LiteRtDispatchGraphDestroyT graph_destroy;
   LiteRtDispatchAddNodeT add_node;
@@ -282,7 +282,7 @@ typedef struct LiteRtDispatchGraphInterface {
   LiteRtDispatchGetScratchpadRequirementsT get_scratchpad_requirements;
   LiteRtDispatchAttachScratchpadBufferT attach_scratchpad_buffer;
 #endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-} LiteRtDispatchGraphInterface;
+} LiteRtDispatchGraphInterface_V0_1;
 
 // /////////////////////////////////////////////////////////////////////////////
 
@@ -292,34 +292,31 @@ typedef struct LiteRtDispatchGraphInterface {
 ///
 /// @note This concrete type is shared between the runtime and the Dispatch
 ///     plugin, so it must be ABI stable.
-typedef struct LiteRtDispatchApi {
-  LiteRtApiVersion version;
-  LiteRtDispatchInterface* interface;
-  LiteRtDispatchAsyncInterface* async_interface;
-  LiteRtDispatchGraphInterface* graph_interface;
-  LiteRtCustomTensorBufferHandlersDef* tensor_buffer_handlers_def;
-} LiteRtDispatchApi;
+typedef enum {
+  kLiteRtInterfaceBasic = 0,
+  kLiteRtInterfaceAsync = 1,
+  kLiteRtInterfaceGraph = 2,
+  kLiteRtInterfaceCustomTensorBufferHandlers = 3,
+} LiteRtDispatchInterfaceId;
 
-#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
-    __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtDispatchApi) == 48,
-              "LiteRtDispatchApi size mismatch");
-static_assert(offsetof(LiteRtDispatchApi, interface) == 16,
-              "LiteRtDispatchApi interface offset mismatch");
-static_assert(offsetof(LiteRtDispatchApi, tensor_buffer_handlers_def) == 40,
-              "LiteRtDispatchApi tensor_buffer_handlers_def offset mismatch");
-#endif  // __cplusplus
+typedef LiteRtStatus (*LiteRtDispatchQueryInterfaceT)(
+    LiteRtDispatchInterfaceId interface_id, LiteRtApiVersion requested_version,
+    void** out_interface);
 
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api);
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchQueryInterface(
+    LiteRtDispatchInterfaceId interface_id, LiteRtApiVersion requested_version,
+    void** out_interface);
 
 // Pointer to a statically linked dispatch API implementation.
 // Vendors that are statically linked can set this pointer to their
-// implementation of LiteRtDispatchGetApi during static initialization.
+// implementation of LiteRtDispatchQueryInterface during static initialization.
 // The storage for this pointer is defined in the internal runtime at
 // litert/runtime/dispatch/litert_dispatch.cc.
 // The runtime will invoke this function to get the API instead of loading a
 // dynamic library if it is not null.
-extern LiteRtStatus (*LiteRtStaticLinkedDispatchGetApi)(LiteRtDispatchApi*);
+extern LiteRtStatus (*LiteRtStaticLinkedDispatchQueryInterface)(
+    LiteRtDispatchInterfaceId interface_id, LiteRtApiVersion requested_version,
+    void** out_interface);
 
 #ifdef __cplusplus
 }

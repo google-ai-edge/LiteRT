@@ -98,7 +98,11 @@ typedef LiteRtStatus (*LiteRtCompilerPluginCheckCompilerCompatibilityT)(
 //
 
 // Wraps all resolved functions from api interface.
-struct LiteRtCompilerPluginApi {
+typedef enum {
+  kLiteRtCompilerPluginInterfaceBasic = 0,
+} LiteRtCompilerPluginInterfaceId;
+
+typedef struct LiteRtCompilerPluginInterface_V0_1 {
   LiteRtGetCompilerPluginVersionT get_compiler_plugin_version;
   LiteRtGetCompilerPluginSocManufacturerT get_compiler_plugin_soc_manufacturer;
   LiteRtCreateCompilerPluginT create_compiler_plugin;
@@ -120,60 +124,33 @@ struct LiteRtCompilerPluginApi {
   LiteRtGetCompiledResultHandleT get_compiled_result_handle;
   LiteRtCompiledResultNumByteCodeModulesT get_compiled_result_num_byte_code;
   LiteRtGetCompiledResultCallInfoT get_compiled_result_call_info;
-  LiteRtGetNumCompiledResultCallsT get_compiled_result_num_calls;
+  LiteRtGetNumCompiledResultCallsT get_num_compiled_result_calls;
   LiteRtCompilerPluginRegisterAllTransformationsT register_all_transformations;
   LiteRtCompilerPluginCheckCompilerCompatibilityT check_compiler_compatibility;
-};
+} LiteRtCompilerPluginInterface_V0_1;
+
+typedef LiteRtStatus (*LiteRtCompilerPluginDummyT)(LiteRtCompilerPlugin);
+
+typedef struct LiteRtCompilerPluginInterface_V0_2 {
+  LiteRtCompilerPluginInterface_V0_1 base;
+  LiteRtCompilerPluginDummyT dummy;
+} LiteRtCompilerPluginInterface_V0_2;
+
+typedef LiteRtStatus (*LiteRtCompilerPluginQueryInterfaceT)(
+    LiteRtCompilerPluginInterfaceId interface_id,
+    LiteRtApiVersion requested_version, void** out_interface);
+
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompilerPluginQueryInterface(
+    LiteRtCompilerPluginInterfaceId interface_id,
+    LiteRtApiVersion requested_version, void** out_interface);
 
 #ifdef __cplusplus
 }
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 
-static constexpr absl::string_view kLiteRtGetCompilerPluginVersion =
-    "LiteRtGetCompilerPluginVersion";
-
-static constexpr absl::string_view kLiteRtGetCompilerPluginSupportedHardware =
-    "LiteRtGetCompilerPluginSupportedHardware";
-
-static constexpr absl::string_view kLiteRtGetCompilerPluginSocManufacturer =
-    "LiteRtGetCompilerPluginSocManufacturer";
-static constexpr absl::string_view
-    kLiteRtGetNumCompilerPluginSupportedSocModels =
-        "LiteRtGetNumCompilerPluginSupportedSocModels";
-static constexpr absl::string_view kLiteRtGetCompilerPluginSupportedSocModel =
-    "LiteRtGetCompilerPluginSupportedSocModel";
-static constexpr absl::string_view kLiteRtGetCompilerPluginSDKVersion =
-    "LiteRtGetCompilerPluginSDKVersion";
-
-static constexpr absl::string_view kLiteRtCreateCompilerPlugin =
-    "LiteRtCreateCompilerPlugin";
-static constexpr absl::string_view kLiteRtDestroyCompilerPlugin =
-    "LiteRtDestroyCompilerPlugin";
-
-static constexpr absl::string_view kLiteRtCompilerPluginPartition =
-    "LiteRtCompilerPluginPartition";
-static constexpr absl::string_view kLiteRtCompilerPluginCompile =
-    "LiteRtCompilerPluginCompile";
-
-static constexpr absl::string_view kLiteRtDestroyCompiledResult =
-    "LiteRtDestroyCompiledResult";
-static constexpr absl::string_view kLiteRtGetCompiledResultByteCode =
-    "LiteRtGetCompiledResultByteCode";
-static constexpr absl::string_view kLiteRtGetCompiledResultHandle =
-    "LiteRtGetCompiledResultHandle";
-static constexpr absl::string_view kLiteRtCompiledResultNumByteCodeModules =
-    "LiteRtCompiledResultNumByteCodeModules";
-static constexpr absl::string_view kLiteRtGetCompiledResultCallInfo =
-    "LiteRtGetCompiledResultCallInfo";
-static constexpr absl::string_view kLiteRtGetNumCompiledResultCalls =
-    "LiteRtGetNumCompiledResultCalls";
-static constexpr absl::string_view
-    kLiteRtCompilerPluginRegisterAllTransformations =
-        "LiteRtCompilerPluginRegisterAllTransformations";
-static constexpr absl::string_view
-    kLiteRtCompilerPluginCheckCompilerCompatibility =
-        "LiteRtCompilerPluginCheckCompilerCompatibility";
+static constexpr absl::string_view kLiteRtCompilerPluginQueryInterface =
+    "LiteRtCompilerPluginQueryInterface";
 
 #endif  // __cplusplus
 

@@ -568,7 +568,7 @@ LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
 
 // /////////////////////////////////////////////////////////////////////////////
 
-LiteRtDispatchInterface ExampleInterface = {
+LiteRtDispatchInterface_V0_1 ExampleInterface = {
     /*.initialize=*/Initialize,
     /*.get_vendor_id=*/GetVendorId,
     /*.get_build_id=*/GetBuildId,
@@ -597,21 +597,19 @@ LiteRtDispatchInterface ExampleInterface = {
     /*.invocation_context_set_options=*/InvocationContextSetOptions,
 };
 
-LiteRtDispatchApi ExampleApi = {
-    /*.version=*/{/*.major=*/LITERT_API_VERSION_MAJOR,
-                  /*.minor=*/LITERT_API_VERSION_MINOR,
-                  /*.patch=*/LITERT_API_VERSION_PATCH},
-    /*.interface=*/&ExampleInterface,
-    /*.async_interface=*/nullptr,
-    /*.graph_interface=*/nullptr,
-};
-
 }  // namespace
 }  // namespace litert::example
 
-LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
-  *api = ::litert::example::ExampleApi;
-  return kLiteRtStatusOk;
+extern "C" LiteRtStatus LiteRtDispatchQueryInterface(
+    LiteRtDispatchInterfaceId interface_id, LiteRtApiVersion requested_version,
+    void** out_interface) {
+  if (requested_version.major == 0 && requested_version.minor == 1) {
+    if (interface_id == kLiteRtInterfaceBasic) {
+      *out_interface = &::litert::example::ExampleInterface;
+      return kLiteRtStatusOk;
+    }
+  }
+  return kLiteRtStatusErrorUnsupported;
 }
 
 extern "C" LiteRtStatus LiteRtDispatchExampleClearLastSchedulingInfo() {

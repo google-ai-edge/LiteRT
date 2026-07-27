@@ -28,8 +28,10 @@
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
 #include "litert/test/load_test_model.h"
+#include "litert/test/load_test_model.h"
+#include "litert/test/matchers.h"
 #include "litert/test/test_models.h"
-#include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/cc/litert_compiler_plugin.h"
 
 namespace litert {
@@ -68,32 +70,35 @@ const auto kSupportedOps = Values(
 // clang-format on
 
 TEST(TestMediatekPlugin, GetConfigInfo) {
-  EXPECT_STREQ(LiteRtGetCompilerPluginSocManufacturer(), "MediaTek");
-
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin, StaticallyLinkedPlugin::Create(LrtGetCompilerContext()));
+  EXPECT_STREQ(plugin.Api()->get_compiler_plugin_soc_manufacturer(),
+               "MediaTek");
 
   LiteRtParamIndex num_supported_soc_models;
-  ASSERT_EQ(LiteRtGetNumCompilerPluginSupportedSocModels(
-                plugin.get(), &num_supported_soc_models),
+  ASSERT_EQ(plugin.Api()->get_num_compiler_plugin_supported_models(
+                plugin.Get(), &num_supported_soc_models),
             kLiteRtStatusOk);
   ASSERT_EQ(num_supported_soc_models, 16);
 
   const char* config_id;
-  ASSERT_EQ(
-      LiteRtGetCompilerPluginSupportedSocModel(plugin.get(), 0, &config_id),
-      kLiteRtStatusOk);
+  ASSERT_EQ(plugin.Api()->get_compiler_plugin_supported_soc_model(
+                plugin.Get(), 0, &config_id),
+            kLiteRtStatusOk);
   EXPECT_STREQ(config_id, "mt6853");
 }
 
 TEST(TestMediatekPlugin, PartitionAdd) {
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin, StaticallyLinkedPlugin::Create(LrtGetCompilerContext()));
   auto model = testing::LoadTestFileModel("add_simple.tflite");
 
   auto subgraph = model.Subgraph(0);
   ASSERT_TRUE(subgraph.HasValue());
   LiteRtOpListT selected_op_list;
-  ASSERT_EQ(LiteRtCompilerPluginPartition(plugin.get(), /*soc_model=*/"mt6989",
-                                          subgraph->Get(), &selected_op_list),
+  ASSERT_EQ(plugin.Api()->compiler_plugin_partition(
+                plugin.Get(), /*soc_model=*/"mt6989", subgraph->Get(),
+                &selected_op_list),
             kLiteRtStatusOk);
   const auto selected_ops = selected_op_list.Values();
 
@@ -106,14 +111,16 @@ TEST(TestMediatekPlugin, DlaDirectory) {
   char* dla_directory_name = std::getenv("MTKNN_ADAPTER_DLA_DIR");
 #endif
 
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin, StaticallyLinkedPlugin::Create(LrtGetCompilerContext()));
   auto model = testing::LoadTestFileModel("add_simple.tflite");
 
   auto subgraph = model.Subgraph(0);
   ASSERT_TRUE(subgraph.HasValue());
   LiteRtOpListT selected_op_list;
-  ASSERT_EQ(LiteRtCompilerPluginPartition(plugin.get(), /*soc_model=*/"mt6989",
-                                          subgraph->Get(), &selected_op_list),
+  ASSERT_EQ(plugin.Api()->compiler_plugin_partition(
+                plugin.Get(), /*soc_model=*/"mt6989", subgraph->Get(),
+                &selected_op_list),
             kLiteRtStatusOk);
   const auto selected_ops = selected_op_list.Values();
 
@@ -142,24 +149,26 @@ class MtkPluginOpCompatibilityTest
 
 TEST_P(MtkPluginOpCompatibilityTest, SupportedOpsTest) {
   LITERT_LOG(LITERT_INFO, "Testing TFLite model: %s", GetParam().c_str());
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin, StaticallyLinkedPlugin::Create(LrtGetCompilerContext()));
   auto model = testing::LoadTestFileModel(GetParam());
 
   LiteRtCompiledResult compiled;
-  ASSERT_EQ(LiteRtCompilerPluginCompile(plugin.get(), /*soc_model=*/"mt6991",
-                                        model.Get(), &compiled),
+  ASSERT_EQ(plugin.Api()->compiler_plugin_compile(
+                plugin.Get(), /*soc_model=*/"mt6991", model.Get(), &compiled),
             kLiteRtStatusOk);
 
   LiteRtParamIndex num_byte_code;
-  ASSERT_EQ(LiteRtCompiledResultNumByteCodeModules(compiled, &num_byte_code),
-            kLiteRtStatusOk);
+  ASSERT_EQ(
+      plugin.Api()->get_compiled_result_num_byte_code(compiled, &num_byte_code),
+      kLiteRtStatusOk);
   ASSERT_EQ(num_byte_code, 1);
 
   const void* byte_code;
   size_t byte_code_size;
 
-  ASSERT_EQ(LiteRtGetCompiledResultByteCode(compiled, /*byte_code_idx=*/0,
-                                            &byte_code, &byte_code_size),
+  ASSERT_EQ(plugin.Api()->get_compiled_result_byte_code(
+                compiled, /*byte_code_idx=*/0, &byte_code, &byte_code_size),
             kLiteRtStatusOk);
 
   absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
@@ -170,9 +179,10 @@ TEST_P(MtkPluginOpCompatibilityTest, SupportedOpsTest) {
   size_t op_data_size;
   LiteRtParamIndex byte_code_idx;
 
-  ASSERT_EQ(LiteRtGetCompiledResultCallInfo(compiled, /*call_idx=*/0, &op_data,
-                                            &op_data_size, &byte_code_idx),
-            kLiteRtStatusOk);
+  ASSERT_EQ(
+      plugin.Api()->get_compiled_result_call_info(
+          compiled, /*call_idx=*/0, &op_data, &op_data_size, &byte_code_idx),
+      kLiteRtStatusOk);
 
   EXPECT_EQ(byte_code_idx, 0);
 
@@ -180,7 +190,7 @@ TEST_P(MtkPluginOpCompatibilityTest, SupportedOpsTest) {
                                    op_data_size);
   EXPECT_EQ(op_data_string, "Partition_0");
 
-  LiteRtDestroyCompiledResult(compiled);
+  plugin.Api()->destroy_compiled_result(compiled);
 }
 
 INSTANTIATE_TEST_SUITE_P(SupportedOpsTest, MtkPluginOpCompatibilityTest,

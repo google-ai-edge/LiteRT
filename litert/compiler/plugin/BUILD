@@ -52,7 +52,6 @@ cc_library(
         "//litert/core:dynamic_loading",
         "//litert/core:environment",
         "//litert/core:filesystem",
-        "//litert/core:options",
         "//litert/core:version",
         "//litert/core/model",
         "//litert/core/util:perfetto_profiling",

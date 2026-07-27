@@ -329,3 +329,101 @@ LiteRtStatus LiteRtGetCompiledResultByteCode(
 LiteRt provides various toolings for applying compiler plugins to model files,
 executing the result, and validating/benchmarking. Please refer to the
 documentation for the LiteRt's tooling: #TODO.
+
+-----
+
+## API Versioning and Extension
+
+LiteRt Compiler Plugin API uses a COM-like version negotiation pattern to ensure
+backward compatibility. This allows newer LiteRt runtimes to safely load older
+compiler plugins without risk of out-of-bounds memory access.
+
+### How it works
+
+1.  **Single Entry Point:** The plugin shared library exports only one C
+    symbol: `LiteRtCompilerPluginQueryInterface`.
+2.  **Explicit Negotiation:** The runtime calls this function, requesting a
+    specific interface ID (e.g., `kLiteRtCompilerPluginInterfaceBasic`) and
+    version (e.g., `0.1.0`).
+3.  **Layout Compatibility (C-Style Inheritance):** Newer versions of
+    interface structs nest the older version as their first member `base`. This
+    ensures that a pointer to the new struct is also a valid pointer to the
+    old struct.
+
+### Example: Extending the Interface
+
+To add a new function to the Compiler Plugin API:
+
+#### 1. Define the new interface version in `litert_compiler_plugin_api.h`
+
+Define the new function pointer type and the new versioned struct:
+
+```c
+// Define new function pointer type
+typedef LiteRtStatus (*LiteRtCompilerPluginNewFunctionT)(LiteRtCompilerPlugin);
+
+// Define V0.2 interface nesting V0.1
+typedef struct LiteRtCompilerPluginInterface_V0_2 {
+  LiteRtCompilerPluginInterface_V0_1 base; // Nested V0.1 must be the first member
+  LiteRtCompilerPluginNewFunctionT new_function; // Append new functions
+} LiteRtCompilerPluginInterface_V0_2;
+```
+
+#### 2. Implement the new function and interface in the plugin (`example_plugin.cc`)
+
+Implement the function and update the query interface logic to return the
+new struct when version `0.2` is requested:
+
+```cpp
+// Implement new function
+LiteRtStatus LiteRtCompilerPluginNewFunction(LiteRtCompilerPlugin compiler_plugin) {
+  // ... implementation ...
+  return kLiteRtStatusOk;
+}
+
+// Define V0.2 interface static instance
+static LiteRtCompilerPluginInterface_V0_2 ExamplePluginInterface_V0_2 = {
+    .base = ExamplePluginInterface, // Copy V0.1
+    .new_function = LiteRtCompilerPluginNewFunction,
+};
+
+// Update Query Interface
+extern "C" LiteRtStatus LiteRtCompilerPluginQueryInterface(
+    LiteRtCompilerPluginInterfaceId interface_id,
+    LiteRtApiVersion requested_version,
+    void** out_interface) {
+  if (requested_version.major == 0) {
+    if (requested_version.minor == 1) {
+      *out_interface = &ExamplePluginInterface;
+      return kLiteRtStatusOk;
+    } else if (requested_version.minor == 2) {
+      *out_interface = &ExamplePluginInterface_V0_2;
+      return kLiteRtStatusOk;
+    }
+  }
+  return kLiteRtStatusErrorUnsupported;
+}
+```
+
+#### 3. How Runtime negotiates and uses it
+
+The runtime loader will attempt to query the highest version it knows about,
+and fallback to older versions if not supported by the plugin:
+
+```cpp
+LiteRtCompilerPluginInterface_V0_2* api_v0_2 = nullptr;
+LiteRtApiVersion version_0_2 = {0, 2, 0};
+
+// Try to get V0.2
+if (QueryInterface(kLiteRtCompilerPluginInterfaceBasic, version_0_2, &api_v0_2) == OK) {
+  // Safe to call new function
+  api_v0_2->new_function(plugin);
+} else {
+  // Fallback: V0.2 not supported. Try V0.1
+  LiteRtCompilerPluginInterface_V0_1* api_v0_1 = nullptr;
+  if (QueryInterface(kLiteRtInterfaceBasic, {0, 1, 0}, &api_v0_1) == OK) {
+    // Only call V0.1 functions
+    api_v0_1->compiler_plugin_compile(...);
+  }
+}
+```

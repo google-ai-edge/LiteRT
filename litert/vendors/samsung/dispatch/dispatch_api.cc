@@ -289,7 +289,7 @@ LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
 
 // /////////////////////////////////////////////////////////////////////////////
 
-LiteRtDispatchInterface TheInterface = {
+LiteRtDispatchInterface_V0_1 TheInterface = {
     /*.initialize=*/LiteRtSamsungInitialize,
     /*.get_vendor_id=*/LiteRtSamsungGetVendorId,
     /*.get_build_id=*/LiteRtSamsungGetBuildId,
@@ -316,16 +316,14 @@ LiteRtDispatchInterface TheInterface = {
     /*.check_runtime_compatibility=*/CheckRuntimeCompatibility,
 };
 
-LiteRtDispatchApi TheApi = {
-    /*.version=*/{/*.major=*/LITERT_API_VERSION_MAJOR,
-                  /*.minor=*/LITERT_API_VERSION_MINOR,
-                  /*.patch=*/LITERT_API_VERSION_PATCH},
-    /*.interface=*/&TheInterface,
-    /*.async_interface=*/nullptr,
-    /*.graph_interface=*/nullptr,
-};
-
-LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
-  *api = TheApi;
-  return kLiteRtStatusOk;
+extern "C" LiteRtStatus LiteRtDispatchQueryInterface(
+    LiteRtDispatchInterfaceId interface_id, LiteRtApiVersion requested_version,
+    void** out_interface) {
+  if (requested_version.major == 0 && requested_version.minor == 1) {
+    if (interface_id == kLiteRtInterfaceBasic) {
+      *out_interface = &TheInterface;
+      return kLiteRtStatusOk;
+    }
+  }
+  return kLiteRtStatusErrorUnsupported;
 }

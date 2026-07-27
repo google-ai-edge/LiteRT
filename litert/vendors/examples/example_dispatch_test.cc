@@ -39,7 +39,7 @@ using ::litert::testing::SimpleBuffer;
 using ::testing::ElementsAre;
 
 struct DeviceDeleter {
-  explicit DeviceDeleter(LiteRtDispatchInterface& api) : api(api) {}
+  explicit DeviceDeleter(LiteRtDispatchInterface_V0_1& api) : api(api) {}
 
   DeviceDeleter(const DeviceDeleter&) noexcept = default;
   DeviceDeleter(DeviceDeleter&&) noexcept = default;
@@ -48,18 +48,19 @@ struct DeviceDeleter {
     api.device_context_destroy(device_context);
   }
 
-  LiteRtDispatchInterface& api;
+  LiteRtDispatchInterface_V0_1& api;
 };
 
 using DevicePtr = std::unique_ptr<LiteRtDispatchDeviceContextT, DeviceDeleter>;
 
-DevicePtr CreateDevicePtr(LiteRtDispatchInterface& api,
+DevicePtr CreateDevicePtr(LiteRtDispatchInterface_V0_1& api,
                           LiteRtDispatchDeviceContext device_context) {
   return DevicePtr(device_context, DeviceDeleter(api));
 }
 
 struct InvocationContextDeleter {
-  explicit InvocationContextDeleter(LiteRtDispatchInterface& api) : api(api) {}
+  explicit InvocationContextDeleter(LiteRtDispatchInterface_V0_1& api)
+      : api(api) {}
 
   InvocationContextDeleter(const InvocationContextDeleter&) noexcept = default;
   InvocationContextDeleter(InvocationContextDeleter&&) noexcept = default;
@@ -68,14 +69,14 @@ struct InvocationContextDeleter {
     api.invocation_context_destroy(invocation_context);
   }
 
-  LiteRtDispatchInterface& api;
+  LiteRtDispatchInterface_V0_1& api;
 };
 
 using InvocationContextPtr =
     std::unique_ptr<LiteRtDispatchInvocationContextT, InvocationContextDeleter>;
 
 InvocationContextPtr CreateInvocationContextPtr(
-    LiteRtDispatchInterface& api,
+    LiteRtDispatchInterface_V0_1& api,
     LiteRtDispatchInvocationContext invocation_context) {
   return InvocationContextPtr(invocation_context,
                               InvocationContextDeleter(api));
@@ -84,11 +85,15 @@ InvocationContextPtr CreateInvocationContextPtr(
 class ExampleDispatchTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    LITERT_ASSERT_OK(LiteRtDispatchGetApi(&api_));
-    ASSERT_NE(api_.interface, nullptr);
+    LiteRtApiVersion version = {.major = 0, .minor = 1, .patch = 0};
+    void* interface = nullptr;
+    LITERT_ASSERT_OK(LiteRtDispatchQueryInterface(kLiteRtInterfaceBasic,
+                                                  version, &interface));
+    ASSERT_NE(interface, nullptr);
+    api_ = reinterpret_cast<LiteRtDispatchInterface_V0_1*>(interface);
   }
 
-  LiteRtDispatchInterface& Api() { return *api_.interface; }
+  LiteRtDispatchInterface_V0_1& Api() { return *api_; }
 
   // Creates a device context and invocation context for a simple mul operation.
   std::pair<DevicePtr, InvocationContextPtr>
@@ -133,7 +138,7 @@ ops:mul(0,1)(2))";
   }
 
  private:
-  LiteRtDispatchApi api_;
+  LiteRtDispatchInterface_V0_1* api_;
 };
 
 TEST_F(ExampleDispatchTest, InvocationContextCreateFromHandle) {
