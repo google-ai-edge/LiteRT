@@ -1683,7 +1683,6 @@ LiteRtStatus AddTensorToQnn(
   if (created_tensors.count(&tensor)) {
     return kLiteRtStatusOk;
   }
-
   auto error =
       qnn_api->tensorCreateGraphTensor(graph_handle, &(tensor.GetQnnTensor()));
   if (QNN_SUCCESS == error) {
@@ -1728,8 +1727,8 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
   auto dump_ids = options.GetDumpTensorIds();
   absl::flat_hash_set<std::int32_t> ids_to_dump(dump_ids.begin(),
                                                 dump_ids.end());
-
-  for (const auto& subgraph_input : graph_mapper.Graph().Inputs()) {
+  const auto subgraph_inputs = graph_mapper.Graph().Inputs();
+  for (const auto& subgraph_input : subgraph_inputs) {
     ::qnn::TensorWrapper* tensor_wrapper{nullptr};
     LITERT_RETURN_IF_ERROR(ConvertTensor(subgraph_input, tensor_pool,
                                          tensor_wrapper, ids_to_dump));
@@ -1738,11 +1737,6 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
       tensor_wrapper->SetMemHandle(nullptr);
     }
     litert_tensor_to_wrapper.emplace(subgraph_input.Get(), tensor_wrapper);
-    LITERT_RETURN_IF_ERROR(AddTensorToQnn(qnn.Api(), graph_mapper.QnnGraph(),
-                                          *tensor_wrapper, created_tensors));
-    if (inputs != nullptr) {
-      inputs->push_back(*tensor_wrapper);
-    }
   }
 
   for (const auto& subgraph_output : graph_mapper.Graph().Outputs()) {
@@ -1822,6 +1816,27 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
                           return qnn.ValidateOp(qnn_backend, op) ==
                                  kLiteRtStatusOk;
                         });
+
+  if (options.GetGraphTransform().find("kv_uint") != absl::string_view::npos) {
+    tensor_pool.ForEach([](::qnn::TensorWrapper& tensor_wrapper) {
+      if ((tensor_wrapper.IsSubgraphInput() ||
+           tensor_wrapper.IsSubgraphOutput()) &&
+          tensor_wrapper.GetName().find("kv") != std::string::npos) {
+        tensor_wrapper.ConvertFromQuantI16ToQuantU16();
+      }
+    });
+  }
+
+  // Create input tensors.
+  for (const auto& subgraph_input : subgraph_inputs) {
+    ::qnn::TensorWrapper* tensor_wrapper =
+        litert_tensor_to_wrapper[subgraph_input.Get()];
+    LITERT_RETURN_IF_ERROR(AddTensorToQnn(qnn.Api(), graph_mapper.QnnGraph(),
+                                          *tensor_wrapper, created_tensors));
+    if (inputs != nullptr) {
+      inputs->push_back(*tensor_wrapper);
+    }
+  }
 
   // Create ops and their corresponding tensors.
   for (auto& op_wrapper : graph_op_wrappers) {

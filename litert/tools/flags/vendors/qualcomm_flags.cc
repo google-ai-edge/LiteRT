@@ -433,6 +433,10 @@ ABSL_FLAG(
     std::string, qualcomm_dlc_dir, "",
     "DLC directory. If provided, you can obtain Qnn graphs in DLC format.");
 
+ABSL_FLAG(std::string, qualcomm_graph_transform, "",
+          "Comma-separated list of graph transform options to apply, e.g. "
+          "\"option1,option2\".");
+
 ABSL_FLAG(uint32_t, qualcomm_vtcm_size, 0,
           "The vtcm size of the target device. If this option is set to 0, the "
           "max size of vtcm size will be used.");
@@ -728,6 +732,10 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const std::string dlc_dir = absl::GetFlag(FLAGS_qualcomm_dlc_dir);
   opts.SetDlcDir(dlc_dir);
+
+  const std::string graph_transform =
+      absl::GetFlag(FLAGS_qualcomm_graph_transform);
+  opts.SetGraphTransform(graph_transform);
 
   const auto vtcm_size = absl::GetFlag(FLAGS_qualcomm_vtcm_size);
   opts.SetVtcmSize(vtcm_size);

@@ -237,6 +237,19 @@ TEST(LiteRtQualcommOptionsTest, DlcDir) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, GraphTransform) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetGraphTransform(qualcomm_options,
+                                                       "option1,option2"));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetGraphTransform(), "option1,option2");
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, VtcmSize) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -451,6 +464,10 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_EQ(options->GetDlcDir(), "");
   options->SetDlcDir("tmp");
   EXPECT_EQ(options->GetDlcDir(), "tmp");
+
+  EXPECT_EQ(options->GetGraphTransform(), "");
+  options->SetGraphTransform("option1,option2");
+  EXPECT_EQ(options->GetGraphTransform(), "option1,option2");
 
   EXPECT_EQ(options->GetVtcmSize(), 0);
   options->SetVtcmSize(4);
