@@ -138,3 +138,30 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+cc_library(
+    name = "buffered_streaming_detokenizer",
+    srcs = ["buffered_streaming_detokenizer.cc"],
+    hdrs = ["buffered_streaming_detokenizer.h"],
+    deps = [
+        ":tokenizer",
+        "//litert/cc:litert_macros",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "buffered_streaming_detokenizer_test",
+    srcs = ["buffered_streaming_detokenizer_test.cc"],
+    deps = [
+        ":buffered_streaming_detokenizer",
+        ":tokenizer",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

@@ -142,7 +142,7 @@ TEST(SentencePieceTokenizerTest, TokenIdsToText) {
 
   const std::vector<int> ids = {90, 547, 58, 735, 210, 466, 2294};
   ASSERT_OK_AND_ASSIGN(auto text, tokenizer->TokenIdsToText(ids));
-  EXPECT_EQ(text, "▁Hello▁World!");
+  EXPECT_EQ(text, "Hello World!");
 }
 
 TEST(SentencePieceTokenizerTest, TokenIdsToTextConsecutiveByteTokens) {
@@ -187,27 +187,29 @@ TEST(SentencePieceTokenizerTest, TokenIdsToTextMixedTokens) {
 
   const std::vector<int> ids = {345, 347, 432, 416, 964};
   ASSERT_OK_AND_ASSIGN(auto text, tokenizer->TokenIdsToText(ids));
-  EXPECT_EQ(text, "km²▁were");
+  EXPECT_EQ(text, "km² were");
 }
 
-TEST(SentencePieceTokenizerTest, TokenIdsToTextStartByteGivesDataLossError) {
+TEST(SentencePieceTokenizerTest,
+     TokenIdsToTextStartByteReturnsReplacementCharacter) {
   ASSERT_OK_AND_ASSIGN(auto tokenizer, SentencePieceTokenizer::CreateFromFile(
                                            GetGemma3TokenizerModelPath()));
 
   // <0xC2> (432) is a start byte, invalid on its own.
-  // TokenIdsToText should return the byte string representation "<0xC2>"
-  // instead of the replacement character.
   auto text_or = tokenizer->TokenIdsToText({432});
-  EXPECT_THAT(text_or, StatusIs(absl::StatusCode::kDataLoss));
+  ASSERT_OK(text_or);
+  EXPECT_EQ(*text_or, "\xef\xbf\xbd");
 }
 
-TEST(SentencePieceTokenizerTest, TokenIdsToTextMixedTokensGivesDataLossError) {
+TEST(SentencePieceTokenizerTest,
+     TokenIdsToTextMixedTokensReturnsReplacementCharacter) {
   ASSERT_OK_AND_ASSIGN(auto tokenizer, SentencePieceTokenizer::CreateFromFile(
                                            GetGemma3TokenizerModelPath()));
 
   const std::vector<int> ids = {964, 345, 347, 432};  // miss byte token 416
   auto text_or = tokenizer->TokenIdsToText(ids);
-  EXPECT_THAT(text_or, StatusIs(absl::StatusCode::kDataLoss));
+  ASSERT_OK(text_or);
+  EXPECT_EQ(*text_or, " werekm\xef\xbf\xbd");
 }
 
 TEST(SentencePieceTokenizerTest, GetTokens) {
