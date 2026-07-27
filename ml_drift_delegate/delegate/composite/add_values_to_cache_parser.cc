@@ -122,6 +122,9 @@ void AddValuesToCacheOperationParser::Parse(const TfLiteNode* tflite_node,
   if (!flexbuffer_map["scale_v"].IsNull()) {
     attr.scale_v = flexbuffer_map["scale_v"].AsFloat();
   }
+  if (!flexbuffer_map["is_ring_buffer"].IsNull()) {
+    attr.is_ring_buffer = flexbuffer_map["is_ring_buffer"].AsBool();
+  }
   node->operation.attributes = std::move(attr);
 }
 
