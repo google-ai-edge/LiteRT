@@ -317,22 +317,96 @@ bool IsLogicalOp(tflite::gpu::OperationType op_type) {
          op_type == tflite::gpu::OperationType::NOT_EQUAL;
 }
 
+absl::Status AddMatrixTransposeNode(GraphFloat32* graph, Value* input,
+                                    int input_rank, Value** output) {
+  TransposeAttributes attr;
+  if (input_rank == 2) {
+    // A rank-2 tensor [M, K] is represented internally as
+    // BHWC(M, 1, 1, K).
+    attr.perm = BHWC(3, 1, 2, 0);
+  } else if (input_rank == 3 || input_rank == 4) {
+    // Rank-3 [B, M, K] and rank-4 [B, H, M, K] tensors map their
+    // matrix dimensions to WIDTH and CHANNELS.
+    attr.perm = BHWC(0, 1, 3, 2);
+  } else {
+    return absl::UnavailableError(
+        "Batched matmul adjoints require rank 2, 3, or 4 tensors.");
+  }
+
+  Node* transpose = graph->NewNode();
+  transpose->operation.type = ToString(OperationType::TRANSPOSE);
+  transpose->operation.attributes = attr;
+  RETURN_IF_ERROR(graph->AddConsumer(transpose->id, input->id));
+
+  Value* transposed = graph->NewValue();
+  transposed->tensor.type = input->tensor.type;
+  transposed->tensor.shape = CalculateOutputShape(input->tensor.shape, attr);
+  transposed->quant_params = input->quant_params;
+  RETURN_IF_ERROR(graph->SetProducer(transpose->id, transposed->id));
+  *output = transposed;
+  return absl::OkStatus();
+}
+
 class BatchedMatMulOperationParser : public TFLiteOperationParser {
  public:
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    return CheckGpuDelegateCompatibility(context, tflite_node, registration);
+    RETURN_IF_ERROR(
+        CheckGpuDelegateCompatibility(context, tflite_node, registration));
+
+    const TfLiteBatchMatMulParams* tf_options;
+    RETURN_IF_ERROR(RetrieveBuiltinData(tflite_node, &tf_options));
+    if (tf_options->adj_x) {
+      return absl::UnavailableError(
+          "Batched matmul does not support adj_x on the GPU delegate.");
+    }
+
+    const TfLiteTensor& lhs =
+        context->tensors[tflite_node->inputs->data[0]];
+    const TfLiteTensor& rhs =
+        context->tensors[tflite_node->inputs->data[1]];
+    const TfLiteTensor& output =
+        context->tensors[tflite_node->outputs->data[0]];
+    const auto rank_is_supported = [](const TfLiteTensor& tensor) {
+      return tensor.dims->size >= 2 && tensor.dims->size <= 4;
+    };
+    if (!rank_is_supported(lhs) || !rank_is_supported(rhs) ||
+        !rank_is_supported(output)) {
+      return absl::UnavailableError(
+          "Batched matmul supports rank 2, 3, or 4 tensors.");
+    }
+    if (IsConstantTensor(&lhs)) {
+      return absl::UnavailableError(
+          "Batched matmul does not support a constant left-hand input.");
+    }
+    if (IsConstantTensor(&rhs) && rhs.dims->size != 2) {
+      return absl::UnavailableError(
+          "Batched matmul supports only rank-2 constant right-hand inputs.");
+    }
+    return absl::OkStatus();
   }
 
   absl::Status Parse(const TfLiteNode* tflite_node,
                      const TfLiteRegistration* registration,
                      GraphFloat32* graph, ObjectReader* reader) final {
+    const TfLiteBatchMatMulParams* tf_options;
+    RETURN_IF_ERROR(RetrieveBuiltinData(tflite_node, &tf_options));
+
     if (reader->GetNumberOfRuntimeInputs() == 2) {
+      Value* lhs;
+      Value* rhs;
+      RETURN_IF_ERROR(reader->ReadValue(0, &lhs));
+      RETURN_IF_ERROR(reader->ReadValue(1, &rhs));
+      if (tf_options->adj_y) {
+        RETURN_IF_ERROR(AddMatrixTransposeNode(
+            graph, rhs, reader->GetInputTensor(1)->dims->size, &rhs));
+      }
+
       Node* node = graph->NewNode();
       node->operation.type = ToString(OperationType::BATCHED_MATMUL);
-      RETURN_IF_ERROR(reader->AddInput(node, 0));
-      RETURN_IF_ERROR(reader->AddInput(node, 1));
+      RETURN_IF_ERROR(graph->AddConsumer(node->id, lhs->id));
+      RETURN_IF_ERROR(graph->AddConsumer(node->id, rhs->id));
       RETURN_IF_ERROR(reader->AddOutputs(node));
       return absl::OkStatus();
     } else if (reader->GetNumberOfRuntimeInputs() == 1) {
@@ -342,26 +416,39 @@ class BatchedMatMulOperationParser : public TFLiteOperationParser {
         // first input must be runtime and second is 2d constant tensor
         return absl::UnavailableError("Not supported batched mat mul case");
       }
+
+      Value* lhs;
+      RETURN_IF_ERROR(reader->ReadValue(0, &lhs));
+
       Node* node = graph->NewNode();
       node->operation.type = ToString(OperationType::CONVOLUTION_2D);
-      RETURN_IF_ERROR(reader->AddInput(node, 0));
+      RETURN_IF_ERROR(graph->AddConsumer(node->id, lhs->id));
       RETURN_IF_ERROR(reader->AddOutputs(node));
 
       Tensor<HW, DataType::FLOAT32> weights;
       RETURN_IF_ERROR(reader->ReadTensor(1, &weights));
       Convolution2DAttributes attr;
-      attr.weights.data.resize(weights.shape.w * weights.shape.h);
-      for (int i = 0; i < weights.shape.w; ++i) {
-        for (int j = 0; j < weights.shape.h; ++j) {
-          attr.weights.data[i * weights.shape.h + j] =
-              weights.data[j * weights.shape.w + i];
+      if (tf_options->adj_y) {
+        // rhs is [N, K]. Treat its rows directly as N convolution filters,
+        // which is equivalent to lhs * transpose(rhs).
+        attr.weights.data = std::move(weights.data);
+        attr.weights.shape.o = weights.shape.h;
+        attr.weights.shape.i = weights.shape.w;
+      } else {
+        // rhs is [K, N]. Convert its columns into N convolution filters.
+        attr.weights.data.resize(weights.shape.w * weights.shape.h);
+        for (int i = 0; i < weights.shape.w; ++i) {
+          for (int j = 0; j < weights.shape.h; ++j) {
+            attr.weights.data[i * weights.shape.h + j] =
+                weights.data[j * weights.shape.w + i];
+          }
         }
+        attr.weights.shape.o = weights.shape.w;
+        attr.weights.shape.i = weights.shape.h;
       }
       attr.weights.id = weights.id;
       attr.weights.shape.h = 1;
       attr.weights.shape.w = 1;
-      attr.weights.shape.o = weights.shape.w;
-      attr.weights.shape.i = weights.shape.h;
       attr.strides = HW(1, 1);
       attr.dilations = HW(1, 1);
       attr.padding.appended = HW(0, 0);

@@ -1515,6 +1515,26 @@ TEST(BatchMatMulOperationParserTest, TestIsSupported) {
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());
+
+  // adj_x is not lowered by the GPU parser.
+  TfLiteBatchMatMulParams* tf_options =
+      static_cast<TfLiteBatchMatMulParams*>(context->node()->builtin_data);
+  tf_options->adj_x = true;
+  ASSERT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Rank-1 matrix inputs are not supported.
+  tf_options->adj_x = false;
+  TfLiteTensor* lhs = context->tensor(context->node()->inputs->data[0]);
+  TfLiteIntArrayFree(lhs->dims);
+  lhs->dims = TfLiteIntArrayCreate(1);
+  lhs->dims->data[0] = 1;
+  ASSERT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
 }
 
 TEST(CastOperationParserTest, TestIsSupported) {

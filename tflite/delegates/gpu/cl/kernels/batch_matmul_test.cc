@@ -31,9 +31,10 @@ using ::testing::Pointwise;
 
 class BatchMatMulOpModel : public SingleOpModel {
  public:
-  explicit BatchMatMulOpModel(bool use_gpu) {
-    lhs_ = AddInput({TensorType_FLOAT32, {1, 2, 3}});
-    rhs_ = AddInput({TensorType_FLOAT32, {1, 4, 3}});
+  BatchMatMulOpModel(bool use_gpu, const std::vector<int>& lhs_shape,
+                     const std::vector<int>& rhs_shape) {
+    lhs_ = AddInput({TensorType_FLOAT32, lhs_shape});
+    rhs_ = AddInput({TensorType_FLOAT32, rhs_shape});
     output_ = AddOutput(TensorType_FLOAT32);
     SetBuiltinOp(
         BuiltinOperator_BATCH_MATMUL, BuiltinOptions_BatchMatMulOptions,
@@ -81,13 +82,15 @@ TEST(BatchMatMulOpenClTest, AdjointRhsMatchesCpu) {
   };
   const std::vector<float> expected = {1, 2, 3, 6, 4, 5, 6, 15};
 
-  BatchMatMulOpModel cpu(/*use_gpu=*/false);
+  BatchMatMulOpModel cpu(/*use_gpu=*/false, /*lhs_shape=*/{1, 2, 3},
+                         /*rhs_shape=*/{1, 4, 3});
   cpu.SetInputs(lhs, rhs);
   ASSERT_EQ(cpu.Invoke(), kTfLiteOk);
   EXPECT_THAT(cpu.GetOutput(), ElementsAreArray(expected));
   EXPECT_THAT(cpu.GetOutputShape(), ElementsAreArray({1, 2, 4}));
 
-  BatchMatMulOpModel gpu(/*use_gpu=*/true);
+  BatchMatMulOpModel gpu(/*use_gpu=*/true, /*lhs_shape=*/{1, 2, 3},
+                         /*rhs_shape=*/{1, 4, 3});
   ASSERT_EQ(gpu.ApplyDelegate(), kTfLiteOk);
   gpu.SetInputs(lhs, rhs);
   ASSERT_EQ(gpu.Invoke(), kTfLiteOk);
@@ -95,6 +98,34 @@ TEST(BatchMatMulOpenClTest, AdjointRhsMatchesCpu) {
   EXPECT_THAT(gpu.GetOutput(),
               Pointwise(FloatNear(1.0e-5f), cpu.GetOutput()));
   EXPECT_THAT(gpu.GetOutputShape(), ElementsAreArray({1, 2, 4}));
+}
+
+TEST(BatchMatMulOpenClTest, AdjointRhsRankTwoMatchesCpu) {
+  const std::vector<float> lhs = {1, 2, 3, 4, 5, 6};
+  const std::vector<float> rhs = {
+      1, 0, 0,  //
+      0, 1, 0,  //
+      0, 0, 1,  //
+      1, 1, 1,
+  };
+  const std::vector<float> expected = {1, 2, 3, 6, 4, 5, 6, 15};
+
+  BatchMatMulOpModel cpu(/*use_gpu=*/false, /*lhs_shape=*/{2, 3},
+                         /*rhs_shape=*/{4, 3});
+  cpu.SetInputs(lhs, rhs);
+  ASSERT_EQ(cpu.Invoke(), kTfLiteOk);
+  EXPECT_THAT(cpu.GetOutput(), ElementsAreArray(expected));
+  EXPECT_THAT(cpu.GetOutputShape(), ElementsAreArray({2, 4}));
+
+  BatchMatMulOpModel gpu(/*use_gpu=*/true, /*lhs_shape=*/{2, 3},
+                         /*rhs_shape=*/{4, 3});
+  ASSERT_EQ(gpu.ApplyDelegate(), kTfLiteOk);
+  gpu.SetInputs(lhs, rhs);
+  ASSERT_EQ(gpu.Invoke(), kTfLiteOk);
+  EXPECT_EQ(gpu.CpuKernelCount(), 0);
+  EXPECT_THAT(gpu.GetOutput(),
+              Pointwise(FloatNear(1.0e-5f), cpu.GetOutput()));
+  EXPECT_THAT(gpu.GetOutputShape(), ElementsAreArray({2, 4}));
 }
 
 }  // namespace
