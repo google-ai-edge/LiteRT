@@ -323,21 +323,21 @@ TEST(MHAOptimization, Gemma3Prefill) {
   op_wrappers.emplace_back(
       CreateSoftmaxOp(reshape2_output, softmax_output, 1.0f));
   // Slice0
-  const std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 1,    1,
+  static constexpr std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 1,    1,
                                                    0, 512, 1, 0, 1280, 1};
   auto& slice0_rangs = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice0_ranges_data.size(), slice0_ranges_data.data());
+      sizeof(slice0_ranges_data[0]) * slice0_ranges_data.size(), slice0_ranges_data.data());
   auto& slice0_output =
       tensor_pool.CloneNativeTensorFrom(reshape2_output, {1, 1, 512, 1280});
   op_wrappers.emplace_back(
       CreateSliceOp(softmax_output, slice0_output, slice0_rangs));
   // Slice1
-  const std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    1,    1,
+  static constexpr std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    1,    1,
                                                    0, 512, 1, 1280, 1408, 1};
   auto& slice1_rangs = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice1_ranges_data.size(), slice1_ranges_data.data());
+      sizeof(slice1_ranges_data[0]) * slice1_ranges_data.size(), slice1_ranges_data.data());
   auto& slice1_output =
       tensor_pool.CloneNativeTensorFrom(reshape2_output, {1, 1, 512, 128});
   op_wrappers.emplace_back(
@@ -539,21 +539,21 @@ TEST(MHAOptimization, Gemma3Decode) {
   op_wrappers.emplace_back(
       CreateSoftmaxOp(reshape1_output, softmax_output, 1.0f));
   // Slice0
-  const std::array<int32_t, 12> slice0_ranges_data{0, 1, 1, 0, 1,    1,
+  static constexpr std::array<int32_t, 12> slice0_ranges_data{0, 1, 1, 0, 1,    1,
                                                    0, 4, 1, 0, 1280, 1};
   auto& slice0_ranges = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice0_ranges_data.size(), slice0_ranges_data.data());
+      sizeof(slice0_ranges_data[0]) * slice0_ranges_data.size(), slice0_ranges_data.data());
   auto& slice0_output =
       tensor_pool.CloneNativeTensorFrom(reshape1_output, {1, 1, 4, 1280});
   op_wrappers.emplace_back(
       CreateSliceOp(softmax_output, slice0_output, slice0_ranges));
   // Slice1
-  const std::array<int32_t, 12> slice1_ranges_data{0, 1, 1, 0,    1,    1,
+  static constexpr std::array<int32_t, 12> slice1_ranges_data{0, 1, 1, 0,    1,    1,
                                                    0, 4, 1, 1280, 1281, 1};
   auto& slice1_ranges = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice1_ranges_data.size(), slice1_ranges_data.data());
+      sizeof(slice1_ranges_data[0]) * slice1_ranges_data.size(), slice1_ranges_data.data());
   auto& slice1_output =
       tensor_pool.CloneNativeTensorFrom(reshape1_output, {1, 1, 4, 256});
   op_wrappers.emplace_back(
@@ -832,8 +832,8 @@ TEST(MHASHATest, GQAGemma4BPrefill) {
   //                        |
   //                       Out
   TensorPool tensor_pool;
-  QuantizeParamsWrapperVariant quant_param;
-  quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(1e-4f, 0);
+  QuantizeParamsWrapperVariant quant_param(
+      std::in_place_type<ScaleOffsetQuantizeParamsWrapper>, 1e-4f, 0);
   std::vector<OpWrapper> op_wrappers;
 
   // In0: [B,S,H,D] input to Transpose0
@@ -841,9 +841,10 @@ TEST(MHASHATest, GQAGemma4BPrefill) {
                         quant_param, {1, 128, 8, 256});
 
   // Transpose0: [B,S,H,D] -> [B,H,S,D]
-  static const std::uint32_t kPerm0213[] = {0, 2, 1, 3};
+  static constexpr std::array<std::uint32_t, 4> kPerm0213{0, 2, 1, 3};
   auto& perm0213 = tensor_pool.CreateStaticTensor(
-    QNN_DATATYPE_UINT_32, {}, {4}, sizeof(kPerm0213), kPerm0213);
+    QNN_DATATYPE_UINT_32, {}, {kPerm0213.size()},
+    sizeof(std::uint32_t) * kPerm0213.size(), kPerm0213.data());
   auto& transpose0_output =
     tensor_pool.CloneNativeTensorFrom(in0, {1, 8, 128, 256});
   op_wrappers.emplace_back(
@@ -894,22 +895,22 @@ TEST(MHASHATest, GQAGemma4BPrefill) {
     CreateSoftmaxOp(add1_output, softmax_output, 1.0f));
 
   // Slice0
-  const std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 2,    1,
+  static constexpr std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 2,    1,
                           0, 512, 1, 0, 2560, 1};
   auto& slice0_ranges = tensor_pool.CreateStaticTensor(
     QNN_DATATYPE_INT_32, {}, {4, 3},
-    sizeof(int32_t) * slice0_ranges_data.size(), slice0_ranges_data.data());
+    sizeof(slice0_ranges_data[0]) * slice0_ranges_data.size(), slice0_ranges_data.data());
   auto& slice0_output =
     tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 512, 2560});
   op_wrappers.emplace_back(
     CreateSliceOp(softmax_output, slice0_output, slice0_ranges));
 
   // Slice1
-  const std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    2,    1,
+  static constexpr std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    2,    1,
                           0, 512, 1, 2560, 2688, 1};
   auto& slice1_ranges = tensor_pool.CreateStaticTensor(
     QNN_DATATYPE_INT_32, {}, {4, 3},
-    sizeof(int32_t) * slice1_ranges_data.size(), slice1_ranges_data.data());
+    sizeof(slice1_ranges_data[0]) * slice1_ranges_data.size(), slice1_ranges_data.data());
   auto& slice1_output =
     tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 512, 128});
   op_wrappers.emplace_back(
@@ -936,8 +937,8 @@ TEST(MHASHATest, GQAGemma4BPrefill) {
   op_wrappers.emplace_back(
     CreateElementWiseAddOp(matmul2_output, matmul3_output, add2_output));
 
-  QuantizeParamsWrapperVariant quant_param_out;
-  quant_param_out.emplace<ScaleOffsetQuantizeParamsWrapper>(3.66805e-02f, 0);
+  QuantizeParamsWrapperVariant quant_param_out(
+      std::in_place_type<ScaleOffsetQuantizeParamsWrapper>, 3.66805e-02f, 0);
   auto& quant_output = tensor_pool.CreateNativeTensor(
     QNN_DATATYPE_SFIXED_POINT_8, quant_param_out, {1, 2, 512, 256});
   op_wrappers.emplace_back(CreateConvertOp(add2_output, quant_output));
@@ -949,7 +950,8 @@ TEST(MHASHATest, GQAGemma4BPrefill) {
 
   // Transpose1: [B,H,S,D] -> [B,S,H,D]
   auto& perm0213_t1 = tensor_pool.CreateStaticTensor(
-    QNN_DATATYPE_UINT_32, {}, {4}, sizeof(kPerm0213), kPerm0213);
+    QNN_DATATYPE_UINT_32, {}, {kPerm0213.size()},
+    sizeof(std::uint32_t) * kPerm0213.size(), kPerm0213.data());
   auto& transpose1_output =
     tensor_pool.CloneNativeTensorFrom(reshape1_output, {1, 128, 8, 256});
   op_wrappers.emplace_back(
@@ -962,9 +964,9 @@ TEST(MHASHATest, GQAGemma4BPrefill) {
               [](OpWrapper& op) { return true; });
 
   // Check OpCode after G2G
-  const size_t num_head = 8; // 2 groups in KV Cache serving 8 queries
+  static constexpr size_t kNumHead = 8; // 2 groups in KV Cache serving 8 queries
   // Q·KC, Q·KS, Concat, MaskAdd, Softmax, Slice(VC), Slice(VS), QK·VC, QK·VS, Add, Convert
-  const size_t num_op_in_sha = 11;
+  static constexpr size_t kNumOpInSha = 11;
 
   // new_ops layout before per-head SHA:
   //   op_wrappers[0]: far-away Convert (kept from original pattern)
@@ -977,28 +979,28 @@ TEST(MHASHATest, GQAGemma4BPrefill) {
   //   op_wrappers[7]  Unpack(mask_reshaped, axis=1)
   //   op_wrappers[8 .. 8+11*8-1] per-head SHA ops
   //   op_wrappers[8+88] Concat, op_wrappers[8+89] Reshape
-  const size_t sha_init_idx = 8;
+  static constexpr size_t kShaInitIdx = 8;
 
-  for (size_t i = 0; i < num_head; ++i) {
-    ASSERT_TRUE(op_wrappers[sha_init_idx + num_op_in_sha * i].IsOpCode(QnnOpCode::kMatMul));
-    ASSERT_TRUE(op_wrappers[(sha_init_idx+1) + num_op_in_sha * i].IsOpCode(QnnOpCode::kMatMul));
-    ASSERT_TRUE(op_wrappers[(sha_init_idx+2) + num_op_in_sha * i].IsOpCode(QnnOpCode::kConcat));
+  for (size_t i = 0; i < kNumHead; ++i) {
+    ASSERT_TRUE(op_wrappers[kShaInitIdx + kNumOpInSha * i].IsOpCode(QnnOpCode::kMatMul));
+    ASSERT_TRUE(op_wrappers[(kShaInitIdx+1) + kNumOpInSha * i].IsOpCode(QnnOpCode::kMatMul));
+    ASSERT_TRUE(op_wrappers[(kShaInitIdx+2) + kNumOpInSha * i].IsOpCode(QnnOpCode::kConcat));
     ASSERT_TRUE(
-      op_wrappers[(sha_init_idx+3) + num_op_in_sha * i].IsOpCode(QnnOpCode::kElementWiseBinary));
-    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[(sha_init_idx+3) + num_op_in_sha * i]));
-    ASSERT_TRUE(op_wrappers[(sha_init_idx+4) + num_op_in_sha * i].IsOpCode(QnnOpCode::kSoftmax));
+      op_wrappers[(kShaInitIdx+3) + kNumOpInSha * i].IsOpCode(QnnOpCode::kElementWiseBinary));
+    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[(kShaInitIdx+3) + kNumOpInSha * i]));
+    ASSERT_TRUE(op_wrappers[(kShaInitIdx+4) + kNumOpInSha * i].IsOpCode(QnnOpCode::kSoftmax));
     ASSERT_TRUE(
-      op_wrappers[(sha_init_idx+5) + num_op_in_sha * i].IsOpCode(QnnOpCode::kStridedSlice));
+      op_wrappers[(kShaInitIdx+5) + kNumOpInSha * i].IsOpCode(QnnOpCode::kStridedSlice));
     ASSERT_TRUE(
-      op_wrappers[(sha_init_idx+6) + num_op_in_sha * i].IsOpCode(QnnOpCode::kStridedSlice));
-    ASSERT_TRUE(op_wrappers[(sha_init_idx+7) + num_op_in_sha * i].IsOpCode(QnnOpCode::kMatMul));
-    ASSERT_TRUE(op_wrappers[(sha_init_idx+8) + num_op_in_sha * i].IsOpCode(QnnOpCode::kMatMul));
+      op_wrappers[(kShaInitIdx+6) + kNumOpInSha * i].IsOpCode(QnnOpCode::kStridedSlice));
+    ASSERT_TRUE(op_wrappers[(kShaInitIdx+7) + kNumOpInSha * i].IsOpCode(QnnOpCode::kMatMul));
+    ASSERT_TRUE(op_wrappers[(kShaInitIdx+8) + kNumOpInSha * i].IsOpCode(QnnOpCode::kMatMul));
     ASSERT_TRUE(
-      op_wrappers[(sha_init_idx+9) + num_op_in_sha * i].IsOpCode(QnnOpCode::kElementWiseBinary));
-    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[(sha_init_idx+9) + num_op_in_sha * i]));
+      op_wrappers[(kShaInitIdx+9) + kNumOpInSha * i].IsOpCode(QnnOpCode::kElementWiseBinary));
+    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[(kShaInitIdx+9) + kNumOpInSha * i]));
     // The output Convert (kConvert) is emitted per-head from convert_out.
     ASSERT_TRUE(
-      op_wrappers[(sha_init_idx+10) + num_op_in_sha * i].IsOpCode(QnnOpCode::kConvert));
+      op_wrappers[(kShaInitIdx+10) + kNumOpInSha * i].IsOpCode(QnnOpCode::kConvert));
   }
 }
 
@@ -1006,16 +1008,17 @@ TEST(MHASHATest, GQAGemma4BPrefill) {
 // Verifies that BuildSingleSHAGemma4B emits a per-head KSliceAttnUpdateConvert (17-op pattern).
 TEST(MHASHATest, GQAGemma4BPrefill_KSliceAttnUpdateConvert) {
   TensorPool tensor_pool;
-  QuantizeParamsWrapperVariant quant_param;
-  quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(1e-4f, 0);
+  QuantizeParamsWrapperVariant quant_param(
+      std::in_place_type<ScaleOffsetQuantizeParamsWrapper>, 1e-4f, 0);
   std::vector<OpWrapper> op_wrappers;
 
   // In0: [B,S,H,D]
   auto& in0 = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
                                               quant_param, {1, 128, 8, 256});
-  static const std::uint32_t kPerm0213[] = {0, 2, 1, 3};
+  static constexpr std::array<std::uint32_t, 4> kPerm0213{0, 2, 1, 3};
   auto& perm0213 = tensor_pool.CreateStaticTensor(
-      QNN_DATATYPE_UINT_32, {}, {4}, sizeof(kPerm0213), kPerm0213);
+      QNN_DATATYPE_UINT_32, {}, {kPerm0213.size()},
+      sizeof(std::uint32_t) * kPerm0213.size(), kPerm0213.data());
   auto& transpose0_output =
       tensor_pool.CloneNativeTensorFrom(in0, {1, 8, 128, 256});
   op_wrappers.emplace_back(CreateTransposeOp(in0, transpose0_output, perm0213));
@@ -1068,22 +1071,22 @@ TEST(MHASHATest, GQAGemma4BPrefill_KSliceAttnUpdateConvert) {
   op_wrappers.emplace_back(CreateSoftmaxOp(add1_output, softmax_output, 1.0f));
 
   // Slice0
-  const std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 2,    1,
+  static constexpr std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 2,    1,
                                                    0, 512, 1, 0, 2560, 1};
   auto& slice0_ranges = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice0_ranges_data.size(), slice0_ranges_data.data());
+      sizeof(slice0_ranges_data[0]) * slice0_ranges_data.size(), slice0_ranges_data.data());
   auto& slice0_output =
       tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 512, 2560});
   op_wrappers.emplace_back(
       CreateSliceOp(softmax_output, slice0_output, slice0_ranges));
 
   // Slice1
-  const std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    2,    1,
+  static constexpr std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    2,    1,
                                                    0, 512, 1, 2560, 2688, 1};
   auto& slice1_ranges = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice1_ranges_data.size(), slice1_ranges_data.data());
+      sizeof(slice1_ranges_data[0]) * slice1_ranges_data.size(), slice1_ranges_data.data());
   auto& slice1_output =
       tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 512, 128});
   op_wrappers.emplace_back(
@@ -1111,8 +1114,8 @@ TEST(MHASHATest, GQAGemma4BPrefill_KSliceAttnUpdateConvert) {
       CreateElementWiseAddOp(matmul2_output, matmul3_output, add2_output));
 
   // Output Convert
-  QuantizeParamsWrapperVariant quant_param_out;
-  quant_param_out.emplace<ScaleOffsetQuantizeParamsWrapper>(3.66805e-02f, 0);
+  QuantizeParamsWrapperVariant quant_param_out(
+      std::in_place_type<ScaleOffsetQuantizeParamsWrapper>, 3.66805e-02f, 0);
   auto& quant_output = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_SFIXED_POINT_8, quant_param_out, {1, 2, 512, 256});
   op_wrappers.emplace_back(CreateConvertOp(add2_output, quant_output));
@@ -1124,7 +1127,8 @@ TEST(MHASHATest, GQAGemma4BPrefill_KSliceAttnUpdateConvert) {
 
   // Transpose1
   auto& perm0213_t1 = tensor_pool.CreateStaticTensor(
-      QNN_DATATYPE_UINT_32, {}, {4}, sizeof(kPerm0213), kPerm0213);
+      QNN_DATATYPE_UINT_32, {}, {kPerm0213.size()},
+      sizeof(std::uint32_t) * kPerm0213.size(), kPerm0213.data());
   auto& transpose1_output =
       tensor_pool.CloneNativeTensorFrom(reshape1_output, {1, 128, 8, 256});
   op_wrappers.emplace_back(
@@ -1136,18 +1140,18 @@ TEST(MHASHATest, GQAGemma4BPrefill_KSliceAttnUpdateConvert) {
                         tensor_pool, [](OpWrapper& op) { return true; });
 
   // Each SHA head has 12 ops: the base 11 + 1 KSliceAttnUpdateConvert.
-  const size_t num_head = 8;
-  const size_t num_op_in_sha = 12;  // Q·KC, KSliceAttnUpdateConvert, Q·KS, Concat, MaskAdd, Softmax,
+  static constexpr size_t kNumHead = 8;
+  static constexpr size_t kNumOpInSha = 12;  // Q·KC, KSliceAttnUpdateConvert, Q·KS, Concat, MaskAdd, Softmax,
                                     // Slice(VC), Slice(VS), QK·VC, QK·VS, Add, Convert
-  const size_t sha_init_idx = 8;
-  for (size_t i = 0; i < num_head; ++i) {
-    ASSERT_TRUE(op_wrappers[sha_init_idx + num_op_in_sha * i].IsOpCode(
+  static constexpr size_t kShaInitIdx = 8;
+  for (size_t i = 0; i < kNumHead; ++i) {
+    ASSERT_TRUE(op_wrappers[kShaInitIdx + kNumOpInSha * i].IsOpCode(
         QnnOpCode::kMatMul));
-    ASSERT_TRUE(op_wrappers[(sha_init_idx + 1) + num_op_in_sha * i].IsOpCode(
+    ASSERT_TRUE(op_wrappers[(kShaInitIdx + 1) + kNumOpInSha * i].IsOpCode(
         QnnOpCode::kConvert));  // KSliceAttnUpdateConvert per head
-    ASSERT_TRUE(op_wrappers[(sha_init_idx + 2) + num_op_in_sha * i].IsOpCode(
+    ASSERT_TRUE(op_wrappers[(kShaInitIdx + 2) + kNumOpInSha * i].IsOpCode(
         QnnOpCode::kMatMul));
-    ASSERT_TRUE(op_wrappers[(sha_init_idx + 11) + num_op_in_sha * i].IsOpCode(
+    ASSERT_TRUE(op_wrappers[(kShaInitIdx + 11) + kNumOpInSha * i].IsOpCode(
         QnnOpCode::kConvert));  // output Convert per head
   }
 }
@@ -1156,15 +1160,16 @@ TEST(MHASHATest, GQAGemma4BPrefill_KSliceAttnUpdateConvert) {
 // Verifies that BuildSingleSHAGemma4B emits a per-head VSliceAttnUpdateConvert (17-op pattern).
 TEST(MHASHATest, GQAGemma4BPrefill_VSliceAttnUpdateConvert) {
   TensorPool tensor_pool;
-  QuantizeParamsWrapperVariant quant_param;
-  quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(1e-4f, 0);
+  QuantizeParamsWrapperVariant quant_param(
+      std::in_place_type<ScaleOffsetQuantizeParamsWrapper>, 1e-4f, 0);
   std::vector<OpWrapper> op_wrappers;
 
   auto& in0 = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
                                               quant_param, {1, 128, 8, 256});
-  static const std::uint32_t kPerm0213[] = {0, 2, 1, 3};
+  static constexpr std::array<std::uint32_t, 4> kPerm0213{0, 2, 1, 3};
   auto& perm0213 = tensor_pool.CreateStaticTensor(
-      QNN_DATATYPE_UINT_32, {}, {4}, sizeof(kPerm0213), kPerm0213);
+      QNN_DATATYPE_UINT_32, {}, {kPerm0213.size()},
+      sizeof(std::uint32_t) * kPerm0213.size(), kPerm0213.data());
   auto& transpose0_output =
       tensor_pool.CloneNativeTensorFrom(in0, {1, 8, 128, 256});
   op_wrappers.emplace_back(CreateTransposeOp(in0, transpose0_output, perm0213));
@@ -1212,22 +1217,22 @@ TEST(MHASHATest, GQAGemma4BPrefill_VSliceAttnUpdateConvert) {
   op_wrappers.emplace_back(CreateSoftmaxOp(add1_output, softmax_output, 1.0f));
 
   // Slice0
-  const std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 2,    1,
+  static constexpr std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 2,    1,
                                                    0, 512, 1, 0, 2560, 1};
   auto& slice0_ranges = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice0_ranges_data.size(), slice0_ranges_data.data());
+      sizeof(slice0_ranges_data[0]) * slice0_ranges_data.size(), slice0_ranges_data.data());
   auto& slice0_output =
       tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 512, 2560});
   op_wrappers.emplace_back(
       CreateSliceOp(softmax_output, slice0_output, slice0_ranges));
 
   // Slice1
-  const std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    2,    1,
+  static constexpr std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    2,    1,
                                                    0, 512, 1, 2560, 2688, 1};
   auto& slice1_ranges = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice1_ranges_data.size(), slice1_ranges_data.data());
+      sizeof(slice1_ranges_data[0]) * slice1_ranges_data.size(), slice1_ranges_data.data());
   auto& slice1_output =
       tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 512, 128});
   op_wrappers.emplace_back(
@@ -1260,8 +1265,8 @@ TEST(MHASHATest, GQAGemma4BPrefill_VSliceAttnUpdateConvert) {
       CreateElementWiseAddOp(matmul2_output, matmul3_output, add2_output));
 
   // Output Convert
-  QuantizeParamsWrapperVariant quant_param_out;
-  quant_param_out.emplace<ScaleOffsetQuantizeParamsWrapper>(3.66805e-02f, 0);
+  QuantizeParamsWrapperVariant quant_param_out(
+      std::in_place_type<ScaleOffsetQuantizeParamsWrapper>, 3.66805e-02f, 0);
   auto& quant_output = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_SFIXED_POINT_8, quant_param_out, {1, 2, 512, 256});
   op_wrappers.emplace_back(CreateConvertOp(add2_output, quant_output));
@@ -1273,7 +1278,8 @@ TEST(MHASHATest, GQAGemma4BPrefill_VSliceAttnUpdateConvert) {
 
   // Transpose1
   auto& perm0213_t1 = tensor_pool.CreateStaticTensor(
-      QNN_DATATYPE_UINT_32, {}, {4}, sizeof(kPerm0213), kPerm0213);
+      QNN_DATATYPE_UINT_32, {}, {kPerm0213.size()},
+      sizeof(std::uint32_t) * kPerm0213.size(), kPerm0213.data());
   auto& transpose1_output =
       tensor_pool.CloneNativeTensorFrom(reshape1_output, {1, 128, 8, 256});
   op_wrappers.emplace_back(
@@ -1285,17 +1291,17 @@ TEST(MHASHATest, GQAGemma4BPrefill_VSliceAttnUpdateConvert) {
                         tensor_pool, [](OpWrapper& op) { return true; });
 
   // Each SHA head has 12 ops: the base 11 + 1 VSliceAttnUpdateConvert.
-  const size_t num_head = 8;
-  const size_t num_op_in_sha = 12;  // Q·KC, Q·KS, Concat, MaskAdd, Softmax,
+  static constexpr size_t kNumHead = 8;
+  static constexpr size_t kNumOpInSha = 12;  // Q·KC, Q·KS, Concat, MaskAdd, Softmax,
                                     // Slice(VC), Slice(VS), QK·VC, VSliceAttnUpdateConvert, QK·VS, Add, Convert
-  const size_t sha_init_idx = 8;
-  for (size_t i = 0; i < num_head; ++i) {
-    ASSERT_TRUE(op_wrappers[sha_init_idx + num_op_in_sha * i].IsOpCode(
+  static constexpr size_t kShaInitIdx = 8;
+  for (size_t i = 0; i < kNumHead; ++i) {
+    ASSERT_TRUE(op_wrappers[kShaInitIdx + kNumOpInSha * i].IsOpCode(
         QnnOpCode::kMatMul));
     // VSliceAttnUpdateConvert is at position 8 within each SHA (between QK·VC and QK·VS)
-    ASSERT_TRUE(op_wrappers[(sha_init_idx + 8) + num_op_in_sha * i].IsOpCode(
+    ASSERT_TRUE(op_wrappers[(kShaInitIdx + 8) + kNumOpInSha * i].IsOpCode(
         QnnOpCode::kConvert));
-    ASSERT_TRUE(op_wrappers[(sha_init_idx + 11) + num_op_in_sha * i].IsOpCode(
+    ASSERT_TRUE(op_wrappers[(kShaInitIdx + 11) + kNumOpInSha * i].IsOpCode(
         QnnOpCode::kConvert));  // output Convert per head
   }
 }
@@ -1304,15 +1310,16 @@ TEST(MHASHATest, GQAGemma4BPrefill_VSliceAttnUpdateConvert) {
 // Verifies that the shifted index calculation still produces the correct SHA layout.
 TEST(MHASHATest, GQAGemma4BPrefill_GlobalMask) {
   TensorPool tensor_pool;
-  QuantizeParamsWrapperVariant quant_param;
-  quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(1e-4f, 0);
+  QuantizeParamsWrapperVariant quant_param(
+      std::in_place_type<ScaleOffsetQuantizeParamsWrapper>, 1e-4f, 0);
   std::vector<OpWrapper> op_wrappers;
 
   auto& in0 = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
                                               quant_param, {1, 128, 8, 256});
-  static const std::uint32_t kPerm0213[] = {0, 2, 1, 3};
+  static constexpr std::array<std::uint32_t, 4> kPerm0213{0, 2, 1, 3};
   auto& perm0213 = tensor_pool.CreateStaticTensor(
-      QNN_DATATYPE_UINT_32, {}, {4}, sizeof(kPerm0213), kPerm0213);
+      QNN_DATATYPE_UINT_32, {}, {kPerm0213.size()},
+      sizeof(std::uint32_t) * kPerm0213.size(), kPerm0213.data());
   auto& transpose0_output =
       tensor_pool.CloneNativeTensorFrom(in0, {1, 8, 128, 256});
   op_wrappers.emplace_back(CreateTransposeOp(in0, transpose0_output, perm0213));
@@ -1373,22 +1380,22 @@ TEST(MHASHATest, GQAGemma4BPrefill_GlobalMask) {
   op_wrappers.emplace_back(CreateSoftmaxOp(add1_output, softmax_output, 1.0f));
 
   // Slice0
-  const std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 2,    1,
+  static constexpr std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 2,    1,
                                                    0, 512, 1, 0, 2560, 1};
   auto& slice0_ranges = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice0_ranges_data.size(), slice0_ranges_data.data());
+      sizeof(slice0_ranges_data[0]) * slice0_ranges_data.size(), slice0_ranges_data.data());
   auto& slice0_output =
       tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 512, 2560});
   op_wrappers.emplace_back(
       CreateSliceOp(softmax_output, slice0_output, slice0_ranges));
 
   // Slice1
-  const std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    2,    1,
+  static constexpr std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    2,    1,
                                                    0, 512, 1, 2560, 2688, 1};
   auto& slice1_ranges = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice1_ranges_data.size(), slice1_ranges_data.data());
+      sizeof(slice1_ranges_data[0]) * slice1_ranges_data.size(), slice1_ranges_data.data());
   auto& slice1_output =
       tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 512, 128});
   op_wrappers.emplace_back(
@@ -1416,8 +1423,8 @@ TEST(MHASHATest, GQAGemma4BPrefill_GlobalMask) {
       CreateElementWiseAddOp(matmul2_output, matmul3_output, add2_output));
 
   // Output Convert
-  QuantizeParamsWrapperVariant quant_param_out;
-  quant_param_out.emplace<ScaleOffsetQuantizeParamsWrapper>(3.66805e-02f, 0);
+  QuantizeParamsWrapperVariant quant_param_out(
+      std::in_place_type<ScaleOffsetQuantizeParamsWrapper>, 3.66805e-02f, 0);
   auto& quant_output = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_SFIXED_POINT_8, quant_param_out, {1, 2, 512, 256});
   op_wrappers.emplace_back(CreateConvertOp(add2_output, quant_output));
@@ -1429,7 +1436,8 @@ TEST(MHASHATest, GQAGemma4BPrefill_GlobalMask) {
 
   // Transpose1
   auto& perm0213_t1 = tensor_pool.CreateStaticTensor(
-      QNN_DATATYPE_UINT_32, {}, {4}, sizeof(kPerm0213), kPerm0213);
+      QNN_DATATYPE_UINT_32, {}, {kPerm0213.size()},
+      sizeof(std::uint32_t) * kPerm0213.size(), kPerm0213.data());
   auto& transpose1_output =
       tensor_pool.CloneNativeTensorFrom(reshape1_output, {1, 128, 8, 256});
   op_wrappers.emplace_back(
@@ -1442,19 +1450,19 @@ TEST(MHASHATest, GQAGemma4BPrefill_GlobalMask) {
 
   // Same SHA layout as the base case — has_global_mask only shifts internal
   // index arithmetic, the output structure is identical.
-  const size_t num_head = 8;
+  static constexpr size_t kNumHead = 8;
   // Q·KC, Q·KS, Concat, MaskAdd, Softmax, Slice(VC), Slice(VS), QK·VC, QK·VS, Add, Convert
-  const size_t num_op_in_sha = 11;
+  static constexpr size_t kNumOpInSha = 11;
   // With has_global_mask the kept mask Concat+Reshape sit at indices 0 and 1,
   // pushing new_ops (far-away Convert, unpacks, SHAs, final Concat+Reshape) up
   // by 2, so the per-head SHA block starts at index 10 instead of 8.
-  const size_t sha_init_idx = 10;
-  for (size_t i = 0; i < num_head; ++i) {
-    ASSERT_TRUE(op_wrappers[sha_init_idx + num_op_in_sha * i].IsOpCode(
+  static constexpr size_t kShaInitIdx = 10;
+  for (size_t i = 0; i < kNumHead; ++i) {
+    ASSERT_TRUE(op_wrappers[kShaInitIdx + kNumOpInSha * i].IsOpCode(
         QnnOpCode::kMatMul));
-    ASSERT_TRUE(op_wrappers[(sha_init_idx + 4) + num_op_in_sha * i].IsOpCode(
+    ASSERT_TRUE(op_wrappers[(kShaInitIdx + 4) + kNumOpInSha * i].IsOpCode(
         QnnOpCode::kSoftmax));
-    ASSERT_TRUE(op_wrappers[(sha_init_idx + 10) + num_op_in_sha * i].IsOpCode(
+    ASSERT_TRUE(op_wrappers[(kShaInitIdx + 10) + kNumOpInSha * i].IsOpCode(
         QnnOpCode::kConvert));
   }
 }
@@ -1621,22 +1629,22 @@ TEST(MHASHATest, FastVlm) {
       CreateSoftmaxOp(reshape2_output, softmax_output, 1.0f));
 
   // Slice0
-  const std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 2,    1,
+  static constexpr std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 2,    1,
                                                    0, 896, 1, 0, 1280, 1};
   auto& slice0_ranges = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice0_ranges_data.size(), slice0_ranges_data.data());
+      sizeof(slice0_ranges_data[0]) * slice0_ranges_data.size(), slice0_ranges_data.data());
   auto& slice0_output =
       tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 896, 1280});
   op_wrappers.emplace_back(
       CreateSliceOp(softmax_output, slice0_output, slice0_ranges));
 
   // Slice1
-  const std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    2,    1,
+  static constexpr std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    2,    1,
                                                    0, 896, 1, 1280, 1408, 1};
   auto& slice1_ranges = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice1_ranges_data.size(), slice1_ranges_data.data());
+      sizeof(slice1_ranges_data[0]) * slice1_ranges_data.size(), slice1_ranges_data.data());
   auto& slice1_output =
       tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 2, 896, 128});
   op_wrappers.emplace_back(
@@ -1865,21 +1873,21 @@ TEST(MHAOptimization, TinyGemma3Prefill) {
   auto& softmax_output = tensor_pool.CloneNativeTensorFrom(add0_output);
   op_wrappers.emplace_back(CreateSoftmaxOp(add0_output, softmax_output, 1.0f));
   // Slice0
-  const std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 1,    1,
+  static constexpr std::array<int32_t, 12> slice0_ranges_data{0, 1,   1, 0, 1,    1,
                                                    0, 512, 1, 0, 1280, 1};
   auto& slice0_ranges = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice0_ranges_data.size(), slice0_ranges_data.data());
+      sizeof(slice0_ranges_data[0]) * slice0_ranges_data.size(), slice0_ranges_data.data());
   auto& slice0_output =
       tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 1, 512, 1280});
   op_wrappers.emplace_back(
       CreateSliceOp(softmax_output, slice0_output, slice0_ranges));
   // Slice1
-  const std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    1,    1,
+  static constexpr std::array<int32_t, 12> slice1_ranges_data{0, 1,   1, 0,    1,    1,
                                                    0, 512, 1, 1280, 1408, 1};
   auto& slice1_ranges = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {4, 3},
-      sizeof(int32_t) * slice1_ranges_data.size(), slice1_ranges_data.data());
+      sizeof(slice1_ranges_data[0]) * slice1_ranges_data.size(), slice1_ranges_data.data());
   auto& slice1_output =
       tensor_pool.CloneNativeTensorFrom(softmax_output, {1, 1, 512, 128});
   op_wrappers.emplace_back(

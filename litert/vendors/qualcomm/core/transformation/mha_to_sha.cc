@@ -739,42 +739,42 @@ size_t OptimizeGQAGemma4BPrefill(
   // Step 1: detect optional KSliceAttnUpdateConvert (between the two QK matmuls).
   const bool has_k_slice_attn_update_convert =
     ops[start_index + 4].IsOpCode(QnnOpCode::kConvert);
-  const size_t kKSliceAttnUpdateConvertIdx = 4;  // valid only if has_k_slice_attn_update_convert
-  const size_t kQKSliceMatmulIdx = has_k_slice_attn_update_convert ? 5 : 4;
-  const size_t kQKConcatIdx = has_k_slice_attn_update_convert ? 6 : 5;
+  const size_t k_slice_attn_update_convert_idx = 4;  // valid only if has_k_slice_attn_update_convert
+  const size_t qk_slice_matmul_idx = has_k_slice_attn_update_convert ? 5 : 4;
+  const size_t qk_concat_idx = has_k_slice_attn_update_convert ? 6 : 5;
 
   // Step 2: detect local/global mask (Concat+Reshape immediately after QK Concat).
-  const size_t kAfterQKConcat = kQKConcatIdx + 1;
+  const size_t after_qk_concat = qk_concat_idx + 1;
   const bool has_mask =
-    ops[start_index + kAfterQKConcat].IsOpCode(QnnOpCode::kConcat) &&
-    ops[start_index + kAfterQKConcat + 1].IsOpCode(QnnOpCode::kReshape);
+    ops[start_index + after_qk_concat].IsOpCode(QnnOpCode::kConcat) &&
+    ops[start_index + after_qk_concat + 1].IsOpCode(QnnOpCode::kReshape);
   const size_t offset_mask = has_mask ? 2 : 0;
 
   // Step 3: remaining indices after the optional mask.
-  const size_t kMaskAddIdx = kAfterQKConcat + offset_mask;
-  const size_t kSoftmaxIdx = kMaskAddIdx + 1;
-  const size_t kQKVCacheSliceIdx = kSoftmaxIdx + 1;
-  const size_t kQKVSliceSliceIdx = kQKVCacheSliceIdx + 1;
-  const size_t kQKVCacheMatmulIdx = kQKVSliceSliceIdx + 1;
+  const size_t mask_add_idx = after_qk_concat + offset_mask;
+  const size_t softmax_idx = mask_add_idx + 1;
+  const size_t qkv_cache_slice_idx = softmax_idx + 1;
+  const size_t qkv_slice_slice_idx = qkv_cache_slice_idx + 1;
+  const size_t qkv_cache_matmul_idx = qkv_slice_slice_idx + 1;
 
   // Step 4: detect optional VSliceAttnUpdateConvert (between the two QKV matmuls).
   const bool has_v_slice_attn_update_convert =
-    ops[start_index + kQKVCacheMatmulIdx + 1].IsOpCode(QnnOpCode::kConvert);
-  const size_t kVSliceAttnUpdateConvertIdx = kQKVCacheMatmulIdx + 1;  // valid only if has_v_slice_attn_update_convert
-  const size_t kQKVSliceMatmulIdx = kQKVCacheMatmulIdx + (has_v_slice_attn_update_convert ? 2 : 1);
+    ops[start_index + qkv_cache_matmul_idx + 1].IsOpCode(QnnOpCode::kConvert);
+  const size_t v_slice_attn_update_convert_idx = qkv_cache_matmul_idx + 1;  // valid only if has_v_slice_attn_update_convert
+  const size_t qkv_slice_matmul_idx = qkv_cache_matmul_idx + (has_v_slice_attn_update_convert ? 2 : 1);
 
   // Step 5: final indices.
-  const size_t kQKVAddIdx = kQKVSliceMatmulIdx + 1;
-  const size_t kConvertOutIdx = kQKVAddIdx + 1;  // output Convert (always present)
-  const size_t kReshape1Idx = kConvertOutIdx + 1;
-  const size_t kTranspose1Idx = kReshape1Idx + 1;
+  const size_t qkv_add_idx = qkv_slice_matmul_idx + 1;
+  const size_t convert_out_idx = qkv_add_idx + 1;  // output Convert (always present)
+  const size_t reshape1_idx = convert_out_idx + 1;
+  const size_t transpose1_idx = reshape1_idx + 1;
 
   QNN_LOG_INFO("[G2G] GQA optimization on Gemma4B Prefill");
 
   const OpWrapper* k_slice_attn_update_convert_op =
-    has_k_slice_attn_update_convert ? &ops[start_index + kKSliceAttnUpdateConvertIdx] : nullptr;
+    has_k_slice_attn_update_convert ? &ops[start_index + k_slice_attn_update_convert_idx] : nullptr;
   const OpWrapper* v_slice_attn_update_convert_op =
-    has_v_slice_attn_update_convert ? &ops[start_index + kVSliceAttnUpdateConvertIdx] : nullptr;
+    has_v_slice_attn_update_convert ? &ops[start_index + v_slice_attn_update_convert_idx] : nullptr;
 
   // Validate both Transpose permutations are [0,2,1,3].
   const auto validate_perm_0213 = [](const OpWrapper& transpose) -> bool {
@@ -785,7 +785,7 @@ size_t OptimizeGQAGemma4BPrefill(
       (*perm_data)[2] == 1 && (*perm_data)[3] == 3;
   };
   if (!validate_perm_0213(ops[start_index + kTranspose0Idx]) ||
-    !validate_perm_0213(ops[start_index + kTranspose1Idx])) {
+    !validate_perm_0213(ops[start_index + transpose1_idx])) {
     return 1;
   }
 
@@ -800,49 +800,49 @@ size_t OptimizeGQAGemma4BPrefill(
   // q_kcache_matmul -> (optional k_slice_attn_update_convert ->) qk_concat(0)
   const bool convert_to_kslice_matmul = !has_k_slice_attn_update_convert ||
     is_connected(*k_slice_attn_update_convert_op, 0,
-           ops[start_index + kQKSliceMatmulIdx], 1);
+           ops[start_index + qk_slice_matmul_idx], 1);
 
   // qkv_cache_matmul -> (optional v_slice_attn_update_convert ->) qkv_add(0)
   const bool convert_to_vslice_matmul = !has_v_slice_attn_update_convert ||
     is_connected(*v_slice_attn_update_convert_op, 0,
-          ops[start_index + kQKVSliceMatmulIdx], 1);
+          ops[start_index + qkv_slice_matmul_idx], 1);
 
   if (!(is_connected(ops[start_index + kTranspose0Idx], 0,
                      ops[start_index + kReshape0Idx], 0) &&
     is_connected(ops[start_index + kReshape0Idx], 0,
                      ops[start_index + kQKCacheMatmulIdx], 0) &&
     is_connected(ops[start_index + kReshape0Idx], 0,
-                     ops[start_index + kQKSliceMatmulIdx], 0) &&
+                     ops[start_index + qk_slice_matmul_idx], 0) &&
     convert_to_kslice_matmul &&
     is_connected(ops[start_index + kQKCacheMatmulIdx], 0,
-                     ops[start_index + kQKConcatIdx], 0) &&
-    is_connected(ops[start_index + kQKSliceMatmulIdx], 0,
-                     ops[start_index + kQKConcatIdx], 1) &&
-    is_connected(ops[start_index + kQKConcatIdx], 0,
-                     ops[start_index + kMaskAddIdx], 0) &&
-    is_connected(ops[start_index + kMaskAddIdx], 0,
-                     ops[start_index + kSoftmaxIdx], 0) &&
-    is_connected(ops[start_index + kSoftmaxIdx], 0,
-                     ops[start_index + kQKVCacheSliceIdx], 0) &&
-    is_connected(ops[start_index + kSoftmaxIdx], 0,
-                     ops[start_index + kQKVSliceSliceIdx], 0) &&
-    is_connected(ops[start_index + kQKVCacheSliceIdx], 0,
-                     ops[start_index + kQKVCacheMatmulIdx], 0) &&
-    is_connected(ops[start_index + kQKVSliceSliceIdx], 0,
-                     ops[start_index + kQKVSliceMatmulIdx], 0) &&
+                     ops[start_index + qk_concat_idx], 0) &&
+    is_connected(ops[start_index + qk_slice_matmul_idx], 0,
+                     ops[start_index + qk_concat_idx], 1) &&
+    is_connected(ops[start_index + qk_concat_idx], 0,
+                     ops[start_index + mask_add_idx], 0) &&
+    is_connected(ops[start_index + mask_add_idx], 0,
+                     ops[start_index + softmax_idx], 0) &&
+    is_connected(ops[start_index + softmax_idx], 0,
+                     ops[start_index + qkv_cache_slice_idx], 0) &&
+    is_connected(ops[start_index + softmax_idx], 0,
+                     ops[start_index + qkv_slice_slice_idx], 0) &&
+    is_connected(ops[start_index + qkv_cache_slice_idx], 0,
+                     ops[start_index + qkv_cache_matmul_idx], 0) &&
+    is_connected(ops[start_index + qkv_slice_slice_idx], 0,
+                     ops[start_index + qkv_slice_matmul_idx], 0) &&
     convert_to_vslice_matmul &&
-    is_connected(ops[start_index + kQKVCacheMatmulIdx], 0,
-                     ops[start_index + kQKVAddIdx], 0) &&
-    is_connected(ops[start_index + kQKVSliceMatmulIdx], 0,
-                     ops[start_index + kQKVAddIdx], 1) &&
-    is_connected(ops[start_index + kQKVAddIdx], 0,
-                     ops[start_index + kConvertOutIdx], 0) &&
-    is_connected(ops[start_index + kConvertOutIdx], 0,
-                     ops[start_index + kReshape1Idx], 0) &&
-    is_connected(ops[start_index + kReshape1Idx], 0,
-                     ops[start_index + kTranspose1Idx], 0) &&
-    IsElementWiseAdd(ops[start_index + kMaskAddIdx]) &&
-    IsElementWiseAdd(ops[start_index + kQKVAddIdx]))) {
+    is_connected(ops[start_index + qkv_cache_matmul_idx], 0,
+                     ops[start_index + qkv_add_idx], 0) &&
+    is_connected(ops[start_index + qkv_slice_matmul_idx], 0,
+                     ops[start_index + qkv_add_idx], 1) &&
+    is_connected(ops[start_index + qkv_add_idx], 0,
+                     ops[start_index + convert_out_idx], 0) &&
+    is_connected(ops[start_index + convert_out_idx], 0,
+                     ops[start_index + reshape1_idx], 0) &&
+    is_connected(ops[start_index + reshape1_idx], 0,
+                     ops[start_index + transpose1_idx], 0) &&
+    IsElementWiseAdd(ops[start_index + mask_add_idx]) &&
+    IsElementWiseAdd(ops[start_index + qkv_add_idx]))) {
     return 1;
   }
 
@@ -873,19 +873,19 @@ size_t OptimizeGQAGemma4BPrefill(
   // input instead, which is the actual static KV weight tensor.
   auto k_slice_unpack_outputs = UnpackTensor(
     tensor_pool, new_ops,
-    has_k_slice_attn_update_convert? k_slice_attn_update_convert_op->GetInputTensor(0): ops[start_index + kQKSliceMatmulIdx].GetInputTensor(1),
+    has_k_slice_attn_update_convert? k_slice_attn_update_convert_op->GetInputTensor(0): ops[start_index + qk_slice_matmul_idx].GetInputTensor(1),
     kKVUnpackAxis);
   auto v_cache_unpack_outputs = UnpackTensor(
-    tensor_pool, new_ops, ops[start_index + kQKVCacheMatmulIdx].GetInputTensor(1), kKVUnpackAxis);
+    tensor_pool, new_ops, ops[start_index + qkv_cache_matmul_idx].GetInputTensor(1), kKVUnpackAxis);
   auto v_slice_unpack_outputs = UnpackTensor(
     tensor_pool, new_ops,
-    has_v_slice_attn_update_convert? v_slice_attn_update_convert_op->GetInputTensor(0) : ops[start_index + kQKVSliceMatmulIdx].GetInputTensor(1),
+    has_v_slice_attn_update_convert? v_slice_attn_update_convert_op->GetInputTensor(0) : ops[start_index + qkv_slice_matmul_idx].GetInputTensor(1),
     kKVUnpackAxis);
 
   // Reshape mask from (1,1,512,2688) -> (1,num_attn_per_kv_heads,128,2688)
   // so that unpacking on axis=1 gives one (1,128,2688) mask per query head.
   const auto& mask_orig =
-    ops[start_index + kMaskAddIdx].GetInputTensor(1);
+    ops[start_index + mask_add_idx].GetInputTensor(1);
   auto mask_reshaped_dims = mask_orig.GetDimensions();
   mask_reshaped_dims[1] = static_cast<std::uint32_t>(num_attn_per_kv_heads);
   mask_reshaped_dims[2] /= static_cast<std::uint32_t>(num_attn_per_kv_heads);
@@ -908,16 +908,16 @@ size_t OptimizeGQAGemma4BPrefill(
         v_cache_unpack_outputs[i], v_slice_unpack_outputs[i],
         mask_unpack_outputs[j],
         ops[start_index + kQKCacheMatmulIdx], k_slice_attn_update_convert_op,
-        ops[start_index + kQKSliceMatmulIdx],
-        ops[start_index + kQKConcatIdx],
-        ops[start_index + kMaskAddIdx],
-        ops[start_index + kSoftmaxIdx],
-        ops[start_index + kQKVCacheSliceIdx],
-        ops[start_index + kQKVSliceSliceIdx],
-        ops[start_index + kQKVCacheMatmulIdx], v_slice_attn_update_convert_op,
-        ops[start_index + kQKVSliceMatmulIdx],
-        ops[start_index + kQKVAddIdx],
-        ops[start_index + kConvertOutIdx]));
+        ops[start_index + qk_slice_matmul_idx],
+        ops[start_index + qk_concat_idx],
+        ops[start_index + mask_add_idx],
+        ops[start_index + softmax_idx],
+        ops[start_index + qkv_cache_slice_idx],
+        ops[start_index + qkv_slice_slice_idx],
+        ops[start_index + qkv_cache_matmul_idx], v_slice_attn_update_convert_op,
+        ops[start_index + qkv_slice_matmul_idx],
+        ops[start_index + qkv_add_idx],
+        ops[start_index + convert_out_idx]));
     }
   }
 
@@ -932,11 +932,11 @@ size_t OptimizeGQAGemma4BPrefill(
   auto concat_dims = sha_outputs[0].get().GetDimensions();  // [B, S, D]
   concat_dims[2] *= static_cast<std::uint32_t>(num_attn_heads);  // [B, S, H*D]
   auto& concat_output = tensor_pool.CloneNativeTensorFrom(
-    ops[start_index + kReshape1Idx].GetOutputTensor(0), concat_dims);
+    ops[start_index + reshape1_idx].GetOutputTensor(0), concat_dims);
   new_ops.emplace_back(CreateConcatenationOp(sha_outputs, concat_output, 2));
   new_ops.emplace_back(CreateReshapeOp(
     concat_output,
-    ops[start_index + kTranspose1Idx].GetOutputTensor(0)));
+    ops[start_index + transpose1_idx].GetOutputTensor(0)));
 
   // Validate new graph.
   const bool is_valid =
@@ -956,12 +956,12 @@ size_t OptimizeGQAGemma4BPrefill(
     // Erase the matched pattern except: the far-away kConvert (index 2),
     // and (if present) the mask Concat+Reshape.
     // Erase from mask_add through transpose1 (inclusive).
-    ops.erase(ops.begin() + start_index + kMaskAddIdx,
-        ops.begin() + start_index + kTranspose1Idx + 1);
+    ops.erase(ops.begin() + start_index + mask_add_idx,
+        ops.begin() + start_index + transpose1_idx + 1);
     // Erase from q_kcache_matmul through qk_concat (inclusive),
     // which also covers the optional QK Quantize between them.
     ops.erase(ops.begin() + start_index + kQKCacheMatmulIdx,
-         ops.begin() + start_index + kQKConcatIdx + 1);
+         ops.begin() + start_index + qk_concat_idx + 1);
     // Erase Reshape0 and Transpose0.
     ops.erase(ops.begin() + start_index + kReshape0Idx);
     ops.erase(ops.begin() + start_index + kTranspose0Idx);
