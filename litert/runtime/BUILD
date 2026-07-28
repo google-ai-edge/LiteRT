@@ -988,7 +988,9 @@ cc_library(
     hdrs = ["profiler.h"],
     deps = [
         ":profiler_summarizer",
+        "//litert/c:litert_common",
         "//litert/c:litert_profiler_event",
+        "//litert/c:litert_profiler_types",
         "//tflite:framework",
         "//tflite/core:private_cc_api_stable",
         "//tflite/core/api",

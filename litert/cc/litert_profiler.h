@@ -14,6 +14,7 @@
 
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_PROFILER_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_PROFILER_H_
+#include <cstddef>
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -21,6 +22,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_profiler.h"
 #include "litert/c/litert_profiler_event.h"
+#include "litert/c/litert_profiler_types.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -101,6 +103,19 @@ class Profiler : public internal::BaseHandle<LiteRtProfiler> {
   Expected<void> SetCurrentEventSource(ProfiledEventSource event_source) {
     LITERT_RETURN_IF_ERROR(
         LiteRtSetProfilerCurrentEventSource(Get(), event_source));
+    return {};
+  }
+
+  /// @brief Registers a hook.
+  Expected<void> RegisterHook(LiteRtHook hook, void* user_data) {
+    LITERT_RETURN_IF_ERROR(LiteRtRegisterHook(Get(), hook, user_data));
+    return {};
+  }
+
+  /// @brief Triggers a hook of the specified type.
+  Expected<void> TriggerHook(LiteRtHookType type, const void* data,
+                             size_t size) {
+    LITERT_RETURN_IF_ERROR(LiteRtTriggerHook(Get(), type, data, size));
     return {};
   }
 };

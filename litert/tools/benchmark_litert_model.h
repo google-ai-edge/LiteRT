@@ -277,6 +277,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
                             BenchmarkParam::Create<std::string>("version8"));
     default_params.AddParam("input_layer_value_range",
                             BenchmarkParam::Create<std::string>(""));
+    default_params.AddParam("vendor_hook_args",
+                            BenchmarkParam::Create<std::string>(""));
     return default_params;
   }
 
@@ -446,6 +448,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
         "xnnpack_weight_cache_file_path", &params_,
         "Path to an XNNPACK packed-weight cache file. Use ':memory' for an "
         "in-memory cache on supported builds."));
+    flags.push_back(tflite::benchmark::CreateFlag<std::string>(
+        "vendor_hook_args", &params_, "Vendor hook arguments config string."));
     return flags;
   }
 
@@ -470,6 +474,7 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
   litert::Profiler profiler_;
   std::unique_ptr<BenchmarkLoggingListener> log_output_;
   std::unique_ptr<ModelRuntimeInfoListener> model_runtime_info_listener_;
+  std::unique_ptr<::tflite::benchmark::BenchmarkListener> trace_listener_;
 
   // TFLite Interpreter is needed for run_summarizer_
   ::tflite::Interpreter* interpreter_ = nullptr;

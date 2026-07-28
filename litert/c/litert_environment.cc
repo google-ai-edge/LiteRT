@@ -18,6 +18,7 @@
 #include <array>
 #include <utility>
 
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/base/const_init.h"  // from @com_google_absl
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
@@ -89,8 +90,7 @@ LiteRtStatus LiteRtCreateEnvironment(int num_options,
   const bool has_gpu_options = std::any_of(
       options_span.begin(), options_span.end(),
       [&kGpuOptionTags](const LiteRtEnvOption& option) {
-        return std::find(kGpuOptionTags.begin(), kGpuOptionTags.end(),
-                         option.tag) != kGpuOptionTags.end();
+        return absl::c_find(kGpuOptionTags, option.tag) != kGpuOptionTags.end();
       });
 
   if (has_gpu_options) {
@@ -240,6 +240,15 @@ void LiteRtEnvironmentHasGpuEnvironment(LiteRtEnvironment environment,
     return;
   }
   *has_gpu_environment = environment->HasGpuEnvironment();
+}
+
+LiteRtStatus LiteRtGetEnvironmentProfiler(LiteRtEnvironment environment,
+                                          LiteRtProfiler* profiler) {
+  if (environment == nullptr || profiler == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *profiler = &environment->GetProfiler();
+  return kLiteRtStatusOk;
 }
 
 #ifdef __cplusplus

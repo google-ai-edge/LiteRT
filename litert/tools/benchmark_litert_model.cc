@@ -14,6 +14,8 @@ limitations under the License.
 ==============================================================================*/
 #include "litert/tools/benchmark_litert_model.h"
 
+#include <dlfcn.h>
+
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
@@ -27,6 +29,9 @@ limitations under the License.
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
+#include "litert/c/litert_profiler.h"
+#include "litert/c/litert_profiler_types.h"
 #include "litert/cc/internal/litert_compiled_model_next.h"
 #include "litert/cc/internal/litert_tflite_error_status_builder.h"
 #include "litert/cc/litert_common.h"
@@ -51,6 +56,7 @@ limitations under the License.
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 #include "tflite/interpreter.h"
+#include "tflite/tools/benchmark/benchmark_model.h"
 
 namespace litert::benchmark {
 namespace {
@@ -207,7 +213,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
 
   compilation_options.SetHardwareAccelerators(hardware_accelerators);
 
-  if (use_profiler) {
+  if (use_profiler || !params.Get<std::string>("vendor_hook_args").empty()) {
     LITERT_ASSIGN_OR_ABORT(auto& runtime_options,
                            compilation_options.GetRuntimeOptions());
     runtime_options.SetEnableProfiling(/*enabled=*/true);
@@ -264,6 +270,24 @@ litert::Expected<Environment> CreateDefaultEnvironment(
   return litert::Environment::Create(
       litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
 }
+class TraceListener : public ::tflite::benchmark::BenchmarkListener {
+ public:
+  TraceListener(LiteRtProfiler profiler, BenchmarkLiteRtModel* benchmark)
+      : profiler_(profiler), benchmark_(benchmark) {}
+  void OnBenchmarkEnd(
+      const ::tflite::benchmark::BenchmarkResults& results) override {
+    if (profiler_) {
+      int count = results.inference_time_us().count();
+      std::string data = absl::StrCat("inference_count=", count);
+      LiteRtTriggerHook(profiler_, kLiteRtHookTypeStopAndProcess, data.c_str(),
+                        data.size() + 1);
+    }
+  }
+
+ private:
+  LiteRtProfiler profiler_;
+  BenchmarkLiteRtModel* benchmark_;
+};
 }  // namespace
 
 TfLiteStatus BenchmarkLiteRtModel::LoadModel() {
@@ -349,11 +373,32 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
     AddListener(model_runtime_info_listener_.get());
   }
 
-  auto use_profiler = params_.Get<bool>("use_profiler");
+  auto use_profiler = params_.Get<bool>("use_profiler") ||
+                      !params_.Get<std::string>("vendor_hook_args").empty();
   if (use_profiler) {
     LITERT_ASSIGN_OR_ABORT(profiler_, compiled_model_->GetProfiler());
+
+    LITERT_LOG(LITERT_INFO, "Benchmark using profiler %p", profiler_.Get());
+
+    LiteRtProfiler env_profiler = nullptr;
+    if (LiteRtGetEnvironmentProfiler(environment_->Get(), &env_profiler) !=
+        kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_WARNING, "Failed to get environment profiler");
+    }
+
     profiler_.StartProfiling();
+
+    // Trigger runtime start hook if vendor hook args are provided
+    if (!params_.Get<std::string>("vendor_hook_args").empty() && env_profiler) {
+      auto hook_args = params_.Get<std::string>("vendor_hook_args");
+      LiteRtTriggerHook(env_profiler, kLiteRtHookTypeRuntimeStart,
+                        hook_args.c_str(), hook_args.size() + 1);
+    }
+
+    trace_listener_ = std::make_unique<TraceListener>(env_profiler, this);
+    AddListener(trace_listener_.get());
   }
+
   LITERT_ASSIGN_OR_RETURN(
       std::string signature, GetCurrentSignatureKey(),
       AsTfLiteStatus(_ << "Failed to get current signature key."));

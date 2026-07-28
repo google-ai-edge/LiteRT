@@ -78,6 +78,10 @@ LiteRtStatus LiteRtEnvironmentSupportsFP16(LiteRtEnvironment environment,
 void LiteRtEnvironmentHasGpuEnvironment(LiteRtEnvironment environment,
                                         bool* has_gpu_environment);
 
+// Returns the profiler associated with the environment.
+LiteRtStatus LiteRtGetEnvironmentProfiler(LiteRtEnvironment environment,
+                                          LiteRtProfiler* profiler);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

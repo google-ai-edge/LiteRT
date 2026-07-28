@@ -14,9 +14,13 @@
 
 #include "litert/c/litert_profiler.h"
 
+#include <string>
+
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
 #include "litert/c/litert_profiler_event.h"
+#include "litert/c/litert_profiler_types.h"
 
 namespace {
 LiteRtProfiler profiler;
@@ -106,6 +110,9 @@ TEST(LiteRtProfilerErrorTest, PassNullToFunctions) {
   EXPECT_NE(LiteRtGetNumProfilerEvents(nullptr, &num_events), kLiteRtStatusOk);
   EXPECT_NE(LiteRtGetProfilerEvents(nullptr, num_events, events),
             kLiteRtStatusOk);
+  EXPECT_NE(LiteRtRegisterHook(nullptr, nullptr, nullptr), kLiteRtStatusOk);
+  EXPECT_NE(LiteRtTriggerHook(nullptr, kLiteRtHookTypeRuntimeStart, nullptr, 0),
+            kLiteRtStatusOk);
   LiteRtDestroyProfiler(profiler);
 }
 
@@ -121,5 +128,79 @@ TEST(LiteRtProfilerTest, PassNullToOutputPointers) {
   EXPECT_NE(LiteRtGetProfilerEvents(profiler, -1, events),
             kLiteRtStatusOk);
   LiteRtDestroyProfiler(profiler);
+}
+
+TEST(LiteRtProfilerErrorTest, GetEnvironmentProfilerNull) {
+  EXPECT_NE(LiteRtGetEnvironmentProfiler(nullptr, &profiler), kLiteRtStatusOk);
+  LiteRtEnvironment env;
+  EXPECT_EQ(LiteRtCreateEnvironment(0, nullptr, &env), kLiteRtStatusOk);
+  EXPECT_NE(LiteRtGetEnvironmentProfiler(env, nullptr), kLiteRtStatusOk);
+  LiteRtDestroyEnvironment(env);
+}
+
+TEST(LiteRtProfilerTest, RegisterAndTriggerHook) {
+  EXPECT_EQ(LiteRtCreateProfiler(10, &profiler), kLiteRtStatusOk);
+
+  struct HookUserData {
+    LiteRtHookType called_type;
+    std::string called_data;
+    int call_count = 0;
+  } user_data;
+
+  LiteRtHook hook = [](LiteRtHookType type, const void* data, size_t size,
+                       void* user_data_ptr) {
+    auto* ud = static_cast<HookUserData*>(user_data_ptr);
+    ud->called_type = type;
+    if (data && size > 0) {
+      ud->called_data.assign(static_cast<const char*>(data), size);
+    }
+    ud->call_count++;
+  };
+
+  EXPECT_EQ(LiteRtRegisterHook(profiler, hook, &user_data), kLiteRtStatusOk);
+
+  std::string test_data = "test_hook_data";
+  EXPECT_EQ(LiteRtTriggerHook(profiler, kLiteRtHookTypeRuntimeStart,
+                              test_data.c_str(), test_data.size()),
+            kLiteRtStatusOk);
+
+  EXPECT_EQ(user_data.call_count, 1);
+  EXPECT_EQ(user_data.called_type, kLiteRtHookTypeRuntimeStart);
+  EXPECT_EQ(user_data.called_data, test_data);
+
+  LiteRtDestroyProfiler(profiler);
+}
+
+TEST(LiteRtProfilerTest, GetEnvironmentProfilerAndHook) {
+  LiteRtEnvironment env;
+  EXPECT_EQ(LiteRtCreateEnvironment(0, nullptr, &env), kLiteRtStatusOk);
+
+  LiteRtProfiler env_profiler;
+  EXPECT_EQ(LiteRtGetEnvironmentProfiler(env, &env_profiler), kLiteRtStatusOk);
+  EXPECT_NE(env_profiler, nullptr);
+
+  struct HookUserData {
+    LiteRtHookType called_type;
+    int call_count = 0;
+  } user_data;
+
+  LiteRtHook hook = [](LiteRtHookType type, const void* data, size_t size,
+                       void* user_data_ptr) {
+    auto* ud = static_cast<HookUserData*>(user_data_ptr);
+    ud->called_type = type;
+    ud->call_count++;
+  };
+
+  EXPECT_EQ(LiteRtRegisterHook(env_profiler, hook, &user_data),
+            kLiteRtStatusOk);
+
+  EXPECT_EQ(LiteRtTriggerHook(env_profiler, kLiteRtHookTypeStopAndProcess,
+                              nullptr, 0),
+            kLiteRtStatusOk);
+
+  EXPECT_EQ(user_data.call_count, 1);
+  EXPECT_EQ(user_data.called_type, kLiteRtHookTypeStopAndProcess);
+
+  LiteRtDestroyEnvironment(env);
 }
 }  // namespace

@@ -23,6 +23,8 @@ package(
     default_visibility = ["//litert:__subpackages__"],
 )
 
+exports_files(["darwinn_hook.cc"])
+
 litert_lib(
     name = "adapter_aot",
     srcs = [
