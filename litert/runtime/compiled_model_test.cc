@@ -1541,6 +1541,66 @@ TEST(CompiledModelTest, CheckResizeFail) {
   LiteRtDestroyEnvironment(env_ptr);
 }
 
+// Unit tests for the split-context KV cache buffer-binding predicate. These are
+// pure-function tests (no compiled model needed) that pin the decision matrix
+// for whether an oversized registered input buffer is bound as a backend
+// sub-view vs. auto-resized vs. rejected.
+TEST(ShouldBindOversizedCustomBufferTest, OversizedCustomBufferBinds) {
+  // A user custom buffer larger than the port on one dim -> bind as sub-view.
+  const std::vector<int> buffer_shape = {1, 16383, 8, 256};
+  const std::vector<int> port_shape = {1, 16256, 8, 256};
+  EXPECT_TRUE(ShouldBindOversizedCustomBuffer(
+      kLiteRtTensorBufferTypeOpenVINOTensorBuffer,
+      absl::MakeConstSpan(buffer_shape), absl::MakeConstSpan(port_shape)));
+}
+
+TEST(ShouldBindOversizedCustomBufferTest, OversizedNonCustomBufferDoesNotBind) {
+  // Same oversized shapes but a host-memory (non-custom) buffer -> no bind;
+  // the caller falls through to the resize / shape-mismatch path.
+  const std::vector<int> buffer_shape = {1, 16383, 8, 256};
+  const std::vector<int> port_shape = {1, 16256, 8, 256};
+  EXPECT_FALSE(ShouldBindOversizedCustomBuffer(
+      kLiteRtTensorBufferTypeHostMemory, absl::MakeConstSpan(buffer_shape),
+      absl::MakeConstSpan(port_shape)));
+}
+
+TEST(ShouldBindOversizedCustomBufferTest, EqualShapesDoNotBind) {
+  // Buffer equal to the port is the ordinary matched case -> no oversized bind.
+  const std::vector<int> shape = {1, 16256, 8, 256};
+  EXPECT_FALSE(ShouldBindOversizedCustomBuffer(
+      kLiteRtTensorBufferTypeOpenVINOTensorBuffer, absl::MakeConstSpan(shape),
+      absl::MakeConstSpan(shape)));
+}
+
+TEST(ShouldBindOversizedCustomBufferTest, SmallerBufferDoesNotBind) {
+  // Buffer smaller than the port on a dim -> ShapeContains false -> no bind.
+  const std::vector<int> buffer_shape = {1, 1024, 8, 256};
+  const std::vector<int> port_shape = {1, 16256, 8, 256};
+  EXPECT_FALSE(ShouldBindOversizedCustomBuffer(
+      kLiteRtTensorBufferTypeOpenVINOTensorBuffer,
+      absl::MakeConstSpan(buffer_shape), absl::MakeConstSpan(port_shape)));
+}
+
+TEST(ShouldBindOversizedCustomBufferTest, DifferentRankDoesNotBind) {
+  // Rank mismatch -> ShapeContains false -> no bind.
+  const std::vector<int> buffer_shape = {1, 16383, 8, 256};
+  const std::vector<int> port_shape = {16256, 8, 256};
+  EXPECT_FALSE(ShouldBindOversizedCustomBuffer(
+      kLiteRtTensorBufferTypeOpenVINOTensorBuffer,
+      absl::MakeConstSpan(buffer_shape), absl::MakeConstSpan(port_shape)));
+}
+
+TEST(ShouldBindOversizedCustomBufferTest, DynamicPortDoesNotBind) {
+  // A dynamic (-1) port dim must auto-resize, not take the oversized path,
+  // even though a concrete buffer trivially "contains" a -1 dim. This is the
+  // AllPositive guard.
+  const std::vector<int> buffer_shape = {1, 16383, 8, 256};
+  const std::vector<int> port_shape = {1, -1, 8, 256};
+  EXPECT_FALSE(ShouldBindOversizedCustomBuffer(
+      kLiteRtTensorBufferTypeOpenVINOTensorBuffer,
+      absl::MakeConstSpan(buffer_shape), absl::MakeConstSpan(port_shape)));
+}
+
 TEST(CompiledModelTest, DynamicResizeWithCustomAllocationsSimple) {
   constexpr absl::string_view kSimpleAddDynamicShapeModel =
       "simple_add_dynamic_shape.tflite";
