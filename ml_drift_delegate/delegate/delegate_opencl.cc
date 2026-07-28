@@ -27,6 +27,7 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
@@ -103,15 +104,16 @@ absl::Status CreateClContext(const ml_drift::cl::CLDevice& device,
                              ml_drift::cl::CLContext* context) {
 #if LITERT_HAS_OPENGL_SUPPORT
   if (IsGlSharingSupported(device)) {
-    RETURN_IF_ERROR(ml_drift::cl::CreateCLGLContext(
+    ABSL_RETURN_IF_ERROR(ml_drift::cl::CreateCLGLContext(
         device, reinterpret_cast<cl_context_properties>(egl_context),
         reinterpret_cast<cl_context_properties>(egl_display), context,
         options));
   } else {
-    RETURN_IF_ERROR(ml_drift::cl::CreateCLContext(device, context, options));
+    ABSL_RETURN_IF_ERROR(
+        ml_drift::cl::CreateCLContext(device, context, options));
   }
 #else
-  RETURN_IF_ERROR(ml_drift::cl::CreateCLContext(device, context, options));
+  ABSL_RETURN_IF_ERROR(ml_drift::cl::CreateCLContext(device, context, options));
 #endif  // LITERT_HAS_OPENGL_SUPPORT
   return absl::OkStatus();
 }
@@ -131,8 +133,8 @@ absl::StatusOr<std::unique_ptr<ml_drift::cl::Environment>> CreateClEnvironment(
     ml_drift::cl::CLCommandQueue queue,
     const ml_drift::cl::CLCommandQueueOptions& queue_options) {
   ml_drift::cl::ProfilingCommandQueue profiling_queue;
-  RETURN_IF_ERROR(CreateProfilingCommandQueue(device, context, &profiling_queue,
-                                              queue_options));
+  ABSL_RETURN_IF_ERROR(CreateProfilingCommandQueue(
+      device, context, &profiling_queue, queue_options));
 
   return std::make_unique<ml_drift::cl::Environment>(
       std::move(device), std::move(context), std::move(queue),
@@ -245,7 +247,7 @@ absl::StatusOr<DelegateEnvironment*> GetOrCreateDelegateEnvironment(
   // Handle EGL environment.
   {
 #if LITERT_HAS_OPENGL_SUPPORT
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         ml_drift::gl::EglEnvironment::NewEglEnvironment(&resources->egl_env));
     resources->egl_context = resources->egl_env->context().context();
     resources->egl_display = resources->egl_env->display();
@@ -255,15 +257,15 @@ absl::StatusOr<DelegateEnvironment*> GetOrCreateDelegateEnvironment(
   // Handle CL environment.
   {
     ml_drift::cl::CLDevice device;
-    RETURN_IF_ERROR(ml_drift::cl::CreateDefaultGPUDevice(&device));
+    ABSL_RETURN_IF_ERROR(ml_drift::cl::CreateDefaultGPUDevice(&device));
 
     ml_drift::cl::CLContext context;
-    RETURN_IF_ERROR(CreateClContext(device, context_options,
-                                    resources->egl_context,
-                                    resources->egl_display, &context));
+    ABSL_RETURN_IF_ERROR(CreateClContext(device, context_options,
+                                         resources->egl_context,
+                                         resources->egl_display, &context));
 
     ml_drift::cl::CLCommandQueue queue;
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         CreateCLCommandQueue(device, context, &queue, queue_options));
 
     LITERT_ASSIGN_OR_RETURN(
@@ -365,6 +367,12 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   return kTfLiteOk;
 }
 
+#define CALL_DELEGATE_KERNEL(function, ...)                               \
+  if (absl::Status s = delegate_kernel->function(__VA_ARGS__); !s.ok()) { \
+    ABSL_LOG(ERROR) << s;                                                 \
+    return kTfLiteError;                                                  \
+  }
+
 TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
   bool is_profiling = ml_drift::IsTfLiteProfilerActive(context);
 
@@ -377,23 +385,10 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
     upload_start = tflite::profiling::time::NowMicros();
   }
 
-  if (delegate_kernel->NoExternalTensorsMode()) {
-    if (absl::Status s = delegate_kernel->UploadOrBindTensorBuffer(context);
-        !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-  } else {
-    if (absl::Status s = delegate_kernel->BindTensorBuffers(context); !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-  }
-
-  if (absl::Status s = delegate_kernel->HandleInputEvents(context); !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
-  }
+  CALL_DELEGATE_KERNEL(BindExternalTensorBuffers, context);
+  CALL_DELEGATE_KERNEL(UploadIntermediateCpuTensorsToGpuMemory, context);
+  CALL_DELEGATE_KERNEL(HandleInputEvents, context);
+  CALL_DELEGATE_KERNEL(ConvertNonExternalInputTensorsToGpuMemory, context);
 
   if (is_profiling) {
     auto status = delegate_kernel->backend()->WaitForCompletion();
@@ -406,18 +401,7 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
                                      dispatch_start - upload_start);
   }
 
-  if (absl::Status s = delegate_kernel->Dispatch(context); !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
-  }
-
-  if (absl::Status s = delegate_kernel->HandleOutputEvents(
-          context, litert::ml_drift::IsAsyncExecutionMode(
-                       context, delegate_kernel->runtime_context()));
-      !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
-  }
+  CALL_DELEGATE_KERNEL(Dispatch, context);
 
   uint64_t download_start;
   if (is_profiling) {
@@ -429,15 +413,10 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
     download_start = tflite::profiling::time::NowMicros();
   }
 
-  if (delegate_kernel->NoExternalTensorsMode()) {
-    // Download internal output GPU memory to output TensorBufferGPU memory.
-    if (absl::Status s =
-            delegate_kernel->DownloadGpuMemoryToTensorBufferGpuMemory(context);
-        !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-  }
+  CALL_DELEGATE_KERNEL(ConvertGpuMemoryToNonExternalOutputTensors, context);
+  bool is_async_execution_mode = litert::ml_drift::IsAsyncExecutionMode(
+      context, delegate_kernel->runtime_context());
+  CALL_DELEGATE_KERNEL(HandleOutputEvents, context, is_async_execution_mode);
 
   // Wait for GPU completion on specific GPUs when IsHintWaitingForCompletion()
   // is enabled.
@@ -460,23 +439,14 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
     }
   }
 
-  if (absl::Status s = delegate_kernel->DownloadGpuMemoryToCpuMemory(context);
-      !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
-  }
+  CALL_DELEGATE_KERNEL(DownloadGpuMemoryToIntermediateCpuTensors, context);
+  CALL_DELEGATE_KERNEL(FlushBufferCacheIfNeeded, context);
 
   if (is_profiling) {
     uint64_t download_end = tflite::profiling::time::NowMicros();
     ml_drift::AddTfLiteProfilerEvent(context,
                                      "DownloadGpuMemoryToTensorBufferGpuMemory",
                                      download_end - download_start);
-  }
-
-  if (absl::Status s = delegate_kernel->FlushBufferCacheIfNeeded(context);
-      !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
   }
 
   return kTfLiteOk;

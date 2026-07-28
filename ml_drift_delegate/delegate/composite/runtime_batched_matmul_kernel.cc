@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
@@ -55,8 +56,8 @@ absl::Status BuildRuntimeBatchedMatMulGpuGraph(
           "Expected 2, 3, 4, or 5 inputs for FullyConnectedExternalWeights.");
     }
 
-    ASSIGN_OR_RETURN(auto src, model_builder->GetTensor(input_ids[0]));
-    ASSIGN_OR_RETURN(auto weights, model_builder->GetTensor(input_ids[1]));
+    ABSL_ASSIGN_OR_RETURN(auto src, model_builder->GetTensor(input_ids[0]));
+    ABSL_ASSIGN_OR_RETURN(auto weights, model_builder->GetTensor(input_ids[1]));
     ::ml_drift::GpuModelBuilder::TensorHandle bias;
     ::ml_drift::GpuModelBuilder::TensorHandle* bias_ptr = nullptr;
     ::ml_drift::GpuModelBuilder::TensorHandle src_exp;
@@ -70,14 +71,14 @@ absl::Status BuildRuntimeBatchedMatMulGpuGraph(
         return absl::InvalidArgumentError("Missing runtime check tensor.");
       }
       if (input_ids.size() > 3) {
-        ASSIGN_OR_RETURN(bias, model_builder->GetTensor(input_ids[2]));
+        ABSL_ASSIGN_OR_RETURN(bias, model_builder->GetTensor(input_ids[2]));
         bias_ptr = &bias;
       }
       if (input_ids.size() > 4) {
-        ASSIGN_OR_RETURN(src_exp, model_builder->GetTensor(input_ids[3]));
+        ABSL_ASSIGN_OR_RETURN(src_exp, model_builder->GetTensor(input_ids[3]));
         src_exp_ptr = &src_exp;
       }
-      ASSIGN_OR_RETURN(
+      ABSL_ASSIGN_OR_RETURN(
           runtime_check_tensor,
           model_builder->GetTensor(input_ids[input_ids.size() - 1]));
       runtime_check_tensor_ptr = &runtime_check_tensor;
@@ -86,11 +87,11 @@ absl::Status BuildRuntimeBatchedMatMulGpuGraph(
         return absl::InvalidArgumentError("Unexpected runtime check tensor.");
       }
       if (input_ids.size() > 2) {
-        ASSIGN_OR_RETURN(bias, model_builder->GetTensor(input_ids[2]));
+        ABSL_ASSIGN_OR_RETURN(bias, model_builder->GetTensor(input_ids[2]));
         bias_ptr = &bias;
       }
       if (input_ids.size() > 3) {
-        ASSIGN_OR_RETURN(src_exp, model_builder->GetTensor(input_ids[3]));
+        ABSL_ASSIGN_OR_RETURN(src_exp, model_builder->GetTensor(input_ids[3]));
         src_exp_ptr = &src_exp;
       }
     }
@@ -124,10 +125,10 @@ absl::Status BuildRuntimeBatchedMatMulGpuGraph(
     } else {
       const ::ml_drift::GpuModelBuilder::Weights external_weights =
           CreateExternalWeights(weights, weights_desc, weights_shape);
-      ASSIGN_OR_RETURN(auto output,
-                       model_builder->FullyConnectedExternalWeights(
-                           src, external_weights, bias_ptr, src_exp_ptr,
-                           runtime_check, runtime_check_tensor_ptr));
+      ABSL_ASSIGN_OR_RETURN(auto output,
+                            model_builder->FullyConnectedExternalWeights(
+                                src, external_weights, bias_ptr, src_exp_ptr,
+                                runtime_check, runtime_check_tensor_ptr));
       return model_builder->UpdateOutputTensor(output, output_id);
     }
   }
@@ -140,14 +141,15 @@ absl::Status BuildRuntimeBatchedMatMulGpuGraph(
   }
   bmm_attr.transpose_left = attr.transpose_left.value();
   bmm_attr.transpose_right = attr.transpose_right.value();
-  ASSIGN_OR_RETURN(auto left, model_builder->GetTensor(input_ids[0]));
-  ASSIGN_OR_RETURN(auto right, model_builder->GetTensor(input_ids[1]));
-  ASSIGN_OR_RETURN(auto runtime_check_tensor,
-                   model_builder->GetTensor(input_ids[2]));
+  ABSL_ASSIGN_OR_RETURN(auto left, model_builder->GetTensor(input_ids[0]));
+  ABSL_ASSIGN_OR_RETURN(auto right, model_builder->GetTensor(input_ids[1]));
+  ABSL_ASSIGN_OR_RETURN(auto runtime_check_tensor,
+                        model_builder->GetTensor(input_ids[2]));
 
-  ASSIGN_OR_RETURN(auto output, model_builder->BatchedMatMul(
-                                    left, right, bmm_attr, /*src_exp=*/nullptr,
-                                    runtime_check, &runtime_check_tensor));
+  ABSL_ASSIGN_OR_RETURN(
+      auto output,
+      model_builder->BatchedMatMul(left, right, bmm_attr, /*src_exp=*/nullptr,
+                                   runtime_check, &runtime_check_tensor));
   return model_builder->UpdateOutputTensor(output, output_id);
 }
 

@@ -19,6 +19,7 @@
 
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -151,8 +152,8 @@ absl::StatusOr<flexbuffers::Map> ReadAttributeMap(
 
 absl::StatusOr<MoeExpertsAttributes> ReadAttributes(
     const TfLiteNode* tflite_node, const TfLiteRegistration* registration) {
-  ASSIGN_OR_RETURN(const flexbuffers::Map map,
-                   ReadAttributeMap(tflite_node, registration));
+  ABSL_ASSIGN_OR_RETURN(const flexbuffers::Map map,
+                        ReadAttributeMap(tflite_node, registration));
   for (absl::string_view key : {"num_experts", "num_active_experts",
                                 "model_dim", "hidden_dim", "weight_type"}) {
     if (IsMissing(map, key)) {
@@ -258,16 +259,17 @@ absl::StatusOr<MoeExpertsAttributes> ReadAttributesOrInfer(
   const TfLiteTensor *top_indices = nullptr;
   const TfLiteTensor *gate_weight = nullptr;
   const TfLiteTensor *linear_weight = nullptr;
-  RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, kInputSrc, &src));
-  RETURN_IF_ERROR(
+  ABSL_RETURN_IF_ERROR(
+      PreGetInputTensor(context, tflite_node, kInputSrc, &src));
+  ABSL_RETURN_IF_ERROR(
       PreGetInputTensor(context, tflite_node, kInputTopIndices, &top_indices));
-  RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, kInputInt8GateWeight,
-                                    &gate_weight));
+  ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node,
+                                         kInputInt8GateWeight, &gate_weight));
   const int linear_weight_index =
       tflite_node->inputs->size == kFp32InputCount ? kInputFp32LinearWeight
                                                    : kInputInt8LinearWeight;
-  RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, linear_weight_index,
-                                    &linear_weight));
+  ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node,
+                                         linear_weight_index, &linear_weight));
   return InferAttributesFromTensors(tflite_node, src, top_indices, gate_weight,
                                     linear_weight);
 }
@@ -319,8 +321,9 @@ void AddConstInput(::ml_drift::GraphFloat32* graph, ObjectReader* reader,
 absl::Status MoeExpertsOperationParser::IsSupported(
     const TfLiteContext* context, const TfLiteNode* tflite_node,
     const TfLiteRegistration* registration) {
-  ASSIGN_OR_RETURN(const MoeExpertsAttributes attr,
-                   ReadAttributesOrInfer(context, tflite_node, registration));
+  ABSL_ASSIGN_OR_RETURN(
+      const MoeExpertsAttributes attr,
+      ReadAttributesOrInfer(context, tflite_node, registration));
   const int expected_inputs =
       attr.weight_type == MoeExpertsAttributes::WeightType::kFp32
           ? kFp32InputCount
@@ -333,13 +336,16 @@ absl::Status MoeExpertsOperationParser::IsSupported(
     return absl::InvalidArgumentError("moe expects 1 output.");
   }
 
-  RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, kInputSrc));
-  RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, kInputTopWeights));
-  RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, kInputTopIndices));
-  RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+  ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, kInputSrc));
+  ABSL_RETURN_IF_ERROR(
+      PreCheckReadValue(context, tflite_node, kInputTopWeights));
+  ABSL_RETURN_IF_ERROR(
+      PreCheckReadValue(context, tflite_node, kInputTopIndices));
+  ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
 
   const TfLiteTensor* src = nullptr;
-  RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, kInputSrc, &src));
+  ABSL_RETURN_IF_ERROR(
+      PreGetInputTensor(context, tflite_node, kInputSrc, &src));
   const ::ml_drift::BHWC src_shape = ExtractTensorShape(src);
   if (src_shape.b != 1 || src_shape.h != 1 || src_shape.c != attr.model_dim) {
     return absl::UnavailableError(
@@ -349,21 +355,21 @@ absl::Status MoeExpertsOperationParser::IsSupported(
   const int sequence_size = src_shape.w;
 
   const TfLiteTensor* top_weights = nullptr;
-  RETURN_IF_ERROR(
+  ABSL_RETURN_IF_ERROR(
       PreGetInputTensor(context, tflite_node, kInputTopWeights, &top_weights));
-  RETURN_IF_ERROR(ValidateShape(
+  ABSL_RETURN_IF_ERROR(ValidateShape(
       ExtractTensorShape(top_weights),
       ::ml_drift::BHWC(1, 1, sequence_size, attr.num_active_experts),
       "top_weights"));
 
   const TfLiteTensor* top_indices = nullptr;
-  RETURN_IF_ERROR(
+  ABSL_RETURN_IF_ERROR(
       PreGetInputTensor(context, tflite_node, kInputTopIndices, &top_indices));
   if (top_indices->type != kTfLiteInt32) {
     return absl::InvalidArgumentError(
         "moe expects int32 top_indices.");
   }
-  RETURN_IF_ERROR(ValidateShape(
+  ABSL_RETURN_IF_ERROR(ValidateShape(
       ExtractTensorShape(top_indices),
       ::ml_drift::BHWC(1, 1, sequence_size, attr.num_active_experts),
       "top_indices"));
@@ -373,13 +379,13 @@ absl::Status MoeExpertsOperationParser::IsSupported(
     const TfLiteTensor* ff1_weight = nullptr;
     const TfLiteTensor* linear_weight = nullptr;
     const TfLiteTensor* per_expert_scale = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node,
-                                      kInputFp32GateWeight, &gate_weight));
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, kInputFp32Ff1Weight,
-                                      &ff1_weight));
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node,
-                                      kInputFp32LinearWeight, &linear_weight));
-    RETURN_IF_ERROR(PreGetInputTensor(
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node,
+                                           kInputFp32GateWeight, &gate_weight));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node,
+                                           kInputFp32Ff1Weight, &ff1_weight));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(
+        context, tflite_node, kInputFp32LinearWeight, &linear_weight));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(
         context, tflite_node, kInputFp32PerExpertScale, &per_expert_scale));
     if (!tflite::IsConstantTensor(gate_weight) ||
         !tflite::IsConstantTensor(ff1_weight) ||
@@ -388,16 +394,16 @@ absl::Status MoeExpertsOperationParser::IsSupported(
       return absl::InvalidArgumentError(
           "moe v1 expects constant weights and scales.");
     }
-    RETURN_IF_ERROR(ValidateExpertWeight(gate_weight, attr.num_experts,
-                                         attr.hidden_dim, attr.model_dim,
-                                         "ff_gate_weight"));
-    RETURN_IF_ERROR(ValidateExpertWeight(ff1_weight, attr.num_experts,
-                                         attr.hidden_dim, attr.model_dim,
-                                         "ff1_weight"));
-    RETURN_IF_ERROR(ValidateExpertWeight(linear_weight, attr.num_experts,
-                                         attr.model_dim, attr.hidden_dim,
-                                         "linear_weight"));
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(ValidateExpertWeight(gate_weight, attr.num_experts,
+                                              attr.hidden_dim, attr.model_dim,
+                                              "ff_gate_weight"));
+    ABSL_RETURN_IF_ERROR(ValidateExpertWeight(ff1_weight, attr.num_experts,
+                                              attr.hidden_dim, attr.model_dim,
+                                              "ff1_weight"));
+    ABSL_RETURN_IF_ERROR(ValidateExpertWeight(linear_weight, attr.num_experts,
+                                              attr.model_dim, attr.hidden_dim,
+                                              "linear_weight"));
+    ABSL_RETURN_IF_ERROR(
         ValidateScale(per_expert_scale, attr.num_experts, "per_expert_scale"));
   } else {
     const int weight_indices[] = {kInputInt8GateWeight, kInputInt8Ff1Weight,
@@ -406,7 +412,7 @@ absl::Status MoeExpertsOperationParser::IsSupported(
                                         "linear_weight"};
     for (int i = 0; i < 3; ++i) {
       const TfLiteTensor* weight = nullptr;
-      RETURN_IF_ERROR(
+      ABSL_RETURN_IF_ERROR(
           PreGetInputTensor(context, tflite_node, weight_indices[i], &weight));
       if (!tflite::IsConstantTensor(weight)) {
         return absl::InvalidArgumentError(
@@ -416,38 +422,38 @@ absl::Status MoeExpertsOperationParser::IsSupported(
         return absl::InvalidArgumentError(absl::StrCat(
             "moe expects int8 ", weight_names[i], "."));
       }
-      RETURN_IF_ERROR(ValidateInt8ZeroPoint(weight, weight_names[i]));
+      ABSL_RETURN_IF_ERROR(ValidateInt8ZeroPoint(weight, weight_names[i]));
     }
     const TfLiteTensor* gate_weight = nullptr;
     const TfLiteTensor* ff1_weight = nullptr;
     const TfLiteTensor* linear_weight = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node,
-                                      kInputInt8GateWeight, &gate_weight));
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, kInputInt8Ff1Weight,
-                                      &ff1_weight));
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node,
-                                      kInputInt8LinearWeight, &linear_weight));
-    RETURN_IF_ERROR(ValidateExpertWeight(gate_weight, attr.num_experts,
-                                         attr.hidden_dim, attr.model_dim,
-                                         "ff_gate_weight"));
-    RETURN_IF_ERROR(ValidateExpertWeight(ff1_weight, attr.num_experts,
-                                         attr.hidden_dim, attr.model_dim,
-                                         "ff1_weight"));
-    RETURN_IF_ERROR(ValidateExpertWeight(linear_weight, attr.num_experts,
-                                         attr.model_dim, attr.hidden_dim,
-                                         "linear_weight"));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node,
+                                           kInputInt8GateWeight, &gate_weight));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node,
+                                           kInputInt8Ff1Weight, &ff1_weight));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(
+        context, tflite_node, kInputInt8LinearWeight, &linear_weight));
+    ABSL_RETURN_IF_ERROR(ValidateExpertWeight(gate_weight, attr.num_experts,
+                                              attr.hidden_dim, attr.model_dim,
+                                              "ff_gate_weight"));
+    ABSL_RETURN_IF_ERROR(ValidateExpertWeight(ff1_weight, attr.num_experts,
+                                              attr.hidden_dim, attr.model_dim,
+                                              "ff1_weight"));
+    ABSL_RETURN_IF_ERROR(ValidateExpertWeight(linear_weight, attr.num_experts,
+                                              attr.model_dim, attr.hidden_dim,
+                                              "linear_weight"));
 
     const TfLiteTensor* gate_scale = nullptr;
     const TfLiteTensor* ff1_scale = nullptr;
     const TfLiteTensor* linear_scale = nullptr;
     const TfLiteTensor* per_expert_scale = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, kInputInt8GateScale,
-                                      &gate_scale));
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, kInputInt8Ff1Scale,
-                                      &ff1_scale));
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node,
-                                      kInputInt8LinearScale, &linear_scale));
-    RETURN_IF_ERROR(PreGetInputTensor(
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node,
+                                           kInputInt8GateScale, &gate_scale));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node,
+                                           kInputInt8Ff1Scale, &ff1_scale));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(
+        context, tflite_node, kInputInt8LinearScale, &linear_scale));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(
         context, tflite_node, kInputInt8PerExpertScale, &per_expert_scale));
     if (!tflite::IsConstantTensor(gate_scale) ||
         !tflite::IsConstantTensor(ff1_scale) ||
@@ -456,13 +462,13 @@ absl::Status MoeExpertsOperationParser::IsSupported(
       return absl::InvalidArgumentError(
           "moe v1 expects constant int8 scales.");
     }
-    RETURN_IF_ERROR(ValidateExpertScale(gate_scale, attr.num_experts,
-                                        attr.hidden_dim, "ff_gate_scale"));
-    RETURN_IF_ERROR(ValidateExpertScale(ff1_scale, attr.num_experts,
-                                        attr.hidden_dim, "ff1_scale"));
-    RETURN_IF_ERROR(ValidateExpertScale(linear_scale, attr.num_experts,
-                                        attr.model_dim, "linear_scale"));
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(ValidateExpertScale(gate_scale, attr.num_experts,
+                                             attr.hidden_dim, "ff_gate_scale"));
+    ABSL_RETURN_IF_ERROR(ValidateExpertScale(ff1_scale, attr.num_experts,
+                                             attr.hidden_dim, "ff1_scale"));
+    ABSL_RETURN_IF_ERROR(ValidateExpertScale(linear_scale, attr.num_experts,
+                                             attr.model_dim, "linear_scale"));
+    ABSL_RETURN_IF_ERROR(
         ValidateScale(per_expert_scale, attr.num_experts, "per_expert_scale"));
   }
 

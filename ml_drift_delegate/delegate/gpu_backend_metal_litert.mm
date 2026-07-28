@@ -23,6 +23,7 @@
 
 #include "absl/log/die_if_null.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -137,8 +138,8 @@ absl::StatusOr<std::unique_ptr<GpuInferenceContext>> GpuBackendMetalLitert::Crea
     std::vector<uint8_t>* serialized_model, bool may_share_memory_manager) {
   auto ctx = std::make_unique<GpuInferenceContextMetalLitert>(
       this, may_share_memory_manager ? &memory_manager() : nullptr);
-  RETURN_IF_ERROR(ctx->metal_ctx().InitFromGpuModel(create_info, &gpu_model,
-                                                    metal_device()->device(), serialized_model));
+  ABSL_RETURN_IF_ERROR(ctx->metal_ctx().InitFromGpuModel(
+      create_info, &gpu_model, metal_device()->device(), serialized_model));
   if (@available(macOS 15.0, iOS 18.0, *)) {
     PopulateResidencySet(create_info, ctx->metal_ctx());
   }
@@ -148,8 +149,8 @@ absl::StatusOr<std::unique_ptr<GpuInferenceContext>> GpuBackendMetalLitert::Crea
 absl::StatusOr<std::unique_ptr<GpuInferenceContext>> GpuBackendMetalLitert::RestoreInferenceContext(
     const ::ml_drift::CreateGpuModelInfo& create_info, absl::Span<const uint8_t> serialized_model) {
   auto ctx = std::make_unique<GpuInferenceContextMetalLitert>(this, &memory_manager());
-  RETURN_IF_ERROR(ctx->metal_ctx().RestoreDeserialized(serialized_model, metal_device()->device(),
-                                                       &create_info));
+  ABSL_RETURN_IF_ERROR(ctx->metal_ctx().RestoreDeserialized(
+      serialized_model, metal_device()->device(), &create_info));
   if (@available(macOS 15.0, iOS 18.0, *)) {
     PopulateResidencySet(create_info, ctx->metal_ctx());
   }
@@ -256,7 +257,7 @@ absl::Status GpuInferenceContextMetalLitert::PostConvert(bool input) {
   // with a new one.
   if (!input) {
     if (post_dispatch_event_ == nullptr) {
-      RETURN_IF_ERROR(metal_backend()->WaitForCompletion());
+      ABSL_RETURN_IF_ERROR(metal_backend()->WaitForCompletion());
     } else {
       if (metal_backend()->command_buffer() == nullptr) {
         metal_backend()->set_command_buffer([metal_backend()->command_queue() commandBuffer]);

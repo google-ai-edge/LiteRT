@@ -14,6 +14,7 @@
 
 #include "litert/compiler/plugin/algo.h"
 
+#include <cstddef>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -192,6 +193,61 @@ LiteRtOp DisjointSets::GetBucket(LiteRtOp op) {
   return parent;
 }
 
+// Performs a topological sort on the given subgraph using Kahn's algorithm.
+bool TopologicalSort(LiteRtSubgraphT& subgraph) {
+  absl::flat_hash_map<const LiteRtOpT*, int> in_degree;
+  absl::flat_hash_set<const LiteRtOpT*> subgraph_ops;
+  for (auto* op : subgraph.Ops()) {
+    subgraph_ops.insert(op);
+  }
+
+  for (auto* op : subgraph.Ops()) {
+    int deg = 0;
+    for (auto* input : op->Inputs()) {
+      if (input && input->DefiningOp()) {
+        if (subgraph_ops.contains(input->DefiningOp())) {
+          deg++;
+        }
+      }
+    }
+    in_degree[op] = deg;
+  }
+
+  std::vector<LiteRtOp> ready;
+  for (auto* op : subgraph.Ops()) {
+    if (in_degree[op] == 0) {
+      ready.push_back(op);
+    }
+  }
+
+  std::vector<LiteRtOp> sorted;
+  sorted.reserve(subgraph.Ops().size());
+
+  size_t head = 0;
+  while (head < ready.size()) {
+    auto* op = ready[head++];
+    sorted.push_back(op);
+
+    for (auto* output : op->Outputs()) {
+      for (auto* user : output->Users()) {
+        if (subgraph_ops.contains(user)) {
+          in_degree[user]--;
+          if (in_degree[user] == 0) {
+            ready.push_back(user);
+          }
+        }
+      }
+    }
+  }
+
+  if (sorted.size() != subgraph.Ops().size()) {
+    return false;
+  }
+
+  subgraph.ReorderOps(sorted);
+  return true;
+}
+
 //
 // slice partitions out of a subgraph (into new subgraphs)
 //===----------------------------------------------------------------------===//
@@ -249,8 +305,8 @@ LiteRtOp GraphSlicer::SlicePartitionFromGraph(
     Drop(*op);
   }
 
-  // Reuse the storage from the last op in partition to maintain
-  // topological order.
+  // Reuse the storage from the last op in partition.
+  // The actual topological order will be fixed at the end.
   slicer.dispatch_op_ = partition.back();
 
   ABSL_DCHECK(slicer.dispatch_op_->Inputs().empty());
@@ -259,6 +315,11 @@ LiteRtOp GraphSlicer::SlicePartitionFromGraph(
   slicer.RerouteTensorsThroughCustomOp(root);
 
   DCE(root);
+
+  if (!TopologicalSort(root)) {
+    LITERT_LOG(LITERT_WARNING,
+               "Failed to topologically sort subgraph after slicing!");
+  }
 
   return slicer.dispatch_op_;
 }

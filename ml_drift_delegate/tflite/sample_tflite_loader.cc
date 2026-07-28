@@ -29,6 +29,7 @@
 #include "absl/log/log.h"  // from @com_google_absl
 #include "absl/memory/memory.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -57,14 +58,14 @@ absl::StatusOr<size_t> GetFileSize(std::string file_path) {
 absl::StatusOr<std::unique_ptr<SampleTfliteLoader>>
 SampleTfliteLoader::CreateFromFile(const std::string& tflite_model_path) {
   auto loader = absl::WrapUnique(new SampleTfliteLoader());
-  RETURN_IF_ERROR(loader->LoadTfliteModelFile(tflite_model_path));
+  ABSL_RETURN_IF_ERROR(loader->LoadTfliteModelFile(tflite_model_path));
   return loader;
 }
 
 absl::StatusOr<std::unique_ptr<SampleTfliteLoader>>
 SampleTfliteLoader::CreateFromString(absl::string_view tflite_model_string) {
   auto loader = absl::WrapUnique(new SampleTfliteLoader());
-  RETURN_IF_ERROR(loader->LoadTfliteModelString(tflite_model_string));
+  ABSL_RETURN_IF_ERROR(loader->LoadTfliteModelString(tflite_model_string));
   return loader;
 }
 
@@ -84,7 +85,7 @@ SampleTfliteLoader::~SampleTfliteLoader() {
 absl::Status SampleTfliteLoader::LoadTfliteModelFile(
     const std::string& tflite_model_path) {
   fd_ = open(tflite_model_path.c_str(), O_RDONLY);
-  ASSIGN_OR_RETURN(buffer_size_, GetFileSize(tflite_model_path));
+  ABSL_ASSIGN_OR_RETURN(buffer_size_, GetFileSize(tflite_model_path));
   if (fd_ == -1) {
     return absl::InternalError("Failed to open file, check permissions.");
   }
@@ -138,8 +139,8 @@ SampleTfliteLoader::GetData(const std::string& weights1_name,
                             const std::string& weights2_name, int count1,
                             int count2) {
   absl::Span<const ::ml_drift::half> data1, data2;
-  ASSIGN_OR_RETURN(data1, GetTFLiteWeightsInternal(weights1_name, count1));
-  ASSIGN_OR_RETURN(data2, GetTFLiteWeightsInternal(weights2_name, count2));
+  ABSL_ASSIGN_OR_RETURN(data1, GetTFLiteWeightsInternal(weights1_name, count1));
+  ABSL_ASSIGN_OR_RETURN(data2, GetTFLiteWeightsInternal(weights2_name, count2));
 
   return std::make_pair(data1, data2);
 }

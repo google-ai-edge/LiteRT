@@ -29,6 +29,7 @@
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/status.h"  // from @ml_drift
@@ -47,6 +48,7 @@
 #include "ml_drift_delegate/delegate/delegate_kernel_litert.h"
 #include "ml_drift_delegate/delegate/delegate_options.h"
 #include "ml_drift_delegate/delegate/delegate_types.h"
+#include "ml_drift_delegate/delegate/delegate_utils.h"
 #include "ml_drift_delegate/delegate/gpu_backend_opengl.h"
 #include "ml_drift_delegate/delegate/precision.h"
 #include "ml_drift_delegate/delegate/tflite_profile.h"
@@ -115,7 +117,7 @@ absl::StatusOr<DelegateEnvironment*> GetOrCreateDelegateEnvironment(
 
     // Initialize egl_env using NewEglEnvironment. If there is a current EGL
     // context on this thread, NewEglEnvironment will adopt it.
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         ml_drift::gl::EglEnvironment::NewEglEnvironment(&resources->egl_env));
 
     // Verify that the acquired EGL context and display match the ones requested
@@ -168,7 +170,7 @@ absl::StatusOr<DelegateEnvironment*> GetOrCreateDelegateEnvironment(
 
   // Handle EGL environment.
   {
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         ml_drift::gl::EglEnvironment::NewEglEnvironment(&resources->egl_env));
     resources->egl_context = reinterpret_cast<LiteRtEglContext>(
         resources->egl_env->context().context());
@@ -245,29 +247,31 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   return kTfLiteOk;
 }
 
+#define CALL_DELEGATE_KERNEL(function, ...)                               \
+  if (absl::Status s = delegate_kernel->function(__VA_ARGS__); !s.ok()) { \
+    ABSL_LOG(ERROR) << s;                                                 \
+    return kTfLiteError;                                                  \
+  }
+
 TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
   bool is_profiling = ml_drift::IsTfLiteProfilerActive(context);
 
   auto* delegate_kernel =
       reinterpret_cast<litert::ml_drift::DelegateKernelLiteRt*>(
           node->user_data);
-  if (delegate_kernel->HasQuantizedTensors()) {
-    if (absl::Status s = delegate_kernel->DequantizeInputs(context); !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-  }
 
   uint64_t upload_start;
   if (is_profiling) {
     upload_start = tflite::profiling::time::NowMicros();
   }
 
-  if (absl::Status s = delegate_kernel->UploadOrBindTensorBuffer(context);
-      !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
+  if (delegate_kernel->HasQuantizedTensors()) {
+    CALL_DELEGATE_KERNEL(DequantizeInputs, context);
   }
+  CALL_DELEGATE_KERNEL(BindExternalTensorBuffers, context);
+  CALL_DELEGATE_KERNEL(UploadIntermediateCpuTensorsToGpuMemory, context);
+  CALL_DELEGATE_KERNEL(HandleInputEvents, context);
+  CALL_DELEGATE_KERNEL(ConvertNonExternalInputTensorsToGpuMemory, context);
 
   if (is_profiling) {
     auto status = delegate_kernel->backend()->WaitForCompletion();
@@ -280,10 +284,7 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
                                      dispatch_start - upload_start);
   }
 
-  if (absl::Status s = delegate_kernel->Dispatch(context); !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
-  }
+  CALL_DELEGATE_KERNEL(Dispatch, context);
 
   uint64_t download_start;
   if (is_profiling) {
@@ -295,13 +296,10 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
     download_start = tflite::profiling::time::NowMicros();
   }
 
-  // Download internal output GPU memory to output TensorBufferGPU memory.
-  if (absl::Status s =
-          delegate_kernel->DownloadGpuMemoryToTensorBufferGpuMemory(context);
-      !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
-  }
+  CALL_DELEGATE_KERNEL(ConvertGpuMemoryToNonExternalOutputTensors, context);
+  bool is_async_execution_mode = litert::ml_drift::IsAsyncExecutionMode(
+      context, delegate_kernel->runtime_context());
+  CALL_DELEGATE_KERNEL(HandleOutputEvents, context, is_async_execution_mode);
 
   if (delegate_kernel->IsBenchmarkMode()) {
     // In benchmark mode, call WaitForCompletion() to wait for all the enqueued
@@ -313,10 +311,9 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
     }
   }
 
-  if (absl::Status s = delegate_kernel->DownloadGpuMemoryToCpuMemory(context);
-      !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
+  CALL_DELEGATE_KERNEL(DownloadGpuMemoryToIntermediateCpuTensors, context);
+  if (delegate_kernel->HasQuantizedTensors()) {
+    CALL_DELEGATE_KERNEL(QuantizeOutputs, context);
   }
 
   if (is_profiling) {
@@ -326,12 +323,6 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
                                      download_end - download_start);
   }
 
-  if (delegate_kernel->HasQuantizedTensors()) {
-    if (absl::Status s = delegate_kernel->QuantizeOutputs(context); !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-  }
   return kTfLiteOk;
 }
 

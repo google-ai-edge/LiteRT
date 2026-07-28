@@ -71,6 +71,7 @@ option(LITERT_AUTO_BUILD_TFLITE "Automatically build TFLite if not found" ON)
 option(LITERT_ENABLE_GPU "Enable GPU acceleration support" ON)
 option(LITERT_ENABLE_NPU "Enable NPU acceleration support" ON)
 option(LITERT_DISABLE_KLEIDIAI "Disable KleidiAI delegate when bundling host TFLite (default ON for Linux/macOS x86_64 hosts)" ${_litert_disable_kleidiai_default})
+option(LITERT_BUILD_SUPPORT_LIBS "Enable build for the support libraries" OFF)
 
 set(LITERT_HOST_C_COMPILER "" CACHE FILEPATH "Host C compiler used for helper host-side tools (e.g. FlatBuffers flatc)")
 set(LITERT_HOST_CXX_COMPILER "" CACHE FILEPATH "Host C++ compiler used for helper host-side tools (e.g. FlatBuffers flatc)")
@@ -260,3 +261,9 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../tensor/CMakeLists.txt")
   add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../tensor"
                    "${CMAKE_CURRENT_BINARY_DIR}/tensor")
 endif()
+
+if(LITERT_BUILD_SUPPORT)
+  add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../support"
+                   "${CMAKE_CURRENT_BINARY_DIR}/support")
+endif()
+

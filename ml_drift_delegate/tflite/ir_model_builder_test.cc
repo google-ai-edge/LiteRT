@@ -121,10 +121,13 @@ class IrModelBuilderTest : public ::testing::Test {
                         bool add_bias = false) {
     model_ = std::make_unique<SingleOpInterpreterBuilder>(kTfLiteBuiltinConv2d);
     model_->AddInput(kTfLiteFloat32, {1, 2, 3, 4});
-    model_->AddConstInput(weights_type, {8, 1, 1, 4}, weights_data);
+    // AddConstInput stores a pointer to the data rather than copying it, so the
+    // buffers must outlive the interpreter. Hold them in fixture members.
+    weights_data_ = weights_data;
+    model_->AddConstInput(weights_type, {8, 1, 1, 4}, weights_data_);
     if (add_bias) {
-      model_->AddConstInput(kTfLiteFloat32, {8},
-                            std::vector<uint8_t>(8 * sizeof(float), 0));
+      bias_data_.assign(8 * sizeof(float), 0);
+      model_->AddConstInput(kTfLiteFloat32, {8}, bias_data_);
     }
     model_->AddOutput(kTfLiteFloat32, {1, 2, 3, 8});
 
@@ -148,10 +151,12 @@ class IrModelBuilderTest : public ::testing::Test {
     model_ = std::make_unique<SingleOpInterpreterBuilder>(
         kTfLiteBuiltinFullyConnected);
     model_->AddInput(kTfLiteFloat32, {1, 1, 1, 4});
-    model_->AddConstInput(kTfLiteFloat32, {8, 4},
-                          std::vector<uint8_t>(8 * 4 * sizeof(float), 0));
-    model_->AddConstInput(kTfLiteFloat32, {8},
-                          std::vector<uint8_t>(8 * sizeof(float), 0));
+    // AddConstInput stores a pointer to the data rather than copying it, so the
+    // buffers must outlive the interpreter. Hold them in fixture members.
+    weights_data_.assign(8 * 4 * sizeof(float), 0);
+    model_->AddConstInput(kTfLiteFloat32, {8, 4}, weights_data_);
+    bias_data_.assign(8 * sizeof(float), 0);
+    model_->AddConstInput(kTfLiteFloat32, {8}, bias_data_);
     model_->AddOutput(kTfLiteFloat32, {1, 8});
 
     auto* params = reinterpret_cast<TfLiteFullyConnectedParams*>(
@@ -214,6 +219,11 @@ class IrModelBuilderTest : public ::testing::Test {
   }
 
   std::unique_ptr<SingleOpInterpreterBuilder> model_;
+  // Backing storage for const-tensor data. The interpreter's read-only tensors
+  // reference these buffers by pointer, so they must outlive interpreter_.
+  // Declared before interpreter_ so they are destroyed after it.
+  std::vector<uint8_t> weights_data_;
+  std::vector<uint8_t> bias_data_;
   std::unique_ptr<::tflite::Interpreter> interpreter_;
   TestDelegateData test_data_;
   TfLiteDelegate delegate_;

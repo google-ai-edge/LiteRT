@@ -67,11 +67,40 @@ cc_test(
 )
 
 cc_library(
+    name = "audio_preprocessor_utils",
+    srcs = ["audio_preprocessor_utils.cc"],
+    hdrs = ["audio_preprocessor_utils.h"],
+    deps = [
+        ":audio_preprocessor",
+        ":mel_filterbank",
+        "//support/util:litert_status_util",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "audio_preprocessor_utils_test",
+    srcs = ["audio_preprocessor_utils_test.cc"],
+    deps = [
+        ":audio_preprocessor",
+        ":audio_preprocessor_utils",
+        "//support/util:test_utils",
+        "@com_google_absl//absl/status",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "audio_preprocessor_miniaudio",
     srcs = ["audio_preprocessor_miniaudio.cc"],
     hdrs = ["audio_preprocessor_miniaudio.h"],
     deps = [
         ":audio_preprocessor",
+        ":audio_preprocessor_utils",
         ":mel_filterbank",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/log:absl_check",

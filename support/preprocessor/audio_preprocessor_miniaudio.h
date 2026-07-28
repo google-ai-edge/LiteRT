@@ -128,15 +128,6 @@ class AudioPreprocessorMiniAudio : public AudioPreprocessor {
   absl::Status PcmFramesToSpectrogram(absl::Span<const float> pcm_frames,
                                       std::vector<float>& spectrograms);
 
-  absl::Status ToLogMelSpectrogram(const std::vector<float>& spectrograms,
-                                   std::vector<float>& log_mel_spectrograms);
-
-  bool GetNextWindowOfSamples(const std::vector<float>& pcm_frames,
-                              int& input_start);
-
-  absl::StatusOr<std::vector<std::vector<float>>> GetFramedSegments(
-      const std::vector<float>& pcm_frames);
-
   AudioPreprocessorConfig config_;
   std::unique_ptr<MelFilterbank> mel_filterbank_;
   std::vector<float> input_queue_;

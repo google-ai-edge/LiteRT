@@ -14,15 +14,11 @@
 
 #include "support/preprocessor/audio_preprocessor_miniaudio.h"
 
-#include <algorithm>
-#include <array>
-#include <cmath>
 #include <cstdlib>
 #include <memory>
 #include <utility>
 #include <vector>
 
-#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/memory/memory.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
@@ -36,9 +32,9 @@
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "support/preprocessor/audio_preprocessor.h"
+#include "support/preprocessor/audio_preprocessor_utils.h"
 #include "support/preprocessor/mel_filterbank.h"
 #include "support/util/io_types.h"
-#include "support/util/status_macros.h"  // IWYU pragma: keep
 #include "miniaudio.h"  // from @miniaudio
 // copybara:uncomment_begin(internal)
 // #include "third_party/kissfft/kiss_fft.h"
@@ -48,55 +44,6 @@
 #include "kiss_fftr.h"  // from @kissfft
 
 namespace litert::support {
-
-namespace {
-// Pads or truncates the frame vector in-place to the given fft_length.
-// Args:
-//   - fft_length: The fft length to be padded or truncated to.
-//   - padding_type: The padding mode to be used for padding.
-//   - frame: The frame vector to be padded or truncated in-place.
-// Returns:
-//   A status object indicating whether the padding or truncation was
-//   successful.
-absl::Status PadOrTruncateForFft(
-    int fft_length, AudioPreprocessorConfig::FftPaddingType padding_type,
-    std::vector<float>& frame) {
-  int input_dim = frame.size();
-  if (input_dim == fft_length) {
-    return absl::OkStatus();
-  }
-
-  if (input_dim < fft_length) {
-    int pad_amount = fft_length - input_dim;
-    if (padding_type == AudioPreprocessorConfig::FftPaddingType::kCenter) {
-      int pad_left = pad_amount / 2;
-      int pad_right = pad_amount - pad_left;
-      frame.insert(frame.begin(), pad_left, 0.0f);
-      frame.insert(frame.end(), pad_right, 0.0f);
-    } else if (padding_type ==
-               AudioPreprocessorConfig::FftPaddingType::kRight) {
-      frame.resize(fft_length, 0.0f);
-    } else {
-      return absl::InvalidArgumentError(
-          absl::StrCat("Unsupported padding: ", padding_type));
-    }
-  } else {
-    int trim_left = 0;
-    if (padding_type == AudioPreprocessorConfig::FftPaddingType::kCenter) {
-      trim_left = (input_dim - fft_length) / 2;
-    } else if (padding_type ==
-               AudioPreprocessorConfig::FftPaddingType::kRight) {
-      trim_left = 0;
-    } else {
-      return absl::InvalidArgumentError(
-          absl::StrCat("Unsupported padding: ", padding_type));
-    }
-    frame.erase(frame.begin(), frame.begin() + trim_left);
-    frame.resize(fft_length);
-  }
-  return absl::OkStatus();
-}
-}  // namespace
 
 absl::Status AudioPreprocessorMiniAudio::DecodeAudio(
     absl::string_view audio_bytes, int num_channels, int sample_rate_hz,
@@ -142,120 +89,12 @@ absl::Status AudioPreprocessorMiniAudio::DecodeAudio(
   return absl::OkStatus();
 }
 
-std::vector<float> GetHanningWindow(int window_length,
-                                    bool use_periodic_hanning,
-                                    bool non_zero_hanning) {
-  if (window_length <= 0) {
-    return {};
-  }
-  const int n = (use_periodic_hanning && (window_length % 2 == 0))
-                    ? window_length
-                    : window_length - 1;
-  float arg = M_PI * 2.0 / n;
-  std::vector<float> hanning_window(window_length, 0);
-  const float shift = non_zero_hanning ? 0.5 : 0.0;
-  for (int i = 0; i < window_length; ++i) {
-    hanning_window[i] = 0.5 - (0.5 * cos(arg * (i + shift)));
-  }
-  return hanning_window;
-}
-
-bool AudioPreprocessorMiniAudio::GetNextWindowOfSamples(
-    const std::vector<float>& pcm_frames, int& input_start) {
-  auto input_it = pcm_frames.begin() + input_start;
-  int input_remaining = pcm_frames.end() - input_it;
-  if (samples_to_next_step_ > input_remaining) {
-    // Copy in as many samples are left and return false, no full window.
-    input_queue_.insert(input_queue_.end(), input_it, pcm_frames.end());
-    input_start += input_remaining;  // Increases it to input.size().
-    samples_to_next_step_ -= input_remaining;
-    return false;  // Not enough for a full window.
-  } else {
-    // Copy just enough into queue to make a new window.
-    if (samples_to_next_step_ < config_.GetFrameLength()) {
-      input_queue_.erase(
-          input_queue_.begin(),
-          input_queue_.begin() + input_queue_.size() -
-              (config_.GetFrameLength() - samples_to_next_step_));
-      input_queue_.insert(input_queue_.end(), input_it,
-                          input_it + samples_to_next_step_);
-    } else {
-      input_queue_.assign(
-          input_it + samples_to_next_step_ - config_.GetFrameLength(),
-          input_it + samples_to_next_step_);
-    }
-    input_start += samples_to_next_step_;
-    samples_to_next_step_ = config_.GetHopLength();  // Be ready for next step.
-    return true;  // Yes, input_queue_ now contains exactly a window-full.
-  }
-}
-
-absl::StatusOr<std::vector<std::vector<float>>>
-AudioPreprocessorMiniAudio::GetFramedSegments(
-    const std::vector<float>& pcm_frames) {
-  std::vector<std::vector<float>> windowed_signals;
-  int input_start = 0;
-  while (GetNextWindowOfSamples(pcm_frames, input_start)) {
-    if (input_queue_.size() != config_.GetFrameLength()) {
-      return absl::InternalError(
-          absl::StrCat("Input queue size is not equal to frame length: ",
-                       input_queue_.size(), " vs ", config_.GetFrameLength()));
-    }
-    windowed_signals.push_back(input_queue_);
-  }
-
-  if (!config_.BufferLastFrame() && !input_queue_.empty() &&
-      input_queue_.size() < config_.GetFrameLength()) {
-    input_queue_.resize(config_.GetFrameLength(), 0.0f);
-    windowed_signals.push_back(input_queue_);
-    input_queue_.clear();
-    if (config_.GetSemicausalPadding()) {
-      samples_to_next_step_ = config_.GetFrameLength() - config_.GetHopLength();
-      input_queue_.resize(config_.GetHopLength(), 0.0f);
-    } else {
-      samples_to_next_step_ = config_.GetFrameLength();
-    }
-  }
-  return windowed_signals;
-}
-
 absl::Status AudioPreprocessorMiniAudio::PcmFramesToSpectrogram(
     absl::Span<const float> pcm_frames, std::vector<float>& spectrograms) {
-  const float input_scale = config_.GetInputScale();
-  const float pre_emphasis_factor = config_.GetPreEmphasisFactor();
-  std::vector<float> scaled_pcm_frames(pcm_frames.size(), 0);
-  absl::c_transform(pcm_frames, scaled_pcm_frames.begin(),
-                    [&input_scale](float x) { return x * input_scale; });
-
-  ASSIGN_OR_RETURN(auto raw_windowed_signals,
-                   GetFramedSegments(scaled_pcm_frames));
-
-  std::vector<std::vector<float>> windowed_signals;
-  windowed_signals.reserve(raw_windowed_signals.size());
-  for (int i = 0; i < raw_windowed_signals.size(); ++i) {
-    const auto& input_frame = raw_windowed_signals[i];
-    windowed_signals.push_back(std::vector<float>(config_.GetFrameLength(), 0));
-    std::vector<float>& current_frame = windowed_signals.back();
-    current_frame[0] = input_frame[0] * (1 - pre_emphasis_factor);
-    for (int j = 1; j < config_.GetFrameLength(); ++j) {
-      current_frame[j] =
-          input_frame[j] - pre_emphasis_factor * input_frame[j - 1];
-    }
-  }
-  const std::vector<float> hanning_window =
-      GetHanningWindow(config_.GetFrameLength(), config_.GetPeriodicHanning(),
-                       config_.GetNonZeroHanning());
-  for (int i = 0; i < windowed_signals.size(); ++i) {
-    std::vector<float>& current_frame = windowed_signals[i];
-    for (int j = 0; j < current_frame.size(); ++j) {
-      current_frame[j] *= hanning_window[j];
-    }
-    auto status = PadOrTruncateForFft(
-        config_.GetFftLength(), config_.GetFftPaddingType(), current_frame);
-    if (!status.ok()) {
-      return status;
-    }
-  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto windowed_signals,
+      GetWindowedSignalsForFft(config_, pcm_frames, input_queue_,
+                               samples_to_next_step_));
 
   kiss_fftr_cfg fft_alloc = kiss_fftr_alloc(config_.GetFftLength(),
                                             /*inverse_fft=*/0,
@@ -277,45 +116,13 @@ absl::Status AudioPreprocessorMiniAudio::PcmFramesToSpectrogram(
   return absl::OkStatus();
 }
 
-absl::Status AudioPreprocessorMiniAudio::ToLogMelSpectrogram(
-    const std::vector<float>& spectrograms,
-    std::vector<float>& log_mel_spectrograms) {
-  std::vector<double> spectrograms_double;
-  spectrograms_double.assign(spectrograms.begin(), spectrograms.end());
-  int fft_bins = config_.GetFftBins();
-  const int frames = spectrograms.size() / fft_bins;
-  log_mel_spectrograms.reserve(frames * config_.GetNumMelBins());
-  std::vector<double> tmp_log_mel(config_.GetNumMelBins(), 0);
-  for (int i = 0; i < frames; ++i) {
-    RETURN_IF_ERROR(mel_filterbank_->ToMelSpectrum(
-        absl::MakeSpan(spectrograms_double.data() + i * fft_bins, fft_bins),
-        &tmp_log_mel));
-    for (int j = 0; j < tmp_log_mel.size(); ++j) {
-      float log_mel;
-      if (config_.GetAddFloorToMelBeforeLog()) {
-        log_mel = std::log(static_cast<float>(tmp_log_mel[j]) +
-                           config_.GetMelFloor());
-      } else {
-        log_mel = std::max(std::log(static_cast<float>(tmp_log_mel[j])),
-                           config_.GetMelFloor());
-      }
-      if (config_.GetNormalizeMel()) {
-        log_mel = (log_mel - AudioPreprocessorConfig::kUsmMelMean[j]) /
-                  AudioPreprocessorConfig::kUsmMelStdDev[j];
-      }
-      log_mel_spectrograms.push_back(log_mel);
-    }
-  }
-  return absl::OkStatus();
-}
-
 absl::StatusOr<std::unique_ptr<AudioPreprocessorMiniAudio>>
 AudioPreprocessorMiniAudio::Create(const AudioPreprocessorConfig& config) {
   if (config.GetFrameLength() <= 0) {
     return absl::InvalidArgumentError("Frame length must be positive.");
   }
   auto mel_filterbank = std::make_unique<MelFilterbank>();
-  RETURN_IF_ERROR(mel_filterbank->Initialize(
+  LITERT_RETURN_IF_ERROR(mel_filterbank->Initialize(
       config.GetFftBins(), config.GetSampleRateHz(), config.GetNumMelBins(),
       config.GetMelLowHz(), config.GetMelHighHz()));
   return absl::WrapUnique(
@@ -330,7 +137,7 @@ AudioPreprocessorMiniAudio::Create(const AudioPreprocessorConfig& config) {
 absl::StatusOr<InputAudio> AudioPreprocessorMiniAudio::Preprocess(
     const InputAudio& input_audio) {
   if (input_audio.IsTensorBuffer()) {
-    ASSIGN_OR_RETURN(auto processed_audio_tensor,
+    LITERT_ASSIGN_OR_RETURN(auto processed_audio_tensor,
                      input_audio.GetPreprocessedAudioTensor());
     LITERT_ASSIGN_OR_RETURN(auto processed_audio_tensor_with_reference,
                             processed_audio_tensor->Duplicate());
@@ -341,19 +148,22 @@ absl::StatusOr<InputAudio> AudioPreprocessorMiniAudio::Preprocess(
   std::vector<float> decoded_pcm_frames;
   absl::Span<const float> pcm_frames;
   if (input_audio.IsPcmFrames()) {
-    ASSIGN_OR_RETURN(pcm_frames, input_audio.GetPcmFrames());
+    LITERT_ASSIGN_OR_RETURN(pcm_frames, input_audio.GetPcmFrames());
   } else {
-    ASSIGN_OR_RETURN(auto raw_audio_bytes, input_audio.GetRawAudioBytes());
-    RETURN_IF_ERROR(DecodeAudio(raw_audio_bytes, config_.GetNumChannels(),
-                                config_.GetSampleRateHz(), decoded_pcm_frames));
+    LITERT_ASSIGN_OR_RETURN(auto raw_audio_bytes,
+                            input_audio.GetRawAudioBytes());
+    LITERT_RETURN_IF_ERROR(
+        DecodeAudio(raw_audio_bytes, config_.GetNumChannels(),
+                    config_.GetSampleRateHz(), decoded_pcm_frames));
     pcm_frames = decoded_pcm_frames;
   }
   if (!config_.SkipMelSpectrogramExtraction()) {
     std::vector<float> spectrograms;
-    RETURN_IF_ERROR(PcmFramesToSpectrogram(pcm_frames, spectrograms));
+    LITERT_RETURN_IF_ERROR(PcmFramesToSpectrogram(pcm_frames, spectrograms));
 
     std::vector<float> log_mel_spectrograms;
-    RETURN_IF_ERROR(ToLogMelSpectrogram(spectrograms, log_mel_spectrograms));
+    LITERT_RETURN_IF_ERROR(ToLogMelSpectrogram(
+        config_, *mel_filterbank_, spectrograms, log_mel_spectrograms));
 
     const int num_frames =
         log_mel_spectrograms.size() / config_.GetNumMelBins();
@@ -369,7 +179,9 @@ absl::StatusOr<InputAudio> AudioPreprocessorMiniAudio::Preprocess(
     return InputAudio(std::move(mel_spectrograms_tensor));
   } else {
     std::vector<float> pcm_vector(pcm_frames.begin(), pcm_frames.end());
-    ASSIGN_OR_RETURN(auto windowed_signals, GetFramedSegments(pcm_vector));
+    LITERT_ASSIGN_OR_RETURN(auto windowed_signals,
+                            GetFramedSegments(config_, pcm_vector, input_queue_,
+                                              samples_to_next_step_));
 
     const int num_frames = windowed_signals.size();
     if (num_frames == 0) {

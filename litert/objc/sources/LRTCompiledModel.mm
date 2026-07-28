@@ -80,11 +80,58 @@ NS_ASSUME_NONNULL_BEGIN
 
   if (!createResult.HasValue()) {
     if (error) {
-      NSDictionary *userInfo =
-          @{NSLocalizedDescriptionKey : @(createResult.Error().Message().c_str())};
-      *error = [NSError errorWithDomain:LRTErrorDomain
-                                   code:static_cast<NSInteger>(createResult.Error().Status())
-                               userInfo:userInfo];
+      *error = [NSError
+          errorWithDomain:LRTErrorDomain
+                     code:static_cast<NSInteger>(createResult.Error().Status())
+                 userInfo:@{NSLocalizedDescriptionKey : @(createResult.Error().Message().c_str())}];
+    }
+    return nil;
+  }
+
+  auto cppPtr = std::make_unique<litert::CompiledModel>(std::move(createResult.Value()));
+  return [[LRTCompiledModel alloc] initInternalWithCppCompiledModel:std::move(cppPtr)
+                                                        environment:environment
+                                                            options:options];
+}
+
++ (nullable instancetype)compiledModelWithModelData:(NSData *)modelData
+                                        environment:(LRTEnvironment *)environment
+                                            options:(nullable LRTOptions *)options
+                                              error:(NSError **)error {
+  if (!modelData || modelData.length == 0) {
+    if (error) {
+      *error =
+          [NSError errorWithDomain:LRTErrorDomain
+                              code:LRTErrorCodeInvalidArgument
+                          userInfo:@{NSLocalizedDescriptionKey : @"modelData cannot be empty"}];
+    }
+    return nil;
+  }
+
+  if (!environment || ![environment cppEnvironment]) {
+    if (error) {
+      *error =
+          [NSError errorWithDomain:LRTErrorDomain
+                              code:LRTErrorCodeInvalidArgument
+                          userInfo:@{NSLocalizedDescriptionKey : @"Valid LRTEnvironment required"}];
+    }
+    return nil;
+  }
+
+  litert::Options dummyOptions;
+  litert::Options *cppOpts = options ? [options cppOptions] : &dummyOptions;
+
+  litert::BufferRef<uint8_t> bufferRef(static_cast<const uint8_t *>(modelData.bytes),
+                                       modelData.length);
+  auto createResult =
+      litert::CompiledModel::Create(*[environment cppEnvironment], bufferRef, *cppOpts);
+
+  if (!createResult.HasValue()) {
+    if (error) {
+      *error = [NSError
+          errorWithDomain:LRTErrorDomain
+                     code:static_cast<NSInteger>(createResult.Error().Status())
+                 userInfo:@{NSLocalizedDescriptionKey : @(createResult.Error().Message().c_str())}];
     }
     return nil;
   }
@@ -106,11 +153,12 @@ static NSArray<LRTTensorBuffer *> *_Nullable CreateObjCTensorBuffersFromCppResul
     litert::Expected<std::vector<litert::TensorBuffer>> &buffersResult, NSError **error) {
   if (!buffersResult.HasValue()) {
     if (error) {
-      NSDictionary *userInfo =
-          @{NSLocalizedDescriptionKey : @(buffersResult.Error().Message().c_str())};
-      *error = [NSError errorWithDomain:LRTErrorDomain
-                                   code:static_cast<NSInteger>(buffersResult.Error().Status())
-                               userInfo:userInfo];
+      *error =
+          [NSError errorWithDomain:LRTErrorDomain
+                              code:static_cast<NSInteger>(buffersResult.Error().Status())
+                          userInfo:@{
+                            NSLocalizedDescriptionKey : @(buffersResult.Error().Message().c_str())
+                          }];
     }
     return nil;
   }
@@ -155,11 +203,12 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
     litert::Expected<litert::TensorBuffer> dupResult = [tensorBuffer cppTensorBuffer]->Duplicate();
     if (!dupResult.HasValue()) {
       if (error) {
-        NSDictionary *userInfo =
-            @{NSLocalizedDescriptionKey : @(dupResult.Error().Message().c_str())};
-        *error = [NSError errorWithDomain:LRTErrorDomain
-                                     code:static_cast<NSInteger>(dupResult.Error().Status())
-                                 userInfo:userInfo];
+        *error =
+            [NSError errorWithDomain:LRTErrorDomain
+                                code:static_cast<NSInteger>(dupResult.Error().Status())
+                            userInfo:@{
+                              NSLocalizedDescriptionKey : @(dupResult.Error().Message().c_str())
+                            }];
       }
       return NO;
     }
@@ -226,11 +275,10 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
   litert::Expected<void> runResult = _cppCompiledModel->Run(inputCppBuffers, outputCppBuffers);
   if (!runResult.HasValue()) {
     if (error) {
-      NSDictionary *userInfo =
-          @{NSLocalizedDescriptionKey : @(runResult.Error().Message().c_str())};
-      *error = [NSError errorWithDomain:LRTErrorDomain
-                                   code:static_cast<NSInteger>(runResult.Error().Status())
-                               userInfo:userInfo];
+      *error = [NSError
+          errorWithDomain:LRTErrorDomain
+                     code:static_cast<NSInteger>(runResult.Error().Status())
+                 userInfo:@{NSLocalizedDescriptionKey : @(runResult.Error().Message().c_str())}];
     }
     return NO;
   }

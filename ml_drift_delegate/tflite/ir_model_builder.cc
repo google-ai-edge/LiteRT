@@ -212,6 +212,9 @@ void ConvertComposite(
   } else if (composite_name == "odml.rms_norm") {
     ConvertRmsNorm(context, node, registration, tensor_map, ir_model);
     return;
+  } else if (composite_name == "custom_call.rotary_positional_embedding") {
+    ConvertRoPE(context, node, registration, tensor_map, ir_model);
+    return;
   } else if (composite_name == "odml.scaled_dot_product_attention") {
     ConvertSdpa(context, node, registration, tensor_map, ir_model);
     return;
@@ -762,7 +765,7 @@ absl::Status BuildFromFlatBuffer(const ::tflite::FlatBufferModel& flatbuffer,
   // Transform and optimize the IR graph.
   // This could include op fusion, dead code elimination, layout changes, etc.
   if (options.apply_model_transformations) {
-    RETURN_IF_ERROR(::ml_drift::ir::TransformIrModel(ir_model));
+    ABSL_RETURN_IF_ERROR(::ml_drift::ir::TransformIrModel(ir_model));
   }
   return absl::OkStatus();
 }

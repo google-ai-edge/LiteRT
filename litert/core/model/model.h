@@ -718,6 +718,11 @@ class LiteRtSubgraphT {
     tensors_.TransferFrom(other);
   }
 
+  // Reorders the ops in this subgraph to match the given order.
+  void ReorderOps(absl::Span<LiteRtOp const> new_order) {
+    ops_.Reorder(new_order);
+  }
+
   LiteRtOpT::Alloc& OpsAllocation() { return ops_; }
   LiteRtTensorT::Alloc& TensorsAllocation() { return tensors_; }
 

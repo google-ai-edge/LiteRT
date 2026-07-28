@@ -103,11 +103,17 @@ TEST(CcModelTest, SimpleModelSignature) {
   EXPECT_EQ(input_names->at(0), "y");
   EXPECT_EQ(input_names->at(1), "x");
 
+  // Signature names may differ from the underlying graph tensor names.
+  LITERT_ASSERT_OK(model.GetInputTensorType(0, input_names->at(0)));
+  LITERT_ASSERT_OK(model.GetInputTensorType(0, input_names->at(1)));
+
   auto output_names = model.GetSignatureOutputNames();
   ASSERT_TRUE(output_names);
   EXPECT_EQ(output_names->size(), 2);
   EXPECT_EQ(output_names->at(0), "sum");
   EXPECT_EQ(output_names->at(1), "prod");
+  LITERT_ASSERT_OK(model.GetOutputTensorType(0, output_names->at(0)));
+  LITERT_ASSERT_OK(model.GetOutputTensorType(0, output_names->at(1)));
 }
 
 #if !defined(LITERT_WINDOWS_OS)

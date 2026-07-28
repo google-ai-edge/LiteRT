@@ -15,6 +15,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 set(LITERT_C_INTERNAL_HEADERS
+    internal/litert_abi_header.h
     internal/litert_accelerator.h
     internal/litert_accelerator_def.h
     internal/litert_accelerator_registration.h

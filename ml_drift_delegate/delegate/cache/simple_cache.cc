@@ -23,6 +23,7 @@
 
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -68,9 +69,9 @@ absl::Status SimpleCache::Load(
         callback) {
   ::ml_drift::MMapHandle mmap_handle;
   if (fd_.IsValid()) {
-    RETURN_IF_ERROR(mmap_handle.Map(fd_));
+    ABSL_RETURN_IF_ERROR(mmap_handle.Map(fd_));
   } else {
-    RETURN_IF_ERROR(mmap_handle.Map(cache_file_path_.c_str()));
+    ABSL_RETURN_IF_ERROR(mmap_handle.Map(cache_file_path_.c_str()));
   }
   return std::move(callback)(
       absl::MakeConstSpan(mmap_handle.data(), mmap_handle.size()), mmap_handle);

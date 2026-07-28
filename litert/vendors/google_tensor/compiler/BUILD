@@ -113,6 +113,7 @@ cc_test(
         # Sanatizer runtime doesn't work with anything that loads a shared library.
         "nosan",
         "manual",
+        "noheapcheck",
     ],
     # This test can only be run on Android and Linux.
     target_compatible_with = select({
@@ -125,14 +126,15 @@ cc_test(
         ":google_tensor_options_cc_proto",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_compiler_context_testonly",
-        "//litert/c/options:litert_google_tensor_options",
         "//litert/cc:litert_api_with_dynamic_runtime",
-        "//litert/test:common",
+        "//litert/compiler/cc:litert_model",
+        "//litert/core/model",
+        "//litert/test:load_test_model_runtimecapi",
         "//litert/test:matchers",
         "//litert/vendors/cc:litert_compiler_plugin",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_googletest//:gtest_main",
+        "@com_google_googletest//:gtest_main_no_heapcheck",
     ],
 )
 

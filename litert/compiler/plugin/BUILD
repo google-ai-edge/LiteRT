@@ -215,6 +215,7 @@ cc_test(
     srcs = ["algo_test.cc"],
     data = [
         "//litert/test:mlir_test_data",
+        "//litert/test:tflite_test_data",
     ],
     deps = [
         ":algo",

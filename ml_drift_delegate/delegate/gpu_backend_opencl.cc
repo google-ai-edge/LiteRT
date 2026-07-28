@@ -22,6 +22,7 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -128,8 +129,8 @@ GpuBackendOpenCl::CreateInferenceContext(
     bool may_share_memory_manager) {
   auto ctx = std::make_unique<GpuInferenceContextOpenCl>(
       this, may_share_memory_manager ? &memory_manager_ : nullptr);
-  RETURN_IF_ERROR(ctx->cl_ctx().InitFromGpuModel(create_info, &gpu_model, env_,
-                                                 serialized_model));
+  ABSL_RETURN_IF_ERROR(ctx->cl_ctx().InitFromGpuModel(create_info, &gpu_model,
+                                                      env_, serialized_model));
   return std::move(ctx);
 }
 
@@ -139,7 +140,7 @@ GpuBackendOpenCl::RestoreInferenceContext(
     const absl::Span<const uint8_t> serialized_model) {
   auto ctx =
       std::make_unique<GpuInferenceContextOpenCl>(this, &memory_manager_);
-  RETURN_IF_ERROR(
+  ABSL_RETURN_IF_ERROR(
       ctx->cl_ctx().RestoreDeserialized(serialized_model, env_, &create_info));
   return std::move(ctx);
 }
@@ -195,7 +196,7 @@ absl::StatusOr<std::unique_ptr<GpuTensorWrapper>>
 GpuBackendOpenCl::CreateTensorWrapper(const ::ml_drift::TensorDescriptor& desc,
                                       GpuMemoryHandle gpu_memory) {
   auto cl_tensor = std::make_unique<GpuTensorWrapperOpenCl>();
-  RETURN_IF_ERROR(::ml_drift::cl::CreateTensorShared(
+  ABSL_RETURN_IF_ERROR(::ml_drift::cl::CreateTensorShared(
       env_->context(), static_cast<cl_mem>(gpu_memory), desc,
       &cl_tensor->cl_tensor()));
   return std::move(cl_tensor);
@@ -231,8 +232,8 @@ absl::StatusOr<std::unique_ptr<GpuIOBuffer>>
 GpuBackendOpenCl::CreateIOBufferWithSize(::ml_drift::DataType data_type,
                                          size_t size, bool input) {
   ::ml_drift::cl::Buffer cl_buffer;
-  RETURN_IF_ERROR(::ml_drift::cl::CreateReadWriteBuffer(size, &env_->context(),
-                                                        &cl_buffer));
+  ABSL_RETURN_IF_ERROR(::ml_drift::cl::CreateReadWriteBuffer(
+      size, &env_->context(), &cl_buffer));
   return std::make_unique<GpuIOBufferOpenCl>(env_, std::move(cl_buffer));
 }
 
@@ -242,7 +243,7 @@ GpuBackendOpenCl::CreateTensor2BufferConverter(
     const ::ml_drift::BufferDescriptor& dst_desc) {
   auto converter =
       std::make_unique<::ml_drift::cl::TensorToBHWCBufferConverter>();
-  RETURN_IF_ERROR(
+  ABSL_RETURN_IF_ERROR(
       converter->InitExplicit(env_->GetDevicePtr(), &env_->context(),
                               env_->program_cache(), src_desc, dst_desc));
   return std::make_unique<Tensor2BufferConverterOpenCl>(env_,
@@ -255,7 +256,7 @@ GpuBackendOpenCl::CreateBuffer2TensorConverter(
     const ::ml_drift::TensorDescriptor& dst_desc) {
   auto converter =
       std::make_unique<::ml_drift::cl::BHWCBufferToTensorConverter>();
-  RETURN_IF_ERROR(
+  ABSL_RETURN_IF_ERROR(
       converter->InitExplicit(env_->GetDevicePtr(), &env_->context(),
                               env_->program_cache(), src_desc, dst_desc));
   return std::make_unique<Buffer2TensorConverterOpenCl>(env_,
@@ -285,7 +286,7 @@ absl::Status GpuInferenceContextOpenCl::WriteDataToWeightTensor(
   auto* cl_tensor = ctx_->GetTensor(id);
   // Mali GPU returns incorrect results when utilizing staging buffer to upload
   // data to GPU.
-  ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
+  ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
   if (gpu_info.IsMali()) {
     return cl_tensor->WriteData(data.data(), cl_env()->queue(),
                                 /*async=*/false);

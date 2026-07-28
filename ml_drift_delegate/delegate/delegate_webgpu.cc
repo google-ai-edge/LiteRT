@@ -65,6 +65,9 @@
 #include "ml_drift_delegate/delegate/serialization_weight_cache/file_util.h"
 #include "ml_drift_delegate/delegate/task_executor.h"
 #include "ml_drift_delegate/tflite/model_builder.h"
+#if defined(ML_DRIFT_USE_DAWN_PROC)
+#include "dawn/dawn_proc.h"  // from @dawn
+#endif  // defined(ML_DRIFT_USE_DAWN_PROC)
 #include "tflite/builtin_ops.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/core/c/common.h"
@@ -219,16 +222,44 @@ std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
   );
   LiteRtEnvironmentOptions env_options;
   runtime_context->get_environment_options(litert_env, &env_options);
-  LiteRtAny wegpu_device_id;
+  LiteRtAny wgpu_device_id;
   auto wgpu_device_id_status = runtime_context->get_environment_options_value(
-      env_options, kLiteRtEnvOptionTagWebGpuDevice, &wegpu_device_id);
+      env_options, kLiteRtEnvOptionTagWebGpuDevice, &wgpu_device_id);
+
+#if !defined(__EMSCRIPTEN__) && defined(ML_DRIFT_USE_DAWN_PROC)
+  LiteRtAny wgpu_procs;
+  if (runtime_context->get_environment_options_value(
+          env_options, kLiteRtEnvOptionTagWebGpuProcs, &wgpu_procs) ==
+          kLiteRtStatusOk &&
+      wgpu_procs.int_value != 0) {
+    dawnProcSetProcs(
+        reinterpret_cast<const DawnProcTable*>(wgpu_procs.int_value));
+  }
+#endif  // !defined(__EMSCRIPTEN__) && defined(ML_DRIFT_USE_DAWN_PROC)
+  LiteRtAny wgpu_instance;
+  if (runtime_context->get_environment_options_value(
+          env_options, kLiteRtEnvOptionTagWebGpuInstance, &wgpu_instance) ==
+          kLiteRtStatusOk &&
+      wgpu_instance.int_value != 0) {
+    (void)::ml_drift::webgpu::Instance::Set(
+        reinterpret_cast<WGPUInstance>(wgpu_instance.int_value));  // NOLINT
+  }
+  LiteRtAny wgpu_flush_cb;
+  if (runtime_context->get_environment_options_value(
+          env_options, kLiteRtEnvOptionTagWebGpuFlushCallback,
+          &wgpu_flush_cb) == kLiteRtStatusOk &&
+      wgpu_flush_cb.int_value != 0) {
+    ::ml_drift::webgpu::Instance::SetFlushCallback(
+        reinterpret_cast<::ml_drift::webgpu::Instance::WebGpuFlushCallback>(
+            wgpu_flush_cb.int_value));
+  }
 
   absl::Status webgpu_init_status;
   std::string success_message;
   if (wgpu_device_id_status == kLiteRtStatusOk) {
     // Use the WebGPU device id provided by the client.
     WGPUDevice wgpu_device =
-        reinterpret_cast<WGPUDevice>(wegpu_device_id.int_value);
+        reinterpret_cast<WGPUDevice>(wgpu_device_id.int_value);
     wgpu::Device device = wgpu_device;
     wgpu::AdapterInfo adapter_info;
     device.GetAdapterInfo(&adapter_info);
@@ -434,58 +465,31 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   return kTfLiteOk;
 }
 
+#define CALL_DELEGATE_KERNEL(function, ...)                               \
+  if (absl::Status s = delegate_kernel->function(__VA_ARGS__); !s.ok()) { \
+    ABSL_LOG(ERROR) << s;                                                 \
+    return kTfLiteError;                                                  \
+  }
+
 TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
   CacheDetach();
 
   auto* delegate_kernel =
       reinterpret_cast<litert::ml_drift::DelegateKernelLiteRt*>(
           node->user_data);
+
   if (delegate_kernel->HasQuantizedTensors()) {
-    if (absl::Status s = delegate_kernel->DequantizeInputs(context); !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
+    CALL_DELEGATE_KERNEL(DequantizeInputs, context);
   }
-  if (delegate_kernel->NoExternalTensorsMode()) {
-    if (absl::Status s = delegate_kernel->UploadOrBindTensorBuffer(context);
-        !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-  } else {
-    if (absl::Status s = delegate_kernel->BindTensorBuffers(context); !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-  }
-
-  if (absl::Status s = delegate_kernel->HandleInputEvents(context); !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
-  }
-
-  if (absl::Status s = delegate_kernel->Dispatch(context); !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
-  }
-
-  if (absl::Status s = delegate_kernel->HandleOutputEvents(
-          context, litert::ml_drift::IsAsyncExecutionMode(
-                       context, delegate_kernel->runtime_context()));
-      !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
-  }
-
-  if (delegate_kernel->NoExternalTensorsMode()) {
-    // Download internal output GPU memory to output TensorBufferGPU memory.
-    if (absl::Status s =
-            delegate_kernel->DownloadGpuMemoryToTensorBufferGpuMemory(context);
-        !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-  }
+  CALL_DELEGATE_KERNEL(BindExternalTensorBuffers, context);
+  CALL_DELEGATE_KERNEL(UploadIntermediateCpuTensorsToGpuMemory, context);
+  CALL_DELEGATE_KERNEL(HandleInputEvents, context);
+  CALL_DELEGATE_KERNEL(ConvertNonExternalInputTensorsToGpuMemory, context);
+  CALL_DELEGATE_KERNEL(Dispatch, context);
+  CALL_DELEGATE_KERNEL(ConvertGpuMemoryToNonExternalOutputTensors, context);
+  bool is_async_execution_mode = litert::ml_drift::IsAsyncExecutionMode(
+      context, delegate_kernel->runtime_context());
+  CALL_DELEGATE_KERNEL(HandleOutputEvents, context, is_async_execution_mode);
 
   if (delegate_kernel->IsBenchmarkMode()) {
     // In benchmark mode, call WaitForCompletion() to wait for all the
@@ -496,17 +500,11 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
     }
   }
 
-  if (absl::Status s = delegate_kernel->DownloadGpuMemoryToCpuMemory(context);
-      !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
-  }
+  CALL_DELEGATE_KERNEL(DownloadGpuMemoryToIntermediateCpuTensors, context);
   if (delegate_kernel->HasQuantizedTensors()) {
-    if (absl::Status s = delegate_kernel->QuantizeOutputs(context); !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
+    CALL_DELEGATE_KERNEL(QuantizeOutputs, context);
   }
+
   return kTfLiteOk;
 }
 

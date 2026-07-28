@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/data_type.h"  // from @ml_drift
@@ -78,17 +79,17 @@ absl::Status RuntimeBatchedMatMulOperationParser::IsSupported(
     return absl::UnavailableError("Runtime BatchedMatMul expects 3 inputs.");
   }
 
-  RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-  RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
-  RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 2));
-  RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+  ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+  ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
+  ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 2));
+  ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
 
   const TfLiteTensor* input0 = nullptr;
-  RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input0));
+  ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input0));
   const ::ml_drift::BHWC input0_shape = ExtractTensorShape(input0);
 
   const TfLiteTensor* input1 = nullptr;
-  RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 1, &input1));
+  ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 1, &input1));
   const ::ml_drift::BHWC input1_shape = ExtractTensorShape(input1);
 
   // We expect the BMM to be transpose_y = true, so the channels must match.
@@ -97,7 +98,8 @@ absl::Status RuntimeBatchedMatMulOperationParser::IsSupported(
   }
 
   const TfLiteTensor* param_tensor = nullptr;
-  RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 2, &param_tensor));
+  ABSL_RETURN_IF_ERROR(
+      PreGetInputTensor(context, tflite_node, 2, &param_tensor));
   const ::ml_drift::BHWC param_tensor_shape = ExtractTensorShape(param_tensor);
   if (param_tensor_shape != ::ml_drift::BHWC(1, 1, 1, 7)) {
     return absl::UnavailableError(

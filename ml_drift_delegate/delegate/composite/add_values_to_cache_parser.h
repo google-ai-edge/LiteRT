@@ -34,6 +34,8 @@ struct AddValuesToCacheAttributes {
   // quantized kv cache case
   std::optional<float> scale_k;
   std::optional<float> scale_v;
+  // Local Attention Ring buffer case
+  std::optional<bool> is_ring_buffer;
 };
 
 class AddValuesToCacheOperationParser : public TFLiteOperationParser {

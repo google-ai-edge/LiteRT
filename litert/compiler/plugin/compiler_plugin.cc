@@ -1027,13 +1027,15 @@ Expected<ApplyPluginsResult> ApplyPlugins(
 
     if (*plugin_supported_hardware & selected_hw_accelerators) {
       auto status = ApplyPlugin(compiler_plugin, *model, "", {}, result);
-      if (mutated != nullptr) {
-        *mutated = true;
-      }
+
       if (!status) {
         error_messages.push_back(
             absl::StrCat(plugin_name, " ", status.Error().Message()));
         continue;
+      }
+
+      if (mutated != nullptr) {
+        *mutated = true;
       }
 
       success_messages.push_back(absl::StrCat(plugin_name));

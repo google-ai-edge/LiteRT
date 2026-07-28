@@ -91,4 +91,50 @@ static NSString *GetTestModelPath() {
   }
 }
 
+- (void)testCreateAndRunFromModelData {
+  NSError *error = nil;
+  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(env);
+
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+
+  NSString *filePath = GetTestModelPath();
+  NSData *modelData = [NSData dataWithContentsOfFile:filePath];
+  XCTAssertNotNil(modelData);
+
+  LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelData:modelData
+                                                             environment:env
+                                                                 options:options
+                                                                   error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
+  NSArray<LRTTensorBuffer *> *inputs = [model createInputTensorBuffersWithError:&error];
+  XCTAssertNotNil(inputs);
+  XCTAssertNil(error);
+
+  NSArray<LRTTensorBuffer *> *outputs = [model createOutputTensorBuffersWithError:&error];
+  XCTAssertNotNil(outputs);
+  XCTAssertNil(error);
+
+  NSData *input0Data = [NSData dataWithBytes:kTestInput0Tensor length:sizeof(kTestInput0Tensor)];
+  NSData *input1Data = [NSData dataWithBytes:kTestInput1Tensor length:sizeof(kTestInput1Tensor)];
+
+  XCTAssertTrue([inputs[0] writeData:input0Data error:&error]);
+  XCTAssertTrue([inputs[1] writeData:input1Data error:&error]);
+
+  BOOL runSuccess = [model runWithInputs:inputs outputs:outputs error:&error];
+  XCTAssertTrue(runSuccess);
+  XCTAssertNil(error);
+
+  NSData *outputData = [outputs[0] readDataWithError:&error];
+  XCTAssertNotNil(outputData);
+  XCTAssertEqual(outputData.length, sizeof(kTestOutputTensor));
+
+  const float *outputFloat = static_cast<const float *>(outputData.bytes);
+  for (size_t i = 0; i < kTestOutputSize; ++i) {
+    XCTAssertEqualWithAccuracy(outputFloat[i], kTestOutputTensor[i], 1e-5f);
+  }
+}
+
 @end

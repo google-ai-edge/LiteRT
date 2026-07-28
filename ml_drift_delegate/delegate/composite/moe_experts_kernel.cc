@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
@@ -150,11 +151,12 @@ absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> ExpertFullyConnected(
     external_weights.scale = &scale_handle_ptr->tensor_desc;
   }
 
-  ASSIGN_OR_RETURN(auto operation,
-                   ::ml_drift::CreateFullyConnectedWeightsBatchIds(
-                       model_builder->gpu_info(), create_info.precision,
-                       src.tensor_desc, batch_ids.tensor_desc, dst.tensor_desc,
-                       external_weights, /*bias=*/nullptr, &dst_shape));
+  ABSL_ASSIGN_OR_RETURN(
+      auto operation,
+      ::ml_drift::CreateFullyConnectedWeightsBatchIds(
+          model_builder->gpu_info(), create_info.precision, src.tensor_desc,
+          batch_ids.tensor_desc, dst.tensor_desc, external_weights,
+          /*bias=*/nullptr, &dst_shape));
   operation.flops_ = dst_shape.DimensionsProduct() * input_channels * 2;
 
   std::vector<::ml_drift::GpuModelBuilder::TensorHandle> srcs = {src,
@@ -212,43 +214,46 @@ absl::Status BuildMoeExpertsGpuGraph(
       src, ::ml_drift::BHWC(1, sequence_size, 1, model_dim));
   auto flat_top_indices = model_builder->Reshape(
       top_indices, ::ml_drift::BHWC(1, 1, 1, num_dispatches));
-  ASSIGN_OR_RETURN(auto token_indices,
-                   CreateDispatchTokenIndices(model_builder, sequence_size,
-                                              num_active_experts));
+  ABSL_ASSIGN_OR_RETURN(auto token_indices,
+                        CreateDispatchTokenIndices(model_builder, sequence_size,
+                                                   num_active_experts));
   auto dispatched_src = model_builder->Gather(src_tokens, token_indices,
                                               ::ml_drift::Axis::HEIGHT);
 
-  ASSIGN_OR_RETURN(auto gate, ExpertFullyConnected(
-                                  model_builder, create_info, dispatched_src,
-                                  flat_top_indices, gate_weight, gate_scale_ptr,
-                                  model_dim, hidden_dim, num_experts,
-                                  num_dispatches, weight_type, "moe_ff_gate"));
+  ABSL_ASSIGN_OR_RETURN(
+      auto gate,
+      ExpertFullyConnected(model_builder, create_info, dispatched_src,
+                           flat_top_indices, gate_weight, gate_scale_ptr,
+                           model_dim, hidden_dim, num_experts, num_dispatches,
+                           weight_type, "moe_ff_gate"));
   gate = model_builder->MakeGelu(gate);
 
-  ASSIGN_OR_RETURN(auto ff1, ExpertFullyConnected(
-                                 model_builder, create_info, dispatched_src,
-                                 flat_top_indices, ff1_weight, ff1_scale_ptr,
-                                 model_dim, hidden_dim, num_experts,
-                                 num_dispatches, weight_type, "moe_ff1"));
+  ABSL_ASSIGN_OR_RETURN(
+      auto ff1,
+      ExpertFullyConnected(model_builder, create_info, dispatched_src,
+                           flat_top_indices, ff1_weight, ff1_scale_ptr,
+                           model_dim, hidden_dim, num_experts, num_dispatches,
+                           weight_type, "moe_ff1"));
   auto hidden = model_builder->Multiplication(gate, ff1);
 
-  ASSIGN_OR_RETURN(auto expert_outputs,
-                   ExpertFullyConnected(
-                       model_builder, create_info, hidden, flat_top_indices,
-                       linear_weight, linear_scale_ptr, hidden_dim, model_dim,
-                       num_experts, num_dispatches, weight_type, "moe_linear"));
-  ASSIGN_OR_RETURN(expert_outputs,
-                   ScaleWithBatchIds(model_builder, expert_outputs,
-                                     per_expert_scale, flat_top_indices));
+  ABSL_ASSIGN_OR_RETURN(
+      auto expert_outputs,
+      ExpertFullyConnected(model_builder, create_info, hidden, flat_top_indices,
+                           linear_weight, linear_scale_ptr, hidden_dim,
+                           model_dim, num_experts, num_dispatches, weight_type,
+                           "moe_linear"));
+  ABSL_ASSIGN_OR_RETURN(expert_outputs,
+                        ScaleWithBatchIds(model_builder, expert_outputs,
+                                          per_expert_scale, flat_top_indices));
 
   auto reshaped_top_weights = model_builder->Reshape(
       top_weights, ::ml_drift::BHWC(1, sequence_size, 1, num_active_experts));
   auto reshaped_expert_outputs = model_builder->Reshape(
       expert_outputs,
       ::ml_drift::BHWC(1, sequence_size, num_active_experts, model_dim));
-  ASSIGN_OR_RETURN(auto combined,
-                   model_builder->BatchedMatMul(reshaped_top_weights,
-                                                reshaped_expert_outputs));
+  ABSL_ASSIGN_OR_RETURN(auto combined,
+                        model_builder->BatchedMatMul(reshaped_top_weights,
+                                                     reshaped_expert_outputs));
   combined = model_builder->Reshape(combined, output_shape);
   return model_builder->UpdateOutputTensor(combined, output_id);
 }
@@ -269,9 +274,11 @@ absl::Status CreateMoeExpertsFromNode(
         "MoE experts operation received an unexpected input/output count.");
   }
 
-  ASSIGN_OR_RETURN(auto src, model_builder->GetTensor(inputs[0]->id));
-  ASSIGN_OR_RETURN(auto top_weights, model_builder->GetTensor(inputs[1]->id));
-  ASSIGN_OR_RETURN(auto top_indices, model_builder->GetTensor(inputs[2]->id));
+  ABSL_ASSIGN_OR_RETURN(auto src, model_builder->GetTensor(inputs[0]->id));
+  ABSL_ASSIGN_OR_RETURN(auto top_weights,
+                        model_builder->GetTensor(inputs[1]->id));
+  ABSL_ASSIGN_OR_RETURN(auto top_indices,
+                        model_builder->GetTensor(inputs[2]->id));
 
   ::ml_drift::GpuModelBuilder::TensorHandle gate_weight;
   ::ml_drift::GpuModelBuilder::TensorHandle ff1_weight;
@@ -282,15 +289,19 @@ absl::Status CreateMoeExpertsFromNode(
   const MoeScaleTensor* linear_scale_ptr = nullptr;
 
   if (attr.weight_type == MoeExpertsAttributes::WeightType::kFp32) {
-    ASSIGN_OR_RETURN(gate_weight, model_builder->GetTensor(inputs[3]->id));
-    ASSIGN_OR_RETURN(ff1_weight, model_builder->GetTensor(inputs[4]->id));
-    ASSIGN_OR_RETURN(linear_weight, model_builder->GetTensor(inputs[5]->id));
-    ASSIGN_OR_RETURN(per_expert_scale, model_builder->GetTensor(inputs[6]->id));
+    ABSL_ASSIGN_OR_RETURN(gate_weight, model_builder->GetTensor(inputs[3]->id));
+    ABSL_ASSIGN_OR_RETURN(ff1_weight, model_builder->GetTensor(inputs[4]->id));
+    ABSL_ASSIGN_OR_RETURN(linear_weight,
+                          model_builder->GetTensor(inputs[5]->id));
+    ABSL_ASSIGN_OR_RETURN(per_expert_scale,
+                          model_builder->GetTensor(inputs[6]->id));
   } else {
-    ASSIGN_OR_RETURN(gate_weight, model_builder->GetTensor(inputs[3]->id));
-    ASSIGN_OR_RETURN(ff1_weight, model_builder->GetTensor(inputs[5]->id));
-    ASSIGN_OR_RETURN(linear_weight, model_builder->GetTensor(inputs[7]->id));
-    ASSIGN_OR_RETURN(per_expert_scale, model_builder->GetTensor(inputs[9]->id));
+    ABSL_ASSIGN_OR_RETURN(gate_weight, model_builder->GetTensor(inputs[3]->id));
+    ABSL_ASSIGN_OR_RETURN(ff1_weight, model_builder->GetTensor(inputs[5]->id));
+    ABSL_ASSIGN_OR_RETURN(linear_weight,
+                          model_builder->GetTensor(inputs[7]->id));
+    ABSL_ASSIGN_OR_RETURN(per_expert_scale,
+                          model_builder->GetTensor(inputs[9]->id));
     if (!attr.ff_gate_scale.has_value() || !attr.ff1_scale.has_value() ||
         !attr.linear_scale.has_value()) {
       return absl::InvalidArgumentError(
@@ -322,9 +333,11 @@ absl::Status CreateMoeExpertsFromIrOp(
         "MoE experts operation received an unexpected input/output count.");
   }
 
-  ASSIGN_OR_RETURN(auto src, model_builder->GetTensor(inputs[0]->id));
-  ASSIGN_OR_RETURN(auto top_weights, model_builder->GetTensor(inputs[1]->id));
-  ASSIGN_OR_RETURN(auto top_indices, model_builder->GetTensor(inputs[2]->id));
+  ABSL_ASSIGN_OR_RETURN(auto src, model_builder->GetTensor(inputs[0]->id));
+  ABSL_ASSIGN_OR_RETURN(auto top_weights,
+                        model_builder->GetTensor(inputs[1]->id));
+  ABSL_ASSIGN_OR_RETURN(auto top_indices,
+                        model_builder->GetTensor(inputs[2]->id));
 
   ::ml_drift::GpuModelBuilder::TensorHandle gate_weight;
   ::ml_drift::GpuModelBuilder::TensorHandle ff1_weight;
@@ -334,10 +347,11 @@ absl::Status CreateMoeExpertsFromIrOp(
   const MoeScaleTensor* ff1_scale_ptr = nullptr;
   const MoeScaleTensor* linear_scale_ptr = nullptr;
 
-  ASSIGN_OR_RETURN(gate_weight, model_builder->GetTensor(inputs[3]->id));
-  ASSIGN_OR_RETURN(ff1_weight, model_builder->GetTensor(inputs[4]->id));
-  ASSIGN_OR_RETURN(linear_weight, model_builder->GetTensor(inputs[5]->id));
-  ASSIGN_OR_RETURN(per_expert_scale, model_builder->GetTensor(inputs[6]->id));
+  ABSL_ASSIGN_OR_RETURN(gate_weight, model_builder->GetTensor(inputs[3]->id));
+  ABSL_ASSIGN_OR_RETURN(ff1_weight, model_builder->GetTensor(inputs[4]->id));
+  ABSL_ASSIGN_OR_RETURN(linear_weight, model_builder->GetTensor(inputs[5]->id));
+  ABSL_ASSIGN_OR_RETURN(per_expert_scale,
+                        model_builder->GetTensor(inputs[6]->id));
 
   if (attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt8) {
     if (!attr.ff_gate_scale.has_value() || !attr.ff1_scale.has_value() ||

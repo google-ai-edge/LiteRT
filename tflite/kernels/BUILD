@@ -793,7 +793,6 @@ BUILTIN_KERNEL_DEPS = [
     "//tflite/kernels/internal:common",
     "//tflite/kernels/internal:compatibility",
     "//tflite/kernels/internal:cpu_check",
-    "//tflite/kernels/internal:float8",
     "//tflite/kernels/internal:kernel_utils",
     "//tflite/kernels/internal:optimized_base",
     "//tflite/kernels/internal:portable_tensor_utils",

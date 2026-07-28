@@ -207,6 +207,54 @@ TEST(MemoryMappedFile, ModifiesScopedFileWhenMutable) {
   EXPECT_EQ(ReadFile(path.string()), "xoo bar");
 }
 
+TEST(MemoryMappedFile, FailsMappingOffsetLargerThanFileSize) {
+  auto path = std::filesystem::path(::testing::TempDir()) / "file_test1.txt";
+  WriteFile(path.string(), "foo");
+
+  auto scoped_file = ScopedFile::Open(path.string());
+  ASSERT_OK(scoped_file);
+  size_t offset = MemoryMappedFile::GetOffsetAlignment();
+  auto statusor =
+      MemoryMappedFile::Create(scoped_file->file(), offset, /*length=*/1);
+  EXPECT_FALSE(statusor.ok());
+  EXPECT_THAT(statusor.status().message(),
+              ::testing::HasSubstr("is greater than file size"));
+}
+
+TEST(MemoryMappedFile, FailsMappingLengthPlusOffsetLargerThanAlignedFileSize) {
+  auto path = std::filesystem::path(::testing::TempDir()) / "file_test2.txt";
+  size_t aligned_size = MemoryMappedFile::GetOffsetAlignment();
+  std::string file_contents(aligned_size, 'a');
+  WriteFile(path.string(), file_contents);
+
+  auto scoped_file = ScopedFile::Open(path.string());
+  ASSERT_OK(scoped_file);
+  auto statusor = MemoryMappedFile::Create(scoped_file->file(), /*offset=*/0,
+                                           /*length=*/aligned_size + 1);
+  EXPECT_FALSE(statusor.ok());
+  EXPECT_THAT(statusor.status().message(),
+              ::testing::HasSubstr("are too large for file size"));
+  EXPECT_THAT(statusor.status().message(),
+              ::testing::Not(::testing::HasSubstr(
+                  "The file might not have enough padding.")));
+}
+
+TEST(MemoryMappedFile,
+     FailsMappingLengthPlusOffsetLargerThanUnalignedFileSize) {
+  auto path = std::filesystem::path(::testing::TempDir()) / "file_test3.txt";
+  size_t unaligned_size = MemoryMappedFile::GetOffsetAlignment() + 1;
+  std::string file_contents(unaligned_size, 'a');
+  WriteFile(path.string(), file_contents);
+
+  auto scoped_file = ScopedFile::Open(path.string());
+  ASSERT_OK(scoped_file);
+  auto statusor = MemoryMappedFile::Create(scoped_file->file(), /*offset=*/0,
+                                           /*length=*/unaligned_size + 1);
+  EXPECT_FALSE(statusor.ok());
+  EXPECT_THAT(statusor.status().message(),
+              ::testing::HasSubstr("The file might not have enough padding."));
+}
+
 TEST(InMemoryFile, SucceedsMappingFromMemory) {
   auto file = InMemoryFile::Create("foo bar");
   ASSERT_OK(file);

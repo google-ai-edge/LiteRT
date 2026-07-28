@@ -50,6 +50,7 @@ inline uint64_t Fingerprint64(const char* s, size_t len) {
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -109,7 +110,7 @@ absl::Status SerializationWeightCache::StartBuild(
     return absl::InvalidArgumentError(
         "Cannot start building when the cache is already building.");
   }
-  RETURN_IF_ERROR(SetFilePath(directory, model_token));
+  ABSL_RETURN_IF_ERROR(SetFilePath(directory, model_token));
   temporary_file_descriptor_.Close();
   return StartBuildInternal(unique_model_identifier);
 }
@@ -132,7 +133,7 @@ absl::Status SerializationWeightCache::StartBuildInternal(
     }
   }
   is_first_build_ = false;
-  RETURN_IF_ERROR(builder_.StartBuildStep(unique_model_identifier_));
+  ABSL_RETURN_IF_ERROR(builder_.StartBuildStep(unique_model_identifier_));
   // Duplicate the file descriptor to avoid losing the temporary file when
   // the builder is reset. The file descriptor is a RAII object. It will be
   // cleaned up when the builder_ is destroyed.
@@ -162,7 +163,7 @@ absl::Status SerializationWeightCache::StopBuild() {
   if (!IsBuilding()) {
     return absl::OkStatus();
   }
-  RETURN_IF_ERROR(builder_.StopBuildStep());
+  ABSL_RETURN_IF_ERROR(builder_.StopBuildStep());
   is_building_ = false;
   return absl::OkStatus();
 }
@@ -170,7 +171,7 @@ absl::Status SerializationWeightCache::StopBuild() {
 absl::Status SerializationWeightCache::Load(absl::string_view directory,
                                             absl::string_view model_token,
                                             uint64_t unique_model_identifier) {
-  RETURN_IF_ERROR(SetFilePath(directory, model_token));
+  ABSL_RETURN_IF_ERROR(SetFilePath(directory, model_token));
 
   bool opened_internally = false;
   if (!temporary_file_descriptor_.IsValid()) {
@@ -201,9 +202,9 @@ absl::Status SerializationWeightCache::LoadInternal(
 
   // Mmap just the header for now.
   MMapHandle& header_handle = mmap_handles_.at(0);
-  RETURN_IF_ERROR(header_handle.Map(fd,
-                                    /*offset=*/0, sizeof(MLDriftCacheHeader),
-                                    file_path_.c_str()));
+  ABSL_RETURN_IF_ERROR(header_handle.Map(
+      fd,
+      /*offset=*/0, sizeof(MLDriftCacheHeader), file_path_.c_str()));
 
   if (header_handle.size() < sizeof(MLDriftCacheHeader)) {
     return absl::InternalError("Invalid cache file size");
@@ -232,9 +233,9 @@ absl::Status SerializationWeightCache::LoadInternal(
 
   // Mmap just the model cache.
   MMapHandle& buffer_list_handle = mmap_handles_.at(1);
-  RETURN_IF_ERROR(buffer_list_handle.Map(fd, header.buffer_list_offset,
-                                         header.buffer_list_size,
-                                         file_path_.c_str()));
+  ABSL_RETURN_IF_ERROR(buffer_list_handle.Map(fd, header.buffer_list_offset,
+                                              header.buffer_list_size,
+                                              file_path_.c_str()));
 
   if (buffer_list_handle.size() < header.buffer_list_size) {
     return absl::InternalError("Invalid buffer list size");
@@ -283,7 +284,7 @@ absl::Status SerializationWeightCache::LoadInternal(
       // Tensor will be decoded without its data. Its data will be read
       // separately on demand.
       TensorDescriptor tensor_desc;
-      RETURN_IF_ERROR(Decode(buffer->tensor_descriptor(), &tensor_desc));
+      ABSL_RETURN_IF_ERROR(Decode(buffer->tensor_descriptor(), &tensor_desc));
 
       global_tensor_id_to_cache_entry_.emplace(
           std::piecewise_construct,
@@ -338,9 +339,9 @@ absl::Status SerializationWeightCache::LookUp(
   size_t offset = mmap_buffer_base_offset_ + cache_entry.location.offset;
 
   auto mmap_handle = std::make_unique<MMapHandle>();
-  RETURN_IF_ERROR(mmap_handle->Map(temporary_file_descriptor_, offset,
-                                   cache_entry.location.size,
-                                   file_path_.c_str()));
+  ABSL_RETURN_IF_ERROR(mmap_handle->Map(temporary_file_descriptor_, offset,
+                                        cache_entry.location.size,
+                                        file_path_.c_str()));
   page_adjusted_offset = mmap_handle->offset_page_adjustment();
 
   unowned_data_tensor_desc = UnownedDataTensorDescriptor(
@@ -436,7 +437,7 @@ absl::Status SerializationWeightCache::Insert(
   tensor_desc.CopyWithoutData(&tensor_desc_without_data);
 
   BufferLocation location;
-  RETURN_IF_ERROR(
+  ABSL_RETURN_IF_ERROR(
       builder_.Append(global_tensor_id, is_quantization_param_tensor,
                       tensor_desc_without_data, ptr, size, location));
 
