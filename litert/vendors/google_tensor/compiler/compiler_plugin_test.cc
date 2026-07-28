@@ -23,16 +23,15 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/c/options/litert_google_tensor_options.h"
+#include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_environment.h"
-#include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
-#include "litert/test/common.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/core/model/model.h"
+#include "litert/test/load_test_model.h"
 #include "litert/test/matchers.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/litert_compiler_plugin.h"
@@ -41,8 +40,9 @@
 namespace google_tensor {
 enum class FilterOutcome { kRunOnTpu, kDoNotRunOnTpu };
 FilterOutcome GetFilterOutcome(
-    const ::litert::Op& op, const ::third_party::odml::litert::litert::vendors::
-                                google_tensor::compiler::OpFilters& op_filters);
+    const ::litert::compiler::Op& op,
+    const ::third_party::odml::litert::litert::vendors::google_tensor::
+        compiler::OpFilters& op_filters);
 }  // namespace google_tensor
 
 namespace litert {
@@ -62,7 +62,11 @@ TEST(TestGoogleTensorPlugin, GetConfigInfo) {
   LiteRtParamIndex num_supported_soc_models;
   LITERT_ASSERT_OK(LiteRtGetNumCompilerPluginSupportedSocModels(
       plugin.get(), &num_supported_soc_models));
+#ifdef EDGETPU_EXTERNAL_RELEASE_COMPILER
   ASSERT_THAT(num_supported_soc_models, 4);
+#else
+  ASSERT_THAT(num_supported_soc_models, 5);
+#endif
 
   std::vector<std::string> soc_model_names;
   for (int i = 0; i < num_supported_soc_models; ++i) {
@@ -71,12 +75,18 @@ TEST(TestGoogleTensorPlugin, GetConfigInfo) {
                                                               &soc_model_name));
     soc_model_names.push_back(soc_model_name);
   }
+#ifdef EDGETPU_EXTERNAL_RELEASE_COMPILER
   EXPECT_THAT(soc_model_names, UnorderedElementsAre("Tensor_G3", "Tensor_G4",
                                                     "Tensor_G5", "Tensor_G6"));
+#else
+  EXPECT_THAT(soc_model_names,
+              UnorderedElementsAre("Tensor_G3", "Tensor_G4", "Tensor_G5",
+                                   "Tensor_G6", "Tensor_G7"));
+#endif
 }
 
 TEST(TestCallGoogleTensorPlugin, PartitionSimpleMultiAdd) {
-  PluginPtr plugin = CreatePlugin();
+  PluginPtr plugin = CreatePlugin(LrtGetCompilerContext());
   ExtendedModel model = testing::LoadTestFileModel("simple_multi_op.tflite");
   LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
 
@@ -92,6 +102,7 @@ TEST(TestCallGoogleTensorPlugin, PartitionSimpleMultiAdd) {
 }
 
 TEST(TestCallGoogleTensorPlugin, PartitionWithOpFiltersRunOnCpu) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
   LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
                               options.GetGoogleTensorOptions());
@@ -106,18 +117,13 @@ TEST(TestCallGoogleTensorPlugin, PartitionWithOpFiltersRunOnCpu) {
   out.close();
 
   google_tensor_options.SetOpFiltersProto(temp_file);
-  const char* identifier;
-  void* payload;
-  void (*deleter)(void*);
-  LITERT_ASSERT_OK(google_tensor_options.GetOpaqueOptionsData(
-      &identifier, &payload, &deleter));
-  LiteRtOpaqueOptions opaque;
-  LITERT_ASSERT_OK(
-      LiteRtCreateOpaqueOptions(identifier, payload, deleter, &opaque));
-  LITERT_ASSERT_OK(LiteRtAddOpaqueOptions(options.Get(), opaque));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
 
   auto plugin =
-      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, options.Get());
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
   auto model = testing::LoadTestFileModel("simple_multi_op.tflite");
   LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
 
@@ -133,7 +139,9 @@ TEST(TestCallGoogleTensorPlugin, PartitionWithOpFiltersRunOnCpu) {
 TEST(TestGoogleTensorPlugin, GetFilterOutcome) {
   auto model = testing::LoadTestFileModel("simple_multi_op.tflite");
   LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
-  auto ops = subgraph.Ops();
+  litert::compiler::Subgraph compiler_subgraph(LrtGetCompilerContext(),
+                                               subgraph.Get());
+  auto ops = compiler_subgraph.Ops();
   ASSERT_FALSE(ops.empty());
   auto op = ops[0];
   auto outputs = op.Outputs();
@@ -183,6 +191,7 @@ TEST(TestGoogleTensorPlugin, GetFilterOutcome) {
 }
 
 TEST(TestCallGoogleTensorPlugin, PartitionWithOpFiltersRunOnTpu) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
   LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
                               options.GetGoogleTensorOptions());
@@ -197,18 +206,13 @@ TEST(TestCallGoogleTensorPlugin, PartitionWithOpFiltersRunOnTpu) {
   out.close();
 
   google_tensor_options.SetOpFiltersProto(temp_file);
-  const char* identifier;
-  void* payload;
-  void (*deleter)(void*);
-  LITERT_ASSERT_OK(google_tensor_options.GetOpaqueOptionsData(
-      &identifier, &payload, &deleter));
-  LiteRtOpaqueOptions opaque;
-  LITERT_ASSERT_OK(
-      LiteRtCreateOpaqueOptions(identifier, payload, deleter, &opaque));
-  LITERT_ASSERT_OK(LiteRtAddOpaqueOptions(options.Get(), opaque));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
 
   auto plugin =
-      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, options.Get());
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
   auto model = testing::LoadTestFileModel("simple_multi_op.tflite");
   LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
 
@@ -222,7 +226,7 @@ TEST(TestCallGoogleTensorPlugin, PartitionWithOpFiltersRunOnTpu) {
 }
 
 TEST(TestCallGoogleTensorPlugin, CompileMulSubgraph) {
-  PluginPtr plugin = CreatePlugin();
+  PluginPtr plugin = CreatePlugin(LrtGetCompilerContext());
   ExtendedModel model = testing::LoadTestFileModel("mul_simple.tflite");
 
   LiteRtCompiledResult compiled;
@@ -253,13 +257,17 @@ TEST(TestCallGoogleTensorPlugin, CompileMulSubgraph) {
 TEST(TestCallGoogleTensorPlugin, CompileMulSubgraphWithOptions) {
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(Options options, Options::Create());
-  LITERT_ASSERT_OK_AND_ASSIGN(GoogleTensorOptions& google_tensor_options,
+  LITERT_ASSERT_OK_AND_ASSIGN(GoogleTensorOptions & google_tensor_options,
                               options.GetGoogleTensorOptions());
   google_tensor_options.SetFloatTruncationType(
       kLiteRtGoogleTensorFloatTruncationTypeBfloat16);
 
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+
   PluginPtr plugin =
-      CreatePlugin(/*runtime_context=*/nullptr, /*env=*/nullptr, options.Get());
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
   auto model = testing::LoadTestFileModel("mul_simple.tflite");
 
   LiteRtCompiledResult compiled;
@@ -288,7 +296,7 @@ TEST(TestCallGoogleTensorPlugin, CompileMulSubgraphWithOptions) {
 }
 
 TEST(TestCallGoogleTensorPlugin, PartitionRmsNormCompositeOp) {
-  PluginPtr plugin = CreatePlugin();
+  PluginPtr plugin = CreatePlugin(LrtGetCompilerContext());
   ExtendedModel model = testing::LoadTestFileModel(
       "stablehlo/stablehlo_composite_rms_norm.tflite");
   LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
@@ -304,7 +312,7 @@ TEST(TestCallGoogleTensorPlugin, PartitionRmsNormCompositeOp) {
 }
 
 TEST(TestCallGoogleTensorPlugin, PartitionUnsupportedCompositeOp) {
-  PluginPtr plugin = CreatePlugin();
+  PluginPtr plugin = CreatePlugin(LrtGetCompilerContext());
   ExtendedModel model = testing::LoadTestFileModel(
       "stablehlo/stablehlo_composite_softmax.tflite");
   LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
