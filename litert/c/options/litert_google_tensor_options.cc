@@ -14,10 +14,16 @@
 
 #include "litert/c/options/litert_google_tensor_options.h"
 
+#include <cstring>
+#include <iterator>
 #include <optional>
 #include <string>
+#include <utility>
 
+#include "absl/container/btree_map.h"  // from @com_google_absl
 #include "absl/strings/escaping.h"  // from @com_google_absl
+#include "absl/strings/match.h"  // from @com_google_absl
+#include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
@@ -40,6 +46,8 @@ struct LrtGoogleTensorOptionsT {
       std::nullopt;
   std::string op_filters_proto = "";
   std::string extra_options_path = "";
+  absl::btree_map<int, bool> input_coherency;
+  absl::btree_map<int, bool> output_coherency;
 };
 
 LiteRtStatus LrtCreateGoogleTensorOptions(LrtGoogleTensorOptions* options) {
@@ -108,6 +116,14 @@ LiteRtStatus LrtGetOpaqueGoogleTensorOptionsData(
     absl::StrAppendFormat(&toml_str, "extra_options_path = \"%s\"\n",
                           options->extra_options_path);
   }
+  for (const auto& [idx, pref] : options->input_coherency) {
+    absl::StrAppendFormat(&toml_str, "input_coherency_%d = %s\n", idx,
+                          pref ? "true" : "false");
+  }
+  for (const auto& [idx, pref] : options->output_coherency) {
+    absl::StrAppendFormat(&toml_str, "output_coherency_%d = %s\n", idx,
+                          pref ? "true" : "false");
+  }
 
   *identifier = LrtGoogleTensorOptionsGetIdentifier();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
@@ -170,6 +186,18 @@ LiteRtStatus LrtCreateGoogleTensorOptionsFromToml(
           }
         } else if (key == "extra_options_path") {
           options_ref.extra_options_path = std::string(value);
+        } else if (absl::StartsWith(key, "input_coherency_")) {
+          int idx;
+          if (absl::SimpleAtoi(key.substr(strlen("input_coherency_")), &idx)) {
+            LITERT_ASSIGN_OR_RETURN(options_ref.input_coherency[idx],
+                                    litert::internal::ParseTomlBool(value));
+          }
+        } else if (absl::StartsWith(key, "output_coherency_")) {
+          int idx;
+          if (absl::SimpleAtoi(key.substr(strlen("output_coherency_")), &idx)) {
+            LITERT_ASSIGN_OR_RETURN(options_ref.output_coherency[idx],
+                                    litert::internal::ParseTomlBool(value));
+          }
         }
         return kLiteRtStatusOk;
       });
@@ -419,5 +447,103 @@ LiteRtStatus LrtGoogleTensorOptionsGetExtraOptionsPath(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *extra_options_path = options->extra_options_path.c_str();
+  return kLiteRtStatusOk;
+}
+
+// input_coherency --------------------------------------------------
+
+LiteRtStatus LrtGoogleTensorOptionsSetInputCoherency(
+    LrtGoogleTensorOptions options, int input_index, bool prefer_coherent) {
+  if (options == nullptr || input_index < 0) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->input_coherency[input_index] = prefer_coherent;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGoogleTensorOptionsGetInputCoherency(
+    LrtGoogleTensorOptions options, int input_index, bool* prefer_coherent) {
+  if (options == nullptr || prefer_coherent == nullptr || input_index < 0) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto it = options->input_coherency.find(input_index);
+  if (it == options->input_coherency.end()) {
+    *prefer_coherent = false;
+  } else {
+    *prefer_coherent = it->second;
+  }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGoogleTensorOptionsGetNumInputCoherencyEntries(
+    LrtGoogleTensorOptions options, int* num_entries) {
+  if (options == nullptr || num_entries == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *num_entries = static_cast<int>(options->input_coherency.size());
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGoogleTensorOptionsGetInputCoherencyEntry(
+    LrtGoogleTensorOptions options, int entry_idx, int* input_index,
+    bool* prefer_coherent) {
+  if (options == nullptr || input_index == nullptr ||
+      prefer_coherent == nullptr || entry_idx < 0 ||
+      static_cast<size_t>(entry_idx) >= options->input_coherency.size()) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto it = options->input_coherency.begin();
+  std::advance(it, entry_idx);
+  *input_index = it->first;
+  *prefer_coherent = it->second;
+  return kLiteRtStatusOk;
+}
+
+// output_coherency --------------------------------------------------
+
+LiteRtStatus LrtGoogleTensorOptionsSetOutputCoherency(
+    LrtGoogleTensorOptions options, int output_index, bool prefer_coherent) {
+  if (options == nullptr || output_index < 0) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->output_coherency[output_index] = prefer_coherent;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGoogleTensorOptionsGetOutputCoherency(
+    LrtGoogleTensorOptions options, int output_index, bool* prefer_coherent) {
+  if (options == nullptr || prefer_coherent == nullptr || output_index < 0) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto it = options->output_coherency.find(output_index);
+  if (it == options->output_coherency.end()) {
+    *prefer_coherent = false;
+  } else {
+    *prefer_coherent = it->second;
+  }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGoogleTensorOptionsGetNumOutputCoherencyEntries(
+    LrtGoogleTensorOptions options, int* num_entries) {
+  if (options == nullptr || num_entries == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *num_entries = static_cast<int>(options->output_coherency.size());
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGoogleTensorOptionsGetOutputCoherencyEntry(
+    LrtGoogleTensorOptions options, int entry_idx, int* output_index,
+    bool* prefer_coherent) {
+  if (options == nullptr || output_index == nullptr ||
+      prefer_coherent == nullptr || entry_idx < 0 ||
+      static_cast<size_t>(entry_idx) >= options->output_coherency.size()) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto it = options->output_coherency.begin();
+  std::advance(it, entry_idx);
+  *output_index = it->first;
+  *prefer_coherent = it->second;
   return kLiteRtStatusOk;
 }
