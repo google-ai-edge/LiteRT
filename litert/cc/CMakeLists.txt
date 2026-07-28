@@ -167,7 +167,6 @@ target_compile_features(litert_cc_api_headers INTERFACE cxx_std_20)
 
 target_link_libraries(litert_cc_api_headers
     INTERFACE
-        absl::algorithm_container
         absl::any_invocable
         absl::cleanup
         absl::flat_hash_map
