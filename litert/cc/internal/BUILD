@@ -727,8 +727,6 @@ cc_library(
     hdrs = ["scoped_weight_source.h"],
     deps = [
         ":scoped_file",
-        "//litert/cc:litert_api_types",
-        "@com_google_absl//absl/container:flat_hash_map",
     ],
 )
 

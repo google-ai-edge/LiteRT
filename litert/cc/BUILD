@@ -317,7 +317,6 @@ cc_library(
         "//litert/c/internal:litert_scheduling_info",
         "//litert/cc/internal:litert_consts",
         "//litert/cc/internal:litert_handle",
-        "@com_google_absl//absl/algorithm:container",
     ],
 )
 
@@ -733,6 +732,7 @@ cc_library(
     name = "litert_string_util",
     hdrs = ["litert_string_util.h"],
     deps = [
+        ":litert_api_types",
         ":litert_element_type",
         ":litert_environment",
         ":litert_expected",
@@ -741,7 +741,6 @@ cc_library(
         ":litert_ranked_tensor_type",
         ":litert_tensor_buffer",
         ":litert_tensor_buffer_types",
-        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -1202,8 +1201,6 @@ cc_library_with_testonly_vis(
         "//litert/cc/options:litert_runtime_options",
         "//litert/cc/options:litert_samsung_options",
         "//litert/core:options",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/types:span",
     ],
 )
 

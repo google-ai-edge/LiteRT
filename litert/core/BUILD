@@ -38,8 +38,6 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
         "//litert/cc/internal:scoped_weight_source",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/types:span",
     ],
 )
 

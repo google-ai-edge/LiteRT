@@ -513,7 +513,8 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     weight_loader_owned_ = weight_loader::CreateLiteRtWeightLoader(
         LrtGetRuntimeContext(), fb_model_->GetModel(), model_directory_,
         std::move(jit_compilation_options->scoped_weight_source),
-        jit_compilation_options->weight_in_memory_map);
+        static_cast<const weight_loader::WeightInMemoryMap*>(
+            jit_compilation_options->weight_in_memory_map));
     weight_loader_ = weight_loader_owned_.get();
   } else {
     weight_loader_ = jit_compilation_options->weight_loader;

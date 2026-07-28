@@ -545,6 +545,7 @@ cc_library(
     deps = [
         ":litert_environment",
         ":litert_tensor_buffer",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
