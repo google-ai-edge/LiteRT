@@ -95,6 +95,7 @@
 #include "litert/vendors/qualcomm/core/builders/select_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/softmax_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/spatial_transform_nd_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/spatial_transform_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/split_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/splitv_op_builder.h"
@@ -455,6 +456,8 @@ REGISTER_SIMPLE_OP_BUILDER(BuildNegOp, BuildElementwiseNegOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildRoundOp, BuildElementwiseRoundOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildSignOp, BuildElementwiseSignOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildScatterNdOp, BuildScatterNdOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildBatchToSpaceNdOp, BuildBatchToSpaceNdOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildSpaceToBatchNdOp, BuildSpaceToBatchNdOp)
 
 #undef REGISTER_SIMPLE_OP_BUILDER
 
@@ -1409,6 +1412,8 @@ GetOpBuilders() {
   builders[kLiteRtOpCodeTflResizeBilinear] = Adapt<BuildResizeBilinearOp>;
   builders[kLiteRtOpCodeTflSoftmax] = Adapt<BuildSoftmaxOp>;
   builders[kLiteRtOpCodeTflSpaceToDepth] = Adapt<BuildSpaceToDepthOp>;
+  builders[kLiteRtOpCodeTflBatchToSpaceNd] = Adapt<BuildBatchToSpaceNdOp>;
+  builders[kLiteRtOpCodeTflSpaceToBatchNd] = Adapt<BuildSpaceToBatchNdOp>;
   builders[kLiteRtOpCodeTflTanh] = Adapt<BuildTanhOp>;
   builders[kLiteRtOpCodeTflPad] = Adapt<BuildConstantPadOp>;
   builders[kLiteRtOpCodeTflGather] = Adapt<BuildGatherOp>;

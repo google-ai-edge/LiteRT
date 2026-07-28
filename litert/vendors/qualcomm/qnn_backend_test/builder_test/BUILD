@@ -300,6 +300,40 @@ litert_test(
 )
 
 litert_test(
+    name = "spatial_transform_nd_test",
+    srcs = [
+        "spatial_transform_nd_test.cc",
+    ],
+    linkopts = select({
+        "//litert:android": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:litert_runtime_c_api_so",
+            ]),
+        ],
+    }),
+    linkstatic = True,
+    no_main = True,
+    tags = [
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
+    ],
+    target_compatible_with = _COMPATIBLE_OS,
+    ungrte = True,
+    use_sys_malloc = True,
+    deps = [
+        "//litert/vendors/qualcomm/core:op_code",
+        "//litert/vendors/qualcomm/core/builders:spatial_transform_nd_op_builder",
+        "//litert/vendors/qualcomm/core/utils:test_main",
+        "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
+        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "@qairt//:qnn_lib_headers",
+    ] + _QNN_DEPS,
+)
+
+litert_test(
     name = "fully_connected_int2_test",
     srcs = [
         "fully_connected_int2_test.cc",
