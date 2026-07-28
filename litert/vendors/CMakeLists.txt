@@ -217,7 +217,6 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
       "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/context_binary_info.cc"
       "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/common.cc"
       "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/utils/miscs.cc"
-      "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/schema/soc_table.cc"
       "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/backends/backend_factory.cc"
       "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/backends/qnn_backend.cc"
       "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/backends/gpu_backend.cc"

@@ -12,13 +12,11 @@
 #include <cstdint>
 #include <functional>
 #include <mutex>
-#include <optional>
 #include <queue>
 #include <thread>  // NOLINT
 #include <utility>
 
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 
 namespace qnn {
 
@@ -44,15 +42,6 @@ void SetNullTermPtrArray(absl::Span<const T> src,
     dst[i] = &src[i];
   }
   dst[min_size] = nullptr;
-}
-
-inline std::optional<SocInfo> FindSocInfo(const SnapdragonModel& soc_model) {
-  for (auto i = 0; i < kNumSocInfos; ++i) {
-    if (soc_model == kSocInfos[i].soc_model) {
-      return kSocInfos[i];
-    }
-  }
-  return std::nullopt;
 }
 
 // Serialises async upvote/downvote on a background thread, so Execute() never

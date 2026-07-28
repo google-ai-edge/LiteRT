@@ -20,7 +20,8 @@
 namespace qnn {
 namespace {
 
-const SocInfo kDefaultSocInfo = FindSocModel("SM8750").value_or(kSocInfos[0]);
+constexpr auto kDefaultSocInfo = FindSocInfo("SM8750");
+static_assert(kDefaultSocInfo.has_value());
 
 struct RegisterCall {
   Qnn_BackendHandle_t backend = nullptr;
