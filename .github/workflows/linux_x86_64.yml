@@ -59,7 +59,14 @@ jobs:
     if: needs.check.outputs.run_build == 'true'
     runs-on: linux-x86-n2-16
     container:
-      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:d6b429665f5269698f88ccd00bcb8a6eb685332c302f08f29fe0738cd6a6610c
+      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:12822904942562e7deb0c91fb0eb3dd9ec87b4292881108b166e44149422b87d
+    permissions:
+      actions: write
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REFRESH_CACHE: ${{ github.event_name == 'schedule' ||
+                         (github.event_name == 'workflow_dispatch' && inputs.REFRESH_CACHE) }}
     steps:
       - name: Install Git LFS
         run: |
@@ -68,9 +75,15 @@ jobs:
           git lfs install
 
       - name: Checkout code
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           lfs: true
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
 
       - name: Install System Dependencies
         # Install build toolchains and dependencies matching the internal CI image
@@ -117,7 +130,50 @@ jobs:
           export TF_NEED_CUDA=0
           export TF_SET_ANDROID_WORKSPACE=0
           export CC_OPT_FLAGS='-Wno-sign-compare'
-          python3 configure.py < <(yes "")
+          yes "" | python3 configure.py
+
+      - name: Set up cache keys
+        id: cache-keys
+        run: |
+          CACHE_RESTORE_KEY_2="$GITHUB_WORKFLOW"
+          CACHE_RESTORE_KEY_1="$CACHE_RESTORE_KEY_2-${{ hashFiles('**/WORKSPACE', '**/.bazelrc') }}"
+          CACHE_RESTORE_KEY_0="$CACHE_RESTORE_KEY_1-${{ hashFiles('**/BUILD*') }}"
+          CACHE_RESTORE_KEY_HEAD="$CACHE_RESTORE_KEY_0-${{ github.event.pull_request.base.sha }}"
+          CACHE_KEY="$CACHE_RESTORE_KEY_0-${{ github.sha }}"
+          echo "CACHE_RESTORE_KEY_2=$CACHE_RESTORE_KEY_2" >> "$GITHUB_OUTPUT"
+          echo "CACHE_RESTORE_KEY_1=$CACHE_RESTORE_KEY_1" >> "$GITHUB_OUTPUT"
+          echo "CACHE_RESTORE_KEY_0=$CACHE_RESTORE_KEY_0" >> "$GITHUB_OUTPUT"
+          echo "CACHE_RESTORE_KEY_HEAD=$CACHE_RESTORE_KEY_HEAD" >> "$GITHUB_OUTPUT"
+          echo "CACHE_KEY=$CACHE_KEY" >> "$GITHUB_OUTPUT"
+
+      - name: Clean build outputs if cache is being refreshed.
+        if: env.REFRESH_CACHE == 'true'
+        run: bazel clean --expunge
+
+      - name: Restore bazel cache if cache is not being refreshed.
+        id: bazel-cache
+        if: env.REFRESH_CACHE != 'true'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cache/bazel-linux
+            ~/.cache/bazel-android
+          key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
+          restore-keys: |
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_HEAD }}
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_0 }}-
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_1 }}-
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_2 }}-
+
+      - name: Check cache hit
+        env:
+          CACHE_HIT: ${{ steps.bazel-cache.outputs.cache-hit }}
+          CACHE_PRIMARY_KEY: ${{ steps.bazel-cache.outputs.cache-primary-key }}
+          CACHE_MATCHED_KEY: ${{ steps.bazel-cache.outputs.cache-matched-key }}
+        run: |
+          echo "Cache Hit: $CACHE_HIT"
+          echo "Cache Primary Key: $CACHE_PRIMARY_KEY"
+          echo "Cache Matched Key: $CACHE_MATCHED_KEY"
 
       - name: Run bazel build on Linux
         env:
@@ -160,3 +216,19 @@ jobs:
             --repo_env=HERMETIC_PYTHON_VERSION=3.11 \
             //litert/vendors/intel_openvino/compiler:libLiteRtCompilerPlugin_IntelOpenvino.so \
             //litert/vendors/intel_openvino/dispatch:libLiteRtDispatch_IntelOpenvino.so
+
+      - name: Remove cache if cache is being refreshed.
+        if: env.REFRESH_CACHE == 'true'
+        continue-on-error: true
+        env:
+          CACHE_KEY: ${{ steps.cache-keys.outputs.CACHE_KEY }}
+        run: gh cache delete $CACHE_KEY
+
+      - name: Save bazel cache if it's new or being refreshed.
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: env.REFRESH_CACHE == 'true' || steps.bazel-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/.cache/bazel-linux
+            ~/.cache/bazel-android
+          key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
