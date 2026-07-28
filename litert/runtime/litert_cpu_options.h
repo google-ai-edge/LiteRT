@@ -27,9 +27,9 @@ struct LiteRtYnnpackOptionsT {
   // The number of threads to use for parallel execution.
   int num_threads = 1;
   // Whether to optimize for static shapes.
-  bool static_shape = false;
+  bool static_shape = true;
   // Whether to enable fast math optimizations.
-  bool fast_math = false;
+  bool fast_math = true;
   // Whether to ensure consistent arithmetic results across different platforms.
   bool consistent_arithmetic = false;
   // Whether to avoid using excess precision in floating-point calculations.
