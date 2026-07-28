@@ -98,6 +98,7 @@
 #include "litert/vendors/qualcomm/core/builders/spatial_transform_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/split_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/splitv_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/squeeze_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/strided_slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/tanh_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/tile_op_builder.h"
@@ -857,6 +858,31 @@ LiteRtStatus BuildSplitVOp(const litert::compiler::Op& litert_op,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus BuildSqueezeOp(
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers) {
+  auto options =
+      litert::compiler::GetOptionsAs<litert::compiler::SqueezeOptions>(
+          litert_op.ctx(), litert_op.Get());
+  if (!options) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  ::qnn::TensorWrapper& squeeze_dims_tensor_param = tensor_pool.CreateStaticTensor(
+    QNN_DATATYPE_UINT_32, {},
+    {static_cast<std::uint32_t>(options->squeeze_dims.size())},
+    sizeof(std::uint32_t)* options->squeeze_dims.size(),
+    options->squeeze_dims.data());
+
+  op_wrappers.clear();
+  op_wrappers.emplace_back(::qnn::CreateSqueezeOp(
+      input_tensors[0], output_tensors[0], squeeze_dims_tensor_param)
+  );
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus BuildTopkV2Op(const litert::compiler::Op& litert_op,
                            ::qnn::TensorPool& tensor_pool,
                            std::vector<::qnn::TensorWrapperRef>& input_tensors,
@@ -1409,6 +1435,7 @@ GetOpBuilders() {
   builders[kLiteRtOpCodeTflResizeBilinear] = Adapt<BuildResizeBilinearOp>;
   builders[kLiteRtOpCodeTflSoftmax] = Adapt<BuildSoftmaxOp>;
   builders[kLiteRtOpCodeTflSpaceToDepth] = Adapt<BuildSpaceToDepthOp>;
+  builders[kLiteRtOpCodeTflSqueeze] = Adapt<BuildSqueezeOp>;
   builders[kLiteRtOpCodeTflTanh] = Adapt<BuildTanhOp>;
   builders[kLiteRtOpCodeTflPad] = Adapt<BuildConstantPadOp>;
   builders[kLiteRtOpCodeTflGather] = Adapt<BuildGatherOp>;

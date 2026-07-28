@@ -311,6 +311,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:spatial_transform_op_builder",
         "//litert/vendors/qualcomm/core/builders:split_op_builder",
         "//litert/vendors/qualcomm/core/builders:splitv_op_builder",
+        "//litert/vendors/qualcomm/core/builders:squeeze_op_builder",
         "//litert/vendors/qualcomm/core/builders:strided_slice_op_builder",
         "//litert/vendors/qualcomm/core/builders:tanh_op_builder",
         "//litert/vendors/qualcomm/core/builders:tile_op_builder",
