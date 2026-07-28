@@ -21,6 +21,7 @@
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
@@ -75,6 +76,9 @@ class GraphMapper {
   QnnManager& qnn_;
   Qnn_ContextHandle_t context_handle_;
   Qnn_ProfileHandle_t profile_handle_;
+  // Owns backend-specific graph configs used by graphCreate() and preserves
+  // their lifetime until graphFinalize().
+  ::qnn::GraphConfigBuilder graph_config_builder_;
   Qnn_GraphHandle_t qnn_graph_ = nullptr;
 };
 
