@@ -2316,6 +2316,7 @@ Tensor<Mixins...> Dequantize(Tensor<Mixins...> a,
   auto& a_info = graph::GetInfo(a.GetRaw()).value();
   out_info = a_info;
   out_info.type = Type::kFP32;
+  out_info.quantization = nullptr;
 
   graph::OpDebugger::DebugOp(*out_group->producer);
   a_info.consumers.push_back(out_group->producer);
