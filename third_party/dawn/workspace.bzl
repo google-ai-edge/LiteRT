@@ -6,8 +6,8 @@ def repo():
     http_archive(
         name = "dawn",
         build_file = "//third_party/dawn:dawn.BUILD",
-        strip_prefix = "dawn-20250713.025201",
+        strip_prefix = "dawn-20260720.160313",
         urls = [
-            "https://github.com/google/dawn/archive/v20250713.025201.tar.gz",
+            "https://github.com/google/dawn/archive/v20260720.160313.tar.gz",
         ],
     )
