@@ -112,6 +112,42 @@ LiteRtStatus LiteRtDispatchInvocationContextT::CreateFromGraph(
   GT_LOG_RETURN_IF_NULL(device_context);
   GT_LOG_RETURN_IF_NULL(graph);
 
+  // Annotate Southbound graph edges for any input/output configured as coherent
+  // in GoogleTensorOptions, before thrInvocationContextGet freezes the graph.
+  if (const auto& options = device_context->google_tensor_options();
+      options.has_value()) {
+    for (const auto& [input_index, prefer_coherent] :
+         options->input_coherency) {
+      if (prefer_coherent) {
+        LiteRtDispatchEdgeId edge_id;
+        if (graph->GetInputEdgeId(input_index, edge_id) == kLiteRtStatusOk) {
+          if (graph->AnnotateEdge(edge_id, "cache_policy", "coherent") ==
+              kLiteRtStatusOk) {
+            LITERT_LOG(LITERT_DEBUG,
+                       "Annotated input index %d (edge %" PRIu64
+                       ") with cache_policy=coherent",
+                       input_index, edge_id);
+          }
+        }
+      }
+    }
+    for (const auto& [output_index, prefer_coherent] :
+         options->output_coherency) {
+      if (prefer_coherent) {
+        LiteRtDispatchEdgeId edge_id;
+        if (graph->GetOutputEdgeId(output_index, edge_id) == kLiteRtStatusOk) {
+          if (graph->AnnotateEdge(edge_id, "cache_policy", "coherent") ==
+              kLiteRtStatusOk) {
+            LITERT_LOG(LITERT_DEBUG,
+                       "Annotated output index %d (edge %" PRIu64
+                       ") with cache_policy=coherent",
+                       output_index, edge_id);
+          }
+        }
+      }
+    }
+  }
+
   ThrInvocationContext* thr_invocation_context = thrInvocationContextGet(
       graph->thr_graph(), device_context->thr_context());
   if (thr_invocation_context == nullptr) {
