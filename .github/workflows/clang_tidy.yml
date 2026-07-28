@@ -18,16 +18,17 @@ jobs:
     name: "clang-tidy"
     runs-on: linux-x86-n2-16
     container:
-      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build:latest
+      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:12822904942562e7deb0c91fb0eb3dd9ec87b4292881108b166e44149422b87d
     env:
       CLANG_TIDY_CHECKS: "clang-diagnostic-*,clang-analyzer-*"
       CMAKE_BUILD_DIR: "litert/cmake_build_clang_tidy"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           submodules: recursive
+          persist-credentials: false
 
       - name: Install clang-tidy dependencies
         run: |

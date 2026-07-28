@@ -36,14 +36,16 @@ jobs:
                          (github.event_name == 'workflow_dispatch' && inputs.REFRESH_CACHE) }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Add GNU tar to PATH
         shell: bash
         run: echo "C:/Program Files/Git/usr/bin" >> $GITHUB_PATH
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
 
@@ -59,7 +61,7 @@ jobs:
       - name : Set up cache keys and bazel output base.
         id: cache-keys
         run: |
-          $CACHE_RESTORE_KEY_2="${{ github.workflow }}"
+          $CACHE_RESTORE_KEY_2="$env:GITHUB_WORKFLOW"
           $CACHE_RESTORE_KEY_1="$CACHE_RESTORE_KEY_2-${{ hashFiles('**/WORKSPACE', '**/.bazelrc') }}"
           $CACHE_RESTORE_KEY_0="$CACHE_RESTORE_KEY_1-${{ hashFiles('**/BUILD*') }}"
           # If it's not a pull request, then it will be the same as $CACHE_RESTORE_KEY_1-.
@@ -84,7 +86,7 @@ jobs:
       - name: Restore bazel cache if cache is not being refreshed.
         id: bazel-cache
         if: env.REFRESH_CACHE != 'true'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         env:
           windir: ""
           PATH: "C:/Program Files/Git/usr/bin;C:/Windows/System32;C:/Windows"
@@ -99,9 +101,13 @@ jobs:
 
       - name: Check cache hit
         run: |
-          echo "Cache Hit: ${{ steps.bazel-cache.outputs.cache-hit }}"
-          echo "Cache Primary Key: ${{ steps.bazel-cache.outputs.cache-primary-key }}"
-          echo "Cache Matched Key: ${{ steps.bazel-cache.outputs.cache-matched-key }}"
+          echo "Cache Hit: $env:STEPS_BAZEL_CACHE_OUTPUTS_CACHE_HIT"
+          echo "Cache Primary Key: $env:STEPS_BAZEL_CACHE_OUTPUTS_CACHE_PRIMARY_KEY"
+          echo "Cache Matched Key: $env:STEPS_BAZEL_CACHE_OUTPUTS_CACHE_MATCHED_KEY"
+        env:
+          STEPS_BAZEL_CACHE_OUTPUTS_CACHE_HIT: ${{ steps.bazel-cache.outputs.cache-hit }}
+          STEPS_BAZEL_CACHE_OUTPUTS_CACHE_PRIMARY_KEY: ${{ steps.bazel-cache.outputs.cache-primary-key }}
+          STEPS_BAZEL_CACHE_OUTPUTS_CACHE_MATCHED_KEY: ${{ steps.bazel-cache.outputs.cache-matched-key }}
 
       - name: Run bazel test on Windows for litert
         run: |
@@ -148,7 +154,7 @@ jobs:
 
       - name: Upload failing bazel test logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows-bazel-testlogs-${{ github.run_id }}
           if-no-files-found: ignore
@@ -180,13 +186,15 @@ jobs:
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
         continue-on-error: true  # Ignore errors when cache is not found.
-        run: gh cache delete ${{ steps.cache-keys.outputs.CACHE_KEY }}
+        run: gh cache delete $env:STEPS_CACHE_KEYS_OUTPUTS_CACHE_KEY
+        env:
+          STEPS_CACHE_KEYS_OUTPUTS_CACHE_KEY: ${{ steps.cache-keys.outputs.CACHE_KEY }}
 
       - name: Shutdown bazel server before saving cache.
         run: bazel --output_base="$env:BAZEL_OUTPUT_BASE" shutdown
 
       - name: Save bazel cache if it's new or being refreshed.
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         if: env.REFRESH_CACHE == 'true' || steps.bazel-cache.outputs.cache-hit != 'true'
         env:
           windir: ""
