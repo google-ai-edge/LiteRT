@@ -19,6 +19,7 @@ package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
     default_visibility = [
         "//ml_drift_delegate/delegate:__subpackages__",
+        "//ml_drift_delegate/tflite:__subpackages__",
         "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
     ],
 )
@@ -159,6 +160,27 @@ cc_library(
 )
 
 cc_library(
+    name = "rope_parser",
+    srcs = ["rope_parser.cc"],
+    hdrs = ["rope_parser.h"],
+    deps = [
+        "//ml_drift_delegate/tflite:model_builder_helper",
+        "//ml_drift_delegate/tflite:object_reader",
+        "//ml_drift_delegate/tflite:operation_parser",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:status",
+    ],
+)
+
+cc_library(
     name = "custom_parsers",
     srcs = ["custom_parsers.cc"],
     hdrs = [
@@ -168,7 +190,9 @@ cc_library(
     deps = [
         ":add_values_to_cache_parser",
         ":moe_experts_parser",
+        ":rope_parser",
         ":runtime_batched_matmul_parser",
+        "//ml_drift_delegate/tflite:model_builder",
         "//ml_drift_delegate/tflite:operation_parser",
         "//ml_drift_delegate/tflite:unimplemented_operation_parser",
         "@com_google_absl//absl/strings",
@@ -219,6 +243,7 @@ cc_library(
         "@ml_drift//ml_drift/common:gpu_model_builder",
         "@ml_drift//ml_drift/common:gpu_model_util",
         "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/common/selectors:operation_selector",
         "@ml_drift//ml_drift/common/selectors:special_selector",
