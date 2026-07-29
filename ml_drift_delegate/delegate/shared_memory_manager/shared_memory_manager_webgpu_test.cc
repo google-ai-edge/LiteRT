@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "testing/base/public/gmock.h"
@@ -24,6 +25,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
+#include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
@@ -31,6 +33,8 @@
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/webgpu/execution_environment.h"  // from @ml_drift
 #include "ml_drift/webgpu/testing/webgpu_test.h"  // from @ml_drift
+#include "ml_drift_delegate/delegate/shared_memory_manager/gf32_graph_adapter.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/ir_graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
 #include "tflite/c/common.h"
@@ -49,7 +53,8 @@ TEST_F(SharedMemoryManagerTest, GetNonExistingExternalTensor) {
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerWebgpu(
-      exec_env_.GetEnv(), create_info, graph, &context,
+      exec_env_.GetEnv(), create_info,
+      std::make_unique<GraphFloat32Adapter>(graph), &context,
       buffer_id_to_spatial_tensor, quant_param_tensors,
       /*has_prepacked_tflite_tensors=*/false, /*serialization_cache=*/nullptr,
       /*upload_executor=*/nullptr, /*madvise_original_tensors=*/false);
@@ -77,7 +82,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF16FromF32) {
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerWebgpu(
-      exec_env_.GetEnv(), create_info, graph, &context,
+      exec_env_.GetEnv(), create_info,
+      std::make_unique<GraphFloat32Adapter>(graph), &context,
       buffer_id_to_spatial_tensor, param_tensors,
       /*has_prepacked_tflite_tensors=*/false, /*serialization_cache=*/nullptr,
       /*upload_executor=*/nullptr, /*madvise_original_tensors=*/false);
@@ -148,7 +154,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF16FromF16) {
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerWebgpu(
-      exec_env_.GetEnv(), create_info, graph, &context,
+      exec_env_.GetEnv(), create_info,
+      std::make_unique<GraphFloat32Adapter>(graph), &context,
       buffer_id_to_spatial_tensor, param_tensors,
       /*has_prepacked_tflite_tensors=*/false, /*serialization_cache=*/nullptr,
       /*upload_executor=*/nullptr, /*madvise_original_tensors=*/false);
@@ -207,7 +214,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF32FromF16) {
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerWebgpu(
-      exec_env_.GetEnv(), create_info, graph, &context,
+      exec_env_.GetEnv(), create_info,
+      std::make_unique<GraphFloat32Adapter>(graph), &context,
       buffer_id_to_spatial_tensor, param_tensors,
       /*has_prepacked_tflite_tensors=*/false, /*serialization_cache=*/nullptr,
       /*upload_executor=*/nullptr, /*madvise_original_tensors=*/false);
@@ -266,7 +274,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF32FromF32) {
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerWebgpu(
-      exec_env_.GetEnv(), create_info, graph, &context,
+      exec_env_.GetEnv(), create_info,
+      std::make_unique<GraphFloat32Adapter>(graph), &context,
       buffer_id_to_spatial_tensor, param_tensors,
       /*has_prepacked_tflite_tensors=*/false, /*serialization_cache=*/nullptr,
       /*upload_executor=*/nullptr, /*madvise_original_tensors=*/false);
@@ -324,7 +333,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalQuantizedTensor) {
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerWebgpu(
-      exec_env_.GetEnv(), create_info, graph, &context,
+      exec_env_.GetEnv(), create_info,
+      std::make_unique<GraphFloat32Adapter>(graph), &context,
       buffer_id_to_spatial_tensor, quant_param_tensors,
       /*has_prepacked_tflite_tensors=*/false, /*serialization_cache=*/nullptr,
       /*upload_executor=*/nullptr, /*madvise_original_tensors=*/false);
@@ -409,7 +419,8 @@ TEST_F(SharedMemoryManagerTest, CreateQuantizedTensorMixedPrecision) {
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerWebgpu(
-      exec_env_.GetEnv(), create_info, graph, &context,
+      exec_env_.GetEnv(), create_info,
+      std::make_unique<GraphFloat32Adapter>(graph), &context,
       buffer_id_to_spatial_tensor, quant_param_tensors,
       /*has_prepacked_tflite_tensors=*/false, /*serialization_cache=*/nullptr,
       /*upload_executor=*/nullptr, /*madvise_original_tensors=*/false);
@@ -554,8 +565,8 @@ void RunBlockwiseQuantizationTest(const webgpu::ExecutionEnvironment& env,
   }
 
   auto manager = MakeSharedMemoryManagerWebgpu(
-      env, create_info, graph, &context, buffer_id_to_spatial_tensor,
-      quant_param_tensors,
+      env, create_info, std::make_unique<GraphFloat32Adapter>(graph), &context,
+      buffer_id_to_spatial_tensor, quant_param_tensors,
       /*has_prepacked_tflite_tensors=*/false,
       /*serialization_cache=*/nullptr,
       /*upload_executor=*/nullptr,
@@ -642,6 +653,80 @@ TEST_F(SharedMemoryManagerTest, CreateBlockwiseQuantizedTensorSymmetric) {
   std::vector<int> expected_zp(200, 0);
   RunBlockwiseQuantizationTest(exec_env_.GetEnv(), kTfLiteInt32, 200,
                                expected_zp, /*use_invalid_zp=*/true);
+}
+
+// Integration coverage for the IR path: build an ir::IrModel, drive the unified
+// SharedMemoryManager over it via IrModelAdapter, and assert the shared
+// constant is mutated in place while its id stays stable. This mirrors the
+// GraphFloat32 coverage above so IR support is not silently dropped when the
+// GF32 path is updated. (The exhaustive IR-adapter logic lives in the
+// host-runnable ir_graph_adapter_test.)
+TEST_F(SharedMemoryManagerTest, IrSharedConstantIsMutatedInPlaceWithStableId) {
+  ValueIdToSharedTensorMap buffer_id_to_spatial_tensor;
+  ValueIdToSharedTensorMap quant_param_tensors;
+
+  CreateGpuModelInfo create_info;
+  create_info.precision = CalculationsPrecision::F16;
+  create_info.storage_type = TensorStorageType::BUFFER;
+
+  ir::IrModel graph;
+  ir::IrOp* op = graph.add_op();
+  const uint32_t op_id = static_cast<uint32_t>(op->id);
+  const uint32_t weights =
+      static_cast<uint32_t>(graph.add_tensor(TensorDescriptor{})->id);
+  const uint32_t output =
+      static_cast<uint32_t>(graph.add_tensor(TensorDescriptor{})->id);
+  // IrModel's AddConsumer/SetProducer take (tensor_id, op_id).
+  graph.AddConsumer(weights, op_id);
+  graph.SetProducer(output, op_id);
+  graph.GetMutableTensor(weights)->desc.SetBHWCShape(BHWC(1, 1, 1, 10));
+  const uint32_t original_weights_id = weights;
+
+  TfLiteContext context;
+  auto manager = MakeSharedMemoryManagerWebgpu(
+      exec_env_.GetEnv(), create_info, std::make_unique<IrModelAdapter>(graph),
+      &context, buffer_id_to_spatial_tensor, quant_param_tensors,
+      /*has_prepacked_tflite_tensors=*/false, /*serialization_cache=*/nullptr,
+      /*upload_executor=*/nullptr, /*madvise_original_tensors=*/false);
+
+  TfLiteTensor tflite_tensor;
+  tflite_tensor.quantization.type = kTfLiteNoQuantization;
+  tflite_tensor.type = TfLiteType::kTfLiteFloat32;
+  std::vector<float> dummy(10);
+  tflite_tensor.dims = TfLiteIntArrayCreate(1);
+  tflite_tensor.dims->data[0] = 10;
+  tflite_tensor.data.f = dummy.data();
+  context.tensors_size = 1;
+  context.tensors = &tflite_tensor;
+  ::litert::ml_drift::SharedTfliteTensor shared_tflite_tensor;
+  shared_tflite_tensor.tflite_tensor_id = 0;
+  shared_tflite_tensor.global_id = 0;
+
+  absl::flat_hash_map<ml_drift::ValueId,
+                      ml_drift::SharedMemoryManager::GlobalId>
+      local_to_global_id_map;
+  ASSERT_OK(manager->RegisterExternalConstantTensors(
+      original_weights_id, shared_tflite_tensor, local_to_global_id_map));
+
+  // Mutated in place: the consumer op still references the same id, the tensor
+  // still exists, and its descriptor was updated to FLOAT16.
+  ASSERT_EQ(graph.op(op_id)->inputs.size(), 1);
+  EXPECT_EQ(static_cast<uint32_t>(graph.op(op_id)->inputs[0]),
+            original_weights_id);
+  ASSERT_NE(graph.tensor(original_weights_id), nullptr);
+  EXPECT_EQ(graph.tensor(original_weights_id)->desc.GetDataType(),
+            DataType::FLOAT16);
+
+  // The id map is keyed on the stable id.
+  ASSERT_EQ(local_to_global_id_map.size(), 1);
+  ASSERT_TRUE(local_to_global_id_map.contains(original_weights_id));
+  ASSERT_OK_AND_ASSIGN(ml_drift::GpuSpatialTensor * external_tensor,
+                       manager->GetExternalConstantTensor(
+                           local_to_global_id_map.at(original_weights_id)));
+  EXPECT_NE(external_tensor, nullptr);
+  EXPECT_EQ(buffer_id_to_spatial_tensor.size(), 1);
+
+  TfLiteIntArrayFree(tflite_tensor.dims);
 }
 
 }  // namespace ml_drift
