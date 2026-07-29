@@ -206,8 +206,8 @@ size_t MHRoPEToSHRoPE(std::function<bool(OpWrapper&)> validate_op_config,
   if (slice1_op.GetInputTensor(0) != rope_input) return 1;
 
   // Concat takes slice0 and slice1 outputs.
-  if (slice0_op.GetOutputTensor(0) != concat_op.GetInputTensor(0)) return 1;
-  if (slice1_op.GetOutputTensor(0) != concat_op.GetInputTensor(1)) return 1;
+  if (slice0_op.GetOutputTensor(0) != concat_op.GetInputTensor(1)) return 1;
+  if (slice1_op.GetOutputTensor(0) != concat_op.GetInputTensor(0)) return 1;
 
   // Standard RoPE: mul_cos takes rope_input as input 0, mul_sin takes
   // concat output as input 0.
