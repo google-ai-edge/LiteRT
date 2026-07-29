@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -61,7 +62,7 @@ struct LiteRtOptionsT {
   // - Breaking layout compatibility: set patch and minor to 0, increment major.
   //
   // Note: Changing a default value does not impact the version.
-  LiteRtApiVersion version = {.major = 1, .minor = 0, .patch = 0};
+  LiteRtApiVersion version = {.major = 1, .minor = 1, .patch = 0};
   LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
   LiteRtOpaqueOptions options = nullptr;
   std::vector<CustomOpOption> custom_op_options;
@@ -80,6 +81,10 @@ struct LiteRtOptionsT {
   // the public no-Abseil C++ headers do not need Abseil merely to describe the
   // otherwise opaque runtime options object.
   const void* weight_in_memory_map = nullptr;
+  // When set, only the subgraphs directly referenced by these signatures are
+  // active for runtime delegation. The initial implementation does not expand
+  // the active set to transitively referenced callee subgraphs.
+  std::optional<std::vector<std::string>> selected_signature_keys;
 };
 
 #endif  // ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_

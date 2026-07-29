@@ -19,9 +19,11 @@
 #include <ios>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/internal/scoped_weight_source.h"
@@ -48,6 +50,23 @@ TEST(OptionsTest, SetHardwareAccelerators) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options_handle,
       internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+}
+
+TEST(OptionsTest, SetSelectedSignaturesCopiesKeys) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+
+  std::vector<absl::string_view> signature_keys = {"decode", "prefill"};
+  LITERT_EXPECT_OK(options.SetSelectedSignatures(signature_keys));
+  signature_keys.clear();
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options_handle,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+  auto* impl = reinterpret_cast<LiteRtOptionsT*>(options_handle.get());
+  ASSERT_TRUE(impl->selected_signature_keys.has_value());
+  EXPECT_EQ(*impl->selected_signature_keys,
+            std::vector<std::string>({"decode", "prefill"}));
 }
 
 TEST(OptionsTest, SetExternalWeightScopedFileStoresMetadata) {

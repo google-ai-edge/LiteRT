@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -161,6 +162,85 @@ TEST(CompiledModelTest, Basic) {
   for (auto tensor_buffer : output_tensor_buffers) {
     LiteRtDestroyTensorBuffer(tensor_buffer);
   }
+}
+
+TEST(CompiledModelTest, SelectedSignaturesRejectInactiveRuntimeAccess) {
+  auto path = testing::GetTfliteFilePath("testdata/multi_signatures.bin");
+
+  LiteRtEnvironment environment;
+  LiteRtEnvOption environment_options = {};
+  LITERT_ASSERT_OK(LiteRtCreateEnvironment(
+      /*num_options=*/0, &environment_options, &environment));
+
+  LiteRtModel model;
+  LITERT_ASSERT_OK(
+      LiteRtCreateModelFromFile(environment, path.c_str(), &model));
+
+  LiteRtParamIndex num_signatures = 0;
+  LITERT_ASSERT_OK(LiteRtGetNumModelSignatures(model, &num_signatures));
+  ASSERT_EQ(num_signatures, 2);
+
+  LiteRtOptions options;
+  LITERT_ASSERT_OK(LiteRtCreateOptions(&options));
+  LITERT_ASSERT_OK(
+      LiteRtSetOptionsHardwareAccelerators(options, kLiteRtHwAcceleratorCpu));
+  const char* selected_signature_keys[] = {"add"};
+  LITERT_ASSERT_OK(LiteRtSetOptionsSelectedSignatures(
+      options, std::size(selected_signature_keys), selected_signature_keys));
+
+  LiteRtCompiledModel compiled_model;
+  LITERT_ASSERT_OK(
+      LiteRtCreateCompiledModel(environment, model, options, &compiled_model));
+
+  LiteRtTensorBufferRequirements requirements;
+  EXPECT_EQ(LiteRtGetCompiledModelInputBufferRequirements(
+                compiled_model, /*signature_index=*/0, /*input_index=*/0,
+                &requirements),
+            kLiteRtStatusOk);
+  EXPECT_EQ(LiteRtGetCompiledModelInputBufferRequirements(
+                compiled_model, /*signature_index=*/1, /*input_index=*/0,
+                &requirements),
+            kLiteRtStatusErrorNotFound);
+  EXPECT_EQ(LiteRtRunCompiledModel(
+                compiled_model, /*signature_index=*/1,
+                /*num_input_buffers=*/0, /*input_buffers=*/nullptr,
+                /*num_output_buffers=*/0, /*output_buffers=*/nullptr),
+            kLiteRtStatusErrorNotFound);
+
+  LiteRtDestroyCompiledModel(compiled_model);
+  LiteRtDestroyOptions(options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
+}
+
+TEST(CompiledModelTest, UnknownSelectedSignatureFailsCreation) {
+  auto path = testing::GetTfliteFilePath("testdata/multi_signatures.bin");
+
+  LiteRtEnvironment environment;
+  LiteRtEnvOption environment_options = {};
+  LITERT_ASSERT_OK(LiteRtCreateEnvironment(
+      /*num_options=*/0, &environment_options, &environment));
+
+  LiteRtModel model;
+  LITERT_ASSERT_OK(
+      LiteRtCreateModelFromFile(environment, path.c_str(), &model));
+
+  LiteRtOptions options;
+  LITERT_ASSERT_OK(LiteRtCreateOptions(&options));
+  LITERT_ASSERT_OK(
+      LiteRtSetOptionsHardwareAccelerators(options, kLiteRtHwAcceleratorCpu));
+  const char* selected_signature_keys[] = {"missing"};
+  LITERT_ASSERT_OK(LiteRtSetOptionsSelectedSignatures(
+      options, std::size(selected_signature_keys), selected_signature_keys));
+
+  LiteRtCompiledModel compiled_model = nullptr;
+  EXPECT_EQ(
+      LiteRtCreateCompiledModel(environment, model, options, &compiled_model),
+      kLiteRtStatusErrorInvalidArgument);
+
+  LiteRtDestroyOptions(options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
 }
 
 TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {

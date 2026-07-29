@@ -363,6 +363,15 @@ class LiteRtCompiledModelT {
   // If the signature key is not found, returns nullptr.
   tflite::SignatureRunner* GetSignatureRunner(absl::string_view signature_key);
 
+  // Resolves selected signatures to their deduplicated root subgraphs. The
+  // initial implementation intentionally defines the active set to be exactly
+  // this root set and does not add transitively referenced callees.
+  litert::Expected<void> InitializeActiveSubgraphs(LiteRtOptions options);
+
+  // Returns NotFound when an explicitly unselected signature is used.
+  litert::Expected<void> ValidateSignatureIsActive(
+      absl::string_view signature_key) const;
+
   // Structure to track constant output tensors and their locked buffer
   // addresses
   struct ConstantOutputInfo {
@@ -491,6 +500,11 @@ class LiteRtCompiledModelT {
   std::unique_ptr<::tflite::FlatBufferModel> fb_model_;
   litert::OwningBufferRef<uint8_t> model_buf_;
   std::vector<const std::string*> signature_keys_;
+  // All subgraphs when no signature selection is configured; otherwise the
+  // deduplicated signature root set. Transitive expansion is a follow-up.
+  std::vector<int> active_subgraph_indices_;
+  // Absent means every signature is active.
+  std::optional<absl::flat_hash_set<std::string>> selected_signature_keys_;
   // If JIT compilation hasn't happened, the flatbuffer fd belongs to the
   // incoming literal model. If JIT compilation has happened, the fd belongs to
   // a newly serialized flatbuffer owned by the compiled model. If the model is

@@ -14,6 +14,8 @@
 
 #include "litert/c/litert_options.h"
 
+#include <iterator>
+
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
@@ -78,6 +80,38 @@ TEST(LiteRtCompiledModelOptionsTest, SetAndGetHardwareAcceleratorsWorks) {
   EXPECT_EQ(
       LiteRtSetOptionsHardwareAccelerators(nullptr, kLiteRtHwAcceleratorNone),
       kLiteRtStatusErrorInvalidArgument);
+
+  LiteRtDestroyOptions(options);
+}
+
+TEST(LiteRtCompiledModelOptionsTest, SetSelectedSignaturesValidatesInput) {
+  LiteRtOptions options;
+  ASSERT_EQ(LiteRtCreateOptions(&options), kLiteRtStatusOk);
+
+  const char* signature_keys[] = {"decode", "prefill"};
+  EXPECT_EQ(LiteRtSetOptionsSelectedSignatures(
+                options, std::size(signature_keys), signature_keys),
+            kLiteRtStatusOk);
+
+  EXPECT_EQ(LiteRtSetOptionsSelectedSignatures(nullptr, 1, signature_keys),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtSetOptionsSelectedSignatures(options, 0, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtSetOptionsSelectedSignatures(options, 1, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+
+  const char* null_key[] = {nullptr};
+  EXPECT_EQ(LiteRtSetOptionsSelectedSignatures(options, 1, null_key),
+            kLiteRtStatusErrorInvalidArgument);
+
+  const char* empty_key[] = {""};
+  EXPECT_EQ(LiteRtSetOptionsSelectedSignatures(options, 1, empty_key),
+            kLiteRtStatusErrorInvalidArgument);
+
+  const char* duplicate_keys[] = {"decode", "decode"};
+  EXPECT_EQ(LiteRtSetOptionsSelectedSignatures(
+                options, std::size(duplicate_keys), duplicate_keys),
+            kLiteRtStatusErrorInvalidArgument);
 
   LiteRtDestroyOptions(options);
 }
