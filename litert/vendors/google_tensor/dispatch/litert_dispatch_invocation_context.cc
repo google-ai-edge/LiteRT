@@ -42,17 +42,32 @@ LiteRtStatus LiteRtDispatchInvocationContextT::CreateFromBytecode(
     const LiteRtMemBuffer& exec_bytecode_buffer,
     const char* absl_nullable function_name, int num_inputs, int num_outputs,
     LiteRtDispatchInvocationContext& invocation_context) {
+  LITERT_LOG(LITERT_INFO, "Jetski: CreateFromBytecode start");
   GT_LOG_RETURN_IF_NULL(device_context);
 
   LiteRtDispatchExecutableHandle exec_handle;
-  LITERT_RETURN_IF_ERROR(device_context->LoadExecutable(
-      exec_type, exec_bytecode_buffer, exec_handle));
+  LITERT_LOG(LITERT_INFO, "Jetski: Loading executable");
+  auto status = device_context->LoadExecutable(exec_type, exec_bytecode_buffer,
+                                               exec_handle);
+  if (status != kLiteRtStatusOk) {
+    LITERT_LOG(LITERT_ERROR, "Jetski: LoadExecutable failed: %d", status);
+    return status;
+  }
+  LITERT_LOG(LITERT_INFO, "Jetski: Loaded executable, handle: %lu",
+             exec_handle);
+
   absl::Cleanup exec_cleanup = [device_context, exec_handle] {
     device_context->UnloadExecutable(exec_handle);
   };
 
   LiteRtDispatchGraph graph;
-  LITERT_RETURN_IF_ERROR(LiteRtDispatchGraphT::Create(device_context, graph));
+  LITERT_LOG(LITERT_INFO, "Jetski: Creating graph");
+  status = LiteRtDispatchGraphT::Create(device_context, graph);
+  if (status != kLiteRtStatusOk) {
+    LITERT_LOG(LITERT_ERROR, "Jetski: Graph creation failed: %d", status);
+    return status;
+  }
+  LITERT_LOG(LITERT_INFO, "Jetski: Created graph");
   absl::Cleanup graph_cleanup = [graph] { graph->Destroy(); };
 
   LiteRtDispatchNodeId node_id = 0;
@@ -69,38 +84,81 @@ LiteRtStatus LiteRtDispatchInvocationContextT::CreateFromBytecode(
       return kLiteRtStatusErrorInvalidArgument;
   }
 
-  // The positional node connection API is used here so that this path remains
-  // compatible with older SouthBound versions. As a result, support for the
-  // basic Dispatch API can still be advertised in the presence of an old
-  // SouthBound version.
-  LITERT_RETURN_IF_ERROR(graph->AddPositionalNode(node_id, node_type));
-  LITERT_RETURN_IF_ERROR(
-      graph->AssignNodeFunction(node_id, exec_handle, function_name));
+  LITERT_LOG(LITERT_INFO, "Jetski: Adding positional node");
+  status = graph->AddPositionalNode(node_id, node_type);
+  if (status != kLiteRtStatusOk) {
+    LITERT_LOG(LITERT_ERROR, "Jetski: AddPositionalNode failed: %d", status);
+    return status;
+  }
+
+  LITERT_LOG(LITERT_INFO, "Jetski: Assigning node function: %s", function_name);
+  status = graph->AssignNodeFunction(node_id, exec_handle, function_name);
+  if (status != kLiteRtStatusOk) {
+    LITERT_LOG(LITERT_ERROR, "Jetski: AssignNodeFunction failed: %d", status);
+    return status;
+  }
 
   LiteRtDispatchEdgeId next_edge_id = 0;
   for (int input_index = 0; input_index < num_inputs; ++input_index) {
     LiteRtDispatchEdgeId edge_id = next_edge_id++;
 
-    LITERT_RETURN_IF_ERROR(graph->AddEdge(edge_id));
-    LITERT_RETURN_IF_ERROR(graph->ConnectPositionalNodeInput(node_id, edge_id));
-    LITERT_RETURN_IF_ERROR(graph->ConnectGraphInput(edge_id));
+    LITERT_LOG(LITERT_INFO, "Jetski: Adding input edge: %d", edge_id);
+    status = graph->AddEdge(edge_id);
+    if (status != kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_ERROR, "Jetski: AddEdge failed: %d", status);
+      return status;
+    }
+
+    status = graph->ConnectPositionalNodeInput(node_id, edge_id);
+    if (status != kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_ERROR, "Jetski: ConnectPositionalNodeInput failed: %d",
+                 status);
+      return status;
+    }
+
+    status = graph->ConnectGraphInput(edge_id);
+    if (status != kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_ERROR, "Jetski: ConnectGraphInput failed: %d", status);
+      return status;
+    }
   }
 
   for (int output_index = 0; output_index < num_outputs; ++output_index) {
     LiteRtDispatchEdgeId edge_id = next_edge_id++;
 
-    LITERT_RETURN_IF_ERROR(graph->AddEdge(edge_id));
-    LITERT_RETURN_IF_ERROR(
-        graph->ConnectPositionalNodeOutput(node_id, edge_id));
-    LITERT_RETURN_IF_ERROR(graph->ConnectGraphOutput(edge_id));
+    LITERT_LOG(LITERT_INFO, "Jetski: Adding output edge: %d", edge_id);
+    status = graph->AddEdge(edge_id);
+    if (status != kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_ERROR, "Jetski: AddEdge failed: %d", status);
+      return status;
+    }
+
+    status = graph->ConnectPositionalNodeOutput(node_id, edge_id);
+    if (status != kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_ERROR, "Jetski: ConnectPositionalNodeOutput failed: %d",
+                 status);
+      return status;
+    }
+
+    status = graph->ConnectGraphOutput(edge_id);
+    if (status != kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_ERROR, "Jetski: ConnectGraphOutput failed: %d", status);
+      return status;
+    }
   }
 
-  LITERT_RETURN_IF_ERROR(
-      CreateFromGraph(device_context, exec_handle, graph, invocation_context));
+  LITERT_LOG(LITERT_INFO, "Jetski: Calling CreateFromGraph");
+  status =
+      CreateFromGraph(device_context, exec_handle, graph, invocation_context);
+  if (status != kLiteRtStatusOk) {
+    LITERT_LOG(LITERT_ERROR, "Jetski: CreateFromGraph failed: %d", status);
+    return status;
+  }
 
   std::move(graph_cleanup).Cancel();
   std::move(exec_cleanup).Cancel();
 
+  LITERT_LOG(LITERT_INFO, "Jetski: CreateFromBytecode success");
   return kLiteRtStatusOk;
 }
 
@@ -109,15 +167,19 @@ LiteRtStatus LiteRtDispatchInvocationContextT::CreateFromGraph(
     std::optional<LiteRtDispatchExecutableHandle> exec_handle,
     LiteRtDispatchGraph graph,
     LiteRtDispatchInvocationContext& invocation_context) {
+  LITERT_LOG(LITERT_INFO, "Jetski: CreateFromGraph start");
   GT_LOG_RETURN_IF_NULL(device_context);
   GT_LOG_RETURN_IF_NULL(graph);
 
+  LITERT_LOG(LITERT_INFO, "Jetski: Calling thrInvocationContextGet");
   ThrInvocationContext* thr_invocation_context = thrInvocationContextGet(
       graph->thr_graph(), device_context->thr_context());
   if (thr_invocation_context == nullptr) {
     LITERT_LOG(LITERT_ERROR, "Failed to get SB invocation context");
     return kLiteRtStatusErrorRuntimeFailure;
   }
+  LITERT_LOG(LITERT_INFO, "Jetski: thrInvocationContextGet ok: %p",
+             thr_invocation_context);
 
   // The returned instance must be allocated with `new`, as it will be
   // deallocated via `delete` in `Destroy`.
@@ -131,12 +193,19 @@ LiteRtStatus LiteRtDispatchInvocationContextT::CreateFromGraph(
     // In this case, the invocation context does not own the graph, and thus
     // must be registered with the graph to ensure that the graph remains alive
     // until after the invocation context is destroyed.
-    LITERT_RETURN_IF_ERROR(
-        graph->RegisterInvocationContext(invocation_context));
+    LITERT_LOG(LITERT_INFO,
+               "Jetski: Registering invocation context with graph");
+    auto status = graph->RegisterInvocationContext(invocation_context);
+    if (status != kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_ERROR, "Jetski: RegisterInvocationContext failed: %d",
+                 status);
+      return status;
+    }
     invocation_context->registered_with_graph_ = true;
   }
 
   std::move(invocation_context_cleanup).Cancel();
+  LITERT_LOG(LITERT_INFO, "Jetski: CreateFromGraph success");
   return kLiteRtStatusOk;
 }
 
