@@ -294,10 +294,20 @@ class CommuteTransposeWithEwiseOps : public RewritePattern {
         PermuteShape(current_out_type.getShape(), inverse_perm),
         current_out_type.getElementType());
 
+    // Determine the order of operands.
+    Value new_lhs, new_rhs;
+    if (op->getOperand(0) == tpose_arg.getResult()) {
+      new_lhs = tpose_arg.getInput();
+      new_rhs = tposed_const->getResult(0);
+    } else {
+      new_lhs = tposed_const->getResult(0);
+      new_rhs = tpose_arg.getInput();
+    }
+
     // Create new ewise op to appear before the tranpose.
     auto *new_ewise_op =
         rewriter.create(op->getLoc(), op->getName().getIdentifier(),
-                        {tpose_arg.getInput(), tposed_const->getResult(0)},
+                        {new_lhs, new_rhs},
                         new_out_type, op->getAttrs());
 
     // Apply original tranpose to output of ewise op.
