@@ -507,6 +507,7 @@ cc_library(
         "//tflite/c:common_internal",
         "//tflite/converter/experimental/remat:metadata_util",
         "//tflite/core/api",
+        "//tflite/core/c:allocator_internal",
         "//tflite/core/c:c_api_types",
         "//tflite/core/c:common",
         "//tflite/experimental/resource",
