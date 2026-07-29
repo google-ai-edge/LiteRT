@@ -687,10 +687,7 @@ cc_library(
     name = "gpu_environment_util",
     srcs = ["gpu_environment_util.cc"],
     hdrs = ["gpu_environment_util.h"],
-    visibility = [
-        "//litert:__subpackages__",
-        "//third_party/odml/litert_lm:__subpackages__",
-    ],
+    visibility = ["//third_party/odml/litert_lm:__subpackages__"],
     deps = [
         ":shared_vulkan_env",
         "//litert/c:litert_common",
