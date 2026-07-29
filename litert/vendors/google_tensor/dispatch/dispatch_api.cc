@@ -55,7 +55,7 @@ constexpr auto Pad(X x, Align align) {
 
 LiteRtStatus CreateTensorBufferRequirements(
     const LiteRtRuntimeContext* runtime_context,
-    const LiteRtRankedTensorType& tensor_type,
+    const LiteRtRankedTensorType& tensor_type, bool prefer_coherent,
     LiteRtTensorBufferRequirements& requirements) {
   if (tensor_type.layout.has_strides) {
     LITERT_LOG(LITERT_ERROR, "Tensor strides are not supported");
@@ -65,11 +65,16 @@ LiteRtStatus CreateTensorBufferRequirements(
   LITERT_ASSIGN_OR_RETURN(size_t size_bytes,
                           litert::internal::GetNumPackedBytes(tensor_type));
 
-  return runtime_context->create_tensor_buffer_requirements(
+  LITERT_RETURN_IF_ERROR(runtime_context->create_tensor_buffer_requirements(
       GetTheSupportedTensorBufferTypes().size(),
       GetTheSupportedTensorBufferTypes().data(),
       Pad(size_bytes, kEdgeTpuPadding), /*num_strides=*/0,
-      /*strides=*/nullptr, &requirements);
+      /*strides=*/nullptr, &requirements));
+
+  if (prefer_coherent) {
+    LiteRtSetTensorBufferRequirementsPreferCoherent(requirements, true);
+  }
+  return kLiteRtStatusOk;
 }
 
 }  // namespace
@@ -137,9 +142,18 @@ LiteRtStatus GetInputRequirements(
   GT_LOG_RETURN_IF_NULL(tensor_type);
   GT_LOG_RETURN_IF_NULL(tensor_buffer_requirements);
 
+  bool prefer_coherent = false;
+  if (auto& gt_options =
+          invocation_context->device_context()->google_tensor_options();
+      gt_options.has_value()) {
+    if (gt_options->input_coherency.count(input_index)) {
+      prefer_coherent = gt_options->input_coherency.at(input_index);
+    }
+  }
+
   return CreateTensorBufferRequirements(
       invocation_context->device_context()->runtime_context(), *tensor_type,
-      *tensor_buffer_requirements);
+      prefer_coherent, *tensor_buffer_requirements);
 }
 
 LiteRtStatus GetOutputRequirements(
@@ -149,9 +163,18 @@ LiteRtStatus GetOutputRequirements(
   GT_LOG_RETURN_IF_NULL(tensor_type);
   GT_LOG_RETURN_IF_NULL(tensor_buffer_requirements);
 
+  bool prefer_coherent = false;
+  if (auto& gt_options =
+          invocation_context->device_context()->google_tensor_options();
+      gt_options.has_value()) {
+    if (gt_options->output_coherency.count(output_index)) {
+      prefer_coherent = gt_options->output_coherency.at(output_index);
+    }
+  }
+
   return CreateTensorBufferRequirements(
       invocation_context->device_context()->runtime_context(), *tensor_type,
-      *tensor_buffer_requirements);
+      prefer_coherent, *tensor_buffer_requirements);
 }
 
 LiteRtStatus RegisterTensorBuffer(

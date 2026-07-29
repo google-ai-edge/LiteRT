@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_GOOGLE_TENSOR_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_GOOGLE_TENSOR_OPTIONS_H_
 
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <vector>
@@ -209,6 +210,48 @@ class GoogleTensorOptions {
     internal::AssertOk(LrtGoogleTensorOptionsGetExtraOptionsPath,
                        options_data, &extra_options_path);
     return StringView(extra_options_path);
+  }
+
+  /// @brief Sets whether the specified input tensor should use coherent memory.
+  /// @param input_index The 0-based index of the input tensor in the model
+  ///     signature (not the global TfLiteTensor index).
+  /// @param prefer_coherent Whether to prefer coherent memory allocation and
+  ///     mapping.
+  void SetInputCoherency(size_t input_index, bool prefer_coherent) {
+    internal::AssertOk(LrtGoogleTensorOptionsSetInputCoherency, Get(),
+                       static_cast<int>(input_index), prefer_coherent);
+  }
+
+  /// @brief Gets whether the specified input tensor should use coherent memory.
+  /// @param input_index The 0-based index of the input tensor in the model
+  ///     signature (not the global TfLiteTensor index).
+  bool GetInputCoherency(size_t input_index) const {
+    bool prefer_coherent = false;
+    internal::AssertOk(LrtGoogleTensorOptionsGetInputCoherency, Get(),
+                       static_cast<int>(input_index), &prefer_coherent);
+    return prefer_coherent;
+  }
+
+  /// @brief Sets whether the specified output tensor should use coherent
+  /// memory.
+  /// @param output_index The 0-based index of the output tensor in the model
+  ///     signature (not the global TfLiteTensor index).
+  /// @param prefer_coherent Whether to prefer coherent memory allocation and
+  ///     mapping.
+  void SetOutputCoherency(size_t output_index, bool prefer_coherent) {
+    internal::AssertOk(LrtGoogleTensorOptionsSetOutputCoherency, Get(),
+                       static_cast<int>(output_index), prefer_coherent);
+  }
+
+  /// @brief Gets whether the specified output tensor should use coherent
+  /// memory.
+  /// @param output_index The 0-based index of the output tensor in the model
+  ///     signature (not the global TfLiteTensor index).
+  bool GetOutputCoherency(size_t output_index) const {
+    bool prefer_coherent = false;
+    internal::AssertOk(LrtGoogleTensorOptionsGetOutputCoherency, Get(),
+                       static_cast<int>(output_index), &prefer_coherent);
+    return prefer_coherent;
   }
 
  private:

@@ -162,6 +162,11 @@ class LiteRtTensorBufferT {
   }
   void ClearEvent() { event_ = nullptr; }
 
+  bool PreferCoherent() const { return prefer_coherent_; }
+  void SetPreferCoherent(bool prefer_coherent) {
+    prefer_coherent_ = prefer_coherent;
+  }
+
   litert::Expected<void*> GetHostBuffer();
   litert::Expected<AHardwareBuffer*> GetAhwbBuffer();
   litert::Expected<std::pair<void*, int>> GetIonBuffer();
@@ -313,6 +318,7 @@ class LiteRtTensorBufferT {
       memory_backed_buffers_;
   bool is_locked_ = false;
   LiteRtTensorBufferLockMode lock_mode_;
+  bool prefer_coherent_ = false;
 };
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_TENSOR_BUFFER_H_

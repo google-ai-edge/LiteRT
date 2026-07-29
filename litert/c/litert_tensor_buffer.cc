@@ -502,6 +502,15 @@ LiteRtStatus LiteRtCreateManagedTensorBufferFromRequirements(
       auto created_tensor_buffer,
       LiteRtTensorBufferT::CreateManagedWithAlignment(
           env, buffer_type, *tensor_type_to_use, buffer_size, alignment));
+
+  bool prefer_coherent = false;
+  if (LiteRtGetTensorBufferRequirementsPreferCoherent(requirements,
+                                                      &prefer_coherent) ==
+          kLiteRtStatusOk &&
+      prefer_coherent) {
+    created_tensor_buffer->SetPreferCoherent(true);
+  }
+
   *tensor_buffer = created_tensor_buffer.release();
   return kLiteRtStatusOk;
 }

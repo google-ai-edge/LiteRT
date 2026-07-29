@@ -1054,7 +1054,8 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
 #if LITERT_HAS_AHWB_SUPPORT
       LITERT_ASSIGN_OR_ABORT(auto ahwb_buffer, GetAhwbBuffer());
       return litert::internal::AhwbBuffer::Lock(
-          ahwb_buffer, event_ != nullptr ? event_.get() : nullptr);
+          ahwb_buffer, event_ != nullptr ? event_.get() : nullptr,
+          prefer_coherent_);
 #else
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                          "AHardwareBuffer is not supported");

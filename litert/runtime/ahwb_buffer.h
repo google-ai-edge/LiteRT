@@ -32,7 +32,8 @@ struct AhwbBuffer {
   static void Free(AHardwareBuffer* ahwb);
   static Expected<size_t> GetSize(AHardwareBuffer* ahwb);
   static Expected<void*> Lock(AHardwareBuffer* ahwb,
-                              LiteRtEventT* event = nullptr);
+                              LiteRtEventT* event = nullptr,
+                              bool prefer_coherent = false);
   static Expected<void> Unlock(AHardwareBuffer* ahwb);
 };
 
