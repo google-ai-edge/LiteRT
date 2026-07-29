@@ -289,8 +289,12 @@ struct ErrorStatusBuilder::ErrorConversion<
 
 template <>
 struct ErrorStatusBuilder::ErrorConversion<LiteRtStatus> {
-  static constexpr bool IsError(const LiteRtStatus& value) {
-    return value != kLiteRtStatusOk;
+  static bool IsError(const LiteRtStatus& value) {
+    if (value == kLiteRtStatusOk) {
+      internal::expected_detail::ClearLastError();
+      return false;
+    }
+    return true;
   };
   static litert::Error AsError(LiteRtStatus value) {
     return litert::Error(ToStatus(value));
@@ -535,12 +539,13 @@ namespace litert {
 
 inline litert::Error ErrorStatusBuilder::ErrorConversion<absl::Status>::AsError(
     const absl::Status& value) {
-  return litert::Error(internal::macros_detail::ToLiteRtStatus(value.code()),
-                       std::string(value.message()));
+  return litert::Error::FromExistingMessage(
+      internal::macros_detail::ToLiteRtStatus(value.code()),
+      std::string(value.message()));
 }
 
 inline absl::Status ErrorStatusBuilder::ToAbslStatus() const noexcept {
-  switch (error_.StatusCC()) {
+  switch (error_.StatusValue()) {
     case Status::kOk:
       return absl::OkStatus();
     case Status::kErrorInvalidArgument:

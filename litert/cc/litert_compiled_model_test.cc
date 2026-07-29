@@ -57,6 +57,7 @@
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
 using ::testing::FloatNear;
+using ::testing::HasSubstr;
 using ::testing::Pointwise;
 using ::testing::SizeIs;
 using ::testing::litert::IsOkAndHolds;
@@ -991,13 +992,11 @@ TEST(CompiledModelTest, ErrorReporterBufferMode) {
   // Test 5: GetErrorMessages - verify all messages are captured
   LITERT_ASSERT_OK_AND_ASSIGN(std::string error_messages,
                               compiled_model.GetErrorMessages());
-  EXPECT_THAT(error_messages, ::testing::HasSubstr("Simple error message"));
-  EXPECT_THAT(error_messages, ::testing::HasSubstr("Error code: 404"));
+  EXPECT_THAT(error_messages, HasSubstr("Simple error message"));
+  EXPECT_THAT(error_messages, HasSubstr("Error code: 404"));
+  EXPECT_THAT(error_messages, HasSubstr("Failed operation: tensor_allocation"));
   EXPECT_THAT(error_messages,
-              ::testing::HasSubstr("Failed operation: tensor_allocation"));
-  EXPECT_THAT(error_messages,
-              ::testing::HasSubstr(
-                  "Complex error: overflow at line 42 with value 3.14"));
+              HasSubstr("Complex error: overflow at line 42 with value 3.14"));
 
   // Test 6: ClearErrors functionality
   LITERT_ASSERT_OK(compiled_model.ClearErrors());
@@ -1011,9 +1010,9 @@ TEST(CompiledModelTest, ErrorReporterBufferMode) {
   LITERT_ASSERT_OK(compiled_model.ReportError("New error after clear"));
   LITERT_ASSERT_OK_AND_ASSIGN(error_messages,
                               compiled_model.GetErrorMessages());
-  EXPECT_THAT(error_messages, ::testing::HasSubstr("New error after clear"));
+  EXPECT_THAT(error_messages, HasSubstr("New error after clear"));
   EXPECT_THAT(error_messages,
-              ::testing::Not(::testing::HasSubstr("Simple error message")));
+              ::testing::Not(HasSubstr("Simple error message")));
 }
 
 // Test error reporter with default StderrReporter mode
@@ -1094,7 +1093,7 @@ TEST(CompiledModelTest, ErrorReporterEdgeCases) {
   // Verify we have all 100 error messages
   for (int i = 0; i < 100; ++i) {
     EXPECT_THAT(error_messages,
-                ::testing::HasSubstr(absl::StrFormat("Error number %d", i)));
+                HasSubstr(absl::StrFormat("Error number %d", i)));
   }
 }
 
@@ -1491,6 +1490,16 @@ TEST(CompiledModelTest, QuantizationAccessors) {
       QuantizationTypeId output_q_type_by_name,
       compiled_model.GetOutputTensorQTypeId(output_names[0]));
   EXPECT_EQ(output_q_type_by_name, QuantizationTypeId::PerTensor);
+}
+
+TEST(CompiledModelTest, ErrorMessagePreservedOnCreateFailure) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  auto compiled_model = CompiledModel::Create(
+      env, testing::GetTestFilePath(kModelFileName), HwAccelerators::kNone);
+  ASSERT_FALSE(compiled_model.HasValue());
+  EXPECT_THAT(compiled_model.Error().Message(),
+              HasSubstr("No acceleration provided"));
 }
 
 }  // namespace
