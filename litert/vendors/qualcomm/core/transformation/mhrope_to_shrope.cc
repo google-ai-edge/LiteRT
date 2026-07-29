@@ -155,12 +155,13 @@ const TensorWrapper& BuildSingleSHRoPE(std::vector<OpWrapper>& new_ops,
   new_ops.emplace_back(CreateSliceOp(input_h, s1_out, ranges1));
 
   // Concat: [B,S,D/2] ++ [B,S,D/2] → [B,S,D] (axis = rank-1 = 2)
-  auto cat_out_dims = s0_out_dims;
-  cat_out_dims.back() += s1_out_dims.back();
+  // Original concat has slice1 at input[0] and slice0 at input[1]; preserve order.
+  auto cat_out_dims = s1_out_dims;
+  cat_out_dims.back() += s0_out_dims.back();
   const auto& cat_out =
       tensor_pool.CloneNativeTensorFrom(mh_concat.GetOutputTensor(0), cat_out_dims);
   new_ops.emplace_back(
-      CreateConcatenationOp({s0_out, s1_out}, cat_out, 2));
+      CreateConcatenationOp({s1_out, s0_out}, cat_out, 2));
 
   // Mul cos: input_h * cos_h  → [B,S,D]
   auto mul_cos_out_dims = cat_out_dims;
