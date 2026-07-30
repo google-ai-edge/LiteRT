@@ -48,13 +48,29 @@ cc_library(
 # copybara:uncomment_begin(google-only)
 #
 # cc_library(
+#     name = "transformer_ops_common",
+#     hdrs = ["transformer_ops_common.h"],
+#     deps = [
+#         "@com_google_absl//absl/status",
+#         "@com_google_absl//absl/strings",
+#         "@com_google_absl//absl/strings:str_format",
+#         "@com_google_absl//absl/strings:string_view",
+#         "@com_google_absl//absl/types:span",
+#         "//tensor/internal:graph",
+#         "//tensor/utils:macros",
+#     ],
+# )
+#
+# cc_library(
 #     name = "transformer_ops_ml_drift",
 #     srcs = ["transformer_ops_ml_drift.cc"],
 #     hdrs = ["transformer_ops_ml_drift.h"],
 #     deps = [
+#         ":transformer_ops_common",
 #         ":transformer_ops_graph",
 #         "@com_google_absl//absl/status",
 #         "@com_google_absl//absl/strings",
+#         "@com_google_absl//absl/strings:str_format",
 #         "@com_google_absl//absl/strings:string_view",
 #         "@ml_drift//ml_drift/common:data_type",
 #         "@ml_drift//ml_drift/common:gpu_model_builder",
@@ -82,15 +98,18 @@ cc_library(
 #     srcs = ["transformer_ops_xnnpack.cc"],
 #     hdrs = ["transformer_ops_xnnpack.h"],
 #     deps = [
+#         ":transformer_ops_common",
 #         ":transformer_ops_graph",
+#         "@XNNPACK",
 #         "@com_google_absl//absl/status",
+#         "@com_google_absl//absl/status:statusor",
 #         "@com_google_absl//absl/strings",
 #         "@com_google_absl//absl/strings:str_format",
 #         "@com_google_absl//absl/strings:string_view",
 #         "//tensor:buffer",
 #         "//tensor:datatypes",
 #         "//tensor/backends/xnnpack:arithmetic",
-#         "//tensor/backends/xnnpack:conversion",
+#         "//tensor/backends/xnnpack:utils",
 #         "//tensor/internal:graph",
 #         "//tensor/internal:mixin",
 #         "//tensor/utils:macros",
