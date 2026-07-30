@@ -25,7 +25,7 @@
 #endif  // defined(EXPECT_OK)
 
 #if !defined(ABSL_ASSERT_OK)
-#define ABSL_ASSERT_OK(status) ABSL_ASSERT_TRUE(status.ok())
+#define ABSL_ASSERT_OK(status) ASSERT_TRUE(status.ok())
 #endif  // defined(ABSL_ASSERT_OK)
 
 #if !defined(ASSERT_OK)
