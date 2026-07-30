@@ -60,6 +60,13 @@ NS_ASSUME_NONNULL_BEGIN
                                             options:(nullable LRTOptions *)options
                                               error:(NSError **)error;
 
+/**
+ * Returns the default signature key for LiteRT models.
+ *
+ * @return Default signature key string.
+ */
++ (NSString *)defaultSignatureKey;
+
 /** Environment used to build this compiled model. */
 @property(nonatomic, readonly) LRTEnvironment *environment;
 
@@ -78,6 +85,28 @@ NS_ASSUME_NONNULL_BEGIN
 - (nullable NSArray<LRTTensorBuffer *> *)createInputTensorBuffersWithError:(NSError **)error;
 
 /**
+ * Creates input tensor buffers according to the specified signature index.
+ *
+ * @param signatureIndex The index of the signature in the model.
+ * @param error Out-parameter populated on failure.
+ * @return Array of newly allocated input @c LRTTensorBuffer instances, or @c nil on failure.
+ */
+- (nullable NSArray<LRTTensorBuffer *> *)
+    createInputTensorBuffersForSignatureIndex:(NSUInteger)signatureIndex
+                                        error:(NSError **)error;
+
+/**
+ * Creates input tensor buffers according to the specified signature key.
+ *
+ * @param signatureKey The name/key of the signature in the model.
+ * @param error Out-parameter populated on failure.
+ * @return Array of newly allocated input @c LRTTensorBuffer instances, or @c nil on failure.
+ */
+- (nullable NSArray<LRTTensorBuffer *> *)createInputTensorBuffersForSignatureKey:
+                                             (NSString *)signatureKey
+                                                                           error:(NSError **)error;
+
+/**
  * Creates output tensor buffers according to the model's default signature requirements.
  *
  * It uses the model's buffer requirements and tensor types to allocate appropriate
@@ -89,6 +118,28 @@ NS_ASSUME_NONNULL_BEGIN
 - (nullable NSArray<LRTTensorBuffer *> *)createOutputTensorBuffersWithError:(NSError **)error;
 
 /**
+ * Creates output tensor buffers according to the specified signature index.
+ *
+ * @param signatureIndex The index of the signature in the model.
+ * @param error Out-parameter populated on failure.
+ * @return Array of newly allocated output @c LRTTensorBuffer instances, or @c nil on failure.
+ */
+- (nullable NSArray<LRTTensorBuffer *> *)
+    createOutputTensorBuffersForSignatureIndex:(NSUInteger)signatureIndex
+                                         error:(NSError **)error;
+
+/**
+ * Creates output tensor buffers according to the specified signature key.
+ *
+ * @param signatureKey The name/key of the signature in the model.
+ * @param error Out-parameter populated on failure.
+ * @return Array of newly allocated output @c LRTTensorBuffer instances, or @c nil on failure.
+ */
+- (nullable NSArray<LRTTensorBuffer *> *)createOutputTensorBuffersForSignatureKey:
+                                             (NSString *)signatureKey
+                                                                            error:(NSError **)error;
+
+/**
  * Runs model inference synchronously for the default signature.
  *
  * @param inputs Array of input tensor buffers matching model signature.
@@ -98,6 +149,34 @@ NS_ASSUME_NONNULL_BEGIN
  */
 - (BOOL)runWithInputs:(NSArray<LRTTensorBuffer *> *)inputs
               outputs:(NSArray<LRTTensorBuffer *> *)outputs
+                error:(NSError **)error;
+
+/**
+ * Runs model inference synchronously for a specified signature index.
+ *
+ * @param inputs Array of input tensor buffers matching model signature.
+ * @param outputs Array of output tensor buffers matching model signature.
+ * @param signatureIndex The index of the signature in the model.
+ * @param error Out-parameter populated on failure.
+ * @return @c YES on success, @c NO on failure.
+ */
+- (BOOL)runWithInputs:(NSArray<LRTTensorBuffer *> *)inputs
+              outputs:(NSArray<LRTTensorBuffer *> *)outputs
+       signatureIndex:(NSUInteger)signatureIndex
+                error:(NSError **)error;
+
+/**
+ * Runs model inference synchronously for a specified signature key.
+ *
+ * @param inputs Array of input tensor buffers matching model signature.
+ * @param outputs Array of output tensor buffers matching model signature.
+ * @param signatureKey The name/key of the signature in the model.
+ * @param error Out-parameter populated on failure.
+ * @return @c YES on success, @c NO on failure.
+ */
+- (BOOL)runWithInputs:(NSArray<LRTTensorBuffer *> *)inputs
+              outputs:(NSArray<LRTTensorBuffer *> *)outputs
+         signatureKey:(NSString *)signatureKey
                 error:(NSError **)error;
 
 @end

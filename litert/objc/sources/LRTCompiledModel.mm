@@ -142,6 +142,10 @@ NS_ASSUME_NONNULL_BEGIN
                                                             options:options];
 }
 
++ (NSString *)defaultSignatureKey {
+  return @(litert::CompiledModel::DefaultSignatureKey().data());
+}
+
 /**
  * Helper to convert C++ TensorBuffers result to NSArray of LRTTensorBuffers.
  *
@@ -218,6 +222,12 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
 }
 
 - (nullable NSArray<LRTTensorBuffer *> *)createInputTensorBuffersWithError:(NSError **)error {
+  return [self createInputTensorBuffersForSignatureIndex:0 error:error];
+}
+
+- (nullable NSArray<LRTTensorBuffer *> *)
+    createInputTensorBuffersForSignatureIndex:(NSUInteger)signatureIndex
+                                        error:(NSError **)error {
   if (!_cppCompiledModel) {
     if (error) {
       *error = [NSError
@@ -229,11 +239,45 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
   }
 
   litert::Expected<std::vector<litert::TensorBuffer>> buffersResult =
-      _cppCompiledModel->CreateInputBuffers();
+      _cppCompiledModel->CreateInputBuffers(signatureIndex);
+  return CreateObjCTensorBuffersFromCppResult(buffersResult, error);
+}
+
+- (nullable NSArray<LRTTensorBuffer *> *)createInputTensorBuffersForSignatureKey:
+                                             (NSString *)signatureKey
+                                                                           error:(NSError **)error {
+  if (!signatureKey) {
+    if (error) {
+      *error =
+          [NSError errorWithDomain:LRTErrorDomain
+                              code:LRTErrorCodeInvalidArgument
+                          userInfo:@{NSLocalizedDescriptionKey : @"signatureKey cannot be nil"}];
+    }
+    return nil;
+  }
+
+  if (!_cppCompiledModel) {
+    if (error) {
+      *error = [NSError
+          errorWithDomain:LRTErrorDomain
+                     code:LRTErrorCodeRuntimeFailure
+                 userInfo:@{NSLocalizedDescriptionKey : @"Compiled model is not initialized"}];
+    }
+    return nil;
+  }
+
+  litert::Expected<std::vector<litert::TensorBuffer>> buffersResult =
+      _cppCompiledModel->CreateInputBuffers(signatureKey.UTF8String);
   return CreateObjCTensorBuffersFromCppResult(buffersResult, error);
 }
 
 - (nullable NSArray<LRTTensorBuffer *> *)createOutputTensorBuffersWithError:(NSError **)error {
+  return [self createOutputTensorBuffersForSignatureIndex:0 error:error];
+}
+
+- (nullable NSArray<LRTTensorBuffer *> *)
+    createOutputTensorBuffersForSignatureIndex:(NSUInteger)signatureIndex
+                                         error:(NSError **)error {
   if (!_cppCompiledModel) {
     if (error) {
       *error = [NSError
@@ -245,12 +289,47 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
   }
 
   litert::Expected<std::vector<litert::TensorBuffer>> buffersResult =
-      _cppCompiledModel->CreateOutputBuffers();
+      _cppCompiledModel->CreateOutputBuffers(signatureIndex);
+  return CreateObjCTensorBuffersFromCppResult(buffersResult, error);
+}
+
+- (nullable NSArray<LRTTensorBuffer *> *)
+    createOutputTensorBuffersForSignatureKey:(NSString *)signatureKey
+                                       error:(NSError **)error {
+  if (!signatureKey) {
+    if (error) {
+      *error =
+          [NSError errorWithDomain:LRTErrorDomain
+                              code:LRTErrorCodeInvalidArgument
+                          userInfo:@{NSLocalizedDescriptionKey : @"signatureKey cannot be nil"}];
+    }
+    return nil;
+  }
+
+  if (!_cppCompiledModel) {
+    if (error) {
+      *error = [NSError
+          errorWithDomain:LRTErrorDomain
+                     code:LRTErrorCodeRuntimeFailure
+                 userInfo:@{NSLocalizedDescriptionKey : @"Compiled model is not initialized"}];
+    }
+    return nil;
+  }
+
+  litert::Expected<std::vector<litert::TensorBuffer>> buffersResult =
+      _cppCompiledModel->CreateOutputBuffers(signatureKey.UTF8String);
   return CreateObjCTensorBuffersFromCppResult(buffersResult, error);
 }
 
 - (BOOL)runWithInputs:(NSArray<LRTTensorBuffer *> *)inputs
               outputs:(NSArray<LRTTensorBuffer *> *)outputs
+                error:(NSError **)error {
+  return [self runWithInputs:inputs outputs:outputs signatureIndex:0 error:error];
+}
+
+- (BOOL)runWithInputs:(NSArray<LRTTensorBuffer *> *)inputs
+              outputs:(NSArray<LRTTensorBuffer *> *)outputs
+       signatureIndex:(NSUInteger)signatureIndex
                 error:(NSError **)error {
   if (!_cppCompiledModel) {
     if (error) {
@@ -272,7 +351,57 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
     return NO;
   }
 
-  litert::Expected<void> runResult = _cppCompiledModel->Run(inputCppBuffers, outputCppBuffers);
+  litert::Expected<void> runResult =
+      _cppCompiledModel->Run(signatureIndex, inputCppBuffers, outputCppBuffers);
+  if (!runResult.HasValue()) {
+    if (error) {
+      *error = [NSError
+          errorWithDomain:LRTErrorDomain
+                     code:static_cast<NSInteger>(runResult.Error().Status())
+                 userInfo:@{NSLocalizedDescriptionKey : @(runResult.Error().Message().c_str())}];
+    }
+    return NO;
+  }
+
+  return YES;
+}
+
+- (BOOL)runWithInputs:(NSArray<LRTTensorBuffer *> *)inputs
+              outputs:(NSArray<LRTTensorBuffer *> *)outputs
+         signatureKey:(NSString *)signatureKey
+                error:(NSError **)error {
+  if (!signatureKey) {
+    if (error) {
+      *error =
+          [NSError errorWithDomain:LRTErrorDomain
+                              code:LRTErrorCodeInvalidArgument
+                          userInfo:@{NSLocalizedDescriptionKey : @"signatureKey cannot be nil"}];
+    }
+    return NO;
+  }
+
+  if (!_cppCompiledModel) {
+    if (error) {
+      *error = [NSError
+          errorWithDomain:LRTErrorDomain
+                     code:LRTErrorCodeRuntimeFailure
+                 userInfo:@{NSLocalizedDescriptionKey : @"Compiled model is not initialized"}];
+    }
+    return NO;
+  }
+
+  std::vector<litert::TensorBuffer> inputCppBuffers;
+  if (!DuplicateObjCTensorBuffersToCpp(inputs, @"input", inputCppBuffers, error)) {
+    return NO;
+  }
+
+  std::vector<litert::TensorBuffer> outputCppBuffers;
+  if (!DuplicateObjCTensorBuffersToCpp(outputs, @"output", outputCppBuffers, error)) {
+    return NO;
+  }
+
+  litert::Expected<void> runResult =
+      _cppCompiledModel->Run(signatureKey.UTF8String, inputCppBuffers, outputCppBuffers);
   if (!runResult.HasValue()) {
     if (error) {
       *error = [NSError
