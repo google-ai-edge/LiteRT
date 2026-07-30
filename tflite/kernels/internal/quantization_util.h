@@ -131,6 +131,9 @@ IntOut SafeCast(FloatIn x, IntOut nan_result = IntOut{0}) {
   static_assert(std::numeric_limits<IntOut>::is_integer,
                 "IntOut is not integer");
   static_assert(std::numeric_limits<IntOut>::radix == 2, "IntOut is base 2");
+  static_assert(std::numeric_limits<FloatIn>::max_exponent >
+                    std::numeric_limits<IntOut>::digits,
+                "FloatIn cannot represent IntOut's exclusive upper bound");
 
   if (std::isnan(x)) {
     return nan_result;
