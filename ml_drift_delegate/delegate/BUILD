@@ -127,7 +127,9 @@ cc_library(
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@opencl_headers",
     ] + select({
-        "@org_tensorflow//tensorflow:android": ["@ml_drift//ml_drift/cl:gl_interop"],
+        # copybara:uncomment_begin(google-only)
+        # "@org_tensorflow//tensorflow:android": ["@ml_drift//ml_drift/cl:gl_interop"],
+        # copybara:uncomment_end
         "//conditions:default": [],
     }) + gles_deps(),
 )
@@ -238,12 +240,6 @@ cc_library(
         ":delegate_data",
         ":gpu_backend",
         ":unowned_tensor_desc",
-        "//litert/c:litert_common",
-        "//litert/c:litert_tensor_buffer_types",
-        "//litert/c/internal:litert_runtime_context_header",
-        "//litert/cc:litert_macros",
-        "//ml_drift_delegate/delegate/serialization_weight_cache",
-        "//tflite/c:common",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:die_if_null",
         "@com_google_absl//absl/status",
@@ -261,11 +257,19 @@ cc_library(
         "@ml_drift//ml_drift/common/task:gpu_tensor",
         "@ml_drift//ml_drift/common/task:profiling_info",
         "@ml_drift//ml_drift/common/task:tensor_desc",
-        "@ml_drift//ml_drift/pelong:converter",
-        "@ml_drift//ml_drift/pelong:egl_environment",
-        "@ml_drift//ml_drift/pelong:gl_buffer",
-        "@ml_drift//ml_drift/pelong:gl_inference_context",
-        "@ml_drift//ml_drift/pelong:gl_spatial_tensor",
+        # copybara:uncomment_begin(google-only)
+        # "@ml_drift//ml_drift/pelong:converter",
+        # "@ml_drift//ml_drift/pelong:egl_environment",
+        # "@ml_drift//ml_drift/pelong:gl_buffer",
+        # "@ml_drift//ml_drift/pelong:gl_inference_context",
+        # "@ml_drift//ml_drift/pelong:gl_spatial_tensor",
+        # copybara:uncomment_end
+        "//litert/c:litert_common",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_runtime_context_header",
+        "//litert/cc:litert_macros",
+        "//ml_drift_delegate/delegate/serialization_weight_cache",
+        "//tflite/c:common",
     ],
 )
 
@@ -682,10 +686,12 @@ cc_library(
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common:status",
     ] + select({
-        "@org_tensorflow//tensorflow:android": [
-            "@ml_drift//ml_drift/cl:gl_interop",
-            "@ml_drift//ml_drift/pelong:egl_environment",
-        ],
+        # copybara:uncomment_begin(google-only)
+        # "@org_tensorflow//tensorflow:android": [
+        # "@ml_drift//ml_drift/cl:gl_interop",
+        # "@ml_drift//ml_drift/pelong:egl_environment",
+        # ],
+        # copybara:uncomment_end
         "//conditions:default": [],
     }),
 )
@@ -819,6 +825,18 @@ cc_library(
         ":gpu_backend_opengl",
         ":precision",
         ":tflite_profile",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/synchronization",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:status",
+        # copybara:uncomment_begin(google-only)
+        # "@ml_drift//ml_drift/pelong:egl_environment",
+        # copybara:uncomment_end
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_header",
@@ -834,16 +852,6 @@ cc_library(
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/profiling:time",
-        "@com_google_absl//absl/base:core_headers",
-        "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:status_macros",
-        "@com_google_absl//absl/synchronization",
-        "@ml_drift//ml_drift/common:precision",
-        "@ml_drift//ml_drift/common:status",
-        "@ml_drift//ml_drift/pelong:egl_environment",
     ],
 )
 
@@ -1102,9 +1110,11 @@ cc_library(
         "@ml_drift//ml_drift/common:status",
         "@opencl_headers",
     ] + select({
-        "@org_tensorflow//tensorflow:android": [
-            "@ml_drift//ml_drift/cl:gl_interop",
-        ],
+        # copybara:uncomment_begin(google-only)
+        # "@org_tensorflow//tensorflow:android": [
+        # "@ml_drift//ml_drift/cl:gl_interop",
+        # ],
+        # copybara:uncomment_end
         "//conditions:default": [],
     }),
 )

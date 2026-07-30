@@ -404,7 +404,10 @@ exynos_ai_litecore()
 # Android rules. Need latest rules_android_ndk to use NDK 26+.
 load("@rules_android_ndk//:rules.bzl", "android_ndk_repository")
 
-android_ndk_repository(name = "androidndk")
+android_ndk_repository(
+    name = "androidndk",
+    api_level = 26,
+)
 
 load("//:android_ndk_env.bzl", "check_android_ndk_env")
 

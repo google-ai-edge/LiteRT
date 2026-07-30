@@ -66,7 +66,7 @@ litert_accelerator_library(
         "//ml_drift_delegate/delegate:delegate_opengl",
         "//ml_drift_delegate/delegate:delegate_types",
         "//ml_drift_delegate/delegate:delegate_webgpu",
-        "//tflite/core/c:c_api_types",
+        "//tflite/c:c_api_types",
         "@ml_drift//ml_drift/cl:opencl_wrapper",
     ],
 )
@@ -99,7 +99,7 @@ litert_accelerator_library(
         "//ml_drift_delegate/delegate:delegate_opencl",
         "//ml_drift_delegate/delegate:delegate_types",
         "//ml_drift_delegate/delegate:delegate_webgpu",
-        "//tflite/core/c:c_api_types",
+        "//tflite/c:c_api_types",
         "@ml_drift//ml_drift/cl:opencl_wrapper",
     ],
 )
@@ -161,7 +161,7 @@ litert_accelerator_library(
         "//ml_drift_delegate/delegate:buffer_handler_opencl",
         "//ml_drift_delegate/delegate:delegate_opencl",
         "//ml_drift_delegate/delegate:delegate_types",
-        "//tflite/core/c:c_api_types",
+        "//tflite/c:c_api_types",
     ],
 )
 
@@ -186,7 +186,7 @@ litert_accelerator_library(
         "//ml_drift_delegate/delegate:buffer_handler_webgpu",
         "//ml_drift_delegate/delegate:delegate_types",
         "//ml_drift_delegate/delegate:delegate_webgpu",
-        "//tflite/core/c:c_api_types",
+        "//tflite/c:c_api_types",
     ],
 )
 
@@ -271,7 +271,7 @@ cc_library(
         "//litert/runtime/accelerators:gpu_static_registry",
         "//ml_drift_delegate/delegate:delegate_opengl",
         "//ml_drift_delegate/delegate:delegate_types",
-        "//tflite/core/c:c_api_types",
+        "//tflite/c:c_api_types",
     ],
     alwayslink = 1,
 )
@@ -295,7 +295,7 @@ litert_accelerator_library(
         "//ml_drift_delegate/delegate:delegate_opencl",
         "//ml_drift_delegate/delegate:delegate_opengl",
         "//ml_drift_delegate/delegate:delegate_types",
-        "//tflite/core/c:c_api_types",
+        "//tflite/c:c_api_types",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/synchronization",
@@ -324,7 +324,7 @@ litert_accelerator_library(
         "//ml_drift_delegate/delegate:buffer_handler_vulkan",
         "//ml_drift_delegate/delegate:delegate_types",
         "//ml_drift_delegate/delegate:delegate_vulkan",
-        "//tflite/core/c:c_api_types",
+        "//tflite/c:c_api_types",
     ],
 )
 
@@ -352,7 +352,7 @@ litert_accelerator_library(
         "//ml_drift_delegate/delegate:delegate_metal",
         "//ml_drift_delegate/delegate:delegate_metal_headers",
         "//ml_drift_delegate/delegate:delegate_types",
-        "//tflite/core/c:c_api_types",
+        "//tflite/c:c_api_types",
     ],
 )
 
