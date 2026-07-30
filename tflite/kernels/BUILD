@@ -534,7 +534,6 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts(),
     deps = [
-        ":op_macros",
         "//tflite:array",
         "//tflite:kernel_api",
         "//tflite:util",
