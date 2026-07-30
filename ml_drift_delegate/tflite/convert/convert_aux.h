@@ -67,8 +67,6 @@ void CopyData(const TfLiteTensor& src, T* dst) {
     return;
   }
   switch (src.type) {
-    case kTfLiteNoType:
-      ABSL_LOG(FATAL) << "src has no type.";
     case kTfLiteFloat32:
       for (int i = 0; i < n; ++i) {
         dst[i] = ::tflite::GetTensorData<float>(&src)[i];
@@ -89,8 +87,6 @@ void CopyData(const TfLiteTensor& src, T* dst) {
         dst[i] = ::tflite::GetTensorData<int64_t>(&src)[i];
       }
       return;
-    case kTfLiteString:
-      ABSL_LOG(FATAL) << "src can't be string.";
     case kTfLiteBool:
       for (int i = 0; i < n; ++i) {
         dst[i] = ::tflite::GetTensorData<bool>(&src)[i];
@@ -101,31 +97,21 @@ void CopyData(const TfLiteTensor& src, T* dst) {
         dst[i] = ::tflite::GetTensorData<int16_t>(&src)[i];
       }
       return;
-    case kTfLiteComplex64:
-      ABSL_LOG(FATAL) << "src can't be complex64.";
     case kTfLiteInt8:
       for (int i = 0; i < n; ++i) {
         dst[i] = ::tflite::GetTensorData<int8_t>(&src)[i];
       }
       return;
-    case kTfLiteFloat16:
-      ABSL_LOG(FATAL) << "src can't be float16.";
     case kTfLiteFloat64:
       for (int i = 0; i < n; ++i) {
         dst[i] = ::tflite::GetTensorData<double>(&src)[i];
       }
       return;
-    case kTfLiteComplex128:
-      ABSL_LOG(FATAL) << "src can't be complex128.";
     case kTfLiteUInt64:
       for (int i = 0; i < n; ++i) {
         dst[i] = ::tflite::GetTensorData<uint64_t>(&src)[i];
       }
       return;
-    case kTfLiteResource:
-      ABSL_LOG(FATAL) << "src can't be resource.";
-    case kTfLiteVariant:
-      ABSL_LOG(FATAL) << "src can't be variant.";
     case kTfLiteUInt32:
       for (int i = 0; i < n; ++i) {
         dst[i] = ::tflite::GetTensorData<uint32_t>(&src)[i];
@@ -139,15 +125,22 @@ void CopyData(const TfLiteTensor& src, T* dst) {
     case kTfLiteInt2:
       std::memcpy(dst, src.data.data, src.bytes);
       return;
-    case kTfLiteInt4: {
+    case kTfLiteInt4:
       std::memcpy(dst, src.data.data, src.bytes);
       return;
-    }
-    case kTfLiteUInt4: {
-      ABSL_LOG(FATAL) << "UInt 4 not yet handled in MLDrift.";
-    }
+    case kTfLiteNoType:
+    case kTfLiteString:
+    case kTfLiteComplex64:
+    case kTfLiteFloat16:
+    case kTfLiteComplex128:
+    case kTfLiteResource:
+    case kTfLiteVariant:
+    case kTfLiteUInt4:
     case kTfLiteBFloat16:
-      ABSL_LOG(FATAL) << "src can't be bfloat16.";
+    case kTfLiteFloat8E4M3FN:
+    case kTfLiteFloat8E5M2:
+      ABSL_LOG(FATAL) << "src has unsupported type: "
+                      << TfLiteTypeGetName(src.type);
   }
 }
 
@@ -262,6 +255,20 @@ void HandleFusedActivation(
 // pass it as a runtime input rather than embedding it into op attributes.
 bool MarkSharedBias(::ml_drift::ir::IrTensorId bias_id,
                     ::ml_drift::ir::IrModel& ir_model);
+
+// Configures `fc_op` as a quantized fully-connected node that consumes shared
+// (runtime) weights of the given OHWI `weights_shape`, mirroring GraphFloat32's
+// ConfigSharedWeightFullyConnectedNode. Sets the
+// FULLY_CONNECTED_INT8/INT4/INT2 op name and the matching attributes with the
+// weights shape and scale shape (no data), plus the (possibly empty) embedded
+// `bias`. Returns true if a quantized variant was configured; returns false for
+// other weight types, in which case the caller should fall back to a plain
+// FULLY_CONNECTED op. The weights themselves must be added as a runtime
+// consumer of `fc_op` by the caller.
+bool ConfigSharedQuantizedFullyConnected(
+    const TfLiteTensor& weights_tensor, const ::ml_drift::OHWI& weights_shape,
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> bias,
+    ::ml_drift::ir::IrOp* fc_op);
 
 // Adds a constant input to the IR model from a TfLite tensor.
 ::ml_drift::ir::IrTensor* AddConstInput(const TfLiteContext& context,

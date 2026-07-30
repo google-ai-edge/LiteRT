@@ -4,16 +4,9 @@
 # Qualcomm QNN Core Library
 cmake_minimum_required(VERSION 3.20)
 
-add_library(qnn_soc_table STATIC)
-
-target_sources(qnn_soc_table PRIVATE soc_table.cc)
+add_library(qnn_soc_table INTERFACE)
 
 target_include_directories(qnn_soc_table
-    PUBLIC
+    INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-)
-
-target_link_libraries(qnn_soc_table
-    PRIVATE
-        qnn_log
 )

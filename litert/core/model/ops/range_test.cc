@@ -12,60 +12,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "litert/core/model/ops/range.h"
+
 #include <cstdint>
 #include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/litert_buffer_ref.h"
-#include "litert/core/model/model.h"
-#include "litert/core/model/shape_inference.h"
+#include "litert/core/model/ops/test_util.h"
+#include "litert/core/model/shape_inference_types.h"
 
 namespace litert::internal {
 namespace {
 
 TEST(RangeOpTest, RangeInt32) {
-  LiteRtModelT model;
-  auto& subgraph = model.EmplaceSubgraph();
-  auto& op = subgraph.EmplaceOp();
-  op.SetOpCode(kLiteRtOpCodeTflRange);
+  auto start = MakeTensorData({}, std::vector<int32_t>{0});
+  auto limit = MakeTensorData({}, std::vector<int32_t>{10});
+  auto delta = MakeTensorData({}, std::vector<int32_t>{2});
+  MockShapeInferenceContext ctx(kLiteRtOpCodeTflRange, {start, limit, delta});
+  InferenceResult result;
 
-  auto make_scalar_int = [&](int32_t val) -> LiteRtTensorT& {
-    auto& t = subgraph.EmplaceTensor();
-    SetWeightsFromOwnedBuffer(
-        t.Weights(),
-        OwningBufferRef<uint8_t>(absl::string_view(
-            reinterpret_cast<const char*>(&val), sizeof(int32_t))));
-    t.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {}));
-    return t;
-  };
+  ASSERT_EQ(InferRange(ctx, result), kLiteRtStatusOk);
 
-  auto& start = make_scalar_int(0);
-  auto& limit = make_scalar_int(10);
-  auto& delta = make_scalar_int(2);
+  // Output shape should be [5]
+  EXPECT_THAT(result.output_shapes[0], testing::ElementsAre(5));
 
-  auto& output = subgraph.EmplaceTensor();
-  output.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {}));
-
-  AttachInput(&start, op);
-  AttachInput(&limit, op);
-  AttachInput(&delta, op);
-  AttachOutput(&output, op);
-
-  ShapeInferenceEngine engine(&model);
-  ASSERT_EQ(engine.InferShapes(), kLiteRtStatusOk);
-
-  const auto& shape = output.Type().second.ranked_tensor_type.layout;
-  EXPECT_EQ(shape.rank, 1);
-  EXPECT_EQ(shape.dimensions[0], 5);
-
-  ASSERT_GT(output.Weights().Buffer().Size(), 0);
+  // Output transient data should be populated with [0, 2, 4, 6, 8]
+  ASSERT_GT(result.propagated_data[0].size(), 0);
   const int32_t* data =
-      reinterpret_cast<const int32_t*>(output.Weights().Buffer().Data());
+      reinterpret_cast<const int32_t*>(result.propagated_data[0].data());
   EXPECT_THAT(std::vector<int32_t>(data, data + 5),
               testing::ElementsAre(0, 2, 4, 6, 8));
 }

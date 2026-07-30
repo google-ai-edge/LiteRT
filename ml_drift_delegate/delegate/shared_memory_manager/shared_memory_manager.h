@@ -30,13 +30,13 @@
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
-#include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
+#include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
 // clang-format off
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
@@ -48,12 +48,18 @@ namespace ml_drift {
 
 void MadviseData(void* ptr, size_t space);
 
-// SharedConstTensor structure holds the cl::Tensor handle of the constant
-// shared weight. For floating point tensors only .weights field is set. For
-// int8 tensors, the .scale_global_tensor_id and .zero_point_global_tensor_id
-// fields are set. Those ids are the fake global ids of the additionally created
-// scale and zero_point tensors in the GraphFloat32, they should be used to look
-// up the tensor in the buffer_id_to_spatial_tensor_.
+// Value id type used to key the shared-tensor caches. Kept graph-agnostic (no
+// dependency on GraphFloat32's model.h). This is the same underlying type as
+// ml_drift::ValueId in model.h; the identical typedef is safe if both headers
+// are included.
+using ValueId = uint32_t;
+
+// SharedConstTensor structure holds the handle of the constant shared weight.
+// For floating point tensors only the .weights field is set. For int8 tensors,
+// the .scale_global_tensor_id and .zero_point_global_tensor_id fields are set.
+// Those ids are the fake global ids of the additionally created scale and
+// zero_point tensors, and should be used to look up the tensor in the
+// buffer_id_to_spatial_tensor_.
 // TODO: b/424473932 - Change struct to class.
 struct SharedConstTensor {
   // The struct instance owns the weights. These weights are created directly
@@ -137,11 +143,6 @@ class SharedMemoryManager {
       bool is_weight_sum_i_required = false,
       Tensor<Linear, DataType::INT32>* weights_sum_i = nullptr);
 
-  // Calculates the weights_sum_i tensor, for use with int8 convs.
-  static absl::Status CalculateWeightsSumI(
-      const TfLiteTensor& tflite_tensor, Value* shared_const_tensor,
-      Tensor<Linear, DataType::INT32>* weights_sum_i);
-
   using CreateTensorFunc = std::function<absl::Status(
       TensorDescriptor&, size_t /*page_adjusted_offset*/,
       ::litert::ml_drift::ReleaseDataCallback,
@@ -160,8 +161,8 @@ class SharedMemoryManager {
       const ::litert::ml_drift::SharedTfliteTensor&)>;
   SharedMemoryManager(
       const GpuInfo& gpu_info, const CreateGpuModelInfo& create_info,
-      GraphFloat32& graph, CreateTensorFunc create_tensor_func,
-      TfLiteContext* context,
+      std::unique_ptr<GraphAdapter> graph_adapter,
+      CreateTensorFunc create_tensor_func, TfLiteContext* context,
       ValueIdToSharedTensorMap& buffer_id_to_spatial_tensor,
       ValueIdToSharedTensorMap& quant_param_id_to_spatial_tensor,
       bool has_prepacked_tflite_tensors,
@@ -178,7 +179,7 @@ class SharedMemoryManager {
   static constexpr uint32_t kInvalidExternalBufferId =
       std::numeric_limits<uint32_t>::max();
 
-  static inline bool IsValidExternalBufferId(uint32_t id) {
+  static bool IsValidExternalBufferId(uint32_t id) {
     return id != 0 && id != kInvalidExternalBufferId;
   }
 
@@ -316,15 +317,15 @@ class SharedMemoryManager {
       const ValueId& shared_tensor_id, uint32_t global_tensor_id,
       const TfLiteTensor& tflite_tensor,
       absl::flat_hash_map<ValueId, GlobalId>* external_tensors,
-      bool is_weight_sum_i_required, Node* fc_node, DataType data_type,
+      bool is_weight_sum_i_required, uint32_t fc_op_id, DataType data_type,
       const OHWI& weights_shape);
 
   // Creates scale and zero point tensors for blockwise quantized weights.
   absl::Status CreateBlockwiseQuantizationParams(
       const ValueId& shared_tensor_id, uint32_t global_tensor_id,
       const TfLiteTensor& tflite_tensor,
-      absl::flat_hash_map<ValueId, GlobalId>* external_tensors, Node* fc_node,
-      DataType data_type);
+      absl::flat_hash_map<ValueId, GlobalId>* external_tensors,
+      uint32_t fc_op_id, DataType data_type);
 
   // Creates a linear tensor with a given shape, adds it to the graph and sets
   // the memory provided by the data pointer.
@@ -335,12 +336,12 @@ class SharedMemoryManager {
   template <typename InputDataType>
   absl::StatusOr<ValueId> AddInputWithData(uint32_t global_tensor_id,
                                            const Linear& shape,
-                                           const Node& consumer_node,
+                                           uint32_t consumer_op_id,
                                            const InputDataType* data,
                                            DataType data_type);
   template <typename InputDataType>
   absl::StatusOr<ValueId> AddScaleNodeWithData(uint32_t global_tensor_id,
-                                               const Node& consumer_node,
+                                               uint32_t consumer_op_id,
                                                const InputDataType* data,
                                                DataType data_type,
                                                int num_channels,
@@ -348,7 +349,7 @@ class SharedMemoryManager {
   // Adds a new value to the consumer_node. The tensor_id and shape parameters
   // are set as give, the data type is default.
   absl::StatusOr<ValueId> AddInputNode(uint32_t tensor_id, const BHWC& shape,
-                                       const Node& consumer_node,
+                                       uint32_t consumer_op_id,
                                        DataType data_type);
 
   // Creates a tensor from a TfLiteTensor containing prepacked weight data.
@@ -361,7 +362,7 @@ class SharedMemoryManager {
 
   const GpuInfo& gpu_info_;
   const CreateGpuModelInfo& create_info_;
-  GraphFloat32& graph_;
+  std::unique_ptr<GraphAdapter> graph_adapter_;
   CreateTensorFunc create_tensor_func_;
   TfLiteContext* context_;
   ValueIdToSharedTensorMap& buffer_id_to_spatial_tensor_;

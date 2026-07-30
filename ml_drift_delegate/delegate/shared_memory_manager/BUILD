@@ -22,6 +22,54 @@ package(
 )
 
 cc_library(
+    name = "graph_adapter",
+    hdrs = ["graph_adapter.h"],
+    deps = [
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:shape",
+    ],
+)
+
+cc_library(
+    name = "gf32_graph_adapter",
+    srcs = ["gf32_graph_adapter.cc"],
+    hdrs = ["gf32_graph_adapter.h"],
+    deps = [
+        ":graph_adapter",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:shape",
+    ],
+)
+
+cc_library(
+    name = "ir_graph_adapter",
+    srcs = ["ir_graph_adapter.cc"],
+    hdrs = ["ir_graph_adapter.h"],
+    deps = [
+        ":graph_adapter",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+    ],
+)
+
+cc_test(
+    name = "ir_graph_adapter_test",
+    srcs = ["ir_graph_adapter_test.cc"],
+    deps = [
+        ":graph_adapter",
+        ":ir_graph_adapter",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+    ],
+)
+
+cc_library(
     name = "shared_memory_manager",
     srcs = ["shared_memory_manager.cc"],
     hdrs = ["shared_memory_manager.h"],
@@ -31,6 +79,7 @@ cc_library(
         "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
     ],
     deps = [
+        ":graph_adapter",
         "//ml_drift_delegate/delegate:unowned_tensor_desc",
         "//ml_drift_delegate/delegate/serialization_weight_cache",
         "//ml_drift_delegate/tflite:model_builder_helper",
@@ -79,6 +128,7 @@ cc_library(
         "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
     ],
     deps = [
+        ":graph_adapter",
         ":shared_memory_manager",
         "//ml_drift_delegate/delegate:unowned_tensor_desc",
         "//ml_drift_delegate/delegate/serialization_weight_cache",
@@ -102,6 +152,7 @@ cc_library(
         "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
     ],
     deps = [
+        ":graph_adapter",
         ":shared_memory_manager",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_runtime_context_header",
@@ -129,8 +180,12 @@ cc_test(
     srcs = ["shared_memory_manager_cl_test.cc"],
     tags = ["requires-gpu-nvidia"],
     deps = [
+        ":gf32_graph_adapter",
+        ":graph_adapter",
+        ":ir_graph_adapter",
         ":shared_memory_manager",
         ":shared_memory_manager_cl",
+        "//ml_drift_delegate/delegate/serialization_weight_cache",
         "//ml_drift_delegate/tflite:shared_const_tensor_map",
         "//tflite/c:common",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -140,6 +195,7 @@ cc_test(
         "@ml_drift//ml_drift/cl:opencl_wrapper",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common:shape",
@@ -186,6 +242,7 @@ cc_library(
         "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
     ],
     deps = [
+        ":graph_adapter",
         ":shared_memory_manager",
         ":shared_memory_manager_webgpu_common",
         "//ml_drift_delegate/delegate:unowned_tensor_desc",
@@ -212,6 +269,7 @@ cc_library(
         "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
     ],
     deps = [
+        ":graph_adapter",
         ":shared_memory_manager",
         ":shared_memory_manager_webgpu_common",
         "//litert/c:litert_common",
@@ -244,8 +302,12 @@ cc_test(
         "requires-gpu-nvidia",
     ],
     deps = [
+        ":gf32_graph_adapter",
+        ":graph_adapter",
+        ":ir_graph_adapter",
         ":shared_memory_manager",
         ":shared_memory_manager_webgpu",
+        "//ml_drift_delegate/delegate/serialization_weight_cache",
         "//ml_drift_delegate/tflite:shared_const_tensor_map",
         "//tflite/c:common",
         "//third_party/vulkan_loader",
@@ -254,6 +316,7 @@ cc_test(
         "@com_google_googletest//:gtest_main_no_heapcheck",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common:shape",
@@ -272,6 +335,7 @@ cc_library(
         "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
     ],
     deps = [
+        ":graph_adapter",
         ":shared_memory_manager",
         "//ml_drift_delegate/delegate:shared_vulkan_env",
         "//ml_drift_delegate/delegate:unowned_tensor_desc",
@@ -292,9 +356,13 @@ cc_test(
     srcs = ["shared_memory_manager_vulkan_test.cc"],
     tags = ["requires-gpu-nvidia"],
     deps = [
+        ":gf32_graph_adapter",
+        ":graph_adapter",
+        ":ir_graph_adapter",
         ":shared_memory_manager",
         ":shared_memory_manager_vulkan",
         "//ml_drift_delegate/delegate:shared_vulkan_env",
+        "//ml_drift_delegate/delegate/serialization_weight_cache",
         "//ml_drift_delegate/tflite:shared_const_tensor_map",
         "//tflite/c:common",
         "//third_party/vulkan_loader",
@@ -303,6 +371,7 @@ cc_test(
         "@com_google_googletest//:gtest_main_no_heapcheck",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common:shape",
@@ -322,6 +391,7 @@ objc_library(
         "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
     ],
     deps = [
+        ":graph_adapter",
         ":shared_memory_manager",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
@@ -350,19 +420,25 @@ objc_library(
         "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
     ],
     deps = [
+        ":gf32_graph_adapter",
+        ":graph_adapter",
+        ":ir_graph_adapter",
         ":shared_memory_manager",
         ":shared_memory_manager_metal",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
         # Dependency placeholder: apple_frameworks Metal,
         # Dependency placeholder: apple_frameworks XCTest,
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common/task:gpu_tensor",
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/metal:metal_device",
+        "//ml_drift_delegate/delegate/serialization_weight_cache",
         "//ml_drift_delegate/tflite:shared_const_tensor_map",
         "//tflite/c:common",
     ],

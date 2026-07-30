@@ -19,6 +19,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
+#include "ml_drift_delegate/delegate/composite/rope_parser.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_parser.h"
 #include "ml_drift_delegate/tflite/operation_parser.h"
 #include "ml_drift_delegate/tflite/unimplemented_operation_parser.h"
@@ -36,13 +37,16 @@ std::unique_ptr<TFLiteOperationParser> CustomOperationParserFactory::Create(
   if (op_name == "moe") {
     return std::make_unique<MoeExpertsOperationParser>();
   }
+  if (op_name == "odml.rope") {
+    return std::make_unique<RopeOperationParser>();
+  }
   return std::make_unique<UnimplementedOperationParser>(op_name);
 }
 
 bool CustomOperationParserFactory::SupportsIntegerTypes(
     std::string_view op_name) {
   return op_name == "odml.cache_update" || op_name == "odml.runtime_bmm" ||
-         op_name == "moe";
+         op_name == "moe" || op_name == "odml.rope";
 }
 
 bool CustomOperationParserFactory::SupportsBoolTypes(std::string_view op_name) {

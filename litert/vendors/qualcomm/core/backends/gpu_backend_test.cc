@@ -14,7 +14,8 @@
 namespace qnn {
 namespace {
 
-const SocInfo kDefaultSocInfo = FindSocModel("SM8750").value_or(kSocInfos[0]);
+constexpr auto kDefaultSocInfo = FindSocInfo("SM8750");
+static_assert(kDefaultSocInfo.has_value());
 
 class GpuBackendTest : public testing::Test {
  public:
@@ -41,7 +42,7 @@ TEST_F(GpuBackendTest, DISABLED_InitializeWithLogLevelOffTest) {
 
   ASSERT_TRUE(backend_->GetBackendHandle());
   ASSERT_FALSE(backend_->GetLogHandle());
-  EXPECT_EQ(backend_->GetSocInfo().soc_model, kDefaultSocInfo.soc_model);
+  EXPECT_EQ(backend_->GetSocInfo().soc_model, kDefaultSocInfo->soc_model);
 }
 
 TEST_F(GpuBackendTest, DISABLED_InitializeWithLogLevelVerboseTest) {
@@ -53,7 +54,7 @@ TEST_F(GpuBackendTest, DISABLED_InitializeWithLogLevelVerboseTest) {
 
   ASSERT_TRUE(backend_->GetBackendHandle());
   ASSERT_TRUE(backend_->GetLogHandle());
-  EXPECT_EQ(backend_->GetSocInfo().soc_model, kDefaultSocInfo.soc_model);
+  EXPECT_EQ(backend_->GetSocInfo().soc_model, kDefaultSocInfo->soc_model);
 }
 
 }  // namespace

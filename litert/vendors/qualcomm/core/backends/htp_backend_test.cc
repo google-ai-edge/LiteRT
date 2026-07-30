@@ -31,8 +31,8 @@
 namespace qnn {
 namespace {
 
-const SocInfo kFp16SocInfo = FindSocModel("SM8750").value();
-const SocInfo kLegacySocInfo = FindSocModel("SA8295").value();
+constexpr auto kFp16SocInfo = FindSocInfo("SM8750");
+static_assert(kFp16SocInfo.has_value());
 
 // HTP PERF CONTROL /////////////////////////////////////////////////////////
 QnnDevice_GetInfrastructureFn_t real_device_get_infrastructure = nullptr;
@@ -318,7 +318,7 @@ TEST_F(HtpBackendTest, DISABLED_InitializeWithLogLevelOffTest) {
   ASSERT_TRUE(backend_->GetBackendHandle());
   ASSERT_FALSE(backend_->GetLogHandle());
 #if defined(__x86_64__) || defined(_M_X64)
-  EXPECT_EQ(backend_->GetSocInfo().soc_model, kFp16SocInfo.soc_model);
+  EXPECT_EQ(backend_->GetSocInfo().soc_model, kFp16SocInfo->soc_model);
 #endif
 }
 
@@ -332,7 +332,7 @@ TEST_F(HtpBackendTest, DISABLED_InitializeWithLogLevelVerboseTest) {
 
   ASSERT_TRUE(backend_->GetBackendHandle());
   ASSERT_TRUE(backend_->GetLogHandle());
-  EXPECT_EQ(backend_->GetSocInfo().soc_model, kFp16SocInfo.soc_model);
+  EXPECT_EQ(backend_->GetSocInfo().soc_model, kFp16SocInfo->soc_model);
 }
 
 // SETPERFORMANCEMODE /////////////////////////////////////////////////////////
@@ -505,10 +505,6 @@ TEST(HtpBackendGraphConfigTest, DefaultConfigsIncludePrecisionAndPriority) {
   ASSERT_EQ(configs.back(), nullptr);
 
   auto ext = ExtractConfigs(configs);
-  const auto* precision =
-      FindCustom(ext, QNN_HTP_GRAPH_CONFIG_OPTION_PRECISION);
-  ASSERT_NE(precision, nullptr);
-  EXPECT_EQ(precision->precision, QNN_PRECISION_FLOAT16);
 
   const auto* priority = FindPriority(ext);
   ASSERT_NE(priority, nullptr);
@@ -529,8 +525,7 @@ TEST_F(HtpBackendDefaultGraphConfigTest, DefaultOptionsProduceExpectedKinds) {
   ASSERT_EQ(configs.back(), nullptr);
 
   auto ext = ExtractConfigs(configs);
-  ASSERT_EQ(ext.size(), 6u);
-  EXPECT_TRUE(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_PRECISION));
+  ASSERT_EQ(ext.size(), 5u);
   EXPECT_TRUE(
       ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION));
   EXPECT_TRUE(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_VTCM_SIZE));
@@ -551,7 +546,7 @@ TEST_F(HtpBackendDefaultGraphConfigTest, PPointAndHvxInsertedWhenSet) {
   ASSERT_EQ(configs.back(), nullptr);
 
   auto ext = ExtractConfigs(configs);
-  ASSERT_EQ(ext.size(), 8u);
+  ASSERT_EQ(ext.size(), 7u);
   EXPECT_TRUE(
       ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG));
   EXPECT_TRUE(
@@ -583,7 +578,7 @@ TEST_F(HtpBackendDefaultGraphConfigTest, DlbcOptionsAppendOptimizationConfigs) {
   ASSERT_EQ(configs.back(), nullptr);
 
   auto ext = ExtractConfigs(configs);
-  ASSERT_EQ(ext.size(), 8u);
+  ASSERT_EQ(ext.size(), 7u);
   EXPECT_EQ(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION),
             3u);
   EXPECT_TRUE(ext.graph_configs.count(QNN_GRAPH_CONFIG_OPTION_PRIORITY));
@@ -623,7 +618,7 @@ TEST_F(HtpBackendDefaultGraphConfigTest, ValuesReflectOptions) {
 
   ASSERT_EQ(configs.back(), nullptr);
   auto ext = ExtractConfigs(configs);
-  ASSERT_EQ(ext.size(), 6u);
+  ASSERT_EQ(ext.size(), 5u);
 
   const auto* vtcm_cc = FindCustom(ext, QNN_HTP_GRAPH_CONFIG_OPTION_VTCM_SIZE);
   ASSERT_NE(vtcm_cc, nullptr);
@@ -647,83 +642,6 @@ TEST_F(HtpBackendDefaultGraphConfigTest, ValuesReflectOptions) {
   const QnnGraph_Config_t* prio = FindPriority(ext);
   ASSERT_NE(prio, nullptr);
   EXPECT_EQ(prio->priority, QNN_PRIORITY_HIGH);
-}
-
-// --- Legacy path (V68 / SAR2230P — fp16 NOT supported) ---
-class HtpBackendLegacyGraphConfigTest : public testing::Test {
- public:
-  void SetUp() override {
-    handle_ = CreateDLHandle(HtpBackend::GetLibraryName());
-    if (!handle_) GTEST_SKIP();
-    auto* qnn_api =
-        ResolveQnnApi(handle_.get(), HtpBackend::GetExpectedBackendVersion());
-    ASSERT_TRUE(qnn_api);
-    qnn_api_copy_ = *qnn_api;
-    qnn_api_copy_.deviceGetPlatformInfo = MockDeviceGetPlatformInfo;
-    qnn_api_copy_.deviceFree = MockDeviceFree;
-    backend_ = std::make_unique<HtpBackend>(&qnn_api_copy_);
-#if defined(__x86_64__) || defined(_M_X64)
-    ASSERT_TRUE(backend_->Init(Options{}, kLegacySocInfo));
-#else
-    ASSERT_TRUE(backend_->Init(Options{}, std::nullopt));
-    if (IsFp16Supported(backend_->GetSocInfo())) {
-      GTEST_SKIP() << "On-device SoC is not legacy (fp16-capable); "
-                      "skipping legacy path test.";
-    }
-#endif
-  }
-
- protected:
-  DLHandle handle_;
-  QNN_INTERFACE_VER_TYPE qnn_api_copy_{};
-  std::unique_ptr<HtpBackend> backend_;
-};
-
-TEST_F(HtpBackendLegacyGraphConfigTest,
-       DISABLED_ExactSequenceNoPrecisionNoPPoint) {
-  Options options;
-  options.SetHtpPPoint(3);  // P-point set, but must be suppressed on legacy.
-  auto config_builder = backend_->BuildGraphConfigs(options, "graph");
-  auto configs = config_builder.GetNullTerminatedConfigs();
-
-  ASSERT_EQ(configs.back(), nullptr);
-
-  auto ext = ExtractConfigs(configs);
-  ASSERT_EQ(ext.size(), 5u);
-  EXPECT_TRUE(
-      ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION));
-  EXPECT_TRUE(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_VTCM_SIZE));
-  EXPECT_TRUE(ext.custom_configs.count(
-      QNN_HTP_GRAPH_CONFIG_OPTION_FOLD_RELU_ACTIVATION_INTO_CONV_OFF));
-  EXPECT_TRUE(ext.custom_configs.count(
-      QNN_HTP_GRAPH_CONFIG_OPTION_SHORT_DEPTH_CONV_ON_HMX_OFF));
-  EXPECT_TRUE(ext.graph_configs.count(QNN_GRAPH_CONFIG_OPTION_PRIORITY));
-
-  EXPECT_FALSE(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_PRECISION))
-      << "Precision config must be absent on legacy path";
-  EXPECT_FALSE(
-      ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG))
-      << "P-point config must be absent on legacy path";
-}
-
-TEST_F(HtpBackendLegacyGraphConfigTest, DISABLED_HvxAppearsWhenSet) {
-  Options options;
-  options.SetNumHvxThreads(2);
-  auto config_builder = backend_->BuildGraphConfigs(options, "graph");
-  auto configs = config_builder.GetNullTerminatedConfigs();
-
-  ASSERT_EQ(configs.back(), nullptr);
-
-  auto ext = ExtractConfigs(configs);
-  ASSERT_EQ(ext.size(), 6u);
-  EXPECT_TRUE(
-      ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_NUM_HVX_THREADS));
-  EXPECT_TRUE(ext.graph_configs.count(QNN_GRAPH_CONFIG_OPTION_PRIORITY));
-
-  // Still no precision or P-point.
-  EXPECT_FALSE(ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_PRECISION));
-  EXPECT_FALSE(
-      ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG));
 }
 
 }  // namespace

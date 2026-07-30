@@ -198,6 +198,10 @@ LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
 // The pointer must point to a litert::ml_drift::SharedTensorMaps struct.
 // The caller is responsible for maintaining the lifetime of the struct
 // until the model is destroyed.
+//
+// WARNING: This API is not ABI-stable and only for internal usage. It works
+// only when the client is built together with the LiteRT and ML Drift delegate.
+// Unless you know what you are doing, do not use this API.
 LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsSharedTensorMaps(
     LrtGpuOptions* gpu_options, void* shared_tensor_maps);
 

@@ -15,13 +15,11 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_DELEGATE_UTILS_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_DELEGATE_UTILS_H_
 
-#include <cstdint>
-#include <functional>
 #include <memory>
 
-#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_runtime_context.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/shared_tensor_maps.h"
 #include "tflite/core/c/common.h"
 

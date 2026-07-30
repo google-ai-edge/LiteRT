@@ -146,23 +146,6 @@ void DoCacheStore(const void* key, size_t key_size, const void* data,
 }
 
 #ifndef __EMSCRIPTEN__
-// Callback adapters for Dawn C API vs C++ std::span API.
-#if __has_include("farmhash.h")
-size_t CacheLoad(const void* key, size_t key_size, void* value,
-                 size_t value_size, void* userdata) {
-  return DoCacheLoad(key, key_size, value, value_size);
-}
-
-void CacheStore(const void* key, size_t key_size, const void* data,
-                size_t data_size, void* userdata) {
-  DoCacheStore(key, key_size, data, data_size);
-}
-
-void AttachCacheCallbacks(wgpu::DawnCacheDeviceDescriptor& desc) {
-  desc.loadDataFunction = &CacheLoad;
-  desc.storeDataFunction = &CacheStore;
-}
-#else   // __has_include("farmhash.h")
 size_t CacheLoad(std::span<const std::byte> key, std::span<std::byte> value) {
   return DoCacheLoad(key.data(), key.size(), value.data(), value.size());
 }
@@ -176,7 +159,6 @@ void AttachCacheCallbacks(wgpu::DawnCacheDeviceDescriptor& desc) {
   desc.SetDawnLoadCacheDataCallback(&CacheLoad);
   desc.SetDawnStoreCacheDataCallback(&CacheStore);
 }
-#endif  // __has_include("farmhash.h")
 #endif  // !__EMSCRIPTEN__
 
 // Called by Invoke() to destroy the cache heuristically if it is not used any

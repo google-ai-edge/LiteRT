@@ -24,17 +24,25 @@
 #define EXPECT_OK(status) EXPECT_TRUE(status.ok())
 #endif  // defined(EXPECT_OK)
 
+#if !defined(ABSL_ASSERT_OK)
+#define ABSL_ASSERT_OK(status) ABSL_ASSERT_TRUE(status.ok())
+#endif  // defined(ABSL_ASSERT_OK)
+
 #if !defined(ASSERT_OK)
-#define ASSERT_OK(status) ASSERT_TRUE(status.ok())
+#define ASSERT_OK(status) ABSL_ASSERT_OK(status)
 #endif  // defined(ASSERT_OK)
 
-#if !defined(ASSERT_OK_AND_ASSIGN)
-#define ASSERT_OK_AND_ASSIGN(DECL, EXPR) \
+#if !defined(ABSL_ASSERT_OK_AND_ASSIGN)
+#define ABSL_ASSERT_OK_AND_ASSIGN(DECL, EXPR) \
   _ASSERT_OK_AND_ASSIGN_IMPL(_CONCAT_NAME(_statusor_, __LINE__), DECL, EXPR)
 #define _ASSERT_OK_AND_ASSIGN_IMPL(TMP_VAR, DECL, EXPR) \
   auto&& TMP_VAR = (EXPR);                              \
   ASSERT_TRUE(TMP_VAR.ok()) << TMP_VAR.status();        \
   DECL = std::move(*TMP_VAR)
+#endif  // !defined(ABSL_ASSERT_OK_AND_ASSIGN)
+
+#if !defined(ASSERT_OK_AND_ASSIGN)
+#define ASSERT_OK_AND_ASSIGN(DECL, EXPR) ABSL_ASSERT_OK_AND_ASSIGN(DECL, EXPR)
 #endif  // !defined(ASSERT_OK_AND_ASSIGN)
 
 // copybara:comment_begin

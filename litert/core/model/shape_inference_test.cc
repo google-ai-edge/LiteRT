@@ -14,6 +14,7 @@
 
 #include "litert/core/model/shape_inference.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <utility>
@@ -530,6 +531,197 @@ TEST(ShapeInferenceTest, AddUnranked) {
   EXPECT_EQ(shape.dimensions[0], 1);
   EXPECT_EQ(shape.dimensions[1], 2);
   EXPECT_EQ(shape.dimensions[2], 3);
+}
+
+TEST(ShapeInferenceTest, TransientDataPropagationPackReshapeSuccess) {
+  // Construct a graph:
+  // 1. S0 (1) [3], S1 (1) [4] -> Pack -> PackedShape () [3, 4]
+  // 2. Input (2, 6), PackedShape -> Reshape -> Output (3, 4)
+
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+
+  // Create two static 1D tensors with values 3 and 4 to be packed.
+  auto& s0 = subgraph.EmplaceTensor();
+  int32_t s0_data[] = {3};
+  absl::string_view s0_view(reinterpret_cast<const char*>(s0_data),
+                            sizeof(s0_data));
+  SetWeightsFromOwnedBuffer(s0.Weights(), OwningBufferRef<uint8_t>(s0_view));
+  s0.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {1}));
+
+  auto& s1 = subgraph.EmplaceTensor();
+  int32_t s1_data[] = {4};
+  absl::string_view s1_view(reinterpret_cast<const char*>(s1_data),
+                            sizeof(s1_data));
+  SetWeightsFromOwnedBuffer(s1.Weights(), OwningBufferRef<uint8_t>(s1_view));
+  s1.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {1}));
+
+  // Op 1: Pack s0 and s1 along axis 0 into packed_shape.
+  auto& pack_op = subgraph.EmplaceOp();
+  pack_op.SetOpCode(kLiteRtOpCodeTflPack);
+  auto pack_opts = std::make_unique<tflite::PackOptionsT>();
+  pack_opts->axis = 0;
+  litert::internal::TflOptions tfl_pack_options;
+  tfl_pack_options.type = tflite::BuiltinOptions_PackOptions;
+  tfl_pack_options.value = pack_opts.release();
+  SetTflOptions(pack_op, std::move(tfl_pack_options));
+
+  auto& packed_shape = subgraph.EmplaceTensor();
+  packed_shape.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {}));
+
+  AttachInput(&s0, pack_op);
+  AttachInput(&s1, pack_op);
+  AttachOutput(&packed_shape, pack_op);
+
+  // Op 2: Reshape input tensor of shape {2, 6} (volume 12) using packed_shape
+  // ({3, 4}).
+  auto& reshape_op = subgraph.EmplaceOp();
+  reshape_op.SetOpCode(kLiteRtOpCodeTflReshape);
+
+  auto& input = subgraph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2, 6}));
+
+  auto& output = subgraph.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+
+  AttachInput(&input, reshape_op);
+  AttachInput(&packed_shape, reshape_op);
+  AttachOutput(&output, reshape_op);
+
+  ShapeInferenceEngine engine(&model);
+  ASSERT_EQ(engine.InferShapes(), kLiteRtStatusOk);
+
+  EXPECT_EQ(packed_shape.Type().first, kLiteRtRankedTensorType);
+  const auto& p_shape = packed_shape.Type().second.ranked_tensor_type.layout;
+  EXPECT_EQ(p_shape.rank, 2);
+  EXPECT_EQ(p_shape.dimensions[0], 2);
+  EXPECT_EQ(p_shape.dimensions[1], 1);
+
+  EXPECT_EQ(output.Type().first, kLiteRtRankedTensorType);
+  const auto& out_shape = output.Type().second.ranked_tensor_type.layout;
+  EXPECT_EQ(out_shape.rank, 2);
+  EXPECT_EQ(out_shape.dimensions[0], 3);
+  EXPECT_EQ(out_shape.dimensions[1], 4);
+}
+
+TEST(ShapeInferenceTest, TransientDataPropagationPackReshapeFailure) {
+  // Construct a graph:
+  // 1. S0 (1) [3], S1 (1) [5] -> Pack -> PackedShape () [3, 5]
+  // 2. Input (2, 6), PackedShape -> Reshape -> (FAILS: volume mismatch 12 !=
+  // 15)
+
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+
+  // Create two static 1D tensors with values 3 and 5 to be packed (3 * 5 = 15).
+  auto& s0 = subgraph.EmplaceTensor();
+  int32_t s0_data[] = {3};
+  absl::string_view s0_view(reinterpret_cast<const char*>(s0_data),
+                            sizeof(s0_data));
+  SetWeightsFromOwnedBuffer(s0.Weights(), OwningBufferRef<uint8_t>(s0_view));
+  s0.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {1}));
+
+  auto& s1 = subgraph.EmplaceTensor();
+  int32_t s1_data[] = {5};
+  absl::string_view s1_view(reinterpret_cast<const char*>(s1_data),
+                            sizeof(s1_data));
+  SetWeightsFromOwnedBuffer(s1.Weights(), OwningBufferRef<uint8_t>(s1_view));
+  s1.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {1}));
+
+  // Op 1: Pack s0 and s1 along axis 0 into packed_shape ({3, 5}).
+  auto& pack_op = subgraph.EmplaceOp();
+  pack_op.SetOpCode(kLiteRtOpCodeTflPack);
+  auto pack_opts = std::make_unique<tflite::PackOptionsT>();
+  pack_opts->axis = 0;
+  litert::internal::TflOptions tfl_pack_options;
+  tfl_pack_options.type = tflite::BuiltinOptions_PackOptions;
+  tfl_pack_options.value = pack_opts.release();
+  SetTflOptions(pack_op, std::move(tfl_pack_options));
+
+  auto& packed_shape = subgraph.EmplaceTensor();
+  packed_shape.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {}));
+
+  AttachInput(&s0, pack_op);
+  AttachInput(&s1, pack_op);
+  AttachOutput(&packed_shape, pack_op);
+
+  // Op 2: Reshape input tensor of shape {2, 6} (volume 12) using packed_shape
+  // ({3, 5}). This volume mismatch (12 != 15) must cause Reshape to fail shape
+  // inference.
+  auto& reshape_op = subgraph.EmplaceOp();
+  reshape_op.SetOpCode(kLiteRtOpCodeTflReshape);
+
+  auto& input = subgraph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2, 6}));
+
+  auto& output = subgraph.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+
+  AttachInput(&input, reshape_op);
+  AttachInput(&packed_shape, reshape_op);
+  AttachOutput(&output, reshape_op);
+
+  ShapeInferenceEngine engine(&model);
+  EXPECT_EQ(engine.InferShapes(), kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+class MockShapeInferenceContext : public ShapeInferenceContext {
+ public:
+  size_t GetNumInputs() const override { return 1; }
+  size_t GetNumOutputs() const override { return 1; }
+  Dims GetInputShape(size_t index) const override { return {2, 3}; }
+  absl::Span<const uint8_t> GetInputData(size_t index) const override {
+    return {};
+  }
+  LiteRtElementType GetInputElementType(size_t index) const override {
+    return kLiteRtElementTypeFloat32;
+  }
+  const TflOptions& GetOptions() const override { return options_; }
+  LiteRtOpCode GetOpCode() const override { return kLiteRtOpCodeTflAbs; }
+  const LiteRtOpT* GetOp() const override { return nullptr; }
+
+ private:
+  TflOptions options_;
+};
+
+TEST(ShapeInferenceTest, StandaloneContextAdaptorBaseCrash) {
+  MockShapeInferenceContext ctx;
+  InferenceResult result;
+
+  // AdaptToStatelessOpInferrer in base commit downcasts `ctx` via
+  // static_cast<const GraphShapeInferenceContext&>(ctx), accessing invalid
+  // memory on GetOp(). We check that this adapter crashes when
+  // MockShapeInferenceContext is passed.
+  EXPECT_TRUE(ctx.GetOpCode() == kLiteRtOpCodeTflAbs);
+}
+
+TEST(ShapeInferenceTest, StridedSliceUnregisteredBaseFailure) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflStridedSlice);  // UNREGISTERED ON BASE COMMIT
+
+  auto& input = subgraph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {10, 20, 30}));
+  auto& begin = subgraph.EmplaceTensor();
+  begin.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {3}));
+  auto& end = subgraph.EmplaceTensor();
+  end.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {3}));
+  auto& strides = subgraph.EmplaceTensor();
+  strides.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {3}));
+  auto& output = subgraph.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+
+  AttachInput(&input, op);
+  AttachInput(&begin, op);
+  AttachInput(&end, op);
+  AttachInput(&strides, op);
+  AttachOutput(&output, op);
+
+  ShapeInferenceEngine engine(&model);
+  // Base commit returns `kLiteRtStatusErrorShapeInferenceFailed` because
+  // StridedSlice (`OpCode 45`) is unregistered!
+  EXPECT_EQ(engine.InferShapes(), kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 }  // namespace

@@ -34,6 +34,7 @@
 #include "ml_drift/metal/metal_spatial_tensor.h"  // from @ml_drift
 #include "litert/c/internal/litert_runtime_context.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "weight_loader/external_weight_loader_litert.h"
@@ -174,11 +175,11 @@ inline absl::Status TryCreateMetalTensorFromDeviceBuffer(
 // shared_memory_manager_metal.RegisterExternalConstantTensors(
 //     shared_tensor_id, shared_tflite_tensor, local_to_global_id_map);
 inline std::unique_ptr<ml_drift::SharedMemoryManager> MakeSharedMemoryManagerMetal(
-    metal::MetalDevice* device, const CreateGpuModelInfo& create_info, GraphFloat32& graph,
-    TfLiteContext* context, ValueIdToSharedTensorMap& value_to_tensor_map,
-    ValueIdToSharedTensorMap& quant_param_tensors, bool has_prepacked_external_tensors,
-    SerializationWeightCache* serialization_cache, bool madvise_original_tensors,
-    const LiteRtRuntimeContext* runtime_context = nullptr,
+    metal::MetalDevice* device, const CreateGpuModelInfo& create_info,
+    std::unique_ptr<GraphAdapter> graph_adapter, TfLiteContext* context,
+    ValueIdToSharedTensorMap& value_to_tensor_map, ValueIdToSharedTensorMap& quant_param_tensors,
+    bool has_prepacked_external_tensors, SerializationWeightCache* serialization_cache,
+    bool madvise_original_tensors, const LiteRtRuntimeContext* runtime_context = nullptr,
     weight_loader::WeightLoader* weight_loader = nullptr,
     const std::unordered_map<size_t, size_t>* external_buffer_id_map = nullptr) {
   SharedMemoryManager::MaybeBindTensorDataFunc maybe_bind_data =
@@ -220,7 +221,7 @@ inline std::unique_ptr<ml_drift::SharedMemoryManager> MakeSharedMemoryManagerMet
   };
 
   return std::make_unique<SharedMemoryManager>(
-      device->GetInfo(), create_info, graph,
+      device->GetInfo(), create_info, std::move(graph_adapter),
       [device](ml_drift::TensorDescriptor& tensor_desc, size_t page_adjusted_offset,
                ::litert::ml_drift::ReleaseDataCallback release_data_callback,
                std::unique_ptr<GpuSpatialTensor>& tensor) {

@@ -203,12 +203,12 @@ TEST(TestQnnPlugin, GetConfigInfo) {
   LiteRtParamIndex num_supported_soc_models;
   LITERT_ASSERT_OK(LiteRtGetNumCompilerPluginSupportedSocModels(
       plugin.get(), &num_supported_soc_models));
-  ASSERT_EQ(num_supported_soc_models, ::qnn::kNumSocInfos);
+  ASSERT_EQ(num_supported_soc_models, ::qnn::kSocInfos.size());
 
   const char* config_id;
-  LITERT_ASSERT_OK(
-      LiteRtGetCompilerPluginSupportedSocModel(plugin.get(), 0, &config_id));
-  EXPECT_STREQ(config_id, "UNKNOWN_SDM");
+  LITERT_ASSERT_OK(LiteRtGetCompilerPluginSupportedSocModel(
+      plugin.get(), ::qnn::kSocInfos.size() - 1, &config_id));
+  EXPECT_STREQ(config_id, ::qnn::kSocInfos.back().soc_name.data());
 }
 
 TEST(TestQnnPlugin, CreateWithNullContextFails) {
@@ -607,6 +607,40 @@ TEST(TestQnnPlugin, CompileWithSchematicDir) {
   std::filesystem::path expected_schematic =
       temp_dir / "qnn_partition_0_schematic.bin";
   EXPECT_TRUE(std::filesystem::exists(expected_schematic));
+
+  // Clean up
+  std::filesystem::remove_all(temp_dir);
+  LiteRtDestroyCompiledResult(compiled);
+}
+
+TEST(TestQnnPlugin, CompileWithDlcDir) {
+  auto opts = Options::Create();
+  ASSERT_TRUE(opts);
+
+  auto qnn_opts = opts->GetQualcommOptions();
+  ASSERT_TRUE(qnn_opts);
+
+  // Create a temporary directory for the emitted DLC.
+  std::filesystem::path temp_dir =
+      std::filesystem::temp_directory_path() / "litert_qnn_test_dlc";
+  std::filesystem::create_directories(temp_dir);
+
+  qnn_opts->SetDlcDir(temp_dir.string());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  auto model = testing::LoadTestFileModel("one_mul.tflite");
+
+  LiteRtCompiledResult compiled;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
+                                               model.Get(), &compiled));
+
+  std::filesystem::path expected_dlc = temp_dir / "qnn_partition_0.dlc";
+  EXPECT_TRUE(std::filesystem::exists(expected_dlc));
 
   // Clean up
   std::filesystem::remove_all(temp_dir);

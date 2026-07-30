@@ -22,10 +22,10 @@
 #include <list>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <unordered_map>
 #include "absl/types/span.h"  // from @com_google_absl
 
 namespace litert::internal {

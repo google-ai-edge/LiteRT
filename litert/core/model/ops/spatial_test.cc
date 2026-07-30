@@ -327,6 +327,10 @@ class SpatialTestShapeInferenceContext : public ShapeInferenceContext {
         input_shapes_(std::move(input_shapes)),
         input_data_(std::move(input_data)) {}
 
+  size_t GetNumInputs() const override { return input_shapes_.size(); }
+
+  size_t GetNumOutputs() const override { return 1; }
+
   Dims GetInputShape(size_t index) const override {
     if (index >= input_shapes_.size()) return {};
     return input_shapes_[index];

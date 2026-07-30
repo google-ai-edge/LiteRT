@@ -24,6 +24,7 @@
 #include "litert/c/internal/litert_logging.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
 #include "ml_drift_delegate/delegate/gpu_backend_webgpu_litert.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/gf32_graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_webgpu_litert.h"
 #include "tflite/c/common.h"
@@ -54,8 +55,9 @@ GpuBackendWebGpuLitert::CreateSharedMemoryManager(
             ->GetExternalTensorBufferIdentifiers());
 
   return ::ml_drift::MakeSharedMemoryManagerWebgpuLitert(
-      wgpu_env(), delegate_data.options->runtime_context, create_info, graph,
-      context, GetBufferIdToSpatialTensorMap(delegate_data),
+      wgpu_env(), delegate_data.options->runtime_context, create_info,
+      std::make_unique<::ml_drift::GraphFloat32Adapter>(graph), context,
+      GetBufferIdToSpatialTensorMap(delegate_data),
       GetQuantParamIdToSpatialTensorMap(delegate_data),
       delegate_data.options->has_prepacked_external_tflite_tensors,
       serialization_cache, delegate_data.upload_executor,

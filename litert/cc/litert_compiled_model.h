@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_COMPILED_MODEL_H_
 #define ODML_LITERT_LITERT_CC_LITERT_COMPILED_MODEL_H_
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -27,7 +28,6 @@
 #include <variant>
 #include <vector>
 
-#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
@@ -1966,7 +1966,8 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                                   StringView input_name) const {
     LITERT_ASSIGN_OR_RETURN(const auto input_names,
                             GetSignatureInputNames(signature_index));
-    auto it = absl::c_find(input_names, input_name);
+    auto it = std::find(input_names.begin(), input_names.end(),
+                        input_name);  // NOLINT
     if (it != input_names.end()) {
       return std::distance(input_names.begin(), it);
     }
@@ -1979,7 +1980,8 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                                    StringView output_name) const {
     LITERT_ASSIGN_OR_RETURN(const auto output_names,
                             GetSignatureOutputNames(signature_index));
-    auto it = absl::c_find(output_names, output_name);
+    auto it = std::find(output_names.begin(), output_names.end(),
+                        output_name);  // NOLINT
     if (it != output_names.end()) {
       return std::distance(output_names.begin(), it);
     }

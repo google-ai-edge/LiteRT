@@ -189,7 +189,6 @@ cc_test(
     ],
     deps = [
         ":backend_utils",
-        "//litert/vendors/qualcomm/core/schema:soc_table",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],

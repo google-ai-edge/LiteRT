@@ -20,7 +20,7 @@
 #include <string>
 #include <vector>
 
-#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
@@ -92,8 +92,8 @@ inline Expected<TensorBuffer> CreateTensorBufferFromStrings(
       TensorBuffer buffer,
       TensorBuffer::CreateManaged(env, buffer_type, tensor_type,
                                   serialized.size()));
-  LITERT_RETURN_IF_ERROR(
-      buffer.Write<uint8_t>(absl::MakeConstSpan(serialized)));
+  LITERT_RETURN_IF_ERROR(buffer.Write<uint8_t>(
+      Span<const uint8_t>(serialized.data(), serialized.size())));
   return buffer;
 }
 
