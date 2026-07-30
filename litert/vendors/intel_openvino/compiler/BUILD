@@ -98,6 +98,7 @@ litert_test(
         "//litert/test:common",
         "//litert/test:load_test_model",
         "//litert/test:test_models",
+        "@intel_openvino//:openvino",
     ],
 )
 
@@ -118,11 +119,9 @@ litert_test(
     srcs = ["global_graph_test.cc"],
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
-    tags = [
-        "manual",
-        "nobuilder",
-        "notap",
-    ],
+    # No OpenVINO runtime dependency (pure container serialize/parse logic), so
+    # this builds and runs in CI on plain CPU -- unlike the other intel_openvino
+    # tests, which link @intel_openvino and need the OV runtime/hardware.
     deps = [
         ":global_graph",
     ],
