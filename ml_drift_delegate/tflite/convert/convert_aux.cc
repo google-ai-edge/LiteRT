@@ -22,6 +22,7 @@
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
@@ -202,6 +203,56 @@ bool MarkSharedBias(::ml_drift::ir::IrTensorId bias_id,
     bias->desc.SetBHWCShape(::ml_drift::BHWC(1, 1, 1, shape.b));
   }
   return true;
+}
+
+bool ConfigSharedQuantizedFullyConnected(
+    const TfLiteTensor& weights_tensor, const ::ml_drift::OHWI& weights_shape,
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> bias,
+    ::ml_drift::ir::IrOp* fc_op) {
+  // Scale is per-output-channel by default; blockwise quantization also splits
+  // the input dimension into blocks (parity with GraphFloat32).
+  ::ml_drift::OHWI scale_shape(weights_shape.o, 1, 1, 1);
+  if (weights_tensor.quantization.type == kTfLiteBlockwiseQuantization) {
+    const auto* qparams = reinterpret_cast<const TfLiteBlockwiseQuantization*>(
+        weights_tensor.quantization.params);
+    scale_shape.i = weights_shape.i / qparams->blocksize;
+  }
+
+  switch (weights_tensor.type) {
+    case kTfLiteInt8: {
+      fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT8);
+      ::ml_drift::FullyConnectedInt8Attributes attr;
+      attr.weights.shape = weights_shape;
+      attr.scale.shape = scale_shape;
+      attr.bias = std::move(bias);
+      fc_op->attr = std::move(attr);
+      return true;
+    }
+    case kTfLiteInt4: {
+      fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT4);
+      ::ml_drift::FullyConnectedInt4Attributes attr;
+      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT4> weights;
+      weights.shape = weights_shape;
+      attr.weights = std::move(weights);
+      attr.scale.shape = scale_shape;
+      attr.bias = std::move(bias);
+      fc_op->attr = std::move(attr);
+      return true;
+    }
+    case kTfLiteInt2: {
+      fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT2);
+      ::ml_drift::FullyConnectedInt2Attributes attr;
+      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT2> weights;
+      weights.shape = weights_shape;
+      attr.weights = std::move(weights);
+      attr.scale.shape = scale_shape;
+      attr.bias = std::move(bias);
+      fc_op->attr = std::move(attr);
+      return true;
+    }
+    default:
+      return false;
+  }
 }
 
 ::ml_drift::ir::IrTensor* AddConstInput(const TfLiteContext& context,

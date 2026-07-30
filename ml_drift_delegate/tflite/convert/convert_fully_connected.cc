@@ -255,10 +255,43 @@ void ConvertFullyConnected(
       ir_model.AddConsumer(tensor_map[node.inputs->data[2]], fc_op->id);
     }
   } else {
-    fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED);
-
     const auto* weights_ir_tensor = ir_model.tensor(tensor_map[weights_id]);
     const auto& current_shape = weights_ir_tensor->desc.GetBHWCShape();
+    const bool weights_are_quantized = weights_tensor->type == kTfLiteInt8 ||
+                                       weights_tensor->type == kTfLiteInt4 ||
+                                       weights_tensor->type == kTfLiteInt2;
+
+    // A const (non-shared) bias is embedded into the op attributes; a runtime
+    // or shared bias is added as a runtime consumer below (parity with
+    // GraphFloat32 and the const-weights branch above).
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> bias;
+    if (bias_is_const) {
+      PopulateTensor(bias_tensor, bias_id, &bias,
+                     PopulateTensorFlags::kNoExtraBytes,
+                     options.enable_spanned_weights);
+    }
+
+    // Shared quantized weights are consumed as quantized runtime inputs, so
+    // emit the matching quantized fully-connected variant with the weights and
+    // scale shapes, embedding the const bias (if any) into the attributes
+    const bool configured_quantized =
+        weights_are_const && weights_ir_tensor->buffer_source.is_shared &&
+        weights_are_quantized;
+    if (configured_quantized) {
+      // Consumes (moves from) `bias`.
+      ConfigSharedQuantizedFullyConnected(
+          *weights_tensor,
+          ::ml_drift::OHWI(output_shape.c, 1, 1, input_shape.c),
+          std::move(bias), fc_op);
+    } else {
+      // Plain float fully-connected: embed the (possibly empty) const bias.
+      // Keeping this move of `bias` in the same if/else as the quantized path
+      // makes the two consumers provably mutually exclusive.
+      fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED);
+      ::ml_drift::FullyConnectedAttributes attr;
+      attr.bias = std::move(bias);
+      fc_op->attr = std::move(attr);
+    }
 
     // While we check if const weights are (o, 1, 1, i) sh, we don't for
     // non-const weights. Manually add a reshape here if necessary.
@@ -282,11 +315,9 @@ void ConvertFullyConnected(
       ir_model.AddConsumer(tensor_map[weights_id], fc_op->id);
     }
 
-    if (has_bias) {
+    if (has_bias && !bias_is_const) {
       ir_model.AddConsumer(tensor_map[node.inputs->data[2]], fc_op->id);
     }
-    ::ml_drift::FullyConnectedAttributes attr;
-    fc_op->attr = std::move(attr);
   }
 
   const ::ml_drift::BHWDC weights_shape_bhwdc =
