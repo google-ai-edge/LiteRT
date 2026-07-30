@@ -775,17 +775,6 @@ cc_test(
     ],
 )
 
-# copybara:uncomment_begin(google-only)
-# config_setting(
-#     name = "play_services_system_android",
-#     constraint_values = ["@platforms//os:android"],
-#     flag_values = {
-#         "//third_party/java/android:sdk_channel": "play_services",
-#         "//third_party/java/android:system_api": "True",
-#     },
-# )
-# copybara:uncomment_end
-
 cc_library(
     name = "litert_runtime_proxy_api",
     hdrs = ["litert_runtime_proxy.h"],
@@ -830,11 +819,6 @@ cc_library(
         "//litert:litert_runtime_link_mode_none": [
             "//litert/c/internal:litert_runtime_builtin_none",
         ],
-        # copybara:uncomment_begin(google-only)
-        # ":play_services_system_android": [
-        # "//litert/c/internal:litert_runtime_builtin_none",
-        # ],
-        # copybara:uncomment_end
         "//conditions:default": [
             "//litert/c/internal:litert_runtime_builtin_static",
         ],
