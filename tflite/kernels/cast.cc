@@ -30,6 +30,7 @@ limitations under the License.
 #include "tflite/kernels/internal/float8.h"
 #endif
 #include "tflite/kernels/internal/portable_tensor_utils.h"
+#include "tflite/kernels/internal/quantization_util.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
 #include "tflite/kernels/op_macros.h"
@@ -61,25 +62,9 @@ ToT SaturatingCastFloatingToInteger(FloatT value) {
   static_assert(std::is_integral_v<ToT>);
   static_assert(!std::is_same_v<ToT, bool>);
 
-  if (std::isnan(value)) {
-    return std::numeric_limits<ToT>::max();
-  }
-
-  const FloatT min_value =
-      static_cast<FloatT>(std::numeric_limits<ToT>::lowest());
-  FloatT max_value = static_cast<FloatT>(std::numeric_limits<ToT>::max());
-  if (static_cast<long double>(max_value) >
-      static_cast<long double>(std::numeric_limits<ToT>::max())) {
-    max_value = std::nextafter(max_value, FloatT{0});
-  }
-
-  if (value < min_value) {
-    return std::numeric_limits<ToT>::lowest();
-  }
-  if (value > max_value) {
-    return std::numeric_limits<ToT>::max();
-  }
-  return static_cast<ToT>(value);
+  // Preserve CAST's existing NaN behavior while sharing the checked
+  // floating-point-to-integer conversion with other kernels.
+  return SafeCast<ToT>(value, std::numeric_limits<ToT>::max());
 }
 
 template <typename ToT, typename FromT>
