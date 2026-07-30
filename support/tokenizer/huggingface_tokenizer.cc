@@ -26,7 +26,6 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "support/tokenizer/tokenizer.h"
 #include "support/util/memory_mapped_file.h"
 #include "support/util/status_macros.h"  // NOLINT
 #include "include/tokenizers_cpp.h"  // from @tokenizers_cpp
@@ -80,14 +79,7 @@ absl::StatusOr<std::string> HuggingFaceTokenizer::TokenIdsToText(
     // Disable leak check as Google's default leak checker does not properly
     // support Rust's lazy_static initialization.
     // TODO(b/379364190) - Remove this once the leak checker is fixed.
-    std::string decoded = tokenizer_->Decode(token_ids);
-    if (Tokenizer::HasBpeSuffix(decoded)) {
-      return absl::DataLossError(
-          "The set of token IDs passed to the tokenizer is part of a BPE "
-          "sequence and needs more tokens to be decoded.");
-    } else {
-      return decoded;
-    }
+    return tokenizer_->Decode(token_ids);
   }
 }
 
