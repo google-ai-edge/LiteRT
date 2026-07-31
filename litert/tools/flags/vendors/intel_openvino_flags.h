@@ -31,6 +31,8 @@
 ABSL_DECLARE_FLAG(LiteRtIntelOpenVinoPerformanceMode,
                   intel_openvino_performance_mode);
 
+ABSL_DECLARE_FLAG(bool, intel_openvino_enable_weight_sharing);
+
 ABSL_DECLARE_FLAG(std::string, intel_openvino_configs_map);
 
 ABSL_DECLARE_FLAG(std::string, intel_openvino_graph_backends);

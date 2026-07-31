@@ -521,12 +521,16 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     // its subgraph and resolves the subgraph's weights against the shared pool.
     //
     // Enabled automatically when EVERY partition targets GPU (the only backend
-    // that supports the weights-as-Parameters + shared-USM dispatch path). A
-    // model with any non-GPU partition falls back to standalone baked-weights
-    // bytecode. Determining this up front (rather than per-partition inside the
-    // loop) keeps the container all-or-nothing, so we never emit a half-shared
-    // model.
-    bool share_weights = num_partitions > 0;
+    // that supports the weights-as-Parameters + shared-USM dispatch path) AND
+    // the caller has not opted out via the `enable_weight_sharing` option
+    // (default true). A model with any non-GPU partition falls back to
+    // standalone baked-weights bytecode.
+    bool enable_weight_sharing = true;
+    if (const auto& opts = compiler_plugin->GetIntelOpenVinoOptions();
+        opts.HasValue()) {
+      enable_weight_sharing = opts->GetEnableWeightSharing();
+    }
+    bool share_weights = num_partitions > 0 && enable_weight_sharing;
     for (int p = 0; p < num_partitions && share_weights; ++p) {
       LITERT_ASSIGN_OR_RETURN(
           litert::openvino::OpenVinoCompileContext probe,

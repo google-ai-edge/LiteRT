@@ -40,6 +40,12 @@ ABSL_FLAG(LiteRtIntelOpenVinoPerformanceMode, intel_openvino_performance_mode,
           "Performance mode for Intel OpenVINO inference (latency, throughput, "
           "cumulative_throughput).");
 
+ABSL_FLAG(bool, intel_openvino_enable_weight_sharing, true,
+          "Enable cross-partition constant-weight sharing for all-GPU models "
+          "(default true).  Set to false to force standalone per-partition "
+          "baked-weights bytecode.  Has no effect unless every partition "
+          "targets GPU.");
+
 ABSL_FLAG(std::string, intel_openvino_configs_map, "",
           "Configuration options for Intel OpenVINO as comma-separated "
           "key=value pairs "
@@ -135,6 +141,9 @@ Expected<void> UpdateIntelOpenVinoOptionsFromFlags(
     IntelOpenVinoOptions& options) {
   options.SetPerformanceMode(
       absl::GetFlag(FLAGS_intel_openvino_performance_mode));
+
+  options.SetEnableWeightSharing(
+      absl::GetFlag(FLAGS_intel_openvino_enable_weight_sharing));
 
   // Parse configs map options from the flag (comma-separated key=value pairs)
   const std::string configs_map_str =

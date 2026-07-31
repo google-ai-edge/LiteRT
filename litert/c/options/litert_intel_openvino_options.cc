@@ -40,6 +40,8 @@
 
 struct LrtIntelOpenVinoOptionsT {
   std::optional<LiteRtIntelOpenVinoPerformanceMode> performance_mode;
+  // Cross-partition weight sharing.  Unset means the default (enabled).
+  std::optional<bool> enable_weight_sharing;
   // Store custom configuration options as key-value pairs
   std::vector<std::pair<std::string, std::string>> configs_map_options;
 
@@ -81,6 +83,10 @@ LiteRtStatus LrtGetOpaqueIntelOpenVinoOptionsData(
   std::stringstream ss;
   if (options->performance_mode.has_value()) {
     ss << "performance_mode = " << options->performance_mode.value() << "\n";
+  }
+  if (options->enable_weight_sharing.has_value()) {
+    ss << "enable_weight_sharing = "
+       << (options->enable_weight_sharing.value() ? "true" : "false") << "\n";
   }
   for (const auto& pair : options->configs_map_options) {
     ss << "configs_map." << pair.first << " = \"" << pair.second << "\"\n";
@@ -128,6 +134,13 @@ LiteRtStatus LrtCreateIntelOpenVinoOptionsFromToml(
           return LrtIntelOpenVinoOptionsSetPerformanceMode(
               local_options,
               static_cast<LiteRtIntelOpenVinoPerformanceMode>(*parsed_int));
+        } else if (key == "enable_weight_sharing") {
+          auto parsed_bool = litert::internal::ParseTomlBool(value);
+          if (!parsed_bool.HasValue()) {
+            return litert::ToLiteRtStatus(parsed_bool.Error().StatusCC());
+          }
+          return LrtIntelOpenVinoOptionsSetEnableWeightSharing(local_options,
+                                                               *parsed_bool);
         } else if (absl::StartsWith(key, "configs_map.")) {
           std::string config_key(key.substr(12));
           std::string config_value(value);
@@ -199,6 +212,26 @@ LiteRtStatus LrtIntelOpenVinoOptionsGetPerformanceMode(
   } else {
     *performance_mode = options->performance_mode.value();
   }
+  return kLiteRtStatusOk;
+}
+
+// enable_weight_sharing ------------------------------------------------------
+LiteRtStatus LrtIntelOpenVinoOptionsSetEnableWeightSharing(
+    LrtIntelOpenVinoOptions options, bool enable_weight_sharing) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->enable_weight_sharing = enable_weight_sharing;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtIntelOpenVinoOptionsGetEnableWeightSharing(
+    LrtIntelOpenVinoOptions options, bool* enable_weight_sharing) {
+  if (options == nullptr || enable_weight_sharing == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // Defaults to enabled when the caller never set it.
+  *enable_weight_sharing = options->enable_weight_sharing.value_or(true);
   return kLiteRtStatusOk;
 }
 

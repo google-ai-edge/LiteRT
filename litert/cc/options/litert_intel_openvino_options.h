@@ -60,6 +60,18 @@ class IntelOpenVinoOptions {
     return performance_mode;
   }
 
+  void SetEnableWeightSharing(bool enable_weight_sharing) {
+    LITERT_ABORT_IF_ERROR(LrtIntelOpenVinoOptionsSetEnableWeightSharing(
+        Get(), enable_weight_sharing));
+  }
+
+  bool GetEnableWeightSharing() const {
+    bool enable_weight_sharing = true;
+    LITERT_ABORT_IF_ERROR(LrtIntelOpenVinoOptionsGetEnableWeightSharing(
+        Get(), &enable_weight_sharing));
+    return enable_weight_sharing;
+  }
+
   void SetConfigsMapOption(const char* key, const char* value) {
     LITERT_ABORT_IF_ERROR(
         LrtIntelOpenVinoOptionsSetConfigsMapOption(Get(), key, value));

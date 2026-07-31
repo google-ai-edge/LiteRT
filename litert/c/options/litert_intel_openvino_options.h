@@ -83,6 +83,22 @@ LiteRtStatus LrtIntelOpenVinoOptionsGetPerformanceMode(
     LrtIntelOpenVinoOptions options,
     LiteRtIntelOpenVinoPerformanceMode* performance_mode);
 
+// enable_weight_sharing ------------------------------------------------------
+
+// Controls cross-partition constant-weight sharing.  When enabled (the
+// default), a model whose partitions all target GPU deduplicates its constant
+// weights into a single shared pool (GlobalGraph + shared USM buffer), reducing
+// memory for multi-partition models.  Set to false to force standalone
+// baked-weights bytecode per partition even when the all-GPU condition holds.
+// Weight sharing is only ever applied when every partition targets GPU; this
+// option cannot force it on for other backends.
+LiteRtStatus LrtIntelOpenVinoOptionsSetEnableWeightSharing(
+    LrtIntelOpenVinoOptions options, bool enable_weight_sharing);
+
+// Returns the configured value, or true (the default) when unset.
+LiteRtStatus LrtIntelOpenVinoOptionsGetEnableWeightSharing(
+    LrtIntelOpenVinoOptions options, bool* enable_weight_sharing);
+
 // configs_map ----------------------------------------------------------------
 
 // Set a custom configuration option with a string key-value pair.
