@@ -17,8 +17,10 @@
 
 #include <map>
 #include <string>
+#include <tuple>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "tflite/core/interpreter.h"
 #include "tflite/profiling/profile_buffer.h"
 
@@ -37,6 +39,7 @@ struct ProfileNodeInfo {
   std::string node_type;
   std::string node_name;
   int64_t first_start_time_us = 0;
+  int64_t first_execution_time_us = 0;
   int64_t total_time_us = 0;
   int count = 0;
 };
@@ -64,7 +67,7 @@ class LiteRtProfileSummarizer {
   std::map<std::string, OpStat> stats_;
   std::map<std::string, OpStat> delegate_stats_;
   std::vector<ProfileNodeInfo> node_stats_;
-  std::map<std::pair<int, int>, size_t> node_index_map_;
+  absl::flat_hash_map<std::string, size_t> node_index_map_;
 };
 
 }  // namespace profiling

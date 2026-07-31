@@ -978,6 +978,8 @@ cc_library(
         "//tflite/core/api",
         "//tflite/profiling:profile_buffer",
         "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
     ],
 )
