@@ -480,10 +480,20 @@ TfLiteStatus DelegatePrepare(TfLiteContext* context, TfLiteDelegate* delegate) {
     }
 #endif  // NDEBUG
   }
-  litert::ml_drift::CustomOperationParserFactory custom_parser_factory;
-  TfLiteIntArray* ops_to_replace = GetOpsToReplace(
-      context, /*allow_quant_ops=*/true, /*max_delegated_partitions=*/1,
-      &kExcludedOps, start_node_index, end_node_index, &custom_parser_factory);
+  TfLiteIntArray* ops_to_replace = nullptr;
+  if (delegate_options->use_ir_model) {
+    auto* delegate_data =
+        reinterpret_cast<litert::ml_drift::MlDriftDelegateData*>(
+            delegate->data_);
+    ops_to_replace = litert::ml_drift::GetIrModelOpsToReplace(
+        context, *delegate_data, start_node_index, end_node_index);
+  } else {
+    litert::ml_drift::CustomOperationParserFactory custom_parser_factory;
+    ops_to_replace = GetOpsToReplace(context, /*allow_quant_ops=*/true,
+                                     /*max_delegated_partitions=*/1,
+                                     &kExcludedOps, start_node_index,
+                                     end_node_index, &custom_parser_factory);
+  }
 
 #ifndef NDEBUG
   if (auto* env_debug_exclude_nodes = std::getenv(kEnvDebugExcludeNodes)) {

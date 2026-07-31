@@ -24,13 +24,10 @@
 #include <string>
 #include <utility>
 
-#include "absl/base/const_init.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
-#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
-#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/pelong/egl_environment.h"  // from @ml_drift
@@ -41,7 +38,6 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_gl_types.h"  // IWYU pragma: keep
 #include "litert/cc/litert_any.h"
-#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "ml_drift_delegate/delegate/composite/custom_parsers.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
@@ -339,13 +335,22 @@ TfLiteStatus DelegatePrepare(TfLiteContext* context, TfLiteDelegate* delegate) {
     start_node_index = delegate_options->debug_first_delegate_node_index;
     end_node_index = delegate_options->debug_last_delegate_node_index;
   }
-  litert::ml_drift::ModelBuilderOptions model_builder_options;
-  model_builder_options.allow_bool_tensors = true;
-  litert::ml_drift::CustomOperationParserFactory custom_parser_factory;
-  TfLiteIntArray* ops_to_replace = GetOpsToReplaceWithOptions(
-      context, /*allow_quant_ops=*/true, /*options=*/model_builder_options,
-      /*max_delegated_partitions=*/1, &kExcludedOps, start_node_index,
-      end_node_index, &custom_parser_factory);
+  TfLiteIntArray* ops_to_replace = nullptr;
+  if (delegate_options->use_ir_model) {
+    auto* delegate_data =
+        reinterpret_cast<litert::ml_drift::MlDriftDelegateData*>(
+            delegate->data_);
+    ops_to_replace = litert::ml_drift::GetIrModelOpsToReplace(
+        context, *delegate_data, start_node_index, end_node_index);
+  } else {
+    litert::ml_drift::ModelBuilderOptions model_builder_options;
+    model_builder_options.allow_bool_tensors = true;
+    litert::ml_drift::CustomOperationParserFactory custom_parser_factory;
+    ops_to_replace = GetOpsToReplace(context, /*allow_quant_ops=*/true,
+                                     /*max_delegated_partitions=*/1,
+                                     &kExcludedOps, start_node_index,
+                                     end_node_index, &custom_parser_factory);
+  }
 
   // Replace the ops with delegate kernel.
   const TfLiteRegistration kRegistration = {

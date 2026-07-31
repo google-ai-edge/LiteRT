@@ -35,6 +35,7 @@
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/buffer_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_object_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
@@ -65,6 +66,31 @@ absl::StatusOr<::ml_drift::TensorDescriptor> CreateTensorDescriptor(
     ::ml_drift::TensorStorageType storage_type) {
   ::ml_drift::BHWC shape = tensor.shape;
   ::ml_drift::DataType data_type = tensor.type;
+  if (data_type == ::ml_drift::DataType::FLOAT32) {
+    data_type = DeduceDataTypeFromPrecision(calculation_precision);
+  }
+
+  auto tensor_desc =
+      (shape.b == 1)
+          ? ::ml_drift::CreateHwcTensorDescriptor(
+                data_type, storage_type,
+                ::ml_drift::HWC(shape.h, shape.w, shape.c))
+          : ::ml_drift::CreateBhwcTensorDescriptor(
+                data_type, storage_type,
+                ::ml_drift::BHWC(shape.b, shape.h, shape.w, shape.c));
+  ABSL_RETURN_IF_ERROR(tensor_desc.UpdateToSupportedStorageType(
+      gpu_info, tensor_desc.GetBHWCShape()));
+  return tensor_desc;
+}
+
+// Creates a TensorDescriptor directly from a TfLiteTensor (used by the IrModel
+// path, which does not have GraphFloat32 TensorRef objects).
+absl::StatusOr<::ml_drift::TensorDescriptor> CreateTensorDescriptorFromTfLite(
+    const ::ml_drift::GpuInfo& gpu_info, TfLiteTensor* tensor,
+    ::ml_drift::CalculationsPrecision calculation_precision,
+    ::ml_drift::TensorStorageType storage_type) {
+  ::ml_drift::BHWC shape = ::litert::ml_drift::ExtractTensorShape(tensor);
+  ::ml_drift::DataType data_type = ::litert::ml_drift::ToDataType(tensor->type);
   if (data_type == ::ml_drift::DataType::FLOAT32) {
     data_type = DeduceDataTypeFromPrecision(calculation_precision);
   }
@@ -373,15 +399,13 @@ absl::Status DelegateKernelLiteRt::
 }
 
 absl::Status DelegateKernelLiteRt::UpdateCreateInfoWithExternalTensors(
-    TfLiteContext* context, const std::vector<::ml_drift::Value*>& inputs,
-    const std::vector<::ml_drift::Value*>& outputs,
-    ::ml_drift::CreateGpuModelInfo& create_info) {
+    TfLiteContext* context, ::ml_drift::CreateGpuModelInfo& create_info) {
   auto* buffer_context = reinterpret_cast<LiteRtExternalLiteRtBufferContext>(
       context->GetExternalContext(context, kTfLiteLiteRtBufferContext));
 
   // Initialize tensor descriptors
-  input_tensor_descriptors_.resize(inputs.size());
-  output_tensor_descriptors_.resize(outputs.size());
+  input_tensor_descriptors_.resize(input_indices_.size());
+  output_tensor_descriptors_.resize(output_indices_.size());
 
   // Create processing context to pass common data to helper methods
   ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
@@ -393,32 +417,30 @@ absl::Status DelegateKernelLiteRt::UpdateCreateInfoWithExternalTensors(
   bool no_external_mode = NoExternalTensorsMode();
 
   // Process input tensors
-  for (int i = 0; i < inputs.size(); ++i) {
-    auto& input = inputs[i];
-    if (IsExternalSharedConstantTensor(input->id)) {
+  for (int i = 0; i < input_indices_.size(); ++i) {
+    if (IsExternalSharedConstantTensor(input_ids_[i])) {
       continue;
     }
-    ABSL_RETURN_IF_ERROR(ProcessTensor(context, input, i, proc_context,
-                                       no_external_mode,
-                                       input_tensor_descriptors_));
+    ABSL_RETURN_IF_ERROR(ProcessTensor(
+        context, input_indices_[i], input_ids_[i], i, proc_context,
+        no_external_mode, input_tensor_descriptors_));
   }
 
   // Process output tensors
-  for (int i = 0; i < outputs.size(); ++i) {
-    auto& output = outputs[i];
-    ABSL_RETURN_IF_ERROR(ProcessTensor(context, output, i, proc_context,
-                                       no_external_mode,
-                                       output_tensor_descriptors_));
+  for (int i = 0; i < output_indices_.size(); ++i) {
+    ABSL_RETURN_IF_ERROR(ProcessTensor(
+        context, output_indices_[i], output_ids_[i], i, proc_context,
+        no_external_mode, output_tensor_descriptors_));
   }
 
   return absl::OkStatus();
 }
 
 absl::Status DelegateKernelLiteRt::ProcessTensor(
-    TfLiteContext* context, ::ml_drift::Value* value, int index,
-    const TensorProcessingContext& proc_context, bool no_external_tensor_mode,
+    TfLiteContext* context, uint32_t tensor_index, ::ml_drift::ValueId value_id,
+    int index, const TensorProcessingContext& proc_context,
+    bool no_external_tensor_mode,
     std::vector<::ml_drift::TensorDescriptor>& tensor_descriptors) {
-  uint32_t tensor_index = value->tensor.ref;
   TfLiteTensor* tflite_tensor = &context->tensors[tensor_index];
 
   // Special handling for NoExternalTensorsMode with non-external tensors
@@ -429,19 +451,19 @@ absl::Status DelegateKernelLiteRt::ProcessTensor(
   } else {
     // Common path for external tensors (both modes) and standard mode
     if (no_external_tensor_mode) {
-      external_tensor_ids_.insert(value->id);
+      external_tensor_ids_.insert(value_id);
     }
     ABSL_ASSIGN_OR_RETURN(
         ::ml_drift::TensorDescriptor tensor_desc,
-        CreateTensorDescriptor(proc_context.gpu_info, value->tensor,
-                               delegate_data_->calculation_precision,
-                               GetStorageType(tflite_tensor->name)));
+        CreateTensorDescriptorFromTfLite(proc_context.gpu_info, tflite_tensor,
+                                         delegate_data_->calculation_precision,
+                                         GetStorageType(tflite_tensor->name)));
     auto tensor_storage_type = tensor_desc.GetStorageType();
 
     // Store tensor descriptor
     tensor_descriptors[index] = tensor_desc;
 
-    proc_context.create_info.external_mutable_tensors.try_emplace(value->id,
+    proc_context.create_info.external_mutable_tensors.try_emplace(value_id,
                                                                   tensor_desc);
     ABSL_RETURN_IF_ERROR(RegisterLiteRtBufferRequirements(
         proc_context.buffer_context, tflite_tensor, tensor_desc,

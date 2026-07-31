@@ -319,6 +319,14 @@ struct MlDriftDelegateOptions {
   // Use FP16 storage and arithmetic with FP32 accumulation for convolution-like
   // operations.
   bool use_f32_accum_for_fp16 = false;
+
+  // If true, the delegate builds the GPU graph via the new IrModel path instead
+  // of the legacy GraphFloat32 path. This gates the GF32 -> IrModel migration
+  // so it can be rolled back/forward easily in case of breakages.
+  //
+  // Default is false: the proven GraphFloat32 path is used, so enabling the
+  // IrModel code is a no-op in production until a host explicitly opts in.
+  bool use_ir_model = false;
 };
 
 namespace litert::ml_drift {
