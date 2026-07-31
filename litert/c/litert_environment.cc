@@ -72,7 +72,7 @@ LiteRtStatus LiteRtCreateEnvironment(int num_options,
   litert::TriggerAcceleratorAutomaticRegistration(*env);
 
   // Check if any GPU-related options are present using modern C++ algorithms
-  constexpr std::array<LiteRtEnvOptionTag, 12> kGpuOptionTags = {
+  constexpr std::array<LiteRtEnvOptionTag, 13> kGpuOptionTags = {
       kLiteRtEnvOptionTagOpenClDeviceId,
       kLiteRtEnvOptionTagOpenClPlatformId,
       kLiteRtEnvOptionTagOpenClContext,
@@ -82,6 +82,7 @@ LiteRtStatus LiteRtCreateEnvironment(int num_options,
       kLiteRtEnvOptionTagWebGpuDevice,
       kLiteRtEnvOptionTagWebGpuQueue,
       kLiteRtEnvOptionTagWebGpuFlushCallback,
+      kLiteRtEnvOptionTagWebGpuIsolatedRuntime,
       kLiteRtEnvOptionTagMetalDevice,
       kLiteRtEnvOptionTagMetalCommandQueue,
       kLiteRtEnvOptionTagVulkanEnvironment};

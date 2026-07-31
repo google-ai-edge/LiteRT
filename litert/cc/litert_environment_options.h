@@ -87,6 +87,9 @@ class EnvironmentOptions {
     /// WebGPU buffer readback (e.g., with Dawn Wire handler) to flush outbound
     /// wire commands and pump inbound events on the thread message loop.
     kWebGpuFlushCallback = kLiteRtEnvOptionTagWebGpuFlushCallback,
+    /// Flag indicating whether WebGPU execution should bypass singletons and
+    /// create an isolated runtime.
+    kWebGpuIsolatedRuntime = kLiteRtEnvOptionTagWebGpuIsolatedRuntime,
     /// Directory for the runtime library.
     kRuntimeLibraryDir = kLiteRtEnvOptionTagRuntimeLibraryDir,
     /// \internal This is for internal use only.

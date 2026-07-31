@@ -73,6 +73,9 @@ typedef enum {
   // WebGPU buffer readback (e.g., with Dawn Wire handler) to flush outbound
   // wire commands and pump inbound events on the thread message loop.
   kLiteRtEnvOptionTagWebGpuFlushCallback = 29,
+  // An optional flag (`bool` or `int64_t`) indicating whether WebGPU execution
+  // should bypass process singletons and create an isolated 1:1:1 runtime.
+  kLiteRtEnvOptionTagWebGpuIsolatedRuntime = 30,
   // Internal use only. Virtual null tag for option that is not defined.
   kLiteRtEnvOptionTagNull = 255,
 } LiteRtEnvOptionTag;

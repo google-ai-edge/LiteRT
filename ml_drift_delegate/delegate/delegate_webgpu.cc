@@ -218,22 +218,16 @@ std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
         reinterpret_cast<const DawnProcTable*>(wgpu_procs.int_value));
   }
 #endif  // !defined(__EMSCRIPTEN__) && defined(ML_DRIFT_USE_DAWN_PROC)
-  LiteRtAny wgpu_instance;
-  if (runtime_context->get_environment_options_value(
-          env_options, kLiteRtEnvOptionTagWebGpuInstance, &wgpu_instance) ==
-          kLiteRtStatusOk &&
-      wgpu_instance.int_value != 0) {
-    (void)::ml_drift::webgpu::Instance::Set(
-        reinterpret_cast<WGPUInstance>(wgpu_instance.int_value));  // NOLINT
-  }
+  const ::ml_drift::webgpu::Instance::WebGpuFlushCallback* flush_callback =
+      nullptr;
   LiteRtAny wgpu_flush_cb;
   if (runtime_context->get_environment_options_value(
           env_options, kLiteRtEnvOptionTagWebGpuFlushCallback,
           &wgpu_flush_cb) == kLiteRtStatusOk &&
       wgpu_flush_cb.int_value != 0) {
-    ::ml_drift::webgpu::Instance::SetFlushCallback(
-        reinterpret_cast<::ml_drift::webgpu::Instance::WebGpuFlushCallback>(
-            wgpu_flush_cb.int_value));
+    flush_callback = reinterpret_cast<
+        const ::ml_drift::webgpu::Instance::WebGpuFlushCallback*>(
+        wgpu_flush_cb.int_value);
   }
 
   absl::Status webgpu_init_status;
@@ -246,6 +240,10 @@ std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
     wgpu::AdapterInfo adapter_info;
     device.GetAdapterInfo(&adapter_info);
     webgpu_init_status = webgpu_env->Initialize(device, adapter_info);
+    if (webgpu_init_status.ok() && flush_callback) {
+      ::ml_drift::webgpu::Instance::SetFlushCallback(wgpu_device,
+                                                     flush_callback);
+    }
     success_message = "Created a WebGPU environment with provided device.";
   } else {
 #ifdef __EMSCRIPTEN__
@@ -290,6 +288,17 @@ std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
   ABSL_LOG(INFO) << success_message;
   return webgpu_env;
 };
+
+void DestroyIsolatedWebGpuEnvironment(void* webgpu_env_ptr) {
+  auto* webgpu_env =
+      reinterpret_cast<ml_drift::webgpu::ExecutionEnvironment*>(webgpu_env_ptr);
+  // Release the flush callback reference from the global registry before
+  // deleting the WebGPU environment to prevent stale readback evaluations.
+  ::ml_drift::webgpu::Instance::ReleaseFlushCallback(
+      webgpu_env->device().Get());
+  delete webgpu_env;
+  ABSL_LOG(INFO) << "Destroyed the isolated WebGPU environment.";
+}
 
 void DestroyWebGpuEnvironment(void* webgpu_env) {
   absl::MutexLock lock(g_webgpu_env_mutex);
@@ -393,7 +402,7 @@ GetSingletonWebGpuEnvironment(LiteRtEnvironment litert_env,
                               g_webgpu_env->queue().Get())));
   LITERT_ASSIGN_OR_RETURN(LiteRtAny wgpu_instance,
                           litert::ToLiteRtAny(reinterpret_cast<int64_t>(
-                              &ml_drift::webgpu::Instance::Get())));
+                              g_webgpu_env->instance().Get())));
   std::array<LiteRtEnvOption, 5> options = {
       LiteRtEnvOption{.tag = kLiteRtEnvOptionTagWebGpuDevice,
                       .value = device_id},
@@ -667,18 +676,66 @@ TfLiteDelegatePtr CreateMlDriftWebGpuDelegate(MlDriftDelegateOptionsPtr options,
     return {nullptr, LiteRtDeleteMlDriftWebGpuDelegate};
   }
 
-  // Use the shared WebGPU environment in LiteRT runtime.
-  auto webgpu_env = GetSingletonWebGpuEnvironment(
-      litert_env, delegate_data->options->gpu_priority,
-      std::move(compiled_cache), runtime_context);
-  if (!webgpu_env) {
-    ABSL_LOG(ERROR) << "Failed to get WebGPU environment: "
-                    << webgpu_env.Error();
-    return {nullptr, LiteRtDeleteMlDriftWebGpuDelegate};
+  bool use_isolated_runtime = false;
+  LiteRtEnvironmentOptions env_opts;
+  LiteRtAny isolated_val;
+  if (runtime_context->get_environment_options(litert_env, &env_opts) ==
+          kLiteRtStatusOk &&
+      runtime_context->get_environment_options_value(
+          env_opts, kLiteRtEnvOptionTagWebGpuIsolatedRuntime, &isolated_val) ==
+          kLiteRtStatusOk &&
+      isolated_val.int_value != 0) {
+    use_isolated_runtime = true;
+  }
+
+  ::ml_drift::webgpu::ExecutionEnvironment* webgpu_env = nullptr;
+  if (use_isolated_runtime) {
+    auto owned_env = CreateWebGpuEnvironment(
+        litert_env, delegate_data->options->gpu_priority,
+        std::move(compiled_cache), runtime_context);
+    webgpu_env = owned_env.release();
+    if (!webgpu_env) {
+      ABSL_LOG(ERROR) << "Failed to create isolated WebGPU environment.";
+      return {nullptr, LiteRtDeleteMlDriftWebGpuDelegate};
+    }
+    auto callback_expected = litert::ToLiteRtAny(
+        reinterpret_cast<const void*>(&DestroyIsolatedWebGpuEnvironment));
+    auto user_data_expected =
+        litert::ToLiteRtAny(reinterpret_cast<const void*>(webgpu_env));
+    if (!callback_expected || !user_data_expected) {
+      DestroyIsolatedWebGpuEnvironment(webgpu_env);
+      ABSL_LOG(ERROR) << "Failed to create LiteRtAny for callbacks.";
+      return {nullptr, LiteRtDeleteMlDriftWebGpuDelegate};
+    }
+    const std::array<LiteRtEnvOption, 2> options = {
+        LiteRtEnvOption{.tag = kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy,
+                        .value = *callback_expected},
+        LiteRtEnvOption{
+            .tag = kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy,
+            .value = *user_data_expected},
+    };
+    if (runtime_context->add_environment_options(
+            litert_env, options.size(), options.data(), /*overwrite=*/true) !=
+        kLiteRtStatusOk) {
+      DestroyIsolatedWebGpuEnvironment(webgpu_env);
+      ABSL_LOG(ERROR) << "Failed to add environment options to LiteRT.";
+      return {nullptr, LiteRtDeleteMlDriftWebGpuDelegate};
+    }
+  } else {
+    // Use the shared WebGPU environment in LiteRT runtime.
+    auto webgpu_env_expected = GetSingletonWebGpuEnvironment(
+        litert_env, delegate_data->options->gpu_priority,
+        std::move(compiled_cache), runtime_context);
+    if (!webgpu_env_expected) {
+      ABSL_LOG(ERROR) << "Failed to get WebGPU environment: "
+                      << webgpu_env_expected.Error();
+      return {nullptr, LiteRtDeleteMlDriftWebGpuDelegate};
+    }
+    webgpu_env = *webgpu_env_expected;
   }
 
   auto backend = std::make_shared<GpuBackendWebGpuLitert>(
-      *webgpu_env,
+      webgpu_env,
       /*strict_error_handling=*/delegate_data->options->litert_benchmark_mode,
       runtime_context);
   backend->set_num_steps_of_command_buffer_preparations(
@@ -698,7 +755,7 @@ TfLiteDelegatePtr CreateMlDriftWebGpuDelegate(MlDriftDelegateOptionsPtr options,
   ABSL_LOG(INFO) << "# of threads to compile kernels = "
                  << delegate_data->options->num_threads_to_compile;
   if (delegate_data->options->num_threads_to_compile > 0) {
-    (*webgpu_env)->GetComputePipelineCache()->set_executor(
+    webgpu_env->GetComputePipelineCache()->set_executor(
         std::make_unique<TaskExecutor>(
             "WGPU_Compile", delegate_data->options->num_threads_to_compile));
   }
@@ -707,7 +764,7 @@ TfLiteDelegatePtr CreateMlDriftWebGpuDelegate(MlDriftDelegateOptionsPtr options,
   switch (delegate_data->options->precision) {
     case kDefault:
       delegate_data->calculation_precision =
-          (*webgpu_env)->GetInfo().SupportsFP16()
+          webgpu_env->GetInfo().SupportsFP16()
               ? ::ml_drift::CalculationsPrecision::F16
               : ::ml_drift::CalculationsPrecision::F32;
       break;
