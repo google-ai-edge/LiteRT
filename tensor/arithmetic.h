@@ -1888,6 +1888,10 @@ Tensor<Mixins...> Slice(Tensor<Mixins...> input, Tensor<Mixins...> begin,
   output_info.type = input_info.type;
   if (size_info.buffer) {
     const auto size_data = size_info.buffer->Lock().As<const int32_t>();
+    if (size_data.size() != input_info.shape.size()) {
+      return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
+          "Slice size tensor length must equal input rank.")));
+    }
     output_info.shape.assign(size_data.begin(), size_data.end());
     for (size_t i = 0; i < output_info.shape.size(); ++i) {
       if (output_info.shape[i] == -1) {
@@ -2090,8 +2094,20 @@ std::vector<Tensor<Mixins...>> TopK(
   graph::TensorInformation& values_info = *GetInfo(values.GetRaw());
   values_info.type = input_info.type;
   values_info.shape = input_info.shape;
+  if (GetInfo(k.GetRaw())->buffer == nullptr) {
+    auto error = absl::InvalidArgumentError(
+        "TopK k tensor must have a buffer.");
+    return {Tensor<Mixins...>(graph::ErrorTensor(error)),
+            Tensor<Mixins...>(graph::ErrorTensor(error))};
+  }
   LockedBufferSpan<const int32_t> k_lock =
       GetInfo(k.GetRaw())->buffer->Lock().template As<const int32_t>();
+  if (k_lock.size() < 1) {
+    auto error = absl::InvalidArgumentError(
+        "TopK k tensor buffer must contain at least one element.");
+    return {Tensor<Mixins...>(graph::ErrorTensor(error)),
+            Tensor<Mixins...>(graph::ErrorTensor(error))};
+  }
   const int k_val = k_lock.data()[0];
   values_info.shape.back() = k_val;
   outputs.push_back(values);
@@ -2179,14 +2195,30 @@ Tensor<Mixins...> Gather(Tensor<Mixins...> input, Tensor<Mixins...> indices,
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.type = input_info.type;
   output_info.shape.clear();
+  int resolved_axis = axis;
+  if (resolved_axis < 0) {
+    resolved_axis += static_cast<int>(input_info.shape.size());
+  }
+  if (resolved_axis < 0 ||
+      resolved_axis >= static_cast<int>(input_info.shape.size())) {
+    return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
+        "The Gather axis is out of range.")));
+  }
+  op->axis = resolved_axis;
+  if (batch_dims < 0 ||
+      batch_dims > static_cast<int>(indices_info.shape.size())) {
+    return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
+        "The Gather batch_dims is out of range.")));
+  }
   int i = 0;
-  for (; i < axis; ++i) {
+  for (; i < resolved_axis; ++i) {
     output_info.shape.push_back(input_info.shape[i]);
   }
   output_info.shape.insert(output_info.shape.end(),
                            indices_info.shape.begin() + batch_dims,
                            indices_info.shape.end());
-  for (i = axis + 1; i < input_info.shape.size(); ++i) {
+  for (i = resolved_axis + 1;
+       i < static_cast<int>(input_info.shape.size()); ++i) {
     output_info.shape.push_back(input_info.shape[i]);
   }
 
