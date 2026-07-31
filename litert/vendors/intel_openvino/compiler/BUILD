@@ -292,10 +292,11 @@ litert_test(
     ],
     deps = [
         ":graph_iterator",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model",
         "//litert/c/internal:litert_compiler_context",
         "//litert/cc:litert_element_type",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc/internal:litert_extended_model",
         "//litert/compiler/cc:litert_model",
         "//litert/test:load_test_model",
         "@intel_openvino//:openvino",
