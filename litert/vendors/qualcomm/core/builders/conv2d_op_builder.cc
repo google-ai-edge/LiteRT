@@ -101,9 +101,6 @@ std::vector<OpWrapper> BuildConv2dOp(
   conv_op.AddInputTensor(*transposed_filter_tensor);
   if (inputs.size() - 1 >= kBiasIndex) {
     TensorWrapper& bias_tensor = inputs[kBiasIndex];
-    // QNN only support per-tensor quant for bias,
-    // and the scale and offset are both zero.
-    bias_tensor.ConvertAxisScaleOffsetToScaleOffset();
 
     if (use_int64_bias_as_int32 && bias_tensor.IsTensorStatic() &&
         bias_tensor.GetDataType() == QNN_DATATYPE_INT_64) {
