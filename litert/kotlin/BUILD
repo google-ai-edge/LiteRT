@@ -439,7 +439,7 @@ kt_android_library(
     ],
 )
 
-# bazel build --config=android_arm64 --android_ndk_min_sdk_version=23 \
+# bazel build --config=android_arm64 --android_ndk_min_sdk_version=24 \
 #   --define=extra_kt_jvm_opts='-jvm-target 17' --define=public_maven_build=true \
 #   --define=litert_runtime_link_mode=dynamic \
 #   //litert/kotlin:litert-api-aar
@@ -449,7 +449,7 @@ aar_with_jni(
     # copybara:uncomment third_party_notice = "//litert/kotlin/google/third_party_licenses:res/raw/third_party_licenses",
 )
 
-# bazel build --config=android_arm64 --android_ndk_min_sdk_version=23 \
+# bazel build --config=android_arm64 --android_ndk_min_sdk_version=24 \
 #   --define=public_maven_build=true \
 #   //litert/kotlin:litert-aar
 aar_with_jni(
