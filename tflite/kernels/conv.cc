@@ -48,6 +48,7 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor_utils.h"
 #include "tflite/kernels/kernel_util.h"
 #include "tflite/kernels/padding.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
 #include "tflite/util.h"
 
 namespace tflite {
@@ -373,13 +374,20 @@ TfLiteStatus Prepare(KernelType kernel_type, TfLiteContext* context,
 
   // Check types. (We assume that UINT8 refers to quantized tensors)
   TfLiteType input_type = input->type;
+  // Unsigned 16-bit activations share the int16 kernel path.
+  const TfLiteType effective_input_type =
+      (input_type == kTfLiteUInt16) ? kTfLiteInt16 : input_type;
   TF_LITE_ENSURE(context,
-                 input_type == kTfLiteFloat32 || input_type == kTfLiteUInt8 ||
-                     input_type == kTfLiteInt8 || input_type == kTfLiteInt16);
-  TF_LITE_ENSURE_TYPES_EQ(context, output->type, input_type);
+                 effective_input_type == kTfLiteFloat32 ||
+                     effective_input_type == kTfLiteUInt8 ||
+                     effective_input_type == kTfLiteInt8 ||
+                     effective_input_type == kTfLiteInt16);
+  TF_LITE_ENSURE(context, output->type == input_type ||
+                               (input_type == kTfLiteUInt16 &&
+                                output->type == kTfLiteUInt16));
 
   // Filter must have zero zero-points in per-channel quantization.
-  if (input_type == kTfLiteInt16 || input_type == kTfLiteInt8) {
+  if (effective_input_type == kTfLiteInt16 || input_type == kTfLiteInt8) {
     TF_LITE_ENSURE_EQ(context, filter->quantization.type,
                       kTfLiteAffineQuantization);
     const auto* affine_quantization =
@@ -411,7 +419,7 @@ TfLiteStatus Prepare(KernelType kernel_type, TfLiteContext* context,
     if (input_type == kTfLiteUInt8 || input_type == kTfLiteInt8) {
       TF_LITE_ENSURE_TYPES_EQ(context, bias->type, kTfLiteInt32);
       TF_LITE_ENSURE_EQ(context, bias->params.zero_point, 0);
-    } else if (input_type == kTfLiteInt16) {
+    } else if (effective_input_type == kTfLiteInt16) {
       TF_LITE_ENSURE(context, (bias->type == kTfLiteInt32) ||
                                   (bias->type == kTfLiteInt64));
       TF_LITE_ENSURE_EQ(context, bias->params.zero_point, 0);
@@ -421,10 +429,9 @@ TfLiteStatus Prepare(KernelType kernel_type, TfLiteContext* context,
     TF_LITE_ENSURE_EQ(context, NumElements(bias), SizeOfDimension(filter, 0));
   }
 
-  if (input_type == kTfLiteInt16) {
-    // Quantization should be symmetric.
-    TF_LITE_ENSURE_EQ(context, input->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, output->params.zero_point, 0);
+  if (effective_input_type == kTfLiteInt16) {
+    // int16 activations may be asymmetric; offsets are applied via the
+    // has_non_zero_point reference path.
 
     // Check quantized_bias_type is either kTfLiteInt64 or kTfLiteInt32.
     if (params->quantized_bias_type != kTfLiteFloat32) {
@@ -973,8 +980,13 @@ TfLiteStatus EvalQuantizedPerChannel16x8(
     TfLiteContext* context, TfLiteNode* node, TfLiteConvParams* params,
     OpData* data, const TfLiteTensor* input, const TfLiteTensor* filter,
     const TfLiteTensor* bias, TfLiteTensor* output, TfLiteTensor* im2col) {
+  std::vector<int16_t> uint16_scratch;
+  int32_t adjusted_input_offset;
+  const int16_t* input_data_for_conv = uint16_asym::PreshiftUInt16ToInt16(
+      input, &uint16_scratch, &adjusted_input_offset);
+
   ConvParams op_params;
-  op_params.input_offset = -input->params.zero_point;
+  op_params.input_offset = adjusted_input_offset;
   op_params.output_offset = output->params.zero_point;
   op_params.stride_height = params->stride_height;
   op_params.stride_width = params->stride_width;
@@ -1017,12 +1029,20 @@ TfLiteStatus EvalQuantizedPerChannel16x8(
     filter_data = GetTensorData<int8_t>(filter);
   }
 
-  if (data->quantized_bias_type == kTfLiteInt32) {
-    if (effective_kernel_type == kReference || has_non_zero_point) {
+  // Determine bias type from the actual tensor; data->quantized_bias_type may
+  // be kTfLiteNoType when TFLiteConvParams.quantized_bias_type is unset.
+  const bool bias_is_int32 = (bias == nullptr) ||
+                              (bias->type == kTfLiteInt32) ||
+                              (data->quantized_bias_type == kTfLiteInt32);
+  if (bias_is_int32) {
+    // The optimized 16-bit path ignores input_offset/output_offset, so
+    // asymmetric-quantized inputs must use the reference kernel.
+    if (effective_kernel_type == kReference || has_non_zero_point ||
+        input->type == kTfLiteUInt16) {
       reference_integer_ops::ConvPerChannel(
           op_params, data->per_channel_output_multiplier.data(),
           data->per_channel_output_shift.data(), GetTensorShape(input),
-          GetTensorData<int16>(input), GetTensorShape(filter), filter_data,
+          input_data_for_conv, GetTensorShape(filter), filter_data,
           GetTensorShape(bias), GetTensorData<int32_t>(bias),
           GetTensorShape(output), GetTensorData<int16>(output));
     } else {
@@ -1033,20 +1053,19 @@ TfLiteStatus EvalQuantizedPerChannel16x8(
       optimized_integer_ops::ConvPerChannel(
           op_params, data->per_channel_output_multiplier.data(),
           data->per_channel_output_shift.data(), GetTensorShape(input),
-          GetTensorData<int16_t>(input), GetTensorShape(filter), filter_data,
+          input_data_for_conv, GetTensorShape(filter), filter_data,
           GetTensorShape(bias), GetTensorData<int32_t>(bias),
           GetTensorShape(output), GetTensorData<int16_t>(output),
           GetTensorShape(im2col), GetTensorData<int16_t>(im2col),
           CpuBackendContext::GetFromContext(context));
     }
   } else {
-    TFLITE_DCHECK(!has_non_zero_point);
     // Fallback to reference kernel when bias_type is int64 as
     // there is no optimized kernel for int64 bias yet.
     reference_integer_ops::ConvPerChannel(
         op_params, data->per_channel_output_multiplier.data(),
         data->per_channel_output_shift.data(), GetTensorShape(input),
-        GetTensorData<int16>(input), GetTensorShape(filter), filter_data,
+        input_data_for_conv, GetTensorShape(filter), filter_data,
         GetTensorShape(bias), GetTensorData<int64_t>(bias),
         GetTensorShape(output), GetTensorData<int16>(output));
   }
@@ -1467,7 +1486,6 @@ template <KernelType kernel_type>
 TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   const TfLiteTensor* input;
   TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, 0, &input));
-
   switch (input->type) {
     case kTfLiteFloat32:
       return EvalImpl<kernel_type, kTfLiteFloat32>(context, node);
@@ -1476,6 +1494,8 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
     case kTfLiteInt8:
       return EvalImpl<kernel_type, kTfLiteInt8>(context, node);
     case kTfLiteInt16:
+      return EvalImpl<kernel_type, kTfLiteInt16>(context, node);
+    case kTfLiteUInt16:
       return EvalImpl<kernel_type, kTfLiteInt16>(context, node);
     default:
       TF_LITE_KERNEL_LOG(context, "Type %s not currently supported.",

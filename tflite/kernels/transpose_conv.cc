@@ -36,6 +36,7 @@ limitations under the License.
 #include "tflite/kernels/internal/types.h"
 #include "tflite/kernels/kernel_util.h"
 #include "tflite/kernels/padding.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
 #include "tflite/util.h"
 
 namespace tflite {
@@ -165,7 +166,7 @@ static TfLiteStatus AllocateTemporaryTensorsIfRequired(TfLiteContext* context,
 
   // Allocate scratch buffer tensor
   if (input_type == kTfLiteUInt8 || input_type == kTfLiteInt8 ||
-      input_type == kTfLiteInt16) {
+      input_type == kTfLiteInt16 || input_type == kTfLiteUInt16) {
     if (data->scratch_tensor_id == kTensorNotAllocated) {
       context->AddTensors(context, 1, &data->scratch_tensor_id);
     }
@@ -335,7 +336,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE(context, SizeOfDimension(weights, 2) > 0);
   TF_LITE_ENSURE(context,
                  input->type == kTfLiteFloat32 || input->type == kTfLiteUInt8 ||
-                     input->type == kTfLiteInt8 || input->type == kTfLiteInt16);
+                     input->type == kTfLiteInt8 || input->type == kTfLiteInt16 ||
+                     input->type == kTfLiteUInt16);
   if (input->type == kTfLiteFloat32) {
     TF_LITE_ENSURE(context, weights->type == kTfLiteFloat32 ||
                                 weights->type == kTfLiteInt8);
@@ -353,7 +355,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
         if (input->type == kTfLiteInt8) {
           TF_LITE_ENSURE_EQ(context, bias->params.zero_point, 0);
         }
-      } else if (input->type == kTfLiteInt16) {
+      } else if (input->type == kTfLiteInt16 || input->type == kTfLiteUInt16) {
         TF_LITE_ENSURE(context, (bias->type == kTfLiteInt64) ||
                                     (bias->type == kTfLiteInt32));
         TF_LITE_ENSURE_EQ(context, bias->params.zero_point, 0);
@@ -365,10 +367,11 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
     }
   }
 
-  if (input->type == kTfLiteInt16) {
+  if (input->type == kTfLiteInt16 || input->type == kTfLiteUInt16) {
     TF_LITE_ENSURE_EQ(context, weights->type, kTfLiteInt8);
-    TF_LITE_ENSURE_EQ(context, input->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, output->params.zero_point, 0);
+    // int16/uint16 activations may be ASYMMETRIC. EvalQuantizedPerChannel16x8
+    // applies input_offset/output_offset (see conv.h / depthwise_conv.h). The
+    // bias must still be symmetric — bias->params.zero_point is checked above.
 
     // Check quantized_bias_type is either kTfLiteInt64 or kTfLiteInt32.
     if (params->quantized_bias_type != kTfLiteFloat32) {
@@ -428,7 +431,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   }
 
   if (input->type == kTfLiteUInt8 || input->type == kTfLiteInt8 ||
-      input->type == kTfLiteInt16) {
+      input->type == kTfLiteInt16 || input->type == kTfLiteUInt16) {
     node->temporaries->data[data->scratch_tensor_index] =
         data->scratch_tensor_id;
     TfLiteTensor* scratch_buffer;
@@ -438,7 +441,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
     if (data->quantized_bias_type != kTfLiteNoType) {
       scratch_buffer->type = data->quantized_bias_type;
-    } else if (input->type == kTfLiteInt16) {
+    } else if (input->type == kTfLiteInt16 || input->type == kTfLiteUInt16) {
       scratch_buffer->type = kTfLiteInt64;
     } else {
       scratch_buffer->type = kTfLiteInt32;
@@ -710,6 +713,11 @@ void EvalQuantizedPerChannel16x8(
     OpData* data, const TfLiteTensor* input, const TfLiteTensor* weights,
     const TfLiteTensor* transposed_weights, const TfLiteTensor* bias,
     TfLiteTensor* col2im, TfLiteTensor* output, TfLiteTensor* scratch_buffer) {
+  std::vector<int16_t> uint16_scratch;
+  int32_t adjusted_input_offset;
+  const int16_t* input_data_for_conv = uint16_asym::PreshiftUInt16ToInt16(
+      input, &uint16_scratch, &adjusted_input_offset);
+
   tflite::ConvParams op_params;
   op_params.padding_type = PaddingType::kSame;
   op_params.padding_values.width = data->padding.width;
@@ -720,7 +728,7 @@ void EvalQuantizedPerChannel16x8(
   op_params.stride_height = params->stride_height;
   // Need to flip the sign of input offset to add it directly to the quantized
   // buffer.
-  op_params.input_offset = -input->params.zero_point;
+  op_params.input_offset = adjusted_input_offset;
   op_params.output_offset = output->params.zero_point;
   op_params.quantized_activation_min = data->output_activation_min;
   op_params.quantized_activation_max = data->output_activation_max;
@@ -731,12 +739,16 @@ void EvalQuantizedPerChannel16x8(
                             weights->params.zero_point ||
                             output->params.zero_point;
 
-  if (data->quantized_bias_type == kTfLiteInt32) {
-    if (kernel_type == kReference || has_non_zero_point) {
+  const bool bias_is_int32 = (bias == nullptr) ||
+                             (bias->type == kTfLiteInt32) ||
+                             (data->quantized_bias_type == kTfLiteInt32);
+  if (bias_is_int32) {
+    if (kernel_type == kReference || has_non_zero_point ||
+        input->type == kTfLiteUInt16) {
       reference_integer_ops::TransposeConv(
           op_params, data->per_channel_output_multiplier.data(),
           data->per_channel_output_shift.data(), GetTensorShape(input),
-          GetTensorData<int16>(input), GetTensorShape(weights),
+          input_data_for_conv, GetTensorShape(weights),
           GetTensorData<int8>(weights), GetTensorShape(bias),
           GetTensorData<int32_t>(bias), GetTensorShape(output),
           GetTensorData<int16>(output), GetTensorShape(col2im),
@@ -745,7 +757,7 @@ void EvalQuantizedPerChannel16x8(
       optimized_integer_ops::TransposeConvV2(
           op_params, data->per_channel_output_multiplier.data(),
           data->per_channel_output_shift.data(), GetTensorShape(input),
-          GetTensorData<int16>(input), GetTensorShape(transposed_weights),
+          input_data_for_conv, GetTensorShape(transposed_weights),
           GetTensorData<int8>(transposed_weights), GetTensorShape(bias),
           GetTensorData<int32_t>(bias), GetTensorShape(output),
           GetTensorData<int16>(output), GetTensorShape(col2im),
@@ -759,7 +771,7 @@ void EvalQuantizedPerChannel16x8(
     reference_integer_ops::TransposeConv(
         op_params, data->per_channel_output_multiplier.data(),
         data->per_channel_output_shift.data(), GetTensorShape(input),
-        GetTensorData<int16>(input), GetTensorShape(weights),
+        input_data_for_conv, GetTensorShape(weights),
         GetTensorData<int8>(weights), GetTensorShape(bias),
         GetTensorData<int64_t>(bias), GetTensorShape(output),
         GetTensorData<int16>(output), GetTensorShape(col2im),
@@ -949,7 +961,8 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
                                            col2im, output, scratch_buffer);
       break;
     }
-    case kTfLiteInt16: {
+    case kTfLiteInt16:    // fallthrough
+    case kTfLiteUInt16: {  // uint16 shares the int16 16x8 transpose-conv path
       TfLiteTensor* scratch_buffer;
       TF_LITE_ENSURE_OK(
           context, GetTemporarySafe(context, node, data->scratch_tensor_index,

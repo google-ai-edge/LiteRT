@@ -201,6 +201,19 @@ inline void Sub(const ArithmeticParams& params,
   SubElementwise(flat_size, params, input1_data, input2_data, output_data);
 }
 
+inline void Sub(const ArithmeticParams& params,
+                const RuntimeShape& input1_shape, const uint16_t* input1_data,
+                const RuntimeShape& input2_shape, const uint16_t* input2_data,
+                const RuntimeShape& output_shape, uint16_t* output_data) {
+  TFLITE_DCHECK_LE(params.quantized_activation_min,
+                   params.quantized_activation_max);
+
+  const int flat_size =
+      MatchingElementsSize(input1_shape, input2_shape, output_shape);
+
+  SubElementwise(flat_size, params, input1_data, input2_data, output_data);
+}
+
 template <typename T>
 void Sub(const ArithmeticParams& params, const RuntimeShape& input1_shape,
          const T* input1_data, const RuntimeShape& input2_shape,

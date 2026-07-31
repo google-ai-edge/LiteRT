@@ -52,7 +52,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
       input->type != kTfLiteFloat8E4M3FN && input->type != kTfLiteFloat8E5M2 &&
 #endif
       input->type != kTfLiteUInt8 && input->type != kTfLiteInt8 &&
-      input->type != kTfLiteInt16 && input->type != kTfLiteBool) {
+      input->type != kTfLiteInt16 && input->type != kTfLiteUInt16 &&
+      input->type != kTfLiteBool) {
     TF_LITE_KERNEL_LOG(context, "Type '%s' is not supported by unpack.",
                        TfLiteTypeGetName(input->type));
     return kTfLiteError;

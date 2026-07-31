@@ -26,6 +26,7 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/internal/types.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
 
 namespace tflite {
 namespace ops {
@@ -194,6 +195,10 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
       TFLiteOperation<kernel_type, Eigen::bfloat16, OpType>(context, node,
                                                             op_context);
       break;
+    case kTfLiteUInt16:
+      return uint16_asym::EvalUInt16Binary(
+          op_context.input1, op_context.input2, op_context.output,
+          [](float a, float b) { return OpType::template op<float>(a, b); });
     default:
       TF_LITE_KERNEL_LOG(context,
                          "Type %d is currently not supported by Maximum.",

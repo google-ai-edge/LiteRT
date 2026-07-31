@@ -120,6 +120,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
     case kTfLiteUInt8:
     case kTfLiteInt8:
     case kTfLiteInt32:
+    case kTfLiteUInt16:
     case kTfLiteBool:
       break;
 
@@ -184,6 +185,9 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node, bool is_arg_max) {
           case kTfLiteInt32:
             TF_LITE_ARG_MIN_MAX(int32_t, int32_t, int32_t);
             break;
+          case kTfLiteUInt16:
+            TF_LITE_ARG_MIN_MAX(uint16_t, int32_t, int32_t);
+            break;
           case kTfLiteBool:
             TF_LITE_ARG_MIN_MAX(bool, int32_t, int32_t);
             break;
@@ -208,6 +212,9 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node, bool is_arg_max) {
             break;
           case kTfLiteInt32:
             TF_LITE_ARG_MIN_MAX(int32_t, int32_t, int64_t);
+            break;
+          case kTfLiteUInt16:
+            TF_LITE_ARG_MIN_MAX(uint16_t, int32_t, int64_t);
             break;
           case kTfLiteBool:
             TF_LITE_ARG_MIN_MAX(bool, int32_t, int64_t);
@@ -242,6 +249,9 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node, bool is_arg_max) {
           case kTfLiteInt32:
             TF_LITE_ARG_MIN_MAX(int32_t, int64_t, int32_t);
             break;
+          case kTfLiteUInt16:
+            TF_LITE_ARG_MIN_MAX(uint16_t, int64_t, int32_t);
+            break;
           case kTfLiteBool:
             TF_LITE_ARG_MIN_MAX(bool, int64_t, int32_t);
             break;
@@ -266,6 +276,9 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node, bool is_arg_max) {
             break;
           case kTfLiteInt32:
             TF_LITE_ARG_MIN_MAX(int32_t, int64_t, int64_t);
+            break;
+          case kTfLiteUInt16:
+            TF_LITE_ARG_MIN_MAX(uint16_t, int64_t, int64_t);
             break;
           case kTfLiteBool:
             TF_LITE_ARG_MIN_MAX(bool, int64_t, int64_t);

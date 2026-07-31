@@ -17,6 +17,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <numeric>
 #include <string>
 #include <utility>
@@ -28,6 +30,7 @@
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/random/random.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -86,6 +89,10 @@ ABSL_FLAG(bool, enable_ynnpack, false,
 ABSL_FLAG(std::string, input_dir, "",
           "An input folder containing .raw files with model input signatures "
           "as their file names.");
+
+ABSL_FLAG(std::string, output_dir, "",
+          "If set, write raw output tensors to this directory as output_0.bin, "
+          "output_1.bin, ... (little-endian, native element type).");
 
 ABSL_FLAG(std::string, scoped_weight_file, "",
           "Optional path to a scoped external weight file.");
@@ -487,6 +494,29 @@ Expected<void> RunModel() {
                  << std::accumulate(timers.begin(), timers.end(), uint64_t{0}) /
                         timers.size()
                  << " microseconds";
+
+  // Dump raw output tensors to --output_dir if requested.
+  std::string output_dir = absl::GetFlag(FLAGS_output_dir);
+  if (!output_dir.empty()) {
+    std::filesystem::create_directories(output_dir);
+    for (size_t i = 0; i < output_buffers.size(); ++i) {
+      auto& buffer = output_buffers[i];
+      LITERT_ASSIGN_OR_RETURN(size_t bytes, buffer.Size());
+      std::vector<uint8_t> u8(bytes);
+      LITERT_RETURN_IF_ERROR(buffer.Read<uint8_t>(absl::MakeSpan(u8)));
+      auto out_path = std::filesystem::path(output_dir) /
+                      ("output_" + std::to_string(i) + ".bin");
+      std::ofstream ofs(out_path, std::ios::binary);
+      if (!ofs) {
+        return Error(kLiteRtStatusErrorRuntimeFailure,
+                     absl::StrFormat("Cannot open output file %s",
+                                     out_path.string()));
+      }
+      ofs.write(reinterpret_cast<const char*>(u8.data()), bytes);
+      ABSL_LOG(INFO) << "Wrote output " << i << " (" << bytes << " bytes) to "
+                     << out_path;
+    }
+  }
 
   // Print output tensor information and values if requested
   if (absl::GetFlag(FLAGS_print_tensors)) {

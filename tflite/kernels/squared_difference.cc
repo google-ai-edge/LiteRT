@@ -27,6 +27,7 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
 
 namespace tflite {
 namespace ops {
@@ -230,6 +231,10 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   } else if (output->type == kTfLiteInt8) {
     EvalQuantizedSquaredDifference<int8_t>(context, node, data, input1, input2,
                                            output);
+  } else if (output->type == kTfLiteUInt16) {
+    return uint16_asym::EvalUInt16Binary(
+        input1, input2, output,
+        [](float a, float b) { float d = a - b; return d * d; });
   } else {
     TF_LITE_KERNEL_LOG(
         context,

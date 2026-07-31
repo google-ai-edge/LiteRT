@@ -18,6 +18,7 @@
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
 
 namespace tflite {
 namespace ops {
@@ -45,7 +46,8 @@ TfLiteStatus Atan2Prepare(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE(context, input_y->type == kTfLiteFloat32 ||
                               input_y->type == kTfLiteFloat64 ||
                               input_y->type == kTfLiteBFloat16 ||
-                              input_y->type == kTfLiteFloat16);
+                              input_y->type == kTfLiteFloat16 ||
+                              input_y->type == kTfLiteUInt16);
 
   TfLiteIntArray* output_shape = TfLiteIntArrayCopy(input_y->dims);
   return context->ResizeTensor(context, output, output_shape);
@@ -71,6 +73,13 @@ TfLiteStatus Atan2Eval(TfLiteContext* context, TfLiteNode* node) {
   TfLiteTensor* output = tflite::GetOutput(context, node, 0);
 
   switch (output->type) {
+    case kTfLiteUInt16:
+      TF_LITE_ENSURE_OK(
+          context,
+          uint16_asym::EvalUInt16Binary(
+              input_y, input_x, output,
+              [](float y, float x) { return std::atan2(y, x); }));
+      break;
     case kTfLiteFloat32:
       TF_LITE_ENSURE_OK(context, Atan2<float>(input_y, input_x, output));
       break;

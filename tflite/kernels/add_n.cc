@@ -22,6 +22,9 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
+
+#include <vector>
 
 namespace tflite {
 namespace ops {
@@ -133,6 +136,19 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
     TF_LITE_ENSURE_OK(context, EvalAddN<float>(context, node));
   } else if (output->type == kTfLiteInt32) {
     TF_LITE_ENSURE_OK(context, EvalAddN<int32_t>(context, node));
+  } else if (output->type == kTfLiteUInt16) {
+    // Dequantize each input to float, sum elementwise, requantize.
+    const int n = GetTensorShape(output).FlatSize();
+    std::vector<float> acc(n, 0.0f);
+    std::vector<float> tmp;
+    const int num_inputs = NumInputs(node);
+    for (int i = 0; i < num_inputs; ++i) {
+      const TfLiteTensor* in;
+      TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, i, &in));
+      uint16_asym::DequantizeUInt16(in, &tmp);
+      for (int k = 0; k < n; ++k) acc[k] += tmp[k];
+    }
+    uint16_asym::RequantizeToUInt16(acc, output);
   } else {
     TF_LITE_KERNEL_LOG(context, "AddN only supports FLOAT32|INT32 now, got %s.",
                        TfLiteTypeGetName(output->type));

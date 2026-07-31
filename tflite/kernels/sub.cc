@@ -96,7 +96,8 @@ TfLiteStatus PrepareGeneralSubOp(TfLiteContext* context,
                                  OpData* op_params) {
   TF_LITE_ENSURE(context, output->type == kTfLiteUInt8 ||
                               output->type == kTfLiteInt8 ||
-                              output->type == kTfLiteInt16);
+                              output->type == kTfLiteInt16 ||
+                              output->type == kTfLiteUInt16);
   const auto& input1_quantization_params = input_1->params;
   const auto& input2_quantization_params = input_2->params;
   const auto& output_quantization_params = output->params;
@@ -108,6 +109,9 @@ TfLiteStatus PrepareGeneralSubOp(TfLiteContext* context,
   } else if (output->type == kTfLiteInt16) {
     integer_type_min = std::numeric_limits<int16_t>::min();
     integer_type_max = std::numeric_limits<int16_t>::max();
+  } else if (output->type == kTfLiteUInt16) {
+    integer_type_min = std::numeric_limits<uint16_t>::min();
+    integer_type_max = std::numeric_limits<uint16_t>::max();
   } else {
     // output->type == kTfLiteInt8
     integer_type_min = std::numeric_limits<int8_t>::min();
@@ -134,7 +138,8 @@ TfLiteStatus PrepareGeneralSubOp(TfLiteContext* context,
   // The shift is set to 15 in case of 16-bit and 20 in case of 8-bit,
   // accordingly. In case of 16-bit we have 65535 << 15 which is less than 1 <<
   // 31, therefore the addition will still fit in a 32 bit accumulator.
-  op_params->left_shift = output->type == kTfLiteInt16 ? 15 : 20;
+  op_params->left_shift =
+      (output->type == kTfLiteInt16 || output->type == kTfLiteUInt16) ? 15 : 20;
   const double twice_max_input_scale =
       2 * std::max(input1_quantization_params.scale,
                    input2_quantization_params.scale);
@@ -271,13 +276,27 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   int input2_scale_log2_rounded{0};
   int output_scale_log2_rounded{0};
 
-  if (input1->type == kTfLiteInt16 && input2->type == kTfLiteInt16 &&
-      output->type == kTfLiteInt16) {
-    TF_LITE_ENSURE_EQ(context, input1->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, input2->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, output->params.zero_point, 0);
+  const bool is_16bit_quantized =
+      (input1->type == kTfLiteInt16 || input1->type == kTfLiteUInt16) &&
+      (input2->type == kTfLiteInt16 || input2->type == kTfLiteUInt16) &&
+      (output->type == kTfLiteInt16 || output->type == kTfLiteUInt16);
+  if (is_16bit_quantized) {
+    if (input1->type == kTfLiteInt16 && input2->type == kTfLiteInt16 &&
+        output->type == kTfLiteInt16) {
+      TF_LITE_ENSURE_EQ(context, input1->params.zero_point, 0);
+      TF_LITE_ENSURE_EQ(context, input2->params.zero_point, 0);
+      TF_LITE_ENSURE_EQ(context, output->params.zero_point, 0);
+    }
+    // uint16 Sub may be ASYMMETRIC on the general path (PrepareGeneralSubOp
+    // and ReferenceOpSub<uint16_t> apply input1_offset / input2_offset /
+    // output_offset). Force general_scale_int16 when any zero_point is
+    // non-zero — the POT fast path (PrepareInt16SubOpPOT) is symmetric-only.
+    const bool any_non_zero_zp = input1->params.zero_point != 0 ||
+                                 input2->params.zero_point != 0 ||
+                                 output->params.zero_point != 0;
 
-    general_scale_int16 = !params || !params->pot_scale_int16;
+    general_scale_int16 =
+        !params || !params->pot_scale_int16 || any_non_zero_zp;
 
     if (!general_scale_int16) {
       // Do preparation in the case of the scale parameter is power of 2.
@@ -298,7 +317,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   data->pot_scale_int16 = !general_scale_int16;
 
   if (output->type == kTfLiteUInt8 || output->type == kTfLiteInt8 ||
-      general_scale_int16) {
+      output->type == kTfLiteUInt16 || general_scale_int16) {
     TF_LITE_ENSURE_OK(context, PrepareGeneralSubOp(context, input1, input2,
                                                    output, params, data));
   } else if (output->type == kTfLiteInt16) {
@@ -410,6 +429,12 @@ void EvalQuantized(TfLiteContext* context, TfLiteNode* node,
     } else {
       TF_LITE_SUB(reference_ops, Sub, int8_t);
     }
+  } else if (output->type == kTfLiteUInt16) {
+    if (need_broadcast) {
+      TF_LITE_SUB(reference_ops, BroadcastQuantSubSlow, uint16_t);
+    } else {
+      TF_LITE_SUB(reference_ops, Sub, uint16_t);
+    }
   } else if (!data->pot_scale_int16) {
     if (kernel_type == kReference) {
       if (need_broadcast) {
@@ -467,7 +492,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
       output->type == kTfLiteInt64) {
     EvalSub<kernel_type>(context, node, params, data, input1, input2, output);
   } else if (output->type == kTfLiteUInt8 || output->type == kTfLiteInt8 ||
-             output->type == kTfLiteInt16) {
+             output->type == kTfLiteInt16 || output->type == kTfLiteUInt16) {
     EvalQuantized<kernel_type>(context, node, params, data, input1, input2,
                                output);
   } else {

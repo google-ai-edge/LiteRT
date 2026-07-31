@@ -118,7 +118,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   if (output->type == kTfLiteUInt8 || output->type == kTfLiteInt8 ||
       (output->quantization.type != kTfLiteNoQuantization &&
-       output->type == kTfLiteInt16)) {
+       (output->type == kTfLiteInt16 || output->type == kTfLiteUInt16))) {
     TF_LITE_ENSURE_STATUS(CalculateActivationRangeQuantized(
         context, params->activation, output, &data->output_activation_min,
         &data->output_activation_max));
@@ -245,7 +245,7 @@ TfLiteStatus EvalQuantized(TfLiteContext* context, TfLiteNode* node,
                            const TfLiteTensor* input2, TfLiteTensor* output) {
   if (input1->type == input2->type && input1->type == output->type &&
       (input1->type == kTfLiteUInt8 || input1->type == kTfLiteInt8 ||
-       input1->type == kTfLiteInt16)) {
+       input1->type == kTfLiteInt16 || input1->type == kTfLiteUInt16)) {
     tflite::ArithmeticParams op_params;
     SetActivationParams(data->output_activation_min,
                         data->output_activation_max, &op_params);
@@ -274,6 +274,12 @@ TfLiteStatus EvalQuantized(TfLiteContext* context, TfLiteNode* node,
         } else {
           TF_LITE_MUL(optimized_integer_ops, Mul, int8_t);
         }
+      }
+    } else if (input1->type == kTfLiteUInt16) {
+      if (need_broadcast) {
+        TF_LITE_MUL(reference_ops, BroadcastMul6DSlow, uint16_t);
+      } else {
+        TF_LITE_MUL(reference_ops, Mul, uint16_t);
       }
     } else if (input1->type == kTfLiteInt16) {
       // We have this check, because in case of int16
@@ -349,14 +355,14 @@ TfLiteStatus EvalImpl(TfLiteContext* context, TfLiteNode* node, OpData* data,
       output->type == kTfLiteUInt32) {
     EvalMul<kernel_type>(context, node, params, data, input1, input2, output);
   } else if (output->type == kTfLiteUInt8 || output->type == kTfLiteInt8 ||
-             output->type == kTfLiteInt16) {
+             output->type == kTfLiteInt16 || output->type == kTfLiteUInt16) {
     TF_LITE_ENSURE_OK(
         context, EvalQuantized<kernel_type>(context, node, params, data, input1,
                                             input2, output));
   } else {
     TF_LITE_KERNEL_LOG(context,
                        "Mul only supports FLOAT32, COMPLEX32, INT8, INT16,"
-                       " INT32, INT64 and quantized UINT8 now, got %d.",
+                       " UINT16, INT32, INT64 and quantized UINT8 now, got %d.",
                        output->type);
     return kTfLiteError;
   }

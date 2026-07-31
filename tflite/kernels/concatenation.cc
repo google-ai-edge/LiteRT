@@ -16,8 +16,10 @@ limitations under the License.
 
 #include <stdint.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstring>
+#include <cmath>
 #include <limits>
 
 #include "Eigen/Core"  // from @eigen_archive
@@ -42,6 +44,74 @@ enum KernelType {
   kReference,
   kGenericOptimized,
 };
+
+template <typename T>
+TfLiteStatus Concatenation16Affine(TfLiteContext* context, TfLiteNode* node,
+                                   int axis, TfLiteTensor* output) {
+  const RuntimeShape output_shape = GetTensorShape(output);
+  const int dims = output_shape.DimensionsCount();
+  TF_LITE_ENSURE(context, dims > 0);
+  TF_LITE_ENSURE(context, axis >= 0);
+  TF_LITE_ENSURE(context, axis < dims);
+
+  int outer_size = 1;
+  for (int d = 0; d < axis; ++d) {
+    outer_size *= output_shape.Dims(d);
+  }
+  int inner_size = 1;
+  for (int d = axis + 1; d < dims; ++d) {
+    inner_size *= output_shape.Dims(d);
+  }
+  const int output_axis_size = output_shape.Dims(axis);
+  T* output_data = GetTensorData<T>(output);
+
+  int axis_offset = 0;
+  for (int input_index = 0; input_index < node->inputs->size; ++input_index) {
+    const TfLiteTensor* input;
+    TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, input_index, &input));
+    const RuntimeShape input_shape = GetTensorShape(input);
+    const int input_axis_size = input_shape.Dims(axis);
+    const int copy_size = input_axis_size * inner_size;
+    const T* input_data = GetTensorData<T>(input);
+    const bool same_quant =
+        input->params.scale == output->params.scale &&
+        input->params.zero_point == output->params.zero_point;
+
+    if (!same_quant) {
+      TF_LITE_ENSURE(context, input->params.scale > 0.0f);
+      TF_LITE_ENSURE(context, output->params.scale > 0.0f);
+    }
+    const double requant_scale =
+        same_quant ? 1.0
+                   : static_cast<double>(input->params.scale) /
+                         static_cast<double>(output->params.scale);
+
+    for (int outer = 0; outer < outer_size; ++outer) {
+      const int input_base = outer * copy_size;
+      const int output_base =
+          (outer * output_axis_size + axis_offset) * inner_size;
+      if (same_quant) {
+        std::memcpy(output_data + output_base, input_data + input_base,
+                    copy_size * sizeof(T));
+        continue;
+      }
+      for (int i = 0; i < copy_size; ++i) {
+        int32_t q = static_cast<int32_t>(
+                        std::round((static_cast<int32_t>(
+                                        input_data[input_base + i]) -
+                                    input->params.zero_point) *
+                                   requant_scale)) +
+                    output->params.zero_point;
+        q = std::min<int32_t>(
+            std::numeric_limits<T>::max(),
+            std::max<int32_t>(std::numeric_limits<T>::min(), q));
+        output_data[output_base + i] = static_cast<T>(q);
+      }
+    }
+    axis_offset += input_axis_size;
+  }
+  return kTfLiteOk;
+}
 
 template <KernelType kernel_type>
 TfLiteStatus EvalImpl(TfLiteContext* context, TfLiteNode* node, int axis,
@@ -92,6 +162,10 @@ TfLiteStatus EvalImpl(TfLiteContext* context, TfLiteNode* node, int axis,
     case kTfLiteUInt8:
       TF_LITE_CONCATENATION_QUANTIZED();
       return kTfLiteOk;
+    case kTfLiteInt16:
+      return Concatenation16Affine<int16_t>(context, node, axis, output);
+    case kTfLiteUInt16:
+      return Concatenation16Affine<uint16_t>(context, node, axis, output);
     case kTfLiteInt4:
       TF_LITE_CONCATENATION(Int4);
       return kTfLiteOk;
@@ -145,9 +219,9 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
       input_type == kTfLiteFloat32 || input_type == kTfLiteFloat16 ||
       input_type == kTfLiteBFloat16 || input_type == kTfLiteUInt8 ||
       input_type == kTfLiteInt8 || input_type == kTfLiteInt16 ||
-      input_type == kTfLiteInt32 || input_type == kTfLiteInt64 ||
-      input_type == kTfLiteBool || input_type == kTfLiteUInt32 ||
-      input_type == kTfLiteInt4;
+      input_type == kTfLiteUInt16 || input_type == kTfLiteInt32 ||
+      input_type == kTfLiteInt64 || input_type == kTfLiteBool ||
+      input_type == kTfLiteUInt32 || input_type == kTfLiteInt4;
 #if defined(TFLITE_ENABLE_EXTRA_REFERENCE_KERNELS)
   is_supported_type = is_supported_type || input_type == kTfLiteFloat8E4M3FN ||
                       input_type == kTfLiteFloat8E5M2;

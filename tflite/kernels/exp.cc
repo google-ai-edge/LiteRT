@@ -13,9 +13,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 #include <cmath>
+#include <limits>
 
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/internal/common.h"
+#include "tflite/kernels/internal/cppmath.h"
 #include "tflite/kernels/internal/reference/integer_ops/lut.h"
 #include "tflite/kernels/internal/reference/reference_ops.h"
 #include "tflite/kernels/internal/tensor.h"
@@ -77,11 +79,17 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   } else if (input->type == kTfLiteInt16) {
     TF_LITE_ENSURE_EQ(context, input->params.zero_point, 0);
     TF_LITE_ENSURE_EQ(context, output->params.zero_point, 0);
-
     LUTPopulate<int16_t>(
         input->params.scale, input->params.zero_point, output->params.scale,
         output->params.zero_point, [](float value) { return std::exp(value); },
         data->lut_int16);
+  } else if (input->type == kTfLiteUInt16) {
+    // uint16 asym: shift zero_point into int16 domain (raw ^ 0x8000 at eval)
+    // so the same int16 LUT builder covers the full uint16 real-value range.
+    LUTPopulate<int16_t>(
+        input->params.scale, input->params.zero_point - 32768,
+        output->params.scale, output->params.zero_point - 32768,
+        [](float value) { return std::exp(value); }, data->lut_int16);
   }
 
   return context->ResizeTensor(context, op_context.output, output_dims);
@@ -112,6 +120,21 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
             NumElements(op_context.input), data->lut_int16,
             GetTensorData<int16_t>(op_context.output));
         break;
+      case kTfLiteUInt16: {
+        // Rebase uint16 to signed-view int16 (raw ^ 0x8000), run the same
+        // int16 LUT, rebase back. Bit-identical to int16 path when the two
+        // graphs cover the same real domain.
+        const uint16_t* input_data = GetTensorData<uint16_t>(op_context.input);
+        uint16_t* output_data = GetTensorData<uint16_t>(op_context.output);
+        const int num_elements = NumElements(op_context.input);
+        for (int i = 0; i < num_elements; ++i) {
+          const int16_t rebased_in =
+              static_cast<int16_t>(input_data[i] ^ 0x8000);
+          const int16_t rebased_out = LUTLookup(rebased_in, data->lut_int16);
+          output_data[i] = static_cast<uint16_t>(rebased_out) ^ 0x8000;
+        }
+        break;
+      }
       default:
         TF_LITE_KERNEL_LOG(context,
                            "Type %d is currently not supported by Exp.",

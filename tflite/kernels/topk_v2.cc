@@ -329,6 +329,10 @@ TfLiteStatus TopKImpl(TfLiteContext* context, TfLiteNode* node, int32_t k,
       TopK(row_size, num_rows, GetTensorData<int16_t>(input), k, output_indexes,
            output_values->data.i16);
       break;
+    case kTfLiteUInt16:
+      TopK(row_size, num_rows, GetTensorData<uint16_t>(input), k,
+           output_indexes, GetTensorData<uint16_t>(output_values));
+      break;
     case kTfLiteInt32:
       TopK(row_size, num_rows, GetTensorData<int32_t>(input), k, output_indexes,
            output_values->data.i32);

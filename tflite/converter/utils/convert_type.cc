@@ -73,7 +73,10 @@ tflite::TensorType ConvertTypeToTensorType(mlir::Type type) {
         else
           return tflite::TensorType_INT8;
       case 16:
-        return tflite::TensorType_INT16;
+        if (itype.isUnsigned())
+          return tflite::TensorType_UINT16;
+        else
+          return tflite::TensorType_INT16;
       case 32:
         return tflite::TensorType_INT32;
       case 64:

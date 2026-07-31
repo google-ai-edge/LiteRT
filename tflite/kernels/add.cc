@@ -139,15 +139,27 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   bool input_quantized = input1->quantization.type != kTfLiteNoQuantization;
 
-  if (input1->type == kTfLiteInt16 && input2->type == kTfLiteInt16 &&
-      output->type == kTfLiteInt16 && input_quantized) {
-    // In case of int16, quantization is symmetic and
-    // zero point should be zero.
-    TF_LITE_ENSURE_EQ(context, input1->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, input2->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, output->params.zero_point, 0);
+  // Accept UINT16 (UFIXED_POINT_16) on the INT16 arithmetic path.
+  const bool is_16bit_quantized =
+      (input1->type == kTfLiteInt16 || input1->type == kTfLiteUInt16) &&
+      (input2->type == kTfLiteInt16 || input2->type == kTfLiteUInt16) &&
+      (output->type == kTfLiteInt16 || output->type == kTfLiteUInt16);
+  if (is_16bit_quantized && input_quantized) {
+    if (input1->type == kTfLiteInt16 && input2->type == kTfLiteInt16 &&
+        output->type == kTfLiteInt16) {
+      // In case of int16, quantization is symmetic and
+      // zero point should be zero.
+      TF_LITE_ENSURE_EQ(context, input1->params.zero_point, 0);
+      TF_LITE_ENSURE_EQ(context, input2->params.zero_point, 0);
+      TF_LITE_ENSURE_EQ(context, output->params.zero_point, 0);
+    }
+    // uint16 may be ASYMMETRIC. Force the general path (which uses offsets)
+    // when any zero_point is non-zero; the POT path is symmetric-only.
+    const bool any_non_zero_zp = input1->params.zero_point != 0 ||
+                                 input2->params.zero_point != 0 ||
+                                 output->params.zero_point != 0;
 
-    general_scale_int16 = !params->pot_scale_int16;
+    general_scale_int16 = !params->pot_scale_int16 || any_non_zero_zp;
 
     if (!general_scale_int16) {
       // Do preparation in the case of the scale parameter is power of 2.
@@ -322,7 +334,7 @@ TfLiteStatus EvalAddQuantized(TfLiteContext* context, TfLiteNode* node,
                               const TfLiteTensor* input2,
                               TfLiteTensor* output) {
   if (output->type == kTfLiteUInt8 || output->type == kTfLiteInt8 ||
-      !data->pot_scale_int16) {
+      output->type == kTfLiteUInt16 || !data->pot_scale_int16) {
     tflite::ArithmeticParams op_params;
     op_params.left_shift = data->left_shift;
     op_params.input1_offset = data->input1_offset;
@@ -357,6 +369,12 @@ TfLiteStatus EvalAddQuantized(TfLiteContext* context, TfLiteNode* node,
           TF_LITE_ADD(optimized_integer_ops, Add, int8_t);
         }
       }
+    } else if (output->type == kTfLiteUInt16) {
+      // UINT16 activations use the same general quantized arithmetic as the
+      // int16 path, but with unsigned storage and asymmetric zero-points.
+      // Always use the reference small-integer path; optimized int16 kernels
+      // interpret data as signed and are only valid for INT16.
+      TF_LITE_ADD(reference_ops, BroadcastAdd6DSlow, uint16_t);
     } else if (output->type == kTfLiteInt16) {
       if (need_broadcast) {
         TF_LITE_ADD(reference_ops, BroadcastAdd6DSlow, int16_t);
@@ -431,7 +449,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
        output->type == kTfLiteInt16)) {
     EvalAdd<kernel_type>(context, node, params, data, input1, input2, output);
   } else if (output->type == kTfLiteUInt8 || output->type == kTfLiteInt8 ||
-             output->type == kTfLiteInt16) {
+             output->type == kTfLiteInt16 || output->type == kTfLiteUInt16) {
     TF_LITE_ENSURE_OK(context,
                       EvalAddQuantized<kernel_type>(context, node, params, data,
                                                     input1, input2, output));

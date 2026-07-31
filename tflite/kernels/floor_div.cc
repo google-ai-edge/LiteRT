@@ -24,6 +24,9 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
+
+#include <cmath>
 
 namespace tflite {
 namespace ops {
@@ -76,6 +79,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
     case kTfLiteInt32:
     case kTfLiteInt16:
     case kTfLiteInt8:
+    case kTfLiteUInt16:
       break;
     default:
       TF_LITE_KERNEL_LOG(context, "Type '%s' is not supported by floor_div.",
@@ -155,6 +159,11 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
     case kTfLiteFloat32: {
       return EvalImpl<float>(context, data->requires_broadcast, input1, input2,
                              output);
+    }
+    case kTfLiteUInt16: {
+      return uint16_asym::EvalUInt16Binary(
+          input1, input2, output,
+          [](float a, float b) { return std::floor(a / b); });
     }
     default: {
       TF_LITE_KERNEL_LOG(context, "Type '%s' is not supported by floor_div.",

@@ -20,6 +20,7 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/internal/types.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
 
 namespace tflite {
 namespace ops {
@@ -47,7 +48,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   TF_LITE_ENSURE_EQ(context, NumDimensions(input), 4);
 
-  TF_LITE_ENSURE_TYPES_EQ(context, output->type, kTfLiteFloat32);
+  TF_LITE_ENSURE(context, output->type == kTfLiteFloat32 ||
+                              output->type == kTfLiteUInt16);
   TF_LITE_ENSURE_TYPES_EQ(context, input->type, output->type);
 
   TfLiteIntArray* output_size = TfLiteIntArrayCreate(4);
@@ -70,6 +72,22 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_OK(context,
                     GetOutputSafe(context, node, kOutputTensor, &output));
 
+  if (output->type == kTfLiteUInt16) {
+    // Dequantize -> float LRN -> requantize.
+    std::vector<float> in_f;
+    uint16_asym::DequantizeUInt16(input, &in_f);
+    std::vector<float> out_f(in_f.size());
+    tflite::LocalResponseNormalizationParams op_params;
+    op_params.range = params->radius;
+    op_params.bias = params->bias;
+    op_params.alpha = params->alpha;
+    op_params.beta = params->beta;
+    reference_ops::LocalResponseNormalization(
+        op_params, GetTensorShape(input), in_f.data(),
+        GetTensorShape(output), out_f.data());
+    uint16_asym::RequantizeToUInt16(out_f, output);
+    return kTfLiteOk;
+  }
   if (output->type == kTfLiteFloat32) {
 #define TF_LITE_LOCAL_RESPONSE_NORM(type)                            \
   tflite::LocalResponseNormalizationParams op_params;                \

@@ -631,6 +631,21 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
         }
       }
     } break;
+    case kTfLiteUInt16: {
+      if (op_context.input->quantization.type != kTfLiteNoQuantization) {
+        EvalInt<uint16_t>(context, op_context, op_params);
+      } else {
+        uint16_t pad_value =
+            op_context.constant_values == nullptr
+                ? 0
+                : *GetTensorData<uint16_t>(op_context.constant_values);
+        if (kernel_type == kReference) {
+          TF_LITE_PAD(reference_ops, Pad, uint16_t, pad_value);
+        } else if (kernel_type == kGenericOptimized) {
+          TF_LITE_PAD(optimized_ops, Pad, uint16_t, pad_value);
+        }
+      }
+    } break;
     case kTfLiteInt32: {
       int32_t pad_value =
           op_context.constant_values == nullptr

@@ -59,6 +59,20 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
     case kTfLiteFloat32:
       memset(GetTensorData<float>(output), 0, output->bytes);
       break;
+    case kTfLiteUInt16: {
+      // For asymmetric uint16 the real value 0 is represented by raw
+      // zero_point. If no quantization params are set, fall back to raw 0.
+      uint16_t zero_raw = 0;
+      if (output->quantization.type == kTfLiteAffineQuantization &&
+          output->params.zero_point != 0) {
+        zero_raw = static_cast<uint16_t>(output->params.zero_point);
+      }
+      uint16_t* out_data = GetTensorData<uint16_t>(output);
+      for (int i = 0; i < num_elements; ++i) {
+        out_data[i] = zero_raw;
+      }
+      break;
+    }
     default:
       TF_LITE_KERNEL_LOG(context,
                          "ZerosLike only currently supports int64, int32, "

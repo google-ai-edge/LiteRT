@@ -30,6 +30,7 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
 #include "tflite/kernels/op_macros.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
 #include "tflite/types/half.h"
 
 namespace tflite {
@@ -55,7 +56,7 @@ struct OpData {
 };
 
 bool IsNumericSupportedType(const TfLiteType type) {
-  return type == kTfLiteFloat32;
+  return type == kTfLiteFloat32 || type == kTfLiteUInt16;
 }
 
 bool IsSinCosSupportedType(const TfLiteType type) {
@@ -68,19 +69,23 @@ bool IsLogicalSupportedType(const TfLiteType type) {
 
 bool IsAbsSupportedType(const TfLiteType type) {
   return type == kTfLiteFloat32 || type == kTfLiteInt8 ||
-         type == kTfLiteInt16 || type == kTfLiteInt32;
+         type == kTfLiteInt16 || type == kTfLiteInt32 ||
+         type == kTfLiteUInt16;
 }
 
 bool IsRsqrtSupportedType(const TfLiteType type) {
-  return type == kTfLiteFloat32 || type == kTfLiteInt8 || type == kTfLiteInt16;
+  return type == kTfLiteFloat32 || type == kTfLiteInt8 ||
+         type == kTfLiteInt16 || type == kTfLiteUInt16;
 }
 
 bool IsSqrtSupportedType(const TfLiteType type) {
-  return type == kTfLiteFloat32 || type == kTfLiteInt8 || type == kTfLiteInt16;
+  return type == kTfLiteFloat32 || type == kTfLiteInt8 ||
+         type == kTfLiteInt16 || type == kTfLiteUInt16;
 }
 
 bool IsLogSupportedType(const TfLiteType type) {
-  return type == kTfLiteFloat32 || type == kTfLiteInt8 || type == kTfLiteInt16;
+  return type == kTfLiteFloat32 || type == kTfLiteInt8 ||
+         type == kTfLiteInt16 || type == kTfLiteUInt16;
 }
 
 inline void SetAbsOutputMultiplier(const float input_scale,
@@ -146,7 +151,12 @@ TfLiteStatus GenericPrepare(TfLiteContext* context, TfLiteNode* node,
     TF_LITE_UNSUPPORTED_TYPE(context, input->type, op_name);
   }
   // For int16 type input, we support both quantized and non-quantized
-  // evaluation.
+  // evaluation.  UINT16 is handled in Eval via the dequant/requant wrapper;
+  // no Prepare-time LUT setup is required here.
+  if (input->type == kTfLiteUInt16) {
+    return context->ResizeTensor(context, output,
+                                 TfLiteIntArrayCopy(input->dims));
+  }
   if (input->type == kTfLiteInt8 ||
       (input->type == kTfLiteInt16 &&
        input->quantization.type != kTfLiteNoQuantization)) {
@@ -260,6 +270,13 @@ inline TfLiteStatus EvalImpl(TfLiteContext* context, TfLiteNode* node,
 
 inline TfLiteStatus EvalNumeric(TfLiteContext* context, TfLiteNode* node,
                                 float float_func(float)) {
+  const TfLiteTensor* input;
+  TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, 0, &input));
+  TfLiteTensor* output;
+  TF_LITE_ENSURE_OK(context, GetOutputSafe(context, node, 0, &output));
+  if (input->type == kTfLiteUInt16) {
+    return uint16_asym::EvalUInt16Elementwise(input, output, float_func);
+  }
   return EvalImpl<float>(context, node, float_func, kTfLiteFloat32);
 }
 
@@ -319,6 +336,11 @@ TfLiteStatus AbsEval(TfLiteContext* context, TfLiteNode* node) {
     case kTfLiteInt32:
       return EvalImpl<int32_t>(
           context, node, [](int32_t i) { return std::abs(i); }, type);
+    case kTfLiteUInt16: {
+      TfLiteTensor* output = GetOutput(context, node, 0);
+      return uint16_asym::EvalUInt16Elementwise(
+          input, output, [](float f) { return std::abs(f); });
+    }
     default:
       TF_LITE_KERNEL_LOG(context, "Current data type %s is not supported.",
                          TfLiteTypeGetName(type));
@@ -374,6 +396,9 @@ TfLiteStatus LogEval(TfLiteContext* context, TfLiteNode* node) {
           MatchingFlatSize(GetTensorShape(input), GetTensorShape(output)),
           op_data->lut_int16, GetTensorData<int16_t>(output));
       return kTfLiteOk;
+    case kTfLiteUInt16:
+      return uint16_asym::EvalUInt16Elementwise(
+          input, output, [](float f) { return f > 0 ? std::log(f) : 0.0f; });
     default:
       TF_LITE_KERNEL_LOG(context, "Current data type %s is not supported.",
                          TfLiteTypeGetName(input->type));
@@ -429,6 +454,15 @@ TfLiteStatus SqrtEval(TfLiteContext* context, TfLiteNode* node) {
       return SqrtEvalQuantized<int8_t>(context, node);
     case kTfLiteInt16:
       return SqrtEvalQuantized<int16_t>(context, node);
+    case kTfLiteUInt16: {
+      const TfLiteTensor* input;
+      TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, 0, &input));
+      TfLiteTensor* output;
+      TF_LITE_ENSURE_OK(context, GetOutputSafe(context, node, 0, &output));
+      return uint16_asym::EvalUInt16Elementwise(
+          input, output,
+          [](float f) { return f >= 0.0f ? std::sqrt(f) : 0.0f; });
+    }
     default:
       TF_LITE_KERNEL_LOG(context, "Current data type %s is not supported.",
                          TfLiteTypeGetName(type));
@@ -500,6 +534,15 @@ TfLiteStatus RsqrtEval(TfLiteContext* context, TfLiteNode* node) {
       return RsqrtEvalQuantizedInt8(context, node, type);
     case kTfLiteInt16:
       return RsqrtEvalQuantizedInt16(context, node, type);
+    case kTfLiteUInt16: {
+      const TfLiteTensor* input;
+      TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, 0, &input));
+      TfLiteTensor* output;
+      TF_LITE_ENSURE_OK(context, GetOutputSafe(context, node, 0, &output));
+      return uint16_asym::EvalUInt16Elementwise(
+          input, output,
+          [](float f) { return f > 0.0f ? 1.0f / std::sqrt(f) : 0.0f; });
+    }
     default:
       TF_LITE_KERNEL_LOG(context, "Current data type %s is not supported.",
                          TfLiteTypeGetName(type));

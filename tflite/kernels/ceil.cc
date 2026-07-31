@@ -19,6 +19,8 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
 #include "tflite/kernels/op_macros.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
+#include <cmath>
 
 namespace tflite {
 namespace ops {
@@ -36,7 +38,11 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
                     GetOutputSafe(context, node, kOutputTensor, &output));
   TF_LITE_ENSURE_EQ(context, NumInputs(node), 1);
   TF_LITE_ENSURE_EQ(context, NumOutputs(node), 1);
-  TF_LITE_ENSURE_TYPES_EQ(context, input->type, kTfLiteFloat32);
+  if (input->type != kTfLiteFloat32 && input->type != kTfLiteUInt16) {
+    TF_LITE_KERNEL_LOG(context, "Ceil: unsupported input type %s.",
+                       TfLiteTypeGetName(input->type));
+    return kTfLiteError;
+  }
   output->type = input->type;
   TfLiteIntArray* output_size = TfLiteIntArrayCopy(input->dims);
   return context->ResizeTensor(context, output, output_size);
@@ -48,6 +54,10 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   TfLiteTensor* output;
   TF_LITE_ENSURE_OK(context,
                     GetOutputSafe(context, node, kOutputTensor, &output));
+  if (input->type == kTfLiteUInt16) {
+    return uint16_asym::EvalUInt16Elementwise(
+        input, output, [](float f) { return std::ceil(f); });
+  }
   if (input->type != kTfLiteFloat32) {
     TF_LITE_UNSUPPORTED_TYPE(context, input->type, "Ceil");
   }

@@ -21,6 +21,9 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
+
+#include <cmath>
 
 // TODO(b/117523611): We should factor out a binary_op and put binary ops there.
 namespace tflite {
@@ -72,7 +75,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   const TfLiteType type = input1->type;
   if (type != kTfLiteInt8 && type != kTfLiteInt16 && type != kTfLiteInt32 &&
-      type != kTfLiteFloat32 && type != kTfLiteInt64) {
+      type != kTfLiteFloat32 && type != kTfLiteInt64 &&
+      type != kTfLiteUInt16) {
     TF_LITE_KERNEL_LOG(context, "Type '%s' is not supported by floor_mod.",
                        TfLiteTypeGetName(type));
     return kTfLiteError;
@@ -158,6 +162,11 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
     case kTfLiteFloat32: {
       return EvalImpl<float>(context, data->requires_broadcast, input1, input2,
                              output);
+    }
+    case kTfLiteUInt16: {
+      return uint16_asym::EvalUInt16Binary(
+          input1, input2, output,
+          [](float a, float b) { return a - std::floor(a / b) * b; });
     }
     default: {
       TF_LITE_KERNEL_LOG(context, "Type '%s' is not supported by floor_mod.",

@@ -23,6 +23,7 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/internal/types.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
 
 namespace tflite {
 namespace ops {
@@ -54,7 +55,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   TF_LITE_ENSURE(context, output->type == kTfLiteFloat32 ||
                               output->type == kTfLiteUInt8 ||
-                              output->type == kTfLiteInt8);
+                              output->type == kTfLiteInt8 ||
+                              output->type == kTfLiteUInt16);
   TF_LITE_ENSURE_TYPES_EQ(context, input->type, output->type);
 
   if (output->type == kTfLiteUInt8 || output->type == kTfLiteInt8) {
@@ -127,6 +129,24 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
       TF_LITE_L2NORM(optimized_ops);
     }
 #undef TF_LITE_L2NORM
+  } else if (output->type == kTfLiteUInt16) {
+    // Dequantize -> per-row L2 normalize along last axis -> requantize.
+    std::vector<float> in_f;
+    uint16_asym::DequantizeUInt16(input, &in_f);
+    const auto input_shape = GetTensorShape(input);
+    const int trailing_dim = input_shape.DimensionsCount() - 1;
+    const int depth = input_shape.Dims(trailing_dim);
+    const int outer_size = in_f.empty() ? 0 : static_cast<int>(in_f.size()) / depth;
+    std::vector<float> out_f(in_f.size());
+    for (int i = 0; i < outer_size; ++i) {
+      const float* row_in = in_f.data() + i * depth;
+      float* row_out = out_f.data() + i * depth;
+      float sq_sum = 0.0f;
+      for (int j = 0; j < depth; ++j) sq_sum += row_in[j] * row_in[j];
+      const float inv_norm = 1.0f / std::sqrt(std::max(sq_sum, epsilon));
+      for (int j = 0; j < depth; ++j) row_out[j] = row_in[j] * inv_norm;
+    }
+    uint16_asym::RequantizeToUInt16(out_f, output);
   } else if (output->type == kTfLiteInt8) {
     const auto input_shape = GetTensorShape(input);
     const auto output_shape = GetTensorShape(output);
