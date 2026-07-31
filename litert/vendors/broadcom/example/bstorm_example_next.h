@@ -48,22 +48,21 @@
 #include "litert/c/litert_tensor_buffer.h"
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 struct inference_parameters {
-  const char* model_fname;
-  const char* input;
-  const char* output;
-  const char* expected;
-  const char* accuracy;
+    const char* model_fname;
+    const char* input;
+    const char* output;
+    const char* expected;
+    const char* accuracy;
 };
 
 void read_input(const char* input, LiteRtTensorBuffer* tensors, unsigned count);
-void write_output(const char* output, LiteRtTensorBuffer* tensors,
-                  unsigned count);
-int verify_outputs(const char* expected, LiteRtTensorBuffer* tensors,
-                   unsigned count, const char* accuracy);
+void write_output(const char* output, LiteRtTensorBuffer* tensors, unsigned count);
+int verify_outputs(const char* expected, LiteRtTensorBuffer* tensors, unsigned count, const char* accuracy);
 
 #ifdef __cplusplus
 } /* extern "C" */

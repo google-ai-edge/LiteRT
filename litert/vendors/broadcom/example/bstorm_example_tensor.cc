@@ -45,75 +45,66 @@
 #define BSTORM_DEBUG_LEVEL_VERBOSE 1
 #include "bstorm_example_tensor.h"
 
-#include <complex>
 #include <cstdio>
-
-#include "bstorm_common.h"
-#include "bstorm_core_internal.h"
+#include <complex>
 #include "bstorm_types.h"
-#include "common/bstorm_util_litert.h"
+#include "bstorm_common.h"
 #include "flatbuf/bstorm_flatbuf.h"
+#include "bstorm_core_internal.h"
+#include "common/bstorm_util_litert.h"
 
-static bstorm_result bstorm_LiteRtExample_p_BlobsFromTensors(
-    struct bstorm_Blobs* blobs, LiteRtTensorBuffer* tensors, unsigned count) {
-  bstorm_result rc = BSTORM_RESULT_INITIALIZER();
-  bstorm_Blobs_Init(blobs);
-  B_STORM_CHECKED_CALL(rc, bstorm_Blobs_AllocateBlobs, (blobs, count),
-                       err_blobs);
-  for (unsigned i = 0; i < count; i++) {
-    B_STORM_CHECKED_CALL(rc, bstorm_Blobs_UseInlineBlob, (blobs, i), err_blob);
-    struct bstorm_Blob* blob = blobs->entry[i];
-    B_STORM_ASSERT(blob);
-    LiteRtTensorBuffer tensor = tensors[i];
-    B_STORM_CONDITION(rc, tensor, err_tensor);
-    B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_BlobFromTensorBuffer, (blob, tensor),
-                         err_tensor);
-  }
-  return rc;
+static bstorm_result bstorm_LiteRtExample_p_BlobsFromTensors(struct bstorm_Blobs* blobs, LiteRtTensorBuffer* tensors, unsigned count)
+{
+    bstorm_result rc = BSTORM_RESULT_INITIALIZER();
+    bstorm_Blobs_Init(blobs);
+    B_STORM_CHECKED_CALL(rc, bstorm_Blobs_AllocateBlobs, (blobs, count), err_blobs);
+    for (unsigned i = 0; i < count; i++) {
+        B_STORM_CHECKED_CALL(rc, bstorm_Blobs_UseInlineBlob, (blobs, i), err_blob);
+        struct bstorm_Blob* blob = blobs->entry[i];
+        B_STORM_ASSERT(blob);
+        LiteRtTensorBuffer tensor = tensors[i];
+        B_STORM_CONDITION(rc, tensor, err_tensor);
+        B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_BlobFromTensorBuffer, (blob, tensor), err_tensor);
+    }
+    return rc;
 
 err_tensor:
 err_blob:
-  bstorm_Blobs_Clear(blobs);
-  bstorm_Blobs_Uninit(blobs);
+    bstorm_Blobs_Clear(blobs);
+    bstorm_Blobs_Uninit(blobs);
 err_blobs:
-  return rc;
+    return rc;
 }
 
-int bstorm_LiteRtExample_WriteTensors(const char* fileName,
-                                      LiteRtTensorBuffer* tensors,
-                                      unsigned count) {
-  bstorm_result rc = BSTORM_RESULT_INITIALIZER();
-  struct bstorm_Blobs blobs;
-  B_STORM_ASSERT(fileName);
-  B_STORM_ASSERT(tensors);
-  B_STORM_CHECKED_CALL(rc, bstorm_LiteRtExample_p_BlobsFromTensors,
-                       (&blobs, tensors, count), err_convert);
-  if (count == 1) {
-    B_STORM_CHECKED_CALL(rc, bstorm_flatbuf_write_blob,
-                         (fileName, blobs.entry[0]), err_write);
-  } else {
-    B_STORM_CHECKED_CALL(rc, bstorm_flatbuf_write_blobs, (fileName, &blobs),
-                         err_write);
-  }
-  bstorm_Blobs_Clear(&blobs);
-  bstorm_Blobs_Uninit(&blobs);
-  return 0;
+int bstorm_LiteRtExample_WriteTensors(const char* fileName, LiteRtTensorBuffer* tensors, unsigned count)
+{
+    bstorm_result rc = BSTORM_RESULT_INITIALIZER();
+    struct bstorm_Blobs blobs;
+    B_STORM_ASSERT(fileName);
+    B_STORM_ASSERT(tensors);
+    B_STORM_CHECKED_CALL(rc, bstorm_LiteRtExample_p_BlobsFromTensors, (&blobs, tensors, count), err_convert);
+    if (count == 1) {
+        B_STORM_CHECKED_CALL(rc, bstorm_flatbuf_write_blob, (fileName, blobs.entry[0]), err_write);
+    } else {
+        B_STORM_CHECKED_CALL(rc, bstorm_flatbuf_write_blobs, (fileName, &blobs), err_write);
+    }
+    bstorm_Blobs_Clear(&blobs);
+    bstorm_Blobs_Uninit(&blobs);
+    return 0;
 
 err_write:
-  bstorm_Blobs_Clear(&blobs);
-  bstorm_Blobs_Uninit(&blobs);
+    bstorm_Blobs_Clear(&blobs);
+    bstorm_Blobs_Uninit(&blobs);
 err_convert:
-  return -1;
+    return -1;
 }
 
-int bstorm_LiteRtExample_BlobsFromTensors(struct bstorm_Blobs* blobs,
-                                          LiteRtTensorBuffer* tensors,
-                                          unsigned count) {
-  bstorm_result rc = BSTORM_RESULT_INITIALIZER();
-  B_STORM_CHECKED_CALL(rc, bstorm_LiteRtExample_p_BlobsFromTensors,
-                       (blobs, tensors, count), err_blobs);
-  return 0;
+int bstorm_LiteRtExample_BlobsFromTensors(struct bstorm_Blobs* blobs, LiteRtTensorBuffer* tensors, unsigned count)
+{
+    bstorm_result rc = BSTORM_RESULT_INITIALIZER();
+    B_STORM_CHECKED_CALL(rc, bstorm_LiteRtExample_p_BlobsFromTensors, (blobs, tensors, count), err_blobs);
+    return 0;
 
 err_blobs:
-  return -1;
+    return -1;
 }

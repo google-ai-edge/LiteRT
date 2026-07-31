@@ -48,15 +48,12 @@
 #include "litert/c/litert_tensor_buffer.h"
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-int bstorm_LiteRtExample_WriteTensors(const char* fileName,
-                                      LiteRtTensorBuffer* tensors,
-                                      unsigned count);
-int bstorm_LiteRtExample_BlobsFromTensors(struct bstorm_Blobs* blobs,
-                                          LiteRtTensorBuffer* tensors,
-                                          unsigned count);
+int bstorm_LiteRtExample_WriteTensors(const char* fileName, LiteRtTensorBuffer* tensors, unsigned count);
+int bstorm_LiteRtExample_BlobsFromTensors(struct bstorm_Blobs* blobs, LiteRtTensorBuffer* tensors, unsigned count);
 
 #ifdef __cplusplus
 } /* extern "C" */

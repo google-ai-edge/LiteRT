@@ -47,6 +47,7 @@
 
 #include "bstorm_common.h"
 #include "bstorm_types.h"
+
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -58,40 +59,35 @@ extern "C" {
 #endif
 
 enum bstorm_engine_control {
-  bstorm_engine_disable,
-  bstorm_engine_default,
-  bstorm_engine_enable
+    bstorm_engine_disable,
+    bstorm_engine_default,
+    bstorm_engine_enable
 };
 
 enum bstorm_engine_control bstorm_engine_control_from_arg(const char* arg);
 bool bstorm_boolean_from_arg(const char* arg);
 
-bstorm_result bstorm_LiteRt_BlobShapeFromTensor(struct bstorm_BlobShape* shape,
-                                                LiteRtTensor tensor);
+bstorm_result bstorm_LiteRt_BlobShapeFromTensor(struct bstorm_BlobShape *shape, LiteRtTensor tensor);
 
-bstorm_result bstorm_LiteRt_BlobFromTensorBuffer(struct bstorm_Blob* blob,
-                                                 LiteRtTensorBuffer tensor);
+bstorm_result bstorm_LiteRt_BlobFromTensorBuffer(struct bstorm_Blob *blob, LiteRtTensorBuffer tensor);
 
-bstorm_result bstorm_LiteRt_LinkPayload(LiteRtRankedTensorType& tensor_type,
-                                        void* tensor_data, size_t packed_size,
-                                        struct bstorm_Blob& blob);
+bstorm_result bstorm_LiteRt_LinkPayload(LiteRtRankedTensorType &tensor_type, void *tensor_data, size_t packed_size, struct bstorm_Blob &blob);
 
-bstorm_result bstorm_LiteRt_convert_datatype(LiteRtElementType litert_datatype,
-                                             enum bstorm_DataType& datatype);
+bstorm_result bstorm_LiteRt_convert_datatype(LiteRtElementType litert_datatype,enum bstorm_DataType &datatype);
 
 bstorm_result bstorm_LiteRt_to_bstorm_error(LiteRtStatus status);
 
-#define B_STORM_CHECKED_LITERT_CALL(rc, f, args, label)                     \
-  do {                                                                      \
-    if (LiteRtStatus s = f args; s != kLiteRtStatusOk) {                    \
-      rc = bstorm_LiteRt_to_bstorm_error(s);                                \
-      rc = B_STORM_TRACE_ERROR(rc, "Call to function '%s' has failed", #f); \
-      goto label;                                                           \
-    }                                                                       \
-  } while (0)
+#define B_STORM_CHECKED_LITERT_CALL(rc, f, args, label)\
+    do {\
+        if (LiteRtStatus s = f args; s != kLiteRtStatusOk) { \
+            rc=bstorm_LiteRt_to_bstorm_error(s);\
+            rc=B_STORM_TRACE_ERROR(rc,"Call to function '%s' has failed", #f);goto label;\
+        }\
+    } while(0)
 
 #ifdef __cplusplus
 } /* extern "C" */
 #endif
 
 #endif /* #ifndef BSTORM_UTIL_LITERT_H_ */
+

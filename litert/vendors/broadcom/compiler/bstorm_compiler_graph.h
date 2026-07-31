@@ -43,46 +43,48 @@
 #ifndef BSTORM_COMPILER_GRAPH_H_
 #define BSTORM_COMPILER_GRAPH_H_
 
-#include <string>
-#include <vector>
-
-#include "bstm/compiler/bstorm_compiler_bstm_offline.h"
 #include "bstorm_common.h"
 #include "bstorm_operations.h"
 #include "bstorm_types.h"
-#include "common/bstorm_util_litert.h"
-#include "litert/cc/internal/litert_extended_model.h"
+
 #include "litert/cc/litert_model.h"
+#include "litert/cc/internal/litert_extended_model.h"
+#include "bstm/compiler/bstorm_compiler_bstm_offline.h"
+#include "common/bstorm_util_litert.h"
+
+#include <string>
+#include <vector>
 
 class bstorm_LiteRt_compiler_graph {
- public:
-  bstorm_LiteRt_compiler_graph() {}
-  ~bstorm_LiteRt_compiler_graph();
+  public:
+    bstorm_LiteRt_compiler_graph() {}
+    ~bstorm_LiteRt_compiler_graph();
 
-  bstorm_result create_graph(LiteRtSubgraph subgraph);
-  bstorm_result node_convert(const litert::Op& op);
-  bstorm_result get_supported_operations(struct bstorm_context* context,
-                                         std::vector<bool>& supported_nodes);
-  bstorm_result graph_write(const std::string& name, const std::string& prefix);
-  bstorm_result graph_precompile_to_file(struct bstorm_context* context,
-                                         const std::string& bstm_file);
-  bstorm_result graph_precompile_to_buffer(
-      struct bstorm_context* context,
-      struct bstorm_compiler_bstm_offline_output_buffer& out);
+    bstorm_result create_graph(LiteRtSubgraph subgraph);
+    bstorm_result node_convert(const litert::Op &op);
+    bstorm_result get_supported_operations(struct bstorm_context *context, std::vector<bool> &supported_nodes);
+    bstorm_result graph_write(const std::string& name, const std::string& prefix);
+    bstorm_result graph_precompile_to_file(struct bstorm_context* context, const std::string& bstm_file,
+                                           const std::string& tool_path = "",
+                                           const std::string& tool_options = "",
+                                           bool bstm_compress = true);
+    bstorm_result graph_precompile_to_buffer(struct bstorm_context* context,
+                                             struct bstorm_compiler_bstm_offline_output_buffer& out,
+                                             const std::string& tool_path = "",
+                                             const std::string& tool_options = "",
+                                             bool bstm_compress = true);
 
- private:
-  bstorm_result operation_convert(struct bstorm_Operation& operation,
-                                  LiteRtOp op);
+  private:
+    bstorm_result operation_convert(struct bstorm_Operation& operation, LiteRtOp op);
 
-  template <typename TensorContainer>
-  bstorm_result read_shapes(const TensorContainer& tensors,
-                            struct bstorm_Blobs& blobs,
-                            std::vector<int>& indices);
-  bstorm_result link_blobs(const litert::SubgraphInputs& tensors,
-                           struct bstorm_Blobs& blobs);
+    template <typename TensorContainer>
+    bstorm_result read_shapes(const TensorContainer &tensors,
+                              struct bstorm_Blobs &blobs,
+                              std::vector<int> &indices);
+    bstorm_result link_blobs(const litert::SubgraphInputs &tensors, struct bstorm_Blobs &blobs);
 
-  LiteRtSubgraph subgraph_ = nullptr;
-  struct bstorm_Graph* bstorm_graph_ = nullptr;
-  unsigned org_blobs_count_ = 0;
+    LiteRtSubgraph subgraph_ = nullptr;
+    struct bstorm_Graph *bstorm_graph_ = nullptr;
+    unsigned org_blobs_count_ = 0;
 };
 #endif /* #ifndef BSTORM_COMPILER_GRAPH_H_ */

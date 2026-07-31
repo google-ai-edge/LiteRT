@@ -43,305 +43,273 @@
  *
  ******************************************************************************/
 /* #define BSTORM_DEBUG_LEVEL_VERBOSE 1 */
+#include "bstorm_core_internal.h"
 #include "bstorm_util_litert.h"
+
+#include "bstorm_common.h"
+#include "bstorm_types.h"
+
+#include "litert/c/litert_model.h"
 
 #include <complex>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
-#include "bstorm_common.h"
-#include "bstorm_core_internal.h"
-#include "bstorm_types.h"
-#include "litert/c/litert_model.h"
+enum bstorm_engine_control bstorm_engine_control_from_arg(const char* arg)
+{
+    int v = atoi(arg);
 
-enum bstorm_engine_control bstorm_engine_control_from_arg(const char* arg) {
-  int v = atoi(arg);
-
-  if (v == 0) {
-    return bstorm_engine_disable;
-  } else if (v < 0) {
-    return bstorm_engine_default;
-  } else {
-    return bstorm_engine_enable;
-  }
+    if (v == 0) {
+        return bstorm_engine_disable;
+    } else if (v < 0) {
+        return bstorm_engine_default;
+    } else {
+        return bstorm_engine_enable;
+    }
 }
 
-bool bstorm_boolean_from_arg(const char* arg) {
-  int v = atoi(arg);
+bool bstorm_boolean_from_arg(const char* arg)
+{
+    int v = atoi(arg);
 
-  if (strcmp(arg, "y") == 0 || strcmp(arg, "yes") == 0 ||
-      strcmp(arg, "on") == 0) {
-    return true;
-  }
-  if (strcmp(arg, "n") == 0 || strcmp(arg, "no") == 0 ||
-      strcmp(arg, "off") == 0) {
-    return false;
-  }
-  return v != 0;
+    if (strcmp(arg, "y") == 0 || strcmp(arg, "yes") == 0 || strcmp(arg, "on") == 0 ) {
+        return true;
+    }
+    if (strcmp(arg, "n") == 0 || strcmp(arg, "no") == 0 || strcmp(arg, "off") == 0 ) {
+        return false;
+    }
+    return v != 0;
 }
 
-bstorm_result bstorm_LiteRt_to_bstorm_error(LiteRtStatus status) {
-  bstorm_result rc = BSTORM_RESULT_INITIALIZER();
-  switch (status) {
-    case kLiteRtStatusOk:
-      BSTORM_ERROR(rc, Success);
-      break;
-    case kLiteRtStatusErrorInvalidArgument:
-      BSTORM_ERROR(rc, InvalidParameter);
-      break;
-    case kLiteRtStatusErrorNotFound:
-      BSTORM_ERROR(rc, NotFound);
-      break;
-    case kLiteRtStatusErrorUnsupported:
-      BSTORM_ERROR(rc, NotSupported);
-      break;
-    case kLiteRtStatusErrorRuntimeFailure:
-      BSTORM_ERROR(rc, OsError);
-      break;
-    case kLiteRtStatusErrorMemoryAllocationFailure:
-      BSTORM_ERROR(rc, OutOfMemory);
-      break;
-    case kLiteRtStatusErrorTimeoutExpired:
-      BSTORM_ERROR(rc, Timeout);
-      break;
-    default:
-      BSTORM_ERROR(rc, Unknown);
-      break;
-  }
-  return rc;
+bstorm_result bstorm_LiteRt_to_bstorm_error(LiteRtStatus status)
+{
+    bstorm_result rc = BSTORM_RESULT_INITIALIZER();
+    switch(status) {
+        case kLiteRtStatusOk:
+            BSTORM_ERROR(rc, Success);
+            break;
+        case kLiteRtStatusErrorInvalidArgument:
+            BSTORM_ERROR(rc, InvalidParameter);
+            break;
+        case kLiteRtStatusErrorNotFound:
+            BSTORM_ERROR(rc, NotFound);
+            break;
+        case kLiteRtStatusErrorUnsupported:
+            BSTORM_ERROR(rc, NotSupported);
+            break;
+        case kLiteRtStatusErrorRuntimeFailure:
+            BSTORM_ERROR(rc, OsError);
+            break;
+        case kLiteRtStatusErrorMemoryAllocationFailure:
+            BSTORM_ERROR(rc, OutOfMemory);
+            break;
+        case kLiteRtStatusErrorTimeoutExpired:
+            BSTORM_ERROR(rc, Timeout);
+            break;
+        default:
+            BSTORM_ERROR(rc, Unknown);
+            break;
+    }
+    return rc;
 }
 
-bstorm_result bstorm_LiteRt_convert_datatype(LiteRtElementType litert_datatype,
-                                             enum bstorm_DataType& datatype) {
-  bstorm_result rc = BSTORM_RESULT_INITIALIZER();
+bstorm_result bstorm_LiteRt_convert_datatype(
+    LiteRtElementType litert_datatype, enum bstorm_DataType &datatype)
+{
+    bstorm_result rc = BSTORM_RESULT_INITIALIZER();
 
-  switch (litert_datatype) {
-    case kLiteRtElementTypeFloat32:
-      datatype = bstorm_DataType_Float32;
-      break;
-    case kLiteRtElementTypeUInt8:
-      datatype = bstorm_DataType_Uint8;
-      break;
-    case kLiteRtElementTypeInt8:
-      datatype = bstorm_DataType_Int8;
-      break;
-    case kLiteRtElementTypeInt32:
-      datatype = bstorm_DataType_Int32;
-      break;
-    case kLiteRtElementTypeUInt32:
-      datatype = bstorm_DataType_Uint32;
-      break;
-    case kLiteRtElementTypeBool:
-      datatype = bstorm_DataType_Bool;
-      break;
-    case kLiteRtElementTypeFloat16:
-      datatype = bstorm_DataType_Float16;
-      break;
-    case kLiteRtElementTypeInt16:
-      datatype = bstorm_DataType_Int16;
-      break;
-    case kLiteRtElementTypeInt64:
-      datatype = bstorm_DataType_Int64;
-      break;
-    case kLiteRtElementTypeComplex64:
-      datatype = bstorm_DataType_Complex64;
-      break;
-    default:
-      datatype = bstorm_DataType_Unknown;
-      B_STORM_ERROR_VERBOSE(rc, NotSupported, err_convert,
-                            "Not supported data type:%u", litert_datatype);
-  }
-  return rc;
+    switch (litert_datatype) {
+        case kLiteRtElementTypeFloat32:
+            datatype = bstorm_DataType_Float32;
+            break;
+        case kLiteRtElementTypeUInt8:
+            datatype = bstorm_DataType_Uint8;
+            break;
+        case kLiteRtElementTypeInt8:
+            datatype = bstorm_DataType_Int8;
+            break;
+        case kLiteRtElementTypeInt32:
+            datatype = bstorm_DataType_Int32;
+            break;
+        case kLiteRtElementTypeUInt32:
+            datatype = bstorm_DataType_Uint32;
+            break;
+        case kLiteRtElementTypeBool:
+            datatype = bstorm_DataType_Bool;
+            break;
+        case kLiteRtElementTypeFloat16:
+            datatype = bstorm_DataType_Float16;
+            break;
+        case kLiteRtElementTypeInt16:
+            datatype = bstorm_DataType_Int16;
+            break;
+        case kLiteRtElementTypeInt64:
+            datatype = bstorm_DataType_Int64;
+            break;
+        case kLiteRtElementTypeComplex64:
+            datatype = bstorm_DataType_Complex64;
+            break;
+        default:
+            datatype = bstorm_DataType_Unknown;
+            B_STORM_ERROR_VERBOSE(rc, NotSupported, err_convert,
+                "Not supported data type:%u", litert_datatype);
+    }
+    return rc;
 
 err_convert:
-  return rc;
+    return rc;
 }
 
 static bstorm_result bstorm_LiteRt_p_read_shape(
-    LiteRtRankedTensorType& tensor_type, struct bstorm_BlobShape& shape) {
-  bstorm_result rc = BSTORM_RESULT_INITIALIZER();
-  unsigned size = (unsigned)tensor_type.layout.rank;
-  B_STORM_PRECONDITION_VERBOSE(rc, size >= 0 && size <= BSTORM_BLOB_SHAPE_MAX,
-                               err_args, "tensor_type.layout.rank=%u", size);
-  B_STORM_DEBUG_VERBOSE(">bstorm_LiteRt_read_shape: %p dimensions:%u",
-                        (void*)&shape, size);
-  B_STORM_CHECKED_CALL(rc, bstorm_BlobShape_SetDimensions, (&shape, NULL, size),
-                       err_dimensions);
-  for (unsigned i = 0; i < size; i++) {
-    auto n = tensor_type.layout.dimensions[i];
-    B_STORM_CONDITION(rc, n >= 0, err_size);
-    B_STORM_DEBUG_VERBOSE(">bstorm_LiteRt_read_shape: %p %u", (void*)&shape, n);
-    B_STORM_CHECKED_CALL(rc, bstorm_BlobShape_SetDimension, (&shape, i, n),
-                         err_dimension);
-  }
-  B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_convert_datatype,
-                       (tensor_type.element_type, shape.type), err_type);
-  B_STORM_DEBUG_VERBOSE("<bstorm_LiteRt_read_shape: %p dimensions:%u",
-                        (void*)&shape, size);
-  return rc;
+    LiteRtRankedTensorType &tensor_type, struct bstorm_BlobShape &shape)
+{
+    bstorm_result rc = BSTORM_RESULT_INITIALIZER();
+    unsigned size = (unsigned) tensor_type.layout.rank;
+    B_STORM_PRECONDITION_VERBOSE(rc, size >= 0 && size <= BSTORM_BLOB_SHAPE_MAX,
+                                 err_args, "tensor_type.layout.rank=%u", size);
+    B_STORM_DEBUG_VERBOSE(">bstorm_LiteRt_read_shape: %p dimensions:%u", (void *)&shape, size);
+    B_STORM_CHECKED_CALL(rc, bstorm_BlobShape_SetDimensions, (&shape, NULL, size), err_dimensions);
+    for (unsigned i = 0; i < size; i++) {
+        auto n = tensor_type.layout.dimensions[i];
+        B_STORM_CONDITION(rc, n >= 0, err_size);
+        B_STORM_DEBUG_VERBOSE(">bstorm_LiteRt_read_shape: %p %u", (void *)&shape, n);
+        B_STORM_CHECKED_CALL(rc, bstorm_BlobShape_SetDimension, (&shape, i, n), err_dimension);
+    }
+    B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_convert_datatype, (tensor_type.element_type, shape.type), err_type);
+    B_STORM_DEBUG_VERBOSE("<bstorm_LiteRt_read_shape: %p dimensions:%u", (void *)&shape, size);
+    return rc;
 
 err_type:
 err_size:
 err_dimension:
 err_dimensions:
 err_args:
-  return rc;
+    return rc;
 }
 
 template <typename T>
-static bstorm_result bstorm_LiteRt_use_payload(struct bstorm_Blob& blob,
-                                               T* src_ptr, unsigned count) {
-  bstorm_result rc = BSTORM_RESULT_INITIALIZER();
-  count = count / sizeof(T);
-  unsigned dst_count = bstorm_BlobShape_Scalar(&blob.shape);
+static bstorm_result bstorm_LiteRt_use_payload(struct bstorm_Blob &blob,
+                                                   T *src_ptr, unsigned count)
+{
+    bstorm_result rc = BSTORM_RESULT_INITIALIZER();
+    count = count / sizeof(T);
+    unsigned dst_count = bstorm_BlobShape_Scalar(&blob.shape);
 
-  B_STORM_DEBUG_VERBOSE(
-      "bstorm_LiteRt_read_input_payload: shape:%p count:%u dst_count:%u",
-      (void*)&blob.shape, count, dst_count);
-  B_STORM_CONDITION_VERBOSE(rc, count == dst_count, err_args, "%u != %u", count,
-                            dst_count);
-  blob.data = reinterpret_cast<void*>(src_ptr);
-  return rc;
+    B_STORM_DEBUG_VERBOSE( "bstorm_LiteRt_read_input_payload: shape:%p count:%u dst_count:%u",
+        (void *)&blob.shape, count, dst_count);
+    B_STORM_CONDITION_VERBOSE(rc, count == dst_count, err_args, "%u != %u", count, dst_count);
+    blob.data = reinterpret_cast<void *>(src_ptr);
+    return rc;
 
 err_args:
-  return rc;
+    return rc;
 }
 
-bstorm_result bstorm_LiteRt_LinkPayload(LiteRtRankedTensorType& tensor_type,
-                                        void* tensor_data, size_t packed_size,
-                                        struct bstorm_Blob& blob) {
-  bstorm_result rc = BSTORM_RESULT_INITIALIZER();
+bstorm_result bstorm_LiteRt_LinkPayload(
+    LiteRtRankedTensorType &tensor_type, void *tensor_data, size_t packed_size,
+    struct bstorm_Blob &blob)
+{
+    bstorm_result rc = BSTORM_RESULT_INITIALIZER();
 
-  switch (tensor_type.element_type) {
-    case kLiteRtElementTypeFloat32:
-      B_STORM_CHECKED_CALL(
-          rc, bstorm_LiteRt_use_payload<float>,
-          (blob, static_cast<float*>(tensor_data), packed_size), err_input);
-      break;
-    case kLiteRtElementTypeInt32:
-      B_STORM_CHECKED_CALL(
-          rc, bstorm_LiteRt_use_payload<int32_t>,
-          (blob, static_cast<int32_t*>(tensor_data), packed_size), err_input);
-      break;
-    case kLiteRtElementTypeUInt32:
-      B_STORM_CHECKED_CALL(
-          rc, bstorm_LiteRt_use_payload<uint32_t>,
-          (blob, static_cast<uint32_t*>(tensor_data), packed_size), err_input);
-      break;
-    case kLiteRtElementTypeUInt8:
-      B_STORM_CHECKED_CALL(
-          rc, bstorm_LiteRt_use_payload<uint8_t>,
-          (blob, static_cast<uint8_t*>(tensor_data), packed_size), err_input);
-      break;
-    case kLiteRtElementTypeInt8:
-      B_STORM_CHECKED_CALL(
-          rc, bstorm_LiteRt_use_payload<int8_t>,
-          (blob, static_cast<int8_t*>(tensor_data), packed_size), err_input);
-      break;
-    case kLiteRtElementTypeBool:
-      B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_use_payload<bool>,
-                           (blob, static_cast<bool*>(tensor_data), packed_size),
-                           err_input);
-      break;
-    case kLiteRtElementTypeFloat16:
-      B_STORM_CHECKED_CALL(
-          rc, bstorm_LiteRt_use_payload<int16_t>,
-          (blob, static_cast<int16_t*>(tensor_data), packed_size), err_input);
-      break;
-    case kLiteRtElementTypeInt16:
-      B_STORM_CHECKED_CALL(
-          rc, bstorm_LiteRt_use_payload<int16_t>,
-          (blob, static_cast<int16_t*>(tensor_data), packed_size), err_input);
-      break;
-    case kLiteRtElementTypeInt64:
-      B_STORM_CHECKED_CALL(
-          rc, bstorm_LiteRt_use_payload<int64_t>,
-          (blob, static_cast<int64_t*>(tensor_data), packed_size), err_input);
-      break;
-    case kLiteRtElementTypeComplex64:
-      B_STORM_CHECKED_CALL(
-          rc, bstorm_LiteRt_use_payload<std::complex<float>>,
-          (blob, static_cast<std::complex<float>*>(tensor_data), packed_size),
-          err_input);
-      break;
-    default:
-      B_STORM_ERROR_VERBOSE(rc, NotSupported, err_input,
-                            "Not supported data type: %d",
-                            tensor_type.element_type);
-  }
-  return rc;
+    switch (tensor_type.element_type) {
+        case kLiteRtElementTypeFloat32:
+            B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_use_payload<float>, (blob, static_cast<float *>(tensor_data), packed_size), err_input);
+            break;
+        case kLiteRtElementTypeInt32:
+            B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_use_payload<int32_t>, (blob, static_cast<int32_t *>(tensor_data), packed_size), err_input);
+            break;
+        case kLiteRtElementTypeUInt32:
+            B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_use_payload<uint32_t>, (blob, static_cast<uint32_t *>(tensor_data), packed_size), err_input);
+            break;
+        case kLiteRtElementTypeUInt8:
+            B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_use_payload<uint8_t>, (blob, static_cast<uint8_t *>(tensor_data), packed_size), err_input);
+            break;
+        case kLiteRtElementTypeInt8:
+            B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_use_payload<int8_t>, (blob, static_cast<int8_t *>(tensor_data), packed_size), err_input);
+            break;
+        case kLiteRtElementTypeBool:
+            B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_use_payload<bool>, (blob, static_cast<bool *>(tensor_data), packed_size), err_input);
+            break;
+        case kLiteRtElementTypeFloat16:
+            B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_use_payload<int16_t>, (blob, static_cast<int16_t *>(tensor_data), packed_size), err_input);
+            break;
+        case kLiteRtElementTypeInt16:
+            B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_use_payload<int16_t>, (blob, static_cast<int16_t *>(tensor_data), packed_size), err_input);
+            break;
+        case kLiteRtElementTypeInt64:
+            B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_use_payload<int64_t>, (blob, static_cast<int64_t *>(tensor_data), packed_size), err_input);
+            break;
+        case kLiteRtElementTypeComplex64:
+            B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_use_payload<std::complex<float>>, (blob, static_cast<std::complex<float> *>(tensor_data), packed_size), err_input);
+            break;
+        default:
+            B_STORM_ERROR_VERBOSE(rc, NotSupported, err_input,
+                                  "Not supported data type: %d",
+                                  tensor_type.element_type);
+    }
+    return rc;
 
 err_input:
-  return rc;
+    return rc;
 }
 
-bstorm_result bstorm_LiteRt_BlobFromTensorBuffer(struct bstorm_Blob* blob,
-                                                 LiteRtTensorBuffer tensor) {
-  bstorm_result rc = BSTORM_RESULT_INITIALIZER();
-  LiteRtRankedTensorType tensor_type;
-  void* tensor_data;
-  size_t packed_size;
+bstorm_result bstorm_LiteRt_BlobFromTensorBuffer(
+    struct bstorm_Blob *blob, LiteRtTensorBuffer tensor)
+{
+    bstorm_result rc = BSTORM_RESULT_INITIALIZER();
+    LiteRtRankedTensorType tensor_type;
+    void *tensor_data;
+    size_t packed_size;
 
-  B_STORM_ASSERT(tensor);
-  B_STORM_ASSERT(blob);
-  bstorm_Blob_Default(blob);
-  B_STORM_CHECKED_LITERT_CALL(rc, LiteRtGetTensorBufferTensorType,
-                              (tensor, &tensor_type), err_convert);
-  B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_p_read_shape,
-                       (tensor_type, blob->shape), err_convert);
-  B_STORM_CHECKED_LITERT_CALL(rc, LiteRtGetTensorBufferPackedSize,
-                              (tensor, &packed_size), err_convert);
-  B_STORM_CHECKED_LITERT_CALL(
-      rc, LiteRtLockTensorBuffer,
-      (tensor, &tensor_data, kLiteRtTensorBufferLockModeRead), err_convert);
-  B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_LinkPayload,
-                       (tensor_type, tensor_data, packed_size, *blob),
-                       err_locked);
-  LiteRtUnlockTensorBuffer(tensor);
-  return rc;
+    B_STORM_ASSERT(tensor);
+    B_STORM_ASSERT(blob);
+    bstorm_Blob_Default(blob);
+    B_STORM_CHECKED_LITERT_CALL(rc, LiteRtGetTensorBufferTensorType, (tensor, &tensor_type), err_convert);
+    B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_p_read_shape, (tensor_type, blob->shape), err_convert);
+    B_STORM_CHECKED_LITERT_CALL(rc, LiteRtGetTensorBufferPackedSize, (tensor, &packed_size), err_convert);
+    B_STORM_CHECKED_LITERT_CALL(rc, LiteRtLockTensorBuffer, (tensor, &tensor_data, kLiteRtTensorBufferLockModeRead), err_convert);
+    B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_LinkPayload, (tensor_type, tensor_data, packed_size, *blob), err_locked);
+    LiteRtUnlockTensorBuffer(tensor);
+    return rc;
 
 err_locked:
-  LiteRtUnlockTensorBuffer(tensor);
+    LiteRtUnlockTensorBuffer(tensor);
 err_convert:
-  return rc;
+    return rc;
 }
 
-static int32_t bstorm_LiteRt_safeInt64(int64_t v) {
-  int32_t i32 = (int32_t)v;
-  B_STORM_ASSERT(v == i32);
-  return i32;
+static int32_t bstorm_LiteRt_safeInt64(int64_t v)
+{
+    int32_t i32 = (int32_t)v;
+    B_STORM_ASSERT(v == i32);
+    return i32;
 }
 
-bstorm_result bstorm_LiteRt_BlobShapeFromTensor(struct bstorm_BlobShape* shape,
-                                                LiteRtTensor tensor) {
-  bstorm_result rc = BSTORM_RESULT_INITIALIZER();
-  LiteRtRankedTensorType tensor_type;
-  LiteRtQuantizationTypeId q_type_id;
+bstorm_result bstorm_LiteRt_BlobShapeFromTensor(struct bstorm_BlobShape *shape,
+                                               LiteRtTensor tensor)
+{
+    bstorm_result rc = BSTORM_RESULT_INITIALIZER();
+    LiteRtRankedTensorType tensor_type;
+    LiteRtQuantizationTypeId q_type_id;
 
-  B_STORM_ASSERT(tensor);
-  B_STORM_ASSERT(shape);
-  bstorm_BlobShape_Default(shape);
-  B_STORM_CHECKED_LITERT_CALL(rc, LiteRtGetRankedTensorType,
-                              (tensor, &tensor_type), err_convert);
-  B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_p_read_shape, (tensor_type, *shape),
-                       err_convert);
-  B_STORM_CHECKED_LITERT_CALL(rc, LiteRtGetQuantizationTypeId,
-                              (tensor, &q_type_id), err_convert);
-  if (q_type_id == kLiteRtQuantizationPerTensor) {
-    LiteRtQuantizationPerTensor per_tensor_quant;
-    B_STORM_CHECKED_LITERT_CALL(rc, LiteRtGetPerTensorQuantization,
-                                (tensor, &per_tensor_quant), err_convert);
-    shape->quantization.type = bstorm_QuantizationType_Asymmetric;
-    shape->quantization.data.asymmetric.scale = per_tensor_quant.scale;
-    shape->quantization.data.asymmetric.zero_point =
-        bstorm_LiteRt_safeInt64(per_tensor_quant.zero_point);
-  } else if (q_type_id != kLiteRtQuantizationNone) {
-    B_STORM_ERROR_VERBOSE(rc, NotSupported, err_convert,
-                          "Unsupported quantization type: %d", q_type_id);
-  }
-  return rc;
+    B_STORM_ASSERT(tensor);
+    B_STORM_ASSERT(shape);
+    bstorm_BlobShape_Default(shape);
+    B_STORM_CHECKED_LITERT_CALL(rc, LiteRtGetRankedTensorType, (tensor, &tensor_type), err_convert);
+    B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_p_read_shape, (tensor_type, *shape), err_convert);
+    B_STORM_CHECKED_LITERT_CALL(rc, LiteRtGetQuantizationTypeId, (tensor, &q_type_id), err_convert);
+    if (q_type_id == kLiteRtQuantizationPerTensor) {
+        LiteRtQuantizationPerTensor per_tensor_quant;
+        B_STORM_CHECKED_LITERT_CALL(rc, LiteRtGetPerTensorQuantization, (tensor, &per_tensor_quant), err_convert);
+        shape->quantization.type = bstorm_QuantizationType_Asymmetric;
+        shape->quantization.data.asymmetric.scale = per_tensor_quant.scale;
+        shape->quantization.data.asymmetric.zero_point = bstorm_LiteRt_safeInt64(per_tensor_quant.zero_point);
+    } else if (q_type_id != kLiteRtQuantizationNone) {
+        B_STORM_ERROR_VERBOSE(rc, NotSupported, err_convert, "Unsupported quantization type: %d", q_type_id);
+    }
+    return rc;
 
 err_convert:
-  return rc;
+    return rc;
 }
