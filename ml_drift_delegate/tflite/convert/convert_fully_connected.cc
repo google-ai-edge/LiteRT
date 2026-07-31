@@ -20,6 +20,8 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/log/log.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
@@ -187,33 +189,33 @@ void ConvertFullyConnected(
     if (weights_tensor->type == kTfLiteInt8 ||
         weights_tensor->type == kTfLiteInt4 ||
         weights_tensor->type == kTfLiteInt2) {
-      // int4/int2 weights with affine (per-tensor or per-channel) quantization
-      // are unpacked to int8 and emitted as a FULLY_CONNECTED_INT8 op, which
-      // runs the numerically-correct int8 FC kernel. Only blockwise int4/int2
-      // (whose per-block scales require the packed kernel) stay on the
-      // FULLY_CONNECTED_INT4/INT2 packed path.
       const bool is_blockwise =
           weights_tensor->quantization.type == kTfLiteBlockwiseQuantization;
-      if (weights_tensor->type == kTfLiteInt8 || !is_blockwise) {
+      if (is_blockwise) {
+        // Native blockwise quantization stores per-block scale/zero-point in
+        // separate tensors (referenced by index) and splits the input dim into
+        // blocks. GraphFloat32's native blockwise path only supports int4;
+        // int8/int2 blockwise is unsupported.
+        if (weights_tensor->type != kTfLiteInt4) {
+          ABSL_LOG(FATAL) << "FULLY_CONNECTED with blockwise quantization only "
+                             "supports int4 weights, got: "
+                          << TfLiteTypeGetName(weights_tensor->type);
+        }
+        ::ml_drift::FullyConnectedInt4Attributes attr;
+        PopulateBlockwiseQuantizedFullyConnected(
+            context, *weights_tensor, weights_id, bias_tensor, bias_id,
+            bias_is_const, options.enable_spanned_weights, attr);
+        fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT4);
+        fc_op->attr = std::move(attr);
+      } else {
+        // Affine (per-tensor or per-channel) int8/int4/int2 weights are
+        // unpacked to int8 and emitted as a FULLY_CONNECTED_INT8 op, which runs
+        // the numerically-correct int8 FC kernel (parity with GraphFloat32).
         ::ml_drift::FullyConnectedInt8Attributes attr;
         PopulateQuantizedAttributes(weights_tensor, weights_id, bias_tensor,
                                     bias_id, bias_is_const,
                                     options.enable_spanned_weights, attr);
         fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT8);
-        fc_op->attr = std::move(attr);
-      } else if (weights_tensor->type == kTfLiteInt4) {
-        ::ml_drift::FullyConnectedInt4Attributes attr;
-        PopulateQuantizedAttributes(weights_tensor, weights_id, bias_tensor,
-                                    bias_id, bias_is_const,
-                                    options.enable_spanned_weights, attr);
-        fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT4);
-        fc_op->attr = std::move(attr);
-      } else {  // kTfLiteInt2 with block wise quantization
-        ::ml_drift::FullyConnectedInt2Attributes attr;
-        PopulateQuantizedAttributes(weights_tensor, weights_id, bias_tensor,
-                                    bias_id, bias_is_const,
-                                    options.enable_spanned_weights, attr);
-        fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT2);
         fc_op->attr = std::move(attr);
       }
     } else {
