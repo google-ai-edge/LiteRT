@@ -15,6 +15,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_SUPPORT_TOKENIZER_HUGGING_FACE_TOKENIZER_H_
 #define THIRD_PARTY_ODML_LITERT_SUPPORT_TOKENIZER_HUGGING_FACE_TOKENIZER_H_
 
+#if defined(ENABLE_HUGGINGFACE_TOKENIZER)
+
 #include <memory>
 #include <string>
 #include <utility>
@@ -69,5 +71,7 @@ class HuggingFaceTokenizer : public Tokenizer {
 };
 
 }  // namespace litert::support
+
+#endif  // defined(ENABLE_HUGGINGFACE_TOKENIZER)
 
 #endif  // THIRD_PARTY_ODML_LITERT_SUPPORT_TOKENIZER_HUGGING_FACE_TOKENIZER_H_
