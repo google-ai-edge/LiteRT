@@ -22,7 +22,7 @@
 
 namespace litert::ml_drift::ir {
 
-CustomIrOpMap GetCustomParsers() {
+CustomIrOpMap GetCustomIrParsers() {
   CustomIrOpMap parsers;
 
   parsers["odml.cache_update"] = GetAddValuesToCacheParser();

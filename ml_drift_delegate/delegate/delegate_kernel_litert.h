@@ -125,17 +125,16 @@ class DelegateKernelLiteRt : public DelegateKernel {
   }
 
  protected:
-  // Updates the create info with external tensors. In addition to this, it
-  // conducts the following tasks:
+  // A virtual function to update the create info with external tensors.
+  // In addition to this, it conducts the following tasks:
   // - It creates EnvironmentSingleton to share OpenCL resources with LiteRt
   // - It registers LiteRt BufferRequirements for the given tensor via
   // RegisterLiteRtBufferRequirements().
   // - It create TensorDescriptors which are later used to create SpatialTensor
   // in BindTensorBuffers().
-  // External tensors are computed from input_ids_/input_indices_ and
-  // output_ids_/output_indices_.
   absl::Status UpdateCreateInfoWithExternalTensors(
-      TfLiteContext* context,
+      TfLiteContext* context, const std::vector<::ml_drift::Value*>& inputs,
+      const std::vector<::ml_drift::Value*>& outputs,
       ::ml_drift::CreateGpuModelInfo& create_info) override;
 
   // Returns the storage type for the given tensor name.
@@ -193,11 +192,8 @@ class DelegateKernelLiteRt : public DelegateKernel {
   //   in NoExternalTensorsMode
   // - tensor_descriptors: reference to either input_tensor_descriptors_ or
   //   output_tensor_descriptors_ where the descriptor will be stored
-  // Processes a single tensor, keyed by TfLite tensor index and IrModel
-  // ValueId.
   absl::Status ProcessTensor(
-      TfLiteContext* context, uint32_t tensor_index,
-      ::ml_drift::ValueId value_id, int index,
+      TfLiteContext* context, ::ml_drift::Value* value, int index,
       const TensorProcessingContext& proc_context, bool no_external_tensor_mode,
       std::vector<::ml_drift::TensorDescriptor>& tensor_descriptors);
 

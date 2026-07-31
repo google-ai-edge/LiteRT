@@ -25,11 +25,9 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/synchronization/blocking_counter.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
-#include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
-#include "ml_drift_delegate/delegate/composite/ir/litert_op_selector.h"
 #include "ml_drift_delegate/delegate/composite/litert_op_selector.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
 #include "ml_drift_delegate/delegate/delegate_options.h"
@@ -89,13 +87,13 @@ class DelegateKernel {
 
  protected:
   // A virtual function to update the create_info with external tensors.
-  // External tensors are computed from input_ids_/input_indices_ and
-  // output_ids_/output_indices_, which are populated by both the GraphFloat32
-  // and IrModel initialization paths before this is called (so no Value* lists
-  // are needed).
+  // inputs and outputs are the list of Value* that are used in the GraphFloat32
+  // model.
   // Used external tensors are added to external_tensor_ids_.
   virtual absl::Status UpdateCreateInfoWithExternalTensors(
-      TfLiteContext* context, ::ml_drift::CreateGpuModelInfo& create_info) = 0;
+      TfLiteContext* context, const std::vector<::ml_drift::Value*>& inputs,
+      const std::vector<::ml_drift::Value*>& outputs,
+      ::ml_drift::CreateGpuModelInfo& create_info) = 0;
 
   // Returns true if the given id is an external shared constant tensor.
   bool IsExternalSharedConstantTensor(::ml_drift::ValueId id) {
@@ -153,37 +151,6 @@ class DelegateKernel {
       TfLiteContext* context, const TfLiteDelegateParams* delegate_params,
       const ::ml_drift::CreateGpuModelInfo& create_info,
       ::ml_drift::GraphFloat32* graph);
-
-  // ---- IrModel path (gated by options->use_ir_model). ----
-  // These mirror the GraphFloat32 helpers above but operate on an IrModel and
-  // the IrModel-specific op selector. They are only used when use_ir_model is
-  // set; the legacy GraphFloat32 path above is unchanged.
-  absl::Status InitializeIrModel(TfLiteContext* context,
-                                 const TfLiteDelegateParams* delegate_params);
-
-  absl::Status IrModelToGpuModelWithGpuConverters(
-      ::ml_drift::ir::IrModel* model,
-      ::ml_drift::CreateGpuModelInfo& create_info,
-      ::ml_drift::GpuModel* gpu_model,
-      ::litert::ml_drift::ir::LiteRtOpSelector* op_selector);
-
-  absl::Status InitInferenceContextFromSerializedData(
-      TfLiteContext* context, const TfLiteDelegateParams* delegate_params,
-      const ::ml_drift::CreateGpuModelInfo& create_info,
-      ::ml_drift::ir::IrModel* model,
-      ::litert::ml_drift::ir::LiteRtOpSelector* op_selector);
-
-  absl::Status InitInferenceContextFromGraph(
-      TfLiteContext* context, const TfLiteDelegateParams* delegate_params,
-      const ::ml_drift::CreateGpuModelInfo& create_info,
-      ::ml_drift::ir::IrModel* model,
-      ::litert::ml_drift::ir::LiteRtOpSelector* op_selector,
-      std::vector<uint8_t>* serialized_model);
-
-  absl::Status InitInferenceContext(
-      TfLiteContext* context, const TfLiteDelegateParams* delegate_params,
-      const ::ml_drift::CreateGpuModelInfo& create_info,
-      ::ml_drift::ir::IrModel* model);
 
   // Creates a new SerializationWeightCache and returns it. If the serialization
   // is disabled, it will return a nullptr. If there is an error, it will return
