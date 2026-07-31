@@ -262,6 +262,16 @@ LiteRtStatus LrtOptionsToGoogleTensorOptions(
       lrt_options, &extra_options_path));
   google_tensor_options.set_extra_options_path(extra_options_path);
 
+#ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
+  // EXPERIMENTAL ENABLE INPUT VALIDATOR
+  bool experimental_enable_input_validator;
+  LITERT_RETURN_IF_ERROR(
+      LrtGoogleTensorOptionsGetExperimentalEnableInputValidator(
+          lrt_options, &experimental_enable_input_validator));
+  google_tensor_options.set_experimental_enable_input_validator(
+      experimental_enable_input_validator);
+#endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
+
   return kLiteRtStatusOk;
 }
 

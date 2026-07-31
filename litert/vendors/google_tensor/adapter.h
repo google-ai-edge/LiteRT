@@ -15,9 +15,11 @@
 #define ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_ADAPTER_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
@@ -50,6 +52,13 @@ class Adapter {
   virtual void FreeCompiledCode(char** compiled_code_data,
                                 size_t* compiled_code_sizes,
                                 size_t num_bytecodes) = 0;
+
+  // Checks which operations in the TFLite flatbuffer are supported/unsupported.
+  // Returns a vector of indices of the unsupported operations in the
+  // flatbuffer.
+  virtual Expected<std::vector<int32_t>> GetUnsupportedOps(
+      const char* tfl_buffer_data, size_t tfl_buffer_size, const char* options,
+      size_t options_size) = 0;
 };
 
 }  // namespace litert::google_tensor

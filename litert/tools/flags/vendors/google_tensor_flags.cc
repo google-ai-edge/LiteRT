@@ -140,6 +140,11 @@ ABSL_FLAG(
     std::string, google_tensor_extra_options_path, "",
     "Path to a file containing extra compiler options file for Google Tensor.");
 
+// copybara:uncomment_begin(google-only)
+// ABSL_FLAG(bool, google_tensor_experimental_enable_input_validator, false,
+//           "Whether to enable the MLIR input validator pass.");
+// copybara:uncomment_end
+
 ABSL_FLAG(
     litert::google_tensor::GoogleTensorOptions::PerformanceMode,
     google_tensor_performance_mode,
@@ -217,6 +222,10 @@ Expected<void> UpdateGoogleTensorOptionsFromFlags(
       absl::GetFlag(FLAGS_google_tensor_op_filters_proto));
   options.SetExtraOptionsPath(
       absl::GetFlag(FLAGS_google_tensor_extra_options_path));
+  // copybara:uncomment_begin(google-only)
+  // options.SetExperimentalEnableInputValidator(
+      // absl::GetFlag(FLAGS_google_tensor_experimental_enable_input_validator));
+  // copybara:uncomment_end
   options.SetPerformanceMode(
       ::absl::GetFlag(::FLAGS_google_tensor_performance_mode));
   return {};

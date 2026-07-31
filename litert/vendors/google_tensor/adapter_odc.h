@@ -16,7 +16,9 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_ADAPTER_ODC_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_shared_library.h"
@@ -43,6 +45,10 @@ class AdapterOdc : public Adapter {
                          char*** compiled_code_data,
                          size_t** compiled_code_sizes,
                          size_t* num_bytecodes) override;
+
+  Expected<std::vector<int32_t>> GetUnsupportedOps(
+      const char* tfl_buffer_data, size_t tfl_buffer_size, const char* options,
+      size_t options_size) override;
 
   bool IsAot() const override { return false; }
 
