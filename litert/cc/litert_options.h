@@ -11,6 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+// SPDX-License-Identifier: Apache-2.0
+//
 
 #ifndef ODML_LITERT_LITERT_CC_LITERT_COMPILATION_OPTIONS_H_
 #define ODML_LITERT_LITERT_CC_LITERT_COMPILATION_OPTIONS_H_
@@ -25,6 +29,7 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
+#include "litert/c/options/litert_arm_options.h"
 #include "litert/c/options/litert_compiler_options.h"
 #include "litert/c/options/litert_cpu_options.h"
 #include "litert/c/options/litert_google_tensor_options.h"
@@ -44,6 +49,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/options/litert_arm_options.h"
 #include "litert/cc/options/litert_compiler_options.h"
 #include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
@@ -375,6 +381,13 @@ class Options {
     return options_impl::EnsureOption(samsung_options_);
   }
 
+  /// Returns a reference to the Arm options.
+  ///
+  /// Use this to configure Arm-specific settings.
+  Expected<arm::ArmOptions&> GetArmOptions() {
+    return options_impl::EnsureOption(arm_options_);
+  }
+
   /// Returns a reference to the runtime options.
   Expected<RuntimeOptions&> GetRuntimeOptions() {
     return options_impl::EnsureOption(runtime_options_);
@@ -431,6 +444,9 @@ class Options {
         runtime, litert_options, options.samsung_options_,
         LrtGetOpaqueSamsungOptionsData));
     LITERT_RETURN_IF_ERROR(options_impl::AppendAndResetOpaqueData(
+        runtime, litert_options, options.arm_options_,
+        LrtGetOpaqueArmOptionsData));
+    LITERT_RETURN_IF_ERROR(options_impl::AppendAndResetOpaqueData(
         runtime, litert_options, options.runtime_options_,
         LrtGetOpaqueRuntimeOptionsData));
     LITERT_RETURN_IF_ERROR(options_impl::AppendAndResetOpaqueData(
@@ -454,6 +470,7 @@ class Options {
   std::optional<google_tensor::GoogleTensorOptions> google_tensor_options_;
   std::optional<intel_openvino::IntelOpenVinoOptions> intel_openvino_options_;
   std::optional<samsung::SamsungOptions> samsung_options_;
+  std::optional<arm::ArmOptions> arm_options_;
   std::optional<RuntimeOptions> runtime_options_;
   std::optional<CompilerOptions> compiler_options_;
 };

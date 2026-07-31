@@ -11,6 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+#
 
 cmake_minimum_required(VERSION 3.20)
 include(CheckIncludeFileCXX)
@@ -315,6 +319,13 @@ if(HAVE_OPENVINO_HDR)
   _litert_add_dispatch_so(OpenVINO "intel_openvino/dispatch" "OpenVINO")
 else()
   message(STATUS "Skipping OpenVINO dispatch: openvino/openvino.hpp not found")
+endif()
+
+# Arm
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/arm/dispatch/dispatch_api.cc")
+  _litert_add_dispatch_so(Arm "arm/dispatch" "Arm")
+else()
+  message(STATUS "Skipping Arm dispatch: arm/dispatch/dispatch_api.cc not found")
 endif()
 
 # Qualcomm

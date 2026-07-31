@@ -11,6 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+#
 
 load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
@@ -1178,6 +1182,7 @@ cc_library_with_testonly_vis(
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
         "//litert/c/internal:litert_logging",
+        "//litert/c/options:litert_arm_options",
         "//litert/c/options:litert_compiler_options",
         "//litert/c/options:litert_cpu_options",
         "//litert/c/options:litert_google_tensor_options",
@@ -1191,6 +1196,7 @@ cc_library_with_testonly_vis(
         "//litert/cc/internal:litert_runtime_proxy_api",
         "//litert/cc/internal:scoped_file",
         "//litert/cc/internal:scoped_weight_source",
+        "//litert/cc/options:litert_arm_options",
         "//litert/cc/options:litert_compiler_options",
         "//litert/cc/options:litert_cpu_options",
         "//litert/cc/options:litert_google_tensor_options",
@@ -1327,6 +1333,7 @@ cc_library(
         "litert_ranked_tensor_type.h",
         "litert_tensor_buffer.h",
         "litert_tensor_buffer_requirements.h",
+        "//litert/cc/options:litert_arm_options.h",
         "//litert/cc/options:litert_compiler_options.h",
         "//litert/cc/options:litert_cpu_options.h",
         "//litert/cc/options:litert_google_tensor_options.h",

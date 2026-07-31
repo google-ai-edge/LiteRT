@@ -11,6 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+#
 
 load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@build_bazel_rules_apple//apple:ios.bzl", "ios_framework", "ios_unit_test")
@@ -808,6 +812,7 @@ LITERT_C_API_COMMON_DEPS = [
     "//litert/c/internal:litert_tensor_buffer_registry",
     "//litert/c/options:litert_cpu_options",
     # copybara:uncomment "//litert/c/options/google:litert_darwinn_runtime_options",
+    "//litert/c/options:litert_arm_options",
     "//litert/c/options:litert_google_tensor_options_type",
     "//litert/c/options:litert_google_tensor_options",
     "//litert/c/options:litert_gpu_options",
