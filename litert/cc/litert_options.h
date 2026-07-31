@@ -11,6 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+// SPDX-License-Identifier: Apache-2.0
+//
 
 #ifndef ODML_LITERT_LITERT_CC_LITERT_COMPILATION_OPTIONS_H_
 #define ODML_LITERT_LITERT_CC_LITERT_COMPILATION_OPTIONS_H_
@@ -36,6 +40,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/options/litert_arm_options.h"  // IWYU pragma: keep 
 #include "litert/cc/options/litert_compiler_options.h"  // IWYU pragma: keep
 #include "litert/cc/options/litert_concrete_options_base.h"
 #include "litert/cc/options/litert_cpu_options.h"  // IWYU pragma: keep
@@ -366,6 +371,13 @@ class Options {
   ///
   /// Use this to configure CPU-specific settings.
   Expected<CpuOptions&> GetCpuOptions() { return GetOptions<CpuOptions>(); }
+
+  /// Returns a reference to the Arm options.
+  ///
+  /// Use this to configure Arm-specific settings.
+  Expected<arm::ArmOptions&> GetArmOptions() {
+    return options_impl::EnsureOption(arm_options_);
+  }
 
   /// Returns a reference to the runtime options.
   Expected<RuntimeOptions&> GetRuntimeOptions() {
