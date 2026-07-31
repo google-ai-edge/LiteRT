@@ -18,7 +18,9 @@
 #include <memory>
 #include <mutex>  // NOLINT
 #include <optional>
+#include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "openvino/runtime/core.hpp"
@@ -56,6 +58,36 @@ class OpenVINOSharedCore {
     return *remote_context_;
   }
 
+  // Returns (and lazily caches) the default remote context for a specific
+  // device.  Unlike the single-device GetRemoteContext()/SetDevice() pair,
+  // this keeps NPU and GPU contexts alive simultaneously, which is required to
+  // import one shared allocation into both devices for a mixed partition.
+  ov::RemoteContext GetRemoteContext(const std::string& device) {
+    absl::MutexLock lock(&state_mutex_);
+    auto it = remote_contexts_.find(device);
+    if (it == remote_contexts_.end()) {
+      it = remote_contexts_.emplace(device, core_->get_default_context(device))
+               .first;
+    }
+    return it->second;
+  }
+
+  // Records that a partition targeting `device` has been created. Used to
+  // detect models whose partitions span both the NPU and the GPU, which is the
+  // only case that needs the cross-device shared allocation path.
+  void NoteDeviceRequested(const std::string& device) {
+    absl::MutexLock lock(&state_mutex_);
+    requested_devices_.insert(device);
+  }
+
+  // True when partitions targeting both "NPU" and "GPU" have been created for
+  // the current model.
+  bool SpansNpuAndGpu() {
+    absl::MutexLock lock(&state_mutex_);
+    return requested_devices_.count("NPU") != 0 &&
+           requested_devices_.count("GPU") != 0;
+  }
+
   // Returns the list of OpenVINO devices reported by `core_->
   // get_available_devices()`.  Queried lazily on first call and cached for
   // the lifetime of the process (the set of installed devices does not
@@ -73,6 +105,11 @@ class OpenVINOSharedCore {
   std::string device_ ABSL_GUARDED_BY(state_mutex_) = "NPU";  // Default device
   std::optional<ov::RemoteContext> remote_context_
       ABSL_GUARDED_BY(state_mutex_);
+  // Per-device remote-context cache; lets NPU and GPU contexts coexist.
+  std::unordered_map<std::string, ov::RemoteContext> remote_contexts_
+      ABSL_GUARDED_BY(state_mutex_);
+  // Set of devices targeted by the current model's partitions.
+  std::set<std::string> requested_devices_ ABSL_GUARDED_BY(state_mutex_);
   std::once_flag available_devices_once_;
   std::vector<std::string> available_devices_;
 };

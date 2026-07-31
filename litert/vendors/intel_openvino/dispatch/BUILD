@@ -25,6 +25,7 @@ package(
 litert_dynamic_lib(
     name = "dispatch_api",
     srcs = [
+        "d3d12_shared_buffer.cc",
         "device_context.cc",
         "dispatch_api.cc",
         "invocation_context.cc",
@@ -32,6 +33,7 @@ litert_dynamic_lib(
         "openvino_tensor_buffer.cc",
     ],
     hdrs = [
+        "d3d12_shared_buffer.h",
         "device_context.h",
         "invocation_context.h",
         "openvino_shared_core.h",
@@ -61,6 +63,13 @@ litert_dynamic_lib(
         "-Wl,-soname=libLiteRtDispatch_IntelOpenvino.so",
     ] + select({
         "//litert:android": ["-Wl,-lc++abi"],
+        "//conditions:default": [],
+    }) + select({
+        # D3D12 is the neutral allocator for the cross-device shared buffer.
+        "//litert:windows": [
+            "d3d12.lib",
+            "dxgi.lib",
+        ],
         "//conditions:default": [],
     }),
     shared_lib_name = "dispatch_api_so",
@@ -106,6 +115,7 @@ litert_dynamic_lib(
 litert_bin(
     name = "LiteRtDispatch",
     srcs = [
+        "d3d12_shared_buffer.cc",
         "device_context.cc",
         "dispatch_api.cc",
         "invocation_context.cc",
@@ -124,7 +134,14 @@ litert_bin(
         "//conditions:default": [],
     }),
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
-    linkopts = litert_android_linkopts(),
+    linkopts = litert_android_linkopts() + select({
+        # D3D12 is the neutral allocator for the cross-device shared buffer.
+        "//litert:windows": [
+            "d3d12.lib",
+            "dxgi.lib",
+        ],
+        "//conditions:default": [],
+    }),
     linkshared = 1,
     visibility = ["//visibility:public"],  # Allows LiteRT-LM packaging.
     deps = [
@@ -166,6 +183,7 @@ litert_bin(
 litert_lib(
     name = "litert_dispatch_api",
     hdrs = [
+        "d3d12_shared_buffer.h",
         "device_context.h",
         "invocation_context.h",
         "openvino_shared_core.h",
@@ -238,6 +256,78 @@ cc_test(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "d3d12_shared_buffer_test",
+    srcs = [
+        "d3d12_shared_buffer.cc",
+        "d3d12_shared_buffer.h",
+        "d3d12_shared_buffer_test.cc",
+    ],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    linkopts = select({
+        "//litert:windows": [
+            "d3d12.lib",
+            "dxgi.lib",
+        ],
+        "//conditions:default": [],
+    }),
+    linkstatic = 1,
+    tags = [
+        "manual",
+        "no-remote-exec",
+        "no_oss",
+        "notap",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "openvino_tensor_buffer_test",
+    srcs = [
+        "d3d12_shared_buffer.cc",
+        "d3d12_shared_buffer.h",
+        "openvino_shared_core.cc",
+        "openvino_shared_core.h",
+        "openvino_tensor_buffer.cc",
+        "openvino_tensor_buffer.h",
+        "openvino_tensor_buffer_test.cc",
+    ],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    linkopts = select({
+        "//litert:windows": [
+            "d3d12.lib",
+            "dxgi.lib",
+        ],
+        "//conditions:default": [],
+    }),
+    linkstatic = 1,
+    tags = [
+        "manual",
+        "no-remote-exec",
+        "no_oss",
+        "notap",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_model_types",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/vendors/intel_openvino:ov_utils",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/synchronization",
+        "@com_google_googletest//:gtest_main",
+        "@intel_openvino//:openvino",
     ],
 )
 
