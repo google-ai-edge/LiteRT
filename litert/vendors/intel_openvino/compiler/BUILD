@@ -338,7 +338,8 @@ litert_test(
         ":openvino_compiler_plugin",  # buildcleaner: keep
         ":openvino_soc_config",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
         "//litert/c/internal:litert_compiler_context",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
@@ -346,7 +347,7 @@ litert_test(
         "//litert/cc/internal:litert_extended_model",
         "//litert/cc/internal:litert_model_predicates",
         "//litert/test:common",
-        "//litert/test:load_test_model_runtimecapi",
+        "//litert/test:load_test_model",
         "//litert/test:matchers_oss",
         "//litert/test:test_models",
         "//litert/vendors/cc:litert_compiler_plugin",
