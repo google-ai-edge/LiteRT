@@ -473,7 +473,6 @@ cc_library(
         # "@mediapipe//mediapipe/tasks/web/genai:__subpackages__",
         # "//litert:__subpackages__",
         # "//ml_drift_delegate:__subpackages__",
-        # "//third_party/odml/litert_lm/c:__pkg__",
         # "//third_party/odml/infra/ml_drift_delegate:__pkg__",
         # "//third_party/odml/infra/fabric:__subpackages__",
         # "//third_party/odml/litert_lm:__subpackages__",
@@ -492,9 +491,7 @@ cc_library(
     srcs = ["litert_logging_helper.cc"],
     hdrs = ["litert_logging_helper.h"],
     visibility = [
-        # copybara:uncomment_begin(oss litert_lm)
-        # "//litert/runtime/accelerators/gpu:__pkg__",
-        # "//litert/vendors:__subpackages__",
+        "//litert/vendors:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
