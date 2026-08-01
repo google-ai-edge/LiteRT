@@ -22,6 +22,7 @@ set(LITERT_RUNTIME_SOURCES
     accelerators/dispatch/dispatch_accelerator.cc
     accelerators/gpu_registry.cc
     accelerators/npu_registry.cc
+    accelerators/legacy_compatibility_layer.cc
     accelerators/registration_helper.cc
     accelerators/webnn_registry.cc
     accelerators/xnnpack/xnnpack_accelerator.cc

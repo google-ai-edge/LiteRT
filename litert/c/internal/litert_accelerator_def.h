@@ -29,7 +29,7 @@ extern "C" {
 // This version is used to ensure the ABI compatibility of the accelerator
 // definition. Any changes to the LiteRtAcceleratorDef struct and HwMemoryInfo
 // struct should be accompanied by an update to this version.
-#define LITERT_ACCELERATOR_DEF_CURRENT_VERSION 1
+#define LITERT_ACCELERATOR_DEF_CURRENT_VERSION 2
 
 // A struct that contains the data and functions that are used to define an
 // accelerator. Refer litert_accelerator_registration.h for more details.
@@ -62,41 +62,41 @@ typedef struct {
                                           LiteRtMetrics metrics);
 
   LiteRtCustomTensorBufferHandlersDef buffer_handlers;
-} LiteRtAcceleratorDefV1;
+} LiteRtAcceleratorDefV2;
 
-// ABI compatibility check for LiteRtAcceleratorDefV1.
+// ABI compatibility check for LiteRtAcceleratorDefV2.
 //
 // Note: Please get review from the LiteRT ABI compatibility team when you make
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtAcceleratorDefV1) == 192,
-              "LiteRtAcceleratorDefV1 size mismatch");
-static_assert(offsetof(LiteRtAcceleratorDefV1, version) == 0,
-              "LiteRtAcceleratorDefV1 version offset mismatch");
-static_assert(offsetof(LiteRtAcceleratorDefV1, get_name) == 8,
-              "LiteRtAcceleratorDefV1 get_name offset mismatch");
-static_assert(offsetof(LiteRtAcceleratorDefV1, get_version) == 16,
-              "LiteRtAcceleratorDefV1 get_version offset mismatch");
-static_assert(offsetof(LiteRtAcceleratorDefV1, get_hardware_support) == 24,
-              "LiteRtAcceleratorDefV1 get_hardware_support offset mismatch");
+static_assert(sizeof(LiteRtAcceleratorDefV2) == 192,
+              "LiteRtAcceleratorDefV2 size mismatch");
+static_assert(offsetof(LiteRtAcceleratorDefV2, version) == 0,
+              "LiteRtAcceleratorDefV2 version offset mismatch");
+static_assert(offsetof(LiteRtAcceleratorDefV2, get_name) == 8,
+              "LiteRtAcceleratorDefV2 get_name offset mismatch");
+static_assert(offsetof(LiteRtAcceleratorDefV2, get_version) == 16,
+              "LiteRtAcceleratorDefV2 get_version offset mismatch");
+static_assert(offsetof(LiteRtAcceleratorDefV2, get_hardware_support) == 24,
+              "LiteRtAcceleratorDefV2 get_hardware_support offset mismatch");
 static_assert(
-    offsetof(LiteRtAcceleratorDefV1,
+    offsetof(LiteRtAcceleratorDefV2,
              is_tflite_delegate_responsible_for_jit_compilation) == 32,
-    "LiteRtAcceleratorDefV1 is_tflite_delegate_responsible_for_jit_compilation "
+    "LiteRtAcceleratorDefV2 is_tflite_delegate_responsible_for_jit_compilation "
     "offset mismatch");
-static_assert(offsetof(LiteRtAcceleratorDefV1, create_delegate) == 40,
-              "LiteRtAcceleratorDefV1 create_delegate offset mismatch");
+static_assert(offsetof(LiteRtAcceleratorDefV2, create_delegate) == 40,
+              "LiteRtAcceleratorDefV2 create_delegate offset mismatch");
 static_assert(
-    offsetof(LiteRtAcceleratorDefV1, start_metrics_collection) == 48,
-    "LiteRtAcceleratorDefV1 start_metrics_collection offset mismatch");
-static_assert(offsetof(LiteRtAcceleratorDefV1, stop_metrics_collection) == 56,
-              "LiteRtAcceleratorDefV1 stop_metrics_collection offset mismatch");
-static_assert(offsetof(LiteRtAcceleratorDefV1, buffer_handlers) == 64,
-              "LiteRtAcceleratorDefV1 buffer_handlers offset mismatch");
+    offsetof(LiteRtAcceleratorDefV2, start_metrics_collection) == 48,
+    "LiteRtAcceleratorDefV2 start_metrics_collection offset mismatch");
+static_assert(offsetof(LiteRtAcceleratorDefV2, stop_metrics_collection) == 56,
+              "LiteRtAcceleratorDefV2 stop_metrics_collection offset mismatch");
+static_assert(offsetof(LiteRtAcceleratorDefV2, buffer_handlers) == 64,
+              "LiteRtAcceleratorDefV2 buffer_handlers offset mismatch");
 #endif  // __cplusplus
 
-typedef LiteRtAcceleratorDefV1 LiteRtAcceleratorDef;
+typedef LiteRtAcceleratorDefV2 LiteRtAcceleratorDef;
 
 #ifdef __cplusplus
 }  // extern "C"
