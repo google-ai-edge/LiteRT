@@ -52,10 +52,12 @@ TEST(BufferManagerTest, RegisterOwnedBuffer) {
   BufferManager manager;
 
   OwningBufferRef<uint8_t> buffer(kData);
+  const uint8_t* const original_data = buffer.Data();
   const auto id = manager.RegisterOwnedBuffer(std::move(buffer));
 
   EXPECT_EQ(manager.NumBuffers(), 2);
   LITERT_ASSERT_OK_AND_ASSIGN(auto managed_buffer, manager.GetBuffer(id));
+  EXPECT_EQ(managed_buffer.Data(), original_data);
   EXPECT_EQ(managed_buffer.StrView(), kData);
 }
 
