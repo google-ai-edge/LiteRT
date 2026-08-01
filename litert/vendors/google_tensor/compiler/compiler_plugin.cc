@@ -262,6 +262,30 @@ LiteRtStatus LrtOptionsToGoogleTensorOptions(
       lrt_options, &extra_options_path));
   google_tensor_options.set_extra_options_path(extra_options_path);
 
+  // INPUT COHERENCY
+  int num_input_coherency_entries = 0;
+  LITERT_RETURN_IF_ERROR(LrtGoogleTensorOptionsGetNumInputCoherencyEntries(
+      lrt_options, &num_input_coherency_entries));
+  for (int i = 0; i < num_input_coherency_entries; ++i) {
+    int idx;
+    bool prefer_coherent;
+    LITERT_RETURN_IF_ERROR(LrtGoogleTensorOptionsGetInputCoherencyEntry(
+        lrt_options, i, &idx, &prefer_coherent));
+    (*google_tensor_options.mutable_input_coherency())[idx] = prefer_coherent;
+  }
+
+  // OUTPUT COHERENCY
+  int num_output_coherency_entries = 0;
+  LITERT_RETURN_IF_ERROR(LrtGoogleTensorOptionsGetNumOutputCoherencyEntries(
+      lrt_options, &num_output_coherency_entries));
+  for (int i = 0; i < num_output_coherency_entries; ++i) {
+    int idx;
+    bool prefer_coherent;
+    LITERT_RETURN_IF_ERROR(LrtGoogleTensorOptionsGetOutputCoherencyEntry(
+        lrt_options, i, &idx, &prefer_coherent));
+    (*google_tensor_options.mutable_output_coherency())[idx] = prefer_coherent;
+  }
+
   return kLiteRtStatusOk;
 }
 

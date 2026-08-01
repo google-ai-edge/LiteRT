@@ -139,6 +139,36 @@ LiteRtStatus LrtGoogleTensorOptionsSetExtraOptionsPath(
 LiteRtStatus LrtGoogleTensorOptionsGetExtraOptionsPath(
     LrtGoogleTensorOptions options, const char** extra_options_path);
 
+// input_coherency --------------------------------------------------
+
+LiteRtStatus LrtGoogleTensorOptionsSetInputCoherency(
+    LrtGoogleTensorOptions options, int input_index, bool prefer_coherent);
+
+LiteRtStatus LrtGoogleTensorOptionsGetInputCoherency(
+    LrtGoogleTensorOptions options, int input_index, bool* prefer_coherent);
+
+LiteRtStatus LrtGoogleTensorOptionsGetNumInputCoherencyEntries(
+    LrtGoogleTensorOptions options, int* num_entries);
+
+LiteRtStatus LrtGoogleTensorOptionsGetInputCoherencyEntry(
+    LrtGoogleTensorOptions options, int entry_idx, int* input_index,
+    bool* prefer_coherent);
+
+// output_coherency --------------------------------------------------
+
+LiteRtStatus LrtGoogleTensorOptionsSetOutputCoherency(
+    LrtGoogleTensorOptions options, int output_index, bool prefer_coherent);
+
+LiteRtStatus LrtGoogleTensorOptionsGetOutputCoherency(
+    LrtGoogleTensorOptions options, int output_index, bool* prefer_coherent);
+
+LiteRtStatus LrtGoogleTensorOptionsGetNumOutputCoherencyEntries(
+    LrtGoogleTensorOptions options, int* num_entries);
+
+LiteRtStatus LrtGoogleTensorOptionsGetOutputCoherencyEntry(
+    LrtGoogleTensorOptions options, int entry_idx, int* output_index,
+    bool* prefer_coherent);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

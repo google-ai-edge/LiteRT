@@ -87,7 +87,7 @@ message OpFilters {
 
 // Message to hold various compilation options for the Google Tensor compiler
 // plugin.
-// NEXT ID: 13
+// NEXT ID: 15
 message GoogleTensorOptions {
   // Specifies the type of float truncation to be applied.
   GoogleTensorOptionsTruncationType float_truncation_type = 1;
@@ -111,6 +111,13 @@ message GoogleTensorOptions {
   string op_filters_proto = 11;
   // Path to a file containing binary compiler options.
   string extra_options_path = 12;
+
+  // Map of signature input index (0-based) to whether the input buffer should
+  // prefer coherent memory.
+  map<int32, bool> input_coherency = 13;
+  // Map of signature output index (0-based) to whether the output buffer should
+  // prefer coherent memory.
+  map<int32, bool> output_coherency = 14;
 
   reserved 8;
 }

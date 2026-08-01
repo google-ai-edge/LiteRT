@@ -38,6 +38,8 @@ class LiteRtDispatchDeviceContextT {
   struct GoogleTensorOptionsData {
     std::optional<LiteRtGoogleTensorOptionsPerformanceMode> performance_mode =
         std::nullopt;
+    absl::flat_hash_map<int, bool> input_coherency;
+    absl::flat_hash_map<int, bool> output_coherency;
   };
 
   static LiteRtStatus Create(const LiteRtRuntimeContext* runtime_context,
