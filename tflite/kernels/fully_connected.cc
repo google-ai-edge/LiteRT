@@ -592,6 +592,8 @@ TfLiteStatus PrepareImpl(TfLiteContext* context, TfLiteNode* node,
       TF_LITE_ENSURE(context, (bias == nullptr) ||
                                   bias->type == params->quantized_bias_type);
       data->quantized_bias_type = params->quantized_bias_type;
+    } else if (bias != nullptr) {
+      data->quantized_bias_type = bias->type;
     }
   }
 
