@@ -311,6 +311,14 @@ TEST(GoogleTensorOptionsTest, CppApi) {
   EXPECT_EQ(options->GetExtraOptionsPath(), "");
   options->SetExtraOptionsPath("/tmp/extra_options.bin");
   EXPECT_EQ(options->GetExtraOptionsPath(), "/tmp/extra_options.bin");
+
+  EXPECT_FALSE(options->GetInputCoherency(0));
+  options->SetInputCoherency(0, true);
+  EXPECT_TRUE(options->GetInputCoherency(0));
+
+  EXPECT_FALSE(options->GetOutputCoherency(0));
+  options->SetOutputCoherency(0, true);
+  EXPECT_TRUE(options->GetOutputCoherency(0));
 }
 
 TEST(LrtGoogleTensorOptionsTest, OpFiltersProto) {
@@ -424,6 +432,53 @@ TEST(LrtGoogleTensorOptionsTest, PerformanceMode) {
   EXPECT_EQ(performance_mode,
             kLiteRtGoogleTensorOptionsPerformanceModeHighPerformance);
 
+  LrtDestroyGoogleTensorOptions(options);
+}
+
+TEST(LrtGoogleTensorOptionsTest, Coherency) {
+  LrtGoogleTensorOptions options;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
+
+  bool prefer_coherent = true;
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetInputCoherency(options, 0, &prefer_coherent));
+  EXPECT_FALSE(prefer_coherent);
+
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetInputCoherency(options, 0, true));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetInputCoherency(options, 1, false));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetOutputCoherency(options, 0, true));
+
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetInputCoherency(options, 0, &prefer_coherent));
+  EXPECT_TRUE(prefer_coherent);
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetInputCoherency(options, 1, &prefer_coherent));
+  EXPECT_FALSE(prefer_coherent);
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetOutputCoherency(options, 0, &prefer_coherent));
+  EXPECT_TRUE(prefer_coherent);
+
+  int num_entries = 0;
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetNumInputCoherencyEntries(options, &num_entries));
+  EXPECT_EQ(num_entries, 2);
+
+  int idx = -1;
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetInputCoherencyEntry(
+      options, 0, &idx, &prefer_coherent));
+  EXPECT_EQ(idx, 0);
+  EXPECT_TRUE(prefer_coherent);
+
+  LrtGoogleTensorOptions parsed;
+  SerializeAndParse(options, &parsed);
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetInputCoherency(parsed, 0, &prefer_coherent));
+  EXPECT_TRUE(prefer_coherent);
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetOutputCoherency(parsed, 0, &prefer_coherent));
+  EXPECT_TRUE(prefer_coherent);
+
+  LrtDestroyGoogleTensorOptions(parsed);
   LrtDestroyGoogleTensorOptions(options);
 }
 
