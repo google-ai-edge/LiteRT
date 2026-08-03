@@ -69,6 +69,14 @@ LiteRtStatus LiteRtGetTensorBufferRequirementsStrides(
 LiteRtStatus LiteRtGetTensorBufferRequirementsAlignment(
     LiteRtTensorBufferRequirements requirements, size_t* alignment);
 
+// Returns whether the tensor buffer requirements prefer coherent memory.
+LiteRtStatus LiteRtGetTensorBufferRequirementsPreferCoherent(
+    LiteRtTensorBufferRequirements requirements, bool* prefer_coherent);
+
+// Sets whether the tensor buffer requirements prefer coherent memory.
+LiteRtStatus LiteRtSetTensorBufferRequirementsPreferCoherent(
+    LiteRtTensorBufferRequirements requirements, bool prefer_coherent);
+
 // Join requirements from two sources and return an error if the join returns an
 // empty set of requirements.
 LiteRtStatus LiteRtJoinTensorBufferRequirements(

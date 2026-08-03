@@ -87,6 +87,33 @@ GetGoogleTensorOptions(const LiteRtRuntimeContext* runtime_context,
     google_tensor_options_data.performance_mode = performance_mode;
   }
 
+  int num_input_entries = 0;
+  if (LrtGoogleTensorOptionsGetNumInputCoherencyEntries(
+          google_tensor_options, &num_input_entries) == kLiteRtStatusOk) {
+    for (int i = 0; i < num_input_entries; ++i) {
+      int idx;
+      bool prefer_coherent;
+      if (LrtGoogleTensorOptionsGetInputCoherencyEntry(
+              google_tensor_options, i, &idx, &prefer_coherent) ==
+          kLiteRtStatusOk) {
+        google_tensor_options_data.input_coherency[idx] = prefer_coherent;
+      }
+    }
+  }
+  int num_output_entries = 0;
+  if (LrtGoogleTensorOptionsGetNumOutputCoherencyEntries(
+          google_tensor_options, &num_output_entries) == kLiteRtStatusOk) {
+    for (int i = 0; i < num_output_entries; ++i) {
+      int idx;
+      bool prefer_coherent;
+      if (LrtGoogleTensorOptionsGetOutputCoherencyEntry(
+              google_tensor_options, i, &idx, &prefer_coherent) ==
+          kLiteRtStatusOk) {
+        google_tensor_options_data.output_coherency[idx] = prefer_coherent;
+      }
+    }
+  }
+
   return google_tensor_options_data;
 }
 bool IsTflite(const void* addr, size_t size) {

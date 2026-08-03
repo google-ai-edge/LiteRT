@@ -110,6 +110,24 @@ LiteRtStatus LiteRtGetTensorBufferRequirementsAlignment(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetTensorBufferRequirementsPreferCoherent(
+    LiteRtTensorBufferRequirements requirements, bool* prefer_coherent) {
+  if (!requirements || !prefer_coherent) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *prefer_coherent = requirements->PreferCoherent();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetTensorBufferRequirementsPreferCoherent(
+    LiteRtTensorBufferRequirements requirements, bool prefer_coherent) {
+  if (!requirements) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  requirements->SetPreferCoherent(prefer_coherent);
+  return kLiteRtStatusOk;
+}
+
 void LiteRtDestroyTensorBufferRequirements(
     LiteRtTensorBufferRequirements requirements) {
   delete requirements;

@@ -42,7 +42,8 @@ std::string LiteRtTensorBufferRequirementsT::ToString() const {
      << litert::internal::ToString(type_strings)
      << ", buffer_size: " << buffer_size_
      << ", strides: " << litert::internal::ToString(strides_)
-     << ", alignment: " << alignment_ << "]";
+     << ", alignment: " << alignment_
+     << ", prefer_coherent: " << (prefer_coherent_ ? "true" : "false") << "]";
   return os.str();
 }
 
@@ -84,9 +85,11 @@ litert::Expected<std::unique_ptr<LiteRtTensorBufferRequirementsT>> Join(
   // Take the max alignment requirement.
   auto alignment = std::max(src1.Alignment(), src2.Alignment());
 
-  return std::make_unique<LiteRtTensorBufferRequirementsT>(
+  auto joined = std::make_unique<LiteRtTensorBufferRequirementsT>(
       buffer_types.size(), buffer_types.data(), buffer_size, std::move(strides),
       alignment);
+  joined->SetPreferCoherent(src1.PreferCoherent() || src2.PreferCoherent());
+  return joined;
 }
 
 }  // namespace litert::internal

@@ -44,6 +44,8 @@ class LiteRtTensorBufferRequirementsT {
   size_t BufferSize() const { return buffer_size_; }
   const std::vector<uint32_t>& Strides() const { return strides_; }
   size_t Alignment() const { return alignment_; }
+  bool PreferCoherent() const { return prefer_coherent_; }
+  void SetPreferCoherent(bool prefer_coherent) { prefer_coherent_ = prefer_coherent; }
   std::string ToString() const;
 
  private:
@@ -57,6 +59,7 @@ class LiteRtTensorBufferRequirementsT {
   std::vector<uint32_t> strides_;
   // Memory alignment requirement in bytes.
   size_t alignment_;
+  bool prefer_coherent_ = false;
 };
 
 namespace litert::internal {

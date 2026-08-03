@@ -27,6 +27,8 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/litert_opaque_options.h"
+#include "litert/c/options/litert_google_tensor_options.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -204,6 +206,91 @@ TEST(DispatchApiStaticLinkTest, CanRunCompiledModel) {
   for (auto b : input_buffers) LiteRtDestroyTensorBuffer(b);
   for (auto b : output_buffers) LiteRtDestroyTensorBuffer(b);
 
+  LiteRtDestroyOptions(compilation_options);
+  LiteRtDestroyCompiledModel(compiled_model);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
+}
+
+TEST(DispatchApiStaticTest, CoherentBufferRequirementsStandardAhwb) {
+  LiteRtEnvironment environment;
+  LiteRtEnvOption env_options = {};
+  ASSERT_EQ(LiteRtCreateEnvironment(0, &env_options, &environment),
+            kLiteRtStatusOk);
+
+  LiteRtModel model;
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto buffer_holder, CreateModelFromReferenceData(environment, &model));
+
+  LiteRtOptions compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(compilation_options,
+                                                 kLiteRtHwAcceleratorNpu),
+            kLiteRtStatusOk);
+
+  LrtGoogleTensorOptions gt_options;
+  ASSERT_EQ(LrtCreateGoogleTensorOptions(&gt_options), kLiteRtStatusOk);
+  ASSERT_EQ(LrtGoogleTensorOptionsSetInputCoherency(gt_options, 0, true),
+            kLiteRtStatusOk);
+
+  const char* identifier = nullptr;
+  void* payload = nullptr;
+  void (*deleter)(void*) = nullptr;
+  ASSERT_EQ(
+      LrtGetOpaqueGoogleTensorOptionsData(gt_options, &identifier, &payload,
+                                          &deleter),
+      kLiteRtStatusOk);
+
+  LiteRtOpaqueOptions opaque_options;
+  ASSERT_EQ(
+      LiteRtCreateOpaqueOptions(identifier, payload, deleter, &opaque_options),
+      kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtAddOpaqueOptions(compilation_options, opaque_options),
+            kLiteRtStatusOk);
+
+  LiteRtCompiledModel compiled_model;
+  ASSERT_EQ(LiteRtCreateCompiledModel(environment, model, compilation_options,
+                                      &compiled_model),
+            kLiteRtStatusOk);
+
+  LiteRtTensorBufferRequirements requirements;
+  ASSERT_EQ(LiteRtGetCompiledModelInputBufferRequirements(
+                compiled_model, /*signature_index=*/0, /*input_index=*/0,
+                &requirements),
+            kLiteRtStatusOk);
+
+  bool prefer_coherent = false;
+  ASSERT_EQ(LiteRtGetTensorBufferRequirementsPreferCoherent(requirements,
+                                                            &prefer_coherent),
+            kLiteRtStatusOk);
+  EXPECT_TRUE(prefer_coherent);
+
+#if LITERT_HAS_AHWB_SUPPORT
+  LiteRtSubgraph subgraph;
+  ASSERT_EQ(LiteRtGetModelSubgraph(model, 0, &subgraph), kLiteRtStatusOk);
+  LiteRtTensor input_tensor;
+  ASSERT_EQ(LiteRtGetSubgraphInput(subgraph, 0, &input_tensor), kLiteRtStatusOk);
+  LiteRtRankedTensorType tensor_type;
+  ASSERT_EQ(LiteRtGetRankedTensorType(input_tensor, &tensor_type),
+            kLiteRtStatusOk);
+
+  LiteRtTensorBuffer buffer;
+  ASSERT_EQ(LiteRtCreateManagedTensorBufferFromRequirements(
+                environment, &tensor_type, requirements, &buffer),
+            kLiteRtStatusOk);
+
+  void* host_ptr = nullptr;
+  ASSERT_EQ(
+      LiteRtLockTensorBuffer(buffer, &host_ptr,
+                             kLiteRtTensorBufferLockModeWrite),
+      kLiteRtStatusOk);
+  ASSERT_NE(host_ptr, nullptr);
+
+  ASSERT_EQ(LiteRtUnlockTensorBuffer(buffer), kLiteRtStatusOk);
+  LiteRtDestroyTensorBuffer(buffer);
+#endif  // LITERT_HAS_AHWB_SUPPORT
+
+  LrtDestroyGoogleTensorOptions(gt_options);
   LiteRtDestroyOptions(compilation_options);
   LiteRtDestroyCompiledModel(compiled_model);
   LiteRtDestroyModel(model);

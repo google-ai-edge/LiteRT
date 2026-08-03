@@ -92,7 +92,8 @@ Expected<size_t> AhwbBuffer::GetSize(AHardwareBuffer* ahwb) {
          ahwb_desc.layers * bytes_per_pixel;
 }
 
-Expected<void*> AhwbBuffer::Lock(AHardwareBuffer* ahwb, LiteRtEventT* event) {
+Expected<void*> AhwbBuffer::Lock(AHardwareBuffer* ahwb, LiteRtEventT* event,
+                                 bool prefer_coherent) {
   if (!IsSupported()) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "AHardwareBuffers are not supported on this platform");
@@ -102,11 +103,12 @@ Expected<void*> AhwbBuffer::Lock(AHardwareBuffer* ahwb, LiteRtEventT* event) {
     LITERT_ASSIGN_OR_RETURN(fence, event->GetSyncFenceFd());
   }
   void* host_addr;
+  uint64_t usage = prefer_coherent
+                       ? 0
+                       : (AHARDWAREBUFFER_USAGE_CPU_READ_RARELY |
+                          AHARDWAREBUFFER_USAGE_CPU_WRITE_RARELY);
   LITERT_RETURN_IF_ERROR(
-      AhwbWrapper().Lock(ahwb,
-                         AHARDWAREBUFFER_USAGE_CPU_READ_RARELY |
-                             AHARDWAREBUFFER_USAGE_CPU_WRITE_RARELY,
-                         fence, /*rect=*/nullptr, &host_addr) == 0,
+      AhwbWrapper().Lock(ahwb, usage, fence, /*rect=*/nullptr, &host_addr) == 0,
       Unexpected(kLiteRtStatusErrorRuntimeFailure, "Failed to lock AHWB"));
   return host_addr;
 }
