@@ -1028,7 +1028,7 @@ cc_library(
         "//litert/runtime:tensor_buffer_lockstate",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/log:absl_log",
-        "@dawn//:dawn_headers",
+        "@dawn//:webgpu_headers",
         "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/common:util",
         "@ml_drift//ml_drift/webgpu:buffer",
