@@ -31,7 +31,7 @@
 #include "ml_drift_delegate/delegate/delegate_opencl.h"
 #include "ml_drift_delegate/delegate/delegate_opengl.h"
 #include "ml_drift_delegate/delegate/delegate_types.h"
-#include "tflite/core/c/c_api_types.h"
+#include "tflite/c/c_api_types.h"
 
 // Accelerator implementation for the LiteRT GPU Accelerator.
 class GpuAccelerator {

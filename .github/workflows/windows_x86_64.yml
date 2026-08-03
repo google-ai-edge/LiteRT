@@ -173,7 +173,9 @@ jobs:
             //litert/vendors/intel_openvino/compiler:LiteRtCompilerPlugin `
             //litert/vendors/intel_openvino/dispatch:LiteRtDispatch `
             //litert/vendors/intel_openvino/compiler:openvino_compiler_plugin_test `
-            //litert/vendors/intel_openvino/dispatch:dispatch_api_openvino_test
+            //litert/vendors/intel_openvino/dispatch:dispatch_api_openvino_test `
+            //litert/vendors/intel_openvino/compiler:weights_to_parameters_test `
+            //litert/vendors/intel_openvino/compiler:weight_bank_test
 
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'

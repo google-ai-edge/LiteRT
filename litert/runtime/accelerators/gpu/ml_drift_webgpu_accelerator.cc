@@ -29,7 +29,7 @@
 #include "ml_drift_delegate/delegate/buffer_handler_webgpu.h"
 #include "ml_drift_delegate/delegate/delegate_types.h"
 #include "ml_drift_delegate/delegate/delegate_webgpu.h"
-#include "tflite/core/c/c_api_types.h"
+#include "tflite/c/c_api_types.h"
 
 // Accelerator implementation for the LiteRT GPU WebGPU accelerator.
 class GpuWebGpuAccelerator {

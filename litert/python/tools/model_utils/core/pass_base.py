@@ -62,7 +62,8 @@ class RewritePatternPassBase(ModulePassBase, abc.ABC):
           str
           | Sequence[str]
           | dialect_base.MlirOpBase
-          | Sequence[dialect_base.MlirOpBase]
+          | type[dialect_base.MlirOpBase]
+          | Sequence[dialect_base.MlirOpBase | type[dialect_base.MlirOpBase]]
           | None
       ) = None,
   ):

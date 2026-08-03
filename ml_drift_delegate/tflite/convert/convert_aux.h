@@ -28,6 +28,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
+#include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "tflite/c/builtin_op_data.h"
@@ -269,6 +270,21 @@ bool ConfigSharedQuantizedFullyConnected(
     const TfLiteTensor& weights_tensor, const ::ml_drift::OHWI& weights_shape,
     ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> bias,
     ::ml_drift::ir::IrOp* fc_op);
+
+// Populates `attr` for a native (const) blockwise-quantized int4
+// fully-connected node, mirroring GraphFloat32's native blockwise path (which
+// only supports int4). Unlike affine quantization (where scale/zero-point live
+// inline in the weights tensor's params), blockwise scale and zero-point are
+// stored in separate tensors referenced by index in the weights tensor's
+// TfLiteBlockwiseQuantization params, so they are read via `context`. The
+// scale/zero-point shapes split the input dim into blocks:
+// OHWI(o, 1, 1, i / blocksize). The int4 weights are unpacked to int8. If
+// `bias_is_const`, the bias is embedded into `attr`.
+void PopulateBlockwiseQuantizedFullyConnected(
+    const TfLiteContext& context, const TfLiteTensor& weights_tensor,
+    int weights_id, const TfLiteTensor* bias_tensor, int bias_id,
+    bool bias_is_const, bool enable_spanned_weights,
+    ::ml_drift::FullyConnectedInt4Attributes& attr);
 
 // Adds a constant input to the IR model from a TfLite tensor.
 ::ml_drift::ir::IrTensor* AddConstInput(const TfLiteContext& context,

@@ -929,6 +929,18 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "reshape_utils",
+    hdrs = ["reshape_utils.h"],
+    compatible_with = get_compatible_with_portable(),
+    copts = tflite_copts(),
+    deps = [
+        ":runtime_shape",
+        "//tflite:util",
+        "//tflite/core/c:common",
+    ],
+)
+
 # Audio support classes imported directly from TensorFlow.
 cc_library(
     name = "audio_utils",

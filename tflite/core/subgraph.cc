@@ -2449,7 +2449,7 @@ TfLiteStatus Subgraph::ReplaceNodeWithSubgraph(
   return kTfLiteOk;
 }
 
-TfLiteStatus Subgraph::InlineCompositeNodes() {
+TfLiteStatus Subgraph::InlineCompositeNodes(CompositeFilter filter) {
   // Checks if there are composite nodes in the current execution plan.
   // NOLINTNEXTLINE: absl not allowed.
   std::unordered_set<int> composite_nodes_execution_indices;
@@ -2457,9 +2457,11 @@ TfLiteStatus Subgraph::InlineCompositeNodes() {
     composite_nodes_execution_indices.clear();
     for (const int i : execution_plan_) {
       auto& [node, reg] = nodes_and_registration_[i];
-      if (reg.builtin_code == kTfLiteBuiltinStablehloComposite &&
-          ShouldInlineStableHloComposite(node)) {
-        composite_nodes_execution_indices.insert(i);
+      if (reg.builtin_code == kTfLiteBuiltinStablehloComposite) {
+        if (filter ? filter(&node, &reg)
+                   : ShouldInlineStableHloComposite(node)) {
+          composite_nodes_execution_indices.insert(i);
+        }
       }
     }
     return !composite_nodes_execution_indices.empty();

@@ -9,6 +9,7 @@ py_binary(
     srcs = [
         "generator/dawn_json_generator.py",
         "generator/generator_lib.py",
+        "generator/webgpu_docs_utility.py",
     ],
     imports = [
         "generator",
@@ -74,6 +75,9 @@ cc_library(
         "include",
         "src",
     ],
+    deps = [
+        "@com_google_absl//absl/types:span",
+    ],
 )
 
 cc_library(
@@ -97,6 +101,9 @@ cc_library(
     ]),
     includes = [
         "include",
+    ],
+    deps = [
+        "@com_google_absl//absl/types:span",
     ],
 )
 

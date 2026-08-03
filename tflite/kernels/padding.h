@@ -33,6 +33,16 @@ inline TfLiteStatus CheckedNarrowPaddingValue(int64_t value, int* result) {
   return kTfLiteOk;
 }
 
+inline TfLiteStatus CheckedNarrowPaddingValueToInt16(int64_t value,
+                                                     int16_t* result) {
+  if (result == nullptr || value > std::numeric_limits<int16_t>::max() ||
+      value < std::numeric_limits<int16_t>::min()) {
+    return kTfLiteError;
+  }
+  *result = static_cast<int16_t>(value);
+  return kTfLiteOk;
+}
+
 inline int64_t ComputeEffectiveFilterSize(int filter_size, int dilation_rate) {
   return (static_cast<int64_t>(filter_size) - 1) * dilation_rate + 1;
 }
@@ -171,6 +181,52 @@ inline TfLitePaddingValues ComputePaddingHeightWidth(
       in_height, in_width, filter_height, filter_width, padding, out_height,
       out_width, &padding_values);
   return padding_values;
+}
+
+inline TfLiteStatus ComputePadding3DValuesChecked(
+    int stride_height, int stride_width, int stride_depth,
+    int dilation_rate_height, int dilation_rate_width, int dilation_rate_depth,
+    int in_height, int in_width, int in_depth, int filter_height,
+    int filter_width, int filter_depth, TfLitePadding padding, int* out_height,
+    int* out_width, int* out_depth, Padding3DValues* padding_values) {
+  if (out_height == nullptr || out_width == nullptr || out_depth == nullptr ||
+      padding_values == nullptr) {
+    return kTfLiteError;
+  }
+  TF_LITE_ENSURE_STATUS(ComputeOutSizeChecked(
+      padding, in_width, filter_width, stride_width, dilation_rate_width,
+      out_width));
+  TF_LITE_ENSURE_STATUS(ComputeOutSizeChecked(
+      padding, in_height, filter_height, stride_height, dilation_rate_height,
+      out_height));
+  TF_LITE_ENSURE_STATUS(ComputeOutSizeChecked(
+      padding, in_depth, filter_depth, stride_depth, dilation_rate_depth,
+      out_depth));
+
+  int offset = 0;
+  int padding_value = 0;
+  TF_LITE_ENSURE_STATUS(ComputePaddingWithOffsetChecked(
+      stride_depth, dilation_rate_depth, in_depth, filter_depth, *out_depth,
+      &offset, &padding_value));
+  TF_LITE_ENSURE_STATUS(
+      CheckedNarrowPaddingValueToInt16(padding_value, &padding_values->depth));
+  TF_LITE_ENSURE_STATUS(
+      CheckedNarrowPaddingValueToInt16(offset, &padding_values->depth_offset));
+  TF_LITE_ENSURE_STATUS(ComputePaddingWithOffsetChecked(
+      stride_height, dilation_rate_height, in_height, filter_height,
+      *out_height, &offset, &padding_value));
+  TF_LITE_ENSURE_STATUS(
+      CheckedNarrowPaddingValueToInt16(padding_value, &padding_values->height));
+  TF_LITE_ENSURE_STATUS(CheckedNarrowPaddingValueToInt16(
+      offset, &padding_values->height_offset));
+  TF_LITE_ENSURE_STATUS(ComputePaddingWithOffsetChecked(
+      stride_width, dilation_rate_width, in_width, filter_width, *out_width,
+      &offset, &padding_value));
+  TF_LITE_ENSURE_STATUS(
+      CheckedNarrowPaddingValueToInt16(padding_value, &padding_values->width));
+  TF_LITE_ENSURE_STATUS(
+      CheckedNarrowPaddingValueToInt16(offset, &padding_values->width_offset));
+  return kTfLiteOk;
 }
 
 inline Padding3DValues ComputePadding3DValues(

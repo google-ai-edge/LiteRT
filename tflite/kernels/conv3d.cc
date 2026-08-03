@@ -150,6 +150,16 @@ TfLiteStatus Prepare(KernelType kernel_type, TfLiteContext* context,
     TF_LITE_ENSURE_EQ(context, NumElements(bias), SizeOfDimension(filter, 4));
   }
 
+  // Validate stride values.
+  TF_LITE_ENSURE(context, params->stride_depth > 0);
+  TF_LITE_ENSURE(context, params->stride_height > 0);
+  TF_LITE_ENSURE(context, params->stride_width > 0);
+
+  // Validate dilation values.
+  TF_LITE_ENSURE(context, params->dilation_depth_factor > 0);
+  TF_LITE_ENSURE(context, params->dilation_height_factor > 0);
+  TF_LITE_ENSURE(context, params->dilation_width_factor > 0);
+
   // Filter has shape of [filter_depth, filter_height, filter_width,
   // in_channels, out_channels].
   int batches = input->dims->data[0];
@@ -173,6 +183,12 @@ TfLiteStatus Prepare(KernelType kernel_type, TfLiteContext* context,
                                  depth, filter_height, filter_width,
                                  filter_depth, params->padding, &out_height,
                                  &out_width, &out_depth, &opdata->padding));
+
+  int output_spatial_elements = 0;
+  TF_LITE_ENSURE_MSG(context,
+                     CheckedNumElements({out_depth, out_height, out_width},
+                                        output_spatial_elements) == kTfLiteOk,
+                     "%s", "Conv3D output spatial dimensions overflow.");
 
   std::unique_ptr<TfLiteIntArray, void (*)(TfLiteIntArray*)> output_size(
       TfLiteIntArrayCreate(5), TfLiteIntArrayFree);

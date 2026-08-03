@@ -174,6 +174,20 @@ class IrModelBuilderTest : public ::testing::Test {
     ASSERT_NE(interpreter_, nullptr);
   }
 
+  // Builds a single EmbeddingLookup interpreter: int32 lookup indices plus
+  // constant weights of the given dtype (vocab=5, embedding_dim=4).
+  void BuildEmbeddingLookupInterpreter(
+      TfLiteType weights_type, const std::vector<uint8_t>& weights_data) {
+    model_ = std::make_unique<SingleOpInterpreterBuilder>(
+        kTfLiteBuiltinEmbeddingLookup);
+    model_->AddInput(kTfLiteInt32, {3});  // lookup indices
+    model_->AddConstInput(weights_type, {5, 4}, weights_data);  // weights
+    model_->AddOutput(kTfLiteFloat32, {3, 4});                  // output
+
+    interpreter_ = model_->Build();
+    ASSERT_NE(interpreter_, nullptr);
+  }
+
   // Builds a pointwise (1x1) Conv2D over a 1x1 spatial input, which is
   // equivalent to a fully-connected op and is reduced to one.
   void BuildPointwiseConvInterpreter(TfLiteType weights_type,
@@ -467,6 +481,106 @@ TEST_F(IrModelBuilderTest, ConfiguresSharedQuantizedFullyConnected) {
     }
   }
   EXPECT_TRUE(weights_kept_quantized);
+}
+
+TEST_F(IrModelBuilderTest, ConfiguresSharedQuantizedEmbeddingLookup) {
+  constexpr int kWeightsIndex = 1;
+  constexpr int kGlobalId = 31;
+  // A shared int8 embedding weight is passed as a runtime input; the op records
+  // its type and per-row scale/zero-point shapes (parity with GraphFloat32's
+  // shared EMBEDDING_LOOKUP branch), and does not embed the weight data.
+  BuildEmbeddingLookupInterpreter(kTfLiteInt8, std::vector<uint8_t>(5 * 4, 0));
+  test_data_.internal_buffer_map[kWeightsIndex] = kGlobalId;
+
+  ASSERT_EQ(interpreter_->ModifyGraphWithDelegate(&delegate_), kTfLiteOk);
+  EXPECT_TRUE(test_data_.status.ok());
+  ASSERT_EQ(test_data_.shared_tensors.size(), 1);
+
+  const ::ml_drift::ir::IrOp* el_op = nullptr;
+  for (const auto& op : test_data_.ir_model.ops()) {
+    if (op->name == ToString(::ml_drift::OperationType::EMBEDDING_LOOKUP)) {
+      el_op = op.get();
+    }
+  }
+  ASSERT_NE(el_op, nullptr);
+
+  const auto& attr =
+      std::any_cast<const ::ml_drift::EmbeddingLookupAttributes&>(el_op->attr);
+  EXPECT_EQ(attr.weights_type,
+            ::ml_drift::EmbeddingLookupAttributes::WeightsType::kInt8);
+  EXPECT_EQ(attr.original_weights_shape, ::ml_drift::OHWI(5, 1, 1, 4));
+  EXPECT_EQ(attr.scale_zp_shape, ::ml_drift::OHWI(5, 1, 1, 1));
+
+  bool found_shared_weights = false;
+  for (const auto& tensor : test_data_.ir_model.tensors()) {
+    if (tensor->buffer_source.is_shared) {
+      found_shared_weights = true;
+      // Shared weights are consumed as a runtime input of the embedding op.
+      EXPECT_TRUE(tensor->consumers.contains(el_op->id));
+    }
+  }
+  EXPECT_TRUE(found_shared_weights);
+}
+
+TEST_F(IrModelBuilderTest, ConfiguresSharedBlockwiseEmbeddingLookup) {
+  constexpr int kWeightsIndex = 1;
+  constexpr int kGlobalId = 41;
+  constexpr int kBlockSize = 2;
+  constexpr int kEmbeddingDim = 4;
+  // A shared, blockwise-quantized int4 embedding weight is passed as a runtime
+  // input. Blockwise quantization splits the embedding dim into blocks, so the
+  // recorded per-block scale/zero-point shape has i = embedding_dim / blocksize
+  // (parity with GraphFloat32's shared EMBEDDING_LOOKUP blockwise branch).
+  // int4 weights pack two elements per byte: 5*4 = 20 elements -> 10 bytes.
+  BuildEmbeddingLookupInterpreter(
+      kTfLiteInt4, std::vector<uint8_t>(5 * kEmbeddingDim / 2, 0));
+
+  // Replace the affine quantization applied by AddConstInput with blockwise
+  // quantization. Only the blocksize is read on the shared path; the scale and
+  // zero-point tensor indices are not dereferenced.
+  TfLiteTensor* weights = interpreter_->tensor(kWeightsIndex);
+  TfLiteQuantizationFree(&weights->quantization);
+  auto* blockwise_params = static_cast<TfLiteBlockwiseQuantization*>(
+      malloc(sizeof(TfLiteBlockwiseQuantization)));
+  blockwise_params->scale = 0;
+  blockwise_params->zero_point = -1;
+  blockwise_params->blocksize = kBlockSize;
+  weights->quantization.type = kTfLiteBlockwiseQuantization;
+  weights->quantization.params = blockwise_params;
+
+  test_data_.internal_buffer_map[kWeightsIndex] = kGlobalId;
+
+  ASSERT_EQ(interpreter_->ModifyGraphWithDelegate(&delegate_), kTfLiteOk);
+  EXPECT_TRUE(test_data_.status.ok());
+  ASSERT_EQ(test_data_.shared_tensors.size(), 1);
+
+  const ::ml_drift::ir::IrOp* el_op = nullptr;
+  for (const auto& op : test_data_.ir_model.ops()) {
+    if (op->name == ToString(::ml_drift::OperationType::EMBEDDING_LOOKUP)) {
+      el_op = op.get();
+    }
+  }
+  ASSERT_NE(el_op, nullptr);
+
+  const auto& attr =
+      std::any_cast<const ::ml_drift::EmbeddingLookupAttributes&>(el_op->attr);
+  EXPECT_EQ(attr.weights_type,
+            ::ml_drift::EmbeddingLookupAttributes::WeightsType::kInt4);
+  EXPECT_EQ(attr.original_weights_shape,
+            ::ml_drift::OHWI(5, 1, 1, kEmbeddingDim));
+  // Blockwise splits the embedding dim (4) into 4 / blocksize(2) = 2 blocks.
+  EXPECT_EQ(attr.scale_zp_shape,
+            ::ml_drift::OHWI(5, 1, 1, kEmbeddingDim / kBlockSize));
+
+  bool found_shared_weights = false;
+  for (const auto& tensor : test_data_.ir_model.tensors()) {
+    if (tensor->buffer_source.is_shared) {
+      found_shared_weights = true;
+      // Shared weights are consumed as a runtime input of the embedding op.
+      EXPECT_TRUE(tensor->consumers.contains(el_op->id));
+    }
+  }
+  EXPECT_TRUE(found_shared_weights);
 }
 
 TEST_F(IrModelBuilderTest, ReducesSharedInt4PointwiseConvToFullyConnected) {

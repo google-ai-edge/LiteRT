@@ -545,8 +545,10 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
         interpreter_options.SetCompressQuantizationZeroPoints(
             runtime_options.compress_quantization_zero_points);
         if (runtime_options.enable_profiling) {
-          profiler_ =
-              new LiteRtProfilerT(/*max_profiling_buffer_entries=*/65536);
+          // Increase the default profiling buffer size to 512 * 1024 entries to
+          // prevent dropping events during LLM benchmarks.
+          profiler_ = new LiteRtProfilerT(
+              /*max_profiling_buffer_entries=*/512 * 1024);
         }
         interpreter_options.SetDisableDelegateClustering(
             runtime_options.disable_delegate_clustering);

@@ -534,7 +534,6 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts(),
     deps = [
-        ":op_macros",
         "//tflite:array",
         "//tflite:kernel_api",
         "//tflite:util",
@@ -801,6 +800,7 @@ BUILTIN_KERNEL_DEPS = [
     "//tflite/kernels/internal:portable_tensor_utils",
     "//tflite/kernels/internal:quantization_util",
     "//tflite/kernels/internal:reference_base",
+    "//tflite/kernels/internal:reshape_utils",
     "//tflite/kernels/internal:strided_slice_logic",
     "//tflite/kernels/internal:tensor",
     "//tflite/kernels/internal:tensor_utils",
@@ -1551,8 +1551,11 @@ cc_test(
         ":kernel_util",
         ":test_main",
         ":test_util",
+        "//tflite:array",
         "//tflite:framework_stable",
         "//tflite:string",
+        "//tflite:util",
+        "//tflite/c:common",
         "//tflite/core:framework_stable",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/memory",
@@ -1590,6 +1593,7 @@ cc_test(
         ":kernel_util",
         ":test_main",
         ":test_util",
+        "//tflite:array",
         "//tflite:framework_stable",
         "//tflite/c:common",
         "//tflite/schema:schema_fbs",
@@ -2094,9 +2098,13 @@ cc_test(
     deps = [
         ":reshape_test_common",
         ":test_main",
+        ":test_util",
+        "//tflite:array",
         "//tflite:framework_stable",
         "//tflite:string",
-        "//tflite/core:framework_stable",
+        "//tflite/core/c:common",
+        "//tflite/kernels/internal:reshape_utils",
+        "//tflite/kernels/internal:runtime_shape",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -3202,6 +3210,7 @@ cc_test(
     deps = [
         ":test_main",
         ":test_util",
+        "//tflite:array",
         "//tflite:framework_stable",
         "//tflite/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -3470,7 +3479,10 @@ cc_test(
 tflite_portable_test_suite_combined(
     combine_conditions = {"deps": [
         ":test_main",
+        "//tflite:array",
+        "//tflite:util",
         "//tflite/kernels/internal:float8",
+        "//tflite/kernels/internal:reshape_utils",
     ]},
     # TODO(b/229985981) : Remove `nnapi_args` after adding Relu0To1 is completed.
     nnapi_args = ["--gunit_filter=*Reshape*"],

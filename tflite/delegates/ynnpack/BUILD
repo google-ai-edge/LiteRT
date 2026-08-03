@@ -34,6 +34,7 @@ cc_library(
     deps = [
         "//tflite:builtin_ops",
         "//tflite:minimal_logging",
+        "//tflite/core:subgraph",
         "//tflite/core/c:common",
         "//tflite/delegates/utils:simple_delegate",
         "//tflite/kernels:kernel_util",

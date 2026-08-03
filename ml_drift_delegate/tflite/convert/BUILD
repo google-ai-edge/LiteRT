@@ -29,6 +29,7 @@ cc_library(
         "//tflite/c:common",
         "//tflite/kernels:kernel_util",
         "//tflite/kernels/internal:tensor_ctypes",
+        "@FP16",
         "@XNNPACK",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_check",
@@ -40,6 +41,7 @@ cc_library(
         "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common:util",
         "@ml_drift//ml_drift/common/task:tensor_desc",
     ],
 )
@@ -140,6 +142,8 @@ cc_library(
         "//tflite/c:common",
         "//tflite/kernels:kernel_util",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:operations",
@@ -922,8 +926,11 @@ cc_test(
         "//tflite/c:common",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
     ],
 )
 
