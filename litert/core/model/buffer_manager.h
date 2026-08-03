@@ -64,7 +64,7 @@ class BufferManager {
       OwningBufferRef<uint8_t>&& buffer,
       std::optional<BufferContext> context = std::nullopt) {
     auto&& ctx = context.has_value() ? std::move(*context) : BufferContext{};
-    buffers_.emplace_back(BufferWithContext(buffer, std::move(ctx)));
+    buffers_.emplace_back(BufferWithContext(std::move(buffer), std::move(ctx)));
     return buffers_.size() - 1;
   }
 
