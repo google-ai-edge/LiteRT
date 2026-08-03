@@ -103,6 +103,15 @@ endif()
 
 # LINT.IfChange(litecore_headers_dir)
 if(NOT LITECORE_HEADERS_DIR)
+  # Check if local headers exist in the repository
+  set(_local_exynos_headers "${CMAKE_CURRENT_SOURCE_DIR}/../../exynos/v1_1_0/include")
+  if(EXISTS "${_local_exynos_headers}/graph_wrapper_api.h")
+    set(LITECORE_HEADERS_DIR "${_local_exynos_headers}")
+    message(STATUS "Using local Samsung AI LiteCore headers: ${LITECORE_HEADERS_DIR}")
+  endif()
+endif()
+
+if(NOT LITECORE_HEADERS_DIR)
   if(NOT LITECORE_HEADERS_URL AND NOT LITECORE_GIT_REPO)
     set(LITECORE_HEADERS_URL "https://soc-developer.semiconductor.samsung.com/api/v1/resource/download-file/1.1.0/ai-litecore-ubuntu2404-v1.1.0.tar.gz")
   endif()
