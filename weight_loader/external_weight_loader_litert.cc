@@ -48,17 +48,20 @@ EM_ASYNC_JS(
             'Stream weights callback is not registered or is not a function');
         return 1;
       }
-      const tflIdsArray = new Int32Array(Module.HEAP32.buffer, tfl_ids, count);
-      const wgpuBuffersArray =
-          new Uint32Array(Module.HEAPU32.buffer, wgpu_buffers, count);
-      const offsetsArray =
-          new Float64Array(Module.HEAPF64.buffer, offsets, count);
-      const lengthsArray =
-          new Float64Array(Module.HEAPF64.buffer, lengths, count);
+      const view = new DataView(Module.HEAPU8.buffer);
+      const tflIdsArray = new Int32Array(count);
+      const wgpuBuffersArray = new Uint32Array(count);
+      const offsetsArray = new Float64Array(count);
+      const lengthsArray = new Float64Array(count);
+      for (let i = 0; i < count; i++) {
+        tflIdsArray[i] = view.getInt32(tfl_ids + i * 4, true);
+        wgpuBuffersArray[i] = view.getUint32(wgpu_buffers + i * 4, true);
+        offsetsArray[i] = view.getFloat64(offsets + i * 8, true);
+        lengthsArray[i] = view.getFloat64(lengths + i * 8, true);
+      }
       try {
         await callback(
-            new Int32Array(tflIdsArray), new Uint32Array(wgpuBuffersArray),
-            new Float64Array(offsetsArray), new Float64Array(lengthsArray));
+            tflIdsArray, wgpuBuffersArray, offsetsArray, lengthsArray);
       } catch (e) {
         console.error('Error in streamWeightsOnWeb:', e);
         return 1;
