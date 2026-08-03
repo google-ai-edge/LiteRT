@@ -1,5 +1,6 @@
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//tflite:build_def.bzl", "tflite_copts")
 
 package(
@@ -46,5 +47,37 @@ cc_library(
         "@flatbuffers//:runtime_cc",
         "@slinky//slinky/base:thread_pool",
         "@slinky//slinky/base:thread_pool_impl",
+    ],
+)
+
+cc_test(
+    name = "sdpa_test",
+    srcs = ["sdpa_test.cc"],
+    copts = tflite_copts(),
+    deps = [
+        ":ynnpack_delegate",
+        "//tflite:framework",
+        "//tflite/core/c:common",
+        "//tflite/kernels:test_util",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "sdpa_bench",
+    srcs = ["sdpa_bench.cc"],
+    copts = tflite_copts(),
+    tags = [
+        "manual",
+        "notap",
+    ],
+    deps = [
+        ":ynnpack_delegate",
+        "//tflite:framework",
+        "//tflite/core/c:common",
+        "//tflite/kernels:test_util",
+        "//tflite/profiling:profile_summarizer",
+        "//tflite/profiling:profiler",
+        "@com_google_benchmark//:benchmark",
     ],
 )
