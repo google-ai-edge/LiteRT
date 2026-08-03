@@ -178,6 +178,16 @@ void CopyFloat32Data(const TfLiteTensor* tfl_tensor, float* dst) {
     DequantizeConstantTensor(*tfl_tensor, tfl_tensor->data.uint8, dst);
   } else if (dtype == kTfLiteInt32) {
     DequantizeConstantTensor(*tfl_tensor, tfl_tensor->data.i32, dst);
+  } else if (dtype == kTfLiteInt16) {
+    DequantizeConstantTensor(*tfl_tensor, tfl_tensor->data.i16, dst);
+  } else if (dtype == kTfLiteInt2) {
+    const size_t num_elements = tflite::NumElements(tfl_tensor);
+    auto unpacked_input_data = std::make_unique<int8_t[]>(num_elements);
+    tflite::tensor_utils::UnpackPackedIntToInt8(tfl_tensor->data.int8,
+                                                num_elements, /*bit_width=*/2,
+                                                unpacked_input_data.get());
+    const int8_t* input_data = unpacked_input_data.get();
+    DequantizeConstantTensor(*tfl_tensor, input_data, dst);
   }
 }
 

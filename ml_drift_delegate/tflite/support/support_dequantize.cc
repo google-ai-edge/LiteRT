@@ -33,7 +33,7 @@ bool IsDequantizeSupported(const TfLiteContext* absl_nonnull context,
                            const TfLiteNode* absl_nonnull node,
                            const TfLiteRegistration* absl_nonnull registration,
                            std::string* absl_nonnull error) {
-  if (registration->version > 3) {
+  if (registration->version > 7) {
     *error = absl::StrCat("Unsupported version: ", registration->version);
     return false;
   }
