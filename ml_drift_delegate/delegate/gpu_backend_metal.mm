@@ -512,7 +512,8 @@ absl::Status GpuInferenceContextMetal::PostConvert(bool input) {
 }
 
 absl::Status GpuInferenceContextMetal::Profile(::ml_drift::ProfilingInfo& profiling_info) {
-  return absl::UnimplementedError("Profile is not implemented.");
+  ctx_->Profile(backend_->metal_device()->device(), &profiling_info);
+  return absl::OkStatus();
 }
 
 absl::StatusOr<size_t> GpuInferenceContextMetal::GetSizeOfMemoryAllocatedForIntermediateTensors()
