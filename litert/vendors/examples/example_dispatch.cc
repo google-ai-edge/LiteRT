@@ -265,7 +265,15 @@ class LiteRtDispatchInvocationContextT {
     return has_scheduling_info_ ? &scheduling_info_ : nullptr;
   }
 
-  ~LiteRtDispatchInvocationContextT() = default;
+  void AddBufferRequirement(LiteRtTensorBufferRequirements req) {
+    requirements_.push_back(req);
+  }
+
+  ~LiteRtDispatchInvocationContextT() {
+    for (auto req : requirements_) {
+      LiteRtDestroyTensorBufferRequirements(req);
+    }
+  }
 
   const LiteRtRuntimeContext* runtime_context() const {
     return runtime_context_;
@@ -304,6 +312,8 @@ class LiteRtDispatchInvocationContextT {
   bool has_scheduling_info_ = false;
   LiteRtSchedulingInfo scheduling_info_{};
   LiteRtHwAcceleratorSet run_accelerators_ = kLiteRtHwAcceleratorNone;
+  
+  std::vector<LiteRtTensorBufferRequirements> requirements_;
 };
 
 namespace litert::example {
@@ -381,6 +391,7 @@ LiteRtStatus GetInputRequirements(
       GetTensorBufferRequirements(invocation_context->runtime_context(),
                                   *tensor_type));
   *tensor_buffer_requirements = requirements;
+  invocation_context->AddBufferRequirement(requirements);
   return kLiteRtStatusOk;
 }
 
@@ -393,6 +404,7 @@ LiteRtStatus GetOutputRequirements(
       GetTensorBufferRequirements(invocation_context->runtime_context(),
                                   *tensor_type));
   *tensor_buffer_requirements = requirements;
+  invocation_context->AddBufferRequirement(requirements);
   return kLiteRtStatusOk;
 }
 
