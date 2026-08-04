@@ -171,32 +171,39 @@ class HtpBackend::HtpPerfControl {
     voting_thread_->Enqueue(VotingThread::VoteType::kDownVote, debounce);
   }
 
-  bool ReinitIfNeeded(HtpPerformanceMode new_mode) {
-    const bool needs_init =
-        htp_perf_infra_ == nullptr || new_mode != current_mode_;
-    if (needs_init && !Init(new_mode)) {
-      QNN_LOG_ERROR("HTP backend failed to re-init for performance mode %d.",
-                    new_mode);
-      return false;
-    }
-    ScheduleUpVote();
-    return true;
-  }
-
-  // Applies new_mode for one inference. Manual skips a same-mode re-vote
-  // when init already upvoted, auto always re-votes.
-  bool ApplyPerfMode(HtpPerformanceMode new_mode, HtpPerfCtrlMode ctrl_mode,
-                     bool supports_rpc_polling) {
+  bool SetPerfModeAndApplyIfManual(const Options& options) {
+    const auto new_mode = options.GetHtpPerformanceMode();
     const bool mode_changed = new_mode != current_mode_;
-    if (!mode_changed && ctrl_mode == HtpPerfCtrlMode::kManual) {
+    if (!mode_changed) {
+      QNN_LOG_DEBUG("SetPerfModeAndApplyIfManual: Perf mode doesn't change.");
       return true;
     }
-    if (!ReinitIfNeeded(new_mode)) {
-      return false;
+    if (new_mode != HtpPerformanceMode::kDefault) {
+      QNN_LOG_DEBUG("SetPerfModeAndApplyIfManual: Init new mode.");
+      if (!Init(new_mode)) return false;
+      // RPC polling config is perf-mode dependent, so refresh it on every mode
+      // change (both manual and auto), mirroring HtpBackend::Init.
+      // TODO(jiunkaiy): Enable RPC polling only on SoCs v69 and later. For now,
+      // rely on the QAIRT SDK to disable it on unsupported platforms.
+      if (!SetRpcPolling(new_mode)) {
+        QNN_LOG_ERROR(
+            "Failed to set RPC polling in SetPerfModeAndApplyIfManual.");
+        return false;
+      }
     }
-    if (mode_changed && supports_rpc_polling && !SetRpcPolling(new_mode)) {
-      QNN_LOG_ERROR("Failed to set RPC Polling in ApplyPerfMode.");
-      return false;
+    if (options.GetHtpPerfCtrlMode() == HtpPerfCtrlMode::kManual) {
+      QNN_LOG_DEBUG("SetPerfModeAndApplyIfManual: Work for kManual.");
+      if (new_mode == HtpPerformanceMode::kDefault) {
+        DownVote();
+        // Down-vote leaves the backend at the default level. Record it so a
+        // later re-vote to the previous mode is not skipped by the same-mode
+        // fast path above (the burst -> default -> burst case).
+        current_mode_ = HtpPerformanceMode::kDefault;
+      } else {
+        UpVote();
+      }
+    } else {
+      QNN_LOG_DEBUG("SetPerfModeAndApplyIfManual: Ignore due to kAuto.");
     }
     return true;
   }
@@ -606,30 +613,26 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
 }
 
 bool HtpBackend::SetPerformanceMode(const Options& options) {
-  HtpPerformanceMode performance_mode = options.GetHtpPerformanceMode();
-
-  if (performance_mode == HtpPerformanceMode::kDefault) {
-    if (htp_perf_control_) {
-      htp_perf_control_->ScheduleDownVote();
+  const auto perf_mode = options.GetHtpPerformanceMode();
+  if (perf_mode != HtpPerformanceMode::kDefault) {
+    if (!htp_perf_control_) {
+      htp_perf_control_ = std::make_unique<HtpPerfControl>(QnnApi());
     }
-    return true;
   }
-
-  if (!htp_perf_control_) {
-    QNN_LOG_ERROR(
-        "HTP performance control is not initialized in SetPerformanceMode.");
-    return false;
-  }
-
-  // TODO(jiunkaiy): Enable RPC polling only on SoCs v69 and later. For now,
-  // rely on the QAIRT SDK to disable it on unsupported platforms.
-  if (!htp_perf_control_->ApplyPerfMode(performance_mode,
-                                        options.GetHtpPerfCtrlMode(), true)) {
+  if (htp_perf_control_ &&
+      !htp_perf_control_->SetPerfModeAndApplyIfManual(options)) {
     QNN_LOG_ERROR("Failed to set HTP performance mode in SetPerformanceMode");
     return false;
   }
-
   return true;
+}
+
+void HtpBackend::ScheduleUpVote() {
+  htp_perf_control_->ScheduleUpVote();
+}
+
+void HtpBackend::ScheduleDownVote() {
+  htp_perf_control_->ScheduleDownVote();
 }
 
 GraphConfigBuilder HtpBackend::BuildGraphConfigs(
