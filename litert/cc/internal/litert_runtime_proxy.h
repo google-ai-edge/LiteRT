@@ -1176,6 +1176,13 @@ class RuntimeProxy {
                                options, hardware_accelerators);
   }
 
+  LiteRtStatus SetOptionsSelectedSignatures(LiteRtOptions options,
+                                            size_t num_signature_keys,
+                                            const char* const* signature_keys) {
+    LITERT_PROXY_METHOD_STATUS(litert_set_options_selected_signatures, options,
+                               num_signature_keys, signature_keys);
+  }
+
   LiteRtStatus AddOpaqueOptions(LiteRtOptions options,
                                 LiteRtOpaqueOptions opaque_options) {
     LITERT_PROXY_METHOD_STATUS(litert_add_opaque_options, options,

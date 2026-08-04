@@ -23,6 +23,9 @@
 #include <utility>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
 #include "litert/c/options/litert_compiler_options.h"
@@ -158,6 +161,51 @@ class Options {
   Expected<void> SetHardwareAccelerators(HwAcceleratorSet accelerators) {
     lite_rt_hw_accelerator_set_ =
         static_cast<LiteRtHwAcceleratorSet>(accelerators.value);
+    return {};
+  }
+
+  /// Selects the TFLite signatures that compiled models created with these
+  /// options prepare for execution.
+  ///
+  /// The selected keys identify root subgraphs. In the initial implementation,
+  /// the active subgraph set is the deduplicated root set; transitively
+  /// referenced callee subgraphs are not added.
+  ///
+  /// If this method is not called, all subgraphs are active. The selection must
+  /// be non-empty and contain non-empty, unique keys. The strings are copied.
+  Expected<void> SetSelectedSignatures(
+      absl::Span<const absl::string_view> signature_keys) {
+    if (signature_keys.empty()) {
+      return Unexpected(Status::kErrorInvalidArgument,
+                        "Selected signature keys must not be empty.");
+    }
+
+    std::vector<std::string> copied_keys;
+    copied_keys.reserve(signature_keys.size());
+    absl::flat_hash_set<absl::string_view> unique_keys;
+    for (absl::string_view signature_key : signature_keys) {
+      if (signature_key.empty()) {
+        return Unexpected(Status::kErrorInvalidArgument,
+                          "Selected signature keys must not be empty.");
+      }
+      if (!unique_keys.insert(signature_key).second) {
+        return Unexpected(Status::kErrorInvalidArgument,
+                          "Selected signature keys must be unique.");
+      }
+      copied_keys.emplace_back(signature_key);
+    }
+
+    build_actions_.push_back(
+        [copied_keys = std::move(copied_keys)](internal::RuntimeProxy* runtime,
+                                               LiteRtOptions options) {
+          std::vector<const char*> key_ptrs;
+          key_ptrs.reserve(copied_keys.size());
+          for (const std::string& key : copied_keys) {
+            key_ptrs.push_back(key.c_str());
+          }
+          return runtime->SetOptionsSelectedSignatures(options, key_ptrs.size(),
+                                                       key_ptrs.data());
+        });
     return {};
   }
 

@@ -257,5 +257,7 @@ extern "C" LITERT_CAPI_EXPORT const LiteRtRuntimeCApiStruct
         .litert_environment_supports_fp16 = LiteRtEnvironmentSupportsFP16,
         .litert_create_model_from_fd = LiteRtCreateModelFromFd,
         .litert_get_block_wise_quantization = LiteRtGetBlockWiseQuantization,
+        .litert_set_options_selected_signatures =
+            LiteRtSetOptionsSelectedSignatures,
         // Google-internal LINT.ThenChange()
     };

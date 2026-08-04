@@ -13,7 +13,11 @@
 // limitations under the License.
 
 #include <cstddef>
+#include <string>
+#include <utility>
+#include <vector>
 
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
@@ -66,6 +70,40 @@ LiteRtStatus LiteRtGetOptionsHardwareAccelerators(
   LRT_CHECK_NON_NULL(options);
   LRT_CHECK_NON_NULL(hardware_accelerators);
   *hardware_accelerators = options->hardware_accelerators;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetOptionsSelectedSignatures(
+    LiteRtOptions options, size_t num_signature_keys,
+    const char* const* signature_keys) {
+  LRT_CHECK_NON_NULL(options);
+  if (num_signature_keys == 0 || signature_keys == nullptr) {
+    LITERT_LOG(LITERT_ERROR,
+               "Selected signature keys must be a non-empty list.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  std::vector<std::string> copied_keys;
+  copied_keys.reserve(num_signature_keys);
+  absl::flat_hash_set<std::string> unique_keys;
+  for (size_t i = 0; i < num_signature_keys; ++i) {
+    const char* signature_key = signature_keys[i];
+    if (signature_key == nullptr || signature_key[0] == '\0') {
+      LITERT_LOG(LITERT_ERROR,
+                 "Selected signature key at index %zu must not be null or "
+                 "empty.",
+                 i);
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    if (!unique_keys.insert(signature_key).second) {
+      LITERT_LOG(LITERT_ERROR, "Duplicate selected signature key: %s.",
+                 signature_key);
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    copied_keys.emplace_back(signature_key);
+  }
+
+  options->selected_signature_keys = std::move(copied_keys);
   return kLiteRtStatusOk;
 }
 

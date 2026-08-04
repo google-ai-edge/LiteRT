@@ -556,6 +556,7 @@ litert_c_api_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
         "//litert/core:options",
+        "@com_google_absl//absl/container:flat_hash_set",
     ],
     deps = [
         ":litert_common",
@@ -614,6 +615,7 @@ cc_test(
     data = [
         "//litert/test:testdata/dynamic_add_model.tflite",
         "//litert/test:testdata/simple_model.tflite",
+        "//tflite:testdata/multi_signatures.bin",
     ],
     deps = [
         ":litert_common",
@@ -642,6 +644,7 @@ cc_test(
     data = [
         "//litert/test:testdata/dynamic_add_model.tflite",
         "//litert/test:testdata/simple_model.tflite",
+        "//tflite:testdata/multi_signatures.bin",
     ],
     deps = [
         ":litert_common",

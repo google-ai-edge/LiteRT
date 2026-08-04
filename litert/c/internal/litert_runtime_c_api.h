@@ -46,7 +46,7 @@ extern "C" {
 // LiteRT CompiledModels ABI version number, in semver 2 format
 // (see https://semver.org).  This is the ABI version number for
 // the methods in LiteRtRuntimeCApiStruct, which is defined below.
-#define LITERT_RUNTIME_ABI_VERSION "1.0.0"
+#define LITERT_RUNTIME_ABI_VERSION "1.1.0"
 // TODO(b/493650900): declare that as an extern const (and
 // initialize it in a .cc file) rather than using a macro.
 
@@ -744,6 +744,14 @@ typedef struct LiteRtRuntimeCApiStruct {
   LiteRtStatus (*litert_get_block_wise_quantization)(
       LiteRtTensor tensor,
       LiteRtQuantizationBlockWise* block_wise_quantization);
+
+  // litert_options.h: LiteRtSetOptionsSelectedSignatures
+  //
+  // This entry is intentionally appended to preserve the offsets of all
+  // existing runtime API entries.
+  LiteRtStatus (*litert_set_options_selected_signatures)(
+      LiteRtOptions options, size_t num_signature_keys,
+      const char* const* signature_keys);
 } LiteRtRuntimeCApiStruct;
 
 // LINT.ThenChange(:version_number)
