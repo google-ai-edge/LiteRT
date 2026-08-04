@@ -227,7 +227,7 @@ TEST_P(DspBackendPerfParamTest, ManualSameModeSkipsRevote) {
   EXPECT_EQ(set_power_config_call_count.load(), calls_after_init);
 }
 
-TEST_P(DspBackendPerfParamTest, AutoSameModeRevotes) {
+TEST_P(DspBackendPerfParamTest, AutoSchedulesVotePerInference) {
   const auto& params = GetParam();
   Options options;
   options.SetDspPerformanceMode(params.mode);
@@ -235,9 +235,15 @@ TEST_P(DspBackendPerfParamTest, AutoSameModeRevotes) {
   DspBackend backend(&qnn_api_copy_);
 
   ASSERT_TRUE(backend.Init(options, std::nullopt));
-  const int calls_after_init = set_power_config_call_count.load();
 
+  // Auto mode defers voting: SetPerformanceMode must not vote by itself.
+  const int calls_after_init = set_power_config_call_count.load();
   EXPECT_TRUE(backend.SetPerformanceMode(options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(set_power_config_call_count.load(), calls_after_init);
+
+  // Execute() drives the per-inference upvote/downvote via these hooks.
+  backend.ScheduleUpVote();
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
   EXPECT_EQ(set_power_config_call_count.load(), calls_after_init + 1);
 }
@@ -296,7 +302,7 @@ TEST_F(DspBackendPerfTest, DefaultModeSchedulesDownvote) {
   EXPECT_GT(set_power_config_call_count.load(), calls_after_init);
 }
 
-TEST_F(DspBackendPerfTest, AutoModeChangesAcrossExecutes) {
+TEST_F(DspBackendPerfTest, AutoSchedulesUpAndDownVotes) {
   Options options;
   options.SetDspPerformanceMode(DspPerformanceMode::kPowerSaver);
   options.SetDspPerfCtrlMode(DspPerfCtrlMode::kAuto);
@@ -305,20 +311,16 @@ TEST_F(DspBackendPerfTest, AutoModeChangesAcrossExecutes) {
   ASSERT_TRUE(backend.Init(options, std::nullopt));
   const int calls_after_init = set_power_config_call_count.load();
 
-  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  // Simulate one inference: upvote before, downvote after.
+  backend.ScheduleUpVote();
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  const int calls_after_same = set_power_config_call_count.load();
-  EXPECT_GT(calls_after_same, calls_after_init);
+  const int calls_after_upvote = set_power_config_call_count.load();
+  EXPECT_GT(calls_after_upvote, calls_after_init);
 
-  Options default_options;
-  EXPECT_TRUE(backend.SetPerformanceMode(default_options));
-
-  Options burst_options;
-  burst_options.SetDspPerformanceMode(DspPerformanceMode::kBurst);
-  burst_options.SetDspPerfCtrlMode(DspPerfCtrlMode::kAuto);
-  EXPECT_TRUE(backend.SetPerformanceMode(burst_options));
+  backend.ScheduleDownVote();
+  // kPowerSaver is not debounced, so the downvote applies promptly.
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  EXPECT_GT(set_power_config_call_count.load(), calls_after_same);
+  EXPECT_GT(set_power_config_call_count.load(), calls_after_upvote);
 }
 
 }  // namespace

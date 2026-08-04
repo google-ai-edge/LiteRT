@@ -101,25 +101,27 @@ class DspBackend::DspPerfControl {
     voting_thread_->Enqueue(VotingThread::VoteType::kDownVote, debounce);
   }
 
-  bool ReinitIfNeeded(DspPerformanceMode new_mode) {
-    const bool needs_init =
-        dsp_perf_infra_ == nullptr || new_mode != current_mode_;
-    if (needs_init && !Init(new_mode)) {
-      QNN_LOG_ERROR("DSP backend failed to re-init for performance mode %d.",
-                    new_mode);
-      return false;
-    }
-    ScheduleUpVote();
-    return true;
-  }
-
-  // Applies new_mode for one inference. Manual skips a same-mode re-vote
-  // when init already upvoted, auto always re-votes.
-  bool ApplyPerfMode(DspPerformanceMode new_mode, DspPerfCtrlMode ctrl_mode) {
-    if (new_mode == current_mode_ && ctrl_mode == DspPerfCtrlMode::kManual) {
+  bool SetPerfModeAndApplyIfManual(const Options& options) {
+    const auto new_mode = options.GetDspPerformanceMode();
+    const bool mode_changed = new_mode != current_mode_;
+    if (!mode_changed) {
+      QNN_LOG_DEBUG("SetPerfModeAndApplyIfManual: Perf mode doesn't change.");
       return true;
     }
-    return ReinitIfNeeded(new_mode);
+    if (new_mode != DspPerformanceMode::kDefault) {
+      QNN_LOG_DEBUG("SetPerfModeAndApplyIfManual: Init new mode.");
+      if (!Init(new_mode)) return false;
+    }
+    if (options.GetDspPerfCtrlMode() == DspPerfCtrlMode::kManual) {
+      QNN_LOG_DEBUG("SetPerfModeAndApplyIfManual: Work for kManual.");
+      if (new_mode == DspPerformanceMode::kDefault)
+        DownVote();
+      else
+        UpVote();
+    } else {
+      QNN_LOG_DEBUG("SetPerfModeAndApplyIfManual: Ignore due to kAuto.");
+    }
+    return true;
   }
 
  private:
@@ -317,28 +319,22 @@ bool DspBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
 }
 
 bool DspBackend::SetPerformanceMode(const Options& options) {
-  DspPerformanceMode performance_mode = options.GetDspPerformanceMode();
-
-  if (performance_mode == DspPerformanceMode::kDefault) {
-    if (dsp_perf_control_) {
-      dsp_perf_control_->ScheduleDownVote();
+  const auto perf_mode = options.GetDspPerformanceMode();
+  if (perf_mode != DspPerformanceMode::kDefault) {
+    if (!dsp_perf_control_) {
+      dsp_perf_control_ = std::make_unique<DspPerfControl>(QnnApi());
     }
-    return true;
   }
-
-  if (!dsp_perf_control_) {
-    QNN_LOG_ERROR(
-        "DSP performance control is not initialized in SetPerformanceMode.");
-    return false;
-  }
-
-  if (!dsp_perf_control_->ApplyPerfMode(performance_mode,
-                                        options.GetDspPerfCtrlMode())) {
+  if (dsp_perf_control_ &&
+      !dsp_perf_control_->SetPerfModeAndApplyIfManual(options)) {
     QNN_LOG_ERROR("Failed to set DSP performance mode in SetPerformanceMode");
     return false;
   }
-
   return true;
 }
+
+void DspBackend::ScheduleUpVote() { dsp_perf_control_->ScheduleUpVote(); }
+
+void DspBackend::ScheduleDownVote() { dsp_perf_control_->ScheduleDownVote(); }
 
 }  // namespace qnn
