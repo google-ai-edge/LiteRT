@@ -95,16 +95,19 @@ TEST(OptionsExperimentalTest, MaxUnpooling2D) {
 
   compiled_model.Run(input_buffers, output_buffers);
 
-  {
-    LITERT_ASSERT_OK_AND_ASSIGN(
-        auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(
-            output_buffers[0], TensorBuffer::LockMode::kRead));
-    auto output = absl::MakeSpan(lock_and_addr.second, 8192);
-    ABSL_LOG(INFO) << "Output[0]: " << output[0];
-    // You might want to add more specific assertions here based on expected
-    // output.
-  }
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto lock_and_addr,
+      litert::TensorBufferScopedLock::Create<const float>(
+          output_buffers[0], TensorBuffer::LockMode::kRead));
+  auto output =
+      absl::MakeSpan(lock_and_addr.second, 8192);
+  ABSL_LOG(INFO) << "Output buffer size: " << output.size();
+#if !defined(MEMORY_SANITIZER)
+  // Memory sanitizer complains that the output buffer is not initialized.
+  ABSL_LOG(INFO) << "Output[0]: " << output[0];
+#endif
+  // You might want to add more specific assertions here based on expected
+  // output.
 }
 
 TEST(OptionsExperimentalTest, MaxUnpooling2D_Valid) {
@@ -168,18 +171,15 @@ TEST(OptionsExperimentalTest, MaxUnpooling2D_Valid) {
       29, 0,  0, 0,  0,  0,  0, 32, 0,  0, 0,  0,  25, 26, 0, 0,  0,  0,
       0,  0,  0, 0,  0,  0,  0, 0,  0,  0, 0,  0,  31, 0};
 
-  {
-    LITERT_ASSERT_OK_AND_ASSIGN(
-        auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(
-            output_buffers[0], TensorBuffer::LockMode::kRead));
-    auto output = absl::MakeSpan(lock_and_addr.second, 176);
-    EXPECT_THAT(output, ::testing::Pointwise(::testing::FloatNear(1e-5),
-                                             expected_output));
-  }
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto lock_and_addr,
+      litert::TensorBufferScopedLock::Create<const float>(
+          output_buffers[0], TensorBuffer::LockMode::kRead));
+  auto output = absl::MakeSpan(lock_and_addr.second, 176);
+  EXPECT_THAT(output, ::testing::Pointwise(::testing::FloatNear(1e-5),
+                                            expected_output));
 }
 
-namespace {
 TfLiteStatus SimplePrepare(TfLiteOpaqueContext* context,
                            TfLiteOpaqueNode* node) {
   return kTfLiteOk;
@@ -197,7 +197,6 @@ TfLiteStatus SimpleInvoke(TfLiteOpaqueContext* context,
   std::memcpy(output_data, input_data, bytes);
   return kTfLiteOk;
 }
-}  // namespace
 
 TEST(OptionsExperimentalTest, SinhCustomOp) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
@@ -236,14 +235,12 @@ TEST(OptionsExperimentalTest, SinhCustomOp) {
 
   compiled_model.Run(input_buffers, output_buffers);
 
-  {
-    LITERT_ASSERT_OK_AND_ASSIGN(
-        auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(
-            output_buffers[0], TensorBuffer::LockMode::kRead));
-    auto output = absl::MakeSpan(lock_and_addr.second, 1);
-    EXPECT_FLOAT_EQ(output[0], input_value);
-  }
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto lock_and_addr,
+      litert::TensorBufferScopedLock::Create<const float>(
+          output_buffers[0], TensorBuffer::LockMode::kRead));
+  auto output = absl::MakeSpan(lock_and_addr.second, 1);
+  EXPECT_FLOAT_EQ(output[0], input_value);
 }
 
 }  // namespace
