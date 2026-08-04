@@ -35,6 +35,7 @@
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/buffer_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_object_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
@@ -54,17 +55,16 @@
 namespace litert::ml_drift {
 namespace {
 
-// Creates TensorDescriptor from BHWC shape and data type, if the batch size is
-// 1, then the tensor is created as HWC tensor, otherwise it is created as
-// BHWC tensor.
+// Builds a TensorDescriptor from an already-resolved BHWC shape and data type.
+// If the batch size is 1 the tensor is created as HWC, otherwise as BHWC. The
+// caller resolves the shape/dtype from the appropriate source (the GraphFloat32
+// Value for the GF32 path, or the TfLiteTensor for the IrModel path); see
+// ProcessTensor.
 absl::StatusOr<::ml_drift::TensorDescriptor> CreateTensorDescriptor(
-    const ::ml_drift::GpuInfo& gpu_info,
-    ::ml_drift::TensorRef<::ml_drift::StrongShape<::ml_drift::Layout::BHWC>>&
-        tensor,
+    const ::ml_drift::GpuInfo& gpu_info, ::ml_drift::BHWC shape,
+    ::ml_drift::DataType data_type,
     ::ml_drift::CalculationsPrecision calculation_precision,
     ::ml_drift::TensorStorageType storage_type) {
-  ::ml_drift::BHWC shape = tensor.shape;
-  ::ml_drift::DataType data_type = tensor.type;
   if (data_type == ::ml_drift::DataType::FLOAT32) {
     data_type = DeduceDataTypeFromPrecision(calculation_precision);
   }
@@ -373,15 +373,17 @@ absl::Status DelegateKernelLiteRt::
 }
 
 absl::Status DelegateKernelLiteRt::UpdateCreateInfoWithExternalTensors(
-    TfLiteContext* context, const std::vector<::ml_drift::Value*>& inputs,
-    const std::vector<::ml_drift::Value*>& outputs,
-    ::ml_drift::CreateGpuModelInfo& create_info) {
+    TfLiteContext* context, ::ml_drift::CreateGpuModelInfo& create_info,
+    const std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>>&
+        input_tensor_refs,
+    const std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>>&
+        output_tensor_refs) {
   auto* buffer_context = reinterpret_cast<LiteRtExternalLiteRtBufferContext>(
       context->GetExternalContext(context, kTfLiteLiteRtBufferContext));
 
   // Initialize tensor descriptors
-  input_tensor_descriptors_.resize(inputs.size());
-  output_tensor_descriptors_.resize(outputs.size());
+  input_tensor_descriptors_.resize(input_indices_.size());
+  output_tensor_descriptors_.resize(output_indices_.size());
 
   // Create processing context to pass common data to helper methods
   ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
@@ -389,37 +391,36 @@ absl::Status DelegateKernelLiteRt::UpdateCreateInfoWithExternalTensors(
                                        .gpu_info = gpu_info,
                                        .create_info = create_info};
 
-  // Process tensors based on the mode
-  bool no_external_mode = NoExternalTensorsMode();
-
-  // Process input tensors
-  for (int i = 0; i < inputs.size(); ++i) {
-    auto& input = inputs[i];
-    if (IsExternalSharedConstantTensor(input->id)) {
+  // Process input tensors using the graph's canonical shape/dtype.
+  for (int i = 0; i < input_indices_.size(); ++i) {
+    if (IsExternalSharedConstantTensor(input_ids_[i])) {
       continue;
     }
-    ABSL_RETURN_IF_ERROR(ProcessTensor(context, input, i, proc_context,
-                                       no_external_mode,
-                                       input_tensor_descriptors_));
+    const ::ml_drift::TensorRef<::ml_drift::BHWC>* graph_tensor_ref =
+        i < input_tensor_refs.size() ? &input_tensor_refs[i] : nullptr;
+    ABSL_RETURN_IF_ERROR(ProcessTensor(
+        &context->tensors[input_indices_[i]], input_ids_[i], proc_context,
+        input_tensor_descriptors_[i], graph_tensor_ref));
   }
 
-  // Process output tensors
-  for (int i = 0; i < outputs.size(); ++i) {
-    auto& output = outputs[i];
-    ABSL_RETURN_IF_ERROR(ProcessTensor(context, output, i, proc_context,
-                                       no_external_mode,
-                                       output_tensor_descriptors_));
+  // Process output tensors using the graph's canonical shape/dtype.
+  for (int i = 0; i < output_indices_.size(); ++i) {
+    const ::ml_drift::TensorRef<::ml_drift::BHWC>* graph_tensor_ref =
+        i < output_tensor_refs.size() ? &output_tensor_refs[i] : nullptr;
+    ABSL_RETURN_IF_ERROR(ProcessTensor(
+        &context->tensors[output_indices_[i]], output_ids_[i], proc_context,
+        output_tensor_descriptors_[i], graph_tensor_ref));
   }
 
   return absl::OkStatus();
 }
 
 absl::Status DelegateKernelLiteRt::ProcessTensor(
-    TfLiteContext* context, ::ml_drift::Value* value, int index,
-    const TensorProcessingContext& proc_context, bool no_external_tensor_mode,
-    std::vector<::ml_drift::TensorDescriptor>& tensor_descriptors) {
-  uint32_t tensor_index = value->tensor.ref;
-  TfLiteTensor* tflite_tensor = &context->tensors[tensor_index];
+    TfLiteTensor* tflite_tensor, ::ml_drift::ValueId value_id,
+    const TensorProcessingContext& proc_context,
+    ::ml_drift::TensorDescriptor& out_tensor_descriptor,
+    const ::ml_drift::TensorRef<::ml_drift::BHWC>* graph_tensor_ref) {
+  const bool no_external_tensor_mode = NoExternalTensorsMode();
 
   // Special handling for NoExternalTensorsMode with non-external tensors
   if (no_external_tensor_mode && !IsExternalTensorName(tflite_tensor->name)) {
@@ -429,19 +430,33 @@ absl::Status DelegateKernelLiteRt::ProcessTensor(
   } else {
     // Common path for external tensors (both modes) and standard mode
     if (no_external_tensor_mode) {
-      external_tensor_ids_.insert(value->id);
+      external_tensor_ids_.insert(value_id);
+    }
+    // Resolve the tensor's shape/dtype from its source. The GraphFloat32 path
+    // supplies the graph's inferred Value shape (graph_tensor_ref != nullptr);
+    // the IrModel path has no GraphFloat32 Value objects, so it derives the
+    // same descriptor from the TfLiteTensor -- i.e. it mimics GraphFloat32
+    // using the best shape source available.
+    ::ml_drift::BHWC shape;
+    ::ml_drift::DataType data_type;
+    if (graph_tensor_ref != nullptr) {
+      shape = graph_tensor_ref->shape;
+      data_type = graph_tensor_ref->type;
+    } else {
+      shape = ::litert::ml_drift::ExtractTensorShape(tflite_tensor);
+      data_type = ::litert::ml_drift::ToDataType(tflite_tensor->type);
     }
     ABSL_ASSIGN_OR_RETURN(
         ::ml_drift::TensorDescriptor tensor_desc,
-        CreateTensorDescriptor(proc_context.gpu_info, value->tensor,
+        CreateTensorDescriptor(proc_context.gpu_info, shape, data_type,
                                delegate_data_->calculation_precision,
                                GetStorageType(tflite_tensor->name)));
     auto tensor_storage_type = tensor_desc.GetStorageType();
 
     // Store tensor descriptor
-    tensor_descriptors[index] = tensor_desc;
+    out_tensor_descriptor = tensor_desc;
 
-    proc_context.create_info.external_mutable_tensors.try_emplace(value->id,
+    proc_context.create_info.external_mutable_tensors.try_emplace(value_id,
                                                                   tensor_desc);
     ABSL_RETURN_IF_ERROR(RegisterLiteRtBufferRequirements(
         proc_context.buffer_context, tflite_tensor, tensor_desc,

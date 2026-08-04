@@ -25,9 +25,13 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/synchronization/blocking_counter.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
+#include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include "ml_drift/common/tensor.h"  // from @ml_drift
+#include "ml_drift_delegate/delegate/composite/ir/litert_op_selector.h"
 #include "ml_drift_delegate/delegate/composite/litert_op_selector.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
 #include "ml_drift_delegate/delegate/delegate_options.h"
@@ -52,9 +56,7 @@ class DelegateKernel {
   }
 
   // Returns true if there are any quantized tensors in the model.
-  inline bool HasQuantizedTensors() const {
-    return !quant_conversion_map_.empty();
-  }
+  bool HasQuantizedTensors() const { return !quant_conversion_map_.empty(); }
 
   // Calls the delegate to get the list of tensors that need to be temporarily
   // storage. It's usually needed for quantized tensors. And it's eventually
@@ -86,14 +88,19 @@ class DelegateKernel {
   GpuBackend* backend() const { return backend_; }
 
  protected:
-  // A virtual function to update the create_info with external tensors.
-  // inputs and outputs are the list of Value* that are used in the GraphFloat32
-  // model.
-  // Used external tensors are added to external_tensor_ids_.
+  // Updates create_info with the delegate's external I/O tensors.
+  // For the GraphFloat32 path, the canonical BHWC shape/dtype for each I/O
+  // tensor is supplied via input_tensor_refs/output_tensor_refs (aligned
+  // element-wise with input_indices_/output_indices_), taken from the graph's
+  // inferred Value shapes. The IrModel path has no GraphFloat32 Value objects
+  // and passes empty vectors, in which case shapes are derived from the
+  // TfLiteTensor. Used external tensors are added to external_tensor_ids_.
   virtual absl::Status UpdateCreateInfoWithExternalTensors(
-      TfLiteContext* context, const std::vector<::ml_drift::Value*>& inputs,
-      const std::vector<::ml_drift::Value*>& outputs,
-      ::ml_drift::CreateGpuModelInfo& create_info) = 0;
+      TfLiteContext* context, ::ml_drift::CreateGpuModelInfo& create_info,
+      const std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>>&
+          input_tensor_refs,
+      const std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>>&
+          output_tensor_refs) = 0;
 
   // Returns true if the given id is an external shared constant tensor.
   bool IsExternalSharedConstantTensor(::ml_drift::ValueId id) {
@@ -112,6 +119,11 @@ class DelegateKernel {
   }
 
  private:
+  // Initializes the delegate kernel using the legacy GraphFloat32 pipeline
+  // (the default, non-IrModel path). Called by Initialize().
+  absl::Status InitializeGraphFloat32(
+      TfLiteContext* context, const TfLiteDelegateParams* delegate_params);
+
   // Initializes external shared constant tensors.
   // Note: This is only called when `enable_constant_tensors_sharing` is true.
   absl::Status InitializeExternalSharedConstantTensors(
@@ -122,7 +134,7 @@ class DelegateKernel {
 
   // Returns false if serialization prerequisites are not initialized. Otherwise
   // initializes the serialization params and returns true.
-  bool ReadFromSerialzedData();
+  bool ReadFromSerializedData();
 
   // Builds the GPU model, while preparing weights on GPU. This will be used
   // when convert_weights_on_gpu is enabled.
@@ -151,6 +163,33 @@ class DelegateKernel {
       TfLiteContext* context, const TfLiteDelegateParams* delegate_params,
       const ::ml_drift::CreateGpuModelInfo& create_info,
       ::ml_drift::GraphFloat32* graph);
+
+  // ---- IrModel path (selected at runtime via options->use_ir_model). ----
+  // These mirror the GraphFloat32 helpers above but operate on an IrModel and
+  // the IrModel-specific op selector.
+  absl::Status InitializeIrModel(TfLiteContext* context,
+                                 const TfLiteDelegateParams* delegate_params);
+
+  absl::Status IrModelToGpuModelWithGpuConverters(
+      ::ml_drift::ir::IrModel* model,
+      ::ml_drift::CreateGpuModelInfo& create_info,
+      ::ml_drift::GpuModel* gpu_model, ir::LiteRtOpSelector* op_selector);
+
+  absl::Status InitInferenceContextFromSerializedData(
+      TfLiteContext* context, const TfLiteDelegateParams* delegate_params,
+      const ::ml_drift::CreateGpuModelInfo& create_info,
+      ::ml_drift::ir::IrModel* model, ir::LiteRtOpSelector* op_selector);
+
+  absl::Status InitInferenceContextFromGraph(
+      TfLiteContext* context, const TfLiteDelegateParams* delegate_params,
+      const ::ml_drift::CreateGpuModelInfo& create_info,
+      ::ml_drift::ir::IrModel* model, ir::LiteRtOpSelector* op_selector,
+      std::vector<uint8_t>* serialized_model);
+
+  absl::Status InitInferenceContext(
+      TfLiteContext* context, const TfLiteDelegateParams* delegate_params,
+      const ::ml_drift::CreateGpuModelInfo& create_info,
+      ::ml_drift::ir::IrModel* model);
 
   // Creates a new SerializationWeightCache and returns it. If the serialization
   // is disabled, it will return a nullptr. If there is an error, it will return

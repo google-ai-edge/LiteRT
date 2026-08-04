@@ -21,13 +21,14 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "litert/c/litert_common.h"
 #include "ml_drift_delegate/delegate/delegate_kernel.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
@@ -132,10 +133,18 @@ class DelegateKernelLiteRt : public DelegateKernel {
   // RegisterLiteRtBufferRequirements().
   // - It create TensorDescriptors which are later used to create SpatialTensor
   // in BindTensorBuffers().
+  // External tensors are computed from input_ids_/input_indices_ and
+  // output_ids_/output_indices_.
+  //
+  // GraphFloat32 callers pass the graph's canonical BHWC shapes via
+  // input_tensor_refs/output_tensor_refs; the IrModel path passes empty vectors
+  // and shapes are derived from the TfLiteTensor. See ProcessTensor().
   absl::Status UpdateCreateInfoWithExternalTensors(
-      TfLiteContext* context, const std::vector<::ml_drift::Value*>& inputs,
-      const std::vector<::ml_drift::Value*>& outputs,
-      ::ml_drift::CreateGpuModelInfo& create_info) override;
+      TfLiteContext* context, ::ml_drift::CreateGpuModelInfo& create_info,
+      const std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>>&
+          input_tensor_refs,
+      const std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>>&
+          output_tensor_refs) override;
 
   // Returns the storage type for the given tensor name.
   // If the tensor name matches any of the buffer storage type patterns,
@@ -185,17 +194,16 @@ class DelegateKernelLiteRt : public DelegateKernel {
       LiteRtExternalLiteRtBufferContext buffer_context,
       TfLiteTensor* tflite_tensor);
 
-  // Unified tensor processing method that handles both standard and
-  // NoExternalTensorsMode. The behavior is controlled by the parameters:
-  // - no_external_tensor_mode: if true, indicates NoExternalTensorsMode is
-  // active
-  //   in NoExternalTensorsMode
-  // - tensor_descriptors: reference to either input_tensor_descriptors_ or
-  //   output_tensor_descriptors_ where the descriptor will be stored
+  // Processes a single tensor, identified by its TfLiteTensor and IrModel
+  // ValueId, storing the resulting descriptor in out_tensor_descriptor. When
+  // graph_tensor_ref is non-null (GraphFloat32 path), its canonical BHWC
+  // shape/dtype is used to build the tensor descriptor; otherwise (IrModel
+  // path) the descriptor is derived from the TfLiteTensor.
   absl::Status ProcessTensor(
-      TfLiteContext* context, ::ml_drift::Value* value, int index,
-      const TensorProcessingContext& proc_context, bool no_external_tensor_mode,
-      std::vector<::ml_drift::TensorDescriptor>& tensor_descriptors);
+      TfLiteTensor* tflite_tensor, ::ml_drift::ValueId value_id,
+      const TensorProcessingContext& proc_context,
+      ::ml_drift::TensorDescriptor& out_tensor_descriptor,
+      const ::ml_drift::TensorRef<::ml_drift::BHWC>* graph_tensor_ref);
 
   // Binds the GPU memory to the inference context.
   absl::Status BindGpuMemoryToInferenceContext(

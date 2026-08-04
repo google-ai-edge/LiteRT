@@ -28,6 +28,14 @@ namespace litert::ml_drift {
 bool IsAsyncExecutionMode(TfLiteContext* context,
                           const LiteRtRuntimeContext* runtime_context);
 
+// Builds the list of ops to delegate to ML Drift using the IR model builder
+// path (used when options->use_ir_model is set). The caller takes ownership of
+// the returned TfLiteIntArray and must free it with TfLiteIntArrayFree.
+TfLiteIntArray* GetIrModelOpsToReplace(TfLiteContext* context,
+                                       const MlDriftDelegateData& delegate_data,
+                                       int start_node_index,
+                                       int end_node_index);
+
 // Returns tensor maps from the delegate data. If the shared tensor maps are
 // provided by the client, returns the shared tensor maps from the client.
 inline ::ml_drift::ValueIdToSharedTensorMap& GetBufferIdToSpatialTensorMap(
