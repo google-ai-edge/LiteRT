@@ -1366,11 +1366,7 @@ cc_library(
         "//tflite/core/c:headers_filegroup",
     ],
     visibility = [
-        # copybara:uncomment_begin(oss litert_lm)
-        # "//litert:litert_public",
-        # copybara:uncomment_end_and_comment_begin
-        "//visibility:public",
-        # copybara:comment_end
+        "//litert:__subpackages__",
     ],
     deps = [
         # C++ API targets.

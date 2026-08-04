@@ -22,13 +22,7 @@ load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
-        # By default, visibility is restricted to litert_cc_users_dynamic_link. Individual targets can be
-        # made public by setting their visibility to litert_public.
-        # copybara:uncomment_begin(oss litert_lm)
-        # "//litert:litert_cc_users_dynamic_link",
-        # copybara:uncomment_end_and_comment_begin
-        "//visibility:public",
-        # copybara:comment_end
+        "//litert:__subpackages__",
     ],
 )
 
@@ -130,9 +124,6 @@ cc_test(
 cc_library(
     name = "litert_event",
     hdrs = ["//litert/cc:litert_event.h"],
-    visibility = [
-        "//litert:litert_public",
-    ],
     deps = [
         ":litert_environment",
         "//litert/cc:litert_expected",
@@ -171,9 +162,6 @@ cc_library(
     name = "litert_model",
     hdrs = ["//litert/cc:litert_model.h"],
     defines = ["LITERT_DYNAMIC_RUNTIME"],
-    visibility = [
-        "//litert:litert_public",
-    ],
     deps = [
         ":litert_environment",
         "//litert/cc:litert_api_types",
@@ -204,7 +192,6 @@ cc_library(
 cc_library(
     name = "litert_tensor_buffer_types",
     hdrs = ["//litert/cc:litert_tensor_buffer_types.h"],
-    visibility = ["//litert:litert_public"],
     deps = [
         "//litert/cc/internal:litert_tensor_buffer_utils",
     ] + select({
@@ -219,9 +206,6 @@ cc_library(
     name = "litert_extended_model",
     hdrs = ["//litert/cc/internal:litert_extended_model.h"],
     defines = ["LITERT_DYNAMIC_RUNTIME"],
-    visibility = [
-        "//litert:litert_public",
-    ],
     deps = [
         ":litert_environment",
         ":litert_model",
@@ -251,9 +235,6 @@ cc_library(
 cc_library(
     name = "litert_builder",
     hdrs = ["//litert/cc/internal:litert_builder.h"],
-    visibility = [
-        "//litert:litert_public",
-    ],
     deps = [
         ":litert_extended_model",
         ":litert_op_options",
@@ -282,9 +263,6 @@ cc_library(
 cc_library(
     name = "litert_matchers",
     hdrs = ["//litert/cc/internal:litert_matchers.h"],
-    visibility = [
-        "//litert:litert_public",
-    ],
     deps = [
         ":litert_extended_model",
         ":litert_op_options",
@@ -336,7 +314,6 @@ cc_test(
 cc_library(
     name = "litert_model_predicates",
     hdrs = ["//litert/cc/internal:litert_model_predicates.h"],
-    visibility = ["//litert:litert_public"],
     deps = [
         ":litert_environment",
         ":litert_extended_model",
@@ -407,7 +384,6 @@ cc_test(
 cc_library(
     name = "litert_op_options",
     hdrs = ["//litert/cc/internal:litert_op_options.h"],
-    visibility = ["//litert:litert_public"],
     deps = [
         "@com_google_absl//absl/strings:string_view",
         "@flatbuffers//:runtime_cc",
@@ -539,9 +515,6 @@ cc_library(
 cc_library(
     name = "litert_string_util",
     hdrs = ["//litert/cc:litert_string_util.h"],
-    visibility = [
-        "//litert:litert_public",
-    ],
     deps = [
         ":litert_environment",
         ":litert_tensor_buffer",
@@ -782,19 +755,9 @@ cc_library(
 
 # Advanced CompiledModel with new / experimental features.
 
-next_library_visibility = [
-    # copybara:uncomment_begin(oss)
-    # "//litert:litert_friends",
-    # "//litert/runtime/dispatch:__subpackages__",
-    # copybara:uncomment_end_and_comment_begin
-    "//visibility:public",
-    # copybara:comment_end
-]
-
 cc_library(
     name = "litert_compiled_model_next",
     hdrs = ["//litert/cc/internal:litert_compiled_model_next.h"],
-    visibility = next_library_visibility,
     deps = [
         ":litert_compiled_model",
         ":litert_environment",
