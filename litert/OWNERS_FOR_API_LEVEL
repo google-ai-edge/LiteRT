@@ -1,0 +1,30 @@
+# ==============================================================================
+# LITERT ANDROID API LEVEL OWNERS & GOVERNANCE
+# ==============================================================================
+# This file governs modifications to minimum Android SDK level (minSdkVersion)
+# and Android NDK API level (--android_ndk_min_sdk_version) for the LiteRT
+# Android API.
+#
+# IMPACTS OF INCREASING API LEVELS:
+# 1. Android Min SDK (minSdkVersion / minSdk):
+#    - Increasing minSdkVersion drops support for older Android OS releases
+#      (e.g., API 23 = Android 6.0; API 26 = Android 8.0; API 31 = Android 12).
+#    - Consumer Android apps targeting older SDKs will fail to build or install
+#      if LiteRT requires a higher SDK level than the app.
+# 2. Android NDK API Level (--android_ndk_min_sdk_version / __ANDROID_API__):
+#    - Determines system library symbol availability (libc, libm, linker APIs)
+#      in compiled native shared libraries (.so) and binaries.
+#    - Binaries built with a higher NDK API level will fail at runtime on older
+#      devices with UnsatisfiedLinkError or symbol resolution errors.
+#
+# CRITERIA FOR APPROVING API LEVEL INCREASES:
+# - Must be approved by designated LiteRT Android API owners.
+# - Clear technical necessity (platform features that cannot be probed at runtime).
+# - Impact assessment on downstream consumers (Google Play services,
+#   Android OS, Tensor, MediaTek, Qualcomm, external AAR/Maven developers).
+# - Consistent alignment across AndroidManifest.xml and release build scripts.
+# ==============================================================================
+
+terryheo
+niuchl
+jingjiangli
