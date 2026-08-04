@@ -63,7 +63,11 @@ Expected<OwningBufferRef<uint8_t>> GetModelBufWithByteCode(
     }
   }
 
-  return SerializeModel(std::move(model), bytecode_alignment);
+  auto serialized = SerializeModel(std::move(model), bytecode_alignment);
+  if (!serialized) {
+    return serialized.Error();
+  }
+  return OwningBufferRef<uint8_t>(serialized->Data(), serialized->Size());
 }
 
 Expected<OwningBufferRef<uint8_t>> GetModelBufWithByteCode(
