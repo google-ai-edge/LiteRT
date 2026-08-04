@@ -33,6 +33,7 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/synchronization/blocking_counter.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -715,15 +716,38 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
     MlDriftDelegatePrecision precision;
     bool convert_weights_on_gpu;
     bool use_f32_accum_for_fp16;
+    bool allow_src_quantized_fc_conv_ops;
+    bool prefer_texture_weights;
+    bool use_buffer_storage_type;
+    bool enable_infinite_float_capping;
+    bool enable_fast_tuning;
+#ifdef __APPLE__
+    bool use_metal_argument_buffers;
+#endif  // __APPLE__
   } options_to_fingerprint = {};
   options_to_fingerprint.precision = delegate_data_->options->precision;
   options_to_fingerprint.convert_weights_on_gpu =
       delegate_data_->options->convert_weights_on_gpu;
   options_to_fingerprint.use_f32_accum_for_fp16 =
       delegate_data_->options->use_f32_accum_for_fp16;
+  options_to_fingerprint.allow_src_quantized_fc_conv_ops =
+      delegate_data_->options->allow_src_quantized_fc_conv_ops;
+  options_to_fingerprint.prefer_texture_weights =
+      delegate_data_->options->prefer_texture_weights;
+  options_to_fingerprint.use_buffer_storage_type =
+      delegate_data_->options->use_buffer_storage_type;
+  options_to_fingerprint.enable_infinite_float_capping =
+      delegate_data_->options->enable_infinite_float_capping;
+  options_to_fingerprint.enable_fast_tuning =
+      delegate_data_->options->enable_fast_tuning;
+#ifdef __APPLE__
+  options_to_fingerprint.use_metal_argument_buffers =
+      delegate_data_->options->use_metal_argument_buffers;
+#endif  // __APPLE__
   std::string options_fingerprint = tflite::delegates::StrFingerprint(
       reinterpret_cast<const char*>(&options_to_fingerprint),
       sizeof(options_to_fingerprint));
+  absl::StrAppend(&options_fingerprint, backend_->GetBackendName());
 
   std::unique_ptr<tflite::delegates::SerializationEntry> data_key;
   std::unique_ptr<::ml_drift::SerializationProgramCache> program_cache;
