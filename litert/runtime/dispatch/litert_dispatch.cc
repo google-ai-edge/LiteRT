@@ -87,6 +87,13 @@ namespace {
 litert::SharedLibrary* DispatchSharedLibrary = nullptr;
 bool IsTheApiInitialized = false;
 LiteRtDispatchApi TheApi = {
+    /*.abi_header=*/
+    {
+        /*.struct_size=*/sizeof(LiteRtDispatchApi),
+        /*.major_version=*/1,
+        /*.minor_version=*/0,
+        /*.reserved=*/0,
+    },
     /*.version=*/{/*.major=*/0, /*.minor=*/0, /*.patch=*/0},
     /*.interface=*/nullptr,
     /*.async_interface=*/nullptr,

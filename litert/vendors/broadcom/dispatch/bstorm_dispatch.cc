@@ -996,9 +996,17 @@ static LiteRtDispatchGraphInterface bstorm_LiteRt_graph_interface = {
 };
 
 static LiteRtDispatchApi bstorm_LiteRt_dispatch_api = {
-    /*.version=*/{/*.major=*/LITERT_API_VERSION_MAJOR,
-                  /*.minor=*/LITERT_API_VERSION_MINOR,
-                  /*.patch=*/LITERT_API_VERSION_PATCH},
+    /*.abi_header=*/
+    {
+        /*.struct_size=*/sizeof(LiteRtDispatchApi),
+        /*.major_version=*/1,
+        /*.minor_version=*/0,
+        /*.reserved=*/0,
+    },
+    /*.version=*/
+    {/*.major=*/LITERT_API_VERSION_MAJOR,
+     /*.minor=*/LITERT_API_VERSION_MINOR,
+     /*.patch=*/LITERT_API_VERSION_PATCH},
     /*.interface=*/&bstorm_LiteRt_dispatch_interface,
     /*.async_interface=*/nullptr,
     /*.graph_interface=*/&bstorm_LiteRt_graph_interface,

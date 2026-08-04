@@ -88,6 +88,7 @@ cc_library(
         "//litert/c:litert_metrics",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_abi_header",
         "//litert/c/internal:litert_custom_tensor_buffer_handlers_def",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_runtime_context_header",

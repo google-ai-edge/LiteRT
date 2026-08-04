@@ -144,7 +144,13 @@ class YnnpackAccelerator final
 extern "C" {
 
 static LiteRtAcceleratorDef LiteRtYnnpackAcceleratorImpl = {
-    .version = 1,
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtAcceleratorDefV1),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .get_name = litert::YnnpackAccelerator::GetName,
     .get_version = litert::YnnpackAccelerator::GetVersion,
     .get_hardware_support = litert::YnnpackAccelerator::GetHardwareSupport,

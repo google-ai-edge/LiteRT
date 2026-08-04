@@ -17,6 +17,7 @@
 
 #include <stddef.h>
 
+#include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -35,6 +36,8 @@ extern "C" {
 /// @note This concrete type is shared between the runtime and the Dispatch
 ///     plugin and Accelerator plugin, so it must be ABI stable.
 typedef struct LiteRtCustomTensorBufferHandlersDef {
+  LiteRtAbiHeader abi_header;
+
   CreateCustomTensorBuffer create_func;
   DestroyCustomTensorBuffer destroy_func;
   LockCustomTensorBuffer lock_func;
@@ -52,18 +55,20 @@ typedef struct LiteRtCustomTensorBufferHandlersDef {
 
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtCustomTensorBufferHandlersDef) == 128,
+static_assert(sizeof(LiteRtCustomTensorBufferHandlersDef) == 136,
               "LiteRtCustomTensorBufferHandlersDef size mismatch");
-static_assert(offsetof(LiteRtCustomTensorBufferHandlersDef, device_tag) == 48,
+static_assert(offsetof(LiteRtCustomTensorBufferHandlersDef, abi_header) == 0,
+              "LiteRtCustomTensorBufferHandlersDef abi_header offset mismatch");
+static_assert(offsetof(LiteRtCustomTensorBufferHandlersDef, device_tag) == 56,
               "LiteRtCustomTensorBufferHandlersDef device_tag offset mismatch");
-static_assert(offsetof(LiteRtCustomTensorBufferHandlersDef, queue_tag) == 52,
+static_assert(offsetof(LiteRtCustomTensorBufferHandlersDef, queue_tag) == 60,
               "LiteRtCustomTensorBufferHandlersDef queue_tag offset mismatch");
 static_assert(offsetof(LiteRtCustomTensorBufferHandlersDef,
-                       num_supported_buffer_types) == 56,
+                       num_supported_buffer_types) == 64,
               "LiteRtCustomTensorBufferHandlersDef num_supported_buffer_types "
               "offset mismatch");
 static_assert(offsetof(LiteRtCustomTensorBufferHandlersDef,
-                       supported_buffer_types) == 64,
+                       supported_buffer_types) == 72,
               "LiteRtCustomTensorBufferHandlersDef supported_buffer_types "
               "offset mismatch");
 #endif  // __cplusplus

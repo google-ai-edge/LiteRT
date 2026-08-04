@@ -325,7 +325,13 @@ LiteRtStatus GpuAccelerator::ImportGpuMemory(
 // This object is used by the LiteRT environment constructor and the
 // object name is looked up by dlsym().
 extern "C" LiteRtAcceleratorDef LiteRtAcceleratorImpl = {
-    .version = 1,  // LiteRtAcceleratorDefV1
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtAcceleratorDefV1),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .get_name = GpuAccelerator::GetName,
     .get_version = GpuAccelerator::GetVersion,
     .get_hardware_support = GpuAccelerator::GetHardwareSupport,

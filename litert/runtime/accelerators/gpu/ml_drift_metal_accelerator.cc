@@ -124,7 +124,13 @@ class GpuMetalAccelerator {
 // object name is looked up by dlsym().
 // The symbol is exported by runtime/accelerators/gpu/macos_exported_symbols.lds
 extern "C" LiteRtAcceleratorDef LiteRtAcceleratorImpl = {
-    .version = 1,  // LiteRtAcceleratorDefV1
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtAcceleratorDefV1),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .get_name = GpuMetalAccelerator::GetName,
     .get_version = GpuMetalAccelerator::GetVersion,
     .get_hardware_support = GpuMetalAccelerator::GetHardwareSupport,
