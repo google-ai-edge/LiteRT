@@ -110,3 +110,26 @@ target_link_libraries(support_preprocessor_stb_image_preprocessor
     absl::strings
     stblib
 )
+
+# ==============================================================================
+# Stub Image Preprocessor
+# ==============================================================================
+add_library(support_preprocessor_stub_image_preprocessor STATIC
+  stub_image_preprocessor.cc
+)
+add_library(LiteRT::Support::Preprocessor::StubImage ALIAS support_preprocessor_stub_image_preprocessor)
+
+target_include_directories(support_preprocessor_stub_image_preprocessor
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+)
+
+target_link_libraries(support_preprocessor_stub_image_preprocessor
+  PUBLIC
+    LiteRT::Support::Util::IoTypes
+    litert_cc_api
+    absl::status
+    absl::strings
+)
+

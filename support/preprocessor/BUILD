@@ -453,6 +453,15 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "stub_image_preprocessor",
+    srcs = ["stub_image_preprocessor.cc"],
+    deps = [
+        ":image_preprocessor",
+    ],
+    alwayslink = 1,
+)
+
 # copybara:uncomment_begin(oss litert)
 # cc_test(
 #     name = "skia_image_preprocessor_test",
