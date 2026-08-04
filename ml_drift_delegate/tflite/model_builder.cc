@@ -80,6 +80,96 @@
 namespace litert::ml_drift {
 namespace {
 
+const TfLiteNode* FindProducerNode(
+    const TfLiteContext* context, int tensor_index,
+    const TfLiteRegistration** registration_out) {
+  auto* subgraph = reinterpret_cast<const ::tflite::Subgraph*>(context->impl_);
+  for (int i = 0; i < subgraph->nodes_size(); ++i) {
+    const auto& node_reg = subgraph->nodes_and_registration()[i];
+    const TfLiteNode& node = node_reg.first;
+    for (int j = 0; j < node.outputs->size; ++j) {
+      if (node.outputs->data[j] == tensor_index) {
+        if (registration_out) {
+          *registration_out = &node_reg.second;
+        }
+        return &node;
+      }
+    }
+  }
+  return nullptr;
+}
+
+int CountTensorConsumers(const TfLiteContext* context, int tensor_index) {
+  auto* subgraph = reinterpret_cast<const ::tflite::Subgraph*>(context->impl_);
+  int count = 0;
+  for (int i = 0; i < subgraph->nodes_size(); ++i) {
+    const auto& node_reg = subgraph->nodes_and_registration()[i];
+    const TfLiteNode& node = node_reg.first;
+    for (int j = 0; j < node.inputs->size; ++j) {
+      if (node.inputs->data[j] == tensor_index) {
+        count++;
+      }
+    }
+  }
+  return count;
+}
+
+bool CanFuseDequantizeWeights(ObjectReader* reader, int weights_tensor_index,
+                              int* quantized_weights_tensor_index_out,
+                              const TfLiteNode** dequantize_node_out) {
+  const TfLiteRegistration* producer_reg = nullptr;
+  const TfLiteNode* producer_node =
+      FindProducerNode(reader->Context(), weights_tensor_index, &producer_reg);
+  if (!producer_node ||
+      producer_reg->builtin_code != kTfLiteBuiltinDequantize) {
+    return false;
+  }
+  int consumers = CountTensorConsumers(reader->Context(), weights_tensor_index);
+  if (consumers != 1) {
+    return false;
+  }
+  int quantized_tensor_index = producer_node->inputs->data[0];
+  const TfLiteTensor* quantized_tensor =
+      reader->GetTensor(quantized_tensor_index);
+  if (!::tflite::IsConstantTensor(quantized_tensor)) {
+    return false;
+  }
+  if (quantized_tensor->type != kTfLiteInt8 &&
+      quantized_tensor->type != kTfLiteInt4 &&
+      quantized_tensor->type != kTfLiteInt2) {
+    return false;
+  }
+  if (quantized_weights_tensor_index_out) {
+    *quantized_weights_tensor_index_out = quantized_tensor_index;
+  }
+  if (dequantize_node_out) {
+    *dequantize_node_out = producer_node;
+  }
+  return true;
+}
+
+::ml_drift::FullyConnectedInt2Attributes ToFullyConnectedInt2Attributes(
+    const ::ml_drift::FullyConnectedInt8Attributes& attr) {
+  ::ml_drift::FullyConnectedInt2Attributes int2_attr;
+  int2_attr.weights = attr.weights;
+  int2_attr.scale = attr.scale;
+  int2_attr.zero_point = attr.zero_point;
+  int2_attr.bias = attr.bias;
+  int2_attr.op_name = attr.op_name;
+  return int2_attr;
+}
+
+::ml_drift::FullyConnectedInt4Attributes ToFullyConnectedInt4Attributes(
+    const ::ml_drift::FullyConnectedInt8Attributes& attr) {
+  ::ml_drift::FullyConnectedInt4Attributes int4_attr;
+  int4_attr.weights = attr.weights;
+  int4_attr.scale = attr.scale;
+  int4_attr.zero_point = attr.zero_point;
+  int4_attr.bias = attr.bias;
+  int4_attr.op_name = attr.op_name;
+  return int4_attr;
+}
+
 inline std::string GetTensorDebugString(const TfLiteTensor* tensor) {
   return absl::StrCat("{\n  type: ", TfLiteTypeGetName(tensor->type),
                       "\n  data: {...}\n  dims: ",
@@ -106,13 +196,12 @@ inline std::string GetTensorDebugString(const TfLiteTensor* tensor) {
   return attr;
 }
 
-// if copy_weights is true, input can be int4 and then it will be unpacked to
-// int8.
-::ml_drift::FullyConnectedInt8Attributes GetFullyConnectedInt8Attributes(
-    int weights_node_input_index, int bias_node_input_index,
-    ObjectReader* reader, bool copy_weights = true) {
-  const TfLiteTensor* weights_tensor =
-      reader->GetInputTensor(weights_node_input_index);
+::ml_drift::FullyConnectedInt8Attributes
+GetFullyConnectedInt8AttributesByTensorIndex(int weights_tensor_index,
+                                             int bias_tensor_index,
+                                             ObjectReader* reader,
+                                             bool copy_weights = true) {
+  const TfLiteTensor* weights_tensor = reader->GetTensor(weights_tensor_index);
 
   const bool supported_int8 = weights_tensor->type == kTfLiteInt8;
   const bool supported_int4 =
@@ -180,14 +269,11 @@ inline std::string GetTensorDebugString(const TfLiteTensor* tensor) {
             qparams->zero_point->data, qparams->zero_point->size);
       }
     }
-    // TFLite assumes that scale and zero_point have the same logical shape.
-    // Since TFLite de-duplicates zero_point and its physical storage shape
-    // might  be shrinked from its logical shape, we should set zero_point's
-    // logical shape by scale's shape.
     attr.zero_point.shape = ::ml_drift::OHWI(qparams->scale->size, 1, 1, 1);
-    if (reader->IsNodeInputTensorPresent(bias_node_input_index)) {
-      reader->ReadTensor(bias_node_input_index, &attr.bias,
-                         ReadTensorFlags::kNoExtraBytes);
+    if (bias_tensor_index >= 0) {
+      const TfLiteTensor* bias_tensor = reader->GetTensor(bias_tensor_index);
+      TfLiteTensorToTensorCopyData(bias_tensor, &attr.bias,
+                                   ReadTensorFlags::kNoExtraBytes);
     }
     return attr;
   }
@@ -242,14 +328,26 @@ inline std::string GetTensorDebugString(const TfLiteTensor* tensor) {
       }
       attr.zero_point.shape = attr.scale.shape;
     }
-    if (reader->IsNodeInputTensorPresent(bias_node_input_index)) {
-      reader->ReadTensor(bias_node_input_index, &attr.bias,
-                         ReadTensorFlags::kNoExtraBytes);
+    if (bias_tensor_index >= 0) {
+      const TfLiteTensor* bias_tensor = reader->GetTensor(bias_tensor_index);
+      TfLiteTensorToTensorCopyData(bias_tensor, &attr.bias,
+                                   ReadTensorFlags::kNoExtraBytes);
     }
     return attr;
   }
 
   ABSL_LOG(FATAL) << "Unimplemented quantization.";
+}
+
+::ml_drift::FullyConnectedInt8Attributes GetFullyConnectedInt8Attributes(
+    int weights_node_input_index, int bias_node_input_index,
+    ObjectReader* reader, bool copy_weights = true) {
+  int weights_tensor_index = reader->GetTensorId(weights_node_input_index);
+  int bias_tensor_index = bias_node_input_index >= 0
+                              ? reader->GetTensorId(bias_node_input_index)
+                              : -1;
+  return GetFullyConnectedInt8AttributesByTensorIndex(
+      weights_tensor_index, bias_tensor_index, reader, copy_weights);
 }
 
 ::ml_drift::FullyConnectedInt4Attributes GetFullyConnectedInt4Attributes(
@@ -3204,6 +3302,65 @@ class FullyConnectedOperationParser : public TFLiteOperationParser {
     const TfLiteTensor* src_tensor = reader->GetInputTensor(kInputSrcId);
     const TfLiteTensor* weights_tensor =
         reader->GetInputTensor(kInputWeightsId);
+
+    int weights_tensor_index = tflite_node->inputs->data[kInputWeightsId];
+    int quantized_weights_tensor_index = -1;
+    const TfLiteNode* dequantize_node = nullptr;
+    bool should_fuse = CanFuseDequantizeWeights(reader, weights_tensor_index,
+                                                &quantized_weights_tensor_index,
+                                                &dequantize_node);
+
+    if (should_fuse) {
+      ABSL_LOG(INFO) << "[DEQUANT_FUSION_SUCCESS] Fused Dequantize into "
+                        "FullyConnected for weights tensor "
+                     << weights_tensor_index
+                     << " (quantized tensor: " << quantized_weights_tensor_index
+                     << ")";
+      ::ml_drift::Node* node = graph->NewNode();
+      reader->AddInput(node, kInputSrcId);
+
+      const TfLiteTensor* quantized_weights_tensor =
+          reader->GetTensor(quantized_weights_tensor_index);
+      int bias_tensor_index = tflite_node->inputs->data[kInputBiasId];
+
+      auto int8_attr = GetFullyConnectedInt8AttributesByTensorIndex(
+          quantized_weights_tensor_index, bias_tensor_index, reader,
+          /*copy_weights=*/!options_.enable_raw_weights_propagation);
+
+      if (quantized_weights_tensor->type == kTfLiteInt8) {
+        node->operation.type =
+            ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT8);
+        node->operation.attributes = std::move(int8_attr);
+      } else if (quantized_weights_tensor->type == kTfLiteInt4) {
+        node->operation.type =
+            ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT4);
+        node->operation.attributes = ToFullyConnectedInt4Attributes(int8_attr);
+      } else if (quantized_weights_tensor->type == kTfLiteInt2) {
+        node->operation.type =
+            ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT2);
+        node->operation.attributes = ToFullyConnectedInt2Attributes(int8_attr);
+      }
+
+      reader->AddOutputs(node);
+      HandleFusedActivation(params->activation, graph, node);
+
+      ::ml_drift::Value* dequant_output_value = nullptr;
+      for (auto* value : graph->values()) {
+        if (value && value->tensor.ref == weights_tensor_index) {
+          dequant_output_value = value;
+          break;
+        }
+      }
+      if (dequant_output_value) {
+        ::ml_drift::Node* dequant_node =
+            graph->FindProducer(dequant_output_value->id);
+        if (dequant_node) {
+          graph->DeleteNode(dequant_node->id).IgnoreError();
+          graph->DeleteValue(dequant_output_value->id).IgnoreError();
+        }
+      }
+      return;
+    }
     if (reader->GetNumberOfRuntimeInputs() == 2 || weights_share.IsShared()) {
       ::ml_drift::Node* node = graph->NewNode();
       reader->AddInput(node, 0);
@@ -7264,13 +7421,16 @@ absl::Status BuildModelEnforceIO(
     ABSL_RETURN_IF_ERROR(GetNodeAndRegistration(
         context, delegate_params->nodes_to_replace->data[i], &tflite_node,
         &registration));
+    auto tensor_type = context->tensors[tflite_node->inputs->data[0]].type;
     if (registration->builtin_code == kTfLiteBuiltinDequantize &&
-        context->tensors[tflite_node->inputs->data[0]].type ==
-            TfLiteType::kTfLiteFloat16 &&
+        (tensor_type == TfLiteType::kTfLiteFloat16 ||
+         tensor_type == TfLiteType::kTfLiteInt8 ||
+         tensor_type == TfLiteType::kTfLiteInt4 ||
+         tensor_type == TfLiteType::kTfLiteInt2) &&
         context->tensors[tflite_node->inputs->data[0]].allocation_type ==
             TfLiteAllocationType::kTfLiteMmapRo) {
-      // Ignore Fp16 Dequantize nodes only if they are the final nodes before
-      // weights, i.e., no other nodes preceded them.
+      // Ignore Dequantize nodes if they are constant weight dequantization
+      // nodes that are fused directly into FullyConnected operations.
       continue;
     }
     auto op_parser = NewOperationParser(

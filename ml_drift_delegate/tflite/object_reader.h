@@ -197,6 +197,8 @@ class ObjectReader {
         tensor_to_external_buffer_id_map_(tensor_to_external_buffer_id_map),
         shared_tensor_map_(shared_tensor_map) {}
 
+  TfLiteContext* Context() const { return context_; }
+
   bool CanReadValue(int input_idx) const;
 
   // MUST check ObjectReader::CanReadValue a priori.
