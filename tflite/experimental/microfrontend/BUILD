@@ -54,6 +54,7 @@ cc_library(
     }),
     deps = [
         "//tflite/experimental/microfrontend/lib:frontend",
+        "@com_google_absl//absl/status",
     ] + select({
         "@org_tensorflow//tensorflow:android": [
             "@org_tensorflow//tensorflow/core:portable_tensorflow_lib_lite",
@@ -89,6 +90,7 @@ tf_custom_op_library(
     ],
     deps = [
         "//tflite/experimental/microfrontend/lib:frontend",
+        "@com_google_absl//absl/status",
     ],
 )
 
@@ -96,6 +98,7 @@ tf_gen_op_libs(
     op_lib_names = ["audio_microfrontend_op"],
     deps = [
         "//tflite/experimental/microfrontend/lib:frontend",
+        "@com_google_absl//absl/status",
         "@org_tensorflow//tensorflow/core:lib",
     ],
 )
