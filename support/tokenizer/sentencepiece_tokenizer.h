@@ -57,8 +57,9 @@ class SentencePieceTokenizer : public Tokenizer {
   absl::StatusOr<int> TokenToId(absl::string_view token) override;
 
   // Decodes the given sequence of token ids into a string.
+  using Tokenizer::TokenIdsToText;  // For skip_special_tokens=false case.
   absl::StatusOr<std::string> TokenIdsToText(
-      const std::vector<int>& token_ids) override;
+      const std::vector<int>& token_ids, bool skip_special_tokens) override;
 
   // Returns the tokens in the SentencePiece model.
   std::vector<std::string> GetTokens() const override;

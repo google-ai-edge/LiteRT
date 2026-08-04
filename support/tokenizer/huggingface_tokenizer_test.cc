@@ -131,6 +131,26 @@ TEST(HuggingFaceTokenizerTest, TokenIdsToText) {
   EXPECT_EQ(text_or.value(), "How's it going?");
 }
 
+TEST(HuggingFaceTokenizerTest, TokenIdsToTextSkipSpecialTokens) {
+  ASSERT_OK_AND_ASSIGN(auto tokenizer, HuggingFaceTokenizer::CreateFromFile(
+                                           GetHuggingFaceModelPath()));
+
+  // Token ID 0 is <|endoftext|>, Token ID 1 is <|im_start|>
+  const std::vector<int> ids = {0, 2020, 506, 357, 2045, 47, 1};
+
+  // With skip_special_tokens=false (default TokenIdsToText)
+  ASSERT_OK_AND_ASSIGN(
+      auto text_with_special,
+      tokenizer->TokenIdsToText(ids, /*skip_special_tokens=*/false));
+  EXPECT_EQ(text_with_special, "<|endoftext|>How's it going?<|im_start|>");
+
+  // With skip_special_tokens=true
+  ASSERT_OK_AND_ASSIGN(
+      auto text_without_special,
+      tokenizer->TokenIdsToText(ids, /*skip_special_tokens=*/true));
+  EXPECT_EQ(text_without_special, "How's it going?");
+}
+
 TEST(HuggingFaceTokenizerTest, GetTokens) {
   ASSERT_OK_AND_ASSIGN(auto tokenizer, HuggingFaceTokenizer::CreateFromFile(
                                            GetHuggingFaceModelPath()));

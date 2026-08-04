@@ -45,7 +45,7 @@ class MockTokenizer : public Tokenizer {
   }
 
   absl::StatusOr<std::string> TokenIdsToText(
-      const TokenIds& token_ids) override {
+      const TokenIds& token_ids, bool skip_special_tokens) override {
     if (token_ids.empty()) {
       return "";
     }

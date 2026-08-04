@@ -40,8 +40,10 @@ class MockTokenizer : public Tokenizer {
               (absl::string_view text), (override));
   MOCK_METHOD(absl::StatusOr<int>, TokenToId, (absl::string_view token),
               (override));
+  using Tokenizer::TokenIdsToText;
   MOCK_METHOD(absl::StatusOr<std::string>, TokenIdsToText,
-              (const std::vector<int>& token_ids), (override));
+              (const std::vector<int>& token_ids, bool skip_special_tokens),
+              (override));
   MOCK_METHOD(TokenizerType, GetTokenizerType, (), (const, override));
   MOCK_METHOD(std::vector<std::string>, GetTokens, (), (const, override));
   MOCK_METHOD(int, GetVocabSize, (), (const, override));
@@ -91,7 +93,7 @@ TEST(TokenizerTest, TensorBufferToTokenIds) {
 
 TEST(TokenizerTest, TokenIdsToTexts) {
   auto tokenizer = std::make_unique<MockTokenizer>();
-  EXPECT_CALL(*tokenizer, TokenIdsToText(::testing::_))
+  EXPECT_CALL(*tokenizer, TokenIdsToText(::testing::_, ::testing::_))
       .WillOnce(testing::Return("▁Hello▁World!"))
       .WillOnce(testing::Return("▁How's▁it▁going?"));
 
@@ -107,7 +109,7 @@ TEST(TokenizerTest, TokenIdsToTexts) {
 
 TEST(TokenizerTest, TokenIdsToTextsWithIncompleteBPESequence) {
   auto tokenizer = std::make_unique<MockTokenizer>();
-  EXPECT_CALL(*tokenizer, TokenIdsToText(::testing::_))
+  EXPECT_CALL(*tokenizer, TokenIdsToText(::testing::_, ::testing::_))
       .WillOnce(testing::Return(absl::DataLossError("Incomplete BPE sequence")))
       .WillOnce(testing::Return("▁How's▁it▁going?"));
 

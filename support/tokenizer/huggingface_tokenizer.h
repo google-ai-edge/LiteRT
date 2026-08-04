@@ -17,13 +17,14 @@
 
 #include <memory>
 #include <string>
-#include <utility>
 #include <vector>
 
+#include "absl/base/nullability.h"  // from @com_google_absl
+#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "support/tokenizer/tokenizer.h"
-#include "include/tokenizers_cpp.h"  // from @tokenizers_cpp
+#include "include/tokenizers_c.h"  // from @tokenizers_cpp
 
 namespace litert::support {
 
@@ -38,6 +39,8 @@ class HuggingFaceTokenizer : public Tokenizer {
   static absl::StatusOr<std::unique_ptr<HuggingFaceTokenizer>> CreateFromJson(
       const std::string& json);
 
+  ~HuggingFaceTokenizer() override { tokenizers_free(handle_); }
+
   TokenizerType GetTokenizerType() const override {
     return TokenizerType::kHuggingFace;
   }
@@ -51,8 +54,9 @@ class HuggingFaceTokenizer : public Tokenizer {
   // Decodes the given sequence of token ids into a string.
   // Returns absl::DataLossError if any of the tokens are part of an incomplete
   // BPE sequence.
+  using Tokenizer::TokenIdsToText;  // For skip_special_tokens=false case.
   absl::StatusOr<std::string> TokenIdsToText(
-      const std::vector<int>& token_ids) override;
+      const std::vector<int>& token_ids, bool skip_special_tokens) override;
 
   std::vector<std::string> GetTokens() const override;
 
@@ -60,12 +64,11 @@ class HuggingFaceTokenizer : public Tokenizer {
 
  private:
   // Constructor.
-  explicit HuggingFaceTokenizer(
-      std::unique_ptr<tokenizers::Tokenizer> tokenizer)
-      : tokenizer_(std::move(tokenizer)) {};
+  explicit HuggingFaceTokenizer(TokenizerHandle absl_nonnull handle)
+      : handle_(handle) {};
 
   // HuggingFace processor.
-  std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
+  TokenizerHandle absl_nonnull handle_;
 };
 
 }  // namespace litert::support
