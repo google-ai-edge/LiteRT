@@ -206,9 +206,22 @@ class GoogleTensorOptions {
   StringView GetExtraOptionsPath() const {
     LrtGoogleTensorOptions options_data = Get();
     const char* extra_options_path;
-    internal::AssertOk(LrtGoogleTensorOptionsGetExtraOptionsPath,
-                       options_data, &extra_options_path);
+    internal::AssertOk(LrtGoogleTensorOptionsGetExtraOptionsPath, options_data,
+                       &extra_options_path);
     return StringView(extra_options_path);
+  }
+
+  void SetExtraOptions(StringView extra_options) {
+    internal::AssertOk(LrtGoogleTensorOptionsSetExtraOptions, Get(),
+                       std::string(extra_options).c_str());
+  }
+
+  StringView GetExtraOptions() const {
+    LrtGoogleTensorOptions options_data = Get();
+    const char* extra_options;
+    internal::AssertOk(LrtGoogleTensorOptionsGetExtraOptions, options_data,
+                       &extra_options);
+    return StringView(extra_options);
   }
 
  private:

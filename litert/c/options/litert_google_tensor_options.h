@@ -139,6 +139,14 @@ LiteRtStatus LrtGoogleTensorOptionsSetExtraOptionsPath(
 LiteRtStatus LrtGoogleTensorOptionsGetExtraOptionsPath(
     LrtGoogleTensorOptions options, const char** extra_options_path);
 
+// extra_options --------------------------------------------------
+
+LiteRtStatus LrtGoogleTensorOptionsSetExtraOptions(
+    LrtGoogleTensorOptions options, const char* extra_options);
+
+LiteRtStatus LrtGoogleTensorOptionsGetExtraOptions(
+    LrtGoogleTensorOptions options, const char** extra_options);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

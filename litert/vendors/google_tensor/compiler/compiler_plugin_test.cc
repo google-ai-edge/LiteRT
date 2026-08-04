@@ -326,5 +326,30 @@ TEST(TestCallGoogleTensorPlugin, PartitionUnsupportedCompositeOp) {
   ASSERT_THAT(selected_ops.size(), 0);
 }
 
+TEST(TestCallGoogleTensorPlugin, CompileWithExtraOptions) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
+                              options.GetGoogleTensorOptions());
+
+  google_tensor_options.SetExtraOptions("test_extra_options");
+  EXPECT_EQ(google_tensor_options.GetExtraOptions(), "test_extra_options");
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  ExtendedModel model = testing::LoadTestFileModel("mul_simple.tflite");
+
+  LiteRtCompiledResult compiled;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "Tensor_G5",
+                                               model.Get(), &compiled));
+  absl::Cleanup compiled_cleanup = [&compiled] {
+    LiteRtDestroyCompiledResult(compiled);
+  };
+}
+
 }  // namespace
 }  // namespace litert
