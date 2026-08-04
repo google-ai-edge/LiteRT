@@ -65,6 +65,9 @@
 #include "ml_drift_delegate/delegate/composite/litert_op_selector.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
 #include "ml_drift_delegate/delegate/incrementable_blocking_counter.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/gf32_graph_adapter.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/ir_graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/tflite_profile.h"
 #include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
@@ -315,7 +318,8 @@ absl::Status DelegateKernel::InitializeGraphFloat32(
   }
   if (delegate_data_->options->enable_constant_tensors_sharing) {
     ABSL_RETURN_IF_ERROR(InitializeExternalSharedConstantTensors(
-        context, delegate_params, shared_tensors, graph, create_info));
+        context, delegate_params, shared_tensors,
+        std::make_unique<::ml_drift::GraphFloat32Adapter>(graph), create_info));
   }
 
   external_tensor_ids_.reserve(input_indices_.size() + output_indices_.size());
@@ -361,7 +365,7 @@ absl::Status DelegateKernel::InitializeGraphFloat32(
 absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
     TfLiteContext* context, const TfLiteDelegateParams* delegate_params,
     const SharedConstTensorsMap& shared_tensors,
-    ::ml_drift::GraphFloat32& graph,
+    std::unique_ptr<::ml_drift::GraphAdapter> graph_adapter,
     ::ml_drift::CreateGpuModelInfo& create_info) {
 #ifdef ML_DRIFT_MEM_STATS
   tflite::profiling::memory::MemoryLatencyLogger logger;
@@ -383,10 +387,11 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
            ? shared_memory_serialization_cache->GetCurrentSize()
            : 0);
 
-  ABSL_ASSIGN_OR_RETURN(auto shared_mem_manager,
-                        backend_->CreateSharedMemoryManager(
-                            create_info, graph, context, *delegate_data_,
-                            shared_memory_serialization_cache));
+  ABSL_ASSIGN_OR_RETURN(
+      auto shared_mem_manager,
+      backend_->CreateSharedMemoryManager(create_info, std::move(graph_adapter),
+                                          context, *delegate_data_,
+                                          shared_memory_serialization_cache));
 
   if (delegate_data_->options->convert_weights_on_gpu &&
       delegate_data_->options->enable_constant_tensors_sharing) {
@@ -1006,8 +1011,44 @@ absl::Status DelegateKernel::InitializeIrModel(
   ir_options.enable_reduced_precision = options.enable_reduced_precision;
 
   auto custom_parsers = ::litert::ml_drift::ir::GetCustomParsers();
+
+  // Constant tensor sharing: derive the shared/external buffer-id maps from the
+  // TFLite subgraph so BuildIrModel can mark shared constants and populate
+  // `shared_tensors`. The populated map is consumed below by
+  // InitializeExternalSharedConstantTensors. When sharing is disabled these
+  // remain null and BuildIrModel behaves as before.
+  SharedConstTensorsMap shared_tensors;
+  SharedConstTensorsMap* shared_tensors_ptr = nullptr;
+  const TensorIndexToBufferIdMap* tensor_to_buffer_id_map = nullptr;
+  const TensorIndexToExternalBufferIdMap* tensor_to_external_buffer_id_map =
+      nullptr;
+  TensorIndexToExternalBufferIdMap canonical_external_buffer_id_map;
+  if (delegate_data_->options->enable_constant_tensors_sharing) {
+    shared_tensors_ptr = &shared_tensors;
+    tensor_to_buffer_id_map =
+        &(reinterpret_cast<const tflite::Subgraph*>(context->impl_)
+              ->GetTensorBufferIdentifiers());
+    const auto& external_buffer_id_map =
+        reinterpret_cast<const tflite::Subgraph*>(context->impl_)
+            ->GetExternalTensorBufferIdentifiers();
+    tensor_to_external_buffer_id_map = &external_buffer_id_map;
+    if (delegate_data_->weight_loader != nullptr &&
+        !external_buffer_id_map.empty()) {
+      canonical_external_buffer_id_map.reserve(external_buffer_id_map.size());
+      for (const auto& [tensor_id, external_buffer_id] :
+           external_buffer_id_map) {
+        canonical_external_buffer_id_map.emplace(
+            tensor_id,
+            delegate_data_->weight_loader->GetCanonicalExternalBufferId(
+                static_cast<uint32_t>(external_buffer_id)));
+      }
+      tensor_to_external_buffer_id_map = &canonical_external_buffer_id_map;
+    }
+  }
   ir_model.reset(::litert::ml_drift::ir::BuildIrModel(
-      *context, *delegate_params, ir_options, &custom_parsers));
+      *context, *delegate_params, ir_options, &custom_parsers,
+      shared_tensors_ptr, tensor_to_buffer_id_map,
+      tensor_to_external_buffer_id_map));
   if (!ir_model) {
     return absl::InternalError("Failed to build IrModel.");
   }
@@ -1071,9 +1112,9 @@ absl::Status DelegateKernel::InitializeIrModel(
     create_info.hints.Add(::ml_drift::ModelHints::kDisallow8bitConvs);
   }
   if (delegate_data_->options->enable_constant_tensors_sharing) {
-    return absl::UnimplementedError(
-        "enable_constant_tensors_sharing is currently unsupported with "
-        "IrModel.");
+    ABSL_RETURN_IF_ERROR(InitializeExternalSharedConstantTensors(
+        context, delegate_params, shared_tensors,
+        std::make_unique<::ml_drift::IrModelAdapter>(*ir_model), create_info));
   }
 
   external_tensor_ids_.reserve(input_indices_.size() + output_indices_.size());

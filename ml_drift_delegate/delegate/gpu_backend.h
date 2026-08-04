@@ -43,6 +43,12 @@
 #include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "tflite/c/common.h"
 
+// Forward declaration for the graph adapter interface. Only an incomplete type
+// is needed for the CreateSharedMemoryManager declaration below.
+namespace ml_drift {
+class GraphAdapter;
+}  // namespace ml_drift
+
 // Forward declaration to depend on LiteRT only when needed.
 class LiteRtEnvironmentT;
 using LiteRtEnvironment = LiteRtEnvironmentT*;
@@ -181,8 +187,8 @@ class GpuBackend {
   virtual absl::StatusOr<std::unique_ptr<::ml_drift::SharedMemoryManager>>
   CreateSharedMemoryManager(
       const ::ml_drift::CreateGpuModelInfo& create_info,
-      ::ml_drift::GraphFloat32& graph, TfLiteContext* context,
-      MlDriftDelegateData& delegate_data,
+      std::unique_ptr<::ml_drift::GraphAdapter> graph_adapter,
+      TfLiteContext* context, MlDriftDelegateData& delegate_data,
       ::ml_drift::SerializationWeightCache* serialization_cache) = 0;
 
   // Creates a `WeightsManager` to manage the weights for GPU backend.

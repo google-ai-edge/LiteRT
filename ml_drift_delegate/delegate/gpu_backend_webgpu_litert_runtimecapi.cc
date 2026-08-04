@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <memory>
+#include <utility>
 
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
@@ -21,6 +22,7 @@
 #include "ml_drift_delegate/delegate/gpu_backend_webgpu.h"
 #include "ml_drift_delegate/delegate/gpu_backend_webgpu_litert.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "tflite/c/common.h"
 
@@ -29,11 +31,12 @@ namespace litert::ml_drift {
 absl::StatusOr<std::unique_ptr<::ml_drift::SharedMemoryManager>>
 GpuBackendWebGpuLitert::CreateSharedMemoryManager(
     const ::ml_drift::CreateGpuModelInfo& create_info,
-    ::ml_drift::GraphFloat32& graph, TfLiteContext* context,
-    MlDriftDelegateData& delegate_data,
+    std::unique_ptr<::ml_drift::GraphAdapter> graph_adapter,
+    TfLiteContext* context, MlDriftDelegateData& delegate_data,
     ::ml_drift::SerializationWeightCache* serialization_cache) {
   return GpuBackendWebGpu::CreateSharedMemoryManager(
-      create_info, graph, context, delegate_data, serialization_cache);
+      create_info, std::move(graph_adapter), context, delegate_data,
+      serialization_cache);
 }
 
 }  // namespace litert::ml_drift

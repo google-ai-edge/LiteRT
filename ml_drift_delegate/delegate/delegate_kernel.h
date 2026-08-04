@@ -37,6 +37,7 @@
 #include "ml_drift_delegate/delegate/delegate_options.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
 #include "tflite/core/c/common.h"
 #include "tflite/delegates/serialization.h"
@@ -129,7 +130,7 @@ class DelegateKernel {
   absl::Status InitializeExternalSharedConstantTensors(
       TfLiteContext* context, const TfLiteDelegateParams* delegate_params,
       const SharedConstTensorsMap& shared_tensors,
-      ::ml_drift::GraphFloat32& graph,
+      std::unique_ptr<::ml_drift::GraphAdapter> graph_adapter,
       ::ml_drift::CreateGpuModelInfo& create_info);
 
   // Returns false if serialization prerequisites are not initialized. Otherwise
