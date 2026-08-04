@@ -121,13 +121,26 @@ TEST_P(NumInputOutputTest, Rejects2Outputs) {
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
 }
 
+TEST_P(NumInputOutputTest, SupportsVersion7) {
+  const TfLiteBuiltinOperator op = GetParam();
+  StubContextBuilder context_builder;
+  const int a =
+      context_builder.AddQuantizedTensor(kTfLiteInt8, kDefaultInputDims);
+  const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+  context_builder.SetOp(op, /*version=*/7, /*params=*/nullptr,
+                        /*inputs=*/{a}, /*outputs=*/{b});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
 TEST_P(NumInputOutputTest, RejectsUnsupportedVersion) {
   const TfLiteBuiltinOperator op = GetParam();
   StubContextBuilder context_builder;
   const int a =
       context_builder.AddQuantizedTensor(kTfLiteInt8, kDefaultInputDims);
   const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
-  context_builder.SetOp(op, /*version=*/4, /*params=*/nullptr,
+  context_builder.SetOp(op, /*version=*/8, /*params=*/nullptr,
                         /*inputs=*/{a}, /*outputs=*/{b});
   TfLiteContext* context = context_builder.Build();
   ASSERT_TRUE(context != nullptr);
@@ -179,6 +192,7 @@ INSTANTIATE_TEST_SUITE_P(
                 // go/keep-sorted start numeric=yes
                 kTfLiteFloat16,
                 kTfLiteFloat32,
+                kTfLiteInt16,
                 kTfLiteInt2,
                 kTfLiteInt4,
                 kTfLiteInt8,

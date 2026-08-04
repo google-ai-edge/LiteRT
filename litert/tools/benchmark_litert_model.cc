@@ -158,6 +158,18 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
       gpu_options.SetPrecision(GpuOptions::Precision::kFp32);
     } else if (gpu_precision == "fp16") {
       gpu_options.SetPrecision(GpuOptions::Precision::kFp16);
+      gpu_options.EnableExternalTensorsMode(false);
+      {
+        gpu_options.AddExternalTensorPattern("kv_cache_");
+        gpu_options.AddBufferStorageTensorPattern("kv_cache_");
+        gpu_options.AddExternalTensorPattern("param_tensor");
+        gpu_options.AddBufferStorageTensorPattern("param_tensor");
+        gpu_options.AddExternalTensorPattern("logits");
+        gpu_options.AddExternalTensorPattern("activations");
+      }
+      gpu_options.SetHintFullyDelegatedToSingleDelegate(true);
+      gpu_options.SetPreferTextureWeights(true);
+      gpu_options.EnableConstantTensorSharing(true);
     } else if (gpu_precision == "auto") {
       gpu_options.SetPrecision(GpuOptions::Precision::kDefault);
     } else {
@@ -174,6 +186,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     if (convert_weights_on_gpu) {
       gpu_options.SetConvertWeightsOnGpu(true);
     }
+    gpu_options.SetBufferStorageType(GpuOptions::BufferStorageType::kBuffer);
 
     auto use_profiler = params.Get<bool>("use_profiler");
     if (use_profiler) {

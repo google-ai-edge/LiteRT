@@ -217,14 +217,17 @@ absl::Status PreCheckCopyData(const TfLiteTensor& src, float* dst) {
   switch (src.type) {
     case kTfLiteFloat32:
     case kTfLiteFloat16:
+    case kTfLiteInt16:
     case kTfLiteInt4:
+    case kTfLiteInt2:
     case kTfLiteInt8:
     case kTfLiteUInt8:
     case kTfLiteInt32:
       return absl::OkStatus();
     default:
       return absl::InvalidArgumentError(
-          "Unsupported data type for float32 tensor");
+          absl::StrCat("Unsupported data type ", TfLiteTypeGetName(src.type),
+                       " for float32 tensor"));
   }
 }
 

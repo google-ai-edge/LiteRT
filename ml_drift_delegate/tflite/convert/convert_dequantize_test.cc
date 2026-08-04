@@ -80,6 +80,7 @@ INSTANTIATE_TEST_SUITE_P(
     SupportedTypes, ConvertDequantizeParamTest,
     ::testing::Values(DequantizeParam{kTfLiteUInt8, 0.0f, 255.0f},
                       DequantizeParam{kTfLiteInt8, -128.0f, 127.0f},
+                      DequantizeParam{kTfLiteInt16, -32768.0f, 32767.0f},
                       DequantizeParam{kTfLiteUInt4, 0.0f, 15.0f},
                       DequantizeParam{kTfLiteInt4, -8.0f, 7.0f},
                       DequantizeParam{kTfLiteInt2, -2.0f, 1.0f}));
@@ -88,6 +89,60 @@ TEST_F(ConvertDequantizeTest, BasicConstantInput) {
   SingleOpInterpreterBuilder model(kTfLiteBuiltinDequantize);
   std::vector<uint8_t> data = {1, 2, 3, 4};
   model.AddConstInput(kTfLiteInt8, {1, 1, 2, 2}, data);
+
+  model.AddOutput(kTfLiteFloat32, {1, 1, 2, 2});
+
+  auto interpreter = model.Build();
+  ASSERT_TRUE(interpreter);
+
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_.get()), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_.get());
+  ASSERT_TRUE(ir_model);
+
+  ASSERT_EQ(ir_model->ops().size(), 1);
+  const ::ml_drift::ir::IrOp* op = ir_model->op(0);
+  EXPECT_EQ(op->name, "const");
+
+  const auto* attr =
+      std::any_cast<::ml_drift::ConstTensorAttributes>(&op->attr);
+  ASSERT_TRUE(attr);
+}
+
+TEST_F(ConvertDequantizeTest, BasicConstantInputInt16) {
+  SingleOpInterpreterBuilder model(kTfLiteBuiltinDequantize);
+  std::vector<uint8_t> data(4 * sizeof(int16_t), 0);
+  int16_t* i16_ptr = reinterpret_cast<int16_t*>(data.data());
+  i16_ptr[0] = 100;
+  i16_ptr[1] = -200;
+  i16_ptr[2] = 300;
+  i16_ptr[3] = -400;
+  model.AddConstInput(kTfLiteInt16, {1, 1, 2, 2}, data);
+
+  model.AddOutput(kTfLiteFloat32, {1, 1, 2, 2});
+
+  auto interpreter = model.Build();
+  ASSERT_TRUE(interpreter);
+
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_.get()), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_.get());
+  ASSERT_TRUE(ir_model);
+
+  ASSERT_EQ(ir_model->ops().size(), 1);
+  const ::ml_drift::ir::IrOp* op = ir_model->op(0);
+  EXPECT_EQ(op->name, "const");
+
+  const auto* attr =
+      std::any_cast<::ml_drift::ConstTensorAttributes>(&op->attr);
+  ASSERT_TRUE(attr);
+}
+
+TEST_F(ConvertDequantizeTest, BasicConstantInputInt2) {
+  SingleOpInterpreterBuilder model(kTfLiteBuiltinDequantize);
+  // Packed Int2 data (4 elements packed into 1 byte)
+  std::vector<uint8_t> data = {0b11100100};
+  model.AddConstInput(kTfLiteInt2, {1, 1, 2, 2}, data);
 
   model.AddOutput(kTfLiteFloat32, {1, 1, 2, 2});
 

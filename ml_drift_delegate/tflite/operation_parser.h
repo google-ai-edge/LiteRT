@@ -208,6 +208,7 @@ absl::Status PreCheckCopyData(const TfLiteTensor& src, T* dst) {
     case kTfLiteUInt32:
     case kTfLiteUInt16:
     case kTfLiteInt4:
+    case kTfLiteInt2:
       return absl::OkStatus();
     case kTfLiteNoType:
       return absl::InvalidArgumentError("src has no type.");
