@@ -28,7 +28,7 @@ jobs:
           toolchain: stable
 
       - name: Get zizmor
-        run: cargo install zizmor
+        run: cargo install zizmor --locked --version 1.28.0
 
       - name: Run zizmor
         run: zizmor --format sarif . > results.sarif
