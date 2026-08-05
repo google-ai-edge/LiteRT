@@ -39,25 +39,25 @@ class DummyAccelerator {
     delete instance;
   }
 
-  static LiteRtStatus GetName(LiteRtAccelerator accelerator,
+  static LiteRtStatus GetName(LiteRtAcceleratorConst accelerator,
                               const char** name) {
     return kLiteRtStatusOk;
   }
 
-  static LiteRtStatus GetVersion(LiteRtAccelerator accelerator,
+  static LiteRtStatus GetVersion(LiteRtAcceleratorConst accelerator,
                                  LiteRtApiVersion* version) {
     return kLiteRtStatusOk;
   }
 
   static LiteRtStatus GetHardwareSupport(
-      LiteRtAccelerator accelerator,
+      LiteRtAcceleratorConst accelerator,
       LiteRtHwAcceleratorSet* supported_hardware) {
     return kLiteRtStatusOk;
   }
 
   static LiteRtStatus CreateDelegate(LiteRtRuntimeContext* runtime_context,
                                      LiteRtEnvironment env,
-                                     LiteRtAccelerator accelerator,
+                                     LiteRtAcceleratorConst accelerator,
                                      LiteRtOptions options,
                                      LiteRtDelegateWrapper* delegate) {
     return kLiteRtStatusOk;

@@ -115,7 +115,8 @@ Expected<void> RegisterSharedObjectAcceleratorViaAcceleratorDef(
       auto shlib, LoadSharedLibrary(shlib_path, try_default_on_failure));
   LITERT_ASSIGN_OR_RETURN(
       auto accelerator_def,
-      shlib.LookupSymbol<LiteRtAcceleratorDef*>(accelerator_def_name.data()));
+      shlib.LookupSymbol<const LiteRtAcceleratorDef*>(
+          accelerator_def_name.data()));
 
   LITERT_RETURN_IF_ERROR(
       RegisterAcceleratorFromDef(&environment, accelerator_def));

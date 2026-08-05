@@ -68,7 +68,7 @@ Expected<LiteRtAcceleratorT*> AcceleratorRegistry::Get(LiteRtParamIndex idx) {
 }
 
 Expected<LiteRtParamIndex> AcceleratorRegistry::FindAcceleratorIndex(
-    LiteRtAcceleratorT* accelerator) {
+    const LiteRtAcceleratorT* accelerator) const {
   for (size_t idx = 0; idx < accelerators_.size(); ++idx) {
     if (accelerator == accelerators_[idx].get()) {
       return static_cast<LiteRtParamIndex>(idx);

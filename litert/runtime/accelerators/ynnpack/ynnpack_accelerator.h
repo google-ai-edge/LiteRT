@@ -19,7 +19,7 @@
 
 extern "C" {
 
-extern LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorYnnpackDef;
+extern const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorYnnpackDef;
 
 }  // extern "C"
 

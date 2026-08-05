@@ -40,17 +40,18 @@ extern "C" {
 typedef struct {
   LiteRtAbiHeader abi_header;
 
-  LiteRtStatus (*get_name)(LiteRtAccelerator accelerator, const char** name);
-  LiteRtStatus (*get_version)(LiteRtAccelerator accelerator,
+  LiteRtStatus (*get_name)(LiteRtAcceleratorConst accelerator,
+                           const char** name);
+  LiteRtStatus (*get_version)(LiteRtAcceleratorConst accelerator,
                               LiteRtApiVersion* version);
   LiteRtStatus (*get_hardware_support)(
-      LiteRtAccelerator accelerator,
+      LiteRtAcceleratorConst accelerator,
       LiteRtHwAcceleratorSet* supported_hardware);
   LiteRtStatus (*is_tflite_delegate_responsible_for_jit_compilation)(
-      LiteRtAccelerator accelerator, bool* does_jit_compilation);
+      LiteRtAcceleratorConst accelerator, bool* does_jit_compilation);
   LiteRtStatus (*create_delegate)(LiteRtRuntimeContext* runtime_context,
                                   LiteRtEnvironment env,
-                                  LiteRtAccelerator accelerator,
+                                  LiteRtAcceleratorConst accelerator,
                                   LiteRtOptions options,
                                   LiteRtDelegateWrapper* delegate_wrapper);
 

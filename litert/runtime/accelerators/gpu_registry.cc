@@ -29,7 +29,7 @@
 #include "litert/runtime/accelerators/registration_helper.h"
 
 extern "C" {
-LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorGpuDef = nullptr;
+const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorGpuDef = nullptr;
 }
 
 namespace litert::internal {

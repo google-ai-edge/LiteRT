@@ -70,7 +70,7 @@ class AcceleratorRegistry {
 
   // Goes through accelerators and find the index of the given one.
   Expected<LiteRtParamIndex> FindAcceleratorIndex(
-      LiteRtAcceleratorT* accelerator);
+      const LiteRtAcceleratorT* accelerator) const;
 
   // Gives ownership of the shared library to the registry.
   //
