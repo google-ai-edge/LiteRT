@@ -14,6 +14,7 @@
 
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_kernel.h"
 
+#include <algorithm>
 #include <any>
 #include <cstdint>
 #include <memory>
@@ -21,11 +22,13 @@
 #include <utility>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/substitute.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift/common/task/arguments.h"  // from @ml_drift
 #include "ml_drift/common/task/buffer_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
@@ -39,7 +42,18 @@ class AddValuesToCacheOp : public ::ml_drift::GPUOperation {
  public:
   AddValuesToCacheOp() = default;
   ::ml_drift::int3 GetGridSize() const override {
-    return ::ml_drift::int3(src_[0]->Width(), batch_size_, src_[0]->Slices());
+    return ::ml_drift::int3(src_[0]->Width() * src_[0]->Height(), batch_size_,
+                            src_[0]->Slices());
+  }
+  absl::Status BindArguments(::ml_drift::ArgumentsBinder* args) override {
+    ABSL_RETURN_IF_ERROR(GPUOperation::BindArguments(args));
+    ABSL_RETURN_IF_ERROR(args->SetInt("src_k_width", src_[0]->Width()));
+    ABSL_RETURN_IF_ERROR(args->SetInt("src_k_height", src_[0]->Height()));
+    ABSL_RETURN_IF_ERROR(args->SetInt("src_k_slices", src_[0]->Slices()));
+    ABSL_RETURN_IF_ERROR(args->SetInt("src_v_width", src_[1]->Width()));
+    ABSL_RETURN_IF_ERROR(args->SetInt("src_v_height", src_[1]->Height()));
+    ABSL_RETURN_IF_ERROR(args->SetInt("src_v_slices", src_[1]->Slices()));
+    return absl::OkStatus();
   }
 
   // Move only
@@ -59,10 +73,15 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateAddValuesToCache(
     int head_dimension, int kv_cache_batch_size, float scale_k, float scale_v,
     bool is_ring_buffer) {
   AddValuesToCacheOp custom_op;
-  custom_op.batch_size_ = kv_cache_batch_size;
+  custom_op.SetSupportsPreReshaped1DInput(true);
+  int num_heads =
+      head_dimension > 0 ? (cache_k.GetBHWCShape().c / head_dimension) : 1;
+  custom_op.batch_size_ = kv_cache_batch_size * std::max(1, num_heads);
   custom_op.args_.AddInt("batch_size", custom_op.batch_size_);
   custom_op.args_.AddInt("cache_size", cache_size);
   custom_op.args_.AddInt("head_size", head_dimension);
+  custom_op.args_.AddInt("src_k_dst_height", src_k.GetBHWCShape().h);
+  custom_op.args_.AddInt("src_v_dst_height", src_v.GetBHWCShape().h);
   custom_op.AddSrcTensor("src_k", src_k);
   custom_op.AddSrcTensor("src_v", src_v);
   ::ml_drift::BufferDescriptor params_buffer;
@@ -101,7 +120,7 @@ MAIN_FUNCTION($0) {
   int X = ucl::GetGlobalId<0>();
   int Y = ucl::GetGlobalId<1>();
   int S = ucl::GetGlobalId<2>();
-  if (X >= args.src_k.Width() || Y >= args.batch_size || S >= args.src_k.Slices()) {
+  if (Y >= args.batch_size || S >= args.src_k.Slices()) {
     return;
   }
   int token_index_offset = args.params.Read(0);
@@ -125,9 +144,11 @@ MAIN_FUNCTION($0) {
   }
 
   op_code += R"(
-  int src_y = Y % args.src_k.Height();  // broadcast Height dim used as Batch
-  args.src_k::type value_k = args.src_k.Read(X, src_y, S);
-  args.src_v::type value_v = args.src_v.Read(X, src_y, S);
+  int src_k_y = Y % args.src_k_dst_height;  // broadcast Height dim used as Batch
+  args.src_k::type value_k = args.src_k.Read(X, src_k_y, S);
+
+  int src_v_y = Y % args.src_v_dst_height;  // broadcast Height dim used as Batch
+  args.src_v::type value_v = args.src_v.Read(X, src_v_y, S);
   )";
 
   if (quantized_cache) {
