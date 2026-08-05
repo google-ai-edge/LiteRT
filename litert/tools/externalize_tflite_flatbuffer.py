@@ -26,7 +26,6 @@ import hashlib
 from pathlib import Path
 
 import flatbuffers
-import numpy as np
 
 from litert.python import schema_py_generated as schema  # pylint:disable=g-direct-tensorflow-import
 
@@ -48,19 +47,27 @@ def _builtin_code(operator_code) -> int:
 def _tensor_element_count(tensor) -> int:
   if tensor.shape is None:
     return 0
-  shape = np.asarray(tensor.shape, dtype=np.int64)
-  if shape.size == 0 or np.any(shape < 0):
+  shape = [int(dimension) for dimension in tensor.shape]
+  if not shape or any(dimension < 0 for dimension in shape):
     return 0
-  return int(np.prod(shape, dtype=np.int64))
+  element_count = 1
+  for dimension in shape:
+    element_count *= dimension
+  return element_count
 
 
 def _buffer_bytes(buffer) -> memoryview | None:
   if buffer.data is None:
     return None
-  data = np.asarray(buffer.data, dtype=np.uint8)
-  if data.size == 0:
+  try:
+    data = memoryview(buffer.data)
+  except TypeError:
+    data = memoryview(bytes(buffer.data))
+  if data.nbytes == 0:
     return None
-  return memoryview(data)
+  if data.format != "B" or data.ndim != 1:
+    data = data.cast("B")
+  return data
 
 
 def _bias_tensor_indices(model) -> set[tuple[int, int]]:
@@ -164,7 +171,7 @@ def externalize(
   if model.externalBuffers is None:
     model.externalBuffers = []
 
-  group_idx = _ensure_group(model, group_name)
+  group_idx = None
   bias_tensors = _bias_tensor_indices(model)
   shareable_weight_tensors = _shareable_weight_tensor_indices(model)
   input_tensors = _subgraph_input_indices(model)
@@ -211,6 +218,8 @@ def externalize(
           bytes_cache[cache_key] = (offset, length)
           total_externalized_bytes += length
 
+        if group_idx is None:
+          group_idx = _ensure_group(model, group_name)
         external_buffer_id = _make_external_buffer_id(model)
         external_buffer = schema.ExternalBufferT()
         external_buffer.id = external_buffer_id
