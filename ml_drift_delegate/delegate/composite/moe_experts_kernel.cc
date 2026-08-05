@@ -226,7 +226,7 @@ absl::Status BuildMoeExpertsGpuGraph(
                            flat_top_indices, gate_weight, gate_scale_ptr,
                            model_dim, hidden_dim, num_experts, num_dispatches,
                            weight_type, "moe_ff_gate"));
-  gate = model_builder->MakeGelu(gate);
+  gate = model_builder->MakeGeluTanh(gate);
 
   ABSL_ASSIGN_OR_RETURN(
       auto ff1,
