@@ -21,6 +21,8 @@ limitations under the License.
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -41,6 +43,7 @@ limitations under the License.
 #include "tflite/delegates/ynnpack/softmax.h"
 #include "tflite/delegates/ynnpack/utils.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/schema/schema_generated.h"
 
 namespace tflite {
 namespace ynnpack {
@@ -440,6 +443,26 @@ class YNNPackDelegateKernel : public SimpleDelegateKernelInterface {
   std::vector<DummyInputInfo> dummy_inputs_;
 };
 
+namespace {
+std::string GetOpName(const TfLiteRegistration* registration,
+                      const TfLiteNode* node) {
+  if (registration->builtin_code == kTfLiteBuiltinCustom &&
+      registration->custom_name) {
+    return registration->custom_name;
+  }
+  if (registration->builtin_code == kTfLiteBuiltinStablehloComposite && node &&
+      node->builtin_data) {
+    const auto* composite_params =
+        static_cast<const TfLiteStablehloCompositeParams*>(node->builtin_data);
+    if (composite_params && composite_params->name) {
+      return composite_params->name;
+    }
+  }
+  return EnumNameBuiltinOperator(
+      static_cast<BuiltinOperator>(registration->builtin_code));
+}
+}  // namespace
+
 class YNNPackDelegate : public SimpleDelegateInterface {
  public:
   explicit YNNPackDelegate(const TfLiteYNNPackDelegateOptions& options)
@@ -448,11 +471,18 @@ class YNNPackDelegate : public SimpleDelegateInterface {
       thread_pool_ =
           std::make_unique<slinky::thread_pool_impl>(options_.num_threads - 1);
     }
+    ParseAllowedOps(options_.allowed_ops);
   }
 
   bool IsNodeSupportedByDelegate(const TfLiteRegistration* registration,
                                  const TfLiteNode* node,
                                  TfLiteContext* context) const override {
+    if (!allowed_ops_set_.empty()) {
+      std::string op_name = GetOpName(registration, node);
+      if (allowed_ops_set_.find(op_name) == allowed_ops_set_.end()) {
+        return false;
+      }
+    }
     int builtin_code = registration->builtin_code;
     if (IsUnaryOp(builtin_code)) {
       return IsUnaryOpSupported(registration, node, context, options_) ==
@@ -536,8 +566,16 @@ class YNNPackDelegate : public SimpleDelegateInterface {
   TfLiteStatus Initialize(TfLiteContext* context) override {
     auto* subgraph = reinterpret_cast<tflite::Subgraph*>(context->impl_);
     if (subgraph != nullptr) {
-      auto filter = [context](const TfLiteNode* node,
-                              const TfLiteRegistration* reg) -> bool {
+      auto filter = [context, this](const TfLiteNode* node,
+                                    const TfLiteRegistration* reg) -> bool {
+        if (!allowed_ops_set_.empty()) {
+          std::string op_name = GetOpName(reg, node);
+          if (allowed_ops_set_.find(op_name) == allowed_ops_set_.end()) {
+            // If the op is not in allowed list, we should inline it if it's
+            // composite.
+            return true;
+          }
+        }
         if (IsRuntimeBmm(reg, node) &&
             IsRuntimeBatchedMatMulSupported(reg, node, context) == kTfLiteOk) {
           // Don't inline this supported runtime_bmm.
@@ -570,8 +608,24 @@ class YNNPackDelegate : public SimpleDelegateInterface {
   }
 
  private:
+  void ParseAllowedOps(const char* allowed_ops_str) {
+    if (!allowed_ops_str || strlen(allowed_ops_str) == 0) {
+      return;
+    }
+    std::string s(allowed_ops_str);
+    size_t pos = 0;
+    std::string token;
+    while ((pos = s.find(",")) != std::string::npos) {
+      token = s.substr(0, pos);
+      allowed_ops_set_.insert(token);
+      s.erase(0, pos + 1);
+    }
+    allowed_ops_set_.insert(s);
+  }
+
   const TfLiteYNNPackDelegateOptions options_;
   std::unique_ptr<slinky::thread_pool_impl> thread_pool_;
+  std::unordered_set<std::string> allowed_ops_set_;
 };
 
 }  // namespace ynnpack
@@ -584,6 +638,7 @@ TfLiteYNNPackDelegateOptions TfLiteYNNPackDelegateOptionsDefault() {
   options.fast_math = false;
   options.consistent_arithmetic = false;
   options.no_excess_precision = false;
+  options.allowed_ops = nullptr;
   return options;
 }
 
