@@ -212,6 +212,78 @@ TEST_F(ConvertMoeExpertsTest, Int8Basic) {
   EXPECT_TRUE(attr->linear_scale.has_value());
 }
 
+TEST_F(ConvertMoeExpertsTest, Int4Basic) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("moe");
+  builder.AddInput(kTfLiteFloat32, {1, 1, 4, 64});  // src
+  builder.AddInput(kTfLiteFloat32, {1, 1, 4, 2});   // top_weights
+  builder.AddInput(kTfLiteInt32, {1, 1, 4, 2});     // top_indices
+
+  std::vector<uint8_t> gate_weight_data(128 * 4 * 1 * 64 * sizeof(int8_t), 0);
+  builder.AddConstInput(kTfLiteInt4, {128, 4, 1, 64},
+                        gate_weight_data);  // gate_weight
+  std::vector<uint8_t> gate_scale_data(128 * 4 * 1 * 1 * sizeof(float), 0);
+  builder.AddConstInput(kTfLiteFloat32, {128, 4, 1, 1},
+                        gate_scale_data);  // gate_scale
+
+  std::vector<uint8_t> ff1_weight_data(128 * 4 * 1 * 64 * sizeof(int8_t), 0);
+  builder.AddConstInput(kTfLiteInt4, {128, 4, 1, 64},
+                        ff1_weight_data);  // ff1_weight
+  std::vector<uint8_t> ff1_scale_data(128 * 4 * 1 * 1 * sizeof(float), 0);
+  builder.AddConstInput(kTfLiteFloat32, {128, 4, 1, 1},
+                        ff1_scale_data);  // ff1_scale
+
+  std::vector<uint8_t> linear_weight_data(64 * 4 * 1 * 128 * sizeof(int8_t), 0);
+  builder.AddConstInput(kTfLiteInt4, {64, 4, 1, 128},
+                        linear_weight_data);  // linear_weight
+  std::vector<uint8_t> linear_scale_data(64 * 4 * 1 * 1 * sizeof(float), 0);
+  builder.AddConstInput(kTfLiteFloat32, {64, 4, 1, 1},
+                        linear_scale_data);  // linear_scale
+
+  std::vector<uint8_t> per_expert_scale_data(1 * 1 * 1 * 4 * sizeof(float), 0);
+  builder.AddConstInput(kTfLiteFloat32, {1, 1, 1, 4},
+                        per_expert_scale_data);  // per_expert_scale
+
+  builder.AddOutput(kTfLiteFloat32, {1, 1, 4, 64});  // output
+
+  TfLiteCustomAllocation custom_alloc =
+      CreateMoeExpertsParams(4, 2, 64, 128, "int4");
+  builder.SetCustomData(custom_alloc.data, custom_alloc.bytes);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+
+  const auto* pair = interpreter->node_and_registration(0);
+  const TfLiteNode* node = &pair->first;
+  const TfLiteRegistration* registration = &pair->second;
+  auto parser = GetMoeExpertsParser();
+  auto status = parser.is_supported(interpreter->primary_subgraph().context(),
+                                    node, registration);
+  EXPECT_TRUE(status.ok()) << status.message();
+
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto& op = ir_model->ops()[0];
+  EXPECT_THAT(op->name, Eq("moe_experts"));
+  EXPECT_THAT(op->inputs, SizeIs(7));  // Int4 scale tensors are stripped!
+  EXPECT_THAT(op->outputs, SizeIs(1));
+
+  const auto* attr = std::any_cast<MoeExpertsAttributes>(&op->attr);
+  ASSERT_NE(attr, nullptr);
+  EXPECT_EQ(attr->num_experts, 4);
+  EXPECT_EQ(attr->num_active_experts, 2);
+  EXPECT_EQ(attr->model_dim, 64);
+  EXPECT_EQ(attr->hidden_dim, 128);
+  EXPECT_EQ(attr->weight_type, MoeExpertsAttributes::WeightType::kInt4);
+  EXPECT_TRUE(attr->ff_gate_scale.has_value());
+  EXPECT_TRUE(attr->ff1_scale.has_value());
+  EXPECT_TRUE(attr->linear_scale.has_value());
+}
+
 TEST_F(ConvertMoeExpertsTest, InferAttributesFromTensors) {
   SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
   builder.SetCustomName("moe");

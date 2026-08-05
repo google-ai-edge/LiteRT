@@ -182,6 +182,8 @@ absl::StatusOr<MoeExpertsAttributes> ReadAttributes(
     attr.weight_type = MoeExpertsAttributes::WeightType::kFp32;
   } else if (weight_type == "int8") {
     attr.weight_type = MoeExpertsAttributes::WeightType::kInt8;
+  } else if (weight_type == "int4") {
+    attr.weight_type = MoeExpertsAttributes::WeightType::kInt4;
   } else {
     return absl::InvalidArgumentError(
         absl::StrCat("moe unsupported weight_type: ", weight_type));
@@ -206,7 +208,9 @@ absl::StatusOr<MoeExpertsAttributes> InferAttributesFromTensors(
   if (tflite_node->inputs->size == kFp32InputCount) {
     attr.weight_type = MoeExpertsAttributes::WeightType::kFp32;
   } else if (tflite_node->inputs->size == kInt8InputCount) {
-    attr.weight_type = MoeExpertsAttributes::WeightType::kInt8;
+    attr.weight_type = (gate_weight->type == kTfLiteInt4)
+                           ? MoeExpertsAttributes::WeightType::kInt4
+                           : MoeExpertsAttributes::WeightType::kInt8;
   } else {
     return absl::InvalidArgumentError(
         "moe cannot infer weight_type from input count.");
@@ -396,11 +400,18 @@ absl::Status MoeExpertsIsSupported(const TfLiteContext* context,
       if (!status.ok()) return status;
       if (!tflite::IsConstantTensor(weight)) {
         return absl::InvalidArgumentError(
-            "moe v1 expects constant int8 weights.");
+            "moe v1 expects constant quantized weights.");
       }
-      if (weight->type != kTfLiteInt8) {
+      const TfLiteType expected_type =
+          attr.weight_type == MoeExpertsAttributes::WeightType::kInt4
+              ? kTfLiteInt4
+              : kTfLiteInt8;
+      const char* type_name =
+          attr.weight_type == MoeExpertsAttributes::WeightType::kInt4 ? "int4"
+                                                                      : "int8";
+      if (weight->type != expected_type) {
         return absl::InvalidArgumentError(
-            absl::StrCat("moe expects int8 ", weight_names[i], "."));
+            absl::StrCat("moe expects ", type_name, " ", weight_names[i], "."));
       }
       status = ValidateInt8ZeroPoint(weight, weight_names[i]);
       if (!status.ok()) return status;
@@ -482,7 +493,8 @@ void MoeExpertsConvert(
   auto attr_or = ReadAttributesOrInfer(&context, &tflite_node, &registration);
   if (attr_or.ok()) {
     MoeExpertsAttributes attr = attr_or.value();
-    if (attr.weight_type == MoeExpertsAttributes::WeightType::kInt8) {
+    if (attr.weight_type == MoeExpertsAttributes::WeightType::kInt8 ||
+        attr.weight_type == MoeExpertsAttributes::WeightType::kInt4) {
       auto get_scale = [&](int index) -> MoeScaleTensor {
         const TfLiteTensor* t =
             &context.tensors[tflite_node.inputs->data[index]];
@@ -501,8 +513,11 @@ void MoeExpertsConvert(
   }
 
   for (int i = 0; i < tflite_node.inputs->size; ++i) {
-    if (attr_or.ok() && attr_or.value().weight_type ==
-                            MoeExpertsAttributes::WeightType::kInt8) {
+    if (attr_or.ok() &&
+        (attr_or.value().weight_type ==
+             MoeExpertsAttributes::WeightType::kInt8 ||
+         attr_or.value().weight_type ==
+             MoeExpertsAttributes::WeightType::kInt4)) {
       if (i == kInputInt8GateScale || i == kInputInt8Ff1Scale ||
           i == kInputInt8LinearScale) {
         continue;

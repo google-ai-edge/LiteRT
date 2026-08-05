@@ -119,11 +119,17 @@ absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> ExpertFullyConnected(
     MoeExpertsAttributes::WeightType weight_type, const std::string& name) {
   const ::ml_drift::OHWI weights_shape(output_channels, num_experts, 1,
                                        input_channels);
-  ::ml_drift::WeightsDescription weights_desc =
-      weight_type == MoeExpertsAttributes::WeightType::kInt8
-          ? model_builder->GetFullyConnectedInt8WeightsDesc(weights_shape)
-          : model_builder->GetFullyConnectedWeightsDesc(
-                src.tensor_desc.GetDataType(), weights_shape);
+  ::ml_drift::WeightsDescription weights_desc;
+  if (weight_type == MoeExpertsAttributes::WeightType::kInt8) {
+    weights_desc =
+        model_builder->GetFullyConnectedInt8WeightsDesc(weights_shape);
+  } else if (weight_type == MoeExpertsAttributes::WeightType::kInt4) {
+    weights_desc =
+        model_builder->GetFullyConnectedInt4WeightsDesc(weights_shape);
+  } else {
+    weights_desc = model_builder->GetFullyConnectedWeightsDesc(
+        src.tensor_desc.GetDataType(), weights_shape);
+  }
 
   ::ml_drift::GpuModelBuilder::TensorHandle scale_handle;
   ::ml_drift::GpuModelBuilder::TensorHandle* scale_handle_ptr = nullptr;
@@ -353,11 +359,12 @@ absl::Status CreateMoeExpertsFromIrOp(
   ABSL_ASSIGN_OR_RETURN(per_expert_scale,
                         model_builder->GetTensor(inputs[6]->id));
 
-  if (attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt8) {
+  if (attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt8 ||
+      attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt4) {
     if (!attr.ff_gate_scale.has_value() || !attr.ff1_scale.has_value() ||
         !attr.linear_scale.has_value()) {
       return absl::InvalidArgumentError(
-          "MoE int8 expert weights require per-expert scale tensors.");
+          "MoE quantized expert weights require per-expert scale tensors.");
     }
     gate_scale_ptr = &attr.ff_gate_scale.value();
     ff1_scale_ptr = &attr.ff1_scale.value();
@@ -367,7 +374,9 @@ absl::Status CreateMoeExpertsFromIrOp(
   auto legacy_weight_type =
       attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt8
           ? MoeExpertsAttributes::WeightType::kInt8
-          : MoeExpertsAttributes::WeightType::kFp32;
+          : (attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt4
+                 ? MoeExpertsAttributes::WeightType::kInt4
+                 : MoeExpertsAttributes::WeightType::kFp32);
 
   return BuildMoeExpertsGpuGraph(
       model_builder, create_info, src, top_weights, top_indices, gate_weight,
