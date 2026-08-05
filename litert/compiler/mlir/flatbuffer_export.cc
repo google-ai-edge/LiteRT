@@ -590,7 +590,7 @@ class ExportBufferStorage {
 
     inline std::string GetData() {
       std::string data;
-      data.reserve(32);
+      data.reserve(byte_size_hint_ > 0 ? byte_size_hint_ : 32);
       auto status = ApplyData([&data](absl::string_view chunk) {
         data.append(chunk.data(), chunk.size());
         return absl::OkStatus();
@@ -1295,7 +1295,8 @@ std::optional<BufferOffset<tflite::Buffer>> Translator::BuildBuffer(
     // Otherwise, creates a buffer with the flatbuffer immediately.
     ExportBufferStorage<int, std::pair<mlir::Attribute, mlir::Operation*>>::
         ExportBuffer buffer(std::make_pair(attr, inst), std::move(applier),
-                            /*hash=*/0);
+                            /*hash=*/0,
+                            /*byte_size_hint=*/mlir::TFL::GetSizeInBytes(type));
 
     std::string buffer_data = buffer.GetData();
     if (custom_option_alignment_.has_value()) {
