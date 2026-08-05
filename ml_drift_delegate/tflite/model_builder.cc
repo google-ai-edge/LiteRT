@@ -3916,8 +3916,31 @@ class OneHotOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                         {.max_version = 1}));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(
+        context, tflite_node, registration,
+        {.max_version = 1,
+         .min_inputs = 4,
+         .num_outputs = 1,
+         .check_gpu_compatibility = false}));
+    const TfLiteTensor* indices_tensor = nullptr;
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 0, &indices_tensor));
+    const auto* one_hot_options =
+        static_cast<const TfLiteOneHotParams*>(tflite_node->builtin_data);
+    if (one_hot_options) {
+      const int num_dims = indices_tensor->dims->size;
+      if (one_hot_options->axis != -1 &&
+          (num_dims == 0 ||
+           one_hot_options->axis != indices_tensor->dims->data[num_dims - 1])) {
+        return absl::InvalidArgumentError(
+            "OneHot axis must be -1 or the last dimension.");
+      }
+    }
+    if (indices_tensor->dims->size >= 4 &&
+        indices_tensor->dims->data[3] != 1) {
+      return absl::InvalidArgumentError(
+          "OneHot indices channel dimension must be 1.");
+    }
     ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     return absl::OkStatus();
   }
