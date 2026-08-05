@@ -113,6 +113,7 @@ cc_test(
 cc_library(
     name = "litert_accelerator_def",
     hdrs = ["litert_accelerator_def.h"],
+    visibility = ["//litert:litert_internal_users"],
     deps = [
         ":litert_abi_header",
         ":litert_custom_tensor_buffer_handlers_def",
