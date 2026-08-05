@@ -33,6 +33,7 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_profiler_types.h"
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -471,6 +472,19 @@ LiteRtStatus LiteRtDispatchCheckRuntimeCompatibility(
     LiteRtApiVersion api_version, LiteRtEnvironmentOptions env,
     LiteRtOptions options) {
   INVOKE_FUNC(check_runtime_compatibility, api_version, env, options);
+}
+
+LiteRtStatus LiteRtDispatchGetHooks(LiteRtDispatchDeviceContext device_context,
+                                    LiteRtHook* hook, void** user_data) {
+  if (!device_context) {
+    LITERT_LOG(LITERT_ERROR, "Null input");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!hook) {
+    LITERT_LOG(LITERT_ERROR, "Null input");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  INVOKE_FUNC(get_hooks, device_context, hook, user_data);
 }
 
 LiteRtStatus LiteRtDispatchStartMetricsCollection(

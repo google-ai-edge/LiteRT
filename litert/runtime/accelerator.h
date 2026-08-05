@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_RUNTIME_ACCELERATOR_H_
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_profiler_types.h"
 #include "litert/runtime/metrics.h"
 
 // We need to forward declare this to avoid a dependency loop.
@@ -69,6 +70,11 @@ struct LiteRtAcceleratorT {
   LiteRtStatus (*StopMetricsCollection)(LiteRtRuntimeContext* runtime_context,
                                         LiteRtDelegateWrapper delegate,
                                         LiteRtMetricsT* metrics);
+
+  // Retrieves the native vendor hooks from the accelerator.
+  LiteRtStatus (*GetHooks)(LiteRtRuntimeContext* runtime_context,
+                           LiteRtDelegateWrapper delegate, LiteRtHook* hook,
+                           void** user_data);
 
   // NOLINTEND(*-readability-class-member-naming)
 };

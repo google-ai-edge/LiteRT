@@ -18,6 +18,7 @@
 #include <stddef.h>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_profiler_types.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 
@@ -47,6 +48,10 @@ LiteRtStatus LiteRtDispatchDelegateStartMetricsCollection(
 // Stop collection of HW-specific metrics and report the collected metrics.
 LiteRtStatus LiteRtDispatchDelegateStopMetricsCollection(
     TfLiteOpaqueDelegate* delegate, LiteRtMetrics metrics);
+
+// Retrieves the native vendor hooks from the accelerator.
+LiteRtStatus LiteRtDispatchDelegateGetHooks(TfLiteOpaqueDelegate* delegate,
+                                            LiteRtHook* hook, void** user_data);
 
 #ifdef __cplusplus
 }
