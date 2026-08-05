@@ -109,6 +109,16 @@ class RuntimeOptions {
   /// @brief Gets the underlying C options object.
   const LrtRuntimeOptions* Get() const { return options_.get(); }
 
+  static const char* Discriminator() {
+    return LrtGetRuntimeOptionsIdentifier();
+  }
+
+  LiteRtStatus GetOpaqueOptionsData(const char** identifier, void** payload,
+                                    void (**payload_deleter)(void*)) const {
+    return LrtGetOpaqueRuntimeOptionsData(Get(), identifier, payload,
+                                          payload_deleter);
+  }
+
  private:
   explicit RuntimeOptions(LrtRuntimeOptions* options) : options_(options) {}
 

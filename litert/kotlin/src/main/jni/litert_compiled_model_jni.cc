@@ -37,7 +37,6 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
@@ -65,7 +64,6 @@ using ::litert::Expected;
 using ::litert::GpuOptions;
 using ::litert::Layout;
 using ::litert::Options;
-using ::litert::OwnHandle;
 using ::litert::RankedTensorType;
 using ::litert::TensorBuffer;
 using ::litert::Unexpected;
@@ -492,8 +490,9 @@ Expected<Options> CreateOptions(JNIEnv* env, jintArray accelerators,
   }
 
   if (env->GetArrayLength(qualcomm_options_keys) > 0) {
-    LITERT_ASSIGN_OR_RETURN(auto& qualcomm_options,
-                            compilation_options.GetQualcommOptions());
+    LITERT_ASSIGN_OR_RETURN(
+        auto& qualcomm_options,
+        compilation_options.GetOptions<::litert::qualcomm::QualcommOptions>());
     LITERT_RETURN_IF_ERROR(PopulateQualcommOptions(
         env, qualcomm_options, qualcomm_options_keys, qualcomm_options_values));
   }

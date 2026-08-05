@@ -27,6 +27,8 @@
 #include "litert/cc/internal/scoped_weight_source.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/options/litert_cpu_options.h"
+#include "litert/cc/options/litert_gpu_options.h"
 #include "litert/core/options.h"
 #include "litert/test/matchers.h"
 
@@ -62,15 +64,14 @@ TEST(OptionsTest, SetExternalWeightScopedFileStoresMetadata) {
     file << std::string(16, '\x01');
   }
 
-  auto scoped_file = ScopedFile::Open(path);
-  ASSERT_TRUE(scoped_file.ok());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto scoped_file, ScopedFile::Open(path));
 
   Options::ScopedWeightSectionMap sections;
   sections.emplace("weights.group",
                    ScopedWeightSection{.offset = 4, .length = 8});
 
   auto status =
-      options.SetExternalWeightScopedFile(*scoped_file, std::move(sections));
+      options.SetExternalWeightScopedFile(scoped_file, std::move(sections));
   LITERT_EXPECT_OK(status);
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options_handle,
@@ -84,5 +85,27 @@ TEST(OptionsTest, SetExternalWeightScopedFileStoresMetadata) {
   EXPECT_EQ(it->second.length, 8);
   std::remove(path.c_str());
 }
+
+TEST(OptionsTest, GetOptionsGenericAccessor) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& gpu_opts_1,
+                              options.GetOptions<GpuOptions>());
+  LITERT_EXPECT_OK(gpu_opts_1.SetPrecision(GpuOptions::Precision::kFp16));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& gpu_opts_2,
+                              options.GetOptions<GpuOptions>());
+  EXPECT_EQ(&gpu_opts_1, &gpu_opts_2);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& cpu_opts, options.GetOptions<CpuOptions>());
+  LITERT_EXPECT_OK(cpu_opts.SetNumThreads(4));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options_handle,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+  ASSERT_NE(options_handle, nullptr);
+}
+
 }  // namespace
 }  // namespace litert

@@ -105,7 +105,7 @@ TEST(TestCallGoogleTensorPlugin, PartitionWithOpFiltersRunOnCpu) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
   LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
-                              options.GetGoogleTensorOptions());
+                              options.GetOptions<GoogleTensorOptions>());
 
   std::string temp_file =
       ::testing::TempDir() + "/test_op_filters_cpu.textproto";
@@ -194,7 +194,7 @@ TEST(TestCallGoogleTensorPlugin, PartitionWithOpFiltersRunOnTpu) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
   LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
-                              options.GetGoogleTensorOptions());
+                              options.GetOptions<GoogleTensorOptions>());
 
   std::string temp_file =
       ::testing::TempDir() + "/test_op_filters_tpu.textproto";
@@ -258,7 +258,7 @@ TEST(TestCallGoogleTensorPlugin, CompileMulSubgraphWithOptions) {
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(Options options, Options::Create());
   LITERT_ASSERT_OK_AND_ASSIGN(GoogleTensorOptions & google_tensor_options,
-                              options.GetGoogleTensorOptions());
+                              options.GetOptions<GoogleTensorOptions>());
   google_tensor_options.SetFloatTruncationType(
       kLiteRtGoogleTensorFloatTruncationTypeBfloat16);
 
@@ -330,7 +330,7 @@ TEST(TestCallGoogleTensorPlugin, CompileWithExtraOptions) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
   LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
-                              options.GetGoogleTensorOptions());
+                              options.GetOptions<GoogleTensorOptions>());
 
   google_tensor_options.SetExtraOptions("test_extra_options");
   EXPECT_EQ(google_tensor_options.GetExtraOptions(), "test_extra_options");

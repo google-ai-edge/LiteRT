@@ -68,6 +68,12 @@ class QualcommOptions {
     return LrtQualcommOptionsGetIdentifier();
   }
 
+  LiteRtStatus GetOpaqueOptionsData(const char** identifier, void** payload,
+                                    void (**payload_deleter)(void*)) const {
+    return LrtGetOpaqueQualcommOptionsData(Get(), identifier, payload,
+                                           payload_deleter);
+  }
+
   static Expected<QualcommOptions> Create() {
     LrtQualcommOptions c_options;
     LITERT_RETURN_IF_ERROR(LrtCreateQualcommOptions(&c_options));

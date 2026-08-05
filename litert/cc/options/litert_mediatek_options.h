@@ -17,6 +17,7 @@
 #include <memory>
 #include <string>
 
+#include "litert/c/litert_common.h"
 #include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -44,6 +45,14 @@ class MediatekOptions {
 
   LrtMediatekOptions* Get() const { return options_.get(); }
   LrtMediatekOptions* Release() { return options_.release(); }
+
+  static const char* Discriminator() { return "mediatek"; }
+
+  LiteRtStatus GetOpaqueOptionsData(const char** identifier, void** payload,
+                                    void (**payload_deleter)(void*)) const {
+    return LrtGetOpaqueMediatekOptionsData(Get(), identifier, payload,
+                                           payload_deleter);
+  }
 
   /// @brief Specifies the version of the Neuron SDK to use.
   enum class NeronSDKVersion : int {

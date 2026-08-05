@@ -261,7 +261,7 @@ namespace litert::intel_openvino {
 
 LITERT_REGISTER_OPTIONS_PARSER([](Options& options) -> Expected<void> {
   LITERT_ASSIGN_OR_RETURN(auto& intel_openvino_opts,
-                          options.GetIntelOpenVinoOptions());
+                          options.GetOptions<IntelOpenVinoOptions>());
   return UpdateIntelOpenVinoOptionsFromFlags(intel_openvino_opts);
 });
 

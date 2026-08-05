@@ -25,15 +25,6 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
-#include "litert/c/options/litert_compiler_options.h"
-#include "litert/c/options/litert_cpu_options.h"
-#include "litert/c/options/litert_google_tensor_options.h"
-#include "litert/c/options/litert_gpu_options.h"
-#include "litert/c/options/litert_intel_openvino_options.h"
-#include "litert/c/options/litert_mediatek_options.h"
-#include "litert/c/options/litert_qualcomm_options.h"
-#include "litert/c/options/litert_runtime_options.h"
-#include "litert/c/options/litert_samsung_options.h"
 #include "litert/cc/internal/litert_runtime_proxy.h"
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/internal/scoped_weight_source.h"
@@ -44,15 +35,15 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
-#include "litert/cc/options/litert_compiler_options.h"
-#include "litert/cc/options/litert_cpu_options.h"
-#include "litert/cc/options/litert_google_tensor_options.h"
-#include "litert/cc/options/litert_gpu_options.h"
-#include "litert/cc/options/litert_intel_openvino_options.h"
-#include "litert/cc/options/litert_mediatek_options.h"
-#include "litert/cc/options/litert_qualcomm_options.h"
-#include "litert/cc/options/litert_runtime_options.h"
-#include "litert/cc/options/litert_samsung_options.h"
+#include "litert/cc/options/litert_compiler_options.h"  // IWYU pragma: keep
+#include "litert/cc/options/litert_cpu_options.h"  // IWYU pragma: keep
+#include "litert/cc/options/litert_google_tensor_options.h"  // IWYU pragma: keep
+#include "litert/cc/options/litert_gpu_options.h"  // IWYU pragma: keep
+#include "litert/cc/options/litert_intel_openvino_options.h"  // IWYU pragma: keep
+#include "litert/cc/options/litert_mediatek_options.h"  // IWYU pragma: keep
+#include "litert/cc/options/litert_qualcomm_options.h"  // IWYU pragma: keep
+#include "litert/cc/options/litert_runtime_options.h"  // IWYU pragma: keep
+#include "litert/cc/options/litert_samsung_options.h"  // IWYU pragma: keep
 #include "litert/core/options.h"
 
 namespace litert {
@@ -105,6 +96,19 @@ class CompiledModel;
 class CompiledModelNext;
 
 namespace internal {
+
+// Opaque unique identifier for a C++ option type.
+using OptionTypeId = const void*;
+
+// Returns a unique pointer address (&type_tag) for each distinct type T
+// instantiated in the program. This serves as a fast, zero-overhead runtime
+// type key for option lookup without requiring RTTI or string identifiers.
+template <typename T>
+OptionTypeId GetOptionTypeId() {
+  static const char type_tag = 0;
+  return &type_tag;
+}
+
 struct LiteRtDestroyOptionsDeleter {
   void (*destroy_options)(LiteRtOptionsT*) = nullptr;
   void operator()(LiteRtOptionsT* options) const {
@@ -326,63 +330,87 @@ class Options {
     return {};
   }
 
+  /// Retrieves or lazy-creates the specified option type.
+  ///
+  /// This template method allows configuring any Option type without
+  /// modifying litert_options.h.
+  ///
+  /// Example usage:
+  ///   LITERT_ASSIGN_OR_RETURN(
+  ///       auto& qnn_options,
+  ///       options.GetOptions<litert::qualcomm::QualcommOptions>());
+  template <typename OptionType>
+  Expected<OptionType&> GetOptions() {
+    auto type_id = internal::GetOptionTypeId<OptionType>();
+    auto it = option_slots_.find(type_id);
+    if (it == option_slots_.end()) {
+      LITERT_ASSIGN_OR_RETURN(auto new_option, OptionType::Create());
+      auto* ptr = new OptionType(std::move(new_option));
+      OptionSlot slot{
+          std::unique_ptr<void, void (*)(void*)>(
+              ptr, [](void* p) { delete static_cast<OptionType*>(p); }),
+          [ptr](internal::RuntimeProxy* runtime,
+                LiteRtOptions options) -> LiteRtStatus {
+            const char* identifier = nullptr;
+            void* payload = nullptr;
+            void (*payload_deleter)(void*) = nullptr;
+            LITERT_RETURN_IF_ERROR(ptr->GetOpaqueOptionsData(
+                &identifier, &payload, &payload_deleter));
+            LiteRtOpaqueOptions opaque_opts = nullptr;
+            LITERT_RETURN_IF_ERROR(runtime->CreateOpaqueOptions(
+                identifier, payload, payload_deleter, &opaque_opts));
+            LITERT_RETURN_IF_ERROR(
+                runtime->AddOpaqueOptions(options, opaque_opts));
+            return kLiteRtStatusOk;
+          }};
+      it = option_slots_.emplace(type_id, std::move(slot)).first;
+    }
+    return *static_cast<OptionType*>(it->second.option_ptr.get());
+  }
+
   /// Returns a reference to the GPU options.
   ///
   /// Use this to configure GPU-specific settings.
-  Expected<GpuOptions&> GetGpuOptions() {
-    return options_impl::EnsureOption(gpu_options_);
-  }
+  Expected<GpuOptions&> GetGpuOptions() { return GetOptions<GpuOptions>(); }
 
   /// Returns a reference to the CPU options.
   ///
   /// Use this to configure CPU-specific settings.
-  Expected<CpuOptions&> GetCpuOptions() {
-    return options_impl::EnsureOption(cpu_options_);
-  }
-
-  /// Returns a reference to the Qualcomm options.
-  ///
-  /// Use this to configure Qualcomm-specific settings.
-  Expected<qualcomm::QualcommOptions&> GetQualcommOptions() {
-    return options_impl::EnsureOption(qualcomm_options_);
-  }
-
-  /// Returns a reference to the MediaTek options.
-  ///
-  /// Use this to configure MediaTek-specific settings.
-  Expected<mediatek::MediatekOptions&> GetMediatekOptions() {
-    return options_impl::EnsureOption(mediatek_options_);
-  }
-
-  /// Returns a reference to the Google Tensor options.
-  ///
-  /// Use this to configure Google Tensor-specific settings.
-  Expected<google_tensor::GoogleTensorOptions&> GetGoogleTensorOptions() {
-    return options_impl::EnsureOption(google_tensor_options_);
-  }
-
-  /// Returns a reference to the Intel OpenVINO options.
-  ///
-  /// Use this to configure Intel OpenVINO-specific settings.
-  Expected<intel_openvino::IntelOpenVinoOptions&> GetIntelOpenVinoOptions() {
-    return options_impl::EnsureOption(intel_openvino_options_);
-  }
-
-  /// Returns a reference to the Samsung options.
-  ///
-  /// Use this to configure Samsung-specific settings.
-  Expected<samsung::SamsungOptions&> GetSamsungOptions() {
-    return options_impl::EnsureOption(samsung_options_);
-  }
+  Expected<CpuOptions&> GetCpuOptions() { return GetOptions<CpuOptions>(); }
 
   /// Returns a reference to the runtime options.
   Expected<RuntimeOptions&> GetRuntimeOptions() {
-    return options_impl::EnsureOption(runtime_options_);
+    return GetOptions<RuntimeOptions>();
   }
 
   /// Returns a reference to the compiler options.
   Expected<CompilerOptions&> GetCompilerOptions() {
-    return options_impl::EnsureOption(compiler_options_);
+    return GetOptions<CompilerOptions>();
+  }
+
+  /// @deprecated Use GetOptions<> API instead.
+  Expected<qualcomm::QualcommOptions&> GetQualcommOptions() {
+    return GetOptions<qualcomm::QualcommOptions>();
+  }
+
+  /// @deprecated Use GetOptions<> API instead.
+  Expected<mediatek::MediatekOptions&> GetMediatekOptions() {
+    return GetOptions<mediatek::MediatekOptions>();
+  }
+
+  /// @deprecated Use GetOptions<> API instead.
+  Expected<google_tensor::GoogleTensorOptions&> GetGoogleTensorOptions() {
+    return GetOptions<google_tensor::GoogleTensorOptions>();
+  }
+
+  /// @deprecated Use GetOptions<> API instead.
+  Expected<intel_openvino::IntelOpenVinoOptions&> GetIntelOpenVinoOptions() {
+    return GetOptions<intel_openvino::IntelOpenVinoOptions>();
+  }
+
+  /// @deprecated Use GetOptions<> API instead.
+  Expected<samsung::SamsungOptions&> GetSamsungOptions() {
+    return GetOptions<samsung::SamsungOptions>();
   }
 
  private:
@@ -409,53 +437,35 @@ class Options {
       LITERT_RETURN_IF_ERROR(action(runtime, litert_options));
     }
 
-    LITERT_RETURN_IF_ERROR(options_impl::AppendAndResetOpaqueData(
-        runtime, litert_options, options.gpu_options_,
-        LrtGetOpaqueGpuOptionsData));
-    LITERT_RETURN_IF_ERROR(options_impl::AppendAndResetOpaqueData(
-        runtime, litert_options, options.cpu_options_,
-        LrtGetOpaqueCpuOptionsData));
-    LITERT_RETURN_IF_ERROR(options_impl::AppendAndResetOpaqueData(
-        runtime, litert_options, options.qualcomm_options_,
-        LrtGetOpaqueQualcommOptionsData));
-    LITERT_RETURN_IF_ERROR(options_impl::AppendAndResetOpaqueData(
-        runtime, litert_options, options.mediatek_options_,
-        LrtGetOpaqueMediatekOptionsData));
-    LITERT_RETURN_IF_ERROR(options_impl::AppendAndResetOpaqueData(
-        runtime, litert_options, options.google_tensor_options_,
-        LrtGetOpaqueGoogleTensorOptionsData));
-    LITERT_RETURN_IF_ERROR(options_impl::AppendAndResetOpaqueData(
-        runtime, litert_options, options.intel_openvino_options_,
-        LrtGetOpaqueIntelOpenVinoOptionsData));
-    LITERT_RETURN_IF_ERROR(options_impl::AppendAndResetOpaqueData(
-        runtime, litert_options, options.samsung_options_,
-        LrtGetOpaqueSamsungOptionsData));
-    LITERT_RETURN_IF_ERROR(options_impl::AppendAndResetOpaqueData(
-        runtime, litert_options, options.runtime_options_,
-        LrtGetOpaqueRuntimeOptionsData));
-    LITERT_RETURN_IF_ERROR(options_impl::AppendAndResetOpaqueData(
-        runtime, litert_options, options.compiler_options_,
-        LrtGetOpaqueCompilerOptionsData));
+    for (const auto& [_, slot] : options.option_slots_) {
+      LITERT_RETURN_IF_ERROR(slot.appender(runtime, litert_options));
+    }
 
     return internal::LiteRtOptionsPtr(
         litert_options, internal::LiteRtDestroyOptionsDeleter{
                             runtime->runtime_c_api_->litert_destroy_options});
   }
 
+  // Type-erased storage slot for an individual compilation option instance.
+  // Holds both the option object and the logic required to serialize and attach
+  // it to the C-API LiteRtOptions handle during Build().
+  struct OptionSlot {
+    // Type-erased pointer to the option instance, paired with a type-aware
+    // deleter that destroys the concrete OptionType when the slot is destroyed.
+    std::unique_ptr<void, void (*)(void*)> option_ptr;
+
+    // Callback invoked during Options::Build() to serialize the option via
+    // GetOpaqueOptionsData() and attach it to LiteRtOptions.
+    std::function<LiteRtStatus(internal::RuntimeProxy*, LiteRtOptions)>
+        appender;
+  };
+
   std::optional<LiteRtHwAcceleratorSet> lite_rt_hw_accelerator_set_;
   std::vector<LiteRtOpaqueOptions> opaque_options_;
   std::vector<
       std::function<LiteRtStatus(internal::RuntimeProxy*, LiteRtOptions)>>
       build_actions_;
-  std::optional<GpuOptions> gpu_options_;
-  std::optional<CpuOptions> cpu_options_;
-  std::optional<qualcomm::QualcommOptions> qualcomm_options_;
-  std::optional<mediatek::MediatekOptions> mediatek_options_;
-  std::optional<google_tensor::GoogleTensorOptions> google_tensor_options_;
-  std::optional<intel_openvino::IntelOpenVinoOptions> intel_openvino_options_;
-  std::optional<samsung::SamsungOptions> samsung_options_;
-  std::optional<RuntimeOptions> runtime_options_;
-  std::optional<CompilerOptions> compiler_options_;
+  FlatHashMap<internal::OptionTypeId, OptionSlot> option_slots_;
 };
 
 namespace internal {

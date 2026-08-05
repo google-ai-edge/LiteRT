@@ -171,6 +171,7 @@ litert_bin(
         "//litert/c/options:litert_google_tensor_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_options",
+        "//litert/cc/options:litert_intel_openvino_options",
         "//litert/core:build_stamp",
         "//litert/tools/flags:apply_plugin_flags",
         "//litert/tools/flags:common_flags",
@@ -184,6 +185,10 @@ litert_bin(
     ] + select({
         "//litert:windows": [],
         "//conditions:default": [
+            "//litert/cc/options:litert_google_tensor_options",
+            "//litert/cc/options:litert_mediatek_options",
+            "//litert/cc/options:litert_qualcomm_options",
+            "//litert/cc/options:litert_samsung_options",
             "//litert/tools/flags/vendors:google_tensor_flags",
             "//litert/tools/flags/vendors:mediatek_flags",
             "//litert/tools/flags/vendors:qualcomm_flags",

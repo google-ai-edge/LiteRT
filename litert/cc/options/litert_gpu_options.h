@@ -65,6 +65,12 @@ class GpuOptions {
     return LrtGetGpuOptionsIdentifier();
   }
 
+  LiteRtStatus GetOpaqueOptionsData(const char** identifier, void** payload,
+                                    void (**payload_deleter)(void*)) const {
+    return LrtGetOpaqueGpuOptionsData(Get(), identifier, payload,
+                                      payload_deleter);
+  }
+
   /// @brief Sets whether to enable constant tensor sharing.
   /// This feature enables sharing of constant tensors (weights) between
   /// subgraphs. Internally, it manages constant tensor separately with

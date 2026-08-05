@@ -151,6 +151,16 @@ class IntelOpenVinoOptions {
 
   LrtIntelOpenVinoOptions Get() const { return options_.get(); }
 
+  static const char* Discriminator() {
+    return LrtGetIntelOpenVinoOptionsIdentifier();
+  }
+
+  LiteRtStatus GetOpaqueOptionsData(const char** identifier, void** payload,
+                                    void (**payload_deleter)(void*)) const {
+    return LrtGetOpaqueIntelOpenVinoOptionsData(Get(), identifier, payload,
+                                                payload_deleter);
+  }
+
  private:
   explicit IntelOpenVinoOptions(LrtIntelOpenVinoOptions options)
       : options_(options) {}

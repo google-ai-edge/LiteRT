@@ -106,8 +106,9 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
 
   if (use_npu) {
     // Set default QNN options
-    LITERT_ASSIGN_OR_ABORT(auto& qnn_opts,
-                           compilation_options.GetQualcommOptions());
+    LITERT_ASSIGN_OR_ABORT(
+        auto& qnn_opts,
+        compilation_options.GetOptions<litert::qualcomm::QualcommOptions>());
     qnn_opts.SetLogLevel(litert::qualcomm::QualcommOptions::LogLevel::kOff);
     qnn_opts.SetHtpPerformanceMode(
         litert::qualcomm::QualcommOptions::HtpPerformanceMode::kBurst);
@@ -118,8 +119,9 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
             kOptimizeForInferenceO3);
 
     // Set default MTK options
-    LITERT_ASSIGN_OR_ABORT(auto& mtk_opts,
-                           compilation_options.GetMediatekOptions());
+    LITERT_ASSIGN_OR_ABORT(
+        auto& mtk_opts,
+        compilation_options.GetOptions<litert::mediatek::MediatekOptions>());
     if (mediatek_nerun_pilot_version == "version9") {
       mtk_opts.SetNeronSDKVersionType(
           litert::mediatek::MediatekOptions::NeronSDKVersion::kVersion9);
@@ -129,8 +131,10 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     mtk_opts.SetEnableL1CacheOptimizations(true);
 
     // Google Tensor options
-    LITERT_ASSIGN_OR_ABORT(auto& google_tensor_opts,
-                           compilation_options.GetGoogleTensorOptions());
+    LITERT_ASSIGN_OR_ABORT(
+        auto& google_tensor_opts,
+        compilation_options
+            .GetOptions<litert::google_tensor::GoogleTensorOptions>());
     google_tensor_opts.SetPerformanceMode(
         google_tensor::GoogleTensorOptions::PerformanceMode::kBurst);
 
