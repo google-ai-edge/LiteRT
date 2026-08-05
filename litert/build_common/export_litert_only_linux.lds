@@ -21,6 +21,9 @@ VERS_1.0 {
 
     LiteRtDispatch*;
 
+    /* Required for libunwind. This is needed if built and then run internally */
+    google_find_phdr;
+
   local:
 
     /* Hide everything else */
