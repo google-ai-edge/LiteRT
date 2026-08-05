@@ -1441,6 +1441,7 @@ cc_test(
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -2263,6 +2264,7 @@ cc_test(
         "//tflite:string",
         "//tflite/core:framework_stable",
         "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_googletest//:gtest",
     ],
