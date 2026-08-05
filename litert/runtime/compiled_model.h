@@ -471,26 +471,11 @@ class LiteRtCompiledModelT {
   // NOTE: Any fields that must be destroyed after the TFL interpreter
   // is destroyed must be listed before field interp_.
 
-  std::vector<Delegate> delegates_;
-  // The loader that manages external weight metadata and bindings.
-  std::unique_ptr<weight_loader::WeightLoader> weight_loader_owned_;
-  // It may point to weight_loader_owned_ or the weight loader owned by the
-  // client. If there are no external weights to use, this will be nullptr.
-  weight_loader::WeightLoader* weight_loader_ = nullptr;
-
-  std::vector<std::unique_ptr<litert::internal::CustomOpDispatcher>>
-      custom_op_dispatchers_;
-
-  // The TFL interpreter.
-  std::unique_ptr<::tflite::Interpreter> interp_;
-
-  // NOTE: List below TFL interpreter related objects used to run the
-  // model. Note that these fields will be destroyed before the TFL interpreter
-  // is destroyed.
+  // File system hints about the originating model location.
+  std::optional<std::string> model_directory_;
 
   std::unique_ptr<::tflite::FlatBufferModel> fb_model_;
   litert::OwningBufferRef<uint8_t> model_buf_;
-  std::vector<const std::string*> signature_keys_;
   // If JIT compilation hasn't happened, the flatbuffer fd belongs to the
   // incoming literal model. If JIT compilation has happened, the fd belongs to
   // a newly serialized flatbuffer owned by the compiled model. If the model is
@@ -510,6 +495,25 @@ class LiteRtCompiledModelT {
   std::vector<litert::internal::CompilerPlugin> maybe_compiled_plugins_;
   std::optional<litert::internal::ApplyPluginsResult> apply_plugins_result_;
 #endif  // !defined(LITERT_DISABLE_NPU)
+
+  std::vector<Delegate> delegates_;
+  // The loader that manages external weight metadata and bindings.
+  std::unique_ptr<weight_loader::WeightLoader> weight_loader_owned_;
+  // It may point to weight_loader_owned_ or the weight loader owned by the
+  // client. If there are no external weights to use, this will be nullptr.
+  weight_loader::WeightLoader* weight_loader_ = nullptr;
+
+  std::vector<std::unique_ptr<litert::internal::CustomOpDispatcher>>
+      custom_op_dispatchers_;
+
+  // The TFL interpreter.
+  std::unique_ptr<::tflite::Interpreter> interp_;
+
+  // NOTE: List below TFL interpreter related objects used to run the
+  // model. Note that these fields will be destroyed before the TFL interpreter
+  // is destroyed.
+
+  std::vector<const std::string*> signature_keys_;
 
   // The buffer requirement maps for CPU buffers. For delegates with CPU
   // buffers, they don't register TensorBufferRequirements. Instead, the
@@ -546,9 +550,6 @@ class LiteRtCompiledModelT {
   // Fabric runtime path state (non-null when CompiledModel runs Fabric).
   std::unique_ptr<litert::internal::FabricRuntimeState> fabric_runtime_;
 #endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-
-  // File system hints about the originating model location.
-  std::optional<std::string> model_directory_;
 
   // The set of CPU Tensors. This is used to manage TensorBufferRequirements
   // for shared CPU Tensors.
