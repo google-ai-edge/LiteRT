@@ -126,9 +126,9 @@ const char* DispatchDelegate::Name() const { return kDelegateName.data(); }
 std::unique_ptr<tflite::SimpleOpaqueDelegateKernelInterface>
 DispatchDelegate::CreateDelegateKernelInterface() {
   if (!has_dispatch_runtime_) {
-    LITERT_LOG(LITERT_ERROR,
-               "Failed to create a dispatch delegate kernel: No usable "
-               "Dispatch runtime found");
+    LITERT_FATAL(
+        "Failed to create a dispatch delegate kernel: No usable Dispatch "
+        "runtime found");
     return nullptr;
   }
 
@@ -138,8 +138,7 @@ DispatchDelegate::CreateDelegateKernelInterface() {
       std::move(dispatch_graph_name), environment_options_, options_,
       device_context_);
   if (!kernel) {
-    LITERT_LOG(LITERT_ERROR,
-               "Failed to create a dispatch delegate kernel facade");
+    LITERT_FATAL("Failed to create a dispatch delegate kernel facade");
     return nullptr;
   }
   kernels_.push_back(kernel.get());
