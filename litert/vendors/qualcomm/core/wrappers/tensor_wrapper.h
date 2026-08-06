@@ -317,6 +317,13 @@ bool TensorWrapper::SetTensorData(absl::Span<const T> data) {
           qnn_tensor_.v2.dataType);
       return false;
     }
+  } else if constexpr (std::is_same_v<T, bool>) {
+    if (qnn_tensor_.v2.dataType != QNN_DATATYPE_BOOL_8) {
+      QNN_LOG_ERROR(
+          "Cannot set tensor data, setting bool data on QNN data type %d.",
+          qnn_tensor_.v2.dataType);
+      return false;
+    }
   } else if constexpr (std::is_same_v<T, std::int8_t>) {
     if (qnn_tensor_.v2.dataType != QNN_DATATYPE_INT_8 &&
         qnn_tensor_.v2.dataType != QNN_DATATYPE_SFIXED_POINT_8) {
