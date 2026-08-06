@@ -17,11 +17,13 @@
 #include <sys/mman.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -132,6 +134,13 @@ void AdapterOdc::FreeCompiledCode(char** compiled_code_data,
                                   size_t num_bytecodes) {
   api_->free_compiled_code(api_->context, compiled_code_data,
                            compiled_code_sizes, num_bytecodes);
+}
+
+Expected<std::vector<int32_t>> AdapterOdc::GetUnsupportedOps(
+    const char* tfl_buffer_data, size_t tfl_buffer_size, const char* options,
+    size_t options_size) {
+  return Unexpected(kLiteRtStatusErrorUnsupported,
+                    "GetUnsupportedOps is not supported in ODC mode");
 }
 
 }  // namespace litert::google_tensor

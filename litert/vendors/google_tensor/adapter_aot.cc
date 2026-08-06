@@ -17,6 +17,7 @@
 #include <dlfcn.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -72,7 +73,7 @@ litert::Expected<void> AdapterAot::LoadSymbols(
 
   if (!dlib_handle_) {
     const std::string error_message =
-        "Failed to load Tensor TPU compiler library: " + std::string(dlerror());
+        absl::StrCat("Failed to load Tensor TPU compiler library: ", dlerror());
     LITERT_LOG(LITERT_ERROR, "Failed to load Tensor TPU compiler library: %s",
                error_message.c_str());  // Include dlerror() for more info
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure, error_message);
@@ -82,7 +83,7 @@ litert::Expected<void> AdapterAot::LoadSymbols(
       dlsym(dlib_handle_, "GoogleTensorCompileFlatbuffer"));
   if (!api_->compile) {
     const std::string error_message =
-        "Failed to load Tensor TPU compiler API: " + std::string(dlerror());
+        absl::StrCat("Failed to load Tensor TPU compiler API: ", dlerror());
     LITERT_LOG(LITERT_ERROR, "Failed to load Tensor TPU compiler API: %s",
                error_message.c_str());  // Include dlerror()
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure, error_message);
@@ -91,7 +92,7 @@ litert::Expected<void> AdapterAot::LoadSymbols(
       dlsym(dlib_handle_, "GoogleTensorCompilerFreeCompiledCode"));
   if (!api_->free_compiled_code) {
     const std::string error_message =
-        "Failed to load Tensor TPU compiler API: " + std::string(dlerror());
+        absl::StrCat("Failed to load Tensor TPU compiler API: ", dlerror());
     LITERT_LOG(LITERT_ERROR, "Failed to load Tensor TPU compiler API: %s",
                error_message.c_str());  // Include dlerror()
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure, error_message);
@@ -100,7 +101,27 @@ litert::Expected<void> AdapterAot::LoadSymbols(
       dlsym(dlib_handle_, "GoogleTensorCompilerFreeErrorMessage"));
   if (!api_->free_error_message) {
     const std::string error_message =
-        "Failed to load Tensor TPU compiler API: " + std::string(dlerror());
+        absl::StrCat("Failed to load Tensor TPU compiler API: ", dlerror());
+    LITERT_LOG(LITERT_ERROR, "Failed to load Tensor TPU compiler API: %s",
+               error_message.c_str());  // Include dlerror()
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure, error_message);
+  }
+
+  api_->get_unsupported_ops = reinterpret_cast<CompilerGetUnsupportedOps>(
+      dlsym(dlib_handle_, "GoogleTensorGetUnsupportedOps"));
+  if (!api_->get_unsupported_ops) {
+    const std::string error_message =
+        absl::StrCat("Failed to load Tensor TPU compiler API: ", dlerror());
+    LITERT_LOG(LITERT_ERROR, "Failed to load Tensor TPU compiler API: %s",
+               error_message.c_str());  // Include dlerror()
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure, error_message);
+  }
+
+  api_->free_unsupported_ops = reinterpret_cast<CompilerFreeUnsupportedOps>(
+      dlsym(dlib_handle_, "GoogleTensorFreeUnsupportedOps"));
+  if (!api_->free_unsupported_ops) {
+    const std::string error_message =
+        absl::StrCat("Failed to load Tensor TPU compiler API: ", dlerror());
     LITERT_LOG(LITERT_ERROR, "Failed to load Tensor TPU compiler API: %s",
                error_message.c_str());  // Include dlerror()
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure, error_message);
@@ -139,6 +160,43 @@ void AdapterAot::FreeCompiledCode(char** compiled_code_data,
                                   size_t num_bytecodes) {
   api_->free_compiled_code(compiled_code_data, compiled_code_sizes,
                            num_bytecodes);
+}
+
+Expected<std::vector<int32_t>> AdapterAot::GetUnsupportedOps(
+    const char* tfl_buffer_data, size_t tfl_buffer_size, const char* options,
+    size_t options_size) {
+  if (!api_->get_unsupported_ops) {
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "get_unsupported_ops symbol not loaded");
+  }
+
+  int32_t* unsupported_op_indices = nullptr;
+  size_t num_unsupported_ops = 0;
+  char* error_message = nullptr;
+  absl::Cleanup cleanup = [&] {
+    if (error_message) {
+      api_->free_error_message(error_message);
+    }
+    if (unsupported_op_indices) {
+      api_->free_unsupported_ops(unsupported_op_indices);
+    }
+  };
+
+  bool success = api_->get_unsupported_ops(
+      tfl_buffer_data, tfl_buffer_size, options, options_size,
+      &unsupported_op_indices, &num_unsupported_ops, &error_message);
+
+  if (!success) {
+    std::string error_str = "Failed to get unsupported ops";
+    if (error_message) {
+      absl::StrAppend(&error_str, ": ", error_message);
+    }
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure, error_str);
+  }
+
+  std::vector<int32_t> result(unsupported_op_indices,
+                              unsupported_op_indices + num_unsupported_ops);
+  return result;
 }
 
 }  // namespace google_tensor
