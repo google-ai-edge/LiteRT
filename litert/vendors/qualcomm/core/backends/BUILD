@@ -3,7 +3,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps")
+load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps", "litert_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -20,6 +20,7 @@ cc_library(
         ":gpu_backend",
         ":htp_backend",
         ":ir_backend",
+        ":lpai_backend",
         ":qnn_backend",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm/core:common",
@@ -133,6 +134,24 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "lpai_backend",
+    srcs = ["lpai_backend.cc"],
+    hdrs = ["lpai_backend.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
+    deps = [
+        ":backend_utils",
+        ":graph_config_builder",
+        ":qnn_backend",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
 cc_test(
     name = "gpu_backend_test",
     srcs = [
@@ -223,21 +242,57 @@ cc_test(
     ],
 )
 
-cc_test(
+litert_test(
     name = "htp_backend_test",
     srcs = [
         "htp_backend_test.cc",
     ],
-    # copybara:uncomment malloc = "//base:system_malloc",
+    no_main = True,
     tags = [
         "noasan",
         "nomsan",
         "nosan",
+        "notap",
         "notsan",
     ],
+    ungrte = True,
+    use_sys_malloc = True,
     deps = [
         ":backend_utils",
         ":htp_backend",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/utils:miscs",
+        "@com_google_absl//absl/base:no_destructor",
+        "@qairt//:qnn_lib_headers",
+    ] + select({
+        "@org_tensorflow//tensorflow:linux_x86_64": [
+            # copybara:uncomment_begin(google-only)
+            # "@qairt//:linux_deps",
+            # copybara:uncomment_end
+        ],
+        "//conditions:default": [],
+    }) + gtest_main_no_heapcheck_deps(),
+)
+
+litert_test(
+    name = "lpai_backend_test",
+    srcs = [
+        "lpai_backend_test.cc",
+    ],
+    no_main = True,
+    tags = [
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notap",
+        "notsan",
+    ],
+    ungrte = True,
+    use_sys_malloc = True,
+    deps = [
+        ":lpai_backend",
+        ":qnn_backend",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/utils:miscs",

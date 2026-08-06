@@ -16,12 +16,19 @@ TEST(SocTableTest, FindSocInfoTest) {
   ASSERT_TRUE(kSdm865.has_value());
   EXPECT_EQ(kSdm865->soc_name, "SDM865");
   EXPECT_EQ(kSdm865->soc_model, 21);
+  EXPECT_EQ(kSdm865->lpai_hw_version, LpaiHardwareVersion::kUnknown);
 
   // Test finding another valid SoC (SM8550).
   static constexpr auto kSm8550 = FindSocInfo("SM8550");
   ASSERT_TRUE(kSm8550.has_value());
   EXPECT_EQ(kSm8550->soc_name, "SM8550");
   EXPECT_EQ(kSm8550->soc_model, 43);
+  EXPECT_EQ(kSm8550->lpai_hw_version, LpaiHardwareVersion::kUnknown);
+
+  // Test an LPAI-capable SoC carries its hw version.
+  static constexpr auto kSm8850 = FindSocInfo("SM8850");
+  ASSERT_TRUE(kSm8850.has_value());
+  EXPECT_EQ(kSm8850->lpai_hw_version, LpaiHardwareVersion::kV6);
 
   // Test finding an invalid SoC.
   EXPECT_FALSE(FindSocInfo("NONEXISTENT").has_value());

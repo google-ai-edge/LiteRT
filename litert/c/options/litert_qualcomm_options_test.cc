@@ -17,14 +17,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
-#include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/test/matchers.h"
 
@@ -314,7 +312,6 @@ TEST(LiteRtQualcommOptionsTest, SchematicDir) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
-
 TEST(LiteRtQualcommOptionsTest, GraphIOTensorMemType) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -492,7 +489,6 @@ TEST(QualcommOptionsTest, CppWrapper) {
   options->SetSchematicDir("tmp");
   EXPECT_EQ(options->GetSchematicDir(), "tmp");
 
-
   EXPECT_EQ(options->GetGraphIOTensorMemType(),
             QualcommOptions::GraphIOTensorMemType::kMemHandle);
   options->SetGraphIOTensorMemType(QualcommOptions::GraphIOTensorMemType::kRaw);
@@ -516,6 +512,64 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_EQ(custom_op_package.compile_package_path, "compile.so");
   EXPECT_EQ(custom_op_package.dispatch_package_path, "dispatch.so");
   EXPECT_EQ(custom_op_package.target, "HTP");
+
+  EXPECT_EQ(options->GetLpaiTarget(), QualcommOptions::LpaiTarget::kAdsp);
+  options->SetLpaiTarget(QualcommOptions::LpaiTarget::kX86);
+  EXPECT_EQ(options->GetLpaiTarget(), QualcommOptions::LpaiTarget::kX86);
+
+  EXPECT_EQ(options->GetLpaiFps(), 1);
+  options->SetLpaiFps(30);
+  EXPECT_EQ(options->GetLpaiFps(), 30);
+
+  EXPECT_EQ(options->GetLpaiFtrtRatio(), 10);
+  options->SetLpaiFtrtRatio(20);
+  EXPECT_EQ(options->GetLpaiFtrtRatio(), 20);
+
+  EXPECT_EQ(options->GetLpaiClientPerfType(),
+            QualcommOptions::LpaiClientPerfType::kDefault);
+  options->SetLpaiClientPerfType(
+      QualcommOptions::LpaiClientPerfType::kRealTime);
+  EXPECT_EQ(options->GetLpaiClientPerfType(),
+            QualcommOptions::LpaiClientPerfType::kRealTime);
+
+  EXPECT_EQ(options->GetLpaiCoreAffinityType(),
+            QualcommOptions::LpaiCoreAffinityType::kDefault);
+  options->SetLpaiCoreAffinityType(
+      QualcommOptions::LpaiCoreAffinityType::kHard);
+  EXPECT_EQ(options->GetLpaiCoreAffinityType(),
+            QualcommOptions::LpaiCoreAffinityType::kHard);
+
+  EXPECT_EQ(options->GetLpaiCoreSelection(), 0);
+  options->SetLpaiCoreSelection(0x01);
+  EXPECT_EQ(options->GetLpaiCoreSelection(), 0x01u);
+}
+
+TEST(LiteRtQualcommOptionsTest, LpaiOptions) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetLpaiTarget(
+      qualcomm_options, kLiteRtQualcommLpaiTargetX86));
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetLpaiFps(qualcomm_options, 30));
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetLpaiFtrtRatio(qualcomm_options, 10));
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetLpaiClientPerfType(
+      qualcomm_options, kLiteRtQualcommLpaiClientPerfTypeRealTime));
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetLpaiCoreAffinityType(
+      qualcomm_options, kLiteRtQualcommLpaiCoreAffinityTypeHard));
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsSetLpaiCoreSelection(qualcomm_options, 0x01));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetLpaiTarget(), QualcommOptions::LpaiTarget::kX86);
+  EXPECT_EQ(parsed.GetLpaiFps(), 30);
+  EXPECT_EQ(parsed.GetLpaiFtrtRatio(), 10);
+  EXPECT_EQ(parsed.GetLpaiClientPerfType(),
+            QualcommOptions::LpaiClientPerfType::kRealTime);
+  EXPECT_EQ(parsed.GetLpaiCoreAffinityType(),
+            QualcommOptions::LpaiCoreAffinityType::kHard);
+  EXPECT_EQ(parsed.GetLpaiCoreSelection(), 0x01u);
+
+  LrtDestroyQualcommOptions(qualcomm_options);
 }
 
 }  // namespace
