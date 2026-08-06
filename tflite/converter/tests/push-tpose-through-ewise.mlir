@@ -210,3 +210,21 @@ func.func @doubleTposeDynamicInput(%arg0: tensor<?x?x4x5xf32>, %arg1: tensor<?x?
 // CHECK: %0 = tfl.add %arg0, %arg1 {fused_activation_function = "NONE"} : tensor<?x?x4x5xf32>
 // CHECK: %1 = "tfl.transpose"(%0, %cst) : (tensor<?x?x4x5xf32>, tensor<4xi32>) -> tensor<5x?x?x4xf32>
 // CHECK: return %1 : tensor<5x?x?x4xf32>
+
+// -----
+
+// CHECK-LABEL: pushTposeAfterSubSwapped
+func.func @pushTposeAfterSubSwapped(%arg0: tensor<2x3x4x5xf32>) -> tensor<5x2x3x4xf32> {
+  %perm = arith.constant dense<[3, 0, 1, 2]> : tensor<4xi32>
+  %0 = "tfl.transpose"(%arg0, %perm) : (tensor<2x3x4x5xf32>, tensor<4xi32>) -> tensor<5x2x3x4xf32>
+  %cst = arith.constant dense<1.0> : tensor<5x2x3x4xf32>
+  %1 = tfl.sub %cst, %0 { fused_activation_function = "NONE" } : tensor<5x2x3x4xf32>
+  func.return %1 : tensor<5x2x3x4xf32>
+}
+
+// CHECK: %cst = arith.constant dense<[3, 0, 1, 2]> : tensor<4xi32>
+// CHECK: %cst_0 = arith.constant dense<1.000000e+00> : tensor<2x3x4x5xf32>
+// CHECK: %0 = tfl.sub %cst_0, %arg0 {fused_activation_function = "NONE"} : tensor<2x3x4x5xf32>
+// CHECK: %1 = "tfl.transpose"(%0, %cst) : (tensor<2x3x4x5xf32>, tensor<4xi32>) -> tensor<5x2x3x4xf32>
+// CHECK: return %1 : tensor<5x2x3x4xf32>
+
