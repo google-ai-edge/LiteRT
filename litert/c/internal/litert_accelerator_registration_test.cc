@@ -63,7 +63,6 @@ class DummyAccelerator {
     return kLiteRtStatusOk;
   }
 
-
   LiteRtHwAccelerators hardware_support_;
 };
 

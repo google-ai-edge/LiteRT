@@ -111,7 +111,6 @@ class GpuWebGpuAccelerator {
     return kLiteRtStatusOk;
   }
 
-
  private:
   LiteRtHwAcceleratorSet hardware_support_;
 };

@@ -430,8 +430,8 @@ absl::Status MoeExpertsOperationParser::IsSupported(
           attr.weight_type == MoeExpertsAttributes::WeightType::kInt4 ? "int4"
                                                                       : "int8";
       if (weight->type != expected_type) {
-        return absl::InvalidArgumentError(absl::StrCat(
-            "moe expects ", type_name, " ", weight_names[i], "."));
+        return absl::InvalidArgumentError(
+            absl::StrCat("moe expects ", type_name, " ", weight_names[i], "."));
       }
       ABSL_RETURN_IF_ERROR(ValidateInt8ZeroPoint(weight, weight_names[i]));
     }

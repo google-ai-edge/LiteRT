@@ -513,11 +513,10 @@ void MoeExpertsConvert(
   }
 
   for (int i = 0; i < tflite_node.inputs->size; ++i) {
-    if (attr_or.ok() &&
-        (attr_or.value().weight_type ==
-             MoeExpertsAttributes::WeightType::kInt8 ||
-         attr_or.value().weight_type ==
-             MoeExpertsAttributes::WeightType::kInt4)) {
+    if (attr_or.ok() && (attr_or.value().weight_type ==
+                             MoeExpertsAttributes::WeightType::kInt8 ||
+                         attr_or.value().weight_type ==
+                             MoeExpertsAttributes::WeightType::kInt4)) {
       if (i == kInputInt8GateScale || i == kInputInt8Ff1Scale ||
           i == kInputInt8LinearScale) {
         continue;
