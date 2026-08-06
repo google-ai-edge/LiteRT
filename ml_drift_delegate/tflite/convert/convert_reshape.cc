@@ -34,7 +34,7 @@ void ConvertReshape(const TfLiteContext& context, const TfLiteNode& node,
   ir_model.SetProducer(tensor_map[output_id], ir_op->id);
 
   const TfLiteTensor& output_tensor = context.tensors[node.outputs->data[0]];
-  if (output_tensor.dims->size == 5) {
+  if (output_tensor.dims->size == 5 || output_tensor.dims->size == 6) {
     ::ml_drift::Reshape3DAttributes attr3d;
     attr3d.new_shape =
         ir_model.tensor(tensor_map[output_id])->desc.GetBHWDCShape();

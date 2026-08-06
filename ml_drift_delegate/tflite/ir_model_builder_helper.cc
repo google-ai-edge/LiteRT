@@ -113,6 +113,11 @@ void UpdateWithMask(int begin_mask, int end_mask,
   } else if (size == 4) {
     return ::ml_drift::BHWDC(dims->data[0], dims->data[1], dims->data[2], 1,
                              dims->data[3]);
+  } else if (size == 6) {
+    // Fold the second dimension into batch: [B, D0, D1, D2, D3, C] →
+    // BHWDC(B * D0, D1, D2, D3, C)
+    return ::ml_drift::BHWDC(dims->data[0] * dims->data[1], dims->data[2],
+                             dims->data[3], dims->data[4], dims->data[5]);
   } else {
     return ::ml_drift::BHWDC(dims->data[0], dims->data[1], dims->data[2],
                              dims->data[3], dims->data[4]);

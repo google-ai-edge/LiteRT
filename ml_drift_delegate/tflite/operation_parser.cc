@@ -132,6 +132,8 @@ absl::Status CheckTensorShape(const TfLiteIntArray* dims,
       // BHWC layout
     case 5:
       // BHWDC layout
+    case 6:
+      // 6D layout — folded into BHWDC with extra dimension in Depth
       return absl::OkStatus();
     default:
       return absl::InvalidArgumentError(
@@ -264,6 +266,10 @@ absl::Status PreCheckTfLiteShape(const TfLiteTensor& tflite_tensor) {
       // HWC layout
     case 4:
       // BHWC layout
+    case 5:
+      // BHWDC layout
+    case 6:
+      // 6D layout — folded into BHWDC with extra dimension in Depth
       return absl::OkStatus();
     default:
       return absl::InvalidArgumentError(absl::StrCat(

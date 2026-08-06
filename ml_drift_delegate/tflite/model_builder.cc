@@ -4575,7 +4575,15 @@ class ReshapeOperationParser : public TFLiteOperationParser {
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::Node* node = graph->NewNode();
     node->operation.type = ToString(::ml_drift::OperationType::RESHAPE);
-    reader->AddInput(node, 0);
+    // A constant input becomes a CONSTANT producer node so the subsequent
+    // RESHAPE node can consume it via AddConsumer (AddInput only works for
+    // runtime/non-constant tensors).
+    if (reader->IsConstantTensor(0)) {
+      ::ml_drift::Value* const_input = reader->AddConstInput(0, /*layout=*/{});
+      graph->AddConsumer(node->id, const_input->id);
+    } else {
+      reader->AddInput(node, 0);
+    }
     reader->AddOutputs(node);
 
     // New shape comes from output shape.
@@ -6739,9 +6747,9 @@ bool IsAllAllowedTensors(TfLiteContext* context,
     int tensor_idx = tensor_indices->data[i];
     if (tensor_idx == kTfLiteOptionalTensor) continue;
     const TfLiteTensor* t = &context->tensors[tensor_idx];
-    if (t->dims && t->dims->size >= 5) {
+    if (t->dims && t->dims->size >= 7) {
       *unsupported_details +=
-          "Tensor dimensions must be less than 5. " + std::string(t->name);
+          "Tensor dimensions must be less than 7. " + std::string(t->name);
       return false;
     }
     bool type_supported = false;

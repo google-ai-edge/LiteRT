@@ -950,11 +950,22 @@ absl::Status CheckGpuDelegateCompatibility(const OpSignature& op_sig,
     case kTfLiteBuiltinPrelu:
       return absl::OkStatus();
 
-    case kTfLiteBuiltinReshape:
-      RETURN_IF_ERROR(CheckInputsOutputs(op_sig,
-                                         /*required_runtime_inputs=*/1,
-                                         /*required_outputs=*/1));
+    case kTfLiteBuiltinReshape: {
+      // RESHAPE of a constant tensor is constant-foldable — accept 0 or 1
+      // runtime inputs.
+      const int runtime_inputs = GetNumberOfRuntimeInputs(op_sig);
+      if (runtime_inputs != 0 && runtime_inputs != 1) {
+        return absl::InternalError(absl::StrCat(
+            "Expected 0 or 1 runtime input tensor(s), but node has ",
+            runtime_inputs, " runtime input(s)."));
+      }
+      if (op_sig.outputs.size() != 1) {
+        return absl::InternalError(
+            absl::StrCat("Expected 1 output tensor(s), but node has ",
+                         op_sig.outputs.size(), " output(s)."));
+      }
       return absl::OkStatus();
+    }
     case kTfLiteBuiltinSelect:
     case kTfLiteBuiltinSelectV2:
       return CheckSelectV2GpuDelegateCompatibility(op_sig);

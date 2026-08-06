@@ -75,8 +75,12 @@ TEST(OperationParserTest, CheckTensorShape) {
     TfLiteIntArrayWrapper dims = {42, 69, 13, 50, 87};
     EXPECT_OK(CheckTensorShape(dims.ptr));
   }
-  {  // Fails with >=6D.
+  {  // Succeeds with 6D.
     TfLiteIntArrayWrapper dims = {42, 69, 13, 50, 87, 99};
+    EXPECT_OK(CheckTensorShape(dims.ptr));
+  }
+  {  // Fails with >=7D.
+    TfLiteIntArrayWrapper dims = {42, 69, 13, 50, 87, 99, 7};
     EXPECT_THAT(CheckTensorShape(dims.ptr), Not(IsOk()));
   }
 }

@@ -25,7 +25,7 @@
 
 namespace litert::ml_drift::ir {
 
-constexpr int kMaxDims = 5;
+constexpr int kMaxDims = 6;
 
 bool IsReshapeSupported(const TfLiteContext* absl_nonnull context,
                         const TfLiteNode* absl_nonnull node,

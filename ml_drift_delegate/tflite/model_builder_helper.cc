@@ -119,8 +119,19 @@ absl::Status GetNodeAndRegistration(TfLiteContext* context, int node_id,
   if (size == 2) return ::ml_drift::BHWC(dims->data[0], 1, 1, dims->data[1]);
   if (size == 3)
     return ::ml_drift::BHWC(dims->data[0], 1, dims->data[1], dims->data[2]);
-  return ::ml_drift::BHWC(dims->data[0], dims->data[1], dims->data[2],
-                          dims->data[3]);
+  if (size == 4)
+    return ::ml_drift::BHWC(dims->data[0], dims->data[1], dims->data[2],
+                            dims->data[3]);
+  // 5D/6D tensors are folded into BHWC so element counts stay consistent with
+  // CreateTensorDescriptor() in buffer_handler_utils.cc.
+  if (size == 5) {
+    // {B, H, W, D, C} -> BHWC(B, H, W, D*C)
+    return ::ml_drift::BHWC(dims->data[0], dims->data[1], dims->data[2],
+                            dims->data[3] * dims->data[4]);
+  }
+  // size == 6: {B, D0, D1, D2, D3, C} -> BHWC(B*D0, D1, D2, D3*C)
+  return ::ml_drift::BHWC(dims->data[0] * dims->data[1], dims->data[2],
+                          dims->data[3], dims->data[4] * dims->data[5]);
 }
 
 ::ml_drift::BHWC ExtractTensorShape(const TfLiteTensor* tflite_tensor) {

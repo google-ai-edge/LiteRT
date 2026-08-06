@@ -25,7 +25,7 @@ namespace litert::ml_drift::ir {
 //  Checks if a `Reshape` operation is supported by the delegate.
 //
 // Verifies op version (must be 1), I/O count (1 in, 1 out), supported tensor
-// data types, tensor rank (<= 4), and ensures the input is not a constant.
+// data types, tensor rank (<= 6), and ensures the input is not a constant.
 bool IsReshapeSupported(const TfLiteContext* absl_nonnull context,
                         const TfLiteNode* absl_nonnull node,
                         const TfLiteRegistration* absl_nonnull registration,

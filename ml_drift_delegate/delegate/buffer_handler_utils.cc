@@ -54,6 +54,27 @@ absl::StatusOr<::ml_drift::TensorDescriptor> CreateTensorDescriptor(
           tensor_type.layout.dimensions[0], tensor_type.layout.dimensions[1],
           tensor_type.layout.dimensions[2], tensor_type.layout.dimensions[3]);
       break;
+    case 5: {
+      // {B, H, W, D, C} → BHWDC(B, H, W, D, C) → BHWC(B, H, W, D*C)
+      shape = ::ml_drift::BHWC(
+          tensor_type.layout.dimensions[0],
+          tensor_type.layout.dimensions[1],
+          tensor_type.layout.dimensions[2],
+          tensor_type.layout.dimensions[3] *
+              tensor_type.layout.dimensions[4]);
+      break;
+    }
+    case 6: {
+      // {B, D0, D1, D2, D3, C} → BHWDC(B*D0, D1, D2, D3, C) → BHWC(B*D0, D1, D2, D3*C)
+      shape = ::ml_drift::BHWC(
+          tensor_type.layout.dimensions[0] *
+              tensor_type.layout.dimensions[1],
+          tensor_type.layout.dimensions[2],
+          tensor_type.layout.dimensions[3],
+          tensor_type.layout.dimensions[4] *
+              tensor_type.layout.dimensions[5]);
+      break;
+    }
     default:
       return absl::InvalidArgumentError(absl::StrCat(
           "Rank ", tensor_type.layout.rank, " tensor is not supported."));
