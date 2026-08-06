@@ -469,7 +469,8 @@ TEST(AccuracyDebuggerUtilTest, RunAccuracyDebuggerWithCustomInputs) {
 
   // Load simple_add_op model.
   std::string model_path = testing::GetTestFilePath("simple_add_op.tflite");
-  auto model_res = litert::internal::LoadModelFromFile(model_path);
+  auto model_res =
+      litert::internal::LoadModelFromFile(env->GetHolder().handle, model_path);
   ASSERT_TRUE(model_res.HasValue());
   auto model = std::move(model_res.Value());
 

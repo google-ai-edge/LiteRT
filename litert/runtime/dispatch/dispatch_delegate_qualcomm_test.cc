@@ -113,15 +113,16 @@ TEST(DispatchDelegate, CpuBuffer) {
   // interpreter directly.
   DispatchDelegatePtr dispatch_delegate = {nullptr, nullptr};
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      testing::TflRuntime::Ptr runtime,
-      MakeRuntimeFromTestFileWithNpuModel(kTfliteFile, kNpuFile));
-  tflite::Interpreter& interpreter = runtime->Interpreter();
-
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
 
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      testing::TflRuntime::Ptr runtime,
+      MakeRuntimeFromTestFileWithNpuModel(env.GetHolder().handle, kTfliteFile,
+                                          kNpuFile));
+  tflite::Interpreter& interpreter = runtime->Interpreter();
+
   LiteRtExternalLiteRtBufferContextT buffer_context =
-      CreateBufferContext(env.Get(), interpreter);
+      CreateBufferContext(env.GetHolder().handle, interpreter);
   interpreter.SetExternalContext(kTfLiteLiteRtBufferContext, &buffer_context);
 
   EXPECT_EQ(interpreter.nodes_size(), 1);
@@ -190,15 +191,16 @@ TEST(DispatchDelegate, HwBuffer) {
   // interpreter directly.
   DispatchDelegatePtr dispatch_delegate = {nullptr, nullptr};
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      testing::TflRuntime::Ptr runtime,
-      MakeRuntimeFromTestFileWithNpuModel(kTfliteFile, kNpuFile));
-  tflite::Interpreter& interpreter = runtime->Interpreter();
-
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
 
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      testing::TflRuntime::Ptr runtime,
+      MakeRuntimeFromTestFileWithNpuModel(env.GetHolder().handle, kTfliteFile,
+                                          kNpuFile));
+  tflite::Interpreter& interpreter = runtime->Interpreter();
+
   LiteRtExternalLiteRtBufferContextT buffer_context =
-      CreateBufferContext(env.Get(), interpreter);
+      CreateBufferContext(env.GetHolder().handle, interpreter);
   interpreter.SetExternalContext(kTfLiteLiteRtBufferContext, &buffer_context);
 
   EXPECT_EQ(interpreter.nodes_size(), 1);
@@ -308,12 +310,6 @@ TEST(DispatchDelegate, HwBuffer) {
 }
 
 TEST(DispatchDelegate, CompiledModel) {
-  // Create Model and check signatures.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      OwningBufferRef<uint8_t> model_with_byte_code,
-      internal::GetModelBufWithByteCode(testing::GetTestFilePath(kTfliteFile),
-                                        testing::GetTestFilePath(kNpuFile)));
-
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
                   "Qualcomm HTP";
@@ -321,6 +317,13 @@ TEST(DispatchDelegate, CompiledModel) {
 
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
+
+  // Create Model and check signatures.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      OwningBufferRef<uint8_t> model_with_byte_code,
+      internal::GetModelBufWithByteCode(env.GetHolder().handle,
+                                        testing::GetTestFilePath(kTfliteFile),
+                                        testing::GetTestFilePath(kNpuFile)));
 
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -398,18 +401,19 @@ TEST(DispatchDelegate, CompiledModel) {
 }
 
 TEST(DispatchDelegate, CompiledModelMultiRun) {
-  // Create Model and check signatures.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      OwningBufferRef<uint8_t> model_with_byte_code,
-      internal::GetModelBufWithByteCode(testing::GetTestFilePath(kTfliteFile),
-                                        testing::GetTestFilePath(kNpuFile)));
-
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
                   "Qualcomm HTP";
 #endif
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
+
+  // Create Model and check signatures.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      OwningBufferRef<uint8_t> model_with_byte_code,
+      internal::GetModelBufWithByteCode(env.GetHolder().handle,
+                                        testing::GetTestFilePath(kTfliteFile),
+                                        testing::GetTestFilePath(kNpuFile)));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
       CompiledModel::Create(env, model_with_byte_code, HwAccelerators::kNpu));
@@ -516,19 +520,20 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
 }
 
 TEST(DispatchDelegate, CompiledModelSharedInput) {
-  // Create Model and check signatures.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      OwningBufferRef<uint8_t> model_with_byte_code,
-      internal::GetModelBufWithByteCode(
-          testing::GetTestFilePath("shared_input_cpu_npu.tflite"),
-          testing::GetTestFilePath(kNpuFile)));
-
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
                   "GoogleTensor eTPU";
 #endif
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
+
+  // Create Model and check signatures.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      OwningBufferRef<uint8_t> model_with_byte_code,
+      internal::GetModelBufWithByteCode(
+          env.GetHolder().handle,
+          testing::GetTestFilePath("shared_input_cpu_npu.tflite"),
+          testing::GetTestFilePath(kNpuFile)));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
       CompiledModel::Create(env, model_with_byte_code, HwAccelerators::kCpu));

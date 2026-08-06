@@ -98,7 +98,8 @@ class CompilationCache {
   // - Returns an optional of value 'LiteRtModelT::Ptr' if a cache hit occured.
   // - Returns a failure status if an error occurred trying to load the model.
   Expected<std::optional<LiteRtModelT::Ptr>> TryLoadModel(
-      CacheKey cache_key, absl::string_view model_name = "");
+      LiteRtEnvironment environment, CacheKey cache_key,
+      absl::string_view model_name = "");
 
   // Builds an inventory of all cached models.
   // Visible for testing.

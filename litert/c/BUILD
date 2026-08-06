@@ -323,6 +323,7 @@ cc_test(
     tags = ["no_oss"],
     deps = [
         ":litert_common",
+        ":litert_environment_header",
         ":litert_op_code",
         ":litert_op_options",
         "//litert/cc:litert_buffer_ref",

@@ -123,7 +123,7 @@ Expected<ExtendedModel> LoadModelThroughRoundTrip(absl::string_view filename) {
   LiteRtModel result = nullptr;
   auto& cached_buf = GetTestBufferCache()[key];
   LITERT_RETURN_IF_ERROR(LiteRtCreateModelFromBuffer(
-      env.Get(), cached_buf.Data(), cached_buf.Size(), &result));
+      env.GetHolder().handle, cached_buf.Data(), cached_buf.Size(), &result));
 
   return ExtendedModel::CreateFromOwnedHandle(result);
 }
@@ -158,7 +158,8 @@ class TestWithModelFactory : public ::testing::TestWithParam<ModelFactory> {
 TEST(ModelLoadTest, BadFilepath) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LiteRtModel model = nullptr;
-  EXPECT_THAT(LiteRtCreateModelFromFile(env.Get(), "bad_path", &model),
+  EXPECT_THAT(LiteRtCreateModelFromFile(env.GetHolder().handle, "bad_path",
+                                        &model),
               IsError(kLiteRtStatusErrorFileIO));
 }
 
@@ -185,7 +186,7 @@ TEST(ModelLoadTest, BadFileData) {
 #else
   const char* bad_file_path = test_file_path.c_str();
 #endif
-  EXPECT_THAT(LiteRtCreateModelFromFile(env.Get(), bad_file_path, &model),
+  EXPECT_THAT(LiteRtCreateModelFromFile(env.GetHolder().handle, bad_file_path, &model),
               IsError(kLiteRtStatusErrorFileIO));
   // NOLINTEND
 }
@@ -1003,6 +1004,7 @@ TEST(ModelSerializeTest,
 
   auto model = litert::testing::LoadTestFileModel(kNpuModelPath);
   ASSERT_TRUE(model);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LITERT_ASSERT_OK(
       model.AddMetadata(kMetadataKey.data(), kMetadataValue.data()));
 
@@ -1012,7 +1014,7 @@ TEST(ModelSerializeTest,
   // Reload model using the cached buffer.
   LiteRtModel result_model = nullptr;
   EXPECT_EQ(
-      LiteRtCreateModelFromBuffer(/*environment=*/nullptr, serialized->Data(),
+      LiteRtCreateModelFromBuffer(env.GetHolder().handle, serialized->Data(),
                                   serialized->Size(), &result_model),
       kLiteRtStatusOk);
 

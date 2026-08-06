@@ -300,6 +300,10 @@ LiteRtStatus LiteRtGetModelSignature(LiteRtModel model,
                                      LiteRtParamIndex signature_index,
                                      LiteRtSignature* signature);
 
+// Get the environment associated with the model.
+LiteRtStatus LiteRtGetModelEnvironment(LiteRtModel model,
+                                       LiteRtEnvironment* environment);
+
 // Destroy the given model, freeing any memory it owns.
 void LiteRtDestroyModel(LiteRtModel model);
 

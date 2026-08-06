@@ -48,7 +48,7 @@ Expected<litert::OwningBufferRef<uint8_t>> CreateModelFromReferenceData(
 
   LITERT_ASSIGN_OR_RETURN(
       auto model_buf_with_bytecode,
-      litert::internal::GetModelBufWithByteCode(tfl_path, bin_path));
+      litert::internal::GetModelBufWithByteCode(env, tfl_path, bin_path));
 
   LITERT_RETURN_IF_ERROR(
       LiteRtCreateModelFromBuffer(env, model_buf_with_bytecode.Data(),
@@ -57,25 +57,28 @@ Expected<litert::OwningBufferRef<uint8_t>> CreateModelFromReferenceData(
   return model_buf_with_bytecode;
 }
 
-TEST(DispatchApiStaticLinkTest, RegistersStaticallyLinkedAccelerator) {
-  // Create environment without setting kLiteRtEnvOptionTagDispatchLibraryDir.
-  // The dynamically linked path would normally error.
-  LiteRtEnvironment env;
-  ASSERT_EQ(
-      LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env),
-      kLiteRtStatusOk);
-  LiteRtDestroyEnvironment(env);
+class DispatchApiStaticLinkTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    ASSERT_EQ(
+        LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env_),
+        kLiteRtStatusOk);
+  }
+
+  void TearDown() override { LiteRtDestroyEnvironment(env_); }
+
+  LiteRtEnvironment env_;
+};
+
+TEST_F(DispatchApiStaticLinkTest, RegistersStaticallyLinkedAccelerator) {
+  // Environment is created in SetUp.
+  EXPECT_NE(env_, nullptr);
 }
 
-TEST(DispatchApiStaticLinkTest, CanCreateCompiledModel) {
-  LiteRtEnvironment environment;
-  LiteRtEnvOption options = {};
-  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
-            kLiteRtStatusOk);
-
+TEST_F(DispatchApiStaticLinkTest, CanCreateCompiledModel) {
   LiteRtModel model;
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto buffer_holder, CreateModelFromReferenceData(environment, &model));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_holder,
+                              CreateModelFromReferenceData(env_, &model));
 
   LiteRtOptions compilation_options;
   ASSERT_EQ(LiteRtCreateOptions(&compilation_options), kLiteRtStatusOk);
@@ -84,25 +87,19 @@ TEST(DispatchApiStaticLinkTest, CanCreateCompiledModel) {
             kLiteRtStatusOk);
 
   LiteRtCompiledModel compiled_model;
-  ASSERT_EQ(LiteRtCreateCompiledModel(environment, model, compilation_options,
+  ASSERT_EQ(LiteRtCreateCompiledModel(env_, model, compilation_options,
                                       &compiled_model),
             kLiteRtStatusOk);
 
   LiteRtDestroyOptions(compilation_options);
   LiteRtDestroyCompiledModel(compiled_model);
   LiteRtDestroyModel(model);
-  LiteRtDestroyEnvironment(environment);
 }
 
-TEST(DispatchApiStaticLinkTest, CanRunCompiledModel) {
-  LiteRtEnvironment environment;
-  LiteRtEnvOption options = {};
-  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
-            kLiteRtStatusOk);
-
+TEST_F(DispatchApiStaticLinkTest, CanRunCompiledModel) {
   LiteRtModel model;
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto buffer_holder, CreateModelFromReferenceData(environment, &model));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_holder,
+                              CreateModelFromReferenceData(env_, &model));
 
   LiteRtOptions compilation_options;
   ASSERT_EQ(LiteRtCreateOptions(&compilation_options), kLiteRtStatusOk);
@@ -111,7 +108,7 @@ TEST(DispatchApiStaticLinkTest, CanRunCompiledModel) {
             kLiteRtStatusOk);
 
   LiteRtCompiledModel compiled_model;
-  ASSERT_EQ(LiteRtCreateCompiledModel(environment, model, compilation_options,
+  ASSERT_EQ(LiteRtCreateCompiledModel(env_, model, compilation_options,
                                       &compiled_model),
             kLiteRtStatusOk);
 
@@ -146,9 +143,8 @@ TEST(DispatchApiStaticLinkTest, CanRunCompiledModel) {
               kLiteRtStatusOk);
 
     LiteRtTensorBuffer buffer;
-    ASSERT_EQ(LiteRtCreateManagedTensorBuffer(environment, buffer_type,
-                                              &tensor_type, buffer_size,
-                                              &buffer),
+    ASSERT_EQ(LiteRtCreateManagedTensorBuffer(env_, buffer_type, &tensor_type,
+                                              buffer_size, &buffer),
               kLiteRtStatusOk);
     input_buffers.push_back(buffer);
 
@@ -189,9 +185,8 @@ TEST(DispatchApiStaticLinkTest, CanRunCompiledModel) {
               kLiteRtStatusOk);
 
     LiteRtTensorBuffer buffer;
-    ASSERT_EQ(LiteRtCreateManagedTensorBuffer(environment, buffer_type,
-                                              &tensor_type, buffer_size,
-                                              &buffer),
+    ASSERT_EQ(LiteRtCreateManagedTensorBuffer(env_, buffer_type, &tensor_type,
+                                              buffer_size, &buffer),
               kLiteRtStatusOk);
     output_buffers.push_back(buffer);
   }
@@ -207,7 +202,6 @@ TEST(DispatchApiStaticLinkTest, CanRunCompiledModel) {
   LiteRtDestroyOptions(compilation_options);
   LiteRtDestroyCompiledModel(compiled_model);
   LiteRtDestroyModel(model);
-  LiteRtDestroyEnvironment(environment);
 }
 
 }  // namespace

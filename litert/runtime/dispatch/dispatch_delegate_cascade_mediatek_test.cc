@@ -61,12 +61,6 @@ TEST(DispatchDelegate, CompiledModel) {
       {"DISPATCH_OP_3", testing::GetTestFilePath(kNpuBytecodeFileName)},
   };
 
-  // Create Model and check signatures.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto model_with_byte_code,
-      internal::GetModelBufWithByteCode(
-          testing::GetTestFilePath(kModelFileName), custom_code_to_npu_file));
-
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
                   "MediaTek NPU";
@@ -81,6 +75,13 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto env, litert::Environment::Create(litert::EnvironmentOptions(
                     absl::MakeConstSpan(environment_options))));
+
+  // Create Model and check signatures.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model_with_byte_code,
+      internal::GetModelBufWithByteCode(
+          env.GetHolder().handle, testing::GetTestFilePath(kModelFileName),
+          custom_code_to_npu_file));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,

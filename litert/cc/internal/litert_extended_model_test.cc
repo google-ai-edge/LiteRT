@@ -30,6 +30,7 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model_types.h"
 #include "litert/core/model/model.h"
@@ -48,6 +49,9 @@ namespace {
 
 // copybara:uncomment_begin(google_only)
 // TEST(CcExtendedModelTest, CreateFromMemoryAllocation) {
+//   auto env = Environment::Create({});
+//   ASSERT_TRUE(env);
+// 
 //   auto runtime = testing::MakeRuntimeFromTestFile("one_mul.tflite");
 //   ASSERT_TRUE(runtime);
 // 
@@ -55,7 +59,7 @@ namespace {
 //   auto allocation = std::make_unique<tflite::MemoryAllocation>(
 //       model_buffer.Data(), model_buffer.Size(), tflite::DefaultErrorReporter());
 // 
-//   auto model = ExtendedModel::CreateFromAllocation(std::move(allocation));
+//   auto model = ExtendedModel::CreateFromAllocation(*env, std::move(allocation));
 //   ASSERT_TRUE(model);
 // 
 //   auto subgraph = model->MainSubgraph();

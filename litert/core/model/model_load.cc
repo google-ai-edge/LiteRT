@@ -519,12 +519,26 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
 }  // namespace
 
 Expected<LiteRtModelT::Ptr> LoadModelFromBuffer(
+    LiteRtEnvironment environment, OwningBufferRef<uint8_t>&& buffer) {
+  // TODO(b/525716722): Remove overloads that don't take an environment and pass
+  // it to the underlying functions, e.g. UnpackModel.
+  return LoadModelFromBuffer(std::move(buffer));
+}
+
+Expected<LiteRtModelT::Ptr> LoadModelFromBuffer(
     OwningBufferRef<uint8_t>&& buffer) {
   auto flatbuffer = FlatbufferWrapper::CreateFromBuffer(std::move(buffer));
   if (!flatbuffer) {
     return flatbuffer.Error();
   }
   return UnpackModel(std::move(**flatbuffer));
+}
+
+Expected<LiteRtModelT::Ptr> LoadModelFromAllocation(
+    LiteRtEnvironment environment, tflite::Allocation::Ptr allocation) {
+  // TODO(b/525716722): Remove overloads that don't take an environment and pass
+  // it to the underlying functions, e.g. UnpackModel.
+  return LoadModelFromAllocation(std::move(allocation));
 }
 
 Expected<LiteRtModelT::Ptr> LoadModelFromAllocation(
@@ -537,12 +551,27 @@ Expected<LiteRtModelT::Ptr> LoadModelFromAllocation(
   return UnpackModel(std::move(**flatbuffer));
 }
 
+Expected<LiteRtModelT::Ptr> LoadModelFromBuffer(LiteRtEnvironment environment,
+                                                BufferRef<uint8_t> buffer) {
+  // TODO(b/525716722): Remove overloads that don't take an environment and pass
+  // it to the underlying functions, e.g. UnpackModel.
+  return LoadModelFromBuffer(buffer);
+}
+
 Expected<LiteRtModelT::Ptr> LoadModelFromBuffer(BufferRef<uint8_t> buffer) {
   auto flatbuffer = FlatbufferWrapper::CreateFromBuffer(buffer);
   if (!flatbuffer) {
     return flatbuffer.Error();
   }
   return UnpackModel(std::move(**flatbuffer));
+}
+
+Expected<LiteRtModelT::Ptr> LoadModelFromFile(LiteRtEnvironment environment,
+                                              absl::string_view filename,
+                                              bool allow_modifications) {
+  // TODO(b/525716722): Remove overloads that don't take an environment and pass
+  // it to the underlying functions, e.g. UnpackModel.
+  return LoadModelFromFile(filename, allow_modifications);
 }
 
 Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,

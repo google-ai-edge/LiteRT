@@ -252,6 +252,7 @@ LiteRtGetMaxPool2dStrideWOption
 LiteRtGetMeanKeepDimsOption
 LiteRtGetMetric
 LiteRtGetMirrorPadModeOption
+LiteRtGetModelEnvironment
 LiteRtGetModelMetadata
 LiteRtGetModelSignature
 LiteRtGetModelSubgraph
