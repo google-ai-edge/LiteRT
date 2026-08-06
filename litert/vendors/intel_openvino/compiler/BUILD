@@ -110,6 +110,8 @@ litert_lib(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     visibility = ["//litert/vendors/intel_openvino:__subpackages__"],
     deps = [
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
     ],
@@ -125,6 +127,7 @@ litert_test(
     # tests, which link @intel_openvino and need the OV runtime/hardware.
     deps = [
         ":global_graph",
+        "@com_google_absl//absl/types:span",
     ],
 )
 

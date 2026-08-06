@@ -17,6 +17,7 @@
 #include <cstring>
 #include <ios>
 #include <limits>
+#include <map>
 #include <memory>
 #include <ostream>
 #include <streambuf>
@@ -24,7 +25,6 @@
 #include <string_view>
 #include <utility>
 #include <vector>
-#include <map>
 
 #include "openvino/core/any.hpp"
 #include "openvino/core/except.hpp"
@@ -33,6 +33,7 @@
 #include "openvino/openvino.hpp"
 #include "openvino/runtime/core.hpp"
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
 #include "litert/c/litert_common.h"
@@ -547,12 +548,18 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       }
       LITERT_LOG(LITERT_INFO, "Weight sharing (GPU): %zu buffers, %zu bytes",
                  weight_bank.NumBuffers(), weight_bank.TotalBytes());
-      // Populate the GlobalGraph shared buffer pool (BufferId -> bytes).
-      for (const auto& [buffer_id, bytes] : weight_bank.Buffers()) {
-        global_graph.buffers.emplace(
-            static_cast<uint32_t>(buffer_id),
-            std::string(reinterpret_cast<const char*>(bytes.data()),
-                        bytes.size()));
+      // Populate the GlobalGraph shared buffer pool. Use an ordered map keyed by
+      // BufferId so the pool is laid out in ascending id order (matching
+      // Serialize()), then assign each buffer its pool offset. The bytes are
+      // BORROWED from the WeightBank (views into the model's mmapped weights,
+      // which outlive this whole Compile call) -- no copy of the multi-GB pool.
+      std::map<uint32_t, absl::Span<const uint8_t>> ordered(
+          weight_bank.Buffers().begin(), weight_bank.Buffers().end());
+      size_t running_offset = 0;
+      for (const auto& [buffer_id, bytes] : ordered) {
+        global_graph.buffers.push_back(
+            {buffer_id, running_offset, bytes});
+        running_offset += bytes.size();
       }
     }
 
@@ -626,13 +633,19 @@ LiteRtStatus LiteRtCompilerPluginCompile(
           // payload becomes this subgraph's payload; the whole container is
           // serialized once after the loop and returned for every partition
           // index.
+          // Park the export payload in the graph's owning store so the
+          // subgraph's payload span stays valid until Serialize(). A deque, so
+          // this emplace never invalidates earlier partitions' payload spans.
+          global_graph.payload_store.push_back(
+              litert::openvino::MakeBytecodeHeader(graph_backend_enum) +
+              obuf.drain_str());
+          const std::string& held = global_graph.payload_store.back();
           litert::openvino::OpenVinoGlobalGraph::Subgraph subgraph;
           subgraph.name = graph_name;
           subgraph.device = static_cast<uint8_t>(graph_backend_enum);
           subgraph.const_map = std::move(const_map);
-          subgraph.payload =
-              litert::openvino::MakeBytecodeHeader(graph_backend_enum) +
-              obuf.drain_str();
+          subgraph.payload = absl::MakeConstSpan(
+              reinterpret_cast<const uint8_t*>(held.data()), held.size());
           global_graph.subgraphs.emplace(graph_name, std::move(subgraph));
         } else {
           // Non-shared path: standalone per-partition bytecode (device header +
