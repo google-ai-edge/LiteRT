@@ -20,7 +20,7 @@ import android.content.Context
 import android.os.Build
 
 /**
- * An interface to checks if the device is compatible with NPU.
+ * An interface to check if the device is compatible with NPU.
  *
  * Developers can implement this interface to provide their own compatibility check logic, if the
  * default logic is not sufficient.
@@ -29,76 +29,74 @@ interface NpuCompatibilityChecker {
   fun isDeviceSupported(): Boolean
 
   companion object {
-    internal val SUPPORTED_QUALCOMM_SOCS =
-      setOf(
-        Pair("QTI", "SM8850"), // Xiaomi 17 Pro Max
-        Pair("Qualcomm", "SM8850"), // Xiaomi 17 Pro Max
-        Pair("QTI", "SM8750"), // Samsung S25
-        Pair("Qualcomm", "SM8750"), // Samsung S25
-        Pair("QTI", "SM8650"), // Samsung S24
-        Pair("Qualcomm", "SM8650"), // Samsung S24
-        Pair("QTI", "SM8550"), // Samsung S23
-        Pair("Qualcomm", "SM8550"), // Samsung S23
-      )
+    private const val GOOGLE_TENSOR_MIN_SDK_INT = 36
+
+    private fun isQualcommDevice(): Boolean {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val manufacturer = Build.SOC_MANUFACTURER?.trim()
+        return "Qualcomm".equals(manufacturer, ignoreCase = true) ||
+          "QTI".equals(manufacturer, ignoreCase = true)
+      }
+      return false
+    }
+
+    private fun isMediaTekDevice(): Boolean {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val manufacturer = Build.SOC_MANUFACTURER?.trim()
+        return "Mediatek".equals(manufacturer, ignoreCase = true) ||
+          "MTK".equals(manufacturer, ignoreCase = true)
+      }
+      return false
+    }
+
+    private fun isGoogleTensorDevice(): Boolean {
+      // Google Tensor NPU is only supported on Android 16+ devices (API level 36).
+      // BP2A is the only Android 16 build ID that does not support NPU.
+      if (
+        Build.VERSION.SDK_INT >= GOOGLE_TENSOR_MIN_SDK_INT &&
+          Build.ID?.startsWith("BP2A") != true
+      ) {
+        val manufacturer = Build.SOC_MANUFACTURER?.trim()
+        val model = Build.SOC_MODEL?.trim()
+        val hardware = Build.HARDWARE.orEmpty()
+        return "Google".equals(manufacturer, ignoreCase = true) ||
+          model?.contains("Tensor", ignoreCase = true) == true ||
+          hardware.contains("tensor", ignoreCase = true)
+      }
+      return false
+    }
+
+    private fun isSamsungDevice(): Boolean {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val manufacturer = Build.SOC_MANUFACTURER?.trim()
+        return manufacturer?.startsWith("Samsung", ignoreCase = true) == true ||
+          "Exynos".equals(manufacturer, ignoreCase = true)
+      }
+      return false
+    }
 
     /** Qualcomm NPU compatibility checker. */
     val Qualcomm =
       object : NpuCompatibilityChecker {
-        override fun isDeviceSupported(): Boolean {
-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            return SUPPORTED_QUALCOMM_SOCS.contains(Pair(Build.SOC_MANUFACTURER, Build.SOC_MODEL))
-          }
-          return false
-        }
+        override fun isDeviceSupported(): Boolean = isQualcommDevice()
       }
-
-    internal val SUPPORTED_MEDIATEK_SOCS =
-      setOf(
-        Pair("Mediatek", "MT6877"),
-        Pair("Mediatek", "MT6878"),
-        Pair("Mediatek", "MT6879"),
-        Pair("Mediatek", "MT6893"),
-        Pair("Mediatek", "MT6897"),
-        Pair("Mediatek", "MT6983"),
-        Pair("Mediatek", "MT6985"),
-        Pair("Mediatek", "MT6989"),
-        Pair("Mediatek", "MT6991"),
-        Pair("Mediatek", "MT6993"),
-      )
 
     /** Mediatek NPU compatibility checker. */
     val Mediatek =
       object : NpuCompatibilityChecker {
-        override fun isDeviceSupported(): Boolean {
-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            return SUPPORTED_MEDIATEK_SOCS.contains(
-              Pair(Build.SOC_MANUFACTURER, Build.SOC_MODEL.removeSuffix("(ENG)"))
-            )
-          }
-          return false
-        }
+        override fun isDeviceSupported(): Boolean = isMediaTekDevice()
       }
-
-    internal val SUPPORTED_GOOGLE_SOCS =
-      setOf(
-        Pair("Google", "Tensor G3"),
-        Pair("Google", "Tensor G4"),
-        Pair("Google", "Tensor G5"),
-        Pair("Google", "Tensor G6"),
-      )
 
     /** Google Tensor NPU compatibility checker. */
     val GoogleTensor =
       object : NpuCompatibilityChecker {
-        override fun isDeviceSupported(): Boolean {
-          // Google Tensor NPU is only supported on Android 16+ devices (API level 36).
-          if (Build.VERSION.SDK_INT >= 36) {
-            // BP2A is the only Android 16 build ID that does not support NPU.
-            return SUPPORTED_GOOGLE_SOCS.contains(Pair(Build.SOC_MANUFACTURER, Build.SOC_MODEL)) &&
-              !Build.ID.startsWith("BP2A")
-          }
-          return false
-        }
+        override fun isDeviceSupported(): Boolean = isGoogleTensorDevice()
+      }
+
+    /** Samsung NPU compatibility checker. */
+    val Samsung =
+      object : NpuCompatibilityChecker {
+        override fun isDeviceSupported(): Boolean = isSamsungDevice()
       }
 
     /** Default NPU compatibility checker for all vendors. */
@@ -107,7 +105,8 @@ interface NpuCompatibilityChecker {
         override fun isDeviceSupported(): Boolean {
           return Qualcomm.isDeviceSupported() ||
             Mediatek.isDeviceSupported() ||
-            GoogleTensor.isDeviceSupported()
+            GoogleTensor.isDeviceSupported() ||
+            Samsung.isDeviceSupported()
         }
       }
   }
@@ -115,7 +114,7 @@ interface NpuCompatibilityChecker {
 
 /** An interface to provide the NPU libraries. */
 interface NpuAcceleratorProvider {
-  /** Returns true if the device is compatible with NPU library.. */
+  /** Returns true if the device is compatible with NPU library. */
   fun isDeviceSupported(): Boolean
 
   /** Returns true if the NPU library is ready to use. */
