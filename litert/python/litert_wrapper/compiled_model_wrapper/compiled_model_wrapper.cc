@@ -361,9 +361,14 @@ bool PopulateCompilationOptions(litert::Options& options,
 // Returns the byte width of a data type.
 size_t CompiledModelWrapper::ByteWidthOfDType(const std::string& dtype) {
   if (dtype == "float32") return 4;
+  if (dtype == "float16") return 2;
+  if (dtype == "bfloat16") return 2;
+  if (dtype == "float8_e4m3fn") return 1;
+  if (dtype == "float8_e5m2") return 1;
   if (dtype == "int8") return 1;
   if (dtype == "int32") return 4;
   if (dtype == "bool") return 1;
+  if (dtype == "uint8") return 1;
   return 0;  // Unknown type
 }
 
