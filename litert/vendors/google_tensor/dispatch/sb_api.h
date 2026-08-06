@@ -560,6 +560,12 @@ ThrStatus thrRegisterBufferWithOffset(ThrContext* context, ThrBufferType type,
                                       void* buffer, size_t offset, size_t size,
                                       ThrBufferHandle* handle);
 
+// A variant of `thrRegisterBufferWithOffset` that allows for specifying the
+// prefer coherency of the buffer.
+ThrStatus thrRegisterBufferWithOffsetAndCoherency(
+    ThrContext* context, ThrBufferType type, void* buffer, size_t offset,
+    size_t size, bool prefer_coherent, ThrBufferHandle* handle);
+
 // A variant of `thrRegisterBufferWithOffset` specialized for
 // `AHardwareBuffer`s that registers the entire `AHardwareBuffer` starting at
 // `offset`.
