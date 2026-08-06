@@ -81,16 +81,18 @@ void AddOptimizationPasses(const tflite::ConverterFlags& converter_flags,
   }
 
   // Add TFLite optimize pass.
-  mlir::TFL::OptimizePassOptions optimize_pass_options;
-  optimize_pass_options.enable_strict_qdq_mode =
-      (pass_config.quant_specs.qdq_conversion_mode ==
-       mlir::TFL::QDQConversionMode::kQDQStrict);
-  std::unique_ptr<mlir::Pass> optimize_pass =
-      mlir::TFL::Create<mlir::TFL::OptimizePass>(optimize_pass_options);
-  auto pass_ptr =
-      dynamic_cast<mlir::TFL::MutableOptionsPass*>(optimize_pass.get());
-  if (pass_ptr) pass_ptr->ApplyOptionsVisitor(converter_pass_options_setter);
-  pass_manager->addNestedPass<mlir::func::FuncOp>(std::move(optimize_pass));
+  if (!pass_config.skip_optimize_pass) {
+    mlir::TFL::OptimizePassOptions optimize_pass_options;
+    optimize_pass_options.enable_strict_qdq_mode =
+        (pass_config.quant_specs.qdq_conversion_mode ==
+         mlir::TFL::QDQConversionMode::kQDQStrict);
+    std::unique_ptr<mlir::Pass> optimize_pass =
+        mlir::TFL::Create<mlir::TFL::OptimizePass>(optimize_pass_options);
+    auto pass_ptr =
+        dynamic_cast<mlir::TFL::MutableOptionsPass*>(optimize_pass.get());
+    if (pass_ptr) pass_ptr->ApplyOptionsVisitor(converter_pass_options_setter);
+    pass_manager->addNestedPass<mlir::func::FuncOp>(std::move(optimize_pass));
+  }
 
   if (!pass_config.unfold_batch_matmul) {
     // Enable an optimization pass that transforms BatchMatmul to FC only
@@ -170,8 +172,15 @@ void AddQuantizationPasses(const mlir::TFL::PassConfig& pass_config,
   // Add optimization pass after quantization for additional fusing
   // opportunities.
   // Add TFLite optimize pass.
-  pass_manager.addNestedPass<mlir::func::FuncOp>(
-      mlir::TFL::CreateOptimizePass());
+  if (!pass_config.skip_optimize_pass) {
+    mlir::TFL::OptimizePassOptions optimize_pass_options;
+    optimize_pass_options.disabled_patterns =
+        pass_config.optimize_disabled_patterns;
+    optimize_pass_options.enabled_patterns =
+        pass_config.optimize_enabled_patterns;
+    pass_manager.addNestedPass<mlir::func::FuncOp>(
+        mlir::TFL::Create<mlir::TFL::OptimizePass>(optimize_pass_options));
+  }
 
   if (!pass_config.unfold_batch_matmul) {
     // Enable an optimization pass that transforms BatchMatmul to FC only when
@@ -226,8 +235,15 @@ void AddDynamicRangeQuantizationPasses(const mlir::TFL::PassConfig& pass_config,
   // Add optimization pass after quantization for additional fusing
   // opportunities.
   // Add TFLite optimize pass.
-  pass_manager.addNestedPass<mlir::func::FuncOp>(
-      mlir::TFL::CreateOptimizePass());
+  if (!pass_config.skip_optimize_pass) {
+    mlir::TFL::OptimizePassOptions optimize_pass_options;
+    optimize_pass_options.disabled_patterns =
+        pass_config.optimize_disabled_patterns;
+    optimize_pass_options.enabled_patterns =
+        pass_config.optimize_enabled_patterns;
+    pass_manager.addNestedPass<mlir::func::FuncOp>(
+        mlir::TFL::Create<mlir::TFL::OptimizePass>(optimize_pass_options));
+  }
 
   if (!pass_config.unfold_batch_matmul) {
     // Enable an optimization pass that transforms BatchMatmul to FC only when

@@ -62,6 +62,21 @@ struct ConvertToTFLConfig {
 
   // If true, enable unsafe single batch rank reduction.
   bool unsafe_single_batch_rank_reduction = false;
+
+  // If true, the `tfl-optimize` pass is not added to the conversion pipeline
+  // (including its post-quantization instances). Individual optimizations can
+  // then be applied selectively by running the registered
+  // `tfl-optimize{enabled-patterns=...}` pass standalone.
+  bool skip_optimize_pass = false;
+
+  // Substring filters over the debug names of the rewrite patterns inside the
+  // `tfl-optimize` pass. A pattern is skipped if its debug name contains any
+  // entry of `optimize_disabled_patterns`. If `optimize_enabled_patterns` is
+  // non-empty, only patterns whose debug name contains one of its entries are
+  // run (allowlist mode). Pattern debug names can be discovered with the
+  // pass's `list-patterns` option.
+  std::vector<std::string> optimize_disabled_patterns;
+  std::vector<std::string> optimize_enabled_patterns;
 };
 
 struct NumpyArrayMeta {
