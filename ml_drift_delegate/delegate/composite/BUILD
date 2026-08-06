@@ -14,6 +14,7 @@
 
 load("@ml_drift//ml_drift/common/kernels/tests:mld_kernel_test.bzl", "mld_kernel_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
@@ -193,7 +194,6 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
         "@flatbuffers",
-        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
@@ -218,6 +218,28 @@ cc_library(
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common:tensor",
         "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:weights_layout",
+    ],
+)
+
+cc_test(
+    name = "sdpa_transposed_kernel_test",
+    srcs = ["sdpa_transposed_kernel_test.cc"],
+    deps = [
+        ":sdpa_transposed_kernel",
+        ":sdpa_transposed_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common/kernels:fully_connected",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:weights_layout",
     ],
 )
 

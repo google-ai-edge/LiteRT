@@ -102,7 +102,6 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@flatbuffers",
-        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
@@ -194,6 +193,26 @@ cc_test(
     deps = [
         ":runtime_batched_matmul_parser",
         "//ml_drift_delegate/delegate/composite:runtime_batched_matmul_parser",
+        "//ml_drift_delegate/tflite:custom_ir_operation_parser",
+        "//ml_drift_delegate/tflite/convert:convert_testing_utils",
+        "//ml_drift_delegate/tflite/convert:stub_delegate",
+        "//tflite:builtin_ops",
+        "//tflite:framework_stable",
+        "//tflite/c:common",
+        "//tflite/core/c:private_common",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:ir_model",
+    ],
+)
+
+cc_test(
+    name = "sdpa_transposed_parser_test",
+    srcs = ["sdpa_transposed_parser_test.cc"],
+    deps = [
+        ":sdpa_transposed_parser",
+        "//ml_drift_delegate/delegate/composite:sdpa_transposed_parser",
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
         "//ml_drift_delegate/tflite/convert:convert_testing_utils",
         "//ml_drift_delegate/tflite/convert:stub_delegate",

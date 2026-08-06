@@ -15,14 +15,21 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_SDPA_TRANSPOSED_KERNEL_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_SDPA_TRANSPOSED_KERNEL_H_
 
+#include <cstdint>
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 
 namespace litert::ml_drift {
+
+absl::Status BuildSdpaTransposedGpuGraph(
+    const std::vector<uint32_t>& input_ids, uint32_t output_id,
+    const SdpaTransposedAttributes& attr,
+    ::ml_drift::GpuModelBuilder* model_builder);
 
 absl::Status CreateSdpaTransposedFromNode(
     const std::vector<::ml_drift::Value*>& inputs,
