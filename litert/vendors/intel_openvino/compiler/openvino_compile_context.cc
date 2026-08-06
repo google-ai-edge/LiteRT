@@ -180,6 +180,7 @@ void OpenVinoCompileContext::OptimizeModel(
     const std::shared_ptr<ov::Model>& model) const {
   if (device_ == "NPU") {
     NpuOptimizer()
+        .SetConstantFold(true)
         .SetEliminateMatMulFakeQuantize(eliminate_fq_after_matmul_)
         .SetFuseSplitAttentionToSDPA(fuse_split_attention_to_sdpa_)
         .SetSdpaPadKvToAlignment(sdpa_pad_kv_to_alignment_)
