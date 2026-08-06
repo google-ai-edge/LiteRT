@@ -112,6 +112,8 @@ extern "C" LITERT_CAPI_EXPORT const LiteRtRuntimeCApiStruct
             LiteRtCompiledModelStopMetricsCollection,
         .litert_compiled_model_is_fully_accelerated =
             LiteRtCompiledModelIsFullyAccelerated,
+        .litert_compiled_model_is_non_cpu_fully_accelerated =
+            LiteRtCompiledModelIsNonCpuFullyAccelerated,
         .litert_compiled_model_get_profiler = LiteRtCompiledModelGetProfiler,
         .litert_compiled_model_resize_input_tensor =
             LiteRtCompiledModelResizeInputTensor,
