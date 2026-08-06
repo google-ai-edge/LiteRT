@@ -93,12 +93,15 @@ class DspBackend::DspPerfControl {
 
   // Debounce the downvote only for burst/sustained modes to avoid thrashing
   // the high-perf vote between back-to-back inferences.
-  void ScheduleDownVote() {
+  void ScheduleDownVote(bool is_manual = false) {
     EnsureVotingThread();
     const bool debounce =
         current_mode_ == DspPerformanceMode::kBurst ||
         current_mode_ == DspPerformanceMode::kSustainedHighPerformance;
     voting_thread_->Enqueue(VotingThread::VoteType::kDownVote, debounce);
+    if (is_manual) {
+      current_mode_ = DspPerformanceMode::kDefault;
+    }
   }
 
   bool ReinitIfNeeded(DspPerformanceMode new_mode) {
@@ -317,11 +320,13 @@ bool DspBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
 }
 
 bool DspBackend::SetPerformanceMode(const Options& options) {
-  DspPerformanceMode performance_mode = options.GetDspPerformanceMode();
+  const DspPerformanceMode performance_mode = options.GetDspPerformanceMode();
+  const bool is_manual =
+      options.GetDspPerfCtrlMode() == DspPerfCtrlMode::kManual;
 
   if (performance_mode == DspPerformanceMode::kDefault) {
     if (dsp_perf_control_) {
-      dsp_perf_control_->ScheduleDownVote();
+      dsp_perf_control_->ScheduleDownVote(is_manual);
     }
     return true;
   }

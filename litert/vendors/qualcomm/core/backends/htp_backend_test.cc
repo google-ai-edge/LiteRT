@@ -413,6 +413,30 @@ TEST_F(HtpBackendPerfBaseTest, DefaultModeSchedulesDownvote) {
   EXPECT_GT(captured_configs->size(), configs_after_init);
 }
 
+TEST_F(HtpBackendPerfBaseTest, ManualBurstDefaultBurstRevotes) {
+  Options options;
+  options.SetHtpPerformanceMode(HtpPerformanceMode::kBurst);
+  options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kManual);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kSocInfos[8]));
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+#endif
+
+  Options default_options;
+  default_options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kManual);
+  EXPECT_TRUE(backend.SetPerformanceMode(default_options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(400));
+  const size_t configs_after_downvote = captured_configs->size();
+
+  options.SetHtpPerformanceMode(HtpPerformanceMode::kBurst);
+  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_GT(captured_configs->size(), configs_after_downvote);
+}
+
 TEST_F(HtpBackendPerfBaseTest, AutoModeChangesAcrossExecutes) {
   Options options;
   options.SetHtpPerformanceMode(HtpPerformanceMode::kPowerSaver);
