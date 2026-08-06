@@ -19,7 +19,6 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
-#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/kernels/fully_connected.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
@@ -117,20 +116,18 @@ void SdpaTransposedOperationParser::Parse(const TfLiteNode* tflite_node,
   const ::ml_drift::BHWC right_shape_k = k_val->tensor.shape;
   attr.bmm1_weights.weights_shape =
       ::ml_drift::OHWI(right_shape_k.w, right_shape_k.h, 1, right_shape_k.c);
-  // TODO: b/403337563 - Set FP16 here as runtime BMM. As FC supports
-  // quantized weights, revisit here and in runtime BMM.
+  // TODO: b/403337563 - Support quantized weights.
   attr.bmm1_weights.desc = ::ml_drift::GetFullyConnectedWeightsDesc(
-      ::ml_drift::DataType::FLOAT16, attr.bmm1_weights.weights_shape);
+      k_val->tensor.type, attr.bmm1_weights.weights_shape);
   attr.bmm1_weights.desc.layout =
       ::ml_drift::WeightsLayout::kOSpatialIOGroupO4I4;
 
   const ::ml_drift::BHWC right_shape_v = v_val->tensor.shape;
   attr.bmm2_weights.weights_shape =
       ::ml_drift::OHWI(right_shape_v.w, right_shape_v.h, 1, right_shape_v.c);
-  // TODO: b/403337563 - Set FP16 here as runtime BMM. As FC supports
-  // quantized weights, revisit here and in runtime BMM.
+  // TODO: byungchul - Support quantized weights.
   attr.bmm2_weights.desc = ::ml_drift::GetFullyConnectedWeightsDesc(
-      ::ml_drift::DataType::FLOAT16, attr.bmm2_weights.weights_shape);
+      v_val->tensor.type, attr.bmm2_weights.weights_shape);
 
   const auto* params = static_cast<const TfLiteStablehloCompositeParams*>(
       tflite_node->builtin_data);

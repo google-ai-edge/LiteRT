@@ -26,6 +26,7 @@
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
+#include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 
@@ -58,19 +59,19 @@ absl::Status BuildSdpaTransposedGpuGraph(
     param_tensor_ptr = &param_tensor;
   }
 
+  ::ml_drift::WeightsDescription bmm1_desc = attr.bmm1_weights.desc;
+  bmm1_desc.type = q.tensor_desc.GetDataType();
   const ::ml_drift::GpuModelBuilder::Weights bmm1_external_weights =
-      ::ml_drift::CreateExternalWeights(k, attr.bmm1_weights.desc,
+      ::ml_drift::CreateExternalWeights(k, bmm1_desc,
                                         attr.bmm1_weights.weights_shape);
-
   ::ml_drift::ConvRuntimeCheckDesc bmm1_runtime_check = {
       .dst_end_ch_index = attr.runtime_check.src_end_ch_index,
   };
 
   ABSL_ASSIGN_OR_RETURN(
-      auto logits,
-      model_builder->FullyConnectedExternalWeights(
-          q, bmm1_external_weights, /*biases=*/nullptr, /*src_exp=*/nullptr,
-          bmm1_runtime_check, param_tensor_ptr));
+      auto logits, model_builder->FullyConnectedExternalWeights(
+                  q, bmm1_external_weights, /*biases=*/nullptr,
+                  /*src_exp=*/nullptr, bmm1_runtime_check, param_tensor_ptr));
 
   if (has_mask) {
     if (mask.tensor_desc.GetDataType() == ::ml_drift::DataType::BOOL) {
@@ -95,18 +96,19 @@ absl::Status BuildSdpaTransposedGpuGraph(
   auto sfmx_partial = model_builder->SoftmaxReduce(
       logits, softmax_runtime_check, param_tensor_ptr);
 
+  ::ml_drift::WeightsDescription bmm2_desc = attr.bmm2_weights.desc;
+  bmm2_desc.type = logits.tensor_desc.GetDataType();
   const ::ml_drift::GpuModelBuilder::Weights bmm2_external_weights =
-      ::ml_drift::CreateExternalWeights(v, attr.bmm2_weights.desc,
+      ::ml_drift::CreateExternalWeights(v, bmm2_desc,
                                         attr.bmm2_weights.weights_shape);
-
   ::ml_drift::ConvRuntimeCheckDesc bmm2_runtime_check = {
       .src_end_ch_index = attr.runtime_check.src_end_ch_index,
   };
 
   ABSL_ASSIGN_OR_RETURN(
       auto output, model_builder->FullyConnectedExternalWeights(
-                       logits, bmm2_external_weights, /*biases=*/nullptr,
-                       &sfmx_partial, bmm2_runtime_check, param_tensor_ptr));
+                  logits, bmm2_external_weights, /*biases=*/nullptr,
+                  &sfmx_partial, bmm2_runtime_check, param_tensor_ptr));
 
   return model_builder->UpdateOutputTensor(output, output_id);
 }
