@@ -40,8 +40,8 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+#include "litert/c/options/google/litert_darwinn_runtime_options_type.h"
 #include "litert/vendors/google_tensor/dispatch/google/darwinn_options_utils.h"
-#include "litert/vendors/google_tensor/dispatch/google/litert_darwinn_runtime_options.h"
 #endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_macros.h"
@@ -133,7 +133,7 @@ LiteRtStatus LiteRtDispatchDeviceContextT::Create(
       new LiteRtDispatchDeviceContextT(runtime_context, thr_context);
 
 #if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
-  std::optional<litert::LiteRtDarwinnRuntimeOptionsT> options_data =
+  std::optional<LrtDarwinnRuntimeOptionsT> options_data =
       gt::GetDarwinnOptionsData(runtime_context, options);
   LITERT_RETURN_IF_ERROR(
       gt::ApplyDarwinnOptionsToDeviceContext(device_context, options_data));
