@@ -83,7 +83,7 @@ LiteRtStatus LiteRtDispatchInvocationContextT::CreateFromBytecode(
 
     LITERT_RETURN_IF_ERROR(graph->AddEdge(edge_id));
     LITERT_RETURN_IF_ERROR(graph->ConnectPositionalNodeInput(node_id, edge_id));
-    LITERT_RETURN_IF_ERROR(graph->ConnectGraphInput(edge_id));
+    LITERT_RETURN_IF_ERROR(graph->ConnectGraphInput(input_index, edge_id));
   }
 
   for (int output_index = 0; output_index < num_outputs; ++output_index) {
@@ -92,7 +92,7 @@ LiteRtStatus LiteRtDispatchInvocationContextT::CreateFromBytecode(
     LITERT_RETURN_IF_ERROR(graph->AddEdge(edge_id));
     LITERT_RETURN_IF_ERROR(
         graph->ConnectPositionalNodeOutput(node_id, edge_id));
-    LITERT_RETURN_IF_ERROR(graph->ConnectGraphOutput(edge_id));
+    LITERT_RETURN_IF_ERROR(graph->ConnectGraphOutput(output_index, edge_id));
   }
 
   LITERT_RETURN_IF_ERROR(
