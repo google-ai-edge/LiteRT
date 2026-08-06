@@ -415,6 +415,95 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
   return YES;
 }
 
+- (BOOL)resizeInputTensorAtIndex:(NSUInteger)inputIndex
+                   newDimensions:(NSArray<NSNumber *> *)dimensions
+                           error:(NSError **)error {
+  return [self resizeInputTensorAtIndex:inputIndex
+                         signatureIndex:0
+                          newDimensions:dimensions
+                                  error:error];
+}
+
+- (BOOL)resizeInputTensorAtIndex:(NSUInteger)inputIndex
+                  signatureIndex:(NSUInteger)signatureIndex
+                   newDimensions:(NSArray<NSNumber *> *)dimensions
+                           error:(NSError **)error {
+  if (!_cppCompiledModel) {
+    if (error) {
+      *error = [NSError
+          errorWithDomain:LRTErrorDomain
+                     code:LRTErrorCodeRuntimeFailure
+                 userInfo:@{NSLocalizedDescriptionKey : @"Compiled model is not initialized"}];
+    }
+    return NO;
+  }
+
+  std::vector<int> cppDims;
+  cppDims.reserve(dimensions.count);
+  for (NSNumber *dim in dimensions) {
+    cppDims.push_back(dim.intValue);
+  }
+
+  litert::Expected<void> resizeResult =
+      _cppCompiledModel->ResizeInputTensor(signatureIndex, inputIndex, cppDims);
+
+  if (!resizeResult.HasValue()) {
+    if (error) {
+      *error = [NSError
+          errorWithDomain:LRTErrorDomain
+                     code:static_cast<NSInteger>(resizeResult.Error().Status())
+                 userInfo:@{NSLocalizedDescriptionKey : @(resizeResult.Error().Message().c_str())}];
+    }
+    return NO;
+  }
+
+  return YES;
+}
+
+- (BOOL)resizeInputTensorAtIndex:(NSUInteger)inputIndex
+                    signatureKey:(NSString *)signatureKey
+                   newDimensions:(NSArray<NSNumber *> *)dimensions
+                           error:(NSError **)error {
+  if (!signatureKey) {
+    if (error) {
+      *error =
+          [NSError errorWithDomain:LRTErrorDomain
+                              code:LRTErrorCodeInvalidArgument
+                          userInfo:@{NSLocalizedDescriptionKey : @"signatureKey cannot be nil"}];
+    }
+    return NO;
+  }
+
+  if (!_cppCompiledModel) {
+    if (error) {
+      *error = [NSError
+          errorWithDomain:LRTErrorDomain
+                     code:LRTErrorCodeRuntimeFailure
+                 userInfo:@{NSLocalizedDescriptionKey : @"Compiled model is not initialized"}];
+    }
+    return NO;
+  }
+
+  litert::Expected<size_t> sigIndexResult =
+      _cppCompiledModel->GetSignatureIndex(signatureKey.UTF8String);
+  if (!sigIndexResult.HasValue()) {
+    if (error) {
+      *error =
+          [NSError errorWithDomain:LRTErrorDomain
+                              code:static_cast<NSInteger>(sigIndexResult.Error().Status())
+                          userInfo:@{
+                            NSLocalizedDescriptionKey : @(sigIndexResult.Error().Message().c_str())
+                          }];
+    }
+    return NO;
+  }
+
+  return [self resizeInputTensorAtIndex:inputIndex
+                         signatureIndex:sigIndexResult.Value()
+                          newDimensions:dimensions
+                                  error:error];
+}
+
 @end
 
 NS_ASSUME_NONNULL_END

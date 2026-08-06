@@ -14,7 +14,6 @@
 
 #import <XCTest/XCTest.h>
 
-#include <cstring>
 #include <string>
 #include <vector>
 
@@ -38,6 +37,16 @@ static NSString *GetTestModelPath() {
     return path;
   }
   std::string modelPath = litert::testing::GetTestFilePath(kModelFileName);
+  return @(modelPath.c_str());
+}
+
+static NSString *GetTestDynamicModelPath() {
+  NSBundle *bundle = [NSBundle bundleForClass:[LRTCompiledModelTests class]];
+  NSString *path = [bundle pathForResource:@"dynamic_add_model" ofType:@"tflite"];
+  if (path) {
+    return path;
+  }
+  std::string modelPath = litert::testing::GetTestFilePath(kDynamicModelFileName);
   return @(modelPath.c_str());
 }
 
@@ -227,6 +236,157 @@ static NSString *GetTestModelPath() {
                                    error:&error];
   XCTAssertTrue(runSuccess);
   XCTAssertNil(error);
+}
+
+- (void)testResizeInputTensor {
+  NSError *error = nil;
+  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(env);
+  XCTAssertNil(error);
+
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+  NSString *filePath = GetTestDynamicModelPath();
+
+  LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelFilePath:filePath
+                                                                 environment:env
+                                                                     options:options
+                                                                       error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
+  // Resize input 0 and 1 to [1, 2, 3] (size 6).
+  const size_t kNewSize = 6;
+  NSArray<NSNumber *> *newDims = @[ @1, @2, @3 ];
+  XCTAssertTrue([model resizeInputTensorAtIndex:0 newDimensions:newDims error:&error]);
+  XCTAssertNil(error);
+  XCTAssertTrue([model resizeInputTensorAtIndex:1 newDimensions:newDims error:&error]);
+  XCTAssertNil(error);
+
+  // Re-create buffers.
+  NSArray<LRTTensorBuffer *> *inputs = [model createInputTensorBuffersWithError:&error];
+  XCTAssertNotNil(inputs);
+  XCTAssertNil(error);
+  XCTAssertEqual(inputs.count, 2);
+  XCTAssertEqualObjects(inputs[0].dimensions, newDims);
+  XCTAssertEqualObjects(inputs[1].dimensions, newDims);
+  XCTAssertEqual(inputs[0].size, kNewSize * sizeof(float));
+  XCTAssertEqual(inputs[1].size, kNewSize * sizeof(float));
+
+  NSArray<LRTTensorBuffer *> *outputs = [model createOutputTensorBuffersWithError:&error];
+  XCTAssertNotNil(outputs);
+  XCTAssertNil(error);
+  XCTAssertEqual(outputs.count, 1);
+  XCTAssertEqualObjects(outputs[0].dimensions, newDims);
+  XCTAssertEqual(outputs[0].size, kNewSize * sizeof(float));
+
+  // Write data of size 6.
+  std::vector<float> input0Values = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+  std::vector<float> input1Values = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+  std::vector<float> expectedOutput = {2.0f, 4.0f, 6.0f, 8.0f, 10.0f, 12.0f};
+
+  NSData *input0Data = [NSData dataWithBytes:input0Values.data()
+                                      length:input0Values.size() * sizeof(float)];
+  NSData *input1Data = [NSData dataWithBytes:input1Values.data()
+                                      length:input1Values.size() * sizeof(float)];
+
+  XCTAssertTrue([inputs[0] writeData:input0Data error:&error]);
+  XCTAssertTrue([inputs[1] writeData:input1Data error:&error]);
+
+  BOOL runSuccess = [model runWithInputs:inputs outputs:outputs error:&error];
+  XCTAssertTrue(runSuccess);
+  XCTAssertNil(error);
+
+  NSData *outputData = [outputs[0] readDataWithError:&error];
+  XCTAssertNotNil(outputData);
+  XCTAssertEqual(outputData.length, expectedOutput.size() * sizeof(float));
+
+  const float *outputFloat = static_cast<const float *>(outputData.bytes);
+  for (size_t i = 0; i < expectedOutput.size(); ++i) {
+    XCTAssertEqualWithAccuracy(outputFloat[i], expectedOutput[i], kTestAccuracy);
+  }
+}
+
+- (void)testMultiSignatureResizeWithSignatureIndex {
+  NSError *error = nil;
+  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(env);
+  XCTAssertNil(error);
+
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+  NSString *filePath = GetTestDynamicModelPath();
+
+  LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelFilePath:filePath
+                                                                 environment:env
+                                                                     options:options
+                                                                       error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
+  // Resize input 0 and 1 to [1, 2, 3] (size 6).
+  const size_t kNewSize = 6;
+  NSArray<NSNumber *> *newDims = @[ @1, @2, @3 ];
+  XCTAssertTrue([model resizeInputTensorAtIndex:0
+                                 signatureIndex:0
+                                  newDimensions:newDims
+                                          error:&error]);
+  XCTAssertNil(error);
+  XCTAssertTrue([model resizeInputTensorAtIndex:1
+                                 signatureIndex:0
+                                  newDimensions:newDims
+                                          error:&error]);
+  XCTAssertNil(error);
+
+  NSArray<LRTTensorBuffer *> *inputs = [model createInputTensorBuffersForSignatureIndex:0
+                                                                                  error:&error];
+  XCTAssertNotNil(inputs);
+  XCTAssertNil(error);
+  XCTAssertEqual(inputs.count, 2);
+  XCTAssertEqualObjects(inputs[0].dimensions, newDims);
+  XCTAssertEqualObjects(inputs[1].dimensions, newDims);
+  XCTAssertEqual(inputs[0].size, kNewSize * sizeof(float));
+  XCTAssertEqual(inputs[1].size, kNewSize * sizeof(float));
+}
+
+- (void)testMultiSignatureResizeWithSignatureKey {
+  NSError *error = nil;
+  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(env);
+  XCTAssertNil(error);
+
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+  NSString *filePath = GetTestDynamicModelPath();
+
+  LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelFilePath:filePath
+                                                                 environment:env
+                                                                     options:options
+                                                                       error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
+  NSString *signatureKey = [LRTCompiledModel defaultSignatureKey];
+  // Resize input 0 and 1 to [1, 2, 3] (size 6).
+  const size_t kNewSize = 6;
+  NSArray<NSNumber *> *newDims = @[ @1, @2, @3 ];
+  XCTAssertTrue([model resizeInputTensorAtIndex:0
+                                   signatureKey:signatureKey
+                                  newDimensions:newDims
+                                          error:&error]);
+  XCTAssertNil(error);
+  XCTAssertTrue([model resizeInputTensorAtIndex:1
+                                   signatureKey:signatureKey
+                                  newDimensions:newDims
+                                          error:&error]);
+  XCTAssertNil(error);
+
+  NSArray<LRTTensorBuffer *> *inputs = [model createInputTensorBuffersForSignatureKey:signatureKey
+                                                                                error:&error];
+  XCTAssertNotNil(inputs);
+  XCTAssertNil(error);
+  XCTAssertEqual(inputs.count, 2);
+  XCTAssertEqualObjects(inputs[0].dimensions, newDims);
+  XCTAssertEqualObjects(inputs[1].dimensions, newDims);
+  XCTAssertEqual(inputs[0].size, kNewSize * sizeof(float));
+  XCTAssertEqual(inputs[1].size, kNewSize * sizeof(float));
 }
 
 @end

@@ -179,6 +179,58 @@ NS_ASSUME_NONNULL_BEGIN
          signatureKey:(NSString *)signatureKey
                 error:(NSError **)error;
 
+/**
+ * Resizes the specified input tensor of the default signature to support dynamic shapes.
+ *
+ * After calling this, you must re-create the input and output tensor buffers
+ * to match the new shapes.
+ *
+ * @param inputIndex The index of the input tensor.
+ * @param dimensions The new dimensions for the input tensor. An array of NSNumber representing the
+ * sizes of each dimension.
+ * @param error Out-parameter populated on failure.
+ * @return @c YES on success, @c NO on failure.
+ */
+- (BOOL)resizeInputTensorAtIndex:(NSUInteger)inputIndex
+                   newDimensions:(NSArray<NSNumber *> *)dimensions
+                           error:(NSError **)error;
+
+/**
+ * Resizes the specified input tensor for a given signature index to support dynamic shapes.
+ *
+ * After calling this, you must re-create the input and output tensor buffers
+ * to match the new shapes.
+ *
+ * @param inputIndex The index of the input tensor.
+ * @param signatureIndex The index of the signature containing the input tensor.
+ * @param dimensions The new dimensions for the input tensor. An array of NSNumber representing the
+ * sizes of each dimension.
+ * @param error Out-parameter populated on failure.
+ * @return @c YES on success, @c NO on failure.
+ */
+- (BOOL)resizeInputTensorAtIndex:(NSUInteger)inputIndex
+                  signatureIndex:(NSUInteger)signatureIndex
+                   newDimensions:(NSArray<NSNumber *> *)dimensions
+                           error:(NSError **)error;
+
+/**
+ * Resizes the specified input tensor for a given signature key to support dynamic shapes.
+ *
+ * After calling this, you must re-create the input and output tensor buffers
+ * to match the new shapes.
+ *
+ * @param inputIndex The index of the input tensor.
+ * @param signatureKey The name/key of the signature containing the input tensor.
+ * @param dimensions The new dimensions for the input tensor. An array of NSNumber representing the
+ * sizes of each dimension.
+ * @param error Out-parameter populated on failure.
+ * @return @c YES on success, @c NO on failure.
+ */
+- (BOOL)resizeInputTensorAtIndex:(NSUInteger)inputIndex
+                    signatureKey:(NSString *)signatureKey
+                   newDimensions:(NSArray<NSNumber *> *)dimensions
+                           error:(NSError **)error;
+
 @end
 
 NS_ASSUME_NONNULL_END

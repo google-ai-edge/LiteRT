@@ -185,6 +185,7 @@ objc_library(
         "tests/LRTCompiledModelTests.mm",
     ],
     data = [
+        "//litert/test:testdata/dynamic_add_model.tflite",
         "//litert/test:testdata/simple_model.tflite",
     ],
     deps = [
