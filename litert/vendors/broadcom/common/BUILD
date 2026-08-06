@@ -52,20 +52,20 @@ package(
 
 # copybara:comment_begin(oss-only)
 # # Common utilities library
-# cc_library(
-#     name = "bstorm_util_litert",
-#     srcs = [
-#         "bstorm_util_litert.cc",
-#     ],
-#     hdrs = [
-#         "bstorm_util_litert.h",
-#     ],
-#     includes = [".."],
-#     visibility = ["//visibility:public"],
-#     deps = [
-#         "//litert/c:litert_common",
-#         "//litert/c:litert_model",
-#         "//litert/c:litert_tensor_buffer",
-#         "@//:bstorm_core",
-#     ],
-# )
+cc_library(
+    name = "bstorm_util_litert",
+    srcs = [
+        "bstorm_util_litert.cc",
+    ],
+    hdrs = [
+        "bstorm_util_litert.h",
+    ],
+    includes = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_model",
+        "//litert/c:litert_tensor_buffer",
+        "@//:bstorm_core",
+    ],
+)
