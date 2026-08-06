@@ -3229,6 +3229,7 @@ cc_test(
         "//tflite/core:framework_stable",
         "//tflite/schema:schema_fbs",
         "//tflite/types:half",
+        "@com_google_benchmark//:benchmark",
         "@com_google_googletest//:gtest",
         "@eigen_archive//:eigen3",
         "@flatbuffers",
