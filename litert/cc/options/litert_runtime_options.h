@@ -16,7 +16,11 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_RUNTIME_OPTIONS_H_
 
 #include <memory>
+#include <string>
+#include <vector>
 
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/litert_expected.h"
@@ -101,6 +105,22 @@ class RuntimeOptions {
     LITERT_RETURN_IF_ERROR(LrtGetRuntimeOptionsDisableDelegateClustering(
         options_.get(), &disable_delegate_clustering));
     return disable_delegate_clustering;
+  }
+
+  /// @brief Selects the TFLite model signature keys identifying the root
+  /// subgraphs that the compiled model prepares for execution.
+  /// @param signature_keys The signature keys to select. Must be non-empty,
+  /// and each key must be non-empty and unique.
+  Expected<void> SetSelectedSignatures(
+      absl::Span<const absl::string_view> signature_keys) {
+    std::vector<std::string> keys;
+    keys.reserve(signature_keys.size());
+    for (absl::string_view key : signature_keys) {
+      keys.emplace_back(key);
+    }
+    LITERT_RETURN_IF_ERROR(
+        LrtSetRuntimeOptionsSelectedSignatures(options_.get(), keys));
+    return {};
   }
 
   /// @brief Gets the underlying C options object.

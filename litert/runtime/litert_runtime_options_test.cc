@@ -16,6 +16,7 @@
 
 #include <string>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
 #include "toml.hpp"  // from @tomlplusplus
@@ -30,6 +31,7 @@ TEST(LiteRtRuntimeOptionsTest, ParseWorks) {
     compress_quantization_zero_points = false
     error_reporter_mode = 1
     disable_delegate_clustering = false
+    selected_signature_keys = ["decode", "prefill"]
   )";
 
   LiteRtRuntimeOptionsT options;
@@ -43,6 +45,8 @@ TEST(LiteRtRuntimeOptionsTest, ParseWorks) {
   EXPECT_EQ(options.error_reporter_mode,
             static_cast<LiteRtErrorReporterMode>(1));
   EXPECT_FALSE(options.disable_delegate_clustering);
+  EXPECT_THAT(options.selected_signature_keys,
+              ::testing::ElementsAre("decode", "prefill"));
 
   // Verify against tomlplusplus
   auto toml_tbl = toml::parse(toml_str);
