@@ -1,10 +1,10 @@
-// Copyright 2026 The ML Drift Authors.
+// Copyright 2026 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//      http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,6 +21,7 @@
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
 #include "ml_drift_delegate/delegate/composite/rope_parser.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_parser.h"
+#include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 #include "ml_drift_delegate/tflite/operation_parser.h"
 #include "ml_drift_delegate/tflite/unimplemented_operation_parser.h"
 
@@ -34,6 +35,9 @@ std::unique_ptr<TFLiteOperationParser> CustomOperationParserFactory::Create(
   if (op_name == "odml.runtime_bmm") {
     return std::make_unique<RuntimeBatchedMatMulOperationParser>();
   }
+  if (op_name == "odml.sdpa_transposed") {
+    return std::make_unique<SdpaTransposedOperationParser>();
+  }
   if (op_name == "moe") {
     return std::make_unique<MoeExpertsOperationParser>();
   }
@@ -46,11 +50,12 @@ std::unique_ptr<TFLiteOperationParser> CustomOperationParserFactory::Create(
 bool CustomOperationParserFactory::SupportsIntegerTypes(
     std::string_view op_name) {
   return op_name == "odml.cache_update" || op_name == "odml.runtime_bmm" ||
-         op_name == "moe" || op_name == "odml.rope";
+         op_name == "moe" || op_name == "odml.rope" ||
+         op_name == "odml.sdpa_transposed";
 }
 
 bool CustomOperationParserFactory::SupportsBoolTypes(std::string_view op_name) {
-  return false;
+  return op_name == "odml.sdpa_transposed";
 }
 
 }  // namespace litert::ml_drift

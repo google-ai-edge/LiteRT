@@ -181,6 +181,47 @@ cc_library(
 )
 
 cc_library(
+    name = "sdpa_transposed_parser",
+    srcs = ["sdpa_transposed_parser.cc"],
+    hdrs = ["sdpa_transposed_parser.h"],
+    deps = [
+        ":runtime_batched_matmul_parser",
+        "//ml_drift_delegate/tflite:model_builder_helper",
+        "//ml_drift_delegate/tflite:object_reader",
+        "//ml_drift_delegate/tflite:operation_parser",
+        "//tflite/c:common",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/kernels:fully_connected",
+        "@ml_drift//ml_drift/common/task:weights_layout",
+    ],
+)
+
+cc_library(
+    name = "sdpa_transposed_kernel",
+    srcs = ["sdpa_transposed_kernel.cc"],
+    hdrs = ["sdpa_transposed_kernel.h"],
+    deps = [
+        ":sdpa_transposed_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+    ],
+)
+
+cc_library(
     name = "custom_parsers",
     srcs = ["custom_parsers.cc"],
     hdrs = [
@@ -192,6 +233,7 @@ cc_library(
         ":moe_experts_parser",
         ":rope_parser",
         ":runtime_batched_matmul_parser",
+        ":sdpa_transposed_parser",
         "//ml_drift_delegate/tflite:model_builder",
         "//ml_drift_delegate/tflite:operation_parser",
         "//ml_drift_delegate/tflite:unimplemented_operation_parser",
@@ -235,6 +277,8 @@ cc_library(
         ":moe_experts_parser",
         ":runtime_batched_matmul_kernel",
         ":runtime_batched_matmul_parser",
+        ":sdpa_transposed_kernel",
+        ":sdpa_transposed_parser",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",

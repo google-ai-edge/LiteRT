@@ -90,6 +90,28 @@ cc_library(
 )
 
 cc_library(
+    name = "sdpa_transposed_parser",
+    srcs = ["sdpa_transposed_parser.cc"],
+    hdrs = ["sdpa_transposed_parser.h"],
+    deps = [
+        "//ml_drift_delegate/delegate/composite:sdpa_transposed_parser",
+        "//ml_drift_delegate/tflite:custom_ir_operation_parser",
+        "//ml_drift_delegate/tflite:ir_model_builder_helper",
+        "//tflite/c:common",
+        "//tflite/kernels:kernel_util",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/kernels:fully_connected",
+        "@ml_drift//ml_drift/common/task:weights_layout",
+    ],
+)
+
+cc_library(
     name = "custom_parsers",
     srcs = ["custom_parsers.cc"],
     hdrs = ["custom_parsers.h"],
@@ -97,6 +119,7 @@ cc_library(
         ":add_values_to_cache_parser",
         ":moe_experts_parser",
         ":runtime_batched_matmul_parser",
+        ":sdpa_transposed_parser",
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
         "//tflite/c:common",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -111,6 +134,7 @@ cc_library(
         "//ml_drift_delegate/delegate/composite:add_values_to_cache_kernel",
         "//ml_drift_delegate/delegate/composite:moe_experts_kernel",
         "//ml_drift_delegate/delegate/composite:runtime_batched_matmul_kernel",
+        "//ml_drift_delegate/delegate/composite:sdpa_transposed_kernel",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
