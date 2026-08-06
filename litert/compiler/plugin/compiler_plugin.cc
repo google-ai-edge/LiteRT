@@ -540,7 +540,8 @@ LiteRtStatus PartitionSubgraph(
   // single dispatch op.
   for (auto& island : islands) {
     auto& new_subgraph = model.EmplaceSubgraph();
-    auto* dispatch_op = OutlinePartition(subgraph, &new_subgraph, island);
+    LITERT_ASSIGN_OR_RETURN(auto* dispatch_op,
+                            OutlinePartition(subgraph, &new_subgraph, island));
     res_ops.push_back(dispatch_op);
   }
 

@@ -14,15 +14,19 @@
 
 #include "litert/compiler/plugin/algo.h"
 
+#include <cstdint>
 #include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_model_predicates.h"
+#include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/core/model/graph_validation.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_serialize.h"
@@ -153,8 +157,9 @@ TEST(TestSliceSubgraphSimpleMultiOp, OnePartition) {
   partition.push_back(ops.at(2).Get());
 
   auto sliced_graph = litert::Subgraph(&model.Get()->EmplaceSubgraph());
-  auto* dispatch_op =
-      OutlinePartition(*subgraph->Get(), sliced_graph.Get(), partition);
+  LITERT_ASSIGN_OR_ABORT(
+      auto* dispatch_op,
+      OutlinePartition(*subgraph->Get(), sliced_graph.Get(), partition));
 
   const auto& internal_sliced = *sliced_graph.Get();
   ASSERT_TRUE(ValidateSubgraphIO(internal_sliced));
@@ -235,7 +240,8 @@ TEST(TestSliceSubgraphSimpleMultiOp, TwoPartitions) {
   partition_1.push_back(ops.at(0).Get());
 
   auto sliced_graph_1 = litert::Subgraph(&model.Get()->EmplaceSubgraph());
-  OutlinePartition(*(subgraph->Get()), sliced_graph_1.Get(), partition_1);
+  LITERT_ABORT_IF_ERROR(
+      OutlinePartition(*(subgraph->Get()), sliced_graph_1.Get(), partition_1));
 
   const auto& internal_slice_1 = *sliced_graph_1.Get();
   ASSERT_TRUE(ValidateSubgraphIO(internal_slice_1));
@@ -247,7 +253,8 @@ TEST(TestSliceSubgraphSimpleMultiOp, TwoPartitions) {
   partition_2.push_back(ops.at(3).Get());
 
   auto sliced_graph_2 = litert::Subgraph(&model.Get()->EmplaceSubgraph());
-  OutlinePartition(*(subgraph->Get()), sliced_graph_2.Get(), partition_2);
+  LITERT_ABORT_IF_ERROR(
+      OutlinePartition(*(subgraph->Get()), sliced_graph_2.Get(), partition_2));
 
   const auto& internal_slice_2 = *sliced_graph_2.Get();
   ASSERT_TRUE(ValidateSubgraphIO(internal_slice_2));
@@ -306,8 +313,9 @@ TEST(TestSliceSubgraphTopoSortFork, ForkPartition) {
   partition.push_back(ops.at(2).Get());  // C
 
   auto sliced_graph = litert::Subgraph(&model.Get()->EmplaceSubgraph());
-  auto* dispatch_op =
-      OutlinePartition(*subgraph->Get(), sliced_graph.Get(), partition);
+  LITERT_ASSIGN_OR_ABORT(
+      auto* dispatch_op,
+      OutlinePartition(*subgraph->Get(), sliced_graph.Get(), partition));
 
   const auto& internal_sliced = *sliced_graph.Get();
   // ASSERT_TRUE(ValidateSubgraphIO(internal_sliced));
@@ -398,8 +406,9 @@ TEST(TestSliceSubgraphTopoSortForkSplit, ForkSplitPartition) {
   std::vector<LiteRtOp> partition = {op_a, op_b, op_c};
 
   auto sliced_graph = litert::Subgraph(&model.Get()->EmplaceSubgraph());
-  auto* dispatch_op =
-      OutlinePartition(*subgraph->Get(), sliced_graph.Get(), partition);
+  LITERT_ASSIGN_OR_ABORT(
+      auto* dispatch_op,
+      OutlinePartition(*subgraph->Get(), sliced_graph.Get(), partition));
 
   const auto& internal_sliced = *sliced_graph.Get();
   ASSERT_TRUE(ValidateSubgraphIO(internal_sliced));
@@ -453,8 +462,9 @@ TEST(TestSliceSubgraphTopoSortForkViolation, ForkPartitionViolation) {
   partition.push_back(ops.at(3).Get());  // C
 
   auto sliced_graph = litert::Subgraph(&model.Get()->EmplaceSubgraph());
-  auto* dispatch_op =
-      OutlinePartition(*subgraph->Get(), sliced_graph.Get(), partition);
+  LITERT_ASSIGN_OR_ABORT(
+      auto* dispatch_op,
+      OutlinePartition(*subgraph->Get(), sliced_graph.Get(), partition));
 
   const auto& internal_sliced = *sliced_graph.Get();
   // ASSERT_TRUE(ValidateSubgraphIO(internal_sliced));
@@ -513,13 +523,63 @@ TEST(TestSliceSubgraphTopoSortInterleaved, InterleavedPartition) {
   partition.push_back(ops.at(4).Get());  // B2
 
   auto sliced_graph = litert::Subgraph(&model.Get()->EmplaceSubgraph());
-  OutlinePartition(*subgraph->Get(), sliced_graph.Get(), partition);
+  LITERT_ABORT_IF_ERROR(
+      OutlinePartition(*subgraph->Get(), sliced_graph.Get(), partition));
 
   const auto& internal_sliced = *sliced_graph.Get();
   ASSERT_TRUE(ValidateSubgraphIO(internal_sliced));
 
   EXPECT_TRUE(IsTopologicallySorted(*subgraph->Get()))
       << "Main subgraph is not topologically sorted!";
+}
+
+TEST(OutlinePartitionTest, SlicesBlockWiseQuantizedOp) {
+  LiteRtModelT model;
+  auto& main_sg = model.EmplaceSubgraph();
+
+  auto& input = main_sg.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 16}));
+  main_sg.Inputs().push_back(&input);
+
+  auto& output = main_sg.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 32}));
+  main_sg.Outputs().push_back(&output);
+
+  auto& scales = main_sg.EmplaceTensor();
+  scales.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {32, 1}));
+  OwningBufferRef<uint8_t> scales_data(sizeof(float) * 32);
+  SetWeightsFromOwnedBuffer(scales.Weights(), std::move(scales_data));
+
+  auto& weight = main_sg.EmplaceTensor();
+  weight.SetType(MakeRankedTensorType(kLiteRtElementTypeInt4, {32, 16}));
+  OwningBufferRef<uint8_t> weight_data(32 * 16 / 2);
+  SetWeightsFromOwnedBuffer(weight.Weights(), std::move(weight_data));
+  weight.SetQarams(
+      MakeBlockWiseQuantization(&scales, nullptr, /*block_size=*/16));
+
+  auto& fc_op = main_sg.EmplaceOp();
+  fc_op.SetOpCode(kLiteRtOpCodeTflFullyConnected);
+  AttachInput(&input, fc_op);
+  AttachInput(&weight, fc_op);
+  AttachOutput(&output, fc_op);
+
+  std::vector<LiteRtOp> partition = {&fc_op};
+
+  auto& slice_sg = model.EmplaceSubgraph();
+  LITERT_ABORT_IF_ERROR(OutlinePartition(main_sg, &slice_sg, partition));
+
+  EXPECT_EQ(slice_sg.Ops().size(), 1);
+  EXPECT_EQ(slice_sg.Ops().front()->OpCode(), kLiteRtOpCodeTflFullyConnected);
+
+  const auto* slice_weight = slice_sg.Ops().front()->Inputs().at(1);
+  ASSERT_EQ(slice_weight->Qparams().first, kLiteRtQuantizationBlockWise);
+  const auto& bw = slice_weight->Qparams().second.block_wise;
+  ASSERT_NE(bw.scales, nullptr);
+  EXPECT_NE(bw.scales, &scales);
+  EXPECT_EQ(bw.block_size, 16);
+
+  auto serialized = SerializeModel(std::move(model));
+  EXPECT_TRUE(serialized.HasValue());
 }
 
 TEST_P(PartitionTest, PartitionWithIndex) {

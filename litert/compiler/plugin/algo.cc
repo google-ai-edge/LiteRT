@@ -257,14 +257,14 @@ class GraphSlicer {
   // Slices "partitions" from "root" into the empty subgraph "slice". Assumes
   // the partition is a valid sub-DAG, and replaces it with a single
   // tfl.custom_op in "root". A reference to that op is returned.
-  static LiteRtOp SlicePartitionFromGraph(LiteRtSubgraphT& root,
-                                          LiteRtSubgraph slice,
-                                          std::vector<LiteRtOp>& partition);
+  static litert::Expected<LiteRtOp> SlicePartitionFromGraph(
+      LiteRtSubgraphT& root, LiteRtSubgraph slice,
+      std::vector<LiteRtOp>& partition);
 
  private:
   explicit GraphSlicer(LiteRtSubgraph slice) : slice_(slice) {}
 
-  void CloneInto(const LiteRtOpT& op);
+  litert::Expected<void> CloneInto(const LiteRtOpT& op);
 
   void RerouteTensorsThroughCustomOp(const LiteRtSubgraphT& root);
 
@@ -274,31 +274,31 @@ class GraphSlicer {
   LiteRtOp dispatch_op_ = nullptr;
 };
 
-LiteRtOp GraphSlicer::SlicePartitionFromGraph(
+//===----------------------------------------------------------------------===//
+// GraphSlicer Implementation
+//===----------------------------------------------------------------------===//
+
+litert::Expected<LiteRtOp> GraphSlicer::SlicePartitionFromGraph(
     LiteRtSubgraphT& root, LiteRtSubgraph slice,
     std::vector<LiteRtOp>& partition) {
   GraphSlicer slicer(slice);
 
-  // Register input tensors of the sliced partition WRT to their original order
-  // in the root subgraph. This ensures the order of input tensors of the
-  // later outlined custom op is the same as the order of input tensors of the
-  // GraphInputs.
-  absl::flat_hash_set<LiteRtTensor> used_tensors;
-
-  // Get all tensors used in the partition.
+  // Find all inputs used by partition.
+  absl::flat_hash_set<const LiteRtTensorT*> used_tensors;
   for (auto* op : partition) {
     used_tensors.insert(op->Inputs().cbegin(), op->Inputs().cend());
   }
   for (auto* old_input : root.Inputs()) {
     if (used_tensors.contains(old_input)) {
-      auto* new_input = &MakeClone(*slicer.slice_, *old_input);
+      LITERT_ASSIGN_OR_RETURN(auto* new_input,
+                              MakeClone(*slicer.slice_, *old_input));
       slicer.slice_->Inputs().push_back(new_input);
       slicer.tensor_map_.InsertOrAssign(old_input, new_input);
     }
   }
 
   for (auto* op : partition) {
-    slicer.CloneInto(*op);
+    LITERT_RETURN_IF_ERROR(slicer.CloneInto(*op));
   }
 
   for (auto* op : partition) {
@@ -346,7 +346,7 @@ void GraphSlicer::RerouteTensorsThroughCustomOp(const LiteRtSubgraphT& root) {
   }
 }
 
-void GraphSlicer::CloneInto(const LiteRtOpT& old_op) {
+litert::Expected<void> GraphSlicer::CloneInto(const LiteRtOpT& old_op) {
   auto& new_op = MakeClone(*slice_, old_op);
 
   for (auto i = 0; i < old_op.NumInputs(); ++i) {
@@ -359,7 +359,7 @@ void GraphSlicer::CloneInto(const LiteRtOpT& old_op) {
       new_input = it->get().second;
     } else {
       // Otherwise, it must be a new subgraph input (or constant).
-      new_input = &MakeClone(*slice_, *old_input);
+      LITERT_ASSIGN_OR_RETURN(new_input, MakeClone(*slice_, *old_input));
       if (!IsConstant(*new_input)) {
         slice_->Inputs().push_back(new_input);
       }
@@ -372,12 +372,14 @@ void GraphSlicer::CloneInto(const LiteRtOpT& old_op) {
 
   for (int i = 0; i < old_op.NumOutputs(); ++i) {
     auto* old_output = old_op.Outputs().at(i);
-    auto* new_output = &MakeClone(*slice_, *old_output);
+    LITERT_ASSIGN_OR_RETURN(auto* new_output, MakeClone(*slice_, *old_output));
     AttachOutput(new_output, new_op);
 
     // Update the values defined in scope of the new subgraph.
     tensor_map_.InsertOrAssign(old_output, new_output);
   }
+
+  return {};
 }
 
 }  // namespace
@@ -469,8 +471,8 @@ std::vector<std::vector<LiteRtOp>> GroupPartitionsV2(
   return GetPartitionsFromFlatListV2(ops, subgraph);
 }
 
-LiteRtOp OutlinePartition(LiteRtSubgraphT& root, LiteRtSubgraph slice,
-                          std::vector<LiteRtOp>& partition) {
+Expected<LiteRtOp> OutlinePartition(LiteRtSubgraphT& root, LiteRtSubgraph slice,
+                                    std::vector<LiteRtOp>& partition) {
   return GraphSlicer::SlicePartitionFromGraph(root, slice, partition);
 }
 

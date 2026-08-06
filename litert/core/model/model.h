@@ -1219,7 +1219,10 @@ void CloneTo(const LiteRtTensorT& src, LiteRtTensorT& dest);
 void CloneTo(const LiteRtOpT& src, LiteRtOpT& dest);
 
 // Same as clone to, but allocates a the dest tensor into given subgraph.
-LiteRtTensorT& MakeClone(LiteRtSubgraphT& parent, const LiteRtTensorT& src);
+// If src has block-wise quantization, its scales and optional zero_points
+// tensors are also cloned into parent and remapped.
+litert::Expected<LiteRtTensorT*> MakeClone(LiteRtSubgraphT& parent,
+                                           const LiteRtTensorT& src);
 
 // Same as clone to, but allocates a the dest op into given subgraph.
 LiteRtOpT& MakeClone(LiteRtSubgraphT& parent, const LiteRtOpT& src);

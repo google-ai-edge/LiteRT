@@ -27,6 +27,7 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/ops/broadcast_args.h"
 #include "litert/core/model/ops/broadcast_to.h"
@@ -455,7 +456,7 @@ LiteRtStatus ShapeInferenceEngine::SpecializeSubgraph(
 
   absl::flat_hash_map<LiteRtTensorT*, LiteRtTensorT*> tensor_map;
   for (auto* tensor : subgraph->Tensors()) {
-    tensor_map[tensor] = &MakeClone(dest, *tensor);
+    LITERT_ASSIGN_OR_RETURN(tensor_map[tensor], MakeClone(dest, *tensor));
   }
 
   // Remap blockwise quantization tensor pointers to the cloned tensors.

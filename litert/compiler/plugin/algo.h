@@ -42,8 +42,9 @@ std::vector<std::vector<LiteRtOp>> GroupPartitionsV2(
 // Outlines "partition" from "root" into the empty subgraph "slice". Assumes
 // the partition is a valid sub-DAG, and replaces it with a single
 // tfl.custom_op in "root". A reference to that op is returned.
-LiteRtOp OutlinePartition(LiteRtSubgraphT& root, LiteRtSubgraph slice,
-                          std::vector<LiteRtOp>& partition);
+litert::Expected<LiteRtOp> OutlinePartition(LiteRtSubgraphT& root,
+                                            LiteRtSubgraph slice,
+                                            std::vector<LiteRtOp>& partition);
 
 // Inline a subgraph to a destination op.
 //
