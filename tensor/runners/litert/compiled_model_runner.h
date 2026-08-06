@@ -51,6 +51,7 @@ limitations under the License.
 #include "tensor/internal/graph_traversal.h"
 #include "tensor/runners/litert/feedback_loop_config.h"
 #include "tensor/runners/litert/litert_buffer.h"
+#include "tensor/runners/litert/runner_options.h"
 #include "tensor/tensor.h"
 
 namespace litert {
@@ -61,10 +62,20 @@ class CompiledModelRunner {
  public:
   CompiledModelRunner(Environment& env, Options& options,
                       ModelFunctor model_func, bool build_model_now = true);
+  CompiledModelRunner(Environment& env, RunnerOptions& options,
+                      ModelFunctor model_func, bool build_model_now = true)
+      : CompiledModelRunner(env, options.litert_options(), model_func,
+                            build_model_now) {}
   CompiledModelRunner(Environment& env, Options& options,
                       ModelFunctor model_func,
                       const std::vector<FeedbackLoopConfig>& feedback_loops,
                       bool build_model_now = true);
+  CompiledModelRunner(Environment& env, RunnerOptions& options,
+                      ModelFunctor model_func,
+                      const std::vector<FeedbackLoopConfig>& feedback_loops,
+                      bool build_model_now = true)
+      : CompiledModelRunner(env, options.litert_options(), model_func,
+                            feedback_loops, build_model_now) {}
 
   absl::Status BuildModel(
       const std::vector<Tensor<TfLiteMixinTag>>& output_tensors = {},
