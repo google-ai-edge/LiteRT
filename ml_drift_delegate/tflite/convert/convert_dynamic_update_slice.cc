@@ -55,7 +55,10 @@ namespace {
   ::ml_drift::ir::IrTensorId current_id;
 
   if (tflite::IsConstantTensor(tfl_tensor)) {
-    current_id = AddConstInput(context, tfl_input_id, ir_model, {})->id;
+    current_id =
+        AddConstInput(context, tfl_input_id, ir_model,
+                      SizedLayout{.layout_1d = ::ml_drift::Layout::SCALAR})
+            ->id;
   } else {
     current_id = tensor_map[tfl_input_id];
   }
@@ -84,14 +87,8 @@ void ConvertDynamicUpdateSlice(
   ::ml_drift::ir::IrTensorId update_id =
       GetRightAlignedInput(context, node.inputs->data[1], tensor_map, ir_model);
 
-  const int start_indices_tfl_id = node.inputs->data[2];
-  ::ml_drift::ir::IrTensorId start_indices_id;
-  if (tflite::IsConstantTensor(&context.tensors[start_indices_tfl_id])) {
-    start_indices_id =
-        AddConstInput(context, start_indices_tfl_id, ir_model, {})->id;
-  } else {
-    start_indices_id = tensor_map[start_indices_tfl_id];
-  }
+  ::ml_drift::ir::IrTensorId start_indices_id =
+      GetRightAlignedInput(context, node.inputs->data[2], tensor_map, ir_model);
 
   ::ml_drift::ir::IrOp* ir_op = ir_model.add_op();
   ir_op->name = ToString(::ml_drift::OperationType::DYNAMIC_UPDATE_SLICE);
