@@ -20,6 +20,7 @@ limitations under the License.
 #include <vector>
 
 #include "absl/strings/string_view.h"
+#include "third_party/protobuf/repeated_ptr_field.h"
 #include "tflite/toco/logging/toco_conversion_log.pb.h"
 #include "tflite/toco/model.h"
 
