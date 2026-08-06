@@ -61,6 +61,13 @@ class SafetensorLoader {
     kPreserveQuantized,
   };
 
+  enum class LayerNormWeightMode {
+    // Gemma 3 stores zero-centered layer-norm weights. Add one while loading.
+    kZeroCentered,
+    // Gemma 4 stores the affine scale directly.
+    kDirect,
+  };
+
   // Loads a safetensor file or a directory of safetensor files.
   static absl::StatusOr<SafetensorLoader> Load(const std::string& path);
 
@@ -76,6 +83,11 @@ class SafetensorLoader {
   // BF16 tensors are automatically converted to FP32.
   absl::StatusOr<TensorHandle> LoadTensor(
       const std::string& name, QuantizedLoadMode quantized_load_mode) const;
+
+  // Loads a tensor with an explicit layer-norm weight convention.
+  absl::StatusOr<TensorHandle> LoadTensor(
+      const std::string& name, QuantizedLoadMode quantized_load_mode,
+      LayerNormWeightMode layer_norm_weight_mode) const;
 
   // Loads all tensors into a map.
   absl::StatusOr<absl::flat_hash_map<std::string, TensorHandle>> LoadAllTensors(
