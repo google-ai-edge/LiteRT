@@ -192,7 +192,13 @@ litert_lib(
 
 litert_dynamic_lib(
     name = "openvino_compiler_plugin",
-    srcs = ["openvino_compiler_plugin.cc"],
+    srcs = [
+        "openvino_compiler_plugin.cc",
+        # Vendored OpenVINO dev_api header (not in the runtime SDK; symbols
+        # exported by libopenvino.so). Tags weight Constants with
+        # WeightlessCacheAttribute on the NPU shared path.
+        "weightless_caching_attributes.hpp",
+    ],
     hdrs = [
         "//litert/vendors/c:litert_compiler_plugin.h",
     ],
@@ -248,7 +254,10 @@ litert_dynamic_lib(
 
 litert_bin(
     name = "LiteRtCompilerPlugin",
-    srcs = ["openvino_compiler_plugin.cc"],
+    srcs = [
+        "openvino_compiler_plugin.cc",
+        "weightless_caching_attributes.hpp",
+    ],
     copts = ["-fexceptions"] + select({
         "//litert/runtime/dispatch:windows_msvc": [
             "/DLITERT_COMPILE_LIBRARY",

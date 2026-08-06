@@ -32,6 +32,8 @@
 
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/compiled_model.hpp"
+#include "openvino/runtime/core.hpp"
+#include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
@@ -146,22 +148,38 @@ LiteRtDispatchInvocationContextT::Create(
   auto exec_bytecode_size = exec_bytecode_buffer->size;
 
   // GlobalGraph weight sharing: the compiler returns ONE container blob for all
-  // partitions (magic "OVGLOBAL") holding a shared buffer pool + per-subgraph
-  // {payload, const_map, device}. Parse it and select THIS partition's subgraph
-  // (by function_name, which the plugin sets to the graph name; fall back to
-  // the sole/first subgraph). The subgraph's weights are resolved against the
-  // pool at import below. Non-shared models skip this and use the raw bytecode
-  // directly.
+  // partitions (magic "OVGLOBAL") holding a contiguous shared buffer pool +
+  // per-subgraph {payload, const_map, device}. We Parse it ZERO-COPY (the pool
+  // can be multi-GB; only the small weightless payload is copied out) ONCE and
+  // select THIS partition's subgraph (by function_name, which the plugin sets to
+  // the graph name; fall back to the sole subgraph). The subgraph's weights are
+  // resolved against the pool at import below:
+  //   - GPU: bound as views into a shared USM-host copy of the pool.
+  //   - NPU: the pool is staged to a temp file and handed to NPUW via
+  //     ov::weights_path; each Constant's WeightlessCacheAttribute bin_offset
+  //     resolves to mmap->data() + bin_offset.
+  // Non-shared models skip this and use the raw bytecode directly. |global_graph|
+  // is kept at function scope (its spans alias exec_bytecode_buffer, which
+  // outlives this function) so the GPU bank fill below can reuse it -- no second
+  // parse.
+  bool has_container = false;
   std::optional<litert::openvino::OpenVinoGlobalGraph> global_graph;
   std::map<std::string, uint32_t> selected_const_map;
   std::optional<LiteRtIntelOpenVinoGraphBackend> selected_device;
   std::vector<uint8_t> selected_payload;
+  // Zero-copy view of the contiguous weight pool (aliases exec_bytecode_buffer,
+  // which outlives this function). Used by the NPU arm to stage the pool.
+  const uint8_t* pool_ptr = nullptr;
+  size_t pool_size = 0;
   if (litert::openvino::OpenVinoGlobalGraph::HasMagic(
           static_cast<const uint8_t*>(exec_bytecode_ptr), exec_bytecode_size)) {
-    LITERT_ASSIGN_OR_RETURN(global_graph,
-                            litert::openvino::OpenVinoGlobalGraph::Parse(
-                                static_cast<const uint8_t*>(exec_bytecode_ptr),
-                                exec_bytecode_size));
+    has_container = true;
+    LITERT_ASSIGN_OR_RETURN(
+        global_graph,
+        litert::openvino::OpenVinoGlobalGraph::Parse(
+            static_cast<const uint8_t*>(exec_bytecode_ptr), exec_bytecode_size));
+    pool_ptr = global_graph->pool.data();
+    pool_size = global_graph->pool.size();
 
     const litert::openvino::OpenVinoGlobalGraph::Subgraph* selected = nullptr;
     if (function_name != nullptr && function_name[0] != '\0') {
@@ -190,15 +208,18 @@ LiteRtDispatchInvocationContextT::Create(
                            "GlobalGraph: no subgraph for function_name");
     }
     LITERT_LOG(LITERT_INFO,
-               "GlobalGraph: selected subgraph '%s' (%zu byte payload) for "
+               "GlobalGraph: selected subgraph (%zu byte payload) for "
                "function_name '%s'",
-               selected->name.c_str(), selected->payload.size(),
+               selected->payload.size(),
                function_name ? function_name : "(null)");
     selected_const_map = selected->const_map;
     selected_device =
         static_cast<LiteRtIntelOpenVinoGraphBackend>(selected->device);
-    // Copy the selected payload into an owned buffer; we import from it below.
-    selected_payload.assign(selected->payload.begin(), selected->payload.end());
+    // Copy the selected (weightless-on-NPU / Parameters-on-GPU) payload into an
+    // owned buffer; we import from it below. This is small -- the large pool is
+    // NOT copied here.
+    selected_payload.assign(selected->payload.begin(),
+                            selected->payload.end());
     exec_bytecode_ptr = selected_payload.data();
     exec_bytecode_size = selected_payload.size();
   }
@@ -283,15 +304,71 @@ LiteRtDispatchInvocationContextT::Create(
                          "Failed to open model bytecode stream");
   }
 
-  // Resolve a GlobalGraph subgraph's weights against the shared pool: on GPU
-  // the weights are Parameters imported plainly, then bound to views into a
-  // shared usm-host buffer (below). A non-shared model (no container) imports
-  // its payload directly. Weight sharing is GPU-only; non-GPU shared models are
-  // rejected at compile time (a later patchset adds the NPU arm).
-  const bool gpu_shared = global_graph.has_value() && device == "GPU";
+  // Resolve a GlobalGraph subgraph's weights against the shared pool. Two
+  // consumption strategies over one container format:
+  //   - GPU: weights are Parameters imported plainly, then bound to views into
+  //     a shared usm-host buffer (below).
+  //   - NPU: weights are Constants tagged with WeightlessCacheAttribute; the
+  //     pool is staged to a temp file and imported via ov::weights_path so NPUW
+  //     mmaps it and resolves each constant as mmap->data() + bin_offset.
+  // A non-shared model (no container) imports its payload directly.
+  const bool gpu_shared = has_container && device == "GPU";
+  const bool npu_shared = has_container && device == "NPU";
+
+  // Cross-check the pool span against the ACTUAL bytecode buffer extent before
+  // staging. Parse validated the pool against exec_bytecode_size, but if that
+  // size overstated the truly-mapped region (e.g. a partially loaded model)
+  // staging would read past the mapping and crash. Fail loudly instead.
+  if (npu_shared) {
+    const uint8_t* buf_base =
+        static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr);
+    const uint8_t* buf_end = buf_base + exec_bytecode_buffer->offset +
+                             exec_bytecode_buffer->size;
+    const uint8_t* pool_end = pool_ptr + pool_size;
+    if (pool_ptr < buf_base || pool_end > buf_end) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Dispatch: pool span [%p,%p) escapes bytecode buffer "
+                 "[%p,%p); refusing to stage (container/model size mismatch)",
+                 static_cast<const void*>(pool_ptr),
+                 static_cast<const void*>(pool_end),
+                 static_cast<const void*>(buf_base),
+                 static_cast<const void*>(buf_end));
+      return litert::Error(
+          kLiteRtStatusErrorRuntimeFailure,
+          "Shared weight pool escapes the bytecode buffer bounds");
+    }
+  }
+
   ov::CompiledModel compiled_model;
   try {
-    compiled_model = core->import_model(model_stream, device);
+    if (npu_shared) {
+      // Stage the deduplicated pool to a temp file once per process, then hand
+      // it to NPUW. The temp file is a byte-for-byte copy of the contiguous
+      // pool span, starting at byte 0, so bin_offset resolves directly.
+      const std::string bank_path =
+          OpenVINOSharedCore::GetInstance()->EnsureBankOnDisk(pool_ptr,
+                                                              pool_size);
+      if (bank_path.empty()) {
+        return litert::Error(
+            kLiteRtStatusErrorRuntimeFailure,
+            "Failed to stage shared weights bank to a temp file");
+      }
+      ov::AnyMap import_properties;
+      // NPU_USE_NPUW is required or the plain NPU plugin rejects the NPUW blob;
+      // WEIGHTS_PATH + ENABLE_WEIGHTLESS are required or NPUW asserts "Blob is
+      // weightless but no WEIGHTS_PATH nor MODEL_PTR property is provided!".
+      import_properties["NPU_USE_NPUW"] = std::string("YES");
+      import_properties[ov::weights_path.name()] = bank_path;
+      import_properties[ov::enable_weightless.name()] = true;
+      LITERT_LOG(LITERT_INFO,
+                 "GlobalGraph: importing weightless NPU blob with "
+                 "WEIGHTS_PATH='%s' (%zu byte pool)",
+                 bank_path.c_str(), pool_size);
+      compiled_model = core->import_model(model_stream, device,
+                                          import_properties);
+    } else {
+      compiled_model = core->import_model(model_stream, device);
+    }
   } catch (const std::exception& e) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure, e.what());
   }
@@ -299,9 +376,14 @@ LiteRtDispatchInvocationContextT::Create(
   auto infer_request = compiled_model.create_infer_request();
 
   // Bind the shared weights onto the infer request and hold the views for its
-  // lifetime (set_input_tensor does not take ownership).
+  // lifetime (set_input_tensor does not take ownership). GPU only: NPU weights
+  // are resolved inside NPUW from the mmapped temp file, so nothing to bind.
   std::vector<ov::Tensor> bound_weights;
   if (gpu_shared) {
+    // Reuse the graph parsed above (its buffer spans alias exec_bytecode_buffer,
+    // which outlives this function) -- no second parse, no pool copy. The GPU
+    // bank resolves each const_map buffer_id to its pool bytes via the graph's
+    // ascending-id BufferEntry list.
     LITERT_ASSIGN_OR_RETURN(
         std::vector<litert::openvino::BoundWeight> bound,
         device_context.GpuBank().Bind(*core, *global_graph, compiled_model,
