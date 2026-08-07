@@ -42,6 +42,7 @@
 #include "openvino/op/strided_slice.hpp"
 #include "openvino/op/util/attr_types.hpp"
 #include "openvino/op/transpose.hpp"
+#include "openvino/pass/constant_folding.hpp"
 #include "openvino/pass/manager.hpp"
 #include "openvino/pass/matcher_pass.hpp"
 #include "openvino/pass/pattern/matcher.hpp"
@@ -457,6 +458,10 @@ FuseSplitAttentionToSDPA::FuseSplitAttentionToSDPA(bool pad_kv_to_alignment) {
 
 void NpuOptimizer::Run(const std::shared_ptr<ov::Model>& model) const {
   ov::pass::Manager pass_manager;
+  // First: fold constants (removes dynamic shapes) before the passes below.
+  if (constant_fold_) {
+    pass_manager.register_pass<ov::pass::ConstantFolding>();
+  }
   if (cast_integer_sign_to_float_) {
     pass_manager.register_pass<CastIntegerSignToFloat>();
   }

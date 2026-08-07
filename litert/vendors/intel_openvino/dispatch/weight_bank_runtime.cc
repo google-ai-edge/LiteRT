@@ -49,8 +49,7 @@ litert::Expected<std::vector<BoundWeight>> GpuSharedBank::Bind(
   absl::MutexLock lock(gpu_bank_mutex_);
   if (!bank_ready_) {
     size_t total = 0;
-    for (const auto& [buffer_id, bytes] : global_graph.buffers)
-      total += bytes.size();
+    for (const auto& entry : global_graph.buffers) total += entry.bytes.size();
     // Allocate the pool as one usm-host buffer of bytes; per-weight views
     // reinterpret slices as the weight's element type below.
     gpu_usm_ =
@@ -62,10 +61,10 @@ litert::Expected<std::vector<BoundWeight>> GpuSharedBank::Bind(
     auto* base = static_cast<uint8_t*>(base_);
     size_t off = 0;
     // TODO(PR #8745 #7): recheck USM view alignment.
-    for (const auto& [buffer_id, bytes] : global_graph.buffers) {  // ascending
-      std::memcpy(base + off, bytes.data(), bytes.size());
-      weight_offset_[buffer_id] = off;
-      off += bytes.size();
+    for (const auto& entry : global_graph.buffers) {  // ascending buffer_id
+      std::memcpy(base + off, entry.bytes.data(), entry.bytes.size());
+      weight_offset_[entry.id] = off;
+      off += entry.bytes.size();
     }
     bank_ready_ = true;
     LITERT_LOG(LITERT_INFO,
