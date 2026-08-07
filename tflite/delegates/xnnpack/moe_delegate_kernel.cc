@@ -42,13 +42,25 @@ namespace xnnpack {
 namespace {
 
 constexpr char kMoeCustomOp[] = "moe";
+constexpr int kInvalidTensorId = -1;
 constexpr uintptr_t kMoeXnnpackWorkspaceAlignment = 128;
 
 struct MoeExpertsAttributes {
+  enum class WeightType {
+    kFp32,
+    kInt8,
+  };
+  enum class Activation {
+    kGelu,
+    kGeluTanh,
+  };
+
   int num_experts = 0;
   int num_active_experts = 0;
   int model_dim = 0;
   int hidden_dim = 0;
+  WeightType weight_type = WeightType::kFp32;
+  Activation activation = Activation::kGelu;
 };
 
 struct MoeExpertsAssignment {
@@ -87,48 +99,60 @@ class MoeExpertsDelegateKernel::Impl {
                          kMoeCustomOp, node_index);
       return kTfLiteError;
     }
-    if (node->inputs->size != 7 || node->outputs->size != 1) {
-      TF_LITE_KERNEL_LOG(
-          context,
-          "%s node #%d expects 7 fp32 inputs and 1 output in the XNNPACK "
-          "prototype path",
-          kMoeCustomOp, node_index);
+    const bool is_int8 =
+        attr.weight_type == MoeExpertsAttributes::WeightType::kInt8;
+    const int expected_inputs = is_int8 ? 10 : 7;
+    if (node->inputs->size != expected_inputs || node->outputs->size != 1) {
+      TF_LITE_KERNEL_LOG(context, "%s node #%d expects %d inputs and 1 output",
+                         kMoeCustomOp, node_index, expected_inputs);
       return kTfLiteError;
     }
     const TfLiteTensor* src = &context->tensors[node->inputs->data[0]];
     const TfLiteTensor* top_weights = &context->tensors[node->inputs->data[1]];
     const TfLiteTensor* top_indices = &context->tensors[node->inputs->data[2]];
-    const TfLiteTensor* gate_weight = &context->tensors[node->inputs->data[3]];
-    const TfLiteTensor* ff1_weight = &context->tensors[node->inputs->data[4]];
-    const TfLiteTensor* linear_weight =
-        &context->tensors[node->inputs->data[5]];
-    const TfLiteTensor* per_expert_scale =
-        &context->tensors[node->inputs->data[6]];
     const TfLiteTensor* output = &context->tensors[node->outputs->data[0]];
 
     if (src->type != kTfLiteFloat32 || top_weights->type != kTfLiteFloat32 ||
-        top_indices->type != kTfLiteInt32 ||
-        gate_weight->type != kTfLiteFloat32 ||
-        ff1_weight->type != kTfLiteFloat32 ||
-        linear_weight->type != kTfLiteFloat32 ||
-        per_expert_scale->type != kTfLiteFloat32 ||
-        output->type != kTfLiteFloat32) {
-      TF_LITE_KERNEL_LOG(context,
-                         "%s node #%d currently supports fp32 weights, fp32 "
-                         "activations, and int32 top_indices only",
-                         kMoeCustomOp, node_index);
+        top_indices->type != kTfLiteInt32 || output->type != kTfLiteFloat32) {
+      TF_LITE_KERNEL_LOG(
+          context,
+          "%s node #%d requires fp32 activations and int32 top_indices",
+          kMoeCustomOp, node_index);
       return kTfLiteError;
     }
-    if (gate_weight->allocation_type != kTfLiteMmapRo ||
-        ff1_weight->allocation_type != kTfLiteMmapRo ||
-        linear_weight->allocation_type != kTfLiteMmapRo ||
-        per_expert_scale->allocation_type != kTfLiteMmapRo) {
-      TF_LITE_KERNEL_LOG(context,
-                         "%s node #%d expects constant expert weights and "
-                         "per_expert_scale",
-                         kMoeCustomOp, node_index);
+
+    auto check_tensor = [&](int idx, TfLiteType expected_type,
+                            const char* name) -> bool {
+      const TfLiteTensor* t = &context->tensors[node->inputs->data[idx]];
+      if (t->type != expected_type) {
+        TF_LITE_KERNEL_LOG(context,
+                           "%s node #%d %s (input #%d) requires %s data type",
+                           kMoeCustomOp, node_index, name, idx,
+                           TfLiteTypeGetName(expected_type));
+        return false;
+      }
+      if (t->allocation_type != kTfLiteMmapRo) {
+        TF_LITE_KERNEL_LOG(
+            context, "%s node #%d %s (input #%d) must be a constant tensor",
+            kMoeCustomOp, node_index, name, idx);
+        return false;
+      }
+      return true;
+    };
+
+    const TfLiteType weight_type = is_int8 ? kTfLiteInt8 : kTfLiteFloat32;
+    int idx = 3;
+    if (!check_tensor(idx++, weight_type, "gate_weight")) return kTfLiteError;
+    if (is_int8 && !check_tensor(idx++, kTfLiteFloat32, "gate_scale"))
       return kTfLiteError;
-    }
+    if (!check_tensor(idx++, weight_type, "ff1_weight")) return kTfLiteError;
+    if (is_int8 && !check_tensor(idx++, kTfLiteFloat32, "ff1_scale"))
+      return kTfLiteError;
+    if (!check_tensor(idx++, weight_type, "linear_weight")) return kTfLiteError;
+    if (is_int8 && !check_tensor(idx++, kTfLiteFloat32, "linear_scale"))
+      return kTfLiteError;
+    if (!check_tensor(idx++, kTfLiteFloat32, "per_expert_scale"))
+      return kTfLiteError;
     return kTfLiteOk;
   }
 
@@ -163,11 +187,34 @@ class MoeExpertsDelegateKernel::Impl {
       return nullptr;
     }
 
-    return std::unique_ptr<Impl>(new Impl(
-        attr, node->inputs->data[0], node->inputs->data[1],
-        node->inputs->data[2], node->inputs->data[3], node->inputs->data[4],
-        node->inputs->data[5], node->inputs->data[6], node->outputs->data[0],
-        std::move(gate_up_fc), std::move(linear_fc), threadpool));
+    int gate_weight_id = kInvalidTensorId;
+    int gate_scale_id = kInvalidTensorId;
+    int ff1_weight_id = kInvalidTensorId;
+    int ff1_scale_id = kInvalidTensorId;
+    int linear_weight_id = kInvalidTensorId;
+    int linear_scale_id = kInvalidTensorId;
+    int per_expert_scale_id = kInvalidTensorId;
+    if (attr.weight_type == MoeExpertsAttributes::WeightType::kInt8) {
+      gate_weight_id = node->inputs->data[3];
+      gate_scale_id = node->inputs->data[4];
+      ff1_weight_id = node->inputs->data[5];
+      ff1_scale_id = node->inputs->data[6];
+      linear_weight_id = node->inputs->data[7];
+      linear_scale_id = node->inputs->data[8];
+      per_expert_scale_id = node->inputs->data[9];
+    } else {
+      gate_weight_id = node->inputs->data[3];
+      ff1_weight_id = node->inputs->data[4];
+      linear_weight_id = node->inputs->data[5];
+      per_expert_scale_id = node->inputs->data[6];
+    }
+
+    return std::unique_ptr<Impl>(
+        new Impl(attr, node->inputs->data[0], node->inputs->data[1],
+                 node->inputs->data[2], gate_weight_id, gate_scale_id,
+                 ff1_weight_id, ff1_scale_id, linear_weight_id, linear_scale_id,
+                 per_expert_scale_id, node->outputs->data[0],
+                 std::move(gate_up_fc), std::move(linear_fc), threadpool));
   }
 
   TfLiteStatus Prepare(TfLiteContext* context) {
@@ -212,9 +259,21 @@ class MoeExpertsDelegateKernel::Impl {
     const float* src = GetTensorData<float>(&src_tensor);
     const float* top_weights = GetTensorData<float>(&top_weights_tensor);
     const int32_t* top_indices = GetTensorData<int32_t>(&top_indices_tensor);
-    const float* gate_weight = GetTensorData<float>(&gate_weight_tensor);
-    const float* ff1_weight = GetTensorData<float>(&ff1_weight_tensor);
-    const float* linear_weight = GetTensorData<float>(&linear_weight_tensor);
+    const void* gate_weight = gate_weight_tensor.data.raw;
+    const float* gate_scale =
+        gate_scale_id_ != kInvalidTensorId
+            ? GetTensorData<float>(&context->tensors[gate_scale_id_])
+            : nullptr;
+    const void* ff1_weight = ff1_weight_tensor.data.raw;
+    const float* ff1_scale =
+        ff1_scale_id_ != kInvalidTensorId
+            ? GetTensorData<float>(&context->tensors[ff1_scale_id_])
+            : nullptr;
+    const void* linear_weight = linear_weight_tensor.data.raw;
+    const float* linear_scale =
+        linear_scale_id_ != kInvalidTensorId
+            ? GetTensorData<float>(&context->tensors[linear_scale_id_])
+            : nullptr;
     const float* per_expert_scale =
         GetTensorData<float>(&per_expert_scale_tensor);
     float* output = GetTensorData<float>(&output_tensor);
@@ -223,6 +282,13 @@ class MoeExpertsDelegateKernel::Impl {
         linear_weight == nullptr || per_expert_scale == nullptr ||
         output == nullptr) {
       TF_LITE_KERNEL_LOG(context, "%s received a null tensor data pointer",
+                         kMoeCustomOp);
+      return kTfLiteError;
+    }
+    if (attr_.weight_type == MoeExpertsAttributes::WeightType::kInt8 &&
+        (gate_scale == nullptr || ff1_scale == nullptr ||
+         linear_scale == nullptr)) {
+      TF_LITE_KERNEL_LOG(context, "%s int8 mode received null scale pointers",
                          kMoeCustomOp);
       return kTfLiteError;
     }
@@ -241,8 +307,9 @@ class MoeExpertsDelegateKernel::Impl {
         continue;
       }
       if (!RunExpert(context, expert, assignments_.data() + begin,
-                     routed_tokens, src, top_weights, gate_weight, ff1_weight,
-                     linear_weight, per_expert_scale, output)) {
+                     routed_tokens, src, top_weights, gate_weight, gate_scale,
+                     ff1_weight, ff1_scale, linear_weight, linear_scale,
+                     per_expert_scale, output)) {
         return kTfLiteError;
       }
     }
@@ -251,8 +318,9 @@ class MoeExpertsDelegateKernel::Impl {
 
  private:
   Impl(MoeExpertsAttributes attr, int src_id, int top_weights_id,
-       int top_indices_id, int gate_weight_id, int ff1_weight_id,
-       int linear_weight_id, int per_expert_scale_id, int output_id,
+       int top_indices_id, int gate_weight_id, int gate_scale_id,
+       int ff1_weight_id, int ff1_scale_id, int linear_weight_id,
+       int linear_scale_id, int per_expert_scale_id, int output_id,
        XnnOperatorPtr gate_up_fc, XnnOperatorPtr linear_fc,
        pthreadpool_t threadpool)
       : attr_(attr),
@@ -260,8 +328,11 @@ class MoeExpertsDelegateKernel::Impl {
         top_weights_id_(top_weights_id),
         top_indices_id_(top_indices_id),
         gate_weight_id_(gate_weight_id),
+        gate_scale_id_(gate_scale_id),
         ff1_weight_id_(ff1_weight_id),
+        ff1_scale_id_(ff1_scale_id),
         linear_weight_id_(linear_weight_id),
+        linear_scale_id_(linear_scale_id),
         per_expert_scale_id_(per_expert_scale_id),
         output_id_(output_id),
         gate_up_fc_(std::move(gate_up_fc)),
@@ -303,18 +374,27 @@ class MoeExpertsDelegateKernel::Impl {
       }
     }
     const std::string weight_type = (*map)["weight_type"].AsString().str();
-    if (weight_type != "fp32") {
+    if (weight_type == "fp32") {
+      attr->weight_type = MoeExpertsAttributes::WeightType::kFp32;
+    } else if (weight_type == "int8") {
+      attr->weight_type = MoeExpertsAttributes::WeightType::kInt8;
+    } else {
       TF_LITE_KERNEL_LOG(context,
-                         "%s node #%d has unsupported weight_type '%s' for the "
-                         "XNNPACK prototype path",
+                         "%s node #%d has unsupported weight_type '%s'",
                          kMoeCustomOp, node_index, weight_type.c_str());
       return false;
     }
-    if (!(*map)["activation"].IsNull() &&
-        (*map)["activation"].AsString().str() != "gelu") {
-      TF_LITE_KERNEL_LOG(context, "%s node #%d only supports activation='gelu'",
-                         kMoeCustomOp, node_index);
-      return false;
+    if (!(*map)["activation"].IsNull()) {
+      const std::string act = (*map)["activation"].AsString().str();
+      if (act == "gelu") {
+        attr->activation = MoeExpertsAttributes::Activation::kGelu;
+      } else if (act == "gelu_tanh") {
+        attr->activation = MoeExpertsAttributes::Activation::kGeluTanh;
+      } else {
+        TF_LITE_KERNEL_LOG(context, "%s node #%d unsupported activation='%s'",
+                           kMoeCustomOp, node_index, act.c_str());
+        return false;
+      }
     }
     attr->num_experts = (*map)["num_experts"].AsInt32();
     attr->num_active_experts = (*map)["num_active_experts"].AsInt32();
@@ -351,6 +431,13 @@ class MoeExpertsDelegateKernel::Impl {
     // TODO: lower this to xnn unary gelu once the expert body is expressed
     // as a subgraph instead of host-stitched dynamic FC calls.
     return 0.5f * x * std::erfc(x * -0.70710678118654752440f);
+  }
+
+  static float GeluTanh(float x) {
+    const float kAlpha = 0.7978845608028654f;  // sqrt(2/pi)
+    const float kBeta = 0.044715f;
+    const float inner = kAlpha * x * (1.0f + kBeta * x * x);
+    return 0.5f * x * (1.0f + std::tanh(inner));
   }
 
   static void* AlignWorkspace(void* ptr) {
@@ -423,27 +510,57 @@ class MoeExpertsDelegateKernel::Impl {
     }
   }
 
-  void CopyGateUpExpertWeight(const float* gate_weight, const float* ff1_weight,
+  static void CopyAndDequantizeExpertWeightRowsInt8(
+      const int8_t* weight_i8, const float* scale, int num_experts, int expert,
+      int output_channels, int input_channels, float* dst) {
+    for (int out = 0; out < output_channels; ++out) {
+      const int row_idx = out * num_experts + expert;
+      const float row_scale = scale[row_idx];
+      const int8_t* src_row = weight_i8 + row_idx * input_channels;
+      float* dst_row = dst + out * input_channels;
+      for (int in = 0; in < input_channels; ++in) {
+        dst_row[in] = static_cast<float>(src_row[in]) * row_scale;
+      }
+    }
+  }
+
+  void CopyGateUpExpertWeight(const void* gate_weight, const float* gate_scale,
+                              const void* ff1_weight, const float* ff1_scale,
                               int expert) {
     const int rows = 2 * attr_.hidden_dim;
     EnsureSize(&kernel_buffer_, rows * attr_.model_dim);
     float* dst = kernel_buffer_.data();
-    // TODO: replace this host-side row gather when the delegate can either
-    // consume expert-major weights directly or lower this as a reusable gather.
-    CopyExpertWeightRows(gate_weight, attr_.num_experts, expert,
-                         attr_.hidden_dim, attr_.model_dim, dst);
-    CopyExpertWeightRows(ff1_weight, attr_.num_experts, expert,
-                         attr_.hidden_dim, attr_.model_dim,
-                         dst + attr_.hidden_dim * attr_.model_dim);
+    if (attr_.weight_type == MoeExpertsAttributes::WeightType::kInt8) {
+      CopyAndDequantizeExpertWeightRowsInt8(
+          static_cast<const int8_t*>(gate_weight), gate_scale,
+          attr_.num_experts, expert, attr_.hidden_dim, attr_.model_dim, dst);
+      CopyAndDequantizeExpertWeightRowsInt8(
+          static_cast<const int8_t*>(ff1_weight), ff1_scale, attr_.num_experts,
+          expert, attr_.hidden_dim, attr_.model_dim,
+          dst + attr_.hidden_dim * attr_.model_dim);
+    } else {
+      CopyExpertWeightRows(static_cast<const float*>(gate_weight),
+                           attr_.num_experts, expert, attr_.hidden_dim,
+                           attr_.model_dim, dst);
+      CopyExpertWeightRows(static_cast<const float*>(ff1_weight),
+                           attr_.num_experts, expert, attr_.hidden_dim,
+                           attr_.model_dim,
+                           dst + attr_.hidden_dim * attr_.model_dim);
+    }
   }
 
-  void CopyExpertWeight(const float* weight, int expert, int output_channels,
-                        int input_channels) {
+  void CopyExpertWeight(const void* weight, const float* scale, int expert,
+                        int output_channels, int input_channels) {
     EnsureSize(&kernel_buffer_, output_channels * input_channels);
-    // TODO: replace this host-side row gather when the xnn can either
-    // consume expert-major weights directly or lower this as a reusable gather.
-    CopyExpertWeightRows(weight, attr_.num_experts, expert, output_channels,
-                         input_channels, kernel_buffer_.data());
+    if (attr_.weight_type == MoeExpertsAttributes::WeightType::kInt8) {
+      CopyAndDequantizeExpertWeightRowsInt8(
+          static_cast<const int8_t*>(weight), scale, attr_.num_experts, expert,
+          output_channels, input_channels, kernel_buffer_.data());
+    } else {
+      CopyExpertWeightRows(static_cast<const float*>(weight), attr_.num_experts,
+                           expert, output_channels, input_channels,
+                           kernel_buffer_.data());
+    }
   }
 
   bool RunDynamicFullyConnected(TfLiteContext* context, xnn_operator_t op,
@@ -484,9 +601,10 @@ class MoeExpertsDelegateKernel::Impl {
   bool RunExpert(TfLiteContext* context, int expert,
                  const MoeExpertsAssignment* expert_assignments,
                  int routed_tokens, const float* src, const float* top_weights,
-                 const float* gate_weight, const float* ff1_weight,
-                 const float* linear_weight, const float* per_expert_scale,
-                 float* output) {
+                 const void* gate_weight, const float* gate_scale,
+                 const void* ff1_weight, const float* ff1_scale,
+                 const void* linear_weight, const float* linear_scale,
+                 const float* per_expert_scale, float* output) {
     EnsureSize(&routed_src_, routed_tokens * attr_.model_dim);
     EnsureSize(&gate_up_, routed_tokens * 2 * attr_.hidden_dim);
     EnsureSize(&hidden_, routed_tokens * attr_.hidden_dim);
@@ -501,7 +619,8 @@ class MoeExpertsDelegateKernel::Impl {
                   attr_.model_dim * sizeof(float));
     }
 
-    CopyGateUpExpertWeight(gate_weight, ff1_weight, expert);
+    CopyGateUpExpertWeight(gate_weight, gate_scale, ff1_weight, ff1_scale,
+                           expert);
     if (!RunDynamicFullyConnected(context, gate_up_fc_.get(), routed_tokens,
                                   attr_.model_dim, 2 * attr_.hidden_dim,
                                   routed_src_.data(), kernel_buffer_.data(),
@@ -514,11 +633,16 @@ class MoeExpertsDelegateKernel::Impl {
       const float* ff1 = gate + attr_.hidden_dim;
       float* hidden = hidden_.data() + token * attr_.hidden_dim;
       for (int dim = 0; dim < attr_.hidden_dim; ++dim) {
-        hidden[dim] = Gelu(gate[dim]) * ff1[dim];
+        float act_val =
+            (attr_.activation == MoeExpertsAttributes::Activation::kGeluTanh)
+                ? GeluTanh(gate[dim])
+                : Gelu(gate[dim]);
+        hidden[dim] = act_val * ff1[dim];
       }
     }
 
-    CopyExpertWeight(linear_weight, expert, attr_.model_dim, attr_.hidden_dim);
+    CopyExpertWeight(linear_weight, linear_scale, expert, attr_.model_dim,
+                     attr_.hidden_dim);
     if (!RunDynamicFullyConnected(context, linear_fc_.get(), routed_tokens,
                                   attr_.hidden_dim, attr_.model_dim,
                                   hidden_.data(), kernel_buffer_.data(),
@@ -544,14 +668,17 @@ class MoeExpertsDelegateKernel::Impl {
   }
 
   MoeExpertsAttributes attr_;
-  int src_id_ = -1;
-  int top_weights_id_ = -1;
-  int top_indices_id_ = -1;
-  int gate_weight_id_ = -1;
-  int ff1_weight_id_ = -1;
-  int linear_weight_id_ = -1;
-  int per_expert_scale_id_ = -1;
-  int output_id_ = -1;
+  int src_id_ = kInvalidTensorId;
+  int top_weights_id_ = kInvalidTensorId;
+  int top_indices_id_ = kInvalidTensorId;
+  int gate_weight_id_ = kInvalidTensorId;
+  int gate_scale_id_ = kInvalidTensorId;
+  int ff1_weight_id_ = kInvalidTensorId;
+  int ff1_scale_id_ = kInvalidTensorId;
+  int linear_weight_id_ = kInvalidTensorId;
+  int linear_scale_id_ = kInvalidTensorId;
+  int per_expert_scale_id_ = kInvalidTensorId;
+  int output_id_ = kInvalidTensorId;
   XnnOperatorPtr gate_up_fc_{nullptr, &xnn_delete_operator};
   XnnOperatorPtr linear_fc_{nullptr, &xnn_delete_operator};
   pthreadpool_t threadpool_ = nullptr;
