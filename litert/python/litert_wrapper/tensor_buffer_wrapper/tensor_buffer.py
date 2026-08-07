@@ -42,6 +42,8 @@ class TensorBuffer:
   buffers in Python.
   """
 
+  _HOST_MEMORY_BUFFER_ALIGNMENT = 64
+
   _DTYPE_STRINGS = {
       ml_dtypes.bfloat16: "bfloat16",
       np.dtype(ml_dtypes.bfloat16): "bfloat16",
@@ -126,13 +128,36 @@ class TensorBuffer:
     return np.ascontiguousarray(data_array), dtype_str
 
   @classmethod
+  def _align_numpy_array(
+      cls, array: np.ndarray, alignment: int = _HOST_MEMORY_BUFFER_ALIGNMENT
+  ) -> np.ndarray:
+    """Returns a NumPy array whose memory address is aligned to `alignment` bytes."""
+    if (array.ctypes.data % alignment) == 0:
+      return array
+
+    size = array.size
+    itemsize = array.dtype.itemsize
+    n_extra = alignment // itemsize
+
+    raw = np.zeros(size + n_extra + alignment, dtype=array.dtype)
+    start_index = 0
+    while (raw[start_index:].ctypes.data % alignment) != 0:
+      start_index += 1
+
+    aligned = raw[start_index : start_index + size].reshape(array.shape)
+    aligned[:] = array
+    return aligned
+
+  @classmethod
   def create_from_host_memory(cls, data_array: np.ndarray):
     """Creates a new TensorBuffer referencing existing host memory.
 
     Args:
       data_array: A C-contiguous NumPy array (e.g., np.array([[1.0, 2.0, 3.0,
         4.0]], dtype=np.float32)). The dtype of the array is used. Inputs that
-        cannot be exposed zero-copy are rejected.
+        are not C-contiguous are rejected. If the array memory address is not
+        aligned to 64 bytes as required by the native runtime, an aligned copy
+        is created automatically.
 
     Returns:
       A new TensorBuffer instance.
@@ -142,6 +167,7 @@ class TensorBuffer:
         an unsupported dtype.
     """
     array, dtype_str = cls._normalize_numpy_array(data_array, zero_copy=True)
+    array = cls._align_numpy_array(array)
     num_elements = array.size
 
     cap = _tb.CreateTensorBufferFromHostMemory(
