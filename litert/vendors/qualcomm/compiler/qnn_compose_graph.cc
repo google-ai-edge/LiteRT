@@ -491,6 +491,25 @@ LiteRtStatus Adapt(const litert::compiler::Op& op, ::qnn::TensorPool& tp,
   }
 }
 
+// QNN's per-tensor bias contract requires scale=0.0 and offset=0 (its
+// convention for "no quantization" on the bias input). Collapse per-channel
+// quantized bias tensors to that form before dispatch, keeping each conv
+// builder free of bias-encoding concerns.
+//
+// Bias input index differs across the TFLite conv variants:
+//   Conv2D           inputs: [input, filter, bias?]     -> bias at 2
+//   DepthwiseConv2D  inputs: [input, filter, bias?]     -> bias at 2
+//   TransposeConv    inputs: [output_shape, filter, input, bias?] -> bias at 3
+// Caller passes the correct index; NormalizeConvBias only touches the slot
+// if it exists.
+inline void NormalizeConvBias(
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    size_t bias_index) {
+  if (input_tensors.size() > bias_index) {
+    input_tensors[bias_index].get().ConvertAxisScaleOffsetToScaleOffset();
+  }
+}
+
 #define REGISTER_SIMPLE_OP_BUILDER(OpName, BuildFunc)                       \
   LiteRtStatus OpName(const litert::compiler::Op& litert_op,                \
                       ::qnn::TensorPool& tensor_pool,                       \
@@ -1105,6 +1124,7 @@ LiteRtStatus BuildConv2dOp(const litert::compiler::Op& litert_op,
 
   auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
       tensor_pool, fused_activation, output_tensors);
+  NormalizeConvBias(input_tensors, /*bias_index=*/2);
   op_wrappers = ::qnn::BuildConv2dOp(tensor_pool, input_tensors,
                                      {activation_input}, stride_h, stride_w,
                                      dilation_h_factor, dilation_w_factor,
@@ -1140,6 +1160,7 @@ LiteRtStatus BuildConv3dOp(const litert::compiler::Op& litert_op,
 
   auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
       tensor_pool, fused_activation, output_tensors);
+  NormalizeConvBias(input_tensors, /*bias_index=*/2);
   op_wrappers =
       ::qnn::BuildConv3dOp(tensor_pool, input_tensors, {activation_input},
                            stride_d, stride_h, stride_w, dilation_d_factor,
@@ -1171,6 +1192,7 @@ LiteRtStatus BuildTransposeConvOp(
 
   auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
       tensor_pool, fused_activation, output_tensors);
+  NormalizeConvBias(input_tensors, /*bias_index=*/3);
   op_wrappers = ::qnn::BuildTransposeConvOp(tensor_pool, input_tensors,
                                             {activation_input}, stride_h,
                                             stride_w, qnn_padding);
@@ -1203,6 +1225,7 @@ LiteRtStatus BuildDepthwiseConv2dOp(
 
   auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
       tensor_pool, fused_activation, output_tensors);
+  NormalizeConvBias(input_tensors, /*bias_index=*/2);
   op_wrappers = ::qnn::BuildDepthwiseConv2dOp(
       tensor_pool, input_tensors, {activation_input}, stride_h, stride_w,
       dilation_h_factor, dilation_w_factor, qnn_padding);
@@ -1505,6 +1528,11 @@ GetOpBuilders() {
   builders[kLiteRtOpCodeTflReluN1To1] = Adapt<BuildReluN1To1Op>;
   builders[kLiteRtOpCodeTflRelu6] = Adapt<BuildRelu6Op>;
   builders[kLiteRtOpCodeTflReshape] = Adapt<BuildReshapeOp>;
+  // ExpandDims and Squeeze are pure rank-adjusting reshapes on the runtime
+  // side; the output tensor already carries the new shape. QNN has no
+  // dedicated builtin for these — QAIRT lowers them to Reshape, and so do we.
+  builders[kLiteRtOpCodeTflExpandDims] = Adapt<BuildReshapeOp>;
+  builders[kLiteRtOpCodeTflSqueeze] = Adapt<BuildReshapeOp>;
   builders[kLiteRtOpCodeTflResizeBilinear] = Adapt<BuildResizeBilinearOp>;
   builders[kLiteRtOpCodeTflSoftmax] = Adapt<BuildSoftmaxOp>;
   builders[kLiteRtOpCodeTflSpaceToDepth] = Adapt<BuildSpaceToDepthOp>;

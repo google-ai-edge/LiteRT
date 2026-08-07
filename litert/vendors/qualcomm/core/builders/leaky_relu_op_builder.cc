@@ -40,17 +40,25 @@ std::vector<OpWrapper> BuildLeakyReluOp(
         input_tensor.GetDataType(), input_tensor.GetQuantParams(), {1}, alpha);
   } else if (std::holds_alternative<ScaleOffsetQuantizeParamsWrapper>(
                  input_tensor.GetQuantParams())) {
+    const bool use_8bit_alpha =
+        input_tensor.GetDataType() == QNN_DATATYPE_UFIXED_POINT_16 ||
+        input_tensor.GetDataType() == QNN_DATATYPE_SFIXED_POINT_16;
+    const Qnn_DataType_t alpha_data_type =
+        use_8bit_alpha ? QNN_DATATYPE_UFIXED_POINT_8
+                       : input_tensor.GetDataType();
     QuantizeParamsWrapperVariant quant_param;
-    quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(std::max(alpha, 0.0f),
-                                                          0);
+    quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(
+        use_8bit_alpha ? std::max(alpha, 0.0f) / 255.0f
+                       : std::max(alpha, 0.0f),
+        0);
 
-    switch (input_tensor.GetDataType()) {
+    switch (alpha_data_type) {
       case QNN_DATATYPE_UFIXED_POINT_8:
       case QNN_DATATYPE_SFIXED_POINT_8:
       case QNN_DATATYPE_UFIXED_POINT_16:
       case QNN_DATATYPE_SFIXED_POINT_16: {
         alpha_tensor = tensor_pool.CreateStaticTensorWithValue(
-            input_tensor.GetDataType(), quant_param, {1}, alpha);
+            alpha_data_type, quant_param, {1}, alpha);
         break;
       }
       default:
