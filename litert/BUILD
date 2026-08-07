@@ -314,7 +314,6 @@ package_group(
         "//litert/tools/...",
         "//litert/vendors/...",
         "//ml_drift_delegate/...",
-        "//support/...",
         "//third_party/odml/generative/fabric/adapters/litert/...",
         "//third_party/odml/infra/fabric/...",
         "//third_party/odml/litert/weight_loader/...",
