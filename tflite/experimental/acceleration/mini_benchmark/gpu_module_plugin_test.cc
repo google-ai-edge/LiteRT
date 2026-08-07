@@ -22,6 +22,8 @@ limitations under the License.
 #include "tflite/acceleration/configuration/configuration.pb.h"
 #include "tflite/acceleration/configuration/configuration_generated.h"
 #include "tflite/acceleration/configuration/proto_to_flatbuffer.h"
+#include "tflite/c/c_api_types.h"
+#include "tflite/core/acceleration/configuration/delegate_registry.h"
 
 namespace tflite {
 namespace acceleration {
@@ -94,6 +96,35 @@ TEST(GpuModulePluginTest, LoadUnloadLoad) {
 
   VerifyPluginCanLoadAndCreateDelegate(*settings->tflite_settings());
   VerifyPluginCanLoadAndCreateDelegate(*settings->tflite_settings());
+}
+
+// Verifies that the delegate created by the plugin can safely outlive the
+// plugin object itself. This is critical to prevent use-after-free crashes
+// when the delegate is destroyed after the plugin has been destroyed (which
+// calls dlclose). The plugin uses RTLD_NODELETE to ensure the library stays
+// in memory in this case.
+// This test also uses the mock GPU delegate plugin for hermeticity.
+TEST(GpuModulePluginTest, DelegateCanOutlivePlugin) {
+  const ComputeSettings* settings = nullptr;
+  auto fbb = CreateGpuSettings(
+      "tflite/experimental/acceleration/"
+      "mini_benchmark/mock_gpu_delegate_plugin.so",
+      &settings);
+  ASSERT_NE(settings, nullptr);
+  ASSERT_NE(settings->tflite_settings(), nullptr);
+
+  tflite::delegates::TfLiteDelegatePtr delegate(nullptr,
+                                                [](TfLiteDelegate*) {});
+  {
+    auto plugin = GpuModulePlugin::New(*settings->tflite_settings());
+    ASSERT_NE(plugin.get(), nullptr);
+    delegate = plugin->Create();
+    ASSERT_NE(delegate, nullptr);
+  }
+  // At this point, `plugin` is destroyed and `dlclose` has been called.
+  // `delegate` is still alive. Destroying it now (when it goes out of scope)
+  // should not crash because the library code should still be in memory
+  // due to RTLD_NODELETE.
 }
 
 }  // namespace
