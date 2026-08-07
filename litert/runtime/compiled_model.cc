@@ -1743,6 +1743,15 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
 #endif
     if (buffer_is_cpu_compatible) {
       if (tensor->type == kTfLiteString && !is_input) {
+        buffer->Duplicate();
+        LiteRtTensorBufferPtr duplicated_buffer(buffer);
+        if (auto status = buffer_context_->RegisterTensorBuffer(
+                tensor, std::move(duplicated_buffer));
+            status != kLiteRtStatusOk) {
+          return Unexpected(
+              kLiteRtStatusErrorRuntimeFailure,
+              "Failed to register string output buffer in buffer_context_");
+        }
         pending_string_output_copies.push_back({buffer, tensor});
         return {};
       }
@@ -2135,6 +2144,9 @@ Expected<void> LiteRtCompiledModelT::Run(
 
     size_t tensor_bytes = pending_copy.tensor->bytes;
     size_t buffer_size = pending_copy.buffer->buffer_size();
+    if (tensor_bytes == 0 || pending_copy.tensor->data.raw == nullptr) {
+      continue;
+    }
     LITERT_LOG(LITERT_DEBUG,
                "Copying output string: tensor_bytes=%d, buffer_size=%d, "
                "raw=%p, allocation_type=%d",
