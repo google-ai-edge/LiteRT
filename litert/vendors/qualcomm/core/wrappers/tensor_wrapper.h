@@ -179,6 +179,8 @@ class TensorWrapper final {
     qnn_tensor_.v2.memHandle = memory_handle;
   }
 
+  void ConvertFromQuantI16ToQuantU16();
+
  private:
   void SetDataBy(std::uint32_t bytes, const void* data, bool copy_data);
 

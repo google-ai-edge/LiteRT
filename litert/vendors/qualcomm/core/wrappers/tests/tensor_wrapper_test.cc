@@ -315,6 +315,47 @@ TEST(TensorWrapperTest, UpdateBitWidthOnUnsupportedQuantTypeTest) {
   EXPECT_FALSE(tensor_wrapper.IsQuantBitwidth(4));
 }
 
+TEST(TensorWrapperTest, ConvertFromQuantI16ToQuantU16Test) {
+  static constexpr float kScale = 0.0001f;
+  static constexpr std::int32_t kZeroPoint = -100;
+  TensorWrapper tensor_wrapper{
+      "",
+      QNN_TENSOR_TYPE_APP_WRITE,
+      QNN_DATATYPE_SFIXED_POINT_16,
+      ScaleOffsetQuantizeParamsWrapper{kScale, kZeroPoint},
+      {1, 1, 4}};
+  ASSERT_TRUE(tensor_wrapper.IsQuantI16());
+
+  tensor_wrapper.ConvertFromQuantI16ToQuantU16();
+
+  EXPECT_TRUE(tensor_wrapper.IsQuantU16());
+  EXPECT_FALSE(tensor_wrapper.IsQuantI16());
+  const auto& converted = std::get<ScaleOffsetQuantizeParamsWrapper>(
+      tensor_wrapper.GetQuantParams());
+  EXPECT_FLOAT_EQ(converted.GetScale(), kScale);
+  static constexpr std::int32_t kSUFixed16OffsetDiff = 32768;
+  EXPECT_EQ(converted.GetZeroPoint(), kZeroPoint + kSUFixed16OffsetDiff);
+}
+
+TEST(TensorWrapperTest, ConvertFromQuantI16ToQuantU16OnNonI16IsNoOp) {
+  static constexpr float kScale = 0.0001f;
+  static constexpr std::int32_t kZeroPoint = 0;
+  TensorWrapper tensor_wrapper{
+      "",
+      QNN_TENSOR_TYPE_APP_WRITE,
+      QNN_DATATYPE_SFIXED_POINT_8,
+      ScaleOffsetQuantizeParamsWrapper{kScale, kZeroPoint},
+      {1, 1, 4}};
+
+  tensor_wrapper.ConvertFromQuantI16ToQuantU16();
+
+  EXPECT_TRUE(tensor_wrapper.IsQuantI8());
+  EXPECT_FALSE(tensor_wrapper.IsQuantU16());
+  const auto& unchanged = std::get<ScaleOffsetQuantizeParamsWrapper>(
+      tensor_wrapper.GetQuantParams());
+  EXPECT_EQ(unchanged.GetZeroPoint(), 0);
+}
+
 TEST(TensorWrapperTest, QnnTensorPerTensorQuantConstructTest) {
   ScaleOffsetQuantizeParamsWrapper q_param(1, 0);
   TensorWrapper tensor_wrapper{"",
