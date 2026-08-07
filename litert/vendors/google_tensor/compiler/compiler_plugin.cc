@@ -15,6 +15,7 @@
 #include <stdio.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -24,9 +25,12 @@
 #include <sstream>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/ascii.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
@@ -35,10 +39,12 @@
 #include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/c/options/litert_google_tensor_options.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
+#include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_opaque_options_wrapper.h"
 #include "litert/cc/internal/litert_options_wrapper.h"
@@ -46,11 +52,17 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/compiler/cc/litert_model.h"
+#include "litert/core/model/model.h"
+#ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
+#include "litert/core/model/model_serialize.h"
+#endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
+#include "litert/core/util/flatbuffer_tools.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/google_tensor/adapter.h"
 #include "litert/vendors/google_tensor/compiler/google_tensor_options.pb.h"
 #include "google/protobuf/text_format.h"  // from @com_google_protobuf
 #include "re2/re2.h"  // from @com_googlesource_code_re2
+#include "tflite/converter/schema/schema_generated.h"
 
 //
 // Configurations
@@ -268,6 +280,15 @@ LiteRtStatus LrtOptionsToGoogleTensorOptions(
       LrtGoogleTensorOptionsGetExtraOptions(lrt_options, &extra_options));
   google_tensor_options.set_extra_options(extra_options);
 
+#ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
+  // EXPERIMENTAL ENABLE INPUT VALIDATOR
+  bool experimental_enable_input_validator;
+  LITERT_RETURN_IF_ERROR(
+      LrtGoogleTensorOptionsGetExperimentalEnableInputValidator(
+          lrt_options, &experimental_enable_input_validator));
+  google_tensor_options.set_experimental_enable_input_validator(
+      experimental_enable_input_validator);
+#endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
   return kLiteRtStatusOk;
 }
 
@@ -662,6 +683,202 @@ bool IsOpSupported(const litert::compiler::Op& op,
 
 }  // namespace google_tensor
 
+namespace {
+
+#ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
+using OpCodeMap =
+    absl::flat_hash_map<std::pair<LiteRtOpCode, std::string>, int32_t>;
+#endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
+
+// Populates the compiler configuration within GoogleTensorOptions.
+LiteRtStatus PopulateCompilerConfig(
+    LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
+    GoogleTensorOptions& google_tensor_options) {
+  LITERT_ASSIGN_OR_RETURN(litert::google_tensor::Adapter* adapter,
+                          compiler_plugin->GetAdapter());
+
+  GoogleTensorCompilerConfig* compiler_config =
+      google_tensor_options.mutable_compiler_config();
+  compiler_config->set_compilation_client(
+      GoogleTensorCompilerConfig::COMPILATION_CLIENT_LITERT_PLUGIN);
+
+  LiteRtApiVersion litert_version = compiler_plugin->GetLiteRtVersion();
+  std::string api_version_str =
+      absl::StrFormat("%d.%d.%d", litert_version.major, litert_version.minor,
+                      litert_version.patch);
+  compiler_config->set_litert_version(api_version_str);
+
+  // In the ODC flow, LiteRT doesn't set a valid value to soc_model, relying on
+  // underlying layers to infer it. This allows the device type to be set as
+  // unspecified. On the other hand, the AOT flow requires soc_model to
+  // determine the device type for ahead-of-time compilation.
+  if (adapter->IsAot()) {
+    std::string valid_soc_model = soc_model ? soc_model : "Tensor_G3";
+    if (valid_soc_model == "g5" || valid_soc_model == "g4" ||
+        valid_soc_model == "g3") {
+      LITERT_LOG(LITERT_WARNING,
+                 "g3/g4/g5 is deprecated. Please use Tensor_G3/G4/G5 instead.");
+      valid_soc_model =
+          absl::StrCat("Tensor_", absl::AsciiStrToUpper(valid_soc_model));
+    }
+    // Set device type.
+    DeviceType device_type;
+    LiteRtStatus status =
+        google_tensor::GetDeviceType(valid_soc_model, &device_type);
+    if (status != kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_ERROR, "Invalid soc model for device type: %s",
+                 valid_soc_model.c_str());
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    compiler_config->set_device(device_type);
+  } else {
+    compiler_config->set_device(
+        ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
+            DEVICE_TYPE_UNSPECIFIED);
+  }
+  return kLiteRtStatusOk;
+}
+
+#ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
+// Inserts a new operator code (opcode + custom name) into the global
+// OperatorCode list, or returns its index if it has already been registered.
+int32_t GetOrInsertOpCode(
+    LiteRtOpCode op_code, absl::string_view custom_code,
+    std::vector<litert::internal::TflOpCodePtr>& new_op_codes,
+    OpCodeMap& op_code_to_index) {
+  std::pair<LiteRtOpCode, std::string> key =
+      std::make_pair(op_code, std::string(custom_code));
+  OpCodeMap::const_iterator it = op_code_to_index.find(key);
+  if (it != op_code_to_index.end()) {
+    return it->second;
+  }
+
+  std::unique_ptr<tflite::OperatorCodeT> new_code =
+      std::make_unique<tflite::OperatorCodeT>();
+  new_code->builtin_code = static_cast<tflite::BuiltinOperator>(op_code);
+  if (!custom_code.empty()) {
+    new_code->custom_code = std::string(custom_code);
+  }
+  new_code->version = 1;
+  new_op_codes.push_back(std::move(new_code));
+  int32_t new_index = new_op_codes.size() - 1;
+  op_code_to_index[key] = new_index;
+  return new_index;
+}
+
+// Scans all operations in the model's main subgraph, rebuilds the global
+// OperatorCode list, and updates each operation's internal opcode index to
+// reference the new list.
+void ReconstructTflOpCodes(LiteRtModelT& temp_model) {
+  std::vector<litert::internal::TflOpCodePtr> new_op_codes;
+  OpCodeMap op_code_to_index;
+
+  LiteRtSubgraph subgraph = temp_model.MainSubgraph();
+  for (LiteRtOpT* op : subgraph->Ops()) {
+    std::string custom_code_str = "";
+    if (op->OpCode() == kLiteRtOpCodeTflCustom) {
+      if (litert::Expected<absl::string_view> custom_code =
+              op->CustomCode()) {
+        custom_code_str = std::string(*custom_code);
+      }
+    }
+    int32_t new_index = GetOrInsertOpCode(op->OpCode(), custom_code_str,
+                                          new_op_codes, op_code_to_index);
+    litert::internal::SetTflOpCodeInd(*op, new_index);
+  }
+
+  litert::internal::SetTflOpCodes(temp_model, std::move(new_op_codes));
+}
+
+// Clones the given subgraph's operations, tensors, and connectivity into a
+// temporary model container and serializes it to a FlatBuffer byte stream.
+litert::Expected<litert::OwningBufferRef<uint8_t>> SerializeSubgraph(
+    LiteRtSubgraph subgraph) {
+  LiteRtModelT temp_model;
+  LiteRtSubgraphT& dest_subgraph = temp_model.EmplaceSubgraph();
+  absl::flat_hash_map<const LiteRtTensorT*, LiteRtTensorT*> tensor_map;
+
+  // Clone all subgraph inputs.
+  for (const LiteRtTensorT* src_input : subgraph->Inputs()) {
+    auto dest_input_expected =
+        litert::internal::MakeClone(dest_subgraph, *src_input);
+    if (!dest_input_expected.HasValue()) {
+      return dest_input_expected.Error();
+    }
+    LiteRtTensorT* dest_input = *dest_input_expected;
+    dest_subgraph.Inputs().push_back(dest_input);
+    tensor_map[src_input] = dest_input;
+  }
+
+  // Clone all ops.
+  for (const LiteRtOpT* src_op : subgraph->Ops()) {
+    LiteRtOpT& dest_op = litert::internal::MakeClone(dest_subgraph, *src_op);
+
+    // Attach inputs.
+    for (const LiteRtTensorT* src_input : src_op->Inputs()) {
+      LiteRtTensorT*& dest_input = tensor_map[src_input];
+      if (dest_input == nullptr) {
+        auto dest_input_expected =
+            litert::internal::MakeClone(dest_subgraph, *src_input);
+        if (!dest_input_expected.HasValue()) {
+          return dest_input_expected.Error();
+        }
+        dest_input = *dest_input_expected;
+      }
+      litert::internal::AttachInput(dest_input, dest_op);
+    }
+
+    // Attach outputs.
+    for (const LiteRtTensorT* src_output : src_op->Outputs()) {
+      auto dest_output_expected =
+          litert::internal::MakeClone(dest_subgraph, *src_output);
+      if (!dest_output_expected.HasValue()) {
+        return dest_output_expected.Error();
+      }
+      LiteRtTensorT* dest_output = *dest_output_expected;
+      tensor_map[src_output] = dest_output;
+      litert::internal::AttachOutput(dest_output, dest_op);
+    }
+
+    if (dest_op.OpCode() == kLiteRtOpCodeShloComposite) {
+      tflite::BuiltinOptions2Union new_opts =
+          litert::internal::GetTflOptions2(dest_op);
+      if (new_opts.type == tflite::BuiltinOptions2_StableHLOCompositeOptions) {
+        tflite::StableHLOCompositeOptionsT* stablehlo_opts =
+            new_opts.AsStableHLOCompositeOptions();
+        stablehlo_opts->decomposition_subgraph_index = -1;
+        litert::internal::SetTflOptions2(dest_op, std::move(new_opts));
+      }
+    }
+  }
+
+  // Populate subgraph outputs.
+  for (const LiteRtTensorT* src_output : subgraph->Outputs()) {
+    absl::flat_hash_map<const LiteRtTensorT*, LiteRtTensorT*>::const_iterator
+        it = tensor_map.find(src_output);
+    if (it == tensor_map.end()) {
+      return litert::Unexpected(kLiteRtStatusErrorNotFound,
+                                "Output tensor not found in map");
+    }
+    dest_subgraph.Outputs().push_back(it->second);
+  }
+
+  ReconstructTflOpCodes(temp_model);
+
+  // Serialize the temp_model
+  auto serialized =
+      litert::internal::SerializeModel(std::move(temp_model),
+                                       /*bytecode_alignment=*/1);
+  if (!serialized.HasValue()) {
+    return litert::Unexpected(serialized.Error().Status(),
+                              "Failed to serialize temporary model");
+  }
+
+  return std::move(*serialized);
+}
+#endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
+}  // namespace
+
 LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            const char* soc_model,
                                            LiteRtSubgraph subgraph,
@@ -693,13 +910,72 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     return status;
   }
 
+#ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
+  LITERT_ASSIGN_OR_RETURN(litert::google_tensor::Adapter* adapter,
+                          compiler_plugin->GetAdapter());
+
+  // Set compilation configuration.
+  LITERT_RETURN_IF_ERROR(
+      PopulateCompilerConfig(
+          compiler_plugin, soc_model, google_tensor_options));
+
+#endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
+
   OpFilters op_filters;
   LITERT_RETURN_IF_ERROR(compiler_plugin->ReadOpFilters(
       google_tensor_options.op_filters_proto(), op_filters));
 
   litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
-  for (const auto& op : graph.Ops()) {
-    if (!google_tensor::IsOpSupported(op, op_filters)) {
+
+#ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
+  std::string options_str;
+  if (!google_tensor_options.SerializeToString(&options_str)) {
+    LITERT_LOG(LITERT_ERROR, "%s", "Failed to serialize GoogleTensorOptions");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  const bool enable_input_validation =
+      google_tensor_options.experimental_enable_input_validator();
+
+  bool use_static_fallback = !enable_input_validation;
+  absl::flat_hash_set<int32_t> unsupported_op_indices;
+
+  if (enable_input_validation) {
+    litert::Expected<litert::OwningBufferRef<uint8_t>> serialize_expected =
+        SerializeSubgraph(subgraph);
+    if (!serialize_expected.HasValue()) {
+      LITERT_LOG(LITERT_ERROR, "Failed to serialize subgraph: %s",
+                 serialize_expected.Error().Message().c_str());
+      return serialize_expected.Error().Status();
+    }
+    litert::OwningBufferRef<uint8_t> serialized_buf =
+        std::move(*serialize_expected);
+
+    litert::Expected<std::vector<int32_t>> unsupported_ops =
+        adapter->GetUnsupportedOps(
+            reinterpret_cast<const char*>(serialized_buf.Data()),
+            serialized_buf.Size(), options_str.data(), options_str.size());
+
+    if (unsupported_ops.HasValue()) {
+      unsupported_op_indices.insert(unsupported_ops->begin(),
+                                    unsupported_ops->end());
+    } else {
+      LITERT_LOG(
+          LITERT_WARNING,
+          "GetUnsupportedOps failed: %s. Falling back to static mapping.",
+          unsupported_ops.Error().Message().c_str());
+      use_static_fallback = true;
+    }
+  }
+#endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
+
+  std::vector<litert::compiler::Op> ops = graph.Ops();
+  for (int i = 0; i < ops.size(); ++i) {
+    const litert::compiler::Op& op = ops[i];
+    bool is_supported = use_static_fallback
+                            ? google_tensor::IsOpSupported(op, op_filters)
+                            : !unsupported_op_indices.contains(i);
+    if (!is_supported) {
       continue;
     }
 
@@ -806,46 +1082,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   LrtDestroyGoogleTensorOptions(lrt_google_tensor_options);
   LITERT_RETURN_IF_ERROR(lrt_status);
 
-  // Set litert version string (e.g., "0.1.0")
-  LiteRtApiVersion litert_version = compiler_plugin->GetLiteRtVersion();
-  std::string api_version_str =
-      absl::StrFormat("%d.%d.%d", litert_version.major, litert_version.minor,
-                      litert_version.patch);
-
-  // Set compilation configuration.
-  auto* compiler_config = google_tensor_options.mutable_compiler_config();
-  compiler_config->set_compilation_client(
-      GoogleTensorCompilerConfig::COMPILATION_CLIENT_LITERT_PLUGIN);
-  compiler_config->set_litert_version(api_version_str);
-
-  // In the ODC flow, LiteRT doesn't set a valid value to soc_model, relying on
-  // underlying layers to infer it. This allows the device type to be set as
-  // unspecified. On the other hand, the AOT flow requires soc_model to
-  // determine the device type for ahead-of-time compilation.
-  if (adapter->IsAot()) {
-    std::string valid_soc_model(soc_model);
-    if (valid_soc_model == "g5" || valid_soc_model == "g4" ||
-        valid_soc_model == "g3") {
-      LITERT_LOG(LITERT_WARNING,
-                 "g3/g4/g5 is deprecated. Please use Tensor_G3/G4/G5 instead.");
-      valid_soc_model =
-          absl::StrCat("Tensor_", absl::AsciiStrToUpper(valid_soc_model));
-    }
-    // Set device type.
-    DeviceType device_type;
-    LiteRtStatus status =
-        google_tensor::GetDeviceType(valid_soc_model, &device_type);
-    if (status != kLiteRtStatusOk) {
-      LITERT_LOG(LITERT_ERROR, "Invalid soc model for device type: %s",
-                 valid_soc_model.c_str());
-      return kLiteRtStatusErrorInvalidArgument;
-    }
-    compiler_config->set_device(device_type);
-  } else {
-    compiler_config->set_device(
-        ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
-            DEVICE_TYPE_UNSPECIFIED);
-  }
+  LITERT_RETURN_IF_ERROR(
+      PopulateCompilerConfig(
+          compiler_plugin, soc_model, google_tensor_options));
 
   // serialize to string
   std::string google_tensor_options_str;
