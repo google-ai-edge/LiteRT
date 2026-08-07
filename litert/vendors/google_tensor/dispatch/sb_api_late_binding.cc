@@ -489,6 +489,15 @@ ThrStatus thrUnloadSqContainer(ThrContext* context,
   return THR_CALL_DYN_FN(thr_unload_sq_container, context, handle);
 }
 
+ThrStatus thrPinSqContainer(ThrContext* context, ThrSqContainerHandle handle) {
+  return THR_CALL_DYN_FN(thr_pin_sq_container, context, handle);
+}
+
+ThrStatus thrUnpinSqContainer(ThrContext* context,
+                              ThrSqContainerHandle handle) {
+  return THR_CALL_DYN_FN(thr_unpin_sq_container, context, handle);
+}
+
 ThrStatus thrGraphAssignSq(ThrGraph* graph, ThrNodeId node_id,
                            ThrSqContainerHandle sq_handle,
                            const char* func_name) {
