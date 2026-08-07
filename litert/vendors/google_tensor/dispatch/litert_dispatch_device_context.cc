@@ -190,6 +190,15 @@ LiteRtStatus LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_offset(
       tensor_buffer, &tensor_buffer_offset));
 
+  if (tensor_buffer_offset > 0 && tensor_buffer_offset >= tensor_buffer_size) {
+    LITERT_LOG(LITERT_ERROR,
+               "Tensor buffer 0x%p offset %zu is out of bounds for tensor "
+               "buffer size %zu",
+               tensor_buffer, tensor_buffer_offset, tensor_buffer_size);
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const size_t offset_adjusted_size = tensor_buffer_size - tensor_buffer_offset;
+
   switch (tensor_buffer_type) {
 #if LITERT_HAS_AHWB_SUPPORT
     case kLiteRtTensorBufferTypeAhwb: {
@@ -200,7 +209,8 @@ LiteRtStatus LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       GT_LOG_RETURN_IF_SB_ERROR(
           thrRegisterBufferWithOffset(
               thr_context_, kThrBufferTypeAHardwareBuffer, ahwb,
-              tensor_buffer_offset, tensor_buffer_size, &tensor_buffer_handle),
+              tensor_buffer_offset, offset_adjusted_size,
+              &tensor_buffer_handle),
           "Failed to register AHardwareBuffer with SB");
       break;
     }
@@ -215,7 +225,7 @@ LiteRtStatus LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       GT_LOG_RETURN_IF_SB_ERROR(
           thrRegisterBufferDmaBufWithOffset(
               thr_context_, dmabuf_buffer_fd, tensor_buffer_offset,
-              tensor_buffer_size, &tensor_buffer_handle),
+              offset_adjusted_size, &tensor_buffer_handle),
           "Failed to register dma-buf with SB");
       break;
     }
@@ -226,9 +236,10 @@ LiteRtStatus LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
           tensor_buffer, &host_memory_addr));
 
       GT_LOG_RETURN_IF_SB_ERROR(
-          thrRegisterBufferWithOffset(
-              thr_context_, kThrBufferTypeHostMemory, host_memory_addr,
-              tensor_buffer_offset, tensor_buffer_size, &tensor_buffer_handle),
+          thrRegisterBufferWithOffset(thr_context_, kThrBufferTypeHostMemory,
+                                      host_memory_addr, tensor_buffer_offset,
+                                      offset_adjusted_size,
+                                      &tensor_buffer_handle),
           "Failed to register host memory with SB");
       break;
     }

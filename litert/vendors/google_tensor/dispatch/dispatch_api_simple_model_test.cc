@@ -36,6 +36,8 @@
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -417,6 +419,83 @@ TEST_F(SimpleModelTest, ExecutableFileCaching) {
 
   LITERT_ASSERT_OK(LiteRtDispatchUnloadExecutable(device_context(), handle1));
   LITERT_ASSERT_OK(LiteRtDispatchUnloadExecutable(device_context(), handle2));
+}
+
+TEST_F(SimpleModelTest, OffsetHostMemoryOutOfBoundsFails) {
+  // Copies the standard runtime context definition.
+  LiteRtRuntimeContext mocked_context = *LrtGetRuntimeContext();
+
+  // We mock `get_tensor_buffer_offset` because LiteRtCreateManagedTensorBuffer
+  // does not support specifying an offset, and hardware handle buffer
+  // types (AHWB/DMA-BUF) are problematic on sandboxed test servers.
+  mocked_context.get_tensor_buffer_offset = [](LiteRtTensorBuffer,
+                                               size_t* offset) -> LiteRtStatus {
+    *offset = 128;
+    return kLiteRtStatusOk;
+  };
+
+  // Creates a custom DeviceContext using the mocked runtime context.
+  LiteRtOptions options;
+  LITERT_ASSERT_OK(LiteRtCreateOptions(&options));
+
+  LiteRtDispatchDeviceContext custom_context;
+  LITERT_ASSERT_OK(LiteRtDispatchDeviceContextCreate(&mocked_context, options,
+                                                     &custom_context));
+  LiteRtDestroyOptions(options);
+
+  LiteRtDispatchInvocationContext invocation_context;
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextCreate(
+      &mocked_context, custom_context, kLiteRtDispatchExecutableTypeMlModel,
+      &model_bytecode(),
+      /*function_name=*/nullptr,
+      /*num_inputs=*/2, /*num_outputs=*/1, &invocation_context));
+
+  // Gathers output buffer requirements.
+  LiteRtTensorBufferRequirements output_requirements;
+  LITERT_ASSERT_OK(LiteRtDispatchGetOutputRequirements(
+      invocation_context, /*output_index=*/0, &kOutputTensorType,
+      &output_requirements));
+
+  LiteRtTensorBufferType output_type;
+  LITERT_ASSERT_OK(LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
+      output_requirements, /*type_index=*/0, &output_type));
+
+  size_t output_size;
+  LITERT_ASSERT_OK(LiteRtGetTensorBufferRequirementsBufferSize(
+      output_requirements, &output_size));
+
+  LiteRtDestroyTensorBufferRequirements(output_requirements);
+
+  // The required output_size is 8 bytes, but we allocate a 64-byte buffer
+  // to perform the offset out-of-bounds test.
+  LiteRtRankedTensorType tensor_type = {
+      .element_type = kLiteRtElementTypeFloat32,
+      .layout =
+          {
+              .rank = 1,
+              .has_strides = false,
+              .dimensions = {16},  // 16 * 4 bytes = 64 bytes
+          },
+  };
+  LiteRtTensorBuffer tensor_buffer;
+  const size_t kBufferAllocSize = 64;
+  LITERT_ASSERT_OK(LiteRtCreateManagedTensorBuffer(
+      env(), output_type, &tensor_type, kBufferAllocSize, &tensor_buffer));
+
+  size_t registered_size;
+  LITERT_ASSERT_OK(
+      LiteRtGetTensorBufferSize(tensor_buffer, &registered_size));
+  ASSERT_EQ(registered_size, kBufferAllocSize);
+
+  LiteRtTensorBufferHandle handle;
+  // This must fail because offset (128) > size (64).
+  EXPECT_EQ(LiteRtDispatchRegisterTensorBuffer(custom_context, tensor_buffer,
+                                               &handle),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LiteRtDestroyTensorBuffer(tensor_buffer);
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextDestroy(invocation_context));
+  LiteRtDispatchDeviceContextDestroy(custom_context);
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInterfaces, SimpleModelEndToEndTest,
