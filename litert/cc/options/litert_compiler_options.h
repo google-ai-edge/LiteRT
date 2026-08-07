@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <memory>
 
+#include "litert/c/litert_common.h"
 #include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -84,6 +85,16 @@ class CompilerOptions {
   /// @brief Returns the underlying C handle.
   LrtCompilerOptions* Get() { return options_.get(); }
   const LrtCompilerOptions* Get() const { return options_.get(); }
+
+  static const char* Discriminator() {
+    return LrtGetCompilerOptionsIdentifier();
+  }
+
+  LiteRtStatus GetOpaqueOptionsData(const char** identifier, void** payload,
+                                    void (**payload_deleter)(void*)) const {
+    return LrtGetOpaqueCompilerOptionsData(Get(), identifier, payload,
+                                           payload_deleter);
+  }
 
  private:
   explicit CompilerOptions(LrtCompilerOptions* options) : options_(options) {}

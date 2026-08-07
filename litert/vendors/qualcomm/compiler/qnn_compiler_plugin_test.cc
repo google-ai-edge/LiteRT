@@ -295,7 +295,7 @@ TEST(TestQnnPlugin, CompileMulSubgraphWithOptions) {
   auto opts = Options::Create();
   ASSERT_TRUE(opts);
 
-  auto qnn_opts = opts->GetQualcommOptions();
+  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
   ASSERT_TRUE(qnn_opts);
   qnn_opts->SetLogLevel(qualcomm::QualcommOptions::LogLevel::kError);
   qnn_opts->SetEnableWeightSharing(false);
@@ -532,7 +532,7 @@ TEST(TestQnnPlugin, CompileMultiSubgraphJustInTime) {
   auto opts = Options::Create();
   ASSERT_TRUE(opts);
 
-  auto qnn_opts = opts->GetQualcommOptions();
+  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
   ASSERT_TRUE(qnn_opts);
   qnn_opts->SetEnableJustInTime(true);
 
@@ -566,7 +566,7 @@ TEST(TestQnnPlugin, CompileWithSchematicDir) {
   auto opts = Options::Create();
   ASSERT_TRUE(opts);
 
-  auto qnn_opts = opts->GetQualcommOptions();
+  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
   ASSERT_TRUE(qnn_opts);
 
   // Create a temporary directory
@@ -617,7 +617,7 @@ TEST(TestQnnPlugin, CompileWithDlcDir) {
   auto opts = Options::Create();
   ASSERT_TRUE(opts);
 
-  auto qnn_opts = opts->GetQualcommOptions();
+  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
   ASSERT_TRUE(qnn_opts);
 
   // Create a temporary directory for the emitted DLC.

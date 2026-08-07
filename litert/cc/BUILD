@@ -1108,6 +1108,8 @@ cc_test(
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:scoped_file",
         "//litert/cc/internal:scoped_weight_source",
+        "//litert/cc/options:litert_cpu_options",
+        "//litert/cc/options:litert_gpu_options",
         "//litert/core:options",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings",

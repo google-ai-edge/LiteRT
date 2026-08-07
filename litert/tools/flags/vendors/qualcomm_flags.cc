@@ -777,7 +777,8 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 namespace litert::qualcomm {
 
 LITERT_REGISTER_OPTIONS_PARSER([](Options& options) -> Expected<void> {
-  LITERT_ASSIGN_OR_RETURN(auto& qualcomm_opts, options.GetQualcommOptions());
+  LITERT_ASSIGN_OR_RETURN(auto& qualcomm_opts,
+                          options.GetOptions<QualcommOptions>());
   return UpdateQualcommOptionsFromFlags(qualcomm_opts);
 });
 

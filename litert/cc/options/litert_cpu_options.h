@@ -163,6 +163,14 @@ class CpuOptions {
   LrtCpuOptions* Get() { return options_.get(); }
   const LrtCpuOptions* Get() const { return options_.get(); }
 
+  static const char* Discriminator() { return LrtGetCpuOptionsIdentifier(); }
+
+  LiteRtStatus GetOpaqueOptionsData(const char** identifier, void** payload,
+                                    void (**payload_deleter)(void*)) const {
+    return LrtGetOpaqueCpuOptionsData(Get(), identifier, payload,
+                                      payload_deleter);
+  }
+
  private:
   explicit CpuOptions(LrtCpuOptions* options) : options_(options) {}
 
