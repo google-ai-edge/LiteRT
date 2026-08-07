@@ -42,6 +42,7 @@ cc_library(
         "//tflite/core/c:common",
         "//tflite/delegates/utils:simple_delegate",
         "//tflite/kernels:kernel_util",
+        "//tflite/schema:schema_fbs",
         "//tflite/types:half",
         "@XNNPACK//ynnpack",
         "@XNNPACK//ynnpack/composites",
