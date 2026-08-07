@@ -59,6 +59,7 @@ typedef enum LiteRtDispatchExecutableType {
   kLiteRtDispatchExecutableTypeDspLibrary = 1,  // DSP library
   kLiteRtDispatchExecutableTypeMlModel = 2,     // Vendor-specific ML model
   kLiteRtDispatchExecutableTypeJitHandle = 3,   // JIT execution graph
+  kLiteRtDispatchExecutableTypeTfliteModel = 4,  // TFLite model
 } LiteRtDispatchExecutableType;
 
 typedef struct LiteRtMemBuffer {
@@ -263,6 +264,7 @@ typedef enum LiteRtDispatchNodeType {
   kLiteRtDispatchNodeTypeDsp =
       1,  // Can execute both ML models and Dsp libraries
   kLiteRtDispatchNodeTypeNpu = 2,  // Can execute only ML models
+  kLiteRtDispatchNodeTypeCpu = 3,  // Can execute CPU/TFLite models
 } LiteRtDispatchNodeType;
 
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGraphCreate(
@@ -307,7 +309,7 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchLoadExecutable(
 LITERT_CAPI_EXPORT LiteRtStatus
 LiteRtDispatchUnloadExecutable(LiteRtDispatchDeviceContext device_context,
                                LiteRtDispatchExecutableHandle exec_handle);
-#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+
 // Query scratchpad buffer requirements for a specific executable function.
 //
 // The returned `scratchpad_requirements` object is owned by the caller.
@@ -321,7 +323,6 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAttachScratchpadBuffer(
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableHandle exec_handle, const char* function_name,
     LiteRtTensorBufferHandle scratchpad_buffer_handle);
-#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 
 // Assign an executable function to a graph node. Parameter `function_name` is
 // mandatory if the given executable includes multiple functions.

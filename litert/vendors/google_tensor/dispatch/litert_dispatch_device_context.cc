@@ -259,6 +259,9 @@ LiteRtStatus LiteRtDispatchDeviceContextT::LoadExecutable(
     case kLiteRtDispatchExecutableTypeMlModel:
       thr_type = kThrSqContainerTypeMlModel;
       break;
+    case kLiteRtDispatchExecutableTypeTfliteModel:
+      thr_type = kThrSqContainerTypeTflite;
+      break;
     default:
       LITERT_LOG(LITERT_ERROR, "Invalid executable type %d", type);
       return kLiteRtStatusErrorInvalidArgument;

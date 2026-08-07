@@ -17,7 +17,10 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:__subpackages__"],
+    default_visibility = [
+        "//litert:__subpackages__",
+        "//third_party/odml/infra/southbound:__subpackages__",
+    ],
 )
 
 cc_library(

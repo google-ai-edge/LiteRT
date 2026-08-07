@@ -49,6 +49,9 @@ LiteRtStatus ToThrNodeType(LiteRtDispatchNodeType node_type,
     case kLiteRtDispatchNodeTypeNpu:
       thr_node_type = kThrNodeTypeNpu;
       break;
+    case kLiteRtDispatchNodeTypeCpu:
+      thr_node_type = kThrNodeTypeCpu;
+      break;
     default:
       LITERT_LOG(LITERT_ERROR, "Invalid node type %d", node_type);
       return kLiteRtStatusErrorInvalidArgument;

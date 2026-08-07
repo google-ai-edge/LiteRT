@@ -64,6 +64,9 @@ LiteRtStatus LiteRtDispatchInvocationContextT::CreateFromBytecode(
     case kLiteRtDispatchExecutableTypeMlModel:
       node_type = kLiteRtDispatchNodeTypeNpu;
       break;
+    case kLiteRtDispatchExecutableTypeTfliteModel:
+      node_type = kLiteRtDispatchNodeTypeCpu;
+      break;
     default:
       LITERT_LOG(LITERT_ERROR, "Invalid executable type %d", exec_type);
       return kLiteRtStatusErrorInvalidArgument;
