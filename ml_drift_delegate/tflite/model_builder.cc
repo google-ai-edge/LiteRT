@@ -3356,13 +3356,17 @@ class FullyConnectedOperationParser : public TFLiteOperationParser {
       ConfigSharedBiasFullyConnectedNode(bias_share.IsShared(),
                                          tflite_node->inputs, kInputBiasId,
                                          reader, graph, node);
-      if (weights_share.IsShared()) {
+      // Register weights and bias independently so a shared bias keeps
+      // Layout::LINEAR even when weights are runtime tensors.
+      {
         auto node_inputs = graph->FindInputs(node->id);
-        reader->SetSharedTensor(node_inputs[1]->id, weights_share.PreferredId(),
-                                tflite_node->inputs->data[kInputWeightsId],
-                                /*dequant_forced=*/false,
-                                /*layout=*/std::nullopt);
-        if (bias_share.IsShared()) {
+        if (weights_share.IsShared() && node_inputs.size() > 1) {
+          reader->SetSharedTensor(
+              node_inputs[1]->id, weights_share.PreferredId(),
+              tflite_node->inputs->data[kInputWeightsId],
+              /*dequant_forced=*/false, /*layout=*/std::nullopt);
+        }
+        if (bias_share.IsShared() && node_inputs.size() > 2) {
           reader->SetSharedTensor(node_inputs[2]->id, bias_share.PreferredId(),
                                   tflite_node->inputs->data[kInputBiasId],
                                   /*dequant_forced=*/false,
