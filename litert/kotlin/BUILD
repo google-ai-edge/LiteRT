@@ -396,13 +396,6 @@ kt_android_library(
     ],
 )
 
-# TODO(niuchl): Remove this alias once the internal references are updated to the new target.
-alias(
-    name = "litert_kotlin_api",
-    actual = ":litert_api",
-    visibility = ["//visibility:private"],
-)
-
 # Android library for the litert package, including:
 # - TFLite Java sources for the implementation
 # - TFLite JNI
