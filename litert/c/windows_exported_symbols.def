@@ -73,6 +73,7 @@ EXPORTS
   LiteRtCompiledModelGetErrorMessages
   LiteRtCompiledModelGetProfiler
   LiteRtCompiledModelIsFullyAccelerated
+  LiteRtCompiledModelIsNonCpuFullyAccelerated
   LiteRtCompiledModelRemoveDispatchAnnotation
   LiteRtCompiledModelReportError
   LiteRtCompiledModelResizeInputTensor

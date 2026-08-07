@@ -313,6 +313,18 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     return *is_fully_accelerated;
   }
 
+  bool isNonCpuFullyAccelerated() {
+    auto is_non_cpu_fully_accelerated =
+        compiled_model_->IsNonCpuFullyAccelerated();
+    if (!is_non_cpu_fully_accelerated.HasValue()) {
+      LITERT_LOG(
+          LITERT_ERROR,
+          "Failed to get is_non_cpu_fully_accelerated. Returning false.");
+      return false;
+    }
+    return *is_non_cpu_fully_accelerated;
+  }
+
   TfLiteStatus RunImpl() override {
     if (!compiled_model_) {
       LITERT_LOG(LITERT_ERROR, "Compiled model not initialized");

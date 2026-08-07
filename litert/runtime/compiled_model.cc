@@ -987,6 +987,9 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
     }
   }
 
+  bool non_cpu_fully_delegated = false;
+  bool cpu_accelerator_present = false;
+
   // Apply accelerators matching the requested hardware support to the
   // model in the order they were registered.
   for (auto& accelerator : env->GetAcceleratorRegistry()) {
@@ -1005,6 +1008,13 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
     if (delegate_responsible_for_jit &&
         !(hardware_accelerators & accelerator_supported_hardware)) {
       continue;
+    }
+
+    if (accelerator_supported_hardware & kLiteRtHwAcceleratorCpu) {
+      cpu_accelerator_present = true;
+      LITERT_ASSIGN_OR_RETURN(bool has_non_delegated_ops_before_cpu,
+                              compiled_model->HasNonDelegatedOps());
+      non_cpu_fully_delegated = !has_non_delegated_ops_before_cpu;
     }
 
     LITERT_DEBUG_CODE({
@@ -1050,6 +1060,9 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
 
   LITERT_ASSIGN_OR_RETURN(bool has_non_delegated_ops,
                           compiled_model->HasNonDelegatedOps());
+  if (!cpu_accelerator_present) {
+    non_cpu_fully_delegated = !has_non_delegated_ops;
+  }
   if (!(hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
       has_non_delegated_ops) {
     return Error(
@@ -1057,9 +1070,7 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
         "Some ops are not accelerated. Add kLiteRtHwAcceleratorCpu to the "
         "compilation accelerator set to allow using the CPU to run those.");
   }
-  compiled_model->non_cpu_fully_delegated_ =
-      !(hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
-      !has_non_delegated_ops;
+  compiled_model->non_cpu_fully_delegated_ = non_cpu_fully_delegated;
   compiled_model->CheckCpuTensors();
   return compiled_model;
 }

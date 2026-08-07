@@ -202,6 +202,9 @@ class LiteRtCompiledModelT {
   // Returns true if a non delegated operation is found in the interpreter.
   litert::Expected<bool> HasNonDelegatedOps();
 
+  // Returns true if the model was fully delegated on non-CPU accelerators.
+  bool IsNonCpuFullyDelegated() const { return non_cpu_fully_delegated_; }
+
   // Returns the environment associated with the compiled model.
   litert::Expected<LiteRtEnvironmentT*> GetEnvironment() { return env_; }
 
