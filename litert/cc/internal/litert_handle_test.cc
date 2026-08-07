@@ -29,7 +29,8 @@ using testing::Not;
 
 LITERT_DEFINE_HANDLE(LiteRtTestResource);
 
-struct LiteRtTestResourceT {
+class LiteRtTestResourceT {
+ public:
   int val;
 };
 

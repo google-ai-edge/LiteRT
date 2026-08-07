@@ -428,6 +428,7 @@ objc_library(
     testonly = True,
     srcs = ["metal_test_helper.mm"],
     hdrs = ["metal_test_helper.h"],
+    tags = ["objc"],
     deps = [
         ":common",
         ":matchers",

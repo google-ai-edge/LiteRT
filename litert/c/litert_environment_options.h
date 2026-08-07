@@ -94,7 +94,7 @@ static_assert(offsetof(LiteRtEnvOption, value) == 8,
 #endif  // __cplusplus
 
 // Arbitrary size of array following the pattern in TfLiteIntArray.
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && !defined(__clang__)
 #define _LITERT_ARBITRARY_ARRAY_SIZE 1
 #elif (!defined(__clang__) && defined(__GNUC__) && __GNUC__ == 6 && \
        __GNUC_MINOR__ >= 1) ||                                      \

@@ -587,6 +587,11 @@ cc_test(
 #     srcs = ["fabric/dispatch_runner_sb.cc"],
 #     hdrs = ["fabric/dispatch_runner_sb.h"],
 #     copts = ["-DLITERT_ENABLE_FABRIC_INTEGRATION"],
+#     tags = [
+#         "noios",
+#         "nomacos",
+#         "nowindows",
+#     ],
 #     deps = [
 #         "@com_google_absl//absl/container:flat_hash_map",
 #         "@com_google_absl//absl/container:flat_hash_set",
