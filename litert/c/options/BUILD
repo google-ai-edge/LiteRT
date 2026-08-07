@@ -11,6 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+#
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
@@ -24,6 +28,20 @@ package(
         "//visibility:public",
         # copybara:comment_end
     ],
+)
+
+cc_library(
+    name = "litert_arm_options",
+    srcs = ["litert_arm_options.cc"],
+    hdrs = ["litert_arm_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/c/internal:litert_options_helper",
+        "//litert/cc:litert_macros",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    alwayslink = True,
 )
 
 cc_library(
