@@ -269,12 +269,12 @@ TEST(LiteRtAbortIfErrorTest, DiesWithErrorValue) {
   Expected<int> InvalidArgumentError = Expected<int>(
       Unexpected(Status::kErrorInvalidArgument, "Unexpected message"));
 #ifndef NDEBUG
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       LITERT_ABORT_IF_ERROR(InvalidArgumentError) << "Error abort log",
       AllOf(HasSubstr("Error abort log"), HasSubstr("Unexpected message")));
 #else
-  EXPECT_DEATH(LITERT_ABORT_IF_ERROR(InvalidArgumentError) << "Error abort log",
-               "");
+  EXPECT_DEATH_IF_SUPPORTED(
+      LITERT_ABORT_IF_ERROR(InvalidArgumentError) << "Error abort log", "");
 #endif
 }
 
@@ -294,11 +294,11 @@ TEST(LiteRtAssignOrAbortTest, DiesWithError) {
   Expected<int> InvalidArgumentError = Expected<int>(
       Unexpected(Status::kErrorInvalidArgument, "Unexpected message"));
 #ifndef NDEBUG
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       LITERT_ASSIGN_OR_ABORT([[maybe_unused]] int v, InvalidArgumentError),
       "Unexpected message");
 #else
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       LITERT_ASSIGN_OR_ABORT([[maybe_unused]] int v, InvalidArgumentError), "");
 #endif
 }
@@ -307,12 +307,12 @@ TEST(LiteRtAssignOrAbortTest, DiesWithErrorAndCustomMessage) {
   Expected<int> InvalidArgumentError = Expected<int>(
       Unexpected(Status::kErrorInvalidArgument, "Unexpected message"));
 #ifndef NDEBUG
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       LITERT_ASSIGN_OR_ABORT([[maybe_unused]] int v, InvalidArgumentError,
                              _ << "Error abort log"),
       AllOf(HasSubstr("Error abort log"), HasSubstr("Unexpected message")));
 #else
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       LITERT_ASSIGN_OR_ABORT([[maybe_unused]] int v, InvalidArgumentError,
                              _ << "Error abort log"),
       "");
