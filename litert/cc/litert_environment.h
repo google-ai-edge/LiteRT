@@ -95,6 +95,7 @@ class Environment {
     WebGpuInstance = kLiteRtEnvOptionTagWebGpuInstance,
     WebGpuProcs = kLiteRtEnvOptionTagWebGpuProcs,
     WebGpuFlushCallback = kLiteRtEnvOptionTagWebGpuFlushCallback,
+    WebGpuIsolatedRuntime = kLiteRtEnvOptionTagWebGpuIsolatedRuntime,
     RuntimeLibraryDir = kLiteRtEnvOptionTagRuntimeLibraryDir,
     AutoRegisterAccelerators = kLiteRtEnvOptionTagAutoRegisterAccelerators,
   };
