@@ -20,6 +20,8 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
+#include <cmath>
 
 namespace tflite {
 namespace ops {
@@ -44,7 +46,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_EQ(context, NumOutputs(node), 1);
   TF_LITE_ENSURE(context, input->type == kTfLiteFloat32 ||
                               input->type == kTfLiteFloat16 ||
-                              input->type == kTfLiteBFloat16);
+                              input->type == kTfLiteBFloat16 ||
+                              input->type == kTfLiteUInt16);
   output->type = input->type;
   TfLiteIntArray* output_size = TfLiteIntArrayCopy(input->dims);
   return context->ResizeTensor(context, output, output_size);
@@ -78,6 +81,10 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
           GetTensorShape(input), GetTensorData<Eigen::half>(input),
           GetTensorShape(output), GetTensorData<Eigen::half>(output));
     }
+  }
+  if (input->type == kTfLiteUInt16) {
+    return uint16_asym::EvalUInt16Elementwise(
+        input, output, [](float f) { return std::floor(f); });
   }
   if (input->type == kTfLiteBFloat16) {
     if (type == kGenericOptimized) {

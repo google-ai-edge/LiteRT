@@ -54,6 +54,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 #endif
       input0->type != kTfLiteUInt8 && input0->type != kTfLiteUInt32 &&
       input0->type != kTfLiteInt8 && input0->type != kTfLiteInt16 &&
+      input0->type != kTfLiteUInt16 &&
       input0->type != kTfLiteInt64) {
     TF_LITE_KERNEL_LOG(context, "Type '%s' is not supported by pack.",
                        TfLiteTypeGetName(input0->type));

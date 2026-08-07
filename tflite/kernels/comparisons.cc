@@ -24,6 +24,7 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/internal/types.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
 #include "tflite/string_util.h"
 
 namespace tflite {
@@ -209,6 +210,10 @@ TfLiteStatus EqualEval(TfLiteContext* context, TfLiteNode* node) {
       ComparisonQuantized<int8_t, reference_ops::EqualFn<int32_t>>(
           input1, input2, output, requires_broadcast);
       break;
+    case kTfLiteUInt16:
+      return uint16_asym::EvalUInt16Compare(
+          input1, input2, output,
+          [](float a, float b) { return a == b; });
     case kTfLiteString:
       ComparisonString(reference_ops::StringRefEqualFn, input1, input2, output,
                        requires_broadcast);
@@ -269,6 +274,10 @@ TfLiteStatus NotEqualEval(TfLiteContext* context, TfLiteNode* node) {
             input1, input2, output, requires_broadcast);
       }
       break;
+    case kTfLiteUInt16:
+      return uint16_asym::EvalUInt16Compare(
+          input1, input2, output,
+          [](float a, float b) { return a != b; });
     case kTfLiteString:
       ComparisonString(reference_ops::StringRefNotEqualFn, input1, input2,
                        output, requires_broadcast);
@@ -326,6 +335,10 @@ TfLiteStatus LessEval(TfLiteContext* context, TfLiteNode* node, int lhs,
       ComparisonQuantized<int8_t, reference_ops::LessFn<int32_t>>(
           input1, input2, output, requires_broadcast);
       break;
+    case kTfLiteUInt16:
+      return uint16_asym::EvalUInt16Compare(
+          input1, input2, output,
+          [](float a, float b) { return a < b; });
     default:
       TF_LITE_KERNEL_LOG(context,
                          "Does not support type %d, requires float|int|uint8",
@@ -374,6 +387,10 @@ TfLiteStatus LessEqualEval(TfLiteContext* context, TfLiteNode* node, int lhs,
       ComparisonQuantized<int8_t, reference_ops::LessEqualFn<int32_t>>(
           input1, input2, output, requires_broadcast);
       break;
+    case kTfLiteUInt16:
+      return uint16_asym::EvalUInt16Compare(
+          input1, input2, output,
+          [](float a, float b) { return a <= b; });
     default:
       TF_LITE_KERNEL_LOG(context,
                          "Does not support type %d, requires float|int|uint8",

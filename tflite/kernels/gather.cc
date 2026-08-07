@@ -90,6 +90,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
     case kTfLiteInt4:
     case kTfLiteInt8:
     case kTfLiteInt16:
+    case kTfLiteUInt16:
     case kTfLiteInt64:
     case kTfLiteInt32:
     case kTfLiteBool:

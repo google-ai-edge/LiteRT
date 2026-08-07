@@ -40,6 +40,7 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor_utils.h"
 #include "tflite/kernels/internal/types.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
 #include "tflite/minimal_logging.h"
 #include "tflite/util.h"
 #ifdef TFLITE_HAVE_CPUINFO
@@ -291,10 +292,12 @@ inline TfLiteStatus CheckTypes(TfLiteContext* context,
     } else {
       TF_LITE_ENSURE(context, input->type == kTfLiteUInt8 ||
                                   input->type == kTfLiteInt8 ||
-                                  input->type == kTfLiteInt16);
+                                  input->type == kTfLiteInt16 ||
+                                  input->type == kTfLiteUInt16);
       TF_LITE_ENSURE(context, output->type == kTfLiteUInt8 ||
                                   output->type == kTfLiteInt8 ||
-                                  output->type == kTfLiteInt16);
+                                  output->type == kTfLiteInt16 ||
+                                  output->type == kTfLiteUInt16);
       TF_LITE_ENSURE_EQ(context, is_optional_bias_int, true);
     }
   } else {
@@ -510,7 +513,7 @@ TfLiteStatus PrepareImpl(TfLiteContext* context, TfLiteNode* node,
   // Note that quantized inference requires that all tensors have their
   // parameters set. This is usually done during quantized training.
   if (input->type == kTfLiteUInt8 || input->type == kTfLiteInt8 ||
-      input->type == kTfLiteInt16) {
+      input->type == kTfLiteInt16 || input->type == kTfLiteUInt16) {
     // Populate per-channel quantization parameters, if per-channel
     // quantization.
     TF_LITE_ENSURE_EQ(context, input->quantization.type,
@@ -528,7 +531,8 @@ TfLiteStatus PrepareImpl(TfLiteContext* context, TfLiteNode* node,
       // Currently only Int8/Int16 activations are supported for per-channel
       // quantization, with signed quantized weights.
       TF_LITE_ENSURE(context,
-                     input->type == kTfLiteInt8 || input->type == kTfLiteInt16);
+                     input->type == kTfLiteInt8 || input->type == kTfLiteInt16 ||
+                         input->type == kTfLiteUInt16);
       TF_LITE_ENSURE(
           context,
           (filter->type == kTfLiteInt8 || filter->type == kTfLiteInt4 ||
@@ -1325,7 +1329,6 @@ void FullyConnectedInt16(const OpData* data, const TfLiteTensor* input,
                          const TfLiteTensor* filter, const int8_t* filter_data,
                          const TfLiteTensor* bias, TfLiteTensor* output) {
   FullyConnectedParams op_params;
-  op_params.input_offset = -input->params.zero_point;
   op_params.weights_offset = -filter->params.zero_point;
   op_params.output_offset = output->params.zero_point;
   op_params.output_multiplier = data->output_multiplier;
@@ -1333,16 +1336,25 @@ void FullyConnectedInt16(const OpData* data, const TfLiteTensor* input,
   op_params.quantized_activation_min = data->output_activation_min;
   op_params.quantized_activation_max = data->output_activation_max;
 
-  if (data->quantized_bias_type == kTfLiteInt32) {
+  std::vector<int16_t> uint16_scratch;
+  const int16_t* input_data_int16 = uint16_asym::PreshiftUInt16ToInt16(
+      input, &uint16_scratch, &op_params.input_offset);
+
+  // data->quantized_bias_type may be kTfLiteNoType when the option is unset;
+  // fall back to the actual tensor type.
+  const bool fc_bias_is_int32 = (bias == nullptr) ||
+                                 (bias->type == kTfLiteInt32) ||
+                                 (data->quantized_bias_type == kTfLiteInt32);
+  if (fc_bias_is_int32) {
     reference_integer_ops::FullyConnected(
-        op_params, GetTensorShape(input), GetTensorData<int16_t>(input),
+        op_params, GetTensorShape(input), input_data_int16,
         GetTensorShape(filter), filter_data, GetTensorShape(bias),
         GetTensorData<int32_t>(bias), GetTensorShape(output),
         input->params.scale, output->params.scale, filter->params.scale,
         GetTensorData<int16_t>(output));
   } else {
     reference_integer_ops::FullyConnected(
-        op_params, GetTensorShape(input), GetTensorData<int16_t>(input),
+        op_params, GetTensorShape(input), input_data_int16,
         GetTensorShape(filter), filter_data, GetTensorShape(bias),
         GetTensorData<int64_t>(bias), GetTensorShape(output),
         input->params.scale, output->params.scale, filter->params.scale,
@@ -1528,7 +1540,6 @@ void FullyConnectedPerChannelInt16(
   // op_params.weights_offset is not set (filter.params.zero_point is not used),
   // since it will be always assumed to be 0.
   FullyConnectedParams op_params;
-  op_params.input_offset = -input->params.zero_point;
   op_params.output_offset = output->params.zero_point;
   op_params.quantized_activation_min = data->output_activation_min;
   op_params.quantized_activation_max = data->output_activation_max;
@@ -1536,16 +1547,24 @@ void FullyConnectedPerChannelInt16(
       reinterpret_cast<TfLiteAffineQuantization*>(filter->quantization.params);
   const float* filter_scales = affine_quantization->scale->data;
 
-  if (data->quantized_bias_type == kTfLiteInt32) {
+  std::vector<int16_t> uint16_scratch;
+  const int16_t* input_data_int16 = uint16_asym::PreshiftUInt16ToInt16(
+      input, &uint16_scratch, &op_params.input_offset);
+
+  // data->quantized_bias_type may be kTfLiteNoType when the option is unset.
+  const bool fcp_bias_is_int32 = (bias == nullptr) ||
+                                  (bias->type == kTfLiteInt32) ||
+                                  (data->quantized_bias_type == kTfLiteInt32);
+  if (fcp_bias_is_int32) {
     reference_integer_ops::FullyConnectedPerChannel(
-        op_params, GetTensorShape(input), GetTensorData<int16_t>(input),
+        op_params, GetTensorShape(input), input_data_int16,
         GetTensorShape(filter), filter_data, GetTensorShape(bias),
         GetTensorData<int32_t>(bias), GetTensorShape(output),
         input->params.scale, output->params.scale, filter_scales,
         GetTensorData<int16_t>(output));
   } else {
     reference_integer_ops::FullyConnectedPerChannel(
-        op_params, GetTensorShape(input), GetTensorData<int16_t>(input),
+        op_params, GetTensorShape(input), input_data_int16,
         GetTensorShape(filter), filter_data, GetTensorShape(bias),
         GetTensorData<int64_t>(bias), GetTensorShape(output),
         input->params.scale, output->params.scale, filter_scales,
@@ -1831,10 +1850,23 @@ TfLiteStatus EvalQuantized(TfLiteContext* context, TfLiteNode* node,
               CpuBackendContext::GetFromContext(context));
         }
         break;
+      case kTfLiteUInt16:
+        if (input->type == kTfLiteUInt16) {
+          if (is_per_channel) {
+            FullyConnectedPerChannelInt16<kernel_type>(
+                data, input, filter, GetTensorData<int8_t>(filter), bias,
+                output);
+          } else {
+            FullyConnectedInt16<kernel_type>(data, input, filter,
+                                            GetTensorData<int8_t>(filter),
+                                            bias, output);
+          }
+        }
+        break;
       default:
         TF_LITE_KERNEL_LOG(context,
                            "Quantized FullyConnected expects output data "
-                           "type uint8, int8 or int16");
+                           "type uint8, int8, int16, or uint16");
         return kTfLiteError;
     }
   }

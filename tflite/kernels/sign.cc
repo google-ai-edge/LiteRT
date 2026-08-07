@@ -19,6 +19,7 @@
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
 
 namespace tflite {
 namespace ops {
@@ -63,6 +64,13 @@ TfLiteStatus PointwiseUnaryOpEval(TfLiteContext* context, TfLiteNode* node) {
   TfLiteTensor* output = tflite::GetOutput(context, node, 0);
 
   switch (output->type) {
+    case kTfLiteUInt16:
+      TF_LITE_ENSURE_OK(
+          context,
+          uint16_asym::EvalUInt16Elementwise(
+              input, output,
+              [](float f) { return Op::template Eval<float>(f); }));
+      break;
     case kTfLiteFloat32:
       TF_LITE_ENSURE_OK(context,
                         (PointwiseUnaryOpDoEval<Op, float>(input, output)));

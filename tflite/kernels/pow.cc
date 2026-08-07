@@ -21,6 +21,9 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
+
+#include <cmath>
 
 namespace tflite {
 namespace ops {
@@ -67,7 +70,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_TYPES_EQ(context, input1->type, input2->type);
 
   const TfLiteType type = input1->type;
-  if (type != kTfLiteInt32 && type != kTfLiteFloat32) {
+  if (type != kTfLiteInt32 && type != kTfLiteFloat32 &&
+      type != kTfLiteUInt16) {
     TF_LITE_KERNEL_LOG(context, "Unsupported data type %s.",
                        TfLiteTypeGetName(type));
     return kTfLiteError;
@@ -138,6 +142,11 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
     case kTfLiteFloat32: {
       PowImpl<float>(input1, input2, output, data->requires_broadcast);
       break;
+    }
+    case kTfLiteUInt16: {
+      return uint16_asym::EvalUInt16Binary(
+          input1, input2, output,
+          [](float a, float b) { return std::pow(a, b); });
     }
     default: {
       TF_LITE_KERNEL_LOG(context, "Unsupported data type: %d", output->type);

@@ -17,11 +17,14 @@ limitations under the License.
 
 #include <stdint.h>
 
+#include <cmath>
+
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/internal/optimized/optimized_ops.h"
 #include "tflite/kernels/internal/tensor.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
 
 namespace tflite {
 namespace ops {
@@ -51,6 +54,10 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   TfLiteTensor* output;
   TF_LITE_ENSURE_OK(context,
                     GetOutputSafe(context, node, kOutputTensor, &output));
+  if (input->type == kTfLiteUInt16) {
+    return uint16_asym::EvalUInt16Elementwise(
+        input, output, [](float f) { return -f; });
+  }
   switch (input->type) {
     case kTfLiteInt64:
       reference_ops::Negate(

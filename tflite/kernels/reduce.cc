@@ -47,6 +47,7 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/internal/types.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
 #include "tflite/util.h"
 
 namespace tflite {
@@ -368,6 +369,7 @@ TfLiteStatus InitializeTemporaries(TfLiteContext* absl_nonnull context,
     case kTfLiteUInt8:
     case kTfLiteInt8:
     case kTfLiteInt16:
+    case kTfLiteUInt16:
       temp_accum->type = kTfLiteInt32;
       break;
     case kTfLiteBool:
@@ -469,7 +471,8 @@ TfLiteStatus PrepareMeanOrSum(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_OK(context, CreateOpContext(context, node, op_context));
   if (op_context.input->type == kTfLiteInt8 ||
       op_context.input->type == kTfLiteUInt8 ||
-      op_context.input->type == kTfLiteInt16) {
+      op_context.input->type == kTfLiteInt16 ||
+      op_context.input->type == kTfLiteUInt16) {
     const double real_multiplier =
         static_cast<double>(op_context.input->params.scale) /
         static_cast<double>(op_context.output->params.scale);
@@ -625,10 +628,10 @@ TfLiteStatus QuantizedMeanOrSum(TfLiteContext* absl_nonnull context,
     TF_LITE_ENSURE(
         context,
         reference_ops::QuantizedMeanOrSum(
-            GetTensorData<uint8_t>(op_context.input),
+            GetTensorData<T>(op_context.input),
             op_context.input->params.zero_point, op_context.input->dims->data,
             op_context.input->dims->size,
-            GetTensorData<uint8_t>(op_context.output), op_data.multiplier,
+            GetTensorData<T>(op_context.output), op_data.multiplier,
             op_data.shift, op_context.output->params.zero_point,
             op_context.output->dims->data, op_context.output->dims->size,
             GetTensorData<int>(op_context.axis), num_axis,
@@ -829,6 +832,11 @@ TfLiteStatus EvalMean(TfLiteContext* context, TfLiteNode* node) {
       TF_LITE_ENSURE_OK(context, EvalQuantizedMean<int16_t>(
                                      context, op_context, num_axis, *data,
                                      *temp_index, *resolved_axis, *temp_sum));
+    } break;
+    case kTfLiteUInt16: {
+      TF_LITE_ENSURE_OK(context, EvalQuantizedMean<uint16_t>(
+                                     context, op_context, num_axis, data,
+                                     temp_index, resolved_axis, temp_sum));
     } break;
     case kTfLiteUInt8: {
       TF_LITE_ENSURE_OK(context, EvalQuantizedMean<uint8_t>(
@@ -1087,6 +1095,10 @@ TfLiteStatus EvalGeneric(TfLiteContext* context, TfLiteNode* node) {
       return EvalType<int16_t, kernel_type>(context, node, op_context,
                                             reduce_type);
       break;
+    case kTfLiteUInt16:
+      return EvalType<uint16_t, kernel_type>(context, node, &op_context,
+                                             reduce_type);
+      break;
     case kTfLiteBool:
       return EvalType<bool, kernel_type>(context, node, op_context,
                                          reduce_type);
@@ -1104,7 +1116,8 @@ TfLiteStatus EvalSum(TfLiteContext* context, TfLiteNode* node) {
   const auto& input = op_context.input;
   const bool quantized = input->type == kTfLiteUInt8 ||
                          input->type == kTfLiteInt8 ||
-                         input->type == kTfLiteInt16;
+                         input->type == kTfLiteInt16 ||
+                         input->type == kTfLiteUInt16;
   if (quantized) {
     const OpData* op_data = reinterpret_cast<const OpData*>(node->user_data);
     TF_LITE_ENSURE(context, op_data != nullptr);
@@ -1150,6 +1163,11 @@ TfLiteStatus EvalSum(TfLiteContext* context, TfLiteNode* node) {
       return QuantizedMeanOrSum<int16_t, kernel_type>(
           context, op_context, *op_data, num_axis, *temp_index, *resolved_axis,
           *temp_sum, /*compute_sum=*/true);
+    }
+    if (input->type == kTfLiteUInt16) {
+      return QuantizedMeanOrSum<uint16_t, kernel_type>(
+          context, op_context, op_data, temp_index, resolved_axis, temp_sum,
+          /*compute_sum=*/true);
     }
   } else {
     return EvalGeneric<kernel_type, kSum>(context, node);
@@ -1284,6 +1302,38 @@ TfLiteStatus EvalImpl(TfLiteContext* context, TfLiteNode* node) {
       return EvalQuantizedProd<kernel_type, int8_t>(context, node, op_context);
     } else if (op_context.input->type == kTfLiteInt16) {
       return EvalQuantizedProd<kernel_type, int16_t>(context, node, op_context);
+    } else if (op_context.input->type == kTfLiteUInt16) {
+      // Dequantize -> float reduce prod -> requantize.
+      TfLiteTensor* temp_index;
+      TF_LITE_ENSURE_OK(
+          context, GetTemporarySafe(context, node, /*index=*/0, &temp_index));
+      TfLiteTensor* resolved_axis;
+      TF_LITE_ENSURE_OK(context, GetTemporarySafe(context, node, /*index=*/1,
+                                                  &resolved_axis));
+      if (IsDynamicTensor(op_context.output)) {
+        TF_LITE_ENSURE_OK(context,
+                          ResizeTempAxis(context, &op_context, resolved_axis));
+        TF_LITE_ENSURE_OK(context, ResizeOutputTensor(context, &op_context));
+      }
+      std::vector<float> in_f;
+      uint16_asym::DequantizeUInt16(op_context.input, &in_f);
+      std::vector<float> out_f(GetTensorShape(op_context.output).FlatSize(),
+                               1.0f);
+      auto reducer = [](const float current, const float in) -> float {
+        return current * in;
+      };
+      TF_LITE_ENSURE(
+          context,
+          reference_ops::ReduceGeneric<float>(
+              in_f.data(), op_context.input->dims->data,
+              op_context.input->dims->size, out_f.data(),
+              op_context.output->dims->data, op_context.output->dims->size,
+              GetTensorData<int>(op_context.axis),
+              NumElements(op_context.axis), op_context.params->keep_dims,
+              GetTensorData<int>(temp_index),
+              GetTensorData<int>(resolved_axis), /*init_value=*/1.0f, reducer));
+      uint16_asym::RequantizeToUInt16(out_f, op_context.output);
+      return kTfLiteOk;
     } else {
       TF_LITE_KERNEL_LOG(context, "Unsupported quantized data type: %d",
                          op_context.input->type);

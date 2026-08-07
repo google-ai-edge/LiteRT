@@ -256,6 +256,9 @@ inline Expected<void> FillBufferWithCustomData(TensorBuffer& buffer,
     case ElementType::Int16:
       WriteBufferAs<int16_t>(buffer, data);
       break;
+    case ElementType::UInt16:
+      WriteBufferAs<uint16_t>(buffer, data);
+      break;
     case ElementType::Int8:
       WriteBufferAs<int8_t>(buffer, data);
       break;

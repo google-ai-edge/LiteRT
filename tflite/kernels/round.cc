@@ -15,12 +15,15 @@ limitations under the License.
 
 #include "tflite/kernels/internal/reference/round.h"
 
+#include <cmath>
+
 #include "Eigen/Core"
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/internal/optimized/optimized_ops.h"
 #include "tflite/kernels/internal/tensor.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
 
 namespace tflite {
 namespace ops {
@@ -39,7 +42,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_EQ(context, NumInputs(node), 1);
   TF_LITE_ENSURE_EQ(context, NumOutputs(node), 1);
   if (input->type != kTfLiteFloat32 && input->type != kTfLiteFloat16 &&
-      input->type != kTfLiteBFloat16) {
+      input->type != kTfLiteBFloat16 && input->type != kTfLiteUInt16) {
     TF_LITE_KERNEL_LOG(context, "Type '%s' is not supported by round.",
                        TfLiteTypeGetName(input->type));
     return kTfLiteError;
@@ -55,6 +58,10 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   TfLiteTensor* output;
   TF_LITE_ENSURE_OK(context,
                     GetOutputSafe(context, node, kOutputTensor, &output));
+  if (input->type == kTfLiteUInt16) {
+    return uint16_asym::EvalUInt16Elementwise(
+        input, output, [](float f) { return std::round(f); });
+  }
   switch (output->type) {
     case kTfLiteFloat32: {
       optimized_ops::Round<float>(

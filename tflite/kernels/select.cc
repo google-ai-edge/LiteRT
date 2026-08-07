@@ -20,7 +20,10 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
 #include "tflite/types/half.h"
+
+#include <vector>
 
 namespace tflite {
 namespace ops {
@@ -171,6 +174,72 @@ TfLiteStatus SelectEval(TfLiteContext* context, TfLiteNode* node) {
                          "got %d",                                           \
                          type);                                              \
       return kTfLiteError;                                                   \
+  }
+
+  // Bit-copy select is only valid when x/y/output share (scale, zp);
+  // otherwise dequantize.
+  if (input_x->type == kTfLiteUInt16) {
+    const auto* xq = reinterpret_cast<const TfLiteAffineQuantization*>(
+        input_x->quantization.params);
+    const auto* yq = reinterpret_cast<const TfLiteAffineQuantization*>(
+        input_y->quantization.params);
+    const auto* oq = reinterpret_cast<const TfLiteAffineQuantization*>(
+        output->quantization.params);
+    auto same_q = [](const TfLiteAffineQuantization* a,
+                     const TfLiteAffineQuantization* b) {
+      if (!a || !b || !a->scale || !b->scale ||
+          !a->zero_point || !b->zero_point) {
+        return false;
+      }
+      return a->scale->data[0] == b->scale->data[0] &&
+             a->zero_point->data[0] == b->zero_point->data[0];
+    };
+    if (!same_q(xq, yq) || !same_q(xq, oq)) {
+      std::vector<float> xf, yf, zf;
+      uint16_asym::DequantizeUInt16(input_x, &xf);
+      uint16_asym::DequantizeUInt16(input_y, &yf);
+      const int n_out = GetTensorShape(output).FlatSize();
+      zf.assign(n_out, 0.0f);
+      const bool* cond = GetTensorData<bool>(input_condition);
+      const int n_cond = GetTensorShape(input_condition).FlatSize();
+      if (data->has_low_rank_input_condition) {
+        // Rank-1 condition selects entire outer-dim slices.
+        const int outer = SizeOfDimension(input_x, 0);
+        const int inner = n_out / outer;
+        for (int i = 0; i < outer; ++i) {
+          const bool c = cond[i % n_cond];
+          for (int j = 0; j < inner; ++j) {
+            zf[i * inner + j] = c ? xf[i * inner + j] : yf[i * inner + j];
+          }
+        }
+      } else if (data->requires_broadcast) {
+        NdArrayDesc<4> dcond, dx, dy;
+        NdArrayDescsForElementwiseBroadcast(
+            GetTensorShape(input_condition), GetTensorShape(input_x),
+            GetTensorShape(input_y), &dcond, &dx, &dy);
+        const RuntimeShape extended_output =
+            RuntimeShape::ExtendedShape(4, GetTensorShape(output));
+        for (int b = 0; b < extended_output.Dims(0); ++b) {
+          for (int h = 0; h < extended_output.Dims(1); ++h) {
+            for (int w = 0; w < extended_output.Dims(2); ++w) {
+              for (int c = 0; c < extended_output.Dims(3); ++c) {
+                const int ic = SubscriptToIndex(dcond, b, h, w, c);
+                const int ix = SubscriptToIndex(dx, b, h, w, c);
+                const int iy = SubscriptToIndex(dy, b, h, w, c);
+                zf[Offset(extended_output, b, h, w, c)] =
+                    cond[ic] ? xf[ix] : yf[iy];
+              }
+            }
+          }
+        }
+      } else {
+        for (int i = 0; i < n_out; ++i) {
+          zf[i] = cond[i] ? xf[i] : yf[i];
+        }
+      }
+      uint16_asym::RequantizeToUInt16(zf, output);
+      return kTfLiteOk;
+    }
   }
 
   if (data->has_low_rank_input_condition) {

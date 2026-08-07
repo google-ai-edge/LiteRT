@@ -210,6 +210,19 @@ TfLiteStatus DequantizeImpl(TfLiteContext* context, TfLiteNode* node,
             GetTensorShape(output), GetTensorData<float>(output));
       }
       break;
+    case kTfLiteUInt16: {
+      // uint16 asymmetric dequantize: out = scale * (raw - zero_point).
+      const uint16_t* input_data = GetTensorData<uint16_t>(input);
+      float* output_data = GetTensorData<float>(output);
+      const int flat_size = GetTensorShape(input).FlatSize();
+      const float scale = op_params.scale;
+      const int32_t zero_point = op_params.zero_point;
+      for (int i = 0; i < flat_size; ++i) {
+        output_data[i] =
+            scale * (static_cast<int32_t>(input_data[i]) - zero_point);
+      }
+      break;
+    }
     case kTfLiteFloat16: {
       const Eigen::half* half_data = reinterpret_cast<const Eigen::half*>(
           GetTensorData<TfLiteFloat16>(input));

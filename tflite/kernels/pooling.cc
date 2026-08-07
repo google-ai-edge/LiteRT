@@ -17,7 +17,10 @@ limitations under the License.
 #include <stddef.h>
 #include <stdint.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdlib>
+#include <vector>
 
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/common.h"
@@ -31,6 +34,7 @@ limitations under the License.
 #include "tflite/kernels/internal/types.h"
 #include "tflite/kernels/kernel_util.h"
 #include "tflite/kernels/padding.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
 
 namespace tflite {
 namespace ops {
@@ -52,6 +56,68 @@ enum PoolType {
 struct OpData {
   TfLitePaddingValues padding;
 };
+
+void CopyUInt16ToShiftedInt16(const TfLiteTensor* input,
+                              std::vector<int16_t>* shifted) {
+  const int flat_size = GetTensorShape(input).FlatSize();
+  shifted->resize(flat_size);
+  const uint16_t* input_data = GetTensorData<uint16_t>(input);
+  for (int i = 0; i < flat_size; ++i) {
+    (*shifted)[i] =
+        static_cast<int16_t>(static_cast<int32_t>(input_data[i]) - 32768);
+  }
+}
+
+void CopyShiftedInt16ToUInt16(const std::vector<int16_t>& shifted,
+                              TfLiteTensor* output) {
+  uint16_t* output_data = GetTensorData<uint16_t>(output);
+  for (int i = 0; i < static_cast<int>(shifted.size()); ++i) {
+    const int32_t raw = static_cast<int32_t>(shifted[i]) + 32768;
+    output_data[i] = static_cast<uint16_t>(
+        std::min<int32_t>(65535, std::max<int32_t>(0, raw)));
+  }
+}
+
+bool AveragePoolUInt16Affine(const TfLitePoolParams* params,
+                             const OpData* data,
+                             const TfLiteTensor* input,
+                             TfLiteTensor* output,
+                             int32_t activation_min,
+                             int32_t activation_max) {
+  // Rebase uint16 to signed-view int16 (raw ^ 0x8000), reuse the same int16
+  // AveragePool kernel used for int16, then rebase back. Assumes same-scale
+  // (input_scale == output_scale, input_zp == output_zp), matching the
+  // int16 kernel which accumulates raw values without rescaling.
+  const RuntimeShape input_shape = GetTensorShape(input);
+  const RuntimeShape output_shape = GetTensorShape(output);
+  const int in_size = input_shape.FlatSize();
+  const int out_size = output_shape.FlatSize();
+  const uint16_t* input_raw = GetTensorData<uint16_t>(input);
+  uint16_t* output_raw = GetTensorData<uint16_t>(output);
+  std::vector<int16_t> rebased_in(in_size);
+  std::vector<int16_t> rebased_out(out_size);
+  for (int i = 0; i < in_size; ++i) {
+    rebased_in[i] = static_cast<int16_t>(input_raw[i] ^ 0x8000);
+  }
+  tflite::PoolParams op_params;
+  op_params.stride_height = params->stride_height;
+  op_params.stride_width = params->stride_width;
+  op_params.filter_height = params->filter_height;
+  op_params.filter_width = params->filter_width;
+  op_params.padding_values.height = data->padding.height;
+  op_params.padding_values.width = data->padding.width;
+  op_params.quantized_activation_min = activation_min - 32768;
+  op_params.quantized_activation_max = activation_max - 32768;
+  if (!reference_integer_ops::AveragePool(op_params, input_shape,
+                                          rebased_in.data(), output_shape,
+                                          rebased_out.data())) {
+    return false;
+  }
+  for (int i = 0; i < out_size; ++i) {
+    output_raw[i] = static_cast<uint16_t>(rebased_out[i]) ^ 0x8000;
+  }
+  return true;
+}
 
 void* Init(TfLiteContext* context, const char* buffer, size_t length) {
   // This is a builtin op, so we don't use the contents in 'buffer', if any.
@@ -96,15 +162,19 @@ TfLiteStatus GenericPrepare(TfLiteContext* context, TfLiteNode* node) {
       params->filter_height, params->filter_width, padding, &out_height,
       &out_width);
 
-  if (input->type == kTfLiteUInt8 || input->type == kTfLiteInt8) {
+  if (input->type == kTfLiteUInt8 || input->type == kTfLiteInt8 ||
+      input->type == kTfLiteInt16 || input->type == kTfLiteUInt16) {
     if (pool_type == kAverage || pool_type == kMax) {
       TFLITE_DCHECK_LE(std::abs(input->params.scale - output->params.scale),
                        1.0e-6);
       TFLITE_DCHECK_EQ(input->params.zero_point, output->params.zero_point);
     }
     if (pool_type == kL2) {
-      // We currently don't have a quantized implementation of L2Pool
-      TF_LITE_ENSURE_TYPES_EQ(context, input->type, kTfLiteFloat32);
+      // We currently don't have a quantized implementation of L2Pool for
+      // int8/uint8/int16; only float32 and uint16 (via dequant->float->requant)
+      // are supported.
+      TF_LITE_ENSURE(context, input->type == kTfLiteFloat32 ||
+                                  input->type == kTfLiteUInt16);
     }
   }
 
@@ -220,6 +290,12 @@ TfLiteStatus AverageEvalQuantizedInt16(TfLiteContext* context, TfLiteNode* node,
   int32_t activation_max;
   CalculateActivationRangeQuantized(context, params->activation, output,
                                     &activation_min, &activation_max);
+  if (input->type == kTfLiteUInt16) {
+    TF_LITE_ENSURE(context, AveragePoolUInt16Affine(
+                                params, data, input, output, activation_min,
+                                activation_max));
+    return kTfLiteOk;
+  }
 #define TF_LITE_AVERAGE_POOL(type)                                            \
   tflite::PoolParams op_params;                                               \
   op_params.stride_height = params->stride_height;                            \
@@ -332,6 +408,25 @@ void MaxEvalQuantizedInt16(TfLiteContext* context, TfLiteNode* node,
   int32_t activation_max;
   CalculateActivationRangeQuantized(context, params->activation, output,
                                     &activation_min, &activation_max);
+  if (input->type == kTfLiteUInt16) {
+    std::vector<int16_t> shifted_input;
+    std::vector<int16_t> shifted_output(GetTensorShape(output).FlatSize());
+    CopyUInt16ToShiftedInt16(input, &shifted_input);
+    tflite::PoolParams op_params;
+    op_params.stride_height = params->stride_height;
+    op_params.stride_width = params->stride_width;
+    op_params.filter_height = params->filter_height;
+    op_params.filter_width = params->filter_width;
+    op_params.padding_values.height = data->padding.height;
+    op_params.padding_values.width = data->padding.width;
+    op_params.quantized_activation_min = activation_min - 32768;
+    op_params.quantized_activation_max = activation_max - 32768;
+    reference_integer_ops::MaxPool(
+        op_params, GetTensorShape(input), shifted_input.data(),
+        GetTensorShape(output), shifted_output.data());
+    CopyShiftedInt16ToUInt16(shifted_output, output);
+    return;
+  }
 #define TF_LITE_MAX_POOL(type)                                         \
   tflite::PoolParams op_params;                                        \
   op_params.stride_height = params->stride_height;                     \
@@ -397,7 +492,8 @@ TfLiteStatus AverageEval(TfLiteContext* context, TfLiteNode* node) {
     case kTfLiteInt8:
       return AverageEvalQuantizedInt8<kernel_type>(context, node, params, data,
                                                    input, output);
-    case kTfLiteInt16:
+    case kTfLiteInt16:  // fallthrough
+    case kTfLiteUInt16:  // uint16 shares int16's 16-bit average kernel path
       return AverageEvalQuantizedInt16<kernel_type>(context, node, params, data,
                                                     input, output);
     default:
@@ -429,7 +525,8 @@ TfLiteStatus MaxEval(TfLiteContext* context, TfLiteNode* node) {
       MaxEvalQuantizedInt8<kernel_type>(context, node, params, data, input,
                                         output);
       break;
-    case kTfLiteInt16:
+    case kTfLiteInt16:  // fallthrough
+    case kTfLiteUInt16:  // uint16 shares int16's 16-bit max-pool kernel path
       MaxEvalQuantizedInt16<kernel_type>(context, node, params, data, input,
                                          output);
       break;
@@ -454,6 +551,28 @@ TfLiteStatus L2Eval(TfLiteContext* context, TfLiteNode* node) {
     case kTfLiteFloat32:
       L2EvalFloat<kernel_type>(context, node, params, data, input, output);
       break;
+    case kTfLiteUInt16: {
+      // Dequantize -> float L2 pool -> requantize.
+      std::vector<float> in_f;
+      uint16_asym::DequantizeUInt16(input, &in_f);
+      std::vector<float> out_f(GetTensorShape(output).FlatSize());
+      float activation_min, activation_max;
+      CalculateActivationRange(params->activation, &activation_min,
+                               &activation_max);
+      tflite::PoolParams op_params;
+      op_params.stride_height = params->stride_height;
+      op_params.stride_width = params->stride_width;
+      op_params.filter_height = params->filter_height;
+      op_params.filter_width = params->filter_width;
+      op_params.padding_values.height = data->padding.height;
+      op_params.padding_values.width = data->padding.width;
+      op_params.float_activation_min = activation_min;
+      op_params.float_activation_max = activation_max;
+      reference_ops::L2Pool(op_params, GetTensorShape(input), in_f.data(),
+                            GetTensorShape(output), out_f.data());
+      uint16_asym::RequantizeToUInt16(out_f, output);
+      break;
+    }
     case kTfLiteUInt8:
     // We don't have a quantized implementation, so just fall through to the
     // 'default' case.

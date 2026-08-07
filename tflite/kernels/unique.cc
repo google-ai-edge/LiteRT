@@ -164,6 +164,9 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
     case kTfLiteInt16:
       TF_LITE_ENSURE_STATUS(EvalImpl<int16_t>(context, input, node));
       break;
+    case kTfLiteUInt16:
+      TF_LITE_ENSURE_STATUS(EvalImpl<uint16_t>(context, input, node));
+      break;
     case kTfLiteInt32:
       TF_LITE_ENSURE_STATUS(EvalImpl<int32_t>(context, input, node));
       break;

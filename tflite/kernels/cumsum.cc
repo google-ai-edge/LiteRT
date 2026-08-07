@@ -13,9 +13,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <vector>
 
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/common.h"
@@ -25,6 +27,7 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/kernels/uint16_asym_wrapper.h"
 
 namespace tflite {
 namespace ops {
@@ -65,7 +68,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   TF_LITE_ENSURE(context, input->type == kTfLiteInt32 ||
                               input->type == kTfLiteFloat32 ||
-                              input->type == kTfLiteInt64);
+                              input->type == kTfLiteInt64 ||
+                              input->type == kTfLiteUInt16);
   TF_LITE_ENSURE_EQ(context, axis->type, kTfLiteInt32);
 
   TF_LITE_ENSURE_EQ(context, NumElements(axis), 1);
@@ -98,6 +102,16 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
   TF_LITE_ENSURE_OK(context,
                     ValidateCumsumFlattenedShape(context, input_shape, axis));
+
+  if (input->type == kTfLiteUInt16) {
+    std::vector<float> in_f;
+    uint16_asym::DequantizeUInt16(input, &in_f);
+    std::vector<float> out_f(in_f.size());
+    optimized_ops::CumSum(in_f.data(), GetTensorShape(input), axis,
+                          params->exclusive, params->reverse, out_f.data());
+    uint16_asym::RequantizeToUInt16(out_f, output);
+    return kTfLiteOk;
+  }
 
   switch (input->type) {
     case kTfLiteInt32: {
