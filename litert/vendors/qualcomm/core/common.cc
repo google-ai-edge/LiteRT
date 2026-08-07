@@ -140,6 +140,9 @@ void AbslStringify(Sink& sink, BackendType v) {
     case BackendType::kIrBackend:
       name = "Ir";
       break;
+    case BackendType::kLpaiBackend:
+      name = "Lpai";
+      break;
   }
   absl::Format(&sink, "%s(%d)", name, static_cast<int>(v));
 }
@@ -362,6 +365,60 @@ void AbslStringify(Sink& sink, GraphIOTensorMemType v) {
   absl::Format(&sink, "%s(%d)", name, static_cast<int>(v));
 }
 
+template <typename Sink>
+void AbslStringify(Sink& sink, LpaiTarget v) {
+  absl::string_view name = "X86";
+  switch (v) {
+    case LpaiTarget::kX86:
+      name = "X86";
+      break;
+    case LpaiTarget::kArm:
+      name = "Arm";
+      break;
+    case LpaiTarget::kAdsp:
+      name = "Adsp";
+      break;
+    case LpaiTarget::kTensilica:
+      name = "Tensilica";
+      break;
+  }
+  absl::Format(&sink, "%s(%d)", name, static_cast<int>(v));
+}
+
+template <typename Sink>
+void AbslStringify(Sink& sink, LpaiClientPerfType v) {
+  absl::string_view name = "Unknown";
+  switch (v) {
+    case LpaiClientPerfType::kDefault:
+      name = "Default";
+      break;
+    case LpaiClientPerfType::kRealTime:
+      name = "RealTime";
+      break;
+    case LpaiClientPerfType::kNonRealTime:
+      name = "NonRealTime";
+      break;
+  }
+  absl::Format(&sink, "%s(%d)", name, static_cast<int>(v));
+}
+
+template <typename Sink>
+void AbslStringify(Sink& sink, LpaiCoreAffinityType v) {
+  absl::string_view name = "Unknown";
+  switch (v) {
+    case LpaiCoreAffinityType::kDefault:
+      name = "Default";
+      break;
+    case LpaiCoreAffinityType::kSoft:
+      name = "Soft";
+      break;
+    case LpaiCoreAffinityType::kHard:
+      name = "Hard";
+      break;
+  }
+  absl::Format(&sink, "%s(%d)", name, static_cast<int>(v));
+}
+
 void Options::SetLogLevel(LogLevel log_level) { log_level_ = log_level; }
 
 LogLevel Options::GetLogLevel() const { return log_level_; }
@@ -554,6 +611,46 @@ const CustomOpPackage& Options::GetCustomOpPackage() const {
   return custom_op_package_;
 }
 
+void Options::SetLpaiTarget(LpaiTarget lpai_target) {
+  lpai_target_ = lpai_target;
+}
+
+LpaiTarget Options::GetLpaiTarget() const { return lpai_target_; }
+
+void Options::SetLpaiFps(std::uint32_t lpai_fps) { lpai_fps_ = lpai_fps; }
+
+std::uint32_t Options::GetLpaiFps() const { return lpai_fps_; }
+
+void Options::SetLpaiFtrtRatio(std::uint32_t lpai_ftrt_ratio) {
+  lpai_ftrt_ratio_ = lpai_ftrt_ratio;
+}
+
+std::uint32_t Options::GetLpaiFtrtRatio() const { return lpai_ftrt_ratio_; }
+
+void Options::SetLpaiClientPerfType(LpaiClientPerfType lpai_client_perf_type) {
+  lpai_client_perf_type_ = lpai_client_perf_type;
+}
+
+LpaiClientPerfType Options::GetLpaiClientPerfType() const {
+  return lpai_client_perf_type_;
+}
+
+void Options::SetLpaiCoreAffinityType(LpaiCoreAffinityType lpai_core_affinity_type) {
+  lpai_core_affinity_type_ = lpai_core_affinity_type;
+}
+
+LpaiCoreAffinityType Options::GetLpaiCoreAffinityType() const {
+  return lpai_core_affinity_type_;
+}
+
+void Options::SetLpaiCoreSelection(std::uint32_t lpai_core_selection) {
+  lpai_core_selection_ = lpai_core_selection;
+}
+
+std::uint32_t Options::GetLpaiCoreSelection() const {
+  return lpai_core_selection_;
+}
+
 std::string Options::Dump() const {
   // Grouped by category; append a field() line to the right section to add one.
   std::string out =
@@ -620,6 +717,15 @@ std::string Options::Dump() const {
   absl::StrAppend(&out, "[GPU]\n");
   field(2, "GpuPerformanceMode", gpu_performance_mode_);
   field(2, "GpuPrecision", gpu_precision_);
+
+  // --- LPAI ---
+  absl::StrAppend(&out, "[LPAI]\n");
+  field(2, "LpaiTarget", lpai_target_);
+  field(2, "LpaiFps", lpai_fps_);
+  field(2, "LpaiFtrtRatio", lpai_ftrt_ratio_);
+  field(2, "LpaiClientPerfType", lpai_client_perf_type_);
+  field(2, "LpaiCoreAffinityType", lpai_core_affinity_type_);
+  field(2, "LpaiCoreSelection", lpai_core_selection_);
 
   // --- DEBUG ---
   absl::StrAppend(&out, "[DEBUG]\n");

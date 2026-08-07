@@ -282,6 +282,12 @@ LiteRtDispatchInvocationContextT::Create(
                       "Failed to retrieve graph");
   }
 
+  if (!qnn_backend.ConfigureGraphAfterRetrieve(
+          {graph_handle, function_name, profile_handle}, qnn.GetOptions())) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Failed to configure graph after retrieve");
+  }
+
   return Ptr(new LiteRtDispatchInvocationContextT(
       qnn, qnn_backend, std::move(*context_binary_info), &device_context,
       &context_handle, profile_handle, graph_index, graph_handle));

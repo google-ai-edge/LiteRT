@@ -1666,6 +1666,18 @@ LiteRtStatus ConvertOp(const ::qnn::Options& options,
                        size_t op_index, ::qnn::SdkVersion sdk_version) {
   const auto& builders = GetOpBuilders();
   const auto op_code = litert_op.Code();
+  if (op_code == kLiteRtOpCodeTflQuantize &&
+      options.GetBackendType() == ::qnn::BackendType::kLpaiBackend &&
+      !input_tensors.empty() && !output_tensors.empty() &&
+      input_tensors[0].get().IsPerTensorQuantWithOffsetDiff(
+          output_tensors[0].get())) {
+    // TODO(chunhsue): LPAI's validator rejects mixed-dtype
+    // Cast, so emit CONVERT for same-scale int8<->uint8 Quantize.
+    // Remove when LPAI accepts mixed-dtype Cast.
+    op_wrappers.emplace_back(
+        ::qnn::CreateConvertOp(input_tensors[0], output_tensors[0]));
+    return kLiteRtStatusOk;
+  }
   if (op_code < builders.size() && builders[op_code]) {
     return builders[op_code](litert_op, tensor_pool, input_tensors,
                              output_tensors, op_wrappers,
