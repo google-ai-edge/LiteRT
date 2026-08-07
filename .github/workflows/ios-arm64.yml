@@ -33,10 +33,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
 
@@ -55,7 +57,7 @@ jobs:
       - name : Set up cache keys
         id: cache-keys
         run: |
-          CACHE_RESTORE_KEY_2="${{ github.workflow }}"
+          CACHE_RESTORE_KEY_2="${GITHUB_WORKFLOW}"
           CACHE_RESTORE_KEY_1="$CACHE_RESTORE_KEY_2-${{ hashFiles('**/WORKSPACE', '**/.bazelrc') }}"
           CACHE_RESTORE_KEY_0="$CACHE_RESTORE_KEY_1-${{ hashFiles('**/BUILD*') }}"
           CACHE_RESTORE_KEY_HEAD="$CACHE_RESTORE_KEY_0-${{ github.event.pull_request.base.sha }}"
@@ -73,7 +75,7 @@ jobs:
       - name: Restore bazel cache if cache is not being refreshed.
         id: bazel-cache
         if: env.REFRESH_CACHE != 'true'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.cache/bazel-ios
@@ -86,9 +88,13 @@ jobs:
 
       - name: Check cache hit
         run: |
-          echo "Cache Hit: ${{ steps.bazel-cache.outputs.cache-hit }}"
-          echo "Cache Primary Key: ${{ steps.bazel-cache.outputs.cache-primary-key }}"
-          echo "Cache Matched Key: ${{ steps.bazel-cache.outputs.cache-matched-key }}"
+          echo "Cache Hit: ${STEPS_BAZEL_CACHE_OUTPUTS_CACHE_HIT}"
+          echo "Cache Primary Key: ${STEPS_BAZEL_CACHE_OUTPUTS_CACHE_PRIMARY_KEY}"
+          echo "Cache Matched Key: ${STEPS_BAZEL_CACHE_OUTPUTS_CACHE_MATCHED_KEY}"
+        env:
+          STEPS_BAZEL_CACHE_OUTPUTS_CACHE_HIT: ${{ steps.bazel-cache.outputs.cache-hit }}
+          STEPS_BAZEL_CACHE_OUTPUTS_CACHE_PRIMARY_KEY: ${{ steps.bazel-cache.outputs.cache-primary-key }}
+          STEPS_BAZEL_CACHE_OUTPUTS_CACHE_MATCHED_KEY: ${{ steps.bazel-cache.outputs.cache-matched-key }}
 
       - name: Build LiteRT iOS targets
         run: |
@@ -118,10 +124,12 @@ jobs:
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
         continue-on-error: true
-        run: gh cache delete ${{ steps.cache-keys.outputs.CACHE_KEY }}
+        run: gh cache delete ${STEPS_CACHE_KEYS_OUTPUTS_CACHE_KEY}
+        env:
+          STEPS_CACHE_KEYS_OUTPUTS_CACHE_KEY: ${{ steps.cache-keys.outputs.CACHE_KEY }}
 
       - name: Save bazel cache if it's new or being refreshed.
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         if: env.REFRESH_CACHE == 'true' || steps.bazel-cache.outputs.cache-hit != 'true'
         with:
           path: |

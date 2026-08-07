@@ -27,7 +27,7 @@ jobs:
     name: "Presubmit-Android-Linux"
     runs-on: linux-x86-n2-16
     container:
-      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build:latest
+      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:12822904942562e7deb0c91fb0eb3dd9ec87b4292881108b166e44149422b87d
     permissions:
       actions: write
       contents: write
@@ -44,16 +44,17 @@ jobs:
           git lfs install
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           submodules: recursive
           lfs: true
+          persist-credentials: false
 
       - name: Set up cache keys
         id: cache-keys
         run: |
-          CACHE_RESTORE_KEY_1="${{ github.workflow }}"
+          CACHE_RESTORE_KEY_1="$GITHUB_WORKFLOW"
           CACHE_RESTORE_KEY_0="$CACHE_RESTORE_KEY_1-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}"
           CACHE_RESTORE_KEY_HEAD="$CACHE_RESTORE_KEY_0-${{ github.event.pull_request.base.sha }}"
           CACHE_KEY="$CACHE_RESTORE_KEY_0-${{ github.sha }}"
@@ -69,7 +70,7 @@ jobs:
       - name: Restore cmake cache if cache is not being refreshed.
         id: cmake-cache
         if: env.REFRESH_CACHE != 'true'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             litert/cmake_build_android_arm64
@@ -80,10 +81,14 @@ jobs:
             ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_0 }}-
             ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_1 }}-
       - name: Check cache hit
+        env:
+          CACHE_HIT: ${{ steps.cmake-cache.outputs.cache-hit }}
+          CACHE_PRIMARY_KEY: ${{ steps.cmake-cache.outputs.cache-primary-key }}
+          CACHE_MATCHED_KEY: ${{ steps.cmake-cache.outputs.cache-matched-key }}
         run: |
-          echo "Cache Hit: ${{ steps.cmake-cache.outputs.cache-hit }}"
-          echo "Cache Primary Key: ${{ steps.cmake-cache.outputs.cache-primary-key }}"
-          echo "Cache Matched Key: ${{ steps.cmake-cache.outputs.cache-matched-key }}"
+          echo "Cache Hit: $CACHE_HIT"
+          echo "Cache Primary Key: $CACHE_PRIMARY_KEY"
+          echo "Cache Matched Key: $CACHE_MATCHED_KEY"
       - name: Setup CMake 3.28.3
         run: |
           sudo apt-get update
@@ -100,12 +105,14 @@ jobs:
           clang --version
       - name: Install Android NDK r27
         id: setup-ndk
-        uses: nttld/setup-ndk@v1
+        uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1
         with:
           ndk-version: r27
 
       - name: Export ANDROID_NDK_HOME
-        run: echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
+        env:
+          NDK_PATH: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: echo "ANDROID_NDK_HOME=$NDK_PATH" >> "$GITHUB_ENV"
 
       - name: Configure host flatbuffers tools
         run: cmake --preset android-arm64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5
@@ -119,7 +126,9 @@ jobs:
         working-directory: litert
 
       - name: Configure Android build
-        run: cmake --preset android-arm64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DTFLITE_HOST_TOOLS_DIR="${{ steps.host-tools.outputs.dir }}"
+        env:
+          HOST_TOOLS_DIR: ${{ steps.host-tools.outputs.dir }}
+        run: cmake --preset android-arm64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DTFLITE_HOST_TOOLS_DIR="$HOST_TOOLS_DIR"
         working-directory: litert
 
       - name: Build Android artifacts
@@ -129,10 +138,12 @@ jobs:
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
         continue-on-error: true
-        run: gh cache delete ${{ steps.cache-keys.outputs.CACHE_KEY }}
+        env:
+          CACHE_KEY: ${{ steps.cache-keys.outputs.CACHE_KEY }}
+        run: gh cache delete $CACHE_KEY
 
       - name: Save cmake cache if it's new or being refreshed.
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         if: env.REFRESH_CACHE == 'true' || steps.cmake-cache.outputs.cache-hit != 'true'
         with:
           path: |
