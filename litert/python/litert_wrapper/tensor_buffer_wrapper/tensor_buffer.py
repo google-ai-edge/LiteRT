@@ -117,11 +117,18 @@ class TensorBuffer:
       raise ValueError("data_array must be a NumPy array")
 
     dtype_str, _ = cls._normalize_dtype(data_array.dtype)
-    if zero_copy and not data_array.flags.c_contiguous:
-      raise ValueError(
-          "data_array must be C-contiguous for zero-copy host-memory binding"
-      )
     if zero_copy:
+      if not data_array.flags.c_contiguous:
+        raise ValueError(
+            "data_array must be C-contiguous for zero-copy host-memory binding"
+        )
+      # LiteRtCreateTensorBufferFromHostMemory requires 64-byte alignment.
+      if data_array.ctypes.data % 64 != 0:
+        raise ValueError(
+            "data_array must be 64-byte aligned for zero-copy host-memory"
+            " binding. Consider using CompiledModel.create_input_buffer() to"
+            " get an aligned backing buffer."
+        )
       return data_array, dtype_str
     return np.ascontiguousarray(data_array), dtype_str
 
