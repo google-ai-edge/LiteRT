@@ -29,6 +29,7 @@ bool_flag(
     visibility = ["//visibility:public"],
 )
 
+# Deprecated. This is no longer used in LiteRT, but is still used in LiteRT-LM.
 bool_flag(
     name = "resolve_symbols_in_exec",
     build_setting_default = False,
