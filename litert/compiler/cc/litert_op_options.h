@@ -1194,7 +1194,7 @@ struct OneHotOptions : public OpOptions {
 /// @brief Returns the composite info for the given op if it is a composite op.
 template <typename OptionsT>
 Expected<OptionsT> GetOptionsAs(const LiteRtCompilerContext* ctx, LiteRtOp op) {
-  OptionsT options;
+  OptionsT options{};
   auto status = options.InitFromOp(ctx, op);
   if (status != kLiteRtStatusOk) {
     return Unexpected(ToStatus(status));
