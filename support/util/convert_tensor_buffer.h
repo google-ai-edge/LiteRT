@@ -254,7 +254,7 @@ template <typename TargetType, typename SourceType>
 // it is in the host memory. It's preferable to CopyFromTensorBuffer() whenever
 // possible since it's more efficient.
 template <typename T>
-::litert::Expected<absl::Span<T>> ReferTensorBufferAsSpan(
+::litert::Expected<absl::Span<const T>> ReferTensorBufferAsSpan(
     const ::litert::TensorBuffer& tensor_buffer) {
   if (auto buffer_type = tensor_buffer.BufferType();
       !buffer_type.HasValue() ||
@@ -275,7 +275,7 @@ template <typename T>
       TensorBuffer::LockMode::kRead);
   ABSL_DCHECK(lock_and_addr.HasValue());
   LITERT_ASSIGN_OR_RETURN(auto num_elements, type->Layout().NumElements());
-  return absl::MakeSpan(static_cast<T*>(lock_and_addr->second), num_elements);
+  return absl::MakeConstSpan(static_cast<const T*>(lock_and_addr->second), num_elements);
 }
 
 // TODO: b/431234598 - This copies data between GPU and CPU backends which
