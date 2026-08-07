@@ -54,6 +54,7 @@
 #include "litert/vendors/qualcomm/core/backends/gpu_backend.h"
 #include "litert/vendors/qualcomm/core/backends/htp_backend.h"
 #include "litert/vendors/qualcomm/core/backends/ir_backend.h"
+#include "litert/vendors/qualcomm/core/backends/lpai_backend.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/op_code.h"
@@ -520,6 +521,9 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
       case ::qnn::BackendType::kDspBackend:
         lib_name = ::qnn::DspBackend::GetLibraryName();
         break;
+      case ::qnn::BackendType::kLpaiBackend:
+        lib_name = ::qnn::LpaiBackend::GetLibraryName();
+        break;
       default:
         break;
     }
@@ -556,6 +560,12 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
       LITERT_RETURN_IF_ERROR(LoadLib(::qnn::DspBackend::GetLibraryName()));
       LITERT_RETURN_IF_ERROR(
           ResolveApi(::qnn::DspBackend::GetExpectedBackendVersion()));
+      break;
+    }
+    case ::qnn::BackendType::kLpaiBackend: {
+      LITERT_RETURN_IF_ERROR(LoadLib(::qnn::LpaiBackend::GetLibraryName()));
+      LITERT_RETURN_IF_ERROR(
+          ResolveApi(::qnn::LpaiBackend::GetExpectedBackendVersion()));
       break;
     }
     default: {
