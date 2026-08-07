@@ -93,20 +93,28 @@ TorchAvgPoolData GetTorchAvgPoolData(CompositeOp op) {
   data.w_in = op_type.getShape()[3];
 
   std::vector<int32_t> kernel_size;
-  GetI32VectorFromDenseI64CompositeAttr(composite_attrs, "kernel_size",
-                                        &kernel_size);
-  data.kh = kernel_size[0];
-  data.kw = kernel_size[1];
+  if (GetI32VectorFromDenseI64CompositeAttr(composite_attrs, "kernel_size",
+                                            &kernel_size) &&
+      !kernel_size.empty()) {
+    data.kh = kernel_size[0];
+    data.kw = kernel_size.size() > 1 ? kernel_size[1] : kernel_size[0];
+  }
 
   std::vector<int32_t> padding;
-  GetI32VectorFromDenseI64CompositeAttr(composite_attrs, "padding", &padding);
-  data.ph = padding[0];
-  data.pw = padding[1];
+  if (GetI32VectorFromDenseI64CompositeAttr(composite_attrs, "padding",
+                                            &padding) &&
+      !padding.empty()) {
+    data.ph = padding[0];
+    data.pw = padding.size() > 1 ? padding[1] : padding[0];
+  }
 
   std::vector<int32_t> strides;
-  GetI32VectorFromDenseI64CompositeAttr(composite_attrs, "stride", &strides);
-  data.sh = strides[0];
-  data.sw = strides[1];
+  if (GetI32VectorFromDenseI64CompositeAttr(composite_attrs, "stride",
+                                            &strides) &&
+      !strides.empty()) {
+    data.sh = strides[0];
+    data.sw = strides.size() > 1 ? strides[1] : strides[0];
+  }
 
   data.ceil_mode =
       GetBoolFromCompositeAttr(composite_attrs, "ceil_mode").value();
@@ -184,7 +192,8 @@ DenseFPElementsAttr GetCorrectionMatrix(Builder& builder, CompositeOp op) {
       const int correct_divisor =
           ActualNumElementsInKernel(k_row_start, k_col_start, pool);
       const size_t flat_ind = get_flat_ind(row, right_col);
-      correction_data[flat_ind] = kern_size / correct_divisor;
+      correction_data[flat_ind] =
+          kern_size / static_cast<float>(correct_divisor);
     }
   }
 
@@ -196,7 +205,8 @@ DenseFPElementsAttr GetCorrectionMatrix(Builder& builder, CompositeOp op) {
       const int correct_divisor =
           ActualNumElementsInKernel(k_row_start, k_col_start, pool);
       const size_t flat_ind = get_flat_ind(bottom_row, col);
-      correction_data[flat_ind] = kern_size / correct_divisor;
+      correction_data[flat_ind] =
+          kern_size / static_cast<float>(correct_divisor);
     }
   }
 
