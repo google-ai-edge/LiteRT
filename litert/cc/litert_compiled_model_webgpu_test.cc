@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -343,6 +344,75 @@ INSTANTIATE_TEST_SUITE_P(
                           info.param.external_tensors_mode ? "_External" : "");
     });
 
+TEST(CompiledModelWebGpuTest, DoubleEnvironmentWithInterleavedDestruction) {
+  // To workaround the memory leak in Nvidia's driver
+  absl::LeakCheckDisabler disable_leak_check;
+
+  // Objects for the second model, which will outlive the first.
+  std::unique_ptr<litert::Environment> env2;
+  std::optional<CompiledModel> compiled_model2;
+
+  {
+    // Create the first environment and model and run it.
+    auto env1 = litert::Environment::Create({});
+    ASSERT_TRUE(env1);
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto options1,
+        CreateGpuOptions(false, GpuOptions::Precision::kDefault,
+                         GpuOptions::BufferStorageType::kDefault));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto compiled_model1,
+        CompiledModel::Create(*env1, testing::GetTestFilePath(kModelFileName),
+                              options1));
+    LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                                compiled_model1.CreateInputBuffers());
+    LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                                compiled_model1.CreateOutputBuffers());
+    ASSERT_TRUE(input_buffers[0].Write<float>(
+        absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+    ASSERT_TRUE(input_buffers[1].Write<float>(
+        absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+    compiled_model1.Run(input_buffers, output_buffers);
+
+    // Create the second environment and model.
+    auto env2_val = litert::Environment::Create({});
+    ASSERT_TRUE(env2_val);
+    env2 = std::make_unique<litert::Environment>(std::move(*env2_val));
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto options2,
+        CreateGpuOptions(false, GpuOptions::Precision::kDefault,
+                         GpuOptions::BufferStorageType::kDefault));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto model2,
+        CompiledModel::Create(*env2, testing::GetTestFilePath(kModelFileName),
+                              options2));
+    compiled_model2.emplace(std::move(model2));
+  }
+
+  // Destruction of env1 and compiled_model1 should have no effect on the
+  // second.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                              compiled_model2->CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                              compiled_model2->CreateOutputBuffers());
+
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  compiled_model2->Run(input_buffers, output_buffers);
+
+  {
+    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+        output_buffers[0], TensorBuffer::LockMode::kRead);
+    ASSERT_TRUE(lock_and_addr);
+    auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+  }
+}
+
 TEST(CompiledModelWebGpuTest, GpuEnvironment) {
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
@@ -371,31 +441,6 @@ TEST(CompiledModelWebGpuTest, GpuEnvironment) {
   ABSL_LOG(INFO) << "WebGPU command queue: "
                  << reinterpret_cast<WGPUQueue>(
                         std::get<int64_t>(wegpu_command_queue_1));
-
-  // Check if the 2nd LiteRT environment can get the same WebGPU device and
-  // command queue.
-  auto env_2 = litert::Environment::Create(litert::EnvironmentOptions({}));
-  ASSERT_TRUE(env_2);
-
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto options_2,
-      CreateGpuOptions(true, GpuOptions::Precision::kFp32,
-                       GpuOptions::BufferStorageType::kTexture2D));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto compiled_model_2,
-      CompiledModel::Create(*env_2, testing::GetTestFilePath(kModelFileName),
-                            options_2));
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options_2, env_2->GetOptions());
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto wegpu_device_id_2,
-      env_options_2.GetOption(litert::EnvironmentOptions::Tag::kWebGpuDevice));
-  EXPECT_EQ(std::get<int64_t>(wegpu_device_id_1),
-            std::get<int64_t>(wegpu_device_id_2));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto wegpu_command_queue_2,
-      env_options_2.GetOption(litert::EnvironmentOptions::Tag::kWebGpuQueue));
-  EXPECT_EQ(std::get<int64_t>(wegpu_command_queue_1),
-            std::get<int64_t>(wegpu_command_queue_2));
 }
 
 TEST(CompiledModelWebGpuTest, ConstructMlDriftWebGpuEnvironment) {

@@ -785,6 +785,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_environment_header",
         "//litert/c:litert_environment_options_header",
+        "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_runtime_context_header",
         "//litert/cc:litert_any",
         "//litert/cc:litert_expected",
