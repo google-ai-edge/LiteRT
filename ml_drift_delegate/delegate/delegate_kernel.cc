@@ -394,14 +394,16 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
                                           context, *delegate_data_,
                                           shared_memory_serialization_cache));
 
-  if (delegate_data_->options->convert_weights_on_gpu &&
+  bool do_convert_weights_on_gpu =
+      delegate_data_->options->convert_weights_on_gpu;
+  if (do_convert_weights_on_gpu &&
       delegate_data_->options->enable_constant_tensors_sharing) {
     ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
     if (!::ml_drift::WeightsManager::IsGpuWeightsPreparationSupported(
             gpu_info) ||
         shared_memory_serialization_cache_size >
             kSharedMemorySerializationCacheSizeThreshold) {
-      delegate_data_->options->convert_weights_on_gpu = false;
+      do_convert_weights_on_gpu = false;
     } else {
       ABSL_ASSIGN_OR_RETURN(auto weights_manager,
                             backend_->CreateWeightsManager());
@@ -458,7 +460,7 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
   }
   // If GPU weights conversion is enabled, trigger the GPU conversion to produce
   // GPU tensors for weights.
-  if (delegate_data_->options->convert_weights_on_gpu &&
+  if (do_convert_weights_on_gpu &&
       delegate_data_->options->enable_constant_tensors_sharing) {
     ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
     auto& buffer_map = GetBufferIdToSpatialTensorMap(*delegate_data_);
