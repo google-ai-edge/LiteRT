@@ -5791,9 +5791,23 @@ class TransposeOperationParser : public TFLiteOperationParser {
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
     ABSL_RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 9));
-    ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
-        context, tflite_node, registration));
-    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    // A TRANSPOSE with a constant data input has no runtime inputs, which
+    // CheckGpuDelegateCompatibility rejects. For TRANSPOSE that helper only
+    // checks input/output counts, so check the outputs here instead and
+    // materialise the constant in Parse().
+    const int runtime_inputs =
+        GetNumberOfRuntimeInputsForNode(context, tflite_node);
+    if (runtime_inputs == 0) {
+      if (tflite_node->outputs->size != 1) {
+        return absl::InternalError(
+            absl::StrCat("Expected 1 output tensor(s), but node has ",
+                         tflite_node->outputs->size, " output(s)."));
+      }
+    } else {
+      ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
+          context, tflite_node, registration));
+      ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    }
     ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
 
     ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32> perm;
@@ -5811,7 +5825,16 @@ class TransposeOperationParser : public TFLiteOperationParser {
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::Node* node = graph->NewNode();
     node->operation.type = ToString(::ml_drift::OperationType::TRANSPOSE);
-    reader->AddInput(node, 0);
+    if (reader->GetNumberOfRuntimeInputs() == 0) {
+      // A constant cannot be read as a Value, so materialise it as a CONSTANT
+      // node, as BatchedMatMulOperationParser does for constant weights.
+      ::ml_drift::TensorFloat32 tensor;
+      reader->ReadTensor(0, &tensor, ReadTensorFlags::kNoExtraBytes);
+      ::ml_drift::Value* input = NewConstNode(std::move(tensor), graph);
+      graph->AddConsumer(node->id, input->id);
+    } else {
+      reader->AddInput(node, 0);
+    }
     reader->AddOutputs(node);
 
     ::ml_drift::TransposeAttributes attr;
