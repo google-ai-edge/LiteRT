@@ -23,6 +23,12 @@ limitations under the License.
 #include "tflite/schema/schema_generated.h"
 
 namespace tflite {
+namespace ops {
+namespace builtin {
+TfLiteRegistration* Register_LSH_PROJECTION();
+}  // namespace builtin
+}  // namespace ops
+
 namespace {
 
 using ::testing::ElementsAre;
@@ -130,6 +136,12 @@ TEST(LSHProjectionOpTest2, Sparse3DInputs) {
 #else
   EXPECT_THAT(m.GetOutput(), ElementsAre(0 + 2, 4 + 1, 8 + 1));
 #endif
+}
+
+TEST(LSHProjectionOpTest2, InvalidProjectionTypeTest) {
+  EXPECT_DEATH(LSHProjectionOpModel m(static_cast<LSHProjectionType>(-1),
+                                      {3, 2}, {5}, {}),
+               "Cannot allocate tensors");
 }
 
 }  // namespace
