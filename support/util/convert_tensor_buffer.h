@@ -250,12 +250,11 @@ template <typename TargetType, typename SourceType>
   return std::move(*tensor_buffer);
 }
 
-// References (no copy) the internal buffer of a ::litert::TensorBuffer when
-// it is in the host memory. It's preferable to CopyFromTensorBuffer() whenever
-// possible since it's more efficient.
+namespace internal {
 template <typename T>
-::litert::Expected<absl::Span<T>> ReferTensorBufferAsSpan(
-    const ::litert::TensorBuffer& tensor_buffer) {
+::litert::Expected<absl::Span<T>> GetTensorBufferAsSpan(
+    const ::litert::TensorBuffer& tensor_buffer,
+    TensorBuffer::LockMode lock_mode) {
   if (auto buffer_type = tensor_buffer.BufferType();
       !buffer_type.HasValue() ||
       *buffer_type != ::litert::TensorBufferType::kHostMemory) {
@@ -270,12 +269,34 @@ template <typename T>
         "Element type is not compatible to the target type.");
   }
 
-  auto lock_and_addr = ::litert::TensorBufferScopedLock::Create(
-      *const_cast<::litert::TensorBuffer*>(&tensor_buffer),
-      TensorBuffer::LockMode::kRead);
-  ABSL_DCHECK(lock_and_addr.HasValue());
+  LITERT_ASSIGN_OR_RETURN(
+      auto lock_and_addr,
+      ::litert::TensorBufferScopedLock::Create(
+          *const_cast<::litert::TensorBuffer*>(&tensor_buffer),
+          lock_mode));
   LITERT_ASSIGN_OR_RETURN(auto num_elements, type->Layout().NumElements());
-  return absl::MakeSpan(static_cast<T*>(lock_and_addr->second), num_elements);
+  return absl::MakeSpan(static_cast<T*>(lock_and_addr.second), num_elements);
+}
+}  // namespace internal
+
+// References (no copy) the internal buffer of a ::litert::TensorBuffer when
+// it is in the host memory. It's preferable to CopyFromTensorBuffer() whenever
+// possible since it's more efficient.
+template <typename T>
+::litert::Expected<absl::Span<T>> ReferTensorBufferAsSpan(
+    const ::litert::TensorBuffer& tensor_buffer) {
+  return internal::GetTensorBufferAsSpan<T>(tensor_buffer,
+                                            TensorBuffer::LockMode::kRead);
+}
+
+// Similar to ReferTensorBufferAsSpan(), but acquires a read-write lock,
+// allowing modifications to the tensor buffer to be synchronized (e.g. uploaded
+// back to GPU) when the buffer is unlocked.
+template <typename T>
+::litert::Expected<absl::Span<T>> MutateTensorBufferAsSpan(
+    ::litert::TensorBuffer& tensor_buffer) {
+  return internal::GetTensorBufferAsSpan<T>(tensor_buffer,
+                                            TensorBuffer::LockMode::kReadWrite);
 }
 
 // TODO: b/431234598 - This copies data between GPU and CPU backends which
