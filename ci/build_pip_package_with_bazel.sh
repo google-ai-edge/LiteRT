@@ -115,6 +115,8 @@ case "${ARCH}" in
     ;;
 esac
 
+start_time=$SECONDS
+
 bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --cxxopt=-std=gnu++17 \
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/wheel:litert_wheel
 
@@ -166,6 +168,9 @@ bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/intel:ai_edge_litert_sdk_intel_sdist
 
 mv bazel-bin/ci/tools/python/vendor_sdk/intel/ai_edge_litert_sdk_intel*.tar.gz dist/
+
+duration=$((SECONDS - start_time))
+echo "INFO: Bazel build phase completed in ${duration} seconds."
 
 echo "Output can be found here:"
 find "./dist/"
