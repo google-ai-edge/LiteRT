@@ -1053,3 +1053,21 @@ cc_binary(
         "@com_google_absl//absl/flags:parse",
     ],
 )
+
+cc_binary(
+    name = "g5_runner",
+    srcs = ["g5_runner.cc"],
+    linkopts = ["-ldl"],
+    deps = [
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_compiled_model",
+        "//litert/c:litert_environment",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_model",
+        "//litert/c:litert_options",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_requirements",
+    ],
+)
