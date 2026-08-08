@@ -466,18 +466,19 @@ void CloneTo(const LiteRtOpT& src, LiteRtOpT& dest) {
 
 litert::Expected<LiteRtTensorT*> MakeClone(LiteRtSubgraphT& parent,
                                            const LiteRtTensorT& src) {
-  const int q_type = reinterpret_cast<const int&>(src.Qparams().first);
-  switch (q_type) {
+  switch (src.Qparams().first) {
     case kLiteRtQuantizationNone:
     case kLiteRtQuantizationPerTensor:
     case kLiteRtQuantizationPerChannel:
     case kLiteRtQuantizationBlockWise:
       break;
     default:
-      LITERT_LOG(LITERT_ERROR, "Unsupported quantization type: %d", q_type);
+      LITERT_LOG(LITERT_ERROR, "Unsupported quantization type: %d",
+                 static_cast<int>(src.Qparams().first));
       return litert::Error(
           kLiteRtStatusErrorInvalidArgument,
-          absl::StrCat("Unsupported quantization type: ", q_type));
+          absl::StrCat("Unsupported quantization type: ",
+                       static_cast<int>(src.Qparams().first)));
   }
 
   auto& new_tensor = parent.EmplaceTensor();
