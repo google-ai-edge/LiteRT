@@ -41,6 +41,9 @@ struct LrtGoogleTensorOptionsT {
   std::string op_filters_proto = "";
   std::string extra_options_path = "";
   std::string extra_options = "";
+  // copybara:uncomment_begin(google-only)
+  // bool experimental_enable_input_validator = false;
+  // copybara:uncomment_end
 };
 
 LiteRtStatus LrtCreateGoogleTensorOptions(LrtGoogleTensorOptions* options) {
@@ -114,6 +117,13 @@ LiteRtStatus LrtGetOpaqueGoogleTensorOptionsData(
                           absl::Base64Escape(options->extra_options));
   }
 
+  // copybara:uncomment_begin(google-only)
+  // if (options->experimental_enable_input_validator) {
+    // absl::StrAppendFormat(&toml_str,
+                          // "experimental_enable_input_validator = true\n");
+  // }
+  // copybara:uncomment_end
+
   *identifier = LrtGoogleTensorOptionsGetIdentifier();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
   return kLiteRtStatusOk;
@@ -179,6 +189,12 @@ LiteRtStatus LrtCreateGoogleTensorOptionsFromToml(
           if (!absl::Base64Unescape(value, &options_ref.extra_options)) {
             return kLiteRtStatusErrorInvalidArgument;
           }
+          // copybara:uncomment_begin(google-only)
+        // } else if (key == "experimental_enable_input_validator") {
+          // LITERT_ASSIGN_OR_RETURN(
+              // options_ref.experimental_enable_input_validator,
+              // litert::internal::ParseTomlBool(value));
+          // copybara:uncomment_end
         }
         return kLiteRtStatusOk;
       });
@@ -430,7 +446,6 @@ LiteRtStatus LrtGoogleTensorOptionsGetExtraOptionsPath(
   *extra_options_path = options->extra_options_path.c_str();
   return kLiteRtStatusOk;
 }
-
 // extra_options --------------------------------------------------
 
 LiteRtStatus LrtGoogleTensorOptionsSetExtraOptions(
@@ -454,3 +469,27 @@ LiteRtStatus LrtGoogleTensorOptionsGetExtraOptions(
   *extra_options = options->extra_options.c_str();
   return kLiteRtStatusOk;
 }
+
+// copybara:uncomment_begin(google-only)
+// // experimental_enable_input_validator ---------------------------------
+// 
+// LiteRtStatus LrtGoogleTensorOptionsSetExperimentalEnableInputValidator(
+//     LrtGoogleTensorOptions options, bool experimental_enable_input_validator) {
+//   if (options == nullptr) {
+//     return kLiteRtStatusErrorInvalidArgument;
+//   }
+//   options->experimental_enable_input_validator =
+//       experimental_enable_input_validator;
+//   return kLiteRtStatusOk;
+// }
+// 
+// LiteRtStatus LrtGoogleTensorOptionsGetExperimentalEnableInputValidator(
+//     LrtGoogleTensorOptions options, bool* experimental_enable_input_validator) {
+//   if (options == nullptr || experimental_enable_input_validator == nullptr) {
+//     return kLiteRtStatusErrorInvalidArgument;
+//   }
+//   *experimental_enable_input_validator =
+//       options->experimental_enable_input_validator;
+//   return kLiteRtStatusOk;
+// }
+// copybara:uncomment_end

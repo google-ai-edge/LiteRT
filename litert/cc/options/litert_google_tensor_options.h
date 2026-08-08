@@ -224,6 +224,23 @@ class GoogleTensorOptions {
     return StringView(extra_options);
   }
 
+  // copybara:uncomment_begin(google-only)
+  // void SetExperimentalEnableInputValidator(
+      // bool experimental_enable_input_validator) {
+    // internal::AssertOk(
+        // LrtGoogleTensorOptionsSetExperimentalEnableInputValidator, Get(),
+        // experimental_enable_input_validator);
+  // }
+// 
+  // bool GetExperimentalEnableInputValidator() const {
+    // LrtGoogleTensorOptions options_data = Get();
+    // bool experimental_enable_input_validator;
+    // internal::AssertOk(
+        // LrtGoogleTensorOptionsGetExperimentalEnableInputValidator, options_data,
+        // &experimental_enable_input_validator);
+    // return experimental_enable_input_validator;
+  // }
+  // copybara:uncomment_end
  private:
   explicit GoogleTensorOptions(LrtGoogleTensorOptions options)
       : options_(options) {}
