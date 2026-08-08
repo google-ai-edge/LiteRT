@@ -255,9 +255,11 @@ Expected<bool> DispatchDelegateKernel::HasAllocBaseFileRegion() const {
 
 TfLiteStatus DispatchDelegateKernel::Init(
     TfLiteOpaqueContext* context, const TfLiteOpaqueDelegateParams* params) {
+  LITERT_LOG(LITERT_INFO, "Jetski: DispatchDelegateKernel::Init start");
   LITERT_RETURN_IF_ERROR(
       InitHelper(context, *params),
       AsTfLiteStatus(_ << "Couldn't initialize the dispatch delegate kernel"));
+  LITERT_LOG(LITERT_INFO, "Jetski: DispatchDelegateKernel::Init success");
   return kTfLiteOk;
 }
 
@@ -604,16 +606,21 @@ DispatchDelegateKernel::GetInternalTensors(
 Expected<LiteRtDispatchInvocationContext>
 DispatchDelegateKernel::CreateNodeInvocationContext(
     TfLiteOpaqueContext* context, TfLiteOpaqueNode* node) {
+  LITERT_LOG(LITERT_INFO, "Jetski: CreateNodeInvocationContext start");
   const void* init_data;
   int init_data_size;
   if (auto status = TfLiteOpaqueNodeGetCustomInitialData(node, &init_data,
                                                          &init_data_size);
       status != kTfLiteOk) {
+    LITERT_LOG(LITERT_ERROR,
+               "Jetski: TfLiteOpaqueNodeGetCustomInitialData failed: %d",
+               status);
     return Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
         absl::StrFormat("Failed to get custom initial data: %d", status));
   }
   if (!init_data || !init_data_size) {
+    LITERT_LOG(LITERT_ERROR, "Jetski: Custom initial data is missing");
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Found custom op with missing initial data");
   }
@@ -624,22 +631,37 @@ DispatchDelegateKernel::CreateNodeInvocationContext(
   // name).
   const auto dispatch_opts = GetDispatchOpOptions(custom_opts);
   const auto& function_name = dispatch_opts.name;
+  LITERT_LOG(
+      LITERT_INFO,
+      "Jetski: function_name: %s, bytecode_offset: %zu, bytecode_size: %zu",
+      function_name.data(), dispatch_opts.bytecode_offset,
+      dispatch_opts.bytecode_size);
 
   auto num_node_inputs = TfLiteOpaqueNodeNumberOfInputs(node);
   auto num_node_outputs = TfLiteOpaqueNodeNumberOfOutputs(node);
+  LITERT_LOG(LITERT_INFO, "Jetski: num_inputs: %d, num_outputs: %d",
+             num_node_inputs, num_node_outputs);
 
   LiteRtDispatchInvocationContext invocation_context;
 
   auto opaque_options =
       OpaqueOptions::WrapCObject(options_->options, OwnHandle::kNo);
-  LITERT_ASSIGN_OR_RETURN(
-      auto dispatch_delegate_options,
-      FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));
+
+  LITERT_LOG(LITERT_INFO, "Jetski: Finding dispatch_delegate_options");
+  auto dispatch_delegate_options_or =
+      FindOpaqueOptions<DispatchDelegateOptions>(opaque_options);
+  if (!dispatch_delegate_options_or) {
+    LITERT_LOG(LITERT_ERROR, "Jetski: FindOpaqueOptions failed");
+    return dispatch_delegate_options_or.Error();
+  }
+  auto dispatch_delegate_options =
+      std::move(dispatch_delegate_options_or.Value());
 
   auto exec_handle_expected =
       dispatch_delegate_options.GetExecHandle(function_name);
   if (exec_handle_expected.HasValue() &&
       exec_handle_expected.Value() != nullptr) {
+    LITERT_LOG(LITERT_INFO, "Jetski: Using JIT handle");
     LiteRtMemBuffer exec_bytecode_buffer = {
         /*.fd=*/-1,
         /*.base_addr=*/exec_handle_expected.Value(),
@@ -652,40 +674,89 @@ DispatchDelegateKernel::CreateNodeInvocationContext(
             function_name.data(), num_node_inputs, num_node_outputs,
             &invocation_context);
         status != kLiteRtStatusOk) {
+      LITERT_LOG(
+          LITERT_ERROR,
+          "Jetski: LiteRtDispatchInvocationContextCreate (JIT) failed: %d",
+          status);
       return Unexpected(status, "Failed to create invocation context");
     }
   } else {
+    LITERT_LOG(LITERT_INFO, "Jetski: Using ML Model");
     if (dispatch_opts.bytecode_offset == 0) {
+      LITERT_LOG(LITERT_ERROR, "Jetski: bytecode_offset is 0");
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Found dispatch op with missing bytecode offset");
     }
 
     // Find pointer to the start of the loaded model buffer.
-    LITERT_ASSIGN_OR_RETURN(const void* alloc_base, FindAllocBase());
-    LITERT_ASSIGN_OR_RETURN(const int alloc_fd, FindAllocBaseFd());
-    LITERT_ASSIGN_OR_RETURN(const size_t alloc_base_file_offset,
-                            FindAllocBaseFileOffset());
-    LITERT_ASSIGN_OR_RETURN(const size_t alloc_base_size, FindAllocBaseSize());
-    LITERT_ASSIGN_OR_RETURN(const bool has_alloc_base_file_region,
-                            HasAllocBaseFileRegion());
+    LITERT_LOG(LITERT_INFO, "Jetski: Finding AllocBase info");
+    auto alloc_base_or = FindAllocBase();
+    if (!alloc_base_or) {
+      LITERT_LOG(LITERT_ERROR, "Jetski: FindAllocBase failed");
+      return alloc_base_or.Error();
+    }
+    const void* alloc_base = alloc_base_or.Value();
+
+    auto alloc_fd_or = FindAllocBaseFd();
+    if (!alloc_fd_or) {
+      LITERT_LOG(LITERT_ERROR, "Jetski: FindAllocBaseFd failed");
+      return alloc_fd_or.Error();
+    }
+    const int alloc_fd = alloc_fd_or.Value();
+
+    auto alloc_base_file_offset_or = FindAllocBaseFileOffset();
+    if (!alloc_base_file_offset_or) {
+      LITERT_LOG(LITERT_ERROR, "Jetski: FindAllocBaseFileOffset failed");
+      return alloc_base_file_offset_or.Error();
+    }
+    const size_t alloc_base_file_offset = alloc_base_file_offset_or.Value();
+
+    auto alloc_base_size_or = FindAllocBaseSize();
+    if (!alloc_base_size_or) {
+      LITERT_LOG(LITERT_ERROR, "Jetski: FindAllocBaseSize failed");
+      return alloc_base_size_or.Error();
+    }
+    const size_t alloc_base_size = alloc_base_size_or.Value();
+
+    auto has_alloc_base_file_region_or = HasAllocBaseFileRegion();
+    if (!has_alloc_base_file_region_or) {
+      LITERT_LOG(LITERT_ERROR, "Jetski: HasAllocBaseFileRegion failed");
+      return has_alloc_base_file_region_or.Error();
+    }
+    const bool has_alloc_base_file_region =
+        has_alloc_base_file_region_or.Value();
+
+    LITERT_LOG(LITERT_INFO,
+               "Jetski: AllocBase: %p, fd: %d, file_offset: %zu, size: %zu, "
+               "has_region: %d",
+               alloc_base, alloc_fd, alloc_base_file_offset, alloc_base_size,
+               has_alloc_base_file_region);
 
     // Get location of bytecode in the model buffer relative to alloc_base.
-    LITERT_ASSIGN_OR_RETURN(
-        LiteRtMemBuffer exec_bytecode_buffer,
-        BuildExecutableBytecodeBuffer(dispatch_opts, alloc_base, alloc_fd,
-                                      alloc_base_file_offset, alloc_base_size,
-                                      has_alloc_base_file_region));
-    const auto& function_name = dispatch_opts.name;
+    auto exec_bytecode_buffer_or = BuildExecutableBytecodeBuffer(
+        dispatch_opts, alloc_base, alloc_fd, alloc_base_file_offset,
+        alloc_base_size, has_alloc_base_file_region);
+    if (!exec_bytecode_buffer_or) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Jetski: BuildExecutableBytecodeBuffer failed: %s",
+                 exec_bytecode_buffer_or.Error().Message().c_str());
+      return exec_bytecode_buffer_or.Error();
+    }
+    LiteRtMemBuffer exec_bytecode_buffer =
+        std::move(exec_bytecode_buffer_or.Value());
 
-    auto num_node_inputs = TfLiteOpaqueNodeNumberOfInputs(node);
-    auto num_node_outputs = TfLiteOpaqueNodeNumberOfOutputs(node);
-
+    LITERT_LOG(LITERT_INFO,
+               "Jetski: Calling LiteRtDispatchInvocationContextCreate (ML)");
     if (auto status = LiteRtDispatchInvocationContextCreate(
             LrtGetRuntimeContext(), device_context_,
             kLiteRtDispatchExecutableTypeMlModel, &exec_bytecode_buffer,
             function_name.data(), num_node_inputs, num_node_outputs,
             &invocation_context);
         status != kLiteRtStatusOk) {
+      LITERT_LOG(
+          LITERT_ERROR,
+          "Jetski: LiteRtDispatchInvocationContextCreate (ML) failed: %d",
+          status);
       return Unexpected(status, "Failed to create invocation context");
     }
   }
@@ -715,6 +786,7 @@ DispatchDelegateKernel::CreateNodeInvocationContext(
     }
   }
 
+  LITERT_LOG(LITERT_INFO, "Jetski: CreateNodeInvocationContext success");
   return invocation_context;
 }
 
