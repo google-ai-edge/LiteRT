@@ -42,8 +42,18 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(miniaudio_lib)
 
+set(LITERT_TOKENIZERS_SRC_DIR "${CMAKE_BINARY_DIR}/_deps/tokenizers_src" CACHE PATH "Path to tokenizers source directory")
+FetchContent_Declare(
+  tokenizers_lib
+  GIT_REPOSITORY https://github.com/mlc-ai/tokenizers-cpp
+  GIT_TAG        main
+  SOURCE_DIR ${LITERT_TOKENIZERS_SRC_DIR}
+)
+FetchContent_MakeAvailable(tokenizers_lib)
+
+
+
 
 add_subdirectory(preprocessor)
-# TODO(b/538569495): Re-enable once CMake support is added.
-# add_subdirectory(tokenizer)
+add_subdirectory(tokenizer)
 add_subdirectory(util)
