@@ -39,6 +39,7 @@
 #include "tensor/datatypes.h"
 #include "tensor/runners/litert/feedback_loop_config.h"
 #include "tensor/runners/litert/litert_buffer.h"
+#include "tensor/runners/litert/runner_options.h"
 #include "tensor/tensor.h"
 
 namespace litert {
@@ -56,6 +57,11 @@ class LitertDynamicRunner {
   }
 
   static absl::StatusOr<LitertDynamicRunner> Create(
+      Environment& env, const std::string& model_path, RunnerOptions& options) {
+    return Create(env, model_path, options.litert_options());
+  }
+
+  static absl::StatusOr<LitertDynamicRunner> Create(
       Environment& env, absl::Span<const uint8_t> model_buffer,
       Options& options) {
     LitertDynamicRunner runner;
@@ -64,6 +70,12 @@ class LitertDynamicRunner {
                             CompiledModel::Create(env, buf_ref, options));
     LITERT_RETURN_IF_ERROR(runner.InitializeBuffers());
     return runner;
+  }
+
+  static absl::StatusOr<LitertDynamicRunner> Create(
+      Environment& env, absl::Span<const uint8_t> model_buffer,
+      RunnerOptions& options) {
+    return Create(env, model_buffer, options.litert_options());
   }
 
   static absl::StatusOr<LitertDynamicRunner> Create(
@@ -94,6 +106,12 @@ class LitertDynamicRunner {
   }
 
   static absl::StatusOr<LitertDynamicRunner> Create(
+      Environment& env, const std::string& model_path, RunnerOptions& options,
+      const std::vector<FeedbackLoopConfig>& feedback_loops) {
+    return Create(env, model_path, options.litert_options(), feedback_loops);
+  }
+
+  static absl::StatusOr<LitertDynamicRunner> Create(
       Environment& env, absl::Span<const uint8_t> model_buffer,
       Options& options, const std::vector<FeedbackLoopConfig>& feedback_loops) {
     auto gpu_options_or = options.GetGpuOptions();
@@ -119,6 +137,13 @@ class LitertDynamicRunner {
     }
 
     return runner;
+  }
+
+  static absl::StatusOr<LitertDynamicRunner> Create(
+      Environment& env, absl::Span<const uint8_t> model_buffer,
+      RunnerOptions& options,
+      const std::vector<FeedbackLoopConfig>& feedback_loops) {
+    return Create(env, model_buffer, options.litert_options(), feedback_loops);
   }
 
   // Helper to initialize buffers for all signatures
