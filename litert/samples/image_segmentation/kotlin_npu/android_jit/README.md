@@ -5,7 +5,7 @@
 From the google3/ directory, run:
 
 ```sh
-$ blaze build --config=android_arm64 --android_ndk_min_sdk_version=23 \
+$ blaze build --config=android_arm64 --android_ndk_min_sdk_version=24 \
   //litert/samples/image_segmentation/kotlin_npu/android_jit:image_segmentation_aab
 ```
 
