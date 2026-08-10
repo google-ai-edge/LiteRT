@@ -319,6 +319,14 @@ TEST(GoogleTensorOptionsTest, CppApi) {
   EXPECT_EQ(options->GetExtraOptionsPath(), "");
   options->SetExtraOptionsPath("/tmp/extra_options.bin");
   EXPECT_EQ(options->GetExtraOptionsPath(), "/tmp/extra_options.bin");
+
+  EXPECT_FALSE(options->GetInputCoherency("serving_default", "input_0"));
+  options->SetInputCoherency("serving_default", "input_0", true);
+  EXPECT_TRUE(options->GetInputCoherency("serving_default", "input_0"));
+
+  EXPECT_FALSE(options->GetOutputCoherency("serving_default", "output_0"));
+  options->SetOutputCoherency("serving_default", "output_0", true);
+  EXPECT_TRUE(options->GetOutputCoherency("serving_default", "output_0"));
 }
 
 TEST(LrtGoogleTensorOptionsTest, OpFiltersProto) {
@@ -432,6 +440,58 @@ TEST(LrtGoogleTensorOptionsTest, PerformanceMode) {
   EXPECT_EQ(performance_mode,
             kLiteRtGoogleTensorOptionsPerformanceModeHighPerformance);
 
+  LrtDestroyGoogleTensorOptions(options);
+}
+
+TEST(LrtGoogleTensorOptionsTest, Coherency) {
+  LrtGoogleTensorOptions options;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
+
+  bool prefer_coherent = true;
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetInputCoherency(
+      options, "serving_default", "input_0", &prefer_coherent));
+  EXPECT_FALSE(prefer_coherent);
+
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetInputCoherency(
+      options, "serving_default", "input_0", true));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetInputCoherency(
+      options, "serving_default", "input_1", false));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetOutputCoherency(
+      options, "serving_default", "output_0", true));
+
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetInputCoherency(
+      options, "serving_default", "input_0", &prefer_coherent));
+  EXPECT_TRUE(prefer_coherent);
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetInputCoherency(
+      options, "serving_default", "input_1", &prefer_coherent));
+  EXPECT_FALSE(prefer_coherent);
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetOutputCoherency(
+      options, "serving_default", "output_0", &prefer_coherent));
+  EXPECT_TRUE(prefer_coherent);
+
+  int num_entries = 0;
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetNumInputCoherencyEntries(options, &num_entries));
+  EXPECT_EQ(num_entries, 2);
+
+  const char* sig_name = nullptr;
+  const char* tensor_name = nullptr;
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetInputCoherencyEntry(
+      options, 0, &sig_name, &tensor_name, &prefer_coherent));
+  EXPECT_STREQ(sig_name, "serving_default");
+  EXPECT_STREQ(tensor_name, "input_0");
+  EXPECT_TRUE(prefer_coherent);
+
+  LrtGoogleTensorOptions parsed;
+  SerializeAndParse(options, &parsed);
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetInputCoherency(
+      parsed, "serving_default", "input_0", &prefer_coherent));
+  EXPECT_TRUE(prefer_coherent);
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetOutputCoherency(
+      parsed, "serving_default", "output_0", &prefer_coherent));
+  EXPECT_TRUE(prefer_coherent);
+
+  LrtDestroyGoogleTensorOptions(parsed);
   LrtDestroyGoogleTensorOptions(options);
 }
 

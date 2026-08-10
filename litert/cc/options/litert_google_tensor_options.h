@@ -211,6 +211,56 @@ class GoogleTensorOptions {
     return StringView(extra_options_path);
   }
 
+  /// @brief Sets whether the specified input tensor should use coherent memory.
+  /// @param signature_name The name of the model signature.
+  /// @param tensor_name The name of the input tensor in the signature.
+  /// @param prefer_coherent Whether to prefer coherent memory allocation and
+  ///     mapping.
+  void SetInputCoherency(StringView signature_name, StringView tensor_name,
+                         bool prefer_coherent) {
+    internal::AssertOk(LrtGoogleTensorOptionsSetInputCoherency, Get(),
+                       signature_name.data(), tensor_name.data(),
+                       prefer_coherent);
+  }
+
+  /// @brief Gets whether the specified input tensor should use coherent memory.
+  /// @param signature_name The name of the model signature.
+  /// @param tensor_name The name of the input tensor in the signature.
+  bool GetInputCoherency(StringView signature_name,
+                         StringView tensor_name) const {
+    bool prefer_coherent = false;
+    internal::AssertOk(LrtGoogleTensorOptionsGetInputCoherency, Get(),
+                       signature_name.data(), tensor_name.data(),
+                       &prefer_coherent);
+    return prefer_coherent;
+  }
+
+  /// @brief Sets whether the specified output tensor should use coherent
+  /// memory.
+  /// @param signature_name The name of the model signature.
+  /// @param tensor_name The name of the output tensor in the signature.
+  /// @param prefer_coherent Whether to prefer coherent memory allocation and
+  ///     mapping.
+  void SetOutputCoherency(StringView signature_name, StringView tensor_name,
+                          bool prefer_coherent) {
+    internal::AssertOk(LrtGoogleTensorOptionsSetOutputCoherency, Get(),
+                       signature_name.data(), tensor_name.data(),
+                       prefer_coherent);
+  }
+
+  /// @brief Gets whether the specified output tensor should use coherent
+  /// memory.
+  /// @param signature_name The name of the model signature.
+  /// @param tensor_name The name of the output tensor in the signature.
+  bool GetOutputCoherency(StringView signature_name,
+                          StringView tensor_name) const {
+    bool prefer_coherent = false;
+    internal::AssertOk(LrtGoogleTensorOptionsGetOutputCoherency, Get(),
+                       signature_name.data(), tensor_name.data(),
+                       &prefer_coherent);
+    return prefer_coherent;
+  }
+
   void SetExtraOptions(StringView extra_options) {
     internal::AssertOk(LrtGoogleTensorOptionsSetExtraOptions, Get(),
                        std::string(extra_options).c_str());
