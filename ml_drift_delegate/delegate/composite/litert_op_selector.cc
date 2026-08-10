@@ -14,16 +14,19 @@
 
 #include "ml_drift_delegate/delegate/composite/litert_op_selector.h"
 
+#include <any>
 #include <memory>
 #include <set>
 #include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/selectors/operation_selector.h"  // from @ml_drift
 #include "ml_drift/common/selectors/special_selector.h"  // from @ml_drift
 #include "ml_drift/common/status.h"  // from @ml_drift
@@ -35,8 +38,58 @@
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_kernel.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_parser.h"
+#include "ml_drift_delegate/delegate/composite/sdpa_transposed_kernel.h"
+#include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 
 namespace litert::ml_drift {
+
+namespace {
+
+absl::Status CreateRoPEFromNode(
+    const std::vector<::ml_drift::Value*>& inputs,
+    const std::vector<::ml_drift::Value*>& outputs,
+    const ::ml_drift::Node& node, ::ml_drift::GpuModelBuilder* model_builder) {
+  ::ml_drift::RoPEAttributes attr;
+  if (node.operation.attributes.has_value()) {
+    if (auto* rope_attr = std::any_cast<::ml_drift::RoPEAttributes>(
+            &node.operation.attributes)) {
+      attr = *rope_attr;
+    }
+  }
+  if (inputs.size() == 2) {
+    if (outputs.size() != 1) {
+      return absl::InvalidArgumentError("RoPE expects 1 output for 2 inputs.");
+    }
+    ABSL_ASSIGN_OR_RETURN(auto src_handle,
+                          model_builder->GetTensor(inputs[0]->id));
+    ABSL_ASSIGN_OR_RETURN(auto position_handle,
+                          model_builder->GetTensor(inputs[1]->id));
+    auto dst_handle =
+        model_builder->SplitRoPEConcat(src_handle, position_handle, attr);
+    ABSL_RETURN_IF_ERROR(
+        model_builder->UpdateOutputTensor(dst_handle, outputs[0]->id));
+    return absl::OkStatus();
+  } else if (inputs.size() == 3) {
+    if (outputs.size() != 2) {
+      return absl::InvalidArgumentError("RoPE expects 2 outputs for 3 inputs.");
+    }
+    ABSL_ASSIGN_OR_RETURN(auto src_l_handle,
+                          model_builder->GetTensor(inputs[0]->id));
+    ABSL_ASSIGN_OR_RETURN(auto src_r_handle,
+                          model_builder->GetTensor(inputs[1]->id));
+    ABSL_ASSIGN_OR_RETURN(auto position_handle,
+                          model_builder->GetTensor(inputs[2]->id));
+    auto dst_handles =
+        model_builder->RoPE(src_l_handle, src_r_handle, position_handle, attr);
+    ABSL_RETURN_IF_ERROR(model_builder->UpdateOutputTensors(
+        dst_handles, {outputs[0]->id, outputs[1]->id}));
+    return absl::OkStatus();
+  } else {
+    return absl::InvalidArgumentError("RoPE expects 2 or 3 inputs.");
+  }
+}
+
+}  // namespace
 
 LiteRtOpSelector::LiteRtOpSelector(
     const ::ml_drift::CreateGpuModelInfo* create_info,
@@ -77,7 +130,8 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     const std::vector<::ml_drift::Value*>& outputs,
     const ::ml_drift::Node& node, ::ml_drift::GpuModelBuilder* model_builder) {
   if (node.operation.type == kAddValuesToCacheType) {
-    ASSIGN_OR_RETURN(auto op, CreateAddValuesToCacheFromNode(op_def, node));
+    ABSL_ASSIGN_OR_RETURN(auto op,
+                          CreateAddValuesToCacheFromNode(op_def, node));
     std::vector<::ml_drift::ValueId> src_ids(inputs.size());
     for (int i = 0; i < inputs.size(); ++i) {
       src_ids[i] = inputs[i]->id;
@@ -110,9 +164,26 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     return CreateRuntimeBatchedMatMulFromNode(bmm_inputs, outputs, node,
                                               model_builder);
   }
+  if (node.operation.type == kSdpaTransposedType) {
+    std::vector<::ml_drift::Value*> sdpa_inputs = inputs;
+    if (inputs.size() > 4) {
+      int param_index = 4;
+      // Ensure param tensor is a buffer tensor as kernel programs expect so.
+      ParamTensorToBuffer(param_index, inputs, model_builder);
+      if (replaced_tensors_.contains(inputs[param_index]->id)) {
+        sdpa_inputs[param_index] =
+            replaced_tensors_[inputs[param_index]->id].get();
+      }
+    }
+    return CreateSdpaTransposedFromNode(sdpa_inputs, outputs, node,
+                                        model_builder);
+  }
   if (node.operation.type == kMoeExpertsType) {
     return CreateMoeExpertsFromNode(create_info_, inputs, outputs, node,
                                     model_builder);
+  }
+  if (node.operation.type == ToString(::ml_drift::OperationType::ROPE)) {
+    return CreateRoPEFromNode(inputs, outputs, node, model_builder);
   }
   return ::ml_drift::GPUOperationFromNode(gpu_info_, op_def, create_info_,
                                           inputs, outputs, node, model_builder);

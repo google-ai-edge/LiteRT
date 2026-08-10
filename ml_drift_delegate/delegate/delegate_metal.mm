@@ -148,29 +148,24 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   return kTfLiteOk;
 }
 
+#define CALL_DELEGATE_KERNEL(function, ...)                               \
+  if (absl::Status s = delegate_kernel->function(__VA_ARGS__); !s.ok()) { \
+    ABSL_LOG(ERROR) << s;                                                 \
+    return kTfLiteError;                                                  \
+  }
+
 TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
   @autoreleasepool {
     auto* delegate_kernel =
         reinterpret_cast<litert::ml_drift::DelegateKernelLiteRt*>(node->user_data);
 
     if (delegate_kernel->HasQuantizedTensors()) {
-      if (absl::Status s = delegate_kernel->DequantizeInputs(context); !s.ok()) {
-        ABSL_LOG(ERROR) << s;
-        return kTfLiteError;
-      }
+      CALL_DELEGATE_KERNEL(DequantizeInputs, context);
     }
-
-    if (delegate_kernel->NoExternalTensorsMode()) {
-      if (absl::Status s = delegate_kernel->UploadOrBindTensorBuffer(context); !s.ok()) {
-        ABSL_LOG(ERROR) << s;
-        return kTfLiteError;
-      }
-    } else {
-      if (absl::Status s = delegate_kernel->BindTensorBuffers(context); !s.ok()) {
-        ABSL_LOG(ERROR) << s;
-        return kTfLiteError;
-      }
-    }
+    CALL_DELEGATE_KERNEL(BindExternalTensorBuffers, context);
+    CALL_DELEGATE_KERNEL(UploadIntermediateCpuTensorsToGpuMemory, context);
+    CALL_DELEGATE_KERNEL(HandleInputEvents, context);
+    CALL_DELEGATE_KERNEL(ConvertNonExternalInputTensorsToGpuMemory, context);
 
     auto* buffer_context = reinterpret_cast<LiteRtExternalLiteRtBufferContext>(
         context->GetExternalContext(context, kTfLiteLiteRtBufferContext));
@@ -205,32 +200,11 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
       }
     }
 
-    if (absl::Status s = delegate_kernel->HandleInputEvents(context); !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-
-    if (absl::Status s = delegate_kernel->Dispatch(context); !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-
-    if (absl::Status s = delegate_kernel->HandleOutputEvents(
-            context,
-            litert::ml_drift::IsAsyncExecutionMode(context, delegate_kernel->runtime_context()));
-        !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-
-    if (delegate_kernel->NoExternalTensorsMode()) {
-      // Download internal output GPU memory to output TensorBufferGPU memory.
-      if (absl::Status s = delegate_kernel->DownloadGpuMemoryToTensorBufferGpuMemory(context);
-          !s.ok()) {
-        ABSL_LOG(ERROR) << s;
-        return kTfLiteError;
-      }
-    }
+    CALL_DELEGATE_KERNEL(Dispatch, context);
+    CALL_DELEGATE_KERNEL(ConvertGpuMemoryToNonExternalOutputTensors, context);
+    bool is_async_execution_mode =
+        litert::ml_drift::IsAsyncExecutionMode(context, delegate_kernel->runtime_context());
+    CALL_DELEGATE_KERNEL(HandleOutputEvents, context, is_async_execution_mode);
 
     if (delegate_kernel->IsBenchmarkMode()) {
       // In benchmark mode, call WaitForCompletion() to wait for all the
@@ -242,16 +216,9 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
       }
     }
 
-    if (absl::Status s = delegate_kernel->DownloadGpuMemoryToCpuMemory(context); !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-
+    CALL_DELEGATE_KERNEL(DownloadGpuMemoryToIntermediateCpuTensors, context);
     if (delegate_kernel->HasQuantizedTensors()) {
-      if (absl::Status s = delegate_kernel->QuantizeOutputs(context); !s.ok()) {
-        ABSL_LOG(ERROR) << s;
-        return kTfLiteError;
-      }
+      CALL_DELEGATE_KERNEL(QuantizeOutputs, context);
     }
   }
   return kTfLiteOk;
@@ -269,10 +236,17 @@ TfLiteStatus DelegatePrepare(TfLiteContext* context, TfLiteDelegate* delegate) {
     start_node_index = delegate_options->debug_first_delegate_node_index;
     end_node_index = delegate_options->debug_last_delegate_node_index;
   }
-  litert::ml_drift::CustomOperationParserFactory custom_parser_factory;
-  TfLiteIntArray* ops_to_replace =
-      GetOpsToReplace(context, /*allow_quant_ops=*/true, /*max_delegated_partitions=*/1,
-                      &kExcludedOps, start_node_index, end_node_index, &custom_parser_factory);
+  TfLiteIntArray* ops_to_replace = nullptr;
+  if (delegate_options->use_ir_model) {
+    auto* delegate_data = reinterpret_cast<litert::ml_drift::MlDriftDelegateData*>(delegate->data_);
+    ops_to_replace = litert::ml_drift::GetIrModelOpsToReplace(context, *delegate_data,
+                                                              start_node_index, end_node_index);
+  } else {
+    litert::ml_drift::CustomOperationParserFactory custom_parser_factory;
+    ops_to_replace =
+        GetOpsToReplace(context, /*allow_quant_ops=*/true, /*max_delegated_partitions=*/1,
+                        &kExcludedOps, start_node_index, end_node_index, &custom_parser_factory);
+  }
 
   // Replace the ops with delegate kernel.
   const TfLiteRegistration kRegistration = {
@@ -405,6 +379,9 @@ TfLiteDelegatePtr CreateMlDriftMetalDelegate(MlDriftDelegateOptionsPtr options,
     case kFp32:
       delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::F32;
       break;
+  }
+  if (delegate_data->options->use_f32_accum_for_fp16) {
+    delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::F32_F16;
   }
   const bool hint_fully_delegated_to_single_delegate =
       delegate_data->options->hint_fully_delegated_to_single_delegate;

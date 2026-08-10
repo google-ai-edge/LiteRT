@@ -718,6 +718,11 @@ class LiteRtSubgraphT {
     tensors_.TransferFrom(other);
   }
 
+  // Reorders the ops in this subgraph to match the given order.
+  void ReorderOps(absl::Span<LiteRtOp const> new_order) {
+    ops_.Reorder(new_order);
+  }
+
   LiteRtOpT::Alloc& OpsAllocation() { return ops_; }
   LiteRtTensorT::Alloc& TensorsAllocation() { return tensors_; }
 
@@ -1214,7 +1219,10 @@ void CloneTo(const LiteRtTensorT& src, LiteRtTensorT& dest);
 void CloneTo(const LiteRtOpT& src, LiteRtOpT& dest);
 
 // Same as clone to, but allocates a the dest tensor into given subgraph.
-LiteRtTensorT& MakeClone(LiteRtSubgraphT& parent, const LiteRtTensorT& src);
+// If src has block-wise quantization, its scales and optional zero_points
+// tensors are also cloned into parent and remapped.
+litert::Expected<LiteRtTensorT*> MakeClone(LiteRtSubgraphT& parent,
+                                           const LiteRtTensorT& src);
 
 // Same as clone to, but allocates a the dest op into given subgraph.
 LiteRtOpT& MakeClone(LiteRtSubgraphT& parent, const LiteRtOpT& src);

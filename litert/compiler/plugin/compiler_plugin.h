@@ -234,7 +234,7 @@ struct ApplyPluginsResult {
   // Holds opaque JIT executable handles keyed by the dispatch op name.
   absl::flat_hash_map<std::string, LiteRtJitExecutable> jit_executable_handles;
 
-  // Keep the compiled results alive.
+  // Keep compiled results that own JIT executable handles alive.
   std::vector<CompiledResult> compiled_results;
 };
 

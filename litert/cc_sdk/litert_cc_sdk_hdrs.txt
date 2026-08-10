@@ -51,7 +51,7 @@ litert/cc/internal/scoped_weight_source.h
 litert/cc/internal/scoped_file.h
 litert/cc/internal/scoped_file_posix.h
 litert/cc/internal/scoped_file_win.h
-litert/cc/internal/litert_runtime_builtin.h
+litert/c/internal/litert_runtime_builtin.h
 litert/cc/internal/litert_runtime_proxy.h
 litert/cc/internal/litert_shared_library.h
 litert/cc/internal/litert_source_location.h

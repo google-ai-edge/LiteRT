@@ -658,6 +658,23 @@ TEST(ApplyTest, Simple) {
   EXPECT_TRUE(model.FindOpAsset(op));
 
   EXPECT_TRUE(model.FindMetadata(kLiteRtBuildStampKey));
+  EXPECT_TRUE(apply_result.compiled_results.empty());
+}
+
+TEST(ApplyTest, RetainsCompiledResultForJitHandle) {
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+  ASSERT_EQ(plugins->size(), 1);
+  auto model_wrap = testing::LoadTestFileModel("mul_simple.tflite");
+  ASSERT_TRUE(model_wrap);
+  auto& model = *model_wrap.Get();
+
+  ApplyPluginsResult apply_result;
+  ASSERT_TRUE(
+      ApplyPlugin(plugins->front(), model, "JustInTime", {}, apply_result));
+
+  EXPECT_EQ(apply_result.compiled_results.size(), 1);
+  EXPECT_FALSE(apply_result.jit_executable_handles.empty());
 }
 
 TEST(ApplyTest, WithPartition) {

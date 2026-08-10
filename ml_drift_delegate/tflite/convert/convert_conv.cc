@@ -35,6 +35,19 @@
 namespace litert::ml_drift::ir {
 namespace {
 
+// Mirrors GraphFloat32's IsConvertibleToFC: a shared convolution can be reduced
+// to a quantized fully-connected node only for 1x1-kernel int4/int8 weights
+// with affine quantization. Other shared weights (int2, non-affine, or float)
+// stay a convolution.
+bool IsConvertibleToFullyConnected(const TfLiteTensor* weights_tensor) {
+  return weights_tensor->dims->size == 4 &&
+         weights_tensor->dims->data[1] == 1 &&
+         weights_tensor->dims->data[2] == 1 &&
+         weights_tensor->quantization.type == kTfLiteAffineQuantization &&
+         (weights_tensor->type == kTfLiteInt4 ||
+          weights_tensor->type == kTfLiteInt8);
+}
+
 bool TryConvertConvToFullyConnected(
     const TfLiteContext& context, const TfLiteNode& node,
     const TfLiteConvParams* params,
@@ -51,27 +64,74 @@ bool TryConvertConvToFullyConnected(
     return false;
   }
 
+  const ::ml_drift::ir::IrTensorId weights_id =
+      tensor_map[node.inputs->data[1]];
+  const TfLiteTensor* weights_tensor = context.tensors + node.inputs->data[1];
+  const bool weights_are_runtime =
+      !tflite::IsConstantTensor(weights_tensor) ||
+      ir_model.tensor(weights_id)->buffer_source.is_shared;
+  const bool weights_are_quantized = weights_tensor->type == kTfLiteInt8 ||
+                                     weights_tensor->type == kTfLiteInt4 ||
+                                     weights_tensor->type == kTfLiteInt2;
+
+  // A shared convolution is only reduced to a quantized fully-connected node
+  // for int4/int8 affine weights (parity with GraphFloat32's
+  // IsConvertibleToFC). Other shared weights (int2, non-affine, or float)
+  // remain a convolution and are dequantized as usual, since the FC kernel
+  // can't consume them.
+  if (ir_model.tensor(weights_id)->buffer_source.is_shared &&
+      !IsConvertibleToFullyConnected(weights_tensor)) {
+    return false;
+  }
+
   ::ml_drift::ir::IrOp* fc_op = ir_model.add_op();
   fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED);
   ir_model.AddConsumer(input_tensor_id, fc_op->id);
 
-  if (!tflite::IsConstantTensor(context.tensors + node.inputs->data[1])) {
-    ir_model.AddConsumer(tensor_map[node.inputs->data[1]], fc_op->id);
+  bool configured_quantized = false;
+  if (weights_are_runtime) {
+    // Shared/runtime weights are consumed directly. Unlike Convolution2D, the
+    // fully-connected kernel can read quantized weights, so a shared weight is
+    // kept quantized (no forced dequantization), matching GraphFloat32's
+    // reduced fully-connected node.
+    ir_model.GetMutableTensor(weights_id)->buffer_source.dequant_forced = false;
+    ir_model.AddConsumer(weights_id, fc_op->id);
+    if (weights_are_quantized) {
+      // Emit the matching quantized fully-connected variant so the kernel reads
+      // the shared quantized weights directly (parity with GraphFloat32).
+      const ::ml_drift::BHWC weights_shape =
+          ir_model.tensor(weights_id)->desc.GetBHWCShape();
+      configured_quantized = ConfigSharedQuantizedFullyConnected(
+          *weights_tensor,
+          ::ml_drift::OHWI(weights_shape.b, weights_shape.h, weights_shape.w,
+                           weights_shape.c),
+          std::move(attr.bias), fc_op);
+    }
   }
   const bool has_bias =
       node.inputs->size > 2 && node.inputs->data[2] != kTfLiteOptionalTensor;
-  if (has_bias &&
-      !tflite::IsConstantTensor(context.tensors + node.inputs->data[2])) {
-    ir_model.AddConsumer(tensor_map[node.inputs->data[2]], fc_op->id);
+  if (has_bias) {
+    const ::ml_drift::ir::IrTensorId bias_id = tensor_map[node.inputs->data[2]];
+    // A runtime or shared bias (already flagged for LINEAR layout by the
+    // caller) is consumed as a runtime input; a const bias is embedded into the
+    // op attributes.
+    if (!tflite::IsConstantTensor(context.tensors + node.inputs->data[2]) ||
+        ir_model.tensor(bias_id)->buffer_source.is_shared) {
+      ir_model.AddConsumer(bias_id, fc_op->id);
+    }
   }
 
   HandleFusedActivation(params->activation, ir_model, fc_op, tensor_map,
                         node.outputs->data[0]);
 
-  ::ml_drift::FullyConnectedAttributes fc_attr;
-  fc_attr.weights = std::move(::ml_drift::GetFloatWeights(attr));
-  fc_attr.bias = std::move(attr.bias);
-  fc_op->attr = std::move(fc_attr);
+  if (!configured_quantized) {
+    ::ml_drift::FullyConnectedAttributes fc_attr;
+    if (!weights_are_runtime) {
+      fc_attr.weights = std::move(::ml_drift::GetFloatWeights(attr));
+    }
+    fc_attr.bias = std::move(attr.bias);
+    fc_op->attr = std::move(fc_attr);
+  }
   return true;
 }
 
@@ -184,7 +244,16 @@ void ConvertConv(
   const int input_id = node.inputs->data[0];
 
   const TfLiteTensor* weights_tensor = context.tensors + node.inputs->data[1];
-  if (tflite::IsConstantTensor(weights_tensor)) {
+  const ::ml_drift::ir::IrTensorId weights_id =
+      tensor_map[node.inputs->data[1]];
+  // Convolution2D cannot consume quantized shared weights, so force
+  // dequantization before sharing (parity with GraphFloat32).
+  if (ir_model.tensor(weights_id)->buffer_source.is_shared) {
+    ir_model.GetMutableTensor(weights_id)->buffer_source.dequant_forced =
+        weights_tensor->quantization.type == kTfLiteAffineQuantization;
+  }
+  if (tflite::IsConstantTensor(weights_tensor) &&
+      !ir_model.tensor(weights_id)->buffer_source.is_shared) {
     if (weights_tensor->type == kTfLiteInt4) {
       auto& weights = attr.weights.emplace<
           ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT4>>();
@@ -214,8 +283,6 @@ void ConvertConv(
   } else {
     auto& weights = attr.weights.emplace<
         ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>();
-    const ::ml_drift::ir::IrTensorId weights_id =
-        tensor_map[node.inputs->data[1]];
     const ::ml_drift::BHWC weights_shape =
         ir_model.tensor(weights_id)->desc.GetBHWCShape();
     // For runtime weights, TFLite conv2d weights are OHWI.
@@ -228,9 +295,15 @@ void ConvertConv(
       node.inputs->size > 2 && node.inputs->data[2] != kTfLiteOptionalTensor;
   if (has_bias &&
       tflite::IsConstantTensor(context.tensors + node.inputs->data[2])) {
-    PopulateTensor(context.tensors + node.inputs->data[2], node.inputs->data[2],
-                   &attr.bias, PopulateTensorFlags::kNoExtraBytes,
-                   options.enable_spanned_weights);
+    const ::ml_drift::ir::IrTensorId bias_id = tensor_map[node.inputs->data[2]];
+    // A shared bias is passed as a runtime input (flagged for LINEAR layout);
+    // otherwise embed it into the op attributes.
+    if (!MarkSharedBias(bias_id, ir_model)) {
+      PopulateTensor(context.tensors + node.inputs->data[2],
+                     node.inputs->data[2], &attr.bias,
+                     PopulateTensorFlags::kNoExtraBytes,
+                     options.enable_spanned_weights);
+    }
   }
 
   const auto* params = static_cast<const TfLiteConvParams*>(node.builtin_data);
@@ -262,11 +335,14 @@ void ConvertConv(
     ::ml_drift::ir::IrOp* conv_op = ir_model.add_op();
     conv_op->name = ToString(::ml_drift::OperationType::CONVOLUTION_2D);
     ir_model.AddConsumer(tensor_map[input_id], conv_op->id);
-    if (!tflite::IsConstantTensor(context.tensors + node.inputs->data[1])) {
-      ir_model.AddConsumer(tensor_map[node.inputs->data[1]], conv_op->id);
+    if (!tflite::IsConstantTensor(weights_tensor) ||
+        ir_model.tensor(weights_id)->buffer_source.is_shared) {
+      ir_model.AddConsumer(weights_id, conv_op->id);
     }
     if (has_bias &&
-        !tflite::IsConstantTensor(context.tensors + node.inputs->data[2])) {
+        (!tflite::IsConstantTensor(context.tensors + node.inputs->data[2]) ||
+         ir_model.tensor(tensor_map[node.inputs->data[2]])
+             ->buffer_source.is_shared)) {
       ir_model.AddConsumer(tensor_map[node.inputs->data[2]], conv_op->id);
     }
 

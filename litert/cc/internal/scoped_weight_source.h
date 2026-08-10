@@ -17,10 +17,10 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 #include "litert/cc/internal/scoped_file.h"
-#include "litert/cc/litert_api_types.h"
 
 /// @file
 /// @brief Defines structures for managing external model weights from a scoped
@@ -38,9 +38,10 @@ struct ScopedWeightSection {
 /// @brief Holds a `ScopedFile` handle and all group sections that can be
 /// sliced from it to satisfy external weight loads.
 struct ScopedWeightSource {
+  using SectionMap = std::unordered_map<std::string, ScopedWeightSection>;
+
   ScopedWeightSource() = default;
-  ScopedWeightSource(ScopedFile scoped_file,
-                     FlatHashMap<std::string, ScopedWeightSection> sections)
+  ScopedWeightSource(ScopedFile scoped_file, SectionMap sections)
       : file(std::move(scoped_file)), sections(std::move(sections)) {}
 
   ScopedWeightSource(ScopedWeightSource&&) = default;
@@ -51,7 +52,9 @@ struct ScopedWeightSource {
   bool empty() const { return sections.empty(); }
 
   ScopedFile file;
-  FlatHashMap<std::string, ScopedWeightSection> sections;
+  // This object crosses the C++ API/shared-runtime boundary, so its layout must
+  // not depend on whether the caller built the API with LITERT_NO_ABSL.
+  SectionMap sections;
 };
 
 }  // namespace litert

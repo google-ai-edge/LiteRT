@@ -16,7 +16,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps", "litert_bin", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
+load(
+    "//litert/build_common:litert_build_defs.bzl",
+    "gtest_main_no_heapcheck_deps",
+    "litert_bin",
+    "litert_dynamic_lib",
+    "litert_lib",
+    "litert_test",
+)
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
@@ -76,6 +83,7 @@ litert_dynamic_lib(
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/backends:backend_factory",
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
@@ -150,6 +158,7 @@ litert_bin(
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/backends:backend_factory",
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
@@ -169,14 +178,6 @@ litert_test(
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
     ],
-    linkopts = select({
-        "//litert:android": [],
-        "//conditions:default": [
-            make_rpaths([
-                "//litert/c:litert_runtime_c_api_so",
-            ]),
-        ],
-    }),
     linkstatic = True,
     no_main = True,
     tags = [
@@ -188,7 +189,7 @@ litert_test(
     # This test can be run only on Android and Linux.
     target_compatible_with = select({
         "//litert:android": [],
-        "//litert:linux": [],
+        "//litert:linux_x86_64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,
@@ -202,18 +203,18 @@ litert_test(
         "//litert/c/internal:litert_compiler_context",
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_qualcomm_options",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_environment",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model_predicates",
-        "//litert/cc/dynamic_runtime:litert_options",
+        "//litert/cc:litert_options",
+        "//litert/cc/internal:litert_extended_model",
+        "//litert/cc/internal:litert_model_predicates",
         "//litert/cc/options:litert_qualcomm_options",
         "//litert/compiler/cc:litert_model",
         "//litert/core:environment_options",
         "//litert/core/model:model_testonly",
         "//litert/test:common",
-        "//litert/test:load_test_model_runtimecapi",
+        "//litert/test:load_test_model",
         "//litert/test:matchers",
         "//litert/test:test_models",
         "//litert/vendors/cc:litert_compiler_plugin",
@@ -263,6 +264,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/backends:qnn_backend",
         "//litert/vendors/qualcomm/core/builders:arg_min_max_op_builder",
         "//litert/vendors/qualcomm/core/builders:broadcast_to_op_builder",
         "//litert/vendors/qualcomm/core/builders:cast_op_builder",
@@ -306,6 +308,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:select_op_builder",
         "//litert/vendors/qualcomm/core/builders:slice_op_builder",
         "//litert/vendors/qualcomm/core/builders:softmax_op_builder",
+        "//litert/vendors/qualcomm/core/builders:spatial_transform_nd_op_builder",
         "//litert/vendors/qualcomm/core/builders:spatial_transform_op_builder",
         "//litert/vendors/qualcomm/core/builders:split_op_builder",
         "//litert/vendors/qualcomm/core/builders:splitv_op_builder",
@@ -317,6 +320,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:transpose_op_builder",
         "//litert/vendors/qualcomm/core/builders:unpack_op_builder",
         "//litert/vendors/qualcomm/core/dump:dump_graph",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/transformation:graph_to_graph",
         "//litert/vendors/qualcomm/core/utils:flexbuffer_helpers",
         "//litert/vendors/qualcomm/core/utils:log",
@@ -343,18 +347,18 @@ litert_lib(
     visibility = ["//litert:__subpackages__"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_macros",
         "//litert/compiler/cc:litert_model",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/backends:graph_config_builder",
+        "//litert/vendors/qualcomm/core/backends:qnn_backend",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],
 )

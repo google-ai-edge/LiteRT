@@ -40,12 +40,12 @@
 #include "ml_drift/syrtis/converter.h"  // from @ml_drift
 #include "ml_drift/syrtis/vulkan_inference_context.h"  // from @ml_drift
 #include "ml_drift/syrtis/vulkan_spatial_tensor.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_event_type.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/shared_vulkan_env.h"
 #include "tflite/c/common.h"
 
@@ -86,15 +86,15 @@ class GpuBackendVulkan : public GpuBackend {
   absl::StatusOr<std::unique_ptr<::ml_drift::SharedMemoryManager>>
   CreateSharedMemoryManager(
       const ::ml_drift::CreateGpuModelInfo& create_info,
-      ::ml_drift::GraphFloat32& graph, TfLiteContext* context,
-      MlDriftDelegateData& delegate_data,
+      std::unique_ptr<::ml_drift::GraphAdapter> graph_adapter,
+      TfLiteContext* context, MlDriftDelegateData& delegate_data,
       ::ml_drift::SerializationWeightCache* serialization_cache) override;
   absl::StatusOr<std::shared_ptr<::ml_drift::WeightsManager>>
   CreateWeightsManager() override;
   absl::StatusOr<std::vector<
       std::vector<::ml_drift::WeightsManager::WeightsPrepOperationInfo>>>
-  GetBatchesForWeightsPreparation(
-      ::ml_drift::WeightsManager* weights_manager) override;
+  GetBatchesForWeightsPreparation(::ml_drift::WeightsManager* weights_manager,
+                                  size_t total_shared_tensor_size) override;
   absl::StatusOr<
       absl::flat_hash_map<::ml_drift::ValueId,
                           std::unique_ptr<::ml_drift::GpuSpatialTensor>>>
@@ -104,7 +104,8 @@ class GpuBackendVulkan : public GpuBackend {
           op_infos) override;
   absl::StatusOr<absl::flat_hash_map<
       ::ml_drift::ValueId, std::unique_ptr<::ml_drift::GpuSpatialTensor>>>
-  PrepareWeightsInBatches(::ml_drift::WeightsManager* weights_manager) override;
+  PrepareWeightsInBatches(::ml_drift::WeightsManager* weights_manager,
+                          size_t total_shared_tensor_size) override;
   absl::StatusOr<std::unique_ptr<GpuTensorWrapper>> CreateTensorWrapper(
       const ::ml_drift::TensorDescriptor& desc,
       GpuMemoryHandle gpu_memory) override;

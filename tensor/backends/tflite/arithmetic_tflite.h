@@ -36,6 +36,8 @@ struct TfLiteMixinTag {};
 template <>
 struct ApiType<tflite::half> : internal::StorageImpl<Type::kFP16, fp16_t> {};
 
+absl::StatusOr<::tflite::TensorType> ToTfLite(Type type);
+
 namespace graph {
 
 struct TfLiteOpBuildInfo {

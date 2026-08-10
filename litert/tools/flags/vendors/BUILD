@@ -46,27 +46,6 @@ cc_library(
     alwayslink = 1,
 )
 
-cc_library(
-    name = "qualcomm_flags_with_dynamic_runtime",
-    srcs = ["qualcomm_flags.cc"],
-    hdrs = ["qualcomm_flags.h"],
-    copts = [
-        "-DINCLUDE_QUALCOMM_COMPILE_FLAGS",
-        "-DINCLUDE_QUALCOMM_RUNTIME_FLAGS",
-    ],
-    deps = [
-        "//litert/cc:litert_api_with_dynamic_runtime",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/tools/flags:flag_types",
-        "//litert/tools/flags:options_parser_registry_dynamic_runtime",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-    alwayslink = 1,
-)
-
 cc_test(
     name = "qualcomm_flags_test",
     srcs = ["qualcomm_flags_test.cc"],
@@ -77,6 +56,7 @@ cc_test(
     deps = [
         ":qualcomm_flags",
         "//litert/c/options:litert_qualcomm_options",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_qualcomm_options",
         "@com_google_absl//absl/strings:string_view",
@@ -107,25 +87,6 @@ cc_library(
     alwayslink = 1,
 )
 
-cc_library(
-    name = "google_tensor_flags_with_dynamic_runtime",
-    srcs = ["google_tensor_flags.cc"],
-    hdrs = ["google_tensor_flags.h"],
-    copts = [
-        "-DINCLUDE_GOOGLE_TENSOR_COMPILE_FLAGS",
-        "-DINCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS",
-    ],
-    deps = [
-        "//litert/cc:litert_api_with_dynamic_runtime",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/tools/flags:options_parser_registry_dynamic_runtime",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-    alwayslink = 1,
-)
-
 cc_test(
     name = "google_tensor_flags_test",
     srcs = ["google_tensor_flags_test.cc"],
@@ -137,6 +98,7 @@ cc_test(
         ":google_tensor_flags",
         "//litert/c/options:litert_google_tensor_options",
         "//litert/c/options:litert_google_tensor_options_type",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_google_tensor_options",
         "@com_google_absl//absl/flags:flag",
@@ -168,25 +130,6 @@ cc_library(
     alwayslink = 1,
 )
 
-cc_library(
-    name = "mediatek_flags_with_dynamic_runtime",
-    srcs = ["mediatek_flags.cc"],
-    hdrs = ["mediatek_flags.h"],
-    copts = [
-        "-DINCLUDE_MEDIATEK_COMPILE_FLAGS",
-        "-DINCLUDE_MEDIATEK_RUNTIME_FLAGS",
-    ],
-    deps = [
-        "//litert/cc:litert_api_with_dynamic_runtime",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/tools/flags:options_parser_registry_dynamic_runtime",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-    alwayslink = 1,
-)
-
 cc_test(
     name = "mediatek_flags_test",
     srcs = ["mediatek_flags_test.cc"],
@@ -197,6 +140,7 @@ cc_test(
     deps = [
         ":mediatek_flags",
         "//litert/c/options:litert_mediatek_options",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_mediatek_options",
         "@com_google_absl//absl/flags:flag",
@@ -231,28 +175,6 @@ cc_library(
     alwayslink = 1,
 )
 
-cc_library(
-    name = "intel_openvino_flags_with_dynamic_runtime",
-    srcs = ["intel_openvino_flags.cc"],
-    hdrs = ["intel_openvino_flags.h"],
-    copts = [
-        "-DINCLUDE_INTEL_OPENVINO_COMPILE_FLAGS",
-        "-DINCLUDE_INTEL_OPENVINO_RUNTIME_FLAGS",
-    ],
-    deps = [
-        "//litert/c/internal:litert_logging",
-        "//litert/cc:litert_api_with_dynamic_runtime",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc/options:litert_intel_openvino_options",
-        "//litert/tools/flags:options_parser_registry_dynamic_runtime",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-    alwayslink = 1,
-)
-
 cc_test(
     name = "intel_openvino_flags_test",
     srcs = ["intel_openvino_flags_test.cc"],
@@ -263,6 +185,7 @@ cc_test(
     deps = [
         ":intel_openvino_flags",
         "//litert/c/options:litert_intel_openvino_options",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_intel_openvino_options",
         "//litert/test:matchers",
@@ -289,25 +212,6 @@ cc_library(
         "//litert/cc:litert_options",
         "//litert/cc/options:litert_samsung_options",
         "//litert/tools/flags:options_parser_registry",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-    alwayslink = 1,
-)
-
-cc_library(
-    name = "samsung_flags_with_dynamic_runtime",
-    srcs = ["samsung_flags.cc"],
-    hdrs = ["samsung_flags.h"],
-    copts = [
-        "-DINCLUDE_SAMSUNG_COMPILE_FLAGS",
-        "-DINCLUDE_SAMSUNG_RUNTIME_FLAGS",
-    ],
-    deps = [
-        "//litert/cc:litert_api_with_dynamic_runtime",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/tools/flags:options_parser_registry_dynamic_runtime",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings:string_view",
     ],

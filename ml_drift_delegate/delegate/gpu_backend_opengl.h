@@ -82,15 +82,15 @@ class GpuBackendOpenGl : public GpuBackend {
   absl::StatusOr<std::unique_ptr<::ml_drift::SharedMemoryManager>>
   CreateSharedMemoryManager(
       const ::ml_drift::CreateGpuModelInfo& create_info,
-      ::ml_drift::GraphFloat32& graph, TfLiteContext* context,
-      MlDriftDelegateData& delegate_data,
+      std::unique_ptr<::ml_drift::GraphAdapter> graph_adapter,
+      TfLiteContext* context, MlDriftDelegateData& delegate_data,
       ::ml_drift::SerializationWeightCache* serialization_cache) override;
   absl::StatusOr<std::shared_ptr<::ml_drift::WeightsManager>>
   CreateWeightsManager() override;
   absl::StatusOr<std::vector<
       std::vector<::ml_drift::WeightsManager::WeightsPrepOperationInfo>>>
-  GetBatchesForWeightsPreparation(
-      ::ml_drift::WeightsManager* weights_manager) override;
+  GetBatchesForWeightsPreparation(::ml_drift::WeightsManager* weights_manager,
+                                  size_t total_shared_tensor_size) override;
   absl::StatusOr<
       absl::flat_hash_map<::ml_drift::ValueId,
                           std::unique_ptr<::ml_drift::GpuSpatialTensor>>>
@@ -98,10 +98,10 @@ class GpuBackendOpenGl : public GpuBackend {
       ::ml_drift::WeightsManager* weights_manager,
       std::vector<::ml_drift::WeightsManager::WeightsPrepOperationInfo>&
           op_infos) override;
-  absl::StatusOr<
-      absl::flat_hash_map<::ml_drift::ValueId,
-                          std::unique_ptr<::ml_drift::GpuSpatialTensor>>>
-  PrepareWeightsInBatches(::ml_drift::WeightsManager* weights_manager) override;
+  absl::StatusOr<absl::flat_hash_map<
+      ::ml_drift::ValueId, std::unique_ptr<::ml_drift::GpuSpatialTensor>>>
+  PrepareWeightsInBatches(::ml_drift::WeightsManager* weights_manager,
+                          size_t total_shared_tensor_size) override;
   absl::StatusOr<std::unique_ptr<GpuTensorWrapper>> CreateTensorWrapper(
       const ::ml_drift::TensorDescriptor& desc,
       GpuMemoryHandle gpu_memory) override;

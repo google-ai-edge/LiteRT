@@ -82,7 +82,7 @@ absl::StatusOr<int> SentencePieceTokenizer::TokenToId(absl::string_view token) {
 
 // Decodes the given TensorBuffer of token ids into a string.
 absl::StatusOr<std::string> SentencePieceTokenizer::TokenIdsToText(
-    const std::vector<int>& token_ids) {
+    const std::vector<int>& token_ids, bool skip_special_tokens) {
   std::string text = "";
   std::vector<int> chunk_byte_token_ids;
   for (const auto& token_id : token_ids) {
@@ -90,6 +90,12 @@ absl::StatusOr<std::string> SentencePieceTokenizer::TokenIdsToText(
       return absl::NotFoundError(
           absl::StrCat("Token id ", token_id,
                        " is out of range. Vocab size is ", vocab_size_));
+    }
+    if (skip_special_tokens &&
+        (token_id == processor_->bos_id() || token_id == processor_->eos_id() ||
+         token_id == processor_->pad_id() ||
+         token_id == processor_->unk_id())) {
+      continue;
     }
     if (processor_->IsByte(token_id)) {
       std::string decoded = processor_->DecodeIds({token_id});

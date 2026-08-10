@@ -23,6 +23,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/log/die_if_null.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -50,6 +51,7 @@
 #include "litert/cc/litert_macros.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
 #include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "tflite/c/common.h"
 
@@ -107,7 +109,7 @@ absl::StatusOr<GpuMemoryHandle> GpuBackendOpenGl::GetGpuMemoryAllocated(
 
 absl::StatusOr<GpuEventHandle> GpuBackendOpenGl::GetGpuEventAssociated(
     const GpuTensorBufferPtr& tensor_buffer) {
-  return absl::UnimplementedError("GetGpuEventAssociated is not implemented.");
+  return absl::NotFoundError("Tensor buffer does not have an event.");
 }
 
 absl::Status GpuBackendOpenGl::AssociateGpuEvent(
@@ -145,8 +147,8 @@ GpuBackendOpenGl::CreateInferenceContext(
     ::ml_drift::GpuModel& gpu_model, std::vector<uint8_t>* serialized_model,
     bool may_share_memory_manager) {
   auto ctx = std::make_unique<GpuInferenceContextOpenGl>(env_);
-  RETURN_IF_ERROR(ctx->gl_ctx().InitFromGpuModel(create_info, &gpu_model,
-                                                 serialized_model));
+  ABSL_RETURN_IF_ERROR(ctx->gl_ctx().InitFromGpuModel(create_info, &gpu_model,
+                                                      serialized_model));
   return std::move(ctx);
 }
 
@@ -155,7 +157,7 @@ GpuBackendOpenGl::RestoreInferenceContext(
     const ::ml_drift::CreateGpuModelInfo& create_info,
     const absl::Span<const uint8_t> serialized_model) {
   auto ctx = std::make_unique<GpuInferenceContextOpenGl>(env_);
-  RETURN_IF_ERROR(ctx->gl_ctx().RestoreDeserialized(
+  ABSL_RETURN_IF_ERROR(ctx->gl_ctx().RestoreDeserialized(
       serialized_model,
       const_cast<::ml_drift::CreateGpuModelInfo*>(&create_info)));
   return std::move(ctx);
@@ -164,8 +166,8 @@ GpuBackendOpenGl::RestoreInferenceContext(
 absl::StatusOr<std::unique_ptr<::ml_drift::SharedMemoryManager>>
 GpuBackendOpenGl::CreateSharedMemoryManager(
     const ::ml_drift::CreateGpuModelInfo& create_info,
-    ::ml_drift::GraphFloat32& graph, TfLiteContext* context,
-    MlDriftDelegateData& delegate_data,
+    std::unique_ptr<::ml_drift::GraphAdapter> graph_adapter,
+    TfLiteContext* context, MlDriftDelegateData& delegate_data,
     ::ml_drift::SerializationWeightCache* serialization_cache) {
   return absl::UnimplementedError(
       "CreateSharedMemoryManager is not implemented.");
@@ -179,7 +181,8 @@ GpuBackendOpenGl::CreateWeightsManager() {
 absl::StatusOr<std::vector<
     std::vector<::ml_drift::WeightsManager::WeightsPrepOperationInfo>>>
 GpuBackendOpenGl::GetBatchesForWeightsPreparation(
-    ::ml_drift::WeightsManager* weights_manager) {
+    ::ml_drift::WeightsManager* weights_manager,
+    size_t total_shared_tensor_size) {
   return absl::UnimplementedError(
       "GetBatchesForWeightsPreparation is not implemented.");
 }
@@ -194,11 +197,11 @@ GpuBackendOpenGl::PrepareWeightsInBatch(
   return absl::UnimplementedError("PrepareWeightsInBatch is not implemented.");
 }
 
-absl::StatusOr<
-    absl::flat_hash_map<::ml_drift::ValueId,
-                        std::unique_ptr<::ml_drift::GpuSpatialTensor>>>
+absl::StatusOr<absl::flat_hash_map<
+    ::ml_drift::ValueId, std::unique_ptr<::ml_drift::GpuSpatialTensor>>>
 GpuBackendOpenGl::PrepareWeightsInBatches(
-    ::ml_drift::WeightsManager* weights_manager) {
+    ::ml_drift::WeightsManager* weights_manager,
+    size_t total_shared_tensor_size) {
   return absl::UnimplementedError(
       "PrepareWeightsInBatches is not implemented.");
 }
@@ -207,7 +210,7 @@ absl::StatusOr<std::unique_ptr<GpuTensorWrapper>>
 GpuBackendOpenGl::CreateTensorWrapper(const ::ml_drift::TensorDescriptor& desc,
                                       GpuMemoryHandle gpu_memory) {
   auto gl_tensor = std::make_unique<GpuTensorWrapperOpenGl>();
-  RETURN_IF_ERROR(::ml_drift::pelong::CreateTensorShared(
+  ABSL_RETURN_IF_ERROR(::ml_drift::pelong::CreateTensorShared(
       static_cast<GLuint>(reinterpret_cast<uintptr_t>(gpu_memory)), desc,
       &gl_tensor->gl_tensor()));
   return std::move(gl_tensor);
@@ -244,7 +247,8 @@ absl::StatusOr<std::unique_ptr<GpuIOBuffer>>
 GpuBackendOpenGl::CreateIOBufferWithSize(::ml_drift::DataType data_type,
                                          size_t size, bool input) {
   ::ml_drift::pelong::GlBuffer gl_buffer;
-  RETURN_IF_ERROR(::ml_drift::pelong::CreateReadWriteBuffer(size, &gl_buffer));
+  ABSL_RETURN_IF_ERROR(
+      ::ml_drift::pelong::CreateReadWriteBuffer(size, &gl_buffer));
   return std::make_unique<GpuIOBufferOpenGl>(env_, std::move(gl_buffer));
 }
 
@@ -254,7 +258,7 @@ GpuBackendOpenGl::CreateTensor2BufferConverter(
     const ::ml_drift::BufferDescriptor& dst_desc) {
   auto converter =
       std::make_unique<::ml_drift::pelong::TensorToBHWCBufferConverter>();
-  RETURN_IF_ERROR(converter->Init(env_->gpu_info(), src_desc, dst_desc));
+  ABSL_RETURN_IF_ERROR(converter->Init(env_->gpu_info(), src_desc, dst_desc));
   return std::make_unique<Tensor2BufferConverterOpenGl>(env_,
                                                         std::move(converter));
 }
@@ -265,7 +269,7 @@ GpuBackendOpenGl::CreateBuffer2TensorConverter(
     const ::ml_drift::TensorDescriptor& dst_desc) {
   auto converter =
       std::make_unique<::ml_drift::pelong::BHWCBufferToTensorConverter>();
-  RETURN_IF_ERROR(converter->Init(env_->gpu_info(), src_desc, dst_desc));
+  ABSL_RETURN_IF_ERROR(converter->Init(env_->gpu_info(), src_desc, dst_desc));
   return std::make_unique<Buffer2TensorConverterOpenGl>(env_,
                                                         std::move(converter));
 }
@@ -300,12 +304,12 @@ absl::Status GpuInferenceContextOpenGl::Dispatch() { return ctx_.AddToQueue(); }
 
 absl::StatusOr<GpuEventHandle>
 GpuInferenceContextOpenGl::GetPreDispatchEvent() {
-  return absl::UnimplementedError("GetPreDispatchEvent is not implemented.");
+  return absl::NotFoundError("No pre-dispatch event.");
 }
 
 absl::StatusOr<GpuEventHandle> GpuInferenceContextOpenGl::GetPostDispatchEvent(
     bool is_async_execution_mode) {
-  return absl::UnimplementedError("GetPostDispatchEvent is not implemented.");
+  return absl::NotFoundError("No post-dispatch event.");
 }
 
 absl::Status GpuInferenceContextOpenGl::WaitForEventsCompleted(

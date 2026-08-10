@@ -30,6 +30,7 @@ struct MoeExpertsAttributes {
   enum class WeightType {
     kFp32,
     kInt8,
+    kInt4,
   };
 
   int num_experts = 0;

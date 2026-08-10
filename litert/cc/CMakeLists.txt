@@ -64,7 +64,6 @@ set(LITERT_CC_REQUIRED_INTERNAL_HEADERS
     internal/litert_platform_support.h
     internal/litert_builder.h
     internal/litert_rng.h
-    internal/litert_runtime_builtin.h
     internal/litert_runtime_proxy.h
     internal/litert_shared_library.h
     internal/litert_source_location.h
@@ -168,7 +167,6 @@ target_compile_features(litert_cc_api_headers INTERFACE cxx_std_20)
 
 target_link_libraries(litert_cc_api_headers
     INTERFACE
-        absl::algorithm_container
         absl::any_invocable
         absl::cleanup
         absl::flat_hash_map

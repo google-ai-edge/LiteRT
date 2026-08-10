@@ -61,7 +61,8 @@ LiteRtStatus LiteRtRegisterAccelerator(LiteRtEnvironment environment,
 // Sets the function used to retrieve the accelerator name.
 LiteRtStatus LiteRtSetAcceleratorGetName(
     LiteRtAccelerator accelerator,
-    LiteRtStatus (*GetName)(LiteRtAccelerator accelerator, const char** name)) {
+    LiteRtStatus (*GetName)(LiteRtAcceleratorConst accelerator,
+                            const char** name)) {
   if (!accelerator) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -72,7 +73,7 @@ LiteRtStatus LiteRtSetAcceleratorGetName(
 // Sets the function used to retrieve the accelerator version.
 LiteRtStatus LiteRtSetAcceleratorGetVersion(
     LiteRtAccelerator accelerator,
-    LiteRtStatus (*GetVersion)(LiteRtAccelerator accelerator,
+    LiteRtStatus (*GetVersion)(LiteRtAcceleratorConst accelerator,
                                LiteRtApiVersion* version)) {
   if (!accelerator) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -85,7 +86,7 @@ LiteRtStatus LiteRtSetAcceleratorGetVersion(
 LiteRtStatus LiteRtSetAcceleratorGetHardwareSupport(
     LiteRtAccelerator accelerator,
     LiteRtStatus (*GetHardwareSupport)(
-        LiteRtAccelerator accelerator,
+        LiteRtAcceleratorConst accelerator,
         LiteRtHwAcceleratorSet* supported_hardware)) {
   if (!accelerator) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -98,7 +99,7 @@ LiteRtStatus LiteRtSetDelegateFunction(
     LiteRtAccelerator accelerator,
     LiteRtStatus (*CreateDelegate)(LiteRtRuntimeContext* runtime_context,
                                    LiteRtEnvironment env,
-                                   LiteRtAccelerator accelerator,
+                                   LiteRtAcceleratorConst accelerator,
                                    LiteRtOptions options,
                                    LiteRtDelegateWrapper* delegate)) {
   if (!accelerator) {
@@ -111,7 +112,7 @@ LiteRtStatus LiteRtSetDelegateFunction(
 LiteRtStatus LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation(
     LiteRtAccelerator accelerator,
     LiteRtStatus (*IsTfLiteDelegateResponsibleForJitCompilation)(
-        LiteRtAcceleratorT* accelerator, bool* does_jit_compilation)) {
+        LiteRtAcceleratorConst accelerator, bool* does_jit_compilation)) {
   if (!accelerator) {
     return kLiteRtStatusErrorInvalidArgument;
   }

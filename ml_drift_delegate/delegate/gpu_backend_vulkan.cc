@@ -25,6 +25,7 @@
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/log/die_if_null.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -45,8 +46,6 @@
 #include "ml_drift/syrtis/environment.h"  // from @ml_drift
 #include "ml_drift/syrtis/vulkan_inference_context.h"  // from @ml_drift
 #include "ml_drift/syrtis/vulkan_spatial_tensor.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager.h"
-#include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager_vulkan.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
@@ -57,6 +56,9 @@
 #include "ml_drift_delegate/delegate/delegate_utils.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_vulkan.h"
 #include "ml_drift_delegate/delegate/shared_vulkan_env.h"
 #include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "tflite/c/common.h"
@@ -205,7 +207,7 @@ GpuBackendVulkan::CreateInferenceContext(
       create_info.external_immutable_tensors;
   inference_info.external_tensors.mutable_tensors =
       create_info.external_mutable_tensors;
-  RETURN_IF_ERROR(ctx->vk_ctx().InitFromGpuModel(
+  ABSL_RETURN_IF_ERROR(ctx->vk_ctx().InitFromGpuModel(
       inference_info, &gpu_model, &env_->vulkan_env(), serialized_model));
   return std::move(ctx);
 }
@@ -216,7 +218,7 @@ GpuBackendVulkan::RestoreInferenceContext(
     const absl::Span<const uint8_t> serialized_model) {
   auto ctx = std::make_unique<GpuInferenceContextVulkan>(
       this, num_steps_of_command_buffer_preparations_);
-  RETURN_IF_ERROR(ctx->vk_ctx().RestoreDeserialized(
+  ABSL_RETURN_IF_ERROR(ctx->vk_ctx().RestoreDeserialized(
       serialized_model, &env_->vulkan_env(), &create_info));
   return std::move(ctx);
 }
@@ -224,11 +226,11 @@ GpuBackendVulkan::RestoreInferenceContext(
 absl::StatusOr<std::unique_ptr<::ml_drift::SharedMemoryManager>>
 GpuBackendVulkan::CreateSharedMemoryManager(
     const ::ml_drift::CreateGpuModelInfo& create_info,
-    ::ml_drift::GraphFloat32& graph, TfLiteContext* context,
-    MlDriftDelegateData& delegate_data,
+    std::unique_ptr<::ml_drift::GraphAdapter> graph_adapter,
+    TfLiteContext* context, MlDriftDelegateData& delegate_data,
     ::ml_drift::SerializationWeightCache* serialization_cache) {
   return ::ml_drift::MakeSharedMemoryManagerVulkan(
-      env_, create_info, graph, context,
+      env_, create_info, std::move(graph_adapter), context,
       GetBufferIdToSpatialTensorMap(delegate_data),
       GetQuantParamIdToSpatialTensorMap(delegate_data),
       delegate_data.options->has_prepacked_external_tflite_tensors,
@@ -244,7 +246,8 @@ GpuBackendVulkan::CreateWeightsManager() {
 absl::StatusOr<std::vector<
     std::vector<::ml_drift::WeightsManager::WeightsPrepOperationInfo>>>
 GpuBackendVulkan::GetBatchesForWeightsPreparation(
-    ::ml_drift::WeightsManager* weights_manager) {
+    ::ml_drift::WeightsManager* weights_manager,
+    size_t total_shared_tensor_size) {
   return absl::UnimplementedError(
       "GetBatchesForWeightsPreparation is not implemented.");
 }
@@ -261,7 +264,8 @@ GpuBackendVulkan::PrepareWeightsInBatch(
 absl::StatusOr<absl::flat_hash_map<
     ::ml_drift::ValueId, std::unique_ptr<::ml_drift::GpuSpatialTensor>>>
 GpuBackendVulkan::PrepareWeightsInBatches(
-    ::ml_drift::WeightsManager* weights_manager) {
+    ::ml_drift::WeightsManager* weights_manager,
+    size_t total_shared_tensor_size) {
   return absl::UnimplementedError(
       "PrepareWeightsInBatches is not implemented.");
 }
@@ -317,7 +321,8 @@ GpuBackendVulkan::CreateTensor2BufferConverter(
     const ::ml_drift::BufferDescriptor& dst_desc) {
   auto converter =
       std::make_unique<::ml_drift::syrtis::TensorToBHWCBufferConverter>();
-  RETURN_IF_ERROR(converter->Init(&env_->vulkan_env(), src_desc, dst_desc));
+  ABSL_RETURN_IF_ERROR(
+      converter->Init(&env_->vulkan_env(), src_desc, dst_desc));
   return std::make_unique<Tensor2BufferConverterVulkan>(this,
                                                         std::move(converter));
 }
@@ -328,7 +333,8 @@ GpuBackendVulkan::CreateBuffer2TensorConverter(
     const ::ml_drift::TensorDescriptor& dst_desc) {
   auto converter =
       std::make_unique<::ml_drift::syrtis::BHWCBufferToTensorConverter>();
-  RETURN_IF_ERROR(converter->Init(&env_->vulkan_env(), src_desc, dst_desc));
+  ABSL_RETURN_IF_ERROR(
+      converter->Init(&env_->vulkan_env(), src_desc, dst_desc));
   return std::make_unique<Buffer2TensorConverterVulkan>(this,
                                                         std::move(converter));
 }
@@ -409,13 +415,14 @@ absl::Status GpuInferenceContextVulkan::Dispatch() {
   auto& shared_env = backend_->vk_env();
 
   // Submit any command buffers used so far, e.g. to upload input tensors.
-  RETURN_IF_ERROR(shared_env.SubmitCommandBuffer());
+  ABSL_RETURN_IF_ERROR(shared_env.SubmitCommandBuffer());
 
   // No command buffer preparation in advance. Add inference nodes to command
   // buffers newly created and added in shared_env.pending_command_buffers().
   if (next_command_buffers_.empty()) {
-    ASSIGN_OR_RETURN(auto command_buffers, ctx_.AddToQueueAsync(
-        &shared_env.vulkan_env(), num_nodes_per_command_buffer_));
+    ABSL_ASSIGN_OR_RETURN(auto command_buffers,
+                          ctx_.AddToQueueAsync(&shared_env.vulkan_env(),
+                                               num_nodes_per_command_buffer_));
     return shared_env.AddToPendingCommandBuffers(std::move(command_buffers));
   }
 
@@ -437,20 +444,21 @@ absl::Status GpuInferenceContextVulkan::Dispatch() {
 
   // Create a new command buffer to prepare in the shared_env with a new
   // command pool as it can't be shared with existing command buffers.
-  ASSIGN_OR_RETURN(auto* command_buffer,
-                   shared_env.GetCommandBuffer(/*new_command_pool=*/true));
+  ABSL_ASSIGN_OR_RETURN(auto* command_buffer,
+                        shared_env.GetCommandBuffer(/*new_command_pool=*/true));
   // Swap it with one prepared by the previous next_command_buffers_thread_.
   auto& next_buffer = next_command_buffers_[next_command_buffers_index_];
   std::swap(next_buffer, *command_buffer);
 
   if (next_command_buffers_ready_) {
-    RETURN_IF_ERROR(shared_env.SubmitCommandBuffer());
+    ABSL_RETURN_IF_ERROR(shared_env.SubmitCommandBuffer());
   } else {
     // Prepare and use command buffers immediately since cached ones are not
     // ready to use yet.
-    ASSIGN_OR_RETURN(auto command_buffers, ctx_.AddToQueueAsync(
-        &shared_env.vulkan_env(), num_nodes_per_command_buffer_));
-    RETURN_IF_ERROR(
+    ABSL_ASSIGN_OR_RETURN(auto command_buffers,
+                          ctx_.AddToQueueAsync(&shared_env.vulkan_env(),
+                                               num_nodes_per_command_buffer_));
+    ABSL_RETURN_IF_ERROR(
         shared_env.AddToPendingCommandBuffers(std::move(command_buffers)));
   }
 
@@ -558,7 +566,8 @@ Tensor2BufferConverterVulkan::Tensor2BufferConverterVulkan(
 
 absl::Status Tensor2BufferConverterVulkan::Convert(
     ::ml_drift::GpuSpatialTensor& src_tensor, GpuIOBuffer& dst_buffer) {
-  ASSIGN_OR_RETURN(auto* command_buffer, backend_->vk_env().GetCommandBuffer());
+  ABSL_ASSIGN_OR_RETURN(auto* command_buffer,
+                        backend_->vk_env().GetCommandBuffer());
   return converter_->Convert(
       backend_->vk_env().vulkan_env().GetDevice(), command_buffer->VkCB(),
       static_cast<::ml_drift::syrtis::VulkanSpatialTensor*>(&src_tensor),
@@ -572,7 +581,8 @@ Buffer2TensorConverterVulkan::Buffer2TensorConverterVulkan(
 
 absl::Status Buffer2TensorConverterVulkan::Convert(
     GpuIOBuffer& src_buffer, ::ml_drift::GpuSpatialTensor& dst_tensor) {
-  ASSIGN_OR_RETURN(auto* command_buffer, backend_->vk_env().GetCommandBuffer());
+  ABSL_ASSIGN_OR_RETURN(auto* command_buffer,
+                        backend_->vk_env().GetCommandBuffer());
   return converter_->Convert(
       backend_->vk_env().vulkan_env().GetDevice(), command_buffer->VkCB(),
       &(static_cast<GpuIOBufferVulkan&>(src_buffer).buffer()),

@@ -18,6 +18,7 @@
 #include <utility>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_accelerator_def.h"
 #include "litert/c/internal/litert_accelerator_registration.h"
 #include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
@@ -32,8 +33,10 @@ namespace litert::internal {
 
 LiteRtStatus RegisterAcceleratorFromDef(
     LiteRtEnvironment env, const LiteRtAcceleratorDef* accelerator_def) {
-  if (accelerator_def->version != LITERT_ACCELERATOR_DEF_CURRENT_VERSION)
+  if (!LITERT_ABI_IS_COMPATIBLE(accelerator_def, /*req_major=*/1,
+                                /*req_minor=*/0)) {
     return kLiteRtStatusErrorWrongVersion;
+  }
 
   if (accelerator_def->get_name == nullptr ||
       accelerator_def->get_version == nullptr ||
@@ -110,9 +113,9 @@ Expected<void> RegisterSharedObjectAcceleratorViaAcceleratorDef(
     absl::string_view accelerator_def_name, bool try_default_on_failure) {
   LITERT_ASSIGN_OR_RETURN(
       auto shlib, LoadSharedLibrary(shlib_path, try_default_on_failure));
-  LITERT_ASSIGN_OR_RETURN(
-      auto accelerator_def,
-      shlib.LookupSymbol<LiteRtAcceleratorDef*>(accelerator_def_name.data()));
+  LITERT_ASSIGN_OR_RETURN(auto accelerator_def,
+                          shlib.LookupSymbol<const LiteRtAcceleratorDef*>(
+                              accelerator_def_name.data()));
 
   LITERT_RETURN_IF_ERROR(
       RegisterAcceleratorFromDef(&environment, accelerator_def));

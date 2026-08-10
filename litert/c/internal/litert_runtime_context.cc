@@ -28,6 +28,13 @@
 
 LiteRtRuntimeContext* LrtGetRuntimeContext() {
   static LiteRtRuntimeContext context = {
+      .abi_header =
+          {
+              .struct_size = sizeof(LiteRtRuntimeContext),
+              .major_version = 1,
+              .minor_version = 0,
+              .reserved = 0,
+          },
       .create_tensor_buffer_requirements = LiteRtCreateTensorBufferRequirements,
       .get_external_litert_buffer_context_tensor_buffer =
           LiteRtGetExternalLiteRtBufferContextTensorBuffer,

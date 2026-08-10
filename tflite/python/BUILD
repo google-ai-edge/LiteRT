@@ -1,11 +1,27 @@
+# Copyright 2026 The TensorFlow Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_py_library")
 load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_contrib_test", "pytype_strict_library")
-load("@org_tensorflow//tensorflow:tensorflow.bzl", "if_oss", "py_test")
+load("@org_tensorflow//tensorflow:tensorflow.bzl", "py_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable", "pywrap_binaries", "pywrap_library")
 load("@org_tensorflow//tensorflow/core/platform:build_config_root.bzl", "if_pywrap")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
 load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
+load("//tflite:build_def.bzl", "tflite_exec_properties")
 load("//tflite:special_rules.bzl", "internal_visibility_allowlist")
 
 package(
@@ -66,6 +82,7 @@ py_test(
         "//tflite/python/testdata:interpreter_test_data",
         "//tflite/python/testdata:test_delegate.so",
     ],
+    exec_properties = tflite_exec_properties(),
     # Static linking is required because this loads a cc_binary as a shared
     # library, which would otherwise create ODR violations.
     # copybara:uncomment linking_mode = "static",
@@ -301,13 +318,7 @@ py_test(
         "//tflite/python/testdata:test_delegate.so",
         "//tflite/python/testdata/control_flow_v1_saved_model:saved_model.pb",
     ],
-    exec_properties = if_oss(
-        None,
-        select({
-            "//tools/cpp:asan_build": {"cpp_link.mem": "20g"},
-            "//conditions:default": None,
-        }),
-    ),
+    exec_properties = tflite_exec_properties(),
     shard_count = 18,
     strict_deps = True,
     tags = [
@@ -676,6 +687,7 @@ py_test(
         "//tflite:testdata/conv_huge_im2col.bin",
         "//tflite:testdata/multi_add_flex.bin",
     ],
+    exec_properties = tflite_exec_properties(),
     strict_deps = True,
     deps = [
         ":analyzer",

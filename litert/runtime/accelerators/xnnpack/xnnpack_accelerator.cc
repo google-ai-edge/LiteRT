@@ -58,7 +58,7 @@ class CpuAccelerator final
   // Creates a Dispatch delegate instance.
   static LiteRtStatus CreateDelegate(LiteRtRuntimeContext* runtime_context,
                                      LiteRtEnvironment env,
-                                     LiteRtAccelerator accelerator,
+                                     LiteRtAcceleratorConst accelerator,
                                      LiteRtOptions options,
                                      LiteRtDelegateWrapper* delegate_wrapper) {
     LITERT_RETURN_IF_ERROR(delegate_wrapper != nullptr,
@@ -133,7 +133,7 @@ class CpuAccelerator final
   // Returns true to indicate the XNNPack delegate is responsible for JIT
   // compilation.
   static LiteRtStatus IsTfLiteDelegateResponsibleForJitCompilation(
-      LiteRtAcceleratorT* accelerator, bool* does_jit_compilation) {
+      LiteRtAcceleratorConst accelerator, bool* does_jit_compilation) {
     LITERT_RETURN_IF_ERROR(does_jit_compilation,
                            litert::ErrorStatusBuilder::InvalidArgument())
         << "`does_jit_compilation` pointer is null.";
@@ -154,8 +154,14 @@ extern "C" {
 
 // Discovery C object for the CPU (XNNPack) accelerator by LiteRT.
 // This object is used by the LiteRT environment constructor.
-static LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
-    .version = 1,  // LiteRtAcceleratorDefV1
+static const LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtAcceleratorDefV1),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .get_name = litert::CpuAccelerator::GetName,
     .get_version = litert::CpuAccelerator::GetVersion,
     .get_hardware_support = litert::CpuAccelerator::GetHardwareSupport,
@@ -177,7 +183,7 @@ static LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
 };
 
 // Accelerator definition pointer referenced by auto_registration.cc.
-LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef =
+const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef =
     &LiteRtCpuAcceleratorImpl;
 
 }  // extern "C"

@@ -44,6 +44,8 @@
  ******************************************************************************/
 #include "bstorm_compiler_graph.h"
 
+#include <sys/wait.h>
+
 #include <memory>
 #include <vector>
 
@@ -191,41 +193,177 @@ static void bstorm_LiteRt_offline_config_init(
   return;
 }
 
+#if !defined(__arm__) && !defined(__aarch64__)
+static bstorm_result bstorm_LiteRt_run_graph_tool(
+    const struct bstorm_Graph* src_graph, const std::string& tool_path,
+    const std::string& options, struct bstorm_flatbuf& flatbuf) {
+  bstorm_result rc = BSTORM_RESULT_INITIALIZER();
+  char tmp_dir[] = "/tmp/bstorm.XXXXXX";
+  char tmp_in[256], tmp_out[256];
+  char* tdir = mkdtemp(tmp_dir);
+  pid_t pid;
+  int prc;
+  char _in[] = "--in";
+  char _out[] = "--out";
+  std::vector<char*> args;
+  std::vector<std::string> vec_opts;
+  bool debug = false;
+
+  B_STORM_ASSERT(src_graph);
+  B_STORM_CONDITION(rc, tdir, err_tmp_dir);
+  prc = snprintf(tmp_in, sizeof(tmp_in), "%s/in.graph.bstorm", tmp_dir);
+  B_STORM_CONDITION(rc, prc >= 0, err_tmp_name);
+  B_STORM_CONDITION(rc, (unsigned)prc < (unsigned)sizeof(tmp_in), err_tmp_name);
+  prc = snprintf(tmp_out, sizeof(tmp_out), "%s/out.graph.bstorm", tmp_dir);
+  B_STORM_CONDITION(rc, prc >= 0, err_tmp_name);
+  B_STORM_CONDITION(rc, (unsigned)prc < (unsigned)sizeof(tmp_out),
+                    err_tmp_name);
+  B_STORM_CHECKED_CALL(rc, bstorm_flatbuf_write_graph, (tmp_in, src_graph),
+                       err_write);
+  args.push_back(const_cast<char*>(tool_path.c_str()));
+  if (!options.empty()) {
+    std::istringstream opts(options);
+    std::string tmp;
+
+    while (std::getline(opts, tmp, ' ')) {
+      vec_opts.push_back(tmp);
+    }
+    for (const std::string& s : vec_opts) {
+      args.push_back(const_cast<char*>(s.c_str()));
+    }
+  }
+  args.push_back(_in);
+  args.push_back(tmp_in);
+  args.push_back(_out);
+  args.push_back(tmp_out);
+  args.push_back(nullptr);
+  if (debug) {
+    std::ostringstream tmp;
+    std::copy(args.begin(), args.end() - 1,
+              std::ostream_iterator<std::string>(tmp, " "));
+    tmp << args.back();
+    std::string cmd = tmp.str();
+    B_STORM_DEBUG("Executing: '%s'", cmd.c_str());
+  }
+  pid = fork();
+  if (pid == -1) {
+    B_STORM_ERROR(rc, NotSupported, err_exec);
+  } else if (pid == 0) {
+    execvp(tool_path.c_str(), args.data());
+    B_STORM_ERROR(rc, NotSupported, err_exec);
+  } else {
+    int status;
+    prc = waitpid(pid, &status, 0);
+    B_STORM_CONDITION(rc, prc != -1, err_wait);
+    B_STORM_CONDITION(rc, prc == pid, err_wait);
+    B_STORM_CONDITION(rc, WIFEXITED(status), err_wait);
+  }
+  B_STORM_CHECKED_CALL(rc, bstorm_flatbuf_read, (tmp_out, &flatbuf, NULL),
+                       err_read);
+  B_STORM_CONDITION(rc, flatbuf.graph, err_graph_read);
+  unlink(tmp_out);
+  unlink(tmp_in);
+  rmdir(tmp_dir);
+  return rc;
+
+err_graph_read:
+  bstorm_flatbuf_free(&flatbuf);
+err_read:
+  unlink(tmp_in);
+err_wait:
+  unlink(tmp_out);
+err_exec:
+  unlink(tmp_in);
+err_write:
+err_tmp_name:
+  rmdir(tmp_dir);
+err_tmp_dir:
+  return rc;
+}
+#endif /* !__arm__ && !__aarch64__ */
+
+static bstorm_result bstorm_LiteRt_precompile_prepare(
+    const struct bstorm_Graph* src_graph, const std::string& tool_path,
+    const std::string& tool_options,
+    struct bstorm_compiler_bstm_offline_config& offline_config,
+    struct bstorm_bstm_config& bstm_config, struct bstorm_flatbuf& transformed,
+    const struct bstorm_Graph*& graph_to_compile, bool bstm_compress) {
+  bstorm_result rc = BSTORM_RESULT_INITIALIZER();
+  bstorm_LiteRt_offline_config_init(&offline_config, &bstm_config);
+  if (bstm_compress) {
+    bstm_config.weight_compression = 1;
+  }
+  graph_to_compile = src_graph;
+#if !defined(__arm__) && !defined(__aarch64__)
+  if (!tool_path.empty()) {
+    B_STORM_CHECKED_CALL(rc, bstorm_LiteRt_run_graph_tool,
+                         (src_graph, tool_path, tool_options, transformed),
+                         err_tool);
+    graph_to_compile = transformed.graph->graph;
+  }
+#else
+  (void)tool_path;
+  (void)tool_options;
+#endif
+  return rc;
+err_tool:
+  return rc;
+}
+
 bstorm_result bstorm_LiteRt_compiler_graph::graph_precompile_to_file(
-    struct bstorm_context* context, const std::string& bstm_file) {
+    struct bstorm_context* context, const std::string& bstm_file,
+    const std::string& tool_path, const std::string& tool_options,
+    bool bstm_compress) {
   bstorm_result rc = BSTORM_RESULT_INITIALIZER();
   struct bstorm_compiler_bstm_offline_config offline_config;
   struct bstorm_bstm_config bstm_config;
+  struct bstorm_flatbuf transformed;
+  const struct bstorm_Graph* graph_to_compile;
 
-  bstorm_LiteRt_offline_config_init(&offline_config, &bstm_config);
-  B_STORM_DEBUG("Running offline compilation to file: %s", bstm_file.c_str());
+  B_STORM_CHECKED_CALL(
+      rc, bstorm_LiteRt_precompile_prepare,
+      (bstorm_graph_, tool_path, tool_options, offline_config, bstm_config,
+       transformed, graph_to_compile, bstm_compress),
+      err_prepare);
+  B_STORM_DEBUG("Offline compile to file: %s", bstm_file.c_str());
   B_STORM_CHECKED_CALL(rc, bstorm_compiler_bstm_offline_process,
-                       (context, &offline_config, &bstm_config, bstorm_graph_,
-                        NULL, NULL, NULL, bstm_file.c_str()),
+                       (context, &offline_config, &bstm_config,
+                        graph_to_compile, NULL, NULL, NULL, bstm_file.c_str()),
                        err_compile);
-  B_STORM_DEBUG("Wrote precompiled .bstm: %s", bstm_file.c_str());
+  if (transformed.graph) bstorm_flatbuf_free(&transformed);
   return rc;
 
 err_compile:
+  if (transformed.graph) bstorm_flatbuf_free(&transformed);
+err_prepare:
   return rc;
 }
 
 bstorm_result bstorm_LiteRt_compiler_graph::graph_precompile_to_buffer(
     struct bstorm_context* context,
-    struct bstorm_compiler_bstm_offline_output_buffer& out) {
+    struct bstorm_compiler_bstm_offline_output_buffer& out,
+    const std::string& tool_path, const std::string& tool_options,
+    bool bstm_compress) {
   bstorm_result rc = BSTORM_RESULT_INITIALIZER();
   struct bstorm_compiler_bstm_offline_config offline_config;
   struct bstorm_bstm_config bstm_config;
+  struct bstorm_flatbuf transformed;
+  const struct bstorm_Graph* graph_to_compile;
 
-  bstorm_LiteRt_offline_config_init(&offline_config, &bstm_config);
-  B_STORM_DEBUG_PRINT("Running offline compilation to buffer");
+  B_STORM_CHECKED_CALL(
+      rc, bstorm_LiteRt_precompile_prepare,
+      (bstorm_graph_, tool_path, tool_options, offline_config, bstm_config,
+       transformed, graph_to_compile, bstm_compress),
+      err_prepare);
   B_STORM_CHECKED_CALL(
       rc, bstorm_compiler_bstm_offline_process_to_buffer,
-      (context, &offline_config, &bstm_config, bstorm_graph_, &out),
+      (context, &offline_config, &bstm_config, graph_to_compile, &out),
       err_compile);
-  B_STORM_DEBUG("Compiled .bstm to buffer: %zu bytes", out.buffer_size);
+  if (transformed.graph) bstorm_flatbuf_free(&transformed);
   return rc;
 
 err_compile:
+  if (transformed.graph) bstorm_flatbuf_free(&transformed);
+err_prepare:
   return rc;
 }

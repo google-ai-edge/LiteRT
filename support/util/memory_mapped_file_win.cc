@@ -95,7 +95,25 @@ absl::StatusOr<std::unique_ptr<MemoryMappedFile>> CreateImpl(
       << ", " << MemoryMappedFile::GetOffsetAlignment();
 
   ASSIGN_OR_RETURN(size_t file_size, ScopedFile::GetSize(hfile));
-  RET_CHECK_GE(file_size, length + offset) << "Length and offset too large.";
+  RET_CHECK_LE(offset, file_size)
+      << "Offset (" << offset << ") is greater than file size (" << file_size
+      << ").";
+
+  if (length + offset > file_size) {
+    if (file_size % MemoryMappedFile::GetOffsetAlignment() != 0) {
+      RET_CHECK(false) << "Length (" << length << ") and offset (" << offset
+                       << ") are too large for file size (" << file_size
+                       << ") and the file size is not a multiple of the OS "
+                          "alignment requirement ("
+                       << MemoryMappedFile::GetOffsetAlignment()
+                       << "). The file might not have enough padding.";
+    } else {
+      RET_CHECK(false) << "Length (" << length << ") and offset (" << offset
+                       << ") are too large for file size (" << file_size
+                       << ").";
+    }
+  }
+
   if (length == 0) {
     length = file_size - offset;
   }

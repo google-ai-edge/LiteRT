@@ -17,7 +17,12 @@
 # load("@rules_cc//cc:cc_test.bzl", "cc_test")
 #
 # copybara:uncomment_end
-load("//litert/build_common:special_rule.bzl", "get_compatible_with_portable")
+load(
+    "//litert/build_common:special_rule.bzl",
+    "friends_of_litert_runtime_builtin_static",
+    "get_compatible_with_portable",
+    "litert_jni_friends",
+)
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
@@ -46,6 +51,24 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     visibility = [
         "//visibility:public",
+    ],
+)
+
+cc_library(
+    name = "litert_abi_header",
+    hdrs = ["litert_abi_header.h"],
+    compatible_with = get_compatible_with_portable(),
+    visibility = [
+        "//visibility:public",
+    ],
+)
+
+cc_test(
+    name = "litert_abi_header_test",
+    srcs = ["litert_abi_header_test.cc"],
+    deps = [
+        ":litert_abi_header",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -90,7 +113,9 @@ cc_test(
 cc_library(
     name = "litert_accelerator_def",
     hdrs = ["litert_accelerator_def.h"],
+    visibility = ["//litert:litert_internal_users"],
     deps = [
+        ":litert_abi_header",
         ":litert_custom_tensor_buffer_handlers_def",
         ":litert_runtime_context_header",
         "//litert/c:litert_common",
@@ -101,6 +126,7 @@ cc_library(
     name = "litert_custom_tensor_buffer_handlers_def",
     hdrs = ["litert_custom_tensor_buffer_handlers_def.h"],
     deps = [
+        ":litert_abi_header",
         "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_environment_options_header",
         "//litert/c:litert_tensor_buffer_types",
@@ -116,6 +142,7 @@ cc_library(
         "//litert/vendors:__subpackages__",
     ],
     deps = [
+        ":litert_abi_header",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_header",
@@ -130,6 +157,7 @@ cc_library(
     hdrs = ["litert_compiler_context.h"],
     visibility = ["//litert:litert_internal_users"],
     deps = [
+        ":litert_abi_header",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_impl",
@@ -148,6 +176,7 @@ cc_library(
     hdrs = ["litert_compiler_context.h"],
     visibility = ["//litert:litert_public"],
     deps = [
+        ":litert_abi_header",
         ":litert_compiler_context",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
@@ -165,6 +194,7 @@ cc_library(
     name = "litert_runtime_context_header",
     hdrs = ["litert_runtime_context.h"],
     deps = [
+        ":litert_abi_header",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
@@ -189,6 +219,7 @@ cc_library(
         "//third_party/odml/litert/weight_loader:__subpackages__",
     ],
     deps = [
+        ":litert_abi_header",
         ":litert_delegate_wrapper",
         ":litert_external_litert_buffer_context",
         "//litert/c:litert_any",
@@ -218,6 +249,7 @@ cc_library(
     testonly = 1,
     hdrs = ["litert_runtime_context.h"],
     deps = [
+        ":litert_abi_header",
         ":litert_runtime_context",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
@@ -338,6 +370,7 @@ cc_library(
     name = "litert_dispatch_headers",
     hdrs = [
         # Internal C API headers.
+        ":litert_abi_header.h",
         ":litert_accelerator.h",
         ":litert_runtime_context.h",
         ":litert_accelerator_registration.h",
@@ -586,6 +619,7 @@ cc_library(
 
 # Header files that should be part of the shared library: litert/c:litert_runtime_c_api_shared_lib.
 _HEADER_FILES_FOR_SHARED_LIB = [
+    "litert_abi_header.h",
     "litert_accelerator.h",
     "litert_runtime_context.h",
     "litert_custom_tensor_buffer_handlers_def.h",
@@ -607,4 +641,72 @@ filegroup(
         "//litert/c:__pkg__",
         "//litert/cc:__pkg__",
     ],
+)
+
+cc_library(
+    name = "litert_runtime_builtin_header",
+    hdrs = ["litert_runtime_builtin.h"],
+    visibility = [
+        "//litert/c:__pkg__",
+        "//litert/cc:__pkg__",
+        "//litert/cc/dynamic_runtime:__pkg__",
+        "//litert/cc/internal:__pkg__",
+        "//litert/kotlin/src/tests/google:__pkg__",
+    ],
+    deps = [
+        ":litert_runtime_c_api",
+    ],
+)
+
+# Do not use this target directly. It should only be used by Environment.
+cc_library(
+    name = "litert_runtime_builtin_dynamic",
+    srcs = ["litert_runtime_builtin.cc"],
+    # The visibility is for testing only, otherwise it would be private.
+    visibility = [
+        "//litert/cc/dynamic_runtime:__pkg__",
+        "//litert/cc/internal:__pkg__",
+    ],
+    deps = [
+        ":litert_runtime_builtin_header",
+        ":litert_runtime_c_api",
+        "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
+    ],
+    alwayslink = True,
+)
+
+cc_library(
+    name = "litert_runtime_builtin_static",
+    srcs = ["litert_runtime_builtin.cc"],
+    visibility = friends_of_litert_runtime_builtin_static() + [
+        # This extra visibility is for testing only.
+        "//litert/cc:__pkg__",
+        "//litert/cc/internal:__pkg__",
+        "//litert/kotlin:__pkg__",
+        "//litert/kotlin/src/tests/google:__pkg__",
+    ],
+    deps = [
+        ":litert_runtime_api_export",
+        ":litert_runtime_builtin_header",
+        ":litert_runtime_c_api",
+    ],
+    alwayslink = True,
+)
+
+cc_library(
+    name = "litert_runtime_builtin_none",
+    srcs = ["litert_runtime_builtin.cc"],
+    local_defines = ["LITERT_CC_RUNTIME_BUILTIN_NONE"],
+    visibility = litert_jni_friends() + [
+        "//litert/cc/internal:__pkg__",
+        "//litert/kotlin:__pkg__",
+    ],
+    deps = [
+        ":litert_logging",
+        ":litert_runtime_builtin_header",
+        ":litert_runtime_c_api",
+        "//litert/cc:litert_expected",
+        "//litert/cc/internal:litert_shared_library",
+    ],
+    alwayslink = True,
 )

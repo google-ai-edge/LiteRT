@@ -17,6 +17,7 @@
 #include <stdlib.h>
 
 #include <string>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -73,6 +74,7 @@ TEST(LiteRtRuntimeOptionsTest, OpaqueOptionsSerialization) {
   const auto kErrorReporterMode = kLiteRtErrorReporterModeStderr;
   const bool kCompressZeroPoints = true;
   const bool kDisableDelegateClustering = true;
+  const std::vector<std::string> kSelectedSignatures = {"decode", "prefill"};
 
   LITERT_ASSERT_OK(
       LrtSetRuntimeOptionsEnableProfiling(options, kEnableProfiling));
@@ -82,6 +84,8 @@ TEST(LiteRtRuntimeOptionsTest, OpaqueOptionsSerialization) {
       options, kCompressZeroPoints));
   LITERT_ASSERT_OK(LrtSetRuntimeOptionsDisableDelegateClustering(
       options, kDisableDelegateClustering));
+  LITERT_ASSERT_OK(
+      LrtSetRuntimeOptionsSelectedSignatures(options, kSelectedSignatures));
 
   const char* identifier;
   void* payload = nullptr;
@@ -124,6 +128,8 @@ TEST(LiteRtRuntimeOptionsTest, OpaqueOptionsSerialization) {
             kCompressZeroPoints);
   EXPECT_EQ(runtime_options.disable_delegate_clustering,
             kDisableDelegateClustering);
+  EXPECT_THAT(runtime_options.selected_signature_keys,
+              ::testing::ElementsAre("decode", "prefill"));
 
   LiteRtDestroyOpaqueOptions(opaque_options);
   LrtDestroyRuntimeOptions(options);
@@ -162,8 +168,32 @@ TEST(LiteRtRuntimeOptionsTest, OpaqueOptionsSerializationOptionality) {
   EXPECT_FALSE(toml_tbl["error_reporter_mode"]);
   EXPECT_FALSE(toml_tbl["compress_quantization_zero_points"]);
   EXPECT_FALSE(toml_tbl["disable_delegate_clustering"]);
+  EXPECT_FALSE(toml_tbl["selected_signature_keys"]);
 
   LiteRtDestroyOpaqueOptions(opaque_options);
+  LrtDestroyRuntimeOptions(options);
+}
+
+TEST(LiteRtRuntimeOptionsTest, SelectedSignaturesValidatesInput) {
+  LrtRuntimeOptions* options = nullptr;
+  LITERT_ASSERT_OK(LrtCreateRuntimeOptions(&options));
+
+  const std::vector<std::string> keys = {"decode", "prefill"};
+  EXPECT_EQ(LrtSetRuntimeOptionsSelectedSignatures(options, keys),
+            kLiteRtStatusOk);
+
+  EXPECT_EQ(LrtSetRuntimeOptionsSelectedSignatures(nullptr, keys),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtSetRuntimeOptionsSelectedSignatures(options, {}),
+            kLiteRtStatusErrorInvalidArgument);
+
+  EXPECT_EQ(LrtSetRuntimeOptionsSelectedSignatures(options, {""}),
+            kLiteRtStatusErrorInvalidArgument);
+
+  EXPECT_EQ(
+      LrtSetRuntimeOptionsSelectedSignatures(options, {"decode", "decode"}),
+      kLiteRtStatusErrorInvalidArgument);
+
   LrtDestroyRuntimeOptions(options);
 }
 

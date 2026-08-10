@@ -6,12 +6,19 @@
 #include <memory>
 #include <optional>
 
+#include "IR/QnnIrGraph.h"  // from @qairt
+#include "QnnGraph.h"  // from @qairt
+#include "QnnInterface.h"  // from @qairt
 #include <gtest/gtest.h>
 #include "litert/vendors/qualcomm/core/common.h"
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 
 namespace qnn {
 namespace {
+
+constexpr auto kDefaultSocInfo = FindSocInfo("SM8750");
+static_assert(kDefaultSocInfo.has_value());
 
 class IrBackendTest : public testing::Test {
  public:
@@ -31,11 +38,12 @@ TEST_F(IrBackendTest, DISABLED_InitializeWithLogLevelOffTest) {
   options.SetLogLevel(LogLevel::kOff);
 
   options.SetBackendType(BackendType::kIrBackend);
-  ASSERT_TRUE(backend_->Init(options, std::nullopt));
+  ASSERT_TRUE(backend_->Init(options, kDefaultSocInfo));
   ASSERT_FALSE(backend_->GetDeviceHandle());
 
   ASSERT_TRUE(backend_->GetBackendHandle());
   ASSERT_FALSE(backend_->GetLogHandle());
+  EXPECT_EQ(backend_->GetSocInfo().soc_model, kDefaultSocInfo->soc_model);
 }
 
 TEST_F(IrBackendTest, DISABLED_InitializeWithLogLevelVerboseTest) {
@@ -43,11 +51,35 @@ TEST_F(IrBackendTest, DISABLED_InitializeWithLogLevelVerboseTest) {
   options.SetLogLevel(LogLevel::kVerbose);
 
   options.SetBackendType(BackendType::kIrBackend);
-  ASSERT_TRUE(backend_->Init(options, std::nullopt));
+  ASSERT_TRUE(backend_->Init(options, kDefaultSocInfo));
   ASSERT_FALSE(backend_->GetDeviceHandle());
 
   ASSERT_TRUE(backend_->GetBackendHandle());
   ASSERT_TRUE(backend_->GetLogHandle());
+  EXPECT_EQ(backend_->GetSocInfo().soc_model, kDefaultSocInfo->soc_model);
+}
+
+TEST(IrBackendGraphConfigTest, ConfigsCarrySerializationAndDlcPath) {
+  QNN_INTERFACE_VER_TYPE api{};
+  IrBackend backend(&api);
+
+  Options options;
+  options.SetDlcDir("/tmp/dlc");
+  auto config_builder = backend.BuildGraphConfigs(options, "my_graph");
+  auto configs = config_builder.GetNullTerminatedConfigs();
+
+  ASSERT_EQ(configs.size(), 2u);
+  ASSERT_NE(configs[0], nullptr);
+  EXPECT_EQ(configs[1], nullptr);
+  EXPECT_EQ(configs[0]->option, QNN_GRAPH_CONFIG_OPTION_CUSTOM);
+
+  auto* custom =
+      static_cast<QnnIrGraph_CustomConfig_t*>(configs[0]->customConfig);
+  ASSERT_NE(custom, nullptr);
+  EXPECT_EQ(custom->option, QNN_IR_GRAPH_CONFIG_OPTION_SERIALIZATION);
+  EXPECT_EQ(custom->serializationOption.serializationType,
+            QNN_IR_GRAPH_SERIALIZATION_TYPE_FLAT_BUFFER);
+  EXPECT_STREQ(custom->serializationOption.outputPath, "/tmp/dlc/my_graph.dlc");
 }
 
 }  // namespace

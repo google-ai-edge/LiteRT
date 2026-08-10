@@ -262,6 +262,12 @@ LiteRtStatus LrtOptionsToGoogleTensorOptions(
       lrt_options, &extra_options_path));
   google_tensor_options.set_extra_options_path(extra_options_path);
 
+  // EXTRA OPTIONS
+  const char* extra_options;
+  LITERT_RETURN_IF_ERROR(
+      LrtGoogleTensorOptionsGetExtraOptions(lrt_options, &extra_options));
+  google_tensor_options.set_extra_options(extra_options);
+
   return kLiteRtStatusOk;
 }
 

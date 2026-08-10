@@ -14,11 +14,13 @@
 
 load("@ml_drift//ml_drift/common/kernels/tests:mld_kernel_test.bzl", "mld_kernel_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
     default_visibility = [
         "//ml_drift_delegate/delegate:__subpackages__",
+        "//ml_drift_delegate/tflite:__subpackages__",
         "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
     ],
 )
@@ -33,6 +35,7 @@ cc_library(
         "//ml_drift_delegate/tflite:operation_parser",
         "//tflite/c:common",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@flatbuffers",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:model",
@@ -71,6 +74,7 @@ cc_library(
         "//ml_drift_delegate/tflite:operation_parser",
         "//tflite/c:common",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings:string_view",
         "@flatbuffers",
         "@ml_drift//ml_drift/common:data_type",
@@ -91,6 +95,7 @@ cc_library(
     deps = [
         ":runtime_batched_matmul_parser",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_model_builder",
         "@ml_drift//ml_drift/common:ir_model",
@@ -117,6 +122,7 @@ cc_library(
         "//tflite/kernels:kernel_util",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@flatbuffers",
@@ -136,6 +142,7 @@ cc_library(
         ":moe_experts_parser",
         "//ml_drift_delegate/delegate/composite/ir:moe_experts_parser",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/status:statusor",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_model",
@@ -154,6 +161,89 @@ cc_library(
 )
 
 cc_library(
+    name = "rope_parser",
+    srcs = ["rope_parser.cc"],
+    hdrs = ["rope_parser.h"],
+    deps = [
+        "//ml_drift_delegate/tflite:model_builder_helper",
+        "//ml_drift_delegate/tflite:object_reader",
+        "//ml_drift_delegate/tflite:operation_parser",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:status",
+    ],
+)
+
+cc_library(
+    name = "sdpa_transposed_parser",
+    srcs = ["sdpa_transposed_parser.cc"],
+    hdrs = ["sdpa_transposed_parser.h"],
+    deps = [
+        ":runtime_batched_matmul_parser",
+        "//ml_drift_delegate/tflite:model_builder_helper",
+        "//ml_drift_delegate/tflite:object_reader",
+        "//ml_drift_delegate/tflite:operation_parser",
+        "//tflite/c:common",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/kernels:fully_connected",
+        "@ml_drift//ml_drift/common/task:weights_layout",
+    ],
+)
+
+cc_library(
+    name = "sdpa_transposed_kernel",
+    srcs = ["sdpa_transposed_kernel.cc"],
+    hdrs = ["sdpa_transposed_kernel.h"],
+    deps = [
+        ":sdpa_transposed_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:weights_layout",
+    ],
+)
+
+cc_test(
+    name = "sdpa_transposed_kernel_test",
+    srcs = ["sdpa_transposed_kernel_test.cc"],
+    deps = [
+        ":sdpa_transposed_kernel",
+        ":sdpa_transposed_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common/kernels:fully_connected",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:weights_layout",
+    ],
+)
+
+cc_library(
     name = "custom_parsers",
     srcs = ["custom_parsers.cc"],
     hdrs = [
@@ -163,7 +253,10 @@ cc_library(
     deps = [
         ":add_values_to_cache_parser",
         ":moe_experts_parser",
+        ":rope_parser",
         ":runtime_batched_matmul_parser",
+        ":sdpa_transposed_parser",
+        "//ml_drift_delegate/tflite:model_builder",
         "//ml_drift_delegate/tflite:operation_parser",
         "//ml_drift_delegate/tflite:unimplemented_operation_parser",
         "@com_google_absl//absl/strings",
@@ -182,6 +275,7 @@ mld_kernel_test(
         ":add_values_to_cache_parser",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:model",
@@ -205,13 +299,17 @@ cc_library(
         ":moe_experts_parser",
         ":runtime_batched_matmul_kernel",
         ":runtime_batched_matmul_parser",
+        ":sdpa_transposed_kernel",
+        ":sdpa_transposed_parser",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:gpu_model",
         "@ml_drift//ml_drift/common:gpu_model_builder",
         "@ml_drift//ml_drift/common:gpu_model_util",
         "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/common/selectors:operation_selector",
         "@ml_drift//ml_drift/common/selectors:special_selector",

@@ -438,7 +438,7 @@ TEST(ExternalWeightLoaderTest, LoadsWeightsFromScopedFile) {
   auto scoped_file_or = ScopedFile::Open(weights_path);
   ASSERT_TRUE(scoped_file_or.ok());
 
-  absl::flat_hash_map<std::string, ScopedWeightSection> sections;
+  ScopedWeightSource::SectionMap sections;
   sections.emplace(
       std::string(kGroupName),
       ScopedWeightSection{.offset = 0,

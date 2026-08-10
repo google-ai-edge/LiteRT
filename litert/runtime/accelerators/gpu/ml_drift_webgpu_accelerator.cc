@@ -29,7 +29,7 @@
 #include "ml_drift_delegate/delegate/buffer_handler_webgpu.h"
 #include "ml_drift_delegate/delegate/delegate_types.h"
 #include "ml_drift_delegate/delegate/delegate_webgpu.h"
-#include "tflite/core/c/c_api_types.h"
+#include "tflite/c/c_api_types.h"
 
 // Accelerator implementation for the LiteRT GPU WebGPU accelerator.
 class GpuWebGpuAccelerator {
@@ -44,14 +44,14 @@ class GpuWebGpuAccelerator {
     delete reinterpret_cast<GpuWebGpuAccelerator*>(accelerator);
   }
 
-  static LiteRtStatus GetName(LiteRtAccelerator accelerator,
+  static LiteRtStatus GetName(LiteRtAcceleratorConst accelerator,
                               const char** name) {
     static const char* lrt_name = "GPU WebGPU";
     *name = lrt_name;
     return kLiteRtStatusOk;
   }
 
-  static LiteRtStatus GetVersion(LiteRtAccelerator accelerator,
+  static LiteRtStatus GetVersion(LiteRtAcceleratorConst accelerator,
                                  LiteRtApiVersion* version) {
     static constexpr LiteRtApiVersion lrt_version = {
         /*major=*/1,
@@ -63,7 +63,7 @@ class GpuWebGpuAccelerator {
   }
 
   static LiteRtStatus GetHardwareSupport(
-      LiteRtAccelerator accelerator,
+      LiteRtAcceleratorConst accelerator,
       LiteRtHwAcceleratorSet* supported_hardware) {
     static LiteRtHwAcceleratorSet hardware_support = kLiteRtHwAcceleratorGpu;
     *supported_hardware = hardware_support;
@@ -71,7 +71,7 @@ class GpuWebGpuAccelerator {
   }
 
   static LiteRtStatus IsTfLiteDelegateResponsibleForJitCompilation(
-      LiteRtAcceleratorT* accelerator, bool* does_jit_compilation) {
+      LiteRtAcceleratorConst accelerator, bool* does_jit_compilation) {
     LITERT_RETURN_IF_ERROR(does_jit_compilation,
                            litert::ErrorStatusBuilder::InvalidArgument())
         << "`does_jit_compilation` pointer is null.";
@@ -81,7 +81,7 @@ class GpuWebGpuAccelerator {
 
   static LiteRtStatus CreateDelegate(LiteRtRuntimeContext* runtime_context,
                                      LiteRtEnvironment env,
-                                     LiteRtAccelerator accelerator,
+                                     LiteRtAcceleratorConst accelerator,
                                      LiteRtOptions options,
                                      LiteRtDelegateWrapper* delegate_wrapper) {
     litert::TfLiteDelegatePtr delegate_ptr{nullptr, nullptr};
@@ -111,7 +111,6 @@ class GpuWebGpuAccelerator {
     return kLiteRtStatusOk;
   }
 
-
  private:
   LiteRtHwAcceleratorSet hardware_support_;
 };
@@ -119,8 +118,14 @@ class GpuWebGpuAccelerator {
 // Discovery C object for the GPU WebGPU accelerator by LiteRT.
 // This object is used by the LiteRT environment constructor and the
 // object name is looked up by dlsym().
-extern "C" LiteRtAcceleratorDef LiteRtAcceleratorImpl = {
-    .version = 1,  // LiteRtAcceleratorDefV1
+extern "C" const LiteRtAcceleratorDef LiteRtAcceleratorImpl = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtAcceleratorDefV1),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .get_name = GpuWebGpuAccelerator::GetName,
     .get_version = GpuWebGpuAccelerator::GetVersion,
     .get_hardware_support = GpuWebGpuAccelerator::GetHardwareSupport,

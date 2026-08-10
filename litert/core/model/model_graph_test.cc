@@ -15,12 +15,13 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/graph_validation.h"
@@ -159,10 +160,124 @@ TEST(ModelQuantizationTypeTest, ClonePerChannelQuantization) {
   EXPECT_THAT(zeros, ElementsAreArray(kZero));
 }
 
+TEST(ModelQuantizationTypeTest, CloneBlockWiseQuantization) {
+  LiteRtSubgraphT src_sg;
+  LiteRtSubgraphT dest_sg;
+
+  OwningBufferRef<uint8_t> scales_buffer("SCALES_DATA");
+  OwningBufferRef<uint8_t> zp_buffer("ZP_DATA");
+  OwningBufferRef<uint8_t> weights_buffer("WEIGHTS_DATA");
+
+  auto& src_scales = src_sg.EmplaceTensor();
+  SetWeightsFromUnownedBuffer(src_scales.Weights(), scales_buffer);
+
+  auto& src_zp = src_sg.EmplaceTensor();
+  SetWeightsFromUnownedBuffer(src_zp.Weights(), zp_buffer);
+
+  auto& src_weight = src_sg.EmplaceTensor();
+  SetWeightsFromUnownedBuffer(src_weight.Weights(), weights_buffer);
+  src_weight.SetQarams(
+      MakeBlockWiseQuantization(&src_scales, &src_zp, /*block_size=*/32));
+
+  auto dest_weight_or = MakeClone(dest_sg, src_weight);
+  ASSERT_TRUE(dest_weight_or.HasValue());
+  auto& dest_weight = *dest_weight_or.Value();
+
+  ASSERT_EQ(dest_weight.Qparams().first, kLiteRtQuantizationBlockWise);
+  const auto& dest_bw = dest_weight.Qparams().second.block_wise;
+  EXPECT_EQ(dest_bw.block_size, 32);
+
+  ASSERT_NE(dest_bw.scales, nullptr);
+  EXPECT_NE(dest_bw.scales, &src_scales);
+  EXPECT_EQ(dest_bw.scales->Weights().Buffer().StrView(), "SCALES_DATA");
+
+  ASSERT_NE(dest_bw.zero_points, nullptr);
+  EXPECT_NE(dest_bw.zero_points, &src_zp);
+  EXPECT_EQ(dest_bw.zero_points->Weights().Buffer().StrView(), "ZP_DATA");
+
+  EXPECT_EQ(dest_sg.Tensors().size(), 3);
+
+  // Mimic DCE / destruction of src subgraph to verify dest tensors are fully
+  // owned.
+  src_sg.TensorsAllocation().RemoveIf([](auto& t) { return true; });
+  EXPECT_EQ(dest_bw.scales->Weights().Buffer().StrView(), "SCALES_DATA");
+  EXPECT_EQ(dest_bw.zero_points->Weights().Buffer().StrView(), "ZP_DATA");
+}
+
+TEST(ModelQuantizationTypeTest, CloneBlockWiseQuantizationSymmetric) {
+  LiteRtSubgraphT src_sg;
+  LiteRtSubgraphT dest_sg;
+
+  OwningBufferRef<uint8_t> scales_buffer("SCALES_DATA");
+  auto& src_scales = src_sg.EmplaceTensor();
+  SetWeightsFromUnownedBuffer(src_scales.Weights(), scales_buffer);
+
+  auto& src_weight = src_sg.EmplaceTensor();
+  src_weight.SetQarams(
+      MakeBlockWiseQuantization(&src_scales, nullptr, /*block_size=*/64));
+
+  auto dest_weight_or = MakeClone(dest_sg, src_weight);
+  ASSERT_TRUE(dest_weight_or.HasValue());
+  auto& dest_weight = *dest_weight_or.Value();
+
+  ASSERT_EQ(dest_weight.Qparams().first, kLiteRtQuantizationBlockWise);
+  const auto& dest_bw = dest_weight.Qparams().second.block_wise;
+  EXPECT_EQ(dest_bw.block_size, 64);
+
+  ASSERT_NE(dest_bw.scales, nullptr);
+  EXPECT_NE(dest_bw.scales, &src_scales);
+  EXPECT_EQ(dest_bw.scales->Weights().Buffer().StrView(), "SCALES_DATA");
+
+  EXPECT_EQ(dest_bw.zero_points, nullptr);
+  EXPECT_EQ(dest_sg.Tensors().size(), 2);
+}
+
+TEST(ModelQuantizationTypeTest, CloneNoneQuantization) {
+  LiteRtSubgraphT src_sg;
+  LiteRtSubgraphT dest_sg;
+
+  auto& src_tensor = src_sg.EmplaceTensor();
+  src_tensor.SetQarams(MakeEmptyQuantization());
+
+  auto dest_tensor_or = MakeClone(dest_sg, src_tensor);
+  ASSERT_TRUE(dest_tensor_or.HasValue());
+  EXPECT_EQ(dest_tensor_or.Value()->Qparams().first, kLiteRtQuantizationNone);
+}
+
+TEST(ModelQuantizationTypeTest, ClonePerTensorQuantization) {
+  LiteRtSubgraphT src_sg;
+  LiteRtSubgraphT dest_sg;
+
+  auto& src_tensor = src_sg.EmplaceTensor();
+  src_tensor.SetQarams(MakePerTensorQuantization(1.5f, 42));
+
+  auto dest_tensor_or = MakeClone(dest_sg, src_tensor);
+  ASSERT_TRUE(dest_tensor_or.HasValue());
+  auto& dest_tensor = *dest_tensor_or.Value();
+  ASSERT_EQ(dest_tensor.Qparams().first, kLiteRtQuantizationPerTensor);
+  EXPECT_FLOAT_EQ(dest_tensor.Qparams().second.per_tensor.scale, 1.5f);
+  EXPECT_EQ(dest_tensor.Qparams().second.per_tensor.zero_point, 42);
+}
+
+TEST(ModelQuantizationTypeTest, CloneUnsupportedQuantizationTypeReturnsError) {
+  LiteRtSubgraphT src_sg;
+  LiteRtSubgraphT dest_sg;
+
+  auto& src_tensor = src_sg.EmplaceTensor();
+  src_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 2}));
+  QuantizationDetail detail{};
+  src_tensor.SetQarams(
+      std::make_pair(static_cast<LiteRtQuantizationTypeId>(999), detail));
+
+  auto dest_tensor_or = MakeClone(dest_sg, src_tensor);
+  EXPECT_FALSE(dest_tensor_or.HasValue());
+}
+
 TEST(ModelGraphTest, MakeCloneTensor) {
   LiteRtSubgraphT subgraph;
-  auto& dest = MakeClone(subgraph, TestTensor());
-  EXPECT_THAT(dest, HasRankedType(kType, kDimsSpan));
+  auto dest_or = MakeClone(subgraph, TestTensor());
+  ASSERT_TRUE(dest_or.HasValue());
+  EXPECT_THAT(*dest_or.Value(), HasRankedType(kType, kDimsSpan));
 }
 
 TEST(ModelGraphTest, CloneCstSameManager) {
@@ -172,7 +287,9 @@ TEST(ModelGraphTest, CloneCstSameManager) {
   auto& sg = model.EmplaceSubgraph();
   auto& src = TestTensor(sg.EmplaceTensor());
   SetWeightsFromUnownedBuffer(src.Weights(), buffer);
-  auto& dest = MakeClone(sg, src);
+  auto dest_or = MakeClone(sg, src);
+  ASSERT_TRUE(dest_or.HasValue());
+  auto& dest = *dest_or.Value();
   EXPECT_EQ(dest.Weights().Buffer().StrView(), buffer.StrView());
   EXPECT_EQ(model.Buffers()->NumBuffers(), num_buffers + 1);
   EXPECT_EQ(dest.Weights().GetBufferId(), src.Weights().GetBufferId());
@@ -186,7 +303,9 @@ TEST(ModelGraphTest, CloneCstDifferentManager) {
   LiteRtSubgraphT sg;
   auto& src = TestTensor(sg.EmplaceTensor());
   SetWeightsFromUnownedBuffer(src.Weights(), buffer);
-  auto& dest = MakeClone(sg, src);
+  auto dest_or = MakeClone(sg, src);
+  ASSERT_TRUE(dest_or.HasValue());
+  auto& dest = *dest_or.Value();
   EXPECT_EQ(dest.Weights().Buffer().StrView(), buffer.StrView());
   EXPECT_NE(dest.Weights().GetBufferManager(),
             src.Weights().GetBufferManager());

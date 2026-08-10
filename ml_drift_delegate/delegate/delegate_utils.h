@@ -15,13 +15,11 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_DELEGATE_UTILS_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_DELEGATE_UTILS_H_
 
-#include <cstdint>
-#include <functional>
 #include <memory>
 
-#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_runtime_context.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/shared_tensor_maps.h"
 #include "tflite/core/c/common.h"
 
@@ -29,6 +27,14 @@ namespace litert::ml_drift {
 
 bool IsAsyncExecutionMode(TfLiteContext* context,
                           const LiteRtRuntimeContext* runtime_context);
+
+// Builds the list of ops to delegate to ML Drift using the IR model builder
+// path (used when options->use_ir_model is set). The caller takes ownership of
+// the returned TfLiteIntArray and must free it with TfLiteIntArrayFree.
+TfLiteIntArray* GetIrModelOpsToReplace(TfLiteContext* context,
+                                       const MlDriftDelegateData& delegate_data,
+                                       int start_node_index,
+                                       int end_node_index);
 
 // Returns tensor maps from the delegate data. If the shared tensor maps are
 // provided by the client, returns the shared tensor maps from the client.

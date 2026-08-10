@@ -15,7 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_SHARED_TENSOR_MAPS_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_SHARED_TENSOR_MAPS_H_
 
-#include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 
 namespace litert::ml_drift {
 

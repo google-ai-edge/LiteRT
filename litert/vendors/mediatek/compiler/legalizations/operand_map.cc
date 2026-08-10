@@ -14,11 +14,12 @@
 
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 
-#include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
+#include <vector>
 
-#include "neuron/api/NeuronAdapter.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
@@ -27,9 +28,100 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/mediatek/compiler/legalizations/neuron_utils.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
+#include "neuron/api/NeuronAdapter.h"
 #include "tflite/kernels/internal/portable_tensor_utils.h"
 
 namespace litert::mediatek {
+
+namespace {
+
+bool IsSymmetricPerChannelType(NeuronTensorType type) {
+  switch (type) {
+    case NEURON_TENSOR_QUANT8_SYMM_PER_CHANNEL:
+    case NEURON_EXT_TENSOR_QUANT4_SYMM_PER_CHANNEL:
+    case NEURON_EXT_TENSOR_QUANT2_SYMM_PER_CHANNEL:
+    case NEURON_EXT_TENSOR_INT32_SYMM_PER_CHANNEL:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool PerChannelZeroPointsAreAllZero(
+    const LiteRtQuantizationPerChannel& quant_info) {
+  for (uint64_t i = 0; i < quant_info.num_channels; ++i) {
+    if (quant_info.zero_points[i] != 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+Expected<std::vector<int32_t>> ConvertPerChannelZeroPoints(
+    const LiteRtQuantizationPerChannel& quant_info) {
+  std::vector<int32_t> zero_points;
+  zero_points.reserve(quant_info.num_channels);
+  for (uint64_t i = 0; i < quant_info.num_channels; ++i) {
+    if (quant_info.zero_points[i] < std::numeric_limits<int32_t>::min() ||
+        quant_info.zero_points[i] > std::numeric_limits<int32_t>::max()) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Per-channel quantization zero point is out of int32 range");
+    }
+    zero_points.push_back(static_cast<int32_t>(quant_info.zero_points[i]));
+  }
+  return zero_points;
+}
+
+Expected<void> SetPerChannelQuantParams(
+    const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
+    uint32_t operand_index, NeuronTensorType neuron_type,
+    const LiteRtQuantizationPerChannel& quant_info) {
+  LITERT_LOG(LITERT_DEBUG, "quantized_dimension: %d",
+             quant_info.quantized_dimension);
+  const bool zero_points_are_all_zero =
+      PerChannelZeroPointsAreAllZero(quant_info);
+
+  if (zero_points_are_all_zero && IsSymmetricPerChannelType(neuron_type)) {
+    if (neuron_adapter_api.api().model_set_symm_per_channel_quant_params !=
+        nullptr) {
+      NeuronSymmPerChannelQuantParams params = {
+          .channelDim = static_cast<uint32_t>(quant_info.quantized_dimension),
+          .scaleCount = static_cast<uint32_t>(quant_info.num_channels),
+          .scales = quant_info.scales,
+      };
+      if (neuron_adapter_api.api().model_set_symm_per_channel_quant_params(
+              model, operand_index, &params) == NEURON_NO_ERROR) {
+        return {};
+      }
+      LITERT_LOG(LITERT_WARNING,
+                 "Failed to set symmetric per-channel quant params; falling "
+                 "back to general per-channel API");
+    }
+  }
+
+  if (neuron_adapter_api.api().model_set_per_channel_quant_params != nullptr) {
+    LITERT_ASSIGN_OR_RETURN(auto zero_points,
+                            ConvertPerChannelZeroPoints(quant_info));
+    NeuronPerChannelQuantParams params = {
+        .channelDim = static_cast<uint32_t>(quant_info.quantized_dimension),
+        .scaleCount = static_cast<uint32_t>(quant_info.num_channels),
+        .scales = quant_info.scales,
+        .zeroPointCount = static_cast<uint32_t>(zero_points.size()),
+        .zeroPoints = zero_points.data(),
+    };
+    if (neuron_adapter_api.api().model_set_per_channel_quant_params(
+            model, operand_index, &params) == NEURON_NO_ERROR) {
+      return {};
+    }
+    return Error(kLiteRtStatusErrorRuntimeFailure,
+                 "Failed to set general per-channel quant params");
+  }
+
+  return Error(kLiteRtStatusErrorRuntimeFailure,
+               "Per-channel quant params API is unavailable");
+}
+
+}  // namespace
 
 Expected<uint32_t> OperandMap::Register(const NeuronOperandType& operand_type) {
   if (neuron_adapter_api_.api().model_add_operand(model_, &operand_type) !=
@@ -57,9 +149,16 @@ Expected<uint32_t> OperandMap::Register(const litert::compiler::Tensor& t,
 
   if (t.HasWeights()) {
     auto weights = t.Weights().Bytes();
+    if (t.QTypeId() == kLiteRtQuantizationPerChannel) {
+      LITERT_RETURN_IF_ERROR(SetPerChannelQuantParams(
+          neuron_adapter_api_, model_, *operand_index,
+          operand_type->GetNeuronType(), t.PerChannelQuantization()));
+    }
 
-    // Placeholder QUANT8 type from fallback: feed a zero buffer sized to
-    // match so the adapter's set_operand_value size check passes.
+    // Placeholder QUANT8 type from fallback: the element type has no Neuron
+    // equivalent, so the packed weights cannot be handed over as-is. Feed a
+    // zero buffer sized to match the placeholder type so the adapter's
+    // set_operand_value size check passes.
     if (operand_type->HasUnsupportedElementType()) {
       const size_t placeholder_bytes = operand_type->GetElementCount();
       LITERT_ASSIGN_OR_RETURN(auto extra_data_idx,
@@ -73,27 +172,6 @@ Expected<uint32_t> OperandMap::Register(const litert::compiler::Tensor& t,
       }
       map_[t.Get()] = *operand_index;
       return *operand_index;
-    }
-
-    if (t.QTypeId() == kLiteRtQuantizationPerChannel &&
-        IsPerChannelQuantizedNeuronType(operand_type->GetNeuronType())) {
-      LITERT_ASSIGN_OR_RETURN(auto quant_param,
-                              operand_type->GetPerChannelQuantParams());
-      const bool is_symm =
-          std::all_of(quant_param.zeroPoints,
-                      quant_param.zeroPoints + quant_param.zeroPointCount,
-                      [](int32_t zp) { return zp == 0; });
-      if (is_symm) {
-        const int32_t zero = 0;
-        quant_param.zeroPointCount = 1;
-        quant_param.zeroPoints = &zero;
-      }
-      auto ret = neuron_adapter_api_.api().model_set_per_channel_quant_params(
-          model_, *operand_index, &quant_param);
-      if (ret != NEURON_NO_ERROR) {
-        return Error(kLiteRtStatusErrorRuntimeFailure,
-                     "Failed to set param of per channel quant params");
-      }
     }
 
     LITERT_ASSIGN_OR_RETURN(auto tensor_type, t.RankedTensorType());

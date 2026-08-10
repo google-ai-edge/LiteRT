@@ -20,7 +20,9 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <vector>
 
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
 
@@ -29,6 +31,7 @@ struct LrtRuntimeOptions {
   std::optional<LiteRtErrorReporterMode> error_reporter_mode;
   std::optional<bool> compress_quantization_zero_points;
   std::optional<bool> disable_delegate_clustering;
+  std::vector<std::string> selected_signature_keys;
 };
 
 LiteRtStatus LrtCreateRuntimeOptions(LrtRuntimeOptions** options) {
@@ -75,6 +78,14 @@ LiteRtStatus LrtGetOpaqueRuntimeOptionsData(const LrtRuntimeOptions* options,
     ss << "disable_delegate_clustering = "
        << (options->disable_delegate_clustering.value() ? "true" : "false")
        << "\n";
+  }
+  if (!options->selected_signature_keys.empty()) {
+    ss << "selected_signature_keys = [";
+    for (size_t i = 0; i < options->selected_signature_keys.size(); ++i) {
+      if (i > 0) ss << ", ";
+      ss << '"' << options->selected_signature_keys[i] << '"';
+    }
+    ss << "]\n";
   }
 
   *identifier = LrtGetRuntimeOptionsIdentifier();
@@ -157,5 +168,30 @@ LiteRtStatus LrtGetRuntimeOptionsDisableDelegateClustering(
     return kLiteRtStatusErrorNotFound;
   }
   *disable_delegate_clustering = options->disable_delegate_clustering.value();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetRuntimeOptionsSelectedSignatures(
+    LrtRuntimeOptions* options, const std::vector<std::string>& keys) {
+  if (!options) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (keys.empty()) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  // Validate each key is non-empty and unique.
+  absl::flat_hash_set<std::string> seen;
+  seen.reserve(keys.size());
+  for (const std::string& key : keys) {
+    if (key.empty()) {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    if (!seen.insert(key).second) {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+  }
+
+  options->selected_signature_keys = keys;
   return kLiteRtStatusOk;
 }

@@ -949,6 +949,36 @@ cc_library(
     alwayslink = 1,
 )
 
+cc_binary(
+    name = "mock_gpu_delegate_plugin.so",
+    testonly = 1,
+    srcs = ["mock_gpu_delegate_plugin.cc"],
+    linkshared = True,
+    deps = [
+        "//tflite/core/acceleration/configuration/c:delegate_plugin",
+        "//tflite/core/c:common",
+    ],
+)
+
+cc_test(
+    name = "gpu_module_plugin_test",
+    srcs = ["gpu_module_plugin_test.cc"],
+    data = [
+        ":mock_gpu_delegate_plugin.so",
+    ],
+    tags = [
+        "no_windows",
+    ],
+    deps = [
+        ":gpu_module_plugin",
+        "//tflite/acceleration/configuration:configuration_cc_proto",
+        "//tflite/acceleration/configuration:configuration_fbs",
+        "//tflite/acceleration/configuration:proto_to_flatbuffer",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+    ],
+)
+
 embedded_binary(
     name = "embedded_nnapi_sl_fake_impl",
     testonly = 1,
@@ -998,7 +1028,9 @@ cc_test(
         "//tflite/acceleration/configuration:proto_to_flatbuffer",
         "//tflite/converter/schema:schema_fbs_with_mutable",
         "//tflite/core:model_builder",
+        "//tflite/core/acceleration/configuration:delegate_registry",
         "//tflite/core/acceleration/configuration:nnapi_plugin",
+        "//tflite/core/c:common",
         "//tflite/experimental/acceleration/mini_benchmark/model_modifier:custom_validation_embedder",
         "//tflite/tools:model_loader",
         "@com_google_googletest//:gtest_main",

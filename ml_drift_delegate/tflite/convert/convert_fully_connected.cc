@@ -20,6 +20,8 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/log/log.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
@@ -113,17 +115,68 @@ void ConvertFullyConnected(
       static_cast<const TfLiteFullyConnectedParams*>(node.builtin_data);
 
   ::ml_drift::ir::IrOp* fc_op = ir_model.add_op();
-  ir_model.AddConsumer(tensor_map[input_id], fc_op->id);
 
   const bool weights_are_const = tflite::IsConstantTensor(weights_tensor);
   const bool has_bias =
       node.inputs->size > 2 && node.inputs->data[2] != kTfLiteOptionalTensor;
   const TfLiteTensor* bias_tensor =
       has_bias ? (context.tensors + node.inputs->data[2]) : nullptr;
-  const bool bias_is_const = has_bias && tflite::IsConstantTensor(bias_tensor);
   int bias_id = -1;
   if (has_bias) {
     bias_id = node.inputs->data[2];
+  }
+  // A shared bias is passed as a runtime input (flagged for LINEAR layout);
+  // treat it as non-const so the population guards below skip it and the
+  // consumer logic adds it as a runtime input (parity with GraphFloat32).
+  const bool bias_is_shared =
+      has_bias && MarkSharedBias(tensor_map[bias_id], ir_model);
+  const bool bias_is_const =
+      has_bias && tflite::IsConstantTensor(bias_tensor) && !bias_is_shared;
+
+  // A local "float island" wraps the FullyConnected op when the weights are
+  // quantized (int8/int4/int2, emitted as a float-activation FC kernel) AND the
+  // input activation is affine-8bit. In that case we dequantize the int8 input
+  // to float right before the FC and quantize the float result back to int8
+  // right after it, so the rest of the graph stays in native int8. When the FC
+  // input is already float (e.g. float-weights branch), no island is needed.
+  const TfLiteTensor* input_tensor = context.tensors + input_id;
+  const TfLiteTensor* output_tensor = context.tensors + output_id;
+  const bool quantized_weights =
+      weights_are_const && (weights_tensor->type == kTfLiteInt8 ||
+                            weights_tensor->type == kTfLiteInt4 ||
+                            weights_tensor->type == kTfLiteInt2);
+  const bool use_float_island =
+      quantized_weights && IsAffineQuantized8Bit(*input_tensor);
+
+  // Wire the FC input: dequantize into float for the island, else consume the
+  // activation tensor directly.
+  if (use_float_island) {
+    const ::ml_drift::BHWDC input_shape_bhwdc =
+        ExtractTensorShape(input_tensor->dims);
+    const ::ml_drift::ir::IrTensorId src = tensor_map[input_id];
+
+    ::ml_drift::ir::IrTensor* dequant_out =
+        ir_model.add_tensor(::ml_drift::DataType::FLOAT32, input_shape_bhwdc);
+    InsertDequantizeChain(ir_model, src, dequant_out->id, input_shape_bhwdc,
+                          input_tensor->params.scale,
+                          static_cast<float>(input_tensor->params.zero_point));
+    ir_model.AddConsumer(dequant_out->id, fc_op->id);
+  } else {
+    ir_model.AddConsumer(tensor_map[input_id], fc_op->id);
+  }
+
+  // For the island, redirect the FC body (weights branch, output reshape and
+  // fused activation) to produce a FLOAT result. The int8 model output is
+  // produced later by a trailing quantize chain. We temporarily point
+  // tensor_map[output_id] at the float island tensor so the existing
+  // output-handling logic runs in float; it is restored at the end.
+  const ::ml_drift::ir::IrTensorId int8_output_id = tensor_map[output_id];
+  if (use_float_island) {
+    const ::ml_drift::BHWDC output_shape_bhwdc =
+        ExtractTensorShape(output_tensor->dims);
+    ::ml_drift::ir::IrTensor* island_out =
+        ir_model.add_tensor(::ml_drift::DataType::FLOAT32, output_shape_bhwdc);
+    tensor_map[output_id] = island_out->id;
   }
 
   const ::ml_drift::BHWC input_shape =
@@ -131,30 +184,38 @@ void ConvertFullyConnected(
   const ::ml_drift::BHWC output_shape =
       ir_model.tensor(tensor_map[output_id])->desc.GetBHWCShape();
 
-  if (weights_are_const) {
+  if (weights_are_const &&
+      !ir_model.tensor(tensor_map[weights_id])->buffer_source.is_shared) {
     if (weights_tensor->type == kTfLiteInt8 ||
         weights_tensor->type == kTfLiteInt4 ||
         weights_tensor->type == kTfLiteInt2) {
-      if (weights_tensor->type == kTfLiteInt8) {
+      const bool is_blockwise =
+          weights_tensor->quantization.type == kTfLiteBlockwiseQuantization;
+      if (is_blockwise) {
+        // Native blockwise quantization stores per-block scale/zero-point in
+        // separate tensors (referenced by index) and splits the input dim into
+        // blocks. GraphFloat32's native blockwise path only supports int4;
+        // int8/int2 blockwise is unsupported.
+        if (weights_tensor->type != kTfLiteInt4) {
+          ABSL_LOG(FATAL) << "FULLY_CONNECTED with blockwise quantization only "
+                             "supports int4 weights, got: "
+                          << TfLiteTypeGetName(weights_tensor->type);
+        }
+        ::ml_drift::FullyConnectedInt4Attributes attr;
+        PopulateBlockwiseQuantizedFullyConnected(
+            context, *weights_tensor, weights_id, bias_tensor, bias_id,
+            bias_is_const, options.enable_spanned_weights, attr);
+        fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT4);
+        fc_op->attr = std::move(attr);
+      } else {
+        // Affine (per-tensor or per-channel) int8/int4/int2 weights are
+        // unpacked to int8 and emitted as a FULLY_CONNECTED_INT8 op, which runs
+        // the numerically-correct int8 FC kernel (parity with GraphFloat32).
         ::ml_drift::FullyConnectedInt8Attributes attr;
         PopulateQuantizedAttributes(weights_tensor, weights_id, bias_tensor,
                                     bias_id, bias_is_const,
                                     options.enable_spanned_weights, attr);
         fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT8);
-        fc_op->attr = std::move(attr);
-      } else if (weights_tensor->type == kTfLiteInt4) {
-        ::ml_drift::FullyConnectedInt4Attributes attr;
-        PopulateQuantizedAttributes(weights_tensor, weights_id, bias_tensor,
-                                    bias_id, bias_is_const,
-                                    options.enable_spanned_weights, attr);
-        fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT4);
-        fc_op->attr = std::move(attr);
-      } else if (weights_tensor->type == kTfLiteInt2) {
-        ::ml_drift::FullyConnectedInt2Attributes attr;
-        PopulateQuantizedAttributes(weights_tensor, weights_id, bias_tensor,
-                                    bias_id, bias_is_const,
-                                    options.enable_spanned_weights, attr);
-        fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT2);
         fc_op->attr = std::move(attr);
       }
     } else {
@@ -196,10 +257,43 @@ void ConvertFullyConnected(
       ir_model.AddConsumer(tensor_map[node.inputs->data[2]], fc_op->id);
     }
   } else {
-    fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED);
-
-    auto* weights_ir_tensor = ir_model.tensor(tensor_map[weights_id]);
+    const auto* weights_ir_tensor = ir_model.tensor(tensor_map[weights_id]);
     const auto& current_shape = weights_ir_tensor->desc.GetBHWCShape();
+    const bool weights_are_quantized = weights_tensor->type == kTfLiteInt8 ||
+                                       weights_tensor->type == kTfLiteInt4 ||
+                                       weights_tensor->type == kTfLiteInt2;
+
+    // A const (non-shared) bias is embedded into the op attributes; a runtime
+    // or shared bias is added as a runtime consumer below (parity with
+    // GraphFloat32 and the const-weights branch above).
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> bias;
+    if (bias_is_const) {
+      PopulateTensor(bias_tensor, bias_id, &bias,
+                     PopulateTensorFlags::kNoExtraBytes,
+                     options.enable_spanned_weights);
+    }
+
+    // Shared quantized weights are consumed as quantized runtime inputs, so
+    // emit the matching quantized fully-connected variant with the weights and
+    // scale shapes, embedding the const bias (if any) into the attributes
+    const bool configured_quantized =
+        weights_are_const && weights_ir_tensor->buffer_source.is_shared &&
+        weights_are_quantized;
+    if (configured_quantized) {
+      // Consumes (moves from) `bias`.
+      ConfigSharedQuantizedFullyConnected(
+          *weights_tensor,
+          ::ml_drift::OHWI(output_shape.c, 1, 1, input_shape.c),
+          std::move(bias), fc_op);
+    } else {
+      // Plain float fully-connected: embed the (possibly empty) const bias.
+      // Keeping this move of `bias` in the same if/else as the quantized path
+      // makes the two consumers provably mutually exclusive.
+      fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED);
+      ::ml_drift::FullyConnectedAttributes attr;
+      attr.bias = std::move(bias);
+      fc_op->attr = std::move(attr);
+    }
 
     // While we check if const weights are (o, 1, 1, i) sh, we don't for
     // non-const weights. Manually add a reshape here if necessary.
@@ -223,11 +317,9 @@ void ConvertFullyConnected(
       ir_model.AddConsumer(tensor_map[weights_id], fc_op->id);
     }
 
-    if (has_bias) {
+    if (has_bias && !bias_is_const) {
       ir_model.AddConsumer(tensor_map[node.inputs->data[2]], fc_op->id);
     }
-    ::ml_drift::FullyConnectedAttributes attr;
-    fc_op->attr = std::move(attr);
   }
 
   const ::ml_drift::BHWDC weights_shape_bhwdc =
@@ -259,6 +351,23 @@ void ConvertFullyConnected(
   } else {
     HandleFusedActivation(params->activation, ir_model, fc_op, tensor_map,
                           output_id);
+  }
+
+  // Close the float island: quantize the FC's float result back to the int8
+  // model output tensor, then restore tensor_map[output_id] so downstream ops
+  // consume the native int8 output.
+  if (use_float_island) {
+    const ::ml_drift::BHWDC output_shape_bhwdc =
+        ExtractTensorShape(output_tensor->dims);
+    float qmin = 0.0f;
+    float qmax = 0.0f;
+    GetQuant8Bounds(output_tensor->type, &qmin, &qmax);
+    InsertQuantizeChain(ir_model, /*src_float=*/tensor_map[output_id],
+                        /*dst_int8=*/int8_output_id, output_shape_bhwdc,
+                        output_tensor->params.scale,
+                        static_cast<float>(output_tensor->params.zero_point),
+                        qmin, qmax);
+    tensor_map[output_id] = int8_output_id;
   }
 }
 

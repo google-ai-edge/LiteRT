@@ -39,7 +39,13 @@ cc_library(
     ],
     deps = [
         "//litert/c:litert_common",
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/internal:litert_handle",
         "//litert/python/litert_wrapper/common:litert_wrapper_utils",
         "//tflite:framework",
         "//tflite/core:framework",
@@ -47,12 +53,7 @@ cc_library(
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/types:span",
         "@xla//third_party/python_runtime:headers",  # buildcleaner: keep
-    ] + select({
-        "//litert:windows": [
-            "//litert/c:litert_runtime_c_api_import",
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 pybind_extension(
@@ -75,7 +76,8 @@ pybind_extension(
     wrap_py_init = True,
     deps = [
         ":tensor_buffer_wrapper_lib",
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_tensor_buffer",
         "//tflite:framework",
         "@pybind11",
         "@xla//third_party/python_runtime:headers",

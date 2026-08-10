@@ -17,6 +17,14 @@ http_archive(
 )
 
 http_archive(
+    name = "FP16",
+    build_file = "@//third_party/FP16:FP16.BUILD",
+    sha256 = "d973501a40c55126b31accc2d9f08d931ec3cc190c0430309a5e341d3c0ce32a",
+    strip_prefix = "FP16-4dfe081cf6bcd15db339cf2680b9281b8451eeb3",
+    url = "https://github.com/Maratyszcza/FP16/archive/4dfe081cf6bcd15db339cf2680b9281b8451eeb3.zip",
+)
+
+http_archive(
     name = "rules_shell",
     sha256 = "bc61ef94facc78e20a645726f64756e5e285a045037c7a61f65af2941f4c25e1",
     strip_prefix = "rules_shell-0.4.1",
@@ -101,9 +109,9 @@ tensorflow_source_repo(
     name = "org_tensorflow",
     patches = ["//:PATCH.flatbuffers_windows_no_bash"],
     protobuf_patches = ["//:PATCH.protobuf_port_msvc_compat"],
-    sha256 = "e7eb1346be0b76875adb9c7a3cd0b5b5e88adba7b2415641115668e2dd459517",
-    strip_prefix = "tensorflow-3e14ca7c1b0cd85e0e5e4728f05d6c3e2bc9e82c",
-    urls = ["https://github.com/tensorflow/tensorflow/archive/3e14ca7c1b0cd85e0e5e4728f05d6c3e2bc9e82c.tar.gz"],
+    sha256 = "c3c552414ab2e59e72511a21c1df566346a7c8f160909325edec6d1ff403d69d",
+    strip_prefix = "tensorflow-bcdab1a62e138c8f8784a7477c0be8af6dd0bd0a",
+    urls = ["https://github.com/tensorflow/tensorflow/archive/bcdab1a62e138c8f8784a7477c0be8af6dd0bd0a.tar.gz"],
 )
 
 # Initialize the TensorFlow repository and all dependencies.
@@ -234,6 +242,14 @@ load("//third_party/tqdm:workspace.bzl", tqdm = "repo")
 
 tqdm()
 
+load("//third_party/markupsafe:workspace.bzl", markupsafe = "repo")
+
+markupsafe()
+
+load("//third_party/jinja2:workspace.bzl", jinja2 = "repo")
+
+jinja2()
+
 load("//third_party/dawn:workspace.bzl", dawn = "repo")
 
 dawn()
@@ -356,6 +372,15 @@ load("//third_party/google_tensor:workspace.bzl", "google_tensor")
 
 google_tensor()
 
+# ML Drift ----------------------------------------------------------------------------------
+http_archive(
+    name = "ml_drift",
+    repo_mapping = {
+        "@fp16": "@FP16",
+    },
+    strip_prefix = "ml-drift-main",
+)
+
 # LiteRT GPU ----------------------------------------------------------------------------------
 load("//third_party/litert_gpu:workspace.bzl", "litert_gpu")
 
@@ -379,7 +404,10 @@ exynos_ai_litecore()
 # Android rules. Need latest rules_android_ndk to use NDK 26+.
 load("@rules_android_ndk//:rules.bzl", "android_ndk_repository")
 
-android_ndk_repository(name = "androidndk")
+android_ndk_repository(
+    name = "androidndk",
+    api_level = 26,
+)
 
 load("//:android_ndk_env.bzl", "check_android_ndk_env")
 

@@ -3879,6 +3879,113 @@ TEST(RoPEParserTest, TestIsSupported) {
           .ok());
 }
 
+TEST(RoPEParserTest, TestIsSupportedComposite) {
+  std::vector<::ml_drift::BHWC> input_shapes = {::ml_drift::BHWC(1, 1, 8, 256),
+                                                ::ml_drift::BHWC(1, 1, 8, 1)};
+  auto context =
+      std::make_unique<StubTfLiteContext>(kTfLiteBuiltinStablehloComposite,
+                                          /*op_version=*/1,
+                                          /*num_inputs=*/2, input_shapes);
+  TfLiteStablehloCompositeParams* composite_params =
+      static_cast<TfLiteStablehloCompositeParams*>(
+          context->node()->builtin_data);
+  composite_params->name = "custom_call.rotary_positional_embedding";
+
+  auto parser = NewOperationParser(context->node(), context->registration());
+  EXPECT_OK(parser->IsSupported(context.get(), context->node(),
+                                context->registration()));
+}
+
+TEST(RoPEParserTest, TestParseAttributesCustom) {
+  std::vector<::ml_drift::BHWC> input_shapes = {::ml_drift::BHWC(1, 1, 8, 256),
+                                                ::ml_drift::BHWC(1, 1, 8, 1)};
+  auto context =
+      std::make_unique<StubTfLiteContext>(kTfLiteBuiltinCustom,
+                                          /*op_version=*/1,
+                                          /*num_inputs=*/2, input_shapes);
+  context->registration()->custom_name =
+      "custom_call.rotary_positional_embedding";
+
+  flexbuffers::Builder fbb;
+  fbb.Map([&]() {
+    fbb.Float("min_timescale", 2.0f);
+    fbb.Float("max_timescale", 50000.0f);
+    fbb.Float("proportion", 0.5f);
+    fbb.Int("kernel_type",
+            static_cast<int>(::ml_drift::RoPEKernelType::INTERLEAVED_2D));
+  });
+  fbb.Finish();
+  context->node()->custom_initial_data = fbb.GetBuffer().data();
+  context->node()->custom_initial_data_size = fbb.GetSize();
+
+  auto parser = NewOperationParser(context->node(), context->registration());
+  ASSERT_OK(parser->IsSupported(context.get(), context->node(),
+                                context->registration()));
+
+  ::ml_drift::GraphFloat32 graph;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+  ObjectReader reader(&graph, context.get(), context->node(), &tensor_to_value,
+                      /*quant_conversion_map=*/nullptr,
+                      /*tensor_to_buffer_id_map=*/nullptr,
+                      /*shared_tensor_map=*/nullptr);
+  parser->Parse(context->node(), context->registration(), &graph, &reader);
+
+  auto rope_node = graph.nodes()[0];
+  EXPECT_EQ(rope_node->operation.type, "rope");
+  const auto& attr = std::any_cast<::ml_drift::RoPEAttributes>(
+      rope_node->operation.attributes);
+  EXPECT_NEAR(attr.min_timescale, 2.0f, 1e-6f);
+  EXPECT_NEAR(attr.max_timescale, 50000.0f, 1e-6f);
+  EXPECT_NEAR(attr.proportion, 0.5f, 1e-6f);
+  EXPECT_EQ(attr.kernel_type, ::ml_drift::RoPEKernelType::INTERLEAVED_2D);
+}
+
+TEST(RoPEParserTest, TestParseAttributesComposite) {
+  std::vector<::ml_drift::BHWC> input_shapes = {::ml_drift::BHWC(1, 1, 8, 256),
+                                                ::ml_drift::BHWC(1, 1, 8, 1)};
+  auto context =
+      std::make_unique<StubTfLiteContext>(kTfLiteBuiltinStablehloComposite,
+                                          /*op_version=*/1,
+                                          /*num_inputs=*/2, input_shapes);
+  TfLiteStablehloCompositeParams* composite_params =
+      static_cast<TfLiteStablehloCompositeParams*>(
+          context->node()->builtin_data);
+  composite_params->name = "custom_call.rotary_positional_embedding";
+
+  flexbuffers::Builder fbb;
+  fbb.Map([&]() {
+    fbb.Float("min_timescale", 2.0f);
+    fbb.Float("max_timescale", 50000.0f);
+    fbb.Float("proportion", 0.5f);
+    fbb.Int("kernel_type",
+            static_cast<int>(::ml_drift::RoPEKernelType::INTERLEAVED_2D));
+  });
+  fbb.Finish();
+  composite_params->attributes = fbb.GetBuffer().data();
+  composite_params->attributes_size = fbb.GetSize();
+
+  auto parser = NewOperationParser(context->node(), context->registration());
+  ASSERT_OK(parser->IsSupported(context.get(), context->node(),
+                                context->registration()));
+
+  ::ml_drift::GraphFloat32 graph;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+  ObjectReader reader(&graph, context.get(), context->node(), &tensor_to_value,
+                      /*quant_conversion_map=*/nullptr,
+                      /*tensor_to_buffer_id_map=*/nullptr,
+                      /*shared_tensor_map=*/nullptr);
+  parser->Parse(context->node(), context->registration(), &graph, &reader);
+
+  auto rope_node = graph.nodes()[0];
+  EXPECT_EQ(rope_node->operation.type, "rope");
+  const auto& attr = std::any_cast<::ml_drift::RoPEAttributes>(
+      rope_node->operation.attributes);
+  EXPECT_NEAR(attr.min_timescale, 2.0f, 1e-6f);
+  EXPECT_NEAR(attr.max_timescale, 50000.0f, 1e-6f);
+  EXPECT_NEAR(attr.proportion, 0.5f, 1e-6f);
+  EXPECT_EQ(attr.kernel_type, ::ml_drift::RoPEKernelType::INTERLEAVED_2D);
+}
+
 TEST(ScaledDotProductAttentionParserTest, TestIsSupportedNoMask) {
   std::vector<::ml_drift::BHWC> input_shapes = {
       ::ml_drift::BHWC(1, 1, 8, 256), ::ml_drift::BHWC(1, 1024, 1, 256),
@@ -4436,57 +4543,35 @@ TEST(CumsumOperationParserTest, TestIsSupported) {
 }
 
 TEST(OneHotOperationParserTest, TestIsSupported) {
-  // Invalid num_inputs
   auto context = std::make_unique<StubTfLiteContext>(
       kTfLiteBuiltinOneHot,
       /*op_version=*/1,
       /*num_inputs=*/4,
       /*shape=*/std::vector<int>({1, 1, 1, 1}));
-  auto parser = NewOperationParser(context->node(), context->registration());
-  auto status = parser->IsSupported(context.get(), context->node(),
-                                    context->registration());
-
-  context->tensor(1)->dims->data[1] = 2;
-  context->tensor(1)->dims->data[2] = 2;
-  EXPECT_FALSE(
-      parser
-          ->IsSupported(context.get(), context->node(), context->registration())
-          .ok());
   context->tensor(1)->type = kTfLiteInt32;
-  EXPECT_FALSE(
-      parser
-          ->IsSupported(context.get(), context->node(), context->registration())
-          .ok());
-
-  TfLiteOneHotParams* params =
+  auto* params =
       static_cast<TfLiteOneHotParams*>(context->node()->builtin_data);
   params->axis = -1;
-  EXPECT_FALSE(
-      parser
-          ->IsSupported(context.get(), context->node(), context->registration())
-          .ok());
-  context->tensor(1)->dims->data[1] = 1;
-  context->tensor(1)->dims->data[2] = 1;
-  EXPECT_FALSE(
-      parser
-          ->IsSupported(context.get(), context->node(), context->registration())
-          .ok());
+  auto parser = NewOperationParser(context->node(), context->registration());
 
-  context->ChangeTensorShape(3, {1});
-  context->SetTensorType(3, kTfLiteFloat32, kTfLiteMmapRo);
-  context->ChangeTensorShape(4, {1});
-  context->SetTensorType(4, kTfLiteFloat32, kTfLiteMmapRo);
-  params->axis =
-      context->tensor(1)->dims->data[context->tensor(1)->dims->size - 1];
-  context->node(1)->builtin_data = params;
-
+  // Valid one_hot is supported.
   EXPECT_TRUE(
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());
 
+  // Non-singleton dimensions at 0, 1, 2 are supported by ML Drift GPU delegate.
   context->tensor(1)->dims->data[0] = 2;
+  context->tensor(1)->dims->data[1] = 2;
+  context->tensor(1)->dims->data[2] = 2;
   EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Unsupported op version (> 1) is rejected.
+  context->registration()->version = 2;
+  EXPECT_FALSE(
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());

@@ -37,7 +37,7 @@ namespace {
 class ConvertSplitTest : public ::testing::TestWithParam<TfLiteType> {
  protected:
   void SetUp() override {
-    delegate_ = CreateStubDelegate();
+    delegate_ = CreateStubDelegate({.apply_model_transformations = false});
     ASSERT_TRUE(delegate_);
   }
 
@@ -118,7 +118,7 @@ TEST_P(ConvertSplitTest, SplitNumSplitsOne) {
 class ConvertSplitVTest : public ::testing::TestWithParam<TfLiteType> {
  protected:
   void SetUp() override {
-    delegate_ = CreateStubDelegate();
+    delegate_ = CreateStubDelegate({.apply_model_transformations = false});
     ASSERT_TRUE(delegate_);
   }
 

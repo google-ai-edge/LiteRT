@@ -49,15 +49,16 @@
 #include <memory>
 #include <string>
 
-#include "bstm/compiler/bstorm_compiler_bstm_offline.h"
-#include "bstorm_common.h"
 #include "bstorm_core_internal.h"
-#include "bstorm_operations.h"
-#include "bstorm_graph_info.h"
+#include "bstorm_common.h"
 #include "bstorm_init.h"
 #include "bstorm_types.h"
-#include "common/bstorm_util_litert.h"
+#include "bstorm_operations.h"
+#include "bstorm_graph_info.h"
+#include "bstm/compiler/bstorm_compiler_bstm_offline.h"
 #include "flatbuf/bstorm_flatbuf.h"
+#include "common/bstorm_util_litert.h"
+
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -996,9 +997,17 @@ static LiteRtDispatchGraphInterface bstorm_LiteRt_graph_interface = {
 };
 
 static LiteRtDispatchApi bstorm_LiteRt_dispatch_api = {
-    /*.version=*/{/*.major=*/LITERT_API_VERSION_MAJOR,
-                  /*.minor=*/LITERT_API_VERSION_MINOR,
-                  /*.patch=*/LITERT_API_VERSION_PATCH},
+    /*.abi_header=*/
+    {
+        /*.struct_size=*/sizeof(LiteRtDispatchApi),
+        /*.major_version=*/1,
+        /*.minor_version=*/0,
+        /*.reserved=*/0,
+    },
+    /*.version=*/
+    {/*.major=*/LITERT_API_VERSION_MAJOR,
+     /*.minor=*/LITERT_API_VERSION_MINOR,
+     /*.patch=*/LITERT_API_VERSION_PATCH},
     /*.interface=*/&bstorm_LiteRt_dispatch_interface,
     /*.async_interface=*/nullptr,
     /*.graph_interface=*/&bstorm_LiteRt_graph_interface,

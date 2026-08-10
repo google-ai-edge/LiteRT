@@ -52,13 +52,11 @@ using ::litert::Options;
 using ::testing::Pointwise;
 static constexpr const float kTol = 5e-2;
 
-constexpr absl::string_view kDispatchLibraryDir = "/data/local/tmp";
-
 litert::Expected<Environment> CreateDefaultEnvironment() {
   const std::vector<litert::EnvironmentOptions::Option> environment_options = {
       litert::EnvironmentOptions::Option{
           litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
-          kDispatchLibraryDir,
+          qnn::GetTestDispatchLibraryDir(),
       },
   };
   return litert::Environment::Create(

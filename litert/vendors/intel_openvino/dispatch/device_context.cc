@@ -57,6 +57,22 @@ LiteRtDispatchDeviceContextT::Create(
 }
 
 #if LITERT_HAS_AHWB_SUPPORT
+// Extracts the backing dma-buf fd of an AHardwareBuffer by serializing the
+// buffer's native handle over a socketpair and reading it back with
+// recvmsg(SCM_RIGHTS). Ownership of the returned fd transfers to the caller,
+// which must close() it.
+//
+// An AHardwareBuffer handle can carry more than one fd: for a BLOB buffer the
+// kernel installs the backing dma-buf plus a secondary metadata/reserved-region
+// fd, and other formats can carry more. This shapes the function in two ways:
+//   1. The control buffer is sized for a generous upper bound on the fd count
+//      so the kernel never truncates the array. Any fds that do not fit are
+//      dropped by the kernel before we ever see them and can no longer be
+//      closed.
+//   2. The caller only needs the first fd (the dma-buf), but every fd the
+//      kernel installed is a live descriptor owned by this process. The
+//      function keeps the first and closes all the rest, regardless of how many
+//      the handle carried, so this process leaves none open.
 litert::Expected<int> GetFdFromUnixHandle(AHardwareBuffer* ahwb) {
   int socks[2];
   if (socketpair(AF_UNIX, SOCK_SEQPACKET, 0, socks) != 0) {
@@ -64,7 +80,7 @@ litert::Expected<int> GetFdFromUnixHandle(AHardwareBuffer* ahwb) {
                               "Failed to create socket pair");
   }
 
-  auto socket_cleaup = absl::Cleanup([&socks] {
+  auto socket_cleanup = absl::Cleanup([&socks] {
     close(socks[0]);
     close(socks[1]);
   });
@@ -85,14 +101,17 @@ litert::Expected<int> GetFdFromUnixHandle(AHardwareBuffer* ahwb) {
                             "AHWB is not supported on this platform");
 #endif  // defined(__ANDROID__)
 
-  // Receives a fd(an int) over the unix socket, sets up control buffer to
-  // receive an int
-  char payload_byte;
+  // A single dummy payload byte travels alongside the ancillary fd array; the
+  // sender writes one byte together with the SCM_RIGHTS control message.
+  char payload_byte = 0;
   struct iovec io = {.iov_base = &payload_byte,
                      .iov_len = sizeof(payload_byte)};
 
-  // Buffer for receiving fd
-  char control_buf[CMSG_SPACE(sizeof(int))];
+  // Control buffer sized for a generous upper bound on the number of fds a
+  // single handle can carry, so the kernel never truncates the fd array.
+  constexpr int kMaxHandleFds = 128;
+  char control_buf[CMSG_SPACE(sizeof(int) * kMaxHandleFds)];
+  memset(control_buf, 0, sizeof(control_buf));
 
   struct msghdr msg = {.msg_iov = &io,
                        .msg_iovlen = 1,
@@ -103,13 +122,32 @@ litert::Expected<int> GetFdFromUnixHandle(AHardwareBuffer* ahwb) {
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                               "Failed to receive socket message");
   }
-  int fd = -1;
-  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
-  if (cmsg && cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
-    memcpy(&fd, CMSG_DATA(cmsg), sizeof(int));
+
+  // Keep the first fd (the dma-buf handed to the importer) and close every
+  // other fd the kernel installed, so this process leaves none open.
+  int dma_buf_fd = -1;
+  for (struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr;
+       cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+    if (cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS) {
+      continue;
+    }
+    const int num_fds =
+        static_cast<int>((cmsg->cmsg_len - CMSG_LEN(0)) / sizeof(int));
+    const int* fds = reinterpret_cast<const int*>(CMSG_DATA(cmsg));
+    for (int i = 0; i < num_fds; ++i) {
+      if (dma_buf_fd < 0) {
+        dma_buf_fd = fds[i];  // Keep the first fd: the dma-buf.
+      } else {
+        close(fds[i]);  // Extra fds are not needed by the caller.
+      }
+    }
   }
 
-  return fd;
+  if (dma_buf_fd < 0) {
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Socket message carried no dma-buf fd");
+  }
+  return dma_buf_fd;
 }
 #endif  // LITERT_HAS_AHWB_SUPPORT
 
@@ -275,14 +313,15 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
           BuildAndValidateShape(tensor_type, ov_element_type.bitwidth(),
                                 tensor_buffer_size));
 
+      // Borrow the AHardwareBuffer's backing dma-buf fd. GetFdFromUnixHandle
+      // returns a single fd owned by this scope; it is closed once mapped.
       LITERT_ASSIGN_OR_RETURN(int fd, GetFdFromUnixHandle(ahwb));
-      LITERT_RETURN_IF_ERROR(
-          fd != -1, litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                       "Failed to get FD from unix handle"));
 
       auto context = getCore()
                          ->get_default_context("NPU")
                          .as<ov::intel_npu::level_zero::ZeroContext>();
+      // The mmap'd region is independent of the fd once mapped, so we close the
+      // fd as soon as the mapping is established.
       void* buffer = mmap(nullptr, tensor_buffer_size, PROT_READ | PROT_WRITE,
                           MAP_SHARED, fd, tensor_buffer_offset);
       close(fd);

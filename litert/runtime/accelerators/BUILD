@@ -56,6 +56,7 @@ cc_library(
     hdrs = ["registration_helper.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c/internal:litert_abi_header",
         "//litert/c/internal:litert_accelerator_def",
         "//litert/c/internal:litert_accelerator_registration",
         "//litert/c/internal:litert_custom_tensor_buffer_handlers_def",

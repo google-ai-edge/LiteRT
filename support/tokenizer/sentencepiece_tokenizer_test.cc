@@ -145,6 +145,23 @@ TEST(SentencePieceTokenizerTest, TokenIdsToText) {
   EXPECT_EQ(text, "▁Hello▁World!");
 }
 
+TEST(SentencePieceTokenizerTest, TokenIdsToTextSkipSpecialTokens) {
+  ASSERT_OK_AND_ASSIGN(auto tokenizer, SentencePieceTokenizer::CreateFromFile(
+                                           GetSentencePieceModelPath()));
+
+  // 1 is <s>, 2 is </s>, 0 is <unk>
+  const std::vector<int> ids = {1, 90, 547, 58, 735, 210, 466, 2294, 2};
+  ASSERT_OK_AND_ASSIGN(
+      auto text_with_special,
+      tokenizer->TokenIdsToText(ids, /*skip_special_tokens=*/false));
+  EXPECT_EQ(text_with_special, "<s>▁Hello▁World!</s>");
+
+  ASSERT_OK_AND_ASSIGN(
+      auto text_without_special,
+      tokenizer->TokenIdsToText(ids, /*skip_special_tokens=*/true));
+  EXPECT_EQ(text_without_special, "▁Hello▁World!");
+}
+
 TEST(SentencePieceTokenizerTest, TokenIdsToTextConsecutiveByteTokens) {
   ASSERT_OK_AND_ASSIGN(auto tokenizer, SentencePieceTokenizer::CreateFromFile(
                                            GetGemma3TokenizerModelPath()));

@@ -36,6 +36,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/common.h"
+#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
@@ -46,8 +47,10 @@ using litert::qnn::QnnManager;
 
 Expected<LiteRtDispatchDeviceContextT::Ptr>
 LiteRtDispatchDeviceContextT::Create(
-    const LiteRtRuntimeContext* runtime_context, QnnManager& qnn) {
-  return Ptr(new LiteRtDispatchDeviceContextT(runtime_context, qnn));
+    const LiteRtRuntimeContext* runtime_context, QnnManager& qnn,
+    ::qnn::QnnBackend& qnn_backend) {
+  return Ptr(
+      new LiteRtDispatchDeviceContextT(runtime_context, qnn, qnn_backend));
 }
 
 Expected<LiteRtTensorBuffer> LiteRtDispatchDeviceContextT::GetTensorBuffer(
@@ -244,7 +247,7 @@ LiteRtDispatchDeviceContextT::GetOrCreateContext(
   LITERT_LOG(LITERT_INFO, "Creating new QNN context for bytecode %p (size %zu)",
              bytecode_ptr, bytecode_size);
   auto context_handle_expected = qnn_manager_.CreateContextHandle(
-      QnnManager::DefaultContextConfigs(),
+      qnn_backend_, QnnManager::DefaultContextConfigs(),
       absl::MakeSpan(static_cast<const uint8_t*>(bytecode_ptr), bytecode_size),
       profile_handle);
 

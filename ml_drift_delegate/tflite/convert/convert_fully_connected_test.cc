@@ -14,7 +14,9 @@
 
 #include <any>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <tuple>
@@ -22,8 +24,11 @@
 
 #include "testing/base/public/gunit.h"
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
+#include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/convert/convert_testing_utils.h"
 #include "ml_drift_delegate/tflite/convert/stub_delegate.h"
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
@@ -102,13 +107,13 @@ TEST_P(ConvertFullyConnectedTest, Parameterized) {
   const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
   ASSERT_TRUE(ir_model);
 
+  // Const int8 weights and const int4/int2 weights with affine (per-tensor or
+  // per-channel) quantization are all emitted as a FULLY_CONNECTED_INT8 op
   std::string expected_op_name;
-  if (dtype_ == kTfLiteInt8 && const_weights_) {
+  if (const_weights_ &&
+      (dtype_ == kTfLiteInt8 || dtype_ == kTfLiteInt4 ||
+       dtype_ == kTfLiteInt2)) {
     expected_op_name = "fully_connected_int8";
-  } else if (dtype_ == kTfLiteInt4 && const_weights_) {
-    expected_op_name = "fully_connected_int4";
-  } else if (dtype_ == kTfLiteInt2 && const_weights_) {
-    expected_op_name = "fully_connected_int2";
   } else {
     expected_op_name = "fully_connected";
   }
@@ -122,17 +127,9 @@ TEST_P(ConvertFullyConnectedTest, Parameterized) {
   ASSERT_NE(fc_op, nullptr)
       << "Expected op " << expected_op_name << " not found in IR model";
 
-  if (dtype_ == kTfLiteInt4 && const_weights_) {
-    EXPECT_TRUE(fc_op->attr.has_value());
-    EXPECT_NO_THROW(
-        (void)std::any_cast<::ml_drift::FullyConnectedInt4Attributes>(
-            fc_op->attr));
-  } else if (dtype_ == kTfLiteInt2 && const_weights_) {
-    EXPECT_TRUE(fc_op->attr.has_value());
-    EXPECT_NO_THROW(
-        (void)std::any_cast<::ml_drift::FullyConnectedInt2Attributes>(
-            fc_op->attr));
-  } else if (dtype_ == kTfLiteInt8 && const_weights_) {
+  if (const_weights_ &&
+      (dtype_ == kTfLiteInt8 || dtype_ == kTfLiteInt4 ||
+       dtype_ == kTfLiteInt2)) {
     EXPECT_TRUE(fc_op->attr.has_value());
     EXPECT_NO_THROW(
         (void)std::any_cast<::ml_drift::FullyConnectedInt8Attributes>(
@@ -346,6 +343,92 @@ TEST(ConvertFullyConnectedTest, SetFullyConnectedOutputShapeTest) {
   EXPECT_EQ(out_shape.h, 2);
   EXPECT_EQ(out_shape.w, 3);
   EXPECT_EQ(out_shape.c, 8);
+}
+
+// Verifies that a native (const) blockwise-quantized int4 FULLY_CONNECTED is
+// converted to a fully_connected_int4 op whose scale is read from the separate
+// scale tensor and whose scale shape splits the input dim into blocks:
+// OHWI(o, 1, 1, i / blocksize). Mirrors GraphFloat32's native blockwise path.
+TEST(ConvertFullyConnectedTest, ConvertsNativeBlockwiseInt4) {
+  IrModelBuilderOptions options;
+  std::unique_ptr<TfLiteDelegate, void (*)(TfLiteDelegate*)> delegate(
+      CreateStubDelegate(options), DeleteStubDelegate);
+  ASSERT_NE(delegate, nullptr);
+
+  constexpr int kOutputChannels = 8;
+  constexpr int kInputChannels = 4;
+  constexpr int kBlockSize = 2;
+  constexpr int kNumBlocks = kInputChannels / kBlockSize;  // 2
+
+  // Scale tensor: [o, i/blocksize] = [8, 2], float32.
+  std::vector<float> scale_values(kOutputChannels * kNumBlocks, 0.5f);
+  std::vector<uint8_t> scale_bytes(scale_values.size() * sizeof(float));
+  std::memcpy(scale_bytes.data(), scale_values.data(), scale_bytes.size());
+
+  SingleOpInterpreterBuilder model(kTfLiteBuiltinFullyConnected, /*version=*/1);
+  model.AddInput(kTfLiteFloat32, {1, 1, 1, kInputChannels});  // input, id 0
+  model.AddInput(kTfLiteInt4,
+                 {kOutputChannels, kInputChannels});  // weights, id 1
+  model.AddConstInput(kTfLiteFloat32, {kOutputChannels, kNumBlocks},
+                      scale_bytes);                       // scale, id 2
+  model.AddOutput(kTfLiteFloat32, {1, kOutputChannels});  // output, id 3
+
+  TfLiteFullyConnectedParams* params =
+      reinterpret_cast<TfLiteFullyConnectedParams*>(
+          calloc(1, sizeof(TfLiteFullyConnectedParams)));
+  params->activation = kTfLiteActNone;
+  model.SetParameters(params);
+
+  // The node consumes only input + weights; the scale tensor (id 2) exists as a
+  // const tensor referenced by the weights' blockwise quantization params.
+  std::unique_ptr<::tflite::Interpreter> interpreter = model.Build({0, 1});
+  ASSERT_TRUE(interpreter);
+
+  // Make the weights a const, blockwise-quantized int4 tensor that references
+  // the scale tensor at index 2.
+  std::vector<uint8_t> weights_bytes(kOutputChannels * kInputChannels / 2,
+                                     0x21);
+  TfLiteTensor* weights = interpreter->tensor(1);
+  weights->allocation_type = kTfLiteMmapRo;
+  weights->data.raw = reinterpret_cast<char*>(weights_bytes.data());
+  weights->bytes = weights_bytes.size();
+  TfLiteQuantizationFree(&weights->quantization);
+  auto* blockwise_params = static_cast<TfLiteBlockwiseQuantization*>(
+      malloc(sizeof(TfLiteBlockwiseQuantization)));
+  blockwise_params->scale = 2;
+  blockwise_params->zero_point = -1;
+  blockwise_params->blocksize = kBlockSize;
+  weights->quantization.type = kTfLiteBlockwiseQuantization;
+  weights->quantization.params = blockwise_params;
+
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate.get()), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate.get());
+  ASSERT_TRUE(ir_model);
+
+  const ::ml_drift::ir::IrOp* fc_op = nullptr;
+  for (const auto& op : ir_model->ops()) {
+    if (op->name == "fully_connected_int4") {
+      fc_op = op.get();
+      break;
+    }
+  }
+  ASSERT_NE(fc_op, nullptr);
+  ASSERT_TRUE(fc_op->attr.has_value());
+  const auto attr =
+      std::any_cast<::ml_drift::FullyConnectedInt4Attributes>(fc_op->attr);
+
+  // Scale is read from the separate tensor; its shape splits the input dim.
+  EXPECT_EQ(attr.scale.shape.o, kOutputChannels);
+  EXPECT_EQ(attr.scale.shape.i, kNumBlocks);
+  EXPECT_EQ(attr.scale.data.size(),
+            static_cast<size_t>(kOutputChannels * kNumBlocks));
+  // Weights are unpacked to int8 with shape OHWI(o, 1, 1, i).
+  const auto& weights_tensor = std::get<
+      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>>(
+      attr.weights);
+  EXPECT_EQ(weights_tensor.shape.o, kOutputChannels);
+  EXPECT_EQ(weights_tensor.shape.i, kInputChannels);
 }
 
 }  // namespace

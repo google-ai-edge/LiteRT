@@ -32,6 +32,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/context_binary_info.h"
+#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
@@ -46,7 +47,7 @@ class LiteRtDispatchInvocationContextT {
   ~LiteRtDispatchInvocationContextT();
 
   static litert::Expected<Ptr> Create(
-      litert::qnn::QnnManager& qnn_manager,
+      litert::qnn::QnnManager& qnn_manager, ::qnn::QnnBackend& qnn_backend,
       LiteRtDispatchDeviceContextT& device_context,
       LiteRtDispatchExecutableType exec_type,
       const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name);
@@ -92,7 +93,7 @@ class LiteRtDispatchInvocationContextT {
 
  private:
   LiteRtDispatchInvocationContextT(
-      litert::qnn::QnnManager& qnn_manager,
+      litert::qnn::QnnManager& qnn_manager, ::qnn::QnnBackend& qnn_backend,
       const litert::qnn::ContextBinaryInfo& context_binary_info,
       LiteRtDispatchDeviceContext device_context,
       const litert::qnn::QnnManager::ContextHandle* context_handle,
@@ -100,7 +101,7 @@ class LiteRtDispatchInvocationContextT {
       Qnn_GraphHandle_t graph_handle);
 
   LiteRtDispatchInvocationContextT(
-      litert::qnn::QnnManager& qnn_manager,
+      litert::qnn::QnnManager& qnn_manager, ::qnn::QnnBackend& qnn_backend,
       LiteRtDispatchDeviceContext device_context,
       const litert::qnn::QnnManager::ContextHandle* context_handle,
       Qnn_ContextHandle_t raw_context_handle,
@@ -121,6 +122,7 @@ class LiteRtDispatchInvocationContextT {
       const LiteRtRankedTensorType& tensor_type);
 
   litert::qnn::QnnManager& qnn_manager_;
+  ::qnn::QnnBackend& qnn_backend_;
   LiteRtDispatchDeviceContext device_context_;
   const litert::qnn::QnnManager::ContextHandle& context_handle_;
   Qnn_ContextHandle_t raw_context_handle_;

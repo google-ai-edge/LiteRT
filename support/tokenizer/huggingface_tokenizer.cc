@@ -14,10 +14,10 @@
 
 #include "support/tokenizer/huggingface_tokenizer.h"
 
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "absl/debugging/leak_check.h"  // from @com_google_absl
@@ -29,7 +29,7 @@
 #include "support/tokenizer/tokenizer.h"
 #include "support/util/memory_mapped_file.h"
 #include "support/util/status_macros.h"  // NOLINT
-#include "include/tokenizers_cpp.h"  // from @tokenizers_cpp
+#include "include/tokenizers_c.h"  // from @tokenizers_cpp
 
 namespace litert::support {
 
@@ -45,27 +45,31 @@ HuggingFaceTokenizer::CreateFromFile(absl::string_view json_path) {
 
 absl::StatusOr<std::unique_ptr<HuggingFaceTokenizer>>
 HuggingFaceTokenizer::CreateFromJson(const std::string& json) {
-  auto tokenizer = tokenizers::Tokenizer::FromBlobJSON(json);
-  if (!tokenizer) {
+  auto handle = tokenizers_new_from_str(json.data(), json.length());
+  if (!handle) {
     return absl::InvalidArgumentError("Failed to create tokenizer from JSON.");
   }
-  return absl::WrapUnique(new HuggingFaceTokenizer(std::move(tokenizer)));
+  return absl::WrapUnique(new HuggingFaceTokenizer(handle));
 }
 
 // Encodes the given text into a TensorBuffer of token ids.
 absl::StatusOr<std::vector<int>> HuggingFaceTokenizer::TextToTokenIds(
     absl::string_view text) {
-  {
-    // Disable leak check as Google's default leak checker does not properly
-    // support Rust's lazy_static initialization.
-    // TODO(b/379364190) - Remove this once the leak checker is fixed.
-    absl::LeakCheckDisabler disabler;
-    return tokenizer_->Encode(std::string{text});
-  }
+  // Disable leak check as Google's default leak checker does not properly
+  // support Rust's lazy_static initialization.
+  // TODO(b/379364190) - Remove this once the leak checker is fixed.
+  absl::LeakCheckDisabler disabler;
+  TokenizerEncodeResult result;
+  tokenizers_encode(handle_, text.data(), text.length(),
+                    /*add_special_tokens=*/0, &result);
+  std::vector<int> ret(result.token_ids, result.token_ids + result.len);
+  tokenizers_free_encode_results(&result, 1);
+  return ret;
 }
 
 absl::StatusOr<int> HuggingFaceTokenizer::TokenToId(absl::string_view token) {
-  int id = tokenizer_->TokenToId(std::string{token});
+  int32_t id = -1;
+  tokenizers_token_to_id(handle_, token.data(), token.length(), &id);
   if (id == -1) {
     return absl::NotFoundError(absl::StrCat("Unknown token: ", token));
   }
@@ -74,36 +78,43 @@ absl::StatusOr<int> HuggingFaceTokenizer::TokenToId(absl::string_view token) {
 
 // Decodes the given TensorBuffer of token ids into a vector of strings.
 absl::StatusOr<std::string> HuggingFaceTokenizer::TokenIdsToText(
-    const std::vector<int>& token_ids) {
-  {
-    absl::LeakCheckDisabler disabler;
-    // Disable leak check as Google's default leak checker does not properly
-    // support Rust's lazy_static initialization.
-    // TODO(b/379364190) - Remove this once the leak checker is fixed.
-    std::string decoded = tokenizer_->Decode(token_ids);
-    if (Tokenizer::HasBpeSuffix(decoded)) {
-      return absl::DataLossError(
-          "The set of token IDs passed to the tokenizer is part of a BPE "
-          "sequence and needs more tokens to be decoded.");
-    } else {
-      return decoded;
-    }
+    const std::vector<int>& token_ids, bool skip_special_tokens) {
+  absl::LeakCheckDisabler disabler;
+  // Disable leak check as Google's default leak checker does not properly
+  // support Rust's lazy_static initialization.
+  // TODO(b/379364190) - Remove this once the leak checker is fixed.
+  tokenizers_decode(handle_,
+                    reinterpret_cast<const uint32_t*>(token_ids.data()),
+                    token_ids.size(), static_cast<int>(skip_special_tokens));
+  const char* data = nullptr;
+  size_t len = 0;
+  tokenizers_get_decode_str(handle_, &data, &len);
+  std::string decoded(data, len);
+  if (Tokenizer::HasBpeSuffix(decoded)) {
+    return absl::DataLossError(
+        "The set of token IDs passed to the tokenizer is part of a BPE "
+        "sequence and needs more tokens to be decoded.");
   }
+  return decoded;
 }
 
 std::vector<std::string> HuggingFaceTokenizer::GetTokens() const {
   std::vector<std::string> tokens;
-  int vocab_size = tokenizer_->GetVocabSize();
+  int vocab_size = GetVocabSize();
   tokens.reserve(vocab_size);
   for (int i = 0; i < vocab_size; ++i) {
-    std::string token = tokenizer_->IdToToken(i);
-    tokens.push_back(token);
+    const char* data = nullptr;
+    size_t len = 0;
+    tokenizers_id_to_token(handle_, static_cast<uint32_t>(i), &data, &len);
+    tokens.emplace_back(data, len);
   }
   return tokens;
 }
 
 int HuggingFaceTokenizer::GetVocabSize() const {
-  return tokenizer_->GetVocabSize();
+  size_t size = 0;
+  tokenizers_get_vocab_size(handle_, &size);
+  return static_cast<int>(size);
 }
 
 }  // namespace litert::support

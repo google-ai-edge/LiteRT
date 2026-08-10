@@ -88,14 +88,3 @@ cc_library(
         "//litert/cc:litert_options",
     ],
 )
-
-cc_library(
-    name = "options_parser_registry_dynamic_runtime",
-    srcs = ["options_parser_registry.cc"],
-    hdrs = ["options_parser_registry.h"],
-    deps = [
-        "//litert/cc:litert_api_with_dynamic_runtime",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-    ],
-)

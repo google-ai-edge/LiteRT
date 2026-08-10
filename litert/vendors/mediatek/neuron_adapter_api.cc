@@ -23,7 +23,6 @@
 #include <utility>
 #include <vector>
 
-#include "neuron/api/NeuronAdapter.h"
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -31,6 +30,7 @@
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "neuron/api/NeuronAdapter.h"
 
 #define LOAD_SYMB(S, H)                                                   \
   if (auto maybe_H = dlib_.LookupSymbol<void*>(#S); maybe_H.HasValue()) { \

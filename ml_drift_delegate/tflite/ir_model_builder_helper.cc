@@ -19,13 +19,16 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "xnnpack.h"  // from @XNNPACK
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
+#include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "tflite/c/builtin_op_data.h"
 #include "tflite/kernels/internal/portable_tensor_utils.h"
@@ -220,6 +223,124 @@ bool IsLinearConvertible(const TfLiteIntArray* dims) {
     if (dims->data[i] != 1) return false;
   }
   return true;
+}
+
+bool IsAffineQuantized8Bit(const TfLiteTensor& tensor) {
+  return (tensor.type == kTfLiteInt8 || tensor.type == kTfLiteUInt8) &&
+         tensor.quantization.type ==
+             TfLiteQuantizationType::kTfLiteAffineQuantization;
+}
+
+void GetQuant8Bounds(TfLiteType type, float* qmin, float* qmax) {
+  if (type == kTfLiteUInt8) {
+    *qmin = 0.0f;
+    *qmax = 255.0f;
+  } else {  // kTfLiteInt8
+    *qmin = -128.0f;
+    *qmax = 127.0f;
+  }
+}
+
+void InsertDequantizeChain(::ml_drift::ir::IrModel& ir_model,
+                           ::ml_drift::ir::IrTensorId src_int8,
+                           ::ml_drift::ir::IrTensorId dst_float,
+                           const ::ml_drift::BHWDC& shape, float scale,
+                           float zero_point) {
+  // CAST int8 -> float32 (value cast, e.g. -5 -> -5.0).
+  ::ml_drift::ir::IrTensor* casted =
+      ir_model.add_tensor(::ml_drift::DataType::FLOAT32, shape);
+  ::ml_drift::ir::IrOp* cast_op = ir_model.add_op();
+  cast_op->name = ToString(::ml_drift::OperationType::CAST);
+  ir_model.AddConsumer(src_int8, cast_op->id);
+  ir_model.SetProducer(casted->id, cast_op->id);
+
+  // SUB zero_point: (q - zero_point).
+  ::ml_drift::ir::IrTensor* subbed =
+      ir_model.add_tensor(::ml_drift::DataType::FLOAT32, shape);
+  ::ml_drift::ir::IrOp* sub_op = ir_model.add_op();
+  sub_op->name = ToString(::ml_drift::OperationType::SUB);
+  ::ml_drift::ElementwiseAttributes sub_attr;
+  sub_attr.param = zero_point;
+  sub_attr.runtime_tensor_is_second = false;
+  sub_op->attr = std::move(sub_attr);
+  ir_model.AddConsumer(casted->id, sub_op->id);
+  ir_model.SetProducer(subbed->id, sub_op->id);
+
+  // MUL scale: (q - zero_point) * scale, producing the float activation.
+  ::ml_drift::ir::IrOp* mul_op = ir_model.add_op();
+  mul_op->name = ToString(::ml_drift::OperationType::MUL);
+  ::ml_drift::ElementwiseAttributes mul_attr;
+  mul_attr.param = scale;
+  mul_op->attr = std::move(mul_attr);
+  ir_model.AddConsumer(subbed->id, mul_op->id);
+  ir_model.SetProducer(dst_float, mul_op->id);
+}
+
+void InsertQuantizeChain(::ml_drift::ir::IrModel& ir_model,
+                         ::ml_drift::ir::IrTensorId src_float,
+                         ::ml_drift::ir::IrTensorId dst_int8,
+                         const ::ml_drift::BHWDC& shape, float scale,
+                         float zero_point, float qmin, float qmax) {
+  // DIV by scale.
+  ::ml_drift::ir::IrTensor* divided =
+      ir_model.add_tensor(::ml_drift::DataType::FLOAT32, shape);
+  ::ml_drift::ir::IrOp* div_op = ir_model.add_op();
+  div_op->name = ToString(::ml_drift::OperationType::DIV);
+  ::ml_drift::ElementwiseAttributes div_attr;
+  div_attr.param = scale;
+  div_attr.runtime_tensor_is_second = false;
+  div_op->attr = std::move(div_attr);
+  ir_model.AddConsumer(src_float, div_op->id);
+  ir_model.SetProducer(divided->id, div_op->id);
+
+  // ROUND to nearest integer.
+  ::ml_drift::ir::IrTensor* rounded =
+      ir_model.add_tensor(::ml_drift::DataType::FLOAT32, shape);
+  ::ml_drift::ir::IrOp* round_op = ir_model.add_op();
+  round_op->name = ToString(::ml_drift::OperationType::ROUND);
+  ir_model.AddConsumer(divided->id, round_op->id);
+  ir_model.SetProducer(rounded->id, round_op->id);
+
+  // ADD zero_point.
+  ::ml_drift::ir::IrTensor* added =
+      ir_model.add_tensor(::ml_drift::DataType::FLOAT32, shape);
+  ::ml_drift::ir::IrOp* add_op = ir_model.add_op();
+  add_op->name = ToString(::ml_drift::OperationType::ADD);
+  ::ml_drift::ElementwiseAttributes add_attr;
+  add_attr.param = zero_point;
+  add_op->attr = std::move(add_attr);
+  ir_model.AddConsumer(rounded->id, add_op->id);
+  ir_model.SetProducer(added->id, add_op->id);
+
+  // Clamp into the target range: MAXIMUM(qmin) then MINIMUM(qmax).
+  ::ml_drift::ir::IrTensor* clamped_lo =
+      ir_model.add_tensor(::ml_drift::DataType::FLOAT32, shape);
+  ::ml_drift::ir::IrOp* max_op = ir_model.add_op();
+  max_op->name = ToString(::ml_drift::OperationType::MAXIMUM);
+  ::ml_drift::ElementwiseAttributes max_attr;
+  max_attr.param = qmin;
+  max_attr.runtime_tensor_is_second = false;
+  max_op->attr = std::move(max_attr);
+  ir_model.AddConsumer(added->id, max_op->id);
+  ir_model.SetProducer(clamped_lo->id, max_op->id);
+
+  ::ml_drift::ir::IrTensor* clamped_hi =
+      ir_model.add_tensor(::ml_drift::DataType::FLOAT32, shape);
+  ::ml_drift::ir::IrOp* min_op = ir_model.add_op();
+  min_op->name = ToString(::ml_drift::OperationType::MINIMUM);
+  ::ml_drift::ElementwiseAttributes min_attr;
+  min_attr.param = qmax;
+  min_attr.runtime_tensor_is_second = false;
+  min_op->attr = std::move(min_attr);
+  ir_model.AddConsumer(clamped_lo->id, min_op->id);
+  ir_model.SetProducer(clamped_hi->id, min_op->id);
+
+  // CAST float32 -> int8/uint8 (value is already integer-valued, so exact),
+  // producing the graph output boundary tensor.
+  ::ml_drift::ir::IrOp* cast_op = ir_model.add_op();
+  cast_op->name = ToString(::ml_drift::OperationType::CAST);
+  ir_model.AddConsumer(clamped_hi->id, cast_op->id);
+  ir_model.SetProducer(dst_int8, cast_op->id);
 }
 
 }  // namespace litert::ml_drift::ir

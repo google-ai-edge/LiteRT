@@ -13,8 +13,6 @@
 // limitations under the License.
 
 #import "third_party/odml/litert/litert/objc/apis/LRTTensorBuffer.h"
-#import "third_party/odml/litert/litert/objc/apis/LRTError.h"
-#import "third_party/odml/litert/litert/objc/sources/LRTEnvironment+Internal.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -28,6 +26,9 @@
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
+#import "third_party/odml/litert/litert/objc/apis/LRTError.h"
+#import "third_party/odml/litert/litert/objc/sources/LRTEnvironment+Internal.h"
+#import "third_party/odml/litert/litert/objc/sources/LRTTensorBuffer+Internal.h"
 
 @implementation LRTTensorBuffer {
   std::unique_ptr<litert::TensorBuffer> _cppTensorBuffer;

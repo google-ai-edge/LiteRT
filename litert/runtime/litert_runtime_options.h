@@ -15,6 +15,10 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_LITERT_RUNTIME_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_LITERT_RUNTIME_OPTIONS_H_
 
+#include <cstddef>
+#include <string>
+#include <vector>
+
 #include "litert/c/litert_common.h"
 
 // Internal LiteRt runtime options struct. This data structure is used to
@@ -34,6 +38,11 @@ struct LiteRtRuntimeOptionsT {
 
   // If true, the interpreter will disable delegate clustering.
   bool disable_delegate_clustering = false;
+
+  // The selected TFLite signature keys identifying the root subgraphs that the
+  // compiled model prepares for execution. Empty means all signatures are
+  // active.
+  std::vector<std::string> selected_signature_keys;
 
   static const char* Identifier() { return "runtime_options_string"; }
 };

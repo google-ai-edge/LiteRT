@@ -18,7 +18,7 @@
 #include "litert/c/internal/litert_accelerator_def.h"
 
 extern "C" {
-extern LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorGpuDef;
+extern const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorGpuDef;
 }
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_ACCELERATORS_GPU_STATIC_REGISTRY_H_

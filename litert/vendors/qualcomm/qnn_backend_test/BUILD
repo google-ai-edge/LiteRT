@@ -52,13 +52,16 @@ cc_library(
     srcs = ["test_utils.cc"],
     hdrs = ["test_utils.h"],
     deps = [
-        "//litert/test:common",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/backends:backend_factory",
+        "//litert/vendors/qualcomm/core/backends:qnn_backend",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/utils:qnn_model",
         "//litert/vendors/qualcomm/core/utils:test_utils",
+        "@com_google_absl//absl/base:no_destructor",
         "@com_google_googletest//:gtest",
     ],
 )

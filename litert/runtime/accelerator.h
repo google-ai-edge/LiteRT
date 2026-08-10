@@ -39,26 +39,27 @@ struct LiteRtAcceleratorT {
   void (*ReleaseData)(void*);
 
   // Retrieves the accelerator name.
-  LiteRtStatus (*GetName)(LiteRtAcceleratorT* accelerator, const char** name);
+  LiteRtStatus (*GetName)(LiteRtAcceleratorConst accelerator,
+                          const char** name);
 
   // Retrieves the accelerator version.
-  LiteRtStatus (*GetVersion)(LiteRtAcceleratorT* accelerator,
+  LiteRtStatus (*GetVersion)(LiteRtAcceleratorConst accelerator,
                              LiteRtApiVersion* version);
 
   // Retrieves the accelerator hardware support.
   LiteRtStatus (*GetHardwareSupport)(
-      LiteRtAcceleratorT* accelerator,
+      LiteRtAcceleratorConst accelerator,
       LiteRtHwAcceleratorSet* supported_hardware);
 
   // Creates a delegate for the accelerator.
   LiteRtStatus (*CreateDelegate)(LiteRtRuntimeContext* runtime_context,
                                  LiteRtEnvironmentT* env,
-                                 LiteRtAcceleratorT* accelerator,
+                                 LiteRtAcceleratorConst accelerator,
                                  LiteRtOptions compilation_options,
                                  LiteRtDelegateWrapper* delegate);
 
   LiteRtStatus (*IsTfLiteDelegateResponsibleForJitCompilation)(
-      LiteRtAcceleratorT* accelerator, bool* does_jit_compilation);
+      LiteRtAcceleratorConst accelerator, bool* does_jit_compilation);
 
   // Starts collection of HW-specific metrics at a specific level of detail.
   LiteRtStatus (*StartMetricsCollection)(LiteRtRuntimeContext* runtime_context,

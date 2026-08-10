@@ -7,12 +7,14 @@
 #include <memory>
 #include <optional>
 
-#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
-#include "litert/vendors/qualcomm/core/common.h"
-#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "DSP/QnnDspCommon.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
+#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
+#include "litert/vendors/qualcomm/core/common.h"
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 
 namespace qnn {
 
@@ -36,6 +38,8 @@ class DspBackend : public QnnBackend {
 
   explicit DspBackend(const QNN_INTERFACE_VER_TYPE* qnn_api);
 
+  // Declared here, defined in .cc so the unique_ptr to the incomplete
+  // DspPerfControl (pimpl) is destroyed where its type is complete.
   ~DspBackend();
 
   DspBackend(const DspBackend&) = delete;
@@ -45,6 +49,10 @@ class DspBackend : public QnnBackend {
 
   bool Init(const Options& options, std::optional<SocInfo> soc_info) override;
   bool SetPerformanceMode(const Options& options) override;
+
+  // TODO: DSP does not build any graph configs yet; returns an empty builder.
+  GraphConfigBuilder BuildGraphConfigs(
+      const Options& options, absl::string_view qnn_graph_name) override;
 
  private:
   class DspPerfControl;

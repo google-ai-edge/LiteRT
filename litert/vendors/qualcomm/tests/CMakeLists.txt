@@ -99,6 +99,8 @@ target_sources(builder_test
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/pack_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/pad_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/relu_test.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/spatial_transform_test.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/spatial_transform_nd_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/splitv_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/topk_test.cc
 )
@@ -243,6 +245,7 @@ target_link_libraries(ir_backend_test
     PRIVATE
         qnn_backends
         qnn_common
+        qnn_soc_table
         qnn_miscs
         GTest::gtest_main
 )
@@ -276,7 +279,39 @@ target_link_libraries(dsp_backend_test
     PRIVATE
         qnn_backends
         qnn_common
+        qnn_soc_table
         qnn_miscs
+        GTest::gtest_main
+)
+
+# Backend factory test
+add_executable(backend_factory_test)
+
+target_sources(backend_factory_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../core/backends/backend_factory_test.cc
+)
+
+target_link_libraries(backend_factory_test
+    PRIVATE
+        qnn_backends
+        qnn_common
+        qnn_soc_table
+        qnn_miscs
+        GTest::gtest_main
+)
+
+# Graph config builder test
+add_executable(graph_config_builder_test)
+
+target_sources(graph_config_builder_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../core/backends/graph_config_builder_test.cc
+)
+
+target_link_libraries(graph_config_builder_test
+    PRIVATE
+        qnn_backends
         GTest::gtest_main
 )
 

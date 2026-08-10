@@ -28,6 +28,18 @@ OpT = TypeVar('OpT', bound=core.MlirOpBase)
 
 @overload
 def match_op(
+    op_or_name: str,  # Input is the operation name string, like "tfl.add"
+    operands: Sequence[SSAValue | core.MlirOpBase] | None = None,
+    results: Sequence[SSAValue | core.MlirOpBase] | None = None,
+    preds: (
+        Sequence[Callable[[core.MlirOpBase], bool] | predicate.Predicate] | None
+    ) = None,
+) -> core.MlirOpBase:  # Return type is the base MlirOpBase class
+  ...
+
+
+@overload
+def match_op(
     op_or_name: Type[OpT],  # Input is the class itself, like tfl.AddOp
     operands: Sequence[SSAValue | core.MlirOpBase] | None = None,
     results: Sequence[SSAValue | core.MlirOpBase] | None = None,
@@ -40,18 +52,18 @@ def match_op(
 
 @overload
 def match_op(
-    op_or_name: str,  # Input is the operation name string, like "tfl.add"
+    op_or_name: OpT,  # Input is an instance of an operation
     operands: Sequence[SSAValue | core.MlirOpBase] | None = None,
     results: Sequence[SSAValue | core.MlirOpBase] | None = None,
     preds: (
         Sequence[Callable[[core.MlirOpBase], bool] | predicate.Predicate] | None
     ) = None,
-) -> core.MlirOpBase:  # Return type is the base MlirOpBase class
+) -> OpT:
   ...
 
 
 def match_op(
-    op_or_name: str | Type[OpT],
+    op_or_name: str | Type[OpT] | OpT,
     operands: Sequence[SSAValue | core.MlirOpBase] | None = None,
     results: Sequence[SSAValue | core.MlirOpBase] | None = None,
     preds: (

@@ -16,7 +16,7 @@ load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
-package(default_applicable_licenses = ["//devtools/compliance/licenses:no_external_contributions"])
+# copybara:uncomment package(default_applicable_licenses = ["//third_party/odml:license"])
 
 flatbuffer_cc_library(
     name = "serialization_program_cache_schema",

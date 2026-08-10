@@ -62,7 +62,7 @@ class DummyAccelerator {
     delete instance;
   }
 
-  static LiteRtStatus GetName(LiteRtAccelerator accelerator,
+  static LiteRtStatus GetName(LiteRtAcceleratorConst accelerator,
                               const char** name) {
     if (!accelerator || !accelerator->data || !name) {
       return kLiteRtStatusErrorInvalidArgument;
@@ -83,7 +83,7 @@ class DummyAccelerator {
     return kLiteRtStatusOk;
   }
 
-  static LiteRtStatus GetVersion(LiteRtAccelerator accelerator,
+  static LiteRtStatus GetVersion(LiteRtAcceleratorConst accelerator,
                                  LiteRtApiVersion* version) {
     if (!version) {
       return kLiteRtStatusErrorInvalidArgument;
@@ -95,7 +95,7 @@ class DummyAccelerator {
   }
 
   static LiteRtStatus GetHardwareSupport(
-      LiteRtAccelerator accelerator,
+      LiteRtAcceleratorConst accelerator,
       LiteRtHwAcceleratorSet* supported_hardware) {
     if (!accelerator || !accelerator->data || !supported_hardware) {
       return kLiteRtStatusErrorInvalidArgument;
@@ -261,7 +261,7 @@ TEST_F(LiteRtAcceleratorTest,
 
   // Add an implementation to the function.
   accelerator->IsTfLiteDelegateResponsibleForJitCompilation =
-      [](LiteRtAccelerator, bool* does_jit) {
+      [](LiteRtAcceleratorConst, bool* does_jit) {
         *does_jit = true;
         return kLiteRtStatusOk;
       };

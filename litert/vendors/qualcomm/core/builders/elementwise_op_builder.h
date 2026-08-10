@@ -103,6 +103,10 @@ std::vector<OpWrapper> BuildElementwiseFloorDivOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
 
+std::vector<OpWrapper> BuildElementwiseFloorModOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs);
+
 std::vector<OpWrapper> BuildElementwiseOrOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);

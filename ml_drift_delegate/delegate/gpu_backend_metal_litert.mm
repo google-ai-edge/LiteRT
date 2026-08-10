@@ -23,6 +23,7 @@
 
 #include "absl/log/die_if_null.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -31,16 +32,16 @@
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/metal/metal_spatial_tensor.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager_metal.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_event.h"
-#include "litert/c/litert_event_type.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
+#include "ml_drift_delegate/delegate/custom_event_metal.h"
 #include "ml_drift_delegate/delegate/delegate_utils.h"
 #include "ml_drift_delegate/delegate/gpu_backend_metal.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_metal.h"
 #include "tflite/core/subgraph.h"
 
 namespace litert::ml_drift {
@@ -138,8 +139,8 @@ absl::StatusOr<std::unique_ptr<GpuInferenceContext>> GpuBackendMetalLitert::Crea
     std::vector<uint8_t>* serialized_model, bool may_share_memory_manager) {
   auto ctx = std::make_unique<GpuInferenceContextMetalLitert>(
       this, may_share_memory_manager ? &memory_manager() : nullptr);
-  RETURN_IF_ERROR(ctx->metal_ctx().InitFromGpuModel(create_info, &gpu_model,
-                                                    metal_device()->device(), serialized_model));
+  ABSL_RETURN_IF_ERROR(ctx->metal_ctx().InitFromGpuModel(
+      create_info, &gpu_model, metal_device()->device(), serialized_model));
   if (@available(macOS 15.0, iOS 18.0, *)) {
     PopulateResidencySet(create_info, ctx->metal_ctx());
   }
@@ -149,8 +150,8 @@ absl::StatusOr<std::unique_ptr<GpuInferenceContext>> GpuBackendMetalLitert::Crea
 absl::StatusOr<std::unique_ptr<GpuInferenceContext>> GpuBackendMetalLitert::RestoreInferenceContext(
     const ::ml_drift::CreateGpuModelInfo& create_info, absl::Span<const uint8_t> serialized_model) {
   auto ctx = std::make_unique<GpuInferenceContextMetalLitert>(this, &memory_manager());
-  RETURN_IF_ERROR(ctx->metal_ctx().RestoreDeserialized(serialized_model, metal_device()->device(),
-                                                       &create_info));
+  ABSL_RETURN_IF_ERROR(ctx->metal_ctx().RestoreDeserialized(
+      serialized_model, metal_device()->device(), &create_info));
   if (@available(macOS 15.0, iOS 18.0, *)) {
     PopulateResidencySet(create_info, ctx->metal_ctx());
   }
@@ -159,14 +160,15 @@ absl::StatusOr<std::unique_ptr<GpuInferenceContext>> GpuBackendMetalLitert::Rest
 
 absl::StatusOr<std::unique_ptr<::ml_drift::SharedMemoryManager>>
 GpuBackendMetalLitert::CreateSharedMemoryManager(
-    const ::ml_drift::CreateGpuModelInfo& create_info, ::ml_drift::GraphFloat32& graph,
-    TfLiteContext* context, MlDriftDelegateData& delegate_data,
-    ::ml_drift::SerializationWeightCache* serialization_cache) {
+    const ::ml_drift::CreateGpuModelInfo& create_info,
+    std::unique_ptr<::ml_drift::GraphAdapter> graph_adapter, TfLiteContext* context,
+    MlDriftDelegateData& delegate_data, ::ml_drift::SerializationWeightCache* serialization_cache) {
   const std::unordered_map<size_t, size_t>* external_buffer_id_map =
       &(reinterpret_cast<const tflite::Subgraph*>(context->impl_)
             ->GetExternalTensorBufferIdentifiers());
   return ::ml_drift::MakeSharedMemoryManagerMetal(
-      metal_device(), create_info, graph, context, GetBufferIdToSpatialTensorMap(delegate_data),
+      metal_device(), create_info, std::move(graph_adapter), context,
+      GetBufferIdToSpatialTensorMap(delegate_data),
       GetQuantParamIdToSpatialTensorMap(delegate_data),
       delegate_data.options->has_prepacked_external_tflite_tensors, serialization_cache,
       delegate_data.options->madvise_original_shared_tensors, runtime_context_,
@@ -179,62 +181,6 @@ absl::StatusOr<std::unique_ptr<GpuIOBuffer>> GpuBackendMetalLitert::CreateIOBuff
   ::ml_drift::metal::Buffer wgpu_buffer(spatial_tensor->GetBufferHandle(),
                                         spatial_tensor->GetMemorySizeInBytes());
   return std::make_unique<GpuIOBufferMetal>(this, std::move(wgpu_buffer));
-}
-
-MetalCustomEvent::MetalCustomEvent(GpuBackendMetal* backend) : ref_count_(1) {
-  Retain = RetainStatic;
-  Release = ReleaseStatic;
-  Wait = WaitStatic;
-  IsSignaled = IsSignaledStatic;
-  GetNative = GetNativeStatic;
-
-  shared_event_ = [backend->metal_device()->device() newSharedEvent];
-  EncodeSignal(backend->command_buffer());
-}
-
-void MetalCustomEvent::EncodeSignal(id<MTLCommandBuffer> command_buffer) {
-  ++value_to_wait_;
-  [command_buffer encodeSignalEvent:shared_event_ value:value_to_wait_];
-}
-
-// Encodes the wait command in the command buffer.
-void MetalCustomEvent::EncodeWait(id<MTLCommandBuffer> command_buffer) {
-  [command_buffer encodeWaitForEvent:shared_event_ value:value_to_wait_];
-}
-
-void MetalCustomEvent::RetainStatic(LiteRtCustomEvent event) {
-  auto* self = static_cast<MetalCustomEvent*>(event);
-  ++self->ref_count_;
-}
-
-void MetalCustomEvent::ReleaseStatic(LiteRtCustomEvent event) {
-  auto* self = static_cast<MetalCustomEvent*>(event);
-  if (--self->ref_count_ <= 0) {
-    delete self;
-  }
-}
-
-void MetalCustomEvent::WaitStatic(LiteRtCustomEvent event, int64_t timeout_in_ms) {
-  auto* self = static_cast<MetalCustomEvent*>(event);
-  // Mutex is not needed because delegate is running only on one thread and this is accessed only
-  // by that single thread.
-  if (self->value_to_wait_ > 0) {
-    if (@available(iOS 15, *)) {
-      [self->shared_event_ waitUntilSignaledValue:self->value_to_wait_ timeoutMS:timeout_in_ms];
-    }
-    self->value_to_wait_ = 0;
-  }
-}
-
-int MetalCustomEvent::IsSignaledStatic(LiteRtCustomEvent event) {
-  auto* self = static_cast<MetalCustomEvent*>(event);
-  // If value_to_wait_ is 0, it means signaled. See WaitStatic() above.
-  return static_cast<int>(self->value_to_wait_ == 0);
-}
-
-void* MetalCustomEvent::GetNativeStatic(LiteRtCustomEvent event) {
-  auto* self = static_cast<MetalCustomEvent*>(event);
-  return (__bridge void*)self->shared_event_;
 }
 
 GpuInferenceContextMetalLitert::GpuInferenceContextMetalLitert(
@@ -262,18 +208,16 @@ absl::StatusOr<GpuEventHandle> GpuInferenceContextMetalLitert::GetPostDispatchEv
     return absl::NotFoundError("No post-dispatch event.");
   }
 
-  if (post_dispatch_event_ != nullptr) {
-    post_dispatch_event_->Release(post_dispatch_event_);
+  if (post_dispatch_event_ == nullptr) {
+    return absl::NotFoundError("No post-dispatch event.");
   }
 
   if (metal_backend()->command_buffer() == nullptr) {
     return absl::FailedPreconditionError("Command buffer is not set.");
   }
 
-  post_dispatch_event_ = new MetalCustomEvent(metal_backend());
-
-  // Commit the command buffer here as MetalCustomEvent above encodes a signaling event and there
-  // might be no place to commit it later.
+  // Commit the command buffer here which has signaling post_dispatch_event_ encoded by
+  // PostConvert() below.
   [metal_backend()->command_buffer() commit];
   metal_backend()->set_command_buffer(nullptr);
 
@@ -284,7 +228,7 @@ absl::Status GpuInferenceContextMetalLitert::WaitForEventsCompleted(
     absl::Span<GpuEventHandle> events, bool force_sync) {
   if (force_sync) {
     for (auto event : events) {
-      auto* metal_event = reinterpret_cast<MetalCustomEvent*>(event);
+      auto* metal_event = reinterpret_cast<CustomEventMetal*>(event);
       metal_event->Wait(metal_event, /*timeout_in_ms=*/0);
     }
     return absl::OkStatus();
@@ -294,9 +238,9 @@ absl::Status GpuInferenceContextMetalLitert::WaitForEventsCompleted(
     metal_backend()->set_command_buffer([metal_backend()->command_queue() commandBuffer]);
   }
 
-  absl::flat_hash_set<MetalCustomEvent*> events_to_wait;
+  absl::flat_hash_set<CustomEventMetal*> events_to_wait;
   for (auto event : events) {
-    auto* metal_event = reinterpret_cast<MetalCustomEvent*>(event);
+    auto* metal_event = reinterpret_cast<CustomEventMetal*>(event);
     if (events_to_wait.insert(metal_event).second) {
       metal_event->EncodeWait(metal_backend()->command_buffer());
     }
@@ -315,16 +259,18 @@ absl::Status GpuInferenceContextMetalLitert::PostConvert(bool input) {
   // with a new one.
   if (!input) {
     if (post_dispatch_event_ == nullptr) {
-      RETURN_IF_ERROR(metal_backend()->WaitForCompletion());
+      ABSL_RETURN_IF_ERROR(metal_backend()->WaitForCompletion());
     } else {
       if (metal_backend()->command_buffer() == nullptr) {
         metal_backend()->set_command_buffer([metal_backend()->command_queue() commandBuffer]);
       }
+
+      if (post_dispatch_event_ != nullptr) {
+        post_dispatch_event_->Release(post_dispatch_event_);
+      }
+
+      post_dispatch_event_ = new CustomEventMetal(metal_backend()->metal_device()->device());
       post_dispatch_event_->EncodeSignal(metal_backend()->command_buffer());
-      // Commit the command buffer here as a signaling event is encoded and there might be no place
-      // to commit it later.
-      [metal_backend()->command_buffer() commit];
-      metal_backend()->set_command_buffer(nullptr);
     }
   }
 

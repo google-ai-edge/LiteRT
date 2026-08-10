@@ -456,6 +456,8 @@ std::string ElementTypeToString(litert::ElementType type) {
       return "int32";
     case litert::ElementType::Int64:
       return "int64";
+    case litert::ElementType::UInt4:
+      return "uint4";
     case litert::ElementType::UInt8:
       return "uint8";
     case litert::ElementType::UInt16:
@@ -464,6 +466,10 @@ std::string ElementTypeToString(litert::ElementType type) {
       return "uint32";
     case litert::ElementType::UInt64:
       return "uint64";
+    case litert::ElementType::Float8E4M3FN:
+      return "float8_e4m3fn";
+    case litert::ElementType::Float8E5M2:
+      return "float8_e5m2";
     case litert::ElementType::Float16:
       return "float16";
     case litert::ElementType::BFloat16:
@@ -537,7 +543,10 @@ void PrintSimpleTensor(const litert::SimpleTensor& tensor,
             << " name=" << tensor.Name()
             << " element_type=" << ElementTypeToString(tensor.ElementType());
   if (tensor.HasQuantization()) {
-    std::cout << " quantization_type=" << tensor.QTypeId();
+    std::cout
+        << " quantization_type="
+        << static_cast<std::underlying_type_t<litert::QuantizationTypeId>>(
+               tensor.QTypeId());
   }
   auto ranked = tensor.RankedTensorType();
   if (ranked) {

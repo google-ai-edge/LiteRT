@@ -24,16 +24,13 @@
 #include <string>
 #include <utility>
 
-#include "absl/base/const_init.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
-#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
-#include "absl/synchronization/mutex.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/pelong/egl_environment.h"  // from @ml_drift
-#include "third_party/odml/infra/ml_drift_delegate/tflite_profile.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_any.h"
@@ -41,15 +38,16 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_gl_types.h"  // IWYU pragma: keep
 #include "litert/cc/litert_any.h"
-#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "ml_drift_delegate/delegate/composite/custom_parsers.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
 #include "ml_drift_delegate/delegate/delegate_kernel_litert.h"
 #include "ml_drift_delegate/delegate/delegate_options.h"
 #include "ml_drift_delegate/delegate/delegate_types.h"
+#include "ml_drift_delegate/delegate/delegate_utils.h"
 #include "ml_drift_delegate/delegate/gpu_backend_opengl.h"
 #include "ml_drift_delegate/delegate/precision.h"
+#include "ml_drift_delegate/delegate/tflite_profile.h"
 #include "ml_drift_delegate/tflite/model_builder.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/c/c_api_types.h"
@@ -115,7 +113,7 @@ absl::StatusOr<DelegateEnvironment*> GetOrCreateDelegateEnvironment(
 
     // Initialize egl_env using NewEglEnvironment. If there is a current EGL
     // context on this thread, NewEglEnvironment will adopt it.
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         ml_drift::gl::EglEnvironment::NewEglEnvironment(&resources->egl_env));
 
     // Verify that the acquired EGL context and display match the ones requested
@@ -168,7 +166,7 @@ absl::StatusOr<DelegateEnvironment*> GetOrCreateDelegateEnvironment(
 
   // Handle EGL environment.
   {
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         ml_drift::gl::EglEnvironment::NewEglEnvironment(&resources->egl_env));
     resources->egl_context = reinterpret_cast<LiteRtEglContext>(
         resources->egl_env->context().context());
@@ -245,29 +243,31 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   return kTfLiteOk;
 }
 
+#define CALL_DELEGATE_KERNEL(function, ...)                               \
+  if (absl::Status s = delegate_kernel->function(__VA_ARGS__); !s.ok()) { \
+    ABSL_LOG(ERROR) << s;                                                 \
+    return kTfLiteError;                                                  \
+  }
+
 TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
   bool is_profiling = ml_drift::IsTfLiteProfilerActive(context);
 
   auto* delegate_kernel =
       reinterpret_cast<litert::ml_drift::DelegateKernelLiteRt*>(
           node->user_data);
-  if (delegate_kernel->HasQuantizedTensors()) {
-    if (absl::Status s = delegate_kernel->DequantizeInputs(context); !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-  }
 
   uint64_t upload_start;
   if (is_profiling) {
     upload_start = tflite::profiling::time::NowMicros();
   }
 
-  if (absl::Status s = delegate_kernel->UploadOrBindTensorBuffer(context);
-      !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
+  if (delegate_kernel->HasQuantizedTensors()) {
+    CALL_DELEGATE_KERNEL(DequantizeInputs, context);
   }
+  CALL_DELEGATE_KERNEL(BindExternalTensorBuffers, context);
+  CALL_DELEGATE_KERNEL(UploadIntermediateCpuTensorsToGpuMemory, context);
+  CALL_DELEGATE_KERNEL(HandleInputEvents, context);
+  CALL_DELEGATE_KERNEL(ConvertNonExternalInputTensorsToGpuMemory, context);
 
   if (is_profiling) {
     auto status = delegate_kernel->backend()->WaitForCompletion();
@@ -280,10 +280,7 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
                                      dispatch_start - upload_start);
   }
 
-  if (absl::Status s = delegate_kernel->Dispatch(context); !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
-  }
+  CALL_DELEGATE_KERNEL(Dispatch, context);
 
   uint64_t download_start;
   if (is_profiling) {
@@ -295,13 +292,10 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
     download_start = tflite::profiling::time::NowMicros();
   }
 
-  // Download internal output GPU memory to output TensorBufferGPU memory.
-  if (absl::Status s =
-          delegate_kernel->DownloadGpuMemoryToTensorBufferGpuMemory(context);
-      !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
-  }
+  CALL_DELEGATE_KERNEL(ConvertGpuMemoryToNonExternalOutputTensors, context);
+  bool is_async_execution_mode = litert::ml_drift::IsAsyncExecutionMode(
+      context, delegate_kernel->runtime_context());
+  CALL_DELEGATE_KERNEL(HandleOutputEvents, context, is_async_execution_mode);
 
   if (delegate_kernel->IsBenchmarkMode()) {
     // In benchmark mode, call WaitForCompletion() to wait for all the enqueued
@@ -313,10 +307,9 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
     }
   }
 
-  if (absl::Status s = delegate_kernel->DownloadGpuMemoryToCpuMemory(context);
-      !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
+  CALL_DELEGATE_KERNEL(DownloadGpuMemoryToIntermediateCpuTensors, context);
+  if (delegate_kernel->HasQuantizedTensors()) {
+    CALL_DELEGATE_KERNEL(QuantizeOutputs, context);
   }
 
   if (is_profiling) {
@@ -326,12 +319,6 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
                                      download_end - download_start);
   }
 
-  if (delegate_kernel->HasQuantizedTensors()) {
-    if (absl::Status s = delegate_kernel->QuantizeOutputs(context); !s.ok()) {
-      ABSL_LOG(ERROR) << s;
-      return kTfLiteError;
-    }
-  }
   return kTfLiteOk;
 }
 
@@ -348,13 +335,22 @@ TfLiteStatus DelegatePrepare(TfLiteContext* context, TfLiteDelegate* delegate) {
     start_node_index = delegate_options->debug_first_delegate_node_index;
     end_node_index = delegate_options->debug_last_delegate_node_index;
   }
-  litert::ml_drift::ModelBuilderOptions model_builder_options;
-  model_builder_options.allow_bool_tensors = true;
-  litert::ml_drift::CustomOperationParserFactory custom_parser_factory;
-  TfLiteIntArray* ops_to_replace = GetOpsToReplaceWithOptions(
-      context, /*allow_quant_ops=*/true, /*options=*/model_builder_options,
-      /*max_delegated_partitions=*/1, &kExcludedOps, start_node_index,
-      end_node_index, &custom_parser_factory);
+  TfLiteIntArray* ops_to_replace = nullptr;
+  if (delegate_options->use_ir_model) {
+    auto* delegate_data =
+        reinterpret_cast<litert::ml_drift::MlDriftDelegateData*>(
+            delegate->data_);
+    ops_to_replace = litert::ml_drift::GetIrModelOpsToReplace(
+        context, *delegate_data, start_node_index, end_node_index);
+  } else {
+    litert::ml_drift::ModelBuilderOptions model_builder_options;
+    model_builder_options.allow_bool_tensors = true;
+    litert::ml_drift::CustomOperationParserFactory custom_parser_factory;
+    ops_to_replace = GetOpsToReplaceWithOptions(
+        context, /*allow_quant_ops=*/true, /*options=*/model_builder_options,
+        /*max_delegated_partitions=*/1, &kExcludedOps, start_node_index,
+        end_node_index, &custom_parser_factory);
+  }
 
   // Replace the ops with delegate kernel.
   const TfLiteRegistration kRegistration = {
@@ -464,6 +460,10 @@ TfLiteDelegatePtr CreateMlDriftOpenGlDelegate(MlDriftDelegateOptionsPtr options,
       delegate_data->calculation_precision =
           ::ml_drift::CalculationsPrecision::F32;
       break;
+  }
+  if (delegate_data->options->use_f32_accum_for_fp16) {
+    delegate_data->calculation_precision =
+        ::ml_drift::CalculationsPrecision::F32_F16;
   }
 
   // Initialize the ml_drift gl delegate.

@@ -22,6 +22,7 @@
 #include "testing/base/public/gunit.h"
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/kernels/tests/kernel_test.h"  // from @ml_drift
@@ -106,7 +107,7 @@ absl::Status RunAddValuesToCacheTest(
   attr.kv_cache_batch_size = kBatchSize;
   node.operation.attributes = attr;
 
-  ASSIGN_OR_RETURN(auto op, CreateAddValuesToCacheFromNode(op_def, node));
+  ABSL_ASSIGN_OR_RETURN(auto op, CreateAddValuesToCacheFromNode(op_def, node));
 
   std::vector<float> k_data(kKVCacheInputSliceSize);
   for (int i = 0; i < kKVCacheInputSliceSize; ++i) {
@@ -134,7 +135,8 @@ absl::Status RunAddValuesToCacheTest(
   cache_k_desc.UploadData(zero_cache.data());
   cache_v_desc.UploadData(zero_cache.data());
 
-  RETURN_IF_ERROR(env.ExecuteGPUOperation(src_cpu, dst_cpu, std::move(op)));
+  ABSL_RETURN_IF_ERROR(
+      env.ExecuteGPUOperation(src_cpu, dst_cpu, std::move(op)));
 
   std::vector<float> cache_k_result(kKVCacheFullSize);
   cache_k_desc.DownloadData(cache_k_result.data());

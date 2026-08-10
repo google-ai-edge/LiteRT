@@ -17,6 +17,7 @@
 
 #include <stddef.h>
 
+#include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
@@ -37,20 +38,20 @@ extern "C" {
 // Note: This struct is shared with LiteRT runtime and Accelerators. So it must
 // be ABI stable.
 typedef struct {
-  int version;  // Version of the accelerator definition
-                // Current runtime only supports version 1.
+  LiteRtAbiHeader abi_header;
 
-  LiteRtStatus (*get_name)(LiteRtAccelerator accelerator, const char** name);
-  LiteRtStatus (*get_version)(LiteRtAccelerator accelerator,
+  LiteRtStatus (*get_name)(LiteRtAcceleratorConst accelerator,
+                           const char** name);
+  LiteRtStatus (*get_version)(LiteRtAcceleratorConst accelerator,
                               LiteRtApiVersion* version);
   LiteRtStatus (*get_hardware_support)(
-      LiteRtAccelerator accelerator,
+      LiteRtAcceleratorConst accelerator,
       LiteRtHwAcceleratorSet* supported_hardware);
   LiteRtStatus (*is_tflite_delegate_responsible_for_jit_compilation)(
-      LiteRtAccelerator accelerator, bool* does_jit_compilation);
+      LiteRtAcceleratorConst accelerator, bool* does_jit_compilation);
   LiteRtStatus (*create_delegate)(LiteRtRuntimeContext* runtime_context,
                                   LiteRtEnvironment env,
-                                  LiteRtAccelerator accelerator,
+                                  LiteRtAcceleratorConst accelerator,
                                   LiteRtOptions options,
                                   LiteRtDelegateWrapper* delegate_wrapper);
 
@@ -70,10 +71,10 @@ typedef struct {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtAcceleratorDefV1) == 192,
+static_assert(sizeof(LiteRtAcceleratorDefV1) == 200,
               "LiteRtAcceleratorDefV1 size mismatch");
-static_assert(offsetof(LiteRtAcceleratorDefV1, version) == 0,
-              "LiteRtAcceleratorDefV1 version offset mismatch");
+static_assert(offsetof(LiteRtAcceleratorDefV1, abi_header) == 0,
+              "LiteRtAcceleratorDefV1 abi_header offset mismatch");
 static_assert(offsetof(LiteRtAcceleratorDefV1, get_name) == 8,
               "LiteRtAcceleratorDefV1 get_name offset mismatch");
 static_assert(offsetof(LiteRtAcceleratorDefV1, get_version) == 16,

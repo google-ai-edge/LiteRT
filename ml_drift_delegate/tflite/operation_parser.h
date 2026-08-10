@@ -22,17 +22,18 @@
 
 #include "xnnpack.h"  // from @XNNPACK
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/object_reader.h"
-#include "tflite/tools/versioning/gpu_compatibility.h"
-#include "tflite/tools/versioning/op_signature.h"
 #include "tflite/c/common.h"
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/tools/versioning/gpu_compatibility.h"
+#include "tflite/tools/versioning/op_signature.h"
 
 namespace litert::ml_drift {
 
@@ -243,8 +244,8 @@ absl::Status PreCheckTensorToTensor(const TfLiteTensor* const tflite_tensor,
   if (tflite_tensor->sparsity) {
     return absl::UnimplementedError("ML Drift doesn't support sparsity.");
   }
-  RETURN_IF_ERROR(PreCheckCopyData(*tflite_tensor, &tensor->data[0]));
-  RETURN_IF_ERROR(
+  ABSL_RETURN_IF_ERROR(PreCheckCopyData(*tflite_tensor, &tensor->data[0]));
+  ABSL_RETURN_IF_ERROR(
       CheckAllDimensions<typename TensorT::ShapeType>(tflite_tensor->dims));
   return absl::OkStatus();
 }
@@ -258,7 +259,7 @@ absl::Status PreCheckReadTensor(const TfLiteContext* context,
                                 const TfLiteNode* node, uint32_t index,
                                 TensorT* tensor) {
   int32_t tensor_id = 0;
-  RETURN_IF_ERROR(GetTensorId(context, node, index, &(tensor_id)));
+  ABSL_RETURN_IF_ERROR(GetTensorId(context, node, index, &(tensor_id)));
   tensor->id = tensor_id;
   const TfLiteTensor* tflite_tensor = context->tensors + tensor_id;
   return PreCheckTensorToTensor(tflite_tensor, tensor);
@@ -270,10 +271,10 @@ absl::Status PreReadTensor(const TfLiteContext* context, const TfLiteNode* node,
                            uint32_t index, TensorT* tensor,
                            ReadTensorFlags flags) {
   int32_t tensor_id = 0;
-  RETURN_IF_ERROR(GetTensorId(context, node, index, &(tensor_id)));
+  ABSL_RETURN_IF_ERROR(GetTensorId(context, node, index, &(tensor_id)));
   tensor->id = tensor_id;
   const TfLiteTensor* tflite_tensor = context->tensors + tensor_id;
-  RETURN_IF_ERROR(PreCheckTensorToTensor(tflite_tensor, tensor));
+  ABSL_RETURN_IF_ERROR(PreCheckTensorToTensor(tflite_tensor, tensor));
   TfLiteTensorToTensorCopyData(tflite_tensor, tensor, flags);
   return absl::OkStatus();
 }

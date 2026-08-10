@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+# copybara:uncomment load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts")
+load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts", "litert_bin")
 load(
     "//litert/build_common:special_rule.bzl",
     "litert_android_linkopts",
@@ -240,7 +240,7 @@ cc_library(
 # )
 # copybara:uncomment_end
 
-cc_binary(
+litert_bin(
     name = "litert_main",
     srcs = ["litert_main.cc"],
     copts = select({
@@ -249,6 +249,8 @@ cc_binary(
     }) + commandline_flag_copts(),
     data = litert_gpu_accelerator_prebuilts(),
     linkopts = litert_android_linkopts(),
+    # copybara:uncomment malloc = "//base:system_malloc",
+    ungrte = True,
     deps = [
         ":config",
         ":gemma3",
@@ -256,9 +258,18 @@ cc_binary(
         ":safetensor_loader",
         ":tokenizer",
         ":util",
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        # copybara:uncomment "//base",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/time",
+        "@com_google_absl//absl/types:span",
         "//litert/cc:litert_common",
         "//litert/cc:litert_environment",
+        "//litert/cc:litert_environment_options",
         "//litert/cc:litert_options",
         "//litert/cc/options:litert_gpu_options",
         "//tensor",
@@ -270,14 +281,6 @@ cc_binary(
         "//tensor/backends/tflite:tflite_flatbuffer_conversion",
         "//tensor/runners/litert:litert_dynamic_runner",
         "//tensor/utils:macros",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/flags:parse",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/time",
-        "@com_google_absl//absl/types:span",
     ] + litert_gpu_accelerator_deps(),
 )
 
@@ -310,10 +313,12 @@ cc_binary(
 #         "@com_google_absl//absl/time",
 #         "@com_google_absl//absl/types:span",
 #         "//third_party/gloop/base:init_google",
-#         "//litert/cc:litert_api_with_dynamic_runtime",
+#         "//litert/cc:litert_api_types",
 #         "//litert/cc:litert_common",
+#         "//litert/cc:litert_compiled_model",
 #         "//litert/cc:litert_environment",
 #         "//litert/cc:litert_options",
+#         "//litert/cc:litert_tensor_buffer",
 #         "//litert/cc/options:litert_gpu_options",
 #         "//tensor",
 #         "//tensor:arithmetic",

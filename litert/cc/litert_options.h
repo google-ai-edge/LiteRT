@@ -23,8 +23,6 @@
 #include <utility>
 #include <vector>
 
-#include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
 #include "litert/c/options/litert_compiler_options.h"
@@ -264,13 +262,16 @@ class Options {
     return {};
   }
 
+#ifndef LITERT_NO_ABSL
   /// Sets the in-memory weights map owned by the client and used for the model.
+  ///
+  /// This extension uses Abseil container and span types and is therefore only
+  /// available in the default C++ API mode.
   /// @param map The weight map mapping group names to contiguous buffers.
   /// @return An `Expected` object that is empty on success, or contains an
   /// error.
   Expected<void> SetWeightInMemoryMap(
-      const absl::flat_hash_map<std::string, absl::Span<const std::byte>>*
-          map) {
+      const FlatHashMap<std::string, Span<const std::byte>>* map) {
     build_actions_.push_back(
         [map](internal::RuntimeProxy* runtime, LiteRtOptions options) {
           auto* options_impl = reinterpret_cast<LiteRtOptionsT*>(options);
@@ -282,6 +283,7 @@ class Options {
         });
     return {};
   }
+#endif  // LITERT_NO_ABSL
 
   /// Registers a `ScopedFile` that contains all external buffer groups.
   /// @param scoped_file The file containing the external weights.
@@ -305,9 +307,12 @@ class Options {
                           "Section length must be positive for group " + name);
       }
     }
+    ScopedWeightSource::SectionMap runtime_sections;
+    runtime_sections.reserve(sections.size());
+    runtime_sections.insert(sections.begin(), sections.end());
 
     auto scoped_weight_source = std::make_unique<ScopedWeightSource>(
-        std::move(scoped_file), std::move(sections));
+        std::move(scoped_file), std::move(runtime_sections));
     build_actions_.push_back(
         [scoped_weight_source_ptr = scoped_weight_source.release()](
             internal::RuntimeProxy* runtime, LiteRtOptions options) {

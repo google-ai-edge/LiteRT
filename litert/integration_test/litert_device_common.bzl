@@ -507,7 +507,10 @@ def _cc_import_files_impl(ctx):
         )
         out_files.append(out)
 
-    return [DefaultInfo(files = depset(out_files))]
+    return [DefaultInfo(
+        files = depset(out_files),
+        runfiles = ctx.runfiles(files = out_files),
+    )]
 
 cc_import_files = rule(
     implementation = _cc_import_files_impl,

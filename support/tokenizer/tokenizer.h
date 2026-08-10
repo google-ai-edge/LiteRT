@@ -68,8 +68,16 @@ class Tokenizer {
   // Decodes the given sequence of token ids into a string.
   // Returns absl::DataLossError if any of the tokens are part of an incomplete
   // BPE sequence.
+  // If skip_special_tokens is true, special tokens (BOS, EOS, PAD, UNK, etc.)
+  // will be skipped in the decoding process.
   virtual absl::StatusOr<std::string> TokenIdsToText(
-      const TokenIds& token_ids) = 0;
+      const TokenIds& token_ids, bool skip_special_tokens) = 0;
+
+  // Decodes the given sequence of token ids into a string including special
+  // tokens.
+  absl::StatusOr<std::string> TokenIdsToText(const TokenIds& token_ids) {
+    return TokenIdsToText(token_ids, /*skip_special_tokens=*/false);
+  }
 
   // Returns the list of tokens in the tokenizer.
   virtual std::vector<std::string> GetTokens() const = 0;

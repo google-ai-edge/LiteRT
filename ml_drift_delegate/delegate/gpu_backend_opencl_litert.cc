@@ -23,6 +23,7 @@
 
 #include "absl/log/die_if_null.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -123,25 +124,25 @@ absl::StatusOr<cl_event> GlInteropFabricLiteRt::Start() {
   ::ml_drift::cl::CLEvent inbound_event;
   std::vector<cl_event> inbound_events;
   ::ml_drift::cl::EglSync sync;
-  RETURN_IF_ERROR(::ml_drift::cl::EglSync::NewFence(egl_display_, &sync));
+  ABSL_RETURN_IF_ERROR(::ml_drift::cl::EglSync::NewFence(egl_display_, &sync));
   if (egl_to_cl_mapping_supported_) {
     glFlush();
-    RETURN_IF_ERROR(::ml_drift::cl::CreateClEventFromEglSync(context_, sync,
-                                                             &inbound_event));
+    ABSL_RETURN_IF_ERROR(::ml_drift::cl::CreateClEventFromEglSync(
+        context_, sync, &inbound_event));
     inbound_events.push_back(inbound_event.event());
   } else {
     if (auto status = sync.ClientWait(); !status.ok()) {
       return status;
     }
   }
-  RETURN_IF_ERROR(::ml_drift::cl::AcquiredGlObjects::Acquire(
+  ABSL_RETURN_IF_ERROR(::ml_drift::cl::AcquiredGlObjects::Acquire(
       mem_objects_, queue_, inbound_events, &start_event_,
       &acquired_gl_objects_));
   return start_event_.event();
 }
 
 absl::StatusOr<cl_event> GlInteropFabricLiteRt::Finish() {
-  RETURN_IF_ERROR(acquired_gl_objects_.Release({}, &finish_event_));
+  ABSL_RETURN_IF_ERROR(acquired_gl_objects_.Release({}, &finish_event_));
   mem_objects_.clear();
   return finish_event_.event();
 }
@@ -190,7 +191,7 @@ absl::StatusOr<GpuMemoryHandle> GpuBackendOpenClLitert::GetGpuMemoryAllocated(
     LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_type(
         tensor_buffer.get(), &buffer_type));
     if (buffer_type == kLiteRtTensorBufferTypeGlBuffer) {
-      RETURN_IF_ERROR(gl_interop_fabric_->RegisterMemory(cl_mem_addr));
+      ABSL_RETURN_IF_ERROR(gl_interop_fabric_->RegisterMemory(cl_mem_addr));
     }
   }
 #endif  // LITERT_HAS_OPENGL_SUPPORT
@@ -323,8 +324,8 @@ GpuBackendOpenClLitert::CreateInferenceContext(
   auto ctx = std::make_unique<GpuInferenceContextOpenClLitert>(
       this, may_share_memory_manager ? &memory_manager() : nullptr,
       gl_interop_fabric);
-  RETURN_IF_ERROR(ctx->cl_ctx().InitFromGpuModel(create_info, &gpu_model,
-                                                 cl_env(), serialized_model));
+  ABSL_RETURN_IF_ERROR(ctx->cl_ctx().InitFromGpuModel(
+      create_info, &gpu_model, cl_env(), serialized_model));
   return std::move(ctx);
 }
 
@@ -338,8 +339,8 @@ GpuBackendOpenClLitert::RestoreInferenceContext(
 #endif
   auto ctx = std::make_unique<GpuInferenceContextOpenClLitert>(
       this, &memory_manager(), gl_interop_fabric);
-  RETURN_IF_ERROR(ctx->cl_ctx().RestoreDeserialized(serialized_model, cl_env(),
-                                                    &create_info));
+  ABSL_RETURN_IF_ERROR(ctx->cl_ctx().RestoreDeserialized(
+      serialized_model, cl_env(), &create_info));
   return std::move(ctx);
 }
 
@@ -351,7 +352,7 @@ absl::Status GpuBackendOpenClLitert::UploadCompiledCache() {
   int num_compiled_programs_before =
       cl_env()->program_cache()->GetProgramCount();
 
-  RETURN_IF_ERROR(compiled_cache_.Load(
+  ABSL_RETURN_IF_ERROR(compiled_cache_.Load(
       [cl_env = cl_env()](absl::Span<const uint8_t> data,
                           ::ml_drift::MMapHandle& mmap_handle) {
         return cl_env->program_cache()->AddSerializedCache(
@@ -431,9 +432,9 @@ absl::Status GpuInferenceContextOpenClLitert::Dispatch() {
   // Otherwise, dispatch kernels in batches of size kernel_batch_size.
   int offset = 0;
   do {
-    ASSIGN_OR_RETURN(offset,
-                     cl_ctx().AddToQueue(cl_env()->queue(), offset,
-                                         current_backend->kernel_batch_size()));
+    ABSL_ASSIGN_OR_RETURN(
+        offset, cl_ctx().AddToQueue(cl_env()->queue(), offset,
+                                    current_backend->kernel_batch_size()));
     ::ml_drift::cl::clFlush(cl_env()->queue()->queue());
   } while (offset != -1);
   return absl::OkStatus();
@@ -448,7 +449,7 @@ absl::Status GpuInferenceContextOpenClLitert::PreConvert(bool input) {
   if (gl_interop_fabric_ && gl_interop_fabric_->HasRegisteredMemory()) {
     LITERT_LOG(LITERT_DEBUG,
                "Enqueuing acquisition of CL memory objects from GL buffers.");
-    RETURN_IF_ERROR(gl_interop_fabric_->Start().status());
+    ABSL_RETURN_IF_ERROR(gl_interop_fabric_->Start().status());
   }
 #endif  // LITERT_HAS_OPENGL_SUPPORT
   return absl::OkStatus();
@@ -523,8 +524,8 @@ absl::Status GpuInferenceContextOpenClLitert::PostConvert(bool input) {
   if (gl_interop_fabric_ && gl_interop_fabric_->HasRegisteredMemory()) {
     LITERT_LOG(LITERT_DEBUG,
                "Enqueuing release of CL memory objects to GL buffers.");
-    ASSIGN_OR_RETURN(cl_event interop_release_event,
-                     gl_interop_fabric_->Finish());
+    ABSL_ASSIGN_OR_RETURN(cl_event interop_release_event,
+                          gl_interop_fabric_->Finish());
     std::vector<GpuEventHandle> events = {interop_release_event};
     return WaitForEventsCompleted(absl::MakeSpan(events), /*force_sync=*/true);
   }

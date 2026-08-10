@@ -21,13 +21,14 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "litert/c/litert_common.h"
 #include "ml_drift_delegate/delegate/delegate_kernel.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
@@ -51,29 +52,46 @@ class DelegateKernelLiteRt : public DelegateKernel {
   static absl::StatusOr<DelegateKernelLiteRt*> Create(
       TfLiteContext* context, const TfLiteDelegateParams* delegate_params);
 
-  // Create internal SpatialTensor from I/O TensorBuffers and bind them to the
-  // inference context. The created SpatialTensors are stored in
-  // input_tensors_ and output_tensors_.
-  absl::Status BindTensorBuffers(TfLiteContext* context);
+  // Before any other operations, binds external tensors to the inference
+  // context with internal I/O SpatialTensor associated with them.
+  // If an internal I/O SpatialTensor is not associated with a tensor regardless
+  // of whether it's an external tensor or not, creates one and associates with
+  // the tensor.
+  absl::Status BindExternalTensorBuffers(TfLiteContext* context);
 
-  // Enqueues Barrier command that will be used to wait for all the input events
-  // to be completed.
-  // Note: This method should be called before Dispatch() is called.
-  // Note: If there is non OpenCL event, it will wait for 5 seconds for the
-  // event to be signaled.
+  // After BindExternalTensorBuffers(), uploads the content of input tensors not
+  // allocated by the users from CPU memory to GPU memory, which happens in the
+  // case of partitioned graph.
+  absl::Status UploadIntermediateCpuTensorsToGpuMemory(TfLiteContext* context);
+
+  // After BindExternalTensorBuffers(), enqueues Barrier command or Event wait
+  // command depending on the GPU backend that will be used to wait for all the
+  // input events to be completed.
   absl::Status HandleInputEvents(TfLiteContext* context);
 
-  // Enqueues Marker command that will be used to notify for all the output
-  // events to be completed. If is_async_execution_mode is true, attaches the
-  // output event to the output tensors. Note: This method should be called
-  // after Dispatch() is called.
+  // After HandleInputEvents(), converts non-external GPU input tensors to GPU
+  // memory.
+  absl::Status ConvertNonExternalInputTensorsToGpuMemory(
+      TfLiteContext* context);
+
+  // After Dispatch() and before HandleOutputEvents(), converts GPU memory to
+  // non-external GPU output tensors.
+  absl::Status ConvertGpuMemoryToNonExternalOutputTensors(
+      TfLiteContext* context);
+
+  // After Dispatch() and ConvertGpuMemoryToNonExternalOutputTensors(), enqueues
+  // Marker command or Event signal command depending on the GPU backend that
+  // will be used to notify for all the output events to be completed.
+  // If is_async_execution_mode is true, attaches the output event to the output
+  // tensors.
   absl::Status HandleOutputEvents(TfLiteContext* context,
                                   bool is_async_execution_mode);
 
-  // Downloads GPU memory to CPU memory. This method will be called after
-  // Dispatch() is called, and it meant to only download the output tensors that
-  // are intermediate tensors and not allocated by the users.
-  absl::Status DownloadGpuMemoryToCpuMemory(TfLiteContext* context);
+  // After HandleOutputEvents(), downloads the content of GPU memory to CPU
+  // memory for output tensors not allocated by the users, which happens in the
+  // case of partitioned graph.
+  absl::Status DownloadGpuMemoryToIntermediateCpuTensors(
+      TfLiteContext* context);
 
   // Flushes the buffer cache if needed.
   absl::Status FlushBufferCacheIfNeeded(TfLiteContext* context);
@@ -102,18 +120,6 @@ class DelegateKernelLiteRt : public DelegateKernel {
     return false;
   }
 
-  // In NoExternalTensorsMode, we need to upload GPU memory in
-  // input TensorBuffer to GPU memory before Dispatch() is called.
-  // Additionaly, it allocates output TensorBuffers if they're not provided
-  // similar to BindTensorBuffers().
-  // If external tensors are present, binds them directly to the inference
-  // context.
-  absl::Status UploadOrBindTensorBuffer(TfLiteContext* context);
-
-  // In NoExternalTensorsMode, we need to download GPU memory to
-  // output TensorBuffer after Dispatch() is called.
-  absl::Status DownloadGpuMemoryToTensorBufferGpuMemory(TfLiteContext* context);
-
   // Returns the LiteRT runtime context.
   const LiteRtRuntimeContext* runtime_context() const {
     return runtime_context_;
@@ -127,10 +133,18 @@ class DelegateKernelLiteRt : public DelegateKernel {
   // RegisterLiteRtBufferRequirements().
   // - It create TensorDescriptors which are later used to create SpatialTensor
   // in BindTensorBuffers().
+  // External tensors are computed from input_ids_/input_indices_ and
+  // output_ids_/output_indices_.
+  //
+  // GraphFloat32 callers pass the graph's canonical BHWC shapes via
+  // input_tensor_refs/output_tensor_refs; the IrModel path passes empty vectors
+  // and shapes are derived from the TfLiteTensor. See ProcessTensor().
   absl::Status UpdateCreateInfoWithExternalTensors(
-      TfLiteContext* context, const std::vector<::ml_drift::Value*>& inputs,
-      const std::vector<::ml_drift::Value*>& outputs,
-      ::ml_drift::CreateGpuModelInfo& create_info) override;
+      TfLiteContext* context, ::ml_drift::CreateGpuModelInfo& create_info,
+      const std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>>&
+          input_tensor_refs,
+      const std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>>&
+          output_tensor_refs) override;
 
   // Returns the storage type for the given tensor name.
   // If the tensor name matches any of the buffer storage type patterns,
@@ -180,17 +194,16 @@ class DelegateKernelLiteRt : public DelegateKernel {
       LiteRtExternalLiteRtBufferContext buffer_context,
       TfLiteTensor* tflite_tensor);
 
-  // Unified tensor processing method that handles both standard and
-  // NoExternalTensorsMode. The behavior is controlled by the parameters:
-  // - no_external_tensor_mode: if true, indicates NoExternalTensorsMode is
-  // active
-  //   in NoExternalTensorsMode
-  // - tensor_descriptors: reference to either input_tensor_descriptors_ or
-  //   output_tensor_descriptors_ where the descriptor will be stored
+  // Processes a single tensor, identified by its TfLiteTensor and IrModel
+  // ValueId, storing the resulting descriptor in out_tensor_descriptor. When
+  // graph_tensor_ref is non-null (GraphFloat32 path), its canonical BHWC
+  // shape/dtype is used to build the tensor descriptor; otherwise (IrModel
+  // path) the descriptor is derived from the TfLiteTensor.
   absl::Status ProcessTensor(
-      TfLiteContext* context, ::ml_drift::Value* value, int index,
-      const TensorProcessingContext& proc_context, bool no_external_tensor_mode,
-      std::vector<::ml_drift::TensorDescriptor>& tensor_descriptors);
+      TfLiteTensor* tflite_tensor, ::ml_drift::ValueId value_id,
+      const TensorProcessingContext& proc_context,
+      ::ml_drift::TensorDescriptor& out_tensor_descriptor,
+      const ::ml_drift::TensorRef<::ml_drift::BHWC>* graph_tensor_ref);
 
   // Binds the GPU memory to the inference context.
   absl::Status BindGpuMemoryToInferenceContext(
@@ -199,6 +212,12 @@ class DelegateKernelLiteRt : public DelegateKernel {
       GpuMemoryHandle gpu_memory,
       absl::flat_hash_map<GpuMemoryHandle, std::unique_ptr<GpuTensorWrapper>>&
           tensors);
+
+  // Marks the tensor to be flushed from the cache and buffer context if it is
+  // a GL buffer.
+  absl::Status MarkToFlushIfGlBuffer(TfLiteTensor* tflite_tensor,
+                                     GpuTensorBufferPtr& tensor_buffer,
+                                     GpuMemoryHandle gpu_memory);
 
   // Tensor descriptors for I/O tensors.
   // The size and order of these vectors should be the same as input_indices_
@@ -222,10 +241,6 @@ class DelegateKernelLiteRt : public DelegateKernel {
   // Set of tensors that need to be flushed from the cache and buffer context
   // during `FlushBufferCacheIfNeeded`.
   absl::flat_hash_map<TfLiteTensor*, GpuMemoryHandle> tensors_to_flush_;
-
-  // Set of input indices whether this input needs to be uploaded to GPU memory
-  // before inference. This is only used in NoExternalTensorsMode.
-  absl::flat_hash_set<int> input_needs_upload_;
 };
 
 }  // namespace litert::ml_drift

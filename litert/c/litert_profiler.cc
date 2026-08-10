@@ -14,6 +14,8 @@
 
 #include "litert/c/litert_profiler.h"
 
+#include <cstdlib>
+#include <cstring>
 #include <string>
 
 #include "litert/c/litert_common.h"
@@ -127,7 +129,14 @@ LiteRtStatus LiteRtGetProfileSummary(LiteRtProfiler profiler,
   }
 
   std::string summary_str = profiler->GetProfileSummary(*interpreter);
-  *summary = strdup(summary_str.c_str());
+  size_t len = summary_str.size();
+  char* summary_copy = static_cast<char*>(malloc(len + 1));
+  if (summary_copy == nullptr) {
+    return kLiteRtStatusErrorMemoryAllocationFailure;
+  }
+  memcpy(summary_copy, summary_str.data(), len);
+  summary_copy[len] = '\0';
+  *summary = summary_copy;
   return kLiteRtStatusOk;
 }
 }  // extern "C"

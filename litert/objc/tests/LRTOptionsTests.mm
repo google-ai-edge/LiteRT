@@ -12,21 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#import <XCTest/XCTest.h>
+
 #import "third_party/odml/litert/litert/objc/apis/LRTOptions.h"
 
-#include "testing/base/public/gunit.h"
+@interface LRTOptionsTests : XCTestCase
+@end
 
-TEST(LRTOptionsTest, DefaultHardwareAcceleratorsIsNone) {
+@implementation LRTOptionsTests
+
+- (void)testDefaultHardwareAcceleratorsIsNone {
   LRTOptions *options = [[LRTOptions alloc] init];
-  EXPECT_NE(options, nil);
-  EXPECT_EQ(options.hardwareAccelerators, LRTHardwareAcceleratorNone);
+  XCTAssertNotNil(options);
+  XCTAssertEqual(options.hardwareAccelerators, LRTHardwareAcceleratorNone);
 }
 
-TEST(LRTOptionsTest, InitWithHardwareAccelerators) {
+- (void)testInitWithHardwareAccelerators {
   LRTHardwareAccelerators expectedFlags =
       LRTHardwareAcceleratorCPU | LRTHardwareAcceleratorNPU;
   LRTOptions *options =
       [[LRTOptions alloc] initWithHardwareAccelerators:expectedFlags];
-  EXPECT_NE(options, nil);
-  EXPECT_EQ(options.hardwareAccelerators, expectedFlags);
+  XCTAssertNotNil(options);
+  XCTAssertEqual(options.hardwareAccelerators, expectedFlags);
 }
+
+@end

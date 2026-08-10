@@ -8,10 +8,15 @@
 
 #include <gtest/gtest.h>
 #include "litert/vendors/qualcomm/core/common.h"
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 
 namespace qnn {
 namespace {
+
+constexpr auto kDefaultSocInfo = FindSocInfo("SM8750");
+static_assert(kDefaultSocInfo.has_value());
+
 class GpuBackendTest : public testing::Test {
  public:
   void SetUp() override {
@@ -32,22 +37,24 @@ TEST_F(GpuBackendTest, DISABLED_InitializeWithLogLevelOffTest) {
   Options options;
   options.SetLogLevel(LogLevel::kOff);
 
-  ASSERT_TRUE(backend_->Init(options, std::nullopt));
+  ASSERT_TRUE(backend_->Init(options, kDefaultSocInfo));
   ASSERT_FALSE(backend_->GetDeviceHandle());
 
   ASSERT_TRUE(backend_->GetBackendHandle());
   ASSERT_FALSE(backend_->GetLogHandle());
+  EXPECT_EQ(backend_->GetSocInfo().soc_model, kDefaultSocInfo->soc_model);
 }
 
 TEST_F(GpuBackendTest, DISABLED_InitializeWithLogLevelVerboseTest) {
   Options options;
   options.SetLogLevel(LogLevel::kVerbose);
 
-  ASSERT_TRUE(backend_->Init(options, std::nullopt));
+  ASSERT_TRUE(backend_->Init(options, kDefaultSocInfo));
   ASSERT_FALSE(backend_->GetDeviceHandle());
 
   ASSERT_TRUE(backend_->GetBackendHandle());
   ASSERT_TRUE(backend_->GetLogHandle());
+  EXPECT_EQ(backend_->GetSocInfo().soc_model, kDefaultSocInfo->soc_model);
 }
 
 }  // namespace

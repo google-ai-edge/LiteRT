@@ -14,6 +14,7 @@
 
 #include "litert/runtime/custom_op_dispatcher.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <vector>
@@ -25,6 +26,7 @@
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/options.h"
@@ -117,6 +119,14 @@ TfLiteStatus CustomOpDispatcher::Prepare(void* user_data,
 Expected<void> CustomOpDispatcher::PrepareHelper(void* user_data,
                                                  TfLiteOpaqueContext* context,
                                                  TfLiteOpaqueNode* node) {
+  auto& self = *static_cast<CustomOpDispatcher*>(user_data);
+  if (!self.buffer_context_) {
+    if (auto buffer_context =
+            LiteRtExternalLiteRtBufferContextT::GetInstance(context);
+        buffer_context) {
+      self.buffer_context_ = *buffer_context;
+    }
+  }
   auto num_inputs = TfLiteOpaqueNodeNumberOfInputs(node);
   std::vector<LiteRtLayout> input_layouts(num_inputs);
   for (auto i = 0; i < num_inputs; ++i) {
@@ -136,7 +146,6 @@ Expected<void> CustomOpDispatcher::PrepareHelper(void* user_data,
   std::vector<LiteRtLayout> output_layouts;
   output_layouts.resize(num_outputs);
 
-  auto& self = *static_cast<CustomOpDispatcher*>(user_data);
   self.op_kernel_.GetOutputLayouts(self.user_data_, input_layouts.size(),
                                    input_layouts.data(), output_layouts.size(),
                                    output_layouts.data());
@@ -164,6 +173,13 @@ Expected<void> CustomOpDispatcher::InvokeHelper(void* user_data,
                                                 TfLiteOpaqueContext* context,
                                                 TfLiteOpaqueNode* node) {
   auto& self = *static_cast<CustomOpDispatcher*>(user_data);
+  if (!self.buffer_context_) {
+    if (auto buffer_context =
+            LiteRtExternalLiteRtBufferContextT::GetInstance(context);
+        buffer_context) {
+      self.buffer_context_ = *buffer_context;
+    }
+  }
 
   auto num_inputs = TfLiteOpaqueNodeNumberOfInputs(node);
   std::vector<LiteRtTensorBuffer> inputs;
@@ -215,6 +231,28 @@ Expected<LiteRtTensorBufferPtr> CustomOpDispatcher::GetTensorBuffer(
       return LiteRtTensorBufferPtr(buffer);
     }
   }
+
+  // For dynamic string output tensors where TfLiteOpaqueTensorByteSize is 0,
+  // allocate a managed temporary TensorBuffer so the custom op kernel can write
+  // to it.
+  LITERT_ASSIGN_OR_RETURN(auto tensor_type,
+                          ConvertTensorType(tfl_opaque_tensor));
+  size_t buffer_size = TfLiteOpaqueTensorByteSize(tfl_opaque_tensor);
+  if (tensor_type.element_type == kLiteRtElementTypeTfString &&
+      buffer_size == 0) {
+    constexpr size_t kDefaultStringBufferSize = 4096;
+    LiteRtRankedTensorType litert_tensor_type =
+        static_cast<LiteRtRankedTensorType>(tensor_type);
+    LiteRtEnvironment env =
+        buffer_context_ ? buffer_context_->GetEnvironment() : nullptr;
+    LITERT_ASSIGN_OR_RETURN(
+        auto managed_buffer,
+        LiteRtTensorBufferT::CreateManaged(
+            env, kLiteRtTensorBufferTypeHostMemory, litert_tensor_type,
+            kDefaultStringBufferSize));
+    return LiteRtTensorBufferPtr(managed_buffer.release());
+  }
+
   return CreateHostTensorBufferFromTflTensor(context, tfl_opaque_tensor);
 }
 

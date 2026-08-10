@@ -16,6 +16,7 @@ cc_library(
         "//ml_drift_delegate/delegate/serialization_weight_cache:mmap_handle",
         "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
         "@ml_drift//ml_drift/common:status",

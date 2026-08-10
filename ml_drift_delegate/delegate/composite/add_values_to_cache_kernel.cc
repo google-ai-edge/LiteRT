@@ -56,7 +56,8 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateAddValuesToCache(
     const ::ml_drift::TensorDescriptor& src_v,
     const ::ml_drift::TensorDescriptor& cache_k,
     const ::ml_drift::TensorDescriptor& cache_v, int cache_size,
-    int head_dimension, int kv_cache_batch_size, float scale_k, float scale_v) {
+    int head_dimension, int kv_cache_batch_size, float scale_k, float scale_v,
+    bool is_ring_buffer) {
   AddValuesToCacheOp custom_op;
   custom_op.batch_size_ = kv_cache_batch_size;
   custom_op.args_.AddInt("batch_size", custom_op.batch_size_);
@@ -105,11 +106,25 @@ MAIN_FUNCTION($0) {
   }
   int token_index_offset = args.params.Read(0);
   int active_tokens = args.params.Read(1);
+  )";
+  if (is_ring_buffer) {
+    op_code += R"(
+  int update_length = args.params.Read(3);
+  if (X >= update_length) {
+    return;
+  }
+  int token_index = (token_index_offset + X) % args.cache_size;
+  )";
+  } else {
+    op_code += R"(
   int token_index = token_index_offset + X;
   if (token_index >= args.cache_size || token_index >= active_tokens) {
     return;
   }
+  )";
+  }
 
+  op_code += R"(
   int src_y = Y % args.src_k.Height();  // broadcast Height dim used as Batch
   args.src_k::type value_k = args.src_k.Read(X, src_y, S);
   args.src_v::type value_v = args.src_v.Read(X, src_y, S);
@@ -189,10 +204,11 @@ CreateAddValuesToCacheFromNode(const ::ml_drift::OperationDef& op_def,
       node.operation.attributes);
   float scale_k = attr.scale_k.value_or(1.0);
   float scale_v = attr.scale_v.value_or(1.0);
-  return CreateAddValuesToCache(op_def.src_tensors[0], op_def.src_tensors[1],
-                                op_def.dst_tensors[0], op_def.dst_tensors[1],
-                                attr.cache_size, attr.head_size,
-                                attr.kv_cache_batch_size, scale_k, scale_v);
+  bool is_ring_buffer = attr.is_ring_buffer.value_or(false);
+  return CreateAddValuesToCache(
+      op_def.src_tensors[0], op_def.src_tensors[1], op_def.dst_tensors[0],
+      op_def.dst_tensors[1], attr.cache_size, attr.head_size,
+      attr.kv_cache_batch_size, scale_k, scale_v, is_ring_buffer);
 }
 
 absl::StatusOr<std::unique_ptr<::ml_drift::GPUOperation>>
@@ -207,10 +223,11 @@ CreateAddValuesToCacheFromNode(const ::ml_drift::OperationDef& op_def,
       std::any_cast<const AddValuesToCacheAttributes&>(ir_op.attr);
   float scale_k = attr.scale_k.value_or(1.0);
   float scale_v = attr.scale_v.value_or(1.0);
-  return CreateAddValuesToCache(op_def.src_tensors[0], op_def.src_tensors[1],
-                                op_def.dst_tensors[0], op_def.dst_tensors[1],
-                                attr.cache_size, attr.head_size,
-                                attr.kv_cache_batch_size, scale_k, scale_v);
+  bool is_ring_buffer = attr.is_ring_buffer.value_or(false);
+  return CreateAddValuesToCache(
+      op_def.src_tensors[0], op_def.src_tensors[1], op_def.dst_tensors[0],
+      op_def.dst_tensors[1], attr.cache_size, attr.head_size,
+      attr.kv_cache_batch_size, scale_k, scale_v, is_ring_buffer);
 }
 
 }  // namespace litert::ml_drift

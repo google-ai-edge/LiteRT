@@ -59,8 +59,11 @@ void ConvertEmbeddingLookup(
   ::ml_drift::EmbeddingLookupAttributes attr;
   const int weights_id = node.inputs->data[1];
   const TfLiteTensor* weights_tensor = context.tensors + weights_id;
+  const ::ml_drift::ir::IrTensorId ir_weights_id = tensor_map[weights_id];
+  bool weights_are_shared = false;
 
-  if (tflite::IsConstantTensor(weights_tensor)) {
+  if (tflite::IsConstantTensor(weights_tensor) &&
+      !ir_model.tensor(ir_weights_id)->buffer_source.is_shared) {
     ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT32> tmp_zp;
     if (weights_tensor->type == kTfLiteInt2) {
       ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::UINT8>
@@ -131,6 +134,35 @@ void ConvertEmbeddingLookup(
     if (tmp_zp.shape.DimensionsProduct() > 0) {
       attr.weights_zero_point = ConvertZeroPoint(tmp_zp);
     }
+  } else if (ir_model.tensor(ir_weights_id)->buffer_source.is_shared) {
+    // Shared (external runtime) weights: mirror GraphFloat32's shared branch.
+    // The weights are passed as a runtime input, so only their type and shapes
+    // are recorded here (no data); the shared-memory manager materializes the
+    // buffer. Blockwise additionally splits the input dim into blocks.
+    const int rows = weights_tensor->dims->data[0];
+    const int cols = weights_tensor->dims->data[1];
+    if (weights_tensor->type == kTfLiteInt8) {
+      attr.weights_type =
+          ::ml_drift::EmbeddingLookupAttributes::WeightsType::kInt8;
+    } else if (weights_tensor->type == kTfLiteInt4) {
+      attr.weights_type =
+          ::ml_drift::EmbeddingLookupAttributes::WeightsType::kInt4;
+    } else if (weights_tensor->type == kTfLiteInt2) {
+      attr.weights_type =
+          ::ml_drift::EmbeddingLookupAttributes::WeightsType::kInt2;
+    } else {
+      ABSL_LOG(FATAL) << "EMBEDDING_LOOKUP: Unsupported external weights type: "
+                      << weights_tensor->type;
+    }
+    attr.original_weights_shape = ::ml_drift::OHWI(rows, 1, 1, cols);
+    attr.scale_zp_shape = ::ml_drift::OHWI(rows, 1, 1, 1);
+    if (weights_tensor->quantization.type == kTfLiteBlockwiseQuantization) {
+      const auto* qparams =
+          reinterpret_cast<const TfLiteBlockwiseQuantization*>(
+              weights_tensor->quantization.params);
+      attr.scale_zp_shape.i = cols / qparams->blocksize;
+    }
+    weights_are_shared = true;
   } else {
     ABSL_LOG(WARNING)
         << "EmbeddingLookup weights are not constant, conversion might be "
@@ -141,6 +173,11 @@ void ConvertEmbeddingLookup(
   op->name = ToString(::ml_drift::OperationType::EMBEDDING_LOOKUP);
   op->attr = std::move(attr);
   ir_model.AddConsumer(tensor_map[node.inputs->data[0]], op->id);
+  // Shared weights are consumed as a runtime input (added after the lookup ids
+  // so the op's input ordering matches GraphFloat32).
+  if (weights_are_shared) {
+    ir_model.AddConsumer(ir_weights_id, op->id);
+  }
 
   // Set output producer
   ir_model.SetProducer(tensor_map[node.outputs->data[0]], op->id);

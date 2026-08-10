@@ -67,11 +67,40 @@ cc_test(
 )
 
 cc_library(
+    name = "audio_preprocessor_utils",
+    srcs = ["audio_preprocessor_utils.cc"],
+    hdrs = ["audio_preprocessor_utils.h"],
+    deps = [
+        ":audio_preprocessor",
+        ":mel_filterbank",
+        "//support/util:litert_status_util",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "audio_preprocessor_utils_test",
+    srcs = ["audio_preprocessor_utils_test.cc"],
+    deps = [
+        ":audio_preprocessor",
+        ":audio_preprocessor_utils",
+        "//support/util:test_utils",
+        "@com_google_absl//absl/status",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "audio_preprocessor_miniaudio",
     srcs = ["audio_preprocessor_miniaudio.cc"],
     hdrs = ["audio_preprocessor_miniaudio.h"],
     deps = [
         ":audio_preprocessor",
+        ":audio_preprocessor_utils",
         ":mel_filterbank",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/log:absl_check",
@@ -129,6 +158,60 @@ cc_test(
         "//support/util:io_types",
         "//support/util:litert_status_util",
         "//support/util:test_utils",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "audio_preprocessor_pffft",
+    srcs = ["audio_preprocessor_pffft.cc"],
+    hdrs = ["audio_preprocessor_pffft.h"],
+    deps = [
+        ":audio_preprocessor",
+        ":audio_preprocessor_utils",
+        ":mel_filterbank",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/cc:litert_tensor_buffer",
+        "//support/util:io_types",
+        "//third_party/pffft",
+        "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "audio_preprocessor_pffft_test",
+    srcs = ["audio_preprocessor_pffft_test.cc"],
+    data = [
+        "//support/preprocessor/testdata",
+    ],
+    tags = ["requires-mac-inputs:hard"],  # Required for running on Forge on Mac.
+    deps = [
+        ":audio_preprocessor",
+        ":audio_preprocessor_pffft",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_options",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/test:matchers",
+        "//support/util:io_types",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
@@ -370,6 +453,15 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "stub_image_preprocessor",
+    srcs = ["stub_image_preprocessor.cc"],
+    deps = [
+        ":image_preprocessor",
+    ],
+    alwayslink = 1,
+)
+
 # copybara:uncomment_begin(oss litert)
 # cc_test(
 #     name = "skia_image_preprocessor_test",
@@ -415,6 +507,7 @@ cc_test(
     deps = [
         ":image_preprocessor",
         ":image_preprocessor_utils",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_tensor_buffer",
         "//support/util:test_utils",
         "@com_google_absl//absl/status",

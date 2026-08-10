@@ -34,8 +34,8 @@ if [[ ${target_file} != *".tar.gz" ]]; then
   fatal "Target file is not a .tar.gz: ${target_file}"
 fi
 
-wget -p -O ${target_file} ${url}
-if [[ $? -ne 0 ]]; then
+wget --no-check-certificate -O "${target_file}" "${url}" || curl -k -L -o "${target_file}" "${url}"
+if [[ $? -ne 0 || ! -f "${target_file}" ]]; then
   fatal "Failed to download model from ${url}."
 fi
 

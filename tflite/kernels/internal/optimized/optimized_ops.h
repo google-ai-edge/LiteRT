@@ -2001,8 +2001,9 @@ inline void MulElementwise(int32_t n, const ArithmeticParams& params,
 
   // This will handle leftovers when n is not aligned to 4 elements.
   for (; i < n; ++i) {
-    out[i] = ActivationFunctionWithMinMax(lhs[i] * rhs[i], activation_min_val,
-                                          activation_max_val);
+    out[i] =
+        ActivationFunctionWithMinMax(WrappingMul<int32_t>(lhs[i], rhs[i]),
+                                     activation_min_val, activation_max_val);
   }
 }
 
@@ -4986,7 +4987,7 @@ void Col2im(const T* col_data, const int depth, const int height,
           if (ih >= 0 && ih < height && iw >= 0 && iw < width) {
             // TODO(andydavis) Vectorize this loop (if compiler does not).
             for (int i = 0; i < depth; ++i) {
-              im_patch_data[i] += col_data[i];
+              im_patch_data[i] = WrappingAdd<T>(im_patch_data[i], col_data[i]);
             }
           }
           im_patch_data += depth;
@@ -5010,7 +5011,7 @@ void BiasAdd(T* im_data, const T* bias_data, const int batch_size,
       for (int h = 0; h < height; ++h) {
         for (int w = 0; w < width; ++w) {
           for (int d = 0; d < depth; ++d) {
-            im_data[d] += bias_data[d];
+            im_data[d] = WrappingAdd<T>(im_data[d], bias_data[d]);
           }
           im_data += depth;
         }
@@ -7328,8 +7329,11 @@ inline void BroadcastMinimumDispatch(const ArithmeticParams& params,
 }
 
 template <typename T>
-void CumsumImpl(const T* input_data, const RuntimeShape& shape, int axis,
-                bool exclusive, bool reverse, T* output_data) {
+TFLITE_NO_SANITIZE_INTEGER_OVERFLOW void CumsumImpl(const T* input_data,
+                                                    const RuntimeShape& shape,
+                                                    int axis, bool exclusive,
+                                                    bool reverse,
+                                                    T* output_data) {
   Eigen::array<Eigen::DenseIndex, 3> dims = {1, 1, 1};
 
   for (int i = 0; i < axis; ++i) {
@@ -7360,8 +7364,10 @@ void CumsumImpl(const T* input_data, const RuntimeShape& shape, int axis,
 }
 
 template <typename T>
-void CumSum(const T* input_data, const RuntimeShape& shape, int axis,
-            bool exclusive, bool reverse, T* output_data) {
+TFLITE_NO_SANITIZE_INTEGER_OVERFLOW void CumSum(const T* input_data,
+                                                const RuntimeShape& shape,
+                                                int axis, bool exclusive,
+                                                bool reverse, T* output_data) {
   const int dim = shape.DimensionsCount();
   TFLITE_DCHECK_GE(dim, 1);
   CumsumImpl<T>(input_data, shape, axis, exclusive, reverse, output_data);
@@ -7535,11 +7541,20 @@ inline int ArgMinVector(const float* input_data, int size) {
       // Increase indices by 4.
       index_s32x4 = vaddq_s32(index_s32x4, inc);
       float32x4_t v = vld1q_f32(&input_data[i]);
-      uint32x4_t mask = vcltq_f32(v, min_value_f32x4);
-      min_value_f32x4 = vminq_f32(min_value_f32x4, v);
+      // NaN-aware comparison: update if candidate is finite AND
+      // (current is NaN OR candidate < current).
+      uint32x4_t v_not_nan = vceqq_f32(v, v);
+      uint32x4_t min_is_nan =
+          vmvnq_u32(vceqq_f32(min_value_f32x4, min_value_f32x4));
+      uint32x4_t v_lt_min = vcltq_f32(v, min_value_f32x4);
+      uint32x4_t mask = vandq_u32(v_not_nan, vorrq_u32(min_is_nan, v_lt_min));
+      min_value_f32x4 = vbslq_f32(mask, v, min_value_f32x4);
       min_index_s32x4 = vbslq_s32(mask, index_s32x4, min_index_s32x4);
     }
     // Find min element within float32x4_t.
+    // Note: on ARMv8, vminvq_f32 uses fminnm which correctly ignores NaN
+    // lanes. On ARMv7, vpmin_f32 may propagate NaN; this is a pre-existing
+    // limitation that does not affect non-NaN inputs.
 #ifdef __aarch64__
     min_value = vminvq_f32(min_value_f32x4);
 #else
@@ -7564,15 +7579,17 @@ inline int ArgMinVector(const float* input_data, int size) {
 #endif  // __aarch64__
   }
 #endif  // USE_NEON
-  // Leftover loop.
+  // Leftover loop (NaN-aware).
   for (; i < size; ++i) {
     const float curr_value = input_data[i];
-    if (curr_value < min_value) {
+    if (!std::isnan(curr_value) &&
+        (std::isnan(min_value) || curr_value < min_value)) {
       min_value = curr_value;
       min_index = i;
     }
   }
-  return min_index;
+  // All-NaN inputs: deterministically return first index.
+  return std::isnan(min_value) ? 0 : min_index;
 }
 
 template <>
@@ -7591,11 +7608,20 @@ inline int ArgMaxVector(const float* input_data, int size) {
       // Increase indices by 4.
       index_s32x4 = vaddq_s32(index_s32x4, inc);
       float32x4_t v = vld1q_f32(&input_data[i]);
-      uint32x4_t mask = vcgtq_f32(v, max_value_f32x4);
-      max_value_f32x4 = vmaxq_f32(max_value_f32x4, v);
+      // NaN-aware comparison: update if candidate is finite AND
+      // (current is NaN OR candidate > current).
+      uint32x4_t v_not_nan = vceqq_f32(v, v);
+      uint32x4_t max_is_nan =
+          vmvnq_u32(vceqq_f32(max_value_f32x4, max_value_f32x4));
+      uint32x4_t v_gt_max = vcgtq_f32(v, max_value_f32x4);
+      uint32x4_t mask = vandq_u32(v_not_nan, vorrq_u32(max_is_nan, v_gt_max));
+      max_value_f32x4 = vbslq_f32(mask, v, max_value_f32x4);
       max_index_s32x4 = vbslq_s32(mask, index_s32x4, max_index_s32x4);
     }
     // Find max element within float32x4_t.
+    // Note: on ARMv8, vmaxvq_f32 uses fmaxnm which correctly ignores NaN
+    // lanes. On ARMv7, vpmax_f32 may propagate NaN; this is a pre-existing
+    // limitation that does not affect non-NaN inputs.
 #ifdef __aarch64__
     max_value = vmaxvq_f32(max_value_f32x4);
 #else
@@ -7620,15 +7646,17 @@ inline int ArgMaxVector(const float* input_data, int size) {
 #endif  // __aarch64__
   }
 #endif  // USE_NEON
-  // Leftover loop.
+  // Leftover loop (NaN-aware).
   for (; i < size; ++i) {
     const float curr_value = input_data[i];
-    if (curr_value > max_value) {
+    if (!std::isnan(curr_value) &&
+        (std::isnan(max_value) || curr_value > max_value)) {
       max_value = curr_value;
       max_index = i;
     }
   }
-  return max_index;
+  // All-NaN inputs: deterministically return first index.
+  return std::isnan(max_value) ? 0 : max_index;
 }
 
 template <>
@@ -7931,7 +7959,8 @@ void Col2im(const T* col_data, const int channel, const int planes,
               if (ip >= 0 && ip < planes && ih >= 0 && ih < height && iw >= 0 &&
                   iw < width) {
                 for (int i = 0; i < channel; ++i) {
-                  im_patch_data[i] += col_data[i];
+                  im_patch_data[i] =
+                      WrappingAdd<T>(im_patch_data[i], col_data[i]);
                 }
               }
               im_patch_data += channel;
@@ -8008,7 +8037,7 @@ inline void Conv3DTranspose(
 
   const int spatial_dim_1_padding_before = params.padding_values.depth;
   const int spatial_dim_1_padding_after =
-      params.padding_values.height + params.padding_values.depth_offset;
+      params.padding_values.depth + params.padding_values.depth_offset;
   const int spatial_dim_2_padding_before = params.padding_values.height;
   const int spatial_dim_2_padding_after =
       params.padding_values.height + params.padding_values.height_offset;

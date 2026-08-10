@@ -90,13 +90,14 @@ void ConvertDepthwiseConv(
   ir_model.AddConsumer(tensor_map[input_id], dw_conv_op->id);
 
   const TfLiteTensor* weights_tensor = context.tensors + node.inputs->data[1];
-  if (tflite::IsConstantTensor(weights_tensor)) {
+  const ::ml_drift::ir::IrTensorId weights_id =
+      tensor_map[node.inputs->data[1]];
+  if (tflite::IsConstantTensor(weights_tensor) &&
+      !ir_model.tensor(weights_id)->buffer_source.is_shared) {
     PopulateTensor(weights_tensor, node.inputs->data[1], &weights,
                    PopulateTensorFlags::kExtraBytes,
                    options.enable_spanned_weights);
   } else {
-    const ::ml_drift::ir::IrTensorId weights_id =
-        tensor_map[node.inputs->data[1]];
     ir_model.AddConsumer(weights_id, dw_conv_op->id);
     const ::ml_drift::BHWC weights_shape =
         ir_model.tensor(weights_id)->desc.GetBHWCShape();

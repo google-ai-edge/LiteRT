@@ -26,6 +26,9 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+// copybara:uncomment_begin(google internal)
+// #include "base/init_google.h"
+// copybara:uncomment_end
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
@@ -1181,6 +1184,9 @@ absl::Status RunGemma3Inference(
 }
 
 int main(int argc, char** argv) {
+  // copybara:uncomment_begin(google internal)
+  // InitGoogle(argv[0], &argc, &argv, /*remove_flags=*/true);
+  // copybara:uncomment_end
   absl::ParseCommandLine(argc, argv);
   std::string weights_path = absl::GetFlag(FLAGS_weights_path);
   std::string tokenizer_path = absl::GetFlag(FLAGS_tokenizer_path);

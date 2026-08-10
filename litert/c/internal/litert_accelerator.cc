@@ -52,7 +52,7 @@ LiteRtStatus LiteRtGetAccelerator(LiteRtEnvironment environment,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetAcceleratorName(LiteRtAccelerator accelerator,
+LiteRtStatus LiteRtGetAcceleratorName(LiteRtAcceleratorConst accelerator,
                                       char const** name) {
   if (!accelerator || !accelerator->GetName || !name) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -60,7 +60,7 @@ LiteRtStatus LiteRtGetAcceleratorName(LiteRtAccelerator accelerator,
   return accelerator->GetName(accelerator, name);
 }
 
-LiteRtStatus LiteRtGetAcceleratorId(LiteRtAccelerator accelerator,
+LiteRtStatus LiteRtGetAcceleratorId(LiteRtAcceleratorConst accelerator,
                                     LiteRtAcceleratorId* id) {
   if (!accelerator || !accelerator->env || !id) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -75,7 +75,7 @@ LiteRtStatus LiteRtGetAcceleratorId(LiteRtAccelerator accelerator,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetAcceleratorVersion(LiteRtAccelerator accelerator,
+LiteRtStatus LiteRtGetAcceleratorVersion(LiteRtAcceleratorConst accelerator,
                                          LiteRtApiVersion* version) {
   if (!accelerator || !accelerator->GetVersion || !version) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -84,14 +84,15 @@ LiteRtStatus LiteRtGetAcceleratorVersion(LiteRtAccelerator accelerator,
 }
 
 LiteRtStatus LiteRtGetAcceleratorHardwareSupport(
-    LiteRtAccelerator accelerator, LiteRtHwAcceleratorSet* supported_hardware) {
+    LiteRtAcceleratorConst accelerator,
+    LiteRtHwAcceleratorSet* supported_hardware) {
   if (!accelerator || !accelerator->GetHardwareSupport || !supported_hardware) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   return accelerator->GetHardwareSupport(accelerator, supported_hardware);
 }
 
-LiteRtStatus LiteRtGetAcceleratorEnvironment(LiteRtAccelerator accelerator,
+LiteRtStatus LiteRtGetAcceleratorEnvironment(LiteRtAcceleratorConst accelerator,
                                              LiteRtEnvironment* environment) {
   if (!accelerator || !environment) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -101,7 +102,7 @@ LiteRtStatus LiteRtGetAcceleratorEnvironment(LiteRtAccelerator accelerator,
 }
 
 LiteRtStatus LiteRtIsAcceleratorDelegateResponsibleForJitCompilation(
-    LiteRtAccelerator accelerator, bool* does_jit_compilation) {
+    LiteRtAcceleratorConst accelerator, bool* does_jit_compilation) {
   if (!accelerator || !does_jit_compilation) {
     return kLiteRtStatusErrorInvalidArgument;
   }

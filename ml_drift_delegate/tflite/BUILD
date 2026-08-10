@@ -29,6 +29,8 @@ cc_library(
     hdrs = ["ir_model_builder.h"],
     deps = [
         ":ir_model_builder_helper",
+        ":operation_parser",
+        ":shared_const_tensor_map",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/functional:bind_front",
         "@com_google_absl//absl/log:absl_log",
@@ -110,6 +112,26 @@ cc_library(
     ],
 )
 
+cc_test(
+    name = "ir_model_builder_test",
+    srcs = ["ir_model_builder_test.cc"],
+    deps = [
+        ":ir_model_builder",
+        ":ir_model_builder_helper",
+        ":shared_const_tensor_map",
+        "//ml_drift_delegate/tflite/convert:convert_testing_utils",
+        "//tflite:builtin_ops",
+        "//tflite:framework",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "@com_google_absl//absl/status",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+    ],
+)
+
 cc_library(
     name = "ir_model_builder_helper",
     srcs = ["ir_model_builder_helper.cc"],
@@ -125,7 +147,9 @@ cc_library(
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
     ],
 )
@@ -240,6 +264,7 @@ cc_library(
         "//tflite/tools/versioning:op_signature",
         "@XNNPACK",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:operations",
@@ -305,7 +330,7 @@ cc_library(
         "//tflite/kernels/internal:tensor_ctypes",
         "//tflite/kernels/internal:tensor_utils_no_eigen",
         "//tflite/kernels/internal:types",
-        "//third_party/FP16",
+        "@FP16",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings",
@@ -349,7 +374,7 @@ cc_library(
         "//tflite/kernels/internal:tensor_utils_no_eigen",
         "//tflite/tools/versioning:gpu_compatibility",
         "//tflite/tools/versioning:op_signature",
-        "//third_party/FP16",
+        "@FP16",
         "@XNNPACK",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -357,6 +382,7 @@ cc_library(
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
         "@flatbuffers//:runtime_cc",
@@ -509,6 +535,7 @@ cc_library(
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
         "@flatbuffers//:runtime_cc",

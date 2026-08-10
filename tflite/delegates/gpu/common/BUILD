@@ -1,3 +1,18 @@
+# Copyright 2026 The TensorFlow Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library")
 load("@org_tensorflow//tensorflow:tensorflow.bzl", "workspace_root")
 load("@org_tensorflow//tensorflow/core/platform:build_config.bzl", "tf_platform_alias")
@@ -71,6 +86,8 @@ cc_library(
         "//tflite/delegates/gpu/common/transformations:merge_padding_with",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
     ],
 )
 
@@ -103,6 +120,8 @@ cc_library(
         "//tflite/delegates/gpu/common/tasks:prelu",
         "//tflite/delegates/gpu/common/tasks:reshape",
         "//tflite/delegates/gpu/common/tasks:strided_slice",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
     ],
 )
 
@@ -217,6 +236,7 @@ cc_library(
         "//tflite/kernels/internal:tensor_utils",
         "//tflite/kernels/internal:types",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:any",
     ],

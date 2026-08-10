@@ -16,7 +16,8 @@ load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "make_rpaths")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
+load("//litert/build_common:special_rule.bzl", "friends_of_google_tensor_compiler_plugin")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -52,12 +53,8 @@ litert_dynamic_lib(
     }),
     ungrte = True,
     visibility = [
-        "//ci/tools/python/wheel:__subpackages__",
         "//litert:__subpackages__",
-        "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
-        "//research/drishti/benchmarking:__subpackages__",
-        "//third_party/darwinn/litert:__subpackages__",
-    ],
+    ] + friends_of_google_tensor_compiler_plugin(),
     deps = [
         ":google_tensor_options_cc_proto",
         "//litert/c:litert_builder_header",
@@ -97,14 +94,6 @@ cc_test(
         "//litert/test:mlir_test_data_stablehlo",
         "//litert/test:tflite_test_data",
     ],
-    linkopts = select({
-        "//litert:android": [],
-        "//conditions:default": [
-            make_rpaths([
-                "//litert/c:litert_runtime_c_api_so",
-            ]),
-        ],
-    }),
     linkstatic = True,
     tags = [
         # Tests with ungrte deps do not currently work on forge.
@@ -116,6 +105,7 @@ cc_test(
         # Sanatizer runtime doesn't work with anything that loads a shared library.
         "nosan",
         "manual",
+        "noheapcheck",
     ],
     # This test can only be run on Android and Linux.
     target_compatible_with = select({
@@ -127,15 +117,27 @@ cc_test(
         ":compiler_plugin",  # buildcleaner: keep
         ":google_tensor_options_cc_proto",
         "//litert/c:litert_common",
+        "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
         "//litert/c/internal:litert_compiler_context_testonly",
         "//litert/c/options:litert_google_tensor_options",
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/c/options:litert_google_tensor_options_type",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_options",
+        "//litert/cc/internal:litert_extended_model",
+        "//litert/cc/internal:litert_options_wrapper",
+        "//litert/cc/options:litert_google_tensor_options",
+        "//litert/compiler/cc:litert_model",
+        "//litert/core/model",
         "//litert/test:common",
+        "//litert/test:load_test_model",
         "//litert/test:matchers",
         "//litert/vendors/cc:litert_compiler_plugin",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_googletest//:gtest_main",
+        "@com_google_googletest//:gtest_main_no_heapcheck",
     ],
 )
 

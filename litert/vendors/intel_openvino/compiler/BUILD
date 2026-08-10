@@ -64,6 +64,112 @@ litert_test(
 )
 
 litert_lib(
+    name = "weight_bank",
+    srcs = ["weight_bank.cc"],
+    hdrs = ["weight_bank.h"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    deps = [
+        "//litert/compiler/cc:litert_model",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+litert_test(
+    name = "weight_bank_test",
+    srcs = ["weight_bank_test.cc"],
+    copts = ["-fexceptions"],
+    data = [
+        "//litert/test:mlir_test_data",
+        "//litert/test:tflite_test_data",
+    ],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":weight_bank",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
+        "//litert/test:common",
+        "//litert/test:load_test_model",
+        "//litert/test:test_models",
+        "@intel_openvino//:openvino",
+    ],
+)
+
+litert_lib(
+    name = "global_graph",
+    srcs = ["global_graph.cc"],
+    hdrs = ["global_graph.h"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    visibility = ["//litert/vendors/intel_openvino:__subpackages__"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+    ],
+)
+
+litert_test(
+    name = "global_graph_test",
+    srcs = ["global_graph_test.cc"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    # No OpenVINO runtime dependency (pure container serialize/parse logic), so
+    # this builds and runs in CI on plain CPU -- unlike the other intel_openvino
+    # tests, which link @intel_openvino and need the OV runtime/hardware.
+    deps = [
+        ":global_graph",
+    ],
+)
+
+litert_lib(
+    name = "weights_to_parameters",
+    srcs = ["weights_to_parameters.cc"],
+    hdrs = ["weights_to_parameters.h"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    deps = [
+        ":weight_bank",
+        "@intel_openvino//:openvino",
+    ],
+)
+
+litert_test(
+    name = "weights_to_parameters_test",
+    srcs = ["weights_to_parameters_test.cc"],
+    copts = ["-fexceptions"],
+    data = [
+        "//litert/test:mlir_test_data",
+        "//litert/test:tflite_test_data",
+    ],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":graph_iterator",
+        ":weight_bank",
+        ":weights_to_parameters",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
+        "//litert/test:common",
+        "//litert/test:load_test_model",
+        "//litert/test:test_models",
+        "@intel_openvino//:openvino",
+    ],
+)
+
+litert_lib(
     name = "openvino_compile_context",
     srcs = ["openvino_compile_context.cc"],
     hdrs = ["openvino_compile_context.h"],
@@ -108,9 +214,12 @@ litert_dynamic_lib(
         "//litert:__subpackages__",
     ],
     deps = [
+        ":global_graph",
         ":graph_iterator",
         ":openvino_compile_context",
         ":openvino_soc_config",
+        ":weight_bank",
+        ":weights_to_parameters",
         "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
@@ -152,10 +261,13 @@ litert_bin(
     linkshared = 1,
     visibility = ["//visibility:public"],
     deps = [
+        ":global_graph",
         ":graph_iterator",
         ":litert_compiler_plugin_c_api",
         ":openvino_compile_context",
         ":openvino_soc_config",
+        ":weight_bank",
+        ":weights_to_parameters",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/c:litert_op_options_header",
@@ -264,7 +376,7 @@ litert_test(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_compiler_context",
         "//litert/c/internal:litert_logging",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc/internal:litert_extended_model",
         "//litert/compiler/cc:litert_model",
         "//litert/test:common",
         "//litert/test:matchers_oss",
@@ -272,6 +384,33 @@ litert_test(
         "//litert/vendors/cc:litert_compiler_plugin",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
+        "@intel_openvino//:openvino",
+    ],
+)
+
+litert_test(
+    name = "graph_iterator_test",
+    srcs = ["graph_iterator_test.cc"],
+    copts = select({
+        "//litert:windows": [],
+        "//conditions:default": ["-fexceptions"],
+    }),
+    data = ["//litert/test:tflite_test_data"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":graph_iterator",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/cc:litert_element_type",
+        "//litert/cc/internal:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
+        "//litert/test:load_test_model",
         "@intel_openvino//:openvino",
     ],
 )
@@ -311,15 +450,16 @@ litert_test(
         ":openvino_compiler_plugin",  # buildcleaner: keep
         ":openvino_soc_config",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
         "//litert/c/internal:litert_compiler_context",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model_predicates",
+        "//litert/cc/internal:litert_extended_model",
+        "//litert/cc/internal:litert_model_predicates",
         "//litert/test:common",
-        "//litert/test:load_test_model_runtimecapi",
+        "//litert/test:load_test_model",
         "//litert/test:matchers_oss",
         "//litert/test:test_models",
         "//litert/vendors/cc:litert_compiler_plugin",

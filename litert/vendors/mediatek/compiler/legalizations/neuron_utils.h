@@ -50,8 +50,6 @@ Expected<uint32_t> GetNeuronDataSize(NeuronTensorType type);
 
 Expected<bool> IsQuantizedType(NeuronTensorType type);
 
-bool IsPerChannelQuantizedNeuronType(NeuronTensorType type);
-
 NeuronReturnCode ModelAddOperation(const NeuronAdapterApi& api,
                                    NeuronModel* model, NeuronOperationType type,
                                    std::vector<uint32_t> input,

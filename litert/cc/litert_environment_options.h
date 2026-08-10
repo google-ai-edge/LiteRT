@@ -78,6 +78,15 @@ class EnvironmentOptions {
     /// Singleton ML Drift WebGPU/Dawn instance. Required for shared libraries
     /// to prevent them from creating their own instances.
     kWebGpuInstance = kLiteRtEnvOptionTagWebGpuInstance,
+    /// Dawn procedure table pointer. This allows shared libraries to use the
+    /// shared procedures instead of their own.
+    /// Note: WebGpuProcs should only be set if you are using Dawn Wire
+    /// handler and need to dynamically loading WebGPU accelerator.
+    kWebGpuProcs = kLiteRtEnvOptionTagWebGpuProcs,
+    /// An optional custom callback (`void (*)()`) invoked during synchronous
+    /// WebGPU buffer readback (e.g., with Dawn Wire handler) to flush outbound
+    /// wire commands and pump inbound events on the thread message loop.
+    kWebGpuFlushCallback = kLiteRtEnvOptionTagWebGpuFlushCallback,
     /// Directory for the runtime library.
     kRuntimeLibraryDir = kLiteRtEnvOptionTagRuntimeLibraryDir,
     /// \internal This is for internal use only.
@@ -93,6 +102,9 @@ class EnvironmentOptions {
     kAutoRegisterAccelerators = kLiteRtEnvOptionTagAutoRegisterAccelerators,
     /// Minimum logger severity for the environment.
     kMinLoggerSeverity = kLiteRtEnvOptionTagMinLoggerSeverity,
+    /// \internal This is for internal use only. Reserved for use by LiteRT in
+    /// Play services.
+    kContext = kLiteRtEnvOptionTagContext,
   };
 
   struct Option {

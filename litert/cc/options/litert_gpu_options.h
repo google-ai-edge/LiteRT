@@ -132,6 +132,7 @@ class GpuOptions {
     kDefault = kLiteRtDelegatePrecisionDefault,
     kFp16 = kLiteRtDelegatePrecisionFp16,
     kFp32 = kLiteRtDelegatePrecisionFp32,
+    kFp16WithFp32Accum = kLiteRtDelegatePrecisionFp16WithFp32Accum,
   };
 
   /// @brief Sets the calculation precision of the GPU Accelerator.
@@ -200,7 +201,20 @@ class GpuOptions {
     return LrtAddGpuOptionsBufferStorageTensorPattern(options_, pattern);
   }
 
+  /// @internal
+  /// WARNING: This API is not ABI-stable and only for internal usage. It works
+  /// only when the client is built together with the LiteRT and ML Drift
+  /// delegate. Unless you know what you are doing, do not use this API.
+  ///
   /// @brief Sets the pointer to the shared tensor maps.
+  /// It should be used only to share the tensor maps among the GPU delegates of
+  /// separate models.
+  ///
+  /// @note The caller is responsible for maintaining the lifetime of the struct
+  /// until the model is destroyed.
+  ///
+  /// @param shared_tensor_maps pointer of litert::ml_drift::SharedTensorMaps
+  /// struct.
   LiteRtStatus SetSharedTensorMaps(void* shared_tensor_maps) {
     return LrtSetGpuAcceleratorCompilationOptionsSharedTensorMaps(
         options_, shared_tensor_maps);

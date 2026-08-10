@@ -21,7 +21,14 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift_delegate/delegate/precision.h"
 #include "tflite/c/common.h"
-#include "util/hash/farmhash_fingerprint.h"
+#include "farmhash.h"
+namespace ml_drift {
+namespace {
+inline uint64_t Fingerprint64(const char* s, size_t len) {
+  return util::Fingerprint64(s, len);
+}
+}  // namespace
+}  // namespace ml_drift
 
 #if defined(_WIN32)
 #include <io.h>
@@ -43,6 +50,7 @@
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -79,6 +87,20 @@ std::string JoinPath(absl::string_view path1, absl::string_view path2) {
              : absl::StrCat(path1, std::string(1, slash), path2);
 }
 
+// Combines two 64-bit fingerprints using the FarmHash / CityHash mixing
+// algorithm (util/hash/farmhash.cc).
+uint64_t CombineFingerprints(uint64_t l, uint64_t h) {
+  const uint64_t kMul = 0x9ddfea08eb382d69ULL;
+  uint64_t a = (l ^ h) * kMul;
+  a ^= (a >> 47);
+  uint64_t b = (h ^ a) * kMul;
+  b ^= (b >> 44);
+  b *= kMul;
+  b ^= (b >> 41);
+  b *= kMul;
+  return b;
+}
+
 }  // namespace
 
 absl::Status SerializationWeightCache::StartBuild(
@@ -88,7 +110,7 @@ absl::Status SerializationWeightCache::StartBuild(
     return absl::InvalidArgumentError(
         "Cannot start building when the cache is already building.");
   }
-  RETURN_IF_ERROR(SetFilePath(directory, model_token));
+  ABSL_RETURN_IF_ERROR(SetFilePath(directory, model_token));
   temporary_file_descriptor_.Close();
   return StartBuildInternal(unique_model_identifier);
 }
@@ -111,7 +133,7 @@ absl::Status SerializationWeightCache::StartBuildInternal(
     }
   }
   is_first_build_ = false;
-  RETURN_IF_ERROR(builder_.StartBuildStep(unique_model_identifier_));
+  ABSL_RETURN_IF_ERROR(builder_.StartBuildStep(unique_model_identifier_));
   // Duplicate the file descriptor to avoid losing the temporary file when
   // the builder is reset. The file descriptor is a RAII object. It will be
   // cleaned up when the builder_ is destroyed.
@@ -141,7 +163,7 @@ absl::Status SerializationWeightCache::StopBuild() {
   if (!IsBuilding()) {
     return absl::OkStatus();
   }
-  RETURN_IF_ERROR(builder_.StopBuildStep());
+  ABSL_RETURN_IF_ERROR(builder_.StopBuildStep());
   is_building_ = false;
   return absl::OkStatus();
 }
@@ -149,7 +171,7 @@ absl::Status SerializationWeightCache::StopBuild() {
 absl::Status SerializationWeightCache::Load(absl::string_view directory,
                                             absl::string_view model_token,
                                             uint64_t unique_model_identifier) {
-  RETURN_IF_ERROR(SetFilePath(directory, model_token));
+  ABSL_RETURN_IF_ERROR(SetFilePath(directory, model_token));
 
   bool opened_internally = false;
   if (!temporary_file_descriptor_.IsValid()) {
@@ -180,9 +202,9 @@ absl::Status SerializationWeightCache::LoadInternal(
 
   // Mmap just the header for now.
   MMapHandle& header_handle = mmap_handles_.at(0);
-  RETURN_IF_ERROR(header_handle.Map(fd,
-                                    /*offset=*/0, sizeof(MLDriftCacheHeader),
-                                    file_path_.c_str()));
+  ABSL_RETURN_IF_ERROR(header_handle.Map(
+      fd,
+      /*offset=*/0, sizeof(MLDriftCacheHeader), file_path_.c_str()));
 
   if (header_handle.size() < sizeof(MLDriftCacheHeader)) {
     return absl::InternalError("Invalid cache file size");
@@ -211,9 +233,9 @@ absl::Status SerializationWeightCache::LoadInternal(
 
   // Mmap just the model cache.
   MMapHandle& buffer_list_handle = mmap_handles_.at(1);
-  RETURN_IF_ERROR(buffer_list_handle.Map(fd, header.buffer_list_offset,
-                                         header.buffer_list_size,
-                                         file_path_.c_str()));
+  ABSL_RETURN_IF_ERROR(buffer_list_handle.Map(fd, header.buffer_list_offset,
+                                              header.buffer_list_size,
+                                              file_path_.c_str()));
 
   if (buffer_list_handle.size() < header.buffer_list_size) {
     return absl::InternalError("Invalid buffer list size");
@@ -262,7 +284,7 @@ absl::Status SerializationWeightCache::LoadInternal(
       // Tensor will be decoded without its data. Its data will be read
       // separately on demand.
       TensorDescriptor tensor_desc;
-      RETURN_IF_ERROR(Decode(buffer->tensor_descriptor(), &tensor_desc));
+      ABSL_RETURN_IF_ERROR(Decode(buffer->tensor_descriptor(), &tensor_desc));
 
       global_tensor_id_to_cache_entry_.emplace(
           std::piecewise_construct,
@@ -317,9 +339,9 @@ absl::Status SerializationWeightCache::LookUp(
   size_t offset = mmap_buffer_base_offset_ + cache_entry.location.offset;
 
   auto mmap_handle = std::make_unique<MMapHandle>();
-  RETURN_IF_ERROR(mmap_handle->Map(temporary_file_descriptor_, offset,
-                                   cache_entry.location.size,
-                                   file_path_.c_str()));
+  ABSL_RETURN_IF_ERROR(mmap_handle->Map(temporary_file_descriptor_, offset,
+                                        cache_entry.location.size,
+                                        file_path_.c_str()));
   page_adjusted_offset = mmap_handle->offset_page_adjustment();
 
   unowned_data_tensor_desc = UnownedDataTensorDescriptor(
@@ -415,7 +437,7 @@ absl::Status SerializationWeightCache::Insert(
   tensor_desc.CopyWithoutData(&tensor_desc_without_data);
 
   BufferLocation location;
-  RETURN_IF_ERROR(
+  ABSL_RETURN_IF_ERROR(
       builder_.Append(global_tensor_id, is_quantization_param_tensor,
                       tensor_desc_without_data, ptr, size, location));
 
@@ -465,57 +487,38 @@ uint64_t SerializationWeightCache::GenerateUniqueModelIdentifier(
     bool allow_src_quantized_fc_conv_ops, bool prepare_weights_in_batches,
     bool serialize_external_tensors, bool ordered_by_size) {
   // Generate fingerprints for the relevant delegate data options.
-  uint64_t precision_fingerprint = farmhash::Fingerprint64(
+  uint64_t precision_fingerprint = Fingerprint64(
       reinterpret_cast<const char*>(&precision), sizeof(precision));
-  uint64_t prefer_texture_weights_fingerprint = farmhash::Fingerprint64(
-      reinterpret_cast<const char*>(&prefer_texture_weights),
-      sizeof(prefer_texture_weights));
-  uint64_t allow_src_quantized_fc_conv_ops_fingerprint =
-      farmhash::Fingerprint64(
-          reinterpret_cast<const char*>(&allow_src_quantized_fc_conv_ops),
-          sizeof(allow_src_quantized_fc_conv_ops));
-  uint64_t ordered_by_size_fingerprint = farmhash::Fingerprint64(
+  uint64_t prefer_texture_weights_fingerprint =
+      Fingerprint64(reinterpret_cast<const char*>(&prefer_texture_weights),
+                    sizeof(prefer_texture_weights));
+  uint64_t allow_src_quantized_fc_conv_ops_fingerprint = Fingerprint64(
+      reinterpret_cast<const char*>(&allow_src_quantized_fc_conv_ops),
+      sizeof(allow_src_quantized_fc_conv_ops));
+  uint64_t ordered_by_size_fingerprint = Fingerprint64(
       reinterpret_cast<const char*>(&ordered_by_size), sizeof(ordered_by_size));
-  uint64_t alignment_fingerprint = farmhash::Fingerprint64(
+  uint64_t alignment_fingerprint = Fingerprint64(
       reinterpret_cast<const char*>(&kMinAlignment), sizeof(kMinAlignment));
-  uint64_t prepare_weights_in_batches_fingerprint = farmhash::Fingerprint64(
-      reinterpret_cast<const char*>(&prepare_weights_in_batches),
-      sizeof(prepare_weights_in_batches));
-  uint64_t serialize_external_tensors_fingerprint = farmhash::Fingerprint64(
-      reinterpret_cast<const char*>(&serialize_external_tensors),
-      sizeof(serialize_external_tensors));
+  uint64_t prepare_weights_in_batches_fingerprint =
+      Fingerprint64(reinterpret_cast<const char*>(&prepare_weights_in_batches),
+                    sizeof(prepare_weights_in_batches));
+  uint64_t serialize_external_tensors_fingerprint =
+      Fingerprint64(reinterpret_cast<const char*>(&serialize_external_tensors),
+                    sizeof(serialize_external_tensors));
   // Combine the fingerprints of the relevant delegate data options into a
   // single fingerprint.
-  // copybara:uncomment_begin(google-only)
-  // uint64_t options_fingerprint = farmhash::Fingerprint(
-      // precision_fingerprint, prefer_texture_weights_fingerprint);
-  // options_fingerprint = farmhash::Fingerprint(
-      // options_fingerprint, allow_src_quantized_fc_conv_ops_fingerprint);
-  // options_fingerprint =
-      // farmhash::Fingerprint(options_fingerprint, ordered_by_size_fingerprint);
-  // options_fingerprint =
-      // farmhash::Fingerprint(options_fingerprint, alignment_fingerprint);
-  // options_fingerprint = farmhash::Fingerprint(
-      // options_fingerprint, prepare_weights_in_batches_fingerprint);
-  // options_fingerprint = farmhash::Fingerprint(
-      // options_fingerprint, serialize_external_tensors_fingerprint);
-  // copybara:uncomment_end_and_comment_begin
-  uint64_t options_fingerprint = util::Fingerprint(
-  std::make_pair(precision_fingerprint, prefer_texture_weights_fingerprint));
-  options_fingerprint = util::Fingerprint(
-  std::make_pair(options_fingerprint,
-  allow_src_quantized_fc_conv_ops_fingerprint));
-  options_fingerprint = util::Fingerprint(
-  std::make_pair(options_fingerprint, ordered_by_size_fingerprint));
-  options_fingerprint = util::Fingerprint(
-  std::make_pair(options_fingerprint, alignment_fingerprint));
-  options_fingerprint = util::Fingerprint(
-  std::make_pair(options_fingerprint,
-  prepare_weights_in_batches_fingerprint));
-  options_fingerprint = util::Fingerprint(
-  std::make_pair(options_fingerprint,
-  serialize_external_tensors_fingerprint));
-  // copybara:comment_end
+  uint64_t options_fingerprint = CombineFingerprints(
+      precision_fingerprint, prefer_texture_weights_fingerprint);
+  options_fingerprint = CombineFingerprints(
+      options_fingerprint, allow_src_quantized_fc_conv_ops_fingerprint);
+  options_fingerprint =
+      CombineFingerprints(options_fingerprint, ordered_by_size_fingerprint);
+  options_fingerprint =
+      CombineFingerprints(options_fingerprint, alignment_fingerprint);
+  options_fingerprint = CombineFingerprints(
+      options_fingerprint, prepare_weights_in_batches_fingerprint);
+  options_fingerprint = CombineFingerprints(
+      options_fingerprint, serialize_external_tensors_fingerprint);
 
   // Add "_external_tensors" to prevent collision with the non-external
   // tensors serialization.

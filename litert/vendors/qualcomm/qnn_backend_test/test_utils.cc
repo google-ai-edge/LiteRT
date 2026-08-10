@@ -3,28 +3,29 @@
 
 #include "litert/vendors/qualcomm/qnn_backend_test/test_utils.h"
 
-#include <optional>
+#include <memory>
 #include <sstream>
 #include <string>
-#include <string_view>
 #include <tuple>
 #include <utility>
 
 #include <gtest/gtest.h>
+#include "litert/vendors/qualcomm/core/backends/backend_factory.h"
+#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
-#include "litert/vendors/qualcomm/core/utils/miscs.h"
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/utils/qnn_model.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 namespace litert::qnn {
 
 std::string QnnTestPrinter(
-    const ::testing::TestParamInfo<
-        std::tuple<::qnn::Options, std::string_view>>& param_info) {
+    const ::testing::TestParamInfo<std::tuple<::qnn::Options, const char*>>&
+        param_info) {
   std::stringstream ss;
   ss << param_info.index << "_";
 
   const auto& [options, soc_model_name] = param_info.param;
-  ss << soc_model_name << "_";
+  ss << (soc_model_name ? soc_model_name : "UNKNOWN_SOC") << "_";
 
   // TODO (chunhsue-qti): Add more backend once it expands.
   switch (options.GetBackendType()) {
@@ -49,30 +50,34 @@ std::string QnnTestPrinter(
 }
 
 void QnnModelTest::SetUpQnnModel(const ::qnn::Options& options,
-                                 std::string_view soc_model_name) {
+                                 const char* soc_model_name) {
   // TODO (chunhsue-qti) get rid of QnnManager and move to core/
-  auto qnn_manager = QnnManager::Create(options, std::nullopt,
-                                        ::qnn::FindSocModel(soc_model_name));
+  auto soc_info = ::qnn::FindOrCreateSocInfo(soc_model_name);
+  auto qnn_manager = QnnManager::Create(options);
   if (!qnn_manager) {
     GTEST_SKIP() << "Skipping test because QNN manager could not be created "
                     "(QNN libraries may be missing): "
                  << qnn_manager.Error();
     return;
   }
+  auto qnn_backend =
+      ::qnn::CreateBackend((**qnn_manager).Api(), options, soc_info, true);
+  ASSERT_TRUE(qnn_backend);
+
   auto context_configs = QnnManager::DefaultContextConfigs();
-  auto context_handle =
-      (**qnn_manager)
-          .CreateContextHandle(context_configs, options.GetProfiling());
+  auto context_handle = (**qnn_manager)
+                            .CreateContextHandle(*qnn_backend, context_configs,
+                                                 options.GetProfiling());
   ASSERT_TRUE(context_handle) << context_handle.Error();
 
   std::swap(qnn_manager_ptr_, *qnn_manager);
+  std::swap(qnn_backend_ptr_, qnn_backend);
   context_handle_ = std::move(context_handle.Value());
 
   auto qnn_model =
-      ::qnn::QnnModel(qnn_manager_ptr_->BackendHandle(),
+      ::qnn::QnnModel(qnn_backend_ptr_->GetBackendHandle(),
                       qnn_manager_ptr_->Api(), context_handle_.Get());
 
   std::swap(qnn_model_, qnn_model);
-  is_fp16_supported_ = qnn_manager_ptr_->IsFp16Supported();
 }
 }  // namespace litert::qnn

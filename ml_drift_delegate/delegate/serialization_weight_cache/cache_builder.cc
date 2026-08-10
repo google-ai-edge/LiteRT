@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -139,8 +140,8 @@ absl::Status CacheBuilder::StartInternal(uint64_t unique_model_identifier,
         absl::StrCat("could not write initial cache header in ", file_path_));
   }
 
-  RETURN_IF_ERROR(StartBuildStep(unique_model_identifier));
-  RETURN_IF_ERROR(StopBuildStep());
+  ABSL_RETURN_IF_ERROR(StartBuildStep(unique_model_identifier));
+  ABSL_RETURN_IF_ERROR(StopBuildStep());
   return absl::OkStatus();
 }
 
@@ -186,9 +187,9 @@ absl::Status CacheBuilder::StartBuildStep(uint64_t unique_model_identifier) {
   }
   if (header.buffer_list_size) {
     MMapHandle buffer_list_handle;
-    RETURN_IF_ERROR(buffer_list_handle.Map(fd_, header.buffer_list_offset,
-                                           header.buffer_list_size,
-                                           file_path_.c_str()));
+    ABSL_RETURN_IF_ERROR(buffer_list_handle.Map(fd_, header.buffer_list_offset,
+                                                header.buffer_list_size,
+                                                file_path_.c_str()));
 
     if (buffer_list_handle.size() < header.buffer_list_size) {
       return absl::InternalError("Invalid buffer list size");
@@ -224,7 +225,7 @@ absl::Status CacheBuilder::StartBuildStep(uint64_t unique_model_identifier) {
           if (subgraph->buffers()) {
             for (const auto* buffer : *subgraph->buffers()) {
               TensorDescriptor tensor_desc;
-              RETURN_IF_ERROR(
+              ABSL_RETURN_IF_ERROR(
                   Decode(buffer->tensor_descriptor(), &tensor_desc));
               BufferLocation loc = {static_cast<size_t>(buffer->offset()),
                                     static_cast<size_t>(buffer->size())};
@@ -255,7 +256,7 @@ absl::Status CacheBuilder::StartBuildStep(uint64_t unique_model_identifier) {
           return absl::InternalError("Buffer has no tensor descriptor.");
         }
         TensorDescriptor tensor_desc;
-        RETURN_IF_ERROR(Decode(buffer->tensor_descriptor(), &tensor_desc));
+        ABSL_RETURN_IF_ERROR(Decode(buffer->tensor_descriptor(), &tensor_desc));
         BufferLocation loc = {static_cast<size_t>(buffer->offset()),
                               static_cast<size_t>(buffer->size())};
         auto buffer_fb = EncodeBuffer(buffer->global_tensor_id(),

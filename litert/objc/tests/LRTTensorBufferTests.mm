@@ -13,19 +13,25 @@
 // limitations under the License.
 
 #import <Metal/Metal.h>
+#import <XCTest/XCTest.h>
 
 #import "third_party/odml/litert/litert/objc/apis/LRTEnvironment.h"
 #import "third_party/odml/litert/litert/objc/apis/LRTError.h"
 #import "third_party/odml/litert/litert/objc/apis/LRTTensorBuffer.h"
 
+#include <cstring>
 #include <vector>
 
-#include "testing/base/public/gunit.h"
+@interface LRTTensorBufferTests : XCTestCase
+@end
 
-TEST(LRTTensorBufferTest, ManagedHostMemoryBufferCreation) {
+@implementation LRTTensorBufferTests
+
+- (void)testManagedHostMemoryBufferCreation {
   NSError *error = nil;
   LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  ASSERT_NE(env, nil);
+  XCTAssertNotNil(env);
+  XCTAssertNil(error);
 
   NSUInteger size = 16 * sizeof(float);
   LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:env
@@ -34,39 +40,42 @@ TEST(LRTTensorBufferTest, ManagedHostMemoryBufferCreation) {
                                                               dimensions:@[ @4, @4 ]
                                                                    error:&error];
 
-  EXPECT_NE(buffer, nil);
-  EXPECT_EQ(error, nil);
-  EXPECT_EQ(buffer.bufferType, LRTTensorBufferTypeHostMemory);
-  EXPECT_EQ(buffer.elementType, LRTElementTypeFloat32);
-  EXPECT_EQ(buffer.dimensions, (@[ @4, @4 ]));
-  EXPECT_GE(buffer.size, size);
+  XCTAssertNotNil(buffer);
+  XCTAssertNil(error);
+  XCTAssertEqual(buffer.bufferType, LRTTensorBufferTypeHostMemory);
+  XCTAssertEqual(buffer.elementType, LRTElementTypeFloat32);
+  XCTAssertEqualObjects(buffer.dimensions, (@[ @4, @4 ]));
+  XCTAssertGreaterThanOrEqual(buffer.size, size);
 
   std::vector<float> inputValues(16, 42.0f);
   NSData *inputData = [NSData dataWithBytes:inputValues.data()
                                      length:inputValues.size() * sizeof(float)];
   BOOL writeSuccess = [buffer writeData:inputData error:&error];
-  EXPECT_TRUE(writeSuccess);
-  EXPECT_EQ(error, nil);
+  XCTAssertTrue(writeSuccess);
+  XCTAssertNil(error);
 
   NSData *readData = [buffer readDataWithError:&error];
-  EXPECT_NE(readData, nil);
-  EXPECT_EQ(std::memcmp(readData.bytes, inputData.bytes, inputData.length), 0);
+  XCTAssertNotNil(readData);
+  XCTAssertEqual(std::memcmp(readData.bytes, inputData.bytes, inputData.length), 0);
 }
 
-TEST(LRTTensorBufferTest, MetalBufferCreation) {
+- (void)testMetalBufferCreation {
   id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-  if (!device) {
-    GTEST_SKIP() << "Metal device is unavailable on this system";
-  }
+  XCTSkipIf(device == nil, @"Metal is not supported on this device/simulator.");
 
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  ASSERT_NE(env, nil);
+  LRTEnvironmentOptions *envOptions = [[LRTEnvironmentOptions alloc] init];
+  envOptions.metalDevice = device;
+  envOptions.metalCommandQueue = [device newCommandQueue];
+
+  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:envOptions error:&error];
+  XCTAssertNotNil(env);
+  XCTAssertNil(error);
 
   NSUInteger size = 16 * sizeof(float);
   id<MTLBuffer> metalBuffer = [device newBufferWithLength:size
                                                   options:MTLResourceStorageModeShared];
-  ASSERT_NE(metalBuffer, nil);
+  XCTAssertNotNil(metalBuffer);
 
   LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:env
                                                              metalBuffer:metalBuffer
@@ -74,10 +83,12 @@ TEST(LRTTensorBufferTest, MetalBufferCreation) {
                                                               dimensions:@[ @4, @4 ]
                                                                    error:&error];
 
-  EXPECT_NE(buffer, nil);
-  EXPECT_EQ(error, nil);
-  EXPECT_EQ(buffer.bufferType, LRTTensorBufferTypeMetalBuffer);
-  EXPECT_EQ(buffer.elementType, LRTElementTypeFloat32);
-  EXPECT_EQ(buffer.dimensions, (@[ @4, @4 ]));
-  EXPECT_EQ(buffer.metalBuffer, metalBuffer);
+  XCTAssertNotNil(buffer);
+  XCTAssertNil(error);
+  XCTAssertEqual(buffer.bufferType, LRTTensorBufferTypeMetalBuffer);
+  XCTAssertEqual(buffer.elementType, LRTElementTypeFloat32);
+  XCTAssertEqualObjects(buffer.dimensions, (@[ @4, @4 ]));
+  XCTAssertEqual(buffer.metalBuffer, metalBuffer);
 }
+
+@end

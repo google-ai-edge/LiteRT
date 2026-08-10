@@ -14,26 +14,53 @@
 
 #include "litert/compiler/plugin/algo.h"
 
+#include <cstdint>
 #include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_model_predicates.h"
+#include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/core/model/graph_validation.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_serialize.h"
-#include "litert/test/common.h"
 #include "litert/test/load_test_model.h"
 
 namespace litert::internal {
 namespace {
 
-using PartitionFunc = decltype(&GroupPartitions);
+bool IsTopologicallySorted(const LiteRtSubgraphT& subgraph) {
+  absl::flat_hash_set<const LiteRtTensorT*> ready_tensors;
+  for (const auto* in : subgraph.Inputs()) {
+    ready_tensors.insert(in);
+  }
+  for (const auto* tensor : subgraph.Tensors()) {
+    if (IsConstant(*tensor)) {
+      ready_tensors.insert(tensor);
+    }
+  }
 
+  for (const auto& op : subgraph.Ops()) {
+    for (const auto* input : op->Inputs()) {
+      if (input == nullptr) continue;
+      if (!ready_tensors.contains(input)) {
+        return false;
+      }
+    }
+    for (const auto* output : op->Outputs()) {
+      ready_tensors.insert(output);
+    }
+  }
+  return true;
+}
+
+using PartitionFunc = decltype(&GroupPartitions);
 class PartitionTest : public ::testing::TestWithParam<PartitionFunc> {};
 
 INSTANTIATE_TEST_SUITE_P(PartitionStrategies, PartitionTest,
@@ -130,8 +157,9 @@ TEST(TestSliceSubgraphSimpleMultiOp, OnePartition) {
   partition.push_back(ops.at(2).Get());
 
   auto sliced_graph = litert::Subgraph(&model.Get()->EmplaceSubgraph());
-  auto* dispatch_op =
-      OutlinePartition(*subgraph->Get(), sliced_graph.Get(), partition);
+  LITERT_ASSIGN_OR_ABORT(
+      auto* dispatch_op,
+      OutlinePartition(*subgraph->Get(), sliced_graph.Get(), partition));
 
   const auto& internal_sliced = *sliced_graph.Get();
   ASSERT_TRUE(ValidateSubgraphIO(internal_sliced));
@@ -212,7 +240,8 @@ TEST(TestSliceSubgraphSimpleMultiOp, TwoPartitions) {
   partition_1.push_back(ops.at(0).Get());
 
   auto sliced_graph_1 = litert::Subgraph(&model.Get()->EmplaceSubgraph());
-  OutlinePartition(*(subgraph->Get()), sliced_graph_1.Get(), partition_1);
+  LITERT_ABORT_IF_ERROR(
+      OutlinePartition(*(subgraph->Get()), sliced_graph_1.Get(), partition_1));
 
   const auto& internal_slice_1 = *sliced_graph_1.Get();
   ASSERT_TRUE(ValidateSubgraphIO(internal_slice_1));
@@ -224,7 +253,8 @@ TEST(TestSliceSubgraphSimpleMultiOp, TwoPartitions) {
   partition_2.push_back(ops.at(3).Get());
 
   auto sliced_graph_2 = litert::Subgraph(&model.Get()->EmplaceSubgraph());
-  OutlinePartition(*(subgraph->Get()), sliced_graph_2.Get(), partition_2);
+  LITERT_ABORT_IF_ERROR(
+      OutlinePartition(*(subgraph->Get()), sliced_graph_2.Get(), partition_2));
 
   const auto& internal_slice_2 = *sliced_graph_2.Get();
   ASSERT_TRUE(ValidateSubgraphIO(internal_slice_2));
@@ -252,6 +282,304 @@ TEST(TestSliceSubgraphSimpleMultiOp, TwoPartitions) {
     ASSERT_EQ(sliced_ops.at(0).Code(), kLiteRtOpCodeTflMul);
     ASSERT_EQ(sliced_ops.at(1).Code(), kLiteRtOpCodeTflAdd);
   }
+}
+
+TEST(TestSliceSubgraphTopoSortFork, ForkPartition) {
+  auto model = litert::testing::LoadTestFileModel("topo_sort_fork.tflite");
+  auto subgraph = model.MainSubgraph();
+  EXPECT_TRUE(subgraph);
+
+  auto ops = subgraph->Ops();
+
+  // We expect ops to be:
+  // 0: Add (A)
+  // 1: Mul (B)
+  // 2: Mul (C)
+  // 3: Add (D)
+  // 4: Add (E)
+  ASSERT_EQ(ops.size(), 5);
+  EXPECT_EQ(ops.at(0).Code(), kLiteRtOpCodeTflAdd);  // A
+  EXPECT_EQ(ops.at(1).Code(), kLiteRtOpCodeTflMul);  // B
+  EXPECT_EQ(ops.at(2).Code(), kLiteRtOpCodeTflMul);  // C
+  EXPECT_EQ(ops.at(3).Code(), kLiteRtOpCodeTflAdd);  // D
+  EXPECT_EQ(ops.at(4).Code(), kLiteRtOpCodeTflAdd);  // E
+
+  auto* op_d = ops.at(3).Get();
+  auto* op_e = ops.at(4).Get();
+
+  std::vector<LiteRtOp> partition;
+  partition.push_back(ops.at(0).Get());  // A
+  partition.push_back(ops.at(1).Get());  // B
+  partition.push_back(ops.at(2).Get());  // C
+
+  auto sliced_graph = litert::Subgraph(&model.Get()->EmplaceSubgraph());
+  LITERT_ASSIGN_OR_ABORT(
+      auto* dispatch_op,
+      OutlinePartition(*subgraph->Get(), sliced_graph.Get(), partition));
+
+  const auto& internal_sliced = *sliced_graph.Get();
+  // ASSERT_TRUE(ValidateSubgraphIO(internal_sliced));
+  ASSERT_TRUE(ValidateLocalTopology(internal_sliced.Ops().cbegin(),
+                                    internal_sliced.Ops().cend()));
+
+  auto edited_subgraph_ops = subgraph->Ops();
+  ASSERT_EQ(edited_subgraph_ops.size(), 3);
+
+  const Op hal_call(dispatch_op);
+  const auto hal_call_outs = hal_call.Outputs();
+
+  // We expect 2 outputs because %1 (from B) is used by E (outside)
+  // and %2 (from C) is used by D (outside).
+  ASSERT_EQ(hal_call_outs.size(), 2);
+
+  bool connected_to_e = false;
+  bool connected_to_d = false;
+
+  for (const auto& out : hal_call_outs) {
+    for (const auto& use : out.Uses()) {
+      if (use.user.Get() == op_e) {
+        connected_to_e = true;
+      }
+      if (use.user.Get() == op_d) {
+        connected_to_d = true;
+      }
+    }
+  }
+
+  EXPECT_TRUE(connected_to_e)
+      << "Output of composite op is not connected to E!";
+  EXPECT_TRUE(connected_to_d)
+      << "Output of composite op is not connected to D!";
+  EXPECT_TRUE(IsTopologicallySorted(*subgraph->Get()));
+}
+
+TEST(TestSliceSubgraphTopoSortForkSplit, ForkSplitPartition) {
+  auto model =
+      litert::testing::LoadTestFileModel("topo_sort_fork_split.tflite");
+  auto subgraph = model.MainSubgraph();
+  EXPECT_TRUE(subgraph);
+
+  auto ops = subgraph->Ops();
+
+  LiteRtOp op_a = nullptr;
+  LiteRtOp op_b = nullptr;
+  LiteRtOp op_c = nullptr;
+  LiteRtOp op_d = nullptr;
+  LiteRtOp op_e = nullptr;
+
+  for (auto op_ref : ops) {
+    if (op_ref.Code() == kLiteRtOpCodeTflAdd) {
+      auto* op = op_ref.Get();
+      if (op->Inputs()[0]->DefiningOp() == nullptr &&
+          !IsConstant(*op->Inputs()[0])) {
+        op_a = op;
+      }
+    } else if (op_ref.Code() == kLiteRtOpCodeTflSplit) {
+      op_b = op_ref.Get();
+    } else if (op_ref.Code() == kLiteRtOpCodeTflMul) {
+      op_c = op_ref.Get();
+    }
+  }
+
+  ASSERT_TRUE(op_a);
+  ASSERT_TRUE(op_b);
+  ASSERT_TRUE(op_c);
+
+  auto* c_out = op_c->Outputs()[0];
+  auto* b_out_1 = op_b->Outputs()[1];
+
+  for (auto op_ref : ops) {
+    if (op_ref.Code() == kLiteRtOpCodeTflAdd) {
+      auto* op = op_ref.Get();
+      if (op == op_a) continue;
+      if (op->Inputs()[0] == c_out || op->Inputs()[1] == c_out) {
+        op_d = op;
+      } else if (op->Inputs()[0] == b_out_1 || op->Inputs()[1] == b_out_1) {
+        op_e = op;
+      }
+    }
+  }
+
+  ASSERT_TRUE(op_d);
+  ASSERT_TRUE(op_e);
+
+  std::vector<LiteRtOp> partition = {op_a, op_b, op_c};
+
+  auto sliced_graph = litert::Subgraph(&model.Get()->EmplaceSubgraph());
+  LITERT_ASSIGN_OR_ABORT(
+      auto* dispatch_op,
+      OutlinePartition(*subgraph->Get(), sliced_graph.Get(), partition));
+
+  const auto& internal_sliced = *sliced_graph.Get();
+  ASSERT_TRUE(ValidateSubgraphIO(internal_sliced));
+
+  const Op hal_call(dispatch_op);
+  const auto hal_call_outs = hal_call.Outputs();
+  ASSERT_EQ(hal_call_outs.size(), 2);
+
+  bool connected_to_e = false;
+  bool connected_to_d = false;
+
+  for (const auto& out : hal_call_outs) {
+    for (const auto& use : out.Uses()) {
+      if (use.user.Get() == op_e) {
+        connected_to_e = true;
+      }
+      if (use.user.Get() == op_d) {
+        connected_to_d = true;
+      }
+    }
+  }
+
+  EXPECT_TRUE(connected_to_e)
+      << "Output of composite op is not connected to E!";
+  EXPECT_TRUE(connected_to_d)
+      << "Output of composite op is not connected to D!";
+  EXPECT_TRUE(IsTopologicallySorted(*subgraph->Get()));
+}
+
+TEST(TestSliceSubgraphTopoSortForkViolation, ForkPartitionViolation) {
+  auto model =
+      litert::testing::LoadTestFileModel("topo_sort_fork_violation.tflite");
+  auto subgraph = model.MainSubgraph();
+  EXPECT_TRUE(subgraph);
+
+  auto ops = subgraph->Ops();
+
+  ASSERT_EQ(ops.size(), 5);
+  EXPECT_EQ(ops.at(0).Code(), kLiteRtOpCodeTflAdd);  // A
+  EXPECT_EQ(ops.at(1).Code(), kLiteRtOpCodeTflMul);  // B
+  EXPECT_EQ(ops.at(2).Code(), kLiteRtOpCodeTflAdd);  // E
+  EXPECT_EQ(ops.at(3).Code(), kLiteRtOpCodeTflMul);  // C
+  EXPECT_EQ(ops.at(4).Code(), kLiteRtOpCodeTflAdd);  // D
+
+  auto* op_e = ops.at(2).Get();
+  auto* op_d = ops.at(4).Get();
+
+  std::vector<LiteRtOp> partition;
+  partition.push_back(ops.at(0).Get());  // A
+  partition.push_back(ops.at(1).Get());  // B
+  partition.push_back(ops.at(3).Get());  // C
+
+  auto sliced_graph = litert::Subgraph(&model.Get()->EmplaceSubgraph());
+  LITERT_ASSIGN_OR_ABORT(
+      auto* dispatch_op,
+      OutlinePartition(*subgraph->Get(), sliced_graph.Get(), partition));
+
+  const auto& internal_sliced = *sliced_graph.Get();
+  // ASSERT_TRUE(ValidateSubgraphIO(internal_sliced));
+  ASSERT_TRUE(ValidateLocalTopology(internal_sliced.Ops().cbegin(),
+                                    internal_sliced.Ops().cend()));
+
+  auto edited_subgraph_ops = subgraph->Ops();
+  ASSERT_EQ(edited_subgraph_ops.size(), 3);
+
+  const Op hal_call(dispatch_op);
+  const auto hal_call_outs = hal_call.Outputs();
+
+  ASSERT_EQ(hal_call_outs.size(), 2);
+
+  bool connected_to_e = false;
+  bool connected_to_d = false;
+
+  for (const auto& out : hal_call_outs) {
+    for (const auto& use : out.Uses()) {
+      if (use.user.Get() == op_e) {
+        connected_to_e = true;
+      }
+      if (use.user.Get() == op_d) {
+        connected_to_d = true;
+      }
+    }
+  }
+
+  EXPECT_TRUE(connected_to_e)
+      << "Output of composite op is not connected to E!";
+  EXPECT_TRUE(connected_to_d)
+      << "Output of composite op is not connected to D!";
+
+  EXPECT_TRUE(IsTopologicallySorted(*subgraph->Get()))
+      << "Main subgraph is not topologically sorted!";
+}
+
+TEST(TestSliceSubgraphTopoSortInterleaved, InterleavedPartition) {
+  auto model =
+      litert::testing::LoadTestFileModel("topo_sort_interleaved.tflite");
+  auto subgraph = model.MainSubgraph();
+  EXPECT_TRUE(subgraph);
+
+  auto ops = subgraph->Ops();
+
+  ASSERT_EQ(ops.size(), 6);
+  EXPECT_EQ(ops.at(0).Code(), kLiteRtOpCodeTflAdd);  // A1
+  EXPECT_EQ(ops.at(1).Code(), kLiteRtOpCodeTflMul);  // B1
+  EXPECT_EQ(ops.at(2).Code(), kLiteRtOpCodeTflAdd);  // C1
+  EXPECT_EQ(ops.at(3).Code(), kLiteRtOpCodeTflAdd);  // A2
+  EXPECT_EQ(ops.at(4).Code(), kLiteRtOpCodeTflMul);  // B2
+  EXPECT_EQ(ops.at(5).Code(), kLiteRtOpCodeTflAdd);  // C2
+
+  std::vector<LiteRtOp> partition;
+  partition.push_back(ops.at(1).Get());  // B1
+  partition.push_back(ops.at(4).Get());  // B2
+
+  auto sliced_graph = litert::Subgraph(&model.Get()->EmplaceSubgraph());
+  LITERT_ABORT_IF_ERROR(
+      OutlinePartition(*subgraph->Get(), sliced_graph.Get(), partition));
+
+  const auto& internal_sliced = *sliced_graph.Get();
+  ASSERT_TRUE(ValidateSubgraphIO(internal_sliced));
+
+  EXPECT_TRUE(IsTopologicallySorted(*subgraph->Get()))
+      << "Main subgraph is not topologically sorted!";
+}
+
+TEST(OutlinePartitionTest, SlicesBlockWiseQuantizedOp) {
+  LiteRtModelT model;
+  auto& main_sg = model.EmplaceSubgraph();
+
+  auto& input = main_sg.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 16}));
+  main_sg.Inputs().push_back(&input);
+
+  auto& output = main_sg.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 32}));
+  main_sg.Outputs().push_back(&output);
+
+  auto& scales = main_sg.EmplaceTensor();
+  scales.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {32, 1}));
+  OwningBufferRef<uint8_t> scales_data(sizeof(float) * 32);
+  SetWeightsFromOwnedBuffer(scales.Weights(), std::move(scales_data));
+
+  auto& weight = main_sg.EmplaceTensor();
+  weight.SetType(MakeRankedTensorType(kLiteRtElementTypeInt4, {32, 16}));
+  OwningBufferRef<uint8_t> weight_data(32 * 16 / 2);
+  SetWeightsFromOwnedBuffer(weight.Weights(), std::move(weight_data));
+  weight.SetQarams(
+      MakeBlockWiseQuantization(&scales, nullptr, /*block_size=*/16));
+
+  auto& fc_op = main_sg.EmplaceOp();
+  fc_op.SetOpCode(kLiteRtOpCodeTflFullyConnected);
+  AttachInput(&input, fc_op);
+  AttachInput(&weight, fc_op);
+  AttachOutput(&output, fc_op);
+
+  std::vector<LiteRtOp> partition = {&fc_op};
+
+  auto& slice_sg = model.EmplaceSubgraph();
+  LITERT_ABORT_IF_ERROR(OutlinePartition(main_sg, &slice_sg, partition));
+
+  EXPECT_EQ(slice_sg.Ops().size(), 1);
+  EXPECT_EQ(slice_sg.Ops().front()->OpCode(), kLiteRtOpCodeTflFullyConnected);
+
+  const auto* slice_weight = slice_sg.Ops().front()->Inputs().at(1);
+  ASSERT_EQ(slice_weight->Qparams().first, kLiteRtQuantizationBlockWise);
+  const auto& bw = slice_weight->Qparams().second.block_wise;
+  ASSERT_NE(bw.scales, nullptr);
+  EXPECT_NE(bw.scales, &scales);
+  EXPECT_EQ(bw.block_size, 16);
+
+  auto serialized = SerializeModel(std::move(model));
+  EXPECT_TRUE(serialized.HasValue());
 }
 
 TEST_P(PartitionTest, PartitionWithIndex) {

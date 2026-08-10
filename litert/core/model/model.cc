@@ -25,6 +25,7 @@
 
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -36,6 +37,7 @@
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/core/build_stamp.h"
 #include "litert/core/util/flatbuffer_tools.h"
 
@@ -442,7 +444,8 @@ void CloneTo(const LiteRtTensorT& src, LiteRtTensorT& dest) {
 
   if (same_manager) {
     dest_weights.SetBufferId(src_weights.GetBufferId());
-  } else {
+  } else if (src_weights.Buffer().Data() != nullptr &&
+             src_weights.Buffer().Size() > 0) {
     OwningBufferRef<uint8_t> weights_buffer(src_weights.Buffer().Data(),
                                             src_weights.Buffer().Size());
     SetWeightsFromOwnedBuffer(dest_weights, std::move(weights_buffer));
@@ -461,10 +464,44 @@ void CloneTo(const LiteRtOpT& src, LiteRtOpT& dest) {
   }
 }
 
-LiteRtTensorT& MakeClone(LiteRtSubgraphT& parent, const LiteRtTensorT& src) {
+litert::Expected<LiteRtTensorT*> MakeClone(LiteRtSubgraphT& parent,
+                                           const LiteRtTensorT& src) {
+  const int q_type = reinterpret_cast<const int&>(src.Qparams().first);
+  switch (q_type) {
+    case kLiteRtQuantizationNone:
+    case kLiteRtQuantizationPerTensor:
+    case kLiteRtQuantizationPerChannel:
+    case kLiteRtQuantizationBlockWise:
+      break;
+    default:
+      LITERT_LOG(LITERT_ERROR, "Unsupported quantization type: %d", q_type);
+      return litert::Error(
+          kLiteRtStatusErrorInvalidArgument,
+          absl::StrCat("Unsupported quantization type: ", q_type));
+  }
+
   auto& new_tensor = parent.EmplaceTensor();
   CloneTo(src, new_tensor);
-  return new_tensor;
+
+  if (new_tensor.Qparams().first == kLiteRtQuantizationBlockWise) {
+    auto& block_wise = new_tensor.Qparams().second.block_wise;
+    if (block_wise.scales != nullptr) {
+      LiteRtTensorT* scales_clone = nullptr;
+      LITERT_ASSIGN_OR_RETURN(
+          scales_clone, MakeClone(parent, *static_cast<const LiteRtTensorT*>(
+                                              block_wise.scales)));
+      block_wise.scales = scales_clone;
+    }
+    if (block_wise.zero_points != nullptr) {
+      LiteRtTensorT* zp_clone = nullptr;
+      LITERT_ASSIGN_OR_RETURN(
+          zp_clone, MakeClone(parent, *static_cast<const LiteRtTensorT*>(
+                                          block_wise.zero_points)));
+      block_wise.zero_points = zp_clone;
+    }
+  }
+
+  return &new_tensor;
 }
 
 LiteRtOpT& MakeClone(LiteRtSubgraphT& parent, const LiteRtOpT& src) {

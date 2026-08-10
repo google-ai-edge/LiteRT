@@ -22,12 +22,10 @@
 #include <functional>
 #include <iterator>
 #include <numeric>
-#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "neuron/api/NeuronAdapter.h"
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -37,6 +35,7 @@
 #include "litert/vendors/mediatek/compiler/legalizations/extra_data_mgr.h"
 #include "litert/vendors/mediatek/compiler/legalizations/neuron_utils.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
+#include "neuron/api/NeuronAdapter.h"
 
 namespace litert::mediatek {
 
@@ -77,8 +76,8 @@ class OperandType : public NeuronOperandType {
         return mtk_type.Error();
       }
       mtk_type = (t.QTypeId() == kLiteRtQuantizationPerChannel)
-                     ? NEURON_TENSOR_QUANT8_ASYMM_SIGNED
-                     : NEURON_TENSOR_QUANT8_SYMM_PER_CHANNEL;
+                     ? NEURON_TENSOR_QUANT8_SYMM_PER_CHANNEL
+                     : NEURON_TENSOR_QUANT8_ASYMM_SIGNED;
       has_unsupported_element_type = true;
     }
 
@@ -87,31 +86,13 @@ class OperandType : public NeuronOperandType {
       LITERT_LOG(LITERT_DEBUG, "zeroPoint: %d, scale: %f",
                  quant_info.zero_point, quant_info.scale);
       return OperandType(*mtk_type, std::move(mtk_dimensions), quant_info.scale,
-                         quant_info.zero_point, std::nullopt, std::nullopt,
-                         has_unsupported_element_type);
+                         quant_info.zero_point, has_unsupported_element_type);
     } else if (t.QTypeId() == kLiteRtQuantizationPerChannel) {
-      auto quant_info = t.PerChannelQuantization();
-      NeuronPerChannelQuantParams params;
-      params.scaleCount = quant_info.num_channels;
-      params.channelDim = quant_info.quantized_dimension;
-      params.zeroPointCount = quant_info.num_channels;
-      LITERT_LOG(LITERT_DEBUG, "quantized_dimension: %d",
-                 quant_info.quantized_dimension);
-      LITERT_LOG(LITERT_DEBUG, "params.channelDim: %d", params.channelDim);
-      PerChannelQuantData quant_data;
-      quant_data.scales.assign(quant_info.scales,
-                               quant_info.scales + quant_info.num_channels);
-      quant_data.zero_points.resize(quant_info.num_channels);
-      for (size_t i = 0; i < quant_data.zero_points.size(); ++i) {
-        quant_data.zero_points[i] =
-            static_cast<int32_t>(quant_info.zero_points[i]);
-      }
-      return OperandType(*mtk_type, std::move(mtk_dimensions), 0, 0, params,
-                         std::move(quant_data), has_unsupported_element_type);
+      return OperandType(*mtk_type, std::move(mtk_dimensions), 0, 0,
+                         has_unsupported_element_type);
     } else {
       return OperandType(*mtk_type, std::move(mtk_dimensions), /*scale*/ 0,
-                         /*zero_point*/ 0, std::nullopt, std::nullopt,
-                         has_unsupported_element_type);
+                         /*zero_point*/ 0, has_unsupported_element_type);
     }
   }
 
@@ -133,14 +114,14 @@ class OperandType : public NeuronOperandType {
 
   OperandType(const OperandType&) = delete;
 
-  OperandType(OperandType&& other) noexcept
+  OperandType(OperandType&& other)
       : dimensions_(std::move(other.dimensions_)),
-        per_channel_data_(std::move(other.per_channel_data_)),
-        neuron_per_channel_params_(other.neuron_per_channel_params_),
         has_unsupported_element_type_(other.has_unsupported_element_type_) {
+    // Copy all the scalar fields from other.
     *static_cast<NeuronOperandType*>(this) =
         *static_cast<NeuronOperandType*>(&other);
-    UpdateOwnedPointers();
+    // Reset the pointer fields by using own data.
+    dimensions = dimensions_.data();
   }
 
   bool HasUnsupportedElementType() const {
@@ -160,13 +141,6 @@ class OperandType : public NeuronOperandType {
     return {};
   }
 
-  Expected<NeuronPerChannelQuantParams> GetPerChannelQuantParams() {
-    if (!neuron_per_channel_params_.has_value()) {
-      return Error(kLiteRtStatusErrorRuntimeFailure, "No quant param is set");
-    }
-    return neuron_per_channel_params_.value();
-  }
-
   int32_t GetNeuronType() const { return this->type; }
 
   std::vector<uint32_t> GetDimension() { return this->dimensions_; }
@@ -179,46 +153,26 @@ class OperandType : public NeuronOperandType {
   uint32_t GetRank() { return this->dimensions_.size(); }
 
   OperandType& operator=(const OperandType&) = delete;
-  OperandType& operator=(OperandType&&) = delete;
+  OperandType& operator=(OperandType&& other) = delete;
 
  private:
-  struct PerChannelQuantData {
-    std::vector<float> scales;
-    std::vector<int32_t> zero_points;
-  };
-
   explicit OperandType(int32_t mtk_type, std::vector<uint32_t>&& mtk_dimensions,
                        float scale, int32_t zero_point,
-                       std::optional<NeuronPerChannelQuantParams> params =
-                           std::nullopt,
-                       std::optional<PerChannelQuantData> quant_data =
-                           std::nullopt,
                        bool has_unsupported_element_type = false)
       : dimensions_(std::move(mtk_dimensions)),
-        per_channel_data_(std::move(quant_data)),
-        neuron_per_channel_params_(params),
         has_unsupported_element_type_(has_unsupported_element_type) {
     this->scale = scale;
     this->zeroPoint = zero_point;
     this->type = mtk_type;
     this->dimensionCount = dimensions_.size();
-    UpdateOwnedPointers();
-  }
-
-  void UpdateOwnedPointers() {
-    dimensions = dimensions_.data();
-    if (neuron_per_channel_params_.has_value() &&
-        per_channel_data_.has_value()) {
-      neuron_per_channel_params_->scales = per_channel_data_->scales.data();
-      neuron_per_channel_params_->zeroPoints =
-          per_channel_data_->zero_points.data();
-    }
+    this->dimensions = dimensions_.data();
   }
 
   std::vector<uint32_t> dimensions_;
-  std::optional<PerChannelQuantData> per_channel_data_;
-  std::optional<NeuronPerChannelQuantParams> neuron_per_channel_params_;
-  // True if the data type is unsupported: Fall back to a placeholder QUANT8 type
+
+  // True if the element type has no Neuron equivalent and a placeholder QUANT8
+  // type was substituted. Only allowed for NEURON_UNKNOWN ops, where the
+  // operand value is don't-care.
   bool has_unsupported_element_type_ = false;
 };
 

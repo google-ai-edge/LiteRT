@@ -17,6 +17,7 @@
 
 #include <stddef.h>
 
+#include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
@@ -293,6 +294,7 @@ typedef struct LiteRtDispatchGraphInterface {
 /// @note This concrete type is shared between the runtime and the Dispatch
 ///     plugin, so it must be ABI stable.
 typedef struct LiteRtDispatchApi {
+  LiteRtAbiHeader abi_header;
   LiteRtApiVersion version;
   LiteRtDispatchInterface* interface;
   LiteRtDispatchAsyncInterface* async_interface;
@@ -302,11 +304,13 @@ typedef struct LiteRtDispatchApi {
 
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtDispatchApi) == 48,
+static_assert(sizeof(LiteRtDispatchApi) == 56,
               "LiteRtDispatchApi size mismatch");
-static_assert(offsetof(LiteRtDispatchApi, interface) == 16,
+static_assert(offsetof(LiteRtDispatchApi, abi_header) == 0,
+              "LiteRtDispatchApi abi_header offset mismatch");
+static_assert(offsetof(LiteRtDispatchApi, interface) == 24,
               "LiteRtDispatchApi interface offset mismatch");
-static_assert(offsetof(LiteRtDispatchApi, tensor_buffer_handlers_def) == 40,
+static_assert(offsetof(LiteRtDispatchApi, tensor_buffer_handlers_def) == 48,
               "LiteRtDispatchApi tensor_buffer_handlers_def offset mismatch");
 #endif  // __cplusplus
 

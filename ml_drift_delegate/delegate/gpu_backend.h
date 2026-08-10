@@ -37,11 +37,17 @@
 // clang-format off
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 // clang-format on
-#include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "tflite/c/common.h"
+
+// Forward declaration for the graph adapter interface. Only an incomplete type
+// is needed for the CreateSharedMemoryManager declaration below.
+namespace ml_drift {
+class GraphAdapter;
+}  // namespace ml_drift
 
 // Forward declaration to depend on LiteRT only when needed.
 class LiteRtEnvironmentT;
@@ -181,8 +187,8 @@ class GpuBackend {
   virtual absl::StatusOr<std::unique_ptr<::ml_drift::SharedMemoryManager>>
   CreateSharedMemoryManager(
       const ::ml_drift::CreateGpuModelInfo& create_info,
-      ::ml_drift::GraphFloat32& graph, TfLiteContext* context,
-      MlDriftDelegateData& delegate_data,
+      std::unique_ptr<::ml_drift::GraphAdapter> graph_adapter,
+      TfLiteContext* context, MlDriftDelegateData& delegate_data,
       ::ml_drift::SerializationWeightCache* serialization_cache) = 0;
 
   // Creates a `WeightsManager` to manage the weights for GPU backend.
@@ -196,8 +202,8 @@ class GpuBackend {
   // [OPTIONAL]
   virtual absl::StatusOr<std::vector<
       std::vector<::ml_drift::WeightsManager::WeightsPrepOperationInfo>>>
-  GetBatchesForWeightsPreparation(
-      ::ml_drift::WeightsManager* weights_manager) = 0;
+  GetBatchesForWeightsPreparation(::ml_drift::WeightsManager* weights_manager,
+                                  size_t total_shared_tensor_size) = 0;
 
   // Prepares the weights in one batch gotten from
   // GetBatchesForWeightsPreparation.
@@ -214,7 +220,8 @@ class GpuBackend {
   // [OPTIONAL]
   virtual absl::StatusOr<absl::flat_hash_map<
       ::ml_drift::ValueId, std::unique_ptr<::ml_drift::GpuSpatialTensor>>>
-  PrepareWeightsInBatches(::ml_drift::WeightsManager* weights_manager) = 0;
+  PrepareWeightsInBatches(::ml_drift::WeightsManager* weights_manager,
+                          size_t total_shared_tensor_size) = 0;
 
   // Creates a `GpuTensorWrapper` with the given descriptor and GPU memory.
   // Note that the GPU memory is not owned by the tensor. The caller should

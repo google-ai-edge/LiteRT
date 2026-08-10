@@ -33,6 +33,7 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/synchronization/blocking_counter.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -41,9 +42,12 @@
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_util.h"  // from @ml_drift
+#include "ml_drift/common/ir_model.h"  // from @ml_drift
+#include "ml_drift/common/ir_model_util.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/model_hints.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
+#include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
 #include "ml_drift/common/task/profiling_info.h"  // from @ml_drift
@@ -56,13 +60,20 @@
 #include "ml_drift_delegate/delegate/serialization_program_cache/serialization_program_cache.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 // clang-format on
-#include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager.h"
-#include "third_party/odml/infra/ml_drift_delegate/tflite_profile.h"
 #include "ml_drift_delegate/delegate/composite/custom_parsers.h"
+#include "ml_drift_delegate/delegate/composite/ir/custom_parsers.h"
+#include "ml_drift_delegate/delegate/composite/ir/litert_op_selector.h"
 #include "ml_drift_delegate/delegate/composite/litert_op_selector.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
 #include "ml_drift_delegate/delegate/incrementable_blocking_counter.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/gf32_graph_adapter.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/ir_graph_adapter.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
+#include "ml_drift_delegate/delegate/tflite_profile.h"
 #include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
+#include "ml_drift_delegate/tflite/ir_model_builder.h"
+#include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
 #include "ml_drift_delegate/tflite/model_builder.h"
 #include "ml_drift_delegate/tflite/object_reader.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
@@ -112,11 +123,11 @@ absl::Status DelegateKernel::Dispatch(TfLiteContext* context) {
 
   if (::ml_drift::IsTfLiteProfilerActive(context)) {
     ::ml_drift::ProfilingInfo profiling_info;
-    RETURN_IF_ERROR(ctx_->Profile(profiling_info));
+    ABSL_RETURN_IF_ERROR(ctx_->Profile(profiling_info));
     AddTfLiteProfilerEvents(context, &profiling_info);
   }
 
-  RETURN_IF_ERROR(ctx_->Dispatch());
+  ABSL_RETURN_IF_ERROR(ctx_->Dispatch());
   if (kForceCompletion) {
     return backend_->WaitForCompletion();
   }
@@ -202,10 +213,19 @@ absl::Status DelegateKernel::Initialize(
   } else {
     backend_ = delegate_data_->backend.get();
   }
-  if (backend_->GetBackendName() == "OpenCL") {
-    is_opencl_backend_ = true;
-  }
+  is_opencl_backend_ = backend_->GetBackendName() == "OpenCL";
 
+  // Select the initialization pipeline at runtime: the IrModel pipeline when
+  // options->use_ir_model is set, otherwise the legacy GraphFloat32 pipeline.
+  // Both pipelines are always compiled and linked.
+  if (delegate_data_->options->use_ir_model) {
+    return InitializeIrModel(context, delegate_params);
+  }
+  return InitializeGraphFloat32(context, delegate_params);
+}
+
+absl::Status DelegateKernel::InitializeGraphFloat32(
+    TfLiteContext* context, const TfLiteDelegateParams* delegate_params) {
   SharedConstTensorsMap shared_tensors;
   SharedConstTensorsMap* shared_tensors_ptr = nullptr;
   const TensorIndexToBufferIdMap* tensor_to_buffer_id_map = nullptr;
@@ -238,12 +258,12 @@ absl::Status DelegateKernel::Initialize(
   litert::ml_drift::ModelBuilderOptions options;
   options.enable_infinite_float_capping =
       delegate_data_->options->enable_infinite_float_capping;
-  options.enable_reduced_precision = delegate_data_->calculation_precision ==
-                                     ::ml_drift::CalculationsPrecision::F16;
+  options.enable_reduced_precision = delegate_data_->calculation_precision !=
+                                     ::ml_drift::CalculationsPrecision::F32;
   // Build GraphFloat32.
   ::ml_drift::GraphFloat32 graph;
   CustomOperationParserFactory custom_parser_factory;
-  RETURN_IF_ERROR(BuildFinalModel(
+  ABSL_RETURN_IF_ERROR(BuildFinalModel(
       context, delegate_params, options, &graph, &quant_conversion_map_,
       shared_tensors_ptr, tensor_to_buffer_id_map,
       tensor_to_external_buffer_id_map, &custom_parser_factory));
@@ -251,25 +271,31 @@ absl::Status DelegateKernel::Initialize(
   const TfLiteIntArray* input_tensors = delegate_params->input_tensors;
   const std::vector<::ml_drift::Value*> inputs =
       GetValuesUsed(graph, graph.inputs());
-  std::vector<uint32_t> input_refs;
-  input_refs.reserve(input_tensors->size);
+  input_indices_.reserve(input_tensors->size);
+  // Canonical BHWC shape/dtype for each non-constant input, taken from the
+  // graph's inferred Value shapes and passed to the GF32 descriptor builder.
+  std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>> input_tensor_refs;
+  input_tensor_refs.reserve(inputs.size());
   for (const ::ml_drift::Value* input : inputs) {
     const TfLiteTensor* tensor = context->tensors + input->tensor.ref;
     if (tflite::IsConstantTensor(tensor)) continue;
     input_ids_.push_back(input->id);
-    input_refs.push_back(input->tensor.ref);
+    input_indices_.push_back(input->tensor.ref);
+    input_tensor_refs.push_back(input->tensor);
   }
   const TfLiteIntArray* output_tensors = delegate_params->output_tensors;
   const std::vector<::ml_drift::Value*> outputs =
       GetValuesUsed(graph, graph.outputs());
   const int output_size =
       std::min(static_cast<int>(graph.outputs().size()), output_tensors->size);
-  std::vector<uint32_t> output_refs;
-  output_refs.reserve(output_size);
+  output_indices_.reserve(output_size);
   output_ids_.reserve(output_size);
+  std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>> output_tensor_refs;
+  output_tensor_refs.reserve(outputs.size());
   for (const ::ml_drift::Value* output : outputs) {
     output_ids_.push_back(output->id);
-    output_refs.push_back(output->tensor.ref);
+    output_indices_.push_back(output->tensor.ref);
+    output_tensor_refs.push_back(output->tensor);
   }
 
   // Create inference context.
@@ -292,50 +318,43 @@ absl::Status DelegateKernel::Initialize(
     create_info.hints.Add(::ml_drift::ModelHints::kDisallow8bitConvs);
   }
   if (delegate_data_->options->enable_constant_tensors_sharing) {
-    RETURN_IF_ERROR(InitializeExternalSharedConstantTensors(
-        context, delegate_params, shared_tensors, graph, create_info));
-  }
-
-  input_indices_.reserve(input_refs.size());
-  output_indices_.reserve(output_refs.size());
-  for (const int64_t input_ref : input_refs) {
-    input_indices_.push_back(input_ref);
-  }
-  for (const int64_t output_ref : output_refs) {
-    output_indices_.push_back(output_ref);
+    ABSL_RETURN_IF_ERROR(InitializeExternalSharedConstantTensors(
+        context, delegate_params, shared_tensors,
+        std::make_unique<::ml_drift::GraphFloat32Adapter>(graph), create_info));
   }
 
   external_tensor_ids_.reserve(input_indices_.size() + output_indices_.size());
-  RETURN_IF_ERROR(UpdateCreateInfoWithExternalTensors(context, inputs, outputs,
-                                                      create_info));
+  ABSL_RETURN_IF_ERROR(UpdateCreateInfoWithExternalTensors(
+      context, create_info, input_tensor_refs, output_tensor_refs));
   if (!external_tensor_ids_.empty()) {
     ABSL_LOG(INFO)
         << "Total " << external_tensor_ids_.size()
         << " external tensors are used for delegate inputs and outputs";
   }
-  RETURN_IF_ERROR(
+  ABSL_RETURN_IF_ERROR(
       InitInferenceContext(context, delegate_params, create_info, &graph));
 
   if (delegate_data_->options->enable_op_profiling_detailed_report) {
     std::cout << create_info.external_mutable_tensors.size() << std::endl;
     ::ml_drift::ProfilingInfo profiling_info;
-    RETURN_IF_ERROR(ctx_->Profile(profiling_info));
+    ABSL_RETURN_IF_ERROR(ctx_->Profile(profiling_info));
     ::ml_drift::ProfilingInfo::DetailedReportOptions options;
     options.add_shapes_info = false;
     std::cout << profiling_info.GetDetailedReport(options) << std::endl;
-    ASSIGN_OR_RETURN(auto runtime_mem_bytes,
-                     ctx_->GetSizeOfMemoryAllocatedForIntermediateTensors());
+    ABSL_ASSIGN_OR_RETURN(
+        auto runtime_mem_bytes,
+        ctx_->GetSizeOfMemoryAllocatedForIntermediateTensors());
     std::cout << "Memory for intermediate tensors - "
               << runtime_mem_bytes / 1024.0 / 1024.0 << " MB" << std::endl;
-    ASSIGN_OR_RETURN(auto const_mem_bytes,
-                     ctx_->GetSizeOfMemoryAllocatedForConstantTensors());
+    ABSL_ASSIGN_OR_RETURN(auto const_mem_bytes,
+                          ctx_->GetSizeOfMemoryAllocatedForConstantTensors());
     std::cout << "Memory for constant tensors - "
               << const_mem_bytes / 1024.0 / 1024.0 << " MB" << std::endl;
     std::cout << "Total tensors memory(const + intermediate) - "
               << (const_mem_bytes + runtime_mem_bytes) / 1024.0 / 1024.0
               << " MB" << std::endl;
-    ASSIGN_OR_RETURN(auto external_bytes,
-                     ctx_->GetSizeOfMemoryAllocatedForExternalTensors());
+    ABSL_ASSIGN_OR_RETURN(auto external_bytes,
+                          ctx_->GetSizeOfMemoryAllocatedForExternalTensors());
     std::cout << "Memory for external tensors - "
               << external_bytes / 1024.0 / 1024.0 << " MB" << std::endl;
   }
@@ -347,7 +366,7 @@ absl::Status DelegateKernel::Initialize(
 absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
     TfLiteContext* context, const TfLiteDelegateParams* delegate_params,
     const SharedConstTensorsMap& shared_tensors,
-    ::ml_drift::GraphFloat32& graph,
+    std::unique_ptr<::ml_drift::GraphAdapter> graph_adapter,
     ::ml_drift::CreateGpuModelInfo& create_info) {
 #ifdef ML_DRIFT_MEM_STATS
   tflite::profiling::memory::MemoryLatencyLogger logger;
@@ -360,29 +379,32 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
 #else
   bool prepare_weights_in_batches = true;
 #endif
-  ASSIGN_OR_RETURN(shared_memory_serialization_cache,
-                   TryInitializingExternalTensorsSerialization(
-                       context, delegate_params, prepare_weights_in_batches));
+  ABSL_ASSIGN_OR_RETURN(
+      shared_memory_serialization_cache,
+      TryInitializingExternalTensorsSerialization(context, delegate_params,
+                                                  prepare_weights_in_batches));
   size_t shared_memory_serialization_cache_size =
       (shared_memory_serialization_cache
            ? shared_memory_serialization_cache->GetCurrentSize()
            : 0);
 
-  ASSIGN_OR_RETURN(auto shared_mem_manager,
-                   backend_->CreateSharedMemoryManager(
-                       create_info, graph, context, *delegate_data_,
-                       shared_memory_serialization_cache));
+  ABSL_ASSIGN_OR_RETURN(
+      auto shared_mem_manager,
+      backend_->CreateSharedMemoryManager(create_info, std::move(graph_adapter),
+                                          context, *delegate_data_,
+                                          shared_memory_serialization_cache));
 
   if (delegate_data_->options->convert_weights_on_gpu &&
       delegate_data_->options->enable_constant_tensors_sharing) {
-    ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
+    ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
     if (!::ml_drift::WeightsManager::IsGpuWeightsPreparationSupported(
             gpu_info) ||
         shared_memory_serialization_cache_size >
             kSharedMemorySerializationCacheSizeThreshold) {
       delegate_data_->options->convert_weights_on_gpu = false;
     } else {
-      ASSIGN_OR_RETURN(auto weights_manager, backend_->CreateWeightsManager());
+      ABSL_ASSIGN_OR_RETURN(auto weights_manager,
+                            backend_->CreateWeightsManager());
       shared_mem_manager->SetWeightsManager(weights_manager);
     }
   }
@@ -431,14 +453,14 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
        it != shared_tensor_ids_ordered_by_size.rend(); ++it) {
     ::ml_drift::ValueId shared_tensor_id = *it;
     auto& shared_tflite_tensor = shared_tensors.find(shared_tensor_id)->second;
-    RETURN_IF_ERROR(shared_mem_manager->RegisterExternalConstantTensors(
+    ABSL_RETURN_IF_ERROR(shared_mem_manager->RegisterExternalConstantTensors(
         shared_tensor_id, shared_tflite_tensor, local_to_global_id_map));
   }
   // If GPU weights conversion is enabled, trigger the GPU conversion to produce
   // GPU tensors for weights.
-if (delegate_data_->options->convert_weights_on_gpu &&
+  if (delegate_data_->options->convert_weights_on_gpu &&
       delegate_data_->options->enable_constant_tensors_sharing) {
-    ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
+    ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
     auto& buffer_map = GetBufferIdToSpatialTensorMap(*delegate_data_);
     auto& quant_map = GetQuantParamIdToSpatialTensorMap(*delegate_data_);
     // TODO: b/403337563 - Enable prepare_weights_in_batches with options.
@@ -451,27 +473,33 @@ if (delegate_data_->options->convert_weights_on_gpu &&
       bool require_serialization_cache_on_first_load =
           use_serialization_cache && gpu_info.IsApple();
       absl::flat_hash_set<::ml_drift::ValueId> prepared_tensor_ids;
-      ASSIGN_OR_RETURN(auto batches,
-                       backend_->GetBatchesForWeightsPreparation(
-                           shared_mem_manager->GetWeightsManager()));
+      size_t total_shared_tensor_size = 0;
+      for (const auto& shared_tensor_id : shared_tensor_ids_ordered_by_size) {
+        total_shared_tensor_size += get_tensor(shared_tensor_id).bytes;
+      }
+      ABSL_ASSIGN_OR_RETURN(auto batches,
+                            backend_->GetBatchesForWeightsPreparation(
+                                shared_mem_manager->GetWeightsManager(),
+                                total_shared_tensor_size));
       for (auto& batch : batches) {
-        ASSIGN_OR_RETURN(auto tensor_map_for_batch,
-                         backend_->PrepareWeightsInBatch(
-                             shared_mem_manager->GetWeightsManager(), batch));
+        ABSL_ASSIGN_OR_RETURN(
+            auto tensor_map_for_batch,
+            backend_->PrepareWeightsInBatch(
+                shared_mem_manager->GetWeightsManager(), batch));
         for (auto& [main_model_id, tensor] : tensor_map_for_batch) {
           ::ml_drift::SharedMemoryManager::GlobalId global_id =
               local_to_global_id_map[main_model_id];
           if (use_serialization_cache) {
             // Download from GPU to CPU memory.
             ::ml_drift::TensorDescriptor descriptor = tensor->GetDescriptor();
-            RETURN_IF_ERROR(
+            ABSL_RETURN_IF_ERROR(
                 backend_->ReadSpatialTensorToDescriptor(*tensor, descriptor));
             // Insert the descriptor to the cache.
-            RETURN_IF_ERROR(shared_memory_serialization_cache->Insert(
+            ABSL_RETURN_IF_ERROR(shared_memory_serialization_cache->Insert(
                 global_id.value, !global_id.IsSourceId(), descriptor));
             // Release the tensor memory.
             if (require_serialization_cache_on_first_load) {
-              RETURN_IF_ERROR(
+              ABSL_RETURN_IF_ERROR(
                   backend_->ReleaseSpatialTensorMemory(tensor.get()));
             }
           }
@@ -492,11 +520,11 @@ if (delegate_data_->options->convert_weights_on_gpu &&
 
       if (require_serialization_cache_on_first_load) {
         // Flush the cache to disk.
-        RETURN_IF_ERROR(CleanupExternalTensorsSerialization(
+        ABSL_RETURN_IF_ERROR(CleanupExternalTensorsSerialization(
             shared_memory_serialization_cache));
 
         // Load the cache from disk.
-        ASSIGN_OR_RETURN(
+        ABSL_ASSIGN_OR_RETURN(
             shared_memory_serialization_cache,
             TryInitializingExternalTensorsSerialization(
                 context, delegate_params, prepare_weights_in_batches));
@@ -510,7 +538,7 @@ if (delegate_data_->options->convert_weights_on_gpu &&
           UnownedDataTensorDescriptor unowned_data_tensor_desc;
           size_t page_adjusted_offset;
           ReleaseDataCallback release_data_callback;
-          RETURN_IF_ERROR(shared_memory_serialization_cache->LookUp(
+          ABSL_RETURN_IF_ERROR(shared_memory_serialization_cache->LookUp(
               global_id.value, global_id.IsParamId(), unowned_data_tensor_desc,
               page_adjusted_offset, release_data_callback));
           ::ml_drift::GpuSpatialTensor* spatial_tensor = nullptr;
@@ -521,27 +549,27 @@ if (delegate_data_->options->convert_weights_on_gpu &&
           }
 
           // Update tensor from cached descriptor.
-          RETURN_IF_ERROR(backend_->UpdateSpatialTensor(
+          ABSL_RETURN_IF_ERROR(backend_->UpdateSpatialTensor(
               spatial_tensor, unowned_data_tensor_desc, page_adjusted_offset,
               std::move(release_data_callback)));
         }
       }
       // Flush the cache to disk.
-      RETURN_IF_ERROR(CleanupExternalTensorsSerialization(
+      ABSL_RETURN_IF_ERROR(CleanupExternalTensorsSerialization(
           shared_memory_serialization_cache));
     } else {
       ::ml_drift::GpuModel gpu_weights_conversion_model;
       absl::flat_hash_map<::ml_drift::ValueId, ::ml_drift::ValueId> io_mapping;
       std::vector<::ml_drift::WeightsManager::UploadWeightsInfo>
           upload_weights_infos;
-      RETURN_IF_ERROR(
+      ABSL_RETURN_IF_ERROR(
           shared_mem_manager->GetWeightsManager()->CreateConversionGpuModel(
               gpu_info, &gpu_weights_conversion_model, &io_mapping,
               &upload_weights_infos));
       if (!upload_weights_infos.empty()) {
-        ASSIGN_OR_RETURN(conversion_context_,
-                         backend_->CreateInferenceContext(
-                             create_info, gpu_weights_conversion_model));
+        ABSL_ASSIGN_OR_RETURN(conversion_context_,
+                              backend_->CreateInferenceContext(
+                                  create_info, gpu_weights_conversion_model));
         // The preferred number is picked based on the performance of Gemma3N
         // 4B running on Linux + Nvidia GTX 4090 with WebGPU backend. We
         // observed that the peak memory usage keeps dropping, as the
@@ -565,14 +593,14 @@ if (delegate_data_->options->convert_weights_on_gpu &&
           }
         }
 #ifdef __EMSCRIPTEN__
-        RETURN_IF_ERROR(conversion_context_->UploadWeightsOnWeb(
+        ABSL_RETURN_IF_ERROR(conversion_context_->UploadWeightsOnWeb(
             delegate_data_->weight_loader, gpu_weights_conversion_model,
             io_mapping, shared_mem_manager->GetWeightIdToExternalBufferIdMap(),
             upload_weights_infos));
 #else
         for (const auto& upload_info : upload_weights_infos) {
           auto upload_fn = [this, upload_info]() -> absl::Status {
-            RETURN_IF_ERROR(conversion_context_->WriteDataToWeightTensor(
+            ABSL_RETURN_IF_ERROR(conversion_context_->WriteDataToWeightTensor(
                 upload_info.input_id,
                 absl::MakeConstSpan(
                     static_cast<const uint8_t*>(upload_info.data),
@@ -592,7 +620,7 @@ if (delegate_data_->options->convert_weights_on_gpu &&
                   weights_converting_->DecrementCount();
                 });
           } else {
-            RETURN_IF_ERROR(upload_fn());
+            ABSL_RETURN_IF_ERROR(upload_fn());
           }
         }
 #endif  // __EMSCRIPTEN__
@@ -605,9 +633,9 @@ if (delegate_data_->options->convert_weights_on_gpu &&
             delegate_data_->weights_conversion_counter->Decrement();
           });
         } else {
-          RETURN_IF_ERROR(conversion_context_->Dispatch());
+          ABSL_RETURN_IF_ERROR(conversion_context_->Dispatch());
         }
-        RETURN_IF_ERROR(backend_->WaitForCompletion());
+        ABSL_RETURN_IF_ERROR(backend_->WaitForCompletion());
         if (delegate_data_->options->wait_for_weights_conversion_complete &&
             delegate_data_->weights_conversion_counter) {
           delegate_data_->weights_conversion_counter->Wait();
@@ -615,8 +643,9 @@ if (delegate_data_->options->convert_weights_on_gpu &&
         }
         for (const auto& [converted_weight_id, main_model_weight_id] :
              io_mapping) {
-          ASSIGN_OR_RETURN(auto* tensor, conversion_context_->GetSpatialTensor(
-                                             converted_weight_id));
+          ABSL_ASSIGN_OR_RETURN(
+              auto* tensor,
+              conversion_context_->GetSpatialTensor(converted_weight_id));
           ::ml_drift::SharedMemoryManager::GlobalId global_id =
               local_to_global_id_map[main_model_weight_id];
           if (global_id.IsSourceId()) {
@@ -631,8 +660,9 @@ if (delegate_data_->options->convert_weights_on_gpu &&
   // Register the shared tensors as the external immutable tensors for the
   // current DelegateKernel instance's execution with ML Drift.
   for (auto& [local_id, global_id] : local_to_global_id_map) {
-    ASSIGN_OR_RETURN(::ml_drift::GpuSpatialTensor * tensor,
-                     shared_mem_manager->GetExternalConstantTensor(global_id));
+    ABSL_ASSIGN_OR_RETURN(
+        ::ml_drift::GpuSpatialTensor * tensor,
+        shared_mem_manager->GetExternalConstantTensor(global_id));
     create_info.external_immutable_tensors.try_emplace(local_id, tensor);
   }
 
@@ -641,7 +671,7 @@ if (delegate_data_->options->convert_weights_on_gpu &&
       shared_tensor_ids_ordered_by_size.begin(),
       shared_tensor_ids_ordered_by_size.end());
 
-  RETURN_IF_ERROR(
+  ABSL_RETURN_IF_ERROR(
       CleanupExternalTensorsSerialization(shared_memory_serialization_cache));
 
 #ifdef ML_DRIFT_MEM_STATS
@@ -653,7 +683,7 @@ if (delegate_data_->options->convert_weights_on_gpu &&
 
 // Returns false if serialization prerequisites are not initialized. Otherwise
 // initializes the serialization params and returns true.
-bool DelegateKernel::ReadFromSerialzedData() {
+bool DelegateKernel::ReadFromSerializedData() {
   bool has_valid_fd_with_model_token =
       delegate_data_->options->program_cache_fd > 0 &&
       !delegate_data_->model_token.empty();
@@ -685,13 +715,39 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
   struct {
     MlDriftDelegatePrecision precision;
     bool convert_weights_on_gpu;
+    bool use_f32_accum_for_fp16;
+    bool allow_src_quantized_fc_conv_ops;
+    bool prefer_texture_weights;
+    bool use_buffer_storage_type;
+    bool enable_infinite_float_capping;
+    bool enable_fast_tuning;
+#ifdef __APPLE__
+    bool use_metal_argument_buffers;
+#endif  // __APPLE__
   } options_to_fingerprint = {};
   options_to_fingerprint.precision = delegate_data_->options->precision;
   options_to_fingerprint.convert_weights_on_gpu =
       delegate_data_->options->convert_weights_on_gpu;
+  options_to_fingerprint.use_f32_accum_for_fp16 =
+      delegate_data_->options->use_f32_accum_for_fp16;
+  options_to_fingerprint.allow_src_quantized_fc_conv_ops =
+      delegate_data_->options->allow_src_quantized_fc_conv_ops;
+  options_to_fingerprint.prefer_texture_weights =
+      delegate_data_->options->prefer_texture_weights;
+  options_to_fingerprint.use_buffer_storage_type =
+      delegate_data_->options->use_buffer_storage_type;
+  options_to_fingerprint.enable_infinite_float_capping =
+      delegate_data_->options->enable_infinite_float_capping;
+  options_to_fingerprint.enable_fast_tuning =
+      delegate_data_->options->enable_fast_tuning;
+#ifdef __APPLE__
+  options_to_fingerprint.use_metal_argument_buffers =
+      delegate_data_->options->use_metal_argument_buffers;
+#endif  // __APPLE__
   std::string options_fingerprint = tflite::delegates::StrFingerprint(
       reinterpret_cast<const char*>(&options_to_fingerprint),
       sizeof(options_to_fingerprint));
+  absl::StrAppend(&options_fingerprint, backend_->GetBackendName());
 
   std::unique_ptr<tflite::delegates::SerializationEntry> data_key;
   std::unique_ptr<::ml_drift::SerializationProgramCache> program_cache;
@@ -738,7 +794,7 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
     if (delegate_data_->options->convert_weights_on_gpu &&
         !delegate_data_->options->enable_constant_tensors_sharing) {
       ::ml_drift::GpuModel gpu_model;
-      RETURN_IF_ERROR(GraphToGpuModelWithGpuConverters(
+      ABSL_RETURN_IF_ERROR(GraphToGpuModelWithGpuConverters(
           *graph, create_info_main, &gpu_model, op_selector));
     }
 
@@ -754,9 +810,9 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
 
   //  Init InferenceContext and serialize it.
   std::vector<uint8_t> serialized_model;
-  RETURN_IF_ERROR(InitInferenceContextFromGraph(context, delegate_params,
-                                                create_info, graph, op_selector,
-                                                &serialized_model));
+  ABSL_RETURN_IF_ERROR(
+      InitInferenceContextFromGraph(context, delegate_params, create_info,
+                                    graph, op_selector, &serialized_model));
   auto save_status = program_cache->Insert(
       fingerprint_key,
       absl::string_view(reinterpret_cast<const char*>(serialized_model.data()),
@@ -771,26 +827,26 @@ absl::Status DelegateKernel::GraphToGpuModelWithGpuConverters(
     const ::ml_drift::GraphFloat32& graph,
     ::ml_drift::CreateGpuModelInfo& create_info,
     ::ml_drift::GpuModel* gpu_model, LiteRtOpSelector& op_selector) {
-  ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
+  ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
   ::ml_drift::CreateGpuModelInfo create_info_for_conversion = create_info;
   ::ml_drift::GpuModel gpu_weights_conversion_model;
   absl::flat_hash_map<::ml_drift::ValueId, ::ml_drift::ValueId> weights_mapping;
   std::vector<::ml_drift::WeightsManager::UploadWeightsInfo>
       upload_weights_info;
 
-  RETURN_IF_ERROR(::ml_drift::GraphToGpuModelWithWeightsConversion(
+  ABSL_RETURN_IF_ERROR(::ml_drift::GraphToGpuModelWithWeightsConversion(
       graph, create_info_for_conversion, gpu_info, gpu_model,
       &gpu_weights_conversion_model, &weights_mapping, &upload_weights_info,
       &op_selector));
-  ASSIGN_OR_RETURN(conversion_context_, backend_->CreateInferenceContext(
-                                            create_info_for_conversion,
-                                            gpu_weights_conversion_model));
+  ABSL_ASSIGN_OR_RETURN(conversion_context_, backend_->CreateInferenceContext(
+                                                 create_info_for_conversion,
+                                                 gpu_weights_conversion_model));
 
   // this can be done in a separate thread. Need to sync then with
   // main.enqueue. Upload data should be alive until completion of all
   // WriteData calls if we have async=true.
   for (const auto& upload_info : upload_weights_info) {
-    RETURN_IF_ERROR(conversion_context_->WriteDataToWeightTensor(
+    ABSL_RETURN_IF_ERROR(conversion_context_->WriteDataToWeightTensor(
         upload_info.input_id,
         absl::MakeConstSpan(reinterpret_cast<const uint8_t*>(upload_info.data),
                             upload_info.size)));
@@ -798,13 +854,13 @@ absl::Status DelegateKernel::GraphToGpuModelWithGpuConverters(
 
   // this can be called later(but before ctx_ enqueue calls) and without
   // explicit wait(if the same queue used for ctx_ enqueue calls).
-  RETURN_IF_ERROR(conversion_context_->Dispatch());
-  RETURN_IF_ERROR(backend_->WaitForCompletion());
+  ABSL_RETURN_IF_ERROR(conversion_context_->Dispatch());
+  ABSL_RETURN_IF_ERROR(backend_->WaitForCompletion());
 
   for (const auto& [converted_weight_id, main_model_weight_id] :
        weights_mapping) {
-    ASSIGN_OR_RETURN(auto* tensor, conversion_context_->GetSpatialTensor(
-                                       converted_weight_id));
+    ABSL_ASSIGN_OR_RETURN(auto* tensor, conversion_context_->GetSpatialTensor(
+                                            converted_weight_id));
     create_info.external_immutable_tensors.insert(
         {main_model_weight_id, tensor});
   }
@@ -818,20 +874,20 @@ absl::Status DelegateKernel::InitInferenceContextFromGraph(
     ::ml_drift::GraphFloat32* graph, LiteRtOpSelector& op_selector,
     std::vector<uint8_t>* serialized_model) {
   ::ml_drift::CreateGpuModelInfo create_info_main = create_info;
-  ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
+  ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
   ::ml_drift::GpuModel gpu_model;
   if (delegate_data_->options->convert_weights_on_gpu &&
       !delegate_data_->options->enable_constant_tensors_sharing &&
       ::ml_drift::WeightsManager::IsGpuWeightsPreparationSupported(gpu_info)) {
-    RETURN_IF_ERROR(GraphToGpuModelWithGpuConverters(*graph, create_info_main,
-                                                     &gpu_model, op_selector));
+    ABSL_RETURN_IF_ERROR(GraphToGpuModelWithGpuConverters(
+        *graph, create_info_main, &gpu_model, op_selector));
   } else {
-    RETURN_IF_ERROR(::ml_drift::GraphToGpuModel(*graph, create_info, gpu_info,
-                                                &gpu_model, &op_selector));
+    ABSL_RETURN_IF_ERROR(::ml_drift::GraphToGpuModel(
+        *graph, create_info, gpu_info, &gpu_model, &op_selector));
   }
-  ASSIGN_OR_RETURN(ctx_, backend_->CreateInferenceContext(
-                             create_info_main, gpu_model, serialized_model,
-                             /*may_share_memory_manager=*/true));
+  ABSL_ASSIGN_OR_RETURN(ctx_, backend_->CreateInferenceContext(
+                                  create_info_main, gpu_model, serialized_model,
+                                  /*may_share_memory_manager=*/true));
   return absl::OkStatus();
 }
 
@@ -844,17 +900,17 @@ absl::Status DelegateKernel::InitInferenceContext(
   logger.Start();
 #endif  // ML_DRIFT_MEM_STATS
 
-  ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
+  ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
   LiteRtOpSelector op_selector(&create_info, &gpu_info);
-  if (ReadFromSerialzedData()) {
+  if (ReadFromSerializedData()) {
     ABSL_LOG(INFO) << "Initializing " << backend_->GetBackendName()
                    << "-based API from serialized data.";
-    RETURN_IF_ERROR(InitInferenceContextFromSerializedData(
+    ABSL_RETURN_IF_ERROR(InitInferenceContextFromSerializedData(
         context, delegate_params, create_info, graph, op_selector));
   } else {
     ABSL_LOG(INFO) << "Initializing " << backend_->GetBackendName()
                    << "-based API from graph.";
-    RETURN_IF_ERROR(InitInferenceContextFromGraph(
+    ABSL_RETURN_IF_ERROR(InitInferenceContextFromGraph(
         context, delegate_params, create_info, graph, op_selector,
         /*serialized_model=*/nullptr));
   }
@@ -927,10 +983,10 @@ DelegateKernel::TryInitializingExternalTensorsSerialization(
       if (dup_fd < 0) {
         return absl::InternalError("Failed to duplicate weight cache fd");
       }
-      RETURN_IF_ERROR(delegate_data_->serialization_cache->StartBuild(
+      ABSL_RETURN_IF_ERROR(delegate_data_->serialization_cache->StartBuild(
           dup_fd, unique_model_identifier));
     } else {
-      RETURN_IF_ERROR(delegate_data_->serialization_cache->StartBuild(
+      ABSL_RETURN_IF_ERROR(delegate_data_->serialization_cache->StartBuild(
           delegate_data_->serialization_dir, delegate_data_->model_token,
           unique_model_identifier));
     }
@@ -949,8 +1005,380 @@ absl::Status DelegateKernel::CleanupExternalTensorsSerialization(
   // inserted anything previously, this will cause the cache to be written to
   // disk.
   if (shared_memory_serialization_cache->IsReadyForInsert()) {
-    RETURN_IF_ERROR(shared_memory_serialization_cache->StopBuild());
+    ABSL_RETURN_IF_ERROR(shared_memory_serialization_cache->StopBuild());
   }
+  return absl::OkStatus();
+}
+
+// ===========================================================================
+// IrModel initialization pipeline. Mirrors the GraphFloat32 pipeline above
+// but operates on ::ml_drift::ir::IrModel. Selected at runtime via
+// options->use_ir_model (see Initialize()).
+// ===========================================================================
+absl::Status DelegateKernel::InitializeIrModel(
+    TfLiteContext* context, const TfLiteDelegateParams* delegate_params) {
+  litert::ml_drift::ModelBuilderOptions options;
+  options.enable_infinite_float_capping =
+      delegate_data_->options->enable_infinite_float_capping;
+  options.enable_reduced_precision = delegate_data_->calculation_precision !=
+                                     ::ml_drift::CalculationsPrecision::F32;
+  std::unique_ptr<::ml_drift::ir::IrModel> ir_model;
+
+  const TfLiteIntArray* input_tensors = delegate_params->input_tensors;
+  input_indices_.reserve(input_tensors->size);
+
+  const TfLiteIntArray* output_tensors = delegate_params->output_tensors;
+
+  ::litert::ml_drift::ir::IrModelBuilderOptions ir_options;
+  ir_options.enable_infinite_float_capping =
+      options.enable_infinite_float_capping;
+  ir_options.enable_reduced_precision = options.enable_reduced_precision;
+
+  auto custom_parsers = ::litert::ml_drift::ir::GetCustomParsers();
+
+  // Constant tensor sharing: derive the shared/external buffer-id maps from the
+  // TFLite subgraph so BuildIrModel can mark shared constants and populate
+  // `shared_tensors`. The populated map is consumed below by
+  // InitializeExternalSharedConstantTensors. When sharing is disabled these
+  // remain null and BuildIrModel behaves as before.
+  SharedConstTensorsMap shared_tensors;
+  SharedConstTensorsMap* shared_tensors_ptr = nullptr;
+  const TensorIndexToBufferIdMap* tensor_to_buffer_id_map = nullptr;
+  const TensorIndexToExternalBufferIdMap* tensor_to_external_buffer_id_map =
+      nullptr;
+  TensorIndexToExternalBufferIdMap canonical_external_buffer_id_map;
+  if (delegate_data_->options->enable_constant_tensors_sharing) {
+    shared_tensors_ptr = &shared_tensors;
+    tensor_to_buffer_id_map =
+        &(reinterpret_cast<const tflite::Subgraph*>(context->impl_)
+              ->GetTensorBufferIdentifiers());
+    const auto& external_buffer_id_map =
+        reinterpret_cast<const tflite::Subgraph*>(context->impl_)
+            ->GetExternalTensorBufferIdentifiers();
+    tensor_to_external_buffer_id_map = &external_buffer_id_map;
+    if (delegate_data_->weight_loader != nullptr &&
+        !external_buffer_id_map.empty()) {
+      canonical_external_buffer_id_map.reserve(external_buffer_id_map.size());
+      for (const auto& [tensor_id, external_buffer_id] :
+           external_buffer_id_map) {
+        canonical_external_buffer_id_map.emplace(
+            tensor_id,
+            delegate_data_->weight_loader->GetCanonicalExternalBufferId(
+                static_cast<uint32_t>(external_buffer_id)));
+      }
+      tensor_to_external_buffer_id_map = &canonical_external_buffer_id_map;
+    }
+  }
+  ir_model.reset(::litert::ml_drift::ir::BuildIrModel(
+      *context, *delegate_params, ir_options, &custom_parsers,
+      shared_tensors_ptr, tensor_to_buffer_id_map,
+      tensor_to_external_buffer_id_map));
+  if (!ir_model) {
+    return absl::InternalError("Failed to build IrModel.");
+  }
+
+  std::vector<uint32_t> non_const_input_refs;
+  non_const_input_refs.reserve(input_tensors->size);
+  for (int i = 0; i < input_tensors->size; ++i) {
+    int t_ref = input_tensors->data[i];
+    if (!tflite::IsConstantTensor(context->tensors + t_ref)) {
+      non_const_input_refs.push_back(t_ref);
+    }
+  }
+  const auto& ir_inputs = ir_model->inputs();
+  for (size_t i = 0; i < ir_inputs.size(); ++i) {
+    auto tensor_id = ir_inputs[i];
+    auto producer = ir_model->FindProducer(tensor_id);
+    auto consumers = ir_model->FindConsumers(tensor_id);
+    if (producer != nullptr || !consumers.empty()) {
+      input_ids_.push_back(tensor_id);
+      input_indices_.push_back(non_const_input_refs[i]);
+    }
+  }
+
+  std::vector<uint32_t> output_tensors_refs;
+  output_tensors_refs.reserve(output_tensors->size);
+  for (int i = 0; i < output_tensors->size; ++i) {
+    output_tensors_refs.push_back(output_tensors->data[i]);
+  }
+  const auto& ir_outputs = ir_model->outputs();
+  const size_t output_size =
+      std::min(ir_outputs.size(), output_tensors_refs.size());
+  output_indices_.reserve(output_size);
+  output_ids_.reserve(output_size);
+  for (size_t i = 0; i < output_size; ++i) {
+    auto tensor_id = ir_outputs[i];
+    auto producer = ir_model->FindProducer(tensor_id);
+    auto consumers = ir_model->FindConsumers(tensor_id);
+    if (producer != nullptr || !consumers.empty()) {
+      output_ids_.push_back(tensor_id);
+      output_indices_.push_back(output_tensors_refs[i]);
+    }
+  }
+
+  // Create inference context.
+  ::ml_drift::CreateGpuModelInfo create_info;
+  create_info.precision = delegate_data_->calculation_precision;
+  create_info.storage_type = GetStorageType();
+#ifdef __APPLE__
+  create_info.hints.use_metal_argument_buffers =
+      delegate_data_->options->use_metal_argument_buffers;
+#endif  // __APPLE__
+
+  create_info.hints.Add(::ml_drift::ModelHints::kAllowSpecialKernels);
+  if (delegate_data_->options->prefer_texture_weights) {
+    create_info.hints.Add(::ml_drift::ModelHints::kPreferTextureWeights);
+  }
+  if (delegate_data_->options->enable_fast_tuning) {
+    create_info.hints.Add(::ml_drift::ModelHints::kFastTuning);
+  }
+  if (!delegate_data_->options->allow_src_quantized_fc_conv_ops) {
+    create_info.hints.Add(::ml_drift::ModelHints::kDisallow8bitConvs);
+  }
+  if (delegate_data_->options->enable_constant_tensors_sharing) {
+    ABSL_RETURN_IF_ERROR(InitializeExternalSharedConstantTensors(
+        context, delegate_params, shared_tensors,
+        std::make_unique<::ml_drift::IrModelAdapter>(*ir_model), create_info));
+  }
+
+  external_tensor_ids_.reserve(input_indices_.size() + output_indices_.size());
+  ABSL_RETURN_IF_ERROR(UpdateCreateInfoWithExternalTensors(
+      context, create_info, /*input_tensor_refs=*/{},
+      /*output_tensor_refs=*/{}));
+  if (!external_tensor_ids_.empty()) {
+    ABSL_LOG(INFO)
+        << "Total " << external_tensor_ids_.size()
+        << " external tensors are used for delegate inputs and outputs";
+  }
+  ABSL_RETURN_IF_ERROR(InitInferenceContext(context, delegate_params,
+                                            create_info, ir_model.get()));
+
+  if (delegate_data_->options->enable_op_profiling_detailed_report) {
+    ABSL_LOG(INFO) << create_info.external_mutable_tensors.size();
+    ::ml_drift::ProfilingInfo profiling_info;
+    ABSL_RETURN_IF_ERROR(ctx_->Profile(profiling_info));
+    ::ml_drift::ProfilingInfo::DetailedReportOptions report_options;
+    report_options.add_shapes_info = false;
+    ABSL_LOG(INFO) << profiling_info.GetDetailedReport(report_options)
+                   << std::endl;
+    ABSL_ASSIGN_OR_RETURN(
+        auto runtime_mem_bytes,
+        ctx_->GetSizeOfMemoryAllocatedForIntermediateTensors());
+    ABSL_LOG(INFO) << "Memory for intermediate tensors - "
+                   << runtime_mem_bytes / 1024.0 / 1024.0 << " MB";
+    ABSL_ASSIGN_OR_RETURN(auto const_mem_bytes,
+                          ctx_->GetSizeOfMemoryAllocatedForConstantTensors());
+    ABSL_LOG(INFO) << "Memory for constant tensors - "
+                   << const_mem_bytes / 1024.0 / 1024.0 << " MB";
+    ABSL_LOG(INFO) << "Total tensors memory(const + intermediate) - "
+                   << (const_mem_bytes + runtime_mem_bytes) / 1024.0 / 1024.0
+                   << " MB";
+    ABSL_ASSIGN_OR_RETURN(auto external_bytes,
+                          ctx_->GetSizeOfMemoryAllocatedForExternalTensors());
+    ABSL_LOG(INFO) << "Memory for external tensors - "
+                   << external_bytes / 1024.0 / 1024.0 << " MB";
+  }
+
+  ctx_->ReportMemoryBenchmarkIfEnabled(create_info).IgnoreError();
+  return absl::OkStatus();
+}
+
+absl::Status DelegateKernel::IrModelToGpuModelWithGpuConverters(
+    ::ml_drift::ir::IrModel* model, ::ml_drift::CreateGpuModelInfo& create_info,
+    ::ml_drift::GpuModel* gpu_model,
+    ::litert::ml_drift::ir::LiteRtOpSelector* op_selector) {
+  ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
+  ::ml_drift::CreateGpuModelInfo create_info_for_conversion = create_info;
+  ::ml_drift::GpuModel gpu_weights_conversion_model;
+  absl::flat_hash_map<::ml_drift::ValueId, ::ml_drift::ValueId> weights_mapping;
+  std::vector<::ml_drift::WeightsManager::UploadWeightsInfo>
+      upload_weights_info;
+
+  ABSL_RETURN_IF_ERROR(::ml_drift::ir::IrModelToGpuModelWithWeightsConversion(
+      *model, create_info_for_conversion, gpu_info, gpu_model,
+      &gpu_weights_conversion_model, &weights_mapping, &upload_weights_info,
+      op_selector));
+
+  ABSL_ASSIGN_OR_RETURN(conversion_context_, backend_->CreateInferenceContext(
+                                                 create_info_for_conversion,
+                                                 gpu_weights_conversion_model));
+
+  // this can be done in a separate thread. Need to sync then with
+  // main.enqueue. Upload data should be alive until completion of all
+  // WriteData calls if we have async=true.
+  for (const auto& upload_info : upload_weights_info) {
+    ABSL_RETURN_IF_ERROR(conversion_context_->WriteDataToWeightTensor(
+        upload_info.input_id,
+        absl::MakeConstSpan(reinterpret_cast<const uint8_t*>(upload_info.data),
+                            upload_info.size)));
+  }
+
+  // this can be called later(but before ctx_ enqueue calls) and without
+  // explicit wait(if the same queue used for ctx_ enqueue calls).
+  ABSL_RETURN_IF_ERROR(conversion_context_->Dispatch());
+  ABSL_RETURN_IF_ERROR(backend_->WaitForCompletion());
+
+  for (const auto& [converted_weight_id, main_model_weight_id] :
+       weights_mapping) {
+    ABSL_ASSIGN_OR_RETURN(auto* tensor, conversion_context_->GetSpatialTensor(
+                                            converted_weight_id));
+    create_info.external_immutable_tensors.insert(
+        {main_model_weight_id, tensor});
+  }
+  return absl::OkStatus();
+}
+
+// Restores inference context from the serialized data.
+absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
+    TfLiteContext* context, const TfLiteDelegateParams* delegate_params,
+    const ::ml_drift::CreateGpuModelInfo& create_info,
+    ::ml_drift::ir::IrModel* model,
+    ::litert::ml_drift::ir::LiteRtOpSelector* op_selector) {
+  // Generate fingerprints for the relevant delegate data options.
+  struct {
+    MlDriftDelegatePrecision precision;
+    bool convert_weights_on_gpu;
+    bool use_f32_accum_for_fp16;
+  } options_to_fingerprint = {};
+  options_to_fingerprint.precision = delegate_data_->options->precision;
+  options_to_fingerprint.convert_weights_on_gpu =
+      delegate_data_->options->convert_weights_on_gpu;
+  options_to_fingerprint.use_f32_accum_for_fp16 =
+      delegate_data_->options->use_f32_accum_for_fp16;
+  std::string options_fingerprint = tflite::delegates::StrFingerprint(
+      reinterpret_cast<const char*>(&options_to_fingerprint),
+      sizeof(options_to_fingerprint));
+
+  std::unique_ptr<tflite::delegates::SerializationEntry> data_key;
+  std::unique_ptr<::ml_drift::SerializationProgramCache> program_cache;
+  uint64_t fingerprint_key;
+  std::string model_data;
+  if (delegate_data_->options->program_cache_fd > 0) {
+    // Duplicate the fd since the program cache will take ownership of the fd.
+    // The original fd is owned by the delegate options and may be used after
+    // this function returns.
+    int dup_fd = dup(delegate_data_->options->program_cache_fd);
+    if (dup_fd < 0) {
+      return absl::InternalError("Failed to duplicate program cache fd");
+    }
+    program_cache =
+        std::make_unique<::ml_drift::SerializationProgramCache>(dup_fd);
+    fingerprint_key = tflite::delegates::Serialization::GetFingerprint(
+        delegate_data_->model_token, options_fingerprint, context,
+        delegate_params);
+    auto program_data = program_cache->LookUp(fingerprint_key);
+    if (program_data.ok()) {
+      model_data = program_data.value();
+    }
+  } else {
+    program_cache = std::make_unique<::ml_drift::SerializationProgramCache>(
+        delegate_data_->serialization_dir, delegate_data_->model_token);
+    fingerprint_key = tflite::delegates::Serialization::GetFingerprint(
+        delegate_data_->model_token, options_fingerprint, context,
+        delegate_params);
+    auto program_data = program_cache->LookUp(fingerprint_key);
+    if (program_data.ok()) {
+      model_data = program_data.value();
+    }
+  }
+
+  if (!model_data.empty()) {
+    // Restore InferenceContext from serialized data.
+    absl::Span<const uint8_t> model_span = absl::Span<const uint8_t>{
+        reinterpret_cast<const uint8_t*>(model_data.data()), model_data.size()};
+
+    // If convert_weights_on_gpu is enabled (prepare weights on GPU),
+    // trigger weights preparation and register the prepared weights into
+    // create_info before restoring the inference context.
+    ::ml_drift::CreateGpuModelInfo create_info_main = create_info;
+    if (delegate_data_->options->convert_weights_on_gpu &&
+        !delegate_data_->options->enable_constant_tensors_sharing) {
+      ::ml_drift::GpuModel gpu_model;
+      ABSL_RETURN_IF_ERROR(IrModelToGpuModelWithGpuConverters(
+          model, create_info_main, &gpu_model, op_selector));
+    }
+
+    auto res = backend_->RestoreInferenceContext(create_info_main, model_span);
+    if (res.ok()) {
+      ctx_ = std::move(res.value());
+      ABSL_LOG(INFO) << "Initialized InferenceContext from serialized data.";
+      return absl::OkStatus();
+    }
+    ABSL_LOG(WARNING) << "Deserialization failed: " << res.status();
+    // If the restore fails, fallback to the default graph initialization.
+  }
+
+  //  Init InferenceContext and serialize it.
+  std::vector<uint8_t> serialized_model;
+  ABSL_RETURN_IF_ERROR(
+      InitInferenceContextFromGraph(context, delegate_params, create_info,
+                                    model, op_selector, &serialized_model));
+  auto save_status = program_cache->Insert(
+      fingerprint_key,
+      absl::string_view(reinterpret_cast<const char*>(serialized_model.data()),
+                        serialized_model.size()));
+  if (!save_status.ok()) {
+    ABSL_LOG(WARNING) << "Failed to save serialized data: " << save_status;
+  }
+  return absl::OkStatus();
+}
+
+// Builds inference context from the graph.
+absl::Status DelegateKernel::InitInferenceContextFromGraph(
+    TfLiteContext* context, const TfLiteDelegateParams* delegate_params,
+    const ::ml_drift::CreateGpuModelInfo& create_info,
+    ::ml_drift::ir::IrModel* model,
+    ::litert::ml_drift::ir::LiteRtOpSelector* op_selector,
+    std::vector<uint8_t>* serialized_model) {
+  ::ml_drift::CreateGpuModelInfo create_info_main = create_info;
+  ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
+  ::ml_drift::GpuModel gpu_model;
+  if (delegate_data_->options->convert_weights_on_gpu &&
+      !delegate_data_->options->enable_constant_tensors_sharing &&
+      ::ml_drift::WeightsManager::IsGpuWeightsPreparationSupported(gpu_info)) {
+    ABSL_RETURN_IF_ERROR(IrModelToGpuModelWithGpuConverters(
+        model, create_info_main, &gpu_model, op_selector));
+  } else {
+    ABSL_RETURN_IF_ERROR(::ml_drift::ir::IrModelToGpuModel(
+        *model, create_info, gpu_info, &gpu_model, op_selector));
+  }
+  ABSL_ASSIGN_OR_RETURN(ctx_, backend_->CreateInferenceContext(
+                                  create_info_main, gpu_model, serialized_model,
+                                  /*may_share_memory_manager=*/true));
+  return absl::OkStatus();
+}
+
+absl::Status DelegateKernel::InitInferenceContext(
+    TfLiteContext* context, const TfLiteDelegateParams* delegate_params,
+    const ::ml_drift::CreateGpuModelInfo& create_info,
+    ::ml_drift::ir::IrModel* model) {
+#ifdef ML_DRIFT_MEM_STATS
+  tflite::profiling::memory::MemoryLatencyLogger logger;
+  logger.Start();
+#endif  // ML_DRIFT_MEM_STATS
+
+  ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
+
+  auto ir_op_selector =
+      std::make_unique<::litert::ml_drift::ir::LiteRtOpSelector>(&create_info,
+                                                                 &gpu_info);
+
+  if (ReadFromSerializedData()) {
+    ABSL_LOG(INFO) << "Initializing " << backend_->GetBackendName()
+                   << "-based API from serialized data.";
+    ABSL_RETURN_IF_ERROR(InitInferenceContextFromSerializedData(
+        context, delegate_params, create_info, model, ir_op_selector.get()));
+  } else {
+    ABSL_LOG(INFO) << "Initializing " << backend_->GetBackendName()
+                   << "-based API from graph.";
+    ABSL_RETURN_IF_ERROR(InitInferenceContextFromGraph(
+        context, delegate_params, create_info, model, ir_op_selector.get(),
+        /*serialized_model=*/nullptr));
+  }
+
+#ifdef ML_DRIFT_MEM_STATS
+  logger.Stop("Loading: inference context init");
+#endif
   return absl::OkStatus();
 }
 

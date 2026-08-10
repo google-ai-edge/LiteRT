@@ -35,6 +35,7 @@ cc_library(
         "//tflite/types:half",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -58,6 +59,7 @@ cc_library(
         "//tensor:datatypes",
         "//tensor/internal:graph",
         "//tensor/internal:graph_traversal",
+        "//tensor/internal:mixin",
         "//tensor/utils:macros",
         "//tflite:framework_stable",
         "//tflite/c:c_api_types",
@@ -69,7 +71,6 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@flatbuffers//:runtime_cc",

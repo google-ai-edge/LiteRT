@@ -521,5 +521,45 @@ TEST(OpWrapperTest, ToString) {
       "(no quantization)");
 }
 
+TEST(OpWrapperTest, ToStringElementWiseOperation) {
+  OpWrapper binary{"add", QNN_OP_ELEMENT_WISE_BINARY,
+                   QnnOpCode::kElementWiseBinary};
+  binary.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_ADD);
+  EXPECT_NE(binary.ToString().find("operation=Add"), std::string::npos);
+
+  OpWrapper unary{"not", QNN_OP_ELEMENT_WISE_UNARY,
+                  QnnOpCode::kElementWiseUnary};
+  unary.AddScalarParam<std::uint32_t>(QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
+                                      QNN_OP_ELEMENT_WISE_UNARY_OPERATION_NOT);
+  EXPECT_NE(unary.ToString().find("operation=Not"), std::string::npos);
+
+  OpWrapper neuron{"tanh", QNN_OP_ELEMENT_WISE_NEURON,
+                   QnnOpCode::kElementWiseNeuron};
+  neuron.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_NEURON_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_NEURON_OPERATION_TANH);
+  EXPECT_NE(neuron.ToString().find("operation=Tanh"), std::string::npos);
+}
+
+TEST(OpWrapperTest, ToStringNoOperationSuffix) {
+  // Non-elementwise ops get no "operation=" suffix.
+  OpWrapper other{"reshape", QNN_OP_RESHAPE, QnnOpCode::kReshape};
+  EXPECT_EQ(other.ToString().find("operation="), std::string::npos);
+
+  // An elementwise op with an unknown operation value also omits the suffix
+  OpWrapper unknown{"weird", QNN_OP_ELEMENT_WISE_BINARY,
+                    QnnOpCode::kElementWiseBinary};
+  unknown.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION, 9999);
+  EXPECT_EQ(unknown.ToString().find("operation="), std::string::npos);
+
+  // An elementwise op missing its scalar param also omits the suffix.
+  OpWrapper no_param{"missing", QNN_OP_ELEMENT_WISE_UNARY,
+                     QnnOpCode::kElementWiseUnary};
+  EXPECT_EQ(no_param.ToString().find("operation="), std::string::npos);
+}
+
 }  // namespace
 }  // namespace qnn

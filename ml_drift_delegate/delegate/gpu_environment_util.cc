@@ -17,7 +17,7 @@
 #include <cstdint>
 
 #include "absl/status/status.h"  // from @com_google_absl
-#include "third_party/gloop/util/status/status_macros.h"
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "ml_drift/cl/cl_device.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "litert/c/litert_common.h"
@@ -133,15 +133,15 @@ absl::Status UpdateGpuEnvironmentWithMlDriftCapabilities(
     return absl::InvalidArgumentError("Environment pointer is null.");
   }
 
-  RETURN_IF_ERROR(UpdateGpuEnvironmentOpenCl(environment));
+  ABSL_RETURN_IF_ERROR(UpdateGpuEnvironmentOpenCl(environment));
 #if LITERT_HAS_WEBGPU_SUPPORT
-  RETURN_IF_ERROR(UpdateGpuEnvironmentWebGpu(environment));
+  ABSL_RETURN_IF_ERROR(UpdateGpuEnvironmentWebGpu(environment));
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 #if LITERT_HAS_METAL_SUPPORT
-  RETURN_IF_ERROR(UpdateGpuEnvironmentMetal(environment));
+  ABSL_RETURN_IF_ERROR(UpdateGpuEnvironmentMetal(environment));
 #endif  // LITERT_HAS_METAL_SUPPORT
 #if LITERT_HAS_VULKAN_SUPPORT
-  RETURN_IF_ERROR(UpdateGpuEnvironmentVulkan(environment));
+  ABSL_RETURN_IF_ERROR(UpdateGpuEnvironmentVulkan(environment));
 #endif  // LITERT_HAS_VULKAN_SUPPORT
 
   return absl::OkStatus();

@@ -89,10 +89,12 @@ class Environment {
     MagicNumberConfigs = kLiteRtEnvOptionTagMagicNumberConfigs,
     MagicNumberVerifications = kLiteRtEnvOptionTagMagicNumberVerifications,
     CompilerCacheDir = kLiteRtEnvOptionTagCompilerCacheDir,
-     CompilerCacheMaxConfigsPerModel =
+    CompilerCacheMaxConfigsPerModel =
         kLiteRtEnvOptionTagCompilerCacheMaxConfigsPerModel,
-     CompilerCacheMaxTotalSize = kLiteRtEnvOptionTagCompilerCacheMaxTotalSize,
+    CompilerCacheMaxTotalSize = kLiteRtEnvOptionTagCompilerCacheMaxTotalSize,
     WebGpuInstance = kLiteRtEnvOptionTagWebGpuInstance,
+    WebGpuProcs = kLiteRtEnvOptionTagWebGpuProcs,
+    WebGpuFlushCallback = kLiteRtEnvOptionTagWebGpuFlushCallback,
     RuntimeLibraryDir = kLiteRtEnvOptionTagRuntimeLibraryDir,
     AutoRegisterAccelerators = kLiteRtEnvOptionTagAutoRegisterAccelerators,
   };

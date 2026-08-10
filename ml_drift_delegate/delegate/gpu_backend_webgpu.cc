@@ -29,6 +29,7 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/synchronization/notification.h"  // from @com_google_absl
@@ -54,15 +55,18 @@
 #include "ml_drift/webgpu/webgpu_api_util.h"  // from @ml_drift
 #include "ml_drift/webgpu/webgpu_headers.h"  // from @ml_drift
 #include "ml_drift/webgpu/webgpu_weights_manager.h"  // from @ml_drift
+#ifdef ML_DRIFT_MEM_STATS
 #include "third_party/odml/infra/ml_drift_delegate/ml_drift_webgpu_benchmark_util.h"  // IWYU pragma: keep
+#endif
 #include "ml_drift_delegate/delegate/delegate_utils.h"
 // clang-format off
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 // clang-format on
-#include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager.h"
-#include "third_party/odml/infra/ml_drift_delegate/shared_memory_manager_webgpu.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_webgpu.h"
 #include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "tflite/c/common.h"
 
@@ -220,7 +224,7 @@ GpuBackendWebGpu::CreateInferenceContext(
   auto ctx = std::make_unique<GpuInferenceContextWebGpu>(
       this, may_share_memory_manager ? &memory_manager_ : nullptr, create_info,
       num_steps_of_command_buffer_preparations_);
-  RETURN_IF_ERROR(ctx->wgpu_ctx().InitFromGpuModel(
+  ABSL_RETURN_IF_ERROR(ctx->wgpu_ctx().InitFromGpuModel(
       *env_, create_info, &gpu_model, serialized_model));
   return std::move(ctx);
 }
@@ -232,19 +236,19 @@ GpuBackendWebGpu::RestoreInferenceContext(
   auto ctx = std::make_unique<GpuInferenceContextWebGpu>(
       this, &memory_manager_, create_info,
       num_steps_of_command_buffer_preparations_);
-  RETURN_IF_ERROR(ctx->wgpu_ctx().RestoreDeserialized(serialized_model, *env_,
-                                                      &create_info));
+  ABSL_RETURN_IF_ERROR(ctx->wgpu_ctx().RestoreDeserialized(
+      serialized_model, *env_, &create_info));
   return std::move(ctx);
 }
 
 absl::StatusOr<std::unique_ptr<::ml_drift::SharedMemoryManager>>
 GpuBackendWebGpu::CreateSharedMemoryManager(
     const ::ml_drift::CreateGpuModelInfo& create_info,
-    ::ml_drift::GraphFloat32& graph, TfLiteContext* context,
-    MlDriftDelegateData& delegate_data,
+    std::unique_ptr<::ml_drift::GraphAdapter> graph_adapter,
+    TfLiteContext* context, MlDriftDelegateData& delegate_data,
     ::ml_drift::SerializationWeightCache* serialization_cache) {
   return ::ml_drift::MakeSharedMemoryManagerWebgpu(
-      *env_, create_info, graph, context,
+      *env_, create_info, std::move(graph_adapter), context,
       GetBufferIdToSpatialTensorMap(delegate_data),
       GetQuantParamIdToSpatialTensorMap(delegate_data),
       delegate_data.options->has_prepacked_external_tflite_tensors,
@@ -260,12 +264,14 @@ GpuBackendWebGpu::CreateWeightsManager() {
 absl::StatusOr<std::vector<
     std::vector<::ml_drift::WeightsManager::WeightsPrepOperationInfo>>>
 GpuBackendWebGpu::GetBatchesForWeightsPreparation(
-    ::ml_drift::WeightsManager* weights_manager) {
+    ::ml_drift::WeightsManager* weights_manager,
+    size_t total_shared_tensor_size) {
   auto* webgpu_weights_manager =
       static_cast<::ml_drift::webgpu::WebGpuWeightsManager*>(weights_manager);
   return webgpu_weights_manager->GetBatchesForWeightsPreparation(
       *env_,
-      ::ml_drift::WeightsManager::ScheduleStrategy::kBatchByMaxWeightSize);
+      ::ml_drift::WeightsManager::ScheduleStrategy::kBatchByMaxWeightSize,
+      total_shared_tensor_size);
 }
 
 absl::StatusOr<absl::flat_hash_map<
@@ -282,7 +288,8 @@ GpuBackendWebGpu::PrepareWeightsInBatch(
 absl::StatusOr<absl::flat_hash_map<
     ::ml_drift::ValueId, std::unique_ptr<::ml_drift::GpuSpatialTensor>>>
 GpuBackendWebGpu::PrepareWeightsInBatches(
-    ::ml_drift::WeightsManager* weights_manager) {
+    ::ml_drift::WeightsManager* weights_manager,
+    size_t total_shared_tensor_size) {
   return absl::UnimplementedError(
       "PrepareWeightsInBatches is not implemented.");
 }
@@ -305,7 +312,7 @@ absl::Status GpuBackendWebGpu::UpdateSpatialTensor(
     const ::ml_drift::TensorDescriptor& desc, size_t page_adjusted_offset,
     ReleaseDataCallback release_data_callback) {
   // If there is any tensor memory, release it before we update the tensor.
-  RETURN_IF_ERROR(ReleaseSpatialTensorMemory(tensor));
+  ABSL_RETURN_IF_ERROR(ReleaseSpatialTensorMemory(tensor));
 
   auto* wgpu_tensor = static_cast<::ml_drift::webgpu::SpatialTensor*>(tensor);
 
@@ -318,7 +325,7 @@ absl::Status GpuBackendWebGpu::UpdateSpatialTensor(
        desc.GetDataType() == ::ml_drift::DataType::UINT2)) {
     ::ml_drift::TensorDescriptor desc_no_data;
     desc.CopyWithoutData(&desc_no_data);
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         wgpu_tensor->CreateFromDescriptor(env_->device(), desc_no_data));
 
     return ::ml_drift::CopyBufferToBuffer(env_, desc, page_adjusted_offset,
@@ -374,7 +381,7 @@ GpuBackendWebGpu::CreateTensor2BufferConverter(
     const ::ml_drift::BufferDescriptor& dst_desc) {
   auto converter =
       std::make_unique<::ml_drift::webgpu::TensorToBHWCBufferConverter>();
-  RETURN_IF_ERROR(converter->Init(*env_, src_desc, dst_desc.element_type));
+  ABSL_RETURN_IF_ERROR(converter->Init(*env_, src_desc, dst_desc.element_type));
   return std::make_unique<Tensor2BufferConverterWebGpu>(this,
                                                         std::move(converter));
 }
@@ -385,7 +392,7 @@ GpuBackendWebGpu::CreateBuffer2TensorConverter(
     const ::ml_drift::TensorDescriptor& dst_desc) {
   auto converter =
       std::make_unique<::ml_drift::webgpu::BHWCBufferToTensorConverter>();
-  RETURN_IF_ERROR(converter->Init(*env_, src_desc.element_type, dst_desc));
+  ABSL_RETURN_IF_ERROR(converter->Init(*env_, src_desc.element_type, dst_desc));
   return std::make_unique<Buffer2TensorConverterWebGpu>(this,
                                                         std::move(converter));
 }
@@ -444,7 +451,7 @@ absl::Status GpuInferenceContextWebGpu::UploadWeightsOnWeb(
 #ifdef __EMSCRIPTEN__
   absl::flat_hash_map<int, wgpu::Buffer> tfl_id_to_wgpu_buffer;
   for (const auto& upload_info : upload_infos) {
-    ASSIGN_OR_RETURN(auto* tensor, GetSpatialTensor(upload_info.input_id));
+    ABSL_ASSIGN_OR_RETURN(auto* tensor, GetSpatialTensor(upload_info.input_id));
     auto* wgpu_tensor = static_cast<::ml_drift::webgpu::SpatialTensor*>(tensor);
 
     auto mapped_output_opt =
@@ -463,7 +470,8 @@ absl::Status GpuInferenceContextWebGpu::UploadWeightsOnWeb(
     tfl_id_to_wgpu_buffer[it->second] = wgpu_tensor->GetBufferHandle();
   }
 
-  RETURN_IF_ERROR(weight_loader->UploadWeightsOnWeb(tfl_id_to_wgpu_buffer));
+  ABSL_RETURN_IF_ERROR(
+      weight_loader->UploadWeightsOnWeb(tfl_id_to_wgpu_buffer));
 
   return absl::OkStatus();
 #else
@@ -474,11 +482,11 @@ absl::Status GpuInferenceContextWebGpu::UploadWeightsOnWeb(
 absl::Status GpuInferenceContextWebGpu::PrepareCommandBuffers(
     std::vector<wgpu::CommandBuffer>& command_buffers,
     bool submit_command_buffers) {
-  ASSIGN_OR_RETURN(command_buffers,
-                   ctx_->CreateCommandBuffers(backend_->wgpu_env(),
-                                              num_nodes_per_command_encoder_,
-                                              /*command_buffer_infos=*/nullptr,
-                                              submit_command_buffers));
+  ABSL_ASSIGN_OR_RETURN(
+      command_buffers,
+      ctx_->CreateCommandBuffers(
+          backend_->wgpu_env(), num_nodes_per_command_encoder_,
+          /*command_buffer_infos=*/nullptr, submit_command_buffers));
   return absl::OkStatus();
 }
 
@@ -513,8 +521,9 @@ absl::Status GpuInferenceContextWebGpu::PrepareCommandBuffersFromCached(
   } else {
     // Prepare and use command buffers immediately since cached ones are not
     // ready to use yet.
-    RETURN_IF_ERROR(PrepareCommandBuffers(command_buffers,
-                                          /*submit_command_buffers=*/true));
+    ABSL_RETURN_IF_ERROR(
+        PrepareCommandBuffers(command_buffers,
+                              /*submit_command_buffers=*/true));
   }
 
 #ifndef __EMSCRIPTEN__
@@ -547,7 +556,7 @@ absl::Status GpuInferenceContextWebGpu::Dispatch() {
   async_upload_notifications_.clear();
 
   std::vector<wgpu::CommandBuffer> command_buffers;
-  RETURN_IF_ERROR(PrepareCommandBuffersFromCached(command_buffers));
+  ABSL_RETURN_IF_ERROR(PrepareCommandBuffersFromCached(command_buffers));
 
   for (int i = 0; i < command_buffers.size(); ++i) {
     // Submit every buffer separately to avoid hangs
@@ -586,7 +595,7 @@ absl::Status GpuInferenceContextWebGpu::PostConvert(bool input) {
   // If output conversion is done, do PreRead on output buffers.
   if (!input) {
     for (auto* buffer : backend_->output_buffers()) {
-      RETURN_IF_ERROR(buffer->PreRead(*backend_->command_encoder()));
+      ABSL_RETURN_IF_ERROR(buffer->PreRead(*backend_->command_encoder()));
     }
   }
 

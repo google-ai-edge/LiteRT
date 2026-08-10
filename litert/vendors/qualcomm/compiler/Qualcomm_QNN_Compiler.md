@@ -47,6 +47,7 @@ provides the corresponding QNN operation it is legalized to.
 | `kLiteRtOpCodeTflArgMin` | Legalized to `QNN_OP_ARGMIN`. |
 | `kLiteRtOpCodeTflAveragePool2d` | Legalized to `QNN_OP_POOL_AVG_2D`. Supports fused activation. |
 | `kLiteRtOpCodeTflBatchMatmul` | Legalized to `QNN_OP_MAT_MUL`. |
+| `kLiteRtOpCodeTflBatchToSpaceNd` | Legalized to `QNN_OP_BATCH_TO_SPACE` with `block_size` and `crops` tensor params derived from the static `block_shape` and `crops` inputs. |
 | `kLiteRtOpCodeTflBroadcastTo` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (ADD) or `QNN_OP_ELEMENT_WISE_BINARY` (OR) with a static tensor. |
 | `kLiteRtOpCodeTflCast` | Legalized to `QNN_OP_CAST`. |
 | `kLiteRtOpCodeTflCeil` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (CEIL). |
@@ -66,6 +67,7 @@ provides the corresponding QNN operation it is legalized to.
 | `kLiteRtOpCodeTflExp` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (EXP). |
 | `kLiteRtOpCodeTflFloor` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (FLOOR). |
 | `kLiteRtOpCodeTflFloorDiv` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (FLOOR_DIV). |
+| `kLiteRtOpCodeTflFloorMod` | Legalized to `QNN_OP_ELEMENT_WISE_MOD`. Supports INT32 only. |
 | `kLiteRtOpCodeTflFullyConnected` | Legalized to `QNN_OP_FULLY_CONNECTED` and `QNN_OP_RESHAPE` if keep_num_dims = true. Supports fused activation. |
 | `kLiteRtOpCodeTflGather` | Legalized to `QNN_OP_GATHER`. |
 | `kLiteRtOpCodeTflGatherNd` | Legalized to `QNN_OP_GATHER_ND`. |
@@ -116,6 +118,7 @@ provides the corresponding QNN operation it is legalized to.
 | `kLiteRtOpCodeTflSin` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (SIN). |
 | `kLiteRtOpCodeTflSlice` | Legalized to `QNN_OP_STRIDED_SLICE`. |
 | `kLiteRtOpCodeTflSoftmax` | Legalized to `QNN_OP_SOFTMAX`. |
+| `kLiteRtOpCodeTflSpaceToBatchNd` | Legalized to `QNN_OP_SPACE_TO_BATCH` with `block_size` and `pad_amount` tensor params derived from the static `block_shape` and `paddings` inputs. |
 | `kLiteRtOpCodeTflSpaceToDepth` | Legalized to `QNN_OP_SPACE_TO_DEPTH`. |
 | `kLiteRtOpCodeTflSplit` | Legalized to `QNN_OP_SPLIT`. |
 | `kLiteRtOpCodeTflSplitV` | Legalized to `QNN_OP_SPLIT` with a cumulative `split_index` derived from the static `size_splits` input. |

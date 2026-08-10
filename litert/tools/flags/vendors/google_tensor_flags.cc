@@ -141,6 +141,10 @@ ABSL_FLAG(
     "Path to a file containing extra compiler options file for Google Tensor.");
 
 ABSL_FLAG(
+    std::string, google_tensor_extra_options, "",
+    "Inline extra compiler options string (textproto/JSON) for Google Tensor.");
+
+ABSL_FLAG(
     litert::google_tensor::GoogleTensorOptions::PerformanceMode,
     google_tensor_performance_mode,
     litert::google_tensor::GoogleTensorOptions::PerformanceMode::kBalanced,
@@ -217,6 +221,7 @@ Expected<void> UpdateGoogleTensorOptionsFromFlags(
       absl::GetFlag(FLAGS_google_tensor_op_filters_proto));
   options.SetExtraOptionsPath(
       absl::GetFlag(FLAGS_google_tensor_extra_options_path));
+  options.SetExtraOptions(absl::GetFlag(FLAGS_google_tensor_extra_options));
   options.SetPerformanceMode(
       ::absl::GetFlag(::FLAGS_google_tensor_performance_mode));
   return {};

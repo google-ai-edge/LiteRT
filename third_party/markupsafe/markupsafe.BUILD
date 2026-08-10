@@ -2,11 +2,6 @@
 
 package(default_visibility = ["//visibility:public"])
 
-license(
-    name = "license",
-    package_name = "markupsafe",
-)
-
 licenses(["notice"])
 
 py_library(

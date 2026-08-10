@@ -37,8 +37,11 @@ namespace {
 class ConvertStridedSliceTest : public ::testing::TestWithParam<TfLiteType> {
  protected:
   void SetUp() override {
+    // Verify the raw per-op conversion; model-level transforms (which would
+    // fold away this no-op full-tensor slice) have their own dedicated tests.
     delegate_ = std::unique_ptr<TfLiteDelegate, void (*)(TfLiteDelegate*)>(
-        CreateStubDelegate(), DeleteStubDelegate);
+        CreateStubDelegate({.apply_model_transformations = false}),
+        DeleteStubDelegate);
     ASSERT_TRUE(delegate_);
   }
 

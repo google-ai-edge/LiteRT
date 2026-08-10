@@ -183,8 +183,12 @@ litert::Expected<void> OutlineSubgraph(LiteRtModelT& model,
   int decomp_sg_idx = model.NumSubgraphs() - 1;
 
   // 2. Use OutlinePartition to do the heavy lifting of slicing and re-wiring.
-  LiteRtOp custom_op =
+  auto custom_op_res =
       litert::internal::OutlinePartition(main_sg, &decomp_sg, ops_to_outline);
+  if (!custom_op_res) {
+    return custom_op_res.Error();
+  }
+  LiteRtOp custom_op = *custom_op_res;
 
   // 3. Transform into a StableHLO Composite Op and final state cleanup.
   custom_op->SetOpCode(kLiteRtOpCodeShloComposite);

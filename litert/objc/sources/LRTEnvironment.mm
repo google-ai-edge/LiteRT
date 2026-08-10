@@ -13,8 +13,6 @@
 // limitations under the License.
 
 #import "third_party/odml/litert/litert/objc/apis/LRTEnvironment.h"
-#import "third_party/odml/litert/litert/objc/apis/LRTError.h"
-#import "third_party/odml/litert/litert/objc/sources/LRTEnvironment+Internal.h"
 
 #include <cstdint>
 #include <memory>
@@ -25,6 +23,8 @@
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
+#import "third_party/odml/litert/litert/objc/apis/LRTError.h"
+#import "third_party/odml/litert/litert/objc/sources/LRTEnvironment+Internal.h"
 
 namespace {
 

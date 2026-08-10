@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <string>
 
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
@@ -34,10 +35,10 @@ absl::Status TFLiteOperationParser::ValidateSupport(
     const TfLiteContext* context, const TfLiteNode* tflite_node,
     const TfLiteRegistration* registration,
     const ParserValidationOptions& options) {
-  RETURN_IF_ERROR(
+  ABSL_RETURN_IF_ERROR(
       CheckMaxSupportedOpVersion(registration, options.max_version));
   if (options.check_gpu_compatibility) {
-    RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
+    ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
         context, tflite_node, registration, options.gpu_flags));
   }
   if (options.min_inputs != -1 || options.max_inputs != -1) {
@@ -80,7 +81,7 @@ absl::Status TFLiteOperationParser::ValidateSupport(
           " const input(s)."));
     }
   }
-  RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+  ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
   return absl::OkStatus();
 }
 
@@ -302,7 +303,7 @@ absl::Status PreCheckNewTensorWithDifferentType(const TfLiteContext* context,
 absl::Status PreCheckReadValue(const TfLiteContext* context,
                                const TfLiteNode* node, uint32_t idx) {
   int32_t tensor_idx = 0;
-  RETURN_IF_ERROR(GetTensorId(context, node, idx, &(tensor_idx)));
+  ABSL_RETURN_IF_ERROR(GetTensorId(context, node, idx, &(tensor_idx)));
   return PreCheckReadValueByTensorIdx(context, tensor_idx);
 }
 
@@ -320,9 +321,9 @@ absl::Status PreCheckReadValueByTensorIdx(const TfLiteContext* context,
       tflite_tensor->quantization.type ==
           TfLiteQuantizationType::kTfLiteAffineQuantization) {
     TfLiteTensor fp_tflite_tensor;
-    RETURN_IF_ERROR(PreCheckNewTensorWithDifferentType(
+    ABSL_RETURN_IF_ERROR(PreCheckNewTensorWithDifferentType(
         context, tensor_idx, kTfLiteFloat32, &fp_tflite_tensor));
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         CheckTensorShape(fp_tflite_tensor.dims, tflite_tensor->name));
     // checkings in PopulateQuantParams
     TfLiteAffineQuantization* quantization_data =
@@ -332,7 +333,8 @@ absl::Status PreCheckReadValueByTensorIdx(const TfLiteContext* context,
       return absl::InvalidArgumentError("Unsupported quantization scale size");
     }
   } else {
-    RETURN_IF_ERROR(CheckTensorShape(tflite_tensor->dims, tflite_tensor->name));
+    ABSL_RETURN_IF_ERROR(
+        CheckTensorShape(tflite_tensor->dims, tflite_tensor->name));
   }
 
   return absl::OkStatus();
@@ -383,16 +385,16 @@ absl::Status PreCheckRuntimeOrConstantInput(const TfLiteContext* context,
   if (!PreCheckReadValue(context, node, tensor_idx).ok()) {
     // checkings in NewConstNode
     const TfLiteTensor* input = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, node, tensor_idx, &input));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, node, tensor_idx, &input));
     if (input->type == kTfLiteFloat32) {
       ::ml_drift::TensorFloat32 t;
-      RETURN_IF_ERROR(PreCheckTensorToTensor(input, &t));
+      ABSL_RETURN_IF_ERROR(PreCheckTensorToTensor(input, &t));
     } else if (input->type == kTfLiteBool) {
       ::ml_drift::TensorBool t;
-      RETURN_IF_ERROR(PreCheckTensorToTensor(input, &t));
+      ABSL_RETURN_IF_ERROR(PreCheckTensorToTensor(input, &t));
     } else if (input->type == kTfLiteInt32) {
       ::ml_drift::TensorInt32 t;
-      RETURN_IF_ERROR(PreCheckTensorToTensor(input, &t));
+      ABSL_RETURN_IF_ERROR(PreCheckTensorToTensor(input, &t));
     } else {
       return absl::InvalidArgumentError(
           absl::StrCat("Unsupported tensor type in NewConstNode: ",
@@ -416,7 +418,7 @@ absl::Status PreCheckOutput(const TfLiteContext* context,
 absl::Status PreCheckOutputs(const TfLiteContext* context,
                              const TfLiteNode* node) {
   for (int i = 0; i < node->outputs->size; ++i) {
-    RETURN_IF_ERROR(PreCheckOutput(context, node, i));
+    ABSL_RETURN_IF_ERROR(PreCheckOutput(context, node, i));
   }
   return absl::OkStatus();
 }

@@ -35,17 +35,12 @@ cc_library(
     srcs = ["environment_wrapper.cc"],
     hdrs = ["environment_wrapper.h"],
     deps = [
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_environment_options",
-        "//litert/cc/dynamic_runtime:litert_environment",
         "//litert/python/litert_wrapper/common:litert_wrapper_utils",
         "@com_google_absl//absl/types:span",
         "@xla//third_party/python_runtime:headers",  # buildcleaner: keep
-    ] + select({
-        "//litert:windows": [
-            "//litert/c:litert_runtime_c_api_import",
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 pybind_extension(

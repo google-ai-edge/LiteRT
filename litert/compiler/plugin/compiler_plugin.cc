@@ -540,7 +540,8 @@ LiteRtStatus PartitionSubgraph(
   // single dispatch op.
   for (auto& island : islands) {
     auto& new_subgraph = model.EmplaceSubgraph();
-    auto* dispatch_op = OutlinePartition(subgraph, &new_subgraph, island);
+    LITERT_ASSIGN_OR_RETURN(auto* dispatch_op,
+                            OutlinePartition(subgraph, &new_subgraph, island));
     res_ops.push_back(dispatch_op);
   }
 
@@ -827,8 +828,8 @@ Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
     return compiled_result.Error();
   }
 
-  result.compiled_results.push_back(std::move(*compiled_result));
-  CompiledResult& stored_result = result.compiled_results.back();
+  CompiledResult& stored_result = *compiled_result;
+  bool has_jit_handles = false;
 
   // Register byte code buffers as external buffers. Map the byte code indices
   // to the registered buffer ids.
@@ -852,6 +853,7 @@ Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
     }
 
     if (exec_handle != nullptr) {
+      has_jit_handles = true;
       // If we have a JIT handle, we don't need to register the bytecode buffer.
       // We register an empty buffer to keep indices consistent and satisfy
       // the model's asset attachment requirements.
@@ -891,6 +893,12 @@ Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
     if (handle_or_error.HasValue() && handle_or_error.Value() != nullptr) {
       result.jit_executable_handles[name] = handle_or_error.Value();
     }
+  }
+
+  // Bytecode modules have been copied into model-owned buffers and no longer
+  // depend on the plugin result. Retain only results that own JIT handles.
+  if (has_jit_handles) {
+    result.compiled_results.push_back(std::move(*compiled_result));
   }
 
   // Tag the model with make/model from the plugin.
@@ -1027,13 +1035,15 @@ Expected<ApplyPluginsResult> ApplyPlugins(
 
     if (*plugin_supported_hardware & selected_hw_accelerators) {
       auto status = ApplyPlugin(compiler_plugin, *model, "", {}, result);
-      if (mutated != nullptr) {
-        *mutated = true;
-      }
+
       if (!status) {
         error_messages.push_back(
             absl::StrCat(plugin_name, " ", status.Error().Message()));
         continue;
+      }
+
+      if (mutated != nullptr) {
+        *mutated = true;
       }
 
       success_messages.push_back(absl::StrCat(plugin_name));

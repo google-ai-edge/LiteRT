@@ -30,13 +30,14 @@
 #include <variant>
 #include <vector>
 
-#include "third_party/FP16/include/fp16.h"
+#include "fp16.h"  // from @FP16
 #include "xnnpack.h"  // from @XNNPACK
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -55,8 +56,6 @@
 #include "ml_drift_delegate/tflite/lstm_parser.h"
 #include "ml_drift_delegate/tflite/model_builder_helper.h"
 #include "ml_drift_delegate/tflite/object_reader.h"
-#include "tflite/tools/versioning/gpu_compatibility.h"
-#include "tflite/tools/versioning/op_signature.h"
 #include "ml_drift_delegate/tflite/operation_parser.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
 #include "tflite/builtin_ops.h"
@@ -157,40 +156,55 @@ inline std::string GetTensorDebugString(const TfLiteTensor* tensor) {
   if (weights_tensor->quantization.type == kTfLiteAffineQuantization) {
     const auto* qparams = reinterpret_cast<TfLiteAffineQuantization*>(
         weights_tensor->quantization.params);
-    if (copy_weights) {
-      attr.scale.data = std::vector<float>(
-          qparams->scale->data, qparams->scale->data + qparams->scale->size);
-    } else {
-      attr.scale.spanned_data =
-          absl::MakeSpan(qparams->scale->data, qparams->scale->size);
-    }
-    attr.scale.shape = ::ml_drift::OHWI(qparams->scale->size, 1, 1, 1);
-    if (copy_weights) {
-      attr.zero_point.data = std::vector<int32_t>(
-          qparams->zero_point->data,
-          qparams->zero_point->data + qparams->zero_point->size);
-      attr.zero_point.data.resize(qparams->scale->size,
-                                  attr.zero_point.data[0]);
-    } else {
-      // If the zero points have been de-duplicated, we need to broadcast them.
-      if (qparams->zero_point->size != qparams->scale->size) {
-        attr.zero_point.data.assign(qparams->scale->size,
-                                    qparams->zero_point->data[0]);
+    if (qparams && qparams->scale) {
+      if (copy_weights) {
+        attr.scale.data = std::vector<float>(
+            qparams->scale->data, qparams->scale->data + qparams->scale->size);
       } else {
-        attr.zero_point.spanned_data = absl::MakeSpan(
-            qparams->zero_point->data, qparams->zero_point->size);
+        attr.scale.spanned_data =
+            absl::MakeSpan(qparams->scale->data, qparams->scale->size);
       }
+      attr.scale.shape = ::ml_drift::OHWI(qparams->scale->size, 1, 1, 1);
+      if (qparams->zero_point) {
+        if (copy_weights) {
+          attr.zero_point.data = std::vector<int32_t>(
+              qparams->zero_point->data,
+              qparams->zero_point->data + qparams->zero_point->size);
+          if (!attr.zero_point.data.empty()) {
+            attr.zero_point.data.resize(qparams->scale->size,
+                                        attr.zero_point.data[0]);
+          } else {
+            attr.zero_point.data.resize(qparams->scale->size, 0);
+          }
+        } else {
+          // If the zero points have been de-duplicated, we need to broadcast
+          // them.
+          if (qparams->zero_point->size != qparams->scale->size) {
+            if (qparams->zero_point->size > 0) {
+              attr.zero_point.data.assign(qparams->scale->size,
+                                          qparams->zero_point->data[0]);
+            } else {
+              attr.zero_point.data.assign(qparams->scale->size, 0);
+            }
+          } else {
+            attr.zero_point.spanned_data = absl::MakeSpan(
+                qparams->zero_point->data, qparams->zero_point->size);
+          }
+        }
+      } else {
+        attr.zero_point.data.assign(qparams->scale->size, 0);
+      }
+      // TFLite assumes that scale and zero_point have the same logical shape.
+      // Since TFLite de-duplicates zero_point and its physical storage shape
+      // might  be shrinked from its logical shape, we should set zero_point's
+      // logical shape by scale's shape.
+      attr.zero_point.shape = ::ml_drift::OHWI(qparams->scale->size, 1, 1, 1);
+      if (reader->IsNodeInputTensorPresent(bias_node_input_index)) {
+        reader->ReadTensor(bias_node_input_index, &attr.bias,
+                           ReadTensorFlags::kNoExtraBytes);
+      }
+      return attr;
     }
-    // TFLite assumes that scale and zero_point have the same logical shape.
-    // Since TFLite de-duplicates zero_point and its physical storage shape
-    // might  be shrinked from its logical shape, we should set zero_point's
-    // logical shape by scale's shape.
-    attr.zero_point.shape = ::ml_drift::OHWI(qparams->scale->size, 1, 1, 1);
-    if (reader->IsNodeInputTensorPresent(bias_node_input_index)) {
-      reader->ReadTensor(bias_node_input_index, &attr.bias,
-                         ReadTensorFlags::kNoExtraBytes);
-    }
-    return attr;
   }
 
   if (weights_tensor->quantization.type == kTfLiteBlockwiseQuantization) {
@@ -203,7 +217,9 @@ inline std::string GetTensorDebugString(const TfLiteTensor* tensor) {
             scale->data.f, scale->data.f + scale->bytes / sizeof(float));
       } else if (scale->type == kTfLiteFloat16) {
         const auto* scale2 = reinterpret_cast<TfLiteFloat16*>(scale->data.f16);
-        for (int i = 0; i < scale->bytes / sizeof(TfLiteFloat16); ++i) {
+        const int num_elements = scale->bytes / sizeof(TfLiteFloat16);
+        attr.scale.data.reserve(num_elements);
+        for (int i = 0; i < num_elements; ++i) {
           attr.scale.data.push_back(fp16_ieee_to_fp32_value(scale2[i].data));
         }
       } else {
@@ -316,6 +332,8 @@ void ConfigSharedWeightFullyConnectedNode(
     const int tflite_weights_tensor_index,
     const TfLiteTensor* const weights_tensor, ObjectReader* reader,
     ::ml_drift::GraphFloat32* graph, ::ml_drift::Node* node) {
+  const ObjectReader::ConstantInputSharingInfo weights_share =
+      reader->GetSharingInfoByTensorIndex(tflite_weights_tensor_index);
   ::ml_drift::Value* input;
   reader->ReadQuantizedValueByTensorIdx(tflite_weights_tensor_index, &input);
   const auto shape =
@@ -329,12 +347,47 @@ void ConfigSharedWeightFullyConnectedNode(
     scale_shape.i = shape.i / qparams->blocksize;
   }
 
+  const bool has_quant =
+      weights_tensor->quantization.type == kTfLiteAffineQuantization;
+  const auto* qparams = has_quant ? reinterpret_cast<TfLiteAffineQuantization*>(
+                                        weights_tensor->quantization.params)
+                                  : nullptr;
+
+  auto populate_quant_attrs = [&](auto& attr) {
+    if (qparams && qparams->scale) {
+      attr.scale.data = std::vector<float>(
+          qparams->scale->data, qparams->scale->data + qparams->scale->size);
+      attr.scale.shape = ::ml_drift::OHWI(qparams->scale->size, 1, 1, 1);
+
+      if (qparams->zero_point) {
+        attr.zero_point.data = std::vector<int32_t>(
+            qparams->zero_point->data,
+            qparams->zero_point->data + qparams->zero_point->size);
+        if (!attr.zero_point.data.empty()) {
+          attr.zero_point.data.resize(qparams->scale->size,
+                                      attr.zero_point.data[0]);
+        } else {
+          attr.zero_point.data.resize(qparams->scale->size, 0);
+        }
+      } else {
+        attr.zero_point.data.resize(qparams->scale->size, 0);
+      }
+      attr.zero_point.shape = ::ml_drift::OHWI(qparams->scale->size, 1, 1, 1);
+    }
+  };
+
   if (weights_tensor->type == kTfLiteInt8) {
     node->operation.type =
         ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT8);
     ::ml_drift::FullyConnectedInt8Attributes attr;
     attr.weights.shape = shape;
+    if (weights_tensor->data.raw_const != nullptr &&
+        !weights_share.HasExternalBufferId()) {
+      attr.weights.spanned_data =
+          absl::MakeSpan(weights_tensor->data.int8, weights_tensor->bytes);
+    }
     attr.scale.shape = scale_shape;
+    populate_quant_attrs(attr);
     node->operation.attributes = std::move(attr);
   } else if (weights_tensor->type == kTfLiteInt4) {
     node->operation.type =
@@ -343,8 +396,14 @@ void ConfigSharedWeightFullyConnectedNode(
     ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT4>
         int4_weights;
     int4_weights.shape = shape;
+    if (weights_tensor->data.raw_const != nullptr &&
+        !weights_share.HasExternalBufferId()) {
+      int4_weights.spanned_data =
+          absl::MakeSpan(weights_tensor->data.int8, weights_tensor->bytes);
+    }
     attr.weights = int4_weights;
     attr.scale.shape = scale_shape;
+    populate_quant_attrs(attr);
     node->operation.attributes = std::move(attr);
   } else if (weights_tensor->type == kTfLiteInt2) {
     node->operation.type =
@@ -353,8 +412,14 @@ void ConfigSharedWeightFullyConnectedNode(
     ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT2>
         int2_weights;
     int2_weights.shape = shape;
+    if (weights_tensor->data.raw_const != nullptr &&
+        !weights_share.HasExternalBufferId()) {
+      int2_weights.spanned_data =
+          absl::MakeSpan(weights_tensor->data.int8, weights_tensor->bytes);
+    }
     attr.weights = int2_weights;
     attr.scale.shape = scale_shape;
+    populate_quant_attrs(attr);
     node->operation.attributes = std::move(attr);
   }
   graph->AddConsumer(node->id, input->id);
@@ -509,26 +574,28 @@ class ArgMaxOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(
-        context, tflite_node, registration,
-        {.num_outputs = 1,
-         .required_runtime_inputs = 1,
-         .required_const_inputs = 1,
-         .check_gpu_compatibility = false}));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
+                                         {.num_outputs = 1,
+                                          .required_runtime_inputs = 1,
+                                          .required_const_inputs = 1,
+                                          .check_gpu_compatibility = false}));
 
     ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::INT32>
         dims_tensor;
-    RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &dims_tensor,
-                                  ReadTensorFlags::kNoExtraBytes));
+    ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &dims_tensor,
+                                       ReadTensorFlags::kNoExtraBytes));
 
     const TfLiteTensor* src_tensor = nullptr;
     TfLiteTensor* dst_tensor = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &src_tensor));
-    RETURN_IF_ERROR(PreGetOutputTensor(context, tflite_node, 0, &dst_tensor));
-    RETURN_IF_ERROR(PreCheckAxisFromIndex(*src_tensor, dims_tensor.data[0]));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckTensorShape(*src_tensor));
-    RETURN_IF_ERROR(PreCheckTensorShape(*dst_tensor));
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 0, &src_tensor));
+    ABSL_RETURN_IF_ERROR(
+        PreGetOutputTensor(context, tflite_node, 0, &dst_tensor));
+    ABSL_RETURN_IF_ERROR(
+        PreCheckAxisFromIndex(*src_tensor, dims_tensor.data[0]));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckTensorShape(*src_tensor));
+    ABSL_RETURN_IF_ERROR(PreCheckTensorShape(*dst_tensor));
 
     return absl::OkStatus();
   }
@@ -593,15 +660,15 @@ class BatchedMatMulOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                    {.num_outputs = 1}));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
+                                         {.num_outputs = 1}));
     const int runtime_inputs =
         GetNumberOfRuntimeInputsForNode(context, tflite_node);
     if (runtime_inputs == 1) {
       // Second input is constant, replace with Convolution2D
-      RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+      ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
       const TfLiteTensor* second_input = nullptr;
-      RETURN_IF_ERROR(
+      ABSL_RETURN_IF_ERROR(
           PreGetInputTensor(context, tflite_node, 1, &second_input));
       if (!tflite::IsConstantTensor(second_input)) {
         // first input must be runtime and second is a constant tensor
@@ -611,13 +678,13 @@ class BatchedMatMulOperationParser : public TFLiteOperationParser {
       if (second_input->dims->size == 2) {
         ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::FLOAT32>
             dummy_weights;
-        RETURN_IF_ERROR(
+        ABSL_RETURN_IF_ERROR(
             PreCheckReadTensor(context, tflite_node, 1, &dummy_weights));
       } else if (second_input->dims->size == 3 ||
                  second_input->dims->size == 4) {
         ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::FLOAT32>
             dummy_weights;
-        RETURN_IF_ERROR(
+        ABSL_RETURN_IF_ERROR(
             PreCheckReadTensor(context, tflite_node, 1, &dummy_weights));
       } else {
         return absl::UnavailableError(
@@ -625,13 +692,13 @@ class BatchedMatMulOperationParser : public TFLiteOperationParser {
             "rank");
       }
     } else if (runtime_inputs == 2) {
-      RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-      RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
+      ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+      ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
     } else {
       return absl::UnavailableError(
           "Not supported batched mat mul case: too many inputs");
     }
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
     return absl::OkStatus();
   }
 
@@ -777,15 +844,18 @@ class BitcastOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration, {}));
+    ABSL_RETURN_IF_ERROR(
+        ValidateSupport(context, tflite_node, registration, {}));
     const TfLiteTensor* src_tensor = nullptr;
     TfLiteTensor* dst_tensor = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &src_tensor));
-    RETURN_IF_ERROR(PreGetOutputTensor(context, tflite_node, 0, &dst_tensor));
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 0, &src_tensor));
+    ABSL_RETURN_IF_ERROR(
+        PreGetOutputTensor(context, tflite_node, 0, &dst_tensor));
 
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     if (src_tensor->dims->size != dst_tensor->dims->size) {
-      RETURN_IF_ERROR(PreCheckTensorShape(*dst_tensor));
+      ABSL_RETURN_IF_ERROR(PreCheckTensorShape(*dst_tensor));
     }
 
     return absl::OkStatus();
@@ -873,11 +943,13 @@ class BroadcastInDimOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration, {}));
+    ABSL_RETURN_IF_ERROR(
+        ValidateSupport(context, tflite_node, registration, {}));
     const TfLiteTensor* input_tensor = nullptr;
     TfLiteTensor* output_tensor = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input_tensor));
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 0, &input_tensor));
+    ABSL_RETURN_IF_ERROR(
         PreGetOutputTensor(context, tflite_node, 0, &output_tensor));
     if (!CanGetIndicesMap(input_tensor->dims->size)) {
       return absl::InvalidArgumentError("Only supports 1D-4D input tensor.");
@@ -887,12 +959,12 @@ class BroadcastInDimOperationParser : public TFLiteOperationParser {
     }
 
     ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32> indices;
-    RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &indices,
-                                  ReadTensorFlags::kNoExtraBytes));
-    RETURN_IF_ERROR(CheckIndices(input_tensor, output_tensor, indices));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &indices,
+                                       ReadTensorFlags::kNoExtraBytes));
+    ABSL_RETURN_IF_ERROR(CheckIndices(input_tensor, output_tensor, indices));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
 
-    RETURN_IF_ERROR(PreCheckTensorShape(*output_tensor));
+    ABSL_RETURN_IF_ERROR(PreCheckTensorShape(*output_tensor));
     return absl::OkStatus();
   }
 
@@ -991,14 +1063,14 @@ class CastOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                    {.min_inputs = 1,
-                                     .max_inputs = 1,
-                                     .num_outputs = 1,
-                                     .required_runtime_inputs = 1,
-                                     .required_const_inputs = 0,
-                                     .check_gpu_compatibility = false}));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
+                                         {.min_inputs = 1,
+                                          .max_inputs = 1,
+                                          .num_outputs = 1,
+                                          .required_runtime_inputs = 1,
+                                          .required_const_inputs = 0,
+                                          .check_gpu_compatibility = false}));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     // TODO(b/189917229): add proper op support checking.
     return absl::OkStatus();
   }
@@ -1018,8 +1090,9 @@ class CbrtOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration, {}));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(
+        ValidateSupport(context, tflite_node, registration, {}));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     return absl::OkStatus();
   }
 
@@ -1042,10 +1115,11 @@ class ClampOperationsParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration, {}));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 2));
+    ABSL_RETURN_IF_ERROR(
+        ValidateSupport(context, tflite_node, registration, {}));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 2));
     return absl::OkStatus();
   }
 
@@ -1082,15 +1156,16 @@ class ConcatenationOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                    {.max_version = 6}));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
+                                         {.max_version = 6}));
 
     // tensor availability checking
     std::vector<::ml_drift::BHWC> input_shapes;
     for (uint32_t idx = 0; idx < tflite_node->inputs->size; ++idx) {
       const TfLiteTensor* input = nullptr;
-      RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, idx, &input));
-      RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, idx));
+      ABSL_RETURN_IF_ERROR(
+          PreGetInputTensor(context, tflite_node, idx, &input));
+      ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, idx));
       input_shapes.push_back(ExtractTensorShape(input));
     }
 
@@ -1104,7 +1179,7 @@ class ConcatenationOperationParser : public TFLiteOperationParser {
     if (!params) {
       return absl::InvalidArgumentError("Missing TfLiteConcatenationParams.");
     }
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         PreCheckMaybeFuseActivation(tflite_node, params->activation));
     return absl::OkStatus();
   }
@@ -1228,22 +1303,22 @@ class Conv2DOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                    {.max_version = 6}));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
+                                         {.max_version = 6}));
 
     // TODO: b/372428865 - Get tensor sharing information in IsSupported.
     // To make checkings more completed, sharing information is required.
     const TfLiteTensor* input_tensor = nullptr;
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         PreGetInputTensor(context, tflite_node, kInputSrcId, &input_tensor));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, kInputSrcId));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, kInputSrcId));
     if (tflite::IsConstantTensor(input_tensor)) {
       return absl::InvalidArgumentError("input must be a runtime tensor");
     }
 
     const TfLiteTensor* weights_tensor = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, kInputWeightsId,
-                                      &weights_tensor));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node,
+                                           kInputWeightsId, &weights_tensor));
 
     const auto* params =
         static_cast<const TfLiteConvParams*>(tflite_node->builtin_data);
@@ -1253,19 +1328,34 @@ class Conv2DOperationParser : public TFLiteOperationParser {
     // connected layer.
     if (IsConvertibleToFC(weights_tensor)) {
       int weights_tensor_idx = 0;
-      RETURN_IF_ERROR(GetTensorId(context, tflite_node, kInputWeightsId,
-                                  &weights_tensor_idx));
-      RETURN_IF_ERROR(
+      ABSL_RETURN_IF_ERROR(GetTensorId(context, tflite_node, kInputWeightsId,
+                                       &weights_tensor_idx));
+      ABSL_RETURN_IF_ERROR(
           PreCheckReadQuantizedValueByTensorIdx(context, weights_tensor_idx));
+    }
+
+    const int runtime_inputs =
+        GetNumberOfRuntimeInputsForNode(context, tflite_node);
+    if (runtime_inputs == 2) {
+      auto status = PreCheckReadValue(context, tflite_node, kInputWeightsId);
+      if (!status.ok()) {
+        ABSL_LOG(INFO)
+            << "Conv2D: Weights tensor has unsupported properties for WebGPU "
+               "delegate (e.g. per-channel quantization). Gracefully falling "
+               "back to CPU. Details: "
+            << status.message();
+        return status;
+      }
     }
 
     if (tflite::GetVariableInput(const_cast<TfLiteContext*>(context),
                                  tflite_node, kInputBiasId)) {
-      RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, kInputBiasId));
+      ABSL_RETURN_IF_ERROR(
+          PreCheckReadValue(context, tflite_node, kInputBiasId));
     }
 
     // TODO: who/impjdi - Check ReadAttributes.
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         PreCheckMaybeFuseActivation(tflite_node, params->activation));
     return absl::OkStatus();
   }
@@ -1446,7 +1536,12 @@ class Conv2DOperationParser : public TFLiteOperationParser {
     node->operation.type = ToString(::ml_drift::OperationType::CONVOLUTION_2D);
     node->operation.attributes = std::move(attr);
     reader->AddInput(node, 0);
-    // If the weights are shared, they will be passed as a runtime input.
+    const int runtime_inputs = reader->GetNumberOfRuntimeInputs();
+    const bool shared_weights = weights_share.IsShared();
+    int node_input_index_for_weights = -1;
+    if (runtime_inputs == 2 || shared_weights) {
+      node_input_index_for_weights = 1;
+    }
     reader->AddInput(node, 1);
     if (shared_bias) {
       ::ml_drift::Value* bias_input =
@@ -1528,7 +1623,11 @@ class Conv2DOperationParser : public TFLiteOperationParser {
           src_shape.c /
           std::visit([](const auto& w) { return w.shape; }, attr.weights).i;
     }
-    if (reader->IsNodeInputTensorPresent(kInputBiasId)) {
+    const ObjectReader::ConstantInputSharingInfo bias_share =
+        reader->GetSharingInfoByNodeInputIndex(kInputBiasId);
+    const TfLiteTensor* bias_tensor = reader->GetInputTensor(kInputBiasId);
+    if (bias_tensor && bias_tensor->data.raw != nullptr &&
+        !bias_share.HasExternalBufferId()) {
       reader->ReadTensor(kInputBiasId, &attr.bias,
                          ReadTensorFlags::kNoExtraBytes,
                          options_.enable_spanned_weights);
@@ -1653,9 +1752,9 @@ class CumsumOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                    {.max_version = 1}));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
+                                         {.max_version = 1}));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     return absl::OkStatus();
   }
 
@@ -1684,17 +1783,17 @@ class DepthwiseConvolutionOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                    {.max_version = 6}));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
+                                         {.max_version = 6}));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     const int runtime_inputs =
         GetNumberOfRuntimeInputsForNode(context, tflite_node);
     if (runtime_inputs == 2) {
-      RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
+      ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
     } else if (runtime_inputs == 1) {
       ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>
           dummy_weights;
-      RETURN_IF_ERROR(
+      ABSL_RETURN_IF_ERROR(
           PreCheckReadTensor(context, tflite_node, 1, &dummy_weights));
     } else {
       return absl::InvalidArgumentError(
@@ -1706,7 +1805,7 @@ class DepthwiseConvolutionOperationParser : public TFLiteOperationParser {
     if (!params) {
       return absl::InvalidArgumentError("Missing TfLiteDepthwiseConvParams.");
     }
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         PreCheckMaybeFuseActivation(tflite_node, params->activation));
 
     return absl::OkStatus();
@@ -1719,32 +1818,77 @@ class DepthwiseConvolutionOperationParser : public TFLiteOperationParser {
     node->operation.type =
         ToString(::ml_drift::OperationType::DEPTHWISE_CONVOLUTION);
     reader->AddInput(node, 0);
-    reader->AddOutputs(node);
 
+    reader->AllowSharingInput(1);
+    reader->AllowSharingInput(2);
+    const ObjectReader::ConstantInputSharingInfo weights_share =
+        reader->GetSharingInfoByNodeInputIndex(1);
+
+    const auto* params = static_cast<const TfLiteDepthwiseConvParams*>(
+        tflite_node->builtin_data);
+    const int depth_multiplier = params ? params->depth_multiplier : 1;
+    const bool can_share_weights = (depth_multiplier == 1);
+
+    const int weights_tensor_id = tflite_node->inputs->data[1];
+    const bool has_external_weights =
+        reader->GetSharingInfoByTensorIndex(weights_tensor_id)
+            .HasExternalBufferId();
+    const TfLiteTensor* weights_tensor = reader->GetInputTensor(1);
+    const bool has_inline_weights =
+        weights_tensor && (weights_tensor->data.raw != nullptr ||
+                           weights_tensor->data.raw_const != nullptr);
+
+    const int runtime_inputs = reader->GetNumberOfRuntimeInputs();
+    int node_input_index_for_weights = -1;
+
+    const bool shared_weights =
+        (weights_share.IsShared() || has_external_weights) &&
+        can_share_weights && !has_inline_weights;
     ::ml_drift::DepthwiseConvolution2DAttributes attr;
     auto& weights = attr.weights.emplace<
         ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>();
-    const int runtime_inputs = reader->GetNumberOfRuntimeInputs();
-    if (runtime_inputs == 2) {
+    if (runtime_inputs == 2 || shared_weights) {
+      node_input_index_for_weights = 1;
       reader->AddInput(node, 1);
-      auto weights_shape = graph->FindInputs(node->id)[1]->tensor.shape;
+      const auto node_inputs = graph->FindInputs(node->id);
+      auto weights_shape = node_inputs[1]->tensor.shape;
       weights.shape = ::ml_drift::OHWI(weights_shape.b, weights_shape.h,
                                        weights_shape.w, weights_shape.c);
+      if (shared_weights) {
+        const TfLiteTensor* weights_tensor = reader->GetInputTensor(1);
+        const bool is_quantized =
+            weights_tensor &&
+            (weights_tensor->quantization.type != kTfLiteNoQuantization ||
+             weights_tensor->type == kTfLiteInt8 ||
+             weights_tensor->type == kTfLiteInt4 ||
+             weights_tensor->type == kTfLiteUInt8 ||
+             weights_tensor->type == kTfLiteInt2);
+        bool dequant_forced =
+            is_quantized ||
+            (weights_tensor &&
+             weights_tensor->quantization.type ==
+                 TfLiteQuantizationType::kTfLiteAffineQuantization);
+        reader->SetSharedTensor(node_inputs[1]->id, weights_share.PreferredId(),
+                                tflite_node->inputs->data[1], dequant_forced,
+                                /*layout=*/std::nullopt);
+      }
     } else {  // runtime_inputs == 1;
       reader->ReadTensor(1, &weights, ReadTensorFlags::kExtraBytes);
     }
-    if (reader->IsNodeInputTensorPresent(2)) {
+    reader->AddOutputs(node);
+    const ObjectReader::ConstantInputSharingInfo bias_share =
+        reader->GetSharingInfoByNodeInputIndex(2);
+    const TfLiteTensor* bias_tensor = reader->GetInputTensor(2);
+    if (bias_tensor && bias_tensor->data.raw != nullptr &&
+        !bias_share.HasExternalBufferId()) {
       reader->ReadTensor(2, &attr.bias, ReadTensorFlags::kNoExtraBytes);
     }
-    const auto* params = static_cast<const TfLiteDepthwiseConvParams*>(
-        tflite_node->builtin_data);
     attr.strides = ToHW(params->stride_height, params->stride_width);
     attr.dilations = ::ml_drift::HW(std::max(1, params->dilation_height_factor),
                                     std::max(1, params->dilation_width_factor));
     UpdatePadding(params->padding, graph->FindInputs(node->id)[0]->tensor.shape,
                   &attr);
     HandleFusedActivation(params->activation, graph, node);
-    const int depth_multiplier = params->depth_multiplier;
     if (depth_multiplier != 1) {
       const TfLiteTensor* input = reader->GetInputTensor(0);
       const TfLiteTensor* filter = reader->GetInputTensor(1);
@@ -1810,9 +1954,10 @@ class DepthToSpaceOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration, {}));
+    ABSL_RETURN_IF_ERROR(
+        ValidateSupport(context, tflite_node, registration, {}));
 
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
 
     const auto* params =
         static_cast<const TfLiteDepthToSpaceParams*>(tflite_node->builtin_data);
@@ -1842,13 +1987,13 @@ class DequantizeOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                    {.max_version = 3}));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
+                                         {.max_version = 3}));
     const int runtime_inputs =
         GetNumberOfRuntimeInputsForNode(context, tflite_node);
     if (runtime_inputs == 0) {
       const TfLiteTensor* input = nullptr;
-      RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
+      ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
       if (input->dims->size < 2 || input->dims->size > 4) {
         return absl::InvalidArgumentError(
             absl::StrCat("Unsupported dims for tensor: ", input->name,
@@ -1857,16 +2002,16 @@ class DequantizeOperationParser : public TFLiteOperationParser {
       if (input->dims->size == 2) {
         ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::FLOAT32>
             dummy_tensor_2d;
-        RETURN_IF_ERROR(
+        ABSL_RETURN_IF_ERROR(
             PreCheckReadTensor(context, tflite_node, 0, &dummy_tensor_2d));
       } else if (input->dims->size == 3) {
         ::ml_drift::Tensor<::ml_drift::HWC, ::ml_drift::DataType::FLOAT32>
             dummy_tensor_3d;
-        RETURN_IF_ERROR(
+        ABSL_RETURN_IF_ERROR(
             PreCheckReadTensor(context, tflite_node, 0, &dummy_tensor_3d));
       } else if (input->dims->size == 4) {
         ::ml_drift::TensorFloat32 dummy_tensor;
-        RETURN_IF_ERROR(
+        ABSL_RETURN_IF_ERROR(
             PreCheckReadTensor(context, tflite_node, 0, &dummy_tensor));
       }
       return absl::OkStatus();
@@ -1889,7 +2034,7 @@ class DequantizeOperationParser : public TFLiteOperationParser {
     //    return false;
     // Same with case 1; This function is called when int8 or uint8 (L.38-39)
     const TfLiteTensor* input = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
 
     TfLiteAffineQuantization* quantization_data =
         reinterpret_cast<TfLiteAffineQuantization*>(input->quantization.params);
@@ -1908,7 +2053,7 @@ class DequantizeOperationParser : public TFLiteOperationParser {
             "Unsupported quantization scale size");
       }
     }
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     return absl::OkStatus();
   }
 
@@ -1984,26 +2129,28 @@ class DynamicUpdateSliceOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration, {}));
+    ABSL_RETURN_IF_ERROR(
+        ValidateSupport(context, tflite_node, registration, {}));
     const TfLiteTensor* operand = nullptr;
     const TfLiteTensor* update = nullptr;
     const TfLiteTensor* start_indices = nullptr;
     TfLiteTensor* output = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &operand));
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 1, &update));
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 2, &start_indices));
-    RETURN_IF_ERROR(PreGetOutputTensor(context, tflite_node, 0, &output));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &operand));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 1, &update));
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 2, &start_indices));
+    ABSL_RETURN_IF_ERROR(PreGetOutputTensor(context, tflite_node, 0, &output));
 
     if (tflite::IsConstantTensor(start_indices)) {
       return absl::InvalidArgumentError(
           "start_indices must be a runtime tensor");
     }
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     if (!CanMapAxis(operand)) {
       return absl::InvalidArgumentError("operand dims must be 1D-4D.");
     }
     const ::ml_drift::BHWC operand_shape = MapAxis(operand);
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
     if (!CanMapAxis(update)) {
       return absl::InvalidArgumentError("update dims must be 1D-4D.");
     }
@@ -2019,12 +2166,12 @@ class DynamicUpdateSliceOperationParser : public TFLiteOperationParser {
           update_slice_shape.c, "], array_to_update: [", operand_shape.b,
           operand_shape.h, operand_shape.w, operand_shape.c, "]"));
     }
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 2));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 2));
     if (!CanMapAxis(start_indices)) {
       return absl::InvalidArgumentError("start_indices dims must be 1D-4D.");
     }
     int idx = tflite_node->outputs->data[0];
-    RETURN_IF_ERROR(PreCheckReadValueByTensorIdx(context, idx));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValueByTensorIdx(context, idx));
     if (!CanMapAxis(output)) {
       return absl::InvalidArgumentError("output dims must be 1D-4D.");
     }
@@ -2103,18 +2250,19 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
         : operation_type_ == ::ml_drift::OperationType::ADD       ? 6
         : operation_type_ == ::ml_drift::OperationType::GELU      ? 3
                                                                   : 2;
-    RETURN_IF_ERROR(ValidateSupport(
+    ABSL_RETURN_IF_ERROR(ValidateSupport(
         context, tflite_node, registration,
         {.max_version = kSupportedOpVersion,
          .gpu_flags = tflite::GpuCompatibilityFlags::kEnhancedBroadcast}));
 
     bool need_broadcast = false;
     if (IsOneArgumentOperation()) {
-      RETURN_IF_ERROR(CheckInputsConstsOutputs(context, tflite_node,
-                                               /*required_runtime_inputs=*/1,
-                                               /*required_const_inputs=*/0,
-                                               /*required_outputs=*/1));
-      RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+      ABSL_RETURN_IF_ERROR(
+          CheckInputsConstsOutputs(context, tflite_node,
+                                   /*required_runtime_inputs=*/1,
+                                   /*required_const_inputs=*/0,
+                                   /*required_outputs=*/1));
+      ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     } else if (IsTwoArgumentOperation() &&
                CheckInputsConstsOutputs(context, tflite_node,
                                         /*required_runtime_inputs=*/2,
@@ -2127,26 +2275,26 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
 
       const TfLiteTensor* input0 = nullptr;
       const TfLiteTensor* input1 = nullptr;
-      RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input0));
-      RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 1, &input1));
+      ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input0));
+      ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 1, &input1));
       if (input0 == input1) {
         if (operation_type_ != ::ml_drift::OperationType::MUL &&
             operation_type_ != ::ml_drift::OperationType::ADD) {
           return absl::UnimplementedError(
               "No support of few identical inputs in the same operation.");
         }
-        RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+        ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
       } else {
         if (operation_type_ == ::ml_drift::OperationType::MUL ||
             operation_type_ == ::ml_drift::OperationType::ADD) {
           // The "larger" input tensor must be bound to 1st input and the
           // "smaller" input tensor must be bound to 2nd input.
-          RETURN_IF_ERROR(PreCheckTensorShape(*input0));
-          RETURN_IF_ERROR(PreCheckTensorShape(*input1));
+          ABSL_RETURN_IF_ERROR(PreCheckTensorShape(*input0));
+          ABSL_RETURN_IF_ERROR(PreCheckTensorShape(*input1));
         }
 
-        RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-        RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
+        ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+        ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
 
         if (input0->dims->size != input1->dims->size) {
           need_broadcast = IsBroadcastable(input0->dims, input1->dims);
@@ -2158,15 +2306,16 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
         }
 
         if (need_broadcast) {
-          RETURN_IF_ERROR(PreCheckTfLiteShape(*input0));
-          RETURN_IF_ERROR(PreCheckTfLiteShape(*input1));
+          ABSL_RETURN_IF_ERROR(PreCheckTfLiteShape(*input0));
+          ABSL_RETURN_IF_ERROR(PreCheckTfLiteShape(*input1));
         }
       }
     } else if (IsTwoArgumentOperation()) {
-      RETURN_IF_ERROR(CheckInputsConstsOutputs(context, tflite_node,
-                                               /*required_runtime_inputs=*/1,
-                                               /*required_const_inputs=*/1,
-                                               /*required_outputs=*/1));
+      ABSL_RETURN_IF_ERROR(
+          CheckInputsConstsOutputs(context, tflite_node,
+                                   /*required_runtime_inputs=*/1,
+                                   /*required_const_inputs=*/1,
+                                   /*required_outputs=*/1));
       if (!CanParseInputsWithConstTensor(context, tflite_node)) {
         return absl::InvalidArgumentError(
             "Can't parse inputs with const tensors.");
@@ -2175,13 +2324,14 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
       return absl::InvalidArgumentError("Incorrect operation type passed");
     }
     if (need_broadcast) {
-      RETURN_IF_ERROR(
+      ABSL_RETURN_IF_ERROR(
           PreCheckReadValueByTensorIdx(context, tflite_node->outputs->data[0]));
       TfLiteTensor* output = nullptr;
-      RETURN_IF_ERROR(PreGetOutputTensor(context, tflite_node, 0, &output));
-      RETURN_IF_ERROR(PreCheckTfLiteShape(*output));
+      ABSL_RETURN_IF_ERROR(
+          PreGetOutputTensor(context, tflite_node, 0, &output));
+      ABSL_RETURN_IF_ERROR(PreCheckTfLiteShape(*output));
     }
-    RETURN_IF_ERROR(PreCheckMaybeFuseActivationForElementwiseNode(
+    ABSL_RETURN_IF_ERROR(PreCheckMaybeFuseActivationForElementwiseNode(
         operation_type_, tflite_node));
     return absl::OkStatus();
   }
@@ -2802,11 +2952,11 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
       if (IsLinearConvertible(constant_dims)) {
         ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>
             tensor;
-        RETURN_IF_ERROR(PreCheckTensorToTensor(constant_tensor, &tensor));
+        ABSL_RETURN_IF_ERROR(PreCheckTensorToTensor(constant_tensor, &tensor));
       } else if (constant_dims->size <= 4) {
         ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::FLOAT32>
             tensor;
-        RETURN_IF_ERROR(PreCheckTensorToTensor(constant_tensor, &tensor));
+        ABSL_RETURN_IF_ERROR(PreCheckTensorToTensor(constant_tensor, &tensor));
       } else {
         return absl::InvalidArgumentError(absl::StrCat(
             "Expected to get constant tensor dimension <= 4, but got: ",
@@ -2826,7 +2976,8 @@ class EmbeddingLookupOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context, const TfLiteNode* node,
                            const TfLiteRegistration* registration) final {
     const TfLiteTensor* value;
-    RETURN_IF_ERROR(PreGetInputTensor(context, node, kInputWeightsId, &value));
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, node, kInputWeightsId, &value));
 
     if (value->quantization.params == nullptr &&
         value->type != kTfLiteFloat32) {
@@ -2835,7 +2986,7 @@ class EmbeddingLookupOperationParser : public TFLiteOperationParser {
     }
 
     const TfLiteTensor* weights_tensor = nullptr;
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         PreGetInputTensor(context, node, kInputWeightsId, &weights_tensor));
 
     if (weights_tensor->type == kTfLiteInt8 ||
@@ -2846,18 +2997,18 @@ class EmbeddingLookupOperationParser : public TFLiteOperationParser {
             "EMBEDDING_LOOKUP: Empty quantization params.");
       }
       int weights_tensor_idx = 0;
-      RETURN_IF_ERROR(
+      ABSL_RETURN_IF_ERROR(
           GetTensorId(context, node, kInputWeightsId, &weights_tensor_idx));
-      RETURN_IF_ERROR(
+      ABSL_RETURN_IF_ERROR(
           PreCheckReadQuantizedValueByTensorIdx(context, weights_tensor_idx));
     } else if (weights_tensor->type != kTfLiteFloat32) {
       return absl::InvalidArgumentError(
           "EMBEDDING_LOOKUP: Unsupported weights type.");
     }
-    RETURN_IF_ERROR(PreCheckReadValue(context, node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, node, 0));
 
-    RETURN_IF_ERROR(ValidateSupport(context, node, registration, {}));
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(ValidateSupport(context, node, registration, {}));
+    ABSL_RETURN_IF_ERROR(
         PreCheckReadValueByTensorIdx(context, node->outputs->data[0]));
     return absl::OkStatus();
   }
@@ -3106,26 +3257,26 @@ class FullyConnectedOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                    {.max_version = 14}));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
+                                         {.max_version = 14}));
 
     // TODO(b/372428865) : Get tensor sharing information in IsSupported.
     //            To make checkings more completed, sharing information is
     //            required.
     const TfLiteTensor* input_tensor = nullptr;
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         PreGetInputTensor(context, tflite_node, kInputSrcId, &input_tensor));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, kInputSrcId));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, kInputSrcId));
 
     const TfLiteTensor* weights_tensor = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, kInputWeightsId,
-                                      &weights_tensor));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node,
+                                           kInputWeightsId, &weights_tensor));
     if (weights_tensor->quantization.type == kTfLiteAffineQuantization) {
       // Check for quantized weight sharing.
       int weights_tensor_idx = 0;
-      RETURN_IF_ERROR(GetTensorId(context, tflite_node, kInputWeightsId,
-                                  &weights_tensor_idx));
-      RETURN_IF_ERROR(
+      ABSL_RETURN_IF_ERROR(GetTensorId(context, tflite_node, kInputWeightsId,
+                                       &weights_tensor_idx));
+      ABSL_RETURN_IF_ERROR(
           PreCheckReadQuantizedValueByTensorIdx(context, weights_tensor_idx));
       if (options_.enable_raw_weights_propagation) {
         if (weights_tensor->type != kTfLiteInt8) {
@@ -3143,18 +3294,20 @@ class FullyConnectedOperationParser : public TFLiteOperationParser {
                kTfLiteBlockwiseQuantization) {
       // TODO: who/impjdi - Add meaningful check.
     } else {
-      RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, kInputWeightsId));
+      ABSL_RETURN_IF_ERROR(
+          PreCheckReadValue(context, tflite_node, kInputWeightsId));
     }
 
     if (tflite::GetVariableInput(const_cast<TfLiteContext*>(context),
                                  tflite_node, kInputBiasId)) {
-      RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, kInputBiasId));
+      ABSL_RETURN_IF_ERROR(
+          PreCheckReadValue(context, tflite_node, kInputBiasId));
     }
 
     TfLiteTensor* output_tensor = nullptr;
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         PreGetOutputTensor(context, tflite_node, kOutputId, &output_tensor));
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
 
     const auto* params = static_cast<const TfLiteFullyConnectedParams*>(
         tflite_node->builtin_data);
@@ -3165,7 +3318,7 @@ class FullyConnectedOperationParser : public TFLiteOperationParser {
       return absl::UnimplementedError(
           "Unsupported fully connected weights format.");
     }
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         PreCheckMaybeFuseActivation(tflite_node, params->activation));
     return absl::OkStatus();
   }
@@ -3323,22 +3476,24 @@ class GatherOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(context, tflite_node,
-                                                          registration));
+    ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
+        context, tflite_node, registration));
 
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
     // CheckGpuDelegateCompatibility makes sure we can only have one constant
     // input.
     const TfLiteTensor* tfl_input = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &tfl_input));
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 0, &tfl_input));
 
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
     if (!tflite_node->builtin_data) {
       return absl::InvalidArgumentError("Missing TfLiteGatherParams.");
     }
     TfLiteTensor* tfl_output;
-    RETURN_IF_ERROR(PreGetOutputTensor(context, tflite_node, 0, &tfl_output));
+    ABSL_RETURN_IF_ERROR(
+        PreGetOutputTensor(context, tflite_node, 0, &tfl_output));
     if (tfl_input->type != tfl_output->type) {
       return absl::InvalidArgumentError("Input / output dtype mismatch.");
     }
@@ -3407,10 +3562,10 @@ class HardSwishOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(context, tflite_node,
-                                                          registration));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
+        context, tflite_node, registration));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
     return absl::OkStatus();
   }
 
@@ -3457,8 +3612,8 @@ class LSTMOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                    {.max_version = 4}));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
+                                         {.max_version = 4}));
 
     const auto* params =
         static_cast<const TfLiteLSTMParams*>(tflite_node->builtin_data);
@@ -3467,10 +3622,12 @@ class LSTMOperationParser : public TFLiteOperationParser {
     }
     switch (params->kernel_type) {
       case kTfLiteLSTMFullKernel:
-        RETURN_IF_ERROR(CheckFull(context, tflite_node, registration, params));
+        ABSL_RETURN_IF_ERROR(
+            CheckFull(context, tflite_node, registration, params));
         break;
       case kTfLiteLSTMBasicKernel:
-        RETURN_IF_ERROR(CheckBasic(context, tflite_node, registration, params));
+        ABSL_RETURN_IF_ERROR(
+            CheckBasic(context, tflite_node, registration, params));
         break;
     }
     return absl::OkStatus();
@@ -3509,25 +3666,27 @@ class LSTMOperationParser : public TFLiteOperationParser {
       return absl::InvalidArgumentError("LSTM should have 4 output tensors");
     }
     // checked in CheckGpuDelegateCompatibility
-    RETURN_IF_ERROR(CheckBasicParameters(tf_options));
+    ABSL_RETURN_IF_ERROR(CheckBasicParameters(tf_options));
 
     // checking for GetFullyConnectedAttributes
     ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::FLOAT32>
         dummy_weights;
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         PreCheckReadTensor(context, tflite_node, 2, &dummy_weights));
 
     int concat_tensor_idx = tflite_node->outputs->data[2];
-    RETURN_IF_ERROR(PreCheckReadValueByTensorIdx(context, concat_tensor_idx));
+    ABSL_RETURN_IF_ERROR(
+        PreCheckReadValueByTensorIdx(context, concat_tensor_idx));
 
     int activ_tensor_idx = tflite_node->outputs->data[3];
-    RETURN_IF_ERROR(PreCheckReadValueByTensorIdx(context, activ_tensor_idx));
+    ABSL_RETURN_IF_ERROR(
+        PreCheckReadValueByTensorIdx(context, activ_tensor_idx));
 
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 4));
-    RETURN_IF_ERROR(PreCheckOutput(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckOutput(context, tflite_node, 1));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 4));
+    ABSL_RETURN_IF_ERROR(PreCheckOutput(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckOutput(context, tflite_node, 1));
     return absl::OkStatus();
   }
 
@@ -3590,20 +3749,20 @@ class LSTMOperationParser : public TFLiteOperationParser {
                                    const TfLiteNode* tflite_node,
                                    int weight_tensor_id) {
     const TfLiteTensor* weights_tensor = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, weight_tensor_id,
-                                      &weights_tensor));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node,
+                                           weight_tensor_id, &weights_tensor));
     TfLiteAffineQuantization* quant_params =
         static_cast<TfLiteAffineQuantization*>(
             weights_tensor->quantization.params);
     if (weights_tensor->type == kTfLiteInt8 && quant_params->scale->size == 1) {
       int tensor_id;
-      RETURN_IF_ERROR(
+      ABSL_RETURN_IF_ERROR(
           GetTensorId(context, tflite_node, weight_tensor_id, &tensor_id));
     } else {
       ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::FLOAT32>
           dummy_weights;
-      RETURN_IF_ERROR(PreCheckReadTensor(context, tflite_node, weight_tensor_id,
-                                         &dummy_weights));
+      ABSL_RETURN_IF_ERROR(PreCheckReadTensor(
+          context, tflite_node, weight_tensor_id, &dummy_weights));
     }
     return absl::OkStatus();
   }
@@ -3615,28 +3774,29 @@ class LSTMOperationParser : public TFLiteOperationParser {
                                   int normalization_weight_id,
                                   const TfLiteFusedActivation activation,
                                   bool has_peephole, bool has_normalization) {
-    RETURN_IF_ERROR(CheckFullyConnected(context, tflite_node, input_weight_id));
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
+        CheckFullyConnected(context, tflite_node, input_weight_id));
+    ABSL_RETURN_IF_ERROR(
         CheckFullyConnected(context, tflite_node, recurrent_weight_id));
 
     if (has_peephole) {
       ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>
           dummy_weights;
-      RETURN_IF_ERROR(PreCheckReadTensor(context, tflite_node, cell_weight_id,
-                                         &dummy_weights));
+      ABSL_RETURN_IF_ERROR(PreCheckReadTensor(context, tflite_node,
+                                              cell_weight_id, &dummy_weights));
     }
 
     ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>
         dummy_norm_weights;
-    RETURN_IF_ERROR(PreCheckReadTensor(
+    ABSL_RETURN_IF_ERROR(PreCheckReadTensor(
         context, tflite_node, normalization_weight_id, &dummy_norm_weights));
 
     ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>
         dummy_bias;
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         PreCheckReadTensor(context, tflite_node, bias_id, &dummy_bias));
 
-    RETURN_IF_ERROR(PreCheckMaybeFuseActivation(tflite_node, activation));
+    ABSL_RETURN_IF_ERROR(PreCheckMaybeFuseActivation(tflite_node, activation));
 
     return absl::OkStatus();
   }
@@ -3655,15 +3815,15 @@ class LSTMOperationParser : public TFLiteOperationParser {
     // Therefore Batched execution can't be checked here.
     // Batched LSTM operation will error quitely in ParseFull.
 
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         PreCheckReadValue(context, tflite_node,
                           tflite::ops::builtin::lstm::full::kCellStateTensor));
 
-    RETURN_IF_ERROR(PreCheckReadValue(
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(
         context, tflite_node,
         tflite::ops::builtin::lstm::full::kOutputStateTensor));
 
-    RETURN_IF_ERROR(CheckBuildLstmGate(
+    ABSL_RETURN_IF_ERROR(CheckBuildLstmGate(
         context, tflite_node,
         tflite::ops::builtin::lstm::full::kInputToForgetWeightsTensor,
         tflite::ops::builtin::lstm::full::kRecurrentToForgetWeightsTensor,
@@ -3672,7 +3832,7 @@ class LSTMOperationParser : public TFLiteOperationParser {
         tflite::ops::builtin::lstm::full::kForgetLayerNormCoefficientsTensor,
         kTfLiteActSigmoid, has_peephole, has_normalization));
 
-    RETURN_IF_ERROR(CheckBuildLstmGate(
+    ABSL_RETURN_IF_ERROR(CheckBuildLstmGate(
         context, tflite_node,
         tflite::ops::builtin::lstm::full::kInputToForgetWeightsTensor,
         tflite::ops::builtin::lstm::full::kRecurrentToForgetWeightsTensor,
@@ -3682,7 +3842,7 @@ class LSTMOperationParser : public TFLiteOperationParser {
         kTfLiteActSigmoid, has_peephole, has_normalization));
 
     if (!has_cifg) {
-      RETURN_IF_ERROR(CheckBuildLstmGate(
+      ABSL_RETURN_IF_ERROR(CheckBuildLstmGate(
           context, tflite_node,
           tflite::ops::builtin::lstm::full::kInputToInputWeightsTensor,
           tflite::ops::builtin::lstm::full::kRecurrentToInputWeightsTensor,
@@ -3692,7 +3852,7 @@ class LSTMOperationParser : public TFLiteOperationParser {
           kTfLiteActSigmoid, has_peephole, has_normalization));
     }
 
-    RETURN_IF_ERROR(CheckBuildLstmGate(
+    ABSL_RETURN_IF_ERROR(CheckBuildLstmGate(
         context, tflite_node,
         tflite::ops::builtin::lstm::full::kInputToCellWeightsTensor,
         tflite::ops::builtin::lstm::full::kRecurrentToCellWeightsTensor,
@@ -3701,7 +3861,7 @@ class LSTMOperationParser : public TFLiteOperationParser {
         tflite::ops::builtin::lstm::full::kCellLayerNormCoefficientsTensor,
         params->activation, /*has_peephole=*/false, has_normalization));
 
-    RETURN_IF_ERROR(CheckBuildLstmGate(
+    ABSL_RETURN_IF_ERROR(CheckBuildLstmGate(
         context, tflite_node,
         tflite::ops::builtin::lstm::full::kInputToOutputWeightsTensor,
         tflite::ops::builtin::lstm::full::kRecurrentToOutputWeightsTensor,
@@ -3710,7 +3870,7 @@ class LSTMOperationParser : public TFLiteOperationParser {
         tflite::ops::builtin::lstm::full::kOutputLayerNormCoefficientsTensor,
         kTfLiteActSigmoid, has_peephole, has_normalization));
 
-    RETURN_IF_ERROR(PreCheckOutput(
+    ABSL_RETURN_IF_ERROR(PreCheckOutput(
         context, tflite_node, tflite::ops::builtin::lstm::full::kOutputTensor));
 
     if (params->activation != kTfLiteActSigmoid &&
@@ -3756,9 +3916,32 @@ class OneHotOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                    {.max_version = 1}));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(
+        context, tflite_node, registration,
+        {.max_version = 1,
+         .min_inputs = 4,
+         .num_outputs = 1,
+         .check_gpu_compatibility = false}));
+    const TfLiteTensor* indices_tensor = nullptr;
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 0, &indices_tensor));
+    const auto* one_hot_options =
+        static_cast<const TfLiteOneHotParams*>(tflite_node->builtin_data);
+    if (one_hot_options) {
+      const int num_dims = indices_tensor->dims->size;
+      if (one_hot_options->axis != -1 &&
+          (num_dims == 0 ||
+           one_hot_options->axis != indices_tensor->dims->data[num_dims - 1])) {
+        return absl::InvalidArgumentError(
+            "OneHot axis must be -1 or the last dimension.");
+      }
+    }
+    if (indices_tensor->dims->size >= 4 &&
+        indices_tensor->dims->data[3] != 1) {
+      return absl::InvalidArgumentError(
+          "OneHot indices channel dimension must be 1.");
+    }
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     return absl::OkStatus();
   }
 
@@ -3783,12 +3966,12 @@ class PackOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(context, tflite_node,
-                                                          registration));
+    ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
+        context, tflite_node, registration));
 
     if (tflite_node->inputs->size == 1) {
-      RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-      RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+      ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+      ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
     } else {
       const auto* params =
           static_cast<const TfLitePackParams*>(tflite_node->builtin_data);
@@ -3796,17 +3979,19 @@ class PackOperationParser : public TFLiteOperationParser {
         return absl::InvalidArgumentError("Missing TfLitePackParams.");
       }
 
-      RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration, {}));
+      ABSL_RETURN_IF_ERROR(
+          ValidateSupport(context, tflite_node, registration, {}));
 
       for (uint32_t idx = 0; idx < tflite_node->inputs->size; ++idx) {
-        RETURN_IF_ERROR(
+        ABSL_RETURN_IF_ERROR(
             PreCheckRuntimeOrConstantInput(context, tflite_node, idx));
       }
 
       TfLiteTensor* output = nullptr;
-      RETURN_IF_ERROR(PreGetOutputTensor(context, tflite_node, 0, &output));
-      RETURN_IF_ERROR(PreCheckAxisFromIndex(*output, params->axis));
-      RETURN_IF_ERROR(PreCheckTensorShape(*output));
+      ABSL_RETURN_IF_ERROR(
+          PreGetOutputTensor(context, tflite_node, 0, &output));
+      ABSL_RETURN_IF_ERROR(PreCheckAxisFromIndex(*output, params->axis));
+      ABSL_RETURN_IF_ERROR(PreCheckTensorShape(*output));
     }
     return absl::OkStatus();
   }
@@ -3885,11 +4070,11 @@ class PReLUOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 1));
+    ABSL_RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 1));
 
     const TfLiteTensor* input = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     const ::ml_drift::BHWC input_shape = ExtractTensorShape(input);
 
     ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>
@@ -3904,8 +4089,8 @@ class PReLUOperationParser : public TFLiteOperationParser {
     } else {
       ::ml_drift::Tensor<::ml_drift::HWC, ::ml_drift::DataType::FLOAT32>
           hwc_alpha;
-      RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &hwc_alpha,
-                                    ReadTensorFlags::kNoExtraBytes));
+      ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &hwc_alpha,
+                                         ReadTensorFlags::kNoExtraBytes));
       if (hwc_alpha.shape.h != input_shape.h ||
           hwc_alpha.shape.w != input_shape.w ||
           hwc_alpha.shape.c != input_shape.c) {
@@ -3914,7 +4099,7 @@ class PReLUOperationParser : public TFLiteOperationParser {
       }
     }
 
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
     return absl::OkStatus();
   }
 
@@ -3949,20 +4134,20 @@ class PadOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                    {.max_version = 5}));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
+                                         {.max_version = 5}));
 
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
 
     ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::INT32> paddings;
-    RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &paddings,
-                                  ReadTensorFlags::kNoExtraBytes));
+    ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &paddings,
+                                       ReadTensorFlags::kNoExtraBytes));
 
     if (registration->builtin_code == kTfLiteBuiltinPadv2 &&
         tflite_node->inputs->size == 3) {
       ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::FLOAT32>
           dummy_const_tensor;
-      RETURN_IF_ERROR(
+      ABSL_RETURN_IF_ERROR(
           PreCheckReadTensor(context, tflite_node, 2, &dummy_const_tensor));
     }
 
@@ -4045,17 +4230,17 @@ class Pooling2DOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                    {.max_version = 2}));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
+                                         {.max_version = 2}));
 
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     const TfLitePoolParams* params =
         static_cast<const TfLitePoolParams*>(tflite_node->custom_initial_data);
     if (!params) {
       params = static_cast<const TfLitePoolParams*>(tflite_node->builtin_data);
     }
     if (!params) return absl::InvalidArgumentError("Missing TfLitePoolParams.");
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         PreCheckMaybeFuseActivationSkipSize(tflite_node, params->activation));
     return absl::OkStatus();
   }
@@ -4114,10 +4299,10 @@ class ReduceOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(context, tflite_node,
-                                                          registration));
+    ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
+        context, tflite_node, registration));
 
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
 
     const auto* params =
         static_cast<const TfLiteReducerParams*>(tflite_node->builtin_data);
@@ -4126,17 +4311,18 @@ class ReduceOperationParser : public TFLiteOperationParser {
     }
     const TfLiteTensor* input = nullptr;
     const TfLiteTensor* axes = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 1, &axes));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 1, &axes));
     for (int i = 0; i < tflite::NumElements(axes->dims); i++) {
-      RETURN_IF_ERROR(PreCheckAxisFromIndex(*input, axes->data.i32[i]));
+      ABSL_RETURN_IF_ERROR(PreCheckAxisFromIndex(*input, axes->data.i32[i]));
     }
     if (!params->keep_dims) {
       TfLiteTensor* output = nullptr;  // reader->GetOutputTensor(0);
-      RETURN_IF_ERROR(PreGetOutputTensor(context, tflite_node, 0, &output));
-      RETURN_IF_ERROR(PreCheckTensorShape(*output));
+      ABSL_RETURN_IF_ERROR(
+          PreGetOutputTensor(context, tflite_node, 0, &output));
+      ABSL_RETURN_IF_ERROR(PreCheckTensorShape(*output));
     }
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
 
     return absl::OkStatus();
   }
@@ -4195,18 +4381,18 @@ class QuantizeOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 2));
-    RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(context, tflite_node,
-                                                          registration));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 2));
+    ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
+        context, tflite_node, registration));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
 
     TfLiteTensor* output = nullptr;
-    RETURN_IF_ERROR(PreGetOutputTensor(context, tflite_node, 0, &output));
+    ABSL_RETURN_IF_ERROR(PreGetOutputTensor(context, tflite_node, 0, &output));
     if (output->quantization.params == nullptr) {
       return absl::InvalidArgumentError(
           "Encountered Quantize output with no quant params");
     }
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
 
     return absl::OkStatus();
   }
@@ -4241,12 +4427,12 @@ class ReLUOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                    {.max_version = 2,
-                                     .num_outputs = 1,
-                                     .required_runtime_inputs = 1,
-                                     .required_const_inputs = 0}));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
+                                         {.max_version = 2,
+                                          .num_outputs = 1,
+                                          .required_runtime_inputs = 1,
+                                          .required_const_inputs = 0}));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     return absl::OkStatus();
   }
 
@@ -4277,11 +4463,11 @@ class RemainderOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(context, tflite_node,
-                                                          registration));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
+        context, tflite_node, registration));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
     return absl::OkStatus();
   }
 
@@ -4339,11 +4525,11 @@ class ResamplerOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(context, tflite_node,
-                                                          registration));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
+        context, tflite_node, registration));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
     return absl::OkStatus();
   }
 
@@ -4371,12 +4557,12 @@ class ReshapeOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 1));
+    ABSL_RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 1));
     // TODO(eignasheva): add shape checking
-    RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(context, tflite_node,
-                                                          registration));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
+        context, tflite_node, registration));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
     // Here we may have extra inputs. Other tensors were supposed to
     // define new shape, but in TFLite these are ignored.
     // TODO(akulik): check that shapes match?
@@ -4407,11 +4593,11 @@ class Resize2DOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 3));
-    RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(context, tflite_node,
-                                                          registration));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 3));
+    ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
+        context, tflite_node, registration));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
 
     if (sampling_type_ == ::ml_drift::SamplingType::BILINEAR) {
       const auto* params = static_cast<const TfLiteResizeBilinearParams*>(
@@ -4474,18 +4660,18 @@ class ReverseOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(context, tflite_node,
-                                                          registration));
+    ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
+        context, tflite_node, registration));
 
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
 
     const TfLiteTensor* input = nullptr;
     const TfLiteTensor* axes = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 1, &axes));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 1, &axes));
     for (int i = 0; i < tflite::NumElements(axes->dims); i++) {
-      RETURN_IF_ERROR(PreCheckAxisFromIndex(*input, axes->data.i32[i]));
+      ABSL_RETURN_IF_ERROR(PreCheckAxisFromIndex(*input, axes->data.i32[i]));
     }
     return absl::OkStatus();
   }
@@ -4514,14 +4700,17 @@ class SelectV2OperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 1));
-    RETURN_IF_ERROR(CheckGpuDelegateCompatibility(
+    ABSL_RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 1));
+    ABSL_RETURN_IF_ERROR(CheckGpuDelegateCompatibility(
         tflite::GetOpSignature(context, tflite_node, registration)));
 
-    RETURN_IF_ERROR(PreCheckRuntimeOrConstantInput(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckRuntimeOrConstantInput(context, tflite_node, 1));
-    RETURN_IF_ERROR(PreCheckRuntimeOrConstantInput(context, tflite_node, 2));
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(
+        PreCheckRuntimeOrConstantInput(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(
+        PreCheckRuntimeOrConstantInput(context, tflite_node, 1));
+    ABSL_RETURN_IF_ERROR(
+        PreCheckRuntimeOrConstantInput(context, tflite_node, 2));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
     return absl::OkStatus();
   }
 
@@ -4607,14 +4796,15 @@ class SliceOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(
+    ABSL_RETURN_IF_ERROR(ValidateSupport(
         context, tflite_node, registration,
         {.max_version = 8, .min_inputs = 3, .check_gpu_compatibility = false}));
 
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
 
     const TfLiteTensor* tfl_input = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &tfl_input));
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 0, &tfl_input));
     if (tflite::IsConstantTensor(tfl_input)) {
       return absl::InvalidArgumentError("Constant input is not supported.");
     }
@@ -4624,10 +4814,10 @@ class SliceOperationParser : public TFLiteOperationParser {
     attr.strides = ::ml_drift::BHWC(1, 1, 1, 1);
     ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32> starts,
         sizes;
-    RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &starts,
-                                  ReadTensorFlags::kNoExtraBytes));
-    RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 2, &sizes,
-                                  ReadTensorFlags::kNoExtraBytes));
+    ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &starts,
+                                       ReadTensorFlags::kNoExtraBytes));
+    ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 2, &sizes,
+                                       ReadTensorFlags::kNoExtraBytes));
     if (starts.data.size() != sizes.data.size()) {
       return absl::InvalidArgumentError(
           absl::StrCat("The dimensionality of `starts` (", starts.data.size(),
@@ -4706,7 +4896,8 @@ class SliceOperationParser : public TFLiteOperationParser {
     UpdateIfNegative(in_shape, &attr);
 
     TfLiteTensor* tfl_output = nullptr;
-    RETURN_IF_ERROR(PreGetOutputTensor(context, tflite_node, 0, &tfl_output));
+    ABSL_RETURN_IF_ERROR(
+        PreGetOutputTensor(context, tflite_node, 0, &tfl_output));
     const ::ml_drift::BHWC out_shape = ExtractTensorShape(tfl_output);
     if ((attr.ends.b - attr.starts.b) != out_shape.b) {
       return absl::UnimplementedError("Output batch don't match");
@@ -4827,12 +5018,12 @@ class SoftmaxOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                    {.max_version = 4,
-                                     .num_outputs = 1,
-                                     .required_runtime_inputs = 1,
-                                     .required_const_inputs = 0}));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
+                                         {.max_version = 4,
+                                          .num_outputs = 1,
+                                          .required_runtime_inputs = 1,
+                                          .required_const_inputs = 0}));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
 
     const auto* params =
         static_cast<const TfLiteSoftmaxParams*>(tflite_node->builtin_data);
@@ -4906,13 +5097,13 @@ class SpaceToDepthOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                    {.max_version = 2,
-                                     .num_outputs = 1,
-                                     .required_runtime_inputs = 1,
-                                     .required_const_inputs = 0}));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
+                                         {.max_version = 2,
+                                          .num_outputs = 1,
+                                          .required_runtime_inputs = 1,
+                                          .required_const_inputs = 0}));
     // TODO(impjdi): Dims check.
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     const auto* params =
         static_cast<const TfLiteSpaceToDepthParams*>(tflite_node->builtin_data);
     if (!params) {
@@ -4941,26 +5132,29 @@ class SplitOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(context, tflite_node,
-                                                          registration));
+    ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
+        context, tflite_node, registration));
     const auto* params =
         static_cast<const TfLiteSplitParams*>(tflite_node->builtin_data);
     if (!params) {
       return absl::InvalidArgumentError("Missing TfLiteSplitParams.");
     }
     if (params->num_splits == 1) {
-      RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration, {}));
-      RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+      ABSL_RETURN_IF_ERROR(
+          ValidateSupport(context, tflite_node, registration, {}));
+      ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
       return absl::OkStatus();
     }
     const TfLiteTensor* input = nullptr;
     const TfLiteTensor* axis_tensor = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 1, &input));
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &axis_tensor));
-    RETURN_IF_ERROR(PreCheckAxisFromIndex(*input, axis_tensor->data.i32[0]));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 1, &input));
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 0, &axis_tensor));
+    ABSL_RETURN_IF_ERROR(
+        PreCheckAxisFromIndex(*input, axis_tensor->data.i32[0]));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
     for (int i = 0; i < tflite_node->outputs->size; ++i) {
-      RETURN_IF_ERROR(PreCheckOutput(context, tflite_node, i));
+      ABSL_RETURN_IF_ERROR(PreCheckOutput(context, tflite_node, i));
     }
 
     return absl::OkStatus();
@@ -5001,16 +5195,16 @@ class SplitVOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                    {.required_runtime_inputs = 1,
-                                     .required_const_inputs = 2}));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(
+        context, tflite_node, registration,
+        {.required_runtime_inputs = 1, .required_const_inputs = 2}));
     const auto* params =
         static_cast<const TfLiteSplitVParams*>(tflite_node->builtin_data);
     if (!params) {
       return absl::InvalidArgumentError("Missing TfLiteSplitVParams.");
     }
 
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
 
     if (params->num_splits == 1) {
       return absl::OkStatus();
@@ -5018,9 +5212,11 @@ class SplitVOperationParser : public TFLiteOperationParser {
 
     const TfLiteTensor* input = nullptr;
     const TfLiteTensor* axis_tensor = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 2, &axis_tensor));
-    RETURN_IF_ERROR(PreCheckAxisFromIndex(*input, axis_tensor->data.i32[0]));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 2, &axis_tensor));
+    ABSL_RETURN_IF_ERROR(
+        PreCheckAxisFromIndex(*input, axis_tensor->data.i32[0]));
     return absl::OkStatus();
   }
 
@@ -5059,17 +5255,18 @@ class StridedSliceOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 2));
-    RETURN_IF_ERROR(CheckGpuDelegateCompatibility(
+    ABSL_RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 2));
+    ABSL_RETURN_IF_ERROR(CheckGpuDelegateCompatibility(
         tflite_node,
         tflite::GetOpSignature(context, tflite_node, registration)));
 
     const TfLiteTensor* input_tensor;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input_tensor));
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 0, &input_tensor));
     ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32>
         starts_sizes;
-    RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &starts_sizes,
-                                  ReadTensorFlags::kNoExtraBytes));
+    ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &starts_sizes,
+                                       ReadTensorFlags::kNoExtraBytes));
 
     const bool read_attr_without_batch =
         input_tensor->dims->size == starts_sizes.data.size() + 1;
@@ -5092,9 +5289,11 @@ class StridedSliceOperationParser : public TFLiteOperationParser {
     attr.ends = ExtractTensorShape(input_tensor);
     attr.strides = ::ml_drift::BHWC(1, 1, 1, 1);
     if (read_attr_without_batch) {
-      RETURN_IF_ERROR(PreReadAttribsWithoutBatch(context, tflite_node, &attr));
+      ABSL_RETURN_IF_ERROR(
+          PreReadAttribsWithoutBatch(context, tflite_node, &attr));
     } else if (read_attr_with_batch) {
-      RETURN_IF_ERROR(PreReadAttribsWithBatch(context, tflite_node, &attr));
+      ABSL_RETURN_IF_ERROR(
+          PreReadAttribsWithBatch(context, tflite_node, &attr));
     }
     const ::ml_drift::BHWC in_shape = ExtractTensorShape(input_tensor);
     UpdateIfNegative(in_shape, &attr);
@@ -5122,13 +5321,13 @@ class StridedSliceOperationParser : public TFLiteOperationParser {
         ::ml_drift::DivideRoundUp(attr.ends.c - attr.starts.c, attr.strides.c);
 
     TfLiteTensor* output = nullptr;
-    RETURN_IF_ERROR(PreGetOutputTensor(context, tflite_node, 0, &output));
+    ABSL_RETURN_IF_ERROR(PreGetOutputTensor(context, tflite_node, 0, &output));
     const ::ml_drift::BHWC out_shape = ExtractTensorShape(output);
     if (ref_shape != out_shape) {
       return absl::UnimplementedError("Output shape mismatch");
     }
 
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
     return absl::OkStatus();
   }
 
@@ -5289,8 +5488,8 @@ class StridedSliceOperationParser : public TFLiteOperationParser {
                                   int node_input_index,
                                   ::ml_drift::BHWC* bhwc) {
     ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32> t;
-    RETURN_IF_ERROR(PreReadTensor(context, tflite_node, node_input_index, &t,
-                                  ReadTensorFlags::kNoExtraBytes));
+    ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, node_input_index,
+                                       &t, ReadTensorFlags::kNoExtraBytes));
     if (t.data.size() == 4) {
       *bhwc = ::ml_drift::BHWC(t.data[0], t.data[1], t.data[2], t.data[3]);
     } else if (t.data.size() == 3) {
@@ -5306,9 +5505,9 @@ class StridedSliceOperationParser : public TFLiteOperationParser {
   static absl::Status PreReadAttribsWithBatch(
       const TfLiteContext* context, const TfLiteNode* tflite_node,
       ::ml_drift::SliceAttributes* attr) {
-    RETURN_IF_ERROR(CanReadBhwc(context, tflite_node, 1, &attr->starts));
-    RETURN_IF_ERROR(CanReadBhwc(context, tflite_node, 2, &attr->ends));
-    RETURN_IF_ERROR(CanReadBhwc(context, tflite_node, 3, &attr->strides));
+    ABSL_RETURN_IF_ERROR(CanReadBhwc(context, tflite_node, 1, &attr->starts));
+    ABSL_RETURN_IF_ERROR(CanReadBhwc(context, tflite_node, 2, &attr->ends));
+    ABSL_RETURN_IF_ERROR(CanReadBhwc(context, tflite_node, 3, &attr->strides));
     return absl::OkStatus();
   }
 
@@ -5316,8 +5515,8 @@ class StridedSliceOperationParser : public TFLiteOperationParser {
                                  const TfLiteNode* tflite_node,
                                  int node_input_index, ::ml_drift::BHWC* bhwc) {
     ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32> t;
-    RETURN_IF_ERROR(PreReadTensor(context, tflite_node, node_input_index, &t,
-                                  ReadTensorFlags::kNoExtraBytes));
+    ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, node_input_index,
+                                       &t, ReadTensorFlags::kNoExtraBytes));
     if (t.data.size() == 3) {
       *bhwc = ::ml_drift::BHWC(bhwc->b, t.data[0], t.data[1], t.data[2]);
     } else if (t.data.size() == 2) {
@@ -5331,9 +5530,9 @@ class StridedSliceOperationParser : public TFLiteOperationParser {
   static absl::Status PreReadAttribsWithoutBatch(
       const TfLiteContext* context, const TfLiteNode* tflite_node,
       ::ml_drift::SliceAttributes* attr) {
-    RETURN_IF_ERROR(CanReadHwc(context, tflite_node, 1, &attr->starts));
-    RETURN_IF_ERROR(CanReadHwc(context, tflite_node, 2, &attr->ends));
-    RETURN_IF_ERROR(CanReadHwc(context, tflite_node, 3, &attr->strides));
+    ABSL_RETURN_IF_ERROR(CanReadHwc(context, tflite_node, 1, &attr->starts));
+    ABSL_RETURN_IF_ERROR(CanReadHwc(context, tflite_node, 2, &attr->ends));
+    ABSL_RETURN_IF_ERROR(CanReadHwc(context, tflite_node, 3, &attr->strides));
     return absl::OkStatus();
   }
 
@@ -5367,10 +5566,10 @@ class TileOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(context, tflite_node,
-                                                          registration));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
+        context, tflite_node, registration));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
     return absl::OkStatus();
   }
 
@@ -5389,13 +5588,13 @@ class TopKOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 1));
-    RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(context, tflite_node,
-                                                          registration));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 1));
+    ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
+        context, tflite_node, registration));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
 
     const TfLiteTensor* k_tensor = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 1, &k_tensor));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 1, &k_tensor));
     if (!tflite::IsConstantTensor(k_tensor)) {
       return absl::InvalidArgumentError("TopK k must be constant tensor.");
     }
@@ -5406,7 +5605,7 @@ class TopKOperationParser : public TFLiteOperationParser {
     if (tflite_node->outputs->size != 2) {
       return absl::InvalidArgumentError("TopK requires 2 output tensors");
     }
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
     return absl::OkStatus();
   }
 
@@ -5480,12 +5679,12 @@ class TransposeConvBuiltinOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 3));
-    RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(context, tflite_node,
-                                                          registration));
+    ABSL_RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 3));
+    ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
+        context, tflite_node, registration));
 
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 2));
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 2));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
 
     const auto* params = static_cast<const TfLiteTransposeConvParams*>(
         tflite_node->builtin_data);
@@ -5496,11 +5695,11 @@ class TransposeConvBuiltinOperationParser : public TFLiteOperationParser {
     const int runtime_inputs =
         GetNumberOfRuntimeInputsForNode(context, tflite_node);
     if (runtime_inputs == 2) {
-      RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
+      ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
     } else {
       ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>
           dummy_weights;
-      RETURN_IF_ERROR(
+      ABSL_RETURN_IF_ERROR(
           PreCheckReadTensor(context, tflite_node, 1, &dummy_weights));
     }
 
@@ -5548,13 +5747,13 @@ class TransposeConvCustomOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(context, tflite_node,
-                                                          registration));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
+        context, tflite_node, registration));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
     ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>
         dummy_weights;
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         PreCheckReadTensor(context, tflite_node, 1, &dummy_weights));
     return absl::OkStatus();
   }
@@ -5591,15 +5790,15 @@ class TransposeOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 9));
-    RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(context, tflite_node,
-                                                          registration));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 9));
+    ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
+        context, tflite_node, registration));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
 
     ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32> perm;
-    RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &perm,
-                                  ReadTensorFlags::kNoExtraBytes));
+    ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &perm,
+                                       ReadTensorFlags::kNoExtraBytes));
     if (perm.data.size() > 4 || perm.data.size() < 2) {
       return absl::InvalidArgumentError(
           "Permutation for transpose is invalid.");
@@ -5658,21 +5857,22 @@ class UnpackOperationParser : public TFLiteOperationParser {
       return absl::InvalidArgumentError("Missing TfLiteUnpackParams.");
     }
     if (params->num == 1) {
-      RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-      RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+      ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+      ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
       return absl::OkStatus();
     }
 
     const TfLiteTensor* input = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
-    RETURN_IF_ERROR(PreCheckTensorShape(*input));
-    RETURN_IF_ERROR(PreCheckAxisFromIndex(*input, params->axis));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
+    ABSL_RETURN_IF_ERROR(PreCheckTensorShape(*input));
+    ABSL_RETURN_IF_ERROR(PreCheckAxisFromIndex(*input, params->axis));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     for (int i = 0; i < tflite_node->outputs->size; ++i) {
       TfLiteTensor* output = nullptr;
-      RETURN_IF_ERROR(PreGetOutputTensor(context, tflite_node, 0, &output));
-      RETURN_IF_ERROR(PreCheckTensorShape(*output));
-      RETURN_IF_ERROR(PreCheckOutput(context, tflite_node, i));
+      ABSL_RETURN_IF_ERROR(
+          PreGetOutputTensor(context, tflite_node, 0, &output));
+      ABSL_RETURN_IF_ERROR(PreCheckTensorShape(*output));
+      ABSL_RETURN_IF_ERROR(PreCheckOutput(context, tflite_node, i));
     }
 
     return absl::OkStatus();
@@ -5737,11 +5937,11 @@ class Unpooling2DOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(context, tflite_node,
-                                                          registration));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
+        context, tflite_node, registration));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
     const auto* params =
         static_cast<const TfLitePoolParams*>(tflite_node->custom_initial_data);
     if (!params) return absl::InvalidArgumentError("Missing TfLitePoolParams.");
@@ -5780,22 +5980,22 @@ class GroupNormParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
 
     const TfLiteTensor* input = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
     const ::ml_drift::BHWC input_shape = ExtractTensorShape(input);
 
     ::ml_drift::GroupNormAttributes attr;
-    RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, attr.gamma,
-                                  ReadTensorFlags::kNoExtraBytes));
+    ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, attr.gamma,
+                                       ReadTensorFlags::kNoExtraBytes));
     if (attr.gamma.has_value() && input_shape.c != attr.gamma.value().shape.v) {
       return absl::InternalError(
           "Scale tensor channels don't match input tensor channels.");
     }
-    RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 2, attr.beta,
-                                  ReadTensorFlags::kNoExtraBytes));
+    ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 2, attr.beta,
+                                       ReadTensorFlags::kNoExtraBytes));
     if (attr.beta.has_value() && attr.beta.value().shape.v != 0 &&
         input_shape.c != attr.beta.value().shape.v) {
       return absl::InternalError(
@@ -5846,22 +6046,22 @@ class LayerNormParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
 
     const TfLiteTensor* input = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
     const ::ml_drift::BHWC input_shape = ExtractTensorShape(input);
 
     ::ml_drift::LayerNormAttributes attr;
-    RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, attr.scale,
-                                  ReadTensorFlags::kNoExtraBytes));
+    ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, attr.scale,
+                                       ReadTensorFlags::kNoExtraBytes));
     if (attr.scale.has_value() && input_shape.c != attr.scale.value().shape.v) {
       return absl::InternalError(
           "Scale tensor channels don't match input tensor channels.");
     }
-    RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 2, attr.bias,
-                                  ReadTensorFlags::kNoExtraBytes));
+    ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 2, attr.bias,
+                                       ReadTensorFlags::kNoExtraBytes));
     if (attr.bias.has_value() && attr.bias.value().shape.v != 0 &&
         input_shape.c != attr.bias.value().shape.v) {
       return absl::InternalError(
@@ -5903,8 +6103,8 @@ class PixelShuffleParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
     return absl::OkStatus();
   }
 
@@ -5943,19 +6143,19 @@ class PositionalEmbeddingParser : public TFLiteOperationParser {
           ", while expected 1."));
     }
     const TfLiteTensor* src = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &src));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &src));
     const ::ml_drift::BHWC src_sh = ExtractTensorShape(src);
     const TfLiteTensor* pos = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 1, &pos));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 1, &pos));
     const ::ml_drift::BHWC pos_sh = ExtractTensorShape(pos);
     if (src_sh.w != pos_sh.w) {
       return absl::InvalidArgumentError(
           "src and pos must have the same width for PositionalEmbedding.");
     }
 
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
     return absl::OkStatus();
   }
 
@@ -5997,22 +6197,25 @@ class RoPEParser : public TFLiteOperationParser {
     const int pos_tensor_idx = tflite_node->inputs->size == 2 ? 1 : 2;
 
     const TfLiteTensor* src = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &src));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &src));
     const ::ml_drift::BHWC src_sh = ExtractTensorShape(src);
     const TfLiteTensor* pos = nullptr;
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         PreGetInputTensor(context, tflite_node, pos_tensor_idx, &pos));
     const ::ml_drift::BHWC pos_sh = ExtractTensorShape(pos);
     if (src_sh.w != pos_sh.w) {
       return absl::InvalidArgumentError(
           "src and pos must have the same width for PositionalEmbedding.");
     }
-    RETURN_IF_ERROR(PreCheckRuntimeOrConstantInput(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckRuntimeOrConstantInput(context, tflite_node, 1));
+    ABSL_RETURN_IF_ERROR(
+        PreCheckRuntimeOrConstantInput(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(
+        PreCheckRuntimeOrConstantInput(context, tflite_node, 1));
     if (tflite_node->inputs->size != 2) {
-      RETURN_IF_ERROR(PreCheckRuntimeOrConstantInput(context, tflite_node, 2));
+      ABSL_RETURN_IF_ERROR(
+          PreCheckRuntimeOrConstantInput(context, tflite_node, 2));
     }
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
     return absl::OkStatus();
   }
 
@@ -6052,6 +6255,43 @@ class RoPEParser : public TFLiteOperationParser {
       }
     }
     reader->AddOutputs(node);
+
+    ::ml_drift::RoPEAttributes attr;
+    const uint8_t* buffer_t = nullptr;
+    size_t length = 0;
+    if (tflite_node->custom_initial_data &&
+        tflite_node->custom_initial_data_size > 0) {
+      buffer_t =
+          reinterpret_cast<const uint8_t*>(tflite_node->custom_initial_data);
+      length = tflite_node->custom_initial_data_size;
+    } else if (tflite_node->builtin_data) {
+      const auto* composite_params =
+          static_cast<const TfLiteStablehloCompositeParams*>(
+              tflite_node->builtin_data);
+      if (composite_params->attributes &&
+          composite_params->attributes_size > 0) {
+        buffer_t = composite_params->attributes;
+        length = composite_params->attributes_size;
+      }
+    }
+    if (buffer_t && length > 0) {
+      const flexbuffers::Map& m =
+          flexbuffers::GetRoot(buffer_t, length).AsMap();
+      if (!m["min_timescale"].IsNull()) {
+        attr.min_timescale = m["min_timescale"].AsFloat();
+      }
+      if (!m["max_timescale"].IsNull()) {
+        attr.max_timescale = m["max_timescale"].AsFloat();
+      }
+      if (!m["proportion"].IsNull()) {
+        attr.proportion = m["proportion"].AsFloat();
+      }
+      if (!m["kernel_type"].IsNull()) {
+        attr.kernel_type =
+            static_cast<::ml_drift::RoPEKernelType>(m["kernel_type"].AsInt32());
+      }
+    }
+    node->operation.attributes = std::move(attr);
   }
 };
 
@@ -6153,7 +6393,7 @@ class CompositeGroupNormParser : public TFLiteOperationParser {
         expected_reduction_axes.push_back(tensor_dims_size - 1);
       }
 
-      RETURN_IF_ERROR(ExpectReductionAxes(
+      ABSL_RETURN_IF_ERROR(ExpectReductionAxes(
           flexbuffer_map, expected_reduction_axes, "GroupNorm"));
     }
 
@@ -6264,7 +6504,7 @@ class CompositeLayerNormParser : public TFLiteOperationParser {
       return absl::InvalidArgumentError("LayerNorm is missing epsilon.");
     }
     if (!flexbuffer_map["_TENSOR_V1_reduction_axes"].IsNull()) {
-      RETURN_IF_ERROR(ExpectReductionAxes(
+      ABSL_RETURN_IF_ERROR(ExpectReductionAxes(
           flexbuffer_map, {input->dims->size - 1}, "LayerNorm"));
     }
     return absl::OkStatus();
@@ -6305,16 +6545,16 @@ class CompositeRmsNormParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration*) final {
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
 
     const TfLiteTensor* input = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
     const ::ml_drift::BHWC input_shape = ExtractTensorShape(input);
 
     ::ml_drift::RmsNormAttributes attr;
-    RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, attr.scale,
-                                  ReadTensorFlags::kNoExtraBytes));
+    ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, attr.scale,
+                                       ReadTensorFlags::kNoExtraBytes));
     if (attr.scale.has_value() && input_shape.c != attr.scale.value().shape.v) {
       return absl::InternalError(
           "Scale tensor channels don't match input tensor channels.");
@@ -6437,16 +6677,16 @@ class RmsNormParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-    RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
 
     const TfLiteTensor* input = nullptr;
-    RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
     const ::ml_drift::BHWC input_shape = ExtractTensorShape(input);
 
     ::ml_drift::RmsNormAttributes attr;
-    RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, attr.scale,
-                                  ReadTensorFlags::kNoExtraBytes));
+    ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, attr.scale,
+                                       ReadTensorFlags::kNoExtraBytes));
     if (attr.scale.has_value() && input_shape.c != attr.scale.value().shape.v) {
       return absl::InternalError(
           "Scale tensor channels don't match input tensor channels.");
@@ -6857,6 +7097,10 @@ std::unique_ptr<TFLiteOperationParser> NewOperationParser(
       if (!std::strcmp(params->name, "odml.rms_norm")) {
         return std::make_unique<CompositeRmsNormParser>();
       }
+      if (!std::strcmp(params->name,
+                       "custom_call.rotary_positional_embedding")) {
+        return std::make_unique<RoPEParser>();
+      }
       if (!std::strcmp(params->name, "odml.scaled_dot_product_attention")) {
         return std::make_unique<CompositeSdpaParser>();
       }
@@ -7174,7 +7418,7 @@ absl::Status BuildModelEnforceIO(
   for (int i = 0; i < delegate_params->nodes_to_replace->size; ++i) {
     TfLiteNode* tflite_node = nullptr;
     TfLiteRegistration* registration = nullptr;
-    RETURN_IF_ERROR(GetNodeAndRegistration(
+    ABSL_RETURN_IF_ERROR(GetNodeAndRegistration(
         context, delegate_params->nodes_to_replace->data[i], &tflite_node,
         &registration));
     if (registration->builtin_code == kTfLiteBuiltinDequantize &&
@@ -7218,16 +7462,17 @@ absl::Status BuildModelEnforceIO(
   }
   absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
   std::vector<::ml_drift::ValueId> variable_inputs_to_value_id;
-  RETURN_IF_ERROR(PrecreateIOTensors(context, graph, filtered_input_ids,
-                                     quant_conversion_map, &tensor_to_value,
-                                     /*is_output=*/false));
-  RETURN_IF_ERROR(PrecreateIOTensors(context, graph, output_ids,
-                                     quant_conversion_map, &tensor_to_value,
-                                     /*is_output=*/true));
+  ABSL_RETURN_IF_ERROR(PrecreateIOTensors(context, graph, filtered_input_ids,
+                                          quant_conversion_map,
+                                          &tensor_to_value,
+                                          /*is_output=*/false));
+  ABSL_RETURN_IF_ERROR(PrecreateIOTensors(
+      context, graph, output_ids, quant_conversion_map, &tensor_to_value,
+      /*is_output=*/true));
   for (int i = 0; i < operations.size(); ++i) {
     TfLiteNode* tflite_node;
     TfLiteRegistration* registration;
-    RETURN_IF_ERROR(GetNodeAndRegistration(
+    ABSL_RETURN_IF_ERROR(GetNodeAndRegistration(
         context, delegate_params->nodes_to_replace->data[tflite_nodes[i]],
         &tflite_node, &registration));
     ObjectReader reader(graph, context, tflite_node, &tensor_to_value,
@@ -7237,7 +7482,7 @@ absl::Status BuildModelEnforceIO(
     absl::flat_hash_map<int, ::ml_drift::ValueId>
         new_value_for_variable_input_tensors =
             operations[i]->GetNewValueIdsForVariableInputNodes();
-    RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(
         CopyVariableTensorOutputs(tflite_node, registration, graph, reader,
                                   new_value_for_variable_input_tensors));
   }
@@ -7262,7 +7507,7 @@ absl::Status BuildFinalModel(
     const TensorIndexToBufferIdMap* tensor_to_buffer_id_map,
     const TensorIndexToExternalBufferIdMap* tensor_to_external_buffer_id_map,
     TFLiteStablehloCompositeParserFactory* composite_parser_factory) {
-  RETURN_IF_ERROR(
+  ABSL_RETURN_IF_ERROR(
       BuildModel(context, delegate_params, options, graph, quant_conversion_map,
                  shared_tensors, tensor_to_buffer_id_map,
                  tensor_to_external_buffer_id_map, composite_parser_factory));
