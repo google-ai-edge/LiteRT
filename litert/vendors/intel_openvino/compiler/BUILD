@@ -173,6 +173,58 @@ litert_test(
 )
 
 litert_lib(
+    name = "alias_shared_constants",
+    srcs = [
+        "alias_shared_constants.cc",
+        # Vendored OpenVINO dev_api header (not in the runtime SDK; symbols
+        # exported by libopenvino.so). Tags weight Constants with
+        # WeightlessCacheAttribute on the NPU shared path.
+        "weightless_caching_attributes.hpp",
+    ],
+    hdrs = ["alias_shared_constants.h"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    deps = [
+        ":weight_bank",
+        "//litert/c/internal:litert_logging",
+        "@com_google_absl//absl/types:span",
+        "@intel_openvino//:openvino",
+    ],
+)
+
+litert_test(
+    name = "alias_shared_constants_test",
+    srcs = [
+        "alias_shared_constants_test.cc",
+        "weightless_caching_attributes.hpp",
+    ],
+    copts = ["-fexceptions"],
+    data = [
+        "//litert/test:mlir_test_data",
+        "//litert/test:tflite_test_data",
+    ],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":alias_shared_constants",
+        ":graph_iterator",
+        ":weight_bank",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
+        "//litert/test:common",
+        "//litert/test:load_test_model",
+        "//litert/test:test_models",
+        "@intel_openvino//:openvino",
+    ],
+)
+
+litert_lib(
     name = "openvino_compile_context",
     srcs = ["openvino_compile_context.cc"],
     hdrs = ["openvino_compile_context.h"],
@@ -194,10 +246,6 @@ litert_dynamic_lib(
     name = "openvino_compiler_plugin",
     srcs = [
         "openvino_compiler_plugin.cc",
-        # Vendored OpenVINO dev_api header (not in the runtime SDK; symbols
-        # exported by libopenvino.so). Tags weight Constants with
-        # WeightlessCacheAttribute on the NPU shared path.
-        "weightless_caching_attributes.hpp",
     ],
     hdrs = [
         "//litert/vendors/c:litert_compiler_plugin.h",
@@ -223,6 +271,7 @@ litert_dynamic_lib(
         "//litert:__subpackages__",
     ],
     deps = [
+        ":alias_shared_constants",
         ":global_graph",
         ":graph_iterator",
         ":openvino_compile_context",
@@ -256,7 +305,6 @@ litert_bin(
     name = "LiteRtCompilerPlugin",
     srcs = [
         "openvino_compiler_plugin.cc",
-        "weightless_caching_attributes.hpp",
     ],
     copts = ["-fexceptions"] + select({
         "//litert/runtime/dispatch:windows_msvc": [
@@ -273,6 +321,7 @@ litert_bin(
     linkshared = 1,
     visibility = ["//visibility:public"],
     deps = [
+        ":alias_shared_constants",
         ":global_graph",
         ":graph_iterator",
         ":litert_compiler_plugin_c_api",
