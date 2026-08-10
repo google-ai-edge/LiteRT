@@ -43,6 +43,53 @@
 
 namespace litert {
 
+namespace internal::expected_detail {
+
+/// @brief Returns the last error status and message for the current thread.
+///
+/// This is used to propagate error messages from C-style APIs to C++ callers.
+///
+/// @return A reference to the last error status and message for the current
+/// thread.
+inline std::optional<std::pair<LiteRtStatus, std::string>>&
+GetThreadLastError() {
+  thread_local std::optional<std::pair<LiteRtStatus, std::string>> last_error;
+  return last_error;
+}
+
+inline void SaveLastError(LiteRtStatus status, std::string message) {
+  GetThreadLastError() = std::make_pair(status, std::move(message));
+}
+
+inline void ClearLastError() { GetThreadLastError().reset(); }
+
+inline std::string TakeLastError(LiteRtStatus status) {
+  auto& last_error = GetThreadLastError();
+  if (last_error.has_value() && last_error->first == status) {
+    std::string result = std::move(last_error->second);
+    last_error.reset();
+    return result;
+  }
+  last_error.reset();
+  return std::string();
+}
+
+inline std::string RestoreMessage(LiteRtStatus status, std::string message) {
+  std::string last_err = TakeLastError(status);
+  if (last_err.empty()) {
+    return message;
+  }
+  if (message.empty()) {
+    return last_err;
+  }
+  if (message.find(last_err) != std::string::npos) {
+    return message;
+  }
+  return absl::StrCat(message, "\n└ ", last_err);
+}
+
+}  // namespace internal::expected_detail
+
 /// @brief A C++ wrapper for a `LiteRtStatus` code, providing a status and an
 /// error message.
 class Error {
@@ -51,24 +98,47 @@ class Error {
   /// @note `::litert::Status::kOk` should not be passed.
   explicit Error(::litert::Status status, std::string message = "")
       : status_(static_cast<LiteRtStatus>(status)),
-        message_(std::move(message)) {
+        message_(internal::expected_detail::RestoreMessage(
+            status_, std::move(message))) {
     LITERT_INTERNAL_DCHECK(status != ::litert::Status::kOk);
   }
 
   [[deprecated("Use the constructor that takes ::litert::Status instead.")]]
   explicit Error(LiteRtStatus status, std::string message = "")
-      : status_(status), message_(std::move(message)) {
+      : status_(status),
+        message_(internal::expected_detail::RestoreMessage(
+            status_, std::move(message))) {
     LITERT_INTERNAL_DCHECK(status != kLiteRtStatusOk);
+  }
+
+  static Error FromExistingMessage(::litert::Status status,
+                                   std::string message) {
+    return Error(static_cast<LiteRtStatus>(status), std::move(message),
+                 /*restore=*/false);
+  }
+
+  static Error FromExistingMessage(LiteRtStatus status, std::string message) {
+    return Error(status, std::move(message), /*restore=*/false);
   }
 
   /// @brief Gets the status.
   /// @todo Rename to `Status()` after the deprecated function is removed.
-  constexpr ::litert::Status StatusCC() const {
+  ::litert::Status StatusCC() const {
+    if (!message_.empty()) {
+      internal::expected_detail::SaveLastError(status_, message_);
+    }
+    return static_cast<enum ::litert::Status>(status_);
+  }
+
+  constexpr ::litert::Status StatusValue() const {
     return static_cast<enum ::litert::Status>(status_);
   }
 
   [[deprecated("Use StatusCC() instead.")]]
-  constexpr LiteRtStatus Status() const {
+  LiteRtStatus Status() const {
+    if (!message_.empty()) {
+      internal::expected_detail::SaveLastError(status_, message_);
+    }
     return status_;
   }
 
@@ -95,6 +165,11 @@ class Error {
 #endif  // LITERT_NO_ABSL
 
  private:
+  explicit Error(LiteRtStatus status, std::string message, bool /*restore*/)
+      : status_(status), message_(std::move(message)) {
+    LITERT_INTERNAL_DCHECK(status != kLiteRtStatusOk);
+  }
+
   LiteRtStatus status_;
   std::string message_;
 };
