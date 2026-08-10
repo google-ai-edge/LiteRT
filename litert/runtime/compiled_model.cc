@@ -58,8 +58,8 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_accelerator.h"
-#include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_delegate_wrapper.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
@@ -104,13 +104,6 @@
 #include "litert/runtime/tensor_buffer_requirements.h"
 #include "litert/runtime/tensor_identifier.h"
 #include "litert/runtime/tfl_utils.h"
-#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-#include "third_party/odml/infra/fabric/runtime/tg_proto_converter.h"
-#include "third_party/odml/infra/fabric/runtime/transmission_graph.pb.h"
-#include "litert/runtime/fabric/compiled_model_fabric_internal.h"
-#include "litert/runtime/fabric/dispatch_runner_sb.h"
-#include "litert/runtime/fabric/litert_fabric_options.h"
-#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 #include "weight_loader/external_weight_loader_litert.h"
 #include "tflite/converter/allocation.h"
 #include "tflite/builtin_ops.h"
@@ -545,19 +538,19 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     request.opencl = false;
     absl::Status prepare_status = weight_loader_->PrepareAccess(request, env);
 #ifdef __EMSCRIPTEN__
-      if (!prepare_status.ok()) {
-        LITERT_LOG(LITERT_WARNING,
-                  "External weight loader: failed to prepare CPU access: %s. "
-                  "Continuing as weights may be provided via other means (e.g. "
-                  "streaming).",
-                  std::string(prepare_status.message()).c_str());
-      }
+    if (!prepare_status.ok()) {
+      LITERT_LOG(LITERT_WARNING,
+                 "External weight loader: failed to prepare CPU access: %s. "
+                 "Continuing as weights may be provided via other means (e.g. "
+                 "streaming).",
+                 std::string(prepare_status.message()).c_str());
+    }
 #else
     if (!prepare_status.ok()) {
       weight_loader_ = nullptr;
-        return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                  std::string(prepare_status.message()));
-      }
+      return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                std::string(prepare_status.message()));
+    }
 #endif
   }
 
@@ -897,27 +890,6 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
            << "No acceleration provided.";
   }
 
-#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-  {
-    auto opaque_options = litert::OpaqueOptions::WrapCObject(
-        jit_compilation_options->options, litert::OwnHandle::kNo);
-    if (auto fabric_options = litert::FindOpaqueData<LiteRtFabricOptionsT>(
-            opaque_options, LiteRtFabricOptionsT::Identifier());
-        fabric_options) {
-      if (!jit_compilation_options->selected_signature_keys.empty()) {
-        return Unexpected(
-            kLiteRtStatusErrorUnsupported,
-            "Selected signatures are not supported by the Fabric runtime.");
-      }
-      LITERT_LOG(LITERT_INFO,
-                 "Fabric options found; initializing Fabric runtime.");
-      LITERT_RETURN_IF_ERROR(compiled_model->InitializeFabricRuntime(
-          jit_compilation_options, **fabric_options));
-      return compiled_model;
-    }
-  }
-#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-
   LITERT_RETURN_IF_ERROR(compiled_model->InitializeModel(
       *model, hardware_accelerators, jit_compilation_options, *env));
 
@@ -1140,11 +1112,6 @@ Expected<void> LiteRtCompiledModelT::ValidateSignatureIsActive(
 }
 
 Expected<bool> LiteRtCompiledModelT::HasNonDelegatedOps() {
-#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-  if (fabric_runtime_) {
-    return false;
-  }
-#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
   for (int subgraph_no : active_subgraph_indices_) {
     const auto* const subgraph = interp_->subgraph(subgraph_no);
     if (subgraph->IsDelegationSkippable()) {
@@ -1336,13 +1303,6 @@ bool LiteRtCompiledModelT::TryLoadingFromCache(
 
 Expected<const LiteRtTensorBufferRequirementsT*>
 LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
-#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-  if (fabric_runtime_) {
-    return Unexpected(kLiteRtStatusErrorUnsupported,
-                      "Tensor buffer requirements are not supported for "
-                      "Fabric runtime.");
-  }
-#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
   LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
                           GetTensorIdentifier(*interp_, tensor));
   // Use the buffer context to get the buffer requirements only if the tensor
@@ -1380,11 +1340,7 @@ Expected<const LiteRtTensorBufferRequirementsT*>
 LiteRtCompiledModelT::GetInputBufferRequirements(
     absl::string_view signature_key, size_t input_index) {
   LITERT_RETURN_IF_ERROR(ValidateSignatureIsActive(signature_key));
-#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-  if (fabric_runtime_) {
-    return GetFabricInputBufferRequirements(signature_key, input_index);
-  }
-#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+
   auto runner = GetSignatureRunner(signature_key);
   if (runner == nullptr) {
     return Unexpected(kLiteRtStatusErrorNotFound,
@@ -1407,11 +1363,7 @@ Expected<const LiteRtTensorBufferRequirementsT*>
 LiteRtCompiledModelT::GetOutputBufferRequirements(
     absl::string_view signature_key, size_t output_index) {
   LITERT_RETURN_IF_ERROR(ValidateSignatureIsActive(signature_key));
-#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-  if (fabric_runtime_) {
-    return GetFabricOutputBufferRequirements(signature_key, output_index);
-  }
-#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+
   auto runner = GetSignatureRunner(signature_key);
   if (runner == nullptr) {
     return Unexpected(kLiteRtStatusErrorNotFound,
@@ -1433,11 +1385,6 @@ LiteRtCompiledModelT::GetOutputBufferRequirements(
 
 Expected<LiteRtLayout> LiteRtCompiledModelT::GetInputTensorLayout(
     size_t signature_index, size_t input_index) {
-#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-  if (fabric_runtime_) {
-    return GetFabricInputTensorLayout(signature_index, input_index);
-  }
-#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
   if (signature_index >= signature_keys_.size()) {
     return Unexpected(kLiteRtStatusErrorIndexOOB,
                       "Signature index is out of range of signature keys");
@@ -1479,87 +1426,11 @@ Expected<LiteRtLayout> LiteRtCompiledModelT::GetInputTensorLayout(
   return layout;
 }
 
-#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-Expected<LiteRtRankedTensorType>
-LiteRtCompiledModelT::GetRuntimeOutputTensorType(size_t signature_index,
-                                                 size_t output_index) {
-  if (signature_index >= signature_keys_.size()) {
-    return Unexpected(kLiteRtStatusErrorIndexOOB,
-                      "Signature index is out of range of signature keys");
-  }
-  const absl::string_view signature_key = *signature_keys_[signature_index];
-  LITERT_RETURN_IF_ERROR(ValidateSignatureIsActive(signature_key));
-  if (fabric_runtime_) {
-    return GetFabricRuntimeOutputTensorType(signature_key, output_index);
-  }
-  auto* runner = GetSignatureRunner(signature_key);
-  if (runner == nullptr) {
-    return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                      "Failed to get signature runner");
-  }
-  const auto& output_names = runner->subgraph_output_names();
-  if (output_index >= output_names.size()) {
-    return Unexpected(kLiteRtStatusErrorIndexOOB, "Output index out of range");
-  }
-  auto* output_tensor = runner->output_tensor(output_names[output_index]);
-  if (output_tensor == nullptr) {
-    return Unexpected(kLiteRtStatusErrorNotFound,
-                      "Failed to get output tensor");
-  }
-  LiteRtElementType element_type = kLiteRtElementTypeNone;
-  switch (output_tensor->type) {
-    case kTfLiteBool:
-      element_type = kLiteRtElementTypeBool;
-      break;
-    case kTfLiteInt32:
-      element_type = kLiteRtElementTypeInt32;
-      break;
-    case kTfLiteInt64:
-      element_type = kLiteRtElementTypeInt64;
-      break;
-    case kTfLiteUInt8:
-      element_type = kLiteRtElementTypeUInt8;
-      break;
-    case kTfLiteUInt32:
-      element_type = kLiteRtElementTypeUInt32;
-      break;
-    case kTfLiteUInt64:
-      element_type = kLiteRtElementTypeUInt64;
-      break;
-    case kTfLiteBFloat16:
-      element_type = kLiteRtElementTypeBFloat16;
-      break;
-    case kTfLiteFloat32:
-      element_type = kLiteRtElementTypeFloat32;
-      break;
-    case kTfLiteFloat64:
-      element_type = kLiteRtElementTypeFloat64;
-      break;
-    default:
-      return Unexpected(kLiteRtStatusErrorUnsupported,
-                        "Unsupported runtime output tensor type");
-  }
-  std::vector<LiteRtLayout> output_layouts(output_names.size());
-  auto output_layouts_span = absl::MakeSpan(output_layouts);
-  LITERT_RETURN_IF_ERROR(GetOutputTensorShapes(signature_key,
-                                               output_layouts_span,
-                                               /*update_allocation=*/false));
-  return LiteRtRankedTensorType{
-      .element_type = element_type,
-      .layout = output_layouts[output_index],
-  };
-}
-#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-
 Expected<void> LiteRtCompiledModelT::GetOutputTensorShapes(
     absl::string_view signature_key, absl::Span<LiteRtLayout>& output_layouts,
     bool update_allocation) {
   LITERT_RETURN_IF_ERROR(ValidateSignatureIsActive(signature_key));
-#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-  if (fabric_runtime_) {
-    return GetFabricOutputTensorShapes(signature_key, output_layouts);
-  }
-#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+
   auto runner = GetSignatureRunner(signature_key);
   if (runner == nullptr) {
     return Unexpected(kLiteRtStatusErrorNotFound,
@@ -1930,11 +1801,6 @@ Expected<void> LiteRtCompiledModelT::Run(
     LiteRtOptions run_options, const LiteRtSchedulingInfo* scheduling_info) {
   LITERT_PERFETTO_TRACE_EVENT("CompiledModel Inference");
   LITERT_RETURN_IF_ERROR(ValidateSignatureIsActive(signature_key));
-#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-  if (fabric_runtime_) {
-    return RunWithFabric(signature_key, input_buffers, output_buffers, async);
-  }
-#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 
   uint64_t event_handle = std::numeric_limits<uint64_t>::max();
   if (profiler_ && profiler_->IsProfiling()) {
@@ -2394,13 +2260,6 @@ Expected<void> LiteRtCompiledModelT::ResizeInputTensorNonStrict(
 Expected<void> LiteRtCompiledModelT::ResizeInputTensorImpl(
     size_t signature_index, size_t input_index, absl::Span<const int> dims,
     bool strict_mode) {
-#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-  if (fabric_runtime_) {
-    return litert::Unexpected(kLiteRtStatusErrorUnsupported,
-                              "ResizeInputTensor is not supported for Fabric "
-                              "runtime.");
-  }
-#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
   if (signature_index >= signature_keys_.size()) {
     return Unexpected(kLiteRtStatusErrorIndexOOB,
                       "Signature index is out of range of signature keys");

@@ -638,11 +638,9 @@ cc_library(
     name = "compiled_model",
     srcs = [
         "compiled_model.cc",
-        # copybara:uncomment "fabric/compiled_model_fabric_internal.cc",
     ],
     hdrs = [
         "compiled_model.h",
-        # copybara:uncomment "fabric/compiled_model_fabric_internal.h",
         "stub_op_resolver.h",
     ],
     copts = litert_metal_opts() + select({
@@ -717,26 +715,7 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-    ] +
-    # copybara:uncomment_begin(google-only)
-    # select({
-    # ":litert_enable_fabric_integration": [
-    # ":dispatch_runner_sb",
-    # ":litert_fabric_options",
-    # "//third_party/odml/infra/fabric/runtime:buffer_utils",
-    # "//third_party/odml/infra/fabric/runtime:executor",
-    # "//third_party/odml/infra/fabric/runtime:inference_program",
-    # "//third_party/odml/infra/fabric/runtime:tg_proto_converter",
-    # "//third_party/odml/infra/fabric/runtime:transmission_graph_cc_proto",
-    # "//third_party/odml/infra/northbound/aot:hardware_buffer",
-    # "//third_party/odml/infra/northbound/aot:program_analysis",
-    # "//third_party/odml/infra/northbound/graph:identifiers",
-    # "//litert/vendors/c:litert_dispatch_c_api",
-    # ],
-    # "//conditions:default": [],
-    # }) +
-    # copybara:uncomment_end
-    [
+    ] + [
         "//tflite:mutable_op_resolver",
         "//tflite/c:c_api_opaque",
         "//tflite/c:c_api_types_opaque_delegate",
