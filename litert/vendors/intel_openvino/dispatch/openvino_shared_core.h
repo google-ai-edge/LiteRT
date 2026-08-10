@@ -15,7 +15,6 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_OPENVINO_SHARED_CORE_H_
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_OPENVINO_SHARED_CORE_H_
 
-#include <cstddef>
 #include <memory>
 #include <mutex>  // NOLINT
 #include <optional>
@@ -64,27 +63,9 @@ class OpenVINOSharedCore {
   // underlying query throws.
   const std::vector<std::string>& GetAvailableDevices();
 
-  // Stages the deduplicated weight pool [data, data+size) to a temp file
-  // EXACTLY ONCE per process and returns its path (empty on failure).
-  //
-  // Thread-safe and write-once: the first successful call writes the file and
-  // caches the path; every later call returns the cached path (ignoring its
-  // arguments), so the multi-GB pool is written once and reused by all
-  // partitions / inferences. Portable across Windows / Linux / Android.
-  //
-  // NOTE: safe use of std::filesystem::path here depends on the dispatch .so
-  // being linked with -Wl,--exclude-libs,ALL -Wl,-Bsymbolic (see its BUILD
-  // target), which keeps libstdc++'s weak path symbols local to this module so
-  // a path is never destroyed by a differently-built module's interposed copy.
-  std::string EnsureBankOnDisk(const void* data, size_t size);
-
-  // Returns the cached bank path, or empty if EnsureBankOnDisk has not yet
-  // succeeded. Thread-safe.
-  std::string GetBankPath();
-
  private:
   OpenVINOSharedCore();
-  ~OpenVINOSharedCore();
+  ~OpenVINOSharedCore() = default;
 
   std::shared_ptr<ov::Core> core_;
   // Guards device_ and remote_context_.
@@ -94,10 +75,6 @@ class OpenVINOSharedCore {
       ABSL_GUARDED_BY(state_mutex_);
   std::once_flag available_devices_once_;
   std::vector<std::string> available_devices_;
-
-  // Guards the write-once temp-file staging of the shared weights bank.
-  std::mutex bank_mu_;
-  std::string bank_path_;  // cached temp-file path; empty until first write
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_OPENVINO_SHARED_CORE_H_

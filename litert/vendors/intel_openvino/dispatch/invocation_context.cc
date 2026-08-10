@@ -342,12 +342,11 @@ LiteRtDispatchInvocationContextT::Create(
   ov::CompiledModel compiled_model;
   try {
     if (npu_shared) {
-      // Stage the deduplicated pool to a temp file once per process, then hand
-      // it to NPUW. The temp file is a byte-for-byte copy of the contiguous
-      // pool span, starting at byte 0, so bin_offset resolves directly.
+      // Stage the deduplicated pool to a temp file once per model, then hand it
+      // to NPUW. The temp file is a byte-for-byte copy of the contiguous pool
+      // span, starting at byte 0, so bin_offset resolves directly.
       const std::string bank_path =
-          OpenVINOSharedCore::GetInstance()->EnsureBankOnDisk(pool_ptr,
-                                                              pool_size);
+          device_context.NpuBank().EnsureOnDisk(pool_ptr, pool_size);
       if (bank_path.empty()) {
         return litert::Error(
             kLiteRtStatusErrorRuntimeFailure,
