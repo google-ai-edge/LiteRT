@@ -548,6 +548,7 @@ litert_device_test(
 #         "//litert/test:testdata/simple_cast_and_add_op.tflite",
 #         "//litert/test:testdata/simple_model.tflite",
 #     ],
+#     tags = ["nowindows"],
 #     deps = [
 #         ":litert_common",
 #         ":litert_compiled_model",
@@ -1267,6 +1268,7 @@ objc_library(
     data = [
         "//litert/test:testdata/simple_model.tflite",
     ],
+    tags = ["objc"],
     deps = [
         ":litert_compiled_model",
         ":litert_environment",
