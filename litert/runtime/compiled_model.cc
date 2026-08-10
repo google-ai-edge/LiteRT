@@ -650,6 +650,24 @@ Expected<void> LiteRtCompiledModelT::RestoreExternalWeightsForCpu() {
                  subgraph_idx, tensor_index, external_buffer_id,
                  host_memory_addr);
     }
+    // Inspect the weight infos to log the available weights for GPU delegates.
+    auto weight_infos = weight_loader_->GetWeightInfo();
+    LITERT_LOG(LITERT_DEBUG,
+               "External weight loader: %zu weight tensors available for GPU "
+               "delegates",
+               weight_infos.size());
+    for (const auto& info : weight_infos) {
+      if (info.packing.empty()) {
+        LITERT_LOG(LITERT_DEBUG,
+                   "  Weight tensor: external_buffer_id=%u, packing=<none>",
+                   info.external_buffer_id);
+      } else {
+        LITERT_LOG(LITERT_DEBUG,
+                   "  Weight tensor: external_buffer_id=%u, packing=%.*s",
+                   info.external_buffer_id,
+                   static_cast<int>(info.packing.size()), info.packing.data());
+      }
+    }
   }
   return {};
 }
