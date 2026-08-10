@@ -22,6 +22,9 @@ std::vector<OpWrapper> BuildEmbeddingLookupOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
 
+OpWrapper CreateGatherOp(const TensorWrapper& table,
+                         const TensorWrapper& indices,
+                         const TensorWrapper& output, std::int32_t axis);
 }  // namespace qnn
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_EMBEDDING_LOOKUP_OP_BUILDER_H_

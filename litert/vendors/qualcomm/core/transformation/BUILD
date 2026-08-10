@@ -131,6 +131,7 @@ cc_library(
     hdrs = ["embedding_gemma.h"],
     deps = [
         "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/builders:embedding_lookup_op_builder",
         "//litert/vendors/qualcomm/core/builders:concatenation_op_builder",
         "//litert/vendors/qualcomm/core/builders:elementwise_op_builder",
         "//litert/vendors/qualcomm/core/builders:op_builder",
