@@ -760,6 +760,52 @@ TEST(CalibratorTest, NonVariableInputsNotReLoggedPostInvocation) {
   }
   interpreter->tensor(5)->data.raw = original_output_data;
 }
+
+TEST(CalibratorTest, HistogramPassClipsRangesToIncludeZero) {
+  auto model = ReadModel("multi_add.bin");
+  ASSERT_TRUE(model);
+  std::unique_ptr<Interpreter> interpreter;
+  std::unique_ptr<CalibrationReader> reader;
+  ASSERT_EQ(BuildLoggingInterpreter(*model, ops::builtin::BuiltinOpResolver{},
+                                    &interpreter, &reader),
+            kTfLiteOk);
+  ASSERT_TRUE(interpreter);
+  ASSERT_TRUE(reader);
+  ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
+
+  // Input i is filled with the constant value i + 1.
+  const size_t tensor_size = 1 * 8 * 8 * 3;
+  for (size_t i = 0; i < interpreter->inputs().size(); i++) {
+    TfLiteTensor* tensor = interpreter->tensor(interpreter->inputs()[i]);
+    ASSERT_NE(tensor, nullptr);
+    ASSERT_EQ(tensor->bytes, tensor_size * sizeof(float));
+    for (size_t j = 0; j < tensor_size; j++) {
+      tensor->data.f[j] = i + 1;
+    }
+  }
+
+  // First pass: min/max.
+  ASSERT_EQ(interpreter->Invoke(), kTfLiteOk);
+  // Second pass: histogram.
+  reader->EnableHistogramPass(/*num_bins=*/16, /*lower_percentile=*/0.0,
+                              /*upper_percentile=*/100.0);
+  ASSERT_EQ(interpreter->Invoke(), kTfLiteOk);
+
+  absl::flat_hash_map<std::tuple<int, int>, CalibrationReader::CalibrationStats>
+      stats;
+  ASSERT_EQ(reader->GetTensorStatsAsMap(&stats), kTfLiteOk);
+  // Each input tensor holds a single positive value. Without a histogram its
+  // range would be [i + 1, i + 1]; with a histogram the range is extended to
+  // include 0 and the upper bound stays at the value.
+  const float eps = 1e-5f;
+  for (int tensor_idx = 0; tensor_idx < 4; tensor_idx++) {
+    auto it = stats.find({0, tensor_idx});
+    ASSERT_NE(it, stats.end());
+    EXPECT_NEAR(it->second.min, 0.0f, eps);
+    EXPECT_NEAR(it->second.max, tensor_idx + 1, eps);
+  }
+}
+
 }  // namespace
 }  // namespace calibration
 }  // namespace optimize

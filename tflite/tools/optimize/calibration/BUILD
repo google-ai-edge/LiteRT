@@ -190,6 +190,16 @@ cc_library(
     ],
 )
 
+cc_test(
+    name = "calibration_logger_test",
+    srcs = ["calibration_logger_test.cc"],
+    deps = [
+        ":calibration_logger",
+        "//tflite/core/c:c_api_types",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "calibration_common",
     hdrs = ["calibration_common.h"],
