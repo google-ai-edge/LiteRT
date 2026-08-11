@@ -19,6 +19,7 @@
 
 #include "openvino/core/model.hpp"
 #include "openvino/pass/graph_rewrite.hpp"
+#include "openvino/pass/pass.hpp"
 
 namespace litert {
 namespace openvino {
@@ -83,6 +84,31 @@ class FuseSplitAttentionToSDPA : public ov::pass::MatcherPass {
   explicit FuseSplitAttentionToSDPA(bool pad_kv_to_alignment);
 };
 
+// Rewrites Gemma4's dense Mixture-of-Experts block — where all N experts are
+// computed and non-selected ones are masked to zero — into selective
+// computation of only the K experts chosen by the router's TopK.
+//
+// Gemma4 (decode) exports each expert as an independent GEGLU branch with its
+// own weights (there is NO batched expert dimension to gather over), the
+// branches accumulated via a chain of Add and masked by per-expert router
+// scores (Equal(topk_indices, expert_id) -> score, 0 when not selected). Per
+// MoE layer this pass:
+//   1. Locates the router TopK and its N (=128) expert branches; the expert_id
+//      of each branch is read from that branch's Equal constant.
+//   2. Stacks the per-expert weights into grouped constants [N, ...] ordered by
+//      expert_id (i4 dequant scales stacked in the same order).
+//   3. Inserts Gather(grouped_w, topk_indices, axis=0) so only K experts are
+//      computed on-device.
+//   4. Replaces the N-way masked Add chain with a K-way score-weighted sum.
+//
+// Decode/generate only (requires TopK indices batch == 1). Disabled by default;
+// enable via config key "enable_moe_gather" = "true".
+class MoEGatherRewrite : public ov::pass::ModelPass {
+ public:
+  OPENVINO_RTTI("MoEGatherRewrite");
+  bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
+};
+
 // Configurable runner for NPU-specific optimization passes.
 // Use the setter APIs to toggle individual optimizations, then call Run() to
 // apply the enabled passes to a model.
@@ -122,6 +148,14 @@ class NpuOptimizer {
     return *this;
   }
 
+  // Toggles the MoEGatherRewrite pass. Disabled by default; enable via config
+  // key "enable_moe_gather" = "true" to turn Gemma4's dense masked MoE into
+  // gather-based selective (K-of-N) expert computation.
+  NpuOptimizer& SetEnableMoeGather(bool enable) {
+    enable_moe_gather_ = enable;
+    return *this;
+  }
+
   // Runs all currently-enabled passes on |model|.
   void Run(const std::shared_ptr<ov::Model>& model) const;
 
@@ -131,6 +165,7 @@ class NpuOptimizer {
   bool cast_integer_sign_to_float_ = true;
   bool fuse_split_attention_to_sdpa_ = false;
   bool sdpa_pad_kv_to_alignment_ = true;
+  bool enable_moe_gather_ = false;
 };
 
 }  // namespace openvino
