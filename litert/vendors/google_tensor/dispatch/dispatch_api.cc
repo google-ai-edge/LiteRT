@@ -360,14 +360,14 @@ LiteRtStatus ConnectGraphInput(LiteRtDispatchGraph graph, int input_index,
                                LiteRtDispatchEdgeId edge_id) {
   GT_LOG_RETURN_IF_NULL(graph);
 
-  return graph->ConnectGraphInput(edge_id);
+  return graph->ConnectGraphInput(input_index, edge_id);
 }
 
 LiteRtStatus ConnectGraphOutput(LiteRtDispatchGraph graph, int output_index,
                                 LiteRtDispatchEdgeId edge_id) {
   GT_LOG_RETURN_IF_NULL(graph);
 
-  return graph->ConnectGraphOutput(edge_id);
+  return graph->ConnectGraphOutput(output_index, edge_id);
 }
 
 LiteRtStatus LoadExecutable(LiteRtDispatchDeviceContext device_context,
