@@ -33,7 +33,6 @@
 
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/compiled_model.hpp"
-#include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/tensor.hpp"
 #if defined(__ANDROID__)
 #include <unistd.h>
@@ -55,6 +54,7 @@
 #include "litert/vendors/intel_openvino/bytecode_header.h"
 #include "litert/vendors/intel_openvino/compiler/global_graph.h"
 #include "litert/vendors/intel_openvino/dispatch/weight_bank_runtime.h"
+#include "litert/vendors/intel_openvino/openvino_version_info.h"
 
 namespace {
 // This class is copied from the OpenVINO codebase with minor modifications
@@ -290,7 +290,11 @@ LiteRtDispatchInvocationContextT::Create(
           "Requested OpenVINO device is not available on this system");
     }
   }
-  LITERT_LOG(LITERT_INFO, "Using Intel OpenVINO device: %s", device.c_str());
+  const char* partition_name =
+      function_name != nullptr && function_name[0] != '\0' ? function_name
+                                                            : "(unnamed)";
+  LITERT_LOG(LITERT_INFO, "OpenVINO partition '%s' using device: %s",
+             partition_name, device.c_str());
 
   OpenVINOSharedCore::GetInstance()->SetDevice(device);
 
@@ -344,6 +348,8 @@ LiteRtDispatchInvocationContextT::Create(
 
   ov::CompiledModel compiled_model;
   try {
+    litert::openvino::LogOpenVINOVersionInfoOnce("OpenVINO Dispatch",
+                                                 device.c_str());
     if (npu_shared) {
       // Stage the deduplicated pool to a temp file once per model, then hand it
       // to NPUW. The temp file is a byte-for-byte copy of the contiguous pool
