@@ -108,6 +108,7 @@ target_link_libraries(litert_apply_plugin
         absl::strings
         absl::status
         absl::statusor
+        absl::str_format
 )
 
 # Add flags
