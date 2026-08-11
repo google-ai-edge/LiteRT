@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "openvino/core/except.hpp"
+#include "openvino/core/version.hpp"
 #include "openvino/runtime/core.hpp"
 #include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
 #include "litert/c/internal/litert_logging.h"
@@ -110,6 +111,10 @@ LiteRtStatus DispatchInitialize(const LiteRtRuntimeContext* runtime_context,
     LiteRtPropagateMinLoggerSeverityWithRuntimeContext(runtime_context,
                                                        environment_options);
   }
+
+  const ov::Version openvino_version = ov::get_openvino_version();
+  LITERT_LOG(LITERT_INFO, "OpenVINO Runtime version: %s (%s)",
+             openvino_version.buildNumber, openvino_version.description);
 
   ov::Core core;
   std::vector<std::string> availableDevices = core.get_available_devices();

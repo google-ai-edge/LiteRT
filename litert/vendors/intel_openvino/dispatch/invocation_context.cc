@@ -24,6 +24,7 @@
 #include <ios>
 #include <istream>
 #include <map>
+#include <mutex>  // NOLINT
 #include <optional>
 #include <streambuf>
 #include <string>
@@ -32,6 +33,8 @@
 
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/compiled_model.hpp"
+#include "openvino/runtime/intel_npu/properties.hpp"
+#include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
@@ -50,6 +53,24 @@
 #include "litert/vendors/intel_openvino/dispatch/weight_bank_runtime.h"
 
 namespace {
+
+void LogNpuCompilerVersionOnce(const ov::Core& core) {
+  static std::once_flag once;
+  std::call_once(once, [&core]() {
+    try {
+      const uint32_t compiler_version =
+          core.get_property("NPU", ov::intel_npu::compiler_version);
+      const uint32_t major_version = compiler_version >> 16;
+      const uint32_t minor_version = compiler_version & 0xFFFF;
+      LITERT_LOG(LITERT_INFO, "Intel NPU compiler version: %u.%u",
+                 static_cast<unsigned int>(major_version),
+                 static_cast<unsigned int>(minor_version));
+    } catch (const std::exception& e) {
+      LITERT_LOG(LITERT_WARNING,
+                 "Failed to query Intel NPU compiler version: %s", e.what());
+    }
+  });
+}
 
 // This class is copied from the OpenVINO codebase with minor modifications
 // for Google C++ Style Guide compliance. It wraps a pre-allocated memory
@@ -294,6 +315,43 @@ LiteRtDispatchInvocationContextT::Create(
     compiled_model = core->import_model(model_stream, device);
   } catch (const std::exception& e) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure, e.what());
+  }
+
+  if (device == "NPU") {
+    LogNpuCompilerVersionOnce(*core);
+  }
+
+  try {
+    const auto execution_devices =
+        compiled_model.get_property(ov::execution_devices);
+    std::string execution_device_list;
+    for (const auto& execution_device : execution_devices) {
+      if (!execution_device_list.empty()) {
+        execution_device_list.append(", ");
+      }
+      execution_device_list.append(execution_device);
+    }
+
+    if (execution_device_list.empty()) {
+      LITERT_LOG(LITERT_WARNING,
+                 "OpenVINO did not report an execution device for partition "
+                 "'%s'",
+                 function_name && function_name[0] != '\0' ? function_name
+                                                            : "(unnamed)");
+    } else {
+      LITERT_LOG(LITERT_INFO,
+                 "OpenVINO partition '%s' execution device(s): %s",
+                 function_name && function_name[0] != '\0' ? function_name
+                                                            : "(unnamed)",
+                 execution_device_list.c_str());
+    }
+  } catch (const std::exception& e) {
+    LITERT_LOG(LITERT_WARNING,
+               "Failed to query OpenVINO execution device for partition "
+               "'%s': %s",
+               function_name && function_name[0] != '\0' ? function_name
+                                                          : "(unnamed)",
+               e.what());
   }
 
   auto infer_request = compiled_model.create_infer_request();
