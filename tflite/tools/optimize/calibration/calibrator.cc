@@ -344,7 +344,7 @@ string GetOpName(const tflite::OperatorCode& opcode) {
 // A |CalibrationReader| that owns the Calibrator.
 class Reader : public CalibrationReader {
  public:
-  Reader(const TfLiteContext* context, const Logger* logger)
+  Reader(const TfLiteContext* context, Logger* logger)
       : CalibrationReader(logger), context_(context) {}
 
   ~Reader() override { GetCalibratorRegistry()->RemoveCalibrator(context_); }
