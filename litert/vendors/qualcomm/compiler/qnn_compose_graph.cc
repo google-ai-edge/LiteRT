@@ -107,6 +107,7 @@
 #include "litert/vendors/qualcomm/core/builders/transpose_conv_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/unpack_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/unsigned_boundary.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/dump/dump_graph.h"
 #include "litert/vendors/qualcomm/core/transformation/graph_to_graph.h"
@@ -1792,6 +1793,8 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
     LITERT_RETURN_IF_ERROR(ConvertOp(options, op, tensor_pool, input_tensors,
                                      output_tensors, op_wrappers, id,
                                      qnn.GetSdkVersion()));
+    ::qnn::InsertUnsignedActivationBoundaries(options.GetBackendType(),
+                                              tensor_pool, op_wrappers);
     for (auto& op_wrapper : op_wrappers) {
       // Add litert op id to qnn op name to preserve op mapping
       op_wrapper.AddSuffixToName(
