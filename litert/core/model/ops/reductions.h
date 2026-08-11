@@ -130,6 +130,28 @@ inline bool ReferenceReduction(const T* input_data, const int* input_dims,
       resolved_axis, init_value, reducer);
 }
 
+template <typename T, typename U = float>
+inline bool ReferenceMean(const T* input_data, const int* input_dims,
+                          int input_num_dims, T* output_data,
+                          const int* output_dims, int output_num_dims,
+                          const int* axis, int num_axis, bool keep_dims) {
+  constexpr int kMaxRank = tflite::RuntimeShape::kMaxSmallSize;
+  assert(input_num_dims <= kMaxRank);
+
+  int temp_index[kMaxRank];
+  int resolved_axis[kMaxRank];
+  size_t num_outputs = 1;
+  for (int i = 0; i < output_num_dims; ++i) {
+    num_outputs *= output_dims[i];
+  }
+  std::vector<U> temp_sum(num_outputs);
+
+  return tflite::reference_ops::Mean<T, U>(
+      input_data, input_dims, input_num_dims, output_data, output_dims,
+      output_num_dims, axis, num_axis, keep_dims, temp_index, resolved_axis,
+      temp_sum.data());
+}
+
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_CORE_MODEL_OPS_REDUCTIONS_H_
