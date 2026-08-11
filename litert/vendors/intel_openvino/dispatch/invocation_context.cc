@@ -33,7 +33,6 @@
 
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/compiled_model.hpp"
-#include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/tensor.hpp"
 #if defined(__ANDROID__)
 #include <unistd.h>
@@ -290,7 +289,11 @@ LiteRtDispatchInvocationContextT::Create(
           "Requested OpenVINO device is not available on this system");
     }
   }
-  LITERT_LOG(LITERT_INFO, "Using Intel OpenVINO device: %s", device.c_str());
+  const char* partition_name =
+      function_name != nullptr && function_name[0] != '\0' ? function_name
+                                                            : "(unnamed)";
+  LITERT_LOG(LITERT_INFO, "OpenVINO partition '%s' using device: %s",
+             partition_name, device.c_str());
 
   OpenVINOSharedCore::GetInstance()->SetDevice(device);
 
