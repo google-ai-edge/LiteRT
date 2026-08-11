@@ -126,6 +126,26 @@ class AtsConf {
   bool IsGpu() const { return backend_ == ExecutionBackend::kGpu; }
   bool IsCpu() const { return backend_ == ExecutionBackend::kCpu; }
 
+  // Whether the target execution backend executes in reduced / half precision
+  // (FP16) by default.
+  //
+  // Note: While the ideal long-term direction is for models to be explicit
+  // about precision on a per-tensor basis (e.g. f16 vs f32 in the graph IR),
+  // current accelerator delegates (e.g. GPU via OpenCL) implicitly execute
+  // existing FP32 graphs using FP16 hardware by default. This flag allows ATS
+  // to calibrate numerical conformance against the physical precision
+  // capabilities of the hardware.
+  bool IsHalfPrecisionBackend() const {
+    if (IsNpu()) {
+      return true;
+    }
+    if (IsGpu()) {
+      // GPU uses FP16 by default unless explicitly configured for FP32.
+      return true;
+    }
+    return false;
+  }
+
   // Whether to minimize logging.
   bool Quiet() const { return quiet_; }
 

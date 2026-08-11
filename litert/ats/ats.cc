@@ -522,6 +522,21 @@ void RegisterPad(const AtsConf& options, size_t& test_id, size_t iters,
 }
 
 template <typename Fixture>
+void RegisterMean(const AtsConf& options, size_t& test_id, size_t iters,
+                  typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Mean,
+      SizeListC<1, 2, 3, 4>,
+      TypeList<float, tflite::half>,
+      OpCodeListC<kLiteRtOpCodeTflMean>,
+      TypeList<std::true_type, std::false_type>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
 void RegisterAll(const AtsConf& options, size_t& test_id,
                  typename Fixture::Capture& cap) {
   RegisterExtraModels<Fixture>(test_id, options, cap);
@@ -532,6 +547,7 @@ void RegisterAll(const AtsConf& options, size_t& test_id,
   RegisterConv2d<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterDepthwiseConv2d<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterReduction<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterMean<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterPooling<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterOneHot<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterReshape<Fixture>(options, test_id, /*iters=*/10, cap);
