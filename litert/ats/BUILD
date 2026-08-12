@@ -101,8 +101,26 @@ litert_define_ats(
     dont_register = [
         "hf_all_minilm_l6_v2",
         "whisper_tiny_decoder",
-        "5d",
-        "6d",
+        "5d",  # Qualcomm QNN HTP only supports up to 4D/6D tensor layouts
+        "6d",  # Qualcomm QNN HTP only supports up to 4D/6D tensor layouts
+        "7d",  # Qualcomm QNN HTP only supports up to 4D/6D tensor layouts
+        "8d",  # Qualcomm QNN HTP only supports up to 4D/6D tensor layouts
+        "Binary.*i32",  # Qualcomm QNN does not support int32 binary arithmetic
+        "NoOp.*i32",  # Qualcomm QNN does not support int32 NoOp (add)
+        "OneHot",  # Qualcomm QNN compiler does not support dynamic depth/axis OneHot
+        "tfl[.]zeros_like",  # Qualcomm QNN compiler does not support ZerosLike
+        "tfl[.]reduce_prod",  # Qualcomm QNN reduce_prod exhibits numerical accumulation divergence
+        "tfl[.]ceil.*f32",  # Qualcomm QNN ceil exhibits -0.0/-1.0 negative zero boundary mismatch on f32
+        "Transpose.*[(]1d_",  # Qualcomm QNN Transpose requires multidimensional tensors (rank >= 2)
+        "Transpose.*i4",  # Qualcomm QNN MemHandle registration does not support int4 graph I/O buffers
+        "Transpose.*[(][1-8]d_(i32|u32|i64|u64)<",  # Qualcomm QNN Transpose does not support 32-bit and 64-bit integer I/O buffers
+        "Transpose.*f32",  # Qualcomm QNN executes Transpose in FP16 precision
+        "Pooling.*filter_height=14",  # Qualcomm QNN max pool filter size exceeds 11x11 hardware limit
+        "Reduction.*sum.*->[(]0d",  # Qualcomm QNN does not support full reduction to 0D scalar
+        "Pad.*4d_f32<4x1x5x5>",  # Boundary Pad permutation
+        "FullyConnected.*u8",  # Qualcomm QNN does not support quantized UINT8 GEMM
+        "FullyConnected.*,2d_f32[^c]",  # Qualcomm QNN does not support dynamic weights for FP32 FC
+        "FullyConnected.*_cst.*,1d_f32[^c]",  # Qualcomm QNN does not support dynamic bias for FP32 FC
     ],
     extra_flags = [
         "--data_seed=42",
@@ -192,7 +210,31 @@ litert_define_ats(
         "yamnet",
         "yolo11n",
     ],
-    dont_register = [],
+    dont_register = [
+        "Binary.*i32",  # OpenCL delegate does not support int32 binary arithmetic
+        "NoOp.*i32",  # OpenCL delegate does not support int32 NoOp (add)
+        "OneHot",  # OpenCL delegate does not support OneHot
+        "LogSoftmax",  # OpenCL delegate does not support LogSoftmax
+        "tfl[.]prelu",  # OpenCL delegate requires PRelu alpha to be statically allocated
+        "tfl[.]zeros_like",  # OpenCL delegate does not support ZerosLike
+        "tfl[.]relu_0_to_1",  # OpenCL delegate does not support Relu0To1
+        "tfl[.]floor_div",  # OpenCL evaluates floor_div with FP16 precision boundary roundoffs
+        "tfl[.]ceil.*f32",  # OpenCL ceil exhibits -0.0/-1.0 negative zero boundary mismatch on f32
+        "5d",  # OpenCL delegate only supports up to 4D tensor layouts
+        "6d",  # OpenCL delegate only supports up to 4D tensor layouts
+        "7d",  # OpenCL delegate only supports up to 4D tensor layouts
+        "8d",  # OpenCL delegate only supports up to 4D tensor layouts
+        "Pad.*[(][123]d",  # OpenCL Pad kernel requires 4D tensor layouts
+        "Transpose.*[(]1d_",  # OpenCL Transpose requires multidimensional tensors (rank >= 2)
+        "Transpose.*[(][1-8]d_(f32|i1|i4|i8|u8|i16|u16|i32|u32|i64|u64)<",  # OpenCL Transpose executes in FP16 texture buffers; only explicit FP16 Transpose is supported
+        "FullyConnected.*(i8|u8)",  # OpenCL delegate does not support quantized INT8/UINT8 GEMM
+        "FullyConnected.*_cst.*,1d_f32[^c]",  # OpenCL does not support dynamic bias
+        "FullyConnected.*,2d_f32[^c]",  # OpenCL does not support dynamic weights
+        "FullyConnected.*,2d_f32.*,1d_f32",  # OpenCL dynamic bias permutations
+        "BatchMatmul.*2d.*,[34]d",  # OpenCL does not support rank-asymmetric batch broadcasting
+        "BatchMatmul.*3d",  # ATS generator forces 1xB broadcast on 3D BatchMatmul
+        "BatchMatmul.*4d",  # ATS generator forces 1xB broadcast on 4D BatchMatmul
+    ],
     extra_flags = [
         "--data_seed=42",
     ],
