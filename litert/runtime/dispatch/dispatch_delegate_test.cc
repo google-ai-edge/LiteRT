@@ -21,6 +21,9 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_dispatch_delegate.h"
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_profiler_types.h"
 #include "litert/cc/internal/litert_compiled_model_next.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
@@ -187,6 +190,13 @@ TEST(DispatchDelegateTest, PerRunOptionsPlumbedToDispatch) {
   for (size_t i = 0; i < scaled.size(); ++i) {
     EXPECT_FLOAT_EQ(scaled[i], baseline[i] * 2.0f);
   }
+}
+
+TEST(DispatchDelegateTest, GetHooksNullDelegateReturnsError) {
+  LiteRtHook hook = nullptr;
+  void* user_data = nullptr;
+  EXPECT_EQ(LiteRtDispatchDelegateGetHooks(nullptr, &hook, &user_data),
+            kLiteRtStatusErrorInvalidArgument);
 }
 
 }  // namespace

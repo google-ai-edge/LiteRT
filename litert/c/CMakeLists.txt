@@ -41,6 +41,7 @@ set(LITERT_C_PUBLIC_HEADERS
     litert_platform_support.h
     litert_profiler_event.h
     litert_profiler.h
+    litert_profiler_types.h
     litert_tensor_buffer_requirements.h
     litert_tensor_buffer_types.h
     litert_tensor_buffer.h

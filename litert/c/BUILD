@@ -706,10 +706,18 @@ cc_library(
     deps = [":litert_common"],
 )
 
+cc_library(
+    name = "litert_profiler_types",
+    hdrs = ["litert_profiler_types.h"],
+    compatible_with = get_compatible_with_portable(),
+    deps = [":litert_common"],
+)
+
 litert_c_api_library(
     name = "litert_profiler",
     srcs = ["litert_profiler.cc"],
     hdrs = ["litert_profiler.h"],
+    header_kwargs = {"compatible_with": get_compatible_with_portable()},
     impl_deps = [
         "//litert/cc:litert_macros",
         "//litert/runtime:compiled_model",
@@ -724,6 +732,7 @@ litert_c_api_library(
 cc_library(
     name = "litert_profiler_event",
     hdrs = ["litert_profiler_event.h"],
+    compatible_with = get_compatible_with_portable(),
 )
 
 cc_test(
