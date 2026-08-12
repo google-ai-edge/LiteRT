@@ -73,6 +73,8 @@ typedef enum {
   // WebGPU buffer readback (e.g., with Dawn Wire handler) to flush outbound
   // wire commands and pump inbound events on the thread message loop.
   kLiteRtEnvOptionTagWebGpuFlushCallback = 29,
+  /// \internal This is for internal use only, for a custom GPU accelerator.
+  kLiteRtEnvOptionTagSystemGpuAcceleratorHandle = 30,
   // Internal use only. Virtual null tag for option that is not defined.
   kLiteRtEnvOptionTagNull = 255,
 } LiteRtEnvOptionTag;
