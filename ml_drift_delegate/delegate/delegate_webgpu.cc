@@ -232,7 +232,14 @@ void AttachCacheCallbacks(
 #endif  // !__EMSCRIPTEN__
 
 void DestroyDelegateEnvironment(void* user_data) {
-  delete reinterpret_cast<DelegateEnvironment*>(user_data);
+  auto* delegate_env = reinterpret_cast<DelegateEnvironment*>(user_data);
+  if (delegate_env && delegate_env->webgpu_env) {
+    // Release the flush callback reference from the global registry before
+    // deleting the WebGPU environment to prevent stale readback evaluations.
+    ::ml_drift::webgpu::Instance::ReleaseFlushCallback(
+        delegate_env->webgpu_env->device().Get());
+  }
+  delete delegate_env;
   LITERT_LOG(LITERT_DEBUG, "Destroyed WebGPU delegate environment.");
 }
 
@@ -270,22 +277,16 @@ std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
         reinterpret_cast<const DawnProcTable*>(wgpu_procs.int_value));
   }
 #endif  // !defined(__EMSCRIPTEN__) && defined(ML_DRIFT_USE_DAWN_PROC)
-  LiteRtAny wgpu_instance;
-  if (runtime_context->get_environment_options_value(
-          env_options, kLiteRtEnvOptionTagWebGpuInstance, &wgpu_instance) ==
-          kLiteRtStatusOk &&
-      wgpu_instance.int_value != 0) {
-    (void)::ml_drift::webgpu::Instance::Set(
-        reinterpret_cast<WGPUInstance>(wgpu_instance.int_value));  // NOLINT
-  }
+  const ::ml_drift::webgpu::Instance::WebGpuFlushCallback* flush_callback =
+      nullptr;
   LiteRtAny wgpu_flush_cb;
   if (runtime_context->get_environment_options_value(
           env_options, kLiteRtEnvOptionTagWebGpuFlushCallback,
           &wgpu_flush_cb) == kLiteRtStatusOk &&
       wgpu_flush_cb.int_value != 0) {
-    ::ml_drift::webgpu::Instance::SetFlushCallback(
-        reinterpret_cast<::ml_drift::webgpu::Instance::WebGpuFlushCallback>(
-            wgpu_flush_cb.int_value));
+    flush_callback = reinterpret_cast<
+        const ::ml_drift::webgpu::Instance::WebGpuFlushCallback*>(
+        wgpu_flush_cb.int_value);
   }
 
   absl::Status webgpu_init_status;
@@ -298,6 +299,10 @@ std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
     wgpu::AdapterInfo adapter_info;
     device.GetAdapterInfo(&adapter_info);
     webgpu_init_status = webgpu_env->Initialize(device, adapter_info);
+    if (webgpu_init_status.ok() && flush_callback) {
+      ::ml_drift::webgpu::Instance::SetFlushCallback(wgpu_device,
+                                                     flush_callback);
+    }
     success_message = "Created a WebGPU environment with provided device.";
   } else {
 #ifdef __EMSCRIPTEN__
@@ -424,7 +429,7 @@ absl::StatusOr<DelegateEnvironment*> GetOrCreateDelegateEnvironment(
                               resources->webgpu_env->queue().Get())));
   LITERT_ASSIGN_OR_RETURN(LiteRtAny wgpu_instance,
                           litert::ToLiteRtAny(reinterpret_cast<int64_t>(
-                              &ml_drift::webgpu::Instance::Get())));
+                              resources->webgpu_env->instance().Get())));
 
   const std::array<LiteRtEnvOption, 5> environment_options = {
       LiteRtEnvOption{.tag = kLiteRtEnvOptionTagWebGpuDevice,
