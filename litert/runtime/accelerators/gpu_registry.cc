@@ -80,6 +80,25 @@ LiteRtStatus RegisterGpuAccelerator(LiteRtEnvironment environment) {
   };
 
   bool gpu_accelerator_registered = false;
+
+  auto gpu_handle_option =
+      environment->GetOption(kLiteRtEnvOptionTagSystemGpuAcceleratorHandle);
+  if (gpu_handle_option.has_value() &&
+      gpu_handle_option->type == kLiteRtAnyTypeVoidPtr) {
+    auto* gpu_accel_def =
+        static_cast<const LiteRtAcceleratorDef*>(gpu_handle_option->ptr_value);
+    if (gpu_accel_def != nullptr) {
+      if (RegisterAcceleratorFromDef(environment, gpu_accel_def) ==
+          kLiteRtStatusOk) {
+        LITERT_LOG(LITERT_INFO,
+                   "System GPU accelerator registered from handle.");
+        gpu_accelerator_registered = true;
+      } else {
+        LITERT_LOG(LITERT_ERROR,
+                   "Failed to register system GPU accelerator from handle.");
+      }
+    }
+  }
   if (LiteRtStaticLinkedAcceleratorGpuDef != nullptr &&
       RegisterAcceleratorFromDef(environment,
                                  LiteRtStaticLinkedAcceleratorGpuDef) ==
