@@ -263,7 +263,12 @@ class AtsInferenceTest : public RngTest {
                                              const BufferView<T>& ref,
                                              const ConformanceSpec& spec) {
     ASSERT_EQ(actual.data.size(), ref.data.size());
-    const double eps = static_cast<double>(std::numeric_limits<T>::epsilon());
+    const double half_eps = static_cast<double>(tflite::half::epsilon());
+    const double eps =
+        conf_.IsHalfPrecisionBackend()
+            ? std::max(static_cast<double>(std::numeric_limits<T>::epsilon()),
+                       half_eps)
+            : static_cast<double>(std::numeric_limits<T>::epsilon());
     const double rtol = std::max(
         spec.relative_tolerance,
         10.0 * eps * std::sqrt(static_cast<double>(spec.accumulation_depth)));
@@ -285,7 +290,13 @@ class AtsInferenceTest : public RngTest {
                                        const BufferView<T>& ref,
                                        const ConformanceSpec& spec) {
     ASSERT_EQ(actual.data.size(), ref.data.size());
-    const double eps = static_cast<double>(std::numeric_limits<T>::epsilon());
+    const double half_eps =
+        static_cast<double>(static_cast<float>(tflite::half::epsilon()));
+    const double eps =
+        conf_.IsHalfPrecisionBackend()
+            ? std::max(static_cast<double>(std::numeric_limits<T>::epsilon()),
+                       half_eps)
+            : static_cast<double>(std::numeric_limits<T>::epsilon());
     const double rtol = std::max(spec.relative_tolerance, 10.0 * eps);
     const double atol = std::max(spec.absolute_tolerance, 10.0 * eps);
     for (size_t i = 0; i < actual.data.size(); ++i) {
