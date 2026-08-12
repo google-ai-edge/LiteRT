@@ -18,7 +18,6 @@ limitations under the License.
 #include <algorithm>
 
 #include "fixedpoint/fixedpoint.h"
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/kernels/internal/common.h"
 #include "tflite/kernels/internal/reference/broadcast_loop.h"
 

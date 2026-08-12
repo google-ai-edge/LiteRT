@@ -18,7 +18,6 @@ limitations under the License.
 #include <algorithm>
 #include <cstdint>
 
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/cpu_backend_threadpool.h"
 #include "tflite/kernels/internal/common.h"
