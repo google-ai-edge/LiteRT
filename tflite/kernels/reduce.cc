@@ -28,7 +28,6 @@ limitations under the License.
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/container/inlined_vector.h"
 #include "absl/types/span.h"
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/core/c/common.h"

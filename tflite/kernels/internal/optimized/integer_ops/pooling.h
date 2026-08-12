@@ -19,7 +19,6 @@ limitations under the License.
 
 #include <algorithm>
 
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/kernels/internal/compatibility.h"
 #include "tflite/kernels/internal/cppmath.h"
 #include "tflite/kernels/internal/optimized/cpu_check.h"
