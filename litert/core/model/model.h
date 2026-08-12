@@ -1043,6 +1043,13 @@ class LiteRtModelT {
     return signatures_.Elements();
   }
 
+  // Removes signatures matching `predicate`. Any subgraphs referenced only by
+  // removed signatures remain owned by the model until explicitly pruned.
+  size_t RemoveSignaturesIf(
+      std::function<bool(const LiteRtSignatureT&)> predicate) {
+    return signatures_.RemoveIf(std::move(predicate));
+  }
+
   // Construct a new signature for this model.
   template <class... Args>
   LiteRtSignatureT& EmplaceSignature(Args&&... args) {
@@ -1115,6 +1122,13 @@ class LiteRtModelT {
     return ::litert::Error(kLiteRtStatusErrorNotFound);
   }
 
+  // Removes an asset reference associated with an op that is about to be
+  // destroyed. The underlying buffer remains owned by the model's buffer
+  // manager and may still be referenced elsewhere.
+  bool RemoveAssetFromOp(LiteRtOp op) {
+    return external_buffer_map_.erase(op) != 0;
+  }
+
   // Contains details about the compiler used if this model was compiled.
   struct BuildStamp {
     absl::string_view soc_manufacturer;
@@ -1182,6 +1196,13 @@ std::optional<std::string> GetCustomOpCode(const LiteRtModelT& model,
 // Lookup subgraph by signature name.
 ::litert::Expected<LiteRtSubgraph> LookupSubgraph(
     const LiteRtModelT& model, absl::string_view signature_key);
+
+// Retains only the named entry-point signatures and the StableHLO composite
+// decomposition subgraphs reachable from them. This mutates the model while
+// preserving pointer stability for all retained IR objects.
+::litert::Expected<void> PruneModelToSignatures(
+    LiteRtModelT& model,
+    absl::Span<const absl::string_view> signature_keys);
 
 namespace litert::internal {
 

@@ -594,6 +594,95 @@ TEST(ModelTest, TransferSubgraphToReindexCompositeMultiple) {
   EXPECT_EQ(new_decomp_ind, 2);
 }
 
+TEST(ModelTest, PruneModelToSignaturesRetainsCompositeClosure) {
+  LiteRtModelT model;
+
+  auto& decode = model.EmplaceSubgraph();
+  auto& unused = model.EmplaceSubgraph();
+  auto& decode_decomposition = model.EmplaceSubgraph();
+
+  auto& composite = decode.EmplaceOp();
+  composite.SetOpCode(kLiteRtOpCodeShloComposite);
+  ::tflite::StableHLOCompositeOptionsT opts;
+  opts.name = "decode_composite";
+  opts.decomposition_subgraph_index = 2;
+  TflOptions2 options;
+  options.type = tflite::BuiltinOptions2_StableHLOCompositeOptions;
+  options.Set(std::move(opts));
+  litert::internal::SetTflOptions2(composite, std::move(options));
+
+  model.EmplaceSignature(&decode, std::vector<std::string>{},
+                         std::vector<LiteRtTensor>{},
+                         std::vector<std::string>{},
+                         std::vector<LiteRtTensor>{}, "decode");
+  model.EmplaceSignature(&unused, std::vector<std::string>{},
+                         std::vector<LiteRtTensor>{},
+                         std::vector<std::string>{},
+                         std::vector<LiteRtTensor>{}, "verify");
+
+  const std::array<absl::string_view, 1> retained = {"decode"};
+  LITERT_ASSERT_OK(PruneModelToSignatures(model, retained));
+
+  EXPECT_THAT(model.Subgraphs(),
+              ElementsAreArray({&decode, &decode_decomposition}));
+  ASSERT_EQ(model.Signatures().size(), 1);
+  EXPECT_EQ(model.Signatures().front()->Key(), "decode");
+  const auto& new_opts = litert::internal::GetTflOptions2(composite);
+  EXPECT_EQ(new_opts.AsStableHLOCompositeOptions()
+                ->decomposition_subgraph_index,
+            1);
+}
+
+TEST(ModelTest, PruneModelToSignaturesRejectsStablehloCase) {
+  LiteRtModelT model;
+
+  auto& decode = model.EmplaceSubgraph();
+  auto& branch = model.EmplaceSubgraph();
+  auto& case_op = decode.EmplaceOp();
+  case_op.SetOpCode(
+      static_cast<LiteRtOpCode>(tflite::BuiltinOperator_STABLEHLO_CASE));
+  ::tflite::StablehloCaseOptionsT case_opts;
+  case_opts.branch_subgraph_indices = {1};
+  TflOptions2 options;
+  options.type = tflite::BuiltinOptions2_StablehloCaseOptions;
+  options.Set(std::move(case_opts));
+  litert::internal::SetTflOptions2(case_op, std::move(options));
+
+  model.EmplaceSignature(&decode, std::vector<std::string>{},
+                         std::vector<LiteRtTensor>{},
+                         std::vector<std::string>{},
+                         std::vector<LiteRtTensor>{}, "decode");
+  model.EmplaceSignature(&branch, std::vector<std::string>{},
+                         std::vector<LiteRtTensor>{},
+                         std::vector<std::string>{},
+                         std::vector<LiteRtTensor>{}, "branch");
+
+  const std::array<absl::string_view, 1> retained = {"decode"};
+  auto status = PruneModelToSignatures(model, retained);
+
+  EXPECT_FALSE(status.HasValue());
+  EXPECT_EQ(status.Error().Status(), kLiteRtStatusErrorUnsupported);
+  EXPECT_EQ(model.Signatures().size(), 2);
+  EXPECT_EQ(model.Subgraphs().size(), 2);
+}
+
+TEST(ModelTest, PruneModelToSignaturesRejectsMissingSignatureWithoutMutation) {
+  LiteRtModelT model;
+  auto& decode = model.EmplaceSubgraph();
+  model.EmplaceSignature(&decode, std::vector<std::string>{},
+                         std::vector<LiteRtTensor>{},
+                         std::vector<std::string>{},
+                         std::vector<LiteRtTensor>{}, "decode");
+
+  const std::array<absl::string_view, 1> retained = {"missing"};
+  auto status = PruneModelToSignatures(model, retained);
+
+  ASSERT_FALSE(status.HasValue());
+  EXPECT_EQ(status.Error().Status(), kLiteRtStatusErrorNotFound);
+  EXPECT_EQ(model.Subgraphs().size(), 1);
+  EXPECT_EQ(model.Signatures().size(), 1);
+}
+
 //
 // Misc Ir Containers
 //

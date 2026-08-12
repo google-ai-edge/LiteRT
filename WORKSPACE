@@ -225,6 +225,16 @@ load(
 cuda_configure(name = "local_config_cuda")
 
 load(
+    "//third_party/nvidia_sdk:repositories.bzl",
+    "local_cuda_repository",
+    "local_tensorrt_rtx_repository",
+)
+
+local_cuda_repository(name = "local_cuda")
+
+local_tensorrt_rtx_repository(name = "local_tensorrt_rtx")
+
+load(
     "@rules_ml_toolchain//gpu/nccl:nccl_redist_init_repository.bzl",
     "nccl_redist_init_repository",
 )

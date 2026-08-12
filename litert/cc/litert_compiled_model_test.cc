@@ -35,6 +35,7 @@
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
+#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_model_types.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
@@ -63,6 +64,11 @@ using ::testing::litert::IsOkAndHolds;
 
 namespace litert {
 namespace {
+
+class CompiledModelTestPeer : public CompiledModel {
+ public:
+  using CompiledModel::Create;
+};
 
 #if defined(_WIN32)
 constexpr bool kSupportsErrorReporterApi = false;
@@ -152,6 +158,56 @@ TEST(CompiledModelTest, Basic) {
     }
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
   }
+}
+
+TEST(CompiledModelTest, OwningCreateRejectsNonOwnedModel) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Model owned_model,
+      Model::CreateFromFile(env, testing::GetTestFilePath(kModelFileName)));
+  Model non_owned_model =
+      Model::CreateFromNonOwnedHandle(owned_model.Get());
+  Options options;
+  options.SetHardwareAccelerators(HwAccelerators::kCpu);
+
+  auto compiled_model = CompiledModelTestPeer::Create(
+      env, std::move(non_owned_model), options);
+
+  ASSERT_FALSE(compiled_model.HasValue());
+  EXPECT_EQ(compiled_model.Error().Status(),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_TRUE(owned_model);
+}
+
+TEST(CompiledModelTest, OwningCreateRunsAfterModelMove) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Model model,
+      Model::CreateFromFile(env, testing::GetTestFilePath(kModelFileName)));
+  Options options;
+  options.SetHardwareAccelerators(HwAccelerators::kCpu);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModelTestPeer::Create(env, std::move(model), options));
+  EXPECT_FALSE(model);
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto lock_and_addr,
+      TensorBufferScopedLock::Create<const float>(
+          output_buffers[0], TensorBuffer::LockMode::kRead));
+  auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
+  EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
 }
 
 // copybara:uncomment_begin(google internal)
