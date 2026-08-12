@@ -255,5 +255,60 @@ TEST(ConvertDepthwiseConvTest, TransposeWeights1x1DepthMultiplier) {
   }
 }
 
+TEST(ConvertDepthwiseConvTest, ConstantWeightsAndBiasPopulatedIntoAttributes) {
+  std::unique_ptr<TfLiteDelegate, void (*)(TfLiteDelegate*)> delegate(
+      CreateStubDelegate(), DeleteStubDelegate);
+
+  SingleOpInterpreterBuilder model(kTfLiteBuiltinDepthwiseConv2d,
+                                   /*version=*/1);
+  model.AddInput(kTfLiteFloat32, {1, 2, 2, 2});  // input data
+  std::vector<float> weights_data = {1.0f, 2.0f};
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(weights_data.data());
+  std::vector<uint8_t> weights_bytes(p,
+                                     p + weights_data.size() * sizeof(float));
+  model.AddConstInput(kTfLiteFloat32, {1, 1, 1, 2}, weights_bytes);
+  std::vector<float> bias_data = {0.5f, 1.5f};
+  const uint8_t* pb = reinterpret_cast<const uint8_t*>(bias_data.data());
+  std::vector<uint8_t> bias_bytes(pb, pb + bias_data.size() * sizeof(float));
+  model.AddConstInput(kTfLiteFloat32, {2}, bias_bytes);
+  model.AddOutput(kTfLiteFloat32, {1, 2, 2, 2});  // output
+
+  TfLiteDepthwiseConvParams* params =
+      reinterpret_cast<TfLiteDepthwiseConvParams*>(
+          calloc(1, sizeof(TfLiteDepthwiseConvParams)));
+  params->depth_multiplier = 1;
+  params->padding = kTfLitePaddingValid;
+  params->stride_height = 1;
+  params->stride_width = 1;
+  params->activation = kTfLiteActNone;
+  model.SetParameters(params);
+
+  std::unique_ptr<::tflite::Interpreter> interpreter = model.Build();
+  ASSERT_TRUE(interpreter);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate.get()), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate.get());
+  ASSERT_TRUE(ir_model);
+  ASSERT_EQ(ir_model->ops().size(), 1);
+
+  const ::ml_drift::ir::IrOp* dw_conv_op = ir_model->op(0);
+  EXPECT_EQ(dw_conv_op->inputs.size(), 1);  // Only activation input
+  const auto* attr =
+      std::any_cast<::ml_drift::DepthwiseConvolution2DAttributes>(
+          &dw_conv_op->attr);
+  ASSERT_TRUE(attr);
+
+  const auto& weights = std::get<
+      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>(
+      attr->weights);
+  EXPECT_FALSE(weights.data.empty());
+  EXPECT_GE(weights.data.size(), 2);
+  EXPECT_FLOAT_EQ(weights.data[0], 1.0f);
+  EXPECT_FLOAT_EQ(weights.data[1], 2.0f);
+  EXPECT_EQ(attr->bias.data.size(), 2);
+  EXPECT_FLOAT_EQ(attr->bias.data[0], 0.5f);
+  EXPECT_FLOAT_EQ(attr->bias.data[1], 1.5f);
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir

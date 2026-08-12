@@ -82,8 +82,8 @@ bool IsTileSupported(const TfLiteContext* absl_nonnull context,
     return false;
   }
 
-  if (multiples.type != kTfLiteInt32) {
-    *error = "multiples must be kTfLiteInt32.";
+  if (multiples.type != kTfLiteInt32 && multiples.type != kTfLiteInt64) {
+    *error = "multiples must be kTfLiteInt32 or kTfLiteInt64.";
     return false;
   }
 
@@ -102,15 +102,17 @@ bool IsTileSupported(const TfLiteContext* absl_nonnull context,
     return false;
   }
 
-  if (multiples.data.i32 == nullptr) {
+  if (multiples.data.raw == nullptr) {
     *error = "multiples data is null.";
     return false;
   }
 
   // Validate output shape matches input_shape * multiples if possible
-  const int32_t* multiples_data = multiples.data.i32;
   for (int i = 0; i < input.dims->size; ++i) {
-    if (output.dims->data[i] != input.dims->data[i] * multiples_data[i]) {
+    const int64_t multiple = multiples.type == kTfLiteInt32
+                                 ? multiples.data.i32[i]
+                                 : multiples.data.i64[i];
+    if (output.dims->data[i] != input.dims->data[i] * multiple) {
       *error = "output shape does not match (input_shape * multiples).";
       return false;
     }

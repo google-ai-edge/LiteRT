@@ -145,5 +145,85 @@ TEST_F(ConvertSdpaTransposedTest, BasicFp16) {
   EXPECT_EQ(attr->bmm2_weights.desc.type, ::ml_drift::DataType::FLOAT16);
 }
 
+TEST_F(ConvertSdpaTransposedTest, ThreeInputs) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 1, 4, 64});    // q
+  builder.AddInput(kTfLiteFloat32, {1, 1, 128, 64});  // k
+  builder.AddInput(kTfLiteFloat32, {1, 1, 128, 64});  // v
+  builder.AddOutput(kTfLiteFloat32, {1, 1, 4, 64});   // result
+
+  TfLiteStablehloCompositeParams* params = CreateSdpaTransposedParams();
+  builder.SetParameters(params);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto& op = ir_model->ops()[0];
+  EXPECT_THAT(op->name, Eq("sdpa_transposed"));
+  EXPECT_THAT(op->inputs, SizeIs(3));
+  EXPECT_THAT(op->outputs, SizeIs(1));
+}
+
+TEST_F(ConvertSdpaTransposedTest, FiveInputsWithMaskAndParams) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 1, 4, 64});    // q
+  builder.AddInput(kTfLiteFloat32, {1, 1, 128, 64});  // k
+  builder.AddInput(kTfLiteFloat32, {1, 1, 128, 64});  // v
+  builder.AddInput(kTfLiteFloat32, {1, 1, 4, 128});   // mask
+  builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});       // param tensor
+  builder.AddOutput(kTfLiteFloat32, {1, 1, 4, 64});   // result
+
+  TfLiteStablehloCompositeParams* params = CreateSdpaTransposedParams();
+  builder.SetParameters(params);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto& op = ir_model->ops()[0];
+  EXPECT_THAT(op->name, Eq("sdpa_transposed"));
+  EXPECT_THAT(op->inputs, SizeIs(5));
+  EXPECT_THAT(op->outputs, SizeIs(1));
+}
+
+TEST_F(ConvertSdpaTransposedTest, WithSoftcap) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 1, 4, 64});    // q
+  builder.AddInput(kTfLiteFloat32, {1, 1, 128, 64});  // k
+  builder.AddInput(kTfLiteFloat32, {1, 1, 128, 64});  // v
+  builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});       // param tensor
+  builder.AddOutput(kTfLiteFloat32, {1, 1, 4, 64});   // result
+
+  TfLiteStablehloCompositeParams* params =
+      CreateSdpaTransposedParams(/*softcap=*/30.0f);
+  builder.SetParameters(params);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto& op = ir_model->ops()[0];
+  EXPECT_THAT(op->name, Eq("sdpa_transposed"));
+
+  const auto* attr =
+      std::any_cast<::litert::ml_drift::SdpaTransposedAttributes>(&op->attr);
+  ASSERT_NE(attr, nullptr);
+  EXPECT_TRUE(attr->softcap.has_value());
+  EXPECT_EQ(*attr->softcap, 30.0f);
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir

@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "testing/base/public/gunit.h"
+#include "xnnpack.h"  // from @XNNPACK
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
@@ -134,6 +135,13 @@ TEST_P(ConvertFullyConnectedTest, Parameterized) {
     EXPECT_NO_THROW(
         (void)std::any_cast<::ml_drift::FullyConnectedInt8Attributes>(
             fc_op->attr));
+    if (dtype_ == kTfLiteInt4 || dtype_ == kTfLiteInt2) {
+      const auto& attr =
+          std::any_cast<const ::ml_drift::FullyConnectedInt8Attributes&>(
+              fc_op->attr);
+      EXPECT_GE(attr.weights.data.size(),
+                output_channels * input_channels + XNN_EXTRA_BYTES);
+    }
   }
 }
 

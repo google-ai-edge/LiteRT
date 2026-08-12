@@ -105,6 +105,9 @@ void AddValuesToCacheConvert(
   if (!flexbuffer_map["scale_v"].IsNull()) {
     attr.scale_v = flexbuffer_map["scale_v"].AsFloat();
   }
+  if (!flexbuffer_map["is_ring_buffer"].IsNull()) {
+    attr.is_ring_buffer = flexbuffer_map["is_ring_buffer"].AsBool();
+  }
   add_values_op->attr = std::move(attr);
 
   ir_model.SetProducer(tensor_map[tflite_node.outputs->data[0]],

@@ -104,11 +104,15 @@ void SdpaTransposedConvert(
   ::ml_drift::ir::IrTensorId input1 = tensor_map[tflite_node.inputs->data[1]];
   ::ml_drift::ir::IrTensorId input2 = tensor_map[tflite_node.inputs->data[2]];
   ::ml_drift::ir::IrTensorId input3 =
-      tflite_node.inputs->size > 3 ? tensor_map[tflite_node.inputs->data[3]]
-                                   : -1;
+      (tflite_node.inputs->size > 3 &&
+       tflite_node.inputs->data[3] != kTfLiteOptionalTensor)
+          ? tensor_map[tflite_node.inputs->data[3]]
+          : -1;
   ::ml_drift::ir::IrTensorId input4 =
-      tflite_node.inputs->size > 4 ? tensor_map[tflite_node.inputs->data[4]]
-                                   : -1;
+      (tflite_node.inputs->size > 4 &&
+       tflite_node.inputs->data[4] != kTfLiteOptionalTensor)
+          ? tensor_map[tflite_node.inputs->data[4]]
+          : -1;
 
   ::ml_drift::ir::IrTensorId output = tensor_map[tflite_node.outputs->data[0]];
 

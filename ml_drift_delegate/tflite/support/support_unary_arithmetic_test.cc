@@ -76,7 +76,8 @@ INSTANTIATE_TEST_SUITE_P(
     ValuesIn<VersionTestCase>({
         {kTfLiteBuiltinAbs,      1},  // min
         {kTfLiteBuiltinAbs,      5},  // max
-        {kTfLiteBuiltinCast,     1},  // only version
+        {kTfLiteBuiltinCast,     1},  // min
+        {kTfLiteBuiltinCast,     7},  // max
         {kTfLiteBuiltinCeil,     1},  // min
         {kTfLiteBuiltinCeil,     2},  // max
         {kTfLiteBuiltinCos,      1},  // min
@@ -140,7 +141,7 @@ INSTANTIATE_TEST_SUITE_P(
         {kTfLiteBuiltinAbs,      0},           // min-1
         {kTfLiteBuiltinAbs,      6},           // max+1
         {kTfLiteBuiltinCast,     0},           // min-1
-        {kTfLiteBuiltinCast,     2},           // max+1
+        {kTfLiteBuiltinCast,     8},           // max+1
         {kTfLiteBuiltinCeil,     0},           // min-1
         {kTfLiteBuiltinCeil,     3},           // max+1
         {kTfLiteBuiltinCos,      0},           // min-1

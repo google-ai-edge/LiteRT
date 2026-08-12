@@ -19,6 +19,7 @@
 #include <variant>
 #include <vector>
 
+#include "xnnpack.h"  // from @XNNPACK
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/log/log.h"  // from @com_google_absl
@@ -78,12 +79,12 @@ void PopulateQuantizedAttributes(const TfLiteTensor* weights_tensor,
   // Once we have RearrangeWeightsPacked supported for all layouts, we can
   // remove this unpacking.
   if (weights_tensor->type == kTfLiteInt4) {
-    std::vector<int8_t> unpacked_data(num_elements);
+    std::vector<int8_t> unpacked_data(num_elements + XNN_EXTRA_BYTES);
     ::ml_drift::UnpackDenseInt4IntoInt8(weights.data.data(), num_elements,
                                         unpacked_data.data());
     fc_weights.data = std::move(unpacked_data);
   } else if (weights_tensor->type == kTfLiteInt2) {
-    std::vector<int8_t> unpacked_data(num_elements);
+    std::vector<int8_t> unpacked_data(num_elements + XNN_EXTRA_BYTES);
     ::ml_drift::UnpackDenseInt2IntoInt8(weights.data.data(), num_elements,
                                         unpacked_data.data());
     fc_weights.data = std::move(unpacked_data);

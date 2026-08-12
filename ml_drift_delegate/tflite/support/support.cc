@@ -329,7 +329,7 @@ bool IsNodeSupported(const TfLiteContext* absl_nonnull context,
     case kTfLiteBuiltinBatchMatmul:             return bmm();
     case kTfLiteBuiltinBitcast:                 return bitcast();
     case kTfLiteBuiltinBitwiseXor:              return logic2(2);
-    case kTfLiteBuiltinCast:                    return arith1(1);
+    case kTfLiteBuiltinCast:                    return arith1(7);
     case kTfLiteBuiltinCeil:                    return arith1(2);
     case kTfLiteBuiltinConcatenation:           return concat();
     case kTfLiteBuiltinConv2d:                  return conv2d();

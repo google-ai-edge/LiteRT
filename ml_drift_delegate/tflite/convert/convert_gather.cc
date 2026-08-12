@@ -41,10 +41,19 @@ void ConvertGather(
   const bool indices_are_const = ::tflite::IsConstantTensor(indices_tensor);
   const bool indices_are_1d = indices_tensor->dims->size == 1;
 
-  ::ml_drift::ir::IrTensorId final_indices_id = tensor_map[indices_id];
+  ::ml_drift::ir::IrTensorId final_input_id = tensor_map[input_id];
+  if (::tflite::IsConstantTensor(input_tensor)) {
+    ::ml_drift::ir::IrTensor* const_tensor =
+        AddConstInput(context, input_id, ir_model, {});
+    final_input_id = const_tensor->id;
+  }
 
-  // Insert a RESHAPE if indices tensor [N] is mis-auto-expanded to [N,1,1,1].
-  if (!indices_are_const && indices_are_1d) {
+  ::ml_drift::ir::IrTensorId final_indices_id = tensor_map[indices_id];
+  if (indices_are_const) {
+    ::ml_drift::ir::IrTensor* const_tensor =
+        AddConstInput(context, indices_id, ir_model, {});
+    final_indices_id = const_tensor->id;
+  } else if (indices_are_1d) {
     ::ml_drift::ir::IrOp* reshape_op = ir_model.add_op();
     reshape_op->name = ToString(::ml_drift::OperationType::RESHAPE);
 
@@ -70,7 +79,7 @@ void ConvertGather(
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
   op->name = ToString(::ml_drift::OperationType::GATHER);
   op->attr = std::move(attr);
-  ir_model.AddConsumer(tensor_map[input_id], op->id);
+  ir_model.AddConsumer(final_input_id, op->id);
   ir_model.AddConsumer(final_indices_id, op->id);
   ir_model.SetProducer(tensor_map[output_id], op->id);
 }

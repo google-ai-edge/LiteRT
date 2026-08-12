@@ -80,7 +80,11 @@ TEST_P(SupportedVersionTest, Supports) {
 INSTANTIATE_TEST_SUITE_P(
     embLookupOps, SupportedVersionTest,
     ValuesIn<VersionTestCase>({
-        {1},  // only supported version
+        {1},  // min
+        {2},
+        {3},
+        {4},
+        {5},  // max
     }),
     [](const TestParamInfo<SupportedVersionTest::ParamType>& info) {
       return absl::StrCat("V_", info.param.version);
@@ -109,7 +113,7 @@ INSTANTIATE_TEST_SUITE_P(
     embLookupOps, UnsupportedVersionTest,
     ValuesIn<VersionTestCase>({
         {0},  // min-1
-        {2},  // max+1
+        {6},  // max+1
     }),
     [](const TestParamInfo<UnsupportedVersionTest::ParamType>& info) {
       return absl::StrCat("V_", info.param.version);

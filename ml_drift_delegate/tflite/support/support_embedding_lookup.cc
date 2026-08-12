@@ -33,7 +33,7 @@ bool IsEmbeddingLookupSupported(
     const TfLiteRegistration* absl_nonnull registration,
     std::string* absl_nonnull error) {
   // Check version.
-  if (registration->version != 1) {
+  if (registration->version < 1 || registration->version > 5) {
     *error = absl::StrCat("Unsupported version: ", registration->version);
     return false;
   }
