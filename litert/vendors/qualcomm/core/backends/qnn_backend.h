@@ -55,6 +55,11 @@ class QnnBackend {
   virtual GraphConfigBuilder BuildGraphConfigs(
       const Options& options, absl::string_view qnn_graph_name) = 0;
 
+  virtual GraphConfigBuilder BuildRetrievedGraphConfigs(const Options&,
+                                                        absl::string_view) {
+    return {};
+  }
+
   Qnn_BackendHandle_t GetBackendHandle();
 
   Qnn_DeviceHandle_t GetDeviceHandle();
