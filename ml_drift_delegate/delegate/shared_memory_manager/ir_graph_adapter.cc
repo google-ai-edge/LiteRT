@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
@@ -70,9 +71,9 @@ DataType IrModelAdapter::GetOpFirstInputType(uint32_t op_id) const {
   return graph_.tensor(input_id)->desc.GetDataType();
 }
 
-uint32_t IrModelAdapter::AddConstantInput(uint32_t global_tensor_id,
-                                          const BHWC& shape, DataType type,
-                                          uint32_t consumer_op_id) {
+uint32_t IrModelAdapter::AddConstantInput(
+    uint32_t global_tensor_id, const BHWC& shape, DataType type,
+    absl::Span<const uint32_t> consumer_op_ids) {
   ir::IrTensor* value = graph_.add_tensor(ml_drift::TensorDescriptor{});
   value->buffer_source = ir::BufferSource{
       .is_shared = true,
@@ -80,7 +81,9 @@ uint32_t IrModelAdapter::AddConstantInput(uint32_t global_tensor_id,
   };
   value->desc.SetDataType(type);
   value->desc.SetBHWCShape(shape);
-  graph_.AddConsumer(value->id, consumer_op_id);
+  for (uint32_t op_id : consumer_op_ids) {
+    graph_.AddConsumer(value->id, op_id);
+  }
   return static_cast<uint32_t>(value->id);
 }
 

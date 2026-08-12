@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
@@ -67,15 +68,17 @@ DataType GraphFloat32Adapter::GetOpFirstInputType(uint32_t op_id) const {
   return graph_.FindInputs(op_id)[0]->tensor.type;
 }
 
-uint32_t GraphFloat32Adapter::AddConstantInput(uint32_t global_tensor_id,
-                                               const BHWC& shape, DataType type,
-                                               uint32_t consumer_op_id) {
+uint32_t GraphFloat32Adapter::AddConstantInput(
+    uint32_t global_tensor_id, const BHWC& shape, DataType type,
+    absl::Span<const uint32_t> consumer_op_ids) {
   Value* value = graph_.NewValue();
   value->tensor.ref = global_tensor_id;
   value->tensor.type = type;
   value->tensor.shape = shape;
   value->tensor.is_variable_input = false;
-  graph_.AddConsumer(consumer_op_id, value->id);
+  for (uint32_t op_id : consumer_op_ids) {
+    graph_.AddConsumer(op_id, value->id);
+  }
   return value->id;
 }
 
