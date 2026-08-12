@@ -94,6 +94,10 @@ TEST(CompiledModelTest, Basic) {
                               compiled_model.IsFullyAccelerated());
   ASSERT_TRUE(fullyAccelerated);
 
+  LITERT_ASSERT_OK_AND_ASSIGN(auto nonCpuFullyAccelerated,
+                              compiled_model.IsNonCpuFullyAccelerated());
+  ASSERT_FALSE(nonCpuFullyAccelerated);
+
   // Check CompiledModel buffer requirements.
   // input and output expect host memory.
   LITERT_ASSERT_OK_AND_ASSIGN(

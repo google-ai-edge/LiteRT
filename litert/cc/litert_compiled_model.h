@@ -1058,6 +1058,15 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return fully_accelerated;
   }
 
+  /// @brief Returns `true` if the compiled model is fully accelerated on
+  /// non-CPU hardware accelerators (e.g. 100% on GPU or NPU).
+  Expected<bool> IsNonCpuFullyAccelerated() {
+    bool non_cpu_fully_accelerated = false;
+    LITERT_RETURN_IF_ERROR(env_.runtime->CompiledModelIsNonCpuFullyAccelerated(
+        Get(), &non_cpu_fully_accelerated));
+    return non_cpu_fully_accelerated;
+  }
+
   /// @brief Sets a callback function that will be called after every node/op
   /// during model execution to check if the execution should be cancelled.
   ///

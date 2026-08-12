@@ -556,6 +556,13 @@ class RuntimeProxy {
                                compiled_model, fully_accelerated);
   }
 
+  LiteRtStatus CompiledModelIsNonCpuFullyAccelerated(
+      LiteRtCompiledModel compiled_model, bool* non_cpu_fully_accelerated) {
+    LITERT_PROXY_METHOD_STATUS(
+        litert_compiled_model_is_non_cpu_fully_accelerated, compiled_model,
+        non_cpu_fully_accelerated);
+  }
+
   LiteRtStatus CompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
                                         LiteRtProfiler* profiler) {
     LITERT_PROXY_METHOD_STATUS(litert_compiled_model_get_profiler,
