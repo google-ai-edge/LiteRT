@@ -18,7 +18,6 @@ limitations under the License.
 #include <cstdint>
 #include <cstring>
 
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/kernels/internal/compatibility.h"
 #include "tflite/kernels/internal/runtime_shape.h"
