@@ -50,6 +50,7 @@ cc_library(
     copts = tflite_copts(),
     deps = [
         "//tflite/kernels:op_macros",
+        "@ruy//ruy/profiler:instrumentation",
     ],
 )
 
