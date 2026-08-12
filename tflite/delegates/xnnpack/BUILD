@@ -1348,6 +1348,7 @@ cc_test(
         "//tflite:builtin_ops",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
+        "@XNNPACK",
         "@com_google_googletest//:gtest",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers//:runtime_cc",
