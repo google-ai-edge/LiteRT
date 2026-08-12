@@ -60,6 +60,7 @@ set(LITERT_C_PUBLIC_HEADERS
 )
 
 set(LITERT_C_REQUIRED_INTERNAL_HEADERS
+    internal/litert_accelerator.h
     internal/litert_logging.h
     internal/litert_runtime_api_export.h
     internal/litert_runtime_c_api.h

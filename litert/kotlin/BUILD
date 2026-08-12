@@ -67,9 +67,9 @@ cc_library(
     deps = [
         ":litert_jni_common",
         "//litert/c:litert_common",
-        "//litert/c/internal:litert_accelerator",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_any",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_environment_api",
         "//litert/cc:litert_environment_options",
         "//tflite/java/jni",

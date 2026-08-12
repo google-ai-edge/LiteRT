@@ -24,10 +24,10 @@
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/internal/litert_accelerator.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_any.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/kotlin/src/main/jni/litert_jni_common.h"
@@ -37,18 +37,19 @@ namespace {
 using ::litert::Environment;
 using ::litert::jni::ThrowLiteRtException;
 
-// Converts a LiteRtHwAccelerators to the value used in the Kotlin enum.
-int ToJniAccelerator(LiteRtHwAcceleratorSet accelerator) {
+// Converts a litert::HwAccelerators to the value used in the Kotlin enum.
+int ToJniAccelerator(litert::HwAccelerators accelerator) {
   switch (accelerator) {
-    case kLiteRtHwAcceleratorCpu:
+    case litert::HwAccelerators::kCpu:
       return litert::jni::kAccelatorCpu;
-    case kLiteRtHwAcceleratorGpu:
+    case litert::HwAccelerators::kGpu:
       return litert::jni::kAccelatorGpu;
-    case kLiteRtHwAcceleratorNpu:
+    case litert::HwAccelerators::kNpu:
       return litert::jni::kAccelatorNpu;
     default:
-      if (accelerator != kLiteRtHwAcceleratorNone) {
-        LITERT_LOG(LITERT_ERROR, "Unknown accelerator: %d.", accelerator);
+      if (accelerator != litert::HwAccelerators::kNone) {
+        LITERT_LOG(LITERT_ERROR, "Unknown accelerator: %d.",
+                   static_cast<int>(accelerator));
       }
       return litert::jni::kAccelatorNone;
   }
@@ -113,35 +114,28 @@ Java_com_google_ai_edge_litert_Environment_nativeGetAvailableAccelerators(
   auto litert_env = reinterpret_cast<Environment*>(handle);
   ABSL_CHECK(litert_env != nullptr);
 
-  LiteRtParamIndex size;
-  auto status = LiteRtGetNumAccelerators(litert_env->GetHolder().handle, &size);
-  if (status != kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get number of accelerators.");
-    ThrowLiteRtException(env, status, "Failed to get number of accelerators.");
+  auto accelerators_res = litert_env->GetAvailableAccelerators();
+  if (!accelerators_res) {
+    LITERT_LOG(LITERT_ERROR, "Failed to get available accelerators: %s.",
+               accelerators_res.Error().Message().c_str());
+    ThrowLiteRtException(env, accelerators_res.Error().Status(),
+                         accelerators_res.Error().Message());
     return nullptr;
   }
 
-  std::vector<jint> accelerators;
-  accelerators.reserve(size);
-  for (LiteRtParamIndex i = 0; i < size; ++i) {
-    LiteRtAccelerator accelerator;
-    status =
-        LiteRtGetAccelerator(litert_env->GetHolder().handle, i, &accelerator);
-    if (status != kLiteRtStatusOk) {
-      LITERT_LOG(LITERT_ERROR, "Failed to get accelerator.");
-      continue;
-    }
-    LiteRtHwAcceleratorSet hardware;
-    status = LiteRtGetAcceleratorHardwareSupport(accelerator, &hardware);
-    if (status != kLiteRtStatusOk) {
-      LITERT_LOG(LITERT_ERROR, "Failed to get accelerator supported hardware.");
-      continue;
-    }
-    accelerators.push_back(ToJniAccelerator(hardware));
+  const auto& accelerators = *accelerators_res;
+  std::vector<jint> jni_accelerators;
+  jni_accelerators.reserve(accelerators.size());
+  for (const auto& accelerator : accelerators) {
+    jni_accelerators.push_back(ToJniAccelerator(accelerator));
   }
 
-  jintArray result = env->NewIntArray(accelerators.size());
-  env->SetIntArrayRegion(result, 0, accelerators.size(), accelerators.data());
+  jsize num_accelerators = static_cast<jsize>(jni_accelerators.size());
+  jintArray result = env->NewIntArray(num_accelerators);
+  if (result != nullptr) {
+    env->SetIntArrayRegion(result, 0, num_accelerators,
+                           jni_accelerators.data());
+  }
   return result;
 }
 

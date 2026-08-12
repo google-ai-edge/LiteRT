@@ -15,7 +15,6 @@
 #include "litert/c/internal/litert_accelerator.h"
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/environment.h"

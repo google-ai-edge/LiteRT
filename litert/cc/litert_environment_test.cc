@@ -46,6 +46,15 @@ TEST(EnvironmentTest, SupportsFP16) {
   EXPECT_FALSE(env->SupportsFP16());
 }
 
+TEST(EnvironmentTest, GetAvailableAccelerators) {
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto accelerators,
+                              env->GetAvailableAccelerators());
+  ASSERT_FALSE(accelerators.empty());
+  EXPECT_EQ(accelerators[0], HwAccelerators::kCpu);
+}
+
 TEST(EnvironmentTest, HasRuntimeProxy) {
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);

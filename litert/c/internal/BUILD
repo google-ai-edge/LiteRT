@@ -18,6 +18,10 @@
 #
 # copybara:uncomment_end
 load(
+    "//litert/build_common:litert_build_defs.bzl",
+    "litert_c_api_library",
+)
+load(
     "//litert/build_common:special_rule.bzl",
     "friends_of_litert_runtime_builtin_static",
     "get_compatible_with_portable",
@@ -80,16 +84,19 @@ cc_library(
     ],
 )
 
-cc_library(
+litert_c_api_library(
     name = "litert_accelerator",
     srcs = ["litert_accelerator.cc"],
     hdrs = ["litert_accelerator.h"],
-    deps = [
-        "//litert/c:litert_common",
+    header_kwargs = {"compatible_with": get_compatible_with_portable()},
+    impl_deps = [
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/core:environment",
         "//litert/runtime:accelerator",
+    ],
+    deps = [
+        "//litert/c:litert_common",
     ],
 )
 
@@ -575,6 +582,7 @@ cc_library(
         "//litert/cc/internal:__pkg__",
     ],
     deps = [
+        ":litert_accelerator_header",
         ":litert_scheduling_info",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
@@ -604,6 +612,8 @@ cc_library(
         "//litert/cc/internal:__pkg__",
     ],
     deps = [
+        ":litert_accelerator",
+        ":litert_runtime_c_api",
         "//litert/c:litert_common",
         "//litert/c:litert_compiled_model_impl",
         "//litert/c:litert_environment_impl",
@@ -615,7 +625,6 @@ cc_library(
         "//litert/c:litert_opaque_options_impl",
         "//litert/c:litert_options_impl",
         "//litert/c:litert_tensor_buffer_impl",
-        "//litert/c/internal:litert_runtime_c_api",
     ],
     alwayslink = 1,
 )

@@ -1218,6 +1218,26 @@ class RuntimeProxy {
                                block_wise_quantization);
   }
 
+  LiteRtStatus GetNumAccelerators(LiteRtEnvironment environment,
+                                  LiteRtParamIndex* num_accelerators) {
+    LITERT_PROXY_METHOD_STATUS(litert_get_num_accelerators, environment,
+                               num_accelerators);
+  }
+
+  LiteRtStatus GetAccelerator(LiteRtEnvironment environment,
+                              LiteRtParamIndex index,
+                              LiteRtAccelerator* accelerator) {
+    LITERT_PROXY_METHOD_STATUS(litert_get_accelerator, environment, index,
+                               accelerator);
+  }
+
+  LiteRtStatus GetAcceleratorHardwareSupport(
+      LiteRtAcceleratorConst accelerator,
+      LiteRtHwAcceleratorSet* supported_hardware) {
+    LITERT_PROXY_METHOD_STATUS(litert_get_accelerator_hardware_support,
+                               accelerator, supported_hardware);
+  }
+
  protected:
   const LiteRtRuntimeCApiStruct* runtime_c_api_;
 };

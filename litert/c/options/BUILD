@@ -46,7 +46,6 @@ cc_test(
         ":litert_cpu_options",
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
-        "//litert/cc:litert_macros",
         "//litert/test:matchers",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings:string_view",
@@ -194,7 +193,6 @@ cc_library(
     hdrs = ["litert_samsung_options.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
         "@com_google_absl//absl/strings:string_view",
@@ -208,9 +206,7 @@ cc_test(
     srcs = ["litert_samsung_options_test.cc"],
     deps = [
         ":litert_samsung_options",
-        "//litert/c:litert_common",
         "//litert/test:matchers",
-        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -253,7 +249,6 @@ cc_test(
         ":litert_webnn_options",
         "//litert/c:litert_common",
         "//litert/test:matchers",
-        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -298,10 +293,8 @@ cc_test(
         ":litert_runtime_options",
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
-        "//litert/cc:litert_macros",
         "//litert/runtime:litert_runtime_options",
         "//litert/test:matchers",
-        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
         "@tomlplusplus",
