@@ -280,7 +280,8 @@ bool save_to_memory(const std::string& filename, std::vector<uint8_t>* data_out,
 // Returns shape[0] * shape[1] * ...
 // Empty Tensor(any shape[i] is 0) returns 0.
 // Zero-rank tensor([]) return 1.
-size_t get_shape_size(const tensor_t& t);
+// `ok` (non-null) reports overflow / invalid ndim; see definition below.
+size_t get_shape_size(const tensor_t& t, bool* ok = nullptr);
 
 // Returns dtype size in bytes.
 size_t get_dtype_bytes(const safetensors::dtype dtype);
@@ -4645,21 +4646,35 @@ std::string get_dtype_str(const safetensors::dtype dtype) {
 
 // Empty Tensor returns 0.
 // Zero-rank Tensor reuturns 1(scalar)
-size_t get_shape_size(const tensor_t& t) {
+//
+// `ok` (when non-null) is set to false when the shape product overflows or the
+// tensor has an invalid number of dimensions, and to true otherwise. On
+// overflow / invalid ndim the function returns 0 and the caller must treat the
+// tensor as invalid rather than as an empty tensor. Returning 0 here used to
+// be indistinguishable from a legitimately empty tensor, which let a wrapped
+// product (e.g. [2^32, 2^32] -> 0) or an out-of-range ndim skip every bounds
+// check below in validate_data_offsets().
+size_t get_shape_size(const tensor_t& t, bool* ok) {
   if (t.shape.empty()) {
+    if (ok) *ok = true;
     return 1;
   }
 
   if (t.shape.size() >= kMaxDim) {  // invalid ndim
+    if (ok) *ok = false;
     return 0;
   }
 
   size_t sz = 1;
 
   for (size_t i = 0; i < t.shape.size(); i++) {
-    sz *= t.shape[i];
+    if (__builtin_mul_overflow(sz, t.shape[i], &sz)) {
+      if (ok) *ok = false;
+      return 0;
+    }
   }
 
+  if (ok) *ok = true;
   return sz;
 }
 
@@ -4694,12 +4709,31 @@ bool validate_data_offsets(const safetensors_t& st, std::string& err) {
       valid = false;
     }
 
-    size_t tensor_size = get_dtype_bytes(tensor.dtype) * get_shape_size(tensor);
-
-    if (tensor_size == 0) {
-      // OK
+    // Compute the tensor size with overflow / invalid-ndim detection.
+    // A wrapped product (e.g. [2^32, 2^32] -> 0) or an out-of-range ndim used
+    // to silently produce tensor_size == 0 here, which the `continue` below
+    // treated as a benign empty tensor, skipping the offset/size bounds checks
+    // and leaving attacker-chosen data_offsets unvalidated.
+    bool shape_ok = true;
+    size_t shape_size = get_shape_size(tensor, &shape_ok);
+    if (!shape_ok) {
+      ss << "Tensor `" << key
+         << "` has an invalid shape (overflowed size or out-of-range ndim).\n";
+      valid = false;
       continue;
     }
+
+    size_t dtype_bytes = get_dtype_bytes(tensor.dtype);
+    size_t tensor_size;
+    if (__builtin_mul_overflow(dtype_bytes, shape_size, &tensor_size)) {
+      ss << "Tensor `" << key
+         << "` size (dtype_bytes * shape_size) overflows.\n";
+      valid = false;
+      continue;
+    }
+
+    // Offset bounds and (for the last tensor) full-buffer coverage must hold
+    // even for a legitimately empty tensor, so do NOT skip them on size == 0.
 
     // data_offsets are absolute offset from the databuffer(file)
     if (tensor.data_offsets[0] > databuffersize) {
