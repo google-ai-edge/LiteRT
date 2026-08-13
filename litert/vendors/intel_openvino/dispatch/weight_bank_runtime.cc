@@ -17,16 +17,10 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>  // NOLINT
-#include <fstream>
-#include <ios>
 #include <map>
-#include <random>
 #include <string>
-#include <system_error>
 #include <vector>
 #include <utility>
 
@@ -41,7 +35,64 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/intel_openvino/compiler/global_graph.h"
 
+// Temp-file staging is platform-split. POSIX uses mkstemp, which creates the
+// file atomically (O_CREAT|O_EXCL, mode 0600); std::filesystem has no
+// equivalent, so the portable spelling would be an exists()-then-open probe
+// loop that races. Keeping <filesystem> out of the ELF build also keeps
+// libstdc++'s vague-linkage std::filesystem::path symbols out of this .so,
+// where a differently-built module on the loader path (OpenVINO's libs) could
+// interpose them. MSVC / clang-cl emit COFF and have no such interposition, so
+// Windows keeps std::filesystem.
+#ifdef LITERT_WINDOWS_OS
+#include <cstdio>
+#include <filesystem>  // NOLINT
+#include <fstream>
+#include <ios>
+#include <random>
+#include <system_error>
+#else
+#include <errno.h>
+#include <stdlib.h>  // mkstemp: POSIX, not declared by <cstdlib>.
+#include <unistd.h>
+#endif
+
 namespace litert::openvino {
+namespace {
+
+#ifndef LITERT_WINDOWS_OS
+// mkstemp needs the directory spelled out in its template, so mirror what
+// std::filesystem::temp_directory_path() probes. Android has no /tmp, so
+// staging there requires TMPDIR to be set -- unchanged from the previous
+// std::filesystem spelling, which failed the same way.
+std::string PosixTempDir() {
+  for (const char* var : {"TMPDIR", "TMP", "TEMP", "TEMPDIR"}) {
+    if (const char* value = std::getenv(var);
+        value != nullptr && value[0] != '\0') {
+      return value;
+    }
+  }
+  return "/tmp";
+}
+
+// A single write(2) is capped at 0x7ffff000 bytes on Linux and can be cut
+// short by a signal, so the multi-GB pool needs this loop: a short write is
+// not an error. Returns 0 on success, else the failing errno.
+int WriteAll(int fd, const void* data, size_t size) {
+  const char* p = static_cast<const char*>(data);
+  while (size > 0) {
+    const ssize_t written = ::write(fd, p, size);
+    if (written < 0) {
+      if (errno == EINTR) continue;
+      return errno;
+    }
+    p += written;
+    size -= static_cast<size_t>(written);
+  }
+  return 0;
+}
+#endif  // !LITERT_WINDOWS_OS
+
+}  // namespace
 
 litert::Expected<std::vector<BoundWeight>> GpuSharedBank::Bind(
     ov::Core& core, const OpenVinoGlobalGraph& global_graph,
@@ -118,10 +169,13 @@ NpuSharedBank::~NpuSharedBank() {
     if (!owns_bank_file_) return;
     path = bank_path_;
   }
-  if (!path.empty()) {
-    std::error_code ec;
-    std::filesystem::remove(std::filesystem::path(path), ec);
-  }
+  if (path.empty()) return;
+#ifdef LITERT_WINDOWS_OS
+  std::error_code ec;
+  std::filesystem::remove(std::filesystem::path(path), ec);
+#else
+  ::unlink(path.c_str());
+#endif
 }
 
 std::string NpuSharedBank::Path() const {
@@ -153,6 +207,7 @@ std::string NpuSharedBank::EnsureOnDisk(const void* data, size_t size) {
     return bank_path_;
   }
 
+#ifdef LITERT_WINDOWS_OS
   std::error_code ec;
   const std::filesystem::path tmp_dir =
       std::filesystem::temp_directory_path(ec);
@@ -163,9 +218,7 @@ std::string NpuSharedBank::EnsureOnDisk(const void* data, size_t size) {
     return {};
   }
 
-  // std::filesystem has no mkstemp equivalent; probe random names in the system
-  // temp dir. std::random_device + exists() is portable across Windows / Linux
-  // / Android (unlike mkstemp, which is POSIX-only).
+  // No mkstemp on Windows; probe random names in the system temp dir.
   std::random_device rd;
   std::filesystem::path file_path;
   bool found = false;
@@ -206,6 +259,40 @@ std::string NpuSharedBank::EnsureOnDisk(const void* data, size_t size) {
   }
 
   bank_path_ = file_path.string();
+#else
+  std::string name_template = PosixTempDir();
+  if (name_template.empty() || name_template.back() != '/') {
+    name_template.push_back('/');
+  }
+  name_template += "litert_ov_bank_XXXXXX";
+  // mkstemp rewrites the XXXXXX in place and creates the file atomically, so
+  // two processes can never end up staging into the same bank, and mode 0600
+  // keeps the pool unreadable by other users of a shared temp dir.
+  std::vector<char> path_buf(name_template.begin(), name_template.end());
+  path_buf.push_back('\0');
+  const int fd = ::mkstemp(path_buf.data());
+  if (fd < 0) {
+    LITERT_LOG(LITERT_ERROR, "NPU weight sharing: mkstemp('%s') failed: %s",
+               name_template.c_str(), std::strerror(errno));
+    return {};
+  }
+  const std::string file_path(path_buf.data());
+
+  const int write_err = WriteAll(fd, data, size);
+  // Close even when the write failed, and treat a close error as a write
+  // error: ENOSPC / EIO can surface only here.
+  const int close_err = (::close(fd) == 0) ? 0 : errno;
+  if (write_err != 0 || close_err != 0) {
+    LITERT_LOG(LITERT_ERROR,
+               "NPU weight sharing: failed to write temp file '%s': %s",
+               file_path.c_str(),
+               std::strerror(write_err != 0 ? write_err : close_err));
+    ::unlink(file_path.c_str());
+    return {};
+  }
+
+  bank_path_ = file_path;
+#endif  // LITERT_WINDOWS_OS
   owns_bank_file_ = true;
   LITERT_LOG(LITERT_INFO,
              "NPU weight sharing: staged %zu-byte weights bank to '%s'", size,

@@ -93,12 +93,8 @@ class NpuSharedBank {
   // Stages the pool [data, data+size) to a temp file and returns its path
   // (empty on failure). Thread-safe and write-once: later calls return the
   // cached path, ignoring their arguments, so the multi-GB pool is written
-  // once. Portable across Windows / Linux / Android.
-  //
-  // NOTE: safe use of std::filesystem::path in the implementation depends on
-  // the dispatch .so being linked with -Wl,-Bsymbolic (see its BUILD target),
-  // which keeps libstdc++'s weak path symbols local to this module so a path is
-  // never destroyed by a differently-built module's interposed copy.
+  // once. Portable across Windows / Linux / Android: POSIX targets stage with
+  // mkstemp, Windows with std::filesystem.
   std::string EnsureOnDisk(const void* data, size_t size);
 
   // The cached bank path, or empty if EnsureOnDisk has not yet succeeded.
