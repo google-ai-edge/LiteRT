@@ -141,6 +141,14 @@ selects.config_setting_group(
 )
 
 selects.config_setting_group(
+    name = "x86_any_with_static_memory",
+    match_all = [
+        ":x86_any",
+        "//tflite:tf_lite_static_memory",
+    ],
+)
+
+selects.config_setting_group(
     name = "arm_any",
     match_any = [
         ":arm32_any",
@@ -521,8 +529,12 @@ cc_library(
         ":types",
         "//tflite:macros",
         "//tflite/core/c:common",
-        "@com_google_absl//absl/container:inlined_vector",
-    ],
+    ] + select({
+        "//tflite:tf_lite_static_memory": [],
+        "//conditions:default": [
+            "@com_google_absl//absl/container:inlined_vector",
+        ],
+    }),
 )
 
 cc_library(
@@ -646,12 +658,16 @@ cc_library(
         "//tflite/kernels:kernel_util",
         "//tflite/kernels:op_macros",
         "//tflite/kernels/internal/utils:sparsity_format_converter",
-        "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/types:span",
         "@eigen_archive//:eigen3",
         "@gemmlowp//:fixedpoint",
         "@ruy//ruy/profiler:instrumentation",
-    ],
+    ] + select({
+        "//tflite:tf_lite_static_memory": [],
+        "//conditions:default": [
+            "@com_google_absl//absl/container:inlined_vector",
+        ],
+    }),
 )
 
 cc_library(
@@ -747,11 +763,16 @@ cc_library(
         "//tflite/core/c:common",
         "//tflite/kernels:op_macros",
         "//tflite/kernels/internal/utils:sparsity_format_converter",
-        "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/types:span",
         "@eigen_archive//:eigen3",
         "@gemmlowp",
         "@ruy//ruy/profiler:instrumentation",
-    ],
+    ] + select({
+        "//tflite:tf_lite_static_memory": [],
+        "//conditions:default": [
+            "@com_google_absl//absl/container:inlined_vector",
+        ],
+    }),
 )
 
 cc_library(
@@ -989,15 +1010,16 @@ cc_library(
             ":arm_any",
         ): [":neon_tensor_utils"],
         (
+            ":x86_any_with_static_memory",
+            "//tflite:tf_lite_static_memory",
+            "//conditions:default",
+        ): [":portable_tensor_utils"],
+        (
             ":x86_any",
         ): [
             ":portable_tensor_utils",  # If SSSE3 isn't available, we fall back to portable
             ":sse_tensor_utils",
         ],
-        (
-            "//tflite:tf_lite_static_memory",
-            "//conditions:default",
-        ): [":portable_tensor_utils"],
     }),
 )
 
@@ -1025,15 +1047,16 @@ cc_library(
             ":arm_any",
         ): [":neon_tensor_utils"],
         (
+            ":x86_any_with_static_memory",
+            "//tflite:tf_lite_static_memory",
+            "//conditions:default",
+        ): [":portable_tensor_utils"],
+        (
             ":x86_any",
         ): [
             ":portable_tensor_utils",  # If SSSE3 isn't available, we fall back to portable
             ":sse_tensor_utils",
         ],
-        (
-            "//tflite:tf_lite_static_memory",
-            "//conditions:default",
-        ): [":portable_tensor_utils"],
     }),
 )
 
