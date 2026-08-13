@@ -187,6 +187,14 @@ void ConvertComposite(
   if (!params) {
     ABSL_LOG(FATAL) << "Missing StableHLO composite params.";
   }
+
+  auto* current_subgraph = static_cast<::tflite::Subgraph*>(context.impl_);
+  if (params->subgraph_index > 0 &&
+      current_subgraph->MarkSubgraphAsDelegationSkippable(
+          params->subgraph_index) != kTfLiteOk) {
+    ABSL_LOG(FATAL) << "Failed to mark subgraph as delegation skippable.";
+  }
+
   const absl::string_view composite_name = params->name;
 
   if (custom_parsers) {
@@ -212,7 +220,8 @@ void ConvertComposite(
   } else if (composite_name == "odml.rms_norm") {
     ConvertRmsNorm(context, node, registration, tensor_map, ir_model);
     return;
-  } else if (composite_name == "custom_call.rotary_positional_embedding") {
+  } else if (composite_name == "custom_call.rotary_positional_embedding" ||
+             composite_name == "odml.rope") {
     ConvertRoPE(context, node, registration, tensor_map, ir_model);
     return;
   } else if (composite_name == "odml.scaled_dot_product_attention") {
@@ -243,25 +252,23 @@ class IrModelBuilder {
         tensor_to_shared_buffer_id_map_(tensor_to_shared_buffer_id_map),
         tensor_to_external_buffer_id_map_(tensor_to_external_buffer_id_map) {}
 
-  // Executes the conversion from TFLite model to ML Drift IrModel.
-  ::ml_drift::ir::IrModel* Build() {
-    auto ir_model = std::make_unique<::ml_drift::ir::IrModel>();
-
+  // Executes the conversion from TFLite model to ML Drift IrModel, appending
+  // into the provided IrModel instance.
+  bool BuildInto(::ml_drift::ir::IrModel& ir_model) {
     // Ensures that when we create IR ops, all their corresponding input/output
     // IR tensors are already available for lookup. Note that some of these
     // tensors may become unused after graph transformations like op fusion.
-    auto tensor_map = CreateTensorMap(*ir_model);
+    auto tensor_map = CreateTensorMap(ir_model);
 
     for (int i = 0; i < delegate_params_.input_tensors->size; ++i) {
       const int input_tensor_id = delegate_params_.input_tensors->data[i];
       if (::tflite::IsConstantTensor(&context_.tensors[input_tensor_id])) {
         continue;
       }
-      ir_model->add_input(tensor_map[input_tensor_id]);
+      ir_model.add_input(tensor_map[input_tensor_id]);
     }
     for (int i = 0; i < delegate_params_.output_tensors->size; ++i) {
-      ir_model->add_output(
-          tensor_map[delegate_params_.output_tensors->data[i]]);
+      ir_model.add_output(tensor_map[delegate_params_.output_tensors->data[i]]);
     }
 
     // Convert each TFLite node to its IR equivalent and append it to the
@@ -279,7 +286,7 @@ class IrModelBuilder {
               &context_.tensors[node->inputs->data[0]])) {
         continue;
       }
-      AddNode(*node, *registration, tensor_map, *ir_model);
+      AddNode(*node, *registration, tensor_map, ir_model);
     }
     // Derive the shared-constants map from per-tensor BufferSource state
     // populated during graph construction and enriched by op converters (e.g.
@@ -287,8 +294,15 @@ class IrModelBuilder {
     // included. The tflite tensor id comes from the tensor map key.
     if (shared_tensors_) {
       for (const auto& [tfl_tensor_id, ir_tensor_id] : tensor_map) {
-        const auto* tensor = ir_model->tensor(ir_tensor_id);
+        const auto* tensor = ir_model.tensor(ir_tensor_id);
         if (tensor == nullptr || !tensor->buffer_source.is_shared) {
+          continue;
+        }
+        // Do not share constants that were completely embedded into op
+        // attributes (like shape tensors or unshared biases) and therefore have
+        // no runtime consumers.
+        if (tensor->consumers.empty() &&
+            !ir_model.IsGraphOutput(ir_tensor_id)) {
           continue;
         }
         SharedTfliteTensor shared_info;
@@ -300,6 +314,15 @@ class IrModelBuilder {
         }
         shared_tensors_->try_emplace(ir_tensor_id, shared_info);
       }
+    }
+    return true;
+  }
+
+  // Executes the conversion from TFLite model to ML Drift IrModel.
+  ::ml_drift::ir::IrModel* Build() {
+    auto ir_model = std::make_unique<::ml_drift::ir::IrModel>();
+    if (!BuildInto(*ir_model)) {
+      return nullptr;
     }
     return ir_model.release();
   }
@@ -668,11 +691,8 @@ class DelegateContext {
             const TfLiteDelegateParams* delegate_params) {
     const auto* delegate_data =
         reinterpret_cast<const DelegateData*>(delegate_params->delegate->data_);
-    std::unique_ptr<::ml_drift::ir::IrModel> built_model(
-        BuildIrModel(*context, *delegate_params, delegate_data->options));
-    if (!built_model) return false;
-    *delegate_data->ir_model = std::move(*built_model);
-    return true;
+    IrModelBuilder builder(*context, *delegate_params, delegate_data->options);
+    return builder.BuildInto(*delegate_data->ir_model);
   }
 };
 

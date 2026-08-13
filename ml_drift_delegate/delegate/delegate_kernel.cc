@@ -1142,9 +1142,28 @@ absl::Status DelegateKernel::InitializeIrModel(
   }
 
   external_tensor_ids_.reserve(input_indices_.size() + output_indices_.size());
+  std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>> input_tensor_refs;
+  input_tensor_refs.reserve(input_ids_.size());
+  for (auto id : input_ids_) {
+    const auto* t = ir_model->tensor(id);
+    input_tensor_refs.push_back({
+        .type = t->desc.GetDataType(),
+        .shape = t->desc.GetBHWCShape(),
+    });
+  }
+
+  std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>> output_tensor_refs;
+  output_tensor_refs.reserve(output_ids_.size());
+  for (auto id : output_ids_) {
+    const auto* t = ir_model->tensor(id);
+    output_tensor_refs.push_back({
+        .type = t->desc.GetDataType(),
+        .shape = t->desc.GetBHWCShape(),
+    });
+  }
+
   ABSL_RETURN_IF_ERROR(UpdateCreateInfoWithExternalTensors(
-      context, create_info, /*input_tensor_refs=*/{},
-      /*output_tensor_refs=*/{}));
+      context, create_info, input_tensor_refs, output_tensor_refs));
   if (!external_tensor_ids_.empty()) {
     ABSL_LOG(INFO)
         << "Total " << external_tensor_ids_.size()
