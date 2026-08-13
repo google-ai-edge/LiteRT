@@ -115,6 +115,11 @@ class LiteRtDispatchInvocationContextT {
   litert::Expected<void> DetachBuffer(
       Qnn_Tensor_t& tensor, LiteRtTensorBufferHandle tensor_buffer_handle);
 
+  // In-place signed/unsigned 16-bit affine rebase. XOR 0x8000 implements both
+  // q_u16 = q_i16 + 32768 and its inverse exactly.
+  litert::Expected<void> ToggleInt16Signedness(
+      LiteRtTensorBufferHandle tensor_buffer_handle, size_t bytes);
+
   litert::Expected<void> WriteTensorTo(
       const std::filesystem::path& output_folder, ::qnn::TensorWrapper& tensor);
 
@@ -133,6 +138,11 @@ class LiteRtDispatchInvocationContextT {
   std::vector<::qnn::TensorWrapper> outputs_;
   std::vector<LiteRtTensorBufferHandle> input_buffer_handles_;
   std::vector<LiteRtTensorBufferHandle> output_buffer_handles_;
+  // The compiled QNN graph canonicalizes QInt16 tensors to QUInt16. These
+  // flags retain the original LiteRT boundary type so native UInt16 models are
+  // not rebased a second time.
+  std::vector<bool> input_requires_qint16_rebase_;
+  std::vector<bool> output_requires_qint16_rebase_;
   std::optional<LiteRtSchedulingInfo> scheduling_info_;
   // Per-invocation performance-mode override (set via SetOptions).
   // nullopt means "use the context-level options from qnn_manager_".

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
@@ -38,26 +39,69 @@ std::vector<OpWrapper> BuildSplitOp(
     QNN_LOG_ERROR("Get axis_data failed.");
     return {};
   }
-  std::uint32_t axis = (*axis_data)[0] >= 0
-                           ? (*axis_data)[0]
-                           : (*axis_data)[0] + input_tensor.GetRank();
-
-  const std::uint32_t slice_size = input_tensor.GetDimension(axis) / num_splits;
-  // The split_indice will do N cuts, split the dimension into N+1 clips
-  // so 0 will not be included in the split_indice
-  // for example, when we split 12 into 4 clip, the split index will be {3,6,9}
-  std::vector<std::uint32_t> split_indice;
-  split_indice.reserve(num_splits);
-  for (int i = 1; i < num_splits; i++) {
-    split_indice.emplace_back(static_cast<std::uint32_t>(i * slice_size));
+  const std::int32_t raw_axis = (*axis_data)[0];
+  const std::int32_t adjusted_axis =
+      raw_axis >= 0 ? raw_axis : raw_axis + input_tensor.GetRank();
+  if (adjusted_axis < 0 || adjusted_axis >= input_tensor.GetRank()) {
+    QNN_LOG_ERROR("Split axis is out of range.");
+    return {};
   }
-  TensorWrapper& split_indice_tensor = tensor_pool.CreateStaticTensor(
-      QNN_DATATYPE_UINT_32, axis_tensor.GetQuantParams(), {num_splits - 1},
-      sizeof(std::uint32_t) * split_indice.size(), split_indice.data());
-  return MakeVector(CreateSplitOp(
-      input_tensor,
-      std::vector<ConstTensorWrapperRef>(outputs.begin(), outputs.end()), axis,
-      split_indice_tensor));
+  const std::uint32_t axis = static_cast<std::uint32_t>(adjusted_axis);
+
+  if (num_splits == 0 || outputs.size() != num_splits ||
+      input_tensor.GetDimension(axis) % num_splits != 0) {
+    QNN_LOG_ERROR("Split dimensions are not evenly divisible.");
+    return {};
+  }
+  const std::uint32_t slice_size = input_tensor.GetDimension(axis) / num_splits;
+  return BuildSplitSlices(tensor_pool, input_tensor, outputs, axis,
+                          std::vector<std::uint32_t>(num_splits, slice_size));
+}
+
+std::vector<OpWrapper> BuildSplitSlices(
+    TensorPool& tensor_pool, const TensorWrapper& input,
+    const std::vector<TensorWrapperRef>& outputs, std::uint32_t axis,
+    const std::vector<std::uint32_t>& split_sizes) {
+  if (axis >= input.GetRank() || outputs.size() != split_sizes.size()) {
+    QNN_LOG_ERROR("Invalid axis or output count for split slices.");
+    return {};
+  }
+
+  std::uint32_t total_size = 0;
+  for (const auto size : split_sizes) {
+    total_size += size;
+  }
+  if (total_size != input.GetDimension(axis)) {
+    QNN_LOG_ERROR("Split sizes do not cover the input dimension.");
+    return {};
+  }
+
+  std::vector<OpWrapper> result;
+  result.reserve(outputs.size());
+  std::uint32_t axis_begin = 0;
+  for (size_t output_index = 0; output_index < outputs.size(); ++output_index) {
+    std::vector<std::int32_t> ranges;
+    ranges.reserve(input.GetRank() * 3);
+    for (size_t dimension = 0; dimension < input.GetRank(); ++dimension) {
+      if (dimension == axis) {
+        ranges.emplace_back(static_cast<std::int32_t>(axis_begin));
+        ranges.emplace_back(static_cast<std::int32_t>(
+            axis_begin + split_sizes[output_index]));
+      } else {
+        ranges.emplace_back(0);
+        ranges.emplace_back(
+            static_cast<std::int32_t>(input.GetDimension(dimension)));
+      }
+      ranges.emplace_back(1);
+    }
+    auto& ranges_tensor = tensor_pool.CreateStaticTensor(
+        QNN_DATATYPE_INT_32, {}, {input.GetRank(), 3},
+        sizeof(std::int32_t) * ranges.size(), ranges.data());
+    result.emplace_back(
+        CreateSliceOp(input, outputs[output_index], ranges_tensor));
+    axis_begin += split_sizes[output_index];
+  }
+  return result;
 }
 
 OpWrapper CreateSplitOp(const TensorWrapper& input_0,

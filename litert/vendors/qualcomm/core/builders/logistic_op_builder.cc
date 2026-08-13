@@ -17,6 +17,15 @@ std::vector<OpWrapper> BuildLogisticOp(
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
+  // Force the u16 sigmoid output to (scale = 1/65536, offset = 0). Sigmoid
+  // outputs are always in [0, 1] and QAIRT emits exactly this encoding on
+  // HTP because 1/65536 = 2^-16 lets HTP fold the requantize into a shift.
+  // TFLite emits ~1/32767 by default (lsb=6 drift on the u16 output). Route
+  // through the wrapper so the internal variant matches the Qnn struct for
+  // any downstream builder that reads the output tensor's quant params.
+  if (outputs[0].get().IsQuantU16()) {
+    outputs[0].get().SetScaleOffsetQuantParams(1.0f / 65536.0f, 0);
+  }
   auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
   elementwise_op.AddInputTensor(inputs[0]);
   elementwise_op.AddOutputTensor(outputs[0]);

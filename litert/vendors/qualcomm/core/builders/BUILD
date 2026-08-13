@@ -197,8 +197,11 @@ cc_library(
     srcs = ["matmul_op_builder.cc"],
     hdrs = ["matmul_op_builder.h"],
     deps = [
+        ":fully_connected_op_builder",
         ":op_builder",
+        ":reshape_op_builder",
         "//litert/vendors/qualcomm/core:op_code",
+        "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@qairt//:qnn_lib_headers",
@@ -322,6 +325,7 @@ cc_library(
     hdrs = ["split_op_builder.h"],
     deps = [
         ":op_builder",
+        ":slice_op_builder",
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/utils:log",

@@ -3,10 +3,18 @@
 
 #include "litert/vendors/qualcomm/core/transformation/graph_to_graph.h"
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <functional>
+#include <utility>
 #include <vector>
 
+#include "QnnOpDef.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/vendors/qualcomm/core/builders/op_builder.h"
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/transformation/embedding_gemma.h"
@@ -86,6 +94,108 @@ void Transform(std::function<bool(OpWrapper&)> validate_op_config,
   }
 }
 
+size_t FuseConstantPadIntoConv(
+    std::function<bool(OpWrapper&)> validate_op_config,
+    std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
+    size_t pattern_size) {
+  auto& pad = ops[start_index];
+  auto& conv = ops[start_index + 1];
+  if (pad.GetInputCount() != 1 || conv.GetInputCount() < 2 ||
+      pad.GetOutputTensor(0) != conv.GetInputTensor(0)) {
+    return 1;
+  }
+
+  // Do not remove a Pad whose output is shared with another operation.
+  size_t consumer_count = 0;
+  const auto& padded_output = pad.GetOutputTensor(0);
+  for (const auto& op : ops) {
+    for (size_t i = 0; i < op.GetInputCount(); ++i) {
+      if (op.GetInputTensor(i) == padded_output) {
+        ++consumer_count;
+      }
+    }
+  }
+  if (consumer_count != 1) {
+    return 1;
+  }
+
+  auto scheme = pad.GetScalarParam(0);
+  auto constant = pad.GetScalarParam(1);
+  if (!scheme.has_value() || !constant.has_value()) {
+    return 1;
+  }
+  Qnn_Param_t scheme_param = QNN_PARAM_INIT;
+  Qnn_Param_t constant_param = QNN_PARAM_INIT;
+  scheme->CloneTo(scheme_param);
+  constant->CloneTo(constant_param);
+  if (scheme_param.paramType != QNN_PARAMTYPE_SCALAR ||
+      scheme_param.scalarParam.dataType != QNN_DATATYPE_UINT_32 ||
+      scheme_param.scalarParam.uint32Value != QNN_OP_PAD_SCHEME_CONSTANT ||
+      constant_param.paramType != QNN_PARAMTYPE_SCALAR ||
+      constant_param.scalarParam.dataType != QNN_DATATYPE_INT_32) {
+    return 1;
+  }
+
+  const auto& input = pad.GetInputTensor(0);
+  if (!input.IsPerTensorQuant()) {
+    return 1;
+  }
+  const auto& input_quant =
+      std::get<ScaleOffsetQuantizeParamsWrapper>(input.GetQuantParams());
+  if (constant_param.scalarParam.int32Value != input_quant.GetZeroPoint()) {
+    return 1;
+  }
+
+  const auto& pad_amount_tensor = pad.GetTensorParam(0).GetTensor();
+  const auto pad_amount =
+      pad_amount_tensor.GetTensorData<std::uint32_t>();
+  if (!pad_amount.has_value() || pad_amount->size() != 8 ||
+      pad_amount_tensor.GetDimensions() != std::vector<std::uint32_t>({4, 2}) ||
+      (*pad_amount)[0] != 0 || (*pad_amount)[1] != 0 ||
+      (*pad_amount)[6] != 0 || (*pad_amount)[7] != 0) {
+    return 1;
+  }
+
+  std::vector<ConstTensorWrapperRef> inputs;
+  inputs.reserve(conv.GetInputCount());
+  inputs.emplace_back(input);
+  for (size_t i = 1; i < conv.GetInputCount(); ++i) {
+    inputs.emplace_back(conv.GetInputTensor(i));
+  }
+  auto fused_conv = CreateOpWithSameParams(
+      conv, inputs, {std::cref(conv.GetOutputTensor(0))});
+  fused_conv.SetName(std::string(conv.GetName()));
+
+  // Conv builders add stride, dilation, then pad_amount tensor parameters.
+  auto& conv_pad_tensor = const_cast<TensorWrapper&>(
+      fused_conv.GetTensorParam(2).GetTensor());
+  const auto old_padding =
+      conv_pad_tensor.GetTensorData<std::uint32_t>();
+  if (!old_padding.has_value() || old_padding->size() != 4 ||
+      conv_pad_tensor.GetDimensions() != std::vector<std::uint32_t>({2, 2})) {
+    return 1;
+  }
+  const std::array<std::uint32_t, 4> old_padding_copy = {
+      (*old_padding)[0], (*old_padding)[1], (*old_padding)[2],
+      (*old_padding)[3]};
+  const std::array<std::uint32_t, 4> spatial_padding = {
+      (*pad_amount)[2], (*pad_amount)[3], (*pad_amount)[4],
+      (*pad_amount)[5]};
+  if (!conv_pad_tensor.SetTensorData<std::uint32_t>(spatial_padding)) {
+    return 1;
+  }
+
+  if (!validate_op_config(fused_conv)) {
+    conv_pad_tensor.SetTensorData<std::uint32_t>(old_padding_copy);
+    return 1;
+  }
+
+  ops.erase(ops.begin() + start_index,
+            ops.begin() + start_index + pattern_size);
+  ops.emplace(ops.begin() + start_index, std::move(fused_conv));
+  return 1;
+}
+
 }  // namespace
 
 // TODO (jiunkaiy): Add more G2G transformation.
@@ -95,6 +205,15 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
   if (g2g_option == G2GConfig::kOff) {
     return;
   }
+
+  const std::vector<QnnOpCode> pad_conv = {QnnOpCode::kPad,
+                                            QnnOpCode::kConv2d};
+  Transform(validate_op_config, ops, tensor_pool, pad_conv,
+            FuseConstantPadIntoConv);
+  const std::vector<QnnOpCode> pad_depthwise = {
+      QnnOpCode::kPad, QnnOpCode::kDepthWiseConv2d};
+  Transform(validate_op_config, ops, tensor_pool, pad_depthwise,
+            FuseConstantPadIntoConv);
 
   // MatMul-convert Fusion
   if (g2g_option == G2GConfig::kMatMulConvert ||

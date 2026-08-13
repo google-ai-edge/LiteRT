@@ -164,6 +164,21 @@ class TensorWrapper final {
 
   void ConvertAxisScaleOffsetToScaleOffset();
 
+  // Canonicalize quantized signed 16-bit storage to the unsigned encoding
+  // preferred by QAIRT/HTP. The represented real values are unchanged:
+  // q_u16 = q_i16 + 32768 and zp_u16 = zp_i16 + 32768.
+  void ConvertQint16ToQuint16();
+
+  // Replace this tensor's per-tensor scale/offset encoding and keep the
+  // underlying Qnn tensor struct in sync. Use this instead of poking
+  // GetQnnTensor().v2.quantizeParams directly, which would leave the
+  // wrapper's variant stale for downstream readers.
+  void SetScaleOffsetQuantParams(float scale, std::int32_t offset) {
+    quantize_params_.emplace<ScaleOffsetQuantizeParamsWrapper>(scale, offset);
+    UpdateQnnQuantParams();
+  }
+
+
   void MarkDump() {
     if (!absl::EndsWith(name_, kDumpSuffix)) {
       name_ += kDumpSuffix;

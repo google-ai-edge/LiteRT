@@ -16,6 +16,11 @@ std::vector<OpWrapper> BuildSplitOp(
     const std::vector<TensorWrapperRef>& outputs,
     const std::uint32_t num_splits);
 
+std::vector<OpWrapper> BuildSplitSlices(
+    TensorPool& tensor_pool, const TensorWrapper& input,
+    const std::vector<TensorWrapperRef>& outputs, std::uint32_t axis,
+    const std::vector<std::uint32_t>& split_sizes);
+
 OpWrapper CreateSplitOp(const TensorWrapper& input_0,
                         const std::vector<ConstTensorWrapperRef>& outputs,
                         std::uint32_t axis, const TensorWrapper& split_index);
