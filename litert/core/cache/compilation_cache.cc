@@ -89,6 +89,11 @@ uint64_t GetHash(const LiteRtOptionsT& options) {
       seed, options.hardware_accelerators,
       options.version.major  // Minor updates should not invalid the cache.
   );
+  HashCombine(seed, options.selected_signature_keys.size());
+  for (const std::string& signature_key :
+       options.selected_signature_keys) {
+    HashCombine(seed, signature_key);
+  }
 
   for (LiteRtOpaqueOptions it = options.options; it;) {
     uint64_t opaque_hash = 0;

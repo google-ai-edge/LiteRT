@@ -287,6 +287,28 @@ TEST(CompilationCacheTest, DifferentLiteRtOptions_CacheMiss) {
   EXPECT_FALSE(cache_hit.has_value());
 }
 
+TEST(CompilationCacheTest, DifferentSignatureSelectionChangesConfigHash) {
+  LITERT_ASSIGN_OR_ABORT(
+      std::unique_ptr<LiteRtModelT> model,
+      LoadModelFromFile(litert::testing::GetTestFilePath(kModelFileName)));
+  LiteRtOptionsT decode_options = GetTestOptions();
+  decode_options.selected_signature_keys = {"decode"};
+  LiteRtOptionsT prefill_options = GetTestOptions();
+  prefill_options.selected_signature_keys = {"prefill"};
+
+  LITERT_ASSIGN_OR_ABORT(
+      CompilationCache::CacheKey decode_key,
+      CompilationCache::GetModelHash(
+          *model, decode_options, GetTestCompilerPluginInfo()));
+  LITERT_ASSIGN_OR_ABORT(
+      CompilationCache::CacheKey prefill_key,
+      CompilationCache::GetModelHash(
+          *model, prefill_options, GetTestCompilerPluginInfo()));
+
+  EXPECT_EQ(decode_key.content_hash, prefill_key.content_hash);
+  EXPECT_NE(decode_key.config_hash, prefill_key.config_hash);
+}
+
 TEST(CompilationCacheTest, DifferentModelContent_DifferentCachePath) {
   const std::string cache_root_path =
       ::testing::TempDir() + "/DifferentModelContent";
