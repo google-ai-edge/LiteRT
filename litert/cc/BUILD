@@ -715,6 +715,7 @@ cc_test(
         ":litert_environment",
         ":litert_expected",
         ":litert_layout",
+        ":litert_model",
         ":litert_model_types",
         ":litert_options",
         ":litert_ranked_tensor_type",

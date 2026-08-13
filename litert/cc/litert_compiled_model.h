@@ -24,6 +24,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -62,6 +63,8 @@ class InferenceRunnerLiteRt;
 }  // namespace mediapipe
 
 namespace litert {
+
+class Model;
 
 namespace benchmark {
 class BenchmarkLiteRtModel;
@@ -363,6 +366,22 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   // copybara:uncomment_end
 
   CompiledModel() = default;
+  CompiledModel(const CompiledModel&) = delete;
+  CompiledModel& operator=(const CompiledModel&) = delete;
+  CompiledModel(CompiledModel&&) noexcept = default;
+  CompiledModel& operator=(CompiledModel&&) noexcept = default;
+
+  ~CompiledModel() {
+    // The compiled runtime handle may retain references into its source model.
+    // Destroy it in the destructor body so model_ remains alive until after the
+    // runtime releases those references. Member destruction runs after this
+    // body; the BaseHandle destructor then sees a released null handle.
+    if (IsOwned() && Get() != nullptr) {
+      auto deleter = GetDeleter();
+      LiteRtCompiledModel compiled_model = Release();
+      deleter(compiled_model);
+    }
+  }
 
   /// @brief Creates a `CompiledModel` from a TFLite file.
   ///
@@ -1879,6 +1898,37 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
 
  protected:
   /// @internal
+  /// @brief Creates a `CompiledModel` and takes ownership of `model`.
+  ///
+  /// This overload is intended for callers that must inspect a mutable model
+  /// before compilation without keeping a second model instance alive. The
+  /// model is consumed on success and remains locally owned until every error
+  /// path has completed.
+  template <typename ModelT,
+            std::enable_if_t<
+                std::is_same_v<std::decay_t<ModelT>, Model> &&
+                    std::is_rvalue_reference_v<ModelT&&>,
+                int> = 0>
+  static Expected<CompiledModel> Create(litert::Environment& env,
+                                        ModelT&& model,
+                                        Options& compilation_options) {
+    if (!model || !model.IsOwned()) {
+      return Error(Status::kErrorInvalidArgument,
+                   "CompiledModel::Create requires an owned Model");
+    }
+    auto env_holder = env.GetHolder();
+    LITERT_ASSIGN_OR_RETURN(
+        auto owned_options,
+        BuildOptions(std::move(compilation_options), env_holder));
+    LiteRtCompiledModel compiled_model;
+    LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateCompiledModel(
+        env_holder.handle, model.Get(), owned_options.get(), &compiled_model));
+    return CompiledModel(env_holder, model.Release(),
+                         /*model_owned=*/OwnHandle::kYes, compiled_model,
+                         /*owned=*/OwnHandle::kYes, std::move(owned_options));
+  }
+
+  /// @internal
   /// @brief Creates a `CompiledModel` from a provided `LiteRtModel`.
   ///
   /// The model is loaded into memory, and the caller takes ownership of the
@@ -1892,6 +1942,9 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// @note Even if the model is fully AOT-compiled for an NPU, you must
   /// specify the NPU accelerator in `hardware_accelerators` to use it
   /// properly.
+  /// @note Signature selection structurally prunes the provided model in place.
+  /// Treat the model handle as consumed once compilation starts, including
+  /// when compilation returns an error.
   static Expected<CompiledModel> Create(litert::Environment& env,
                                         const LiteRtModel litert_model,
                                         Options& compilation_options) {
