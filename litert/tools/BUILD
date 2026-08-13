@@ -17,6 +17,8 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 # copybara:uncomment load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
+# copybara:uncomment load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
+# copybara:uncomment load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
 load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps", "litert_bin")
 load("//litert/build_common:special_rule.bzl", "litert_gpu_accelerator_deps", "litert_gpu_accelerator_prebuilts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
@@ -50,6 +52,19 @@ exports_files([
 #     ],
 # )
 # copybara:uncomment_end
+
+py_library(
+    name = "externalize_litertlm_sections_lib",
+    srcs = ["externalize_litertlm_sections.py"],
+)
+
+py_test(
+    name = "externalize_litertlm_sections_test",
+    srcs = ["externalize_litertlm_sections_test.py"],
+    deps = [
+        ":externalize_litertlm_sections_lib",
+    ],
+)
 
 # This user library should depend on libLiteRt.so to allow
 # CompilerPlugin to use the same libLiteRt.so
