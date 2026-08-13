@@ -86,7 +86,8 @@ bool IsGatherSupported(const TfLiteContext* absl_nonnull context,
                        "inputs[0]", *error)) {
     return false;
   }
-  if (!CheckTensorDims(indices, /*min_dims=*/1, /*max_dims=*/kMaxDims,
+
+  if (!CheckTensorDims(indices, /*min_dims=*/1, /*max_dims=*/1,
                        "inputs[1]", *error)) {
     return false;
   }

@@ -49,7 +49,7 @@ TEST_P(ConvertGatherTest, Basic) {
   std::vector<uint8_t> input_bytes(input_data.size() * sizeof(float));
   std::memcpy(input_bytes.data(), input_data.data(), input_bytes.size());
 
-  std::vector<int> indices_shape_arr = {2, 1};
+  std::vector<int> indices_shape_arr = {2};
   std::vector<int32_t> indices_data = {0, 1};
   std::vector<uint8_t> indices_bytes(indices_data.size() * sizeof(int32_t));
   std::memcpy(indices_bytes.data(), indices_data.data(), indices_bytes.size());
@@ -87,6 +87,8 @@ TEST_P(ConvertGatherTest, Basic) {
   }
   if (is_indices_constant) {
     expected_ops++;
+  } else {
+    expected_ops++;  // Reshape op
   }
 
   ASSERT_EQ(ir_model->ops().size(), expected_ops);

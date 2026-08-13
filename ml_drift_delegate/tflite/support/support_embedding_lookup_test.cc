@@ -387,6 +387,20 @@ TEST_F(DimsTest, SupportsQuantized2DWeights) {
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
 }
 
+TEST_F(DimsTest, SupportsBlockwiseQuantized2DWeights) {
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddTensor(kDefaultDtype, {4, 1, 1, 4});
+  const int b = context_builder.AddQuantizedTensor(kTfLiteInt4, {4, 4});
+  const int c = context_builder.AddTensor(kDefaultDtype, {4, 1, 1, 4});
+  context_builder.SetOp(kTfLiteBuiltinEmbeddingLookup, /*version=*/1,
+                        /*params=*/nullptr,
+                        /*inputs=*/{a, b}, /*outputs=*/{c});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  context->tensors[b].quantization.type = kTfLiteBlockwiseQuantization;
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
 TEST_F(DimsTest, RejectsQuantized3DWeights) {
   StubContextBuilder context_builder;
   const int a = context_builder.AddTensor(kDefaultDtype, {4, 1, 1, 4});

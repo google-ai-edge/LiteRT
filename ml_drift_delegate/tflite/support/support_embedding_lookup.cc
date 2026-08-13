@@ -93,7 +93,8 @@ bool IsEmbeddingLookupSupported(
         *error = "Quantization params are null for weights";
         return false;
       }
-      if (weights.quantization.type != kTfLiteAffineQuantization) {
+      if (weights.quantization.type != kTfLiteAffineQuantization &&
+          weights.quantization.type != kTfLiteBlockwiseQuantization) {
         *error = "Unsupported quantization type for weights: " +
                  std::to_string(weights.quantization.type);
         return false;
