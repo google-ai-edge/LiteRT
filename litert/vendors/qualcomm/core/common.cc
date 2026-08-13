@@ -13,6 +13,8 @@
 #include <system_error>
 #include <vector>
 
+#include "QnnLog.h"  // from @qairt
+
 #if defined(__ANDROID__)
 #include <android/log.h>
 #endif  // defined(__ANDROID__)
@@ -478,6 +480,14 @@ absl::string_view Options::GetDlcDir() const { return dlc_dir_; }
 
 void Options::SetDlcDir(absl::string_view dlc_dir) { dlc_dir_ = dlc_dir; }
 
+absl::string_view Options::GetGraphTransform() const {
+  return graph_transform_;
+}
+
+void Options::SetGraphTransform(absl::string_view graph_transform) {
+  graph_transform_ = graph_transform;
+}
+
 std::uint32_t Options::GetVtcmSize() const { return vtcm_size_; }
 
 void Options::SetVtcmSize(std::uint32_t vtcm_size) { vtcm_size_ = vtcm_size; }
@@ -588,6 +598,7 @@ std::string Options::Dump() const {
   field(4, "compile_package_path", custom_op_package_.compile_package_path);
   field(4, "dispatch_package_path", custom_op_package_.dispatch_package_path);
   field(4, "target", custom_op_package_.target);
+  field(4, "GraphTransform", graph_transform_);
 
   // --- HTP ---
   absl::StrAppend(&out, "[HTP]\n");
