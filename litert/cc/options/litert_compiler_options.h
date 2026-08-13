@@ -18,14 +18,16 @@
 #include <cstddef>
 #include <memory>
 
+#include "litert/c/litert_common.h"
 #include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_concrete_options_base.h"
 
 namespace litert {
 
 /// @brief Defines the C++ wrapper for LiteRT compiler options.
-class CompilerOptions {
+class CompilerOptions : public ConcreteOptionsBase {
  public:
   /// @brief Creates a new `CompilerOptions` instance with default values.
   static Expected<CompilerOptions> Create() {
@@ -84,6 +86,17 @@ class CompilerOptions {
   /// @brief Returns the underlying C handle.
   LrtCompilerOptions* Get() { return options_.get(); }
   const LrtCompilerOptions* Get() const { return options_.get(); }
+
+  static const char* Discriminator() {
+    return LrtGetCompilerOptionsIdentifier();
+  }
+
+  LiteRtStatus GetOpaqueOptionsData(
+      const char** identifier, void** payload,
+      void (**payload_deleter)(void*)) const override {
+    return LrtGetOpaqueCompilerOptionsData(Get(), identifier, payload,
+                                           payload_deleter);
+  }
 
  private:
   explicit CompilerOptions(LrtCompilerOptions* options) : options_(options) {}

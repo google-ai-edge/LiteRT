@@ -27,15 +27,16 @@
 #include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_concrete_options_base.h"
 
 namespace litert::qualcomm {
 
 /// @brief Defines the C++ wrapper for Qualcomm-specific LiteRT options.
-class QualcommOptions {
+class QualcommOptions : public ConcreteOptionsBase {
  public:
   QualcommOptions() : options_(nullptr) {}
   explicit QualcommOptions(LrtQualcommOptions options) : options_(options) {}
-  ~QualcommOptions() {
+  ~QualcommOptions() override {
     if (options_) {
       LrtDestroyQualcommOptions(options_);
     }
@@ -66,6 +67,13 @@ class QualcommOptions {
 
   static const char* Discriminator() {
     return LrtQualcommOptionsGetIdentifier();
+  }
+
+  LiteRtStatus GetOpaqueOptionsData(
+      const char** identifier, void** payload,
+      void (**payload_deleter)(void*)) const override {
+    return LrtGetOpaqueQualcommOptionsData(Get(), identifier, payload,
+                                           payload_deleter);
   }
 
   static Expected<QualcommOptions> Create() {

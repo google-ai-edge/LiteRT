@@ -19,15 +19,16 @@
 #include "litert/c/options/litert_gpu_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_concrete_options_base.h"
 
 namespace litert {
 
 /// @brief Defines the C++ wrapper for LiteRT GPU options.
-class GpuOptions {
+class GpuOptions : public ConcreteOptionsBase {
  public:
   GpuOptions() : options_(nullptr) {}
   explicit GpuOptions(LrtGpuOptions* options) : options_(options) {}
-  ~GpuOptions() {
+  ~GpuOptions() override {
     if (options_) {
       LrtDestroyGpuOptions(options_);
     }
@@ -63,6 +64,13 @@ class GpuOptions {
   }
   static const char* GetPayloadIdentifier() {
     return LrtGetGpuOptionsIdentifier();
+  }
+
+  LiteRtStatus GetOpaqueOptionsData(
+      const char** identifier, void** payload,
+      void (**payload_deleter)(void*)) const override {
+    return LrtGetOpaqueGpuOptionsData(Get(), identifier, payload,
+                                      payload_deleter);
   }
 
   /// @brief Sets whether to enable constant tensor sharing.

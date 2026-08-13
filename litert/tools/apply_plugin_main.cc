@@ -30,6 +30,7 @@
 #include "litert/c/litert_common.h"  // NOLINT
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/tools/apply_plugin.h"
 #include "litert/tools/flags/apply_plugin_flags.h"
 #include "litert/tools/flags/common_flags.h"
@@ -38,6 +39,10 @@
 #include "litert/tools/outstream.h"
 
 #if !defined(LITERT_WINDOWS_OS)
+#include "litert/cc/options/litert_google_tensor_options.h"
+#include "litert/cc/options/litert_mediatek_options.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
+#include "litert/cc/options/litert_samsung_options.h"
 #include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: keep
@@ -143,29 +148,36 @@ int main(int argc, char* argv[]) {
 
   ParseOptionsFlags(
       run->dump_out, "Google Tensor",
-      [&] { return opts->GetGoogleTensorOptions(); },
+      [&] {
+        return opts->GetOptions<litert::google_tensor::GoogleTensorOptions>();
+      },
       litert::google_tensor::UpdateGoogleTensorOptionsFromFlags,
       "Failed to parse Google Tensor flags, Error: ");
 
   ParseOptionsFlags(
-      run->dump_out, "Qualcomm", [&] { return opts->GetQualcommOptions(); },
+      run->dump_out, "Qualcomm",
+      [&] { return opts->GetOptions<litert::qualcomm::QualcommOptions>(); },
       litert::qualcomm::UpdateQualcommOptionsFromFlags,
       "Failed to parse Qualcomm flags, Error: ");
 
   ParseOptionsFlags(
-      run->dump_out, "Mediatek", [&] { return opts->GetMediatekOptions(); },
+      run->dump_out, "Mediatek",
+      [&] { return opts->GetOptions<litert::mediatek::MediatekOptions>(); },
       litert::mediatek::UpdateMediatekOptionsFromFlags,
       "Failed to parse Mediatek flags, Error: ");
 
   ParseOptionsFlags(
-      run->dump_out, "Samsung", [&] { return opts->GetSamsungOptions(); },
+      run->dump_out, "Samsung",
+      [&] { return opts->GetOptions<litert::samsung::SamsungOptions>(); },
       litert::samsung::UpdateSamsungOptionsFromFlags,
       "Failed to parse Samsung flags, Error: ");
 #endif  // !defined(LITERT_WINDOWS_OS)
 
   ParseOptionsFlags(
       run->dump_out, "Intel OpenVINO",
-      [&] { return opts->GetIntelOpenVinoOptions(); },
+      [&] {
+        return opts->GetOptions<litert::intel_openvino::IntelOpenVinoOptions>();
+      },
       litert::intel_openvino::UpdateIntelOpenVinoOptionsFromFlags,
       "Failed to parse Intel OpenVINO flags, Error: ");
 

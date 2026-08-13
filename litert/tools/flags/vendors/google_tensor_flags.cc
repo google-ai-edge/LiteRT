@@ -229,7 +229,7 @@ Expected<void> UpdateGoogleTensorOptionsFromFlags(
 
 LITERT_REGISTER_OPTIONS_PARSER([](Options& options) -> Expected<void> {
   LITERT_ASSIGN_OR_RETURN(auto& google_tensor_opts,
-                          options.GetGoogleTensorOptions());
+                          options.GetOptions<GoogleTensorOptions>());
   return UpdateGoogleTensorOptionsFromFlags(google_tensor_opts);
 });
 

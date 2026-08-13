@@ -141,7 +141,7 @@ Expected<OpaqueOptions> FindOpaqueOptions(
 /// This is analogous to `FindData`, but it returns the C++ wrapper associated
 /// with an opaque options type, rather than the raw payload data.
 template <typename Discriminated,
-          std::enable_if_t<std::is_base_of<OpaqueOptions, Discriminated>::value,
+          std::enable_if_t<std::is_base_of_v<OpaqueOptions, Discriminated>,
                            bool> = true>
 Expected<Discriminated> FindOpaqueOptions(OpaqueOptions& options) {
   LITERT_ASSIGN_OR_RETURN(

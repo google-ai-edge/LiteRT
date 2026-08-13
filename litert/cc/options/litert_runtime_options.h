@@ -25,11 +25,12 @@
 #include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_concrete_options_base.h"
 
 namespace litert {
 
 /// @brief Defines the C++ wrapper for LiteRT runtime options.
-class RuntimeOptions {
+class RuntimeOptions : public ConcreteOptionsBase {
  public:
   /// @brief Creates a new `RuntimeOptions` instance with default values.
   static Expected<RuntimeOptions> Create() {
@@ -128,6 +129,17 @@ class RuntimeOptions {
 
   /// @brief Gets the underlying C options object.
   const LrtRuntimeOptions* Get() const { return options_.get(); }
+
+  static const char* Discriminator() {
+    return LrtGetRuntimeOptionsIdentifier();
+  }
+
+  LiteRtStatus GetOpaqueOptionsData(
+      const char** identifier, void** payload,
+      void (**payload_deleter)(void*)) const override {
+    return LrtGetOpaqueRuntimeOptionsData(Get(), identifier, payload,
+                                          payload_deleter);
+  }
 
  private:
   explicit RuntimeOptions(LrtRuntimeOptions* options) : options_(options) {}
