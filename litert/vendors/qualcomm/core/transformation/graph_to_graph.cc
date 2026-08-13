@@ -15,6 +15,7 @@
 #include "litert/vendors/qualcomm/core/transformation/matmul_convert.h"
 #include "litert/vendors/qualcomm/core/transformation/mha_to_sha.h"
 #include "litert/vendors/qualcomm/core/transformation/rotation_quant.h"
+#include "litert/vendors/qualcomm/core/transformation/mhrope_to_shrope.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 
 namespace qnn {
@@ -241,6 +242,74 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
   };
   Transform(validate_op_config, ops, tensor_pool, embedding_gemma,
             TransformEmbeddingGemma);
+
+  // Gemma 4 Optimization
+  // Base: perm=[0,2,1,3] transpose bookends, one far-away Convert before QK,
+  // two QK matmuls, concat, mask-add, softmax, two strided-slices, two V
+  // matmuls, add, output-quantize Convert, reshape+transpose.
+  // Optional inserts:
+  //   has_k_slice_attn_update_convert : kConvert between the two QK matmuls
+  //   has_v_slice_attn_update_convert  : kConvert between the two V  matmuls
+  //   has_global_mask : kConcat + kReshape after the first kConcat
+  auto build_gqa_gemma4b_prefill_pattern = [](bool has_k_slice_attn_update_convert,
+                                         bool has_v_slice_attn_update_convert,
+                                         bool has_global_mask) {
+    std::vector<QnnOpCode> p = {
+        QnnOpCode::kTranspose,
+        QnnOpCode::kReshape,
+        QnnOpCode::kConvert,  // far-away input quantize
+        QnnOpCode::kMatMul,   // Q x K cache
+    };
+    if (has_k_slice_attn_update_convert) p.push_back(QnnOpCode::kConvert);
+    p.push_back(QnnOpCode::kMatMul);  // Q x K slice
+    p.push_back(QnnOpCode::kConcat);
+    if (has_global_mask) {
+      p.push_back(QnnOpCode::kConcat);   // concat local/global mask
+      p.push_back(QnnOpCode::kReshape);  // reshape mask
+    }
+    p.insert(p.end(), {
+        QnnOpCode::kElementWiseBinary,  // mask add
+        QnnOpCode::kSoftmax,
+        QnnOpCode::kStridedSlice,
+        QnnOpCode::kStridedSlice,
+        QnnOpCode::kMatMul,  // QK x V cache
+    });
+    if (has_v_slice_attn_update_convert) p.push_back(QnnOpCode::kConvert);
+    p.insert(p.end(), {
+        QnnOpCode::kMatMul,             // QK x V slice
+        QnnOpCode::kElementWiseBinary,  // qkv add
+        QnnOpCode::kConvert,            // output quantize
+        QnnOpCode::kReshape,
+        QnnOpCode::kTranspose,
+    });
+    return p;
+  };
+  for (auto has_k_slice_convert : {false, true}) {
+    for (auto has_v_slice_convert : {false, true}) {
+      Transform(validate_op_config, ops, tensor_pool,
+                build_gqa_gemma4b_prefill_pattern(has_k_slice_convert, has_v_slice_convert, false),
+                OptimizeGQAGemma4BPrefill);
+    }
+  }
+  Transform(validate_op_config, ops, tensor_pool,
+            build_gqa_gemma4b_prefill_pattern(false, false, true),
+            OptimizeGQAGemma4BPrefill);
+
+  // Multi-Head RoPE to Single-Head RoPE:
+  //    Slice → Slice → Concat → Mul(cos) → Mul(sin) → Add → Convert → Transpose
+  // Replaced by: Unpack → H × [Slice → Slice → Concat → Mul(cos) → Mul(sin) → Add] → Pack(axis=1) -> Convert
+  const std::vector<QnnOpCode> rope_transpose_pattern = {
+      QnnOpCode::kStridedSlice,
+      QnnOpCode::kStridedSlice,
+      QnnOpCode::kConcat,
+      QnnOpCode::kElementWiseBinary,
+      QnnOpCode::kElementWiseBinary,
+      QnnOpCode::kElementWiseBinary,
+      QnnOpCode::kConvert,
+      QnnOpCode::kTranspose,
+  };
+  Transform(validate_op_config, ops, tensor_pool, rope_transpose_pattern,
+            MHRoPEToSHRoPE);
 
   // Fast Vlm Optimization
   const std::vector<QnnOpCode> fast_vlm_mha_prefill = {
