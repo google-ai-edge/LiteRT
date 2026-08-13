@@ -105,6 +105,8 @@ class EnvironmentOptions {
     /// \internal This is for internal use only. Reserved for use by LiteRT in
     /// Play services.
     kContext = kLiteRtEnvOptionTagContext,
+    /// \internal This is for internal use only.
+    kSystemGpuAcceleratorHandle = kLiteRtEnvOptionTagSystemGpuAcceleratorHandle,
   };
 
   struct Option {

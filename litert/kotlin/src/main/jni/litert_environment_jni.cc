@@ -76,10 +76,11 @@ JNIEXPORT jlong JNICALL Java_com_google_ai_edge_litert_Environment_nativeCreate(
     for (int i = 0; i < num_tags; ++i) {
       auto value = values_vector[i];
       auto tag = static_cast<litert::EnvironmentOptions::Tag>(tags_array[i]);
-      if (tag == litert::EnvironmentOptions::Tag::kSystemRuntimeHandle) {
+      if (tag == litert::EnvironmentOptions::Tag::kSystemRuntimeHandle ||
+          tag == litert::EnvironmentOptions::Tag::kSystemGpuAcceleratorHandle) {
         int64_t handle;
         ABSL_CHECK(absl::SimpleAtoi(value, &handle))
-            << "Failed to parse system runtime handle: " << value;
+            << "Failed to parse handle option: " << value;
         options.push_back(litert::EnvironmentOptions::Option{
             // An intermediate static_cast to std::uintptr_t is used before the
             // reinterpret_cast to const void* to avoid size-mismatch
