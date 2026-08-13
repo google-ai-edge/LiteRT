@@ -156,10 +156,10 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
         "%s", "DepthwiseConv int4 filter has too many elements.");
   }
 
-  if (data_type == kTfLiteInt16) {
-    TF_LITE_ENSURE_EQ(context, input->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, output->params.zero_point, 0);
-  }
+  // Note: asymmetric int16 activations are supported; the reference
+  // integer_ops::DepthwiseConvPerChannel path consumes input_offset and
+  // output_offset from params. Bias tensors must still be zp==0 (checked
+  // below), and the filter is per-channel symmetric int8.
 
   // Filter in DepthwiseConv is expected to be [1, H, W, O].
   TF_LITE_ENSURE_EQ(context, SizeOfDimension(filter, 0), 1);
@@ -516,7 +516,9 @@ TfLiteStatus EvalQuantizedPerChannel16x8(
   op_params.dilation_width_factor = params->dilation_width_factor;
   op_params.dilation_height_factor = params->dilation_height_factor;
   op_params.depth_multiplier = params->depth_multiplier;
+  op_params.input_offset = -input->params.zero_point;
   op_params.weights_offset = 0;
+  op_params.output_offset = output->params.zero_point;
   op_params.quantized_activation_min = data->output_activation_min;
   op_params.quantized_activation_max = data->output_activation_max;
 

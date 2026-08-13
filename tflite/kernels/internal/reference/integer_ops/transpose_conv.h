@@ -53,6 +53,8 @@ inline void TransposeConv(
   const int filter_width = filter_shape.Dims(2);
   const int output_height = output_shape.Dims(1);
   const int output_width = output_shape.Dims(2);
+  // Affine offsets. For symmetric int16 (zero_point==0) these are 0 and
+  // add nothing to the accumulator, preserving prior numerics exactly.
   const int32_t input_offset = params.input_offset;
   const int32_t output_offset = params.output_offset;
   const int32_t output_activation_min = params.quantized_activation_min;
@@ -153,6 +155,10 @@ inline void TransposeConv(
   const int filter_width = filter_shape.Dims(2);
   const int output_height = output_shape.Dims(1);
   const int output_width = output_shape.Dims(2);
+  // Affine offsets. For symmetric int16 (zero_point==0) these are 0 and
+  // add nothing to the accumulator, preserving prior numerics exactly.
+  const int32_t input_offset = params.input_offset;
+  const int32_t output_offset = params.output_offset;
   const int32_t output_activation_min = params.quantized_activation_min;
   const int32_t output_activation_max = params.quantized_activation_max;
   TFLITE_DCHECK_LE(output_activation_min, output_activation_max);
@@ -187,7 +193,7 @@ inline void TransposeConv(
                                          filter_x, in_channel)];
                   scratch_buffer[Offset(output_shape, batch, out_y, out_x,
                                         out_channel)] +=
-                      input_value * filter_value;
+                      (input_value + input_offset) * filter_value;
                 }
               }
             }
@@ -208,6 +214,7 @@ inline void TransposeConv(
           }
           int32_t scaled_acc = MultiplyByQuantizedMultiplier(
               acc, output_multiplier[out_channel], output_shift[out_channel]);
+          scaled_acc += output_offset;
           scaled_acc = std::max(scaled_acc, output_activation_min);
           scaled_acc = std::min(scaled_acc, output_activation_max);
           output_data[Offset(output_shape, batch, out_y, out_x, out_channel)] =

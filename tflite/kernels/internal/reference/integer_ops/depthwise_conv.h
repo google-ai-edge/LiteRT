@@ -138,6 +138,11 @@ inline void DepthwiseConvPerChannel(
   const int depth_multiplier = params.depth_multiplier;
   const int32_t output_activation_min = params.quantized_activation_min;
   const int32_t output_activation_max = params.quantized_activation_max;
+  // Affine offsets. For symmetric int16 (zero_point==0) these are 0 and
+  // add nothing to the accumulator, preserving prior numerics exactly.
+  // Asymmetric 16-bit (uint16, or int16 with non-zero zp) uses them.
+  const int32_t input_offset = params.input_offset;
+  const int32_t output_offset = params.output_offset;
 
   // Check dimensions of the tensors.
   TFLITE_DCHECK_EQ(input_shape.DimensionsCount(), 4);
@@ -185,7 +190,7 @@ inline void DepthwiseConvPerChannel(
                   // case so actually the value in the accumulator should not
                   // exceed 40 bits
                   acc += static_cast<int64_t>(filter_val) *
-                         static_cast<int64_t>(input_val);
+                         static_cast<int64_t>(input_val + input_offset);
                 }
               }
             }
@@ -195,6 +200,7 @@ inline void DepthwiseConvPerChannel(
             int32_t scaled_acc = MultiplyByQuantizedMultiplier(
                 acc, output_multiplier[output_channel],
                 output_shift[output_channel]);
+            scaled_acc += output_offset;
             scaled_acc = std::max(scaled_acc, output_activation_min);
             scaled_acc = std::min(scaled_acc, output_activation_max);
             output_data[Offset(output_shape, batch, out_y, out_x,

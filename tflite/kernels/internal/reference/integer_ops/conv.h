@@ -153,6 +153,11 @@ inline void ConvPerChannel(
   const int dilation_height_factor = params.dilation_height_factor;
   const int pad_width = params.padding_values.width;
   const int pad_height = params.padding_values.height;
+  // Affine offsets. For symmetric int16 (zero_point==0) these are 0 and
+  // add nothing to the accumulator, preserving prior numerics exactly.
+  // Asymmetric 16-bit (uint16, or int16 with non-zero zp) uses them.
+  const int32_t input_offset = params.input_offset;
+  const int32_t output_offset = params.output_offset;
 
   // Set min and max value of the output.
   const int32_t output_activation_min = params.quantized_activation_min;
@@ -216,7 +221,7 @@ inline void ConvPerChannel(
                 // 32767] -
                 // [-32768, 32767]), which is [-8322945, 8322945].
                 // log2(8322945) = 22.99.
-                acc += filter_val * input_val;
+                acc += filter_val * (input_val + input_offset);
               }
             }
           }
@@ -225,6 +230,7 @@ inline void ConvPerChannel(
           }
           int32_t scaled_acc = MultiplyByQuantizedMultiplier(
               acc, output_multiplier[out_channel], output_shift[out_channel]);
+          scaled_acc += output_offset;
           scaled_acc = std::max(scaled_acc, output_activation_min);
           scaled_acc = std::min(scaled_acc, output_activation_max);
           output_data[Offset(output_shape, batch, out_y, out_x, out_channel)] =

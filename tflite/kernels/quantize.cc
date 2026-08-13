@@ -198,10 +198,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
                        &data->output_shift);
   }
 
-  if (input->type == kTfLiteInt16 && output->type == kTfLiteInt16) {
-    TF_LITE_ENSURE_EQ(context, input->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, output->params.zero_point, 0);
-  }
+  // Note: asymmetric int16 is supported here; Requantize threads
+  // input_zeropoint and output_zeropoint through to the low-level ops.
 
   return context->ResizeTensor(context, output,
                                TfLiteIntArrayCopy(input->dims));

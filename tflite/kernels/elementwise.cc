@@ -170,10 +170,10 @@ TfLiteStatus GenericPrepare(TfLiteContext* context, TfLiteNode* node,
     TF_LITE_ENSURE(context, output_params->zero_point->size > 0);
     op_data->input_offset = input_params->zero_point->data[0];
     op_data->output_offset = output_params->zero_point->data[0];
-    if (input->type == kTfLiteInt16) {
-      TF_LITE_ENSURE_EQ(context, op_data->input_offset, 0);
-      TF_LITE_ENSURE_EQ(context, op_data->output_offset, 0);
-    }
+    // int16 asymmetric activations supported: rsqrt/log dispatch through
+    // LUTPopulate<int16_t> (which encodes both zero_points into the table)
+    // and abs uses AbsEvalQuantized which subtracts input_offset per element
+    // and adds output_offset after saturation.
     const float input_scale = input_params->scale->data[0];
     const float output_scale = output_params->scale->data[0];
     op_data->needs_rescale = input_scale != output_scale;

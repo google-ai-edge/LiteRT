@@ -239,12 +239,17 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   }
 
   if (input_type == kTfLiteInt16) {
-    // Make sure that all Int16 inputs have a null zero-point.
+    // Make sure there is no re-scaling needed for Int16 quantized kernel.
+    // Asymmetric int16 is supported so long as every input shares the
+    // output's scale/zero-point (value-moving op, no requant).
+    VectorOfTensors<int16_t> all_inputs(*context, *node->inputs);
     for (int i = 0; i < node->inputs->size; ++i) {
-      const TfLiteTensor* t = GetInput(context, node, i);
-      TF_LITE_ENSURE_EQ(context, t->params.zero_point, 0);
+      const TfLiteTensor* t;
+      TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, i, &t));
+      TF_LITE_ENSURE_EQ(context, t->params.scale, output->params.scale);
+      TF_LITE_ENSURE_EQ(context, t->params.zero_point,
+                        output->params.zero_point);
     }
-    TF_LITE_ENSURE_EQ(context, output->params.zero_point, 0);
   }
 
   if (all_inputs_at_prepare) {

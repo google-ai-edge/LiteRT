@@ -367,8 +367,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   if (input->type == kTfLiteInt16) {
     TF_LITE_ENSURE_EQ(context, weights->type, kTfLiteInt8);
-    TF_LITE_ENSURE_EQ(context, input->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, output->params.zero_point, 0);
+    // int16 asymmetric supported; EvalQuantizedPerChannel16x8 already dispatches to the has_non_zero_point reference branch.
 
     // Check quantized_bias_type is either kTfLiteInt64 or kTfLiteInt32.
     if (params->quantized_bias_type != kTfLiteFloat32) {
