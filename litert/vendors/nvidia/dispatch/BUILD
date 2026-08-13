@@ -35,18 +35,21 @@ cuda_library(
     srcs = ["greedy_sampler_kernel.cu"],
     hdrs = ["greedy_sampler_kernel.h"],
     linkstatic = 1,
+    tags = ["manual"],
     deps = ["@local_cuda//:cuda_runtime"],
 )
 
 cc_import(
     name = "greedy_sampler_kernel_archive",
     static_library = ":greedy_sampler_kernel_cuda",
+    tags = ["manual"],
     alwayslink = 1,
 )
 
 cc_library(
     name = "greedy_sampler_kernel",
     hdrs = ["greedy_sampler_kernel.h"],
+    tags = ["manual"],
     deps = [
         ":greedy_sampler_kernel_archive",
         "@local_cuda//:cuda_headers",
@@ -68,6 +71,7 @@ litert_dispatch_api(
     ],
     shared_lib_name = "dispatch_api_so",
     so_name = "libLiteRtDispatch_Nvidia.so",
+    tags = ["manual"],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
         "//litert:linux_aarch64": [],
@@ -119,5 +123,26 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "greedy_sampler_kernel_test",
+    srcs = ["greedy_sampler_kernel_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":greedy_sampler_kernel",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
     ],
 )

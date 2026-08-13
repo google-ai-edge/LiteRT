@@ -33,6 +33,7 @@ cuda_library(
         "int2_gemv.h",
     ],
     linkstatic = 1,
+    tags = ["manual"],
     deps = [
         "@local_cuda//:cuda_runtime",
     ],
@@ -41,6 +42,7 @@ cuda_library(
 cc_import(
     name = "gemma4_head_kernels_archive",
     static_library = ":gemma4_head_kernels_cuda",
+    tags = ["manual"],
     alwayslink = 1,
 )
 
@@ -50,6 +52,7 @@ cc_library(
         "head_kernels.h",
         "int2_gemv.h",
     ],
+    tags = ["manual"],
     deps = [
         ":gemma4_head_kernels_archive",
         "@local_cuda//:cuda_headers",
@@ -61,6 +64,7 @@ cc_test(
     srcs = ["gemma4_head_kernels_test.cc"],
     tags = [
         "exclusive",
+        "manual",
         "requires-gpu",
     ],
     target_compatible_with = select({

@@ -24,6 +24,7 @@ cc_library(
     name = "tensorrt_graph_builder",
     srcs = ["tensorrt_graph_builder.cc"],
     hdrs = ["tensorrt_graph_builder.h"],
+    tags = ["manual"],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
@@ -55,6 +56,7 @@ litert_dynamic_lib(
     ],
     shared_lib_name = "compiler_plugin_so",
     so_name = "libLiteRtCompilerPlugin_Nvidia.so",
+    tags = ["manual"],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
         "//litert:linux_aarch64": [],
