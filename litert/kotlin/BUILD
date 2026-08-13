@@ -405,7 +405,7 @@ android_library(
     srcs = TFLITE_JAVA_SRCS_IMPL,
     exports_manifest = 1,
     javacopts = JAVACOPTS,
-    manifest = "src/main/AndroidManifest.xml",
+    manifest = "src/main/AndroidManifestImpl.xml",
     proguard_specs = ["//tflite/java:proguard.flags"],
     visibility = ["//visibility:public"],
     exports = [
@@ -425,7 +425,7 @@ android_library(
     srcs = TFLITE_JAVA_SRCS_IMPL,
     exports_manifest = 1,
     javacopts = JAVACOPTS,
-    manifest = "src/main/AndroidManifest.xml",
+    manifest = "src/main/AndroidManifestImpl.xml",
     proguard_specs = ["//tflite/java:proguard.flags"],
     visibility = ["//visibility:private"],
     deps = [
