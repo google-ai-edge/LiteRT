@@ -4646,14 +4646,7 @@ std::string get_dtype_str(const safetensors::dtype dtype) {
 
 // Empty Tensor returns 0.
 // Zero-rank Tensor reuturns 1(scalar)
-//
-// `ok` (when non-null) is set to false when the shape product overflows or the
-// tensor has an invalid number of dimensions, and to true otherwise. On
-// overflow / invalid ndim the function returns 0 and the caller must treat the
-// tensor as invalid rather than as an empty tensor. Returning 0 here used to
-// be indistinguishable from a legitimately empty tensor, which let a wrapped
-// product (e.g. [2^32, 2^32] -> 0) or an out-of-range ndim skip every bounds
-// check below in validate_data_offsets().
+// `ok`=false on overflow or out-of-range ndim (a 0 return is then invalid, not empty).
 size_t get_shape_size(const tensor_t& t, bool* ok) {
   if (t.shape.empty()) {
     if (ok) *ok = true;
@@ -4710,10 +4703,6 @@ bool validate_data_offsets(const safetensors_t& st, std::string& err) {
     }
 
     // Compute the tensor size with overflow / invalid-ndim detection.
-    // A wrapped product (e.g. [2^32, 2^32] -> 0) or an out-of-range ndim used
-    // to silently produce tensor_size == 0 here, which the `continue` below
-    // treated as a benign empty tensor, skipping the offset/size bounds checks
-    // and leaving attacker-chosen data_offsets unvalidated.
     bool shape_ok = true;
     size_t shape_size = get_shape_size(tensor, &shape_ok);
     if (!shape_ok) {
@@ -4732,8 +4721,7 @@ bool validate_data_offsets(const safetensors_t& st, std::string& err) {
       continue;
     }
 
-    // Offset bounds and (for the last tensor) full-buffer coverage must hold
-    // even for a legitimately empty tensor, so do NOT skip them on size == 0.
+    // Bounds checks run for every tensor, including legitimately empty (size == 0) ones.
 
     // data_offsets are absolute offset from the databuffer(file)
     if (tensor.data_offsets[0] > databuffersize) {
