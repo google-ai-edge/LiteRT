@@ -943,31 +943,55 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   bool use_static_fallback = !enable_input_validation;
   absl::flat_hash_set<int32_t> unsupported_op_indices;
 
-  if (enable_input_validation) {
-    litert::Expected<litert::OwningBufferRef<uint8_t>> serialize_expected =
-        SerializeSubgraph(subgraph);
-    if (!serialize_expected.HasValue()) {
-      LITERT_LOG(LITERT_ERROR, "Failed to serialize subgraph: %s",
-                 serialize_expected.Error().Message().c_str());
-      return serialize_expected.Error().Status();
+  // Check if subgraph contains any unsupported composite ops.
+  // If there are unsupported composite ops, LiteRT inlines their decompositions
+  // and re-runs Partition() in Pass 2. To avoid running the expensive
+  // GetUnsupportedOps() twice, defer full subgraph input validation until Pass
+  // 2 (when unsupported composites are inlined and the graph is in final form).
+  bool has_unsupported_composite = false;
+  for (const auto& op : graph.Ops()) {
+    if (op.Code() == kLiteRtOpCodeShloComposite &&
+        !google_tensor::IsShloCompositeOpSupported(op)) {
+      has_unsupported_composite = true;
+      break;
     }
-    litert::OwningBufferRef<uint8_t> serialized_buf =
-        std::move(*serialize_expected);
+  }
 
-    litert::Expected<std::vector<int32_t>> unsupported_ops =
-        adapter->GetUnsupportedOps(
-            reinterpret_cast<const char*>(serialized_buf.Data()),
-            serialized_buf.Size(), options_str.data(), options_str.size());
-
-    if (unsupported_ops.HasValue()) {
-      unsupported_op_indices.insert(unsupported_ops->begin(),
-                                    unsupported_ops->end());
-    } else {
-      LITERT_LOG(
-          LITERT_WARNING,
-          "GetUnsupportedOps failed: %s. Falling back to static mapping.",
-          unsupported_ops.Error().Message().c_str());
+  if (enable_input_validation) {
+    if (has_unsupported_composite) {
+      // In Pass 1, if there are unsupported composites, skip the expensive
+      // validator and only select supported composites via fast static check,
+      // leaving unsupported composites unselected. This causes LiteRT to inline
+      // the unsupported composite decompositions and call Partition() again
+      // (Pass 2), where GetUnsupportedOps will run once over the expanded
+      // graph.
       use_static_fallback = true;
+    } else {
+      litert::Expected<litert::OwningBufferRef<uint8_t>> serialize_expected =
+          SerializeSubgraph(subgraph);
+      if (!serialize_expected.HasValue()) {
+        LITERT_LOG(LITERT_ERROR, "Failed to serialize subgraph: %s",
+                   serialize_expected.Error().Message().c_str());
+        return serialize_expected.Error().Status();
+      }
+      litert::OwningBufferRef<uint8_t> serialized_buf =
+          std::move(*serialize_expected);
+
+      litert::Expected<std::vector<int32_t>> unsupported_ops =
+          adapter->GetUnsupportedOps(
+              reinterpret_cast<const char*>(serialized_buf.Data()),
+              serialized_buf.Size(), options_str.data(), options_str.size());
+
+      if (unsupported_ops.HasValue()) {
+        unsupported_op_indices.insert(unsupported_ops->begin(),
+                                      unsupported_ops->end());
+      } else {
+        LITERT_LOG(
+            LITERT_WARNING,
+            "GetUnsupportedOps failed: %s. Falling back to static mapping.",
+            unsupported_ops.Error().Message().c_str());
+        use_static_fallback = true;
+      }
     }
   }
 #endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
@@ -975,9 +999,20 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   std::vector<litert::compiler::Op> ops = graph.Ops();
   for (int i = 0; i < ops.size(); ++i) {
     const litert::compiler::Op& op = ops[i];
-    bool is_supported = use_static_fallback
-                            ? google_tensor::IsOpSupported(op, op_filters)
-                            : !unsupported_op_indices.contains(i);
+    bool is_supported = false;
+    if (use_static_fallback) {
+      if (enable_input_validation && has_unsupported_composite) {
+        // Only select supported composite ops so unsupported ones get inlined
+        // by LiteRT. All other ops will be validated by GetUnsupportedOps in
+        // Pass 2.
+        is_supported = (op.Code() == kLiteRtOpCodeShloComposite &&
+                        google_tensor::IsShloCompositeOpSupported(op));
+      } else {
+        is_supported = google_tensor::IsOpSupported(op, op_filters);
+      }
+    } else {
+      is_supported = !unsupported_op_indices.contains(i);
+    }
     if (!is_supported) {
       continue;
     }
