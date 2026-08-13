@@ -107,7 +107,8 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
     LiteRtDispatchDeviceContext device_context,
     const litert::qnn::QnnManager::ContextHandle* context_handle,
     Qnn_ProfileHandle_t profile_handle, int graph_index,
-    Qnn_GraphHandle_t graph_handle)
+    Qnn_GraphHandle_t graph_handle,
+    ::qnn::GraphConfigBuilder graph_config_builder)
     : qnn_manager_(qnn_manager),
       qnn_backend_(qnn_backend),
       device_context_(device_context),
@@ -116,6 +117,7 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
       profile_handle_(profile_handle),
       graph_index_(graph_index),
       graph_handle_(graph_handle),
+      graph_config_builder_(std::move(graph_config_builder)),
       inputs_(context_binary_info.Graphs()[graph_index].Inputs()),
       outputs_(context_binary_info.Graphs()[graph_index].Outputs()) {
   input_buffer_handles_.resize(inputs_.size());
@@ -146,7 +148,8 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
     Qnn_ContextHandle_t raw_context_handle, Qnn_ProfileHandle_t profile_handle,
     int graph_index, Qnn_GraphHandle_t graph_handle,
     std::vector<::qnn::TensorWrapper> inputs,
-    std::vector<::qnn::TensorWrapper> outputs)
+    std::vector<::qnn::TensorWrapper> outputs,
+    ::qnn::GraphConfigBuilder graph_config_builder)
     : qnn_manager_(qnn_manager),
       qnn_backend_(qnn_backend),
       device_context_(device_context),
@@ -155,6 +158,7 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
       profile_handle_(profile_handle),
       graph_index_(graph_index),
       graph_handle_(graph_handle),
+      graph_config_builder_(std::move(graph_config_builder)),
       inputs_(std::move(inputs)),
       outputs_(std::move(outputs)) {
   input_buffer_handles_.resize(inputs_.size());
@@ -176,6 +180,22 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
             std::back_inserter(outputs_));
   std::move(dumped_outputs.begin(), dumped_outputs.end(),
             std::back_inserter(outputs_));
+}
+
+void LiteRtDispatchInvocationContextT::ApplyRetrievedGraphConfigs() {
+  auto graph_configs = graph_config_builder_.GetNullTerminatedConfigs();
+  auto status =
+      qnn_manager_.Api()->graphSetConfig(graph_handle_, graph_configs.data());
+  if (status != QNN_SUCCESS) {
+    const char* message = nullptr;
+    auto error_status = qnn_manager_.Api()->errorGetMessage(status, &message);
+    if (error_status == QNN_SUCCESS) {
+      LITERT_LOG(LITERT_ERROR, "Failed to set retrieved graph configs: %s",
+                 message);
+    } else {
+      LITERT_LOG(LITERT_ERROR, "Failed to set retrieved graph configs");
+    }
+  }
 }
 
 LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
@@ -216,10 +236,14 @@ LiteRtDispatchInvocationContextT::Create(
     // Pass an empty context handle since the compiler plugin manages its
     // lifecycle.
     static absl::NoDestructor<QnnManager::ContextHandle> empty_context_handle;
-    return Ptr(new LiteRtDispatchInvocationContextT(
+    auto invocation_context = Ptr(new LiteRtDispatchInvocationContextT(
         qnn, qnn_backend, &device_context, empty_context_handle.get(),
         jit_graph->context_handle, nullptr, 0, graph_handle, jit_graph->inputs,
-        jit_graph->outputs));
+        jit_graph->outputs,
+        qnn_backend.BuildRetrievedGraphConfigs(qnn.GetOptions(),
+                                               jit_graph->graph_name)));
+    invocation_context->ApplyRetrievedGraphConfigs();
+    return invocation_context;
   }
 
   auto exec_bytecode_ptr =
@@ -282,9 +306,12 @@ LiteRtDispatchInvocationContextT::Create(
                       "Failed to retrieve graph");
   }
 
-  return Ptr(new LiteRtDispatchInvocationContextT(
+  auto invocation_context = Ptr(new LiteRtDispatchInvocationContextT(
       qnn, qnn_backend, std::move(*context_binary_info), &device_context,
-      &context_handle, profile_handle, graph_index, graph_handle));
+      &context_handle, profile_handle, graph_index, graph_handle,
+      qnn_backend.BuildRetrievedGraphConfigs(qnn.GetOptions(), function_name)));
+  invocation_context->ApplyRetrievedGraphConfigs();
+  return invocation_context;
 }
 
 Expected<LiteRtTensorBufferRequirements>

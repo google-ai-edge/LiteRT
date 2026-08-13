@@ -716,4 +716,15 @@ GraphConfigBuilder HtpBackend::BuildGraphConfigs(
   return config_builder;
 }
 
+GraphConfigBuilder HtpBackend::BuildRetrievedGraphConfigs(
+    const Options& options, absl::string_view /*qnn_graph_name*/) {
+  GraphConfigBuilder config_builder;
+  QnnGraph_Config_t priority = QNN_GRAPH_CONFIG_INIT;
+  priority.option = QNN_GRAPH_CONFIG_OPTION_PRIORITY;
+  priority.priority = GetGraphPriorityValue(options.GetGraphPriority());
+  config_builder.AddGraphConfig(priority);
+
+  return config_builder;
+}
+
 }  // namespace qnn

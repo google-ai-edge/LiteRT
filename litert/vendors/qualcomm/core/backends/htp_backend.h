@@ -68,6 +68,9 @@ class HtpBackend : public QnnBackend {
   GraphConfigBuilder BuildGraphConfigs(
       const Options& options, absl::string_view qnn_graph_name) override;
 
+  GraphConfigBuilder BuildRetrievedGraphConfigs(
+      const Options& options, absl::string_view qnn_graph_name) override;
+
   SocInfo GetSocInfo() { return soc_info_; }
 
  private:

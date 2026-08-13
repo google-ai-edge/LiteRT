@@ -644,5 +644,21 @@ TEST_F(HtpBackendDefaultGraphConfigTest, ValuesReflectOptions) {
   EXPECT_EQ(prio->priority, QNN_PRIORITY_HIGH);
 }
 
+TEST_F(HtpBackendDefaultGraphConfigTest,
+       RetrievedGraphConfigsOnlyIncludePriority) {
+  Options options;
+  options.SetGraphPriority(GraphPriority::kHigh);
+  auto config_builder = backend_.BuildRetrievedGraphConfigs(options, "graph");
+  auto configs = config_builder.GetNullTerminatedConfigs();
+
+  ASSERT_EQ(configs.back(), nullptr);
+  auto ext = ExtractConfigs(configs);
+  ASSERT_EQ(ext.size(), 1u);
+
+  const QnnGraph_Config_t* prio = FindPriority(ext);
+  ASSERT_NE(prio, nullptr);
+  EXPECT_EQ(prio->priority, QNN_PRIORITY_HIGH);
+}
+
 }  // namespace
 }  // namespace qnn

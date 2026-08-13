@@ -98,7 +98,8 @@ class LiteRtDispatchInvocationContextT {
       LiteRtDispatchDeviceContext device_context,
       const litert::qnn::QnnManager::ContextHandle* context_handle,
       Qnn_ProfileHandle_t profile_handle, int graph_index,
-      Qnn_GraphHandle_t graph_handle);
+      Qnn_GraphHandle_t graph_handle,
+      ::qnn::GraphConfigBuilder graph_config_builder);
 
   LiteRtDispatchInvocationContextT(
       litert::qnn::QnnManager& qnn_manager, ::qnn::QnnBackend& qnn_backend,
@@ -107,7 +108,10 @@ class LiteRtDispatchInvocationContextT {
       Qnn_ContextHandle_t raw_context_handle,
       Qnn_ProfileHandle_t profile_handle, int graph_index,
       Qnn_GraphHandle_t graph_handle, std::vector<::qnn::TensorWrapper> inputs,
-      std::vector<::qnn::TensorWrapper> outputs);
+      std::vector<::qnn::TensorWrapper> outputs,
+      ::qnn::GraphConfigBuilder graph_config_builder);
+
+  void ApplyRetrievedGraphConfigs();
 
   litert::Expected<void> AttachBuffer(
       Qnn_Tensor_t& tensor, LiteRtTensorBufferHandle tensor_buffer_handle);
@@ -129,6 +133,7 @@ class LiteRtDispatchInvocationContextT {
   Qnn_ProfileHandle_t profile_handle_;
   int graph_index_;
   Qnn_GraphHandle_t graph_handle_;
+  ::qnn::GraphConfigBuilder graph_config_builder_;
   std::vector<::qnn::TensorWrapper> inputs_;
   std::vector<::qnn::TensorWrapper> outputs_;
   std::vector<LiteRtTensorBufferHandle> input_buffer_handles_;
