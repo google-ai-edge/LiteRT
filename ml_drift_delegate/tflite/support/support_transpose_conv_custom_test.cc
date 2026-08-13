@@ -490,12 +490,12 @@ TEST(DimsTest, Rejects5dBias) {
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
 }
 
-TEST(DimsTest, Rejects1dBias) {
+TEST(DimsTest, Supports1dBias) {
   StubContextBuilder context_builder;
   const int input = context_builder.AddTensor(kDefaultDtype, kDefaultInputDims);
   const int weights =
-      context_builder.AddTensor(kTfLiteInt32, kDefaultWeightsDims);
-  const int bias = context_builder.AddTensor(kDefaultDtype, {4});
+      context_builder.AddTensor(kDefaultDtype, kDefaultWeightsDims);
+  const int bias = context_builder.AddTensor(kDefaultDtype, {1});
   const int output =
       context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
 
@@ -506,7 +506,7 @@ TEST(DimsTest, Rejects1dBias) {
   context_builder.SetOpCustomInitialData(buffer.data(), buffer.size());
   TfLiteContext* context = context_builder.Build();
   ASSERT_THAT(context, NotNull());
-  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
 }
 
 TEST(DimsTest, Rejects5dOutput) {

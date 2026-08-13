@@ -14,6 +14,7 @@
 
 #include "ml_drift_delegate/tflite/support/support_argmax.h"
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -42,6 +43,39 @@ bool IsScalar(const TfLiteTensor* tensor) {
     }
   }
   return true;
+}
+
+bool MatchesExpectedDims(const TfLiteIntArray& output_dims,
+                         const std::vector<int>& expected) {
+  if (output_dims.size == expected.size()) {
+    for (int i = 0; i < output_dims.size; ++i) {
+      if (output_dims.data[i] != expected[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (output_dims.size > static_cast<int>(expected.size())) {
+    const int delta = output_dims.size - expected.size();
+    for (int i = 0; i < delta; ++i) {
+      if (output_dims.data[i] != 1) return false;
+    }
+    for (size_t i = 0; i < expected.size(); ++i) {
+      if (output_dims.data[delta + i] != expected[i]) return false;
+    }
+    return true;
+  }
+  if (output_dims.size < static_cast<int>(expected.size())) {
+    const int delta = expected.size() - output_dims.size;
+    for (int i = 0; i < delta; ++i) {
+      if (expected[i] != 1) return false;
+    }
+    for (int i = 0; i < output_dims.size; ++i) {
+      if (output_dims.data[i] != expected[delta + i]) return false;
+    }
+    return true;
+  }
+  return false;
 }
 
 }  // namespace
@@ -116,67 +150,23 @@ bool IsArgMaxSupported(const TfLiteContext* absl_nonnull context,
                      ", while input has ", input.dims->size, " dimensions");
     return false;
   }
-  std::vector<int> expected_output_dims(input.dims->size);
+  std::vector<int> expected_reduced_dims(input.dims->size);
+  std::vector<int> expected_squeezed_dims;
+  expected_squeezed_dims.reserve(input.dims->size > 0 ? input.dims->size - 1
+                                                      : 0);
   for (int i = 0; i < input.dims->size; ++i) {
-    expected_output_dims[i] = i == dim_index ? 1 : input.dims->data[i];
+    expected_reduced_dims[i] = i == dim_index ? 1 : input.dims->data[i];
+    if (i != dim_index) {
+      expected_squeezed_dims.push_back(input.dims->data[i]);
+    }
   }
 
-  if (output.dims->size == expected_output_dims.size()) {
-    for (int i = 0; i < output.dims->size; ++i) {
-      if (i != dim_index && output.dims->data[i] != expected_output_dims[i]) {
-        *error = absl::StrCat(
-            "Output dimension mismatch: ", GetShapeDebugString(output.dims),
-            ", ", GetShapeDebugString(input.dims));
-        return false;
-      } else if (i == dim_index && output.dims->data[i] != 1) {
-        *error = absl::StrCat(
-            "Output dimension mismatch: ", GetShapeDebugString(output.dims),
-            ", ", GetShapeDebugString(input.dims));
-        return false;
-      }
-    }
-  } else if (output.dims->size < expected_output_dims.size()) {
-    const int delta = expected_output_dims.size() - output.dims->size;
-    for (int i = 0; i < expected_output_dims.size(); ++i) {
-      if (i < delta && expected_output_dims[i] != 1) {
-        *error = absl::StrCat(
-            "Output dimension mismatch: ", GetShapeDebugString(output.dims),
-            ", ", GetShapeDebugString(input.dims));
-        return false;
-      } else if (i >= delta && i != dim_index &&
-                 output.dims->data[i - delta] != expected_output_dims[i]) {
-        *error = absl::StrCat(
-            "Output dimension mismatch: ", GetShapeDebugString(output.dims),
-            ", ", GetShapeDebugString(input.dims));
-        return false;
-      } else if (i == dim_index && output.dims->data[i - delta] != 1) {
-        *error = absl::StrCat(
-            "Output dimension mismatch: ", GetShapeDebugString(output.dims),
-            ", ", GetShapeDebugString(input.dims));
-        return false;
-      }
-    }
-  } else {
-    const int delta = output.dims->size - expected_output_dims.size();
-    for (int i = 0; i < output.dims->size; ++i) {
-      if (i < delta && output.dims->data[i] != 1) {
-        *error = absl::StrCat(
-            "Output dimension mismatch: ", GetShapeDebugString(output.dims),
-            ", ", GetShapeDebugString(input.dims));
-        return false;
-      } else if (i >= delta && (i - delta) != dim_index &&
-                 output.dims->data[i] != expected_output_dims[i - delta]) {
-        *error = absl::StrCat(
-            "Output dimension mismatch: ", GetShapeDebugString(output.dims),
-            ", ", GetShapeDebugString(input.dims));
-        return false;
-      } else if ((i - delta) == dim_index && output.dims->data[i] != 1) {
-        *error = absl::StrCat(
-            "Output dimension mismatch: ", GetShapeDebugString(output.dims),
-            ", ", GetShapeDebugString(input.dims));
-        return false;
-      }
-    }
+  if (!MatchesExpectedDims(*output.dims, expected_squeezed_dims) &&
+      !MatchesExpectedDims(*output.dims, expected_reduced_dims)) {
+    *error = absl::StrCat(
+        "Output dimension mismatch: ", GetShapeDebugString(output.dims), ", ",
+        GetShapeDebugString(input.dims));
+    return false;
   }
   return true;
 }
