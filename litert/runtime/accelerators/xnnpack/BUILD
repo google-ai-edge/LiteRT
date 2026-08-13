@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+# copybara:uncomment load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -47,3 +48,20 @@ cc_library(
     ],
     alwayslink = 1,  # Keep the symbols in Windows and macOS.
 )
+
+# copybara:uncomment_begin(google-only)
+# cc_test(
+#     name = "moe_delegate_kernel_test",
+#     srcs = ["moe_delegate_kernel_test.cc"],
+#     deps = [
+#         "@com_google_googletest//:gtest",
+#         "@com_google_googletest//:gtest_main",
+#         "@flatbuffers//:runtime_cc",
+#         "//tflite:builtin_ops",
+#         "//tflite/c:c_api_types",
+#         "//tflite/c:common",
+#         "//tflite/delegates/xnnpack:moe_delegate_kernel",
+#         "//tflite/delegates/xnnpack:xnnpack_delegate",
+#     ],
+# )
+# copybara:uncomment_end
