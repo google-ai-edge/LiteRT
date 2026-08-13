@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_COMPILATION_OPTIONS_H_
 #define ODML_LITERT_LITERT_CC_LITERT_COMPILATION_OPTIONS_H_
 
+#include <algorithm>
 #include <cstddef>
 #include <functional>
 #include <memory>
@@ -174,6 +175,19 @@ class Options {
 
   Expected<void> AddOpaqueOptions(OpaqueOptions&& options) {
     opaque_options_.push_back(options.Release());
+    return {};
+  }
+
+  /// Restricts JIT compilation to the named model signatures.
+  ///
+  /// Replaces any previous selection. An empty list keeps all signatures.
+  Expected<void> SetSignaturesToCompile(
+      std::vector<std::string> signature_keys) {
+    std::sort(signature_keys.begin(), signature_keys.end());
+    signature_keys.erase(
+        std::unique(signature_keys.begin(), signature_keys.end()),
+        signature_keys.end());
+    signatures_to_compile_ = std::move(signature_keys);
     return {};
   }
 
@@ -392,8 +406,13 @@ class Options {
   static Expected<internal::LiteRtOptionsPtr> Build(
       const Options& options, const internal::EnvironmentHolder& env) {
     auto* runtime = env.runtime;
-    LiteRtOptions litert_options;
+    LiteRtOptions litert_options = nullptr;
     LITERT_RETURN_IF_ERROR(runtime->CreateOptions(&litert_options));
+    internal::LiteRtOptionsPtr owned_options(
+        litert_options, internal::LiteRtDestroyOptionsDeleter{
+                            runtime->runtime_c_api_->litert_destroy_options});
+    reinterpret_cast<LiteRtOptionsT*>(litert_options)
+        ->selected_signature_keys = options.signatures_to_compile_;
 
     if (options.lite_rt_hw_accelerator_set_.has_value()) {
       LITERT_RETURN_IF_ERROR(runtime->SetOptionsHardwareAccelerators(
@@ -437,12 +456,11 @@ class Options {
         runtime, litert_options, options.compiler_options_,
         LrtGetOpaqueCompilerOptionsData));
 
-    return internal::LiteRtOptionsPtr(
-        litert_options, internal::LiteRtDestroyOptionsDeleter{
-                            runtime->runtime_c_api_->litert_destroy_options});
+    return owned_options;
   }
 
   std::optional<LiteRtHwAcceleratorSet> lite_rt_hw_accelerator_set_;
+  std::vector<std::string> signatures_to_compile_;
   std::vector<LiteRtOpaqueOptions> opaque_options_;
   std::vector<
       std::function<LiteRtStatus(internal::RuntimeProxy*, LiteRtOptions)>>
