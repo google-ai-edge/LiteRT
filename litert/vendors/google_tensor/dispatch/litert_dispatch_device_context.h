@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -40,6 +41,12 @@ class LiteRtDispatchDeviceContextT {
   struct GoogleTensorOptionsData {
     std::optional<LiteRtGoogleTensorOptionsPerformanceMode> performance_mode =
         std::nullopt;
+    // Map from (signature_name, tensor_name) to coherency preference.
+    absl::flat_hash_map<std::pair<std::string, std::string>, bool>
+        input_coherency_map;
+    // Map from (signature_name, tensor_name) to coherency preference.
+    absl::flat_hash_map<std::pair<std::string, std::string>, bool>
+        output_coherency_map;
   };
 
   static LiteRtStatus Create(const LiteRtRuntimeContext* runtime_context,
