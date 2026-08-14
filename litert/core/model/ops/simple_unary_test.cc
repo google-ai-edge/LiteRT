@@ -14,6 +14,7 @@
 
 #include "litert/core/model/ops/simple_unary.h"
 
+#include <cmath>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -94,6 +95,17 @@ TEST(SimpleUnaryOpTest, ReverseV2) {
             kLiteRtStatusOk);
 
   EXPECT_THAT(output_shapes[0], ElementsAre(1, 2, 3));
+}
+
+TEST(SimpleUnaryOpTest, ReferenceTanh) {
+  std::vector<float> input = {0.0f, 1.0f, -1.0f};
+  std::vector<float> output(3);
+
+  ReferenceTanh(input.data(), input.size(), output.data());
+
+  EXPECT_NEAR(output[0], 0.0f, 1e-5);
+  EXPECT_NEAR(output[1], std::tanh(1.0f), 1e-5);
+  EXPECT_NEAR(output[2], std::tanh(-1.0f), 1e-5);
 }
 
 }  // namespace

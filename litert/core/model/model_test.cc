@@ -871,12 +871,14 @@ TEST(PrintingTest, TflOptionsReshape) {
   EXPECT_EQ(absl::StrFormat("%v", opts), "{new_shape=[2,3]}");
 }
 
-TEST(PrintingTest, TflOptions2NoPrinter) {
+TEST(PrintingTest, TflOptions2Composite) {
   TflOptions2 opts;
   opts.type = ::tflite::BuiltinOptions2_StableHLOCompositeOptions;
   ::tflite::StableHLOCompositeOptionsT comp_opts;
+  comp_opts.name = "odml.scaled_dot_product_attention";
   opts.Set(std::move(comp_opts));
-  EXPECT_EQ(absl::StrFormat("%v", opts), "{!no_printer}");
+  EXPECT_EQ(absl::StrFormat("%v", opts),
+            "{name=odml.scaled_dot_product_attention}");
 }
 
 TEST(PrintingTest, FusedActivationFunction) {
