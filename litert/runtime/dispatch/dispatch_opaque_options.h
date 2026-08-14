@@ -28,6 +28,20 @@ namespace litert::internal {
 //
 // Note: Since they're alway build together, this structure doesn't need to be
 // ABI stable.
+//
+// This is an internal typed wrapper for a `LiteRtOpaqueOptions` node used to
+// pass runtime-generated model metadata from `CompiledModel` to the dispatch
+// delegate while delegates are created and applied.
+//
+// Unlike user-facing option builders such as `CpuOptions`, this object is
+// itself an opaque transport node. `CompiledModel` creates it after model
+// allocation and JIT metadata are available, temporarily appends it to
+// `LiteRtOptionsT::options`, and the dispatch delegate retrieves it using
+// `Discriminator()`.
+//
+// The producer and consumer are built together and the payload remains within
+// the same runtime, so it may contain in-process pointers and handles and does
+// not require a serialized or ABI-stable representation.
 class DispatchDelegateOptions : public OpaqueOptions {
  public:
   using OpaqueOptions::OpaqueOptions;
