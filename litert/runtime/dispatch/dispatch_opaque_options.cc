@@ -16,6 +16,8 @@
 
 #include <cstddef>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -42,6 +44,11 @@ struct Payload {
   size_t alloc_base_size = 0;
   // Indicates whether the file region metadata (offset or size) is populated.
   bool has_alloc_base_file_region = false;
+  // Mapping of a function name to its input and output tensor ports. Can be
+  // used to identify the tensor port index for a given signature namd + tensor
+  // name from a delegate kernel.
+  absl::flat_hash_map<std::string, NodeTensorPortMapping>
+      node_tensor_port_mappings;
 };
 
 }  // namespace
@@ -132,6 +139,32 @@ Expected<size_t> DispatchDelegateOptions::GetAllocBaseSize() {
 Expected<bool> DispatchDelegateOptions::HasAllocBaseFileRegion() {
   LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
   return payload->has_alloc_base_file_region;
+}
+
+Expected<void> DispatchDelegateOptions::SetNodeTensorPortMapping(
+    absl::string_view function_name,
+    std::vector<TensorPortMapping> input_tensor_ports,
+    std::vector<TensorPortMapping> output_tensor_ports) {
+  if (function_name.empty()) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument);
+  }
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  NodeTensorPortMapping mapping;
+  mapping.input_tensor_ports = std::move(input_tensor_ports);
+  mapping.output_tensor_ports = std::move(output_tensor_ports);
+  payload->node_tensor_port_mappings[function_name] = std::move(mapping);
+  return {};
+}
+
+Expected<const NodeTensorPortMapping*>
+DispatchDelegateOptions::GetNodeTensorPortMapping(
+    absl::string_view function_name) {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  auto it = payload->node_tensor_port_mappings.find(function_name);
+  if (it == payload->node_tensor_port_mappings.end()) {
+    return litert::Unexpected(kLiteRtStatusErrorNotFound);
+  }
+  return &it->second;
 }
 
 }  // namespace litert::internal

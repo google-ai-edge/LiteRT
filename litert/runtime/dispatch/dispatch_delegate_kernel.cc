@@ -636,6 +636,52 @@ DispatchDelegateKernel::CreateNodeInvocationContext(
       auto dispatch_delegate_options,
       FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));
 
+  // If there is a function name, record the mapping between node port indices
+  // and their corresponding opaque tensor names. If function_name is empty,
+  // this is an anonymous node without an external function name, so we skip
+  // recording the mapping.
+  if (!function_name.empty()) {
+    const int* in_indices = nullptr;
+    int num_inputs = 0;
+    TfLiteOpaqueNodeInputs(node, &in_indices, &num_inputs);
+    std::vector<TensorPortMapping> input_ports;
+    input_ports.reserve(num_inputs);
+    for (int i = 0; i < num_inputs; ++i) {
+      TfLiteOpaqueTensor* tensor =
+          TfLiteOpaqueContextGetOpaqueTensor(context, in_indices[i]);
+      const char* name = tensor ? TfLiteOpaqueTensorName(tensor) : nullptr;
+      if (name != nullptr) {
+        TensorPortMapping port_map;
+        port_map.opaque_tensor_name = name;
+        port_map.port_index = i;
+        input_ports.push_back(std::move(port_map));
+      }
+    }
+
+    const int* out_indices = nullptr;
+    int num_outputs = 0;
+    TfLiteOpaqueNodeOutputs(node, &out_indices, &num_outputs);
+    std::vector<TensorPortMapping> output_ports;
+    output_ports.reserve(num_outputs);
+    for (int i = 0; i < num_outputs; ++i) {
+      TfLiteOpaqueTensor* tensor =
+          TfLiteOpaqueContextGetOpaqueTensor(context, out_indices[i]);
+      const char* name = tensor ? TfLiteOpaqueTensorName(tensor) : nullptr;
+      if (name != nullptr) {
+        TensorPortMapping port_map;
+        port_map.opaque_tensor_name = name;
+        port_map.port_index = i;
+        output_ports.push_back(std::move(port_map));
+      }
+    }
+
+    // Record the mapping if there are any named input or output tensors.
+    if (!input_ports.empty() || !output_ports.empty()) {
+      LITERT_RETURN_IF_ERROR(dispatch_delegate_options.SetNodeTensorPortMapping(
+          function_name, std::move(input_ports), std::move(output_ports)));
+    }
+  }
+
   auto exec_handle_expected =
       dispatch_delegate_options.GetExecHandle(function_name);
   if (exec_handle_expected.HasValue() &&
