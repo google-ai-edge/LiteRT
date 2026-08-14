@@ -300,6 +300,27 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "litert_dispatch_delegate_vendor_options",
+    hdrs = ["litert_dispatch_delegate_vendor_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "litert_dispatch_delegate_vendor_options_test",
+    srcs = ["litert_dispatch_delegate_vendor_options_test.cc"],
+    deps = [
+        ":litert_dispatch_delegate_vendor_options",
+        "//litert/c:litert_common",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 exports_files(glob([
     "*.h",
     "*.cc",

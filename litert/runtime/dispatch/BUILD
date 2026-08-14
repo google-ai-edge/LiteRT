@@ -152,6 +152,31 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "dispatch_options_utils",
+    srcs = ["dispatch_options_utils.cc"],
+    hdrs = ["dispatch_options_utils.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/options:litert_dispatch_delegate_vendor_options",
+    ],
+)
+
+cc_test(
+    name = "dispatch_options_utils_test",
+    srcs = ["dispatch_options_utils_test.cc"],
+    deps = [
+        ":dispatch_options_utils",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc/options:litert_dispatch_delegate_vendor_options",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "dispatch_delegate_kernel_test",
     srcs = ["dispatch_delegate_kernel_test.cc"],
@@ -312,6 +337,7 @@ cc_library(
         ":dispatch",
         ":dispatch_kernel_interface",
         ":dispatch_opaque_options",
+        ":dispatch_options_utils",
         "//litert/c:litert_common",
         "//litert/c:litert_metrics",
         "//litert/c:litert_tensor_buffer",
@@ -325,6 +351,7 @@ cc_library(
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_tflite_error_status_builder",
+        "//litert/cc/options:litert_dispatch_delegate_vendor_options",
         "//litert/core:dispatch_op_schema",
         "//litert/runtime:external_litert_buffer_context",
         "//litert/runtime:metrics",
@@ -461,6 +488,7 @@ litert_device_test(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         # copybara:uncomment "//third_party/darwinn/driver_shared/fence:fence_test_util",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc/internal:litert_handle",
         "//litert/cc:litert_buffer_ref",
