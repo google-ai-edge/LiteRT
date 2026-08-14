@@ -168,13 +168,13 @@ impl<'a> Iterator for InputOutputNamesIterator<'a> {
 pub struct SignatureIterator<'a> {
     model: &'a Model,
     index: LiteRtParamIndex,
-    total_num_signatures: LiteRtParamIndex,
+    total_num_signatures: SignatureIndex,
 }
 
 impl<'a> Iterator for SignatureIterator<'a> {
     type Item = Result<Signature<'a>, Error>;
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index >= self.total_num_signatures {
+        if self.index >= self.total_num_signatures.value() {
             return None;
         }
         let mut raw_signature_ptr: LiteRtSignature = std::ptr::null_mut();
@@ -192,7 +192,7 @@ impl<'a> Iterator for SignatureIterator<'a> {
         Some(Ok(Signature { raw_signature: raw_signature_ptr, _phantom: PhantomData {} }))
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.total_num_signatures, Some(self.total_num_signatures))
+        (self.total_num_signatures.value(), Some(self.total_num_signatures.value()))
     }
 }
 
@@ -352,6 +352,48 @@ impl<'a> Subgraph<'a> {
     }
 }
 
+/// A wrapper around the LiteRtParamIndex C struct representing the index of a subgraph in a model.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SubgraphIndex(LiteRtParamIndex);
+
+impl SubgraphIndex {
+    fn new(index: LiteRtParamIndex) -> Self {
+        SubgraphIndex(index)
+    }
+
+    /// Returns the underlying LiteRtParamIndex value.
+    pub fn value(self) -> LiteRtParamIndex {
+        self.0
+    }
+}
+
+impl From<LiteRtParamIndex> for SubgraphIndex {
+    fn from(index: LiteRtParamIndex) -> Self {
+        SubgraphIndex(index)
+    }
+}
+
+/// A wrapper around the LiteRtParamIndex C struct representing the index of a signature in a model.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SignatureIndex(LiteRtParamIndex);
+
+impl SignatureIndex {
+    fn new(index: LiteRtParamIndex) -> Self {
+        SignatureIndex(index)
+    }
+
+    /// Returns the underlying LiteRtParamIndex value.
+    pub fn value(self) -> LiteRtParamIndex {
+        self.0
+    }
+}
+
+impl From<LiteRtParamIndex> for SignatureIndex {
+    fn from(index: LiteRtParamIndex) -> Self {
+        SignatureIndex(index)
+    }
+}
+
 impl Model {
     /// Creates a model from a file path.
     pub fn create_model_from_file(environment: &Environment, path: &str) -> Result<Self, Error> {
@@ -391,18 +433,18 @@ impl Model {
     }
 
     /// Returns the number of subgraphs in the model.
-    pub fn num_subgraphs(&self) -> Result<LiteRtParamIndex, Error> {
+    pub fn num_subgraphs(&self) -> Result<SubgraphIndex, Error> {
         let mut num_subgraphs: LiteRtParamIndex = 0;
         call_check_status!(
             // SAFETY: self.raw_model is always valid as it's initialized by a wrapper function.
             unsafe { LiteRtGetNumModelSubgraphs(self.raw_model, &mut num_subgraphs) },
             ErrorCause::GetNumModelSubgraphs
         );
-        Ok(num_subgraphs)
+        Ok(SubgraphIndex::new(num_subgraphs))
     }
 
     /// Returns the number of signatures in the model.
-    pub fn num_signatures(&self) -> Result<LiteRtParamIndex, Error> {
+    pub fn num_signatures(&self) -> Result<SignatureIndex, Error> {
         let mut num_signatures: LiteRtParamIndex = 0;
         call_check_status!(
             // SAFETY: self.raw_model is always valid as it's initialized by a wrapper function.
@@ -410,7 +452,7 @@ impl Model {
             unsafe { LiteRtGetNumModelSignatures(self.raw_model, &mut num_signatures) },
             ErrorCause::GetNumModelSignatures
         );
-        Ok(num_signatures)
+        Ok(SignatureIndex::new(num_signatures))
     }
 
     /// Returns an iterator over the signatures of the model.
@@ -423,12 +465,12 @@ impl Model {
     }
 
     /// Returns the signature at the given index.
-    pub fn signature(&self, index: LiteRtParamIndex) -> Result<Signature<'_>, Error> {
+    pub fn signature(&self, index: SignatureIndex) -> Result<Signature<'_>, Error> {
         let mut raw_signature_ptr: LiteRtSignature = std::ptr::null_mut();
         call_check_status!(
             // SAFETY: self.raw_model is always valid as it's initialized by a wrapper function.
             // We assume that the output is valid if the return status is OK or don't use the output pointers.
-            unsafe { LiteRtGetModelSignature(self.raw_model, index, &mut raw_signature_ptr) },
+            unsafe { LiteRtGetModelSignature(self.raw_model, index.value(), &mut raw_signature_ptr) },
             ErrorCause::GetModelSignature
         );
         Ok(Signature { raw_signature: raw_signature_ptr, _phantom: PhantomData {} })

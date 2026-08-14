@@ -267,6 +267,7 @@ impl TensorBufferType {
 pub struct TensorBuffer<'a> {
     pub(crate) raw_tensor_buffer: LiteRtTensorBuffer,
     element_type: ElementType,
+    dimensions: Vec<i32>,
     _phantom: PhantomData<&'a LiteRtTensorBuffer>,
 }
 
@@ -288,7 +289,7 @@ impl<T> Drop for TensorBufferLock<'_, T> {
 impl<'a> TensorBuffer<'a> {
     pub(crate) fn new(
         environment: &Environment,
-        tensor_type: *const LiteRtRankedTensorType,
+        tensor_type: &LiteRtRankedTensorType,
         buffer_type: &TensorBufferType,
         buffer_size: usize,
         element_type: ElementType,
@@ -301,19 +302,32 @@ impl<'a> TensorBuffer<'a> {
                 LiteRtCreateManagedTensorBuffer(
                     environment.raw_environment,
                     buffer_type.to_c_enum(),
-                    tensor_type,
+                    tensor_type as *const LiteRtRankedTensorType,
                     buffer_size,
                     &mut buffer_ptr,
                 )
             },
             ErrorCause::CreateManagedTensorBuffer
         );
-        Ok(TensorBuffer { raw_tensor_buffer: buffer_ptr, element_type, _phantom: PhantomData {} })
+        let dimensions =
+            tensor_type.layout.dimensions[..tensor_type.layout.rank().try_into().unwrap()]
+                .to_vec();
+        Ok(TensorBuffer {
+            raw_tensor_buffer: buffer_ptr,
+            dimensions,
+            element_type,
+            _phantom: PhantomData {},
+        })
     }
 
     /// Returns the element type of the tensor buffer.
     pub fn element_type(&self) -> ElementType {
         self.element_type
+    }
+
+    /// Returns dimensions of the tensor buffer.
+    pub fn dimensions(&self) -> &[i32] {
+        &self.dimensions
     }
 
     fn lock_read<T>(&'a self) -> Result<TensorBufferLock<'a, T>, Error> {
@@ -477,7 +491,6 @@ impl<'a> TensorBuffer<'a> {
         Ok(())
     }
 
-
     /// Reads data from the tensor buffer asynchronously.
     ///
     /// If the buffer has an event attached, it waits for the event to be signaled
@@ -594,9 +607,9 @@ mod tests {
         }
         const VTABLE: RawWakerVTable = RawWakerVTable::new(
             |_| RawWaker::new(std::ptr::null(), &VTABLE), // clone
-            |_| {}, // wake
-            |_| {}, // wake_by_ref
-            |_| {}, // drop
+            |_| {},                                       // wake
+            |_| {},                                       // wake_by_ref
+            |_| {},                                       // drop
         );
     }
 
@@ -646,7 +659,7 @@ mod tests {
     #[cfg(async_support)]
     fn test_read_async_with_event() {
         // This test requires Linux to run as it uses Linux-specific sync fence FDs.
-        
+
         extern "C" {
             fn pipe(fds: *mut i32) -> i32;
             fn write(fd: i32, buf: *const std::ffi::c_void, count: usize) -> isize;

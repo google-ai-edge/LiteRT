@@ -55,13 +55,17 @@ impl SegmentationModel {
         Ok(SegmentationModel { model: m, env: env, compiled_model: cm })
     }
     fn run(&self, input: &[f32], output: &mut [f32]) -> Result<(), litert::Error> {
-        let inputs = self.compiled_model.create_input_tensor_buffers(&self.env, &self.model, 0)?;
+        let sig_index = litert::SignatureIndex::from(0);
+        let inputs =
+            self.compiled_model.create_input_tensor_buffers(&self.env, &self.model, sig_index)?;
         println!("Input type: {:?}", inputs[0].element_type());
+        println!("Input dimensions: {:?}", inputs[0].dimensions());
         inputs[0].write(input)?;
         let outputs =
-            self.compiled_model.create_output_tensor_buffers(&self.env, &self.model, 0)?;
+            self.compiled_model.create_output_tensor_buffers(&self.env, &self.model, sig_index)?;
         println!("Output type: {:?}", outputs[0].element_type());
-        self.compiled_model.run(0, &inputs, &outputs)?;
+        println!("Output dimensions: {:?}", outputs[0].dimensions());
+        self.compiled_model.run(sig_index, &inputs, &outputs)?;
         outputs[0].read(output)?;
         Ok(())
     }

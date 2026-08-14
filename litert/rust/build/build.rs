@@ -33,7 +33,7 @@ const CARGO_DOCS_RS: &str = "DOCS_RS";
 // It's defined as a macro, so it can be used inside concat! macros below.
 macro_rules! litert_sdk_version {
     () => {
-        "2.1.6"
+        "2.2.0"
     };
 }
 
