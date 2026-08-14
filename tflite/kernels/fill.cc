@@ -21,6 +21,7 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
 #include "tflite/string_util.h"
+#include "tflite/util.h"
 
 namespace tflite {
 namespace ops {
@@ -113,9 +114,7 @@ TfLiteStatus FillString(const TfLiteTensor* value, TfLiteTensor* output) {
   DynamicBuffer buffer;
   const auto string_ref = GetString(value, 0);
   int n = 1;
-  for (int i = 0; i < output->dims->size; ++i) {
-    n *= output->dims->data[i];
-  }
+  TF_LITE_ENSURE_STATUS(CheckedNumElements(output, n));
   for (int i = 0; i < n; ++i) {
     buffer.AddString(string_ref.str, string_ref.len);
   }
@@ -137,8 +136,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
     TF_LITE_ENSURE_OK(context, ResizeOutput(context, dims, output));
   }
   if (value->type == kTfLiteString) {
-    FillString(value, output);
-    return kTfLiteOk;
+    return FillString(value, output);
   }
 #define TF_LITE_FILL(data_type)                                               \
   reference_ops::Fill(GetTensorShape(value), GetTensorData<data_type>(value), \
