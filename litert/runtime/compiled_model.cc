@@ -784,32 +784,8 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
     LiteRtModelT& model, LiteRtHwAcceleratorSet hw_accelerators,
     LiteRtOptions options, LiteRtEnvironmentT& env) {
   LITERT_PERFETTO_TRACE_EVENT("CompiledModel Graph Loading");
-  const bool restrict_signatures =
-      options != nullptr && !options->selected_signature_keys.empty();
-  std::vector<absl::string_view> signature_keys;
-  if (restrict_signatures) {
-    if (IsCompiled(model)) {
-      return Unexpected(
-          kLiteRtStatusErrorUnsupported,
-          "Signature selection is only supported for JIT-compiled models");
-    }
-    signature_keys.reserve(options->selected_signature_keys.size());
-    for (const std::string& key : options->selected_signature_keys) {
-      if (!model.FindSignature(key)) {
-        return Unexpected(kLiteRtStatusErrorNotFound,
-                          "Cannot retain missing model signature: " + key);
-      }
-      signature_keys.push_back(key);
-    }
-  }
-
-  // Magic-number replacement indexes the original immutable flatbuffer by
-  // mutable LiteRT subgraph position, so it must run before pruning.
   LITERT_RETURN_IF_ERROR(
       litert::internal::ReplaceMagicNumbersIfAny(env, model));
-  if (restrict_signatures) {
-    LITERT_RETURN_IF_ERROR(PruneModelToSignatures(model, signature_keys));
-  }
 
   if (auto source_path = model.SourcePath()) {
     model_directory_ = ExtractDirectory(*source_path);
@@ -832,11 +808,6 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
         // The compiled model's flatbuffer has initialized by applying the
         // plugins.
         return {};
-      }
-      if (restrict_signatures) {
-        return Unexpected(
-            kLiteRtStatusErrorRuntimeFailure,
-            "Signature-selected model requires successful JIT compilation");
       }
       // Deliberate fall through, failing to apply plugins is a recoverable
       // error, we will try to initialize the compiled model from the incoming
