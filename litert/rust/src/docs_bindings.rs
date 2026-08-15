@@ -295,16 +295,6 @@ pub fn LiteRtGetCompiledModelOutputBufferRequirements(
     unimplemented!()
 }
 
-pub fn LiteRtCompiledModelResizeInputTensor(
-    compiled_model: LiteRtCompiledModel,
-    signature_index: LiteRtParamIndex,
-    input_index: LiteRtParamIndex,
-    dims: *const i32,
-    dims_size: usize,
-) -> LiteRtStatus {
-    unimplemented!()
-}
-
 pub fn LiteRtGetCompiledModelInputTensorLayout(
     compiled_model: LiteRtCompiledModel,
     signature_index: LiteRtParamIndex,
