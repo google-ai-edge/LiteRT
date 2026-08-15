@@ -315,7 +315,7 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     return in_file.tellg();
   }
 
-  bool isFullyAccelerated() {
+  bool IsFullyAccelerated() {
     auto is_fully_accelerated = compiled_model_->IsFullyAccelerated();
     if (!is_fully_accelerated.HasValue()) {
       LITERT_LOG(LITERT_ERROR,
@@ -325,17 +325,13 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     return *is_fully_accelerated;
   }
 
-  bool isNonCpuFullyAccelerated() {
-    auto is_non_cpu_fully_accelerated =
-        compiled_model_->IsNonCpuFullyAccelerated();
-    if (!is_non_cpu_fully_accelerated.HasValue()) {
-      LITERT_LOG(
-          LITERT_ERROR,
-          "Failed to get is_non_cpu_fully_accelerated. Returning false.");
-      return false;
-    }
-    return *is_non_cpu_fully_accelerated;
-  }
+  int TotalNodeCount() const;
+  int NpuDelegatedNodeCount() const;
+  int NpuPartitionCount() const;
+  int GpuDelegatedNodeCount() const;
+  int GpuPartitionCount() const;
+  int CpuDelegatedNodeCount() const;
+  int CpuPartitionCount() const;
 
   TfLiteStatus RunImpl() override {
     if (!compiled_model_) {

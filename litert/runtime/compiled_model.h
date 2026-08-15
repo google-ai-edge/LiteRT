@@ -196,6 +196,36 @@ class LiteRtCompiledModelT {
   // Returns true if the model was fully delegated on non-CPU accelerators.
   bool IsNonCpuFullyDelegated() const { return non_cpu_fully_delegated_; }
 
+  // Counts total number of operations across active subgraphs before
+  // delegation.
+  int CountTotalNodes() const;
+
+  struct GraphCounts {
+    int undelegated_nodes = 0;
+    int npu_partitions = 0;
+    int gpu_partitions = 0;
+    int cpu_partitions = 0;
+  };
+
+  // Counts undelegated nodes and partitions across active subgraphs in a single
+  // pass.
+  GraphCounts GetGraphCounts() const;
+
+  struct DelegationMetrics {
+    int total_node_count = 0;
+    int npu_delegated_node_count = 0;
+    int npu_partition_count = 0;
+    int gpu_delegated_node_count = 0;
+    int gpu_partition_count = 0;
+    int cpu_delegated_node_count = 0;
+    int cpu_partition_count = 0;
+  };
+
+  // Returns delegation metrics for the compiled model.
+  const DelegationMetrics& GetDelegationMetrics() const {
+    return delegation_metrics_;
+  }
+
   // Returns the environment associated with the compiled model.
   litert::Expected<LiteRtEnvironmentT*> GetEnvironment() { return env_; }
 
@@ -551,6 +581,9 @@ class LiteRtCompiledModelT {
 
   // Indicates whether the model is fully delegated on GPU or NPU.
   bool non_cpu_fully_delegated_ = false;
+
+  // Delegation metrics for the compiled model.
+  DelegationMetrics delegation_metrics_;
 
   // Owns dynamically created TfLiteRegistration objects for TfLiteOperator.
   std::vector<std::unique_ptr<TfLiteRegistration>> owned_tflite_registrations_;

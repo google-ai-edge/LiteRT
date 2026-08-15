@@ -456,4 +456,59 @@ TfLiteStatus BenchmarkLiteRtModel::PrepareInputData() {
   }
   return kTfLiteOk;
 }
+
+int BenchmarkLiteRtModel::TotalNodeCount() const {
+  return (compiled_model_ && compiled_model_->Get())
+             ? compiled_model_->Get()->GetDelegationMetrics().total_node_count
+             : 0;
+}
+
+int BenchmarkLiteRtModel::NpuDelegatedNodeCount() const {
+  return (compiled_model_ && compiled_model_->Get())
+             ? compiled_model_->Get()
+                   ->GetDelegationMetrics()
+                   .npu_delegated_node_count
+             : 0;
+}
+
+int BenchmarkLiteRtModel::NpuPartitionCount() const {
+  return (compiled_model_ && compiled_model_->Get())
+             ? compiled_model_->Get()
+                   ->GetDelegationMetrics()
+                   .npu_partition_count
+             : 0;
+}
+
+int BenchmarkLiteRtModel::GpuDelegatedNodeCount() const {
+  return (compiled_model_ && compiled_model_->Get())
+             ? compiled_model_->Get()
+                   ->GetDelegationMetrics()
+                   .gpu_delegated_node_count
+             : 0;
+}
+
+int BenchmarkLiteRtModel::GpuPartitionCount() const {
+  return (compiled_model_ && compiled_model_->Get())
+             ? compiled_model_->Get()
+                   ->GetDelegationMetrics()
+                   .gpu_partition_count
+             : 0;
+}
+
+int BenchmarkLiteRtModel::CpuDelegatedNodeCount() const {
+  return (compiled_model_ && compiled_model_->Get())
+             ? compiled_model_->Get()
+                   ->GetDelegationMetrics()
+                   .cpu_delegated_node_count
+             : 0;
+}
+
+int BenchmarkLiteRtModel::CpuPartitionCount() const {
+  return (compiled_model_ && compiled_model_->Get())
+             ? compiled_model_->Get()
+                   ->GetDelegationMetrics()
+                   .cpu_partition_count
+             : 0;
+}
+
 }  // namespace litert::benchmark

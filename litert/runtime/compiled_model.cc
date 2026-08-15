@@ -968,8 +968,10 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
     }
   }
 
-  bool non_cpu_fully_delegated = false;
-  bool cpu_accelerator_present = false;
+  compiled_model->delegation_metrics_.total_node_count =
+      compiled_model->CountTotalNodes();
+  int current_undelegated_nodes =
+      compiled_model->delegation_metrics_.total_node_count;
 
   // Apply accelerators matching the requested hardware support to the
   // model in the order they were registered.
@@ -989,15 +991,6 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
     if (delegate_responsible_for_jit &&
         !(hardware_accelerators & accelerator_supported_hardware)) {
       continue;
-    }
-
-    if (accelerator_supported_hardware & kLiteRtHwAcceleratorCpu) {
-      if (!cpu_accelerator_present) {
-        LITERT_ASSIGN_OR_RETURN(bool has_non_delegated_ops_before_cpu,
-                                compiled_model->HasNonDelegatedOps());
-        non_cpu_fully_delegated = !has_non_delegated_ops_before_cpu;
-      }
-      cpu_accelerator_present = true;
     }
 
     LITERT_DEBUG_CODE({
@@ -1056,6 +1049,26 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
                           "Failed to modify graph with delegate");
       }
 
+      GraphCounts counts = compiled_model->GetGraphCounts();
+      int delegated_ops = current_undelegated_nodes - counts.undelegated_nodes;
+      if (accelerator_supported_hardware & kLiteRtHwAcceleratorNpu) {
+        compiled_model->delegation_metrics_.npu_delegated_node_count +=
+            delegated_ops;
+        compiled_model->delegation_metrics_.npu_partition_count =
+            counts.npu_partitions;
+      } else if (accelerator_supported_hardware & kLiteRtHwAcceleratorGpu) {
+        compiled_model->delegation_metrics_.gpu_delegated_node_count +=
+            delegated_ops;
+        compiled_model->delegation_metrics_.gpu_partition_count =
+            counts.gpu_partitions;
+      } else if (accelerator_supported_hardware & kLiteRtHwAcceleratorCpu) {
+        compiled_model->delegation_metrics_.cpu_delegated_node_count +=
+            delegated_ops;
+        compiled_model->delegation_metrics_.cpu_partition_count =
+            counts.cpu_partitions;
+      }
+      current_undelegated_nodes = counts.undelegated_nodes;
+
       if (compiled_model->profiler_ != nullptr) {
         compiled_model->profiler_->TriggerHook(kLiteRtHookTypeCompilerStop,
                                                nullptr, 0);
@@ -1067,19 +1080,19 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
     }
   }
 
-  LITERT_ASSIGN_OR_RETURN(bool has_non_delegated_ops,
-                          compiled_model->HasNonDelegatedOps());
-  if (!cpu_accelerator_present) {
-    non_cpu_fully_delegated = !has_non_delegated_ops;
-  }
+  compiled_model->non_cpu_fully_delegated_ =
+      (compiled_model->delegation_metrics_.gpu_delegated_node_count +
+           compiled_model->delegation_metrics_.npu_delegated_node_count ==
+       compiled_model->delegation_metrics_.total_node_count) &&
+      (compiled_model->delegation_metrics_.total_node_count > 0);
+
   if (!(hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
-      has_non_delegated_ops) {
+      !compiled_model->non_cpu_fully_delegated_) {
     return Error(
         kLiteRtStatusErrorCompilation,
         "Some ops are not accelerated. Add kLiteRtHwAcceleratorCpu to the "
         "compilation accelerator set to allow using the CPU to run those.");
   }
-  compiled_model->non_cpu_fully_delegated_ = non_cpu_fully_delegated;
   compiled_model->CheckCpuTensors();
   return compiled_model;
 }
@@ -1157,6 +1170,48 @@ Expected<void> LiteRtCompiledModelT::ValidateSignatureIsActive(
       absl::StrFormat("Signature '%s' was not selected when the compiled model "
                       "was created.",
                       signature_key));
+}
+
+int LiteRtCompiledModelT::CountTotalNodes() const {
+  int total_node_count = 0;
+  for (int subgraph_no : active_subgraph_indices_) {
+    const auto* const subgraph = interp_->subgraph(subgraph_no);
+    if (!subgraph->IsDelegationSkippable()) {
+      total_node_count += subgraph->execution_plan().size();
+    }
+  }
+  return total_node_count;
+}
+
+LiteRtCompiledModelT::GraphCounts LiteRtCompiledModelT::GetGraphCounts() const {
+  GraphCounts counts;
+  for (int subgraph_no : active_subgraph_indices_) {
+    const auto* const subgraph = interp_->subgraph(subgraph_no);
+    if (subgraph->IsDelegationSkippable()) {
+      continue;
+    }
+    const auto& execution_plan = subgraph->execution_plan();
+    const auto& nodes_and_registration = subgraph->nodes_and_registration();
+    for (int node_index : execution_plan) {
+      const TfLiteRegistration& reg = nodes_and_registration[node_index].second;
+      bool is_cpu_delegate =
+          reg.custom_name &&
+          (reg.custom_name == absl::string_view("TfLiteXNNPackDelegate") ||
+           reg.custom_name == absl::string_view("YNNPackDelegate"));
+      if (reg.builtin_code == kTfLiteBuiltinCustom &&
+          litert::internal::kLiteRtDispatchOpCustomName == reg.custom_name) {
+        counts.npu_partitions++;
+      } else if (reg.builtin_code == kTfLiteBuiltinDelegate &&
+                 !is_cpu_delegate) {
+        counts.gpu_partitions++;
+      } else if (is_cpu_delegate) {
+        counts.cpu_partitions++;
+      } else {
+        counts.undelegated_nodes++;
+      }
+    }
+  }
+  return counts;
 }
 
 Expected<bool> LiteRtCompiledModelT::HasNonDelegatedOps() {
