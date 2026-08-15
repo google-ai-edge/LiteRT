@@ -151,6 +151,7 @@ cc_library(
     deps = [
         ":litert_abi_header",
         "//litert/c:litert_any",
+        "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_header",
         "//litert/c:litert_model_types",
@@ -166,6 +167,7 @@ cc_library(
     deps = [
         ":litert_abi_header",
         "//litert/c:litert_any",
+        "//litert/c:litert_builder_impl",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_impl",
         "//litert/c:litert_model_impl",
@@ -186,6 +188,7 @@ cc_library(
         ":litert_abi_header",
         ":litert_compiler_context",
         "//litert/c:litert_any",
+        "//litert/c:litert_builder",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_model",

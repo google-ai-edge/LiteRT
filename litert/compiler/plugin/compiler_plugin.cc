@@ -452,7 +452,8 @@ Expected<void> CompilerPlugin::GreedyPatternMatchAndRewrite(
           LITERT_LOG(LITERT_DEBUG, "Matching pattern '%s'",
                      transformation.name);
           // Call the function pointer.
-          if (transformation.pattern(&builder, op) == kLiteRtStatusOk) {
+          if (transformation.pattern(LrtGetCompilerContext(), &builder, op) ==
+              kLiteRtStatusOk) {
             LITERT_LOG(LITERT_DEBUG, "Matched pattern '%s'",
                        transformation.name);
 

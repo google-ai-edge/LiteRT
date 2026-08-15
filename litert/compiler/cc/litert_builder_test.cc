@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC.
+// Copyright 2026 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/cc/internal/litert_builder.h"
+#include "litert/compiler/cc/litert_builder.h"
 
 #include <cstdint>
+#include <initializer_list>
 #include <optional>
 #include <string>
 #include <utility>
@@ -24,20 +25,22 @@
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/internal/litert_extended_model.h"
-#include "litert/cc/internal/litert_op_options.h"
+#include "litert/cc/internal/litert_tfl_types.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/compiler/cc/litert_op_options.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/model.h"
 
-namespace litert {
+namespace litert::compiler {
 
 template <typename T>
 RankedTensorSpec MakeRankedTensorSpec(absl::Span<const int32_t> dims) {
@@ -48,7 +51,23 @@ RankedTensorSpec MakeRankedTensorSpec(absl::Span<const int32_t> dims) {
       .Build();
 }
 
+template <typename T>
+RankedTensorSpec MakeRankedTensorSpec(std::initializer_list<int32_t> dims) {
+  return MakeRankedTensorSpec<T>(
+      absl::Span<const int32_t>(dims.begin(), dims.size()));
+}
+
 namespace {
+
+using ::MakePerChannelQuantization;
+using ::MakePerTensorQuantization;
+using ::SetWeightsFromOwnedBuffer;
+using ::litert::ElementType;
+using ::litert::Layout;
+using ::litert::OwningBufferRef;
+using ::litert::RankedTensorType;
+using ::litert::internal::AttachInput;
+using ::litert::internal::AttachOutput;
 
 static constexpr absl::string_view kTensorName = "M3";
 static constexpr absl::string_view kData = "Nurburgring";
@@ -74,8 +93,9 @@ TEST(CcRankedTensorSpecBuilderTest, TestBuild) {
 }
 
 TEST(CcBuilderTest, TestBuildUnrankedTensor) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtBuilderT builder;
-  Builder cc_builder(&builder);
+  Builder cc_builder(ctx, &builder);
   auto tensor = cc_builder.BuildScalar(kLiteRtElementTypeFloat32,
                                        std::string(kTensorName));
   ASSERT_TRUE(tensor.HasValue());
@@ -84,8 +104,9 @@ TEST(CcBuilderTest, TestBuildUnrankedTensor) {
 }
 
 TEST(CcBuilderTest, TestBuildRankedTensor) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtBuilderT builder;
-  Builder cc_builder(&builder);
+  Builder cc_builder(ctx, &builder);
   RankedTensorType tensor_type(kTensorType);
   auto ranked_tensor_spec = RankedTensorSpecBuilder(tensor_type)
                                 .WithTensorName(std::string(kTensorName))
@@ -103,8 +124,9 @@ TEST(CcBuilderTest, TestBuildRankedTensor) {
 }
 
 TEST(CcBuilderTest, TestCloneTensor) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtBuilderT builder;
-  Builder cc_builder(&builder);
+  Builder cc_builder(ctx, &builder);
   RankedTensorType tensor_type(kTensorType);
   auto ranked_tensor_spec = RankedTensorSpecBuilder(tensor_type)
                                 .WithTensorName(std::string(kTensorName))
@@ -122,8 +144,9 @@ TEST(CcBuilderTest, TestCloneTensor) {
 }
 
 TEST(CcBuilderTest, TestCloneTensorWithQuantization) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtBuilderT builder;
-  Builder cc_builder(&builder);
+  Builder cc_builder(ctx, &builder);
   RankedTensorType tensor_type(kTensorType);
   auto per_tensor_quantization = MakePerTensorQuantization(1.0, 1);
   auto ranked_tensor_spec =
@@ -141,30 +164,32 @@ TEST(CcBuilderTest, TestCloneTensorWithQuantization) {
 }
 
 TEST(CcBuilderTest, TestBuildRankedTensorWithWeights) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtBuilderT builder;
-  Builder cc_builder(&builder);
+  Builder cc_builder(ctx, &builder);
   RankedTensorType tensor_type(kTensorType);
 
-  litert::internal::BufferManager manager;
+  ::litert::internal::BufferManager manager;
   LiteRtWeightsT weights;
   {
     weights.SetBufferManager(&manager);
-    litert::OwningBufferRef<uint8_t> buf(kData);
+    OwningBufferRef<uint8_t> buf(kData);
     SetWeightsFromOwnedBuffer(weights, std::move(buf));
   }
-  Weights cc_weights = Weights(&weights);
+  Weights cc_weights(ctx, &weights);
   auto ranked_tensor_spec = RankedTensorSpecBuilder(tensor_type)
-                                .WithWeights(Weights(&weights))
+                                .WithWeights(Weights(ctx, &weights))
                                 .Build();
   auto tensor = cc_builder.BuildTensor(ranked_tensor_spec);
   ASSERT_TRUE(tensor.HasValue());
   EXPECT_EQ(tensor->ElementType(), ElementType::Float32);
-  EXPECT_EQ(tensor->Weights().Get()->Buffer().StrView(), kData);
+  EXPECT_EQ(tensor->Weights().StrView(), kData);
 }
 
 TEST(CcBuilderTest, TestBuildRankedTensorWithPerTensorQuantization) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtBuilderT builder;
-  Builder cc_builder(&builder);
+  Builder cc_builder(ctx, &builder);
   RankedTensorType tensor_type(kTensorType);
   auto per_tensor_quantization = MakePerTensorQuantization(1.0, 1);
   auto ranked_tensor_spec =
@@ -179,13 +204,14 @@ TEST(CcBuilderTest, TestBuildRankedTensorWithPerTensorQuantization) {
 }
 
 TEST(CcBuilderTest, TestBuildRankedTensorWithPerChannelQuantization) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   constexpr auto kNumChannels = 2;
   constexpr auto kQuantizedDimension = 0;
   constexpr float kScales[kNumChannels] = {1.0, 2.0};
   constexpr int64_t kZeroPoints[kNumChannels] = {0, 0};
 
   LiteRtBuilderT builder;
-  Builder cc_builder(&builder);
+  Builder cc_builder(ctx, &builder);
   RankedTensorType tensor_type(kTensorType);
   LiteRtTensorT per_channel_quantized_tensor;
   auto per_channel_quantization = MakePerChannelQuantization(
@@ -206,57 +232,60 @@ TEST(CcBuilderTest, TestBuildRankedTensorWithPerChannelQuantization) {
 }
 
 TEST(CcBuilderTest, TestBuildOp) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtBuilderT builder;
-  Builder cc_builder(&builder);
+  Builder cc_builder(ctx, &builder);
   LiteRtTensorT litert_tensor_0;
   LiteRtTensorT litert_tensor_1;
   LiteRtTensorT litert_tensor_2;
   std::vector<Tensor> inputs;
-  inputs.push_back(Tensor(&litert_tensor_0));
-  inputs.push_back(Tensor(&litert_tensor_1));
+  inputs.push_back(Tensor(ctx, &litert_tensor_0));
+  inputs.push_back(Tensor(ctx, &litert_tensor_1));
   std::vector<Tensor> outputs;
-  outputs.push_back(Tensor(&litert_tensor_2));
+  outputs.push_back(Tensor(ctx, &litert_tensor_2));
   auto op = cc_builder.BuildOp(kLiteRtOpCodeTflAdd, inputs, outputs);
-  EXPECT_EQ(op.Inputs().size(), 2);
-  EXPECT_EQ(op.Outputs().size(), 1);
-  EXPECT_EQ(op.Code(), kLiteRtOpCodeTflAdd);
+  ASSERT_TRUE(op.HasValue());
+  EXPECT_EQ(op->Inputs().size(), 2);
+  EXPECT_EQ(op->Outputs().size(), 1);
+  EXPECT_EQ(op->Code(), kLiteRtOpCodeTflAdd);
 }
 
 TEST(CcBuilderTest, TestBuildWeights) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   const float kData[] = {1.0f, 2.0f, 3.0f};
   absl::Span<const float> data = absl::MakeConstSpan(kData);
 
   LiteRtBuilderT builder;
-  Builder cc_builder(&builder);
-  LiteRtTensorT litert_tensor_0;
+  Builder cc_builder(ctx, &builder);
   RankedTensorType tensor_type(kTensorType);
 
   auto tensor_spec = RankedTensorSpecBuilder(tensor_type).Build();
   auto tensor = cc_builder.BuildTensor(tensor_spec);
-  auto weights = cc_builder.BuildWeights<float>(data, tensor.Value());
+  auto weights = cc_builder.BuildWeights<float>(data, *tensor);
 
   ASSERT_TRUE(weights.HasValue());
-  EXPECT_EQ(weights.Value().Get()->Buffer().Size(),
-            data.size() * sizeof(float));
+  EXPECT_EQ(weights->Bytes().size(), data.size() * sizeof(float));
   const float* weights_data =
-      reinterpret_cast<const float*>(weights.Value().Get()->Buffer().Data());
+      reinterpret_cast<const float*>(weights->Bytes().data());
   for (int i = 0; i < data.size(); ++i) {
     EXPECT_EQ(weights_data[i], data[i]);
   }
 }
 
 TEST(CcBuilderTest, TestSetOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtBuilderT builder;
-  Builder cc_builder(&builder);
+  Builder cc_builder(ctx, &builder);
   std::vector<Tensor> inputs;
   std::vector<Tensor> outputs;
   auto op = cc_builder.BuildOp(kLiteRtOpCodeTflAdd, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
   {
     AddOptions add_options;
     add_options.fused_activation_function = kActivationFunctionTypeRelu;
-    cc_builder.SetOpOptions<AddOptions>(op, std::move(add_options));
+    cc_builder.SetOpOptions<AddOptions>(*op, std::move(add_options));
   }
-  auto res = GetOptionsAs<AddOptions>(op.Get());
+  auto res = GetOptionsAs<AddOptions>(op->Context(), op->Get());
   ASSERT_TRUE(res.HasValue());
   EXPECT_EQ(res.Value().fused_activation_function, kActivationFunctionTypeRelu);
 }
@@ -267,8 +296,9 @@ TEST(CcBuilderTest, TestSetOpOptions) {
 
 class BuilderExtendedTest : public ::testing::Test {
  protected:
+  const LiteRtCompilerContext* ctx_{LrtGetCompilerContext()};
   LiteRtBuilderT builder_impl_;
-  Builder builder_{&builder_impl_};
+  Builder builder_{ctx_, &builder_impl_};
 };
 
 // Create Single Op (Add)
@@ -285,8 +315,8 @@ TEST_F(BuilderExtendedTest, CreateAddOp) {
 
   auto def_op = out.DefiningOp();
   ASSERT_TRUE(def_op.has_value());
-  EXPECT_EQ(Op(def_op->op).Code(), kLiteRtOpCodeTflAdd);
-  EXPECT_EQ(Op(def_op->op).Inputs().size(), 2);
+  EXPECT_EQ(Op(ctx_, def_op->op).Code(), kLiteRtOpCodeTflAdd);
+  EXPECT_EQ(Op(ctx_, def_op->op).Inputs().size(), 2);
 }
 
 // Create Multi-Output Op (Split)
@@ -309,7 +339,7 @@ TEST_F(BuilderExtendedTest, CreateSplitOp) {
   auto def0 = outs[0].DefiningOp();
   auto def1 = outs[1].DefiningOp();
   EXPECT_EQ(def0->op, def1->op);
-  EXPECT_EQ(Op(def0->op).Code(), kLiteRtOpCodeTflSplit);
+  EXPECT_EQ(Op(ctx_, def0->op).Code(), kLiteRtOpCodeTflSplit);
 }
 
 // ReplaceOp (Simple)
@@ -321,14 +351,14 @@ TEST_F(BuilderExtendedTest, ReplaceOp) {
   auto& existing_op = subgraph.EmplaceOp();
   existing_op.SetOpCode(kLiteRtOpCodeTflAdd);
 
-  litert::internal::AttachInput(&input_tensor, existing_op);
-  litert::internal::AttachOutput(&output_tensor, existing_op);
+  AttachInput(&input_tensor, existing_op);
+  AttachOutput(&output_tensor, existing_op);
 
   LiteRtBuilderT buidler_typed;
-  Builder b(&buidler_typed);
+  Builder b(ctx_, &buidler_typed);
 
-  Op op_to_replace(&existing_op);
-  Tensor input(&input_tensor);
+  Op op_to_replace(ctx_, &existing_op);
+  Tensor input(ctx_, &input_tensor);
 
   auto new_op = b.ReplaceOp(op_to_replace, kLiteRtOpCodeTflNeg, {input});
 
@@ -347,7 +377,7 @@ TEST_F(BuilderExtendedTest, EraseOp) {
       kLiteRtOpCodeTflAbs, {*in_res}, MakeRankedTensorSpec<float>({1}));
   ASSERT_TRUE(out_res.HasValue());
   auto def = out_res->DefiningOp();
-  auto op = Op(def->op);
+  auto op = Op(ctx_, def->op);
 
   builder_.EraseOp(op);
 }
@@ -366,7 +396,7 @@ TEST_F(BuilderExtendedTest, CreateVariadicOp) {
       MakeRankedTensorSpec<float>({3}));
   ASSERT_TRUE(out_res.HasValue());
   auto def = out_res->DefiningOp();
-  EXPECT_EQ(Op(def->op).Inputs().size(), 3);
+  EXPECT_EQ(Op(ctx_, def->op).Inputs().size(), 3);
 }
 
 // Replace with different input count
@@ -377,15 +407,15 @@ TEST_F(BuilderExtendedTest, ReplaceOpDiffInputs) {
   auto& out = subgraph.EmplaceTensor();
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflAdd);
-  litert::internal::AttachInput(&t1, op);
-  litert::internal::AttachInput(&t2, op);
-  litert::internal::AttachOutput(&out, op);
+  AttachInput(&t1, op);
+  AttachInput(&t2, op);
+  AttachOutput(&out, op);
 
   LiteRtBuilderT buidler_typed;
-  Builder b(&buidler_typed);
+  Builder b(ctx_, &buidler_typed);
 
-  Op op_to_replace(&op);
-  Tensor input(&t1);
+  Op op_to_replace(ctx_, &op);
+  Tensor input(ctx_, &t1);
 
   // New: Abs(t1) - 1 input
   auto new_op = b.ReplaceOp(op_to_replace, kLiteRtOpCodeTflAbs, {input});
@@ -425,7 +455,7 @@ TEST_F(BuilderExtendedTest, CreateResNetBlock) {
   ASSERT_TRUE(add_out_res.HasValue());
 
   auto def = add_out_res->DefiningOp();
-  EXPECT_EQ(Op(def->op).Inputs().size(), 2);
+  EXPECT_EQ(Op(ctx_, def->op).Inputs().size(), 2);
 }
 
 // Empty Inputs
@@ -435,7 +465,7 @@ TEST_F(BuilderExtendedTest, CreateOpNoInputs) {
       kLiteRtOpCodeTflCustom, {}, MakeRankedTensorSpec<float>({1}));
   ASSERT_TRUE(out_res.HasValue());
   auto def = out_res->DefiningOp();
-  EXPECT_EQ(Op(def->op).Inputs().size(), 0);
+  EXPECT_EQ(Op(ctx_, def->op).Inputs().size(), 0);
 }
 
 // Empty Outputs
@@ -461,7 +491,7 @@ TEST_F(BuilderExtendedTest, LargeFanIn) {
                                       MakeRankedTensorSpec<float>({100}));
   ASSERT_TRUE(out_res.HasValue());
   auto def = out_res->DefiningOp();
-  EXPECT_EQ(Op(def->op).Inputs().size(), 100);
+  EXPECT_EQ(Op(ctx_, def->op).Inputs().size(), 100);
 }
 
 // Dynamic Shapes (Wildcards)
@@ -480,14 +510,14 @@ TEST_F(BuilderExtendedTest, ReplaceNegWithAdd) {
   auto& out = subgraph.EmplaceTensor();
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflNeg);
-  litert::internal::AttachInput(&t1, op);
-  litert::internal::AttachOutput(&out, op);
+  AttachInput(&t1, op);
+  AttachOutput(&out, op);
 
   LiteRtBuilderT buidler_typed;
-  Builder b(&buidler_typed);
+  Builder b(ctx_, &buidler_typed);
 
-  Op op_to_replace(&op);
-  Tensor input(&t1);
+  Op op_to_replace(ctx_, &op);
+  Tensor input(ctx_, &t1);
 
   // New: Add(t1, t1)
   auto new_op = b.ReplaceOp(op_to_replace, kLiteRtOpCodeTflAdd, {input, input});
@@ -506,17 +536,16 @@ TEST_F(BuilderExtendedTest, ReplaceSplitWithSplit) {
   auto& out2 = subgraph.EmplaceTensor();
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflSplit);
-  litert::internal::AttachInput(&axis, op);
-  litert::internal::AttachInput(&t, op);
-  litert::internal::AttachOutput(&out1, op);
-  litert::internal::AttachOutput(&out2, op);
+  AttachInput(&axis, op);
+  AttachInput(&t, op);
+  AttachOutput(&out1, op);
+  AttachOutput(&out2, op);
 
   LiteRtBuilderT buidler_typed;
-  Builder b(&buidler_typed);
+  Builder b(ctx_, &buidler_typed);
 
-  Op op_to_replace(&op);
-  Tensor input_t(&t);
-  Tensor input_axis(&axis);  // Or use a new axis tensor
+  Op op_to_replace(ctx_, &op);
+  Tensor input_t(ctx_, &t);
 
   // Create a new axis tensor for replacement test
   auto axis2_res = b.BuildTensor(MakeRankedTensorSpec<int32_t>({1}));
@@ -571,15 +600,15 @@ TEST_F(BuilderExtendedTest, PatternMatchReplace) {
   auto& out = subgraph.EmplaceTensor();
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflAdd);
-  litert::internal::AttachInput(&x, op);
-  litert::internal::AttachInput(&x, op);
-  litert::internal::AttachOutput(&out, op);
+  AttachInput(&x, op);
+  AttachInput(&x, op);
+  AttachOutput(&out, op);
 
   LiteRtBuilderT buidler_typed;
-  Builder b(&buidler_typed);
+  Builder b(ctx_, &buidler_typed);
 
-  Op op_to_replace(&op);
-  Tensor input_x(&x);
+  Op op_to_replace(ctx_, &op);
+  Tensor input_x(ctx_, &x);
 
   // Pattern: Add(a, a) -> Mul(a, 2)
   if (op_to_replace.Code() == kLiteRtOpCodeTflAdd &&
@@ -596,4 +625,4 @@ TEST_F(BuilderExtendedTest, PatternMatchReplace) {
 }
 
 }  // namespace
-}  // namespace litert
+}  // namespace litert::compiler

@@ -20,11 +20,10 @@
 
 #include <gtest/gtest.h>
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/internal/litert_builder.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/core/model/model.h"
@@ -36,16 +35,6 @@
 #include "tflite/converter/schema/schema_generated.h"
 
 namespace litert {
-
-template <typename T>
-RankedTensorSpec MakeRankedTensorSpec(absl::Span<const int32_t> dims) {
-  return RankedTensorSpecBuilder(
-             RankedTensorType(
-                 GetElementType<T>(),
-                 Layout(BuildLayout(dims.data(), dims.data() + dims.size()))))
-      .Build();
-}
-
 namespace {
 
 TEST(MatMulRequantTest, FuseMatMulRequantSuccessTest) {
@@ -88,7 +77,7 @@ TEST(MatMulRequantTest, FuseMatMulRequantSuccessTest) {
   internal::AttachOutput(&output0, convert);
 
   // Call the transformation.
-  FuseMatMulRequantTransformation(&builder, &convert);
+  FuseMatMulRequantTransformation(LrtGetCompilerContext(), &builder, &convert);
 
   // Apply the changes.
   builder.ApplyChanges(&subgraph);
@@ -151,7 +140,8 @@ TEST(MatMulRequantTest, FuseMatMulRequantNoMatchTest) {
   internal::AttachOutput(&output0, convert);
 
   // Call the transformation.
-  auto status = FuseMatMulRequantTransformation(&builder, &convert);
+  auto status = FuseMatMulRequantTransformation(LrtGetCompilerContext(),
+                                                &builder, &convert);
   EXPECT_EQ(status, kLiteRtStatusPatternNoMatch);
 
   // Apply the changes (none expected).
@@ -211,7 +201,7 @@ TEST(MatMulRequantTest, FuseMatMulRequantComplexDagTest) {
   internal::AttachOutput(&out, concat);
 
   // Call the transformation on the Quant op.
-  FuseMatMulRequantTransformation(&builder, &quant);
+  FuseMatMulRequantTransformation(LrtGetCompilerContext(), &builder, &quant);
 
   // Apply the changes.
   builder.ApplyChanges(&subgraph);
@@ -318,7 +308,7 @@ TEST(MatMulRequantTest, FuseMatMulRequantSharedInputTest) {
   ASSERT_EQ(input_shared.NumUses(), 2);
 
   // Call the transformation on the Quant op.
-  FuseMatMulRequantTransformation(&builder, &quant);
+  FuseMatMulRequantTransformation(LrtGetCompilerContext(), &builder, &quant);
 
   // Apply the changes.
   builder.ApplyChanges(&subgraph);
@@ -365,7 +355,8 @@ TEST(MatMulRequantTest, FuseMatMulRequantRealModelTest) {
   LiteRtOp quant_op_ptr = nullptr;
   for (auto* op : subgraph->Ops()) {
     if (op->OpCode() == kLiteRtOpCodeTflQuantize) {
-      if (FuseMatMulRequantTransformation(&builder, op) == kLiteRtStatusOk) {
+      if (FuseMatMulRequantTransformation(LrtGetCompilerContext(), &builder,
+                                          op) == kLiteRtStatusOk) {
         quant_op_ptr = op;
         break;
       }

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef ODML_LITERT_LITERT_CC_INTERNAL_LITERT_MATCHERS_H_
-#define ODML_LITERT_LITERT_CC_INTERNAL_LITERT_MATCHERS_H_
+#ifndef ODML_LITERT_LITERT_COMPILER_CC_LITERT_MATCHERS_H_
+#define ODML_LITERT_LITERT_COMPILER_CC_LITERT_MATCHERS_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -27,11 +27,10 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/internal/litert_extended_model.h"
-#include "litert/cc/internal/litert_op_options.h"
-#include "litert/cc/litert_model_types.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/compiler/cc/litert_op_options.h"
 
-namespace litert {
+namespace litert::compiler {
 
 // Interface for tracing match operations.
 class MatchTracer {
@@ -487,7 +486,7 @@ struct OptionsMatcher {
 
   bool Match(const Op& op, MatchTracer* tracer = nullptr) const {
     if (tracer) tracer->PushScope(label);
-    auto opts = GetOptionsAs<OptionsT>(op.Get());
+    auto opts = GetOptionsAs<OptionsT>(op.Context(), op.Get());
     if (!opts) {
       if (tracer) {
         tracer->LogFailure(label, "Failed to retrieve options");
@@ -669,7 +668,7 @@ struct OutputIndexMatcher {
       return false;
     }
 
-    Op op(def_op_wrapper->op);
+    Op op(tensor.Context(), def_op_wrapper->op);
     bool res = op_matcher.Match(op, tracer);
     if (tracer) tracer->PopScope();
     return res;
@@ -723,10 +722,10 @@ struct CaptureOrSameAsMatcher {
         *storage = val;
       } else {
         if constexpr (std::is_same_v<T, Op> && std::is_same_v<U, Op>) {
-          *storage = Op(val.Get());
+          *storage = Op(val.Context(), val.Get());
         } else if constexpr (std::is_same_v<T, Tensor> &&
                              std::is_same_v<U, Tensor>) {
-          *storage = Tensor(val.Get());
+          *storage = Tensor(val.Context(), val.Get());
         }
       }
     } else {
@@ -1061,8 +1060,9 @@ inline auto m_IsQuantized(absl::string_view label = "IsQuantizedMatcher") {
 
 struct QuantizationTypeMatcher {
   absl::string_view label;
-  QuantizationTypeId type;
-  explicit QuantizationTypeMatcher(absl::string_view l, QuantizationTypeId t)
+  LiteRtQuantizationTypeId type;
+  explicit QuantizationTypeMatcher(absl::string_view l,
+                                   LiteRtQuantizationTypeId t)
       : label(l), type(t) {}
   bool Match(const Tensor& tensor, MatchTracer* tracer = nullptr) const {
     if (tracer) tracer->PushScope(label);
@@ -1078,14 +1078,9 @@ struct QuantizationTypeMatcher {
   }
 };
 
-inline auto m_QType(QuantizationTypeId type,
-                    absl::string_view label = "QuantizationTypeMatcher") {
-  return QuantizationTypeMatcher(label, type);
-}
-
 inline auto m_QType(LiteRtQuantizationTypeId type,
                     absl::string_view label = "QuantizationTypeMatcher") {
-  return QuantizationTypeMatcher(label, static_cast<QuantizationTypeId>(type));
+  return QuantizationTypeMatcher(label, type);
 }
 
 // User Count matcher.
@@ -1349,6 +1344,6 @@ inline auto m_Name(absl::string_view name,
   return NameMatcher(label, name);
 }
 
-}  // namespace litert
+}  // namespace litert::compiler
 
-#endif  // ODML_LITERT_LITERT_CC_INTERNAL_LITERT_MATCHERS_H_
+#endif  // ODML_LITERT_LITERT_COMPILER_CC_LITERT_MATCHERS_H_

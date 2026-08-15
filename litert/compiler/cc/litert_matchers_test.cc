@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/cc/internal/litert_matchers.h"
+#include "litert/compiler/cc/litert_matchers.h"
 
 #include <cstdint>
 #include <cstring>
@@ -22,56 +22,66 @@
 
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/internal/litert_extended_model.h"
-#include "litert/cc/internal/litert_op_options.h"
+#include "litert/cc/internal/litert_tfl_types.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/compiler/cc/litert_op_options.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "tflite/converter/schema/schema_generated.h"
 
-namespace litert {
+namespace litert::compiler {
 namespace {
 
+using ::SetWeightsFromOwnedBuffer;
+using ::litert::OwningBufferRef;
+using ::litert::internal::AttachInput;
+using ::litert::internal::AttachOutput;
+
 TEST(MatchersTest, SimpleMatch) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflAdd);
 
-  Op cc_op(&op);
+  Op cc_op(ctx, &op);
   EXPECT_TRUE(Match(cc_op, m_Op<kLiteRtOpCodeTflAdd>()));
   EXPECT_FALSE(Match(cc_op, m_Op<kLiteRtOpCodeTflMul>()));
 }
 
 TEST(MatchersTest, OpCodeMatch) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflAdd);
 
   // Add inputs to make m_Op(Code) fail (as it expects 0 inputs)
   auto& input = subgraph.EmplaceTensor();
-  internal::AttachInput(&input, op);
+  AttachInput(&input, op);
 
-  Op cc_op(&op);
+  Op cc_op(ctx, &op);
   EXPECT_FALSE(Match(cc_op, m_Op<kLiteRtOpCodeTflAdd>()));
   EXPECT_TRUE(Match(cc_op, m_OpCode<kLiteRtOpCodeTflAdd>()));
 }
 
 TEST(MatchersTest, MatchInput) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflAdd);
 
   auto& input = subgraph.EmplaceTensor();
-  internal::AttachInput(&input, op);
+  AttachInput(&input, op);
 
   auto& def_op = subgraph.EmplaceOp();
   def_op.SetOpCode(kLiteRtOpCodeTflMul);
-  internal::AttachOutput(&input, def_op);
+  AttachOutput(&input, def_op);
 
-  Op cc_op(&op);
+  Op cc_op(ctx, &op);
 
   // Match Add(Mul)
   EXPECT_TRUE(
@@ -83,12 +93,13 @@ TEST(MatchersTest, MatchInput) {
 }
 
 TEST(MatchersTest, CaptureOrSameAs_Capture) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflAdd);
 
-  Op cc_op(&op);
-  Op captured(nullptr);
+  Op cc_op(ctx, &op);
+  Op captured(ctx, nullptr);
 
   EXPECT_TRUE(
       Match(cc_op, m_CaptureOrSameAs(&captured, m_Op<kLiteRtOpCodeTflAdd>())));
@@ -97,14 +108,15 @@ TEST(MatchersTest, CaptureOrSameAs_Capture) {
 }
 
 TEST(MatchersTest, AnyMatchers) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflAdd);
   auto& tensor = subgraph.EmplaceTensor();
-  internal::AttachOutput(&tensor, op);
+  AttachOutput(&tensor, op);
 
-  Op cc_op(&op);
-  Tensor cc_tensor(&tensor);
+  Op cc_op(ctx, &op);
+  Tensor cc_tensor(ctx, &tensor);
 
   EXPECT_TRUE(Match(cc_op, m_AnyOp()));
   EXPECT_TRUE(Match(cc_tensor, m_Any()));
@@ -112,6 +124,7 @@ TEST(MatchersTest, AnyMatchers) {
 }
 
 TEST(MatchersTest, ConstantAndSubgraphInput) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& cst = subgraph.EmplaceTensor();
   SetWeightsFromOwnedBuffer(cst.Weights(), OwningBufferRef<uint8_t>("dummy"));
@@ -121,11 +134,11 @@ TEST(MatchersTest, ConstantAndSubgraphInput) {
 
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflAdd);
-  internal::AttachInput(&cst, op);
-  internal::AttachInput(&input, op);
+  AttachInput(&cst, op);
+  AttachInput(&input, op);
 
-  Tensor cc_cst(&cst);
-  Tensor cc_input(&input);
+  Tensor cc_cst(ctx, &cst);
+  Tensor cc_input(ctx, &input);
 
   EXPECT_TRUE(Match(cc_cst, m_IsConstant()));
   EXPECT_FALSE(Match(cc_cst, m_IsSubgraphInput()));
@@ -133,17 +146,18 @@ TEST(MatchersTest, ConstantAndSubgraphInput) {
   EXPECT_TRUE(Match(cc_input, m_IsSubgraphInput()));
   EXPECT_FALSE(Match(cc_input, m_IsConstant()));
 
-  Op cc_op(&op);
+  Op cc_op(ctx, &op);
   EXPECT_TRUE(Match(
       cc_op, m_Op<kLiteRtOpCodeTflAdd>(m_IsConstant(), m_IsSubgraphInput())));
 }
 
 TEST(MatchersTest, Predicate) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflAdd);
 
-  Op cc_op(&op);
+  Op cc_op(ctx, &op);
   EXPECT_TRUE(Match(cc_op, m_Predicate<Op>([](const Op& o) {
                       return o.Code() == kLiteRtOpCodeTflAdd;
                     })));
@@ -157,19 +171,20 @@ Topology:
     T0 -> Op1 -> T1 -> Op2 -> T2 -> Op3 -> T3 -> Op4 -> T4
 */
 TEST(MatchersTest, DeepChain) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto* current_tensor = &subgraph.EmplaceTensor();
 
   for (int i = 0; i < 4; ++i) {
     auto& op = subgraph.EmplaceOp();
     op.SetOpCode(static_cast<LiteRtOpCode>(i + 1));
-    internal::AttachInput(current_tensor, op);
+    AttachInput(current_tensor, op);
     auto& next_tensor = subgraph.EmplaceTensor();
-    internal::AttachOutput(&next_tensor, op);
+    AttachOutput(&next_tensor, op);
     current_tensor = &next_tensor;
   }
 
-  Tensor last_tensor(current_tensor);
+  Tensor last_tensor(ctx, current_tensor);
   EXPECT_TRUE(Match(
       last_tensor,
       m_Op<static_cast<LiteRtOpCode>(4)>(
@@ -191,6 +206,7 @@ Topology:
     T3 /
 */
 TEST(MatchersTest, FanIn) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& in1 = subgraph.EmplaceTensor();
   auto& in2 = subgraph.EmplaceTensor();
@@ -198,11 +214,11 @@ TEST(MatchersTest, FanIn) {
 
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflAdd);
-  internal::AttachInput(&in1, op);
-  internal::AttachInput(&in2, op);
-  internal::AttachInput(&in3, op);
+  AttachInput(&in1, op);
+  AttachInput(&in2, op);
+  AttachInput(&in3, op);
 
-  Op cc_op(&op);
+  Op cc_op(ctx, &op);
   EXPECT_TRUE(
       Match(cc_op, m_Op<kLiteRtOpCodeTflAdd>(m_Any(), m_Any(), m_Any())));
   EXPECT_FALSE(Match(cc_op, m_Op<kLiteRtOpCodeTflAdd>(m_Any(), m_Any())));
@@ -217,16 +233,17 @@ Topology:
          +--/
 */
 TEST(MatchersTest, SameInput) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& in = subgraph.EmplaceTensor();
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflMul);
-  internal::AttachInput(&in, op);
-  internal::AttachInput(&in, op);
+  AttachInput(&in, op);
+  AttachInput(&in, op);
 
-  Op cc_op(&op);
-  Tensor captured1(nullptr);
-  Tensor captured2(nullptr);
+  Op cc_op(ctx, &op);
+  Tensor captured1(ctx, nullptr);
+  Tensor captured2(ctx, nullptr);
 
   // Both matchers see the same tensor, but they don't know it's shared
   // unless we check the captured pointers.
@@ -244,27 +261,28 @@ Topology:
           +-> Op_right -> T_right -/
 */
 TEST(MatchersTest, DiamondPattern) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& in = subgraph.EmplaceTensor();
 
   auto& op_left = subgraph.EmplaceOp();
   op_left.SetOpCode(kLiteRtOpCodeTflAbs);
-  internal::AttachInput(&in, op_left);
+  AttachInput(&in, op_left);
   auto& out_left = subgraph.EmplaceTensor();
-  internal::AttachOutput(&out_left, op_left);
+  AttachOutput(&out_left, op_left);
 
   auto& op_right = subgraph.EmplaceOp();
   op_right.SetOpCode(kLiteRtOpCodeTflNeg);
-  internal::AttachInput(&in, op_right);
+  AttachInput(&in, op_right);
   auto& out_right = subgraph.EmplaceTensor();
-  internal::AttachOutput(&out_right, op_right);
+  AttachOutput(&out_right, op_right);
 
   auto& op_final = subgraph.EmplaceOp();
   op_final.SetOpCode(kLiteRtOpCodeTflAdd);
-  internal::AttachInput(&out_left, op_final);
-  internal::AttachInput(&out_right, op_final);
+  AttachInput(&out_left, op_final);
+  AttachInput(&out_right, op_final);
 
-  Op cc_op(&op_final);
+  Op cc_op(ctx, &op_final);
   EXPECT_TRUE(
       Match(cc_op, m_Op<kLiteRtOpCodeTflAdd>(m_OpCode<kLiteRtOpCodeTflAbs>(),
                                              m_OpCode<kLiteRtOpCodeTflNeg>())));
@@ -277,24 +295,25 @@ Topology:
            +--/           T_in2 -/
 */
 TEST(MatchersTest, NestedCaptures) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& in = subgraph.EmplaceTensor();
   auto& op1 = subgraph.EmplaceOp();
   op1.SetOpCode(kLiteRtOpCodeTflMul);
-  internal::AttachInput(&in, op1);
-  internal::AttachInput(&in, op1);
+  AttachInput(&in, op1);
+  AttachInput(&in, op1);
   auto& out1 = subgraph.EmplaceTensor();
-  internal::AttachOutput(&out1, op1);
+  AttachOutput(&out1, op1);
 
   auto& op2 = subgraph.EmplaceOp();
   op2.SetOpCode(kLiteRtOpCodeTflAdd);
-  internal::AttachInput(&out1, op2);
+  AttachInput(&out1, op2);
   auto& in2 = subgraph.EmplaceTensor();
-  internal::AttachInput(&in2, op2);
+  AttachInput(&in2, op2);
 
-  Op root(&op2);
-  Op cap_mul(nullptr);
-  Op cap_add(nullptr);
+  Op root(ctx, &op2);
+  Op cap_mul(ctx, nullptr);
+  Op cap_add(ctx, nullptr);
 
   EXPECT_TRUE(Match(
       root, m_CaptureOrSameAs(
@@ -307,21 +326,17 @@ TEST(MatchersTest, NestedCaptures) {
 }
 
 TEST(MatchersTest, ManyTestCasesTopology) {
-  // We'll generate a bunch of cases in a loop or just list many variations.
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   for (int num_inputs = 0; num_inputs < 10; ++num_inputs) {
     LiteRtSubgraphT subgraph;
     auto& op = subgraph.EmplaceOp();
     op.SetOpCode(kLiteRtOpCodeTflCustom);
     for (int i = 0; i < num_inputs; ++i) {
       auto& in = subgraph.EmplaceTensor();
-      internal::AttachInput(&in, op);
+      AttachInput(&in, op);
     }
 
-    Op cc_op(&op);
-    // Exact match for num_inputs
-    std::vector<AnyTensorMatcher> matchers(num_inputs);
-    // Unfortunately we can't easily build m_Op dynamically with variadic args.
-    // But we can check a few specific ones.
+    Op cc_op(ctx, &op);
     if (num_inputs == 0)
       EXPECT_TRUE(Match(cc_op, m_Op<kLiteRtOpCodeTflCustom>()));
     if (num_inputs == 1)
@@ -336,21 +351,19 @@ TEST(MatchersTest, ManyTestCasesTopology) {
 }
 
 TEST(MatchersTest, ChainVariation) {
-  // Testing chains of different lengths.
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   for (int len = 1; len < 10; ++len) {
     LiteRtSubgraphT subgraph;
     auto* cur = &subgraph.EmplaceTensor();
     for (int i = 0; i < len; ++i) {
       auto& op = subgraph.EmplaceOp();
       op.SetOpCode(kLiteRtOpCodeTflAbs);
-      internal::AttachInput(cur, op);
+      AttachInput(cur, op);
       auto& out = subgraph.EmplaceTensor();
-      internal::AttachOutput(&out, op);
+      AttachOutput(&out, op);
       cur = &out;
     }
-    Tensor last(cur);
-    // We can't easily generate the recursive matcher dynamically for 50 cases,
-    // but we can test a few.
+    Tensor last(ctx, cur);
     if (len == 1) EXPECT_TRUE(Match(last, m_Op<kLiteRtOpCodeTflAbs>(m_Any())));
     if (len == 2)
       EXPECT_TRUE(Match(
@@ -369,19 +382,20 @@ Topology:
           +-> Op2 -> T_out2
 */
 TEST(MatchersTest, FanOutMismatch) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& in = subgraph.EmplaceTensor();
 
   auto& op1 = subgraph.EmplaceOp();
   op1.SetOpCode(kLiteRtOpCodeTflAbs);
-  internal::AttachInput(&in, op1);
+  AttachInput(&in, op1);
 
   auto& op2 = subgraph.EmplaceOp();
   op2.SetOpCode(kLiteRtOpCodeTflNeg);
-  internal::AttachInput(&in, op2);
+  AttachInput(&in, op2);
 
   // Matcher for op1 shouldn't care about op2.
-  EXPECT_TRUE(Match(Op(&op1), m_Op<kLiteRtOpCodeTflAbs>(m_Any())));
+  EXPECT_TRUE(Match(Op(ctx, &op1), m_Op<kLiteRtOpCodeTflAbs>(m_Any())));
 }
 
 /*
@@ -391,23 +405,24 @@ Topology:
                  +-> T_out2
 */
 TEST(MatchersTest, MultipleOutputs) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& in = subgraph.EmplaceTensor();
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflSplit);
-  internal::AttachInput(&in, op);
+  AttachInput(&in, op);
 
   auto& out1 = subgraph.EmplaceTensor();
-  internal::AttachOutput(&out1, op);
+  AttachOutput(&out1, op);
   auto& out2 = subgraph.EmplaceTensor();
-  internal::AttachOutput(&out2, op);
+  AttachOutput(&out2, op);
 
   // OpMatcher only checks inputs.
-  EXPECT_TRUE(Match(Op(&op), m_Op<kLiteRtOpCodeTflSplit>(m_Any())));
+  EXPECT_TRUE(Match(Op(ctx, &op), m_Op<kLiteRtOpCodeTflSplit>(m_Any())));
 
   // Tensor matching from different outputs.
-  EXPECT_TRUE(Match(Tensor(&out1), m_Op<kLiteRtOpCodeTflSplit>(m_Any())));
-  EXPECT_TRUE(Match(Tensor(&out2), m_Op<kLiteRtOpCodeTflSplit>(m_Any())));
+  EXPECT_TRUE(Match(Tensor(ctx, &out1), m_Op<kLiteRtOpCodeTflSplit>(m_Any())));
+  EXPECT_TRUE(Match(Tensor(ctx, &out2), m_Op<kLiteRtOpCodeTflSplit>(m_Any())));
 }
 
 /*
@@ -418,18 +433,18 @@ Topology:
     T8 --/
 */
 TEST(MatchersTest, WideFanIn) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflConcatenation);
-  std::vector<LiteRtTensor*> inputs;
   for (int i = 0; i < 8; ++i) {
     auto& in = subgraph.EmplaceTensor();
-    internal::AttachInput(&in, op);
+    AttachInput(&in, op);
   }
 
-  EXPECT_TRUE(Match(Op(&op), m_Op<kLiteRtOpCodeTflConcatenation>(
-                                 m_Any(), m_Any(), m_Any(), m_Any(), m_Any(),
-                                 m_Any(), m_Any(), m_Any())));
+  EXPECT_TRUE(Match(Op(ctx, &op), m_Op<kLiteRtOpCodeTflConcatenation>(
+                                      m_Any(), m_Any(), m_Any(), m_Any(),
+                                      m_Any(), m_Any(), m_Any(), m_Any())));
 }
 
 /*
@@ -443,74 +458,79 @@ Topology:
     T4 -/
 */
 TEST(MatchersTest, ComplexTree) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& in1 = subgraph.EmplaceTensor();
   auto& in2 = subgraph.EmplaceTensor();
   auto& op1 = subgraph.EmplaceOp();
   op1.SetOpCode(kLiteRtOpCodeTflMul);
-  internal::AttachInput(&in1, op1);
-  internal::AttachInput(&in2, op1);
+  AttachInput(&in1, op1);
+  AttachInput(&in2, op1);
   auto& out1 = subgraph.EmplaceTensor();
-  internal::AttachOutput(&out1, op1);
+  AttachOutput(&out1, op1);
 
   auto& in3 = subgraph.EmplaceTensor();
   auto& in4 = subgraph.EmplaceTensor();
   auto& op2 = subgraph.EmplaceOp();
   op2.SetOpCode(kLiteRtOpCodeTflSub);
-  internal::AttachInput(&in3, op2);
-  internal::AttachInput(&in4, op2);
+  AttachInput(&in3, op2);
+  AttachInput(&in4, op2);
   auto& out2 = subgraph.EmplaceTensor();
-  internal::AttachOutput(&out2, op2);
+  AttachOutput(&out2, op2);
 
   auto& op3 = subgraph.EmplaceOp();
   op3.SetOpCode(kLiteRtOpCodeTflAdd);
-  internal::AttachInput(&out1, op3);
-  internal::AttachInput(&out2, op3);
+  AttachInput(&out1, op3);
+  AttachInput(&out2, op3);
 
-  EXPECT_TRUE(Match(
-      Op(&op3), m_Op<kLiteRtOpCodeTflAdd>(m_OpCode<kLiteRtOpCodeTflMul>(),
-                                          m_OpCode<kLiteRtOpCodeTflSub>())));
+  EXPECT_TRUE(Match(Op(ctx, &op3), m_Op<kLiteRtOpCodeTflAdd>(
+                                       m_OpCode<kLiteRtOpCodeTflMul>(),
+                                       m_OpCode<kLiteRtOpCodeTflSub>())));
 }
 
 TEST(MatchersTest, CaptureTensor) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& in = subgraph.EmplaceTensor();
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflAbs);
-  internal::AttachInput(&in, op);
+  AttachInput(&in, op);
 
-  Tensor captured(nullptr);
-  EXPECT_TRUE(Match(Op(&op), m_Op<kLiteRtOpCodeTflAbs>(
-                                 m_CaptureOrSameAs(&captured, m_Any()))));
+  Tensor captured(ctx, nullptr);
+  EXPECT_TRUE(Match(Op(ctx, &op), m_Op<kLiteRtOpCodeTflAbs>(
+                                      m_CaptureOrSameAs(&captured, m_Any()))));
   EXPECT_EQ(captured.Get(), &in);
 }
 
 TEST(MatchersTest, PredicateOnTensor) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& in = subgraph.EmplaceTensor();
   in.SetName("my_tensor");
 
-  EXPECT_TRUE(Match(Tensor(&in), m_Predicate<Tensor>([](const Tensor& t) {
+  EXPECT_TRUE(Match(Tensor(ctx, &in), m_Predicate<Tensor>([](const Tensor& t) {
                       return t.Name() == "my_tensor";
                     })));
 }
 
 TEST(MatchersTest, MatchOpCodeWithTensor) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflMul);
   auto& out = subgraph.EmplaceTensor();
-  internal::AttachOutput(&out, op);
+  AttachOutput(&out, op);
 
-  EXPECT_TRUE(Match(Tensor(&out), m_OpCode<kLiteRtOpCodeTflMul>()));
+  EXPECT_TRUE(Match(Tensor(ctx, &out), m_OpCode<kLiteRtOpCodeTflMul>()));
 }
 
 TEST(MatchersTest, Combinators) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflAdd);
 
-  Op cc_op(&op);
+  Op cc_op(ctx, &op);
   EXPECT_TRUE(
       Match(cc_op, m_AllOf(m_OpCode<kLiteRtOpCodeTflAdd>(), m_AnyOp())));
   EXPECT_FALSE(Match(cc_op, m_AllOf(m_OpCode<kLiteRtOpCodeTflAdd>(),
@@ -526,28 +546,30 @@ TEST(MatchersTest, Combinators) {
 }
 
 TEST(MatchersTest, CaptureFail) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& input = subgraph.EmplaceTensor();
   // No defining op (subgraph input)
 
-  Tensor cc_input(&input);
-  Op captured(nullptr);
+  Tensor cc_input(ctx, &input);
+  Op captured(ctx, nullptr);
 
   // Match succeeds on tensor level (m_Any), but capture Op fails because no
-  // defining op. With fix, this should return false.
+  // defining op.
   EXPECT_FALSE(Match(cc_input, m_CaptureOrSameAs(&captured, m_Any())));
 }
 
 TEST(MatchersTest, CustomOpMatching) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflCustom);
   op.SetCustomCode("MyCustomOp");
 
   auto& in = subgraph.EmplaceTensor();
-  internal::AttachInput(&in, op);
+  AttachInput(&in, op);
 
-  Op cc_op(&op);
+  Op cc_op(ctx, &op);
 
   // m_CustomOpCode matches code string
   EXPECT_TRUE(Match(cc_op, m_CustomOpCode("MyCustomOp")));
@@ -560,21 +582,23 @@ TEST(MatchersTest, CustomOpMatching) {
 }
 
 TEST(MatchersTest, NameMatching) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& t = subgraph.EmplaceTensor();
   t.SetName("MyTensor");
 
-  Tensor cc_t(&t);
+  Tensor cc_t(ctx, &t);
   EXPECT_TRUE(Match(cc_t, m_Name("MyTensor")));
   EXPECT_FALSE(Match(cc_t, m_Name("Other")));
 }
 
 TEST(MatchersTest, CustomLambdaMatching) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflAdd);
 
-  Op cc_op(&op);
+  Op cc_op(ctx, &op);
 
   // Custom lambda checking op code
   auto is_add = [](const Op& o) { return o.Code() == kLiteRtOpCodeTflAdd; };
@@ -594,6 +618,7 @@ TEST(MatchersTest, CustomLambdaMatching) {
 }
 
 TEST(MatchersTest, OptionsMatching) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflConv2d);
@@ -607,7 +632,7 @@ TEST(MatchersTest, OptionsMatching) {
   tfl_opts.Set(std::move(conv_opts));
   litert::internal::SetTflOptions(op, std::move(tfl_opts));
 
-  Op cc_op(&op);
+  Op cc_op(ctx, &op);
 
   auto match_stride = [](const Conv2dOptions& opts) {
     return opts.stride_w == 1 && opts.stride_h == 2;
@@ -622,6 +647,7 @@ TEST(MatchersTest, OptionsMatching) {
 }
 
 TEST(MatchersTest, OpVariadicMatching) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflConcatenation);
@@ -629,11 +655,11 @@ TEST(MatchersTest, OpVariadicMatching) {
   auto& in1 = subgraph.EmplaceTensor();
   auto& in2 = subgraph.EmplaceTensor();
   auto& in3 = subgraph.EmplaceTensor();
-  internal::AttachInput(&in1, op);
-  internal::AttachInput(&in2, op);
-  internal::AttachInput(&in3, op);
+  AttachInput(&in1, op);
+  AttachInput(&in2, op);
+  AttachInput(&in3, op);
 
-  Op cc_op(&op);
+  Op cc_op(ctx, &op);
 
   // Match prefix 2 inputs
   EXPECT_TRUE(Match(
@@ -653,6 +679,7 @@ TEST(MatchersTest, OpVariadicMatching) {
 }
 
 TEST(MatchersTest, CommutativeMatching) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflAdd);
@@ -661,10 +688,10 @@ TEST(MatchersTest, CommutativeMatching) {
   in1.SetName("A");
   auto& in2 = subgraph.EmplaceTensor();
   in2.SetName("B");
-  internal::AttachInput(&in1, op);
-  internal::AttachInput(&in2, op);
+  AttachInput(&in1, op);
+  AttachInput(&in2, op);
 
-  Op cc_op(&op);
+  Op cc_op(ctx, &op);
 
   auto match_a =
       m_Predicate<Tensor>([](const Tensor& t) { return t.Name() == "A"; });
@@ -687,6 +714,7 @@ TEST(MatchersTest, CommutativeMatching) {
 }
 
 TEST(MatchersTest, MixedMatchers) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflAdd);
@@ -701,10 +729,10 @@ TEST(MatchersTest, MixedMatchers) {
 
   auto& in1 = subgraph.EmplaceTensor();
   auto& in2 = subgraph.EmplaceTensor();
-  internal::AttachInput(&in1, op);
-  internal::AttachInput(&in2, op);
+  AttachInput(&in1, op);
+  AttachInput(&in2, op);
 
-  Op cc_op(&op);
+  Op cc_op(ctx, &op);
 
   auto match_opts = m_Options<AddOptions>([](const AddOptions& o) {
     return o.fused_activation_function == kActivationFunctionTypeRelu;
@@ -717,25 +745,27 @@ TEST(MatchersTest, MixedMatchers) {
 }
 
 TEST(MatchersTest, CommutativeOpFailCount) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflAdd);
   auto& in1 = subgraph.EmplaceTensor();
-  internal::AttachInput(&in1, op);
+  AttachInput(&in1, op);
   // Only 1 input
 
-  Op cc_op(&op);
+  Op cc_op(ctx, &op);
   EXPECT_FALSE(
       Match(cc_op, m_CommutativeOp<kLiteRtOpCodeTflAdd>(m_Any(), m_Any())));
 }
 
 TEST(MatchersTest, ShapeMatching) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& tensor = subgraph.EmplaceTensor();
   tensor.SetType(
       MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 224, 224, 3}));
 
-  Tensor cc_tensor(&tensor);
+  Tensor cc_tensor(ctx, &tensor);
   EXPECT_TRUE(Match(cc_tensor, m_Shape({1, 224, 224, 3})));
   // Rank mismatch
   EXPECT_FALSE(Match(cc_tensor, m_Shape({1, 224, 224})));
@@ -746,12 +776,13 @@ TEST(MatchersTest, ShapeMatching) {
 }
 
 TEST(MatchersTest, ShapeWildcardMatching) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& tensor = subgraph.EmplaceTensor();
   tensor.SetType(
       MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 224, 224, 3}));
 
-  Tensor cc_tensor(&tensor);
+  Tensor cc_tensor(ctx, &tensor);
   // Match exact
   EXPECT_TRUE(Match(cc_tensor, m_Shape({1, 224, 224, 3})));
   // Match with wildcards
@@ -763,32 +794,35 @@ TEST(MatchersTest, ShapeWildcardMatching) {
 }
 
 TEST(MatchersTest, RankMatching) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& tensor = subgraph.EmplaceTensor();
   tensor.SetType(
       MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 224, 224, 3}));
 
-  Tensor cc_tensor(&tensor);
+  Tensor cc_tensor(ctx, &tensor);
   EXPECT_TRUE(Match(cc_tensor, m_Rank(4)));
   EXPECT_FALSE(Match(cc_tensor, m_Rank(3)));
   EXPECT_FALSE(Match(cc_tensor, m_Rank(5)));
 }
 
 TEST(MatchersTest, ElementTypeMatching) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& tensor = subgraph.EmplaceTensor();
   tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1}));
 
-  Tensor cc_tensor(&tensor);
+  Tensor cc_tensor(ctx, &tensor);
   EXPECT_TRUE(Match(cc_tensor, m_ElementType(kLiteRtElementTypeFloat32)));
   EXPECT_FALSE(Match(cc_tensor, m_ElementType(kLiteRtElementTypeInt32)));
   EXPECT_FALSE(Match(cc_tensor, m_ElementType(kLiteRtElementTypeBool)));
 }
 
 TEST(MatchersTest, OneUseMatching) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& tensor = subgraph.EmplaceTensor();
-  Tensor cc_tensor(&tensor);
+  Tensor cc_tensor(ctx, &tensor);
 
   // 0 uses
   EXPECT_FALSE(Match(cc_tensor, m_HasOneUse()));
@@ -796,17 +830,18 @@ TEST(MatchersTest, OneUseMatching) {
   // 1 use
   auto& op1 = subgraph.EmplaceOp();
   op1.SetOpCode(kLiteRtOpCodeTflAdd);
-  internal::AttachInput(&tensor, op1);
+  AttachInput(&tensor, op1);
   EXPECT_TRUE(Match(cc_tensor, m_HasOneUse()));
 
   // 2 uses
   auto& op2 = subgraph.EmplaceOp();
   op2.SetOpCode(kLiteRtOpCodeTflAdd);
-  internal::AttachInput(&tensor, op2);
+  AttachInput(&tensor, op2);
   EXPECT_FALSE(Match(cc_tensor, m_HasOneUse()));
 }
 
 TEST(MatchersTest, ConstantValueMatching) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& tensor = subgraph.EmplaceTensor();
   tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1}));
@@ -818,7 +853,7 @@ TEST(MatchersTest, ConstantValueMatching) {
   SetWeightsFromOwnedBuffer(tensor.Weights(),
                             OwningBufferRef<uint8_t>(std::move(bytes)));
 
-  Tensor cc_tensor(&tensor);
+  Tensor cc_tensor(ctx, &tensor);
   EXPECT_TRUE(Match(cc_tensor, m_IsConstant()));
   EXPECT_TRUE(Match(cc_tensor, m_ConstantValue<float>(1.0f)));
   EXPECT_FALSE(Match(cc_tensor, m_ConstantValue<float>(0.0f)));
@@ -828,11 +863,12 @@ TEST(MatchersTest, ConstantValueMatching) {
 }
 
 TEST(MatchersTest, QuantizationMatching) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& tensor = subgraph.EmplaceTensor();
   tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt8, {1}));
 
-  Tensor cc_tensor(&tensor);
+  Tensor cc_tensor(ctx, &tensor);
   // Initially no quantization
   EXPECT_FALSE(Match(cc_tensor, m_IsQuantized()));
   EXPECT_TRUE(Match(cc_tensor, m_QType(kLiteRtQuantizationNone)));
@@ -845,32 +881,34 @@ TEST(MatchersTest, QuantizationMatching) {
 }
 
 TEST(MatchersTest, UserCountMatching) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& tensor = subgraph.EmplaceTensor();
-  Tensor cc_tensor(&tensor);
+  Tensor cc_tensor(ctx, &tensor);
 
   EXPECT_TRUE(Match(cc_tensor, m_HasUsers(0)));
   EXPECT_FALSE(Match(cc_tensor, m_HasUsers(1)));
 
   auto& op1 = subgraph.EmplaceOp();
-  internal::AttachInput(&tensor, op1);
+  AttachInput(&tensor, op1);
   EXPECT_TRUE(Match(cc_tensor, m_HasUsers(1)));
   EXPECT_TRUE(Match(cc_tensor, m_HasOneUse()));
 
   auto& op2 = subgraph.EmplaceOp();
-  internal::AttachInput(&tensor, op2);
+  AttachInput(&tensor, op2);
   EXPECT_TRUE(Match(cc_tensor, m_HasUsers(2)));
 }
 
 TEST(MatchersTest, CaptureOrSameAs_SameAs) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& t1 = subgraph.EmplaceTensor();
   auto& t2 = subgraph.EmplaceTensor();
 
-  Tensor cc_t1(&t1);
-  Tensor cc_t2(&t2);
+  Tensor cc_t1(ctx, &t1);
+  Tensor cc_t2(ctx, &t2);
 
-  Tensor captured(nullptr);
+  Tensor captured(ctx, nullptr);
 
   // Capture t1, match t1 against captured (true)
   EXPECT_TRUE(Match(cc_t1, m_AllOf(m_CaptureOrSameAs(&captured, m_Any()),
@@ -880,14 +918,8 @@ TEST(MatchersTest, CaptureOrSameAs_SameAs) {
   EXPECT_FALSE(Match(cc_t2, m_AllOf(m_CaptureOrSameAs(&captured, m_Any()),
                                     m_CaptureOrSameAs(&cc_t1, m_Any()))));
 
-  // Test scenario: Matcher logic
-  // m_CaptureOrSameAs(&captured, m_Any()) checks if current value == captured
-  // value.
-
   // Reset captured
-  captured = Tensor(nullptr);
-  // Match t1, capture it. Then check if t2 is same as t1 (false).
-  // But we need to structure it as separate matches if not in same expression.
+  captured = Tensor(ctx, nullptr);
 
   Match(cc_t1, m_CaptureOrSameAs(&captured, m_Any()));
   EXPECT_TRUE(Match(cc_t1, m_CaptureOrSameAs(&captured, m_Any())));
@@ -895,16 +927,17 @@ TEST(MatchersTest, CaptureOrSameAs_SameAs) {
 }
 
 TEST(MatchersTest, OutputIndexMatching) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflSplit);
   auto& out0 = subgraph.EmplaceTensor();
-  internal::AttachOutput(&out0, op);
+  AttachOutput(&out0, op);
   auto& out1 = subgraph.EmplaceTensor();
-  internal::AttachOutput(&out1, op);
+  AttachOutput(&out1, op);
 
-  Tensor cc_out0(&out0);
-  Tensor cc_out1(&out1);
+  Tensor cc_out0(ctx, &out0);
+  Tensor cc_out1(ctx, &out1);
 
   // Both tensors are produced by the same Split op
   EXPECT_TRUE(Match(cc_out0, m_OpCode<kLiteRtOpCodeTflSplit>()));
@@ -927,26 +960,21 @@ TEST(MatchersTest, OutputIndexMatching) {
 }
 
 TEST(MatchersTest, ComplexResnetBlock) {
-  // Topology:
-  // Input -> Split (2 outputs)
-  // Out0 -> Conv2D (stride=1) -> Add
-  // Out1 ----------------------> Add
-  // Match the final Add op.
-
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& input = subgraph.EmplaceTensor();
 
   auto& split_op = subgraph.EmplaceOp();
   split_op.SetOpCode(kLiteRtOpCodeTflSplit);
-  internal::AttachInput(&input, split_op);
+  AttachInput(&input, split_op);
   auto& split_out0 = subgraph.EmplaceTensor();
-  internal::AttachOutput(&split_out0, split_op);
+  AttachOutput(&split_out0, split_op);
   auto& split_out1 = subgraph.EmplaceTensor();
-  internal::AttachOutput(&split_out1, split_op);
+  AttachOutput(&split_out1, split_op);
 
   auto& conv_op = subgraph.EmplaceOp();
   conv_op.SetOpCode(kLiteRtOpCodeTflConv2d);
-  internal::AttachInput(&split_out0, conv_op);
+  AttachInput(&split_out0, conv_op);
   // Set Conv2D options (stride=1)
   tflite::Conv2DOptionsT conv_opts;
   conv_opts.stride_w = 1;
@@ -958,39 +986,33 @@ TEST(MatchersTest, ComplexResnetBlock) {
   litert::internal::SetTflOptions(conv_op, std::move(tfl_conv_opts));
 
   auto& conv_out = subgraph.EmplaceTensor();
-  internal::AttachOutput(&conv_out, conv_op);
+  AttachOutput(&conv_out, conv_op);
 
   auto& add_op = subgraph.EmplaceOp();
   add_op.SetOpCode(kLiteRtOpCodeTflAdd);
-  internal::AttachInput(&conv_out, add_op);
-  internal::AttachInput(&split_out1, add_op);
+  AttachInput(&conv_out, add_op);
+  AttachInput(&split_out1, add_op);
 
-  Op root(&add_op);
+  Op root(ctx, &add_op);
 
-  // Define sub-matchers for clarity
   auto match_split = m_OpCode<kLiteRtOpCodeTflSplit>();
 
   auto match_conv_opts = m_Options<Conv2dOptions>([](const Conv2dOptions& o) {
     return o.stride_w == 1 && o.stride_h == 1;
   });
 
-  // Match Conv2D that takes the 0-th output of a Split, and has stride=1.
   auto match_conv =
       m_AllOf(m_Op<kLiteRtOpCodeTflConv2d>(m_OutputIndex(0, match_split)),
               match_conv_opts);
 
-  // Match Add where one input is the Conv path, and other is the skip path
-  // (1-st output of the same Split). Use CommutativeOp to handle input order.
   auto match_resnet_add = m_CommutativeOp<kLiteRtOpCodeTflAdd>(
-      match_conv,                    // Matches Conv output path
-      m_OutputIndex(1, match_split)  // Matches skip path
-  );
+      match_conv, m_OutputIndex(1, match_split));
 
   EXPECT_TRUE(Match(root, match_resnet_add));
 }
 
 TEST(MatchersTest, VariadicTypedConcat) {
-  // Topology: Concat(Float32, Float32, Float32)
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflConcatenation);
@@ -998,18 +1020,16 @@ TEST(MatchersTest, VariadicTypedConcat) {
   for (int i = 0; i < 3; ++i) {
     auto& t = subgraph.EmplaceTensor();
     t.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 10}));
-    internal::AttachInput(&t, op);
+    AttachInput(&t, op);
   }
 
-  Op root(&op);
+  Op root(ctx, &op);
 
   auto float_tensor = m_ElementType(kLiteRtElementTypeFloat32);
 
-  // Match Concat taking at least 3 float tensors.
   EXPECT_TRUE(Match(root, m_OpVariadic<kLiteRtOpCodeTflConcatenation>(
                               float_tensor, float_tensor, float_tensor)));
 
-  // Modify last input to Int32 -> Match should fail.
   subgraph.Tensors().back()->SetType(
       MakeRankedTensorType(kLiteRtElementTypeInt32, {1, 10}));
   EXPECT_FALSE(Match(root, m_OpVariadic<kLiteRtOpCodeTflConcatenation>(
@@ -1017,21 +1037,7 @@ TEST(MatchersTest, VariadicTypedConcat) {
 }
 
 TEST(MatchersTest, AllInOneIntegration) {
-  // A complex graph pattern that exercises every single matcher type.
-  //
-  // Graph Topology:
-  //   Const(Float32) -\
-  //                    Mul (Commutative) -> T_mul
-  //   Input(Float32) -/
-  //
-  //   T_mul -\
-  //           Add (Options: FusedActivation=Relu) -> T_add
-  //   T_mul -/
-  //
-  //   Split(T_add, num_splits=2) -> T_split_0, T_split_1
-  //
-  //   Concat(T_split_0, T_split_1, T_mul) -> Output
-
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
 
   // 1. Inputs for Mul
@@ -1045,11 +1051,11 @@ TEST(MatchersTest, AllInOneIntegration) {
   // 2. Mul Op (Commutative)
   auto& mul_op = subgraph.EmplaceOp();
   mul_op.SetOpCode(kLiteRtOpCodeTflMul);
-  internal::AttachInput(&cst, mul_op);
-  internal::AttachInput(&input, mul_op);
+  AttachInput(&cst, mul_op);
+  AttachInput(&input, mul_op);
   auto& t_mul = subgraph.EmplaceTensor();
   t_mul.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 2}));
-  internal::AttachOutput(&t_mul, mul_op);
+  AttachOutput(&t_mul, mul_op);
 
   // 3. Add Op (Options)
   auto& add_op = subgraph.EmplaceOp();
@@ -1061,41 +1067,37 @@ TEST(MatchersTest, AllInOneIntegration) {
   tfl_add_opts.Set(std::move(add_opts));
   litert::internal::SetTflOptions(add_op, std::move(tfl_add_opts));
 
-  internal::AttachInput(&t_mul, add_op);
-  internal::AttachInput(&t_mul, add_op);
+  AttachInput(&t_mul, add_op);
+  AttachInput(&t_mul, add_op);
   auto& t_add = subgraph.EmplaceTensor();
   t_add.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 2}));
-  internal::AttachOutput(&t_add, add_op);
+  AttachOutput(&t_add, add_op);
 
   // 4. Split Op (Output Index)
   auto& split_op = subgraph.EmplaceOp();
   split_op.SetOpCode(kLiteRtOpCodeTflSplit);
-  internal::AttachInput(&t_add, split_op);
+  AttachInput(&t_add, split_op);
   auto& t_split_0 = subgraph.EmplaceTensor();
   t_split_0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 1}));
-  internal::AttachOutput(&t_split_0, split_op);
+  AttachOutput(&t_split_0, split_op);
   auto& t_split_1 = subgraph.EmplaceTensor();
   t_split_1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 1}));
-  internal::AttachOutput(&t_split_1, split_op);
+  AttachOutput(&t_split_1, split_op);
 
   // 5. Concat Op (Variadic)
   auto& concat_op = subgraph.EmplaceOp();
   concat_op.SetOpCode(kLiteRtOpCodeTflConcatenation);
-  internal::AttachInput(&t_split_0, concat_op);
-  internal::AttachInput(&t_split_1, concat_op);
-  internal::AttachInput(&t_mul, concat_op);
+  AttachInput(&t_split_0, concat_op);
+  AttachInput(&t_split_1, concat_op);
+  AttachInput(&t_mul, concat_op);
 
-  // --- Matching Logic ---
+  Op root(ctx, &concat_op);
+  Op captured_add(ctx, nullptr);
 
-  Op root(&concat_op);
-  Op captured_add(nullptr);
-
-  // Matcher for the commutative Mul inputs: one Const, one Subgraph Input
   auto match_mul_inputs = m_CommutativeOp<kLiteRtOpCodeTflMul>(
       m_AllOf(m_IsConstant(), m_ElementType(kLiteRtElementTypeFloat32)),
       m_AllOf(m_IsSubgraphInput(), m_Shape({1, 2})));
 
-  // Matcher for the Add op with options, capturing it
   auto match_add = m_CaptureOrSameAs(
       &captured_add,
       m_AllOf(m_OpCode<kLiteRtOpCodeTflAdd>(),
@@ -1103,35 +1105,28 @@ TEST(MatchersTest, AllInOneIntegration) {
                 return o.fused_activation_function ==
                        kActivationFunctionTypeRelu;
               }),
-              // Verify inputs come from the Mul we matched
               m_Op<kLiteRtOpCodeTflAdd>(match_mul_inputs, match_mul_inputs)));
 
-  // Matcher for Split outputs
   auto match_split_out0 =
       m_OutputIndex(0, m_Op<kLiteRtOpCodeTflSplit>(match_add));
-  auto match_split_out1 =
-      m_OutputIndex(1, m_OpCode<kLiteRtOpCodeTflSplit>());  // Simple check
+  auto match_split_out1 = m_OutputIndex(1, m_OpCode<kLiteRtOpCodeTflSplit>());
 
-  // Root Matcher: Variadic Concat
-  // Also using m_Not and m_AnyOf just to show them off.
-  auto match_root =
-      m_AllOf(m_OpVariadic<kLiteRtOpCodeTflConcatenation>(
-                  match_split_out0, match_split_out1,
-                  m_AnyOf(match_mul_inputs, m_IsConstant())  // Mul matches
-                  ),
-              m_Not(m_OpCode<kLiteRtOpCodeTflAdd>())  // Root is NOT Add
-      );
+  auto match_root = m_AllOf(m_OpVariadic<kLiteRtOpCodeTflConcatenation>(
+                                match_split_out0, match_split_out1,
+                                m_AnyOf(match_mul_inputs, m_IsConstant())),
+                            m_Not(m_OpCode<kLiteRtOpCodeTflAdd>()));
 
   EXPECT_TRUE(Match(root, match_root));
   EXPECT_EQ(captured_add.Get(), &add_op);
 }
 
 TEST(MatchersTest, LabeledVariadicOpTest) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflAdd);
 
-  Op cc_op(&op);
+  Op cc_op(ctx, &op);
   LoggingMatchTracer tracer;
 
   bool res = Match(cc_op, m_Op<kLiteRtOpCodeTflAdd>(m_Any(), m_Any(), "MyAdd"),
@@ -1146,21 +1141,19 @@ TEST(MatchersTest, LabeledVariadicOpTest) {
 }
 
 TEST(MatchersTest, NestedTraceScope) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflAdd);
   auto& in = subgraph.EmplaceTensor();
-  internal::AttachInput(&in, op);
+  AttachInput(&in, op);
 
-  Op cc_op(&op);
+  Op cc_op(ctx, &op);
   LoggingMatchTracer tracer;
-
-  // Match Op(Mul) with 1 input.
 
   bool res = Match(cc_op, m_Op<kLiteRtOpCodeTflAdd>(m_Any(), m_Any()), &tracer);
   EXPECT_FALSE(res);
 
-  // Expect: [Start] OpMatcher -> [Fail] OpMatcher: Input count mismatch
   ASSERT_GE(tracer.logs().size(), 2);
   EXPECT_EQ(tracer.logs()[0].type, "Start");
   EXPECT_EQ(tracer.logs()[0].name, "OpMatcher");
@@ -1169,13 +1162,10 @@ TEST(MatchersTest, NestedTraceScope) {
   EXPECT_EQ(tracer.logs()[1].reason, "Input count mismatch");
 }
 
-// Comprehensive test to verify DebugMatch failure logging for every matcher.
-// We use DebugMatch to ensure it compiles and runs (visible in logs),
-// and LoggingMatchTracer to verify the failure reasons programmatically.
 TEST(MatchersTest, AllMatchersFailureLogging) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
 
-  // Setup common ops and tensors
   auto& add_op = subgraph.EmplaceOp();
   add_op.SetOpCode(kLiteRtOpCodeTflAdd);
 
@@ -1191,11 +1181,11 @@ TEST(MatchersTest, AllMatchersFailureLogging) {
   SetWeightsFromOwnedBuffer(tensor_const.Weights(),
                             OwningBufferRef<uint8_t>(std::move(buf)));
 
-  internal::AttachInput(&tensor_float, add_op);  // 1 input
+  AttachInput(&tensor_float, add_op);
 
-  Op cc_op(&add_op);
-  Tensor cc_tensor_float(&tensor_float);
-  Tensor cc_tensor_const(&tensor_const);
+  Op cc_op(ctx, &add_op);
+  Tensor cc_tensor_float(ctx, &tensor_float);
+  Tensor cc_tensor_const(ctx, &tensor_const);
 
   auto VerifyFailure = [&](bool debug_res, const auto& matcher, const auto& val,
                            absl::string_view expected_label,
@@ -1212,7 +1202,6 @@ TEST(MatchersTest, AllMatchersFailureLogging) {
       }
     }
     if (!found) {
-      // Print logs for debugging the test itself
       for (const auto& log : tracer.logs()) {
         std::cerr << "Log: " << log.type << " " << log.name << ": "
                   << log.reason << "\n";
@@ -1232,19 +1221,18 @@ TEST(MatchersTest, AllMatchersFailureLogging) {
                 m_Op<kLiteRtOpCodeTflMul>("LblOp"), cc_op, "LblOp",
                 "OpCode mismatch");
 
-  // 3. m_Op (Input count mismatch) - Add has 1 input, m_Op<Add> expects 0 by
-  // default
+  // 3. m_Op (Input count mismatch)
   VerifyFailure(DebugMatch(cc_op, m_Op<kLiteRtOpCodeTflAdd>("LblOpCount")),
                 m_Op<kLiteRtOpCodeTflAdd>("LblOpCount"), cc_op, "LblOpCount",
                 "Input count mismatch");
 
-  // 4. m_OpVariadic (Insufficient inputs) - Expects 2, has 1
+  // 4. m_OpVariadic (Insufficient inputs)
   VerifyFailure(DebugMatch(cc_op, m_OpVariadic<kLiteRtOpCodeTflAdd>(
                                       m_Any(), m_Any(), "LblVar")),
                 m_OpVariadic<kLiteRtOpCodeTflAdd>(m_Any(), m_Any(), "LblVar"),
                 cc_op, "LblVar", "Input count mismatch (insufficient inputs)");
 
-  // 5. m_CommutativeOp (Input count mismatch) - Expects 2, has 1
+  // 5. m_CommutativeOp (Input count mismatch)
   VerifyFailure(
       DebugMatch(cc_op, m_CommutativeOp<kLiteRtOpCodeTflAdd>(m_Any(), m_Any(),
                                                              "LblComm")),
@@ -1252,7 +1240,6 @@ TEST(MatchersTest, AllMatchersFailureLogging) {
       "LblComm", "Input count mismatch (expected 2)");
 
   // 6. m_Options
-  // Setup Op with options
   auto& conv_op = subgraph.EmplaceOp();
   conv_op.SetOpCode(kLiteRtOpCodeTflConv2d);
   tflite::Conv2DOptionsT opts;
@@ -1261,7 +1248,7 @@ TEST(MatchersTest, AllMatchersFailureLogging) {
   tfl_opts.type = tflite::BuiltinOptions_Conv2DOptions;
   tfl_opts.Set(std::move(opts));
   litert::internal::SetTflOptions(conv_op, std::move(tfl_opts));
-  Op cc_conv(&conv_op);
+  Op cc_conv(ctx, &conv_op);
 
   VerifyFailure(
       DebugMatch(cc_conv,
@@ -1288,15 +1275,13 @@ TEST(MatchersTest, AllMatchersFailureLogging) {
                 cc_tensor_float, "LblType", "Type mismatch");
 
   // 10. m_OutputIndex
-  // Tensor float is input to Add, not output of anything (subgraph input)
-  // DefiningOp is missing.
   VerifyFailure(
       DebugMatch(cc_tensor_float, m_OutputIndex(0, m_AnyOp(), "LblOutIdx")),
       m_OutputIndex(0, m_AnyOp(), "LblOutIdx"), cc_tensor_float, "LblOutIdx",
       "No defining op found");
 
   // 11. m_Capture (sub-matcher fail)
-  Op captured(nullptr);
+  Op captured(ctx, nullptr);
   VerifyFailure(
       DebugMatch(cc_op,
                  m_CaptureOrSameAs(&captured, m_OpCode<kLiteRtOpCodeTflMul>(),
@@ -1332,7 +1317,6 @@ TEST(MatchersTest, AllMatchersFailureLogging) {
                                           m_AnyOp(), "LblAllOf")),
                 m_AllOf(m_OpCode<kLiteRtOpCodeTflMul>(), m_AnyOp(), "LblAllOf"),
                 cc_op, "OpCodeMatcher", "OpCode mismatch");
-  // AllOf fails if any sub-matcher fails. It doesn't log itself.
 
   // 17. m_AnyOf (All fail)
   VerifyFailure(
@@ -1349,7 +1333,7 @@ TEST(MatchersTest, AllMatchersFailureLogging) {
       "Sub-matcher matched (expected failure)");
 
   // 19. m_SameAs
-  Tensor cc_tensor_const_copy(&tensor_const);
+  Tensor cc_tensor_const_copy(ctx, &tensor_const);
   VerifyFailure(
       DebugMatch(cc_tensor_float,
                  m_CaptureOrSameAs(&cc_tensor_const_copy, m_Any(), "LblSame")),
@@ -1383,18 +1367,16 @@ TEST(MatchersTest, AllMatchersFailureLogging) {
                 "Tensor is not quantized");
 
   // 25. m_QType
-  // float tensor has no quantization
   VerifyFailure(DebugMatch(cc_tensor_float,
                            m_QType(kLiteRtQuantizationPerTensor, "LblQType")),
                 m_QType(kLiteRtQuantizationPerTensor, "LblQType"),
                 cc_tensor_float, "LblQType", "Quantization type mismatch");
 
   // 26. m_HasUsers
-  // float tensor has 1 use (Add op)
   VerifyFailure(DebugMatch(cc_tensor_float, m_HasUsers(2, "LblUsers")),
                 m_HasUsers(2, "LblUsers"), cc_tensor_float, "LblUsers",
                 "User count mismatch");
 }
 
 }  // namespace
-}  // namespace litert
+}  // namespace litert::compiler

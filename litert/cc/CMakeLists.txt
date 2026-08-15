@@ -63,7 +63,6 @@ set(LITERT_CC_REQUIRED_INTERNAL_HEADERS
     internal/litert_numerics.h
     internal/litert_op_options.h
     internal/litert_platform_support.h
-    internal/litert_builder.h
     internal/litert_rng.h
     internal/litert_runtime_proxy.h
     internal/litert_shared_library.h

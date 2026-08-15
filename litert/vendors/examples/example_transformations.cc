@@ -17,63 +17,72 @@
 #include <utility>
 #include <vector>
 
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/internal/litert_builder.h"
-#include "litert/cc/internal/litert_extended_model.h"
-#include "litert/cc/internal/litert_matchers.h"
-#include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_builder.h"
+#include "litert/compiler/cc/litert_matchers.h"
+#include "litert/compiler/cc/litert_model.h"
+#include "litert/compiler/cc/litert_op_options.h"
 
-using litert::Builder;
-using litert::Op;
-using litert::OpInputs;
-using litert::OpOutputs;
+using litert::compiler::BatchMatmulOptions;
+using litert::compiler::Builder;
+using litert::compiler::Op;
+using litert::compiler::OpInputs;
+using litert::compiler::OpOutputs;
+using litert::compiler::Tensor;
 
 extern "C" {
 
-LiteRtStatus SimpleAddOpToMulOpTransformation(LiteRtBuilder builder_ptr,
-                                              LiteRtOp op) {
+LiteRtStatus SimpleAddOpToMulOpTransformation(
+    const LiteRtCompilerContext* context, LiteRtBuilder builder_ptr,
+    LiteRtOp op) {
   // Convert to C++ objects.
-  Builder builder = Builder(builder_ptr);
-  Op root_op = Op(op);
-  if (!litert::Match(root_op, litert::m_OpCode<kLiteRtOpCodeTflAdd>())) {
+  Builder builder = Builder(context, builder_ptr);
+  Op root_op = Op(context, op);
+  if (!litert::compiler::Match(
+          root_op, litert::compiler::m_OpCode<kLiteRtOpCodeTflAdd>())) {
     return kLiteRtStatusPatternNoMatch;
   }
   OpInputs inputs = root_op.Inputs();
-  std::vector<litert::Tensor> inputs_vec(inputs.begin(), inputs.end());
+  std::vector<Tensor> inputs_vec(inputs.begin(), inputs.end());
   builder.ReplaceOp(root_op, kLiteRtOpCodeTflMul, inputs_vec);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus SqrtMeanSquareTransformation(LiteRtBuilder builder_ptr,
+LiteRtStatus SqrtMeanSquareTransformation(const LiteRtCompilerContext* context,
+                                          LiteRtBuilder builder_ptr,
                                           LiteRtOp op) {
-  Builder builder(builder_ptr);
-  Op root_op(op);
-  Op mean_op(nullptr);
-  Op square_op(nullptr);
+  Builder builder(context, builder_ptr);
+  Op root_op(context, op);
+  Op mean_op;
+  Op square_op;
 
-  litert::Tensor sq_in(nullptr);
+  Tensor sq_in;
 
   // Match: Sqrt(Mean(Mul(x, x)))
   // Capture Mean and Mul ops, and the square input x.
   // Verify that Mean and Mul are only used once (safe to fuse).
-  auto mul_op_matcher = litert::m_Op<kLiteRtOpCodeTflMul>(
-      litert::m_CaptureOrSameAs(&sq_in, litert::m_Any()),
-      litert::m_CaptureOrSameAs(&sq_in, litert::m_Any()));
+  auto mul_op_matcher = litert::compiler::m_Op<kLiteRtOpCodeTflMul>(
+      litert::compiler::m_CaptureOrSameAs(&sq_in, litert::compiler::m_Any()),
+      litert::compiler::m_CaptureOrSameAs(&sq_in, litert::compiler::m_Any()));
 
-  auto mean_input_matcher = litert::m_CaptureOrSameAs(
-      &square_op, litert::m_AllOf(litert::m_HasOneUse(), mul_op_matcher));
+  auto mean_input_matcher = litert::compiler::m_CaptureOrSameAs(
+      &square_op, litert::compiler::m_AllOf(litert::compiler::m_HasOneUse(),
+                                            mul_op_matcher));
 
-  auto mean_op_matcher =
-      litert::m_Op<kLiteRtOpCodeTflMean>(mean_input_matcher, litert::m_Any());
+  auto mean_op_matcher = litert::compiler::m_Op<kLiteRtOpCodeTflMean>(
+      mean_input_matcher, litert::compiler::m_Any());
 
-  auto sqrt_input_matcher = litert::m_CaptureOrSameAs(
-      &mean_op, litert::m_AllOf(litert::m_HasOneUse(), mean_op_matcher));
+  auto sqrt_input_matcher = litert::compiler::m_CaptureOrSameAs(
+      &mean_op, litert::compiler::m_AllOf(litert::compiler::m_HasOneUse(),
+                                          mean_op_matcher));
 
-  auto root_matcher = litert::m_Op<kLiteRtOpCodeTflSqrt>(sqrt_input_matcher);
+  auto root_matcher =
+      litert::compiler::m_Op<kLiteRtOpCodeTflSqrt>(sqrt_input_matcher);
 
-  if (!litert::Match(root_op, root_matcher)) {
+  if (!litert::compiler::Match(root_op, root_matcher)) {
     return kLiteRtStatusPatternNoMatch;
   }
 
@@ -87,20 +96,22 @@ LiteRtStatus SqrtMeanSquareTransformation(LiteRtBuilder builder_ptr,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus FuseMatMulRequantTransformation(LiteRtBuilder builder_ptr,
-                                             LiteRtOp op) {
-  Builder builder(builder_ptr);
-  Op root_op(op);
-  Op matmul_op(nullptr);
+LiteRtStatus FuseMatMulRequantTransformation(
+    const LiteRtCompilerContext* context, LiteRtBuilder builder_ptr,
+    LiteRtOp op) {
+  Builder builder(context, builder_ptr);
+  Op root_op(context, op);
+  Op matmul_op;
 
   // Match: Quantize(MatMul(...))
-  if (!litert::Match(
+  if (!litert::compiler::Match(
           root_op,
-          litert::m_Op<kLiteRtOpCodeTflQuantize>(litert::m_CaptureOrSameAs(
-              &matmul_op,
-              litert::m_AllOf(
-                  litert::m_HasOneUse(),
-                  litert::m_OpCode<kLiteRtOpCodeTflBatchMatmul>()))))) {
+          litert::compiler::m_Op<kLiteRtOpCodeTflQuantize>(
+              litert::compiler::m_CaptureOrSameAs(
+                  &matmul_op, litert::compiler::m_AllOf(
+                                  litert::compiler::m_HasOneUse(),
+                                  litert::compiler::m_OpCode<
+                                      kLiteRtOpCodeTflBatchMatmul>()))))) {
     return kLiteRtStatusPatternNoMatch;
   }
 
@@ -110,7 +121,7 @@ LiteRtStatus FuseMatMulRequantTransformation(LiteRtBuilder builder_ptr,
   }
 
   OpInputs inputs = matmul_op.Inputs();
-  std::vector<litert::Tensor> inputs_vec(inputs.begin(), inputs.end());
+  std::vector<Tensor> inputs_vec(inputs.begin(), inputs.end());
 
   // Replace the Quant op with a new MatMul op that uses the same outputs as the
   // Quant op but takes inputs from the original MatMul op.
@@ -122,8 +133,8 @@ LiteRtStatus FuseMatMulRequantTransformation(LiteRtBuilder builder_ptr,
   builder.EraseOp(matmul_op);
 
   // Copy options from the original MatMul op to the new one.
-  litert::BatchMatmulOptions options;
-  LITERT_RETURN_IF_ERROR(options.InitFromOp(matmul_op.Get()));
+  BatchMatmulOptions options;
+  LITERT_RETURN_IF_ERROR(options.InitFromOp(context, matmul_op.Get()));
   auto res = builder.SetOpOptions(new_matmul, std::move(options));
   if (!res) {
     return res.Error().Status();
@@ -132,7 +143,8 @@ LiteRtStatus FuseMatMulRequantTransformation(LiteRtBuilder builder_ptr,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus DummyTransformation(LiteRtBuilder builder_ptr, LiteRtOp op) {
+LiteRtStatus DummyTransformation(const LiteRtCompilerContext* context,
+                                 LiteRtBuilder builder_ptr, LiteRtOp op) {
   return kLiteRtStatusPatternNoMatch;
 }
 

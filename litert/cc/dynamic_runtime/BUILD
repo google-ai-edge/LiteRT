@@ -239,48 +239,6 @@ cc_library(
     }),
 )
 
-cc_library(
-    name = "litert_builder",
-    hdrs = ["//litert/cc/internal:litert_builder.h"],
-    deps = [
-        ":litert_extended_model",
-        ":litert_op_options",
-        "//litert/c/internal:litert_logging",
-        "//litert/cc:litert_api_types",
-        "//litert/cc:litert_common",
-        "//litert/cc:litert_element_type",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_layout",
-        "//litert/cc:litert_model_types",
-        "//litert/cc:litert_ranked_tensor_type",
-        "//litert/cc/internal:litert_detail",
-        "//litert/cc/internal:litert_handle",
-        "@com_google_absl//absl/container:inlined_vector",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-    ] + select({
-        "//litert:emscripten": LITERT_C_API_DEPS,
-        "//conditions:default": [
-            "//litert/c:litert_common",
-            "//litert/c:litert_runtime_c_api_shared_lib",
-        ],
-    }),
-)
-
-cc_library(
-    name = "litert_matchers",
-    hdrs = ["//litert/cc/internal:litert_matchers.h"],
-    deps = [
-        ":litert_extended_model",
-        ":litert_op_options",
-        "//litert/c:litert_model_types",
-        "//litert/c:litert_op_code",
-        "//litert/c/internal:litert_logging",
-        "//litert/cc:litert_model_types",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
 cc_test(
     name = "litert_model_test",
     srcs = ["//litert/cc:litert_model_test.cc"],

@@ -814,7 +814,7 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_builder_impl",
     ":litert_tensor_buffer_impl",
     "//litert/c/internal:litert_accelerator_registration",
-    "//litert/c/internal:litert_accelerator",
+    "//litert/c/internal:litert_accelerator_impl",
     "//litert/c/internal:litert_dispatch_delegate",
     "//litert/c/internal:litert_external_litert_buffer_context",
     "//litert/c/internal:litert_logging",
