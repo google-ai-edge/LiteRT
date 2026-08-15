@@ -21,8 +21,8 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/runtime/dispatch/dispatch_delegate_kernel.h"
 #include "litert/runtime/dispatch/dispatch_kernel_interface.h"
+#include "litert/runtime/dispatch/shared_kernel_resources.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "tflite/c/c_api_types.h"
 
@@ -36,9 +36,11 @@ class DispatchKernelFacade : public DispatchKernelInterface {
  public:
   static std::unique_ptr<DispatchKernelFacade> Create(
       std::string&& graph_name, LiteRtEnvironmentOptions environment_options,
-      LiteRtOptions options, LiteRtDispatchDeviceContext device_context) {
+      LiteRtOptions options, LiteRtDispatchDeviceContext device_context,
+      std::shared_ptr<DispatchKernelResources> kernel_resources) {
     return std::unique_ptr<DispatchKernelFacade>(new DispatchKernelFacade(
-        std::move(graph_name), environment_options, options, device_context));
+        std::move(graph_name), environment_options, options, device_context,
+        std::move(kernel_resources)));
   }
 
   ~DispatchKernelFacade() override = default;
@@ -75,18 +77,20 @@ class DispatchKernelFacade : public DispatchKernelInterface {
   }
 
  private:
-  DispatchKernelFacade(std::string&& graph_name,
-                               LiteRtEnvironmentOptions environment_options,
-                               LiteRtOptions options,
-                               LiteRtDispatchDeviceContext device_context)
+  DispatchKernelFacade(
+      std::string&& graph_name, LiteRtEnvironmentOptions environment_options,
+      LiteRtOptions options, LiteRtDispatchDeviceContext device_context,
+      std::shared_ptr<DispatchKernelResources> kernel_resources)
       : graph_name_(std::move(graph_name)),
         environment_options_(environment_options),
         options_(options),
-        device_context_(device_context) {}
+        device_context_(device_context),
+        kernel_resources_(std::move(kernel_resources)) {}
   std::string graph_name_;
   LiteRtEnvironmentOptions environment_options_;
   LiteRtOptions options_;
   LiteRtDispatchDeviceContext device_context_;
+  std::shared_ptr<DispatchKernelResources> kernel_resources_;
 
   std::unique_ptr<DispatchKernelInterface> kernel_;
 };

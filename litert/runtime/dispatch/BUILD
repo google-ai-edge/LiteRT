@@ -107,7 +107,10 @@ cc_library(
 
 cc_library(
     name = "dispatch_kernel_interface",
-    hdrs = ["dispatch_kernel_interface.h"],
+    hdrs = [
+        "dispatch_kernel_interface.h",
+        "shared_kernel_resources.h",
+    ],
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
@@ -358,9 +361,11 @@ cc_library(
     deps = [
         ":dispatch_delegate_kernel",
         ":dispatch_kernel_interface",
+        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
+        # copybara:uncomment "//litert/runtime/dispatch/fabric:fabric_kernel",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
@@ -380,6 +385,7 @@ cc_library(
     deps = [
         ":dispatch",
         ":dispatch_kernel_facade",
+        ":dispatch_kernel_resources",
         "//litert/c:litert_common",
         "//litert/c:litert_metrics",
         "//litert/c:litert_profiler_types",
@@ -788,4 +794,9 @@ litert_device_test(
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
+)
+
+cc_library(
+    name = "dispatch_kernel_resources",
+    hdrs = ["shared_kernel_resources.h"],
 )

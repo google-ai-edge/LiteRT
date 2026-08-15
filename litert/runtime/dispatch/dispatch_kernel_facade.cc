@@ -22,9 +22,14 @@
 #include "litert/c/litert_common.h"
 #include "litert/runtime/dispatch/dispatch_delegate_kernel.h"
 #include "litert/runtime/dispatch/dispatch_kernel_interface.h"
+#include "litert/runtime/dispatch/shared_kernel_resources.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
+
+// copybara:uncomment_begin(internal)
+// #include "litert/runtime/dispatch/fabric/fabric_kernel.h"
+// copybara:uncomment_end
 
 namespace litert::internal {
 
@@ -33,9 +38,24 @@ namespace {
 std::unique_ptr<DispatchKernelInterface> CreateKernel(
     std::string graph_name, LiteRtEnvironmentOptions environment_options,
     LiteRtOptions options, LiteRtDispatchDeviceContext device_context,
+    std::shared_ptr<DispatchKernelResources> kernel_resources,
     TfLiteOpaqueContext* context, const TfLiteOpaqueDelegateParams* params) {
-
-  // Fallback to standard dispatch delegate kernel if not instantiated.
+  // copybara:uncomment_begin(internal)
+  // if (IsFabricBytecode(context, params, options)) {
+    // LITERT_LOG(LITERT_INFO,
+               // "Fabric bytecode detected, attempting to instantiate fabric "
+               // "dispatch kernel.");
+    // auto res = fabric::FabricKernel::Create(
+        // std::move(graph_name), environment_options, options, device_context,
+        // std::move(kernel_resources));
+    // if (res) {
+      // return std::unique_ptr<DispatchKernelInterface>(res->release());
+    // }
+    // LITERT_LOG(LITERT_ERROR, "%s", res.Error().Message().c_str());
+    // return nullptr;
+  // }
+  // // Fallback to standard dispatch delegate kernel if not instantiated.
+  // copybara:uncomment_end
   auto kernel_res = DispatchDelegateKernel::Create(
       std::move(graph_name), environment_options, options, device_context);
   if (kernel_res) {
@@ -51,7 +71,7 @@ std::unique_ptr<DispatchKernelInterface> CreateKernel(
 TfLiteStatus DispatchKernelFacade::Init(
     TfLiteOpaqueContext* context, const TfLiteOpaqueDelegateParams* params) {
   kernel_ = CreateKernel(graph_name_, environment_options_, options_,
-                         device_context_, context, params);
+                         device_context_, kernel_resources_, context, params);
   if (!kernel_) {
     return kTfLiteError;
   }
