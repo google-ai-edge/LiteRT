@@ -54,7 +54,7 @@ litert_dynamic_lib(
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_header",
         "//litert/c/internal:litert_logging",
-        "//litert/c/internal:litert_logging_helper",
+        "//litert/c/internal:litert_logging_helper_with_compiler_context",
         "//litert/c/options:litert_samsung_options",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",

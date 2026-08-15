@@ -707,6 +707,7 @@ cc_library(
         "//litert/cc/internal:scoped_file",
         "//litert/cc/internal:scoped_weight_source",
         "//litert/cc/options:litert_compiler_options",
+        "//litert/cc/options:litert_concrete_options_base",
         "//litert/cc/options:litert_cpu_options",
         "//litert/cc/options:litert_google_tensor_options",
         "//litert/cc/options:litert_gpu_options",

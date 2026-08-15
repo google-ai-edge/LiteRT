@@ -200,7 +200,8 @@ Expected<void> UpdateMediatekOptionsFromFlags(MediatekOptions& options) {
 namespace litert::mediatek {
 
 LITERT_REGISTER_OPTIONS_PARSER([](Options& options) -> Expected<void> {
-  LITERT_ASSIGN_OR_RETURN(auto& mediatek_opts, options.GetMediatekOptions());
+  LITERT_ASSIGN_OR_RETURN(auto& mediatek_opts,
+                          options.GetOptions<MediatekOptions>());
   return UpdateMediatekOptionsFromFlags(mediatek_opts);
 });
 

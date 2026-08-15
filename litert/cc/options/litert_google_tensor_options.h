@@ -17,7 +17,6 @@
 
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_google_tensor_options.h"
@@ -26,10 +25,11 @@
 #include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_concrete_options_base.h"
 
 namespace litert::google_tensor {
 
-class GoogleTensorOptions {
+class GoogleTensorOptions : public ConcreteOptionsBase {
  public:
   GoogleTensorOptions() = delete;
 
@@ -43,8 +43,9 @@ class GoogleTensorOptions {
 
   LrtGoogleTensorOptions Get() const { return options_.get(); }
 
-  LiteRtStatus GetOpaqueOptionsData(const char** identifier, void** payload,
-                                    void (**payload_deleter)(void*)) const {
+  LiteRtStatus GetOpaqueOptionsData(
+      const char** identifier, void** payload,
+      void (**payload_deleter)(void*)) const override {
     return LrtGetOpaqueGoogleTensorOptionsData(Get(), identifier, payload,
                                                payload_deleter);
   }

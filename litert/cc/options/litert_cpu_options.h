@@ -23,13 +23,14 @@
 #include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_concrete_options_base.h"
 
 struct LrtCpuOptions;
 
 namespace litert {
 
 /// @brief Defines the C++ wrapper for LiteRT CPU options.
-class CpuOptions {
+class CpuOptions : public ConcreteOptionsBase {
  public:
   /// @brief Creates a new CPU options instance.
   static Expected<CpuOptions> Create() {
@@ -162,6 +163,15 @@ class CpuOptions {
 
   LrtCpuOptions* Get() { return options_.get(); }
   const LrtCpuOptions* Get() const { return options_.get(); }
+
+  static const char* Discriminator() { return LrtGetCpuOptionsIdentifier(); }
+
+  LiteRtStatus GetOpaqueOptionsData(
+      const char** identifier, void** payload,
+      void (**payload_deleter)(void*)) const override {
+    return LrtGetOpaqueCpuOptionsData(Get(), identifier, payload,
+                                      payload_deleter);
+  }
 
  private:
   explicit CpuOptions(LrtCpuOptions* options) : options_(options) {}

@@ -40,6 +40,7 @@ set(LITERT_CC_PUBLIC_HEADERS
     litert_tensor_buffer_types.h
     litert_tensor_buffer.h
     options/litert_compiler_options.h
+    options/litert_concrete_options_base.h
     options/litert_cpu_options.h
     options/litert_google_tensor_options.h
     options/litert_gpu_options.h

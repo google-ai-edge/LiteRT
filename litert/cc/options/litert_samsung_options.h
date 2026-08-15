@@ -12,16 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_SAMSUNG_OPTIONS_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_SAMSUNG_OPTIONS_H_
+
+#include <memory>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_samsung_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_concrete_options_base.h"
 
 namespace litert::samsung {
 
-class SamsungOptions {
+class SamsungOptions : public ConcreteOptionsBase {
  public:
   SamsungOptions() = delete;
   explicit SamsungOptions(LrtSamsungOptions options)
@@ -33,7 +37,7 @@ class SamsungOptions {
   SamsungOptions(SamsungOptions&&) = default;
   SamsungOptions& operator=(SamsungOptions&&) = default;
 
-  ~SamsungOptions() = default;
+  ~SamsungOptions() override = default;
 
   static const char* Discriminator() {
     return LrtSamsungOptionsGetIdentifier();
@@ -48,8 +52,9 @@ class SamsungOptions {
   LrtSamsungOptions Release() { return options_.release(); }
   LrtSamsungOptions Get() const { return options_.get(); }
 
-  LiteRtStatus GetOpaqueOptionsData(const char** identifier, void** payload,
-                                    void (**payload_deleter)(void*)) const {
+  LiteRtStatus GetOpaqueOptionsData(
+      const char** identifier, void** payload,
+      void (**payload_deleter)(void*)) const override {
     return LrtGetOpaqueSamsungOptionsData(Get(), identifier, payload,
                                           payload_deleter);
   }
@@ -82,3 +87,5 @@ class SamsungOptions {
 };
 
 }  // namespace litert::samsung
+
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_SAMSUNG_OPTIONS_H_

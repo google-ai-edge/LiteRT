@@ -83,6 +83,7 @@ litert/cc/litert_tensor_buffer_requirements.h
 litert/cc/litert_tensor_buffer_types.h
 litert/cc/litert_tensor_buffer.h
 litert/cc/options/litert_compiler_options.h
+litert/cc/options/litert_concrete_options_base.h
 litert/cc/options/litert_cpu_options.h
 litert/cc/options/litert_google_tensor_options.h
 litert/cc/options/litert_gpu_options.h
