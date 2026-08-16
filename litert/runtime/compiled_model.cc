@@ -1081,13 +1081,12 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
   }
 
   compiled_model->non_cpu_fully_delegated_ =
-      (compiled_model->delegation_metrics_.gpu_delegated_node_count +
-           compiled_model->delegation_metrics_.npu_delegated_node_count ==
-       compiled_model->delegation_metrics_.total_node_count) &&
+      (compiled_model->delegation_metrics_.cpu_delegated_node_count == 0) &&
+      (current_undelegated_nodes == 0) &&
       (compiled_model->delegation_metrics_.total_node_count > 0);
 
   if (!(hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
-      !compiled_model->non_cpu_fully_delegated_) {
+      current_undelegated_nodes > 0) {
     return Error(
         kLiteRtStatusErrorCompilation,
         "Some ops are not accelerated. Add kLiteRtHwAcceleratorCpu to the "
