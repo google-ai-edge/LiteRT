@@ -664,7 +664,6 @@ cc_library(
     visibility = [
         "//litert/c:__pkg__",
         "//litert/cc:__pkg__",
-        "//litert/cc/dynamic_runtime:__pkg__",
         "//litert/cc/internal:__pkg__",
         "//litert/kotlin/src/tests/google:__pkg__",
     ],
@@ -679,7 +678,6 @@ cc_library(
     srcs = ["litert_runtime_builtin.cc"],
     # The visibility is for testing only, otherwise it would be private.
     visibility = [
-        "//litert/cc/dynamic_runtime:__pkg__",
         "//litert/cc/internal:__pkg__",
     ],
     deps = [

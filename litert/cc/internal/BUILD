@@ -410,8 +410,6 @@ cc_test(
 
 # -----------------------------------------------------------------------------
 # Internal static C++ libraries.
-#
-# There are shared version of these libraries available in cc/dynamic_runtime/.
 # -----------------------------------------------------------------------------
 
 cc_library(
@@ -744,37 +742,4 @@ cc_library(
             "//litert/c/internal:litert_runtime_builtin_static",
         ],
     }),
-)
-
-# TODO(niuchl): Remove this target once all dynamic_runtime targets are migrated.
-cc_library(
-    name = "litert_runtime_proxy_runtimecapi",
-    hdrs = ["litert_runtime_proxy.h"],
-    visibility = [
-        "//litert/cc:__pkg__",
-        "//litert/cc/dynamic_runtime:__pkg__",
-    ],
-    deps = [
-        "//litert/c:litert_any",
-        "//litert/c:litert_common",
-        "//litert/c:litert_custom_op_kernel",
-        "//litert/c:litert_custom_tensor_buffer",
-        "//litert/c:litert_environment_options_header",
-        "//litert/c:litert_event_type",
-        "//litert/c:litert_gl_types",
-        "//litert/c:litert_layout",
-        "//litert/c:litert_metrics_header",
-        "//litert/c:litert_model_types",
-        "//litert/c:litert_opaque_options_header",
-        "//litert/c:litert_opencl_types",
-        "//litert/c:litert_tensor_buffer_types",
-        "//litert/c:litert_webgpu_types",
-        "//litert/c/internal:litert_runtime_builtin_dynamic",
-        "//litert/c/internal:litert_runtime_builtin_header",
-        "//litert/c/internal:litert_runtime_c_api",
-        "//litert/c/internal:litert_scheduling_info",
-        "//litert/cc:litert_api_types",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/log:die_if_null",
-    ],
 )

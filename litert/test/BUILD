@@ -153,19 +153,6 @@ cc_library(
 )
 
 cc_library(
-    name = "load_test_model_runtimecapi",
-    testonly = 1,
-    srcs = ["load_test_model.cc"],
-    hdrs = ["load_test_model.h"],
-    deps = [
-        ":common",
-        "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
-cc_library(
     name = "simple_model",
     testonly = 1,
     hdrs = ["testdata/simple_model_test_vectors.h"],
@@ -375,31 +362,6 @@ cc_library(
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc/internal:litert_extended_model",
-        "//litert/cc/internal:litert_handle",
-        "//litert/cc/internal:litert_rng",
-        "//tflite/types:half",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
-cc_library(
-    name = "simple_buffer_runtimecapi",
-    testonly = True,
-    hdrs = ["simple_buffer.h"],
-    deps = [
-        ":tflite_half_traits",
-        "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_element_type",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_layout",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_ranked_tensor_type",
-        "//litert/cc/dynamic_runtime:litert_environment",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_tensor_buffer",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_rng",
         "//tflite/types:half",
