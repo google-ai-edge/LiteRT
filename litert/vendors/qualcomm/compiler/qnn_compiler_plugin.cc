@@ -475,16 +475,18 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     std::vector<::qnn::TensorWrapperRef> input_tensors;
     for (const auto& input : op.Inputs()) {
       ::qnn::TensorWrapper* res{nullptr};
-      LITERT_RETURN_IF_ERROR(
-          litert::qnn::ConvertTensor(input, tensor_pool, res));
+      LITERT_RETURN_IF_ERROR(litert::qnn::ConvertTensor(
+          input, tensor_pool, res, {}, /*is_tensor_output=*/false,
+          /*canonicalize_qint16=*/true));
       input_tensors.emplace_back(*res);
     }
 
     std::vector<::qnn::TensorWrapperRef> output_tensors;
     for (const auto& output : op.Outputs()) {
       ::qnn::TensorWrapper* res{nullptr};
-      LITERT_RETURN_IF_ERROR(
-          litert::qnn::ConvertTensor(output, tensor_pool, res));
+      LITERT_RETURN_IF_ERROR(litert::qnn::ConvertTensor(
+          output, tensor_pool, res, {}, /*is_tensor_output=*/false,
+          /*canonicalize_qint16=*/true));
       output_tensors.emplace_back(*res);
     }
 

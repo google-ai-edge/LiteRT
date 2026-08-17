@@ -138,28 +138,13 @@ std::vector<OpWrapper> BuildSplitVOp(
     return {};
   }
 
-  // N segments are produced by N-1 internal cut points (QNN_OP_SPLIT takes the
-  // cut points, not the per-segment sizes).
-  const std::uint32_t num_cuts = num_splits - 1;
-
-  std::vector<std::uint32_t> split_index;
-  split_index.reserve(num_cuts);
-  std::uint32_t running = 0;
-  for (std::uint32_t i = 0; i < num_cuts; ++i) {
-    running += static_cast<std::uint32_t>(size_splits_values[i]);
-    split_index.emplace_back(running);
+  std::vector<std::uint32_t> split_sizes;
+  split_sizes.reserve(num_splits);
+  for (const auto size : size_splits_values) {
+    split_sizes.emplace_back(static_cast<std::uint32_t>(size));
   }
-
-  TensorWrapper& split_index_tensor = tensor_pool.CreateStaticTensor(
-      QNN_DATATYPE_UINT_32, {}, {num_cuts},
-      sizeof(std::uint32_t) * split_index.size(), split_index.data());
-
-  // QNN has no dedicated SPLIT_V op; reuse the QNN_OP_SPLIT builder with the
-  // cumulative split_index derived above.
-  return MakeVector(CreateSplitOp(
-      input_tensor,
-      std::vector<ConstTensorWrapperRef>(outputs.begin(), outputs.end()), axis,
-      split_index_tensor));
+  return BuildSplitSlices(tensor_pool, input_tensor, outputs, axis,
+                          split_sizes);
 }
 
 }  // namespace qnn

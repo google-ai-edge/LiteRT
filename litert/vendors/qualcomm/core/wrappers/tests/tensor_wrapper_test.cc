@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <numeric>
 #include <optional>
 #include <string>
@@ -204,6 +205,32 @@ TEST(TensorWrapperTest, IsPerTensorQuantWithOffsetDiff16BitTest) {
                                 QuantizeParamsWrapperVariant(wrapper2),
                                 {}};
   EXPECT_TRUE(tensor_wrapper0.IsPerTensorQuantWithOffsetDiff(tensor_wrapper1));
+}
+
+TEST(TensorWrapperTest, ConvertQint16ToQuint16PreservesAffineValues) {
+  constexpr float kScale = 0.02f;
+  constexpr std::int32_t kSignedZeroPoint = -2767;
+  const std::vector<std::int16_t> signed_data = {
+      std::numeric_limits<std::int16_t>::min(), 0,
+      std::numeric_limits<std::int16_t>::max()};
+  TensorWrapper tensor(
+      "activation", QNN_TENSOR_TYPE_STATIC, QNN_DATATYPE_SFIXED_POINT_16,
+      ScaleOffsetQuantizeParamsWrapper(kScale, kSignedZeroPoint),
+      {static_cast<std::uint32_t>(signed_data.size())},
+      signed_data.size() * sizeof(std::int16_t), signed_data.data(),
+      /*copy_data=*/false);
+
+  tensor.ConvertQint16ToQuint16();
+
+  EXPECT_TRUE(tensor.IsQuantU16());
+  const auto& quant =
+      std::get<ScaleOffsetQuantizeParamsWrapper>(tensor.GetQuantParams());
+  EXPECT_FLOAT_EQ(quant.GetScale(), kScale);
+  EXPECT_EQ(quant.GetZeroPoint(), kSignedZeroPoint + 32768);
+  const auto unsigned_data = tensor.GetTensorData<std::uint16_t>();
+  ASSERT_TRUE(unsigned_data.has_value());
+  EXPECT_THAT(*unsigned_data,
+              ::testing::ElementsAre(0, 32768, 65535));
 }
 
 TEST(TensorWrapperTest, StaticTensorTest) {

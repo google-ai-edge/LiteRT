@@ -6,6 +6,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
@@ -24,6 +25,21 @@ constexpr size_t kInputIndex = 0;
 constexpr size_t kOutputIndex = 0;
 constexpr size_t kHeightIndex = 1;
 constexpr size_t kWidthIndex = 2;
+
+std::pair<std::uint32_t, std::uint32_t> ComputePoolPaddingBeforeAfter(
+    const std::uint32_t input_size, const std::uint32_t filter_size,
+    const std::uint32_t stride, const PaddingType padding_type) {
+  if (padding_type != PaddingType::Same || stride == 0) {
+    return {0, 0};
+  }
+  const std::uint32_t output_size = (input_size + stride - 1) / stride;
+  const std::int32_t total_padding =
+      static_cast<std::int32_t>((output_size - 1) * stride + filter_size) -
+      static_cast<std::int32_t>(input_size);
+  const std::uint32_t clamped_padding =
+      total_padding > 0 ? static_cast<std::uint32_t>(total_padding) : 0;
+  return {clamped_padding / 2, clamped_padding - clamped_padding / 2};
+}
 
 std::vector<OpWrapper> BuildPool2dOp(
     TensorPool& tensor_pool, const char* op_type, const char* filter_param_name,
@@ -60,11 +76,11 @@ std::vector<OpWrapper> BuildPool2dOp(
 
   // padding
   const auto [padding_before_height, padding_after_height] =
-      ComputePaddingBeforeAfter(input_tensor.GetDimension(kHeightIndex),
-                                filter_height, stride_height, 1, padding_type);
+      ComputePoolPaddingBeforeAfter(input_tensor.GetDimension(kHeightIndex),
+                                    filter_height, stride_height, padding_type);
   const auto [padding_before_width, padding_after_width] =
-      ComputePaddingBeforeAfter(input_tensor.GetDimension(kWidthIndex),
-                                filter_width, stride_width, 1, padding_type);
+      ComputePoolPaddingBeforeAfter(input_tensor.GetDimension(kWidthIndex),
+                                    filter_width, stride_width, padding_type);
   const std::vector<std::uint32_t> padding_shape{2, 2};
   const std::array<std::uint32_t, 4> padding_data{
       padding_before_height, padding_after_height, padding_before_width,

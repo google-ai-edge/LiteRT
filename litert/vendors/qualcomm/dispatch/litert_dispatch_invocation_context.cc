@@ -47,6 +47,7 @@
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
@@ -119,6 +120,7 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
       inputs_(context_binary_info.Graphs()[graph_index].Inputs()),
       outputs_(context_binary_info.Graphs()[graph_index].Outputs()) {
   input_buffer_handles_.resize(inputs_.size());
+  input_requires_qint16_rebase_.resize(inputs_.size(), false);
 
   std::vector<::qnn::TensorWrapper> real_outputs;
   std::vector<::qnn::TensorWrapper> dumped_outputs;
@@ -131,6 +133,7 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
       });
 
   output_buffer_handles_.resize(real_outputs.size());
+  output_requires_qint16_rebase_.resize(real_outputs.size(), false);
 
   outputs_.clear();
   std::move(real_outputs.begin(), real_outputs.end(),
@@ -158,6 +161,7 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
       inputs_(std::move(inputs)),
       outputs_(std::move(outputs)) {
   input_buffer_handles_.resize(inputs_.size());
+  input_requires_qint16_rebase_.resize(inputs_.size(), false);
 
   std::vector<::qnn::TensorWrapper> real_outputs;
   std::vector<::qnn::TensorWrapper> dumped_outputs;
@@ -170,6 +174,7 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
       });
 
   output_buffer_handles_.resize(real_outputs.size());
+  output_requires_qint16_rebase_.resize(real_outputs.size(), false);
 
   outputs_.clear();
   std::move(real_outputs.begin(), real_outputs.end(),
@@ -351,12 +356,26 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
 Expected<LiteRtTensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetInputRequirements(
     int input_index, const LiteRtRankedTensorType& tensor_type) {
+  if (input_index < 0 || input_index >= inputs_.size()) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Invalid input tensor index");
+  }
+  input_requires_qint16_rebase_[input_index] =
+      tensor_type.element_type == kLiteRtElementTypeInt16 &&
+      inputs_[input_index].IsQuantU16();
   return GetTensorBufferRequirements(tensor_type);
 }
 
 Expected<LiteRtTensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetOutputRequirements(
     int output_index, const LiteRtRankedTensorType& tensor_type) {
+  if (output_index < 0 || output_index >= output_buffer_handles_.size()) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Invalid output tensor index");
+  }
+  output_requires_qint16_rebase_[output_index] =
+      tensor_type.element_type == kLiteRtElementTypeInt16 &&
+      outputs_[output_index].IsQuantU16();
   return GetTensorBufferRequirements(tensor_type);
 }
 
@@ -492,6 +511,43 @@ Expected<void> LiteRtDispatchInvocationContextT::DetachBuffer(
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::Execute() {
+  std::vector<bool> rebased_inputs(inputs_.size(), false);
+  std::vector<bool> rebased_outputs(output_buffer_handles_.size(), false);
+  absl::Cleanup restore_inputs = [this, &rebased_inputs, &rebased_outputs] {
+    for (size_t i = 0; i < rebased_inputs.size(); ++i) {
+      if (!rebased_inputs[i]) {
+        continue;
+      }
+      // If an in-place graph aliases a converted output with this input, the
+      // output conversion has already restored the shared buffer to I16.
+      bool restored_as_output = false;
+      for (size_t j = 0; j < rebased_outputs.size(); ++j) {
+        if (rebased_outputs[j] &&
+            output_buffer_handles_[j] == input_buffer_handles_[i]) {
+          restored_as_output = true;
+          break;
+        }
+      }
+      if (!restored_as_output) {
+        auto status = ToggleInt16Signedness(input_buffer_handles_[i],
+                                            inputs_[i].GetTensorBytes());
+        if (!status) {
+          LITERT_LOG(LITERT_ERROR,
+                     "Failed to restore signed INT16 graph input %d", i);
+        }
+      }
+    }
+  };
+
+  for (size_t i = 0; i < inputs_.size(); ++i) {
+    if (!input_requires_qint16_rebase_[i]) {
+      continue;
+    }
+    LITERT_RETURN_IF_ERROR(ToggleInt16Signedness(
+        input_buffer_handles_[i], inputs_[i].GetTensorBytes()));
+    rebased_inputs[i] = true;
+  }
+
   // Auto mode does per-inference upvote + debounced downvote.
   // Manual mode is unchanged (upvote at init).
   const bool auto_mode = IsAutoPerfCtrlMode(
@@ -538,6 +594,15 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
     LITERT_RETURN_IF_ERROR(Profile());
   }
 
+  for (size_t i = 0; i < output_buffer_handles_.size(); ++i) {
+    if (!output_requires_qint16_rebase_[i]) {
+      continue;
+    }
+    LITERT_RETURN_IF_ERROR(ToggleInt16Signedness(
+        output_buffer_handles_[i], outputs_[i].GetTensorBytes()));
+    rebased_outputs[i] = true;
+  }
+
   // TODO (chunhsue-qti): pass folder as option
   std::string dump_folder = "/data/local/tmp/dumped_tensors/";
   for (int i = 0; i < outputs_.size(); ++i) {
@@ -549,6 +614,36 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
     }
   }
 
+  return {};
+}
+
+Expected<void> LiteRtDispatchInvocationContextT::ToggleInt16Signedness(
+    LiteRtTensorBufferHandle tensor_buffer_handle, size_t bytes) {
+  if (bytes % sizeof(std::uint16_t) != 0) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Invalid 16-bit tensor byte size");
+  }
+  auto tensor_buffer = device_context_->GetTensorBuffer(tensor_buffer_handle);
+  if (!tensor_buffer) {
+    return Unexpected(tensor_buffer.Error());
+  }
+
+  void* memory = nullptr;
+  if (auto status = LiteRtLockTensorBuffer(
+          *tensor_buffer, &memory, kLiteRtTensorBufferLockModeReadWrite);
+      status != kLiteRtStatusOk) {
+    return Unexpected(status, "Failed to lock 16-bit tensor buffer");
+  }
+
+  auto* values = static_cast<std::uint16_t*>(memory);
+  for (size_t i = 0; i < bytes / sizeof(std::uint16_t); ++i) {
+    values[i] ^= std::uint16_t{0x8000};
+  }
+
+  if (auto status = LiteRtUnlockTensorBuffer(*tensor_buffer);
+      status != kLiteRtStatusOk) {
+    return Unexpected(status, "Failed to unlock 16-bit tensor buffer");
+  }
   return {};
 }
 

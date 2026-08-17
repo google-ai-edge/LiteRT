@@ -274,6 +274,57 @@ void TensorWrapper::SetDataBy(std::uint32_t bytes, const void* data,
   }
 }
 
+void TensorWrapper::ConvertQint16ToQuint16() {
+  if (!IsQuantI16()) {
+    return;
+  }
+
+  constexpr std::int32_t kSignedToUnsignedOffset = 32768;
+
+  // Convert static data before changing the declared type. ConvertTensor may
+  // keep static model data as a non-owning view, so always materialize an
+  // owned rebased buffer here.
+  if (IsTensorStatic()) {
+    const auto int16_data = GetTensorData<std::int16_t>();
+    if (!int16_data.has_value()) {
+      QNN_LOG_ERROR("Failed to read static QInt16 tensor during U16 rebase.");
+      return;
+    }
+    std::vector<std::uint16_t> uint16_data(int16_data->size());
+    for (size_t i = 0; i < int16_data->size(); ++i) {
+      uint16_data[i] = static_cast<std::uint16_t>(
+          static_cast<std::int32_t>((*int16_data)[i]) +
+          kSignedToUnsignedOffset);
+    }
+    owned_data_.resize(GetTensorBytes());
+    std::memcpy(owned_data_.data(), uint16_data.data(), owned_data_.size());
+    qnn_tensor_.v2.clientBuf.dataSize = owned_data_.size();
+    qnn_tensor_.v2.clientBuf.data = owned_data_.data();
+  }
+
+  if (IsPerTensorQuant()) {
+    const auto& quant =
+        std::get<ScaleOffsetQuantizeParamsWrapper>(quantize_params_);
+    quantize_params_.emplace<ScaleOffsetQuantizeParamsWrapper>(
+        quant.GetScale(), quant.GetZeroPoint() + kSignedToUnsignedOffset);
+  } else if (IsPerChannelQuant()) {
+    const auto& quant =
+        std::get<AxisScaleOffsetQuantizeParamsWrapper>(quantize_params_);
+    auto zero_points = quant.GetZeroPoints();
+    for (auto& zero_point : zero_points) {
+      zero_point += kSignedToUnsignedOffset;
+    }
+    quantize_params_.emplace<AxisScaleOffsetQuantizeParamsWrapper>(
+        quant.GetAxis(), quant.GetScales(), zero_points);
+  } else {
+    QNN_LOG_ERROR("Cannot rebase QInt16 tensor without affine quantization.");
+    return;
+  }
+
+  qnn_tensor_.v2.dataType = QNN_DATATYPE_UFIXED_POINT_16;
+  UpdateQnnQuantParams();
+}
+
 TensorWrapper::TensorWrapper(const Qnn_Tensor_t& qnn_tensor)
     : qnn_tensor_{qnn_tensor} {
   if (qnn_tensor_.version == QNN_TENSOR_VERSION_1) {

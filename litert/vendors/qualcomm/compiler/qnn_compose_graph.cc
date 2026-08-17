@@ -225,7 +225,7 @@ LiteRtStatus ConvertTensor(const litert::compiler::Tensor& litert_tensor,
                            ::qnn::TensorPool& tensor_pool,
                            ::qnn::TensorWrapper*& tensor_wrapper,
                            const absl::flat_hash_set<std::int32_t>& ids_to_dump,
-                           bool is_tensor_output) {
+                           bool is_tensor_output, bool canonicalize_qint16) {
   tensor_wrapper = nullptr;
 
   if (litert_tensor.TypeId() != kLiteRtRankedTensorType) {
@@ -357,6 +357,9 @@ LiteRtStatus ConvertTensor(const litert::compiler::Tensor& litert_tensor,
       res.MarkDump();
     }
     tensor_wrapper = &res;
+  }
+  if (canonicalize_qint16) {
+    tensor_wrapper->ConvertQint16ToQuint16();
   }
   return kLiteRtStatusOk;
 }
@@ -1506,6 +1509,11 @@ GetOpBuilders() {
   builders[kLiteRtOpCodeTflReluN1To1] = Adapt<BuildReluN1To1Op>;
   builders[kLiteRtOpCodeTflRelu6] = Adapt<BuildRelu6Op>;
   builders[kLiteRtOpCodeTflReshape] = Adapt<BuildReshapeOp>;
+  // ExpandDims and Squeeze are pure rank-adjusting reshapes on the runtime
+  // side; the output tensor already carries the new shape. QNN has no
+  // dedicated builtin for these — QAIRT lowers them to Reshape, and so do we.
+  builders[kLiteRtOpCodeTflExpandDims] = Adapt<BuildReshapeOp>;
+  builders[kLiteRtOpCodeTflSqueeze] = Adapt<BuildReshapeOp>;
   builders[kLiteRtOpCodeTflResizeBilinear] = Adapt<BuildResizeBilinearOp>;
   builders[kLiteRtOpCodeTflSoftmax] = Adapt<BuildSoftmaxOp>;
   builders[kLiteRtOpCodeTflSpaceToDepth] = Adapt<BuildSpaceToDepthOp>;
@@ -1735,8 +1743,9 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
   const auto subgraph_inputs = graph_mapper.Graph().Inputs();
   for (const auto& subgraph_input : subgraph_inputs) {
     ::qnn::TensorWrapper* tensor_wrapper{nullptr};
-    LITERT_RETURN_IF_ERROR(ConvertTensor(subgraph_input, tensor_pool,
-                                         tensor_wrapper, ids_to_dump));
+    LITERT_RETURN_IF_ERROR(ConvertTensor(
+        subgraph_input, tensor_pool, tensor_wrapper, ids_to_dump,
+        /*is_tensor_output=*/false, /*canonicalize_qint16=*/true));
     if (options.GetGraphIOTensorMemType() ==
         ::qnn::GraphIOTensorMemType::kMemHandle) {
       if (tensor_wrapper != nullptr) {
@@ -1765,7 +1774,9 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
           it == litert_tensor_to_wrapper.end()) {
         ::qnn::TensorWrapper* tensor_wrapper{nullptr};
         LITERT_RETURN_IF_ERROR(
-            ConvertTensor(input, tensor_pool, tensor_wrapper, ids_to_dump));
+            ConvertTensor(input, tensor_pool, tensor_wrapper, ids_to_dump,
+                          /*is_tensor_output=*/false,
+                          /*canonicalize_qint16=*/true));
         // add into map to capture re-used static tensor
         litert_tensor_to_wrapper.emplace(input.Get(), tensor_wrapper);
         input_tensors.emplace_back(*tensor_wrapper);
@@ -1779,7 +1790,8 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
       const bool is_tensor_output = graph_mapper.IsTensorOutput(output.Get());
       ::qnn::TensorWrapper* tensor_wrapper{nullptr};
       LITERT_RETURN_IF_ERROR(ConvertTensor(output, tensor_pool, tensor_wrapper,
-                                           ids_to_dump, is_tensor_output));
+                                           ids_to_dump, is_tensor_output,
+                                           /*canonicalize_qint16=*/true));
       if (is_tensor_output && options.GetGraphIOTensorMemType() ==
                                   ::qnn::GraphIOTensorMemType::kMemHandle) {
         tensor_wrapper->SetMemHandle(nullptr);

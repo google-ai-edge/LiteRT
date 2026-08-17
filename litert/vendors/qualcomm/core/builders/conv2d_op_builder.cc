@@ -43,6 +43,14 @@ std::vector<OpWrapper> BuildConv2dOp(
   // transpose filter
   TensorWrapper& filter_tensor = inputs[kFilterIndex];
   const std::vector<uint32_t>& filters_dims = filter_tensor.GetDimensions();
+  TensorWrapper& input_tensor = inputs[kInputIndex];
+  const std::uint32_t input_channels =
+      input_tensor.GetDimension(kChannelIndex);
+  const std::uint32_t filter_input_channels =
+      filter_tensor.GetDimension(kChannelIndex);
+  const bool is_depthwise =
+      filter_input_channels == 1 &&
+      filter_tensor.GetDimension(kBatchIndex) % input_channels == 0;
   auto& filter_quant_params = filter_tensor.GetQuantParams();
   std::vector<std::uint32_t> permute_dims{filters_dims[1], filters_dims[2],
                                           filters_dims[3], filters_dims[0]};
@@ -95,15 +103,12 @@ std::vector<OpWrapper> BuildConv2dOp(
   }
 
   // conv
-  OpWrapper& conv_op = CreateOpWrapper(res, QNN_OP_CONV_2D);
-  TensorWrapper& input_tensor = inputs[kInputIndex];
+  OpWrapper& conv_op = CreateOpWrapper(
+      res, is_depthwise ? QNN_OP_DEPTH_WISE_CONV_2D : QNN_OP_CONV_2D);
   conv_op.AddInputTensor(input_tensor);
   conv_op.AddInputTensor(*transposed_filter_tensor);
   if (inputs.size() - 1 >= kBiasIndex) {
     TensorWrapper& bias_tensor = inputs[kBiasIndex];
-    // QNN only support per-tensor quant for bias,
-    // and the scale and offset are both zero.
-    bias_tensor.ConvertAxisScaleOffsetToScaleOffset();
 
     if (use_int64_bias_as_int32 && bias_tensor.IsTensorStatic() &&
         bias_tensor.GetDataType() == QNN_DATATYPE_INT_64) {
@@ -159,15 +164,13 @@ std::vector<OpWrapper> BuildConv2dOp(
   conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_PAD_AMOUNT, padding_tensor);
 
   // group param
-  if ((input_tensor.GetDimension(kChannelIndex) %
-       filter_tensor.GetDimension(kChannelIndex)) != 0) {
+  if ((input_channels % filter_input_channels) != 0) {
     QNN_LOG_WARNING(
         "The channels of the input tensor cannot be evenly divided by the "
         "channels of the filter tensor.");
   }
-  if (const std::uint32_t groups = input_tensor.GetDimension(kChannelIndex) /
-                                   filter_tensor.GetDimension(kChannelIndex);
-      groups > 1) {
+  if (const std::uint32_t groups = input_channels / filter_input_channels;
+      groups > 1 && !is_depthwise) {
     conv_op.AddScalarParam<std::uint32_t>(QNN_OP_CONV_2D_PARAM_GROUP, groups);
   }
 

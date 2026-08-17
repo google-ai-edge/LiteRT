@@ -48,7 +48,7 @@ LiteRtStatus ConvertTensor(
     const litert::compiler::Tensor& litert_tensor,
     ::qnn::TensorPool& tensor_pool, ::qnn::TensorWrapper*& tensor_wrapper,
     const absl::flat_hash_set<std::int32_t>& ids_to_dump = {},
-    bool is_tensor_output = false);
+    bool is_tensor_output = false, bool canonicalize_qint16 = false);
 
 LiteRtStatus AddCustomOpOptionsAsParams(
     absl::Span<const uint8_t> custom_options, ::qnn::TensorPool& tensor_pool,

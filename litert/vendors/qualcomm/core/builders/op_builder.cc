@@ -10,6 +10,8 @@
 #include <utility>
 #include <vector>
 
+#include <cstdlib>
+
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/op_code.h"
@@ -244,10 +246,50 @@ OpWrapper CreateOpWithSameParams(
   return op;
 }
 
+namespace {
+
+// ReLU-family fused activations (RELU, RELU6, RELU_N1_TO_1) clip the output
+// range, and the TFLite→LiteRT converter already encodes that clip range
+// into the *output tensor's* quant scale/offset. Emitting a separate
+// ElementWiseNeuron node is therefore redundant, and it diverges from
+// QAIRT's converter (which folds the clip into producer output quant and
+// emits no neuron node). For those cases we let the producer op write
+// directly to the final output tensor.
+//
+// Tanh / SignBit are not representable as a quant-range clip, so they
+// still need a real neuron node.
+//
+// Setting env var LITERT_QNN_FOLD_ACTIVATION=0 disables the fold and
+// restores explicit ElementWiseNeuron emission for A/B experimentation
+// against QAIRT's own reference DLC.
+bool FoldActivationEnabled() {
+  static const bool enabled = []() {
+    const char* v = std::getenv("LITERT_QNN_FOLD_ACTIVATION");
+    return !(v && v[0] == '0' && v[1] == '\0');
+  }();
+  return enabled;
+}
+
+bool ClipFoldableIntoOutputQuant(uint32_t fused_activation_function) {
+  if (!FoldActivationEnabled()) return false;
+  switch (fused_activation_function) {
+    case FusedActivationRelu:
+    case FusedActivationReluN1To1:
+    case FusedActivationRelu6:
+      return true;
+    default:
+      return false;
+  }
+}
+
+}  // namespace
+
+
 TensorWrapper& CreateFusedActivationInputTensor(
     TensorPool& tensor_pool, const uint32_t fused_activation_function,
     std::vector<TensorWrapperRef>& output_tensors) {
-  if (fused_activation_function == FusedActivationNone) {
+  if (fused_activation_function == FusedActivationNone ||
+      ClipFoldableIntoOutputQuant(fused_activation_function)) {
     return output_tensors[0];
   }
 
@@ -270,45 +312,48 @@ void AddFusedActivationNode(std::vector<OpWrapper>& res,
       break;
     }
     case FusedActivationRelu: {
-      auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
-      elementwise_op.AddInputTensor(input_tensor);
-      elementwise_op.AddOutputTensor(output_tensor);
-      elementwise_op.AddScalarParam<std::uint32_t>(
+      if (ClipFoldableIntoOutputQuant(fused_activation_function)) break;
+      auto& op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
+      op.AddInputTensor(input_tensor);
+      op.AddOutputTensor(output_tensor);
+      op.AddScalarParam<std::uint32_t>(
           QNN_OP_ELEMENT_WISE_NEURON_PARAM_OPERATION,
           QNN_OP_ELEMENT_WISE_NEURON_OPERATION_RELU);
       break;
     }
     case FusedActivationReluN1To1: {
-      auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
-      elementwise_op.AddInputTensor(input_tensor);
-      elementwise_op.AddOutputTensor(output_tensor);
-      elementwise_op.AddScalarParam<std::uint32_t>(
+      if (ClipFoldableIntoOutputQuant(fused_activation_function)) break;
+      auto& op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
+      op.AddInputTensor(input_tensor);
+      op.AddOutputTensor(output_tensor);
+      op.AddScalarParam<std::uint32_t>(
           QNN_OP_ELEMENT_WISE_NEURON_PARAM_OPERATION,
           QNN_OP_ELEMENT_WISE_NEURON_OPERATION_RELU_MIN_MAX);
-      elementwise_op.AddScalarParam<float>(
+      op.AddScalarParam<float>(
           QNN_OP_ELEMENT_WISE_NEURON_PARAM_MIN_VALUE, -1);
-      elementwise_op.AddScalarParam<float>(
+      op.AddScalarParam<float>(
           QNN_OP_ELEMENT_WISE_NEURON_PARAM_MAX_VALUE, 1);
       break;
     }
     case FusedActivationRelu6: {
-      auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
-      elementwise_op.AddInputTensor(input_tensor);
-      elementwise_op.AddOutputTensor(output_tensor);
-      elementwise_op.AddScalarParam<std::uint32_t>(
+      if (ClipFoldableIntoOutputQuant(fused_activation_function)) break;
+      auto& op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
+      op.AddInputTensor(input_tensor);
+      op.AddOutputTensor(output_tensor);
+      op.AddScalarParam<std::uint32_t>(
           QNN_OP_ELEMENT_WISE_NEURON_PARAM_OPERATION,
           QNN_OP_ELEMENT_WISE_NEURON_OPERATION_RELU_MIN_MAX);
-      elementwise_op.AddScalarParam<float>(
+      op.AddScalarParam<float>(
           QNN_OP_ELEMENT_WISE_NEURON_PARAM_MIN_VALUE, 0);
-      elementwise_op.AddScalarParam<float>(
+      op.AddScalarParam<float>(
           QNN_OP_ELEMENT_WISE_NEURON_PARAM_MAX_VALUE, 6);
       break;
     }
     case FusedActivationTanh: {
-      auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
-      elementwise_op.AddInputTensor(input_tensor);
-      elementwise_op.AddOutputTensor(output_tensor);
-      elementwise_op.AddScalarParam<std::uint32_t>(
+      auto& op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
+      op.AddInputTensor(input_tensor);
+      op.AddOutputTensor(output_tensor);
+      op.AddScalarParam<std::uint32_t>(
           QNN_OP_ELEMENT_WISE_NEURON_PARAM_OPERATION,
           QNN_OP_ELEMENT_WISE_NEURON_OPERATION_TANH);
       break;
