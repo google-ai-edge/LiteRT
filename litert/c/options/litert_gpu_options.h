@@ -252,6 +252,10 @@ LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
 LiteRtStatus LrtSetGpuOptionsHintFullyDelegatedToSingleDelegate(
     LrtGpuOptions* gpu_options, bool hint_fully_delegated_to_single_delegate);
 
+// Sets whether to use IrModel instead of legacy GraphFloat32.
+LiteRtStatus LrtSetGpuOptionsUseIrModel(LrtGpuOptions* gpu_options,
+                                        bool enable);
+
 // Declarations below this point are meant to be used by accelerator code.
 
 const char* LrtGetGpuOptionsIdentifier();
@@ -375,6 +379,9 @@ LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
 LiteRtStatus LrtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
     bool* hint_fully_delegated_to_single_delegate,
     const LrtGpuOptions* options);
+
+LiteRtStatus LrtGetGpuOptionsUseIrModel(bool* enabled,
+                                        const LrtGpuOptions* options);
 
 #ifdef __cplusplus
 }  // extern "C"

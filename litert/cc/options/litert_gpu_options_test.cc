@@ -322,5 +322,36 @@ TEST(GpuOptions, SetKernelBatchSizeWorks) {
   EXPECT_THAT(kernel_batch_size, Eq(10));
 }
 
+TEST(GpuOptions, EnableUseIrModelWorks) {
+  LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
+  LrtGpuOptions* payload = options.Get();
+
+  // Check the default value.
+  bool use_ir_model = true;
+  LITERT_ASSERT_OK(LrtGetGpuOptionsUseIrModel(&use_ir_model, payload));
+  EXPECT_THAT(use_ir_model, Eq(false));
+
+  options.EnableUseIrModel(true);
+
+  LITERT_ASSERT_OK(LrtGetGpuOptionsUseIrModel(&use_ir_model, payload));
+  EXPECT_THAT(use_ir_model, Eq(true));
+
+  options.EnableUseIrModel(false);
+
+  LITERT_ASSERT_OK(LrtGetGpuOptionsUseIrModel(&use_ir_model, payload));
+  EXPECT_THAT(use_ir_model, Eq(false));
+}
+
+TEST(GpuOptions, SetUseIrModelWorks) {
+  LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
+  LrtGpuOptions* payload = options.Get();
+
+  options.SetUseIrModel(true);
+
+  bool use_ir_model = false;
+  LITERT_ASSERT_OK(LrtGetGpuOptionsUseIrModel(&use_ir_model, payload));
+  EXPECT_THAT(use_ir_model, Eq(true));
+}
+
 }  // namespace
 }  // namespace litert::ml_drift
