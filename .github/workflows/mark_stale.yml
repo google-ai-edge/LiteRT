@@ -11,7 +11,7 @@ on:
   - cron: '30 1 * * *'
 
 permissions:
-  contents: read
+  contents: read # Required
 
 jobs:
   stale:
@@ -20,8 +20,8 @@ jobs:
       (github.event_name == 'schedule' && github.repository == 'google-ai-edge/LiteRT')
     runs-on: ubuntu-latest
     permissions:
-      issues: write
-      pull-requests: write
+      issues: write # Required
+      pull-requests: write # Required
       actions: write
 
     steps:
