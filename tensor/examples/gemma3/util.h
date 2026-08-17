@@ -25,10 +25,10 @@
 #include <utility>
 #include <vector>
 
-#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 
@@ -78,6 +78,8 @@ class Timer {
         [](auto accu, auto lap) -> absl::Duration { return accu + lap; });
   }
 
+  void SetCountPerLap(double count) { count_per_lap_ = count; }
+
   const std::string& Name() const { return name_; }
   absl::Duration AverageDuration() const { return Duration() / laps_.size(); }
   const std::vector<struct Lap>& Laps() const { return laps_; }
@@ -99,18 +101,21 @@ class Timer {
 
   std::string Stats() const {
     return absl::StrCat(name_, "=",
-                        absl::ToDoubleMilliseconds(Duration() / laps_.size()));
+                        absl::ToDoubleMilliseconds(
+                            Duration() / (laps_.size() * count_per_lap_)));
   }
 
   std::string PerSec() const {
     return absl::StrCat(
-        name_, "_per_sec=", laps_.size() / absl::ToDoubleSeconds(Duration()));
+        name_, "_per_sec=",
+        (laps_.size() * count_per_lap_) / absl::ToDoubleSeconds(Duration()));
   }
 
  private:
   std::string name_;
   absl::Time start_;
   std::vector<struct Lap> laps_;
+  double count_per_lap_ = 1;
 };
 
 struct PrefillTiming {
