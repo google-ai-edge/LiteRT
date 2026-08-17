@@ -7,15 +7,15 @@ on:
     branches: ["*"]
 
 permissions:
-  contents: read
+  contents: read # Required
 
 jobs:
   zizmor:
     name: zizmor latest via Cargo
     runs-on: ubuntu-latest
     permissions:
-      security-events: write
-      contents: read
+      security-events: write # Required
+      contents: read # Required
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
