@@ -167,7 +167,7 @@ jobs:
           path: ~/.cache/bazel
           key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
 
-  upload-to-pypi:
+  upload-to-pypi: # zizmor: ignore[secrets-outside-env]
     name: "Upload Nightly Wheels to PyPI"
     runs-on: ubuntu-latest
     needs: build_wheels

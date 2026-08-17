@@ -164,7 +164,7 @@ jobs:
           path: ~/.cache/bazel-windows
           key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
 
-  upload-to-pypi:
+  upload-to-pypi: # zizmor: ignore[secrets-outside-env]
     name: "Upload Nightly Wheels to PyPI"
     runs-on: Windows_x64
     needs: build-nightly
