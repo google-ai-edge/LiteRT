@@ -87,7 +87,7 @@ message OpFilters {
 
 // Message to hold various compilation options for the Google Tensor compiler
 // plugin.
-// NEXT ID: 14
+// NEXT ID: 15
 message GoogleTensorOptions {
   // Specifies the type of float truncation to be applied.
   GoogleTensorOptionsTruncationType float_truncation_type = 1;
@@ -114,6 +114,13 @@ message GoogleTensorOptions {
   // Inline string descriptor (e.g., textproto formatted CompilerOptions)
   // for additional Google Tensor compiler options.
   string extra_options = 13;
+
+  // copybara:comment_begin(google-only)
+  // Enables MLIR-based input validation. When set to true, the compiler runs
+  // an InputValidatorPass to check for unsupported operations.
+  // TODO(b/472440425): Remove this flag and enable by default after verification.
+  bool experimental_enable_input_validator = 14;
+  // copybara:comment_end
 
   reserved 8;
 }

@@ -275,6 +275,25 @@ class GoogleTensorOptions : public ConcreteOptionsBase {
     return StringView(extra_options);
   }
 
+  // copybara:uncomment_begin(google-only)
+  // // TODO(b/472440425): Remove this flag and enable by default after
+  // // verification.
+  // void SetExperimentalEnableInputValidator(
+      // bool experimental_enable_input_validator) {
+    // internal::AssertOk(
+        // LrtGoogleTensorOptionsSetExperimentalEnableInputValidator, Get(),
+        // experimental_enable_input_validator);
+  // }
+// 
+  // bool GetExperimentalEnableInputValidator() const {
+    // LrtGoogleTensorOptions options_data = Get();
+    // bool experimental_enable_input_validator;
+    // internal::AssertOk(
+        // LrtGoogleTensorOptionsGetExperimentalEnableInputValidator, options_data,
+        // &experimental_enable_input_validator);
+    // return experimental_enable_input_validator;
+  // }
+  // copybara:uncomment_end
  private:
   explicit GoogleTensorOptions(LrtGoogleTensorOptions options)
       : options_(options) {}

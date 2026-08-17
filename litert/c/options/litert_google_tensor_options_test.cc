@@ -527,5 +527,33 @@ TEST(LrtGoogleTensorOptionsTest, ExtraOptions) {
   LrtDestroyGoogleTensorOptions(options);
 }
 
+// copybara:uncomment_begin(google-only)
+// TEST(LrtGoogleTensorOptionsTest, ExperimentalEnableInputValidator) {
+//   LrtGoogleTensorOptions options;
+//   LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
+// 
+//   bool experimental_enable_input_validator;
+//   LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetExperimentalEnableInputValidator(
+//       options, &experimental_enable_input_validator));
+//   ASSERT_FALSE(experimental_enable_input_validator);
+// 
+//   LITERT_ASSERT_OK(
+//       LrtGoogleTensorOptionsSetExperimentalEnableInputValidator(options, true));
+//   LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetExperimentalEnableInputValidator(
+//       options, &experimental_enable_input_validator));
+//   ASSERT_TRUE(experimental_enable_input_validator);
+// 
+//   LrtGoogleTensorOptions parsed;
+//   SerializeAndParse(options, &parsed);
+//   bool parsed_validator;
+//   LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetExperimentalEnableInputValidator(
+//       parsed, &parsed_validator));
+//   EXPECT_TRUE(parsed_validator);
+// 
+//   LrtDestroyGoogleTensorOptions(parsed);
+//   LrtDestroyGoogleTensorOptions(options);
+// }
+// copybara:uncomment_end
+
 }  // namespace
 }  // namespace litert::google_tensor

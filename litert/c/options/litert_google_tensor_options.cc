@@ -30,6 +30,11 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/litert_toml_parser.h"
 
+// copybara:uncomment_begin(google-only)
+// constexpr char kExperimentalEnableInputValidatorKey[] =
+//     "experimental_enable_input_validator";
+// copybara:uncomment_end
+
 struct LrtGoogleTensorOptionsT {
   LrtGoogleTensorOptionsTruncationType float_truncation_type =
       kLiteRtGoogleTensorFloatTruncationTypeAuto;
@@ -52,6 +57,9 @@ struct LrtGoogleTensorOptionsT {
   // coherent).
   absl::btree_map<std::pair<std::string, std::string>, bool> output_coherency;
   std::string extra_options = "";
+  // copybara:uncomment_begin(google-only)
+  // bool experimental_enable_input_validator = false;
+  // copybara:uncomment_end
 };
 
 LiteRtStatus LrtCreateGoogleTensorOptions(LrtGoogleTensorOptions* options) {
@@ -132,6 +140,13 @@ LiteRtStatus LrtGetOpaqueGoogleTensorOptionsData(
     absl::StrAppendFormat(&toml_str, "output_coherency_%s:%s = %s\n", key.first,
                           key.second, pref ? "true" : "false");
   }
+
+  // copybara:uncomment_begin(google-only)
+  // if (options->experimental_enable_input_validator) {
+    // absl::StrAppendFormat(&toml_str, "%s = true\n",
+                          // kExperimentalEnableInputValidatorKey);
+  // }
+  // copybara:uncomment_end
 
   *identifier = LrtGoogleTensorOptionsGetIdentifier();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
@@ -220,6 +235,12 @@ LiteRtStatus LrtCreateGoogleTensorOptionsFromToml(
           if (!absl::Base64Unescape(value, &options_ref.extra_options)) {
             return kLiteRtStatusErrorInvalidArgument;
           }
+          // copybara:uncomment_begin(google-only)
+        // } else if (key == kExperimentalEnableInputValidatorKey) {
+          // LITERT_ASSIGN_OR_RETURN(
+              // options_ref.experimental_enable_input_validator,
+              // litert::internal::ParseTomlBool(value));
+          // copybara:uncomment_end
         }
         return kLiteRtStatusOk;
       });
@@ -607,3 +628,27 @@ LiteRtStatus LrtGoogleTensorOptionsGetExtraOptions(
   *extra_options = options->extra_options.c_str();
   return kLiteRtStatusOk;
 }
+
+// copybara:uncomment_begin(google-only)
+// // experimental_enable_input_validator ---------------------------------
+// 
+// LiteRtStatus LrtGoogleTensorOptionsSetExperimentalEnableInputValidator(
+//     LrtGoogleTensorOptions options, bool experimental_enable_input_validator) {
+//   if (options == nullptr) {
+//     return kLiteRtStatusErrorInvalidArgument;
+//   }
+//   options->experimental_enable_input_validator =
+//       experimental_enable_input_validator;
+//   return kLiteRtStatusOk;
+// }
+// 
+// LiteRtStatus LrtGoogleTensorOptionsGetExperimentalEnableInputValidator(
+//     LrtGoogleTensorOptions options, bool* experimental_enable_input_validator) {
+//   if (options == nullptr || experimental_enable_input_validator == nullptr) {
+//     return kLiteRtStatusErrorInvalidArgument;
+//   }
+//   *experimental_enable_input_validator =
+//       options->experimental_enable_input_validator;
+//   return kLiteRtStatusOk;
+// }
+// copybara:uncomment_end

@@ -267,6 +267,17 @@ LiteRtStatus LrtOptionsToGoogleTensorOptions(
       LrtGoogleTensorOptionsGetExtraOptions(lrt_options, &extra_options));
   google_tensor_options.set_extra_options(extra_options);
 
+// copybara:uncomment_begin(google-only)
+// #ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
+//   // EXPERIMENTAL ENABLE INPUT VALIDATOR
+//   bool experimental_enable_input_validator;
+//   LITERT_RETURN_IF_ERROR(
+//       LrtGoogleTensorOptionsGetExperimentalEnableInputValidator(
+//           lrt_options, &experimental_enable_input_validator));
+//   google_tensor_options.set_experimental_enable_input_validator(
+//       experimental_enable_input_validator);
+// #endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
+// copybara:uncomment_end
   return kLiteRtStatusOk;
 }
 

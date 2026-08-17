@@ -176,6 +176,25 @@ TEST(UpdateGoogleTensorOptionsFromFlagsTest, SetExtraOptionsPath) {
   absl::SetFlag(&FLAGS_google_tensor_extra_options_path, "");
 }
 
+// copybara:uncomment_begin(google-only)
+// TEST(UpdateGoogleTensorOptionsFromFlagsTest,
+//      SetExperimentalEnableInputValidator) {
+//   Expected<GoogleTensorOptions> options = GoogleTensorOptions::Create();
+//   ASSERT_TRUE(options.HasValue());
+//   // Default value should be false.
+//   ASSERT_TRUE(UpdateGoogleTensorOptionsFromFlags(options.Value()).HasValue());
+//   EXPECT_FALSE(options.Value().GetExperimentalEnableInputValidator());
+//   // Update flag value.
+//   absl::SetFlag(&FLAGS_google_tensor_experimental_enable_input_validator, true);
+//   ASSERT_TRUE(UpdateGoogleTensorOptionsFromFlags(options.Value()).HasValue());
+//   EXPECT_TRUE(options.Value().GetExperimentalEnableInputValidator());
+// 
+//   // Reset flag to default to avoid affecting other tests.
+//   absl::SetFlag(&FLAGS_google_tensor_experimental_enable_input_validator,
+//                 false);
+// }
+// copybara:uncomment_end
+
 }  // namespace
 
 }  // namespace litert::google_tensor

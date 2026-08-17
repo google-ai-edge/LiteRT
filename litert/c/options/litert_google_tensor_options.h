@@ -197,6 +197,15 @@ LiteRtStatus LrtGoogleTensorOptionsSetExtraOptions(
 LiteRtStatus LrtGoogleTensorOptionsGetExtraOptions(
     LrtGoogleTensorOptions options, const char** extra_options);
 
+// copybara:uncomment_begin(google-only)
+// // experimental_enable_input_validator ---------------------------------
+// 
+// LiteRtStatus LrtGoogleTensorOptionsSetExperimentalEnableInputValidator(
+//     LrtGoogleTensorOptions options, bool experimental_enable_input_validator);
+// 
+// LiteRtStatus LrtGoogleTensorOptionsGetExperimentalEnableInputValidator(
+//     LrtGoogleTensorOptions options, bool* experimental_enable_input_validator);
+// copybara:uncomment_end
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
