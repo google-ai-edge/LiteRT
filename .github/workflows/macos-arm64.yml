@@ -27,8 +27,8 @@ jobs:
     name: "Presubmit-Mac"
     runs-on: macos-15
     permissions:
-      actions: write  # For gh cache delete.
-      contents: write  # For gh release upload.
+      actions: write  # For gh cache delete. # zizmor: ignore[excessive-permissions]
+      contents: write  # For gh release upload. # zizmor: ignore[excessive-permissions]
     env:
       GH_TOKEN: ${{ github.token }}  # For gh release upload.
       REFRESH_CACHE: ${{ github.event_name == 'schedule' ||

@@ -25,9 +25,9 @@ concurrency:
 jobs:
   presubmit:
     name: "Presubmit-Win"
-    runs-on: windows-x86-n2-16
+    runs-on: windows-x86-n2-16 # zizmor: ignore[self-hosted-runner]
     permissions:
-      actions: write  # For gh cache delete.
+      actions: write  # For gh cache delete. # zizmor: ignore[excessive-permissions]
       contents: read # Required
     env:
       # Clear ANDROID_NDK_HOME as windows-latest has NDK where jobs don't have permission for

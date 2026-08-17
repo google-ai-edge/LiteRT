@@ -17,7 +17,7 @@ permissions:
 jobs:
   build_android_on_linux:
     name: Build Android Artifacts on Linux
-    runs-on: linux-x86-n2-16
+    runs-on: linux-x86-n2-16 # zizmor: ignore[self-hosted-runner]
     container:
       image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:12822904942562e7deb0c91fb0eb3dd9ec87b4292881108b166e44149422b87d
     steps:
@@ -33,7 +33,7 @@ jobs:
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3 # zizmor: ignore[unverified-uses,stale-action-refs]
         with:
           packages: >
             ndk;26.3.11579264

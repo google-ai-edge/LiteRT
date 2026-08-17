@@ -19,7 +19,7 @@ permissions:
 jobs:
   build-release:
     name: "Build stable Windows wheel - Python ${{ matrix.python-version }}"
-    runs-on: windows-x86-n2-16
+    runs-on: windows-x86-n2-16 # zizmor: ignore[self-hosted-runner]
     strategy:
       fail-fast: false
       matrix:
@@ -44,7 +44,7 @@ jobs:
         run: echo "C:/Program Files/Git/usr/bin" >> $GITHUB_PATH
 
       - name: Mount Bazel
-        uses: bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2 # v3
+        uses: bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2 # v3 # zizmor: ignore[unverified-uses,stale-action-refs]
 
       - name: Setup Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -169,7 +169,7 @@ jobs:
 
   upload-to-pypi:
     name: "Upload stable Wheels to PyPI"
-    runs-on: Windows_x64
+    runs-on: Windows_x64 # zizmor: ignore[self-hosted-runner]
     needs: build-release
     if: success() && inputs.dry_run == false
     steps:

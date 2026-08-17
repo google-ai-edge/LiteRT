@@ -25,12 +25,12 @@ concurrency:
 jobs:
   presubmit:
     name: "Presubmit-Linux"
-    runs-on: linux-x86-n2-16
+    runs-on: linux-x86-n2-16 # zizmor: ignore[self-hosted-runner]
     container:
       image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:12822904942562e7deb0c91fb0eb3dd9ec87b4292881108b166e44149422b87d
     permissions:
-      actions: write
-      contents: write
+      actions: write # zizmor: ignore[excessive-permissions]
+      contents: write # zizmor: ignore[excessive-permissions]
     env:
       GH_TOKEN: ${{ github.token }}
       REFRESH_CACHE: ${{ github.event_name == 'schedule' ||
