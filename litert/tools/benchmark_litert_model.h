@@ -281,6 +281,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
                             BenchmarkParam::Create<bool>(false));
     default_params.AddParam("gpu_madvise_original_shared_tensors",
                             BenchmarkParam::Create<bool>(true));
+    default_params.AddParam("gpu_use_ir_model",
+                            BenchmarkParam::Create<std::string>(""));
     default_params.AddParam("xnnpack_weight_cache_file_path",
                             BenchmarkParam::Create<std::string>(""));
     default_params.AddParam("result_file_path",
@@ -485,6 +487,10 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     flags.push_back(tflite::benchmark::CreateFlag<bool>(
         "gpu_madvise_original_shared_tensors", &params_,
         "Whether to madvise original shared tensors after use."));
+    flags.push_back(tflite::benchmark::CreateFlag<std::string>(
+        "gpu_use_ir_model", &params_,
+        "Whether to use IrModel instead of legacy GraphFloat32 for GPU. "
+        "Values: 'true', 'false', or empty for system default."));
     flags.push_back(tflite::benchmark::CreateFlag<std::string>(
         "xnnpack_weight_cache_file_path", &params_,
         "Path to an XNNPACK packed-weight cache file. Use ':memory' for an "

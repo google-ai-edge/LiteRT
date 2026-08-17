@@ -110,6 +110,12 @@ LiteRtStatus CreateDelegate(
         &gpu_delegate_options->litert_external_tensors_mode,
         gpu_options_payload);
 
+    bool use_ir_model;
+    if (LrtGetGpuOptionsUseIrModel(&use_ir_model, gpu_options_payload) ==
+        kLiteRtStatusOk) {
+      gpu_delegate_options->use_ir_model = use_ir_model;
+    }
+
     LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
         &gpu_delegate_options->allow_src_quantized_fc_conv_ops,
         gpu_options_payload);

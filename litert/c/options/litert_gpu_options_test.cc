@@ -17,7 +17,6 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 #include "litert/test/matchers.h"
 
 namespace {
@@ -616,6 +615,38 @@ TEST(GpuAcceleratorPayload, SetAndGetAllowSrcQuantizedFcConvOps) {
       LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
           &enabled_from_toml, payload_from_toml));
   EXPECT_THAT(enabled_from_toml, Eq(true));
+
+  LrtDestroyGpuOptions(payload_from_toml);
+  LrtDestroyGpuOptions(payload);
+}
+
+TEST(GpuAcceleratorPayload, SetAndGetUseIrModel) {
+  LrtGpuOptions* payload = nullptr;
+  LITERT_ASSERT_OK(LrtCreateGpuOptions(&payload));
+
+  bool use_ir_model = true;
+
+  // Check that it returns kLiteRtStatusErrorNotFound when not set.
+  EXPECT_THAT(LrtGetGpuOptionsUseIrModel(&use_ir_model, payload),
+              IsError(kLiteRtStatusErrorNotFound));
+
+  EXPECT_THAT(LrtGetGpuOptionsUseIrModel(nullptr, payload),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+
+  LITERT_EXPECT_OK(LrtSetGpuOptionsUseIrModel(payload, true));
+  LITERT_EXPECT_OK(LrtGetGpuOptionsUseIrModel(&use_ir_model, payload));
+  EXPECT_THAT(use_ir_model, Eq(true));
+
+  EXPECT_THAT(LrtSetGpuOptionsUseIrModel(nullptr, true),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+
+  LrtGpuOptions* payload_from_toml = nullptr;
+  SerializeAndParse(payload, &payload_from_toml);
+
+  bool use_ir_model_from_toml;
+  LITERT_EXPECT_OK(
+      LrtGetGpuOptionsUseIrModel(&use_ir_model_from_toml, payload_from_toml));
+  EXPECT_THAT(use_ir_model_from_toml, Eq(true));
 
   LrtDestroyGpuOptions(payload_from_toml);
   LrtDestroyGpuOptions(payload);
