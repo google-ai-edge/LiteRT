@@ -70,7 +70,7 @@ jobs:
       - name: Restore cmake cache if cache is not being refreshed.
         id: cmake-cache
         if: env.REFRESH_CACHE != 'true'
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 # zizmor: ignore[cache-poisoning]
         with:
           path: |
             litert/cmake_build_android_arm64
@@ -143,7 +143,7 @@ jobs:
         run: gh cache delete $CACHE_KEY
 
       - name: Save cmake cache if it's new or being refreshed.
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 # zizmor: ignore[cache-poisoning]
         if: env.REFRESH_CACHE == 'true' || steps.cmake-cache.outputs.cache-hit != 'true'
         with:
           path: |

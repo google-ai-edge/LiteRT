@@ -102,7 +102,7 @@ jobs:
       - name: Restore bazel cache if cache is not being refreshed.
         id: bazel-cache
         if: env.REFRESH_CACHE != 'true'
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 # zizmor: ignore[cache-poisoning]
         env:
           windir: ""
           PATH: "C:/Program Files/Git/usr/bin;C:/Windows/System32;C:/Windows"
@@ -158,7 +158,7 @@ jobs:
         run: bazel --output_user_root="$env:BAZEL_OUTPUT_USER_ROOT" shutdown
 
       - name: Save bazel cache
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 # zizmor: ignore[cache-poisoning]
         if: always()
         env:
           windir: ""
