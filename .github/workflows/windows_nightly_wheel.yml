@@ -7,7 +7,7 @@ on:
   workflow_dispatch: {} # Allow manual trigger
 
 permissions:
-  contents: read
+  contents: read # Required
 
 jobs:
   build-nightly:
@@ -164,7 +164,7 @@ jobs:
           path: ~/.cache/bazel-windows
           key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
 
-  upload-to-pypi: # zizmor: ignore[secrets-outside-env]
+  upload-to-pypi:
     name: "Upload Nightly Wheels to PyPI"
     runs-on: Windows_x64
     needs: build-nightly
@@ -191,6 +191,6 @@ jobs:
       - name: Upload to PyPI
         env:
           TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_UPLOAD_TOKEN }}
+          TWINE_PASSWORD: # zizmor: ignore[secrets-outside-env] ${{ secrets.PYPI_UPLOAD_TOKEN }}
         # zizmor: ignore[use-trusted-publishing]
         run: twine upload --skip-existing --non-interactive --verbose dist/*.whl

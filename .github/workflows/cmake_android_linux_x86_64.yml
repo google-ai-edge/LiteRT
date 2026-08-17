@@ -16,7 +16,7 @@ on:
         default: true
 
 permissions:
-  contents: read
+  contents: read # Required
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}

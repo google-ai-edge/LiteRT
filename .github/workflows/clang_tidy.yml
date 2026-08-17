@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: read # Required
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}

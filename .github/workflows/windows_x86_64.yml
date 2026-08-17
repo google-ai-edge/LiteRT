@@ -16,7 +16,7 @@ on:
         default: true
 
 permissions:
-  contents: read
+  contents: read # Required
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
@@ -28,7 +28,7 @@ jobs:
     runs-on: windows-x86-n2-16
     permissions:
       actions: write  # For gh cache delete.
-      contents: read
+      contents: read # Required
     env:
       # Clear ANDROID_NDK_HOME as windows-latest has NDK where jobs don't have permission for
       # androidndk rulesto create symlinks.

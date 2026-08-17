@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: read # Required
 
 jobs:
   build_android_on_linux:
