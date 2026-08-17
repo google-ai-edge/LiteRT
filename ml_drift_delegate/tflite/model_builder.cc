@@ -1324,14 +1324,23 @@ class Conv2DOperationParser : public TFLiteOperationParser {
         static_cast<const TfLiteConvParams*>(tflite_node->builtin_data);
     if (!params) return absl::InvalidArgumentError("Missing TfLiteConvParams.");
 
+    const bool is_float_input = input_tensor->type == kTfLiteFloat32 ||
+                                input_tensor->type == kTfLiteFloat16;
     // Check for quantized weights sharing when they are convertible to fully
     // connected layer.
-    if (IsConvertibleToFC(weights_tensor)) {
+    if (IsConvertibleToFC(input_tensor, weights_tensor, params)) {
       int weights_tensor_idx = 0;
       ABSL_RETURN_IF_ERROR(GetTensorId(context, tflite_node, kInputWeightsId,
                                        &weights_tensor_idx));
       ABSL_RETURN_IF_ERROR(
           PreCheckReadQuantizedValueByTensorIdx(context, weights_tensor_idx));
+    } else if (is_float_input && (weights_tensor->type == kTfLiteInt8 ||
+                                  weights_tensor->type == kTfLiteInt4 ||
+                                  weights_tensor->type == kTfLiteInt2 ||
+                                  weights_tensor->type == kTfLiteUInt8)) {
+      return absl::InvalidArgumentError(
+          "Conv2D: Quantized weights (DRQ / non-FC) are not supported on GPU "
+          "delegate.");
     }
 
     const int runtime_inputs =
@@ -1391,7 +1400,8 @@ class Conv2DOperationParser : public TFLiteOperationParser {
     }
 
     // Weights are constant.
-    if (IsConvertibleToFC(weights_tensor) &&
+    if (IsConvertibleToFC(reader->GetInputTensor(kInputSrcId), weights_tensor,
+                          params) &&
         (weights_tensor->type == kTfLiteInt8 ||
          (!options_.enable_raw_weights_propagation &&
           weights_tensor->type == kTfLiteInt4))) {
@@ -1471,14 +1481,31 @@ class Conv2DOperationParser : public TFLiteOperationParser {
   }
 
  private:
-  bool IsConvertibleToFC(const TfLiteTensor* weights_tensor) {
-    return weights_tensor->dims->size == 4 &&
-           weights_tensor->dims->data[1] == 1 &&
-           weights_tensor->dims->data[2] == 1 &&
-           weights_tensor->quantization.type ==
-               TfLiteQuantizationType::kTfLiteAffineQuantization &&
-           (weights_tensor->type == kTfLiteInt4 ||
-            weights_tensor->type == kTfLiteInt8);
+  bool IsConvertibleToFC(const TfLiteTensor* input_tensor,
+                         const TfLiteTensor* weights_tensor,
+                         const TfLiteConvParams* params) {
+    if (!weights_tensor || !weights_tensor->dims ||
+        weights_tensor->dims->size != 4 ||
+        weights_tensor->dims->data[1] != 1 ||
+        weights_tensor->dims->data[2] != 1 ||
+        weights_tensor->quantization.type !=
+            TfLiteQuantizationType::kTfLiteAffineQuantization ||
+        (weights_tensor->type != kTfLiteInt4 &&
+         weights_tensor->type != kTfLiteInt8)) {
+      return false;
+    }
+    if (params && (params->stride_height != 1 || params->stride_width != 1 ||
+                   params->dilation_height_factor != 1 ||
+                   params->dilation_width_factor != 1)) {
+      return false;
+    }
+    if (input_tensor && input_tensor->dims) {
+      const ::ml_drift::BHWC src_shape = ExtractTensorShape(input_tensor);
+      if (src_shape.c != weights_tensor->dims->data[3]) {
+        return false;
+      }
+    }
+    return true;
   }
 
   void ParseWithSharedWeights(const TfLiteNode* tflite_node,
@@ -1497,7 +1524,8 @@ class Conv2DOperationParser : public TFLiteOperationParser {
     const bool shared_bias = bias_share.IsShared();
 
     // Reduce convolution operation to a fully connected node.
-    if (IsConvertibleToFC(weights_tensor)) {
+    if (IsConvertibleToFC(reader->GetInputTensor(kInputSrcId), weights_tensor,
+                          params)) {
       ::ml_drift::Node* node = graph->NewNode();
       reader->AddInput(node, 0);
       ConfigSharedWeightFullyConnectedNode(
