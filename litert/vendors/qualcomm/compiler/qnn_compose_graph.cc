@@ -1154,7 +1154,7 @@ LiteRtStatus BuildTransposeConvOp(
     const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
-    std::vector<::qnn::OpWrapper>& op_wrappers) {
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_int64_bias_as_int32) {
   auto options =
       litert::compiler::GetOptionsAs<litert::compiler::TransposeConvOptions>(
           litert_op.ctx(), litert_op.Get());
@@ -1172,9 +1172,9 @@ LiteRtStatus BuildTransposeConvOp(
 
   auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
       tensor_pool, fused_activation, output_tensors);
-  op_wrappers = ::qnn::BuildTransposeConvOp(tensor_pool, input_tensors,
-                                            {activation_input}, stride_h,
-                                            stride_w, qnn_padding);
+  op_wrappers = ::qnn::BuildTransposeConvOp(
+      tensor_pool, input_tensors, {activation_input}, stride_h, stride_w,
+      qnn_padding, use_int64_bias_as_int32);
   ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
                                 output_tensors[0]);
   return kLiteRtStatusOk;
