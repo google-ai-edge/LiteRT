@@ -22,13 +22,15 @@ jobs:
     name: "CMake C++ API example"
     runs-on: linux-x86-n2-16
     container:
-      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build:latest
+      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:12822904942562e7deb0c91fb0eb3dd9ec87b4292881108b166e44149422b87d
     env:
       CMAKE_BUILD_DIR: cmake_build_source_cc_api
       CMAKE_BUILD_PARALLEL_LEVEL: 6
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Install CMake and Ninja
         run: |
