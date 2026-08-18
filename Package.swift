@@ -25,7 +25,17 @@ let package = Package(
     .library(
       name: "LiteRT",
       targets: ["LiteRT"]
-    )
+    ),
+    .library(
+      name: "LiteRT_static",
+      type: .static,
+      targets: ["LiteRT"]
+    ),
+    .library(
+      name: "LiteRT_dynamic",
+      type: .dynamic,
+      targets: ["LiteRT"]
+    ),
   ],
   targets: [
     // The Prebuilt Binary Target
