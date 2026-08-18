@@ -88,6 +88,12 @@ class FuseSplitAttentionToSDPA : public ov::pass::MatcherPass {
 // apply the enabled passes to a model.
 class NpuOptimizer {
  public:
+  // Toggles a ConstantFolding pass. Disabled by default.
+  NpuOptimizer& SetConstantFold(bool enable) {
+    constant_fold_ = enable;
+    return *this;
+  }
+
   // Toggles the EliminateMatMulFakeQuantize pass. Disabled by default.
   NpuOptimizer& SetEliminateMatMulFakeQuantize(bool enable) {
     eliminate_matmul_fq_ = enable;
@@ -120,6 +126,7 @@ class NpuOptimizer {
   void Run(const std::shared_ptr<ov::Model>& model) const;
 
  private:
+  bool constant_fold_ = false;
   bool eliminate_matmul_fq_ = false;
   bool cast_integer_sign_to_float_ = true;
   bool fuse_split_attention_to_sdpa_ = false;

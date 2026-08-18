@@ -17,6 +17,7 @@
 #include <cstring>
 #include <ios>
 #include <limits>
+#include <map>
 #include <memory>
 #include <ostream>
 #include <streambuf>
@@ -24,7 +25,6 @@
 #include <string_view>
 #include <utility>
 #include <vector>
-#include <map>
 
 #include "openvino/core/any.hpp"
 #include "openvino/core/except.hpp"
@@ -33,6 +33,7 @@
 #include "openvino/openvino.hpp"
 #include "openvino/runtime/core.hpp"
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
 #include "litert/c/litert_common.h"
@@ -50,6 +51,7 @@
 #include "litert/compiler/cc/litert_op_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/intel_openvino/bytecode_header.h"
+#include "litert/vendors/intel_openvino/compiler/alias_shared_constants.h"
 #include "litert/vendors/intel_openvino/compiler/global_graph.h"
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
 #include "litert/vendors/intel_openvino/compiler/openvino_compile_context.h"
@@ -240,6 +242,7 @@ class CustomOStreamBuf : public std::streambuf {
   std::string target_;
   size_t pos_;
 };
+
 }  // namespace
 
 LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion* api_version) {
@@ -523,36 +526,55 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     // selects its subgraph and resolves the subgraph's weights against the
     // shared pool.
     //
-    // Enabled automatically when EVERY partition targets GPU (the only backend
-    // that supports the weights-as-Parameters + shared-USM dispatch path). A
-    // model with any non-GPU partition falls back to standalone baked-weights
-    // bytecode. Determining this up front (rather than per-partition inside the
-    // loop) keeps the container all-or-nothing, so we never emit a half-shared
-    // model.
-    bool share_weights = num_partitions > 0;
+    // Enabled only when EVERY partition targets the SAME shareable backend (all
+    // GPU or all NPU); mixed devices or a non-shareable backend (CPU) fall back
+    // to standalone baked-weights bytecode. Decided up front so the container
+    // is all-or-nothing. |share_device| records the common target. Requires > 1
+    // partition, since this deduplicates weights ACROSS partitions.
+    bool share_weights = num_partitions > 1;
+    std::string share_device;
     for (int p = 0; p < num_partitions && share_weights; ++p) {
       LITERT_ASSIGN_OR_RETURN(
           litert::openvino::OpenVinoCompileContext probe,
           litert::openvino::OpenVinoCompileContext::Create(
               compiler_plugin->GetIntelOpenVinoOptions(), p));
-      if (probe.Device() != "GPU") share_weights = false;
+      const std::string& dev = probe.Device();
+      if (dev != "GPU" && dev != "NPU") {
+        share_weights = false;  // only GPU and NPU support shared dispatch
+      } else if (share_device.empty()) {
+        share_device = dev;  // first partition sets the required common device
+      } else if (dev != share_device) {
+        share_weights = false;  // heterogeneous devices: don't half-share
+      }
     }
+    const bool share_npu = share_weights && share_device == "NPU";
 
     litert::openvino::WeightBank weight_bank;
     litert::openvino::OpenVinoGlobalGraph global_graph;
+    // Authoritative BufferId -> byte offset in the contiguous pool, built in
+    // the SAME ascending-id order Serialize() lays out, so a Constant's WLCA
+    // bin_offset equals its position in the temp file staged at dispatch.
+    std::map<int32_t, size_t> pool_offset_of;
     if (share_weights) {
       for (int p = 0; p < num_partitions; ++p) {
         auto subgraph = model.Subgraph(p);
         if (subgraph.HasValue()) weight_bank.AddSubgraph(subgraph.Value());
       }
-      LITERT_LOG(LITERT_INFO, "Weight sharing (GPU): %zu buffers, %zu bytes",
-                 weight_bank.NumBuffers(), weight_bank.TotalBytes());
-      // Populate the GlobalGraph shared buffer pool (BufferId -> bytes).
-      for (const auto& [buffer_id, bytes] : weight_bank.Buffers()) {
-        global_graph.buffers.emplace(
-            static_cast<uint32_t>(buffer_id),
-            std::string(reinterpret_cast<const char*>(bytes.data()),
-                        bytes.size()));
+      LITERT_LOG(LITERT_INFO, "Weight sharing (%s): %zu buffers, %zu bytes",
+                 share_device.c_str(), weight_bank.NumBuffers(),
+                 weight_bank.TotalBytes());
+      // Populate the GlobalGraph shared buffer pool. Use an ordered map keyed
+      // by BufferId so the pool is laid out in ascending id order (matching
+      // Serialize()), then assign each buffer its pool offset. The bytes are
+      // BORROWED from the WeightBank (views into the model's mmapped weights,
+      // which outlive this whole Compile call) -- no copy of the multi-GB pool.
+      std::map<uint32_t, absl::Span<const uint8_t>> ordered(
+          weight_bank.Buffers().begin(), weight_bank.Buffers().end());
+      size_t running_offset = 0;
+      for (const auto& [buffer_id, bytes] : ordered) {
+        global_graph.buffers.push_back({buffer_id, running_offset, bytes});
+        pool_offset_of[static_cast<int32_t>(buffer_id)] = running_offset;
+        running_offset += bytes.size();
       }
     }
 
@@ -566,6 +588,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
           litert::openvino::OpenVinoCompileContext::Create(
               compiler_plugin->GetIntelOpenVinoOptions(), partition_idx));
       LITERT_RETURN_IF_ERROR(context.ConfigureForSoc(soc_model));
+      if (share_npu) {
+        // NPU shared path: turn on NPUW/CWAI so export_model emits a weightless
+        // blob whose constants are referenced by WeightlessCacheAttribute
+        // bin_offset instead of baked in.
+        context.ConfigureForNpuWeightSharing();
+      }
 
       auto graph_name = absl::StrFormat("Partition_%d", partition_idx);
       litert::Expected<litert::compiler::Subgraph> expected_subgraph =
@@ -586,16 +614,21 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         ov::AnyMap configs = context.ConfigsMap();
         std::map<std::string, uint32_t> const_map;
         if (share_weights) {
-          // share_weights is only set when every partition targets GPU (see the
-          // pre-scan above), so this path is GPU-only by construction.
-          // Convert weights to Parameters bound to the shared bank at dispatch;
-          // const_map records friendly_name -> BufferId.
-          const size_t converted = litert::openvino::ConvertWeightsToParameters(
-              ov_model, weight_bank, &const_map);
-          LITERT_LOG(LITERT_INFO,
-                     "Weight sharing: converted %zu weights to parameters "
-                     "in partition %d",
-                     converted, partition_idx);
+          if (share_npu) {
+            // NPU: alias+tag weights (see AliasAndTagSharedConstants).
+            litert::openvino::AliasAndTagSharedConstants(
+                ov_model, weight_bank, pool_offset_of, partition_idx);
+          } else {
+            // GPU: convert weights to Parameters bound to the shared bank at
+            // dispatch; const_map records friendly_name -> BufferId.
+            const size_t converted =
+                litert::openvino::ConvertWeightsToParameters(
+                    ov_model, weight_bank, &const_map);
+            LITERT_LOG(LITERT_INFO,
+                       "Weight sharing (GPU): converted %zu weights to "
+                       "parameters in partition %d",
+                       converted, partition_idx);
+          }
         }
 
         // Compile using the per-partition device and properties.
@@ -626,13 +659,19 @@ LiteRtStatus LiteRtCompilerPluginCompile(
           // payload becomes this subgraph's payload; the whole container is
           // serialized once after the loop and returned for every partition
           // index.
+          // Park the export payload in the graph's owning store so the
+          // subgraph's payload span stays valid until Serialize(). A deque, so
+          // this emplace never invalidates earlier partitions' payload spans.
+          global_graph.payload_store.push_back(
+              litert::openvino::MakeBytecodeHeader(graph_backend_enum) +
+              obuf.drain_str());
+          const std::string& held = global_graph.payload_store.back();
           litert::openvino::OpenVinoGlobalGraph::Subgraph subgraph;
           subgraph.name = graph_name;
           subgraph.device = static_cast<uint8_t>(graph_backend_enum);
           subgraph.const_map = std::move(const_map);
-          subgraph.payload =
-              litert::openvino::MakeBytecodeHeader(graph_backend_enum) +
-              obuf.drain_str();
+          subgraph.payload = absl::MakeConstSpan(
+              reinterpret_cast<const uint8_t*>(held.data()), held.size());
           global_graph.subgraphs.emplace(graph_name, std::move(subgraph));
         } else {
           // Non-shared path: standalone per-partition bytecode (device header +
