@@ -1834,36 +1834,50 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
           status, absl::StrFormat("Failed to lock the tensor buffer: %s",
                                   tensor->name ? tensor->name : "<unnamed>"));
     }
-    // If this is a constant output, save the locked address for later data
-    // copying
-    if (is_constant_output) {
-      constant_outputs.push_back({buffer, host_mem_addr, tensor_index,
-                                  tensor_name, buffer->buffer_size()});
-      LITERT_LOG(LITERT_INFO,
-                 "Tracked CPU constant output tensor %s with locked address",
-                 tensor_name);
-    }
     TfLiteCustomAllocation custom_allocation{host_mem_addr,
                                              buffer->buffer_size()};
+    TfLiteStatus set_custom_allocation_status = kTfLiteOk;
     if (is_input) {
       if (runner) {
-        runner->SetCustomAllocationForInputTensor(tensor_name,
-                                                  custom_allocation,
-                                                  /*flags=*/0);
+        set_custom_allocation_status =
+            runner->SetCustomAllocationForInputTensor(tensor_name,
+                                                      custom_allocation,
+                                                      /*flags=*/0);
       } else {
-        interp_->SetCustomAllocationForTensor(tensor_index, custom_allocation,
-                                              /*flags=*/0);
+        set_custom_allocation_status = interp_->SetCustomAllocationForTensor(
+            tensor_index, custom_allocation,
+            /*flags=*/0);
       }
+      if (set_custom_allocation_status != kTfLiteOk) {
+        LiteRtUnlockTensorBuffer(buffer);
+        return Unexpected(
+            kLiteRtStatusErrorRuntimeFailure,
+            "Failed to set custom allocation for cpu-shared buffer");
+      }
+      locked_buffers.push_back(buffer);
     } else {
-      // Skip SetCustomAllocationForOutputTensor for constant tensors
-      if (!is_constant_output) {
+      locked_buffers.push_back(buffer);
+      if (is_constant_output) {
+        constant_outputs.push_back({buffer, host_mem_addr, tensor_index,
+                                    tensor_name, buffer->buffer_size()});
+        LITERT_LOG(LITERT_INFO,
+                   "Tracked CPU constant output tensor %s with locked address",
+                   tensor_name);
+      } else {
         if (runner) {
-          runner->SetCustomAllocationForOutputTensor(tensor_name,
-                                                     custom_allocation,
-                                                     /*flags=*/0);
+          set_custom_allocation_status =
+              runner->SetCustomAllocationForOutputTensor(tensor_name,
+                                                         custom_allocation,
+                                                         /*flags=*/0);
         } else {
-          interp_->SetCustomAllocationForTensor(tensor_index, custom_allocation,
-                                                /*flags=*/0);
+          set_custom_allocation_status = interp_->SetCustomAllocationForTensor(
+              tensor_index, custom_allocation,
+              /*flags=*/0);
+        }
+        if (set_custom_allocation_status != kTfLiteOk) {
+          return Unexpected(
+              kLiteRtStatusErrorRuntimeFailure,
+              "Failed to set custom allocation for cpu-shared buffer");
         }
       }
     }
@@ -1963,7 +1977,11 @@ Expected<void> LiteRtCompiledModelT::Run(
   // custom allocations (zero-copy) for dynamic string tensors.
   std::vector<PendingCopy> pending_string_output_copies;
   auto unlock_buffers = absl::MakeCleanup([&locked_buffers]() {
+    LITERT_LOG(LITERT_VERBOSE, "unlock_buffers cleanup executing, size=%zu",
+               locked_buffers.size());
     for (auto locked_buffer : locked_buffers) {
+      LITERT_LOG(LITERT_VERBOSE, "unlock_buffers unlocking buffer %p",
+                 locked_buffer);
       if (LiteRtUnlockTensorBuffer(locked_buffer) != kLiteRtStatusOk) {
         LITERT_LOG(LITERT_ERROR, "Failed to unlock buffer %p", locked_buffer);
         ABSL_DCHECK(false);
