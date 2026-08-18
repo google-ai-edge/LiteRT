@@ -16,6 +16,7 @@
 
 #include <any>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
@@ -31,9 +32,38 @@
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 
 namespace litert::ml_drift {
+namespace {
 
-absl::Status BuildSdpaTransposedGpuGraph(
-    const std::vector<uint32_t>& input_ids, uint32_t output_id,
+enum class SdpaImplementationStrategy {
+  kCompositeMultiKernelFallback,
+};
+
+inline SdpaImplementationStrategy SelectSdpaStrategy(
+    bool is_decode, bool allow_single_kernel_implementation) {
+  return SdpaImplementationStrategy::kCompositeMultiKernelFallback;
+}
+
+struct SdpaInputs {
+  ::ml_drift::GpuModelBuilder::TensorHandle q;
+  ::ml_drift::GpuModelBuilder::TensorHandle k;
+  ::ml_drift::GpuModelBuilder::TensorHandle v;
+  std::optional<::ml_drift::GpuModelBuilder::TensorHandle> mask;
+  std::optional<::ml_drift::GpuModelBuilder::TensorHandle> param_tensor;
+  bool is_decode = false;
+  int cache_size = 0;
+  int k_cache_slices = 0;
+  int src_end_ch_index = 2;
+  std::optional<float> softcap;
+
+  bool has_mask() const { return mask.has_value(); }
+  bool has_param() const { return param_tensor.has_value(); }
+  const ::ml_drift::GpuModelBuilder::TensorHandle* param_tensor_ptr() const {
+    return param_tensor.has_value() ? &*param_tensor : nullptr;
+  }
+};
+
+absl::StatusOr<SdpaInputs> ExtractSdpaInputs(
+    const std::vector<uint32_t>& input_ids,
     const SdpaTransposedAttributes& attr,
     ::ml_drift::GpuModelBuilder* model_builder) {
   if (input_ids.size() < 3) {
@@ -41,40 +71,56 @@ absl::Status BuildSdpaTransposedGpuGraph(
         "SDPA transposed expects at least 3 inputs (Q, K, V).");
   }
 
-  ABSL_ASSIGN_OR_RETURN(auto q, model_builder->GetTensor(input_ids[0]));
-  ABSL_ASSIGN_OR_RETURN(auto k, model_builder->GetTensor(input_ids[1]));
-  ABSL_ASSIGN_OR_RETURN(auto v, model_builder->GetTensor(input_ids[2]));
+  SdpaInputs inputs;
+  ABSL_ASSIGN_OR_RETURN(inputs.q, model_builder->GetTensor(input_ids[0]));
+  ABSL_ASSIGN_OR_RETURN(inputs.k, model_builder->GetTensor(input_ids[1]));
+  ABSL_ASSIGN_OR_RETURN(inputs.v, model_builder->GetTensor(input_ids[2]));
 
-  ::ml_drift::GpuModelBuilder::TensorHandle mask;
-  bool has_mask = false;
-  if (input_ids.size() > 3) {
-    ABSL_ASSIGN_OR_RETURN(mask, model_builder->GetTensor(input_ids[3]));
-    has_mask = true;
+  if (input_ids.size() == 4) {
+    ABSL_ASSIGN_OR_RETURN(auto tensor_4,
+                          model_builder->GetTensor(input_ids[3]));
+    if (tensor_4.tensor_desc.GetDataType() == ::ml_drift::DataType::INT32) {
+      inputs.param_tensor = tensor_4;
+    } else {
+      inputs.mask = tensor_4;
+    }
+  } else if (input_ids.size() > 4) {
+    ABSL_ASSIGN_OR_RETURN(inputs.mask, model_builder->GetTensor(input_ids[3]));
+    ABSL_ASSIGN_OR_RETURN(inputs.param_tensor,
+                          model_builder->GetTensor(input_ids[4]));
   }
 
-  ::ml_drift::GpuModelBuilder::TensorHandle param_tensor;
-  ::ml_drift::GpuModelBuilder::TensorHandle* param_tensor_ptr = nullptr;
-  if (input_ids.size() > 4) {
-    ABSL_ASSIGN_OR_RETURN(param_tensor, model_builder->GetTensor(input_ids[4]));
-    param_tensor_ptr = &param_tensor;
-  }
+  // Some model (Qwen3) has 2 seqlen, real & imaginary (complex number) in RoPE.
+  inputs.is_decode = inputs.q.tensor_desc.GetBHWCShape().w <= 2;
+  inputs.cache_size = inputs.k.tensor_desc.GetBHWCShape().w;
+  inputs.k_cache_slices = (inputs.cache_size + 3) / 4;
+  inputs.src_end_ch_index = attr.runtime_check.src_end_ch_index.value_or(2);
+  inputs.softcap = attr.softcap;
 
+  return inputs;
+}
+
+absl::Status BuildCompositeMultiKernelSdpaGraph(
+    const SdpaInputs& inputs, const SdpaTransposedAttributes& attr,
+    uint32_t output_id, ::ml_drift::GpuModelBuilder* model_builder) {
+  // Fallback implementation using FullyConnectedExternalWeights.
   ::ml_drift::WeightsDescription bmm1_desc = attr.bmm1_weights.desc;
-  bmm1_desc.type = q.tensor_desc.GetDataType();
+  bmm1_desc.type = inputs.q.tensor_desc.GetDataType();
   const ::ml_drift::GpuModelBuilder::Weights bmm1_external_weights =
-      ::ml_drift::CreateExternalWeights(k, bmm1_desc,
+      ::ml_drift::CreateExternalWeights(inputs.k, bmm1_desc,
                                         attr.bmm1_weights.weights_shape);
   ::ml_drift::ConvRuntimeCheckDesc bmm1_runtime_check = {
       .dst_end_ch_index = attr.runtime_check.src_end_ch_index,
   };
 
   ABSL_ASSIGN_OR_RETURN(
-      auto logits, model_builder->FullyConnectedExternalWeights(
-                  q, bmm1_external_weights, /*biases=*/nullptr,
-                  /*src_exp=*/nullptr, bmm1_runtime_check, param_tensor_ptr));
+      auto logits,
+      model_builder->FullyConnectedExternalWeights(
+          inputs.q, bmm1_external_weights, /*biases=*/nullptr,
+          /*src_exp=*/nullptr, bmm1_runtime_check, inputs.param_tensor_ptr()));
 
-  if (has_mask) {
-    if (mask.tensor_desc.GetDataType() == ::ml_drift::DataType::BOOL) {
+  if (inputs.has_mask()) {
+    if (inputs.mask->tensor_desc.GetDataType() == ::ml_drift::DataType::BOOL) {
       ::ml_drift::Tensor<::ml_drift::StrongShape<::ml_drift::Layout::BHWC>,
                          ::ml_drift::DataType::FLOAT32>
           fill_tensor;
@@ -84,9 +130,9 @@ absl::Status BuildSdpaTransposedGpuGraph(
       fill_tensor.data = {-10000.0f};
       auto neg_val = model_builder->AddConstantTensor(
           fill_tensor, logits.tensor_desc.GetDataType());
-      logits = model_builder->SelectV2(mask, logits, neg_val);
+      logits = model_builder->SelectV2(*inputs.mask, logits, neg_val);
     } else {
-      logits = model_builder->Add(logits, mask);
+      logits = model_builder->Add(logits, *inputs.mask);
     }
   }
 
@@ -94,23 +140,44 @@ absl::Status BuildSdpaTransposedGpuGraph(
       .end_ch_index = attr.runtime_check.src_end_ch_index,
   };
   auto sfmx_partial = model_builder->SoftmaxReduce(
-      logits, softmax_runtime_check, param_tensor_ptr);
+      logits, softmax_runtime_check, inputs.param_tensor_ptr());
 
   ::ml_drift::WeightsDescription bmm2_desc = attr.bmm2_weights.desc;
   bmm2_desc.type = logits.tensor_desc.GetDataType();
   const ::ml_drift::GpuModelBuilder::Weights bmm2_external_weights =
-      ::ml_drift::CreateExternalWeights(v, bmm2_desc,
+      ::ml_drift::CreateExternalWeights(inputs.v, bmm2_desc,
                                         attr.bmm2_weights.weights_shape);
   ::ml_drift::ConvRuntimeCheckDesc bmm2_runtime_check = {
       .src_end_ch_index = attr.runtime_check.src_end_ch_index,
   };
 
   ABSL_ASSIGN_OR_RETURN(
-      auto output, model_builder->FullyConnectedExternalWeights(
-                  logits, bmm2_external_weights, /*biases=*/nullptr,
-                  &sfmx_partial, bmm2_runtime_check, param_tensor_ptr));
+      auto output,
+      model_builder->FullyConnectedExternalWeights(
+          logits, bmm2_external_weights, /*biases=*/nullptr, &sfmx_partial,
+          bmm2_runtime_check, inputs.param_tensor_ptr()));
 
   return model_builder->UpdateOutputTensor(output, output_id);
+}
+
+}  // namespace
+
+absl::Status BuildSdpaTransposedGpuGraph(
+    const std::vector<uint32_t>& input_ids, uint32_t output_id,
+    const SdpaTransposedAttributes& attr,
+    ::ml_drift::GpuModelBuilder* model_builder,
+    bool allow_single_kernel_implementation) {
+  ABSL_ASSIGN_OR_RETURN(const SdpaInputs inputs,
+                        ExtractSdpaInputs(input_ids, attr, model_builder));
+
+  const SdpaImplementationStrategy strategy =
+      SelectSdpaStrategy(inputs.is_decode, allow_single_kernel_implementation);
+
+  switch (strategy) {
+    case SdpaImplementationStrategy::kCompositeMultiKernelFallback:
+      return BuildCompositeMultiKernelSdpaGraph(inputs, attr, output_id,
+                                                model_builder);
+  }
 }
 
 absl::Status CreateSdpaTransposedFromNode(
