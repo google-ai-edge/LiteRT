@@ -25,6 +25,8 @@
 #include <ios>
 #include <limits>
 #include <numeric>
+#include <string>
+#include <system_error>
 #include <type_traits>
 #include <vector>
 
@@ -212,69 +214,88 @@ void PrintTensorSamples(const std::vector<T>& data, size_t total_elements,
 
 inline Expected<std::vector<char>> ReadTensorDataFromRawFile(
     absl::string_view file_path) {
-  std::ifstream file(file_path.data(), std::ios::binary);
-  if (!file.is_open()) {
+  const std::string path_str(file_path);
+  std::error_code ec;
+  if (!std::filesystem::exists(path_str, ec) ||
+      std::filesystem::is_directory(path_str, ec)) {
     return Unexpected(
         kLiteRtStatusErrorNotFound,
         absl::StrFormat("Failed to find input file %s.", file_path));
   }
-  std::vector<char> input_data(std::filesystem::file_size(file_path.data()));
-  file.read(input_data.data(), input_data.size());
+  const auto file_size = std::filesystem::file_size(path_str, ec);
+  if (ec) {
+    return Unexpected(kLiteRtStatusErrorNotFound,
+                      absl::StrFormat("Failed to get file size for %s: %s",
+                                      file_path, ec.message()));
+  }
+  std::ifstream file(path_str, std::ios::binary);
+  if (!file.is_open()) {
+    return Unexpected(
+        kLiteRtStatusErrorNotFound,
+        absl::StrFormat("Failed to open input file %s.", file_path));
+  }
+  std::vector<char> input_data(file_size);
+  if (file_size > 0) {
+    file.read(input_data.data(), file_size);
+    if (!file) {
+      return Unexpected(
+          kLiteRtStatusErrorRuntimeFailure,
+          absl::StrFormat("Failed to read all bytes from %s.", file_path));
+    }
+  }
   return input_data;
 }
 
 template <typename T>
-void WriteBufferAs(TensorBuffer& buffer, const std::vector<char>& data) {
-  buffer.Write<T>(
-      absl::Span<T>(reinterpret_cast<T*>(const_cast<char*>(data.data())),
-                    data.size() / sizeof(T)));
+inline Expected<void> WriteBufferAs(TensorBuffer& buffer,
+                                    const std::vector<char>& data) {
+  return buffer.Write<T>(absl::MakeConstSpan(
+      reinterpret_cast<const T*>(data.data()), data.size() / sizeof(T)));
 }
 
 // Fill tensor buffer with custom data
 inline Expected<void> FillBufferWithCustomData(TensorBuffer& buffer,
                                                const std::vector<char>& data) {
-  auto buffer_size = buffer.Size();
-  if (data.size() != buffer_size.Value()) {
+  LITERT_ASSIGN_OR_RETURN(const auto buffer_size, buffer.Size());
+  if (data.size() != buffer_size) {
     return Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
         absl::StrFormat("Mismatched input size, input data size: %d bytes != "
                         "model buffer size: %d bytes.",
-                        data.size(), buffer_size.Value()));
+                        data.size(), buffer_size));
   }
   LITERT_ASSIGN_OR_RETURN(auto type, buffer.TensorType());
 
   switch (type.ElementType()) {
     case ElementType::Float32:
-      WriteBufferAs<float>(buffer, data);
-      break;
+      return WriteBufferAs<float>(buffer, data);
     case ElementType::Int64:
-      WriteBufferAs<int64_t>(buffer, data);
-      break;
+      return WriteBufferAs<int64_t>(buffer, data);
     case ElementType::Int32:
-      WriteBufferAs<int32_t>(buffer, data);
-      break;
+      return WriteBufferAs<int32_t>(buffer, data);
     case ElementType::Int16:
-      WriteBufferAs<int16_t>(buffer, data);
-      break;
+      return WriteBufferAs<int16_t>(buffer, data);
     case ElementType::Int8:
-      WriteBufferAs<int8_t>(buffer, data);
-      break;
+      return WriteBufferAs<int8_t>(buffer, data);
     case ElementType::UInt8:
     case ElementType::Bool:
-      WriteBufferAs<uint8_t>(buffer, data);
-      break;
+      return WriteBufferAs<uint8_t>(buffer, data);
+    case ElementType::UInt16:
+      return WriteBufferAs<uint16_t>(buffer, data);
+    case ElementType::UInt32:
+      return WriteBufferAs<uint32_t>(buffer, data);
+    case ElementType::UInt64:
+      return WriteBufferAs<uint64_t>(buffer, data);
 
     // Half-precision formats written as raw 16-bit payloads.
     case ElementType::Float16:
     case ElementType::BFloat16:
-      WriteBufferAs<uint16_t>(buffer, data);
-      break;
+      return WriteBufferAs<uint16_t>(buffer, data);
 
     default:
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Unsupported element type.");
   }
-  return {};
 }
 
 // Fill tensor buffer with random data
@@ -338,9 +359,49 @@ inline Expected<void> FillBufferWithRandomData(TensorBuffer& buffer) {
   return {};
 }
 
+// Helper function to quantize float data to an integral type using affine
+// quantization.
+template <typename T>
+inline std::vector<T> QuantizeData(absl::Span<const float> float_data,
+                                   float scale, int64_t zero_point) {
+  static_assert(std::is_integral<T>::value, "Integral type required");
+  std::vector<T> quantized_data(float_data.size());
+  constexpr int64_t qmin = static_cast<int64_t>(std::numeric_limits<T>::min());
+  constexpr int64_t qmax = static_cast<int64_t>(std::numeric_limits<T>::max());
+
+  if (scale <= 0.0f || !std::isfinite(scale)) {
+    const T clamped_zp = static_cast<T>(std::clamp(zero_point, qmin, qmax));
+    std::fill(quantized_data.begin(), quantized_data.end(), clamped_zp);
+    return quantized_data;
+  }
+
+  const double inv_scale = 1.0 / static_cast<double>(scale);
+  const double zp = static_cast<double>(zero_point);
+  const double min_bound = static_cast<double>(qmin);
+  const double max_bound = static_cast<double>(qmax);
+
+  for (size_t i = 0; i < float_data.size(); ++i) {
+    const float val = float_data[i];
+    if (std::isnan(val)) {
+      quantized_data[i] = static_cast<T>(std::clamp(zero_point, qmin, qmax));
+      continue;
+    }
+    double unclamped = std::round(static_cast<double>(val) * inv_scale) + zp;
+    if (unclamped <= min_bound) {
+      quantized_data[i] = static_cast<T>(qmin);
+    } else if (unclamped >= max_bound) {
+      quantized_data[i] = static_cast<T>(qmax);
+    } else {
+      quantized_data[i] = static_cast<T>(static_cast<int64_t>(unclamped));
+    }
+  }
+  return quantized_data;
+}
+
 Expected<void> FillInputBuffersWithCustomData(
     const CompiledModel& compiled_model, size_t signature_index,
-    std::vector<TensorBuffer>& input_buffers, absl::string_view input_dir);
+    std::vector<TensorBuffer>& input_buffers, absl::string_view input_dir,
+    bool quantize_inputs = false);
 }  // namespace tensor_utils
 }  // namespace litert
 

@@ -86,6 +86,9 @@ ABSL_FLAG(bool, enable_ynnpack, false,
 ABSL_FLAG(std::string, input_dir, "",
           "An input folder containing .raw files with model input signatures "
           "as their file names.");
+ABSL_FLAG(bool, quantize_inputs, false,
+          "Automatically quantize unquantized (FP32) input data when model "
+          "inputs are quantized.");
 
 ABSL_FLAG(std::string, scoped_weight_file, "",
           "Optional path to a scoped external weight file.");
@@ -436,17 +439,24 @@ Expected<void> RunModel() {
   if (!input_dir.empty()) {
     // Use the inputs given by the user.
     LITERT_RETURN_IF_ERROR(tensor_utils::FillInputBuffersWithCustomData(
-        compiled_model, signature_index, input_buffers, input_dir));
-  } else if (absl::GetFlag(FLAGS_language_model)) {
-    // Language model, hard assumption on tensor order here TODO: generalize
-    // when we find other examples.
-    LITERT_RETURN_IF_ERROR(
-        FillLanguageModelInputBuffers(absl::MakeSpan(input_buffers)));
+        compiled_model, signature_index, input_buffers, input_dir,
+        absl::GetFlag(FLAGS_quantize_inputs)));
   } else {
-    // Non-language model, Fill input buffers with sample data.
-    for (size_t i = 0; i < input_buffers.size(); ++i) {
-      auto& buffer = input_buffers[i];
-      LITERT_RETURN_IF_ERROR(tensor_utils::FillBufferWithRandomData(buffer));
+    if (absl::GetFlag(FLAGS_quantize_inputs)) {
+      ABSL_LOG(WARNING)
+          << "--quantize_inputs was specified without --input_dir; ignoring.";
+    }
+    if (absl::GetFlag(FLAGS_language_model)) {
+      // Language model, hard assumption on tensor order here TODO: generalize
+      // when we find other examples.
+      LITERT_RETURN_IF_ERROR(
+          FillLanguageModelInputBuffers(absl::MakeSpan(input_buffers)));
+    } else {
+      // Non-language model, Fill input buffers with sample data.
+      for (size_t i = 0; i < input_buffers.size(); ++i) {
+        auto& buffer = input_buffers[i];
+        LITERT_RETURN_IF_ERROR(tensor_utils::FillBufferWithRandomData(buffer));
+      }
     }
   }
 
