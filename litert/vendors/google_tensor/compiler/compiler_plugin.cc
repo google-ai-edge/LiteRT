@@ -53,9 +53,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/core/model/model.h"
-#ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
 #include "litert/core/model/model_serialize.h"
-#endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/google_tensor/adapter.h"
@@ -89,9 +87,9 @@ constexpr char kPluginManufacturer[] = "Google";
 
 constexpr const char* kPluginSocModels[] = {
     "Tensor_G3", "Tensor_G4", "Tensor_G5", "Tensor_G6",
-#ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
-    "Tensor_G7",
-#endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
+// copybara:uncomment_begin(google-only)
+//     "Tensor_G7",
+// copybara:uncomment_end
 };  // get the name for plugin soc model
 
 LiteRtStatus GetDeviceType(absl::string_view soc_model,
@@ -108,11 +106,11 @@ LiteRtStatus GetDeviceType(absl::string_view soc_model,
   } else if (soc_model == "Tensor_G6") {
     *device_type = ::third_party::odml::litert::litert::vendors::google_tensor::
         compiler::DEVICE_TYPE_TENSOR_G6;
-#ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
-  } else if (soc_model == "Tensor_G7") {
-    *device_type = ::third_party::odml::litert::litert::vendors::google_tensor::
-        compiler::DEVICE_TYPE_TENSOR_G7;
-#endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
+// copybara:uncomment_begin(google-only)
+//   } else if (soc_model == "Tensor_G7") {
+//     *device_type = ::third_party::odml::litert::litert::vendors::google_tensor::
+//         compiler::DEVICE_TYPE_TENSOR_G7;
+// copybara:uncomment_end
   } else {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -280,7 +278,6 @@ LiteRtStatus LrtOptionsToGoogleTensorOptions(
   google_tensor_options.set_extra_options(extra_options);
 
 // copybara:uncomment_begin(google-only)
-// #ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
 //   // EXPERIMENTAL ENABLE INPUT VALIDATOR
 //   bool experimental_enable_input_validator;
 //   LITERT_RETURN_IF_ERROR(
@@ -288,8 +285,8 @@ LiteRtStatus LrtOptionsToGoogleTensorOptions(
 //           lrt_options, &experimental_enable_input_validator));
 //   google_tensor_options.set_experimental_enable_input_validator(
 //       experimental_enable_input_validator);
-// #endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
 // copybara:uncomment_end
+
   return kLiteRtStatusOk;
 }
 
@@ -362,8 +359,6 @@ LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
 // Compiled Result Definition
 //
 
-// TODO (abhirs): Revisit this struct after updating the compiler api wrapper to
-// return multiple bytecodes.
 struct LiteRtCompiledResultT {
   std::vector<std::string> byte_codes;
   std::vector<std::string> per_op_data;
@@ -686,10 +681,10 @@ bool IsOpSupported(const litert::compiler::Op& op,
 
 namespace {
 
-#ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
+
 using OpCodeMap =
     absl::flat_hash_map<std::pair<LiteRtOpCode, std::string>, int32_t>;
-#endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
+
 
 // Populates the compiler configuration within GoogleTensorOptions.
 LiteRtStatus PopulateCompilerConfig(
@@ -744,7 +739,7 @@ LiteRtStatus PopulateCompilerConfig(
   return kLiteRtStatusOk;
 }
 
-#ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
+
 // Inserts a new operator code (opcode + custom name) into the global
 // OperatorCode list, or returns its index if it has already been registered.
 int32_t GetOrInsertOpCode(
@@ -880,7 +875,7 @@ litert::Expected<litert::OwningBufferRef<uint8_t>> SerializeSubgraph(
 
   return std::move(*serialized);
 }
-#endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
+
 }  // namespace
 
 LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
@@ -914,7 +909,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     return status;
   }
 
-#ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
+
   LITERT_ASSIGN_OR_RETURN(litert::google_tensor::Adapter* adapter,
                           compiler_plugin->GetAdapter());
 
@@ -922,7 +917,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   LITERT_RETURN_IF_ERROR(PopulateCompilerConfig(
       compiler_plugin, soc_model ? soc_model : "", google_tensor_options));
 
-#endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
+
 
   OpFilters op_filters;
   LITERT_RETURN_IF_ERROR(compiler_plugin->ReadOpFilters(
@@ -930,18 +925,21 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
   litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
 
-#ifndef EDGETPU_EXTERNAL_RELEASE_COMPILER
+  bool use_static_fallback = true;
+  absl::flat_hash_set<int32_t> unsupported_op_indices;
+
   std::string options_str;
   if (!google_tensor_options.SerializeToString(&options_str)) {
     LITERT_LOG(LITERT_ERROR, "%s", "Failed to serialize GoogleTensorOptions");
     return kLiteRtStatusErrorRuntimeFailure;
   }
+  bool enable_input_validation = false;
+  // copybara:uncomment_begin(google-only)
+  // enable_input_validation =
+      // google_tensor_options.experimental_enable_input_validator();
+  // copybara:uncomment_end
 
-  const bool enable_input_validation =
-      google_tensor_options.experimental_enable_input_validator();
-
-  bool use_static_fallback = !enable_input_validation;
-  absl::flat_hash_set<int32_t> unsupported_op_indices;
+  use_static_fallback = !enable_input_validation;
 
   if (enable_input_validation) {
     litert::Expected<litert::OwningBufferRef<uint8_t>> serialize_expected =
@@ -970,7 +968,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
       use_static_fallback = true;
     }
   }
-#endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
+
 
   std::vector<litert::compiler::Op> ops = graph.Ops();
   for (int i = 0; i < ops.size(); ++i) {
