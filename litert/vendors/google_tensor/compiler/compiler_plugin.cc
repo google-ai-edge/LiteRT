@@ -639,31 +639,52 @@ FilterOutcome GetFilterOutcome(const litert::compiler::Op& op,
   }
 }
 
-bool IsShloCompositeOpSupported(const litert::compiler::Op& op) {
+bool IsShloCompositeOpSupported(
+    const litert::compiler::Op& op, int op_index = -1,
+    const absl::flat_hash_map<int, bool>& composite_support_map = {}) {
   if (op.Code() == kLiteRtOpCodeShloComposite) {
     const char* custom_op_name = nullptr;
-    if (op.ctx()->get_shlo_composite_op_name(op.Get(), &custom_op_name) !=
+    if (op.ctx() == nullptr ||
+        op.ctx()->get_shlo_composite_op_name == nullptr ||
+        op.ctx()->get_shlo_composite_op_name(op.Get(), &custom_op_name) !=
             kLiteRtStatusOk ||
         custom_op_name == nullptr) {
       return false;
     }
-    // check if the name of the composite op is in the list of
+    if (op_index >= 0) {
+      auto it = composite_support_map.find(op_index);
+      if (it != composite_support_map.end()) {
+        if (!it->second) {
+          LITERT_LOG(LITERT_INFO, "unsupported composite op at index %d: %s",
+                     op_index, custom_op_name);
+        }
+        return it->second;
+      }
+    }
+    // Direct fallback check if the name of the composite op is in the list of
     // kSupportedStableHloCompositeOps.
-    for (auto supported_op : kSupportedStableHloCompositeOps) {
+    for (const char* supported_op : kSupportedStableHloCompositeOps) {
       if (strcmp(supported_op, custom_op_name) == 0) {
         return true;
       }
     }
-    LITERT_LOG(LITERT_INFO, "unsupported composite op: %s", custom_op_name);
+    if (op_index >= 0) {
+      LITERT_LOG(LITERT_INFO, "unsupported composite op at index %d: %s",
+                 op_index, custom_op_name);
+    } else {
+      LITERT_LOG(LITERT_INFO, "unsupported composite op: %s", custom_op_name);
+    }
   }
   return false;
 }
 
-bool IsOpSupported(const litert::compiler::Op& op,
-                   const OpFilters& op_filters) {
+bool IsOpSupported(
+    const litert::compiler::Op& op, const OpFilters& op_filters,
+    int op_index = -1,
+    const absl::flat_hash_map<int, bool>& composite_support_map = {}) {
   // Check if the composite op is supported.
   if (op.Code() == kLiteRtOpCodeShloComposite) {
-    return IsShloCompositeOpSupported(op);
+    return IsShloCompositeOpSupported(op, op_index, composite_support_map);
   }
   // Check if the op is in the list of unsupported ops.
   for (auto unsupported_op : kUnSupportedOps) {
@@ -927,6 +948,64 @@ litert::Expected<absl::flat_hash_set<int32_t>> GetUnsupportedOpsDynamic(
                                       unsupported_ops->end());
 }
 
+// Collects and batch-validates all SHLO composite ops in the subgraph using the
+// adapter. Returns a map from op index to its support status.
+absl::flat_hash_map<int, bool> ValidateCompositeOpsBatch(
+    const std::vector<litert::compiler::Op>& ops,
+    litert::google_tensor::Adapter* adapter,
+    absl::string_view serialized_options) {
+  absl::flat_hash_map<int, bool> composite_support_map;
+  std::vector<int> composite_op_indices;
+  std::vector<std::string> composite_names;
+
+  for (int i = 0; i < ops.size(); ++i) {
+    const litert::compiler::Op& op = ops[i];
+    if (op.Code() == kLiteRtOpCodeShloComposite) {
+      const char* custom_op_name = nullptr;
+      if (op.ctx() != nullptr &&
+          op.ctx()->get_shlo_composite_op_name != nullptr &&
+          op.ctx()->get_shlo_composite_op_name(op.Get(), &custom_op_name) ==
+              kLiteRtStatusOk &&
+          custom_op_name != nullptr) {
+        composite_op_indices.push_back(i);
+        composite_names.emplace_back(custom_op_name);
+      } else {
+        composite_support_map[i] = false;
+      }
+    }
+  }
+
+  if (composite_names.empty()) {
+    return composite_support_map;
+  }
+
+  litert::Expected<std::vector<bool>> are_supported =
+      adapter != nullptr ? adapter->AreCompositesSupported(
+                               composite_names, serialized_options.data(),
+                               serialized_options.size())
+                         : litert::Unexpected(kLiteRtStatusErrorNotFound);
+
+  if (are_supported.HasValue()) {
+    for (size_t k = 0; k < composite_op_indices.size(); ++k) {
+      composite_support_map[composite_op_indices[k]] = (*are_supported)[k];
+    }
+  } else {
+    for (size_t k = 0; k < composite_op_indices.size(); ++k) {
+      bool is_supported = false;
+      for (const char* supported_op :
+           google_tensor::kSupportedStableHloCompositeOps) {
+        if (composite_names[k] == supported_op) {
+          is_supported = true;
+          break;
+        }
+      }
+      composite_support_map[composite_op_indices[k]] = is_supported;
+    }
+  }
+
+  return composite_support_map;
+}
+
 }  // namespace
 
 LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
@@ -958,20 +1037,10 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   LITERT_RETURN_IF_ERROR(compiler_plugin->ReadOpFilters(
       google_tensor_options.op_filters_proto(), op_filters));
 
+  std::string serialized_options = google_tensor_options.SerializeAsString();
+
   litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
   std::vector<litert::compiler::Op> ops = graph.Ops();
-
-  bool has_unsupported_composite = false;
-  for (const litert::compiler::Op& op : ops) {
-    if (op.Code() == kLiteRtOpCodeShloComposite &&
-        !google_tensor::IsOpSupported(op, op_filters)) {
-      has_unsupported_composite = true;
-      break;
-    }
-  }
-
-  bool use_static_fallback = true;
-  absl::flat_hash_set<int32_t> unsupported_op_indices;
 
   bool enable_input_validation = false;
   // copybara:uncomment_begin(google-only)
@@ -981,7 +1050,27 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
       // google_tensor_options.experimental_enable_input_validator();
   // copybara:uncomment_end
 
+  bool use_static_fallback = true;
+  absl::flat_hash_set<int32_t> unsupported_op_indices;
+  absl::flat_hash_map<int, bool> composite_support_map;
+
   if (enable_input_validation) {
+    // Batch validate all SHLO composite ops in the subgraph and store support
+    // info when input validation is enabled.
+    composite_support_map =
+        ValidateCompositeOpsBatch(ops, adapter, serialized_options);
+
+    bool has_unsupported_composite = false;
+    for (int i = 0; i < ops.size(); ++i) {
+      const litert::compiler::Op& op = ops[i];
+      if (op.Code() == kLiteRtOpCodeShloComposite &&
+          !google_tensor::IsOpSupported(op, op_filters, i,
+                                        composite_support_map)) {
+        has_unsupported_composite = true;
+        break;
+      }
+    }
+
     if (has_unsupported_composite) {
       LITERT_LOG(LITERT_INFO,
                  "Graph contains unsupported composite ops. Skipping dynamic "
@@ -1004,7 +1093,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   for (int i = 0; i < ops.size(); ++i) {
     const litert::compiler::Op& op = ops[i];
     bool is_supported = use_static_fallback
-                            ? google_tensor::IsOpSupported(op, op_filters)
+                            ? google_tensor::IsOpSupported(
+                                  op, op_filters, i, composite_support_map)
                             : !unsupported_op_indices.contains(i);
     if (!is_supported) {
       continue;

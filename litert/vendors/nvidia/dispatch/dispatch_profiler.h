@@ -15,13 +15,12 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_DISPATCH_DISPATCH_PROFILER_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_DISPATCH_DISPATCH_PROFILER_H_
 
+#include <chrono>
 #include <cstddef>
 #include <string>
 #include <unordered_map>
 #include <utility>
 
-#include "absl/time/clock.h"  // from @com_google_absl
-#include "absl/time/time.h"  // from @com_google_absl
 #include "cuda_runtime_api.h"
 #include "litert/cc/litert_expected.h"
 #include "NvInfer.h"
@@ -32,12 +31,13 @@ bool DispatchProfilingEnabled();
 bool DispatchLayerProfilingEnabled();
 
 // Reads the clock only when dispatch profiling is enabled, keeping the default
-// invocation path free of clock calls.
+// invocation path free of clock calls. Elapsed times use a monotonic clock so
+// wall-clock adjustments cannot make durations negative.
 class DispatchCpuTimer {
  public:
   explicit DispatchCpuTimer(bool enabled) : enabled_(enabled) {
     if (enabled_) {
-      start_ = absl::Now();
+      start_ = std::chrono::steady_clock::now();
     }
   }
 
@@ -45,12 +45,14 @@ class DispatchCpuTimer {
     if (!enabled_) {
       return 0.0;
     }
-    return absl::ToDoubleMilliseconds(absl::Now() - start_);
+    return std::chrono::duration<double, std::milli>(
+               std::chrono::steady_clock::now() - start_)
+        .count();
   }
 
  private:
   bool enabled_;
-  absl::Time start_;
+  std::chrono::steady_clock::time_point start_;
 };
 
 struct DispatchProfileMetrics {
@@ -92,7 +94,7 @@ class DispatchInvocationProfiler {
   litert::Expected<void> EnsureEvents();
   void DestroyEvents();
 
-  absl::Time cpu_start_;
+  std::chrono::steady_clock::time_point cpu_start_;
   cudaEvent_t event_start_ = nullptr;
   cudaEvent_t event_after_h2d_ = nullptr;
   cudaEvent_t event_after_enqueue_ = nullptr;
