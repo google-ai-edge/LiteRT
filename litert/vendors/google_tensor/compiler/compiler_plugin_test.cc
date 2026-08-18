@@ -379,6 +379,63 @@ TEST(TestCallGoogleTensorPlugin, PartitionWithInputValidator) {
   // Add and Mul should be supported by default.
   EXPECT_GT(selected_ops.size(), 0);
 }
+
+TEST(TestCallGoogleTensorPlugin,
+     PartitionWithInputValidatorAndSupportedComposite) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
+                              options.GetGoogleTensorOptions());
+
+  google_tensor_options.SetExperimentalEnableInputValidator(true);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  ExtendedModel model = testing::LoadTestFileModel(
+      "stablehlo/stablehlo_composite_rms_norm.tflite");
+  LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
+
+  LiteRtOpListT selected_op_list;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
+      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
+  const auto selected_ops = selected_op_list.Values();
+
+  ASSERT_EQ(selected_ops.size(), 1);
+  EXPECT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeShloComposite);
+}
+
+TEST(TestCallGoogleTensorPlugin,
+     PartitionWithInputValidatorAndUnsupportedComposite) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
+                              options.GetGoogleTensorOptions());
+
+  google_tensor_options.SetExperimentalEnableInputValidator(true);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  ExtendedModel model = testing::LoadTestFileModel(
+      "stablehlo/stablehlo_composite_softmax.tflite");
+  LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
+
+  LiteRtOpListT selected_op_list;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
+      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
+  const auto selected_ops = selected_op_list.Values();
+
+  // Unsupported composite should not be selected in Pass 1 to allow LiteRT
+  // inlining.
+  EXPECT_EQ(selected_ops.size(), 0);
+}
 #endif  // EDGETPU_EXTERNAL_RELEASE_COMPILER
 
 }  // namespace
