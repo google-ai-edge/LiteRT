@@ -24,6 +24,7 @@ litert_dynamic_lib(
     export_litert_only = True,
     linkopts = [
         "-Wl,-rpath,$$ORIGIN/../../..",
+        "-Wl,--no-undefined",
     ],
     linkstatic = 1,
     shared_lib_name = "compiler_plugin_so",

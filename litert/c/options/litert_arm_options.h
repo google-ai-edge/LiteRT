@@ -20,30 +20,31 @@
 #define ODML_LITERT_LITERT_C_OPTIONS_LITERT_ARM_OPTIONS_H_
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
 
-LITERT_DEFINE_HANDLE(LiteRtArmOptions);
+LITERT_DEFINE_HANDLE(LrtArmOptions);
 
-LiteRtStatus LiteRtArmOptionsCreate(LiteRtOpaqueOptions* options);
+LiteRtStatus LrtCreateArmOptions(LrtArmOptions* options);
 
-LiteRtStatus LiteRtArmOptionsGet(LiteRtOpaqueOptions options,
-                                 LiteRtArmOptions* arm_options);
+LiteRtStatus LrtCreateArmOptionsFromToml(const char* toml_payload,
+                                         LrtArmOptions* options);
 
-LiteRtStatus LrtGetOpaqueArmOptionsData(LiteRtOpaqueOptions options,
+void LrtDestroyArmOptions(LrtArmOptions options);
+
+LiteRtStatus LrtGetOpaqueArmOptionsData(LrtArmOptions options,
                                         const char** identifier, void** payload,
                                         void (**payload_deleter)(void*));
 
-const char* LiteRtArmOptionsGetIdentifier();
+const char* LrtArmOptionsGetIdentifier();
 
-LiteRtStatus LiteRtArmOptionsSetEnableJustInTime(LiteRtArmOptions options,
-                                                 bool enable_just_in_time);
+LiteRtStatus LrtArmOptionsSetEnableJustInTime(LrtArmOptions options,
+                                              bool enable_just_in_time);
 
-LiteRtStatus LiteRtArmOptionsGetEnableJustInTime(LiteRtArmOptions options,
-                                                 bool* enable_just_in_time);
+LiteRtStatus LrtArmOptionsGetEnableJustInTime(LrtArmOptions options,
+                                              bool* enable_just_in_time);
 
 #ifdef __cplusplus
 }

@@ -28,13 +28,12 @@
 #include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/options/litert_arm_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 
 namespace {
 
-constexpr char kPluginManufacturer[] = "Arm";
+constexpr char kPluginManufacturer[] = "Arm(R)";
 constexpr char kDefaultSocModel[] = "Generic";
 
 }  // namespace
@@ -59,10 +58,20 @@ class LiteRtCompilerPluginT {
       return;
     }
 
-    auto opaque_options = litert::OpaqueOptions::WrapCObject(
-        opaque_options_->Get(), litert::OwnHandle::kNo);
-    arm_options_ =
-        litert::FindOpaqueOptions<litert::arm::ArmOptions>(opaque_options);
+    auto target_options =
+        opaque_options_->FindOpaqueOptions(LrtArmOptionsGetIdentifier());
+    if (!target_options) {
+      return;
+    }
+
+    const char* payload = static_cast<const char*>(target_options.Value());
+    LrtArmOptions arm_options = nullptr;
+    auto status = LrtCreateArmOptionsFromToml(payload, &arm_options);
+    if (status == kLiteRtStatusOk) {
+      arm_options_ = litert::arm::ArmOptions(arm_options);
+    } else {
+      LITERT_LOG(LITERT_ERROR, "Failed to parse Arm(R) options: %d", status);
+    }
   }
 
   bool IsJitRequested() const {
@@ -76,7 +85,7 @@ class LiteRtCompilerPluginT {
 
  private:
   litert::Expected<litert::arm::ArmOptions> arm_options_ =
-      litert::Error(kLiteRtStatusErrorNotFound, "Arm options not found");
+      litert::Error(kLiteRtStatusErrorNotFound, "Arm(R) options not found");
   litert::Expected<litert::internal::OptionsWrapper> litert_options_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
   litert::Expected<litert::internal::OpaqueOptionsWrapper> opaque_options_ =
@@ -96,8 +105,8 @@ LiteRtStatus EnsureJitMode(LiteRtCompilerPlugin compiler_plugin) {
   }
   if (!compiler_plugin->IsJitRequested()) {
     LITERT_LOG(LITERT_ERROR,
-               "Arm compiler only supports the JIT flow. Set the "
-               "Arm enable_just_in_time option to use this plugin.");
+               "Arm(R) compiler only supports the JIT flow. Set the "
+               "Arm(R) enable_just_in_time option to use this plugin.");
     return kLiteRtStatusErrorUnsupported;
   }
   return kLiteRtStatusOk;

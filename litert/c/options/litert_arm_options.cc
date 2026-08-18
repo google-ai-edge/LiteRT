@@ -24,40 +24,57 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/litert_toml_parser.h"
 
-struct LiteRtArmOptionsT {
+struct LrtArmOptionsT {
   bool enable_just_in_time = false;
 };
 
-const char* LiteRtArmOptionsGetIdentifier() { return "Arm"; }
+const char* LrtArmOptionsGetIdentifier() { return "Arm(R)"; }
 
-LiteRtStatus LiteRtArmOptionsCreate(LiteRtOpaqueOptions* options) {
+LiteRtStatus LrtCreateArmOptions(LrtArmOptions* options) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  auto* arm_options = new LiteRtArmOptionsT;
-  LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
-      LiteRtArmOptionsGetIdentifier(), arm_options,
-      [](void* payload) { delete reinterpret_cast<LiteRtArmOptions>(payload); },
-      options));
+  *options = new LrtArmOptionsT;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtArmOptionsGet(LiteRtOpaqueOptions options,
-                                 LiteRtArmOptions* arm_options) {
-  if (options == nullptr || arm_options == nullptr) {
+LiteRtStatus LrtCreateArmOptionsFromToml(const char* toml_payload,
+                                         LrtArmOptions* options) {
+  if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
+  LITERT_RETURN_IF_ERROR(LrtCreateArmOptions(options));
 
-  void* payload = nullptr;
-  LITERT_RETURN_IF_ERROR(LiteRtFindOpaqueOptionsData(
-      options, LiteRtArmOptionsGetIdentifier(), &payload));
-  *arm_options = reinterpret_cast<LiteRtArmOptions>(payload);
-  return kLiteRtStatusOk;
+  if (toml_payload == nullptr || toml_payload[0] == '\0') {
+    return kLiteRtStatusOk;
+  }
+
+  LrtArmOptionsT& options_ref = **options;
+  auto status = litert::internal::ParseToml(
+      toml_payload,
+      [&options_ref](absl::string_view key,
+                     absl::string_view value) -> LiteRtStatus {
+        if (key == "enable_just_in_time") {
+          LITERT_ASSIGN_OR_RETURN(options_ref.enable_just_in_time,
+                                  litert::internal::ParseTomlBool(value));
+        }
+        return kLiteRtStatusOk;
+      });
+
+  if (status != kLiteRtStatusOk) {
+    LrtDestroyArmOptions(*options);
+    *options = nullptr;
+  }
+
+  return status;
 }
 
-LiteRtStatus LrtGetOpaqueArmOptionsData(LiteRtOpaqueOptions options,
+void LrtDestroyArmOptions(LrtArmOptions options) { delete options; }
+
+LiteRtStatus LrtGetOpaqueArmOptionsData(LrtArmOptions options,
                                         const char** identifier, void** payload,
                                         void (**payload_deleter)(void*)) {
   if (options == nullptr || identifier == nullptr || payload == nullptr ||
@@ -65,22 +82,18 @@ LiteRtStatus LrtGetOpaqueArmOptionsData(LiteRtOpaqueOptions options,
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  LiteRtArmOptions arm_options = nullptr;
-  LITERT_RETURN_IF_ERROR(LiteRtArmOptionsGet(options, &arm_options));
+  *identifier = LrtArmOptionsGetIdentifier();
 
   std::ostringstream toml;
   toml << "enable_just_in_time = "
-       << (arm_options->enable_just_in_time ? "true" : "false") << "\n";
+       << (options->enable_just_in_time ? "true" : "false") << "\n";
 
-  const std::string toml_payload = toml.str();
-  *identifier = LiteRtArmOptionsGetIdentifier();
-  litert::internal::MakeCStringPayload(absl::string_view(toml_payload), payload,
-                                       payload_deleter);
+  litert::internal::MakeCStringPayload(toml.str(), payload, payload_deleter);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtArmOptionsSetEnableJustInTime(LiteRtArmOptions options,
-                                                 bool enable_just_in_time) {
+LiteRtStatus LrtArmOptionsSetEnableJustInTime(LrtArmOptions options,
+                                              bool enable_just_in_time) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -88,8 +101,8 @@ LiteRtStatus LiteRtArmOptionsSetEnableJustInTime(LiteRtArmOptions options,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtArmOptionsGetEnableJustInTime(LiteRtArmOptions options,
-                                                 bool* enable_just_in_time) {
+LiteRtStatus LrtArmOptionsGetEnableJustInTime(LrtArmOptions options,
+                                              bool* enable_just_in_time) {
   if (options == nullptr || enable_just_in_time == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }

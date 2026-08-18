@@ -19,6 +19,8 @@
 #ifndef ODML_LITERT_LITERT_CC_OPTIONS_LITERT_ARM_OPTIONS_H_
 #define ODML_LITERT_LITERT_CC_OPTIONS_LITERT_ARM_OPTIONS_H_
 
+#include <memory>
+
 #include "litert/c/options/litert_arm_options.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/litert_common.h"
@@ -30,43 +32,53 @@ namespace litert::arm {
 
 class ArmOptions : public ConcreteOptionsBase {
  public:
-  using OpaqueOptions::OpaqueOptions;
-
   ArmOptions() = delete;
+  explicit ArmOptions(LrtArmOptions options) : options_(options) {}
 
-  static const char* Discriminator() { return LiteRtArmOptionsGetIdentifier(); }
+  ArmOptions(const ArmOptions&) = delete;
+  ArmOptions& operator=(const ArmOptions&) = delete;
+  ArmOptions(ArmOptions&&) = default;
+  ArmOptions& operator=(ArmOptions&&) = default;
+
+  static const char* Discriminator() { return LrtArmOptionsGetIdentifier(); }
 
   static Expected<ArmOptions> Create() {
-    LiteRtOpaqueOptions options = nullptr;
-    LITERT_RETURN_IF_ERROR(LiteRtArmOptionsCreate(&options));
-    return ArmOptions(options, OwnHandle::kYes);
+    LrtArmOptions options = nullptr;
+    LITERT_RETURN_IF_ERROR(LrtCreateArmOptions(&options));
+    return ArmOptions(options);
   }
 
   Expected<void> SetEnableJustInTime(bool enable_just_in_time) {
-    internal::AssertOk(LiteRtArmOptionsSetEnableJustInTime, Data(),
+    internal::AssertOk(LrtArmOptionsSetEnableJustInTime, Get(),
                        enable_just_in_time);
     return {};
   }
 
   Expected<bool> GetEnableJustInTime() const {
     bool enable_just_in_time = false;
-    internal::AssertOk(LiteRtArmOptionsGetEnableJustInTime, Data(),
+    internal::AssertOk(LrtArmOptionsGetEnableJustInTime, Get(),
                        &enable_just_in_time);
     return enable_just_in_time;
   }
 
-  LiteRtStatus GetOpaqueOptionsData(const char** identifier, void** payload,
-                                    void (**payload_deleter)(void*)) const {
+  LrtArmOptions Get() const { return options_.get(); }
+  LrtArmOptions Release() { return options_.release(); }
+
+  LiteRtStatus GetOpaqueOptionsData(
+      const char** identifier, void** payload,
+      void (**payload_deleter)(void*)) const override {
     return LrtGetOpaqueArmOptionsData(Get(), identifier, payload,
                                       payload_deleter);
   }
 
  private:
-  LiteRtArmOptions Data() const {
-    LiteRtArmOptions arm_options = nullptr;
-    internal::AssertOk(LiteRtArmOptionsGet, Get(), &arm_options);
-    return arm_options;
-  }
+  struct Deleter {
+    void operator()(LrtArmOptions options) const {
+      LrtDestroyArmOptions(options);
+    }
+  };
+
+  std::unique_ptr<LrtArmOptionsT, Deleter> options_;
 };
 
 }  // namespace litert::arm
