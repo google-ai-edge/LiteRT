@@ -29,7 +29,9 @@ namespace litert::ml_drift {
 absl::Status BuildSdpaTransposedGpuGraph(
     const std::vector<uint32_t>& input_ids, uint32_t output_id,
     const SdpaTransposedAttributes& attr,
-    ::ml_drift::GpuModelBuilder* model_builder);
+    ::ml_drift::GpuModelBuilder* model_builder,
+    bool allow_single_kernel_implementation = false,
+    bool request_flash_decoding = false);
 
 absl::Status CreateSdpaTransposedFromNode(
     const std::vector<::ml_drift::Value*>& inputs,
