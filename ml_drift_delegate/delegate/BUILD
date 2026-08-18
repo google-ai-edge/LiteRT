@@ -3,7 +3,7 @@ load("@build_bazel_rules_apple//apple:macos.bzl", "macos_unit_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
-load("//litert/build_common:special_rule.bzl", "gles_deps", "litert_metal_opts")
+load("//litert/build_common:special_rule.bzl", "gles_deps", "litert_gpu_accelerator_deps", "litert_metal_opts")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
@@ -1251,3 +1251,63 @@ macos_unit_test(
 
 # For MLD Android package.
 exports_files(srcs = ["delegate_options.h"])
+
+cc_library(
+    name = "gated_delta_update_test_util",
+    testonly = 1,
+    hdrs = ["gated_delta_update_test_util.h"],
+    deps = [
+        "//tflite:version",
+        "//tflite/schema:schema_fbs",
+        "@flatbuffers",
+    ],
+)
+
+cc_test(
+    name = "gated_delta_update_gpu_test",
+    srcs = ["gated_delta_update_gpu_test.cc"],
+    tags = [
+        "requires-gpu-nvidia",
+    ],
+    deps = [
+        ":gated_delta_update_test_util",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_options",
+        "//litert/cc/options:litert_gpu_options",
+        "//litert/core:options",
+        "//litert/experimental/custom_ops/gated_delta_net:gated_delta_update_tflite_op",
+        "//tflite/c:common",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ] + litert_gpu_accelerator_deps(),
+)
+
+cc_test(
+    name = "gated_delta_update_gpu_benchmark",
+    srcs = ["gated_delta_update_gpu_benchmark.cc"],
+    tags = [
+        "requires-gpu-nvidia",
+    ],
+    deps = [
+        ":gated_delta_update_test_util",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_options",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/options:litert_gpu_options",
+        "//litert/core:options",
+        "//litert/experimental/custom_ops/gated_delta_net:gated_delta_update_tflite_op",
+        "//tflite/c:common",
+        "@com_google_absl//absl/time",
+        "@com_google_googletest//:gtest_main",
+    ] + litert_gpu_accelerator_deps(),
+)
