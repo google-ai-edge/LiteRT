@@ -16,9 +16,11 @@
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_SDPA_TRANSPOSED_KERNEL_H_
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
@@ -26,10 +28,24 @@
 
 namespace litert::ml_drift {
 
+enum class SdpaImplementationStrategy {
+  kSingleKernelFlashDecode,
+  kTwoKernelFlashDecode,
+  kTwoKernelFlashDecodeAppleMpp,
+  kCompositeMultiKernelFallback,
+};
+
+SdpaImplementationStrategy SelectSdpaStrategy(
+    const ::ml_drift::GpuInfo& gpu_info, bool is_decode,
+    bool allow_single_kernel, bool request_flash_decoding);
+
 absl::Status BuildSdpaTransposedGpuGraph(
     const std::vector<uint32_t>& input_ids, uint32_t output_id,
     const SdpaTransposedAttributes& attr,
-    ::ml_drift::GpuModelBuilder* model_builder);
+    ::ml_drift::GpuModelBuilder* model_builder,
+    bool allow_single_kernel_implementation = false,
+    bool request_flash_decoding = false,
+    std::optional<SdpaImplementationStrategy> strategy_override = std::nullopt);
 
 absl::Status CreateSdpaTransposedFromNode(
     const std::vector<::ml_drift::Value*>& inputs,
