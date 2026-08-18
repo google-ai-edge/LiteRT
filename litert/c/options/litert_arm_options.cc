@@ -30,7 +30,7 @@ struct LrtArmOptionsT {
   bool enable_just_in_time = false;
 };
 
-const char* LrtArmOptionsGetIdentifier() { return "Arm(R)"; }
+const char* LrtArmOptionsGetIdentifier() { return "Arm"; }
 
 LiteRtStatus LrtCreateArmOptions(LrtArmOptions* options) {
   if (options == nullptr) {

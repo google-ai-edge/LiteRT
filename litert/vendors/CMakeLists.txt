@@ -332,7 +332,7 @@ endif()
 
 # Arm
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/arm/dispatch/dispatch_api.cc")
-  _litert_add_dispatch_so(Arm "arm/dispatch" "Arm(R)")
+  _litert_add_dispatch_so(Arm "arm/dispatch" "Arm")
 else()
   message(STATUS "Skipping Arm dispatch: arm/dispatch/dispatch_api.cc not found")
 endif()

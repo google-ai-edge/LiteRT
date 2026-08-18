@@ -33,7 +33,7 @@
 
 namespace {
 
-constexpr char kPluginManufacturer[] = "Arm(R)";
+constexpr char kPluginManufacturer[] = "Arm";
 constexpr char kDefaultSocModel[] = "Generic";
 
 }  // namespace
@@ -70,7 +70,7 @@ class LiteRtCompilerPluginT {
     if (status == kLiteRtStatusOk) {
       arm_options_ = litert::arm::ArmOptions(arm_options);
     } else {
-      LITERT_LOG(LITERT_ERROR, "Failed to parse Arm(R) options: %d", status);
+      LITERT_LOG(LITERT_ERROR, "Failed to parse Arm options: %d", status);
     }
   }
 
@@ -85,7 +85,7 @@ class LiteRtCompilerPluginT {
 
  private:
   litert::Expected<litert::arm::ArmOptions> arm_options_ =
-      litert::Error(kLiteRtStatusErrorNotFound, "Arm(R) options not found");
+      litert::Error(kLiteRtStatusErrorNotFound, "Arm options not found");
   litert::Expected<litert::internal::OptionsWrapper> litert_options_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
   litert::Expected<litert::internal::OpaqueOptionsWrapper> opaque_options_ =
@@ -105,8 +105,8 @@ LiteRtStatus EnsureJitMode(LiteRtCompilerPlugin compiler_plugin) {
   }
   if (!compiler_plugin->IsJitRequested()) {
     LITERT_LOG(LITERT_ERROR,
-               "Arm(R) compiler only supports the JIT flow. Set the "
-               "Arm(R) enable_just_in_time option to use this plugin.");
+               "Arm compiler only supports the JIT flow. Set the "
+               "Arm enable_just_in_time option to use this plugin.");
     return kLiteRtStatusErrorUnsupported;
   }
   return kLiteRtStatusOk;

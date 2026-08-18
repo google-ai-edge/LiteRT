@@ -26,7 +26,7 @@ LiteRtStatus GetVendorId(const char** vendor_id) {
   if (vendor_id == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *vendor_id = "Arm(R)";
+  *vendor_id = "Arm";
   return kLiteRtStatusOk;
 }
 
