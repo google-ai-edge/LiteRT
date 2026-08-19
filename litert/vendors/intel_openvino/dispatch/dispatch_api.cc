@@ -15,7 +15,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <exception>
 #include <memory>
 #include <string>
 #include <vector>
@@ -125,8 +124,7 @@ LiteRtStatus DispatchInitialize(const LiteRtRuntimeContext* runtime_context,
   for (const auto& device : available_devices) {
     LITERT_LOG(LITERT_INFO, "[Openvino]Found device plugin for: %s",
                device.c_str());
-    npu_available = npu_available || device == "NPU" ||
-                    device.rfind("NPU.", 0) == 0;
+    npu_available = npu_available || device.rfind("NPU.", 0) == 0;
   }
 
   if (npu_available) {
@@ -138,7 +136,7 @@ LiteRtStatus DispatchInitialize(const LiteRtRuntimeContext* runtime_context,
       LITERT_LOG(LITERT_INFO, "Intel NPU compiler version: %u.%u",
                  static_cast<unsigned int>(major_version),
                  static_cast<unsigned int>(minor_version));
-    } catch (const std::exception& e) {
+    } catch (const ov::Exception& e) {
       LITERT_LOG(LITERT_WARNING,
                  "Failed to query Intel NPU compiler version: %s", e.what());
     }

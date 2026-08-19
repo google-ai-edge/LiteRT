@@ -220,9 +220,18 @@ LiteRtDispatchInvocationContextT::Create(
     exec_bytecode_ptr =
         static_cast<const uint8_t*>(exec_bytecode_ptr) + payload_offset;
     exec_bytecode_size -= payload_offset;
+    LITERT_LOG(LITERT_INFO,
+               "Dispatch: using device '%s' from bytecode header",
+               device.c_str());
   } else if (selected_device.has_value()) {
     // GlobalGraph subgraphs carry their target device in the container.
     device = litert::openvino::GraphBackendToString(*selected_device);
+    LITERT_LOG(LITERT_INFO, "Dispatch: using device '%s' from GlobalGraph",
+               device.c_str());
+  } else {
+    LITERT_LOG(LITERT_INFO,
+               "Dispatch: no device metadata found, defaulting to '%s'",
+               device.c_str());
   }
 
   // Validate that the requested device is actually available on this system
