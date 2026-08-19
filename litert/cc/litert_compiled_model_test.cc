@@ -165,17 +165,15 @@ TEST(CompiledModelTest, OwningCreateRejectsNonOwnedModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       Model owned_model,
       Model::CreateFromFile(env, testing::GetTestFilePath(kModelFileName)));
-  Model non_owned_model =
-      Model::CreateFromNonOwnedHandle(owned_model.Get());
+  Model non_owned_model = Model::CreateFromNonOwnedHandle(owned_model.Get());
   Options options;
   options.SetHardwareAccelerators(HwAccelerators::kCpu);
 
-  auto compiled_model = CompiledModelTestPeer::Create(
-      env, std::move(non_owned_model), options);
+  auto compiled_model =
+      CompiledModelTestPeer::Create(env, std::move(non_owned_model), options);
 
   ASSERT_FALSE(compiled_model.HasValue());
-  EXPECT_EQ(compiled_model.Error().Status(),
-            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(compiled_model.Error().Status(), kLiteRtStatusErrorInvalidArgument);
   EXPECT_TRUE(owned_model);
 }
 
@@ -633,14 +631,80 @@ TEST(CompiledModelTest, SignatureAccessorsInvalidContext) {
   EXPECT_FALSE(compiled_model.GetSignature(100).HasValue());
 
   // Check GetSignatureIndex with invalid key.
-  EXPECT_FALSE(compiled_model.GetSignatureIndex("invalid_key").HasValue());
+  auto sig_index = compiled_model.GetSignatureIndex("invalid_key_sig_index");
+  ASSERT_FALSE(sig_index.HasValue());
+  EXPECT_THAT(
+      sig_index.Error().Message(),
+      ::testing::HasSubstr("Signature not found: invalid_key_sig_index"));
 
   // Check GetSignatureInputNames with invalid key.
-  EXPECT_FALSE(compiled_model.GetSignatureInputNames("invalid_key").HasValue());
+  auto input_names =
+      compiled_model.GetSignatureInputNames("invalid_key_input_names");
+  ASSERT_FALSE(input_names.HasValue());
+  EXPECT_THAT(
+      input_names.Error().Message(),
+      ::testing::HasSubstr("Signature not found: invalid_key_input_names"));
 
   // Check GetSignatureOutputNames with invalid key.
-  EXPECT_FALSE(
-      compiled_model.GetSignatureOutputNames("invalid_key").HasValue());
+  auto output_names =
+      compiled_model.GetSignatureOutputNames("invalid_key_output_names");
+  ASSERT_FALSE(output_names.HasValue());
+  EXPECT_THAT(
+      output_names.Error().Message(),
+      ::testing::HasSubstr("Signature not found: invalid_key_output_names"));
+
+  // Check buffer requirements with invalid signature / tensor names.
+  auto input_buf_req_bad_sig = compiled_model.GetInputBufferRequirements(
+      "invalid_key_sig", "invalid_input_req");
+  ASSERT_FALSE(input_buf_req_bad_sig.HasValue());
+  EXPECT_THAT(input_buf_req_bad_sig.Error().Message(),
+              ::testing::HasSubstr("Signature not found: invalid_key_sig"));
+
+  auto input_buf_req =
+      compiled_model.GetInputBufferRequirements("invalid_input_req");
+  ASSERT_FALSE(input_buf_req.HasValue());
+  EXPECT_THAT(input_buf_req.Error().Message(),
+              ::testing::HasSubstr("Failed to find input: invalid_input_req"));
+
+  auto output_buf_req_bad_sig = compiled_model.GetOutputBufferRequirements(
+      "invalid_key_sig", "invalid_output_req");
+  ASSERT_FALSE(output_buf_req_bad_sig.HasValue());
+  EXPECT_THAT(output_buf_req_bad_sig.Error().Message(),
+              ::testing::HasSubstr("Signature not found: invalid_key_sig"));
+
+  auto output_buf_req =
+      compiled_model.GetOutputBufferRequirements("invalid_output_req");
+  ASSERT_FALSE(output_buf_req.HasValue());
+  EXPECT_THAT(
+      output_buf_req.Error().Message(),
+      ::testing::HasSubstr("Failed to find output: invalid_output_req"));
+
+  // Check tensor types with invalid tensor names.
+  auto input_type_bad_sig = compiled_model.GetInputTensorType(
+      "invalid_key_sig", "invalid_input_type");
+  ASSERT_FALSE(input_type_bad_sig.HasValue());
+  EXPECT_THAT(input_type_bad_sig.Error().Message(),
+              ::testing::HasSubstr("Signature not found: invalid_key_sig"));
+
+  auto input_type =
+      compiled_model.GetInputTensorType("invalid_input_type");
+  ASSERT_FALSE(input_type.HasValue());
+  EXPECT_THAT(
+      input_type.Error().Message(),
+      ::testing::HasSubstr("Input tensor not found: invalid_input_type"));
+
+  auto output_type_bad_sig = compiled_model.GetOutputTensorType(
+      "invalid_key_sig", "invalid_output_type");
+  ASSERT_FALSE(output_type_bad_sig.HasValue());
+  EXPECT_THAT(output_type_bad_sig.Error().Message(),
+              ::testing::HasSubstr("Signature not found: invalid_key_sig"));
+
+  auto output_type =
+      compiled_model.GetOutputTensorType("invalid_output_type");
+  ASSERT_FALSE(output_type.HasValue());
+  EXPECT_THAT(
+      output_type.Error().Message(),
+      ::testing::HasSubstr("Output tensor not found: invalid_output_type"));
 }
 
 // Tests Compiled Model async API on CPU. In the CPU case, the async API should

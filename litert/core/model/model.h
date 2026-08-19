@@ -1002,7 +1002,9 @@ class LiteRtModelT {
         return std::ref(*sig);
       }
     }
-    return ::litert::Error(kLiteRtStatusErrorNotFound, "Signature not found");
+    return ::litert::Error(
+        kLiteRtStatusErrorNotFound,
+        "Signature not found: " + std::string(signature_key));
   }
 
   // Build a new subgraph and get a stable reference to it.

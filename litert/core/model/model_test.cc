@@ -126,6 +126,8 @@ TEST(ModelTest, SignatureDNE) {
   LiteRtModelT model;
   auto found_signature = model.FindSignature(kSignatureName);
   EXPECT_FALSE(found_signature);
+  EXPECT_THAT(found_signature.Error().Message(),
+              ::testing::HasSubstr("Signature not found: MY_SIGNATURE"));
 }
 
 TEST(ModelTest, SignatureAllowsDistinctInputOutputAliases) {

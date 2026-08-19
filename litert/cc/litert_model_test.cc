@@ -200,8 +200,42 @@ TEST(CcSignatureTest, Lookup) {
   auto model = testing::LoadTestFileModel("one_mul.tflite");
 
   {
-    auto signature = model.FindSignature("nonexistent");
+    auto signature = model.FindSignature("nonexistent_find_sig");
     ASSERT_FALSE(signature);
+    EXPECT_THAT(
+        signature.Error().Message(),
+        ::testing::HasSubstr("Signature not found: nonexistent_find_sig"));
+
+    auto sig_index = model.GetSignatureIndex("nonexistent_index_sig");
+    ASSERT_FALSE(sig_index);
+    EXPECT_THAT(
+        sig_index.Error().Message(),
+        ::testing::HasSubstr("Signature not found: nonexistent_index_sig"));
+
+    auto input_names = model.GetSignatureInputNames("nonexistent_input_sig");
+    ASSERT_FALSE(input_names);
+    EXPECT_THAT(
+        input_names.Error().Message(),
+        ::testing::HasSubstr("Signature not found: nonexistent_input_sig"));
+
+    auto output_names = model.GetSignatureOutputNames("nonexistent_output_sig");
+    ASSERT_FALSE(output_names);
+    EXPECT_THAT(
+        output_names.Error().Message(),
+        ::testing::HasSubstr("Signature not found: nonexistent_output_sig"));
+
+    auto input_type = model.GetInputTensorType(0, "nonexistent_input_tensor");
+    ASSERT_FALSE(input_type);
+    EXPECT_THAT(input_type.Error().Message(),
+                ::testing::HasSubstr(
+                    "Input tensor not found: nonexistent_input_tensor"));
+
+    auto output_type =
+        model.GetOutputTensorType(0, "nonexistent_output_tensor");
+    ASSERT_FALSE(output_type);
+    EXPECT_THAT(output_type.Error().Message(),
+                ::testing::HasSubstr(
+                    "Output tensor not found: nonexistent_output_tensor"));
   }
   auto signature = model.FindSignature(Model::DefaultSignatureKey());
   ASSERT_TRUE(signature);

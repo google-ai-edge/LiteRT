@@ -479,7 +479,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// @brief Gets input buffer requirements for the given signature and input
   /// name.
   Expected<TensorBufferRequirements> GetInputBufferRequirements(
-      StringView signature_name, StringView input_name) {
+      StringView signature_name, StringView input_name) const {
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
                             GetSignatureIndex(signature_name));
     return GetInputBufferRequirements(signature_index, input_name);
@@ -525,7 +525,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// @brief Gets output buffer requirements for the given signature and output
   /// name.
   Expected<TensorBufferRequirements> GetOutputBufferRequirements(
-      StringView signature_name, StringView output_name) {
+      StringView signature_name, StringView output_name) const {
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
                             GetSignatureIndex(signature_name));
     return GetOutputBufferRequirements(signature_index, output_name);
@@ -1401,7 +1401,8 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
         return i;
       }
     }
-    return Unexpected(Status::kErrorNotFound, "Signature not found");
+    return Unexpected(Status::kErrorNotFound,
+                      "Signature not found: " + std::string(signature_key));
   }
 
   Expected<SimpleSignature> FindSignature(StringView signature_key) const {
@@ -1494,7 +1495,8 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
         return input_tensor->RankedTensorType();
       }
     }
-    return Error(Status::kErrorNotFound, "Input tensor not found");
+    return Error(Status::kErrorNotFound,
+                 "Input tensor not found: " + std::string(input_name));
   }
 
   /// @brief Returns the tensor type for a given input tensor name.
@@ -1546,7 +1548,8 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
             FetchSignatureOutputTensorTypeByIndex(env_, lite_rt_signature, i);
       }
     }
-    return Error(Status::kErrorNotFound, "Output tensor not found");
+    return Error(Status::kErrorNotFound,
+                 "Output tensor not found: " + std::string(output_name));
   }
 
   /// @brief Returns the tensor type for a given output tensor name.
@@ -2033,7 +2036,8 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     if (it != input_names.end()) {
       return std::distance(input_names.begin(), it);
     }
-    return Unexpected(Status::kErrorNotFound, "Failed to find input");
+    return Unexpected(Status::kErrorNotFound,
+                      "Failed to find input: " + std::string(input_name));
   }
 
   /// @brief Returns the signature output index for a given output tensor
@@ -2047,7 +2051,8 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     if (it != output_names.end()) {
       return std::distance(output_names.begin(), it);
     }
-    return Unexpected(Status::kErrorNotFound, "Failed to find output");
+    return Unexpected(Status::kErrorNotFound,
+                      "Failed to find output: " + std::string(output_name));
   }
 
   /// @brief Creates a `TensorBuffer` with the given buffer requirements and
