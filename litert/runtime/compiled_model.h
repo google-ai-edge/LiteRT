@@ -499,7 +499,7 @@ class LiteRtCompiledModelT {
   // is destroyed.
 
   std::unique_ptr<::tflite::FlatBufferModel> fb_model_;
-  litert::OwningBufferRef<uint8_t> model_buf_;
+  litert::OwningBufferRef<uint8_t, litert::Mallocator<uint8_t>> model_buf_;
   std::vector<const std::string*> signature_keys_;
   // All subgraphs when no signature selection is configured; otherwise the
   // deduplicated signature root set. Transitive expansion is a follow-up.
