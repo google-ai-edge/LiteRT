@@ -687,6 +687,7 @@ cc_library(
         ":model",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//tensor:datatypes",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
     ],
