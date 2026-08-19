@@ -56,6 +56,7 @@ from ._greater_equal import *
 from ._no_value import *
 from ._pack import *
 from ._pad_v2 import *
+from ._quantize import *
 from ._range import *
 # pylint: disable=g-multiple-import
 # pylint: disable=g-bad-import-order
