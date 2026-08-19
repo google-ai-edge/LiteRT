@@ -26,55 +26,8 @@
 #include "absl/base/thread_annotations.h"  // from @com_google_absl
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 
-// Bundles the OpenVINO core and all hardware-context-derived state whose
-// lifetimes must be tied together. Destroying this object releases the
-// underlying Level Zero / NPU resources.
-class OpenVINOCore {
- public:
-  OpenVINOCore() : core_(std::make_shared<ov::Core>()) {}
-  OpenVINOCore(const OpenVINOCore&) = delete;
-  OpenVINOCore(OpenVINOCore&&) = delete;
-  OpenVINOCore& operator=(const OpenVINOCore&) = delete;
-  OpenVINOCore& operator=(OpenVINOCore&&) = delete;
-
-  std::shared_ptr<ov::Core> core() const { return core_; }
-
-  void SetDevice(const std::string& device) {
-    absl::MutexLock lock(mutex_);
-    device_ = device;
-    remote_context_.reset();
-  }
-
-  std::string GetDevice() {
-    absl::MutexLock lock(mutex_);
-    return device_;
-  }
-
-  ov::RemoteContext GetRemoteContext() {
-    absl::MutexLock lock(mutex_);
-    if (!remote_context_.has_value()) {
-      remote_context_ = core_->get_default_context(device_);
-    }
-    return *remote_context_;
-  }
-
-  const std::vector<std::string>& GetAvailableDevices();
-
- private:
-  absl::Mutex mutex_;
-  std::shared_ptr<ov::Core> core_;  // never null after construction
-  std::string device_ ABSL_GUARDED_BY(mutex_) = "NPU";
-  std::optional<ov::RemoteContext> remote_context_ ABSL_GUARDED_BY(mutex_);
-  std::once_flag available_devices_once_;
-  std::vector<std::string> available_devices_;
-};
-
-// Process-wide provider. Hands out a *shared* OpenVINOCore, created lazily and
-// destroyed automatically once the last handle is dropped. No manual counting.
 class OpenVINOSharedCore {
  public:
-  using Handle = std::shared_ptr<OpenVINOCore>;
-
   OpenVINOSharedCore(const OpenVINOSharedCore&) = delete;
   OpenVINOSharedCore(OpenVINOSharedCore&&) = delete;
   OpenVINOSharedCore& operator=(const OpenVINOSharedCore&) = delete;
@@ -82,22 +35,46 @@ class OpenVINOSharedCore {
 
   static OpenVINOSharedCore* GetInstance();
 
-  // Returns a strong handle to the live core, creating a fresh one if none is
-  // currently alive. Callers keep the handle for as long as they use the core.
-  Handle Acquire() {
-    absl::MutexLock lock(mutex_);
-    Handle core = weak_core_.lock();
-    if (!core) {
-      core = std::make_shared<OpenVINOCore>();
-      weak_core_ = core;
-    }
-    return core;
+  // Return the core shared_pointer.
+  std::shared_ptr<ov::Core> getCore() const { return core_; }
+
+  void SetDevice(const std::string device) {
+    absl::MutexLock lock(&state_mutex_);
+    device_ = device;
+    remote_context_.reset();
+  }
+  std::string GetDevice() {
+    absl::MutexLock lock(&state_mutex_);
+    return device_;
   }
 
+  ov::RemoteContext GetRemoteContext() {
+    absl::MutexLock lock(&state_mutex_);
+    if (!remote_context_.has_value()) {
+      remote_context_ = core_->get_default_context(device_);
+    }
+    return *remote_context_;
+  }
+
+  // Returns the list of OpenVINO devices reported by `core_->
+  // get_available_devices()`.  Queried lazily on first call and cached for
+  // the lifetime of the process (the set of installed devices does not
+  // change at runtime).  Thread-safe.  Returns an empty vector if the
+  // underlying query throws.
+  const std::vector<std::string>& GetAvailableDevices();
+
  private:
-  OpenVINOSharedCore() = default;
-  absl::Mutex mutex_;
-  std::weak_ptr<OpenVINOCore> weak_core_ ABSL_GUARDED_BY(mutex_);
+  OpenVINOSharedCore();
+  ~OpenVINOSharedCore() = default;
+
+  std::shared_ptr<ov::Core> core_;
+  // Guards device_ and remote_context_.
+  absl::Mutex state_mutex_;
+  std::string device_ ABSL_GUARDED_BY(state_mutex_) = "NPU";  // Default device
+  std::optional<ov::RemoteContext> remote_context_
+      ABSL_GUARDED_BY(state_mutex_);
+  std::once_flag available_devices_once_;
+  std::vector<std::string> available_devices_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_OPENVINO_SHARED_CORE_H_

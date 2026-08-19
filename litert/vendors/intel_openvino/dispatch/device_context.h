@@ -68,7 +68,7 @@ class LiteRtDispatchDeviceContextT {
 
   // Return the core shared_pointer.
   std::shared_ptr<ov::Core> getCore() const {
-    return OpenVINOSharedCore::GetInstance()->Acquire()->core();
+    return OpenVINOSharedCore::GetInstance()->getCore();
   }
 
   const LiteRtRuntimeContext* runtime_context() const {

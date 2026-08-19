@@ -24,7 +24,6 @@
 #include <ios>
 #include <istream>
 #include <map>
-#include <memory>
 #include <optional>
 #include <streambuf>
 #include <string>
@@ -49,7 +48,6 @@
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/intel_openvino/bytecode_header.h"
 #include "litert/vendors/intel_openvino/compiler/global_graph.h"
-#include "litert/vendors/intel_openvino/dispatch/openvino_shared_core.h"
 #include "litert/vendors/intel_openvino/dispatch/weight_bank_runtime.h"
 
 namespace {
@@ -256,16 +254,14 @@ LiteRtDispatchInvocationContextT::Create(
 
   // Validate that the requested device is actually available on this system
   // before setting the device.
-  OpenVINOSharedCore::Handle shared_core =
-      OpenVINOSharedCore::GetInstance()->Acquire();
-  std::shared_ptr<ov::Core> core = shared_core->core();
+  auto core = device_context.getCore();
   if (!core) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to get OpenVINO core from device context");
   }
   {
     const std::vector<std::string>& available_devices =
-        shared_core->GetAvailableDevices();
+        OpenVINOSharedCore::GetInstance()->GetAvailableDevices();
 
     auto matches = [&device](const std::string& name) {
       if (name == device) return true;
@@ -291,7 +287,7 @@ LiteRtDispatchInvocationContextT::Create(
   }
   LITERT_LOG(LITERT_INFO, "Using Intel OpenVINO device: %s", device.c_str());
 
-  shared_core->SetDevice(device);
+  OpenVINOSharedCore::GetInstance()->SetDevice(device);
 
   if (!exec_bytecode_ptr || exec_bytecode_size == 0) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
@@ -400,9 +396,9 @@ LiteRtDispatchInvocationContextT::Create(
 
   LITERT_LOG(LITERT_INFO, "Openvino InvocationContext Initialize SUCCESS");
   // TODO: add support for loading cached model
-  return Ptr(new LiteRtDispatchInvocationContextT(
-      infer_request, device_context, num_inputs, num_outputs,
-      std::move(shared_core), std::move(bound_weights)));
+  return Ptr(new LiteRtDispatchInvocationContextT(infer_request, device_context,
+                                                  num_inputs, num_outputs,
+                                                  std::move(bound_weights)));
 }
 
 litert::Expected<LiteRtTensorBufferRequirements>
