@@ -425,7 +425,7 @@ class LiteRtCompiledModelT {
   litert::Expected<void> RegisterBuffer(
       tflite::SignatureRunner* runner, TfLiteTensor* tensor, int tensor_index,
       const char* tensor_name, LiteRtTensorBufferT* buffer, bool is_input,
-      std::vector<LiteRtTensorBuffer>& locked_buffers,
+      absl::flat_hash_map<LiteRtTensorBuffer, void*>& locked_buffers,
       std::vector<ConstantOutputInfo>& constant_outputs,
       std::vector<PendingCopy>& pending_string_output_copies);
 

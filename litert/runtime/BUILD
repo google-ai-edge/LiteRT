@@ -771,6 +771,7 @@ cc_test(
     tags = ["requires-gpu-nvidia"],
     deps = [
         ":compiled_model",
+        ":external_litert_buffer_context",
         ":open_cl_memory",
         ":tensor_buffer",
         ":tensor_buffer_requirements",
