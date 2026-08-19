@@ -67,6 +67,7 @@ swift_test(
     name = "LiteRT_Swift_Tests",
     srcs = glob(["Tests/*.swift"]),
     data = [
+        "//litert/test:testdata/dynamic_add_model.tflite",
         "//litert/test:testdata/simple_model.tflite",
     ] + litert_gpu_accelerator_prebuilts(),
     deps = [
