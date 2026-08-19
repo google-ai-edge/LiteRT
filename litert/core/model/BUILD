@@ -42,6 +42,13 @@ cc_library_with_testonly_vis(
     deps = [
         ":buffer_manager",
         ":ir_allocator",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
@@ -57,15 +64,10 @@ cc_library_with_testonly_vis(
         "//litert/core:build_stamp",
         "//litert/core/util:flatbuffer_tools",
         "//tflite/converter/core:model_builder_base",
+        # Required for schema_generated.h included by model.cc when Clang modules are enabled (e.g. Darwin).
+        "//tflite/converter/schema:schema_fbs",
         "//tflite/core/c:private_c_api_types",
         "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_absl//absl/container:inlined_vector",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
     ],
 )
 
