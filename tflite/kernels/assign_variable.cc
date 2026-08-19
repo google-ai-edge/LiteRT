@@ -13,12 +13,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include <stdint.h>
-
 #include "tflite/core/c/common.h"
 #include "tflite/core/subgraph.h"
 #include "tflite/experimental/resource/resource_variable.h"
-#include "tflite/kernels/internal/tensor.h"
 #include "tflite/kernels/kernel_util.h"
 
 namespace tflite {
@@ -55,7 +52,8 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
   int resource_id = input_resource_id_tensor->data.i32[0];
   auto& resources = subgraph->resources();
-  resource::CreateResourceVariableIfNotAvailable(&resources, resource_id);
+  TF_LITE_ENSURE_OK(context, resource::CreateResourceVariableIfNotAvailable(
+                                 &resources, resource_id));
   auto* variable = resource::GetResourceVariable(&resources, resource_id);
   TF_LITE_ENSURE(context, variable != nullptr);
   variable->AssignFrom(input_value_tensor);

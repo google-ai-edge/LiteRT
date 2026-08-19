@@ -16,17 +16,27 @@ limitations under the License.
 
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/core/c/common.h"
+#include "tflite/experimental/resource/mock_resource.h"
+#include "tflite/experimental/resource/resource_base.h"
 #include "tflite/kernels/test_util.h"
 #include "tflite/util.h"
 
 namespace tflite {
 namespace resource {
+namespace {
+
+using ::testing::ElementsAre;
+using ::testing::Pair;
+using ::testing::Pointee;
+using ::testing::Property;
+
 // Helper util that initialize 'tensor'.
 void InitTensor(const std::vector<int>& shape, TfLiteAllocationType alloc_type,
                 float default_value, TfLiteTensor* tensor) {
@@ -218,5 +228,61 @@ TEST(ResourceTest, GetMemoryUsage) {
   TfLiteTensorFree(&tensor);
 }
 
+TEST(ResourceTest, CreateResourceVariableWhenNotAvailableCreatesNew) {
+  ResourceMap resources;
+  EXPECT_EQ(CreateResourceVariableIfNotAvailable(&resources, /*resource_id=*/1),
+            kTfLiteOk);
+  EXPECT_THAT(resources,
+              ElementsAre(Pair(
+                  1, Pointee(Property(
+                         &ResourceBase::GetResourceType,
+                         ResourceBase::ResourceType::kResourceVariable)))));
+}
+
+TEST(ResourceTest, CreateResourceVariableWhenMatchingTypeExistsSucceeds) {
+  ResourceMap resources;
+  EXPECT_EQ(CreateResourceVariableIfNotAvailable(&resources, /*resource_id=*/1),
+            kTfLiteOk);
+  EXPECT_EQ(CreateResourceVariableIfNotAvailable(&resources, /*resource_id=*/1),
+            kTfLiteOk);
+  ASSERT_EQ(resources.size(), 1);
+}
+
+TEST(ResourceTest, CreateResourceVariableWhenTypeMismatchesReturnsError) {
+  ResourceMap resources;
+  resources.emplace(1, std::make_unique<MockHashTableResource>());
+  EXPECT_EQ(CreateResourceVariableIfNotAvailable(&resources, /*resource_id=*/1),
+            kTfLiteError);
+}
+
+TEST(ResourceTest, CreateResourceVariableWhenEntryIsNullReturnsError) {
+  ResourceMap resources;
+  resources.emplace(1, nullptr);
+  EXPECT_EQ(CreateResourceVariableIfNotAvailable(&resources, /*resource_id=*/1),
+            kTfLiteError);
+  EXPECT_EQ(GetResourceVariable(&resources, /*resource_id=*/1), nullptr);
+}
+
+TEST(ResourceTest, CreateResourceVariableWhenResourcesMapIsNullReturnsError) {
+  EXPECT_EQ(CreateResourceVariableIfNotAvailable(nullptr, /*resource_id=*/1),
+            kTfLiteError);
+}
+
+TEST(ResourceTest, GetResourceVariableWhenResourcesMapIsNullReturnsNull) {
+  EXPECT_EQ(GetResourceVariable(nullptr, /*resource_id=*/1), nullptr);
+}
+
+TEST(ResourceTest, GetResourceVariableWhenNotFoundReturnsNull) {
+  ResourceMap resources;
+  EXPECT_EQ(GetResourceVariable(&resources, /*resource_id=*/1), nullptr);
+}
+
+TEST(ResourceTest, GetResourceVariableWhenTypeMismatchesReturnsNull) {
+  ResourceMap resources;
+  resources.emplace(1, std::make_unique<MockHashTableResource>());
+  EXPECT_EQ(GetResourceVariable(&resources, /*resource_id=*/1), nullptr);
+}
+
+}  // namespace
 }  // namespace resource
 }  // namespace tflite
