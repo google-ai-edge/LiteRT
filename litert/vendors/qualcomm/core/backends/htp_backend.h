@@ -63,7 +63,11 @@ class HtpBackend : public QnnBackend {
 
   bool Init(const Options& options, std::optional<SocInfo> soc_info) override;
 
+  // Updates the HTP/DSP performance mode.
   bool SetPerformanceMode(const Options& options) override;
+  // In auto mode, the update is deferred until before and after inference.
+  void ScheduleUpVote() override;
+  void ScheduleDownVote() override;
 
   GraphConfigBuilder BuildGraphConfigs(
       const Options& options, absl::string_view qnn_graph_name) override;
