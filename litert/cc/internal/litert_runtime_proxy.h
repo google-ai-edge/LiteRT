@@ -39,7 +39,9 @@
 #include "litert/cc/litert_api_types.h"
 
 namespace litert {
+class Environment;
 class Options;
+
 namespace internal {
 
 #define LITERT_PROXY_METHOD_STATUS(method, ...)  \
@@ -56,7 +58,9 @@ namespace internal {
 // different runtime implementations (e.g. real runtime, mock runtime).
 class RuntimeProxy {
  public:
+  friend class litert::Environment;
   friend class litert::Options;
+
   /// @brief Creates a runtime proxy with the externally provided system runtime
   /// handle.
   ///

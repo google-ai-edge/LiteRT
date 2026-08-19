@@ -258,11 +258,26 @@ class Environment {
   }
 
   /// @internal
+  /// @brief Returns the underlying environment handle and runtime for C API.
+  std::pair<const struct LiteRtRuntimeCApiStruct*, LiteRtEnvironment>
+  GetHolderForCApi() const noexcept {
+    return {runtime_->runtime_c_api_, handle_.get()};
+  }
+
+  /// @internal
   /// @brief Releases ownership of the environment handle.
   ///
   /// After this call, `GetHolder()` returns a null handle.
   internal::EnvironmentHolder Release() noexcept {
     return {runtime_.release(), handle_.release()};
+  }
+
+  /// @internal
+  /// @brief Releases ownership of the underlying environment handle and
+  /// runtime for C API.
+  std::pair<const struct LiteRtRuntimeCApiStruct*, LiteRtEnvironment>
+  ReleaseForCApi() noexcept {
+    return {runtime_->runtime_c_api_, handle_.release()};
   }
 
   /// @brief Returns `true` if the underlying LiteRT handle is valid.
@@ -294,6 +309,17 @@ class Environment {
         std::unique_ptr<RuntimeProxy, std::function<void(RuntimeProxy*)>>(
             env.runtime, [](RuntimeProxy*) {});
     return Environment(env.handle, std::move(runtime), owned);
+  }
+
+  /// @internal
+  /// @brief Wraps a `LiteRtEnvironment` C object in an `Environment` C++
+  /// object, with the externally provided runtime.
+  /// @warning This is for internal use only.
+  static Environment WrapCObject(
+      const struct LiteRtRuntimeCApiStruct* runtime_c_api,
+      LiteRtEnvironment env, OwnHandle owned) {
+    auto runtime = CreateRuntime(runtime_c_api);
+    return Environment(env, std::move(runtime), owned);
   }
 
  private:
