@@ -1,0 +1,22 @@
+#
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>.
+# SPDX-License-Identifier: Apache-2.0
+#
+
+--- schema/vgf_generated.h
++++ schema/vgf_generated.h
+@@ -6,10 +6,9 @@
+ #include "flatbuffers/flatbuffers.h"
+ 
+ // Ensure the included flatbuffers.h is the same version as when this file was
+-// generated, otherwise it may not be compatible.
+-static_assert(FLATBUFFERS_VERSION_MAJOR == 25 &&
+-              FLATBUFFERS_VERSION_MINOR == 2 &&
+-              FLATBUFFERS_VERSION_REVISION == 10,
+-             "Non-compatible flatbuffers version included");
++// generated. LiteRT builds against its own flatbuffers dependency, so keep
++// the major version guard while accepting compatible minor/patch updates.
++static_assert(FLATBUFFERS_VERSION_MAJOR == 25,
++              "Non-compatible flatbuffers major version included");
+ 
+ namespace VGF {

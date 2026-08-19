@@ -1,3 +1,8 @@
+#
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+#
+
 # buildifier: disable=load-on-top
 
 workspace(name = "litert")
@@ -366,6 +371,11 @@ load("//third_party/models:workspace.bzl", "models")
 models()
 
 # VENDOR SDKS ######################################################################################
+
+# ARM(R) -----------------------------------------------------------------------------------------
+load("//third_party/arm:workspace.bzl", "arm_deps")
+
+arm_deps()
 
 # QUALCOMM ---------------------------------------------------------------------------------------
 

@@ -1,0 +1,62 @@
+#
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>.
+# SPDX-License-Identifier: Apache-2.0
+#
+
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+licenses(["notice"])
+
+exports_files(["LICENSES/Apache-2.0.txt"])
+
+cc_library(
+    name = "tosa_for_spirv_codegen_impl",
+    srcs = [
+        "src/Graph.cpp",
+        "src/Instruction.cpp",
+        "src/Module.cpp",
+        "src/Operand.cpp",
+        "src/OperatorDefinitions.cpp",
+        "src/SPIRVDefinitions.cpp",
+        "src/TosaForSpirvCodegen.cpp",
+    ],
+    hdrs = glob([
+        "include/**/*.hpp",
+        "src/*.hpp",
+    ]),
+    includes = [
+        "include",
+        "include/spirv",
+        "include/tosa",
+        "src",
+    ],
+    deps = [
+        "@arm_dep_spirv_headers//:spirv_common_headers",
+        "@arm_dep_spirv_headers//:spirv_cpp_headers",
+    ],
+)
+
+cc_library(
+    name = "tosa_for_spirv_codegen_api_headers",
+    hdrs = glob(["include/*.hpp"]),
+    include_prefix = "tosa-for-spirv-codegen",
+    strip_include_prefix = "include",
+)
+
+cc_library(
+    name = "tosa_for_spirv_codegen_tosa_headers",
+    hdrs = glob(["include/tosa/**/*.hpp"]),
+    include_prefix = "tosa-for-spirv-codegen",
+    strip_include_prefix = "include",
+)
+
+cc_library(
+    name = "tosa_for_spirv_codegen",
+    deps = [
+        ":tosa_for_spirv_codegen_api_headers",
+        ":tosa_for_spirv_codegen_tosa_headers",
+        ":tosa_for_spirv_codegen_impl",
+    ],
+)
