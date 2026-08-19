@@ -48,12 +48,29 @@ public final class Environment {
   }
 
   public init(options: [Option] = []) throws {
+    var resolvedOptions = options
+    if !options.contains(where: { if case .runtimeLibraryDir = $0 { return true }; return false }) {
+      let libName = "libLiteRtMetalAccelerator.dylib"
+      let candidateURLs: [URL?] = [
+        Bundle(identifier: "com.google.odml.litert.CLiteRT")?.bundleURL,
+        Bundle.main.privateFrameworksURL,
+        Bundle.main.resourceURL,
+        Bundle.main.bundleURL,
+      ]
+      for candidate in candidateURLs.compactMap({ $0 }) {
+        if FileManager.default.fileExists(atPath: candidate.appendingPathComponent(libName).path) {
+          resolvedOptions.append(.runtimeLibraryDir(candidate.path))
+          break
+        }
+      }
+    }
+
     var environment: LiteRtEnvironment?
     var cOptions: [LiteRtEnvOption] = []
 
     // Recursive wrapper helper to keep C-strings alive until LiteRtCreateEnvironment finishes executing.
     func buildAndRun(index: Int) throws {
-      if index == options.count {
+      if index == resolvedOptions.count {
         let status: LiteRtStatus
         if cOptions.isEmpty {
           status = LiteRtCreateEnvironment(0, nil, &environment)
@@ -64,7 +81,7 @@ public final class Environment {
         return
       }
 
-      let option = options[index]
+      let option = resolvedOptions[index]
       switch option {
       case .compilerPluginLibraryDir(let path),
         .dispatchLibraryDir(let path),
