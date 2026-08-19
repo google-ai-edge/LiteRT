@@ -135,10 +135,36 @@ cc_library(
 )
 
 cc_library(
+    name = "experts_remap_builder",
+    srcs = ["experts_remap_builder.cc"],
+    hdrs = ["experts_remap_builder.h"],
+    deps = [
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/status:statusor",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common:util",
+        "@ml_drift//ml_drift/common/kernels:conv_apple_mpp",
+        "@ml_drift//ml_drift/common/kernels:conv_generic",
+        "@ml_drift//ml_drift/common/kernels:conv_wave_matrix",
+        "@ml_drift//ml_drift/common/kernels:conv_wave_memory",
+        "@ml_drift//ml_drift/common/kernels:fully_connected",
+        "@ml_drift//ml_drift/common/kernels/google/custom:experts_remap",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+    ],
+)
+
+cc_library(
     name = "moe_experts_kernel",
     srcs = ["moe_experts_kernel.cc"],
     hdrs = ["moe_experts_kernel.h"],
     deps = [
+        ":experts_remap_builder",
         ":moe_experts_parser",
         "//ml_drift_delegate/delegate/composite/ir:moe_experts_parser",
         "@com_google_absl//absl/status",
