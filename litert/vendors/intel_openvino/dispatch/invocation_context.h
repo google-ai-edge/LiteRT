@@ -29,6 +29,7 @@
 #include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
+#include "litert/vendors/intel_openvino/dispatch/openvino_shared_core.h"
 
 class LiteRtDispatchDeviceContextT;
 
@@ -88,12 +89,15 @@ class LiteRtDispatchInvocationContextT {
   LiteRtDispatchInvocationContextT(ov::InferRequest& infer_request,
                                    LiteRtDispatchDeviceContextT& device_context,
                                    int num_inputs, int num_outputs,
+                                   OpenVINOSharedCore::Handle shared_core,
                                    std::vector<ov::Tensor> bound_weights = {})
       : device_context_(device_context),
         infer_request_(infer_request),
+        shared_core_(std::move(shared_core)),
         bound_weights_(std::move(bound_weights)) {}
   LiteRtDispatchDeviceContextT& device_context_;
   ov::InferRequest infer_request_;
+  OpenVINOSharedCore::Handle shared_core_;
   // Views into the shared usm-host weight buffer bound to weight-Parameter
   // inputs; held for the infer request's lifetime (set_input_tensor does not
   // take ownership).
