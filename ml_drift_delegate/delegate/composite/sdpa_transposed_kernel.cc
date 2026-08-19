@@ -47,14 +47,23 @@ absl::Status BuildSdpaTransposedGpuGraph(
 
   ::ml_drift::GpuModelBuilder::TensorHandle mask;
   bool has_mask = false;
-  if (input_ids.size() > 3) {
-    ABSL_ASSIGN_OR_RETURN(mask, model_builder->GetTensor(input_ids[3]));
-    has_mask = true;
-  }
-
   ::ml_drift::GpuModelBuilder::TensorHandle param_tensor;
   ::ml_drift::GpuModelBuilder::TensorHandle* param_tensor_ptr = nullptr;
-  if (input_ids.size() > 4) {
+
+  if (input_ids.size() == 4) {
+    ABSL_ASSIGN_OR_RETURN(auto mask_or_param,
+                          model_builder->GetTensor(input_ids[3]));
+    if (mask_or_param.tensor_desc.GetDataType() ==
+        ::ml_drift::DataType::INT32) {
+      param_tensor = mask_or_param;
+      param_tensor_ptr = &param_tensor;
+    } else {
+      mask = mask_or_param;
+      has_mask = true;
+    }
+  } else if (input_ids.size() > 4) {
+    ABSL_ASSIGN_OR_RETURN(mask, model_builder->GetTensor(input_ids[3]));
+    has_mask = true;
     ABSL_ASSIGN_OR_RETURN(param_tensor, model_builder->GetTensor(input_ids[4]));
     param_tensor_ptr = &param_tensor;
   }

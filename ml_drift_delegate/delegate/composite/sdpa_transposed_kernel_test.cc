@@ -131,7 +131,7 @@ absl::Status RearrangeV(const std::vector<float>& data,
   return absl::OkStatus();
 }
 
-enum class MaskMode { kBool, kFloatAdditive };
+enum class MaskMode { kBool, kFloatAdditive, kNone };
 
 inline std::string ToString(MaskMode mask_mode) {
   switch (mask_mode) {
@@ -139,6 +139,8 @@ inline std::string ToString(MaskMode mask_mode) {
       return "BoolMask";
     case MaskMode::kFloatAdditive:
       return "FloatAdditiveMask";
+    case MaskMode::kNone:
+      return "NoMask";
   }
 }
 
@@ -159,7 +161,9 @@ std::vector<float> ComputeSdpaReferenceOutput(
           score += q_data[q_idx] * k_data[k_idx];
         }
 
-        if (mask_mode == MaskMode::kBool) {
+        if (mask_mode == MaskMode::kNone) {
+          scores[s] = score;
+        } else if (mask_mode == MaskMode::kBool) {
           if (mask_data[t * S + s] != 0.0f) {
             scores[s] = score;
           }
@@ -391,10 +395,12 @@ absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
   std::vector<::ml_drift::TensorFloat32> src_cpu = {q_tensor, k_tensor,
                                                     v_tensor};
 
-  ::ml_drift::TensorFloat32 mask_tensor;
-  mask_tensor.shape = mask_shape;
-  mask_tensor.data = mask_data;
-  src_cpu.push_back(mask_tensor);
+  if (mask_mode != MaskMode::kNone) {
+    ::ml_drift::TensorFloat32 mask_tensor;
+    mask_tensor.shape = mask_shape;
+    mask_tensor.data = mask_data;
+    src_cpu.push_back(mask_tensor);
+  }
 
   ::ml_drift::TensorFloat32 out_tensor_cpu;
   out_tensor_cpu.shape = ::ml_drift::BHWC(1, BK, T, H);
@@ -453,7 +459,8 @@ INSTANTIATE_TEST_SUITE_P(
                       ::ml_drift::CalculationsPrecision::F16}),
             ValuesIn({::ml_drift::TensorStorageType::TEXTURE_2D,
                       ::ml_drift::TensorStorageType::BUFFER}),
-            ValuesIn({MaskMode::kBool, MaskMode::kFloatAdditive})),
+            ValuesIn({MaskMode::kBool, MaskMode::kFloatAdditive,
+                      MaskMode::kNone})),
     [](const TestParamInfo<SdpaTransposedKernelExecuteTest::ParamType>& info) {
       std::string name =
           absl::StrCat(::ml_drift::ToString(std::get<0>(info.param)), "_",
