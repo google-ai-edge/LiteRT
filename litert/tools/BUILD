@@ -512,6 +512,9 @@ cc_library(
     hdrs = ["benchmark_litert_model.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_environment",
+        "//litert/c:litert_profiler",
+        "//litert/c:litert_profiler_types",
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_mediatek_options",
         "//litert/c/options:litert_qualcomm_options",
@@ -544,6 +547,7 @@ cc_library(
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
         "//litert/tools/flags/vendors:samsung_flags",
+        "//platforms/darwinn/devtools/power_stats",
         "//tflite:framework_stable",
         "//tflite/c:c_api_types",
         "//tflite/c:common",

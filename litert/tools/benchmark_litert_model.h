@@ -289,6 +289,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
                             BenchmarkParam::Create<std::string>("version8"));
     default_params.AddParam("input_layer_value_range",
                             BenchmarkParam::Create<std::string>(""));
+    default_params.AddParam("vendor_hook_args",
+                            BenchmarkParam::Create<std::string>(""));
     return default_params;
   }
 
@@ -484,6 +486,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
         "xnnpack_weight_cache_file_path", &params_,
         "Path to an XNNPACK packed-weight cache file. Use ':memory' for an "
         "in-memory cache on supported builds."));
+    flags.push_back(tflite::benchmark::CreateFlag<std::string>(
+        "vendor_hook_args", &params_, "Vendor hook arguments config string."));
     return flags;
   }
 

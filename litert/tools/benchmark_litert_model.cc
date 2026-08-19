@@ -14,6 +14,8 @@ limitations under the License.
 ==============================================================================*/
 #include "litert/tools/benchmark_litert_model.h"
 
+#include <dlfcn.h>
+
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
@@ -383,11 +385,20 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
     AddListener(model_runtime_info_listener_.get());
   }
 
-  auto use_profiler = params_.Get<bool>("use_profiler");
+  if (!params_.Get<std::string>("vendor_hook_args").empty()) {
+    setenv("LITERT_VENDOR_HOOK_ARGS",
+           params_.Get<std::string>("vendor_hook_args").c_str(), 1);
+  }
+
+  bool use_profiler = params_.Get<bool>("use_profiler");
   if (use_profiler) {
     LITERT_ASSIGN_OR_ABORT(profiler_, compiled_model_->GetProfiler());
+
+    LITERT_LOG(LITERT_INFO, "Benchmark using profiler %p", profiler_.Get());
+
     profiler_.StartProfiling();
   }
+
   LITERT_ASSIGN_OR_RETURN(
       std::string signature, GetCurrentSignatureKey(),
       AsTfLiteStatus(_ << "Failed to get current signature key."));
