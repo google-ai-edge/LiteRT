@@ -20,6 +20,7 @@
 #include <utility>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
 
 #include "ml_drift/common/convert.h"  // from @ml_drift
