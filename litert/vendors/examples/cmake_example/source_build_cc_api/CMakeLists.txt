@@ -73,12 +73,12 @@ file(READ "${CMAKE_CURRENT_LIST_DIR}/cc_api_headers_smoke_test.cc"
 foreach(_litert_source_build_cc_api_public_header
         IN LISTS _litert_source_build_cc_api_public_headers)
     string(FIND "${_litert_source_build_cc_api_headers_smoke_source}"
-        "#include \"third_party/odml/litert/litert/${_litert_source_build_cc_api_public_header}\""
+        "#include \"litert/${_litert_source_build_cc_api_public_header}\""
         _litert_source_build_cc_api_header_position)
     if(_litert_source_build_cc_api_header_position EQUAL -1)
         message(FATAL_ERROR
             "cc_api_headers_smoke_test.cc does not include public header "
-            "third_party/odml/litert/litert/${_litert_source_build_cc_api_public_header}")
+            "litert/${_litert_source_build_cc_api_public_header}")
     endif()
 endforeach()
 
