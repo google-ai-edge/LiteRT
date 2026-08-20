@@ -92,31 +92,33 @@ cc_library(
 #         "//tensor/utils:macros",
 #     ],
 # )
-#
-# cc_library(
-#     name = "transformer_ops_xnnpack",
-#     srcs = ["transformer_ops_xnnpack.cc"],
-#     hdrs = ["transformer_ops_xnnpack.h"],
-#     deps = [
-#         ":transformer_ops_graph",
-#         "@com_google_absl//absl/status",
-#         "@com_google_absl//absl/status:statusor",
-#         "@com_google_absl//absl/strings",
-#         "@com_google_absl//absl/strings:str_format",
-#         "@com_google_absl//absl/strings:string_view",
-#         "//tensor",
-#         "//tensor:arithmetic",
-#         "//tensor:buffer",
-#         "//tensor:datatypes",
-#         "//tensor/backends/xnnpack:arithmetic",
-#         "//tensor/backends/xnnpack:conversion",
-#         "//tensor/backends/xnnpack:utils",
-#         "//tensor/internal:graph",
-#         "//tensor/internal:mixin",
-#         "//tensor/utils:macros",
-#     ],
-# )
-#
+# copybara:uncomment_end
+
+cc_library(
+    name = "transformer_ops_xnnpack",
+    srcs = ["transformer_ops_xnnpack.cc"],
+    hdrs = ["transformer_ops_xnnpack.h"],
+    deps = [
+        ":transformer_ops_graph",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "//tensor/backends/xnnpack:arithmetic",
+        "//tensor/backends/xnnpack:conversion",
+        "//tensor/backends/xnnpack:utils",
+        "//tensor/internal:graph",
+        "//tensor/internal:mixin",
+        "//tensor/utils:macros",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+# copybara:uncomment_begin(google-only)
 # cc_test(
 #     name = "transformer_ops_numerical_test",
 #     srcs = ["transformer_ops_numerical_test.cc"],
