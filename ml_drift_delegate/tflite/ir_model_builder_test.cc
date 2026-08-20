@@ -700,5 +700,55 @@ TEST_F(IrModelBuilderTest, DoesNotReduceSharedInt2PointwiseConv) {
   EXPECT_TRUE(found_shared_weights);
 }
 
+TEST_F(IrModelBuilderTest,
+       ConfiguresSharedExternalWeightsWithNonConstantTensor) {
+  constexpr int kWeightsIndex = 1;
+  constexpr int kGlobalId = 42;
+  // External weights (e.g. from LiteRT-LM) are allocated dynamically or with
+  // custom allocation (IsConstantTensor returns false), but are mapped via
+  // external_buffer_map. Verify that IrModelBuilder correctly recognizes them
+  // as shared tensors.
+  model_ = std::make_unique<SingleOpInterpreterBuilder>(
+      kTfLiteBuiltinFullyConnected);
+  model_->AddInput(kTfLiteFloat32, {1, 1, 1, 4});
+  model_->AddInput(kTfLiteInt8, {8, 4});  // Dynamic/custom non-const input
+  bias_data_.assign(8 * sizeof(float), 0);
+  model_->AddConstInput(kTfLiteFloat32, {8}, bias_data_);
+  model_->AddOutput(kTfLiteFloat32, {1, 8});
+
+  auto* params = reinterpret_cast<TfLiteFullyConnectedParams*>(
+      calloc(1, sizeof(TfLiteFullyConnectedParams)));
+  params->activation = kTfLiteActNone;
+  model_->SetParameters(params);
+
+  interpreter_ = model_->Build();
+  ASSERT_NE(interpreter_, nullptr);
+
+  test_data_.external_buffer_map[kWeightsIndex] = kGlobalId;
+
+  ASSERT_EQ(interpreter_->ModifyGraphWithDelegate(&delegate_), kTfLiteOk);
+  EXPECT_TRUE(test_data_.status.ok());
+  ASSERT_EQ(test_data_.shared_tensors.size(), 1);
+
+  const ::ml_drift::ir::IrOp* fc_op = nullptr;
+  for (const auto& op : test_data_.ir_model.ops()) {
+    if (op->name == ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT8)) {
+      fc_op = op.get();
+    }
+  }
+  ASSERT_NE(fc_op, nullptr);
+
+  bool found_shared = false;
+  for (const auto& tensor : test_data_.ir_model.tensors()) {
+    if (tensor->buffer_source.is_shared) {
+      found_shared = true;
+      EXPECT_EQ(tensor->buffer_source.global_id, kGlobalId);
+      EXPECT_FALSE(test_data_.shared_tensors.at(tensor->id).dequant_forced);
+      EXPECT_TRUE(tensor->consumers.contains(fc_op->id));
+    }
+  }
+  EXPECT_TRUE(found_shared);
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir

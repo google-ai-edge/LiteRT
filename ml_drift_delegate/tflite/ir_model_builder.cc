@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
@@ -558,16 +559,33 @@ class IrModelBuilder {
           static_cast<::ml_drift::ir::IrTensorId>(-1)};
     }
     const TfLiteTensor& tflite_tensor = context_.tensors[tensor_id];
-    const ::ml_drift::DataType dtype = GetDtype(tflite_tensor.type);
+    ::ml_drift::DataType dtype = GetDtype(tflite_tensor.type);
+    std::optional<::ml_drift::ir::IrQuantParams> quant_params;
+
+    if (!buffer_source.is_shared &&
+        !::tflite::IsConstantTensor(&tflite_tensor) &&
+        IsAffineQuantized8Bit(tflite_tensor)) {
+      const TfLiteAffineQuantization* params =
+          static_cast<const TfLiteAffineQuantization*>(
+              tflite_tensor.quantization.params);
+      if (params && params->scale && params->scale->size == 1) {
+        dtype = ::ml_drift::DataType::FLOAT32;
+        ::ml_drift::ir::IrQuantParams quant;
+        PopulateQuantParams(tflite_tensor, &quant);
+        quant_params = quant;
+      }
+    }
+
     const ::ml_drift::BHWDC shape = ExtractTensorShape(tflite_tensor.dims);
     auto* tensor = ir_model.add_tensor(dtype, shape);
     tensor->buffer_source = buffer_source;
+    tensor->quant_params = quant_params;
     return tensor->id;
   }
 
   // Helper function to create an IR tensor from a TFLite tensor. If the tensor
-  // is a constant and its ID is found in the external buffer maps, it is marked
-  // as a shared constant and added to the `shared_tensors_` map.
+  // is found in the external or shared buffer maps, it is marked as a shared
+  // tensor and added to the `shared_tensors_` map.
   void ProcessTensor(
       int tfl_tensor_id, ::ml_drift::ir::IrModel& ir_model,
       absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map) const {
@@ -580,21 +598,19 @@ class IrModelBuilder {
     bool is_shared = false;
     int global_id = -1;
 
-    // Check if the tensor is a constant and if its ID is found externally
-    if (::tflite::IsConstantTensor(&context_.tensors[tfl_tensor_id])) {
-      if (tensor_to_external_buffer_id_map_) {
-        if (auto it = tensor_to_external_buffer_id_map_->find(tfl_tensor_id);
-            it != tensor_to_external_buffer_id_map_->end()) {
-          is_shared = true;
-          global_id = it->second;
-        }
+    // Check if the tensor ID is found in the external or shared buffer maps.
+    if (tensor_to_external_buffer_id_map_) {
+      if (auto it = tensor_to_external_buffer_id_map_->find(tfl_tensor_id);
+          it != tensor_to_external_buffer_id_map_->end()) {
+        is_shared = true;
+        global_id = it->second;
       }
-      if (!is_shared && tensor_to_shared_buffer_id_map_) {
-        if (auto it = tensor_to_shared_buffer_id_map_->find(tfl_tensor_id);
-            it != tensor_to_shared_buffer_id_map_->end()) {
-          is_shared = true;
-          global_id = it->second;
-        }
+    }
+    if (!is_shared && tensor_to_shared_buffer_id_map_) {
+      if (auto it = tensor_to_shared_buffer_id_map_->find(tfl_tensor_id);
+          it != tensor_to_shared_buffer_id_map_->end()) {
+        is_shared = true;
+        global_id = it->second;
       }
     }
 
