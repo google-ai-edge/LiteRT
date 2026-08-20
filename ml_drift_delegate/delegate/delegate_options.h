@@ -323,7 +323,7 @@ struct MlDriftDelegateOptions {
   // If true, the delegate initializes via the IrModel pipeline instead of the
   // legacy GraphFloat32 pipeline. Selected at runtime; both pipelines are
   // always compiled and linked.
-  bool use_ir_model = true;
+  bool use_ir_model = false;
 };
 
 namespace litert::ml_drift {
