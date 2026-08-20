@@ -2034,6 +2034,20 @@ func.func @InvalidL2NormalizePattern3(%arg0: tensor<2x2xf32>) -> tensor<2x2xf32>
   // CHECK: return %[[RES]]
 }
 
+// CHECK-LABEL: @InvalidL2NormalizePatternAllAxes
+// L2_NORMALIZATION only normalizes the final dimension, while an axis list
+// containing every dimension normalizes the whole tensor.
+func.func @InvalidL2NormalizePatternAllAxes(%arg0: tensor<2x2xf32>) -> tensor<2x2xf32> {
+  %cst = arith.constant dense<[0, 1]> : tensor<2xi32>
+  %0 = "tfl.square"(%arg0) : (tensor<2x2xf32>) -> tensor<2x2xf32>
+  %1 = "tfl.sum"(%0, %cst) {keep_dims = false} : (tensor<2x2xf32>, tensor<2xi32>) -> tensor<f32>
+  %2 = "tfl.sqrt"(%1) : (tensor<f32>) -> tensor<f32>
+  %3 = "tfl.div"(%arg0, %2) {fused_activation_function = "NONE"} : (tensor<2x2xf32>, tensor<f32>) -> tensor<2x2xf32>
+  func.return %3: tensor<2x2xf32>
+  // CHECK: %[[RES:[0-9].*]] = tfl.div([[INPUT:%.*]], %2) <{fused_activation_function = "NONE"}> : (tensor<2x2xf32>, tensor<f32>) -> tensor<2x2xf32>
+  // CHECK: return %[[RES]]
+}
+
 // CHECK-LABEL: @fuseDivIntoConv2d
 func.func @fuseDivIntoConv2d(%arg0: tensor<1x112x112x2xf32>) -> tensor<1x28x23x2xf32> {
   %cst0 = arith.constant dense<[[[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]], [[[9.0, 10.0], [11.0, 12.0]], [[13.0, 14.0], [15.0, 16.0]]]]> : tensor<2x2x2x2xf32>
