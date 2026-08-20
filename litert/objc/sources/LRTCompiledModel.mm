@@ -24,8 +24,8 @@
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#import "third_party/odml/litert/litert/objc/apis/LRTError.h"
 #import "third_party/odml/litert/litert/objc/sources/LRTEnvironment+Internal.h"
+#import "third_party/odml/litert/litert/objc/sources/LRTError+Internal.h"
 #import "third_party/odml/litert/litert/objc/sources/LRTOptions+Internal.h"
 #import "third_party/odml/litert/litert/objc/sources/LRTTensorBuffer+Internal.h"
 
@@ -54,20 +54,14 @@ NS_ASSUME_NONNULL_BEGIN
                                                   error:(NSError **)error {
   if (!modelFilePath) {
     if (error) {
-      *error =
-          [NSError errorWithDomain:LRTErrorDomain
-                              code:LRTErrorCodeInvalidArgument
-                          userInfo:@{NSLocalizedDescriptionKey : @"modelFilePath cannot be nil"}];
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"modelFilePath cannot be nil");
     }
     return nil;
   }
 
   if (![environment cppEnvironment]) {
     if (error) {
-      *error =
-          [NSError errorWithDomain:LRTErrorDomain
-                              code:LRTErrorCodeInvalidArgument
-                          userInfo:@{NSLocalizedDescriptionKey : @"Valid LRTEnvironment required"}];
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
     }
     return nil;
   }
@@ -80,10 +74,8 @@ NS_ASSUME_NONNULL_BEGIN
 
   if (!createResult.HasValue()) {
     if (error) {
-      *error = [NSError
-          errorWithDomain:LRTErrorDomain
-                     code:static_cast<NSInteger>(createResult.Error().Status())
-                 userInfo:@{NSLocalizedDescriptionKey : @(createResult.Error().Message().c_str())}];
+      *error = CreateLRTError(static_cast<NSInteger>(createResult.Error().Status()),
+                              @(createResult.Error().Message().c_str()));
     }
     return nil;
   }
@@ -100,20 +92,14 @@ NS_ASSUME_NONNULL_BEGIN
                                               error:(NSError **)error {
   if (!modelData || modelData.length == 0) {
     if (error) {
-      *error =
-          [NSError errorWithDomain:LRTErrorDomain
-                              code:LRTErrorCodeInvalidArgument
-                          userInfo:@{NSLocalizedDescriptionKey : @"modelData cannot be empty"}];
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"modelData cannot be empty");
     }
     return nil;
   }
 
   if (!environment || ![environment cppEnvironment]) {
     if (error) {
-      *error =
-          [NSError errorWithDomain:LRTErrorDomain
-                              code:LRTErrorCodeInvalidArgument
-                          userInfo:@{NSLocalizedDescriptionKey : @"Valid LRTEnvironment required"}];
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
     }
     return nil;
   }
@@ -128,10 +114,8 @@ NS_ASSUME_NONNULL_BEGIN
 
   if (!createResult.HasValue()) {
     if (error) {
-      *error = [NSError
-          errorWithDomain:LRTErrorDomain
-                     code:static_cast<NSInteger>(createResult.Error().Status())
-                 userInfo:@{NSLocalizedDescriptionKey : @(createResult.Error().Message().c_str())}];
+      *error = CreateLRTError(static_cast<NSInteger>(createResult.Error().Status()),
+                              @(createResult.Error().Message().c_str()));
     }
     return nil;
   }
@@ -157,12 +141,8 @@ static NSArray<LRTTensorBuffer *> *_Nullable CreateObjCTensorBuffersFromCppResul
     litert::Expected<std::vector<litert::TensorBuffer>> &buffersResult, NSError **error) {
   if (!buffersResult.HasValue()) {
     if (error) {
-      *error =
-          [NSError errorWithDomain:LRTErrorDomain
-                              code:static_cast<NSInteger>(buffersResult.Error().Status())
-                          userInfo:@{
-                            NSLocalizedDescriptionKey : @(buffersResult.Error().Message().c_str())
-                          }];
+      *error = CreateLRTError(static_cast<NSInteger>(buffersResult.Error().Status()),
+                              @(buffersResult.Error().Message().c_str()));
     }
     return nil;
   }
@@ -198,21 +178,15 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
     if (![tensorBuffer cppTensorBuffer]) {
       if (error) {
         NSString *msg = [NSString stringWithFormat:@"Invalid %@ tensor buffer", bufferKind];
-        *error = [NSError errorWithDomain:LRTErrorDomain
-                                     code:LRTErrorCodeInvalidArgument
-                                 userInfo:@{NSLocalizedDescriptionKey : msg}];
+        *error = CreateLRTError(LRTErrorCodeInvalidArgument, msg);
       }
       return NO;
     }
     litert::Expected<litert::TensorBuffer> dupResult = [tensorBuffer cppTensorBuffer]->Duplicate();
     if (!dupResult.HasValue()) {
       if (error) {
-        *error =
-            [NSError errorWithDomain:LRTErrorDomain
-                                code:static_cast<NSInteger>(dupResult.Error().Status())
-                            userInfo:@{
-                              NSLocalizedDescriptionKey : @(dupResult.Error().Message().c_str())
-                            }];
+        *error = CreateLRTError(static_cast<NSInteger>(dupResult.Error().Status()),
+                                @(dupResult.Error().Message().c_str()));
       }
       return NO;
     }
@@ -230,10 +204,7 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
                                         error:(NSError **)error {
   if (!_cppCompiledModel) {
     if (error) {
-      *error = [NSError
-          errorWithDomain:LRTErrorDomain
-                     code:LRTErrorCodeRuntimeFailure
-                 userInfo:@{NSLocalizedDescriptionKey : @"Compiled model is not initialized"}];
+      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
     }
     return nil;
   }
@@ -248,20 +219,14 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
                                                                            error:(NSError **)error {
   if (!signatureKey) {
     if (error) {
-      *error =
-          [NSError errorWithDomain:LRTErrorDomain
-                              code:LRTErrorCodeInvalidArgument
-                          userInfo:@{NSLocalizedDescriptionKey : @"signatureKey cannot be nil"}];
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"signatureKey cannot be nil");
     }
     return nil;
   }
 
   if (!_cppCompiledModel) {
     if (error) {
-      *error = [NSError
-          errorWithDomain:LRTErrorDomain
-                     code:LRTErrorCodeRuntimeFailure
-                 userInfo:@{NSLocalizedDescriptionKey : @"Compiled model is not initialized"}];
+      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
     }
     return nil;
   }
@@ -280,10 +245,7 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
                                          error:(NSError **)error {
   if (!_cppCompiledModel) {
     if (error) {
-      *error = [NSError
-          errorWithDomain:LRTErrorDomain
-                     code:LRTErrorCodeRuntimeFailure
-                 userInfo:@{NSLocalizedDescriptionKey : @"Compiled model is not initialized"}];
+      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
     }
     return nil;
   }
@@ -298,20 +260,14 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
                                        error:(NSError **)error {
   if (!signatureKey) {
     if (error) {
-      *error =
-          [NSError errorWithDomain:LRTErrorDomain
-                              code:LRTErrorCodeInvalidArgument
-                          userInfo:@{NSLocalizedDescriptionKey : @"signatureKey cannot be nil"}];
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"signatureKey cannot be nil");
     }
     return nil;
   }
 
   if (!_cppCompiledModel) {
     if (error) {
-      *error = [NSError
-          errorWithDomain:LRTErrorDomain
-                     code:LRTErrorCodeRuntimeFailure
-                 userInfo:@{NSLocalizedDescriptionKey : @"Compiled model is not initialized"}];
+      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
     }
     return nil;
   }
@@ -333,10 +289,7 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
                 error:(NSError **)error {
   if (!_cppCompiledModel) {
     if (error) {
-      *error = [NSError
-          errorWithDomain:LRTErrorDomain
-                     code:LRTErrorCodeRuntimeFailure
-                 userInfo:@{NSLocalizedDescriptionKey : @"Compiled model is not initialized"}];
+      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
     }
     return NO;
   }
@@ -355,10 +308,8 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
       _cppCompiledModel->Run(signatureIndex, inputCppBuffers, outputCppBuffers);
   if (!runResult.HasValue()) {
     if (error) {
-      *error = [NSError
-          errorWithDomain:LRTErrorDomain
-                     code:static_cast<NSInteger>(runResult.Error().Status())
-                 userInfo:@{NSLocalizedDescriptionKey : @(runResult.Error().Message().c_str())}];
+      *error = CreateLRTError(static_cast<NSInteger>(runResult.Error().Status()),
+                              @(runResult.Error().Message().c_str()));
     }
     return NO;
   }
@@ -372,20 +323,14 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
                 error:(NSError **)error {
   if (!signatureKey) {
     if (error) {
-      *error =
-          [NSError errorWithDomain:LRTErrorDomain
-                              code:LRTErrorCodeInvalidArgument
-                          userInfo:@{NSLocalizedDescriptionKey : @"signatureKey cannot be nil"}];
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"signatureKey cannot be nil");
     }
     return NO;
   }
 
   if (!_cppCompiledModel) {
     if (error) {
-      *error = [NSError
-          errorWithDomain:LRTErrorDomain
-                     code:LRTErrorCodeRuntimeFailure
-                 userInfo:@{NSLocalizedDescriptionKey : @"Compiled model is not initialized"}];
+      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
     }
     return NO;
   }
@@ -404,10 +349,8 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
       _cppCompiledModel->Run(signatureKey.UTF8String, inputCppBuffers, outputCppBuffers);
   if (!runResult.HasValue()) {
     if (error) {
-      *error = [NSError
-          errorWithDomain:LRTErrorDomain
-                     code:static_cast<NSInteger>(runResult.Error().Status())
-                 userInfo:@{NSLocalizedDescriptionKey : @(runResult.Error().Message().c_str())}];
+      *error = CreateLRTError(static_cast<NSInteger>(runResult.Error().Status()),
+                              @(runResult.Error().Message().c_str()));
     }
     return NO;
   }
@@ -430,10 +373,7 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
                            error:(NSError **)error {
   if (!_cppCompiledModel) {
     if (error) {
-      *error = [NSError
-          errorWithDomain:LRTErrorDomain
-                     code:LRTErrorCodeRuntimeFailure
-                 userInfo:@{NSLocalizedDescriptionKey : @"Compiled model is not initialized"}];
+      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
     }
     return NO;
   }
@@ -449,10 +389,8 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
 
   if (!resizeResult.HasValue()) {
     if (error) {
-      *error = [NSError
-          errorWithDomain:LRTErrorDomain
-                     code:static_cast<NSInteger>(resizeResult.Error().Status())
-                 userInfo:@{NSLocalizedDescriptionKey : @(resizeResult.Error().Message().c_str())}];
+      *error = CreateLRTError(static_cast<NSInteger>(resizeResult.Error().Status()),
+                              @(resizeResult.Error().Message().c_str()));
     }
     return NO;
   }
@@ -466,20 +404,14 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
                            error:(NSError **)error {
   if (!signatureKey) {
     if (error) {
-      *error =
-          [NSError errorWithDomain:LRTErrorDomain
-                              code:LRTErrorCodeInvalidArgument
-                          userInfo:@{NSLocalizedDescriptionKey : @"signatureKey cannot be nil"}];
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"signatureKey cannot be nil");
     }
     return NO;
   }
 
   if (!_cppCompiledModel) {
     if (error) {
-      *error = [NSError
-          errorWithDomain:LRTErrorDomain
-                     code:LRTErrorCodeRuntimeFailure
-                 userInfo:@{NSLocalizedDescriptionKey : @"Compiled model is not initialized"}];
+      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
     }
     return NO;
   }
@@ -488,12 +420,8 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
       _cppCompiledModel->GetSignatureIndex(signatureKey.UTF8String);
   if (!sigIndexResult.HasValue()) {
     if (error) {
-      *error =
-          [NSError errorWithDomain:LRTErrorDomain
-                              code:static_cast<NSInteger>(sigIndexResult.Error().Status())
-                          userInfo:@{
-                            NSLocalizedDescriptionKey : @(sigIndexResult.Error().Message().c_str())
-                          }];
+      *error = CreateLRTError(static_cast<NSInteger>(sigIndexResult.Error().Status()),
+                              @(sigIndexResult.Error().Message().c_str()));
     }
     return NO;
   }

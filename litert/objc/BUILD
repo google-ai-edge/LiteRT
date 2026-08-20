@@ -32,6 +32,7 @@ objc_library(
         "apis/LRTEnvironment.h",
         "apis/LRTError.h",
         "sources/LRTEnvironment+Internal.h",
+        "sources/LRTError+Internal.h",
     ],
     deps = [
         "//third_party/apple_frameworks:Foundation",
