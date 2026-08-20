@@ -53,6 +53,7 @@
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/compiler/graph_mapper.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
+#include "litert/vendors/qualcomm/core/builders/addn_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/arg_min_max_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/broadcast_to_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/cast_op_builder.h"
@@ -555,6 +556,7 @@ REGISTER_SIMPLE_OP_BUILDER(BuildSignOp, BuildElementwiseSignOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildScatterNdOp, BuildScatterNdOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildBatchToSpaceNdOp, BuildBatchToSpaceNdOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildSpaceToBatchNdOp, BuildSpaceToBatchNdOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildAddNOp, BuildAddNOp)
 
 #undef REGISTER_SIMPLE_OP_BUILDER
 
@@ -1488,6 +1490,7 @@ constexpr std::array<OpBuilder, kLiteRtOpCodeShloComposite + 1>
 GetOpBuilders() {
   std::array<OpBuilder, kLiteRtOpCodeShloComposite + 1> builders{};
   builders[kLiteRtOpCodeTflAdd] = Adapt<BuildAddOp>;
+  builders[kLiteRtOpCodeTflAddN] = Adapt<BuildAddNOp>;
   builders[kLiteRtOpCodeTflAveragePool2d] = Adapt<BuildAveragePool2dOp>;
   builders[kLiteRtOpCodeTflConcatenation] = Adapt<BuildConcatenationOp>;
   builders[kLiteRtOpCodeTflConv2d] = Adapt<BuildConv2dOp>;
