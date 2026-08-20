@@ -232,7 +232,10 @@ copy_file(
     name = "ml_drift_webgpu_accelerator_dylib",
     src = ":build_ml_drift_webgpu_accelerator_dylib",
     target = "libLiteRtWebGpuAccelerator.dylib",
-    visibility = ["//litert:litert_friends"],
+    visibility = [
+        "//litert:__subpackages__",
+        "//litert:litert_friends",
+    ],
 )
 
 # Target for windows libLiteRtWebGpuAccelerator.dll.
@@ -373,7 +376,10 @@ copy_file(
     name = "ml_drift_metal_accelerator_dylib",
     src = ":build_ml_drift_metal_accelerator_dylib",
     target = "libLiteRtMetalAccelerator.dylib",
-    visibility = ["//litert:litert_friends"],
+    visibility = [
+        "//litert:__subpackages__",
+        "//litert:litert_friends",
+    ],
 )
 
 ios_framework(
