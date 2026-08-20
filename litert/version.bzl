@@ -37,3 +37,6 @@ LITERT_SDK_INTEL_FULL_VERSION = "2.3.0"
 # The next version of LiteRT Converter version.
 # The minor version code should be bumped after every release.
 LITERT_CONVERTER_VERSION = "0.4.0"
+
+# Minimum Android API / SDK level supported by the LiteRT runtime, APIs, and native libraries.
+LITERT_ANDROID_NDK_MIN_SDK_VERSION = 24

@@ -16,6 +16,8 @@
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
+# copybara:uncomment load("//litert:version.bzl", "LITERT_ANDROID_NDK_MIN_SDK_VERSION")
 load("//litert/build_common:litert_build_defs.bzl", "if_oss")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test", "litert_integration_test")
@@ -457,17 +459,17 @@ litert_integration_test(
 #     ],
 # )
 #
-# # Same as above, but for SDK 24 devices. NPU is not included as it requires 31+.
+# # Same as above, but for min SDK devices. NPU is not included as it requires 31+.
 # # GPU is not included due to OpenCL unavailability on some devices.
 # guitar_workflow_test(
-#     name = "litert_guitar_device_integration_tests_kotlin_sdk_24",
+#     name = "litert_guitar_device_integration_tests_kotlin_min_sdk",
 #     auto_deps = [
 #         "//litert/kotlin/src/tests/google:litert_kotlin_api_mh_test",
 #     ],
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
 #             litert_mh_guitar_test(
-#                 sdk_version = 24,
+#                 sdk_version = LITERT_ANDROID_NDK_MIN_SDK_VERSION,
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_mh_test"],
 #             ),
 #         ],
