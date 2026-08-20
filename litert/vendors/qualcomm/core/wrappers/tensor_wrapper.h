@@ -146,6 +146,10 @@ class TensorWrapper final {
     return GetTensorType() == QNN_TENSOR_TYPE_STATIC;
   }
 
+  bool IsTensorNull() const {
+    return GetTensorType() == QNN_TENSOR_TYPE_NULL;
+  }
+
   bool IsMarkedDump() const {
     return absl::EndsWith(name_, kDumpSuffix) &&
            qnn_tensor_.v2.type == QNN_TENSOR_TYPE_APP_READ;
