@@ -132,7 +132,7 @@ cc_library(
     hdrs = ["perfetto_profiling.h"],
     defines = ["LITERT_PERFETTO_ENABLED"],
     visibility = ["//visibility:private"],
-    # copybara:uncomment deps = ["//third_party/perfetto:libperfetto_client_experimental"],
+    # copybara:uncomment deps = ["@perfetto//:libperfetto_client_experimental"],
 )
 
 cc_library(

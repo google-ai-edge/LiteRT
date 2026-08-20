@@ -272,6 +272,10 @@ load("//third_party/xdsl:workspace.bzl", xdsl = "repo")
 
 xdsl()
 
+load("//third_party/perfetto:workspace.bzl", perfetto = "repo")
+
+perfetto()
+
 load("@rules_jvm_external//:defs.bzl", "maven_install")
 
 maven_install(
