@@ -265,6 +265,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/backends:qnn_backend",
+        "//litert/vendors/qualcomm/core/builders:addn_op_builder",
         "//litert/vendors/qualcomm/core/builders:arg_min_max_op_builder",
         "//litert/vendors/qualcomm/core/builders:broadcast_to_op_builder",
         "//litert/vendors/qualcomm/core/builders:cast_op_builder",
