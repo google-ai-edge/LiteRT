@@ -30,6 +30,7 @@
 #include "ml_drift/common/selectors/special_selector.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_kernel.h"
+#include "ml_drift_delegate/delegate/composite/gated_delta_update_kernel.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_kernel.h"
 #include "ml_drift_delegate/delegate/composite/qkv_norm_rope_kernel.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_kernel.h"
@@ -64,6 +65,9 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     model_builder->AddGpuOperation(src_ids, dst_ids, std::move(op),
                                    "add_values_to_cache");
     return absl::OkStatus();
+  } else if (op.name == "gated_delta_update") {
+    return CreateGatedDeltaUpdateFromIrOp(op_def, inputs, outputs, op,
+                                          &gpu_info_, model_builder);
   } else if (op.name == "moe_experts") {
     return CreateMoeExpertsFromIrOp(create_info_, inputs, outputs, op,
                                     model_builder);
