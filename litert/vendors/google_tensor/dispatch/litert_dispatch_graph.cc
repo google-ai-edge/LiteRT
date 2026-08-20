@@ -78,12 +78,12 @@ LiteRtStatus LiteRtDispatchGraphT::Create(
   absl::Cleanup graph_cleanup = [graph] { graph->Destroy(); };
 
 #if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
-  LITERT_RETURN_IF_ERROR(
-      gt::ApplyDarwinnOptionsToGraph(graph, device_context->darwinn_options()));
+  LITERT_RETURN_IF_ERROR(gt::ApplyDarwinnOptionsToGraph(
+      graph, device_context->GetDarwinnOptions()));
 #endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
 
   // Apply Google Tensor specific options.
-  if (const auto& options = device_context->google_tensor_options();
+  if (const auto& options = device_context->GetGoogleTensorOptions();
       options.has_value() && options->performance_mode.has_value()) {
     if (GoogleTensorSouthBoundFeatureSupported(
             GoogleTensorSouthBoundFeature::kPerformanceModeAnnotation)) {
