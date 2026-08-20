@@ -213,6 +213,12 @@ class SdpaTransposedKernelExecuteTest
     if (!exec_env) {
       GTEST_SKIP() << "TestExecutionEnvironment not initialized.";
     }
+    const auto data_type = ::ml_drift::DeduceDataTypeFromPrecision(precision());
+    if (!exec_env->IsStorageSupported(storage(), data_type)) {
+      GTEST_SKIP() << "Unsupported data type: "
+                   << ::ml_drift::ToString(data_type)
+                   << " storage type: " << ::ml_drift::ToString(storage());
+    }
   }
 
  protected:
