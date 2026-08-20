@@ -31,6 +31,7 @@ cc_library(
         "//tflite:string_util",
         "//tflite/core/c:c_api_types",
         "//tflite/core/c:common",
+        "@com_google_absl//absl/base",
         "@org_tensorflow//third_party/py/numpy:headers",
         "@xla//third_party/python_runtime:headers",  # buildcleaner: keep
     ],
@@ -61,6 +62,7 @@ cc_library(
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/synchronization",
         "@xla//third_party/python_runtime:headers",  # buildcleaner: keep
     ],
 )
@@ -117,6 +119,7 @@ pybind_extension(
         ":interpreter_wrapper_lib",
         "//tflite:framework",
         "//tflite/core:framework_stable",
+        "@com_google_absl//absl/synchronization",
         "@org_tensorflow//tensorflow/python/lib/core:pybind11_lib",
         "@pybind11",
         "@xla//third_party/python_runtime:headers",
