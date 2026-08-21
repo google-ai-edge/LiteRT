@@ -50,11 +50,12 @@ limitations under the License.
 #include "tensor/examples/gemma3/util.h"
 #include "tensor/examples/gemma4/gemma4_config.h"
 #include "tensor/examples/gemma4/gemma4_graph.h"
+#include "tensor/examples/gemma4/gemma4_weights.h"
 #include "tensor/examples/gemma4/helpers/rope.h"
-#include "tensor/examples/gemma4/perfetto_session.h"
-#include "tensor/examples/gemma4/safetensor_loader.h"
 #include "tensor/examples/ops/transformer/transformer_ops_xnnpack.h"
 #include "tensor/examples/utils/initialization.h"
+#include "tensor/examples/utils/perfetto_session.h"
+#include "tensor/examples/utils/safetensor_loader.h"
 #include "tensor/runners/xnnpack/runner.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
@@ -83,6 +84,7 @@ namespace {
 constexpr int32_t kStartOfTurnToken = 105;
 constexpr int32_t kEndOfTurnToken = 106;
 
+using ::litert::tensor::PerfettoSession;
 using ::litert::tensor::examples::DecodeTiming;
 using ::litert::tensor::examples::GemmaTokenizerSP;
 using ::litert::tensor::examples::PrefillTiming;
@@ -95,7 +97,7 @@ using XnnTensor = Tensor<XnnpackMixinTag>;
 absl::Status MapGemma4WeightIdentifiers(
     tflite::xnnpack::MMapWeightCacheProvider& cache_provider,
     const absl::flat_hash_map<std::string, TensorHandle>& weights_handle) {
-  TRACE_EVENT(kGemma4Category, "MapGemma4WeightIdentifiers");
+  TRACE_EVENT(kTensorApiCategory, "MapGemma4WeightIdentifiers");
   for (const auto& [name, tensor] : weights_handle) {
     LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & buffer, tensor.GetBuffer());
     auto locked = buffer.Lock();
@@ -109,79 +111,6 @@ absl::Status MapGemma4WeightIdentifiers(
   return absl::OkStatus();
 }
 
-absl::flat_hash_map<std::string, std::string> GetGemma4WeightMapping(
-    int n_layers) {
-  absl::flat_hash_map<std::string, std::string> mapping;
-
-  // Embedding
-  mapping["model.language_model.embed_tokens.weight"] =
-      "model.embed_tokens.weight";
-
-  // Final norm
-  mapping["model.language_model.norm.weight"] = "model.norm.weight";
-
-  // Per-layer input weights
-  mapping["model.language_model.embed_tokens_per_layer.weight"] =
-      "model.embed_tokens_per_layer.weight";
-  mapping["model.language_model.per_layer_model_projection.weight"] =
-      "model.per_layer_model_projection.weight";
-  mapping["model.language_model.per_layer_projection_norm.weight"] =
-      "model.per_layer_projection_norm.weight";
-
-  // Per-layer weights
-  for (int i = 0; i < n_layers; ++i) {
-    std::string hf_prefix = absl::StrCat("model.language_model.layers.", i);
-    std::string model_prefix = absl::StrCat("model.layers.", i);
-
-    // Attention weights
-    mapping[absl::StrCat(hf_prefix, ".self_attn.q_proj.weight")] =
-        absl::StrCat(model_prefix, ".self_attn.q_proj.weight");
-    mapping[absl::StrCat(hf_prefix, ".self_attn.k_proj.weight")] =
-        absl::StrCat(model_prefix, ".self_attn.k_proj.weight");
-    mapping[absl::StrCat(hf_prefix, ".self_attn.v_proj.weight")] =
-        absl::StrCat(model_prefix, ".self_attn.v_proj.weight");
-    mapping[absl::StrCat(hf_prefix, ".self_attn.o_proj.weight")] =
-        absl::StrCat(model_prefix, ".self_attn.o_proj.weight");
-
-    // QK normalization
-    mapping[absl::StrCat(hf_prefix, ".self_attn.q_norm.weight")] =
-        absl::StrCat(model_prefix, ".self_attn.q_norm.weight");
-    mapping[absl::StrCat(hf_prefix, ".self_attn.k_norm.weight")] =
-        absl::StrCat(model_prefix, ".self_attn.k_norm.weight");
-
-    // MLP weights
-    mapping[absl::StrCat(hf_prefix, ".mlp.gate_proj.weight")] =
-        absl::StrCat(model_prefix, ".mlp.gate_proj.weight");
-    mapping[absl::StrCat(hf_prefix, ".mlp.up_proj.weight")] =
-        absl::StrCat(model_prefix, ".mlp.up_proj.weight");
-    mapping[absl::StrCat(hf_prefix, ".mlp.down_proj.weight")] =
-        absl::StrCat(model_prefix, ".mlp.down_proj.weight");
-
-    // Layer norms
-    mapping[absl::StrCat(hf_prefix, ".input_layernorm.weight")] =
-        absl::StrCat(model_prefix, ".input_layernorm.weight");
-    mapping[absl::StrCat(hf_prefix, ".post_attention_layernorm.weight")] =
-        absl::StrCat(model_prefix, ".post_attention_layernorm.weight");
-    mapping[absl::StrCat(hf_prefix, ".pre_feedforward_layernorm.weight")] =
-        absl::StrCat(model_prefix, ".pre_feedforward_layernorm.weight");
-    mapping[absl::StrCat(hf_prefix, ".post_feedforward_layernorm.weight")] =
-        absl::StrCat(model_prefix, ".post_feedforward_layernorm.weight");
-
-    // Per-layer input integration weights
-    mapping[absl::StrCat(hf_prefix, ".per_layer_input_gate.weight")] =
-        absl::StrCat(model_prefix, ".per_layer_input_gate.weight");
-    mapping[absl::StrCat(hf_prefix, ".per_layer_projection.weight")] =
-        absl::StrCat(model_prefix, ".per_layer_projection.weight");
-    mapping[absl::StrCat(hf_prefix, ".post_per_layer_input_norm.weight")] =
-        absl::StrCat(model_prefix, ".post_per_layer_input_norm.weight");
-
-    // Layer Scalar (replaces Gemma3 skip_scale)
-    mapping[absl::StrCat(hf_prefix, ".layer_scalar")] =
-        absl::StrCat(model_prefix, ".layer_scalar");
-  }
-
-  return mapping;
-}
 
 // Slices the combined per-layer model projection weight matrix
 // ("model.per_layer_model_projection.weight") of shape
@@ -191,7 +120,7 @@ absl::flat_hash_map<std::string, std::string> GetGemma4WeightMapping(
 absl::Status SlicePerLayerModelProjectionWeights(
     const Config& config,
     absl::flat_hash_map<std::string, TensorHandle>& weights_handle) {
-  TRACE_EVENT(kGemma4Category, "SlicePerLayerModelProjectionWeights");
+  TRACE_EVENT(kTensorApiCategory, "SlicePerLayerModelProjectionWeights");
   auto proj_w_it =
       weights_handle.find("model.per_layer_model_projection.weight");
   if (proj_w_it == weights_handle.end()) {
@@ -226,7 +155,7 @@ absl::Status SlicePerLayerModelProjectionWeights(
 
 absl::StatusOr<LockedBufferSpan<const float>> GetOrDequantizeEmbeddingTableFp32(
     const XnnTensor& tensor) {
-  TRACE_EVENT(kGemma4Category, "GetOrDequantizeEmbeddingTableFp32");
+  TRACE_EVENT(kTensorApiCategory, "GetOrDequantizeEmbeddingTableFp32");
   LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & buffer, tensor.GetBuffer());
   LockedBufferSpan<const float> data = LockedBufferSpan<const float>::Empty();
   if (tensor.GetQuantization() != nullptr) {
@@ -380,7 +309,7 @@ struct LoadedTensors {
 
 absl::StatusOr<LoadedTensors> LoadWeightsAndPrepareTensors(
     const SafetensorLoader& loader, const Config& config) {
-  TRACE_EVENT(kGemma4Category, "LoadWeightsAndPrepareTensors");
+  TRACE_EVENT(kTensorApiCategory, "LoadWeightsAndPrepareTensors");
   auto weight_mapping = GetGemma4WeightMapping(config.num_layers);
   LRT_TENSOR_ASSIGN_OR_RETURN(auto weights_handle,
                               loader.LoadWeightsWithMapping(weight_mapping));
@@ -503,7 +432,7 @@ absl::StatusOr<BuiltGraphs> BuildModelGraphs(
     const Config& config, int seq_len,
     const absl::flat_hash_map<std::string, TensorHandle>& weights_handle,
     bool verbose) {
-  TRACE_EVENT(kGemma4Category, "BuildModelGraphs");
+  TRACE_EVENT(kTensorApiCategory, "BuildModelGraphs");
   LRT_TENSOR_ASSIGN_OR_RETURN(
       Gemma4Inputs<XnnpackMixinTag> prefill_inputs,
       CreateGemma4Inputs(config, /*input_seq_len=*/seq_len, /*kv_cache_len=*/0,
@@ -530,7 +459,7 @@ struct CompiledRunners {
 absl::StatusOr<CompiledRunners> CompileRunners(
     BuiltGraphs& graphs, int num_threads, bool use_weight_cache,
     tflite::xnnpack::MMapWeightCacheProvider* weight_cache_provider) {
-  TRACE_EVENT(kGemma4Category, "CompileRunners");
+  TRACE_EVENT(kTensorApiCategory, "CompileRunners");
   LRT_TENSOR_ASSIGN_OR_RETURN(
       auto runner,
       XnnpackRunner::Create(graphs.prefill_outputs.GetAllHandles()));
@@ -572,14 +501,14 @@ absl::StatusOr<int32_t> ExecutePrefillPass(
     const absl::Span<const float> embedding_table_fp32,
     const absl::Span<const float> emb_per_layer_table_fp32,
     PrefillTiming& prefill_timing, bool verbose) {
-  TRACE_EVENT(kGemma4Category, "Prefill");
+  TRACE_EVENT(kTensorApiCategory, "Prefill");
   Timer::LapScope lap_scope = prefill_timing.prefill.Lap();
 
   int seq_len = static_cast<int>(input_tokens.size());
   std::vector<float> embedded_input;
   std::vector<std::vector<float>> per_layer_tok_embs;
   {
-    TRACE_EVENT(kGemma4Category, "CpuPrep");
+    TRACE_EVENT(kTensorApiCategory, "CpuPrep");
     Timer::LapScope cpu_prep_scope = prefill_timing.cpu_prep.Lap();
     embedded_input = EmbeddingLookupCpu(input_tokens, embedding_table_fp32,
                                         config.vocab_size, config.embed_dim);
@@ -590,7 +519,7 @@ absl::StatusOr<int32_t> ExecutePrefillPass(
   }
 
   {
-    TRACE_EVENT(kGemma4Category, "Uploads");
+    TRACE_EVENT(kTensorApiCategory, "Uploads");
     Timer::LapScope uploads_scope = prefill_timing.uploads.Lap();
     LRT_TENSOR_RETURN_IF_ERROR(
         runner.SetInput(inputs.embedded_input, embedded_input));
@@ -602,7 +531,7 @@ absl::StatusOr<int32_t> ExecutePrefillPass(
   }
 
   {
-    TRACE_EVENT(kGemma4Category, "Run");
+    TRACE_EVENT(kTensorApiCategory, "Run");
     Timer::LapScope run_scope = prefill_timing.run.Lap();
     LRT_TENSOR_RETURN_IF_ERROR(runner.Run());
   }
@@ -610,7 +539,7 @@ absl::StatusOr<int32_t> ExecutePrefillPass(
   LockedBufferSpan<const float> initial_output_locked =
       LockedBufferSpan<const float>::Empty();
   {
-    TRACE_EVENT(kGemma4Category, "Readback");
+    TRACE_EVENT(kTensorApiCategory, "Readback");
     Timer::LapScope readback_scope = prefill_timing.readback.Lap();
     LRT_TENSOR_ASSIGN_OR_RETURN(initial_output_locked,
                                 runner.ReadOutputAs<float>(outputs.logits));
@@ -638,7 +567,7 @@ absl::StatusOr<int32_t> ExecuteDecodeStep(
     std::vector<float>& global_cos, std::vector<float>& global_sin,
     std::vector<float>& local_cos, std::vector<float>& local_sin,
     DecodeTiming& decode_timing) {
-  TRACE_EVENT(kGemma4Category, "Decode");
+  TRACE_EVENT(kTensorApiCategory, "Decode");
   Timer::LapScope lap_scope = decode_timing.decode.Lap();
 
   std::vector<int32_t> token_vec = {current_token};
@@ -649,7 +578,7 @@ absl::StatusOr<int32_t> ExecuteDecodeStep(
   std::vector<float> global_mask(static_cast<size_t>(seq_k), 0.0f);
 
   {
-    TRACE_EVENT(kGemma4Category, "CpuPrep");
+    TRACE_EVENT(kTensorApiCategory, "CpuPrep");
     Timer::LapScope cpu_prep_scope = decode_timing.cpu_prep.Lap();
     token_embedding = EmbeddingLookupCpu(token_vec, embedding_table_fp32,
                                          config.vocab_size, config.embed_dim);
@@ -682,7 +611,7 @@ absl::StatusOr<int32_t> ExecuteDecodeStep(
   }
 
   {
-    TRACE_EVENT(kGemma4Category, "Uploads");
+    TRACE_EVENT(kTensorApiCategory, "Uploads");
     Timer::LapScope uploads_scope = decode_timing.uploads.Lap();
     LRT_TENSOR_RETURN_IF_ERROR(
         decode_runner.SetInput(decode_inputs.embedded_input, token_embedding));
@@ -715,7 +644,7 @@ absl::StatusOr<int32_t> ExecuteDecodeStep(
   }
 
   {
-    TRACE_EVENT(kGemma4Category, "Run");
+    TRACE_EVENT(kTensorApiCategory, "Run");
     Timer::LapScope lap(decode_timing.run);
     LRT_TENSOR_RETURN_IF_ERROR(decode_runner.Run());
   }
@@ -723,14 +652,14 @@ absl::StatusOr<int32_t> ExecuteDecodeStep(
   LockedBufferSpan<const float> logits_locked =
       LockedBufferSpan<const float>::Empty();
   {
-    TRACE_EVENT(kGemma4Category, "Readback");
+    TRACE_EVENT(kTensorApiCategory, "Readback");
     Timer::LapScope readback_scope = decode_timing.readback.Lap();
     LRT_TENSOR_ASSIGN_OR_RETURN(
         logits_locked,
         decode_runner.ReadOutputAs<float>(decode_outputs.logits));
   }
 
-  TRACE_EVENT(kGemma4Category, "Argmax");
+  TRACE_EVENT(kTensorApiCategory, "Argmax");
   Timer::LapScope argmax_scope = decode_timing.argmax.Lap();
   if (logits_locked.size() == 0) {
     return absl::InternalError("Decode logits span is empty.");
@@ -746,7 +675,7 @@ absl::Status UpdateKvCache(XnnpackRunner& decode_runner,
                            std::vector<std::vector<float>>& host_key_caches,
                            std::vector<std::vector<float>>& host_value_caches,
                            DecodeTiming& decode_timing) {
-  TRACE_EVENT(kGemma4Category, "UpdateKvCache");
+  TRACE_EVENT(kTensorApiCategory, "UpdateKvCache");
   for (int i = 0; i < config.num_layers; ++i) {
     if (sharing_patterns[i] != i) {
       continue;
@@ -760,7 +689,7 @@ absl::Status UpdateKvCache(XnnpackRunner& decode_runner,
         LockedBufferSpan<const float>::Empty();
 
     {
-      TRACE_EVENT(kGemma4Category, "KvCache::Readback");
+      TRACE_EVENT(kTensorApiCategory, "KvCache::Readback");
       Timer::LapScope readback_scope = decode_timing.cache_readback.Lap();
       LRT_TENSOR_ASSIGN_OR_RETURN(
           new_key_locked,
@@ -772,7 +701,7 @@ absl::Status UpdateKvCache(XnnpackRunner& decode_runner,
     }
 
     {
-      TRACE_EVENT(kGemma4Category, "KvCache::AppendAndUpload");
+      TRACE_EVENT(kTensorApiCategory, "KvCache::AppendAndUpload");
       Timer::LapScope upload_scope = decode_timing.cache_upload.Lap();
       AppendTokenToKvCache(host_key_caches[i], new_key_locked,
                            config.num_kv_heads, cache_len, head_dim);
@@ -837,15 +766,15 @@ absl::Status Run(const std::string& weights_path,
                                 PerfettoSession::Create(perfetto_out));
   }
 
-  TRACE_EVENT_BEGIN(kGemma4Category, "Load tokenizer");
+  TRACE_EVENT_BEGIN(kTensorApiCategory, "Load tokenizer");
   LRT_TENSOR_ASSIGN_OR_RETURN(GemmaTokenizerSP tokenizer,
                               GemmaTokenizerSP::Load(tokenizer_path));
-  TRACE_EVENT_END(kGemma4Category);
+  TRACE_EVENT_END(kTensorApiCategory);
 
-  TRACE_EVENT_BEGIN(kGemma4Category, "Load weights");
+  TRACE_EVENT_BEGIN(kTensorApiCategory, "Load weights");
   LRT_TENSOR_ASSIGN_OR_RETURN(SafetensorLoader loader,
                               SafetensorLoader::Load(weights_path));
-  TRACE_EVENT_END(kGemma4Category);
+  TRACE_EVENT_END(kTensorApiCategory);
   LRT_TENSOR_ASSIGN_OR_RETURN(ModelVariant model_variant,
                               DeduceModelVariant(loader));
 
@@ -875,7 +804,7 @@ absl::Status Run(const std::string& weights_path,
   tflite::xnnpack::MMapWeightCacheProvider weight_cache_provider;
   const bool use_weight_cache = !weight_cache_path.empty();
   if (use_weight_cache) {
-    TRACE_EVENT(kGemma4Category, "MapWeightCache");
+    TRACE_EVENT(kTensorApiCategory, "MapWeightCache");
     LRT_TENSOR_RETURN_IF_ERROR(MapGemma4WeightIdentifiers(
         weight_cache_provider, loaded_tensors.weights_handle));
     if (!weight_cache_provider.LoadOrStartBuild(weight_cache_path.c_str())) {
@@ -885,10 +814,10 @@ absl::Status Run(const std::string& weights_path,
     }
   }
 
-  TRACE_EVENT_BEGIN(kGemma4Category, "TokenizerEncode");
+  TRACE_EVENT_BEGIN(kTensorApiCategory, "TokenizerEncode");
   std::vector<int32_t> input_tokens =
       tokenizer.Encode(prompt, /*add_bos=*/true);
-  TRACE_EVENT_END(kGemma4Category);
+  TRACE_EVENT_END(kTensorApiCategory);
   int seq_len = static_cast<int>(input_tokens.size());
 
   if (verbose) {
@@ -954,7 +883,7 @@ absl::Status Run(const std::string& weights_path,
   std::vector<std::vector<float>> host_value_caches(config.num_layers);
 
   {
-    TRACE_EVENT(kGemma4Category, "InitKvCacheFromPrefill");
+    TRACE_EVENT(kTensorApiCategory, "InitKvCacheFromPrefill");
     for (int i = 0; i < config.num_layers; ++i) {
       if (sharing_patterns[i] != i) {
         continue;
@@ -1010,7 +939,7 @@ absl::Status Run(const std::string& weights_path,
 
   int tokens_generated = 0;
   for (int step = 0; step < max_tokens; ++step) {
-    TRACE_EVENT(kGemma4Category, "DecodeStep");
+    TRACE_EVENT(kTensorApiCategory, "DecodeStep");
     LRT_TENSOR_ASSIGN_OR_RETURN(
         current_token,
         ExecuteDecodeStep(

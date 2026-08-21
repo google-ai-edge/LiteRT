@@ -12,7 +12,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-#include "tensor/examples/gemma4/safetensor_loader.h"
+#include "tensor/examples/utils/safetensor_loader.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -41,6 +41,7 @@ limitations under the License.
 #include "tensor/examples/utils/safetensors.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
+#include "perfetto/tracing/track_event.h"  // from @perfetto
 
 namespace litert::tensor::examples {
 
@@ -773,68 +774,4 @@ SafetensorLoader::LoadWeightsWithMapping(
   }
   return tensors;
 }
-
-absl::flat_hash_map<std::string, std::string> GetGemma4WeightMapping(
-    int n_layers) {
-  absl::flat_hash_map<std::string, std::string> mapping;
-
-  // Embedding
-  mapping["model.embed_tokens.weight"] = "model.embed_tokens.weight";
-
-  // Final norm
-  mapping["model.norm.weight"] = "model.norm.weight";
-
-  // Per-layer weights
-  for (int i = 0; i < n_layers; ++i) {
-    std::string hf_prefix = absl::StrCat("model.layers.", i);
-    std::string model_prefix = hf_prefix;
-
-    // Attention weights
-    mapping[absl::StrCat(hf_prefix, ".self_attn.q_proj.weight")] =
-        absl::StrCat(model_prefix, ".self_attn.q_proj.weight");
-    mapping[absl::StrCat(hf_prefix, ".self_attn.k_proj.weight")] =
-        absl::StrCat(model_prefix, ".self_attn.k_proj.weight");
-    mapping[absl::StrCat(hf_prefix, ".self_attn.v_proj.weight")] =
-        absl::StrCat(model_prefix, ".self_attn.v_proj.weight");
-    mapping[absl::StrCat(hf_prefix, ".self_attn.o_proj.weight")] =
-        absl::StrCat(model_prefix, ".self_attn.o_proj.weight");
-
-    // QK normalization (Gemma3 specific)
-    mapping[absl::StrCat(hf_prefix, ".self_attn.q_norm.weight")] =
-        absl::StrCat(model_prefix, ".self_attn.q_norm.weight");
-    mapping[absl::StrCat(hf_prefix, ".self_attn.k_norm.weight")] =
-        absl::StrCat(model_prefix, ".self_attn.k_norm.weight");
-
-    // MLP weights
-    mapping[absl::StrCat(hf_prefix, ".mlp.gate_proj.weight")] =
-        absl::StrCat(model_prefix, ".mlp.gate_proj.weight");
-    mapping[absl::StrCat(hf_prefix, ".mlp.up_proj.weight")] =
-        absl::StrCat(model_prefix, ".mlp.up_proj.weight");
-    mapping[absl::StrCat(hf_prefix, ".mlp.down_proj.weight")] =
-        absl::StrCat(model_prefix, ".mlp.down_proj.weight");
-
-    // Layer norms
-    mapping[absl::StrCat(hf_prefix, ".input_layernorm.weight")] =
-        absl::StrCat(model_prefix, ".input_layernorm.weight");
-    mapping[absl::StrCat(hf_prefix, ".post_attention_layernorm.weight")] =
-        absl::StrCat(model_prefix, ".post_attention_layernorm.weight");
-    mapping[absl::StrCat(hf_prefix, ".pre_feedforward_layernorm.weight")] =
-        absl::StrCat(model_prefix, ".pre_feedforward_layernorm.weight");
-    mapping[absl::StrCat(hf_prefix, ".post_feedforward_layernorm.weight")] =
-        absl::StrCat(model_prefix, ".post_feedforward_layernorm.weight");
-
-    // Gemma 4 per-layer components
-    mapping[absl::StrCat(hf_prefix, ".per_layer_input_gate.weight")] =
-        absl::StrCat(model_prefix, ".per_layer_input_gate.weight");
-    mapping[absl::StrCat(hf_prefix, ".per_layer_projection.weight")] =
-        absl::StrCat(model_prefix, ".per_layer_projection.weight");
-    mapping[absl::StrCat(hf_prefix, ".post_per_layer_input_norm.weight")] =
-        absl::StrCat(model_prefix, ".post_per_layer_input_norm.weight");
-    mapping[absl::StrCat(hf_prefix, ".layer_scalar")] =
-        absl::StrCat(model_prefix, ".layer_scalar");
-  }
-
-  return mapping;
-}
-
 }  // namespace litert::tensor::examples
