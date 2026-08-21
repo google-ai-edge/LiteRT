@@ -1717,9 +1717,9 @@ cc_test(
     deps = [
         ":test_main",
         ":test_util",
+        "//tflite/core/c:c_api_types",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
-        "@flatbuffers",
     ],
 )
 
