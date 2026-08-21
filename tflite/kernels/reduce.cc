@@ -416,10 +416,7 @@ TfLiteStatus PrepareSimple(TfLiteContext* context, TfLiteNode* node) {
     data->noop &= output_num_elements <= kMaxConstantOutputTensorSize;
   }
 
-  if (op_context.input->type == kTfLiteInt16) {
-    TF_LITE_ENSURE_EQ(context, op_context.input->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, op_context.output->params.zero_point, 0);
-  }
+  // int16 asymmetric activations supported; offsets threaded into reduce kernels.
 
   TfLiteTensor* resolved_axis;
   TF_LITE_ENSURE_OK(
@@ -478,10 +475,8 @@ TfLiteStatus PrepareMeanOrSum(TfLiteContext* context, TfLiteNode* node) {
     data->shift = exponent;
   }
 
-  if (op_context.input->type == kTfLiteInt16) {
-    TF_LITE_ENSURE_EQ(context, op_context.input->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, op_context.output->params.zero_point, 0);
-  }
+  // int16 asymmetric supported; input/output offsets are propagated to the
+  // reduce mean/sum kernels via input->params.zero_point / output->params.zero_point.
 
   TfLiteTensor* temp_sum;
   TF_LITE_ENSURE_OK(context,
@@ -515,10 +510,8 @@ TfLiteStatus PrepareProd(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_OK(context,
                     GetTemporarySafe(context, node, /*index=*/2, &temp_prod));
 
-  if (op_context.input->type == kTfLiteInt16) {
-    TF_LITE_ENSURE_EQ(context, op_context.input->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, op_context.output->params.zero_point, 0);
-  }
+  // int16 asymmetric supported; QuantizedReduceProd in
+  // internal/reference/reduce.h accepts both input_zero_point and output_zero_point.
 
   if (!IsConstantOrPersistentTensor(op_context.axis)) {
     SetTensorToDynamic(temp_prod);

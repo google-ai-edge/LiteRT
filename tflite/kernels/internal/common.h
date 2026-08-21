@@ -581,6 +581,12 @@ inline void LUTPopulateInt16(FloatT input_scale, int32_t input_zero_point,
   const FloatT table_max =
       static_cast<FloatT>(std::numeric_limits<int16_t>::max());
 
+  // Bake output_zero_point into every stored LUT entry so LookupTable can
+  // return raw-domain values directly. Mirrors the int8 LUT populator, which
+  // does `quantized = rescaled + output_zero_point`. Without this, the LUT
+  // silently assumes zp==0 and asymmetric-output flows produce values off
+  // by output_zero_point.
+  const FloatT output_zp = static_cast<FloatT>(output_zero_point);
   for (int i = 0; i < nb_steps; i++) {
     const FloatT val =
         LUTTransform<FloatT>(transform, transform_params, input_min + i * step);
@@ -589,12 +595,14 @@ inline void LUTPopulateInt16(FloatT input_scale, int32_t input_zero_point,
     const FloatT val_next = LUTTransform<FloatT>(transform, transform_params,
                                                  input_min + (i + 1) * step);
 
-    const FloatT sample_val = TfLiteRound(val * output_scaling_inv);
+    const FloatT sample_val = TfLiteRound(val * output_scaling_inv + output_zp);
     const FloatT midpoint_interp_val =
         TfLiteRound((val_next * output_scaling_inv +
                      TfLiteRound(val * output_scaling_inv)) /
-                    2);
-    const FloatT midpoint_val = TfLiteRound(val_midpoint * output_scaling_inv);
+                    2) +
+        output_zp;
+    const FloatT midpoint_val =
+        TfLiteRound(val_midpoint * output_scaling_inv + output_zp);
     const FloatT midpoint_err = midpoint_interp_val - midpoint_val;
     const FloatT bias = TfLiteRound(midpoint_err / 2);
 
@@ -605,7 +613,8 @@ inline void LUTPopulateInt16(FloatT input_scale, int32_t input_zero_point,
   lut[nb_steps] = static_cast<int16_t>(std::min<FloatT>(
       std::max<FloatT>(TfLiteRound(LUTTransform<FloatT>(
                                        transform, transform_params, input_max) *
-                                   output_scaling_inv),
+                                       output_scaling_inv +
+                                   output_zp),
                        table_min),
       table_max));
 }

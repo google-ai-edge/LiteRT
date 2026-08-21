@@ -141,12 +141,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   if (input1->type == kTfLiteInt16 && input2->type == kTfLiteInt16 &&
       output->type == kTfLiteInt16 && input_quantized) {
-    // In case of int16, quantization is symmetic and
-    // zero point should be zero.
-    TF_LITE_ENSURE_EQ(context, input1->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, input2->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, output->params.zero_point, 0);
-
+    // Note: asymmetric int16 is supported on the general (non-POT) path
+    // below; the POT/LSTM path further down still requires zp==0.
     general_scale_int16 = !params->pot_scale_int16;
 
     if (!general_scale_int16) {

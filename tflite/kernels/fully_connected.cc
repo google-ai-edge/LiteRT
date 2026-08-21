@@ -581,8 +581,7 @@ TfLiteStatus PrepareImpl(TfLiteContext* context, TfLiteNode* node,
         &data->output_activation_max));
   }
   if (input->type == kTfLiteInt16 && output->type == kTfLiteInt16) {
-    TF_LITE_ENSURE_EQ(context, input->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, output->params.zero_point, 0);
+    // int16 asymmetric activations supported; offsets threaded in FullyConnectedInt16.
 
     // Check quantized_bias_type is either kTfLiteInt64 or kTfLiteInt32.
     if (params->quantized_bias_type != kTfLiteFloat32) {

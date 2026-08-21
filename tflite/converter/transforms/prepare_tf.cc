@@ -1652,10 +1652,24 @@ class QuantizeMeanResult : public OpRewritePattern<TF::MeanOp> {
 
   LogicalResult matchAndRewrite(TF::MeanOp mean,
                                 PatternRewriter &rewriter) const override {
-    // Skip ops where the output is already quantized.
+    // Skip ops where the output is already quantized. Walk through same-scale
+    // reorder ops (transpose/reshape/squeeze/expand_dims) that ReorderFakeQuant
+    // may have moved between the mean and its output FakeQuant. Without this,
+    // when the graph is `mean -> transpose -> FQ_out` (after ReorderFakeQuant
+    // pulled FQ_out past the transpose), this pattern would fire, copy mean's
+    // INPUT FQ params onto the mean output, overwrite the downstream FQ_out,
+    // and produce a scale mismatch at the same-scale reorder op.
     for (auto *user : mean->getUsers()) {
-      if (mlir::dyn_cast_or_null<TFL::QuantizeOp>(user) ||
-          mlir::dyn_cast_or_null<TF::FakeQuantWithMinMaxVarsOp>(user)) {
+      Operation *w = user;
+      while (w && w->hasOneUse() &&
+             (mlir::isa<TF::TransposeOp>(w) ||
+              mlir::isa<TF::ReshapeOp>(w) ||
+              mlir::isa<TF::SqueezeOp>(w) ||
+              mlir::isa<TF::ExpandDimsOp>(w))) {
+        w = *w->getUsers().begin();
+      }
+      if (mlir::dyn_cast_or_null<TFL::QuantizeOp>(w) ||
+          mlir::dyn_cast_or_null<TF::FakeQuantWithMinMaxVarsOp>(w)) {
         return failure();
       }
     }

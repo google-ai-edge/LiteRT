@@ -236,10 +236,8 @@ TfLiteStatus ReluPrepare(TfLiteContext* context, TfLiteNode* node) {
                        &data->output_shift);
   }
 
-  if (input->type == kTfLiteInt16) {
-    TF_LITE_ENSURE_EQ(context, input->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, output->params.zero_point, 0);
-  }
+  // Note: asymmetric int16 activations are supported here; QuantizedReluX
+  // consumes params.input_offset/output_offset from the tensors' zero_points.
 
   return context->ResizeTensor(context, output,
                                TfLiteIntArrayCopy(input->dims));
@@ -320,10 +318,8 @@ TfLiteStatus LeakyReluPrepare(TfLiteContext* context, TfLiteNode* node) {
                        &data->output_shift_identity);
   }
 
-  if (input->type == kTfLiteInt16 && output->type == kTfLiteInt16) {
-    TF_LITE_ENSURE_EQ(context, input->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, output->params.zero_point, 0);
-  }
+  // Note: asymmetric int16 is supported for LeakyRelu; QuantizeLeakyRelu
+  // uses params.input_offset/output_offset from the tensor zero_points.
 
   return context->ResizeTensor(context, output,
                                TfLiteIntArrayCopy(input->dims));
