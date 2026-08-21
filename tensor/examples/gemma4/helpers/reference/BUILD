@@ -105,7 +105,6 @@ py_library(
         ":attention_lib",
         ":feed_forward_network_lib",
         ":rmsnorm_lib",
-        ":rope_lib",
         ":utils",
         "@org_tensorflow//third_party/py/numpy:headers",
     ],

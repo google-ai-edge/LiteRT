@@ -50,7 +50,6 @@ cc_library(
         "//tensor:arithmetic",
         "//tensor:buffer",
         "//tensor:datatypes",
-        "//tensor/utils:macros",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
     ],

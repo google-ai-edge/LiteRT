@@ -72,7 +72,6 @@ cc_test(
         "//tflite/delegates/xnnpack:weight_cache",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -99,7 +98,6 @@ cc_test(
         ":perfetto_session",
         "//tensor/utils:matchers",
         "@com_google_googletest//:gtest_main",
-        "@perfetto//:libperfetto_client_experimental",
     ],
 )
 
@@ -156,7 +154,6 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
-        "@perfetto//:libperfetto_client_experimental",
     ],
 )
 
