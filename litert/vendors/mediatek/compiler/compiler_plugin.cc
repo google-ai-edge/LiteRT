@@ -38,6 +38,7 @@
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_opaque_options_wrapper.h"
 #include "litert/cc/internal/litert_options_wrapper.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/compiler/cc/litert_model.h"
@@ -429,6 +430,22 @@ bool IsOpSupported(const litert::compiler::Op& op) {
   return false;
 }
 
+bool IsInt32ReshapeUnsupportedByMdla(const litert::compiler::Op& op) {
+  if (op.Code() != kLiteRtOpCodeTflReshape) {
+    return false;
+  }
+  auto is_int32 = [](const litert::compiler::Tensor& t) {
+    return t.ElementType() == litert::ElementType::Int32;
+  };
+  for (const auto& t : op.Inputs()) {
+    if (is_int32(t)) return true;
+  }
+  for (const auto& t : op.Outputs()) {
+    if (is_int32(t)) return true;
+  }
+  return false;
+}
+
 }  // namespace
 
 LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
@@ -467,7 +484,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   if (!neuron_adapter_api->IsFeatureEnabled(
           litert::mediatek::NeuronFeatureType::NEURON_FEATURE_UNKNOWN_OP)) {
     for (const auto& op : ops) {
-      if (!IsOpSupported(op)) {
+      if (!IsOpSupported(op) || IsInt32ReshapeUnsupportedByMdla(op)) {
         continue;
       }
       LITERT_RETURN_IF_ERROR(op.ctx()->push_op(selected_ops, op.Get(), 0));
@@ -481,7 +498,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   std::unordered_set<int> unknown_op_indices;
   for (int op_idx = 0; op_idx < num_ops; ++op_idx) {
     const auto& op = ops[op_idx];
-    if (!IsOpSupported(op)) {
+    if (!IsOpSupported(op) || IsInt32ReshapeUnsupportedByMdla(op)) {
       unknown_op_indices.insert(op_idx);
     }
   }
@@ -509,7 +526,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     return status.Error().Status();
   }
   for (int op_idx = 0; op_idx < num_ops; ++op_idx) {
-    if (support_flags[op_idx]) {
+    if (support_flags[op_idx] &&
+        !IsInt32ReshapeUnsupportedByMdla(ops[op_idx])) {
       LITERT_RETURN_IF_ERROR(
           ops[op_idx].ctx()->push_op(selected_ops, ops[op_idx].Get(), 0));
     }
