@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>LiteRT Zero-Copy WebGPU Segmentation Demo</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f0f2f5; }
+    h1 { color: #333; }
+    .container { display: flex; gap: 20px; }
+    .panel { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    .video-container { position: relative; width: 100%; max-width: 512px; }
+    video { width: 100%; border-radius: 4px; background: #000; display: block; }
+    canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; border-radius: 4px; }
+    #info { margin-top: 15px; font-family: monospace; color: #555; }
+  </style>
+</head>
+<body>
+  <h1>LiteRT WebAssembly: Real-Time WebGPU Segmentation</h1>
+  <p>Demonstrating zero-copy pipeline execution mapping an HTML5 webcam feed directly into LiteRT runtime buffers using WebGPU and Emscripten.</p>
+
+  <div class="container">
+    <div class="panel">
+      <h3>Live WebCam with Segmentation Mask</h3>
+      <div class="video-container">
+        <video id="webcam" autoplay playsinline></video>
+        <canvas id="outputCanvas" width="256" height="256"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div id="info">Initializing Emscripten WASM runtime & WebGPU...</div>
+  <div id="perf" style="font-family: monospace; margin-top: 10px;"></div>
+
+
+  <!-- Load Emscripten WebAssembly sandbox -->
+  <script src="../tensor_wasm_internal.js"></script>
+  <script type="module">
+    import { createLiteRT } from '../tensor_wasm.js';
+
+    async function runDemo() {
+      const infoDiv = document.getElementById('info');
+
+      // Request WebGPU adapter and device
+      if (!navigator.gpu) {
+        infoDiv.textContent = "Error: WebGPU is not supported by this browser.";
+        return;
+      }
+      const adapter = await navigator.gpu.requestAdapter();
+      const device = await adapter.requestDevice();
+
+      // Load the LiteRT WebAssembly sandbox module
+      const litert = await createLiteRT({
+        preinitializedWebGPUDevice: device
+      });
+
+      infoDiv.textContent = "WebAssembly & WebGPU initialized. Setting up camera feed...";
+
+      // Load selfie multiclass segmentation model
+      const modelUrl = "selfie_multiclass_256x256.tflite";
+      const response = await fetch(modelUrl);
+      const modelBytes = await response.arrayBuffer();
+
+      // Setup live camera feed
+      const video = document.getElementById('webcam');
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 512, height: 512 } });
+      video.srcObject = stream;
+      await video.play();
+      // 1. Create Input Tensors for Pre-processing
+      const rawImage = litert.createTensor({
+        name: "raw_image",
+        type: "FP32",
+        shape: [1, 512, 512, 3]
+      });
+
+      const scaleTensor = litert.createTensor({
+        name: "scale",
+        type: "FP32",
+        shape: [1]
+      });
+
+      const offsetTensor = litert.createTensor({
+        name: "offset",
+        type: "FP32",
+        shape: [1]
+      });
+
+      // 2. Build Pre-processing Graph: resize -> scale (mul) -> normalize (add)
+      const resized = rawImage.resizeBilinear([256, 256], false, false);
+      const preprocessed = resized.mul(scaleTensor)
+                                   .add(offsetTensor);
+
+      // 3. Create Input Tensors for Post-processing
+      const modelOutput = litert.createTensor({
+        name: "model_output",
+        type: "FP32",
+        shape: [1, 256, 256, 6]
+      });
+
+      const colors = litert.createTensor({
+        name: "colors",
+        type: "FP32",
+        shape: [6, 4]
+      });
+
+      // 4. Build Post-processing Graph: ArgMax -> Reshape -> Gather -> Reshape
+      const winningClasses = modelOutput.argMax(-1);
+      const winning1D = winningClasses.reshape([256 * 256]);
+      const maskColor1D = colors.gather(winning1D, 0);
+      const maskOut = maskColor1D.reshape([1, 256, 256, 4]);
+
+      // 5. Init Pre/Core/Post model runners
+      const preRunner = await litert.createGraphRunner(
+          {"raw_image": rawImage, "scale": scaleTensor, "offset": offsetTensor},
+          {"normalized_image": preprocessed}
+      );
+      console.log("HwAccelerators:", litert.HwAccelerators);
+      if (litert.HwAccelerators) {
+        console.log("CPU:", litert.HwAccelerators.CPU);
+      }
+
+      const coreRunner = litert.createModelRunner(new Uint8Array(modelBytes), litert.HwAccelerators ? (litert.HwAccelerators.CPU.value | litert.HwAccelerators.GPU.value) : 3);
+
+      const postRunner = await litert.createGraphRunner(
+          {"model_output": modelOutput, "colors": colors},
+          {"blended": maskOut}
+      );
+
+      const canvas = document.getElementById("outputCanvas");
+      const gpu_context = canvas.getContext("webgpu");
+
+      const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
+      gpu_context.configure({
+        device,
+        format: presentationFormat,
+        alphaMode: 'premultiplied',
+      });
+
+      const vert_code = `
+      @vertex
+      fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
+        var pos = array<vec2<f32>, 3>(
+            vec2<f32>(-1.0, -1.0),
+            vec2<f32>(3.0, -1.0),
+            vec2<f32>(-1.0, 3.0));
+        return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+      }`;
+
+      const frag_code = `
+      @group(0) @binding(0) var<storage, read> image_data: array<f32>;
+
+      @fragment
+      fn main(@builtin(position) coord : vec4<f32>) -> @location(0) vec4<f32> {
+        let x = u32(coord.x);
+        let y = u32(coord.y);
+        let cy = clamp(y, 0u, 255u);
+        let cx = clamp(x, 0u, 255u);
+        let idx = (cy * 256u + cx) * 4u;
+        let r = image_data[idx];
+        let g = image_data[idx + 1u];
+        let b = image_data[idx + 2u];
+        let a = image_data[idx + 3u];
+
+        return vec4<f32>(r * a, g * a, b * a, a);
+      }`;
+
+      const pipeline = device.createRenderPipeline({
+        layout: 'auto',
+        vertex: {
+          module: device.createShaderModule({ code: vert_code }),
+          entryPoint: 'main',
+        },
+        fragment: {
+          module: device.createShaderModule({ code: frag_code }),
+          entryPoint: 'main',
+          targets: [{ format: presentationFormat }],
+        },
+        primitive: { topology: 'triangle-list' },
+      });
+
+      infoDiv.textContent = "Model loaded. Processing frames...";
+
+      let isProcessing = false; // Used to prevent concurrent frame processing
+      const floatPixels = new Float32Array(512 * 512 * 3);
+
+      const perfDiv = document.getElementById('perf'); // Used to display performance metrics
+      let lastFrameTime = performance.now();
+
+      const tmpCanvas = document.createElement("canvas");
+      tmpCanvas.width = 512;
+      tmpCanvas.height = 512;
+      const tmpCtx = tmpCanvas.getContext("2d", { willReadFrequently: true });
+
+      async function processFrame() {
+        if (isProcessing) {
+          requestAnimationFrame(processFrame);
+          return;
+        }
+        if (video.videoWidth === 0) {
+          requestAnimationFrame(processFrame);
+          return;
+        }
+        isProcessing = true;
+        const tTotal0 = performance.now();
+
+        try {
+          // 1. Capture video frame to temporary input Canvas for CPU readback
+
+          tmpCtx.drawImage(video, 0, 0, 512, 512);
+
+          // Map extracted raw RGB float/int pixel array directly to the input Tensor CPU buffer view
+          const rawPixels = tmpCtx.getImageData(0, 0, 512, 512).data;
+
+          // Copy image pixels into intermediate CPU model tensor
+          for (let i = 0, j = 0; i < 512 * 512 * 4; i += 4, j += 3) {
+            floatPixels[j] = rawPixels[i] / 255.0;
+            floatPixels[j + 1] = rawPixels[i + 1] / 255.0;
+            floatPixels[j + 2] = rawPixels[i + 2] / 255.0;
+          }
+ 
+          // Pass input data to pre-processing model
+          const tSetPre0 = performance.now();
+          // Get raw GPU buffer handle
+          const preInputTensor = preRunner.getInput("raw_image");
+          const dstBufferIdPre = preInputTensor.getWebGpuBuffer();
+          const dstBufferPre = litert.WebGPU.getJsObject(dstBufferIdPre);
+
+          // Copy directly to GPU buffer!
+          device.queue.writeBuffer(dstBufferPre, 0, floatPixels);
+
+          // Set constants for pre-processing
+          const scaleData = new Float32Array([2.0]);
+          preRunner.setInputBinary("scale", new Uint8Array(scaleData.buffer));
+
+          const offsetData = new Float32Array([-1.0]);
+          preRunner.setInputBinary("offset", new Uint8Array(offsetData.buffer));
+          const tSetPre1 = performance.now();
+ 
+          // Execute Pre-processing
+          const tPre0 = performance.now();
+          await preRunner.run();
+          const tPre1 = performance.now();
+
+          // Pass output of pre-processing to core model
+          const preOutputTensor = preRunner.getOutput("normalized_image");
+
+          const coreInputTensor = coreRunner.getInput(0);
+          const inputName = coreInputTensor.getName();
+
+          const tSetCore0 = performance.now();
+          
+          // Share WebGPU buffer directly between runners instead of copying!
+          coreRunner.setInput(inputName, preOutputTensor);
+          
+          const tSetCore1 = performance.now();
+
+          // Execute Core Model
+          const tCore0 = performance.now();
+          await coreRunner.run();
+          await device.queue.onSubmittedWorkDone();
+          const tCore1 = performance.now();
+
+          // Pass output of core model to post-processing
+          const coreOutputTensor = coreRunner.getOutput(0);
+          const tSetPost0 = performance.now();
+          
+          // Share WebGPU buffer directly between runners instead of copying!
+          postRunner.setInput("model_output", coreOutputTensor);
+          // Set colors for post-processing (RGBA)
+          const colorsData = new Float32Array([
+            0.0, 0.0, 0.0, 0.0, // Background (transparent)
+            1.0, 0.0, 0.0, 0.5, // Class 1 (semi-transparent red)
+            0.0, 1.0, 0.0, 0.5, // Class 2 (semi-transparent green)
+            0.0, 0.0, 1.0, 0.5, // Class 3 (semi-transparent blue)
+            1.0, 1.0, 0.0, 0.5, // Class 4 (semi-transparent yellow)
+            1.0, 0.0, 1.0, 0.5  // Class 5 (semi-transparent magenta)
+          ]);
+          postRunner.setInputBinary("colors", new Uint8Array(colorsData.buffer));
+
+          const tSetPost1 = performance.now();
+
+          // Execute Post-processing
+          const tPost0 = performance.now();
+          await postRunner.run();
+          const tPost1 = performance.now();
+
+          const postOutputTensor = postRunner.getOutput("blended");
+          const tDraw0 = performance.now();
+
+
+          const bufferId = postOutputTensor.getWebGpuBuffer();
+          const gpuBuffer = litert.WebGPU.getJsObject(bufferId);
+
+          const textureView = gpu_context.getCurrentTexture().createView();
+
+          const renderPassDescriptor = {
+            colorAttachments: [
+              {
+                view: textureView,
+                clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 0.0 },
+                loadOp: 'clear',
+                storeOp: 'store',
+              },
+            ],
+          };
+
+          const bindGroup = device.createBindGroup({
+            layout: pipeline.getBindGroupLayout(0),
+            entries: [
+              {
+                binding: 0,
+                resource: { buffer: gpuBuffer },
+              },
+            ],
+          });
+
+          const commandEncoderRender = device.createCommandEncoder();
+          const passEncoder = commandEncoderRender.beginRenderPass(renderPassDescriptor);
+          passEncoder.setPipeline(pipeline);
+          passEncoder.setBindGroup(0, bindGroup);
+          passEncoder.draw(3, 1, 0, 0);
+          passEncoder.end();
+
+          device.queue.submit([commandEncoderRender.finish()]);
+          await device.queue.onSubmittedWorkDone();
+
+          const tDraw1 = performance.now();
+          const tTotal1 = performance.now();
+
+          const cycleTime = tTotal1 - lastFrameTime;
+          lastFrameTime = tTotal1;
+          perfDiv.innerHTML = `<div style="font-size: 1.5em; font-weight: bold; color: #007acc; margin-bottom: 5px;">Proc FPS: ${(1000 / (tTotal1 - tTotal0)).toFixed(1)} | Cycle FPS: ${(1000 / cycleTime).toFixed(1)}</div><div>SetPre=${(tSetPre1 - tSetPre0).toFixed(2)}ms, Pre=${(tPre1 - tPre0).toFixed(2)}ms, SetCore=${(tSetCore1 - tSetCore0).toFixed(2)}ms, Core=${(tCore1 - tCore0).toFixed(2)}ms, SetPost=${(tSetPost1 - tSetPost0).toFixed(2)}ms, Post=${(tPost1 - tPost0).toFixed(2)}ms, Draw=${(tDraw1 - tDraw0).toFixed(2)}ms</div>`;
+
+          requestAnimationFrame(processFrame);
+
+        } catch (wasmError) {
+          console.error("WebAssembly execution fault:", wasmError);
+          document.getElementById('info').style.color = "red";
+          document.getElementById('info').textContent = `WASM Fault: ${wasmError.message || wasmError}`;
+        } finally {
+          isProcessing = false;
+        }
+      }
+      processFrame();
+    }
+
+    runDemo().catch(err => {
+      console.error(err);
+      document.getElementById('info').textContent = `Error: ${err.message}`;
+    });
+  </script>
+</body>
+</html>
