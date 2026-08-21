@@ -1608,6 +1608,7 @@ GetOpBuilders() {
       Adapt<BuildDynamicUpdateSliceOp>;
   builders[kLiteRtOpCodeTflRelu0To1] = Adapt<BuildRelu0To1Op>;
   builders[kLiteRtOpCodeTflSign] = Adapt<BuildSignOp>;
+  builders[kLiteRtOpCodeTflExpandDims] = Adapt<BuildReshapeOp>;
   builders[kLiteRtOpCodeShloComposite] = Adapt<BuildShloCompositeOp>;
   return builders;
 }
