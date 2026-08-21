@@ -733,12 +733,38 @@ bool Conv3DTransposeMustRejectIfInvoked(const Conv3DTransposeCase& test_case) {
       HasNegativeDim(test_case.input_shape) ||
       HasNegativeDim(test_case.filter_shape) ||
       HasNonPositiveDim(test_case.input_shape, {1, 2, 3, 4}) ||
-      HasNonPositiveDim(test_case.filter_shape, {0, 1, 2, 3, 4}) ||
+      HasNonPositiveDim(test_case.filter_shape, {0, 1, 2, 4}) ||
       test_case.input_shape[4] != test_case.filter_shape[4] ||
       test_case.output_shape[0] != test_case.input_shape[0] ||
-      test_case.output_shape[4] != test_case.filter_shape[3]) {
+      test_case.output_shape[4] != test_case.filter_shape[3] ||
+      test_case.stride_depth <= 0 || test_case.stride_width <= 0 ||
+      test_case.stride_height <= 0 || test_case.dilation_depth <= 0 ||
+      test_case.dilation_width <= 0 || test_case.dilation_height <= 0) {
     return true;
   }
+
+  int32_t expected_input_depth = 0;
+  int32_t expected_input_height = 0;
+  int32_t expected_input_width = 0;
+  if (!GetConvolutionOutputDim(test_case.padding, test_case.output_shape[1],
+                               test_case.filter_shape[0],
+                               test_case.stride_depth, test_case.dilation_depth,
+                               &expected_input_depth) ||
+      !GetConvolutionOutputDim(test_case.padding, test_case.output_shape[2],
+                               test_case.filter_shape[1],
+                               test_case.stride_height,
+                               test_case.dilation_height,
+                               &expected_input_height) ||
+      !GetConvolutionOutputDim(test_case.padding, test_case.output_shape[3],
+                               test_case.filter_shape[2],
+                               test_case.stride_width, test_case.dilation_width,
+                               &expected_input_width) ||
+      expected_input_depth != test_case.input_shape[1] ||
+      expected_input_height != test_case.input_shape[2] ||
+      expected_input_width != test_case.input_shape[3]) {
+    return true;
+  }
+
   return ProductOverflowsInt32(
       {test_case.output_shape[0], test_case.output_shape[1],
        test_case.output_shape[2], test_case.output_shape[3],
@@ -1193,6 +1219,22 @@ TEST(ConvolutionFuzzTest, PersistentFilterInvokesMultithreadedKernel) {
                        /*force_persistent_filter=*/true,
                        /*invoke=*/true}),
             RunResult::kSuccess);
+}
+
+TEST(ConvolutionFuzzTest, Conv3DTransposeZeroOutputChannelSuccess) {
+  Conv3DTransposeCase test_case;
+  test_case.output_shape = {1, 3, 1, 1, 0};
+  test_case.filter_shape = {1, 1, 1, 0, 1};
+  test_case.input_shape = {1, 1, 1, 1, 1};
+  test_case.padding = Padding_SAME;
+  test_case.stride_depth = 4;
+  test_case.stride_width = 1;
+  test_case.stride_height = 2;
+  test_case.dilation_depth = 2;
+  test_case.dilation_width = 1;
+  test_case.dilation_height = 1;
+  test_case.invoke = true;
+  Conv3DTransposeIsSafeAndContractCompliant(test_case);
 }
 #endif
 
