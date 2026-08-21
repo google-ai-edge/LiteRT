@@ -64,6 +64,7 @@ target_sources(qnn_builders
         transpose_conv_op_builder.cc
         transpose_op_builder.cc
         unpack_op_builder.cc
+        unsigned_boundary.cc
         log_softmax_op_builder.cc
         scatter_nd_op_builder.cc
         topk_op_builder.cc
