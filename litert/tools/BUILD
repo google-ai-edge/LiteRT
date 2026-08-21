@@ -67,6 +67,19 @@ exports_files([
 #
 # copybara:uncomment_end
 
+py_library(
+    name = "externalize_litertlm_sections_lib",
+    srcs = ["externalize_litertlm_sections.py"],
+)
+
+py_test(
+    name = "externalize_litertlm_sections_test",
+    srcs = ["externalize_litertlm_sections_test.py"],
+    deps = [
+        ":externalize_litertlm_sections_lib",
+    ],
+)
+
 # This user library should depend on libLiteRt.so to allow
 # CompilerPlugin to use the same libLiteRt.so
 cc_library(
