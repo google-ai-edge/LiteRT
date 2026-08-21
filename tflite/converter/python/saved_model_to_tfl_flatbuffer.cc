@@ -23,6 +23,7 @@ limitations under the License.
 
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "third_party/gloop/util/status/status_macros.h"
 #include "llvm/ADT/StringSet.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
 #include "mlir/IR/BuiltinAttributes.h"  // from @llvm-project
@@ -149,14 +150,14 @@ absl::Status ConvertSavedModelToTFLiteFlatBuffer(
   std::vector<std::optional<double>> node_maxs;
 
   // Populate quantization specs.
-  TF_RETURN_IF_ERROR(internal::PopulateQuantizationSpecs(
+  RETURN_IF_ERROR(internal::PopulateQuantizationSpecs(
       model_flags, converter_flags, &quant_specs, &node_names, &node_dtypes,
       &node_shapes, &node_mins, &node_maxs));
 
   internal::WarningUnusedFlags(model_flags, converter_flags);
 
   // Register all custom ops, including user-specified custom ops.
-  TF_RETURN_IF_ERROR(internal::RegisterAllCustomOps(converter_flags));
+  RETURN_IF_ERROR(internal::RegisterAllCustomOps(converter_flags));
 
   auto& saved_model_tags = model_flags.saved_model_tags();
   auto& saved_model_exported_names = model_flags.saved_model_exported_names();
@@ -176,7 +177,7 @@ absl::Status ConvertSavedModelToTFLiteFlatBuffer(
   std::vector<std::string> custom_opdefs(
       converter_flags.custom_opdefs().begin(),
       converter_flags.custom_opdefs().end());
-  TF_ASSIGN_OR_RETURN(
+  ASSIGN_OR_RETURN(
       auto module,
       ImportSavedModel(model_flags.saved_model_dir(),
                        model_flags.saved_model_version(), tags,
@@ -186,7 +187,7 @@ absl::Status ConvertSavedModelToTFLiteFlatBuffer(
 
   if (!model_flags.input_arrays().empty() ||
       !model_flags.output_arrays().empty()) {
-    TF_RETURN_IF_ERROR(HandleInputOutputArraysWithModule(model_flags, &module));
+    RETURN_IF_ERROR(HandleInputOutputArraysWithModule(model_flags, &module));
   }
 
   mlir::TFL::PassConfig pass_config(quant_specs);

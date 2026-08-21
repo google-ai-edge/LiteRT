@@ -29,6 +29,7 @@ limitations under the License.
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "Eigen/Core"  // from @eigen_archive
+#include "third_party/gloop/util/status/status_macros.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/bit.h"
@@ -221,8 +222,7 @@ StatusOr<mlir::TensorType> GetTensorType(const TensorT& tensor, Builder builder,
     elem_type = mlir::TF::VariantType::get(tensor_types, builder.getContext());
   }
   if (IsQuantized(tensor) && !get_storage) {
-    TF_ASSIGN_OR_RETURN(elem_type,
-                        GetQuantizedType(tensor, builder, is_constant));
+    ASSIGN_OR_RETURN(elem_type, GetQuantizedType(tensor, builder, is_constant));
   } else if (IsQuantized(tensor) && get_storage) {
     // If the type is quantized we strip the signedness from the storage type.
     elem_type = mlir::IntegerType::get(elem_type.getContext(),
@@ -233,7 +233,7 @@ StatusOr<mlir::TensorType> GetTensorType(const TensorT& tensor, Builder builder,
   // should return calibrated quantized type.
   if (is_intermediate && tensor.quantization != nullptr &&
       !IsQuantized(tensor)) {
-    TF_ASSIGN_OR_RETURN(elem_type, GetCalibratedQuantizedType(tensor, builder));
+    ASSIGN_OR_RETURN(elem_type, GetCalibratedQuantizedType(tensor, builder));
   }
 
   if (tensor.shape.empty() && (is_constant || tensor.has_rank)) {

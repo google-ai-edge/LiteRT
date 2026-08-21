@@ -32,6 +32,7 @@ limitations under the License.
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
+#include "third_party/gloop/util/status/status_macros.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
@@ -520,7 +521,7 @@ absl::Status ConvertTFExecutorToTFLOrFlatbuffer(
   auto new_context = std::make_unique<mlir::MLIRContext>(
       new_registry, mlir::MLIRContext::Threading::DISABLED);
 
-  TF_ASSIGN_OR_RETURN(
+  ASSIGN_OR_RETURN(
       auto new_module,
       CloneModuleInto(std::move(context), std::move(module), *new_context));
 
