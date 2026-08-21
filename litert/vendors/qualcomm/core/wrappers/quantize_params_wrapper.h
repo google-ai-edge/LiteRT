@@ -56,6 +56,11 @@ class AxisScaleOffsetQuantizeParamsWrapper final {
       std::int32_t axis, absl::Span<const float> scales,
       absl::Span<const std::int32_t> zero_points);
 
+  explicit AxisScaleOffsetQuantizeParamsWrapper(std::int32_t axis,
+                                                std::uint32_t num_scale_offsets,
+                                                float scale,
+                                                std::int32_t zero_point);
+
   explicit AxisScaleOffsetQuantizeParamsWrapper(
       const Qnn_AxisScaleOffset_t& axis_scale_offset);
 

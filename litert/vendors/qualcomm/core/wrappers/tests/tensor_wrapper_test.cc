@@ -206,6 +206,42 @@ TEST(TensorWrapperTest, IsPerTensorQuantWithOffsetDiff16BitTest) {
   EXPECT_TRUE(tensor_wrapper0.IsPerTensorQuantWithOffsetDiff(tensor_wrapper1));
 }
 
+TEST(TensorWrapperTest, SetQuantParams) {
+  TensorWrapper tensor_wrapper{"",
+                               QNN_TENSOR_TYPE_STATIC,
+                               QNN_DATATYPE_SFIXED_POINT_8,
+                               ScaleOffsetQuantizeParamsWrapper(0.5f, 3),
+                               {2, 2}};
+
+  tensor_wrapper.SetQuantParams(
+      AxisScaleOffsetQuantizeParamsWrapper(0, 2, 0.25f, -1));
+
+  EXPECT_TRUE(tensor_wrapper.IsPerChannelQuant());
+  const auto& quant_params = std::get<AxisScaleOffsetQuantizeParamsWrapper>(
+      tensor_wrapper.GetQuantParams());
+  EXPECT_EQ(quant_params.GetAxis(), 0);
+  const auto scales = quant_params.GetScales();
+  ASSERT_EQ(scales.size(), 2);
+  EXPECT_FLOAT_EQ(scales[0], 0.25f);
+  EXPECT_FLOAT_EQ(scales[1], 0.25f);
+  EXPECT_THAT(quant_params.GetZeroPoints(), testing::ElementsAre(-1, -1));
+
+  const Qnn_QuantizeParams_t& qnn_quant_params =
+      tensor_wrapper.GetQnnTensor().v2.quantizeParams;
+  EXPECT_EQ(qnn_quant_params.encodingDefinition, QNN_DEFINITION_DEFINED);
+  EXPECT_EQ(qnn_quant_params.quantizationEncoding,
+            QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET);
+  EXPECT_EQ(qnn_quant_params.axisScaleOffsetEncoding.axis, 0);
+  EXPECT_EQ(qnn_quant_params.axisScaleOffsetEncoding.numScaleOffsets, 2);
+  ASSERT_NE(qnn_quant_params.axisScaleOffsetEncoding.scaleOffset, nullptr);
+  EXPECT_FLOAT_EQ(qnn_quant_params.axisScaleOffsetEncoding.scaleOffset[0].scale,
+                  0.25f);
+  EXPECT_EQ(qnn_quant_params.axisScaleOffsetEncoding.scaleOffset[0].offset, 1);
+  EXPECT_FLOAT_EQ(qnn_quant_params.axisScaleOffsetEncoding.scaleOffset[1].scale,
+                  0.25f);
+  EXPECT_EQ(qnn_quant_params.axisScaleOffsetEncoding.scaleOffset[1].offset, 1);
+}
+
 TEST(TensorWrapperTest, StaticTensorTest) {
   TensorWrapper tensor_wrapper{"",
                                QNN_TENSOR_TYPE_STATIC,
