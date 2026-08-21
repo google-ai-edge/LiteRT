@@ -18,6 +18,7 @@ limitations under the License.
 
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "llvm/ADT/ArrayRef.h"
@@ -115,6 +116,20 @@ struct PassConfig {
 
   // When set to true, enable unsafe single batch rank reduction.
   bool unsafe_single_batch_rank_reduction = false;
+
+  // When set to true, the `tfl-optimize` pass is not added to the pipeline at
+  // all (including the post-quantization instances). The resulting model is
+  // still valid but unoptimized; individual optimizations can then be applied
+  // selectively by running `tfl-optimize{enabled-patterns=...}` standalone.
+  bool skip_optimize_pass = false;
+
+  // Substring filters applied to the debug names of the rewrite patterns
+  // inside the `tfl-optimize` pass. A pattern is skipped if its debug name
+  // contains any entry of `optimize_disabled_patterns`. If
+  // `optimize_enabled_patterns` is non-empty, only patterns whose debug name
+  // contains one of its entries are run (allowlist mode).
+  std::vector<std::string> optimize_disabled_patterns;
+  std::vector<std::string> optimize_enabled_patterns;
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os,

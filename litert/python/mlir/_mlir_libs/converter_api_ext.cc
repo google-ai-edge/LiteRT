@@ -78,7 +78,23 @@ NB_MODULE(converter_api_ext, m) {
 
       .def_rw("unsafe_single_batch_rank_reduction",
             &litert::ConvertToTFLConfig::unsafe_single_batch_rank_reduction,
-            "Allows single batch rank reduction");
+            "Allows single batch rank reduction")
+
+      .def_rw("skip_optimize_pass",
+              &litert::ConvertToTFLConfig::skip_optimize_pass,
+              "If True, do not add the tfl-optimize pass to the conversion "
+              "pipeline at all. Selected optimizations can then be applied "
+              "standalone via tfl-optimize{enabled-patterns=...}")
+
+      .def_rw("optimize_disabled_patterns",
+              &litert::ConvertToTFLConfig::optimize_disabled_patterns,
+              "Skip rewrite patterns inside tfl-optimize whose debug name "
+              "contains any of these substrings")
+
+      .def_rw("optimize_enabled_patterns",
+              &litert::ConvertToTFLConfig::optimize_enabled_patterns,
+              "If non-empty, run only rewrite patterns inside tfl-optimize "
+              "whose debug name contains one of these substrings");
 
   m.def(
       "prepare_mlir_context",
