@@ -92,6 +92,7 @@ litert_dispatch_api(
         "//litert/c:litert_metrics",
         "//litert/c:litert_model_types",
         "//litert/c:litert_options_header",
+        "//litert/c:litert_profiler_types",
         "//litert/c:litert_tensor_buffer_header",
         "//litert/c:litert_tensor_buffer_requirements",
         "//litert/c:litert_tensor_buffer_types",
