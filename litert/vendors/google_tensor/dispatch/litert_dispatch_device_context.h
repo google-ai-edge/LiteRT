@@ -28,9 +28,9 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/vendors/c/litert_dispatch.h"
-#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
-#include "litert/c/options/google/litert_darwinn_runtime_options_type.h"
-#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+#if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
+#include "litert/c/options/google/litert_google_tensor_privileged_options_type.h"
+#endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
 // This class is thread-compatible.
@@ -76,17 +76,19 @@ class LiteRtDispatchDeviceContextT {
 
   ThrContext* absl_nonnull thr_context() { return thr_context_; }
 
-#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
-  absl::optional_ref<const LrtDarwinnRuntimeOptionsT> GetDarwinnOptions()
-      const {
-    return darwinn_options_;
+#if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
+  absl::optional_ref<const LrtGoogleTensorPrivilegedOptionsT>
+  GetGoogleTensorPrivilegedOptions() const {
+    return google_tensor_privileged_options_;
   }
 
-  void SetDarwinnOptions(
-      std::optional<LrtDarwinnRuntimeOptionsT> darwinn_options) {
-    darwinn_options_ = std::move(darwinn_options);
+  void SetGoogleTensorPrivilegedOptions(
+      std::optional<LrtGoogleTensorPrivilegedOptionsT>
+          google_tensor_privileged_options) {
+    google_tensor_privileged_options_ =
+        std::move(google_tensor_privileged_options);
   }
-#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+#endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
 
   absl::optional_ref<const GoogleTensorOptionsData> GetGoogleTensorOptions()
       const {
@@ -152,9 +154,10 @@ class LiteRtDispatchDeviceContextT {
 
   const LiteRtRuntimeContext* runtime_context_;
   ThrContext* absl_nonnull thr_context_;
-#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
-  std::optional<LrtDarwinnRuntimeOptionsT> darwinn_options_;
-#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+#if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
+  std::optional<LrtGoogleTensorPrivilegedOptionsT>
+      google_tensor_privileged_options_;
+#endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
   std::optional<GoogleTensorOptionsData> google_tensor_options_;
   // A device context cannot be destroyed with any registered graphs.
   absl::flat_hash_set<LiteRtDispatchGraph> registered_graphs_;

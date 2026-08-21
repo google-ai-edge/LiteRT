@@ -25,9 +25,9 @@
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
-#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
-#include "litert/vendors/google_tensor/dispatch/google/darwinn_options_utils.h"
-#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+#if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
+#include "litert/vendors/google_tensor/dispatch/google/google_tensor_privileged_options_utils.h"
+#endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_macros.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_utils.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
@@ -77,10 +77,10 @@ LiteRtStatus LiteRtDispatchGraphT::Create(
   graph = new LiteRtDispatchGraphT(device_context, thr_graph);
   absl::Cleanup graph_cleanup = [graph] { graph->Destroy(); };
 
-#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
-  LITERT_RETURN_IF_ERROR(gt::ApplyDarwinnOptionsToGraph(
-      graph, device_context->GetDarwinnOptions()));
-#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+#if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
+  LITERT_RETURN_IF_ERROR(gt::ApplyGoogleTensorPrivilegedOptionsToGraph(
+      graph, device_context->GetGoogleTensorPrivilegedOptions()));
+#endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
 
   // Apply Google Tensor specific options.
   if (const auto& options = device_context->GetGoogleTensorOptions();

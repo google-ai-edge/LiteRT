@@ -39,10 +39,10 @@
 #include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
-#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
-#include "litert/c/options/google/litert_darwinn_runtime_options_type.h"
-#include "litert/vendors/google_tensor/dispatch/google/darwinn_options_utils.h"
-#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+#if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
+#include "litert/c/options/google/litert_google_tensor_privileged_options_type.h"
+#include "litert/vendors/google_tensor/dispatch/google/google_tensor_privileged_options_utils.h"
+#endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_macros.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
@@ -132,13 +132,13 @@ LiteRtStatus LiteRtDispatchDeviceContextT::Create(
   device_context =
       new LiteRtDispatchDeviceContextT(runtime_context, thr_context);
 
-#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
-  std::optional<LrtDarwinnRuntimeOptionsT> options_data =
-      gt::GetDarwinnOptionsData(runtime_context, options);
-  LITERT_RETURN_IF_ERROR(
-      gt::ApplyDarwinnOptionsToDeviceContext(device_context, options_data));
-  device_context->SetDarwinnOptions(std::move(options_data));
-#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+#if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
+  std::optional<LrtGoogleTensorPrivilegedOptionsT> options_data =
+      gt::GetGoogleTensorPrivilegedOptionsData(runtime_context, options);
+  LITERT_RETURN_IF_ERROR(gt::ApplyGoogleTensorPrivilegedOptionsToDeviceContext(
+      device_context, options_data));
+  device_context->SetGoogleTensorPrivilegedOptions(std::move(options_data));
+#endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
 
   device_context->SetGoogleTensorOptions(
       ParseGoogleTensorOptions(runtime_context, options));
