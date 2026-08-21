@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA4_SAFETENSOR_LOADER_H_
-#define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA4_SAFETENSOR_LOADER_H_
+#ifndef THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_UTILS_SAFETENSOR_LOADER_H_
+#define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_UTILS_SAFETENSOR_LOADER_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -148,10 +148,6 @@ class SafetensorLoader {
   std::optional<QuantizationConfig> quant_config_;
 };
 
-// Creates the HuggingFace to model weight name mapping for Gemma4.
-absl::flat_hash_map<std::string, std::string> GetGemma4WeightMapping(
-    int n_layers);
-
 }  // namespace litert::tensor::examples
 
-#endif  // THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA4_SAFETENSOR_LOADER_H_
+#endif  // THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_UTILS_SAFETENSOR_LOADER_H_

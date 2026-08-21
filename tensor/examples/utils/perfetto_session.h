@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA4_PERFETTO_SESSION_H_
-#define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA4_PERFETTO_SESSION_H_
+#ifndef THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_UTILS_PERFETTO_SESSION_H_
+#define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_UTILS_PERFETTO_SESSION_H_
 
 #include <memory>
 #include <string>
@@ -25,9 +25,9 @@ limitations under the License.
 #include "perfetto/tracing/track_event.h"  // from @perfetto
 #include "perfetto/tracing/track_event_category_registry.h"  // from @perfetto
 
-namespace litert::tensor::examples::gemma4 {
+namespace litert::tensor {
 
-inline constexpr char kGemma4Category[] = "gemma4";
+inline constexpr char kTensorApiCategory[] = "tensor_api";
 
 // Manages the lifecycle of an in-process Perfetto tracing session.
 class PerfettoSession {
@@ -53,10 +53,10 @@ class PerfettoSession {
   std::unique_ptr<perfetto::TracingSession> tracing_session_;
 };
 
-}  // namespace litert::tensor::examples::gemma4
+}  // namespace litert::tensor
 
 PERFETTO_DEFINE_CATEGORIES(
-    perfetto::Category(litert::tensor::examples::gemma4::kGemma4Category)
-        .SetDescription("Gemma 4 End-to-End Runner Events"));
+    perfetto::Category(litert::tensor::kTensorApiCategory)
+        .SetDescription("LiteRT Tensor API Events"));
 
-#endif  // THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA4_PERFETTO_SESSION_H_
+#endif  // THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_UTILS_PERFETTO_SESSION_H_

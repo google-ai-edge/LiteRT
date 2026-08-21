@@ -14,6 +14,7 @@
 # ==============================================================================
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
@@ -45,5 +46,65 @@ cc_library(
         ":minijson",
         "//tensor:datatypes",
         "//tensor/internal:fp16",
+    ],
+)
+
+cc_library(
+    name = "perfetto_session",
+    srcs = ["perfetto_session.cc"],
+    hdrs = ["perfetto_session.h"],
+    deps = [
+        "//tensor/utils:macros",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@perfetto//:libperfetto_client_experimental",
+    ],
+)
+
+cc_test(
+    name = "perfetto_session_test",
+    srcs = ["perfetto_session_test.cc"],
+    deps = [
+        ":perfetto_session",
+        "//tensor/utils:matchers",
+        "@com_google_googletest//:gtest_main",
+        "@perfetto//:libperfetto_client_experimental",
+    ],
+)
+
+cc_library(
+    name = "safetensor_loader",
+    srcs = ["safetensor_loader.cc"],
+    hdrs = ["safetensor_loader.h"],
+    deps = [
+        ":minijson",
+        ":perfetto_session",
+        ":safetensors",
+        "//tensor",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "//tensor/utils:macros",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@perfetto//:libperfetto_client_experimental",
+    ],
+)
+
+cc_test(
+    name = "safetensor_loader_test",
+    srcs = ["safetensor_loader_test.cc"],
+    deps = [
+        ":safetensor_loader",
+        ":safetensors",
+        "//tensor/utils:matchers",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
     ],
 )
