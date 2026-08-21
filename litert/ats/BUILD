@@ -341,24 +341,344 @@ litert_test(
         ":configure",
         ":inference_fixture",
         ":register",
-        "//litert/c:litert_op_code",
+        ":register_batch_matmul",
+        ":register_binary_broadcast",
+        ":register_binary_no_bcast",
+        ":register_concatenation",
+        ":register_conv_2d",
+        ":register_depthwise_conv_2d",
+        ":register_fully_connected",
+        ":register_no_op",
+        ":register_one_hot",
+        ":register_pad",
+        ":register_pooling",
+        ":register_reduction",
+        ":register_reshape",
+        ":register_softmax",
+        ":register_transformer_layer",
+        ":register_transpose",
+        ":register_unary",
         "//litert/c/internal:litert_logging",
-        "//litert/cc:litert_environment",
-        "//litert/cc/internal:litert_c_types_printing",
         "//litert/cc/internal:litert_detail",
-        "//litert/test/generators",
-        "//litert/test/generators:common",
-        "//litert/test/generators:one_hot",
-        "//tensor:arithmetic",
-        "//tensor:arithmetic_graph",
-        "//tensor:datatypes",
-        "//tflite/schema:schema_fbs",
-        "//tflite/types:half",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_library(
+    name = "register_batch_matmul",
+    testonly = True,
+    srcs = ["register_batch_matmul.cc"],
+    hdrs = ["register_batch_matmul.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:batch_matmul",
+        "//litert/test/generators:common",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_binary_broadcast",
+    testonly = True,
+    srcs = ["register_binary_broadcast.cc"],
+    hdrs = ["register_binary_broadcast.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:binary_broadcast",
+        "//litert/test/generators:common",
+        "//tflite/schema:schema_fbs",
+    ],
+)
+
+cc_library(
+    name = "register_binary_no_bcast",
+    testonly = True,
+    srcs = ["register_binary_no_bcast.cc"],
+    hdrs = ["register_binary_no_bcast.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:binary_no_bcast",
+        "//litert/test/generators:common",
+        "//tflite/schema:schema_fbs",
+    ],
+)
+
+cc_library(
+    name = "register_concatenation",
+    testonly = True,
+    srcs = ["register_concatenation.cc"],
+    hdrs = ["register_concatenation.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:concatenation",
+        "//tflite/schema:schema_fbs",
+    ],
+)
+
+cc_library(
+    name = "register_conv_2d",
+    testonly = True,
+    srcs = ["register_conv_2d.cc"],
+    hdrs = ["register_conv_2d.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:conv_2d",
+        "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_depthwise_conv_2d",
+    testonly = True,
+    srcs = ["register_depthwise_conv_2d.cc"],
+    hdrs = ["register_depthwise_conv_2d.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:depthwise_conv_2d",
+        "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_fully_connected",
+    testonly = True,
+    srcs = ["register_fully_connected.cc"],
+    hdrs = ["register_fully_connected.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:fully_connected",
+        "//tensor:arithmetic_graph",
+        "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_no_op",
+    testonly = True,
+    srcs = ["register_no_op.cc"],
+    hdrs = ["register_no_op.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:no_op",
+    ],
+)
+
+cc_library(
+    name = "register_one_hot",
+    testonly = True,
+    srcs = ["register_one_hot.cc"],
+    hdrs = ["register_one_hot.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:one_hot",
+    ],
+)
+
+cc_library(
+    name = "register_pad",
+    testonly = True,
+    srcs = ["register_pad.cc"],
+    hdrs = ["register_pad.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:pad",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_pooling",
+    testonly = True,
+    srcs = ["register_pooling.cc"],
+    hdrs = ["register_pooling.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:pooling",
+        "//tflite/schema:schema_fbs",
+    ],
+)
+
+cc_library(
+    name = "register_reduction",
+    testonly = True,
+    srcs = ["register_reduction.cc"],
+    hdrs = ["register_reduction.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:reduction",
+    ],
+)
+
+cc_library(
+    name = "register_reshape",
+    testonly = True,
+    srcs = ["register_reshape.cc"],
+    hdrs = ["register_reshape.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:reshape",
+    ],
+)
+
+cc_library(
+    name = "register_softmax",
+    testonly = True,
+    srcs = ["register_softmax.cc"],
+    hdrs = ["register_softmax.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:softmax",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_transformer_layer",
+    testonly = True,
+    srcs = ["register_transformer_layer.cc"],
+    hdrs = ["register_transformer_layer.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:transformer_layer",
+    ],
+)
+
+cc_library(
+    name = "register_transpose",
+    testonly = True,
+    srcs = ["register_transpose.cc"],
+    hdrs = ["register_transpose.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:transpose",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_unary",
+    testonly = True,
+    srcs = ["register_unary.cc"],
+    hdrs = ["register_unary.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:unary",
+        "//tflite/types:half",
     ],
 )
 
