@@ -36,8 +36,11 @@ _GOOGLE_TENSOR_BACKEND_ID = "GOOGLE"
 
 
 class SocModel(StrEnum):
-  """Google Tensor SOC model."""
+  """Google Tensor SOC model.
 
+  For details on the officially supported SoCs, please refer to:
+  https://developers.google.com/edge/litert/next/tensor-sdk
+  """
   ALL = "ALL"
 
   TENSOR_G3 = "Tensor_G3"
