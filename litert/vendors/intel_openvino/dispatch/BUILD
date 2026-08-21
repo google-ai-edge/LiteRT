@@ -73,6 +73,7 @@ litert_dynamic_lib(
     ],
     deps = [
         ":litert_dispatch_api",
+        ":roi_view",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_environment_header",
@@ -133,6 +134,7 @@ litert_bin(
     visibility = ["//visibility:public"],  # Allows LiteRT-LM packaging.
     deps = [
         ":litert_dispatch_api",
+        ":roi_view",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_environment_options_header",
@@ -203,7 +205,41 @@ litert_lib(
     ],
 )
 
+# Header-only helper: binds a graph port to a (possibly larger) backing tensor
+# as a zero-copy ROI sub-view. Extracted so it can be unit-tested on the host
+# CPU without a device (see roi_view_test).
+litert_lib(
+    name = "roi_view",
+    hdrs = ["roi_view.h"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
+        "@intel_openvino//:openvino",
+    ],
+)
+
 #Test targets for Openvino Dispatch
+
+# Host CPU unit test for MakePortView: fabricates plain host ov::Tensors (no
+# device) and checks the equal-shape passthrough, the sub-view shape/strides,
+# and the rank-mismatch and under-sized-buffer error paths.
+cc_test(
+    name = "roi_view_test",
+    srcs = ["roi_view_test.cc"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    linkstatic = 1,
+    deps = [
+        ":roi_view",
+        "//litert/cc:litert_expected",
+        "@com_google_googletest//:gtest_main",
+        "@intel_openvino//:openvino",
+    ],
+)
+
 cc_test(
     name = "dispatch_api_openvino_test",
     srcs = [
