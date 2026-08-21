@@ -69,6 +69,56 @@ ios_unit_test(
 )
 
 objc_library(
+    name = "litert_objc_model",
+    srcs = [
+        "sources/LRTModel.mm",
+    ],
+    hdrs = [
+        "apis/LRTModel.h",
+        "sources/LRTModel+Internal.h",
+    ],
+    deps = [
+        ":litert_objc_environment",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_model",
+        "//third_party/apple_frameworks:Foundation",
+    ],
+)
+
+objc_library(
+    name = "litert_objc_model_test_library",
+    testonly = True,
+    srcs = [
+        "tests/LRTModelTests.mm",
+    ],
+    data = [
+        "//litert/test:testdata/simple_model.tflite",
+    ],
+    deps = [
+        ":litert_objc_environment",
+        ":litert_objc_model",
+        # Dependency placeholder: apple_frameworks XCTest,
+        "//litert/test:common",
+        "//litert/test:simple_model",
+    ],
+)
+
+ios_unit_test(
+    name = "litert_objc_model_test_ios",
+    minimum_os_version = LITERT_MIN_IOS_VERSION,
+    runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
+    tags = [
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":litert_objc_model_test_library",
+    ],
+)
+
+objc_library(
     name = "litert_objc_options",
     srcs = [
         "sources/LRTOptions.mm",
