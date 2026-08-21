@@ -27,6 +27,11 @@
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "tflite/core/c/common.h"
 
+#ifdef __ANDROID__
+#include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
+#include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#endif  // __ANDROID__
+
 struct LiteRtRuntimeContext;
 
 namespace weight_loader {
@@ -34,6 +39,19 @@ class WeightLoader;
 }  // namespace weight_loader
 
 namespace ml_drift {
+
+namespace internal {
+#ifdef __ANDROID__
+// Tries to allocate a cl::Tensor backed by an AHardwareBuffer via the
+// cl_arm_import_memory extension.
+// Exposed under the internal namespace for testing.
+bool TryCreateTensorViaAhwb(
+    const cl::Environment& env,
+    ml_drift::TensorDescriptor& tensor_desc,
+    std::unique_ptr<GpuSpatialTensor>& tensor);
+#endif  // __ANDROID__
+}  // namespace internal
+
 // Map from tensor index to external buffer ID.
 using TensorIndexToExternalBufferIdMap = std::unordered_map<size_t, size_t>;
 
