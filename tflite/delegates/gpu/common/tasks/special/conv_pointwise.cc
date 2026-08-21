@@ -23,7 +23,10 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
+#include "absl/types/any.h"
+#include "third_party/gloop/util/status/status_macros.h"
 #include "tflite/delegates/gpu/common/operations.h"
 #include "tflite/delegates/gpu/common/util.h"
 
