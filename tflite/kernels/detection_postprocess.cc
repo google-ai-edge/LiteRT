@@ -161,9 +161,32 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_EQ(context, NumDimensions(input_box_encodings), 3);
   TF_LITE_ENSURE_EQ(context, NumDimensions(input_class_predictions), 3);
   TF_LITE_ENSURE_EQ(context, NumDimensions(input_anchors), 2);
+  TF_LITE_ENSURE_MSG(context, input_box_encodings->dims->data[2] >= 4,
+                     "box encodings dimension 2 must be at least 4");
+  // Validate attacker-controlled parameters are non-negative.
+  TF_LITE_ENSURE_MSG(context, op_data->max_detections >= 0,
+                     "max_detections must be non-negative");
+  TF_LITE_ENSURE_MSG(context, op_data->max_classes_per_detection >= 0,
+                     "max_classes_per_detection must be non-negative");
+  TF_LITE_ENSURE_MSG(context, op_data->detections_per_class >= 0,
+                     "detections_per_class must be non-negative");
+  TF_LITE_ENSURE_MSG(context, op_data->num_classes > 0,
+                     "num_classes must be positive");
+  const int64_t total_regular_detections =
+      static_cast<int64_t>(op_data->max_detections) +
+      static_cast<int64_t>(op_data->detections_per_class);
+  TF_LITE_ENSURE_MSG(context, total_regular_detections <= INT32_MAX,
+                     "max_detections + detections_per_class overflows int32");
   // number of detected boxes
-  const int num_detected_boxes =
-      op_data->max_detections * op_data->max_classes_per_detection;
+  // Guard against integer overflow: both values come from attacker-controlled
+  // FlexBuffer custom options, so the product can wrap around.
+  const int64_t num_detected_boxes_int64 =
+      static_cast<int64_t>(op_data->max_detections) *
+      static_cast<int64_t>(op_data->max_classes_per_detection);
+  TF_LITE_ENSURE_MSG(
+      context, num_detected_boxes_int64 <= INT32_MAX,
+      "max_detections * max_classes_per_detection overflows int32");
+  const int num_detected_boxes = static_cast<int>(num_detected_boxes_int64);
 
   // Outputs: detection_boxes, detection_scores, detection_classes,
   // num_detections
@@ -304,7 +327,12 @@ TfLiteStatus DecodeCenterSizeBoxes(TfLiteContext* context, TfLiteNode* node,
         // Float
       case kTfLiteFloat32: {
         // Please see DequantizeBoxEncodings function for the support detail.
-        const int box_encoding_idx = idx * input_box_encodings->dims->data[2];
+        const int64_t box_encoding_idx_int64 =
+            static_cast<int64_t>(idx) *
+            static_cast<int64_t>(input_box_encodings->dims->data[2]);
+        TF_LITE_ENSURE_MSG(context, box_encoding_idx_int64 <= INT32_MAX,
+                           "box encoding index computation overflows int32");
+        const int box_encoding_idx = static_cast<int>(box_encoding_idx_int64);
         const float* boxes =
             &(GetTensorData<float>(input_box_encodings)[box_encoding_idx]);
         box_centersize = *reinterpret_cast<const CenterSizeEncoding*>(boxes);
@@ -785,7 +813,11 @@ TfLiteStatus NonMaxSuppressionMultiClassFastHelper(TfLiteContext* context,
   std::vector<float> max_scores;
   max_scores.resize(num_boxes);
   std::vector<int> sorted_class_indices;
-  sorted_class_indices.resize(num_boxes * num_classes);
+  const int64_t sorted_indices_size =
+      static_cast<int64_t>(num_boxes) * static_cast<int64_t>(num_classes);
+  TF_LITE_ENSURE_MSG(context, sorted_indices_size <= INT32_MAX,
+                     "num_boxes * num_classes overflows int32");
+  sorted_class_indices.resize(static_cast<size_t>(sorted_indices_size));
   for (int row = 0; row < num_boxes; row++) {
     const float* box_scores =
         scores + row * num_classes_with_background + label_offset;
@@ -863,6 +895,15 @@ TfLiteStatus NonMaxSuppressionMultiClass(TfLiteContext* context,
 
   TF_LITE_ENSURE(context, (num_classes_with_background - num_classes <= 1));
   TF_LITE_ENSURE(context, (num_classes_with_background >= num_classes));
+
+  // Guard against integer overflow in DequantizeClassPredictions and score
+  // indexing. num_boxes comes from tensor dims, num_classes_with_background
+  // from tensor dims (but influenced by attacker-controlled num_classes).
+  const int64_t num_boxes_x_classes_with_bg =
+      static_cast<int64_t>(num_boxes) *
+      static_cast<int64_t>(num_classes_with_background);
+  TF_LITE_ENSURE_MSG(context, num_boxes_x_classes_with_bg <= INT32_MAX,
+                     "num_boxes * num_classes_with_background overflows int32");
 
   const TfLiteTensor* scores;
   switch (input_class_predictions->type) {
