@@ -27,6 +27,15 @@ constexpr size_t kBatchIndex = 0;
 constexpr size_t kHeightIndex = 1;
 constexpr size_t kWidthIndex = 2;
 constexpr size_t kChannelIndex = 3;
+constexpr std::uint32_t kConv2dMinStride = 4;
+constexpr std::uint32_t kConv2dMinFilterSize = 4;
+
+bool ShouldUseGroupedConv2d(const TensorWrapper& filter_tensor,
+                            std::uint32_t stride_h, std::uint32_t stride_w) {
+  return stride_h >= kConv2dMinStride && stride_w >= kConv2dMinStride &&
+         filter_tensor.GetDimension(kHeightIndex) >= kConv2dMinFilterSize &&
+         filter_tensor.GetDimension(kWidthIndex) >= kConv2dMinFilterSize;
+}
 
 }  // namespace
 
@@ -37,7 +46,7 @@ std::vector<OpWrapper> BuildDepthwiseConv2dOp(
     const std::uint32_t dilation_w, const PaddingType padding_type) {
   std::vector<OpWrapper> res;
 
-  // reshape filter
+  TensorWrapper& input_tensor = inputs[kInputIndex];
   TensorWrapper& filter_tensor = inputs[kFilterIndex];
 
   // 1HWC to HW1C, only need reshape instead of transpose.
@@ -58,21 +67,13 @@ std::vector<OpWrapper> BuildDepthwiseConv2dOp(
     reshape_op.AddInputTensor(filter_tensor);
     reshape_op.AddOutputTensor(*reshaped_filter_tensor);
   }
-
-  // conv
-  OpWrapper& conv_op = CreateOpWrapper(res, QNN_OP_DEPTH_WISE_CONV_2D);
-  TensorWrapper& input_tensor = inputs[kInputIndex];
-  conv_op.AddInputTensor(input_tensor);
-  conv_op.AddInputTensor(*reshaped_filter_tensor);
+  TensorWrapper* bias_tensor = nullptr;
   if (inputs.size() - 1 >= kBiasIndex) {
-    TensorWrapper& bias_tensor = inputs[kBiasIndex];
+    bias_tensor = &inputs[kBiasIndex].get();
     // QNN only support per-tensor quant for bias,
     // and the scale and offset are both zero.
-    bias_tensor.ConvertAxisScaleOffsetToScaleOffset();
-    conv_op.AddInputTensor(bias_tensor);
+    bias_tensor->ConvertAxisScaleOffsetToScaleOffset();
   }
-
-  conv_op.AddOutputTensor(outputs[kOutputIndex]);
 
   // stride param
   const std::array<std::uint32_t, 2> stride_data{stride_h, stride_w};
@@ -81,7 +82,6 @@ std::vector<OpWrapper> BuildDepthwiseConv2dOp(
       QNN_DATATYPE_UINT_32, QuantizeParamsWrapperVariant{}, stride_shape,
       sizeof(decltype(stride_data)::value_type) * stride_data.size(),
       stride_data.data());
-  conv_op.AddTensorParam(QNN_OP_DEPTH_WISE_CONV_2D_PARAM_STRIDE, stride_tensor);
 
   // dilation param
   const std::array<std::uint32_t, 2> dilation_data{dilation_h, dilation_w};
@@ -90,8 +90,6 @@ std::vector<OpWrapper> BuildDepthwiseConv2dOp(
       QNN_DATATYPE_UINT_32, QuantizeParamsWrapperVariant{}, dilation_shape,
       sizeof(decltype(dilation_data)::value_type) * dilation_data.size(),
       dilation_data.data());
-  conv_op.AddTensorParam(QNN_OP_DEPTH_WISE_CONV_2D_PARAM_DILATION,
-                         dilation_tensor);
 
   // padding param
   const auto [padding_before_height, padding_after_height] =
@@ -110,8 +108,34 @@ std::vector<OpWrapper> BuildDepthwiseConv2dOp(
       QNN_DATATYPE_UINT_32, QuantizeParamsWrapperVariant{}, padding_shape,
       sizeof(decltype(padding_data)::value_type) * padding_data.size(),
       padding_data.data());
-  conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_PAD_AMOUNT, padding_tensor);
 
+  if (ShouldUseGroupedConv2d(filter_tensor, stride_h, stride_w)) {
+    OpWrapper& conv_op = CreateOpWrapper(res, QNN_OP_CONV_2D);
+    conv_op.AddInputTensor(input_tensor);
+    conv_op.AddInputTensor(*reshaped_filter_tensor);
+    if (bias_tensor) {
+      conv_op.AddInputTensor(*bias_tensor);
+    }
+    conv_op.AddOutputTensor(outputs[kOutputIndex]);
+    conv_op.AddScalarParam<std::uint32_t>(
+        QNN_OP_CONV_2D_PARAM_GROUP, input_tensor.GetDimension(kChannelIndex));
+    conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_STRIDE, stride_tensor);
+    conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_DILATION, dilation_tensor);
+    conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_PAD_AMOUNT, padding_tensor);
+  } else {
+    OpWrapper& conv_op = CreateOpWrapper(res, QNN_OP_DEPTH_WISE_CONV_2D);
+    conv_op.AddInputTensor(input_tensor);
+    conv_op.AddInputTensor(*reshaped_filter_tensor);
+    if (bias_tensor) {
+      conv_op.AddInputTensor(*bias_tensor);
+    }
+    conv_op.AddOutputTensor(outputs[kOutputIndex]);
+    conv_op.AddTensorParam(QNN_OP_DEPTH_WISE_CONV_2D_PARAM_STRIDE,
+                           stride_tensor);
+    conv_op.AddTensorParam(QNN_OP_DEPTH_WISE_CONV_2D_PARAM_DILATION,
+                           dilation_tensor);
+    conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_PAD_AMOUNT, padding_tensor);
+  }
   return res;
 }
 

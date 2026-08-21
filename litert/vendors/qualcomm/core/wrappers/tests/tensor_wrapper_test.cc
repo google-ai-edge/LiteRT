@@ -206,6 +206,55 @@ TEST(TensorWrapperTest, IsPerTensorQuantWithOffsetDiff16BitTest) {
   EXPECT_TRUE(tensor_wrapper0.IsPerTensorQuantWithOffsetDiff(tensor_wrapper1));
 }
 
+TEST(TensorWrapperTest, SetQuantParams) {
+  static constexpr float kInitialScale = 0.5f;
+  static constexpr int kInitialZeroPoint = 3;
+  static constexpr int kQuantizationAxis = 0;
+  static constexpr std::uint32_t kNumScaleOffsets = 2;
+  static constexpr float kScale = 0.25f;
+  static constexpr int kZeroPoint = -1;
+  static constexpr int kQnnOffset = -kZeroPoint;
+
+  TensorWrapper tensor_wrapper{
+      "",
+      QNN_TENSOR_TYPE_STATIC,
+      QNN_DATATYPE_SFIXED_POINT_8,
+      ScaleOffsetQuantizeParamsWrapper(kInitialScale, kInitialZeroPoint),
+      {kNumScaleOffsets, kNumScaleOffsets}};
+
+  tensor_wrapper.SetQuantParams(AxisScaleOffsetQuantizeParamsWrapper(
+      kQuantizationAxis, kNumScaleOffsets, kScale, kZeroPoint));
+
+  EXPECT_TRUE(tensor_wrapper.IsPerChannelQuant());
+  const auto& quant_params = std::get<AxisScaleOffsetQuantizeParamsWrapper>(
+      tensor_wrapper.GetQuantParams());
+  EXPECT_EQ(quant_params.GetAxis(), kQuantizationAxis);
+  const auto scales = quant_params.GetScales();
+  ASSERT_EQ(scales.size(), kNumScaleOffsets);
+  EXPECT_FLOAT_EQ(scales[0], kScale);
+  EXPECT_FLOAT_EQ(scales[1], kScale);
+  EXPECT_THAT(quant_params.GetZeroPoints(),
+              testing::ElementsAre(kZeroPoint, kZeroPoint));
+
+  const Qnn_QuantizeParams_t& qnn_quant_params =
+      tensor_wrapper.GetQnnTensor().v2.quantizeParams;
+  EXPECT_EQ(qnn_quant_params.encodingDefinition, QNN_DEFINITION_DEFINED);
+  EXPECT_EQ(qnn_quant_params.quantizationEncoding,
+            QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET);
+  EXPECT_EQ(qnn_quant_params.axisScaleOffsetEncoding.axis, kQuantizationAxis);
+  EXPECT_EQ(qnn_quant_params.axisScaleOffsetEncoding.numScaleOffsets,
+            kNumScaleOffsets);
+  ASSERT_NE(qnn_quant_params.axisScaleOffsetEncoding.scaleOffset, nullptr);
+  EXPECT_FLOAT_EQ(qnn_quant_params.axisScaleOffsetEncoding.scaleOffset[0].scale,
+                  kScale);
+  EXPECT_EQ(qnn_quant_params.axisScaleOffsetEncoding.scaleOffset[0].offset,
+            kQnnOffset);
+  EXPECT_FLOAT_EQ(qnn_quant_params.axisScaleOffsetEncoding.scaleOffset[1].scale,
+                  kScale);
+  EXPECT_EQ(qnn_quant_params.axisScaleOffsetEncoding.scaleOffset[1].offset,
+            kQnnOffset);
+}
+
 TEST(TensorWrapperTest, StaticTensorTest) {
   TensorWrapper tensor_wrapper{"",
                                QNN_TENSOR_TYPE_STATIC,

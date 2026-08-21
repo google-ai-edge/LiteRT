@@ -138,6 +138,26 @@ TEST(AxisScaleOffsetQuantizeParamsWrapperTest, ConstructorTest) {
   }
 }
 
+TEST(AxisScaleOffsetQuantizeParamsWrapperTest, PerTensorConstructorTest) {
+  static constexpr std::int32_t kAxis = 0;
+  static constexpr std::uint32_t kNumScaleOffsets = 3;
+  static constexpr float kScale = 1.5f;
+  static constexpr std::int32_t kZeroPoint = 10;
+  AxisScaleOffsetQuantizeParamsWrapper wrapper(kAxis, kNumScaleOffsets, kScale,
+                                               kZeroPoint);
+  Qnn_QuantizeParams_t dst = QNN_QUANTIZE_PARAMS_INIT;
+  wrapper.CloneTo(dst);
+  EXPECT_EQ(dst.encodingDefinition, QNN_DEFINITION_DEFINED);
+  EXPECT_EQ(dst.quantizationEncoding,
+            QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET);
+  EXPECT_EQ(dst.axisScaleOffsetEncoding.axis, kAxis);
+  EXPECT_EQ(dst.axisScaleOffsetEncoding.numScaleOffsets, kNumScaleOffsets);
+  for (size_t i = 0; i < kNumScaleOffsets; ++i) {
+    EXPECT_FLOAT_EQ(dst.axisScaleOffsetEncoding.scaleOffset[i].scale, kScale);
+    EXPECT_EQ(dst.axisScaleOffsetEncoding.scaleOffset[i].offset, -kZeroPoint);
+  }
+}
+
 TEST(AxisScaleOffsetQuantizeParamsWrapperTest, CopyConstructorTest) {
   std::int32_t axis = 1;
   std::vector<float> scales = {1.5f, 2.5f};
