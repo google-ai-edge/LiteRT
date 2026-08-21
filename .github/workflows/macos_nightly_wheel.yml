@@ -10,6 +10,9 @@ concurrency:
   group: ${{ github.workflow }}-nightly
   cancel-in-progress: true
 
+permissions:
+  contents: read # Required
+
 jobs:
   build_wheels:
     name: "Build Wheels - Python ${{ matrix.python-version }}"
@@ -21,9 +24,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: 'recursive'
+          persist-credentials: false
 
       - name: Set Bazel version for Bazelisk
         run: echo "7.6.1" > .bazelversion
@@ -34,7 +38,7 @@ jobs:
         run: |
           # The month is used as a cache-buster.
           CACHE_MONTH=$(TZ='America/Los_Angeles' date +%Y-%m)
-          CACHE_RESTORE_KEY_2="${{ github.workflow }}-${{ matrix.python-version }}-$CACHE_MONTH"
+          CACHE_RESTORE_KEY_2="${GITHUB_WORKFLOW}-${{ matrix.python-version }}-$CACHE_MONTH"
           echo "CACHE_RESTORE_KEY_2=$CACHE_RESTORE_KEY_2" >> "$GITHUB_OUTPUT"
 
           if [ -f "WORKSPACE" ]; then
@@ -67,7 +71,7 @@ jobs:
 
       - name: Restore bazel cache
         id: bazel-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 # zizmor: ignore[cache-poisoning]
         with:
           path: ~/.cache/bazel
           key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
@@ -79,9 +83,13 @@ jobs:
 
       - name: Check cache hit
         run: |
-          echo "Cache Hit: ${{ steps.bazel-cache.outputs.cache-hit }}"
-          echo "Cache Primary Key: ${{ steps.bazel-cache.outputs.cache-primary-key }}"
-          echo "Cache Matched Key: ${{ steps.bazel-cache.outputs.cache-matched-key }}"
+          echo "Cache Hit: ${STEPS_BAZEL_CACHE_OUTPUTS_CACHE_HIT}"
+          echo "Cache Primary Key: ${STEPS_BAZEL_CACHE_OUTPUTS_CACHE_PRIMARY_KEY}"
+          echo "Cache Matched Key: ${STEPS_BAZEL_CACHE_OUTPUTS_CACHE_MATCHED_KEY}"
+        env:
+          STEPS_BAZEL_CACHE_OUTPUTS_CACHE_HIT: ${{ steps.bazel-cache.outputs.cache-hit }}
+          STEPS_BAZEL_CACHE_OUTPUTS_CACHE_PRIMARY_KEY: ${{ steps.bazel-cache.outputs.cache-primary-key }}
+          STEPS_BAZEL_CACHE_OUTPUTS_CACHE_MATCHED_KEY: ${{ steps.bazel-cache.outputs.cache-matched-key }}
 
       - name: Set BAZEL_CONFIG_FLAGS for Cache
         shell: bash
@@ -97,7 +105,7 @@ jobs:
           bazel --version
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -117,13 +125,13 @@ jobs:
           ./ci/build_pip_package_with_bazel.sh
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: wheels-py${{ matrix.python-version }}-${{ runner.os }}-${{ runner.arch }}
           path: ./dist/*.whl
 
       - name: Save bazel cache
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 # zizmor: ignore[cache-poisoning]
         if: always()
         with:
           path: ~/.cache/bazel
@@ -136,7 +144,7 @@ jobs:
     if: success() && github.ref == 'refs/heads/main'
     steps:
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
@@ -144,7 +152,7 @@ jobs:
         run: python -m pip install twine
 
       - name: Download all wheel artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: wheels-*
           path: dist
@@ -156,5 +164,6 @@ jobs:
       - name: Upload to PyPI
         env:
           TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_UPLOAD_TOKEN }}
+          TWINE_PASSWORD: # zizmor: ignore[secrets-outside-env] ${{ secrets.PYPI_UPLOAD_TOKEN }}
+        # zizmor: ignore[use-trusted-publishing]
         run: twine upload --skip-existing --non-interactive --verbose dist/*.whl
