@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "tensor/examples/gemma4/perfetto_session.h"
+#include "tensor/examples/utils/perfetto_session.h"
 
 #include <fstream>
 #include <ios>
@@ -35,7 +35,7 @@ limitations under the License.
 
 PERFETTO_TRACK_EVENT_STATIC_STORAGE();
 
-namespace litert::tensor::examples::gemma4 {
+namespace litert::tensor {
 
 PerfettoSession::PerfettoSession(absl::string_view output_path)
     : output_path_(output_path) {}
@@ -98,4 +98,4 @@ absl::Status PerfettoSession::StopAndSave() {
   return absl::OkStatus();
 }
 
-}  // namespace litert::tensor::examples::gemma4
+}  // namespace litert::tensor
