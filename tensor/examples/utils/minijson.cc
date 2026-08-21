@@ -12,7 +12,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-#include "tensor/examples/gemma4/minijson.h"
+#include "tensor/examples/utils/minijson.h"
 
 #include <array>
 #include <cstdint>

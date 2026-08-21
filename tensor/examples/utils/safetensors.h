@@ -21,8 +21,8 @@ limitations under the License.
 // Inspired from:
 // https://gist.github.com/Narsil/5d6bf307995158ad2c4994f323967284
 
-#ifndef THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA4_SAFETENSORS_H_
-#define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA4_SAFETENSORS_H_
+#ifndef THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_UTILS_SAFETENSORS_H_
+#define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_UTILS_SAFETENSORS_H_
 
 #include <array>
 #include <cstddef>
@@ -30,7 +30,7 @@ limitations under the License.
 #include <string>
 #include <vector>
 
-#include "tensor/examples/gemma4/minijson.h"
+#include "tensor/examples/utils/minijson.h"
 
 #ifdef __ANDROID__
 #ifdef SAFETENSORS_CPP_ANDROID_LOAD_FROM_ASSETS
@@ -218,4 +218,4 @@ float fp16_to_float(uint16_t x);
 
 }  // namespace safetensors
 
-#endif  // THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA4_SAFETENSORS_H_
+#endif  // THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_UTILS_SAFETENSORS_H_

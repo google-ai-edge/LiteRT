@@ -28,7 +28,7 @@ limitations under the License.
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "tensor/datatypes.h"
-#include "tensor/examples/gemma4/safetensors.h"
+#include "tensor/examples/utils/safetensors.h"
 #include "tensor/tensor.h"
 
 namespace litert::tensor::examples {

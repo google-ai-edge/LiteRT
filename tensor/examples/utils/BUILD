@@ -30,3 +30,20 @@ cc_library(
         "@com_google_absl//absl/flags:usage",
     ],
 )
+
+cc_library(
+    name = "minijson",
+    srcs = ["minijson.cc"],
+    hdrs = ["minijson.h"],
+)
+
+cc_library(
+    name = "safetensors",
+    srcs = ["safetensors.cc"],
+    hdrs = ["safetensors.h"],
+    deps = [
+        ":minijson",
+        "//tensor:datatypes",
+        "//tensor/internal:fp16",
+    ],
+)

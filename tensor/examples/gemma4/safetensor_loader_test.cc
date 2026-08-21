@@ -23,7 +23,7 @@ limitations under the License.
 
 #include <gtest/gtest.h>
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "tensor/examples/gemma4/safetensors.h"
+#include "tensor/examples/utils/safetensors.h"
 #include "tensor/utils/matchers.h"
 
 namespace litert::tensor::examples {

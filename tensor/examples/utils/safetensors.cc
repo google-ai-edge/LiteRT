@@ -12,7 +12,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-#include "tensor/examples/gemma4/safetensors.h"
+#include "tensor/examples/utils/safetensors.h"
 
 #include <algorithm>
 #include <array>
@@ -31,7 +31,7 @@ limitations under the License.
 #include <vector>
 
 #include "tensor/datatypes.h"
-#include "tensor/examples/gemma4/minijson.h"
+#include "tensor/examples/utils/minijson.h"
 #include "tensor/internal/fp16.h"
 
 #ifdef __has_include

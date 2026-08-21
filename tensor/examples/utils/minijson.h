@@ -16,8 +16,8 @@ limitations under the License.
 // https://github.com/syoyo/minijson
 // SPDX-License-Identifier: MIT Copyright 2023 - Present, Syoyo Fujita.
 
-#ifndef THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA4_MINIJSON_H_
-#define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA4_MINIJSON_H_
+#ifndef THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_UTILS_MINIJSON_H_
+#define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_UTILS_MINIJSON_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -864,4 +864,4 @@ inline const char* errstr(error e) {
 
 }  // namespace minijson
 
-#endif  // THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA4_MINIJSON_H_
+#endif  // THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_UTILS_MINIJSON_H_

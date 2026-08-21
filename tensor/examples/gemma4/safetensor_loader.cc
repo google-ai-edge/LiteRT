@@ -36,9 +36,9 @@ limitations under the License.
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
-#include "tensor/examples/gemma4/minijson.h"
 #include "tensor/examples/gemma4/perfetto_session.h"
-#include "tensor/examples/gemma4/safetensors.h"
+#include "tensor/examples/utils/minijson.h"
+#include "tensor/examples/utils/safetensors.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
 

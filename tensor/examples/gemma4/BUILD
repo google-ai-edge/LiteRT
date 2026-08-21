@@ -139,33 +139,16 @@ cc_binary(
 )
 
 cc_library(
-    name = "minijson",
-    srcs = ["minijson.cc"],
-    hdrs = ["minijson.h"],
-)
-
-cc_library(
-    name = "safetensors",
-    srcs = ["safetensors.cc"],
-    hdrs = ["safetensors.h"],
-    deps = [
-        ":minijson",
-        "//tensor:datatypes",
-        "//tensor/internal:fp16",
-    ],
-)
-
-cc_library(
     name = "safetensor_loader",
     srcs = ["safetensor_loader.cc"],
     hdrs = ["safetensor_loader.h"],
     deps = [
-        ":minijson",
         ":perfetto_session",
-        ":safetensors",
         "//tensor",
         "//tensor:buffer",
         "//tensor:datatypes",
+        "//tensor/examples/utils:minijson",
+        "//tensor/examples/utils:safetensors",
         "//tensor/utils:macros",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_log",
@@ -182,7 +165,7 @@ cc_test(
     srcs = ["safetensor_loader_test.cc"],
     deps = [
         ":safetensor_loader",
-        ":safetensors",
+        "//tensor/examples/utils:safetensors",
         "//tensor/utils:matchers",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
