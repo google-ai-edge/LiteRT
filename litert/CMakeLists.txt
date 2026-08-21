@@ -41,7 +41,6 @@ add_compile_options(
   -Wno-deprecated-declarations
   -Wno-nullability-completeness
   -Wno-return-type
-  -fpermissive
 )
 add_compile_definitions(CL_TARGET_OPENCL_VERSION=300)
 
