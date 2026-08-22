@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "tensor/examples/gemma4/perfetto_session.h"
+#include "tensor/examples/utils/perfetto_session.h"
 
 #include <filesystem>  // NOLINT
 #include <memory>
@@ -22,8 +22,9 @@ limitations under the License.
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "tensor/utils/matchers.h"
+#include "perfetto/tracing/track_event.h"  // from @perfetto
 
-namespace litert::tensor::examples::gemma4 {
+namespace litert::tensor {
 namespace {
 
 using testing::IsNull;
@@ -35,7 +36,7 @@ TEST(PerfettoSessionTest, CreateAndStop) {
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::unique_ptr<PerfettoSession> session,
                                     PerfettoSession::Create(trace_path));
     EXPECT_THAT(session, Not(IsNull()));
-    TRACE_EVENT(kGemma4Category, "TestEvent");
+    TRACE_EVENT(kTensorApiCategory, "TestEvent");
     EXPECT_THAT(session->StopAndSave(), IsOk());
   }
   EXPECT_TRUE(std::filesystem::exists(trace_path));
@@ -47,9 +48,9 @@ TEST(PerfettoSessionTest, EmptyOutputPath) {
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::unique_ptr<PerfettoSession> session,
                                   PerfettoSession::Create(""));
   EXPECT_THAT(session, Not(IsNull()));
-  TRACE_EVENT(kGemma4Category, "TestEventEmptyPath");
+  TRACE_EVENT(kTensorApiCategory, "TestEventEmptyPath");
   EXPECT_THAT(session->StopAndSave(), IsOk());
 }
 
 }  // namespace
-}  // namespace litert::tensor::examples::gemma4
+}  // namespace litert::tensor

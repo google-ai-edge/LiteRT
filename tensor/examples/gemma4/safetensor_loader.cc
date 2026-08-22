@@ -36,11 +36,12 @@ limitations under the License.
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
-#include "tensor/examples/gemma4/perfetto_session.h"
 #include "tensor/examples/utils/minijson.h"
+#include "tensor/examples/utils/perfetto_session.h"
 #include "tensor/examples/utils/safetensors.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
+#include "perfetto/tracing/track_event.h"  // from @perfetto
 
 namespace litert::tensor::examples {
 
@@ -471,7 +472,7 @@ absl::StatusOr<Type> SafetensorLoader::DtypeToType(safetensors::dtype dtype) {
 }
 
 absl::Status SafetensorLoader::AddSafetensorFile(const std::string& path) {
-  TRACE_EVENT(gemma4::kGemma4Category, "AddSafetensorFile");
+  TRACE_EVENT(kTensorApiCategory, "AddSafetensorFile");
   auto st = std::make_shared<safetensors::safetensors_t>();
   std::string warn, err;
   bool ret = safetensors::mmap_from_file(path, st.get(), &warn, &err);
@@ -500,7 +501,7 @@ absl::Status SafetensorLoader::AddSafetensorFile(const std::string& path) {
   // Convert safetensors-cpp tensor info to our format.
   const std::vector<std::string>& tensor_keys = st->tensors.keys();
   for (const std::string& name : tensor_keys) {
-    TRACE_EVENT(gemma4::kGemma4Category, "AddTensor");
+    TRACE_EVENT(kTensorApiCategory, "AddTensor");
     if (tensor_infos_.contains(name)) {
       return absl::AlreadyExistsError(absl::StrCat(
           "Duplicate tensor name across safetensor files: ", name));
@@ -543,7 +544,7 @@ absl::Status SafetensorLoader::AddSafetensorFile(const std::string& path) {
 
 absl::StatusOr<SafetensorLoader> SafetensorLoader::Load(
     const std::string& path) {
-  TRACE_EVENT(gemma4::kGemma4Category, "Initialize weight loader");
+  TRACE_EVENT(kTensorApiCategory, "Initialize weight loader");
   namespace fs = std::filesystem;
   SafetensorLoader loader;
 
@@ -618,7 +619,7 @@ absl::StatusOr<SafetensorTensorInfo> SafetensorLoader::GetTensorInfo(
 
 absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
     absl::string_view name) const {
-  TRACE_EVENT(gemma4::kGemma4Category, "LoadTensor");
+  TRACE_EVENT(kTensorApiCategory, "LoadTensor");
   ABSL_VLOG(3) << "Loading tensor " << name;
   LRT_TENSOR_ASSIGN_OR_RETURN(SafetensorTensorInfo info, GetTensorInfo(name));
   LRT_TENSOR_ASSIGN_OR_RETURN(Type type, DtypeToType(info.dtype));
@@ -759,7 +760,7 @@ SafetensorLoader::LoadAllTensors() const {
 absl::StatusOr<absl::flat_hash_map<std::string, TensorHandle>>
 SafetensorLoader::LoadWeightsWithMapping(
     const absl::flat_hash_map<std::string, std::string>& name_mapping) const {
-  TRACE_EVENT(gemma4::kGemma4Category, "LoadWeightsWithMapping");
+  TRACE_EVENT(kTensorApiCategory, "LoadWeightsWithMapping");
   absl::flat_hash_map<std::string, TensorHandle> tensors;
   for (const auto& [hf_name, model_name] : name_mapping) {
     absl::StatusOr<TensorHandle> tensor_or = LoadTensor(hf_name);
