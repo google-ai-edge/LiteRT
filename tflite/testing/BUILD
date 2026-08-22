@@ -37,7 +37,6 @@ load(
     "gen_zipped_test_file",
     "generated_test_models_all",
 )
-load("//tflite/testing:tflite_model_test.bzl", "tflite_model_test")
 # copybara:uncomment(oss-unused) load("//tools/build_defs/build_test:build_test.bzl", "build_test")
 
 package(
@@ -647,20 +646,6 @@ tf_cc_binary(
         ":tflite_diff_flags",
         ":tflite_diff_util",
     ],
-)
-
-tflite_model_test(
-    name = "tflite_model_example_test",
-    input_layer = "a,b,c,d",
-    input_layer_shape = "1,8,8,3:1,8,8,3:1,8,8,3:1,8,8,3",
-    input_layer_type = "float,float,float,float",
-    output_layer = "x,y",
-    tags = [
-        "no_cuda_on_cpu_tap",
-        "no_oss",  # needs test data
-        "tflite_not_portable",  # TODO(b/134772701): Enable after making this a proper GTest.
-    ],
-    tensorflow_model_file = "//tflite:testdata/multi_add.pb",
 )
 
 cc_library(
