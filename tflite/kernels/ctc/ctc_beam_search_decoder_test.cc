@@ -226,6 +226,14 @@ TEST(CTCBeamSearchTest, NonEqualSequencesTest) {
               ElementsAreArray(ArrayFloatNear({-0.97322, -1.16334, -2.15553})));
 }
 
+TEST(CTCBeamSearchTest, InvalidTopPathsTest) {
+  CTCBeamSearchDecoderOpModel m({3, 1, 5}, {1}, 2, 2, true);
+  m.PopulateTensor<float>(m.inputs(), {0.1, 0.2, 0.3, 0.4, 0.5, 0.1, 0.2, 0.3,
+                                       0.4, 0.5, 0.1, 0.2, 0.3, 0.4, 0.5});
+  m.PopulateTensor<int>(m.sequence_length(), {0});
+  ASSERT_EQ(m.Invoke(), kTfLiteError);
+}
+
 }  // namespace
 }  // namespace custom
 }  // namespace ops

@@ -48,6 +48,7 @@ struct OpData {
   int input_offset;
   int output_offset;
   bool needs_rescale;
+  TfLiteType lut_type;
   union {
     int8_t* lut_int8;
     int16_t* lut_int16;
@@ -115,15 +116,23 @@ void LogLUTPrepare(TfLiteType type, OpData* op_data, float input_scale,
   };
 
   if (type == kTfLiteInt8) {
-    if (!op_data->lut_int8) {
+    if (op_data->lut_type != kTfLiteInt8) {
+      if (op_data->lut_type == kTfLiteInt16) {
+        delete[] op_data->lut_int16;
+      }
       op_data->lut_int8 = new int8_t[LUTSize<int8_t>()];
+      op_data->lut_type = kTfLiteInt8;
     }
     LUTPopulate<int8_t>(input_scale, input_zero_point, output_scale,
                         output_zero_point, lut_func, lut_func_params,
                         op_data->lut_int8);
   } else {
-    if (!op_data->lut_int16) {
+    if (op_data->lut_type != kTfLiteInt16) {
+      if (op_data->lut_type == kTfLiteInt8) {
+        delete[] op_data->lut_int8;
+      }
       op_data->lut_int16 = new int16_t[LUTSize<int16_t>()];
+      op_data->lut_type = kTfLiteInt16;
     }
     LUTPopulate<int16_t>(input_scale, input_zero_point, output_scale,
                          output_zero_point, lut_func, lut_func_params,
@@ -191,8 +200,12 @@ TfLiteStatus GenericPrepare(TfLiteContext* context, TfLiteNode* node,
           }
           return 1.0f / std::sqrt(value);
         };
-        if (!op_data->lut_int16) {
+        if (op_data->lut_type != kTfLiteInt16) {
+          if (op_data->lut_type == kTfLiteInt8) {
+            delete[] op_data->lut_int8;
+          }
           op_data->lut_int16 = new int16_t[LUTSize<int16_t>()];
+          op_data->lut_type = kTfLiteInt16;
         }
         LUTPopulate<int16_t>(input_scale, input_params->zero_point->data[0],
                              output_scale, output_params->zero_point->data[0],
@@ -270,15 +283,22 @@ inline TfLiteStatus EvalLogical(TfLiteContext* context, TfLiteNode* node,
 
 void* ElementWiseQuantizedInit(TfLiteContext* context, const char* buffer,
                                size_t length) {
-  return new OpData();
+  OpData* data = new OpData();
+  data->lut_type = kTfLiteNoType;
+  data->lut_int8 = nullptr;
+  return data;
 }
 
 void ElementWiseQuantizedFree(TfLiteContext* context, void* buffer) {
   OpData* data = static_cast<OpData*>(buffer);
-  if (data && data->lut_int8) {
-    delete[] data->lut_int8;
+  if (data) {
+    if (data->lut_type == kTfLiteInt8) {
+      delete[] data->lut_int8;
+    } else if (data->lut_type == kTfLiteInt16) {
+      delete[] data->lut_int16;
+    }
+    delete data;
   }
-  delete data;
 }
 
 template <typename T>
