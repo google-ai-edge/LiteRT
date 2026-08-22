@@ -65,6 +65,7 @@ provides the corresponding QNN operation it is legalized to.
 | `kLiteRtOpCodeTflEmbeddingLookup` | Legalized to `QNN_OP_GATHER`. |
 | `kLiteRtOpCodeTflEqual` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (EQUAL). |
 | `kLiteRtOpCodeTflExp` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (EXP). |
+| `kLiteRtOpCodeTflExpandDims` | Legalized to `QNN_OP_RESHAPE`. |
 | `kLiteRtOpCodeTflFloor` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (FLOOR). |
 | `kLiteRtOpCodeTflFloorDiv` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (FLOOR_DIV). |
 | `kLiteRtOpCodeTflFloorMod` | Legalized to `QNN_OP_ELEMENT_WISE_MOD`. Supports INT32 only. |
