@@ -77,6 +77,9 @@ bool QnnModel::Finalize() {
       context_handle_, "test", DefaultGraphConfigs().data(), &graph_handle_));
   for (auto& op_wrapper : op_wrappers_) {
     for (const auto& tensor_wrapper_ref : op_wrapper.GetAllTensors()) {
+      if (tensor_wrapper_ref.get().IsTensorNull()) {
+        continue;
+      }
       if (!created_tensors.count(&(tensor_wrapper_ref.get()))) {
         QNN_RETURN_STATUS_IF_NOT_OK(api_->tensorCreateGraphTensor(
             graph_handle_, &(tensor_wrapper_ref.get().GetQnnTensor())));
