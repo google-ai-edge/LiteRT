@@ -296,6 +296,26 @@ TEST_F(DspBackendPerfTest, DefaultModeSchedulesDownvote) {
   EXPECT_GT(set_power_config_call_count.load(), calls_after_init);
 }
 
+TEST_F(DspBackendPerfTest, ManualBurstDefaultBurstRevotes) {
+  Options options;
+  options.SetDspPerformanceMode(DspPerformanceMode::kBurst);
+  options.SetDspPerfCtrlMode(DspPerfCtrlMode::kManual);
+  DspBackend backend(&qnn_api_copy_);
+
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+
+  Options default_options;
+  default_options.SetDspPerfCtrlMode(DspPerfCtrlMode::kManual);
+  EXPECT_TRUE(backend.SetPerformanceMode(default_options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(400));
+  const int calls_after_downvote = set_power_config_call_count.load();
+
+  options.SetDspPerformanceMode(DspPerformanceMode::kBurst);
+  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_GT(set_power_config_call_count.load(), calls_after_downvote);
+}
+
 TEST_F(DspBackendPerfTest, AutoModeChangesAcrossExecutes) {
   Options options;
   options.SetDspPerformanceMode(DspPerformanceMode::kPowerSaver);

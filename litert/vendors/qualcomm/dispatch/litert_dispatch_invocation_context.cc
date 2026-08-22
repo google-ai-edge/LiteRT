@@ -698,14 +698,10 @@ Expected<void> LiteRtDispatchInvocationContextT::SetOptions(
   switch (qnn_manager_.GetOptions().GetBackendType()) {
     case ::qnn::BackendType::kHtpBackend:
       manual =
-          qnn_options.GetHtpPerformanceMode() !=
-              ::qnn::HtpPerformanceMode::kDefault &&
           qnn_options.GetHtpPerfCtrlMode() == ::qnn::HtpPerfCtrlMode::kManual;
       break;
     case ::qnn::BackendType::kDspBackend:
       manual =
-          qnn_options.GetDspPerformanceMode() !=
-              ::qnn::DspPerformanceMode::kDefault &&
           qnn_options.GetDspPerfCtrlMode() == ::qnn::DspPerfCtrlMode::kManual;
       break;
     default:
