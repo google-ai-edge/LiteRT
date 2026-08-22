@@ -50,16 +50,10 @@ EXCLUDED_TARGETS=(
         "-//tflite/delegates/flex:buffer_map_test"
         "-//tflite/delegates/gpu/cl/kernels:convolution_transposed_3x3_test"
         "-//tflite/delegates/xnnpack:reduce_test"
-        # Fails when run as root in Docker due to overriding chmod 0444 write failure simulation.
-        "-//tflite/experimental/acceleration/mini_benchmark:fb_storage_test"
-        "-//tflite/experimental/acceleration/mini_benchmark:blocking_validator_runner_test"
         "-//tflite/experimental/microfrontend:audio_microfrontend_op_test"
-        "-//tflite/kernels/variants/py:end_to_end_test"
         "-//tflite/profiling:memory_info_test"
         "-//tflite/profiling:profile_summarizer_test"
         "-//tflite/profiling:profile_summary_formatter_test"
-        "-//tflite/python/authoring:authoring_test"
-        "-//tflite/python/kernel_tests/signal:window_ops_test_cpu"
         "-//tflite/python/metrics:metrics_wrapper_test"
         "-//tflite/python:convert_saved_model_test"
         "-//tflite/python:convert_test"
@@ -81,10 +75,8 @@ EXCLUDED_TARGETS=(
         "-//tflite/testing:zip_test_depthwiseconv_forward-compat"
         "-//tflite/testing:zip_test_depthwiseconv_mlir-quant"
         "-//tflite/testing:zip_test_depthwiseconv_with-flex"
-        "-//tflite/experimental/acceleration/mini_benchmark:blocking_validator_runner_test"
         # Exclude dir which shouldnt run
         "-//tflite/java/..."
-        "-//tflite/tools/benchmark/experimental/..."
         "-//tflite/delegates/gpu/..."
         "-//tflite/delegates/nnapi/..."
         # TODO: (b/410925271) - Targets not migrated to pywrap_rules yet
