@@ -57,7 +57,7 @@ class UniqueTfLiteTensor {
 
 // Prints a debug string for the given tensor.
 std::string TfliteTensorDebugString(const ::TfLiteTensor* tensor,
-                                    const std::size_t max_values = 30);
+                                    std::size_t max_values = 30);
 
 // Calculate the total number of elements given the shape.
 std::size_t NumTotalFromShape(const std::initializer_list<int>& shape);
@@ -92,7 +92,7 @@ void PopulateTfLiteTensorValue(const std::initializer_list<T> values,
 
 template <>
 void PopulateTfLiteTensorValue<std::string>(
-    const std::initializer_list<std::string> values, TfLiteTensor* tensor);
+    std::initializer_list<std::string> values, TfLiteTensor* tensor);
 
 template <typename T>
 void PopulateTfLiteTensor(const std::initializer_list<T> values,
