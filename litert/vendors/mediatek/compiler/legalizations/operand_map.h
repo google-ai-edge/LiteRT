@@ -68,8 +68,17 @@ class OperandType : public NeuronOperandType {
     }
 
     auto mtk_type = GetNeuronTensorType(t, tensor_flags);
+    bool has_unsupported_element_type = false;
     if (!mtk_type) {
-      return mtk_type.Error();
+      // Fallback path for unrepresentable element types: only used for
+      // NEURON_UNKNOWN ops, where the operand value is don't-care.
+      if (!(tensor_flags & NN_TENSOR_FLAG_USE_INVALID_TENSOR_TYPE)) {
+        return mtk_type.Error();
+      }
+      mtk_type = (t.QTypeId() == kLiteRtQuantizationPerChannel)
+                     ? NEURON_TENSOR_QUANT8_SYMM_PER_CHANNEL
+                     : NEURON_TENSOR_QUANT8_ASYMM_SIGNED;
+      has_unsupported_element_type = true;
     }
 
     if (t.QTypeId() == kLiteRtQuantizationPerTensor) {
@@ -77,12 +86,13 @@ class OperandType : public NeuronOperandType {
       LITERT_LOG(LITERT_DEBUG, "zeroPoint: %d, scale: %f",
                  quant_info.zero_point, quant_info.scale);
       return OperandType(*mtk_type, std::move(mtk_dimensions), quant_info.scale,
-                         quant_info.zero_point);
+                         quant_info.zero_point, has_unsupported_element_type);
     } else if (t.QTypeId() == kLiteRtQuantizationPerChannel) {
-      return OperandType(*mtk_type, std::move(mtk_dimensions), 0, 0);
+      return OperandType(*mtk_type, std::move(mtk_dimensions), 0, 0,
+                         has_unsupported_element_type);
     } else {
       return OperandType(*mtk_type, std::move(mtk_dimensions), /*scale*/ 0,
-                         /*zero_point*/ 0);
+                         /*zero_point*/ 0, has_unsupported_element_type);
     }
   }
 
@@ -104,13 +114,19 @@ class OperandType : public NeuronOperandType {
 
   OperandType(const OperandType&) = delete;
 
-  OperandType(OperandType&& other) : dimensions_(std::move(other.dimensions_)) {
+  OperandType(OperandType&& other)
+      : dimensions_(std::move(other.dimensions_)),
+        has_unsupported_element_type_(other.has_unsupported_element_type_) {
     // Copy all the scalar fields from other.
     *static_cast<NeuronOperandType*>(this) =
         *static_cast<NeuronOperandType*>(&other);
     // Reset the pointer fields by using own data.
     dimensions = dimensions_.data();
-  };
+  }
+
+  bool HasUnsupportedElementType() const {
+    return has_unsupported_element_type_;
+  }
 
   Expected<void> Reshape(std::vector<uint32_t>& shape) {
     auto elements = GetElementCount();
@@ -141,8 +157,10 @@ class OperandType : public NeuronOperandType {
 
  private:
   explicit OperandType(int32_t mtk_type, std::vector<uint32_t>&& mtk_dimensions,
-                       float scale, int32_t zero_point)
-      : dimensions_(std::move(mtk_dimensions)) {
+                       float scale, int32_t zero_point,
+                       bool has_unsupported_element_type = false)
+      : dimensions_(std::move(mtk_dimensions)),
+        has_unsupported_element_type_(has_unsupported_element_type) {
     this->scale = scale;
     this->zeroPoint = zero_point;
     this->type = mtk_type;
@@ -151,6 +169,11 @@ class OperandType : public NeuronOperandType {
   }
 
   std::vector<uint32_t> dimensions_;
+
+  // True if the element type has no Neuron equivalent and a placeholder QUANT8
+  // type was substituted. Only allowed for NEURON_UNKNOWN ops, where the
+  // operand value is don't-care.
+  bool has_unsupported_element_type_ = false;
 };
 
 // This class takes care of registering Tensors and scalars with a given
