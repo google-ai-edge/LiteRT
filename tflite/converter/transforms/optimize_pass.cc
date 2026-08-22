@@ -100,25 +100,15 @@ ElementsAttr ReshapeNCHWBiasToNHWC(Value v, Attribute a) {
 }
 
 bool L2NormalizeReduceAxis(Value sq_op, DenseElementsAttr axis) {
-  if (axis.getNumElements() == 0) {
+  // TFL_L2_NORMALIZATION only reduces the final dimension. Do not fuse a
+  // multi-axis reduction: in particular, [0, 1, ..., rank - 1] reduces the
+  // whole tensor and is not equivalent for rank greater than one.
+  if (axis.getNumElements() != 1) {
     return false;
   }
-  if (mlir::cast<ShapedType>(sq_op.getType()).getRank() - 1 ==
-          *axis.getValues<int>().begin() ||
-      *axis.getValues<int>().begin() == -1) {
-    return true;
-  }
-  if (mlir::cast<ShapedType>(sq_op.getType()).getRank() !=
-      axis.getNumElements()) {
-    return false;
-  }
-  auto shape = mlir::cast<ShapedType>(sq_op.getType());
-  SmallVector<int, 4> elems{axis.getValues<int>().begin(),
-                            axis.getValues<int>().end()};
-  for (int i = 0; i < shape.getRank(); ++i) {
-    if (i != elems[i]) return false;
-  }
-  return true;
+  const int reduction_axis = *axis.getValues<int>().begin();
+  const int rank = mlir::cast<ShapedType>(sq_op.getType()).getRank();
+  return reduction_axis == rank - 1 || reduction_axis == -1;
 }
 
 // Checks if a ReshapeOp is equivalent to a `keep_dims=true` reduction by
