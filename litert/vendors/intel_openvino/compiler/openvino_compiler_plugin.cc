@@ -447,6 +447,20 @@ bool IsOpSupported(const litert::compiler::Op& op) {
   return false;
 }
 
+bool IsFloatingPoint(litert::ElementType element_type) {
+  switch (element_type) {
+    case litert::ElementType::Float8E4M3FN:
+    case litert::ElementType::Float8E5M2:
+    case litert::ElementType::Float16:
+    case litert::ElementType::BFloat16:
+    case litert::ElementType::Float32:
+    case litert::ElementType::Float64:
+      return true;
+    default:
+      return false;
+  }
+}
+
 bool IsCompositeOpSupported(const litert::compiler::Op& op) {
   if (op.Code() != kLiteRtOpCodeShloComposite) {
     return true;
@@ -461,9 +475,29 @@ bool IsCompositeOpSupported(const litert::compiler::Op& op) {
     return false;
   }
 
-  return std::string_view(composite_op_name) ==
-         std::string_view(litert::compiler::CompositeOptions::kRmsNorm.data(),
-                          litert::compiler::CompositeOptions::kRmsNorm.size());
+  if (std::string_view(composite_op_name) !=
+      std::string_view(litert::compiler::CompositeOptions::kRmsNorm.data(),
+                       litert::compiler::CompositeOptions::kRmsNorm.size())) {
+    return false;
+  }
+
+  for (const auto& input : op.Inputs()) {
+    if (!IsFloatingPoint(input.ElementType())) {
+      LITERT_LOG(LITERT_INFO,
+                 "Quantized RMSNorm composite requires decomposition; "
+                 "leaving it unselected.");
+      return false;
+    }
+  }
+  for (const auto& output : op.Outputs()) {
+    if (!IsFloatingPoint(output.ElementType())) {
+      LITERT_LOG(LITERT_INFO,
+                 "Quantized RMSNorm composite requires decomposition; "
+                 "leaving it unselected.");
+      return false;
+    }
+  }
+  return true;
 }
 
 #ifdef __cplusplus
