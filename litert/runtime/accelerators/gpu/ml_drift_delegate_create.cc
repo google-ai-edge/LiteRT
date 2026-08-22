@@ -108,6 +108,9 @@ LiteRtStatus CreateDelegate(
         &gpu_delegate_options->litert_external_tensors_mode,
         gpu_options_payload);
 
+    LrtGetGpuOptionsUseIrModel(&gpu_delegate_options->use_ir_model,
+                               gpu_options_payload);
+
     LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
         &gpu_delegate_options->allow_src_quantized_fc_conv_ops,
         gpu_options_payload);

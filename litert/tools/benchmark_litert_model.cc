@@ -99,6 +99,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
       params.Get<bool>("gpu_wait_for_weights_conversion_complete");
   auto gpu_cache_compiled_programs_only =
       params.Get<bool>("gpu_cache_compiled_programs_only");
+  auto gpu_use_ir_model = params.Get<bool>("gpu_use_ir_model");
   auto xnnpack_weight_cache_file_path =
       params.Get<std::string>("xnnpack_weight_cache_file_path");
   auto mediatek_nerun_pilot_version =
@@ -207,6 +208,9 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     }
     if (gpu_cache_compiled_programs_only) {
       gpu_options.CacheCompiledProgramsOnly(true);
+    }
+    if (gpu_use_ir_model) {
+      gpu_options.EnableUseIrModel(true);
     }
 
     auto use_profiler = params.Get<bool>("use_profiler");
