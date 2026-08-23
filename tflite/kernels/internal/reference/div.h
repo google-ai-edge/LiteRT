@@ -1,3 +1,5 @@
+#include <limits>
+#include <type_traits>
 /* Copyright 2020 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,6 +25,20 @@ limitations under the License.
 namespace tflite {
 
 namespace reference_ops {
+
+template <typename T>
+inline T SafeDiv(T input1, T input2) {
+  if (input2 == 0) {
+    return 0;
+  }
+  if constexpr (std::is_signed<T>::value) {
+    if (input1 == std::numeric_limits<T>::min() && input2 == static_cast<T>(-1)) {
+      return std::numeric_limits<T>::max();
+    }
+  }
+  return input1 / input2;
+}
+
 
 template <typename T>
 inline void DivCheckArithmeticParams(const ArithmeticParams& params) {
@@ -202,7 +218,7 @@ void BroadcastDivSlow(const ArithmeticParams& params,
   GetActivationParams(params, &output_activation_min, &output_activation_max);
 
   auto op = [output_activation_min, output_activation_max](T a, T b) {
-    return ActivationFunctionWithMinMax(a / b, output_activation_min,
+    return ActivationFunctionWithMinMax(SafeDiv(a, b), output_activation_min,
                                         output_activation_max);
   };
 
@@ -224,7 +240,7 @@ inline void Div(const ArithmeticParams& params,
       MatchingElementsSize(input1_shape, input2_shape, output_shape);
   for (int i = 0; i < flat_size; ++i) {
     output_data[i] = ActivationFunctionWithMinMax(
-        input1_data[i] / input2_data[i], output_activation_min,
+        SafeDiv(input1_data[i], input2_data[i]), output_activation_min,
         output_activation_max);
   }
 }
