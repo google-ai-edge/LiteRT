@@ -64,8 +64,15 @@ bool IsResize2DSupported(const TfLiteContext* absl_nonnull context,
       // clang-format off
       // go/keep-sorted start numeric=yes
       kTfLiteBFloat16,
+      kTfLiteBool,
       kTfLiteFloat16,
       kTfLiteFloat32,
+      kTfLiteInt8,
+      kTfLiteInt16,
+      kTfLiteInt32,
+      kTfLiteUInt8,
+      kTfLiteUInt16,
+      kTfLiteUInt32,
       // go/keep-sorted end
       // clang-format on
   };

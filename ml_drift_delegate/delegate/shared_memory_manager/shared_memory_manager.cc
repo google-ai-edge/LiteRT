@@ -736,8 +736,7 @@ absl::Status SharedMemoryManager::CreateAffineQuantizationParams(
     const ValueId& shared_tensor_id, uint32_t global_tensor_id,
     const TfLiteTensor& tflite_tensor,
     absl::flat_hash_map<ValueId, GlobalId>* external_tensors,
-    bool is_weight_sum_i_required,
-    const std::vector<uint32_t>& weight_consumers, DataType data_type,
+    bool is_weight_sum_i_required, uint32_t fc_op_id, DataType data_type,
     const OHWI& weights_shape) {
   TfLiteAffineQuantization* quant_params =
       static_cast<TfLiteAffineQuantization*>(tflite_tensor.quantization.params);
@@ -761,8 +760,7 @@ absl::Status SharedMemoryManager::CreateAffineQuantizationParams(
   ABSL_ASSIGN_OR_RETURN(
       ValueId scale_value_id,
       AddInputWithData(shared_tensor->scale_global_tensor_id.value(),
-                       scale_shape, weight_consumers, scales.data(),
-                       data_type));
+                       scale_shape, fc_op_id, scales.data(), data_type));
   // We refresh the shared_tensor pointer as the object could have been moved
   // after AddInputWithData() call added  a scale tensor to the
   // buffer_id_to_spatial_tensor_.
@@ -775,7 +773,7 @@ absl::Status SharedMemoryManager::CreateAffineQuantizationParams(
   ABSL_ASSIGN_OR_RETURN(
       ValueId zero_point_value_id,
       AddInputWithData(shared_tensor->zero_point_global_tensor_id.value(),
-                       zero_point_shape, weight_consumers, zero_points.data(),
+                       zero_point_shape, fc_op_id, zero_points.data(),
                        data_type));
   shared_tensor = &buffer_id_to_spatial_tensor_.at(global_tensor_id);
   (*external_tensors)[zero_point_value_id] = GlobalId::BuildParamId(
@@ -800,15 +798,14 @@ absl::Status SharedMemoryManager::CreateAffineQuantizationParams(
           weights_sum_i_value_id,
           AddInputWithData<int32_t>(
               shared_tensor->weights_sum_i_global_tensor_id.value(),
-              scale_shape, weight_consumers, nullptr, DataType::INT32));
+              scale_shape, fc_op_id, nullptr, DataType::INT32));
     } else if (weights_manager_) {
       BHWC scale_or_zero_point_shape = BHWC(
           1, 1, 1, tflite_tensor.dims->data[quant_params->quantized_dimension]);
       ABSL_ASSIGN_OR_RETURN(
           weights_sum_i_value_id,
           AddInputNode(shared_tensor->weights_sum_i_global_tensor_id.value(),
-                       scale_or_zero_point_shape, weight_consumers,
-                       DataType::INT32));
+                       scale_or_zero_point_shape, fc_op_id, DataType::INT32));
       DataType src_data_type = DataType::INT4;
       if (tflite_tensor.type == TfLiteType::kTfLiteInt8) {
         src_data_type = DataType::INT8;
@@ -826,7 +823,7 @@ absl::Status SharedMemoryManager::CreateAffineQuantizationParams(
                                      : shared_tensor->weights_sum_i.data.data();
       absl::StatusOr<ValueId> status_or_value_id = AddInputWithData(
           shared_tensor->weights_sum_i_global_tensor_id.value(), scale_shape,
-          weight_consumers, weights_sum_i_data, DataType::INT32);
+          fc_op_id, weights_sum_i_data, DataType::INT32);
 
       // If the weights_sum_i is empty and there is no entry in the cache, we
       // will get an error when trying to add the input. In this case, we
@@ -850,8 +847,8 @@ absl::Status SharedMemoryManager::CreateAffineQuantizationParams(
 absl::Status SharedMemoryManager::CreateBlockwiseQuantizationParams(
     const ValueId& shared_tensor_id, uint32_t global_tensor_id,
     const TfLiteTensor& tflite_tensor,
-    absl::flat_hash_map<ValueId, GlobalId>* external_tensors,
-    const std::vector<uint32_t>& weight_consumers, DataType data_type) {
+    absl::flat_hash_map<ValueId, GlobalId>* external_tensors, uint32_t fc_op_id,
+    DataType data_type) {
   TfLiteBlockwiseQuantization* quant_params =
       static_cast<TfLiteBlockwiseQuantization*>(
           tflite_tensor.quantization.params);
@@ -927,8 +924,8 @@ absl::Status SharedMemoryManager::CreateBlockwiseQuantizationParams(
   ABSL_ASSIGN_OR_RETURN(
       ValueId scale_value_id,
       AddScaleNodeWithData(shared_tensor->scale_global_tensor_id.value(),
-                           weight_consumers, scale_data, data_type,
-                           num_channels, num_blocks));
+                           fc_op_id, scale_data, data_type, num_channels,
+                           num_blocks));
   shared_tensor = &buffer_id_to_spatial_tensor_.at(global_tensor_id);
   (*external_tensors)[scale_value_id] =
       GlobalId::BuildParamId(shared_tensor->scale_global_tensor_id.value());
@@ -937,8 +934,8 @@ absl::Status SharedMemoryManager::CreateBlockwiseQuantizationParams(
   ABSL_ASSIGN_OR_RETURN(
       ValueId zero_point_value_id,
       AddScaleNodeWithData(shared_tensor->zero_point_global_tensor_id.value(),
-                           weight_consumers, zero_point_data, data_type,
-                           num_channels, num_blocks));
+                           fc_op_id, zero_point_data, data_type, num_channels,
+                           num_blocks));
   shared_tensor = &buffer_id_to_spatial_tensor_.at(global_tensor_id);
   (*external_tensors)[zero_point_value_id] = GlobalId::BuildParamId(
       shared_tensor->zero_point_global_tensor_id.value());
@@ -963,9 +960,9 @@ absl::Status SharedMemoryManager::CreateQuantizedTensorWithScaleAndZeroPoint(
                      shared_const_shape.w, shared_const_shape.c);
   std::vector<uint32_t> weight_consumers =
       graph_adapter_->FindConsumerOps(shared_tensor_id);
-  if (weight_consumers.empty()) {
+  if (weight_consumers.size() != 1) {
     return absl::InternalError(
-        "Expected to have at least one shared weight consumer.");
+        "Expected to have only one shared weight consumer.");
   }
   uint32_t fc_op_id = weight_consumers[0];
   DataType data_type = data_type_;
@@ -1040,12 +1037,12 @@ absl::Status SharedMemoryManager::CreateQuantizedTensorWithScaleAndZeroPoint(
       TfLiteQuantizationType::kTfLiteAffineQuantization) {
     return CreateAffineQuantizationParams(
         shared_tensor_id, global_tensor_id, tflite_tensor, external_tensors,
-        is_weight_sum_i_required, weight_consumers, data_type, weights_shape);
+        is_weight_sum_i_required, fc_op_id, data_type, weights_shape);
   } else if (tflite_tensor.quantization.type ==
              TfLiteQuantizationType::kTfLiteBlockwiseQuantization) {
     return CreateBlockwiseQuantizationParams(shared_tensor_id, global_tensor_id,
                                              tflite_tensor, external_tensors,
-                                             weight_consumers, data_type);
+                                             fc_op_id, data_type);
   } else {
     return absl::UnimplementedError(
         "Only affine quantization is supported for the shared tensors.");
@@ -1054,9 +1051,8 @@ absl::Status SharedMemoryManager::CreateQuantizedTensorWithScaleAndZeroPoint(
 
 template <typename InputDataType>
 absl::StatusOr<ValueId> SharedMemoryManager::AddInputWithData(
-    uint32_t global_tensor_id, const Linear& shape,
-    const std::vector<uint32_t>& weight_consumers, const InputDataType* data,
-    DataType data_type) {
+    uint32_t global_tensor_id, const Linear& shape, uint32_t consumer_op_id,
+    const InputDataType* data, DataType data_type) {
   auto [tensor_it, tensor_inserted] =
       quant_param_id_to_spatial_tensor_.try_emplace(global_tensor_id);
   if (!tensor_inserted) {
@@ -1065,7 +1061,7 @@ absl::StatusOr<ValueId> SharedMemoryManager::AddInputWithData(
 
   ABSL_ASSIGN_OR_RETURN(ValueId local_value_id,
                         AddInputNode(global_tensor_id, BHWC(1, 1, 1, shape.v),
-                                     weight_consumers, data_type));
+                                     consumer_op_id, data_type));
 
   if (data == nullptr) {
     TensorDescriptor serialized_tensor_desc;
@@ -1115,7 +1111,7 @@ absl::StatusOr<ValueId> SharedMemoryManager::AddInputWithData(
 
 template <typename InputDataType>
 absl::StatusOr<ValueId> SharedMemoryManager::AddScaleNodeWithData(
-    uint32_t global_tensor_id, const std::vector<uint32_t>& weight_consumers,
+    uint32_t global_tensor_id, uint32_t consumer_op_id,
     const InputDataType* data, DataType data_type, int num_channels,
     int num_blocks) {
   auto [tensor_it, tensor_inserted] =
@@ -1129,7 +1125,7 @@ absl::StatusOr<ValueId> SharedMemoryManager::AddScaleNodeWithData(
       BHWC(1, 1, DivideRoundUp(num_channels, 4), 4 * num_blocks);
   ABSL_ASSIGN_OR_RETURN(
       ValueId local_value_id,
-      AddInputNode(global_tensor_id, bhwc_shape, weight_consumers, data_type));
+      AddInputNode(global_tensor_id, bhwc_shape, consumer_op_id, data_type));
 
   Tensor<OHWI, DataType::FLOAT32> scale_values;
   scale_values.data.resize(shape.DimensionsProduct());
@@ -1147,15 +1143,10 @@ absl::StatusOr<ValueId> SharedMemoryManager::AddScaleNodeWithData(
 }
 
 absl::StatusOr<ValueId> SharedMemoryManager::AddInputNode(
-    uint32_t global_tensor_id, const BHWC& shape,
-    const std::vector<uint32_t>& weight_consumers, DataType data_type,
-    absl::flat_hash_map<ValueId, GlobalId>* external_tensors) {
-  ValueId value_id = graph_adapter_->AddConstantInput(
-      global_tensor_id, shape, data_type, weight_consumers);
-  if (external_tensors) {
-    (*external_tensors)[value_id] = GlobalId::BuildParamId(global_tensor_id);
-  }
-  return value_id;
+    uint32_t global_tensor_id, const BHWC& shape, uint32_t consumer_op_id,
+    DataType data_type) {
+  return graph_adapter_->AddConstantInput(global_tensor_id, shape, data_type,
+                                          consumer_op_id);
 }
 
 absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
@@ -1174,9 +1165,8 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
   std::vector<uint32_t> weight_consumers =
       graph_adapter_->FindConsumerOps(shared_tensor_id);
 
-  if (weight_consumers.empty()) {
-    return absl::InternalError(
-        "Expected to have at least one weights consumer.");
+  if (weight_consumers.size() != 1) {
+    return absl::InternalError("Expected to have only one weights consumer.");
   }
   uint32_t fc_op_id = weight_consumers[0];
   DataType data_type = data_type_;
@@ -1208,27 +1198,30 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
     BHWC scale_or_zero_point_shape = BHWC(
         1, 1, 1, tflite_tensor.dims->data[quant_params->quantized_dimension]);
 
-    ABSL_RETURN_IF_ERROR(
+    ABSL_ASSIGN_OR_RETURN(
+        ValueId scale_value_id,
         AddInputNode(shared_tensor.scale_global_tensor_id.value(),
-                     scale_or_zero_point_shape, weight_consumers, data_type,
-                     external_tensors)
-            .status());
+                     scale_or_zero_point_shape, fc_op_id, data_type));
+    (*external_tensors)[scale_value_id] =
+        GlobalId::BuildParamId(shared_tensor.scale_global_tensor_id.value());
 
-    ABSL_RETURN_IF_ERROR(
+    ABSL_ASSIGN_OR_RETURN(
+        ValueId zero_point_value_id,
         AddInputNode(shared_tensor.zero_point_global_tensor_id.value(),
-                     scale_or_zero_point_shape, weight_consumers, data_type,
-                     external_tensors)
-            .status());
+                     scale_or_zero_point_shape, fc_op_id, data_type));
+    (*external_tensors)[zero_point_value_id] =
+      GlobalId::BuildParamId(shared_tensor.zero_point_global_tensor_id.value());
 
     if (is_weight_sum_i_required) {
       if (shared_tensor.weights_sum_i_global_tensor_id.has_value()) {
         // If the weights_sum_i is already populated, call AddInputNode() for
         // it.
-        ABSL_RETURN_IF_ERROR(
+        ABSL_ASSIGN_OR_RETURN(
+            ValueId weights_sum_i_value_id,
             AddInputNode(shared_tensor.weights_sum_i_global_tensor_id.value(),
-                         scale_or_zero_point_shape, weight_consumers,
-                         DataType::INT32, external_tensors)
-                .status());
+                         scale_or_zero_point_shape, fc_op_id, DataType::INT32));
+        (*external_tensors)[weights_sum_i_value_id] = GlobalId::BuildParamId(
+            shared_tensor.weights_sum_i_global_tensor_id.value());
       } else {
         // If the weights_sum_i is not already populated, and we can support,
         // create it here. This can happen in the case the shared weight creator
@@ -1240,8 +1233,8 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
           ABSL_ASSIGN_OR_RETURN(
               weights_sum_i_value_id,
               AddInputNode(shared_tensor.weights_sum_i_global_tensor_id.value(),
-                           scale_or_zero_point_shape, weight_consumers,
-                           DataType::INT32, external_tensors));
+                           scale_or_zero_point_shape, fc_op_id,
+                           DataType::INT32));
 
           OHWI weights_shape = OHWI(shared_const_shape.b, shared_const_shape.h,
                                     shared_const_shape.w, shared_const_shape.c);
@@ -1285,7 +1278,7 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
               tflite_tensor.dims->data[quant_params->quantized_dimension]);
           absl::StatusOr<ValueId> status_or_value_id = AddInputWithData(
               shared_tensor.weights_sum_i_global_tensor_id.value(),
-              weights_sum_i_shape, weight_consumers, weights_sum_i_data,
+              weights_sum_i_shape, fc_op_id, weights_sum_i_data,
               DataType::INT32);
           if (!status_or_value_id.ok()) {
             return status_or_value_id.status();
@@ -1305,15 +1298,19 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
         BHWC(1, 1, DivideRoundUp(tflite_tensor.dims->data[0], 4),
              4 * tflite_tensor.dims->data[1] / quant_params->blocksize);
 
-    ABSL_RETURN_IF_ERROR(
+    ABSL_ASSIGN_OR_RETURN(
+        ValueId scale_value_id,
         AddInputNode(shared_tensor.scale_global_tensor_id.value(), bhwc_shape,
-                     weight_consumers, data_type, external_tensors)
-            .status());
+                     fc_op_id, data_type));
+    (*external_tensors)[scale_value_id] =
+        GlobalId::BuildParamId(shared_tensor.scale_global_tensor_id.value());
 
-    ABSL_RETURN_IF_ERROR(
+    ABSL_ASSIGN_OR_RETURN(
+        ValueId zero_point_value_id,
         AddInputNode(shared_tensor.zero_point_global_tensor_id.value(),
-                     bhwc_shape, weight_consumers, data_type, external_tensors)
-            .status());
+                     bhwc_shape, fc_op_id, data_type));
+    (*external_tensors)[zero_point_value_id] = GlobalId::BuildParamId(
+        shared_tensor.zero_point_global_tensor_id.value());
   } else {
     return absl::UnimplementedError(
         "Only affine quantization is supported for the shared tensors.");
@@ -1419,7 +1416,14 @@ absl::Status SharedMemoryManager::CreateSharedTensor(
 
   // Initialize tensor descriptor and upload data.
   BHWC value_shape = graph_adapter_->GetValueShape(shared_tensor_id);
-  DataType data_type = data_type_;
+  const DataType graph_value_type =
+      graph_adapter_->GetValueType(shared_tensor_id);
+  // If the graph tensor is FLOAT32, apply the configured float precision (e.g.
+  // downcast to FP16). For any other type (INT32, INT8, BOOL, FLOAT16, etc.),
+  // preserve the graph's native type.
+  DataType data_type = (graph_value_type == DataType::FLOAT32)
+                           ? data_type_
+                           : graph_value_type;
   if (data_type_ == DataType::FLOAT32) {
     std::vector<uint32_t> consumers =
         graph_adapter_->FindConsumerOps(shared_tensor_id);
@@ -1450,32 +1454,46 @@ absl::Status SharedMemoryManager::CreateSharedTensor(
     return absl::OkStatus();
   }
 
-  // Support uploading float16 data for float16 tensors, otherwise upload float
-  // data. This is used for the models with fp16 weights from MediaPipe. (e.g.
-  // inpainting models)
-  if (tensor_desc.GetDataType() == DataType::FLOAT16) {
-    if (tensor.type == TfLiteType::kTfLiteFloat16) {
-      tensor_desc.UploadData<half>(reinterpret_cast<half*>(tensor.data.f16));
-    } else {
-      int num_elements = tflite::NumElements(&tensor);
-      std::vector<half> half_data(num_elements);
-      for (int i = 0; i < num_elements; ++i) {
-        half_data[i] = half(weights_data_ptr[i]);
+  // Support uploading integer data for int32 tensors, float16 data for float16
+  // tensors, otherwise upload float data. This is used for models with fp16
+  // weights from MediaPipe (e.g. inpainting models) or non-float constants
+  // (e.g. shape/pack tensors).
+  switch (tensor_desc.GetDataType()) {
+    case DataType::INT32:
+      tensor_desc.UploadData<int32_t>(tensor.data.i32);
+      break;
+    case DataType::INT64:
+      tensor_desc.UploadData<int64_t>(tensor.data.i64);
+      break;
+    case DataType::BOOL:
+      tensor_desc.UploadData<bool>(tensor.data.b);
+      break;
+    case DataType::FLOAT16:
+      if (tensor.type == TfLiteType::kTfLiteFloat16) {
+        tensor_desc.UploadData<half>(
+            reinterpret_cast<const half*>(tensor.data.f16));
+      } else {
+        int num_elements = tflite::NumElements(&tensor);
+        std::vector<half> half_data(num_elements);
+        for (int i = 0; i < num_elements; ++i) {
+          half_data[i] = half(weights_data_ptr[i]);
+        }
+        tensor_desc.UploadData<half>(half_data.data());
       }
-      tensor_desc.UploadData<half>(half_data.data());
-    }
-  } else {  // FLOAT32
-    if (tensor.type == TfLiteType::kTfLiteFloat16) {
-      int num_elements = tflite::NumElements(&tensor);
-      std::vector<float> float_data(num_elements);
-      const half* f16_ptr = reinterpret_cast<const half*>(tensor.data.f16);
-      for (int i = 0; i < num_elements; ++i) {
-        float_data[i] = static_cast<float>(f16_ptr[i]);
+      break;
+    default:  // FLOAT32
+      if (tensor.type == TfLiteType::kTfLiteFloat16) {
+        int num_elements = tflite::NumElements(&tensor);
+        std::vector<float> float_data(num_elements);
+        const half* f16_ptr = reinterpret_cast<const half*>(tensor.data.f16);
+        for (int i = 0; i < num_elements; ++i) {
+          float_data[i] = static_cast<float>(f16_ptr[i]);
+        }
+        tensor_desc.UploadData<float>(float_data.data());
+      } else {
+        tensor_desc.UploadData<float>(weights_data_ptr);
       }
-      tensor_desc.UploadData<float>(float_data.data());
-    } else {
-      tensor_desc.UploadData<float>(weights_data_ptr);
-    }
+      break;
   }
   return create_tensor_func_(tensor_desc, /*page_adjusted_offset=*/0,
                              /*release_data_callback=*/nullptr,

@@ -29,7 +29,6 @@ namespace {
 using ::testing::Contains;
 using ::testing::ElementsAre;
 using ::testing::IsEmpty;
-using ::testing::UnorderedElementsAre;
 
 // Host-runnable unit test for IrModelAdapter: exercises each of the nine
 // GraphAdapter methods against a hand-built ir::IrModel. No GPU /
@@ -143,7 +142,7 @@ TEST(IrModelAdapterTest, AddConstantInputWiresNewValueToConsumerOp) {
   IrModelAdapter adapter(g.model);
 
   const uint32_t new_id = adapter.AddConstantInput(
-      /*global_tensor_id=*/123, BHWC(1, 1, 1, 4), DataType::FLOAT16, {g.op_id});
+      /*global_tensor_id=*/123, BHWC(1, 1, 1, 4), DataType::FLOAT16, g.op_id);
 
   // A distinct new value was created with the requested shape/type.
   EXPECT_NE(new_id, g.weights_id);
@@ -161,26 +160,6 @@ TEST(IrModelAdapterTest, AddConstantInputWiresNewValueToConsumerOp) {
               Contains(static_cast<ir::IrTensorId>(new_id)));
   // ...and the reverse lookup resolves back to that op.
   EXPECT_THAT(adapter.FindConsumerOps(new_id), ElementsAre(g.op_id));
-}
-
-TEST(IrModelAdapterTest, AddConstantInputWiresNewValueToMultipleConsumerOps) {
-  TestGraph g;
-  ir::IrOp* second_op = g.model.add_op();
-  second_op->name = "fully_connected";
-  IrModelAdapter adapter(g.model);
-
-  const uint32_t new_id = adapter.AddConstantInput(
-      /*global_tensor_id=*/456, BHWC(1, 1, 1, 4), DataType::FLOAT16,
-      {g.op_id, static_cast<uint32_t>(second_op->id)});
-
-  EXPECT_TRUE(g.model.tensor(new_id)->buffer_source.is_shared);
-  EXPECT_EQ(g.model.tensor(new_id)->buffer_source.global_id, 456);
-  EXPECT_THAT(g.model.op(g.op_id)->inputs,
-              Contains(static_cast<ir::IrTensorId>(new_id)));
-  EXPECT_THAT(second_op->inputs, Contains(static_cast<ir::IrTensorId>(new_id)));
-  EXPECT_THAT(
-      adapter.FindConsumerOps(new_id),
-      UnorderedElementsAre(g.op_id, static_cast<uint32_t>(second_op->id)));
 }
 
 }  // namespace
