@@ -47,7 +47,7 @@ export async function cpuTensorToGpuTensor(
   }
   const liteRtWasm = getGlobalLiteRt().liteRtWasm;
 
-  const byteLength = cpuTensor.liteRtTensorBuffer.size();
+  const byteLength = cpuTensor.liteRtTensorHandle.size();
   // The WebGPU buffer size must be a multiple of 4.
   //   1. Add 3 to ensure that size is larger than the smallest multiple of 4
   //      that can hold the data.
@@ -64,18 +64,18 @@ export async function cpuTensorToGpuTensor(
   const mappedBuffer = await stagingBuffer.getMappedRange();
 
   const mappedArray = new Uint8Array(mappedBuffer);
-  const cpuMemoryPtr = cpuTensor.liteRtTensorBuffer.lock(
+  const cpuMemoryPtr = cpuTensor.liteRtTensorHandle.lock(
       liteRtWasm.LiteRtTensorBufferLockMode.READ,
   );
   try {
     const cpuMemoryView = new Uint8Array(
         liteRtWasm.HEAPU8.buffer,
         cpuMemoryPtr,
-        cpuTensor.liteRtTensorBuffer.size(),
+        cpuTensor.liteRtTensorHandle.size(),
     );
     mappedArray.set(cpuMemoryView);
   } finally {
-    cpuTensor.liteRtTensorBuffer.unlock();
+    cpuTensor.liteRtTensorHandle.unlock();
   }
 
   stagingBuffer.unmap();
@@ -133,21 +133,21 @@ export async function gpuTensorToCpuTensor(
 
   const liteRtWasm = getGlobalLiteRt().liteRtWasm;
 
-  const tensorBuffer = gpuTensor.liteRtTensorBuffer;
-  const bufferType = tensorBuffer.bufferType();
+  const tensorHandle = gpuTensor.liteRtTensorHandle;
+  const bufferType = tensorHandle.bufferType();
   if (bufferType !== liteRtWasm.LiteRtTensorBufferType.WEB_GPU_BUFFER_PACKED) {
     throw new Error(`Cannot convert a tensor with a non-WebGPU buffer type ${
         bufferType} to a CPU tensor.`);
   }
 
   const gpuBuffer = liteRtWasm.WebGPU.getJsObject(
-      tensorBuffer.getWebGpuBuffer(),
+      tensorHandle.getWebGpuBuffer(),
   );
 
-  const byteOffset = tensorBuffer.offset();
+  const byteOffset = tensorHandle.offset();
 
   // Get the number of elements in the tensor.
-  const tensorType = tensorBuffer.tensorType();
+  const tensorType = tensorHandle.tensorType();
   const layout = tensorType.layout();
   const numElements = layout.numElements();
   const arrayConstructor =
