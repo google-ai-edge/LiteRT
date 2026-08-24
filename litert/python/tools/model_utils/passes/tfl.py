@@ -56,12 +56,12 @@ class PrepareQuantizePass(mlir_pass.MlirPass):
     )
 
 
-class PropagateQsvPass(mlir_pass.MlirPass):
-  """Propagates Quantization Scale/Value (QSV) information through the graph.
+class PropagateQParamsPass(mlir_pass.MlirPass):
+  """Propagates Quantization Parameters information through the graph.
 
-  This transformation pass propagates the QSV data across operations in the
-  TensorFlow Lite dialect.
+  This transformation pass propagates the quantization parameters across
+  operations in the TensorFlow Lite dialect.
   """
 
   def __init__(self):
-    super().__init__("builtin.module(tfl-propagate-qsv)")
+    super().__init__("builtin.module(tfl-propagate-qparams)")
