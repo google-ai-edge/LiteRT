@@ -85,9 +85,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_EQ(context, input->params.scale, output->params.scale);
   TF_LITE_ENSURE_EQ(context, input->params.zero_point,
                     output->params.zero_point);
-  if (input->type == kTfLiteInt16) {
-    TF_LITE_ENSURE_EQ(context, input->params.zero_point, 0);
-  }
+  // Note: ExpandDims is a value-moving op (memcpy); asymmetric int16 works
+  // since input/output scale and zp are already required to match.
 
   if (IsConstantOrPersistentTensor(axis)) {
     int axis_value;

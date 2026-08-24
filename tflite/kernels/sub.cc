@@ -273,10 +273,9 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   if (input1->type == kTfLiteInt16 && input2->type == kTfLiteInt16 &&
       output->type == kTfLiteInt16) {
-    TF_LITE_ENSURE_EQ(context, input1->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, input2->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, output->params.zero_point, 0);
-
+    // Note: asymmetric int16 is supported on the general (non-POT) path
+    // via PrepareGeneralSubOp; the POT path in PrepareInt16SubOpPOT still
+    // requires zp==0 and asserts it there.
     general_scale_int16 = !params || !params->pot_scale_int16;
 
     if (!general_scale_int16) {

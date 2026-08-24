@@ -39,6 +39,18 @@ limitations under the License.
 namespace mlir {
 namespace TFL {
 
+// Returns true if any value in the min attribute is negative.
+// Handles both per-layer (FloatAttr) and per-channel (DenseFPElementsAttr).
+inline bool HasNegativeMinValue(FloatAttr min_value) {
+  return min_value.getValueAsDouble() < 0.0;
+}
+inline bool HasNegativeMinValue(DenseFPElementsAttr min_value) {
+  for (auto it = min_value.begin(); it != min_value.end(); ++it) {
+    if (FloatAttr::getValueAsDouble(*it) < 0.0) return true;
+  }
+  return false;
+}
+
 template <class TFFakeQuantOp>
 struct FetchMinMaxAttrs {
   using AttrType = FloatAttr;
@@ -138,9 +150,18 @@ class InsertTFLQuantOpsAfterTFFakeQuantOp {
     IntegerAttr num_bits = rewriter.getI64IntegerAttr(tf_op.getNumBits());
     BoolAttr narrow_range = rewriter.getBoolAttr(tf_op.getNarrowRange());
     Type res_type = tf_op.getType();
+    // For >8-bit quantization (e.g. 16-bit), use signed representation when
+    // the min/max range spans negative values. TFLite's int16 quantized
+    // kernels (EXPERIMENTAL_TFLITE_BUILTINS_ACTIVATIONS_INT16_WEIGHTS_INT8)
+    // require signed quantization; using unsigned produces an incorrect
+    // zero_point that causes quantized conv outputs to saturate.
+    // For 8-bit, keep unsigned (existing behavior) since TFLite internally
+    // handles the uint8<->int8 conversion.
+    bool is_signed =
+        tf_op.getNumBits() > 8 && HasNegativeMinValue(min_value);
     TypeAttr qtype = GetQuantizedTypeAttr(
         rewriter, res_type, min_value, max_value, quant_dim, num_bits,
-        narrow_range, /*is_signed=*/false, /*legacy_float_scale=*/false,
+        narrow_range, /*is_signed=*/is_signed, /*legacy_float_scale=*/false,
         use_fake_quant_num_bits_);
     if (!qtype) {
       return failure();

@@ -528,3 +528,34 @@ func.func @populateFakeQuantOnMeanOutputNegativeCase(%arg0: tensor<f32>) -> (ten
 
 // -----
 
+// CHECK-LABEL: fakeQuant16BitForActivation
+func.func @fakeQuant16BitForActivation(tensor<8xf32>) -> (tensor<8xf32>) {
+^bb0(%arg0: tensor<8xf32>):
+  %arg1 = arith.constant dense<-327.67> : tensor<f32>
+  %arg2 = arith.constant dense<327.67> : tensor<f32>
+  %0 = "tf.FakeQuantWithMinMaxVars"(%arg0, %arg1, %arg2) {num_bits = 16, narrow_range = false} : (tensor<8xf32>, tensor<f32>, tensor<f32>) -> tensor<8xf32>
+  func.return %0 : tensor<8xf32>
+
+// CHECK:  %0 = "tf.FakeQuantWithMinMaxVars"(%arg0, %cst, %cst_0)
+// CHECK:  %1 = "tfl.quantize"(%0) <{qtype = tensor<8x!quant.uniform<i16:f32, 0.0099999694824218748>>}>
+// CHECK:  %2 = "tfl.dequantize"(%1)
+// CHECK:  return %2
+}
+
+// -----
+
+// CHECK-LABEL: fakeQuant16BitWithPositiveRange
+func.func @fakeQuant16BitWithPositiveRange(tensor<8xf32>) -> (tensor<8xf32>) {
+^bb0(%arg0: tensor<8xf32>):
+  %arg1 = arith.constant dense<0.0> : tensor<f32>
+  %arg2 = arith.constant dense<655.35> : tensor<f32>
+  %0 = "tf.FakeQuantWithMinMaxVars"(%arg0, %arg1, %arg2) {num_bits = 16, narrow_range = false} : (tensor<8xf32>, tensor<f32>, tensor<f32>) -> tensor<8xf32>
+  func.return %0 : tensor<8xf32>
+
+// CHECK:  %0 = "tf.FakeQuantWithMinMaxVars"(%arg0, %cst, %cst_0)
+// CHECK:  %1 = "tfl.quantize"(%0) <{qtype = tensor<8x!quant.uniform<u16:f32, 1.000000e-02>>}>
+// CHECK:  %2 = "tfl.dequantize"(%1)
+// CHECK:  return %2
+}
+
+// -----

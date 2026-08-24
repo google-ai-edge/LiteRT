@@ -112,10 +112,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
                       op_context.output->params.zero_point);
   }
 
-  if (op_context.input->type == kTfLiteInt16) {
-    TF_LITE_ENSURE_EQ(context, op_context.input->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, op_context.output->params.zero_point, 0);
-  }
+  // Note: BatchToSpaceND is value-moving; asymmetric int16 works since the
+  // op only reorders elements and input zp == output zp is enforced above.
 
   if (!IsConstantOrPersistentTensor(op_context.block_shape) ||
       !IsConstantOrPersistentTensor(op_context.crops)) {

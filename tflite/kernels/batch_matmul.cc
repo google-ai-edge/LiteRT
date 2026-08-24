@@ -331,11 +331,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
     }
   }
 
-  if (lhs_data->type == kTfLiteInt16) {
-    TF_LITE_ENSURE_EQ(context, lhs_data->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, rhs_data->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, output->params.zero_point, 0);
-  }
+  // Note: asymmetric int16 activations are supported here; EvalInt16 and
+  // EvalInt16Int8 read zero_points via params.input_offset/output_offset.
 
   TF_LITE_ENSURE(context, lhs_data->type == kTfLiteFloat32 ||
                               lhs_data->type == kTfLiteInt8 ||

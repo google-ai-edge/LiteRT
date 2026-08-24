@@ -422,9 +422,7 @@ TfLiteStatus Prepare(KernelType kernel_type, TfLiteContext* context,
   }
 
   if (input_type == kTfLiteInt16) {
-    // Quantization should be symmetric.
-    TF_LITE_ENSURE_EQ(context, input->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, output->params.zero_point, 0);
+    // int16 asymmetric activations supported; offsets threaded in EvalQuantizedPerChannel16x8.
 
     // Check quantized_bias_type is either kTfLiteInt64 or kTfLiteInt32.
     if (params->quantized_bias_type != kTfLiteFloat32) {

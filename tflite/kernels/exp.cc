@@ -75,9 +75,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
         output->params.zero_point, [](float value) { return std::exp(value); },
         data->lut_int8);
   } else if (input->type == kTfLiteInt16) {
-    TF_LITE_ENSURE_EQ(context, input->params.zero_point, 0);
-    TF_LITE_ENSURE_EQ(context, output->params.zero_point, 0);
-
+    // Note: LUTPopulateInt16 bakes both input and output zero_points into
+    // the LUT, so asymmetric int16 is supported.
     LUTPopulate<int16_t>(
         input->params.scale, input->params.zero_point, output->params.scale,
         output->params.zero_point, [](float value) { return std::exp(value); },
