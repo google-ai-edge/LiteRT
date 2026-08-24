@@ -85,7 +85,8 @@ inline std::string RestoreMessage(LiteRtStatus status, std::string message) {
   if (message.find(last_err) != std::string::npos) {
     return message;
   }
-  return absl::StrCat(message, "\n└ ", last_err);
+  message.append("\n└ ").append(last_err);
+  return message;
 }
 
 }  // namespace internal::expected_detail

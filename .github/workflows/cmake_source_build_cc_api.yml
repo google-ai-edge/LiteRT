@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   source-build-cc-api:
-    name: "CMake C++ API example"
+    name: "CMake-C++-API-example"
     runs-on: linux-x86-n2-16
     container:
       image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build:latest

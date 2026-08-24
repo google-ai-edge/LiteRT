@@ -62,23 +62,35 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         PRIVATE -Wno-deprecated-declarations)
 endif()
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(litert_source_build_cc_api_headers_smoke_test
+        PRIVATE -fpermissive)
+    target_compile_options(litert_source_build_cc_api_no_absl_headers_smoke_test
+        PRIVATE -fpermissive)
+endif()
+
 file(GLOB _litert_source_build_cc_api_public_headers
     CONFIGURE_DEPENDS
     RELATIVE "${LITERT_SOURCE_DIR}"
     "${LITERT_SOURCE_DIR}/cc/*.h"
     "${LITERT_SOURCE_DIR}/cc/options/*.h"
 )
+# The smoke source has a different include root in g3 and OSS. Normalize
+# it before checking the public-header inventory so this guard survives export.
+string(REPLACE "third_party/odml/litert/litert/" "litert/"
+    _litert_source_build_cc_api_headers_smoke_source
+    "${_litert_source_build_cc_api_headers_smoke_source}")
 file(READ "${CMAKE_CURRENT_LIST_DIR}/cc_api_headers_smoke_test.cc"
     _litert_source_build_cc_api_headers_smoke_source)
 foreach(_litert_source_build_cc_api_public_header
         IN LISTS _litert_source_build_cc_api_public_headers)
     string(FIND "${_litert_source_build_cc_api_headers_smoke_source}"
-        "#include \"third_party/odml/litert/litert/${_litert_source_build_cc_api_public_header}\""
+        "#include \"litert/${_litert_source_build_cc_api_public_header}\""
         _litert_source_build_cc_api_header_position)
     if(_litert_source_build_cc_api_header_position EQUAL -1)
         message(FATAL_ERROR
             "cc_api_headers_smoke_test.cc does not include public header "
-            "third_party/odml/litert/litert/${_litert_source_build_cc_api_public_header}")
+            "litert/${_litert_source_build_cc_api_public_header}")
     endif()
 endforeach()
 
@@ -97,6 +109,10 @@ foreach(_litert_source_build_cc_api_target IN LISTS _litert_source_build_cc_api_
             PRIVATE -Wno-deprecated-declarations)
     endif()
 
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(${_litert_source_build_cc_api_target}
+            PRIVATE -fpermissive)
+    endif()
     target_compile_definitions(${_litert_source_build_cc_api_target}
         PRIVATE
             LITERT_EXAMPLE_DEFAULT_MODEL="${LITERT_EXAMPLE_DEFAULT_MODEL}"

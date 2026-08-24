@@ -265,10 +265,9 @@ cc_library(
         ":litert_concrete_options_base",
         "//litert/c:litert_common",
         "//litert/c/options:litert_runtime_options",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
     ],
 )
 
