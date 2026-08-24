@@ -233,22 +233,22 @@ Expected<Options> GetOptions() {
   options.SetHardwareAccelerators(accelerators);
 
   if (accelerators & litert::HwAccelerators::kGpu) {
+    LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
+    // Enable benchmark mode to run clFinish() after each inference.
+    LITERT_RETURN_IF_ERROR(gpu_opts.EnableBenchmarkMode(/*enabled=*/true));
+
     int kernel_batch_size = absl::GetFlag(FLAGS_kernel_batch_size);
     if (kernel_batch_size > 0) {
-      LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
       LITERT_RETURN_IF_ERROR(gpu_opts.SetKernelBatchSize(kernel_batch_size));
     }
     std::string gpu_precision = absl::GetFlag(FLAGS_gpu_precision);
     if (gpu_precision == "fp32") {
-      LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
       LITERT_RETURN_IF_ERROR(
           gpu_opts.SetPrecision(GpuOptions::Precision::kFp32));
     } else if (gpu_precision == "fp16") {
-      LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
       LITERT_RETURN_IF_ERROR(
           gpu_opts.SetPrecision(GpuOptions::Precision::kFp16));
     } else if (gpu_precision == "auto") {
-      LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
       LITERT_RETURN_IF_ERROR(
           gpu_opts.SetPrecision(GpuOptions::Precision::kDefault));
     } else {
