@@ -194,6 +194,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
                    op_data->params.filter_width, op_data->params.padding,
                    &out_height, &out_width,
                    &op_data->params.computed.padding));
+  TF_LITE_ENSURE_STATUS(
+      ValidatePaddingValuesForInt16(op_data->params.computed.padding));
 
   TfLiteIntArray* output_size = TfLiteIntArrayCreate(4);
   output_size->data[0] = batches;

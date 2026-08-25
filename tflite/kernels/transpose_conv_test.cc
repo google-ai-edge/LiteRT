@@ -224,6 +224,19 @@ TEST(TransposeConvPrepareSecurityTest, RejectsStrideOutsideInt16Range) {
   EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
 }
 
+TEST(TransposeConvPrepareSecurityTest, RejectsPaddingOutsideInt16Range) {
+  constexpr int kFilterWidth =
+      2 * (std::numeric_limits<int16_t>::max() + 1) + 1;
+  PrepareOnlyTransposeConvOpModel<float> m(
+      ops::builtin::Register_TRANSPOSECONV_GENERIC_OPT(), {1, 1, 1, 1},
+      {TensorType_FLOAT32, {1, 1, kFilterWidth, 1}},
+      {TensorType_FLOAT32, {1, 1, 1, 1}}, {TensorType_FLOAT32, {}},
+      Padding_SAME, /*stride_w=*/1, /*stride_h=*/1,
+      ActivationFunctionType_NONE);
+
+  EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
+}
+
 TEST(TransposeConvPrepareSecurityTest, RejectsMismatchedOutputChannels) {
   PrepareOnlyTransposeConvOpModel<float> m(
       ops::builtin::Register_TRANSPOSECONV_GENERIC_OPT(), {1, 1, 1, 2},
@@ -242,8 +255,7 @@ TEST(TransposeConvPrepareSecurityTest, RejectsInconsistentSpatialShape) {
       {TensorType_FLOAT32, {}}, Padding_SAME, /*stride_w=*/1, /*stride_h=*/1,
       ActivationFunctionType_NONE);
 
-  ASSERT_EQ(m.AllocateTensors(), kTfLiteOk);
-  EXPECT_EQ(m.Invoke(), kTfLiteError);
+  EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
 }
 
 // Test case:
