@@ -33,7 +33,6 @@ limitations under the License.
 #include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/flags/flag.h"  // from @com_google_absl
-#include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
@@ -62,9 +61,9 @@ limitations under the License.
 #include "perfetto/tracing/track_event.h"  // from @perfetto
 #include "tflite/delegates/xnnpack/weight_cache.h"
 
-ABSL_FLAG(std::string, weights, "/tmp/gemma4/model.safetensors",
+ABSL_FLAG(std::string, weights, "",
           "Path to safetensor weights file or directory.");
-ABSL_FLAG(std::string, tokenizer, "/tmp/gemma4/tokenizer.model",
+ABSL_FLAG(std::string, tokenizer, "",
           "Path to SentencePiece tokenizer model file.");
 ABSL_FLAG(std::string, prompt, "Write a short poem about coding.",
           "Prompt to run.");
@@ -83,6 +82,7 @@ namespace {
 
 constexpr int32_t kStartOfTurnToken = 105;
 constexpr int32_t kEndOfTurnToken = 106;
+constexpr absl::string_view kAutoWeightCacheFlag = ":auto";
 
 using ::litert::tensor::PerfettoSession;
 using ::litert::tensor::examples::DecodeTiming;
@@ -110,7 +110,6 @@ absl::Status MapGemma4WeightIdentifiers(
   }
   return absl::OkStatus();
 }
-
 
 // Slices the combined per-layer model projection weight matrix
 // ("model.per_layer_model_projection.weight") of shape
@@ -801,6 +800,9 @@ absl::Status Run(const std::string& weights_path,
                               LoadWeightsAndPrepareTensors(loader, config));
 
   std::string weight_cache_path = absl::GetFlag(FLAGS_weight_cache);
+  if (weight_cache_path == kAutoWeightCacheFlag) {
+    weight_cache_path = absl::StrCat(weights_path, ".cache");
+  }
   tflite::xnnpack::MMapWeightCacheProvider weight_cache_provider;
   const bool use_weight_cache = !weight_cache_path.empty();
   if (use_weight_cache) {
