@@ -19,10 +19,9 @@
 #include <string>
 #include <vector>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_runtime_options.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_concrete_options_base.h"
@@ -112,11 +111,10 @@ class RuntimeOptions : public ConcreteOptionsBase {
   /// subgraphs that the compiled model prepares for execution.
   /// @param signature_keys The signature keys to select. Must be non-empty,
   /// and each key must be non-empty and unique.
-  Expected<void> SetSelectedSignatures(
-      absl::Span<const absl::string_view> signature_keys) {
+  Expected<void> SetSelectedSignatures(Span<const StringView> signature_keys) {
     std::vector<std::string> keys;
     keys.reserve(signature_keys.size());
-    for (absl::string_view key : signature_keys) {
+    for (StringView key : signature_keys) {
       keys.emplace_back(key);
     }
     LITERT_RETURN_IF_ERROR(
