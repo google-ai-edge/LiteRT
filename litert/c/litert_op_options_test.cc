@@ -504,6 +504,45 @@ TEST(GetOpOptionTest, TestGetConv3dOptions) {
   ASSERT_EQ(dilation_h_factor, 1);
 }
 
+TEST(GetOpOptionTest, TestGetConv3dTransposeOptions) {
+  auto model = litert::testing::LoadTestFileModel(
+      "simple_transpose_conv3d.tflite");
+  auto subgraph = model.MainSubgraph();
+  EXPECT_TRUE(subgraph);
+
+  auto ops = subgraph->Ops();
+  auto op = ops.front().Get();
+
+  uint32_t padding;
+  LITERT_ASSERT_OK(LiteRtGetConv3dTransposePaddingOption(op, &padding));
+  ASSERT_EQ(padding, 1);
+  int32_t stride_d;
+  LITERT_ASSERT_OK(LiteRtGetConv3dTransposeStrideDOption(op, &stride_d));
+  ASSERT_EQ(stride_d, 1);
+  int32_t stride_w;
+  LITERT_ASSERT_OK(LiteRtGetConv3dTransposeStrideWOption(op, &stride_w));
+  ASSERT_EQ(stride_w, 1);
+  int32_t stride_h;
+  LITERT_ASSERT_OK(LiteRtGetConv3dTransposeStrideHOption(op, &stride_h));
+  ASSERT_EQ(stride_h, 1);
+  uint32_t fused_activation_function;
+  LITERT_ASSERT_OK(LiteRtGetConv3dTransposeFusedActivationOption(
+      op, &fused_activation_function));
+  ASSERT_EQ(fused_activation_function, 0);
+  int32_t dilation_d_factor;
+  LITERT_ASSERT_OK(
+      LiteRtGetConv3dTransposeDilationDOption(op, &dilation_d_factor));
+  ASSERT_EQ(dilation_d_factor, 1);
+  int32_t dilation_w_factor;
+  LITERT_ASSERT_OK(
+      LiteRtGetConv3dTransposeDilationWOption(op, &dilation_w_factor));
+  ASSERT_EQ(dilation_w_factor, 1);
+  int32_t dilation_h_factor;
+  LITERT_ASSERT_OK(
+      LiteRtGetConv3dTransposeDilationHOption(op, &dilation_h_factor));
+  ASSERT_EQ(dilation_h_factor, 2);
+}
+
 TEST(GetOpOptionTest, TestGetDepthwiseConv2dOptions) {
   auto model =
       litert::testing::LoadTestFileModel("simple_depthwise_conv_2d_op.tflite");

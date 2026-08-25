@@ -123,6 +123,7 @@ target_sources(builder_test
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/splitv_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/squeeze_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/topk_test.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/transpose_conv3d_test.cc
 )
 
 target_link_libraries(builder_test
