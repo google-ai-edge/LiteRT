@@ -56,6 +56,29 @@ absl::Status CheckGpuDelegateCompatibility(const tflite::Model* model) {
   return absl::OkStatus();
 }
 
+// Builds a BroadcastTo OpSignature: runtime data input[0], const shape
+// input[1], and one output.
+static OpSignature MakeBroadcastToOpSig(const std::vector<int32_t> &input_dims,
+                                        const std::vector<int32_t> &output_dims,
+                                        TfLiteType input_type = kTfLiteFloat32,
+                                        TfLiteType output_type = kTfLiteFloat32) {
+  OpSignature op_sig = OpSignature();
+  op_sig.op = BuiltinOperator_BROADCAST_TO;
+  op_sig.inputs = std::vector<OpSignatureTensorSpec>(2);
+  op_sig.inputs[0] = OpSignatureTensorSpec();
+  op_sig.inputs[0].dims = input_dims;
+  op_sig.inputs[0].type = input_type;
+  op_sig.inputs[1] = OpSignatureTensorSpec(); // shape tensor
+  op_sig.inputs[1].is_const = true;
+  op_sig.inputs[1].dims = {static_cast<int32_t>(output_dims.size())};
+  op_sig.inputs[1].type = kTfLiteInt32;
+  op_sig.outputs = std::vector<OpSignatureTensorSpec>(1);
+  op_sig.outputs[0] = OpSignatureTensorSpec();
+  op_sig.outputs[0].dims = output_dims;
+  op_sig.outputs[0].type = output_type;
+  return op_sig;
+}
+
 }  // namespace
 
 // FYI, CheckGpuDelegateCompatibility() will be validated by
@@ -190,6 +213,48 @@ TEST(CheckGpuDelegateCompatibility, Add2Dto4DBroadcastSuccess2) {
   op_sig.inputs[1].dims = {1, 1};
 
   EXPECT_TRUE(CheckGpuDelegateCompatibility(op_sig).message().empty());
+}
+
+TEST(CheckGpuDelegateCompatibility, BroadcastToTileSuccess) {
+  OpSignature op_sig = MakeBroadcastToOpSig({1, 1, 1, 4}, {2, 1, 1, 4});
+  EXPECT_TRUE(CheckGpuDelegateCompatibility(op_sig).message().empty());
+}
+
+TEST(CheckGpuDelegateCompatibility, BroadcastToLowerRankSuccess) {
+  OpSignature op_sig = MakeBroadcastToOpSig({4}, {2, 4});
+  EXPECT_TRUE(CheckGpuDelegateCompatibility(op_sig).message().empty());
+}
+
+TEST(CheckGpuDelegateCompatibility, BroadcastToRankExceedsFail) {
+  OpSignature op_sig = MakeBroadcastToOpSig({2, 4}, {4});
+  EXPECT_EQ(CheckGpuDelegateCompatibility(op_sig).message(),
+            "BroadcastTo input rank must not exceed output rank.");
+}
+
+TEST(CheckGpuDelegateCompatibility, BroadcastToIncompatibleDimsFail) {
+  OpSignature op_sig = MakeBroadcastToOpSig({3, 4}, {2, 4});
+  EXPECT_EQ(CheckGpuDelegateCompatibility(op_sig).message(),
+            "BroadcastTo dimensions are not broadcast-compatible.");
+}
+
+TEST(CheckGpuDelegateCompatibility, BroadcastToTypeMismatchFail) {
+  OpSignature op_sig =
+      MakeBroadcastToOpSig({1, 4}, {2, 4}, kTfLiteFloat32, kTfLiteInt32);
+  EXPECT_EQ(CheckGpuDelegateCompatibility(op_sig).message(),
+            "BroadcastTo input and output must have the same data type.");
+}
+
+TEST(CheckGpuDelegateCompatibility, BroadcastToTooManyDimsFail) {
+  OpSignature op_sig =
+      MakeBroadcastToOpSig({2, 2, 2, 2, 2}, {2, 2, 2, 2, 2});
+  EXPECT_EQ(CheckGpuDelegateCompatibility(op_sig).message(),
+            "BroadcastTo only supports 1D-4D tensors.");
+}
+
+TEST(CheckGpuDelegateCompatibility, BroadcastToNonConstShapeFail) {
+  OpSignature op_sig = MakeBroadcastToOpSig({1, 4}, {2, 4});
+  op_sig.inputs[1].is_const = false;  // shape must be constant
+  EXPECT_FALSE(CheckGpuDelegateCompatibility(op_sig).message().empty());
 }
 
 TEST(CheckGpuDelegateCompatibility, Add2Dto4DBroadcastSuccess3) {

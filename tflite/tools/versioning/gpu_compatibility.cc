@@ -630,6 +630,39 @@ absl::Status CheckGpuDelegateCompatibility(const OpSignature& op_sig,
       return absl::OkStatus();
     }
 
+    case kTfLiteBuiltinBroadcastTo: {
+      RETURN_IF_ERROR(CheckInputsConstsOutputs(op_sig,
+                                               /*required_runtime_inputs=*/1,
+                                               /*required_const_inputs=*/1,
+                                               /*required_outputs=*/1));
+      const auto &bcast_input = op_sig.inputs[0];
+      const auto &bcast_output = op_sig.outputs[0];
+      if (bcast_input.dims.empty() || bcast_input.dims.size() > 4 ||
+          bcast_output.dims.empty() || bcast_output.dims.size() > 4) {
+        return absl::UnimplementedError(
+            "BroadcastTo only supports 1D-4D tensors.");
+      }
+      if (bcast_input.dims.size() > bcast_output.dims.size()) {
+        return absl::InvalidArgumentError(
+            "BroadcastTo input rank must not exceed output rank.");
+      }
+      // Numpy-style right-aligned broadcast compatibility: pairing dims from the
+      // trailing end, each input dim must be 1 or equal to the output dim.
+      for (int i = 0; i < static_cast<int>(bcast_input.dims.size()); ++i) {
+        const int in_dim = bcast_input.dims[bcast_input.dims.size() - 1 - i];
+        const int out_dim = bcast_output.dims[bcast_output.dims.size() - 1 - i];
+        if (in_dim != 1 && in_dim != out_dim) {
+          return absl::InvalidArgumentError(
+              "BroadcastTo dimensions are not broadcast-compatible.");
+        }
+      }
+      if (bcast_input.type != bcast_output.type) {
+        return absl::InvalidArgumentError(
+            "BroadcastTo input and output must have the same data type.");
+      }
+      return absl::OkStatus();
+    }
+
     case kTfLiteBuiltinCast:
       RETURN_IF_ERROR(CheckInputsOutputs(op_sig,
                                          /*required_runtime_inputs=*/1,

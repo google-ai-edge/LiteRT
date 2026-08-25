@@ -549,6 +549,7 @@ bool IsBoolSupportedCompositeOp(
 bool SupportAllPrecisionOp(int32_t builtin_code) {
   return builtin_code == kTfLiteBuiltinStablehloBroadcastInDim ||
          builtin_code == kTfLiteBuiltinBitcast ||
+         builtin_code == kTfLiteBuiltinBroadcastTo ||
          builtin_code == kTfLiteBuiltinCast ||
          builtin_code == kTfLiteBuiltinConcatenation ||
          builtin_code == kTfLiteBuiltinDynamicUpdateSlice ||
@@ -1055,6 +1056,81 @@ class BroadcastInDimOperationParser : public TFLiteOperationParser {
       return absl::InvalidArgumentError("Index values must be unique");
     }
     return absl::OkStatus();
+  }
+};
+
+class BroadcastToOperationParser : public TFLiteOperationParser {
+ public:
+  absl::Status IsSupported(const TfLiteContext* context,
+                           const TfLiteNode* tflite_node,
+                           const TfLiteRegistration* registration) final {
+    ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
+        context, tflite_node, registration));
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    return absl::OkStatus();
+  }
+
+  void Parse(const TfLiteNode* tflite_node,
+             const TfLiteRegistration* registration,
+             ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
+    const TfLiteTensor* input_tensor = reader->GetInputTensor(0);
+    const TfLiteTensor* output_tensor = reader->GetOutputTensor(0);
+    const int input_rank = input_tensor->dims->size;
+    const int output_rank = output_tensor->dims->size;
+
+    const ::ml_drift::BHWC output_shape = ExtractTensorShape(output_tensor);
+    const ::ml_drift::BHWC input_shape = ExtractTensorShape(input_tensor);
+
+    // Right-align the input shape to the output rank by left-padding with 1s.
+    std::vector<int> padded(output_rank, 1);
+    for (int i = 0; i < input_rank; ++i) {
+      padded[output_rank - input_rank + i] = input_tensor->dims->data[i];
+    }
+    const ::ml_drift::BHWC padded_shape = ExtractTensorShape(padded);
+
+    const bool need_reshape = input_shape != padded_shape;
+    const bool need_tile = padded_shape != output_shape;
+
+    if (!need_reshape && !need_tile) {
+      ::ml_drift::Node* node = graph->NewNode();
+      node->operation.type = ToString(::ml_drift::OperationType::RESHAPE);
+      ::ml_drift::ReshapeAttributes attr;
+      attr.new_shape = output_shape;
+      node->operation.attributes = std::move(attr);
+      reader->AddInput(node, 0);
+      reader->AddOutputs(node);
+      return;
+    }
+
+    ::ml_drift::Value* reshaped_value = nullptr;
+    if (need_reshape) {
+      ::ml_drift::Node* reshape_node = graph->NewNode();
+      reshape_node->operation.type =
+          ToString(::ml_drift::OperationType::RESHAPE);
+      ::ml_drift::ReshapeAttributes attr;
+      attr.new_shape = padded_shape;
+      reshape_node->operation.attributes = std::move(attr);
+      reader->AddInput(reshape_node, 0);
+      if (!need_tile) {
+        reader->AddOutputs(reshape_node);
+        return;
+      }
+      const ::ml_drift::Value* input_value = reader->ReadValue(0);
+      reshaped_value = graph->NewValue();
+      reshaped_value->tensor.type = input_value->tensor.type;
+      reshaped_value->tensor.shape = padded_shape;
+      graph->SetProducer(reshape_node->id, reshaped_value->id);
+    }
+
+    ::ml_drift::Node* tile_node = graph->NewNode();
+    tile_node->operation.type = ToString(::ml_drift::OperationType::TILE);
+    if (need_reshape) {
+      graph->AddConsumer(tile_node->id, reshaped_value->id);
+    } else {
+      reader->AddInput(tile_node, 0);
+    }
+    reader->AddOutputs(tile_node);
   }
 };
 
@@ -6799,6 +6875,8 @@ std::unique_ptr<TFLiteOperationParser> NewOperationParser(
           ::ml_drift::OperationType::LOGICAL_XOR);
     case kTfLiteBuiltinStablehloBroadcastInDim:
       return std::make_unique<BroadcastInDimOperationParser>();
+    case kTfLiteBuiltinBroadcastTo:
+      return std::make_unique<BroadcastToOperationParser>();
     case kTfLiteBuiltinCast:
       return std::make_unique<CastOperationParser>();
     case kTfLiteBuiltinStablehloCbrt:

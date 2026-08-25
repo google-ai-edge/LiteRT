@@ -44,6 +44,8 @@ absl::Status GetNodeAndRegistration(TfLiteContext* context, int node_id,
 
 ::ml_drift::BHWC ExtractTensorShape(const TfLiteTensor* tflite_tensor);
 
+::ml_drift::BHWC ExtractTensorShape(const std::vector<int> &dims);
+
 // Must check PreCheckAxisFromIndex.
 ::ml_drift::Axis ExtractAxisFromIndex(const TfLiteTensor& tflite_tensor,
                                       int index);
