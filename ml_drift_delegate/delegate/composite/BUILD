@@ -51,6 +51,7 @@ cc_library(
     deps = [
         ":add_values_to_cache_parser",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
@@ -58,6 +59,7 @@ cc_library(
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common/task:arguments",
         "@ml_drift//ml_drift/common/task:buffer_desc",
         "@ml_drift//ml_drift/common/task:gpu_operation",
         "@ml_drift//ml_drift/common/task:tensor_desc",
