@@ -78,7 +78,6 @@ set(CMAKE_PREFIX_PATH
 include(GNUInstallDirs)
 include(CMakeDependentOption)
 option(TFLITE_ENABLE_INSTALL "Enable install rule" OFF)
-option(TFLITE_ENABLE_LABEL_IMAGE "Enable label_image example" OFF)
 option(TFLITE_ENABLE_BENCHMARK_MODEL "Enable the benchmark_model tool" OFF)
 option(TFLITE_ENABLE_RUY "Enable experimental RUY integration" OFF)
 option(TFLITE_ENABLE_RESOURCE "Enable experimental support for resources" ON)
@@ -321,7 +320,6 @@ populate_tflite_source_vars("core/async/c" TFLITE_CORE_ASYNC_C_SRCS)
 populate_tflite_source_vars("core/async/interop" TFLITE_CORE_ASYNC_INTEROP_SRCS)
 populate_tflite_source_vars("core/async/interop/c" TFLITE_CORE_ASYNC_INTEROP_C_SRCS)
 populate_tflite_source_vars("core/c" TFLITE_CORE_C_SRCS)
-populate_tflite_source_vars("core/experimental/acceleration/configuration" TFLITE_CORE_EXPERIMENTAL_SRCS)
 populate_tflite_source_vars("core/kernels" TFLITE_CORE_KERNELS_SRCS)
 populate_tflite_source_vars("core/tools" TFLITE_CORE_TOOLS_SRCS)
 populate_tflite_source_vars("c" TFLITE_C_SRCS)
@@ -684,7 +682,6 @@ set(_ALL_TFLITE_SRCS
   ${TFLITE_CORE_ASYNC_INTEROP_SRCS}
   ${TFLITE_CORE_ASYNC_SRCS}
   ${TFLITE_CORE_C_SRCS}
-  ${TFLITE_CORE_EXPERIMENTAL_SRCS}
   ${TFLITE_CORE_KERNELS_SRCS}
   ${TFLITE_CORE_SRCS}
   ${TFLITE_CORE_TOOLS_SRCS}
@@ -853,9 +850,6 @@ add_subdirectory(${TF_SOURCE_DIR}/core/example ${CMAKE_BINARY_DIR}/example_proto
 
 # The benchmark tool.
 add_subdirectory(${TFLITE_SOURCE_DIR}/tools/benchmark)
-
-# The label_image example.
-add_subdirectory(${TFLITE_SOURCE_DIR}/examples/label_image)
 
 # Python interpreter wrapper.
 add_library(_pywrap_tensorflow_interpreter_wrapper SHARED EXCLUDE_FROM_ALL
