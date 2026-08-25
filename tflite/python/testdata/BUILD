@@ -23,7 +23,7 @@ load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension", "
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
-load("//tflite:build_def.bzl", "tf_to_tflite", "tflite_copts")
+load("//tflite:build_def.bzl", "tflite_copts")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -36,60 +36,11 @@ exports_files(glob([
     "*.pbtxt",
 ]))
 
-tf_to_tflite(
-    name = "permute_float",
-    src = "permute.pbtxt",
-    out = "permute_float.tflite",
-    options = [
-        "--input_arrays=input",
-        "--output_arrays=output",
-    ],
-)
-
-tf_to_tflite(
-    name = "permute_uint8",
-    src = "permute.pbtxt",
-    out = "permute_uint8.tflite",
-    options = [
-        "--input_arrays=input",
-        "--output_arrays=output",
-        "--inference_type=QUANTIZED_UINT8",
-        "--std_dev_values=1",
-        "--mean_values=0",
-        "--default_ranges_min=0",
-        "--default_ranges_max=255",
-    ],
-)
-
-tf_to_tflite(
-    name = "gather_string",
-    src = "gather.pbtxt",
-    out = "gather_string.tflite",
-    options = [
-        "--input_arrays=input,indices",
-        "--output_arrays=output",
-    ],
-)
-
-tf_to_tflite(
-    name = "gather_string_0d",
-    src = "gather_0d.pbtxt",
-    out = "gather_string_0d.tflite",
-    options = [
-        "--input_arrays=input,indices",
-        "--output_arrays=output",
-    ],
-)
-
 filegroup(
     name = "interpreter_test_data",
     srcs = [
         "pc_conv.bin",
         "two_signatures.tflite",
-        ":gather_string",
-        ":gather_string_0d",
-        ":permute_float",
-        ":permute_uint8",
     ],
     visibility = ["@org_tensorflow//tensorflow:__subpackages__"],
 )

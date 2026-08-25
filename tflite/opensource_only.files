@@ -28,7 +28,6 @@ tf_staging/tflite/c/test_util.cc:
 tf_staging/tflite/c/test_util.h:
 tf_staging/tflite/core/acceleration/configuration/c/special_rules.bzl:
 tf_staging/tflite/core/c/special_rules.bzl:
-tf_staging/tflite/core/experimental/acceleration/configuration/c/special_rules.bzl:
 tf_staging/tflite/core/interpreter.h:
 tf_staging/tflite/core/interpreter_builder.h:
 tf_staging/tflite/core/model_builder.h:
@@ -50,16 +49,10 @@ tf_staging/tflite/delegates/utils/experimental/stable_delegate/BUILD:
 tf_staging/tflite/delegates/utils/experimental/stable_delegate/delegate_loader.cc:
 tf_staging/tflite/delegates/utils/experimental/stable_delegate/delegate_loader.h:
 tf_staging/tflite/delegates/utils/experimental/stable_delegate/delegate_loader_test.cc:
-tf_staging/tflite/experimental/acceleration/configuration/configuration_generated.h:
-tf_staging/tflite/experimental/acceleration/mini_benchmark/c/c_api.h:
-tf_staging/tflite/experimental/acceleration/mini_benchmark/libjpeg.h:
-tf_staging/tflite/experimental/acceleration/mini_benchmark/special_rules.bzl:
 tf_staging/tflite/interpreter.h:
 tf_staging/tflite/interpreter_builder.h:
-tf_staging/tflite/ios/BUILD:
 tf_staging/tflite/kernels/builtin_op_kernels.h:
 tf_staging/tflite/kernels/register.h:
-tf_staging/tflite/lib_package/BUILD:
 tf_staging/tflite/model.h:
 tf_staging/tflite/model_builder.h:
 tf_staging/tflite/namespace.h:
@@ -68,7 +61,5 @@ tf_staging/tflite/schema/conversion_metadata_generated.h:
 tf_staging/tflite/schema/schema_generated.h:
 tf_staging/tflite/signature_runner.h:
 tf_staging/tflite/special_rules.bzl:
-tf_staging/tflite/tools/benchmark/experimental/delegate_performance/android/AndroidManifest.xml:
-tf_staging/tflite/tools/benchmark/experimental/delegate_performance/android/build_defs.bzl:
 tf_staging/tflite/tools/verifier.h:
 tf_staging/tflite/tools/verifier_internal.h:
