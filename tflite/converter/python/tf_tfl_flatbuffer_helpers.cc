@@ -24,6 +24,7 @@ limitations under the License.
 #include "absl/log/log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "third_party/gloop/util/status/status_macros.h"
 #include "mlir/IR/BuiltinOps.h"  // from @llvm-project
 #include "mlir/IR/MLIRContext.h"  // from @llvm-project
 #include "mlir/IR/OwningOpRef.h"  // from @llvm-project
@@ -252,9 +253,9 @@ absl::Status PopulateQuantizationSpecs(
     // Currently, only UINT8 and INT8 require inputs stats
     if (inference_type == DT_QINT8 || inference_type == DT_QUINT8) {
       if (flag.has_mean_value() && flag.has_std_value()) {
-        TF_ASSIGN_OR_RETURN(
-            auto min_max, InputStatsToMinMax(flag.mean_value(),
-                                             flag.std_value(), inference_type));
+        ASSIGN_OR_RETURN(auto min_max,
+                         InputStatsToMinMax(flag.mean_value(), flag.std_value(),
+                                            inference_type));
         node_mins->push_back(min_max.first);
         node_maxs->push_back(min_max.second);
       } else {
