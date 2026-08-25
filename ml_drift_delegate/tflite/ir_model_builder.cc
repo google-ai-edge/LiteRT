@@ -211,7 +211,15 @@ void ConvertComposite(
     const flexbuffers::Map flexbuffer_map =
         flexbuffers::GetRoot(params->attributes, params->attributes_size)
             .AsMap();
-    if (flexbuffer_map["_TENSOR_V1_reduction_axes"].IsNull()) {
+    if (!flexbuffer_map["sub_type"].IsNull()) {
+      // sub_type: 0=GroupNorm, 1=LayerNorm.
+      if (flexbuffer_map["sub_type"].AsInt32() == 0) {
+        ConvertGroupNorm(context, node, registration, tensor_map, ir_model);
+      } else {
+        ConvertLayerNorm(context, node, registration, tensor_map, ir_model);
+      }
+      return;
+    } else if (flexbuffer_map["_TENSOR_V1_reduction_axes"].IsNull()) {
       ConvertLayerNorm(context, node, registration, tensor_map, ir_model);
       return;
     } else {

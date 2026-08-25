@@ -121,7 +121,14 @@ bool IsCompositeNodeSupported(
     const flexbuffers::Map flexbuffer_map =
         flexbuffers::GetRoot(params->attributes, params->attributes_size)
             .AsMap();
-    if (flexbuffer_map["_TENSOR_V1_reduction_axes"].IsNull()) {
+    if (!flexbuffer_map["sub_type"].IsNull()) {
+      // sub_type: 0=GroupNorm, 1=LayerNorm.
+      if (flexbuffer_map["sub_type"].AsInt32() == 0) {
+        return IsGroupNormSupported(context, node, registration, error);
+      } else {
+        return IsLayerNormSupported(context, node, registration, error);
+      }
+    } else if (flexbuffer_map["_TENSOR_V1_reduction_axes"].IsNull()) {
       return IsLayerNormSupported(context, node, registration, error);
     } else {
       return IsGroupNormSupported(context, node, registration, error);

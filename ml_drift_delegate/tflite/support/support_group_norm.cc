@@ -156,14 +156,28 @@ bool IsGroupNormSupported(const TfLiteContext* absl_nonnull context,
   const int tensor_dims_size = input.dims->size;
 
   if (!flexbuffer_map["_TENSOR_V1_reduction_axes"].IsNull()) {
+    const bool has_sub_type = !flexbuffer_map["sub_type"].IsNull();
     const flexbuffers::Vector reduction_axes_vec =
         flexbuffer_map["_TENSOR_V1_reduction_axes"]
             .AsMap()["TENSOR_DATA"]
             .AsVector();
-    if (reduction_axes_vec.size() != 1 ||
-        reduction_axes_vec[0].AsInt64() != tensor_dims_size - 1) {
-      *error = "Only reduction on the last axis is supported for GroupNorm.";
-      return false;
+    if (has_sub_type) {
+      if (reduction_axes_vec.size() != tensor_dims_size - 1) {
+        *error = "GroupNorm has unexpected reduction axes count.";
+        return false;
+      }
+      for (int i = 0; i < reduction_axes_vec.size(); ++i) {
+        if (reduction_axes_vec[i].AsInt64() != i + 1) {
+          *error = "GroupNorm has unexpected reduction axes.";
+          return false;
+        }
+      }
+    } else {
+      if (reduction_axes_vec.size() != 1 ||
+          reduction_axes_vec[0].AsInt64() != tensor_dims_size - 1) {
+        *error = "Only reduction on the last axis is supported for GroupNorm.";
+        return false;
+      }
     }
   }
 
