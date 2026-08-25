@@ -105,7 +105,7 @@ class SimpleTensor {
   SimpleTensor& operator=(SimpleTensor&&) = default;
 
   /// @brief Returns the element type of the tensor.
-  ElementType ElementType() const {
+  ::litert::ElementType ElementType() const {
     if (type_id_ == kLiteRtUnrankedTensorType) {
       LITERT_ASSIGN_OR_ABORT(auto tensor_type, UnrankedTensorType());
       return static_cast<enum ElementType>(tensor_type.element_type);
@@ -145,7 +145,7 @@ class SimpleTensor {
 
   /// @brief Returns the ranked tensor type of the tensor.
   /// @return The ranked tensor type, or an error if the tensor is not ranked.
-  Expected<RankedTensorType> RankedTensorType() const {
+  Expected<::litert::RankedTensorType> RankedTensorType() const {
     if (type_id_ != kLiteRtRankedTensorType) {
       return Error(Status::kErrorInvalidArgument, "Not a ranked tensor type");
     }

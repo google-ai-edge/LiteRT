@@ -62,6 +62,13 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         PRIVATE -Wno-deprecated-declarations)
 endif()
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(litert_source_build_cc_api_headers_smoke_test
+        PRIVATE -fpermissive)
+    target_compile_options(litert_source_build_cc_api_no_absl_headers_smoke_test
+        PRIVATE -fpermissive)
+endif()
+
 file(GLOB _litert_source_build_cc_api_public_headers
     CONFIGURE_DEPENDS
     RELATIVE "${LITERT_SOURCE_DIR}"
@@ -102,6 +109,10 @@ foreach(_litert_source_build_cc_api_target IN LISTS _litert_source_build_cc_api_
             PRIVATE -Wno-deprecated-declarations)
     endif()
 
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(${_litert_source_build_cc_api_target}
+            PRIVATE -fpermissive)
+    endif()
     target_compile_definitions(${_litert_source_build_cc_api_target}
         PRIVATE
             LITERT_EXAMPLE_DEFAULT_MODEL="${LITERT_EXAMPLE_DEFAULT_MODEL}"
