@@ -90,13 +90,6 @@ class GpuWebGpuAccelerator {
     if (delegate_options && options) {
       delegate_options->weight_loader =
           reinterpret_cast<LiteRtOptionsT*>(options)->weight_loader;
-      // Enable constant tensor sharing when weight_loader is provided.
-      // This is required for external weight loading to work because the
-      // SharedMemoryManager (which sets up the maybe_bind_data callback for
-      // loading external weights) is only created when this option is enabled.
-      if (delegate_options->weight_loader != nullptr) {
-        delegate_options->enable_constant_tensors_sharing = true;
-      }
     }
     LITERT_RETURN_IF_ERROR(litert::ml_drift::CreateDelegate(
         runtime_context, env, accelerator,
