@@ -276,7 +276,7 @@ class GoogleTensorOptions : public ConcreteOptionsBase {
   }
 
   // copybara:uncomment_begin(google-only)
-  // // TODO(b/472440425): Remove this flag and enable by default after
+  // // TODO(b/551885395): Remove this flag and enable by default after
   // // verification.
   // void SetExperimentalEnableInputValidator(
       // bool experimental_enable_input_validator) {
