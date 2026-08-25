@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "tensor/examples/gemma4/safetensor_loader.h"
+#include "tensor/examples/utils/safetensor_loader.h"
 
 #include <cstdint>
 #include <cstdio>

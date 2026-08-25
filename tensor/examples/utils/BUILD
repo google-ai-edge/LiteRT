@@ -74,3 +74,37 @@ cc_test(
         "@perfetto//:libperfetto_client_experimental",
     ],
 )
+
+cc_library(
+    name = "safetensor_loader",
+    srcs = ["safetensor_loader.cc"],
+    hdrs = ["safetensor_loader.h"],
+    deps = [
+        ":minijson",
+        ":perfetto_session",
+        ":safetensors",
+        "//tensor",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "//tensor/utils:macros",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@perfetto//:libperfetto_client_experimental",
+    ],
+)
+
+cc_test(
+    name = "safetensor_loader_test",
+    srcs = ["safetensor_loader_test.cc"],
+    deps = [
+        ":safetensor_loader",
+        ":safetensors",
+        "//tensor/utils:matchers",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
