@@ -436,4 +436,22 @@ TEST(QuantizedDivOpTest, AsymmetricQuantizedDivisorZeroCheck) {
 }
 
 }  // namespace
+
+
+TEST(DivOpTest, Int32MinOverflowASan) {
+  BaseOpModel model(
+      {TensorType_INT32, {2}},
+      {TensorType_INT32, {2}},
+      {TensorType_INT32, {}},
+      BuiltinOperator_DIV);
+
+  model.SetInput1<int32_t>({std::numeric_limits<int32_t>::min(), 10});
+  model.SetInput2<int32_t>({-1, 2});
+  
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+  
+  EXPECT_THAT(model.GetOutput<int32_t>(), 
+              ElementsAre(std::numeric_limits<int32_t>::max(), 5));
+}
+
 }  // namespace tflite
