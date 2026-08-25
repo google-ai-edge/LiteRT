@@ -399,6 +399,27 @@ typedef struct LiteRtCompilerContext {
   LiteRtStatus (*get_block_wise_quantization)(
       LiteRtTensor tensor,
       LiteRtQuantizationBlockWise* block_wise_quantization);
+
+  // Conv3dTranspose options
+  // Added in version 1.2.0
+  // Appended at the tail so the offsets of every preceding member -- and the
+  // static_asserts pinning them -- stay unchanged.
+  LiteRtStatus (*get_conv_3d_transpose_padding_option)(LiteRtOp op,
+                                                       uint32_t* padding);
+  LiteRtStatus (*get_conv_3d_transpose_stride_d_option)(LiteRtOp op,
+                                                        int32_t* stride_d);
+  LiteRtStatus (*get_conv_3d_transpose_stride_w_option)(LiteRtOp op,
+                                                        int32_t* stride_w);
+  LiteRtStatus (*get_conv_3d_transpose_stride_h_option)(LiteRtOp op,
+                                                        int32_t* stride_h);
+  LiteRtStatus (*get_conv_3d_transpose_fused_activation_option)(
+      LiteRtOp op, uint32_t* fused_activation_function);
+  LiteRtStatus (*get_conv_3d_transpose_dilation_d_option)(
+      LiteRtOp op, int32_t* dilation_d_factor);
+  LiteRtStatus (*get_conv_3d_transpose_dilation_w_option)(
+      LiteRtOp op, int32_t* dilation_w_factor);
+  LiteRtStatus (*get_conv_3d_transpose_dilation_h_option)(
+      LiteRtOp op, int32_t* dilation_h_factor);
 } LiteRtCompilerContext;
 // LINT.ThenChange(./litert_compiler_context.cc:compiler_context_version)
 
@@ -408,7 +429,7 @@ typedef struct LiteRtCompilerContext {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtCompilerContext) == 1104,
+static_assert(sizeof(LiteRtCompilerContext) == 1168,
               "LiteRtCompilerContext size mismatch");
 static_assert(offsetof(LiteRtCompilerContext, abi_header) == 0,
               "LiteRtCompilerContext abi_header offset mismatch");
@@ -933,6 +954,46 @@ static_assert(
 static_assert(
     offsetof(LiteRtCompilerContext, get_block_wise_quantization) == 1096,
     "LiteRtCompilerContext get_block_wise_quantization offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_conv_3d_transpose_padding_option) ==
+        1104,
+    "LiteRtCompilerContext get_conv_3d_transpose_padding_option offset "
+    "mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_conv_3d_transpose_stride_d_option) ==
+        1112,
+    "LiteRtCompilerContext get_conv_3d_transpose_stride_d_option offset "
+    "mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_conv_3d_transpose_stride_w_option) ==
+        1120,
+    "LiteRtCompilerContext get_conv_3d_transpose_stride_w_option offset "
+    "mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_conv_3d_transpose_stride_h_option) ==
+        1128,
+    "LiteRtCompilerContext get_conv_3d_transpose_stride_h_option offset "
+    "mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext,
+             get_conv_3d_transpose_fused_activation_option) == 1136,
+    "LiteRtCompilerContext get_conv_3d_transpose_fused_activation_option "
+    "offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_conv_3d_transpose_dilation_d_option) ==
+        1144,
+    "LiteRtCompilerContext get_conv_3d_transpose_dilation_d_option offset "
+    "mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_conv_3d_transpose_dilation_w_option) ==
+        1152,
+    "LiteRtCompilerContext get_conv_3d_transpose_dilation_w_option offset "
+    "mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_conv_3d_transpose_dilation_h_option) ==
+        1160,
+    "LiteRtCompilerContext get_conv_3d_transpose_dilation_h_option offset "
+    "mismatch");
 #endif  // __cplusplus
 
 LiteRtCompilerContext* LrtGetCompilerContext();

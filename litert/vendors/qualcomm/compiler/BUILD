@@ -317,6 +317,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:tanh_op_builder",
         "//litert/vendors/qualcomm/core/builders:tile_op_builder",
         "//litert/vendors/qualcomm/core/builders:topk_op_builder",
+        "//litert/vendors/qualcomm/core/builders:transpose_conv3d_op_builder",
         "//litert/vendors/qualcomm/core/builders:transpose_conv_op_builder",
         "//litert/vendors/qualcomm/core/builders:transpose_op_builder",
         "//litert/vendors/qualcomm/core/builders:unpack_op_builder",
