@@ -94,7 +94,7 @@ config_setting(
 )
 
 config_setting(
-    name = "tflite_gpu_extra_gles_deps",
+    name = "tflite_gpu_extra_gles_deps_x86_64",
     constraint_values = [
         "@org_tensorflow//third_party/bazel_platforms/cpu:x86_64",
         "@org_tensorflow//third_party/bazel_platforms/os:linux",
@@ -102,6 +102,25 @@ config_setting(
     values = {
         "copt": "-DTFLITE_GPU_EXTRA_GLES_DEPS",
     },
+)
+
+config_setting(
+    name = "tflite_gpu_extra_gles_deps_aarch64",
+    constraint_values = [
+        "@org_tensorflow//third_party/bazel_platforms/cpu:aarch64",
+        "@org_tensorflow//third_party/bazel_platforms/os:linux",
+    ],
+    values = {
+        "copt": "-DTFLITE_GPU_EXTRA_GLES_DEPS",
+    },
+)
+
+selects.config_setting_group(
+    name = "tflite_gpu_extra_gles_deps",
+    match_any = [
+        ":tflite_gpu_extra_gles_deps_x86_64",
+        ":tflite_gpu_extra_gles_deps_aarch64",
+    ],
 )
 
 cc_library(

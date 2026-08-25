@@ -150,9 +150,13 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
   ///
   /// The provided host memory is not owned by the `TensorBuffer` object and
   /// must outlive it. Callers are responsible for ensuring that the pointer is
-  /// aligned to at least `LITERT_HOST_MEMORY_BUFFER_ALIGNMENT` bytes and that
-  /// any required padding for delegates like XNNPACK is included and
-  /// initialized.
+  /// aligned to at least `LITERT_HOST_MEMORY_BUFFER_ALIGNMENT` bytes (or
+  /// `kHostMemoryBufferAlignment`) and that any required padding for delegates
+  /// like XNNPACK is included and initialized.
+  ///
+  /// Note: When passing host memory to specific hardware accelerators that may
+  /// have stricter alignment requirements, query the tensor's requirements via
+  /// `CompiledModel::GetInputBufferRequirements` / `TensorBufferRequirements`.
   static Expected<TensorBuffer> CreateFromHostMemory(
       const Environment& env, const RankedTensorType& tensor_type,
       void* host_mem_addr, size_t buffer_size) {

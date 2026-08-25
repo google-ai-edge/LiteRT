@@ -141,6 +141,7 @@ inline LiteRtStatus InitQnnOptions(
       qualcomm_options.GetDspPerfCtrlMode()));
   qnn_options.SetIrJsonDir(qualcomm_options.GetIrJsonDir());
   qnn_options.SetDlcDir(qualcomm_options.GetDlcDir());
+  qnn_options.SetGraphTransform(qualcomm_options.GetGraphTransform());
   qnn_options.SetVtcmSize(qualcomm_options.GetVtcmSize());
   qnn_options.SetNumHvxThreads(qualcomm_options.GetNumHvxThreads());
   qnn_options.SetOptimizationLevel(static_cast<::qnn::OptimizationLevel>(
@@ -157,6 +158,16 @@ inline LiteRtStatus InitQnnOptions(
       custom_op_package.name, custom_op_package.interface_provider,
       custom_op_package.compile_package_path,
       custom_op_package.dispatch_package_path, custom_op_package.target);
+  qnn_options.SetLpaiTarget(
+      static_cast<::qnn::LpaiTarget>(qualcomm_options.GetLpaiTarget()));
+  qnn_options.SetLpaiFps(qualcomm_options.GetLpaiFps());
+  qnn_options.SetLpaiFtrtRatio(qualcomm_options.GetLpaiFtrtRatio());
+  qnn_options.SetLpaiClientPerfType(static_cast<::qnn::LpaiClientPerfType>(
+      qualcomm_options.GetLpaiClientPerfType()));
+  qnn_options.SetLpaiCoreAffinityType(static_cast<::qnn::LpaiCoreAffinityType>(
+      qualcomm_options.GetLpaiCoreAffinityType()));
+  qnn_options.SetLpaiCoreSelection(qualcomm_options.GetLpaiCoreSelection());
+
   LITERT_LOG(LITERT_INFO, "\n%s", qnn_options.Dump().data());
   return kLiteRtStatusOk;
 }

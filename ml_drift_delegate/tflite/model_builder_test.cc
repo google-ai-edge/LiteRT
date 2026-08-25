@@ -4543,57 +4543,35 @@ TEST(CumsumOperationParserTest, TestIsSupported) {
 }
 
 TEST(OneHotOperationParserTest, TestIsSupported) {
-  // Invalid num_inputs
   auto context = std::make_unique<StubTfLiteContext>(
       kTfLiteBuiltinOneHot,
       /*op_version=*/1,
       /*num_inputs=*/4,
       /*shape=*/std::vector<int>({1, 1, 1, 1}));
-  auto parser = NewOperationParser(context->node(), context->registration());
-  auto status = parser->IsSupported(context.get(), context->node(),
-                                    context->registration());
-
-  context->tensor(1)->dims->data[1] = 2;
-  context->tensor(1)->dims->data[2] = 2;
-  EXPECT_FALSE(
-      parser
-          ->IsSupported(context.get(), context->node(), context->registration())
-          .ok());
   context->tensor(1)->type = kTfLiteInt32;
-  EXPECT_FALSE(
-      parser
-          ->IsSupported(context.get(), context->node(), context->registration())
-          .ok());
-
-  TfLiteOneHotParams* params =
+  auto* params =
       static_cast<TfLiteOneHotParams*>(context->node()->builtin_data);
   params->axis = -1;
-  EXPECT_FALSE(
-      parser
-          ->IsSupported(context.get(), context->node(), context->registration())
-          .ok());
-  context->tensor(1)->dims->data[1] = 1;
-  context->tensor(1)->dims->data[2] = 1;
-  EXPECT_FALSE(
-      parser
-          ->IsSupported(context.get(), context->node(), context->registration())
-          .ok());
+  auto parser = NewOperationParser(context->node(), context->registration());
 
-  context->ChangeTensorShape(3, {1});
-  context->SetTensorType(3, kTfLiteFloat32, kTfLiteMmapRo);
-  context->ChangeTensorShape(4, {1});
-  context->SetTensorType(4, kTfLiteFloat32, kTfLiteMmapRo);
-  params->axis =
-      context->tensor(1)->dims->data[context->tensor(1)->dims->size - 1];
-  context->node(1)->builtin_data = params;
-
+  // Valid one_hot is supported.
   EXPECT_TRUE(
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());
 
+  // Non-singleton dimensions at 0, 1, 2 are supported by ML Drift GPU delegate.
   context->tensor(1)->dims->data[0] = 2;
+  context->tensor(1)->dims->data[1] = 2;
+  context->tensor(1)->dims->data[2] = 2;
   EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Unsupported op version (> 1) is rejected.
+  context->registration()->version = 2;
+  EXPECT_FALSE(
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());

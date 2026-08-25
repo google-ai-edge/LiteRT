@@ -31,7 +31,11 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
+#include "litert/cc/options/litert_intel_openvino_options.h"
+#include "litert/cc/options/litert_mediatek_options.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/core/model/model_load.h"
 #include "litert/tools/accuracy_debugger/accuracy_debugger_util.h"
 #include "litert/tools/flags/vendors/google_tensor_flags.h"
@@ -145,17 +149,22 @@ litert::Expected<litert::Environment> GetEnvironment() {
 litert::Expected<litert::Options> GetOptions() {
   LITERT_ASSIGN_OR_RETURN(auto options, litert::Options::Create());
   options.SetHardwareAccelerators(GetAccelerator());
-  LITERT_ASSIGN_OR_RETURN(auto& qnn_opts, options.GetQualcommOptions());
+  LITERT_ASSIGN_OR_RETURN(
+      auto& qnn_opts, options.GetOptions<litert::qualcomm::QualcommOptions>());
   LITERT_RETURN_IF_ERROR(UpdateQualcommOptionsFromFlags(qnn_opts));
-  LITERT_ASSIGN_OR_RETURN(auto& google_tensor_opts,
-                          options.GetGoogleTensorOptions());
+  LITERT_ASSIGN_OR_RETURN(
+      auto& google_tensor_opts,
+      options.GetOptions<litert::google_tensor::GoogleTensorOptions>());
   LITERT_RETURN_IF_ERROR(
       UpdateGoogleTensorOptionsFromFlags(google_tensor_opts));
-  LITERT_ASSIGN_OR_RETURN(auto& intel_openvino_opts,
-                          options.GetIntelOpenVinoOptions());
+  LITERT_ASSIGN_OR_RETURN(
+      auto& intel_openvino_opts,
+      options.GetOptions<litert::intel_openvino::IntelOpenVinoOptions>());
   LITERT_RETURN_IF_ERROR(
       UpdateIntelOpenVinoOptionsFromFlags(intel_openvino_opts));
-  LITERT_ASSIGN_OR_RETURN(auto& mediatek_opts, options.GetMediatekOptions());
+  LITERT_ASSIGN_OR_RETURN(
+      auto& mediatek_opts,
+      options.GetOptions<litert::mediatek::MediatekOptions>());
   LITERT_RETURN_IF_ERROR(UpdateMediatekOptionsFromFlags(mediatek_opts));
   if (absl::GetFlag(FLAGS_use_gpu_fp32_as_accel)) {
     auto gpu_opts = options.GetGpuOptions();

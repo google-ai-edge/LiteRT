@@ -80,7 +80,11 @@ TEST_P(SupportedVersionTest, Supports) {
 INSTANTIATE_TEST_SUITE_P(
     embLookupOps, SupportedVersionTest,
     ValuesIn<VersionTestCase>({
-        {1},  // only supported version
+        {1},  // min
+        {2},
+        {3},
+        {4},
+        {5},  // max
     }),
     [](const TestParamInfo<SupportedVersionTest::ParamType>& info) {
       return absl::StrCat("V_", info.param.version);
@@ -109,7 +113,7 @@ INSTANTIATE_TEST_SUITE_P(
     embLookupOps, UnsupportedVersionTest,
     ValuesIn<VersionTestCase>({
         {0},  // min-1
-        {2},  // max+1
+        {6},  // max+1
     }),
     [](const TestParamInfo<UnsupportedVersionTest::ParamType>& info) {
       return absl::StrCat("V_", info.param.version);
@@ -380,6 +384,20 @@ TEST_F(DimsTest, SupportsQuantized2DWeights) {
                         /*inputs=*/{a, b}, /*outputs=*/{c});
   TfLiteContext* context = context_builder.Build();
   ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
+TEST_F(DimsTest, SupportsBlockwiseQuantized2DWeights) {
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddTensor(kDefaultDtype, {4, 1, 1, 4});
+  const int b = context_builder.AddQuantizedTensor(kTfLiteInt4, {4, 4});
+  const int c = context_builder.AddTensor(kDefaultDtype, {4, 1, 1, 4});
+  context_builder.SetOp(kTfLiteBuiltinEmbeddingLookup, /*version=*/1,
+                        /*params=*/nullptr,
+                        /*inputs=*/{a, b}, /*outputs=*/{c});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  context->tensors[b].quantization.type = kTfLiteBlockwiseQuantization;
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
 }
 

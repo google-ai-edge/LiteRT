@@ -56,6 +56,11 @@ ABSL_DECLARE_FLAG(std::string, google_tensor_op_filters_proto);
 
 ABSL_DECLARE_FLAG(std::string, google_tensor_extra_options_path);
 
+ABSL_DECLARE_FLAG(std::string, google_tensor_extra_options);
+
+// copybara:uncomment_begin(google-only)
+// ABSL_DECLARE_FLAG(bool, google_tensor_experimental_enable_input_validator);
+// copybara:uncomment_end
 namespace litert::google_tensor {
 bool AbslParseFlag(::absl::string_view text,
                    GoogleTensorOptions::PerformanceMode* options,

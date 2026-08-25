@@ -29,7 +29,7 @@
 #include "litert/runtime/accelerators/registration_helper.h"
 
 extern "C" {
-LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorGpuDef = nullptr;
+const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorGpuDef = nullptr;
 }
 
 namespace litert::internal {
@@ -80,7 +80,29 @@ LiteRtStatus RegisterGpuAccelerator(LiteRtEnvironment environment) {
   };
 
   bool gpu_accelerator_registered = false;
-  if (LiteRtStaticLinkedAcceleratorGpuDef != nullptr &&
+  auto gpu_handle_option =
+      environment->GetOption(kLiteRtEnvOptionTagSystemGpuAcceleratorHandle);
+  if (gpu_handle_option.has_value()) {
+    const LiteRtAcceleratorDef* accelerator_def = nullptr;
+    if (gpu_handle_option->type == kLiteRtAnyTypeVoidPtr) {
+      accelerator_def = static_cast<const LiteRtAcceleratorDef*>(
+          gpu_handle_option->ptr_value);
+    } else {
+      LITERT_LOG(LITERT_WARNING,
+                 "Unsupported type for system GPU accelerator handle: %d",
+                 gpu_handle_option->type);
+    }
+
+    if (accelerator_def != nullptr &&
+        RegisterAcceleratorFromDef(environment, accelerator_def) ==
+            kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_INFO, "GPU accelerator registered from handle option.");
+      gpu_accelerator_registered = true;
+    }
+  }
+
+  if (!gpu_accelerator_registered &&
+      LiteRtStaticLinkedAcceleratorGpuDef != nullptr &&
       RegisterAcceleratorFromDef(environment,
                                  LiteRtStaticLinkedAcceleratorGpuDef) ==
           kLiteRtStatusOk) {

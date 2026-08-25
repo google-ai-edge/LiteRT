@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
@@ -46,8 +47,9 @@ class IrModelAdapter : public GraphAdapter {
   BHWC GetOpFirstInputShape(uint32_t op_id) const override;
   DataType GetOpFirstInputType(uint32_t op_id) const override;
 
-  uint32_t AddConstantInput(uint32_t global_tensor_id, const BHWC& shape,
-                            DataType type, uint32_t consumer_op_id) override;
+  uint32_t AddConstantInput(
+      uint32_t global_tensor_id, const BHWC& shape, DataType type,
+      absl::Span<const uint32_t> consumer_op_ids) override;
 
  private:
   ir::IrModel& graph_;

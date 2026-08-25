@@ -182,6 +182,8 @@ absl::StatusOr<MoeExpertsAttributes> ReadAttributes(
     attr.weight_type = MoeExpertsAttributes::WeightType::kFp32;
   } else if (weight_type == "int8") {
     attr.weight_type = MoeExpertsAttributes::WeightType::kInt8;
+  } else if (weight_type == "int4") {
+    attr.weight_type = MoeExpertsAttributes::WeightType::kInt4;
   } else {
     return absl::InvalidArgumentError(absl::StrCat(
         "moe unsupported weight_type: ", weight_type));
@@ -206,7 +208,9 @@ absl::StatusOr<MoeExpertsAttributes> InferAttributesFromTensors(
   if (tflite_node->inputs->size == kFp32InputCount) {
     attr.weight_type = MoeExpertsAttributes::WeightType::kFp32;
   } else if (tflite_node->inputs->size == kInt8InputCount) {
-    attr.weight_type = MoeExpertsAttributes::WeightType::kInt8;
+    attr.weight_type = (gate_weight->type == kTfLiteInt4)
+                           ? MoeExpertsAttributes::WeightType::kInt4
+                           : MoeExpertsAttributes::WeightType::kInt8;
   } else {
     return absl::InvalidArgumentError(
         "moe cannot infer weight_type from input count.");
@@ -416,11 +420,18 @@ absl::Status MoeExpertsOperationParser::IsSupported(
           PreGetInputTensor(context, tflite_node, weight_indices[i], &weight));
       if (!tflite::IsConstantTensor(weight)) {
         return absl::InvalidArgumentError(
-            "moe v1 expects constant int8 weights.");
+            "moe v1 expects constant quantized weights.");
       }
-      if (weight->type != kTfLiteInt8) {
-        return absl::InvalidArgumentError(absl::StrCat(
-            "moe expects int8 ", weight_names[i], "."));
+      const TfLiteType expected_type =
+          attr.weight_type == MoeExpertsAttributes::WeightType::kInt4
+              ? kTfLiteInt4
+              : kTfLiteInt8;
+      const char* type_name =
+          attr.weight_type == MoeExpertsAttributes::WeightType::kInt4 ? "int4"
+                                                                      : "int8";
+      if (weight->type != expected_type) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("moe expects ", type_name, " ", weight_names[i], "."));
       }
       ABSL_RETURN_IF_ERROR(ValidateInt8ZeroPoint(weight, weight_names[i]));
     }

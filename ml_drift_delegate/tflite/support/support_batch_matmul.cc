@@ -101,13 +101,11 @@ bool IsBatchMatMulSupported(const TfLiteContext* absl_nonnull context,
   }
   const TfLiteTensor& input1 = context->tensors[input1_id];
   if (IsConstantTensor(&input1)) {
-    // Only 2D is currently supported because we will reduce the op to
-    // FullyConnected to support the case that the second input is a constant
-    // tensor.
-    if (input1.dims->size != 2) {
+    if (input1.dims->size != 2 && input1.dims->size != 3 &&
+        input1.dims->size != 4) {
       absl::StrAppend(error,
-                      "If the second input is a constant tensor, only 2D "
-                      "tensor is supported, but got ",
+                      "If the second input is a constant tensor, only 2D, 3D, "
+                      "or 4D tensor is supported, but got ",
                       input1.dims->size, "D");
       return false;
     }

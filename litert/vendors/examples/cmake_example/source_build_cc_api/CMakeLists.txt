@@ -16,6 +16,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(litert_source_build_cc_api_example LANGUAGES CXX C)
 
+include(CTest)
+
 # Some TensorFlow Lite third-party CMake projects still declare compatibility
 # below CMake 3.5. CMake 4 rejects those projects unless this floor is set.
 if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
@@ -37,6 +39,61 @@ set(LITERT_EXAMPLE_DEFAULT_GPU_MODEL
 
 add_subdirectory("${LITERT_SOURCE_DIR}" "${LITERT_BUILD_DIR}" EXCLUDE_FROM_ALL)
 
+add_library(litert_source_build_cc_api_headers_smoke_test OBJECT
+    cc_api_headers_smoke_test.cc
+)
+target_link_libraries(litert_source_build_cc_api_headers_smoke_test
+    PRIVATE
+        litert_cc_api_headers
+)
+
+add_library(litert_source_build_cc_api_no_absl_headers_smoke_test OBJECT
+    cc_api_headers_smoke_test.cc
+)
+target_link_libraries(litert_source_build_cc_api_no_absl_headers_smoke_test
+    PRIVATE
+        litert_cc_api_no_absl_headers
+)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(litert_source_build_cc_api_headers_smoke_test
+        PRIVATE -Wno-deprecated-declarations)
+    target_compile_options(litert_source_build_cc_api_no_absl_headers_smoke_test
+        PRIVATE -Wno-deprecated-declarations)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(litert_source_build_cc_api_headers_smoke_test
+        PRIVATE -fpermissive)
+    target_compile_options(litert_source_build_cc_api_no_absl_headers_smoke_test
+        PRIVATE -fpermissive)
+endif()
+
+file(GLOB _litert_source_build_cc_api_public_headers
+    CONFIGURE_DEPENDS
+    RELATIVE "${LITERT_SOURCE_DIR}"
+    "${LITERT_SOURCE_DIR}/cc/*.h"
+    "${LITERT_SOURCE_DIR}/cc/options/*.h"
+)
+# The smoke source has a different include root in g3 and OSS. Normalize
+# it before checking the public-header inventory so this guard survives export.
+string(REPLACE "third_party/odml/litert/litert/" "litert/"
+    _litert_source_build_cc_api_headers_smoke_source
+    "${_litert_source_build_cc_api_headers_smoke_source}")
+file(READ "${CMAKE_CURRENT_LIST_DIR}/cc_api_headers_smoke_test.cc"
+    _litert_source_build_cc_api_headers_smoke_source)
+foreach(_litert_source_build_cc_api_public_header
+        IN LISTS _litert_source_build_cc_api_public_headers)
+    string(FIND "${_litert_source_build_cc_api_headers_smoke_source}"
+        "#include \"litert/${_litert_source_build_cc_api_public_header}\""
+        _litert_source_build_cc_api_header_position)
+    if(_litert_source_build_cc_api_header_position EQUAL -1)
+        message(FATAL_ERROR
+            "cc_api_headers_smoke_test.cc does not include public header "
+            "litert/${_litert_source_build_cc_api_public_header}")
+    endif()
+endforeach()
+
 set(_litert_source_build_cc_api_targets
     litert_source_build_cc_api_run_model
     litert_source_build_cc_api_no_absl_run_model
@@ -52,6 +109,10 @@ foreach(_litert_source_build_cc_api_target IN LISTS _litert_source_build_cc_api_
             PRIVATE -Wno-deprecated-declarations)
     endif()
 
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(${_litert_source_build_cc_api_target}
+            PRIVATE -fpermissive)
+    endif()
     target_compile_definitions(${_litert_source_build_cc_api_target}
         PRIVATE
             LITERT_EXAMPLE_DEFAULT_MODEL="${LITERT_EXAMPLE_DEFAULT_MODEL}"
@@ -68,11 +129,40 @@ target_link_libraries(litert_source_build_cc_api_run_model
     PRIVATE
         litert_cc_api_with_dynamic_runtime
 )
+add_dependencies(litert_source_build_cc_api_run_model
+    litert_source_build_cc_api_headers_smoke_test
+)
 
 target_link_libraries(litert_source_build_cc_api_no_absl_run_model
     PRIVATE
         litert_cc_api_no_absl_with_dynamic_runtime
 )
+add_dependencies(litert_source_build_cc_api_no_absl_run_model
+    litert_source_build_cc_api_no_absl_headers_smoke_test
+)
+
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    add_test(
+        NAME litert_source_build_cc_api_regular
+        COMMAND $<TARGET_FILE:litert_source_build_cc_api_run_model>
+            --iterations=2
+            --print_tensors
+            --sample_size=6
+    )
+    add_test(
+        NAME litert_source_build_cc_api_no_absl
+        COMMAND $<TARGET_FILE:litert_source_build_cc_api_no_absl_run_model>
+            --iterations=2
+            --use_async
+            --use_named_maps
+            --sample_size=6
+    )
+    set_tests_properties(
+        litert_source_build_cc_api_regular
+        litert_source_build_cc_api_no_absl
+        PROPERTIES LABELS "cmake;cc_api"
+    )
+endif()
 
 if(LITERT_ENABLE_GPU)
     string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _litert_example_processor)

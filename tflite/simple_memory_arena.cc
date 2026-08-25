@@ -45,6 +45,7 @@ limitations under the License.
 // (this is a non-standard behavior). However, it provides _aligned_malloc,
 // _aligned_realloc, and _aligned_free, with a slightly different behavior than
 // the C11/C++17 standard functions (size requirement, and free function name.)
+// The following line of code has no behavioral effect.
 #define TF_LITE_HAS_ALIGNED_ALLOC 0
 #elif __cplusplus >= 201703L || __STDC_VERSION__ >= 201112L
 // C++17 or C11 has (std::)aligned_alloc
@@ -105,6 +106,24 @@ tflite::PointerAlignedPointerPair AlignedRealloc(
     const tflite::PointerAlignedPointerPair& old_buffer, size_t old_size,
     size_t new_size, size_t alignment, TfLiteAllocator* allocator);
 
+// Uses the allocator's reallocation callback when an allocation already
+// exists. Initial allocations continue to use `allocate`, since
+// TfLiteAllocator does not require `reallocate(nullptr, ...)` support. Returns
+// true when the callback was invoked, including when reallocation failed.
+bool TryCustomAlignedRealloc(
+    const tflite::PointerAlignedPointerPair& old_buffer, size_t old_size,
+    size_t new_size, size_t alignment, TfLiteAllocator* allocator,
+    tflite::PointerAlignedPointerPair* new_buffer) {
+  if (!IsValidTfLiteAllocator(allocator) || old_buffer.pointer == nullptr ||
+      allocator->reallocate == nullptr) {
+    return false;
+  }
+  char* pointer = reinterpret_cast<char*>(allocator->reallocate(
+      allocator->data, old_buffer.pointer, old_size, new_size, alignment));
+  *new_buffer = {pointer, pointer};
+  return true;
+}
+
 #if defined(_WIN32)
 // On Windows <cstdlib> provides _aligned_malloc, _aligned_free, and
 // _aligned_realloc, use them to implement the Aligned functions.
@@ -137,8 +156,12 @@ tflite::PointerAlignedPointerPair AlignedRealloc(
     const tflite::PointerAlignedPointerPair& old_buffer, size_t old_size,
     size_t new_size, size_t alignment, TfLiteAllocator* allocator) {
   if (IsValidTfLiteAllocator(allocator)) {
-    tflite::PointerAlignedPointerPair new_buffer =
-        AlignedAlloc(new_size, alignment, allocator);
+    tflite::PointerAlignedPointerPair new_buffer;
+    if (TryCustomAlignedRealloc(old_buffer, old_size, new_size, alignment,
+                                allocator, &new_buffer)) {
+      return new_buffer;
+    }
+    new_buffer = AlignedAlloc(new_size, alignment, allocator);
     if (new_size > 0 && new_buffer.pointer == nullptr) {
       return {nullptr, nullptr};
     }
@@ -228,8 +251,12 @@ void AlignedFree(const tflite::PointerAlignedPointerPair& buffer, size_t size,
 tflite::PointerAlignedPointerPair AlignedRealloc(
     const tflite::PointerAlignedPointerPair& old_buffer, size_t old_size,
     size_t new_size, size_t alignment, TfLiteAllocator* allocator) {
-  tflite::PointerAlignedPointerPair new_buffer =
-      AlignedAlloc(new_size, alignment, allocator);
+  tflite::PointerAlignedPointerPair new_buffer;
+  if (TryCustomAlignedRealloc(old_buffer, old_size, new_size, alignment,
+                              allocator, &new_buffer)) {
+    return new_buffer;
+  }
+  new_buffer = AlignedAlloc(new_size, alignment, allocator);
   if (new_size > 0 && new_buffer.pointer == nullptr) {
     return {nullptr, nullptr};
   }

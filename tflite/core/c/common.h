@@ -541,8 +541,8 @@ typedef struct TfLiteCustomAllocation {
 typedef struct TfLiteAllocator {
   void* data;
   void* (*allocate)(void* data, size_t bytes, size_t alignment);
-  void* (*reallocate)(void* data, void* ptr, size_t old_bytes,
-                      size_t new_bytes, size_t alignment);
+  void* (*reallocate)(void* data, void* ptr, size_t old_bytes, size_t new_bytes,
+                      size_t alignment);
   void (*deallocate)(void* data, void* ptr, size_t bytes, size_t alignment);
 } TfLiteAllocator;
 

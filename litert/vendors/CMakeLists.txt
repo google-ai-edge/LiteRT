@@ -11,6 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+#
 
 cmake_minimum_required(VERSION 3.20)
 include(CheckIncludeFileCXX)
@@ -102,6 +106,15 @@ endif()
 # )
 
 # LINT.IfChange(litecore_headers_dir)
+if(NOT LITECORE_HEADERS_DIR)
+  # Check if local headers exist in the repository
+  set(_local_exynos_headers "${CMAKE_CURRENT_SOURCE_DIR}/../../exynos/v1_1_0/include")
+  if(EXISTS "${_local_exynos_headers}/graph_wrapper_api.h")
+    set(LITECORE_HEADERS_DIR "${_local_exynos_headers}")
+    message(STATUS "Using local Samsung AI LiteCore headers: ${LITECORE_HEADERS_DIR}")
+  endif()
+endif()
+
 if(NOT LITECORE_HEADERS_DIR)
   if(NOT LITECORE_HEADERS_URL AND NOT LITECORE_GIT_REPO)
     set(LITECORE_HEADERS_URL "https://soc-developer.semiconductor.samsung.com/api/v1/resource/download-file/1.1.0/ai-litecore-ubuntu2404-v1.1.0.tar.gz")
@@ -315,6 +328,13 @@ if(HAVE_OPENVINO_HDR)
   _litert_add_dispatch_so(OpenVINO "intel_openvino/dispatch" "OpenVINO")
 else()
   message(STATUS "Skipping OpenVINO dispatch: openvino/openvino.hpp not found")
+endif()
+
+# Arm
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/arm/dispatch/dispatch_api.cc")
+  _litert_add_dispatch_so(Arm "arm/dispatch" "Arm")
+else()
+  message(STATUS "Skipping Arm dispatch: arm/dispatch/dispatch_api.cc not found")
 endif()
 
 # Qualcomm

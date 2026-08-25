@@ -116,7 +116,6 @@ jobs:
           )
 
           $LITERT_EXCLUDED_TARGETS = @(
-            "-//litert/cc/dynamic_runtime/..."
             "-//litert/python:converter_wrapper_test"
             "-//litert/python/aot/..."
             "-//litert/python/tools:mmap_utils_test"
@@ -174,6 +173,7 @@ jobs:
             //litert/vendors/intel_openvino/dispatch:LiteRtDispatch `
             //litert/vendors/intel_openvino/compiler:openvino_compiler_plugin_test `
             //litert/vendors/intel_openvino/dispatch:dispatch_api_openvino_test `
+            //litert/vendors/intel_openvino/compiler:alias_shared_constants_test `
             //litert/vendors/intel_openvino/compiler:weights_to_parameters_test `
             //litert/vendors/intel_openvino/compiler:weight_bank_test
 

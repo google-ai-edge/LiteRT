@@ -16,7 +16,6 @@
 cmake_minimum_required(VERSION 3.20)
 
 set(LITERT_CC_INTERNAL_HEADERS
-    litert_builder.h
     litert_c_types_printing.h
     litert_context_wrapper.h
     litert_compiled_model_next.h
@@ -26,7 +25,6 @@ set(LITERT_CC_INTERNAL_HEADERS
     litert_extended_model.h
     litert_handle.h
     litert_logging.h
-    litert_matchers.h
     litert_model_predicates.h
     litert_numerics.h
     litert_op_options.h

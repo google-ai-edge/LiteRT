@@ -172,7 +172,7 @@ bool IsTransposeConvSupported(
                        "weights", *error)) {
     return false;
   }
-  if (bias && !CheckTensorDims(*bias, /*min_dims=*/2, /*max_dims=*/kMaxDims,
+  if (bias && !CheckTensorDims(*bias, /*min_dims=*/1, /*max_dims=*/kMaxDims,
                                "bias", *error)) {
     return false;
   }

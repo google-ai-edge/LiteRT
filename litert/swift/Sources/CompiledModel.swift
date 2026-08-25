@@ -333,22 +333,22 @@ public final class CompiledModel {
   /// - Returns: An array of newly created output tensor buffers.
   /// - Throws: `LiteRtError` if buffer creation fails.
   public func createOutputBuffers(signatureIndex: Int = 0) throws -> [TensorBuffer] {
-    let count = try outputCount(signatureIndex: signatureIndex)
-    var outputs: [TensorBuffer] = []
-    for i in 0..<count {
+    let layouts = try getOutputTensorLayouts(
+      signatureIndex: signatureIndex, updateAllocation: true)
+
+    return try layouts.enumerated().map { index, layout in
+      guard layout.elementCount != nil else { throw LiteRtError.invalidArgument }
       let requirements = try getOutputBufferRequirements(
-        outputIndex: i, signatureIndex: signatureIndex)
-      let tensorType = try getOutputTensorType(outputIndex: i, signatureIndex: signatureIndex)
-      let bufferType = requirements.supportedTypes.first ?? .hostMemory
-      let buf = try TensorBuffer(
+        outputIndex: index, signatureIndex: signatureIndex)
+      guard requirements.bufferSize > 0 else { throw LiteRtError.runtimeFailure }
+      let elementType = try getOutputTensorType(
+        outputIndex: index, signatureIndex: signatureIndex).elementType
+      return try TensorBuffer(
         environment: environment,
-        bufferType: bufferType,
-        tensorType: tensorType,
-        size: requirements.bufferSize
-      )
-      outputs.append(buf)
+        bufferType: requirements.supportedTypes.first ?? .hostMemory,
+        tensorType: TensorType(elementType: elementType, layout: layout),
+        size: requirements.bufferSize)
     }
-    return outputs
   }
 
   /// Queries the input count for a signature.

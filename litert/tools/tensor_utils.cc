@@ -14,16 +14,26 @@
 
 #include "litert/tools/tensor_utils.h"
 
+#include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
+#include <functional>
+#include <numeric>
 #include <string>
 #include <vector>
 
 #include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_compiled_model.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_model_types.h"
 #include "litert/cc/litert_tensor_buffer.h"
 
 namespace litert {
@@ -31,18 +41,121 @@ namespace tensor_utils {
 
 Expected<void> FillInputBuffersWithCustomData(
     const CompiledModel& compiled_model, size_t signature_index,
-    std::vector<TensorBuffer>& input_buffers, absl::string_view input_dir) {
+    std::vector<TensorBuffer>& input_buffers, absl::string_view input_dir,
+    bool quantize_inputs) {
   ABSL_LOG(INFO) << "Using inputs from: " << input_dir;
   LITERT_ASSIGN_OR_RETURN(
       const auto input_names,
       compiled_model.GetSignatureInputNames(signature_index));
+  if (input_buffers.size() != input_names.size()) {
+    return Unexpected(
+        kLiteRtStatusErrorInvalidArgument,
+        absl::StrFormat("Number of input buffers (%d) does not match number "
+                        "of model inputs (%d) for signature %d.",
+                        input_buffers.size(), input_names.size(),
+                        signature_index));
+  }
   for (size_t i = 0; i < input_names.size(); ++i) {
     const auto& input_name = input_names[i];
     auto& input_buffer = input_buffers[i];
-    const auto input_file_path = std::filesystem::path(std::string(input_dir)) /
-                                 (std::string(input_name.data()) + ".raw");
+    const auto input_file_path =
+        std::filesystem::path(std::string(input_dir)) /
+        (std::string(input_name.data(), input_name.size()) + ".raw");
     LITERT_ASSIGN_OR_RETURN(auto data, tensor_utils::ReadTensorDataFromRawFile(
                                            input_file_path.string()));
+    if (quantize_inputs) {
+      LITERT_ASSIGN_OR_RETURN(auto q_type, compiled_model.GetInputTensorQTypeId(
+                                               signature_index, input_name));
+      LITERT_ASSIGN_OR_RETURN(auto type, input_buffer.TensorType());
+      LITERT_ASSIGN_OR_RETURN(auto buffer_size, input_buffer.Size());
+      const auto& layout = type.Layout();
+      size_t total_elements = std::accumulate(layout.Dimensions().begin(),
+                                              layout.Dimensions().end(), 1,
+                                              std::multiplies<size_t>());
+      const size_t expected_fp32_size = total_elements * sizeof(float);
+
+      if (q_type == QuantizationTypeId::PerTensor) {
+        if (data.size() == expected_fp32_size) {
+          LITERT_ASSIGN_OR_RETURN(
+              auto q_params, compiled_model.GetInputTensorPerTensorQuantization(
+                                 signature_index, input_name));
+          if (q_params.scale <= 0.0f || !std::isfinite(q_params.scale)) {
+            return Unexpected(
+                kLiteRtStatusErrorRuntimeFailure,
+                absl::StrFormat(
+                    "Invalid quantization scale %f for input tensor '%s'.",
+                    q_params.scale, input_name));
+          }
+          absl::Span<const float> float_data(
+              reinterpret_cast<const float*>(data.data()), total_elements);
+
+          ABSL_LOG(INFO) << "Quantizing input tensor '" << input_name
+                         << "' from FP32 to type "
+                         << static_cast<int>(type.ElementType())
+                         << " (scale=" << q_params.scale
+                         << ", zero_point=" << q_params.zero_point << ")";
+
+          switch (type.ElementType()) {
+            case ElementType::Int8: {
+              auto q_vec = QuantizeData<int8_t>(float_data, q_params.scale,
+                                                q_params.zero_point);
+              LITERT_RETURN_IF_ERROR(
+                  input_buffer.Write<int8_t>(absl::MakeConstSpan(q_vec)));
+              continue;
+            }
+            case ElementType::UInt8: {
+              auto q_vec = QuantizeData<uint8_t>(float_data, q_params.scale,
+                                                 q_params.zero_point);
+              LITERT_RETURN_IF_ERROR(
+                  input_buffer.Write<uint8_t>(absl::MakeConstSpan(q_vec)));
+              continue;
+            }
+            case ElementType::Int16: {
+              auto q_vec = QuantizeData<int16_t>(float_data, q_params.scale,
+                                                 q_params.zero_point);
+              LITERT_RETURN_IF_ERROR(
+                  input_buffer.Write<int16_t>(absl::MakeConstSpan(q_vec)));
+              continue;
+            }
+            case ElementType::UInt16: {
+              auto q_vec = QuantizeData<uint16_t>(float_data, q_params.scale,
+                                                  q_params.zero_point);
+              LITERT_RETURN_IF_ERROR(
+                  input_buffer.Write<uint16_t>(absl::MakeConstSpan(q_vec)));
+              continue;
+            }
+            case ElementType::Int32: {
+              auto q_vec = QuantizeData<int32_t>(float_data, q_params.scale,
+                                                 q_params.zero_point);
+              LITERT_RETURN_IF_ERROR(
+                  input_buffer.Write<int32_t>(absl::MakeConstSpan(q_vec)));
+              continue;
+            }
+            default:
+              return Unexpected(
+                  kLiteRtStatusErrorRuntimeFailure,
+                  absl::StrFormat("Auto-quantization is not supported for "
+                                  "element type %d on tensor '%s'.",
+                                  static_cast<int>(type.ElementType()),
+                                  input_name));
+          }
+        } else if (data.size() != buffer_size) {
+          return Unexpected(
+              kLiteRtStatusErrorRuntimeFailure,
+              absl::StrFormat(
+                  "Mismatched input size for '%s'. Expected %d bytes "
+                  "(for FP32 auto-quantization) or %d bytes (raw "
+                  "quantized buffer), but got %d bytes.",
+                  input_name, expected_fp32_size, buffer_size, data.size()));
+        }
+      } else if (q_type != QuantizationTypeId::None) {
+        ABSL_LOG(WARNING) << "Auto-quantization requested, but tensor '"
+                          << input_name
+                          << "' has unsupported quantization type "
+                          << static_cast<int>(q_type)
+                          << "; attempting raw fill.";
+      }
+    }
     LITERT_RETURN_IF_ERROR(
         tensor_utils::FillBufferWithCustomData(input_buffer, data));
   }

@@ -39,37 +39,38 @@ LiteRtStatus LiteRtGetAccelerator(LiteRtEnvironment environment,
 // Fetches the name of the accelerator.
 //
 // Note: client code does not need to manage the `name` lifetime.
-LiteRtStatus LiteRtGetAcceleratorName(LiteRtAccelerator accelerator,
+LiteRtStatus LiteRtGetAcceleratorName(LiteRtAcceleratorConst accelerator,
                                       char const** name);
 
 // Fetches the accelerator identifier.
 //
 // The identifier is a runtime unique number, provided by the registrar to the
 // accelerator upon registration.
-LiteRtStatus LiteRtGetAcceleratorId(LiteRtAccelerator accelerator,
+LiteRtStatus LiteRtGetAcceleratorId(LiteRtAcceleratorConst accelerator,
                                     LiteRtAcceleratorId* id);
 
 // Fetches the version of the accelerator implementation.
 //
 // Note: This is NOT the LiteRT version. It's the accelerator specific software
 // implementation version.
-LiteRtStatus LiteRtGetAcceleratorVersion(LiteRtAccelerator accelerator,
+LiteRtStatus LiteRtGetAcceleratorVersion(LiteRtAcceleratorConst accelerator,
                                          LiteRtApiVersion* version);
 
 // Fetches the accelerator hardware.
 //
 // `supported_hardware` is a bitfield of `LiteRtHwAccelerators` values.
 LiteRtStatus LiteRtGetAcceleratorHardwareSupport(
-    LiteRtAccelerator accelerator, LiteRtHwAcceleratorSet* supported_hardware);
+    LiteRtAcceleratorConst accelerator,
+    LiteRtHwAcceleratorSet* supported_hardware);
 
 // Fetches the accelerator environment.
 //
-LiteRtStatus LiteRtGetAcceleratorEnvironment(LiteRtAccelerator accelerator,
+LiteRtStatus LiteRtGetAcceleratorEnvironment(LiteRtAcceleratorConst accelerator,
                                              LiteRtEnvironment* environment);
 
 // Returns whether the accelerator TFLite delegate does some JIT compilation.
 LiteRtStatus LiteRtIsAcceleratorDelegateResponsibleForJitCompilation(
-    LiteRtAccelerator accelerator, bool* does_jit_compilation);
+    LiteRtAcceleratorConst accelerator, bool* does_jit_compilation);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -43,15 +43,15 @@ IS_X86_ARCHITECTURE = platform.machine() in ('x86_64')
 
 # --- Configuration for Google Tensor ML SDK Download ---
 # Google Tensor ML SDK version doesn't necessarily match the SDK version though.
-# TODO: b/475410468 - Remove this environment variable once the SDK is publicly
-# available without ACLs. Remove the entire flow of using environment variables
-# for the SDK download, and use the URL directly.
+# TODO: b/475410468 - Remove this environment variable when we want to deprecate
+# the beta version. Currently the BETA version will still be supported for
+# existing users.
 GOOGLE_TENSOR_SDK_BETA = os.environ.get('GOOGLE_TENSOR_SDK_BETA', None)
-# TODO: b/475410468 - Update the URL once the SDK is finalized.
-# Currently, an environment variable is used here instead of the true URL. This
-# is because the SDK is not yet publicly available. The URL environment variable
-# is used only for testing purposes, by providing a way to override the URL.
-GOOGLE_TENSOR_ML_SDK_URL = os.environ.get('GOOGLE_TENSOR_ML_SDK_URL', None)
+_GOOGLE_TENSOR_SDK_ARTIFACT_VERSION = '6.1.0'
+_STORAGE_PROJECT = 'tensor-ml-sdk'
+_BASE_FOLDER_PATH = 'sdk/releases'
+_TAR_FILE_NAME = 'litert_plugin_compiler.tar.gz'
+GOOGLE_TENSOR_ML_SDK_URL = f'https://redirector.gvt1.com/edgedl/{_STORAGE_PROJECT}/{_BASE_FOLDER_PATH}/{_GOOGLE_TENSOR_SDK_ARTIFACT_VERSION}/{_TAR_FILE_NAME}'
 GOOGLE_TENSOR_ML_SDK_CONTENT_DIR = 'google_tensor_ml_sdk'
 GOOGLE_TENSOR_ML_SDK_TARGET_DIR = 'ai_edge_litert_sdk_google_tensor/data'
 # ---

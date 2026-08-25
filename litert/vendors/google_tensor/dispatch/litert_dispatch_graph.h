@@ -69,9 +69,11 @@ class LiteRtDispatchGraphT {
 
   LiteRtStatus AddEdge(LiteRtDispatchEdgeId edge_id);
 
-  LiteRtStatus ConnectGraphInput(LiteRtDispatchEdgeId edge_id);
+  LiteRtStatus ConnectGraphInput(int input_index,
+                                 LiteRtDispatchEdgeId edge_id);
 
-  LiteRtStatus ConnectGraphOutput(LiteRtDispatchEdgeId edge_id);
+  LiteRtStatus ConnectGraphOutput(int output_index,
+                                  LiteRtDispatchEdgeId edge_id);
 
   LiteRtStatus AssignNodeFunction(LiteRtDispatchNodeId node_id,
                                   LiteRtDispatchExecutableHandle exec_handle,

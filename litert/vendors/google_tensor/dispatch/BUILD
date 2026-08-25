@@ -69,6 +69,7 @@ cc_library(
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/types:optional_ref",
         "@com_google_absl//absl/types:span",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
@@ -77,9 +78,9 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_runtime_context_header",
         "//litert/c/options:litert_google_tensor_options_type",
+        # copybara:uncomment "//litert/c/options/google:litert_google_tensor_privileged_options_type",
         "//litert/cc:litert_environment_options",
         "//litert/vendors/c:litert_dispatch_c_api",
-        # copybara:uncomment "//litert/vendors/google_tensor/dispatch/google:litert_darwinn_runtime_options",
     ],
 )
 
@@ -114,7 +115,7 @@ litert_dispatch_api(
         "-ffunction-sections",
         "-fdata-sections",
     ],
-    # copybara:uncomment defines = ["LITERT_HAS_DARWINN_OPTIONS_SUPPORT=1"],
+    # copybara:uncomment defines = ["LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT=1"],
     export_litert_only = True,
     linkopts = litert_android_linkopts() + [
         "-Wl,-soname=libLiteRtDispatch_GoogleTensor.so",
@@ -133,12 +134,13 @@ litert_dispatch_api(
         "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
     ],
     deps = [
-        # copybara:uncomment "//litert/vendors/google_tensor/dispatch/google:litert_darwinn_runtime_options",
-        # copybara:uncomment "//litert/vendors/google_tensor/dispatch/google:darwinn_options_utils",
+        # copybara:uncomment "//litert/c/options/google:litert_google_tensor_privileged_options_type",
+        # copybara:uncomment "//litert/vendors/google_tensor/dispatch/google:google_tensor_privileged_options_utils",
         "@com_google_absl//absl/algorithm:container",
         "//litert/c/internal:litert_scheduling_info",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/types:optional_ref",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",

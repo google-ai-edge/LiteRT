@@ -15,6 +15,7 @@
 
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load(
     "//tflite:build_def.bzl",
@@ -384,7 +385,6 @@ cc_library(
 tflite_cc_library_with_c_headers_test(
     name = "common",
     srcs = [
-        "allocator_internal.h",
         "common.cc",
     ],
     hdrs = [
@@ -393,6 +393,9 @@ tflite_cc_library_with_c_headers_test(
     ],
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts(),
+    textual_hdrs = [
+        "allocator_internal.h",
+    ],
     visibility = ["//tflite:__subpackages__"] + common_header_visibility_allowlist(),
     deps = [
         ":c_api_types",

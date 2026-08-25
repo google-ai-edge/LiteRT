@@ -37,7 +37,14 @@ class Environment private constructor(handle: Long) : JniHandle(handle) {
      * @suppress
      */
     SystemRuntimeHandle(23),
+    /**
+     * This for internal use only.
+     *
+     * @suppress
+     */
+    SystemGpuAcceleratorHandle(30),
   }
+
   // LINT.ThenChange(../../../../../../../../../c/litert_environment_options.h)
 
   override protected fun destroy() {
@@ -56,6 +63,7 @@ class Environment private constructor(handle: Long) : JniHandle(handle) {
   companion object {
     // LINT.IfChange(ENV_OPTION_TAG_COMPILER_CACHE_DIR)
     private const val ENV_OPTION_TAG_COMPILER_CACHE_DIR = 18
+
     // LINT.ThenChange(../../../../../../../../../c/litert_environment_options.h)
 
     init {
@@ -93,8 +101,8 @@ class Environment private constructor(handle: Long) : JniHandle(handle) {
     /**
      * Creates an environment.
      *
-     * Note: This version does not enable compiler caching. Use [create(Context, Map, Boolean)]
-     * to enable caching.
+     * Note: This version does not enable compiler caching. Use [create(Context, Map, Boolean)] to
+     * enable caching.
      *
      * @param options The options to configure the environment.
      */
@@ -141,19 +149,14 @@ class Environment private constructor(handle: Long) : JniHandle(handle) {
         }
       }
 
-      return Environment(
-        nativeCreate(
-          keys.toIntArray(),
-          values.toTypedArray(),
-        )
-      )
+      return Environment(nativeCreate(keys.toIntArray(), values.toTypedArray()))
     }
 
     /**
      * Creates an environment with a [NpuAcceleratorProvider].
      *
-     * Note: This version does not enable compiler caching. Use [create(Context, NpuAcceleratorProvider, Map, Boolean)]
-     * to enable caching.
+     * Note: This version does not enable compiler caching. Use
+     * [create(Context, NpuAcceleratorProvider, Map, Boolean)] to enable caching.
      *
      * @param npuAcceleratorProvider The NPU accelerator provider.
      * @param options The options to configure the environment.

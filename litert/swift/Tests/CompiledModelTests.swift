@@ -174,4 +174,54 @@ final class CompiledModelTests: XCTestCase {
     let readValue = try compiledModel.metadata(key: metadataKey)
     XCTAssertEqual(readValue, metadataValue)
   }
+
+  func testCreateOutputBuffersWithDynamicDimensions() throws {
+    let env = try Environment()
+    let modelPath = "litert/test/testdata/dynamic_add_model.tflite"
+    let options = try Options()
+    try options.setHardwareAccelerators([.cpu])
+    let compiledModel = try CompiledModel(filePath: modelPath, environment: env, options: options)
+
+    // Resize input tensors from (?, 2, 3) to (4, 2, 3) -> 24 floats = 96 bytes each
+    let newDims = [4, 2, 3]
+    try compiledModel.resizeInputTensor(inputIndex: 0, dimensions: newDims)
+    try compiledModel.resizeInputTensor(inputIndex: 1, dimensions: newDims)
+
+    // Verify createOutputBuffers() correctly sizes output buffers from resolved layouts
+    let outputBuffers = try compiledModel.createOutputBuffers()
+    XCTAssertEqual(outputBuffers.count, 1)
+    XCTAssertEqual(outputBuffers[0].size, 24 * MemoryLayout<Float>.stride)
+    XCTAssertEqual(outputBuffers[0].tensorType?.layout.dimensions, [4, 2, 3])
+
+    // Create input buffers matching resized input dimensions
+    let inputBuffers = try [
+      TensorBuffer(
+        environment: env,
+        bufferType: .hostMemory,
+        tensorType: TensorType(elementType: .float32, layout: Layout(dimensions: newDims)),
+        size: 24 * MemoryLayout<Float>.stride
+      ),
+      TensorBuffer(
+        environment: env,
+        bufferType: .hostMemory,
+        tensorType: TensorType(elementType: .float32, layout: Layout(dimensions: newDims)),
+        size: 24 * MemoryLayout<Float>.stride
+      )
+    ]
+    let inData0 = [Float](repeating: 1.0, count: 24)
+    let inData1 = [Float](repeating: 2.0, count: 24)
+    try inputBuffers[0].write(inData0)
+    try inputBuffers[1].write(inData1)
+
+    // Run inference safely without buffer overflow
+    try compiledModel.run(inputs: inputBuffers, outputs: outputBuffers)
+
+    let outputData: [Float] = try outputBuffers[0].read()
+    XCTAssertEqual(outputData.count, 24)
+    for val in outputData {
+      XCTAssertEqual(val, 3.0, accuracy: 0.0001)
+    }
+  }
 }
+
+

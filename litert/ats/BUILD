@@ -36,7 +36,7 @@ litert_define_ats(
     backend = "cpu",
     compile_only_suffix = None,
     dont_register = [
-        "^(?!.*Pad).*i32",  # XNNPACK does not support int32 (except Pad weights)
+        "^(?!.*(Pad|Reduction|Transpose)).*i32",  # XNNPACK does not support int32 math (except Pad/Reduction/Transpose static constants)
         "OneHot",  # XNNPACK does not support OneHot
         "Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
         "tfl\\.floor_div",  # XNNPACK does not support FloorDiv
@@ -46,8 +46,6 @@ litert_define_ats(
         "tfl\\.sign",  # XNNPACK does not support Sign
         "tfl\\.relu_0_to_1",  # XNNPACK does not support Relu0To1
         "tfl\\.elu",  # XNNPACK does not support Elu
-        "tfl\\.reduce_max",  # XNNPACK does not support ReduceMax
-        "tfl\\.reduce_min",  # XNNPACK does not support ReduceMin
         "tfl\\.reduce_prod",  # XNNPACK does not support ReduceProd
         "LogSoftmax",  # XNNPACK does not support LogSoftmax
         "Pooling",  # XNNPACK rejects pooling when stride > filter size
@@ -57,7 +55,7 @@ litert_define_ats(
         "FullyConnected.*,2d_f32.*,1d_f32",
         "FullyConnected.*,2d_f32[^c]",
         "FullyConnected.*_cst.*,1d_f32[^c]",
-        "Transpose.*(f16|i4|bool|u16|u32|u64|i64)",  # XNNPACK delegate at ToT does not yet support these Transpose presets
+        "Transpose.*([(][78]d|[(][1-8]d_(i1|i4|i16|u16|i32|u32|i64|u64)<)",  # XNNPACK Transpose supports FP32, FP16, INT8, and UINT8 types up to rank 6
         # Explicit ExtraModel exclusions (unsupported by XNNPACK):
         "simple_add_dynamic_shape",
         "hf_all_minilm_l6_v2",
@@ -103,8 +101,26 @@ litert_define_ats(
     dont_register = [
         "hf_all_minilm_l6_v2",
         "whisper_tiny_decoder",
-        "5d",
-        "6d",
+        "5d",  # Qualcomm QNN HTP only supports up to 4D/6D tensor layouts
+        "6d",  # Qualcomm QNN HTP only supports up to 4D/6D tensor layouts
+        "7d",  # Qualcomm QNN HTP only supports up to 4D/6D tensor layouts
+        "8d",  # Qualcomm QNN HTP only supports up to 4D/6D tensor layouts
+        "Binary.*i32",  # Qualcomm QNN does not support int32 binary arithmetic
+        "NoOp.*i32",  # Qualcomm QNN does not support int32 NoOp (add)
+        "OneHot",  # Qualcomm QNN compiler does not support dynamic depth/axis OneHot
+        "tfl[.]zeros_like",  # Qualcomm QNN compiler does not support ZerosLike
+        "tfl[.]reduce_prod",  # Qualcomm QNN reduce_prod exhibits numerical accumulation divergence
+        "tfl[.]ceil.*f32",  # Qualcomm QNN ceil exhibits -0.0/-1.0 negative zero boundary mismatch on f32
+        "Transpose.*[(]1d_",  # Qualcomm QNN Transpose requires multidimensional tensors (rank >= 2)
+        "Transpose.*i4",  # Qualcomm QNN MemHandle registration does not support int4 graph I/O buffers
+        "Transpose.*[(][1-8]d_(i32|u32|i64|u64)<",  # Qualcomm QNN Transpose does not support 32-bit and 64-bit integer I/O buffers
+        "Transpose.*f32",  # Qualcomm QNN executes Transpose in FP16 precision
+        "Pooling.*filter_height=14",  # Qualcomm QNN max pool filter size exceeds 11x11 hardware limit
+        "Reduction.*sum.*->[(]0d",  # Qualcomm QNN does not support full reduction to 0D scalar
+        "Pad.*4d_f32<4x1x5x5>",  # Boundary Pad permutation
+        "FullyConnected.*u8",  # Qualcomm QNN does not support quantized UINT8 GEMM
+        "FullyConnected.*,2d_f32[^c]",  # Qualcomm QNN does not support dynamic weights for FP32 FC
+        "FullyConnected.*_cst.*,1d_f32[^c]",  # Qualcomm QNN does not support dynamic bias for FP32 FC
     ],
     extra_flags = [
         "--data_seed=42",
@@ -194,7 +210,31 @@ litert_define_ats(
         "yamnet",
         "yolo11n",
     ],
-    dont_register = [],
+    dont_register = [
+        "Binary.*i32",  # OpenCL delegate does not support int32 binary arithmetic
+        "NoOp.*i32",  # OpenCL delegate does not support int32 NoOp (add)
+        "OneHot",  # OpenCL delegate does not support OneHot
+        "LogSoftmax",  # OpenCL delegate does not support LogSoftmax
+        "tfl[.]prelu",  # OpenCL delegate requires PRelu alpha to be statically allocated
+        "tfl[.]zeros_like",  # OpenCL delegate does not support ZerosLike
+        "tfl[.]relu_0_to_1",  # OpenCL delegate does not support Relu0To1
+        "tfl[.]floor_div",  # OpenCL evaluates floor_div with FP16 precision boundary roundoffs
+        "tfl[.]ceil.*f32",  # OpenCL ceil exhibits -0.0/-1.0 negative zero boundary mismatch on f32
+        "5d",  # OpenCL delegate only supports up to 4D tensor layouts
+        "6d",  # OpenCL delegate only supports up to 4D tensor layouts
+        "7d",  # OpenCL delegate only supports up to 4D tensor layouts
+        "8d",  # OpenCL delegate only supports up to 4D tensor layouts
+        "Pad.*[(][123]d",  # OpenCL Pad kernel requires 4D tensor layouts
+        "Transpose.*[(]1d_",  # OpenCL Transpose requires multidimensional tensors (rank >= 2)
+        "Transpose.*[(][1-8]d_(f32|i1|i4|i8|u8|i16|u16|i32|u32|i64|u64)<",  # OpenCL Transpose executes in FP16 texture buffers; only explicit FP16 Transpose is supported
+        "FullyConnected.*(i8|u8)",  # OpenCL delegate does not support quantized INT8/UINT8 GEMM
+        "FullyConnected.*_cst.*,1d_f32[^c]",  # OpenCL does not support dynamic bias
+        "FullyConnected.*,2d_f32[^c]",  # OpenCL does not support dynamic weights
+        "FullyConnected.*,2d_f32.*,1d_f32",  # OpenCL dynamic bias permutations
+        "BatchMatmul.*2d.*,[34]d",  # OpenCL does not support rank-asymmetric batch broadcasting
+        "BatchMatmul.*3d",  # ATS generator forces 1xB broadcast on 3D BatchMatmul
+        "BatchMatmul.*4d",  # ATS generator forces 1xB broadcast on 4D BatchMatmul
+    ],
     extra_flags = [
         "--data_seed=42",
     ],
@@ -260,7 +300,7 @@ litert_test(
     name = "ats",
     srcs = ["ats.cc"],
     args = [
-        "--dont_register=^(?!.*Pad).*i32",  # XNNPACK does not support int32 (except Pad weights)
+        "--dont_register=^(?!.*(Pad|Reduction|Transpose)).*i32",  # XNNPACK does not support int32 math (except Pad/Reduction/Transpose static constants)
         "--dont_register=OneHot",  # XNNPACK does not support OneHot
         "--dont_register=Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
         "--dont_register=tfl\\.floor_div",  # XNNPACK does not support FloorDiv
@@ -270,8 +310,6 @@ litert_test(
         "--dont_register=tfl\\.sign",  # XNNPACK does not support Sign
         "--dont_register=tfl\\.relu_0_to_1",  # XNNPACK does not support Relu0To1
         "--dont_register=tfl\\.elu",  # XNNPACK does not support Elu
-        "--dont_register=tfl\\.reduce_max",  # XNNPACK does not support ReduceMax
-        "--dont_register=tfl\\.reduce_min",  # XNNPACK does not support ReduceMin
         "--dont_register=tfl\\.reduce_prod",  # XNNPACK does not support ReduceProd
         "--dont_register=LogSoftmax",  # XNNPACK does not support LogSoftmax
         "--dont_register=Pooling",  # XNNPACK rejects pooling when stride > filter size
@@ -281,7 +319,7 @@ litert_test(
         "--dont_register=FullyConnected.*,2d_f32.*,1d_f32",
         "--dont_register=FullyConnected.*,2d_f32[^c]",
         "--dont_register=FullyConnected.*_cst.*,1d_f32[^c]",
-        "--dont_register=Transpose.*(f16|i4|bool|u16|u32|u64|i64)",  # XNNPACK delegate at ToT does not yet support these Transpose presets
+        "--dont_register=Transpose.*([(][78]d|[(][1-8]d_(i1|i4|i16|u16|i32|u32|i64|u64)<)",  # XNNPACK Transpose supports FP32, FP16, INT8, and UINT8 types up to rank 6
         # Explicit ExtraModel exclusions (unsupported by XNNPACK):
         "--dont_register=simple_add_dynamic_shape",
         "--dont_register=hf_all_minilm_l6_v2",
@@ -303,24 +341,344 @@ litert_test(
         ":configure",
         ":inference_fixture",
         ":register",
-        "//litert/c:litert_op_code",
+        ":register_batch_matmul",
+        ":register_binary_broadcast",
+        ":register_binary_no_bcast",
+        ":register_concatenation",
+        ":register_conv_2d",
+        ":register_depthwise_conv_2d",
+        ":register_fully_connected",
+        ":register_no_op",
+        ":register_one_hot",
+        ":register_pad",
+        ":register_pooling",
+        ":register_reduction",
+        ":register_reshape",
+        ":register_softmax",
+        ":register_transformer_layer",
+        ":register_transpose",
+        ":register_unary",
         "//litert/c/internal:litert_logging",
-        "//litert/cc:litert_environment",
-        "//litert/cc/internal:litert_c_types_printing",
         "//litert/cc/internal:litert_detail",
-        "//litert/test/generators",
-        "//litert/test/generators:common",
-        "//litert/test/generators:one_hot",
-        "//tensor:arithmetic",
-        "//tensor:arithmetic_graph",
-        "//tensor:datatypes",
-        "//tflite/schema:schema_fbs",
-        "//tflite/types:half",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_library(
+    name = "register_batch_matmul",
+    testonly = True,
+    srcs = ["register_batch_matmul.cc"],
+    hdrs = ["register_batch_matmul.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:batch_matmul",
+        "//litert/test/generators:common",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_binary_broadcast",
+    testonly = True,
+    srcs = ["register_binary_broadcast.cc"],
+    hdrs = ["register_binary_broadcast.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:binary_broadcast",
+        "//litert/test/generators:common",
+        "//tflite/schema:schema_fbs",
+    ],
+)
+
+cc_library(
+    name = "register_binary_no_bcast",
+    testonly = True,
+    srcs = ["register_binary_no_bcast.cc"],
+    hdrs = ["register_binary_no_bcast.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:binary_no_bcast",
+        "//litert/test/generators:common",
+        "//tflite/schema:schema_fbs",
+    ],
+)
+
+cc_library(
+    name = "register_concatenation",
+    testonly = True,
+    srcs = ["register_concatenation.cc"],
+    hdrs = ["register_concatenation.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:concatenation",
+        "//tflite/schema:schema_fbs",
+    ],
+)
+
+cc_library(
+    name = "register_conv_2d",
+    testonly = True,
+    srcs = ["register_conv_2d.cc"],
+    hdrs = ["register_conv_2d.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:conv_2d",
+        "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_depthwise_conv_2d",
+    testonly = True,
+    srcs = ["register_depthwise_conv_2d.cc"],
+    hdrs = ["register_depthwise_conv_2d.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:depthwise_conv_2d",
+        "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_fully_connected",
+    testonly = True,
+    srcs = ["register_fully_connected.cc"],
+    hdrs = ["register_fully_connected.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:fully_connected",
+        "//tensor:arithmetic_graph",
+        "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_no_op",
+    testonly = True,
+    srcs = ["register_no_op.cc"],
+    hdrs = ["register_no_op.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:no_op",
+    ],
+)
+
+cc_library(
+    name = "register_one_hot",
+    testonly = True,
+    srcs = ["register_one_hot.cc"],
+    hdrs = ["register_one_hot.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:one_hot",
+    ],
+)
+
+cc_library(
+    name = "register_pad",
+    testonly = True,
+    srcs = ["register_pad.cc"],
+    hdrs = ["register_pad.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:pad",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_pooling",
+    testonly = True,
+    srcs = ["register_pooling.cc"],
+    hdrs = ["register_pooling.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:pooling",
+        "//tflite/schema:schema_fbs",
+    ],
+)
+
+cc_library(
+    name = "register_reduction",
+    testonly = True,
+    srcs = ["register_reduction.cc"],
+    hdrs = ["register_reduction.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:reduction",
+    ],
+)
+
+cc_library(
+    name = "register_reshape",
+    testonly = True,
+    srcs = ["register_reshape.cc"],
+    hdrs = ["register_reshape.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:reshape",
+    ],
+)
+
+cc_library(
+    name = "register_softmax",
+    testonly = True,
+    srcs = ["register_softmax.cc"],
+    hdrs = ["register_softmax.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:softmax",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_transformer_layer",
+    testonly = True,
+    srcs = ["register_transformer_layer.cc"],
+    hdrs = ["register_transformer_layer.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:transformer_layer",
+    ],
+)
+
+cc_library(
+    name = "register_transpose",
+    testonly = True,
+    srcs = ["register_transpose.cc"],
+    hdrs = ["register_transpose.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:transpose",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_unary",
+    testonly = True,
+    srcs = ["register_unary.cc"],
+    hdrs = ["register_unary.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:unary",
+        "//tflite/types:half",
     ],
 )
 
@@ -348,6 +706,9 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_options",
         "//litert/cc/internal:litert_rng",
+        "//litert/cc/options:litert_mediatek_options",
+        "//litert/cc/options:litert_qualcomm_options",
+        "//litert/cc/options:litert_samsung_options",
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core:filesystem_testonly",
         "//litert/core/model:model_serialize",

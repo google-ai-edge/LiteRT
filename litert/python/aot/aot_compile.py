@@ -132,7 +132,7 @@ def aot_compile(
     results = core.prepare_for_npu_multiple_configs(
         input_model,
         output_dir_path,
-        configs_with_backend,
+        configs_with_backend,  # pyrefly: ignore[bad-argument-type]
         transforms=mlir_transforms.MlirTransforms(),
         quantizer=quantizer,
         plugin=apply_plugin.ApplyPlugin(

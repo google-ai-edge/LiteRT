@@ -221,10 +221,10 @@ TEST(Conv3dTransposePrepareSecurityTest, RejectsZeroFilterOutputChannels) {
 }
 
 TEST(Conv3dTransposePrepareSecurityTest, RejectsMismatchedOutputChannels) {
-  PrepareOnlyConv3dTransposeOpModel m(
-      {4, 1, 1, 1, 4}, {TensorType_FLOAT32, {4, 8, 1, 2, 1}},
-      {TensorType_FLOAT32, {4, 1, 1, 1, 1}}, {TensorType_FLOAT32, {}},
-      Padding_SAME);
+  PrepareOnlyConv3dTransposeOpModel m({4, 1, 1, 1, 4},
+                                      {TensorType_FLOAT32, {4, 8, 1, 2, 1}},
+                                      {TensorType_FLOAT32, {4, 1, 1, 1, 1}},
+                                      {TensorType_FLOAT32, {}}, Padding_SAME);
 
   EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
 }

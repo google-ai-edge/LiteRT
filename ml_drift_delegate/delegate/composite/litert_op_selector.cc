@@ -38,6 +38,8 @@
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_kernel.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_parser.h"
+#include "ml_drift_delegate/delegate/composite/sdpa_transposed_kernel.h"
+#include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 
 namespace litert::ml_drift {
 
@@ -161,6 +163,20 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     }
     return CreateRuntimeBatchedMatMulFromNode(bmm_inputs, outputs, node,
                                               model_builder);
+  }
+  if (node.operation.type == kSdpaTransposedType) {
+    std::vector<::ml_drift::Value*> sdpa_inputs = inputs;
+    if (inputs.size() > 4) {
+      int param_index = 4;
+      // Ensure param tensor is a buffer tensor as kernel programs expect so.
+      ParamTensorToBuffer(param_index, inputs, model_builder);
+      if (replaced_tensors_.contains(inputs[param_index]->id)) {
+        sdpa_inputs[param_index] =
+            replaced_tensors_[inputs[param_index]->id].get();
+      }
+    }
+    return CreateSdpaTransposedFromNode(sdpa_inputs, outputs, node,
+                                        model_builder);
   }
   if (node.operation.type == kMoeExpertsType) {
     return CreateMoeExpertsFromNode(create_info_, inputs, outputs, node,

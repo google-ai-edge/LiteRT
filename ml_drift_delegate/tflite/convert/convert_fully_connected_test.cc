@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "testing/base/public/gunit.h"
+#include "xnnpack.h"  // from @XNNPACK
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
@@ -134,6 +135,13 @@ TEST_P(ConvertFullyConnectedTest, Parameterized) {
     EXPECT_NO_THROW(
         (void)std::any_cast<::ml_drift::FullyConnectedInt8Attributes>(
             fc_op->attr));
+    if (dtype_ == kTfLiteInt4 || dtype_ == kTfLiteInt2) {
+      const auto& attr =
+          std::any_cast<const ::ml_drift::FullyConnectedInt8Attributes&>(
+              fc_op->attr);
+      EXPECT_GE(attr.weights.data.size(),
+                output_channels * input_channels + XNN_EXTRA_BYTES);
+    }
   }
 }
 
@@ -203,6 +211,52 @@ TEST(ConvertFullyConnectedFallbackTest, Conv2DFallback) {
     }
   }
   EXPECT_TRUE(found_conv);
+}
+
+TEST(ConvertFullyConnectedFallbackTest, RuntimeWeightsSpatialInputEmitsConv2D) {
+  IrModelBuilderOptions options;
+  std::unique_ptr<TfLiteDelegate, void (*)(TfLiteDelegate*)> delegate(
+      CreateStubDelegate(options), DeleteStubDelegate);
+  ASSERT_NE(delegate, nullptr);
+
+  SingleOpInterpreterBuilder model(kTfLiteBuiltinFullyConnected, /*version=*/1);
+  model.AddInput(kTfLiteFloat32, {1, 2, 2, 4});  // input data h,w != 1
+  model.AddInput(kTfLiteFloat32, {8, 4});        // runtime weights
+  model.AddInput(kTfLiteFloat32, {8});           // bias
+  model.AddOutput(kTfLiteFloat32, {1, 2, 2, 8});
+  TfLiteFullyConnectedParams* params =
+      reinterpret_cast<TfLiteFullyConnectedParams*>(
+          calloc(1, sizeof(TfLiteFullyConnectedParams)));
+  params->activation = kTfLiteActNone;
+  model.SetParameters(params);
+
+  std::unique_ptr<::tflite::Interpreter> interpreter = model.Build();
+  ASSERT_TRUE(interpreter);
+
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate.get()), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate.get());
+  ASSERT_TRUE(ir_model);
+
+  const ::ml_drift::ir::IrOp* conv_op = nullptr;
+  for (const auto& op : ir_model->ops()) {
+    if (op->name == "convolution_2d") {
+      conv_op = op.get();
+      break;
+    }
+  }
+  ASSERT_NE(conv_op, nullptr);
+  ASSERT_TRUE(conv_op->attr.has_value());
+  const auto& conv_attr =
+      std::any_cast<const ::ml_drift::Convolution2DAttributes&>(conv_op->attr);
+  EXPECT_EQ(conv_attr.groups, 1);
+  const auto& weights = std::get<
+      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>(
+      conv_attr.weights);
+  EXPECT_EQ(weights.shape.o, 8);
+  EXPECT_EQ(weights.shape.h, 1);
+  EXPECT_EQ(weights.shape.w, 1);
+  EXPECT_EQ(weights.shape.i, 4);
 }
 
 TEST(ConvertFullyConnectedTest, WeightsReshapeNeeded) {
@@ -328,16 +382,16 @@ TEST(ConvertFullyConnectedTest, SetFullyConnectedOutputShapeTest) {
   const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate.get());
   ASSERT_TRUE(ir_model);
 
-  const ::ml_drift::ir::IrOp* fc_op = nullptr;
+  const ::ml_drift::ir::IrOp* fc_or_conv_op = nullptr;
   for (const auto& op : ir_model->ops()) {
-    if (op->name == "fully_connected") {
-      fc_op = op.get();
+    if (op->name == "fully_connected" || op->name == "convolution_2d") {
+      fc_or_conv_op = op.get();
       break;
     }
   }
-  ASSERT_NE(fc_op, nullptr);
+  ASSERT_NE(fc_or_conv_op, nullptr);
 
-  const auto* out_tensor = ir_model->tensor(fc_op->outputs[0]);
+  const auto* out_tensor = ir_model->tensor(fc_or_conv_op->outputs[0]);
   auto out_shape = out_tensor->desc.GetBHWCShape();
   EXPECT_EQ(out_shape.b, 1);
   EXPECT_EQ(out_shape.h, 2);

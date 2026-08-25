@@ -943,10 +943,49 @@ cc_library(
         "//tflite/acceleration/configuration:configuration_fbs",
         "//tflite/acceleration/configuration/c:delegate_plugin",
         "//tflite/core/acceleration/configuration:delegate_registry",
+        "//tflite/core/c:common",
         "@com_google_absl//absl/memory",
         "@flatbuffers",
     ],
     alwayslink = 1,
+)
+
+cc_binary(
+    name = "mock_gpu_delegate_plugin.so",
+    testonly = 1,
+    srcs = ["mock_gpu_delegate_plugin.cc"],
+    linkshared = True,
+    deps = [
+        "//tflite/core/acceleration/configuration/c:delegate_plugin",
+        "//tflite/core/c:common",
+    ],
+)
+
+embedded_binary(
+    name = "embedded_mock_gpu_delegate_plugin",
+    testonly = 1,
+    array_variable_name = "g_mock_gpu_delegate_plugin",
+    binary = ":mock_gpu_delegate_plugin.so",
+)
+
+cc_test(
+    name = "gpu_module_plugin_test",
+    srcs = ["gpu_module_plugin_test.cc"],
+    tags = [
+        "no_windows",
+    ],
+    deps = [
+        ":embedded_mock_gpu_delegate_plugin",
+        ":gpu_module_plugin",
+        ":mini_benchmark_test_helper",
+        "//tflite/acceleration/configuration:configuration_cc_proto",
+        "//tflite/acceleration/configuration:configuration_fbs",
+        "//tflite/acceleration/configuration:proto_to_flatbuffer",
+        "//tflite/c:c_api_types",
+        "//tflite/core/acceleration/configuration:delegate_registry",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+    ],
 )
 
 embedded_binary(
@@ -988,6 +1027,7 @@ cc_test(
     deps = [
         ":embedded_mobilenet_model",
         ":embedded_mobilenet_validation_model",
+        ":gpu_module_plugin",
         ":mini_benchmark_test_helper",
         ":status_codes",
         ":validator",
@@ -998,7 +1038,9 @@ cc_test(
         "//tflite/acceleration/configuration:proto_to_flatbuffer",
         "//tflite/converter/schema:schema_fbs_with_mutable",
         "//tflite/core:model_builder",
+        "//tflite/core/acceleration/configuration:delegate_registry",
         "//tflite/core/acceleration/configuration:nnapi_plugin",
+        "//tflite/core/c:common",
         "//tflite/experimental/acceleration/mini_benchmark/model_modifier:custom_validation_embedder",
         "//tflite/tools:model_loader",
         "@com_google_googletest//:gtest_main",

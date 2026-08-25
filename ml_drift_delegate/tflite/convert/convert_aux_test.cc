@@ -17,6 +17,7 @@
 #include <any>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -672,6 +673,142 @@ TEST_P(PopulateTensorQuantizationTest, ZeroCopy) {
   } else {
     RunQuantizationZeroCopyTest<::ml_drift::DataType::INT4>();
   }
+}
+
+TEST(ConvertAuxTest, ConfigSharedQuantizedFullyConnectedInt8PerChannel) {
+  TfLiteTensor weights_tensor = {};
+  weights_tensor.type = kTfLiteInt8;
+  weights_tensor.quantization.type = kTfLiteAffineQuantization;
+  TfLiteAffineQuantization quant_params;
+  quant_params.scale = TfLiteFloatArrayCreate(4);
+  quant_params.scale->data[0] = 0.1f;
+  quant_params.scale->data[1] = 0.2f;
+  quant_params.scale->data[2] = 0.3f;
+  quant_params.scale->data[3] = 0.4f;
+  quant_params.zero_point = TfLiteIntArrayCreate(4);
+  quant_params.zero_point->data[0] = -1;
+  quant_params.zero_point->data[1] = 0;
+  quant_params.zero_point->data[2] = 1;
+  quant_params.zero_point->data[3] = 2;
+  weights_tensor.quantization.params = &quant_params;
+
+  ::ml_drift::OHWI weights_shape(4, 1, 1, 8);
+  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> bias;
+  ::ml_drift::ir::IrOp fc_op(0);
+
+  EXPECT_TRUE(ConfigSharedQuantizedFullyConnected(weights_tensor, weights_shape,
+                                                  std::move(bias), &fc_op));
+
+  EXPECT_EQ(fc_op.name, "fully_connected_int8");
+  ASSERT_TRUE(fc_op.attr.has_value());
+  const auto& attr =
+      std::any_cast<const ::ml_drift::FullyConnectedInt8Attributes&>(
+          fc_op.attr);
+  EXPECT_EQ(attr.scale.shape, ::ml_drift::OHWI(4, 1, 1, 1));
+  EXPECT_THAT(attr.scale.data, testing::ElementsAre(0.1f, 0.2f, 0.3f, 0.4f));
+  EXPECT_EQ(attr.zero_point.shape, ::ml_drift::OHWI(4, 1, 1, 1));
+  EXPECT_THAT(attr.zero_point.data, testing::ElementsAre(-1, 0, 1, 2));
+
+  TfLiteFloatArrayFree(quant_params.scale);
+  TfLiteIntArrayFree(quant_params.zero_point);
+}
+
+TEST(ConvertAuxTest,
+     ConfigSharedQuantizedFullyConnectedInt8PerTensorBroadcast) {
+  TfLiteTensor weights_tensor = {};
+  weights_tensor.type = kTfLiteInt8;
+  weights_tensor.quantization.type = kTfLiteAffineQuantization;
+  TfLiteAffineQuantization quant_params;
+  quant_params.scale = TfLiteFloatArrayCreate(1);
+  quant_params.scale->data[0] = 0.5f;
+  quant_params.zero_point = TfLiteIntArrayCreate(1);
+  quant_params.zero_point->data[0] = 3;
+  weights_tensor.quantization.params = &quant_params;
+
+  ::ml_drift::OHWI weights_shape(4, 1, 1, 8);
+  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> bias;
+  ::ml_drift::ir::IrOp fc_op(0);
+
+  EXPECT_TRUE(ConfigSharedQuantizedFullyConnected(weights_tensor, weights_shape,
+                                                  std::move(bias), &fc_op));
+
+  EXPECT_EQ(fc_op.name, "fully_connected_int8");
+  ASSERT_TRUE(fc_op.attr.has_value());
+  const auto& attr =
+      std::any_cast<const ::ml_drift::FullyConnectedInt8Attributes&>(
+          fc_op.attr);
+  EXPECT_EQ(attr.scale.shape, ::ml_drift::OHWI(4, 1, 1, 1));
+  EXPECT_THAT(attr.scale.data, testing::ElementsAre(0.5f, 0.5f, 0.5f, 0.5f));
+  EXPECT_EQ(attr.zero_point.shape, ::ml_drift::OHWI(4, 1, 1, 1));
+  EXPECT_THAT(attr.zero_point.data, testing::ElementsAre(3, 3, 3, 3));
+
+  TfLiteFloatArrayFree(quant_params.scale);
+  TfLiteIntArrayFree(quant_params.zero_point);
+}
+
+TEST(ConvertAuxTest, ConfigSharedQuantizedFullyConnectedInt4) {
+  TfLiteTensor weights_tensor = {};
+  weights_tensor.type = kTfLiteInt4;
+  weights_tensor.quantization.type = kTfLiteAffineQuantization;
+  TfLiteAffineQuantization quant_params;
+  quant_params.scale = TfLiteFloatArrayCreate(2);
+  quant_params.scale->data[0] = 0.25f;
+  quant_params.scale->data[1] = 0.75f;
+  quant_params.zero_point = TfLiteIntArrayCreate(2);
+  quant_params.zero_point->data[0] = 0;
+  quant_params.zero_point->data[1] = 1;
+  weights_tensor.quantization.params = &quant_params;
+
+  ::ml_drift::OHWI weights_shape(2, 1, 1, 4);
+  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> bias;
+  ::ml_drift::ir::IrOp fc_op(0);
+
+  EXPECT_TRUE(ConfigSharedQuantizedFullyConnected(weights_tensor, weights_shape,
+                                                  std::move(bias), &fc_op));
+
+  EXPECT_EQ(fc_op.name, "fully_connected_int4");
+  ASSERT_TRUE(fc_op.attr.has_value());
+  const auto& attr =
+      std::any_cast<const ::ml_drift::FullyConnectedInt4Attributes&>(
+          fc_op.attr);
+  EXPECT_EQ(attr.scale.shape, ::ml_drift::OHWI(2, 1, 1, 1));
+  EXPECT_THAT(attr.scale.data, testing::ElementsAre(0.25f, 0.75f));
+  EXPECT_EQ(attr.zero_point.shape, ::ml_drift::OHWI(2, 1, 1, 1));
+  EXPECT_THAT(attr.zero_point.data, testing::ElementsAre(0, 1));
+
+  TfLiteFloatArrayFree(quant_params.scale);
+  TfLiteIntArrayFree(quant_params.zero_point);
+}
+
+TEST(ConvertAuxTest, ConfigSharedQuantizedFullyConnectedInt2) {
+  TfLiteTensor weights_tensor = {};
+  weights_tensor.type = kTfLiteInt2;
+  weights_tensor.quantization.type = kTfLiteAffineQuantization;
+  TfLiteAffineQuantization quant_params;
+  quant_params.scale = TfLiteFloatArrayCreate(2);
+  quant_params.scale->data[0] = 0.125f;
+  quant_params.scale->data[1] = 0.375f;
+  quant_params.zero_point = nullptr;
+  weights_tensor.quantization.params = &quant_params;
+
+  ::ml_drift::OHWI weights_shape(2, 1, 1, 4);
+  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> bias;
+  ::ml_drift::ir::IrOp fc_op(0);
+
+  EXPECT_TRUE(ConfigSharedQuantizedFullyConnected(weights_tensor, weights_shape,
+                                                  std::move(bias), &fc_op));
+
+  EXPECT_EQ(fc_op.name, "fully_connected_int2");
+  ASSERT_TRUE(fc_op.attr.has_value());
+  const auto& attr =
+      std::any_cast<const ::ml_drift::FullyConnectedInt2Attributes&>(
+          fc_op.attr);
+  EXPECT_EQ(attr.scale.shape, ::ml_drift::OHWI(2, 1, 1, 1));
+  EXPECT_THAT(attr.scale.data, testing::ElementsAre(0.125f, 0.375f));
+  EXPECT_EQ(attr.zero_point.shape, ::ml_drift::OHWI(2, 1, 1, 1));
+  EXPECT_THAT(attr.zero_point.data, testing::ElementsAre(0, 0));
+
+  TfLiteFloatArrayFree(quant_params.scale);
 }
 
 }  // namespace

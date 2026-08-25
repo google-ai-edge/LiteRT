@@ -73,8 +73,8 @@ class GpuBackendOpenClLitert : public GpuBackendOpenCl {
   absl::StatusOr<std::unique_ptr<::ml_drift::SharedMemoryManager>>
   CreateSharedMemoryManager(
       const ::ml_drift::CreateGpuModelInfo& create_info,
-      ::ml_drift::GraphFloat32& graph, TfLiteContext* context,
-      MlDriftDelegateData& delegate_data,
+      std::unique_ptr<::ml_drift::GraphAdapter> graph_adapter,
+      TfLiteContext* context, MlDriftDelegateData& delegate_data,
       ::ml_drift::SerializationWeightCache* serialization_cache) override;
 
   // Flushes the compiled shader program cache to the file if needed

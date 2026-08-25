@@ -24,6 +24,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "ml_drift/cl/environment.h"  // from @ml_drift
+#include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
 #include "ml_drift/cl/tensor.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
@@ -38,10 +39,147 @@
 #include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
 #include "weight_loader/external_weight_loader_litert.h"
-#include <CL/cl.h>
 #include "tflite/c/common.h"
 
+#ifdef __ANDROID__
+#include <android/hardware_buffer.h>
+
+#include "ml_drift/cl/cl_image_format.h"  // from @ml_drift
+#include "ml_drift/common/data_type.h"  // from @ml_drift
+#include <CL/cl.h>
+#endif
+
 namespace ml_drift {
+namespace internal {
+
+#ifdef __ANDROID__
+// Tries to allocate a cl::Tensor backed by an AHardwareBuffer via the
+// cl_arm_import_memory extension. On Mali GPUs, standard clCreateBuffer /
+// clCreateImage maps GPU memory into the process address space, inflating RSS.
+// This is problematic on Android because the low memory killer (lmk) uses RSS
+// to decide which processes to terminate under memory pressure — inflated RSS
+// causes the app to be killed even when the system has sufficient physical
+// memory. Using clImportMemoryARM with AHardwareBuffer avoids this because the
+// memory is allocated through Android's graphics subsystem and is not counted
+// toward process RSS.
+//
+// Currently only supports TEXTURE_2D tensors, which are the primary storage
+// type on Mali GPUs and account for the vast majority of weight memory.
+//
+// Returns true if the tensor was successfully created via AHWB; |tensor| is
+// populated. Returns false on any failure; the caller should fall through to
+// the standard CreateTensor path.
+bool TryCreateTensorViaAhwb(
+    const cl::Environment& env,
+    ml_drift::TensorDescriptor& tensor_desc,
+    std::unique_ptr<GpuSpatialTensor>& tensor) {
+  if (cl::clImportMemoryARM == nullptr) return false;
+  if (tensor_desc.GetStorageType() != TensorStorageType::TEXTURE_2D) {
+    return false;
+  }
+
+  // Compute the buffer size: width * height * channels * sizeof(element).
+  std::vector<uint64_t> storage_dims = tensor_desc.GetStorageDims();
+  const int element_size = tensor_desc.GetElementSize();
+  const DataType data_type = tensor_desc.GetDataType();
+  const size_t data_size =
+      storage_dims[0] * storage_dims[1] * element_size * SizeOf(data_type);
+
+  // All AHardwareBuffer APIs require Android 26+. The __builtin_available
+  // check must be an if-condition (not an early return) so the compiler
+  // can verify availability for every call site within the block.
+  if (__builtin_available(android 26, *)) {
+    // Allocate an AHardwareBuffer.
+    AHardwareBuffer_Desc ahwb_desc = {};
+    ahwb_desc.width = data_size;
+    ahwb_desc.height = 1;
+    ahwb_desc.layers = 1;
+    ahwb_desc.format = AHARDWAREBUFFER_FORMAT_BLOB;
+    ahwb_desc.usage = AHARDWAREBUFFER_USAGE_GPU_DATA_BUFFER;
+
+    AHardwareBuffer* ahwb = nullptr;
+    if (AHardwareBuffer_allocate(&ahwb_desc, &ahwb) != 0) return false;
+
+    // Import the AHWB into OpenCL as a buffer via cl_arm_import_memory.
+    const cl_import_properties_arm properties[] = {
+        CL_IMPORT_TYPE_ARM,
+        CL_IMPORT_TYPE_ANDROID_HARDWARE_BUFFER_ARM,
+        0,
+    };
+    cl_int error_code;
+    cl_mem buffer_memory = cl::clImportMemoryARM(
+        env.context().context(), CL_MEM_READ_WRITE, properties, ahwb,
+        data_size, &error_code);
+    if (!buffer_memory || error_code != CL_SUCCESS) {
+      if (buffer_memory) cl::clReleaseMemObject(buffer_memory);
+      AHardwareBuffer_release(ahwb);
+      return false;
+    }
+
+    // Register a destructor callback to release the AHardwareBuffer when
+    // the cl_mem is freed.
+    cl::clSetMemObjectDestructorCallback(
+        buffer_memory,
+        [](cl_mem /*memobj*/, void* user_data) {
+          if (__builtin_available(android 26, *)) {
+            AHardwareBuffer_release(
+                static_cast<AHardwareBuffer*>(user_data));
+          }
+        },
+        ahwb);
+
+    // Upload initial data (weights) to the buffer if present.
+    if (!tensor_desc.GetData().empty()) {
+      cl_int write_err = cl::clEnqueueWriteBuffer(
+          const_cast<cl::Environment&>(env).queue()->queue(), buffer_memory,
+          /*blocking_write=*/CL_TRUE, /*offset=*/0, data_size,
+          tensor_desc.GetData().data(),
+          /*num_events_in_wait_list=*/0,
+          /*event_wait_list=*/nullptr, /*event=*/nullptr);
+      if (write_err != CL_SUCCESS) {
+        cl::clReleaseMemObject(buffer_memory);
+        // AHWB released by the destructor callback.
+        return false;
+      }
+    }
+
+    // Create an Image2D view backed by the imported buffer. The Tensor
+    // constructor will set buffer_based_ = true, so GPU reads use the
+    // image view while the underlying buffer holds the actual memory.
+    cl_image_desc image_desc = {};
+    image_desc.image_type = CL_MEM_OBJECT_IMAGE2D;
+    image_desc.image_width = storage_dims[0];
+    image_desc.image_height = storage_dims[1];
+    image_desc.image_row_pitch =
+        storage_dims[0] * element_size * SizeOf(data_type);
+    image_desc.buffer = buffer_memory;
+
+    cl_image_format format;
+    format.image_channel_order = CL_RGBA;
+    format.image_channel_data_type = cl::DataTypeToChannelType(data_type);
+
+    cl_int img_error;
+    cl_mem image_memory = cl::CreateImage2DLegacy(
+        env.context().context(), CL_MEM_READ_WRITE, &format, &image_desc,
+        nullptr, &img_error);
+    if (!image_memory || img_error != CL_SUCCESS) {
+      if (image_memory) cl::clReleaseMemObject(image_memory);
+      cl::clReleaseMemObject(buffer_memory);
+      // AHWB released by the destructor callback.
+      return false;
+    }
+
+    TensorDescriptor desc_copy;
+    tensor_desc.CopyWithoutData(&desc_copy);
+    tensor = std::make_unique<cl::Tensor>(
+        buffer_memory, /*memory_owner=*/true, image_memory, desc_copy);
+    return true;
+  }
+  return false;
+}
+#endif  // __ANDROID__
+
+}  // namespace internal
 
 std::unique_ptr<::ml_drift::SharedMemoryManager>
 MakeSharedMemoryManagerClLitert(
@@ -110,6 +248,11 @@ MakeSharedMemoryManagerClLitert(
           return absl::InvalidArgumentError(
               "Release data callback is not currently supported on OpenCL.");
         }
+#ifdef __ANDROID__
+        if (internal::TryCreateTensorViaAhwb(env, tensor_desc, tensor)) {
+          return absl::OkStatus();
+        }
+#endif  // __ANDROID__
         tensor = std::make_unique<cl::Tensor>();
         return CreateTensor(env.context(), tensor_desc,
                             dynamic_cast<cl::Tensor*>(tensor.get()));

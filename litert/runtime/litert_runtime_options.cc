@@ -50,6 +50,10 @@ LiteRtStatus ParseLiteRtRuntimeOptions(const void* data, size_t size,
         } else if (key == "disable_delegate_clustering") {
           LITERT_ASSIGN_OR_RETURN(options->disable_delegate_clustering,
                                   litert::internal::ParseTomlBool(value));
+        } else if (key == "selected_signature_keys") {
+          LITERT_ASSIGN_OR_RETURN(
+              options->selected_signature_keys,
+              litert::internal::ParseTomlStringArray(value));
         }
         return kLiteRtStatusOk;
       });

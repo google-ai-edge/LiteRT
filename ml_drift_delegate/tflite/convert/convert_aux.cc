@@ -233,12 +233,44 @@ bool ConfigSharedQuantizedFullyConnected(
   const ::ml_drift::OHWI scale_shape =
       QuantizedFullyConnectedScaleShape(weights_tensor, weights_shape);
 
+  const bool has_quant =
+      weights_tensor.quantization.type == kTfLiteAffineQuantization;
+  const auto* qparams = has_quant
+                            ? reinterpret_cast<const TfLiteAffineQuantization*>(
+                                  weights_tensor.quantization.params)
+                            : nullptr;
+
+  auto populate_quant_attrs = [&](auto& attr) {
+    attr.scale.shape = scale_shape;
+    const int num_scales =
+        scale_shape.o * scale_shape.h * scale_shape.w * scale_shape.i;
+    if (qparams && qparams->scale && qparams->scale->size > 0) {
+      attr.scale.data = std::vector<float>(
+          qparams->scale->data, qparams->scale->data + qparams->scale->size);
+      if (attr.scale.data.size() == 1 && num_scales > 1) {
+        attr.scale.data.resize(num_scales, attr.scale.data[0]);
+      }
+    }
+    attr.zero_point.shape = scale_shape;
+    if (qparams && qparams->zero_point && qparams->zero_point->size > 0) {
+      attr.zero_point.data = std::vector<int32_t>(
+          qparams->zero_point->data,
+          qparams->zero_point->data + qparams->zero_point->size);
+      if (attr.zero_point.data.size() == 1 && num_scales > 1) {
+        attr.zero_point.data.resize(num_scales, attr.zero_point.data[0]);
+      }
+    } else {
+      attr.zero_point.data.resize(num_scales, 0);
+    }
+  };
+
   switch (weights_tensor.type) {
     case kTfLiteInt8: {
       fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT8);
       ::ml_drift::FullyConnectedInt8Attributes attr;
       attr.weights.shape = weights_shape;
       attr.scale.shape = scale_shape;
+      populate_quant_attrs(attr);
       attr.bias = std::move(bias);
       fc_op->attr = std::move(attr);
       return true;
@@ -250,6 +282,7 @@ bool ConfigSharedQuantizedFullyConnected(
       weights.shape = weights_shape;
       attr.weights = std::move(weights);
       attr.scale.shape = scale_shape;
+      populate_quant_attrs(attr);
       attr.bias = std::move(bias);
       fc_op->attr = std::move(attr);
       return true;
@@ -261,6 +294,7 @@ bool ConfigSharedQuantizedFullyConnected(
       weights.shape = weights_shape;
       attr.weights = std::move(weights);
       attr.scale.shape = scale_shape;
+      populate_quant_attrs(attr);
       attr.bias = std::move(bias);
       fc_op->attr = std::move(attr);
       return true;

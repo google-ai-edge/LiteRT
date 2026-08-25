@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@build_bazel_rules_apple//apple:apple.bzl", "apple_universal_binary", "apple_xcframework")
+load("@build_bazel_rules_apple//apple:apple.bzl", "apple_static_xcframework", "apple_universal_binary", "apple_xcframework")
 load("@build_bazel_rules_apple//apple:macos.bzl", "macos_dylib")
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_interop_hint", "swift_library", "swift_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
@@ -67,6 +67,7 @@ swift_test(
     name = "LiteRT_Swift_Tests",
     srcs = glob(["Tests/*.swift"]),
     data = [
+        "//litert/test:testdata/dynamic_add_model.tflite",
         "//litert/test:testdata/simple_model.tflite",
     ] + litert_gpu_accelerator_prebuilts(),
     deps = [
@@ -110,6 +111,28 @@ apple_xcframework(
     bundle_id = "com.google.odml.litert.CLiteRT",
     features = ["exported_symbols"],
     infoplists = ["Sources/Info.plist"],
+    ios = {
+        "simulator": [
+            "arm64",
+        ],
+        "device": [
+            "arm64",
+        ],
+    },
+    minimum_os_versions = {
+        "ios": "15.0",
+    },
+    public_hdrs = [
+        ":CLiteRT_headers",
+    ],
+    deps = [
+        ":CLiteRT_objc",
+    ],
+)
+
+apple_static_xcframework(
+    name = "CLiteRT_static",
+    bundle_name = "CLiteRT",
     ios = {
         "simulator": [
             "arm64",

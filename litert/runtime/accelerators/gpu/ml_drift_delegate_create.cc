@@ -69,7 +69,7 @@ LrtGpuOptions* GetGpuOptionsPayload(LiteRtRuntimeContext* runtime_context,
 
 LiteRtStatus CreateDelegate(
     LiteRtRuntimeContext* runtime_context, LiteRtEnvironment env,
-    LiteRtAccelerator accelerator, LrtGpuOptions* gpu_options_payload,
+    LiteRtAcceleratorConst accelerator, LrtGpuOptions* gpu_options_payload,
     std::unique_ptr<MlDriftDelegateOptions> gpu_delegate_options,
     DelegateCreator delegate_creator, TfLiteDelegatePtr& delegate) {
   if (delegate_creator == nullptr) {

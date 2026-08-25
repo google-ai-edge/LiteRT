@@ -72,11 +72,11 @@ class ExampleBackend(aot_types.Backend):
     return self.target_()
 
   @classmethod
-  def soc_manufacturer(cls) -> str:
+  def soc_manufacturer(cls) -> str:  # pyrefly: ignore[bad-override]
     return cls.target_().soc_manufacturer
 
   @classmethod
-  def soc_model(cls) -> str:
+  def soc_model(cls) -> str:  # pyrefly: ignore[bad-override]
     return cls.target_().soc_model
 
   @classmethod
@@ -129,8 +129,8 @@ def _apply_plugin(
   return component(
       input_model,
       output_model,
-      backend.soc_manufacturer,
-      backend.soc_model,
+      backend.soc_manufacturer,  # pyrefly: ignore[bad-argument-type]
+      backend.soc_model,  # pyrefly: ignore[bad-argument-type]
   )
 
 

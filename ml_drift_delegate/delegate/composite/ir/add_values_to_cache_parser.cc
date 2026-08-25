@@ -19,6 +19,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/ir/add_values_to_cache_parser.h"
 #include "ml_drift_delegate/tflite/custom_ir_operation_parser.h"
@@ -105,7 +106,21 @@ void AddValuesToCacheConvert(
   if (!flexbuffer_map["scale_v"].IsNull()) {
     attr.scale_v = flexbuffer_map["scale_v"].AsFloat();
   }
+  if (!flexbuffer_map["is_ring_buffer"].IsNull()) {
+    attr.is_ring_buffer = flexbuffer_map["is_ring_buffer"].AsBool();
+  }
   add_values_op->attr = std::move(attr);
+
+  if (context.tensors[tflite_node.outputs->data[0]].type == kTfLiteInt8) {
+    auto output_1_id = tensor_map[tflite_node.outputs->data[0]];
+    auto output_2_id = tensor_map[tflite_node.outputs->data[1]];
+    ir_model.ResetQuantParams(output_1_id);
+    ir_model.ResetQuantParams(output_2_id);
+    ir_model.GetMutableTensor(output_1_id)
+        ->desc.SetDataType(::ml_drift::DataType::UINT8);
+    ir_model.GetMutableTensor(output_2_id)
+        ->desc.SetDataType(::ml_drift::DataType::UINT8);
+  }
 
   ir_model.SetProducer(tensor_map[tflite_node.outputs->data[0]],
                        add_values_op->id);

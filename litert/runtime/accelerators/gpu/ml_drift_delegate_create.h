@@ -31,7 +31,7 @@ using DelegateCreator = TfLiteDelegatePtr (*)(MlDriftDelegateOptionsPtr,
 // Creates a new ML Drift delegate object.
 LiteRtStatus CreateDelegate(
     LiteRtRuntimeContext* runtime_context, LiteRtEnvironment env,
-    LiteRtAccelerator accelerator, LrtGpuOptions* gpu_options_payload,
+    LiteRtAcceleratorConst accelerator, LrtGpuOptions* gpu_options_payload,
     std::unique_ptr<MlDriftDelegateOptions> gpu_delegate_options,
     DelegateCreator delegate_creator, TfLiteDelegatePtr& delegate);
 

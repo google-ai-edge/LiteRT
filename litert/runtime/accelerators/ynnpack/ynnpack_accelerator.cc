@@ -54,7 +54,7 @@ class YnnpackAccelerator final
 
   static LiteRtStatus CreateDelegate(LiteRtRuntimeContext* runtime_context,
                                      LiteRtEnvironment env,
-                                     LiteRtAccelerator accelerator,
+                                     LiteRtAcceleratorConst accelerator,
                                      LiteRtOptions options,
                                      LiteRtDelegateWrapper* delegate_wrapper) {
     LITERT_RETURN_IF_ERROR(delegate_wrapper != nullptr,
@@ -125,7 +125,7 @@ class YnnpackAccelerator final
   }
 
   static LiteRtStatus IsTfLiteDelegateResponsibleForJitCompilation(
-      LiteRtAcceleratorT* accelerator, bool* does_jit_compilation) {
+      LiteRtAcceleratorConst accelerator, bool* does_jit_compilation) {
     LITERT_RETURN_IF_ERROR(does_jit_compilation,
                            ErrorStatusBuilder::InvalidArgument())
         << "`does_jit_compilation` pointer is null.";
@@ -143,8 +143,14 @@ class YnnpackAccelerator final
 
 extern "C" {
 
-static LiteRtAcceleratorDef LiteRtYnnpackAcceleratorImpl = {
-    .version = 1,
+static const LiteRtAcceleratorDef LiteRtYnnpackAcceleratorImpl = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtAcceleratorDefV1),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .get_name = litert::YnnpackAccelerator::GetName,
     .get_version = litert::YnnpackAccelerator::GetVersion,
     .get_hardware_support = litert::YnnpackAccelerator::GetHardwareSupport,
@@ -165,7 +171,7 @@ static LiteRtAcceleratorDef LiteRtYnnpackAcceleratorImpl = {
         },
 };
 
-LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorYnnpackDef =
+const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorYnnpackDef =
     &LiteRtYnnpackAcceleratorImpl;
 
 }  // extern "C"

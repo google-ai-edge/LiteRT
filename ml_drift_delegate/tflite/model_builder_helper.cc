@@ -240,7 +240,8 @@ void CopyData<float>(const TfLiteTensor& src, float* dst) {
       dtype == kTfLiteInt4 ||     //
       dtype == kTfLiteInt8 ||     //
       dtype == kTfLiteUInt8 ||    //
-      dtype == kTfLiteInt32) {
+      dtype == kTfLiteInt32 ||    //
+      dtype == kTfLiteBool) {
     CopyFloat32Data(&src, dst);
     return;
   }
@@ -274,6 +275,11 @@ void CopyFloat32Data(const TfLiteTensor* tfl_tensor, float* dst) {
     DequantizeConstantTensor(*tfl_tensor, tfl_tensor->data.uint8, dst);
   } else if (dtype == kTfLiteInt32) {
     DequantizeConstantTensor(*tfl_tensor, tfl_tensor->data.i32, dst);
+  } else if (dtype == kTfLiteBool) {
+    const int num_elements = tflite::NumElements(tfl_tensor);
+    for (int i = 0; i < num_elements; ++i) {
+      dst[i] = static_cast<float>(tfl_tensor->data.b[i]);
+    }
   }
 }
 

@@ -35,6 +35,7 @@
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
+#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_model_types.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
@@ -63,6 +64,11 @@ using ::testing::litert::IsOkAndHolds;
 
 namespace litert {
 namespace {
+
+class CompiledModelTestPeer : public CompiledModel {
+ public:
+  using CompiledModel::Create;
+};
 
 #if defined(_WIN32)
 constexpr bool kSupportsErrorReporterApi = false;
@@ -93,6 +99,10 @@ TEST(CompiledModelTest, Basic) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto fullyAccelerated,
                               compiled_model.IsFullyAccelerated());
   ASSERT_TRUE(fullyAccelerated);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto nonCpuFullyAccelerated,
+                              compiled_model.IsNonCpuFullyAccelerated());
+  ASSERT_FALSE(nonCpuFullyAccelerated);
 
   // Check CompiledModel buffer requirements.
   // input and output expect host memory.
@@ -150,31 +160,39 @@ TEST(CompiledModelTest, Basic) {
   }
 }
 
-TEST(CompiledModelTest, WithProfilerAndMetrics) {
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+TEST(CompiledModelTest, OwningCreateRejectsNonOwnedModel) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Model owned_model,
+      Model::CreateFromFile(env, testing::GetTestFilePath(kModelFileName)));
+  Model non_owned_model = Model::CreateFromNonOwnedHandle(owned_model.Get());
+  Options options;
+  options.SetHardwareAccelerators(HwAccelerators::kCpu);
 
-  LITERT_ASSIGN_OR_ABORT(litert::Options compilation_options,
-                         litert::Options::Create());
-  compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
-  LITERT_ASSIGN_OR_ABORT(auto& runtime_options,
-                         compilation_options.GetRuntimeOptions());
-  runtime_options.SetEnableProfiling(/*enable_profiling=*/true);
+  auto compiled_model =
+      CompiledModelTestPeer::Create(env, std::move(non_owned_model), options);
+
+  ASSERT_FALSE(compiled_model.HasValue());
+  EXPECT_EQ(compiled_model.Error().Status(), kLiteRtStatusErrorInvalidArgument);
+  EXPECT_TRUE(owned_model);
+}
+
+TEST(CompiledModelTest, OwningCreateRunsAfterModelMove) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Model model,
+      Model::CreateFromFile(env, testing::GetTestFilePath(kModelFileName)));
+  Options options;
+  options.SetHardwareAccelerators(HwAccelerators::kCpu);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto compiled_model,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
-                            compilation_options));
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto profiler, compiled_model.GetProfiler());
-  ASSERT_TRUE(profiler);
-  ASSERT_TRUE(profiler.StartProfiling());
-  LITERT_ASSERT_OK(compiled_model.StartMetricsCollection(/*detail_level=*/100));
-
+      CompiledModel compiled_model,
+      CompiledModelTestPeer::Create(env, std::move(model), options));
+  EXPECT_FALSE(model);
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
                               compiled_model.CreateInputBuffers());
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
                               compiled_model.CreateOutputBuffers());
-
   ASSERT_TRUE(input_buffers[0].Write<float>(
       absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
   ASSERT_TRUE(input_buffers[1].Write<float>(
@@ -182,18 +200,10 @@ TEST(CompiledModelTest, WithProfilerAndMetrics) {
 
   LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto metrics, compiled_model.StopMetricsCollection());
-  EXPECT_THAT(metrics.metrics, SizeIs(0));
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto events, profiler.GetEvents());
-  EXPECT_GT(events.size(), 2);
-  ASSERT_TRUE(profiler.Reset());
-  LITERT_ASSERT_OK_AND_ASSIGN(events, profiler.GetEvents());
-  EXPECT_THAT(events, SizeIs(0));
-
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto lock_and_addr, litert::TensorBufferScopedLock::Create<const float>(
-                              output_buffers[0], TensorBuffer::LockMode::kRead));
+      auto lock_and_addr,
+      TensorBufferScopedLock::Create<const float>(
+          output_buffers[0], TensorBuffer::LockMode::kRead));
   auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
   EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
 }
@@ -621,14 +631,80 @@ TEST(CompiledModelTest, SignatureAccessorsInvalidContext) {
   EXPECT_FALSE(compiled_model.GetSignature(100).HasValue());
 
   // Check GetSignatureIndex with invalid key.
-  EXPECT_FALSE(compiled_model.GetSignatureIndex("invalid_key").HasValue());
+  auto sig_index = compiled_model.GetSignatureIndex("invalid_key_sig_index");
+  ASSERT_FALSE(sig_index.HasValue());
+  EXPECT_THAT(
+      sig_index.Error().Message(),
+      ::testing::HasSubstr("Signature not found: invalid_key_sig_index"));
 
   // Check GetSignatureInputNames with invalid key.
-  EXPECT_FALSE(compiled_model.GetSignatureInputNames("invalid_key").HasValue());
+  auto input_names =
+      compiled_model.GetSignatureInputNames("invalid_key_input_names");
+  ASSERT_FALSE(input_names.HasValue());
+  EXPECT_THAT(
+      input_names.Error().Message(),
+      ::testing::HasSubstr("Signature not found: invalid_key_input_names"));
 
   // Check GetSignatureOutputNames with invalid key.
-  EXPECT_FALSE(
-      compiled_model.GetSignatureOutputNames("invalid_key").HasValue());
+  auto output_names =
+      compiled_model.GetSignatureOutputNames("invalid_key_output_names");
+  ASSERT_FALSE(output_names.HasValue());
+  EXPECT_THAT(
+      output_names.Error().Message(),
+      ::testing::HasSubstr("Signature not found: invalid_key_output_names"));
+
+  // Check buffer requirements with invalid signature / tensor names.
+  auto input_buf_req_bad_sig = compiled_model.GetInputBufferRequirements(
+      "invalid_key_sig", "invalid_input_req");
+  ASSERT_FALSE(input_buf_req_bad_sig.HasValue());
+  EXPECT_THAT(input_buf_req_bad_sig.Error().Message(),
+              ::testing::HasSubstr("Signature not found: invalid_key_sig"));
+
+  auto input_buf_req =
+      compiled_model.GetInputBufferRequirements("invalid_input_req");
+  ASSERT_FALSE(input_buf_req.HasValue());
+  EXPECT_THAT(input_buf_req.Error().Message(),
+              ::testing::HasSubstr("Failed to find input: invalid_input_req"));
+
+  auto output_buf_req_bad_sig = compiled_model.GetOutputBufferRequirements(
+      "invalid_key_sig", "invalid_output_req");
+  ASSERT_FALSE(output_buf_req_bad_sig.HasValue());
+  EXPECT_THAT(output_buf_req_bad_sig.Error().Message(),
+              ::testing::HasSubstr("Signature not found: invalid_key_sig"));
+
+  auto output_buf_req =
+      compiled_model.GetOutputBufferRequirements("invalid_output_req");
+  ASSERT_FALSE(output_buf_req.HasValue());
+  EXPECT_THAT(
+      output_buf_req.Error().Message(),
+      ::testing::HasSubstr("Failed to find output: invalid_output_req"));
+
+  // Check tensor types with invalid tensor names.
+  auto input_type_bad_sig = compiled_model.GetInputTensorType(
+      "invalid_key_sig", "invalid_input_type");
+  ASSERT_FALSE(input_type_bad_sig.HasValue());
+  EXPECT_THAT(input_type_bad_sig.Error().Message(),
+              ::testing::HasSubstr("Signature not found: invalid_key_sig"));
+
+  auto input_type =
+      compiled_model.GetInputTensorType("invalid_input_type");
+  ASSERT_FALSE(input_type.HasValue());
+  EXPECT_THAT(
+      input_type.Error().Message(),
+      ::testing::HasSubstr("Input tensor not found: invalid_input_type"));
+
+  auto output_type_bad_sig = compiled_model.GetOutputTensorType(
+      "invalid_key_sig", "invalid_output_type");
+  ASSERT_FALSE(output_type_bad_sig.HasValue());
+  EXPECT_THAT(output_type_bad_sig.Error().Message(),
+              ::testing::HasSubstr("Signature not found: invalid_key_sig"));
+
+  auto output_type =
+      compiled_model.GetOutputTensorType("invalid_output_type");
+  ASSERT_FALSE(output_type.HasValue());
+  EXPECT_THAT(
+      output_type.Error().Message(),
+      ::testing::HasSubstr("Output tensor not found: invalid_output_type"));
 }
 
 // Tests Compiled Model async API on CPU. In the CPU case, the async API should

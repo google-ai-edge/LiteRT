@@ -16,16 +16,20 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_RUNTIME_OPTIONS_H_
 
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_runtime_options.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_concrete_options_base.h"
 
 namespace litert {
 
 /// @brief Defines the C++ wrapper for LiteRT runtime options.
-class RuntimeOptions {
+class RuntimeOptions : public ConcreteOptionsBase {
  public:
   /// @brief Creates a new `RuntimeOptions` instance with default values.
   static Expected<RuntimeOptions> Create() {
@@ -103,11 +107,37 @@ class RuntimeOptions {
     return disable_delegate_clustering;
   }
 
+  /// @brief Selects the TFLite model signature keys identifying the root
+  /// subgraphs that the compiled model prepares for execution.
+  /// @param signature_keys The signature keys to select. Must be non-empty,
+  /// and each key must be non-empty and unique.
+  Expected<void> SetSelectedSignatures(Span<const StringView> signature_keys) {
+    std::vector<std::string> keys;
+    keys.reserve(signature_keys.size());
+    for (StringView key : signature_keys) {
+      keys.emplace_back(key);
+    }
+    LITERT_RETURN_IF_ERROR(
+        LrtSetRuntimeOptionsSelectedSignatures(options_.get(), keys));
+    return {};
+  }
+
   /// @brief Gets the underlying C options object.
   LrtRuntimeOptions* Get() { return options_.get(); }
 
   /// @brief Gets the underlying C options object.
   const LrtRuntimeOptions* Get() const { return options_.get(); }
+
+  static const char* Discriminator() {
+    return LrtGetRuntimeOptionsIdentifier();
+  }
+
+  LiteRtStatus GetOpaqueOptionsData(
+      const char** identifier, void** payload,
+      void (**payload_deleter)(void*)) const override {
+    return LrtGetOpaqueRuntimeOptionsData(Get(), identifier, payload,
+                                          payload_deleter);
+  }
 
  private:
   explicit RuntimeOptions(LrtRuntimeOptions* options) : options_(options) {}

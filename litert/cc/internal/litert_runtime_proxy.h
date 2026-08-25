@@ -39,7 +39,9 @@
 #include "litert/cc/litert_api_types.h"
 
 namespace litert {
+class Environment;
 class Options;
+
 namespace internal {
 
 #define LITERT_PROXY_METHOD_STATUS(method, ...)  \
@@ -56,7 +58,9 @@ namespace internal {
 // different runtime implementations (e.g. real runtime, mock runtime).
 class RuntimeProxy {
  public:
+  friend class litert::Environment;
   friend class litert::Options;
+
   /// @brief Creates a runtime proxy with the externally provided system runtime
   /// handle.
   ///
@@ -554,6 +558,13 @@ class RuntimeProxy {
       LiteRtCompiledModel compiled_model, bool* fully_accelerated) {
     LITERT_PROXY_METHOD_STATUS(litert_compiled_model_is_fully_accelerated,
                                compiled_model, fully_accelerated);
+  }
+
+  LiteRtStatus CompiledModelIsNonCpuFullyAccelerated(
+      LiteRtCompiledModel compiled_model, bool* non_cpu_fully_accelerated) {
+    LITERT_PROXY_METHOD_STATUS(
+        litert_compiled_model_is_non_cpu_fully_accelerated, compiled_model,
+        non_cpu_fully_accelerated);
   }
 
   LiteRtStatus CompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
@@ -1216,6 +1227,26 @@ class RuntimeProxy {
       LiteRtQuantizationBlockWise* block_wise_quantization) {
     LITERT_PROXY_METHOD_STATUS(litert_get_block_wise_quantization, tensor,
                                block_wise_quantization);
+  }
+
+  LiteRtStatus GetNumAccelerators(LiteRtEnvironment environment,
+                                  LiteRtParamIndex* num_accelerators) {
+    LITERT_PROXY_METHOD_STATUS(litert_get_num_accelerators, environment,
+                               num_accelerators);
+  }
+
+  LiteRtStatus GetAccelerator(LiteRtEnvironment environment,
+                              LiteRtParamIndex index,
+                              LiteRtAccelerator* accelerator) {
+    LITERT_PROXY_METHOD_STATUS(litert_get_accelerator, environment, index,
+                               accelerator);
+  }
+
+  LiteRtStatus GetAcceleratorHardwareSupport(
+      LiteRtAcceleratorConst accelerator,
+      LiteRtHwAcceleratorSet* supported_hardware) {
+    LITERT_PROXY_METHOD_STATUS(litert_get_accelerator_hardware_support,
+                               accelerator, supported_hardware);
   }
 
  protected:

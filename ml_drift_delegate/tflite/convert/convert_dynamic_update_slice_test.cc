@@ -54,8 +54,9 @@ TEST_P(ConvertDynamicUpdateSliceTest, DynamicUpdateSlice4D) {
 
   const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_.get());
   ASSERT_TRUE(ir_model);
-  ASSERT_EQ(ir_model->ops().size(), 1);
-  const ::ml_drift::ir::IrOp* op = ir_model->op(ir_model->ops()[0]->id);
+  // GetRightAlignedInput inserts a reshape op to right-align start_indices.
+  ASSERT_EQ(ir_model->ops().size(), 2);
+  const ::ml_drift::ir::IrOp* op = ir_model->op(ir_model->ops()[1]->id);
   EXPECT_EQ(op->name, "dynamic_update_slice");
   EXPECT_EQ(op->inputs.size(), 3);
   EXPECT_EQ(ir_model->tensor(op->inputs[0])->desc.GetBHWCShape(),
@@ -63,7 +64,7 @@ TEST_P(ConvertDynamicUpdateSliceTest, DynamicUpdateSlice4D) {
   EXPECT_EQ(ir_model->tensor(op->inputs[1])->desc.GetBHWCShape(),
             ::ml_drift::BHWC(1, 2, 2, 3));
   EXPECT_EQ(ir_model->tensor(op->inputs[2])->desc.GetBHWCShape(),
-            ::ml_drift::BHWC(4, 1, 1, 1));
+            ::ml_drift::BHWC(1, 1, 1, 4));
 }
 
 TEST_P(ConvertDynamicUpdateSliceTest, DynamicUpdateSlice3D) {
@@ -81,11 +82,10 @@ TEST_P(ConvertDynamicUpdateSliceTest, DynamicUpdateSlice3D) {
   const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_.get());
   ASSERT_TRUE(ir_model);
 
-  // Expect 1 operation because {1, 4, 3} maps to BHWC(1, 1, 4, 3) in both
-  // ExtractTensorShape (left-align) and GetRightAlignedBHWC (right-align).
-  ASSERT_EQ(ir_model->ops().size(), 1);
+  // GetRightAlignedInput inserts a reshape op to right-align start_indices.
+  ASSERT_EQ(ir_model->ops().size(), 2);
 
-  const ::ml_drift::ir::IrOp* dus_op = ir_model->op(ir_model->ops()[0]->id);
+  const ::ml_drift::ir::IrOp* dus_op = ir_model->op(ir_model->ops()[1]->id);
 
   EXPECT_EQ(dus_op->name, "dynamic_update_slice");
 
@@ -94,9 +94,8 @@ TEST_P(ConvertDynamicUpdateSliceTest, DynamicUpdateSlice3D) {
             ::ml_drift::BHWC(1, 1, 4, 3));
   EXPECT_EQ(ir_model->tensor(dus_op->inputs[1])->desc.GetBHWCShape(),
             ::ml_drift::BHWC(1, 1, 2, 3));
-  // start_indices remains standard 1D map: {3} -> BHWC(3, 1, 1, 1)
   EXPECT_EQ(ir_model->tensor(dus_op->inputs[2])->desc.GetBHWCShape(),
-            ::ml_drift::BHWC(3, 1, 1, 1));
+            ::ml_drift::BHWC(1, 1, 1, 3));
 }
 
 TEST_P(ConvertDynamicUpdateSliceTest, DynamicUpdateSlice2D) {
@@ -114,11 +113,10 @@ TEST_P(ConvertDynamicUpdateSliceTest, DynamicUpdateSlice2D) {
   const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_.get());
   ASSERT_TRUE(ir_model);
 
-  // Expect 1 operation because {1, 4} maps to BHWC(1, 1, 1, 4) in both
-  // ExtractTensorShape (left-align) and GetRightAlignedBHWC (right-align).
-  ASSERT_EQ(ir_model->ops().size(), 1);
+  // GetRightAlignedInput inserts a reshape op to right-align start_indices.
+  ASSERT_EQ(ir_model->ops().size(), 2);
 
-  const ::ml_drift::ir::IrOp* dus_op = ir_model->op(ir_model->ops()[0]->id);
+  const ::ml_drift::ir::IrOp* dus_op = ir_model->op(ir_model->ops()[1]->id);
 
   EXPECT_EQ(dus_op->name, "dynamic_update_slice");
 
@@ -127,9 +125,8 @@ TEST_P(ConvertDynamicUpdateSliceTest, DynamicUpdateSlice2D) {
             ::ml_drift::BHWC(1, 1, 1, 4));
   EXPECT_EQ(ir_model->tensor(dus_op->inputs[1])->desc.GetBHWCShape(),
             ::ml_drift::BHWC(1, 1, 1, 2));
-  // start_indices remains standard 1D map: {2} -> BHWC(2, 1, 1, 1)
   EXPECT_EQ(ir_model->tensor(dus_op->inputs[2])->desc.GetBHWCShape(),
-            ::ml_drift::BHWC(2, 1, 1, 1));
+            ::ml_drift::BHWC(1, 1, 1, 2));
 }
 
 INSTANTIATE_TEST_SUITE_P(ConvertDynamicUpdateSliceTest,

@@ -81,6 +81,8 @@ TEST(LrtGoogleTensorOptionsTest, OpaqueDataSerializesAndParsesSetFields) {
   LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetOpFiltersProto(options, "proto"));
   LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetExtraOptionsPath(
       options, "/tmp/extra_options.bin"));
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsSetExtraOptions(options, "extra_opts"));
 
   const char* identifier;
   void* payload;
@@ -100,7 +102,8 @@ TEST(LrtGoogleTensorOptionsTest, OpaqueDataSerializesAndParsesSetFields) {
                "enable_dynamic_range_quantization = true\n"
                "performance_mode = 5\n"
                "op_filters_proto = \"cHJvdG8=\"\n"
-               "extra_options_path = \"/tmp/extra_options.bin\"\n");
+               "extra_options_path = \"/tmp/extra_options.bin\"\n"
+               "extra_options = \"ZXh0cmFfb3B0cw==\"\n");
 
   LrtGoogleTensorOptions parsed;
   LITERT_ASSERT_OK(LrtCreateGoogleTensorOptionsFromToml(
@@ -159,6 +162,11 @@ TEST(LrtGoogleTensorOptionsTest, OpaqueDataSerializesAndParsesSetFields) {
   LITERT_ASSERT_OK(
       LrtGoogleTensorOptionsGetExtraOptionsPath(parsed, &extra_options_path));
   EXPECT_STREQ(extra_options_path, "/tmp/extra_options.bin");
+
+  const char* extra_options;
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetExtraOptions(parsed, &extra_options));
+  EXPECT_STREQ(extra_options, "extra_opts");
 
   payload_deleter(payload);
   LrtDestroyGoogleTensorOptions(parsed);
@@ -311,6 +319,14 @@ TEST(GoogleTensorOptionsTest, CppApi) {
   EXPECT_EQ(options->GetExtraOptionsPath(), "");
   options->SetExtraOptionsPath("/tmp/extra_options.bin");
   EXPECT_EQ(options->GetExtraOptionsPath(), "/tmp/extra_options.bin");
+
+  EXPECT_FALSE(options->GetInputCoherency("serving_default", "input_0"));
+  options->SetInputCoherency("serving_default", "input_0", true);
+  EXPECT_TRUE(options->GetInputCoherency("serving_default", "input_0"));
+
+  EXPECT_FALSE(options->GetOutputCoherency("serving_default", "output_0"));
+  options->SetOutputCoherency("serving_default", "output_0", true);
+  EXPECT_TRUE(options->GetOutputCoherency("serving_default", "output_0"));
 }
 
 TEST(LrtGoogleTensorOptionsTest, OpFiltersProto) {
@@ -344,14 +360,14 @@ TEST(LrtGoogleTensorOptionsTest, ExtraOptionsPath) {
   LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
 
   const char* extra_options_path;
-  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetExtraOptionsPath(
-      options, &extra_options_path));
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetExtraOptionsPath(options, &extra_options_path));
   ASSERT_STREQ(extra_options_path, "");
 
   LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetExtraOptionsPath(
       options, "/tmp/extra_options.bin"));
-  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetExtraOptionsPath(
-      options, &extra_options_path));
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetExtraOptionsPath(options, &extra_options_path));
   ASSERT_STREQ(extra_options_path, "/tmp/extra_options.bin");
 
   LrtGoogleTensorOptions parsed;
@@ -426,6 +442,118 @@ TEST(LrtGoogleTensorOptionsTest, PerformanceMode) {
 
   LrtDestroyGoogleTensorOptions(options);
 }
+
+TEST(LrtGoogleTensorOptionsTest, Coherency) {
+  LrtGoogleTensorOptions options;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
+
+  bool prefer_coherent = true;
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetInputCoherency(
+      options, "serving_default", "input_0", &prefer_coherent));
+  EXPECT_FALSE(prefer_coherent);
+
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetInputCoherency(
+      options, "serving_default", "input_0", true));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetInputCoherency(
+      options, "serving_default", "input_1", false));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetOutputCoherency(
+      options, "serving_default", "output_0", true));
+
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetInputCoherency(
+      options, "serving_default", "input_0", &prefer_coherent));
+  EXPECT_TRUE(prefer_coherent);
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetInputCoherency(
+      options, "serving_default", "input_1", &prefer_coherent));
+  EXPECT_FALSE(prefer_coherent);
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetOutputCoherency(
+      options, "serving_default", "output_0", &prefer_coherent));
+  EXPECT_TRUE(prefer_coherent);
+
+  int num_entries = 0;
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetNumInputCoherencyEntries(options, &num_entries));
+  EXPECT_EQ(num_entries, 2);
+
+  const char* sig_name = nullptr;
+  const char* tensor_name = nullptr;
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetInputCoherencyEntry(
+      options, 0, &sig_name, &tensor_name, &prefer_coherent));
+  EXPECT_STREQ(sig_name, "serving_default");
+  EXPECT_STREQ(tensor_name, "input_0");
+  EXPECT_TRUE(prefer_coherent);
+
+  LrtGoogleTensorOptions parsed;
+  SerializeAndParse(options, &parsed);
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetInputCoherency(
+      parsed, "serving_default", "input_0", &prefer_coherent));
+  EXPECT_TRUE(prefer_coherent);
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetOutputCoherency(
+      parsed, "serving_default", "output_0", &prefer_coherent));
+  EXPECT_TRUE(prefer_coherent);
+
+  LrtDestroyGoogleTensorOptions(parsed);
+  LrtDestroyGoogleTensorOptions(options);
+}
+
+TEST(LrtGoogleTensorOptionsTest, ExtraOptions) {
+  LrtGoogleTensorOptions options;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
+
+  const char* extra_options;
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetExtraOptions(options, &extra_options));
+  ASSERT_STREQ(extra_options, "");
+
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetExtraOptions(
+      options,
+      "compiler_options { tpu_compiler_options { "
+      "use_native_subbyte_conversion: true } }"));
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetExtraOptions(options, &extra_options));
+  ASSERT_STREQ(extra_options,
+               "compiler_options { tpu_compiler_options { "
+               "use_native_subbyte_conversion: true } }");
+
+  LrtGoogleTensorOptions parsed;
+  SerializeAndParse(options, &parsed);
+  const char* parsed_extra_options;
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetExtraOptions(parsed, &parsed_extra_options));
+  EXPECT_STREQ(parsed_extra_options,
+               "compiler_options { tpu_compiler_options { "
+               "use_native_subbyte_conversion: true } }");
+
+  LrtDestroyGoogleTensorOptions(parsed);
+  LrtDestroyGoogleTensorOptions(options);
+}
+
+// copybara:uncomment_begin(google-only)
+// TEST(LrtGoogleTensorOptionsTest, ExperimentalEnableInputValidator) {
+//   LrtGoogleTensorOptions options;
+//   LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
+// 
+//   bool experimental_enable_input_validator;
+//   LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetExperimentalEnableInputValidator(
+//       options, &experimental_enable_input_validator));
+//   ASSERT_FALSE(experimental_enable_input_validator);
+// 
+//   LITERT_ASSERT_OK(
+//       LrtGoogleTensorOptionsSetExperimentalEnableInputValidator(options, true));
+//   LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetExperimentalEnableInputValidator(
+//       options, &experimental_enable_input_validator));
+//   ASSERT_TRUE(experimental_enable_input_validator);
+// 
+//   LrtGoogleTensorOptions parsed;
+//   SerializeAndParse(options, &parsed);
+//   bool parsed_validator;
+//   LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetExperimentalEnableInputValidator(
+//       parsed, &parsed_validator));
+//   EXPECT_TRUE(parsed_validator);
+// 
+//   LrtDestroyGoogleTensorOptions(parsed);
+//   LrtDestroyGoogleTensorOptions(options);
+// }
+// copybara:uncomment_end
 
 }  // namespace
 }  // namespace litert::google_tensor

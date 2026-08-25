@@ -50,7 +50,7 @@ litert_dispatch_api(
     features = ["-layering_check"],  # buildifier: disable=no-layering-check
     linkopts = litert_android_linkopts() + [
         "-Wl,-soname=libLiteRtDispatch_Qualcomm.so",
-        "-Wl,-lc++abi",
+        "-Wl,-lc++abi",  # copybara:comment
     ],
     shared_lib_name = "dispatch_api_so",
     so_name = "libLiteRtDispatch_Qualcomm.so",

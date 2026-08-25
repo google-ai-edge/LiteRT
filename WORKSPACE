@@ -109,9 +109,9 @@ tensorflow_source_repo(
     name = "org_tensorflow",
     patches = ["//:PATCH.flatbuffers_windows_no_bash"],
     protobuf_patches = ["//:PATCH.protobuf_port_msvc_compat"],
-    sha256 = "c3c552414ab2e59e72511a21c1df566346a7c8f160909325edec6d1ff403d69d",
-    strip_prefix = "tensorflow-bcdab1a62e138c8f8784a7477c0be8af6dd0bd0a",
-    urls = ["https://github.com/tensorflow/tensorflow/archive/bcdab1a62e138c8f8784a7477c0be8af6dd0bd0a.tar.gz"],
+    sha256 = "a091b411891ff3534e4361a47847a5e46877959e43d0f84fd0e1d15c3d45fa9c",
+    strip_prefix = "tensorflow-a6146d14c579be0f52e11e6cbdd6dff74bec70bc",
+    urls = ["https://github.com/tensorflow/tensorflow/archive/a6146d14c579be0f52e11e6cbdd6dff74bec70bc.tar.gz"],
 )
 
 # Initialize the TensorFlow repository and all dependencies.
@@ -225,6 +225,16 @@ load(
 cuda_configure(name = "local_config_cuda")
 
 load(
+    "//third_party/nvidia_sdk:repositories.bzl",
+    "local_cuda_repository",
+    "local_tensorrt_rtx_repository",
+)
+
+local_cuda_repository(name = "local_cuda")
+
+local_tensorrt_rtx_repository(name = "local_tensorrt_rtx")
+
+load(
     "@rules_ml_toolchain//gpu/nccl:nccl_redist_init_repository.bzl",
     "nccl_redist_init_repository",
 )
@@ -261,6 +271,10 @@ lark()
 load("//third_party/xdsl:workspace.bzl", xdsl = "repo")
 
 xdsl()
+
+load("//third_party/perfetto:workspace.bzl", perfetto = "repo")
+
+perfetto()
 
 load("@rules_jvm_external//:defs.bzl", "maven_install")
 

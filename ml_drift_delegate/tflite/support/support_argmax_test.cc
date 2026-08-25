@@ -230,6 +230,20 @@ TEST_P(DimsTest, Supports4dOutput) {
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
 }
 
+TEST_P(DimsTest, Supports3dOutput) {
+  const TfLiteBuiltinOperator op = GetParam();
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddTensor(kDefaultDtype, {1, 2, 3, 4});
+  const int b = context_builder.AddScalarConstTensor(kDefaultDimIndexDtype,
+                                                     &kDefaultDimIndex);
+  const int c = context_builder.AddTensor(kDefaultDtype, {1, 2, 3});
+  context_builder.SetOp(op, /*version=*/1, /*params=*/nullptr,
+                        /*inputs=*/{a, b}, /*outputs=*/{c});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
 TEST_P(DimsTest, Rejects5dOutput) {
   const TfLiteBuiltinOperator op = GetParam();
   StubContextBuilder context_builder;

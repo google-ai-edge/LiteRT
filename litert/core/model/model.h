@@ -1002,7 +1002,9 @@ class LiteRtModelT {
         return std::ref(*sig);
       }
     }
-    return ::litert::Error(kLiteRtStatusErrorNotFound, "Signature not found");
+    return ::litert::Error(
+        kLiteRtStatusErrorNotFound,
+        "Signature not found: " + std::string(signature_key));
   }
 
   // Build a new subgraph and get a stable reference to it.
@@ -1041,6 +1043,13 @@ class LiteRtModelT {
   // All signatures registered with this model.
   absl::Span<LiteRtSignature> Signatures() const {
     return signatures_.Elements();
+  }
+
+  // Removes signatures matching `predicate`. Any subgraphs referenced only by
+  // removed signatures remain owned by the model until explicitly pruned.
+  size_t RemoveSignaturesIf(
+      std::function<bool(const LiteRtSignatureT&)> predicate) {
+    return signatures_.RemoveIf(std::move(predicate));
   }
 
   // Construct a new signature for this model.
@@ -1115,6 +1124,13 @@ class LiteRtModelT {
     return ::litert::Error(kLiteRtStatusErrorNotFound);
   }
 
+  // Removes an asset reference associated with an op that is about to be
+  // destroyed. The underlying buffer remains owned by the model's buffer
+  // manager and may still be referenced elsewhere.
+  bool RemoveAssetFromOp(LiteRtOp op) {
+    return external_buffer_map_.erase(op) != 0;
+  }
+
   // Contains details about the compiler used if this model was compiled.
   struct BuildStamp {
     absl::string_view soc_manufacturer;
@@ -1183,6 +1199,13 @@ std::optional<std::string> GetCustomOpCode(const LiteRtModelT& model,
 ::litert::Expected<LiteRtSubgraph> LookupSubgraph(
     const LiteRtModelT& model, absl::string_view signature_key);
 
+// Retains only the named entry-point signatures and the StableHLO composite
+// decomposition subgraphs reachable from them. This mutates the model while
+// preserving pointer stability for all retained IR objects.
+::litert::Expected<void> PruneModelToSignatures(
+    LiteRtModelT& model,
+    absl::Span<const absl::string_view> signature_keys);
+
 namespace litert::internal {
 
 template <class Arg>
@@ -1219,7 +1242,10 @@ void CloneTo(const LiteRtTensorT& src, LiteRtTensorT& dest);
 void CloneTo(const LiteRtOpT& src, LiteRtOpT& dest);
 
 // Same as clone to, but allocates a the dest tensor into given subgraph.
-LiteRtTensorT& MakeClone(LiteRtSubgraphT& parent, const LiteRtTensorT& src);
+// If src has block-wise quantization, its scales and optional zero_points
+// tensors are also cloned into parent and remapped.
+litert::Expected<LiteRtTensorT*> MakeClone(LiteRtSubgraphT& parent,
+                                           const LiteRtTensorT& src);
 
 // Same as clone to, but allocates a the dest op into given subgraph.
 LiteRtOpT& MakeClone(LiteRtSubgraphT& parent, const LiteRtOpT& src);

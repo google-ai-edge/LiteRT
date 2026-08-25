@@ -103,7 +103,6 @@ jobs:
 
           LITERT_TARGETS=(
             "//litert/c:litert_runtime_c_api_shared_lib"
-            "//litert/cc:litert_api_with_dynamic_runtime"
           )
 
           for IOS_CONFIG in ios_arm64 ios_sim_arm64; do

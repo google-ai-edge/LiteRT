@@ -18,6 +18,7 @@
 #include <stdbool.h>  // NOLINT
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_profiler_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -51,7 +52,8 @@ LiteRtStatus LiteRtRegisterAccelerator(LiteRtEnvironment environment,
 // Sets the function used to retrieve the accelerator name.
 LiteRtStatus LiteRtSetAcceleratorGetName(
     LiteRtAccelerator accelerator,
-    LiteRtStatus (*GetName)(LiteRtAccelerator accelerator, const char** name));
+    LiteRtStatus (*GetName)(LiteRtAcceleratorConst accelerator,
+                            const char** name));
 
 // Sets the function used to retrieve the accelerator implementation version.
 //
@@ -59,14 +61,14 @@ LiteRtStatus LiteRtSetAcceleratorGetName(
 // implementation version.
 LiteRtStatus LiteRtSetAcceleratorGetVersion(
     LiteRtAccelerator accelerator,
-    LiteRtStatus (*GetVersion)(LiteRtAccelerator accelerator,
+    LiteRtStatus (*GetVersion)(LiteRtAcceleratorConst accelerator,
                                LiteRtApiVersion* version));
 
 // Sets the function used to retrieve the accelerator hardware support.
 LiteRtStatus LiteRtSetAcceleratorGetHardwareSupport(
     LiteRtAccelerator accelerator,
     LiteRtStatus (*GetHardwareSupport)(
-        LiteRtAccelerator accelerator,
+        LiteRtAcceleratorConst accelerator,
         LiteRtHwAcceleratorSet* supported_hardware));
 
 // Sets the function used to return a Delegate to apply the accelerator by the
@@ -76,7 +78,7 @@ LiteRtStatus LiteRtSetDelegateFunction(
     LiteRtAccelerator accelerator,
     LiteRtStatus (*CreateDelegate)(LiteRtRuntimeContext* runtime_context,
                                    LiteRtEnvironment env,
-                                   LiteRtAccelerator accelerator,
+                                   LiteRtAcceleratorConst accelerator,
                                    LiteRtOptions options,
                                    LiteRtDelegateWrapper* delegate));
 
@@ -90,7 +92,7 @@ LiteRtStatus LiteRtSetDelegateFunction(
 LiteRtStatus LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation(
     LiteRtAccelerator accelerator,
     LiteRtStatus (*IsTfLiteDelegateResponsibleForJitCompilation)(
-        LiteRtAccelerator accelerator, bool* does_jit_compilation));
+        LiteRtAcceleratorConst accelerator, bool* does_jit_compilation));
 
 // Sets the function used to start collection of HW-specific metrics at a
 // specific level of detail (>= 0).
@@ -107,6 +109,13 @@ LiteRtStatus LiteRtSetAcceleratorStopMetricsCollection(
     LiteRtStatus (*StopMetricsCollection)(LiteRtRuntimeContext* runtime_context,
                                           LiteRtDelegateWrapper delegate,
                                           LiteRtMetrics metrics));
+
+// Sets the function used to retrieve the native vendor hooks.
+LiteRtStatus LiteRtSetAcceleratorGetHooks(
+    LiteRtAccelerator accelerator,
+    LiteRtStatus (*GetHooks)(LiteRtRuntimeContext* runtime_context,
+                             LiteRtDelegateWrapper delegate, LiteRtHook* hook,
+                             void** user_data));
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -352,5 +352,43 @@ TEST(CcModelTest, SerializePreCompiledModelHasSameSizeAsOriginal) {
   EXPECT_EQ(serialized->Size(), flatbuffer->get()->Buf().Size());
 }
 
+TEST(CcModelTest, NotFoundErrorsContainNames) {
+  auto model = testing::LoadTestFileModel("one_mul.tflite");
+  auto subgraph = model.MainSubgraph();
+  ASSERT_TRUE(subgraph);
+
+  auto input = subgraph->Input("nonexistent_subgraph_input");
+  ASSERT_FALSE(input);
+  EXPECT_THAT(
+      input.Error().Message(),
+      ::testing::HasSubstr("Failed to find input: nonexistent_subgraph_input"));
+
+  auto output = subgraph->Output("nonexistent_subgraph_output");
+  ASSERT_FALSE(output);
+  EXPECT_THAT(output.Error().Message(),
+              ::testing::HasSubstr(
+                  "Failed to find output: nonexistent_subgraph_output"));
+
+  auto sig_subgraph = model.Subgraph("nonexistent_subgraph_sig");
+  ASSERT_FALSE(sig_subgraph);
+  EXPECT_THAT(
+      sig_subgraph.Error().Message(),
+      ::testing::HasSubstr("Signature not found: nonexistent_subgraph_sig"));
+
+  auto input_names =
+      model.GetSignatureInputNames("nonexistent_input_names_sig");
+  ASSERT_FALSE(input_names);
+  EXPECT_THAT(
+      input_names.Error().Message(),
+      ::testing::HasSubstr("Signature not found: nonexistent_input_names_sig"));
+
+  auto output_names =
+      model.GetSignatureOutputNames("nonexistent_output_names_sig");
+  ASSERT_FALSE(output_names);
+  EXPECT_THAT(output_names.Error().Message(),
+              ::testing::HasSubstr(
+                  "Signature not found: nonexistent_output_names_sig"));
+}
+
 }  // namespace
 }  // namespace litert

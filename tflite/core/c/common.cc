@@ -35,7 +35,7 @@ limitations under the License.
 namespace {
 
 #ifndef TF_LITE_STATIC_MEMORY
-
+// The extra bytes are required by XNNPack to avoid out of bounds reads.
 constexpr size_t kTfLiteTensorAllocationExtraBytes = 16;
 constexpr size_t kTfLiteTensorAllocationAlignment = alignof(std::max_align_t);
 
@@ -624,7 +624,7 @@ TfLiteStatus TfLiteTensorResizeMaybeCopyWithAllocator(
           kTfLiteTensorAllocationAlignment);
     } else {
       new_data = AllocateWithTfLiteAllocator(effective_allocator, alloc_bytes,
-                                            kTfLiteTensorAllocationAlignment);
+                                             kTfLiteTensorAllocationAlignment);
     }
     if (new_data == nullptr) {
 #ifdef TF_LITE_TENSORFLOW_PROFILER

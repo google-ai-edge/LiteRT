@@ -886,9 +886,12 @@ cc_test(
         ":test_main",
         ":variable_op_kernels",  # buildcleaner: keep
         "//tflite:framework_stable",
+        "//tflite/core:cc_api_experimental",
         "//tflite/core:framework_stable",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
+        "//tflite/experimental/resource",
+        "//tflite/experimental/resource:mock_resource",
         "//tflite/kernels/internal:tensor",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
@@ -1716,9 +1719,9 @@ cc_test(
     deps = [
         ":test_main",
         ":test_util",
+        "//tflite/core/c:c_api_types",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
-        "@flatbuffers",
     ],
 )
 
@@ -3175,12 +3178,13 @@ cc_test(
         "hashtable_ops_test.cc",
     ],
     deps = [
+        ":test_main",
+        ":test_util",
         "//tflite:framework_stable",
         "//tflite/core:framework_stable",
         "//tflite/core/api",
         "//tflite/experimental/resource",
-        "//tflite/kernels:test_main",
-        "//tflite/kernels:test_util",
+        "//tflite/experimental/resource:mock_resource",
         "//tflite/kernels/internal:tensor",
         "//tflite/testing:util",
         "@com_google_absl//absl/memory",
@@ -3231,6 +3235,7 @@ cc_test(
         "//tflite/core:framework_stable",
         "//tflite/schema:schema_fbs",
         "//tflite/types:half",
+        "@com_google_benchmark//:benchmark",
         "@com_google_googletest//:gtest",
         "@eigen_archive//:eigen3",
         "@flatbuffers",

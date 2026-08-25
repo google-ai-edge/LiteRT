@@ -73,7 +73,8 @@ bool IsOneHotSupported(const TfLiteContext* absl_nonnull context,
     return false;
   }
   const TfLiteTensor& output = context->tensors[output_id];
-  if (!CheckTensorDtype(output, {kTfLiteInt32}, "output", *error)) {
+  if (!CheckTensorDtype(output, {kTfLiteInt32, kTfLiteFloat32}, "output",
+                        *error)) {
     return false;
   }
 
@@ -87,10 +88,10 @@ bool IsOneHotSupported(const TfLiteContext* absl_nonnull context,
                        *error)) {
     return false;
   }
-  if (!CheckTensorDims(on, /*min_dims=*/1, /*max_dims=*/1, "on", *error)) {
+  if (!CheckTensorDims(on, /*min_dims=*/0, /*max_dims=*/1, "on", *error)) {
     return false;
   }
-  if (!CheckTensorDims(off, /*min_dims=*/1, /*max_dims=*/1, "off", *error)) {
+  if (!CheckTensorDims(off, /*min_dims=*/0, /*max_dims=*/1, "off", *error)) {
     return false;
   }
   if (!CheckTensorDims(output, /*min_dims=*/1, /*max_dims=*/kMaxDims, "output",
@@ -98,11 +99,11 @@ bool IsOneHotSupported(const TfLiteContext* absl_nonnull context,
     return false;
   }
   // Check on / off tensor have a single value
-  if (on.dims->data[0] != 1) {
+  if (on.dims->size == 1 && on.dims->data[0] != 1) {
     *error = "On tensor must have a single value";
     return false;
   }
-  if (off.dims->data[0] != 1) {
+  if (off.dims->size == 1 && off.dims->data[0] != 1) {
     *error = "Off tensor must have a single value";
     return false;
   }

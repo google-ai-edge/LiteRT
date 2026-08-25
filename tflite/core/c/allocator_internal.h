@@ -35,7 +35,7 @@ class ScopedTfLiteAllocator {
   ScopedTfLiteAllocator& operator=(const ScopedTfLiteAllocator&) = delete;
 
  private:
-  TfLiteAllocator* previous_;
+  TfLiteAllocator* const previous_;
 };
 
 }  // namespace internal

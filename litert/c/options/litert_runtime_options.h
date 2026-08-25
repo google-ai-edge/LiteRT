@@ -35,7 +35,11 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_RUNTIME_OPTIONS_H_
 
 #include "litert/c/litert_common.h"
+
 #ifdef __cplusplus
+#include <string>
+#include <vector>
+
 extern "C" {
 #endif
 
@@ -94,6 +98,16 @@ LiteRtStatus LrtSetRuntimeOptionsDisableDelegateClustering(
 // Gets whether delegate clustering is disabled.
 LiteRtStatus LrtGetRuntimeOptionsDisableDelegateClustering(
     const LrtRuntimeOptions* options, bool* disable_delegate_clustering);
+
+#ifdef __cplusplus
+// Sets the TFLite model signatures that compiled models created with these
+// options prepare for execution. The selected keys identify root subgraphs.
+//
+// Validates that options is non-null, keys is non-empty, each key is non-empty,
+// and all keys are unique. The strings are copied.
+LiteRtStatus LrtSetRuntimeOptionsSelectedSignatures(
+    LrtRuntimeOptions* options, const std::vector<std::string>& keys);
+#endif  // __cplusplus
 
 #ifdef __cplusplus
 }  // extern "C"

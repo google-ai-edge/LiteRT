@@ -26,10 +26,23 @@
 
 namespace litert {
 
-/// @brief The required byte alignment for host memory `TensorBuffer`s, used
-/// by the LiteRT CPU accelerator.
+/// @brief The required byte alignment for host memory `TensorBuffer`s on CPU.
+///
+/// This is an immutable compile-time constant guaranteed across all LiteRT
+/// versions and runtime environments (including LiteRT in Google Play
+/// services). It is safe to use with `alignas(...)` for static or
+/// stack-allocated buffers intended for CPU execution. Changing this value is
+/// a breaking ABI change that requires increasing the LiteRT major version.
+///
+/// Note: Hardware accelerators or delegates requiring different alignment
+/// express those requirements dynamically via `TensorBufferRequirements`.
 inline constexpr size_t kHostMemoryBufferAlignment =
     static_cast<size_t>(LITERT_HOST_MEMORY_BUFFER_ALIGNMENT);
+
+static_assert(kHostMemoryBufferAlignment == 64,
+              "kHostMemoryBufferAlignment must be 64 bytes for ABI "
+              "compatibility. Changing this value requires bumping the LiteRT "
+              "major version.");
 
 /// @brief A C++-style scoped enum for tensor buffer types.
 ///

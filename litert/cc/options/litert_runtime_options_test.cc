@@ -14,8 +14,11 @@
 
 #include "litert/cc/options/litert_runtime_options.h"
 
+#include <vector>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_runtime_options.h"
@@ -26,6 +29,7 @@
 namespace litert {
 namespace {
 
+using ::testing::HasSubstr;
 using ::testing::litert::IsOk;
 
 TEST(RuntimeOptionsTest, CreateWorks) {
@@ -78,6 +82,29 @@ TEST(RuntimeOptionsTest, CreateOpaqueOptionsWorks) {
             kLiteRtStatusOk);
   litert::OpaqueOptions cpp_opaque_opts =
       litert::OpaqueOptions::WrapCObject(opaque_opts, litert::OwnHandle::kYes);
+}
+
+TEST(RuntimeOptionsTest, SetSelectedSignaturesCopiesKeys) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, RuntimeOptions::Create());
+
+  std::vector<absl::string_view> signature_keys = {"decode", "prefill"};
+  EXPECT_THAT(options.SetSelectedSignatures(signature_keys), IsOk());
+  // Clear the caller's buffer to prove the wrapper copied the keys.
+  signature_keys.clear();
+
+  // The serialized payload should still carry both keys.
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  ASSERT_EQ(LrtGetOpaqueRuntimeOptionsData(options.Get(), &identifier, &payload,
+                                           &payload_deleter),
+            kLiteRtStatusOk);
+  absl::string_view payload_str(static_cast<char*>(payload));
+  EXPECT_THAT(payload_str, HasSubstr("decode"));
+  EXPECT_THAT(payload_str, HasSubstr("prefill"));
+  if (payload_deleter != nullptr) {
+    payload_deleter(payload);
+  }
 }
 
 }  // namespace

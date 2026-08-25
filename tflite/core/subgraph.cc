@@ -2126,8 +2126,8 @@ TfLiteStatus Subgraph::ResizeTensorImpl(TfLiteTensor* tensor,
       }
 
       // Realloc space for heap-allocated tensors.
-      status = TfLiteTensorResizeMaybeCopyWithAllocator(
-          bytes_required, tensor, false, allocator_);
+      status = TfLiteTensorResizeMaybeCopyWithAllocator(bytes_required, tensor,
+                                                        false, allocator_);
       if (status != kTfLiteOk) {
         TfLiteIntArrayFree(new_size);
         return status;

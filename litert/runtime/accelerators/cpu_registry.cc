@@ -29,7 +29,7 @@
 #if defined(LITERT_USE_XNNPACK)
 extern "C" {
 // Defined in xnnpack_accelerator.cc.
-extern LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef;
+extern const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef;
 }
 #endif
 

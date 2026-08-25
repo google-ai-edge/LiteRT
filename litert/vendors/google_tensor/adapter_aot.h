@@ -16,9 +16,11 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_ADAPTER_AOT_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
@@ -57,6 +59,32 @@ typedef void (*CompilerFreeCompiledCode)(char** compiled_code_data,
                                          size_t num_bytecodes);
 typedef void (*CompilerFreeErrorMessage)(char* error_message);
 
+// Type definition for a function pointer to an ABI stable function
+// used to check which operations in the TFLite flatbuffer are unsupported.
+//
+// Functions of this type are expected to:
+// @param tfl_buffer_data Pointer to the serialized TFLite model flatbuffer.
+// @param tfl_buffer_size Size of the flatbuffer.
+// @param options Pointer to the serialized GoogleTensorOptions proto.
+// @param options_size Size of the serialized GoogleTensorOptions proto.
+// @param unsupported_op_indices On success, will be set to point to a newly
+//        allocated array containing the indices of the unsupported operations.
+//        The caller takes ownership of this array and is responsible for
+//        freeing it (e.g., using a companion *FreeUnsupportedOps() function).
+// @param num_unsupported_ops On success, will be set to the number of elements
+//        in the array pointed to by *unsupported_op_indices.
+// @param out_error_message On failure, may be set to point to a newly allocated
+//        NULL-terminated string containing an error message. The caller
+//        takes ownership of this string and is responsible for freeing it
+//        (e.g., using a companion *FreeErrorMessage() function).
+// @return bool indicating whether the validation was successful or not.
+typedef bool (*CompilerGetUnsupportedOps)(
+    const char* tfl_buffer_data, size_t tfl_buffer_size, const char* options,
+    size_t options_size, int32_t** unsupported_op_indices,
+    size_t* num_unsupported_ops, char** out_error_message);
+
+typedef void (*CompilerFreeUnsupportedOps)(int32_t* unsupported_op_indices);
+
 // This class adapts the google tensor compiler API for dynamic loading.
 class AdapterAot : public Adapter {
  public:
@@ -76,6 +104,10 @@ class AdapterAot : public Adapter {
                          size_t** compiled_code_sizes,
                          size_t* num_bytecodes) override;
 
+  Expected<std::vector<int32_t>> GetUnsupportedOps(
+      const char* tfl_buffer_data, size_t tfl_buffer_size, const char* options,
+      size_t options_size) override;
+
   bool IsAot() const override { return true; }
 
   void FreeCompiledCode(char** compiled_code_data, size_t* compiled_code_sizes,
@@ -87,6 +119,8 @@ class AdapterAot : public Adapter {
     ::litert::google_tensor::Compile compile = nullptr;
     CompilerFreeCompiledCode free_compiled_code = nullptr;
     CompilerFreeErrorMessage free_error_message = nullptr;
+    CompilerGetUnsupportedOps get_unsupported_ops = nullptr;
+    CompilerFreeUnsupportedOps free_unsupported_ops = nullptr;
   };
 
   void* dlib_handle_ = nullptr;

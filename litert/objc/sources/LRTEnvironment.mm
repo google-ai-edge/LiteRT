@@ -23,8 +23,8 @@
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
-#import "third_party/odml/litert/litert/objc/apis/LRTError.h"
 #import "third_party/odml/litert/litert/objc/sources/LRTEnvironment+Internal.h"
+#import "third_party/odml/litert/litert/objc/sources/LRTError+Internal.h"
 
 namespace {
 
@@ -81,11 +81,8 @@ id _Nullable GetBridgedObjectForOption(const litert::Environment &env,
   auto envResult = litert::Environment::Create(litert::EnvironmentOptions(cppOptions));
   if (!envResult.HasValue()) {
     if (error) {
-      NSDictionary *userInfo =
-          @{NSLocalizedDescriptionKey : @(envResult.Error().Message().c_str())};
-      *error = [NSError errorWithDomain:LRTErrorDomain
-                                   code:static_cast<NSInteger>(envResult.Error().Status())
-                               userInfo:userInfo];
+      *error = CreateLRTError(static_cast<NSInteger>(envResult.Error().Status()),
+                              @(envResult.Error().Message().c_str()));
     }
     return nil;
   }

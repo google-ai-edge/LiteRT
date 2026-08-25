@@ -21,7 +21,6 @@
 
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/options/litert_samsung_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
@@ -51,7 +50,8 @@ Expected<void> UpdateSamsungOptionsFromFlags(SamsungOptions& options) {
 namespace litert::samsung {
 
 LITERT_REGISTER_OPTIONS_PARSER([](Options& options) -> Expected<void> {
-  LITERT_ASSIGN_OR_RETURN(auto& samsung_opts, options.GetSamsungOptions());
+  LITERT_ASSIGN_OR_RETURN(auto& samsung_opts,
+                          options.GetOptions<SamsungOptions>());
   return UpdateSamsungOptionsFromFlags(samsung_opts);
 });
 

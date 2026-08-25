@@ -16,8 +16,8 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_event.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 
@@ -50,6 +50,7 @@ GetBufferToHandle() {
   return *buffer_to_handle;
 }
 static LiteRtEnvironment g_env = nullptr;
+static const LiteRtRuntimeContext* g_runtime_context = nullptr;
 
 extern "C" {
 
@@ -101,6 +102,15 @@ LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
 
   g_intercepted_interface = *g_real_api.interface;
 
+  // Override initialize to save runtime_context
+  g_intercepted_interface.initialize =
+      [](const LiteRtRuntimeContext* runtime_context, LiteRtEnvironment env,
+         LiteRtOptions options) {
+        g_runtime_context = runtime_context;
+        g_env = env;
+        return g_real_api.interface->initialize(runtime_context, env, options);
+      };
+
   // Override get_capabilities to report async support
   g_intercepted_interface.get_capabilities = [](int* capabilities) {
     *capabilities =
@@ -136,8 +146,15 @@ LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
         int pipefds[2];
         if (pipe(pipefds) != 0) return kLiteRtStatusErrorRuntimeFailure;
 
+        if (!g_runtime_context ||
+            !g_runtime_context->create_event_from_sync_fence_fd) {
+          close(pipefds[0]);
+          close(pipefds[1]);
+          return kLiteRtStatusErrorRuntimeFailure;
+        }
+
         LiteRtEvent event;
-        LiteRtStatus s = LiteRtCreateEventFromSyncFenceFd(
+        LiteRtStatus s = g_runtime_context->create_event_from_sync_fence_fd(
             g_env, pipefds[0], /*owns_fd=*/true, &event);
         if (s != kLiteRtStatusOk) {
           close(pipefds[0]);

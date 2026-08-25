@@ -45,22 +45,22 @@ TEST_P(ConvertGatherTest, Basic) {
   const bool is_input_constant = std::get<0>(GetParam());
   const bool is_indices_constant = std::get<1>(GetParam());
 
+  std::vector<float> input_data(12, 1.0f);
+  std::vector<uint8_t> input_bytes(input_data.size() * sizeof(float));
+  std::memcpy(input_bytes.data(), input_data.data(), input_bytes.size());
+
+  std::vector<int> indices_shape_arr = {2};
+  std::vector<int32_t> indices_data = {0, 1};
+  std::vector<uint8_t> indices_bytes(indices_data.size() * sizeof(int32_t));
+  std::memcpy(indices_bytes.data(), indices_data.data(), indices_bytes.size());
+
   if (is_input_constant) {
-    std::vector<float> input_data(12, 1.0f);
-    std::vector<uint8_t> input_bytes(input_data.size() * sizeof(float));
-    std::memcpy(input_bytes.data(), input_data.data(), input_bytes.size());
     model.AddConstInput(kTfLiteFloat32, {1, 3, 4}, input_bytes);
   } else {
     model.AddInput(kTfLiteFloat32, {1, 3, 4});
   }
 
-  std::vector<int> indices_shape_arr = {2, 1};
-  std::vector<int32_t> indices_data = {0, 1};
-
   if (is_indices_constant) {
-    std::vector<uint8_t> indices_bytes(indices_data.size() * sizeof(int32_t));
-    std::memcpy(indices_bytes.data(), indices_data.data(),
-                indices_bytes.size());
     model.AddConstInput(kTfLiteInt32, indices_shape_arr, indices_bytes);
   } else {
     model.AddInput(kTfLiteInt32, indices_shape_arr);
@@ -81,9 +81,19 @@ TEST_P(ConvertGatherTest, Basic) {
   const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate.get());
   ASSERT_TRUE(ir_model);
 
-  ASSERT_EQ(ir_model->ops().size(), 1);
+  int expected_ops = 1;  // gather
+  if (is_input_constant) {
+    expected_ops++;
+  }
+  if (is_indices_constant) {
+    expected_ops++;
+  } else {
+    expected_ops++;  // Reshape op
+  }
 
-  const ::ml_drift::ir::IrOp* op = ir_model->op(0);
+  ASSERT_EQ(ir_model->ops().size(), expected_ops);
+
+  const ::ml_drift::ir::IrOp* op = ir_model->op(expected_ops - 1);
   EXPECT_EQ(op->name, "gather");
   EXPECT_EQ(op->inputs.size(), 2);
   EXPECT_EQ(op->outputs.size(), 1);
@@ -101,22 +111,22 @@ TEST_P(ConvertGatherTest, Indices1D_WithReshapeOp) {
   const bool is_input_constant = std::get<0>(GetParam());
   const bool is_indices_constant = std::get<1>(GetParam());
 
+  std::vector<float> input_data(12, 1.0f);
+  std::vector<uint8_t> input_bytes(input_data.size() * sizeof(float));
+  std::memcpy(input_bytes.data(), input_data.data(), input_bytes.size());
+
+  std::vector<int> indices_shape_arr = {2};
+  std::vector<int32_t> indices_data = {0, 1};
+  std::vector<uint8_t> indices_bytes(indices_data.size() * sizeof(int32_t));
+  std::memcpy(indices_bytes.data(), indices_data.data(), indices_bytes.size());
+
   if (is_input_constant) {
-    std::vector<float> input_data(12, 1.0f);
-    std::vector<uint8_t> input_bytes(input_data.size() * sizeof(float));
-    std::memcpy(input_bytes.data(), input_data.data(), input_bytes.size());
     model.AddConstInput(kTfLiteFloat32, {1, 3, 4}, input_bytes);
   } else {
     model.AddInput(kTfLiteFloat32, {1, 3, 4});
   }
 
-  std::vector<int> indices_shape_arr = {2};
-  std::vector<int32_t> indices_data = {0, 1};
-
   if (is_indices_constant) {
-    std::vector<uint8_t> indices_bytes(indices_data.size() * sizeof(int32_t));
-    std::memcpy(indices_bytes.data(), indices_data.data(),
-                indices_bytes.size());
     model.AddConstInput(kTfLiteInt32, indices_shape_arr, indices_bytes);
   } else {
     model.AddInput(kTfLiteInt32, indices_shape_arr);
@@ -137,17 +147,19 @@ TEST_P(ConvertGatherTest, Indices1D_WithReshapeOp) {
   const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate.get());
   ASSERT_TRUE(ir_model);
 
-  int expected_ops = 1;
-  if (!is_indices_constant) {
+  int expected_ops = 1;  // gather
+  if (is_input_constant) {
+    expected_ops++;
+  }
+  if (is_indices_constant) {
+    expected_ops++;
+  } else {
     expected_ops++;  // Reshape op
   }
 
   ASSERT_EQ(ir_model->ops().size(), expected_ops);
 
-  if (!is_indices_constant) {
-    EXPECT_EQ(ir_model->op(0)->name, "reshape");
-  }
-  const ::ml_drift::ir::IrOp* op = ir_model->op(is_indices_constant ? 0 : 1);
+  const ::ml_drift::ir::IrOp* op = ir_model->op(expected_ops - 1);
   EXPECT_EQ(op->name, "gather");
   EXPECT_EQ(op->inputs.size(), 2);
   EXPECT_EQ(op->outputs.size(), 1);

@@ -1,0 +1,122 @@
+# Copyright 2026 The Google AI Edge Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+diff --git a/BUILD b/BUILD
+index a517aa16..b5c52ec5 100644
+--- a/BUILD
++++ b/BUILD
+@@ -1427,9 +1427,9 @@ perfetto_genrule(
+     outs = [
+         "perfetto_version.gen.h",
+     ],
+-    cmd = "$(location gen_version_header_py) --cpp_out=$@ --changelog=$(location CHANGELOG)",
++    cmd = "python3 $(location tools/write_version_header.py) --cpp_out=$@ --changelog=$(location CHANGELOG)",
+     tools = [
+-        ":gen_version_header_py",
++        "tools/write_version_header.py",
+     ],
+ )
+
+diff --git a/bazel/rules.bzl b/bazel/rules.bzl
+index 563382a1..816e1e21 100644
+--- a/bazel/rules.bzl
++++ b/bazel/rules.bzl
+@@ -15,7 +15,8 @@
+ load("@perfetto//bazel:proto_gen.bzl", "proto_descriptor_gen", "proto_gen")
+ load("@perfetto//bazel:run_ait_with_adb.bzl", "android_instrumentation_test")
+ load("@perfetto_cfg//:perfetto_cfg.bzl", "PERFETTO_CONFIG")
+-load("@rules_android//android:rules.bzl", "android_binary", "android_library")
++def android_binary(**kwargs): pass
++def android_library(**kwargs): pass
+
+ # +----------------------------------------------------------------------------+
+ # | Base C++ rules.                                                            |
+diff --git a/bazel/run_ait_with_adb.bzl b/bazel/run_ait_with_adb.bzl
+index b08f781d..7f1dfa2c 100644
+--- a/bazel/run_ait_with_adb.bzl
++++ b/bazel/run_ait_with_adb.bzl
+@@ -1,72 +1 @@
+-# Copyright (C) 2025 The Android Open Source Project
+-#
+-# Licensed under the Apache License, Version 2.0 (the "License");
+-# you may not use this file except in compliance with the License.
+-# You may obtain a copy of the License at
+-#
+-#      http://www.apache.org/licenses/LICENSE-2.0
+-#
+-# Unless required by applicable law or agreed to in writing, software
+-# distributed under the License is distributed on an "AS IS" BASIS,
+-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-# See the License for the specific language governing permissions and
+-# limitations under the License.
+-
+-load("@rules_android//android:rules.bzl", "ApkInfo", "StarlarkApkInfo")
+-
+-def _get_apk_info(apk):
+-    if StarlarkApkInfo in apk:
+-        return apk[StarlarkApkInfo].signed_apk
+-    return apk[ApkInfo].signed_apk
+-
+-def _android_instrumentation_test_impl(ctx):
+-    apk_file = _get_apk_info(ctx.attr.app)
+-    test_apk_file = _get_apk_info(ctx.attr.test_app)
+-    adb_file = ctx.attr._adb_exe.files_to_run.executable
+-    aapt2_file = ctx.attr._aapt2_exe.files_to_run.executable
+-    subst = dict()
+-    subst["%%adb_tool_path%%"] = adb_file.short_path
+-    subst["%%appt2_tool_path%%"] = aapt2_file.short_path
+-    subst["%%apk_path%%"] = apk_file.short_path
+-    subst["%%test_apk_path%%"] = test_apk_file.short_path
+-    out = ctx.actions.declare_file(ctx.label.name + "_script.sh")
+-    ctx.actions.expand_template(
+-        template = ctx.file._sh_script_template,
+-        is_executable = True,
+-        substitutions = subst,
+-        output = out,
+-    )
+-    runfiles = ctx.runfiles(
+-        files = [apk_file, test_apk_file],
+-        transitive_files = ctx.attr._adb_exe.files,
+-    ).merge(ctx.attr._aapt2_exe.default_runfiles)
+-    return [DefaultInfo(executable = out, runfiles = runfiles)]
+-
+-android_instrumentation_test = rule(
+-    implementation = _android_instrumentation_test_impl,
+-    attrs = {
+-        "app": attr.label(
+-            providers = [[ApkInfo], [StarlarkApkInfo]],
+-            allow_files = True,
+-        ),
+-        "test_app": attr.label(
+-            providers = [[ApkInfo], [StarlarkApkInfo]],
+-            allow_files = True,
+-        ),
+-        "_adb_exe": attr.label(
+-            allow_single_file = True,
+-            cfg = "exec",
+-            default = Label("@androidsdk//:platform-tools/adb"),
+-        ),
+-        "_aapt2_exe": attr.label(
+-            executable = True,
+-            cfg = "exec",
+-            default = Label("@androidsdk//:aapt2_binary"),
+-        ),
+-        "_sh_script_template": attr.label(
+-            allow_single_file = True,
+-            default = Label(":run_ait_with_adb.sh"),
+-        ),
+-    },
+-    test = True,
+-)
++def android_instrumentation_test(**kwargs): pass

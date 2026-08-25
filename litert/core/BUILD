@@ -240,6 +240,7 @@ cc_test(
 #         "noasan",
 #         "nomsan",
 #         "nosan",
+#         "nowindows",
 #     ],
 #     deps = [
 #         ":dynamic_loading",

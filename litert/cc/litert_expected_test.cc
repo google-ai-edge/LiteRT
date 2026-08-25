@@ -195,7 +195,7 @@ TEST(UnexpectedTest, WithMessage) {
 TEST(UnexpectedTest, WithLocalMessageString) {
   // Message is a string with scoped lifetime.
   Unexpected err(kErrorStatus, absl::StrCat("MESSAGE", 1));
-  EXPECT_EQ(ToLiteRtStatus(err.Error().StatusCC()), kErrorStatus);
+  EXPECT_EQ(ToLiteRtStatus(err.Error().StatusValue()), kErrorStatus);
   EXPECT_EQ(err.Error().Message(), "MESSAGE1");
 }
 

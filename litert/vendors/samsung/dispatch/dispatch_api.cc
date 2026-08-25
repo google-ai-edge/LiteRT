@@ -317,9 +317,17 @@ LiteRtDispatchInterface TheInterface = {
 };
 
 LiteRtDispatchApi TheApi = {
-    /*.version=*/{/*.major=*/LITERT_API_VERSION_MAJOR,
-                  /*.minor=*/LITERT_API_VERSION_MINOR,
-                  /*.patch=*/LITERT_API_VERSION_PATCH},
+    /*.abi_header=*/
+    {
+        /*.struct_size=*/sizeof(LiteRtDispatchApi),
+        /*.major_version=*/1,
+        /*.minor_version=*/0,
+        /*.reserved=*/0,
+    },
+    /*.version=*/
+    {/*.major=*/LITERT_API_VERSION_MAJOR,
+     /*.minor=*/LITERT_API_VERSION_MINOR,
+     /*.patch=*/LITERT_API_VERSION_PATCH},
     /*.interface=*/&TheInterface,
     /*.async_interface=*/nullptr,
     /*.graph_interface=*/nullptr,

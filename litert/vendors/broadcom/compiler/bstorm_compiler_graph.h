@@ -65,10 +65,15 @@ class bstorm_LiteRt_compiler_graph {
                                          std::vector<bool>& supported_nodes);
   bstorm_result graph_write(const std::string& name, const std::string& prefix);
   bstorm_result graph_precompile_to_file(struct bstorm_context* context,
-                                         const std::string& bstm_file);
+                                         const std::string& bstm_file,
+                                         const std::string& tool_path = "",
+                                         const std::string& tool_options = "",
+                                         bool bstm_compress = true);
   bstorm_result graph_precompile_to_buffer(
       struct bstorm_context* context,
-      struct bstorm_compiler_bstm_offline_output_buffer& out);
+      struct bstorm_compiler_bstm_offline_output_buffer& out,
+      const std::string& tool_path = "", const std::string& tool_options = "",
+      bool bstm_compress = true);
 
  private:
   bstorm_result operation_convert(struct bstorm_Operation& operation,

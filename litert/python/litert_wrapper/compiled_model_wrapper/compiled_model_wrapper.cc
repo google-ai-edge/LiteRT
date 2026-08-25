@@ -28,7 +28,6 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/options/litert_cpu_options.h"
 #include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/internal/litert_extended_model.h"
@@ -36,7 +35,6 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
-#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_model_types.h"
@@ -243,7 +241,7 @@ bool PopulateCompilationOptions(litert::Options& options,
   }
 
   if (HasQualcommOptions(compilation_options)) {
-    auto qualcomm_options_or = options.GetQualcommOptions();
+    auto qualcomm_options_or = options.GetOptions<qualcomm::QualcommOptions>();
     if (!qualcomm_options_or) {
       if (out_error) *out_error = qualcomm_options_or.Error().Message();
       return false;
@@ -331,7 +329,8 @@ bool PopulateCompilationOptions(litert::Options& options,
   }
 
   if (HasIntelOpenVinoOptions(compilation_options)) {
-    auto intel_openvino_options_or = options.GetIntelOpenVinoOptions();
+    auto intel_openvino_options_or =
+        options.GetOptions<intel_openvino::IntelOpenVinoOptions>();
     if (!intel_openvino_options_or) {
       if (out_error) *out_error = intel_openvino_options_or.Error().Message();
       return false;

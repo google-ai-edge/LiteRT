@@ -36,8 +36,8 @@ def build_sample_model() -> mlir.ModuleOp:
 
   signature_builder = mu.SignatureBuilder(module.ops[0])
   signature_builder.name = "serving_default"
-  signature_builder.input_names = ["args_0", "args_1"]
-  signature_builder.output_names = ["output_0", "output_1"]
+  signature_builder.input_names = ["args_0", "args_1"]  # pyrefly: ignore[bad-argument-type]
+  signature_builder.output_names = ["output_0", "output_1"]  # pyrefly: ignore[bad-argument-type]
   return module
 
 
@@ -56,37 +56,37 @@ class SignatureBuilderTest(testing.ModelUtilsTestCase):
 
   def test_get_signature_name(self):
     module = build_sample_model()
-    signature_builder = mu.SignatureBuilder(module.ops[0])
+    signature_builder = mu.SignatureBuilder(module.ops[0])  # pyrefly: ignore[bad-argument-type]
     self.assertEqual(signature_builder.name, "serving_default")
 
   def test_get_input_map(self):
     module = build_sample_model()
-    signature_builder = mu.SignatureBuilder(module.ops[0])
+    signature_builder = mu.SignatureBuilder(module.ops[0])  # pyrefly: ignore[bad-argument-type]
     self.assertEqual(
         signature_builder.get_inputs_map(),
         {
-            "args_0": module.ops[0].body.block.args[0],
-            "args_1": module.ops[0].body.block.args[1],
+            "args_0": module.ops[0].body.block.args[0],  # pyrefly: ignore[missing-attribute]
+            "args_1": module.ops[0].body.block.args[1],  # pyrefly: ignore[missing-attribute]
         },
     )
     self.assert_write_flatbuffer_ok(module)
 
   def test_get_output_map(self):
     module = build_sample_model()
-    signature_builder = mu.SignatureBuilder(module.ops[0])
+    signature_builder = mu.SignatureBuilder(module.ops[0])  # pyrefly: ignore[bad-argument-type]
     self.assertEqual(
         signature_builder.get_outputs_map(),
         {
-            "output_0": module.ops[0].return_op.operands[0],
-            "output_1": module.ops[0].return_op.operands[1],
+            "output_0": module.ops[0].return_op.operands[0],  # pyrefly: ignore[missing-attribute]
+            "output_1": module.ops[0].return_op.operands[1],  # pyrefly: ignore[missing-attribute]
         },
     )
     self.assert_write_flatbuffer_ok(module)
 
   def test_set_input_names(self):
     module = build_sample_model()
-    signature_builder = mu.SignatureBuilder(module.ops[0])
-    signature_builder.input_names = ["x", "y"]
+    signature_builder = mu.SignatureBuilder(module.ops[0])  # pyrefly: ignore[bad-argument-type]
+    signature_builder.input_names = ["x", "y"]  # pyrefly: ignore[bad-argument-type]
 
     self.assert_filecheck(
         module,
@@ -101,8 +101,8 @@ class SignatureBuilderTest(testing.ModelUtilsTestCase):
 
   def test_set_output_names(self):
     module = build_sample_model()
-    signature_builder = mu.SignatureBuilder(module.ops[0])
-    signature_builder.output_names = ["o1", "o2"]
+    signature_builder = mu.SignatureBuilder(module.ops[0])  # pyrefly: ignore[bad-argument-type]
+    signature_builder.output_names = ["o1", "o2"]  # pyrefly: ignore[bad-argument-type]
 
     self.assert_filecheck(
         module,
@@ -117,70 +117,70 @@ class SignatureBuilderTest(testing.ModelUtilsTestCase):
 
   def test_erase_input_by_name(self):
     module = build_sample_model()
-    signature_builder = mu.SignatureBuilder(module.ops[0])
+    signature_builder = mu.SignatureBuilder(module.ops[0])  # pyrefly: ignore[bad-argument-type]
     signature_builder.erase_input("args_0")
 
-    self.assertLen(module.ops[0].body.block.args, 1)
+    self.assertLen(module.ops[0].body.block.args, 1)  # pyrefly: ignore[missing-attribute]
     self.assertLen(signature_builder.inputs, 1)
     self.assertEqual(
         signature_builder.get_inputs_map(),
-        {"args_1": module.ops[0].body.block.args[0]},
+        {"args_1": module.ops[0].body.block.args[0]},  # pyrefly: ignore[missing-attribute]
     )
     self.assert_write_flatbuffer_ok(module)
 
   def test_erase_output_by_name(self):
     module = build_sample_model()
-    signature_builder = mu.SignatureBuilder(module.ops[0])
+    signature_builder = mu.SignatureBuilder(module.ops[0])  # pyrefly: ignore[bad-argument-type]
     signature_builder.erase_output("output_0")
 
-    self.assertLen(module.ops[0].return_op.operands, 1)
+    self.assertLen(module.ops[0].return_op.operands, 1)  # pyrefly: ignore[missing-attribute]
     self.assertLen(signature_builder.outputs, 1)
     self.assertEqual(
         signature_builder.get_outputs_map(),
-        {"output_1": module.ops[0].return_op.operands[0]},
+        {"output_1": module.ops[0].return_op.operands[0]},  # pyrefly: ignore[missing-attribute]
     )
     self.assert_write_flatbuffer_ok(module)
 
   def test_insert_input(self):
     module = build_sample_model()
-    signature_builder = mu.SignatureBuilder(module.ops[0])
+    signature_builder = mu.SignatureBuilder(module.ops[0])  # pyrefly: ignore[bad-argument-type]
     signature_builder.insert_input(
         mlir.RankedTensorType([10, 10], "f32"), 1, "x"
     )
 
-    self.assertLen(module.ops[0].body.block.args, 3)
+    self.assertLen(module.ops[0].body.block.args, 3)  # pyrefly: ignore[missing-attribute]
     self.assertLen(signature_builder.inputs, 3)
     self.assertEqual(
         signature_builder.get_inputs_map(),
         {
-            "args_0": module.ops[0].body.block.args[0],
-            "x": module.ops[0].body.block.args[1],
-            "args_1": module.ops[0].body.block.args[2],
+            "args_0": module.ops[0].body.block.args[0],  # pyrefly: ignore[missing-attribute]
+            "x": module.ops[0].body.block.args[1],  # pyrefly: ignore[missing-attribute]
+            "args_1": module.ops[0].body.block.args[2],  # pyrefly: ignore[missing-attribute]
         },
     )
     self.assertEqual(
-        signature_builder.get_inputs_map()["x"].type.shape,
+        signature_builder.get_inputs_map()["x"].type.shape,  # pyrefly: ignore[missing-attribute]
         [10, 10],
     )
     self.assertEqual(
-        signature_builder.get_inputs_map()["x"].type.elty,
+        signature_builder.get_inputs_map()["x"].type.elty,  # pyrefly: ignore[missing-attribute]
         "f32",
     )
     self.assert_write_flatbuffer_ok(module)
 
   def test_insert_output(self):
     module = build_sample_model()
-    signature_builder = mu.SignatureBuilder(module.ops[0])
-    signature_builder.insert_output(module.ops[0].body.block.args[0], 1, "y")
+    signature_builder = mu.SignatureBuilder(module.ops[0])  # pyrefly: ignore[bad-argument-type]
+    signature_builder.insert_output(module.ops[0].body.block.args[0], 1, "y")  # pyrefly: ignore[missing-attribute]
 
-    self.assertLen(module.ops[0].return_op.operands, 3)
+    self.assertLen(module.ops[0].return_op.operands, 3)  # pyrefly: ignore[missing-attribute]
     self.assertLen(signature_builder.outputs, 3)
     self.assertEqual(
         signature_builder.get_outputs_map(),
         {
-            "output_0": module.ops[0].return_op.operands[0],
-            "y": module.ops[0].body.block.args[0],
-            "output_1": module.ops[0].return_op.operands[2],
+            "output_0": module.ops[0].return_op.operands[0],  # pyrefly: ignore[missing-attribute]
+            "y": module.ops[0].body.block.args[0],  # pyrefly: ignore[missing-attribute]
+            "output_1": module.ops[0].return_op.operands[2],  # pyrefly: ignore[missing-attribute]
         },
     )
     self.assert_write_flatbuffer_ok(module)
@@ -188,12 +188,12 @@ class SignatureBuilderTest(testing.ModelUtilsTestCase):
   def test_erase_all_inputs_outputs(self):
     module = build_sample_model()
 
-    signature_builder = mu.SignatureBuilder(module.ops[0])
+    signature_builder = mu.SignatureBuilder(module.ops[0])  # pyrefly: ignore[bad-argument-type]
 
     while signature_builder.output_names:
       signature_builder.erase_output(0)
 
-    for op in reversed(module.ops[0].ops):
+    for op in reversed(module.ops[0].ops):  # pyrefly: ignore[missing-attribute]
       if op.name == "func.return":
         continue
       op.detach()
@@ -202,10 +202,10 @@ class SignatureBuilderTest(testing.ModelUtilsTestCase):
     while signature_builder.input_names:
       signature_builder.erase_input(0)
 
-    self.assertEmpty(module.ops[0].body.block.args)
+    self.assertEmpty(module.ops[0].body.block.args)  # pyrefly: ignore[missing-attribute]
     self.assertEmpty(signature_builder.inputs)
     self.assertEmpty(signature_builder.input_names)
-    self.assertEmpty(module.ops[0].return_op.operands)
+    self.assertEmpty(module.ops[0].return_op.operands)  # pyrefly: ignore[missing-attribute]
     self.assertEmpty(signature_builder.outputs)
     self.assertEmpty(signature_builder.output_names)
     self.assert_write_flatbuffer_ok(module)

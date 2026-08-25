@@ -25,11 +25,14 @@ limitations under the License.
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
+#ifndef GEMMA3_XNNPACK_ONLY
+#include "absl/log/absl_check.h"  // from @com_google_absl
+#endif
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
+#include "tensor/examples/gemma3/gemma3_config.h"
 #ifndef GEMMA3_XNNPACK_ONLY
 #include "tensor/backends/ml_drift/arithmetic_ml_drift.h"  // IWYU pragma: keep
 #endif
@@ -105,67 +108,7 @@ Tensor<Mixins...> GetWeight(
       {.name = std::move(name), .type = type, .shape = shape});
 }
 
-// RMS Normalization with Gemma's zero-centered weights.
-template <class... Mixins>
-Tensor<Mixins...> Gemma3RmsNorm(
-    const Tensor<Mixins...>& input, const Tensor<Mixins...>& scale,
-    float eps = 1e-6f,
-    absl::flat_hash_map<std::string, Tensor<Mixins...>>* intermediate_tensors =
-        nullptr,
-    absl::string_view debug_prefix = "") {
-  // Compute: sqrt(mean(x^2) + eps).
-  Tensor x_squared = Mul(input, input);
-  if (intermediate_tensors && !debug_prefix.empty()) {
-    (*intermediate_tensors)[absl::StrCat(debug_prefix, "_x_squared")] =
-        x_squared;
-  }
 
-  // Mean over last dimension (emb_dim).
-  const auto& input_shape = input.GetShape();
-  int last_axis = static_cast<int>(input_shape.size()) - 1;
-  Tensor mean_squared = Mean(x_squared, {last_axis}, /*keep_dims=*/true);
-  if (intermediate_tensors && !debug_prefix.empty()) {
-    (*intermediate_tensors)[absl::StrCat(debug_prefix, "_mean_squared")] =
-        mean_squared;
-  }
-
-  // Add epsilon and compute rsqrt.
-  Tensor eps_tensor =
-      Tensor<Mixins...>({.type = Type::kFP32,
-                         .shape = {1},
-                         .buffer = OwningCpuBuffer::Copy<Type::kFP32>({eps})});
-  Tensor variance_plus_eps = Add(mean_squared, eps_tensor);
-  if (intermediate_tensors && !debug_prefix.empty()) {
-    (*intermediate_tensors)[absl::StrCat(debug_prefix, "_var_plus_eps")] =
-        variance_plus_eps;
-  }
-  Tensor inv_rms = Rsqrt(variance_plus_eps);
-  if (intermediate_tensors && !debug_prefix.empty()) {
-    (*intermediate_tensors)[absl::StrCat(debug_prefix, "_inv_rms")] = inv_rms;
-  }
-
-  // Normalize
-  Tensor x_norm = Mul(input, inv_rms);
-  if (intermediate_tensors && !debug_prefix.empty()) {
-    (*intermediate_tensors)[absl::StrCat(debug_prefix, "_x_norm")] = x_norm;
-  }
-
-  return Mul(x_norm, scale);
-}
-
-template <>
-Tensor<MlDriftMixinTag> Gemma3RmsNorm<MlDriftMixinTag>(
-    const Tensor<MlDriftMixinTag>& input, const Tensor<MlDriftMixinTag>& scale,
-    float eps,
-    absl::flat_hash_map<std::string, Tensor<MlDriftMixinTag>>*
-        intermediate_tensors,
-    absl::string_view debug_prefix) {
-  Tensor<MlDriftMixinTag> eps_tensor = Tensor<MlDriftMixinTag>(
-      {.type = Type::kFP32,
-       .shape = {1},
-       .buffer = OwningCpuBuffer::Copy<Type::kFP32>({eps})});
-  return RmsNorm(input, scale, eps_tensor);
-}
 
 // GELU activation with tanh approximation.
 template <class... Mixins>
@@ -241,6 +184,7 @@ Tensor<Mixins...> Gemma3RotaryEmbedding(const Tensor<Mixins...>& x,
   return ApplyRotaryEmbedding(x, cos, sin);
 }
 
+#ifndef GEMMA3_XNNPACK_ONLY
 template <>
 Tensor<MlDriftMixinTag> Gemma3RotaryEmbedding<MlDriftMixinTag>(
     const Tensor<MlDriftMixinTag>& x,
@@ -249,6 +193,7 @@ Tensor<MlDriftMixinTag> Gemma3RotaryEmbedding<MlDriftMixinTag>(
     float rope_base) {
   return RotaryEmbedding(x, position_ids, 1.0f, rope_base, 0.0f);
 }
+#endif
 
 // Self-attention layer output structure.
 template <class... Mixins>
@@ -330,8 +275,12 @@ SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
   v.SetName(absl::StrCat(name, ".v_cache_src"));
 
   // Apply QK normalization (Gemma3 specific).
-  q = Gemma3RmsNorm(q, q_norm, config.rms_norm_eps);
-  k = Gemma3RmsNorm(k, k_norm, config.rms_norm_eps);
+  Tensor eps_tensor = Tensor<Mixins...>(
+      {.type = Type::kFP32,
+       .shape = {1},
+       .buffer = config.rms_norm_eps});
+  q = RmsNorm(q, q_norm, eps_tensor);
+  k = RmsNorm(k, k_norm, eps_tensor);
 
   // Apply rotary positional embedding.
   q = Gemma3RotaryEmbedding(q, position_ids, cos, sin, rope_base);
@@ -496,6 +445,10 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings(
       {.type = Type::kFP32,
        .shape = {1},
        .buffer = OwningCpuBuffer::Copy<Type::kFP32>({emb_scale})});
+  Tensor eps_tensor = Tensor<Mixins...>(
+      {.type = Type::kFP32,
+       .shape = {1},
+       .buffer = OwningCpuBuffer::Copy<Type::kFP32>({config.rms_norm_eps})});
   Tensor scaled_embedded = Mul(embedded_input, emb_scale_tensor);
 
   // Get layer types.
@@ -562,10 +515,7 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings(
     Tensor input_norm_scale = GetWeight(
         weights, absl::StrCat(layer_prefix, ".input_layernorm.weight"),
         Type::kFP32, {config.emb_dim});
-    Tensor normed_input =
-        Gemma3RmsNorm(hidden_states, input_norm_scale, config.rms_norm_eps,
-                      (layer_idx == 4) ? &intermediate_tensors : nullptr,
-                      (layer_idx == 4) ? "layer_4_input_norm" : "");
+    Tensor normed_input = RmsNorm(hidden_states, input_norm_scale, eps_tensor);
     normed_input.SetName(absl::StrCat(layer_prefix, ".input_layernorm.output"));
     if (layer_idx == 0 || layer_idx == 4) {
       intermediate_tensors[absl::StrCat("layer_", layer_idx, "_normed_input")] =
@@ -611,8 +561,8 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings(
     Tensor post_attn_norm_scale = GetWeight(
         weights, absl::StrCat(layer_prefix, ".post_attention_layernorm.weight"),
         Type::kFP32, {config.emb_dim});
-    Tensor normed_attn_output = Gemma3RmsNorm(
-        attn_output.output, post_attn_norm_scale, config.rms_norm_eps);
+    Tensor normed_attn_output =
+        RmsNorm(attn_output.output, post_attn_norm_scale, eps_tensor);
     normed_attn_output.SetName(
         absl::StrCat(layer_prefix, ".post_attention_layernorm.output"));
 
@@ -631,7 +581,7 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings(
         absl::StrCat(layer_prefix, ".pre_feedforward_layernorm.weight"),
         Type::kFP32, {config.emb_dim});
     Tensor normed_for_ffn =
-        Gemma3RmsNorm(hidden_states, pre_ffn_norm_scale, config.rms_norm_eps);
+        RmsNorm(hidden_states, pre_ffn_norm_scale, eps_tensor);
     normed_for_ffn.SetName(
         absl::StrCat(layer_prefix, ".pre_feedforward_layernorm.output"));
 
@@ -645,7 +595,7 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings(
         absl::StrCat(layer_prefix, ".post_feedforward_layernorm.weight"),
         Type::kFP32, {config.emb_dim});
     Tensor normed_ffn_output =
-        Gemma3RmsNorm(ffn_output, post_ffn_norm_scale, config.rms_norm_eps);
+        RmsNorm(ffn_output, post_ffn_norm_scale, eps_tensor);
     normed_ffn_output.SetName(
         absl::StrCat(layer_prefix, ".post_feedforward_layernorm.output"));
 
@@ -660,8 +610,7 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings(
   // Final RMS normalization.
   Tensor final_norm_scale =
       GetWeight(weights, "model.norm.weight", Type::kFP32, {config.emb_dim});
-  Tensor final_output =
-      Gemma3RmsNorm(hidden_states, final_norm_scale, config.rms_norm_eps);
+  Tensor final_output = RmsNorm(hidden_states, final_norm_scale, eps_tensor);
   final_output.SetName("model.norm.output");
 
   // Output head - need embedding table for tied weights.
@@ -755,6 +704,10 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings_Decode(
        .shape = {1},
        .buffer = OwningCpuBuffer::Copy<Type::kFP32>({emb_scale})});
   Tensor hidden_states = Mul(embedded_input, emb_scale_tensor);
+  Tensor eps_tensor = Tensor<Mixins...>(
+      {.type = Type::kFP32,
+       .shape = {1},
+       .buffer = OwningCpuBuffer::Copy<Type::kFP32>({config.rms_norm_eps})});
 
   absl::flat_hash_map<std::string, Tensor<Mixins...>> intermediate_tensors;
 
@@ -857,8 +810,7 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings_Decode(
     Tensor input_norm_scale = GetWeight(
         weights, absl::StrCat(layer_prefix, ".input_layernorm.weight"),
         Type::kFP32, {config.emb_dim});
-    Tensor normed_input =
-        Gemma3RmsNorm(hidden_states, input_norm_scale, config.rms_norm_eps);
+    Tensor normed_input = RmsNorm(hidden_states, input_norm_scale, eps_tensor);
 
     SelfAttentionOutput attn_output = MakeSelfAttentionLayer(
         normed_input, absl::StrCat(layer_prefix, ".self_attn"), config,
@@ -876,8 +828,8 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings_Decode(
     Tensor post_attn_norm_scale = GetWeight(
         weights, absl::StrCat(layer_prefix, ".post_attention_layernorm.weight"),
         Type::kFP32, {config.emb_dim});
-    Tensor normed_attn_output = Gemma3RmsNorm(
-        attn_output.output, post_attn_norm_scale, config.rms_norm_eps);
+    Tensor normed_attn_output =
+        RmsNorm(attn_output.output, post_attn_norm_scale, eps_tensor);
 
     hidden_states = Add(hidden_states, normed_attn_output);
 
@@ -886,7 +838,7 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings_Decode(
         absl::StrCat(layer_prefix, ".pre_feedforward_layernorm.weight"),
         Type::kFP32, {config.emb_dim});
     Tensor normed_for_ffn =
-        Gemma3RmsNorm(hidden_states, pre_ffn_norm_scale, config.rms_norm_eps);
+        RmsNorm(hidden_states, pre_ffn_norm_scale, eps_tensor);
 
     Tensor ffn_output = MakeFeedForwardLayer(
         normed_for_ffn, absl::StrCat(layer_prefix, ".mlp"), config, weights);
@@ -896,7 +848,7 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings_Decode(
         absl::StrCat(layer_prefix, ".post_feedforward_layernorm.weight"),
         Type::kFP32, {config.emb_dim});
     Tensor normed_ffn_output =
-        Gemma3RmsNorm(ffn_output, post_ffn_norm_scale, config.rms_norm_eps);
+        RmsNorm(ffn_output, post_ffn_norm_scale, eps_tensor);
 
     hidden_states = Add(hidden_states, normed_ffn_output);
     hidden_states.SetName(
@@ -907,8 +859,7 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings_Decode(
 
   Tensor final_norm_scale =
       GetWeight(weights, "model.norm.weight", Type::kFP32, {config.emb_dim});
-  Tensor final_output =
-      Gemma3RmsNorm(hidden_states, final_norm_scale, config.rms_norm_eps);
+  Tensor final_output = RmsNorm(hidden_states, final_norm_scale, eps_tensor);
 
   Tensor embedding_table =
       GetWeight(weights, "model.embed_tokens.weight", Type::kFP32,

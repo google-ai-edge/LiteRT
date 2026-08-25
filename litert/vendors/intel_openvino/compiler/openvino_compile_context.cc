@@ -163,10 +163,24 @@ LiteRtStatus OpenVinoCompileContext::ConfigureForSoc(const char* soc_model) {
   return kLiteRtStatusOk;
 }
 
+void OpenVinoCompileContext::ConfigureForNpuWeightSharing() {
+  if (device_ != "NPU") return;
+  // NPUW private properties, set by literal key because
+  // npuw_private_properties.hpp is not shipped in the runtime SDK.
+  configs_map_["NPU_USE_NPUW"] = "YES";
+  configs_map_["NPUW_DEVICES"] = "NPU";
+  configs_map_["NPUW_WEIGHTS_BANK"] = "shared";
+  configs_map_["NPUW_CWAI"] = "YES";
+  configs_map_["NPUW_FUNCALL_FOR_ALL"] = "YES";
+  LITERT_LOG(LITERT_INFO,
+             "NPU weight sharing: enabled NPUW/CWAI weightless compile knobs");
+}
+
 void OpenVinoCompileContext::OptimizeModel(
     const std::shared_ptr<ov::Model>& model) const {
   if (device_ == "NPU") {
     NpuOptimizer()
+        .SetConstantFold(true)
         .SetEliminateMatMulFakeQuantize(eliminate_fq_after_matmul_)
         .SetFuseSplitAttentionToSDPA(fuse_split_attention_to_sdpa_)
         .SetSdpaPadKvToAlignment(sdpa_pad_kv_to_alignment_)

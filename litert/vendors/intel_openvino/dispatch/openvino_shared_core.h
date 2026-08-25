@@ -65,7 +65,7 @@ class OpenVINOSharedCore {
 
  private:
   OpenVINOSharedCore();
-  ~OpenVINOSharedCore();
+  ~OpenVINOSharedCore() = default;
 
   std::shared_ptr<ov::Core> core_;
   // Guards device_ and remote_context_.

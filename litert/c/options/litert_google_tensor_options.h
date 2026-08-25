@@ -139,6 +139,73 @@ LiteRtStatus LrtGoogleTensorOptionsSetExtraOptionsPath(
 LiteRtStatus LrtGoogleTensorOptionsGetExtraOptionsPath(
     LrtGoogleTensorOptions options, const char** extra_options_path);
 
+// input_coherency --------------------------------------------------
+
+// Sets whether the specified input tensor should use coherent memory.
+// The `signature_name` and `tensor_name` strings are copied and stored in the
+// `options` object.
+LiteRtStatus LrtGoogleTensorOptionsSetInputCoherency(
+    LrtGoogleTensorOptions options, const char* signature_name,
+    const char* tensor_name, bool prefer_coherent);
+
+// Gets whether the specified input tensor should use coherent memory.
+LiteRtStatus LrtGoogleTensorOptionsGetInputCoherency(
+    LrtGoogleTensorOptions options, const char* signature_name,
+    const char* tensor_name, bool* prefer_coherent);
+
+// Gets the number of input coherency entries configured.
+LiteRtStatus LrtGoogleTensorOptionsGetNumInputCoherencyEntries(
+    LrtGoogleTensorOptions options, int* num_entries);
+
+// Gets the input coherency entry at the specified index.
+// The `signature_name` and `tensor_name` strings are owned by the `options`
+// object.
+LiteRtStatus LrtGoogleTensorOptionsGetInputCoherencyEntry(
+    LrtGoogleTensorOptions options, int entry_idx, const char** signature_name,
+    const char** tensor_name, bool* prefer_coherent);
+
+// output_coherency --------------------------------------------------
+
+// Sets whether the specified output tensor should use coherent memory.
+// The `signature_name` and `tensor_name` strings are copied and stored in the
+// `options` object.
+LiteRtStatus LrtGoogleTensorOptionsSetOutputCoherency(
+    LrtGoogleTensorOptions options, const char* signature_name,
+    const char* tensor_name, bool prefer_coherent);
+
+// Gets whether the specified output tensor should use coherent memory.
+LiteRtStatus LrtGoogleTensorOptionsGetOutputCoherency(
+    LrtGoogleTensorOptions options, const char* signature_name,
+    const char* tensor_name, bool* prefer_coherent);
+
+// Gets the number of output coherency entries configured.
+LiteRtStatus LrtGoogleTensorOptionsGetNumOutputCoherencyEntries(
+    LrtGoogleTensorOptions options, int* num_entries);
+
+// Gets the output coherency entry at the specified index.
+// The `signature_name` and `tensor_name` strings are owned by the `options`
+// object.
+LiteRtStatus LrtGoogleTensorOptionsGetOutputCoherencyEntry(
+    LrtGoogleTensorOptions options, int entry_idx, const char** signature_name,
+    const char** tensor_name, bool* prefer_coherent);
+
+// extra_options --------------------------------------------------
+
+LiteRtStatus LrtGoogleTensorOptionsSetExtraOptions(
+    LrtGoogleTensorOptions options, const char* extra_options);
+
+LiteRtStatus LrtGoogleTensorOptionsGetExtraOptions(
+    LrtGoogleTensorOptions options, const char** extra_options);
+
+// copybara:uncomment_begin(google-only)
+// // experimental_enable_input_validator ---------------------------------
+// 
+// LiteRtStatus LrtGoogleTensorOptionsSetExperimentalEnableInputValidator(
+//     LrtGoogleTensorOptions options, bool experimental_enable_input_validator);
+// 
+// LiteRtStatus LrtGoogleTensorOptionsGetExperimentalEnableInputValidator(
+//     LrtGoogleTensorOptions options, bool* experimental_enable_input_validator);
+// copybara:uncomment_end
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

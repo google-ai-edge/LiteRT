@@ -38,6 +38,10 @@ extern "C" {
 // error if the passed host memory buffer doesn't satisfy
 // LITERT_HOST_MEMORY_BUFFER_ALIGNMENT alignment.
 //
+// When interfacing with hardware accelerators that require custom alignment,
+// check the buffer requirements dynamically using
+// LiteRtGetTensorBufferRequirementsAlignment().
+//
 // Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
 // calling LiteRtDestroyTensorBuffer() to release the object.
 // NULL deallocator means that the host buffer is not managed by the tensor

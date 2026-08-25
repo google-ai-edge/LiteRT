@@ -15,6 +15,13 @@ It also builds a no-Abseil variant that compiles the same sample against
 target_link_libraries(my_app PRIVATE litert_cc_api_no_absl_with_dynamic_runtime)
 ```
 
+Each executable also depends on a compile-only header smoke target. The smoke
+source includes every public LiteRT C++ API header and verifies that the regular
+target selects the Abseil vocabulary types while the no-Abseil target selects
+the corresponding standard-library types. Consequently, the documented build
+commands fail if a public header leaks a new Abseil requirement into the
+no-Abseil API.
+
 ## Files
 
 `CMakeLists.txt` is the downstream consumer project. It vendors the LiteRT
@@ -62,6 +69,9 @@ That model has two dynamic float inputs, so the sample exercises
 requirement APIs, `TensorBuffer::Write`, `TensorBuffer::Read`, `Run`,
 `RunAsync`, `TensorBuffer::Duplicate`, and the named-map `Run` overloads.
 
+`cc_api_headers_smoke_test.cc` provides compile-only coverage of every public
+C++ API header in both API modes.
+
 The GPU default is:
 
 ```text
@@ -101,6 +111,19 @@ Run the same checked-in model through the no-Abseil C++ API target:
   --use_named_maps \
   --sample_size=6
 ```
+
+Run both CPU examples through CTest after building them:
+
+```bash
+ctest --test-dir /tmp/litert_source_build_cc_api_example \
+  --label-regex '^cc_api$' \
+  --output-on-failure
+```
+
+The `CMake source-built C++ API` GitHub Actions workflow configures this same
+CPU build, compiles both targets and their header smoke tests, audits the
+no-Abseil compile and link commands, and runs both CTest cases. Its check name
+is `CMake C++ API example`.
 
 Validate only environment creation and accelerator registration:
 
@@ -214,12 +237,13 @@ cmake -S litert/vendors/examples/cmake_example/source_build_cc_api \
   -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 ```
 
-Build the executable. This also builds the source `libLiteRt.so` runtime and
+Build both API variants. This also builds the source `libLiteRt.so` runtime and
 copies `libLiteRtClGlAccelerator.so` next to it:
 
 ```bash
 cmake --build "${ANDROID_BUILD_DIR}" \
   --target litert_source_build_cc_api_run_model \
+  --target litert_source_build_cc_api_no_absl_run_model \
   --parallel 8
 ```
 
@@ -301,7 +325,6 @@ target_compile_features(litert_cc_api_headers INTERFACE cxx_std_20)
 
 target_link_libraries(litert_cc_api_headers
     INTERFACE
-        absl::algorithm_container
         absl::any_invocable
         absl::cleanup
         absl::flat_hash_map
@@ -328,6 +351,8 @@ target_compile_definitions(litert_cc_api_no_absl_headers
     INTERFACE
         LITERT_NO_ABSL
 )
+
+target_compile_features(litert_cc_api_no_absl_headers INTERFACE cxx_std_20)
 
 add_library(litert_cc_api_no_absl_with_dynamic_runtime INTERFACE)
 

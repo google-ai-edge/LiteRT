@@ -293,7 +293,7 @@ class RecordingTfLiteAllocator {
   static void DeallocateCallback(void* data, void* ptr, size_t bytes,
                                  size_t alignment) {
     static_cast<RecordingTfLiteAllocator*>(data)->Deallocate(ptr, bytes,
-                                                              alignment);
+                                                             alignment);
   }
 
   void* Allocate(size_t bytes, size_t alignment) {
@@ -311,9 +311,9 @@ class RecordingTfLiteAllocator {
 
   void* Reallocate(void* ptr, size_t old_bytes, size_t new_bytes,
                    size_t alignment) {
-    callback_arguments_match_ &=
-        ptr == pointer_ && old_bytes == allocation_bytes_ &&
-        alignment == alignment_;
+    callback_arguments_match_ &= ptr == pointer_ &&
+                                 old_bytes == allocation_bytes_ &&
+                                 alignment == alignment_;
     void* new_pointer = std::realloc(ptr, new_bytes);
     if (new_pointer != nullptr) {
       pointer_ = new_pointer;
@@ -325,7 +325,8 @@ class RecordingTfLiteAllocator {
   }
 
   void Deallocate(void* ptr, size_t bytes, size_t alignment) {
-    callback_arguments_match_ &= ptr == pointer_ && bytes == allocation_bytes_ &&
+    callback_arguments_match_ &= ptr == pointer_ &&
+                                 bytes == allocation_bytes_ &&
                                  alignment == alignment_;
     std::free(ptr);
     pointer_ = nullptr;

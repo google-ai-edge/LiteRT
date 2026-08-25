@@ -33,6 +33,7 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_profiler_types.h"
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -87,6 +88,13 @@ namespace {
 litert::SharedLibrary* DispatchSharedLibrary = nullptr;
 bool IsTheApiInitialized = false;
 LiteRtDispatchApi TheApi = {
+    /*.abi_header=*/
+    {
+        /*.struct_size=*/sizeof(LiteRtDispatchApi),
+        /*.major_version=*/1,
+        /*.minor_version=*/0,
+        /*.reserved=*/0,
+    },
     /*.version=*/{/*.major=*/0, /*.minor=*/0, /*.patch=*/0},
     /*.interface=*/nullptr,
     /*.async_interface=*/nullptr,
@@ -464,6 +472,31 @@ LiteRtStatus LiteRtDispatchCheckRuntimeCompatibility(
     LiteRtApiVersion api_version, LiteRtEnvironmentOptions env,
     LiteRtOptions options) {
   INVOKE_FUNC(check_runtime_compatibility, api_version, env, options);
+}
+
+LiteRtStatus LiteRtDispatchGetHooks(LiteRtDispatchDeviceContext device_context,
+                                    LiteRtHook* hook, void** user_data) {
+  if (!device_context) {
+    LITERT_LOG(LITERT_ERROR, "Null input");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!hook) {
+    LITERT_LOG(LITERT_ERROR, "Null input");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!TheApi.interface) {
+    LITERT_LOG(LITERT_ERROR, "Dispatch API interface not found");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  if (!TheApi.interface->get_hooks) {
+    *hook = nullptr;
+    if (user_data) {
+      *user_data = nullptr;
+    }
+    return kLiteRtStatusOk;
+  }
+  LITERT_PERFETTO_TRACE_EVENT("Dispatch API get_hooks");
+  return TheApi.interface->get_hooks(device_context, hook, user_data);
 }
 
 LiteRtStatus LiteRtDispatchStartMetricsCollection(

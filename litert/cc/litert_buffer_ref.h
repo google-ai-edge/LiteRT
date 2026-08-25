@@ -122,7 +122,7 @@ class BufferRef {
       : end_offset_(end_offset),
         start_offset_(start_offset),
         data_(const_cast<ByteT*>(reinterpret_cast<const ByteT*>(data))) {}
-  explicit BufferRef(Span<const ByteT> data)
+  explicit BufferRef(::litert::Span<const ByteT> data)
       : end_offset_(data.size()),
         start_offset_(0),
         data_(const_cast<ByteT*>(data.data())) {}
@@ -152,7 +152,7 @@ class BufferRef {
   StringView StrView() const { return StringView(StrData(), Size()); }
 
   /// @brief Returns a const span of the actual data.
-  Span<const ByteT> Span() const {
+  ::litert::Span<const ByteT> Span() const {
     return internal::MakeLiteRtConstSpan(Data(), Size());
   }
 
@@ -211,8 +211,9 @@ class MutableBufferRef : public BufferRef<ByteT> {
       : BufferRef<ByteT>(data, size, offset) {}
   MutableBufferRef(void* data, size_t size, size_t offset = 0)
       : BufferRef<ByteT>(data, size, offset) {}
-  explicit MutableBufferRef(Span<ByteT> data) : BufferRef<ByteT>(data) {}
-  explicit MutableBufferRef(Span<const ByteT> data) = delete;
+  explicit MutableBufferRef(::litert::Span<ByteT> data)
+      : BufferRef<ByteT>(data) {}
+  explicit MutableBufferRef(::litert::Span<const ByteT> data) = delete;
   MutableBufferRef(const ByteT*, size_t, size_t) = delete;
   MutableBufferRef(const void*, size_t, size_t) = delete;
 
@@ -230,7 +231,9 @@ class MutableBufferRef : public BufferRef<ByteT> {
   }
 
   /// @brief Returns a mutable span of the actual data.
-  Span<ByteT> Span() { return internal::MakeLiteRtSpan(Data(), this->Size()); }
+  ::litert::Span<ByteT> Span() {
+    return internal::MakeLiteRtSpan(Data(), this->Size());
+  }
 
   /// @brief Writes a string into the buffer at a specified offset.
   /// @param str The string to write.

@@ -231,10 +231,8 @@ void RuntimeBatchedMatMulConvert(
         if (right_tensor_obj->quant_params.has_value()) {
           ir_model.ResetQuantParams(right_value);
         }
-        ::ml_drift::TensorDescriptor new_desc = right_tensor_obj->desc;
-        new_desc.SetDataType(::ml_drift::DataType::UINT8);
-        ::ml_drift::ir::IrTensor* new_tensor = ir_model.add_tensor(new_desc);
-        right_value = new_tensor->id;
+        ir_model.GetMutableTensor(right_value)
+            ->desc.SetDataType(::ml_drift::DataType::UINT8);
 
         scale = flexbuffer_map["scale"].AsFloat();
         channel_count = rhs_tensor->dims->data[2];

@@ -30,10 +30,10 @@ extern "C" LiteRtStatus LiteRtRegisterNpuAccelerator(
 #include <memory>
 
 #include "litert/c/internal/litert_accelerator_registration.h"
-#include "litert/c/internal/litert_delegate_wrapper.h"
 #include "litert/c/internal/litert_dispatch_delegate.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
+#include "litert/c/litert_profiler_types.h"
 #include "litert/cc/internal/litert_dispatch_delegate.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -67,7 +67,7 @@ class NpuAccelerator final
 
   static LiteRtStatus CreateDelegate(LiteRtRuntimeContext* runtime_context,
                                      LiteRtEnvironment env,
-                                     LiteRtAccelerator accelerator,
+                                     LiteRtAcceleratorConst accelerator,
                                      LiteRtOptions options,
                                      LiteRtDelegateWrapper* delegate_wrapper) {
     LITERT_RETURN_IF_ERROR(delegate_wrapper != nullptr,
@@ -123,6 +123,22 @@ class NpuAccelerator final
     LITERT_LOG(LITERT_INFO, "Dispatch delegate stopped metrics collection.");
     return LiteRtDispatchDelegateStopMetricsCollection(delegate, metrics);
   }
+
+  // Retrieves the native vendor hooks from the accelerator.
+  static LiteRtStatus GetHooks(LiteRtRuntimeContext* runtime_context,
+                               LiteRtDelegateWrapper delegate_wrapper,
+                               LiteRtHook* hook, void** user_data) {
+    LITERT_RETURN_IF_ERROR(delegate_wrapper != nullptr,
+                           ErrorStatusBuilder::InvalidArgument())
+        << "Delegate pointer is null.";
+    LITERT_RETURN_IF_ERROR(hook != nullptr,
+                           ErrorStatusBuilder::InvalidArgument())
+        << "Hook pointer is null.";
+    TfLiteOpaqueDelegate* delegate;
+    runtime_context->unwrap_delegate(delegate_wrapper, &delegate);
+    LITERT_LOG(LITERT_INFO, "Dispatch delegate getting hooks.");
+    return LiteRtDispatchDelegateGetHooks(delegate, hook, user_data);
+  }
 };
 
 }  // namespace litert
@@ -155,6 +171,8 @@ LiteRtStatus LiteRtRegisterNpuAccelerator(LiteRtEnvironment environment) {
       accelerator.get(), litert::NpuAccelerator::StartMetricsCollection));
   LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorStopMetricsCollection(
       accelerator.get(), litert::NpuAccelerator::StopMetricsCollection));
+  LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorGetHooks(
+      accelerator.get(), litert::NpuAccelerator::GetHooks));
 
   LITERT_ASSIGN_OR_RETURN(auto accelerator_impl,
                           litert::NpuAccelerator::Create());

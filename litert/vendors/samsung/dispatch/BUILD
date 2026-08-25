@@ -51,7 +51,7 @@ litert_dynamic_lib(
         "//conditions:default": [],
     }) + [
         "-Wl,-soname=libLiteRtDispatch_Samsung.so",
-        "-Wl,-lc++abi",
+        "-Wl,-lc++abi",  # copybara:comment
     ],
     shared_lib_name = "dispatch_api_so",
     so_name = "libLiteRtDispatch_Samsung.so",

@@ -339,6 +339,33 @@ litert_lib(
     ],
 )
 
+litert_test(
+    name = "qnn_compose_graph_test",
+    srcs = ["qnn_compose_graph_test.cc"],
+    linkstatic = True,
+    no_main = True,
+    tags = [
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    ungrte = True,
+    deps = [
+        ":qnn_compose_graph",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
 litert_lib(
     name = "graph_mapper",
     srcs = ["graph_mapper.cc"],

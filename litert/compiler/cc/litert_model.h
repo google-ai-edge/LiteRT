@@ -59,6 +59,16 @@ class Weights {
     return absl::MakeSpan(static_cast<const uint8_t*>(addr), size);
   }
 
+  absl::string_view StrView() const {
+    auto bytes = Bytes();
+    return absl::string_view(reinterpret_cast<const char*>(bytes.data()),
+                             bytes.size());
+  }
+
+  LiteRtWeights Get() const { return weights_; }
+  const LiteRtCompilerContext* ctx() const { return ctx_; }
+  const LiteRtCompilerContext* Context() const { return ctx_; }
+
  private:
   const LiteRtCompilerContext* ctx_;
   LiteRtWeights weights_;
@@ -66,10 +76,13 @@ class Weights {
 
 class Tensor {
  public:
+  Tensor() : ctx_(nullptr), tensor_(nullptr) {}
   Tensor(const LiteRtCompilerContext* ctx, LiteRtTensor tensor)
       : ctx_(ctx), tensor_(tensor) {}
 
   LiteRtTensor Get() const { return tensor_; }
+  const LiteRtCompilerContext* ctx() const { return ctx_; }
+  const LiteRtCompilerContext* Context() const { return ctx_; }
 
   absl::string_view Name() const {
     const char* name = "";
@@ -98,10 +111,14 @@ class Tensor {
 
   litert::ElementType ElementType() const {
     auto ranked_type = RankedTensorType();
-    if (!ranked_type.HasValue()) {
-      return litert::ElementType::None;
+    if (ranked_type.HasValue()) {
+      return ranked_type.Value().ElementType();
     }
-    return ranked_type.Value().ElementType();
+    auto unranked_type = UnrankedTensorType();
+    if (unranked_type.HasValue()) {
+      return static_cast<enum ElementType>(unranked_type.Value().element_type);
+    }
+    return litert::ElementType::None;
   }
 
   Expected<LiteRtUnrankedTensorType> UnrankedTensorType() const {
@@ -206,6 +223,15 @@ class Tensor {
     return per_channel_quantization;
   }
 
+  LiteRtQuantizationBlockWise BlockWiseQuantization() const {
+    LiteRtQuantizationBlockWise block_wise_quantization;
+    if (ctx_ && ctx_->get_block_wise_quantization) {
+      internal::AssertOk(ctx_->get_block_wise_quantization, Get(),
+                         &block_wise_quantization);
+    }
+    return block_wise_quantization;
+  }
+
   struct TensorUse;
   std::vector<TensorUse> Uses() const;
 
@@ -236,11 +262,13 @@ class Tensor {
 
 class Op {
  public:
+  Op() : ctx_(nullptr), op_(nullptr) {}
   Op(const LiteRtCompilerContext* ctx, LiteRtOp op) : ctx_(ctx), op_(op) {}
 
   LiteRtOp Get() const { return op_; }
 
   const LiteRtCompilerContext* ctx() const { return ctx_; }
+  const LiteRtCompilerContext* Context() const { return ctx_; }
 
   LiteRtOpCode Code() const {
     LiteRtOpCode opcode = kLiteRtOpCodeTflCustom;
@@ -248,6 +276,19 @@ class Op {
       internal::AssertOk(ctx_->get_op_code, op_, &opcode);
     }
     return opcode;
+  }
+
+  std::optional<Tensor> Input(size_t index) const {
+    LiteRtParamIndex num_inputs = 0;
+    if (ctx_ && ctx_->get_num_op_inputs) {
+      internal::AssertOk(ctx_->get_num_op_inputs, op_, &num_inputs);
+    }
+    if (index >= num_inputs) return std::nullopt;
+    LiteRtTensor input = nullptr;
+    if (ctx_ && ctx_->get_op_input) {
+      internal::AssertOk(ctx_->get_op_input, op_, index, &input);
+    }
+    return Tensor(ctx_, input);
   }
 
   std::vector<Tensor> Inputs() const {
@@ -265,6 +306,19 @@ class Op {
       inputs.emplace_back(ctx_, input);
     }
     return inputs;
+  }
+
+  std::optional<Tensor> Output(size_t index) const {
+    LiteRtParamIndex num_outputs = 0;
+    if (ctx_ && ctx_->get_num_op_outputs) {
+      internal::AssertOk(ctx_->get_num_op_outputs, op_, &num_outputs);
+    }
+    if (index >= num_outputs) return std::nullopt;
+    LiteRtTensor output = nullptr;
+    if (ctx_ && ctx_->get_op_output) {
+      internal::AssertOk(ctx_->get_op_output, op_, index, &output);
+    }
+    return Tensor(ctx_, output);
   }
 
   std::vector<Tensor> Outputs() const {
@@ -309,6 +363,9 @@ class Op {
 
   bool Is(LiteRtOpCode code) const { return Code() == code; }
 
+  bool operator==(const Op& other) const { return op_ == other.op_; }
+  bool operator!=(const Op& other) const { return op_ != other.op_; }
+
  private:
   const LiteRtCompilerContext* ctx_;
   LiteRtOp op_;
@@ -352,6 +409,8 @@ class Subgraph {
       : ctx_(ctx), subgraph_(subgraph) {}
 
   LiteRtSubgraph Get() const { return subgraph_; }
+  const LiteRtCompilerContext* ctx() const { return ctx_; }
+  const LiteRtCompilerContext* Context() const { return ctx_; }
 
   std::vector<Tensor> Inputs() const {
     LiteRtParamIndex num_inputs = 0;
@@ -440,6 +499,9 @@ class Model {
   const LiteRtCompilerContext* ctx_;
   LiteRtModel model_;
 };
+
+using OpInputs = std::vector<Tensor>;
+using OpOutputs = std::vector<Tensor>;
 
 }  // namespace litert::compiler
 

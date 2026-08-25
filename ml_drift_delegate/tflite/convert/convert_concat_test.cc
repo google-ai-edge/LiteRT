@@ -296,11 +296,12 @@ TEST_P(ConvertConcatTest, ConcatWithDuplicatedInput) {
   EXPECT_EQ(ir_model->inputs().size(), 2);
   EXPECT_EQ(ir_model->outputs().size(), 1);
   EXPECT_EQ(ir_model->ops().size(), 2);
-  // concat op gets created first
-  EXPECT_EQ(ir_model->op(0)->name, "concat");
-  EXPECT_EQ(ir_model->op(1)->name, "copy");
+  // copy op gets created first before concat op for correct topological
+  // execution order.
+  EXPECT_EQ(ir_model->op(0)->name, "copy");
+  EXPECT_EQ(ir_model->op(1)->name, "concat");
   // Only two inputs to model, but we have three inputs to concat op
-  EXPECT_EQ(ir_model->op(0)->inputs.size(), 3);
+  EXPECT_EQ(ir_model->op(1)->inputs.size(), 3);
   // Also note that the 0 tensor will have two consumers
   EXPECT_EQ(ir_model->tensors().at(0)->consumers.size(), 2);
 

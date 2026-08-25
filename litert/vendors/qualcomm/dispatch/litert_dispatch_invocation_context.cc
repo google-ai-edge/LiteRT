@@ -282,6 +282,12 @@ LiteRtDispatchInvocationContextT::Create(
                       "Failed to retrieve graph");
   }
 
+  if (!qnn_backend.ConfigureGraphAfterRetrieve(
+          {graph_handle, function_name, profile_handle}, qnn.GetOptions())) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Failed to configure graph after retrieve");
+  }
+
   return Ptr(new LiteRtDispatchInvocationContextT(
       qnn, qnn_backend, std::move(*context_binary_info), &device_context,
       &context_handle, profile_handle, graph_index, graph_handle));
@@ -564,41 +570,47 @@ Expected<void> LiteRtDispatchInvocationContextT::Profile() {
   }
 
   QnnProfile_EventData_t event_data;
-  for (std::uint32_t i = 0; i < num_events; ++i) {
-    if (auto status =
-            qnn_manager_.Api()->profileGetEventData(events_ptr[i], &event_data);
-        status != QNN_SUCCESS) {
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "Failed to get the event data from profiling result");
-    }
-    data_ss << "    " << event_data.identifier << ": " << event_data.value
-            << " " << GetEventUnit(event_data.unit) << std::endl;
-
-    // Check the sub events only related to graph execution time
-    if (event_data.type ==
-        QNN_HTP_PROFILE_EVENTTYPE_GRAPH_EXECUTE_ACCEL_TIME_CYCLE) {
-      if (auto status = qnn_manager_.Api()->profileGetSubEvents(
-              events_ptr[i], &sub_events_ptr, &num_sub_events);
+  if (events_ptr != nullptr) {
+    for (std::uint32_t i = 0; i < num_events; ++i) {
+      if (auto status = qnn_manager_.Api()->profileGetEventData(
+              events_ptr[i], &event_data);
           status != QNN_SUCCESS) {
-        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                          "Failed to get the event data from profiling result");
+        return Unexpected(
+            kLiteRtStatusErrorRuntimeFailure,
+            "Failed to get the event data from profiling result");
       }
+      data_ss << "    " << event_data.identifier << ": " << event_data.value
+              << " " << GetEventUnit(event_data.unit) << std::endl;
 
-      QnnProfile_EventData_t sub_event_data;
-      for (std::uint32_t j = 0; j < num_sub_events; ++j) {
-        if (auto status = qnn_manager_.Api()->profileGetEventData(
-                sub_events_ptr[j], &sub_event_data);
+      // Check the sub events only related to graph execution time
+      if (event_data.type ==
+          QNN_HTP_PROFILE_EVENTTYPE_GRAPH_EXECUTE_ACCEL_TIME_CYCLE) {
+        if (auto status = qnn_manager_.Api()->profileGetSubEvents(
+                events_ptr[i], &sub_events_ptr, &num_sub_events);
             status != QNN_SUCCESS) {
           return Unexpected(
               kLiteRtStatusErrorRuntimeFailure,
-              "Failed to get the sub event data from profiling result");
+              "Failed to get the event data from profiling result");
         }
-        if (sub_event_data.type == QNN_PROFILE_EVENTTYPE_NODE &&
-            (sub_event_data.unit == QNN_PROFILE_EVENTUNIT_MICROSEC ||
-             sub_event_data.unit == QNN_PROFILE_EVENTUNIT_CYCLES)) {
-          data_ss << "        " << sub_event_data.identifier << ": "
-                  << sub_event_data.value << " "
-                  << GetEventUnit(sub_event_data.unit) << std::endl;
+
+        QnnProfile_EventData_t sub_event_data;
+        if (sub_events_ptr != nullptr) {
+          for (std::uint32_t j = 0; j < num_sub_events; ++j) {
+            if (auto status = qnn_manager_.Api()->profileGetEventData(
+                    sub_events_ptr[j], &sub_event_data);
+                status != QNN_SUCCESS) {
+              return Unexpected(
+                  kLiteRtStatusErrorRuntimeFailure,
+                  "Failed to get the sub event data from profiling result");
+            }
+            if (sub_event_data.type == QNN_PROFILE_EVENTTYPE_NODE &&
+                (sub_event_data.unit == QNN_PROFILE_EVENTUNIT_MICROSEC ||
+                 sub_event_data.unit == QNN_PROFILE_EVENTUNIT_CYCLES)) {
+              data_ss << "        " << sub_event_data.identifier << ": "
+                      << sub_event_data.value << " "
+                      << GetEventUnit(sub_event_data.unit) << std::endl;
+            }
+          }
         }
       }
     }

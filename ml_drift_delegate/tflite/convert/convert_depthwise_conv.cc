@@ -82,6 +82,11 @@ void ConvertDepthwiseConv(
   ::ml_drift::ir::IrOp* dw_conv_op = ir_model.add_op();
   dw_conv_op->name = ToString(::ml_drift::OperationType::DEPTHWISE_CONVOLUTION);
 
+  const auto* params =
+      static_cast<const TfLiteDepthwiseConvParams*>(node.builtin_data);
+  const int depth_multiplier = params ? params->depth_multiplier : 1;
+  const bool can_share_weights = (depth_multiplier == 1);
+
   ::ml_drift::DepthwiseConvolution2DAttributes attr;
   auto& weights = attr.weights.emplace<
       ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>();
@@ -92,11 +97,37 @@ void ConvertDepthwiseConv(
   const TfLiteTensor* weights_tensor = context.tensors + node.inputs->data[1];
   const ::ml_drift::ir::IrTensorId weights_id =
       tensor_map[node.inputs->data[1]];
-  if (tflite::IsConstantTensor(weights_tensor) &&
-      !ir_model.tensor(weights_id)->buffer_source.is_shared) {
+  const bool has_inline_weights =
+      weights_tensor && (weights_tensor->data.raw != nullptr ||
+                         weights_tensor->data.raw_const != nullptr);
+  const bool is_external =
+      ir_model.tensor(weights_id) &&
+      ir_model.tensor(weights_id)->buffer_source.global_id >= 0;
+  const bool is_shared_source =
+      ir_model.tensor(weights_id) &&
+      ir_model.tensor(weights_id)->buffer_source.is_shared;
+  const bool shared_weights = (is_shared_source || is_external) &&
+                              can_share_weights && !has_inline_weights;
+
+  if (shared_weights) {
+    ir_model.GetMutableTensor(weights_id)->buffer_source.dequant_forced =
+        weights_tensor->quantization.type == kTfLiteAffineQuantization;
+    ir_model.AddConsumer(weights_id, dw_conv_op->id);
+    const ::ml_drift::BHWC weights_shape =
+        ir_model.tensor(weights_id)->desc.GetBHWCShape();
+    weights.shape = ::ml_drift::OHWI(weights_shape.b, weights_shape.h,
+                                     weights_shape.w, weights_shape.c);
+  } else if (tflite::IsConstantTensor(weights_tensor)) {
     PopulateTensor(weights_tensor, node.inputs->data[1], &weights,
                    PopulateTensorFlags::kExtraBytes,
                    options.enable_spanned_weights);
+    if (depth_multiplier != 1) {
+      const TfLiteTensor* input_tensor = context.tensors + input_id;
+      const TfLiteTensor* output_tensor =
+          context.tensors + node.outputs->data[0];
+      TransposeWeights(input_tensor, weights_tensor, output_tensor,
+                       depth_multiplier, &attr);
+    }
   } else {
     ir_model.AddConsumer(weights_id, dw_conv_op->id);
     const ::ml_drift::BHWC weights_shape =
@@ -109,13 +140,13 @@ void ConvertDepthwiseConv(
       node.inputs->size > 2 && node.inputs->data[2] != kTfLiteOptionalTensor;
   if (has_bias) {
     const TfLiteTensor* bias_tensor = context.tensors + node.inputs->data[2];
-    PopulateTensor(bias_tensor, node.inputs->data[2], &attr.bias,
-                   PopulateTensorFlags::kNoExtraBytes,
-                   options.enable_spanned_weights);
+    if (tflite::IsConstantTensor(bias_tensor)) {
+      PopulateTensor(bias_tensor, node.inputs->data[2], &attr.bias,
+                     PopulateTensorFlags::kNoExtraBytes,
+                     options.enable_spanned_weights);
+    }
   }
 
-  const auto* params =
-      static_cast<const TfLiteDepthwiseConvParams*>(node.builtin_data);
   attr.strides = ToHW(params->stride_height, params->stride_width);
   attr.dilations = ::ml_drift::HW(std::max(1, params->dilation_height_factor),
                                   std::max(1, params->dilation_width_factor));
@@ -126,13 +157,6 @@ void ConvertDepthwiseConv(
   HandleFusedActivation(params->activation, ir_model, dw_conv_op, tensor_map,
                         node.outputs->data[0]);
 
-  const int depth_multiplier = params->depth_multiplier;
-  if (depth_multiplier != 1 && tflite::IsConstantTensor(weights_tensor)) {
-    const TfLiteTensor* input_tensor = context.tensors + input_id;
-    const TfLiteTensor* output_tensor = context.tensors + node.outputs->data[0];
-    TransposeWeights(input_tensor, weights_tensor, output_tensor,
-                     depth_multiplier, &attr);
-  }
   dw_conv_op->attr = std::move(attr);
 }
 

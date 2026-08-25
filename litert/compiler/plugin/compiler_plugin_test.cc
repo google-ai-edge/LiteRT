@@ -658,6 +658,23 @@ TEST(ApplyTest, Simple) {
   EXPECT_TRUE(model.FindOpAsset(op));
 
   EXPECT_TRUE(model.FindMetadata(kLiteRtBuildStampKey));
+  EXPECT_TRUE(apply_result.compiled_results.empty());
+}
+
+TEST(ApplyTest, RetainsCompiledResultForJitHandle) {
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+  ASSERT_EQ(plugins->size(), 1);
+  auto model_wrap = testing::LoadTestFileModel("mul_simple.tflite");
+  ASSERT_TRUE(model_wrap);
+  auto& model = *model_wrap.Get();
+
+  ApplyPluginsResult apply_result;
+  ASSERT_TRUE(
+      ApplyPlugin(plugins->front(), model, "JustInTime", {}, apply_result));
+
+  EXPECT_EQ(apply_result.compiled_results.size(), 1);
+  EXPECT_FALSE(apply_result.jit_executable_handles.empty());
 }
 
 TEST(ApplyTest, WithPartition) {
@@ -1035,7 +1052,8 @@ TEST(CheckCompilerCompatibilityTest, Simple) {
   ASSERT_FALSE(plugin.CheckCompilerCompatibility("UnsupportedSocModel"));
 }
 
-LiteRtStatus ReplaceAddWithMul(LiteRtBuilder builder, LiteRtOp op) {
+LiteRtStatus ReplaceAddWithMul(const LiteRtCompilerContext* context,
+                               LiteRtBuilder builder, LiteRtOp op) {
   if (op->OpCode() != kLiteRtOpCodeTflAdd) {
     return kLiteRtStatusErrorNotFound;
   }
@@ -1095,7 +1113,8 @@ TEST_F(CompilerPluginFriend, GreedyPatternMatchAndRewriteIterative) {
   // Transformation 2: Mul -> Sub
   LiteRtTransformation transformation2;
   transformation2.name = "ReplaceMulWithSub";
-  transformation2.pattern = [](LiteRtBuilder builder,
+  transformation2.pattern = [](const LiteRtCompilerContext* context,
+                               LiteRtBuilder builder,
                                LiteRtOp op) -> LiteRtStatus {
     if (op->OpCode() != kLiteRtOpCodeTflMul) {
       return kLiteRtStatusErrorNotFound;
@@ -1145,7 +1164,9 @@ TEST_F(CompilerPluginFriend, MaxTransformationIterations) {
   // Chain of transformations:
   // 1. Add -> Mul
   add_transform(
-      "Add_to_Mul", [](LiteRtBuilder builder, LiteRtOp op) -> LiteRtStatus {
+      "Add_to_Mul",
+      [](const LiteRtCompilerContext* context, LiteRtBuilder builder,
+         LiteRtOp op) -> LiteRtStatus {
         if (op->OpCode() != kLiteRtOpCodeTflAdd)
           return kLiteRtStatusErrorNotFound;
         LiteRtBuilderT* b = reinterpret_cast<LiteRtBuilderT*>(builder);
@@ -1157,7 +1178,9 @@ TEST_F(CompilerPluginFriend, MaxTransformationIterations) {
       });
   // 2. Mul -> Sub
   add_transform(
-      "Mul_to_Sub", [](LiteRtBuilder builder, LiteRtOp op) -> LiteRtStatus {
+      "Mul_to_Sub",
+      [](const LiteRtCompilerContext* context, LiteRtBuilder builder,
+         LiteRtOp op) -> LiteRtStatus {
         if (op->OpCode() != kLiteRtOpCodeTflMul)
           return kLiteRtStatusErrorNotFound;
         LiteRtBuilderT* b = reinterpret_cast<LiteRtBuilderT*>(builder);
@@ -1169,7 +1192,9 @@ TEST_F(CompilerPluginFriend, MaxTransformationIterations) {
       });
   // 3. Sub -> Div
   add_transform(
-      "Sub_to_Div", [](LiteRtBuilder builder, LiteRtOp op) -> LiteRtStatus {
+      "Sub_to_Div",
+      [](const LiteRtCompilerContext* context, LiteRtBuilder builder,
+         LiteRtOp op) -> LiteRtStatus {
         if (op->OpCode() != kLiteRtOpCodeTflSub)
           return kLiteRtStatusErrorNotFound;
         LiteRtBuilderT* b = reinterpret_cast<LiteRtBuilderT*>(builder);
@@ -1181,7 +1206,9 @@ TEST_F(CompilerPluginFriend, MaxTransformationIterations) {
       });
   // 4. Div -> Cos
   add_transform(
-      "Div_to_Cos", [](LiteRtBuilder builder, LiteRtOp op) -> LiteRtStatus {
+      "Div_to_Cos",
+      [](const LiteRtCompilerContext* context, LiteRtBuilder builder,
+         LiteRtOp op) -> LiteRtStatus {
         if (op->OpCode() != kLiteRtOpCodeTflDiv)
           return kLiteRtStatusErrorNotFound;
         LiteRtBuilderT* b = reinterpret_cast<LiteRtBuilderT*>(builder);
@@ -1193,7 +1220,9 @@ TEST_F(CompilerPluginFriend, MaxTransformationIterations) {
       });
   // 5. Cos -> Sin
   add_transform(
-      "Cos_to_Sin", [](LiteRtBuilder builder, LiteRtOp op) -> LiteRtStatus {
+      "Cos_to_Sin",
+      [](const LiteRtCompilerContext* context, LiteRtBuilder builder,
+         LiteRtOp op) -> LiteRtStatus {
         if (op->OpCode() != kLiteRtOpCodeTflCos)
           return kLiteRtStatusErrorNotFound;
         LiteRtBuilderT* b = reinterpret_cast<LiteRtBuilderT*>(builder);
@@ -1205,7 +1234,9 @@ TEST_F(CompilerPluginFriend, MaxTransformationIterations) {
       });
   // 6. Sin -> Log (Should not happen if max iterations = 5)
   add_transform(
-      "Sin_to_Log", [](LiteRtBuilder builder, LiteRtOp op) -> LiteRtStatus {
+      "Sin_to_Log",
+      [](const LiteRtCompilerContext* context, LiteRtBuilder builder,
+         LiteRtOp op) -> LiteRtStatus {
         if (op->OpCode() != kLiteRtOpCodeTflSin)
           return kLiteRtStatusErrorNotFound;
         LiteRtBuilderT* b = reinterpret_cast<LiteRtBuilderT*>(builder);

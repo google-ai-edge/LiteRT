@@ -72,6 +72,21 @@ run_model --graph=<model_path>
     run_model --graph=model.tflite --signature_index=1
     ```
 
+-   **`--input_dir`** (string, default: ""): Path to a folder containing `.raw`
+    input files named after model input tensor names (e.g. `<input_name>.raw`).
+
+    ```bash
+    run_model --graph=model.tflite --input_dir=/path/to/inputs
+    ```
+
+-   **`--quantize_inputs`** (bool, default: false): Automatically quantize
+    unquantized (FP32) input data from `--input_dir` when model inputs are
+    quantized (using the model's per-tensor scale and zero point).
+
+    ```bash
+    run_model --graph=model.tflite --input_dir=/path/to/inputs --quantize_inputs=true
+    ```
+
 #### Debug and Analysis Parameters
 
 -   **`--print_tensors`** (bool, default: false): Print tensor values after
@@ -188,8 +203,28 @@ for tensor_name, detail in input_details.items():
     data.tofile(Path(OUTPUT_FOLDER) / f"{tensor_name}.raw")
 ```
 
-Then specify the input folder at `--input_dir`. `bash run_model
---graph=model.tflite --signature_index=1 --input_dir=inputs`
+Then specify the input folder at `--input_dir`:
+
+```bash
+run_model --graph=model.tflite --signature_index=0 --input_dir=inputs
+```
+
+#### Automatic Input Quantization
+
+When running quantized models, you can provide unquantized standard
+floating-point (FP32) inputs in the `.raw` files (e.g. from float images or
+preprocessing) and have `run_model` automatically quantize the inputs according
+to the model's per-tensor quantization parameters:
+
+```bash
+run_model --graph=model.tflite --signature_index=0 --input_dir=inputs --quantize_inputs=true
+```
+
+The tool will read the FP32 floats, apply affine quantization
+($q = \text{round}(x / \text{scale}) + \text{zero\_point}$) with boundary
+clamping, and fill the target quantized tensor buffers (e.g. `INT8`, `UINT8`,
+`INT16`, `UINT16`, `INT32`). Raw quantized inputs can also continue to be
+passed directly.
 
 ### Vendor-Specific Flags
 

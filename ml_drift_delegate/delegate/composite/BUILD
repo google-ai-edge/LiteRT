@@ -14,6 +14,8 @@
 
 load("@ml_drift//ml_drift/common/kernels/tests:mld_kernel_test.bzl", "mld_kernel_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
@@ -134,10 +136,36 @@ cc_library(
 )
 
 cc_library(
+    name = "experts_remap_builder",
+    srcs = ["experts_remap_builder.cc"],
+    hdrs = ["experts_remap_builder.h"],
+    deps = [
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/status:statusor",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common:util",
+        "@ml_drift//ml_drift/common/kernels:conv_apple_mpp",
+        "@ml_drift//ml_drift/common/kernels:conv_generic",
+        "@ml_drift//ml_drift/common/kernels:conv_wave_matrix",
+        "@ml_drift//ml_drift/common/kernels:conv_wave_memory",
+        "@ml_drift//ml_drift/common/kernels:fully_connected",
+        "@ml_drift//ml_drift/common/kernels/google/custom:experts_remap",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+    ],
+)
+
+cc_library(
     name = "moe_experts_kernel",
     srcs = ["moe_experts_kernel.cc"],
     hdrs = ["moe_experts_kernel.h"],
     deps = [
+        ":experts_remap_builder",
         ":moe_experts_parser",
         "//ml_drift_delegate/delegate/composite/ir:moe_experts_parser",
         "@com_google_absl//absl/status",
@@ -181,6 +209,129 @@ cc_library(
 )
 
 cc_library(
+    name = "sdpa_transposed_parser",
+    srcs = ["sdpa_transposed_parser.cc"],
+    hdrs = ["sdpa_transposed_parser.h"],
+    deps = [
+        ":runtime_batched_matmul_parser",
+        "//ml_drift_delegate/tflite:model_builder_helper",
+        "//ml_drift_delegate/tflite:object_reader",
+        "//ml_drift_delegate/tflite:operation_parser",
+        "//tflite/c:common",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/kernels:fully_connected",
+        "@ml_drift//ml_drift/common/task:weights_layout",
+    ],
+)
+
+cc_library(
+    name = "sdpa_transposed_kernel",
+    srcs = ["sdpa_transposed_kernel.cc"],
+    hdrs = ["sdpa_transposed_kernel.h"],
+    deps = [
+        ":sdpa_transposed_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:weights_layout",
+    ],
+)
+
+mld_kernel_test(
+    name = "sdpa_transposed_kernel_test",
+    srcs = ["sdpa_transposed_kernel_test.cc"],
+    platforms = [
+        "opencl",
+        "webgpu",
+    ],
+    deps = [
+        ":sdpa_transposed_kernel",
+        ":sdpa_transposed_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common/kernels:fully_connected",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:testing_util",
+        "@ml_drift//ml_drift/common/task:weights_layout",
+    ],
+)
+
+# The Mac test targets are defined separately from mld_kernel_test to tag the
+# objc_library and cc_test with "manual", "notap", and "nobuilder". This prevents
+# non-Apple presubmits (TAP on Linux) from failing during target analysis due to
+# objc_library not being supported on non-Apple platforms, while still allowing
+# explicit test execution with:
+# bazel test -c opt --config=darwin_arm64 //third_party/odml/litert/ml_drift/delegate/composite:sdpa_transposed_kernel_test_mac
+objc_library(
+    name = "sdpa_transposed_kernel_test_objc_lib",
+    testonly = True,
+    srcs = [
+        "sdpa_transposed_kernel_test.cc",
+        "@ml_drift//ml_drift/common/kernels/tests:kernel_test.h",
+        "@ml_drift//ml_drift/common/kernels/tests:metal_kernel_test.mm",
+    ],
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":sdpa_transposed_kernel",
+        ":sdpa_transposed_parser",
+        "@com_google_googletest//:gtest",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        # Dependency placeholder: apple_frameworks Metal,
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common/kernels:fully_connected",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:testing_util",
+        "@ml_drift//ml_drift/common/task:weights_layout",
+        "@ml_drift//ml_drift/metal/testing:test_util",
+    ],
+)
+
+cc_test(
+    name = "sdpa_transposed_kernel_test_mac",
+    tags = [
+        "mac",
+        "manual",
+        "nobuilder",
+        "notap",
+        "nozapfhahn",
+    ],
+    deps = [
+        ":sdpa_transposed_kernel_test_objc_lib",
+    ],
+)
+
+cc_library(
     name = "custom_parsers",
     srcs = ["custom_parsers.cc"],
     hdrs = [
@@ -192,6 +343,7 @@ cc_library(
         ":moe_experts_parser",
         ":rope_parser",
         ":runtime_batched_matmul_parser",
+        ":sdpa_transposed_parser",
         "//ml_drift_delegate/tflite:model_builder",
         "//ml_drift_delegate/tflite:operation_parser",
         "//ml_drift_delegate/tflite:unimplemented_operation_parser",
@@ -235,6 +387,8 @@ cc_library(
         ":moe_experts_parser",
         ":runtime_batched_matmul_kernel",
         ":runtime_batched_matmul_parser",
+        ":sdpa_transposed_kernel",
+        ":sdpa_transposed_parser",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",

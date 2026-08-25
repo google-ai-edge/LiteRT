@@ -14,11 +14,15 @@
 
 #include "litert/vendors/intel_openvino/compiler/global_graph.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include "absl/log/absl_check.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 
@@ -86,20 +90,49 @@ bool OpenVinoGlobalGraph::HasMagic(const uint8_t* data, size_t size) {
 
 size_t OpenVinoGlobalGraph::BankBytes() const {
   size_t total = 0;
-  for (const auto& [id, bytes] : buffers) total += bytes.size();
+  for (const auto& entry : buffers) total += entry.bytes.size();
   return total;
+}
+
+const OpenVinoGlobalGraph::BufferEntry* OpenVinoGlobalGraph::FindBuffer(
+    uint32_t id) const {
+  for (const auto& entry : buffers) {
+    if (entry.id == id) return &entry;
+  }
+  return nullptr;
 }
 
 std::string OpenVinoGlobalGraph::Serialize() const {
   std::string out;
   out.append(kMagic, sizeof(kMagic));
   PutU16(out, kVersion);
-  // shared buffer pool
+  // Shared buffer pool, stored contiguously so the NPU weightless path can copy
+  // it to a temp file byte-for-byte. First the directory, then the contiguous
+  // pool bytes. |buffers| MUST be in strictly-ascending buffer_id order with
+  // pool_offset == the running byte sum: that is the invariant that makes a
+  // Constant's WeightlessCacheAttribute bin_offset (== pool_offset) resolve to
+  // mmap->data() + bin_offset in the staged temp file.
   PutU32(out, static_cast<uint32_t>(buffers.size()));
-  for (const auto& [id, bytes] : buffers) {
-    PutU32(out, id);
-    PutU64(out, bytes.size());
-    out.append(bytes);
+  uint64_t pool_size = 0;
+  bool have_prev = false;
+  uint32_t prev_id = 0;
+  for (const auto& entry : buffers) {
+    // Enforce the ordering/offset invariant rather than silently misserialize.
+    ABSL_DCHECK(!have_prev || entry.id > prev_id)
+        << "OpenVinoGlobalGraph: buffers must be strictly ascending by id";
+    ABSL_DCHECK_EQ(entry.pool_offset, pool_size)
+        << "OpenVinoGlobalGraph: pool_offset must equal the running byte sum";
+    PutU32(out, entry.id);
+    PutU64(out, pool_size);  // pool_offset (== WLCA bin_offset at dispatch)
+    PutU64(out, entry.bytes.size());
+    pool_size += entry.bytes.size();
+    have_prev = true;
+    prev_id = entry.id;
+  }
+  PutU64(out, pool_size);
+  for (const auto& entry : buffers) {
+    out.append(reinterpret_cast<const char*>(entry.bytes.data()),
+               entry.bytes.size());  // contiguous, ascending buffer_id
   }
   // subgraphs
   PutU32(out, static_cast<uint32_t>(subgraphs.size()));
@@ -114,7 +147,8 @@ std::string OpenVinoGlobalGraph::Serialize() const {
       PutU32(out, buffer_id);
     }
     PutU64(out, subgraph.payload.size());
-    out.append(subgraph.payload);
+    out.append(reinterpret_cast<const char*>(subgraph.payload.data()),
+               subgraph.payload.size());
   }
   return out;
 }
@@ -134,13 +168,51 @@ litert::Expected<OpenVinoGlobalGraph> OpenVinoGlobalGraph::Parse(
                          "OpenVinoGlobalGraph: unsupported container version");
   }
 
+  // Read the pool directory {id, pool_offset, size}, then locate the contiguous
+  // pool that follows. Zero-copy: every buffer's bytes and each subgraph's
+  // payload alias |data| (which must outlive the returned graph). Serves both
+  // dispatch arms -- the GPU bank resolves buffers by id, the NPU path stages
+  // the whole pool span to a temp file.
   const uint32_t num_buffers = reader.U32();
+  std::vector<std::pair<uint32_t, std::pair<uint64_t, uint64_t>>>
+      dir;  // id->{off,sz}
+  dir.reserve(num_buffers);
   for (uint32_t i = 0; i < num_buffers && reader.ok; ++i) {
     const uint32_t id = reader.U32();
+    const uint64_t off = reader.U64();
     const uint64_t sz = reader.U64();
-    std::string bytes;
-    reader.Str(bytes, static_cast<size_t>(sz));
-    if (reader.ok) graph.buffers.emplace(id, std::move(bytes));
+    dir.push_back({id, {off, sz}});
+  }
+  const uint64_t pool_size = reader.U64();
+  if (!reader.ok) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "OpenVinoGlobalGraph: truncated directory");
+  }
+  // The contiguous pool begins right after pool_size. Its offset from the
+  // container start is what the NPU temp-file writer copies from.
+  const size_t pool_data_offset = static_cast<size_t>(reader.p - data);
+  const uint8_t* pool_base = reader.p;
+  if (static_cast<size_t>(reader.end - reader.p) < pool_size) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "OpenVinoGlobalGraph: truncated pool");
+  }
+  graph.pool_data_offset = pool_data_offset;
+  graph.pool = absl::MakeConstSpan(pool_base, static_cast<size_t>(pool_size));
+  reader.p += pool_size;
+  // Every {offset, size} must lie within the pool; this is what guarantees a
+  // WLCA bin_offset resolves inside the staged temp file (bin_offset + size
+  // <= pool_size) and that a GPU buffer view stays in-bounds.
+  graph.buffers.reserve(dir.size());
+  for (const auto& [id, off_sz] : dir) {
+    const uint64_t off = off_sz.first;
+    const uint64_t sz = off_sz.second;
+    if (off > pool_size || sz > pool_size - off) {
+      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                           "OpenVinoGlobalGraph: buffer out of pool bounds");
+    }
+    graph.buffers.push_back(
+        {id, static_cast<size_t>(off),
+         absl::MakeConstSpan(pool_base + off, static_cast<size_t>(sz))});
   }
 
   const uint32_t num_subgraphs = reader.U32();
@@ -160,8 +232,20 @@ litert::Expected<OpenVinoGlobalGraph> OpenVinoGlobalGraph::Parse(
       subgraph.const_map.emplace(const_name, bid);
     }
     const uint64_t payload_len = reader.U64();
-    reader.Str(subgraph.payload, static_cast<size_t>(payload_len));
-    if (reader.ok) graph.subgraphs.emplace(subgraph.name, std::move(subgraph));
+    // Alias the payload bytes in place (zero-copy) instead of copying.
+    const uint8_t* payload_ptr = reader.p;
+    if (!reader.ok ||
+        static_cast<size_t>(reader.end - reader.p) < payload_len) {
+      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                           "OpenVinoGlobalGraph: truncated subgraph payload");
+    }
+    subgraph.payload =
+        absl::MakeConstSpan(payload_ptr, static_cast<size_t>(payload_len));
+    reader.p += payload_len;
+    if (reader.ok) {
+      const std::string name = subgraph.name;
+      graph.subgraphs.emplace(name, std::move(subgraph));
+    }
   }
 
   if (!reader.ok) {

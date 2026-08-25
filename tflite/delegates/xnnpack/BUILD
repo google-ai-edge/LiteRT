@@ -629,6 +629,7 @@ cc_library(
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
+        "@FP16",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
     ],
@@ -1368,8 +1369,15 @@ cc_test(
         ":batch_matrix_multiply_tester",
         ":test_main",
         ":xnnpack_delegate_test_mode",
+        "//tflite:framework_stable",
+        "//tflite:version",
         "//tflite/c:c_api_types",
+        "//tflite/converter/schema:schema_conversion_utils",
+        "//tflite/core:cc_api_stable",
+        "//tflite/core/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
+        "@flatbuffers//:runtime_cc",
     ],
 )
 

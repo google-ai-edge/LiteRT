@@ -18,6 +18,7 @@
 #include <utility>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_profiler_types.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/environment.h"
@@ -61,7 +62,8 @@ LiteRtStatus LiteRtRegisterAccelerator(LiteRtEnvironment environment,
 // Sets the function used to retrieve the accelerator name.
 LiteRtStatus LiteRtSetAcceleratorGetName(
     LiteRtAccelerator accelerator,
-    LiteRtStatus (*GetName)(LiteRtAccelerator accelerator, const char** name)) {
+    LiteRtStatus (*GetName)(LiteRtAcceleratorConst accelerator,
+                            const char** name)) {
   if (!accelerator) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -72,7 +74,7 @@ LiteRtStatus LiteRtSetAcceleratorGetName(
 // Sets the function used to retrieve the accelerator version.
 LiteRtStatus LiteRtSetAcceleratorGetVersion(
     LiteRtAccelerator accelerator,
-    LiteRtStatus (*GetVersion)(LiteRtAccelerator accelerator,
+    LiteRtStatus (*GetVersion)(LiteRtAcceleratorConst accelerator,
                                LiteRtApiVersion* version)) {
   if (!accelerator) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -85,7 +87,7 @@ LiteRtStatus LiteRtSetAcceleratorGetVersion(
 LiteRtStatus LiteRtSetAcceleratorGetHardwareSupport(
     LiteRtAccelerator accelerator,
     LiteRtStatus (*GetHardwareSupport)(
-        LiteRtAccelerator accelerator,
+        LiteRtAcceleratorConst accelerator,
         LiteRtHwAcceleratorSet* supported_hardware)) {
   if (!accelerator) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -98,7 +100,7 @@ LiteRtStatus LiteRtSetDelegateFunction(
     LiteRtAccelerator accelerator,
     LiteRtStatus (*CreateDelegate)(LiteRtRuntimeContext* runtime_context,
                                    LiteRtEnvironment env,
-                                   LiteRtAccelerator accelerator,
+                                   LiteRtAcceleratorConst accelerator,
                                    LiteRtOptions options,
                                    LiteRtDelegateWrapper* delegate)) {
   if (!accelerator) {
@@ -111,7 +113,7 @@ LiteRtStatus LiteRtSetDelegateFunction(
 LiteRtStatus LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation(
     LiteRtAccelerator accelerator,
     LiteRtStatus (*IsTfLiteDelegateResponsibleForJitCompilation)(
-        LiteRtAcceleratorT* accelerator, bool* does_jit_compilation)) {
+        LiteRtAcceleratorConst accelerator, bool* does_jit_compilation)) {
   if (!accelerator) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -141,5 +143,17 @@ LiteRtStatus LiteRtSetAcceleratorStopMetricsCollection(
     return kLiteRtStatusErrorInvalidArgument;
   }
   accelerator->StopMetricsCollection = StopMetricsCollection;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetAcceleratorGetHooks(
+    LiteRtAccelerator accelerator,
+    LiteRtStatus (*GetHooks)(LiteRtRuntimeContext* runtime_context,
+                             LiteRtDelegateWrapper delegate, LiteRtHook* hook,
+                             void** user_data)) {
+  if (!accelerator) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  accelerator->GetHooks = GetHooks;
   return kLiteRtStatusOk;
 }

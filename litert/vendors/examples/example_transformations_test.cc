@@ -15,6 +15,7 @@
 #include "litert/vendors/examples/example_transformations.h"
 
 #include <gtest/gtest.h>
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/core/model/model.h"
@@ -34,7 +35,7 @@ TEST(ExampleTransformationTest, SimpleAddOpToMulOpTransformation) {
   internal::AttachOutput(&mul_op_output_tensor, add_op);
 
   // Call the transformation.
-  SimpleAddOpToMulOpTransformation(&builder, &add_op);
+  SimpleAddOpToMulOpTransformation(LrtGetCompilerContext(), &builder, &add_op);
 
   // Apply the changes.
   builder.ApplyChanges(&subgraph);
@@ -73,7 +74,7 @@ TEST(ExampleTransformationTest, SqrtMeanSquareTransformation) {
   internal::AttachOutput(&sqrt_out, sqrt_op);
 
   // Call the transformation.
-  SqrtMeanSquareTransformation(&builder, &sqrt_op);
+  SqrtMeanSquareTransformation(LrtGetCompilerContext(), &builder, &sqrt_op);
 
   // Apply the changes.
   builder.ApplyChanges(&subgraph);

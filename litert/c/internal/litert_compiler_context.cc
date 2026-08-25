@@ -14,6 +14,7 @@
 
 #include "litert/c/internal/litert_compiler_context.h"
 
+#include "litert/c/litert_builder.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_options.h"
@@ -25,9 +26,11 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
       .abi_header =
           {
               .struct_size = sizeof(LiteRtCompilerContext),
+              // LINT.IfChange(compiler_context_version)
               .major_version = 1,
-              .minor_version = 0,
+              .minor_version = 1,
               .reserved = 0,
+              // LINT.ThenChange(./litert_compiler_context.h:compiler_context_table)
           },
       .get_num_model_subgraphs = LiteRtGetNumModelSubgraphs,
       .get_model_subgraph = LiteRtGetModelSubgraph,
@@ -235,6 +238,14 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
 
       .get_custom_options = LiteRtGetCustomOptions,
       .serialize_model_with_signatures = LiteRtSerializeModelWithSignatures,
+
+      .build_tensor = LiteRtBuilderBuildTensor,
+      .build_weights = LiteRtBuilderBuildWeights,
+      .build_op = LiteRtBuilderBuildOp,
+      .erase_op = LiteRtBuilderEraseOp,
+      .build_add_op_option = LiteRtBuilderBuildAddOpOption,
+      .build_batch_matmul_op_option = LiteRtBuilderBuildBatchMatmulOpOption,
+      .get_block_wise_quantization = LiteRtGetBlockWiseQuantization,
   };
   return &ctx;
 }

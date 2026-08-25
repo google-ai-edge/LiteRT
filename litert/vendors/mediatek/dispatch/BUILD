@@ -44,7 +44,7 @@ litert_dispatch_api(
     export_litert_only = True,
     linkopts = litert_android_linkopts() + [
         "-Wl,-soname=libLiteRtDispatch_MediaTek.so",
-        "-Wl,-lc++abi",
+        "-Wl,-lc++abi",  # copybara:comment
     ],
     shared_lib_name = "dispatch_api_so",
     so_name = "libLiteRtDispatch_MediaTek.so",

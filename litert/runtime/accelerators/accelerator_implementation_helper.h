@@ -104,7 +104,7 @@ class AcceleratorImplementationHelper {
   }
 
   // Returns the accelerator's name by setting `name`.
-  static LiteRtStatus GetName(LiteRtAccelerator accelerator,
+  static LiteRtStatus GetName(LiteRtAcceleratorConst accelerator,
                               const char** name) {
     LITERT_RETURN_IF_ERROR(accelerator != nullptr,
                            ErrorStatusBuilder::InvalidArgument())
@@ -117,7 +117,7 @@ class AcceleratorImplementationHelper {
   }
 
   // Returns the accelerator's version by setting `version`.
-  static LiteRtStatus GetVersion(LiteRtAccelerator accelerator,
+  static LiteRtStatus GetVersion(LiteRtAcceleratorConst accelerator,
                                  LiteRtApiVersion* version) {
     LITERT_RETURN_IF_ERROR(accelerator != nullptr,
                            ErrorStatusBuilder::InvalidArgument())
@@ -130,7 +130,7 @@ class AcceleratorImplementationHelper {
   }
 
   // Returns the accelerator's hardware support by setting `hw_set`.
-  static LiteRtStatus GetHardwareSupport(LiteRtAccelerator accelerator,
+  static LiteRtStatus GetHardwareSupport(LiteRtAcceleratorConst accelerator,
                                          LiteRtHwAcceleratorSet* hw_set) {
     LITERT_RETURN_IF_ERROR(accelerator != nullptr,
                            ErrorStatusBuilder::InvalidArgument())

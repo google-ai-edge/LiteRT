@@ -36,6 +36,7 @@
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift/common/types.h"  // from @ml_drift
+#include "ml_drift_delegate/delegate/composite/experts_remap_builder.h"
 #include "ml_drift_delegate/delegate/composite/ir/moe_experts_parser.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
 
@@ -119,11 +120,17 @@ absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> ExpertFullyConnected(
     MoeExpertsAttributes::WeightType weight_type, const std::string& name) {
   const ::ml_drift::OHWI weights_shape(output_channels, num_experts, 1,
                                        input_channels);
-  ::ml_drift::WeightsDescription weights_desc =
-      weight_type == MoeExpertsAttributes::WeightType::kInt8
-          ? model_builder->GetFullyConnectedInt8WeightsDesc(weights_shape)
-          : model_builder->GetFullyConnectedWeightsDesc(
-                src.tensor_desc.GetDataType(), weights_shape);
+  ::ml_drift::WeightsDescription weights_desc;
+  if (weight_type == MoeExpertsAttributes::WeightType::kInt8) {
+    weights_desc =
+        model_builder->GetFullyConnectedInt8WeightsDesc(weights_shape);
+  } else if (weight_type == MoeExpertsAttributes::WeightType::kInt4) {
+    weights_desc =
+        model_builder->GetFullyConnectedInt4WeightsDesc(weights_shape);
+  } else {
+    weights_desc = model_builder->GetFullyConnectedWeightsDesc(
+        src.tensor_desc.GetDataType(), weights_shape);
+  }
 
   ::ml_drift::GpuModelBuilder::TensorHandle scale_handle;
   ::ml_drift::GpuModelBuilder::TensorHandle* scale_handle_ptr = nullptr;
@@ -192,6 +199,49 @@ absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> ScaleWithBatchIds(
   return dst;
 }
 
+::ml_drift::GpuModelBuilder::Weights BuildExpertWeights(
+    ::ml_drift::GpuModelBuilder* model_builder,
+    const ::ml_drift::GpuModelBuilder::TensorHandle& src,
+    const ::ml_drift::GpuModelBuilder::TensorHandle& weights,
+    const MoeScaleTensor* weight_scale, int input_channels, int output_channels,
+    int num_experts, MoeExpertsAttributes::WeightType weight_type) {
+  const ::ml_drift::OHWI weights_shape(output_channels, num_experts, 1,
+                                       input_channels);
+  ::ml_drift::WeightsDescription weights_desc =
+      weight_type == MoeExpertsAttributes::WeightType::kInt4
+          ? model_builder->GetFullyConnectedInt4WeightsDesc(weights_shape)
+          : weight_type == MoeExpertsAttributes::WeightType::kInt8
+                ? model_builder->GetFullyConnectedInt8WeightsDesc(weights_shape)
+                : model_builder->GetFullyConnectedWeightsDesc(
+                      src.tensor_desc.GetDataType(), weights_shape);
+
+  ::ml_drift::GpuModelBuilder::TensorHandle scale_handle;
+  ::ml_drift::GpuModelBuilder::TensorHandle* scale_handle_ptr = nullptr;
+  if (weight_scale != nullptr) {
+    auto scale_desc = ::ml_drift::ScaleOrZeroPointToTensorDesc(
+        model_builder->gpu_info(), *weight_scale,
+        src.tensor_desc.GetDataType());
+    scale_handle = model_builder->AddConstantTensor(std::move(scale_desc));
+    scale_handle_ptr = &scale_handle;
+  }
+
+  ::ml_drift::GpuModelBuilder::Weights result;
+  result.shape = weights_shape;
+  result.desc = weights_desc;
+  if (scale_handle_ptr != nullptr) {
+    result.scale = *scale_handle_ptr;
+    result.scale_zp_shape =
+        ::ml_drift::OHWI(output_channels, num_experts, 1, 1);
+  }
+  std::vector<::ml_drift::GpuModelBuilder::TensorHandle> converted_weights =
+      model_builder->WeightsConversion(weights, ::ml_drift::Layout::OHWI,
+                                       result.desc, result.shape,
+                                       scale_handle_ptr,
+                                       /*weights_zero_point=*/nullptr);
+  result.weights = converted_weights[0];
+  return result;
+}
+
 absl::Status BuildMoeExpertsGpuGraph(
     ::ml_drift::GpuModelBuilder* model_builder,
     const ::ml_drift::CreateGpuModelInfo& create_info,
@@ -210,38 +260,76 @@ absl::Status BuildMoeExpertsGpuGraph(
   const ::ml_drift::BHWC src_shape = src.tensor_desc.GetBHWCShape();
   const int sequence_size = src_shape.w;
   const int num_dispatches = sequence_size * num_active_experts;
-  auto src_tokens = model_builder->Reshape(
-      src, ::ml_drift::BHWC(1, sequence_size, 1, model_dim));
+  const bool use_packed_groups =
+      sequence_size * num_active_experts > num_experts;
+
+  ::ml_drift::GpuModelBuilder::TensorHandle expert_src;
+  ::ml_drift::GpuModelBuilder::TensorHandle expert_params;
+  ::ml_drift::GpuModelBuilder::TensorHandle experts_packed_remap;
   auto flat_top_indices = model_builder->Reshape(
       top_indices, ::ml_drift::BHWC(1, 1, 1, num_dispatches));
-  ABSL_ASSIGN_OR_RETURN(auto token_indices,
-                        CreateDispatchTokenIndices(model_builder, sequence_size,
-                                                   num_active_experts));
-  auto dispatched_src = model_builder->Gather(src_tokens, token_indices,
-                                              ::ml_drift::Axis::HEIGHT);
+
+  if (use_packed_groups) {
+    auto vals = CreateExpertsRemap(*model_builder, top_indices, num_experts);
+    experts_packed_remap = vals[2];
+    expert_params = vals[1];  // experts count and offsets
+    expert_src = ExpertsRemapTo(*model_builder, src, experts_packed_remap,
+                                num_active_experts);
+  } else {
+    auto src_tokens = model_builder->Reshape(
+        src, ::ml_drift::BHWC(1, sequence_size, 1, model_dim));
+    ABSL_ASSIGN_OR_RETURN(auto token_indices,
+                          CreateDispatchTokenIndices(model_builder, sequence_size,
+                                                     num_active_experts));
+    expert_src = model_builder->Gather(src_tokens, token_indices,
+                                       ::ml_drift::Axis::HEIGHT);
+    expert_params = flat_top_indices;
+  }
+
+  auto run_expert_projection =
+      [&](const ::ml_drift::GpuModelBuilder::TensorHandle& input,
+          const ::ml_drift::GpuModelBuilder::TensorHandle& weights_handle,
+          const MoeScaleTensor* scale_ptr, int in_channels, int out_channels,
+          const std::string& name)
+      -> absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> {
+    if (use_packed_groups) {
+      auto w =
+          BuildExpertWeights(model_builder, input, weights_handle, scale_ptr,
+                             in_channels, out_channels, num_experts, weight_type);
+      return MakeConvWithPackedGroups(*model_builder, input, expert_params, w,
+                                      num_active_experts);
+    } else {
+      return ExpertFullyConnected(model_builder, create_info, input,
+                                  expert_params, weights_handle, scale_ptr,
+                                  in_channels, out_channels, num_experts,
+                                  num_dispatches, weight_type, name);
+    }
+  };
 
   ABSL_ASSIGN_OR_RETURN(
-      auto gate,
-      ExpertFullyConnected(model_builder, create_info, dispatched_src,
-                           flat_top_indices, gate_weight, gate_scale_ptr,
-                           model_dim, hidden_dim, num_experts, num_dispatches,
-                           weight_type, "moe_ff_gate"));
-  gate = model_builder->MakeGelu(gate);
+      auto gate, run_expert_projection(expert_src, gate_weight, gate_scale_ptr,
+                                       model_dim, hidden_dim, "moe_ff_gate"));
+  gate = model_builder->MakeGeluTanh(gate);
 
   ABSL_ASSIGN_OR_RETURN(
-      auto ff1,
-      ExpertFullyConnected(model_builder, create_info, dispatched_src,
-                           flat_top_indices, ff1_weight, ff1_scale_ptr,
-                           model_dim, hidden_dim, num_experts, num_dispatches,
-                           weight_type, "moe_ff1"));
+      auto ff1, run_expert_projection(expert_src, ff1_weight, ff1_scale_ptr,
+                                      model_dim, hidden_dim, "moe_ff1"));
   auto hidden = model_builder->Multiplication(gate, ff1);
 
   ABSL_ASSIGN_OR_RETURN(
       auto expert_outputs,
-      ExpertFullyConnected(model_builder, create_info, hidden, flat_top_indices,
-                           linear_weight, linear_scale_ptr, hidden_dim,
-                           model_dim, num_experts, num_dispatches, weight_type,
-                           "moe_linear"));
+      run_expert_projection(hidden, linear_weight, linear_scale_ptr, hidden_dim,
+                            model_dim, "moe_linear"));
+
+  if (use_packed_groups) {
+    expert_outputs = ExpertsRemapFrom(*model_builder, expert_outputs,
+                                      experts_packed_remap, num_active_experts);
+    expert_outputs =
+        model_builder->Transpose(expert_outputs, ::ml_drift::BHWC(0, 2, 1, 3));
+    expert_outputs = model_builder->Reshape(
+        expert_outputs, ::ml_drift::BHWC(1, num_dispatches, 1, model_dim));
+  }
+
   ABSL_ASSIGN_OR_RETURN(expert_outputs,
                         ScaleWithBatchIds(model_builder, expert_outputs,
                                           per_expert_scale, flat_top_indices));
@@ -353,11 +441,12 @@ absl::Status CreateMoeExpertsFromIrOp(
   ABSL_ASSIGN_OR_RETURN(per_expert_scale,
                         model_builder->GetTensor(inputs[6]->id));
 
-  if (attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt8) {
+  if (attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt8 ||
+      attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt4) {
     if (!attr.ff_gate_scale.has_value() || !attr.ff1_scale.has_value() ||
         !attr.linear_scale.has_value()) {
       return absl::InvalidArgumentError(
-          "MoE int8 expert weights require per-expert scale tensors.");
+          "MoE quantized expert weights require per-expert scale tensors.");
     }
     gate_scale_ptr = &attr.ff_gate_scale.value();
     ff1_scale_ptr = &attr.ff1_scale.value();
@@ -367,7 +456,9 @@ absl::Status CreateMoeExpertsFromIrOp(
   auto legacy_weight_type =
       attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt8
           ? MoeExpertsAttributes::WeightType::kInt8
-          : MoeExpertsAttributes::WeightType::kFp32;
+          : (attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt4
+                 ? MoeExpertsAttributes::WeightType::kInt4
+                 : MoeExpertsAttributes::WeightType::kFp32);
 
   return BuildMoeExpertsGpuGraph(
       model_builder, create_info, src, top_weights, top_indices, gate_weight,

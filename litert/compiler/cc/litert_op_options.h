@@ -37,6 +37,10 @@ namespace litert::compiler {
 struct OpOptions {
   virtual LiteRtStatus InitFromOp(const LiteRtCompilerContext* ctx,
                                   LiteRtOp op) = 0;
+  virtual Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                                      LiteRtBuilder builder) {
+    return Unexpected(kLiteRtStatusErrorUnsupported);
+  }
   virtual ~OpOptions() = default;
 };
 
@@ -152,6 +156,17 @@ struct AddOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (ctx == nullptr || ctx->build_add_op_option == nullptr) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure);
+    }
+    uint32_t raw_fused_activation =
+        static_cast<uint32_t>(fused_activation_function);
+    LITERT_RETURN_IF_ERROR(
+        ctx->build_add_op_option(builder, op, &raw_fused_activation));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT BatchMatmul op.
@@ -182,6 +197,16 @@ struct BatchMatmulOptions : public OpOptions {
     this->op = op;
 
     return kLiteRtStatusOk;
+  }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!ctx || !ctx->build_batch_matmul_op_option) {
+      return Unexpected(kLiteRtStatusErrorUnsupported);
+    }
+    LITERT_RETURN_IF_ERROR(ctx->build_batch_matmul_op_option(
+        builder, op, &adj_x, &adj_y, &asymmetric_quantize_input));
+    return Expected<void>();
   }
 };
 
@@ -1194,7 +1219,7 @@ struct OneHotOptions : public OpOptions {
 /// @brief Returns the composite info for the given op if it is a composite op.
 template <typename OptionsT>
 Expected<OptionsT> GetOptionsAs(const LiteRtCompilerContext* ctx, LiteRtOp op) {
-  OptionsT options;
+  OptionsT options{};
   auto status = options.InitFromOp(ctx, op);
   if (status != kLiteRtStatusOk) {
     return Unexpected(ToStatus(status));

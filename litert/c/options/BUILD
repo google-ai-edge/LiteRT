@@ -11,6 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+#
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
@@ -24,6 +28,20 @@ package(
         "//visibility:public",
         # copybara:comment_end
     ],
+)
+
+cc_library(
+    name = "litert_arm_options",
+    srcs = ["litert_arm_options.cc"],
+    hdrs = ["litert_arm_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_options_helper",
+        "//litert/cc:litert_macros",
+        "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    alwayslink = True,
 )
 
 cc_library(
@@ -46,7 +64,6 @@ cc_test(
         ":litert_cpu_options",
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
-        "//litert/cc:litert_macros",
         "//litert/test:matchers",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings:string_view",
@@ -121,6 +138,7 @@ cc_library(
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/container:btree",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
     ],
@@ -193,7 +211,6 @@ cc_library(
     hdrs = ["litert_samsung_options.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
         "@com_google_absl//absl/strings:string_view",
@@ -207,9 +224,7 @@ cc_test(
     srcs = ["litert_samsung_options_test.cc"],
     deps = [
         ":litert_samsung_options",
-        "//litert/c:litert_common",
         "//litert/test:matchers",
-        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -252,7 +267,6 @@ cc_test(
         ":litert_webnn_options",
         "//litert/c:litert_common",
         "//litert/test:matchers",
-        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -264,6 +278,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
+        "@com_google_absl//absl/container:flat_hash_set",
     ],
     # Keep the symbols in libLiteRt.dylib.
     alwayslink = 1,
@@ -296,10 +311,8 @@ cc_test(
         ":litert_runtime_options",
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
-        "//litert/cc:litert_macros",
         "//litert/runtime:litert_runtime_options",
         "//litert/test:matchers",
-        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
         "@tomlplusplus",

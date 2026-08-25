@@ -26,8 +26,8 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
+        "//litert/c:litert_profiler_types",
         "//litert/c/internal:litert_accelerator_registration",
-        "//litert/c/internal:litert_delegate_wrapper",
         "//litert/c/internal:litert_dispatch_delegate",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_runtime_context_header",

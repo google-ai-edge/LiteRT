@@ -14,80 +14,121 @@
 
 #include "litert/vendors/intel_openvino/compiler/global_graph.h"
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
+#include "absl/types/span.h"  // from @com_google_absl
 
 namespace litert {
 namespace openvino {
 namespace {
 
-// Builds a container with two shared buffers and two subgraphs whose const_maps
-// reference those buffers.
-OpenVinoGlobalGraph MakeSample() {
-  OpenVinoGlobalGraph graph;
-  graph.buffers[0] = "\x01\x02\x03\x04";
-  graph.buffers[7] =
-      std::string(10, '\xAB');  // non-contiguous id, larger buffer
-
-  OpenVinoGlobalGraph::Subgraph prefill;
-  prefill.name = "Partition_0";
-  prefill.device = 2;  // e.g. GPU enum
-  prefill.const_map = {{"weight_a", 0u}, {"weight_b", 7u}};
-  prefill.payload = "prefill-blob-bytes";
-
-  OpenVinoGlobalGraph::Subgraph decode;
-  decode.name = "Partition_1";
-  decode.device = 2;
-  decode.const_map = {{"weight_a", 7u}};
-  decode.payload =
-      std::string("\x00\x00\xFF", 3);  // embedded NULs must survive
-
-  graph.subgraphs[prefill.name] = prefill;
-  graph.subgraphs[decode.name] = decode;
-  return graph;
+absl::Span<const uint8_t> AsBytes(const std::string& s) {
+  return absl::MakeConstSpan(reinterpret_cast<const uint8_t*>(s.data()),
+                             s.size());
 }
 
+// A sample container plus the storage its spans borrow from. Because the
+// unified OpenVinoGlobalGraph carries borrowed spans (not owned strings), the
+// backing bytes must outlive the graph; this holder owns both. Two shared
+// buffers (non-contiguous ids) and two subgraphs whose const_maps reference
+// them, with an embedded-NUL payload.
+struct Sample {
+  std::string buf0 = "\x01\x02\x03\x04";
+  std::string buf7 = std::string(10, '\xAB');  // larger, non-contiguous id
+  std::string payload0 = "prefill-blob-bytes";
+  std::string payload1 = std::string("\x00\x00\xFF", 3);  // embedded NULs
+  OpenVinoGlobalGraph graph;
+
+  Sample() {
+    // Ascending buffer_id, pool_offset == running byte sum (the invariant
+    // Serialize() enforces).
+    graph.buffers.push_back({0u, 0u, AsBytes(buf0)});
+    graph.buffers.push_back({7u, buf0.size(), AsBytes(buf7)});
+
+    OpenVinoGlobalGraph::Subgraph prefill;
+    prefill.name = "Partition_0";
+    prefill.device = 2;  // e.g. GPU enum
+    prefill.const_map = {{"weight_a", 0u}, {"weight_b", 7u}};
+    prefill.payload = AsBytes(payload0);
+    graph.subgraphs["Partition_0"] = prefill;
+
+    OpenVinoGlobalGraph::Subgraph decode;
+    decode.name = "Partition_1";
+    decode.device = 2;
+    decode.const_map = {{"weight_a", 7u}};
+    decode.payload = AsBytes(payload1);
+    graph.subgraphs["Partition_1"] = decode;
+  }
+};
+
 // Serialize -> Parse reproduces the buffer pool, subgraph topology, const_maps,
-// device, and payloads exactly (including embedded NUL bytes).
+// device, and payloads exactly (including embedded NUL bytes), and Parse
+// locates them zero-copy (spans alias the blob).
 TEST(GlobalGraphTest, RoundTrip) {
-  const OpenVinoGlobalGraph in = MakeSample();
+  Sample sample;
+  const OpenVinoGlobalGraph& in = sample.graph;
   const std::string blob = in.Serialize();
+  const auto* base = reinterpret_cast<const uint8_t*>(blob.data());
 
-  ASSERT_TRUE(OpenVinoGlobalGraph::HasMagic(
-      reinterpret_cast<const uint8_t*>(blob.data()), blob.size()));
+  ASSERT_TRUE(OpenVinoGlobalGraph::HasMagic(base, blob.size()));
 
-  auto parsed = OpenVinoGlobalGraph::Parse(
-      reinterpret_cast<const uint8_t*>(blob.data()), blob.size());
+  auto parsed = OpenVinoGlobalGraph::Parse(base, blob.size());
   ASSERT_TRUE(parsed.HasValue());
   const OpenVinoGlobalGraph& out = parsed.Value();
 
-  // Buffer pool.
-  ASSERT_EQ(out.buffers.size(), in.buffers.size());
-  for (const auto& [id, bytes] : in.buffers) {
-    ASSERT_TRUE(out.buffers.count(id));
-    EXPECT_EQ(out.buffers.at(id), bytes);
-  }
+  // Pool locus: the pool span aliases the blob, in-bounds, sized to the sum.
+  EXPECT_EQ(out.pool.size(), in.BankBytes());
+  ASSERT_EQ(out.pool.data(), base + out.pool_data_offset);
+  EXPECT_GE(out.pool_data_offset, 8u + 2u);  // after magic + version
+  EXPECT_LE(out.pool_data_offset + out.pool.size(), blob.size());
   EXPECT_EQ(out.BankBytes(), in.BankBytes());
 
-  // Subgraphs.
+  // Buffer pool: same ascending-id entries, offsets, and bytes; the bytes are
+  // aliased in place (== pool.data() + pool_offset).
+  ASSERT_EQ(out.buffers.size(), in.buffers.size());
+  for (size_t i = 0; i < in.buffers.size(); ++i) {
+    const auto& a = in.buffers[i];
+    const auto& b = out.buffers[i];
+    EXPECT_EQ(b.id, a.id);
+    EXPECT_EQ(b.pool_offset, a.pool_offset);
+    ASSERT_EQ(b.bytes.size(), a.bytes.size()) << "buffer id=" << a.id;
+    EXPECT_EQ(b.bytes.data(), out.pool.data() + b.pool_offset);
+    EXPECT_EQ(0, std::string(reinterpret_cast<const char*>(b.bytes.data()),
+                             b.bytes.size())
+                     .compare(std::string(
+                         reinterpret_cast<const char*>(a.bytes.data()),
+                         a.bytes.size())))
+        << "buffer id=" << a.id;
+    // FindBuffer resolves by id.
+    const auto* found = out.FindBuffer(a.id);
+    ASSERT_NE(found, nullptr);
+    EXPECT_EQ(found->pool_offset, a.pool_offset);
+  }
+
+  // Subgraphs: topology, device, const_map, and aliased payloads match.
   ASSERT_EQ(out.subgraphs.size(), in.subgraphs.size());
-  for (const auto& [name, in_subgraph] : in.subgraphs) {
+  for (const auto& [name, in_sg] : in.subgraphs) {
     ASSERT_TRUE(out.subgraphs.count(name));
-    const auto& out_subgraph = out.subgraphs.at(name);
-    EXPECT_EQ(out_subgraph.name, in_subgraph.name);
-    EXPECT_EQ(out_subgraph.device, in_subgraph.device);
-    EXPECT_EQ(out_subgraph.payload, in_subgraph.payload);
-    EXPECT_EQ(out_subgraph.const_map, in_subgraph.const_map);
+    const auto& out_sg = out.subgraphs.at(name);
+    EXPECT_EQ(out_sg.name, in_sg.name);
+    EXPECT_EQ(out_sg.device, in_sg.device);
+    EXPECT_EQ(out_sg.const_map, in_sg.const_map);
+    const std::string got(reinterpret_cast<const char*>(out_sg.payload.data()),
+                          out_sg.payload.size());
+    const std::string want(reinterpret_cast<const char*>(in_sg.payload.data()),
+                           in_sg.payload.size());
+    EXPECT_EQ(got, want) << "subgraph " << name;
   }
 }
 
 // BankBytes sums the deduplicated buffer pool.
 TEST(GlobalGraphTest, BankBytesSumsPool) {
-  const OpenVinoGlobalGraph graph = MakeSample();
-  EXPECT_EQ(graph.BankBytes(), 4u + 10u);
+  Sample sample;
+  EXPECT_EQ(sample.graph.BankBytes(), 4u + 10u);
 }
 
 // An empty container round-trips (magic + zero counts).
@@ -123,7 +164,7 @@ TEST(GlobalGraphTest, ParseRejectsBadMagic) {
 // Parse errors on a blob whose version byte does not match kVersion, rather
 // than misparsing a future/unknown layout.
 TEST(GlobalGraphTest, ParseRejectsUnknownVersion) {
-  std::string blob = MakeSample().Serialize();
+  std::string blob = Sample().graph.Serialize();
   // The version is a little-endian uint16 immediately after the 8-byte magic.
   ASSERT_GT(blob.size(), 9u);
   blob[8] = static_cast<char>(OpenVinoGlobalGraph::kVersion + 1);
@@ -134,7 +175,7 @@ TEST(GlobalGraphTest, ParseRejectsUnknownVersion) {
 
 // Parse errors on a truncated (mid-buffer) blob rather than over-reading.
 TEST(GlobalGraphTest, ParseRejectsTruncated) {
-  const std::string blob = MakeSample().Serialize();
+  const std::string blob = Sample().graph.Serialize();
   for (size_t cut : {blob.size() / 2, blob.size() - 1}) {
     auto parsed = OpenVinoGlobalGraph::Parse(
         reinterpret_cast<const uint8_t*>(blob.data()), cut);

@@ -19,15 +19,16 @@
 #include "litert/c/options/litert_gpu_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_concrete_options_base.h"
 
 namespace litert {
 
 /// @brief Defines the C++ wrapper for LiteRT GPU options.
-class GpuOptions {
+class GpuOptions : public ConcreteOptionsBase {
  public:
   GpuOptions() : options_(nullptr) {}
   explicit GpuOptions(LrtGpuOptions* options) : options_(options) {}
-  ~GpuOptions() {
+  ~GpuOptions() override {
     if (options_) {
       LrtDestroyGpuOptions(options_);
     }
@@ -65,16 +66,25 @@ class GpuOptions {
     return LrtGetGpuOptionsIdentifier();
   }
 
+  LiteRtStatus GetOpaqueOptionsData(
+      const char** identifier, void** payload,
+      void (**payload_deleter)(void*)) const override {
+    return LrtGetOpaqueGpuOptionsData(Get(), identifier, payload,
+                                      payload_deleter);
+  }
+
   /// @brief Sets whether to enable constant tensor sharing.
   /// This feature enables sharing of constant tensors (weights) between
-  /// subgraphs. Internally, it manages constant tensor separately with
-  /// SharedMemoryManager.
-  /// @note: This feature has the following trade-offs:
-  /// The benefit is reducing additional memory allocation
-  /// for these constant tensors (by leveraging mmap and madvise behavior) even
-  /// though tensors are not shared with other subgraphs.
-  /// The downside is the performance penalty due to external tensor binding
-  /// APIs.
+  /// subgraphs for supported operations (e.g., FullyConnected and
+  /// EmbeddingLookup), which is typical for LLMs. Internally, it manages
+  /// constant tensors separately with SharedMemoryManager.
+  /// @note This feature has the following trade-offs:
+  /// The benefit is reducing application memory footprint (RAM)
+  /// by preventing the duplication of constant tensors across subgraphs.
+  /// The downside is increased warm startup time (initialization with shader
+  /// cache) because external weights are not serialized into the standard
+  /// program cache. This also results in smaller disk cache sizes. To avoid
+  /// the warm startup overhead, enable `SetSerializeExternalTensors`.
   LiteRtStatus EnableConstantTensorSharing(bool enabled) {
     return LrtSetGpuOptionsConstantTensorsSharing(options_, enabled);
   }
@@ -90,11 +100,14 @@ class GpuOptions {
   }
 
   /// @brief Sets whether to convert weights on the GPU.
-  /// LiteRT GPU Accelerator uses different memory layout for constant tensors
-  /// (weights). So there is a step to convert weights to the GPU specific
+  /// LiteRT GPU Accelerator uses a different memory layout for constant tensors
+  /// (weights). So there is a step to convert weights to the GPU-specific
   /// layout. By default, the conversion is done on the CPU. Enabling this
-  /// option will convert weights on the GPU. Enabling this option will reduce
-  /// the CPU memory usage but increase the GPU memory usage.
+  /// option will convert weights on the GPU, which is typically faster and
+  /// reduces CPU memory usage (at the cost of increased GPU memory usage).
+  /// @note When combined with `EnableConstantTensorSharing`, converting weights
+  /// on the GPU accelerates the dynamic weight rearrangement performed during
+  /// initialization.
   LiteRtStatus SetConvertWeightsOnGpu(bool convert_weights_on_gpu) {
     return LrtSetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
         options_, convert_weights_on_gpu);
@@ -187,6 +200,11 @@ class GpuOptions {
     return LrtSetGpuAcceleratorCompilationOptionsSerializeProgramCache(
         options_, serialize_program_cache);
   }
+  /// @brief Sets whether to serialize external tensors.
+  /// When `EnableConstantTensorSharing` is enabled, setting this to true caches
+  /// all rearranged weights of the external tensors into the serialization
+  /// cache. This eliminates dynamic weight rearrangement during initialization,
+  /// significantly reducing warm startup times.
   LiteRtStatus SetSerializeExternalTensors(bool serialize_external_tensors) {
     return LrtSetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
         options_, serialize_external_tensors);

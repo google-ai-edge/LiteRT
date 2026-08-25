@@ -11,6 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+#
 
 # LiteRT C++ API
 cmake_minimum_required(VERSION 3.20)
@@ -39,7 +43,9 @@ set(LITERT_CC_PUBLIC_HEADERS
     litert_tensor_buffer_requirements.h
     litert_tensor_buffer_types.h
     litert_tensor_buffer.h
+    options/litert_arm_options.h
     options/litert_compiler_options.h
+    options/litert_concrete_options_base.h
     options/litert_cpu_options.h
     options/litert_google_tensor_options.h
     options/litert_gpu_options.h
@@ -62,7 +68,6 @@ set(LITERT_CC_REQUIRED_INTERNAL_HEADERS
     internal/litert_numerics.h
     internal/litert_op_options.h
     internal/litert_platform_support.h
-    internal/litert_builder.h
     internal/litert_rng.h
     internal/litert_runtime_proxy.h
     internal/litert_shared_library.h

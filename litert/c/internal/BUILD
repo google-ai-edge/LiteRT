@@ -18,6 +18,10 @@
 #
 # copybara:uncomment_end
 load(
+    "//litert/build_common:litert_build_defs.bzl",
+    "litert_c_api_library",
+)
+load(
     "//litert/build_common:special_rule.bzl",
     "friends_of_litert_runtime_builtin_static",
     "get_compatible_with_portable",
@@ -80,16 +84,19 @@ cc_library(
     ],
 )
 
-cc_library(
+litert_c_api_library(
     name = "litert_accelerator",
     srcs = ["litert_accelerator.cc"],
     hdrs = ["litert_accelerator.h"],
-    deps = [
-        "//litert/c:litert_common",
+    header_kwargs = {"compatible_with": get_compatible_with_portable()},
+    impl_deps = [
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/core:environment",
         "//litert/runtime:accelerator",
+    ],
+    deps = [
+        "//litert/c:litert_common",
     ],
 )
 
@@ -113,7 +120,9 @@ cc_test(
 cc_library(
     name = "litert_accelerator_def",
     hdrs = ["litert_accelerator_def.h"],
+    visibility = ["//litert:litert_internal_users"],
     deps = [
+        ":litert_abi_header",
         ":litert_custom_tensor_buffer_handlers_def",
         ":litert_runtime_context_header",
         "//litert/c:litert_common",
@@ -124,6 +133,7 @@ cc_library(
     name = "litert_custom_tensor_buffer_handlers_def",
     hdrs = ["litert_custom_tensor_buffer_handlers_def.h"],
     deps = [
+        ":litert_abi_header",
         "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_environment_options_header",
         "//litert/c:litert_tensor_buffer_types",
@@ -141,6 +151,7 @@ cc_library(
     deps = [
         ":litert_abi_header",
         "//litert/c:litert_any",
+        "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_header",
         "//litert/c:litert_model_types",
@@ -156,6 +167,7 @@ cc_library(
     deps = [
         ":litert_abi_header",
         "//litert/c:litert_any",
+        "//litert/c:litert_builder_impl",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_impl",
         "//litert/c:litert_model_impl",
@@ -176,6 +188,7 @@ cc_library(
         ":litert_abi_header",
         ":litert_compiler_context",
         "//litert/c:litert_any",
+        "//litert/c:litert_builder",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_model",
@@ -270,6 +283,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_metrics",
         "//litert/c:litert_opaque_options",
+        "//litert/c:litert_profiler_types",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/core:environment",
@@ -301,6 +315,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_metrics",
+        "//litert/c:litert_profiler_types",
         "//litert/runtime/dispatch:dispatch_delegate",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//tflite/c:c_api",
@@ -386,6 +401,7 @@ cc_library(
         "//litert/c:litert_gl_types.h",
         "//litert/c:litert_layout.h",
         "//litert/c:litert_metrics.h",
+        "//litert/c:litert_profiler_types.h",
         "//litert/c:litert_model_types.h",
         "//litert/c:litert_op_code.h",
         "//litert/c:litert_op_options.h",
@@ -569,6 +585,7 @@ cc_library(
         "//litert/cc/internal:__pkg__",
     ],
     deps = [
+        ":litert_accelerator_header",
         ":litert_scheduling_info",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
@@ -598,6 +615,8 @@ cc_library(
         "//litert/cc/internal:__pkg__",
     ],
     deps = [
+        ":litert_accelerator",
+        ":litert_runtime_c_api",
         "//litert/c:litert_common",
         "//litert/c:litert_compiled_model_impl",
         "//litert/c:litert_environment_impl",
@@ -609,7 +628,6 @@ cc_library(
         "//litert/c:litert_opaque_options_impl",
         "//litert/c:litert_options_impl",
         "//litert/c:litert_tensor_buffer_impl",
-        "//litert/c/internal:litert_runtime_c_api",
     ],
     alwayslink = 1,
 )
@@ -646,7 +664,6 @@ cc_library(
     visibility = [
         "//litert/c:__pkg__",
         "//litert/cc:__pkg__",
-        "//litert/cc/dynamic_runtime:__pkg__",
         "//litert/cc/internal:__pkg__",
         "//litert/kotlin/src/tests/google:__pkg__",
     ],
@@ -661,7 +678,6 @@ cc_library(
     srcs = ["litert_runtime_builtin.cc"],
     # The visibility is for testing only, otherwise it would be private.
     visibility = [
-        "//litert/cc/dynamic_runtime:__pkg__",
         "//litert/cc/internal:__pkg__",
     ],
     deps = [

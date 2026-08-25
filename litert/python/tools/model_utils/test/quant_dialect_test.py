@@ -28,7 +28,7 @@ class QuantDialectTest(testing.ModelUtilsTestCase):
         "tensor<2x2x!quant.uniform<i8<-8:7>:f32, 0.99872:127>>"
     )
 
-    tensor_ty = mlir.RankedTensorType.from_mlir(ir_type)
+    tensor_ty = mlir.RankedTensorType.from_mlir(ir_type)  # pyrefly: ignore[bad-argument-type]
     self.assertIsInstance(tensor_ty.elty, quant.UniformQuantizedType)
     self.assertEqual(tensor_ty.elty.storage_type, "i8")
     self.assertEqual(tensor_ty.elty.expressed_type, "f32")
@@ -41,14 +41,23 @@ class QuantDialectTest(testing.ModelUtilsTestCase):
     ir_type = ir.Type.parse(
         "tensor<2x2x!quant.uniform<i8<-8:7>:f32, 0.99872:127>>"
     )
-    tensor_ty = mlir.RankedTensorType.from_mlir(ir_type)
+    tensor_ty = mlir.RankedTensorType.from_mlir(ir_type)  # pyrefly: ignore[bad-argument-type]
+    self.assertEqual(tensor_ty.to_mlir(), ir_type)
+
+  def test_unsigned_uniform_quantized_type_to_mlir(self):
+    ir_type = ir.Type.parse(
+        "tensor<2x2x!quant.uniform<u8<0:255>:f32, 0.003921568859368563:0>>"
+    )
+    tensor_ty = mlir.RankedTensorType.from_mlir(ir_type)  # pyrefly: ignore[bad-argument-type]
+    self.assertIsInstance(tensor_ty.elty, quant.UniformQuantizedType)
+    self.assertFalse(tensor_ty.elty.is_signed)
     self.assertEqual(tensor_ty.to_mlir(), ir_type)
 
   def test_uniform_quantized_per_axis_type(self):
     ir_type = ir.Type.parse(
         "tensor<2x2x!quant.uniform<i8:f32:1, {2.0e+2,0.99872:120}>>"
     )
-    tensor_ty = mlir.RankedTensorType.from_mlir(ir_type)
+    tensor_ty = mlir.RankedTensorType.from_mlir(ir_type)  # pyrefly: ignore[bad-argument-type]
     self.assertIsInstance(tensor_ty.elty, quant.UniformQuantizedPerAxisType)
     self.assertEqual(tensor_ty.elty.storage_type, "i8")
     self.assertEqual(tensor_ty.elty.expressed_type, "f32")
@@ -60,7 +69,16 @@ class QuantDialectTest(testing.ModelUtilsTestCase):
     ir_type = ir.Type.parse(
         "tensor<2x2x!quant.uniform<i8:f32:1, {2.0e+2,0.99872:120}>>"
     )
-    tensor_ty = mlir.RankedTensorType.from_mlir(ir_type)
+    tensor_ty = mlir.RankedTensorType.from_mlir(ir_type)  # pyrefly: ignore[bad-argument-type]
+    self.assertEqual(tensor_ty.to_mlir(), ir_type)
+
+  def test_unsigned_uniform_quantized_per_axis_type_to_mlir(self):
+    ir_type = ir.Type.parse(
+        "tensor<2x2x!quant.uniform<u8<0:255>:f32:1, {2.0e+2,0.99872:120}>>"
+    )
+    tensor_ty = mlir.RankedTensorType.from_mlir(ir_type)  # pyrefly: ignore[bad-argument-type]
+    self.assertIsInstance(tensor_ty.elty, quant.UniformQuantizedPerAxisType)
+    self.assertFalse(tensor_ty.elty.is_signed)
     self.assertEqual(tensor_ty.to_mlir(), ir_type)
 
 

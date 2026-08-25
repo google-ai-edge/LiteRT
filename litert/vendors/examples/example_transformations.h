@@ -15,22 +15,27 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_EXAMPLES_EXAMPLE_TRANSFORMATIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_EXAMPLES_EXAMPLE_TRANSFORMATIONS_H_
 
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-LiteRtStatus SimpleAddOpToMulOpTransformation(LiteRtBuilder builder_ptr,
-                                              LiteRtOp op);
+LiteRtStatus SimpleAddOpToMulOpTransformation(
+    const LiteRtCompilerContext* context, LiteRtBuilder builder_ptr,
+    LiteRtOp op);
 
-LiteRtStatus SqrtMeanSquareTransformation(LiteRtBuilder builder_ptr,
+LiteRtStatus SqrtMeanSquareTransformation(const LiteRtCompilerContext* context,
+                                          LiteRtBuilder builder_ptr,
                                           LiteRtOp op);
 
-LiteRtStatus FuseMatMulRequantTransformation(LiteRtBuilder builder_ptr,
-                                             LiteRtOp op);
+LiteRtStatus FuseMatMulRequantTransformation(
+    const LiteRtCompilerContext* context, LiteRtBuilder builder_ptr,
+    LiteRtOp op);
 
-LiteRtStatus DummyTransformation(LiteRtBuilder builder_ptr, LiteRtOp op);
+LiteRtStatus DummyTransformation(const LiteRtCompilerContext* context,
+                                 LiteRtBuilder builder_ptr, LiteRtOp op);
 
 #ifdef __cplusplus
 }  // extern "C"
