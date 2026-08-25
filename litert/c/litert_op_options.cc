@@ -785,6 +785,111 @@ LiteRtStatus LiteRtGetConv3dDilationHOption(LiteRtOp op,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetConv3dTransposePaddingOption(LiteRtOp op,
+                                                  uint32_t* padding) {
+  if (op->OpCode() != kLiteRtOpCodeTflConv3dTranspose) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *padding = opts.AsConv3DOptions()->padding;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetConv3dTransposeStrideDOption(LiteRtOp op,
+                                                  int32_t* stride_d) {
+  if (op->OpCode() != kLiteRtOpCodeTflConv3dTranspose) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *stride_d = opts.AsConv3DOptions()->stride_d;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetConv3dTransposeStrideWOption(LiteRtOp op,
+                                                  int32_t* stride_w) {
+  if (op->OpCode() != kLiteRtOpCodeTflConv3dTranspose) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *stride_w = opts.AsConv3DOptions()->stride_w;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetConv3dTransposeStrideHOption(LiteRtOp op,
+                                                  int32_t* stride_h) {
+  if (op->OpCode() != kLiteRtOpCodeTflConv3dTranspose) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *stride_h = opts.AsConv3DOptions()->stride_h;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetConv3dTransposeFusedActivationOption(
+    LiteRtOp op, uint32_t* fused_activation_function) {
+  if (op->OpCode() != kLiteRtOpCodeTflConv3dTranspose) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *fused_activation_function =
+      opts.AsConv3DOptions()->fused_activation_function;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetConv3dTransposeDilationDOption(
+    LiteRtOp op, int32_t* dilation_d_factor) {
+  if (op->OpCode() != kLiteRtOpCodeTflConv3dTranspose) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *dilation_d_factor = opts.AsConv3DOptions()->dilation_d_factor;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetConv3dTransposeDilationWOption(
+    LiteRtOp op, int32_t* dilation_w_factor) {
+  if (op->OpCode() != kLiteRtOpCodeTflConv3dTranspose) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *dilation_w_factor = opts.AsConv3DOptions()->dilation_w_factor;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetConv3dTransposeDilationHOption(
+    LiteRtOp op, int32_t* dilation_h_factor) {
+  if (op->OpCode() != kLiteRtOpCodeTflConv3dTranspose) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *dilation_h_factor = opts.AsConv3DOptions()->dilation_h_factor;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetTransposeConvPaddingOption(LiteRtOp op,
                                                  uint32_t* padding) {
   if (op->OpCode() != kLiteRtOpCodeTflTransposeConv) {

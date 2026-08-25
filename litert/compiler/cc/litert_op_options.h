@@ -767,6 +767,60 @@ struct Conv3dOptions : public OpOptions {
   }
 };
 
+/// @brief Struct to hold options for the LiteRT Conv3dTranspose op.
+///
+/// Conv3dTranspose shares the Conv3DOptions table with Conv3d, so the fields
+/// mirror Conv3dOptions; only the op code guard differs.
+struct Conv3dTransposeOptions : public OpOptions {
+  LiteRtOp op;
+  Padding padding;
+  int32_t stride_w;
+  int32_t stride_h;
+  int32_t stride_d;
+  int32_t dilation_w_factor;
+  int32_t dilation_h_factor;
+  int32_t dilation_d_factor;
+  ActivationFunction fused_activation_function;
+  LiteRtStatus InitFromOp(const LiteRtCompilerContext* ctx,
+                          LiteRtOp op) override {
+    if (ctx == nullptr || ctx->get_op_code == nullptr ||
+        ctx->get_conv_3d_transpose_padding_option == nullptr ||
+        ctx->get_conv_3d_transpose_stride_w_option == nullptr ||
+        ctx->get_conv_3d_transpose_stride_h_option == nullptr ||
+        ctx->get_conv_3d_transpose_stride_d_option == nullptr ||
+        ctx->get_conv_3d_transpose_dilation_w_option == nullptr ||
+        ctx->get_conv_3d_transpose_dilation_h_option == nullptr ||
+        ctx->get_conv_3d_transpose_dilation_d_option == nullptr ||
+        ctx->get_conv_3d_transpose_fused_activation_option == nullptr) {
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
+    LiteRtOpCode opcode;
+    LITERT_RETURN_IF_ERROR(ctx->get_op_code(op, &opcode));
+    if (opcode != kLiteRtOpCodeTflConv3dTranspose) {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx->get_conv_3d_transpose_padding_option(op, &padding));
+    LITERT_RETURN_IF_ERROR(
+        ctx->get_conv_3d_transpose_stride_w_option(op, &stride_w));
+    LITERT_RETURN_IF_ERROR(
+        ctx->get_conv_3d_transpose_stride_h_option(op, &stride_h));
+    LITERT_RETURN_IF_ERROR(
+        ctx->get_conv_3d_transpose_stride_d_option(op, &stride_d));
+    LITERT_RETURN_IF_ERROR(
+        ctx->get_conv_3d_transpose_dilation_w_option(op, &dilation_w_factor));
+    LITERT_RETURN_IF_ERROR(
+        ctx->get_conv_3d_transpose_dilation_h_option(op, &dilation_h_factor));
+    LITERT_RETURN_IF_ERROR(
+        ctx->get_conv_3d_transpose_dilation_d_option(op, &dilation_d_factor));
+    LITERT_RETURN_IF_ERROR(ctx->get_conv_3d_transpose_fused_activation_option(
+        op, &fused_activation_function));
+    this->op = op;
+
+    return kLiteRtStatusOk;
+  }
+};
+
 /// @brief Struct to hold options for the LiteRT DepthwiseConv2d op.
 struct DepthwiseConv2dOptions : public OpOptions {
   LiteRtOp op;

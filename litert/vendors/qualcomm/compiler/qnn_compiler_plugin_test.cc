@@ -144,6 +144,7 @@ const auto kSupportedOps =
                     "simple_topk_op.tflite",
                     "simple_transpose_conv_fused_tanh.tflite",
                     "simple_transpose_conv_op.tflite",
+                    "simple_transpose_conv3d.tflite",
                     "simple_transpose_op.tflite",
                     "simple_unpack_op.tflite",
                     "simple_prelu_op.tflite",

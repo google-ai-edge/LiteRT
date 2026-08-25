@@ -4,6 +4,7 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_WRAPPERS_TENSOR_WRAPPER_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_WRAPPERS_TENSOR_WRAPPER_H_
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -278,6 +279,81 @@ void TransposeFromOHWIToHWIO(absl::Span<const T> weight_data,
                                      index_w * input * output +
                                      index_i * output + index_o;
           weight_data_transpose[index_transpose] = inval;
+        }
+      }
+    }
+  }
+}
+
+template <typename T>
+void TransposeFromDHWOIToDHWIO(absl::Span<const T> weight_data,
+                               const std::vector<std::uint32_t>& weight_dims,
+                               std::vector<T>& weight_data_transpose) {
+  weight_data_transpose.resize(weight_data.size());
+  const uint32_t depth = weight_dims[0];
+  const uint32_t height = weight_dims[1];
+  const uint32_t width = weight_dims[2];
+  const uint32_t channel_out = weight_dims[3];
+  const uint32_t channel_in = weight_dims[4];
+
+  for (uint32_t d = 0; d < depth; ++d) {
+    for (uint32_t h = 0; h < height; ++h) {
+      for (uint32_t w = 0; w < width; ++w) {
+        for (uint32_t o = 0; o < channel_out; ++o) {
+          for (uint32_t i = 0; i < channel_in; ++i) {
+            const uint32_t src =
+                ((((d * height + h) * width + w) * channel_out + o) *
+                 channel_in) +
+                i;
+            const uint32_t dst =
+                ((((d * height + h) * width + w) * channel_in + i) *
+                 channel_out) +
+                o;
+            weight_data_transpose[dst] = weight_data[src];
+          }
+        }
+      }
+    }
+  }
+}
+
+template <typename T>
+void DilateDHWIO(absl::Span<const T> weight_data,
+                 const std::vector<std::uint32_t>& weight_dims,
+                 const std::array<std::uint32_t, 3>& dilation,
+                 std::vector<std::uint32_t>& dilated_dims,
+                 std::vector<T>& dilated_data) {
+  dilated_dims = weight_dims;
+  for (std::size_t axis = 0; axis < dilation.size(); ++axis) {
+    dilated_dims[axis] = (weight_dims[axis] - 1) * dilation[axis] + 1;
+  }
+
+  const std::size_t dilated_size =
+      static_cast<std::size_t>(dilated_dims[0]) * dilated_dims[1] *
+      dilated_dims[2] * dilated_dims[3] * dilated_dims[4];
+  dilated_data.assign(dilated_size, T{});
+
+  for (std::size_t d = 0; d < weight_dims[0]; ++d) {
+    for (std::size_t h = 0; h < weight_dims[1]; ++h) {
+      for (std::size_t w = 0; w < weight_dims[2]; ++w) {
+        for (std::size_t i = 0; i < weight_dims[3]; ++i) {
+          for (std::size_t o = 0; o < weight_dims[4]; ++o) {
+            const std::size_t src =
+                ((((d * weight_dims[1] + h) * weight_dims[2] + w) *
+                      weight_dims[3] +
+                  i) *
+                     weight_dims[4]) +
+                o;
+            const std::size_t dst =
+                (((((d * dilation[0]) * dilated_dims[1] + h * dilation[1]) *
+                        dilated_dims[2] +
+                    w * dilation[2]) *
+                       dilated_dims[3] +
+                   i) *
+                      dilated_dims[4]) +
+                o;
+            dilated_data[dst] = weight_data[src];
+          }
         }
       }
     }

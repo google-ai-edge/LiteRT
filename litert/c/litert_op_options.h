@@ -412,6 +412,40 @@ LiteRtStatus LiteRtBuilderBuildConv3dOpOption(
 
 //==============================================================================
 //
+// Get option APIs for LiteRt Conv3dTranspose op.
+//  Options:
+// - padding : uint32_t
+// - stride_d : int32_t
+// - stride_w : int32_t
+// - stride_h : int32_t
+// - fused_activation_function : uint32_t
+// - dilation_d_factor : int32_t
+// - dilation_w_factor : int32_t
+// - dilation_h_factor : int32_t
+//
+// Conv3dTranspose shares the Conv3DOptions table with Conv3d, so these getters
+// read the same fields under a Conv3dTranspose op code.
+//
+//==============================================================================
+LiteRtStatus LiteRtGetConv3dTransposePaddingOption(LiteRtOp op,
+                                                   uint32_t* padding);
+LiteRtStatus LiteRtGetConv3dTransposeStrideDOption(LiteRtOp op,
+                                                   int32_t* stride_d);
+LiteRtStatus LiteRtGetConv3dTransposeStrideWOption(LiteRtOp op,
+                                                   int32_t* stride_w);
+LiteRtStatus LiteRtGetConv3dTransposeStrideHOption(LiteRtOp op,
+                                                   int32_t* stride_h);
+LiteRtStatus LiteRtGetConv3dTransposeFusedActivationOption(
+    LiteRtOp op, uint32_t* fused_activation_function);
+LiteRtStatus LiteRtGetConv3dTransposeDilationDOption(
+    LiteRtOp op, int32_t* dilation_d_factor);
+LiteRtStatus LiteRtGetConv3dTransposeDilationWOption(
+    LiteRtOp op, int32_t* dilation_w_factor);
+LiteRtStatus LiteRtGetConv3dTransposeDilationHOption(
+    LiteRtOp op, int32_t* dilation_h_factor);
+
+//==============================================================================
+//
 // Get option APIs for LiteRt DepthwiseConv2d op.
 //  Options:
 // - padding : uint32_t
