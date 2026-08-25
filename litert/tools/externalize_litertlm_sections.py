@@ -23,15 +23,6 @@ import pathlib
 import re
 import tomllib
 
-_MODALITY_MODEL_TYPES = frozenset({
-    "audio_adapter",
-    "audio_encoder_hw",
-    "audio_frontend",
-    "end_of_audio",
-    "end_of_vision",
-    "vision_adapter",
-    "vision_encoder",
-})
 _SECTION_MARKER = "[[section]]"
 _DATA_PATH_RE = re.compile(r'(?m)^data_path\s*=\s*"(?:[^"\\]|\\.)*"')
 _PEEK_DATA_TYPE_RE = re.compile(r"Data Type:\s+(\S+)")
@@ -138,11 +129,10 @@ def rewrite_toml(
     results_path: pathlib.Path,
     output_toml: pathlib.Path,
 ) -> tuple[int, int]:
-  """Reorders sections and appends all external-weight sections at EOF."""
+  """Preserves section order and appends external-weight sections at EOF."""
   prefix, blocks = _split_toml(input_toml.read_text(encoding="utf-8"))
   results = _read_results(results_path)
-  text_sections: list[str] = []
-  modality_sections: list[str] = []
+  model_sections: list[str] = []
   weight_sections_by_model: dict[str, str] = {}
   encountered_models: set[str] = set()
 
@@ -154,6 +144,14 @@ def rewrite_toml(
     if section_type == "TFLiteWeights":
       if not isinstance(model_type, str) or not model_type:
         raise ValueError("TFLiteWeights section has no model_type")
+      data_path = section.get("data_path")
+      if not isinstance(data_path, str) or not data_path:
+        raise ValueError("TFLiteWeights section has no data_path")
+      block = _replace_data_path(
+          block,
+          (input_toml.parent / data_path).resolve(),
+          output_toml,
+      )
       weight_sections_by_model[model_type] = block
       continue
 
@@ -181,12 +179,7 @@ def rewrite_toml(
             f"data_path = {_toml_path(weights_path, output_toml)}",
         ))
 
-    destination = (
-        modality_sections
-        if model_type in _MODALITY_MODEL_TYPES
-        else text_sections
-    )
-    destination.append(block)
+    model_sections.append(block)
 
   missing = sorted(set(results) - encountered_models)
   if missing:
@@ -203,8 +196,7 @@ def rewrite_toml(
       block
       for block in (
           prefix,
-          *text_sections,
-          *modality_sections,
+          *model_sections,
           *ordered_weights,
       )
       if block
