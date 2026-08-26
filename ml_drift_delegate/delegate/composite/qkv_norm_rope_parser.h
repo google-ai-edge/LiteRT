@@ -1,0 +1,59 @@
+// Copyright 2026 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_QKV_NORM_ROPE_PARSER_H_
+#define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_QKV_NORM_ROPE_PARSER_H_
+
+#include <string_view>
+
+#include "absl/status/status.h"  // from @com_google_absl
+#include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift_delegate/tflite/object_reader.h"
+#include "ml_drift_delegate/tflite/operation_parser.h"
+#include "tflite/c/common.h"
+
+namespace litert::ml_drift {
+
+inline constexpr std::string_view kQkvNormRopeType = "odml.qkv_norm_rope";
+
+struct QkvNormRopeAttributes {
+  int num_heads = 16;
+  int num_kv_heads = 8;
+  int head_dim = 128;
+  float min_timescale = 1.0f;
+  float max_timescale = 1000000.0f;
+  float proportion = 1.0f;
+  float epsilon = 1e-6f;
+};
+
+// Typedef alias for backward compatibility.
+using Qwen3QkvNormRopeAttributes = QkvNormRopeAttributes;
+
+class QkvNormRopeOperationParser : public TFLiteOperationParser {
+ public:
+  absl::Status IsSupported(const TfLiteContext* context,
+                           const TfLiteNode* tflite_node,
+                           const TfLiteRegistration* registration) override;
+
+  void Parse(const TfLiteNode* tflite_node,
+             const TfLiteRegistration* registration,
+             ::ml_drift::GraphFloat32* graph, ObjectReader* reader) override;
+};
+
+// Class alias for backward compatibility.
+using Qwen3QkvNormRopeOperationParser = QkvNormRopeOperationParser;
+
+}  // namespace litert::ml_drift
+
+#endif  // THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_QKV_NORM_ROPE_PARSER_H_

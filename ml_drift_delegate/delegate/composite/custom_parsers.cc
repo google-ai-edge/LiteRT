@@ -19,6 +19,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
+#include "ml_drift_delegate/delegate/composite/qkv_norm_rope_parser.h"
 #include "ml_drift_delegate/delegate/composite/rope_parser.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
@@ -48,6 +49,9 @@ std::unique_ptr<TFLiteOperationParser> CustomOperationParserFactory::Create(
   if (op_name == "odml.swiglu") {
     return std::make_unique<SwigluOperationParser>();
   }
+  if (op_name == kQkvNormRopeType) {
+    return std::make_unique<QkvNormRopeOperationParser>();
+  }
   return std::make_unique<UnimplementedOperationParser>(op_name);
 }
 
@@ -55,7 +59,8 @@ bool CustomOperationParserFactory::SupportsIntegerTypes(
     std::string_view op_name) {
   return op_name == "odml.cache_update" || op_name == "odml.runtime_bmm" ||
          op_name == "moe" || op_name == "odml.rope" ||
-         op_name == "odml.sdpa_transposed" || op_name == "odml.swiglu";
+         op_name == "odml.sdpa_transposed" || op_name == "odml.swiglu" ||
+         op_name == kQkvNormRopeType;
 }
 
 bool CustomOperationParserFactory::SupportsBoolTypes(std::string_view op_name) {

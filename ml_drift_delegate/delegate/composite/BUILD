@@ -368,6 +368,56 @@ cc_library(
 )
 
 cc_library(
+    name = "qkv_norm_rope_parser",
+    srcs = ["qkv_norm_rope_parser.cc"],
+    hdrs = ["qkv_norm_rope_parser.h"],
+    deps = [
+        "//ml_drift_delegate/tflite:object_reader",
+        "//ml_drift_delegate/tflite:operation_parser",
+        "//tflite/c:common",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:model",
+    ],
+)
+
+alias(
+    name = "qwen3_qkv_norm_rope_parser",
+    actual = ":qkv_norm_rope_parser",
+)
+
+cc_library(
+    name = "qkv_norm_rope_kernel",
+    srcs = ["qkv_norm_rope_kernel.cc"],
+    hdrs = ["qkv_norm_rope_kernel.h"],
+    deps = [
+        ":qkv_norm_rope_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:kernel_info",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:tuning_type",
+    ],
+)
+
+alias(
+    name = "qwen3_qkv_norm_rope_kernel",
+    actual = ":qkv_norm_rope_kernel",
+)
+
+cc_library(
     name = "custom_parsers",
     srcs = ["custom_parsers.cc"],
     hdrs = [
@@ -377,6 +427,7 @@ cc_library(
     deps = [
         ":add_values_to_cache_parser",
         ":moe_experts_parser",
+        ":qkv_norm_rope_parser",
         ":rope_parser",
         ":runtime_batched_matmul_parser",
         ":sdpa_transposed_parser",
@@ -422,6 +473,8 @@ cc_library(
         ":add_values_to_cache_parser",
         ":moe_experts_kernel",
         ":moe_experts_parser",
+        ":qkv_norm_rope_kernel",
+        ":qkv_norm_rope_parser",
         ":runtime_batched_matmul_kernel",
         ":runtime_batched_matmul_parser",
         ":sdpa_transposed_kernel",

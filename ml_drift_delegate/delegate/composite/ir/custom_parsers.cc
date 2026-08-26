@@ -17,6 +17,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "ml_drift_delegate/delegate/composite/ir/add_values_to_cache_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/moe_experts_parser.h"
+#include "ml_drift_delegate/delegate/composite/ir/qkv_norm_rope_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/runtime_batched_matmul_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/sdpa_transposed_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/swiglu_parser.h"
@@ -32,6 +33,7 @@ CustomIrOpMap GetCustomParsers() {
   parsers["odml.runtime_bmm"] = GetRuntimeBatchedMatMulParser();
   parsers["odml.sdpa_transposed"] = GetSdpaTransposedParser();
   parsers["odml.swiglu"] = GetSwigluParser();
+  parsers["odml.qkv_norm_rope"] = GetQkvNormRopeParser();
 
   return parsers;
 }
