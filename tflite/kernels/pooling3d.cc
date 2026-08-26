@@ -17,12 +17,15 @@ limitations under the License.
 
 #include <algorithm>
 #include <cstdlib>
+#include <limits>
 #include <string>
 
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
+#include "tflite/core/c/builtin_op_data.h"
+#include "tflite/core/c/c_api_types.h"
 #include "tflite/core/c/common.h"
+#include "tflite/kernels/internal/common.h"
 #include "tflite/kernels/internal/compatibility.h"
-#include "tflite/kernels/internal/tensor.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/internal/types.h"
 #include "tflite/kernels/kernel_util.h"
