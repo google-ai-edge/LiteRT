@@ -125,9 +125,11 @@ cc_test(
         "//tflite/c:common",
         "@com_google_absl//absl/status",
         "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
     ],
 )
 

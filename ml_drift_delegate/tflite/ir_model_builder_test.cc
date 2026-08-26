@@ -25,9 +25,11 @@
 
 #include "testing/base/public/gunit.h"
 #include "absl/status/status.h"  // from @com_google_absl
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/convert/convert_testing_utils.h"
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
@@ -546,6 +548,10 @@ TEST_F(IrModelBuilderTest, ConfiguresSharedQuantizedEmbeddingLookup) {
             ::ml_drift::EmbeddingLookupAttributes::WeightsType::kInt8);
   EXPECT_EQ(attr.original_weights_shape, ::ml_drift::OHWI(5, 1, 1, 4));
   EXPECT_EQ(attr.scale_zp_shape, ::ml_drift::OHWI(5, 1, 1, 1));
+  EXPECT_TRUE(
+      (std::holds_alternative<
+          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>>(
+          attr.weights)));
 
   bool found_shared_weights = false;
   for (const auto& tensor : test_data_.ir_model.tensors()) {
@@ -607,6 +613,10 @@ TEST_F(IrModelBuilderTest, ConfiguresSharedBlockwiseEmbeddingLookup) {
   // Blockwise splits the embedding dim (4) into 4 / blocksize(2) = 2 blocks.
   EXPECT_EQ(attr.scale_zp_shape,
             ::ml_drift::OHWI(5, 1, 1, kEmbeddingDim / kBlockSize));
+  EXPECT_TRUE(
+      (std::holds_alternative<
+          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::UINT8>>(
+          attr.weights)));
 
   bool found_shared_weights = false;
   for (const auto& tensor : test_data_.ir_model.tensors()) {

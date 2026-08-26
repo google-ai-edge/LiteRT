@@ -144,12 +144,21 @@ void ConvertEmbeddingLookup(
     if (weights_tensor->type == kTfLiteInt8) {
       attr.weights_type =
           ::ml_drift::EmbeddingLookupAttributes::WeightsType::kInt8;
+      auto& weights_int8 = attr.weights.emplace<
+          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>>();
+      weights_int8.shape = ::ml_drift::OHWI(rows, 1, 1, cols);
     } else if (weights_tensor->type == kTfLiteInt4) {
       attr.weights_type =
           ::ml_drift::EmbeddingLookupAttributes::WeightsType::kInt4;
+      auto& weights_uint8 = attr.weights.emplace<
+          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::UINT8>>();
+      weights_uint8.shape = ::ml_drift::OHWI(rows, 1, 1, cols);
     } else if (weights_tensor->type == kTfLiteInt2) {
       attr.weights_type =
           ::ml_drift::EmbeddingLookupAttributes::WeightsType::kInt2;
+      auto& weights_uint8 = attr.weights.emplace<
+          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::UINT8>>();
+      weights_uint8.shape = ::ml_drift::OHWI(rows, 1, 1, cols);
     } else {
       ABSL_LOG(FATAL) << "EMBEDDING_LOOKUP: Unsupported external weights type: "
                       << weights_tensor->type;
