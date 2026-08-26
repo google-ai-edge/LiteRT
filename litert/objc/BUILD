@@ -297,3 +297,38 @@ ios_unit_test(
         ":litert_objc_integration_test_library",
     ],
 )
+
+objc_library(
+    name = "litert_objc_compiled_model_metal_test_library",
+    testonly = True,
+    srcs = [
+        "tests/LRTCompiledModelMetalTests.mm",
+    ],
+    data = [
+        "//litert/test:testdata/simple_model.tflite",
+    ],
+    deps = [
+        ":litert_objc_compiled_model",
+        ":litert_objc_environment",
+        ":litert_objc_options",
+        ":litert_objc_tensor_buffer",
+        # Dependency placeholder: apple_frameworks Metal,
+        # Dependency placeholder: apple_frameworks XCTest,
+        "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
+        "//litert/test:common",
+        "//litert/test:simple_model",
+    ],
+)
+
+ios_unit_test(
+    name = "litert_objc_compiled_model_metal_test_ios",
+    minimum_os_version = LITERT_MIN_IOS_VERSION,
+    runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
+    tags = [
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":litert_objc_compiled_model_metal_test_library",
+    ],
+)
