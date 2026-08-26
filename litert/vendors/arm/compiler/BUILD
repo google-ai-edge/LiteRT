@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
 
 package(
@@ -44,15 +45,37 @@ litert_dynamic_lib(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_context_wrapper",
+        "//litert/cc/internal:litert_extended_model",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_opaque_options_wrapper",
         "//litert/cc/internal:litert_options_wrapper",
         "//litert/cc/options:litert_arm_options",
+        "//litert/core/model",
+        "//litert/vendors/arm:capabilities",
         # copybara:comment_begin(oss-only)
         "@ai_ml_sdk_vgf_library//:vgf",  # TODO: Placeholder include. Review when mature.
         "@ai_ml_sdk_vgf_library//:vgf_utils",  # TODO: Placeholder include. Review when mature.
         "@arm_dep_vulkan_headers//:vulkan_headers",  # TODO: Placeholder include. Review when mature.
         "@tosa_for_spirv_codegen",  # TODO: Placeholder include. Review when mature.
         # copybara:comment_end
+    ],
+)
+
+cc_test(
+    name = "compiler_plugin_test",
+    srcs = ["compiler_plugin_test.cc"],
+    data = ["//litert/test:tflite_test_data"],
+    deps = [
+        ":compiler_plugin",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_options",
+        "//litert/cc/options:litert_arm_options",
+        "//litert/compiler/plugin:compiler_plugin",
+        "//litert/test:load_test_model",
+        "//litert/test:matchers",
+        "//litert/vendors/c:litert_compiler_plugin",
+        "//litert/vendors/cc:litert_compiler_plugin",
+        "@com_google_googletest//:gtest_main",
     ],
 )
