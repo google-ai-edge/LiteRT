@@ -94,13 +94,13 @@ absl::Status GpuBackendMetalLitert::AssociateGpuEvent(GpuEventHandle event, Lite
   if (runtime_context_ == nullptr) {
     return absl::InternalError("Runtime context is not set.");
   }
-  LiteRtEvent liter_event;
+  LiteRtEvent litert_event;
   LITERT_RETURN_IF_ERROR(
-      runtime_context_->create_managed_event(env, LiteRtEventTypeCustom, &liter_event));
+      runtime_context_->create_managed_event(env, LiteRtEventTypeCustom, &litert_event));
   LITERT_RETURN_IF_ERROR(
-      runtime_context_->set_custom_event(liter_event, reinterpret_cast<LiteRtCustomEvent>(event)));
+      runtime_context_->set_custom_event(litert_event, reinterpret_cast<LiteRtCustomEvent>(event)));
   LITERT_RETURN_IF_ERROR(
-      runtime_context_->set_tensor_buffer_event(tensor_buffer.get(), liter_event));
+      runtime_context_->set_tensor_buffer_event(tensor_buffer.get(), litert_event));
   return absl::OkStatus();
 }
 
@@ -178,9 +178,9 @@ GpuBackendMetalLitert::CreateSharedMemoryManager(
 absl::StatusOr<std::unique_ptr<GpuIOBuffer>> GpuBackendMetalLitert::CreateIOBuffer(
     GpuMemoryHandle gpu_memory) {
   auto* spatial_tensor = reinterpret_cast<::ml_drift::metal::MetalSpatialTensor*>(gpu_memory);
-  ::ml_drift::metal::Buffer wgpu_buffer(spatial_tensor->GetBufferHandle(),
-                                        spatial_tensor->GetMemorySizeInBytes());
-  return std::make_unique<GpuIOBufferMetal>(this, std::move(wgpu_buffer));
+  ::ml_drift::metal::Buffer metal_buffer(spatial_tensor->GetBufferHandle(),
+                                         spatial_tensor->GetMemorySizeInBytes());
+  return std::make_unique<GpuIOBufferMetal>(this, std::move(metal_buffer));
 }
 
 GpuInferenceContextMetalLitert::GpuInferenceContextMetalLitert(
@@ -265,9 +265,7 @@ absl::Status GpuInferenceContextMetalLitert::PostConvert(bool input) {
         metal_backend()->set_command_buffer([metal_backend()->command_queue() commandBuffer]);
       }
 
-      if (post_dispatch_event_ != nullptr) {
-        post_dispatch_event_->Release(post_dispatch_event_);
-      }
+      post_dispatch_event_->Release(post_dispatch_event_);
 
       post_dispatch_event_ = new CustomEventMetal(metal_backend()->metal_device()->device());
       post_dispatch_event_->EncodeSignal(metal_backend()->command_buffer());

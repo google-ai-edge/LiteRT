@@ -170,6 +170,11 @@ LiteRtStatus LiteRtCreateMetalMemory(LiteRtGpuDeviceId device_id, LiteRtGpuQueue
                                      const LiteRtRankedTensorType* tensor_type,
                                      LiteRtTensorBufferType buffer_type, size_t bytes,
                                      size_t packed_bytes, HwMemoryInfoPtr* metal_memory_info) {
+  if (device_id == nullptr || tensor_type == nullptr || metal_memory_info == nullptr) {
+    ABSL_LOG(ERROR) << "Invalid arguments to LiteRtCreateMetalMemory";
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
   absl::StatusOr<::ml_drift::TensorDescriptor> tensor_desc =
       ::litert::ml_drift::CreateTensorDescriptor(*tensor_type, buffer_type);
   if (!tensor_desc.ok()) {
@@ -177,19 +182,17 @@ LiteRtStatus LiteRtCreateMetalMemory(LiteRtGpuDeviceId device_id, LiteRtGpuQueue
     return kLiteRtStatusErrorUnsupported;
   }
 
-  if (device_id == nullptr) {
-    ABSL_LOG(ERROR) << "Metal device is missing";
-    return kLiteRtStatusErrorInvalidArgument;
-  }
   absl::Status absl_status = absl::OkStatus();
   id<MTLDevice> metal_device = (__bridge id<MTLDevice>)(device_id);
   id<MTLCommandQueue> command_queue = (__bridge id<MTLCommandQueue>)(queue_id);
 
   auto memory_info =
-      std::make_unique<MetalMemoryInfo>(MetalMemoryInfo{.owns_tensor = true,
+      std::make_unique<MetalMemoryInfo>(MetalMemoryInfo{.metal_tensor = {},
+                                                        .owns_tensor = true,
                                                         .tensor_type = *tensor_type,
                                                         .buffer_type = buffer_type,
                                                         .packed_bytes = packed_bytes,
+                                                        .host_memory = nullptr,
                                                         .lock_state = LockState::kUnlocked,
                                                         .metal_device = metal_device,
                                                         .command_queue = command_queue});
@@ -210,7 +213,7 @@ LiteRtStatus LiteRtImportMetalMemory(LiteRtGpuDeviceId device_id, LiteRtGpuQueue
                                      LiteRtTensorBufferType buffer_type,
                                      HwMemoryHandle hw_buffer_handle, size_t bytes,
                                      size_t packed_bytes, HwMemoryInfoPtr* metal_memory_info) {
-  if (hw_buffer_handle == nullptr || metal_memory_info == nullptr) {
+  if (hw_buffer_handle == nullptr || tensor_type == nullptr || metal_memory_info == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
@@ -226,10 +229,12 @@ LiteRtStatus LiteRtImportMetalMemory(LiteRtGpuDeviceId device_id, LiteRtGpuQueue
   id<MTLCommandQueue> command_queue = queue_id ? (__bridge id<MTLCommandQueue>)(queue_id) : nil;
 
   auto memory_info =
-      std::make_unique<MetalMemoryInfo>(MetalMemoryInfo{.owns_tensor = false,  // Set no ownership
+      std::make_unique<MetalMemoryInfo>(MetalMemoryInfo{.metal_tensor = {},
+                                                        .owns_tensor = false,  // Set no ownership
                                                         .tensor_type = *tensor_type,
                                                         .buffer_type = buffer_type,
                                                         .packed_bytes = packed_bytes,
+                                                        .host_memory = nullptr,
                                                         .lock_state = LockState::kUnlocked,
                                                         .metal_device = metal_device,
                                                         .command_queue = command_queue});

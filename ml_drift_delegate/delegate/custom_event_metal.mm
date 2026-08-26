@@ -70,7 +70,10 @@ void CustomEventMetal::WaitStatic(LiteRtCustomEvent event, int64_t timeout_in_ms
 int CustomEventMetal::IsSignaledStatic(LiteRtCustomEvent event) {
   auto* self = static_cast<CustomEventMetal*>(event);
   // If value_to_wait_ is 0, it means signaled. See WaitStatic() above.
-  return static_cast<int>(self->value_to_wait_ == 0);
+  if (self->value_to_wait_ == 0) {
+    return 1;
+  }
+  return static_cast<int>(self->metal_shared_event_.signaledValue >= self->value_to_wait_);
 }
 
 void* CustomEventMetal::GetNativeStatic(LiteRtCustomEvent event) {
