@@ -959,6 +959,16 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
       google_tensor_options.op_filters_proto(), op_filters));
 
   litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
+  std::vector<litert::compiler::Op> ops = graph.Ops();
+
+  bool has_unsupported_composite = false;
+  for (const litert::compiler::Op& op : ops) {
+    if (op.Code() == kLiteRtOpCodeShloComposite &&
+        !google_tensor::IsOpSupported(op, op_filters)) {
+      has_unsupported_composite = true;
+      break;
+    }
+  }
 
   bool use_static_fallback = true;
   absl::flat_hash_set<int32_t> unsupported_op_indices;
@@ -972,20 +982,25 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   // copybara:uncomment_end
 
   if (enable_input_validation) {
-    auto unsupported_ops_expected =
-        GetUnsupportedOpsDynamic(adapter, subgraph, google_tensor_options);
-    if (unsupported_ops_expected.HasValue()) {
-      unsupported_op_indices = std::move(*unsupported_ops_expected);
-      use_static_fallback = false;
+    if (has_unsupported_composite) {
+      LITERT_LOG(LITERT_INFO,
+                 "Graph contains unsupported composite ops. Skipping dynamic "
+                 "validation for this pass. Falling back to static mapping.");
     } else {
-      LITERT_LOG(LITERT_WARNING,
-                 "GetUnsupportedOpsDynamic failed: %s. Falling back to static "
-                 "mapping.",
-                 unsupported_ops_expected.Error().Message().c_str());
+      litert::Expected<absl::flat_hash_set<int32_t>> unsupported_ops_expected =
+          GetUnsupportedOpsDynamic(adapter, subgraph, google_tensor_options);
+      if (unsupported_ops_expected.HasValue()) {
+        unsupported_op_indices = std::move(*unsupported_ops_expected);
+        use_static_fallback = false;
+      } else {
+        LITERT_LOG(
+            LITERT_WARNING,
+            "GetUnsupportedOpsDynamic failed: %s. Falling back to static "
+            "mapping.",
+            unsupported_ops_expected.Error().Message().c_str());
+      }
     }
   }
-
-  std::vector<litert::compiler::Op> ops = graph.Ops();
   for (int i = 0; i < ops.size(); ++i) {
     const litert::compiler::Op& op = ops[i];
     bool is_supported = use_static_fallback
