@@ -30,6 +30,7 @@ cc_library(
         "//tflite:builtin_ops",
         "//tflite:util",
         "//tflite/c:common",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/types:span",
     ],
@@ -665,6 +666,7 @@ cc_library(
     hdrs = ["support_split.h"],
     deps = [
         ":support_aux",
+        "//ml_drift_delegate/tflite:ir_model_builder_helper",
         "//tflite/c:common",
         "//tflite/core/c:private_common",
         "//tflite/kernels:kernel_util",

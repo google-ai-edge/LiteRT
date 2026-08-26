@@ -21,6 +21,7 @@
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
 #include "ml_drift_delegate/tflite/support/support_aux.h"
 #include "tflite/c/common.h"
 #include "tflite/core/c/builtin_op_data.h"
@@ -114,8 +115,8 @@ bool IsSplitSupported(const TfLiteContext* absl_nonnull context,
       return false;
     }
   }
-  // Check dims. First tensor should have 1 value
-  if (!CheckTensorDims(axis_tensor, /*min_dims=*/1, /*max_dims=*/1, "inputs[0]",
+  // Check dims. First tensor should have 1 value or be a scalar (0D).
+  if (!CheckTensorDims(axis_tensor, /*min_dims=*/0, /*max_dims=*/1, "inputs[0]",
                        *error)) {
     return false;
   }
@@ -130,15 +131,19 @@ bool IsSplitSupported(const TfLiteContext* absl_nonnull context,
     }
   }
   // Check shapes.
-  // Axis value in first position.
-  const int32_t axis = axis_tensor.data.i32[0];
-  const int input_dims = input_tensor.dims->size;
-  if (axis < 0 || axis >= input_dims) {
-    *error = absl::StrCat("Axis should be in [0, ", input_dims, "), is ", axis);
+  if (axis_tensor.data.data == nullptr) {
+    *error = "inputs[0] data is null";
+    return false;
+  }
+  // Axis can be negative.
+  const int32_t axis =
+      ResolveNegativeIndex(axis_tensor.data.i32[0], input_tensor.dims->size);
+  if (axis < 0 || axis >= input_tensor.dims->size) {
+    *error = absl::StrCat("Invalid axis: ", axis);
     return false;
   }
   // Make sure we agree on all dims except the split dim.
-  for (int dim = 0; dim < input_dims; ++dim) {
+  for (int dim = 0; dim < input_tensor.dims->size; ++dim) {
     if (dim == axis) {
       continue;
     }
