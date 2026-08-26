@@ -37,9 +37,10 @@
 #include "ml_drift_delegate/delegate/composite/moe_experts_kernel.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_kernel.h"
-#include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_kernel.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
+#include "ml_drift_delegate/delegate/composite/swiglu_kernel.h"
+#include "ml_drift_delegate/delegate/composite/swiglu_parser.h"
 
 namespace litert::ml_drift {
 
@@ -181,6 +182,9 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
   if (node.operation.type == kMoeExpertsType) {
     return CreateMoeExpertsFromNode(create_info_, inputs, outputs, node,
                                     model_builder);
+  }
+  if (node.operation.type == kSwigluType) {
+    return CreateSwigluFromNode(inputs, outputs, node, model_builder);
   }
   if (node.operation.type == ToString(::ml_drift::OperationType::ROPE)) {
     return CreateRoPEFromNode(inputs, outputs, node, model_builder);

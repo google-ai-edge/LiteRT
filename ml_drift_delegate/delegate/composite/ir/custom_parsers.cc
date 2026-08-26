@@ -19,6 +19,7 @@
 #include "ml_drift_delegate/delegate/composite/ir/moe_experts_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/runtime_batched_matmul_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/sdpa_transposed_parser.h"
+#include "ml_drift_delegate/delegate/composite/ir/swiglu_parser.h"
 #include "ml_drift_delegate/tflite/custom_ir_operation_parser.h"
 
 namespace litert::ml_drift::ir {
@@ -30,6 +31,7 @@ CustomIrOpMap GetCustomParsers() {
   parsers["moe"] = GetMoeExpertsParser();
   parsers["odml.runtime_bmm"] = GetRuntimeBatchedMatMulParser();
   parsers["odml.sdpa_transposed"] = GetSdpaTransposedParser();
+  parsers["odml.swiglu"] = GetSwigluParser();
 
   return parsers;
 }

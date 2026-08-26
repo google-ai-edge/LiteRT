@@ -332,6 +332,42 @@ cc_test(
 )
 
 cc_library(
+    name = "swiglu_parser",
+    srcs = ["swiglu_parser.cc"],
+    hdrs = ["swiglu_parser.h"],
+    deps = [
+        "//ml_drift_delegate/tflite:model_builder_helper",
+        "//ml_drift_delegate/tflite:object_reader",
+        "//ml_drift_delegate/tflite:operation_parser",
+        "//tflite/c:common",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:status",
+    ],
+)
+
+cc_library(
+    name = "swiglu_kernel",
+    srcs = ["swiglu_kernel.cc"],
+    hdrs = ["swiglu_kernel.h"],
+    deps = [
+        ":swiglu_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+    ],
+)
+
+cc_library(
     name = "custom_parsers",
     srcs = ["custom_parsers.cc"],
     hdrs = [
@@ -344,6 +380,7 @@ cc_library(
         ":rope_parser",
         ":runtime_batched_matmul_parser",
         ":sdpa_transposed_parser",
+        ":swiglu_parser",
         "//ml_drift_delegate/tflite:model_builder",
         "//ml_drift_delegate/tflite:operation_parser",
         "//ml_drift_delegate/tflite:unimplemented_operation_parser",
@@ -389,6 +426,8 @@ cc_library(
         ":runtime_batched_matmul_parser",
         ":sdpa_transposed_kernel",
         ":sdpa_transposed_parser",
+        ":swiglu_kernel",
+        ":swiglu_parser",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",

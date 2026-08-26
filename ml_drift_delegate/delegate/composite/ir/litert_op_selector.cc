@@ -34,6 +34,7 @@
 #include "ml_drift_delegate/delegate/composite/moe_experts_kernel.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_kernel.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_kernel.h"
+#include "ml_drift_delegate/delegate/composite/swiglu_kernel.h"
 
 namespace litert::ml_drift::ir {
 
@@ -70,6 +71,8 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
                                               model_builder);
   } else if (op.name == "sdpa_transposed") {
     return CreateSdpaTransposedFromIrOp(inputs, outputs, op, model_builder);
+  } else if (op.name == "swiglu") {
+    return CreateSwigluFromIrOp(inputs, outputs, op, model_builder);
   }
 
   return ::ml_drift::GPUOperationFromNode(gpu_info_, op_def, create_info_,
