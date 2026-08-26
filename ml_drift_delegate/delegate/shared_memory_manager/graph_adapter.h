@@ -47,6 +47,9 @@ class GraphAdapter {
   // Returns the BHWC shape currently recorded for `value_id`.
   virtual BHWC GetValueShape(uint32_t value_id) const = 0;
 
+  // Returns the data type currently recorded for `value_id`.
+  virtual DataType GetValueType(uint32_t value_id) const = 0;
+
   // Sets the data type of `value_id`, leaving its shape (and any other
   // descriptor state the underlying graph tracks) unchanged.
   virtual void SetValueType(uint32_t value_id, DataType type) = 0;

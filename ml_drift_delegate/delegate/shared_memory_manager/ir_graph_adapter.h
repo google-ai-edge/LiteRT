@@ -36,6 +36,7 @@ class IrModelAdapter : public GraphAdapter {
   explicit IrModelAdapter(ir::IrModel& graph) : graph_(graph) {}
 
   BHWC GetValueShape(uint32_t value_id) const override;
+  DataType GetValueType(uint32_t value_id) const override;
   void SetValueType(uint32_t value_id, DataType type) override;
   void SetValueShapeAndType(uint32_t value_id, const BHWC& shape,
                             DataType type) override;
