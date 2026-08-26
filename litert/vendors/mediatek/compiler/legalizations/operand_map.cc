@@ -14,11 +14,13 @@
 
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <string>
 #include <vector>
 
+#include "neuron/api/NeuronAdapter.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
@@ -27,7 +29,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/mediatek/compiler/legalizations/neuron_utils.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
-#include "neuron/api/NeuronAdapter.h"
+#include "tflite/kernels/internal/portable_tensor_utils.h"
 
 namespace litert::mediatek {
 
@@ -37,6 +39,7 @@ bool IsSymmetricPerChannelType(NeuronTensorType type) {
   switch (type) {
     case NEURON_TENSOR_QUANT8_SYMM_PER_CHANNEL:
     case NEURON_EXT_TENSOR_QUANT4_SYMM_PER_CHANNEL:
+    case NEURON_EXT_TENSOR_QUANT2_SYMM_PER_CHANNEL:
     case NEURON_EXT_TENSOR_INT32_SYMM_PER_CHANNEL:
       return true;
     default:
@@ -152,22 +155,44 @@ Expected<uint32_t> OperandMap::Register(const litert::compiler::Tensor& t,
           operand_type->GetNeuronType(), t.PerChannelQuantization()));
     }
 
+    // Placeholder QUANT8 type from fallback: the element type has no Neuron
+    // equivalent, so the packed weights cannot be handed over as-is. Feed a
+    // zero buffer sized to match the placeholder type so the adapter's
+    // set_operand_value size check passes.
+    if (operand_type->HasUnsupportedElementType()) {
+      const size_t placeholder_bytes = operand_type->GetElementCount();
+      LITERT_ASSIGN_OR_RETURN(auto extra_data_idx,
+                              RegisterExtraData(placeholder_bytes));
+      if (neuron_adapter_api_.api().model_set_operand_value(
+              model_, *operand_index, GetExtraData(extra_data_idx),
+              placeholder_bytes) != NEURON_NO_ERROR) {
+        return Error(kLiteRtStatusErrorRuntimeFailure,
+                     "Failed to set placeholder value for tensor with "
+                     "unsupported element type");
+      }
+      map_[t.Get()] = *operand_index;
+      return *operand_index;
+    }
+
     LITERT_ASSIGN_OR_RETURN(auto tensor_type, t.RankedTensorType());
     if (tensor_type.ElementType() == ElementType::Int4 ||
-        tensor_type.ElementType() == ElementType::Int64) {
+        tensor_type.ElementType() == ElementType::Int64 ||
+        tensor_type.ElementType() == ElementType::Int2) {
       int num_element = static_cast<int>(operand_type->GetElementCount());
       int new_bytes = 0;
       int32_t extra_data_idx = -1;
 
-      if (tensor_type.ElementType() == ElementType::Int4) {
-        // Unpack Int4 into Int8
+      if (tensor_type.ElementType() == ElementType::Int4 ||
+          tensor_type.ElementType() == ElementType::Int2) {
+        // Unpack Int4/Int2 into Int8
+        int bits = (tensor_type.ElementType() == ElementType::Int4) ? 4 : 2;
         new_bytes = num_element * sizeof(int8_t);
         LITERT_ASSIGN_OR_RETURN(extra_data_idx, RegisterExtraData(new_bytes));
-        LITERT_LOG(LITERT_INFO, "\nUnpack Int4 into Int8, new bytes: %d",
+        LITERT_LOG(LITERT_INFO, "Unpack Int%d into Int8, new bytes: %d", bits,
                    new_bytes);
-        LITERT_RETURN_IF_ERROR(UnpackDenseInt4IntoInt8(
-            reinterpret_cast<const int8_t*>(weights.data()), num_element,
-            reinterpret_cast<int8_t*>(GetExtraData(extra_data_idx))));
+        tflite::tensor_utils::UnpackPackedIntToInt8(
+            reinterpret_cast<const int8_t*>(weights.data()), num_element, bits,
+            reinterpret_cast<int8_t*>(GetExtraData(extra_data_idx)));
       } else if (tensor_type.ElementType() == ElementType::Int64) {
         // Cast Int64 into Int32
         new_bytes = num_element * sizeof(int32_t);
