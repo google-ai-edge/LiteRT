@@ -19,10 +19,10 @@
 #include <memory>
 #include <utility>
 
+#include "absl/status/status.h"  // from @com_google_absl
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/tensor.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
-#include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"

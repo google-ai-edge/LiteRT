@@ -16,7 +16,6 @@
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_BUFFER_HANDLER_UTILS_H_
 
 #include "absl/status/statusor.h"  // from @com_google_absl
-#include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"

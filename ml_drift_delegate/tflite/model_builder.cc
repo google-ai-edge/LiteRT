@@ -47,7 +47,6 @@
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
-#include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift/common/transformations/model_transformations.h"  // from @ml_drift
 #include "ml_drift/common/types.h"  // from @ml_drift

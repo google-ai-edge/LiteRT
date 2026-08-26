@@ -14,16 +14,16 @@
 
 #include "ml_drift_delegate/delegate/composite/rope_parser.h"
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <utility>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
-#include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/object_reader.h"
 #include "ml_drift_delegate/tflite/operation_parser.h"
 #include "tflite/c/builtin_op_data.h"

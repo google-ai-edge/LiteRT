@@ -144,7 +144,6 @@ cc_library(
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:ir_model_util",
         "@ml_drift//ml_drift/common:model",
-        "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/common/selectors:operation_selector",
         "@ml_drift//ml_drift/common/selectors:special_selector",
         "@ml_drift//ml_drift/common/task:gpu_operation",
