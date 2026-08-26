@@ -12,6 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+exports_files(
+    ["LICENSE"],
+    visibility = ["//:__subpackages__"],
+)
+
 exports_files([
     "PATCH.flatbuffers_windows_no_bash",
     "PATCH.perfetto",

@@ -24,6 +24,7 @@ args:
   --version: Version of the wheel.
   --src: List of source files for the wheel.
   --platform: Platform name to be passed to build module.
+  --license_file: Path to the LICENSE file to bundle in the wheel.
 
 output:
   A python wheel file is created in the output directory. The name of the wheel
@@ -72,6 +73,10 @@ def parse_args() -> argparse.Namespace:
       "--platform",
       required=True,
       help="Platform name to be passed to build module",
+  )
+  parser.add_argument(
+      "--license_file",
+      help="Path to the LICENSE file to bundle in the wheel",
   )
   parser.add_argument(
       "--nightly_suffix",
@@ -360,6 +365,14 @@ def prepare_build_tree(tree_path, args, project_name: str):
   os.makedirs(src_dir)
 
   shutil.copyfile(args.setup_py, os.path.join(tree_path, "setup.py"))
+
+  if args.license_file:
+    if os.path.exists(args.license_file):
+      shutil.copyfile(args.license_file, os.path.join(tree_path, "LICENSE"))
+    else:
+      raise FileNotFoundError(
+          f"License file missing at {args.license_file}"
+      )
 
   for src in args.src:
     shutil.copyfile(src, os.path.join(src_dir, os.path.basename(src)))
