@@ -1480,6 +1480,11 @@ OpMixin<ResizeNearestNeighborOperation, XnnpackMixinTag>::ToXnnpack(
   const int input_w = input_info.shape[2];
   const int channels = input_info.shape[3];
 
+  if (input_h == 0 || input_w == 0) {
+    return absl::InvalidArgumentError(absl::StrFormat(
+        "%s: input spatial dimensions must be non-zero. Got %dx%d", op_name,
+        input_h, input_w));
+  }
   if (new_height % input_h != 0 || new_width % input_w != 0) {
     return absl::UnimplementedError(absl::StrFormat(
         "%s: only integer scaling supported. Input %dx%d, output %dx%d",

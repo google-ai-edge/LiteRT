@@ -102,7 +102,10 @@ typedef enum {
   kLiteRtTensorBufferTypeOpenVINOTensorBuffer = 100,
   kLiteRtTensorBufferTypeUserCustomBufferEnd = 199,
 } LiteRtTensorBufferType;
-// LINT.ThenChange(../kotlin/src/main/kotlin/com/google/ai/edge/litert/TensorBuffer.kt:tensor_buffer_types)
+// LINT.ThenChange(
+//   ../kotlin/src/main/kotlin/com/google/ai/edge/litert/TensorBuffer.kt:tensor_buffer_types,
+//   ../objc/apis/LRTTensorBuffer.h:tensor_buffer_types
+// )
 
 inline bool IsUserCustomBuffer(LiteRtTensorBufferType buffer_type) {
   return buffer_type >= kLiteRtTensorBufferTypeUserCustomBuffer &&

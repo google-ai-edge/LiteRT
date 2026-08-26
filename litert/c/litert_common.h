@@ -310,7 +310,8 @@ typedef enum {
 } LiteRtStatus;
 // LINT.ThenChange(
 //   ../kotlin/src/main/kotlin/com/google/ai/edge/litert/LiteRtException.kt:status_codes,
-//   ../cc/litert_common.h:status_codes
+//   ../cc/litert_common.h:status_codes,
+//   ../objc/apis/LRTError.h:status_codes
 // )
 
 // Returns a string describing the status value.
