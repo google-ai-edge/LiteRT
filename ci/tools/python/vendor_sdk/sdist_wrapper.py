@@ -76,8 +76,28 @@ def main():
       ),
   )
   parser.add_argument("--version", help="version of the sdist")
+  parser.add_argument(
+      "--substitution",
+      action="append",
+      default=[],
+      metavar="KEY=VALUE",
+      help=(
+          "Extra {{ KEY }} -> VALUE substitution to apply to setup.py's"
+          " contents, in addition to the built-in {{ PACKAGE_NAME }} /"
+          " {{ PACKAGE_VERSION }} substitutions. May be repeated."
+      ),
+  )
 
   args = parser.parse_args()
+
+  substitutions = {}
+  for substitution in args.substitution:
+    key, sep, value = substitution.partition("=")
+    if not sep:
+      raise ValueError(
+          f"--substitution must be of the form KEY=VALUE, got: {substitution!r}"
+      )
+    substitutions[key] = value
 
   original_cwd = os.getcwd()
   build_dir = os.path.join(os.getcwd(), "sdist_build")
@@ -100,6 +120,8 @@ def main():
         "{{ PACKAGE_VERSION }}",
         version,
     )
+    for key, value in substitutions.items():
+      setup_py_content = setup_py_content.replace("{{ " + key + " }}", value)
     tmp_setup_py_path = os.path.join(build_dir, "setup.py")
     with open(tmp_setup_py_path, "wt") as f:
       f.write(setup_py_content)

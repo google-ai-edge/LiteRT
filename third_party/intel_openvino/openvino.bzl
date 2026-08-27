@@ -14,6 +14,11 @@
 """Workspace definition for Openvino."""
 
 load("//litert/sdk_util:repo.bzl", "configurable_repo")
+load(
+    "//third_party/intel_openvino:openvino_version.bzl",
+    "OPENVINO_DIRS",
+    "OPENVINO_URLS",
+)
 
 def openvino_configure():
     """Configure OpenVINO for multiple platforms."""
@@ -23,43 +28,41 @@ def openvino_configure():
     # target platform, enabling Android cross-compilation from Linux.
     # On Windows hosts, only the Windows SDK is downloaded.
     #
-    # The OpenVINO build pinned here must match the build that
-    # ci/tools/python/vendor_sdk/intel/setup.py fetches at pip install time;
-    # otherwise the Intel OV compiler plugin (built against the version below)
-    # will be paired with a mismatched libopenvino_intel_npu_compiler at
-    # runtime.
-    # LINT.IfChange(openvino_packages)
+    # The OpenVINO build pinned here comes from openvino_version.bzl, the
+    # single source of truth shared with the pip SDK built by
+    # ci/tools/python/vendor_sdk/intel/setup.py — this keeps the Intel OV
+    # compiler plugin (built against the SDK below) paired with a matching
+    # libopenvino_intel_npu_compiler at runtime. To bump the build or switch
+    # channel, run ci/tools/update_openvino_version.py; do not hand-edit
+    # openvino_version.bzl.
     configurable_repo(
         name = "intel_openvino",
         build_file = Label("@//third_party/intel_openvino:openvino.bazel"),
         local_path_env = "OPENVINO_NATIVE_DIR",
         packages = json.encode([
             {
-                "url": "https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2026.3.0-22242-561fc907ca4/openvino_toolkit_windows_2026.3.0.dev20260622_x86_64.zip",
+                "url": OPENVINO_URLS["windows"],
                 "host_os": "windows",
                 "file_extension": "zip",
                 "symlink_mapping": {
-                    "openvino": "openvino_toolkit_windows_2026.3.0.dev20260622_x86_64",
+                    "openvino": OPENVINO_DIRS["windows"],
                 },
             },
             {
-                "url": "https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2026.3.0-22242-561fc907ca4/openvino_toolkit_ubuntu24_2026.3.0.dev20260622_x86_64.tgz",
+                "url": OPENVINO_URLS["ubuntu24"],
                 "host_os": "linux",
                 "file_extension": "tgz",
                 "symlink_mapping": {
-                    "openvino": "openvino_toolkit_ubuntu24_2026.3.0.dev20260622_x86_64",
+                    "openvino": OPENVINO_DIRS["ubuntu24"],
                 },
             },
             {
-                "url": "https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2026.3.0-22242-561fc907ca4/openvino_toolkit_android_2026.3.0.dev20260622_x86_64.tgz",
+                "url": OPENVINO_URLS["android"],
                 "host_os": "linux",
                 "file_extension": "tgz",
                 "symlink_mapping": {
-                    "openvino_android": "openvino_toolkit_android_2026.3.0.dev20260622_x86_64",
+                    "openvino_android": OPENVINO_DIRS["android"],
                 },
             },
         ]),
     )
-    # LINT.ThenChange(
-    #   ../../ci/tools/python/vendor_sdk/intel/setup.py:wheel_openvino_sdk_version,
-    # )
