@@ -107,8 +107,9 @@ strip_common_include_path_prefix(
 )
 
 apple_xcframework(
-    name = "CLiteRT",
+    name = "CLiteRT_raw",
     bundle_id = "com.google.odml.litert.CLiteRT",
+    bundle_name = "CLiteRT",
     features = ["exported_symbols"],
     infoplists = ["Sources/Info.plist"],
     ios = {
@@ -130,8 +131,27 @@ apple_xcframework(
     ],
 )
 
+genrule(
+    name = "CLiteRT",
+    srcs = [
+        ":CLiteRT_raw",
+        "@litert_prebuilts//:ios_arm64/libLiteRtMetalAccelerator.dylib",
+        "@litert_prebuilts//:ios_sim_arm64/libLiteRtMetalAccelerator.dylib",
+    ],
+    outs = ["CLiteRT.xcframework.zip"],
+    cmd = """
+       OUT_ZIP=$$(pwd)/$@
+       unzip -q $(location :CLiteRT_raw) -d clitert_tmp
+       cp $(location @litert_prebuilts//:ios_arm64/libLiteRtMetalAccelerator.dylib) clitert_tmp/CLiteRT.xcframework/ios-arm64/CLiteRT.framework/
+       cp $(location @litert_prebuilts//:ios_sim_arm64/libLiteRtMetalAccelerator.dylib) clitert_tmp/CLiteRT.xcframework/ios-arm64-simulator/CLiteRT.framework/
+       cd clitert_tmp && zip -q -r "$$OUT_ZIP" CLiteRT.xcframework && cd ..
+       rm -rf clitert_tmp
+    """,
+    visibility = ["//visibility:public"],
+)
+
 apple_static_xcframework(
-    name = "CLiteRT_static",
+    name = "CLiteRT_static_raw",
     bundle_name = "CLiteRT",
     ios = {
         "simulator": [
@@ -150,6 +170,25 @@ apple_static_xcframework(
     deps = [
         ":CLiteRT_objc",
     ],
+)
+
+genrule(
+    name = "CLiteRT_static",
+    srcs = [
+        ":CLiteRT_static_raw",
+        "@litert_prebuilts//:ios_arm64/libLiteRtMetalAccelerator.dylib",
+        "@litert_prebuilts//:ios_sim_arm64/libLiteRtMetalAccelerator.dylib",
+    ],
+    outs = ["CLiteRT_static.xcframework.zip"],
+    cmd = """
+       OUT_ZIP=$$(pwd)/$@
+       unzip -q $(location :CLiteRT_static_raw) -d clitert_static_tmp
+       cp $(location @litert_prebuilts//:ios_arm64/libLiteRtMetalAccelerator.dylib) clitert_static_tmp/CLiteRT.xcframework/ios-arm64/CLiteRT.framework/
+       cp $(location @litert_prebuilts//:ios_sim_arm64/libLiteRtMetalAccelerator.dylib) clitert_static_tmp/CLiteRT.xcframework/ios-arm64-simulator/CLiteRT.framework/
+       cd clitert_static_tmp && zip -q -r "$$OUT_ZIP" CLiteRT.xcframework && cd ..
+       rm -rf clitert_static_tmp
+    """,
+    visibility = ["//visibility:public"],
 )
 
 macos_dylib(
@@ -180,12 +219,18 @@ genrule(
     srcs = [
         ":CLiteRT_universal",
         ":CLiteRT_headers",
-    ],
+    ] + litert_gpu_accelerator_prebuilts(),
     outs = ["CLiteRT_mac.zip"],
     cmd = """
        mkdir -p CLiteRT_mac/Headers
        # Copy the universal dylib
        cp $(location :CLiteRT_universal) CLiteRT_mac/libCLiteRT_mac.dylib
+       # Copy the accelerator dylib if present
+       for FILE in $(SRCS); do
+         if [[ "$$FILE" == *.dylib && "$$FILE" != *CLiteRT* ]]; then
+           cp $$FILE CLiteRT_mac/
+         fi
+       done
        # Copy the headers
        cp $(locations :CLiteRT_headers) CLiteRT_mac/Headers/
        # Create module map
