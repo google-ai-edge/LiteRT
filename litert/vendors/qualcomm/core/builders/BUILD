@@ -615,6 +615,19 @@ cc_library(
 )
 
 cc_library(
+    name = "local_response_norm_op_builder",
+    srcs = ["local_response_norm_op_builder.cc"],
+    hdrs = ["local_response_norm_op_builder.h"],
+    deps = [
+        ":op_builder",
+        "//litert/vendors/qualcomm/core:op_code",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
     name = "depthwise_conv2d_op_builder",
     srcs = ["depthwise_conv2d_op_builder.cc"],
     hdrs = ["depthwise_conv2d_op_builder.h"],
