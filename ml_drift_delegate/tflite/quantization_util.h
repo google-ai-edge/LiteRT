@@ -19,7 +19,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "ml_drift/common/status.h"  // from @ml_drift
+#include "absl/status/status.h"  // from @com_google_absl
 #include "tflite/c/common.h"
 
 namespace litert::ml_drift {

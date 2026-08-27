@@ -17,8 +17,8 @@
 #include <string>
 
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "ml_drift/common/status.h"  // from @ml_drift
 #include "tflite/c/builtin_op_data.h"
 #include "tflite/c/common.h"
 #include "tflite/kernels/kernel_util.h"

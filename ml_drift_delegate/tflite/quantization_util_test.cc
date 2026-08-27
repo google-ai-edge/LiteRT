@@ -23,7 +23,6 @@
 #include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "ml_drift/common/status.h"  // from @ml_drift
 #include "tflite/c/common.h"
 
 using ::testing::Eq;

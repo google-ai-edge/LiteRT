@@ -24,7 +24,6 @@
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
-#include "absl/status/status.h"  // from @com_google_absl
 #include "ml_drift/cl/cl_command_queue.h"  // from @ml_drift
 #include "ml_drift/cl/cl_context.h"  // from @ml_drift
 #include "ml_drift/cl/cl_memory.h"  // from @ml_drift
@@ -34,7 +33,6 @@
 #include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
 #include "ml_drift/cl/tensor.h"  // from @ml_drift
 #include "ml_drift/common/access_type.h"  // from @ml_drift
-#include "ml_drift/common/status.h"  // from @ml_drift
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
@@ -48,7 +46,7 @@
 #include "litert/runtime/tensor_buffer_lockstate.h"
 #include "ml_drift_delegate/delegate/buffer_handler_utils.h"
 #include <CL/cl.h>
-#include "tflite/delegates/gpu/cl/opencl_wrapper.h" // NOLINT: Required for OpenCL backend.
+#include "tflite/delegates/gpu/cl/opencl_wrapper.h"  // NOLINT: Required for OpenCL backend.
 
 using ::litert::internal::LockState;
 

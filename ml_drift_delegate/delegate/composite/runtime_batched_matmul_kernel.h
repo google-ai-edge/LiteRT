@@ -17,10 +17,10 @@
 
 #include <vector>
 
+#include "absl/status/status.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
-#include "ml_drift/common/status.h"  // from @ml_drift
 
 namespace litert::ml_drift {
 

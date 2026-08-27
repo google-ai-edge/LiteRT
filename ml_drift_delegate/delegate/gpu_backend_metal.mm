@@ -23,10 +23,11 @@
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
 
+#include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
 #include "ml_drift/common/convert.h"  // from @ml_drift
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
-#include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/metal/buffer.h"  // from @ml_drift
 #include "ml_drift/metal/converter.h"  // from @ml_drift
 #include "ml_drift/metal/inference_context.h"  // from @ml_drift

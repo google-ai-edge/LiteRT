@@ -20,7 +20,6 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
-#include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 
 namespace litert::ml_drift {
