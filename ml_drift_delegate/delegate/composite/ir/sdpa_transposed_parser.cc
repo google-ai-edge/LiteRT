@@ -116,7 +116,8 @@ void SdpaTransposedConvert(
 
   ::ml_drift::ir::IrTensorId output = tensor_map[tflite_node.outputs->data[0]];
 
-  const bool model_batch = ir_model.tensor(input0)->desc.GetBHWCShape().b != 1;
+  const auto q_shape = ir_model.tensor(input0)->desc.GetBHWCShape();
+  const bool model_batch = q_shape.b != 1;
   ::ml_drift::ir::IrTensorId q_val = input0;
   ::ml_drift::ir::IrTensorId k_val = input1;
   ::ml_drift::ir::IrTensorId v_val = input2;
@@ -131,6 +132,7 @@ void SdpaTransposedConvert(
 
   ::litert::ml_drift::SdpaTransposedAttributes attr;
   attr.runtime_check.src_end_ch_index = kActiveTokensAlignedIndex;
+  attr.is_prefill = (q_shape.w > 2 || model_batch);
 
   const ::ml_drift::BHWC right_shape_k =
       ir_model.tensor(k_val)->desc.GetBHWCShape();

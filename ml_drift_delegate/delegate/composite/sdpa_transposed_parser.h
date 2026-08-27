@@ -33,6 +33,7 @@ struct SdpaTransposedAttributes {
   std::optional<float> softcap;
   ExternalWeightsAttributes bmm1_weights;
   ExternalWeightsAttributes bmm2_weights;
+  bool is_prefill = false;
 };
 
 class SdpaTransposedOperationParser : public TFLiteOperationParser {
