@@ -131,7 +131,7 @@ Expected<uint32_t> OperandMap::Register(const NeuronOperandType& operand_type) {
 
 Expected<uint32_t> OperandMap::Register(const litert::compiler::Tensor& t,
                                         int32_t tensor_flags) {
-  auto operand_type = OperandType::Create(t, tensor_flags);
+  auto operand_type = OperandType::Create(t, neuron_adapter_api_, tensor_flags);
   if (!operand_type) {
     return operand_type.Error();
   }
@@ -146,7 +146,11 @@ Expected<uint32_t> OperandMap::Register(const litert::compiler::Tensor& t,
 
   if (t.HasWeights()) {
     auto weights = t.Weights().Bytes();
-    if (t.QTypeId() == kLiteRtQuantizationPerChannel) {
+    // The resolved Neuron type may have fallen back to a non-per-channel
+    // type (e.g. on older Neuron SDK versions), in which case per-channel
+    // quant params must not be set.
+    if (t.QTypeId() == kLiteRtQuantizationPerChannel &&
+        IsPerChannelQuantizedType(operand_type->GetNeuronType())) {
       LITERT_RETURN_IF_ERROR(SetPerChannelQuantParams(
           neuron_adapter_api_, model_, *operand_index,
           operand_type->GetNeuronType(), t.PerChannelQuantization()));

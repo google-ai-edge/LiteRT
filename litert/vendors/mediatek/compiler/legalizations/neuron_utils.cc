@@ -51,13 +51,18 @@ bool PerTensorZeroPointIsZero(const litert::compiler::Tensor& t) {
 }  // namespace
 
 Expected<NeuronTensorType> GetNeuronTensorType(
-    const litert::compiler::Tensor& t, int32_t tensor_flags) {
+    const litert::compiler::Tensor& t, const NeuronAdapterApi& neuron_adapter_api,
+    int32_t tensor_flags) {
   auto element_type = t.ElementType();
 
   const bool use_int8_asymm_signed =
       tensor_flags & NN_TENSOR_FLAG_USE_INT8_ASYMM_SIGNED;
   const bool use_invalid_tensor_type =
       tensor_flags & NN_TENSOR_FLAG_USE_INVALID_TENSOR_TYPE;
+  // Extended per-channel quant4/int32 types require Neuron SDK major >= 8.
+  const bool ext_quant4_int32_per_channel_supported =
+      neuron_adapter_api.IsFeatureEnabled(
+          NeuronFeatureType::NEURON_FEATURE_EXT_QUANT4_INT32_PER_CHANNEL);
 
   int32_t mtk_type = -1;
   switch (element_type) {
@@ -69,12 +74,9 @@ Expected<NeuronTensorType> GetNeuronTensorType(
       break;
     case ElementType::Int32:
       if (t.QTypeId() == kLiteRtQuantizationPerChannel) {
-        if (!PerChannelZeroPointsAreAllZero(t)) {
-          return Error(kLiteRtStatusErrorRuntimeFailure,
-                       "Int32 per-channel quantization only supports "
-                       "symmetric zero points.");
-        }
-        mtk_type = NEURON_EXT_TENSOR_INT32_SYMM_PER_CHANNEL;
+        mtk_type = ext_quant4_int32_per_channel_supported
+                       ? NEURON_EXT_TENSOR_INT32_SYMM_PER_CHANNEL
+                       : NEURON_TENSOR_INT32;
       } else {
         mtk_type = NEURON_TENSOR_INT32;
       }
@@ -126,9 +128,15 @@ Expected<NeuronTensorType> GetNeuronTensorType(
                        ? NEURON_EXT_TENSOR_QUANT4_SYMM
                        : NEURON_EXT_TENSOR_QUANT4_ASYMM_SIGNED;
       } else if (t.QTypeId() == kLiteRtQuantizationPerChannel) {
-        mtk_type = PerChannelZeroPointsAreAllZero(t)
-                       ? NEURON_EXT_TENSOR_QUANT4_SYMM_PER_CHANNEL
-                       : NEURON_TENSOR_QUANT4_ASYMM_SIGNED_PER_CHANNEL;
+        if (ext_quant4_int32_per_channel_supported) {
+          mtk_type = PerChannelZeroPointsAreAllZero(t)
+                         ? NEURON_EXT_TENSOR_QUANT4_SYMM_PER_CHANNEL
+                         : NEURON_TENSOR_QUANT4_ASYMM_SIGNED_PER_CHANNEL;
+        } else {
+          mtk_type = PerChannelZeroPointsAreAllZero(t)
+                         ? NEURON_EXT_TENSOR_QUANT4_SYMM
+                         : NEURON_EXT_TENSOR_QUANT4_ASYMM_SIGNED;
+        }
       } else {
         return Error(kLiteRtStatusErrorRuntimeFailure,
                      "Int4 is not supported.");
@@ -143,7 +151,9 @@ Expected<NeuronTensorType> GetNeuronTensorType(
             t.QTypeId() == kLiteRtQuantizationNone) {
           mtk_type = NEURON_TENSOR_INT32;
         } else if (t.QTypeId() == kLiteRtQuantizationPerChannel) {
-          mtk_type = NEURON_EXT_TENSOR_INT32_SYMM_PER_CHANNEL;
+          mtk_type = ext_quant4_int32_per_channel_supported
+                         ? NEURON_EXT_TENSOR_INT32_SYMM_PER_CHANNEL
+                         : NEURON_TENSOR_INT32;
         } else {
           return Error(kLiteRtStatusErrorRuntimeFailure,
                        "Int64 is not supported.");
@@ -223,6 +233,21 @@ Expected<bool> IsQuantizedType(NeuronTensorType type) {
       return true;
   }
   return false;
+}
+
+bool IsPerChannelQuantizedType(NeuronTensorType type) {
+  switch (type) {
+    case NEURON_TENSOR_QUANT8_SYMM_PER_CHANNEL:
+    case NEURON_EXT_TENSOR_QUANT8_ASYMM_PER_CHANNEL:
+    case NEURON_EXT_TENSOR_QUANT8_ASYMM_SIGNED_PER_CHANNEL:
+    case NEURON_EXT_TENSOR_QUANT4_SYMM_PER_CHANNEL:
+    case NEURON_EXT_TENSOR_QUANT4_ASYMM_PER_CHANNEL:
+    case NEURON_TENSOR_QUANT4_ASYMM_SIGNED_PER_CHANNEL:
+    case NEURON_EXT_TENSOR_INT32_SYMM_PER_CHANNEL:
+      return true;
+    default:
+      return false;
+  }
 }
 
 NeuronReturnCode ModelAddOperation(const NeuronAdapterApi& api,

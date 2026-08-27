@@ -417,12 +417,13 @@ CreateNeuronAdapterApi(const char* soc_model,
 }
 
 // TODO update this function to match the new legalizations.
-bool IsOpSupported(const litert::compiler::Op& op) {
+bool IsOpSupported(const litert::compiler::Op& op,
+                   const NeuronAdapterApi& neuron_adapter_api) {
   // NOTE: Currently we are demoing by just mapping simple f32 mul ops.  Use a
   // very loose guard for now -- only checking if op code is supported.
   for (auto supported_op : kSupportedOps) {
     if (op.Code() == supported_op &&
-        litert::mediatek::VerifyCommonOp(op, op.Code())) {
+        litert::mediatek::VerifyCommonOp(op, op.Code(), neuron_adapter_api)) {
       return true;
     }
   }
@@ -467,7 +468,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   if (!neuron_adapter_api->IsFeatureEnabled(
           litert::mediatek::NeuronFeatureType::NEURON_FEATURE_UNKNOWN_OP)) {
     for (const auto& op : ops) {
-      if (!IsOpSupported(op)) {
+      if (!IsOpSupported(op, *neuron_adapter_api)) {
         continue;
       }
       LITERT_RETURN_IF_ERROR(op.ctx()->push_op(selected_ops, op.Get(), 0));
@@ -481,7 +482,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   std::unordered_set<int> unknown_op_indices;
   for (int op_idx = 0; op_idx < num_ops; ++op_idx) {
     const auto& op = ops[op_idx];
-    if (!IsOpSupported(op)) {
+    if (!IsOpSupported(op, *neuron_adapter_api)) {
       unknown_op_indices.insert(op_idx);
     }
   }

@@ -42,6 +42,7 @@ namespace litert::mediatek {
 class OperandType : public NeuronOperandType {
  public:
   static Expected<OperandType> Create(const litert::compiler::Tensor& t,
+                                      const NeuronAdapterApi& neuron_adapter_api,
                                       int32_t tensor_flags = 0) {
     auto ranked_tensor_type = t.RankedTensorType();
     if (!ranked_tensor_type) {
@@ -67,7 +68,7 @@ class OperandType : public NeuronOperandType {
                    "Doesn't support BlockWise quantize now");
     }
 
-    auto mtk_type = GetNeuronTensorType(t, tensor_flags);
+    auto mtk_type = GetNeuronTensorType(t, neuron_adapter_api, tensor_flags);
     if (!mtk_type) {
       return mtk_type.Error();
     }

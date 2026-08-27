@@ -44,11 +44,16 @@ struct OemOperandValue {
 };
 
 Expected<NeuronTensorType> GetNeuronTensorType(
-    const litert::compiler::Tensor& t, int32_t tensor_flags = 0);
+    const litert::compiler::Tensor& t, const NeuronAdapterApi& neuron_adapter_api,
+    int32_t tensor_flags = 0);
 
 Expected<uint32_t> GetNeuronDataSize(NeuronTensorType type);
 
 Expected<bool> IsQuantizedType(NeuronTensorType type);
+
+// Returns true if `type` is one of the Neuron per-channel-quantized tensor
+// types.
+bool IsPerChannelQuantizedType(NeuronTensorType type);
 
 NeuronReturnCode ModelAddOperation(const NeuronAdapterApi& api,
                                    NeuronModel* model, NeuronOperationType type,

@@ -23,7 +23,8 @@
 
 namespace litert::mediatek {
 
-bool VerifyCommonOp(const litert::compiler::Op& op, LiteRtOpCode op_code);
+bool VerifyCommonOp(const litert::compiler::Op& op, LiteRtOpCode op_code,
+                    const NeuronAdapterApi& neuron_adapter_api);
 
 Expected<void> LegalizeCommonOp(const NeuronAdapterApi& neuron_adapter_api,
                                 NeuronModel* model, OperandMap& operand_map,
