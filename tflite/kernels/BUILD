@@ -2309,6 +2309,7 @@ cc_test(
     deps = [
         ":test_main",
         ":test_util",
+        "//tflite/c:c_api_types",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
@@ -2478,6 +2479,7 @@ cc_test(
     deps = [
         ":test_main",
         ":test_util",
+        "//tflite/c:c_api_types",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
@@ -2491,6 +2493,7 @@ cc_test(
     deps = [
         ":test_main",
         ":test_util",
+        "//tflite/c:c_api_types",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
@@ -2771,6 +2774,7 @@ cc_test(
     deps = [
         ":test_main",
         ":test_util",
+        "//tflite/c:c_api_types",
         "//tflite/schema:schema_fbs",
         "//tflite/types:half",
         "@com_google_googletest//:gtest",
