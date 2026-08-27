@@ -475,7 +475,12 @@ cc_test(
 # cc_test(
 #     name = "litert_tensor_buffer_cl_test",
 #     srcs = ["litert_tensor_buffer_cl_test.cc"],
-#     tags = ["requires-gpu-nvidia"],
+#     tags = [
+#         "noasan",
+#         "nomsan",
+#         "notsan",
+#         "requires-gpu-nvidia",
+#     ],
 #     deps = [
 #         ":litert_any",
 #         ":litert_common",
@@ -485,7 +490,7 @@ cc_test(
 #         ":litert_platform_support",
 #         ":litert_tensor_buffer",
 #         ":litert_tensor_buffer_types",
-#         "@com_google_googletest//:gtest_main",
+#         "@com_google_googletest//:gtest_main_no_heapcheck",
 #         "@ml_drift//ml_drift/cl:cl_command_queue",
 #         "@ml_drift//ml_drift/cl:cl_context",
 #         "@ml_drift//ml_drift/cl:environment",
@@ -502,7 +507,13 @@ cc_test(
 #     name = "litert_tensor_buffer_test_custom",
 #     srcs = ["litert_tensor_buffer_test.cc"],
 #     defines = ["LITERT_CUSTOM_TENSOR_BUFFER_TEST=1"],
-#     tags = ["requires-gpu-nvidia"],
+#     tags = [
+#         # TODO(b/553203115): Reenable Asan test
+#         "noasan",
+#         "nomsan",
+#         "notsan",
+#         "requires-gpu-nvidia",
+#     ],
 #     deps = [
 #         ":litert_any",
 #         ":litert_common",
@@ -511,7 +522,7 @@ cc_test(
 #         ":litert_platform_support",
 #         ":litert_tensor_buffer",
 #         ":litert_tensor_buffer_types",
-#         "@com_google_googletest//:gtest_main",
+#         "@com_google_googletest//:gtest_main_no_heapcheck",
 #         "@ml_drift//ml_drift/cl:cl_command_queue",
 #         "@ml_drift//ml_drift/cl:cl_context",
 #         "@ml_drift//ml_drift/cl:environment",
