@@ -56,9 +56,17 @@ jobs:
           export CC_OPT_FLAGS='-Wno-sign-compare'
           python3 configure.py < <(yes "")
 
-      - name: Build all TFLite Bazel targets
+      - name: Build TFLite Linux artifacts with Bazel
         shell: bash
-        run: bazel build //tflite/...
+        run: |
+          bazel build \
+            --config=bulk_build_cpu \
+            --nocheck_visibility \
+            -- \
+            //tflite:tensorflowlite \
+            //tflite/c:tensorflowlite_c \
+            //tflite/tools/benchmark:benchmark_model \
+            //tflite/converter:flatbuffer_translate
 
       - name: Configure TFLite with CMake
         run: |
@@ -69,5 +77,6 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 
-      - name: Build all TFLite CMake targets
-        run: cmake --build "${CMAKE_BUILD_DIR}" --parallel
+      - name: Build TFLite runtime with CMake
+        # TODO: Build all targets under tflite with cmake
+        run: cmake --build "${CMAKE_BUILD_DIR}" --target tensorflow-lite --parallel
