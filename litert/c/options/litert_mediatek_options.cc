@@ -32,6 +32,7 @@ struct LrtMediatekOptions {
   std::optional<bool> l1_cache_optimizations;
   std::optional<LiteRtMediatekNeuronAdapterOptimizationHint> optimization_hint;
   std::optional<bool> disable_dla_dir_removal;
+  std::optional<bool> use_get_supported_operations;
   std::string mediatek_dla_dir;
   std::string aot_compilation_options;
 };
@@ -98,6 +99,12 @@ LiteRtStatus LrtCreateMediatekOptionsFromToml(const char* toml_payload,
                                   ::litert::internal::ParseTomlBool(value));
           return LrtSetMediatekOptionsDisableDlaDirRemoval(*options, disable);
         }
+        if (key == "use_get_supported_operations") {
+          LITERT_ASSIGN_OR_RETURN(auto use_gso,
+                                  ::litert::internal::ParseTomlBool(value));
+          return LrtSetMediatekOptionsUseGetSupportedOperations(*options,
+                                                                use_gso);
+        }
         if (key == "mediatek_dla_dir") {
           return LrtSetMediatekOptionsMediatekDlaDir(
               *options, std::string(value).c_str());
@@ -153,6 +160,11 @@ LiteRtStatus LrtGetOpaqueMediatekOptionsData(const LrtMediatekOptions* options,
   if (options->disable_dla_dir_removal.has_value()) {
     absl::StrAppendFormat(&toml_str, "disable_dla_dir_removal = %s\n",
                           *options->disable_dla_dir_removal ? "true" : "false");
+  }
+  if (options->use_get_supported_operations.has_value()) {
+    absl::StrAppendFormat(
+        &toml_str, "use_get_supported_operations = %s\n",
+        *options->use_get_supported_operations ? "true" : "false");
   }
   if (!options->mediatek_dla_dir.empty()) {
     absl::StrAppendFormat(&toml_str, "mediatek_dla_dir = \"%s\"\n",
@@ -302,6 +314,26 @@ LiteRtStatus LrtGetMediatekOptionsDisableDlaDirRemoval(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *disable_dla_dir_removal = options->disable_dla_dir_removal.value_or(false);
+  return kLiteRtStatusOk;
+}
+
+// use_get_supported_operations ----------------------------------------------
+LiteRtStatus LrtSetMediatekOptionsUseGetSupportedOperations(
+    LrtMediatekOptions* options, bool use_get_supported_operations) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->use_get_supported_operations = use_get_supported_operations;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetMediatekOptionsUseGetSupportedOperations(
+    const LrtMediatekOptions* options, bool* use_get_supported_operations) {
+  if (use_get_supported_operations == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *use_get_supported_operations =
+      options->use_get_supported_operations.value_or(true);
   return kLiteRtStatusOk;
 }
 

@@ -131,6 +131,16 @@ LiteRtStatus LrtSetMediatekOptionsDisableDlaDirRemoval(
 LiteRtStatus LrtGetMediatekOptionsDisableDlaDirRemoval(
     const LrtMediatekOptions* options, bool* disable_dla_dir_removal);
 
+// use_get_supported_operations ----------------------------------------------
+// Controls whether partitioning queries the Neuron compiler via
+// get_supported_operations (richer view of what the SDK can run) or just
+// uses the plugin's static IsOpSupported list. Defaults to true.
+LiteRtStatus LrtSetMediatekOptionsUseGetSupportedOperations(
+    LrtMediatekOptions* options, bool use_get_supported_operations);
+
+LiteRtStatus LrtGetMediatekOptionsUseGetSupportedOperations(
+    const LrtMediatekOptions* options, bool* use_get_supported_operations);
+
 // mediatek_dla_dir ----------------------------------------------------------
 
 LiteRtStatus LrtSetMediatekOptionsMediatekDlaDir(LrtMediatekOptions* options,

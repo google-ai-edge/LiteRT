@@ -568,3 +568,30 @@ Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
   }
   return {};
 }
+
+Expected<void> LiteRtDispatchInvocationContextT::SetSchedulingInfo(
+    const LiteRtSchedulingInfo* scheduling_info) {
+  if (scheduling_info == nullptr) {
+    scheduling_info_ = std::nullopt;
+    return {};
+  }
+  scheduling_info_ = *scheduling_info;
+  if (scheduling_info_.has_value() &&
+      neuron_adapter_api_.api().execution_set_config) {
+    if (neuron_adapter_api_.api().execution_set_config(
+            execution_, litert::mediatek::NEURON_EXECUTION_CONFIG_ORIGINAL_UID,
+            &scheduling_info_->original_uid,
+            sizeof(int32_t)) != NEURON_NO_ERROR) {
+      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                           "Failed to set execution config: uid");
+    }
+    if (neuron_adapter_api_.api().execution_set_config(
+            execution_, litert::mediatek::NEURON_EXECUTION_CONFIG_JOB_PRIORITY,
+            &scheduling_info_->job_priority,
+            sizeof(int32_t)) != NEURON_NO_ERROR) {
+      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                           "Failed to set execution config: priority");
+    }
+  }
+  return {};
+}
