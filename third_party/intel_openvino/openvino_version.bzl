@@ -27,24 +27,24 @@ below; neither stitches URLs together itself.
 """
 
 # "release" | "nightly" — informational, derived from the URL shape.
-OPENVINO_CHANNEL = "nightly"
+OPENVINO_CHANNEL = "release"
 
 # PEP 440 version for `pip install openvino=={version}`.
-OPENVINO_PEP440_VERSION = "2026.3.0.dev20260622"
+OPENVINO_PEP440_VERSION = "2026.3.1"
 
 # One fully-formed archive URL per OS variant.
 OPENVINO_URLS = {
-    "windows": "https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2026.3.0-22242-561fc907ca4/openvino_toolkit_windows_2026.3.0.dev20260622_x86_64.zip",
-    "ubuntu24": "https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2026.3.0-22242-561fc907ca4/openvino_toolkit_ubuntu24_2026.3.0.dev20260622_x86_64.tgz",
-    "ubuntu22": "https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2026.3.0-22242-561fc907ca4/openvino_toolkit_ubuntu22_2026.3.0.dev20260622_x86_64.tgz",
-    "android": "https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2026.3.0-22242-561fc907ca4/openvino_toolkit_android_2026.3.0.dev20260622_x86_64.tgz",
+    "windows": "https://storage.openvinotoolkit.org/repositories/openvino/packages/2026.3.1/windows/openvino_toolkit_windows_2026.3.1.22476.56d9685302d_x86_64.zip",
+    "ubuntu24": "https://storage.openvinotoolkit.org/repositories/openvino/packages/2026.3.1/linux/openvino_toolkit_ubuntu24_2026.3.1.22476.56d9685302d_x86_64.tgz",
+    "ubuntu22": "https://storage.openvinotoolkit.org/repositories/openvino/packages/2026.3.1/linux/openvino_toolkit_ubuntu22_2026.3.1.22476.56d9685302d_x86_64.tgz",
+    "android": "https://storage.openvinotoolkit.org/repositories/openvino/packages/2026.3.1/linux/openvino_toolkit_android_2026.3.1.22476.56d9685302d_x86_64.tgz",
 }
 
 # Extracted top-level directory name per archive (basename minus
 # extension), i.e. the Bazel repo-rule symlink target.
 OPENVINO_DIRS = {
-    "windows": "openvino_toolkit_windows_2026.3.0.dev20260622_x86_64",
-    "ubuntu24": "openvino_toolkit_ubuntu24_2026.3.0.dev20260622_x86_64",
-    "ubuntu22": "openvino_toolkit_ubuntu22_2026.3.0.dev20260622_x86_64",
-    "android": "openvino_toolkit_android_2026.3.0.dev20260622_x86_64",
+    "windows": "openvino_toolkit_windows_2026.3.1.22476.56d9685302d_x86_64",
+    "ubuntu24": "openvino_toolkit_ubuntu24_2026.3.1.22476.56d9685302d_x86_64",
+    "ubuntu22": "openvino_toolkit_ubuntu22_2026.3.1.22476.56d9685302d_x86_64",
+    "android": "openvino_toolkit_android_2026.3.1.22476.56d9685302d_x86_64",
 }
