@@ -255,6 +255,11 @@ LiteRtStatus LiteRtCompiledModelStopMetricsCollection(
 LiteRtStatus LiteRtCompiledModelIsFullyAccelerated(
     LiteRtCompiledModel compiled_model, bool* fully_accelerated);
 
+// Returns true if the model is fully accelerated on non-CPU accelerators
+// (e.g. 100% delegated on GPU or NPU with zero CPU execution).
+LiteRtStatus LiteRtCompiledModelIsNonCpuFullyAccelerated(
+    LiteRtCompiledModel compiled_model, bool* non_cpu_fully_accelerated);
+
 // Gets the profiler for the model. CompiledModel owns the profiler.
 LiteRtStatus LiteRtCompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
                                             LiteRtProfiler* profiler);

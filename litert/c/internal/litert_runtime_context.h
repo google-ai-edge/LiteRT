@@ -42,6 +42,7 @@ typedef struct AHardwareBuffer AHardwareBuffer;
 ///
 /// @note This concrete type is shared with LiteRT runtime and Accelerators and
 /// Dispatch APIs. So it must be ABI stable.
+// LINT.IfChange(runtime_context_table)
 typedef struct LiteRtRuntimeContext {
   LiteRtAbiHeader abi_header;
 
@@ -177,7 +178,13 @@ typedef struct LiteRtRuntimeContext {
   // execution (inference run) and must not be stored.
   LiteRtStatus (*external_litert_buffer_context_get_run_options)(
       LiteRtExternalLiteRtBufferContext context, LiteRtOptions* run_options);
+
+  // Added in version 1.1.0
+  // Returns the hardware accelerator set configured in the given options.
+  LiteRtStatus (*get_options_hardware_accelerators)(
+      LiteRtOptions options, LiteRtHwAcceleratorSet* hardware_accelerators);
 } LiteRtRuntimeContext;
+// LINT.ThenChange(./litert_runtime_context.cc:runtime_context_version)
 
 // ABI compatibility check for LiteRtRuntimeContext.
 //
@@ -185,7 +192,7 @@ typedef struct LiteRtRuntimeContext {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtRuntimeContext) == 400,
+static_assert(sizeof(LiteRtRuntimeContext) == 408,
               "LiteRtRuntimeContext size mismatch");
 static_assert(offsetof(LiteRtRuntimeContext, abi_header) == 0,
               "LiteRtRuntimeContext abi_header offset mismatch");
@@ -329,6 +336,9 @@ static_assert(offsetof(LiteRtRuntimeContext,
                        external_litert_buffer_context_get_run_options) == 392,
               "LiteRtRuntimeContext "
               "external_litert_buffer_context_get_run_options offset mismatch");
+static_assert(
+    offsetof(LiteRtRuntimeContext, get_options_hardware_accelerators) == 400,
+    "LiteRtRuntimeContext get_options_hardware_accelerators offset mismatch");
 #endif  // __cplusplus
 
 LiteRtRuntimeContext* LrtGetRuntimeContext();

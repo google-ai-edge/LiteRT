@@ -425,6 +425,11 @@ PyObject* TensorBufferWrapper::CreateFromHostMemory(PyObject* py_data,
       &dummy_type, py_buf.buf, required_size, &NoopDeallocator, &tensor_buffer);
   if (status != kLiteRtStatusOk) {
     PyBuffer_Release(&py_buf);
+    if (reinterpret_cast<uintptr_t>(py_buf.buf) % 64 != 0) {
+      return ReportError(
+          "Failed LiteRtCreateTensorBufferFromHostMemory: host memory pointer "
+          "is not 64-byte aligned");
+    }
     return ReportError("Failed LiteRtCreateTensorBufferFromHostMemory");
   }
 

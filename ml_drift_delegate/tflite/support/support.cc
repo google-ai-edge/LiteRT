@@ -121,7 +121,14 @@ bool IsCompositeNodeSupported(
     const flexbuffers::Map flexbuffer_map =
         flexbuffers::GetRoot(params->attributes, params->attributes_size)
             .AsMap();
-    if (flexbuffer_map["_TENSOR_V1_reduction_axes"].IsNull()) {
+    if (!flexbuffer_map["sub_type"].IsNull()) {
+      // sub_type: 0=GroupNorm, 1=LayerNorm.
+      if (flexbuffer_map["sub_type"].AsInt32() == 0) {
+        return IsGroupNormSupported(context, node, registration, error);
+      } else {
+        return IsLayerNormSupported(context, node, registration, error);
+      }
+    } else if (flexbuffer_map["_TENSOR_V1_reduction_axes"].IsNull()) {
       return IsLayerNormSupported(context, node, registration, error);
     } else {
       return IsGroupNormSupported(context, node, registration, error);
@@ -329,7 +336,7 @@ bool IsNodeSupported(const TfLiteContext* absl_nonnull context,
     case kTfLiteBuiltinBatchMatmul:             return bmm();
     case kTfLiteBuiltinBitcast:                 return bitcast();
     case kTfLiteBuiltinBitwiseXor:              return logic2(2);
-    case kTfLiteBuiltinCast:                    return arith1(1);
+    case kTfLiteBuiltinCast:                    return arith1(7);
     case kTfLiteBuiltinCeil:                    return arith1(2);
     case kTfLiteBuiltinConcatenation:           return concat();
     case kTfLiteBuiltinConv2d:                  return conv2d();

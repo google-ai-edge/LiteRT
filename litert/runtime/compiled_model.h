@@ -59,13 +59,7 @@ using TfLiteTensorIdentifier = litert::internal::TfLiteTensorIdentifier;
 using TensorIdentifierHash = litert::internal::TensorIdentifierHash;
 using TensorIdentifierEqual = litert::internal::TensorIdentifierEqual;
 
-#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-namespace litert::internal {
-struct FabricRuntimeState;
-}  // namespace litert::internal
 
-struct LiteRtFabricOptionsT;
-#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 
 // The LiteRtCompiledModelT is internal implementation of CompiledModel C++ API.
 class LiteRtCompiledModelT {
@@ -143,10 +137,7 @@ class LiteRtCompiledModelT {
                                  output_layouts, update_allocation);
   }
 
-#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-  litert::Expected<LiteRtRankedTensorType> GetRuntimeOutputTensorType(
-      size_t signature_index, size_t output_index);
-#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+
 
   // Returns the layout for an input tensor identified by signature and index.
   litert::Expected<LiteRtLayout> GetInputTensorLayout(size_t signature_index,
@@ -202,11 +193,47 @@ class LiteRtCompiledModelT {
   // Returns true if a non delegated operation is found in the interpreter.
   litert::Expected<bool> HasNonDelegatedOps();
 
+  // Returns true if the model was fully delegated on non-CPU accelerators.
+  bool IsNonCpuFullyDelegated() const { return non_cpu_fully_delegated_; }
+
+  // Counts total number of operations across active subgraphs before
+  // delegation.
+  int CountTotalNodes() const;
+
+  struct GraphCounts {
+    int undelegated_nodes = 0;
+    int npu_partitions = 0;
+    int gpu_partitions = 0;
+    int cpu_partitions = 0;
+  };
+
+  // Counts undelegated nodes and partitions across active subgraphs in a single
+  // pass.
+  GraphCounts GetGraphCounts() const;
+
+  struct DelegationMetrics {
+    int total_node_count = 0;
+    int npu_delegated_node_count = 0;
+    int npu_partition_count = 0;
+    int gpu_delegated_node_count = 0;
+    int gpu_partition_count = 0;
+    int cpu_delegated_node_count = 0;
+    int cpu_partition_count = 0;
+  };
+
+  // Returns delegation metrics for the compiled model.
+  const DelegationMetrics& GetDelegationMetrics() const {
+    return delegation_metrics_;
+  }
+
   // Returns the environment associated with the compiled model.
   litert::Expected<LiteRtEnvironmentT*> GetEnvironment() { return env_; }
 
   // Returns the profiler used by the compiled model.
   litert::Expected<LiteRtProfilerT*> GetProfiler() { return profiler_; }
+
+  // Returns or lazily creates the profiler used by the compiled model.
+  LiteRtProfilerT* GetOrCreateProfiler();
 
   // Resizes the specified input tensor to support dynamic shapes.
   litert::Expected<void> ResizeInputTensor(size_t signature_index,
@@ -398,7 +425,7 @@ class LiteRtCompiledModelT {
   litert::Expected<void> RegisterBuffer(
       tflite::SignatureRunner* runner, TfLiteTensor* tensor, int tensor_index,
       const char* tensor_name, LiteRtTensorBufferT* buffer, bool is_input,
-      std::vector<LiteRtTensorBuffer>& locked_buffers,
+      absl::flat_hash_map<LiteRtTensorBuffer, void*>& locked_buffers,
       std::vector<ConstantOutputInfo>& constant_outputs,
       std::vector<PendingCopy>& pending_string_output_copies);
 
@@ -414,33 +441,7 @@ class LiteRtCompiledModelT {
                                                absl::Span<const int> dims,
                                                bool strict_mode);
 
-#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-  // Initializes the Fabric runtime path when Fabric options are provided.
-  litert::Expected<void> InitializeFabricRuntime(
-      LiteRtOptions options, const LiteRtFabricOptionsT& fabric_options);
-  litert::Expected<const LiteRtTensorBufferRequirementsT*>
-  GetFabricInputBufferRequirements(absl::string_view signature_key,
-                                   size_t input_index);
 
-  litert::Expected<const LiteRtTensorBufferRequirementsT*>
-  GetFabricOutputBufferRequirements(absl::string_view signature_key,
-                                    size_t output_index);
-
-  litert::Expected<LiteRtLayout> GetFabricInputTensorLayout(
-      size_t signature_index, size_t input_index);
-
-  litert::Expected<LiteRtRankedTensorType> GetFabricRuntimeOutputTensorType(
-      absl::string_view signature_key, size_t output_index);
-
-  litert::Expected<void> GetFabricOutputTensorShapes(
-      absl::string_view signature_key,
-      absl::Span<LiteRtLayout>& output_layouts);
-
-  litert::Expected<void> RunWithFabric(
-      absl::string_view signature_key,
-      const std::vector<LiteRtTensorBuffer>& input_buffers,
-      const std::vector<LiteRtTensorBuffer>& output_buffers, bool& async);
-#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 
   // Marks that the given signature needs tensor allocation.
   litert::Expected<void> MarkSignatureNeedsAllocation(
@@ -556,10 +557,7 @@ class LiteRtCompiledModelT {
   // `SetSchedulingInfo`.
   std::string model_debug_feature_id_;
 
-#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
-  // Fabric runtime path state (non-null when CompiledModel runs Fabric).
-  std::unique_ptr<litert::internal::FabricRuntimeState> fabric_runtime_;
-#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+
 
   // File system hints about the originating model location.
   std::optional<std::string> model_directory_;
@@ -583,6 +581,9 @@ class LiteRtCompiledModelT {
 
   // Indicates whether the model is fully delegated on GPU or NPU.
   bool non_cpu_fully_delegated_ = false;
+
+  // Delegation metrics for the compiled model.
+  DelegationMetrics delegation_metrics_;
 
   // Owns dynamically created TfLiteRegistration objects for TfLiteOperator.
   std::vector<std::unique_ptr<TfLiteRegistration>> owned_tflite_registrations_;

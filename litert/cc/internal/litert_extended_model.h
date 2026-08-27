@@ -593,7 +593,8 @@ class Subgraph : public internal::NonOwnedHandle<LiteRtSubgraph> {
         return Tensor(input);
       }
     }
-    return Unexpected(Status::kErrorNotFound, "Failed to find input");
+    return Unexpected(Status::kErrorNotFound,
+                      "Failed to find input: " + std::string(name));
   }
 
   /// @brief Returns the output tensor with the given output signature name.
@@ -610,7 +611,8 @@ class Subgraph : public internal::NonOwnedHandle<LiteRtSubgraph> {
         return Tensor(output);
       }
     }
-    return Unexpected(Status::kErrorNotFound, "Failed to find output");
+    return Unexpected(Status::kErrorNotFound,
+                      "Failed to find output: " + std::string(name));
   }
 };
 
@@ -794,7 +796,8 @@ class ExtendedModel : public litert::Model {
         return litert::Subgraph(subgraph);
       }
     }
-    return Unexpected(Status::kErrorNotFound, "Signature not found");
+    return Unexpected(Status::kErrorNotFound,
+                      "Signature not found: " + std::string(signature_key));
   }
 
   /// @brief Returns the list of signatures defined in the model.
@@ -846,11 +849,8 @@ class ExtendedModel : public litert::Model {
   /// @brief Returns the list of input names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureInputNames(
       absl::string_view signature_key) const {
-    auto signature = FindSignature(signature_key);
-    if (!signature) {
-      return Unexpected(Status::kErrorNotFound, "Signature not found");
-    }
-    return signature->InputNames();
+    LITERT_ASSIGN_OR_RETURN(auto signature, FindSignature(signature_key));
+    return signature.InputNames();
   }
 
   /// @brief Returns the list of output names defined in the signature.
@@ -871,11 +871,8 @@ class ExtendedModel : public litert::Model {
   /// @brief Returns the list of output names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureOutputNames(
       absl::string_view signature_key) const {
-    auto signature = FindSignature(signature_key);
-    if (!signature) {
-      return Unexpected(Status::kErrorNotFound, "Signature not found");
-    }
-    return signature->OutputNames();
+    LITERT_ASSIGN_OR_RETURN(auto signature, FindSignature(signature_key));
+    return signature.OutputNames();
   }
 
   /// @brief Serializes a model to a buffer.

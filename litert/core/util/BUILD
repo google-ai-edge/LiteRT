@@ -20,7 +20,11 @@ package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
         # copybara:uncomment "@mediapipe//mediapipe/calculators/tensor:__subpackages__",
-        "//litert:litert_internal_users",
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_internal_users",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
 )
 
@@ -128,7 +132,7 @@ cc_library(
     hdrs = ["perfetto_profiling.h"],
     defines = ["LITERT_PERFETTO_ENABLED"],
     visibility = ["//visibility:private"],
-    # copybara:uncomment deps = ["//third_party/perfetto:libperfetto_client_experimental"],
+    # copybara:uncomment deps = ["@perfetto//:libperfetto_client_experimental"],
 )
 
 cc_library(

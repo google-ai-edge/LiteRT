@@ -37,7 +37,6 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
@@ -65,7 +64,6 @@ using ::litert::Expected;
 using ::litert::GpuOptions;
 using ::litert::Layout;
 using ::litert::Options;
-using ::litert::OwnHandle;
 using ::litert::RankedTensorType;
 using ::litert::TensorBuffer;
 using ::litert::Unexpected;
@@ -492,8 +490,9 @@ Expected<Options> CreateOptions(JNIEnv* env, jintArray accelerators,
   }
 
   if (env->GetArrayLength(qualcomm_options_keys) > 0) {
-    LITERT_ASSIGN_OR_RETURN(auto& qualcomm_options,
-                            compilation_options.GetQualcommOptions());
+    LITERT_ASSIGN_OR_RETURN(
+        auto& qualcomm_options,
+        compilation_options.GetOptions<::litert::qualcomm::QualcommOptions>());
     LITERT_RETURN_IF_ERROR(PopulateQualcommOptions(
         env, qualcomm_options, qualcomm_options_keys, qualcomm_options_values));
   }
@@ -738,10 +737,25 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromAsset(
     return 0;
   }
 
-  auto buffer = litert::OwningBufferRef<uint8_t>(
-      reinterpret_cast<const uint8_t*>(AAsset_getBuffer(model_asset)),
-      AAsset_getLength(model_asset));
+  const off_t asset_length = AAsset_getLength(model_asset);
+  if (asset_length <= 0) {
+    LITERT_LOG(LITERT_ERROR, "Asset '%s' is empty or invalid size: %ld",
+               asset_name_str, static_cast<long>(asset_length));
+    AAsset_close(model_asset);
+    ThrowLiteRtException(env, kLiteRtStatusErrorNotFound,
+                         "Empty or invalid asset.");
+    return 0;
+  }
+
+  litert::OwningBufferRef<uint8_t> buffer(static_cast<size_t>(asset_length));
+  int bytes_read = AAsset_read(model_asset, buffer.Data(), asset_length);
   AAsset_close(model_asset);
+  if (bytes_read != asset_length) {
+    LITERT_LOG(LITERT_ERROR, "Failed to read full asset '%s'", asset_name_str);
+    ThrowLiteRtException(env, kLiteRtStatusErrorFileIO,
+                         "Failed to read asset data.");
+    return 0;
+  }
 
   auto litert_env = reinterpret_cast<Environment*>(env_handle);
   ABSL_CHECK(litert_env != nullptr);

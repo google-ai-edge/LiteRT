@@ -18,6 +18,7 @@
 #include <utility>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_profiler_types.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/environment.h"
@@ -142,5 +143,17 @@ LiteRtStatus LiteRtSetAcceleratorStopMetricsCollection(
     return kLiteRtStatusErrorInvalidArgument;
   }
   accelerator->StopMetricsCollection = StopMetricsCollection;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetAcceleratorGetHooks(
+    LiteRtAccelerator accelerator,
+    LiteRtStatus (*GetHooks)(LiteRtRuntimeContext* runtime_context,
+                             LiteRtDelegateWrapper delegate, LiteRtHook* hook,
+                             void** user_data)) {
+  if (!accelerator) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  accelerator->GetHooks = GetHooks;
   return kLiteRtStatusOk;
 }

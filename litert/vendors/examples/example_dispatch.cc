@@ -23,15 +23,11 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/internal/litert_logging_helper.h"
+#include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_options.h"
-#include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
@@ -224,19 +220,12 @@ class LiteRtDispatchInvocationContextT {
   }
 
   // Stores per-invocation options to be used for the next invocation.
-  //
-  // For this example implementation, we uses the "Hardware Accelerators"
-  // option as an example to demonstrate how to pass per rn option.
-  // If the option is provided, it is stored and used to control the behavior
-  // of the next call to `Invoke`.
-  // This is only a reference implementation to demonstrate the API use case.
   void SetRunOptions(LiteRtOptions options) {
     LiteRtHwAcceleratorSet accelerators = kLiteRtHwAcceleratorNone;
-    if (options) {
-      // Best-effort: if the option isn't present or is invalid, fall back to
-      // "no per-run override" semantics.
-      if (LiteRtGetOptionsHardwareAccelerators(options, &accelerators) !=
-          kLiteRtStatusOk) {
+    if (options && runtime_context_ &&
+        runtime_context_->get_options_hardware_accelerators) {
+      if (runtime_context_->get_options_hardware_accelerators(
+              options, &accelerators) != kLiteRtStatusOk) {
         accelerators = kLiteRtHwAcceleratorNone;
       }
     }
@@ -333,9 +322,10 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
   the_options = options;
 
   LiteRtEnvironmentOptions environment_options;
-  if (LiteRtGetEnvironmentOptions(env, &environment_options) ==
+  if (runtime_context->get_environment_options(env, &environment_options) ==
       kLiteRtStatusOk) {
-    LiteRtPropagateMinLoggerSeverity(environment_options);
+    LiteRtPropagateMinLoggerSeverityWithRuntimeContext(runtime_context,
+                                                       environment_options);
   }
 
   return kLiteRtStatusOk;
@@ -522,27 +512,6 @@ LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
       auto results,
       ::litert::example::Execute(invocation_context->ExampleGraph(), inputs));
 
-  // Apply a simple per-run behavior tweak based on the provided options:
-  // if the per-run accelerator set contains CPU, scale outputs by 2.
-  //
-  // IMPORTANT: This section serves as a reference implementation to demonstrate
-  // the usage of the per-run options API. In a real-world scenario, the
-  // dispatch plugin would use the options to alter the execution flow,
-  // for example, by selecting a different hardware accelerator or adjusting
-  // runtime parameters.
-  //
-  // To facilitate testing and verification of the options propagation mechanism
-  // within the LiteRT framework, we introduce an artificial behavior change
-  // here. Specifically, if the `kLiteRtHwAcceleratorCpu` flag is set in the
-  // per-run options, we scale all output values by a factor of 2. This allows
-  // integration tests to easily check if the options were received and
-  // processed correctly by this dispatch plugin.
-  //
-  // This scaling is purely for testing purposes and does not represent a
-  // realistic use case for hardware accelerator selection. In a production
-  // environment, the choice of accelerator would influence the underlying
-  // computation kernels used, rather than arbitrarily changing the output
-  // values.
   if (invocation_context->GetRunAccelerators() & kLiteRtHwAcceleratorCpu) {
     for (auto& output : results) {
       for (auto& v : output) {

@@ -82,6 +82,8 @@ ABSL_DECLARE_FLAG(std::string, qualcomm_ir_json_dir);
 
 ABSL_DECLARE_FLAG(std::string, qualcomm_dlc_dir);
 
+ABSL_DECLARE_FLAG(std::string, qualcomm_graph_transform);
+
 ABSL_DECLARE_FLAG(std::string, qualcomm_saver_output_dir);
 
 ABSL_DECLARE_FLAG(std::string, qualcomm_schematic_dir);
@@ -189,6 +191,36 @@ bool AbslParseFlag(absl::string_view text, QualcommOptions::Profiling* options,
                    std::string* error);
 
 std::string AbslUnparseFlag(QualcommOptions::Profiling options);
+
+}  // namespace litert::qualcomm
+
+// LPAI OPTIONS ////////////////////////////////////////////////////////////////
+
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::LpaiTarget,
+                  qualcomm_lpai_target);
+ABSL_DECLARE_FLAG(uint32_t, qualcomm_lpai_fps);
+ABSL_DECLARE_FLAG(uint32_t, qualcomm_lpai_ftrt_ratio);
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::LpaiClientPerfType,
+                  qualcomm_lpai_client_perf_type);
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::LpaiCoreAffinityType,
+                  qualcomm_lpai_core_affinity_type);
+ABSL_DECLARE_FLAG(uint32_t, qualcomm_lpai_core_selection);
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text, QualcommOptions::LpaiTarget* options,
+                   std::string* error);
+std::string AbslUnparseFlag(QualcommOptions::LpaiTarget options);
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::LpaiClientPerfType* options,
+                   std::string* error);
+std::string AbslUnparseFlag(QualcommOptions::LpaiClientPerfType options);
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::LpaiCoreAffinityType* options,
+                   std::string* error);
+std::string AbslUnparseFlag(QualcommOptions::LpaiCoreAffinityType options);
 
 }  // namespace litert::qualcomm
 

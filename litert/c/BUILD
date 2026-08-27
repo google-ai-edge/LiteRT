@@ -11,6 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+#
 
 load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@build_bazel_rules_apple//apple:ios.bzl", "ios_framework", "ios_unit_test")
@@ -471,7 +475,12 @@ cc_test(
 # cc_test(
 #     name = "litert_tensor_buffer_cl_test",
 #     srcs = ["litert_tensor_buffer_cl_test.cc"],
-#     tags = ["requires-gpu-nvidia"],
+#     tags = [
+#         "noasan",
+#         "nomsan",
+#         "notsan",
+#         "requires-gpu-nvidia",
+#     ],
 #     deps = [
 #         ":litert_any",
 #         ":litert_common",
@@ -481,7 +490,7 @@ cc_test(
 #         ":litert_platform_support",
 #         ":litert_tensor_buffer",
 #         ":litert_tensor_buffer_types",
-#         "@com_google_googletest//:gtest_main",
+#         "@com_google_googletest//:gtest_main_no_heapcheck",
 #         "@ml_drift//ml_drift/cl:cl_command_queue",
 #         "@ml_drift//ml_drift/cl:cl_context",
 #         "@ml_drift//ml_drift/cl:environment",
@@ -498,7 +507,13 @@ cc_test(
 #     name = "litert_tensor_buffer_test_custom",
 #     srcs = ["litert_tensor_buffer_test.cc"],
 #     defines = ["LITERT_CUSTOM_TENSOR_BUFFER_TEST=1"],
-#     tags = ["requires-gpu-nvidia"],
+#     tags = [
+#         # TODO(b/553203115): Reenable Asan test
+#         "noasan",
+#         "nomsan",
+#         "notsan",
+#         "requires-gpu-nvidia",
+#     ],
 #     deps = [
 #         ":litert_any",
 #         ":litert_common",
@@ -507,7 +522,7 @@ cc_test(
 #         ":litert_platform_support",
 #         ":litert_tensor_buffer",
 #         ":litert_tensor_buffer_types",
-#         "@com_google_googletest//:gtest_main",
+#         "@com_google_googletest//:gtest_main_no_heapcheck",
 #         "@ml_drift//ml_drift/cl:cl_command_queue",
 #         "@ml_drift//ml_drift/cl:cl_context",
 #         "@ml_drift//ml_drift/cl:environment",
@@ -643,6 +658,11 @@ cc_test(
         "//litert/test:testdata/dynamic_add_model.tflite",
         "//litert/test:testdata/simple_model.tflite",
     ],
+    tags = [
+        "noios",
+        "nomacos",
+        "nowindows",
+    ],
     deps = [
         ":litert_common",
         ":litert_environment_options",
@@ -701,10 +721,18 @@ cc_library(
     deps = [":litert_common"],
 )
 
+cc_library(
+    name = "litert_profiler_types",
+    hdrs = ["litert_profiler_types.h"],
+    compatible_with = get_compatible_with_portable(),
+    deps = [":litert_common"],
+)
+
 litert_c_api_library(
     name = "litert_profiler",
     srcs = ["litert_profiler.cc"],
     hdrs = ["litert_profiler.h"],
+    header_kwargs = {"compatible_with": get_compatible_with_portable()},
     impl_deps = [
         "//litert/cc:litert_macros",
         "//litert/runtime:compiled_model",
@@ -719,6 +747,7 @@ litert_c_api_library(
 cc_library(
     name = "litert_profiler_event",
     hdrs = ["litert_profiler_event.h"],
+    compatible_with = get_compatible_with_portable(),
 )
 
 cc_test(
@@ -800,14 +829,15 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_builder_impl",
     ":litert_tensor_buffer_impl",
     "//litert/c/internal:litert_accelerator_registration",
-    "//litert/c/internal:litert_accelerator",
+    "//litert/c/internal:litert_accelerator_impl",
     "//litert/c/internal:litert_dispatch_delegate",
     "//litert/c/internal:litert_external_litert_buffer_context",
     "//litert/c/internal:litert_logging",
     "//litert/c/internal:litert_runtime_api_export",
     "//litert/c/internal:litert_tensor_buffer_registry",
     "//litert/c/options:litert_cpu_options",
-    # copybara:uncomment "//litert/c/options/google:litert_darwinn_runtime_options",
+    # copybara:uncomment "//litert/c/options/google:litert_google_tensor_privileged_options",
+    "//litert/c/options:litert_arm_options",
     "//litert/c/options:litert_google_tensor_options_type",
     "//litert/c/options:litert_google_tensor_options",
     "//litert/c/options:litert_gpu_options",
@@ -864,6 +894,7 @@ cc_shared_library(
     target_compatible_with = exclude_windows_target_compatible_with(),
     user_link_flags = export_lrt_runtime_only_linkopt() + select({
         "//litert:macos": ["-Wl,-install_name,@rpath/libLiteRt.so"],
+        "//litert:ios": ["-Wl,-install_name,@rpath/libLiteRt.so"],
         "//conditions:default": ["-Wl,-soname=libLiteRt.so"],
     }) + litert_android_linkopts(),
     deps = [":litert_runtime_c_api_so_shim"],
@@ -875,6 +906,11 @@ sh_test(
     data = [
         "litert_runtime_c_api_so_symbols.txt",
         ":libLiteRt.so",
+    ],
+    tags = [
+        "noios",
+        "nomacos",
+        "nowindows",
     ],
 )
 
@@ -908,6 +944,7 @@ ios_framework(
         "-install_name @rpath/libLiteRt.dylib",
     ] + LITERT_RUNTIME_C_API_DARWIN_FORCE_LINKOPTS,
     minimum_os_version = LITERT_MIN_IOS_VERSION,
+    tags = ["notap"],
     deps = LITERT_C_API_COMMON_DEPS,
 )
 
@@ -1112,6 +1149,7 @@ cc_library(
 # check_dependencies(
 #     of = [":litert_runtime_c_api_shared_lib"],
 #     dont_match_regexp = "^//third_party/llvm/llvm-project/mlir",
+#     tags = ["nowindows"],
 # )
 # copybara:uncomment_end
 
@@ -1121,6 +1159,7 @@ objc_library(
     name = "litert_tensor_buffer_test_library",
     testonly = True,
     srcs = ["litert_tensor_buffer_test.mm"],
+    tags = ["objc"],
     deps = [
         ":litert_any",
         ":litert_common",

@@ -79,15 +79,13 @@ void UpdateRawHandle(MetalMemoryInfo* memory_info) {
 void ReadDataFromBuffer(id<MTLBuffer> buffer, int buffer_offset, id<MTLCommandQueue> command_queue,
                         void* data, int data_size) {
   @autoreleasepool {
-    id<MTLCommandBuffer> command_buffer = [command_queue commandBuffer];
     // If the buffer is already in shared storage mode, copy the data directly to
-    // the host memory.
+    // the host memory without creating an empty command buffer.
     if (buffer.storageMode == MTLStorageModeShared) {
-      [command_buffer commit];
-      [command_buffer waitUntilCompleted];
       std::memcpy(data, reinterpret_cast<uint8_t*>([buffer contents]) + buffer_offset, data_size);
       return;
     }
+    id<MTLCommandBuffer> command_buffer = [command_queue commandBuffer];
     // Create a temporary buffer with shared storage mode to be accessible by the
     // CPU.
     id<MTLBuffer> temp_buffer =

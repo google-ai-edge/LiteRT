@@ -44,7 +44,7 @@ litert_dispatch_api(
     export_litert_only = True,
     linkopts = litert_android_linkopts() + [
         "-Wl,-soname=libLiteRtDispatch_MediaTek.so",
-        "-Wl,-lc++abi",
+        "-Wl,-lc++abi",  # copybara:comment
     ],
     shared_lib_name = "dispatch_api_so",
     so_name = "libLiteRtDispatch_MediaTek.so",
@@ -126,5 +126,6 @@ litert_device_test(
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+        "@neuro_pilot//:v8_latest_host_headers",
     ],
 )

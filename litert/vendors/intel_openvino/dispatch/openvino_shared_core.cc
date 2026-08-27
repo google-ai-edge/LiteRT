@@ -25,8 +25,6 @@
 OpenVINOSharedCore::OpenVINOSharedCore()
     : core_(std::make_shared<ov::Core>()) {}
 
-OpenVINOSharedCore::~OpenVINOSharedCore() = default;
-
 // static
 OpenVINOSharedCore* OpenVINOSharedCore::GetInstance() {
   static OpenVINOSharedCore* instance = new OpenVINOSharedCore();

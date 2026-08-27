@@ -111,6 +111,10 @@ litert_lib(
 litert_lib(
     name = "adapter",
     hdrs = ["adapter.h"],
+    visibility = [
+        "//litert:__subpackages__",
+        "//litert:litert_friends",
+    ],
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",

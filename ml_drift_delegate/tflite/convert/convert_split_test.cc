@@ -81,6 +81,41 @@ TEST_P(ConvertSplitTest, SplitAlongChannel) {
   EXPECT_EQ(attr->axis, ::ml_drift::Axis::CHANNELS);
 }
 
+TEST_P(ConvertSplitTest, SplitAlongChannel0DScalarAxis) {
+  SingleOpInterpreterBuilder model(kTfLiteBuiltinSplit, /*version=*/1);
+  // Split has inputs: axis (0D scalar), input
+  std::vector<uint8_t> axis_data(sizeof(int32_t));
+  int32_t axis = 3;  // Channel axis for 4D
+  std::memcpy(axis_data.data(), &axis, sizeof(int32_t));
+  model.AddConstInput(kTfLiteInt32, {}, axis_data);  // 0D scalar axis
+  model.AddInput(GetParam(), {1, 2, 3, 4});          // input
+  model.AddOutput(GetParam(), {1, 2, 3, 2});         // output 0
+  model.AddOutput(GetParam(), {1, 2, 3, 2});         // output 1
+
+  TfLiteSplitParams* params =
+      static_cast<TfLiteSplitParams*>(calloc(1, sizeof(TfLiteSplitParams)));
+  params->num_splits = 2;
+  model.SetParameters(params);
+
+  std::unique_ptr<::tflite::Interpreter> interpreter = model.Build();
+  ASSERT_TRUE(interpreter);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_EQ(ir_model->ops().size(), 1);
+
+  const ::ml_drift::ir::IrOp* split_op = ir_model->op(0);
+  EXPECT_EQ(split_op->name, "split");
+  EXPECT_EQ(split_op->inputs.size(), 1);  // only input tensor
+  EXPECT_EQ(split_op->outputs.size(), 2);
+
+  const ::ml_drift::SplitAttributes* attr =
+      std::any_cast<::ml_drift::SplitAttributes>(&split_op->attr);
+  ASSERT_TRUE(attr);
+  EXPECT_EQ(attr->axis, ::ml_drift::Axis::CHANNELS);
+}
+
 TEST_P(ConvertSplitTest, SplitNumSplitsOne) {
   SingleOpInterpreterBuilder model(kTfLiteBuiltinSplit, /*version=*/1);
   std::vector<uint8_t> axis_data(sizeof(int32_t));

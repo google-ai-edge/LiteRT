@@ -23,11 +23,12 @@
 #include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_concrete_options_base.h"
 
 namespace litert::intel_openvino {
 
 /// @brief Defines the C++ wrapper for Intel OpenVINO-specific LiteRT options.
-class IntelOpenVinoOptions {
+class IntelOpenVinoOptions : public ConcreteOptionsBase {
  public:
   IntelOpenVinoOptions() = delete;
 
@@ -150,6 +151,17 @@ class IntelOpenVinoOptions {
   }
 
   LrtIntelOpenVinoOptions Get() const { return options_.get(); }
+
+  static const char* Discriminator() {
+    return LrtGetIntelOpenVinoOptionsIdentifier();
+  }
+
+  LiteRtStatus GetOpaqueOptionsData(
+      const char** identifier, void** payload,
+      void (**payload_deleter)(void*)) const override {
+    return LrtGetOpaqueIntelOpenVinoOptionsData(Get(), identifier, payload,
+                                                payload_deleter);
+  }
 
  private:
   explicit IntelOpenVinoOptions(LrtIntelOpenVinoOptions options)

@@ -17,17 +17,19 @@
 #include <memory>
 #include <string>
 
+#include "litert/c/litert_common.h"
 #include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_concrete_options_base.h"
 
 namespace litert::mediatek {
 
 /// @brief Defines the C++ wrapper for MediaTek-specific LiteRT options.
-class MediatekOptions {
+class MediatekOptions : public ConcreteOptionsBase {
  public:
   MediatekOptions() = delete;
   explicit MediatekOptions(LrtMediatekOptions* options,
@@ -44,6 +46,15 @@ class MediatekOptions {
 
   LrtMediatekOptions* Get() const { return options_.get(); }
   LrtMediatekOptions* Release() { return options_.release(); }
+
+  static const char* Discriminator() { return "mediatek"; }
+
+  LiteRtStatus GetOpaqueOptionsData(
+      const char** identifier, void** payload,
+      void (**payload_deleter)(void*)) const override {
+    return LrtGetOpaqueMediatekOptionsData(Get(), identifier, payload,
+                                           payload_deleter);
+  }
 
   /// @brief Specifies the version of the Neuron SDK to use.
   enum class NeronSDKVersion : int {
@@ -147,6 +158,18 @@ class MediatekOptions {
     internal::AssertOk(LrtGetMediatekOptionsDisableDlaDirRemoval, Get(),
                        &disable_dla_dir_removal);
     return disable_dla_dir_removal;
+  }
+
+  void SetUseGetSupportedOperations(bool use_get_supported_operations) {
+    internal::AssertOk(LrtSetMediatekOptionsUseGetSupportedOperations, Get(),
+                       use_get_supported_operations);
+  }
+
+  bool GetUseGetSupportedOperations() {
+    bool use_get_supported_operations;
+    internal::AssertOk(LrtGetMediatekOptionsUseGetSupportedOperations, Get(),
+                       &use_get_supported_operations);
+    return use_get_supported_operations;
   }
 
   void SetMediatekDlaDir(const std::string& mediatek_dla_dir) {

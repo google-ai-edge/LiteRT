@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -68,6 +69,22 @@ inline LiteRtStatus InferTranspose(const LiteRtOpT& op,
   return kLiteRtStatusOk;
 }
 
+template <typename T, typename = void>
+struct HasSubByte4 : std::false_type {};
+
+template <typename T>
+struct HasSubByte4<T, std::void_t<decltype(std::declval<T>().c),
+                                  decltype(std::declval<T>().d)>>
+    : std::true_type {};
+
+template <typename T, typename = void>
+struct HasSubByte2 : std::false_type {};
+
+template <typename T>
+struct HasSubByte2<T, std::void_t<decltype(std::declval<T>().a),
+                                  decltype(std::declval<T>().b)>>
+    : std::true_type {};
+
 constexpr int kMaxRank = 8;
 
 template <typename T>
@@ -90,7 +107,7 @@ inline void ReferenceTranspose(const T* input_data, const int32_t* input_dims,
 
   int64_t num_elements = in_strides[0] * input_dims[0];
 
-  for (int64_t o = 0; o < num_elements; ++o) {
+  auto get_in_idx = [&](int64_t o) {
     int64_t temp = o;
     int64_t in_idx = 0;
     for (int i = 0; i < rank; ++i) {
@@ -98,7 +115,41 @@ inline void ReferenceTranspose(const T* input_data, const int32_t* input_dims,
       temp %= out_strides[i];
       in_idx += coord * in_strides[perm[i]];
     }
-    output_data[o] = input_data[in_idx];
+    return in_idx;
+  };
+
+  if constexpr (HasSubByte4<T>::value) {
+    auto get_elem = [&](int64_t in_idx) {
+      switch (in_idx & 3) {
+        case 0:
+          return input_data[in_idx >> 2].a;
+        case 1:
+          return input_data[in_idx >> 2].b;
+        case 2:
+          return input_data[in_idx >> 2].c;
+        default:
+          return input_data[in_idx >> 2].d;
+      }
+    };
+    for (int64_t o = 0; o < num_elements >> 2; ++o) {
+      output_data[o].a = get_elem(get_in_idx(o << 2));
+      output_data[o].b = get_elem(get_in_idx((o << 2) + 1));
+      output_data[o].c = get_elem(get_in_idx((o << 2) + 2));
+      output_data[o].d = get_elem(get_in_idx((o << 2) + 3));
+    }
+  } else if constexpr (HasSubByte2<T>::value) {
+    auto get_elem = [&](int64_t in_idx) {
+      return (in_idx & 1) == 0 ? input_data[in_idx >> 1].a
+                               : input_data[in_idx >> 1].b;
+    };
+    for (int64_t o = 0; o < num_elements >> 1; ++o) {
+      output_data[o].a = get_elem(get_in_idx(o << 1));
+      output_data[o].b = get_elem(get_in_idx((o << 1) + 1));
+    }
+  } else {
+    for (int64_t o = 0; o < num_elements; ++o) {
+      output_data[o] = input_data[get_in_idx(o)];
+    }
   }
 }
 

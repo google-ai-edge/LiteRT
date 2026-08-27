@@ -166,6 +166,17 @@ bool IsLayerNormSupported(const TfLiteContext* absl_nonnull context,
     *error = "LayerNorm is missing epsilon.";
     return false;
   }
+  if (!flexbuffer_map["_TENSOR_V1_reduction_axes"].IsNull()) {
+    const flexbuffers::Vector reduction_axes_vec =
+        flexbuffer_map["_TENSOR_V1_reduction_axes"]
+            .AsMap()["TENSOR_DATA"]
+            .AsVector();
+    if (reduction_axes_vec.size() != 1 ||
+        reduction_axes_vec[0].AsInt64() != input->dims->size - 1) {
+      *error = "Only reduction on the last axis is supported for LayerNorm.";
+      return false;
+    }
+  }
   return true;
 }
 

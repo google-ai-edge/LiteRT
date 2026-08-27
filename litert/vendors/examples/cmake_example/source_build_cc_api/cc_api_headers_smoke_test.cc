@@ -1,0 +1,79 @@
+// Copyright 2026 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include <type_traits>
+
+#include "litert/cc/litert_any.h"
+#include "litert/cc/litert_api_types.h"
+#include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_common.h"
+#include "litert/cc/litert_compiled_model.h"
+#include "litert/cc/litert_custom_op_kernel.h"
+#include "litert/cc/litert_element_type.h"
+#include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
+#include "litert/cc/litert_event.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_layout.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_model.h"
+#include "litert/cc/litert_model_types.h"
+#include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/litert_options.h"
+#include "litert/cc/litert_profiler.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
+#include "litert/cc/litert_string_util.h"
+#include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
+#include "litert/cc/options/litert_arm_options.h"
+#include "litert/cc/options/litert_compiler_options.h"
+#include "litert/cc/options/litert_concrete_options_base.h"
+#include "litert/cc/options/litert_cpu_options.h"
+#include "litert/cc/options/litert_google_tensor_options.h"
+#include "litert/cc/options/litert_gpu_options.h"
+#include "litert/cc/options/litert_intel_openvino_options.h"
+#include "litert/cc/options/litert_magic_number_options.h"
+#include "litert/cc/options/litert_mediatek_options.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
+#include "litert/cc/options/litert_runtime_options.h"
+#include "litert/cc/options/litert_samsung_options.h"
+#include "litert/cc/options/litert_webnn_options.h"
+
+namespace {
+
+static_assert(std::is_same_v<
+              litert::ScopedWeightSource::SectionMap,
+              std::unordered_map<std::string, litert::ScopedWeightSection>>);
+
+#ifdef LITERT_NO_ABSL
+static_assert(std::is_same_v<litert::StringView, std::string_view>);
+static_assert(std::is_same_v<litert::Span<const int>, std::span<const int>>);
+static_assert(std::is_same_v<litert::FlatHashMap<int, int>,
+                             std::unordered_map<int, int>>);
+static_assert(
+    std::is_same_v<litert::AnyInvocable<void()>, std::function<void()>>);
+static_assert(std::is_same_v<litert::SmallVector<int, 4>, std::vector<int>>);
+#else
+static_assert(std::is_same_v<litert::StringView, absl::string_view>);
+static_assert(std::is_same_v<litert::Span<const int>, absl::Span<const int>>);
+static_assert(std::is_same_v<litert::FlatHashMap<int, int>,
+                             absl::flat_hash_map<int, int>>);
+static_assert(
+    std::is_same_v<litert::AnyInvocable<void()>, absl::AnyInvocable<void()>>);
+static_assert(
+    std::is_same_v<litert::SmallVector<int, 4>, absl::InlinedVector<int, 4>>);
+#endif  // LITERT_NO_ABSL
+
+}  // namespace

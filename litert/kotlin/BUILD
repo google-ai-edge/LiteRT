@@ -67,9 +67,9 @@ cc_library(
     deps = [
         ":litert_jni_common",
         "//litert/c:litert_common",
-        "//litert/c/internal:litert_accelerator",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_any",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_environment_api",
         "//litert/cc:litert_environment_options",
         "//tflite/java/jni",
@@ -396,13 +396,6 @@ kt_android_library(
     ],
 )
 
-# TODO(niuchl): Remove this alias once the internal references are updated to the new target.
-alias(
-    name = "litert_kotlin_api",
-    actual = ":litert_api",
-    visibility = ["//visibility:private"],
-)
-
 # Android library for the litert package, including:
 # - TFLite Java sources for the implementation
 # - TFLite JNI
@@ -412,7 +405,7 @@ android_library(
     srcs = TFLITE_JAVA_SRCS_IMPL,
     exports_manifest = 1,
     javacopts = JAVACOPTS,
-    manifest = "src/main/AndroidManifest.xml",
+    manifest = "src/main/AndroidManifestImpl.xml",
     proguard_specs = ["//tflite/java:proguard.flags"],
     visibility = ["//visibility:public"],
     exports = [
@@ -432,7 +425,7 @@ android_library(
     srcs = TFLITE_JAVA_SRCS_IMPL,
     exports_manifest = 1,
     javacopts = JAVACOPTS,
-    manifest = "src/main/AndroidManifest.xml",
+    manifest = "src/main/AndroidManifestImpl.xml",
     proguard_specs = ["//tflite/java:proguard.flags"],
     visibility = ["//visibility:private"],
     deps = [
@@ -443,7 +436,7 @@ android_library(
     ],
 )
 
-# bazel build --config=android_arm64 --android_ndk_min_sdk_version=23 \
+# bazel build --config=android_arm64 --android_ndk_min_sdk_version=24 \
 #   --define=extra_kt_jvm_opts='-jvm-target 17' --define=public_maven_build=true \
 #   --define=litert_runtime_link_mode=dynamic \
 #   //litert/kotlin:litert-api-aar
@@ -453,7 +446,7 @@ aar_with_jni(
     # copybara:uncomment third_party_notice = "//litert/kotlin/google/third_party_licenses:res/raw/third_party_licenses",
 )
 
-# bazel build --config=android_arm64 --android_ndk_min_sdk_version=23 \
+# bazel build --config=android_arm64 --android_ndk_min_sdk_version=24 \
 #   --define=public_maven_build=true \
 #   //litert/kotlin:litert-aar
 aar_with_jni(

@@ -39,10 +39,10 @@
 #include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
-#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
-#include "litert/vendors/google_tensor/dispatch/google/darwinn_options_utils.h"
-#include "litert/vendors/google_tensor/dispatch/google/litert_darwinn_runtime_options.h"
-#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+#if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
+#include "litert/c/options/google/litert_google_tensor_privileged_options_type.h"
+#include "litert/vendors/google_tensor/dispatch/google/google_tensor_privileged_options_utils.h"
+#endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_macros.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
@@ -52,8 +52,8 @@ namespace gt = litert::google_tensor;
 
 namespace {
 std::optional<LiteRtDispatchDeviceContextT::GoogleTensorOptionsData>
-GetGoogleTensorOptions(const LiteRtRuntimeContext* runtime_context,
-                       LiteRtOptions options) {
+ParseGoogleTensorOptions(const LiteRtRuntimeContext* runtime_context,
+                         LiteRtOptions options) {
   if (options == nullptr) return std::nullopt;
   LiteRtOpaqueOptions opaque_opts = nullptr;
   runtime_context->get_opaque_options(options, &opaque_opts);
@@ -132,16 +132,16 @@ LiteRtStatus LiteRtDispatchDeviceContextT::Create(
   device_context =
       new LiteRtDispatchDeviceContextT(runtime_context, thr_context);
 
-#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
-  std::optional<litert::LiteRtDarwinnRuntimeOptionsT> options_data =
-      gt::GetDarwinnOptionsData(runtime_context, options);
-  LITERT_RETURN_IF_ERROR(
-      gt::ApplyDarwinnOptionsToDeviceContext(device_context, options_data));
-  device_context->darwinn_options() = std::move(options_data);
-#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+#if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
+  std::optional<LrtGoogleTensorPrivilegedOptionsT> options_data =
+      gt::GetGoogleTensorPrivilegedOptionsData(runtime_context, options);
+  LITERT_RETURN_IF_ERROR(gt::ApplyGoogleTensorPrivilegedOptionsToDeviceContext(
+      device_context, options_data));
+  device_context->SetGoogleTensorPrivilegedOptions(std::move(options_data));
+#endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
 
-  device_context->google_tensor_options() =
-      GetGoogleTensorOptions(runtime_context, options);
+  device_context->SetGoogleTensorOptions(
+      ParseGoogleTensorOptions(runtime_context, options));
 
   std::move(thr_context_cleanup).Cancel();
   return kLiteRtStatusOk;
@@ -190,6 +190,15 @@ LiteRtStatus LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_offset(
       tensor_buffer, &tensor_buffer_offset));
 
+  if (tensor_buffer_offset > 0 && tensor_buffer_offset >= tensor_buffer_size) {
+    LITERT_LOG(LITERT_ERROR,
+               "Tensor buffer 0x%p offset %zu is out of bounds for tensor "
+               "buffer size %zu",
+               tensor_buffer, tensor_buffer_offset, tensor_buffer_size);
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const size_t offset_adjusted_size = tensor_buffer_size - tensor_buffer_offset;
+
   switch (tensor_buffer_type) {
 #if LITERT_HAS_AHWB_SUPPORT
     case kLiteRtTensorBufferTypeAhwb: {
@@ -200,7 +209,8 @@ LiteRtStatus LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       GT_LOG_RETURN_IF_SB_ERROR(
           thrRegisterBufferWithOffset(
               thr_context_, kThrBufferTypeAHardwareBuffer, ahwb,
-              tensor_buffer_offset, tensor_buffer_size, &tensor_buffer_handle),
+              tensor_buffer_offset, offset_adjusted_size,
+              &tensor_buffer_handle),
           "Failed to register AHardwareBuffer with SB");
       break;
     }
@@ -215,7 +225,7 @@ LiteRtStatus LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       GT_LOG_RETURN_IF_SB_ERROR(
           thrRegisterBufferDmaBufWithOffset(
               thr_context_, dmabuf_buffer_fd, tensor_buffer_offset,
-              tensor_buffer_size, &tensor_buffer_handle),
+              offset_adjusted_size, &tensor_buffer_handle),
           "Failed to register dma-buf with SB");
       break;
     }
@@ -226,9 +236,10 @@ LiteRtStatus LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
           tensor_buffer, &host_memory_addr));
 
       GT_LOG_RETURN_IF_SB_ERROR(
-          thrRegisterBufferWithOffset(
-              thr_context_, kThrBufferTypeHostMemory, host_memory_addr,
-              tensor_buffer_offset, tensor_buffer_size, &tensor_buffer_handle),
+          thrRegisterBufferWithOffset(thr_context_, kThrBufferTypeHostMemory,
+                                      host_memory_addr, tensor_buffer_offset,
+                                      offset_adjusted_size,
+                                      &tensor_buffer_handle),
           "Failed to register host memory with SB");
       break;
     }
@@ -258,6 +269,9 @@ LiteRtStatus LiteRtDispatchDeviceContextT::LoadExecutable(
       break;
     case kLiteRtDispatchExecutableTypeMlModel:
       thr_type = kThrSqContainerTypeMlModel;
+      break;
+    case kLiteRtDispatchExecutableTypeTfliteModel:
+      thr_type = kThrSqContainerTypeTflite;
       break;
     default:
       LITERT_LOG(LITERT_ERROR, "Invalid executable type %d", type);

@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -25,7 +24,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
-#include "litert/c/internal/litert_logging_helper.h"
+#include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_element_type.h"
@@ -200,7 +199,7 @@ LiteRtStatus LiteRtCreateCompilerPlugin(
     LiteRtCompilerPlugin* compiler_plugin, LiteRtEnvironmentOptions env,
     LiteRtOptions options) {
   // Propagate the min logger severity from the environment.
-  LiteRtPropagateMinLoggerSeverity(env);
+  LiteRtPropagateMinLoggerSeverityWithCompilerContext(compiler_context, env);
 
   *compiler_plugin = new LiteRtCompilerPluginT(compiler_context);
   return kLiteRtStatusOk;

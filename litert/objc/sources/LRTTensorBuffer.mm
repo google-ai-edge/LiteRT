@@ -26,8 +26,8 @@
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
-#import "third_party/odml/litert/litert/objc/apis/LRTError.h"
 #import "third_party/odml/litert/litert/objc/sources/LRTEnvironment+Internal.h"
+#import "third_party/odml/litert/litert/objc/sources/LRTError+Internal.h"
 #import "third_party/odml/litert/litert/objc/sources/LRTTensorBuffer+Internal.h"
 
 @implementation LRTTensorBuffer {
@@ -55,10 +55,7 @@
                                                error:(NSError **)error {
   if (!environment || ![environment cppEnvironment]) {
     if (error) {
-      *error =
-          [NSError errorWithDomain:LRTErrorDomain
-                              code:LRTErrorCodeInvalidArgument
-                          userInfo:@{NSLocalizedDescriptionKey : @"Valid LRTEnvironment required"}];
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
     }
     return nil;
   }
@@ -78,11 +75,8 @@
 
   if (!bufferResult.HasValue()) {
     if (error) {
-      NSDictionary *userInfo =
-          @{NSLocalizedDescriptionKey : @(bufferResult.Error().Message().c_str())};
-      *error = [NSError errorWithDomain:LRTErrorDomain
-                                   code:static_cast<NSInteger>(bufferResult.Error().Status())
-                               userInfo:userInfo];
+      *error = CreateLRTError(static_cast<NSInteger>(bufferResult.Error().Status()),
+                              @(bufferResult.Error().Message().c_str()));
     }
     return nil;
   }
@@ -98,10 +92,7 @@
                                                error:(NSError **)error {
   if (!environment || ![environment cppEnvironment]) {
     if (error) {
-      *error =
-          [NSError errorWithDomain:LRTErrorDomain
-                              code:LRTErrorCodeInvalidArgument
-                          userInfo:@{NSLocalizedDescriptionKey : @"Valid LRTEnvironment required"}];
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
     }
     return nil;
   }
@@ -122,11 +113,8 @@
 
   if (!bufferResult.HasValue()) {
     if (error) {
-      NSDictionary *userInfo =
-          @{NSLocalizedDescriptionKey : @(bufferResult.Error().Message().c_str())};
-      *error = [NSError errorWithDomain:LRTErrorDomain
-                                   code:static_cast<NSInteger>(bufferResult.Error().Status())
-                               userInfo:userInfo];
+      *error = CreateLRTError(static_cast<NSInteger>(bufferResult.Error().Status()),
+                              @(bufferResult.Error().Message().c_str()));
     }
     return nil;
   }
@@ -183,10 +171,8 @@
   auto lockResult = _cppTensorBuffer->Lock(litert::TensorBuffer::LockMode::kRead);
   if (!lockResult.HasValue()) {
     if (error) {
-      *error =
-          [NSError errorWithDomain:LRTErrorDomain
-                              code:static_cast<NSInteger>(lockResult.Error().Status())
-                          userInfo:@{NSLocalizedDescriptionKey : @"Failed to lock tensor buffer"}];
+      *error = CreateLRTError(static_cast<NSInteger>(lockResult.Error().Status()),
+                              @"Failed to lock tensor buffer");
     }
     return nil;
   }
@@ -203,10 +189,8 @@
   auto lockResult = _cppTensorBuffer->Lock(litert::TensorBuffer::LockMode::kWrite);
   if (!lockResult.HasValue()) {
     if (error) {
-      *error =
-          [NSError errorWithDomain:LRTErrorDomain
-                              code:static_cast<NSInteger>(lockResult.Error().Status())
-                          userInfo:@{NSLocalizedDescriptionKey : @"Failed to lock tensor buffer"}];
+      *error = CreateLRTError(static_cast<NSInteger>(lockResult.Error().Status()),
+                              @"Failed to lock tensor buffer");
     }
     return NO;
   }

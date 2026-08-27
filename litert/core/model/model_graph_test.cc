@@ -259,20 +259,6 @@ TEST(ModelQuantizationTypeTest, ClonePerTensorQuantization) {
   EXPECT_EQ(dest_tensor.Qparams().second.per_tensor.zero_point, 42);
 }
 
-TEST(ModelQuantizationTypeTest, CloneUnsupportedQuantizationTypeReturnsError) {
-  LiteRtSubgraphT src_sg;
-  LiteRtSubgraphT dest_sg;
-
-  auto& src_tensor = src_sg.EmplaceTensor();
-  src_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 2}));
-  QuantizationDetail detail{};
-  src_tensor.SetQarams(
-      std::make_pair(static_cast<LiteRtQuantizationTypeId>(999), detail));
-
-  auto dest_tensor_or = MakeClone(dest_sg, src_tensor);
-  EXPECT_FALSE(dest_tensor_or.HasValue());
-}
-
 TEST(ModelGraphTest, MakeCloneTensor) {
   LiteRtSubgraphT subgraph;
   auto dest_or = MakeClone(subgraph, TestTensor());

@@ -116,8 +116,9 @@ TEST_P(ConvertResize2dTest, ResizeNearestNeighbor) {
   ASSERT_EQ(interpreter->Invoke(), kTfLiteOk);
 }
 
-INSTANTIATE_TEST_SUITE_P(ConvertResize2dTest, ConvertResize2dTest,
-                         ::testing::Values(kTfLiteFloat32, kTfLiteFloat16));
+INSTANTIATE_TEST_SUITE_P(
+    ConvertResize2dTest, ConvertResize2dTest,
+    ::testing::Values(kTfLiteFloat32, kTfLiteFloat16, kTfLiteInt8));
 
 }  // namespace
 }  // namespace litert::ml_drift::ir

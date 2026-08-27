@@ -249,43 +249,10 @@ config_setting(
 )
 
 # Controls visibility into LiteRT C++ and C APIs.
-# Access to LiteRT C++ API is controlled by :litert_cc_users_dynamic_link and
-# :litert_cc_users_static_link.
+# Access to LiteRT C++ API is controlled by :litert_cc_users_static_link.
 # Access to LiteRT C API is controlled by :litert_c_users.
 
-# Users with access to the LiteRT C++ API linked dynamically (litert/cc/dynamic_runtime).
-# Requires linking against libLiteRt.so.
-# For statically linked C++ API, use :litert_cc_users_static_link.
-#
-# Note: External users should use litert/cc:litert_api_with_dynamic_runtime which is litert_public.
-# This should be only used for internal LiteRT targets.
-package_group(
-    name = "litert_cc_users_dynamic_link",
-    packages = [
-        "//litert/cc/...",
-        "//litert/compiler/plugin/...",
-        "//litert/google/...",
-        "//litert/integration_test/...",
-        "//litert/kotlin/...",
-        "//litert/python/...",
-        "//litert/runtime/accelerators/gpu/...",
-        "//litert/runtime/dispatch/...",
-        "//ml_drift_delegate/delegate/...",
-        "//litert/rust/...",
-        "//litert/samples/...",
-        "//litert/sdk_util/...",
-        "//litert/test/...",
-        "//litert/tflite_support/custom_op/...",
-        "//litert/tools/...",
-        "//litert/vendors/...",
-        # When litert_link_capi_so=false
-        "//ci/tools/...",
-        # copybara:uncomment "//tensor/...",
-    ] + litert_friends(),
-)
-
 # Users with access to the LiteRT C++ API linked statically (i.e. litert/cc/).
-# For dynamically linked C++ API, use :litert_cc_users_dynamic_link.
 # This is public for now.
 package_group(
     name = "litert_cc_users_static_link",
@@ -314,9 +281,10 @@ package_group(
         "//litert/tools/...",
         "//litert/vendors/...",
         "//ml_drift_delegate/...",
-        "//support/...",
         "//third_party/odml/generative/fabric/adapters/litert/...",
         "//third_party/odml/infra/fabric/...",
+        "//third_party/odml/infra/southbound/...",
+        "//third_party/odml/litert/support/...",
         "//third_party/odml/litert/weight_loader/...",
         "//third_party/odml/litert_lm/...",
     ] + litert_friends(),

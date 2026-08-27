@@ -80,7 +80,16 @@ class Transpose : public TestGraph {
     std::uniform_int_distribution<int> dim_dist(2, 6);
 
     for (size_t i = 0; i < kRank; ++i) {
-      params.input_shape[i] = dim_dist(rng);
+      if constexpr (std::is_same_v<T, litert::tensor::int4_t> ||
+                    std::is_same_v<T, litert::tensor::uint4_t>) {
+        params.input_shape[i] = dim_dist(rng) / 2 * 2;
+        if (params.input_shape[i] == 0) params.input_shape[i] = 2;
+      } else if constexpr (std::is_same_v<T, litert::tensor::int2_t>) {
+        params.input_shape[i] = dim_dist(rng) / 4 * 4;
+        if (params.input_shape[i] == 0) params.input_shape[i] = 4;
+      } else {
+        params.input_shape[i] = dim_dist(rng);
+      }
       params.perm[i] = i;
     }
 

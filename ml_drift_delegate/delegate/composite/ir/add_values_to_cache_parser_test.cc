@@ -46,7 +46,8 @@ using ::testing::SizeIs;
 TfLiteStablehloCompositeParams* CreateAddValuesToCacheParams(
     int kv_cache_batch_size, int cache_size, int head_size,
     std::optional<float> scale_k = std::nullopt,
-    std::optional<float> scale_v = std::nullopt) {
+    std::optional<float> scale_v = std::nullopt,
+    std::optional<bool> is_ring_buffer = std::nullopt) {
   size_t total_size = sizeof(TfLiteStablehloCompositeParams);
   std::vector<uint8_t> buffer;
 
@@ -60,6 +61,9 @@ TfLiteStablehloCompositeParams* CreateAddValuesToCacheParams(
     }
     if (scale_v.has_value()) {
       fbb.Float("scale_v", *scale_v);
+    }
+    if (is_ring_buffer.has_value()) {
+      fbb.Bool("is_ring_buffer", *is_ring_buffer);
     }
   });
   fbb.Finish();
@@ -128,6 +132,36 @@ TEST_F(ConvertAddValuesToCacheTest, Basic) {
   EXPECT_THAT(*attr->scale_k, Eq(0.5f));
   EXPECT_TRUE(attr->scale_v.has_value());
   EXPECT_THAT(*attr->scale_v, Eq(2.0f));
+}
+
+TEST_F(ConvertAddValuesToCacheTest, RingBuffer) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 1, 1, 64});   // src_k
+  builder.AddInput(kTfLiteFloat32, {1, 1, 1, 64});   // src_v
+  builder.AddInput(kTfLiteInt32, {2});               // params
+  builder.AddOutput(kTfLiteFloat32, {1, 1, 1, 64});  // cache_k
+  builder.AddOutput(kTfLiteFloat32, {1, 1, 1, 64});  // cache_v
+
+  TfLiteStablehloCompositeParams* params = CreateAddValuesToCacheParams(
+      2, 128, 64, /*scale_k=*/std::nullopt, /*scale_v=*/std::nullopt,
+      /*is_ring_buffer=*/true);
+  builder.SetParameters(params);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto& op = ir_model->ops()[0];
+  EXPECT_THAT(op->name, Eq("add_values_to_cache"));
+
+  const auto* attr =
+      std::any_cast<::litert::ml_drift::AddValuesToCacheAttributes>(&op->attr);
+  ASSERT_NE(attr, nullptr);
+  EXPECT_TRUE(attr->is_ring_buffer);
 }
 
 }  // namespace

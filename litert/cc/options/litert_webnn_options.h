@@ -21,11 +21,12 @@
 #include "litert/c/options/litert_webnn_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_concrete_options_base.h"
 
 namespace litert {
 
 /// @brief Defines the C++ wrapper for WebNN-specific LiteRT options.
-class WebNnOptions {
+class WebNnOptions : public ConcreteOptionsBase {
  public:
   static Expected<WebNnOptions> Create() {
     LrtWebNnOptions* options = nullptr;
@@ -46,8 +47,9 @@ class WebNnOptions {
   LrtWebNnOptions* Get() { return options_.get(); }
   const LrtWebNnOptions* Get() const { return options_.get(); }
 
-  LiteRtStatus GetOpaqueOptionsData(const char** identifier, void** payload,
-                                    void (**payload_deleter)(void*)) const {
+  LiteRtStatus GetOpaqueOptionsData(
+      const char** identifier, void** payload,
+      void (**payload_deleter)(void*)) const override {
     return LrtGetOpaqueWebNnOptionsData(Get(), identifier, payload,
                                         payload_deleter);
   }

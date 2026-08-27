@@ -13,6 +13,9 @@
 # limitations under the License.
 
 exports_files([
+    "PATCH.flatbuffers_windows_no_bash",
+    "PATCH.perfetto",
     "PATCH.protobuf_port_msvc_compat",
+    "PATCH.sentencepiece",
     "tensorflow_source_rules.bzl",
 ])

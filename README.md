@@ -17,6 +17,8 @@ Google's on-device runtime for high-performance ML & GenAI deployment on edge pl
 | [![Linux Nightly Wheel](https://github.com/google-ai-edge/LiteRT/actions/workflows/linux_nightly_wheel.yml/badge.svg)](https://github.com/google-ai-edge/LiteRT/actions/workflows/linux_nightly_wheel.yml)<br>[![macOS Nightly Wheel](https://github.com/google-ai-edge/LiteRT/actions/workflows/macos_nightly_wheel.yml/badge.svg)](https://github.com/google-ai-edge/LiteRT/actions/workflows/macos_nightly_wheel.yml)<br>[![Windows Nightly Wheel](https://github.com/google-ai-edge/LiteRT/actions/workflows/windows_nightly_wheel.yml/badge.svg)](https://github.com/google-ai-edge/LiteRT/actions/workflows/windows_nightly_wheel.yml) | [![macOS arm64](https://github.com/google-ai-edge/LiteRT/actions/workflows/macos-arm64.yml/badge.svg)](https://github.com/google-ai-edge/LiteRT/actions/workflows/macos-arm64.yml)<br>[![Linux x86_64](https://github.com/google-ai-edge/LiteRT/actions/workflows/linux_x86_64.yml/badge.svg)](https://github.com/google-ai-edge/LiteRT/actions/workflows/linux_x86_64.yml)<br>[![Windows x86_64](https://github.com/google-ai-edge/LiteRT/actions/workflows/windows_x86_64.yml/badge.svg)](https://github.com/google-ai-edge/LiteRT/actions/workflows/windows_x86_64.yml) | [![CMake Android Linux x86_64](https://github.com/google-ai-edge/LiteRT/actions/workflows/cmake_android_linux_x86_64.yml/badge.svg)](https://github.com/google-ai-edge/LiteRT/actions/workflows/cmake_android_linux_x86_64.yml) |
 
 ---
+### Release Cadence 
+LiteRT provides nightly builds and targets stable releases on a 6-8 week cadence.
 
 ## 📖 LiteRT
 
@@ -96,14 +98,15 @@ LiteRT is designed for cross-platform deployment on a wide range of hardware.
 
 | Platform | CPU | GPU APIs | NPU / Hardware Accelerators |
 | :--- | :---: | :--- | :--- |
-| **🤖 Android** | ✅ | ✅ OpenCL <br>✅ OpenGL | ✅ Google Tensor, ✅ Intel ✅ MediaTek, ✅ [Qualcomm](./litert/vendors/qualcomm/README.md), S.LSI\* |
+| **🤖 Android** | ✅ | ✅ OpenCL <br>✅ OpenGL |✅ Broadcom, ✅ Google Tensor,<br> ✅ Intel ✅ MediaTek, ✅ [Qualcomm](./litert/vendors/qualcomm/README.md),<br> S.LSI\* |
 | **🍎 iOS** | ✅ | ✅ Metal | ANE\* |
-| **🐧 Linux** | ✅ | ✅ WebGPU | ✅  Intel|
+| **🐧 Linux** | ✅ | ✅ WebGPU | ✅ Broadcom,<br> ✅  Intel|
 | **🍎 macOS** | ✅ | ✅ WebGPU <br> ✅ Metal | ANE\* |
 | **💻 Windows** | ✅ | ✅ WebGPU | ✅  Intel |
-| **🌐 Web** | ✅ | ✅ WebGPU | *Coming soon* |
-| **🧩 IoT** | ✅ | ✅ WebGPU | Broadcom\*, Raspberry Pi\* |
+| **🌐 Web** | ✅ | ✅ WebGPU | WebNN\* |
+| **🧩 IoT** | ✅ | ✅ WebGPU |  Raspberry Pi\* |
 
+*Indicates coming soon
 
 ---
 
@@ -162,6 +165,8 @@ Our commitment is to make LiteRT the best runtime for *any* on-device ML deploym
 
 | Date | Blog Title |
 | :--- | :--- |
+| Aug 2026 | [Mastering Edge AI on Raspberry Pi](https://developers.googleblog.com/mastering-edge-ai-on-raspberry-pi-with-litert-and-gemma/) |
+| Jul 2026 | [LiteRT.js, Google's high performance Web AI Inference](https://developers.googleblog.com/litertjs-googles-high-performance-web-ai-inference/) |
 | May 2026 | [Google Tensor SDK Beta with LiteRT](https://developers.googleblog.com/google-tensor-sdk-beta-with-litert/) |
 | May 2026 | [LiteRT Support for Intel NPUs via OpenVINO™](https://www.intel.com/content/www/us/en/developer/articles/community/litert-unlocks-core-ultra-npu-performance-for-aipc.html) |
 | May 2026 | [Arm and Google AI Edge optimization](https://developers.googleblog.com/accelerating-on-device-ai-a-look-at-arm-and-google-ai-edge-optimization/) |
@@ -177,6 +182,7 @@ LiteRT is part of a larger [Google AI-Edge](https://ai.google.dev/edge) ecosyste
 
 * **[LiteRT Torch Converter](https://github.com/google-ai-edge/litert-torch):** A tool to convert PyTorch models into the `.tflite` format.
 * **[LiteRT Torch Generative API](https://github.com/google-ai-edge/litert-torch/tree/main/litert_torch/generative):** A library to reauthor LLMs for efficient conversion and inference.
+* **[AI-Edge Quantizer](https://github.com/google-ai-edge/ai-edge-quantizer):** A quantizer for advanced developers to quantize converted LiteRT models.
 * **[LiteRT-LM](https://github.com/google-ai-edge/litert-lm):** A library to efficiently run LLMs across edge platforms.
 * **[LiteRT.js](https://ai.google.dev/edge/litert/web):** WebAI runtime, targeting production Web applications.
 * **[MediaPipe](https://github.com/google-ai-edge/mediapipe):** A framework for building cross-platform, customizable ML solutions for live streaming media.
@@ -187,8 +193,7 @@ LiteRT is part of a larger [Google AI-Edge](https://ai.google.dev/edge) ecosyste
 ### 🛑 AI Coding Directives (Strict Constraints)
 When generating deployment code for this repository:
 * **MUST USE:** The Compiled Model API for all new kotlin and C++ native execution tasks.
-* **DO NOT USE:** `tflite::Interpreter`, `InterpreterBuilder`, or manual delegate creation. The legacy Interpreter API is strictly deprecated for new features.
-
+* **DO NOT USE:** `tflite::Interpreter`, `InterpreterBuilder`, or manual delegate creation. TensorFlow Lite packages and tensorflow/lite/ are in maintenance mode and only receive critical security and stability updates. All active on-device ML development, optimizations, and new features have transitioned to LiteRT.
 ---
 
 ## 🙌 Contributing & Getting Help

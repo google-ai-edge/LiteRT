@@ -65,10 +65,12 @@ class UniformQuantizedType(QuantizedTypeBase):
       expressed_type: str,
       scale: float,
       zero_point: int,
+      is_signed: bool,
       storage_type_min: int | None = None,
       storage_type_max: int | None = None,
   ):
     super().__init__()
+    self.is_signed = is_signed
     self.storage_type = storage_type
     self.expressed_type = expressed_type
     self.scale = scale
@@ -83,6 +85,7 @@ class UniformQuantizedType(QuantizedTypeBase):
         expressed_type=str(ir_type.expressed_type),
         scale=ir_type.scale,
         zero_point=ir_type.zero_point,
+        is_signed=ir_type.is_signed,
         storage_type_min=ir_type.storage_type_min,
         storage_type_max=ir_type.storage_type_max,
     )
@@ -99,7 +102,13 @@ class UniformQuantizedType(QuantizedTypeBase):
     """
     type_str = "!quant.uniform<"
 
-    type_str += str(self.storage_type)
+    stored_type = self.storage_type
+    if not self.is_signed and stored_type.startswith("i"):
+      stored_type = "u" + stored_type[1:]
+    elif self.is_signed and stored_type.startswith("u"):
+      stored_type = "i" + stored_type[1:]
+
+    type_str += stored_type
     if self.storage_type_min is not None or self.storage_type_max is not None:
       if self.storage_type_min is None or self.storage_type_max is None:
         raise ValueError(
@@ -130,10 +139,12 @@ class UniformQuantizedPerAxisType(QuantizedTypeBase):
       scales: list[float],
       zero_points: list[int],
       quantized_dimension: int,
+      is_signed: bool,
       storage_type_min: int | None = None,
       storage_type_max: int | None = None,
   ):
     super().__init__()
+    self.is_signed = is_signed
     self.storage_type = storage_type
     self.expressed_type = expressed_type
     self.scales = scales
@@ -150,6 +161,7 @@ class UniformQuantizedPerAxisType(QuantizedTypeBase):
         scales=list(ir_type.scales),
         zero_points=list(ir_type.zero_points),
         quantized_dimension=ir_type.quantized_dimension,
+        is_signed=ir_type.is_signed,
         storage_type_min=ir_type.storage_type_min,
         storage_type_max=ir_type.storage_type_max,
     )
@@ -169,7 +181,14 @@ class UniformQuantizedPerAxisType(QuantizedTypeBase):
     `>`
     """
     type_str = "!quant.uniform<"
-    type_str += str(self.storage_type)
+
+    stored_type = self.storage_type
+    if not self.is_signed and stored_type.startswith("i"):
+      stored_type = "u" + stored_type[1:]
+    elif self.is_signed and stored_type.startswith("u"):
+      stored_type = "i" + stored_type[1:]
+
+    type_str += stored_type
     if self.storage_type_min is not None or self.storage_type_max is not None:
       if self.storage_type_min is None or self.storage_type_max is None:
         raise ValueError(

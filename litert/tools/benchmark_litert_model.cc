@@ -87,6 +87,18 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   auto num_threads = params.Get<int>("num_threads");
   auto enable_weight_sharing = params.Get<bool>("enable_weight_sharing");
   auto convert_weights_on_gpu = params.Get<bool>("convert_weights_on_gpu");
+  auto gpu_serialization_dir =
+      params.Get<std::string>("gpu_serialization_dir");
+  auto gpu_model_cache_key =
+      params.Get<std::string>("gpu_model_cache_key");
+  auto gpu_serialize_external_tensors =
+      params.Get<bool>("gpu_serialize_external_tensors");
+  auto gpu_prefer_texture_weights =
+      params.Get<bool>("gpu_prefer_texture_weights");
+  auto gpu_wait_for_weights_conversion_complete =
+      params.Get<bool>("gpu_wait_for_weights_conversion_complete");
+  auto gpu_cache_compiled_programs_only =
+      params.Get<bool>("gpu_cache_compiled_programs_only");
   auto xnnpack_weight_cache_file_path =
       params.Get<std::string>("xnnpack_weight_cache_file_path");
   auto mediatek_nerun_pilot_version =
@@ -106,8 +118,9 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
 
   if (use_npu) {
     // Set default QNN options
-    LITERT_ASSIGN_OR_ABORT(auto& qnn_opts,
-                           compilation_options.GetQualcommOptions());
+    LITERT_ASSIGN_OR_ABORT(
+        auto& qnn_opts,
+        compilation_options.GetOptions<litert::qualcomm::QualcommOptions>());
     qnn_opts.SetLogLevel(litert::qualcomm::QualcommOptions::LogLevel::kOff);
     qnn_opts.SetHtpPerformanceMode(
         litert::qualcomm::QualcommOptions::HtpPerformanceMode::kBurst);
@@ -118,8 +131,9 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
             kOptimizeForInferenceO3);
 
     // Set default MTK options
-    LITERT_ASSIGN_OR_ABORT(auto& mtk_opts,
-                           compilation_options.GetMediatekOptions());
+    LITERT_ASSIGN_OR_ABORT(
+        auto& mtk_opts,
+        compilation_options.GetOptions<litert::mediatek::MediatekOptions>());
     if (mediatek_nerun_pilot_version == "version9") {
       mtk_opts.SetNeronSDKVersionType(
           litert::mediatek::MediatekOptions::NeronSDKVersion::kVersion9);
@@ -129,8 +143,10 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     mtk_opts.SetEnableL1CacheOptimizations(true);
 
     // Google Tensor options
-    LITERT_ASSIGN_OR_ABORT(auto& google_tensor_opts,
-                           compilation_options.GetGoogleTensorOptions());
+    LITERT_ASSIGN_OR_ABORT(
+        auto& google_tensor_opts,
+        compilation_options
+            .GetOptions<litert::google_tensor::GoogleTensorOptions>());
     google_tensor_opts.SetPerformanceMode(
         google_tensor::GoogleTensorOptions::PerformanceMode::kBurst);
 
@@ -173,6 +189,24 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     }
     if (convert_weights_on_gpu) {
       gpu_options.SetConvertWeightsOnGpu(true);
+    }
+    if (!gpu_serialization_dir.empty()) {
+      gpu_options.SetSerializationDir(gpu_serialization_dir.c_str());
+    }
+    if (!gpu_model_cache_key.empty()) {
+      gpu_options.SetModelCacheKey(gpu_model_cache_key.c_str());
+    }
+    if (gpu_serialize_external_tensors) {
+      gpu_options.SetSerializeExternalTensors(true);
+    }
+    if (gpu_prefer_texture_weights) {
+      gpu_options.SetPreferTextureWeights(true);
+    }
+    if (gpu_wait_for_weights_conversion_complete) {
+      gpu_options.WaitForWeightsConversionComplete(true);
+    }
+    if (gpu_cache_compiled_programs_only) {
+      gpu_options.CacheCompiledProgramsOnly(true);
     }
 
     auto use_profiler = params.Get<bool>("use_profiler");
@@ -422,4 +456,59 @@ TfLiteStatus BenchmarkLiteRtModel::PrepareInputData() {
   }
   return kTfLiteOk;
 }
+
+int BenchmarkLiteRtModel::TotalNodeCount() const {
+  return (compiled_model_ && compiled_model_->Get())
+             ? compiled_model_->Get()->GetDelegationMetrics().total_node_count
+             : 0;
+}
+
+int BenchmarkLiteRtModel::NpuDelegatedNodeCount() const {
+  return (compiled_model_ && compiled_model_->Get())
+             ? compiled_model_->Get()
+                   ->GetDelegationMetrics()
+                   .npu_delegated_node_count
+             : 0;
+}
+
+int BenchmarkLiteRtModel::NpuPartitionCount() const {
+  return (compiled_model_ && compiled_model_->Get())
+             ? compiled_model_->Get()
+                   ->GetDelegationMetrics()
+                   .npu_partition_count
+             : 0;
+}
+
+int BenchmarkLiteRtModel::GpuDelegatedNodeCount() const {
+  return (compiled_model_ && compiled_model_->Get())
+             ? compiled_model_->Get()
+                   ->GetDelegationMetrics()
+                   .gpu_delegated_node_count
+             : 0;
+}
+
+int BenchmarkLiteRtModel::GpuPartitionCount() const {
+  return (compiled_model_ && compiled_model_->Get())
+             ? compiled_model_->Get()
+                   ->GetDelegationMetrics()
+                   .gpu_partition_count
+             : 0;
+}
+
+int BenchmarkLiteRtModel::CpuDelegatedNodeCount() const {
+  return (compiled_model_ && compiled_model_->Get())
+             ? compiled_model_->Get()
+                   ->GetDelegationMetrics()
+                   .cpu_delegated_node_count
+             : 0;
+}
+
+int BenchmarkLiteRtModel::CpuPartitionCount() const {
+  return (compiled_model_ && compiled_model_->Get())
+             ? compiled_model_->Get()
+                   ->GetDelegationMetrics()
+                   .cpu_partition_count
+             : 0;
+}
+
 }  // namespace litert::benchmark

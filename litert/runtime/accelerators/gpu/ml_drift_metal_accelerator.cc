@@ -35,9 +35,7 @@
 class GpuMetalAccelerator {
  public:
   static std::unique_ptr<GpuMetalAccelerator> Create() {
-    auto accelerator = std::make_unique<GpuMetalAccelerator>();
-    accelerator->hardware_support_ = kLiteRtHwAcceleratorGpu;
-    return accelerator;
+    return std::make_unique<GpuMetalAccelerator>();
   }
 
   static void Destroy(void* accelerator) {
@@ -46,6 +44,8 @@ class GpuMetalAccelerator {
 
   static LiteRtStatus GetName(LiteRtAcceleratorConst accelerator,
                               const char** name) {
+    LITERT_RETURN_IF_ERROR(name, litert::ErrorStatusBuilder::InvalidArgument())
+        << "`name` pointer is null.";
     static const char* lrt_name = "GPU Metal";
     *name = lrt_name;
     return kLiteRtStatusOk;
@@ -53,6 +53,9 @@ class GpuMetalAccelerator {
 
   static LiteRtStatus GetVersion(LiteRtAcceleratorConst accelerator,
                                  LiteRtApiVersion* version) {
+    LITERT_RETURN_IF_ERROR(version,
+                           litert::ErrorStatusBuilder::InvalidArgument())
+        << "`version` pointer is null.";
     static constexpr LiteRtApiVersion lrt_version = {
         /*major=*/1,
         /*minor=*/0,
@@ -65,6 +68,9 @@ class GpuMetalAccelerator {
   static LiteRtStatus GetHardwareSupport(
       LiteRtAcceleratorConst accelerator,
       LiteRtHwAcceleratorSet* supported_hardware) {
+    LITERT_RETURN_IF_ERROR(supported_hardware,
+                           litert::ErrorStatusBuilder::InvalidArgument())
+        << "`supported_hardware` pointer is null.";
     static LiteRtHwAcceleratorSet hardware_support = kLiteRtHwAcceleratorGpu;
     *supported_hardware = hardware_support;
     return kLiteRtStatusOk;
@@ -114,12 +120,9 @@ class GpuMetalAccelerator {
         delegate_wrapper);
     return kLiteRtStatusOk;
   }
-
- private:
-  LiteRtHwAcceleratorSet hardware_support_;
 };
 
-// Discovery C object for the GPU WebGPU accelerator by LiteRT.
+// Discovery C object for the GPU Metal accelerator by LiteRT.
 // This object is used by the LiteRT environment constructor and the
 // object name is looked up by dlsym().
 // The symbol is exported by runtime/accelerators/gpu/macos_exported_symbols.lds

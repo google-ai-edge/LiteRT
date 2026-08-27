@@ -68,11 +68,16 @@ LiteRtStatus LiteRtBuilderBuildOp(LiteRtBuilder builder, LiteRtOpCode op_code,
 // This function is performed transactionally within the builder context.
 LiteRtStatus LiteRtBuilderEraseOp(LiteRtBuilder builder, LiteRtOp op_to_erase);
 
+struct LiteRtCompilerContext;
+
 // Function pointer type for a rewrite pattern (also known as a transformation).
-// A LiteRtPatternFn takes an LiteRtOp and an LiteRtBuilder
-// instance. It can analyze the OP and use the builder to modify the graph,
-// for example, by replacing the OP with a sequence of other operations.
-typedef LiteRtStatus (*LiteRtPatternFn)(LiteRtBuilder builder, LiteRtOp op);
+// A LiteRtPatternFn takes a LiteRtCompilerContext, an LiteRtBuilder and an
+// LiteRtOp instance. It can analyze the OP and use the builder to modify
+// the graph, for example, by replacing the OP with a sequence of other
+// operations.
+typedef LiteRtStatus (*LiteRtPatternFn)(
+    const struct LiteRtCompilerContext* context, LiteRtBuilder builder,
+    LiteRtOp op);
 
 #ifdef __cplusplus
 }

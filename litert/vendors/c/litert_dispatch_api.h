@@ -23,6 +23,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_profiler_types.h"
 #include "litert/vendors/c/litert_dispatch.h"
 
 #ifdef __cplusplus
@@ -137,6 +138,10 @@ typedef LiteRtStatus (*LiteRtDispatchCheckRuntimeCompatibilityT)(
     LiteRtApiVersion api_version, LiteRtEnvironmentOptions env,
     LiteRtOptions options);
 
+typedef LiteRtStatus (*LiteRtDispatchGetHooksT)(
+    LiteRtDispatchDeviceContext device_context, LiteRtHook* hook,
+    void** user_data);
+
 typedef struct LiteRtDispatchInterface {
   LiteRtDispatchInitializeT initialize;
   LiteRtDispatchGetVendorIdT get_vendor_id;
@@ -164,6 +169,7 @@ typedef struct LiteRtDispatchInterface {
   LiteRtDispatchDestroyMetricsT destroy_metrics;
   LiteRtDispatchCheckRuntimeCompatibilityT check_runtime_compatibility;
   LiteRtDispatchInvocationContextSetOptionsT invocation_context_set_options;
+  LiteRtDispatchGetHooksT get_hooks;
 
 #if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
   // Optional extensions (capability-gated).

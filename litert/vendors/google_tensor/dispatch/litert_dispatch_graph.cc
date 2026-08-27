@@ -25,9 +25,9 @@
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
-#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
-#include "litert/vendors/google_tensor/dispatch/google/darwinn_options_utils.h"
-#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+#if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
+#include "litert/vendors/google_tensor/dispatch/google/google_tensor_privileged_options_utils.h"
+#endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_macros.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_utils.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
@@ -48,6 +48,9 @@ LiteRtStatus ToThrNodeType(LiteRtDispatchNodeType node_type,
       break;
     case kLiteRtDispatchNodeTypeNpu:
       thr_node_type = kThrNodeTypeNpu;
+      break;
+    case kLiteRtDispatchNodeTypeCpu:
+      thr_node_type = kThrNodeTypeCpu;
       break;
     default:
       LITERT_LOG(LITERT_ERROR, "Invalid node type %d", node_type);
@@ -74,13 +77,13 @@ LiteRtStatus LiteRtDispatchGraphT::Create(
   graph = new LiteRtDispatchGraphT(device_context, thr_graph);
   absl::Cleanup graph_cleanup = [graph] { graph->Destroy(); };
 
-#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
-  LITERT_RETURN_IF_ERROR(
-      gt::ApplyDarwinnOptionsToGraph(graph, device_context->darwinn_options()));
-#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+#if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
+  LITERT_RETURN_IF_ERROR(gt::ApplyGoogleTensorPrivilegedOptionsToGraph(
+      graph, device_context->GetGoogleTensorPrivilegedOptions()));
+#endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
 
   // Apply Google Tensor specific options.
-  if (const auto& options = device_context->google_tensor_options();
+  if (const auto& options = device_context->GetGoogleTensorOptions();
       options.has_value() && options->performance_mode.has_value()) {
     if (GoogleTensorSouthBoundFeatureSupported(
             GoogleTensorSouthBoundFeature::kPerformanceModeAnnotation)) {
@@ -150,8 +153,6 @@ LiteRtStatus LiteRtDispatchGraphT::ConnectPositionalNodeInput(
                                gt::ToThrEdgeId(edge_id)),
       "Failed to connect positional node %" PRIu64 " to input edge %" PRIu64,
       node_id, edge_id);
-
-  input_edge_ids_.insert_or_assign(input_edge_ids_.size(), edge_id);
   return kLiteRtStatusOk;
 }
 
@@ -162,8 +163,6 @@ LiteRtStatus LiteRtDispatchGraphT::ConnectPositionalNodeOutput(
                                 gt::ToThrEdgeId(edge_id)),
       "Failed to connect positional node %" PRIu64 " to output edge %" PRIu64,
       node_id, edge_id);
-
-  output_edge_ids_.insert_or_assign(output_edge_ids_.size(), edge_id);
   return kLiteRtStatusOk;
 }
 
@@ -191,8 +190,6 @@ LiteRtStatus LiteRtDispatchGraphT::ConnectIndexedNodeInput(
                             "Failed to connect indexed node %" PRIu64
                             " to input edge %" PRIu64 " at index %d",
                             node_id, edge_id, input_index);
-
-  input_edge_ids_.insert_or_assign(input_index, edge_id);
   return kLiteRtStatusOk;
 }
 
@@ -206,7 +203,6 @@ LiteRtStatus LiteRtDispatchGraphT::ConnectIndexedNodeOutput(
                             " to output edge %" PRIu64 " at index %d",
                             node_id, edge_id, output_index);
 
-  output_edge_ids_.insert_or_assign(output_index, edge_id);
   return kLiteRtStatusOk;
 }
 
@@ -219,20 +215,36 @@ LiteRtStatus LiteRtDispatchGraphT::AddEdge(LiteRtDispatchEdgeId edge_id) {
 }
 
 LiteRtStatus LiteRtDispatchGraphT::ConnectGraphInput(
-    LiteRtDispatchEdgeId edge_id) {
+    int input_index, LiteRtDispatchEdgeId edge_id) {
   GT_LOG_RETURN_IF_SB_ERROR(
       thrGraphSetInputEdge(thr_graph_, gt::ToThrEdgeId(edge_id)),
       "Failed to set input edge %" PRIu64 " on SB graph", edge_id);
-
+  auto [it, inserted] = input_edge_ids_.insert({input_index, edge_id});
+  if (!inserted) {
+    LITERT_LOG(LITERT_ERROR,
+               "Received duplicate connection request for graph input on "
+               "position %d with edge_id %" PRIu64 ". Already connected to "
+               "edge_id %" PRIu64 ".",
+               input_index, edge_id, it->second);
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtDispatchGraphT::ConnectGraphOutput(
-    LiteRtDispatchEdgeId edge_id) {
+    int output_index, LiteRtDispatchEdgeId edge_id) {
   GT_LOG_RETURN_IF_SB_ERROR(
       thrGraphSetOutputEdge(thr_graph_, gt::ToThrEdgeId(edge_id)),
       "Failed to set output edge %" PRIu64 " on SB graph", edge_id);
-
+  auto [it, inserted] = output_edge_ids_.insert({output_index, edge_id});
+  if (!inserted) {
+    LITERT_LOG(LITERT_ERROR,
+               "Received duplicate connection request for graph output on "
+               "position %d with edge_id %" PRIu64 ". Already connected to "
+               "edge_id %" PRIu64 ".",
+               output_index, edge_id, it->second);
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   return kLiteRtStatusOk;
 }
 

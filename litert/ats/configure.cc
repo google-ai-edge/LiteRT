@@ -39,6 +39,9 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_mediatek_options.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
+#include "litert/cc/options/litert_samsung_options.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/tools/flags/vendors/mediatek_flags.h"
 #include "litert/tools/flags/vendors/qualcomm_flags.h"
@@ -162,11 +165,17 @@ Expected<ExecutionBackend> ParseBackend() {
 Expected<Options> ParseOptions(ExecutionBackend backend) {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
   if (backend == ExecutionBackend::kNpu) {
-    LITERT_ASSIGN_OR_RETURN(auto& qnn_opts, options.GetQualcommOptions());
+    LITERT_ASSIGN_OR_RETURN(
+        auto& qnn_opts,
+        options.GetOptions<litert::qualcomm::QualcommOptions>());
     LITERT_RETURN_IF_ERROR(UpdateQualcommOptionsFromFlags(qnn_opts));
-    LITERT_ASSIGN_OR_RETURN(auto& mediatek_opts, options.GetMediatekOptions());
+    LITERT_ASSIGN_OR_RETURN(
+        auto& mediatek_opts,
+        options.GetOptions<litert::mediatek::MediatekOptions>());
     LITERT_RETURN_IF_ERROR(UpdateMediatekOptionsFromFlags(mediatek_opts));
-    LITERT_ASSIGN_OR_RETURN(auto& samsung_opts, options.GetSamsungOptions());
+    LITERT_ASSIGN_OR_RETURN(
+        auto& samsung_opts,
+        options.GetOptions<litert::samsung::SamsungOptions>());
     LITERT_RETURN_IF_ERROR(UpdateSamsungOptionsFromFlags(samsung_opts));
     options.SetHardwareAccelerators(HwAccelerators::kNpu);
   } else if (backend == ExecutionBackend::kCpu) {

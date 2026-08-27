@@ -17,6 +17,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -36,6 +37,7 @@
 #include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_layout.h"
@@ -45,6 +47,7 @@
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_profiler.h"
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/options/litert_cpu_options.h"
 #include "litert/c/options/litert_runtime_options.h"
@@ -64,6 +67,7 @@
 #include "litert/cc/options/litert_runtime_options.h"
 #include "litert/core/model/model.h"
 #include "litert/core/options.h"
+#include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/open_cl_memory.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
@@ -80,8 +84,6 @@ using ::testing::ElementsAre;
 using ::testing::FloatNear;
 using ::testing::Pointwise;
 using ::testing::litert::IsError;
-
-
 
 // Creates a tensor buffer of the given tensor, buffer type, and size.
 Expected<LiteRtTensorBufferT*> CreateBufferOfType(
@@ -1689,6 +1691,531 @@ TEST(CompiledModelTest, DynamicResizeWithCustomAllocationsSimple) {
   for (auto& buf : outputs_b) LiteRtDestroyTensorBuffer(buf);
 
   LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+namespace {
+
+struct CustomMemory : public HwMemoryInfo {
+  void* aligned_data = nullptr;
+  size_t size = 0;
+};
+
+LiteRtStatus CreateCustomMemory(LiteRtGpuDeviceId, LiteRtGpuQueueId,
+                                const LiteRtRankedTensorType*,
+                                LiteRtTensorBufferType, size_t bytes,
+                                size_t packed_bytes,
+                                HwMemoryInfoPtr* hw_memory_info) {
+  auto* mem = new CustomMemory();
+  mem->size = bytes;
+  if (posix_memalign(&mem->aligned_data, 64, bytes) != 0) {
+    delete mem;
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  mem->raw_handle = mem->aligned_data;
+  mem->memory_handle = mem;
+  *hw_memory_info = mem;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus DestroyCustomMemory(HwMemoryInfoPtr hw_memory_info) {
+  auto* mem = static_cast<CustomMemory*>(hw_memory_info);
+  if (mem != nullptr) {
+    if (mem->aligned_data != nullptr) {
+      free(mem->aligned_data);
+    }
+    delete mem;
+  }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LockCustomMemory(HwMemoryInfoPtr hw_memory_info,
+                              LiteRtTensorBufferLockMode,
+                              void** host_memory_ptr) {
+  auto* mem = static_cast<CustomMemory*>(hw_memory_info);
+  *host_memory_ptr = mem->aligned_data;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus UnlockCustomMemory(HwMemoryInfoPtr) { return kLiteRtStatusOk; }
+
+// Custom memory handler that invalidates (clears) host memory upon unlock,
+// simulating hardware buffer unmapping (e.g. munmap / AHardwareBuffer_unlock).
+struct InvalidatingCustomMemory : public HwMemoryInfo {
+  std::vector<uint8_t> device_storage;
+  void* host_mapped_ptr = nullptr;
+  size_t size = 0;
+};
+
+LiteRtStatus CreateInvalidatingCustomMemory(LiteRtGpuDeviceId, LiteRtGpuQueueId,
+                                            const LiteRtRankedTensorType*,
+                                            LiteRtTensorBufferType,
+                                            size_t bytes, size_t packed_bytes,
+                                            HwMemoryInfoPtr* hw_memory_info) {
+  auto* mem = new InvalidatingCustomMemory();
+  mem->size = bytes;
+  mem->device_storage.resize(bytes, 0);
+  if (posix_memalign(&mem->host_mapped_ptr, 64, bytes) != 0) {
+    delete mem;
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  mem->raw_handle = mem->host_mapped_ptr;
+  mem->memory_handle = mem;
+  *hw_memory_info = mem;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus DestroyInvalidatingCustomMemory(HwMemoryInfoPtr hw_memory_info) {
+  auto* mem = static_cast<InvalidatingCustomMemory*>(hw_memory_info);
+  if (mem != nullptr) {
+    if (mem->host_mapped_ptr != nullptr) {
+      free(mem->host_mapped_ptr);
+    }
+    delete mem;
+  }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LockInvalidatingCustomMemory(HwMemoryInfoPtr hw_memory_info,
+                                         LiteRtTensorBufferLockMode,
+                                         void** host_memory_ptr) {
+  auto* mem = static_cast<InvalidatingCustomMemory*>(hw_memory_info);
+  // Restore host memory contents from device storage upon lock.
+  std::memcpy(mem->host_mapped_ptr, mem->device_storage.data(), mem->size);
+  *host_memory_ptr = mem->host_mapped_ptr;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus UnlockInvalidatingCustomMemory(HwMemoryInfoPtr hw_memory_info) {
+  auto* mem = static_cast<InvalidatingCustomMemory*>(hw_memory_info);
+  // Persist current host memory to device storage.
+  std::memcpy(mem->device_storage.data(), mem->host_mapped_ptr, mem->size);
+  // Invalidate host memory to simulate driver unmapping / cache invalidation.
+  std::memset(mem->host_mapped_ptr, 0, mem->size);
+  return kLiteRtStatusOk;
+}
+
+}  // namespace
+
+// This test verifies that CPU-shared input tensor buffers remain mapped and
+// valid throughout model execution in CompiledModel::Run().
+//
+// Lifecycle Diagram:
+//
+//   Expected (Correct) Lifecycle:
+//
+//     +--------------------------------+
+//     |     CompiledModel::Run()       |
+//     |     - RegisterBuffer()         |  Locks buffer -> host_mapped_ptr valid
+//     |       (SetCustomAllocation)    |  (is_locked_ = true)
+//     |                                |
+//     |     - Interpreter::Invoke()    |  CPU kernels execute and read from
+//     |                                |  host_mapped_ptr [MUST be valid!]
+//     |                                |
+//     |     - Cleanup / Return         |  Unlocks buffer (unlock_buffers RAII)
+//     |                                |  (is_locked_ = false)
+//     +--------------------------------+
+//                   |
+//                   v
+//     +--------------------------------+
+//     |        Run() Completed         |  Correct inference results produced
+//     +--------------------------------+
+//
+//   Premature Unlock (Buggy) Lifecycle:
+//
+//     +--------------------------------+
+//     |     CompiledModel::Run()       |
+//     |     - RegisterBuffer()         |  Locks buffer -> host_mapped_ptr valid
+//     |       (SetCustomAllocation)    |
+//     |       (UnlockTensorBuffer)     |  Premature unlock! Invalidate memory
+//     |                                |  (e.g. munmap/AHardwareBuffer_unlock)
+//     |                                |
+//     |     - Interpreter::Invoke()    |  CPU kernels read INVALID host memory!
+//     |                                |  ---> Corrupted output or SIGSEGV
+//     |                                |
+//     |     - Cleanup / Return         |
+//     +--------------------------------+
+//
+// When a non-host-memory buffer (e.g. AHardwareBuffer, OpenCL, GPU, DMA-buf,
+// or custom hardware buffer) is passed to a CPU subgraph, LiteRT locks the
+// buffer to obtain a CPU virtual address for TfLiteCustomAllocation.
+// Unlocking hardware buffers can invalidate or unmap the host virtual address.
+// This test uses `InvalidatingCustomMemory` to simulate unmapping/clearing host
+// memory upon unlock, ensuring input buffers remain valid during `Invoke()`.
+TEST(CompiledModelTest, CpuSharedInputBufferRemainsValidDuringRun) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  ASSERT_EQ(
+      LiteRtRegisterTensorBufferHandlers(
+          env_ptr, kLiteRtTensorBufferTypeUserCustomBuffer,
+          CreateInvalidatingCustomMemory, DestroyInvalidatingCustomMemory,
+          LockInvalidatingCustomMemory, UnlockInvalidatingCustomMemory,
+          /*clear_func=*/nullptr, /*import_func=*/nullptr,
+          kLiteRtEnvOptionTagNull, kLiteRtEnvOptionTagNull),
+      kLiteRtStatusOk);
+
+  // Create LiteRtModel and check signatures.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
+
+  absl::Span<LiteRtSignature> signatures = model->Signatures();
+  ASSERT_EQ(signatures.size(), 1);
+  absl::string_view signature_key = signatures[0]->Key();
+
+  // Create CompiledModel with CPU accelerator options.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  // Register buffer requirements on buffer_context for input tensor to route
+  // through cpu_tensors_ registration path.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto interp,
+                              GetInterpreter(compiled_model.get()));
+  auto* input_tensor0 = interp->input_tensor(0);
+  ASSERT_NE(input_tensor0, nullptr);
+
+  LiteRtTensorBufferRequirements requirements;
+  LiteRtTensorBufferType supported_types[] = {
+      kLiteRtTensorBufferTypeHostMemory};
+  ASSERT_EQ(LiteRtCreateTensorBufferRequirements(
+                /*num_supported_tensor_buffer_types=*/1, supported_types,
+                /*buffer_size=*/sizeof(float) * kTestInput0Size,
+                /*num_strides=*/0, /*strides=*/nullptr, &requirements),
+            kLiteRtStatusOk);
+  ASSERT_EQ(compiled_model->GetBufferContext()->RegisterBufferRequirements(
+                input_tensor0, LiteRtTensorBufferRequirementsPtr(requirements)),
+            kLiteRtStatusOk);
+
+  // Create input buffers with kLiteRtTensorBufferTypeUserCustomBuffer.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> input_buffers,
+      CreateInputBuffersOfType(env_ptr, *model, signature_key,
+                               kLiteRtTensorBufferTypeUserCustomBuffer,
+                               sizeof(float) * kTestInput0Size));
+
+  {
+    void* host_addr = nullptr;
+    ASSERT_EQ(LiteRtLockTensorBuffer(input_buffers[0], &host_addr,
+                                     kLiteRtTensorBufferLockModeWrite),
+              kLiteRtStatusOk);
+    std::memcpy(host_addr, kTestInput0Tensor, sizeof(float) * kTestInput0Size);
+    ASSERT_EQ(LiteRtUnlockTensorBuffer(input_buffers[0]), kLiteRtStatusOk);
+  }
+  {
+    void* host_addr = nullptr;
+    ASSERT_EQ(LiteRtLockTensorBuffer(input_buffers[1], &host_addr,
+                                     kLiteRtTensorBufferLockModeWrite),
+              kLiteRtStatusOk);
+    std::memcpy(host_addr, kTestInput1Tensor, sizeof(float) * kTestInput1Size);
+    ASSERT_EQ(LiteRtUnlockTensorBuffer(input_buffers[1]), kLiteRtStatusOk);
+  }
+
+  // Create output buffers matching requirements.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> output_buffers,
+      CreateOutputBuffersFromRequirements(env_ptr, *model, signature_key,
+                                          *compiled_model));
+
+  // Run model.
+  bool async = false;
+  auto run_res =
+      compiled_model->Run(signature_key, input_buffers, output_buffers, async);
+  ASSERT_TRUE(run_res.HasValue()) << run_res.Error().Message();
+
+  // Verify that model output was computed correctly using the input buffer
+  // data.
+  {
+    void* host_mem_addr = nullptr;
+    ASSERT_EQ(LiteRtLockTensorBuffer(output_buffers[0], &host_mem_addr,
+                                     kLiteRtTensorBufferLockModeRead),
+              kLiteRtStatusOk);
+    absl::Span<const float> output = absl::MakeSpan(
+        static_cast<const float*>(host_mem_addr), kTestOutputSize);
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+    ASSERT_EQ(LiteRtUnlockTensorBuffer(output_buffers[0]), kLiteRtStatusOk);
+  }
+
+  // Cleanup.
+  for (auto& buf : input_buffers) {
+    LiteRtDestroyTensorBuffer(buf);
+  }
+  for (auto& buf : output_buffers) {
+    LiteRtDestroyTensorBuffer(buf);
+  }
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+// This test guards against buffer lock leaks for CPU-shared tensors in
+// CompiledModel::Run() (e.g. b/540540866).
+//
+// Lifecycle Diagram:
+//
+//   +--------------------------+
+//   |  TensorBuffer Allocated  |  (is_locked_ = false)
+//   +--------------------------+
+//                 |
+//                 v
+//   +--------------------------+
+//   |   CompiledModel::Run()   |
+//   |   - RegisterBuffer()     |  Locks buffer for custom allocation
+//   |                          |  (is_locked_ = true)
+//   |   - Interpreter::Invoke()|  Executes model kernels
+//   |   - Cleanup / Return     |  Unlocks buffer
+//   +--------------------------+
+//                 |
+//                 v
+//   +--------------------------+
+//   |     Run() Completed      |  (is_locked_ = false)
+//   +--------------------------+
+//                 |
+//                 +---> Caller can immediately lock, read, or reuse buffer
+//                       without "Tensor buffer is already locked" error.
+//
+// When a tensor is routed through the `cpu_tensors_` registration path
+// (e.g. non-host-memory buffers shared with CPU subgraphs), CompiledModel
+// locks the buffer to obtain host memory for TfLiteCustomAllocation.
+// This test verifies that CPU-shared buffers are cleanly unlocked when Run()
+// returns, preventing lock leaks across inference steps or pipeline stages.
+TEST(CompiledModelTest, CpuSharedTensorBufferUnlockedAfterRun) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  ASSERT_EQ(
+      LiteRtRegisterTensorBufferHandlers(
+          env_ptr, kLiteRtTensorBufferTypeUserCustomBuffer, CreateCustomMemory,
+          DestroyCustomMemory, LockCustomMemory, UnlockCustomMemory,
+          /*clear_func=*/nullptr, /*import_func=*/nullptr,
+          kLiteRtEnvOptionTagNull, kLiteRtEnvOptionTagNull),
+      kLiteRtStatusOk);
+
+  // Create LiteRtModel and check signatures.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
+
+  absl::Span<LiteRtSignature> signatures = model->Signatures();
+  ASSERT_EQ(signatures.size(), 1);
+  absl::string_view signature_key = signatures[0]->Key();
+
+  // Create CompiledModel with CPU accelerator options.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  // Register buffer requirements on buffer_context for input tensor to route
+  // through cpu_tensors_ registration path.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto interp,
+                              GetInterpreter(compiled_model.get()));
+  auto* input_tensor0 = interp->input_tensor(0);
+  ASSERT_NE(input_tensor0, nullptr);
+
+  LiteRtTensorBufferRequirements requirements;
+  LiteRtTensorBufferType supported_types[] = {
+      kLiteRtTensorBufferTypeHostMemory};
+  ASSERT_EQ(LiteRtCreateTensorBufferRequirements(
+                /*num_supported_tensor_buffer_types=*/1, supported_types,
+                /*buffer_size=*/sizeof(float) * kTestInput0Size,
+                /*num_strides=*/0, /*strides=*/nullptr, &requirements),
+            kLiteRtStatusOk);
+  ASSERT_EQ(compiled_model->GetBufferContext()->RegisterBufferRequirements(
+                input_tensor0, LiteRtTensorBufferRequirementsPtr(requirements)),
+            kLiteRtStatusOk);
+
+  // Create input buffers with kLiteRtTensorBufferTypeUserCustomBuffer.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> input_buffers,
+      CreateInputBuffersOfType(env_ptr, *model, signature_key,
+                               kLiteRtTensorBufferTypeUserCustomBuffer,
+                               sizeof(float) * kTestInput0Size));
+
+  {
+    void* host_addr = nullptr;
+    ASSERT_EQ(LiteRtLockTensorBuffer(input_buffers[0], &host_addr,
+                                     kLiteRtTensorBufferLockModeWrite),
+              kLiteRtStatusOk);
+    std::memcpy(host_addr, kTestInput0Tensor, sizeof(float) * kTestInput0Size);
+    ASSERT_EQ(LiteRtUnlockTensorBuffer(input_buffers[0]), kLiteRtStatusOk);
+  }
+  {
+    void* host_addr = nullptr;
+    ASSERT_EQ(LiteRtLockTensorBuffer(input_buffers[1], &host_addr,
+                                     kLiteRtTensorBufferLockModeWrite),
+              kLiteRtStatusOk);
+    std::memcpy(host_addr, kTestInput1Tensor, sizeof(float) * kTestInput1Size);
+    ASSERT_EQ(LiteRtUnlockTensorBuffer(input_buffers[1]), kLiteRtStatusOk);
+  }
+
+  // Create output buffers matching requirements.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> output_buffers,
+      CreateOutputBuffersFromRequirements(env_ptr, *model, signature_key,
+                                          *compiled_model));
+
+  // Run model.
+  bool async = false;
+  auto run_res =
+      compiled_model->Run(signature_key, input_buffers, output_buffers, async);
+  ASSERT_TRUE(run_res.HasValue()) << run_res.Error().Message();
+
+  // Verify that the input buffer is NOT left locked after Run().
+  void* host_mem_addr = nullptr;
+  EXPECT_EQ(LiteRtLockTensorBuffer(input_buffers[0], &host_mem_addr,
+                                   kLiteRtTensorBufferLockModeRead),
+            kLiteRtStatusOk)
+      << "Input buffer was left locked after CompiledModel::Run()";
+  if (host_mem_addr != nullptr) {
+    EXPECT_EQ(LiteRtUnlockTensorBuffer(input_buffers[0]), kLiteRtStatusOk);
+  }
+
+  // Verify that the output buffer is NOT left locked after Run().
+  void* host_out_addr = nullptr;
+  EXPECT_EQ(LiteRtLockTensorBuffer(output_buffers[0], &host_out_addr,
+                                   kLiteRtTensorBufferLockModeRead),
+            kLiteRtStatusOk)
+      << "Output buffer was left locked after CompiledModel::Run()";
+  if (host_out_addr != nullptr) {
+    EXPECT_EQ(LiteRtUnlockTensorBuffer(output_buffers[0]), kLiteRtStatusOk);
+  }
+
+  // Cleanup.
+  for (auto& buf : input_buffers) {
+    LiteRtDestroyTensorBuffer(buf);
+  }
+  for (auto& buf : output_buffers) {
+    LiteRtDestroyTensorBuffer(buf);
+  }
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+// This test verifies that a tensor buffer can be passed as both an input and an
+// output in the same `CompiledModel::Run()` call (e.g. in-place KV cache update
+// in LLM execution pipelines).
+//
+// Lifecycle Diagram:
+//
+//   +-------------------------------------------------------------+
+//   | Shared Buffer (as input_buffers[0] and output_buffers[0])   |
+//   +-------------------------------------------------------------+
+//                                  |
+//                                  v
+//   +-------------------------------------------------------------+
+//   | CompiledModel::Run()                                        |
+//   | - Register Input 0:  Locks shared buffer (first time)       |
+//   | - Register Output 0: Reuses locked host address without     |
+//   |                      double-locking error                   |
+//   | - Interpreter::Invoke(): Executes kernel (in-place)         |
+//   | - Cleanup / Return:  Unlocks shared buffer exactly once     |
+//   +-------------------------------------------------------------+
+//                                  |
+//                                  v
+//   +-------------------------------------------------------------+
+//   | Run() Completed: Buffer is unlocked and usable              |
+//   +-------------------------------------------------------------+
+TEST(CompiledModelTest, SharedInputAndOutputBuffer) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel and check signatures.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
+
+  absl::Span<LiteRtSignature> signatures = model->Signatures();
+  ASSERT_EQ(signatures.size(), 1);
+  absl::string_view signature_key = signatures[0]->Key();
+
+  // Create CompiledModel with CPU accelerator options.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  // Create input/output buffers matching model dimensions.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> input_buffers,
+      CreateInputBuffersFromRequirements(env_ptr, *model, signature_key,
+                                         *compiled_model));
+  ASSERT_EQ(input_buffers.size(), 2);
+
+  // Use input_buffers[0] as the shared buffer for both input 0 and output 0.
+  LiteRtTensorBuffer shared_buffer = input_buffers[0];
+  std::vector<LiteRtTensorBuffer> output_buffers = {shared_buffer};
+
+  {
+    TensorBuffer cpu_buffer =
+        TensorBuffer::WrapCObject(shared_buffer, OwnHandle::kNo);
+    cpu_buffer.Write<float>(
+        absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
+  }
+  {
+    TensorBuffer cpu_buffer =
+        TensorBuffer::WrapCObject(input_buffers[1], OwnHandle::kNo);
+    cpu_buffer.Write<float>(
+        absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
+  }
+
+  // Execute model with the shared buffer passed as both input and output.
+  bool async = false;
+  auto run_res =
+      compiled_model->Run(signature_key, input_buffers, output_buffers, async);
+  EXPECT_TRUE(run_res.HasValue()) << run_res.Error().Message();
+
+  if (run_res.HasValue()) {
+    // Verify in-place computation output (input0 + input1).
+    void* host_mem_addr = nullptr;
+    ASSERT_EQ(LiteRtLockTensorBuffer(shared_buffer, &host_mem_addr,
+                                     kLiteRtTensorBufferLockModeRead),
+              kLiteRtStatusOk);
+    absl::Span<const float> output = absl::MakeSpan(
+        static_cast<const float*>(host_mem_addr), kTestOutputSize);
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+    ASSERT_EQ(LiteRtUnlockTensorBuffer(shared_buffer), kLiteRtStatusOk);
+  }
+
+  // Verify shared_buffer is NOT left locked after Run().
+  void* check_addr = nullptr;
+  EXPECT_EQ(LiteRtLockTensorBuffer(shared_buffer, &check_addr,
+                                   kLiteRtTensorBufferLockModeRead),
+            kLiteRtStatusOk)
+      << "Shared buffer was left locked after CompiledModel::Run()";
+  if (check_addr != nullptr) {
+    EXPECT_EQ(LiteRtUnlockTensorBuffer(shared_buffer), kLiteRtStatusOk);
+  }
+
+  // Cleanup.
+  LiteRtDestroyTensorBuffer(input_buffers[0]);
+  LiteRtDestroyTensorBuffer(input_buffers[1]);
   LiteRtDestroyModel(model);
   LiteRtDestroyEnvironment(env_ptr);
 }

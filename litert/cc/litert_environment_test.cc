@@ -21,7 +21,10 @@
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_accelerator_def.h"
 #include "litert/c/internal/litert_runtime_builtin.h"
+#include "litert/c/internal/litert_runtime_context.h"
+#include "litert/c/litert_common.h"
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
@@ -46,6 +49,15 @@ TEST(EnvironmentTest, SupportsFP16) {
   EXPECT_FALSE(env->SupportsFP16());
 }
 
+TEST(EnvironmentTest, GetAvailableAccelerators) {
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto accelerators,
+                              env->GetAvailableAccelerators());
+  ASSERT_FALSE(accelerators.empty());
+  EXPECT_EQ(accelerators[0], HwAccelerators::kCpu);
+}
+
 TEST(EnvironmentTest, HasRuntimeProxy) {
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
@@ -63,6 +75,58 @@ TEST(EnvironmentTest, CreateWithSystemRuntime) {
   auto env = litert::Environment::Create(
       litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
   EXPECT_TRUE(env);
+}
+
+TEST(EnvironmentTest, CreateWithSystemGpuAcceleratorHandle) {
+  static const LiteRtAcceleratorDef kDummyGpuAcceleratorDef = {
+      .abi_header =
+          {
+              .struct_size = sizeof(LiteRtAcceleratorDef),
+              .major_version = 1,
+              .minor_version = 0,
+              .reserved = 0,
+          },
+      .get_name =
+          [](LiteRtAcceleratorConst, const char** name) {
+            *name = "DummyGpu";
+            return kLiteRtStatusOk;
+          },
+      .get_version =
+          [](LiteRtAcceleratorConst, LiteRtApiVersion* version) {
+            version->major = 1;
+            version->minor = 0;
+            version->patch = 0;
+            return kLiteRtStatusOk;
+          },
+      .get_hardware_support =
+          [](LiteRtAcceleratorConst, LiteRtHwAcceleratorSet* hardware) {
+            *hardware = kLiteRtHwAcceleratorGpu;
+            return kLiteRtStatusOk;
+          },
+      .is_tflite_delegate_responsible_for_jit_compilation =
+          [](LiteRtAcceleratorConst, bool* does_jit) {
+            *does_jit = false;
+            return kLiteRtStatusOk;
+          },
+      .create_delegate = [](LiteRtRuntimeContext*, LiteRtEnvironment,
+                            LiteRtAcceleratorConst, LiteRtOptions,
+                            LiteRtDelegateWrapper*) { return kLiteRtStatusOk; },
+  };
+
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kSystemGpuAcceleratorHandle,
+          litert::LiteRtVariant(
+              reinterpret_cast<const void*>(&kDummyGpuAcceleratorDef)),
+      },
+  };
+  auto env = litert::Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
+  ASSERT_TRUE(env);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto accelerators,
+                              env->GetAvailableAccelerators());
+  ASSERT_FALSE(accelerators.empty());
+  EXPECT_EQ(accelerators[0], HwAccelerators::kGpu);
 }
 
 TEST(EnvironmentTest, Options) {

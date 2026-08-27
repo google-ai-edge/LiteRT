@@ -166,5 +166,17 @@ TEST_F(GatherOpTest, Rejects5DInput) {
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
 }
 
+TEST_F(GatherOpTest, Rejects2DIndices) {
+  StubContextBuilder context_builder;
+  const int in = context_builder.AddTensor(kDefaultDtype, kInputDims);
+  const int indices = context_builder.AddTensor(kTfLiteInt32, {2, 2});
+  const int out = context_builder.AddTensor(kDefaultDtype, kOutputDims);
+  context_builder.SetOp(kTfLiteBuiltinGather, /*version=*/1, &params_,
+                        {in, indices}, {out});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir

@@ -49,6 +49,11 @@ class OpenVinoCompileContext {
   // parameters (e.g. NPU_PLATFORM).  |soc_model| may be nullptr.
   LiteRtStatus ConfigureForSoc(const char* soc_model);
 
+  // Enables the NPUW weight-sharing compile knobs on an NPU target so that
+  // export_model emits a WEIGHTLESS blob (constants referenced by
+  // WeightlessCacheAttribute bin_offset rather than baked in).
+  void ConfigureForNpuWeightSharing();
+
   // Runs NPU-specific optimization passes on the given OV model.
   void OptimizeModel(const std::shared_ptr<ov::Model>& model) const;
 

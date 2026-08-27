@@ -154,6 +154,25 @@ TEST_F(ConstantTileTest, RejectsConstantInput) {
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
 }
 
+TEST_F(ConstantTileTest, SupportsInt64Multiples) {
+  StubContextBuilder context_builder;
+  const std::array<int, 4> input_dims = {1, 2, 3, 4};
+  const std::array<int, 4> output_dims = {1, 4, 3, 8};
+  const std::vector<int64_t> multiples = {1, 2, 1, 2};
+
+  const int a = context_builder.AddTensor(kDefaultDtype, input_dims);
+  const int m = context_builder.AddConst1dTensor(
+      kTfLiteInt64, absl::MakeConstSpan(multiples));
+  const int b = context_builder.AddTensor(kDefaultDtype, output_dims);
+
+  context_builder.SetOp(kTfLiteBuiltinTile, /*version=*/1,
+                        /*params=*/nullptr,
+                        /*inputs=*/{a, m}, /*outputs=*/{b});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
 TEST_F(ConstantTileTest, RejectsNonConstantMultiples) {
   StubContextBuilder context_builder;
   const int a = context_builder.AddTensor(kDefaultDtype, {1, 2, 3, 4});

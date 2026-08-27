@@ -15,13 +15,11 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_EXPERIMENTAL_RESOURCE_LOOKUP_INTERFACES_H_
 #define TENSORFLOW_LITE_EXPERIMENTAL_RESOURCE_LOOKUP_INTERFACES_H_
 
-#include <unordered_map>
+#include <cstddef>
 
+#include "tflite/core/c/c_api_types.h"
 #include "tflite/core/c/common.h"
-#include "tflite/experimental/resource/lookup_util.h"
 #include "tflite/experimental/resource/resource_base.h"
-#include "tflite/kernels/internal/tensor_ctypes.h"
-#include "tflite/string_util.h"
 
 namespace tflite {
 namespace resource {
@@ -51,12 +49,13 @@ class LookupInterface : public ResourceBase {
 };
 
 // Creates an resource hash table, shared among all the subgraphs with the
-// given resource id if there is an existing one.
+// given resource id if there is an existing one. Returns kTfLiteError if the
+// given resource id is already used by a resource of a different type.
 // WARNING: Experimental interface, subject to change.
-void CreateHashtableResourceIfNotAvailable(ResourceMap* resources,
-                                           int resource_id,
-                                           TfLiteType key_dtype,
-                                           TfLiteType value_dtype);
+TfLiteStatus CreateHashtableResourceIfNotAvailable(ResourceMap* resources,
+                                                   int resource_id,
+                                                   TfLiteType key_dtype,
+                                                   TfLiteType value_dtype);
 
 // Returns the corresponding resource hash table, or nullptr if none.
 // WARNING: Experimental interface, subject to change.

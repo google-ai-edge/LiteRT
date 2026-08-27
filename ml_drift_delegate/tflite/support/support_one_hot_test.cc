@@ -207,6 +207,20 @@ TEST(SupportDtypesTest, RejectsBadOffDtype) {
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
 }
 
+TEST(SupportDtypesTest, SupportsFloat32Output) {
+  StubContextBuilder context_builder;
+  const int input = context_builder.AddTensor(kTfLiteInt32, kDefaultDims);
+  const int depth = context_builder.AddTensor(kTfLiteInt32, kDefaultDims);
+  const int on = context_builder.AddConst1dTensor<int>(kTfLiteFloat32, {1});
+  const int off = context_builder.AddConst1dTensor<int>(kTfLiteFloat32, {0});
+  const int output = context_builder.AddTensor(kTfLiteFloat32, kDefaultDims);
+  context_builder.SetOp(kTfLiteBuiltinOneHot, /*version=*/1,
+                        /*params=*/nullptr, {input, depth, on, off}, {output});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
 TEST(SupportDtypesTest, RejectsBadOutputDtype) {
   StubContextBuilder context_builder;
   const int input = context_builder.AddTensor(kTfLiteInt32, kDefaultDims);
@@ -322,9 +336,9 @@ TEST(DimsTest, Rejects2dOff) {
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
 }
 
-TEST(DimsTest, Rejects0dOn) {
+TEST(DimsTest, Supports0dOn) {
   StubContextBuilder context_builder;
-  const int input = context_builder.AddConstTensor(kTfLiteInt32, kDefaultDims);
+  const int input = context_builder.AddTensor(kTfLiteInt32, kDefaultDims);
   const int depth = context_builder.AddTensor(kTfLiteInt32, kDefaultDims);
   const int on = context_builder.AddConstTensor(kTfLiteFloat32, {});
   const int off = context_builder.AddConst1dTensor<int>(kTfLiteFloat32, {0});
@@ -333,12 +347,12 @@ TEST(DimsTest, Rejects0dOn) {
                         /*params=*/nullptr, {input, depth, on, off}, {output});
   TfLiteContext* context = context_builder.Build();
   ASSERT_THAT(context, NotNull());
-  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
 }
 
-TEST(DimsTest, Rejects0dOff) {
+TEST(DimsTest, Supports0dOff) {
   StubContextBuilder context_builder;
-  const int input = context_builder.AddConstTensor(kTfLiteInt32, kDefaultDims);
+  const int input = context_builder.AddTensor(kTfLiteInt32, kDefaultDims);
   const int depth = context_builder.AddTensor(kTfLiteInt32, kDefaultDims);
   const int on = context_builder.AddConst1dTensor<int>(kTfLiteFloat32, {1});
   const int off = context_builder.AddConstTensor(kTfLiteFloat32, {});
@@ -347,7 +361,7 @@ TEST(DimsTest, Rejects0dOff) {
                         /*params=*/nullptr, {input, depth, on, off}, {output});
   TfLiteContext* context = context_builder.Build();
   ASSERT_THAT(context, NotNull());
-  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
 }
 
 TEST(DimsTest, RejectsOnMultipleValues) {

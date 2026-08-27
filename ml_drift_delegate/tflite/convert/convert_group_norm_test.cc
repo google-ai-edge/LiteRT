@@ -110,5 +110,76 @@ TEST_F(ConvertGroupNormTest, BasicGroupNorm) {
   ASSERT_EQ(interpreter->Invoke(), kTfLiteOk);
 }
 
+TEST_F(ConvertGroupNormTest, GroupNormWithSubType) {
+  SingleOpInterpreterBuilder model(kTfLiteBuiltinStablehloComposite,
+                                   /*version=*/1);
+  model.AddInput(kTfLiteFloat32, {1, 2, 3, 4});  // input
+
+  std::vector<float> gamma_data(4, 1.0f);
+  std::vector<uint8_t> gamma_bytes(gamma_data.size() * sizeof(float));
+  std::memcpy(gamma_bytes.data(), gamma_data.data(), gamma_bytes.size());
+  model.AddConstInput(kTfLiteFloat32, {4}, gamma_bytes);  // gamma
+
+  std::vector<float> beta_data(4, 0.0f);
+  std::vector<uint8_t> beta_bytes(beta_data.size() * sizeof(float));
+  std::memcpy(beta_bytes.data(), beta_data.data(), beta_bytes.size());
+  model.AddConstInput(kTfLiteFloat32, {4}, beta_bytes);  // beta
+
+  model.AddOutput(kTfLiteFloat32, {1, 2, 3, 4});
+
+  TfLiteStablehloCompositeParams* params =
+      reinterpret_cast<TfLiteStablehloCompositeParams*>(
+          calloc(1, sizeof(TfLiteStablehloCompositeParams)));
+  params->name = "odml.group_norm";
+
+  flexbuffers::Builder fbb;
+  fbb.Map([&]() {
+    fbb.Int("sub_type", 0);  // 0 = GroupNorm
+    fbb.Int("num_groups", 2);
+    fbb.Float("epsilon", 1e-5f);
+    fbb.Int("channel_axis", 3);
+    fbb.Map("_TENSOR_V1_reduction_axes", [&]() {
+      fbb.Vector("TENSOR_DATA", [&]() {
+        fbb.Int(1);
+        fbb.Int(2);
+        fbb.Int(3);
+      });
+    });
+  });
+  fbb.Finish();
+  const std::vector<uint8_t>& buffer = fbb.GetBuffer();
+
+  std::vector<uint8_t> attr_buffer(buffer.begin(), buffer.end());
+  params->attributes = attr_buffer.data();
+  params->attributes_size = attr_buffer.size();
+
+  model.SetParameters(params);
+
+  std::unique_ptr<::tflite::Interpreter> interpreter = model.Build();
+  ASSERT_TRUE(interpreter);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  EXPECT_EQ(ir_model->inputs().size(), 1);
+  EXPECT_EQ(ir_model->outputs().size(), 1);
+  ASSERT_EQ(ir_model->ops().size(), 1);
+
+  const ::ml_drift::ir::IrOp* group_norm_op = ir_model->op(0);
+  EXPECT_EQ(group_norm_op->name, "group_norm");
+
+  const ::ml_drift::GroupNormAttributes* attr =
+      std::any_cast<::ml_drift::GroupNormAttributes>(&group_norm_op->attr);
+  ASSERT_TRUE(attr);
+  EXPECT_EQ(attr->groups, 2);
+  EXPECT_FLOAT_EQ(attr->epsilon, 1e-5f);
+  EXPECT_TRUE(attr->gamma.has_value());
+  EXPECT_TRUE(attr->beta.has_value());
+
+  // Sanity check inference.
+  ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
+  ASSERT_EQ(interpreter->Invoke(), kTfLiteOk);
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir

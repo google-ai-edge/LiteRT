@@ -31,8 +31,10 @@ LiteRtRuntimeContext* LrtGetRuntimeContext() {
       .abi_header =
           {
               .struct_size = sizeof(LiteRtRuntimeContext),
+              // LINT.IfChange(runtime_context_version)
               .major_version = 1,
-              .minor_version = 0,
+              .minor_version = 1,
+              // LINT.ThenChange(./litert_runtime_context.h:runtime_context_table)
               .reserved = 0,
           },
       .create_tensor_buffer_requirements = LiteRtCreateTensorBufferRequirements,
@@ -99,6 +101,7 @@ LiteRtRuntimeContext* LrtGetRuntimeContext() {
       .wait_event = LiteRtWaitEvent,
       .external_litert_buffer_context_get_run_options =
           LiteRtExternalLiteRtBufferContextGetRunOptions,
+      .get_options_hardware_accelerators = LiteRtGetOptionsHardwareAccelerators,
   };
   return &context;
 }

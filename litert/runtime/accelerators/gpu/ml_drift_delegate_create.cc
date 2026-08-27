@@ -87,15 +87,10 @@ LiteRtStatus CreateDelegate(
 
   if (gpu_delegate_options != nullptr && gpu_options_payload != nullptr) {
     LITERT_LOG(LITERT_VERBOSE, "User provided gpu options found.");
-    // We only apply this option when the weight loader is not provided. If the
-    // weight loader is provided, constant tensor sharing is always needed.
-    if (gpu_delegate_options->weight_loader == nullptr) {
-      LrtGetGpuOptionsConstantTensorsSharing(
-          &gpu_delegate_options->enable_constant_tensors_sharing,
-          gpu_options_payload);
-    } else {
-      gpu_delegate_options->enable_constant_tensors_sharing = true;
-    }
+
+    LrtGetGpuOptionsConstantTensorsSharing(
+        &gpu_delegate_options->enable_constant_tensors_sharing,
+        gpu_options_payload);
 
     LrtGetGpuOptionsInfiniteFloatCapping(
         &gpu_delegate_options->enable_infinite_float_capping,

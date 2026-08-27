@@ -23,7 +23,7 @@
 //! compile it, create input and output buffers, and run the model for inference.
 //!
 //! ```rust,no_run
-//! use litert::{CompiledModel, EnvironmentBuilder, LiteRtHwAccelerator, Model, Options};
+//! use litert::{CompiledModel, EnvironmentBuilder, LiteRtHwAccelerator, Model, Options, SignatureIndex};
 //!
 //! // 1. Create an environment.
 //! let environment = EnvironmentBuilder::build_default().expect("Failed to create environment");
@@ -43,7 +43,7 @@
 //!
 //! // 5. Create input and output tensor buffers.
 //! // We are using the first signature (index 0).
-//! let signature_index = 0;
+//! let signature_index = SignatureIndex::from(0);
 //! let input_buffers = compiled_model
 //!     .create_input_tensor_buffers(&environment, &model, signature_index)
 //!     .expect("Failed to create input buffers");
@@ -82,7 +82,7 @@
 //! # // Note: async is not available on all platforms.
 //! # let options = Options::create_with_accelerator(LiteRtHwAccelerator::Gpu).unwrap();
 //! # let compiled_model = CompiledModel::create(&environment, &model, &options).unwrap();
-//! let signature_index = 0;
+//! let signature_index = SignatureIndex::from(0);
 //! # let input_buffers = compiled_model.create_input_tensor_buffers(&environment, &model, signature_index).unwrap();
 //! # let output_buffers = compiled_model.create_output_tensor_buffers(&environment, &model, signature_index).unwrap();
 //! // 1. Run inference asynchronously.
@@ -122,6 +122,8 @@ pub use environment::EnvironmentBuilder;
 pub use error::Error;
 pub use error::ErrorCause;
 pub use model::Model;
+pub use model::SignatureIndex;
+pub use model::SubgraphIndex;
 pub use tensor_buffer::ElementType;
 #[cfg(async_support)]
 pub use tensor_buffer::ReadAsync;

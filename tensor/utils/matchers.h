@@ -157,5 +157,4 @@ auto IsOkAndHolds(Matcher&& matcher) {
 
 }  // namespace litert::tensor
 
-
 #endif  // THIRD_PARTY_ODML_LITERT_TENSOR_UTILS_MATCHERS_H_

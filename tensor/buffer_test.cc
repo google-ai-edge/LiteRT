@@ -40,6 +40,7 @@ using ::litert::tensor::IsOk;
 using ::testing::Address;
 using ::testing::Contains;
 using ::testing::Each;
+using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
 using ::testing::Eq;
 using ::testing::Not;
@@ -80,6 +81,47 @@ TEST(LockedBufferSpanTest, CanBeCastAndUsedAsAContainer) {
               ElementsAreArray(Lockable::kData));
   EXPECT_THAT(const_cast<const LockedBufferSpan<int>&>(span),
               SizeIs(std::size(Lockable::kData)));
+}
+
+TEST(LockedBufferSpanTest, SharedOwnershipAcrossCopies) {
+  Lockable l;
+  ASSERT_EQ(l.i, 0);
+  {
+    LockedBufferSpan<std::byte> span1 = l.LockMutable();
+    ASSERT_EQ(l.i, 1);
+    {
+      LockedBufferSpan<std::byte> span2 = span1;
+      LockedBufferSpan<int> span3 = span1.As<int>();
+      ASSERT_EQ(l.i, 1);
+    }
+    ASSERT_EQ(l.i, 1);
+  }
+  ASSERT_EQ(l.i, 0);
+}
+
+TEST(LockedBufferSpanTest, SubSpan) {
+  const int data[] = {10, 20, 30, 40, 50};
+  LockedBufferSpan<const int> span(data, [](const int*) {}, std::size(data));
+
+  LockedBufferSpan<const int> sub1 = span.SubSpan(1, 3);
+  EXPECT_THAT(sub1, ElementsAre(20, 30, 40));
+  EXPECT_EQ(sub1.size(), 3);
+
+  LockedBufferSpan<const int> sub2 = span.SubSpan(2);
+  EXPECT_THAT(sub2, ElementsAre(30, 40, 50));
+  EXPECT_EQ(sub2.size(), 3);
+
+  LockedBufferSpan<const int> sub_oob = span.SubSpan(10);
+  EXPECT_EQ(sub_oob.size(), 0);
+}
+
+TEST(LockedBufferSpanTest, ConstructFromUniquePtr) {
+  auto ptr = std::make_unique<int[]>(3);
+  ptr[0] = 100;
+  ptr[1] = 200;
+  ptr[2] = 300;
+  LockedBufferSpan<int> span(std::move(ptr), 3);
+  EXPECT_THAT(span, ElementsAre(100, 200, 300));
 }
 
 TEST(SpanCpuBufferTest, BuildFromRawData) {

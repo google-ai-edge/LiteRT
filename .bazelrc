@@ -198,6 +198,7 @@ build:apple-toolchain --config=clang_local
 build:apple-toolchain --apple_crosstool_top=@local_config_apple_cc//:toolchain
 build:apple-toolchain --crosstool_top=@local_config_apple_cc//:toolchain
 build:apple-toolchain --host_crosstool_top=@local_config_apple_cc//:toolchain
+build:apple-toolchain --xcode_version_config=@local_config_xcode//:host_xcodes
 
 # Wheel builds need the installable macOS runtime dylib linked into python
 # extensions and packaged into the wheel.

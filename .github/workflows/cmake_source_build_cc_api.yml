@@ -1,0 +1,131 @@
+name: "CMake source-built C++ API"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-build-cc-api:
+    name: "CMake-C++-API-example"
+    runs-on: linux-x86-n2-16
+    container:
+      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build:latest
+    env:
+      CMAKE_BUILD_DIR: cmake_build_source_cc_api
+      CMAKE_BUILD_PARALLEL_LEVEL: 6
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install CMake and Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build python3-pip
+          pip3 install cmake==3.28.3
+          cmake --version
+          ninja --version
+
+      - name: Configure source-built C++ API example
+        run: |
+          cmake \
+            -S litert/vendors/examples/cmake_example/source_build_cc_api \
+            -B "${CMAKE_BUILD_DIR}" \
+            -G Ninja \
+            -DBUILD_TESTING=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -DLITERT_ENABLE_GPU=OFF \
+            -DLITERT_ENABLE_NPU=OFF
+
+      - name: Build regular and no-Abseil examples
+        run: |
+          cmake --build "${CMAKE_BUILD_DIR}" \
+            --target litert_source_build_cc_api_run_model \
+            --target litert_source_build_cc_api_no_absl_run_model \
+            --parallel
+
+      - name: Verify no-Abseil compile and link boundary
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          build_dir = Path(os.environ["CMAKE_BUILD_DIR"])
+          compile_commands = json.loads(
+              (build_dir / "compile_commands.json").read_text()
+          )
+          targets = {
+              "litert_source_build_cc_api_no_absl_headers_smoke_test":
+                  "cc_api_headers_smoke_test.cc",
+              "litert_source_build_cc_api_no_absl_run_model":
+                  "source_build_cc_api_run_model.cc",
+          }
+
+          for target, source in targets.items():
+            marker = f"CMakeFiles/{target}.dir/"
+            matches = [
+                entry for entry in compile_commands
+                if Path(entry["file"]).name == source
+                and marker in entry.get("command", " ".join(entry.get("arguments", [])))
+            ]
+            if len(matches) != 1:
+              raise SystemExit(
+                  f"expected one compile command for {target}, found {len(matches)}"
+              )
+            command = matches[0].get(
+                "command", " ".join(matches[0].get("arguments", []))
+            )
+            if "-DLITERT_NO_ABSL" not in command:
+              raise SystemExit(f"{target} is missing -DLITERT_NO_ABSL")
+            if "abseil-cpp" in command:
+              raise SystemExit(f"{target} inherited an Abseil include path")
+
+          link_commands = subprocess.check_output(
+              [
+                  "ninja",
+                  "-C",
+                  str(build_dir),
+                  "-t",
+                  "commands",
+                  "litert_source_build_cc_api_no_absl_run_model",
+              ],
+              text=True,
+          ).splitlines()
+          executable = "litert_source_build_cc_api_no_absl_run_model"
+          matches = [
+              command for command in link_commands
+              if f"-o {executable}" in command and " -c " not in command
+          ]
+          if len(matches) != 1:
+            raise SystemExit(
+                f"expected one no-Abseil link command, found {len(matches)}"
+            )
+          if "libabsl" in matches[0]:
+            raise SystemExit("no-Abseil executable links an Abseil library")
+
+          print("No-Abseil compile and link boundary verified.")
+          PY
+
+      - name: Run regular and no-Abseil CPU tests
+        run: |
+          ctest --test-dir "${CMAKE_BUILD_DIR}" \
+            --label-regex '^cc_api$' \
+            --output-on-failure
+

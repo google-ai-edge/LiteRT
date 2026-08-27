@@ -35,6 +35,7 @@ extern "C" {
 ///
 /// @note This struct is shared with LiteRT runtime and Compiler Plugins. So it
 /// must be ABI stable.
+// LINT.IfChange(compiler_context_table)
 typedef struct LiteRtCompilerContext {
   LiteRtAbiHeader abi_header;
 
@@ -369,7 +370,37 @@ typedef struct LiteRtCompilerContext {
       LiteRtModel model, uint8_t** buf, size_t* size, size_t* offset,
       bool share_weights, char** signature_keys, size_t num_signatures,
       LiteRtModelSerializationOptions options);
+
+  // Added in version 1.1.0
+  // Builder (graph mutation)
+  LiteRtStatus (*build_tensor)(
+      LiteRtBuilder builder, LiteRtTensorTypeId tensor_type_id,
+      LiteRtRankedTensorType ranked_tensor_type,
+      LiteRtUnrankedTensorType unranked_tensor_type, LiteRtWeights weights,
+      LiteRtQuantizationTypeId quantization_type_id,
+      LiteRtQuantizationPerTensor per_tensor_quantization,
+      LiteRtQuantizationPerChannel per_channel_quantization,
+      LiteRtQuantizationBlockWise block_wise_quantization, const char* name,
+      LiteRtTensor* new_tensor);
+  LiteRtStatus (*build_weights)(LiteRtBuilder builder, const uint8_t* data,
+                                LiteRtParamIndex size, LiteRtTensor tensor,
+                                LiteRtWeights* new_weights);
+  LiteRtStatus (*build_op)(LiteRtBuilder builder, LiteRtOpCode op_code,
+                           LiteRtParamIndex num_inputs, LiteRtTensor* inputs,
+                           LiteRtParamIndex num_outputs, LiteRtTensor* outputs,
+                           LiteRtOp* new_op);
+  LiteRtStatus (*erase_op)(LiteRtBuilder builder, LiteRtOp op_to_erase);
+  LiteRtStatus (*build_add_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                      uint32_t* fused_activation);
+  LiteRtStatus (*build_batch_matmul_op_option)(LiteRtBuilder builder,
+                                               LiteRtOp op, bool* adj_x,
+                                               bool* adj_y,
+                                               bool* asymmetric_quantize_input);
+  LiteRtStatus (*get_block_wise_quantization)(
+      LiteRtTensor tensor,
+      LiteRtQuantizationBlockWise* block_wise_quantization);
 } LiteRtCompilerContext;
+// LINT.ThenChange(./litert_compiler_context.cc:compiler_context_version)
 
 // ABI compatibility check for LiteRtCompilerContext.
 //
@@ -377,7 +408,7 @@ typedef struct LiteRtCompilerContext {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtCompilerContext) == 1048,
+static_assert(sizeof(LiteRtCompilerContext) == 1104,
               "LiteRtCompilerContext size mismatch");
 static_assert(offsetof(LiteRtCompilerContext, abi_header) == 0,
               "LiteRtCompilerContext abi_header offset mismatch");
@@ -886,6 +917,22 @@ static_assert(offsetof(LiteRtCompilerContext, get_custom_options) == 1032,
 static_assert(
     offsetof(LiteRtCompilerContext, serialize_model_with_signatures) == 1040,
     "LiteRtCompilerContext serialize_model_with_signatures offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_tensor) == 1048,
+              "LiteRtCompilerContext build_tensor offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_weights) == 1056,
+              "LiteRtCompilerContext build_weights offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_op) == 1064,
+              "LiteRtCompilerContext build_op offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, erase_op) == 1072,
+              "LiteRtCompilerContext erase_op offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_add_op_option) == 1080,
+              "LiteRtCompilerContext build_add_op_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, build_batch_matmul_op_option) == 1088,
+    "LiteRtCompilerContext build_batch_matmul_op_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_block_wise_quantization) == 1096,
+    "LiteRtCompilerContext get_block_wise_quantization offset mismatch");
 #endif  // __cplusplus
 
 LiteRtCompilerContext* LrtGetCompilerContext();

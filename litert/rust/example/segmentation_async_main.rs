@@ -57,14 +57,15 @@ impl SegmentationModel {
 
     #[cfg(async_support)]
     async fn run(&self, input: &[f32], output: &mut [f32]) -> Result<(), litert::Error> {
-        let inputs = self.compiled_model.create_input_tensor_buffers(&self.env, &self.model, 0)?;
+        let sig_index = litert::SignatureIndex::from(0);
+        let inputs = self.compiled_model.create_input_tensor_buffers(&self.env, &self.model, sig_index)?;
         println!("Input type: {:?}", inputs[0].element_type());
         inputs[0].write(input)?;
         let outputs =
-            self.compiled_model.create_output_tensor_buffers(&self.env, &self.model, 0)?;
+            self.compiled_model.create_output_tensor_buffers(&self.env, &self.model, sig_index)?;
         println!("Output type: {:?}", outputs[0].element_type());
 
-        let ran_in_parallel = self.compiled_model.run_async(0, &inputs, &outputs)?;
+        let ran_in_parallel = self.compiled_model.run_async(sig_index, &inputs, &outputs)?;
         println!("Ran in parallel: {}", ran_in_parallel);
 
         let read_future = outputs[0].read_async(output);
@@ -89,11 +90,12 @@ impl SegmentationModel {
     #[cfg(not(async_support))]
     async fn run(&self, input: &[f32], output: &mut [f32]) -> Result<(), litert::Error> {
         // Fallback if async is not supported (should not happen with our BUILD config)
-        let inputs = self.compiled_model.create_input_tensor_buffers(&self.env, &self.model, 0)?;
+        let sig_index = litert::SignatureIndex::from(0);
+        let inputs = self.compiled_model.create_input_tensor_buffers(&self.env, &self.model, sig_index)?;
         inputs[0].write(input)?;
         let outputs =
-            self.compiled_model.create_output_tensor_buffers(&self.env, &self.model, 0)?;
-        self.compiled_model.run(0, &inputs, &outputs)?;
+            self.compiled_model.create_output_tensor_buffers(&self.env, &self.model, sig_index)?;
+        self.compiled_model.run(sig_index, &inputs, &outputs)?;
         outputs[0].read(output)?;
         Ok(())
     }

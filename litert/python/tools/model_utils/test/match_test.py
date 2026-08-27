@@ -79,7 +79,7 @@ class MatchTest(testing.ModelUtilsTestCase):
     add_op = find_op_by_name(self, module, "tfl.add")
 
     # Match the MulOp where the first operand is add_op.
-    mul_op = mu.match.op("tfl.mul", operands=[add_op, mu.match.ANY])
+    mul_op = mu.match.op("tfl.mul", operands=[add_op, mu.match.ANY])  # pyrefly: ignore[no-matching-overload]
     self.assertEqual(mul_op.name, "tfl.mul")
 
   def test_match_op_by_operand_class(self):
@@ -87,7 +87,7 @@ class MatchTest(testing.ModelUtilsTestCase):
     add_op = find_op_by_name(self, module, "tfl.add")
 
     # Match the MulOp where the first operand is add_op.
-    mul_op = mu.match.op(tfl.MulOp, operands=[add_op, mu.match.ANY])
+    mul_op = mu.match.op(tfl.MulOp, operands=[add_op, mu.match.ANY])  # pyrefly: ignore[no-matching-overload]
     self.assertEqual(mul_op.name, "tfl.mul")
 
   def test_match_op_by_result_class(self):
@@ -105,7 +105,7 @@ class MatchTest(testing.ModelUtilsTestCase):
 
     # Match the MulOp where the first operand is add_op and the first result
     # is sub_op's first operand.
-    mul_op = mu.match.op(
+    mul_op = mu.match.op(  # pyrefly: ignore[no-matching-overload]
         "tfl.mul",
         operands=[add_op, mu.match.ANY],
         results=[sub_op.operands[0]],

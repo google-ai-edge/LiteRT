@@ -29,6 +29,7 @@ pub enum ErrorCause {
     GetCompiledModelInputBufferRequirements,
     GetCompiledModelOutputBufferRequirements,
     InputDoesntSupportAnyTensorBufferTypes,
+    ResizeCompiledModelInputBuffer,
     RunCompiledModel,
     // environment
     NotSupportedLiteRtAnyType,

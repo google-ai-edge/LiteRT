@@ -18,13 +18,16 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>  // For simple pass/fail messages if not using a framework
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_profiler_event.h"
+#include "litert/c/litert_profiler_types.h"
 #include "tflite/core/api/profiler.h"  // For tflite::Profiler::EventType
 
 // Suggested location: tests/litert/profiler_test.cc
@@ -254,6 +257,110 @@ TEST(LiteRTProfiler, MaxEventsHandling) {
     ASSERT_TRUE(found_e1 || found_e3);
   }
   std::cout << "TestMaxEventsHandling: PASSED" << std::endl;
+}
+
+struct HookCallRecord {
+  LiteRtHookType type;
+  std::vector<uint8_t> data;
+  void* user_data;
+};
+
+void TestHookCallback(LiteRtHookType type, const void* data, size_t size,
+                      void* user_data) {
+  if (user_data == nullptr) {
+    return;
+  }
+  auto* records = static_cast<std::vector<HookCallRecord>*>(user_data);
+  std::vector<uint8_t> byte_data;
+  if (data != nullptr && size > 0) {
+    const auto* bytes = static_cast<const uint8_t*>(data);
+    byte_data.assign(bytes, bytes + size);
+  }
+  records->push_back(HookCallRecord{
+      .type = type,
+      .data = std::move(byte_data),
+      .user_data = user_data,
+  });
+}
+
+TEST(LiteRTProfiler, RegisterAndTriggerSingleHook) {
+  LiteRtProfilerT profiler;
+  std::vector<HookCallRecord> records;
+
+  EXPECT_EQ(profiler.RegisterHook(TestHookCallback, &records), kLiteRtStatusOk);
+
+  const char test_payload[] = "runtime_data";
+  EXPECT_EQ(profiler.TriggerHook(kLiteRtHookTypeRuntimeStart, nullptr, 0),
+            kLiteRtStatusOk);
+  EXPECT_EQ(profiler.TriggerHook(kLiteRtHookTypeRuntimeStop, test_payload,
+                                 sizeof(test_payload)),
+            kLiteRtStatusOk);
+  EXPECT_EQ(profiler.TriggerHook(kLiteRtHookTypeStopAndProcess, nullptr, 0),
+            kLiteRtStatusOk);
+  EXPECT_EQ(profiler.TriggerHook(kLiteRtHookTypeCompilerStart, nullptr, 0),
+            kLiteRtStatusOk);
+  EXPECT_EQ(profiler.TriggerHook(kLiteRtHookTypeCompilerStop, nullptr, 0),
+            kLiteRtStatusOk);
+
+  ASSERT_EQ(records.size(), 5);
+  EXPECT_EQ(records[0].type, kLiteRtHookTypeRuntimeStart);
+  EXPECT_TRUE(records[0].data.empty());
+  EXPECT_EQ(records[0].user_data, &records);
+
+  EXPECT_EQ(records[1].type, kLiteRtHookTypeRuntimeStop);
+  EXPECT_EQ(records[1].data.size(), sizeof(test_payload));
+  EXPECT_EQ(memcmp(records[1].data.data(), test_payload, sizeof(test_payload)),
+            0);
+  EXPECT_EQ(records[1].user_data, &records);
+
+  EXPECT_EQ(records[2].type, kLiteRtHookTypeStopAndProcess);
+  EXPECT_TRUE(records[2].data.empty());
+  EXPECT_EQ(records[2].user_data, &records);
+
+  EXPECT_EQ(records[3].type, kLiteRtHookTypeCompilerStart);
+  EXPECT_TRUE(records[3].data.empty());
+  EXPECT_EQ(records[3].user_data, &records);
+
+  EXPECT_EQ(records[4].type, kLiteRtHookTypeCompilerStop);
+  EXPECT_TRUE(records[4].data.empty());
+  EXPECT_EQ(records[4].user_data, &records);
+}
+
+TEST(LiteRTProfiler, RegisterMultipleHooks) {
+  LiteRtProfilerT profiler;
+  std::vector<HookCallRecord> records1;
+  std::vector<HookCallRecord> records2;
+
+  EXPECT_EQ(profiler.RegisterHook(TestHookCallback, &records1),
+            kLiteRtStatusOk);
+  EXPECT_EQ(profiler.RegisterHook(TestHookCallback, &records2),
+            kLiteRtStatusOk);
+
+  EXPECT_EQ(profiler.TriggerHook(kLiteRtHookTypeRuntimeStart, nullptr, 0),
+            kLiteRtStatusOk);
+
+  ASSERT_EQ(records1.size(), 1);
+  EXPECT_EQ(records1[0].type, kLiteRtHookTypeRuntimeStart);
+  EXPECT_EQ(records1[0].user_data, &records1);
+
+  ASSERT_EQ(records2.size(), 1);
+  EXPECT_EQ(records2[0].type, kLiteRtHookTypeRuntimeStart);
+  EXPECT_EQ(records2[0].user_data, &records2);
+}
+
+TEST(LiteRTProfiler, TriggerHookWithoutRegisteredHooks) {
+  LiteRtProfilerT profiler;
+  EXPECT_EQ(profiler.TriggerHook(kLiteRtHookTypeRuntimeStart, nullptr, 0),
+            kLiteRtStatusOk);
+  EXPECT_EQ(profiler.TriggerHook(kLiteRtHookTypeStopAndProcess, nullptr, 0),
+            kLiteRtStatusOk);
+}
+
+TEST(LiteRTProfiler, NullHookSafeguard) {
+  LiteRtProfilerT profiler;
+  EXPECT_EQ(profiler.RegisterHook(nullptr, nullptr), kLiteRtStatusOk);
+  EXPECT_EQ(profiler.TriggerHook(kLiteRtHookTypeRuntimeStart, nullptr, 0),
+            kLiteRtStatusOk);
 }
 
 }  // namespace

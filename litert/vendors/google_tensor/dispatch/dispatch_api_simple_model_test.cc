@@ -36,6 +36,8 @@
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -417,6 +419,318 @@ TEST_F(SimpleModelTest, ExecutableFileCaching) {
 
   LITERT_ASSERT_OK(LiteRtDispatchUnloadExecutable(device_context(), handle1));
   LITERT_ASSERT_OK(LiteRtDispatchUnloadExecutable(device_context(), handle2));
+}
+
+TEST_F(SimpleModelTest, OffsetHostMemoryOutOfBoundsFails) {
+  // Copies the standard runtime context definition.
+  LiteRtRuntimeContext mocked_context = *LrtGetRuntimeContext();
+
+  // We mock `get_tensor_buffer_offset` because LiteRtCreateManagedTensorBuffer
+  // does not support specifying an offset, and hardware handle buffer
+  // types (AHWB/DMA-BUF) are problematic on sandboxed test servers.
+  mocked_context.get_tensor_buffer_offset = [](LiteRtTensorBuffer,
+                                               size_t* offset) -> LiteRtStatus {
+    *offset = 128;
+    return kLiteRtStatusOk;
+  };
+
+  // Creates a custom DeviceContext using the mocked runtime context.
+  LiteRtOptions options;
+  LITERT_ASSERT_OK(LiteRtCreateOptions(&options));
+
+  LiteRtDispatchDeviceContext custom_context;
+  LITERT_ASSERT_OK(LiteRtDispatchDeviceContextCreate(&mocked_context, options,
+                                                     &custom_context));
+  LiteRtDestroyOptions(options);
+
+  LiteRtDispatchInvocationContext invocation_context;
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextCreate(
+      &mocked_context, custom_context, kLiteRtDispatchExecutableTypeMlModel,
+      &model_bytecode(),
+      /*function_name=*/nullptr,
+      /*num_inputs=*/2, /*num_outputs=*/1, &invocation_context));
+
+  // Gathers output buffer requirements.
+  LiteRtTensorBufferRequirements output_requirements;
+  LITERT_ASSERT_OK(LiteRtDispatchGetOutputRequirements(
+      invocation_context, /*output_index=*/0, &kOutputTensorType,
+      &output_requirements));
+
+  LiteRtTensorBufferType output_type;
+  LITERT_ASSERT_OK(LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
+      output_requirements, /*type_index=*/0, &output_type));
+
+  size_t output_size;
+  LITERT_ASSERT_OK(LiteRtGetTensorBufferRequirementsBufferSize(
+      output_requirements, &output_size));
+
+  LiteRtDestroyTensorBufferRequirements(output_requirements);
+
+  // The required output_size is 8 bytes, but we allocate a 64-byte buffer
+  // to perform the offset out-of-bounds test.
+  LiteRtRankedTensorType tensor_type = {
+      .element_type = kLiteRtElementTypeFloat32,
+      .layout =
+          {
+              .rank = 1,
+              .has_strides = false,
+              .dimensions = {16},  // 16 * 4 bytes = 64 bytes
+          },
+  };
+  LiteRtTensorBuffer tensor_buffer;
+  const size_t kBufferAllocSize = 64;
+  LITERT_ASSERT_OK(LiteRtCreateManagedTensorBuffer(
+      env(), output_type, &tensor_type, kBufferAllocSize, &tensor_buffer));
+
+  size_t registered_size;
+  LITERT_ASSERT_OK(
+      LiteRtGetTensorBufferSize(tensor_buffer, &registered_size));
+  ASSERT_EQ(registered_size, kBufferAllocSize);
+
+  LiteRtTensorBufferHandle handle;
+  // This must fail because offset (128) > size (64).
+  EXPECT_EQ(LiteRtDispatchRegisterTensorBuffer(custom_context, tensor_buffer,
+                                               &handle),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LiteRtDestroyTensorBuffer(tensor_buffer);
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextDestroy(invocation_context));
+  LiteRtDispatchDeviceContextDestroy(custom_context);
+}
+
+TEST_F(SimpleModelTest, TwoNodeGraph) {
+  // Builds and invokes the following graph:
+  //
+  // Graph Inputs
+  //  [0]      [1]      [2]
+  //   │        │        │
+  //   │(E0)    │(E1)    │(E2)
+  //   │    ┌───┴───┐    │
+  //  ┌▽────▽┐     ┌▽────▽┐
+  //  │Node 0│     │Node 1│
+  //  └┬─────┘     └┬─────┘
+  //   │(E3)        │(E4)
+  //   ▽            ▽
+  //  [0]          [1]
+  // Graph Outputs
+
+  int capabilities;
+  LITERT_ASSERT_OK(LiteRtDispatchGetCapabilities(&capabilities));
+  // This test exercises the graph API.
+  ASSERT_NE(capabilities & kLiteRtDispatchCapabilitiesGraph, 0);
+
+  LiteRtDispatchExecutableHandle exec_handle;
+  LITERT_ASSERT_OK(LiteRtDispatchLoadExecutable(
+      device_context(), kLiteRtDispatchExecutableTypeMlModel, &model_bytecode(),
+      &exec_handle));
+
+  LiteRtDispatchGraph graph;
+  LITERT_ASSERT_OK(LiteRtDispatchGraphCreate(device_context(), &graph));
+
+  LITERT_ASSERT_OK(
+      LiteRtDispatchAddNode(graph, /*node_id=*/0, kLiteRtDispatchNodeTypeNpu));
+  LITERT_ASSERT_OK(
+      LiteRtDispatchAddNode(graph, /*node_id=*/1, kLiteRtDispatchNodeTypeNpu));
+
+  LITERT_ASSERT_OK(LiteRtDispatchAddEdge(graph, /*edge_id=*/0));
+  LITERT_ASSERT_OK(LiteRtDispatchAddEdge(graph, /*edge_id=*/1));
+  LITERT_ASSERT_OK(LiteRtDispatchAddEdge(graph, /*edge_id=*/2));
+  LITERT_ASSERT_OK(LiteRtDispatchAddEdge(graph, /*edge_id=*/3));
+  LITERT_ASSERT_OK(LiteRtDispatchAddEdge(graph, /*edge_id=*/4));
+
+  LITERT_ASSERT_OK(LiteRtDispatchAssignNodeFunction(
+      graph, /*node_id=*/0, exec_handle, /*function_name=*/nullptr));
+  LITERT_ASSERT_OK(LiteRtDispatchAssignNodeFunction(
+      graph, /*node_id=*/1, exec_handle, /*function_name=*/nullptr));
+
+  // Connects Node 0 inputs.
+  LITERT_ASSERT_OK(LiteRtDispatchConnectNodeInput(
+      graph, /*node_id=*/0, /*input_index=*/0, /*edge_id=*/0));
+  LITERT_ASSERT_OK(LiteRtDispatchConnectNodeInput(
+      graph, /*node_id=*/0, /*input_index=*/1, /*edge_id=*/1));
+
+  // Connects Node 1 inputs.
+  LITERT_ASSERT_OK(LiteRtDispatchConnectNodeInput(
+      graph, /*node_id=*/1, /*input_index=*/0, /*edge_id=*/1));
+  LITERT_ASSERT_OK(LiteRtDispatchConnectNodeInput(
+      graph, /*node_id=*/1, /*input_index=*/1, /*edge_id=*/2));
+
+  // Connect Node outputs. Each node has a single output.
+  LITERT_ASSERT_OK(LiteRtDispatchConnectNodeOutput(
+      graph, /*node_id=*/0, /*output_index=*/0, /*edge_id=*/3));
+  LITERT_ASSERT_OK(LiteRtDispatchConnectNodeOutput(
+      graph, /*node_id=*/1, /*output_index=*/0, /*edge_id=*/4));
+
+  // Connect Graph inputs
+  LITERT_ASSERT_OK(LiteRtDispatchConnectGraphInput(graph, /*input_index=*/0,
+                                                   /*edge_id=*/0));
+  LITERT_ASSERT_OK(LiteRtDispatchConnectGraphInput(graph, /*input_index=*/1,
+                                                   /*edge_id=*/1));
+  LITERT_ASSERT_OK(LiteRtDispatchConnectGraphInput(graph, /*input_index=*/2,
+                                                   /*edge_id=*/2));
+
+  // Connect Graph outputs
+  LITERT_ASSERT_OK(LiteRtDispatchConnectGraphOutput(graph, /*output_index=*/0,
+                                                    /*edge_id=*/3));
+  LITERT_ASSERT_OK(LiteRtDispatchConnectGraphOutput(graph, /*output_index=*/1,
+                                                    /*edge_id=*/4));
+
+  // Prepares for invocation.
+  LiteRtDispatchInvocationContext invocation_context;
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextCreateFromGraph(
+      device_context(), graph, &invocation_context));
+
+  LiteRtTensorBufferRequirements input_reqs[3];
+  LiteRtTensorBufferRequirements output_reqs[2];
+
+  for (int i = 0; i < 3; ++i) {
+    LITERT_ASSERT_OK(LiteRtDispatchGetInputRequirements(
+        invocation_context, i, &kInput0TensorType, &input_reqs[i]));
+  }
+  for (int i = 0; i < 2; ++i) {
+    LITERT_ASSERT_OK(LiteRtDispatchGetOutputRequirements(
+        invocation_context, i, &kOutputTensorType, &output_reqs[i]));
+  }
+
+  LiteRtTensorBufferType input_types[3];
+  size_t input_sizes[3];
+  LiteRtTensorBuffer input_buffers[3];
+  LiteRtTensorBufferHandle input_handles[3];
+
+  for (int i = 0; i < 3; ++i) {
+    LITERT_ASSERT_OK(LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
+        input_reqs[i], 0, &input_types[i]));
+    LITERT_ASSERT_OK(LiteRtGetTensorBufferRequirementsBufferSize(
+        input_reqs[i], &input_sizes[i]));
+    LITERT_ASSERT_OK(LiteRtCreateManagedTensorBuffer(
+        env(), input_types[i], &kInput0TensorType, input_sizes[i],
+        &input_buffers[i]));
+    LITERT_ASSERT_OK(LiteRtDispatchRegisterTensorBuffer(
+        device_context(), input_buffers[i], &input_handles[i]));
+    LITERT_ASSERT_OK(
+        LiteRtDispatchAttachInput(invocation_context, i, input_handles[i]));
+    LiteRtDestroyTensorBufferRequirements(input_reqs[i]);
+  }
+
+  LiteRtTensorBufferType output_types[2];
+  size_t output_sizes[2];
+  LiteRtTensorBuffer output_buffers[2];
+  LiteRtTensorBufferHandle output_handles[2];
+
+  for (int i = 0; i < 2; ++i) {
+    LITERT_ASSERT_OK(LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
+        output_reqs[i], 0, &output_types[i]));
+    LITERT_ASSERT_OK(LiteRtGetTensorBufferRequirementsBufferSize(
+        output_reqs[i], &output_sizes[i]));
+    LITERT_ASSERT_OK(LiteRtCreateManagedTensorBuffer(
+        env(), output_types[i], &kOutputTensorType, output_sizes[i],
+        &output_buffers[i]));
+    LITERT_ASSERT_OK(LiteRtDispatchRegisterTensorBuffer(
+        device_context(), output_buffers[i], &output_handles[i]));
+    LITERT_ASSERT_OK(
+        LiteRtDispatchAttachOutput(invocation_context, i, output_handles[i]));
+    LiteRtDestroyTensorBufferRequirements(output_reqs[i]);
+  }
+
+  const float kTestInput2Tensor[] = {100.0f, 200.0f};
+  {
+    void* host_mem_addr;
+    LITERT_ASSERT_OK(LiteRtLockTensorBuffer(input_buffers[0], &host_mem_addr,
+                                            kLiteRtTensorBufferLockModeWrite));
+    std::memcpy(host_mem_addr, kTestInput0Tensor, sizeof(kTestInput0Tensor));
+    LITERT_ASSERT_OK(LiteRtUnlockTensorBuffer(input_buffers[0]));
+
+    LITERT_ASSERT_OK(LiteRtLockTensorBuffer(input_buffers[1], &host_mem_addr,
+                                            kLiteRtTensorBufferLockModeWrite));
+    std::memcpy(host_mem_addr, kTestInput1Tensor, sizeof(kTestInput1Tensor));
+    LITERT_ASSERT_OK(LiteRtUnlockTensorBuffer(input_buffers[1]));
+
+    LITERT_ASSERT_OK(LiteRtLockTensorBuffer(input_buffers[2], &host_mem_addr,
+                                            kLiteRtTensorBufferLockModeWrite));
+    std::memcpy(host_mem_addr, kTestInput2Tensor, sizeof(kTestInput2Tensor));
+    LITERT_ASSERT_OK(LiteRtUnlockTensorBuffer(input_buffers[2]));
+  }
+
+  // Executes the graph.
+  LITERT_ASSERT_OK(LiteRtDispatchInvoke(invocation_context));
+
+  // Checks the results. The program on each node performs an element-wise
+  // addition of its two inputs. Each input is a 2-element float vector.
+
+  // output_0 = {1, 2} + {10, 20}
+  const float expected_output_0[] = {11.0f, 22.0f};
+  // output_1 = {10, 20} + {100, 200}
+  const float expected_output_1[] = {110.0f, 220.0f};
+
+  {
+    void* host_mem_addr;
+    LITERT_ASSERT_OK(LiteRtLockTensorBuffer(output_buffers[0], &host_mem_addr,
+                                            kLiteRtTensorBufferLockModeRead));
+    auto output_0 = absl::MakeConstSpan(static_cast<float*>(host_mem_addr),
+                                        kTestOutputSize);
+    EXPECT_THAT(output_0,
+                Pointwise(testing::FloatNear(1e-3), expected_output_0));
+    LITERT_ASSERT_OK(LiteRtUnlockTensorBuffer(output_buffers[0]));
+
+    LITERT_ASSERT_OK(LiteRtLockTensorBuffer(output_buffers[1], &host_mem_addr,
+                                            kLiteRtTensorBufferLockModeRead));
+    auto output_1 = absl::MakeConstSpan(static_cast<float*>(host_mem_addr),
+                                        kTestOutputSize);
+    EXPECT_THAT(output_1,
+                Pointwise(testing::FloatNear(1e-3), expected_output_1));
+    LITERT_ASSERT_OK(LiteRtUnlockTensorBuffer(output_buffers[1]));
+  }
+
+  // Cleans up graph resources to avoid memory leaks.
+  for (int i = 0; i < 3; ++i) {
+    LITERT_ASSERT_OK(
+        LiteRtDispatchDetachInput(invocation_context, i, input_handles[i]));
+    LITERT_ASSERT_OK(LiteRtDispatchUnregisterTensorBuffer(device_context(),
+                                                          input_handles[i]));
+    LiteRtDestroyTensorBuffer(input_buffers[i]);
+  }
+  for (int i = 0; i < 2; ++i) {
+    LITERT_ASSERT_OK(
+        LiteRtDispatchDetachOutput(invocation_context, i, output_handles[i]));
+    LITERT_ASSERT_OK(LiteRtDispatchUnregisterTensorBuffer(device_context(),
+                                                          output_handles[i]));
+    LiteRtDestroyTensorBuffer(output_buffers[i]);
+  }
+
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextDestroy(invocation_context));
+  LITERT_ASSERT_OK(LiteRtDispatchGraphDestroy(graph));
+  LITERT_ASSERT_OK(
+      LiteRtDispatchUnloadExecutable(device_context(), exec_handle));
+}
+
+TEST_F(SimpleModelTest, DuplicateGraphInputOutputConnectionFails) {
+  int capabilities;
+  LITERT_ASSERT_OK(LiteRtDispatchGetCapabilities(&capabilities));
+  if ((capabilities & kLiteRtDispatchCapabilitiesGraph) == 0) {
+    GTEST_SKIP() << "Graph API is not supported";
+  }
+
+  LiteRtDispatchGraph graph;
+  LITERT_ASSERT_OK(LiteRtDispatchGraphCreate(device_context(), &graph));
+
+  LITERT_ASSERT_OK(LiteRtDispatchAddEdge(graph, /*edge_id=*/0));
+  LITERT_ASSERT_OK(LiteRtDispatchAddEdge(graph, /*edge_id=*/1));
+
+  // Connects the same input index 0 twice.
+  LITERT_ASSERT_OK(LiteRtDispatchConnectGraphInput(graph, /*input_index=*/0,
+                                                   /*edge_id=*/0));
+  EXPECT_EQ(LiteRtDispatchConnectGraphInput(graph, /*input_index=*/0,
+                                            /*edge_id=*/0),
+            kLiteRtStatusErrorInvalidArgument);
+
+  // Connects the same output index 0 twice.
+  LITERT_ASSERT_OK(LiteRtDispatchConnectGraphOutput(graph, /*output_index=*/0,
+                                                    /*edge_id=*/1));
+  EXPECT_EQ(LiteRtDispatchConnectGraphOutput(graph, /*output_index=*/0,
+                                             /*edge_id=*/1),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LITERT_ASSERT_OK(LiteRtDispatchGraphDestroy(graph));
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInterfaces, SimpleModelEndToEndTest,

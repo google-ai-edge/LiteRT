@@ -199,6 +199,52 @@ class Environment {
   }
 
   /// @internal
+  /// @brief Returns the list of supported hardware accelerators available in
+  /// the environment.
+  Expected<std::vector<HwAccelerators>> GetAvailableAccelerators() const {
+    LiteRtParamIndex size;
+    if (auto status = runtime_->GetNumAccelerators(handle_.get(), &size);
+        status != kLiteRtStatusOk) {
+      return Error(ToStatus(status), "Failed to get number of accelerators.");
+    }
+
+    std::vector<HwAccelerators> accelerators;
+    accelerators.reserve(size);
+    for (LiteRtParamIndex i = 0; i < size; ++i) {
+      LiteRtAccelerator accelerator;
+      if (auto status =
+              runtime_->GetAccelerator(handle_.get(), i, &accelerator);
+          status != kLiteRtStatusOk) {
+        LITERT_LOG(LITERT_ERROR, "Failed to get accelerator.");
+        continue;
+      }
+      LiteRtHwAcceleratorSet hardware;
+      if (auto status =
+              runtime_->GetAcceleratorHardwareSupport(accelerator, &hardware);
+          status != kLiteRtStatusOk) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Failed to get accelerator supported hardware.");
+        continue;
+      }
+      if (hardware & kLiteRtHwAcceleratorCpu) {
+        accelerators.push_back(HwAccelerators::kCpu);
+      }
+      if (hardware & kLiteRtHwAcceleratorGpu) {
+        accelerators.push_back(HwAccelerators::kGpu);
+      }
+      if (hardware & kLiteRtHwAcceleratorNpu) {
+        accelerators.push_back(HwAccelerators::kNpu);
+      }
+#if defined(__EMSCRIPTEN__)
+      if (hardware & kLiteRtHwAcceleratorWebNn) {
+        accelerators.push_back(HwAccelerators::kWebNn);
+      }
+#endif  // __EMSCRIPTEN__
+    }
+    return accelerators;
+  }
+
+  /// @internal
   /// @brief Returns the underlying environment handle.
   [[deprecated("Use GetHolder() instead.")]]
   LiteRtEnvironment Get() const noexcept {
@@ -212,11 +258,26 @@ class Environment {
   }
 
   /// @internal
+  /// @brief Returns the underlying environment handle and runtime for C API.
+  std::pair<const struct LiteRtRuntimeCApiStruct*, LiteRtEnvironment>
+  GetHolderForCApi() const noexcept {
+    return {runtime_->runtime_c_api_, handle_.get()};
+  }
+
+  /// @internal
   /// @brief Releases ownership of the environment handle.
   ///
   /// After this call, `GetHolder()` returns a null handle.
   internal::EnvironmentHolder Release() noexcept {
     return {runtime_.release(), handle_.release()};
+  }
+
+  /// @internal
+  /// @brief Releases ownership of the underlying environment handle and
+  /// runtime for C API.
+  std::pair<const struct LiteRtRuntimeCApiStruct*, LiteRtEnvironment>
+  ReleaseForCApi() noexcept {
+    return {runtime_->runtime_c_api_, handle_.release()};
   }
 
   /// @brief Returns `true` if the underlying LiteRT handle is valid.
@@ -248,6 +309,17 @@ class Environment {
         std::unique_ptr<RuntimeProxy, std::function<void(RuntimeProxy*)>>(
             env.runtime, [](RuntimeProxy*) {});
     return Environment(env.handle, std::move(runtime), owned);
+  }
+
+  /// @internal
+  /// @brief Wraps a `LiteRtEnvironment` C object in an `Environment` C++
+  /// object, with the externally provided runtime.
+  /// @warning This is for internal use only.
+  static Environment WrapCObject(
+      const struct LiteRtRuntimeCApiStruct* runtime_c_api,
+      LiteRtEnvironment env, OwnHandle owned) {
+    auto runtime = CreateRuntime(runtime_c_api);
+    return Environment(env, std::move(runtime), owned);
   }
 
  private:
@@ -302,7 +374,7 @@ class Environment {
   Expected<EnvironmentOptions> FromCOptions(
       LiteRtEnvironmentOptions options) const {
     std::vector<EnvironmentOptions::Option> env_options;
-    for (int i = 0; i <= kLiteRtEnvOptionTagAutoRegisterAccelerators; ++i) {
+    for (int i = 0; i <= kLiteRtEnvOptionTagSystemGpuAcceleratorHandle; ++i) {
       LiteRtAny value;
       if (runtime_->GetEnvironmentOptionsValue(
               options, static_cast<LiteRtEnvOptionTag>(i), &value) ==

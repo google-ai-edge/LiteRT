@@ -62,11 +62,6 @@ TEST(TestGoogleTensorPlugin, GetConfigInfo) {
   LiteRtParamIndex num_supported_soc_models;
   LITERT_ASSERT_OK(LiteRtGetNumCompilerPluginSupportedSocModels(
       plugin.get(), &num_supported_soc_models));
-#ifdef EDGETPU_EXTERNAL_RELEASE_COMPILER
-  ASSERT_THAT(num_supported_soc_models, 4);
-#else
-  ASSERT_THAT(num_supported_soc_models, 5);
-#endif
 
   std::vector<std::string> soc_model_names;
   for (int i = 0; i < num_supported_soc_models; ++i) {
@@ -75,14 +70,13 @@ TEST(TestGoogleTensorPlugin, GetConfigInfo) {
                                                               &soc_model_name));
     soc_model_names.push_back(soc_model_name);
   }
-#ifdef EDGETPU_EXTERNAL_RELEASE_COMPILER
-  EXPECT_THAT(soc_model_names, UnorderedElementsAre("Tensor_G3", "Tensor_G4",
-                                                    "Tensor_G5", "Tensor_G6"));
-#else
   EXPECT_THAT(soc_model_names,
               UnorderedElementsAre("Tensor_G3", "Tensor_G4", "Tensor_G5",
-                                   "Tensor_G6", "Tensor_G7"));
-#endif
+                                   "Tensor_G6",
+                                   // copybara:uncomment_begin(google-only)
+                                   // "Tensor_G7"
+                                   // copybara:uncomment_end
+                                   ));
 }
 
 TEST(TestCallGoogleTensorPlugin, PartitionSimpleMultiAdd) {
@@ -105,7 +99,7 @@ TEST(TestCallGoogleTensorPlugin, PartitionWithOpFiltersRunOnCpu) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
   LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
-                              options.GetGoogleTensorOptions());
+                              options.GetOptions<GoogleTensorOptions>());
 
   std::string temp_file =
       ::testing::TempDir() + "/test_op_filters_cpu.textproto";
@@ -194,7 +188,7 @@ TEST(TestCallGoogleTensorPlugin, PartitionWithOpFiltersRunOnTpu) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
   LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
-                              options.GetGoogleTensorOptions());
+                              options.GetOptions<GoogleTensorOptions>());
 
   std::string temp_file =
       ::testing::TempDir() + "/test_op_filters_tpu.textproto";
@@ -258,7 +252,7 @@ TEST(TestCallGoogleTensorPlugin, CompileMulSubgraphWithOptions) {
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(Options options, Options::Create());
   LITERT_ASSERT_OK_AND_ASSIGN(GoogleTensorOptions & google_tensor_options,
-                              options.GetGoogleTensorOptions());
+                              options.GetOptions<GoogleTensorOptions>());
   google_tensor_options.SetFloatTruncationType(
       kLiteRtGoogleTensorFloatTruncationTypeBfloat16);
 
@@ -330,7 +324,7 @@ TEST(TestCallGoogleTensorPlugin, CompileWithExtraOptions) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
   LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
-                              options.GetGoogleTensorOptions());
+                              options.GetOptions<GoogleTensorOptions>());
 
   google_tensor_options.SetExtraOptions("test_extra_options");
   EXPECT_EQ(google_tensor_options.GetExtraOptions(), "test_extra_options");
@@ -350,6 +344,36 @@ TEST(TestCallGoogleTensorPlugin, CompileWithExtraOptions) {
     LiteRtDestroyCompiledResult(compiled);
   };
 }
+
+
+
+TEST(TestCallGoogleTensorPlugin, PartitionWithInputValidator) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
+                              options.GetGoogleTensorOptions());
+
+  google_tensor_options.SetExperimentalEnableInputValidator(true);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  auto model = testing::LoadTestFileModel("simple_multi_op.tflite");
+  LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
+
+  LiteRtOpListT selected_op_list;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
+      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
+  const auto selected_ops = selected_op_list.Values();
+
+  // Verify compilation path with validator enabled succeeds.
+  // Add and Mul should be supported by default.
+  EXPECT_GT(selected_ops.size(), 0);
+}
+
 
 }  // namespace
 }  // namespace litert

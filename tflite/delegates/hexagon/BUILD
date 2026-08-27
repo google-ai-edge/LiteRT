@@ -171,6 +171,7 @@ cc_test(
     linkopts = tflite_linkopts() + ["-lm"],
     deps = [
         ":utils",
+        "//tflite:builtin_ops",
         "//tflite/core/c:common",
         "@com_google_googletest//:gtest_main",
     ],

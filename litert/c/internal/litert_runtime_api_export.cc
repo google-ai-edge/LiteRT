@@ -14,6 +14,7 @@
 
 #include "litert/c/internal/litert_runtime_api_export.h"
 
+#include "litert/c/internal/litert_accelerator.h"
 #include "litert/c/internal/litert_runtime_c_api.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_compiled_model.h"
@@ -257,5 +258,11 @@ extern "C" LITERT_CAPI_EXPORT const LiteRtRuntimeCApiStruct
         .litert_environment_supports_fp16 = LiteRtEnvironmentSupportsFP16,
         .litert_create_model_from_fd = LiteRtCreateModelFromFd,
         .litert_get_block_wise_quantization = LiteRtGetBlockWiseQuantization,
+        .litert_get_num_accelerators = LiteRtGetNumAccelerators,
+        .litert_get_accelerator = LiteRtGetAccelerator,
+        .litert_get_accelerator_hardware_support =
+            LiteRtGetAcceleratorHardwareSupport,
+        .litert_compiled_model_is_non_cpu_fully_accelerated =
+            LiteRtCompiledModelIsNonCpuFullyAccelerated,
         // Google-internal LINT.ThenChange()
     };

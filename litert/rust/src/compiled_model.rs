@@ -18,7 +18,7 @@ use crate::bindings::*;
 use crate::call_check_status;
 use crate::environment::Environment;
 use crate::error::{Error, ErrorCause};
-use crate::model::{Model, Tensor};
+use crate::model::{Model, SignatureIndex, Tensor};
 use crate::tensor_buffer::{TensorBuffer, TensorBufferRequirements};
 
 /// Options for compiling a model.
@@ -113,7 +113,7 @@ impl CompiledModel {
 
     fn input_buffer_requirements(
         &self,
-        signature_index: LiteRtParamIndex,
+        signature_index: SignatureIndex,
         input_index: LiteRtParamIndex,
     ) -> Result<TensorBufferRequirements<'_>, Error> {
         let mut requirements_ptr: *mut LiteRtTensorBufferRequirementsT = std::ptr::null_mut();
@@ -122,7 +122,7 @@ impl CompiledModel {
             unsafe {
                 LiteRtGetCompiledModelInputBufferRequirements(
                     self.raw_compiled_model,
-                    signature_index,
+                    signature_index.value(),
                     input_index,
                     &mut requirements_ptr,
                 )
@@ -134,7 +134,7 @@ impl CompiledModel {
 
     fn output_buffer_requirements(
         &self,
-        signature_index: LiteRtParamIndex,
+        signature_index: SignatureIndex,
         output_index: LiteRtParamIndex,
     ) -> Result<TensorBufferRequirements<'_>, Error> {
         let mut requirements_ptr: *mut LiteRtTensorBufferRequirementsT = std::ptr::null_mut();
@@ -143,7 +143,7 @@ impl CompiledModel {
             unsafe {
                 LiteRtGetCompiledModelOutputBufferRequirements(
                     self.raw_compiled_model,
-                    signature_index,
+                    signature_index.value(),
                     output_index,
                     &mut requirements_ptr,
                 )
@@ -158,7 +158,7 @@ impl CompiledModel {
         &self,
         environment: &Environment,
         model: &Model,
-        signature_index: LiteRtParamIndex,
+        signature_index: SignatureIndex,
     ) -> Result<Vec<TensorBuffer<'_>>, Error> {
         let signature = model.signature(signature_index)?;
         let subgraph = signature.subgraph()?;
@@ -178,7 +178,7 @@ impl CompiledModel {
         &self,
         environment: &Environment,
         model: &Model,
-        signature_index: LiteRtParamIndex,
+        signature_index: SignatureIndex,
     ) -> Result<Vec<TensorBuffer<'_>>, Error> {
         let signature = model.signature(signature_index)?;
         let subgraph = signature.subgraph()?;
@@ -212,10 +212,34 @@ impl CompiledModel {
         TensorBuffer::new(environment, &tensor_type, buffer_type, buffer_size, element_type)
     }
 
+    /// Resizes the input tensor buffer for the specified input index.
+    pub fn resize_input_tensor_buffer(
+        &self,
+        signature_index: SignatureIndex,
+        input_index: LiteRtParamIndex,
+        dimensions: &[i32],
+    ) -> Result<(), Error> {
+        call_check_status!(
+            // SAFETY: self.raw_compiled_model is valid because it's created by calling the create() function.
+            // dimensions is a valid slice provided by the caller.
+            unsafe {
+                LiteRtCompiledModelResizeInputTensor(
+                    self.raw_compiled_model,
+                    signature_index.value(),
+                    input_index,
+                    dimensions.as_ptr(),
+                    dimensions.len(),
+                )
+            },
+            ErrorCause::ResizeCompiledModelInputBuffer
+        );
+        Ok(())
+    }
+
     /// Runs inference on the compiled model.
     pub fn run(
         &self,
-        signature_index: LiteRtParamIndex,
+        signature_index: SignatureIndex,
         input: &[TensorBuffer<'_>],
         output: &[TensorBuffer<'_>],
     ) -> Result<(), Error> {
@@ -228,7 +252,7 @@ impl CompiledModel {
             unsafe {
                 LiteRtRunCompiledModel(
                     self.raw_compiled_model,
-                    signature_index,
+                    signature_index.value(),
                     input_ptrs.len(),
                     input_ptrs.as_mut_ptr(),
                     output_ptrs.len(),
@@ -246,7 +270,7 @@ impl CompiledModel {
     #[cfg(async_support)]
     pub fn run_async(
         &self,
-        signature_index: LiteRtParamIndex,
+        signature_index: SignatureIndex,
         input: &[TensorBuffer<'_>],
         output: &[TensorBuffer<'_>],
     ) -> Result<bool, Error> {
@@ -260,7 +284,7 @@ impl CompiledModel {
             unsafe {
                 LiteRtRunCompiledModelAsync(
                     self.raw_compiled_model,
-                    signature_index,
+                    signature_index.value(),
                     input_ptrs.len(),
                     input_ptrs.as_mut_ptr(),
                     output_ptrs.len(),

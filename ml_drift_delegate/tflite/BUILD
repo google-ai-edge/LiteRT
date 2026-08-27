@@ -29,7 +29,6 @@ cc_library(
     hdrs = ["ir_model_builder.h"],
     deps = [
         ":ir_model_builder_helper",
-        ":operation_parser",
         ":shared_const_tensor_map",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/functional:bind_front",
@@ -126,9 +125,11 @@ cc_test(
         "//tflite/c:common",
         "@com_google_absl//absl/status",
         "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
     ],
 )
 
@@ -147,9 +148,7 @@ cc_library(
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings",
-        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
-        "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
     ],
 )

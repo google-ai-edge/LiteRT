@@ -1,3 +1,7 @@
+#
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>.
+# SPDX-License-Identifier: Apache-2.0
+#
 name: Build LiteRT Android Artifacts
 
 on:
@@ -52,6 +56,7 @@ jobs:
       - name: Build Android Artifacts with Bazel
         run: |
           bazel build --extra_toolchains=@bazel_tools//tools/jdk:all --config=android_arm64 //litert/kotlin:litert
+          bazel build --extra_toolchains=@bazel_tools//tools/jdk:all --config=android_arm64 //litert/vendors/arm/compiler:compiler_plugin
 
       - name: Upload Android Artifacts
         if: github.event_name != 'pull_request'

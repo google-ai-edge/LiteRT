@@ -267,6 +267,18 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
                             BenchmarkParam::Create<bool>(false));
     default_params.AddParam("convert_weights_on_gpu",
                             BenchmarkParam::Create<bool>(false));
+    default_params.AddParam("gpu_serialization_dir",
+                            BenchmarkParam::Create<std::string>(""));
+    default_params.AddParam("gpu_model_cache_key",
+                            BenchmarkParam::Create<std::string>(""));
+    default_params.AddParam("gpu_serialize_external_tensors",
+                            BenchmarkParam::Create<bool>(false));
+    default_params.AddParam("gpu_prefer_texture_weights",
+                            BenchmarkParam::Create<bool>(false));
+    default_params.AddParam("gpu_wait_for_weights_conversion_complete",
+                            BenchmarkParam::Create<bool>(false));
+    default_params.AddParam("gpu_cache_compiled_programs_only",
+                            BenchmarkParam::Create<bool>(false));
     default_params.AddParam("xnnpack_weight_cache_file_path",
                             BenchmarkParam::Create<std::string>(""));
     default_params.AddParam("result_file_path",
@@ -303,7 +315,7 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     return in_file.tellg();
   }
 
-  bool isFullyAccelerated() {
+  bool IsFullyAccelerated() {
     auto is_fully_accelerated = compiled_model_->IsFullyAccelerated();
     if (!is_fully_accelerated.HasValue()) {
       LITERT_LOG(LITERT_ERROR,
@@ -312,6 +324,14 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     }
     return *is_fully_accelerated;
   }
+
+  int TotalNodeCount() const;
+  int NpuDelegatedNodeCount() const;
+  int NpuPartitionCount() const;
+  int GpuDelegatedNodeCount() const;
+  int GpuPartitionCount() const;
+  int CpuDelegatedNodeCount() const;
+  int CpuPartitionCount() const;
 
   TfLiteStatus RunImpl() override {
     if (!compiled_model_) {
@@ -442,6 +462,24 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     flags.push_back(tflite::benchmark::CreateFlag<bool>(
         "convert_weights_on_gpu", &params_,
         "Whether to convert weights on the GPU."));
+    flags.push_back(tflite::benchmark::CreateFlag<std::string>(
+        "gpu_serialization_dir", &params_,
+        "Path to the GPU shader serialization directory."));
+    flags.push_back(tflite::benchmark::CreateFlag<std::string>(
+        "gpu_model_cache_key", &params_,
+        "Model cache key for GPU shader serialization."));
+    flags.push_back(tflite::benchmark::CreateFlag<bool>(
+        "gpu_serialize_external_tensors", &params_,
+        "Whether to serialize external constant tensors in weight cache."));
+    flags.push_back(tflite::benchmark::CreateFlag<bool>(
+        "gpu_prefer_texture_weights", &params_,
+        "Whether to prefer texture weights for GPU."));
+    flags.push_back(tflite::benchmark::CreateFlag<bool>(
+        "gpu_wait_for_weights_conversion_complete", &params_,
+        "Whether to block and wait for weights conversion on GPU complete."));
+    flags.push_back(tflite::benchmark::CreateFlag<bool>(
+        "gpu_cache_compiled_programs_only", &params_,
+        "Whether to cache only the compiled programs."));
     flags.push_back(tflite::benchmark::CreateFlag<std::string>(
         "xnnpack_weight_cache_file_path", &params_,
         "Path to an XNNPACK packed-weight cache file. Use ':memory' for an "

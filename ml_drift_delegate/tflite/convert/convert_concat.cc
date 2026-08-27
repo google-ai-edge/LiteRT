@@ -147,9 +147,6 @@ void ConvertConcat(
         ir_model.tensor(input_ids.back())->desc.GetBHWDCShape());
   }
 
-  ::ml_drift::ir::IrOp* concat_op = ir_model.add_op();
-  concat_op->name = ToString(::ml_drift::OperationType::CONCAT);
-
   for (int i = 0; i < input_ids.size(); ++i) {
     for (int j = 0; j < i; ++j) {
       if (input_ids[i] == input_ids[j]) {
@@ -168,6 +165,9 @@ void ConvertConcat(
       }
     }
   }
+
+  ::ml_drift::ir::IrOp* concat_op = ir_model.add_op();
+  concat_op->name = ToString(::ml_drift::OperationType::CONCAT);
 
   for (::ml_drift::ir::IrTensorId input_id : input_ids) {
     ir_model.AddConsumer(input_id, concat_op->id);

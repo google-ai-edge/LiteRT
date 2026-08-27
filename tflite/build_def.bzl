@@ -16,7 +16,7 @@
 """Build macros for TF Lite."""
 
 load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
-load("@org_tensorflow//tensorflow:tensorflow.bzl", "if_oss", "tf_binary_additional_srcs", "tf_cc_shared_object")
+load("@org_tensorflow//tensorflow:tensorflow.bzl", "if_oss", "tf_cc_shared_object")
 load("//tflite:special_rules.bzl", "tflite_copts_extra")
 load("//tflite/java:aar_with_jni.bzl", "aar_with_jni")
 load("@build_bazel_rules_android//android:rules.bzl", "android_library")
@@ -298,58 +298,6 @@ def tflite_cc_shared_object(
         framework_so = [],
         per_os_targets = per_os_targets,
         **kwargs
-    )
-
-def tf_to_tflite(name, src, options, out):
-    """Convert a frozen tensorflow graphdef to TF Lite's flatbuffer.
-
-    Args:
-      name: Name of rule.
-      src: name of the input graphdef file.
-      options: options passed to TFLite Converter.
-      out: name of the output flatbuffer file.
-    """
-
-    toco_cmdline = " ".join([
-        "$(location //tflite/python:tflite_convert)",
-        "--enable_v1_converter",
-        ("--graph_def_file=$(location %s)" % src),
-        ("--output_file=$(location %s)" % out),
-    ] + options)
-    native.genrule(
-        name = name,
-        srcs = [src],
-        outs = [out],
-        cmd = toco_cmdline,
-        tools = ["//tflite/python:tflite_convert"] + tf_binary_additional_srcs(),
-    )
-
-def DEPRECATED_tf_to_tflite(name, src, options, out):
-    """DEPRECATED Convert a frozen tensorflow graphdef to TF Lite's flatbuffer, using toco.
-
-    Please use tf_to_tflite instead.
-    TODO(b/138396996): Migrate away from this deprecated rule.
-
-    Args:
-      name: Name of rule.
-      src: name of the input graphdef file.
-      options: options passed to TOCO.
-      out: name of the output flatbuffer file.
-    """
-
-    toco_cmdline = " ".join([
-        "$(location //tflite/toco:toco)",
-        "--input_format=TENSORFLOW_GRAPHDEF",
-        "--output_format=TFLITE",
-        ("--input_file=$(location %s)" % src),
-        ("--output_file=$(location %s)" % out),
-    ] + options)
-    native.genrule(
-        name = name,
-        srcs = [src],
-        outs = [out],
-        cmd = toco_cmdline,
-        tools = ["//tflite/toco:toco"] + tf_binary_additional_srcs(),
     )
 
 def tflite_to_json(name, src, out):

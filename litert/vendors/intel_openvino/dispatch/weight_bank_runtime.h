@@ -75,6 +75,39 @@ class GpuSharedBank {
   bool bank_ready_ ABSL_GUARDED_BY(gpu_bank_mutex_) = false;
 };
 
+// One on-disk copy of a model's deduplicated weight pool, owned by the model's
+// device context (so it is staged once and shared by the prefill and decode
+// partitions, but distinct across models -- a process-wide bank would hand the
+// first model's path to every later model, whose bin_offsets index a different
+// pool). NPUW mmaps the file and resolves each weightless Constant as
+// mmap->data() + bin_offset.
+class NpuSharedBank {
+ public:
+  NpuSharedBank() = default;
+  ~NpuSharedBank();
+  NpuSharedBank(const NpuSharedBank&) = delete;
+  NpuSharedBank& operator=(const NpuSharedBank&) = delete;
+  NpuSharedBank(NpuSharedBank&&) = delete;
+  NpuSharedBank& operator=(NpuSharedBank&&) = delete;
+
+  // Stages the pool [data, data+size) to a temp file and returns its path
+  // (empty on failure). Thread-safe and write-once: later calls return the
+  // cached path, ignoring their arguments, so the multi-GB pool is written
+  // once. Portable across Windows / Linux / Android: POSIX targets stage with
+  // mkstemp, Windows with std::filesystem.
+  std::string EnsureOnDisk(const void* data, size_t size);
+
+  // The cached bank path, or empty if EnsureOnDisk has not yet succeeded.
+  std::string Path() const;
+
+ private:
+  mutable absl::Mutex npu_bank_mutex_;
+  std::string bank_path_ ABSL_GUARDED_BY(npu_bank_mutex_);
+  // False when bank_path_ came from LITERT_OV_WEIGHTS_PATH: that file is the
+  // deployment's, not ours to unlink.
+  bool owns_bank_file_ ABSL_GUARDED_BY(npu_bank_mutex_) = false;
+};
+
 }  // namespace litert::openvino
 
 #endif  // ODML_LITERT_LITERT_VENDORS_INTEL_OPENVINO_DISPATCH_WEIGHT_BANK_RUNTIME_H_

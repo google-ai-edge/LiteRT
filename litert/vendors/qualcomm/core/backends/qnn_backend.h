@@ -21,6 +21,12 @@
 
 namespace qnn {
 
+struct GraphConfigContext {
+  Qnn_GraphHandle_t graph;
+  absl::string_view graph_name;
+  Qnn_ProfileHandle_t profile = nullptr;
+};
+
 class QnnBackend {
  public:
   using QnnLogHandle =
@@ -54,6 +60,11 @@ class QnnBackend {
 
   virtual GraphConfigBuilder BuildGraphConfigs(
       const Options& options, absl::string_view qnn_graph_name) = 0;
+
+  virtual bool ConfigureGraphAfterRetrieve(const GraphConfigContext& /*ctx*/,
+                                           const Options& /*options*/) {
+    return true;
+  }
 
   Qnn_BackendHandle_t GetBackendHandle();
 

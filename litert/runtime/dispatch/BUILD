@@ -87,6 +87,7 @@ cc_library(
         "//litert/c:litert_environment_options",
         "//litert/c:litert_metrics",
         "//litert/c:litert_model_types",
+        "//litert/c:litert_profiler_types",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_abi_header",
         "//litert/c/internal:litert_custom_tensor_buffer_handlers_def",
@@ -106,7 +107,10 @@ cc_library(
 
 cc_library(
     name = "dispatch_kernel_interface",
-    hdrs = ["dispatch_kernel_interface.h"],
+    hdrs = [
+        "dispatch_kernel_interface.h",
+        "shared_kernel_resources.h",
+    ],
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
@@ -169,6 +173,9 @@ cc_test(
         "//litert/vendors/examples:example_plugin_so_data",
     ],
     deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_profiler_types",
+        "//litert/c/internal:litert_dispatch_delegate",
         "//litert/cc:litert_common",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_environment_options",
@@ -200,13 +207,12 @@ cc_test(
     deps = [
         ":dispatch",
         "//litert/c:litert_common",
-        "//litert/c:litert_event",
         "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_environment_options",
-        "//litert/cc/dynamic_runtime:litert_compiled_model",
-        "//litert/cc/dynamic_runtime:litert_environment",
-        "//litert/cc/dynamic_runtime:litert_options",
-        "//litert/cc/dynamic_runtime:litert_tensor_buffer",
+        "//litert/cc:litert_options",
+        "//litert/cc:litert_tensor_buffer",
         "//litert/test:common",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
@@ -238,7 +244,7 @@ litert_dispatch_api(
     ],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_event",
+        "//litert/c/internal:litert_runtime_context_header",
         "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/container:flat_hash_map",
     ],
@@ -354,9 +360,11 @@ cc_library(
     deps = [
         ":dispatch_delegate_kernel",
         ":dispatch_kernel_interface",
+        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
+        # copybara:uncomment "//litert/runtime/dispatch/fabric:fabric_kernel",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
@@ -376,8 +384,10 @@ cc_library(
     deps = [
         ":dispatch",
         ":dispatch_kernel_facade",
+        ":dispatch_kernel_resources",
         "//litert/c:litert_common",
         "//litert/c:litert_metrics",
+        "//litert/c:litert_profiler_types",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_requirements",
         "//litert/c/internal:litert_dispatch_headers",
@@ -783,4 +793,9 @@ litert_device_test(
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
+)
+
+cc_library(
+    name = "dispatch_kernel_resources",
+    hdrs = ["shared_kernel_resources.h"],
 )

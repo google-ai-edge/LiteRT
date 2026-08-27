@@ -14,16 +14,26 @@
 
 #include "litert/c/options/litert_google_tensor_options.h"
 
+#include <cstddef>
+#include <iterator>
 #include <optional>
 #include <string>
+#include <utility>
 
+#include "absl/container/btree_map.h"  // from @com_google_absl
 #include "absl/strings/escaping.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/strip.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/litert_toml_parser.h"
+
+// copybara:uncomment_begin(google-only)
+// constexpr char kExperimentalEnableInputValidatorKey[] =
+//     "experimental_enable_input_validator";
+// copybara:uncomment_end
 
 struct LrtGoogleTensorOptionsT {
   LrtGoogleTensorOptionsTruncationType float_truncation_type =
@@ -40,7 +50,16 @@ struct LrtGoogleTensorOptionsT {
       std::nullopt;
   std::string op_filters_proto = "";
   std::string extra_options_path = "";
+  // Map from (signature_name, tensor_name) to coherency preference (true =
+  // coherent).
+  absl::btree_map<std::pair<std::string, std::string>, bool> input_coherency;
+  // Map from (signature_name, tensor_name) to coherency preference (true =
+  // coherent).
+  absl::btree_map<std::pair<std::string, std::string>, bool> output_coherency;
   std::string extra_options = "";
+  // copybara:uncomment_begin(google-only)
+  // bool experimental_enable_input_validator = false;
+  // copybara:uncomment_end
 };
 
 LiteRtStatus LrtCreateGoogleTensorOptions(LrtGoogleTensorOptions* options) {
@@ -113,6 +132,21 @@ LiteRtStatus LrtGetOpaqueGoogleTensorOptionsData(
     absl::StrAppendFormat(&toml_str, "extra_options = \"%s\"\n",
                           absl::Base64Escape(options->extra_options));
   }
+  for (const auto& [key, pref] : options->input_coherency) {
+    absl::StrAppendFormat(&toml_str, "input_coherency_%s:%s = %s\n", key.first,
+                          key.second, pref ? "true" : "false");
+  }
+  for (const auto& [key, pref] : options->output_coherency) {
+    absl::StrAppendFormat(&toml_str, "output_coherency_%s:%s = %s\n", key.first,
+                          key.second, pref ? "true" : "false");
+  }
+
+  // copybara:uncomment_begin(google-only)
+  // if (options->experimental_enable_input_validator) {
+    // absl::StrAppendFormat(&toml_str, "%s = true\n",
+                          // kExperimentalEnableInputValidatorKey);
+  // }
+  // copybara:uncomment_end
 
   *identifier = LrtGoogleTensorOptionsGetIdentifier();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
@@ -175,10 +209,38 @@ LiteRtStatus LrtCreateGoogleTensorOptionsFromToml(
           }
         } else if (key == "extra_options_path") {
           options_ref.extra_options_path = std::string(value);
+        } else if (absl::string_view rest = key;
+                   absl::ConsumePrefix(&rest, "input_coherency_")) {
+          size_t colon_pos = rest.find(':');
+          if (colon_pos != absl::string_view::npos) {
+            std::string sig(rest.substr(0, colon_pos));
+            std::string tensor(rest.substr(colon_pos + 1));
+            LITERT_ASSIGN_OR_RETURN(bool pref,
+                                    litert::internal::ParseTomlBool(value));
+            options_ref.input_coherency[{std::move(sig), std::move(tensor)}] =
+                pref;
+          }
+        } else if (absl::string_view rest = key;
+                   absl::ConsumePrefix(&rest, "output_coherency_")) {
+          size_t colon_pos = rest.find(':');
+          if (colon_pos != absl::string_view::npos) {
+            std::string sig(rest.substr(0, colon_pos));
+            std::string tensor(rest.substr(colon_pos + 1));
+            LITERT_ASSIGN_OR_RETURN(bool pref,
+                                    litert::internal::ParseTomlBool(value));
+            options_ref.output_coherency[{std::move(sig), std::move(tensor)}] =
+                pref;
+          }
         } else if (key == "extra_options") {
           if (!absl::Base64Unescape(value, &options_ref.extra_options)) {
             return kLiteRtStatusErrorInvalidArgument;
           }
+          // copybara:uncomment_begin(google-only)
+        // } else if (key == kExperimentalEnableInputValidatorKey) {
+          // LITERT_ASSIGN_OR_RETURN(
+              // options_ref.experimental_enable_input_validator,
+              // litert::internal::ParseTomlBool(value));
+          // copybara:uncomment_end
         }
         return kLiteRtStatusOk;
       });
@@ -431,6 +493,118 @@ LiteRtStatus LrtGoogleTensorOptionsGetExtraOptionsPath(
   return kLiteRtStatusOk;
 }
 
+// input_coherency --------------------------------------------------
+
+LiteRtStatus LrtGoogleTensorOptionsSetInputCoherency(
+    LrtGoogleTensorOptions options, const char* signature_name,
+    const char* tensor_name, bool prefer_coherent) {
+  if (options == nullptr || signature_name == nullptr ||
+      tensor_name == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->input_coherency[{std::string(signature_name),
+                            std::string(tensor_name)}] = prefer_coherent;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGoogleTensorOptionsGetInputCoherency(
+    LrtGoogleTensorOptions options, const char* signature_name,
+    const char* tensor_name, bool* prefer_coherent) {
+  if (options == nullptr || signature_name == nullptr ||
+      tensor_name == nullptr || prefer_coherent == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto it = options->input_coherency.find(
+      {std::string(signature_name), std::string(tensor_name)});
+  if (it == options->input_coherency.end()) {
+    *prefer_coherent = false;
+  } else {
+    *prefer_coherent = it->second;
+  }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGoogleTensorOptionsGetNumInputCoherencyEntries(
+    LrtGoogleTensorOptions options, int* num_entries) {
+  if (options == nullptr || num_entries == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *num_entries = static_cast<int>(options->input_coherency.size());
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGoogleTensorOptionsGetInputCoherencyEntry(
+    LrtGoogleTensorOptions options, int entry_idx, const char** signature_name,
+    const char** tensor_name, bool* prefer_coherent) {
+  if (options == nullptr || signature_name == nullptr ||
+      tensor_name == nullptr || prefer_coherent == nullptr || entry_idx < 0 ||
+      static_cast<size_t>(entry_idx) >= options->input_coherency.size()) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto it = options->input_coherency.begin();
+  std::advance(it, entry_idx);
+  *signature_name = it->first.first.c_str();
+  *tensor_name = it->first.second.c_str();
+  *prefer_coherent = it->second;
+  return kLiteRtStatusOk;
+}
+
+// output_coherency --------------------------------------------------
+
+LiteRtStatus LrtGoogleTensorOptionsSetOutputCoherency(
+    LrtGoogleTensorOptions options, const char* signature_name,
+    const char* tensor_name, bool prefer_coherent) {
+  if (options == nullptr || signature_name == nullptr ||
+      tensor_name == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->output_coherency[{std::string(signature_name),
+                             std::string(tensor_name)}] = prefer_coherent;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGoogleTensorOptionsGetOutputCoherency(
+    LrtGoogleTensorOptions options, const char* signature_name,
+    const char* tensor_name, bool* prefer_coherent) {
+  if (options == nullptr || signature_name == nullptr ||
+      tensor_name == nullptr || prefer_coherent == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto it = options->output_coherency.find(
+      {std::string(signature_name), std::string(tensor_name)});
+  if (it == options->output_coherency.end()) {
+    *prefer_coherent = false;
+  } else {
+    *prefer_coherent = it->second;
+  }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGoogleTensorOptionsGetNumOutputCoherencyEntries(
+    LrtGoogleTensorOptions options, int* num_entries) {
+  if (options == nullptr || num_entries == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *num_entries = static_cast<int>(options->output_coherency.size());
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGoogleTensorOptionsGetOutputCoherencyEntry(
+    LrtGoogleTensorOptions options, int entry_idx, const char** signature_name,
+    const char** tensor_name, bool* prefer_coherent) {
+  if (options == nullptr || signature_name == nullptr ||
+      tensor_name == nullptr || prefer_coherent == nullptr || entry_idx < 0 ||
+      static_cast<size_t>(entry_idx) >= options->output_coherency.size()) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto it = options->output_coherency.begin();
+  std::advance(it, entry_idx);
+  *signature_name = it->first.first.c_str();
+  *tensor_name = it->first.second.c_str();
+  *prefer_coherent = it->second;
+  return kLiteRtStatusOk;
+}
+
 // extra_options --------------------------------------------------
 
 LiteRtStatus LrtGoogleTensorOptionsSetExtraOptions(
@@ -454,3 +628,27 @@ LiteRtStatus LrtGoogleTensorOptionsGetExtraOptions(
   *extra_options = options->extra_options.c_str();
   return kLiteRtStatusOk;
 }
+
+// copybara:uncomment_begin(google-only)
+// // experimental_enable_input_validator ---------------------------------
+// 
+// LiteRtStatus LrtGoogleTensorOptionsSetExperimentalEnableInputValidator(
+//     LrtGoogleTensorOptions options, bool experimental_enable_input_validator) {
+//   if (options == nullptr) {
+//     return kLiteRtStatusErrorInvalidArgument;
+//   }
+//   options->experimental_enable_input_validator =
+//       experimental_enable_input_validator;
+//   return kLiteRtStatusOk;
+// }
+// 
+// LiteRtStatus LrtGoogleTensorOptionsGetExperimentalEnableInputValidator(
+//     LrtGoogleTensorOptions options, bool* experimental_enable_input_validator) {
+//   if (options == nullptr || experimental_enable_input_validator == nullptr) {
+//     return kLiteRtStatusErrorInvalidArgument;
+//   }
+//   *experimental_enable_input_validator =
+//       options->experimental_enable_input_validator;
+//   return kLiteRtStatusOk;
+// }
+// copybara:uncomment_end

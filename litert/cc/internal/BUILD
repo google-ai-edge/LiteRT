@@ -410,8 +410,6 @@ cc_test(
 
 # -----------------------------------------------------------------------------
 # Internal static C++ libraries.
-#
-# There are shared version of these libraries available in cc/dynamic_runtime/.
 # -----------------------------------------------------------------------------
 
 cc_library(
@@ -490,52 +488,6 @@ cc_test(
         "//litert/test:load_test_model",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
-    name = "litert_builder",
-    hdrs = ["litert_builder.h"],
-    visibility = internal_static_library_visibility,
-    deps = [
-        ":litert_detail",
-        ":litert_extended_model",
-        ":litert_handle",
-        ":litert_op_options",
-        "//litert/c:litert_builder",
-        "//litert/c:litert_common",
-        "//litert/c:litert_model_types",
-        "//litert/c:litert_op_code",
-        "//litert/c/internal:litert_logging",
-        "//litert/cc:litert_api_types",
-        "//litert/cc:litert_common",
-        "//litert/cc:litert_element_type",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_layout",
-        "//litert/cc:litert_model_types",
-        "//litert/cc:litert_ranked_tensor_type",
-    ],
-)
-
-cc_test(
-    name = "litert_builder_test",
-    srcs = ["litert_builder_test.cc"],
-    deps = [
-        ":litert_builder",
-        ":litert_extended_model",
-        ":litert_op_options",
-        "//litert/c:litert_common",
-        "//litert/c:litert_layout",
-        "//litert/c:litert_op_code",
-        "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_element_type",
-        "//litert/cc:litert_layout",
-        "//litert/cc:litert_ranked_tensor_type",
-        "//litert/core/model",
-        "//litert/core/model:buffer_manager",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -743,39 +695,6 @@ cc_test(
 )
 
 cc_library(
-    name = "litert_matchers",
-    hdrs = ["litert_matchers.h"],
-    visibility = ["//litert:litert_public"],
-    deps = [
-        ":litert_extended_model",
-        ":litert_op_options",
-        "//litert/c:litert_model_types",
-        "//litert/c:litert_op_code",
-        "//litert/c/internal:litert_logging",
-        "//litert/cc:litert_model_types",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
-cc_test(
-    name = "litert_matchers_test",
-    srcs = ["litert_matchers_test.cc"],
-    deps = [
-        ":litert_extended_model",
-        ":litert_matchers",
-        ":litert_op_options",
-        "//litert/c:litert_common",
-        "//litert/c:litert_op_code",
-        "//litert/cc:litert_buffer_ref",
-        "//litert/core/model",
-        "//litert/core/util:flatbuffer_tools_testonly",
-        "//tflite/converter/schema:schema_fbs",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
     name = "litert_runtime_proxy_api",
     hdrs = ["litert_runtime_proxy.h"],
     visibility = [
@@ -823,37 +742,4 @@ cc_library(
             "//litert/c/internal:litert_runtime_builtin_static",
         ],
     }),
-)
-
-# TODO(niuchl): Remove this target once all dynamic_runtime targets are migrated.
-cc_library(
-    name = "litert_runtime_proxy_runtimecapi",
-    hdrs = ["litert_runtime_proxy.h"],
-    visibility = [
-        "//litert/cc:__pkg__",
-        "//litert/cc/dynamic_runtime:__pkg__",
-    ],
-    deps = [
-        "//litert/c:litert_any",
-        "//litert/c:litert_common",
-        "//litert/c:litert_custom_op_kernel",
-        "//litert/c:litert_custom_tensor_buffer",
-        "//litert/c:litert_environment_options_header",
-        "//litert/c:litert_event_type",
-        "//litert/c:litert_gl_types",
-        "//litert/c:litert_layout",
-        "//litert/c:litert_metrics_header",
-        "//litert/c:litert_model_types",
-        "//litert/c:litert_opaque_options_header",
-        "//litert/c:litert_opencl_types",
-        "//litert/c:litert_tensor_buffer_types",
-        "//litert/c:litert_webgpu_types",
-        "//litert/c/internal:litert_runtime_builtin_dynamic",
-        "//litert/c/internal:litert_runtime_builtin_header",
-        "//litert/c/internal:litert_runtime_c_api",
-        "//litert/c/internal:litert_scheduling_info",
-        "//litert/cc:litert_api_types",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/log:die_if_null",
-    ],
 )

@@ -17,7 +17,6 @@
 
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_google_tensor_options.h"
@@ -26,10 +25,11 @@
 #include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_concrete_options_base.h"
 
 namespace litert::google_tensor {
 
-class GoogleTensorOptions {
+class GoogleTensorOptions : public ConcreteOptionsBase {
  public:
   GoogleTensorOptions() = delete;
 
@@ -43,8 +43,9 @@ class GoogleTensorOptions {
 
   LrtGoogleTensorOptions Get() const { return options_.get(); }
 
-  LiteRtStatus GetOpaqueOptionsData(const char** identifier, void** payload,
-                                    void (**payload_deleter)(void*)) const {
+  LiteRtStatus GetOpaqueOptionsData(
+      const char** identifier, void** payload,
+      void (**payload_deleter)(void*)) const override {
     return LrtGetOpaqueGoogleTensorOptionsData(Get(), identifier, payload,
                                                payload_deleter);
   }
@@ -211,6 +212,56 @@ class GoogleTensorOptions {
     return StringView(extra_options_path);
   }
 
+  /// @brief Sets whether the specified input tensor should use coherent memory.
+  /// @param signature_name The name of the model signature.
+  /// @param tensor_name The name of the input tensor in the signature.
+  /// @param prefer_coherent Whether to prefer coherent memory allocation and
+  ///     mapping.
+  void SetInputCoherency(StringView signature_name, StringView tensor_name,
+                         bool prefer_coherent) {
+    internal::AssertOk(LrtGoogleTensorOptionsSetInputCoherency, Get(),
+                       signature_name.data(), tensor_name.data(),
+                       prefer_coherent);
+  }
+
+  /// @brief Gets whether the specified input tensor should use coherent memory.
+  /// @param signature_name The name of the model signature.
+  /// @param tensor_name The name of the input tensor in the signature.
+  bool GetInputCoherency(StringView signature_name,
+                         StringView tensor_name) const {
+    bool prefer_coherent = false;
+    internal::AssertOk(LrtGoogleTensorOptionsGetInputCoherency, Get(),
+                       signature_name.data(), tensor_name.data(),
+                       &prefer_coherent);
+    return prefer_coherent;
+  }
+
+  /// @brief Sets whether the specified output tensor should use coherent
+  /// memory.
+  /// @param signature_name The name of the model signature.
+  /// @param tensor_name The name of the output tensor in the signature.
+  /// @param prefer_coherent Whether to prefer coherent memory allocation and
+  ///     mapping.
+  void SetOutputCoherency(StringView signature_name, StringView tensor_name,
+                          bool prefer_coherent) {
+    internal::AssertOk(LrtGoogleTensorOptionsSetOutputCoherency, Get(),
+                       signature_name.data(), tensor_name.data(),
+                       prefer_coherent);
+  }
+
+  /// @brief Gets whether the specified output tensor should use coherent
+  /// memory.
+  /// @param signature_name The name of the model signature.
+  /// @param tensor_name The name of the output tensor in the signature.
+  bool GetOutputCoherency(StringView signature_name,
+                          StringView tensor_name) const {
+    bool prefer_coherent = false;
+    internal::AssertOk(LrtGoogleTensorOptionsGetOutputCoherency, Get(),
+                       signature_name.data(), tensor_name.data(),
+                       &prefer_coherent);
+    return prefer_coherent;
+  }
+
   void SetExtraOptions(StringView extra_options) {
     internal::AssertOk(LrtGoogleTensorOptionsSetExtraOptions, Get(),
                        std::string(extra_options).c_str());
@@ -224,6 +275,25 @@ class GoogleTensorOptions {
     return StringView(extra_options);
   }
 
+  // copybara:uncomment_begin(google-only)
+  // // TODO(b/551885395): Remove this flag and enable by default after
+  // // verification.
+  // void SetExperimentalEnableInputValidator(
+      // bool experimental_enable_input_validator) {
+    // internal::AssertOk(
+        // LrtGoogleTensorOptionsSetExperimentalEnableInputValidator, Get(),
+        // experimental_enable_input_validator);
+  // }
+// 
+  // bool GetExperimentalEnableInputValidator() const {
+    // LrtGoogleTensorOptions options_data = Get();
+    // bool experimental_enable_input_validator;
+    // internal::AssertOk(
+        // LrtGoogleTensorOptionsGetExperimentalEnableInputValidator, options_data,
+        // &experimental_enable_input_validator);
+    // return experimental_enable_input_validator;
+  // }
+  // copybara:uncomment_end
  private:
   explicit GoogleTensorOptions(LrtGoogleTensorOptions options)
       : options_(options) {}

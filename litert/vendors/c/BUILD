@@ -17,7 +17,10 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:__subpackages__"],
+    default_visibility = [
+        "//litert:__subpackages__",
+        "//third_party/odml/infra/southbound:__subpackages__",
+    ],
 )
 
 cc_library(
@@ -50,6 +53,7 @@ cc_library(
     deps = [
         "//litert/c/internal:litert_abi_header",
         "//litert/c/internal:litert_custom_tensor_buffer_handlers_def",
+        "//litert/c:litert_profiler_types",
         # only depend on the headers, not the implementation.
         "//litert/c/internal:litert_dispatch_headers",
         "//litert/c/internal:litert_scheduling_info",

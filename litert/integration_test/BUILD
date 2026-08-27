@@ -16,6 +16,8 @@
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
+# copybara:uncomment load("//litert:version.bzl", "LITERT_ANDROID_NDK_MIN_SDK_VERSION")
 load("//litert/build_common:litert_build_defs.bzl", "if_oss")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test", "litert_integration_test")
@@ -195,7 +197,7 @@ litert_integration_test(
 # # --test_output=streamed \
 # # --notest_loasd \
 # # --test_arg=--allocation_exit_strategy=FAIL_FAST_NO_MATCH --test_arg=--run_as=mobileiq-user \
-# # --android_ndk_min_sdk_version=23
+# # --android_ndk_min_sdk_version=24
 # # ```
 # #
 # # The following can be copied into your bazelrc to set these with --config=litert_mh
@@ -207,7 +209,7 @@ litert_integration_test(
 # # build:litert_mh --test_output=streamed
 # # build:litert_mh --test_arg=--allocation_exit_strategy=FAIL_FAST_NO_MATCH --test_arg=--run_as=mobileiq-user
 # # build:litert_mh --compilation_mode=opt`
-# # build:litert_mh --android_ndk_min_sdk_version=23
+# # build:litert_mh --android_ndk_min_sdk_version=24
 # #```
 #
 # # MH PERMISSIONS
@@ -232,7 +234,6 @@ litert_integration_test(
 #     # "//litert/vendors/google_tensor/dispatch:dispatch_api_google_tensor_test",
 #     # "//litert/vendors/google_tensor/dispatch:dispatch_api_async_google_tensor_test",
 #     # "//litert/runtime:gl_buffer_device_test",
-#     # "//litert/cc/dynamic_runtime:litert_tensor_buffer_device_test",
 # ]
 #
 # guitar_workflow_test(
@@ -275,7 +276,6 @@ litert_integration_test(
 #     "//litert/runtime:gl_buffer_device_test",
 #     # TODO: b/466050076 - Reenable once pthread issue is resolved.
 #     # "//litert/cc:litert_compiled_model_qualcomm_test",
-#     "//litert/cc/dynamic_runtime:litert_tensor_buffer_device_test",
 #     "//litert/cc:litert_compiled_model_gpu_device_test",
 # ]
 #
@@ -459,17 +459,17 @@ litert_integration_test(
 #     ],
 # )
 #
-# # Same as above, but for SDK 23 devices. NPU is not included as it requires 31+.
+# # Same as above, but for min SDK devices. NPU is not included as it requires 31+.
 # # GPU is not included due to OpenCL unavailability on some devices.
 # guitar_workflow_test(
-#     name = "litert_guitar_device_integration_tests_kotlin_sdk_23",
+#     name = "litert_guitar_device_integration_tests_kotlin_min_sdk",
 #     auto_deps = [
 #         "//litert/kotlin/src/tests/google:litert_kotlin_api_mh_test",
 #     ],
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
 #             litert_mh_guitar_test(
-#                 sdk_version = 23,
+#                 sdk_version = LITERT_ANDROID_NDK_MIN_SDK_VERSION,
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_mh_test"],
 #             ),
 #         ],

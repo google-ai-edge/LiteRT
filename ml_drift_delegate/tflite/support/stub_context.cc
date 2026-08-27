@@ -14,12 +14,12 @@
 
 #include "ml_drift_delegate/tflite/support/stub_context.h"
 
-#include <algorithm>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
 #include <memory>
 
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tflite/builtin_ops.h"
@@ -38,7 +38,7 @@ TfLiteDelegateParams* g_delegate_params;
 
 TfLiteIntArray* CopySpanToTfLiteIntArray(absl::Span<const int> span) {
   TfLiteIntArray* array = TfLiteIntArrayCreate(span.size());
-  std::copy(span.begin(), span.end(), array->data);
+  absl::c_copy(span, &array->data[0]);
   return array;
 }
 
@@ -171,12 +171,10 @@ int StubContextBuilder::AddScalarConstTensor(TfLiteType dtype,
   std::memset(&tensor, 0, sizeof(TfLiteTensor));
   tensor.data.data = scalar_value;
   tensor.type = dtype;
-  const int num_elements = 1;
-  tensor.dims = TfLiteIntArrayCreate(num_elements);
+  tensor.dims = TfLiteIntArrayCreate(0);
   size_t size;
   ::tflite::GetSizeOfType(nullptr, dtype, &size);
-  tensor.bytes = size * num_elements;
-  tensor.dims->data[0] = 1;
+  tensor.bytes = size;
   tensor.allocation_type = kTfLiteMmapRo;
   return tensors_.size() - 1;
 }

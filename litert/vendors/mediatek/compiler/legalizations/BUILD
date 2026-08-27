@@ -41,6 +41,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/compiler/cc:litert_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
+        "//tflite/kernels/internal:tensor_utils",
         "@com_google_absl//absl/container:flat_hash_map",
         "@neuro_pilot//:v8_latest_host_headers",
     ],

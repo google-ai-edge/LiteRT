@@ -24,6 +24,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -62,6 +63,8 @@ class InferenceRunnerLiteRt;
 }  // namespace mediapipe
 
 namespace litert {
+
+class Model;
 
 namespace benchmark {
 class BenchmarkLiteRtModel;
@@ -363,6 +366,22 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   // copybara:uncomment_end
 
   CompiledModel() = default;
+  CompiledModel(const CompiledModel&) = delete;
+  CompiledModel& operator=(const CompiledModel&) = delete;
+  CompiledModel(CompiledModel&&) noexcept = default;
+  CompiledModel& operator=(CompiledModel&&) noexcept = default;
+
+  ~CompiledModel() {
+    // The compiled runtime handle may retain references into its source model.
+    // Destroy it in the destructor body so model_ remains alive until after the
+    // runtime releases those references. Member destruction runs after this
+    // body; the BaseHandle destructor then sees a released null handle.
+    if (IsOwned() && Get() != nullptr) {
+      auto deleter = GetDeleter();
+      LiteRtCompiledModel compiled_model = Release();
+      deleter(compiled_model);
+    }
+  }
 
   /// @brief Creates a `CompiledModel` from a TFLite file.
   ///
@@ -460,7 +479,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// @brief Gets input buffer requirements for the given signature and input
   /// name.
   Expected<TensorBufferRequirements> GetInputBufferRequirements(
-      StringView signature_name, StringView input_name) {
+      StringView signature_name, StringView input_name) const {
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
                             GetSignatureIndex(signature_name));
     return GetInputBufferRequirements(signature_index, input_name);
@@ -506,7 +525,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// @brief Gets output buffer requirements for the given signature and output
   /// name.
   Expected<TensorBufferRequirements> GetOutputBufferRequirements(
-      StringView signature_name, StringView output_name) {
+      StringView signature_name, StringView output_name) const {
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
                             GetSignatureIndex(signature_name));
     return GetOutputBufferRequirements(signature_index, output_name);
@@ -1058,6 +1077,15 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return fully_accelerated;
   }
 
+  /// @brief Returns `true` if the compiled model is fully accelerated on
+  /// non-CPU hardware accelerators (e.g. 100% on GPU or NPU).
+  Expected<bool> IsNonCpuFullyAccelerated() {
+    bool non_cpu_fully_accelerated = false;
+    LITERT_RETURN_IF_ERROR(env_.runtime->CompiledModelIsNonCpuFullyAccelerated(
+        Get(), &non_cpu_fully_accelerated));
+    return non_cpu_fully_accelerated;
+  }
+
   /// @brief Sets a callback function that will be called after every node/op
   /// during model execution to check if the execution should be cancelled.
   ///
@@ -1373,7 +1401,8 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
         return i;
       }
     }
-    return Unexpected(Status::kErrorNotFound, "Signature not found");
+    return Unexpected(Status::kErrorNotFound,
+                      "Signature not found: " + std::string(signature_key));
   }
 
   Expected<SimpleSignature> FindSignature(StringView signature_key) const {
@@ -1466,7 +1495,8 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
         return input_tensor->RankedTensorType();
       }
     }
-    return Error(Status::kErrorNotFound, "Input tensor not found");
+    return Error(Status::kErrorNotFound,
+                 "Input tensor not found: " + std::string(input_name));
   }
 
   /// @brief Returns the tensor type for a given input tensor name.
@@ -1518,7 +1548,8 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
             FetchSignatureOutputTensorTypeByIndex(env_, lite_rt_signature, i);
       }
     }
-    return Error(Status::kErrorNotFound, "Output tensor not found");
+    return Error(Status::kErrorNotFound,
+                 "Output tensor not found: " + std::string(output_name));
   }
 
   /// @brief Returns the tensor type for a given output tensor name.
@@ -1870,6 +1901,37 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
 
  protected:
   /// @internal
+  /// @brief Creates a `CompiledModel` and takes ownership of `model`.
+  ///
+  /// This overload is intended for callers that must inspect a mutable model
+  /// before compilation without keeping a second model instance alive. The
+  /// model is consumed on success and remains locally owned until every error
+  /// path has completed.
+  template <typename ModelT,
+            std::enable_if_t<
+                std::is_same_v<std::decay_t<ModelT>, Model> &&
+                    std::is_rvalue_reference_v<ModelT&&>,
+                int> = 0>
+  static Expected<CompiledModel> Create(litert::Environment& env,
+                                        ModelT&& model,
+                                        Options& compilation_options) {
+    if (!model || !model.IsOwned()) {
+      return Error(Status::kErrorInvalidArgument,
+                   "CompiledModel::Create requires an owned Model");
+    }
+    auto env_holder = env.GetHolder();
+    LITERT_ASSIGN_OR_RETURN(
+        auto owned_options,
+        BuildOptions(std::move(compilation_options), env_holder));
+    LiteRtCompiledModel compiled_model;
+    LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateCompiledModel(
+        env_holder.handle, model.Get(), owned_options.get(), &compiled_model));
+    return CompiledModel(env_holder, model.Release(),
+                         /*model_owned=*/OwnHandle::kYes, compiled_model,
+                         /*owned=*/OwnHandle::kYes, std::move(owned_options));
+  }
+
+  /// @internal
   /// @brief Creates a `CompiledModel` from a provided `LiteRtModel`.
   ///
   /// The model is loaded into memory, and the caller takes ownership of the
@@ -1883,6 +1945,9 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// @note Even if the model is fully AOT-compiled for an NPU, you must
   /// specify the NPU accelerator in `hardware_accelerators` to use it
   /// properly.
+  /// @note Signature selection structurally prunes the provided model in place.
+  /// Treat the model handle as consumed once compilation starts, including
+  /// when compilation returns an error.
   static Expected<CompiledModel> Create(litert::Environment& env,
                                         const LiteRtModel litert_model,
                                         Options& compilation_options) {
@@ -1971,7 +2036,8 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     if (it != input_names.end()) {
       return std::distance(input_names.begin(), it);
     }
-    return Unexpected(Status::kErrorNotFound, "Failed to find input");
+    return Unexpected(Status::kErrorNotFound,
+                      "Failed to find input: " + std::string(input_name));
   }
 
   /// @brief Returns the signature output index for a given output tensor
@@ -1985,7 +2051,8 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     if (it != output_names.end()) {
       return std::distance(output_names.begin(), it);
     }
-    return Unexpected(Status::kErrorNotFound, "Failed to find output");
+    return Unexpected(Status::kErrorNotFound,
+                      "Failed to find output: " + std::string(output_name));
   }
 
   /// @brief Creates a `TensorBuffer` with the given buffer requirements and

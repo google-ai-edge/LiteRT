@@ -85,7 +85,7 @@ INSTANTIATE_TEST_SUITE_P(
     FCOps, SupportedVersionTest,
     ValuesIn<VersionTestCase>({
         {kTfLiteBuiltinFullyConnected,          1},  // min
-        {kTfLiteBuiltinFullyConnected,          12},  // max
+        {kTfLiteBuiltinFullyConnected,          14},  // max
     }),
     [](const TestParamInfo<SupportedVersionTest::ParamType>& info) {
       return absl::StrCat(::tflite::EnumNamesBuiltinOperator()[info.param.op],
@@ -114,7 +114,7 @@ INSTANTIATE_TEST_SUITE_P(
     FCOps, UnsupportedVersionTest,
     ValuesIn<VersionTestCase>({
         {kTfLiteBuiltinFullyConnected,          0},  // min-1
-        {kTfLiteBuiltinFullyConnected,          13},  // max+1
+        {kTfLiteBuiltinFullyConnected,          15},  // max+1
     }),
     [](const TestParamInfo<UnsupportedVersionTest::ParamType>& info) {
       return absl::StrCat(::tflite::EnumNamesBuiltinOperator()[info.param.op],

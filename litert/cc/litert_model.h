@@ -409,11 +409,8 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   /// @brief Returns the list of input names defined in the signature.
   Expected<std::vector<StringView>> GetSignatureInputNames(
       StringView signature_key) const {
-    auto signature = FindSignature(signature_key);
-    if (!signature) {
-      return Unexpected(Status::kErrorNotFound, "Signature not found");
-    }
-    return signature->InputNames();
+    LITERT_ASSIGN_OR_RETURN(auto signature, FindSignature(signature_key));
+    return signature.InputNames();
   }
 
   /// @brief Returns the list of output names defined in the signature.
@@ -430,11 +427,8 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   /// @brief Returns the list of output names defined in the signature.
   Expected<std::vector<StringView>> GetSignatureOutputNames(
       StringView signature_key) const {
-    auto signature = FindSignature(signature_key);
-    if (!signature) {
-      return Unexpected(Status::kErrorNotFound, "Signature not found");
-    }
-    return signature->OutputNames();
+    LITERT_ASSIGN_OR_RETURN(auto signature, FindSignature(signature_key));
+    return signature.OutputNames();
   }
 
   /// @brief Returns the signature at the given index.
@@ -466,7 +460,8 @@ class Model : public internal::BaseHandle<LiteRtModel> {
         return i;
       }
     }
-    return Unexpected(Status::kErrorNotFound, "Signature not found");
+    return Unexpected(Status::kErrorNotFound,
+                      "Signature not found: " + std::string(signature_key));
   }
 
   /// @brief Returns the `SimpleSignature` object for the given signature key.
@@ -519,7 +514,8 @@ class Model : public internal::BaseHandle<LiteRtModel> {
         return input_tensor->RankedTensorType();
       }
     }
-    return Error(Status::kErrorNotFound, "Input tensor not found");
+    return Error(Status::kErrorNotFound,
+                 "Input tensor not found: " + std::string(input_name));
   }
 
   /// @brief Returns the tensor type for the given input tensor name.
@@ -571,7 +567,8 @@ class Model : public internal::BaseHandle<LiteRtModel> {
             ->RankedTensorType();
       }
     }
-    return Error(Status::kErrorNotFound, "Output tensor not found");
+    return Error(Status::kErrorNotFound,
+                 "Output tensor not found: " + std::string(output_name));
   }
 
   /// @brief Returns the tensor type for the given output tensor name.

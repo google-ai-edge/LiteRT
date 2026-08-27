@@ -20,6 +20,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -40,6 +41,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/build_stamp.h"
 #include "litert/core/util/flatbuffer_tools.h"
+#include "tflite/converter/schema/schema_generated.h"
 
 using ::litert::internal::AttachInput;
 using ::litert::internal::AttachOutput;
@@ -137,6 +139,138 @@ LiteRtSignatureT MakeDefaultSignature(LiteRtSubgraph subgraph) {
     return sig.Error();
   }
   return &sig->get().GetSubgraph();
+}
+
+::litert::Expected<void> PruneModelToSignatures(
+    LiteRtModelT& model,
+    absl::Span<const absl::string_view> signature_keys) {
+  if (signature_keys.empty()) {
+    return {};
+  }
+
+  absl::flat_hash_set<std::string> retained_keys;
+  retained_keys.reserve(signature_keys.size());
+  for (absl::string_view key : signature_keys) {
+    if (!model.FindSignature(key)) {
+      return ::litert::Unexpected(
+          kLiteRtStatusErrorNotFound,
+          std::string("Cannot retain missing model signature: ") +
+              std::string(key));
+    }
+    retained_keys.insert(std::string(key));
+  }
+
+  const auto subgraphs = model.Subgraphs();
+  std::unordered_map<const LiteRtSubgraphT*, size_t> subgraph_indices;
+  subgraph_indices.reserve(subgraphs.size());
+  for (size_t i = 0; i < subgraphs.size(); ++i) {
+    subgraph_indices.emplace(subgraphs[i], i);
+  }
+
+  std::vector<bool> reachable(subgraphs.size(), false);
+  std::vector<size_t> pending;
+  for (LiteRtSignature signature : model.Signatures()) {
+    if (!retained_keys.contains(signature->Key())) {
+      continue;
+    }
+    const auto it = subgraph_indices.find(&signature->GetSubgraph());
+    if (it == subgraph_indices.end()) {
+      return ::litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                  "Signature references an unknown subgraph");
+    }
+    if (!reachable[it->second]) {
+      reachable[it->second] = true;
+      pending.push_back(it->second);
+    }
+  }
+
+  while (!pending.empty()) {
+    const size_t subgraph_index = pending.back();
+    pending.pop_back();
+    for (LiteRtOp op : subgraphs[subgraph_index]->Ops()) {
+      if (litert::internal::GetTflOptions2(*op).type ==
+          tflite::BuiltinOptions2_StablehloCaseOptions) {
+        return ::litert::Unexpected(
+            kLiteRtStatusErrorUnsupported,
+            "Signature pruning does not support StableHLO case subgraph "
+            "references");
+      }
+      if (op->OpCode() == kLiteRtOpCodeShloComposite) {
+        const auto* options = litert::internal::GetTflOptions2(*op)
+                                  .AsStableHLOCompositeOptions();
+        if (options == nullptr || options->decomposition_subgraph_index < -1) {
+          return ::litert::Unexpected(
+              kLiteRtStatusErrorInvalidArgument,
+              "StableHLO composite references an invalid subgraph");
+        }
+        if (options->decomposition_subgraph_index == -1) {
+          return ::litert::Unexpected(
+              kLiteRtStatusErrorUnsupported,
+              "Signature pruning does not support a StableHLO composite "
+              "without a decomposition subgraph");
+        }
+        if (static_cast<size_t>(options->decomposition_subgraph_index) >=
+            subgraphs.size()) {
+          return ::litert::Unexpected(
+              kLiteRtStatusErrorInvalidArgument,
+              "StableHLO composite references an invalid subgraph");
+        }
+        const size_t dependency =
+            static_cast<size_t>(options->decomposition_subgraph_index);
+        if (!reachable[dependency]) {
+          reachable[dependency] = true;
+          pending.push_back(dependency);
+        }
+        continue;
+      }
+
+      // TransferSubgraphTo currently remaps StableHLO composite references.
+      // Reject other control-flow references instead of silently producing a
+      // model with stale subgraph indices.
+      switch (op->OpCode()) {
+        case kLiteRtOpCodeTflIf:
+        case kLiteRtOpCodeTflWhile:
+        case kLiteRtOpCodeTflCallOnce:
+        case kLiteRtOpCodeShloCustomCall:
+        case kLiteRtOpCodeShloReduce:
+        case kLiteRtOpCodeShloScatter:
+        case kLiteRtOpCodeShloWindow:
+        case kLiteRtOpCodeShloSort:
+        case kLiteRtOpCodeShloWhile:
+          return ::litert::Unexpected(
+              kLiteRtStatusErrorUnsupported,
+              "Signature pruning does not support this subgraph reference "
+              "operator");
+        default:
+          break;
+      }
+    }
+  }
+
+  const size_t removed_signatures = model.RemoveSignaturesIf(
+      [&retained_keys](const LiteRtSignatureT& signature) {
+        return !retained_keys.contains(signature.Key());
+      });
+  std::vector<size_t> removed_subgraph_indices;
+  for (size_t i = 0; i < reachable.size(); ++i) {
+    if (!reachable[i]) {
+      removed_subgraph_indices.push_back(i);
+    }
+  }
+  LiteRtSubgraphT::Alloc removed_subgraphs;
+  model.TransferSubgraphTo(removed_subgraphs,
+                           std::move(removed_subgraph_indices));
+  for (LiteRtSubgraph removed_subgraph : removed_subgraphs.Elements()) {
+    for (LiteRtOp removed_op : removed_subgraph->Ops()) {
+      model.RemoveAssetFromOp(removed_op);
+    }
+  }
+  LITERT_LOG(LITERT_INFO,
+             "Pruned model to %zu signatures and %zu reachable subgraphs "
+             "(%zu signatures and %zu subgraphs removed)",
+             model.Signatures().size(), model.Subgraphs().size(),
+             removed_signatures, removed_subgraphs.Size());
+  return {};
 }
 
 void LiteRtModelT::TransferSubgraphTo(LiteRtSubgraphT::Alloc& dest,
@@ -466,18 +600,19 @@ void CloneTo(const LiteRtOpT& src, LiteRtOpT& dest) {
 
 litert::Expected<LiteRtTensorT*> MakeClone(LiteRtSubgraphT& parent,
                                            const LiteRtTensorT& src) {
-  const int q_type = reinterpret_cast<const int&>(src.Qparams().first);
-  switch (q_type) {
+  switch (src.Qparams().first) {
     case kLiteRtQuantizationNone:
     case kLiteRtQuantizationPerTensor:
     case kLiteRtQuantizationPerChannel:
     case kLiteRtQuantizationBlockWise:
       break;
     default:
-      LITERT_LOG(LITERT_ERROR, "Unsupported quantization type: %d", q_type);
+      LITERT_LOG(LITERT_ERROR, "Unsupported quantization type: %d",
+                 static_cast<int>(src.Qparams().first));
       return litert::Error(
           kLiteRtStatusErrorInvalidArgument,
-          absl::StrCat("Unsupported quantization type: ", q_type));
+          absl::StrCat("Unsupported quantization type: ",
+                       static_cast<int>(src.Qparams().first)));
   }
 
   auto& new_tensor = parent.EmplaceTensor();

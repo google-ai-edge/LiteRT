@@ -21,6 +21,7 @@ load("@org_tensorflow//tensorflow/core/platform:build_config_root.bzl", "if_pywr
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
 load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
+load("//tflite:api_visibility.bzl", "TFLITE_PYTHON_CLIENTS_VISIBILITY")
 load("//tflite:build_def.bzl", "tflite_exec_properties")
 load("//tflite:special_rules.bzl", "internal_visibility_allowlist")
 
@@ -41,7 +42,6 @@ package(
 )
 
 exports_files([
-    "tflite_convert.py",
     "pywrap_tflite_common.json",
     "pywrap_tflite_common.lds",
     "pywrap_tflite_common_darwin.lds",
@@ -65,7 +65,7 @@ py_library(
     ],
     compatible_with = get_compatible_with_portable(),
     strict_deps = True,
-    visibility = ["//visibility:public"],
+    visibility = TFLITE_PYTHON_CLIENTS_VISIBILITY,
     deps = [
         "//tflite/python/interpreter_wrapper:_pywrap_litert_interpreter_wrapper",
         "//tflite/python/metrics",
@@ -104,37 +104,6 @@ py_test(
     ],
 )
 
-py_binary(
-    name = "tflite_convert",
-    srcs = ["tflite_convert.py"],
-    strict_deps = True,
-    visibility = ["//visibility:public"],
-    deps = [
-        ":tflite_convert_main_lib",
-        "//tflite/python:lite",
-        "@absl_py//absl:app",
-        "@org_tensorflow//tensorflow:tensorflow_py",
-    ],
-)
-
-py_library(
-    name = "tflite_convert_main_lib",
-    srcs = ["tflite_convert.py"],
-    strict_deps = True,
-    visibility = ["//visibility:public"],
-    deps = [
-        ":convert",
-        "//tflite/toco:toco_flags_proto_py",
-        "//tflite/toco/logging:gen_html",
-        "@absl_py//absl:app",
-        "@org_tensorflow//tensorflow:tensorflow_py",
-        "@org_tensorflow//tensorflow/python:tf2",
-        "@org_tensorflow//tensorflow/python/framework:dtypes",
-        "@org_tensorflow//tensorflow/python/platform:gfile",
-        "@org_tensorflow//tensorflow/python/util:keras_deps",
-    ],
-)
-
 py_library(
     name = "test_util",
     srcs = ["test_util.py"],
@@ -163,49 +132,6 @@ py_test(
         "@org_tensorflow//tensorflow/python/platform:client_testlib",
         "@org_tensorflow//tensorflow/python/platform:gfile",
         "@org_tensorflow//tensorflow/python/platform:resource_loader",
-    ],
-)
-
-py_test(
-    name = "tflite_convert_test",
-    srcs = ["tflite_convert_test.py"],
-    data = [
-        ":tflite_convert.par",
-        "@tflite_mobilenet_ssd_quant_protobuf//:tflite_graph.pb",
-    ],
-    # Increased thread count for reducing timeout failures.
-    shard_count = 10,
-    strict_deps = True,
-    tags = [
-        "no_oss",
-        "no_windows",
-    ],
-    deps = [
-        ":convert",
-        ":test_util",
-        ":tflite_convert_main_lib",
-        #internal proto upb dep
-        "@org_tensorflow//third_party/py/numpy",
-        "@org_tensorflow//tensorflow:tensorflow_py",
-        "@org_tensorflow//tensorflow/core:protos_all_py",
-        "@org_tensorflow//tensorflow/python:tf2",
-        "@org_tensorflow//tensorflow/python/client:session",
-        "@org_tensorflow//tensorflow/python/eager:def_function",
-        "@org_tensorflow//tensorflow/python/framework:constant_op",
-        "@org_tensorflow//tensorflow/python/framework:dtypes",
-        "@org_tensorflow//tensorflow/python/framework:importer",
-        "@org_tensorflow//tensorflow/python/framework:ops",
-        "@org_tensorflow//tensorflow/python/framework:test_lib",
-        "@org_tensorflow//tensorflow/python/ops:array_ops",
-        "@org_tensorflow//tensorflow/python/ops:random_ops",
-        "@org_tensorflow//tensorflow/python/platform:client_testlib",
-        "@org_tensorflow//tensorflow/python/platform:gfile",
-        "@org_tensorflow//tensorflow/python/platform:resource_loader",
-        "@org_tensorflow//tensorflow/python/saved_model",
-        "@org_tensorflow//tensorflow/python/saved_model:save",
-        "@org_tensorflow//tensorflow/python/trackable:autotrackable",
-        "@org_tensorflow//tensorflow/python/training:training_util",
-        "@absl_py//absl/testing:parameterized",
     ],
 )
 

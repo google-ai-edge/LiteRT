@@ -19,6 +19,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/kernels/fully_connected.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
@@ -89,10 +90,20 @@ void SdpaTransposedOperationParser::Parse(const TfLiteNode* tflite_node,
   ::ml_drift::Value* query = reader->ReadValue(0);
   ::ml_drift::Value* key = reader->ReadValue(1);
   ::ml_drift::Value* value = reader->ReadValue(2);
-  ::ml_drift::Value* mask =
-      tflite_node->inputs->size > 3 ? reader->ReadValue(3) : nullptr;
-  ::ml_drift::Value* param_tensor =
-      tflite_node->inputs->size > 4 ? reader->ReadValue(4) : nullptr;
+  ::ml_drift::Value* mask = nullptr;
+  ::ml_drift::Value* param_tensor = nullptr;
+  if (tflite_node->inputs->size == 4) {
+    auto* mask_or_param = reader->ReadValue(3);
+    if (mask_or_param &&
+        mask_or_param->tensor.type == ::ml_drift::DataType::INT32) {
+      param_tensor = mask_or_param;
+    } else {
+      mask = mask_or_param;
+    }
+  } else if (tflite_node->inputs->size > 4) {
+    mask = reader->ReadValue(3);
+    param_tensor = reader->ReadValue(4);
+  }
 
   ::ml_drift::Value* output =
       reader->ReadValueByTensorIdx(tflite_node->outputs->data[0]);
@@ -112,6 +123,7 @@ void SdpaTransposedOperationParser::Parse(const TfLiteNode* tflite_node,
 
   SdpaTransposedAttributes attr;
   attr.runtime_check.src_end_ch_index = kActiveTokensAlignedIndex;
+  attr.is_prefill = (query->tensor.shape.w > 2 || model_batch);
 
   const ::ml_drift::BHWC right_shape_k = k_val->tensor.shape;
   attr.bmm1_weights.weights_shape =

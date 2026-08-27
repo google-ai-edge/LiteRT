@@ -25,6 +25,9 @@
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 
 namespace qnn {
+namespace {
+constexpr int32_t kSUFixed16OffsetDiff = 32768;
+}  // namespace
 std::size_t GetDataTypeSize(const Qnn_DataType_t data_type) {
   std::size_t bytes = 0;
   switch (data_type) {
@@ -243,7 +246,6 @@ bool TensorWrapper::IsPerTensorQuantWithOffsetDiff(
               rhs.GetDataType() == QNN_DATATYPE_UFIXED_POINT_16) ||
              (GetDataType() == QNN_DATATYPE_UFIXED_POINT_16 &&
               rhs.GetDataType() == QNN_DATATYPE_SFIXED_POINT_16)) {
-    constexpr int kSUFixed16OffsetDiff = 32768;
     if (std::fabs(lhs_scale - rhs_scale) <
             std::numeric_limits<float>::epsilon() &&
         std::abs(lhs_offset - rhs_offset) == kSUFixed16OffsetDiff) {
@@ -363,6 +365,22 @@ void TensorWrapper::SetQuantBitwidth(std::uint32_t bitwidth) {
   }
 
   UpdateQnnQuantParams();
+}
+
+void TensorWrapper::ConvertFromQuantI16ToQuantU16() {
+  auto* p =
+      std::get_if<::qnn::ScaleOffsetQuantizeParamsWrapper>(&quantize_params_);
+  if (IsTensorStatic() || !IsQuantI16() || !p) {
+    QNN_LOG_WARNING("Cannot convert %s to UINT16.", GetName().data());
+    return;
+  }
+
+  // Signed and unsigned 16-bit differ only by where zero sits.
+  quantize_params_ = ::qnn::ScaleOffsetQuantizeParamsWrapper(
+      p->GetScale(), p->GetZeroPoint() + kSUFixed16OffsetDiff);
+  qnn_tensor_.v2.dataType = QNN_DATATYPE_UFIXED_POINT_16;
+  UpdateQnnQuantParams();
+  QNN_LOG_INFO("Convert %s to UINT16.", GetName().data());
 }
 
 std::string TensorWrapper::ToString() const {

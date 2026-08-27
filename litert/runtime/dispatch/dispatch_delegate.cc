@@ -26,11 +26,13 @@
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_profiler_types.h"
 #include "litert/cc/internal/litert_dispatch_delegate.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/build_stamp.h"
 #include "litert/runtime/dispatch/dispatch_kernel_facade.h"
+#include "litert/runtime/dispatch/shared_kernel_resources.h"
 #include "litert/runtime/metrics.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "tflite/c/c_api_opaque.h"
@@ -48,6 +50,7 @@ using ::litert::Unexpected;
 class DispatchDelegate : public tflite::SimpleOpaqueDelegateInterface {
  public:
   ~DispatchDelegate() override {
+    kernel_resources_.reset();
     if (device_context_) {
       (void)LiteRtDispatchDeviceContextDestroy(device_context_);
     }
@@ -79,6 +82,8 @@ class DispatchDelegate : public tflite::SimpleOpaqueDelegateInterface {
 
   litert::Expected<LiteRtMetricsT> StopMetricsCollection();
 
+  LiteRtStatus GetHooks(LiteRtHook* hook, void** user_data);
+
  private:
   static constexpr absl::string_view kDelegateName = "DispatchDelegate";
 
@@ -87,7 +92,11 @@ class DispatchDelegate : public tflite::SimpleOpaqueDelegateInterface {
                             LiteRtOptions options)
       : env_(env),
         environment_options_(environment_options),
-        options_(options) {}
+        options_(options),
+        kernel_resources_(
+            std::make_shared<litert::internal::DispatchKernelResources>()) {
+    LITERT_LOG(LITERT_INFO, "DispatchDelegate::DispatchDelegate");
+  }
 
   litert::Expected<void> InitializeDispatchApi();
 
@@ -96,9 +105,13 @@ class DispatchDelegate : public tflite::SimpleOpaqueDelegateInterface {
   LiteRtOptions options_;
   bool has_dispatch_runtime_ = false;
   int dispatch_graph_name_id_ = 0;
-  std::vector<litert::internal::DispatchKernelFacade*>
-      kernels_;
+  std::vector<litert::internal::DispatchKernelFacade*> kernels_;
   LiteRtDispatchDeviceContext device_context_ = nullptr;
+  // We use std::shared_ptr to manage DispatchKernelResources because TFLite
+  // destroys the delegate object while individual kernels
+  // remain active. Using shared ownership ensures that resources stay alive
+  // until all kernels are destroyed.
+  std::shared_ptr<litert::internal::DispatchKernelResources> kernel_resources_;
 };
 
 bool DispatchDelegate::IsNodeSupportedByDelegate(
@@ -111,6 +124,8 @@ bool DispatchDelegate::IsNodeSupportedByDelegate(
 }
 
 TfLiteStatus DispatchDelegate::Initialize(TfLiteOpaqueContext* context) {
+  LITERT_LOG(LITERT_INFO, "DispatchDelegate::Initialize %s",
+             TfLiteOpaqueContextGetName(context));
   if (auto status = InitializeDispatchApi(); !status) {
     LITERT_LOG(LITERT_ERROR, "Failed to initialize Dispatch API: %s",
                status.Error().Message().c_str());
@@ -136,7 +151,7 @@ DispatchDelegate::CreateDelegateKernelInterface() {
       absl::StrFormat("DispatchGraph_%d", dispatch_graph_name_id_++);
   auto kernel = litert::internal::DispatchKernelFacade::Create(
       std::move(dispatch_graph_name), environment_options_, options_,
-      device_context_);
+      device_context_, kernel_resources_);
   if (!kernel) {
     LITERT_LOG(LITERT_ERROR,
                "Failed to create a dispatch delegate kernel facade");
@@ -165,6 +180,16 @@ litert::Expected<LiteRtMetricsT> DispatchDelegate::StopMetricsCollection() {
                    std::make_move_iterator(kernel_metrics.metrics.end()));
   }
   return LiteRtMetricsT{.metrics = std::move(metrics)};
+}
+
+LiteRtStatus DispatchDelegate::GetHooks(LiteRtHook* hook, void** user_data) {
+  if (device_context_ == nullptr) {
+    LITERT_LOG(LITERT_INFO, "Lazy initializing Dispatch API for GetHooks.");
+    if (auto status = InitializeDispatchApi(); !status) {
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
+  }
+  return LiteRtDispatchGetHooks(device_context_, hook, user_data);
 }
 
 litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
@@ -249,6 +274,17 @@ LiteRtStatus LiteRtDispatchDelegateStopMetricsCollection(
                           dispatch_delegate->StopMetricsCollection());
   *metrics = std::move(liter_metrics);
   return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtDispatchDelegateGetHooks(TfLiteOpaqueDelegate* delegate,
+                                            LiteRtHook* hook,
+                                            void** user_data) {
+  if (!delegate) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto* dispatch_delegate = reinterpret_cast<DispatchDelegate*>(
+      TfLiteOpaqueDelegateGetData(delegate));
+  return dispatch_delegate->GetHooks(hook, user_data);
 }
 
 namespace litert {
