@@ -29,11 +29,6 @@ BHWC IrModelAdapter::GetValueShape(uint32_t value_id) const {
   return graph_.tensor(value_id)->desc.GetBHWCShape();
 }
 
-DataType IrModelAdapter::GetValueType(uint32_t value_id) const {
-  DataType type = graph_.tensor(value_id)->desc.GetDataType();
-  return type == DataType::UNKNOWN ? DataType::FLOAT32 : type;
-}
-
 void IrModelAdapter::SetValueType(uint32_t value_id, DataType type) {
   graph_.GetMutableTensor(value_id)->desc.SetDataType(type);
 }
