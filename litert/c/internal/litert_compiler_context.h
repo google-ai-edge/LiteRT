@@ -511,6 +511,15 @@ typedef struct LiteRtCompilerContext {
                                          int32_t* axis, int32_t* num);
   LiteRtStatus (*get_split_v_num_splits_option)(LiteRtOp op,
                                                 int32_t* num_splits);
+  // Added in version 1.4.0
+  LiteRtStatus (*get_local_response_normalization_radius_option)(
+      LiteRtOp op, int32_t* radius);
+  LiteRtStatus (*get_local_response_normalization_bias_option)(LiteRtOp op,
+                                                               float* bias);
+  LiteRtStatus (*get_local_response_normalization_alpha_option)(LiteRtOp op,
+                                                                float* alpha);
+  LiteRtStatus (*get_local_response_normalization_beta_option)(LiteRtOp op,
+                                                               float* beta);
 } LiteRtCompilerContext;
 // LINT.ThenChange(./litert_compiler_context.cc:compiler_context_version)
 
@@ -520,7 +529,7 @@ typedef struct LiteRtCompilerContext {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtCompilerContext) == 1408,
+static_assert(sizeof(LiteRtCompilerContext) == 1440,
               "LiteRtCompilerContext size mismatch");
 static_assert(offsetof(LiteRtCompilerContext, abi_header) == 0,
               "LiteRtCompilerContext abi_header offset mismatch");
@@ -1142,6 +1151,26 @@ static_assert(offsetof(LiteRtCompilerContext, build_unpack_op_option) == 1392,
 static_assert(
     offsetof(LiteRtCompilerContext, get_split_v_num_splits_option) == 1400,
     "LiteRtCompilerContext get_split_v_num_splits_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext,
+             get_local_response_normalization_radius_option) == 1408,
+    "LiteRtCompilerContext get_local_response_normalization_radius_option "
+    "offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext,
+             get_local_response_normalization_bias_option) == 1416,
+    "LiteRtCompilerContext get_local_response_normalization_bias_option "
+    "offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext,
+             get_local_response_normalization_alpha_option) == 1424,
+    "LiteRtCompilerContext get_local_response_normalization_alpha_option "
+    "offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext,
+             get_local_response_normalization_beta_option) == 1432,
+    "LiteRtCompilerContext get_local_response_normalization_beta_option "
+    "offset mismatch");
 #endif  // __cplusplus
 
 LiteRtCompilerContext* LrtGetCompilerContext();
