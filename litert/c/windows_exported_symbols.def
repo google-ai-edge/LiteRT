@@ -203,6 +203,10 @@ EXPORTS
   LiteRtGetL2Pool2dStrideHOption
   LiteRtGetL2Pool2dStrideWOption
   LiteRtGetLeakyReluAlphaOption
+  LiteRtGetLocalResponseNormalizationAlphaOption
+  LiteRtGetLocalResponseNormalizationBetaOption
+  LiteRtGetLocalResponseNormalizationBiasOption
+  LiteRtGetLocalResponseNormalizationRadiusOption
   LiteRtGetMainModelSubgraphIndex
   LiteRtGetMaxPool2dFilterHeightOption
   LiteRtGetMaxPool2dFilterWidthOption

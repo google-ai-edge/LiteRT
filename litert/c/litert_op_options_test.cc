@@ -629,6 +629,33 @@ TEST(GetOpOptionTest, TestGetLeakyReluOptions) {
   ASSERT_FLOAT_EQ(alpha, 0.2);
 }
 
+TEST(GetOpOptionTest, TestGetLocalResponseNormalizationOptions) {
+  auto model = litert::testing::LoadTestFileModel(
+      "simple_local_response_norm_op.tflite");
+  auto subgraph = model.MainSubgraph();
+  EXPECT_TRUE(subgraph);
+
+  auto ops = subgraph->Ops();
+  auto op = ops.front().Get();
+
+  int32_t radius;
+  LITERT_ASSERT_OK(
+      LiteRtGetLocalResponseNormalizationRadiusOption(op, &radius));
+  ASSERT_EQ(radius, 5);
+
+  float bias;
+  LITERT_ASSERT_OK(LiteRtGetLocalResponseNormalizationBiasOption(op, &bias));
+  ASSERT_FLOAT_EQ(bias, 9.0);
+
+  float alpha;
+  LITERT_ASSERT_OK(LiteRtGetLocalResponseNormalizationAlphaOption(op, &alpha));
+  ASSERT_FLOAT_EQ(alpha, 4.0);
+
+  float beta;
+  LITERT_ASSERT_OK(LiteRtGetLocalResponseNormalizationBetaOption(op, &beta));
+  ASSERT_FLOAT_EQ(beta, 0.75);
+}
+
 TEST(GetOpOptionTest, TestGetDepthToSpaceOptions) {
   auto model =
       litert::testing::LoadTestFileModel("simple_depth_to_space_op.tflite");
