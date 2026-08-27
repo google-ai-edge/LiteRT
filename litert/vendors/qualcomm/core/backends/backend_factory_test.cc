@@ -3,10 +3,20 @@
 
 #include "litert/vendors/qualcomm/core/backends/backend_factory.h"
 
+#include <cstddef>
+#include <cstdlib>
+#include <memory>
 #include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
+#include "HTP/QnnHtpDeviceConfigShared.h"  // from @qairt
+#include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
+#include "QnnDevice.h"  // from @qairt
+#include "QnnInterface.h"  // from @qairt
+#include "QnnLog.h"  // from @qairt
 #include <gtest/gtest.h>
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/backends/dsp_backend.h"
@@ -157,6 +167,182 @@ TEST(CreateBackendTest, DISABLED_CreateIrBackend) {
 
 TEST(CreateBackendTest, DISABLED_CreateDspBackend) {
   TestCreateBackend<DspBackend>(BackendType::kDspBackend);
+}
+
+// SIGNED PROCESS DOMAIN (SignedPD) TESTS //////////////////////////////////////
+
+struct MockDeviceCreateCall {
+  std::vector<QnnHtpDevice_CustomConfig_t> custom_configs;
+};
+
+struct MockQnnState {
+  int device_create_call_count = 0;
+  int fail_device_create_on_call =
+      0;  // 0: never, 1: fail 1st call only, -1: fail all
+  std::vector<MockDeviceCreateCall> device_create_calls;
+};
+
+static MockQnnState* g_mock_qnn_state = nullptr;
+
+static char kDummyBackendObj = 0;
+static char kDummyDeviceObj = 0;
+
+Qnn_ErrorHandle_t MockQnnLogCreate(QnnLog_Callback_t, QnnLog_Level_t,
+                                   Qnn_LogHandle_t* log) {
+  *log = reinterpret_cast<Qnn_LogHandle_t>(&kDummyDeviceObj);
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockQnnLogFree(Qnn_LogHandle_t) { return QNN_SUCCESS; }
+
+Qnn_ErrorHandle_t MockQnnBackendCreate(Qnn_LogHandle_t,
+                                       const QnnBackend_Config_t**,
+                                       Qnn_BackendHandle_t* backend) {
+  *backend = reinterpret_cast<Qnn_BackendHandle_t>(&kDummyBackendObj);
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockQnnBackendFree(Qnn_BackendHandle_t) {
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockQnnDeviceFree(Qnn_DeviceHandle_t) { return QNN_SUCCESS; }
+
+Qnn_ErrorHandle_t MockQnnDeviceCreate(Qnn_LogHandle_t,
+                                      const QnnDevice_Config_t** configs,
+                                      Qnn_DeviceHandle_t* device) {
+  if (!g_mock_qnn_state) {
+    return QNN_COMMON_ERROR_GENERAL;
+  }
+  g_mock_qnn_state->device_create_call_count++;
+
+  MockDeviceCreateCall call_record;
+  if (configs) {
+    for (size_t i = 0; configs[i] != nullptr; ++i) {
+      if (configs[i]->option == QNN_DEVICE_CONFIG_OPTION_CUSTOM &&
+          configs[i]->customConfig != nullptr) {
+        const auto* htp_cfg = static_cast<const QnnHtpDevice_CustomConfig_t*>(
+            configs[i]->customConfig);
+        call_record.custom_configs.push_back(*htp_cfg);
+      }
+    }
+  }
+  g_mock_qnn_state->device_create_calls.push_back(std::move(call_record));
+
+  if (g_mock_qnn_state->fail_device_create_on_call == -1 ||
+      g_mock_qnn_state->fail_device_create_on_call ==
+          g_mock_qnn_state->device_create_call_count) {
+    return QNN_DEVICE_ERROR_UNSUPPORTED_FEATURE;
+  }
+
+  *device = reinterpret_cast<Qnn_DeviceHandle_t>(&kDummyDeviceObj);
+  return QNN_SUCCESS;
+}
+
+class HtpBackendSignedPdTest : public testing::Test {
+ protected:
+  void SetUp() override {
+    unsetenv("LITERT_QUALCOMM_USE_SIGNED_PD");
+    mock_state_ = std::make_unique<MockQnnState>();
+    g_mock_qnn_state = mock_state_.get();
+
+    api_ = {};
+    api_.logCreate = MockQnnLogCreate;
+    api_.logFree = MockQnnLogFree;
+    api_.backendCreate = MockQnnBackendCreate;
+    api_.backendFree = MockQnnBackendFree;
+    api_.deviceCreate = MockQnnDeviceCreate;
+    api_.deviceFree = MockQnnDeviceFree;
+  }
+
+  void TearDown() override {
+    unsetenv("LITERT_QUALCOMM_USE_SIGNED_PD");
+    g_mock_qnn_state = nullptr;
+    mock_state_.reset();
+  }
+
+  QNN_INTERFACE_VER_TYPE api_{};
+  std::unique_ptr<MockQnnState> mock_state_;
+};
+
+TEST_F(HtpBackendSignedPdTest, Init_DefaultSucceedsWithoutSignedPd) {
+  HtpBackend backend(&api_);
+  Options options;
+  EXPECT_TRUE(backend.Init(options, kDefaultSocInfo));
+
+  ASSERT_EQ(mock_state_->device_create_call_count, 1);
+  ASSERT_EQ(mock_state_->device_create_calls.size(), 1);
+
+  const auto& configs = mock_state_->device_create_calls[0].custom_configs;
+  ASSERT_EQ(configs.size(), 1);
+  EXPECT_EQ(configs[0].option, QNN_HTP_DEVICE_CONFIG_OPTION_SOC);
+  EXPECT_EQ(configs[0].socModel, kDefaultSocInfo->soc_model);
+}
+
+TEST_F(HtpBackendSignedPdTest, Init_FallbackToSignedPdWhenDefaultFails) {
+  mock_state_->fail_device_create_on_call = 1;  // fail 1st attempt
+  HtpBackend backend(&api_);
+  Options options;
+  EXPECT_TRUE(backend.Init(options, kDefaultSocInfo));
+
+  ASSERT_EQ(mock_state_->device_create_call_count, 2);
+  ASSERT_EQ(mock_state_->device_create_calls.size(), 2);
+
+  // First call: SOC only
+  const auto& first_configs =
+      mock_state_->device_create_calls[0].custom_configs;
+  ASSERT_EQ(first_configs.size(), 1);
+  EXPECT_EQ(first_configs[0].option, QNN_HTP_DEVICE_CONFIG_OPTION_SOC);
+
+  // Second call: SOC + SignedPD
+  const auto& second_configs =
+      mock_state_->device_create_calls[1].custom_configs;
+  ASSERT_EQ(second_configs.size(), 2);
+  EXPECT_EQ(second_configs[0].option, QNN_HTP_DEVICE_CONFIG_OPTION_SOC);
+  EXPECT_EQ(second_configs[1].option, QNN_HTP_DEVICE_CONFIG_OPTION_SIGNEDPD);
+  EXPECT_EQ(second_configs[1].useSignedProcessDomain.deviceId, 0);
+  EXPECT_TRUE(second_configs[1].useSignedProcessDomain.useSignedProcessDomain);
+}
+
+TEST_F(HtpBackendSignedPdTest, Init_ForceSignedPdViaEnvVarNumeric) {
+  setenv("LITERT_QUALCOMM_USE_SIGNED_PD", "1", 1);
+  HtpBackend backend(&api_);
+  Options options;
+  EXPECT_TRUE(backend.Init(options, kDefaultSocInfo));
+
+  ASSERT_EQ(mock_state_->device_create_call_count, 1);
+  ASSERT_EQ(mock_state_->device_create_calls.size(), 1);
+
+  const auto& configs = mock_state_->device_create_calls[0].custom_configs;
+  ASSERT_EQ(configs.size(), 2);
+  EXPECT_EQ(configs[0].option, QNN_HTP_DEVICE_CONFIG_OPTION_SOC);
+  EXPECT_EQ(configs[1].option, QNN_HTP_DEVICE_CONFIG_OPTION_SIGNEDPD);
+  EXPECT_TRUE(configs[1].useSignedProcessDomain.useSignedProcessDomain);
+}
+
+TEST_F(HtpBackendSignedPdTest, Init_ForceSignedPdViaEnvVarString) {
+  setenv("LITERT_QUALCOMM_USE_SIGNED_PD", "true", 1);
+  HtpBackend backend(&api_);
+  Options options;
+  EXPECT_TRUE(backend.Init(options, kDefaultSocInfo));
+
+  ASSERT_EQ(mock_state_->device_create_call_count, 1);
+  ASSERT_EQ(mock_state_->device_create_calls.size(), 1);
+
+  const auto& configs = mock_state_->device_create_calls[0].custom_configs;
+  ASSERT_EQ(configs.size(), 2);
+  EXPECT_EQ(configs[0].option, QNN_HTP_DEVICE_CONFIG_OPTION_SOC);
+  EXPECT_EQ(configs[1].option, QNN_HTP_DEVICE_CONFIG_OPTION_SIGNEDPD);
+  EXPECT_TRUE(configs[1].useSignedProcessDomain.useSignedProcessDomain);
+}
+
+TEST_F(HtpBackendSignedPdTest, Init_FailsWhenBothAttemptsFail) {
+  mock_state_->fail_device_create_on_call = -1;  // fail all attempts
+  HtpBackend backend(&api_);
+  Options options;
+  EXPECT_FALSE(backend.Init(options, kDefaultSocInfo));
+
+  EXPECT_EQ(mock_state_->device_create_call_count, 2);
 }
 
 }  // namespace
