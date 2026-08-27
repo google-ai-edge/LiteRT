@@ -354,3 +354,5 @@ filegroup(
         "//litert/cc:__pkg__",
     ],
 )
+
+exports_files(glob(["litert_*.h"]))

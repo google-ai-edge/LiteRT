@@ -42,6 +42,7 @@ cc_library(
         "//litert/c:litert_options",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_requirements",
+        "//litert/c/options:litert_cpu_options",
     ],
     alwayslink = True,
 )
@@ -103,6 +104,7 @@ strip_common_include_path_prefix(
         "//litert/c:litert_tensor_buffer_types.h",
         "//litert/c:litert_webgpu_types.h",
         "//litert/c/internal:litert_scheduling_info.h",
+        "//litert/c/options:litert_cpu_options.h",
     ],
 )
 

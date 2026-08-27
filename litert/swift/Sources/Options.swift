@@ -134,4 +134,13 @@ public final class Options {
     }
     return OpaqueOptions(cOpaqueOptions: opaqueOptions, owned: false)
   }
+
+  /// Adds concrete options (such as `CpuOptions`, `GpuOptions`, etc.) to the compilation options.
+  ///
+  /// - Parameter concreteOptions: The concrete options conforming to `ConcreteOptions` to add.
+  /// - Throws: `LiteRtError` if serializing or adding the options fails.
+  public func addConcreteOptions(_ concreteOptions: ConcreteOptions) throws {
+    let opaqueOptions = try concreteOptions.createOpaqueOptions()
+    try addOpaqueOptions(opaqueOptions)
+  }
 }
