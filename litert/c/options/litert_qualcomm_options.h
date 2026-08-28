@@ -322,6 +322,12 @@ LiteRtStatus LrtQualcommOptionsSetVtcmSize(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetVtcmSize(LrtQualcommOptions options,
                                            uint32_t* vtcm_size);
 
+LiteRtStatus LrtQualcommOptionsSetHtpDeviceId(LrtQualcommOptions options,
+                                              uint32_t htp_device_id);
+
+LiteRtStatus LrtQualcommOptionsGetHtpDeviceId(LrtQualcommOptions options,
+                                              uint32_t* htp_device_id);
+
 LiteRtStatus LrtQualcommOptionsSetNumHvxThreads(LrtQualcommOptions options,
                                                 uint32_t num_hvx_threads);
 
