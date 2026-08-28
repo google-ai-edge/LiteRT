@@ -7,6 +7,7 @@
 #include <list>
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include "HTP/QnnHtpCommon.h"  // from @qairt
 #include "HTP/QnnHtpDevice.h"  // from @qairt
@@ -84,6 +85,10 @@ class HtpBackend : public QnnBackend {
   }
 
   QnnDevicePlatformInfo CreateDevicePlatformInfo();
+
+  bool CreateDevicePlatformConfigs(
+      std::uint32_t htp_device_id,
+      std::vector<const QnnDevice_Config_t*>& device_configs);
 
   // The qnn_device_platform_info_ is referenced by device configurations
   // managed in the lists below. It must be destructed after the configs to

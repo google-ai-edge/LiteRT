@@ -17,6 +17,7 @@
 #include <string>
 
 #include <gtest/gtest.h>
+#include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
@@ -701,6 +702,7 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
             QualcommOptions::DspPerfCtrlMode::kManual);
   EXPECT_TRUE(options.Value().GetDumpTensorIds().empty());
   EXPECT_EQ(options.Value().GetVtcmSize(), 0);
+  EXPECT_EQ(options.Value().GetHtpDeviceId(), 0);
   EXPECT_EQ(options.Value().GetNumHvxThreads(), 0);
   EXPECT_EQ(options.Value().GetOptimizationLevel(),
             QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3);
@@ -718,6 +720,15 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_EQ(options.Value().GetLpaiCoreAffinityType(),
             QualcommOptions::LpaiCoreAffinityType::kDefault);
   EXPECT_EQ(options.Value().GetLpaiCoreSelection(), 0);
+}
+
+TEST(QualcommOptionsFromFlagsTest, HtpDeviceId) {
+  absl::SetFlag(&FLAGS_qualcomm_htp_device_id, 2);
+  Expected<QualcommOptions> options = QualcommOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_EQ(options.Value().GetHtpDeviceId(), 2);
+  absl::SetFlag(&FLAGS_qualcomm_htp_device_id, 0);
 }
 
 }  // namespace

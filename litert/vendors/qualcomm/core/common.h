@@ -203,6 +203,9 @@ class Options {
   std::uint32_t GetVtcmSize() const;
   void SetVtcmSize(std::uint32_t vtcm_size);
 
+  std::uint32_t GetHtpDeviceId() const;
+  void SetHtpDeviceId(std::uint32_t htp_device_id);
+
   std::uint32_t GetNumHvxThreads() const;
   void SetNumHvxThreads(std::uint32_t num_hvx_threads);
 
@@ -276,6 +279,7 @@ class Options {
   std::string dlc_dir_;
   std::string graph_transform_;
   std::uint32_t vtcm_size_ = 0;
+  std::uint32_t htp_device_id_ = 0;
   std::uint32_t num_hvx_threads_ = 0;
   OptimizationLevel optimization_level_ =
       OptimizationLevel::kHtpOptimizeForInferenceO3;
