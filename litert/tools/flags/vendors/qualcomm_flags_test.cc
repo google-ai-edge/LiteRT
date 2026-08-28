@@ -701,6 +701,7 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
             QualcommOptions::DspPerfCtrlMode::kManual);
   EXPECT_TRUE(options.Value().GetDumpTensorIds().empty());
   EXPECT_EQ(options.Value().GetVtcmSize(), 0);
+  EXPECT_EQ(options.Value().GetHtpDeviceId(), 0);
   EXPECT_EQ(options.Value().GetNumHvxThreads(), 0);
   EXPECT_EQ(options.Value().GetOptimizationLevel(),
             QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3);

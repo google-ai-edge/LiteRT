@@ -547,6 +547,12 @@ std::uint32_t Options::GetVtcmSize() const { return vtcm_size_; }
 
 void Options::SetVtcmSize(std::uint32_t vtcm_size) { vtcm_size_ = vtcm_size; }
 
+std::uint32_t Options::GetHtpDeviceId() const { return htp_device_id_; }
+
+void Options::SetHtpDeviceId(std::uint32_t htp_device_id) {
+  htp_device_id_ = htp_device_id;
+}
+
 std::uint32_t Options::GetNumHvxThreads() const { return num_hvx_threads_; }
 
 void Options::SetNumHvxThreads(std::uint32_t num_hvx_threads) {
@@ -706,6 +712,7 @@ std::string Options::Dump() const {
   field(2, "HtpPerformanceMode", htp_performance_mode_);
   field(2, "HtpPerfCtrlMode", htp_perf_ctrl_mode_);
   field(2, "VtcmSize", vtcm_size_);
+  field(2, "HtpDeviceId", htp_device_id_);
   field(2, "NumHvxThreads", num_hvx_threads_);
   field(2, "OptimizationLevel", optimization_level_);
 
