@@ -27,7 +27,7 @@ target_link_libraries(qnn_log
 )
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
-    target_link_libraries(qnn_log PUBLIC android log)
+    target_link_libraries(qnn_log PUBLIC log)
 endif()
 
 # miscs

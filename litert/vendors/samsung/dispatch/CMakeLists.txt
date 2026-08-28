@@ -39,7 +39,7 @@ target_link_libraries(dispatch_api_samsung_so
         litert_runtime_c_api_static
 )
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
-    target_link_libraries(dispatch_api_samsung_so PRIVATE android log)
+    target_link_libraries(dispatch_api_samsung_so PRIVATE log)
 endif()
 set_target_properties(dispatch_api_samsung_so PROPERTIES
     OUTPUT_NAME "LiteRtDispatch_Samsung"

@@ -15,6 +15,7 @@
 
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
+load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -46,10 +47,7 @@ litert_dynamic_lib(
         "-fdata-sections",
     ],
     export_litert_only = True,
-    linkopts = select({
-        "//litert:android": ["-landroid"],
-        "//conditions:default": [],
-    }) + [
+    linkopts = litert_android_linkopts() + [
         "-Wl,-soname=libLiteRtDispatch_Samsung.so",
         "-Wl,-lc++abi",  # copybara:comment
     ],
