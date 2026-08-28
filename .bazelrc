@@ -203,7 +203,6 @@ build:apple-toolchain --xcode_version_config=@local_config_xcode//:host_xcodes
 # Wheel builds need the installable macOS runtime dylib linked into python
 # extensions and packaged into the wheel.
 build:macos_wheel --config=macos
-build:macos_wheel --define=resolve_symbols_in_exec=false
 
 # Settings for MacOS on ARM CPUs.
 build:macos_arm64 --config=macos
