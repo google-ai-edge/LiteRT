@@ -82,6 +82,11 @@ enum class DspPerfCtrlMode {
   kAuto = 1,
 };
 
+enum class DspEncoding {
+  kStatic = 0,
+  kDynamic = 1,
+};
+
 enum class OptimizationLevel {
   kHtpOptimizeForInference = 0,
   kHtpOptimizeForPrepare = 1,
@@ -187,6 +192,9 @@ class Options {
   void SetDspPerfCtrlMode(DspPerfCtrlMode dsp_perf_ctrl_mode);
   DspPerfCtrlMode GetDspPerfCtrlMode() const;
 
+  void SetDspEncoding(DspEncoding dsp_encoding);
+  DspEncoding GetDspEncoding() const;
+
   // for per-layer dump
   void SetDumpTensorIds(const std::vector<std::int32_t>& ids);
   std::vector<std::int32_t> GetDumpTensorIds() const;
@@ -271,6 +279,7 @@ class Options {
   DspPerformanceMode dsp_performance_mode_ = DspPerformanceMode::kDefault;
   HtpPerfCtrlMode htp_perf_ctrl_mode_ = HtpPerfCtrlMode::kManual;
   DspPerfCtrlMode dsp_perf_ctrl_mode_ = DspPerfCtrlMode::kManual;
+  DspEncoding dsp_encoding_ = DspEncoding::kStatic;
   std::vector<std::int32_t> dump_tensor_ids_;
   std::string ir_json_dir_;
   std::string dlc_dir_;

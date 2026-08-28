@@ -102,6 +102,7 @@ struct LrtQualcommOptionsT {
   std::optional<LrtQualcommOptionsDspPerformanceMode> dsp_performance_mode;
   std::optional<LrtQualcommOptionsHtpPerfCtrlMode> htp_perf_ctrl_mode;
   std::optional<LrtQualcommOptionsDspPerfCtrlMode> dsp_perf_ctrl_mode;
+  std::optional<LrtQualcommOptionsDspEncoding> dsp_encoding;
   std::optional<std::vector<std::int32_t>> dump_tensor_ids;
   std::optional<std::string> ir_json_dir;
   std::optional<std::string> dlc_dir;
@@ -209,6 +210,11 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           status = LrtQualcommOptionsSetDspPerfCtrlMode(
               parsed_options,
               static_cast<LrtQualcommOptionsDspPerfCtrlMode>(*v));
+        } else if (key == "dsp_encoding") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetDspEncoding(
+              parsed_options, static_cast<LrtQualcommOptionsDspEncoding>(*v));
         } else if (key == "dump_tensor_ids") {
           auto parts = litert::internal::ParseTomlStringArray(value);
           if (!parts) return litert::ToLiteRtStatus(parts.Error().StatusCC());
@@ -389,6 +395,10 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->dsp_perf_ctrl_mode.has_value()) {
     toml << "dsp_perf_ctrl_mode = "
          << static_cast<int>(*options->dsp_perf_ctrl_mode) << "\n";
+  }
+  if (options->dsp_encoding.has_value()) {
+    toml << "dsp_encoding = " << static_cast<int>(*options->dsp_encoding)
+         << "\n";
   }
   if (options->dump_tensor_ids.has_value()) {
     toml << "dump_tensor_ids = [";
@@ -945,6 +955,29 @@ LiteRtStatus LrtQualcommOptionsGetDspPerfCtrlMode(
 
   *dsp_perf_ctrl_mode = options->dsp_perf_ctrl_mode.value_or(
       kLiteRtQualcommDspPerfCtrlModeManual);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetDspEncoding(
+    LrtQualcommOptions options, LrtQualcommOptionsDspEncoding dsp_encoding) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->dsp_encoding = dsp_encoding;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetDspEncoding(
+    LrtQualcommOptions options, LrtQualcommOptionsDspEncoding* dsp_encoding) {
+  if (options == nullptr || dsp_encoding == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *dsp_encoding =
+      options->dsp_encoding.value_or(kLiteRtQualcommDspEncodingStatic);
 
   return kLiteRtStatusOk;
 }
