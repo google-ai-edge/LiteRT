@@ -71,7 +71,9 @@ Qnn_Priority_t GetGraphPriorityValue(GraphPriority graph_priority) {
 // HTP PERF CONTROL /////////////////////////////////////////////////////////
 class HtpBackend::HtpPerfControl {
  public:
-  explicit HtpPerfControl(const QNN_INTERFACE_VER_TYPE* api) : api_(api) {}
+  explicit HtpPerfControl(const QNN_INTERFACE_VER_TYPE* api,
+                          std::uint32_t device_id = 0)
+      : api_(api), device_id_(device_id) {}
 
   ~HtpPerfControl() {
     DownVote();
@@ -110,7 +112,7 @@ class HtpBackend::HtpPerfControl {
 
     if (power_config_id_ == 0) {
       if (error = htp_perf_infra_->perfInfra.createPowerConfigId(
-              /*device_id=*/0, /*core_id=*/0, &power_config_id_);
+              device_id_, /*core_id=*/0, &power_config_id_);
           error != QNN_SUCCESS) {
         QNN_LOG_ERROR("HTP backend unable to create power config. Error %d",
                       QNN_GET_ERROR_CODE(error));
@@ -447,6 +449,7 @@ class HtpBackend::HtpPerfControl {
 
   // Performance control
   const QNN_INTERFACE_VER_TYPE* api_{nullptr};
+  std::uint32_t device_id_{0};
   std::uint32_t power_config_id_{0};
   QnnDevice_Infrastructure_t htp_perf_infra_{nullptr};
   // Last successfully-applied mode, used to skip a redundant re-vote.
@@ -510,6 +513,20 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   // this API is called during offline preparation. However, it will always
   // return the default SoC info (SM8350). If user specifies a SoC, we will
   // override the default.
+  auto device_platform_info = CreateDevicePlatformInfo();
+
+  // Validate the requested HTP device id against the enumerated devices
+  // whenever platform info is available (on-device, or the test mock).
+  if (device_platform_info) {
+    const std::uint32_t device_id = options.GetHtpDeviceId();
+    const std::uint32_t num_hw_devices = device_platform_info->v1.numHwDevices;
+    if (device_id >= num_hw_devices) {
+      QNN_LOG_ERROR("Found %u HTP devices but got device_id=%u.",
+                    num_hw_devices, device_id);
+      return false;
+    }
+  }
+
   if (soc_info.has_value()) {
     QNN_LOG_INFO("Using provided SoC info. SoC name: %s.",
                  soc_info->soc_name.data());
@@ -518,10 +535,10 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
 #if defined(__x86_64__) || defined(_M_X64)
     // Offline compilation on desktop hosts cannot query the target device.
 #else
-    if (auto device_platform_info = CreateDevicePlatformInfo();
-        device_platform_info) {
-      const auto device_info = device_platform_info->v1.hwDevices->v1
-                                   .deviceInfoExtension->onChipDevice;
+    if (device_platform_info) {
+      const auto device_info =
+          device_platform_info->v1.hwDevices[options.GetHtpDeviceId()]
+              .v1.deviceInfoExtension->onChipDevice;
       soc_info_ = SocInfo("Online SoC", device_info.socModel);
     }
 #endif
@@ -576,7 +593,8 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   if (performance_mode != HtpPerformanceMode::kDefault) {
     QNN_LOG_INFO("Set HTP performance mode: %d", performance_mode);
 
-    htp_perf_control_ = std::make_unique<HtpPerfControl>(QnnApi());
+    htp_perf_control_ =
+        std::make_unique<HtpPerfControl>(QnnApi(), options.GetHtpDeviceId());
     if (!htp_perf_control_->Init(performance_mode)) {
       QNN_LOG_ERROR(
           "Failed to initialize HTP performance Control, using default "

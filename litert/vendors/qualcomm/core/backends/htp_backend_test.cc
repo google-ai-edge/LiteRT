@@ -413,6 +413,30 @@ TEST_F(HtpBackendPerfBaseTest, DefaultModeSchedulesDownvote) {
   EXPECT_GT(captured_configs->size(), configs_after_init);
 }
 
+TEST_F(HtpBackendPerfBaseTest, ValidHtpDeviceIdInitializes) {
+  Options options;
+  options.SetHtpDeviceId(0);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  EXPECT_TRUE(backend.Init(options, kSocInfos[8]));
+#else
+  EXPECT_TRUE(backend.Init(options, std::nullopt));
+#endif
+}
+
+TEST_F(HtpBackendPerfBaseTest, OutOfRangeHtpDeviceIdFailsInit) {
+  Options options;
+  options.SetHtpDeviceId(1);  // mock platform info exposes numHwDevices = 1
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  EXPECT_FALSE(backend.Init(options, kSocInfos[8]));
+#else
+  EXPECT_FALSE(backend.Init(options, std::nullopt));
+#endif
+}
+
 TEST_F(HtpBackendPerfBaseTest, AutoModeChangesAcrossExecutes) {
   Options options;
   options.SetHtpPerformanceMode(HtpPerformanceMode::kPowerSaver);
