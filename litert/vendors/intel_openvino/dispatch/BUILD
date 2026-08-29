@@ -35,6 +35,7 @@ litert_dynamic_lib(
     hdrs = [
         "device_context.h",
         "invocation_context.h",
+        "npu_hal_wrapper.h",
         "openvino_shared_core.h",
         "openvino_tensor_buffer.h",
         "weight_bank_runtime.h",
@@ -101,6 +102,7 @@ litert_dynamic_lib(
         "//litert/vendors/intel_openvino/compiler:global_graph",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/synchronization",
         "@intel_openvino//:openvino",
     ],
@@ -173,6 +175,7 @@ litert_lib(
     hdrs = [
         "device_context.h",
         "invocation_context.h",
+        "npu_hal_wrapper.h",
         "openvino_shared_core.h",
         "openvino_tensor_buffer.h",
         "weight_bank_runtime.h",
