@@ -12,6 +12,7 @@ package(
 
 exports_files([
     "AndroidManifest.xml",
+    "AndroidManifestImpl.xml",
 ])
 
 filegroup(
@@ -27,8 +28,8 @@ filegroup(
 android_library(
     name = "litert_support",
     srcs = [],
-    custom_package = "com.google.ai.edge.litert.support",
-    manifest = "AndroidManifest.xml",
+    custom_package = "com.google.ai.edge.litert.support.impl",
+    manifest = "AndroidManifestImpl.xml",
     exports = [
         ":litert_support_java",
     ],
