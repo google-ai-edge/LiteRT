@@ -15,19 +15,6 @@ flatbuffer_py_library(
     srcs = ["//tflite/converter/schema:schema.fbs"],
 )
 
-# Generic schema for inference on device.
-flatbuffer_android_library(
-    name = "schema_fbs_android",
-    srcs = ["//tflite/converter/schema:schema.fbs"],
-    custom_package = "org.tensorflow.lite.schema",
-)
-
-flatbuffer_java_library(
-    name = "schema_fbs_java",
-    srcs = ["//tflite/converter/schema:schema.fbs"],
-    custom_package = "org.tensorflow.lite.schema",
-)
-
 # Generic schema for model metadata.
 flatbuffer_cc_library(
     name = "metadata_schema_cc",
