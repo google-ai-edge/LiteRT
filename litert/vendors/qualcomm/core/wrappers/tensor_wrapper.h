@@ -180,6 +180,7 @@ class TensorWrapper final {
   }
 
   void ConvertFromQuantI16ToQuantU16();
+  void ConvertFromQuantI8ToQuantU8();
 
  private:
   void SetDataBy(std::uint32_t bytes, const void* data, bool copy_data);
