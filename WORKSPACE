@@ -287,7 +287,9 @@ maven_install(
     name = "litert_maven",
     artifacts = [
         "androidx.lifecycle:lifecycle-common:2.8.7",
+        "com.google.android.odml:image:aar:1.0.0-beta1",
         "com.google.android.play:ai-delivery:0.1.1-alpha01",
+        "com.google.errorprone:error_prone_annotations:2.50.0",
         "com.google.guava:guava:33.4.6-android",
         "org.jetbrains.kotlin:kotlin-stdlib:2.0.21",
         "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0",
