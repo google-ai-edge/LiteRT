@@ -20,7 +20,7 @@ android_library(
     manifest = "AndroidManifest.xml",
     deps = [
         "//litert/support_lib/metadata:metadata_schema_fbs_android",
-        "//litert/support_lib/metadata:schema_fbs_android",
+        "//litert/support_lib/metadata/schema:schema_fbs_android",
         "@litert_maven//:com_google_errorprone_error_prone_annotations",
         "@org_checkerframework_qual",
     ],
@@ -37,7 +37,7 @@ java_library(
     javacopts = ["--release 8"],
     deps = [
         "//litert/support_lib/metadata:metadata_schema_java",
-        "//litert/support_lib/metadata:schema_fbs_java",
+        "//litert/support_lib/metadata/schema:schema_fbs_java",
         "@litert_maven//:com_google_errorprone_error_prone_annotations",
         "@org_checkerframework_qual",
     ],
@@ -49,7 +49,7 @@ java_library(
     name = "litert-metadata-lib",
     srcs = METADATA_SRCS + [
         "//litert/support_lib/metadata:metadata_schema_java_srcjar",
-        "//litert/support_lib/metadata:schema_fbs_java_srcjar",
+        "//litert/support_lib/metadata/schema:schema_fbs_java_srcjar",
     ],
     javacopts = ["--release 8"],
     # LINT.IfChange(dep)
