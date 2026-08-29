@@ -69,6 +69,15 @@ TEST(IrModelAdapterTest, GetValueShape) {
   EXPECT_EQ(adapter.GetValueShape(g.weights_id), BHWC(1, 1, 1, 10));
 }
 
+TEST(IrModelAdapterTest, GetValueType) {
+  TestGraph g;
+  IrModelAdapter adapter(g.model);
+  EXPECT_EQ(adapter.GetValueType(g.weights_id), DataType::FLOAT32);
+
+  adapter.SetValueType(g.weights_id, DataType::INT32);
+  EXPECT_EQ(adapter.GetValueType(g.weights_id), DataType::INT32);
+}
+
 TEST(IrModelAdapterTest, SetValueTypeChangesTypeAndPreservesShape) {
   TestGraph g;
   IrModelAdapter adapter(g.model);
