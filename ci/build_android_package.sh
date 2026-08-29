@@ -35,6 +35,9 @@ GEN_DIR="${SCRIPT_DIR}/gen"
 #    POM dependency.
 # 6. --depends-gpu-api to add com.google.ai.edge.litert:litert-gpu-api into
 #    POM dependency.
+# 7. Additional dependency and packaging flags accepted in any order:
+#    --depends-litert, --depends-support-api, --support-api-dependencies,
+#    --metadata-dependencies, --jar.
 build_pom_file() {
   local POM_FILE="$1"
   local TFLITE_ARTIFACT="$2"
@@ -43,6 +46,11 @@ build_pom_file() {
 
   API_DEPENDENCY=""
   GPU_API_DEPENDENCY=""
+  LITERT_DEPENDENCY=""
+  SUPPORT_API_DEPENDENCY=""
+  SUPPORT_API_DEPENDENCIES=""
+  METADATA_DEPENDENCIES=""
+  PACKAGING="aar"
 
   TFLITE_API_VERSION="$TFLITE_VERSION"
   if [[ "$TFLITE_API_VERSION" == "0.0.0-nightly-debug-SNAPSHOT" ]]; then
@@ -53,8 +61,9 @@ build_pom_file() {
   # Please note that TFLite runtime libraries depend on the API library with
   # exact same version, so that an old runtime never pulls in a new API (which
   # may has new methods / classes which are not implemented in the runtime).
-  if [[ "$5" == "--depends-api" ]]; then
-    API_DEPENDENCY=$(cat <<-END
+  for dependency_flag in "${@:5}"; do
+    if [[ "${dependency_flag}" == "--depends-api" ]]; then
+      API_DEPENDENCY=$(cat <<-END
     <dependency>
       <groupId>com.google.ai.edge.litert</groupId>
       <artifactId>litert-api</artifactId>
@@ -62,9 +71,8 @@ build_pom_file() {
     </dependency>
 END
 )
-  fi
-  if [[ "$6" == "--depends-gpu-api" ]]; then
-    GPU_API_DEPENDENCY=$(cat <<-END
+    elif [[ "${dependency_flag}" == "--depends-gpu-api" ]]; then
+      GPU_API_DEPENDENCY=$(cat <<-END
     <dependency>
       <groupId>com.google.ai.edge.litert</groupId>
       <artifactId>litert-gpu-api</artifactId>
@@ -72,7 +80,83 @@ END
     </dependency>
 END
 )
-  fi
+    elif [[ "${dependency_flag}" == "--depends-litert" ]]; then
+      LITERT_DEPENDENCY=$(cat <<-END
+    <dependency>
+      <groupId>com.google.ai.edge.litert</groupId>
+      <artifactId>litert</artifactId>
+      <version>${TFLITE_VERSION}</version>
+    </dependency>
+END
+)
+    elif [[ "${dependency_flag}" == "--depends-support-api" ]]; then
+      SUPPORT_API_DEPENDENCY=$(cat <<-END
+    <dependency>
+      <groupId>com.google.ai.edge.litert</groupId>
+      <artifactId>litert-support-api</artifactId>
+      <version>[${TFLITE_VERSION}]</version>
+    </dependency>
+END
+)
+    elif [[ "${dependency_flag}" == "--support-api-dependencies" ]]; then
+      SUPPORT_API_DEPENDENCIES=$(cat <<-END
+    <dependency>
+      <groupId>org.checkerframework</groupId>
+      <artifactId>checker-qual</artifactId>
+      <version>2.5.8</version>
+    </dependency>
+    <dependency>
+      <groupId>com.google.android.odml</groupId>
+      <artifactId>image</artifactId>
+      <version>1.0.0-beta1</version>
+    </dependency>
+    <dependency>
+      <groupId>androidx.annotation</groupId>
+      <artifactId>annotation</artifactId>
+      <version>1.1.0</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.google.auto.value</groupId>
+      <artifactId>auto-value-annotations</artifactId>
+      <version>1.6</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.google.errorprone</groupId>
+      <artifactId>error_prone_annotations</artifactId>
+      <version>2.50.0</version>
+      <scope>provided</scope>
+    </dependency>
+END
+)
+    elif [[ "${dependency_flag}" == "--metadata-dependencies" ]]; then
+      METADATA_DEPENDENCIES=$(cat <<-END
+    <dependency>
+      <groupId>org.checkerframework</groupId>
+      <artifactId>checker-qual</artifactId>
+      <version>2.5.8</version>
+    </dependency>
+    <dependency>
+      <groupId>com.google.flatbuffers</groupId>
+      <artifactId>flatbuffers-java</artifactId>
+      <version>1.12.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.google.errorprone</groupId>
+      <artifactId>error_prone_annotations</artifactId>
+      <version>2.50.0</version>
+      <scope>provided</scope>
+    </dependency>
+END
+)
+    elif [[ "${dependency_flag}" == "--jar" ]]; then
+      PACKAGING="jar"
+    else
+      echo "Unknown POM dependency flag: ${dependency_flag}" >&2
+      return 1
+    fi
+  done
 
   cat >"${POM_FILE}" <<EOF
 <project
@@ -84,7 +168,7 @@ END
   <groupId>com.google.ai.edge.litert</groupId>
   <artifactId>${TFLITE_ARTIFACT}</artifactId>
   <version>${TFLITE_VERSION}</version>
-  <packaging>aar</packaging>
+  <packaging>${PACKAGING}</packaging>
 
   <name>${TITLE}</name>
   <url>https://tensorflow.org/lite/</url>
@@ -130,6 +214,10 @@ END
   <dependencies>
 ${API_DEPENDENCY}
 ${GPU_API_DEPENDENCY}
+${LITERT_DEPENDENCY}
+${SUPPORT_API_DEPENDENCY}
+${SUPPORT_API_DEPENDENCIES}
+${METADATA_DEPENDENCIES}
   </dependencies>
 </project>
 EOF
@@ -148,22 +236,27 @@ function make_placeholder_jar() {
 # - 2. Package title, e.g. `LiteRT API`.
 # - 3. Artifact path
 # - 4. Version
-# - 5. --depends-api to add litert-api into dependencies
-# - 6. --depends-gpu-api to add litert-gpu-api into dependencies
+# - 5+. Dependency and packaging flags accepted by build_pom_file.
 prepare_pom_and_artifact() {
   local PACKAGE="$1"
   local TITLE="$2"
   local ARTIFACT_PATH="$3"
   local VERSION="$4"
+  local ARTIFACT_EXTENSION="aar"
+  for packaging_flag in "${@:5}"; do
+    if [[ "${packaging_flag}" == "--jar" ]]; then
+      ARTIFACT_EXTENSION="jar"
+    fi
+  done
   NAME="${PACKAGE}-${VERSION}"
   DST_DIR="${GEN_DIR}/${NAME}"
 
   mkdir -p "${DST_DIR}"
 
-  mv "${ARTIFACT_PATH}" "${DST_DIR}/${NAME}.aar"
+  mv "${ARTIFACT_PATH}" "${DST_DIR}/${NAME}.${ARTIFACT_EXTENSION}"
 
   POM_FILE="${DST_DIR}/${NAME}.pom"
-  build_pom_file "${POM_FILE}" "${PACKAGE}" "${TITLE}" "${VERSION}" "$5" "$6"
+  build_pom_file "${POM_FILE}" "${PACKAGE}" "${TITLE}" "${VERSION}" "${@:5}"
 
   # Source JAR, javadoc JAR and pgp signs are required to publish to OSSRH.
   # https://central.sonatype.org/publish/requirements/
@@ -199,6 +292,9 @@ if [[ "${USE_LOCAL_TF}" == "true" ]]; then
   BUILD_FLAGS+=("--config=use_local_tf")
 fi
 
+LITERT_API_AAR="bazel-bin/tflite/java/tensorflow-lite-api.aar"
+LITERT_AAR="bazel-bin/tflite/java/tensorflow-lite.aar"
+
 if [[ "$BUILD_LITERT_KOTLIN_API" == "true" ]]; then
   echo "Building Litert Kotlin API."
   bazel build "${BUILD_FLAGS[@]}" --action_env ANDROID_NDK_API_LEVEL=23 \
@@ -206,6 +302,8 @@ if [[ "$BUILD_LITERT_KOTLIN_API" == "true" ]]; then
       //litert/kotlin:litert-api-aar
   bazel build "${BUILD_FLAGS[@]}" --action_env ANDROID_NDK_API_LEVEL=23 \
       //litert/kotlin:litert-aar
+  LITERT_API_AAR="bazel-bin/litert/kotlin/litert-api-aar.aar"
+  LITERT_AAR="bazel-bin/litert/kotlin/litert-aar.aar"
 else
   echo "Skipping building Litert Kotlin API."
 fi
@@ -218,6 +316,9 @@ bazel build "${BUILD_FLAGS[@]}" \
     //tflite/java:tensorflow-lite \
     //tflite/java:tensorflow-lite-gpu-api \
     //tflite/java:tensorflow-lite-gpu \
+    //litert/support_lib:litert-support-api \
+    //litert/support_lib:litert-support \
+    //litert/support_lib/metadata/java:litert-metadata-lib \
     //tflite/acceleration/configuration:gpu_plugin \
     //tflite/acceleration/configuration:nnapi_plugin
     # //tflite/delegates/hexagon/java:tensorflow-lite-hexagon
@@ -225,15 +326,24 @@ bazel build "${BUILD_FLAGS[@]}" \
 export VERSION="${RELEASE_VERSION:-0.0.0-nightly-SNAPSHOT}"
 
 prepare_pom_and_artifact "litert-api" "LiteRT API" \
-    "bazel-bin/tflite/java/tensorflow-lite-api.aar" "${VERSION}"
+    "${LITERT_API_AAR}" "${VERSION}"
 prepare_pom_and_artifact "litert" "LiteRT implementation" \
-    "bazel-bin/tflite/java/tensorflow-lite.aar" "${VERSION}" \
+    "${LITERT_AAR}" "${VERSION}" \
     --depends-api
 prepare_pom_and_artifact "litert-gpu-api" "LiteRT GPU API" \
     "bazel-bin/tflite/java/tensorflow-lite-gpu-api.aar" "${VERSION}"
 prepare_pom_and_artifact "litert-gpu" "LiteRT GPU implementation" \
     "bazel-bin/tflite/java/tensorflow-lite-gpu.aar" "${VERSION}" \
     --depends-api --depends-gpu-api
+prepare_pom_and_artifact "litert-support-api" "LiteRT Support API" \
+    "bazel-bin/litert/support_lib/litert-support-api.aar" "${VERSION}" \
+    --depends-api --support-api-dependencies
+prepare_pom_and_artifact "litert-support" "LiteRT Support" \
+    "bazel-bin/litert/support_lib/litert-support.aar" "${VERSION}" \
+    --depends-litert --depends-support-api
+prepare_pom_and_artifact "litert-metadata" "LiteRT Metadata" \
+    "bazel-bin/litert/support_lib/metadata/java/liblitert-metadata-lib.jar" \
+    "${VERSION}" --metadata-dependencies --jar
 # prepare_pom_and_artifact "litert-hexagon" "LiteRT Hexagon" \
 #     "bazel-bin/tflite/delegates/hexagon/java/tensorflow-lite-hexagon.aar" \
 #     "${VERSION}"
