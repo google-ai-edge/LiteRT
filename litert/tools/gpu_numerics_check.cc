@@ -72,6 +72,8 @@ ABSL_FLAG(bool, external_tensor_mode, false,
 ABSL_FLAG(bool, print_outputs, false, "Whether to print the output tensors.");
 ABSL_FLAG(bool, enable_constant_tensors_sharing, false,
           "Whether to enable constant tensors sharing.");
+ABSL_FLAG(bool, gpu_use_ir_model, false,
+          "Whether to use IrModel instead of legacy GraphFloat32 for GPU.");
 ABSL_FLAG(bool, use_fp16, false, "Whether to use FP32 precision.");
 ABSL_FLAG(bool, deterministic_inputs, true,
           "If true, generate deterministic inputs for reproducibility.");
@@ -265,6 +267,9 @@ Expected<Options> GetGpuOptions() {
 
   if (absl::GetFlag(FLAGS_enable_constant_tensors_sharing)) {
     gpu_options.EnableConstantTensorSharing(true);
+  }
+  if (absl::GetFlag(FLAGS_gpu_use_ir_model)) {
+    gpu_options.EnableUseIrModel(true);
   }
   LITERT_RETURN_IF_ERROR(ConfigureScopedWeightSource(options));
   return options;

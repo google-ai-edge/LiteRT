@@ -172,6 +172,11 @@ struct LrtGpuOptions {
   // Added in version 2.1.7.
   // Pointer to SharedTensorMaps to share pre-loaded weights between models.
   std::optional<void*> shared_tensor_maps;
+
+  // Added in version 2.2.1.
+  // If true, the delegate initializes via the IrModel pipeline instead of the
+  // legacy GraphFloat32 pipeline.
+  std::optional<bool> use_ir_model;
 };
 
 LiteRtStatus LrtCreateGpuOptions(LrtGpuOptions** options) {
@@ -352,6 +357,10 @@ LiteRtStatus LrtGetOpaqueGpuOptionsData(const LrtGpuOptions* options,
     }
     ss << "]\n";
   }
+  if (options->use_ir_model.has_value()) {
+    ss << "use_ir_model = "
+       << (options->use_ir_model.value() ? "true" : "false") << "\n";
+  }
   *identifier = LrtGetGpuOptionsIdentifier();
   std::string toml_str = ss.str();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
@@ -499,6 +508,10 @@ LiteRtStatus LrtCreateGpuOptionsFromToml(const char* toml_string,
           auto res = ParseTomlStringArray(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
           (*options)->buffer_storage_tensor_patterns = *res;
+        } else if (key == "use_ir_model") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->use_ir_model = *res;
         }
         return kLiteRtStatusOk;
       });
@@ -798,6 +811,14 @@ LiteRtStatus LrtSetGpuOptionsHintFullyDelegatedToSingleDelegate(
 
   gpu_options->hint_fully_delegated_to_single_delegate =
       hint_fully_delegated_to_single_delegate;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetGpuOptionsUseIrModel(LrtGpuOptions* gpu_options,
+                                        bool enable) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->use_ir_model = enable;
   return kLiteRtStatusOk;
 }
 
@@ -1213,5 +1234,15 @@ LiteRtStatus LrtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
       << "`options` cannot be null.";
   *hint_fully_delegated_to_single_delegate =
       options->hint_fully_delegated_to_single_delegate.value_or(false);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetGpuOptionsUseIrModel(bool* enabled,
+                                        const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *enabled = options->use_ir_model.value_or(false);
   return kLiteRtStatusOk;
 }
