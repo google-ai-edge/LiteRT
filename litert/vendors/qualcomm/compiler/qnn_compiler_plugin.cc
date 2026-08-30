@@ -557,16 +557,17 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         "Overriding graph IO tensor mem type to Raw because Saver is enabled.");
     options.SetGraphIOTensorMemType(::qnn::GraphIOTensorMemType::kRaw);
   }
-  const bool ir_backend_override =
-      !options.GetDlcDir().empty() &&
-      options.GetBackendType() != ::qnn::BackendType::kIrBackend;
-  if (ir_backend_override) {
+  const ::qnn::BackendType compile_backend_type =
+      !options.GetDlcDir().empty()
+          ? ::qnn::BackendType::kIrBackend
+          : options.GetBackendType();
+  if (compile_backend_type == ::qnn::BackendType::kIrBackend &&
+      options.GetBackendType() != ::qnn::BackendType::kIrBackend) {
     LITERT_LOG(LITERT_WARNING,
-               "Overriding backend type to IR Backend because DLC dir is set.");
-    options.SetBackendType(::qnn::BackendType::kIrBackend);
+               "Using IR Backend for compilation because DLC dir is set.");
   }
 
-  if (options.GetBackendType() == ::qnn::BackendType::kIrBackend) {
+  if (compile_backend_type == ::qnn::BackendType::kIrBackend) {
     std::string dlc_dir(options.GetDlcDir());
     if (!dlc_dir.empty()) {
       std::error_code ec;
@@ -579,12 +580,14 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     }
   }
 
-  QnnManager* qnn_manager = compiler_plugin->GetOrCreateQnnManager(options);
+  auto manager_options = options;
+  manager_options.SetBackendType(compile_backend_type);
+  QnnManager* qnn_manager = compiler_plugin->GetOrCreateQnnManager(manager_options);
   if (!qnn_manager) {
     return kLiteRtStatusErrorRuntimeFailure;
   }
   ::qnn::QnnBackend* qnn_backend =
-      compiler_plugin->GetOrCreateQnnBackend(options, opt_soc_model);
+      compiler_plugin->GetOrCreateQnnBackend(manager_options, opt_soc_model);
   if (!qnn_backend) {
     return kLiteRtStatusErrorRuntimeFailure;
   }
@@ -626,7 +629,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       LITERT_LOG(LITERT_INFO, "%s", "Creating context handle");
       auto context_configs = QnnManager::DefaultContextConfigs();
       if (options.GetEnableWeightSharing()) {
-        if (options.GetBackendType() != ::qnn::BackendType::kHtpBackend) {
+        if (compile_backend_type != ::qnn::BackendType::kHtpBackend) {
           LITERT_LOG(LITERT_ERROR,
                      "Weight sharing is only supported in HTP backend.");
           return kLiteRtStatusErrorInvalidArgument;
@@ -640,7 +643,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                      "Disable weight sharing feature. Only support with "
                      "multiple partitions and on x86-64 host");
         }
-      } else if (options.GetBackendType() == ::qnn::BackendType::kGpuBackend) {
+      } else if (compile_backend_type == ::qnn::BackendType::kGpuBackend) {
         if (options.GetGpuPerformanceMode() !=
             ::qnn::GpuPerformanceMode::kDefault) {
           context_configs = QnnManager::GpuPerformanceContextConfigs(
@@ -711,7 +714,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     return kLiteRtStatusOk;
   }
 
-  if (options.GetBackendType() == ::qnn::BackendType::kIrBackend) {
+  if (compile_backend_type == ::qnn::BackendType::kIrBackend) {
     LITERT_LOG(LITERT_WARNING,
                "Since IR backend is enabled, functional context binaries are "
                "excluded from the compiled TFLite.");
