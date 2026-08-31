@@ -3495,7 +3495,17 @@ class GatherOperationParser : public TFLiteOperationParser {
     ABSL_RETURN_IF_ERROR(
         PreGetOutputTensor(context, tflite_node, 0, &tfl_output));
     if (tfl_input->type != tfl_output->type) {
-      return absl::InvalidArgumentError("Input / output dtype mismatch.");
+      // A folded fp16 weight (e.g. Chromium emits fp16 constants behind a
+      // DEQUANTIZE that this delegate folds away) legitimately feeds an fp32
+      // destination. The kernel converts to the destination type, so allow a
+      // float/float difference; anything else is still a real mismatch.
+      const bool both_float = (tfl_input->type == kTfLiteFloat16 ||
+                               tfl_input->type == kTfLiteFloat32) &&
+                              (tfl_output->type == kTfLiteFloat16 ||
+                               tfl_output->type == kTfLiteFloat32);
+      if (!both_float) {
+        return absl::InvalidArgumentError("Input / output dtype mismatch.");
+      }
     }
     return absl::OkStatus();
   }
