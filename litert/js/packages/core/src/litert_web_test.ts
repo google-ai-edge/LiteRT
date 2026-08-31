@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {add, author, AuthoredModel, CompiledModel, div, Environment, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, mul, relu, sub, supportsFeature, Tensor, TensorBufferType, type TypedArray, unloadLiteRt} from '@litertjs/core';
+import {add, author, AuthoredModel, batchMatMul, CompiledModel, div, Environment, fullyConnected, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, mul, relu, sub, supportsFeature, Tensor, TensorBufferType, type TypedArray, unloadLiteRt} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 
@@ -1681,6 +1681,60 @@ describe('LiteRt', () => {
          res1.delete();
          res2.delete();
          authoredModel.delete();
+       });
+
+    it('compiles and executes authored batchMatMul graph', async () => {
+      await resetLiteRt(true, {threads: false});
+      const dataA = new Float32Array([1, 2, 3, 4, 5, 6]);
+      const dataB = new Float32Array([7, 8, 9, 1, 2, 3]);
+      const tensorA = Tensor.fromTypedArray(dataA, [2, 3]);
+      const tensorB = Tensor.fromTypedArray(dataB, [3, 2]);
+
+      const model = author(
+          (a: Tensor, b: Tensor) => a.batchMatMul(b), {accelerator: 'wasm'});
+      const out = await model.run(tensorA, tensorB);
+
+      expect(Array.from(await out.data())).toEqual([31, 19, 85, 55]);
+
+      tensorA.delete();
+      tensorB.delete();
+      out.delete();
+      model.delete();
+    });
+
+    it('compiles and executes authored fullyConnected graph with and without bias',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+         const inputData = new Float32Array([1, 2, 3]);
+         const weightData = new Float32Array([1, 2, 3, 4, 5, 6]);
+         const biasData = new Float32Array([10, 20]);
+
+         const inputTensor = Tensor.fromTypedArray(inputData, [1, 3]);
+         const weightTensor = Tensor.fromTypedArray(weightData, [2, 3]);
+         const biasTensor = Tensor.fromTypedArray(biasData, [2]);
+
+         // Without bias: 1*1+2*2+3*3=14, 1*4+2*5+3*6=32
+         const modelNoBias = author(
+             (x: Tensor, w: Tensor) => x.fullyConnected(w),
+             {accelerator: 'wasm'});
+         const outNoBias = await modelNoBias.run(inputTensor, weightTensor);
+         expect(Array.from(await outNoBias.data())).toEqual([14, 32]);
+
+         // With bias: [14+10, 32+20] = [24, 52]
+         const modelWithBias = author(
+             (x: Tensor, w: Tensor, b: Tensor) => x.fullyConnected(w, b),
+             {accelerator: 'wasm'});
+         const outWithBias =
+             await modelWithBias.run(inputTensor, weightTensor, biasTensor);
+         expect(Array.from(await outWithBias.data())).toEqual([24, 52]);
+
+         inputTensor.delete();
+         weightTensor.delete();
+         biasTensor.delete();
+         outNoBias.delete();
+         outWithBias.delete();
+         modelNoBias.delete();
+         modelWithBias.delete();
        });
 
     it('can copy to a different environment', async () => {
