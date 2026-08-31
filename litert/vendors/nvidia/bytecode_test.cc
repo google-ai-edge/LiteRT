@@ -15,6 +15,7 @@
 #include "litert/vendors/nvidia/bytecode.h"
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <string>
@@ -174,6 +175,265 @@ TEST(TensorRtBytecodeTest, VersionOneRoundTripIsStillSupported) {
                                  parsed->engine_data + parsed->engine_size),
             engine);
   EXPECT_FALSE(parsed->trtllm_head.has_value());
+}
+
+TEST(TensorRtBytecodeTest, SharedWeightBundleSelectsEngineAndWeightViews) {
+  std::vector<TensorRtSharedWeight> shared_weights;
+  shared_weights.push_back(
+      {TensorRtWeightDataType::kFloat, 2, {1, 2, 3, 4, 5, 6, 7, 8}});
+  shared_weights.push_back(
+      {TensorRtWeightDataType::kInt4, 5, {0x12, 0x34, 0x05}});
+  const std::vector<uint8_t> engine_0 = {9, 8, 7};
+  const std::vector<uint8_t> engine_1 = {6, 5, 4, 3};
+
+  TensorRtBundleEntry entry_0;
+  entry_0.function_name = "partition_0";
+  entry_0.input_names = {"input_0"};
+  entry_0.output_names = {"output_0"};
+  entry_0.engine_data = engine_0.data();
+  entry_0.engine_size = engine_0.size();
+  entry_0.refit_weights = {{"matrix", 0}};
+  TensorRtBundleEntry entry_1;
+  entry_1.function_name = "partition_1";
+  entry_1.input_names = {"input_1"};
+  entry_1.output_names = {"output_1"};
+  entry_1.engine_data = engine_1.data();
+  entry_1.engine_size = engine_1.size();
+  entry_1.refit_weights = {{"matrix_alias", 0}, {"packed", 1}};
+
+  auto packed =
+      PackTensorRtSharedWeightBundle(shared_weights, {entry_0, entry_1});
+  ASSERT_TRUE(packed.HasValue()) << packed.Error().Message();
+  EXPECT_FALSE(
+      ParseTensorRtBytecode(packed->data(), packed->size()).HasValue());
+
+  auto parsed =
+      ParseTensorRtBytecode(packed->data(), packed->size(), "partition_1");
+  ASSERT_TRUE(parsed.HasValue()) << parsed.Error().Message();
+  EXPECT_EQ(parsed->version, kTensorRtBytecodeVersionWithSharedWeights);
+  EXPECT_EQ(parsed->function_name, "partition_1");
+  EXPECT_EQ(parsed->input_names, std::vector<std::string>({"input_1"}));
+  EXPECT_EQ(parsed->output_names, std::vector<std::string>({"output_1"}));
+  EXPECT_EQ(std::vector<uint8_t>(parsed->engine_data,
+                                 parsed->engine_data + parsed->engine_size),
+            engine_1);
+  ASSERT_EQ(parsed->refit_weights.size(), 2);
+  EXPECT_EQ(parsed->refit_weights[0].name, "matrix_alias");
+  EXPECT_EQ(parsed->refit_weights[0].data_type, TensorRtWeightDataType::kFloat);
+  EXPECT_EQ(parsed->refit_weights[0].count, 2);
+  EXPECT_EQ(std::vector<uint8_t>(
+                parsed->refit_weights[0].data,
+                parsed->refit_weights[0].data + parsed->refit_weights[0].size),
+            shared_weights[0].data);
+  EXPECT_EQ(parsed->refit_weights[1].name, "packed");
+  EXPECT_EQ(parsed->refit_weights[1].data_type, TensorRtWeightDataType::kInt4);
+  EXPECT_EQ(parsed->refit_weights[1].count, 5);
+  EXPECT_EQ(std::vector<uint8_t>(
+                parsed->refit_weights[1].data,
+                parsed->refit_weights[1].data + parsed->refit_weights[1].size),
+            shared_weights[1].data);
+  EXPECT_FALSE(
+      ParseTensorRtBytecode(packed->data(), packed->size(), "missing_partition")
+          .HasValue());
+}
+
+TEST(TensorRtBytecodeTest, SharedWeightBundleRejectsInvalidReferences) {
+  std::vector<TensorRtSharedWeight> shared_weights = {
+      {TensorRtWeightDataType::kInt8, 1, {7}}};
+  const std::vector<uint8_t> engine = {1};
+  TensorRtBundleEntry entry;
+  entry.function_name = "partition_0";
+  entry.engine_data = engine.data();
+  entry.engine_size = engine.size();
+  entry.refit_weights = {{"weight", 1}};
+  EXPECT_FALSE(
+      PackTensorRtSharedWeightBundle(shared_weights, {entry}).HasValue());
+}
+
+TEST(TensorRtBytecodeTest, SharedWeightShardKeepsAndRemapsReferencedWeights) {
+  std::vector<TensorRtSharedWeight> shared_weights = {
+      {TensorRtWeightDataType::kInt8, 2, {1, 2}},
+      {TensorRtWeightDataType::kInt8, 3, {3, 4, 5}},
+      {TensorRtWeightDataType::kInt4, 5, {0x12, 0x34, 0x05}}};
+  const std::vector<uint8_t> engine = {9, 8, 7};
+  TensorRtBundleEntry entry;
+  entry.function_name = "partition_1";
+  entry.input_names = {"input"};
+  entry.output_names = {"output"};
+  entry.engine_data = engine.data();
+  entry.engine_size = engine.size();
+  entry.refit_weights = {{"packed", 2}, {"first", 0}, {"packed_alias", 2}};
+
+  auto shard = PackTensorRtSharedWeightShard(shared_weights, entry);
+  ASSERT_TRUE(shard.HasValue()) << shard.Error().Message();
+  auto full = PackTensorRtSharedWeightBundle(shared_weights, {entry});
+  ASSERT_TRUE(full.HasValue()) << full.Error().Message();
+  EXPECT_LT(shard->size(), full->size());
+
+  auto parsed =
+      ParseTensorRtBytecode(shard->data(), shard->size(), "partition_1");
+  ASSERT_TRUE(parsed.HasValue()) << parsed.Error().Message();
+  ASSERT_EQ(parsed->refit_weights.size(), 3);
+  EXPECT_EQ(std::vector<uint8_t>(
+                parsed->refit_weights[0].data,
+                parsed->refit_weights[0].data + parsed->refit_weights[0].size),
+            shared_weights[2].data);
+  EXPECT_EQ(std::vector<uint8_t>(
+                parsed->refit_weights[1].data,
+                parsed->refit_weights[1].data + parsed->refit_weights[1].size),
+            shared_weights[0].data);
+  EXPECT_EQ(parsed->refit_weights[2].data, parsed->refit_weights[0].data);
+}
+
+TEST(TensorRtBytecodeTest, SharedWeightShardRejectsInvalidReferences) {
+  const std::vector<TensorRtSharedWeight> shared_weights = {
+      {TensorRtWeightDataType::kInt8, 1, {7}}};
+  const std::vector<uint8_t> engine = {1};
+  TensorRtBundleEntry entry;
+  entry.function_name = "partition_0";
+  entry.engine_data = engine.data();
+  entry.engine_size = engine.size();
+  entry.refit_weights = {{"weight", 1}};
+  EXPECT_FALSE(PackTensorRtSharedWeightShard(shared_weights, entry).HasValue());
+}
+
+TEST(TensorRtBytecodeTest, SharedWeightBundleRejectsOverflowingInt4Count) {
+  std::vector<TensorRtSharedWeight> shared_weights = {
+      {TensorRtWeightDataType::kInt4,
+       std::numeric_limits<uint64_t>::max(),
+       {}}};
+  const std::vector<uint8_t> engine = {1};
+  TensorRtBundleEntry entry;
+  entry.function_name = "partition_0";
+  entry.engine_data = engine.data();
+  entry.engine_size = engine.size();
+  entry.refit_weights = {{"weight", 0}};
+  EXPECT_FALSE(
+      PackTensorRtSharedWeightBundle(shared_weights, {entry}).HasValue());
+}
+
+TEST(TensorRtBytecodeTest, AotLocatorRoundTrips) {
+  const std::vector<uint8_t> artifact = {1, 3, 5, 7, 9};
+  TensorRtAotLocator locator{
+      "/tmp/tensorrt/artifact.trt_aot", artifact.size(),
+      FingerprintTensorRtArtifact(artifact.data(), artifact.size()),
+      TensorRtAotFileIdentity{/*device=*/3,
+                              /*inode=*/5,
+                              /*mtime_seconds=*/7,
+                              /*mtime_nanoseconds=*/11,
+                              /*ctime_seconds=*/13,
+                              /*ctime_nanoseconds=*/17}};
+  auto packed = PackTensorRtAotLocator(locator);
+  ASSERT_TRUE(packed.HasValue()) << packed.Error().Message();
+  ASSERT_LT(packed->size(), 128);
+
+  auto parsed = TryParseTensorRtAotLocator(packed->data(), packed->size());
+  ASSERT_TRUE(parsed.HasValue()) << parsed.Error().Message();
+  ASSERT_TRUE(parsed->has_value());
+  EXPECT_EQ(parsed->value().path, locator.path);
+  EXPECT_EQ(parsed->value().artifact_size, locator.artifact_size);
+  EXPECT_EQ(parsed->value().fingerprint, locator.fingerprint);
+  EXPECT_EQ(parsed->value().file_identity, locator.file_identity);
+  EXPECT_EQ(parsed->value().version, kTensorRtAotLocatorVersion);
+}
+
+TEST(TensorRtBytecodeTest, LegacyAotLocatorStillParsesWithoutFileIdentity) {
+  constexpr uint32_t kAotLocatorMagic = 0x414e524c;
+  const std::string path = "/tmp/legacy.trt_aot";
+  std::vector<uint8_t> packed;
+  AppendLe32(packed, kAotLocatorMagic);
+  AppendLe32(packed, 1);  // Legacy locator version.
+  AppendLe64(packed, 123);
+  AppendLe64(packed, 7);
+  AppendLe64(packed, 11);
+  AppendFixedString(packed, path);
+
+  auto parsed = TryParseTensorRtAotLocator(packed.data(), packed.size());
+  ASSERT_TRUE(parsed.HasValue()) << parsed.Error().Message();
+  ASSERT_TRUE(parsed->has_value());
+  EXPECT_EQ(parsed->value().path, path);
+  EXPECT_EQ(parsed->value().artifact_size, 123);
+  EXPECT_EQ(parsed->value().fingerprint, (TensorRtArtifactFingerprint{7, 11}));
+  EXPECT_FALSE(parsed->value().file_identity.has_value());
+  EXPECT_EQ(parsed->value().version, 1);
+}
+
+TEST(TensorRtBytecodeTest, AotFingerprintIsChunkComposable) {
+  std::vector<uint8_t> bytes(kTensorRtAotFingerprintChunkBytes + 17);
+  for (size_t i = 0; i < bytes.size(); ++i) {
+    bytes[i] = static_cast<uint8_t>(i * 31);
+  }
+  TensorRtAotFingerprintBuilder builder;
+  builder.Add(bytes.data(), kTensorRtAotFingerprintChunkBytes);
+  builder.Add(bytes.data() + kTensorRtAotFingerprintChunkBytes, 17);
+  EXPECT_EQ(builder.Finish(),
+            FingerprintTensorRtAotArtifact(bytes.data(), bytes.size()));
+  bytes.back() ^= 1;
+  EXPECT_FALSE(builder.Finish() ==
+               FingerprintTensorRtAotArtifact(bytes.data(), bytes.size()));
+}
+
+TEST(TensorRtBytecodeTest, OrdinaryBytecodeIsNotAnAotLocator) {
+  const std::vector<uint8_t> engine = {1};
+  auto packed = PackTensorRtBytecode("partition_0", {}, {"output"},
+                                     engine.data(), engine.size());
+  ASSERT_TRUE(packed.HasValue()) << packed.Error().Message();
+  auto parsed = TryParseTensorRtAotLocator(packed->data(), packed->size());
+  ASSERT_TRUE(parsed.HasValue()) << parsed.Error().Message();
+  EXPECT_FALSE(parsed->has_value());
+}
+
+TEST(TensorRtBytecodeTest, AotLocatorRejectsRelativeAndTruncatedData) {
+  TensorRtAotLocator relative{"artifact.trt_aot", 1, {2, 3}};
+  EXPECT_FALSE(PackTensorRtAotLocator(relative).HasValue());
+
+  TensorRtAotLocator locator{"/tmp/artifact.trt_aot", 1, {2, 3}};
+  auto packed = PackTensorRtAotLocator(locator);
+  ASSERT_TRUE(packed.HasValue()) << packed.Error().Message();
+  packed->pop_back();
+  EXPECT_FALSE(
+      TryParseTensorRtAotLocator(packed->data(), packed->size()).HasValue());
+}
+
+TEST(TensorRtBytecodeTest, ArtifactFingerprintDependsOnAllBytes) {
+  const std::vector<uint8_t> first = {1, 2, 3, 4};
+  const std::vector<uint8_t> second = {1, 2, 3, 5};
+  EXPECT_EQ(FingerprintTensorRtArtifact(first.data(), first.size()),
+            FingerprintTensorRtArtifact(first.data(), first.size()));
+  EXPECT_FALSE(FingerprintTensorRtArtifact(first.data(), first.size()) ==
+               FingerprintTensorRtArtifact(second.data(), second.size()));
+}
+
+TEST(TensorRtBytecodeTest, AotManifestRoundTrips) {
+  TensorRtAotLocator locator{"/tmp/artifact.trt_aot", 123, {7, 11}};
+  auto packed_locator = PackTensorRtAotLocator(locator);
+  ASSERT_TRUE(packed_locator.HasValue()) << packed_locator.Error().Message();
+  TensorRtAotManifest manifest{
+      {13, 17}, {*packed_locator}, {"partition_0", "partition_1"}, {0, 0}};
+  auto packed = PackTensorRtAotManifest(manifest);
+  ASSERT_TRUE(packed.HasValue()) << packed.Error().Message();
+  auto parsed = ParseTensorRtAotManifest(packed->data(), packed->size());
+  ASSERT_TRUE(parsed.HasValue()) << parsed.Error().Message();
+  EXPECT_EQ(parsed->cache_key, manifest.cache_key);
+  EXPECT_EQ(parsed->locators, manifest.locators);
+  EXPECT_EQ(parsed->call_infos, manifest.call_infos);
+  EXPECT_EQ(parsed->bytecode_indices, manifest.bytecode_indices);
+}
+
+TEST(TensorRtBytecodeTest, AotManifestRejectsInvalidIndexAndTruncation) {
+  TensorRtAotLocator locator{"/tmp/artifact.trt_aot", 123, {7, 11}};
+  auto packed_locator = PackTensorRtAotLocator(locator);
+  ASSERT_TRUE(packed_locator.HasValue()) << packed_locator.Error().Message();
+  TensorRtAotManifest invalid{
+      {13, 17}, {*packed_locator}, {"partition_0"}, {1}};
+  EXPECT_FALSE(PackTensorRtAotManifest(invalid).HasValue());
+
+  invalid.bytecode_indices[0] = 0;
+  auto packed = PackTensorRtAotManifest(invalid);
+  ASSERT_TRUE(packed.HasValue()) << packed.Error().Message();
+  packed->pop_back();
+  EXPECT_FALSE(
+      ParseTensorRtAotManifest(packed->data(), packed->size()).HasValue());
 }
 
 TEST(TensorRtBytecodeTest, VersionTwoRoundTripsTensorRtLlmHeadViews) {
