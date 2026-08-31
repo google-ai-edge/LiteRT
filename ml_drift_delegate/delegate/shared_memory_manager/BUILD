@@ -99,7 +99,6 @@ cc_library(
         "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:gpu_model",
         "@ml_drift//ml_drift/common:gpu_model_builder",
-        "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:model_hints",
         "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:precision",

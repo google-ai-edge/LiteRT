@@ -1421,13 +1421,12 @@ absl::Status SharedMemoryManager::CreateSharedTensor(
   BHWC value_shape = graph_adapter_->GetValueShape(shared_tensor_id);
   const DataType graph_value_type =
       graph_adapter_->GetValueType(shared_tensor_id);
-  // If the graph tensor is FLOAT32, apply the configured float precision (e.g.
-  // downcast to FP16). For any other type (INT32, INT8, BOOL, FLOAT16, etc.),
+  // If the graph tensor is a float type, apply the configured float precision
+  // (e.g. downcast to FP16). For any other type (INT32, INT8, BOOL, etc.),
   // preserve the graph's native type.
   DataType data_type =
-      (graph_value_type == DataType::FLOAT32) ? data_type_ : graph_value_type;
-  if (data_type_ == DataType::FLOAT32 &&
-      graph_value_type == DataType::FLOAT32) {
+      IsFloatType(graph_value_type) ? data_type_ : graph_value_type;
+  if (data_type_ == DataType::FLOAT32 && IsFloatType(graph_value_type)) {
     std::vector<uint32_t> consumers =
         graph_adapter_->FindConsumerOps(shared_tensor_id);
     if (consumers.size() == 1 && graph_adapter_->OpHasInputs(consumers[0])) {
@@ -1464,6 +1463,9 @@ absl::Status SharedMemoryManager::CreateSharedTensor(
   // weights from MediaPipe (e.g. inpainting models) or non-float constants
   // (e.g. shape/pack tensors).
   switch (tensor_desc.GetDataType()) {
+    case DataType::INT8:
+      tensor_desc.UploadData<int8_t>(tensor.data.int8);
+      break;
     case DataType::INT32:
       tensor_desc.UploadData<int32_t>(tensor.data.i32);
       break;
