@@ -2722,14 +2722,17 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
     int runtime_tensor_index;
     int constant_tensor_index;
     const TfLiteTensor* constant_tensor;
+    const TfLiteTensor* runtime_tensor;
     if (constant_tensor0) {
       runtime_tensor_index = 1;
       constant_tensor_index = 0;
       constant_tensor = input0;
+      runtime_tensor = input1;
     } else {
       runtime_tensor_index = 0;
       constant_tensor_index = 1;
       constant_tensor = input1;
+      runtime_tensor = input0;
     }
 
     reader->AddInput(node, runtime_tensor_index);
@@ -2760,8 +2763,10 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
     }
     if (!convertible_to_f32) {
       if (reader->IsConstantTensor(constant_tensor_index)) {
+        const SizedLayout layout = BroadcastConstLayout(
+            constant_dims->size, runtime_tensor->dims->size);
         const ::ml_drift::Value* input =
-            reader->AddConstInput(constant_tensor_index, /*layout=*/{});
+            reader->AddConstInput(constant_tensor_index, layout);
         graph->AddConsumer(node->id, input->id);
       } else {
         reader->AddInput(node, constant_tensor_index);
@@ -2898,6 +2903,29 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
     }
     return ::ml_drift::BHWC(dims->data[0], dims->data[1], dims->data[2],
                             dims->data[3]);
+  }
+
+  // Returns the layout with which a constant operand has to be read so that it
+  // broadcasts against a runtime operand of `runtime_rank`.
+  //
+  // TFLite/numpy broadcasting is right-aligned, but ml-drift maps TFLite dim 0
+  // to BHWC's batch, i.e. it is left-aligned. A constant of lower rank than the
+  // runtime operand therefore has to be relabeled onto the trailing axes;
+  // otherwise the GPU elementwise broadcast reads only batch-0 and splats it to
+  // every channel.
+  //
+  // This encodes the same right-alignment rule as
+  // ExtractTensorShapeWithTfLiteBroadcast() above, expressed as a SizedLayout
+  // because that is what ObjectReader::AddConstInput() takes. Keep the two in
+  // sync.
+  static SizedLayout BroadcastConstLayout(int constant_rank, int runtime_rank) {
+    SizedLayout layout;
+    if (constant_rank < runtime_rank) {
+      layout.layout_1d = ::ml_drift::Layout::SCALAR;  // [C] -> 1x1x1xC
+      layout.layout_2d = ::ml_drift::Layout::HW;      // [W,C] -> 1x1xWxC
+      layout.layout_3d = ::ml_drift::Layout::HWC;     // [H,W,C] -> 1xHxWxC
+    }
+    return layout;
   }
 
   absl::Status PreCheckInputsWithConstTensor(const TfLiteContext* context,

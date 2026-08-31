@@ -14,11 +14,14 @@
 
 #include "ml_drift_delegate/tflite/object_reader.h"
 
+#include <any>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "testing/base/public/gmock.h"
@@ -28,6 +31,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift/common/types.h"  // from @ml_drift
@@ -212,6 +216,103 @@ TEST_F(ObjectBuilderSharingTest, SetSharedTensorWorks) {
                                      .global_id = kGlobalBufferId,
                                      .dequant_forced = false};
   EXPECT_EQ(shared_tensor_map_.at(kFakeGraphNodeId), kExpected);
+}
+
+// Tests for AddConstInput(). The layout requested by the caller must reach both
+// the Value and the constant data held by the CONSTANT node's attributes:
+// ml-drift's ReserveGraphTensors() cross-checks the two shapes and rejects the
+// model if they disagree.
+class AddConstInputTest : public testing::Test {
+ public:
+  // StubTfLiteContext wires tensors {1, 2} as the inputs of the node under
+  // test.
+  enum { kConstTensorIdx = 2, kConstInputPos = 1 };
+
+ protected:
+  // Turns the constant input into an INT32 tensor of shape `dims` holding
+  // `data`.
+  void SetUpConstInt32Tensor(const std::vector<int>& dims,
+                             const std::vector<int32_t>& data) {
+    context_->ChangeTensorShape(kConstTensorIdx, dims);
+    TfLiteTensor* tensor = context_->tensor(kConstTensorIdx);
+    tensor->type = kTfLiteInt32;
+    tensor->allocation_type = kTfLiteMmapRo;
+    ASSERT_EQ(tensor->bytes, data.size() * sizeof(int32_t));
+    std::memcpy(tensor->data.raw, data.data(), tensor->bytes);
+  }
+
+  // Returns the constant tensor stored in the attributes of the CONSTANT node
+  // producing `value`.
+  const ::ml_drift::TensorInt32* GetConstAttrTensor(
+      const ::ml_drift::Value* value) {
+    ::ml_drift::Node* producer = graph_.FindProducer(value->id);
+    if (producer == nullptr) return nullptr;
+    const auto* attr = std::any_cast<::ml_drift::ConstTensorAttributes>(
+        &producer->operation.attributes);
+    if (attr == nullptr) return nullptr;
+    return std::get_if<::ml_drift::TensorInt32>(&attr->tensor);
+  }
+
+  std::unique_ptr<StubTfLiteContext> context_ =
+      std::make_unique<StubTfLiteContext>(kTfLiteBuiltinMinimum,
+                                          /*op_version=*/1,
+                                          /*num_inputs=*/2,
+                                          /*shape=*/std::vector<int>({1, 3}));
+  ::ml_drift::GraphFloat32 graph_;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value_;
+  ObjectReader reader_ = ObjectReader(
+      &graph_, context_.get(), context_->node(), &tensor_to_value_,
+      /*quant_conversion_map=*/nullptr, /*tensor_to_buffer_id_map=*/nullptr,
+      /*tensor_to_external_buffer_id_map=*/nullptr,
+      /*shared_tensor_map=*/nullptr);
+};
+
+TEST_F(AddConstInputTest, DefaultLayoutPutsFirstDimensionInBatch) {
+  SetUpConstInt32Tensor(/*dims=*/{3}, /*data=*/{0, 7, 126});
+
+  const ::ml_drift::Value* value =
+      reader_.AddConstInput(kConstInputPos, /*layout=*/{});
+
+  ASSERT_NE(value, nullptr);
+  EXPECT_EQ(value->tensor.shape, ::ml_drift::BHWC(3, 1, 1, 1));
+  const ::ml_drift::TensorInt32* t = GetConstAttrTensor(value);
+  ASSERT_NE(t, nullptr);
+  EXPECT_EQ(t->shape, value->tensor.shape);
+  EXPECT_THAT(t->data, testing::ElementsAre(0, 7, 126));
+}
+
+TEST_F(AddConstInputTest, Layout1dScalarMovesLengthToChannelsInValueAndAttr) {
+  SetUpConstInt32Tensor(/*dims=*/{3}, /*data=*/{0, 7, 126});
+
+  SizedLayout layout;
+  layout.layout_1d = ::ml_drift::Layout::SCALAR;
+  const ::ml_drift::Value* value =
+      reader_.AddConstInput(kConstInputPos, layout);
+
+  ASSERT_NE(value, nullptr);
+  EXPECT_EQ(value->tensor.shape, ::ml_drift::BHWC(1, 1, 1, 3));
+  const ::ml_drift::TensorInt32* t = GetConstAttrTensor(value);
+  ASSERT_NE(t, nullptr);
+  // The attributes must carry the very same shape, and relabeling axes of
+  // extent 1 must not reorder the data.
+  EXPECT_EQ(t->shape, value->tensor.shape);
+  EXPECT_THAT(t->data, testing::ElementsAre(0, 7, 126));
+}
+
+TEST_F(AddConstInputTest, Layout2dHwMovesDimensionsToWidthAndChannels) {
+  SetUpConstInt32Tensor(/*dims=*/{2, 3}, /*data=*/{0, 1, 2, 3, 4, 5});
+
+  SizedLayout layout;
+  layout.layout_2d = ::ml_drift::Layout::HW;
+  const ::ml_drift::Value* value =
+      reader_.AddConstInput(kConstInputPos, layout);
+
+  ASSERT_NE(value, nullptr);
+  EXPECT_EQ(value->tensor.shape, ::ml_drift::BHWC(1, 1, 2, 3));
+  const ::ml_drift::TensorInt32* t = GetConstAttrTensor(value);
+  ASSERT_NE(t, nullptr);
+  EXPECT_EQ(t->shape, value->tensor.shape);
+  EXPECT_THAT(t->data, testing::ElementsAre(0, 1, 2, 3, 4, 5));
 }
 
 TEST(TfLiteTensorToTensorTest, Float2D) {
