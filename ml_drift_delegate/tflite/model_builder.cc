@@ -7183,6 +7183,7 @@ TfLiteIntArray* GetOpsToReplaceWithOptions(
       allowed_out_types.push_back(kTfLiteUInt8);
     }
     if (registration->builtin_code == kTfLiteBuiltinArgMax) {
+      allowed_in_types.push_back(kTfLiteInt32);
       allowed_out_types = {kTfLiteInt32};
     }
     if (registration->builtin_code == kTfLiteBuiltinReduceAll ||
