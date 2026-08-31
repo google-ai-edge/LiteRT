@@ -16,6 +16,8 @@ The build and run docs live in [doc/](./doc/). Read them in this order:
 flowchart LR
     A[PREREQUISITES.md<br/>Install toolchain] --> B[QAIRT_SDK.md<br/>QNN concepts and libraries]
     B --> C[HTP_INSTRUCTIONS.md<br/>Compile and execute]
+    B -. "Pip, no source build" .-> H[PYTHON_AOT_INSTRUCTIONS.md<br/>Compile via pip-installed packages]
+    H -. "Run compiled model on NPU" .-> C
     B -. "QNN Native Path" .-> G[LITERT_QNN_NATIVE_RUN.md<br/>Run a .dlc via qnn-net-run]
     C -. "IoT target" .-> D[IOT_DEVICE_SETUP.md<br/>Flash oe-linux device]
     C -. "LPAI target" .-> E[LPAI_INSTRUCTIONS.md<br/>Always-on low-power engine]
@@ -27,6 +29,7 @@ flowchart LR
 | [PREREQUISITES.md](./doc/PREREQUISITES.md) | Always | Install the toolchain. Skip if already installed. |
 | [QAIRT_SDK.md](./doc/QAIRT_SDK.md) | Always | QNN backends, platforms, and how to locate the QNN libraries (`.so`), plus QAIRT native tools. |
 | [HTP_INSTRUCTIONS.md](./doc/HTP_INSTRUCTIONS.md) | Always | Compile and run a model: AOT on host (Bazel / CMake) and JIT on device. |
+| [PYTHON_AOT_INSTRUCTIONS.md](./doc/PYTHON_AOT_INSTRUCTIONS.md) | Conditional | Compile a `.tflite` for the NPU on x86 Linux via pip-installed packages (`ai-edge-litert` + `ai-edge-litert-sdk-qualcomm`); no Bazel/CMake source build. |
 | [IOT_DEVICE_SETUP.md](./doc/IOT_DEVICE_SETUP.md) | Conditional | Flash an IoT device (with Qualcomm oe-linux or Qualcomm Ubuntu), then follow [Run on device (IoT device with oe-linux)](./doc/HTP_INSTRUCTIONS.md#run-on-device-iot-device-with-oe-linux) in HTP_INSTRUCTIONS.md. |
 | [LPAI_INSTRUCTIONS.md](./doc/LPAI_INSTRUCTIONS.md) | Conditional | Target the LPAI (Low Power AI) backend for always-on embedded use cases. |
 | [CUSTOM_OP_INSTRUCTIONS.md](./doc/CUSTOM_OP_INSTRUCTIONS.md) | Conditional | Build a QNN custom op package and run TFLite custom ops on the NPU. |

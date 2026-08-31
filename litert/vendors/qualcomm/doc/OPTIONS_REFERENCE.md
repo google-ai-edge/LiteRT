@@ -203,6 +203,7 @@ apply_plugin_main \
 ```bash
 run_model \
     --graph=model_compiled.tflite \
+    --accelerator npu \
     --qualcomm_htp_performance_mode=burst \
     --qualcomm_profiling=detailed
 ```
