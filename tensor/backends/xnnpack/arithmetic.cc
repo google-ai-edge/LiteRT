@@ -1854,6 +1854,10 @@ absl::Status OpMixin<RopeOperation, XnnpackMixinTag>::ToXnnpack(
 
   LRT_TENSOR_ASSIGN_OR_RETURN(const auto& weights_info,
                               graph::GetInfo(op.inputs[1]));
+  if (weights_info.shape.empty()) {
+    return absl::InvalidArgumentError(
+        absl::StrFormat("%s: weights tensor must not be a 0D scalar", op_name));
+  }
   size_t max_tokens = weights_info.shape[0];
   LRT_TENSOR_RETURN_IF_ERROR(xnn_define_rope(ctx.subgraph(), max_tokens,
                                              input_id, weights_id, output_id,
