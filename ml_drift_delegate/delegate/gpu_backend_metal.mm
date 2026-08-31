@@ -94,6 +94,11 @@ GpuBackendMetal::~GpuBackendMetal() {
   @autoreleasepool {
     absl::MutexLock lock(&residency_mutex_);
     ReleaseResidencyLocked();
+    if (@available(macOS 15.0, iOS 18.0, *)) {
+      if (residency_set_ != nil && command_queue_ != nil) {
+        [command_queue_ removeResidencySet:residency_set_];
+      }
+    }
   }
 }
 
