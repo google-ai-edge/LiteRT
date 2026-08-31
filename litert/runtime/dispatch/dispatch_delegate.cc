@@ -205,15 +205,17 @@ litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
                        LITERT_API_VERSION_PATCH},
       environment_options_, options_));
 
-  const char* vendor_id;
+  const char* vendor_id = nullptr;
   LITERT_RETURN_IF_ERROR(LiteRtDispatchGetVendorId(&vendor_id));
-  LITERT_LOG(LITERT_DEBUG, "Dispatch API vendor ID: %s", vendor_id);
+  LITERT_LOG(LITERT_DEBUG, "Dispatch API vendor ID: %s",
+             vendor_id != nullptr ? vendor_id : "(null)");
 
-  const char* build_id;
+  const char* build_id = nullptr;
   LITERT_RETURN_IF_ERROR(LiteRtDispatchGetBuildId(&build_id));
-  LITERT_LOG(LITERT_DEBUG, "Dispatch API build ID: %s", build_id);
+  LITERT_LOG(LITERT_DEBUG, "Dispatch API build ID: %s",
+             build_id != nullptr ? build_id : "(null)");
 
-  LiteRtApiVersion api_version;
+  LiteRtApiVersion api_version = {};
   LITERT_RETURN_IF_ERROR(LiteRtDispatchGetApiVersion(&api_version));
   LITERT_LOG(LITERT_DEBUG, "Dispatch API version: %d.%d.%d", api_version.major,
              api_version.minor, api_version.patch);
@@ -225,7 +227,7 @@ litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
                       "Found Dispatch API with an unsupported version");
   }
 
-  int capabilities;
+  int capabilities = 0;
   LITERT_RETURN_IF_ERROR(LiteRtDispatchGetCapabilities(&capabilities));
   LITERT_LOG(LITERT_DEBUG, "Dispatch API capabilities: %d", capabilities);
 

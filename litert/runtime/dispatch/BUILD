@@ -173,9 +173,11 @@ cc_test(
         "//litert/vendors/examples:example_plugin_so_data",
     ],
     deps = [
+        ":dispatch",
         "//litert/c:litert_common",
         "//litert/c:litert_profiler_types",
         "//litert/c/internal:litert_dispatch_delegate",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_common",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_environment_options",

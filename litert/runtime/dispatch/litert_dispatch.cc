@@ -124,7 +124,11 @@ litert::Expected<std::string> GetSharedLibraryPath(
     return litert::Error(kLiteRtStatusErrorRuntimeFailure);
   }
   if (dispatch_lib_paths.size() > 1) {
-    LITERT_LOG(LITERT_WARNING, "Multiple dispatch libraries found");
+    LITERT_LOG(LITERT_WARNING, "Multiple dispatch libraries found in %s:",
+               dispatch_lib_dir.str_value);
+    for (const auto& path : dispatch_lib_paths) {
+      LITERT_LOG(LITERT_WARNING, "  Candidate: %s", path.c_str());
+    }
   }
   return dispatch_lib_paths.front();
 }
@@ -227,6 +231,7 @@ LiteRtStatus LiteRtDispatchGetVendorId(const char** vendor_id) {
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
+  *vendor_id = nullptr;
   INVOKE_FUNC(get_vendor_id, vendor_id);
 }
 
@@ -235,6 +240,7 @@ LiteRtStatus LiteRtDispatchGetBuildId(const char** build_id) {
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
+  *build_id = nullptr;
   INVOKE_FUNC(get_build_id, build_id);
 }
 
@@ -243,6 +249,7 @@ LiteRtStatus LiteRtDispatchGetCapabilities(int* capabilities) {
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
+  *capabilities = 0;
   INVOKE_FUNC(get_capabilities, capabilities);
 }
 
@@ -253,6 +260,7 @@ LiteRtStatus LiteRtDispatchDeviceContextCreate(
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
+  *device_context = nullptr;
   INVOKE_FUNC(device_context_create, runtime_context, options, device_context);
 }
 
