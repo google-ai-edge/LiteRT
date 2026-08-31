@@ -28,6 +28,52 @@ namespace litert::nvidia {
 inline constexpr uint32_t kTensorRtBytecodeVersion = 1;
 inline constexpr uint32_t kTensorRtBytecodeVersionWithTrtLlmHead = 2;
 inline constexpr uint32_t kTensorRtBytecodeVersionWithTypedHead = 3;
+inline constexpr uint32_t kTensorRtBytecodeVersionWithSharedWeights = 4;
+
+// Versioned POD payload behind LiteRtJitExecutable. The compiler plugin owns
+// the bytecode for the lifetime of the compiled result; dispatch reads it
+// directly instead of forcing LiteRT to copy it into the JIT-rewritten
+// FlatBuffer.
+inline constexpr uint64_t kTensorRtJitExecutableMagic =
+    0x4a49544e56545254ULL;  // "JITNVTRT"
+inline constexpr uint32_t kTensorRtJitExecutableVersion = 1;
+
+// A small, serializable locator used by the persistent AOT path. The LiteRT
+// model cache stores this locator while the large TensorRT bytecode bundle
+// remains in a separate immutable, memory-mappable artifact file.
+inline constexpr uint32_t kTensorRtAotLocatorVersion = 1;
+inline constexpr uint32_t kTensorRtAotManifestVersion = 1;
+
+struct TensorRtJitExecutable {
+  uint64_t magic = kTensorRtJitExecutableMagic;
+  uint32_t version = kTensorRtJitExecutableVersion;
+  uint32_t reserved = 0;
+  const void* bytecode_data = nullptr;
+  uint64_t bytecode_size = 0;
+};
+
+struct TensorRtArtifactFingerprint {
+  uint64_t low = 0;
+  uint64_t high = 0;
+
+  friend bool operator==(const TensorRtArtifactFingerprint& lhs,
+                         const TensorRtArtifactFingerprint& rhs) {
+    return lhs.low == rhs.low && lhs.high == rhs.high;
+  }
+};
+
+struct TensorRtAotLocator {
+  std::string path;
+  uint64_t artifact_size = 0;
+  TensorRtArtifactFingerprint fingerprint;
+};
+
+struct TensorRtAotManifest {
+  TensorRtArtifactFingerprint cache_key;
+  std::vector<std::vector<uint8_t>> locators;
+  std::vector<std::string> call_infos;
+  std::vector<uint32_t> bytecode_indices;
+};
 
 enum class TensorRtLlmHeadWeightFormat : uint32_t {
   kInvalid = 0,
@@ -70,6 +116,59 @@ struct TensorRtLlmHead {
   size_t bf16_scales_size = 0;
 };
 
+// TensorRT weight types are kept independent of NvInfer headers so the
+// bytecode parser remains usable by LiteRT tooling that does not link the
+// TensorRT SDK. The numeric values intentionally match nvinfer1::DataType.
+enum class TensorRtWeightDataType : int32_t {
+  kFloat = 0,
+  kHalf = 1,
+  kInt8 = 2,
+  kInt32 = 3,
+  kBool = 4,
+  kUint8 = 5,
+  kFp8 = 6,
+  kBf16 = 7,
+  kInt64 = 8,
+  kInt4 = 9,
+  kFp4 = 10,
+  kE8m0 = 11,
+};
+
+// A view of one named weight required to refit a stripped TensorRT plan. The
+// data aliases the enclosing bytecode buffer and remains valid only while the
+// buffer is alive.
+struct TensorRtRefitWeight {
+  std::string name;
+  TensorRtWeightDataType data_type = TensorRtWeightDataType::kFloat;
+  uint64_t count = 0;
+  const uint8_t* data = nullptr;
+  size_t size = 0;
+};
+
+// Owning input used when packing the shared store. Multiple engine entries
+// can reference the same element by index.
+struct TensorRtSharedWeight {
+  TensorRtWeightDataType data_type = TensorRtWeightDataType::kFloat;
+  uint64_t count = 0;
+  std::vector<uint8_t> data;
+};
+
+struct TensorRtSharedWeightRef {
+  std::string name;
+  uint32_t shared_weight_index = 0;
+};
+
+// Non-owning engine view used only for PackTensorRtSharedWeightBundle().
+struct TensorRtBundleEntry {
+  std::string function_name;
+  std::vector<std::string> input_names;
+  std::vector<std::string> output_names;
+  const void* engine_data = nullptr;
+  size_t engine_size = 0;
+  const TensorRtLlmHead* trtllm_head = nullptr;
+  std::vector<TensorRtSharedWeightRef> refit_weights;
+};
+
 struct TensorRtBytecode {
   uint32_t version = 0;
   std::string function_name;
@@ -78,6 +177,7 @@ struct TensorRtBytecode {
   const uint8_t* engine_data = nullptr;
   size_t engine_size = 0;
   std::optional<TensorRtLlmHead> trtllm_head;
+  std::vector<TensorRtRefitWeight> refit_weights;
 };
 
 Expected<std::vector<uint8_t>> PackTensorRtBytecode(
@@ -85,7 +185,37 @@ Expected<std::vector<uint8_t>> PackTensorRtBytecode(
     const std::vector<std::string>& outputs, const void* engine_data,
     size_t engine_size, const TensorRtLlmHead* trtllm_head = nullptr);
 
-Expected<TensorRtBytecode> ParseTensorRtBytecode(const void* data, size_t size);
+// Packs several stripped TensorRT plans and one deduplicated weight store into
+// a single bytecode module. LiteRT dispatch calls select an engine by their
+// call-info function name while sharing the same serialized module.
+Expected<std::vector<uint8_t>> PackTensorRtSharedWeightBundle(
+    const std::vector<TensorRtSharedWeight>& shared_weights,
+    const std::vector<TensorRtBundleEntry>& entries);
+
+// Returns a stable, non-cryptographic 128-bit content fingerprint. The AOT
+// writer additionally compares existing artifacts byte-for-byte before reuse;
+// dispatch uses the fingerprint to detect accidental corruption.
+TensorRtArtifactFingerprint FingerprintTensorRtArtifact(const void* data,
+                                                        size_t size);
+
+Expected<std::vector<uint8_t>> PackTensorRtAotLocator(
+    const TensorRtAotLocator& locator);
+
+// Returns nullopt when data is ordinary TensorRT bytecode. Once the AOT magic
+// is present, malformed locator data is reported as an error rather than being
+// reinterpreted as engine bytecode.
+Expected<std::optional<TensorRtAotLocator>> TryParseTensorRtAotLocator(
+    const void* data, size_t size);
+
+Expected<std::vector<uint8_t>> PackTensorRtAotManifest(
+    const TensorRtAotManifest& manifest);
+Expected<TensorRtAotManifest> ParseTensorRtAotManifest(const void* data,
+                                                       size_t size);
+
+// Legacy bytecodes contain one engine and ignore function_name. Version 4
+// bundles require function_name when they contain more than one engine.
+Expected<TensorRtBytecode> ParseTensorRtBytecode(
+    const void* data, size_t size, const char* function_name = nullptr);
 
 }  // namespace litert::nvidia
 
