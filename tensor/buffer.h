@@ -187,6 +187,12 @@ class SpanCpuBuffer : public Buffer {
   SpanCpuBuffer(const std::byte* data, size_t bytes)
       : bytes_(bytes), data_(const_cast<std::byte*>(data)) {}
 
+  // Creates a viewing buffer from a vector.
+  template <class T>
+  explicit SpanCpuBuffer(const std::vector<T>& vec)
+      : SpanCpuBuffer(reinterpret_cast<const std::byte*>(vec.data()),
+                      sizeof(T) * vec.size()) {}
+
   // Creates a viewing buffer from a C++ array.
   template <class T, size_t N>
   explicit SpanCpuBuffer(const std::array<T, N>& array)

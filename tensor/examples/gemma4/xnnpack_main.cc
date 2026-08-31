@@ -41,7 +41,6 @@ limitations under the License.
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "tensor/arithmetic.h"
 #include "tensor/backends/xnnpack/arithmetic.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
@@ -50,6 +49,7 @@ limitations under the License.
 #include "tensor/examples/gemma4/gemma4_config.h"
 #include "tensor/examples/gemma4/gemma4_graph.h"
 #include "tensor/examples/gemma4/gemma4_weights.h"
+#include "tensor/examples/gemma4/helpers/quantized_embedding.h"
 #include "tensor/examples/gemma4/helpers/rope.h"
 #include "tensor/examples/ops/transformer/transformer_ops_xnnpack.h"
 #include "tensor/examples/utils/initialization.h"
@@ -152,67 +152,6 @@ absl::Status SlicePerLayerModelProjectionWeights(
   return absl::OkStatus();
 }
 
-absl::StatusOr<LockedBufferSpan<const float>> GetOrDequantizeEmbeddingTableFp32(
-    const XnnTensor& tensor) {
-  TRACE_EVENT(kTensorApiCategory, "GetOrDequantizeEmbeddingTableFp32");
-  LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & buffer, tensor.GetBuffer());
-  LockedBufferSpan<const float> data = LockedBufferSpan<const float>::Empty();
-  if (tensor.GetQuantization() != nullptr) {
-    XnnTensor dequantized = Dequantize(tensor);
-    LRT_TENSOR_ASSIGN_OR_RETURN(auto runner,
-                                XnnpackRunner::Create({dequantized}));
-    LRT_TENSOR_RETURN_IF_ERROR(runner.Run());
-    return runner.ReadOutputAs<float>(dequantized);
-  }
-  return buffer.Lock().As<const float>();
-}
-
-std::vector<float> EmbeddingLookupCpu(const std::vector<int32_t>& tokens,
-                                      absl::Span<const float> embedding_table,
-                                      const int vocab_size, const int emb_dim) {
-  const size_t seq_len = tokens.size();
-  std::vector<float> embeddings;
-  embeddings.reserve(seq_len * emb_dim);
-  for (size_t i = 0; i < seq_len; ++i) {
-    int32_t token_id = tokens[i];
-    if (token_id < 0 || token_id >= vocab_size) {
-      ABSL_LOG(WARNING) << "Token ID " << token_id << " out of range [0, "
-                        << vocab_size << "), using 0";
-      token_id = 0;
-    }
-    const absl::Span<const float> src =
-        embedding_table.subspan(token_id * emb_dim, emb_dim);
-    embeddings.insert(embeddings.end(), src.begin(), src.end());
-  }
-  return embeddings;
-}
-
-std::vector<std::vector<float>> GetPerLayerTokenEmbeddingsCpu(
-    const std::vector<int32_t>& tokens,
-    absl::Span<const float> emb_per_layer_table, const int vocab_size,
-    const int num_layers, const int per_layer_input_dim) {
-  size_t seq_len = tokens.size();
-  size_t total_per_layer_dim =
-      static_cast<size_t>(num_layers) * per_layer_input_dim;
-  std::vector<std::vector<float>> result(
-      num_layers, std::vector<float>(seq_len * per_layer_input_dim));
-
-  for (size_t s = 0; s < seq_len; ++s) {
-    int32_t token_id = tokens[s];
-    if (token_id < 0 || token_id >= vocab_size) {
-      token_id = 0;
-    }
-    const float* src = emb_per_layer_table.data() +
-                       static_cast<size_t>(token_id) * total_per_layer_dim;
-    for (int l = 0; l < num_layers; ++l) {
-      std::copy(src + l * per_layer_input_dim,
-                src + (l + 1) * per_layer_input_dim,
-                result[l].data() + s * per_layer_input_dim);
-    }
-  }
-  return result;
-}
-
 absl::Status FillAttentionMask(const Shape& shape, const absl::Span<float> mask,
                                const bool is_local,
                                const int sliding_window_size) {
@@ -302,8 +241,8 @@ void AppendTokenToKvCache(std::vector<float>& cache_buf,
 
 struct LoadedTensors {
   absl::flat_hash_map<std::string, TensorHandle> weights_handle;
-  LockedBufferSpan<const float> embedding_table_fp32;
-  LockedBufferSpan<const float> emb_per_layer_table_fp32;
+  std::unique_ptr<GemmaEmbeddingTable> token_embedding;
+  std::unique_ptr<GemmaEmbeddingTable> emb_per_layer_table;
 };
 
 absl::StatusOr<LoadedTensors> LoadWeightsAndPrepareTensors(
@@ -315,16 +254,16 @@ absl::StatusOr<LoadedTensors> LoadWeightsAndPrepareTensors(
   LRT_TENSOR_RETURN_IF_ERROR(
       SlicePerLayerModelProjectionWeights(config, weights_handle));
   LRT_TENSOR_ASSIGN_OR_RETURN(
-      LockedBufferSpan<const float> embedding_table_fp32,
-      GetOrDequantizeEmbeddingTableFp32(
-          weights_handle["model.embed_tokens.weight"]));
+      std::unique_ptr<GemmaEmbeddingTable> token_embedding,
+      GemmaEmbeddingTable::Create(weights_handle["model.embed_tokens.weight"],
+                                  config.embed_dim));
   LRT_TENSOR_ASSIGN_OR_RETURN(
-      LockedBufferSpan<const float> emb_per_layer_table_fp32,
-      GetOrDequantizeEmbeddingTableFp32(
-          weights_handle["model.embed_tokens_per_layer.weight"]));
-  return LoadedTensors{std::move(weights_handle),
-                       std::move(embedding_table_fp32),
-                       std::move(emb_per_layer_table_fp32)};
+      std::unique_ptr<GemmaEmbeddingTable> emb_per_layer_table,
+      GemmaEmbeddingTable::Create(
+          weights_handle["model.embed_tokens_per_layer.weight"],
+          config.num_layers * config.per_layer_input_dim));
+  return LoadedTensors{std::move(weights_handle), std::move(token_embedding),
+                       std::move(emb_per_layer_table)};
 }
 
 struct BuiltGraphs {
@@ -497,24 +436,26 @@ absl::StatusOr<int32_t> ExecutePrefillPass(
     XnnpackRunner& runner, Gemma4Inputs<XnnpackMixinTag>& inputs,
     Gemma4Outputs<XnnpackMixinTag>& outputs, const Config& config,
     const std::vector<int32_t>& input_tokens,
-    const absl::Span<const float> embedding_table_fp32,
-    const absl::Span<const float> emb_per_layer_table_fp32,
+    const GemmaEmbeddingTable& token_embedding,
+    const GemmaEmbeddingTable& emb_per_layer_table,
     PrefillTiming& prefill_timing, bool verbose) {
   TRACE_EVENT(kTensorApiCategory, "Prefill");
   Timer::LapScope lap_scope = prefill_timing.prefill.Lap();
 
   int seq_len = static_cast<int>(input_tokens.size());
-  std::vector<float> embedded_input;
-  std::vector<std::vector<float>> per_layer_tok_embs;
+  std::vector<float> embedded_input(seq_len * config.embed_dim);
+  std::vector<std::vector<float>> per_layer_tok_embs(
+      config.num_layers,
+      std::vector<float>(seq_len * config.per_layer_input_dim));
   {
     TRACE_EVENT(kTensorApiCategory, "CpuPrep");
     Timer::LapScope cpu_prep_scope = prefill_timing.cpu_prep.Lap();
-    embedded_input = EmbeddingLookupCpu(input_tokens, embedding_table_fp32,
-                                        config.vocab_size, config.embed_dim);
+    LRT_TENSOR_RETURN_IF_ERROR(
+        token_embedding.Lookup(input_tokens, absl::MakeSpan(embedded_input)));
 
-    per_layer_tok_embs = GetPerLayerTokenEmbeddingsCpu(
-        input_tokens, emb_per_layer_table_fp32, config.vocab_size,
-        config.num_layers, config.per_layer_input_dim);
+    LRT_TENSOR_RETURN_IF_ERROR(emb_per_layer_table.LookupPerLayer(
+        input_tokens, config.num_layers, config.per_layer_input_dim,
+        absl::MakeSpan(per_layer_tok_embs)));
   }
 
   {
@@ -561,30 +502,32 @@ absl::StatusOr<int32_t> ExecuteDecodeStep(
     XnnpackRunner& decode_runner, Gemma4Inputs<XnnpackMixinTag>& decode_inputs,
     Gemma4Outputs<XnnpackMixinTag>& decode_outputs, const Config& config,
     int32_t current_token, int cache_len,
-    const absl::Span<const float> embedding_table_fp32,
-    const absl::Span<const float> emb_per_layer_table_fp32,
+    const GemmaEmbeddingTable& token_embedding_table,
+    const GemmaEmbeddingTable& emb_per_layer_table,
     std::vector<float>& global_cos, std::vector<float>& global_sin,
     std::vector<float>& local_cos, std::vector<float>& local_sin,
     DecodeTiming& decode_timing) {
   TRACE_EVENT(kTensorApiCategory, "Decode");
   Timer::LapScope lap_scope = decode_timing.decode.Lap();
 
-  std::vector<int32_t> token_vec = {current_token};
-  std::vector<float> token_embedding;
-  std::vector<std::vector<float>> token_per_layer_embs;
   const int32_t seq_k = cache_len + 1;
   std::vector<float> sliding_mask(static_cast<size_t>(seq_k), 0.0f);
   std::vector<float> global_mask(static_cast<size_t>(seq_k), 0.0f);
 
+  LockedBufferSpan<const float> token_embeddings =
+      LockedBufferSpan<const float>::Empty();
+  std::vector<LockedBufferSpan<const float>> token_per_layer_embs;
+
   {
     TRACE_EVENT(kTensorApiCategory, "CpuPrep");
     Timer::LapScope cpu_prep_scope = decode_timing.cpu_prep.Lap();
-    token_embedding = EmbeddingLookupCpu(token_vec, embedding_table_fp32,
-                                         config.vocab_size, config.embed_dim);
 
-    token_per_layer_embs = GetPerLayerTokenEmbeddingsCpu(
-        token_vec, emb_per_layer_table_fp32, config.vocab_size,
-        config.num_layers, config.per_layer_input_dim);
+    LRT_TENSOR_ASSIGN_OR_RETURN(token_embeddings,
+                                token_embedding_table.Lookup(current_token));
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        token_per_layer_embs,
+        emb_per_layer_table.LookupPerLayer(current_token, config.num_layers,
+                                           config.per_layer_input_dim));
 
     RopeCosSin(/*start=*/cache_len, /*seq_len=*/1, config.global_key_size,
                config.global_base_frequency, config.global_rope_proportion,
@@ -612,8 +555,10 @@ absl::StatusOr<int32_t> ExecuteDecodeStep(
   {
     TRACE_EVENT(kTensorApiCategory, "Uploads");
     Timer::LapScope uploads_scope = decode_timing.uploads.Lap();
-    LRT_TENSOR_RETURN_IF_ERROR(
-        decode_runner.SetInput(decode_inputs.embedded_input, token_embedding));
+    absl::Span<const float> token_embeddings_span =
+        absl::MakeConstSpan(token_embeddings.data(), token_embeddings.size());
+    LRT_TENSOR_RETURN_IF_ERROR(decode_runner.SetInput(
+        decode_inputs.embedded_input, token_embeddings_span));
 
     LRT_TENSOR_RETURN_IF_ERROR(
         decode_runner.SetInput(decode_inputs.rope_global_cos, global_cos));
@@ -625,9 +570,10 @@ absl::StatusOr<int32_t> ExecuteDecodeStep(
         decode_runner.SetInput(decode_inputs.rope_local_sin, local_sin));
 
     for (int l = 0; l < config.num_layers; ++l) {
-      LRT_TENSOR_RETURN_IF_ERROR(
-          decode_runner.SetInput(decode_inputs.per_layer_token_embeddings[l],
-                                 token_per_layer_embs[l]));
+      absl::Span<const float> layer_ple_span = absl::MakeConstSpan(
+          token_per_layer_embs[l].data(), token_per_layer_embs[l].size());
+      LRT_TENSOR_RETURN_IF_ERROR(decode_runner.SetInput(
+          decode_inputs.per_layer_token_embeddings[l], layer_ple_span));
     }
 
     LRT_TENSOR_RETURN_IF_ERROR(decode_runner.WriteInput(
@@ -732,17 +678,19 @@ absl::Status UpdateKvCache(XnnpackRunner& decode_runner,
 
 absl::StatusOr<ModelVariant> DeduceModelVariant(
     const SafetensorLoader& loader) {
-  static constexpr absl::string_view kEmbedKeys[] = {
-      "model.embed_tokens.weight",
-      "model.language_model.embed_tokens.weight",
+  static constexpr absl::string_view kNormKeys[] = {
+      "model.norm.weight",
+      "model.language_model.norm.weight",
+      "model.layers.0.input_layernorm.weight",
+      "model.language_model.layers.0.input_layernorm.weight",
   };
-  for (const absl::string_view key : kEmbedKeys) {
+  for (const absl::string_view key : kNormKeys) {
     if (auto info_or = loader.GetTensorInfo(key); info_or.ok()) {
-      if (info_or->shape.size() >= 2) {
-        int64_t embed_dim = info_or->shape[1];
-        if (embed_dim == 1536) {
+      if (!info_or->shape.empty()) {
+        const int64_t dim = info_or->shape[0];
+        if (dim == 1536) {
           return ModelVariant::kE2B;
-        } else if (embed_dim == 2560) {
+        } else if (dim == 2560) {
           return ModelVariant::kE4B;
         }
       }
@@ -848,10 +796,8 @@ absl::Status Run(const std::string& weights_path,
       current_token,
       ExecutePrefillPass(
           runners.prefill_runner, graphs.prefill_inputs, graphs.prefill_outputs,
-          config, input_tokens,
-          absl::MakeSpan(loaded_tensors.embedding_table_fp32),
-          absl::MakeSpan(loaded_tensors.emb_per_layer_table_fp32),
-          prefill_timing, verbose));
+          config, input_tokens, *loaded_tensors.token_embedding,
+          *loaded_tensors.emb_per_layer_table, prefill_timing, verbose));
 
   std::cout << prompt << std::flush;
 
@@ -944,12 +890,11 @@ absl::Status Run(const std::string& weights_path,
     TRACE_EVENT(kTensorApiCategory, "DecodeStep");
     LRT_TENSOR_ASSIGN_OR_RETURN(
         current_token,
-        ExecuteDecodeStep(
-            runners.decode_runner, graphs.decode_inputs, graphs.decode_outputs,
-            config, current_token, cache_len,
-            absl::MakeSpan(loaded_tensors.embedding_table_fp32),
-            absl::MakeSpan(loaded_tensors.emb_per_layer_table_fp32), global_cos,
-            global_sin, local_cos, local_sin, decode_timing));
+        ExecuteDecodeStep(runners.decode_runner, graphs.decode_inputs,
+                          graphs.decode_outputs, config, current_token,
+                          cache_len, *loaded_tensors.token_embedding,
+                          *loaded_tensors.emb_per_layer_table, global_cos,
+                          global_sin, local_cos, local_sin, decode_timing));
 
     LRT_TENSOR_RETURN_IF_ERROR(UpdateKvCache(
         runners.decode_runner, graphs.decode_inputs, graphs.decode_outputs,

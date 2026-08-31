@@ -165,3 +165,35 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+cc_library(
+    name = "quantized_embedding",
+    srcs = ["quantized_embedding.cc"],
+    hdrs = ["quantized_embedding.h"],
+    deps = [
+        "//tensor",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "//tensor/utils:macros",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "quantized_embedding_test",
+    srcs = ["quantized_embedding_test.cc"],
+    deps = [
+        ":quantized_embedding",
+        "//tensor",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "//tensor/utils:matchers",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
