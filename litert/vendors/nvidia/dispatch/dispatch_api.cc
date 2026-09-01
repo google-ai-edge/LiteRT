@@ -53,6 +53,7 @@
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/nvidia/bytecode.h"
+#include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
 #include "litert/vendors/nvidia/dispatch/greedy_sampler_c_api.h"
 #include "litert/vendors/nvidia/dispatch/greedy_sampler_kernel.h"
 #include "litert/vendors/nvidia/dispatch/tensor_buffer_view.h"
@@ -1368,6 +1369,7 @@ class LiteRtDispatchInvocationContextT {
         bound_output_ptrs_(bytecode_.output_names.size(), nullptr) {}
 
   Expected<void> Initialize() {
+    litert::nvidia::EnsureSubbyteGemvPluginRegistered();
     LITERT_RETURN_IF_ERROR(
         CudaOk(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking),
                "cudaStreamCreateWithFlags"));

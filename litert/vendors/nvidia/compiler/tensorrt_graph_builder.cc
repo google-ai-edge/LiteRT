@@ -47,6 +47,8 @@
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/nvidia/bytecode.h"
+#include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
+#include "litert/vendors/nvidia/compiler/tensorrt_rtx_plugin_compat.h"
 #include "litert/vendors/nvidia/tensorrt_logger.h"
 #include "NvInfer.h"
 
@@ -1819,7 +1821,9 @@ class TensorRtGraphBuilder {
   //   kFp8:   fp8-e4m3 value constants + per-channel scale dequantize, which
   //           Myelin fuses into a single GEMV that reads 1 byte/element.
   //           int4/int2 integer values are exactly representable in e4m3.
-  enum class PredequantMode { kOff, kFloat, kFp8 };
+  // kCudaGemv keeps packed INT2/INT4 weights and performs dequantization and
+  // GEMV in one native CUDA plugin without materializing expanded weights.
+  enum class PredequantMode { kOff, kFloat, kFp8, kCudaGemv };
 
   static PredequantMode PredequantizeFcWeightsMode() {
     const char* value =
@@ -1829,6 +1833,9 @@ class TensorRtGraphBuilder {
     }
     if (std::strcmp(value, "fp8") == 0) {
       return PredequantMode::kFp8;
+    }
+    if (std::strcmp(value, "cuda_gemv") == 0) {
+      return PredequantMode::kCudaGemv;
     }
     return PredequantMode::kFloat;
   }
@@ -2308,6 +2315,113 @@ class TensorRtGraphBuilder {
       dq->setAxis(axis);
     }
     return dq->getOutput(0);
+  }
+
+  Expected<nvinfer1::ITensor*> AddCudaSubbyteGemv(
+      const Tensor& tensor, nvinfer1::ITensor* activation,
+      nvinfer1::DataType compute_type) {
+    if (activation == nullptr || compute_type != nvinfer1::DataType::kBF16 ||
+        activation->getType() != nvinfer1::DataType::kBF16) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "CUDA subbyte GEMV requires BF16 activations");
+    }
+    const auto element_type = tensor.ElementType();
+    if (element_type != litert::ElementType::Int2 &&
+        element_type != litert::ElementType::Int4) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "CUDA subbyte GEMV requires INT2 or INT4 weights");
+    }
+    LITERT_ASSIGN_OR_RETURN(auto type, tensor.RankedTensorType());
+    const auto dims = type.Layout().Dimensions();
+    if (dims.size() != 2 || dims[0] <= 0 || dims[1] <= 0 || dims[1] % 16 != 0) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "CUDA subbyte GEMV requires aligned rank-2 weights");
+    }
+    const auto activation_dims = activation->getDimensions();
+    if (activation_dims.nbDims < 1 ||
+        activation_dims.d[activation_dims.nbDims - 1] != dims[1]) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "CUDA subbyte GEMV activation shape does not match weights");
+    }
+    for (int i = 0; i + 1 < activation_dims.nbDims; ++i) {
+      if (activation_dims.d[i] != 1) {
+        return Error(kLiteRtStatusErrorUnsupported,
+                     "CUDA subbyte GEMV requires static M=1");
+      }
+    }
+    if (tensor.QTypeId() != kLiteRtQuantizationPerChannel) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "CUDA subbyte GEMV requires per-channel scales");
+    }
+    const auto q = tensor.PerChannelQuantization();
+    if (q.quantized_dimension != 0 || q.num_channels != dims[0] ||
+        q.scales == nullptr || q.zero_points == nullptr) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "Invalid CUDA subbyte GEMV weight quantization");
+    }
+    for (uint64_t i = 0; i < q.num_channels; ++i) {
+      if (q.scales[i] <= 0.0f || q.zero_points[i] != 0) {
+        return Error(kLiteRtStatusErrorUnsupported,
+                     "CUDA subbyte GEMV requires symmetric scales");
+      }
+    }
+    LITERT_ASSIGN_OR_RETURN(size_t num_elements, NumElements(type));
+    const int32_t bit_width = element_type == litert::ElementType::Int2 ? 2 : 4;
+    const size_t expected_bytes =
+        (num_elements + (8 / bit_width) - 1) / (8 / bit_width);
+    const auto bytes = tensor.Weights().Bytes();
+    if (bytes.size() != expected_bytes) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Unexpected CUDA subbyte GEMV weight byte count");
+    }
+
+    owned_weights_.emplace_back(bytes.begin(), bytes.end());
+    nvinfer1::Dims packed_dims{};
+    packed_dims.nbDims = 1;
+    packed_dims.d[0] = static_cast<int32_t>(expected_bytes);
+    nvinfer1::Weights packed_weights{nvinfer1::DataType::kINT8,
+                                     owned_weights_.back().data(),
+                                     static_cast<int64_t>(expected_bytes)};
+    auto* packed_constant = network_->addConstant(packed_dims, packed_weights);
+    if (packed_constant == nullptr ||
+        packed_constant->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add packed CUDA subbyte GEMV weights");
+    }
+
+    nvinfer1::Dims scale_dims{};
+    scale_dims.nbDims = 1;
+    scale_dims.d[0] = static_cast<int32_t>(q.num_channels);
+    LITERT_ASSIGN_OR_RETURN(
+        auto* scales,
+        AddFloatConstant(
+            absl::Span<const float>(q.scales, q.num_channels), scale_dims,
+            "cuda_subbyte_gemv_scales_" + std::to_string(tensor.TensorIndex()),
+            nvinfer1::DataType::kBF16));
+
+    TrtPtr<nvinfer1::IPluginV3> plugin(
+        CreateSubbyteGemvPlugin(bit_width, dims[0], dims[1]));
+    if (!plugin) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to create CUDA subbyte GEMV plugin");
+    }
+    nvinfer1::ITensor* inputs[] = {activation, packed_constant->getOutput(0),
+                                   scales};
+    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
+        *network_, inputs, std::size(inputs), *plugin);
+    if (layer == nullptr || layer->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add CUDA subbyte GEMV plugin layer");
+    }
+    layer->getOutput(0)->setName(KeepName(UniqueName(
+        "cuda_subbyte_gemv_" + std::to_string(tensor.TensorIndex()))));
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX CUDA subbyte GEMV: tensor=%u bits=%d "
+               "N=%lld K=%lld",
+               tensor.TensorIndex(), bit_width, static_cast<long long>(dims[0]),
+               static_cast<long long>(dims[1]));
+    owned_plugins_.push_back(std::move(plugin));
+    return layer->getOutput(0);
   }
 
   Expected<nvinfer1::ITensor*> AddInt32Constant(
@@ -3342,6 +3456,37 @@ class TensorRtGraphBuilder {
     return SetOutputTensor(op.Outputs()[0], layer->getOutput(0));
   }
 
+  Expected<void> FinishFullyConnected(const Op& op, nvinfer1::ITensor* out,
+                                      nvinfer1::DataType compute_type) {
+    if (op.Inputs().size() == 3) {
+      LITERT_ASSIGN_OR_RETURN(auto* bias, GetTensor(op.Inputs()[2]));
+      LITERT_ASSIGN_OR_RETURN(bias, AddCastTensor(bias, compute_type));
+      LITERT_RETURN_IF_ERROR(MatchElementwiseRanks(out, bias));
+      auto* bias_layer = network_->addElementWise(
+          *out, *bias, nvinfer1::ElementWiseOperation::kSUM);
+      if (bias_layer == nullptr || bias_layer->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to add TensorRT fully connected bias layer");
+      }
+      out = bias_layer->getOutput(0);
+    }
+    LITERT_ASSIGN_OR_RETURN(auto activation, GetFusedActivation(op));
+    LITERT_ASSIGN_OR_RETURN(out, AddFusedActivation(out, activation));
+    LITERT_ASSIGN_OR_RETURN(auto output_type,
+                            op.Outputs()[0].RankedTensorType());
+    LITERT_ASSIGN_OR_RETURN(auto trt_output_type,
+                            ConvertDataType(output_type.ElementType()));
+    if (Fp16ActivationsEnabled()) {
+      // Keep the FP16 real value; boundary conversion happens at MarkOutputs.
+    } else if (!IsFloatLike(op.Outputs()[0].ElementType())) {
+      LITERT_ASSIGN_OR_RETURN(
+          out, AddQuantizeTensor(out, op.Outputs()[0], trt_output_type));
+    } else if (trt_output_type != compute_type) {
+      LITERT_ASSIGN_OR_RETURN(out, AddCastTensor(out, trt_output_type));
+    }
+    return SetOutputTensor(op.Outputs()[0], out);
+  }
+
   Expected<void> LowerFullyConnected(const Op& op) {
     LITERT_ASSIGN_OR_RETURN(auto* input, GetTensor(op.Inputs()[0]));
     // TensorRT executes sub-byte weight-only quantization (INT4) only with
@@ -3376,8 +3521,19 @@ class TensorRtGraphBuilder {
         }
       }
     }
+    if (Fp16ActivationsEnabled() &&
+        predequant_mode == PredequantMode::kCudaGemv && sub_byte_weights &&
+        static_m_is_one) {
+      LITERT_ASSIGN_OR_RETURN(input, AddCastTensor(input, compute_type));
+      auto fused = AddCudaSubbyteGemv(op.Inputs()[1], input, compute_type);
+      if (fused.HasValue()) {
+        return FinishFullyConnected(op, *fused, compute_type);
+      }
+      LITERT_LOG(LITERT_INFO, "CUDA subbyte GEMV unavailable for tensor %u: %s",
+                 op.Inputs()[1].TensorIndex(), fused.Error().Message().c_str());
+    }
     if (Fp16ActivationsEnabled() && predequant_mode != PredequantMode::kOff &&
-        static_m_is_one &&
+        predequant_mode != PredequantMode::kCudaGemv && static_m_is_one &&
         (op.Inputs()[1].ElementType() == litert::ElementType::Int8 ||
          op.Inputs()[1].ElementType() == litert::ElementType::Int4 ||
          op.Inputs()[1].ElementType() == litert::ElementType::Int2)) {
@@ -3474,33 +3630,7 @@ class TensorRtGraphBuilder {
       LITERT_ASSIGN_OR_RETURN(auto out_dims, ConvertDims(out_type));
       LITERT_ASSIGN_OR_RETURN(out, ReshapeTensor(out, out_dims));
     }
-    if (op.Inputs().size() == 3) {
-      LITERT_ASSIGN_OR_RETURN(auto* bias, GetTensor(op.Inputs()[2]));
-      LITERT_ASSIGN_OR_RETURN(bias, AddCastTensor(bias, compute_type));
-      LITERT_RETURN_IF_ERROR(MatchElementwiseRanks(out, bias));
-      auto* bias_layer = network_->addElementWise(
-          *out, *bias, nvinfer1::ElementWiseOperation::kSUM);
-      if (bias_layer == nullptr || bias_layer->getOutput(0) == nullptr) {
-        return Error(kLiteRtStatusErrorCompilation,
-                     "Failed to add TensorRT fully connected bias layer");
-      }
-      out = bias_layer->getOutput(0);
-    }
-    LITERT_ASSIGN_OR_RETURN(auto activation, GetFusedActivation(op));
-    LITERT_ASSIGN_OR_RETURN(out, AddFusedActivation(out, activation));
-    LITERT_ASSIGN_OR_RETURN(auto output_type,
-                            op.Outputs()[0].RankedTensorType());
-    LITERT_ASSIGN_OR_RETURN(auto trt_output_type,
-                            ConvertDataType(output_type.ElementType()));
-    if (Fp16ActivationsEnabled()) {
-      // Keep the FP16 real value; boundary conversion happens at MarkOutputs.
-    } else if (!IsFloatLike(op.Outputs()[0].ElementType())) {
-      LITERT_ASSIGN_OR_RETURN(
-          out, AddQuantizeTensor(out, op.Outputs()[0], trt_output_type));
-    } else if (trt_output_type != compute_type) {
-      LITERT_ASSIGN_OR_RETURN(out, AddCastTensor(out, trt_output_type));
-    }
-    return SetOutputTensor(op.Outputs()[0], out);
+    return FinishFullyConnected(op, out, compute_type);
   }
 
   Expected<void> LowerSelectV2(const Op& op) {
@@ -4052,6 +4182,7 @@ class TensorRtGraphBuilder {
   TrtPtr<nvinfer1::IBuilderConfig> config_;
   std::deque<std::string> names_;
   std::vector<std::vector<uint8_t>> owned_weights_;
+  std::vector<TrtPtr<nvinfer1::IPluginV3>> owned_plugins_;
   std::unordered_map<LiteRtTensor, nvinfer1::ITensor*> tensor_map_;
   // Network inputs in their boundary (pre-FP16-conversion) form; used by
   // in-place style ops (cache updates) that operate on the raw int8 data.
