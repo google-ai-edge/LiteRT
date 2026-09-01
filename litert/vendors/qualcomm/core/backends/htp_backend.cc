@@ -6,6 +6,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -544,28 +546,54 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
                soc_info_.soc_model);
 
   // Device Handle
-  std::vector<QnnDevice_CustomConfig_t> device_custom_configs;
-  QnnHtpDevice_CustomConfig_t* htp_device_custom_config =
-      &AllocateHtpDeviceConfig();
-  htp_device_custom_config->option = QNN_HTP_DEVICE_CONFIG_OPTION_SOC;
-  htp_device_custom_config->socModel = soc_info_.soc_model;
-  device_custom_configs.emplace_back(
-      static_cast<QnnDevice_CustomConfig_t>(htp_device_custom_config));
+  auto create_device_with_signed_pd =
+      [&](bool use_signed_pd) -> QnnBackend::QnnDeviceHandle {
+    std::vector<QnnDevice_CustomConfig_t> custom_configs;
+    QnnHtpDevice_CustomConfig_t* htp_soc_config = &AllocateHtpDeviceConfig();
+    htp_soc_config->option = QNN_HTP_DEVICE_CONFIG_OPTION_SOC;
+    htp_soc_config->socModel = soc_info_.soc_model;
+    custom_configs.emplace_back(
+        static_cast<QnnDevice_CustomConfig_t>(htp_soc_config));
 
-  std::vector<const QnnDevice_Config_t*> device_configs;
-  // +1 for null terminated
-  device_configs.reserve(device_custom_configs.size() + 1);
-  for (std::size_t i = 0; i < device_custom_configs.size(); ++i) {
-    QnnDevice_Config_t* device_custom_config = &AllocateDeviceConfig();
-    device_custom_config->option = QNN_DEVICE_CONFIG_OPTION_CUSTOM;
-    device_custom_config->customConfig = device_custom_configs[i];
-    device_configs.emplace_back(device_custom_config);
+    if (use_signed_pd) {
+      QnnHtpDevice_CustomConfig_t* signed_pd_config =
+          &AllocateHtpDeviceConfig();
+      signed_pd_config->option = QNN_HTP_DEVICE_CONFIG_OPTION_SIGNEDPD;
+      signed_pd_config->useSignedProcessDomain.deviceId = 0;
+      signed_pd_config->useSignedProcessDomain.useSignedProcessDomain = true;
+      custom_configs.emplace_back(
+          static_cast<QnnDevice_CustomConfig_t>(signed_pd_config));
+    }
+
+    std::vector<const QnnDevice_Config_t*> device_configs;
+    // +1 for null terminated
+    device_configs.reserve(custom_configs.size() + 1);
+    for (std::size_t i = 0; i < custom_configs.size(); ++i) {
+      QnnDevice_Config_t* device_custom_config = &AllocateDeviceConfig();
+      device_custom_config->option = QNN_DEVICE_CONFIG_OPTION_CUSTOM;
+      device_custom_config->customConfig = custom_configs[i];
+      device_configs.emplace_back(device_custom_config);
+    }
+    // null terminated
+    device_configs.emplace_back(nullptr);
+
+    return CreateDeviceHandle(local_log_handle.get(),
+                              absl::MakeSpan(device_configs));
+  };
+
+  const char* signed_pd_env = getenv("LITERT_QUALCOMM_USE_SIGNED_PD");
+  bool force_signed_pd =
+      (signed_pd_env != nullptr && (std::strcmp(signed_pd_env, "1") == 0 ||
+                                    std::strcmp(signed_pd_env, "true") == 0 ||
+                                    std::strcmp(signed_pd_env, "TRUE") == 0));
+
+  auto local_device_handle = create_device_with_signed_pd(force_signed_pd);
+  if (!local_device_handle && !force_signed_pd) {
+    QNN_LOG_WARNING(
+        "Failed to create device handle with default config. Retrying with "
+        "Signed Process Domain (SignedPD)...");
+    local_device_handle = create_device_with_signed_pd(/*use_signed_pd=*/true);
   }
-  // null terminated
-  device_configs.emplace_back(nullptr);
-
-  auto local_device_handle = CreateDeviceHandle(local_log_handle.get(),
-                                                absl::MakeSpan(device_configs));
   if (!local_device_handle) {
     QNN_LOG_ERROR("Failed to create device handle.");
     return false;
