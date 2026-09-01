@@ -181,10 +181,16 @@ cc_library(
     deps = ["//tflite/converter/schema:schema_conversion_utils"],
 )
 
-flatbuffer_cc_library(
+cc_library(
     name = "conversion_metadata_fbs",
-    srcs = ["//tflite/converter/schema:conversion_metadata.fbs"],
-    compatible_with = get_compatible_with_portable(),
+    hdrs = [
+        ":conversion_metadata_generated.h",
+        "//tflite/converter/schema:conversion_metadata_generated.h",
+    ],
+    deps = [
+        "//tflite/converter/schema:conversion_metadata_fbs",
+        "@flatbuffers//:runtime_cc",
+    ],
 )
 
 tflite_portable_test_suite()
