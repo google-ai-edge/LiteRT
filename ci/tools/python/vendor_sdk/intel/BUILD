@@ -15,6 +15,11 @@
 
 load("//ci/tools/python/vendor_sdk:sdist.bzl", "sdist_rule")
 load("//litert:version.bzl", "LITERT_SDK_INTEL_FULL_VERSION")
+load(
+    "//third_party/intel_openvino:openvino_version.bzl",
+    "OPENVINO_PEP440_VERSION",
+    "OPENVINO_URLS",
+)
 
 package(
     default_visibility = ["//visibility:private"],
@@ -29,5 +34,11 @@ sdist_rule(
     nightly_suffix = "//ci/tools/python/wheel:nightly_iso_date",
     package_srcs = glob(["ai_edge_litert_sdk_intel/**"]),
     setup_py = "setup.py",
+    substitutions = {
+        "OPENVINO_UBUNTU22_URL": OPENVINO_URLS["ubuntu22"],
+        "OPENVINO_UBUNTU24_URL": OPENVINO_URLS["ubuntu24"],
+        "OPENVINO_WINDOWS_URL": OPENVINO_URLS["windows"],
+        "OPENVINO_PEP440_VERSION": OPENVINO_PEP440_VERSION,
+    },
     version = LITERT_SDK_INTEL_FULL_VERSION,
 )
