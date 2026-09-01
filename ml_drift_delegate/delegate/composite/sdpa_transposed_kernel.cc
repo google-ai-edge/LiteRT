@@ -24,6 +24,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
@@ -51,24 +52,27 @@ constexpr int kNumSimdGroups = 16;
 // TODO(b/552147487): Benchmark the kernel on Nividia GPUs.
 class FusedFlashDecodeSdpaOp : public ::ml_drift::GPUOperation {
  public:
-  FusedFlashDecodeSdpaOp() = default;
+  explicit FusedFlashDecodeSdpaOp(int slices_per_head = 32)
+      : slices_per_head_(slices_per_head) {}
 
   ::ml_drift::int3 GetGridSize() const override {
-    return ::ml_drift::int3(dst_[0]->Width(),
-                            dst_[0]->Height() * dst_[0]->Slices(),
-                            kNumSimdGroups);
+    return ::ml_drift::int3(
+        src_[0]->Width(), src_[0]->Height() * slices_per_head_, kNumSimdGroups);
   }
 
   std::vector<::ml_drift::int3> GetPossibleKernelWorkGroups(
       ::ml_drift::TuningType tuning_type, const ::ml_drift::GpuInfo& gpu_info,
       const ::ml_drift::KernelInfo& kernel_info) const override {
-    return {::ml_drift::int3(1, dst_[0]->Slices(), kNumSimdGroups)};
+    return {::ml_drift::int3(1, slices_per_head_, kNumSimdGroups)};
   }
 
   FusedFlashDecodeSdpaOp(FusedFlashDecodeSdpaOp&&) = default;
   FusedFlashDecodeSdpaOp& operator=(FusedFlashDecodeSdpaOp&&) = default;
   FusedFlashDecodeSdpaOp(const FusedFlashDecodeSdpaOp&) = delete;
   FusedFlashDecodeSdpaOp& operator=(const FusedFlashDecodeSdpaOp&) = delete;
+
+ private:
+  int slices_per_head_ = 32;
 };
 
 std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashDecodeSdpa(
@@ -79,11 +83,11 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashDecodeSdpa(
     const ::ml_drift::TensorDescriptor* mask_desc,
     const ::ml_drift::TensorDescriptor* param_desc,
     const ::ml_drift::TensorDescriptor& dst_desc,
-    const SdpaTransposedAttributes& attr) {
-  FusedFlashDecodeSdpaOp custom_op;
+    const SdpaTransposedAttributes& attr, bool is_flattened_dst = false) {
   // Each float4/half4 vector slice consists of 4 channels.
   // slices represents the number of vector slices per head (e.g. 128 / 4 = 32).
-  int slices = dst_desc.GetBHWCShape().c / 4;
+  int slices = q_desc.GetBHWCShape().c / 4;
+  FusedFlashDecodeSdpaOp custom_op(slices);
   // V-cache memory layout: [num_heads, num_chunks, slices, 4].
   // Each chunk across the head dimension has stride `slices * 4`.
   int v_stride_s = slices * 4;
@@ -94,6 +98,12 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashDecodeSdpa(
   int k_stride_head = slices * k_o_slices * 4;
   int k_stride_slice = k_o_slices * 4;
   int v_stride_head = k_o_slices * v_stride_s;
+  const int q_heads = q_desc.GetBHWCShape().h;
+  const int kv_heads = k_desc.GetBHWCShape().h;
+  const int gqa_ratio =
+      (kv_heads > 0 && q_heads >= kv_heads && (q_heads % kv_heads == 0))
+          ? (q_heads / kv_heads)
+          : 1;
 
   custom_op.work_group_size_ = ::ml_drift::int3(1, slices, kNumSimdGroups);
   custom_op.args_.AddInt("cache_size", k_desc.GetBHWCShape().w);
@@ -174,12 +184,17 @@ MAIN_FUNCTION($0) {
   half4 out_acc = half4(0.0h);
   half inv_ln2 = 1.4426950408889634h;
 
-  int k_base_head = Y * )", k_stride_head, R"( + tid * )", k_stride_slice, R"(;
-  int v_base_head = Y * )", v_stride_head, R"( + tid * 4;
+  int kv_head = )",
+                  (gqa_ratio > 1 ? absl::StrCat("Y / ", gqa_ratio) : "Y"), R"(;
+  int k_base_head = kv_head * )",
+                  k_stride_head, R"( + tid * )", k_stride_slice, R"(;
+  int v_base_head = kv_head * )",
+                  v_stride_head, R"( + tid * 4;
 
   int chunk = chunk_start;
   int k_idx = k_base_head + chunk * 4;
-  int v_idx = v_base_head + chunk * )", v_stride_s, R"(;
+  int v_idx = v_base_head + chunk * )",
+                  v_stride_s, R"(;
 
   for (; chunk + 3 < safe_chunk_end; chunk += 4) {
     half4 k0 = ucl::Convert<half4>(args.k.Read(k_idx + 0));
@@ -324,7 +339,8 @@ MAIN_FUNCTION($0) {
                   fma((half4)p.z, v2,
                       (half4)p.w * v3))));
     k_idx += 4;
-    v_idx += )", v_stride_s, R"(;
+    v_idx += )",
+                  v_stride_s, R"(;
   }
 
   if (tid == 0) {
@@ -364,7 +380,16 @@ MAIN_FUNCTION($0) {
     half4 sum0 = (acc0 + acc1) + (acc2 + acc3);
     half4 sum1 = (acc4 + acc5) + (acc6 + acc7);
     half4 final_acc = sum0 + sum1;
+)",
+                  is_flattened_dst ? absl::StrFormat(R"(
+    int out_slice = Y * %d + tid;
+    args.dst.Write(ucl::Convert<args.dst::type>(final_acc), X, 0, out_slice);
+)",
+                                                     slices)
+                                   : R"(
     args.dst.Write(ucl::Convert<args.dst::type>(final_acc), X, Y, tid);
+)",
+                  R"(
   }
 }
 )");
@@ -480,12 +505,18 @@ absl::Status BuildSdpaTransposedGpuGraph(
   }
 
   // Single fused SDPA op.
-  auto dst = model_builder->AddTensor(q.tensor_desc.GetBHWCShape(),
-                                      q.tensor_desc.GetDataType());
+  ABSL_ASSIGN_OR_RETURN(auto output_ref, model_builder->GetTensor(output_id));
+  const auto output_shape = output_ref.tensor_desc.GetBHWCShape();
+  const auto q_shape = q.tensor_desc.GetBHWCShape();
+  const bool is_flattened_dst =
+      (output_shape.h == 1 && output_shape.c == q_shape.h * q_shape.c);
+
+  const auto dst_shape = is_flattened_dst ? output_shape : q_shape;
+  auto dst = model_builder->AddTensor(dst_shape, q.tensor_desc.GetDataType());
 
   auto op = CreateFusedFlashDecodeSdpa(
       model_builder->gpu_info(), q.tensor_desc, k.tensor_desc, v.tensor_desc,
-      mask_desc, param_desc, dst.tensor_desc, attr);
+      mask_desc, param_desc, dst.tensor_desc, attr, is_flattened_dst);
 
   std::vector<::ml_drift::GpuModelBuilder::TensorHandle> src_tensors = {
       q, k, v};
