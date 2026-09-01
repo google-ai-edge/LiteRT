@@ -25,6 +25,7 @@ cc_library(
     deps = [
         ":debug_options_proto_cc",
         "//tflite/converter/metrics:error_collector_inst",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status",
@@ -38,9 +39,7 @@ cc_library(
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:Transforms",
-        "@org_tensorflow//tensorflow/core:portable_gif_internal",
         "@tsl//tsl/platform:path",
-        "@tsl//tsl/platform:stringpiece",
         "@xla//xla/tsl/lib/io:buffered_file",
         "@xla//xla/tsl/platform:env",
     ],

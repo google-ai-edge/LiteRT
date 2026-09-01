@@ -373,6 +373,35 @@ cc_library(
     ],
 )
 
+tf_cc_binary(
+    name = "litert-reduce",
+    testonly = True,
+    deps = [
+        ":litert_mlir_reduce_main",
+    ],
+)
+
+cc_library(
+    name = "litert_mlir_reduce_main",
+    testonly = True,
+    srcs = ["litert_mlir_reduce_main.cc"],
+    deps = [
+        ":lift_tflite_flex_ops",  # buildcleaner:keep
+        ":register_lite_dialects",
+        ":tensorflow_lite",
+        ":tf_tfl_passes",  # buildcleaner:keep
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:AllPassesAndDialects",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:MlirReduceLib",
+        "@org_tensorflow//tensorflow/compiler/mlir:init_mlir",
+        "@org_tensorflow//tensorflow/compiler/mlir:passes",
+        "@org_tensorflow//tensorflow/compiler/mlir:register_common_dialects",
+        "@org_tensorflow//tensorflow/compiler/mlir/tensorflow/transforms:tensorflow_passes",
+    ],
+    alwayslink = 1,
+)
+
 cc_library(
     name = "utils",
     hdrs = ["utils/utils.h"],
@@ -1790,6 +1819,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+        "@eigen_archive//:eigen3",
         "@flatbuffers",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:ArithDialect",
@@ -1806,6 +1836,7 @@ cc_library(
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core:portable_gif_internal",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@org_tensorflow//tensorflow/core/platform:status",
         "@stablehlo//:stablehlo_ops",
         "@stablehlo//:vhlo_ops",
         "@tsl//tsl/platform:tstring",
