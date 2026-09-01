@@ -32,8 +32,8 @@
 #include <utility>
 #include <vector>
 
-#include "cuda_runtime_api.h"
 #include "absl/types/span.h"  // from @com_google_absl
+#include "cuda_runtime_api.h"
 #include "driver_types.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -1678,7 +1678,7 @@ nvinfer1::Permutation MakePermutation(std::initializer_list<int32_t> values) {
 class TensorRtGraphBuilder {
  public:
   Expected<TensorRtBuildResult> Build(const Subgraph& subgraph) {
-    LogMemoryProfile("compiler", "graph_build_begin");
+    memory_profiler_.Log("graph_build_begin");
     builder_.reset(nvinfer1::createInferBuilder(logger_));
     if (!builder_) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
@@ -1743,7 +1743,7 @@ class TensorRtGraphBuilder {
     }
 #endif
 
-    LogMemoryProfile("compiler", "builder_configured");
+    memory_profiler_.Log("builder_configured");
 
     const auto ops = subgraph.Ops();
     std::optional<TensorRtLlmHeadBuildData> trtllm_head;
@@ -1770,7 +1770,7 @@ class TensorRtGraphBuilder {
       LITERT_RETURN_IF_ERROR(LowerOp(ops[i]));
     }
     LITERT_RETURN_IF_ERROR(MarkOutputs(subgraph, trtllm_head));
-    LogMemoryProfile("compiler", "graph_lowered");
+    memory_profiler_.Log("graph_lowered");
 
     // The CUDA GEMV plugin receives packed subbyte weights through an INT8
     // constant input. Those weights cannot use the safe stripping path below,
@@ -1805,14 +1805,14 @@ class TensorRtGraphBuilder {
                  "cannot be stripped safely by this SDK");
     }
 
-    LogMemoryProfile("compiler", "engine_serialize_begin");
+    memory_profiler_.Log("engine_serialize_begin");
     TrtPtr<nvinfer1::IHostMemory> serialized(
         builder_->buildSerializedNetwork(*network_, *config_));
     if (!serialized) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to build serialized TensorRT engine");
     }
-    LogMemoryProfile("compiler", "engine_serialize_end");
+    memory_profiler_.Log("engine_serialize_end");
     if (EnvEnabled("LITERT_NVIDIA_TENSORRT_DUMP_ENGINE_INFO",
                    /*default_value=*/false)) {
       TrtPtr<nvinfer1::IRuntime> runtime(nvinfer1::createInferRuntime(logger_));
@@ -1855,7 +1855,7 @@ class TensorRtGraphBuilder {
     owned_weights_.shrink_to_fit();
     result.engine.resize(serialized->size());
     std::memcpy(result.engine.data(), serialized->data(), serialized->size());
-    LogMemoryProfile("compiler", "engine_copied");
+    memory_profiler_.Log("engine_copied");
     return result;
   }
 
@@ -4312,6 +4312,7 @@ class TensorRtGraphBuilder {
     }
   }
 
+  MemoryProfiler memory_profiler_{"compiler"};
   TensorRtLogger logger_;
   SyncCudaGpuAllocator sync_allocator_;
   TrtPtr<nvinfer1::IBuilder> builder_;
@@ -4440,11 +4441,12 @@ bool IsTensorRtOpSupported(const Op& op) {
 }
 
 Expected<TensorRtBuildResult> BuildTensorRtEngine(const Subgraph& subgraph) {
+  const MemoryProfiler memory_profiler("compiler");
   auto result = [&]() {
     TensorRtGraphBuilder builder;
     return builder.Build(subgraph);
   }();
-  LogMemoryProfile("compiler", "graph_builder_destroyed");
+  memory_profiler.Log("graph_builder_destroyed");
   return result;
 }
 

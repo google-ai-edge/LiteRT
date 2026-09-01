@@ -402,6 +402,13 @@ Expected<void> FillInputBuffersWithCustomData(
     const CompiledModel& compiled_model, size_t signature_index,
     std::vector<TensorBuffer>& input_buffers, absl::string_view input_dir,
     bool quantize_inputs = false);
+
+// Writes output buffers to .raw files in the given directory, using the model's
+// output signature names as filenames.
+Expected<void> WriteOutputBuffersToFiles(
+    const CompiledModel& compiled_model, size_t signature_index,
+    std::vector<TensorBuffer>& output_buffers, absl::string_view output_dir);
+
 }  // namespace tensor_utils
 }  // namespace litert
 
