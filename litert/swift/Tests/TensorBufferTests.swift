@@ -67,6 +67,104 @@ final class TensorBufferTests: XCTestCase {
     }
   }
 
+  func testWriteAndReadArray() throws {
+    let env = try Environment()
+    try withExtendedLifetime(env) {
+      let tensorType = TensorType(elementType: .float32, layout: Layout(dimensions: [2]))
+      let buf = try TensorBuffer(
+        environment: env,
+        bufferType: .hostMemory,
+        tensorType: tensorType,
+        size: 8
+      )
+
+      let input: [Float] = [1.25, 2.5]
+      try buf.write(input)
+
+      let readBackArray: [Float] = try buf.read()
+      XCTAssertEqual(readBackArray, input)
+
+      let readBackData: Data = try buf.read()
+      XCTAssertEqual(readBackData.count, 8)
+      readBackData.withUnsafeBytes { rawBuffer in
+        let typedPtr = rawBuffer.bindMemory(to: Float.self)
+        XCTAssertEqual(typedPtr[0], 1.25)
+        XCTAssertEqual(typedPtr[1], 2.5)
+      }
+    }
+  }
+
+  func testWriteAndReadData() throws {
+    let env = try Environment()
+    try withExtendedLifetime(env) {
+      let tensorType = TensorType(elementType: .float32, layout: Layout(dimensions: [2]))
+      let buf = try TensorBuffer(
+        environment: env,
+        bufferType: .hostMemory,
+        tensorType: tensorType,
+        size: 8
+      )
+
+      let inputFloats: [Float] = [3.14, 2.71]
+      let inputData = inputFloats.withUnsafeBytes { Data($0) }
+      try buf.write(inputData)
+
+      let readBackData: Data = try buf.read()
+      XCTAssertEqual(readBackData, inputData)
+
+      let readBackArray: [Float] = try buf.read()
+      XCTAssertEqual(readBackArray, inputFloats)
+    }
+  }
+
+  func testWriteArraySizeMismatch() throws {
+    let env = try Environment()
+    try withExtendedLifetime(env) {
+      let tensorType = TensorType(elementType: .float32, layout: Layout(dimensions: [2]))
+      let buf = try TensorBuffer(
+        environment: env,
+        bufferType: .hostMemory,
+        tensorType: tensorType,
+        size: 8
+      )
+
+      // Too few elements (1 Float = 4 bytes != 8 bytes)
+      XCTAssertThrowsError(try buf.write([1.0 as Float])) { error in
+        XCTAssertEqual(error as? LiteRtError, .invalidArgument)
+      }
+
+      // Too many elements (3 Floats = 12 bytes != 8 bytes)
+      XCTAssertThrowsError(try buf.write([1.0, 2.0, 3.0] as [Float])) { error in
+        XCTAssertEqual(error as? LiteRtError, .invalidArgument)
+      }
+    }
+  }
+
+  func testWriteDataSizeMismatch() throws {
+    let env = try Environment()
+    try withExtendedLifetime(env) {
+      let tensorType = TensorType(elementType: .float32, layout: Layout(dimensions: [2]))
+      let buf = try TensorBuffer(
+        environment: env,
+        bufferType: .hostMemory,
+        tensorType: tensorType,
+        size: 8
+      )
+
+      // Too few bytes (4 bytes != 8 bytes)
+      let smallData = Data(repeating: 0, count: 4)
+      XCTAssertThrowsError(try buf.write(smallData)) { error in
+        XCTAssertEqual(error as? LiteRtError, .invalidArgument)
+      }
+
+      // Too many bytes (12 bytes != 8 bytes)
+      let largeData = Data(repeating: 0, count: 12)
+      XCTAssertThrowsError(try buf.write(largeData)) { error in
+        XCTAssertEqual(error as? LiteRtError, .invalidArgument)
+      }
+    }
+  }
+
 #if canImport(Metal)
   func testMetalBuffer() throws {
     guard let device = MTLCreateSystemDefaultDevice() else {

@@ -41,4 +41,78 @@ final class OptionsTests: XCTestCase {
       kernel: &customKernel
     )
   }
+
+  func testCpuOptionsDefaults() throws {
+    let cpuOptions = try CpuOptions()
+    XCTAssertNil(try cpuOptions.kernelMode())
+    XCTAssertNil(try cpuOptions.enableYNNPack())
+    XCTAssertNil(try cpuOptions.numThreads())
+    XCTAssertNil(try cpuOptions.xnnPackFlags())
+    XCTAssertNil(try cpuOptions.xnnPackWeightCachePath())
+    XCTAssertNil(try cpuOptions.xnnPackWeightCacheFileDescriptor())
+  }
+
+  func testCpuOptionsSettersAndGetters() throws {
+    let cpuOptions = try CpuOptions()
+
+    try cpuOptions.setKernelMode(.builtin)
+    XCTAssertEqual(try cpuOptions.kernelMode(), .builtin)
+
+    try cpuOptions.setKernelMode(.reference)
+    XCTAssertEqual(try cpuOptions.kernelMode(), .reference)
+
+    try cpuOptions.setKernelMode(.delegate)
+    XCTAssertEqual(try cpuOptions.kernelMode(), .delegate)
+
+    try cpuOptions.setEnableYNNPack(true)
+    XCTAssertEqual(try cpuOptions.enableYNNPack(), true)
+
+    try cpuOptions.setEnableYNNPack(false)
+    XCTAssertEqual(try cpuOptions.enableYNNPack(), false)
+
+    try cpuOptions.setNumThreads(4)
+    XCTAssertEqual(try cpuOptions.numThreads(), 4)
+
+    try cpuOptions.setXNNPackFlags(0x1234)
+    XCTAssertEqual(try cpuOptions.xnnPackFlags(), 0x1234)
+
+    try cpuOptions.setHintFullyDelegatedToSingleDelegate(true)
+
+    try cpuOptions.setXNNPackWeightCachePath("/tmp/weight_cache.bin")
+    XCTAssertEqual(try cpuOptions.xnnPackWeightCachePath(), "/tmp/weight_cache.bin")
+  }
+
+  func testCpuOptionsWeightCacheFileDescriptor() throws {
+    let cpuOptions = try CpuOptions()
+    try cpuOptions.setXNNPackWeightCacheFileDescriptor(42)
+    XCTAssertEqual(try cpuOptions.xnnPackWeightCacheFileDescriptor(), 42)
+  }
+
+  func testAddConcreteOptions() throws {
+    let options = try Options()
+    let cpuOptions = try CpuOptions()
+    try cpuOptions.setNumThreads(2)
+    try cpuOptions.setKernelMode(.delegate)
+
+    try options.addConcreteOptions(cpuOptions)
+
+    let opaqueOptions = try options.opaqueOptions()
+    XCTAssertNotNil(opaqueOptions)
+    XCTAssertEqual(opaqueOptions?.identifier, "xnnpack")
+  }
+
+  func testCompiledModelWithCpuOptions() throws {
+    let env = try Environment()
+    let modelPath = "litert/test/testdata/simple_model.tflite"
+    let options = try Options()
+    try options.setHardwareAccelerators([.cpu])
+
+    let cpuOptions = try CpuOptions()
+    try cpuOptions.setNumThreads(2)
+    try cpuOptions.setKernelMode(.delegate)
+    try options.addConcreteOptions(cpuOptions)
+
+    let compiledModel = try CompiledModel(filePath: modelPath, environment: env, options: options)
+    XCTAssertNotNil(compiledModel)
+  }
 }

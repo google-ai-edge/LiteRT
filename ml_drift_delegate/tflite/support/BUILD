@@ -30,6 +30,7 @@ cc_library(
         "//tflite:builtin_ops",
         "//tflite:util",
         "//tflite/c:common",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/types:span",
     ],
@@ -125,10 +126,10 @@ cc_library(
         "//tflite/kernels:kernel_util",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
-        "@ml_drift//ml_drift/common:status",
     ],
 )
 
@@ -138,10 +139,10 @@ cc_test(
     deps = [
         ":support_aux",
         "//tflite/c:common",
+        "@com_google_absl//absl/status",
         "@com_google_googletest//:gtest_main",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
     ],
 )
 
@@ -169,10 +170,10 @@ cc_library(
         "//tflite/core/c:private_common",
         "//tflite/kernels:kernel_util",
         "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
     ],
 )
 
@@ -188,10 +189,10 @@ cc_library(
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
     ],
 )
 
@@ -222,10 +223,10 @@ cc_library(
         "//tflite/core/c:private_common",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
     ],
 )
 
@@ -272,10 +273,10 @@ cc_library(
         "//tflite/kernels:kernel_util",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
     ],
 )
 
@@ -320,10 +321,10 @@ cc_library(
         "//tflite/kernels:kernel_util",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
     ],
 )
 
@@ -338,10 +339,10 @@ cc_library(
         "//tflite/kernels:kernel_util",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
     ],
 )
 
@@ -388,10 +389,10 @@ cc_library(
         "//tflite/kernels:kernel_util",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
     ],
 )
 
@@ -419,11 +420,11 @@ cc_library(
         "//tflite/core/c:private_common",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@flatbuffers//:runtime_cc",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
     ],
 )
 
@@ -437,11 +438,11 @@ cc_library(
         "//tflite/core/c:private_common",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@flatbuffers//:runtime_cc",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
     ],
 )
 
@@ -486,10 +487,10 @@ cc_library(
         "//tflite/kernels:kernel_util",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
     ],
 )
 
@@ -533,10 +534,10 @@ cc_library(
         "//tflite/kernels:kernel_util",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
     ],
 )
 
@@ -622,11 +623,11 @@ cc_library(
         "//tflite/c:common",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@flatbuffers//:runtime_cc",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
     ],
 )
 
@@ -665,6 +666,7 @@ cc_library(
     hdrs = ["support_split.h"],
     deps = [
         ":support_aux",
+        "//ml_drift_delegate/tflite:ir_model_builder_helper",
         "//tflite/c:common",
         "//tflite/core/c:private_common",
         "//tflite/kernels:kernel_util",
@@ -809,10 +811,10 @@ cc_library(
         "//tflite/c:common",
         "//tflite/core/c:private_common",
         "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/common:util",
     ],
 )
@@ -840,10 +842,10 @@ cc_library(
         "//tflite/c:common",
         "//tflite/core/c:private_common",
         "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
     ],
 )
 
@@ -873,10 +875,10 @@ cc_library(
         "//tflite/kernels:kernel_util",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
     ],
 )
 

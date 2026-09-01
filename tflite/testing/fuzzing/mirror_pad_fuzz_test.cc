@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <utility>
 #include <vector>
@@ -83,21 +84,41 @@ std::vector<int32_t> PaddingShape(const MirrorPadCase& test_case, size_t rank,
   return {static_cast<int32_t>(*rows), static_cast<int32_t>(*columns)};
 }
 
-std::vector<int64_t> StoredPaddingValues(TensorType type,
-                                         std::vector<int64_t> values) {
-  for (int64_t& value : values) {
-    switch (type) {
-      case TensorType_INT32:
-        value = static_cast<int32_t>(value);
-        break;
-      case TensorType_INT64:
-        break;
-      default:
-        value = 0;
-        break;
-    }
+std::vector<uint8_t> MaterializePaddingBytes(const MirrorPadCase& test_case,
+                                             size_t padding_count) {
+  const std::vector<int64_t> padding_values =
+      fuzzing::MaterializeValues(test_case.padding_values, padding_count);
+  std::vector<uint8_t> bytes =
+      fuzzing::MakeIntegerValues(test_case.padding_type, padding_values);
+  fuzzing::OverlayBytes(test_case.padding_data, &bytes);
+  fuzzing::ApplyCentralTensorInputInvariants(test_case.padding_type, &bytes);
+  return bytes;
+}
+
+template <typename T>
+std::vector<int64_t> DecodePaddingValues(const std::vector<uint8_t>& bytes) {
+  if (bytes.size() % sizeof(T) != 0) {
+    return {};
+  }
+  std::vector<int64_t> values(bytes.size() / sizeof(T));
+  for (size_t i = 0; i < values.size(); ++i) {
+    T value;
+    std::memcpy(&value, bytes.data() + i * sizeof(T), sizeof(T));
+    values[i] = static_cast<int64_t>(value);
   }
   return values;
+}
+
+std::vector<int64_t> DecodePaddingValues(TensorType type,
+                                         const std::vector<uint8_t>& bytes) {
+  switch (type) {
+    case TensorType_INT32:
+      return DecodePaddingValues<int32_t>(bytes);
+    case TensorType_INT64:
+      return DecodePaddingValues<int64_t>(bytes);
+    default:
+      return {};
+  }
 }
 
 bool MirrorPadOutputIsWithinFuzzerBudget(const MirrorPadCase& test_case) {
@@ -113,9 +134,11 @@ bool MirrorPadOutputIsWithinFuzzerBudget(const MirrorPadCase& test_case) {
 
   const size_t rank = test_case.input_shape.size();
   const int64_t mode_offset = test_case.mode == MirrorPadMode_REFLECT ? 1 : 0;
-  const std::vector<int64_t> padding_values = StoredPaddingValues(
-      test_case.padding_type,
-      fuzzing::MaterializeValues(test_case.padding_values, rank * 2));
+  const std::vector<int64_t> padding_values = DecodePaddingValues(
+      test_case.padding_type, MaterializePaddingBytes(test_case, rank * 2));
+  if (padding_values.size() != rank * 2) {
+    return false;
+  }
 
   size_t output_elements = 1;
   for (size_t i = 0; i < rank; ++i) {
@@ -196,8 +219,6 @@ fuzzing::RunResult RunMirrorPadCase(const MirrorPadCase& test_case) {
   size_t padding_columns = 0;
   const std::vector<int32_t> padding_shape =
       PaddingShape(test_case, rank, &padding_rows, &padding_columns);
-  const std::vector<int64_t> padding_values = fuzzing::MaterializeValues(
-      test_case.padding_values, padding_rows * padding_columns);
   size_t input_elements = 0;
   if (!fuzzing::CheckedShapeElementCount(test_case.input_shape,
                                          &input_elements) ||
@@ -210,10 +231,7 @@ fuzzing::RunResult RunMirrorPadCase(const MirrorPadCase& test_case) {
   fuzzing::ApplyCentralTensorInputInvariants(test_case.input_type,
                                              &input_bytes);
   std::vector<uint8_t> padding_bytes =
-      fuzzing::MakeIntegerValues(test_case.padding_type, padding_values);
-  fuzzing::OverlayBytes(test_case.padding_data, &padding_bytes);
-  fuzzing::ApplyCentralTensorInputInvariants(test_case.padding_type,
-                                             &padding_bytes);
+      MaterializePaddingBytes(test_case, padding_rows * padding_columns);
 
   flatbuffers::FlatBufferBuilder builder;
   std::vector<flatbuffers::Offset<Buffer>> buffers = {
@@ -359,6 +377,26 @@ TEST(MirrorPadFuzzTest, MirrorPadSmokeInvokes) {
   test_case.quantized_int8 = false;
   test_case.invoke = true;
 
+  EXPECT_EQ(RunMirrorPadCase(test_case), fuzzing::RunResult::kSuccess);
+}
+
+TEST(MirrorPadFuzzTest, PaddingDataOverlayControlsValidation) {
+  MirrorPadCase test_case;
+  test_case.input_shape = {1};
+  test_case.padding_values = {
+      static_cast<int64_t>(std::numeric_limits<int32_t>::min()) - 1};
+  test_case.input_data = {};
+  test_case.padding_data = {1, 0, 0, 0, 0, 0, 0, 0};
+  test_case.padding_shape_kind = PaddingShapeKind::kValid;
+  test_case.input_type = TensorType_INT32;
+  test_case.output_type = TensorType_INT32;
+  test_case.padding_type = TensorType_INT32;
+  test_case.mode = MirrorPadMode_SYMMETRIC;
+  test_case.dynamic_paddings = false;
+  test_case.quantized_int8 = false;
+  test_case.invoke = true;
+
+  EXPECT_TRUE(MirrorPadOutputIsWithinFuzzerBudget(test_case));
   EXPECT_EQ(RunMirrorPadCase(test_case), fuzzing::RunResult::kSuccess);
 }
 

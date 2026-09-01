@@ -73,7 +73,7 @@ class StubContextBuilder {
     return tensors_.size() - 1;
   }
 
-  // Adds a scalar const TfLiteTensor and returns its index in
+  // Adds a scalar const TfLiteTensor (dims->size == 0) and returns its index in
   // TfLiteContext.tensors.
   int AddScalarConstTensor(TfLiteType dtype, void* scalar_value);
 

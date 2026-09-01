@@ -1514,7 +1514,7 @@ cc_library(
         "transforms/prepare_quantize_helper.cc",
         "transforms/quantization/bias_quantizer_pass.cc",
         "transforms/quantization/fuse_qdq_pass.cc",
-        "transforms/quantization/propagate_qsv_pass.cc",
+        "transforms/quantization/propagate_qparams_pass.cc",
         "transforms/quantization/quant_utils.cc",
         "transforms/quantize.cc",
         "transforms/quantize_variables.cc",
@@ -2422,9 +2422,3 @@ tf_proto_library(
 #     deps = [":converter_flags_proto"],
 # )
 # copybara:uncomment_end
-
-filegroup(
-    name = "litfiles",
-    srcs = glob(["runlit*py"]),
-    visibility = ["//tflite/converter:__subpackages__"],
-)

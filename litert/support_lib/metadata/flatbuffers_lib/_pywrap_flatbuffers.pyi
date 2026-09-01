@@ -1,0 +1,33 @@
+# Copyright 2026 The AI Edge LiteRT Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+class FlatBufferBuilder:
+    def __init__(self, *args, **kwargs) -> None: ...
+    def clear(self) -> None: ...
+    def push_flat_buffer(self, arg0: str) -> None: ...
+
+class IDLOptions:
+    strict_json: bool
+    def __init__(self) -> None: ...
+
+class Parser:
+    def __init__(self, arg0: IDLOptions) -> None: ...
+    def parse(self, arg0: str) -> bool: ...
+    @property
+    def builder(self): ...
+    @property
+    def error(self) -> str: ...
+
+def generate_text(arg0: Parser, arg1: str) -> str: ...
+def generate_text_file(arg0: Parser, arg1: str, arg2: str) -> str: ...

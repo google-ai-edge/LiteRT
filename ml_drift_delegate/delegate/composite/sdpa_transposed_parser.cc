@@ -123,6 +123,7 @@ void SdpaTransposedOperationParser::Parse(const TfLiteNode* tflite_node,
 
   SdpaTransposedAttributes attr;
   attr.runtime_check.src_end_ch_index = kActiveTokensAlignedIndex;
+  attr.is_prefill = (query->tensor.shape.w > 2 || model_batch);
 
   const ::ml_drift::BHWC right_shape_k = k_val->tensor.shape;
   attr.bmm1_weights.weights_shape =

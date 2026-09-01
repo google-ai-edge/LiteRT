@@ -28,12 +28,13 @@
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/selectors/operation_selector.h"  // from @ml_drift
 #include "ml_drift/common/selectors/special_selector.h"  // from @ml_drift
-#include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_kernel.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_kernel.h"
+#include "ml_drift_delegate/delegate/composite/qkv_norm_rope_kernel.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_kernel.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_kernel.h"
+#include "ml_drift_delegate/delegate/composite/swiglu_kernel.h"
 
 namespace litert::ml_drift::ir {
 
@@ -70,6 +71,10 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
                                               model_builder);
   } else if (op.name == "sdpa_transposed") {
     return CreateSdpaTransposedFromIrOp(inputs, outputs, op, model_builder);
+  } else if (op.name == "swiglu") {
+    return CreateSwigluFromIrOp(inputs, outputs, op, model_builder);
+  } else if (op.name == "qkv_norm_rope") {
+    return CreateQkvNormRopeFromIrOp(inputs, outputs, op, model_builder);
   }
 
   return ::ml_drift::GPUOperationFromNode(gpu_info_, op_def, create_info_,

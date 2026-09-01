@@ -88,6 +88,18 @@ else
   mkdir -p ${LITERT_GPU_API_DIR}
   cp ./ci/gen/litert-gpu-api-$VERSION/* ${LITERT_GPU_API_DIR}
 
+  LITERT_SUPPORT_API_DIR=${PACKAGE_PATH}/litert-support-api/$VERSION
+  mkdir -p ${LITERT_SUPPORT_API_DIR}
+  cp ./ci/gen/litert-support-api-$VERSION/* ${LITERT_SUPPORT_API_DIR}
+
+  LITERT_SUPPORT_DIR=${PACKAGE_PATH}/litert-support/$VERSION
+  mkdir -p ${LITERT_SUPPORT_DIR}
+  cp ./ci/gen/litert-support-$VERSION/* ${LITERT_SUPPORT_DIR}
+
+  LITERT_METADATA_DIR=${PACKAGE_PATH}/litert-metadata/$VERSION
+  mkdir -p ${LITERT_METADATA_DIR}
+  cp ./ci/gen/litert-metadata-$VERSION/* ${LITERT_METADATA_DIR}
+
   if [[ "$VERSION" == "0.0.0-nightly-SNAPSHOT" && "$IS_PRESUBMIT_JOB" != "true" ]]; then
     # Package debug version of litert, litert-gpu
     LITERT_DEBUG_DIR=${PACKAGE_PATH}/litert/${DEBUG_VERSION}

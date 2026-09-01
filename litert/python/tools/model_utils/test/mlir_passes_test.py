@@ -56,9 +56,9 @@ class MlirPassesTest(testing.ModelUtilsTestCase):
     module = build_sample_model()
     passes.tfl.PrepareQuantizePass()(module)
 
-  def test_tfl_propagate_qsv_pass(self):
+  def test_tfl_propagate_qparams_pass(self):
     module = build_sample_model()
-    passes.tfl.PropagateQsvPass()(module)
+    passes.tfl.PropagateQParamsPass()(module)
 
 
 if __name__ == "__main__":

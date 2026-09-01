@@ -29,9 +29,7 @@ limitations under the License.
 // NOLINTNEXTLINE - This header file shouldn't go to the top.
 #include "tflite/kernels/internal/portable_tensor_utils.h"
 #include "tflite/kernels/internal/reference/integer_ops/transpose_conv.h"
-#include "tflite/kernels/internal/reference/reference_ops.h"
 #include "tflite/kernels/internal/reference/transpose_conv.h"
-#include "tflite/kernels/internal/tensor.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/internal/types.h"
 #include "tflite/kernels/kernel_util.h"
@@ -297,6 +295,11 @@ TfLiteStatus ComputeAndValidatePadding(TfLiteContext* context,
                                        const TfLiteTensor* input,
                                        const TfLiteTensor* output,
                                        TfLitePaddingValues* padding) {
+  TF_LITE_ENSURE_EQ(context, NumDimensions(output), 4);
+  TF_LITE_ENSURE_EQ(context, NumDimensions(weights), 4);
+  TF_LITE_ENSURE_EQ(context, NumDimensions(input), 4);
+  TF_LITE_ENSURE(context, SizeOfDimension(output, 1) > 0);
+  TF_LITE_ENSURE(context, SizeOfDimension(output, 2) > 0);
   const int width = SizeOfDimension(output, 2);
   const int height = SizeOfDimension(output, 1);
   const int filter_width = SizeOfDimension(weights, 2);
@@ -344,6 +347,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   // Tensor sanity checks
   TF_LITE_ENSURE_EQ(context, NumDimensions(output_shape), 1);
+  TF_LITE_ENSURE_EQ(context, NumElements(output_shape), 4);
   TF_LITE_ENSURE_EQ(context, NumDimensions(input), 4);
   TF_LITE_ENSURE_EQ(context, NumDimensions(weights), 4);
   TF_LITE_ENSURE(context, params->stride_height > 0);

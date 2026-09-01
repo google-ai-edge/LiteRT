@@ -17,7 +17,6 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//tflite:build_def.bzl", "tflite_copts")
-load("//tflite/tools/evaluation/tasks:build_def.bzl", "task_linkopts")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -73,49 +72,6 @@ cc_library(
         "//tflite/tools/delegates:delegate_provider_hdr",
     ],
     alwayslink = 1,
-)
-
-cc_binary(
-    name = "benchmark_model_plus_dummy_delegate",
-    copts = tflite_copts(),
-    linkopts = task_linkopts(),
-    deps = [
-        ":dummy_delegate_provider",
-        "//tflite/tools/benchmark:benchmark_model_main",
-    ],
-)
-
-cc_binary(
-    name = "inference_diff_plus_dummy_delegate",
-    copts = tflite_copts(),
-    linkopts = task_linkopts(),
-    deps = [
-        ":dummy_delegate_provider",
-        "//tflite/tools/evaluation/tasks:task_executor_main",
-        "//tflite/tools/evaluation/tasks/inference_diff:run_eval_lib",
-    ],
-)
-
-cc_binary(
-    name = "imagenet_classification_eval_plus_dummy_delegate",
-    copts = tflite_copts(),
-    linkopts = task_linkopts(),
-    deps = [
-        ":dummy_delegate_provider",
-        "//tflite/tools/evaluation/tasks:task_executor_main",
-        "//tflite/tools/evaluation/tasks/imagenet_image_classification:run_eval_lib",
-    ],
-)
-
-cc_binary(
-    name = "coco_object_detection_eval_plus_dummy_delegate",
-    copts = tflite_copts(),
-    linkopts = task_linkopts(),
-    deps = [
-        ":dummy_delegate_provider",
-        "//tflite/tools/evaluation/tasks:task_executor_main",
-        "//tflite/tools/evaluation/tasks/coco_object_detection:run_eval_lib",
-    ],
 )
 
 sh_test(

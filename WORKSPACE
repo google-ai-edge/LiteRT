@@ -1,3 +1,8 @@
+#
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+#
+
 # buildifier: disable=load-on-top
 
 workspace(name = "litert")
@@ -282,7 +287,9 @@ maven_install(
     name = "litert_maven",
     artifacts = [
         "androidx.lifecycle:lifecycle-common:2.8.7",
+        "com.google.android.odml:image:aar:1.0.0-beta1",
         "com.google.android.play:ai-delivery:0.1.1-alpha01",
+        "com.google.errorprone:error_prone_annotations:2.50.0",
         "com.google.guava:guava:33.4.6-android",
         "org.jetbrains.kotlin:kotlin-stdlib:2.0.21",
         "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0",
@@ -366,6 +373,11 @@ load("//third_party/models:workspace.bzl", "models")
 models()
 
 # VENDOR SDKS ######################################################################################
+
+# ARM(R) -----------------------------------------------------------------------------------------
+load("//third_party/arm:workspace.bzl", "arm_deps")
+
+arm_deps()
 
 # QUALCOMM ---------------------------------------------------------------------------------------
 

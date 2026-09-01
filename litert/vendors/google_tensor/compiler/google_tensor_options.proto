@@ -118,7 +118,8 @@ message GoogleTensorOptions {
   // copybara:comment_begin(google-only)
   // Enables MLIR-based input validation. When set to true, the compiler runs
   // an InputValidatorPass to check for unsupported operations.
-  // TODO(b/472440425): Remove this flag and enable by default after verification.
+  // TODO(b/551885395): Remove this flag and enable by default after
+  // verification.
   bool experimental_enable_input_validator = 14;
   // copybara:comment_end
 

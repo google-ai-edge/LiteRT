@@ -300,7 +300,7 @@ void RegisterPasses() {
   mlir::PassRegistration<mlir::OperationPass<mlir::func::FuncOp>>(
       []() { return mlir::TFL::CreatePrepareQuantizePass(); });
   mlir::PassRegistration<mlir::OperationPass<mlir::ModuleOp>>(
-      []() { return mlir::TFL::CreatePropagateQsvPass(); });
+      []() { return mlir::TFL::CreatePropagateQParamsPass(); });
   mlir::PassRegistration<mlir::OperationPass<mlir::ModuleOp>>(
       []() { return mlir::TFL::CreatePostQuantizePass(true); });
   mlir::PassRegistration<mlir::OperationPass<mlir::ModuleOp>>(

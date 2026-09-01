@@ -47,7 +47,26 @@ exports_files([
 #     srcs = ["externalize_tflite_flatbuffer.py"],
 #     deps = [
 #         "//third_party/py/flatbuffers",
-#         "@org_tensorflow//third_party/py/numpy:headers",
+#         "//tflite/python:schema_py",
+#     ],
+# )
+#
+# py_library(
+#     name = "externalize_tflite_flatbuffer_lib",
+#     srcs = ["externalize_tflite_flatbuffer.py"],
+#     deps = [
+#         "//third_party/py/flatbuffers",
+#         "//tflite/python:schema_py",
+#     ],
+# )
+#
+# py_test(
+#     name = "externalize_tflite_flatbuffer_test",
+#     srcs = ["externalize_tflite_flatbuffer_test.py"],
+#     deps = [
+#         ":externalize_tflite_flatbuffer_lib",
+#         "@absl_py//absl/testing:absltest",
+#         "//third_party/py/flatbuffers",
 #         "//tflite/python:schema_py",
 #     ],
 # )

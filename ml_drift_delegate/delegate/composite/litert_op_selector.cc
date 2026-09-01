@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
@@ -29,17 +30,19 @@
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/selectors/operation_selector.h"  // from @ml_drift
 #include "ml_drift/common/selectors/special_selector.h"  // from @ml_drift
-#include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_kernel.h"
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_kernel.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
+#include "ml_drift_delegate/delegate/composite/qkv_norm_rope_kernel.h"
+#include "ml_drift_delegate/delegate/composite/qkv_norm_rope_parser.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_kernel.h"
-#include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_kernel.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
+#include "ml_drift_delegate/delegate/composite/swiglu_kernel.h"
+#include "ml_drift_delegate/delegate/composite/swiglu_parser.h"
 
 namespace litert::ml_drift {
 
@@ -181,6 +184,12 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
   if (node.operation.type == kMoeExpertsType) {
     return CreateMoeExpertsFromNode(create_info_, inputs, outputs, node,
                                     model_builder);
+  }
+  if (node.operation.type == kSwigluType) {
+    return CreateSwigluFromNode(inputs, outputs, node, model_builder);
+  }
+  if (node.operation.type == kQkvNormRopeType) {
+    return CreateQkvNormRopeFromNode(inputs, outputs, node, model_builder);
   }
   if (node.operation.type == ToString(::ml_drift::OperationType::ROPE)) {
     return CreateRoPEFromNode(inputs, outputs, node, model_builder);

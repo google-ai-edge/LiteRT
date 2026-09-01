@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <array>
+#include <cstdint>
 #include <vector>
 
 #include "testing/base/public/gmock.h"
@@ -370,9 +371,10 @@ TEST_F(ParamsTest, RejectsNumSplitsTooBig) {
 
 // Test suite for checking the number of dimensions.
 class DimsTest : public testing::Test {};
-TEST_F(DimsTest, Rejects0dAxis) {
+TEST_F(DimsTest, SupportsScalarAxis) {
   StubContextBuilder context_builder;
-  const int axis = context_builder.AddConstTensor(kTfLiteInt32, {});
+  const int axis =
+      context_builder.AddScalarConstTensor(kTfLiteInt32, &kDefaultAxis);
   const int input = context_builder.AddTensor(kDefaultDtype, kDefaultInputDims);
   const int output0 =
       context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
@@ -384,7 +386,26 @@ TEST_F(DimsTest, Rejects0dAxis) {
                         /*outputs=*/{output0, output1});
   TfLiteContext* context = context_builder.Build();
   ASSERT_TRUE(context != nullptr);
-  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
+TEST_F(DimsTest, Supports1dAxis) {
+  StubContextBuilder context_builder;
+  std::array<int32_t, 1> axis_data = {kDefaultAxis};
+  const int axis =
+      context_builder.AddConst1dTensor<int32_t>(kTfLiteInt32, axis_data);
+  const int input = context_builder.AddTensor(kDefaultDtype, kDefaultInputDims);
+  const int output0 =
+      context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+  const int output1 =
+      context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+  context_builder.SetOp(kTfLiteBuiltinSplit, /*version=*/1,
+                        /*params=*/&kDefaultParams,
+                        /*inputs=*/{axis, input},
+                        /*outputs=*/{output0, output1});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
 }
 
 TEST_F(DimsTest, Rejects2dAxis) {
@@ -501,6 +522,43 @@ TEST_F(ShapeTest, RejectsAxisSumMismatch) {
   TfLiteContext* context = context_builder.Build();
   ASSERT_TRUE(context != nullptr);
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+TEST_F(ShapeTest, SupportsScalarAxis) {
+  StubContextBuilder context_builder;
+  const int axis =
+      context_builder.AddScalarConstTensor(kTfLiteInt32, &kDefaultAxis);
+  const int input = context_builder.AddTensor(kDefaultDtype, kDefaultInputDims);
+  const int output0 =
+      context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+  const int output1 =
+      context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+  context_builder.SetOp(kTfLiteBuiltinSplit, /*version=*/1,
+                        /*params=*/&kDefaultParams,
+                        /*inputs=*/{axis, input},
+                        /*outputs=*/{output0, output1});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
+TEST_F(ShapeTest, SupportsNegativeAxis) {
+  int negative_axis = -1;
+  StubContextBuilder context_builder;
+  const int axis =
+      context_builder.AddScalarConstTensor(kTfLiteInt32, &negative_axis);
+  const int input = context_builder.AddTensor(kDefaultDtype, kDefaultInputDims);
+  const int output0 =
+      context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+  const int output1 =
+      context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+  context_builder.SetOp(kTfLiteBuiltinSplit, /*version=*/1,
+                        /*params=*/&kDefaultParams,
+                        /*inputs=*/{axis, input},
+                        /*outputs=*/{output0, output1});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
 }
 
 }  // namespace

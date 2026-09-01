@@ -309,11 +309,15 @@ public final class TensorBuffer {
     }
   }
 
-  /// Locks the tensor buffer, writes data into it, and unlocks it.
+  /// Locks the tensor buffer, copies `source` into it, and unlocks it.
   ///
-  /// - Parameter data: An array of data elements to write into the buffer.
+  /// - Parameter source: The raw bytes to copy into the buffer.
   /// - Throws: `LiteRtError` if locking, writing, or unlocking fails.
-  public func write<T>(_ data: [T]) throws {
+  private func write(rawBytes source: UnsafeRawBufferPointer) throws {
+    guard source.count == size else {
+      throw LiteRtError.invalidArgument
+    }
+
     var hostAddr: UnsafeMutableRawPointer?
     let status = LiteRtLockTensorBuffer(cTensorBuffer, &hostAddr, kLiteRtTensorBufferLockModeWrite)
     try checkStatus(status)
@@ -325,16 +329,44 @@ public final class TensorBuffer {
       LiteRtUnlockTensorBuffer(cTensorBuffer)
     }
 
-    let byteCount = data.count * MemoryLayout<T>.stride
-    guard byteCount <= size else {
-      throw LiteRtError.invalidArgument
+    if let sourceAddr = source.baseAddress {
+      hostAddr.copyMemory(from: sourceAddr, byteCount: source.count)
+    }
+  }
+
+  /// Locks the tensor buffer, writes data into it, and unlocks it.
+  ///
+  /// - Parameter data: An array of data elements to write into the buffer.
+  /// - Throws: `LiteRtError` if locking, writing, or unlocking fails.
+  public func write<T>(_ data: [T]) throws {
+    try data.withUnsafeBytes { try write(rawBytes: $0) }
+  }
+
+  /// Locks the tensor buffer, writes data into it, and unlocks it.
+  ///
+  /// - Parameter data: The bytes to write into the buffer.
+  /// - Throws: `LiteRtError` if locking, writing, or unlocking fails.
+  public func write(_ data: Data) throws {
+    try data.withUnsafeBytes { try write(rawBytes: $0) }
+  }
+
+  /// Locks the tensor buffer, reads its contents into `Data`, and unlocks it.
+  ///
+  /// - Returns: The bytes read from the buffer.
+  /// - Throws: `LiteRtError` if locking, reading, or unlocking fails.
+  public func read() throws -> Data {
+    var hostAddr: UnsafeMutableRawPointer?
+    let status = LiteRtLockTensorBuffer(cTensorBuffer, &hostAddr, kLiteRtTensorBufferLockModeRead)
+    try checkStatus(status)
+    guard let hostAddr else {
+      throw LiteRtError.runtimeFailure
     }
 
-    data.withUnsafeBytes { source in
-      if let sourceAddr = source.baseAddress {
-        hostAddr.copyMemory(from: sourceAddr, byteCount: byteCount)
-      }
+    defer {
+      LiteRtUnlockTensorBuffer(cTensorBuffer)
     }
+
+    return Data(bytes: hostAddr, count: size)
   }
 
   /// Locks the tensor buffer, reads its contents into an array, and unlocks it.

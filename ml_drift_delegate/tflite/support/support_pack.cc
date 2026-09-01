@@ -22,6 +22,7 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "ml_drift_delegate/tflite/support/support_aux.h"
+#include "tflite/c/builtin_op_data.h"
 #include "tflite/c/common.h"
 #include "tflite/kernels/kernel_util.h"
 
@@ -98,8 +99,14 @@ bool IsPackSupported(const TfLiteContext* absl_nonnull context,
   }
   // Check dims. Should all be the same number of dims.
   for (int i = 0; i < inputs->size; ++i) {
-    if (!CheckTensorDims(*input_tensors[i], /*min_dims=*/1, /*max_dims=*/4,
+    if (!CheckTensorDims(*input_tensors[i], /*min_dims=*/0, /*max_dims=*/4,
                          absl::StrCat("inputs[", i, "]"), *error)) {
+      return false;
+    }
+  }
+  for (int i = 1; i < inputs->size; ++i) {
+    if (input_tensors[i]->dims->size != input_tensors[0]->dims->size) {
+      *error = "All input tensors must have the same number of dimensions";
       return false;
     }
   }

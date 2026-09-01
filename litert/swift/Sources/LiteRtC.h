@@ -28,5 +28,6 @@
 #include "litert/c/litert_options.h"  // IWYU pragma: keep
 #include "litert/c/litert_tensor_buffer.h"  // IWYU pragma: keep
 #include "litert/c/litert_tensor_buffer_requirements.h"  // IWYU pragma: keep
+#include "litert/c/options/litert_cpu_options.h"  // IWYU pragma: keep
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_SWIFT_SOURCES_LITERTC_H_

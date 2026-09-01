@@ -26,12 +26,12 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/node_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
-#include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
@@ -317,8 +317,7 @@ class SharedMemoryManager {
       const ValueId& shared_tensor_id, uint32_t global_tensor_id,
       const TfLiteTensor& tflite_tensor,
       absl::flat_hash_map<ValueId, GlobalId>* external_tensors,
-      bool is_weight_sum_i_required,
-      const std::vector<uint32_t>& weight_consumers, DataType data_type,
+      bool is_weight_sum_i_required, uint32_t fc_op_id, DataType data_type,
       const OHWI& weights_shape);
 
   // Creates scale and zero point tensors for blockwise quantized weights.
@@ -326,7 +325,7 @@ class SharedMemoryManager {
       const ValueId& shared_tensor_id, uint32_t global_tensor_id,
       const TfLiteTensor& tflite_tensor,
       absl::flat_hash_map<ValueId, GlobalId>* external_tensors,
-      const std::vector<uint32_t>& weight_consumers, DataType data_type);
+      uint32_t fc_op_id, DataType data_type);
 
   // Creates a linear tensor with a given shape, adds it to the graph and sets
   // the memory provided by the data pointer.
@@ -335,21 +334,23 @@ class SharedMemoryManager {
   // cache, the descriptor will be retrieved from the cache instead of creating
   // a new one. In this case, the data pointer will be ignored.
   template <typename InputDataType>
-  absl::StatusOr<ValueId> AddInputWithData(
-      uint32_t global_tensor_id, const Linear& shape,
-      const std::vector<uint32_t>& weight_consumers, const InputDataType* data,
-      DataType data_type);
+  absl::StatusOr<ValueId> AddInputWithData(uint32_t global_tensor_id,
+                                           const Linear& shape,
+                                           uint32_t consumer_op_id,
+                                           const InputDataType* data,
+                                           DataType data_type);
   template <typename InputDataType>
-  absl::StatusOr<ValueId> AddScaleNodeWithData(
-      uint32_t global_tensor_id, const std::vector<uint32_t>& weight_consumers,
-      const InputDataType* data, DataType data_type, int num_channels,
-      int num_blocks);
+  absl::StatusOr<ValueId> AddScaleNodeWithData(uint32_t global_tensor_id,
+                                               uint32_t consumer_op_id,
+                                               const InputDataType* data,
+                                               DataType data_type,
+                                               int num_channels,
+                                               int num_blocks);
   // Adds a new value to the consumer_node. The tensor_id and shape parameters
   // are set as give, the data type is default.
-  absl::StatusOr<ValueId> AddInputNode(
-      uint32_t tensor_id, const BHWC& shape,
-      const std::vector<uint32_t>& weight_consumers, DataType data_type,
-      absl::flat_hash_map<ValueId, GlobalId>* external_tensors = nullptr);
+  absl::StatusOr<ValueId> AddInputNode(uint32_t tensor_id, const BHWC& shape,
+                                       uint32_t consumer_op_id,
+                                       DataType data_type);
 
   // Creates a tensor from a TfLiteTensor containing prepacked weight data.
   absl::StatusOr<std::unique_ptr<GpuSpatialTensor>>

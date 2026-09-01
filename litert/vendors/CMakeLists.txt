@@ -293,7 +293,7 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
       absl::status
       absl::statusor)
   if(CMAKE_SYSTEM_NAME STREQUAL "Android")
-    target_link_libraries(${TGT} PRIVATE android log)
+    target_link_libraries(${TGT} PRIVATE log)
   endif()
   set_target_properties(${TGT} PROPERTIES
     OUTPUT_NAME "LiteRtDispatch_${OUTPUT_BASENAME}"

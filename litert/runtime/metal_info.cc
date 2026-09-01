@@ -37,10 +37,19 @@ extern "C" {
 #endif  // __cplusplus
 
 LiteRtStatus LiteRtCreateMetalInfo(MetalInfoPtr* metal_info) {
+  if (!metal_info) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   auto metal_info_impl = std::make_unique<MetalInfoImpl>();
   metal_info_impl->metal_device = MTLCreateSystemDefaultDevice();
+  if (!metal_info_impl->metal_device) {
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
   metal_info_impl->metal_command_queue =
       [metal_info_impl->metal_device newCommandQueue];
+  if (!metal_info_impl->metal_command_queue) {
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
   metal_info_impl->MetalInfo::metal_info =
       (__bridge void*)metal_info_impl->metal_device;
   metal_info_impl->MetalInfo::metal_command_queue =
@@ -50,10 +59,16 @@ LiteRtStatus LiteRtCreateMetalInfo(MetalInfoPtr* metal_info) {
 }
 
 LiteRtStatus LiteRtCreateWithDevice(void* device, MetalInfoPtr* metal_info) {
+  if (!metal_info || !device) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   auto metal_info_impl = std::make_unique<MetalInfoImpl>();
   metal_info_impl->metal_device = (__bridge id<MTLDevice>)device;
   metal_info_impl->metal_command_queue =
       [metal_info_impl->metal_device newCommandQueue];
+  if (!metal_info_impl->metal_command_queue) {
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
   metal_info_impl->MetalInfo::metal_info =
       (__bridge void*)metal_info_impl->metal_device;
   metal_info_impl->MetalInfo::metal_command_queue =
@@ -64,6 +79,9 @@ LiteRtStatus LiteRtCreateWithDevice(void* device, MetalInfoPtr* metal_info) {
 
 LiteRtStatus LiteRtCreateWithCommandQueue(void* command_queue, void* device,
                                           MetalInfoPtr* metal_info) {
+  if (!metal_info || !device || !command_queue) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   auto metal_info_impl = std::make_unique<MetalInfoImpl>();
   metal_info_impl->metal_device = (__bridge id<MTLDevice>)device;
   metal_info_impl->metal_command_queue =
@@ -78,7 +96,7 @@ LiteRtStatus LiteRtCreateWithCommandQueue(void* command_queue, void* device,
 
 void LiteRtDeleteMetalInfo(MetalInfoPtr metal_info) {
   if (metal_info) {
-    delete metal_info;
+    delete static_cast<MetalInfoImpl*>(metal_info);
   }
 }
 

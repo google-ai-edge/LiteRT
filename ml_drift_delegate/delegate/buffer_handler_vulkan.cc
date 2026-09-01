@@ -23,8 +23,6 @@
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
-#include "absl/status/status.h"  // from @com_google_absl
-#include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/syrtis/buffer.h"  // from @ml_drift
 #include "ml_drift/syrtis/environment.h"  // from @ml_drift
 #include "ml_drift/syrtis/memory.h"  // from @ml_drift

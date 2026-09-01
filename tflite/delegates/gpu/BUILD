@@ -14,7 +14,7 @@
 # ==============================================================================
 
 load("@bazel_skylib//lib:selects.bzl", "selects")
-load("@build_bazel_rules_apple//apple:ios.bzl", "ios_static_framework")
+load("@build_bazel_rules_apple//apple:ios.bzl", "ios_static_framework", "ios_unit_test")
 load("@build_bazel_rules_apple//apple:macos.bzl", "macos_dylib")
 load(
     "@org_tensorflow//tensorflow/core/platform:build_config_root.bzl",
@@ -25,7 +25,12 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("//tflite:build_def.bzl", "CXX17_BAZEL_ONLY_COPTS", "tflite_pagesize_linkopts")
-load("//tflite:special_rules.bzl", "tflite_extra_gles_deps", "tflite_portable_test_suite")
+load(
+    "//tflite:special_rules.bzl",
+    "tflite_extra_gles_deps",
+    "tflite_ios_lab_runner",
+    "tflite_portable_test_suite",
+)
 load("//tflite/delegates/gpu:build_defs.bzl", "gpu_delegate_linkopts")
 
 package(
@@ -96,8 +101,8 @@ config_setting(
 config_setting(
     name = "tflite_gpu_extra_gles_deps_x86_64",
     constraint_values = [
-        "@org_tensorflow//third_party/bazel_platforms/cpu:x86_64",
-        "@org_tensorflow//third_party/bazel_platforms/os:linux",
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
     ],
     values = {
         "copt": "-DTFLITE_GPU_EXTRA_GLES_DEPS",
@@ -107,8 +112,8 @@ config_setting(
 config_setting(
     name = "tflite_gpu_extra_gles_deps_aarch64",
     constraint_values = [
-        "@org_tensorflow//third_party/bazel_platforms/cpu:aarch64",
-        "@org_tensorflow//third_party/bazel_platforms/os:linux",
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
     ],
     values = {
         "copt": "-DTFLITE_GPU_EXTRA_GLES_DEPS",
@@ -199,6 +204,27 @@ objc_library(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/types:span",
     ],
+)
+
+objc_library(
+    name = "metal_delegate_test_lib",
+    testonly = 1,
+    srcs = ["metal_delegate_test.mm"],
+    copts = CXX17_BAZEL_ONLY_COPTS,
+    sdk_frameworks = ["XCTest"],
+    deps = [":metal_delegate"],
+)
+
+ios_unit_test(
+    name = "metal_delegate_test",
+    testonly = 1,
+    minimum_os_version = "12.0",
+    runner = tflite_ios_lab_runner("IOS_LATEST"),
+    tags = tf_gpu_tests_tags() + [
+        "notap",
+        "tflite_not_portable_android",
+    ],
+    deps = [":metal_delegate_test_lib"],
 )
 
 objc_library(
@@ -358,6 +384,16 @@ cc_library(
             "//tflite/delegates/gpu/gl:api2",
         ],
     }) + _DELEGATE_NO_GL_DEPS + ["//tflite/delegates/gpu/cl:api"],
+)
+
+cc_test(
+    name = "delegate_test",
+    srcs = ["delegate_test.cc"],
+    tags = tf_gpu_tests_tags() + ["tflite_not_portable_ios"],
+    deps = [
+        ":delegate",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 cc_library(

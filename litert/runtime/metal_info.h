@@ -32,7 +32,6 @@ typedef void* MetalInfoHandle;
 // It's created by LiteRtCreateMetalInfo and LiteRtCreateWithDevice and
 // destroyed by LiteRtDeleteMetalInfo.
 typedef struct MetalInfo {
-  virtual ~MetalInfo() = default;
   MetalInfoHandle metal_info;
   MetalInfoHandle metal_command_queue;
 } MetalInfo;

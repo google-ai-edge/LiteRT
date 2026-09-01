@@ -314,6 +314,13 @@ INSTANTIATE_TEST_SUITE_P(
                            kTfLiteFloat32,
                            kTfLiteFloat16,
                            kTfLiteBFloat16,
+                           kTfLiteInt8,
+                           kTfLiteUInt8,
+                           kTfLiteInt16,
+                           kTfLiteInt32,
+                           kTfLiteBool,
+                           kTfLiteUInt16,
+                           kTfLiteUInt32,
                        }),
                        ::testing::ValuesIn<TfLiteBuiltinOperator>(
                            {kTfLiteBuiltinResizeBilinear,

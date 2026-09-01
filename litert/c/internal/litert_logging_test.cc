@@ -148,4 +148,13 @@ TEST_F(LiteRtSinkLoggerTest, ClearingMessagesFailsWithInvalidArguments) {
               IsError(kLiteRtStatusErrorInvalidArgument));
 }
 
+TEST_F(LiteRtSinkLoggerTest, NullStringFormatDoesNotCrash) {
+  const char* null_str = nullptr;
+  LITERT_EXPECT_OK(
+      LiteRtLoggerLog(sink_logger_, LITERT_INFO, "Vendor: %s", null_str));
+  const char* message = nullptr;
+  LITERT_EXPECT_OK(LiteRtGetSinkLoggerMessage(sink_logger_, 1, &message));
+  EXPECT_THAT(message, HasSubstr("Vendor: (null)"));
+}
+
 }  // namespace

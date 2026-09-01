@@ -21,6 +21,7 @@ limitations under the License.
 #include <vector>
 
 #include "flatbuffers/flatbuffers.h"  // from @flatbuffers
+#include "tflite/c/c_api_types.h"
 #include "tflite/kernels/test_util.h"
 #include "tflite/schema/schema_generated.h"
 

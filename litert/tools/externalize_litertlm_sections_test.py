@@ -82,7 +82,7 @@ class ExternalizeLitertlmSectionsTest(unittest.TestCase):
     self.assertIn("prefill_decode", text)
     self.assertIn("embedder", text)
 
-  def test_rewrite_prioritizes_text_and_appends_all_weights(self):
+  def test_rewrite_preserves_section_order_and_appends_all_weights(self):
     processed_prefill = self.root / "processed_prefill.tflite"
     processed_prefill.write_bytes(b"processed")
     prefill_weights = self.root / "prefill.weights"
@@ -104,19 +104,17 @@ class ExternalizeLitertlmSectionsTest(unittest.TestCase):
     self.assertEqual((model_count, weight_count), (3, 2))
     sections = tomllib.loads(output.read_text(encoding="utf-8"))["section"]
     model_types = [section.get("model_type") for section in sections]
-    self.assertLess(
-        model_types.index("prefill_decode"), model_types.index("vision_encoder")
+    self.assertEqual(
+        model_types[:4], [None, "vision_encoder", "prefill_decode", "embedder"]
     )
     first_weight = next(
         index
         for index, section in enumerate(sections)
         if section["section_type"] == "TFLiteWeights"
     )
-    self.assertTrue(
-        all(
-            section["section_type"] == "TFLiteWeights"
-            for section in sections[first_weight:]
-        )
+    self.assertEqual(
+        {section["section_type"] for section in sections[first_weight:]},
+        {"TFLiteWeights"},
     )
     self.assertEqual(
         [section["model_type"] for section in sections[first_weight:]],

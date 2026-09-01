@@ -187,13 +187,10 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   // Matching GetWindowedOutputSize in TensorFlow.
   int out_width, out_height;
-  TF_LITE_ENSURE_OK(
-      context, ComputePaddingHeightWidthChecked(
-                   op_data->params.stride_height, op_data->params.stride_width,
-                   1, 1, height, width, op_data->params.filter_height,
-                   op_data->params.filter_width, op_data->params.padding,
-                   &out_height, &out_width,
-                   &op_data->params.computed.padding));
+  op_data->params.computed.padding = ComputePaddingHeightWidth(
+      op_data->params.stride_height, op_data->params.stride_width, 1, 1, height,
+      width, op_data->params.filter_height, op_data->params.filter_width,
+      op_data->params.padding, &out_height, &out_width);
   TF_LITE_ENSURE_STATUS(
       ValidatePaddingValuesForInt16(op_data->params.computed.padding));
 

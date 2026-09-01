@@ -876,6 +876,57 @@ litert::Expected<litert::OwningBufferRef<uint8_t>> SerializeSubgraph(
   return std::move(*serialized);
 }
 
+// Gets and converts options from the compiler plugin.
+litert::Expected<GoogleTensorOptions> GetGoogleTensorOptions(
+    LiteRtCompilerPlugin compiler_plugin) {
+  auto lrt_google_tensor_options_expected =
+      compiler_plugin->CreateGoogleTensorOptions();
+  if (!lrt_google_tensor_options_expected) {
+    return lrt_google_tensor_options_expected.Error();
+  }
+  auto lrt_google_tensor_options = *lrt_google_tensor_options_expected;
+
+  GoogleTensorOptions google_tensor_options;
+  LiteRtStatus status = LrtOptionsToGoogleTensorOptions(
+      lrt_google_tensor_options, google_tensor_options);
+  LrtDestroyGoogleTensorOptions(lrt_google_tensor_options);
+
+  if (status != kLiteRtStatusOk) {
+    return litert::Unexpected(
+        status, "Failed to convert LrtOptions to GoogleTensorOptions");
+  }
+  return google_tensor_options;
+}
+
+// Gets unsupported op indices dynamically using the adapter.
+litert::Expected<absl::flat_hash_set<int32_t>> GetUnsupportedOpsDynamic(
+    litert::google_tensor::Adapter* adapter, LiteRtSubgraph subgraph,
+    const GoogleTensorOptions& google_tensor_options) {
+  std::string options_str;
+  if (!google_tensor_options.SerializeToString(&options_str)) {
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Failed to serialize GoogleTensorOptions");
+  }
+
+  auto serialize_expected = SerializeSubgraph(subgraph);
+  if (!serialize_expected.HasValue()) {
+    return serialize_expected.Error();
+  }
+  litert::OwningBufferRef<uint8_t> serialized_buf =
+      std::move(*serialize_expected);
+
+  auto unsupported_ops = adapter->GetUnsupportedOps(
+      reinterpret_cast<const char*>(serialized_buf.Data()),
+      serialized_buf.Size(), options_str.data(), options_str.size());
+
+  if (!unsupported_ops.HasValue()) {
+    return unsupported_ops.Error();
+  }
+
+  return absl::flat_hash_set<int32_t>(unsupported_ops->begin(),
+                                      unsupported_ops->end());
+}
+
 }  // namespace
 
 LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
@@ -887,28 +938,14 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  third_party::odml::litert::litert::vendors::google_tensor::compiler::
-      GoogleTensorOptions google_tensor_options;
-
-  auto lrt_google_tensor_options_expected =
-      compiler_plugin->CreateGoogleTensorOptions();
-  if (!lrt_google_tensor_options_expected) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create LrtGoogleTensorOptions: %s",
-               lrt_google_tensor_options_expected.Error().Message().c_str());
-    return lrt_google_tensor_options_expected.Error().Status();
+  auto google_tensor_options_expected = GetGoogleTensorOptions(compiler_plugin);
+  if (!google_tensor_options_expected) {
+    LITERT_LOG(LITERT_ERROR, "Failed to get GoogleTensorOptions: %s",
+               google_tensor_options_expected.Error().Message().c_str());
+    return google_tensor_options_expected.Error().Status();
   }
-  auto lrt_google_tensor_options = *lrt_google_tensor_options_expected;
-
-  LiteRtStatus status = LrtOptionsToGoogleTensorOptions(
-      lrt_google_tensor_options, google_tensor_options);
-  LrtDestroyGoogleTensorOptions(lrt_google_tensor_options);
-
-  if (status != kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_ERROR, "%s",
-               "Failed to convert LrtOptions to GoogleTensorOptions");
-    return status;
-  }
-
+  GoogleTensorOptions google_tensor_options =
+      std::move(*google_tensor_options_expected);
 
   LITERT_ASSIGN_OR_RETURN(litert::google_tensor::Adapter* adapter,
                           compiler_plugin->GetAdapter());
@@ -917,60 +954,53 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   LITERT_RETURN_IF_ERROR(PopulateCompilerConfig(
       compiler_plugin, soc_model ? soc_model : "", google_tensor_options));
 
-
-
   OpFilters op_filters;
   LITERT_RETURN_IF_ERROR(compiler_plugin->ReadOpFilters(
       google_tensor_options.op_filters_proto(), op_filters));
 
   litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
+  std::vector<litert::compiler::Op> ops = graph.Ops();
+
+  bool has_unsupported_composite = false;
+  for (const litert::compiler::Op& op : ops) {
+    if (op.Code() == kLiteRtOpCodeShloComposite &&
+        !google_tensor::IsOpSupported(op, op_filters)) {
+      has_unsupported_composite = true;
+      break;
+    }
+  }
 
   bool use_static_fallback = true;
   absl::flat_hash_set<int32_t> unsupported_op_indices;
 
-  std::string options_str;
-  if (!google_tensor_options.SerializeToString(&options_str)) {
-    LITERT_LOG(LITERT_ERROR, "%s", "Failed to serialize GoogleTensorOptions");
-    return kLiteRtStatusErrorRuntimeFailure;
-  }
   bool enable_input_validation = false;
   // copybara:uncomment_begin(google-only)
+  // // TODO(b/551885395): Remove this experimental flag once the feature is
+  // // matured.
   // enable_input_validation =
       // google_tensor_options.experimental_enable_input_validator();
   // copybara:uncomment_end
 
-  use_static_fallback = !enable_input_validation;
-
   if (enable_input_validation) {
-    litert::Expected<litert::OwningBufferRef<uint8_t>> serialize_expected =
-        SerializeSubgraph(subgraph);
-    if (!serialize_expected.HasValue()) {
-      LITERT_LOG(LITERT_ERROR, "Failed to serialize subgraph: %s",
-                 serialize_expected.Error().Message().c_str());
-      return serialize_expected.Error().Status();
-    }
-    litert::OwningBufferRef<uint8_t> serialized_buf =
-        std::move(*serialize_expected);
-
-    litert::Expected<std::vector<int32_t>> unsupported_ops =
-        adapter->GetUnsupportedOps(
-            reinterpret_cast<const char*>(serialized_buf.Data()),
-            serialized_buf.Size(), options_str.data(), options_str.size());
-
-    if (unsupported_ops.HasValue()) {
-      unsupported_op_indices.insert(unsupported_ops->begin(),
-                                    unsupported_ops->end());
+    if (has_unsupported_composite) {
+      LITERT_LOG(LITERT_INFO,
+                 "Graph contains unsupported composite ops. Skipping dynamic "
+                 "validation for this pass. Falling back to static mapping.");
     } else {
-      LITERT_LOG(
-          LITERT_WARNING,
-          "GetUnsupportedOps failed: %s. Falling back to static mapping.",
-          unsupported_ops.Error().Message().c_str());
-      use_static_fallback = true;
+      litert::Expected<absl::flat_hash_set<int32_t>> unsupported_ops_expected =
+          GetUnsupportedOpsDynamic(adapter, subgraph, google_tensor_options);
+      if (unsupported_ops_expected.HasValue()) {
+        unsupported_op_indices = std::move(*unsupported_ops_expected);
+        use_static_fallback = false;
+      } else {
+        LITERT_LOG(
+            LITERT_WARNING,
+            "GetUnsupportedOpsDynamic failed: %s. Falling back to static "
+            "mapping.",
+            unsupported_ops_expected.Error().Message().c_str());
+      }
     }
   }
-
-
-  std::vector<litert::compiler::Op> ops = graph.Ops();
   for (int i = 0; i < ops.size(); ++i) {
     const litert::compiler::Op& op = ops[i];
     bool is_supported = use_static_fallback

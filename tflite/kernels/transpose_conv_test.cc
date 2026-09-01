@@ -26,7 +26,6 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "absl/memory/memory.h"
 #include "tflite/core/interpreter.h"
 #include "tflite/kernels/test_util.h"
 #include "tflite/schema/schema_generated.h"
@@ -90,19 +89,19 @@ class BaseTransposeConvOpModel : public SingleOpModel {
 
     if (test_type == TestType::kDynamic) {
       PopulateTensor<int32_t>(output_shape_, output_shape_data);
-      if (!std::is_same<InputType, int16_t>::value &&
-          !std::is_same<InputType, int8_t>::value) {
+      if (!std::is_same_v<InputType, int16_t> &&
+          !std::is_same_v<InputType, int8_t>) {
         PopulateTensor<InputType>(filter_, filter_data);
       }
     }
   }
 
   void SetInput(std::initializer_list<float> data) {
-    if (std::is_same<InputType, uint8_t>::value) {
+    if (std::is_same_v<InputType, uint8_t>) {
       QuantizeAndPopulate<uint8_t>(input_, data);
-    } else if (std::is_same<InputType, int8_t>::value) {
+    } else if (std::is_same_v<InputType, int8_t>) {
       QuantizeAndPopulate<int8_t>(input_, data);
-    } else if (std::is_same<InputType, int16_t>::value) {
+    } else if (std::is_same_v<InputType, int16_t>) {
       QuantizeAndPopulate<int16_t>(input_, data);
     } else {
       PopulateTensor(input_, data);
@@ -255,6 +254,44 @@ TEST(TransposeConvPrepareSecurityTest, RejectsInconsistentSpatialShape) {
       {TensorType_FLOAT32, {}}, Padding_SAME, /*stride_w=*/1, /*stride_h=*/1,
       ActivationFunctionType_NONE);
 
+  EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
+}
+
+class PrepareOnlyInvalidOutputShapeTransposeConvOpModel : public SingleOpModel {
+ public:
+  explicit PrepareOnlyInvalidOutputShapeTransposeConvOpModel(
+      std::initializer_list<int> output_shape_data,
+      std::initializer_list<int> output_shape_dims) {
+    output_shape_ =
+        AddConstInput(TensorType_INT32, output_shape_data, output_shape_dims);
+    filter_ = AddInput({TensorType_FLOAT32, {1, 1, 1, 1}});
+    input_ = AddInput({TensorType_FLOAT32, {1, 1, 1, 1}});
+    output_ = AddOutput({TensorType_FLOAT32, {}});
+
+    SetBuiltinOp(
+        BuiltinOperator_TRANSPOSE_CONV, BuiltinOptions_TransposeConvOptions,
+        CreateTransposeConvOptions(builder_, Padding_SAME, /*stride_w=*/1,
+                                   /*stride_h=*/1, ActivationFunctionType_NONE)
+            .Union());
+    resolver_ = std::make_unique<SingleOpResolver>(
+        BuiltinOperator_TRANSPOSE_CONV,
+        ops::builtin::Register_TRANSPOSECONV_GENERIC_OPT(), /*version=*/1);
+    BuildInterpreter(
+        {GetShape(output_shape_), GetShape(filter_), GetShape(input_)},
+        /*num_threads=*/1, /*allow_fp32_relax_to_fp16=*/false,
+        /*apply_delegate=*/false,
+        /*allocate_and_delegate=*/false);
+  }
+
+ private:
+  int output_shape_;
+  int filter_;
+  int input_;
+  int output_;
+};
+
+TEST(TransposeConvPrepareSecurityTest, RejectsInvalidOutputShapeTensorLength) {
+  PrepareOnlyInvalidOutputShapeTransposeConvOpModel m({1}, {1});
   EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
 }
 
@@ -995,19 +1032,19 @@ class BaseTransposeConvBiasOpModel : public SingleOpModel {
                       GetShape(input_), GetShape(bias_)});
     if (test_type == TestType::kDynamic) {
       PopulateTensor<int32_t>(output_shape_, output_shape_data);
-      if (!std::is_same<InputType, int16_t>::value &&
-          !std::is_same<InputType, int8_t>::value) {
+      if (!std::is_same_v<InputType, int16_t> &&
+          !std::is_same_v<InputType, int8_t>) {
         PopulateTensor<FilterType>(filter_, filter_data);
       }
     }
   }
 
   void SetInput(std::initializer_list<float> data) {
-    if (std::is_same<InputType, uint8_t>::value) {
+    if (std::is_same_v<InputType, uint8_t>) {
       QuantizeAndPopulate<uint8_t>(input_, data);
-    } else if (std::is_same<InputType, int8_t>::value) {
+    } else if (std::is_same_v<InputType, int8_t>) {
       QuantizeAndPopulate<int8_t>(input_, data);
-    } else if (std::is_same<InputType, int16_t>::value) {
+    } else if (std::is_same_v<InputType, int16_t>) {
       QuantizeAndPopulate<int16_t>(input_, data);
     } else {
       PopulateTensor(input_, data);
@@ -1015,9 +1052,9 @@ class BaseTransposeConvBiasOpModel : public SingleOpModel {
   }
 
   void SetBias(std::initializer_list<float> bias) {
-    if (std::is_same<InputType, uint8_t>::value) {
+    if (std::is_same_v<InputType, uint8_t>) {
       QuantizeAndPopulate<int32_t>(bias_, bias);
-    } else if (std::is_same<FilterType, int8_t>::value) {
+    } else if (std::is_same_v<FilterType, int8_t>) {
       PerChannelQuantizeBias(bias_, bias);
     } else {
       PopulateTensor(bias_, bias);

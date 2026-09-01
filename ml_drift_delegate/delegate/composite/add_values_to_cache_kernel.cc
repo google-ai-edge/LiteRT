@@ -14,6 +14,7 @@
 
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_kernel.h"
 
+#include <algorithm>
 #include <any>
 #include <cstdint>
 #include <memory>
@@ -39,7 +40,7 @@ class AddValuesToCacheOp : public ::ml_drift::GPUOperation {
  public:
   AddValuesToCacheOp() = default;
   ::ml_drift::int3 GetGridSize() const override {
-    return ::ml_drift::int3(src_[0]->Width(), batch_size_, src_[0]->Slices());
+    return ::ml_drift::int3(update_width_, batch_size_, slices_);
   }
 
   // Move only
@@ -48,21 +49,35 @@ class AddValuesToCacheOp : public ::ml_drift::GPUOperation {
   AddValuesToCacheOp(const AddValuesToCacheOp&) = delete;
   AddValuesToCacheOp& operator=(const AddValuesToCacheOp&) = delete;
 
+  int update_width_ = 1;
   int batch_size_ = 1;
+  int slices_ = 1;
 };
 
 std::unique_ptr<::ml_drift::GPUOperation> CreateAddValuesToCache(
-    const ::ml_drift::TensorDescriptor& src_k,
-    const ::ml_drift::TensorDescriptor& src_v,
-    const ::ml_drift::TensorDescriptor& cache_k,
-    const ::ml_drift::TensorDescriptor& cache_v, int cache_size,
-    int head_dimension, int kv_cache_batch_size, float scale_k, float scale_v,
-    bool is_ring_buffer) {
+    const ::ml_drift::OperationDef& op_def,
+    const AddValuesToCacheAttributes& attr) {
+  const auto& src_k = op_def.src_tensors[0];
+  const auto& src_v = op_def.src_tensors[1];
+  const auto& cache_k = op_def.dst_tensors[0];
+  const auto& cache_v = op_def.dst_tensors[1];
+  const auto src_shape = src_k.GetBHWDCShape();
+  const auto cache_shape = cache_k.GetBHWDCShape();
+
   AddValuesToCacheOp custom_op;
-  custom_op.batch_size_ = kv_cache_batch_size;
+  custom_op.AllowFuseInputReorder(true);
+
+  int num_heads = attr.head_size > 0 ? (cache_shape.c / attr.head_size) : 1;
+  custom_op.update_width_ = src_shape.w;
+  custom_op.batch_size_ = attr.kv_cache_batch_size * std::max(1, num_heads);
+  custom_op.slices_ = (attr.head_size + 3) / 4;
+
+  custom_op.args_.AddInt("update_width", custom_op.update_width_);
   custom_op.args_.AddInt("batch_size", custom_op.batch_size_);
-  custom_op.args_.AddInt("cache_size", cache_size);
-  custom_op.args_.AddInt("head_size", head_dimension);
+  custom_op.args_.AddInt("slices", custom_op.slices_);
+  custom_op.args_.AddInt("src_height", src_shape.h);
+  custom_op.args_.AddInt("cache_size", attr.cache_size);
+  custom_op.args_.AddInt("head_size", attr.head_size);
   custom_op.AddSrcTensor("src_k", src_k);
   custom_op.AddSrcTensor("src_v", src_v);
   ::ml_drift::BufferDescriptor params_buffer;
@@ -71,6 +86,10 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateAddValuesToCache(
   custom_op.AddSrcBuffer("params", params_buffer);
   custom_op.AddDstTensor("cache_k", cache_k);
   custom_op.AddDstTensor("cache_v", cache_v);
+
+  float scale_k = attr.scale_k.value_or(1.0f);
+  float scale_v = attr.scale_v.value_or(1.0f);
+  bool is_ring_buffer = attr.is_ring_buffer.value_or(false);
 
   // quantized cache case. Expects src_k and src_v to be float and quantize
   // inside the shader.
@@ -101,7 +120,7 @@ MAIN_FUNCTION($0) {
   int X = ucl::GetGlobalId<0>();
   int Y = ucl::GetGlobalId<1>();
   int S = ucl::GetGlobalId<2>();
-  if (X >= args.src_k.Width() || Y >= args.batch_size || S >= args.src_k.Slices()) {
+  if (X >= args.update_width || Y >= args.batch_size || S >= args.slices) {
     return;
   }
   int token_index_offset = args.params.Read(0);
@@ -125,7 +144,7 @@ MAIN_FUNCTION($0) {
   }
 
   op_code += R"(
-  int src_y = Y % args.src_k.Height();  // broadcast Height dim used as Batch
+  int src_y = Y % args.src_height;  // broadcast Height dim used as Batch
   args.src_k::type value_k = args.src_k.Read(X, src_y, S);
   args.src_v::type value_v = args.src_v.Read(X, src_y, S);
   )";
@@ -202,13 +221,7 @@ CreateAddValuesToCacheFromNode(const ::ml_drift::OperationDef& op_def,
 
   const auto& attr = std::any_cast<const AddValuesToCacheAttributes&>(
       node.operation.attributes);
-  float scale_k = attr.scale_k.value_or(1.0);
-  float scale_v = attr.scale_v.value_or(1.0);
-  bool is_ring_buffer = attr.is_ring_buffer.value_or(false);
-  return CreateAddValuesToCache(
-      op_def.src_tensors[0], op_def.src_tensors[1], op_def.dst_tensors[0],
-      op_def.dst_tensors[1], attr.cache_size, attr.head_size,
-      attr.kv_cache_batch_size, scale_k, scale_v, is_ring_buffer);
+  return CreateAddValuesToCache(op_def, attr);
 }
 
 absl::StatusOr<std::unique_ptr<::ml_drift::GPUOperation>>
@@ -221,13 +234,7 @@ CreateAddValuesToCacheFromNode(const ::ml_drift::OperationDef& op_def,
 
   const auto& attr =
       std::any_cast<const AddValuesToCacheAttributes&>(ir_op.attr);
-  float scale_k = attr.scale_k.value_or(1.0);
-  float scale_v = attr.scale_v.value_or(1.0);
-  bool is_ring_buffer = attr.is_ring_buffer.value_or(false);
-  return CreateAddValuesToCache(
-      op_def.src_tensors[0], op_def.src_tensors[1], op_def.dst_tensors[0],
-      op_def.dst_tensors[1], attr.cache_size, attr.head_size,
-      attr.kv_cache_batch_size, scale_k, scale_v, is_ring_buffer);
+  return CreateAddValuesToCache(op_def, attr);
 }
 
 }  // namespace litert::ml_drift

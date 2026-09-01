@@ -1,0 +1,82 @@
+name: "TFLite Bazel and CMake"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tflite-build:
+    name: "Presubmit-TFLite-Bazel-CMake"
+    runs-on: linux-x86-n2-16
+    container:
+      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:d6b429665f5269698f88ccd00bcb8a6eb685332c302f08f29fe0738cd6a6610c
+    env:
+      CMAKE_BUILD_DIR: cmake_build_tflite
+      CMAKE_BUILD_PARALLEL_LEVEL: 6
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.11"
+
+      - name: Install CMake and Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build python3-pip
+          pip3 install cmake==3.28.3
+          cmake --version
+          ninja --version
+
+      - name: Configure Bazel
+        shell: bash
+        run: |
+          chmod +x configure.py
+          export PYTHON_BIN_PATH="$(which python3)"
+          export PYTHON_LIB_PATH="$(python3 -c 'import site; print(site.getsitepackages()[0])')"
+          export TF_NEED_ROCM=0
+          export TF_NEED_CLANG=0
+          export TF_NEED_CUDA=0
+          export TF_SET_ANDROID_WORKSPACE=0
+          export CC_OPT_FLAGS='-Wno-sign-compare'
+          python3 configure.py < <(yes "")
+
+      - name: Build TFLite Linux artifacts with Bazel
+        shell: bash
+        run: |
+          bazel build \
+            --config=bulk_build_cpu \
+            --nocheck_visibility \
+            -- \
+            //tflite:tensorflowlite \
+            //tflite/c:tensorflowlite_c \
+            //tflite/tools/benchmark:benchmark_model \
+            //tflite/converter:flatbuffer_translate
+
+      - name: Configure TFLite with CMake
+        run: |
+          cmake \
+            -S tflite \
+            -B "${CMAKE_BUILD_DIR}" \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+
+      - name: Build TFLite runtime with CMake
+        # TODO: Build all targets under tflite with cmake
+        run: cmake --build "${CMAKE_BUILD_DIR}" --target tensorflow-lite --parallel

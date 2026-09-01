@@ -54,37 +54,38 @@ class LockedBufferSpan {
   using iterator = T*;
   using const_iterator = const T*;
 
-  // `const std::byte*` if `T` is `const`, otherwise `std::byte`.
-  using MaybeConstByte =
-      std::conditional_t<std::is_const_v<T>, const std::byte, std::byte>;
+  template <class Unlock>
+  LockedBufferSpan(T* data, Unlock&& unlock, size_t count)
+      : data_(data, std::forward<Unlock>(unlock)), bytes_(count * sizeof(T)) {}
 
-  LockedBufferSpan(MaybeConstByte* data,
-                   std::function<void(MaybeConstByte*)> unlock, size_t bytes)
-      : data_(data, std::move(unlock)), bytes_(bytes) {}
-
-  LockedBufferSpan(
-      std::unique_ptr<MaybeConstByte, std::function<void(MaybeConstByte*)>>
-          data,
-      size_t bytes)
-      : data_(std::move(data)), bytes_(bytes) {}
+  template <class Y, class Deleter>
+  LockedBufferSpan(std::unique_ptr<Y, Deleter> data, size_t count)
+      : data_(data.release(), data.get_deleter()), bytes_(count * sizeof(T)) {}
 
   static LockedBufferSpan Empty() {
-    return LockedBufferSpan(nullptr, [](MaybeConstByte*) {}, 0);
+    return LockedBufferSpan(nullptr, [](T*) {}, 0);
   }
 
   // Casts the span to a specific type.
-  //
-  // Warning: This transfers the lock management to the returned
-  // `LockedBufferSpan`.
   template <class U>
-  [[nodiscard]] LockedBufferSpan<U> As() && {
+  [[nodiscard]] LockedBufferSpan<U> As() const {
     static_assert(
         std::is_const_v<U> || !std::is_const_v<T>,
         "Cannot cast from a constant buffer span to a non constant one.");
-    return LockedBufferSpan<U>(std::move(data_), bytes_);
+    return LockedBufferSpan<U>(data_, reinterpret_cast<U*>(data_.get()),
+                               bytes_ / sizeof(U));
   }
 
-  T* data() const& { return reinterpret_cast<T*>(data_.get()); }
+  [[nodiscard]] LockedBufferSpan SubSpan(size_t offset,
+                                         size_t count = SIZE_MAX) const {
+    if (offset >= size()) {
+      return Empty();
+    }
+    const size_t sub_count = std::min(count, size() - offset);
+    return LockedBufferSpan(data_, data_.get() + offset, sub_count);
+  }
+
+  T* data() const& { return data_.get(); }
   size_t size() const { return bytes_ / sizeof(T); }
   T* begin() & { return data(); }
   T* end() & { return data() + size(); }
@@ -102,8 +103,15 @@ class LockedBufferSpan {
   const T* cend() const&& = delete;
 
  private:
-  std::unique_ptr<MaybeConstByte, std::function<void(MaybeConstByte*)>> data_;
-  size_t bytes_;
+  template <class>
+  friend class LockedBufferSpan;
+
+  template <class U>
+  LockedBufferSpan(const std::shared_ptr<U>& data, T* ptr, size_t count)
+      : data_(data, ptr), bytes_(count * sizeof(T)) {}
+
+  std::shared_ptr<T> data_;
+  size_t bytes_ = 0;
 };
 
 // The main interface for buffers.
@@ -178,6 +186,12 @@ class SpanCpuBuffer : public Buffer {
   // Creates a viewing buffer holding `data` of size `bytes`.
   SpanCpuBuffer(const std::byte* data, size_t bytes)
       : bytes_(bytes), data_(const_cast<std::byte*>(data)) {}
+
+  // Creates a viewing buffer from a vector.
+  template <class T>
+  explicit SpanCpuBuffer(const std::vector<T>& vec)
+      : SpanCpuBuffer(reinterpret_cast<const std::byte*>(vec.data()),
+                      sizeof(T) * vec.size()) {}
 
   // Creates a viewing buffer from a C++ array.
   template <class T, size_t N>

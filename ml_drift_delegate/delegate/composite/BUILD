@@ -40,7 +40,6 @@ cc_library(
         "@flatbuffers",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:model",
-        "@ml_drift//ml_drift/common:status",
     ],
 )
 
@@ -56,7 +55,6 @@ cc_library(
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:model",
-        "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/common:types",
         "@ml_drift//ml_drift/common/task:buffer_desc",
         "@ml_drift//ml_drift/common/task:gpu_operation",
@@ -82,7 +80,6 @@ cc_library(
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/common:tensor",
         "@ml_drift//ml_drift/common/kernels:fully_connected",
         "@ml_drift//ml_drift/common/task:weights_layout",
@@ -103,7 +100,6 @@ cc_library(
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/common/task:gpu_operation",
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/common/task:weights_layout",
@@ -130,7 +126,6 @@ cc_library(
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/common:tensor",
     ],
 )
@@ -177,7 +172,6 @@ cc_library(
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/common:tensor",
         "@ml_drift//ml_drift/common:types",
         "@ml_drift//ml_drift/common/kernels:fully_connected",
@@ -192,19 +186,16 @@ cc_library(
     srcs = ["rope_parser.cc"],
     hdrs = ["rope_parser.h"],
     deps = [
-        "//ml_drift_delegate/tflite:model_builder_helper",
         "//ml_drift_delegate/tflite:object_reader",
         "//ml_drift_delegate/tflite:operation_parser",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
         "@flatbuffers",
-        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:operations",
-        "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
     ],
 )
 
@@ -238,14 +229,20 @@ cc_library(
         ":sdpa_transposed_parser",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:gpu_model_builder",
         "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:kernel_info",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common:types",
         "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:tuning_type",
         "@ml_drift//ml_drift/common/task:weights_layout",
     ],
 )
@@ -332,6 +329,91 @@ cc_test(
 )
 
 cc_library(
+    name = "swiglu_parser",
+    srcs = ["swiglu_parser.cc"],
+    hdrs = ["swiglu_parser.h"],
+    deps = [
+        "//ml_drift_delegate/tflite:object_reader",
+        "//ml_drift_delegate/tflite:operation_parser",
+        "//tflite/c:common",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:model",
+    ],
+)
+
+cc_library(
+    name = "swiglu_kernel",
+    srcs = ["swiglu_kernel.cc"],
+    hdrs = ["swiglu_kernel.h"],
+    deps = [
+        ":swiglu_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+    ],
+)
+
+cc_library(
+    name = "qkv_norm_rope_parser",
+    srcs = ["qkv_norm_rope_parser.cc"],
+    hdrs = ["qkv_norm_rope_parser.h"],
+    deps = [
+        "//ml_drift_delegate/tflite:object_reader",
+        "//ml_drift_delegate/tflite:operation_parser",
+        "//tflite/c:common",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:model",
+    ],
+)
+
+alias(
+    name = "qwen3_qkv_norm_rope_parser",
+    actual = ":qkv_norm_rope_parser",
+)
+
+cc_library(
+    name = "qkv_norm_rope_kernel",
+    srcs = ["qkv_norm_rope_kernel.cc"],
+    hdrs = ["qkv_norm_rope_kernel.h"],
+    deps = [
+        ":qkv_norm_rope_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:kernel_info",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:tuning_type",
+    ],
+)
+
+alias(
+    name = "qwen3_qkv_norm_rope_kernel",
+    actual = ":qkv_norm_rope_kernel",
+)
+
+cc_library(
     name = "custom_parsers",
     srcs = ["custom_parsers.cc"],
     hdrs = [
@@ -341,9 +423,11 @@ cc_library(
     deps = [
         ":add_values_to_cache_parser",
         ":moe_experts_parser",
+        ":qkv_norm_rope_parser",
         ":rope_parser",
         ":runtime_batched_matmul_parser",
         ":sdpa_transposed_parser",
+        ":swiglu_parser",
         "//ml_drift_delegate/tflite:model_builder",
         "//ml_drift_delegate/tflite:operation_parser",
         "//ml_drift_delegate/tflite:unimplemented_operation_parser",
@@ -369,7 +453,6 @@ mld_kernel_test(
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/common/task:gpu_operation",
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/common/task:testing_util",
@@ -385,10 +468,14 @@ cc_library(
         ":add_values_to_cache_parser",
         ":moe_experts_kernel",
         ":moe_experts_parser",
+        ":qkv_norm_rope_kernel",
+        ":qkv_norm_rope_parser",
         ":runtime_batched_matmul_kernel",
         ":runtime_batched_matmul_parser",
         ":sdpa_transposed_kernel",
         ":sdpa_transposed_parser",
+        ":swiglu_kernel",
+        ":swiglu_parser",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
@@ -398,7 +485,6 @@ cc_library(
         "@ml_drift//ml_drift/common:gpu_model_util",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:operations",
-        "@ml_drift//ml_drift/common:status",
         "@ml_drift//ml_drift/common/selectors:operation_selector",
         "@ml_drift//ml_drift/common/selectors:special_selector",
         "@ml_drift//ml_drift/common/task:gpu_operation",

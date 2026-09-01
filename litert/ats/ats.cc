@@ -33,6 +33,7 @@
 #include "litert/ats/register_conv_2d.h"
 #include "litert/ats/register_depthwise_conv_2d.h"
 #include "litert/ats/register_fully_connected.h"
+#include "litert/ats/register_mean.h"
 #include "litert/ats/register_no_op.h"
 #include "litert/ats/register_one_hot.h"
 #include "litert/ats/register_pad.h"
@@ -69,6 +70,7 @@ void RegisterAll(const AtsConf& options, size_t& test_id,
   RegisterConv2d(options, test_id, /*iters=*/10, cap);
   RegisterDepthwiseConv2d(options, test_id, /*iters=*/10, cap);
   RegisterReduction(options, test_id, /*iters=*/10, cap);
+  RegisterMean(options, test_id, /*iters=*/10, cap);
   RegisterPooling(options, test_id, /*iters=*/10, cap);
   RegisterOneHot(options, test_id, /*iters=*/10, cap);
   RegisterReshape(options, test_id, /*iters=*/10, cap);

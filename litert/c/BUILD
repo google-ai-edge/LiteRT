@@ -16,7 +16,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@build_bazel_rules_apple//apple:ios.bzl", "ios_framework", "ios_unit_test")
 load("@build_bazel_rules_apple//apple:macos.bzl", "macos_dylib")
 
@@ -475,7 +474,12 @@ cc_test(
 # cc_test(
 #     name = "litert_tensor_buffer_cl_test",
 #     srcs = ["litert_tensor_buffer_cl_test.cc"],
-#     tags = ["requires-gpu-nvidia"],
+#     tags = [
+#         "noasan",
+#         "nomsan",
+#         "notsan",
+#         "requires-gpu-nvidia",
+#     ],
 #     deps = [
 #         ":litert_any",
 #         ":litert_common",
@@ -485,7 +489,7 @@ cc_test(
 #         ":litert_platform_support",
 #         ":litert_tensor_buffer",
 #         ":litert_tensor_buffer_types",
-#         "@com_google_googletest//:gtest_main",
+#         "@com_google_googletest//:gtest_main_no_heapcheck",
 #         "@ml_drift//ml_drift/cl:cl_command_queue",
 #         "@ml_drift//ml_drift/cl:cl_context",
 #         "@ml_drift//ml_drift/cl:environment",
@@ -502,7 +506,13 @@ cc_test(
 #     name = "litert_tensor_buffer_test_custom",
 #     srcs = ["litert_tensor_buffer_test.cc"],
 #     defines = ["LITERT_CUSTOM_TENSOR_BUFFER_TEST=1"],
-#     tags = ["requires-gpu-nvidia"],
+#     tags = [
+#         # TODO(b/553203115): Reenable Asan test
+#         "noasan",
+#         "nomsan",
+#         "notsan",
+#         "requires-gpu-nvidia",
+#     ],
 #     deps = [
 #         ":litert_any",
 #         ":litert_common",
@@ -511,7 +521,7 @@ cc_test(
 #         ":litert_platform_support",
 #         ":litert_tensor_buffer",
 #         ":litert_tensor_buffer_types",
-#         "@com_google_googletest//:gtest_main",
+#         "@com_google_googletest//:gtest_main_no_heapcheck",
 #         "@ml_drift//ml_drift/cl:cl_command_queue",
 #         "@ml_drift//ml_drift/cl:cl_context",
 #         "@ml_drift//ml_drift/cl:environment",
@@ -974,33 +984,9 @@ cc_import(
     target_compatible_with = ["@platforms//os:windows"],
 )
 
-genrule(
-    name = "litert_runtime_c_api_exe_interface_lib",
-    srcs = [":windows_exported_symbols.def"],
-    outs = ["litert_runtime_c_api_exe_import.lib"],
-    # Prepend LIBRARY name before building the import library.
-    cmd = "echo 'LIBRARY litert_lm_main.exe' > $(RULEDIR)/def.tmp; " +
-          "cat $(SRCS) >> $(RULEDIR)/def.tmp; " +
-          "$(AR) /def:$(RULEDIR)/def.tmp /out:$(OUTS) /machine:x64; " +
-          "rm $(RULEDIR)/def.tmp",
-    tags = ["manual"],
-    toolchains = ["@bazel_tools//tools/cpp:toolchain_type"],
-)
-
-# Import library to resolve symbols in executables.
-cc_import(
-    name = "litert_runtime_c_api_exe_import",
-    interface_library = ":litert_runtime_c_api_exe_interface_lib",
-    system_provided = True,
-    target_compatible_with = ["@platforms//os:windows"],
-)
-
 alias(
     name = "litert_runtime_c_api_import",
-    actual = select({
-        ":resolve_symbols_in_exec": ":litert_runtime_c_api_exe_import",
-        "//conditions:default": ":litert_runtime_c_api_dll_import",
-    }),
+    actual = ":litert_runtime_c_api_dll_import",
 )
 
 exports_files(srcs = ["windows_exported_symbols.def"])
@@ -1034,27 +1020,11 @@ cc_shared_library(
     deps = [":litert_tflite_runtime_c_api_so_shim"],
 )
 
-filegroup(
-    name = "litert_runtime_c_api_dylib_conditional",
-    srcs = select({
-        ":resolve_symbols_in_exec": [],
-        "//conditions:default": [":litert_runtime_c_api_dylib"],
-    }),
-)
-
-filegroup(
-    name = "litert_runtime_c_api_so_conditional",
-    srcs = select({
-        ":resolve_symbols_in_exec": [],
-        "//conditions:default": [":litert_runtime_c_api_so"],
-    }),
-)
-
 SELECT_LITERT_RUNTIME_C_API_SHARED_LIB = select({
-    "//litert:ios": [":litert_runtime_c_api_dylib_conditional"],
-    "//litert:macos": [":litert_runtime_c_api_dylib_conditional"],
+    "//litert:ios": [":litert_runtime_c_api_dylib"],
+    "//litert:macos": [":litert_runtime_c_api_dylib"],
     "//litert:windows": [],
-    "//conditions:default": [":litert_runtime_c_api_so_conditional"],
+    "//conditions:default": [":litert_runtime_c_api_so"],
 })
 
 # Allows referring to the above as a target with the name :libLiteRt.so.
@@ -1062,27 +1032,6 @@ filegroup(
     name = "libLiteRt.so",
     srcs = SELECT_LITERT_RUNTIME_C_API_SHARED_LIB,
     visibility = ["//litert:litert_public"],
-)
-
-# Config for LiteRT client executables to export LiteRt* symbols and let accelerator shared libs
-config_setting(
-    name = "resolve_symbols_in_exec_define",
-    define_values = {"resolve_symbols_in_exec": "true"},
-)
-
-config_setting(
-    name = "resolve_symbols_in_exec_flag",
-    flag_values = {"//litert/build_common:resolve_symbols_in_exec": "true"},
-)
-
-# Config for LiteRT client executables to export LiteRt* symbols and let accelerator shared libs
-# resolve the symbols, not from libLiteRt.so.
-selects.config_setting_group(
-    name = "resolve_symbols_in_exec",
-    match_any = [
-        ":resolve_symbols_in_exec_define",
-        ":resolve_symbols_in_exec_flag",
-    ],
 )
 
 filegroup(
@@ -1129,8 +1078,7 @@ cc_library(
         "//tflite/profiling:profile_buffer",
         "//litert/build_common:build_config",
     ] + gles_headers() + select({
-        ":resolve_symbols_in_exec": [],
-        "//litert:windows": [":litert_runtime_c_api_import"],
+        "//litert:windows": [":litert_runtime_c_api_dll_import"],
         "//conditions:default": [],
     }),
 )

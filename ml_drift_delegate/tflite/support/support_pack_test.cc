@@ -344,7 +344,7 @@ TEST_F(ParamsTest, SupportsNullParamsOneInput) {
 
 // Test suite for checking the number of dimensions.
 class DimsTest : public testing::Test {};
-TEST_F(DimsTest, Rejects0dInput) {
+TEST_F(DimsTest, RejectsMismatchedRankInput) {
   StubContextBuilder context_builder;
   const int a = context_builder.AddTensor(kDefaultDtype, kDefaultInputDims);
   const int b = context_builder.AddTensor(kDefaultDtype, {});
@@ -355,6 +355,20 @@ TEST_F(DimsTest, Rejects0dInput) {
   TfLiteContext* context = context_builder.Build();
   ASSERT_THAT(context, NotNull());
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+TEST_F(DimsTest, Supports0dInput) {
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddTensor(kDefaultDtype, {});
+  const int b = context_builder.AddTensor(kDefaultDtype, {});
+  const int c = context_builder.AddTensor(kDefaultDtype, {2});
+  const TfLitePackParams params = {/*axis=*/0};
+  context_builder.SetOp(kTfLiteBuiltinPack, /*version=*/1,
+                        /*params=*/&params,
+                        /*inputs=*/{a, b}, /*outputs=*/{c});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
 }
 
 TEST_F(DimsTest, Rejects0dOutput) {

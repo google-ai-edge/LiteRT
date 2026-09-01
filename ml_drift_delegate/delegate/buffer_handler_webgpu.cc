@@ -22,7 +22,6 @@
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
-#include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift/common/util.h"  // from @ml_drift
 #include "ml_drift/webgpu/buffer.h"  // from @ml_drift
 #include "ml_drift/webgpu/spatial_tensor.h"  // from @ml_drift

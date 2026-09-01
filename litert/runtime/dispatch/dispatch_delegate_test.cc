@@ -22,6 +22,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_dispatch_delegate.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_profiler_types.h"
 #include "litert/cc/internal/litert_compiled_model_next.h"
@@ -32,6 +33,7 @@
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
+#include "litert/vendors/c/litert_dispatch.h"
 
 namespace litert {
 namespace {
@@ -197,6 +199,81 @@ TEST(DispatchDelegateTest, GetHooksNullDelegateReturnsError) {
   void* user_data = nullptr;
   EXPECT_EQ(LiteRtDispatchDelegateGetHooks(nullptr, &hook, &user_data),
             kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(DispatchDelegateTest, InitializeDispatchApiWithDebugLoggingDoesNotCrash) {
+  LiteRtLogSeverity old_severity;
+  LITERT_ASSERT_OK(
+      LiteRtGetMinLoggerSeverity(LiteRtGetDefaultLogger(), &old_severity));
+  LITERT_ASSERT_OK(LiteRtSetMinLoggerSeverity(LiteRtGetDefaultLogger(),
+                                              kLiteRtLogSeverityDebug));
+
+  const auto litert_libs_path =
+      litert::testing::GetLiteRtPath("vendors/examples");
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
+          litert_libs_path,
+      },
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
+          litert_libs_path,
+      },
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto env, litert::Environment::Create(litert::EnvironmentOptions(
+                    absl::MakeConstSpan(environment_options))));
+
+  std::string model_path = litert::testing::GetTestFilePath("one_mul.tflite");
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compilation_options, Options::Create());
+  LITERT_ASSERT_OK(compilation_options.SetHardwareAccelerators(
+      litert::HwAccelerators::kNpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModelNext::Create(env, model_path, compilation_options));
+
+  LITERT_ASSERT_OK(
+      LiteRtSetMinLoggerSeverity(LiteRtGetDefaultLogger(), old_severity));
+}
+
+TEST(DispatchDelegateTest,
+     DispatchApiDefensivelyClearsOutputsOnInvalidInputOrFailure) {
+  EXPECT_EQ(LiteRtDispatchGetVendorId(nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtDispatchGetBuildId(nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtDispatchGetCapabilities(nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(nullptr, nullptr, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+
+  const char* dummy_ptr = reinterpret_cast<const char*>(0xdeadbeef);
+  const char* vendor_id = dummy_ptr;
+  (void)LiteRtDispatchGetVendorId(&vendor_id);
+  EXPECT_NE(vendor_id, dummy_ptr);
+
+  const char* build_id = dummy_ptr;
+  (void)LiteRtDispatchGetBuildId(&build_id);
+  EXPECT_NE(build_id, dummy_ptr);
+
+  int capabilities = 0x12345678;
+  (void)LiteRtDispatchGetCapabilities(&capabilities);
+  EXPECT_NE(capabilities, 0x12345678);
+
+  LiteRtDispatchDeviceContext dummy_ctx =
+      reinterpret_cast<LiteRtDispatchDeviceContext>(0xdeadbeef);
+  LiteRtDispatchDeviceContext device_context = dummy_ctx;
+  if (LiteRtDispatchDeviceContextCreate(nullptr, nullptr, &device_context) ==
+      kLiteRtStatusOk) {
+    EXPECT_NE(device_context, dummy_ctx);
+    if (device_context) {
+      LiteRtDispatchDeviceContextDestroy(device_context);
+    }
+  } else {
+    EXPECT_EQ(device_context, nullptr);
+  }
 }
 
 }  // namespace

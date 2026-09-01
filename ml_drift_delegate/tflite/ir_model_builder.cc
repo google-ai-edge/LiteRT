@@ -211,7 +211,15 @@ void ConvertComposite(
     const flexbuffers::Map flexbuffer_map =
         flexbuffers::GetRoot(params->attributes, params->attributes_size)
             .AsMap();
-    if (flexbuffer_map["_TENSOR_V1_reduction_axes"].IsNull()) {
+    if (!flexbuffer_map["sub_type"].IsNull()) {
+      // sub_type: 0=GroupNorm, 1=LayerNorm.
+      if (flexbuffer_map["sub_type"].AsInt32() == 0) {
+        ConvertGroupNorm(context, node, registration, tensor_map, ir_model);
+      } else {
+        ConvertLayerNorm(context, node, registration, tensor_map, ir_model);
+      }
+      return;
+    } else if (flexbuffer_map["_TENSOR_V1_reduction_axes"].IsNull()) {
       ConvertLayerNorm(context, node, registration, tensor_map, ir_model);
       return;
     } else {
@@ -278,23 +286,19 @@ class IrModelBuilder {
     const TfLiteIntArray* nodes = delegate_params_.nodes_to_replace;
     for (int node_id = 0; node_id < nodes->size; ++node_id) {
       const auto& [node, registration] = GetNodeInfo(node_id);
-      // Skip f16 dequantize ops if no other nodes precede them.
-      // Note the corresponding change in support_dequantize.cc.
-      if (registration->builtin_code == kTfLiteBuiltinDequantize &&
-          context_.tensors[node->inputs->data[0]].type ==
-              TfLiteType::kTfLiteFloat16 &&
-          ::tflite::IsConstantTensor(
-              &context_.tensors[node->inputs->data[0]])) {
+      if (ShouldSkipDequantize(*node, *registration)) {
         continue;
       }
+      PrepareSharedConstantInputsForNode(*node, ir_model, tensor_map);
       AddNode(*node, *registration, tensor_map, ir_model);
     }
     // Derive the shared-constants map from per-tensor BufferSource state
     // populated during graph construction and enriched by op converters (e.g.
     // dequant_forced). Done after conversion so op-provided fields are
-    // included. The tflite tensor id comes from the tensor map key.
+    // included.
     if (shared_tensors_) {
-      for (const auto& [tfl_tensor_id, ir_tensor_id] : tensor_map) {
+      for (size_t ir_tensor_id = 0; ir_tensor_id < ir_model.tensors().size();
+           ++ir_tensor_id) {
         const auto* tensor = ir_model.tensor(ir_tensor_id);
         if (tensor == nullptr || !tensor->buffer_source.is_shared) {
           continue;
@@ -307,7 +311,7 @@ class IrModelBuilder {
           continue;
         }
         SharedTfliteTensor shared_info;
-        shared_info.tflite_tensor_id = tfl_tensor_id;
+        shared_info.tflite_tensor_id = tensor->buffer_source.tflite_tensor_id;
         shared_info.global_id = tensor->buffer_source.global_id;
         shared_info.dequant_forced = tensor->buffer_source.dequant_forced;
         if (tensor->buffer_source.force_linear_layout) {
@@ -619,8 +623,46 @@ class IrModelBuilder {
     // constants map is derived from this in Build() after op conversion.
     const auto ir_tensor_id = AddTensor(
         tfl_tensor_id, ir_model,
-        ::ml_drift::ir::BufferSource{is_shared, global_id});
+        ::ml_drift::ir::BufferSource{is_shared, tfl_tensor_id, global_id});
     tensor_map[tfl_tensor_id] = ir_tensor_id;
+  }
+
+  // Determines whether an f16 dequantize op preceding weights should be
+  // skipped during graph construction.
+  bool ShouldSkipDequantize(
+      const TfLiteNode& node,
+      const TfLiteRegistration& registration) const {
+    return registration.builtin_code == kTfLiteBuiltinDequantize &&
+           context_.tensors[node.inputs->data[0]].type ==
+               TfLiteType::kTfLiteFloat16 &&
+           ::tflite::IsConstantTensor(&context_.tensors[node.inputs->data[0]]);
+  }
+
+  // Ensures that each op consuming a shared constant receives a distinct
+  // IrTensor handle. In ML Drift IR, shared constant tensors must have separate
+  // IrTensor handles per consumer op so downstream passes (such as
+  // SharedMemoryManager) can attach op-specific auxiliary inputs and
+  // mutate tensor descriptors independently without mutating other consumers'
+  // signatures.
+  void PrepareSharedConstantInputsForNode(
+      const TfLiteNode& node, ::ml_drift::ir::IrModel& ir_model,
+      absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map) const {
+    for (int j = 0; j < node.inputs->size; ++j) {
+      const int tfl_id = node.inputs->data[j];
+      if (tfl_id == kTfLiteOptionalTensor) {
+        continue;
+      }
+      auto it = tensor_map.find(tfl_id);
+      if (it == tensor_map.end()) {
+        continue;
+      }
+      const auto* existing = ir_model.tensor(it->second);
+      if (existing && existing->buffer_source.is_shared &&
+          !existing->consumers.empty()) {
+        tensor_map[tfl_id] =
+            AddTensor(tfl_id, ir_model, existing->buffer_source);
+      }
+    }
   }
 
   // Creates IR tensors for all unique TFLite tensors in the subgraph.

@@ -30,7 +30,7 @@ target_link_libraries(dispatch_api_qualcomm_so
 )
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
-    target_link_libraries(dispatch_api_qualcomm_so PRIVATE android log)
+    target_link_libraries(dispatch_api_qualcomm_so PRIVATE log)
 endif()
 
 set_target_properties(dispatch_api_qualcomm_so PROPERTIES

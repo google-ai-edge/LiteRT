@@ -36,7 +36,7 @@ litert_define_ats(
     backend = "cpu",
     compile_only_suffix = None,
     dont_register = [
-        "^(?!.*(Pad|Reduction|Transpose)).*i32",  # XNNPACK does not support int32 math (except Pad/Reduction/Transpose static constants)
+        "(_i32<[^>]+>(?!_cst)|->.*_i32)",  # XNNPACK does not support dynamic int32 math (allows int32 static constants)
         "OneHot",  # XNNPACK does not support OneHot
         "Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
         "tfl\\.floor_div",  # XNNPACK does not support FloorDiv
@@ -300,7 +300,7 @@ litert_test(
     name = "ats",
     srcs = ["ats.cc"],
     args = [
-        "--dont_register=^(?!.*(Pad|Reduction|Transpose)).*i32",  # XNNPACK does not support int32 math (except Pad/Reduction/Transpose static constants)
+        "--dont_register=(_i32<[^>]+>(?!_cst)|->.*_i32)",  # XNNPACK does not support dynamic int32 math (allows int32 static constants)
         "--dont_register=OneHot",  # XNNPACK does not support OneHot
         "--dont_register=Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
         "--dont_register=tfl\\.floor_div",  # XNNPACK does not support FloorDiv
@@ -348,6 +348,7 @@ litert_test(
         ":register_conv_2d",
         ":register_depthwise_conv_2d",
         ":register_fully_connected",
+        ":register_mean",
         ":register_no_op",
         ":register_one_hot",
         ":register_pad",
@@ -500,6 +501,25 @@ cc_library(
         "//litert/test/generators:fully_connected",
         "//tensor:arithmetic_graph",
         "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_mean",
+    testonly = True,
+    srcs = ["register_mean.cc"],
+    hdrs = ["register_mean.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:mean",
         "//tflite/types:half",
     ],
 )

@@ -19,11 +19,11 @@
 
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
-#include "ml_drift/common/status.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/support/support_aux.h"
 #include "tflite/c/common.h"
 #include "tflite/core/c/builtin_op_data.h"
@@ -165,6 +165,17 @@ bool IsLayerNormSupported(const TfLiteContext* absl_nonnull context,
   if (flexbuffer_map["epsilon"].IsNull()) {
     *error = "LayerNorm is missing epsilon.";
     return false;
+  }
+  if (!flexbuffer_map["_TENSOR_V1_reduction_axes"].IsNull()) {
+    const flexbuffers::Vector reduction_axes_vec =
+        flexbuffer_map["_TENSOR_V1_reduction_axes"]
+            .AsMap()["TENSOR_DATA"]
+            .AsVector();
+    if (reduction_axes_vec.size() != 1 ||
+        reduction_axes_vec[0].AsInt64() != input->dims->size - 1) {
+      *error = "Only reduction on the last axis is supported for LayerNorm.";
+      return false;
+    }
   }
   return true;
 }

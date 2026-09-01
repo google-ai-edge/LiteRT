@@ -805,31 +805,39 @@ Tensor<Mixins...> Sum(Tensor<Mixins...> a, Tensor<Mixins...> b, bool keep_dims,
   const LockedBufferSpan<const int32_t> b_lock =
       b_info.buffer->Lock().As<const int32_t>();
   const int32_t* b_data = b_lock.data();
+  int rank = static_cast<int>(a_info.shape.size());
   if (op->keep_dims) {
     o_info.shape = a_info.shape;
     if (b_info.shape.empty()) {
-      if (b_data[0] < 0 ||
-          static_cast<size_t>(b_data[0]) >= o_info.shape.size()) {
+      int axis = b_data[0] < 0 ? b_data[0] + rank : b_data[0];
+      if (axis < 0 || axis >= rank) {
         return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
             "The reduction axis is out of range.")));
       }
-      o_info.shape.push_back(o_info.shape[b_data[0]]);
+      o_info.shape.push_back(o_info.shape[axis]);
     } else {
       for (int i = 0; i < b_info.shape[0]; ++i) {
-        if (b_data[i] < 0 ||
-            static_cast<size_t>(b_data[i]) >= o_info.shape.size()) {
-          return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
-              "The reduction axis is out of range.")));
+        int axis = b_data[i] < 0 ? b_data[i] + rank : b_data[i];
+        if (axis < 0 || axis >= rank) {
+          return Tensor<Mixins...>(
+              graph::ErrorTensor(absl::InvalidArgumentError(
+                  "The reduction axis is out of range.")));
         }
-        o_info.shape[b_data[i]] = 1;
+        o_info.shape[axis] = 1;
       }
     }
   } else {
     o_info.shape = {};
-    for (int i = 0; i < a_info.shape.size(); ++i) {
+    for (int i = 0; i < rank; ++i) {
       bool found = false;
       for (int j = 0; j < b_info.shape[0]; ++j) {
-        if (i == b_data[j]) {
+        int axis = b_data[j] < 0 ? b_data[j] + rank : b_data[j];
+        if (axis < 0 || axis >= rank) {
+          return Tensor<Mixins...>(
+              graph::ErrorTensor(absl::InvalidArgumentError(
+                  "The reduction axis is out of range.")));
+        }
+        if (i == axis) {
           found = true;
           break;
         }
@@ -875,31 +883,38 @@ Tensor<Mixins...> ReduceMax(Tensor<Mixins...> a, Tensor<Mixins...> b,
   const LockedBufferSpan<const int32_t> b_lock =
       b_info.buffer->Lock().As<const int32_t>();
   const int32_t* b_data = b_lock.data();
+  int rank = static_cast<int>(a_info.shape.size());
   if (op->keep_dims) {
     o_info.shape = a_info.shape;
     if (b_info.shape.empty()) {
-      if (b_data[0] < 0 ||
-          static_cast<size_t>(b_data[0]) >= o_info.shape.size()) {
+      int axis = b_data[0] < 0 ? b_data[0] + rank : b_data[0];
+      if (axis < 0 || axis >= rank) {
         return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
             "The reduction axis is out of range.")));
       }
-      o_info.shape.push_back(o_info.shape[b_data[0]]);
+      o_info.shape.push_back(o_info.shape[axis]);
     } else {
       for (int i = 0; i < b_info.shape[0]; ++i) {
-        if (b_data[i] < 0 ||
-            static_cast<size_t>(b_data[i]) >= o_info.shape.size()) {
+        int axis = b_data[i] < 0 ? b_data[i] + rank : b_data[i];
+        if (axis < 0 || axis >= rank) {
           return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
               "The reduction axis is out of range.")));
         }
-        o_info.shape[b_data[i]] = 1;
+        o_info.shape[axis] = 1;
       }
     }
   } else {
     o_info.shape = {};
-    for (int i = 0; i < a_info.shape.size(); ++i) {
+    for (int i = 0; i < rank; ++i) {
       bool found = false;
       for (int j = 0; j < b_info.shape[0]; ++j) {
-        if (i == b_data[j]) {
+        int axis = b_data[j] < 0 ? b_data[j] + rank : b_data[j];
+        if (axis < 0 || axis >= rank) {
+          return Tensor<Mixins...>(
+              graph::ErrorTensor(absl::InvalidArgumentError(
+                  "The reduction axis is out of range.")));
+        }
+        if (i == axis) {
           found = true;
           break;
         }
@@ -944,31 +959,38 @@ Tensor<Mixins...> Mean(Tensor<Mixins...> a, Tensor<Mixins...> b, bool keep_dims,
   const LockedBufferSpan<const int32_t> b_lock =
       b_info.buffer->Lock().As<const int32_t>();
   const int32_t* b_data = b_lock.data();
+  int rank = static_cast<int>(a_info.shape.size());
   if (op->keep_dims) {
     o_info.shape = a_info.shape;
     if (b_info.shape.empty()) {
-      if (b_data[0] < 0 ||
-          static_cast<size_t>(b_data[0]) >= o_info.shape.size()) {
+      int axis = b_data[0] < 0 ? b_data[0] + rank : b_data[0];
+      if (axis < 0 || axis >= rank) {
         return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
             "The reduction axis is out of range.")));
       }
-      o_info.shape.push_back(o_info.shape[b_data[0]]);
+      o_info.shape.push_back(o_info.shape[axis]);
     } else {
       for (int i = 0; i < b_info.shape[0]; ++i) {
-        if (b_data[i] < 0 ||
-            static_cast<size_t>(b_data[i]) >= o_info.shape.size()) {
+        int axis = b_data[i] < 0 ? b_data[i] + rank : b_data[i];
+        if (axis < 0 || axis >= rank) {
           return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
               "The reduction axis is out of range.")));
         }
-        o_info.shape[b_data[i]] = 1;
+        o_info.shape[axis] = 1;
       }
     }
   } else {
     o_info.shape = {};
-    for (int i = 0; i < a_info.shape.size(); ++i) {
+    for (int i = 0; i < rank; ++i) {
       bool found = false;
       for (int j = 0; j < b_info.shape[0]; ++j) {
-        if (i == b_data[j]) {
+        int axis = b_data[j] < 0 ? b_data[j] + rank : b_data[j];
+        if (axis < 0 || axis >= rank) {
+          return Tensor<Mixins...>(
+              graph::ErrorTensor(absl::InvalidArgumentError(
+                  "The reduction axis is out of range.")));
+        }
+        if (i == axis) {
           found = true;
           break;
         }

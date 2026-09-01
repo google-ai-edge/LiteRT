@@ -494,5 +494,68 @@ TEST(LayerNormParamsTest, RejectsMissingEpsilon) {
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
 }
 
+TEST(LayerNormParamsTest, SupportsLayerNormWithSubType) {
+  StubContextBuilder context_builder;
+  const int input =
+      context_builder.AddTensor(kDefaultDtype, std::array<int, 3>{1, 2, 4});
+  const int output =
+      context_builder.AddTensor(kDefaultDtype, std::array<int, 3>{1, 2, 4});
+
+  flexbuffers::Builder fbb;
+  fbb.Map([&]() {
+    fbb.Int("sub_type", 1);  // 1 = LayerNorm
+    fbb.Float("epsilon", 1e-5f);
+    fbb.Int("channel_axis", 2);
+    fbb.Map("_TENSOR_V1_reduction_axes",
+            [&]() { fbb.Vector("TENSOR_DATA", [&]() { fbb.Add(2); }); });
+  });
+  fbb.Finish();
+  const std::vector<uint8_t> buffer = fbb.GetBuffer();
+  const TfLiteStablehloCompositeParams params = {
+      .name = "odml.group_norm",
+      .attributes = buffer.data(),
+      .attributes_size = buffer.size()};
+
+  context_builder.SetOp(kTfLiteBuiltinStablehloComposite, /*version=*/1,
+                        /*params=*/&params,
+                        /*inputs=*/{input},
+                        /*outputs=*/{output});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
+TEST(LayerNormParamsTest, RejectsLayerNormWithBadReductionAxes) {
+  StubContextBuilder context_builder;
+  const int input =
+      context_builder.AddTensor(kDefaultDtype, std::array<int, 3>{1, 2, 4});
+  const int output =
+      context_builder.AddTensor(kDefaultDtype, std::array<int, 3>{1, 2, 4});
+
+  flexbuffers::Builder fbb;
+  fbb.Map([&]() {
+    fbb.Int("sub_type", 1);  // 1 = LayerNorm
+    fbb.Float("epsilon", 1e-5f);
+    fbb.Int("channel_axis", 2);
+    fbb.Map("_TENSOR_V1_reduction_axes", [&]() {
+      fbb.Vector("TENSOR_DATA", [&]() { fbb.Add(1); });  // Not last axis 2
+    });
+  });
+  fbb.Finish();
+  const std::vector<uint8_t> buffer = fbb.GetBuffer();
+  const TfLiteStablehloCompositeParams params = {
+      .name = "odml.group_norm",
+      .attributes = buffer.data(),
+      .attributes_size = buffer.size()};
+
+  context_builder.SetOp(kTfLiteBuiltinStablehloComposite, /*version=*/1,
+                        /*params=*/&params,
+                        /*inputs=*/{input},
+                        /*outputs=*/{output});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir

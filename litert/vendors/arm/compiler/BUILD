@@ -48,5 +48,11 @@ litert_dynamic_lib(
         "//litert/cc/internal:litert_opaque_options_wrapper",
         "//litert/cc/internal:litert_options_wrapper",
         "//litert/cc/options:litert_arm_options",
+        # copybara:comment_begin(oss-only)
+        "@ai_ml_sdk_vgf_library//:vgf",  # TODO: Placeholder include. Review when mature.
+        "@ai_ml_sdk_vgf_library//:vgf_utils",  # TODO: Placeholder include. Review when mature.
+        "@arm_dep_vulkan_headers//:vulkan_headers",  # TODO: Placeholder include. Review when mature.
+        "@tosa_for_spirv_codegen",  # TODO: Placeholder include. Review when mature.
+        # copybara:comment_end
     ],
 )
