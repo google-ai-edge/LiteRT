@@ -162,7 +162,7 @@ py_library(
         "@absl_py//absl/logging",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/stablehlo:quantization_config_proto_py",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/tensorflow/python:representative_dataset",
-        "@org_tensorflow//tensorflow/core:protos_all_py",
+        "@org_tensorflow//tensorflow/core/framework:graph_proto_py_proto",
         "@org_tensorflow//tensorflow/python/client:session",
         "@org_tensorflow//tensorflow/python/eager:context",
         "@org_tensorflow//tensorflow/python/eager:def_function",
