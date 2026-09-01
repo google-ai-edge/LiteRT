@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tflite/tools/versioning/gpu_compatibility.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -54,6 +55,24 @@ absl::Status CheckGpuDelegateCompatibility(const tflite::Model* model) {
     }
   }
   return absl::OkStatus();
+}
+
+// Builds a signature for gathering `indices_dims` rows out of a [4,5] table.
+OpSignature GatherOpSignature(const std::vector<int32_t>& indices_dims,
+                              const std::vector<int32_t>& output_dims) {
+  OpSignature op_sig = OpSignature();
+  op_sig.op = BuiltinOperator_GATHER;
+  op_sig.inputs = std::vector<OpSignatureTensorSpec>(2);
+  op_sig.inputs[0].is_const = false;
+  op_sig.inputs[0].type = kTfLiteFloat32;
+  op_sig.inputs[0].dims = {4, 5};
+  op_sig.inputs[1].is_const = false;
+  op_sig.inputs[1].type = kTfLiteInt32;
+  op_sig.inputs[1].dims = indices_dims;
+  op_sig.outputs = std::vector<OpSignatureTensorSpec>(1);
+  op_sig.outputs[0].type = kTfLiteFloat32;
+  op_sig.outputs[0].dims = output_dims;
+  return op_sig;
 }
 
 }  // namespace
@@ -299,6 +318,53 @@ TEST(CheckGpuDelegateCompatibility, ResamplerInvalidChannels) {
   EXPECT_THAT(
       CheckGpuDelegateCompatibility(op_sig),
       StatusIs(absl::StatusCode::kInvalidArgument, HasSubstr("warp.c < 2")));
+}
+
+TEST(CheckGpuDelegateCompatibility, GatherMultiDimIndicesNeedFlag) {
+  const OpSignature op_sig = GatherOpSignature(/*indices_dims=*/{1, 3},
+                                               /*output_dims=*/{1, 3, 5});
+
+  // Indices of rank > 1 require the backend to relabel them into the 1D vector
+  // the kernel reads, which only kReducibleGatherIndices backends do.
+  EXPECT_THAT(CheckGpuDelegateCompatibility(op_sig),
+              StatusIs(absl::StatusCode::kUnimplemented,
+                       HasSubstr("Only support 1D indices")));
+  EXPECT_THAT(CheckGpuDelegateCompatibility(
+                  op_sig, GpuCompatibilityFlags::kReducibleGatherIndices),
+              IsOk());
+}
+
+TEST(CheckGpuDelegateCompatibility, Gather1DIndicesNeedNoFlag) {
+  const OpSignature op_sig = GatherOpSignature(/*indices_dims=*/{3},
+                                               /*output_dims=*/{3, 5});
+
+  EXPECT_THAT(CheckGpuDelegateCompatibility(op_sig), IsOk());
+  EXPECT_THAT(CheckGpuDelegateCompatibility(
+                  op_sig, GpuCompatibilityFlags::kReducibleGatherIndices),
+              IsOk());
+}
+
+TEST(CheckGpuDelegateCompatibility, GatherIndicesWithNonUnitLeadingDim) {
+  const OpSignature op_sig = GatherOpSignature(/*indices_dims=*/{2, 3},
+                                               /*output_dims=*/{2, 3, 5});
+
+  EXPECT_THAT(CheckGpuDelegateCompatibility(
+                  op_sig, GpuCompatibilityFlags::kReducibleGatherIndices),
+              StatusIs(absl::StatusCode::kUnimplemented,
+                       HasSubstr("reduce to a 1D vector")));
+}
+
+TEST(CheckGpuDelegateCompatibility, GatherIndicesAboveBhwcRank) {
+  // The leading dimensions are all 1, so the indices do reduce to a 1D vector,
+  // but rank 5 would be truncated to its four leading dimensions downstream,
+  // silently dropping the gathered dimension.
+  const OpSignature op_sig = GatherOpSignature(/*indices_dims=*/{1, 1, 1, 1, 3},
+                                               /*output_dims=*/{1, 1, 1, 3, 5});
+
+  EXPECT_THAT(CheckGpuDelegateCompatibility(
+                  op_sig, GpuCompatibilityFlags::kReducibleGatherIndices),
+              StatusIs(absl::StatusCode::kUnimplemented,
+                       HasSubstr("up to 4D input, indices and output")));
 }
 
 }  // namespace tflite

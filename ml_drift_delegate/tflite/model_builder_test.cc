@@ -2870,12 +2870,51 @@ TEST(GatherOperationParserTest, TestIndicesTensor) {
       /*num_inputs=*/2, /*shape=*/std::vector<int>({1, 1, 1, 1}));
   std::unique_ptr<TFLiteOperationParser> parser =
       NewOperationParser(context->node(), context->registration());
-  // Need 1D indices
+  // Indices have to reduce to a 1D vector: a leading dimension != 1 makes them
+  // genuinely multi-dimensional, which the single-axis kernel cannot express.
   context = std::make_unique<StubTfLiteContext>(
       kTfLiteBuiltinGather,
       /*op_version=*/1,
       /*num_inputs=*/2, /*shape=*/std::vector<int>({1, 1, 1, 1}));
-  context->tensor(2)->dims->size = 2;
+  context->ChangeTensorShape(2, {2, 3});
+  context->tensor(2)->type = kTfLiteInt32;
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+  // Multi-dimensional indices whose leading dimensions are all 1 do reduce to
+  // a 1D vector and are supported: gathering 3 rows of a [4,5] table with [1,3]
+  // indices yields a [1,3,5] output, which Parse() reaches with a RESHAPE.
+  context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinGather,
+      /*op_version=*/1,
+      /*num_inputs=*/2, /*shape=*/std::vector<int>({1, 1, 1, 1}));
+  context->ChangeTensorShape(1, {4, 5});
+  context->ChangeTensorShape(2, {1, 3});
+  context->tensor(2)->type = kTfLiteInt32;
+  context->ChangeTensorShape(3, {1, 3, 5});
+  EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+  // Indices above rank 4 are not representable in BHWC, even when they reduce
+  // to a 1D vector.
+  context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinGather,
+      /*op_version=*/1,
+      /*num_inputs=*/2, /*shape=*/std::vector<int>({1, 1, 1, 1}));
+  context->ChangeTensorShape(2, {1, 1, 1, 1, 3});
+  context->tensor(2)->type = kTfLiteInt32;
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+  // A rank-0 (scalar) index drops the gathered axis entirely.
+  context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinGather,
+      /*op_version=*/1,
+      /*num_inputs=*/2, /*shape=*/std::vector<int>({1, 1, 1, 1}));
+  context->ChangeTensorShape(2, {});
   context->tensor(2)->type = kTfLiteInt32;
   EXPECT_FALSE(
       parser
@@ -2921,6 +2960,130 @@ TEST(GatherOperationParserTest, ValidConstantValueTensor) {
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());
+}
+
+TEST(GatherOperationParserTest, TestBatchDims) {
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinGather,
+      /*op_version=*/1,
+      /*num_inputs=*/2, /*shape=*/std::vector<int>({1, 1, 1, 1}));
+  std::unique_ptr<TFLiteOperationParser> parser =
+      NewOperationParser(context->node(), context->registration());
+  context->tensor(2)->dims->size = 1;
+  context->tensor(2)->type = kTfLiteInt32;
+  auto* params =
+      static_cast<TfLiteGatherParams*>(context->node()->builtin_data);
+  // Parse() only honors `axis`; batched gather has different semantics.
+  params->batch_dims = 1;
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+  params->batch_dims = 0;
+  EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+}
+
+// Exercises GatherOperationParser::Parse() on the graph it actually builds.
+class GatherParseTest : public testing::Test {
+ protected:
+  // Gathers along axis 0 of a runtime [4,5] table with constant indices.
+  void SetUpGather(const std::vector<int>& indices_shape,
+                   const std::vector<int>& output_shape) {
+    context_ = std::make_unique<StubTfLiteContext>(
+        kTfLiteBuiltinGather,
+        /*op_version=*/1,
+        /*num_inputs=*/2, /*shape=*/std::vector<int>({1, 1, 1, 1}));
+    context_->ChangeTensorShape(1, {4, 5});
+    context_->ChangeTensorShape(2, indices_shape);
+    context_->tensor(2)->type = kTfLiteInt32;
+    context_->tensor(2)->allocation_type = kTfLiteMmapRo;
+    context_->ChangeTensorShape(3, output_shape);
+    parser_ = NewOperationParser(context_->node(), context_->registration());
+  }
+
+  void Parse() {
+    ObjectReader reader(&graph_, context_.get(), context_->node(),
+                        &tensor_to_value_);
+    parser_->Parse(context_->node(), context_->registration(), &graph_,
+                   &reader);
+  }
+
+  // Returns the single node of the given operation type, or nullptr.
+  const ::ml_drift::Node* FindNode(::ml_drift::OperationType type) {
+    for (const ::ml_drift::Node* node : graph_.nodes()) {
+      if (::ml_drift::OperationTypeFromString(node->operation.type) == type) {
+        return node;
+      }
+    }
+    return nullptr;
+  }
+
+  std::unique_ptr<StubTfLiteContext> context_;
+  std::unique_ptr<TFLiteOperationParser> parser_;
+  ::ml_drift::GraphFloat32 graph_;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value_;
+};
+
+// The kernel reads the indices along the channel axis, so a 1D constant [3]
+// has to enter the graph as [1,1,1,3], not as the default [3,1,1,1].
+TEST_F(GatherParseTest, ConstIndicesAreLaidOutAlongChannels) {
+  SetUpGather(/*indices_shape=*/{3}, /*output_shape=*/{3, 5});
+  ASSERT_TRUE(parser_
+                  ->IsSupported(context_.get(), context_->node(),
+                                context_->registration())
+                  .ok());
+  Parse();
+
+  const ::ml_drift::Node* gather = FindNode(::ml_drift::OperationType::GATHER);
+  ASSERT_NE(gather, nullptr);
+  const auto inputs = graph_.FindInputs(gather->id);
+  ASSERT_EQ(inputs.size(), 2);
+  EXPECT_EQ(inputs[0]->tensor.shape, ::ml_drift::BHWC(4, 1, 1, 5));
+  EXPECT_EQ(inputs[1]->tensor.shape, ::ml_drift::BHWC(1, 1, 1, 3));
+
+  // The gathered shape already matches the TFLite output, so no RESHAPE.
+  EXPECT_EQ(FindNode(::ml_drift::OperationType::RESHAPE), nullptr);
+  ASSERT_EQ(graph_.outputs().size(), 1);
+  EXPECT_EQ(graph_.outputs()[0]->tensor.shape, ::ml_drift::BHWC(3, 1, 1, 5));
+}
+
+// [1,3] indices push the gathered dimension onto another BHWC axis: the kernel
+// still writes [3,1,1,5], so a RESHAPE has to relabel it to the [1,3,5] output.
+TEST_F(GatherParseTest, MultiDimIndicesGetReshapedOutput) {
+  SetUpGather(/*indices_shape=*/{1, 3}, /*output_shape=*/{1, 3, 5});
+  ASSERT_TRUE(parser_
+                  ->IsSupported(context_.get(), context_->node(),
+                                context_->registration())
+                  .ok());
+  Parse();
+
+  const ::ml_drift::Node* gather = FindNode(::ml_drift::OperationType::GATHER);
+  ASSERT_NE(gather, nullptr);
+  const auto gather_outputs = graph_.FindOutputs(gather->id);
+  ASSERT_EQ(gather_outputs.size(), 1);
+  EXPECT_EQ(gather_outputs[0]->tensor.shape, ::ml_drift::BHWC(3, 1, 1, 5));
+
+  const ::ml_drift::Node* reshape =
+      FindNode(::ml_drift::OperationType::RESHAPE);
+  ASSERT_NE(reshape, nullptr);
+  const auto reshape_inputs = graph_.FindInputs(reshape->id);
+  ASSERT_EQ(reshape_inputs.size(), 1);
+  EXPECT_EQ(reshape_inputs[0]->id, gather_outputs[0]->id);
+  ASSERT_EQ(graph_.outputs().size(), 1);
+  EXPECT_EQ(graph_.outputs()[0]->tensor.shape, ::ml_drift::BHWC(1, 1, 3, 5));
+}
+
+// An output shape that is not a relabeling of the gathered shape would make the
+// RESHAPE permute the data, so the node must not be delegated at all.
+TEST_F(GatherParseTest, PermutedOutputShapeIsRejected) {
+  SetUpGather(/*indices_shape=*/{1, 3}, /*output_shape=*/{5, 3});
+  EXPECT_FALSE(parser_
+                   ->IsSupported(context_.get(), context_->node(),
+                                 context_->registration())
+                   .ok());
 }
 
 TEST(HardSwishOperationParserTest, TestIsSupported) {

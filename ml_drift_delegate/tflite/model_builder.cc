@@ -3504,8 +3504,11 @@ class GatherOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
+    // Parse() relabels or reshapes the indices and the gathered result, so it
+    // also accepts indices that only reduce to a 1D vector, e.g. [1,N].
     ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
-        context, tflite_node, registration));
+        context, tflite_node, registration,
+        tflite::GpuCompatibilityFlags::kReducibleGatherIndices));
 
     ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
@@ -3514,16 +3517,50 @@ class GatherOperationParser : public TFLiteOperationParser {
     const TfLiteTensor* tfl_input = nullptr;
     ABSL_RETURN_IF_ERROR(
         PreGetInputTensor(context, tflite_node, 0, &tfl_input));
+    const TfLiteTensor* tfl_indices = nullptr;
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 1, &tfl_indices));
 
     ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
     if (!tflite_node->builtin_data) {
       return absl::InvalidArgumentError("Missing TfLiteGatherParams.");
     }
+    const auto* params =
+        static_cast<const TfLiteGatherParams*>(tflite_node->builtin_data);
+    // Parse() only honors `axis`; a non-zero `batch_dims` means batched gather,
+    // which has different semantics and is not implemented here.
+    if (params->batch_dims != 0) {
+      return absl::UnimplementedError("Only support batch_dims == 0.");
+    }
     TfLiteTensor* tfl_output;
     ABSL_RETURN_IF_ERROR(
         PreGetOutputTensor(context, tflite_node, 0, &tfl_output));
-    if (tfl_input->type != tfl_output->type) {
+    // Treat an fp16 constant data input as FLOAT32: FP16GraphPartitionHelper
+    // folds the preceding DEQUANTIZE and remaps this node's input to the
+    // original fp16 constant while the output stays FLOAT32. The delegate
+    // handles the precision conversion, so that pair is not a real mismatch.
+    // Runtime inputs never go through that folding, so they keep the strict
+    // comparison, and so does an fp16 input paired with an fp16 output.
+    const bool fp16_const_input = tfl_input->type == kTfLiteFloat16 &&
+                                  tflite::IsConstantTensor(tfl_input);
+    if (tfl_input->type != tfl_output->type &&
+        !(fp16_const_input && tfl_output->type == kTfLiteFloat32)) {
       return absl::InvalidArgumentError("Input / output dtype mismatch.");
+    }
+
+    // Parse() calls ExtractAxisFromIndex() and ExtractTensorShape().
+    ABSL_RETURN_IF_ERROR(PreCheckAxisFromIndex(*tfl_input, params->axis));
+    ABSL_RETURN_IF_ERROR(PreCheckTensorShape(*tfl_input));
+    ABSL_RETURN_IF_ERROR(PreCheckTensorShape(*tfl_output));
+    // Parse() appends a RESHAPE when the TFLite output shape differs from the
+    // shape the kernel produces. That RESHAPE only relabels axes, so reject
+    // anything it cannot express rather than let Parse() build a graph that
+    // silently permutes the gathered data.
+    if (!IsPureRelabel(GetGatherShape(*tfl_input, *tfl_indices, params->axis),
+                       ExtractTensorShape(tfl_output))) {
+      return absl::UnimplementedError(
+          "Gather output shape is not a relabeling of the gathered input "
+          "shape.");
     }
     return absl::OkStatus();
   }
@@ -3574,14 +3611,80 @@ class GatherOperationParser : public TFLiteOperationParser {
       reader->AddInput(gather_node, 0);
     }
     if (indices_are_const) {
-      indices_value = reader->AddConstInput(1, /*layout=*/{});
+      // Match the layout the runtime path builds above: the kernel reads the
+      // indices along the channel axis, so a 1D constant [N] has to be labeled
+      // [1,1,1,N] instead of the default [N,1,1,1]. Relabeling axes of extent 1
+      // leaves the flat data order untouched, so no RESHAPE node is needed.
+      // Rank 2-4 constants need no override: their default layouts already map
+      // [1,..,N] to [1,1,1,N].
+      indices_value = reader->AddConstInput(
+          1, /*layout=*/{.layout_1d = ::ml_drift::Layout::SCALAR});
       graph->AddConsumer(gather_node->id, indices_value->id);
     } else if (indices_are_1d) {
       graph->AddConsumer(gather_node->id, indices_value->id);
     } else {
       reader->AddInput(gather_node, 1);
     }
-    reader->AddOutputs(gather_node);
+
+    // GpuModelBuilder infers the GATHER output shape as the input shape with
+    // `axis` replaced by the number of gathered indices. Multi-dimensional
+    // indices give the TFLite output a higher rank, which lands the gathered
+    // dimension on a different BHWC axis (e.g. gathering rows of a [V,C] table
+    // with [1,N] indices yields [1,N,C], not [N,C]). Emit the GATHER into an
+    // intermediate value with the kernel's shape and RESHAPE it to the real
+    // output layout; IsSupported() has verified that this is a pure relabeling.
+    const TfLiteTensor* output_tensor = reader->GetOutputTensor(0);
+    const ::ml_drift::BHWC gather_shape =
+        GetGatherShape(*input_tensor, *indices_tensor, params->axis);
+    const ::ml_drift::BHWC output_shape = ExtractTensorShape(output_tensor);
+    if (gather_shape == output_shape) {
+      reader->AddOutputs(gather_node);
+    } else {
+      ::ml_drift::Value* gather_value = graph->NewValue();
+      gather_value->tensor.type = ToDataType(output_tensor->type);
+      gather_value->tensor.shape = gather_shape;
+      graph->SetProducer(gather_node->id, gather_value->id);
+
+      ::ml_drift::Node* reshape_node = graph->NewNode();
+      reshape_node->operation.type =
+          ToString(::ml_drift::OperationType::RESHAPE);
+      ::ml_drift::ReshapeAttributes reshape_attr;
+      reshape_attr.new_shape = output_shape;
+      reshape_node->operation.attributes = std::move(reshape_attr);
+      graph->AddConsumer(reshape_node->id, gather_value->id);
+      reader->AddOutputs(reshape_node);
+    }
+  }
+
+ private:
+  // Returns the shape the ml-drift GATHER kernel produces: the input shape with
+  // `axis` replaced by the number of gathered indices. Requires
+  // PreCheckAxisFromIndex() and PreCheckTensorShape() to have passed.
+  static ::ml_drift::BHWC GetGatherShape(const TfLiteTensor& input_tensor,
+                                         const TfLiteTensor& indices_tensor,
+                                         int axis) {
+    ::ml_drift::BHWC shape = ExtractTensorShape(&input_tensor);
+    shape.set(ExtractAxisFromIndex(input_tensor, axis),
+              static_cast<int>(tflite::NumElements(&indices_tensor)));
+    return shape;
+  }
+
+  // Returns true if `to` holds the same extents as `from`, in the same order,
+  // once axes of extent 1 are dropped. A RESHAPE between two such shapes only
+  // relabels axes and leaves the flat BHWC data order untouched; between any
+  // other pair of shapes it would permute the data.
+  static bool IsPureRelabel(const ::ml_drift::BHWC& from,
+                            const ::ml_drift::BHWC& to) {
+    const auto squeeze = [](const ::ml_drift::BHWC& shape) {
+      std::vector<int> dims;
+      for (const auto dim : {shape.b, shape.h, shape.w, shape.c}) {
+        if (dim != 1) {
+          dims.push_back(dim);
+        }
+      }
+      return dims;
+    };
+    return squeeze(from) == squeeze(to);
   }
 };
 
