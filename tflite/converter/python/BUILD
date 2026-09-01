@@ -235,7 +235,6 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Parser",
         "@llvm-project//mlir:Pass",
-        "@llvm-project//mlir:ReconcileUnrealizedCasts",
         "@llvm-project//mlir:Support",
         "@stablehlo//:stablehlo_ops",
         "@stablehlo//:stablehlo_passes",
