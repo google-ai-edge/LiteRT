@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (C) 2026 Intel Corporation
+# Copyright 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -53,7 +53,7 @@ _ALLOWED_HOST = "storage.openvinotoolkit.org"
 # OS keys, in the order they should appear in the generated file.
 _OS_KEYS = ("windows", "ubuntu24", "ubuntu22", "android")
 
-_TEMPLATE = '''# Copyright (C) 2026 Intel Corporation
+_TEMPLATE = '''# Copyright 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
