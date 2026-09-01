@@ -17,7 +17,7 @@
 
 #include <cstdint>
 
-#include "litert/vendors/nvidia/tensorrt_rtx/include/NvInferRuntime.h"
+#include "NvInferRuntime.h"
 
 namespace litert::nvidia {
 

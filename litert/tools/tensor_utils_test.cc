@@ -490,6 +490,69 @@ TEST(TensorUtilsTest, FillInputBuffersWithCustomDataMismatchedBufferCount) {
               IsError(kLiteRtStatusErrorInvalidArgument));
 }
 
+TEST(TensorUtilsTest, WriteOutputBuffersToFilesSuccess) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(
+          env, testing::GetTestFilePath("simple_quantized_ops.tflite"),
+          HwAccelerators::kCpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto output_names,
+      compiled_model.GetSignatureOutputNames(/*signature_index=*/0));
+  ASSERT_FALSE(output_names.empty());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto output_buffers,
+      compiled_model.CreateOutputBuffers(/*signature_index=*/0));
+  ASSERT_EQ(output_buffers.size(), output_names.size());
+
+  // Fill each output buffer with a distinct known byte pattern.
+  std::vector<std::vector<char>> expected_bytes(output_buffers.size());
+  for (size_t i = 0; i < output_buffers.size(); ++i) {
+    LITERT_ASSERT_OK_AND_ASSIGN(size_t size, output_buffers[i].Size());
+    expected_bytes[i].assign(size, static_cast<char>(i + 1));
+    LITERT_EXPECT_OK(
+        FillBufferWithCustomData(output_buffers[i], expected_bytes[i]));
+  }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto temp_dir,
+                              testing::UniqueTestDirectory::Create());
+  LITERT_EXPECT_OK(WriteOutputBuffersToFiles(
+      compiled_model, /*signature_index=*/0, output_buffers, temp_dir.Str()));
+
+  // Every output must ba a "<name>.raw" file with the exact bytes.
+  for (size_t i = 0; i < output_names.size(); ++i) {
+    const auto& name = output_names[i];
+    std::string file_path =
+        (std::filesystem::path(std::string(temp_dir.Str())) /
+         (std::string(name) + ".raw"))
+            .string();
+    LITERT_ASSERT_OK_AND_ASSIGN(auto read_bytes,
+                                ReadTensorDataFromRawFile(file_path));
+    EXPECT_EQ(read_bytes, expected_bytes[i]);
+  }
+}
+
+TEST(TensorUtilsTest, WriteOutputBuffersToFilesUnwritableDir) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(
+          env, testing::GetTestFilePath("simple_quantized_ops.tflite"),
+          HwAccelerators::kCpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto output_buffers,
+      compiled_model.CreateOutputBuffers(/*signature_index=*/0));
+
+  // A non-existent directory makes the output file fail to open.
+  EXPECT_THAT(
+      WriteOutputBuffersToFiles(compiled_model, /*signature_index=*/0,
+                                output_buffers, "/path/that/does/not/exist"),
+      IsError(kLiteRtStatusErrorRuntimeFailure));
+}
+
 }  // namespace
 }  // namespace tensor_utils
 }  // namespace litert

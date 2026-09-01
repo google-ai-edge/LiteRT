@@ -30,6 +30,52 @@ cc_library(
     deps = ["//litert/c:litert_common"],
 )
 
+cc_library(
+    name = "dispatch_profiler",
+    srcs = ["dispatch_profiler.cc"],
+    hdrs = ["dispatch_profiler.h"],
+    tags = ["manual"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/time",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+    ],
+)
+
+cc_library(
+    name = "aot_artifact",
+    srcs = ["aot_artifact.cc"],
+    hdrs = ["aot_artifact.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/vendors/nvidia:bytecode",
+        "@com_google_absl//absl/base:no_destructor",
+        "@com_google_absl//absl/synchronization",
+    ],
+)
+
+cc_test(
+    name = "aot_artifact_test",
+    srcs = ["aot_artifact_test.cc"],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":aot_artifact",
+        "//litert/vendors/nvidia:bytecode",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cuda_library(
     name = "greedy_sampler_kernel_cuda",
     srcs = ["greedy_sampler_kernel.cu"],
@@ -82,6 +128,8 @@ litert_dispatch_api(
         "//litert:litert_friends",
     ],
     deps = [
+        ":aot_artifact",
+        ":dispatch_profiler",
         ":greedy_sampler_c_api",
         ":greedy_sampler_kernel",
         "//litert/c:litert_common",

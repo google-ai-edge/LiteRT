@@ -90,6 +90,10 @@ ABSL_FLAG(bool, quantize_inputs, false,
           "Automatically quantize unquantized (FP32) input data when model "
           "inputs are quantized.");
 
+ABSL_FLAG(std::string, output_dir, "",
+          "An output folder to write .raw files with model output signatures "
+          "as their file names.");
+
 ABSL_FLAG(std::string, scoped_weight_file, "",
           "Optional path to a scoped external weight file.");
 ABSL_FLAG(std::string, scoped_weight_group, "",
@@ -504,6 +508,13 @@ Expected<void> RunModel() {
       auto& buffer = output_buffers[i];
       LITERT_RETURN_IF_ERROR(PrintTensorBuffer(buffer, "Output", i));
     }
+  }
+
+  // Write output tensors to files if requested.
+  std::string output_dir = absl::GetFlag(FLAGS_output_dir);
+  if (!output_dir.empty()) {
+    LITERT_RETURN_IF_ERROR(tensor_utils::WriteOutputBuffersToFiles(
+        compiled_model, signature_index, output_buffers, output_dir));
   }
 
   ABSL_LOG(INFO) << "Model run completed";
