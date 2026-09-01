@@ -28,6 +28,19 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "@com_google_absl//absl/strings:string_view",
+        "@tsl//tsl/platform:fingerprint",
+    ],
+)
+
+cc_library(
+    name = "memory_profile",
+    srcs = ["memory_profile.cc"],
+    hdrs = ["memory_profile.h"],
+    deps = [
+        "//litert/c/internal:litert_logging",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
     ],
 )
 
@@ -36,6 +49,22 @@ cc_test(
     srcs = ["bytecode_test.cc"],
     deps = [
         ":bytecode",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "profiling_test",
+    srcs = ["profiling_test.cc"],
+    tags = ["manual"],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":memory_profile",
+        "//litert/vendors/nvidia/dispatch:dispatch_profiler",
         "@com_google_googletest//:gtest_main",
     ],
 )
