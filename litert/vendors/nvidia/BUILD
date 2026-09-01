@@ -28,6 +28,18 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "@com_google_absl//absl/strings:string_view",
+        "@tsl//tsl/platform:fingerprint",
+    ],
+)
+
+cc_library(
+    name = "memory_profile",
+    hdrs = ["memory_profile.h"],
+    deps = [
+        "//litert/c/internal:litert_logging",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
     ],
 )
 
