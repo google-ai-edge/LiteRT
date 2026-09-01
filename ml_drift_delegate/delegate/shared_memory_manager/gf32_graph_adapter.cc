@@ -28,9 +28,6 @@ BHWC GraphFloat32Adapter::GetValueShape(uint32_t value_id) const {
   return graph_.GetValue(value_id)->tensor.shape;
 }
 
-DataType GraphFloat32Adapter::GetValueType(uint32_t value_id) const {
-  return DataType::FLOAT32;
-}
 void GraphFloat32Adapter::SetValueType(uint32_t value_id, DataType type) {
   graph_.GetValue(value_id)->tensor.type = type;
 }

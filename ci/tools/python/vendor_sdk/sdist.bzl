@@ -51,6 +51,9 @@ def _sdist_impl(ctx):
     if ctx.attr.nightly_suffix and ctx.attr.nightly_suffix[BuildSettingInfo].value != "":
         args.add("--nightly_suffix", "_nightly")
 
+    for key, value in ctx.attr.substitutions.items():
+        args.add("--substitution", "{}={}".format(key, value))
+
     all_input_files = depset(
         direct = [ctx.file.setup_py, ctx.file.manifest_in],
         transitive = [depset(ctx.files.package_srcs)],
@@ -92,6 +95,14 @@ sdist_rule = rule(
         "version": attr.string(
             mandatory = True,
             doc = "Version of the Python package.",
+        ),
+        "substitutions": attr.string_dict(
+            doc = """
+            Extra {{ KEY }} -> VALUE substitutions to apply to setup.py's
+            contents before running it, in addition to the built-in
+            {{ PACKAGE_NAME }} / {{ PACKAGE_VERSION }} substitutions.
+            """,
+            mandatory = False,
         ),
         "_sdist_wrapper": attr.label(
             default = Label("//ci/tools/python/vendor_sdk:sdist_wrapper"),

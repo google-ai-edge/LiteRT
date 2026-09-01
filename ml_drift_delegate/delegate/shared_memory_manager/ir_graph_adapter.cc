@@ -29,11 +29,6 @@ BHWC IrModelAdapter::GetValueShape(uint32_t value_id) const {
   return graph_.tensor(value_id)->desc.GetBHWCShape();
 }
 
-DataType IrModelAdapter::GetValueType(uint32_t value_id) const {
-  DataType type = graph_.tensor(value_id)->desc.GetDataType();
-  return type == DataType::UNKNOWN ? DataType::FLOAT32 : type;
-}
-
 void IrModelAdapter::SetValueType(uint32_t value_id, DataType type) {
   graph_.GetMutableTensor(value_id)->desc.SetDataType(type);
 }
@@ -78,13 +73,11 @@ DataType IrModelAdapter::GetOpFirstInputType(uint32_t op_id) const {
 uint32_t IrModelAdapter::AddConstantInput(uint32_t global_tensor_id,
                                           const BHWC& shape, DataType type,
                                           uint32_t consumer_op_id) {
-  ir::IrTensor* value = graph_.add_tensor(ml_drift::TensorDescriptor{});
+  ir::IrTensor* value = graph_.add_tensor(type, shape);
   value->buffer_source = ir::BufferSource{
       .is_shared = true,
       .global_id = global_tensor_id,
   };
-  value->desc.SetDataType(type);
-  value->desc.SetBHWCShape(shape);
   graph_.AddConsumer(value->id, consumer_op_id);
   return static_cast<uint32_t>(value->id);
 }
