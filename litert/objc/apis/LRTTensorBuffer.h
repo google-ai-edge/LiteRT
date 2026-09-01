@@ -19,25 +19,78 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/** Element data types supported by LiteRT tensor buffers (bridging @c LiteRtElementType in
+// LINT.IfChange(element_types)
+/** Element data types supported by LiteRT tensor buffers (matching @c LiteRtElementType in
  * litert_model_types.h). */
 typedef NS_ENUM(NSInteger, LRTElementType) {
-  LRTElementTypeUnknown = 0,
+  LRTElementTypeNone = 0,
+  LRTElementTypeUnknown = LRTElementTypeNone,
   LRTElementTypeFloat32 = 1,
   LRTElementTypeInt32 = 2,
   LRTElementTypeUInt8 = 3,
   LRTElementTypeInt64 = 4,
-  LRTElementTypeBool = 5,
-  LRTElementTypeFloat16 = 6,
+  LRTElementTypeString = 5,
+  LRTElementTypeBool = 6,
+  LRTElementTypeInt16 = 7,
+  LRTElementTypeComplex64 = 8,
+  LRTElementTypeInt8 = 9,
+  LRTElementTypeFloat16 = 10,
+  LRTElementTypeFloat64 = 11,
+  LRTElementTypeComplex128 = 12,
+  LRTElementTypeUInt64 = 13,
+  LRTElementTypeResource = 14,
+  LRTElementTypeVariant = 15,
+  LRTElementTypeUInt32 = 16,
+  LRTElementTypeUInt16 = 17,
+  LRTElementTypeInt4 = 18,
+  LRTElementTypeBFloat16 = 19,
+  LRTElementTypeInt2 = 20,
+  LRTElementTypeUInt4 = 21,
+  LRTElementTypeFloat8E4M3FN = 22,
+  LRTElementTypeFloat8E5M2 = 23,
 };
+// LINT.ThenChange(../../c/litert_model_types.h)
 
-/** Underlying storage type of a LiteRT tensor buffer (bridging @c LiteRtTensorBufferType in
+// LINT.IfChange(tensor_buffer_types)
+/** Underlying storage type of a LiteRT tensor buffer (matching @c LiteRtTensorBufferType in
  * litert_tensor_buffer_types.h). */
 typedef NS_ENUM(NSInteger, LRTTensorBufferType) {
   LRTTensorBufferTypeUnknown = 0,
   LRTTensorBufferTypeHostMemory = 1,
+  LRTTensorBufferTypeAHWB = 2,
+  LRTTensorBufferTypeION = 3,
+  LRTTensorBufferTypeDMABuf = 4,
+  LRTTensorBufferTypeFastRPC = 5,
+  LRTTensorBufferTypeGLBuffer = 6,
+  LRTTensorBufferTypeGLTexture = 7,
+  LRTTensorBufferTypeOpenCLBuffer = 10,
+  LRTTensorBufferTypeOpenCLBufferFP16 = 11,
+  LRTTensorBufferTypeOpenCLTexture = 12,
+  LRTTensorBufferTypeOpenCLTextureFP16 = 13,
+  LRTTensorBufferTypeOpenCLBufferPacked = 14,
+  LRTTensorBufferTypeOpenCLImageBuffer = 15,
+  LRTTensorBufferTypeOpenCLImageBufferFP16 = 16,
+  LRTTensorBufferTypeWebGPUBuffer = 20,
+  LRTTensorBufferTypeWebGPUBufferFP16 = 21,
+  LRTTensorBufferTypeWebGPUTexture = 22,
+  LRTTensorBufferTypeWebGPUTextureFP16 = 23,
+  LRTTensorBufferTypeWebGPUImageBuffer = 24,
+  LRTTensorBufferTypeWebGPUImageBufferFP16 = 25,
+  LRTTensorBufferTypeWebGPUBufferPacked = 26,
   LRTTensorBufferTypeMetalBuffer = 30,
+  LRTTensorBufferTypeMetalBufferFP16 = 31,
+  LRTTensorBufferTypeMetalTexture = 32,
+  LRTTensorBufferTypeMetalTextureFP16 = 33,
+  LRTTensorBufferTypeMetalBufferPacked = 34,
+  LRTTensorBufferTypeVulkanBuffer = 40,
+  LRTTensorBufferTypeVulkanBufferFP16 = 41,
+  LRTTensorBufferTypeVulkanTexture = 42,
+  LRTTensorBufferTypeVulkanTextureFP16 = 43,
+  LRTTensorBufferTypeVulkanImageBuffer = 44,
+  LRTTensorBufferTypeVulkanImageBufferFP16 = 45,
+  LRTTensorBufferTypeVulkanBufferPacked = 46,
 };
+// LINT.ThenChange(../../c/litert_tensor_buffer_types.h:tensor_buffer_types)
 
 /** Wraps a LiteRT tensor buffer holding model inputs or outputs. */
 @interface LRTTensorBuffer : NSObject

@@ -91,4 +91,33 @@
   XCTAssertEqual(buffer.metalBuffer, metalBuffer);
 }
 
+- (void)testVariousElementTypes {
+  NSError *error = nil;
+  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(env);
+  XCTAssertNil(error);
+
+  NSArray<NSNumber *> *elementTypes = @[
+    @(LRTElementTypeFloat32),
+    @(LRTElementTypeInt32),
+    @(LRTElementTypeUInt8),
+    @(LRTElementTypeInt64),
+    @(LRTElementTypeBool),
+    @(LRTElementTypeFloat16),
+  ];
+
+  for (NSNumber *typeNum in elementTypes) {
+    LRTElementType type = (LRTElementType)typeNum.integerValue;
+    LRTTensorBuffer *buf = [LRTTensorBuffer tensorBufferWithEnvironment:env
+                                                                   size:32
+                                                            elementType:type
+                                                             dimensions:@[ @2, @4 ]
+                                                                  error:&error];
+    XCTAssertNotNil(buf, @"Failed for element type: %ld", (long)type);
+    XCTAssertNil(error);
+    XCTAssertEqual(buf.elementType, type);
+    XCTAssertEqual(buf.bufferType, LRTTensorBufferTypeHostMemory);
+  }
+}
+
 @end
