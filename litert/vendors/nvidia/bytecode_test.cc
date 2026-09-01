@@ -176,6 +176,94 @@ TEST(TensorRtBytecodeTest, VersionOneRoundTripIsStillSupported) {
   EXPECT_FALSE(parsed->trtllm_head.has_value());
 }
 
+TEST(TensorRtBytecodeTest, SharedWeightBundleSelectsEngineAndWeightViews) {
+  std::vector<TensorRtSharedWeight> shared_weights;
+  shared_weights.push_back(
+      {TensorRtWeightDataType::kFloat, 2, {1, 2, 3, 4, 5, 6, 7, 8}});
+  shared_weights.push_back(
+      {TensorRtWeightDataType::kInt4, 5, {0x12, 0x34, 0x05}});
+  const std::vector<uint8_t> engine_0 = {9, 8, 7};
+  const std::vector<uint8_t> engine_1 = {6, 5, 4, 3};
+
+  TensorRtBundleEntry entry_0;
+  entry_0.function_name = "partition_0";
+  entry_0.input_names = {"input_0"};
+  entry_0.output_names = {"output_0"};
+  entry_0.engine_data = engine_0.data();
+  entry_0.engine_size = engine_0.size();
+  entry_0.refit_weights = {{"matrix", 0}};
+  TensorRtBundleEntry entry_1;
+  entry_1.function_name = "partition_1";
+  entry_1.input_names = {"input_1"};
+  entry_1.output_names = {"output_1"};
+  entry_1.engine_data = engine_1.data();
+  entry_1.engine_size = engine_1.size();
+  entry_1.refit_weights = {{"matrix_alias", 0}, {"packed", 1}};
+
+  auto packed =
+      PackTensorRtSharedWeightBundle(shared_weights, {entry_0, entry_1});
+  ASSERT_TRUE(packed.HasValue()) << packed.Error().Message();
+  EXPECT_FALSE(
+      ParseTensorRtBytecode(packed->data(), packed->size()).HasValue());
+
+  auto parsed =
+      ParseTensorRtBytecode(packed->data(), packed->size(), "partition_1");
+  ASSERT_TRUE(parsed.HasValue()) << parsed.Error().Message();
+  EXPECT_EQ(parsed->version, kTensorRtBytecodeVersionWithSharedWeights);
+  EXPECT_EQ(parsed->function_name, "partition_1");
+  EXPECT_EQ(parsed->input_names, std::vector<std::string>({"input_1"}));
+  EXPECT_EQ(parsed->output_names, std::vector<std::string>({"output_1"}));
+  EXPECT_EQ(std::vector<uint8_t>(parsed->engine_data,
+                                 parsed->engine_data + parsed->engine_size),
+            engine_1);
+  ASSERT_EQ(parsed->refit_weights.size(), 2);
+  EXPECT_EQ(parsed->refit_weights[0].name, "matrix_alias");
+  EXPECT_EQ(parsed->refit_weights[0].data_type, TensorRtWeightDataType::kFloat);
+  EXPECT_EQ(parsed->refit_weights[0].count, 2);
+  EXPECT_EQ(std::vector<uint8_t>(
+                parsed->refit_weights[0].data,
+                parsed->refit_weights[0].data + parsed->refit_weights[0].size),
+            shared_weights[0].data);
+  EXPECT_EQ(parsed->refit_weights[1].name, "packed");
+  EXPECT_EQ(parsed->refit_weights[1].data_type, TensorRtWeightDataType::kInt4);
+  EXPECT_EQ(parsed->refit_weights[1].count, 5);
+  EXPECT_EQ(std::vector<uint8_t>(
+                parsed->refit_weights[1].data,
+                parsed->refit_weights[1].data + parsed->refit_weights[1].size),
+            shared_weights[1].data);
+  EXPECT_FALSE(
+      ParseTensorRtBytecode(packed->data(), packed->size(), "missing_partition")
+          .HasValue());
+}
+
+TEST(TensorRtBytecodeTest, SharedWeightBundleRejectsInvalidReferences) {
+  std::vector<TensorRtSharedWeight> shared_weights = {
+      {TensorRtWeightDataType::kInt8, 1, {7}}};
+  const std::vector<uint8_t> engine = {1};
+  TensorRtBundleEntry entry;
+  entry.function_name = "partition_0";
+  entry.engine_data = engine.data();
+  entry.engine_size = engine.size();
+  entry.refit_weights = {{"weight", 1}};
+  EXPECT_FALSE(
+      PackTensorRtSharedWeightBundle(shared_weights, {entry}).HasValue());
+}
+
+TEST(TensorRtBytecodeTest, SharedWeightBundleRejectsOverflowingInt4Count) {
+  std::vector<TensorRtSharedWeight> shared_weights = {
+      {TensorRtWeightDataType::kInt4,
+       std::numeric_limits<uint64_t>::max(),
+       {}}};
+  const std::vector<uint8_t> engine = {1};
+  TensorRtBundleEntry entry;
+  entry.function_name = "partition_0";
+  entry.engine_data = engine.data();
+  entry.engine_size = engine.size();
+  entry.refit_weights = {{"weight", 0}};
+  EXPECT_FALSE(
+      PackTensorRtSharedWeightBundle(shared_weights, {entry}).HasValue());
+}
+
 TEST(TensorRtBytecodeTest, VersionTwoRoundTripsTensorRtLlmHeadViews) {
   const std::vector<uint8_t> engine = {2, 4, 6, 8};
   const std::vector<uint8_t> weights(64 * 64 / 2, 0x87);

@@ -29,6 +29,7 @@
 #include <new>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -136,6 +137,38 @@ LiteRtStatus CudaStatus(cudaError_t error, const char* what) {
   }
   LITERT_LOG(LITERT_ERROR, "%s: %s", what, cudaGetErrorString(error));
   return kLiteRtStatusErrorRuntimeFailure;
+}
+
+Expected<nvinfer1::DataType> ToTensorRtDataType(
+    litert::nvidia::TensorRtWeightDataType data_type) {
+  switch (data_type) {
+    case litert::nvidia::TensorRtWeightDataType::kFloat:
+      return nvinfer1::DataType::kFLOAT;
+    case litert::nvidia::TensorRtWeightDataType::kHalf:
+      return nvinfer1::DataType::kHALF;
+    case litert::nvidia::TensorRtWeightDataType::kInt8:
+      return nvinfer1::DataType::kINT8;
+    case litert::nvidia::TensorRtWeightDataType::kInt32:
+      return nvinfer1::DataType::kINT32;
+    case litert::nvidia::TensorRtWeightDataType::kBool:
+      return nvinfer1::DataType::kBOOL;
+    case litert::nvidia::TensorRtWeightDataType::kUint8:
+      return nvinfer1::DataType::kUINT8;
+    case litert::nvidia::TensorRtWeightDataType::kFp8:
+      return nvinfer1::DataType::kFP8;
+    case litert::nvidia::TensorRtWeightDataType::kBf16:
+      return nvinfer1::DataType::kBF16;
+    case litert::nvidia::TensorRtWeightDataType::kInt64:
+      return nvinfer1::DataType::kINT64;
+    case litert::nvidia::TensorRtWeightDataType::kInt4:
+      return nvinfer1::DataType::kINT4;
+    case litert::nvidia::TensorRtWeightDataType::kFp4:
+      return nvinfer1::DataType::kFP4;
+    case litert::nvidia::TensorRtWeightDataType::kE8m0:
+      return nvinfer1::DataType::kE8M0;
+  }
+  return Error(kLiteRtStatusErrorInvalidArgument,
+               "Unknown TensorRT refit weight type");
 }
 
 struct CudaTensorBufferInfo : HwMemoryInfo {
@@ -1023,10 +1056,10 @@ class LiteRtDispatchInvocationContextT {
     }
     const auto* base =
         static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr);
-    LITERT_ASSIGN_OR_RETURN(
-        auto bytecode,
-        litert::nvidia::ParseTensorRtBytecode(
-            base + exec_bytecode_buffer->offset, exec_bytecode_buffer->size));
+    LITERT_ASSIGN_OR_RETURN(auto bytecode,
+                            litert::nvidia::ParseTensorRtBytecode(
+                                base + exec_bytecode_buffer->offset,
+                                exec_bytecode_buffer->size, function_name));
     if (function_name != nullptr && !bytecode.function_name.empty() &&
         bytecode.function_name != function_name) {
       return Error(kLiteRtStatusErrorInvalidArgument,
@@ -1429,6 +1462,7 @@ class LiteRtDispatchInvocationContextT {
     }
     litert::nvidia::LogMemoryProfile("dispatch", "engine_deserialized",
                                      bytecode_.function_name.c_str());
+    LITERT_RETURN_IF_ERROR(RefitEngine());
     if (UseCudaGraph()) {
       // TensorRT-RTX owns whole-graph CUDA-graph capture/replay through the
       // runtime config; this collapses per-kernel launch overhead, which
@@ -1485,6 +1519,110 @@ class LiteRtDispatchInvocationContextT {
     }
     LITERT_RETURN_IF_ERROR(InitializeExternalHead());
     litert::nvidia::LogMemoryProfile("dispatch", "context_initialize_end",
+                                     bytecode_.function_name.c_str());
+    return {};
+  }
+
+  Expected<void> RefitEngine() {
+    if (bytecode_.refit_weights.empty()) {
+      return {};
+    }
+    litert::nvidia::LogMemoryProfile("dispatch", "engine_refit_begin",
+                                     bytecode_.function_name.c_str());
+    TrtPtr<nvinfer1::IRefitter> refitter(
+        nvinfer1::createInferRefitter(*engine_, logger_));
+    if (!refitter) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Failed to create TensorRT refitter");
+    }
+
+    const int32_t refittable_count = refitter->getAllWeights(0, nullptr);
+    if (refittable_count < 0) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Failed to enumerate TensorRT refit weights");
+    }
+    std::vector<const char*> refittable_names(refittable_count);
+    if (refitter->getAllWeights(refittable_count, refittable_names.data()) !=
+        refittable_count) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "TensorRT refit weight enumeration changed");
+    }
+    std::unordered_set<std::string> refittable;
+    refittable.reserve(refittable_names.size());
+    for (const char* name : refittable_names) {
+      if (name != nullptr) {
+        refittable.emplace(name);
+      }
+    }
+
+    size_t bound_weights = 0;
+    size_t bound_bytes = 0;
+    for (const auto& weight : bytecode_.refit_weights) {
+      LITERT_ASSIGN_OR_RETURN(auto data_type,
+                              ToTensorRtDataType(weight.data_type));
+      if (weight.count >
+          static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "TensorRT refit weight count is too large");
+      }
+      // TensorRT can eliminate named constants while optimizing the graph.
+      // They are harmless in the shared store and need not be supplied.
+      if (refittable.find(weight.name) == refittable.end()) {
+        continue;
+      }
+      const nvinfer1::Weights prototype =
+          refitter->getWeightsPrototype(weight.name.c_str());
+      if (prototype.type != data_type ||
+          prototype.count != static_cast<int64_t>(weight.count)) {
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "TensorRT refit weight metadata does not match plan");
+      }
+      if (!refitter->setNamedWeights(
+              weight.name.c_str(),
+              nvinfer1::Weights{data_type, weight.data,
+                                static_cast<int64_t>(weight.count)})) {
+        return Error(kLiteRtStatusErrorRuntimeFailure,
+                     "TensorRT rejected a named refit weight");
+      }
+      ++bound_weights;
+      bound_bytes += weight.size;
+    }
+    litert::nvidia::LogMemoryProfile("dispatch", "engine_refit_weights_bound",
+                                     bytecode_.function_name.c_str());
+    const int32_t missing_count = refitter->getMissingWeights(0, nullptr);
+    if (missing_count < 0) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Failed to enumerate missing TensorRT refit weights");
+    }
+    if (missing_count != 0) {
+      std::vector<const char*> missing_names(missing_count);
+      if (refitter->getMissingWeights(missing_count, missing_names.data()) !=
+          missing_count) {
+        return Error(kLiteRtStatusErrorRuntimeFailure,
+                     "TensorRT missing refit weight enumeration changed");
+      }
+      for (int32_t i = 0; i < std::min<int32_t>(missing_count, 8); ++i) {
+        LITERT_LOG(LITERT_ERROR,
+                   "NVIDIA TensorRT-RTX missing refit weight for %s: %s",
+                   bytecode_.function_name.c_str(), missing_names[i]);
+      }
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "TensorRT stripped plan has missing refit weights");
+    }
+    if (!refitter->refitCudaEngine()) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Failed to refit TensorRT stripped plan");
+    }
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA dispatch refitted TensorRT plan for %s "
+               "(weights=%zu bytes=%zu total_engine_weight_bytes=%lld "
+               "stripped_engine_weight_bytes=%lld)",
+               bytecode_.function_name.c_str(), bound_weights, bound_bytes,
+               static_cast<long long>(engine_->getEngineStat(
+                   nvinfer1::EngineStat::kTOTAL_WEIGHTS_SIZE)),
+               static_cast<long long>(engine_->getEngineStat(
+                   nvinfer1::EngineStat::kSTRIPPED_WEIGHTS_SIZE)));
+    litert::nvidia::LogMemoryProfile("dispatch", "engine_refit_end",
                                      bytecode_.function_name.c_str());
     return {};
   }

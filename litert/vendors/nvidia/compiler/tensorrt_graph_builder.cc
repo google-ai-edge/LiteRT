@@ -1659,6 +1659,13 @@ bool UseSyncCudaAllocator() {
   return RunningUnderWsl();
 }
 
+struct OwnedRefitWeight {
+  std::string name;
+  int32_t data_type = 0;
+  uint64_t count = 0;
+  size_t owned_weight_index = 0;
+};
+
 nvinfer1::Permutation MakePermutation(std::initializer_list<int32_t> values) {
   nvinfer1::Permutation permutation{};
   int index = 0;
@@ -1717,6 +1724,12 @@ class TensorRtGraphBuilder {
                     /*default_value=*/false)) {
       config_->clearFlag(nvinfer1::BuilderFlag::kTF32);
     }
+    if (TensorRtSharedWeightsEnabled()) {
+      // Only constants explicitly registered below are refittable. Making all
+      // builder-generated weights refittable produces an archive that the
+      // TensorRT-RTX recorder cannot serialize for these large graphs.
+      config_->setFlag(nvinfer1::BuilderFlag::kREFIT_INDIVIDUAL);
+    }
 #if !defined(TRT_MAJOR_RTX)
     if (std::getenv("LITERT_NVIDIA_TENSORRT_FP16") != nullptr) {
       config_->setFlag(nvinfer1::BuilderFlag::kFP16);
@@ -1759,6 +1772,39 @@ class TensorRtGraphBuilder {
     LITERT_RETURN_IF_ERROR(MarkOutputs(subgraph, trtllm_head));
     LogMemoryProfile("compiler", "graph_lowered");
 
+    // The CUDA GEMV plugin receives packed subbyte weights through an INT8
+    // constant input. Those weights cannot use the safe stripping path below,
+    // so keep the decode plan portable and self-contained instead of making it
+    // refittable only for its comparatively tiny scale constants.
+    const bool strip_plan =
+        TensorRtSharedWeightsEnabled() && !uses_cuda_subbyte_gemv_;
+    if (strip_plan) {
+      // Weight-stripped TensorRT-RTX plans require a GPU build targeting at
+      // most one compute capability. Ordinary plans retain RTX's portable
+      // multi-architecture default.
+      if (!config_->setNbComputeCapabilities(1) ||
+          !config_->setComputeCapability(nvinfer1::ComputeCapability::kCURRENT,
+                                         0)) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to target the current GPU for a stripped plan");
+      }
+      config_->setFlag(nvinfer1::BuilderFlag::kSTRIP_PLAN);
+      size_t refit_weight_bytes = 0;
+      for (const auto& weight : owned_refit_weights_) {
+        refit_weight_bytes += owned_weights_[weight.owned_weight_index].size();
+      }
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA TensorRT-RTX building a stripped selectively "
+                 "refittable plan with %zu weights (%zu bytes)",
+                 owned_refit_weights_.size(), refit_weight_bytes);
+    } else if (TensorRtSharedWeightsEnabled()) {
+      config_->clearFlag(nvinfer1::BuilderFlag::kREFIT_INDIVIDUAL);
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA TensorRT-RTX keeping CUDA GEMV plugin plan "
+                 "self-contained because its packed INT8 plugin weights "
+                 "cannot be stripped safely by this SDK");
+    }
+
     LogMemoryProfile("compiler", "engine_serialize_begin");
     TrtPtr<nvinfer1::IHostMemory> serialized(
         builder_->buildSerializedNetwork(*network_, *config_));
@@ -1790,10 +1836,21 @@ class TensorRtGraphBuilder {
     result.input_names = input_names_;
     result.output_names = output_names_;
     result.trtllm_head = std::move(trtllm_head);
+    result.is_stripped_plan = strip_plan;
     // TensorRT-RTX has consumed every network constant at this point. Destroy
     // the network before copying its serialized plan into the result so the
     // compiler-owned constants do not overlap that additional engine copy.
     network_.reset();
+    if (strip_plan) {
+      result.refit_weights.reserve(owned_refit_weights_.size());
+      for (auto& weight : owned_refit_weights_) {
+        result.refit_weights.push_back(
+            {std::move(weight.name),
+             static_cast<TensorRtWeightDataType>(weight.data_type),
+             weight.count,
+             std::move(owned_weights_[weight.owned_weight_index])});
+      }
+    }
     owned_weights_.clear();
     owned_weights_.shrink_to_fit();
     result.engine.resize(serialized->size());
@@ -1867,6 +1924,54 @@ class TensorRtGraphBuilder {
     base += "_trt_";
     base += std::to_string(next_name_id_++);
     return base;
+  }
+
+  Expected<void> RegisterRefitWeight(nvinfer1::Weights weights,
+                                     const std::string& base_name) {
+    if (!TensorRtSharedWeightsEnabled() || weights.values == nullptr ||
+        weights.count <= 0) {
+      return {};
+    }
+    // TensorRT-RTX 1.5.0 build 114 fails in stdArchiveRecorder when an INT8
+    // constant is marked for stripping, even though equivalent INT4 and
+    // floating-point constants serialize and refit correctly. Leave INT8
+    // weights embedded until the SDK recorder supports them.
+    if (weights.type == nvinfer1::DataType::kINT8) {
+      return {};
+    }
+    for (const auto& existing : owned_refit_weights_) {
+      if (owned_weights_[existing.owned_weight_index].data() ==
+          weights.values) {
+        return {};
+      }
+    }
+    size_t owned_weight_index = owned_weights_.size();
+    for (size_t i = 0; i < owned_weights_.size(); ++i) {
+      if (owned_weights_[i].data() == weights.values) {
+        owned_weight_index = i;
+        break;
+      }
+    }
+    if (owned_weight_index == owned_weights_.size()) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "TensorRT refit weight is not compiler-owned");
+    }
+    std::string name = UniqueName("refit_" + base_name);
+    const char* kept_name = KeepName(name);
+    if (!network_->setWeightsName(weights, kept_name)) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to name TensorRT refit weight");
+    }
+    if (!network_->markWeightsRefittable(kept_name)) {
+      LITERT_LOG(LITERT_VERBOSE,
+                 "NVIDIA TensorRT-RTX weight cannot be refitted: %s",
+                 kept_name);
+      return {};
+    }
+    owned_refit_weights_.push_back(
+        {std::move(name), static_cast<int32_t>(weights.type),
+         static_cast<uint64_t>(weights.count), owned_weight_index});
+    return {};
   }
 
   Expected<void> AddInputs(const Subgraph& subgraph) {
@@ -2136,6 +2241,7 @@ class TensorRtGraphBuilder {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to add TensorRT float constant");
     }
+    LITERT_RETURN_IF_ERROR(RegisterRefitWeight(weights, name));
     layer->getOutput(0)->setName(KeepName(UniqueName(name)));
     return layer->getOutput(0);
   }
@@ -2231,6 +2337,9 @@ class TensorRtGraphBuilder {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to add predequantized FC weight constant");
     }
+    LITERT_RETURN_IF_ERROR(RegisterRefitWeight(
+        weights,
+        "predequantized_fc_weights_" + std::to_string(tensor.TensorIndex())));
     layer->getOutput(0)->setName(KeepName(UniqueName(
         "predequantized_fc_weights_" + std::to_string(tensor.TensorIndex()))));
     return layer->getOutput(0);
@@ -2307,6 +2416,8 @@ class TensorRtGraphBuilder {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to add FP8 FC weight constant");
     }
+    LITERT_RETURN_IF_ERROR(RegisterRefitWeight(
+        weights, "fp8_fc_weights_" + std::to_string(tensor.TensorIndex())));
     constant->getOutput(0)->setName(KeepName(
         UniqueName("fp8_fc_weights_" + std::to_string(tensor.TensorIndex()))));
     int32_t axis = -1;
@@ -2396,6 +2507,9 @@ class TensorRtGraphBuilder {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to add packed CUDA subbyte GEMV weights");
     }
+    LITERT_RETURN_IF_ERROR(RegisterRefitWeight(
+        packed_weights,
+        "cuda_subbyte_gemv_weights_" + std::to_string(tensor.TensorIndex())));
 
     nvinfer1::Dims scale_dims{};
     scale_dims.nbDims = 1;
@@ -2429,6 +2543,7 @@ class TensorRtGraphBuilder {
                tensor.TensorIndex(), bit_width, static_cast<long long>(dims[0]),
                static_cast<long long>(dims[1]));
     owned_plugins_.push_back(std::move(plugin));
+    uses_cuda_subbyte_gemv_ = true;
     return layer->getOutput(0);
   }
 
@@ -2445,6 +2560,7 @@ class TensorRtGraphBuilder {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to add TensorRT int32 constant");
     }
+    LITERT_RETURN_IF_ERROR(RegisterRefitWeight(weights, name));
     layer->getOutput(0)->setName(KeepName(UniqueName(name)));
     return layer->getOutput(0);
   }
@@ -2678,6 +2794,9 @@ class TensorRtGraphBuilder {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to add TensorRT fill constant");
     }
+    LITERT_RETURN_IF_ERROR(RegisterRefitWeight(
+        weights,
+        "fill_constant_tensor_" + std::to_string(output_tensor.TensorIndex())));
     layer->getOutput(0)->setName(
         KeepName(UniqueName("fill_constant_tensor_" +
                             std::to_string(output_tensor.TensorIndex()))));
@@ -2700,6 +2819,8 @@ class TensorRtGraphBuilder {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to add TensorRT constant");
     }
+    LITERT_RETURN_IF_ERROR(RegisterRefitWeight(
+        weights, "constant_tensor_" + std::to_string(tensor.TensorIndex())));
     auto* out = layer->getOutput(0);
     out->setName(KeepName(
         UniqueName("constant_tensor_" + std::to_string(tensor.TensorIndex()))));
@@ -3786,6 +3907,14 @@ class TensorRtGraphBuilder {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to add TensorRT Conv2D layer");
     }
+    LITERT_RETURN_IF_ERROR(RegisterRefitWeight(
+        kernel_weights,
+        "conv_kernel_" + std::to_string(op.Inputs()[1].TensorIndex())));
+    if (bias_weights.values != nullptr && bias_weights.count > 0) {
+      LITERT_RETURN_IF_ERROR(RegisterRefitWeight(
+          bias_weights,
+          "conv_bias_" + std::to_string(op.Inputs()[2].TensorIndex())));
+    }
     int32_t stride_w = 1;
     int32_t stride_h = 1;
     int32_t dilation_w = 1;
@@ -4190,6 +4319,7 @@ class TensorRtGraphBuilder {
   TrtPtr<nvinfer1::IBuilderConfig> config_;
   std::deque<std::string> names_;
   std::vector<std::vector<uint8_t>> owned_weights_;
+  std::vector<OwnedRefitWeight> owned_refit_weights_;
   std::vector<TrtPtr<nvinfer1::IPluginV3>> owned_plugins_;
   std::unordered_map<LiteRtTensor, nvinfer1::ITensor*> tensor_map_;
   // Network inputs in their boundary (pre-FP16-conversion) form; used by
@@ -4201,9 +4331,15 @@ class TensorRtGraphBuilder {
   std::vector<std::string> input_names_;
   std::vector<std::string> output_names_;
   int next_name_id_ = 0;
+  bool uses_cuda_subbyte_gemv_ = false;
 };
 
 }  // namespace
+
+bool TensorRtSharedWeightsEnabled() {
+  return EnvEnabled("LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS",
+                    /*default_value=*/false);
+}
 
 bool IsTensorRtOpSupported(const Op& op) {
   Expected<bool> result = false;
