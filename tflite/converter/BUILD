@@ -1529,6 +1529,17 @@ cc_library(
 )
 
 cc_library(
+    name = "tfl_carrier",
+    srcs = ["transforms/tfl_carrier.cc"],
+    hdrs = ["transforms/tfl_carrier.h"],
+    deps = [
+        "@llvm-project//mlir:AsmParser",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Support",
+    ],
+)
+
+cc_library(
     name = "tensorflow_lite_push_transpose_through_ewise_pass",
     srcs = [
         "transforms/push_transpose_through_ewise_pass.cc",
@@ -2151,8 +2162,10 @@ tf_cc_binary(
         "@org_tensorflow//tensorflow/core/platform:errors",
         "@stablehlo//:chlo_ops",
         "@stablehlo//:stablehlo_ops",
-        "@xla//xla/hlo/translate/hlo_to_mhlo:translate",
-        "@xla//xla/mlir_hlo",
+        "@tsl//tsl/platform:protobuf",
+        "@xla//xla/hlo/parser:hlo_parser",
+        "@xla//xla/hlo/translate:stablehlo",
+        "@xla//xla/service:hlo_proto_cc",
     ],
 )
 
