@@ -16,8 +16,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <map>
 #include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "openvino/core/model.hpp"
 #include "openvino/frontend/tensorflow_lite/frontend.hpp"
@@ -38,7 +42,8 @@ namespace {
 // frontend path the plugin uses, returning the OpenVINO model.
 std::shared_ptr<ov::Model> BuildBankAndModel(litert::compiler::Model& model,
                                              const LiteRtCompilerContext* ctx,
-                                             WeightBank& bank) {
+                                             WeightBank& bank,
+                                             std::string device = "NPU") {
   for (size_t s = 0; s < model.NumSubgraphs(); ++s) {
     auto graph = model.Subgraph(s);
     if (graph.HasValue()) bank.AddSubgraph(graph.Value());
@@ -48,7 +53,7 @@ std::shared_ptr<ov::Model> BuildBankAndModel(litert::compiler::Model& model,
   auto subgraph = model.Subgraph(0);
   std::shared_ptr<ov::frontend::tensorflow_lite::GraphIterator> delegate =
       std::make_shared<litert::openvino::GraphIteratorDelegate>(
-          ctx, &subgraph.Value());
+          ctx, &subgraph.Value(), std::move(device));
   return fe->convert(fe->load(delegate));
 }
 
@@ -143,6 +148,42 @@ TEST(WeightsToParametersTest, EmptyBankConvertsNothing) {
   EXPECT_EQ(ConvertWeightsToParameters(ov_model, empty_bank, &const_map), 0u);
   EXPECT_TRUE(const_map.empty());
   EXPECT_EQ(ov_model->inputs().size(), inputs_before);
+}
+
+TEST(WeightsToParametersTest, LeavesTransformedWeightConstantBaked) {
+  auto cc_model = testing::LoadTestFileModel("FFW-2-bit.tflite");
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  litert::compiler::Model model(ctx, cc_model.Get());
+  WeightBank bank;
+  auto ov_model = BuildBankAndModel(model, ctx, bank, "GPU");
+
+  std::vector<std::string> transformed_weights;
+  for (const auto& node : ov_model->get_ops()) {
+    auto constant = ov::as_type_ptr<ov::op::v0::Constant>(node);
+    if (!constant || constant->get_byte_size() <= kMinConvertBytes) {
+      continue;
+    }
+    const auto buffer_id =
+        bank.BufferIdOfName(constant->get_friendly_name());
+    if (!buffer_id.has_value()) {
+      continue;
+    }
+    const auto buffer_it = bank.Buffers().find(*buffer_id);
+    if (buffer_it != bank.Buffers().end() &&
+        (constant->get_byte_size() != buffer_it->second.size() ||
+         std::memcmp(constant->get_data_ptr(), buffer_it->second.data(),
+                     constant->get_byte_size()) != 0)) {
+      transformed_weights.push_back(constant->get_friendly_name());
+    }
+  }
+  ASSERT_FALSE(transformed_weights.empty());
+
+  std::map<std::string, uint32_t> const_map;
+  ConvertWeightsToParameters(ov_model, bank, &const_map);
+
+  for (const auto& name : transformed_weights) {
+    EXPECT_EQ(const_map.count(name), 0u) << name;
+  }
 }
 
 }  // namespace

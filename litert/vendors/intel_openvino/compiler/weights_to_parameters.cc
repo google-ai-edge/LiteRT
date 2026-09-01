@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <optional>
@@ -43,15 +44,26 @@ size_t ConvertWeightsToParameters(const std::shared_ptr<ov::Model>& model,
   // Collect before mutating: replacing nodes while iterating get_ops() is
   // unsafe.
   std::vector<std::shared_ptr<ov::op::v0::Constant>> to_promote;
+  const auto& buffers = bank.Buffers();
   for (const auto& node : model->get_ops()) {
     auto constant = ov::as_type_ptr<ov::op::v0::Constant>(node);
     if (!constant) {
       continue;
     }
-    if (!bank.BufferIdOfName(constant->get_friendly_name()).has_value()) {
+    const std::optional<int32_t> buffer_id =
+        bank.BufferIdOfName(constant->get_friendly_name());
+    if (!buffer_id.has_value()) {
       continue;
     }
     if (constant->get_byte_size() <= kMinConvertBytes) {
+      continue;
+    }
+    // Only share constants that still match the original weight-bank storage.
+    const auto buffer_it = buffers.find(*buffer_id);
+    if (buffer_it == buffers.end() ||
+        constant->get_byte_size() != buffer_it->second.size() ||
+        std::memcmp(constant->get_data_ptr(), buffer_it->second.data(),
+                    constant->get_byte_size()) != 0) {
       continue;
     }
     to_promote.push_back(constant);
