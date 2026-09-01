@@ -57,6 +57,7 @@
 #include "litert/vendors/nvidia/dispatch/greedy_sampler_c_api.h"
 #include "litert/vendors/nvidia/dispatch/greedy_sampler_kernel.h"
 #include "litert/vendors/nvidia/dispatch/tensor_buffer_view.h"
+#include "litert/vendors/nvidia/memory_profile.h"
 #include "litert/vendors/nvidia/tensorrt_logger.h"
 #include "NvInfer.h"
 #include "NvInferVersion.h"
@@ -1150,6 +1151,13 @@ class LiteRtDispatchInvocationContextT {
 
   Expected<void> Invoke() {
     const bool profile = DispatchProfilingEnabled();
+    const bool memory_profile =
+        litert::nvidia::MemoryProfilingEnabled() && invocation_count_ == 0;
+    ++invocation_count_;
+    if (memory_profile) {
+      litert::nvidia::LogMemoryProfile("dispatch", "invoke_begin",
+                                       bytecode_.function_name.c_str());
+    }
     const auto cpu_start = std::chrono::steady_clock::now();
     if (profile) {
       LITERT_RETURN_IF_ERROR(EnsureProfilingEvents());
@@ -1162,10 +1170,12 @@ class LiteRtDispatchInvocationContextT {
       explicit ScopedTransientDevicePtrs(
           LiteRtDispatchDeviceContext device_context)
           : device_context(device_context) {}
-      ~ScopedTransientDevicePtrs() {
+      ~ScopedTransientDevicePtrs() { ReleaseAll(); }
+      void ReleaseAll() {
         for (auto* record : records) {
           device_context->ReleaseTransientDevicePtr(record);
         }
+        records.clear();
       }
       void Add(LiteRtDispatchDeviceContextT::Record* record) {
         if (record == nullptr || !record->transient_device_ptr ||
@@ -1219,6 +1229,10 @@ class LiteRtDispatchInvocationContextT {
           CudaOk(cudaEventRecord(profile_event_after_h2d_, stream_),
                  "cudaEventRecord"));
     }
+    if (memory_profile) {
+      litert::nvidia::LogMemoryProfile("dispatch", "invoke_inputs_ready",
+                                       bytecode_.function_name.c_str());
+    }
 
     const auto output_setup_start = std::chrono::steady_clock::now();
     for (int i = 0; i < static_cast<int>(output_handles_.size()); ++i) {
@@ -1242,6 +1256,11 @@ class LiteRtDispatchInvocationContextT {
     const double output_setup_ms = SinceMs(output_setup_start);
 
     LITERT_RETURN_IF_ERROR(BindSharedActivationArena());
+    if (memory_profile) {
+      litert::nvidia::LogMemoryProfile("dispatch",
+                                       "invoke_outputs_and_arena_ready",
+                                       bytecode_.function_name.c_str());
+    }
     if (DispatchDumpIoEnabled()) {
       for (int i = 0; i < static_cast<int>(input_handles_.size()); ++i) {
         LITERT_ASSIGN_OR_RETURN(auto* record,
@@ -1261,6 +1280,10 @@ class LiteRtDispatchInvocationContextT {
       LITERT_RETURN_IF_ERROR(
           CudaOk(cudaEventRecord(profile_event_after_enqueue_, stream_),
                  "cudaEventRecord"));
+    }
+    if (memory_profile) {
+      litert::nvidia::LogMemoryProfile("dispatch", "invoke_enqueued",
+                                       bytecode_.function_name.c_str());
     }
 
     const auto output_copy_setup_start = std::chrono::steady_clock::now();
@@ -1296,6 +1319,10 @@ class LiteRtDispatchInvocationContextT {
     LITERT_RETURN_IF_ERROR(
         CudaOk(cudaStreamSynchronize(stream_), sync_context));
     const double sync_cpu_ms = SinceMs(sync_start);
+    if (memory_profile) {
+      litert::nvidia::LogMemoryProfile("dispatch", "invoke_synchronized",
+                                       bytecode_.function_name.c_str());
+    }
     if (DispatchDumpIoEnabled()) {
       for (int i = 0; i < static_cast<int>(output_handles_.size()); ++i) {
         LITERT_ASSIGN_OR_RETURN(auto* record,
@@ -1340,6 +1367,11 @@ class LiteRtDispatchInvocationContextT {
                  unlock_cpu_ms, set_address_calls, set_address_skips,
                  SinceMs(cpu_start));
     }
+    if (memory_profile) {
+      transient_device_ptrs.ReleaseAll();
+      litert::nvidia::LogMemoryProfile("dispatch", "invoke_transients_released",
+                                       bytecode_.function_name.c_str());
+    }
     return {};
   }
 
@@ -1369,10 +1401,14 @@ class LiteRtDispatchInvocationContextT {
         bound_output_ptrs_(bytecode_.output_names.size(), nullptr) {}
 
   Expected<void> Initialize() {
+    litert::nvidia::LogMemoryProfile("dispatch", "context_initialize_begin",
+                                     bytecode_.function_name.c_str());
     litert::nvidia::EnsureSubbyteGemvPluginRegistered();
     LITERT_RETURN_IF_ERROR(
         CudaOk(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking),
                "cudaStreamCreateWithFlags"));
+    litert::nvidia::LogMemoryProfile("dispatch", "stream_created",
+                                     bytecode_.function_name.c_str());
     LITERT_LOG(LITERT_INFO,
                "NVIDIA dispatch creating TensorRT runtime for function %s "
                "(inputs=%zu outputs=%zu engine_bytes=%zu)",
@@ -1383,12 +1419,16 @@ class LiteRtDispatchInvocationContextT {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    "Failed to create TensorRT runtime");
     }
+    litert::nvidia::LogMemoryProfile("dispatch", "runtime_created",
+                                     bytecode_.function_name.c_str());
     engine_.reset(runtime_->deserializeCudaEngine(bytecode_.engine_data,
                                                   bytecode_.engine_size));
     if (!engine_) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    "Failed to deserialize TensorRT engine");
     }
+    litert::nvidia::LogMemoryProfile("dispatch", "engine_deserialized",
+                                     bytecode_.function_name.c_str());
     if (UseCudaGraph()) {
       // TensorRT-RTX owns whole-graph CUDA-graph capture/replay through the
       // runtime config; this collapses per-kernel launch overhead, which
@@ -1435,6 +1475,8 @@ class LiteRtDispatchInvocationContextT {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    "Failed to create TensorRT execution context");
     }
+    litert::nvidia::LogMemoryProfile("dispatch", "execution_context_created",
+                                     bytecode_.function_name.c_str());
     if (LayerProfileEnabled()) {
       layer_profiler_ = std::make_unique<LayerProfiler>();
       execution_context_->setProfiler(layer_profiler_.get());
@@ -1442,6 +1484,8 @@ class LiteRtDispatchInvocationContextT {
                  bytecode_.function_name.c_str());
     }
     LITERT_RETURN_IF_ERROR(InitializeExternalHead());
+    litert::nvidia::LogMemoryProfile("dispatch", "context_initialize_end",
+                                     bytecode_.function_name.c_str());
     return {};
   }
 
@@ -1948,6 +1992,7 @@ class LiteRtDispatchInvocationContextT {
   int64_t device_memory_bytes_ = -1;
   void* bound_arena_ptr_ = nullptr;
   uint64_t bound_arena_version_ = 0;
+  uint64_t invocation_count_ = 0;
   std::string runtime_cache_path_;
 };
 

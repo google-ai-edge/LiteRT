@@ -31,6 +31,16 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "memory_profile",
+    hdrs = ["memory_profile.h"],
+    deps = [
+        "//litert/c/internal:litert_logging",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
 cc_test(
     name = "bytecode_test",
     srcs = ["bytecode_test.cc"],

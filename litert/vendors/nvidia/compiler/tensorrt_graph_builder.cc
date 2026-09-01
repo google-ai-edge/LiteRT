@@ -49,6 +49,7 @@
 #include "litert/vendors/nvidia/bytecode.h"
 #include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
 #include "litert/vendors/nvidia/compiler/tensorrt_rtx_plugin_compat.h"
+#include "litert/vendors/nvidia/memory_profile.h"
 #include "litert/vendors/nvidia/tensorrt_logger.h"
 #include "NvInfer.h"
 
@@ -1670,6 +1671,7 @@ nvinfer1::Permutation MakePermutation(std::initializer_list<int32_t> values) {
 class TensorRtGraphBuilder {
  public:
   Expected<TensorRtBuildResult> Build(const Subgraph& subgraph) {
+    LogMemoryProfile("compiler", "graph_build_begin");
     builder_.reset(nvinfer1::createInferBuilder(logger_));
     if (!builder_) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
@@ -1728,6 +1730,8 @@ class TensorRtGraphBuilder {
     }
 #endif
 
+    LogMemoryProfile("compiler", "builder_configured");
+
     const auto ops = subgraph.Ops();
     std::optional<TensorRtLlmHeadBuildData> trtllm_head;
     const std::optional<int> compute_capability =
@@ -1753,13 +1757,16 @@ class TensorRtGraphBuilder {
       LITERT_RETURN_IF_ERROR(LowerOp(ops[i]));
     }
     LITERT_RETURN_IF_ERROR(MarkOutputs(subgraph, trtllm_head));
+    LogMemoryProfile("compiler", "graph_lowered");
 
+    LogMemoryProfile("compiler", "engine_serialize_begin");
     TrtPtr<nvinfer1::IHostMemory> serialized(
         builder_->buildSerializedNetwork(*network_, *config_));
     if (!serialized) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to build serialized TensorRT engine");
     }
+    LogMemoryProfile("compiler", "engine_serialize_end");
     if (EnvEnabled("LITERT_NVIDIA_TENSORRT_DUMP_ENGINE_INFO",
                    /*default_value=*/false)) {
       TrtPtr<nvinfer1::IRuntime> runtime(nvinfer1::createInferRuntime(logger_));
@@ -1791,6 +1798,7 @@ class TensorRtGraphBuilder {
     owned_weights_.shrink_to_fit();
     result.engine.resize(serialized->size());
     std::memcpy(result.engine.data(), serialized->data(), serialized->size());
+    LogMemoryProfile("compiler", "engine_copied");
     return result;
   }
 
@@ -4296,8 +4304,12 @@ bool IsTensorRtOpSupported(const Op& op) {
 }
 
 Expected<TensorRtBuildResult> BuildTensorRtEngine(const Subgraph& subgraph) {
-  TensorRtGraphBuilder builder;
-  return builder.Build(subgraph);
+  auto result = [&]() {
+    TensorRtGraphBuilder builder;
+    return builder.Build(subgraph);
+  }();
+  LogMemoryProfile("compiler", "graph_builder_destroyed");
+  return result;
 }
 
 }  // namespace litert::nvidia

@@ -39,6 +39,7 @@
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/nvidia/bytecode.h"
 #include "litert/vendors/nvidia/compiler/tensorrt_graph_builder.h"
+#include "litert/vendors/nvidia/memory_profile.h"
 #include "NvInferVersion.h"
 
 namespace {
@@ -782,9 +783,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   result->bytecodes.reserve(num_partitions);
   result->call_infos.reserve(num_partitions);
   size_t total_bytecode_bytes = 0;
+  litert::nvidia::LogMemoryProfile("compiler", "compile_begin", soc_model);
 
   for (LiteRtParamIndex i = 0; i < num_partitions; ++i) {
     LITERT_ASSIGN_OR_RETURN(auto subgraph, model.Subgraph(i));
+    const auto function_name = PartitionName(i);
     LITERT_LOG(LITERT_INFO,
                "NVIDIA TensorRT-RTX compiling partition %d/%d with %d ops",
                static_cast<int>(i + 1), static_cast<int>(num_partitions),
@@ -797,6 +800,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                    static_cast<int>(i + 1), op_summary.c_str());
       }
     }
+    litert::nvidia::LogMemoryProfile("compiler", "partition_build_begin",
+                                     function_name.c_str());
     auto engine_or = litert::nvidia::BuildTensorRtEngine(subgraph);
     if (!engine_or) {
       std::string op_codes;
@@ -820,7 +825,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       return engine_or.Error().Status();
     }
     auto engine = std::move(*engine_or);
-    const auto function_name = PartitionName(i);
+    litert::nvidia::LogMemoryProfile("compiler", "partition_build_end",
+                                     function_name.c_str());
     litert::nvidia::TensorRtLlmHead trtllm_head;
     const litert::nvidia::TensorRtLlmHead* trtllm_head_ptr = nullptr;
     if (engine.trtllm_head.has_value()) {
@@ -851,8 +857,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         engine.engine.size(), packed.size(), total_bytecode_bytes);
     result->call_infos.push_back(function_name);
     result->bytecodes.push_back(std::move(packed));
+    litert::nvidia::LogMemoryProfile("compiler", "partition_retained",
+                                     function_name.c_str());
   }
 
+  litert::nvidia::LogMemoryProfile("compiler", "compile_end", soc_model);
   *compiled_result = result.release();
   return kLiteRtStatusOk;
 }

@@ -105,6 +105,7 @@ litert_dispatch_api(
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/nvidia:bytecode",
+        "//litert/vendors/nvidia:memory_profile",
         "//litert/vendors/nvidia:tensorrt_logger",
         "//litert/vendors/nvidia/compiler:subbyte_gemv_plugin",
         "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
