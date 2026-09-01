@@ -2104,8 +2104,10 @@ tf_cc_binary(
         "@org_tensorflow//tensorflow/core/platform:errors",
         "@stablehlo//:chlo_ops",
         "@stablehlo//:stablehlo_ops",
-        "@xla//xla/hlo/translate/hlo_to_mhlo:translate",
-        "@xla//xla/mlir_hlo",
+        "@tsl//tsl/platform:protobuf",
+        "@xla//xla/hlo/parser:hlo_parser",
+        "@xla//xla/hlo/translate:stablehlo",
+        "@xla//xla/service:hlo_proto_cc",
     ],
 )
 
