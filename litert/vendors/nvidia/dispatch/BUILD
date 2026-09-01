@@ -30,6 +30,22 @@ cc_library(
     deps = ["//litert/c:litert_common"],
 )
 
+cc_library(
+    name = "dispatch_profiler",
+    srcs = ["dispatch_profiler.cc"],
+    hdrs = ["dispatch_profiler.h"],
+    tags = ["manual"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+    ],
+)
+
 cuda_library(
     name = "greedy_sampler_kernel_cuda",
     srcs = ["greedy_sampler_kernel.cu"],
@@ -82,6 +98,7 @@ litert_dispatch_api(
         "//litert:litert_friends",
     ],
     deps = [
+        ":dispatch_profiler",
         ":greedy_sampler_c_api",
         ":greedy_sampler_kernel",
         "//litert/c:litert_common",
@@ -92,6 +109,7 @@ litert_dispatch_api(
         "//litert/c:litert_metrics",
         "//litert/c:litert_model_types",
         "//litert/c:litert_options_header",
+        "//litert/c:litert_profiler_types",
         "//litert/c:litert_tensor_buffer_header",
         "//litert/c:litert_tensor_buffer_requirements",
         "//litert/c:litert_tensor_buffer_types",
@@ -104,7 +122,9 @@ litert_dispatch_api(
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/nvidia:bytecode",
+        "//litert/vendors/nvidia:memory_profile",
         "//litert/vendors/nvidia:tensorrt_logger",
+        "//litert/vendors/nvidia/compiler:subbyte_gemv_plugin",
         "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
         "@local_cuda//:cuda_headers",
         "@local_cuda//:cuda_runtime",

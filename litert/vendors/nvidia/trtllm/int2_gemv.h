@@ -27,4 +27,11 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int2PerChannelGemv(
     const void* activation, const uint8_t* packed_weights, const void* scales,
     void* output, int input_size, int output_size, cudaStream_t stream);
 
+// Computes one BF16 activation row times raw TFLite row-major signed INT2 or
+// INT4 weights with BF16 per-channel scales and FP32 accumulation.
+extern "C" cudaError_t LiteRtNvidiaLaunchBf16SubbytePerChannelGemv(
+    const void* activation, const uint8_t* packed_weights, const void* scales,
+    void* output, int bit_width, int input_size, int output_size,
+    cudaStream_t stream);
+
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_TRTLLM_INT2_GEMV_H_

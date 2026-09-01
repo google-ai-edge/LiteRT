@@ -42,12 +42,25 @@ struct TensorRtLlmHeadBuildData {
   std::vector<uint8_t> bf16_scales;
 };
 
+struct TensorRtRefitWeightBuildData {
+  std::string name;
+  TensorRtWeightDataType data_type = TensorRtWeightDataType::kFloat;
+  uint64_t count = 0;
+  std::vector<uint8_t> data;
+};
+
 struct TensorRtBuildResult {
   std::vector<uint8_t> engine;
   std::vector<std::string> input_names;
   std::vector<std::string> output_names;
   std::optional<TensorRtLlmHeadBuildData> trtllm_head;
+  std::vector<TensorRtRefitWeightBuildData> refit_weights;
+  bool is_stripped_plan = false;
 };
+
+// Shared-weight mode builds stripped, refittable plans. The compiler plugin
+// then stores each unique named weight once in a multi-engine bytecode bundle.
+bool TensorRtSharedWeightsEnabled();
 
 bool IsTensorRtOpSupported(const litert::compiler::Op& op);
 
