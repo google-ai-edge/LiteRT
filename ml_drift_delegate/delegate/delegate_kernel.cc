@@ -852,6 +852,10 @@ absl::Status DelegateKernel::GraphToGpuModelWithGpuConverters(
         upload_info.input_id,
         absl::MakeConstSpan(reinterpret_cast<const uint8_t*>(upload_info.data),
                             upload_info.size)));
+    if (delegate_data_->options->madvise_original_shared_tensors) {
+      ::ml_drift::MadviseData(const_cast<void*>(upload_info.data),
+                              upload_info.size);
+    }
   }
 
   // this can be called later(but before ctx_ enqueue calls) and without
@@ -1221,6 +1225,10 @@ absl::Status DelegateKernel::IrModelToGpuModelWithGpuConverters(
         upload_info.input_id,
         absl::MakeConstSpan(reinterpret_cast<const uint8_t*>(upload_info.data),
                             upload_info.size)));
+    if (delegate_data_->options->madvise_original_shared_tensors) {
+      ::ml_drift::MadviseData(const_cast<void*>(upload_info.data),
+                              upload_info.size);
+    }
   }
 
   // this can be called later(but before ctx_ enqueue calls) and without
