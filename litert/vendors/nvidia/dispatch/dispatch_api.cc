@@ -1050,16 +1050,45 @@ class LiteRtDispatchInvocationContextT {
       return Error(kLiteRtStatusErrorInvalidArgument,
                    "Null dispatch invocation input");
     }
-    if (exec_type != kLiteRtDispatchExecutableTypeMlModel) {
+    const uint8_t* bytecode_data = nullptr;
+    size_t bytecode_size = 0;
+    if (exec_type == kLiteRtDispatchExecutableTypeJitHandle) {
+      const auto* jit_executable =
+          static_cast<const litert::nvidia::TensorRtJitExecutable*>(
+              exec_bytecode_buffer->base_addr);
+      if (jit_executable->magic !=
+              litert::nvidia::kTensorRtJitExecutableMagic ||
+          jit_executable->version !=
+              litert::nvidia::kTensorRtJitExecutableVersion ||
+          jit_executable->reserved != 0 ||
+          jit_executable->bytecode_data == nullptr ||
+          jit_executable->bytecode_size == 0 ||
+          jit_executable->bytecode_size > std::numeric_limits<size_t>::max()) {
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "Invalid NVIDIA TensorRT JIT executable handle");
+      }
+      bytecode_data =
+          static_cast<const uint8_t*>(jit_executable->bytecode_data);
+      bytecode_size = static_cast<size_t>(jit_executable->bytecode_size);
+      litert::nvidia::LogMemoryProfile("dispatch", "jit_handle_resolved",
+                                       function_name);
+    } else if (exec_type == kLiteRtDispatchExecutableTypeMlModel) {
+      const auto* base =
+          static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr);
+      if (exec_bytecode_buffer->offset >
+          std::numeric_limits<size_t>::max() - exec_bytecode_buffer->size) {
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "TensorRT bytecode range overflows");
+      }
+      bytecode_data = base + exec_bytecode_buffer->offset;
+      bytecode_size = exec_bytecode_buffer->size;
+    } else {
       return Error(kLiteRtStatusErrorUnsupported,
-                   "NVIDIA dispatch expects TensorRT ML model bytecode");
+                   "NVIDIA dispatch expects TensorRT bytecode or JIT handle");
     }
-    const auto* base =
-        static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr);
     LITERT_ASSIGN_OR_RETURN(auto bytecode,
                             litert::nvidia::ParseTensorRtBytecode(
-                                base + exec_bytecode_buffer->offset,
-                                exec_bytecode_buffer->size, function_name));
+                                bytecode_data, bytecode_size, function_name));
     if (function_name != nullptr && !bytecode.function_name.empty() &&
         bytecode.function_name != function_name) {
       return Error(kLiteRtStatusErrorInvalidArgument,
@@ -1077,10 +1106,12 @@ class LiteRtDispatchInvocationContextT {
                                              std::move(bytecode)));
     LITERT_RETURN_IF_ERROR(context->Initialize());
     // TensorRT-RTX owns its deserialized engine and the external head has
-    // copied packed weights and scales to CUDA memory. The bytecode is a
-    // file-backed mmap, so its clean resident pages can be discarded and
-    // refaulted if a later read ever occurs.
-    DropFileBackedBytecodePages(*exec_bytecode_buffer);
+    // copied packed weights and scales to CUDA memory. Serialized-model
+    // bytecode can therefore release clean file-backed pages. JIT-handle
+    // bytecode remains owned by the compiler result for handle validity.
+    if (exec_type == kLiteRtDispatchExecutableTypeMlModel) {
+      DropFileBackedBytecodePages(*exec_bytecode_buffer);
+    }
     return context;
   }
 

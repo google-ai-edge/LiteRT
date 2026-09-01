@@ -595,6 +595,7 @@ struct LiteRtCompiledResultT {
   std::vector<std::vector<uint8_t>> bytecodes;
   std::vector<std::string> call_infos;
   std::vector<LiteRtParamIndex> bytecode_indices;
+  std::vector<litert::nvidia::TensorRtJitExecutable> jit_executables;
 };
 
 struct LiteRtCompilerPluginT {
@@ -711,6 +712,24 @@ LiteRtStatus LiteRtGetNumCompiledResultCalls(
 
 void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) {
   delete compiled_result;
+}
+
+LiteRtStatus LiteRtGetCompiledResultHandle(LiteRtCompiledResult compiled_result,
+                                           LiteRtParamIndex byte_code_idx,
+                                           LiteRtJitExecutable* handle) {
+  if (!compiled_result || !handle) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (compiled_result->jit_executables.empty()) {
+    *handle = nullptr;
+    return kLiteRtStatusOk;
+  }
+  if (byte_code_idx >= compiled_result->jit_executables.size()) {
+    return kLiteRtStatusErrorIndexOOB;
+  }
+  *handle = reinterpret_cast<LiteRtJitExecutable>(
+      &compiled_result->jit_executables[byte_code_idx]);
+  return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtCreateCompilerPlugin(
@@ -1009,6 +1028,25 @@ LiteRtStatus LiteRtCompilerPluginCompile(
             shared_weight_store.unique_bytes(),
         total_bytecode_bytes);
     litert::nvidia::LogMemoryProfile("compiler", "bundle_pack_end", soc_model);
+  }
+
+  if (EnvEnabled("LITERT_NVIDIA_TENSORRT_JIT_HANDLE",
+                 /*default_value=*/false)) {
+    result->jit_executables.reserve(result->bytecodes.size());
+    for (const auto& bytecode : result->bytecodes) {
+      result->jit_executables.push_back(
+          {litert::nvidia::kTensorRtJitExecutableMagic,
+           litert::nvidia::kTensorRtJitExecutableVersion,
+           /*reserved=*/0, bytecode.data(),
+           static_cast<uint64_t>(bytecode.size())});
+    }
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX exposing %zu in-memory JIT executable "
+               "handle(s); bytecode will not be copied into the rewritten "
+               "LiteRT FlatBuffer",
+               result->jit_executables.size());
+    litert::nvidia::LogMemoryProfile("compiler", "jit_handles_ready",
+                                     soc_model);
   }
 
   litert::nvidia::LogMemoryProfile("compiler", "compile_end", soc_model);

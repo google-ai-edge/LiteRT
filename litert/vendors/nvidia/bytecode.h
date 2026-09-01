@@ -30,6 +30,22 @@ inline constexpr uint32_t kTensorRtBytecodeVersionWithTrtLlmHead = 2;
 inline constexpr uint32_t kTensorRtBytecodeVersionWithTypedHead = 3;
 inline constexpr uint32_t kTensorRtBytecodeVersionWithSharedWeights = 4;
 
+// Versioned POD payload behind LiteRtJitExecutable. The compiler plugin owns
+// the bytecode for the lifetime of the compiled result; dispatch reads it
+// directly instead of forcing LiteRT to copy it into the JIT-rewritten
+// FlatBuffer.
+inline constexpr uint64_t kTensorRtJitExecutableMagic =
+    0x4a49544e56545254ULL;  // "JITNVTRT"
+inline constexpr uint32_t kTensorRtJitExecutableVersion = 1;
+
+struct TensorRtJitExecutable {
+  uint64_t magic = kTensorRtJitExecutableMagic;
+  uint32_t version = kTensorRtJitExecutableVersion;
+  uint32_t reserved = 0;
+  const void* bytecode_data = nullptr;
+  uint64_t bytecode_size = 0;
+};
+
 enum class TensorRtLlmHeadWeightFormat : uint32_t {
   kInvalid = 0,
   kInt4ColumnMajorInterleaved = 1,
