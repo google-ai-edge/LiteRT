@@ -621,6 +621,11 @@ absl::Status OpMixin<AveragePool2DOperation, XnnpackMixinTag>::ToXnnpack(
 
   LRT_TENSOR_ASSIGN_OR_RETURN(const auto& input_info, graph::GetInfo(input));
 
+  if (input_info.shape.size() < 3) {
+    return absl::InvalidArgumentError(absl::StrFormat(
+        "%s: input tensor must be at least rank 3. Got rank %d", op_name,
+        input_info.shape.size()));
+  }
   const int input_h = input_info.shape[1];
   const int input_w = input_info.shape[2];
   const int filter_h = op_data.filter_height;
@@ -666,6 +671,11 @@ absl::Status OpMixin<MaxPool2DOperation, XnnpackMixinTag>::ToXnnpack(
 
   LRT_TENSOR_ASSIGN_OR_RETURN(const auto& input_info, graph::GetInfo(input));
 
+  if (input_info.shape.size() < 3) {
+    return absl::InvalidArgumentError(absl::StrFormat(
+        "%s: input tensor must be at least rank 3. Got rank %d", op_name,
+        input_info.shape.size()));
+  }
   const int input_h = input_info.shape[1];
   const int input_w = input_info.shape[2];
   const int filter_h = op_data.filter_height;
@@ -719,6 +729,12 @@ absl::Status OpMixin<Conv2DOperation, XnnpackMixinTag>::ToXnnpack(
   LRT_TENSOR_ASSIGN_OR_RETURN(const auto& input_info, graph::GetInfo(input));
   LRT_TENSOR_ASSIGN_OR_RETURN(const auto& filter_info, graph::GetInfo(filter));
 
+  if (input_info.shape.size() != 4 || filter_info.shape.size() != 4) {
+    return absl::InvalidArgumentError(absl::StrFormat(
+        "%s: input and filter tensors must be rank 4. Got input rank %d, "
+        "filter rank %d",
+        op_name, input_info.shape.size(), filter_info.shape.size()));
+  }
   // The 0th dimension is always the batch dimension in the tensor API (BHWC).
   const int input_h = input_info.shape[1];
   const int input_w = input_info.shape[2];
@@ -780,6 +796,12 @@ absl::Status OpMixin<DepthwiseConv2DOperation, XnnpackMixinTag>::ToXnnpack(
   LRT_TENSOR_ASSIGN_OR_RETURN(const auto& input_info, graph::GetInfo(input));
   LRT_TENSOR_ASSIGN_OR_RETURN(const auto& filter_info, graph::GetInfo(filter));
 
+  if (input_info.shape.size() != 4 || filter_info.shape.size() != 4) {
+    return absl::InvalidArgumentError(absl::StrFormat(
+        "%s: input and filter tensors must be rank 4. Got input rank %d, "
+        "filter rank %d",
+        op_name, input_info.shape.size(), filter_info.shape.size()));
+  }
   const int input_h = input_info.shape[1];
   const int input_w = input_info.shape[2];
   const int filter_h = filter_info.shape[1];
@@ -1747,6 +1769,14 @@ absl::Status OpMixin<TransposeConv2DOperation, XnnpackMixinTag>::ToXnnpack(
   LRT_TENSOR_ASSIGN_OR_RETURN(uint32_t output_id, ctx.DefineValue(output));
   LRT_TENSOR_ASSIGN_OR_RETURN(const auto& output_info, graph::GetInfo(output));
 
+  if (input_info.shape.size() != 4 || filter_info.shape.size() != 4 ||
+      output_info.shape.size() != 4) {
+    return absl::InvalidArgumentError(absl::StrFormat(
+        "%s: input, filter, and output tensors must be rank 4. Got input "
+        "rank %d, filter rank %d, output rank %d",
+        op_name, input_info.shape.size(), filter_info.shape.size(),
+        output_info.shape.size()));
+  }
   const size_t output_channels = filter_info.shape[0];
   const size_t input_channels = filter_info.shape[3];
 
