@@ -48,32 +48,22 @@ IS_X86_ARCHITECTURE = platform.machine() in ('x86_64', 'AMD64', 'i386', 'i686')
 
 # --- Configuration for OpenVINO NPU Compiler Download ---
 #
-# Must match the OpenVINO build pinned in third_party/intel_openvino/
-# openvino.bzl. That workspace file pins the OpenVINO SDK used to compile
-# the Intel OV compiler plugin and dispatch library at build time; the
-# archive URL below pins the matching toolkit build from which we extract
-# the NPU compiler shared library at pip install time. OpenVINO's build
-# number (the numeric segment in `2026.3.0-22242-<commit>/`) uniquely
-# identifies a build — ci/check_openvino_version_sync.py enforces that
-# this file and openvino.bzl pin the same one.
+# The archive URLs and PyPI version below are baked in at sdist-build time
+# (see ci/tools/python/vendor_sdk/sdist_wrapper.py's `--substitution`
+# handling, wired up in ci/tools/python/vendor_sdk/intel/BUILD) from the
+# single source of truth, third_party/intel_openvino/openvino_version.bzl.
+# That file also pins the OpenVINO SDK used to compile the Intel OV
+# compiler plugin and dispatch library at Bazel build time, so the two are
+# always in sync. To bump the OpenVINO build or switch release/nightly
+# channel, run `python ci/tools/update_openvino_version.py`; do not
+# hand-edit this file or openvino_version.bzl.
 #
 # install_requires pins the matching PyPI `openvino` wheel by PEP 440
-# version string (date-stamped, e.g. `2026.3.0.dev20260622`). PyPI does
-# not allow direct-URL dependencies in hosted packages, so users need
+# version string. Release versions (e.g. `2026.3.1`) are on PyPI directly;
+# nightly versions (date-stamped, e.g. `2026.4.0.dev20260826`) require
 # `--extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly`
 # at install time to locate the nightly wheel.
-# LINT.IfChange(wheel_openvino_sdk_version)
-_OV_BUILD_NUMBER = '22242'
-_OV_COMMIT = '561fc907ca4'
-_OV_PEP440_VERSION = '2026.3.0.dev20260622'
-_OV_ARCHIVE_DIR = f'2026.3.0-{_OV_BUILD_NUMBER}-{_OV_COMMIT}'
-_OV_BASE_URL = (
-    'https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly'
-    f'/{_OV_ARCHIVE_DIR}'
-)
-# LINT.ThenChange(
-#   ../../../../../third_party/intel_openvino/openvino.bzl:openvino_packages,
-# )
+_OV_PEP440_VERSION = '{{ OPENVINO_PEP440_VERSION }}'
 
 # Archive -> list of members to extract. OpenVINO 2026.2 split the NPU VCL
 # adapter out of libopenvino_intel_npu_compiler.{so,dll}: the `_compiler_loader`
@@ -111,21 +101,15 @@ _WINDOWS_MEMBERS = (
 
 _ARCHIVES = {
     'ubuntu22': {
-        'url': (
-            f'{_OV_BASE_URL}/openvino_toolkit_ubuntu22_{_OV_PEP440_VERSION}_x86_64.tgz'
-        ),
+        'url': '{{ OPENVINO_UBUNTU22_URL }}',
         'members': _LINUX_MEMBERS,
     },
     'ubuntu24': {
-        'url': (
-            f'{_OV_BASE_URL}/openvino_toolkit_ubuntu24_{_OV_PEP440_VERSION}_x86_64.tgz'
-        ),
+        'url': '{{ OPENVINO_UBUNTU24_URL }}',
         'members': _LINUX_MEMBERS,
     },
     'windows': {
-        'url': (
-            f'{_OV_BASE_URL}/openvino_toolkit_windows_{_OV_PEP440_VERSION}_x86_64.zip'
-        ),
+        'url': '{{ OPENVINO_WINDOWS_URL }}',
         'members': _WINDOWS_MEMBERS,
     },
 }

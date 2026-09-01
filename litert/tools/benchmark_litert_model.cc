@@ -99,6 +99,8 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
       params.Get<bool>("gpu_wait_for_weights_conversion_complete");
   auto gpu_cache_compiled_programs_only =
       params.Get<bool>("gpu_cache_compiled_programs_only");
+  auto gpu_madvise_original_shared_tensors =
+      params.Get<bool>("gpu_madvise_original_shared_tensors");
   auto xnnpack_weight_cache_file_path =
       params.Get<std::string>("xnnpack_weight_cache_file_path");
   auto mediatek_nerun_pilot_version =
@@ -208,6 +210,8 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     if (gpu_cache_compiled_programs_only) {
       gpu_options.CacheCompiledProgramsOnly(true);
     }
+    gpu_options.SetMadviseOriginalSharedTensors(
+        gpu_madvise_original_shared_tensors);
 
     auto use_profiler = params.Get<bool>("use_profiler");
     if (use_profiler) {

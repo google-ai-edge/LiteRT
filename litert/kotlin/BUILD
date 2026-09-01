@@ -143,7 +143,6 @@ cc_library(
 # android_jni_library(
 #     name = "litert_api_jni_lib",
 #     binary_name = "liblitert_jni.so",
-#     force_android = True,
 #     lds = ":litert_api_version_script.lds",
 #     linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + litert_android_linkopts(),
 #     visibility = litert_jni_friends(),
@@ -169,7 +168,6 @@ cc_library(
 # android_jni_library(
 #     name = "litert_impl_jni_lib",
 #     binary_name = "libLiteRt.so",
-#     force_android = True,
 #     lds = ":litert_version_script.lds",
 #     linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + litert_android_linkopts(),
 #     deps = [
