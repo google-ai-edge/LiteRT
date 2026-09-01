@@ -1172,10 +1172,7 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
   DataType data_type = data_type_;
   if (data_type_ == DataType::FLOAT32) {
     if (graph_adapter_->OpHasInputs(fc_op_id)) {
-      DataType input_type = graph_adapter_->GetOpFirstInputType(fc_op_id);
-      if (IsFloatType(input_type)) {
-        data_type = input_type;
-      }
+      data_type = graph_adapter_->GetOpFirstInputType(fc_op_id);
     }
   }
   bool is_weight_sum_i_required = false;
@@ -1212,8 +1209,8 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
         ValueId zero_point_value_id,
         AddInputNode(shared_tensor.zero_point_global_tensor_id.value(),
                      scale_or_zero_point_shape, fc_op_id, data_type));
-    (*external_tensors)[zero_point_value_id] = GlobalId::BuildParamId(
-        shared_tensor.zero_point_global_tensor_id.value());
+    (*external_tensors)[zero_point_value_id] =
+      GlobalId::BuildParamId(shared_tensor.zero_point_global_tensor_id.value());
 
     if (is_weight_sum_i_required) {
       if (shared_tensor.weights_sum_i_global_tensor_id.has_value()) {
@@ -1419,22 +1416,13 @@ absl::Status SharedMemoryManager::CreateSharedTensor(
 
   // Initialize tensor descriptor and upload data.
   BHWC value_shape = graph_adapter_->GetValueShape(shared_tensor_id);
-  const DataType graph_value_type =
-      graph_adapter_->GetValueType(shared_tensor_id);
-  // If the graph tensor is FLOAT32, apply the configured float precision (e.g.
-  // downcast to FP16). For any other type (INT32, INT8, BOOL, FLOAT16, etc.),
-  // preserve the graph's native type.
-  DataType data_type =
-      (graph_value_type == DataType::FLOAT32) ? data_type_ : graph_value_type;
-  if (data_type_ == DataType::FLOAT32 &&
-      graph_value_type == DataType::FLOAT32) {
+  DataType data_type = data_type_;
+  if (data_type_ == DataType::FLOAT32) {
     std::vector<uint32_t> consumers =
         graph_adapter_->FindConsumerOps(shared_tensor_id);
     if (consumers.size() == 1 && graph_adapter_->OpHasInputs(consumers[0])) {
-      DataType input_type = graph_adapter_->GetOpFirstInputType(consumers[0]);
-      if (IsFloatType(input_type)) {
-        data_type = input_type;
-      }
+      data_type = DataType::FLOAT16;
+      data_type = graph_adapter_->GetOpFirstInputType(consumers[0]);
     }
   }
   ml_drift::TensorDescriptor tensor_desc;
@@ -1459,46 +1447,32 @@ absl::Status SharedMemoryManager::CreateSharedTensor(
     return absl::OkStatus();
   }
 
-  // Support uploading integer data for int32 tensors, float16 data for float16
-  // tensors, otherwise upload float data. This is used for models with fp16
-  // weights from MediaPipe (e.g. inpainting models) or non-float constants
-  // (e.g. shape/pack tensors).
-  switch (tensor_desc.GetDataType()) {
-    case DataType::INT32:
-      tensor_desc.UploadData<int32_t>(tensor.data.i32);
-      break;
-    case DataType::INT64:
-      tensor_desc.UploadData<int64_t>(tensor.data.i64);
-      break;
-    case DataType::BOOL:
-      tensor_desc.UploadData<bool>(tensor.data.b);
-      break;
-    case DataType::FLOAT16:
-      if (tensor.type == TfLiteType::kTfLiteFloat16) {
-        tensor_desc.UploadData<half>(
-            reinterpret_cast<const half*>(tensor.data.f16));
-      } else {
-        int num_elements = tflite::NumElements(&tensor);
-        std::vector<half> half_data(num_elements);
-        for (int i = 0; i < num_elements; ++i) {
-          half_data[i] = half(weights_data_ptr[i]);
-        }
-        tensor_desc.UploadData<half>(half_data.data());
+  // Support uploading float16 data for float16 tensors, otherwise upload float
+  // data. This is used for the models with fp16 weights from MediaPipe. (e.g.
+  // inpainting models)
+  if (tensor_desc.GetDataType() == DataType::FLOAT16) {
+    if (tensor.type == TfLiteType::kTfLiteFloat16) {
+      tensor_desc.UploadData<half>(reinterpret_cast<half*>(tensor.data.f16));
+    } else {
+      int num_elements = tflite::NumElements(&tensor);
+      std::vector<half> half_data(num_elements);
+      for (int i = 0; i < num_elements; ++i) {
+        half_data[i] = half(weights_data_ptr[i]);
       }
-      break;
-    default:  // FLOAT32
-      if (tensor.type == TfLiteType::kTfLiteFloat16) {
-        int num_elements = tflite::NumElements(&tensor);
-        std::vector<float> float_data(num_elements);
-        const half* f16_ptr = reinterpret_cast<const half*>(tensor.data.f16);
-        for (int i = 0; i < num_elements; ++i) {
-          float_data[i] = static_cast<float>(f16_ptr[i]);
-        }
-        tensor_desc.UploadData<float>(float_data.data());
-      } else {
-        tensor_desc.UploadData<float>(weights_data_ptr);
+      tensor_desc.UploadData<half>(half_data.data());
+    }
+  } else {  // FLOAT32
+    if (tensor.type == TfLiteType::kTfLiteFloat16) {
+      int num_elements = tflite::NumElements(&tensor);
+      std::vector<float> float_data(num_elements);
+      const half* f16_ptr = reinterpret_cast<const half*>(tensor.data.f16);
+      for (int i = 0; i < num_elements; ++i) {
+        float_data[i] = static_cast<float>(f16_ptr[i]);
       }
-      break;
+      tensor_desc.UploadData<float>(float_data.data());
+    } else {
+      tensor_desc.UploadData<float>(weights_data_ptr);
+    }
   }
   return create_tensor_func_(tensor_desc, /*page_adjusted_offset=*/0,
                              /*release_data_callback=*/nullptr,
