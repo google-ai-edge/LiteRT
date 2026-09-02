@@ -16,6 +16,8 @@ limitations under the License.
 #ifndef TENSORFLOW_COMPILER_MLIR_LITE_TRANSFORMS_OPTIMIZE_PASS_OPTIONS_H_
 #define TENSORFLOW_COMPILER_MLIR_LITE_TRANSFORMS_OPTIMIZE_PASS_OPTIONS_H_
 
+#include <string>
+
 #include "llvm/Support/CommandLine.h"
 #include "mlir/Pass/PassOptions.h"  // from @llvm-project
 
@@ -38,6 +40,28 @@ struct OptimizePassOptions : public mlir::detail::PassOptions {
   mlir::detail::PassOptions::Option<bool> enable_strict_qdq_mode{
       *this, "enable-strict-qdq-mode",
       llvm::cl::desc("Enable strict QDQ mode in the optimize pass"),
+      llvm::cl::init(false)};
+  // Skips every rewrite pattern whose debug name (usually the C++ class name
+  // of the pattern, or the TableGen def name for generated patterns) contains
+  // any of the given substrings. Applies to all phases of this pass,
+  // including canonicalization patterns when enabled.
+  mlir::detail::PassOptions::ListOption<std::string> disabled_patterns{
+      *this, "disabled-patterns",
+      llvm::cl::desc("Skip rewrite patterns whose debug name contains any of "
+                     "these substrings")};
+  // If non-empty, only rewrite patterns whose debug name contains one of the
+  // given substrings are run (allowlist mode); `disabled-patterns` is still
+  // applied on top. Note this also filters canonicalization patterns.
+  mlir::detail::PassOptions::ListOption<std::string> enabled_patterns{
+      *this, "enabled-patterns",
+      llvm::cl::desc("If non-empty, run only rewrite patterns whose debug "
+                     "name contains one of these substrings")};
+  // Prints the debug name of every pattern considered by this pass (per
+  // phase) to stderr, annotated with whether the filters kept or skipped it.
+  mlir::detail::PassOptions::Option<bool> list_patterns{
+      *this, "list-patterns",
+      llvm::cl::desc("Print the debug names of all rewrite patterns in this "
+                     "pass and whether they are kept by the filters"),
       llvm::cl::init(false)};
 };
 
