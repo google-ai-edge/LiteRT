@@ -38,6 +38,10 @@ static_assert(kFp16SocInfo.has_value());
 QnnDevice_GetInfrastructureFn_t real_device_get_infrastructure = nullptr;
 QnnDevice_GetPlatformInfoFn_t real_device_get_platform_info = nullptr;
 QnnDevice_FreeFn_t real_device_free = nullptr;
+bool backend_create_called = false;
+const QnnBackend_Config_t** captured_backend_configs = nullptr;
+bool device_create_called = false;
+absl::NoDestructor<std::vector<QnnDevice_Config_t>> captured_device_configs;
 absl::NoDestructor<
     std::vector<std::vector<QnnHtpPerfInfrastructure_PowerConfig_t>>>
     captured_configs;
@@ -98,12 +102,34 @@ Qnn_ErrorHandle_t MockDeviceGetPlatformInfo(
   return QNN_SUCCESS;
 }
 
-Qnn_ErrorHandle_t MockDeviceFree(void* handle) {
-  if (handle == &kTestDevicePlatformInfo) {
-    return QNN_SUCCESS;
+Qnn_ErrorHandle_t MockDeviceCreate(Qnn_LogHandle_t,
+                                   const QnnDevice_Config_t** configs,
+                                   Qnn_DeviceHandle_t* device) {
+  device_create_called = true;
+  captured_device_configs->clear();
+  if (configs) {
+    for (size_t i = 0; configs[i] != nullptr; ++i) {
+      captured_device_configs->emplace_back(*configs[i]);
+    }
   }
-  return QNN_COMMON_ERROR_GENERAL;
+  static int fake_device_handle;
+  *device = &fake_device_handle;
+  return QNN_SUCCESS;
 }
+
+Qnn_ErrorHandle_t MockDeviceFree(Qnn_DeviceHandle_t) { return QNN_SUCCESS; }
+
+Qnn_ErrorHandle_t MockBackendCreateNoConfigs(
+    Qnn_LogHandle_t, const QnnBackend_Config_t** configs,
+    Qnn_BackendHandle_t* backend) {
+  backend_create_called = true;
+  captured_backend_configs = configs;
+  static int fake_backend_handle;
+  *backend = &fake_backend_handle;
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockBackendFree(Qnn_BackendHandle_t) { return QNN_SUCCESS; }
 
 struct HtpPerfParams {
   HtpPerformanceMode mode;
@@ -333,6 +359,45 @@ TEST_F(HtpBackendTest, DISABLED_InitializeWithLogLevelVerboseTest) {
   ASSERT_TRUE(backend_->GetBackendHandle());
   ASSERT_TRUE(backend_->GetLogHandle());
   EXPECT_EQ(backend_->GetSocInfo().soc_model, kFp16SocInfo->soc_model);
+}
+
+TEST(HtpBackendInitTest, CreatesBackendAndDevice) {
+  backend_create_called = false;
+  captured_backend_configs = nullptr;
+  device_create_called = false;
+  captured_device_configs->clear();
+
+  QNN_INTERFACE_VER_TYPE api{};
+  api.backendCreate = MockBackendCreateNoConfigs;
+  api.backendFree = MockBackendFree;
+  api.deviceCreate = MockDeviceCreate;
+  api.deviceFree = MockDeviceFree;
+
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  HtpBackend backend(&api);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kFp16SocInfo));
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+#endif
+
+  EXPECT_TRUE(backend_create_called);
+  EXPECT_EQ(captured_backend_configs, nullptr);
+  EXPECT_TRUE(device_create_called);
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_EQ(captured_device_configs->size(), 1);
+  EXPECT_EQ(captured_device_configs->at(0).option,
+            QNN_DEVICE_CONFIG_OPTION_CUSTOM);
+  const auto* htp_config = static_cast<const QnnHtpDevice_CustomConfig_t*>(
+      captured_device_configs->at(0).customConfig);
+  ASSERT_NE(htp_config, nullptr);
+  EXPECT_EQ(htp_config->option, QNN_HTP_DEVICE_CONFIG_OPTION_SOC);
+  EXPECT_EQ(htp_config->socModel, kFp16SocInfo->soc_model);
+#else
+  EXPECT_TRUE(captured_device_configs->empty());
+#endif
 }
 
 // SETPERFORMANCEMODE /////////////////////////////////////////////////////////
