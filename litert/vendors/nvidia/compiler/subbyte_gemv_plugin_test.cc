@@ -21,9 +21,10 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include "third_party/gpus/cuda/include/cuda_runtime_api.h"
+#include "cuda_runtime_api.h"
+#include "driver_types.h"
 #include "litert/vendors/nvidia/compiler/tensorrt_rtx_plugin_compat.h"
-#include "litert/vendors/nvidia/tensorrt_rtx/include/NvInfer.h"
+#include "NvInfer.h"
 
 namespace litert::nvidia {
 namespace {

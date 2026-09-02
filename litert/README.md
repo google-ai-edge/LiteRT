@@ -22,7 +22,7 @@ optimization tools.
 - cc/
 
   .h and associated .cc files for public/stable C++ APIs for app developers
-  (not ABI stable)
+  (header only)
 
 - compiler/
 

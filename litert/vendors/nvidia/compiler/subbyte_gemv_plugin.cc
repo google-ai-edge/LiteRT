@@ -20,7 +20,9 @@
 #include <cstring>
 #include <new>
 
-#include "litert/vendors/nvidia/tensorrt_rtx/include/NvInferRuntime.h"
+#include "cuda_runtime_api.h"
+#include "driver_types.h"
+#include "NvInferRuntime.h"
 #include "litert/vendors/nvidia/trtllm/int2_gemv.h"
 
 namespace litert::nvidia {

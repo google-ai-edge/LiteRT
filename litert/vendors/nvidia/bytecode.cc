@@ -14,23 +14,33 @@
 
 #include "litert/vendors/nvidia/bytecode.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
+#include "absl/strings/match.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "tsl/platform/fingerprint.h"
 
 namespace litert::nvidia {
 namespace {
 
 constexpr uint32_t kMagic = 0x4e52544c;  // "LTRN", little endian.
+constexpr uint32_t kAotLocatorMagic =
+    0x414e524c;  // "LRNA" (LiteRT NVIDIA AOT), little endian.
+constexpr uint32_t kAotManifestMagic =
+    0x494e524c;  // "LRNI" (LiteRT NVIDIA index), little endian.
 
 template <typename T>
 void AppendScalar(std::vector<uint8_t>& out, T value) {
@@ -464,8 +474,16 @@ Expected<std::vector<uint8_t>> PackTensorRtBytecode(
   return out;
 }
 
-Expected<std::vector<uint8_t>> PackTensorRtSharedWeightBundle(
-    const std::vector<TensorRtSharedWeight>& shared_weights,
+namespace {
+
+struct TensorRtSharedWeightPackView {
+  TensorRtWeightDataType data_type;
+  uint64_t count;
+  const std::vector<uint8_t>* data;
+};
+
+Expected<std::vector<uint8_t>> PackTensorRtSharedWeightBundleImpl(
+    const std::vector<TensorRtSharedWeightPackView>& shared_weights,
     const std::vector<TensorRtBundleEntry>& entries) {
   if (shared_weights.size() > std::numeric_limits<uint32_t>::max() ||
       entries.empty() ||
@@ -486,9 +504,9 @@ Expected<std::vector<uint8_t>> PackTensorRtSharedWeightBundle(
     LITERT_ASSIGN_OR_RETURN(
         size_t expected_size,
         TensorRtWeightBytes(weight.data_type, weight.count));
-    if (weight.data.size() != expected_size ||
+    if (weight.data == nullptr || weight.data->size() != expected_size ||
         !add_reserve_size(sizeof(int32_t) + sizeof(uint64_t) * 2) ||
-        !add_reserve_size(weight.data.size())) {
+        !add_reserve_size(weight.data->size())) {
       return Error(kLiteRtStatusErrorInvalidArgument,
                    "Invalid TensorRT shared weight");
     }
@@ -557,8 +575,8 @@ Expected<std::vector<uint8_t>> PackTensorRtSharedWeightBundle(
   for (const auto& weight : shared_weights) {
     AppendScalar<int32_t>(out, static_cast<int32_t>(weight.data_type));
     AppendScalar<uint64_t>(out, weight.count);
-    AppendScalar<uint64_t>(out, static_cast<uint64_t>(weight.data.size()));
-    out.insert(out.end(), weight.data.begin(), weight.data.end());
+    AppendScalar<uint64_t>(out, static_cast<uint64_t>(weight.data->size()));
+    out.insert(out.end(), weight.data->begin(), weight.data->end());
   }
   AppendScalar<uint32_t>(out, static_cast<uint32_t>(entries.size()));
   for (const auto& entry : entries) {
@@ -580,6 +598,317 @@ Expected<std::vector<uint8_t>> PackTensorRtSharedWeightBundle(
     }
   }
   return out;
+}
+
+}  // namespace
+
+Expected<std::vector<uint8_t>> PackTensorRtSharedWeightBundle(
+    const std::vector<TensorRtSharedWeight>& shared_weights,
+    const std::vector<TensorRtBundleEntry>& entries) {
+  std::vector<TensorRtSharedWeightPackView> views;
+  views.reserve(shared_weights.size());
+  for (const auto& weight : shared_weights) {
+    views.push_back({weight.data_type, weight.count, &weight.data});
+  }
+  return PackTensorRtSharedWeightBundleImpl(views, entries);
+}
+
+Expected<std::vector<uint8_t>> PackTensorRtSharedWeightShard(
+    const std::vector<TensorRtSharedWeight>& shared_weights,
+    const TensorRtBundleEntry& entry) {
+  std::vector<TensorRtSharedWeightPackView> shard_weights;
+  shard_weights.reserve(entry.refit_weights.size());
+  std::vector<uint32_t> global_to_local(shared_weights.size(),
+                                        std::numeric_limits<uint32_t>::max());
+  TensorRtBundleEntry shard_entry = entry;
+  shard_entry.refit_weights.clear();
+  shard_entry.refit_weights.reserve(entry.refit_weights.size());
+  for (const auto& ref : entry.refit_weights) {
+    if (ref.shared_weight_index >= shared_weights.size()) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Invalid TensorRT bundle refit reference");
+    }
+    uint32_t& local_index = global_to_local[ref.shared_weight_index];
+    if (local_index == std::numeric_limits<uint32_t>::max()) {
+      if (shard_weights.size() >= std::numeric_limits<uint32_t>::max()) {
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "Too many TensorRT shard weights");
+      }
+      local_index = static_cast<uint32_t>(shard_weights.size());
+      const auto& weight = shared_weights[ref.shared_weight_index];
+      shard_weights.push_back({weight.data_type, weight.count, &weight.data});
+    }
+    shard_entry.refit_weights.push_back({ref.name, local_index});
+  }
+  return PackTensorRtSharedWeightBundleImpl(shard_weights, {shard_entry});
+}
+
+TensorRtArtifactFingerprint FingerprintTensorRtArtifact(const void* data,
+                                                        size_t size) {
+  if (data == nullptr || size == 0) {
+    return {};
+  }
+  const auto fingerprint = tsl::Fingerprint128(
+      absl::string_view(static_cast<const char*>(data), size));
+  return {fingerprint.low64, fingerprint.high64};
+}
+
+void TensorRtAotFingerprintBuilder::Add(const void* data, size_t size) {
+  if (data == nullptr || size == 0) {
+    return;
+  }
+  const auto chunk = tsl::Fingerprint128(
+      absl::string_view(static_cast<const char*>(data), size));
+  const tsl::Fprint128 accumulated{fingerprint_.low, fingerprint_.high};
+  const auto combined = tsl::FingerprintCat128(accumulated, chunk);
+  fingerprint_ = {combined.low64, combined.high64};
+  total_size_ += size;
+  ++chunk_count_;
+}
+
+TensorRtArtifactFingerprint TensorRtAotFingerprintBuilder::Finish() const {
+  if (chunk_count_ == 0) {
+    return {};
+  }
+  auto fingerprint = tsl::FingerprintCat128(
+      {fingerprint_.low, fingerprint_.high}, total_size_);
+  fingerprint = tsl::FingerprintCat128(fingerprint, chunk_count_);
+  return {fingerprint.low64, fingerprint.high64};
+}
+
+TensorRtArtifactFingerprint FingerprintTensorRtAotArtifact(const void* data,
+                                                           size_t size) {
+  if (data == nullptr || size == 0) {
+    return {};
+  }
+  TensorRtAotFingerprintBuilder builder;
+  const auto* bytes = static_cast<const uint8_t*>(data);
+  for (size_t offset = 0; offset < size;) {
+    const size_t chunk_size =
+        std::min(kTensorRtAotFingerprintChunkBytes, size - offset);
+    builder.Add(bytes + offset, chunk_size);
+    offset += chunk_size;
+  }
+  return builder.Finish();
+}
+
+Expected<std::vector<uint8_t>> PackTensorRtAotLocator(
+    const TensorRtAotLocator& locator) {
+  if (locator.path.empty() || locator.path.front() != '/' ||
+      absl::StrContains(locator.path, '\0') || locator.artifact_size == 0 ||
+      locator.version != kTensorRtAotLocatorVersion ||
+      locator.path.size() > std::numeric_limits<uint32_t>::max()) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Invalid TensorRT AOT artifact locator");
+  }
+  std::vector<uint8_t> out;
+  out.reserve(sizeof(uint32_t) * 4 + sizeof(uint64_t) * 5 +
+              sizeof(int64_t) * 4 + locator.path.size());
+  AppendScalar<uint32_t>(out, kAotLocatorMagic);
+  AppendScalar<uint32_t>(out, kTensorRtAotLocatorVersion);
+  AppendScalar<uint64_t>(out, locator.artifact_size);
+  AppendScalar<uint64_t>(out, locator.fingerprint.low);
+  AppendScalar<uint64_t>(out, locator.fingerprint.high);
+  LITERT_RETURN_IF_ERROR(AppendString(out, locator.path));
+  AppendScalar<uint32_t>(out, locator.file_identity.has_value() ? 1 : 0);
+  if (locator.file_identity.has_value()) {
+    const auto& identity = *locator.file_identity;
+    AppendScalar<uint64_t>(out, identity.device);
+    AppendScalar<uint64_t>(out, identity.inode);
+    AppendScalar<int64_t>(out, identity.mtime_seconds);
+    AppendScalar<int64_t>(out, identity.mtime_nanoseconds);
+    AppendScalar<int64_t>(out, identity.ctime_seconds);
+    AppendScalar<int64_t>(out, identity.ctime_nanoseconds);
+  }
+  return out;
+}
+
+Expected<std::optional<TensorRtAotLocator>> TryParseTensorRtAotLocator(
+    const void* data, size_t size) {
+  if (data == nullptr || size < sizeof(uint32_t)) {
+    return std::optional<TensorRtAotLocator>();
+  }
+  const auto* cur = static_cast<const uint8_t*>(data);
+  const auto* end = cur + size;
+  LITERT_ASSIGN_OR_RETURN(uint32_t magic, ReadScalar<uint32_t>(cur, end));
+  if (magic != kAotLocatorMagic) {
+    return std::optional<TensorRtAotLocator>();
+  }
+  LITERT_ASSIGN_OR_RETURN(uint32_t version, ReadScalar<uint32_t>(cur, end));
+  if (version != 1 && version != kTensorRtAotLocatorVersion) {
+    return Error(kLiteRtStatusErrorUnsupportedCompilerVersion,
+                 "Unsupported TensorRT AOT locator version");
+  }
+  TensorRtAotLocator locator;
+  locator.version = version;
+  LITERT_ASSIGN_OR_RETURN(locator.artifact_size,
+                          ReadScalar<uint64_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(locator.fingerprint.low,
+                          ReadScalar<uint64_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(locator.fingerprint.high,
+                          ReadScalar<uint64_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(locator.path, ReadString(cur, end));
+  if (version >= 2) {
+    LITERT_ASSIGN_OR_RETURN(uint32_t has_file_identity,
+                            ReadScalar<uint32_t>(cur, end));
+    if (has_file_identity > 1) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Invalid TensorRT AOT file identity marker");
+    }
+    if (has_file_identity != 0) {
+      TensorRtAotFileIdentity identity;
+      LITERT_ASSIGN_OR_RETURN(identity.device, ReadScalar<uint64_t>(cur, end));
+      LITERT_ASSIGN_OR_RETURN(identity.inode, ReadScalar<uint64_t>(cur, end));
+      LITERT_ASSIGN_OR_RETURN(identity.mtime_seconds,
+                              ReadScalar<int64_t>(cur, end));
+      LITERT_ASSIGN_OR_RETURN(identity.mtime_nanoseconds,
+                              ReadScalar<int64_t>(cur, end));
+      LITERT_ASSIGN_OR_RETURN(identity.ctime_seconds,
+                              ReadScalar<int64_t>(cur, end));
+      LITERT_ASSIGN_OR_RETURN(identity.ctime_nanoseconds,
+                              ReadScalar<int64_t>(cur, end));
+      locator.file_identity = identity;
+    }
+  }
+  if (locator.path.empty() || locator.path.front() != '/' ||
+      absl::StrContains(locator.path, '\0') || locator.artifact_size == 0 ||
+      cur != end) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Invalid TensorRT AOT artifact locator");
+  }
+  return std::optional<TensorRtAotLocator>(std::move(locator));
+}
+
+Expected<std::vector<uint8_t>> PackTensorRtAotManifest(
+    const TensorRtAotManifest& manifest) {
+  if (manifest.locators.empty() ||
+      manifest.locators.size() > std::numeric_limits<uint32_t>::max() ||
+      manifest.call_infos.empty() ||
+      manifest.call_infos.size() > std::numeric_limits<uint32_t>::max() ||
+      manifest.call_infos.size() != manifest.bytecode_indices.size()) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Invalid TensorRT AOT manifest cardinality");
+  }
+  size_t reserve_size = sizeof(uint32_t) * 4 + sizeof(uint64_t) * 2;
+  for (const auto& locator : manifest.locators) {
+    if (locator.empty() ||
+        locator.size() > std::numeric_limits<uint32_t>::max() ||
+        locator.size() > std::numeric_limits<size_t>::max() - reserve_size) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Invalid TensorRT AOT manifest locator");
+    }
+    LITERT_ASSIGN_OR_RETURN(auto parsed, TryParseTensorRtAotLocator(
+                                             locator.data(), locator.size()));
+    if (!parsed.has_value()) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "TensorRT AOT manifest contains non-locator bytecode");
+    }
+    reserve_size += sizeof(uint32_t) + locator.size();
+  }
+  for (size_t i = 0; i < manifest.call_infos.size(); ++i) {
+    if (manifest.call_infos[i].empty() ||
+        manifest.bytecode_indices[i] >= manifest.locators.size() ||
+        manifest.call_infos[i].size() > std::numeric_limits<uint32_t>::max() ||
+        manifest.call_infos[i].size() >
+            std::numeric_limits<size_t>::max() - reserve_size) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Invalid TensorRT AOT manifest call entry");
+    }
+    reserve_size += sizeof(uint32_t) * 2 + manifest.call_infos[i].size();
+  }
+
+  std::vector<uint8_t> out;
+  out.reserve(reserve_size);
+  AppendScalar<uint32_t>(out, kAotManifestMagic);
+  AppendScalar<uint32_t>(out, kTensorRtAotManifestVersion);
+  AppendScalar<uint64_t>(out, manifest.cache_key.low);
+  AppendScalar<uint64_t>(out, manifest.cache_key.high);
+  AppendScalar<uint32_t>(out, static_cast<uint32_t>(manifest.locators.size()));
+  for (const auto& locator : manifest.locators) {
+    AppendScalar<uint32_t>(out, static_cast<uint32_t>(locator.size()));
+    out.insert(out.end(), locator.begin(), locator.end());
+  }
+  AppendScalar<uint32_t>(out,
+                         static_cast<uint32_t>(manifest.call_infos.size()));
+  for (size_t i = 0; i < manifest.call_infos.size(); ++i) {
+    LITERT_RETURN_IF_ERROR(AppendString(out, manifest.call_infos[i]));
+    AppendScalar<uint32_t>(out, manifest.bytecode_indices[i]);
+  }
+  return out;
+}
+
+Expected<TensorRtAotManifest> ParseTensorRtAotManifest(const void* data,
+                                                       size_t size) {
+  if (data == nullptr || size == 0) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "TensorRT AOT manifest is empty");
+  }
+  const auto* cur = static_cast<const uint8_t*>(data);
+  const auto* end = cur + size;
+  LITERT_ASSIGN_OR_RETURN(uint32_t magic, ReadScalar<uint32_t>(cur, end));
+  if (magic != kAotManifestMagic) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Invalid TensorRT AOT manifest magic");
+  }
+  LITERT_ASSIGN_OR_RETURN(uint32_t version, ReadScalar<uint32_t>(cur, end));
+  if (version != kTensorRtAotManifestVersion) {
+    return Error(kLiteRtStatusErrorUnsupportedCompilerVersion,
+                 "Unsupported TensorRT AOT manifest version");
+  }
+  TensorRtAotManifest manifest;
+  LITERT_ASSIGN_OR_RETURN(manifest.cache_key.low,
+                          ReadScalar<uint64_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(manifest.cache_key.high,
+                          ReadScalar<uint64_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(uint32_t locator_count,
+                          ReadScalar<uint32_t>(cur, end));
+  if (locator_count == 0 ||
+      locator_count > static_cast<size_t>(end - cur) / sizeof(uint32_t)) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Invalid TensorRT AOT manifest locator count");
+  }
+  manifest.locators.reserve(locator_count);
+  for (uint32_t i = 0; i < locator_count; ++i) {
+    LITERT_ASSIGN_OR_RETURN(uint32_t locator_size,
+                            ReadScalar<uint32_t>(cur, end));
+    if (locator_size == 0 || locator_size > static_cast<size_t>(end - cur)) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Truncated TensorRT AOT manifest locator");
+    }
+    std::vector<uint8_t> locator(cur, cur + locator_size);
+    cur += locator_size;
+    LITERT_ASSIGN_OR_RETURN(auto parsed, TryParseTensorRtAotLocator(
+                                             locator.data(), locator.size()));
+    if (!parsed.has_value()) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "TensorRT AOT manifest contains non-locator bytecode");
+    }
+    manifest.locators.push_back(std::move(locator));
+  }
+  LITERT_ASSIGN_OR_RETURN(uint32_t call_count, ReadScalar<uint32_t>(cur, end));
+  if (call_count == 0 ||
+      call_count > static_cast<size_t>(end - cur) / (sizeof(uint32_t) * 2)) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Invalid TensorRT AOT manifest call count");
+  }
+  manifest.call_infos.reserve(call_count);
+  manifest.bytecode_indices.reserve(call_count);
+  for (uint32_t i = 0; i < call_count; ++i) {
+    LITERT_ASSIGN_OR_RETURN(auto call_info, ReadString(cur, end));
+    LITERT_ASSIGN_OR_RETURN(uint32_t bytecode_index,
+                            ReadScalar<uint32_t>(cur, end));
+    if (call_info.empty() || bytecode_index >= manifest.locators.size()) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Invalid TensorRT AOT manifest call entry");
+    }
+    manifest.call_infos.push_back(std::move(call_info));
+    manifest.bytecode_indices.push_back(bytecode_index);
+  }
+  if (cur != end) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Unexpected trailing TensorRT AOT manifest data");
+  }
+  return manifest;
 }
 
 Expected<TensorRtBytecode> ParseTensorRtBytecode(const void* data, size_t size,

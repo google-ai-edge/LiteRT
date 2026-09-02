@@ -18,12 +18,17 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <functional>
+#include <ios>
 #include <numeric>
 #include <string>
+#include <system_error>
 #include <vector>
 
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -158,6 +163,56 @@ Expected<void> FillInputBuffersWithCustomData(
     }
     LITERT_RETURN_IF_ERROR(
         tensor_utils::FillBufferWithCustomData(input_buffer, data));
+  }
+  return {};
+}
+
+Expected<void> WriteOutputBuffersToFiles(
+    const CompiledModel& compiled_model, size_t signature_index,
+    std::vector<TensorBuffer>& output_buffers, absl::string_view output_dir) {
+  ABSL_LOG(INFO) << "Writing outputs to: " << output_dir;
+  LITERT_ASSIGN_OR_RETURN(
+      const auto output_names,
+      compiled_model.GetSignatureOutputNames(signature_index));
+  if (output_names.size() != output_buffers.size()) {
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrFormat("Mismatched output count: signature has %d outputs "
+                        "but got %d output buffers.",
+                        output_names.size(), output_buffers.size()));
+  }
+  std::error_code ec;
+  if (!std::filesystem::is_directory(output_dir, ec)) {
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrFormat("Output directory %s does not exist or is not a "
+                        "directory.",
+                        output_dir));
+  }
+  for (size_t i = 0; i < output_names.size(); ++i) {
+    const auto output_name = output_names[i];
+    auto& output_buffer = output_buffers[i];
+    LITERT_ASSIGN_OR_RETURN(size_t buffer_size, output_buffer.Size());
+    LITERT_ASSIGN_OR_RETURN(void* host_mem_addr,
+                            output_buffer.Lock(TensorBuffer::LockMode::kRead));
+    absl::Cleanup unlock = [&output_buffer] { output_buffer.Unlock(); };
+    const auto output_file_path =
+        std::filesystem::path(output_dir) / absl::StrCat(output_name, ".raw");
+    std::ofstream file(output_file_path, std::ios::binary);
+    if (!file.is_open()) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        absl::StrFormat("Failed to open output file %s.",
+                                        output_file_path.string()));
+    }
+    file.write(static_cast<const char*>(host_mem_addr), buffer_size);
+    file.close();
+    if (!file) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        absl::StrFormat("Failed to write output file %s.",
+                                        output_file_path.string()));
+    }
+    ABSL_LOG(INFO) << "Wrote output " << output_name << " (" << buffer_size
+                   << " bytes) to " << output_file_path;
   }
   return {};
 }

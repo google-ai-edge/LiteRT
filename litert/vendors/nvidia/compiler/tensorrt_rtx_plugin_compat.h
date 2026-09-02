@@ -17,7 +17,7 @@
 
 #include <cstdint>
 
-#include "litert/vendors/nvidia/tensorrt_rtx/include/NvInfer.h"
+#include "NvInfer.h"
 
 extern "C" void* getPrivateApi_INTERNAL(uint64_t api_id,
                                         int32_t version) noexcept;
