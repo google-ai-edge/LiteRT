@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -181,7 +182,8 @@ absl::Status SerializationProgramCache::Insert(uint64_t key,
   return absl::OkStatus();
 }
 
-absl::StatusOr<std::string> SerializationProgramCache::LookUp(uint64_t key) {
+absl::StatusOr<MMapHandle> SerializationProgramCache::LookUpHandle(
+    uint64_t key) {
   if (!fd_.IsValid()) {
     return absl::InvalidArgumentError("Invalid file descriptor.");
   }
@@ -195,9 +197,7 @@ absl::StatusOr<std::string> SerializationProgramCache::LookUp(uint64_t key) {
     return absl::NotFoundError("File is empty.");
   }
 
-  if (auto status = mmap_handle.Map(fd_, 0, map_size); !status.ok()) {
-    return status;
-  }
+  ABSL_RETURN_IF_ERROR(mmap_handle.Map(fd_, 0, map_size));
 
   flatbuffers::Verifier verifier(mmap_handle.data(), mmap_handle.size());
   if (!ml_drift::program_cache::schema::VerifyCacheMetadataBuffer(verifier)) {
@@ -229,16 +229,16 @@ absl::StatusOr<std::string> SerializationProgramCache::LookUp(uint64_t key) {
     return absl::InternalError("Data offset/size out of bounds.");
   }
 
-  std::string result;
-  result.resize(found_size);
-  if (fd_.SetPos(found_offset) == -1) {
-    return absl::InternalError("Failed to seek to data.");
-  }
-  if (!fd_.Read(result.data(), found_size)) {
-    return absl::InternalError("Failed to read data.");
-  }
+  MMapHandle data_handle;
+  ABSL_RETURN_IF_ERROR(data_handle.Map(fd_, found_offset, found_size));
 
-  return result;
+  return data_handle;
+}
+
+absl::StatusOr<std::string> SerializationProgramCache::LookUp(uint64_t key) {
+  ABSL_ASSIGN_OR_RETURN(auto handle, LookUpHandle(key));
+  return std::string(reinterpret_cast<const char*>(handle.data()),
+                     handle.size());
 }
 
 }  // namespace ml_drift

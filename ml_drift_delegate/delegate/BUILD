@@ -519,6 +519,7 @@ cc_library(
         "//ml_drift_delegate/delegate/composite/ir:litert_op_selector",
         "//ml_drift_delegate/delegate/serialization_program_cache",
         "//ml_drift_delegate/delegate/serialization_weight_cache",
+        "//ml_drift_delegate/delegate/serialization_weight_cache:mmap_handle",
         "//ml_drift_delegate/delegate/shared_memory_manager",
         "//ml_drift_delegate/delegate/shared_memory_manager:gf32_graph_adapter",
         "//ml_drift_delegate/delegate/shared_memory_manager:graph_adapter",

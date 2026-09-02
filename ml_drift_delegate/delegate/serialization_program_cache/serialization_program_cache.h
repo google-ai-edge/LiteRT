@@ -22,6 +22,7 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "ml_drift_delegate/delegate/serialization_weight_cache/file_util.h"
+#include "ml_drift_delegate/delegate/serialization_weight_cache/mmap_handle.h"
 
 namespace ml_drift {
 
@@ -51,6 +52,11 @@ class SerializationProgramCache {
   // The file descriptor must be open for reading.
   // Returns NOT_FOUND if the key is not present.
   absl::StatusOr<std::string> LookUp(uint64_t key);
+
+  // Reads a value for a given key by memory-mapping the data from the cache
+  // file. The returned MMapHandle owns the mapping lifetime.
+  // Returns NOT_FOUND if the key is not present.
+  absl::StatusOr<MMapHandle> LookUpHandle(uint64_t key);
 
  private:
   FileDescriptor fd_;
