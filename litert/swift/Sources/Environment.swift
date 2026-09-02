@@ -53,6 +53,9 @@ public final class Environment {
       let libName = "libLiteRtMetalAccelerator.dylib"
       let candidateURLs = [
         Bundle(identifier: "com.google.odml.litert.CLiteRT")?.bundleURL,
+        Bundle(identifier: "com.google.litert.metal_accelerator")?.bundleURL,
+        Bundle(identifier: "com.google.odml.litert.LiteRtMetalAccelerator")?.bundleURL,
+        Bundle.main.privateFrameworksURL?.appendingPathComponent("LiteRtMetalAccelerator.framework"),
         Bundle.main.privateFrameworksURL,
         Bundle.main.resourceURL,
         Bundle.main.bundleURL,

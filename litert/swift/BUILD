@@ -109,7 +109,7 @@ strip_common_include_path_prefix(
 )
 
 apple_xcframework(
-    name = "CLiteRT_raw",
+    name = "CLiteRT",
     bundle_id = "com.google.odml.litert.CLiteRT",
     bundle_name = "CLiteRT",
     features = ["exported_symbols"],
@@ -128,32 +128,14 @@ apple_xcframework(
     public_hdrs = [
         ":CLiteRT_headers",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         ":CLiteRT_objc",
     ],
 )
 
-genrule(
-    name = "CLiteRT",
-    srcs = [
-        ":CLiteRT_raw",
-        "@litert_prebuilts//:ios_arm64/libLiteRtMetalAccelerator.dylib",
-        "@litert_prebuilts//:ios_sim_arm64/libLiteRtMetalAccelerator.dylib",
-    ],
-    outs = ["CLiteRT.xcframework.zip"],
-    cmd = """
-       OUT_ZIP=$$(pwd)/$@
-       unzip -q $(location :CLiteRT_raw) -d clitert_tmp
-       cp $(location @litert_prebuilts//:ios_arm64/libLiteRtMetalAccelerator.dylib) clitert_tmp/CLiteRT.xcframework/ios-arm64/CLiteRT.framework/
-       cp $(location @litert_prebuilts//:ios_sim_arm64/libLiteRtMetalAccelerator.dylib) clitert_tmp/CLiteRT.xcframework/ios-arm64-simulator/CLiteRT.framework/
-       cd clitert_tmp && zip -q -r "$$OUT_ZIP" CLiteRT.xcframework && cd ..
-       rm -rf clitert_tmp
-    """,
-    visibility = ["//visibility:public"],
-)
-
 apple_static_xcframework(
-    name = "CLiteRT_static_raw",
+    name = "CLiteRT_static",
     bundle_name = "CLiteRT",
     ios = {
         "simulator": [
@@ -169,28 +151,10 @@ apple_static_xcframework(
     public_hdrs = [
         ":CLiteRT_headers",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         ":CLiteRT_objc",
     ],
-)
-
-genrule(
-    name = "CLiteRT_static",
-    srcs = [
-        ":CLiteRT_static_raw",
-        "@litert_prebuilts//:ios_arm64/libLiteRtMetalAccelerator.dylib",
-        "@litert_prebuilts//:ios_sim_arm64/libLiteRtMetalAccelerator.dylib",
-    ],
-    outs = ["CLiteRT_static.xcframework.zip"],
-    cmd = """
-       OUT_ZIP=$$(pwd)/$@
-       unzip -q $(location :CLiteRT_static_raw) -d clitert_static_tmp
-       cp $(location @litert_prebuilts//:ios_arm64/libLiteRtMetalAccelerator.dylib) clitert_static_tmp/CLiteRT.xcframework/ios-arm64/CLiteRT.framework/
-       cp $(location @litert_prebuilts//:ios_sim_arm64/libLiteRtMetalAccelerator.dylib) clitert_static_tmp/CLiteRT.xcframework/ios-arm64-simulator/CLiteRT.framework/
-       cd clitert_static_tmp && zip -q -r "$$OUT_ZIP" CLiteRT.xcframework && cd ..
-       rm -rf clitert_static_tmp
-    """,
-    visibility = ["//visibility:public"],
 )
 
 macos_dylib(
@@ -248,3 +212,83 @@ genrule(
     """,
     visibility = ["//visibility:public"],
 )
+
+# copybara:comment_begin(oss-only)
+genrule(
+    name = "LiteRtMetalAccelerator",
+    srcs = [
+        "@litert_prebuilts//:ios_arm64/libLiteRtMetalAccelerator.dylib",
+        "@litert_prebuilts//:ios_sim_arm64/libLiteRtMetalAccelerator.dylib",
+    ],
+    outs = ["LiteRtMetalAccelerator.xcframework.zip"],
+    cmd = """
+       OUT_ZIP=$$(pwd)/$@
+       mkdir -p metal_tmp/LiteRtMetalAccelerator.xcframework/ios-arm64/LiteRtMetalAccelerator.framework
+       mkdir -p metal_tmp/LiteRtMetalAccelerator.xcframework/ios-arm64-simulator/LiteRtMetalAccelerator.framework
+       cp $(location @litert_prebuilts//:ios_arm64/libLiteRtMetalAccelerator.dylib) metal_tmp/LiteRtMetalAccelerator.xcframework/ios-arm64/LiteRtMetalAccelerator.framework/libLiteRtMetalAccelerator.dylib
+       cp $(location @litert_prebuilts//:ios_sim_arm64/libLiteRtMetalAccelerator.dylib) metal_tmp/LiteRtMetalAccelerator.xcframework/ios-arm64-simulator/LiteRtMetalAccelerator.framework/libLiteRtMetalAccelerator.dylib
+       cat << 'EOF' > metal_tmp/framework_Info.plist
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.google.odml.litert.LiteRtMetalAccelerator</string>
+    <key>CFBundlePackageType</key>
+    <string>FMWK</string>
+</dict>
+</plist>
+EOF
+       cp metal_tmp/framework_Info.plist metal_tmp/LiteRtMetalAccelerator.xcframework/ios-arm64/LiteRtMetalAccelerator.framework/Info.plist
+       cp metal_tmp/framework_Info.plist metal_tmp/LiteRtMetalAccelerator.xcframework/ios-arm64-simulator/LiteRtMetalAccelerator.framework/Info.plist
+       cat << 'EOF' > metal_tmp/LiteRtMetalAccelerator.xcframework/Info.plist
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>AvailableLibraries</key>
+    <array>
+        <dict>
+            <key>BinaryPath</key>
+            <string>LiteRtMetalAccelerator.framework/libLiteRtMetalAccelerator.dylib</string>
+            <key>LibraryIdentifier</key>
+            <string>ios-arm64</string>
+            <key>LibraryPath</key>
+            <string>LiteRtMetalAccelerator.framework</string>
+            <key>SupportedArchitectures</key>
+            <array>
+                <string>arm64</string>
+            </array>
+            <key>SupportedPlatform</key>
+            <string>ios</string>
+        </dict>
+        <dict>
+            <key>BinaryPath</key>
+            <string>LiteRtMetalAccelerator.framework/libLiteRtMetalAccelerator.dylib</string>
+            <key>LibraryIdentifier</key>
+            <string>ios-arm64-simulator</string>
+            <key>LibraryPath</key>
+            <string>LiteRtMetalAccelerator.framework</string>
+            <key>SupportedArchitectures</key>
+            <array>
+                <string>arm64</string>
+            </array>
+            <key>SupportedPlatform</key>
+            <string>ios</string>
+            <key>SupportedPlatformVariant</key>
+            <string>simulator</string>
+        </dict>
+    </array>
+    <key>CFBundlePackageType</key>
+    <string>XFWK</string>
+    <key>XCFrameworkFormatVersion</key>
+    <string>1.0</string>
+</dict>
+</plist>
+EOF
+       cd metal_tmp && zip -q -r "$$OUT_ZIP" LiteRtMetalAccelerator.xcframework && cd ..
+       rm -rf metal_tmp
+    """,
+    visibility = ["//visibility:public"],
+)
+# copybara:comment_end

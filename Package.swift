@@ -36,6 +36,10 @@ let package = Package(
       type: .dynamic,
       targets: ["LiteRT"]
     ),
+    .library(
+      name: "LiteRtMetalAccelerator",
+      targets: ["LiteRtMetalAccelerator"]
+    ),
   ],
   targets: [
     // The Prebuilt Binary Target
@@ -46,6 +50,11 @@ let package = Package(
     .binaryTarget(
       name: "CLiteRT_mac",
       path: "prebuilt/CLiteRT_mac.xcframework.zip"
+    ),
+    // Optional GPU Accelerator Plugin Target
+    .binaryTarget(
+      name: "LiteRtMetalAccelerator",
+      path: "prebuilt/LiteRtMetalAccelerator.xcframework.zip"
     ),
     // The Swift Wrapper Target
     .target(
