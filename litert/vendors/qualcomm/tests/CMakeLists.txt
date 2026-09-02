@@ -111,6 +111,7 @@ add_executable(builder_test)
 
 target_sources(builder_test
     PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/addn_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/elementwise_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/fully_connected_int2_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/pack_test.cc
