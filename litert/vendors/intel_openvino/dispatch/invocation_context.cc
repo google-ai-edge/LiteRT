@@ -37,6 +37,7 @@
 #include "openvino/runtime/tensor.hpp"
 #if defined(__ANDROID__)
 #include <unistd.h>
+#include "litert/vendors/intel_openvino/dispatch/npu_hal_wrapper.h"
 #endif
 
 #include "litert/c/internal/litert_logging.h"
