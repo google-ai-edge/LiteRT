@@ -124,6 +124,7 @@ provides the corresponding QNN operation it is legalized to.
 | `kLiteRtOpCodeTflSplitV` | Legalized to `QNN_OP_SPLIT` with a cumulative `split_index` derived from the static `size_splits` input. |
 | `kLiteRtOpCodeTflSquare` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (MULTIPLY). |
 | `kLiteRtOpCodeTflSquaredDifference` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (SQUARED_DIFFERENCE). |
+| `kLiteRtOpCodeTflSqueeze` | Legalized to `QNN_OP_SQUEEZE`. |
 | `kLiteRtOpCodeTflSqrt` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (SQRT). |
 | `kLiteRtOpCodeTflStridedSlice` | Legalized to `QNN_OP_STRIDED_SLICE`. |
 | `kLiteRtOpCodeTflSub` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (SUBTRACT). Supports fused activation. |
