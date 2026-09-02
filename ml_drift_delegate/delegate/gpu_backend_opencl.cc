@@ -28,7 +28,6 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/cl/buffer.h"  // from @ml_drift
 #include "ml_drift/cl/cl_operation.h"  // from @ml_drift
-#include "ml_drift/cl/cl_weights_manager.h"  // from @ml_drift
 #include "ml_drift/cl/converter.h"  // from @ml_drift
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/inference_context.h"  // from @ml_drift
@@ -163,7 +162,7 @@ GpuBackendOpenCl::CreateSharedMemoryManager(
 
 absl::StatusOr<std::shared_ptr<::ml_drift::WeightsManager>>
 GpuBackendOpenCl::CreateWeightsManager() {
-  return std::make_shared<::ml_drift::cl::ClWeightsManager>();
+  return std::make_shared<::ml_drift::WeightsManager>();
 }
 
 absl::StatusOr<std::vector<
@@ -171,12 +170,8 @@ absl::StatusOr<std::vector<
 GpuBackendOpenCl::GetBatchesForWeightsPreparation(
     ::ml_drift::WeightsManager* weights_manager,
     size_t total_shared_tensor_size) {
-  auto* cl_weights_manager =
-      static_cast<::ml_drift::cl::ClWeightsManager*>(weights_manager);
-  return cl_weights_manager->GetBatchesForWeightsPreparation(
-      *env_,
-      ::ml_drift::WeightsManager::ScheduleStrategy::kBatchByMaxWeightSize,
-      total_shared_tensor_size);
+  return absl::UnimplementedError(
+      "GetBatchesForWeightsPreparation is not implemented.");
 }
 
 absl::StatusOr<absl::flat_hash_map<
@@ -185,9 +180,7 @@ GpuBackendOpenCl::PrepareWeightsInBatch(
     ::ml_drift::WeightsManager* weights_manager,
     std::vector<::ml_drift::WeightsManager::WeightsPrepOperationInfo>&
         op_infos) {
-  auto* cl_weights_manager =
-      static_cast<::ml_drift::cl::ClWeightsManager*>(weights_manager);
-  return cl_weights_manager->PrepareWeightsInBatch(*env_, op_infos);
+  return absl::UnimplementedError("PrepareWeightsInBatch is not implemented.");
 }
 
 absl::StatusOr<absl::flat_hash_map<
@@ -195,12 +188,8 @@ absl::StatusOr<absl::flat_hash_map<
 GpuBackendOpenCl::PrepareWeightsInBatches(
     ::ml_drift::WeightsManager* weights_manager,
     size_t total_shared_tensor_size) {
-  auto* cl_weights_manager =
-      static_cast<::ml_drift::cl::ClWeightsManager*>(weights_manager);
-  return cl_weights_manager->PrepareWeightsInBatches(
-      *env_,
-      ::ml_drift::WeightsManager::ScheduleStrategy::kBatchByMaxWeightSize,
-      total_shared_tensor_size);
+  return absl::UnimplementedError(
+      "PrepareWeightsInBatches is not implemented.");
 }
 
 absl::StatusOr<std::unique_ptr<GpuTensorWrapper>>
@@ -215,8 +204,8 @@ GpuBackendOpenCl::CreateTensorWrapper(const ::ml_drift::TensorDescriptor& desc,
 
 absl::Status GpuBackendOpenCl::ReadSpatialTensorToDescriptor(
     ::ml_drift::GpuSpatialTensor& tensor, ::ml_drift::TensorDescriptor& desc) {
-  auto* cl_tensor = static_cast<::ml_drift::cl::Tensor*>(&tensor);
-  return cl_tensor->ToDescriptor(&desc, env_->queue());
+  return absl::UnimplementedError(
+      "ReadSpatialTensorToDescriptor is not implemented");
 }
 
 absl::Status GpuBackendOpenCl::UpdateSpatialTensor(

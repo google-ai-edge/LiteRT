@@ -205,7 +205,6 @@ class GpuOptions : public ConcreteOptionsBase {
   /// all rearranged weights of the external tensors into the serialization
   /// cache. This eliminates dynamic weight rearrangement during initialization,
   /// significantly reducing warm startup times.
-  /// Supported backends: OpenCL, WebGPU, Metal.
   LiteRtStatus SetSerializeExternalTensors(bool serialize_external_tensors) {
     return LrtSetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
         options_, serialize_external_tensors);
