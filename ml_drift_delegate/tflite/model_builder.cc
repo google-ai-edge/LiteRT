@@ -3915,12 +3915,11 @@ class OneHotOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    ABSL_RETURN_IF_ERROR(ValidateSupport(
-        context, tflite_node, registration,
-        {.max_version = 1,
-         .min_inputs = 4,
-         .num_outputs = 1,
-         .check_gpu_compatibility = false}));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
+                                         {.max_version = 1,
+                                          .min_inputs = 4,
+                                          .num_outputs = 1,
+                                          .check_gpu_compatibility = false}));
     const TfLiteTensor* indices_tensor = nullptr;
     ABSL_RETURN_IF_ERROR(
         PreGetInputTensor(context, tflite_node, 0, &indices_tensor));
@@ -3935,8 +3934,7 @@ class OneHotOperationParser : public TFLiteOperationParser {
             "OneHot axis must be -1 or the last dimension.");
       }
     }
-    if (indices_tensor->dims->size >= 4 &&
-        indices_tensor->dims->data[3] != 1) {
+    if (indices_tensor->dims->size >= 4 && indices_tensor->dims->data[3] != 1) {
       return absl::InvalidArgumentError(
           "OneHot indices channel dimension must be 1.");
     }
@@ -5619,8 +5617,7 @@ class TopKOperationParser : public TFLiteOperationParser {
     // Insert a RESHAPE if input tensor [N] is mis-auto-expanded to [N,1,1,1].
     if (is_1d) {
       const ::ml_drift::Value* original_input = reader->ReadValue(0);
-      const ::ml_drift::BHWC new_shape(1, 1, 1,
-                                       original_input->tensor.shape.b);
+      const ::ml_drift::BHWC new_shape(1, 1, 1, original_input->tensor.shape.b);
       ::ml_drift::Node* reshape_node = graph->NewNode();
       reshape_node->operation.type =
           ToString(::ml_drift::OperationType::RESHAPE);
@@ -6736,12 +6733,24 @@ bool IsAllAllowedTensors(TfLiteContext* context,
                          std::string* unsupported_details) {
   for (int i = 0; i < tensor_indices->size; ++i) {
     int tensor_idx = tensor_indices->data[i];
-    if (tensor_idx == kTfLiteOptionalTensor) continue;
+    if (tensor_idx < 0 || tensor_idx >= context->tensors_size ||
+        tensor_idx == kTfLiteOptionalTensor) {
+      continue;
+    }
     const TfLiteTensor* t = &context->tensors[tensor_idx];
-    if (t->dims && t->dims->size >= 5) {
-      *unsupported_details +=
-          "Tensor dimensions must be less than 5. " + std::string(t->name);
-      return false;
+    if (t->dims) {
+      if (t->dims->size >= 5) {
+        *unsupported_details +=
+            "Tensor dimensions must be less than 5. " + std::string(t->name);
+        return false;
+      }
+      for (int d = 0; d < t->dims->size; ++d) {
+        if (t->dims->data[d] <= 0) {
+          *unsupported_details +=
+              "Tensor dimension is <= 0. " + std::string(t->name);
+          return false;
+        }
+      }
     }
     bool type_supported = false;
     for (auto allowed_type : allowed_types) {

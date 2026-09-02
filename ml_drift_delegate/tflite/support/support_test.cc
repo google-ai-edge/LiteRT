@@ -12,20 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <vector>
+#include "ml_drift_delegate/tflite/support/support.h"
 
 #include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
 #include "ml_drift_delegate/tflite/support/stub_context.h"
 #include "tflite/builtin_ops.h"
+#include "tflite/c/builtin_op_data.h"
 #include "tflite/c/common.h"
 
 namespace litert::ml_drift::ir {
-
-extern std::vector<int> GetSupportedNodes(TfLiteContext*,
-                                          const IrModelBuilderOptions&);
-
 namespace {
 
 using ::testing::ElementsAre;
@@ -89,6 +86,67 @@ TEST(OptionToggleTest, HasQuantTensorBuiltinQuantize) {
   IrModelBuilderOptions options;
   options.allow_quant_ops = false;
   EXPECT_THAT(GetSupportedNodes(context, options), IsEmpty());
+}
+
+TEST(EmptyTensorTest, RejectEmptyTensorWithZeroDimension) {
+  constexpr TfLiteAddParams kAddParams = {};
+  {
+    StubContextBuilder context_builder;
+    const int in0 = context_builder.AddTensor(kTfLiteFloat32, {1, 1, 1, 8});
+    const int in1 = context_builder.AddTensor(kTfLiteFloat32, {1, 1, 1, 8});
+    const int out = context_builder.AddTensor(kTfLiteFloat32, {1, 1, 1, 8});
+    context_builder.SetOp(kTfLiteBuiltinAdd, 1, &kAddParams, {in0, in1}, {out});
+    TfLiteContext* context = context_builder.Build();
+    ASSERT_NE(context, nullptr);
+
+    IrModelBuilderOptions options;
+    EXPECT_THAT(GetSupportedNodes(context, options), ElementsAre(0));
+  }
+  {
+    StubContextBuilder context_builder;
+    const int in0 = context_builder.AddTensor(kTfLiteFloat32, {0, 1, 1, 8});
+    const int in1 = context_builder.AddTensor(kTfLiteFloat32, {0, 1, 1, 8});
+    const int out = context_builder.AddTensor(kTfLiteFloat32, {0, 1, 1, 8});
+    context_builder.SetOp(kTfLiteBuiltinAdd, 1, &kAddParams, {in0, in1}, {out});
+    TfLiteContext* context = context_builder.Build();
+    ASSERT_NE(context, nullptr);
+
+    IrModelBuilderOptions options;
+    EXPECT_THAT(GetSupportedNodes(context, options), IsEmpty());
+  }
+}
+
+TEST(EmptyTensorTest, AcceptNodeWithScalarConstTensor) {
+  constexpr int kDefaultAxis = 0;
+  constexpr TfLiteSplitParams kSplitParams = {/*num_splits=*/2};
+  StubContextBuilder context_builder;
+  int axis_val = kDefaultAxis;
+  const int axis =
+      context_builder.AddScalarConstTensor(kTfLiteInt32, &axis_val);
+  const int in = context_builder.AddTensor(kTfLiteFloat32, {2, 4});
+  const int out0 = context_builder.AddTensor(kTfLiteFloat32, {1, 4});
+  const int out1 = context_builder.AddTensor(kTfLiteFloat32, {1, 4});
+  context_builder.SetOp(kTfLiteBuiltinSplit, 1, &kSplitParams, {axis, in},
+                        {out0, out1});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_NE(context, nullptr);
+
+  IrModelBuilderOptions options;
+  EXPECT_THAT(GetSupportedNodes(context, options), ElementsAre(0));
+}
+
+TEST(EmptyTensorTest, AcceptNodeWithScalarInput) {
+  constexpr TfLiteAddParams kAddParams = {};
+  StubContextBuilder context_builder;
+  const int in0 = context_builder.AddTensor(kTfLiteFloat32, {});
+  const int in1 = context_builder.AddTensor(kTfLiteFloat32, {});
+  const int out = context_builder.AddTensor(kTfLiteFloat32, {});
+  context_builder.SetOp(kTfLiteBuiltinAdd, 1, &kAddParams, {in0, in1}, {out});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_NE(context, nullptr);
+
+  IrModelBuilderOptions options;
+  EXPECT_THAT(GetSupportedNodes(context, options), ElementsAre(0));
 }
 
 }  // namespace
